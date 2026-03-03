@@ -6,109 +6,16 @@
 <title>CompanyHub — Dashboard</title>
 <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="site-ui.css">
 <style>
-:root{
-  --bg:#060810;--s1:#0c0f1a;--s2:#111520;--s3:#171c2b;--s4:#1d2235;
-  --border:#1f2740;--border2:#293050;
-  --blue:#3b82f6;--blue-dim:rgba(59,130,246,0.12);--blue-glow:rgba(59,130,246,0.25);
-  --teal:#14b8a6;--teal-dim:rgba(20,184,166,0.1);--teal-glow:rgba(20,184,166,0.25);
-  --amber:#f59e0b;--amber-dim:rgba(245,158,11,0.12);
-  --red:#f43f5e;--red-dim:rgba(244,63,94,0.1);
-  --violet:#8b5cf6;--violet-dim:rgba(139,92,246,0.1);
-  --green:#22c55e;--orange:#fb923c;
-  --em:#00d4aa;--em-dim:rgba(0,212,170,0.1);
-  --text:#e2e8f8;--text2:#6b7a9e;--text3:#323b56;
-  --font:'Outfit',sans-serif;--mono:'JetBrains Mono',monospace;--r:10px;
-}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;-webkit-font-smoothing:antialiased;}
-::-webkit-scrollbar{width:5px;height:5px;}
-::-webkit-scrollbar-track{background:var(--s1);}
-::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
-
-/* LOGIN */
-#loginScreen{position:fixed;inset:0;z-index:1000;background:var(--bg);display:flex;align-items:center;justify-content:center;}
-#loginScreen::before{content:'';position:absolute;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:48px 48px;opacity:.35;mask-image:radial-gradient(ellipse 70% 60% at 50% 40%,black 40%,transparent 100%);}
-.login-card{position:relative;z-index:1;background:var(--s2);border:1px solid var(--border2);border-radius:18px;padding:44px 48px;width:400px;max-width:95vw;text-align:center;box-shadow:0 40px 80px rgba(0,0,0,.5);animation:fadeUp .5s ease;}
-.login-logo{display:flex;align-items:center;justify-content:center;gap:11px;margin-bottom:28px;}
-.login-mark{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--blue),var(--teal));display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;color:#fff;}
-.login-brand{font-size:20px;font-weight:800;}
-.login-sub{font-size:12px;color:var(--text2);margin-bottom:30px;line-height:1.6;}
-.btn-ms{width:100%;padding:12px 20px;border-radius:9px;border:none;background:var(--blue);color:#fff;font-family:var(--font);font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;transition:all .2s;}
-.btn-ms:hover{background:#5b9bff;transform:translateY(-2px);}
-.ms-mini{display:grid;grid-template-columns:1fr 1fr;gap:2px;width:13px;}
-.ms-mini span{display:block;width:5.5px;height:5.5px;border-radius:1px;}
-.ms-mini span:nth-child(1){background:#fff;}.ms-mini span:nth-child(2){background:rgba(255,255,255,.7);}
-.ms-mini span:nth-child(3){background:rgba(255,255,255,.7);}.ms-mini span:nth-child(4){background:rgba(255,255,255,.5);}
-.login-divider{display:flex;align-items:center;gap:12px;margin:20px 0;}
-.login-divider::before,.login-divider::after{content:'';flex:1;height:1px;background:var(--border);}
-.login-divider span{font-size:11px;color:var(--text3);}
-.btn-demo{width:100%;padding:10px;border-radius:9px;border:1px solid var(--border2);background:transparent;color:var(--text2);font-family:var(--font);font-size:13px;cursor:pointer;transition:all .2s;}
-.btn-demo:hover{border-color:var(--blue);color:var(--text);}
-.login-note{font-size:11px;color:var(--text3);margin-top:18px;line-height:1.7;}
-
-/* APP */
-#app{display:none;}
-#app.visible{display:block;animation:fadeUp .4s ease;}
-@keyframes fadeUp{from{opacity:0;transform:translateY(9px);}to{opacity:1;transform:translateY(0);}}
-@keyframes spin{to{transform:rotate(360deg);}}
-
-/* TOPBAR */
-.topbar{position:sticky;top:0;z-index:200;display:flex;align-items:center;justify-content:space-between;height:54px;padding:0 24px;background:rgba(12,15,26,.95);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);}
-.t-brand{display:flex;align-items:center;gap:10px;}
-.brand-mark{width:28px;height:28px;border-radius:7px;background:linear-gradient(135deg,var(--blue),var(--teal));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;}
-.brand-name{font-size:16px;font-weight:800;}
-.t-right{display:flex;align-items:center;gap:9px;}
-.user-chip{display:flex;align-items:center;gap:8px;background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:5px 10px;}
-.u-av{width:22px;height:22px;border-radius:5px;background:linear-gradient(135deg,var(--blue),var(--teal));display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;}
-.u-name{font-size:12px;font-weight:500;}
-.u-dept{font-size:10px;color:var(--text2);}
-.sync-btn{display:flex;align-items:center;gap:7px;font-family:var(--font);font-size:12px;font-weight:500;color:var(--text2);background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:6px 12px;cursor:pointer;transition:all .18s;}
-.sync-btn:hover{border-color:var(--blue);color:var(--blue);}
-.ms-sq{display:grid;grid-template-columns:1fr 1fr;gap:2px;width:11px;}
-.ms-sq span{display:block;width:4.5px;height:4.5px;border-radius:1px;}
-.ms-sq span:nth-child(1){background:#f25022;}.ms-sq span:nth-child(2){background:#7fba00;}
-.ms-sq span:nth-child(3){background:#00a4ef;}.ms-sq span:nth-child(4){background:#ffb900;}
-.icon-btn{position:relative;width:32px;height:32px;border-radius:7px;border:1px solid var(--border);background:var(--s3);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);font-size:15px;transition:all .15s;}
-.icon-btn:hover{border-color:var(--blue);color:var(--blue);}
-.npip{position:absolute;top:5px;right:5px;width:6px;height:6px;border-radius:50%;background:var(--red);border:1px solid var(--bg);}
-.signout{font-family:var(--font);font-size:12px;color:var(--text2);background:transparent;border:1px solid var(--border);border-radius:7px;padding:6px 12px;cursor:pointer;transition:all .18s;}
-.signout:hover{border-color:var(--red);color:var(--red);}
-
-/* DEPT TABS */
-.dept-nav{background:var(--s1);border-bottom:1px solid var(--border);padding:0 24px;display:flex;overflow-x:auto;}
-.dept-tab{display:flex;align-items:center;gap:7px;padding:12px 16px;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;transition:all .16s;white-space:nowrap;font-family:var(--font);text-decoration:none;}
-.dept-tab:hover{color:var(--text);}
-.dept-tab.active{color:var(--blue);border-bottom-color:var(--blue);}
-
-/* LAYOUT */
-.app-wrap{display:flex;min-height:calc(100vh - 98px);}
-.sidebar{width:200px;flex-shrink:0;background:var(--s1);border-right:1px solid var(--border);padding:18px 0;}
-.s-sect{margin-bottom:22px;}
-.s-lbl{font-size:11px;font-weight:600;letter-spacing:.8px;color:var(--text2);text-transform:uppercase;padding:0 16px;margin-bottom:6px;}
-.s-item{display:flex;align-items:center;gap:8px;padding:9px 16px;font-size:14px;color:var(--text2);cursor:pointer;transition:all .14s;border-left:2px solid transparent;text-decoration:none;}
-.s-item:hover{color:var(--text);background:var(--s2);}
-.s-item.active{color:var(--blue);background:var(--blue-dim);border-left-color:var(--blue);font-weight:500;}
-.s-ico{font-size:14px;width:18px;text-align:center;}
-.s-badge{margin-left:auto;font-size:10px;font-family:var(--mono);background:var(--blue);color:#fff;border-radius:9px;padding:1px 6px;}
-
-.content{flex:1;padding:24px 26px;overflow-y:auto;max-height:calc(100vh - 98px);}
-.tab-panel{display:none;animation:fadeUp .26s ease;}
-.tab-panel.active{display:block;}
-
-/* PAGE HEADER */
-.pg-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;}
-.pg-title{font-size:22px;font-weight:800;letter-spacing:-.02em;}
-.pg-title em{color:var(--blue);font-style:normal;}
-.pg-sub{font-size:13px;color:var(--text2);margin-top:4px;}
-
+/* ── INDEX-SPECIFIC STYLES ── */
 /* STATS */
 .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:11px;margin-bottom:24px;}
 .stat-card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;}
 .stat-lbl{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:600;margin-bottom:6px;}
 .stat-val{font-size:26px;font-weight:800;letter-spacing:-.02em;}
 .stat-meta{font-size:11px;color:var(--text2);margin-top:3px;}
-.c-blue{color:var(--blue);}.c-teal{color:var(--teal);}.c-amber{color:var(--amber);}.c-red{color:var(--red);}.c-violet{color:var(--violet);}
+.c-blue{color:var(--accent);}.c-teal{color:var(--teal);}.c-amber{color:var(--amber);}.c-red{color:var(--red);}.c-violet{color:var(--violet);}
 
 /* SECTION LABEL */
 .sec-lbl{font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--text2);margin-bottom:14px;}
@@ -117,14 +24,14 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .dept-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:32px;}
 .dept-card{background:var(--s2);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:all .22s;text-decoration:none;display:block;}
 .dept-card:hover{transform:translateY(-3px);}
-.dept-card.blue:hover{border-color:var(--blue);box-shadow:0 14px 48px var(--blue-glow);}
-.dept-card.teal:hover{border-color:var(--teal);box-shadow:0 14px 48px var(--teal-glow);}
+.dept-card.blue:hover{border-color:var(--accent);box-shadow:0 14px 48px var(--accent-glow);}
+.dept-card.teal:hover{border-color:var(--teal);box-shadow:0 14px 48px var(--teal-glow,rgba(20,184,166,.25));}
 .dc-banner{height:4px;}
-.dc-banner.blue{background:linear-gradient(90deg,var(--blue),var(--violet));}
+.dc-banner.blue{background:linear-gradient(90deg,var(--accent),var(--violet));}
 .dc-banner.teal{background:linear-gradient(90deg,var(--teal),var(--em));}
 .dc-body{padding:22px 24px 20px;}
 .dc-icon{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:14px;}
-.dc-icon.blue{background:var(--blue-dim);border:1px solid rgba(59,130,246,.2);}
+.dc-icon.blue{background:var(--accent-dim);border:1px solid rgba(59,130,246,.2);}
 .dc-icon.teal{background:var(--em-dim);border:1px solid rgba(0,212,170,.2);}
 .dc-name{font-size:17px;font-weight:800;margin-bottom:5px;letter-spacing:-.015em;color:var(--text);}
 .dc-desc{font-size:12px;color:var(--text2);line-height:1.65;margin-bottom:16px;}
@@ -133,7 +40,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .dc-stat-lbl{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-top:2px;}
 .dc-footer{margin-top:13px;}
 .dc-link{font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px;transition:gap .15s;}
-.blue .dc-link{color:var(--blue);}
+.blue .dc-link{color:var(--accent);}
 .teal .dc-link{color:var(--teal);}
 .dept-card:hover .dc-link{gap:9px;}
 
@@ -144,11 +51,6 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .qc-ico{font-size:16px;width:28px;text-align:center;flex-shrink:0;}
 .qc-name{font-size:13px;font-weight:600;}
 .qc-sub{font-size:11px;color:var(--text2);margin-top:1px;}
-
-/* TOAST */
-.toast{position:fixed;bottom:22px;right:22px;z-index:999;background:var(--s3);border:1px solid var(--blue);border-radius:10px;padding:11px 15px;font-size:12px;color:var(--text);display:flex;align-items:center;gap:8px;max-width:320px;transform:translateY(80px);opacity:0;transition:all .32s cubic-bezier(.34,1.56,.64,1);}
-.toast.show{transform:translateY(0);opacity:1;}
-.t-ic{color:var(--teal);font-size:14px;}
 </style>
 </head>
 <body>
@@ -251,7 +153,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
               <div class="dc-name">Service Department</div>
               <div class="dc-desc">Personnel scheduling, preventative maintenance agreements, technician dispatch board, and PM calendar with auto-generated visit dates from Col M patterns.</div>
               <div class="dc-stats">
-                <div class="dc-stat"><div class="dc-stat-val" style="color:var(--blue)">9</div><div class="dc-stat-lbl">Technicians</div></div>
+                <div class="dc-stat"><div class="dc-stat-val" style="color:var(--accent)">9</div><div class="dc-stat-lbl">Technicians</div></div>
                 <div class="dc-stat"><div class="dc-stat-val" style="color:var(--amber)">57</div><div class="dc-stat-lbl">SA Records</div></div>
                 <div class="dc-stat"><div class="dc-stat-val" style="color:var(--teal)">3</div><div class="dc-stat-lbl">Views</div></div>
               </div>
@@ -303,47 +205,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
               <div class="dc-name">Service Department</div>
               <div class="dc-desc">Personnel scheduling, preventative maintenance agreements, technician dispatch board, and PM calendar with auto-generated visit dates from Col M patterns.</div>
               <div class="dc-stats">
-                <div class="dc-stat"><div class="dc-stat-val" style="color:var(--blue)">9</div><div class="dc-stat-lbl">Technicians</div></div>
-                <div class="dc-stat"><div class="dc-stat-val" style="color:var(--amber)">57</div><div class="dc-stat-lbl">SA Records</div></div>
-                <div class="dc-stat"><div class="dc-stat-val" style="color:var(--teal)">3</div><div class="dc-stat-lbl">Views</div></div>
-              </div>
-              <div class="dc-footer"><span class="dc-link">Open Service Department →</span></div>
-            </div>
-          </a>
-          <a class="dept-card teal" href="energy-department.html">
-            <div class="dc-banner teal"></div>
-            <div class="dc-body">
-              <div class="dc-icon teal">⚡</div>
-              <div class="dc-name">Energy Department</div>
-              <div class="dc-desc">Energy projects, PDF &amp; OCR tools, weather normalization, utility baseline calculations, energy savings analysis, district calendar, equipment repo, and WebCTRL integration.</div>
-              <div class="dc-stats">
-                <div class="dc-stat"><div class="dc-stat-val" style="color:var(--teal)">12</div><div class="dc-stat-lbl">Tools</div></div>
-                <div class="dc-stat"><div class="dc-stat-val" style="color:var(--em)">AI</div><div class="dc-stat-lbl">Powered</div></div>
-                <div class="dc-stat"><div class="dc-stat-val" style="color:var(--violet)">BAS</div><div class="dc-stat-lbl">Integration</div></div>
-              </div>
-              <div class="dc-footer"><span class="dc-link">Open Energy Department →</span></div>
-            </div>
-          </a>
-        </div>
-      </div>
-
-      <!-- DEPARTMENTS -->
-      <div id="view-departments" class="tab-panel">
-        <div class="pg-hdr">
-          <div>
-            <h1 class="pg-title">All <em>Departments</em></h1>
-            <p class="pg-sub">Select a department to open its full portal</p>
-          </div>
-        </div>
-        <div class="dept-grid">
-          <a class="dept-card blue" href="service-department.html">
-            <div class="dc-banner blue"></div>
-            <div class="dc-body">
-              <div class="dc-icon blue">🔧</div>
-              <div class="dc-name">Service Department</div>
-              <div class="dc-desc">Personnel scheduling, preventative maintenance agreements, technician dispatch board, and PM calendar with auto-generated visit dates from Col M patterns.</div>
-              <div class="dc-stats">
-                <div class="dc-stat"><div class="dc-stat-val" style="color:var(--blue)">9</div><div class="dc-stat-lbl">Technicians</div></div>
+                <div class="dc-stat"><div class="dc-stat-val" style="color:var(--accent)">9</div><div class="dc-stat-lbl">Technicians</div></div>
                 <div class="dc-stat"><div class="dc-stat-val" style="color:var(--amber)">57</div><div class="dc-stat-lbl">SA Records</div></div>
                 <div class="dc-stat"><div class="dc-stat-val" style="color:var(--teal)">3</div><div class="dc-stat-lbl">Views</div></div>
               </div>
@@ -406,6 +268,8 @@ async function loginWithMicrosoft(){
   }
 }
 function enterApp(){
+  // Check if user should be redirected to a different default page
+  if(window.__siteUI && window.__siteUI.checkDefaultLogin()) return;
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('app').classList.add('visible');
   document.getElementById('topName').textContent=currentUser.name;
@@ -447,5 +311,6 @@ function showToast(msg){
   toastTimer=setTimeout(()=>t.classList.remove('show'),3400);
 }
 </script>
+<script src="site-ui.js"></script>
 </body>
 </html>
