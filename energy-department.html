@@ -152,17 +152,20 @@ html{scroll-behavior:smooth;}
 .ptab{display:none;padding:18px;}
 .ptab.active{display:block;}
 /* ── SIDEBAR PROJECT FOLDERS ── */
-.s-proj-section{margin-top:0;}
-.spf{display:flex;align-items:center;gap:7px;padding:7px 16px;font-size:12px;color:var(--text2);cursor:pointer;transition:all .13s;user-select:none;}
-.spf:hover{color:var(--text);background:var(--s2);}
-.spf-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.spf-arrow{font-size:9px;color:var(--text3);transition:transform .18s;flex-shrink:0;}
-.spf-arrow.open{transform:rotate(90deg);}
-.spf-children{overflow:hidden;transition:max-height .22s ease;}
-.spfc{display:flex;align-items:center;gap:6px;padding:5px 16px 5px 36px;font-size:11px;color:var(--text2);cursor:pointer;transition:all .13s;border:none;border-left:2px solid transparent;background:none;width:100%;text-align:left;font-family:var(--font);}
-.spfc:hover{color:var(--text);background:var(--s2);}
-.spfc.active{color:var(--em);background:var(--em-dim);border-left-color:var(--em);}
-.spfc-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;}
+.s-proj-header{display:flex;align-items:center;position:relative;}
+.s-proj-toggle{flex:1;text-align:left;}
+.s-proj-collapse{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:20px;height:20px;border-radius:4px;border:none;background:transparent;color:var(--text3);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:all .15s;line-height:1;padding:0;font-family:var(--font);}
+.s-proj-collapse:hover{color:var(--text2);background:var(--s3);}
+.s-proj-collapse.collapsed{transform:translateY(-50%) rotate(180deg);}
+.s-proj-section{overflow:hidden;transition:max-height .25s ease,opacity .2s ease;max-height:600px;opacity:1;}
+.s-proj-section.collapsed{max-height:0;opacity:0;}
+/* flat project items */
+.spfi{display:flex;align-items:center;gap:8px;padding:5px 14px 5px 28px;font-size:12px;color:var(--text2);cursor:pointer;transition:all .13s;border:none;border-left:2px solid transparent;background:none;width:100%;text-align:left;font-family:var(--font);border-right:none;}
+.spfi:hover{color:var(--text);background:rgba(255,255,255,.03);}
+.spfi.active{color:var(--em);background:var(--em-dim);border-left-color:var(--em);}
+.spfi-icon{font-size:13px;flex-shrink:0;line-height:1;}
+.spfi-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;}
+.spfi-badge{font-size:9px;background:var(--warn);color:#000;border-radius:4px;padding:0 4px;font-weight:700;flex-shrink:0;line-height:16px;}
 /* ── PDF/AI/etc ── */
 .drop-zone{border:2px dashed var(--border2);border-radius:12px;padding:36px 22px;text-align:center;cursor:pointer;transition:all .2s;background:var(--s2);}
 .drop-zone:hover,.drop-zone.drag{border-color:var(--em);background:var(--em-dim);}
@@ -257,7 +260,10 @@ html{scroll-behavior:smooth;}
   <div class="s-sect">
     <div class="s-lbl">Energy</div>
     <button class="s-item active" onclick="sv('home',this)"><span class="s-ico">🏠</span>Home</button>
-    <button class="s-item" id="sb-proj-btn" onclick="sv('projects',this)"><span class="s-ico">📁</span>Projects</button>
+    <div class="s-proj-header" id="sb-proj-btn">
+      <button class="s-item s-proj-toggle" onclick="sv('projects',document.getElementById('sb-proj-btn'))"><span class="s-ico">📁</span>Projects</button>
+      <button class="s-proj-collapse" id="projCollapseBtn" onclick="toggleProjSection(event)" title="Collapse projects">‹</button>
+    </div>
     <div class="s-proj-section" id="sidebarProjFolders"></div>
     <button class="s-item" onclick="sv('pdf',this)"><span class="s-ico">📄</span>PDF / OCR</button>
     <button class="s-item" onclick="sv('weather',this)"><span class="s-ico">🌡️</span>Weather &amp; Normalize</button>
@@ -777,7 +783,7 @@ async function sget(k,fb){try{const r=await window.storage.get(k);return r?JSON.
 /* ── STATE ── */
 let projects=[],tasks=[],equipment=[];
 let hCalY,hCalM;
-let folderOpen={};
+let projSectionOpen=true;
 const NOW=new Date();
 hCalY=NOW.getFullYear(); hCalM=NOW.getMonth();
 const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -837,7 +843,9 @@ function sv(id,btn){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.querySelectorAll('.sidebar .s-item').forEach(t=>t.classList.remove('active'));
   document.getElementById('view-'+id).classList.add('active');
-  (btn||document.querySelector(`.sidebar .s-item[onclick*="'${id}'"]`))?.classList.add('active');
+  // btn may be a wrapper div (projects header) — activate the inner s-item if so
+  const target=btn?.classList.contains('s-item')?btn:btn?.querySelector('.s-item')||btn;
+  (target||document.querySelector(`.sidebar .s-item[onclick*="'${id}'"]`))?.classList.add('active');
   if(id==='projects') showList();
 }
 
@@ -931,7 +939,7 @@ function saveTask(){
 function showList(){
   document.getElementById('projListView').style.display='block';
   document.getElementById('projDetailView').style.display='none';
-  document.querySelectorAll('.spfc').forEach(c=>c.classList.remove('active'));
+  document.querySelectorAll('.spfi').forEach(c=>c.classList.remove('active'));
 }
 function backToList(){showList();}
 
@@ -976,8 +984,8 @@ function openDetail(id){
   document.getElementById('projListView').style.display='none';
   document.getElementById('projDetailView').style.display='block';
   renderDetail(p);
-  document.querySelectorAll('.spfc').forEach(c=>c.classList.remove('active'));
-  document.querySelectorAll(`.spfc[data-pid="${id}"]`).forEach(c=>c.classList.add('active'));
+  document.querySelectorAll('.spfi').forEach(c=>c.classList.remove('active'));
+  document.querySelectorAll(`.spfi[data-pid="${id}"]`).forEach(c=>c.classList.add('active'));
   document.querySelector('.content')?.scrollTo({top:0,behavior:'smooth'});
 }
 
@@ -1153,37 +1161,27 @@ function getFacilityIcon(type){
   if(t.includes('airport')||t.includes('transit')) return '✈️';
   return '🏗️';
 }
+function toggleProjSection(e){
+  if(e) e.stopPropagation();
+  projSectionOpen=!projSectionOpen;
+  const sec=document.getElementById('sidebarProjFolders');
+  const btn=document.getElementById('projCollapseBtn');
+  if(sec) sec.classList.toggle('collapsed',!projSectionOpen);
+  if(btn) btn.classList.toggle('collapsed',!projSectionOpen);
+}
 function renderSidebarFolders(){
   const c=document.getElementById('sidebarProjFolders'); if(!c) return;
   if(!projects.length){c.innerHTML='';return;}
-  const colors={active:'#00d4aa',planning:'#0ea5e9',complete:'#6b7b9e',onhold:'#f59e0b'};
   c.innerHTML=projects.map(p=>{
-    const isOpen=folderOpen[p.id]===true;
-    const color=colors[p.status]||'#6b7b9e';
     const pt=tasks.filter(t=>t.projId===p.id&&!t.done).length;
     const nm=p.name.length>22?p.name.slice(0,22)+'…':p.name;
     const icon=getFacilityIcon(p.type);
-    return `<div>
-      <div class="spf" onclick="toggleFolder(${p.id})">
-        <span style="font-size:13px;flex-shrink:0">${icon}</span>
-        <span class="spf-name" title="${p.name}">${nm}</span>
-        ${pt>0?`<span style="font-size:9px;background:var(--warn);color:#000;border-radius:5px;padding:0 4px;font-weight:700">${pt}</span>`:''}
-        <span class="spf-arrow${isOpen?' open':''}">›</span>
-      </div>
-      <div class="spf-children" id="spf-${p.id}" style="max-height:${isOpen?'200px':'0'}">
-        <button class="spfc" data-pid="${p.id}" onclick="openDetail(${p.id})"><span class="spfc-dot" style="background:${color}"></span>Overview</button>
-        <button class="spfc" data-pid="${p.id}" onclick="openDetail(${p.id});setTimeout(()=>{sPTab('tasks',document.querySelectorAll('.pdt')[1])},120)"><span class="spfc-dot" style="background:var(--text3)"></span>Tasks</button>
-        <button class="spfc" data-pid="${p.id}" onclick="openDetail(${p.id});setTimeout(()=>{sPTab('docs',document.querySelectorAll('.pdt')[3])},120)"><span class="spfc-dot" style="background:var(--text3)"></span>Documents</button>
-      </div>
-    </div>`;
+    return `<button class="spfi" data-pid="${p.id}" onclick="openDetail(${p.id})">
+      <span class="spfi-icon">${icon}</span>
+      <span class="spfi-name" title="${p.name}">${nm}</span>
+      ${pt>0?`<span class="spfi-badge">${pt}</span>`:''}
+    </button>`;
   }).join('');
-}
-function toggleFolder(id){
-  folderOpen[id]=!folderOpen[id];
-  const ch=document.getElementById('spf-'+id);
-  const arrow=ch?.previousElementSibling?.querySelector('.spf-arrow');
-  if(ch) ch.style.maxHeight=folderOpen[id]?'200px':'0';
-  if(arrow){if(folderOpen[id])arrow.classList.add('open');else arrow.classList.remove('open');}
 }
 
 /* ── DROPDOWNS ── */
