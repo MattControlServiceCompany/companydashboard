@@ -322,6 +322,18 @@ html{scroll-behavior:smooth;}
 .cc-card-meta{font-size:11px;color:var(--text2);display:flex;flex-wrap:wrap;gap:6px;}
 .cc-card-meta a{color:var(--em);text-decoration:none;}
 .cc-card-meta a:hover{text-decoration:underline;}
+
+/* ── PROJECT BUILDINGS TAB ── */
+.pb-bldg-card{display:grid;grid-template-columns:1fr auto;align-items:start;gap:10px;background:var(--s3);border:1px solid var(--border);border-radius:9px;padding:12px 14px;margin-bottom:8px;transition:border-color .13s;}
+.pb-bldg-card:hover{border-color:var(--border2);}
+.pb-bldg-name{font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px;}
+.pb-bldg-meta{font-size:11px;color:var(--text2);display:flex;flex-wrap:wrap;gap:8px;margin-top:2px;}
+.pb-bldg-meta span{display:flex;align-items:center;gap:3px;}
+.pb-bldg-actions{display:flex;gap:5px;flex-shrink:0;}
+.pb-sqft-total{display:flex;align-items:center;justify-content:space-between;background:var(--em-dim);border:1px solid rgba(0,212,170,.2);border-radius:8px;padding:9px 14px;margin-bottom:12px;}
+.pb-sqft-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--em);}
+.pb-sqft-val{font-size:16px;font-weight:800;color:var(--em);font-family:var(--mono);}
+
 </style>
 </head><body>
 
@@ -1313,7 +1325,7 @@ function renderDetail(p){
         <div class="pd-cell"><div class="pd-cell-lbl">Project Manager</div><div class="pd-cell-val">${p.pm||'—'}</div></div>
         <div class="pd-cell"><div class="pd-cell-lbl">Field Tech</div><div class="pd-cell-val">${p.tech||'—'}</div></div>
         <div class="pd-cell"><div class="pd-cell-lbl">Building Type</div><div class="pd-cell-val">${p.type||'—'}</div></div>
-        <div class="pd-cell"><div class="pd-cell-lbl">Square Feet</div><div class="pd-cell-val">${p.sqft?Number(p.sqft).toLocaleString()+' sf':'—'}</div></div>
+        <div class="pd-cell"><div class="pd-cell-lbl">Square Feet</div><div class="pd-cell-val" id="pd-sqft-cell-${p.id}">${p.sqft?Number(p.sqft).toLocaleString()+' sf':'—'}</div></div>
         <div class="pd-cell"><div class="pd-cell-lbl">Service Agreement #</div><div class="pd-cell-val mono">${p.sa||'—'}</div></div>
         <div class="pd-cell"><div class="pd-cell-lbl">Contract Value</div><div class="pd-cell-val mono">${p.contract?'$'+Number(p.contract).toLocaleString():'—'}</div></div>
         <div class="pd-cell"><div class="pd-cell-lbl">Est. Savings/yr</div><div class="pd-cell-val mono">${p.savings?'$'+Number(p.savings).toLocaleString():'—'}</div></div>
@@ -1328,6 +1340,7 @@ function renderDetail(p){
         <button class="pdt active" onclick="sPTab('notes',this)">📝 Notes &amp; Scope</button>
         <button class="pdt" onclick="sPTab('tasks',this)">✅ Tasks</button>
         <button class="pdt" onclick="sPTab('contacts',this)">👥 Contacts</button>
+        <button class="pdt" onclick="sPTab('buildings',this)">🏢 Buildings</button>
         <button class="pdt" onclick="sPTab('utility',this)">⚡ Utility &amp; Data</button>
         <button class="pdt" onclick="sPTab('docs',this)">📁 Documents</button>
       </div>
@@ -1348,6 +1361,14 @@ function renderDetail(p){
         </div>
         ${buildContactsDetailHTML(p.contacts||[], p.id)}
       </div>
+      <div id="ptab-buildings" class="ptab">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div style="font-size:12px;color:var(--text2)" id="pb-count-${p.id}"></div>
+          <button class="btn btn-em btn-sm" onclick="openBldgModalForProj(${p.id})">+ Add Building</button>
+        </div>
+        <div id="pb-sqft-bar-${p.id}"></div>
+        <div id="pb-list-${p.id}"></div>
+      </div>
       <div id="ptab-utility" class="ptab">
         <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Manage utility meters and billing data for this project.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
@@ -1365,8 +1386,11 @@ function renderDetail(p){
         <div style="font-size:13px;color:var(--text2)">No documents yet. Use the PDF/OCR tool to save documents to this project.</div>
       </div>
     </div>`;
-  // Populate utility tab summary after DOM is ready
-  requestAnimationFrame(()=>renderUtilTabSummary(p.id));
+  // Populate utility tab summary and buildings tab after DOM is ready
+  requestAnimationFrame(()=>{
+    renderUtilTabSummary(p.id);
+    renderProjBuildingsTab(p.id);
+  });
 }
 
 function updateProg(id,val){
@@ -2041,10 +2065,12 @@ function saveBuilding(){
     showToast(name+' added ✓');
   }
   saveUtilityData();
+  syncBldgSqftToProject(udSelProjId);
   closeBldgModal();
   renderUDBldgList();
   renderUDDetail();
   renderUDProjList();
+  renderProjBuildingsTab(udSelProjId);
 }
 function deleteBuilding(bid){
   if(!confirm('Delete this building and all its meter data?')) return;
@@ -2052,9 +2078,11 @@ function deleteBuilding(bid){
   proj.buildings = proj.buildings.filter(b=>b.id!==bid);
   if(udSelBldgId===bid){ udSelBldgId=null; }
   saveUtilityData();
+  syncBldgSqftToProject(udSelProjId);
   renderUDBldgList();
   renderUDDetail();
   renderUDProjList();
+  renderProjBuildingsTab(udSelProjId);
   showToast('Building deleted');
 }
 
@@ -2229,7 +2257,107 @@ function initUtilityTool(){
   renderUDProjList();
 }
 
-/* ── UTILITY TAB SUMMARY (called from project detail) ── */
+/* ── PROJECT BUILDINGS TAB ── */
+function renderProjBuildingsTab(projId){
+  const listEl  = document.getElementById('pb-list-'+projId);
+  const countEl = document.getElementById('pb-count-'+projId);
+  const sqftEl  = document.getElementById('pb-sqft-bar-'+projId);
+  const sqftCell= document.getElementById('pd-sqft-cell-'+projId);
+  if(!listEl) return;
+
+  const bldgs = getUDBldgs(projId);
+  const totalSqft = bldgs.reduce((s,b)=>s+(parseInt(b.sqft)||0), 0);
+
+  // Update count label
+  if(countEl) countEl.textContent = bldgs.length
+    ? bldgs.length+' building'+(bldgs.length!==1?'s':'')+' · '+totalSqft.toLocaleString()+' total sf'
+    : 'No buildings yet';
+
+  // Update summary sqft bar
+  if(sqftEl){
+    sqftEl.innerHTML = bldgs.length
+      ? `<div class="pb-sqft-total">
+          <span class="pb-sqft-lbl">Total Project Square Footage</span>
+          <span class="pb-sqft-val">${totalSqft.toLocaleString()} sf</span>
+        </div>`
+      : '';
+  }
+
+  // Update the info grid sqft cell
+  if(sqftCell){
+    const p = projects.find(p=>p.id===projId);
+    const displaySqft = bldgs.length ? totalSqft : (p?.sqft||0);
+    sqftCell.textContent = displaySqft ? Number(displaySqft).toLocaleString()+' sf' : '—';
+    if(bldgs.length) sqftCell.title = 'Sum of '+bldgs.length+' building'+(bldgs.length!==1?'s':'');
+  }
+
+  // Render building cards
+  if(!bldgs.length){
+    listEl.innerHTML=`<div style="font-size:13px;color:var(--text2);padding:8px 0">
+      No buildings added yet.
+      <button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="openBldgModalForProj(${projId})">+ Add Building</button>
+    </div>`;
+    return;
+  }
+
+  listEl.innerHTML = bldgs.map(b=>{
+    const mCount = (b.meters||[]).length;
+    return `<div class="pb-bldg-card">
+      <div>
+        <div class="pb-bldg-name">${b.name}</div>
+        <div class="pb-bldg-meta">
+          ${b.sqft?`<span>📐 ${Number(b.sqft).toLocaleString()} sf</span>`:''}
+          ${b.addr?`<span>📍 ${b.addr}</span>`:''}
+          <span>⚡ ${mCount} meter${mCount!==1?'s':''}</span>
+        </div>
+      </div>
+      <div class="pb-bldg-actions">
+        <button class="btn btn-ghost btn-sm" onclick="openBldgModalForProj(${projId},'${b.id}')" title="Edit building">✏️</button>
+        <button class="btn btn-ghost btn-sm" onclick="goToBldgInUtility(${projId},'${b.id}')" title="Open in Utility Data">⚡</button>
+        <button class="btn-del" onclick="deleteBldgFromProj(${projId},'${b.id}')" title="Delete building">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* Open building modal pre-selected to a specific project (from Projects tool) */
+function openBldgModalForProj(projId, editId){
+  udSelProjId = projId;   // sync selection so saveBuilding knows which project
+  openBldgModal(editId||null);
+}
+
+/* Navigate to a specific building in the Utility Data tool */
+function goToBldgInUtility(projId, bldgId){
+  udSelProjId  = projId;
+  udSelBldgId  = bldgId;
+  sv('utility', document.querySelector('.s-item[onclick*="utility"]'));
+  renderUDProjList();
+  renderUDBldgList();
+  renderUDDetail();
+}
+
+/* Sync total sqft from buildings back into the project record */
+function syncBldgSqftToProject(projId){
+  const bldgs = getUDBldgs(projId);
+  const total = bldgs.reduce((s,b)=>s+(parseInt(b.sqft)||0), 0);
+  const p = projects.find(p=>p.id===projId);
+  if(p && bldgs.length){ p.sqft = total; sset('en_projects', projects); }
+}
+
+/* Delete a building from within the Projects tab */
+function deleteBldgFromProj(projId, bldgId){
+  if(!confirm('Delete this building and all its meter data?')) return;
+  const proj = getUDProj(projId);
+  proj.buildings = proj.buildings.filter(b=>b.id!==bldgId);
+  if(udSelBldgId===bldgId) udSelBldgId=null;
+  saveUtilityData();
+  syncBldgSqftToProject(projId);
+  renderProjBuildingsTab(projId);
+  renderUDProjList();
+  showToast('Building deleted');
+}
+
+
 function renderUtilTabSummary(projId){
   const el = document.getElementById('ptab-utility-summary-'+projId);
   if(!el) return;
