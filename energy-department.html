@@ -1,5 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
+<script>
+  // Apply saved theme before paint to prevent flash
+  (function(){
+    try{
+      const t=localStorage.getItem('ch_theme');
+      if(t==='light') document.documentElement.setAttribute('data-theme','light');
+    }catch(e){}
+  }());
+</script>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -334,6 +343,62 @@ html{scroll-behavior:smooth;}
 .pb-sqft-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--em);}
 .pb-sqft-val{font-size:16px;font-weight:800;color:var(--em);font-family:var(--mono);}
 
+
+/* ═══════════════════════════════════════════
+   LIGHT MODE THEME
+═══════════════════════════════════════════ */
+[data-theme="light"]{
+  --bg:#f0f2f7;
+  --s1:#e4e8f2;
+  --s2:#ffffff;
+  --s3:#f5f7fc;
+  --s4:#eaedf6;
+  --border:#d3d9e8;
+  --border2:#bcc5da;
+  --em:#0099aa;
+  --em-dim:rgba(0,153,170,.1);
+  --em-glow:rgba(0,153,170,.2);
+  --em2:#0369a1;
+  --em2-dim:rgba(3,105,161,.1);
+  --warn:#b45309;
+  --warn-dim:rgba(180,83,9,.1);
+  --danger:#be123c;
+  --danger-dim:rgba(190,18,60,.1);
+  --violet:#6d28d9;
+  --violet-dim:rgba(109,40,217,.1);
+  --lime:#4d7c0f;
+  --lime-dim:rgba(77,124,15,.1);
+  --text:#1a2340;
+  --text2:#4a5672;
+  --text3:#9aa5be;
+  --accent:var(--em);
+}
+[data-theme="light"] body{background:var(--bg);color:var(--text);}
+[data-theme="light"] .modal{box-shadow:0 20px 60px rgba(0,0,0,.18);}
+[data-theme="light"] .btn-em{color:#fff;}
+[data-theme="light"] .tcb.done{color:#fff;}
+[data-theme="light"] .nav-bar{background:#fff;border-bottom:1px solid var(--border);}
+[data-theme="light"] .sidebar{background:var(--s1);border-right:1px solid var(--border);}
+[data-theme="light"] .top-bar{background:#fff;border-bottom:1px solid var(--border);}
+[data-theme="light"] input[type=date]::-webkit-calendar-picker-indicator{filter:invert(0.4);}
+
+/* Theme toggle button in sidebar */
+.theme-toggle-wrap{padding:10px 12px;border-top:1px solid var(--border);margin-top:auto;}
+.theme-toggle{display:flex;align-items:center;justify-content:space-between;background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:7px 10px;cursor:default;user-select:none;}
+.theme-toggle-lbl{font-size:11px;font-weight:600;color:var(--text2);display:flex;align-items:center;gap:6px;}
+.theme-switch{position:relative;width:38px;height:20px;flex-shrink:0;}
+.theme-switch input{opacity:0;width:0;height:0;}
+.theme-track{position:absolute;inset:0;background:var(--s4);border:1px solid var(--border2);border-radius:20px;cursor:pointer;transition:background .2s,border-color .2s;}
+.theme-track:before{content:'';position:absolute;width:14px;height:14px;left:2px;top:2px;background:var(--text2);border-radius:50%;transition:transform .2s,background .2s;}
+.theme-switch input:checked + .theme-track{background:var(--em);border-color:var(--em);}
+.theme-switch input:checked + .theme-track:before{transform:translateX(18px);background:#fff;}
+
+
+/* Sidebar layout so theme toggle sticks to bottom */
+.sidebar{display:flex!important;flex-direction:column!important;}
+.sidebar .s-sect{flex:1;overflow-y:auto;}
+.theme-toggle-wrap{margin-top:auto;flex-shrink:0;}
+
 </style>
 </head><body>
 
@@ -387,6 +452,15 @@ html{scroll-behavior:smooth;}
     <button class="s-item" onclick="sv('specs',this)"><span class="s-ico">✍️</span>Spec Writer</button>
     <button class="s-item" onclick="sv('contracts',this)"><span class="s-ico">📋</span>Contracts</button>
     <button class="s-item" onclick="sv('webctrl',this)"><span class="s-ico">🔌</span>WebCTRL</button>
+  </div>
+  <div class="theme-toggle-wrap">
+    <div class="theme-toggle">
+      <span class="theme-toggle-lbl" id="theme-lbl">🌙 Dark Mode</span>
+      <label class="theme-switch">
+        <input type="checkbox" id="themeToggle" onchange="setTheme(this.checked?'light':'dark')">
+        <span class="theme-track"></span>
+      </label>
+    </div>
   </div>
 </aside>
 
@@ -1040,6 +1114,7 @@ const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 /* ── INIT ── */
 function init(){
+  initTheme();
   projects=sget('en_projects',[]);
   tasks=sget('en_tasks',[]);
   equipment=sget('en_equipment',[]);
@@ -1342,7 +1417,7 @@ function renderDetail(p){
         <button class="pdt" onclick="sPTab('tasks',this)">✅ Tasks</button>
         <button class="pdt" onclick="sPTab('contacts',this)">👥 Contacts</button>
         <button class="pdt" onclick="sPTab('buildings',this)">🏢 Buildings</button>
-        <button class="pdt" onclick="sPTab('utility',this)">⚡ Utility &amp; Data</button>
+        <button class="pdt" onclick="sPTab('utility',this)">⚡ Utility Data</button>
         <button class="pdt" onclick="sPTab('docs',this)">📁 Documents</button>
       </div>
       <div id="ptab-notes" class="ptab active">
@@ -1767,6 +1842,7 @@ let udSelBldgId = null;
 let udSelMeterId = null; // for bill modal
 let udBillEditId = null;
 let _meterInclusive = true;
+const _openMeterIds = new Set(); // tracks which meter cards are expanded
 
 function loadUtilityData(){ utilityData = sget('en_utilityData', {}); }
 function saveUtilityData(){ sset('en_utilityData', utilityData); }
@@ -1829,14 +1905,14 @@ function renderUDBldgList(){
   el.innerHTML = bldgs.map(b=>{
     const mCount = b.meters ? b.meters.length : 0;
     const active = b.id === udSelBldgId ? ' active' : '';
-    return `<div class="ud-bldg-item${active}" onclick="udSelectBldg('${b.id}')">
-      <div style="flex:1;min-width:0;cursor:pointer">
+    return `<div class="ud-bldg-item${active}">
+      <div style="flex:1;min-width:0;cursor:pointer;padding:2px 0" onclick="udSelectBldg('${b.id}')">
         <div class="ud-bldg-name" title="${b.name}">${b.name}</div>
         <div class="ud-bldg-meta">${b.sqft?Number(b.sqft).toLocaleString()+' sf · ':''} ${mCount} meter${mCount!==1?'s':''}</div>
       </div>
-      <div style="display:flex;gap:3px;flex-shrink:0">
-        <button class="cc-move" onclick="event.stopPropagation();openBldgModal('${b.id}')" title="Edit building" style="width:24px;height:24px;font-size:11px">✏️</button>
-        <button class="btn-del" onclick="event.stopPropagation();deleteBuilding('${b.id}')" title="Delete building">✕</button>
+      <div style="display:flex;gap:3px;flex-shrink:0;align-items:center">
+        <button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:11px" onclick="openBldgModal('${b.id}')" title="Edit building">✏️</button>
+        <button class="btn-del" onclick="deleteBuilding('${b.id}')" title="Delete building">✕</button>
       </div>
     </div>`;
   }).join('');
@@ -1864,29 +1940,38 @@ function renderUDDetail(){
     `<div class="ud-empty"><div class="ud-empty-ico">⚡</div>No meters yet<br><button class="btn btn-em btn-sm" style="margin-top:10px" onclick="openMeterModal()">+ Add Meter</button></div>`;
 
   wrap.innerHTML = `
-    <!-- Building info -->
     <div class="ud-bldg-info">
-      <div class="ud-info-cell">
-        <div class="ud-info-lbl">Facility Name</div>
+      <div class="ud-info-cell" style="cursor:pointer" onclick="openBldgModal('${b.id}')" title="Click to edit">
+        <div class="ud-info-lbl">Facility Name <span style="color:var(--em);font-size:9px">✏️</span></div>
         <div class="ud-info-val">${b.name}</div>
       </div>
-      <div class="ud-info-cell">
-        <div class="ud-info-lbl">Square Footage</div>
+      <div class="ud-info-cell" style="cursor:pointer" onclick="openBldgModal('${b.id}')" title="Click to edit">
+        <div class="ud-info-lbl">Square Footage <span style="color:var(--em);font-size:9px">✏️</span></div>
         <div class="ud-info-val">${b.sqft ? Number(b.sqft).toLocaleString()+' sf' : '—'}</div>
       </div>
-      <div class="ud-info-cell">
-        <div class="ud-info-lbl">Address</div>
+      <div class="ud-info-cell" style="cursor:pointer" onclick="openBldgModal('${b.id}')" title="Click to edit">
+        <div class="ud-info-lbl">Address <span style="color:var(--em);font-size:9px">✏️</span></div>
         <div class="ud-info-val" style="font-size:11px">${b.addr||'—'}</div>
       </div>
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2)">Meters</div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2)">${meters.length} Meter${meters.length!==1?'s':''}</div>
       <div style="display:flex;gap:6px">
         <button class="btn btn-ghost btn-sm" onclick="openBldgModal('${b.id}')">✏️ Edit Building</button>
         <button class="btn btn-em btn-sm" onclick="openMeterModal()">+ Add Meter</button>
       </div>
     </div>
     ${metersHTML}`;
+
+  // Restore previously open meter cards
+  requestAnimationFrame(()=>{
+    _openMeterIds.forEach(mid=>{
+      const body = document.getElementById('mbody-'+mid);
+      const tog  = document.getElementById('mtog-'+mid);
+      if(body){ body.classList.add('open'); }
+      if(tog)  { tog.classList.add('open'); }
+    });
+  });
 }
 
 function renderMeterCard(m){
@@ -1988,6 +2073,7 @@ function udSelectProj(pid){
   if(addBldg) addBldg.style.display = '';
 }
 function udSelectBldg(bid){
+  if(udSelBldgId !== bid) _openMeterIds.clear(); // reset open cards when switching building
   udSelBldgId = bid;
   renderUDBldgList();
   renderUDDetail();
@@ -2000,6 +2086,7 @@ function toggleMeterCard(mid){
   if(!body) return;
   const isOpen = body.classList.toggle('open');
   if(tog) tog.classList.toggle('open', isOpen);
+  if(isOpen) _openMeterIds.add(mid); else _openMeterIds.delete(mid);
 }
 
 /* ── INLINE BILL FIELD UPDATE ── */
@@ -2141,16 +2228,18 @@ function saveMeter(){
   if(editId){
     const m = b.meters.find(m=>m.id===editId);
     if(m) Object.assign(m, fields);
+    _openMeterIds.add(editId); // keep it open after edit
     showToast('Meter updated ✓');
   } else {
     b.meters = b.meters || [];
-    b.meters.push({id:'m'+Date.now(), bills:[], ...fields});
+    const newId = 'm'+Date.now();
+    b.meters.push({id:newId, bills:[], ...fields});
+    _openMeterIds.add(newId); // auto-open newly added meter
     showToast('Meter added ✓');
   }
   saveUtilityData();
   closeMeterModal();
   renderUDDetail();
-  // Re-open the meter card that was just added/edited
 }
 function deleteMeter(mid){
   if(!confirm('Delete this meter and all billing data?')) return;
@@ -2527,6 +2616,22 @@ function showToast(msg){
   document.getElementById('toastMsg').textContent=msg;
   t.classList.add('show'); clearTimeout(toastTmr);
   toastTmr=setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+/* ── THEME ── */
+function setTheme(mode){
+  const isLight = mode === 'light';
+  document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
+  try{ localStorage.setItem('ch_theme', isLight ? 'light' : 'dark'); }catch(e){}
+  const lbl = document.getElementById('theme-lbl');
+  const tog  = document.getElementById('themeToggle');
+  if(lbl) lbl.textContent = isLight ? '☀️ Light Mode' : '🌙 Dark Mode';
+  if(tog) tog.checked = isLight;
+}
+function initTheme(){
+  let saved = 'dark';
+  try{ saved = localStorage.getItem('ch_theme') || 'dark'; }catch(e){}
+  setTheme(saved);
 }
 
 window.addEventListener('DOMContentLoaded',init);

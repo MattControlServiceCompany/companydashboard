@@ -1,5 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+<script>
+  (function(){
+    try{
+      const t=localStorage.getItem('ch_theme');
+      if(t==='light') document.documentElement.setAttribute('data-theme','light');
+    }catch(e){}
+  }());
+</script>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -51,6 +59,24 @@
 .qc-ico{font-size:16px;width:28px;text-align:center;flex-shrink:0;}
 .qc-name{font-size:13px;font-weight:600;}
 .qc-sub{font-size:11px;color:var(--text2);margin-top:1px;}
+</style>
+
+<style id="theme-override">
+[data-theme="light"]{
+  --bg:#f0f2f7;--s1:#e4e8f2;--s2:#ffffff;--s3:#f5f7fc;--s4:#eaedf6;
+  --border:#d3d9e8;--border2:#bcc5da;
+  --em:#0099aa;--em-dim:rgba(0,153,170,.1);--em-glow:rgba(0,153,170,.2);
+  --em2:#0369a1;--em2-dim:rgba(3,105,161,.1);
+  --warn:#b45309;--warn-dim:rgba(180,83,9,.1);
+  --danger:#be123c;--danger-dim:rgba(190,18,60,.1);
+  --violet:#6d28d9;--violet-dim:rgba(109,40,217,.1);
+  --text:#1a2340;--text2:#4a5672;--text3:#9aa5be;
+  --accent:var(--em);
+}
+[data-theme="light"] body{background:var(--bg);color:var(--text);}
+[data-theme="light"] .btn-em{color:#fff;}
+[data-theme="light"] .nav-bar{background:#fff;border-bottom:1px solid var(--border);}
+[data-theme="light"] .top-bar{background:#fff;border-bottom:1px solid var(--border);}
 </style>
 </head>
 <body>
