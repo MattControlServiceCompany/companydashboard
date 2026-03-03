@@ -468,7 +468,6 @@ html{scroll-behavior:smooth;}
   <div class="pg-hdr">
     <div><h1 class="pg-title">Utility <em>Data</em></h1><p class="pg-sub">All utility meters and billing data organized by project and building</p></div>
     <div class="hdr-actions">
-      <button class="btn btn-ghost" id="ud-add-bldg-btn" style="display:none" onclick="openBldgModal()">+ Building</button>
       <button class="btn btn-ghost" id="ud-add-meter-btn" style="display:none" onclick="openMeterModal()">+ Meter</button>
     </div>
   </div>
@@ -484,6 +483,7 @@ html{scroll-behavior:smooth;}
     <div class="ud-panel">
       <div class="ud-panel-hdr">
         <span class="ud-panel-title" id="udBldgPanelTitle">Buildings</span>
+        <button class="btn btn-em btn-sm" id="ud-add-bldg-btn" style="display:none;padding:2px 8px;font-size:10px" onclick="openBldgModal(null)">+ Add</button>
       </div>
       <div class="ud-panel-body" id="udBldgList">
         <div class="ud-empty"><div class="ud-empty-ico">📁</div>Select a project</div>
@@ -1822,18 +1822,21 @@ function renderUDBldgList(){
   const addBtn = document.getElementById('ud-add-bldg-btn');
   if(addBtn) addBtn.style.display = udSelProjId ? '' : 'none';
   if(!bldgs.length){
-    el.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">🏢</div>No buildings yet<br><button class="btn btn-em btn-sm" style="margin-top:10px" onclick="openBldgModal()">+ Add Building</button></div>';
+    el.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">🏢</div>No buildings yet<br><button class="btn btn-em btn-sm" style="margin-top:10px" onclick="openBldgModal(null)">+ Add Building</button></div>';
     return;
   }
   el.innerHTML = bldgs.map(b=>{
     const mCount = b.meters ? b.meters.length : 0;
     const active = b.id === udSelBldgId ? ' active' : '';
-    return `<div class="ud-bldg-item${active}" onclick="udSelectBldg(${b.id})">
-      <div style="flex:1;min-width:0">
+    return `<div class="ud-bldg-item${active}" onclick="udSelectBldg('${b.id}')">
+      <div style="flex:1;min-width:0;cursor:pointer">
         <div class="ud-bldg-name" title="${b.name}">${b.name}</div>
         <div class="ud-bldg-meta">${b.sqft?Number(b.sqft).toLocaleString()+' sf · ':''} ${mCount} meter${mCount!==1?'s':''}</div>
       </div>
-      <button class="btn-del" onclick="event.stopPropagation();deleteBuilding(${b.id})" title="Delete building">✕</button>
+      <div style="display:flex;gap:3px;flex-shrink:0">
+        <button class="cc-move" onclick="event.stopPropagation();openBldgModal('${b.id}')" title="Edit building" style="width:24px;height:24px;font-size:11px">✏️</button>
+        <button class="btn-del" onclick="event.stopPropagation();deleteBuilding('${b.id}')" title="Delete building">✕</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -1878,7 +1881,8 @@ function renderUDDetail(){
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2)">Meters</div>
       <div style="display:flex;gap:6px">
-        <button class="btn btn-ghost btn-sm" onclick="openBldgModal(${b.id})">✏️ Edit Building</button>
+        <button class="btn btn-ghost btn-sm" onclick="openBldgModal('${b.id}')">✏️ Edit Building</button>
+        <button class="btn btn-em btn-sm" onclick="openMeterModal()">+ Add Meter</button>
       </div>
     </div>
     ${metersHTML}`;
