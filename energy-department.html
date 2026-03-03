@@ -1092,6 +1092,7 @@ function updateHomeStats(){
 function sv(id,btn){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.querySelectorAll('.sidebar .s-item').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.sidebar .spfi').forEach(t=>t.classList.remove('active'));
   document.getElementById('view-'+id).classList.add('active');
   // btn may be a wrapper div (projects header) — activate the inner s-item if so
   const target=btn?.classList.contains('s-item')?btn:btn?.querySelector('.s-item')||btn;
