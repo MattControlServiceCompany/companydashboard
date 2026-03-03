@@ -65,7 +65,7 @@ html{scroll-behavior:smooth;}
 .f3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
 .modal-bg{position:fixed;inset:0;background:rgba(5,8,15,.88);backdrop-filter:blur(10px);z-index:700;display:none;align-items:center;justify-content:center;}
 .modal-bg.open{display:flex;}
-.modal{background:var(--s2);border:1px solid var(--border2);border-radius:14px;width:580px;max-width:95vw;max-height:90vh;overflow-y:auto;animation:fadeUp .18s ease;box-shadow:0 40px 80px rgba(0,0,0,.6);}
+.modal{background:var(--s2);border:1px solid var(--border2);border-radius:14px;width:640px;min-width:420px;max-width:95vw;max-height:90vh;overflow-y:auto;animation:fadeUp .18s ease;box-shadow:0 40px 80px rgba(0,0,0,.6);resize:both;overflow:auto;position:relative;}
 .modal-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--s2);z-index:1;}
 .modal-title{font-family:var(--head);font-size:15px;font-weight:700;}
 .modal-x{width:27px;height:27px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:all .13s;}
@@ -292,6 +292,36 @@ html{scroll-behavior:smooth;}
 .ud-modal-tabs{display:flex;gap:3px;margin-bottom:16px;}
 .ud-mtab{font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;border:1px solid var(--border2);background:transparent;cursor:pointer;color:var(--text2);transition:all .13s;font-family:var(--font);}
 .ud-mtab.sel{background:var(--em-dim);border-color:var(--em);color:var(--em);}
+
+
+
+/* ── CLIENT CONTACTS ── */
+.cc-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
+.cc-row{display:grid;grid-template-columns:auto 1fr 1fr 1fr auto auto;align-items:center;gap:8px;background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:8px 10px;cursor:default;}
+.cc-row:hover{border-color:var(--border2);}
+.cc-row-editing{border-color:var(--em)!important;background:var(--em-dim);}
+/* Modal resize handle */
+.modal::after{content:'';position:absolute;bottom:4px;right:6px;width:12px;height:12px;cursor:nwse-resize;opacity:.3;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Cpath d='M10 2L2 10M10 6L6 10M10 10h0' stroke='%23888' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat center;pointer-events:none;}
+.cc-order-btns{display:flex;flex-direction:column;gap:1px;}
+.cc-order-btn{width:20px;height:16px;border:1px solid var(--border2);background:var(--s2);border-radius:3px;cursor:pointer;font-size:9px;color:var(--text2);display:flex;align-items:center;justify-content:center;transition:all .1s;padding:0;line-height:1;}
+.cc-order-btn:hover{background:var(--s4);color:var(--text);}
+.cc-order-btn:disabled{opacity:.25;cursor:default;}
+.cc-field{font-size:12px;color:var(--text);min-width:0;}
+.cc-title-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;background:var(--em-dim);color:var(--em);border:1px solid rgba(0,212,170,.2);white-space:nowrap;}
+.cc-add-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:12px;}
+.cc-add-row .cc-add-full{grid-column:1/-1;}
+.cc-add-row .cc-add-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:6px;margin-top:2px;}
+.cc-empty{font-size:13px;color:var(--text2);padding:12px 0;}
+/* detail view contact cards */
+.cc-card-grid{display:flex;flex-direction:column;gap:8px;}
+.cc-card{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;background:var(--s3);border:1px solid var(--border);border-radius:9px;padding:11px 14px;}
+.cc-card-av{width:36px;height:36px;border-radius:8px;background:var(--em-dim);border:1px solid rgba(0,212,170,.2);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;}
+.cc-card-info{min-width:0;}
+.cc-card-name{font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px;}
+.cc-card-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--em);margin-bottom:4px;}
+.cc-card-meta{font-size:11px;color:var(--text2);display:flex;flex-wrap:wrap;gap:6px;}
+.cc-card-meta a{color:var(--em);text-decoration:none;}
+.cc-card-meta a:hover{text-decoration:underline;}
 </style>
 </head><body>
 
@@ -789,18 +819,53 @@ html{scroll-behavior:smooth;}
           <select class="fs" id="mp-status"><option value="planning">Planning</option><option value="active">Active</option><option value="onhold">On Hold</option><option value="complete">Complete</option></select>
         </div>
         <div class="fg"><label class="fl">Phase</label>
-          <select class="fs" id="mp-phase"><option value="">— Select Phase —</option><option>Audit / Assessment</option><option>Design</option><option>Bidding</option><option>Construction</option><option>Commissioning</option><option>M&amp;V</option><option>Closeout</option></select>
+          <select class="fs" id="mp-phase"><option value="">— Select Phase —</option><option>Audit / Assessment</option><option>Design</option><option>Bidding</option><option>Construction</option><option>Commissioning</option><option>M&amp;V</option><option>Energy Management Services</option><option>Closeout</option></select>
         </div>
       </div>
       <div class="f2">
         <div class="fg"><label class="fl">Project Manager</label><input class="fi" id="mp-pm" placeholder="e.g. [REDACTED]"></div>
         <div class="fg"><label class="fl">Field Technician</label><input class="fi" id="mp-tech" placeholder="e.g. [REDACTED]"></div>
       </div>
-      <div class="f2">
-        <div class="fg"><label class="fl">Client Contact Name</label><input class="fi" id="mp-contact" placeholder="e.g. Sarah Johnson"></div>
-        <div class="fg"><label class="fl">Client Contact Phone</label><input class="fi" id="mp-phone" placeholder="(816) 555-1234"></div>
+      <!-- hidden legacy fields kept for data compat -->
+      <input type="hidden" id="mp-contact"><input type="hidden" id="mp-phone"><input type="hidden" id="mp-email">
+      <div class="modal-sect">Client Contacts</div>
+      <div id="mp-contacts-list" class="cc-list"></div>
+      <div class="cc-add-row" id="mp-cc-add-row">
+        <div class="fg cc-add-full" style="margin:0">
+          <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px" id="cc-add-label">Add Contact</div>
+        </div>
+        <div class="fg" style="margin:0">
+          <label class="fl" style="margin-bottom:4px">Title</label>
+          <select class="fs" id="cc-title">
+            <option value="">— Select Title —</option>
+            <option>Owner</option>
+            <option>Facilities Director</option>
+            <option>Facilities Manager</option>
+            <option>Energy Manager</option>
+            <option>Project Manager</option>
+            <option>Engineer</option>
+            <option>Maintenance Supervisor</option>
+            <option>Operations Manager</option>
+            <option>Procurement Officer</option>
+            <option>Financial Officer</option>
+            <option>IT Director</option>
+            <option>Executive Director</option>
+            <option>Superintendent</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:6px">
+          <div class="fg" style="margin:0;flex:1"><label class="fl" style="margin-bottom:4px">First Name</label><input class="fi" id="cc-first" placeholder="First"></div>
+          <div class="fg" style="margin:0;flex:1"><label class="fl" style="margin-bottom:4px">Last Name</label><input class="fi" id="cc-last" placeholder="Last"></div>
+        </div>
+        <div class="fg" style="margin:0"><label class="fl" style="margin-bottom:4px">Phone</label><input class="fi" id="cc-phone" placeholder="(816) 555-0000"></div>
+        <div class="fg" style="margin:0"><label class="fl" style="margin-bottom:4px">Email</label><input class="fi" id="cc-email" type="email" placeholder="name@org.com"></div>
+        <div class="cc-add-actions">
+          <button class="btn btn-ghost btn-sm" id="cc-cancel-edit-btn" style="display:none" onclick="cancelEditContact()">Cancel</button>
+          <button class="btn btn-em btn-sm" id="cc-save-btn" onclick="saveContactRow()">+ Add Contact</button>
+        </div>
+        <input type="hidden" id="cc-edit-idx" value="">
       </div>
-      <div class="fg"><label class="fl">Client Contact Email</label><input class="fi" id="mp-email" type="email" placeholder="sjohnson@district.edu"></div>
       <div class="modal-sect">Financials &amp; Schedule</div>
       <div class="f2">
         <div class="fg"><label class="fl">Contract Value $</label><input class="fi" id="mp-contract" type="number" placeholder="125000"></div>
@@ -1209,9 +1274,7 @@ function renderDetail(p){
         <div class="pd-cell"><div class="pd-cell-lbl">Est. Savings/yr</div><div class="pd-cell-val mono">${p.savings?'$'+Number(p.savings).toLocaleString():'—'}</div></div>
         <div class="pd-cell"><div class="pd-cell-lbl">Start Date</div><div class="pd-cell-val">${p.start?new Date(p.start+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</div></div>
         <div class="pd-cell"><div class="pd-cell-lbl">Target End</div><div class="pd-cell-val">${p.end?new Date(p.end+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</div></div>
-        <div class="pd-cell"><div class="pd-cell-lbl">Client Contact</div><div class="pd-cell-val">${p.contact||'—'}</div></div>
-        <div class="pd-cell"><div class="pd-cell-lbl">Phone</div><div class="pd-cell-val">${p.phone||'—'}</div></div>
-        <div class="pd-cell"><div class="pd-cell-lbl">Email</div><div class="pd-cell-val" style="font-size:12px">${p.email?`<a href="mailto:${p.email}" style="color:var(--em);text-decoration:none">${p.email}</a>`:'—'}</div></div>
+        <div class="pd-cell"><div class="pd-cell-lbl">Contacts</div><div class="pd-cell-val">${(p.contacts&&p.contacts.length)?p.contacts.length+' contact'+(p.contacts.length!==1?'s':''):'—'}</div></div>
         <div class="pd-cell"><div class="pd-cell-lbl">Open Tasks</div><div class="pd-cell-val" style="color:${openTasks>0?'var(--warn)':'inherit'}">${openTasks}</div></div>
       </div>
     </div>
@@ -1219,6 +1282,7 @@ function renderDetail(p){
       <div class="pd-tabs">
         <button class="pdt active" onclick="sPTab('notes',this)">📝 Notes &amp; Scope</button>
         <button class="pdt" onclick="sPTab('tasks',this)">✅ Tasks</button>
+        <button class="pdt" onclick="sPTab('contacts',this)">👥 Contacts</button>
         <button class="pdt" onclick="sPTab('utility',this)">⚡ Utility &amp; Data</button>
         <button class="pdt" onclick="sPTab('docs',this)">📁 Documents</button>
       </div>
@@ -1231,6 +1295,13 @@ function renderDetail(p){
           <button class="btn btn-em btn-sm" onclick="document.getElementById('mt-proj').value=${p.id};openTaskModal()">+ Add Task</button>
         </div>
         <div id="ptab-tasks-list">${tasksHTML}</div>
+      </div>
+      <div id="ptab-contacts" class="ptab">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div style="font-size:12px;color:var(--text2)">${(p.contacts&&p.contacts.length)?p.contacts.length+' contact'+(p.contacts.length!==1?'s':''):'No contacts yet'}</div>
+          <button class="btn btn-em btn-sm" onclick="editProj(${p.id})">✏️ Edit Contacts</button>
+        </div>
+        ${buildContactsDetailHTML(p.contacts||[], p.id)}
       </div>
       <div id="ptab-utility" class="ptab">
         <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Manage utility meters and billing data for this project.</div>
@@ -1279,23 +1350,34 @@ function deleteProj(id){
 function openProjModal(){
   document.getElementById('projModalTitle').textContent='+ New Energy Project';
   document.getElementById('mp-edit-id').value='';
-  ['mp-name','mp-client','mp-addr','mp-sqft','mp-pm','mp-tech','mp-contact','mp-phone','mp-email','mp-contract','mp-savings','mp-start','mp-end','mp-notes','mp-tags'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  ['mp-name','mp-client','mp-addr','mp-sqft','mp-pm','mp-tech','mp-contract','mp-savings','mp-start','mp-end','mp-notes','mp-tags'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
   document.getElementById('mp-status').value='planning';
   document.getElementById('mp-phase').value='';
   document.getElementById('mp-priority').value='normal';
   document.getElementById('mp-progress').value='0';
+  _modalContacts=[];
+  renderModalContacts();
   document.getElementById('projModal').classList.add('open');
 }
 function editProj(id){
   const p=projects.find(p=>p.id===id); if(!p) return;
   document.getElementById('projModalTitle').textContent='✏️ Edit Project';
   document.getElementById('mp-edit-id').value=id;
-  const fv={name:p.name,client:p.client,addr:p.addr,sqft:p.sqft,pm:p.pm,tech:p.tech,contact:p.contact,phone:p.phone,email:p.email,contract:p.contract,savings:p.savings,start:p.start,end:p.end,progress:p.progress,notes:p.notes,tags:p.tags};
+  const fv={name:p.name,client:p.client,addr:p.addr,sqft:p.sqft,pm:p.pm,tech:p.tech,contract:p.contract,savings:p.savings,start:p.start,end:p.end,progress:p.progress,notes:p.notes,tags:p.tags};
   Object.entries(fv).forEach(([k,v])=>{const e=document.getElementById('mp-'+k);if(e)e.value=v||'';});
   document.getElementById('mp-type').value=p.type||'K-12 School';
   document.getElementById('mp-status').value=p.status||'planning';
   document.getElementById('mp-phase').value=p.phase||'';
   document.getElementById('mp-priority').value=p.priority||'normal';
+  // Load contacts — support legacy single-contact projects too
+  if(p.contacts&&p.contacts.length){
+    _modalContacts=p.contacts.map(c=>({...c}));
+  } else if(p.contact){
+    _modalContacts=[{id:'c'+Date.now(),title:'',first:p.contact,last:'',phone:p.phone||'',email:p.email||''}];
+  } else {
+    _modalContacts=[];
+  }
+  renderModalContacts();
   document.getElementById('projModal').classList.add('open');
 }
 function closeProjModal(){document.getElementById('projModal').classList.remove('open');}
@@ -1303,7 +1385,9 @@ function saveProject(){
   const name=document.getElementById('mp-name').value.trim();
   if(!name){showToast('Enter a project name');return;}
   const editId=document.getElementById('mp-edit-id').value;
-  const fields={name,client:document.getElementById('mp-client').value,addr:document.getElementById('mp-addr').value,type:document.getElementById('mp-type').value,sqft:parseInt(document.getElementById('mp-sqft').value)||0,status:document.getElementById('mp-status').value,phase:document.getElementById('mp-phase').value,pm:document.getElementById('mp-pm').value,tech:document.getElementById('mp-tech').value,contact:document.getElementById('mp-contact').value,phone:document.getElementById('mp-phone').value,email:document.getElementById('mp-email').value,contract:parseFloat(document.getElementById('mp-contract').value)||0,savings:parseFloat(document.getElementById('mp-savings').value)||0,start:document.getElementById('mp-start').value,end:document.getElementById('mp-end').value,progress:Math.max(0,Math.min(100,parseInt(document.getElementById('mp-progress').value)||0)),priority:document.getElementById('mp-priority').value,notes:document.getElementById('mp-notes').value,tags:document.getElementById('mp-tags').value};
+  // Set legacy fields from first contact for backwards compat
+  const fc=_modalContacts[0];
+  const fields={name,client:document.getElementById('mp-client').value,addr:document.getElementById('mp-addr').value,type:document.getElementById('mp-type').value,sqft:parseInt(document.getElementById('mp-sqft').value)||0,status:document.getElementById('mp-status').value,phase:document.getElementById('mp-phase').value,pm:document.getElementById('mp-pm').value,tech:document.getElementById('mp-tech').value,contacts:[..._modalContacts],contact:fc?(fc.first+' '+fc.last).trim():'',phone:fc?fc.phone:'',email:fc?fc.email:'',contract:parseFloat(document.getElementById('mp-contract').value)||0,savings:parseFloat(document.getElementById('mp-savings').value)||0,start:document.getElementById('mp-start').value,end:document.getElementById('mp-end').value,progress:Math.max(0,Math.min(100,parseInt(document.getElementById('mp-progress').value)||0)),priority:document.getElementById('mp-priority').value,notes:document.getElementById('mp-notes').value,tags:document.getElementById('mp-tags').value};
   if(editId){
     const idx=projects.findIndex(p=>p.id==editId);
     if(idx>-1) projects[idx]={...projects[idx],...fields};
@@ -2117,6 +2201,145 @@ function renderUtilTabSummary(projId){
     <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:9px 12px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Meters</div><div style="font-size:18px;font-weight:800;color:var(--em2)">${totalMeters}</div></div>
     <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:9px 12px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Bill Records</div><div style="font-size:18px;font-weight:800;color:var(--violet)">${totalBills}</div></div>
   </div>`;
+}
+
+
+/* ── CLIENT CONTACTS ── */
+let _modalContacts = [];
+
+function _ccField(id){ return document.getElementById(id); }
+function _ccVal(id){ const e=_ccField(id); return e?e.value.trim():''; }
+function _ccSet(id,v){ const e=_ccField(id); if(e) e.value=v||''; }
+
+function saveContactRow(){
+  const first = _ccVal('cc-first');
+  const last  = _ccVal('cc-last');
+  if(!first && !last){ showToast('Enter at least a first or last name'); return; }
+  const editIdx = _ccVal('cc-edit-idx');
+  const entry = {
+    id: editIdx!=='' ? _modalContacts[parseInt(editIdx)].id : 'c'+Date.now(),
+    title: _ccVal('cc-title'),
+    first, last,
+    phone: _ccVal('cc-phone'),
+    email: _ccVal('cc-email')
+  };
+  if(editIdx !== ''){
+    _modalContacts[parseInt(editIdx)] = entry;
+    showToast('Contact updated ✓');
+  } else {
+    _modalContacts.push(entry);
+  }
+  _ccClearForm();
+  renderModalContacts();
+}
+
+/* kept for backward compat — old HTML called addContactRow */
+function addContactRow(){ saveContactRow(); }
+
+function startEditContact(idx){
+  const ct = _modalContacts[idx];
+  if(!ct) return;
+  _ccSet('cc-title', ct.title);
+  _ccSet('cc-first', ct.first);
+  _ccSet('cc-last',  ct.last);
+  _ccSet('cc-phone', ct.phone);
+  _ccSet('cc-email', ct.email);
+  _ccSet('cc-edit-idx', String(idx));
+  const lbl = document.getElementById('cc-add-label');
+  if(lbl) lbl.textContent = 'Editing: '+(ct.first||'')+' '+(ct.last||'');
+  const saveBtn = document.getElementById('cc-save-btn');
+  if(saveBtn) saveBtn.textContent = '💾 Save Changes';
+  const cancelBtn = document.getElementById('cc-cancel-edit-btn');
+  if(cancelBtn) cancelBtn.style.display = '';
+  // Scroll add-row into view
+  const row = document.getElementById('mp-cc-add-row');
+  if(row) row.scrollIntoView({behavior:'smooth', block:'nearest'});
+  renderModalContacts();
+}
+
+function cancelEditContact(){
+  _ccClearForm();
+  renderModalContacts();
+}
+
+function _ccClearForm(){
+  ['cc-first','cc-last','cc-phone','cc-email','cc-edit-idx'].forEach(id=>_ccSet(id,''));
+  _ccSet('cc-title','');
+  const lbl = document.getElementById('cc-add-label');
+  if(lbl) lbl.textContent = 'Add Contact';
+  const saveBtn = document.getElementById('cc-save-btn');
+  if(saveBtn) saveBtn.textContent = '+ Add Contact';
+  const cancelBtn = document.getElementById('cc-cancel-edit-btn');
+  if(cancelBtn) cancelBtn.style.display = 'none';
+}
+
+function renderModalContacts(){
+  const wrap = document.getElementById('mp-contacts-list');
+  if(!wrap) return;
+  const editIdx = _ccVal('cc-edit-idx');
+  if(!_modalContacts.length){
+    wrap.innerHTML = '<div class="cc-empty">No contacts yet — fill in the fields below and click + Add Contact.</div>';
+    return;
+  }
+  wrap.innerHTML = _modalContacts.map((ct,i) => {
+    const isEditing = editIdx !== '' && parseInt(editIdx) === i;
+    return `<div class="cc-row${isEditing?' cc-row-editing':''}" id="ccrow-${ct.id}">
+      <div class="cc-order-btns">
+        <button class="cc-order-btn" onclick="moveContact(${i},-1)" ${i===0?'disabled':''} title="Move up">▲</button>
+        <button class="cc-order-btn" onclick="moveContact(${i},1)"  ${i===_modalContacts.length-1?'disabled':''} title="Move down">▼</button>
+      </div>
+      <div class="cc-field">
+        <div style="font-weight:600;font-size:12px;margin-bottom:2px">${ct.first||''} ${ct.last||''}</div>
+        ${ct.title ? `<span class="cc-title-badge">${ct.title}</span>` : ''}
+      </div>
+      <div class="cc-field" style="font-size:11px">${ct.phone||'<span style="color:var(--text3)">—</span>'}</div>
+      <div class="cc-field" style="font-size:11px;word-break:break-all">${ct.email||'<span style="color:var(--text3)">—</span>'}</div>
+      <button class="btn btn-ghost btn-sm" onclick="startEditContact(${i})" title="Edit contact" style="padding:2px 8px;font-size:10px">✏️</button>
+      <button class="btn-del" onclick="removeContact(${i})" title="Remove">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function moveContact(idx, dir){
+  const to = idx + dir;
+  if(to < 0 || to >= _modalContacts.length) return;
+  [_modalContacts[idx], _modalContacts[to]] = [_modalContacts[to], _modalContacts[idx]];
+  renderModalContacts();
+}
+
+function removeContact(idx){
+  // If currently editing this contact, clear form first
+  const editIdx = _ccVal('cc-edit-idx');
+  if(editIdx !== '' && parseInt(editIdx) === idx) _ccClearForm();
+  _modalContacts.splice(idx, 1);
+  renderModalContacts();
+}
+
+/* ── CONTACTS DISPLAY IN PROJECT DETAIL TAB ── */
+function buildContactsDetailHTML(contacts, projId){
+  const icons = {
+    'Owner':'👤','Facilities Director':'🏢','Facilities Manager':'🔧',
+    'Energy Manager':'⚡','Project Manager':'📋','Engineer':'⚙️',
+    'Maintenance Supervisor':'🛠️','Operations Manager':'📊',
+    'Procurement Officer':'💼','Financial Officer':'💰',
+    'IT Director':'🖥️','Executive Director':'🏛️','Superintendent':'🎓','Other':'👤'
+  };
+  if(!contacts || !contacts.length){
+    return `<div class="cc-empty">No contacts yet —
+      <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="editProj(${projId})">+ Add Contacts</button></div>`;
+  }
+  return '<div class="cc-card-grid">' + contacts.map(ct => `
+    <div class="cc-card">
+      <div class="cc-card-av">${icons[ct.title]||'👤'}</div>
+      <div class="cc-card-info" style="flex:1">
+        <div class="cc-card-name">${(ct.first||'')+' '+(ct.last||'')}</div>
+        ${ct.title ? `<div class="cc-card-title">${ct.title}</div>` : ''}
+        <div class="cc-card-meta">
+          ${ct.phone ? `<span>📞 ${ct.phone}</span>` : ''}
+          ${ct.email ? `<span>✉️ <a href="mailto:${ct.email}">${ct.email}</a></span>` : ''}
+        </div>
+      </div>
+    </div>`).join('') + '</div>';
 }
 
 /* ── TOAST ── */
