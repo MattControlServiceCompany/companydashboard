@@ -777,8 +777,8 @@ async function claudePDF(prompt,b64,sys){
 }
 
 /* ── STORAGE ── */
-async function sset(k,v){try{await window.storage.set(k,JSON.stringify(v));}catch(e){}}
-async function sget(k,fb){try{const r=await window.storage.get(k);return r?JSON.parse(r.value):fb;}catch(e){return fb;}}
+function sset(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){console.warn('sset failed:',e);}}
+function sget(k,fb){try{const r=localStorage.getItem(k);return r!==null?JSON.parse(r):fb;}catch(e){return fb;}}
 
 /* ── STATE ── */
 let projects=[],tasks=[],equipment=[];
@@ -790,10 +790,10 @@ const MONTHS=['January','February','March','April','May','June','July','August',
 const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 /* ── INIT ── */
-async function init(){
-  projects=await sget('en_projects',[]);
-  tasks=await sget('en_tasks',[]);
-  equipment=await sget('en_equipment',[]);
+function init(){
+  projects=sget('en_projects',[]);
+  tasks=sget('en_tasks',[]);
+  equipment=sget('en_equipment',[]);
   if(!projects.length){
     const fmt=n=>{const d=new Date(NOW.getFullYear(),NOW.getMonth(),NOW.getDate()+n);return d.toISOString().split('T')[0];};
     projects=[
@@ -801,7 +801,7 @@ async function init(){
       {id:2,name:'Advent Health — Utility Baseline',client:'Advent Health at Shawnee Mission',addr:'9119 Medical Building, Lenexa KS',type:'Hospital / Healthcare',sqft:820000,status:'active',phase:'M&V',pm:'[REDACTED]',tech:'[REDACTED]',contact:'[REDACTED]',phone:'[REDACTED-PHONE]',email:'[REDACTED-EMAIL]',contract:62000,savings:18500,start:'2025-03-01',end:'2025-09-30',priority:'normal',notes:'Establishing utility baseline across all campus buildings pre-BAS upgrade.',tags:'healthcare, baseline, M&V',progress:70},
       {id:3,name:'Evergy — Demand Response',client:'Evergy',addr:'1200 Main St, Kansas City MO',type:'Office Building',sqft:180000,status:'planning',phase:'Design',pm:'[REDACTED]',tech:'',contact:'[REDACTED]',phone:'[REDACTED-PHONE]',email:'[REDACTED-EMAIL]',contract:48000,savings:9200,start:'2025-06-01',end:'2025-12-31',priority:'normal',notes:'Demand response enrollment and peak shaving control strategy.',tags:'DR, demand response, utility',progress:10},
     ];
-    await sset('en_projects',projects);
+    sset('en_projects',projects);
   }
   if(!tasks.length){
     const fmt=n=>{const d=new Date(NOW.getFullYear(),NOW.getMonth(),NOW.getDate()+n);return d.toISOString().split('T')[0];};
@@ -811,7 +811,7 @@ async function init(){
       {id:3,text:'Review Evergy DR contract terms',due:fmt(5),projId:3,pri:'normal',done:false},
       {id:4,text:'Upload utility bills Q1 — ISD',due:fmt(4),projId:1,pri:'high',done:false},
     ];
-    await sset('en_tasks',tasks);
+    sset('en_tasks',tasks);
   }
   if(!equipment.length){
     equipment=[
@@ -819,7 +819,7 @@ async function init(){
       {id:2,tag:'CH-1',type:'Chiller',make:'York',model:'YCAL0047',cap:'47 Tons',eff:'2.8 kW/Ton',loc:'Advent Health — Central Plant',notes:'Air-cooled scroll. 2015 vintage.'},
       {id:3,tag:'BLR-1',type:'Boiler',make:'Cleaver-Brooks',model:'FLX-750',cap:'750 MBH',eff:'94% AFUE',loc:'ISD Van Horn HS — Boiler Room',notes:'Natural gas. 2020 install.'},
     ];
-    await sset('en_equipment',equipment);
+    sset('en_equipment',equipment);
   }
   buildWeekStrip(); buildHomeCal(); buildBaselineMonthRows(); buildUtilRows();
   refreshProjDropdowns(); renderProjTable(); renderSidebarFolders();

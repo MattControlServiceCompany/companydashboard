@@ -753,6 +753,10 @@ function getPMChipLabel(lbl) {
 /* ═══════════════════════════════════
    SA DATA — 57 real records from CSV
 ═══════════════════════════════════ */
+/* ── PERSISTENT STORAGE ── */
+function sset(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){console.warn('sset:',e);}}
+function sget(k,fb){try{const r=localStorage.getItem(k);return r!==null?JSON.parse(r):fb;}catch(e){return fb;}}
+
 let saData = [
   {
     "id": 1,
@@ -1496,6 +1500,8 @@ let saData = [
     "pattern": "Josh - PMs Semi-Annual - 1st Wed - May/Nov"
   }
 ];
+// Load from localStorage, fall back to defaults above
+saData = sget('sv_saData', saData);
 
 /* ═══════════════════════════════════
    STAFF DATA
@@ -1511,6 +1517,7 @@ let staffData=[
   {id:8,name:'[REDACTED]',   role:'Field Technician', hours:40,status:'on'},
   {id:9,name:'[REDACTED]',role:'Field Technician', hours:40,status:'on'},
 ];
+staffData = sget('sv_staffData', staffData);
 const AV_COLORS=[['#3b82f6','#1d4ed8'],['#14b8a6','#0f766e'],['#f59e0b','#b45309'],
   ['#8b5cf6','#6d28d9'],['#f43f5e','#be123c'],['#22c55e','#15803d'],['#fb923c','#c2410c'],['#38bdf8','#0284c7'],['#e879f9','#a21caf']];
 
@@ -1550,6 +1557,7 @@ function updateStaffStats(){
 function removeStaff(id){
   const e=staffData.find(r=>r.id===id);
   staffData=staffData.filter(r=>r.id!==id);
+  sset('sv_staffData',staffData);
   renderStaff();
   showToast('Removed '+(e?.name||'employee'));
 }
@@ -1671,6 +1679,7 @@ function renderSADetail(){
 function removeSA(id){
   const r=saData.find(s=>s.id===id);
   saData=saData.filter(s=>s.id!==id);
+  sset('sv_saData',saData);
   if(selectedSA?.id===id){selectedSA=null;document.getElementById('saDetail').style.display='none';}
   renderSAList();
   buildCalendar('pm',pmCalYear,pmCalMonth,pmSelDay,'pmCalCard');
@@ -1698,6 +1707,7 @@ let dispatchData=[
   {id:4,saNum:'SA002',customer:'Evergy',site:'Charlotte',start:'2/13/2026 8:00 AM',end:'2/13/2026 5:00 PM',tech:'[REDACTED]',status:'Not Assigned'},
   {id:5,saNum:'SA218',customer:'Center School District',site:'Center High School',start:'2/6/2026 8:00 AM',end:'2/6/2026 5:00 PM',tech:'[REDACTED]',status:'Not Assigned'},
 ];
+dispatchData = sget('sv_dispatchData', dispatchData);
 function renderDispatch(){
   const tb=document.getElementById('dispatchBody');
   tb.innerHTML=dispatchData.map(r=>{
@@ -1846,6 +1856,7 @@ function addStaff(){
   if(!name){showToast('Enter a name ⚠️');return;}
   staffData.push({id:Date.now(),name,role:document.getElementById('iRole').value||'Technician',
     hours:parseInt(document.getElementById('iHours').value)||40,status:document.getElementById('iStatus').value});
+  sset('sv_staffData',staffData);
   closeStaffModal();renderStaff();showToast(name+' added ✓');
   ['iName','iRole','iHours'].forEach(id=>document.getElementById(id).value='');
 }
@@ -1860,6 +1871,7 @@ function addPMRecord(){
     pattern:document.getElementById('pm-pattern').value,
     adminContact:document.getElementById('pm-admin').value,fieldContact:'',
     contractStart:document.getElementById('pm-start').value,contractEnd:document.getElementById('pm-end').value});
+  sset('sv_saData',saData);
   closePMModal();renderSAList();populateTechFilter();
   buildCalendar('pm',pmCalYear,pmCalMonth,pmSelDay,'pmCalCard');
   showToast(sa+' added to PM schedule ✓');
@@ -1873,6 +1885,7 @@ function addWorkOrder(){
   dispatchData.push({id:Date.now(),saNum:sa,customer:cust,site:document.getElementById('d-site').value,
     start:document.getElementById('d-start').value,end:document.getElementById('d-end').value,
     tech:document.getElementById('d-tech').value||'Unassigned',status:'Not Assigned'});
+  sset('sv_dispatchData',dispatchData);
   closeDispatchModal();renderDispatch();showToast('Work order added ✓');
 }
 
