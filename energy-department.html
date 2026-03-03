@@ -7,102 +7,81 @@
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="site-ui.css">
 <style>
-/* ═══════════════════════════ ENERGY-SPECIFIC TOKENS ═══════════════════════════ */
 :root{
-  --bg:#05080f; --s1:#090c16; --s2:#0d1120; --s3:#121729; --s4:#181f33;
-  --border:#1a2236; --border2:#232d45;
-  --em2:#0ea5e9; --em2-dim:rgba(14,165,233,.1);
-  --warn:#f59e0b; --warn-dim:rgba(245,158,11,.1);
-  --danger:#f43f5e; --danger-dim:rgba(244,63,94,.1);
-  --violet:#a78bfa; --violet-dim:rgba(167,139,250,.1);
-  --lime:#84cc16; --lime-dim:rgba(132,204,22,.1);
-  --text:#dde6f5; --text2:#6b7b9e; --text3:#2a3450;
-  --font:'DM Sans',sans-serif; --head:'Syne',sans-serif; --mono:'DM Mono',monospace;
+  --bg:#05080f;--s1:#090c16;--s2:#0d1120;--s3:#121729;--s4:#181f33;
+  --border:#1a2236;--border2:#232d45;
+  --em:#00d4aa;--em-dim:rgba(0,212,170,.1);--em-glow:rgba(0,212,170,.22);
+  --em2:#0ea5e9;--em2-dim:rgba(14,165,233,.1);
+  --warn:#f59e0b;--warn-dim:rgba(245,158,11,.1);
+  --danger:#f43f5e;--danger-dim:rgba(244,63,94,.1);
+  --violet:#a78bfa;--violet-dim:rgba(167,139,250,.1);
+  --lime:#84cc16;--lime-dim:rgba(132,204,22,.1);
+  --text:#dde6f5;--text2:#6b7b9e;--text3:#2a3450;
+  --font:'DM Sans',sans-serif;--head:'Syne',sans-serif;--mono:'DM Mono',monospace;
   --r:10px;
 }
 html{scroll-behavior:smooth;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(9px);}to{opacity:1;transform:translateY(0);}}
 @keyframes pulse{0%,100%{opacity:.3;transform:scale(.85);}50%{opacity:1;transform:scale(1);}}
-@keyframes shimmer{0%{background-position:-200% 0;}100%{background-position:200% 0;}}
-
-/* ═══════════════════════════ NAV ═══════════════════════════ */
 .nav-bar{display:none;}
-/* ═══════════════════════════ LAYOUT ═══════════════════════════ */
 .wrap{display:flex;min-height:calc(100vh - 86px);}
 .view{display:none;padding:24px 26px;animation:fadeUp .22s ease;}
 .view.active{display:block;}
-
-/* ═══════════════════════════ PAGE HEADER ═══════════════════════════ */
 .pg-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;}
 .pg-title{font-family:var(--head);font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.1;}
 .pg-title em{color:var(--em);font-style:normal;}
 .pg-sub{font-size:13px;color:var(--text2);margin-top:4px;line-height:1.5;}
 .hdr-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
-
-/* ═══════════════════════════ BUTTONS ═══════════════════════════ */
 .btn{font-family:var(--font);font-size:12px;font-weight:600;padding:7px 14px;border-radius:7px;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .16s;line-height:1;}
-.btn-em{background:var(--accent);color:#05080f;}
-.btn-em:hover{filter:brightness(1.1);transform:translateY(-1px);box-shadow:0 4px 18px var(--accent-glow);}
+.btn-em{background:var(--accent,var(--em));color:#05080f;}
+.btn-em:hover{filter:brightness(1.1);transform:translateY(-1px);}
 .btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border2);}
-.btn-ghost:hover{border-color:var(--accent);color:var(--accent);}
+.btn-ghost:hover{border-color:var(--accent,var(--em));color:var(--accent,var(--em));}
 .btn-sm{padding:4px 10px;font-size:11px;border-radius:5px;}
 .btn-del{background:transparent;color:var(--text3);border:1px solid var(--border);padding:3px 8px;font-size:11px;border-radius:5px;cursor:pointer;font-family:var(--font);transition:all .13s;}
 .btn-del:hover{border-color:var(--danger);color:var(--danger);}
-
-/* ═══════════════════════════ STATS ROW ═══════════════════════════ */
 .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:11px;margin-bottom:20px;}
 .stat{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;position:relative;overflow:hidden;}
 .stat::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,transparent 60%,rgba(255,255,255,.018));pointer-events:none;}
 .stat-lbl{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.7px;font-weight:600;margin-bottom:7px;}
 .stat-val{font-family:var(--head);font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1;}
 .stat-meta{font-size:11px;color:var(--text2);margin-top:5px;}
-.c-em{color:var(--em);} .c-em2{color:var(--em2);} .c-warn{color:var(--warn);} .c-violet{color:var(--violet);} .c-lime{color:var(--lime);}
-
-/* ═══════════════════════════ CARDS ═══════════════════════════ */
+.c-em{color:var(--em);}.c-em2{color:var(--em2);}.c-warn{color:var(--warn);}.c-violet{color:var(--violet);}
 .card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
 .card-hdr{display:flex;align-items:center;justify-content:space-between;padding:13px 17px;border-bottom:1px solid var(--border);}
 .card-title{font-family:var(--head);font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px;}
-.card-body{padding:16px;}
-
-/* ═══════════════════════════ GRID HELPERS ═══════════════════════════ */
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
 .g-6040{display:grid;grid-template-columns:1.35fr 1fr;gap:16px;}
 .g-4060{display:grid;grid-template-columns:1fr 1.35fr;gap:16px;}
 @media(max-width:880px){.g2,.g3,.g-6040,.g-4060{grid-template-columns:1fr;}}
-
-/* ═══════════════════════════ FORMS ═══════════════════════════ */
 .fg{display:flex;flex-direction:column;gap:5px;margin-bottom:13px;}
 .fl{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;}
 .fi,.fs,.fta{font-family:var(--font);font-size:13px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px;outline:none;transition:border-color .14s;width:100%;}
-.fi:focus,.fs:focus,.fta:focus{border-color:var(--accent);}
+.fi:focus,.fs:focus,.fta:focus{border-color:var(--accent,var(--em));}
 .fs option{background:var(--s2);}
 .fta{resize:vertical;min-height:80px;line-height:1.6;}
-.fhint{font-size:10px;color:var(--text3);margin-top:3px;}
 .f2{display:grid;grid-template-columns:1fr 1fr;gap:11px;}
 .f3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
-
-/* ═══════════════════════════ MODAL ═══════════════════════════ */
 .modal-bg{position:fixed;inset:0;background:rgba(5,8,15,.88);backdrop-filter:blur(10px);z-index:700;display:none;align-items:center;justify-content:center;}
 .modal-bg.open{display:flex;}
-.modal{background:var(--s2);border:1px solid var(--border2);border-radius:14px;width:520px;max-width:95vw;max-height:90vh;overflow-y:auto;animation:fadeUp .18s ease;box-shadow:0 40px 80px rgba(0,0,0,.6);}
+.modal{background:var(--s2);border:1px solid var(--border2);border-radius:14px;width:580px;max-width:95vw;max-height:90vh;overflow-y:auto;animation:fadeUp .18s ease;box-shadow:0 40px 80px rgba(0,0,0,.6);}
 .modal-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--s2);z-index:1;}
 .modal-title{font-family:var(--head);font-size:15px;font-weight:700;}
 .modal-x{width:27px;height:27px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:all .13s;}
 .modal-x:hover{border-color:var(--danger);color:var(--danger);}
 .modal-body{padding:20px;}
 .modal-ftr{display:flex;justify-content:flex-end;gap:8px;padding:13px 20px;border-top:1px solid var(--border);}
-
-/* ═══════════════════════════ TABLE ═══════════════════════════ */
+.modal-sect{font-size:11px;font-weight:700;color:var(--em);text-transform:uppercase;letter-spacing:.7px;margin:14px 0 10px;padding-bottom:5px;border-bottom:1px solid var(--border);}
+.modal-sect:first-child{margin-top:0;}
 .dtbl{width:100%;border-collapse:collapse;}
 .dtbl th{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);font-weight:700;padding:9px 13px;text-align:left;border-bottom:1px solid var(--border);background:var(--s1);white-space:nowrap;}
-.dtbl td{padding:11px 13px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.dtbl td{padding:10px 13px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:middle;}
 .dtbl tr:last-child td{border-bottom:none;}
-.dtbl tr:hover td{background:var(--s3);}
-
-/* ═══════════════════════════ HOME: WEEK STRIP ═══════════════════════════ */
+.dtbl tr.clickable{cursor:pointer;}
+.dtbl tr.clickable:hover td{background:rgba(0,212,170,.05);}
 .week-strip{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin-bottom:20px;}
-.wday{background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:10px 8px;text-align:center;cursor:pointer;transition:all .14s;position:relative;}
-.wday:hover{border-color:var(--border2);}
+.wday{background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:10px 8px;text-align:center;cursor:pointer;transition:all .14s;}
 .wday.is-today{background:var(--em-dim);border-color:var(--em);}
 .wday-name{font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.7px;font-weight:700;}
 .wday-num{font-family:var(--head);font-size:19px;font-weight:800;margin:3px 0;line-height:1;}
@@ -110,19 +89,17 @@ html{scroll-behavior:smooth;}
 .wday-count{font-size:10px;color:var(--text2);}
 .wday-dots{display:flex;gap:2px;justify-content:center;margin-top:4px;flex-wrap:wrap;}
 .wdot{width:5px;height:5px;border-radius:50%;}
-
-/* ═══════════════════════════ HOME: CALENDAR ═══════════════════════════ */
 .cal-outer{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
 .cal-top{display:flex;align-items:center;justify-content:space-between;padding:13px 17px;border-bottom:1px solid var(--border);}
 .cal-nav{display:flex;align-items:center;gap:7px;}
 .cnav{width:27px;height:27px;border-radius:5px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:all .13s;}
-.cnav:hover{border-color:var(--accent);color:var(--accent);}
+.cnav:hover{border-color:var(--accent,var(--em));color:var(--accent,var(--em));}
 .cal-mlbl{font-family:var(--head);font-size:14px;font-weight:700;min-width:130px;text-align:center;}
 .cal-grid{padding:12px 14px;}
 .dow-row{display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:3px;}
 .dow{text-align:center;font-size:9px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:2px 0;}
 .days-g{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
-.cday{min-height:50px;border-radius:6px;padding:5px 5px;cursor:pointer;transition:all .11s;background:transparent;border:1px solid transparent;}
+.cday{min-height:50px;border-radius:6px;padding:5px;cursor:pointer;transition:all .11s;border:1px solid transparent;}
 .cday:hover{background:var(--s3);}
 .cday.ctoday{background:var(--em-dim);border-color:var(--em);}
 .cday.cother{opacity:.28;}
@@ -130,8 +107,6 @@ html{scroll-behavior:smooth;}
 .cday.ctoday .cday-n{color:var(--em);}
 .cday-evs{margin-top:2px;display:flex;flex-direction:column;gap:1px;}
 .cev{font-size:9px;padding:1px 4px;border-radius:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;}
-
-/* ═══════════════════════════ TASKS ═══════════════════════════ */
 .task-item{display:flex;align-items:flex-start;gap:9px;padding:9px 11px;border-radius:8px;background:var(--s3);border:1px solid var(--border);margin-bottom:6px;transition:border-color .13s;}
 .task-item:hover{border-color:var(--border2);}
 .tcb{width:16px;height:16px;border-radius:4px;border:1.5px solid var(--border2);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .13s;flex-shrink:0;margin-top:1px;}
@@ -141,39 +116,54 @@ html{scroll-behavior:smooth;}
 .t-text.struck{text-decoration:line-through;color:var(--text2);}
 .t-proj{font-size:10px;color:var(--text2);margin-top:2px;}
 .t-due{font-size:10px;font-family:var(--mono);white-space:nowrap;flex-shrink:0;}
-.pri-high{color:var(--danger);}
-.pri-normal{color:var(--text2);}
-
-/* ═══════════════════════════ PROJECTS ═══════════════════════════ */
-.proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:13px;margin-bottom:20px;}
-.pcard{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:17px;cursor:pointer;transition:all .17s;position:relative;overflow:hidden;}
-.pcard:hover{border-color:var(--border2);transform:translateY(-2px);box-shadow:0 10px 32px rgba(0,0,0,.35);}
-.pcard.selected{border-color:var(--em);background:var(--em-dim);}
-.pcard::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:transparent;transition:background .17s;}
-.pcard.selected::after,.pcard:hover::after{background:linear-gradient(90deg,var(--em),var(--em2));}
-.p-status{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;margin-bottom:9px;text-transform:uppercase;letter-spacing:.5px;}
+/* ── PROJECTS TABLE ── */
+.proj-search{font-family:var(--font);font-size:12px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 11px;outline:none;width:200px;transition:border-color .13s;}
+.proj-search:focus{border-color:var(--accent,var(--em));}
+.p-status{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;}
 .ps-active{background:var(--em-dim);color:var(--em);border:1px solid rgba(0,212,170,.2);}
 .ps-planning{background:var(--em2-dim);color:var(--em2);border:1px solid rgba(14,165,233,.2);}
 .ps-complete{background:var(--s4);color:var(--text2);border:1px solid var(--border);}
-.p-name{font-family:var(--head);font-size:15px;font-weight:700;margin-bottom:3px;line-height:1.3;}
-.p-client{font-size:12px;color:var(--text2);}
-.p-meta{display:flex;gap:10px;margin-top:11px;font-size:11px;color:var(--text2);}
-.p-bar-wrap{height:3px;background:var(--border);border-radius:2px;margin-top:11px;overflow:hidden;}
-.p-bar{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--em),var(--em2));transition:width .5s ease;}
-.p-pct{font-size:10px;color:var(--text2);margin-top:4px;}
-
-/* project detail */
-.proj-detail{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-top:16px;animation:fadeUp .2s ease;}
-.pd-hdr{display:flex;align-items:flex-start;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);}
-.pd-title{font-family:var(--head);font-size:17px;font-weight:800;}
-.pd-sub{font-size:12px;color:var(--text2);margin-top:3px;}
+.ps-onhold{background:var(--warn-dim);color:var(--warn);border:1px solid rgba(245,158,11,.2);}
+.tpbar{display:flex;align-items:center;gap:6px;}
+.tpbar-track{flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden;min-width:50px;}
+.tpbar-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--em),var(--em2));}
+.tpbar-pct{font-size:10px;font-family:var(--mono);color:var(--text2);}
+/* ── PROJECT DETAIL ── */
+#projDetailView{display:none;animation:fadeUp .22s ease;}
+.pd-back{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer;padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--s3);transition:all .14s;margin-bottom:18px;}
+.pd-back:hover{border-color:var(--accent,var(--em));color:var(--accent,var(--em));}
+.pd-hero{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:18px;}
+.pd-hero-top{background:linear-gradient(135deg,rgba(0,212,170,.07),rgba(14,165,233,.04));border-bottom:1px solid var(--border);padding:20px 24px;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:14px;}
+.pd-name{font-family:var(--head);font-size:20px;font-weight:800;letter-spacing:-.02em;line-height:1.15;margin-bottom:4px;}
+.pd-client{font-size:13px;color:var(--text2);}
+.pd-info-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:0;}
+.pd-cell{padding:12px 18px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);}
+.pd-cell-lbl{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px;}
+.pd-cell-val{font-size:13px;font-weight:600;line-height:1.3;}
+.pd-cell-val.mono{font-family:var(--mono);color:var(--em);}
+.pd-prog-row{padding:13px 18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);}
+.pd-prog-bar{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;}
+.pd-prog-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--em),var(--em2));transition:width .4s ease;}
+.pd-prog-input{width:55px;font-family:var(--mono);font-size:12px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:5px;padding:3px 6px;outline:none;}
+.pd-prog-input:focus{border-color:var(--accent,var(--em));}
 .pd-tabs{display:flex;gap:2px;padding:12px 18px 0;border-bottom:1px solid var(--border);}
 .pdt{font-family:var(--font);font-size:12px;font-weight:500;padding:6px 12px;border-radius:6px 6px 0 0;border:none;cursor:pointer;color:var(--text2);background:transparent;border-bottom:2px solid transparent;transition:all .13s;}
 .pdt.active{color:var(--em);border-bottom-color:var(--em);font-weight:600;}
-.ptab{display:none;padding:16px;}
+.ptab{display:none;padding:18px;}
 .ptab.active{display:block;}
-
-/* ═══════════════════════════ PDF / OCR ═══════════════════════════ */
+/* ── SIDEBAR PROJECT FOLDERS ── */
+.s-proj-section{margin-top:0;}
+.spf{display:flex;align-items:center;gap:7px;padding:7px 16px;font-size:12px;color:var(--text2);cursor:pointer;transition:all .13s;user-select:none;}
+.spf:hover{color:var(--text);background:var(--s2);}
+.spf-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.spf-arrow{font-size:9px;color:var(--text3);transition:transform .18s;flex-shrink:0;}
+.spf-arrow.open{transform:rotate(90deg);}
+.spf-children{overflow:hidden;transition:max-height .22s ease;}
+.spfc{display:flex;align-items:center;gap:6px;padding:5px 16px 5px 30px;font-size:11px;color:var(--text2);cursor:pointer;transition:all .13s;border:none;border-left:2px solid transparent;background:none;width:100%;text-align:left;font-family:var(--font);}
+.spfc:hover{color:var(--text);background:var(--s2);}
+.spfc.active{color:var(--em);background:var(--em-dim);border-left-color:var(--em);}
+.spfc-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;}
+/* ── PDF/AI/etc ── */
 .drop-zone{border:2px dashed var(--border2);border-radius:12px;padding:36px 22px;text-align:center;cursor:pointer;transition:all .2s;background:var(--s2);}
 .drop-zone:hover,.drop-zone.drag{border-color:var(--em);background:var(--em-dim);}
 .dz-ico{font-size:38px;margin-bottom:10px;display:block;}
@@ -185,10 +175,7 @@ html{scroll-behavior:smooth;}
 .ef-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;}
 .ef-item{background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:9px 11px;}
 .ef-key{font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:3px;}
-.ef-val{font-family:var(--mono);font-size:12px;color:var(--em);}
 .ef-input{font-family:var(--mono);font-size:12px;color:var(--em);background:transparent;border:none;outline:none;width:100%;}
-
-/* ═══════════════════════════ AI OUTPUT ═══════════════════════════ */
 .ai-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--em);margin-bottom:7px;display:flex;align-items:center;gap:6px;}
 .ai-box{background:var(--s1);border:1px solid var(--border);border-radius:9px;padding:15px 17px;font-size:13px;line-height:1.8;color:var(--text);white-space:pre-wrap;word-break:break-word;}
 .ai-thinking{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--text2);padding:10px 0;}
@@ -196,16 +183,11 @@ html{scroll-behavior:smooth;}
 .tdots span{width:6px;height:6px;border-radius:50%;background:var(--em);animation:pulse 1.4s ease-in-out infinite;}
 .tdots span:nth-child(2){animation-delay:.22s;}
 .tdots span:nth-child(3){animation-delay:.44s;}
-
-/* ═══════════════════════════ UTILITY ROWS ═══════════════════════════ */
 .util-hdr,.util-row{display:grid;grid-template-columns:70px 1fr 1fr 1fr 1fr 50px 28px;gap:6px;align-items:center;padding:7px 10px;border-radius:7px;}
 .util-hdr{background:var(--s1);font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);font-weight:700;border:1px solid var(--border);margin-bottom:4px;}
 .util-row{background:var(--s3);border:1px solid var(--border);margin-bottom:5px;}
-.util-row input{font-family:var(--mono);font-size:12px;color:var(--text);background:transparent;border:none;outline:none;width:100%;padding:2px 3px;border-radius:3px;transition:background .11s;}
-.util-row input:focus{background:var(--s4);}
+.util-row input{font-family:var(--mono);font-size:12px;color:var(--text);background:transparent;border:none;outline:none;width:100%;padding:2px 3px;}
 .util-row input[readonly]{color:var(--text2);}
-
-/* ═══════════════════════════ BASELINE RESULT ═══════════════════════════ */
 .bl-result{background:linear-gradient(135deg,rgba(0,212,170,.08),rgba(14,165,233,.04));border:1px solid rgba(0,212,170,.2);border-radius:11px;padding:18px 20px;margin-top:14px;}
 .bl-title{font-family:var(--head);font-size:13px;font-weight:700;color:var(--em);margin-bottom:13px;}
 .bl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;}
@@ -213,8 +195,8 @@ html{scroll-behavior:smooth;}
 .bl-lbl{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:3px;}
 .bl-val{font-family:var(--head);font-size:15px;font-weight:800;color:var(--em);}
 .bl-unit{font-size:10px;color:var(--text2);font-weight:400;font-family:var(--font);}
-
-/* ═══════════════════════════ WEBCTRL ═══════════════════════════ */
+.bl-mo-row{display:grid;grid-template-columns:85px 1fr 1fr;gap:8px;align-items:center;margin-bottom:5px;}
+.bl-mo-lbl{font-family:var(--mono);font-size:11px;color:var(--text2);}
 .wc-modes{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;margin-bottom:20px;}
 .wcm{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:17px;cursor:pointer;transition:all .17s;text-align:center;}
 .wcm:hover{border-color:var(--border2);}
@@ -225,69 +207,45 @@ html{scroll-behavior:smooth;}
 .logic-area{font-family:var(--mono);font-size:12px;color:#7fffd4;background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:13px;width:100%;min-height:160px;resize:vertical;outline:none;line-height:1.75;}
 .logic-area:focus{border-color:var(--em);}
 .logic-out{background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:15px;min-height:110px;font-size:13px;line-height:1.8;color:var(--text);white-space:pre-wrap;}
-
-/* ═══════════════════════════ SPEC WRITER ═══════════════════════════ */
 .sys-chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px;}
 .schip{font-size:12px;font-weight:600;padding:5px 12px;border-radius:7px;border:1px solid var(--border2);cursor:pointer;background:transparent;color:var(--text2);transition:all .13s;font-family:var(--font);}
-.schip:hover{border-color:var(--border2);color:var(--text);}
 .schip.sel{background:var(--em-dim);border-color:var(--em);color:var(--em);}
 .spec-out{background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:18px;font-size:12px;line-height:1.9;color:var(--text);white-space:pre-wrap;font-family:var(--mono);min-height:200px;max-height:520px;overflow-y:auto;}
-
-/* ═══════════════════════════ EQUIPMENT ═══════════════════════════ */
 .eq-tag{font-family:var(--mono);font-size:11px;font-weight:600;background:var(--em2-dim);color:var(--em2);border:1px solid rgba(14,165,233,.2);padding:2px 7px;border-radius:5px;}
-
-/* ═══════════════════════════ DISTRICT CAL ═══════════════════════════ */
 .hchip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:10px;margin:3px;}
 .hc-hol{background:var(--warn-dim);color:var(--warn);border:1px solid rgba(245,158,11,.2);}
-.hc-sch{background:var(--em2-dim);color:var(--em2);border:1px solid rgba(14,165,233,.2);}
-.hc-ev{background:var(--violet-dim);color:var(--violet);border:1px solid rgba(167,139,250,.2);}
-
-/* ═══════════════════════════ CONTRACT ═══════════════════════════ */
 .cv-row{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--s3);border:1px solid var(--border);border-radius:7px;margin-bottom:6px;}
 .cv-key{font-family:var(--mono);font-size:11px;color:var(--warn);font-weight:600;min-width:160px;flex-shrink:0;}
-.cv-inp{flex:1;font-family:var(--font);font-size:13px;color:var(--text);background:transparent;border:none;outline:none;padding:2px 4px;border-radius:3px;}
+.cv-inp{flex:1;font-family:var(--font);font-size:13px;color:var(--text);background:transparent;border:none;outline:none;padding:2px 4px;}
 .cv-inp:focus{background:var(--s4);}
-
-/* Month row for baseline */
-.bl-mo-row{display:grid;grid-template-columns:85px 1fr 1fr;gap:8px;align-items:center;margin-bottom:5px;}
-.bl-mo-lbl{font-family:var(--mono);font-size:11px;color:var(--text2);}
+.toast{position:fixed;bottom:22px;right:22px;z-index:999;background:var(--s3);border:1px solid var(--em);border-radius:10px;padding:11px 15px;font-size:12px;color:var(--text);display:flex;align-items:center;gap:8px;max-width:320px;transform:translateY(80px);opacity:0;transition:all .32s cubic-bezier(.34,1.56,.64,1);}
+.toast.show{transform:translateY(0);opacity:1;}
 </style>
 </head><body>
-<!-- LOGIN SCREEN -->
+
 <div id="loginScreen">
   <div class="login-card">
-    <div class="login-logo">
-      <div class="login-mark">C</div>
-      <span class="login-brand">CompanyHub</span>
-    </div>
+    <div class="login-logo"><div class="login-mark">C</div><span class="login-brand">CompanyHub</span></div>
     <p class="login-sub">Sign in with your company Microsoft 365 account to access all departments and tools.</p>
     <button class="btn-ms" onclick="window.location.href='index.html'">← Return to Sign In</button>
   </div>
 </div>
 
-<!-- APP -->
 <div id="app" style="display:none;">
-
-<!-- TOPBAR -->
 <header class="topbar">
-  <div class="t-brand">
-    <div class="brand-mark">C</div>
-    <span class="brand-name">CompanyHub</span>
-  </div>
+  <div class="t-brand"><div class="brand-mark">C</div><span class="brand-name">CompanyHub</span></div>
   <div class="t-right">
     <div class="user-chip">
       <div class="u-av" id="topAv">JS</div>
       <div><div class="u-name" id="topName">Loading...</div><div class="u-dept">Energy Dept</div></div>
     </div>
     <button class="sync-btn" onclick="showToast('Syncing to Outlook...')">
-      <div class="ms-sq"><span></span><span></span><span></span><span></span></div>
-      Sync to Outlook
+      <div class="ms-sq"><span></span><span></span><span></span><span></span></div>Sync to Outlook
     </button>
     <button class="signout" onclick="signOut()">Sign Out</button>
   </div>
 </header>
 
-<!-- DEPT NAV -->
 <nav class="dept-nav">
   <a class="dept-tab" href="index.html">🏠 Dashboard</a>
   <a class="dept-tab" href="service-department.html">🔧 Service Department</a>
@@ -295,34 +253,34 @@ html{scroll-behavior:smooth;}
 </nav>
 
 <div class="app-wrap">
-  <!-- SIDEBAR -->
-  <aside class="sidebar">
-    <div class="s-sect">
-      <div class="s-lbl">Energy</div>
-      <button class="s-item active" onclick="sv('home',this)"><span class="s-ico">🏠</span>Home</button>
-      <button class="s-item" onclick="sv('projects',this)"><span class="s-ico">📁</span>Projects</button>
-      <button class="s-item" onclick="sv('pdf',this)"><span class="s-ico">📄</span>PDF / OCR</button>
-      <button class="s-item" onclick="sv('weather',this)"><span class="s-ico">🌡️</span>Weather &amp; Normalize</button>
-      <button class="s-item" onclick="sv('baseline',this)"><span class="s-ico">📊</span>Baseline</button>
-      <button class="s-item" onclick="sv('savings',this)"><span class="s-ico">💡</span>Energy Savings</button>
-      <button class="s-item" onclick="sv('district',this)"><span class="s-ico">🗓️</span>District Calendar</button>
-      <button class="s-item" onclick="sv('equipment',this)"><span class="s-ico">⚙️</span>Equipment</button>
-      <button class="s-item" onclick="sv('drawings',this)"><span class="s-ico">📐</span>Drawings</button>
-      <button class="s-item" onclick="sv('specs',this)"><span class="s-ico">✍️</span>Spec Writer</button>
-      <button class="s-item" onclick="sv('contracts',this)"><span class="s-ico">📋</span>Contracts</button>
-      <button class="s-item" onclick="sv('webctrl',this)"><span class="s-ico">🔌</span>WebCTRL</button>
-    </div>
-  </aside>
+<aside class="sidebar">
+  <div class="s-sect">
+    <div class="s-lbl">Energy</div>
+    <button class="s-item active" onclick="sv('home',this)"><span class="s-ico">🏠</span>Home</button>
+    <button class="s-item" id="sb-proj-btn" onclick="sv('projects',this)"><span class="s-ico">📁</span>Projects</button>
+    <div class="s-proj-section" id="sidebarProjFolders"></div>
+    <button class="s-item" onclick="sv('pdf',this)"><span class="s-ico">📄</span>PDF / OCR</button>
+    <button class="s-item" onclick="sv('weather',this)"><span class="s-ico">🌡️</span>Weather &amp; Normalize</button>
+    <button class="s-item" onclick="sv('baseline',this)"><span class="s-ico">📊</span>Baseline</button>
+    <button class="s-item" onclick="sv('savings',this)"><span class="s-ico">💡</span>Energy Savings</button>
+    <button class="s-item" onclick="sv('district',this)"><span class="s-ico">🗓️</span>District Calendar</button>
+    <button class="s-item" onclick="sv('equipment',this)"><span class="s-ico">⚙️</span>Equipment</button>
+    <button class="s-item" onclick="sv('drawings',this)"><span class="s-ico">📐</span>Drawings</button>
+    <button class="s-item" onclick="sv('specs',this)"><span class="s-ico">✍️</span>Spec Writer</button>
+    <button class="s-item" onclick="sv('contracts',this)"><span class="s-ico">📋</span>Contracts</button>
+    <button class="s-item" onclick="sv('webctrl',this)"><span class="s-ico">🔌</span>WebCTRL</button>
+  </div>
+</aside>
 
 <div class="wrap"><main class="content">
 
-<!-- ══════════════════ HOME ══════════════════ -->
+<!-- HOME -->
 <div id="view-home" class="view active">
   <div class="pg-hdr">
     <div><h1 class="pg-title">Energy <em>Department</em></h1><p class="pg-sub" id="home-date"></p></div>
     <div class="hdr-actions">
       <button class="btn btn-ghost" onclick="openTaskModal()">+ Task</button>
-      <button class="btn btn-em" onclick="sv('projects',document.querySelector('[onclick*=projects]'))">+ New Project</button>
+      <button class="btn btn-em" onclick="sv('projects',document.getElementById('sb-proj-btn'));openProjModal()">+ New Project</button>
     </div>
   </div>
   <div class="stats-row">
@@ -331,12 +289,10 @@ html{scroll-behavior:smooth;}
     <div class="stat"><div class="stat-lbl">Equipment Records</div><div class="stat-val c-em2" id="h-equip">0</div><div class="stat-meta">in repository</div></div>
     <div class="stat"><div class="stat-lbl">Baselines Set</div><div class="stat-val c-violet" id="h-base">0</div><div class="stat-meta">projects</div></div>
   </div>
-  <!-- Week strip -->
   <div class="card" style="margin-bottom:18px">
     <div class="card-hdr"><span class="card-title">📅 Current Week</span><span style="font-size:12px;color:var(--text2)" id="week-range-lbl"></span></div>
     <div style="padding:13px 15px"><div class="week-strip" id="weekStrip"></div></div>
   </div>
-  <!-- Calendar + upcoming tasks -->
   <div class="g-6040">
     <div class="cal-outer">
       <div class="cal-top">
@@ -359,28 +315,42 @@ html{scroll-behavior:smooth;}
   </div>
 </div>
 
-<!-- ══════════════════ PROJECTS ══════════════════ -->
+<!-- PROJECTS -->
 <div id="view-projects" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Energy <em>Projects</em></h1><p class="pg-sub">Manage projects, tasks, documents, and utility data in one place</p></div>
-    <div class="hdr-actions"><button class="btn btn-em" onclick="openProjModal()">+ New Project</button></div>
+  <!-- List view -->
+  <div id="projListView">
+    <div class="pg-hdr">
+      <div><h1 class="pg-title">Energy <em>Projects</em></h1><p class="pg-sub">Click any row to open the full project detail</p></div>
+      <div class="hdr-actions">
+        <input class="proj-search" id="projSearchQ" placeholder="🔍 Search..." oninput="renderProjTable()">
+        <button class="btn btn-em" onclick="openProjModal()">+ New Project</button>
+      </div>
+    </div>
+    <div class="card">
+      <div style="overflow-x:auto">
+        <table class="dtbl" style="min-width:900px">
+          <thead><tr>
+            <th>Project Name</th><th>Client</th><th>Type</th><th>Status</th>
+            <th>PM</th><th>Contract</th><th>Start</th><th>Progress</th><th>Tasks</th><th></th>
+          </tr></thead>
+          <tbody id="projTableBody"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
-  <div class="proj-grid" id="projGrid"></div>
-  <div id="projDetail" style="display:none"></div>
+  <!-- Detail view -->
+  <div id="projDetailView">
+    <button class="pd-back" onclick="backToList()">← Back to Projects</button>
+    <div id="projDetailContent"></div>
+  </div>
 </div>
 
-<!-- ══════════════════ PDF / OCR ══════════════════ -->
+<!-- PDF OCR -->
 <div id="view-pdf" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">PDF <em>OCR Tool</em></h1><p class="pg-sub">Upload utility bills, drawings, submittals, or contracts — AI extracts and structures the data</p></div>
-  </div>
+  <div class="pg-hdr"><div><h1 class="pg-title">PDF <em>OCR Tool</em></h1><p class="pg-sub">Upload utility bills, drawings, submittals, or contracts — AI extracts and structures the data</p></div></div>
   <div class="g-6040">
     <div>
-      <div class="drop-zone" id="dropZone"
-           onclick="document.getElementById('pdfInput').click()"
-           ondragover="event.preventDefault();this.classList.add('drag')"
-           ondragleave="this.classList.remove('drag')"
-           ondrop="handleDrop(event)">
+      <div class="drop-zone" id="dropZone" onclick="document.getElementById('pdfInput').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleDrop(event)">
         <span class="dz-ico">📄</span>
         <div class="dz-title" id="dz-title">Drop PDF here or click to browse</div>
         <div class="dz-sub">Utility bills · Drawings · Equipment submittals · Contracts</div>
@@ -389,61 +359,49 @@ html{scroll-behavior:smooth;}
       <div style="margin-top:12px">
         <div class="fl" style="margin-bottom:6px">Document Type</div>
         <div class="pdf-type-pills">
-          <button class="ptpill sel" id="pt-utility" onclick="setPDFType('utility',this)">🔌 Utility Bill</button>
-          <button class="ptpill" id="pt-drawing" onclick="setPDFType('drawing',this)">📐 Drawing</button>
-          <button class="ptpill" id="pt-submittal" onclick="setPDFType('submittal',this)">⚙️ Submittal</button>
-          <button class="ptpill" id="pt-contract" onclick="setPDFType('contract',this)">📋 Contract</button>
+          <button class="ptpill sel" onclick="setPDFType('utility',this)">🔌 Utility Bill</button>
+          <button class="ptpill" onclick="setPDFType('drawing',this)">📐 Drawing</button>
+          <button class="ptpill" onclick="setPDFType('submittal',this)">⚙️ Submittal</button>
+          <button class="ptpill" onclick="setPDFType('contract',this)">📋 Contract</button>
         </div>
       </div>
       <div id="extractedFields"></div>
       <div id="pdfSaveRow" style="display:none;margin-top:12px">
-        <div class="fl" style="margin-bottom:5px">Save extracted data to project</div>
-        <div style="display:flex;gap:8px">
-          <select class="fs" id="pdfProjSel" style="flex:1"></select>
-          <button class="btn btn-em" onclick="savePDFData()">Save to Project</button>
-        </div>
+        <div class="fl" style="margin-bottom:5px">Save to project</div>
+        <div style="display:flex;gap:8px"><select class="fs" id="pdfProjSel" style="flex:1"></select><button class="btn btn-em" onclick="savePDFData()">Save</button></div>
       </div>
     </div>
     <div>
       <div class="ai-label">🤖 AI Extraction Output</div>
-      <div class="ai-box" id="pdfAIBox" style="min-height:280px">Upload a PDF and select document type. The AI will read the document and extract all relevant structured data — account numbers, dates, consumption figures, equipment specs, drawing notes, contract terms, and more.</div>
+      <div class="ai-box" id="pdfAIBox" style="min-height:280px">Upload a PDF and select document type. The AI will extract all relevant structured data.</div>
     </div>
   </div>
 </div>
 
-<!-- ══════════════════ WEATHER & NORMALIZE ══════════════════ -->
+<!-- WEATHER -->
 <div id="view-weather" class="view">
   <div class="pg-hdr">
     <div><h1 class="pg-title">Weather &amp; Date <em>Normalization</em></h1><p class="pg-sub">Normalize utility consumption for HDD, CDD, and billing period length variations</p></div>
-    <div class="hdr-actions">
-      <button class="btn btn-ghost" onclick="addUtilRow()">+ Month</button>
-      <button class="btn btn-em" onclick="runNorm()">⚡ Run Normalization</button>
-    </div>
+    <div class="hdr-actions"><button class="btn btn-ghost" onclick="addUtilRow()">+ Month</button><button class="btn btn-em" onclick="runNorm()">⚡ Run Normalization</button></div>
   </div>
   <div class="g2">
     <div class="card">
       <div class="card-hdr"><span class="card-title">📋 Utility Data Entry</span></div>
       <div style="padding:14px">
-        <div class="util-hdr"><div>Month</div><div>kWh</div><div>Therms</div><div>Start Date</div><div>End Date</div><div>Days</div><div></div></div>
+        <div class="util-hdr"><div>Month</div><div>kWh</div><div>Therms</div><div>Start</div><div>End</div><div>Days</div><div></div></div>
         <div id="utilRows"></div>
-        <div class="fg" style="margin-top:12px">
-          <label class="fl">Building Location (for HDD/CDD lookup)</label>
-          <input class="fi" id="wxLoc" placeholder="e.g. Kansas City, MO  or  64106">
-        </div>
+        <div class="fg" style="margin-top:12px"><label class="fl">Location</label><input class="fi" id="wxLoc" placeholder="e.g. Kansas City, MO"></div>
         <div class="f2">
-          <div class="fg"><label class="fl">HDD Base Temp °F</label><input class="fi" id="hddBase" type="number" value="65"></div>
-          <div class="fg"><label class="fl">CDD Base Temp °F</label><input class="fi" id="cddBase" type="number" value="65"></div>
+          <div class="fg"><label class="fl">HDD Base °F</label><input class="fi" id="hddBase" type="number" value="65"></div>
+          <div class="fg"><label class="fl">CDD Base °F</label><input class="fi" id="cddBase" type="number" value="65"></div>
         </div>
       </div>
     </div>
-    <div>
-      <div class="ai-label">🌡️ Normalization Results</div>
-      <div class="ai-box" id="wxBox" style="min-height:300px">Enter utility data, specify location and base temperatures, then click Run Normalization to get HDD/CDD-adjusted consumption, billing period normalization to 30-day months, and a weather-normalized comparison table.</div>
-    </div>
+    <div><div class="ai-label">🌡️ Normalization Results</div><div class="ai-box" id="wxBox" style="min-height:300px">Enter utility data, specify location and base temperatures, then click Run Normalization.</div></div>
   </div>
 </div>
 
-<!-- ══════════════════ BASELINE ══════════════════ -->
+<!-- BASELINE -->
 <div id="view-baseline" class="view">
   <div class="pg-hdr">
     <div><h1 class="pg-title">Utility <em>Baseline</em></h1><p class="pg-sub">Calculate energy use baseline from 12 months of data per ASHRAE Guideline 14 / IPMVP</p></div>
@@ -459,32 +417,24 @@ html{scroll-behavior:smooth;}
           <div class="fg"><label class="fl">Period End</label><input class="fi" id="bl-end" type="month"></div>
         </div>
         <div class="fg"><label class="fl">Utility Type</label>
-          <select class="fs" id="bl-type">
-            <option value="electric">Electric (kWh)</option>
-            <option value="gas">Natural Gas (Therms)</option>
-            <option value="both">Both Electric &amp; Gas</option>
-          </select>
+          <select class="fs" id="bl-type"><option value="electric">Electric (kWh)</option><option value="gas">Natural Gas (Therms)</option><option value="both">Both Electric &amp; Gas</option></select>
         </div>
-        <div class="fl" style="margin-bottom:7px;display:block">Monthly Normalized Consumption</div>
+        <div class="fl" style="margin-bottom:7px;display:block">Monthly Consumption</div>
         <div id="blMonthRows"></div>
         <div class="f2" style="margin-top:10px">
-          <div class="fg"><label class="fl">Annual HDD</label><input class="fi" id="bl-hdd" type="number" placeholder="e.g. 4800"></div>
-          <div class="fg"><label class="fl">Annual CDD</label><input class="fi" id="bl-cdd" type="number" placeholder="e.g. 1200"></div>
+          <div class="fg"><label class="fl">Annual HDD</label><input class="fi" id="bl-hdd" type="number" placeholder="4800"></div>
+          <div class="fg"><label class="fl">Annual CDD</label><input class="fi" id="bl-cdd" type="number" placeholder="1200"></div>
         </div>
       </div>
     </div>
-    <div>
-      <div class="ai-label">📊 Baseline Results</div>
-      <div class="ai-box" id="blBox" style="min-height:220px">Enter 12 months of normalized consumption data and click Calculate to generate your baseline — consumption per day, per degree day, regression coefficients, base load, and a summary card.</div>
-      <div id="blResult"></div>
-    </div>
+    <div><div class="ai-label">📊 Baseline Results</div><div class="ai-box" id="blBox" style="min-height:220px">Enter 12 months of data and click Calculate.</div><div id="blResult"></div></div>
   </div>
 </div>
 
-<!-- ══════════════════ ENERGY SAVINGS ══════════════════ -->
+<!-- ENERGY SAVINGS -->
 <div id="view-savings" class="view">
   <div class="pg-hdr">
-    <div><h1 class="pg-title">Energy <em>Savings</em></h1><p class="pg-sub">Weather-adjusted M&amp;V savings calculations — compare post-installation to baseline</p></div>
+    <div><h1 class="pg-title">Energy <em>Savings</em></h1><p class="pg-sub">Weather-adjusted M&amp;V savings calculations</p></div>
     <div class="hdr-actions"><button class="btn btn-em" onclick="calcSavings()">💡 Calculate Savings</button></div>
   </div>
   <div class="g2">
@@ -514,95 +464,73 @@ html{scroll-behavior:smooth;}
         </div>
       </div>
     </div>
-    <div>
-      <div class="ai-label">💡 Savings Results</div>
-      <div class="ai-box" id="svBox" style="min-height:220px">Enter baseline and post-installation data to calculate gross savings, weather-adjusted savings, cost savings, simple payback, and a professional M&amp;V narrative for client reporting.</div>
-      <div id="svResult"></div>
-    </div>
+    <div><div class="ai-label">💡 Savings Results</div><div class="ai-box" id="svBox" style="min-height:220px">Enter baseline and post-installation data to calculate savings.</div><div id="svResult"></div></div>
   </div>
 </div>
 
-<!-- ══════════════════ DISTRICT CALENDAR ══════════════════ -->
+<!-- DISTRICT CALENDAR -->
 <div id="view-district" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">District <em>Calendar</em></h1><p class="pg-sub">Parse school district calendars — auto-generate BAS holiday schedules and setback recommendations</p></div>
-  </div>
+  <div class="pg-hdr"><div><h1 class="pg-title">District <em>Calendar</em></h1><p class="pg-sub">Parse school district calendars — auto-generate BAS holiday schedules</p></div></div>
   <div class="g2">
     <div class="card">
       <div class="card-hdr"><span class="card-title">📅 Calendar Input</span></div>
       <div style="padding:15px">
         <div class="fg"><label class="fl">District Name</label><input class="fi" id="dist-name" placeholder="e.g. Independence School District"></div>
-        <div class="fg"><label class="fl">Paste Calendar Text (or URL to PDF)</label>
-          <textarea class="fta" id="dist-cal" style="min-height:130px" placeholder="Paste school calendar text — holidays, early release days, school start/end dates, professional development days, etc. You can also paste a link to the district's online calendar."></textarea>
-        </div>
+        <div class="fg"><label class="fl">Paste Calendar Text</label><textarea class="fta" id="dist-cal" style="min-height:130px" placeholder="Paste school calendar text..."></textarea></div>
         <div class="f2">
           <div class="fg"><label class="fl">Occupied Start</label><input class="fi" id="dist-occ-s" placeholder="7:00 AM"></div>
           <div class="fg"><label class="fl">Occupied End</label><input class="fi" id="dist-occ-e" placeholder="5:00 PM"></div>
         </div>
         <div class="f2">
-          <div class="fg"><label class="fl">Unoccupied Heat Setback °F</label><input class="fi" id="dist-sh" type="number" value="60"></div>
-          <div class="fg"><label class="fl">Unoccupied Cool Setback °F</label><input class="fi" id="dist-sc" type="number" value="85"></div>
+          <div class="fg"><label class="fl">Heat Setback °F</label><input class="fi" id="dist-sh" type="number" value="60"></div>
+          <div class="fg"><label class="fl">Cool Setback °F</label><input class="fi" id="dist-sc" type="number" value="85"></div>
         </div>
         <button class="btn btn-em" style="width:100%" onclick="parseDistCal()">🗓️ Parse Calendar &amp; Generate Schedule</button>
       </div>
     </div>
-    <div>
-      <div class="ai-label">📅 Recommended Control Schedule</div>
-      <div class="ai-box" id="distBox" style="min-height:280px">Paste in the district calendar text and click Parse. The AI will extract all holidays and special schedule days, then generate a recommended BAS exception schedule formatted for WebCTRL, including setback periods, early release adjustments, and a controls spec excerpt.</div>
-      <div id="distChips" style="margin-top:12px"></div>
-    </div>
+    <div><div class="ai-label">📅 Control Schedule</div><div class="ai-box" id="distBox" style="min-height:280px">Paste calendar text and click Parse.</div><div id="distChips" style="margin-top:12px"></div></div>
   </div>
 </div>
 
-<!-- ══════════════════ EQUIPMENT ══════════════════ -->
+<!-- EQUIPMENT -->
 <div id="view-equipment" class="view">
   <div class="pg-hdr">
     <div><h1 class="pg-title">Equipment <em>Repository</em></h1><p class="pg-sub">Centralized equipment database across all projects and facilities</p></div>
     <div class="hdr-actions">
-      <input class="fi" id="equipQ" placeholder="Search tag, type, customer..." style="width:220px" oninput="renderEquip()">
+      <input class="fi" id="equipQ" placeholder="Search..." style="width:200px" oninput="renderEquip()">
       <button class="btn btn-em" onclick="openEquipModal()">+ Add Equipment</button>
     </div>
   </div>
-  <div class="card">
-    <div style="overflow-x:auto">
-      <table class="dtbl" style="min-width:860px">
-        <thead><tr><th>Tag</th><th>Type</th><th>Make / Model</th><th>Capacity</th><th>Efficiency</th><th>Location / Project</th><th>Notes</th><th></th></tr></thead>
-        <tbody id="equipBody"></tbody>
-      </table>
-    </div>
-  </div>
+  <div class="card"><div style="overflow-x:auto">
+    <table class="dtbl" style="min-width:860px">
+      <thead><tr><th>Tag</th><th>Type</th><th>Make / Model</th><th>Capacity</th><th>Efficiency</th><th>Location / Project</th><th>Notes</th><th></th></tr></thead>
+      <tbody id="equipBody"></tbody>
+    </table>
+  </div></div>
 </div>
 
-<!-- ══════════════════ DRAWINGS ══════════════════ -->
+<!-- DRAWINGS -->
 <div id="view-drawings" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Construction <em>Drawings</em></h1><p class="pg-sub">Upload drawing PDFs — AI reads equipment schedules, system types, control points, and tags</p></div>
-  </div>
+  <div class="pg-hdr"><div><h1 class="pg-title">Construction <em>Drawings</em></h1><p class="pg-sub">Upload drawing PDFs — AI reads equipment schedules, system types, control points, and tags</p></div></div>
   <div class="g2">
     <div>
       <div class="drop-zone" onclick="document.getElementById('dwgInput').click()">
-        <span class="dz-ico">📐</span>
-        <div class="dz-title">Upload Construction Drawing PDF</div>
+        <span class="dz-ico">📐</span><div class="dz-title">Upload Construction Drawing PDF</div>
         <div class="dz-sub">Mechanical plans · Equipment schedules · Controls drawings</div>
         <input type="file" id="dwgInput" accept=".pdf" style="display:none" onchange="handleDrawingUpload(event)">
       </div>
       <div id="dwgExtracted" style="margin-top:13px"></div>
     </div>
-    <div>
-      <div class="ai-label">📐 Drawing Analysis</div>
-      <div class="ai-box" id="dwgBox" style="min-height:320px">Upload a mechanical, HVAC, or controls drawing PDF. The AI will identify all equipment tags, system types, control points, equipment schedules, notes, and any information relevant to controls programming or commissioning.</div>
-    </div>
+    <div><div class="ai-label">📐 Drawing Analysis</div><div class="ai-box" id="dwgBox" style="min-height:320px">Upload a drawing PDF to analyze.</div></div>
   </div>
 </div>
 
-<!-- ══════════════════ SPEC WRITER ══════════════════ -->
+<!-- SPEC WRITER -->
 <div id="view-specs" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Controls <em>Spec Writer</em></h1><p class="pg-sub">AI-generated Division 25 controls specifications — select systems and fill in project details</p></div>
-  </div>
+  <div class="pg-hdr"><div><h1 class="pg-title">Controls <em>Spec Writer</em></h1><p class="pg-sub">AI-generated Division 25 controls specifications</p></div></div>
   <div class="g-4060">
     <div>
-      <div class="fl" style="margin-bottom:8px;display:block">System Types to Include</div>
+      <div class="fl" style="margin-bottom:8px;display:block">System Types</div>
       <div class="sys-chips">
         <button class="schip sel" data-sys="AHU/RTU" onclick="this.classList.toggle('sel')">AHU / RTU</button>
         <button class="schip" data-sys="Boiler" onclick="this.classList.toggle('sel')">Boilers</button>
@@ -620,19 +548,11 @@ html{scroll-behavior:smooth;}
         <div style="padding:15px">
           <div class="fg"><label class="fl">Project Name</label><input class="fi" id="sp-proj" placeholder="e.g. Van Horn HS BAS Upgrade"></div>
           <div class="fg"><label class="fl">Owner / Client</label><input class="fi" id="sp-owner" placeholder="e.g. Independence School District"></div>
-          <div class="fg"><label class="fl">Building Description</label><input class="fi" id="sp-bldg" placeholder="e.g. K-12 school, 180,000 sq ft, 3-story"></div>
+          <div class="fg"><label class="fl">Building Description</label><input class="fi" id="sp-bldg" placeholder="e.g. K-12 school, 180,000 sq ft"></div>
           <div class="fg"><label class="fl">BAS Platform</label>
-            <select class="fs" id="sp-bas">
-              <option>WebCTRL (Automated Logic)</option>
-              <option>Metasys (Johnson Controls)</option>
-              <option>EcoStruxure (Schneider Electric)</option>
-              <option>Niagara Framework (Tridium)</option>
-              <option>Open to Recommendation</option>
-            </select>
+            <select class="fs" id="sp-bas"><option>WebCTRL (Automated Logic)</option><option>Metasys (Johnson Controls)</option><option>EcoStruxure (Schneider Electric)</option><option>Niagara Framework (Tridium)</option><option>Open to Recommendation</option></select>
           </div>
-          <div class="fg"><label class="fl">Special Requirements / Notes</label>
-            <textarea class="fta" id="sp-notes" placeholder="Integration requirements, existing equipment, district standards, commissioning requirements..."></textarea>
-          </div>
+          <div class="fg"><label class="fl">Special Requirements</label><textarea class="fta" id="sp-notes" placeholder="Integration requirements, district standards..."></textarea></div>
           <button class="btn btn-em" style="width:100%;margin-top:4px" onclick="writeSpec()">✍️ Generate Specification</button>
         </div>
       </div>
@@ -642,38 +562,33 @@ html{scroll-behavior:smooth;}
         <div class="ai-label" style="margin:0">✍️ Generated Specification</div>
         <div style="display:flex;gap:7px">
           <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('specOut').textContent);showToast('Copied ✓')">📋 Copy</button>
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('specOut').textContent='Cleared.'">Clear</button>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('specOut').textContent=''">Clear</button>
         </div>
       </div>
-      <div class="spec-out" id="specOut">Select system types and fill in project details, then click Generate Specification. The output will be a complete, bid-ready Division 25 controls specification with sequences of operations, control points, setpoints, alarm descriptions, and commissioning requirements for each selected system.</div>
+      <div class="spec-out" id="specOut">Select system types and fill in project details, then click Generate Specification.</div>
     </div>
   </div>
 </div>
 
-<!-- ══════════════════ CONTRACTS ══════════════════ -->
+<!-- CONTRACTS -->
 <div id="view-contracts" class="view">
   <div class="pg-hdr">
-    <div><h1 class="pg-title">Client <em>Contracts</em></h1><p class="pg-sub">Fill in project variables and generate a complete client contract from your template</p></div>
-    <div class="hdr-actions">
-      <button class="btn btn-ghost" onclick="document.getElementById('tmplInput').click()">📤 Upload Template</button>
-      <input type="file" id="tmplInput" accept=".pdf,.docx,.txt" style="display:none" onchange="loadTemplate(event)">
-    </div>
+    <div><h1 class="pg-title">Client <em>Contracts</em></h1><p class="pg-sub">Generate complete client contracts from your template</p></div>
+    <div class="hdr-actions"><button class="btn btn-ghost" onclick="document.getElementById('tmplInput').click()">📤 Upload Template</button><input type="file" id="tmplInput" accept=".pdf,.docx,.txt" style="display:none" onchange="loadTemplate(event)"></div>
   </div>
   <div class="g2">
     <div>
       <div class="card" style="margin-bottom:14px">
         <div class="card-hdr"><span class="card-title">📋 Template Status</span></div>
         <div style="padding:14px" id="tmplStatus">
-          <div style="font-size:13px;color:var(--text2);line-height:1.6">No template loaded. Upload your contract template (PDF, DOCX, or TXT) or use the default generic template below. The AI will identify variable fields and prompt you to fill them in.</div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.6">No template loaded. Upload a contract template or use the default below.</div>
           <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="loadDefaultTemplate()">Use Generic Template</button>
         </div>
       </div>
       <div class="card" id="contractVarsCard" style="display:none">
         <div class="card-hdr"><span class="card-title">✏️ Contract Variables</span></div>
         <div style="padding:14px" id="contractVars"></div>
-        <div style="padding:0 14px 14px;display:flex;gap:8px">
-          <button class="btn btn-em" style="flex:1" onclick="generateContract()">📋 Generate Contract</button>
-        </div>
+        <div style="padding:0 14px 14px"><button class="btn btn-em" style="width:100%" onclick="generateContract()">📋 Generate Contract</button></div>
       </div>
     </div>
     <div>
@@ -684,260 +599,206 @@ html{scroll-behavior:smooth;}
           <button class="btn btn-ghost btn-sm" onclick="document.getElementById('contractOut').textContent=''">Clear</button>
         </div>
       </div>
-      <div class="ai-box" id="contractOut" style="min-height:400px;max-height:560px;overflow-y:auto">Upload your contract template or click "Use Generic Template" to get started. Fill in the variable fields and click Generate Contract to produce a complete, client-ready agreement.</div>
+      <div class="ai-box" id="contractOut" style="min-height:400px;max-height:560px;overflow-y:auto">Upload your template or click "Use Generic Template" to get started.</div>
     </div>
   </div>
 </div>
 
-<!-- ══════════════════ WEBCTRL ══════════════════ -->
+<!-- WEBCTRL -->
 <div id="view-webctrl" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">WebCTRL <em>Logic Tool</em></h1><p class="pg-sub">AI-powered Automated Logic / WebCTRL assistant — explain, diagnose, and write control programs</p></div>
-  </div>
+  <div class="pg-hdr"><div><h1 class="pg-title">WebCTRL <em>Logic Tool</em></h1><p class="pg-sub">AI-powered Automated Logic / WebCTRL assistant — explain, diagnose, and write control programs</p></div></div>
   <div class="wc-modes">
-    <div class="wcm active" id="wcm-guide" onclick="setWCMode('guide',this)">
-      <div class="wcm-ico">🗺️</div>
-      <div class="wcm-name">Guided Walkthrough</div>
-      <div class="wcm-desc">Step-by-step explanations of WebCTRL logic concepts, programs, and sequences</div>
-    </div>
-    <div class="wcm" id="wcm-diagnose" onclick="setWCMode('diagnose',this)">
-      <div class="wcm-ico">🔍</div>
-      <div class="wcm-name">Diagnose Logic</div>
-      <div class="wcm-desc">Paste in existing logic or describe symptoms — get plain-English explanation and fixes</div>
-    </div>
-    <div class="wcm" id="wcm-write" onclick="setWCMode('write',this)">
-      <div class="wcm-ico">✍️</div>
-      <div class="wcm-name">Write Logic</div>
-      <div class="wcm-desc">Describe what you need — get complete WebCTRL-compatible logic written for you</div>
-    </div>
+    <div class="wcm active" id="wcm-guide" onclick="setWCMode('guide',this)"><div class="wcm-ico">🗺️</div><div class="wcm-name">Guided Walkthrough</div><div class="wcm-desc">Step-by-step explanations of WebCTRL logic concepts</div></div>
+    <div class="wcm" id="wcm-diagnose" onclick="setWCMode('diagnose',this)"><div class="wcm-ico">🔍</div><div class="wcm-name">Diagnose Logic</div><div class="wcm-desc">Paste in existing logic — get plain-English explanation and fixes</div></div>
+    <div class="wcm" id="wcm-write" onclick="setWCMode('write',this)"><div class="wcm-ico">✍️</div><div class="wcm-name">Write Logic</div><div class="wcm-desc">Describe what you need — get complete WebCTRL-compatible logic</div></div>
   </div>
-  <!-- Guide -->
   <div id="wc-guide" class="card">
-    <div class="card-hdr"><span class="card-title">🗺️ WebCTRL Guided Walkthrough</span></div>
+    <div class="card-hdr"><span class="card-title">🗺️ Guided Walkthrough</span></div>
     <div style="padding:16px">
       <div class="f2">
-        <div class="fg"><label class="fl">What do you want to understand?</label>
-          <input class="fi" id="wc-g-q" placeholder="e.g. How does Occupied mode work? How do I set up a VAV sequence? What is a setpoint offset?">
-        </div>
-        <div class="fg"><label class="fl">Experience Level</label>
-          <select class="fs" id="wc-g-lvl">
-            <option>Beginner — explain from scratch</option>
-            <option>Intermediate — I know the basics</option>
-            <option>Advanced — deep technical detail</option>
-          </select>
-        </div>
+        <div class="fg"><label class="fl">What do you want to understand?</label><input class="fi" id="wc-g-q" placeholder="e.g. How does Occupied mode work?"></div>
+        <div class="fg"><label class="fl">Experience Level</label><select class="fs" id="wc-g-lvl"><option>Beginner — explain from scratch</option><option>Intermediate — I know the basics</option><option>Advanced — skip the basics</option></select></div>
       </div>
-      <button class="btn btn-em" onclick="runWC('guide')">🗺️ Get Explanation</button>
-      <div style="margin-top:14px">
-        <div class="ai-label">🤖 WebCTRL Explanation</div>
-        <div class="ai-box" id="wc-g-out">Ask a question about WebCTRL logic, sequences, programming concepts, or system behavior and get a clear step-by-step explanation tailored to your experience level.</div>
-      </div>
+      <button class="btn btn-em" onclick="runWC('guide')">🗺️ Explain This</button>
+      <div class="ai-label" style="margin-top:14px">🤖 Explanation</div>
+      <div class="logic-out" id="wc-g-out">Ask any WebCTRL or Automated Logic question above.</div>
     </div>
   </div>
-  <!-- Diagnose -->
   <div id="wc-diagnose" class="card" style="display:none">
-    <div class="card-hdr"><span class="card-title">🔍 Diagnose Existing Logic</span></div>
+    <div class="card-hdr"><span class="card-title">🔍 Diagnose Logic</span></div>
     <div style="padding:16px">
-      <div class="fg"><label class="fl">Paste WebCTRL Logic / Program / Sequence</label>
-        <textarea class="logic-area" id="wc-d-logic" placeholder="Paste WebCTRL logic, program code, sequence of operations, or a description of what the controller is doing..."></textarea>
-      </div>
-      <div class="fg"><label class="fl">Describe the Issue (optional)</label>
-        <input class="fi" id="wc-d-issue" placeholder="e.g. Zone not cooling, setpoint not reached, equipment short-cycling, fan running during unoccupied...">
-      </div>
+      <div class="fg"><label class="fl">Paste Logic or Program</label><textarea class="logic-area" id="wc-d-logic" placeholder="Paste your WebCTRL logic or sequence..."></textarea></div>
+      <div class="fg"><label class="fl">Reported Issue (optional)</label><input class="fi" id="wc-d-issue" placeholder="e.g. AHU never goes to occupied mode..."></div>
       <button class="btn btn-em" onclick="runWC('diagnose')">🔍 Diagnose</button>
-      <div style="margin-top:14px">
-        <div class="ai-label">🤖 Diagnosis &amp; Explanation</div>
-        <div class="logic-out" id="wc-d-out">Paste in your WebCTRL logic and click Diagnose to get a line-by-line explanation, any issues identified, and suggested corrections.</div>
-      </div>
+      <div class="ai-label" style="margin-top:14px">🤖 Diagnosis</div>
+      <div class="logic-out" id="wc-d-out">Paste logic above and click Diagnose.</div>
     </div>
   </div>
-  <!-- Write -->
   <div id="wc-write" class="card" style="display:none">
-    <div class="card-hdr"><span class="card-title">✍️ Write WebCTRL Logic</span></div>
+    <div class="card-hdr"><span class="card-title">✍️ Write Logic</span></div>
     <div style="padding:16px">
       <div class="f2">
-        <div class="fg"><label class="fl">Equipment / System Type</label>
-          <select class="fs" id="wc-w-sys">
-            <option>AHU / Air Handler</option><option>RTU / Rooftop Unit</option><option>VAV Box</option>
-            <option>Boiler</option><option>Chiller</option><option>Fan Coil Unit</option>
-            <option>Exhaust Fan</option><option>Lighting Panel</option><option>Custom / Other</option>
-          </select>
-        </div>
-        <div class="fg"><label class="fl">Available Control Points</label>
-          <input class="fi" id="wc-w-pts" placeholder="e.g. SAT sensor, OAT sensor, HW valve 0-10V, DX-Stage-1, VFD...">
-        </div>
+        <div class="fg"><label class="fl">System Type</label><input class="fi" id="wc-w-sys" placeholder="e.g. AHU, VAV, Boiler"></div>
+        <div class="fg"><label class="fl">Available Control Points</label><input class="fi" id="wc-w-pts" placeholder="e.g. Discharge Temp, OAT, Occupied..."></div>
       </div>
-      <div class="fg"><label class="fl">Describe the Sequence of Operations</label>
-        <textarea class="fta" id="wc-w-desc" style="min-height:110px" placeholder="e.g. AHU-1 maintains 55°F supply air temp during occupied hours 6AM–10PM. Enable economizer when OAT below 60°F. Heating via HW valve, cooling via 2-stage DX. Demand-controlled ventilation via CO2..."></textarea>
-      </div>
+      <div class="fg"><label class="fl">Sequence of Operations</label><textarea class="logic-area" id="wc-w-desc" placeholder="Describe what you need the logic to do..."></textarea></div>
       <button class="btn btn-em" onclick="runWC('write')">✍️ Write Logic</button>
-      <div style="margin-top:14px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
-          <div class="ai-label" style="margin:0">🤖 Generated Logic</div>
-          <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('wc-w-out').textContent);showToast('Logic copied ✓')">📋 Copy</button>
-        </div>
-        <div class="logic-out" id="wc-w-out">Describe your sequence of operations and available control points. The AI will write complete, commented WebCTRL-compatible logic you can adapt for your application.</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px">
+        <div class="ai-label" style="margin:0">🤖 Generated Logic</div>
+        <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('wc-w-out').textContent);showToast('Copied ✓')">📋 Copy</button>
       </div>
+      <div class="logic-out" id="wc-w-out">Describe your sequence above.</div>
     </div>
   </div>
 </div>
 
-</main></div><!-- end wrap -->
-</div><!-- end app-wrap -->
-</div><!-- end app -->
-<!-- ══════════════════ MODALS ══════════════════ -->
+</main></div></div></div>
 
-<!-- New Project Modal -->
+<!-- PROJECT MODAL -->
 <div class="modal-bg" id="projModal" onclick="if(event.target===this)closeProjModal()">
   <div class="modal">
-    <div class="modal-hdr"><span class="modal-title">+ New Energy Project</span><button class="modal-x" onclick="closeProjModal()">✕</button></div>
+    <div class="modal-hdr"><span class="modal-title" id="projModalTitle">+ New Energy Project</span><button class="modal-x" onclick="closeProjModal()">✕</button></div>
     <div class="modal-body">
-      <div class="fg"><label class="fl">Project Name</label><input class="fi" id="mp-name" placeholder="e.g. Van Horn HS BAS Upgrade"></div>
-      <div class="fg"><label class="fl">Client / Owner</label><input class="fi" id="mp-client" placeholder="e.g. Independence School District"></div>
+      <div class="modal-sect">Project Info</div>
+      <div class="fg"><label class="fl">Project Name *</label><input class="fi" id="mp-name" placeholder="e.g. Van Horn HS BAS Upgrade"></div>
+      <div class="fg"><label class="fl">Client / Owner *</label><input class="fi" id="mp-client" placeholder="e.g. Independence School District"></div>
       <div class="fg"><label class="fl">Building Address</label><input class="fi" id="mp-addr" placeholder="e.g. 2500 Van Horn Rd, Independence MO 64050"></div>
       <div class="f2">
         <div class="fg"><label class="fl">Building Type</label>
-          <select class="fs" id="mp-type">
-            <option>K-12 School</option><option>College / University</option><option>Hospital / Healthcare</option>
-            <option>Office Building</option><option>Warehouse / Industrial</option><option>Retail</option>
-            <option>Municipal / Government</option><option>Data Center</option><option>Other</option>
-          </select>
+          <select class="fs" id="mp-type"><option>K-12 School</option><option>College / University</option><option>Hospital / Healthcare</option><option>Office Building</option><option>Warehouse / Industrial</option><option>Retail</option><option>Municipal / Government</option><option>Data Center</option><option>Other</option></select>
         </div>
-        <div class="fg"><label class="fl">Square Footage</label><input class="fi" id="mp-sqft" type="number" placeholder="e.g. 180000"></div>
+        <div class="fg"><label class="fl">Square Footage</label><input class="fi" id="mp-sqft" type="number" placeholder="180000"></div>
       </div>
+      <div class="modal-sect">People &amp; Status</div>
       <div class="f2">
         <div class="fg"><label class="fl">Status</label>
-          <select class="fs" id="mp-status"><option value="planning">Planning</option><option value="active">Active</option><option value="complete">Complete</option></select>
+          <select class="fs" id="mp-status"><option value="planning">Planning</option><option value="active">Active</option><option value="onhold">On Hold</option><option value="complete">Complete</option></select>
         </div>
-        <div class="fg"><label class="fl">Project Manager</label><input class="fi" id="mp-pm" placeholder="e.g. [REDACTED]"></div>
+        <div class="fg"><label class="fl">Phase</label>
+          <select class="fs" id="mp-phase"><option value="">— Select Phase —</option><option>Audit / Assessment</option><option>Design</option><option>Bidding</option><option>Construction</option><option>Commissioning</option><option>M&amp;V</option><option>Closeout</option></select>
+        </div>
       </div>
-      <div class="fg"><label class="fl">Notes / Description</label><textarea class="fta" id="mp-notes" placeholder="Project goals, scope summary, key contacts..."></textarea></div>
+      <div class="f2">
+        <div class="fg"><label class="fl">Project Manager</label><input class="fi" id="mp-pm" placeholder="e.g. [REDACTED]"></div>
+        <div class="fg"><label class="fl">Field Technician</label><input class="fi" id="mp-tech" placeholder="e.g. [REDACTED]"></div>
+      </div>
+      <div class="f2">
+        <div class="fg"><label class="fl">Client Contact Name</label><input class="fi" id="mp-contact" placeholder="e.g. Sarah Johnson"></div>
+        <div class="fg"><label class="fl">Client Contact Phone</label><input class="fi" id="mp-phone" placeholder="(816) 555-1234"></div>
+      </div>
+      <div class="fg"><label class="fl">Client Contact Email</label><input class="fi" id="mp-email" type="email" placeholder="sjohnson@district.edu"></div>
+      <div class="modal-sect">Financials &amp; Schedule</div>
+      <div class="f2">
+        <div class="fg"><label class="fl">Contract Value $</label><input class="fi" id="mp-contract" type="number" placeholder="125000"></div>
+        <div class="fg"><label class="fl">Estimated Savings $/yr</label><input class="fi" id="mp-savings" type="number" placeholder="18000"></div>
+      </div>
+      <div class="f2">
+        <div class="fg"><label class="fl">Start Date</label><input class="fi" id="mp-start" type="date"></div>
+        <div class="fg"><label class="fl">Target End Date</label><input class="fi" id="mp-end" type="date"></div>
+      </div>
+      <div class="f2">
+        <div class="fg"><label class="fl">Progress %</label><input class="fi" id="mp-progress" type="number" min="0" max="100" placeholder="0"></div>
+        <div class="fg"><label class="fl">Priority</label>
+          <select class="fs" id="mp-priority"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select>
+        </div>
+      </div>
+      <div class="modal-sect">Description &amp; Notes</div>
+      <div class="fg"><label class="fl">Project Description / Scope</label><textarea class="fta" id="mp-notes" placeholder="Project goals, scope summary, key contacts..."></textarea></div>
+      <div class="fg"><label class="fl">Tags (comma-separated)</label><input class="fi" id="mp-tags" placeholder="e.g. BAS, K-12, retrofit, Evergy rebate"></div>
+      <input type="hidden" id="mp-edit-id">
     </div>
     <div class="modal-ftr"><button class="btn btn-ghost" onclick="closeProjModal()">Cancel</button><button class="btn btn-em" onclick="saveProject()">Save Project</button></div>
   </div>
 </div>
 
-<!-- Task Modal -->
+<!-- TASK MODAL -->
 <div class="modal-bg" id="taskModal" onclick="if(event.target===this)closeTaskModal()">
-  <div class="modal">
+  <div class="modal" style="width:420px">
     <div class="modal-hdr"><span class="modal-title">+ Add Task</span><button class="modal-x" onclick="closeTaskModal()">✕</button></div>
     <div class="modal-body">
       <div class="fg"><label class="fl">Task Description</label><input class="fi" id="mt-text" placeholder="e.g. Submit baseline report to client"></div>
       <div class="f2">
         <div class="fg"><label class="fl">Due Date</label><input class="fi" id="mt-due" type="date"></div>
-        <div class="fg"><label class="fl">Project (optional)</label>
-          <select class="fs" id="mt-proj"><option value="">— General —</option></select>
-        </div>
+        <div class="fg"><label class="fl">Project</label><select class="fs" id="mt-proj"><option value="">— General —</option></select></div>
       </div>
-      <div class="fg"><label class="fl">Priority</label>
-        <select class="fs" id="mt-pri"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select>
-      </div>
+      <div class="fg"><label class="fl">Priority</label><select class="fs" id="mt-pri"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></div>
     </div>
     <div class="modal-ftr"><button class="btn btn-ghost" onclick="closeTaskModal()">Cancel</button><button class="btn btn-em" onclick="saveTask()">Save Task</button></div>
   </div>
 </div>
 
-<!-- Equipment Modal -->
+<!-- EQUIPMENT MODAL -->
 <div class="modal-bg" id="equipModal" onclick="if(event.target===this)closeEquipModal()">
-  <div class="modal">
+  <div class="modal" style="width:480px">
     <div class="modal-hdr"><span class="modal-title">+ Add Equipment</span><button class="modal-x" onclick="closeEquipModal()">✕</button></div>
     <div class="modal-body">
       <div class="f2">
         <div class="fg"><label class="fl">Equipment Tag</label><input class="fi" id="eq-tag" placeholder="e.g. AHU-1"></div>
-        <div class="fg"><label class="fl">Type</label>
-          <select class="fs" id="eq-type"><option>AHU</option><option>RTU</option><option>Boiler</option><option>Chiller</option><option>VAV Box</option><option>Fan Coil Unit</option><option>Exhaust Fan</option><option>Pump</option><option>Cooling Tower</option><option>HX</option><option>Meter</option><option>Other</option></select>
-        </div>
+        <div class="fg"><label class="fl">Type</label><select class="fs" id="eq-type"><option>AHU</option><option>RTU</option><option>Boiler</option><option>Chiller</option><option>VAV Box</option><option>Fan Coil Unit</option><option>Exhaust Fan</option><option>Pump</option><option>Cooling Tower</option><option>HX</option><option>Meter</option><option>Other</option></select></div>
       </div>
       <div class="f2">
         <div class="fg"><label class="fl">Manufacturer</label><input class="fi" id="eq-make" placeholder="e.g. Trane"></div>
         <div class="fg"><label class="fl">Model Number</label><input class="fi" id="eq-model" placeholder="e.g. CGAM-075"></div>
       </div>
       <div class="f2">
-        <div class="fg"><label class="fl">Capacity</label><input class="fi" id="eq-cap" placeholder="e.g. 75 Tons / 900 MBH"></div>
-        <div class="fg"><label class="fl">Efficiency</label><input class="fi" id="eq-eff" placeholder="e.g. 0.65 kW/Ton / 95% AFUE"></div>
+        <div class="fg"><label class="fl">Capacity</label><input class="fi" id="eq-cap" placeholder="e.g. 75 Tons"></div>
+        <div class="fg"><label class="fl">Efficiency</label><input class="fi" id="eq-eff" placeholder="e.g. 0.65 kW/Ton"></div>
       </div>
       <div class="fg"><label class="fl">Location / Project</label><input class="fi" id="eq-loc" placeholder="e.g. Van Horn HS — Mech Room B"></div>
-      <div class="fg"><label class="fl">Notes</label><textarea class="fta" id="eq-notes" placeholder="Install year, serial number, last service date, BACnet address, special notes..."></textarea></div>
+      <div class="fg"><label class="fl">Notes</label><textarea class="fta" id="eq-notes" placeholder="Install year, serial number, BACnet address..."></textarea></div>
     </div>
     <div class="modal-ftr"><button class="btn btn-ghost" onclick="closeEquipModal()">Cancel</button><button class="btn btn-em" onclick="saveEquip()">Save Equipment</button></div>
   </div>
 </div>
 
-<div class="toast" id="toast"><span class="t-ic">✓</span><span id="toastMsg">Done!</span></div>
+<div class="toast" id="toast"><span style="color:var(--em);font-size:14px">✓</span><span id="toastMsg">Done!</span></div>
+
 <script>
-/* ═══════════════════════════════════
-   CLAUDE API
-═══════════════════════════════════ */
-async function claude(prompt, sys) {
-  try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        model:'claude-sonnet-4-20250514', max_tokens:1000,
-        system: sys||'You are an expert building automation and energy engineering assistant. Be precise, practical, and technical.',
-        messages:[{role:'user',content:prompt}]
-      })
-    });
-    const d = await r.json();
-    return d.error ? '⚠️ '+d.error.message : (d.content||[]).map(b=>b.text||'').join('');
-  } catch(e){ return '⚠️ '+e.message; }
+/* ── CLAUDE API ── */
+async function claude(prompt,sys){
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:sys||'You are an expert building automation and energy engineering assistant.',messages:[{role:'user',content:prompt}]})});
+    const d=await r.json();
+    return d.error?'⚠️ '+d.error.message:(d.content||[]).map(b=>b.text||'').join('');
+  }catch(e){return '⚠️ '+e.message;}
+}
+async function claudePDF(prompt,b64,sys){
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:sys||'You are an expert document analyst.',messages:[{role:'user',content:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},{type:'text',text:prompt}]}]})});
+    const d=await r.json();
+    return d.error?'⚠️ '+d.error.message:(d.content||[]).map(b=>b.text||'').join('');
+  }catch(e){return '⚠️ '+e.message;}
 }
 
-async function claudePDF(prompt, b64, sys) {
-  try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        model:'claude-sonnet-4-20250514', max_tokens:1000,
-        system: sys||'You are an expert at extracting structured data from engineering documents.',
-        messages:[{role:'user',content:[
-          {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},
-          {type:'text',text:prompt}
-        ]}]
-      })
-    });
-    const d = await r.json();
-    return d.error ? '⚠️ '+d.error.message : (d.content||[]).map(b=>b.text||'').join('');
-  } catch(e){ return '⚠️ '+e.message; }
-}
+/* ── STORAGE ── */
+async function sset(k,v){try{await window.storage.set(k,JSON.stringify(v));}catch(e){}}
+async function sget(k,fb){try{const r=await window.storage.get(k);return r?JSON.parse(r.value):fb;}catch(e){return fb;}}
 
-/* ═══════════════════════════════════
-   STORAGE
-═══════════════════════════════════ */
-async function sset(k,v){ try{ await window.storage.set(k,JSON.stringify(v)); }catch(e){} }
-async function sget(k,fb){ try{ const r=await window.storage.get(k); return r?JSON.parse(r.value):fb; }catch(e){ return fb; } }
-
-/* ═══════════════════════════════════
-   STATE
-═══════════════════════════════════ */
-let projects=[], tasks=[], equipment=[];
-let hCalY, hCalM;
-const NOW = new Date();
-hCalY = NOW.getFullYear();
-hCalM = NOW.getMonth();
+/* ── STATE ── */
+let projects=[],tasks=[],equipment=[];
+let hCalY,hCalM;
+let folderOpen={};
+const NOW=new Date();
+hCalY=NOW.getFullYear(); hCalM=NOW.getMonth();
 const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-/* ═══════════════════════════════════
-   INIT
-═══════════════════════════════════ */
+/* ── INIT ── */
 async function init(){
-  projects  = await sget('en_projects',  []);
-  tasks     = await sget('en_tasks',     []);
-  equipment = await sget('en_equipment', []);
-
+  projects=await sget('en_projects',[]);
+  tasks=await sget('en_tasks',[]);
+  equipment=await sget('en_equipment',[]);
   if(!projects.length){
-    const d = new Date();
+    const fmt=n=>{const d=new Date(NOW.getFullYear(),NOW.getMonth(),NOW.getDate()+n);return d.toISOString().split('T')[0];};
     projects=[
-      {id:1,name:'Independence School District — Energy Audit',client:'Independence School District',addr:'620 W Maple Ave, Independence MO',type:'K-12 School',sqft:2400000,status:'active',pm:'[REDACTED]',notes:'Multi-building audit across 35 sites. Focus on BAS optimization and lighting retrofits.',progress:35},
-      {id:2,name:'Advent Health — Utility Baseline',client:'Advent Health at Shawnee Mission',addr:'9119 Medical Building, Lenexa KS',type:'Hospital / Healthcare',sqft:820000,status:'active',pm:'[REDACTED]',notes:'Establishing utility baseline across all campus buildings pre-BAS upgrade.',progress:70},
-      {id:3,name:'Evergy — Demand Response',client:'Evergy',addr:'1200 Main St, Kansas City MO',type:'Office Building',sqft:180000,status:'planning',pm:'[REDACTED]',notes:'Demand response enrollment and peak shaving control strategy.',progress:10},
+      {id:1,name:'Independence School District — Energy Audit',client:'Independence School District',addr:'620 W Maple Ave, Independence MO',type:'K-12 School',sqft:2400000,status:'active',phase:'Audit / Assessment',pm:'[REDACTED]',tech:'[REDACTED]',contact:'[REDACTED]',phone:'[REDACTED-PHONE]',email:'[REDACTED-EMAIL]',contract:185000,savings:32000,start:'2025-01-15',end:'2025-12-31',priority:'high',notes:'Multi-building audit across 35 sites. Focus on BAS optimization and lighting retrofits.',tags:'BAS, K-12, audit, Evergy',progress:35},
+      {id:2,name:'Advent Health — Utility Baseline',client:'Advent Health at Shawnee Mission',addr:'9119 Medical Building, Lenexa KS',type:'Hospital / Healthcare',sqft:820000,status:'active',phase:'M&V',pm:'[REDACTED]',tech:'[REDACTED]',contact:'[REDACTED]',phone:'[REDACTED-PHONE]',email:'[REDACTED-EMAIL]',contract:62000,savings:18500,start:'2025-03-01',end:'2025-09-30',priority:'normal',notes:'Establishing utility baseline across all campus buildings pre-BAS upgrade.',tags:'healthcare, baseline, M&V',progress:70},
+      {id:3,name:'Evergy — Demand Response',client:'Evergy',addr:'1200 Main St, Kansas City MO',type:'Office Building',sqft:180000,status:'planning',phase:'Design',pm:'[REDACTED]',tech:'',contact:'[REDACTED]',phone:'[REDACTED-PHONE]',email:'[REDACTED-EMAIL]',contract:48000,savings:9200,start:'2025-06-01',end:'2025-12-31',priority:'normal',notes:'Demand response enrollment and peak shaving control strategy.',tags:'DR, demand response, utility',progress:10},
     ];
     await sset('en_projects',projects);
   }
   if(!tasks.length){
-    const d = new Date();
-    const fmt = (n)=>{const dd=new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);return dd.toISOString().split('T')[0];};
+    const fmt=n=>{const d=new Date(NOW.getFullYear(),NOW.getMonth(),NOW.getDate()+n);return d.toISOString().split('T')[0];};
     tasks=[
       {id:1,text:'Submit baseline report — Advent Health',due:fmt(2),projId:2,pri:'high',done:false},
       {id:2,text:'Schedule site walk — ISD Van Horn HS',due:fmt(1),projId:1,pri:'normal',done:false},
@@ -948,80 +809,55 @@ async function init(){
   }
   if(!equipment.length){
     equipment=[
-      {id:1,tag:'AHU-1',type:'AHU',make:'Trane',model:'UCCA-120',cap:'10,000 CFM / 120 MBH',eff:'0.8 kW/Ton',loc:'ISD Van Horn HS — Mech Room A',notes:'Installed 2018. BACnet MS/TP address 3.'},
+      {id:1,tag:'AHU-1',type:'AHU',make:'Trane',model:'UCCA-120',cap:'10,000 CFM / 120 MBH',eff:'0.8 kW/Ton',loc:'ISD Van Horn HS — Mech Room A',notes:'Installed 2018.'},
       {id:2,tag:'CH-1',type:'Chiller',make:'York',model:'YCAL0047',cap:'47 Tons',eff:'2.8 kW/Ton',loc:'Advent Health — Central Plant',notes:'Air-cooled scroll. 2015 vintage.'},
       {id:3,tag:'BLR-1',type:'Boiler',make:'Cleaver-Brooks',model:'FLX-750',cap:'750 MBH',eff:'94% AFUE',loc:'ISD Van Horn HS — Boiler Room',notes:'Natural gas. 2020 install.'},
     ];
     await sset('en_equipment',equipment);
   }
-
-  buildWeekStrip();
-  buildHomeCal();
-  buildBaselineMonthRows();
-  buildUtilRows();
-  refreshProjDropdowns();
-  renderProjects();
-  renderEquip();
-  renderUpcomingTasks();
-  updateHomeStats();
-
-  document.getElementById('home-date').textContent =
-    NOW.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  buildWeekStrip(); buildHomeCal(); buildBaselineMonthRows(); buildUtilRows();
+  refreshProjDropdowns(); renderProjTable(); renderSidebarFolders();
+  renderEquip(); renderUpcomingTasks(); updateHomeStats();
+  document.getElementById('home-date').textContent=NOW.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
 }
 
 function updateHomeStats(){
-  document.getElementById('h-proj').textContent  = projects.filter(p=>p.status==='active').length;
-  document.getElementById('h-equip').textContent = equipment.length;
-  const wStart = new Date(NOW); wStart.setDate(NOW.getDate()-NOW.getDay());
-  const wEnd   = new Date(wStart); wEnd.setDate(wStart.getDate()+6);
-  document.getElementById('h-tasks').textContent = tasks.filter(t=>{
+  document.getElementById('h-proj').textContent=projects.filter(p=>p.status==='active').length;
+  document.getElementById('h-equip').textContent=equipment.length;
+  const ws=new Date(NOW); ws.setDate(NOW.getDate()-NOW.getDay());
+  const we=new Date(ws); we.setDate(ws.getDate()+6);
+  document.getElementById('h-tasks').textContent=tasks.filter(t=>{
     if(t.done) return false;
-    const d=new Date(t.due+'T12:00:00'); return d>=wStart&&d<=wEnd;
+    const d=new Date(t.due+'T12:00:00'); return d>=ws&&d<=we;
   }).length;
 }
 
-/* ═══════════════════════════════════
-   VIEW SWITCH
-═══════════════════════════════════ */
+/* ── VIEW SWITCH ── */
 function sv(id,btn){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.querySelectorAll('.sidebar .s-item').forEach(t=>t.classList.remove('active'));
   document.getElementById('view-'+id).classList.add('active');
   (btn||document.querySelector(`.sidebar .s-item[onclick*="'${id}'"]`))?.classList.add('active');
+  if(id==='projects') showList();
 }
 
-/* ═══════════════════════════════════
-   AUTH — sessionStorage persistence
-═══════════════════════════════════ */
+/* ── AUTH ── */
 let currentUser=null;
-function signOut(){
-  sessionStorage.removeItem('ch_user');
-  window.location.href='index.html';
-}
+function signOut(){sessionStorage.removeItem('ch_user');window.location.href='index.html';}
 function enterApp(){
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('app').style.display='block';
   document.getElementById('topName').textContent=currentUser.name;
   document.getElementById('topAv').textContent=currentUser.initials;
 }
-(function(){
-  try{
-    const s=sessionStorage.getItem('ch_user');
-    if(s){currentUser=JSON.parse(s);enterApp();}
-  }catch(e){}
-}());
+(function(){try{const s=sessionStorage.getItem('ch_user');if(s){currentUser=JSON.parse(s);enterApp();}}catch(e){}}());
 
-/* ═══════════════════════════════════
-   HOME CALENDAR
-═══════════════════════════════════ */
+/* ── HOME CALENDAR ── */
 function buildHomeCal(){
-  const lbl=document.getElementById('hCalLbl');
-  const grid=document.getElementById('hCalDays');
+  const lbl=document.getElementById('hCalLbl'),grid=document.getElementById('hCalDays');
   if(!lbl||!grid) return;
   lbl.textContent=MONTHS[hCalM]+' '+hCalY;
-  const first=new Date(hCalY,hCalM,1).getDay();
-  const dim=new Date(hCalY,hCalM+1,0).getDate();
-  const prev=new Date(hCalY,hCalM,0).getDate();
+  const first=new Date(hCalY,hCalM,1).getDay(),dim=new Date(hCalY,hCalM+1,0).getDate(),prev=new Date(hCalY,hCalM,0).getDate();
   const isCur=NOW.getFullYear()===hCalY&&NOW.getMonth()===hCalM;
   let h='';
   for(let i=first-1;i>=0;i--) h+=`<div class="cday cother"><div class="cday-n">${prev-i}</div></div>`;
@@ -1036,23 +872,18 @@ function buildHomeCal(){
   for(let n=1,i=first+dim;i<tot;i++,n++) h+=`<div class="cday cother"><div class="cday-n">${n}</div></div>`;
   grid.innerHTML=h;
 }
-function changeHCal(d){ hCalM+=d; if(hCalM<0){hCalM=11;hCalY--;} if(hCalM>11){hCalM=0;hCalY++;} buildHomeCal(); }
+function changeHCal(d){hCalM+=d;if(hCalM<0){hCalM=11;hCalY--;}if(hCalM>11){hCalM=0;hCalY++;}buildHomeCal();}
 function calClick(ds){
   const dt=tasks.filter(t=>t.due===ds);
   if(dt.length) showToast(dt.length+' task'+(dt.length>1?'s':'')+' on '+new Date(ds+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}));
-  else{ document.getElementById('mt-due').value=ds; openTaskModal(); }
+  else{document.getElementById('mt-due').value=ds;openTaskModal();}
 }
-
-/* ═══════════════════════════════════
-   WEEK STRIP
-═══════════════════════════════════ */
 function buildWeekStrip(){
-  const el=document.getElementById('weekStrip');
-  const rl=document.getElementById('week-range-lbl');
+  const el=document.getElementById('weekStrip'),rl=document.getElementById('week-range-lbl');
   if(!el) return;
   const sow=new Date(NOW); sow.setDate(NOW.getDate()-NOW.getDay());
   const eow=new Date(sow); eow.setDate(sow.getDate()+6);
-  if(rl) rl.textContent=sow.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+eow.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  if(rl) rl.textContent=sow.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+eow.toLocaleDateString('en-US',{month:'short',day:'numeric'});
   let h='';
   for(let i=0;i<7;i++){
     const d=new Date(sow); d.setDate(sow.getDate()+i);
@@ -1060,22 +891,14 @@ function buildWeekStrip(){
     const ds=d.toISOString().split('T')[0];
     const dt=tasks.filter(t=>t.due===ds&&!t.done);
     const dots=dt.slice(0,4).map(t=>`<div class="wdot" style="background:${t.pri==='high'?'#f43f5e':'#00d4aa'}"></div>`).join('');
-    h+=`<div class="wday${isT?' is-today':''}" onclick="calClick('${ds}')">
-      <div class="wday-name">${DAYS[d.getDay()]}</div>
-      <div class="wday-num">${d.getDate()}</div>
-      <div class="wday-count">${dt.length?dt.length+' task'+(dt.length>1?'s':''):''}</div>
-      <div class="wday-dots">${dots}</div>
-    </div>`;
+    h+=`<div class="wday${isT?' is-today':''}" onclick="calClick('${ds}')"><div class="wday-name">${DAYS[d.getDay()]}</div><div class="wday-num">${d.getDate()}</div><div class="wday-count">${dt.length?dt.length+' task'+(dt.length>1?'s':''):''}</div><div class="wday-dots">${dots}</div></div>`;
   }
   el.innerHTML=h;
 }
 
-/* ═══════════════════════════════════
-   TASKS
-═══════════════════════════════════ */
+/* ── TASKS ── */
 function renderUpcomingTasks(){
-  const el=document.getElementById('upcomingTasksList');
-  if(!el) return;
+  const el=document.getElementById('upcomingTasksList'); if(!el) return;
   const list=[...tasks].filter(t=>!t.done).sort((a,b)=>new Date(a.due)-new Date(b.due)).slice(0,10);
   if(!list.length){el.innerHTML='<div style="font-size:13px;color:var(--text2);padding:8px 0">No upcoming tasks</div>';return;}
   el.innerHTML=list.map(t=>{
@@ -1086,23 +909,14 @@ function renderUpcomingTasks(){
     const dl=diff<=0?'Today':diff===1?'Tomorrow':due.toLocaleDateString('en-US',{month:'short',day:'numeric'});
     return `<div class="task-item">
       <div class="tcb${t.done?' done':''}" onclick="toggleTask(${t.id})">${t.done?'<span style="color:#05080f;font-size:9px">✓</span>':''}</div>
-      <div class="t-body">
-        <div class="t-text${t.done?' struck':''}">${t.text}${t.pri==='high'?' <span style="color:var(--danger);font-size:10px">● HIGH</span>':''}</div>
-        ${proj?`<div class="t-proj">${proj.name}</div>`:''}
-      </div>
+      <div class="t-body"><div class="t-text${t.done?' struck':''}">${t.text}${t.pri==='high'?' <span style="color:var(--danger);font-size:10px">● HIGH</span>':''}</div>${proj?`<div class="t-proj">${proj.name}</div>`:''}</div>
       <div class="t-due" style="color:${dc}">${dl}</div>
       <button class="btn-del" onclick="removeTask(${t.id})">✕</button>
     </div>`;
   }).join('');
 }
-function toggleTask(id){
-  const t=tasks.find(t=>t.id===id);
-  if(t){t.done=!t.done;sset('en_tasks',tasks);renderUpcomingTasks();buildHomeCal();}
-}
-function removeTask(id){
-  tasks=tasks.filter(t=>t.id!==id);
-  sset('en_tasks',tasks);renderUpcomingTasks();buildHomeCal();buildWeekStrip();
-}
+function toggleTask(id){const t=tasks.find(t=>t.id===id);if(t){t.done=!t.done;sset('en_tasks',tasks);renderUpcomingTasks();buildHomeCal();}}
+function removeTask(id){tasks=tasks.filter(t=>t.id!==id);sset('en_tasks',tasks);renderUpcomingTasks();buildHomeCal();buildWeekStrip();}
 function openTaskModal(){refreshProjDropdowns();document.getElementById('taskModal').classList.add('open');}
 function closeTaskModal(){document.getElementById('taskModal').classList.remove('open');}
 function saveTask(){
@@ -1113,68 +927,126 @@ function saveTask(){
   document.getElementById('mt-text').value='';
 }
 
-/* ═══════════════════════════════════
-   PROJECTS
-═══════════════════════════════════ */
-let selProj=null;
-function renderProjects(){
-  const g=document.getElementById('projGrid');
-  if(!g) return;
-  if(!projects.length){g.innerHTML='<div style="font-size:13px;color:var(--text2)">No projects yet. Click + New Project to add one.</div>';return;}
-  g.innerHTML=projects.map(p=>{
-    const sc={active:'ps-active',planning:'ps-planning',complete:'ps-complete'}[p.status]||'ps-planning';
-    const sl={active:'Active',planning:'Planning',complete:'Complete'}[p.status]||p.status;
+/* ── PROJECTS: TABLE ── */
+function showList(){
+  document.getElementById('projListView').style.display='block';
+  document.getElementById('projDetailView').style.display='none';
+  document.querySelectorAll('.spfc').forEach(c=>c.classList.remove('active'));
+}
+function backToList(){showList();}
+
+function renderProjTable(){
+  const tbody=document.getElementById('projTableBody'); if(!tbody) return;
+  const q=(document.getElementById('projSearchQ')?.value||'').toLowerCase();
+  const filtered=projects.filter(p=>!q||(p.name+p.client+p.type+p.pm+p.status+(p.tags||'')).toLowerCase().includes(q));
+  if(!filtered.length){
+    tbody.innerHTML=`<tr><td colspan="10" style="text-align:center;color:var(--text2);padding:28px">No projects yet — click <strong style="color:var(--em)">+ New Project</strong> to add one.</td></tr>`;
+    return;
+  }
+  const SC={active:'ps-active',planning:'ps-planning',complete:'ps-complete',onhold:'ps-onhold'};
+  const SL={active:'Active',planning:'Planning',complete:'Complete',onhold:'On Hold'};
+  tbody.innerHTML=filtered.map(p=>{
     const pt=tasks.filter(t=>t.projId===p.id&&!t.done).length;
-    return `<div class="pcard${selProj&&selProj.id===p.id?' selected':''}" onclick="selectProj(${p.id})">
-      <span class="p-status ${sc}">● ${sl}</span>
-      <div class="p-name">${p.name}</div>
-      <div class="p-client">${p.client}</div>
-      <div class="p-meta"><span>🏢 ${p.type}</span>${p.sqft?`<span>📐 ${Number(p.sqft).toLocaleString()} sf</span>`:''}<span>✅ ${pt} open task${pt!==1?'s':''}</span></div>
-      <div class="p-bar-wrap"><div class="p-bar" style="width:${p.progress||0}%"></div></div>
-      <div class="p-pct">${p.progress||0}% complete · PM: ${p.pm||'—'}</div>
-    </div>`;
+    const cv=p.contract?'$'+Number(p.contract).toLocaleString():'—';
+    const sd=p.start?new Date(p.start+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'}):'—';
+    return `<tr class="clickable" onclick="openDetail(${p.id})">
+      <td><div style="font-weight:600;margin-bottom:2px">${p.name}</div>${p.phase?`<div style="font-size:10px;color:var(--text2)">${p.phase}</div>`:''}</td>
+      <td style="font-size:12px">${p.client||'—'}</td>
+      <td style="font-size:11px;color:var(--text2)">${p.type||'—'}</td>
+      <td><span class="p-status ${SC[p.status]||'ps-planning'}">● ${SL[p.status]||p.status}</span></td>
+      <td style="font-size:12px">${p.pm||'—'}</td>
+      <td style="font-family:var(--mono);font-size:12px;color:var(--em)">${cv}</td>
+      <td style="font-size:12px;color:var(--text2)">${sd}</td>
+      <td><div class="tpbar"><div class="tpbar-track"><div class="tpbar-fill" style="width:${p.progress||0}%"></div></div><span class="tpbar-pct">${p.progress||0}%</span></div></td>
+      <td style="text-align:center;font-size:12px;color:${pt>0?'var(--warn)':'var(--text2)'}">${pt}</td>
+      <td><div style="display:flex;gap:5px">
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editProj(${p.id})">Edit</button>
+        <button class="btn-del" onclick="event.stopPropagation();deleteProj(${p.id})">✕</button>
+      </div></td>
+    </tr>`;
   }).join('');
 }
-function selectProj(id){
-  selProj=projects.find(p=>p.id===id);
-  renderProjects();
-  renderProjDetail();
-  const det=document.getElementById('projDetail');
-  det.style.display='block';
-  setTimeout(()=>det.scrollIntoView({behavior:'smooth',block:'start'}),50);
+
+/* ── PROJECTS: DETAIL ── */
+function openDetail(id){
+  const p=projects.find(p=>p.id===id); if(!p) return;
+  if(!document.getElementById('view-projects').classList.contains('active')){
+    sv('projects',document.getElementById('sb-proj-btn'));
+  }
+  document.getElementById('projListView').style.display='none';
+  document.getElementById('projDetailView').style.display='block';
+  renderDetail(p);
+  document.querySelectorAll('.spfc').forEach(c=>c.classList.remove('active'));
+  document.querySelectorAll(`.spfc[data-pid="${id}"]`).forEach(c=>c.classList.add('active'));
+  document.querySelector('.content')?.scrollTo({top:0,behavior:'smooth'});
 }
-function renderProjDetail(){
-  if(!selProj) return;
-  const p=selProj;
+
+function renderDetail(p){
+  const SC={active:'ps-active',planning:'ps-planning',complete:'ps-complete',onhold:'ps-onhold'};
+  const SL={active:'Active',planning:'Planning',complete:'Complete',onhold:'On Hold'};
   const pt=tasks.filter(t=>t.projId===p.id);
+  const openTasks=pt.filter(t=>!t.done).length;
   const tasksHTML=pt.length
     ?pt.map(t=>`<div class="task-item">
-      <div class="tcb${t.done?' done':''}" onclick="toggleTask(${t.id})">${t.done?'<span style="color:#05080f;font-size:9px">✓</span>':''}</div>
-      <div class="t-body"><div class="t-text${t.done?' struck':''}">${t.text}</div></div>
+      <div class="tcb${t.done?' done':''}" onclick="toggleTask(${t.id});renderDetail(projects.find(x=>x.id===${p.id}))">${t.done?'<span style="color:#05080f;font-size:9px">✓</span>':''}</div>
+      <div class="t-body"><div class="t-text${t.done?' struck':''}">${t.text}${t.pri==='high'?' <span style="color:var(--danger);font-size:10px">● HIGH</span>':''}</div></div>
       <div class="t-due">${t.due}</div>
-      <button class="btn-del" onclick="removeTask(${t.id})">✕</button>
+      <button class="btn-del" onclick="removeTask(${t.id});renderDetail(projects.find(x=>x.id===${p.id}))">✕</button>
     </div>`).join('')
     :'<div style="font-size:13px;color:var(--text2)">No tasks yet</div>';
-  document.getElementById('projDetail').innerHTML=`
-    <div class="proj-detail">
-      <div class="pd-hdr">
-        <div>
-          <div class="pd-title">${p.name}</div>
-          <div class="pd-sub">${p.client} · ${p.addr}</div>
+
+  const tagsHTML=(p.tags||'').split(',').map(t=>t.trim()).filter(Boolean)
+    .map(t=>`<span style="font-size:11px;padding:2px 8px;border-radius:8px;background:var(--s4);border:1px solid var(--border2);color:var(--text2);margin:2px 2px 0 0;display:inline-block">${t}</span>`).join('');
+
+  document.getElementById('projDetailContent').innerHTML=`
+    <div class="pd-hero">
+      <div class="pd-hero-top">
+        <div style="flex:1;min-width:0">
+          <div style="margin-bottom:8px">
+            <span class="p-status ${SC[p.status]||'ps-planning'}">● ${SL[p.status]||p.status}</span>
+            ${p.priority==='high'?'<span style="font-size:10px;color:var(--danger);font-weight:700;margin-left:8px">● HIGH PRIORITY</span>':''}
+          </div>
+          <div class="pd-name">${p.name}</div>
+          <div class="pd-client">${p.client||''}${p.addr?' · '+p.addr:''}</div>
+          ${tagsHTML?`<div style="margin-top:8px">${tagsHTML}</div>`:''}
         </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-ghost btn-sm" onclick="deleteProj(${p.id})">🗑 Delete</button>
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('projDetail').style.display='none';selProj=null;renderProjects()">✕ Close</button>
+        <div style="display:flex;gap:8px;flex-shrink:0;align-items:flex-start;margin-top:4px">
+          <button class="btn btn-ghost btn-sm" onclick="editProj(${p.id})">✏️ Edit</button>
+          <button class="btn-del" onclick="deleteProj(${p.id})">🗑 Delete</button>
         </div>
       </div>
+      <div class="pd-prog-row">
+        <span style="font-size:12px;color:var(--text2);min-width:70px">Progress</span>
+        <div class="pd-prog-bar"><div class="pd-prog-fill" id="hpf" style="width:${p.progress||0}%"></div></div>
+        <input class="pd-prog-input" type="number" min="0" max="100" value="${p.progress||0}" oninput="updateProg(${p.id},this.value)">
+        <span style="font-size:11px;color:var(--text2)">%</span>
+        ${p.phase?`<span style="font-size:11px;color:var(--text2);margin-left:6px">· ${p.phase}</span>`:''}
+      </div>
+      <div class="pd-info-grid">
+        <div class="pd-cell"><div class="pd-cell-lbl">Project Manager</div><div class="pd-cell-val">${p.pm||'—'}</div></div>
+        <div class="pd-cell"><div class="pd-cell-lbl">Field Tech</div><div class="pd-cell-val">${p.tech||'—'}</div></div>
+        <div class="pd-cell"><div class="pd-cell-lbl">Building Type</div><div class="pd-cell-val">${p.type||'—'}</div></div>
+        <div class="pd-cell"><div class="pd-cell-lbl">Square Feet</div><div class="pd-cell-val">${p.sqft?Number(p.sqft).toLocaleString()+' sf':'—'}</div></div>
+        <div class="pd-cell"><div class="pd-cell-lbl">Contract Value</div><div class="pd-cell-val mono">${p.contract?'$'+Number(p.contract).toLocaleString():'—'}</div></div>
+        <div class="pd-cell"><div class="pd-cell-lbl">Est. Savings/yr</div><div class="pd-cell-val mono">${p.savings?'$'+Number(p.savings).toLocaleString():'—'}</div></div>
+        <div class="pd-cell"><div class="pd-cell-lbl">Start Date</div><div class="pd-cell-val">${p.start?new Date(p.start+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</div></div>
+        <div class="pd-cell"><div class="pd-cell-lbl">Target End</div><div class="pd-cell-val">${p.end?new Date(p.end+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</div></div>
+        <div class="pd-cell"><div class="pd-cell-lbl">Client Contact</div><div class="pd-cell-val">${p.contact||'—'}</div></div>
+        <div class="pd-cell"><div class="pd-cell-lbl">Phone</div><div class="pd-cell-val">${p.phone||'—'}</div></div>
+        <div class="pd-cell"><div class="pd-cell-lbl">Email</div><div class="pd-cell-val" style="font-size:12px">${p.email?`<a href="mailto:${p.email}" style="color:var(--em);text-decoration:none">${p.email}</a>`:'—'}</div></div>
+        <div class="pd-cell"><div class="pd-cell-lbl">Open Tasks</div><div class="pd-cell-val" style="color:${openTasks>0?'var(--warn)':'inherit'}">${openTasks}</div></div>
+      </div>
+    </div>
+    <div class="card">
       <div class="pd-tabs">
-        <button class="pdt active" onclick="switchPTab('notes',this)">📝 Notes</button>
-        <button class="pdt" onclick="switchPTab('tasks',this)">✅ Tasks</button>
-        <button class="pdt" onclick="switchPTab('utility',this)">⚡ Utility Data</button>
-        <button class="pdt" onclick="switchPTab('docs',this)">📁 Documents</button>
+        <button class="pdt active" onclick="sPTab('notes',this)">📝 Notes &amp; Scope</button>
+        <button class="pdt" onclick="sPTab('tasks',this)">✅ Tasks</button>
+        <button class="pdt" onclick="sPTab('utility',this)">⚡ Utility &amp; Data</button>
+        <button class="pdt" onclick="sPTab('docs',this)">📁 Documents</button>
       </div>
       <div id="ptab-notes" class="ptab active">
-        <textarea class="fta" style="min-height:150px;width:100%" id="proj-notes-area" oninput="autoSaveNotes(${p.id})">${p.notes||''}</textarea>
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">Notes / Description</div>
+        <textarea class="fta" style="min-height:150px;width:100%" id="proj-notes-ta" oninput="autoSaveNotes(${p.id})">${p.notes||''}</textarea>
       </div>
       <div id="ptab-tasks" class="ptab">
         <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
@@ -1183,46 +1055,121 @@ function renderProjDetail(){
         <div id="ptab-tasks-list">${tasksHTML}</div>
       </div>
       <div id="ptab-utility" class="ptab">
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:14px">
-          <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:10px 12px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:3px">Building Type</div><div style="font-size:13px;font-weight:600">${p.type}</div></div>
-          <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:10px 12px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:3px">Square Feet</div><div style="font-size:13px;font-weight:600">${p.sqft?Number(p.sqft).toLocaleString():'—'}</div></div>
-          <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:10px 12px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:3px">Project Manager</div><div style="font-size:13px;font-weight:600">${p.pm||'—'}</div></div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Use the Energy tools to add utility analysis for this project.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="sv('weather',null)">🌡️ Weather &amp; Normalize</button>
+          <button class="btn btn-ghost btn-sm" onclick="sv('baseline',null)">📊 Baseline</button>
+          <button class="btn btn-ghost btn-sm" onclick="sv('savings',null)">💡 Energy Savings</button>
+          <button class="btn btn-ghost btn-sm" onclick="sv('pdf',null)">📄 Upload Utility Bill</button>
         </div>
-        <div style="font-size:12px;color:var(--text2)">Use the <a href="#" onclick="sv('baseline',null)" style="color:var(--em);text-decoration:none;font-weight:600">Baseline tab</a> and <a href="#" onclick="sv('weather',null)" style="color:var(--em);text-decoration:none;font-weight:600">Weather & Normalize tab</a> to add utility data for this project.</div>
       </div>
       <div id="ptab-docs" class="ptab">
         <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
-          <button class="btn btn-em btn-sm" onclick="sv('pdf',null);showToast('Upload a PDF and save it to this project')">📄 Upload PDF</button>
+          <button class="btn btn-em btn-sm" onclick="sv('pdf',null);showToast('Upload a PDF and save it to this project')">📄 Upload Document</button>
         </div>
-        <div style="font-size:13px;color:var(--text2)">No documents uploaded yet. Use the PDF/OCR tool to read and save documents to this project.</div>
+        <div style="font-size:13px;color:var(--text2)">No documents yet. Use the PDF/OCR tool to save documents to this project.</div>
       </div>
     </div>`;
 }
-function switchPTab(tab,el){
+
+function updateProg(id,val){
+  const p=projects.find(p=>p.id===id); if(!p) return;
+  const n=Math.max(0,Math.min(100,parseInt(val)||0));
+  p.progress=n;
+  const f=document.getElementById('hpf'); if(f) f.style.width=n+'%';
+  sset('en_projects',projects); renderProjTable();
+}
+function sPTab(tab,el){
   document.querySelectorAll('.ptab').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('.pdt').forEach(b=>b.classList.remove('active'));
-  document.getElementById('ptab-'+tab).classList.add('active');
-  el?.classList.add('active');
+  document.getElementById('ptab-'+tab).classList.add('active'); el?.classList.add('active');
 }
 function autoSaveNotes(id){
   const p=projects.find(p=>p.id===id);
-  if(p){p.notes=document.getElementById('proj-notes-area').value;sset('en_projects',projects);}
+  if(p){p.notes=document.getElementById('proj-notes-ta').value;sset('en_projects',projects);}
 }
 function deleteProj(id){
   if(!confirm('Delete this project?')) return;
-  projects=projects.filter(p=>p.id!==id);selProj=null;
-  document.getElementById('projDetail').style.display='none';
-  sset('en_projects',projects);renderProjects();showToast('Project deleted');
+  projects=projects.filter(p=>p.id!==id);
+  sset('en_projects',projects); renderProjTable(); renderSidebarFolders(); showList(); updateHomeStats(); showToast('Project deleted');
 }
-function openProjModal(){document.getElementById('projModal').classList.add('open');}
+
+/* ── PROJECTS: MODAL ── */
+function openProjModal(){
+  document.getElementById('projModalTitle').textContent='+ New Energy Project';
+  document.getElementById('mp-edit-id').value='';
+  ['mp-name','mp-client','mp-addr','mp-sqft','mp-pm','mp-tech','mp-contact','mp-phone','mp-email','mp-contract','mp-savings','mp-start','mp-end','mp-notes','mp-tags'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  document.getElementById('mp-status').value='planning';
+  document.getElementById('mp-phase').value='';
+  document.getElementById('mp-priority').value='normal';
+  document.getElementById('mp-progress').value='0';
+  document.getElementById('projModal').classList.add('open');
+}
+function editProj(id){
+  const p=projects.find(p=>p.id===id); if(!p) return;
+  document.getElementById('projModalTitle').textContent='✏️ Edit Project';
+  document.getElementById('mp-edit-id').value=id;
+  const fv={name:p.name,client:p.client,addr:p.addr,sqft:p.sqft,pm:p.pm,tech:p.tech,contact:p.contact,phone:p.phone,email:p.email,contract:p.contract,savings:p.savings,start:p.start,end:p.end,progress:p.progress,notes:p.notes,tags:p.tags};
+  Object.entries(fv).forEach(([k,v])=>{const e=document.getElementById('mp-'+k);if(e)e.value=v||'';});
+  document.getElementById('mp-type').value=p.type||'K-12 School';
+  document.getElementById('mp-status').value=p.status||'planning';
+  document.getElementById('mp-phase').value=p.phase||'';
+  document.getElementById('mp-priority').value=p.priority||'normal';
+  document.getElementById('projModal').classList.add('open');
+}
 function closeProjModal(){document.getElementById('projModal').classList.remove('open');}
 function saveProject(){
   const name=document.getElementById('mp-name').value.trim();
   if(!name){showToast('Enter a project name');return;}
-  const p={id:Date.now(),name,client:document.getElementById('mp-client').value,addr:document.getElementById('mp-addr').value,type:document.getElementById('mp-type').value,sqft:parseInt(document.getElementById('mp-sqft').value)||0,status:document.getElementById('mp-status').value,pm:document.getElementById('mp-pm').value,notes:document.getElementById('mp-notes').value,progress:0};
-  projects.push(p);sset('en_projects',projects);closeProjModal();renderProjects();refreshProjDropdowns();updateHomeStats();showToast(name+' created ✓');
-  ['mp-name','mp-client','mp-addr','mp-sqft','mp-pm','mp-notes'].forEach(id=>document.getElementById(id).value='');
+  const editId=document.getElementById('mp-edit-id').value;
+  const fields={name,client:document.getElementById('mp-client').value,addr:document.getElementById('mp-addr').value,type:document.getElementById('mp-type').value,sqft:parseInt(document.getElementById('mp-sqft').value)||0,status:document.getElementById('mp-status').value,phase:document.getElementById('mp-phase').value,pm:document.getElementById('mp-pm').value,tech:document.getElementById('mp-tech').value,contact:document.getElementById('mp-contact').value,phone:document.getElementById('mp-phone').value,email:document.getElementById('mp-email').value,contract:parseFloat(document.getElementById('mp-contract').value)||0,savings:parseFloat(document.getElementById('mp-savings').value)||0,start:document.getElementById('mp-start').value,end:document.getElementById('mp-end').value,progress:Math.max(0,Math.min(100,parseInt(document.getElementById('mp-progress').value)||0)),priority:document.getElementById('mp-priority').value,notes:document.getElementById('mp-notes').value,tags:document.getElementById('mp-tags').value};
+  if(editId){
+    const idx=projects.findIndex(p=>p.id==editId);
+    if(idx>-1) projects[idx]={...projects[idx],...fields};
+    showToast(name+' updated ✓');
+    const p=projects.find(p=>p.id==editId);
+    if(p&&document.getElementById('projDetailView').style.display!=='none') renderDetail(p);
+  } else {
+    projects.push({id:Date.now(),...fields});
+    showToast(name+' created ✓');
+  }
+  sset('en_projects',projects); closeProjModal(); renderProjTable(); renderSidebarFolders(); refreshProjDropdowns(); updateHomeStats();
 }
+
+/* ── SIDEBAR FOLDERS ── */
+function renderSidebarFolders(){
+  const c=document.getElementById('sidebarProjFolders'); if(!c) return;
+  if(!projects.length){c.innerHTML='';return;}
+  const colors={active:'#00d4aa',planning:'#0ea5e9',complete:'#6b7b9e',onhold:'#f59e0b'};
+  c.innerHTML=projects.map(p=>{
+    const isOpen=folderOpen[p.id]===true;
+    const color=colors[p.status]||'#6b7b9e';
+    const pt=tasks.filter(t=>t.projId===p.id&&!t.done).length;
+    const nm=p.name.length>21?p.name.slice(0,21)+'…':p.name;
+    return `<div>
+      <div class="spf" onclick="toggleFolder(${p.id})">
+        <span style="font-size:12px">📁</span>
+        <span class="spf-name" title="${p.name}">${nm}</span>
+        ${pt>0?`<span style="font-size:9px;background:var(--warn);color:#000;border-radius:5px;padding:0 4px;font-weight:700">${pt}</span>`:''}
+        <span class="spf-arrow${isOpen?' open':''}">›</span>
+      </div>
+      <div class="spf-children" id="spf-${p.id}" style="max-height:${isOpen?'200px':'0'}">
+        <button class="spfc" data-pid="${p.id}" onclick="openDetail(${p.id})"><span class="spfc-dot" style="background:${color}"></span>Overview</button>
+        <button class="spfc" data-pid="${p.id}" onclick="openDetail(${p.id});setTimeout(()=>{sPTab('tasks',document.querySelectorAll('.pdt')[1])},120)"><span class="spfc-dot" style="background:var(--text3)"></span>Tasks</button>
+        <button class="spfc" data-pid="${p.id}" onclick="openDetail(${p.id});setTimeout(()=>{sPTab('docs',document.querySelectorAll('.pdt')[3])},120)"><span class="spfc-dot" style="background:var(--text3)"></span>Documents</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function toggleFolder(id){
+  folderOpen[id]=!folderOpen[id];
+  const ch=document.getElementById('spf-'+id);
+  const arrow=ch?.previousElementSibling?.querySelector('.spf-arrow');
+  if(ch) ch.style.maxHeight=folderOpen[id]?'200px':'0';
+  if(arrow){if(folderOpen[id])arrow.classList.add('open');else arrow.classList.remove('open');}
+}
+
+/* ── DROPDOWNS ── */
 function refreshProjDropdowns(){
   ['mt-proj','pdfProjSel'].forEach(id=>{
     const el=document.getElementById(id); if(!el) return;
@@ -1232,71 +1179,42 @@ function refreshProjDropdowns(){
   });
 }
 
-/* ═══════════════════════════════════
-   PDF OCR
-═══════════════════════════════════ */
-let pdfType='utility', pdfB64=null;
-function setPDFType(t,el){
-  pdfType=t;
-  document.querySelectorAll('.ptpill').forEach(b=>b.classList.remove('sel'));
-  el.classList.add('sel');
-}
-function handleDrop(e){
-  e.preventDefault();document.getElementById('dropZone').classList.remove('drag');
-  const f=e.dataTransfer.files[0];if(f&&f.type==='application/pdf') processPDF(f);
-}
-function handlePDFUpload(e){if(e.target.files[0]) processPDF(e.target.files[0]);}
+/* ── PDF OCR ── */
+let pdfType='utility',pdfB64=null;
+function setPDFType(t,el){pdfType=t;document.querySelectorAll('.ptpill').forEach(b=>b.classList.remove('sel'));el.classList.add('sel');}
+function handleDrop(e){e.preventDefault();document.getElementById('dropZone').classList.remove('drag');const f=e.dataTransfer.files[0];if(f&&f.type==='application/pdf')processPDF(f);}
+function handlePDFUpload(e){if(e.target.files[0])processPDF(e.target.files[0]);}
 async function processPDF(file){
-  const box=document.getElementById('pdfAIBox');
-  const dz=document.getElementById('dz-title');
+  const box=document.getElementById('pdfAIBox'),dz=document.getElementById('dz-title');
   dz.textContent='📄 '+file.name+' — reading...';
   box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Reading PDF with AI vision...</div>';
   const reader=new FileReader();
   reader.onload=async ev=>{
     pdfB64=ev.target.result.split(',')[1];
-    const prompts={
-      utility:`Extract ALL structured data from this utility bill. Return ONLY valid JSON with these fields: AccountNumber, ServiceAddress, BillingPeriodStart, BillingPeriodEnd, NumberOfDays, kWhConsumed, PeakDemandKW, NaturalGasTherms, TotalAmountDue, RateSchedule, UtilityCompany, MeterNumber, AnyOtherFields. Use null for missing fields.`,
-      drawing:`Analyze this construction drawing. Return ONLY valid JSON: ProjectName, DrawingNumber, DrawingTitle, Scale, EquipmentTags (array), SystemTypes (array), ControlPoints (array), EquipmentScheduleItems (array of objects), NotesAndSpecifications (array), BASRelatedInfo.`,
-      submittal:`Extract equipment data from this submittal sheet. Return ONLY valid JSON: EquipmentTag, Manufacturer, ModelNumber, SerialNumber, Capacity, EfficiencyRating, OperatingWeight, ElectricalRequirements, ControlInterface, PhysicalDimensions, AirflowCFM, RefrigerantType, WarrantyInfo, SpecialNotes.`,
-      contract:`Extract key terms from this contract. Return ONLY valid JSON: PartyA, PartyB, ProjectDescription, ContractValue, StartDate, EndDate, PaymentTerms, ScopeOfWork, KeyObligations (array), PenaltyClauses (array), SpecialConditions (array), GoverningLaw, SignatureRequirements.`
-    };
-    const sys='You are an expert document analyst. Return ONLY valid JSON — no markdown, no backticks, no preamble.';
+    const prompts={utility:`Extract ALL structured data from this utility bill. Return ONLY valid JSON: AccountNumber, ServiceAddress, BillingPeriodStart, BillingPeriodEnd, NumberOfDays, kWhConsumed, PeakDemandKW, NaturalGasTherms, TotalAmountDue, RateSchedule, UtilityCompany, MeterNumber.`,drawing:`Analyze this drawing. Return ONLY valid JSON: ProjectName, DrawingNumber, DrawingTitle, EquipmentTags (array), SystemTypes (array), ControlPoints (array), NotesAndSpecifications (array).`,submittal:`Extract equipment data. Return ONLY valid JSON: EquipmentTag, Manufacturer, ModelNumber, SerialNumber, Capacity, EfficiencyRating, ElectricalRequirements, ControlInterface.`,contract:`Extract key terms. Return ONLY valid JSON: PartyA, PartyB, ProjectDescription, ContractValue, StartDate, EndDate, PaymentTerms, ScopeOfWork, KeyObligations (array).`};
+    const sys='Return ONLY valid JSON — no markdown, no backticks, no preamble.';
     const result=await claudePDF(prompts[pdfType],pdfB64,sys);
     let parsed=null;
     try{parsed=JSON.parse(result.replace(/```json|```/g,'').trim());}catch(e){}
     if(parsed){
-      renderExtracted(parsed);
+      const el=document.getElementById('extractedFields');
+      const items=Object.entries(parsed).filter(([k,v])=>v!=null&&v!=='');
+      el.innerHTML=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div><div class="ef-grid">${items.map(([k,v])=>`<div class="ef-item"><div class="ef-key">${k.replace(/([A-Z])/g,' $1').trim()}</div><input class="ef-input" value="${Array.isArray(v)?v.join(', '):(v||'')}" data-key="${k}"></div>`).join('')}</div>`;
       box.textContent=JSON.stringify(parsed,null,2);
       document.getElementById('pdfSaveRow').style.display='block';
       refreshProjDropdowns();
-    } else {
-      box.textContent=result;
-    }
-    dz.textContent=file.name+' ✓';
-    showToast('PDF extracted ✓');
+    } else {box.textContent=result;}
+    dz.textContent=file.name+' ✓'; showToast('PDF extracted ✓');
   };
   reader.readAsDataURL(file);
 }
-function renderExtracted(data){
-  const el=document.getElementById('extractedFields');
-  const items=Object.entries(data).filter(([k,v])=>v!=null&&v!=='');
-  el.innerHTML=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>
-    <div class="ef-grid">${items.map(([k,v])=>`
-      <div class="ef-item">
-        <div class="ef-key">${k.replace(/([A-Z])/g,' $1').trim()}</div>
-        <input class="ef-input" value="${Array.isArray(v)?v.join(', '):(v||'')}" data-key="${k}">
-      </div>`).join('')}</div>`;
-}
 function savePDFData(){
-  const pid=parseInt(document.getElementById('pdfProjSel').value);
-  const proj=projects.find(p=>p.id===pid);
+  const proj=projects.find(p=>p.id===parseInt(document.getElementById('pdfProjSel').value));
   if(!proj){showToast('Select a project first');return;}
   showToast('Data saved to '+proj.name+' ✓');
 }
 
-/* ═══════════════════════════════════
-   WEATHER / NORMALIZE
-═══════════════════════════════════ */
+/* ── WEATHER ── */
 function buildUtilRows(){
   const el=document.getElementById('utilRows'); if(!el) return;
   let h='';
@@ -1304,40 +1222,29 @@ function buildUtilRows(){
     const d=new Date(NOW.getFullYear(),NOW.getMonth()-i,1);
     const mon=d.toLocaleDateString('en-US',{month:'short',year:'2-digit'});
     const s=new Date(d.getFullYear(),d.getMonth(),1).toISOString().split('T')[0];
-    const e=new Date(d.getFullYear(),d.getMonth()+1,0).toISOString().split('T')[0];
+    const e2=new Date(d.getFullYear(),d.getMonth()+1,0).toISOString().split('T')[0];
     const days=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();
-    h+=`<div class="util-row"><div style="font-family:var(--mono);font-size:11px;color:var(--text2)">${mon}</div><input type="number" placeholder="0"><input type="number" placeholder="0"><input type="date" value="${s}"><input type="date" value="${e}"><input type="number" value="${days}" readonly><button class="btn-del" onclick="this.parentElement.remove()">✕</button></div>`;
+    h+=`<div class="util-row"><div style="font-family:var(--mono);font-size:11px;color:var(--text2)">${mon}</div><input type="number" placeholder="0" id="ur-kwh-${i}"><input type="number" placeholder="0" id="ur-th-${i}"><input type="text" value="${s}" id="ur-s-${i}"><input type="text" value="${e2}" id="ur-e-${i}"><input type="number" value="${days}" id="ur-d-${i}" readonly><button class="btn-del" onclick="this.closest('.util-row').remove()">✕</button></div>`;
   }
   el.innerHTML=h;
 }
 function addUtilRow(){
-  const row=document.createElement('div');row.className='util-row';
-  row.innerHTML='<input placeholder="Month"><input type="number" placeholder="0"><input type="number" placeholder="0"><input type="date"><input type="date"><input type="number" placeholder="30"><button class="btn-del" onclick="this.parentElement.remove()">✕</button>';
-  document.getElementById('utilRows').appendChild(row);
+  const el=document.getElementById('utilRows');
+  const d=document.createElement('div'); d.className='util-row';
+  d.innerHTML='<div style="font-family:var(--mono);font-size:11px;color:var(--text2)">New</div><input type="number" placeholder="0"><input type="number" placeholder="0"><input type="text" placeholder="Start"><input type="text" placeholder="End"><input type="number" placeholder="30"><button class="btn-del" onclick="this.closest(\'.util-row\').remove()">✕</button>';
+  el.appendChild(d);
 }
 async function runNorm(){
-  const box=document.getElementById('wxBox');
-  const loc=document.getElementById('wxLoc').value||'Kansas City, MO';
-  const hb=document.getElementById('hddBase').value||65;
-  const cb=document.getElementById('cddBase').value||65;
-  const rows=document.querySelectorAll('#utilRows .util-row');
-  const lines=[];
-  rows.forEach(r=>{
-    const ins=r.querySelectorAll('input');
-    if(ins[1].value||ins[2].value) lines.push(`Month:${ins[0].value||'?'} kWh:${ins[1].value||0} Therms:${ins[2].value||0} Start:${ins[3].value||'?'} End:${ins[4].value||'?'} Days:${ins[5].value||30}`);
-  });
-  if(!lines.length){showToast('Enter utility data first');return;}
-  box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Running normalization with HDD/CDD lookup...</div>';
-  const result=await claude(
-    `You are an energy engineer. Normalize this utility data for a building at "${loc}".\n\nMonthly data:\n${lines.join('\n')}\n\nHDD base: ${hb}°F, CDD base: ${cb}°F\n\nFor each month:\n1. Calculate kWh/day and Therms/day\n2. Estimate historical HDD and CDD for that month in that location (use NOAA typical values)\n3. Normalize consumption to a standard 30-day month\n4. Calculate weather-normalized kWh (adjust to average degree days)\n5. Flag anomalies\n\nPresent as a clear table then provide a brief analysis paragraph noting trends, anomalies, and recommendations.`,
-    'You are an expert energy engineer specializing in utility data analysis, weather normalization, and ASHRAE measurement & verification protocols.'
-  );
+  const box=document.getElementById('wxBox'),loc=document.getElementById('wxLoc').value||'Kansas City, MO';
+  const rows=document.querySelectorAll('.util-row'); let data=[];
+  rows.forEach(r=>{const ins=r.querySelectorAll('input');const kwh=parseFloat(ins[0]?.value)||0,th=parseFloat(ins[1]?.value)||0;if(kwh||th)data.push({kwh,th,start:ins[2]?.value,end:ins[3]?.value,days:parseInt(ins[4]?.value)||30});});
+  if(!data.length){showToast('Enter at least one row of data');return;}
+  box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Running normalization...</div>';
+  const result=await claude(`Normalize these utility data rows for ${loc}.\nData: ${JSON.stringify(data)}\nFor each row provide consumption, days, kWh/day, estimated HDD/CDD, and HDD-normalized kWh. Return a formatted table for an M&V report.`,'You are an expert energy engineer specializing in utility data analysis and weather normalization.');
   box.textContent=result;
 }
 
-/* ═══════════════════════════════════
-   BASELINE
-═══════════════════════════════════ */
+/* ── BASELINE ── */
 function buildBaselineMonthRows(){
   const el=document.getElementById('blMonthRows'); if(!el) return;
   let h='';
@@ -1349,336 +1256,160 @@ function buildBaselineMonthRows(){
   el.innerHTML=h;
 }
 async function calcBaseline(){
-  const box=document.getElementById('blBox');
-  const name=document.getElementById('bl-name').value||'Facility';
+  const box=document.getElementById('blBox'),name=document.getElementById('bl-name').value||'Facility';
   let months=[];
-  for(let i=0;i<12;i++){
-    const k=parseFloat(document.getElementById('bl-kwh-'+i)?.value)||0;
-    const t=parseFloat(document.getElementById('bl-th-'+i)?.value)||0;
-    if(k||t) months.push({m:i+1,kwh:k,therms:t});
-  }
+  for(let i=0;i<12;i++){const k=parseFloat(document.getElementById('bl-kwh-'+i)?.value)||0,t=parseFloat(document.getElementById('bl-th-'+i)?.value)||0;if(k||t)months.push({m:i+1,kwh:k,therms:t});}
   if(months.length<3){showToast('Enter at least 3 months of data');return;}
   box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Calculating baseline...</div>';
-  const totalK=months.reduce((a,b)=>a+b.kwh,0);
-  const totalT=months.reduce((a,b)=>a+b.therms,0);
-  const hdd=parseFloat(document.getElementById('bl-hdd').value)||4800;
-  const cdd=parseFloat(document.getElementById('bl-cdd').value)||1200;
-  const result=await claude(
-    `Calculate a utility energy baseline for ${name} per ASHRAE Guideline 14 / IPMVP.\n\n12-month data: ${JSON.stringify(months)}\nAnnual HDD: ${hdd}, Annual CDD: ${cdd}, Months with data: ${months.length}\n\nCalculate and present:\n1. Annual baseline kWh and Therms\n2. Average kWh/day and Therms/day\n3. kWh per HDD and kWh per CDD (correlation coefficients)\n4. Base load estimate (weather-independent consumption)\n5. Linear regression equation: kWh = BaseLoad + (HDD_coeff × HDD) + (CDD_coeff × CDD)\n6. R² goodness of fit estimate\n7. Professional baseline summary table\n8. Notes on data quality and recommendations\n\nFormat suitable for inclusion in an M&V report.`,
-    'You are an expert energy engineer and M&V professional with deep knowledge of ASHRAE Guideline 14, IPMVP, and utility baseline methodologies.'
-  );
+  const totalK=months.reduce((a,b)=>a+b.kwh,0),totalT=months.reduce((a,b)=>a+b.therms,0);
+  const hdd=parseFloat(document.getElementById('bl-hdd').value)||4800,cdd=parseFloat(document.getElementById('bl-cdd').value)||1200;
+  const result=await claude(`Calculate utility baseline for ${name} per ASHRAE GL14/IPMVP. Data: ${JSON.stringify(months)}, HDD: ${hdd}, CDD: ${cdd}. Provide: annual kWh/Therms, kWh/day, regression equation, R², base load, professional summary table.`,'You are an expert energy engineer and M&V professional.');
   box.textContent=result;
-  document.getElementById('blResult').innerHTML=`<div class="bl-result">
-    <div class="bl-title">📊 Baseline Summary — ${name}</div>
-    <div class="bl-grid">
-      <div class="bl-item"><div class="bl-lbl">Annual kWh</div><div class="bl-val">${Math.round(totalK).toLocaleString()}<span class="bl-unit"> kWh/yr</span></div></div>
-      <div class="bl-item"><div class="bl-lbl">Annual Therms</div><div class="bl-val">${Math.round(totalT).toLocaleString()}<span class="bl-unit"> Th/yr</span></div></div>
-      <div class="bl-item"><div class="bl-lbl">Avg kWh/Mo</div><div class="bl-val">${Math.round(totalK/months.length).toLocaleString()}<span class="bl-unit"> kWh</span></div></div>
-      <div class="bl-item"><div class="bl-lbl">kWh/Day</div><div class="bl-val">${Math.round(totalK/365).toLocaleString()}<span class="bl-unit"> kWh/day</span></div></div>
-      <div class="bl-item"><div class="bl-lbl">Annual HDD</div><div class="bl-val">${hdd.toLocaleString()}<span class="bl-unit"> HDD</span></div></div>
-      <div class="bl-item"><div class="bl-lbl">Data Points</div><div class="bl-val">${months.length}<span class="bl-unit"> months</span></div></div>
-    </div>
-  </div>`;
-  let hb=parseInt(document.getElementById('h-base').textContent||0);
-  document.getElementById('h-base').textContent=hb+1;
+  document.getElementById('blResult').innerHTML=`<div class="bl-result"><div class="bl-title">📊 Baseline Summary — ${name}</div><div class="bl-grid"><div class="bl-item"><div class="bl-lbl">Annual kWh</div><div class="bl-val">${Math.round(totalK).toLocaleString()}<span class="bl-unit"> kWh/yr</span></div></div><div class="bl-item"><div class="bl-lbl">Annual Therms</div><div class="bl-val">${Math.round(totalT).toLocaleString()}<span class="bl-unit"> Th/yr</span></div></div><div class="bl-item"><div class="bl-lbl">Avg kWh/Mo</div><div class="bl-val">${Math.round(totalK/months.length).toLocaleString()}<span class="bl-unit"> kWh</span></div></div><div class="bl-item"><div class="bl-lbl">Data Points</div><div class="bl-val">${months.length}<span class="bl-unit"> months</span></div></div></div></div>`;
+  document.getElementById('h-base').textContent=parseInt(document.getElementById('h-base').textContent||0)+1;
 }
 
-/* ═══════════════════════════════════
-   ENERGY SAVINGS
-═══════════════════════════════════ */
+/* ── ENERGY SAVINGS ── */
 async function calcSavings(){
-  const box=document.getElementById('svBox');
-  const name=document.getElementById('sv-name').value||'Project';
-  const blK=parseFloat(document.getElementById('sv-bl-kwh').value)||0;
-  const blT=parseFloat(document.getElementById('sv-bl-th').value)||0;
-  const blC=parseFloat(document.getElementById('sv-bl-cost').value)||0;
-  const poK=parseFloat(document.getElementById('sv-po-kwh').value)||0;
-  const poT=parseFloat(document.getElementById('sv-po-th').value)||0;
-  const poC=parseFloat(document.getElementById('sv-po-cost').value)||0;
-  const blH=parseFloat(document.getElementById('sv-bl-hdd').value)||4800;
-  const poH=parseFloat(document.getElementById('sv-po-hdd').value)||4800;
-  const pc=parseFloat(document.getElementById('sv-cost').value)||0;
-  const rate=parseFloat(document.getElementById('sv-rate').value)||0.12;
+  const box=document.getElementById('svBox'),name=document.getElementById('sv-name').value||'Project';
+  const blK=parseFloat(document.getElementById('sv-bl-kwh').value)||0,blT=parseFloat(document.getElementById('sv-bl-th').value)||0,blC=parseFloat(document.getElementById('sv-bl-cost').value)||0;
+  const poK=parseFloat(document.getElementById('sv-po-kwh').value)||0,poT=parseFloat(document.getElementById('sv-po-th').value)||0,poC=parseFloat(document.getElementById('sv-po-cost').value)||0;
+  const blH=parseFloat(document.getElementById('sv-bl-hdd').value)||4800,poH=parseFloat(document.getElementById('sv-po-hdd').value)||4800;
+  const pc=parseFloat(document.getElementById('sv-cost').value)||0,rate=parseFloat(document.getElementById('sv-rate').value)||0.12;
   if(!blK&&!blT){showToast('Enter baseline data first');return;}
   box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Calculating M&V savings...</div>';
-  const grossK=blK-poK, grossT=blT-poT, grossC=blC-poC;
-  const hAdj=blH>0?poH/blH:1;
-  const adjBlK=blK*hAdj;
-  const adjSavK=adjBlK-poK;
-  const payback=pc>0&&grossC>0?(pc/grossC).toFixed(1):'N/A';
-  const result=await claude(
-    `Write a professional IPMVP Option B M&V savings summary for ${name}.\n\nBaseline: ${blK.toLocaleString()} kWh/yr, ${blT.toLocaleString()} Th/yr, $${blC.toLocaleString()}/yr. Baseline HDD: ${blH}.\nPost-installation: ${poK.toLocaleString()} kWh/yr, ${poT.toLocaleString()} Th/yr, $${poC.toLocaleString()}/yr. Post HDD: ${poH}.\nGross kWh savings: ${Math.round(grossK).toLocaleString()}\nWeather-adjusted baseline kWh: ${Math.round(adjBlK).toLocaleString()}\nWeather-adjusted savings: ${Math.round(adjSavK).toLocaleString()} kWh\nProject cost: $${pc.toLocaleString()}, Simple payback: ${payback} years\nElectric rate: $${rate}/kWh\n\nProvide: gross savings table, weather-adjusted savings, cost savings, % reductions, simple payback, ROI, and a professional 2-paragraph narrative suitable for a client M&V report.`,
-    'You are an expert energy engineer and M&V professional writing per ASHRAE Guideline 14 and IPMVP protocols.'
-  );
+  const grossK=blK-poK,grossC=blC-poC,hAdj=blH>0?poH/blH:1,adjSavK=blK*hAdj-poK,payback=pc>0&&grossC>0?(pc/grossC).toFixed(1):'N/A';
+  const result=await claude(`Write IPMVP Option B M&V savings summary for ${name}. Baseline: ${blK} kWh, ${blT} Th, $${blC}, HDD ${blH}. Post: ${poK} kWh, ${poT} Th, $${poC}, HDD ${poH}. Project cost $${pc}. Payback ${payback}yr. Rate $${rate}/kWh. Provide savings table, % reductions, payback, ROI, professional narrative.`,'You are an expert M&V professional writing per ASHRAE GL14 and IPMVP.');
   box.textContent=result;
-  document.getElementById('svResult').innerHTML=`<div class="bl-result">
-    <div class="bl-title">💡 Savings — ${name}</div>
-    <div class="bl-grid">
-      <div class="bl-item"><div class="bl-lbl">Gross kWh Savings</div><div class="bl-val" style="color:var(--em)">${Math.round(grossK).toLocaleString()}<span class="bl-unit"> kWh/yr</span></div></div>
-      <div class="bl-item"><div class="bl-lbl">WX-Adjusted Savings</div><div class="bl-val" style="color:var(--em)">${Math.round(adjSavK).toLocaleString()}<span class="bl-unit"> kWh/yr</span></div></div>
-      <div class="bl-item"><div class="bl-lbl">Cost Savings</div><div class="bl-val" style="color:var(--em)">$${Math.round(grossC).toLocaleString()}<span class="bl-unit">/yr</span></div></div>
-      <div class="bl-item"><div class="bl-lbl">Simple Payback</div><div class="bl-val" style="color:var(--warn)">${payback}<span class="bl-unit"> yrs</span></div></div>
-      <div class="bl-item"><div class="bl-lbl">% kWh Reduction</div><div class="bl-val">${blK>0?Math.round(grossK/blK*100):0}<span class="bl-unit"> %</span></div></div>
-      <div class="bl-item"><div class="bl-lbl">Project Cost</div><div class="bl-val">$${pc.toLocaleString()}</div></div>
-    </div>
-  </div>`;
+  document.getElementById('svResult').innerHTML=`<div class="bl-result"><div class="bl-title">💡 Savings — ${name}</div><div class="bl-grid"><div class="bl-item"><div class="bl-lbl">Gross kWh Savings</div><div class="bl-val" style="color:var(--em)">${Math.round(grossK).toLocaleString()}<span class="bl-unit"> kWh/yr</span></div></div><div class="bl-item"><div class="bl-lbl">WX-Adj Savings</div><div class="bl-val" style="color:var(--em)">${Math.round(adjSavK).toLocaleString()}<span class="bl-unit"> kWh/yr</span></div></div><div class="bl-item"><div class="bl-lbl">Cost Savings</div><div class="bl-val" style="color:var(--em)">$${Math.round(grossC).toLocaleString()}<span class="bl-unit">/yr</span></div></div><div class="bl-item"><div class="bl-lbl">Simple Payback</div><div class="bl-val" style="color:var(--warn)">${payback}<span class="bl-unit"> yrs</span></div></div></div></div>`;
 }
 
-/* ═══════════════════════════════════
-   DISTRICT CALENDAR
-═══════════════════════════════════ */
+/* ── DISTRICT CAL ── */
 async function parseDistCal(){
-  const box=document.getElementById('distBox');
-  const dist=document.getElementById('dist-name').value||'the school district';
-  const cal=document.getElementById('dist-cal').value;
+  const box=document.getElementById('distBox'),cal=document.getElementById('dist-cal').value;
   if(!cal){showToast('Paste calendar text first');return;}
-  box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Parsing calendar & building schedule...</div>';
-  const os=document.getElementById('dist-occ-s').value||'7:00 AM';
-  const oe=document.getElementById('dist-occ-e').value||'5:00 PM';
-  const sh=document.getElementById('dist-sh').value||60;
-  const sc=document.getElementById('dist-sc').value||85;
-  const result=await claude(
-    `You are a BAS controls engineer. Parse this school district calendar for ${dist} and generate a complete building automation control schedule.\n\nCalendar:\n${cal}\n\nBuilding occupied hours: ${os}–${oe}\nHeat setback (unoccupied): ${sh}°F\nCool setback (unoccupied): ${sc}°F\n\nProvide:\n1. Complete list of holidays and no-school days with exact dates\n2. Early release days (specify reduced hours)\n3. Summer break (full setback period with dates)\n4. Winter and spring break periods\n5. Formatted WebCTRL exception schedule list (date, schedule name, start time, end time)\n6. Estimated annual energy savings percentage from implementing all setbacks\n7. Controls specification excerpt for the holiday schedule section (2-3 sentences, spec language)\n\nFormat clearly with section headers and dates.`,
-    'You are an expert building automation engineer specializing in school district energy programs, WebCTRL scheduling, and HVAC control systems for educational facilities.'
-  );
+  box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Parsing calendar...</div>';
+  const dist=document.getElementById('dist-name').value||'the district',os=document.getElementById('dist-occ-s').value||'7:00 AM',oe=document.getElementById('dist-occ-e').value||'5:00 PM',sh=document.getElementById('dist-sh').value||60,sc=document.getElementById('dist-sc').value||85;
+  const result=await claude(`Parse this ${dist} school calendar and generate a complete BAS control schedule.\n\nCalendar:\n${cal}\n\nOccupied: ${os}–${oe}, Heat setback: ${sh}°F, Cool setback: ${sc}°F\n\nProvide: holiday list with dates, early release days, break periods, formatted WebCTRL exception schedule, estimated annual savings %.`,'You are an expert BAS engineer specializing in school district energy programs and WebCTRL scheduling.');
   box.textContent=result;
-  document.getElementById('distChips').innerHTML=
-    '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--em);margin-bottom:6px">Detected Schedule Categories</div>'+
-    ['🏖 Summer Break','📚 School Days','⏰ Early Release','🎄 Winter Break','🌸 Spring Break','📋 Professional Days','🦃 Thanksgiving','🔔 First/Last Day'].map(l=>`<span class="hchip hc-hol">${l}</span>`).join('');
+  document.getElementById('distChips').innerHTML='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--em);margin-bottom:6px">Detected Categories</div>'+['🏖 Summer Break','📚 School Days','⏰ Early Release','🎄 Winter Break','🌸 Spring Break','📋 Professional Days','🦃 Thanksgiving'].map(l=>`<span class="hchip hc-hol">${l}</span>`).join('');
 }
 
-/* ═══════════════════════════════════
-   EQUIPMENT
-═══════════════════════════════════ */
+/* ── EQUIPMENT ── */
 function renderEquip(){
   const q=(document.getElementById('equipQ')?.value||'').toLowerCase();
-  const rows=equipment.filter(e=>!q||[e.tag,e.type,e.make,e.model,e.loc||''].some(f=>f.toLowerCase().includes(q)));
-  const tb=document.getElementById('equipBody');if(!tb) return;
-  if(!rows.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:20px">No equipment records match</td></tr>';return;}
-  tb.innerHTML=rows.map(e=>`<tr>
-    <td><span class="eq-tag">${e.tag}</span></td>
-    <td style="font-size:12px;color:var(--text2)">${e.type}</td>
-    <td><strong>${e.make}</strong> <span style="color:var(--text2)">${e.model}</span></td>
-    <td style="font-family:var(--mono);font-size:12px">${e.cap||'—'}</td>
-    <td style="font-family:var(--mono);font-size:12px">${e.eff||'—'}</td>
+  const tbody=document.getElementById('equipBody'); if(!tbody) return;
+  tbody.innerHTML=equipment.filter(e=>(e.tag+e.type+e.make+e.model+e.loc).toLowerCase().includes(q)).map(e=>`<tr>
+    <td><span class="eq-tag">${e.tag}</span></td><td>${e.type}</td><td>${e.make} ${e.model}</td>
+    <td>${e.cap||'—'}</td><td>${e.eff||'—'}</td>
     <td style="font-size:12px;color:var(--text2)">${e.loc||'—'}</td>
-    <td style="font-size:12px;color:var(--text2);max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.notes||'—'}</td>
+    <td style="font-size:12px;color:var(--text2)">${e.notes||'—'}</td>
     <td><button class="btn-del" onclick="removeEquip(${e.id})">✕</button></td>
   </tr>`).join('');
-  document.getElementById('h-equip').textContent=equipment.length;
 }
 function openEquipModal(){document.getElementById('equipModal').classList.add('open');}
 function closeEquipModal(){document.getElementById('equipModal').classList.remove('open');}
 function saveEquip(){
-  const tag=document.getElementById('eq-tag').value.trim();
-  if(!tag){showToast('Enter equipment tag');return;}
+  const tag=document.getElementById('eq-tag').value.trim(); if(!tag){showToast('Enter equipment tag');return;}
   equipment.push({id:Date.now(),tag,type:document.getElementById('eq-type').value,make:document.getElementById('eq-make').value,model:document.getElementById('eq-model').value,cap:document.getElementById('eq-cap').value,eff:document.getElementById('eq-eff').value,loc:document.getElementById('eq-loc').value,notes:document.getElementById('eq-notes').value});
-  sset('en_equipment',equipment);closeEquipModal();renderEquip();showToast(tag+' added ✓');
+  sset('en_equipment',equipment);closeEquipModal();renderEquip();updateHomeStats();showToast(tag+' added ✓');
   ['eq-tag','eq-make','eq-model','eq-cap','eq-eff','eq-loc','eq-notes'].forEach(id=>document.getElementById(id).value='');
 }
-function removeEquip(id){equipment=equipment.filter(e=>e.id!==id);sset('en_equipment',equipment);renderEquip();showToast('Removed');}
+function removeEquip(id){equipment=equipment.filter(e=>e.id!==id);sset('en_equipment',equipment);renderEquip();updateHomeStats();}
 
-/* ═══════════════════════════════════
-   DRAWINGS
-═══════════════════════════════════ */
+/* ── DRAWINGS ── */
 async function handleDrawingUpload(e){
-  const file=e.target.files[0];if(!file) return;
+  const file=e.target.files[0]; if(!file) return;
   const box=document.getElementById('dwgBox');
-  box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Reading drawing with AI vision...</div>';
+  box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Analyzing drawing...</div>';
   const reader=new FileReader();
   reader.onload=async ev=>{
     const b64=ev.target.result.split(',')[1];
-    const result=await claudePDF(
-      `Analyze this construction drawing or mechanical plan and provide a detailed structured report:\n\n1. PROJECT INFO: Name, drawing number, title, date, scale, engineer of record\n2. EQUIPMENT TAGS: List every equipment tag found (AHU-1, CH-1, BLR-1, etc.) with description\n3. SYSTEM TYPES: All HVAC, plumbing, electrical, controls systems shown\n4. CONTROL POINTS: All sensors (temp, pressure, flow, CO2), actuators (valves, dampers), and switches\n5. EQUIPMENT SCHEDULE: Any schedule tables — fill in all columns\n6. CONTROL SEQUENCES: Any sequences of operations or control notes\n7. NETWORK/PROTOCOL: Any BAS network info, BACnet addresses, or protocol notes\n8. COMMISSIONING NOTES: Any notes relevant to controls programming or cx\n9. OPEN ITEMS: Anything unclear or requiring clarification\n\nBe thorough — this report will be used for controls programming.`,
-      b64,
-      'You are an expert mechanical and controls engineer who reads construction drawings for BAS programming purposes.'
-    );
-    box.textContent=result;
-    document.getElementById('dwgExtracted').innerHTML=`<div style="background:var(--em-dim);border:1px solid rgba(0,212,170,.2);border-radius:7px;padding:11px;font-size:12px;color:var(--em)">✓ Drawing analyzed — review results on the right. <a href="#" onclick="sv('equipment',null);showToast('Add equipment found in drawing')" style="color:var(--em);font-weight:700;text-decoration:underline">Add equipment to repository →</a></div>`;
-    showToast('Drawing analyzed ✓');
+    const result=await claudePDF('Analyze this construction drawing. Identify all equipment tags, system types, control points, equipment schedules, notes, and information relevant to controls programming or commissioning.', b64,'You are an expert controls engineer analyzing mechanical and electrical construction drawings.');
+    box.textContent=result; showToast('Drawing analyzed ✓');
   };
   reader.readAsDataURL(file);
 }
 
-/* ═══════════════════════════════════
-   SPEC WRITER
-═══════════════════════════════════ */
+/* ── SPEC WRITER ── */
 async function writeSpec(){
-  const sel=[...document.querySelectorAll('.schip.sel')].map(e=>e.dataset.sys);
-  if(!sel.length){showToast('Select at least one system type');return;}
   const out=document.getElementById('specOut');
+  const systems=[...document.querySelectorAll('.schip.sel')].map(b=>b.dataset.sys).join(', ');
+  if(!systems){showToast('Select at least one system type');return;}
   out.textContent='Generating specification...';
-  const proj=document.getElementById('sp-proj').value||'Controls Upgrade';
-  const owner=document.getElementById('sp-owner').value||'Owner';
-  const bldg=document.getElementById('sp-bldg').value||'Commercial building';
-  const bas=document.getElementById('sp-bas').value;
-  const notes=document.getElementById('sp-notes').value;
-  const result=await claude(
-    `Write a complete, bid-ready Division 25 Building Automation System controls specification for the following project.\n\nPROJECT: ${proj}\nOWNER: ${owner}\nBUILDING: ${bldg}\nBAS PLATFORM: ${bas}\nSYSTEMS: ${sel.join(', ')}\nSPECIAL REQUIREMENTS: ${notes||'None specified'}\n\nFor EACH system type listed, include:\n1. SCOPE — what equipment and points are included\n2. SEQUENCE OF OPERATIONS — detailed, step-by-step numbered sequence\n   - Occupied/Unoccupied modes\n   - Heating/Cooling control loops with setpoints\n   - Safety shutdowns and interlocks\n   - Demand control or energy conservation measures\n3. CONTROL POINTS LIST — all inputs (sensors) and outputs (actuators)\n4. SETPOINTS TABLE — all configurable setpoints with default values and ranges\n5. ALARMS & FAULT DETECTION — all alarms with priority levels\n6. INTEGRATION — BACnet objects, network requirements\n7. COMMISSIONING — functional test requirements\n\nFormat as a proper specification document (CSI format where applicable). Use technical language appropriate for contractor bidding.`,
-    'You are a senior controls engineer writing Division 25 building automation specifications. Write complete, technically accurate, bid-ready specifications per CSI MasterFormat and ASHRAE standards.'
-  );
+  const result=await claude(`Write a complete Division 25 controls spec for:\nProject: ${document.getElementById('sp-proj').value||'[Project]'}\nOwner: ${document.getElementById('sp-owner').value||'[Owner]'}\nBuilding: ${document.getElementById('sp-bldg').value||'[Building]'}\nBAS: ${document.getElementById('sp-bas').value}\nSystems: ${systems}\nNotes: ${document.getElementById('sp-notes').value||'None'}\n\nInclude for each system: Sequences, Control Points, Setpoints, Alarms, Commissioning requirements.`,'You are an expert controls engineer writing Division 25 specifications.');
   out.textContent=result;
 }
 
-/* ═══════════════════════════════════
-   CONTRACTS
-═══════════════════════════════════ */
+/* ── CONTRACTS ── */
 let contractTemplate='';
-const DEFAULT_CONTRACT=`BUILDING AUTOMATION SYSTEM SERVICES AGREEMENT
-
-This Agreement is entered into as of [START_DATE] between [COMPANY_NAME] ("Service Provider") and [CLIENT_NAME] ("Client").
-
-PROJECT: [PROJECT_NAME]
-LOCATION: [PROJECT_ADDRESS]
-PROJECT MANAGER: [PM_NAME]
-
-1. SCOPE OF WORK
-[SCOPE_OF_WORK]
-
-2. CONTRACT VALUE
-The total contract value is [CONTRACT_VALUE], payable as follows:
-[PAYMENT_TERMS]
-
-3. SCHEDULE
-Work shall commence on [START_DATE] and be substantially complete by [END_DATE].
-
-4. WARRANTIES
-Service Provider warrants all work for a period of [WARRANTY_PERIOD] from date of substantial completion.
-
-5. SPECIAL CONDITIONS
-[SPECIAL_CONDITIONS]
-
-6. SIGNATURES
-Client: _________________________ Date: _______
-Service Provider: ________________ Date: _______`;
-
-const CONTRACT_VARS=['COMPANY_NAME','CLIENT_NAME','PROJECT_NAME','PROJECT_ADDRESS','PM_NAME','START_DATE','END_DATE','CONTRACT_VALUE','PAYMENT_TERMS','SCOPE_OF_WORK','WARRANTY_PERIOD','SPECIAL_CONDITIONS'];
-
+const DEFAULT_CONTRACT=`SERVICE AGREEMENT\n\nThis agreement is entered between [COMPANY_NAME] ("Contractor") and [CLIENT_NAME] ("Client").\n\nProject: [PROJECT_NAME]\nAddress: [PROJECT_ADDRESS]\nContract Value: $[CONTRACT_VALUE]\nStart Date: [START_DATE]\nEnd Date: [END_DATE]\n\nSCOPE OF WORK:\n[SCOPE_OF_WORK]\n\nPAYMENT TERMS:\n[PAYMENT_TERMS]\n\nWARRANTY:\nContractor warrants all work for [WARRANTY_PERIOD] from completion.\n\n___________________\nContractor Signature\n\n___________________\nClient Signature`;
+const CONTRACT_VARS=['CLIENT_NAME','PROJECT_NAME','PROJECT_ADDRESS','CONTRACT_VALUE','START_DATE','END_DATE','SCOPE_OF_WORK','PAYMENT_TERMS','WARRANTY_PERIOD','COMPANY_NAME'];
 function loadDefaultTemplate(){
   contractTemplate=DEFAULT_CONTRACT;
-  document.getElementById('tmplStatus').innerHTML='<div style="font-size:13px;color:var(--em)">✓ Using generic controls/energy services template</div>';
+  document.getElementById('tmplStatus').innerHTML='<div style="font-size:13px;color:var(--em)">✓ Generic template loaded</div>';
+  document.getElementById('contractVarsCard').style.display='block';
   renderContractVars(CONTRACT_VARS);
 }
 async function loadTemplate(e){
-  const file=e.target.files[0];if(!file) return;
-  const box=document.getElementById('tmplStatus');
-  box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Reading template...</div>';
-  if(file.type==='application/pdf'){
-    const reader=new FileReader();
-    reader.onload=async ev=>{
-      const b64=ev.target.result.split(',')[1];
-      const result=await claudePDF(
-        'Extract all the text from this contract template. Also identify all variable placeholder fields (anything in brackets, ALL_CAPS, or clearly meant to be filled in). Return the full text followed by a JSON array of variable names found.',
-        b64,
-        'You are a document analyst extracting contract text and variable fields.'
-      );
-      contractTemplate=result;
-      // Try to extract variable list
-      let vars=CONTRACT_VARS;
-      try{
-        const m=result.match(/\[([A-Z_]+)\]/g);
-        if(m) vars=[...new Set(m.map(v=>v.replace(/[\[\]]/g,'')))];
-      }catch(e){}
-      box.innerHTML=`<div style="font-size:13px;color:var(--em)">✓ Template loaded: ${file.name}</div>`;
-      renderContractVars(vars);
-    };
-    reader.readAsDataURL(file);
-  } else {
-    const reader=new FileReader();
-    reader.onload=ev=>{
-      contractTemplate=ev.target.result;
-      const m=contractTemplate.match(/\[([A-Z_]+)\]/g)||[];
-      const vars=m.length?[...new Set(m.map(v=>v.replace(/[\[\]]/g,'')))]:CONTRACT_VARS;
-      box.innerHTML=`<div style="font-size:13px;color:var(--em)">✓ Template loaded: ${file.name}</div>`;
-      renderContractVars(vars);
-    };
-    reader.readAsText(file);
-  }
+  const file=e.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=async ev=>{
+    contractTemplate=typeof ev.target.result==='string'?ev.target.result:DEFAULT_CONTRACT;
+    const m=contractTemplate.match(/\[([A-Z_]+)\]/g)||[];
+    const vars=m.length?[...new Set(m.map(v=>v.replace(/[\[\]]/g,'')))] :CONTRACT_VARS;
+    document.getElementById('tmplStatus').innerHTML=`<div style="font-size:13px;color:var(--em)">✓ Loaded: ${file.name}</div>`;
+    document.getElementById('contractVarsCard').style.display='block';
+    renderContractVars(vars);
+  };
+  reader.readAsText(file);
 }
 function renderContractVars(vars){
-  document.getElementById('contractVarsCard').style.display='block';
-  document.getElementById('contractVars').innerHTML=vars.map(v=>`
-    <div class="cv-row">
-      <div class="cv-key">[${v}]</div>
-      <input class="cv-inp" id="cv-${v}" placeholder="Enter ${v.replace(/_/g,' ').toLowerCase()}...">
-    </div>`).join('');
+  document.getElementById('contractVars').innerHTML=vars.map(v=>`<div class="cv-row"><div class="cv-key">[${v}]</div><input class="cv-inp" id="cv-${v}" placeholder="${v.replace(/_/g,' ').toLowerCase()}..."></div>`).join('');
 }
 async function generateContract(){
   const out=document.getElementById('contractOut');
   out.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Generating contract...</div>';
   const vars={};
-  document.querySelectorAll('.cv-inp').forEach(inp=>{
-    const k=inp.id.replace('cv-','');
-    vars[k]=inp.value||`[${k}]`;
-  });
-  const varList=Object.entries(vars).map(([k,v])=>`${k}: ${v}`).join('\n');
-  const result=await claude(
-    `You are a contracts specialist. Generate a complete, professional client contract using the following template and variables.\n\nTEMPLATE:\n${contractTemplate||DEFAULT_CONTRACT}\n\nFILL IN THESE VARIABLES:\n${varList}\n\nReplace all placeholder variables with the provided values. Where a value is empty, write a reasonable professional placeholder. Make the contract complete, professional, and ready to present to a client. Maintain all original structure and legal language from the template.`,
-    'You are an expert contracts specialist for building automation and energy services companies. Write professional, legally appropriate service agreements.'
-  );
-  out.textContent=result;
-  showToast('Contract generated ✓');
+  document.querySelectorAll('.cv-inp').forEach(inp=>{vars[inp.id.replace('cv-','')]=inp.value||`[${inp.id.replace('cv-','')}]`;});
+  const result=await claude(`Generate a complete professional client contract using this template and variables.\n\nTEMPLATE:\n${contractTemplate||DEFAULT_CONTRACT}\n\nVARIABLES:\n${Object.entries(vars).map(([k,v])=>`${k}: ${v}`).join('\n')}\n\nReplace all placeholders. Make it professional and ready to present.`,'You are an expert contracts specialist for building automation and energy services companies.');
+  out.textContent=result; showToast('Contract generated ✓');
 }
 
-/* ═══════════════════════════════════
-   WEBCTRL TOOL
-═══════════════════════════════════ */
+/* ── WEBCTRL ── */
 function setWCMode(mode,el){
-  document.querySelectorAll('.wcm').forEach(m=>m.classList.remove('active'));
-  el.classList.add('active');
+  document.querySelectorAll('.wcm').forEach(m=>m.classList.remove('active'));el.classList.add('active');
   ['wc-guide','wc-diagnose','wc-write'].forEach(id=>document.getElementById(id).style.display='none');
   document.getElementById('wc-'+mode).style.display='block';
 }
 async function runWC(mode){
-  const SYS='You are a senior controls engineer and WebCTRL/Automated Logic expert with 20+ years of experience programming, commissioning, and troubleshooting building automation systems. Provide technically accurate, practical, field-ready guidance.';
+  const SYS='You are a senior WebCTRL/Automated Logic expert with 20+ years experience. Provide technically accurate, field-ready guidance.';
   if(mode==='guide'){
-    const q=document.getElementById('wc-g-q').value;
-    if(!q){showToast('Enter a question first');return;}
-    const lvl=document.getElementById('wc-g-lvl').value;
+    const q=document.getElementById('wc-g-q').value; if(!q){showToast('Enter a question');return;}
     const out=document.getElementById('wc-g-out');
     out.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Generating explanation...</div>';
-    const result=await claude(
-      `Explain the following WebCTRL / Automated Logic concept for someone at ${lvl} level:\n\n"${q}"\n\nProvide:\n1. Clear explanation of the concept\n2. How it works in WebCTRL specifically\n3. Step-by-step walkthrough if applicable\n4. Common pitfalls or gotchas\n5. Practical tips from field experience\n6. Example or use case\n\nTailor depth and terminology to the ${lvl} level.`,
-      SYS
-    );
-    out.textContent=result;
+    out.textContent=await claude(`Explain for ${document.getElementById('wc-g-lvl').value}: "${q}". Include concept explanation, WebCTRL specifics, step-by-step walkthrough, pitfalls, tips, and an example.`,SYS);
   } else if(mode==='diagnose'){
-    const logic=document.getElementById('wc-d-logic').value;
-    if(!logic){showToast('Paste logic first');return;}
-    const issue=document.getElementById('wc-d-issue').value;
-    const out=document.getElementById('wc-d-out');
-    out.textContent='Diagnosing...';
-    const result=await claude(
-      `Analyze this WebCTRL / Automated Logic program or sequence:\n\n${logic}\n\n${issue?'REPORTED ISSUE: '+issue:''}\n\nProvide:\n1. PLAIN ENGLISH EXPLANATION — what this logic does, step by step\n2. LOGIC FLOW — walk through the key decision points\n3. ISSUES FOUND — any bugs, inefficiencies, or problematic logic\n4. SUGGESTED FIXES — specific corrections with example code/logic where helpful\n5. OPTIMIZATION OPPORTUNITIES — ways to improve performance or energy savings\n6. FIELD NOTES — any practical considerations for commissioning or troubleshooting\n\nBe specific and reference actual line numbers or variable names from the pasted logic.`,
-      SYS
-    );
-    out.textContent=result;
-  } else if(mode==='write'){
-    const sys=document.getElementById('wc-w-sys').value;
-    const desc=document.getElementById('wc-w-desc').value;
-    if(!desc){showToast('Describe the sequence first');return;}
-    const pts=document.getElementById('wc-w-pts').value;
-    const out=document.getElementById('wc-w-out');
-    out.textContent='Writing logic...';
-    const result=await claude(
-      `Write complete WebCTRL / Automated Logic programming for a ${sys}.\n\nSEQUENCE OF OPERATIONS:\n${desc}\n\n${pts?'AVAILABLE CONTROL POINTS:\n'+pts:''}\n\nProvide:\n1. COMPLETE LOGIC PROGRAM — ready to implement in WebCTRL\n   - Use standard Automated Logic programming conventions\n   - Include all setpoints as adjustable parameters\n   - Include occupied/unoccupied scheduling\n   - Include all safety interlocks\n2. CONTROL POINTS LIST — define all inputs and outputs needed\n3. SETPOINTS — all adjustable parameters with default values\n4. ALARMS — list all alarm conditions\n5. COMMISSIONING CHECKLIST — steps to verify proper operation\n6. COMMENTS — explain each major logic block\n\nWrite production-quality logic suitable for immediate use.`,
-      SYS
-    );
-    out.textContent=result;
+    const logic=document.getElementById('wc-d-logic').value; if(!logic){showToast('Paste logic first');return;}
+    const out=document.getElementById('wc-d-out'); out.textContent='Diagnosing...';
+    out.textContent=await claude(`Analyze this WebCTRL program:\n\n${logic}\n\n${document.getElementById('wc-d-issue').value?'ISSUE: '+document.getElementById('wc-d-issue').value:''}\n\nProvide: plain English explanation, logic flow, issues found, fixes, optimizations, field notes.`,SYS);
+  } else {
+    const desc=document.getElementById('wc-w-desc').value; if(!desc){showToast('Describe the sequence');return;}
+    const out=document.getElementById('wc-w-out'); out.textContent='Writing logic...';
+    out.textContent=await claude(`Write WebCTRL logic for a ${document.getElementById('wc-w-sys').value}.\n\nSequence: ${desc}\n\n${document.getElementById('wc-w-pts').value?'Points: '+document.getElementById('wc-w-pts').value:''}\n\nProvide complete logic, control points list, setpoints, alarms, commissioning checklist.`,SYS);
   }
 }
 
-/* ═══════════════════════════════════
-   TOAST
-═══════════════════════════════════ */
+/* ── TOAST ── */
 let toastTmr;
 function showToast(msg){
   const t=document.getElementById('toast');
   document.getElementById('toastMsg').textContent=msg;
-  t.classList.add('show');
-  clearTimeout(toastTmr);
+  t.classList.add('show'); clearTimeout(toastTmr);
   toastTmr=setTimeout(()=>t.classList.remove('show'),3000);
 }
 
-window.addEventListener('DOMContentLoaded', init);
-</script><script src="site-ui.js"></script></body></html>
+window.addEventListener('DOMContentLoaded',init);
+</script>
+<script src="site-ui.js"></script>
+</body></html>
