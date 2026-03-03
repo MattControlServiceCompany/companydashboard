@@ -956,7 +956,7 @@ html{scroll-behavior:smooth;}
 <!-- TASK MODAL -->
 <div class="modal-bg" id="taskModal" onclick="if(event.target===this)closeTaskModal()">
   <div class="modal" style="width:420px">
-    <div class="modal-hdr"><span class="modal-title">+ Add Task</span><button class="modal-x" onclick="closeTaskModal()">✕</button></div>
+    <div class="modal-hdr"><span class="modal-title" id="taskModalTitle">+ Add Task</span><button class="modal-x" onclick="closeTaskModal()">✕</button></div>
     <div class="modal-body">
       <div class="fg"><label class="fl">Task Description</label><input class="fi" id="mt-text" placeholder="e.g. Submit baseline report to client"></div>
       <div class="f2">
@@ -964,8 +964,9 @@ html{scroll-behavior:smooth;}
         <div class="fg"><label class="fl">Project</label><select class="fs" id="mt-proj"><option value="">— General —</option></select></div>
       </div>
       <div class="fg"><label class="fl">Priority</label><select class="fs" id="mt-pri"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></div>
+      <input type="hidden" id="mt-edit-id">
     </div>
-    <div class="modal-ftr"><button class="btn btn-ghost" onclick="closeTaskModal()">Cancel</button><button class="btn btn-em" onclick="saveTask()">Save Task</button></div>
+    <div class="modal-ftr"><button class="btn btn-ghost" onclick="closeTaskModal()">Cancel</button><button class="btn btn-em" id="taskSaveBtn" onclick="saveTask()">Save Task</button></div>
   </div>
 </div>
 
@@ -1163,14 +1164,53 @@ function renderUpcomingTasks(){
 }
 function toggleTask(id){const t=tasks.find(t=>t.id===id);if(t){t.done=!t.done;sset('en_tasks',tasks);renderUpcomingTasks();buildHomeCal();}}
 function removeTask(id){tasks=tasks.filter(t=>t.id!==id);sset('en_tasks',tasks);renderUpcomingTasks();buildHomeCal();buildWeekStrip();}
-function openTaskModal(){refreshProjDropdowns();document.getElementById('taskModal').classList.add('open');}
-function closeTaskModal(){document.getElementById('taskModal').classList.remove('open');}
+function openTaskModal(){
+  refreshProjDropdowns();
+  document.getElementById('mt-edit-id').value='';
+  document.getElementById('mt-text').value='';
+  document.getElementById('mt-due').value='';
+  document.getElementById('mt-pri').value='normal';
+  document.getElementById('taskModalTitle').textContent='+ Add Task';
+  document.getElementById('taskSaveBtn').textContent='Save Task';
+  document.getElementById('taskModal').classList.add('open');
+}
+function openTaskEdit(taskId, projId){
+  const t=tasks.find(t=>t.id===taskId); if(!t) return;
+  refreshProjDropdowns();
+  document.getElementById('mt-edit-id').value=taskId;
+  document.getElementById('mt-text').value=t.text||'';
+  document.getElementById('mt-due').value=t.due||'';
+  document.getElementById('mt-proj').value=t.projId||'';
+  document.getElementById('mt-pri').value=t.pri||'normal';
+  document.getElementById('taskModalTitle').textContent='✏️ Edit Task';
+  document.getElementById('taskSaveBtn').textContent='Save Changes';
+  document.getElementById('taskModal').classList.add('open');
+}
+function closeTaskModal(){
+  document.getElementById('taskModal').classList.remove('open');
+  document.getElementById('mt-edit-id').value='';
+  document.getElementById('taskModalTitle').textContent='+ Add Task';
+  document.getElementById('taskSaveBtn').textContent='Save Task';
+}
 function saveTask(){
   const text=document.getElementById('mt-text').value.trim();
   if(!text){showToast('Enter task description');return;}
-  tasks.push({id:Date.now(),text,due:document.getElementById('mt-due').value||NOW.toISOString().split('T')[0],projId:parseInt(document.getElementById('mt-proj').value)||null,pri:document.getElementById('mt-pri').value,done:false});
-  sset('en_tasks',tasks);closeTaskModal();renderUpcomingTasks();buildHomeCal();buildWeekStrip();updateHomeStats();showToast('Task added ✓');
-  document.getElementById('mt-text').value='';
+  const editId=parseInt(document.getElementById('mt-edit-id').value)||null;
+  const due=document.getElementById('mt-due').value||NOW.toISOString().split('T')[0];
+  const projId=parseInt(document.getElementById('mt-proj').value)||null;
+  const pri=document.getElementById('mt-pri').value;
+  if(editId){
+    const t=tasks.find(t=>t.id===editId);
+    if(t){t.text=text;t.due=due;t.projId=projId;t.pri=pri;}
+    showToast('Task updated ✓');
+  } else {
+    tasks.push({id:Date.now(),text,due,projId,pri,done:false});
+    showToast('Task added ✓');
+  }
+  sset('en_tasks',tasks);closeTaskModal();renderUpcomingTasks();buildHomeCal();buildWeekStrip();updateHomeStats();
+  // Refresh project detail if open
+  const activeProj=projects.find(p=>p.id===(projId||parseInt(document.getElementById('mt-proj')?.value)));
+  if(activeProj&&document.getElementById('projDetailView')?.style.display!=='none') renderDetail(activeProj);
 }
 
 /* ── PROJECTS: TABLE ── */
@@ -1237,6 +1277,7 @@ function renderDetail(p){
       <div class="tcb${t.done?' done':''}" onclick="toggleTask(${t.id});renderDetail(projects.find(x=>x.id===${p.id}))">${t.done?'<span style="color:#05080f;font-size:9px">✓</span>':''}</div>
       <div class="t-body"><div class="t-text${t.done?' struck':''}">${t.text}${t.pri==='high'?' <span style="color:var(--danger);font-size:10px">● HIGH</span>':''}</div></div>
       <div class="t-due">${t.due}</div>
+      <button class="btn btn-ghost btn-sm" style="padding:2px 7px;font-size:10px;flex-shrink:0" onclick="openTaskEdit(${t.id},${p.id})" title="Edit task">✏️</button>
       <button class="btn-del" onclick="removeTask(${t.id});renderDetail(projects.find(x=>x.id===${p.id}))">✕</button>
     </div>`).join('')
     :'<div style="font-size:13px;color:var(--text2)">No tasks yet</div>';
