@@ -588,27 +588,26 @@ html,body{height:100%;overflow:hidden;}
 <div class="app-wrap">
 <aside class="sidebar">
   <div class="sidebar-top">
-<div class="s-sect">
-    <div class="s-lbl">Energy</div>
-    <button class="s-item active" onclick="sv('home',this)"><span class="s-ico">🏠</span>Home</button>
-    <div class="s-proj-header" id="sb-proj-btn">
-      <button class="s-item s-proj-toggle" onclick="sv('projects',document.getElementById('sb-proj-btn'))"><span class="s-ico">📁</span>Projects</button>
-      <button class="s-proj-collapse" id="projCollapseBtn" onclick="toggleProjSection(event)" title="Collapse projects">‹</button>
+    <div class="s-sect">
+      <div class="s-lbl">Energy</div>
+      <button class="s-item active" onclick="sv('home',this)"><span class="s-ico">🏠</span>Home</button>
+      <div class="s-proj-header" id="sb-proj-btn">
+        <button class="s-item s-proj-toggle" onclick="sv('projects',document.getElementById('sb-proj-btn'))"><span class="s-ico">📁</span>Projects</button>
+        <button class="s-proj-collapse" id="projCollapseBtn" onclick="toggleProjSection(event)" title="Collapse projects">‹</button>
+      </div>
+      <div class="s-proj-section" id="sidebarProjFolders"></div>
+      <button class="s-item" onclick="sv('pdf',this)"><span class="s-ico">📄</span>PDF / OCR</button>
+      <button class="s-item" onclick="sv('utility',this)"><span class="s-ico">⚡</span>Utility Data</button>
+      <button class="s-item" onclick="sv('weather',this)"><span class="s-ico">🌡️</span>Weather &amp; Normalize</button>
+      <button class="s-item" onclick="sv('baseline',this)"><span class="s-ico">📊</span>Baseline</button>
+      <button class="s-item" onclick="sv('savings',this)"><span class="s-ico">💡</span>Energy Savings</button>
+      <button class="s-item" onclick="sv('district',this)"><span class="s-ico">🗓️</span>District Calendar</button>
+      <button class="s-item" onclick="sv('equipment',this)"><span class="s-ico">⚙️</span>Equipment</button>
+      <button class="s-item" onclick="sv('drawings',this)"><span class="s-ico">📐</span>Drawings</button>
+      <button class="s-item" onclick="sv('specs',this)"><span class="s-ico">✍️</span>Spec Writer</button>
+      <button class="s-item" onclick="sv('contracts',this)"><span class="s-ico">📋</span>Contracts</button>
+      <button class="s-item" onclick="sv('webctrl',this)"><span class="s-ico">🔌</span>WebCTRL</button>
     </div>
-    <div class="s-proj-section" id="sidebarProjFolders"></div>
-    <button class="s-item" onclick="sv('pdf',this)"><span class="s-ico">📄</span>PDF / OCR</button>
-    <button class="s-item" onclick="sv('utility',this)"><span class="s-ico">⚡</span>Utility Data</button>
-    <button class="s-item" onclick="sv('weather',this)"><span class="s-ico">🌡️</span>Weather &amp; Normalize</button>
-    <button class="s-item" onclick="sv('baseline',this)"><span class="s-ico">📊</span>Baseline</button>
-    <button class="s-item" onclick="sv('savings',this)"><span class="s-ico">💡</span>Energy Savings</button>
-    <button class="s-item" onclick="sv('district',this)"><span class="s-ico">🗓️</span>District Calendar</button>
-    <button class="s-item" onclick="sv('equipment',this)"><span class="s-ico">⚙️</span>Equipment</button>
-    <button class="s-item" onclick="sv('drawings',this)"><span class="s-ico">📐</span>Drawings</button>
-    <button class="s-item" onclick="sv('specs',this)"><span class="s-ico">✍️</span>Spec Writer</button>
-    <button class="s-item" onclick="sv('contracts',this)"><span class="s-ico">📋</span>Contracts</button>
-    <button class="s-item" onclick="sv('webctrl',this)"><span class="s-ico">🔌</span>WebCTRL</button>
-  </div>
-  </div>
   </div>
   <div class="sidebar-bottom">
     <button class="sb-settings-btn" onclick="siteOpenSettings()">&#9881; Settings</button>

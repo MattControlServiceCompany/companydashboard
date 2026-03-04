@@ -415,25 +415,24 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100%;
 
   <div class="app-wrap">
     <aside class="sidebar">
-  <div class="sidebar-top">
-<div class="s-sect">
-        <div class="s-lbl">Service</div>
-        <div class="s-item active" onclick="setView('schedule',this)"><span class="s-ico">📋</span>Personnel <span class="s-badge" id="sbStaff">8</span></div>
-        <div class="s-item" onclick="setView('pm',this)"><span class="s-ico">🗓️</span>PM Schedule <span class="s-badge" id="sbPM">57</span></div>
-        <div class="s-item" onclick="setView('dispatch',this)"><span class="s-ico">📡</span>Dispatch Board</div>
+      <div class="sidebar-top">
+        <div class="s-sect">
+          <div class="s-lbl">Service</div>
+          <div class="s-item active" onclick="setView('schedule',this)"><span class="s-ico">📋</span>Personnel <span class="s-badge" id="sbStaff">8</span></div>
+          <div class="s-item" onclick="setView('pm',this)"><span class="s-ico">🗓️</span>PM Schedule <span class="s-badge" id="sbPM">57</span></div>
+          <div class="s-item" onclick="setView('dispatch',this)"><span class="s-ico">📡</span>Dispatch Board</div>
+        </div>
+        <div class="s-sect">
+          <div class="s-lbl">Reports</div>
+          <div class="s-item" onclick="setView('schedule',this)"><span class="s-ico">📈</span>Performance</div>
+          <div class="s-item" onclick="setView('schedule',this)"><span class="s-ico">🕐</span>Time Logs</div>
+        </div>
+        <div class="s-sect">
+          <div class="s-lbl">Tools</div>
+          <div class="s-item" onclick="syncToOutlook()"><span class="s-ico">🔗</span>O365 Sync</div>
+        </div>
       </div>
-      <div class="s-sect">
-        <div class="s-lbl">Reports</div>
-        <div class="s-item" onclick="setView('schedule',this)"><span class="s-ico">📈</span>Performance</div>
-        <div class="s-item" onclick="setView('schedule',this)"><span class="s-ico">🕐</span>Time Logs</div>
-      </div>
-      <div class="s-sect">
-        <div class="s-lbl">Tools</div>
-        <div class="s-item" onclick="syncToOutlook()"><span class="s-ico">🔗</span>O365 Sync</div>
-      </div>
-  </div>
-  </div>
-  <div class="sidebar-bottom">
+      <div class="sidebar-bottom">
     <button class="sb-settings-btn" onclick="siteOpenSettings()">&#9881; Settings</button>
     <div class="sb-divider"></div>
     <div class="sb-clock" id="sb-clock">--:-- --</div>
