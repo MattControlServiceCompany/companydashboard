@@ -129,7 +129,10 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100%;
 .sb-btn.danger:hover{border-color:var(--red);color:var(--red);}
 
 /* ── CONTENT ── */
-.content{flex:1;padding:24px 26px;overflow-y:auto;}
+.content{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+.view{display:none;padding:24px 26px;animation:fadeUp .22s ease;}
+.view.active{display:block;flex:1;overflow-y:auto;}
+.view.active.view-flex{display:flex;flex-direction:column;overflow:hidden;padding-bottom:0;}
 .tab-panel{display:none;animation:fadeUp .26s ease;}
 .tab-panel.active{display:block;}
 
@@ -263,8 +266,6 @@ html,body{height:100%;overflow:hidden;}
 @keyframes pulse{0%,100%{opacity:.3;transform:scale(.85);}50%{opacity:1;transform:scale(1);}}
 .nav-bar{display:none;}
 .wrap{display:flex;flex:1;overflow:hidden;}
-.view{display:none;padding:24px 26px;animation:fadeUp .22s ease;}
-.view.active{display:block;}
 .pg-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;}
 .pg-title{font-family:var(--head);font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.1;}
 .pg-title em{color:var(--em);font-style:normal;}
@@ -466,11 +467,14 @@ html,body{height:100%;overflow:hidden;}
    UTILITY DATA TOOL
 ══════════════════════════════════════ */
 /* Three-panel layout */
-.ud-layout{display:grid;grid-template-columns:220px 260px 1fr;gap:0;height:calc(100vh - 160px);min-height:500px;background:var(--s2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
-.ud-panel{display:flex;flex-direction:column;border-right:1px solid var(--border);overflow:hidden;}
+.ud-layout{display:grid;grid-template-columns:220px 260px 1fr;gap:0;flex:1;min-height:0;background:var(--s2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
+.ud-panel{display:flex;flex-direction:column;border-right:1px solid var(--border);overflow:hidden;min-height:0;}
 .ud-panel:last-child{border-right:none;}
-.ud-panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0;}
-.ud-panel-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text2);}
+.ud-panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0;gap:8px;flex-wrap:wrap;}
+.ud-panel-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text2);white-space:nowrap;}
+.ud-panel-hdr-meta{display:flex;gap:16px;font-size:11px;color:var(--text2);flex-wrap:wrap;}
+.ud-panel-hdr-meta span{white-space:nowrap;}
+.ud-panel-hdr-meta strong{color:var(--text);font-weight:600;}
 .ud-panel-body{flex:1;overflow-y:auto;padding:6px 0;}
 /* Project list items */
 .ud-proj-item{display:flex;align-items:center;gap:8px;padding:8px 14px;cursor:pointer;transition:all .13s;border-left:2px solid transparent;font-size:12px;color:var(--text2);}
@@ -486,7 +490,7 @@ html,body{height:100%;overflow:hidden;}
 .ud-bldg-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;}
 .ud-bldg-meta{font-size:10px;color:var(--text2);}
 /* Right panel — building detail */
-.ud-detail-wrap{padding:16px;overflow-y:auto;flex:1;}
+.ud-detail-wrap{padding:16px;overflow-y:auto;flex:1;min-height:0;}
 .ud-bldg-info{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:18px;}
 .ud-info-cell{background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:9px 12px;}
 .ud-info-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);font-weight:700;margin-bottom:4px;}
@@ -507,7 +511,7 @@ html,body{height:100%;overflow:hidden;}
 .ud-meter-body{display:none;padding:14px;}
 .ud-meter-body.open{display:block;}
 /* Meter info row */
-.ud-meter-info{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;}
+.ud-meter-info{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:14px;}
 .ud-meter-info-cell{background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:7px 10px;}
 /* Billing rows table */
 .ud-bill-wrap{overflow-x:auto;margin-top:4px;}
@@ -719,12 +723,9 @@ html,body{height:100%;overflow:hidden;}
 </div>
 
 <!-- UTILITY DATA -->
-<div id="view-utility" class="view">
-  <div class="pg-hdr">
+<div id="view-utility" class="view view-flex">
+  <div class="pg-hdr" style="flex-shrink:0">
     <div><h1 class="pg-title">Utility <em>Data</em></h1><p class="pg-sub">All utility meters and billing data organized by project and building</p></div>
-    <div class="hdr-actions">
-      <button class="btn btn-ghost" id="ud-add-meter-btn" style="display:none" onclick="openMeterModal()">+ Meter</button>
-    </div>
   </div>
   <div class="ud-layout">
     <!-- Panel 1: Projects -->
@@ -2116,36 +2117,33 @@ function renderUDDetail(){
   if(!udSelBldgId || !udSelProjId){
     wrap.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">🏢</div>Select a building</div>';
     if(meterBtn) meterBtn.style.display='none';
-    if(titleEl) titleEl.textContent='Meters & Billing';
+    if(titleEl) titleEl.innerHTML='<span class="ud-panel-title">Meters &amp; Billing</span>';
     return;
   }
   const b = getUDBldg(udSelProjId, udSelBldgId);
   if(!b){ wrap.innerHTML='<div class="ud-empty">Building not found</div>'; return; }
   if(meterBtn) meterBtn.style.display='';
-  if(titleEl) titleEl.textContent = b.name.length>26 ? b.name.slice(0,26)+'…' : b.name;
+
+  // Show building meta in panel header — no repeated info cards in body
+  if(titleEl){
+    const sqftStr = b.sqft ? Number(b.sqft).toLocaleString()+' sf' : '';
+    const addrStr = b.addr || '';
+    titleEl.innerHTML = `
+      <span class="ud-panel-title">${b.name.length>22?b.name.slice(0,22)+'…':b.name}</span>
+      <div class="ud-panel-hdr-meta">
+        ${sqftStr?`<span><strong>${sqftStr}</strong></span>`:''}
+        ${addrStr?`<span>${addrStr}</span>`:''}
+      </div>`;
+  }
 
   const meters = b.meters || [];
   const metersHTML = meters.length ? meters.map(m=>renderMeterCard(m)).join('') :
     `<div class="ud-empty"><div class="ud-empty-ico">⚡</div>No meters yet<br><button class="btn btn-em btn-sm" style="margin-top:10px" onclick="openMeterModal()">+ Add Meter</button></div>`;
 
   wrap.innerHTML = `
-    <div class="ud-bldg-info">
-      <div class="ud-info-cell" style="cursor:pointer" onclick="openBldgModal('${b.id}')" title="Click to edit">
-        <div class="ud-info-lbl">Facility Name <span style="color:var(--em);font-size:9px">✏️</span></div>
-        <div class="ud-info-val">${b.name}</div>
-      </div>
-      <div class="ud-info-cell" style="cursor:pointer" onclick="openBldgModal('${b.id}')" title="Click to edit">
-        <div class="ud-info-lbl">Square Footage <span style="color:var(--em);font-size:9px">✏️</span></div>
-        <div class="ud-info-val">${b.sqft ? Number(b.sqft).toLocaleString()+' sf' : '—'}</div>
-      </div>
-      <div class="ud-info-cell" style="cursor:pointer" onclick="openBldgModal('${b.id}')" title="Click to edit">
-        <div class="ud-info-lbl">Address <span style="color:var(--em);font-size:9px">✏️</span></div>
-        <div class="ud-info-val" style="font-size:11px">${b.addr||'—'}</div>
-      </div>
-    </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2)">${meters.length} Meter${meters.length!==1?'s':''}</div>
-      <div style="display:flex;gap:6px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" onclick="openBldgModal('${b.id}')">✏️ Edit Building</button>
         <button class="btn btn-em btn-sm" onclick="openMeterModal()">+ Add Meter</button>
       </div>
