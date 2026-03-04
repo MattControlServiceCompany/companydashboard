@@ -466,83 +466,77 @@ html,body{height:100%;overflow:hidden;}
 .toast{position:fixed;bottom:22px;right:22px;z-index:999;background:var(--s3);border:1px solid var(--em);border-radius:10px;padding:11px 15px;font-size:12px;color:var(--text);display:flex;align-items:center;gap:8px;max-width:320px;transform:translateY(80px);opacity:0;transition:all .32s cubic-bezier(.34,1.56,.64,1);}
 .toast.show{transform:translateY(0);opacity:1;}
 
-/* ══════════════════════════════════════
-   UTILITY DATA TOOL
-══════════════════════════════════════ */
-/* Three-panel layout */
-.ud-layout{display:grid;grid-template-columns:180px 240px 1fr;gap:0;flex:1;min-height:0;background:var(--s2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
-.ud-panel{display:flex;flex-direction:column;border-right:1px solid var(--border);overflow:hidden;min-height:0;}
-.ud-panel:last-child{border-right:none;}
-.ud-panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0;gap:8px;min-height:42px;}
-.ud-panel-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text2);white-space:nowrap;}
-.ud-panel-hdr-actions{display:flex;gap:5px;align-items:center;flex-shrink:0;}
-.ud-panel-body{flex:1;overflow-y:auto;padding:6px 0;}
-/* Building info bar in detail panel — shows below header, not in it */
-.ud-bldg-bar{display:flex;align-items:center;gap:14px;padding:9px 16px;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap;}
-.ud-bldg-bar-name{font-size:13px;font-weight:700;color:var(--text);}
-.ud-bldg-bar-meta{display:flex;gap:12px;flex-wrap:wrap;}
-.ud-bldg-bar-item{font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;}
-.ud-bldg-bar-item strong{color:var(--text);font-weight:600;}
-/* Project list items */
-.ud-proj-item{display:flex;align-items:center;gap:8px;padding:8px 14px;cursor:pointer;transition:all .13s;border-left:2px solid transparent;font-size:12px;color:var(--text2);}
-.ud-proj-item:hover{background:rgba(255,255,255,.03);color:var(--text);}
-.ud-proj-item.active{background:var(--em-dim);color:var(--em);border-left-color:var(--em);}
-.ud-proj-icon{font-size:14px;flex-shrink:0;}
-.ud-proj-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;}
-.ud-proj-count{font-size:10px;background:var(--s4);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;color:var(--text2);flex-shrink:0;}
-/* Building list items */
-.ud-bldg-item{display:flex;align-items:center;gap:8px;padding:8px 14px;cursor:pointer;transition:all .13s;border-left:2px solid transparent;font-size:12px;color:var(--text2);}
-.ud-bldg-item:hover{background:rgba(255,255,255,.03);color:var(--text);}
-.ud-bldg-item.active{background:var(--em-dim);color:var(--em);border-left-color:var(--em);}
-.ud-bldg-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;}
-.ud-bldg-meta{font-size:10px;color:var(--text2);}
-.ud-bldg-item-actions{display:flex;gap:3px;opacity:0;transition:opacity .13s;flex-shrink:0;}
-.ud-bldg-item:hover .ud-bldg-item-actions{opacity:1;}
-/* Right panel — building detail */
-.ud-detail-wrap{padding:14px 16px;overflow-y:auto;flex:1;min-height:0;}
-.ud-bldg-info{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:18px;}
-.ud-info-cell{background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:9px 12px;}
-.ud-info-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);font-weight:700;margin-bottom:4px;}
-.ud-info-val{font-size:13px;font-weight:600;color:var(--text);word-break:break-all;}
+/* ── UTILITY DATA — TWO-COLUMN MASTER/DETAIL ══ */
+.ud-layout{display:grid;grid-template-columns:260px 1fr;gap:0;flex:1;min-height:0;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
+/* Left nav column */
+.ud-nav{display:flex;flex-direction:column;background:var(--s1);border-right:1px solid var(--border);overflow:hidden;min-height:0;}
+.ud-nav-sect{flex-shrink:0;}
+.ud-nav-sect-hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--border);}
+.ud-nav-sect-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);}
+.ud-nav-body{flex:1;overflow-y:auto;}
+.ud-nav-proj-item{display:flex;align-items:center;gap:9px;padding:9px 14px;cursor:pointer;transition:all .13s;border-left:3px solid transparent;font-size:13px;color:var(--text2);}
+.ud-nav-proj-item:hover{background:rgba(255,255,255,.03);color:var(--text);}
+.ud-nav-proj-item.active{background:var(--em-dim);color:var(--em);border-left-color:var(--em);}
+.ud-nav-proj-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;}
+.ud-nav-proj-count{font-size:10px;background:var(--s4);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;color:var(--text2);flex-shrink:0;}
+.ud-nav-bldg-item{display:flex;align-items:center;gap:8px;padding:7px 14px 7px 30px;cursor:pointer;transition:all .13s;border-left:3px solid transparent;font-size:12px;color:var(--text2);}
+.ud-nav-bldg-item:hover{background:rgba(255,255,255,.03);color:var(--text);}
+.ud-nav-bldg-item.active{background:var(--em-dim);color:var(--em);border-left-color:var(--em);}
+.ud-nav-bldg-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ud-nav-bldg-meta{font-size:10px;color:var(--text3);}
+.ud-nav-bldg-actions{display:flex;gap:2px;opacity:0;transition:opacity .12s;flex-shrink:0;}
+.ud-nav-bldg-item:hover .ud-nav-bldg-actions{opacity:1;}
+/* Right detail column */
+.ud-detail-col{display:flex;flex-direction:column;overflow:hidden;min-height:0;background:var(--s2);}
+.ud-detail-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0;flex-wrap:wrap;gap:10px;}
+.ud-detail-hdr-left{display:flex;flex-direction:column;gap:3px;min-width:0;}
+.ud-detail-hdr-title{font-size:16px;font-weight:700;color:var(--text);}
+.ud-detail-hdr-sub{font-size:12px;color:var(--text2);display:flex;flex-wrap:wrap;gap:12px;}
+.ud-detail-hdr-sub span{display:flex;align-items:center;gap:4px;}
+.ud-detail-body{flex:1;overflow-y:auto;padding:20px;}
 /* Meter cards */
-.ud-meter-card{background:var(--s3);border:1px solid var(--border);border-radius:9px;margin-bottom:12px;overflow:hidden;transition:border-color .14s;}
+.ud-meter-card{background:var(--s3);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden;transition:border-color .14s;}
 .ud-meter-card:hover{border-color:var(--border2);}
-.ud-meter-hdr{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;background:var(--s1);border-bottom:1px solid var(--border);}
+.ud-meter-hdr{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;background:var(--s1);}
 .ud-meter-hdr:hover{background:var(--s2);}
-.ud-meter-pill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0;}
+.ud-meter-pill{font-size:10px;font-weight:700;padding:3px 10px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0;}
 .ud-meter-elec{background:var(--em-dim);color:var(--em);border:1px solid rgba(0,212,170,.2);}
 .ud-meter-gas{background:var(--warn-dim);color:var(--warn);border:1px solid rgba(245,158,11,.2);}
 .ud-meter-water{background:var(--em2-dim);color:var(--em2);border:1px solid rgba(14,165,233,.2);}
 .ud-meter-steam{background:var(--violet-dim);color:var(--violet);border:1px solid rgba(167,139,250,.2);}
-.ud-meter-label{flex:1;font-size:12px;font-weight:600;color:var(--text);font-family:var(--mono);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.ud-meter-toggle{font-size:11px;color:var(--text3);transition:transform .18s;flex-shrink:0;}
+.ud-meter-label{flex:1;font-size:13px;font-weight:600;color:var(--text);font-family:var(--mono);min-width:0;}
+.ud-meter-bills-count{font-size:11px;color:var(--text2);flex-shrink:0;white-space:nowrap;}
+.ud-meter-toggle{font-size:12px;color:var(--text3);transition:transform .18s;flex-shrink:0;margin-left:4px;}
 .ud-meter-toggle.open{transform:rotate(90deg);}
-.ud-meter-body{display:none;padding:14px;}
+.ud-meter-body{display:none;padding:16px;border-top:1px solid var(--border);}
 .ud-meter-body.open{display:block;}
-/* Meter info row */
-.ud-meter-info{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:14px;}
-.ud-meter-info-cell{background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:7px 10px;}
+/* Meter info grid — responsive auto-fit */
+.ud-meter-info{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px;}
+.ud-meter-info-cell{background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:10px 12px;}
 /* Billing rows table */
-.ud-bill-wrap{overflow-x:auto;margin-top:4px;}
-.ud-bill-tbl{width:100%;border-collapse:collapse;font-size:11px;min-width:700px;}
-.ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);font-weight:700;padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);background:var(--s1);white-space:nowrap;}
-.ud-bill-tbl td{padding:5px 8px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.ud-bill-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px;margin-top:4px;}
+.ud-bill-tbl{width:100%;border-collapse:collapse;font-size:12px;min-width:500px;}
+.ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);font-weight:700;padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);background:var(--s1);white-space:nowrap;}
+.ud-bill-tbl td{padding:6px 10px;border-bottom:1px solid var(--border);vertical-align:middle;}
 .ud-bill-tbl tr:last-child td{border-bottom:none;}
-.ud-bill-tbl input{font-family:var(--mono);font-size:11px;color:var(--text);background:transparent;border:none;outline:none;width:100%;padding:1px 2px;}
+.ud-bill-tbl input{font-family:var(--mono);font-size:12px;color:var(--text);background:transparent;border:none;outline:none;width:100%;padding:2px 3px;min-width:60px;}
 .ud-bill-tbl input:focus{background:var(--s4);border-radius:3px;}
-.ud-bill-tbl td.days-cell{font-family:var(--mono);font-size:11px;color:var(--em);text-align:center;}
-.ud-add-row{display:flex;align-items:center;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);}
-/* Inclusive/exclusive toggle */
-.ud-incl-toggle{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);}
-.ud-incl-btn{font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;border:1px solid var(--border2);background:transparent;cursor:pointer;transition:all .13s;font-family:var(--font);color:var(--text2);}
+.ud-bill-tbl td.days-cell{font-family:var(--mono);font-size:12px;color:var(--em);text-align:center;}
+/* Bottom row of meter body: day calc toggle + add period button */
+.ud-add-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);}
+.ud-incl-toggle{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);flex-wrap:wrap;}
+.ud-incl-btn{font-size:10px;font-weight:600;padding:3px 10px;border-radius:10px;border:1px solid var(--border2);background:transparent;cursor:pointer;transition:all .13s;font-family:var(--font);color:var(--text2);}
 .ud-incl-btn.sel{background:var(--em-dim);border-color:var(--em);color:var(--em);}
 /* Empty states */
-.ud-empty{padding:28px;text-align:center;font-size:13px;color:var(--text2);}
-.ud-empty-ico{font-size:28px;margin-bottom:8px;}
+.ud-empty{padding:40px 28px;text-align:center;font-size:13px;color:var(--text2);display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;}
+.ud-empty-ico{font-size:32px;margin-bottom:10px;}
 /* Modal extras */
 .ud-modal-tabs{display:flex;gap:3px;margin-bottom:16px;}
 .ud-mtab{font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;border:1px solid var(--border2);background:transparent;cursor:pointer;color:var(--text2);transition:all .13s;font-family:var(--font);}
 .ud-mtab.sel{background:var(--em-dim);border-color:var(--em);color:var(--em);}
+/* Keep old classes referenced elsewhere */
+.ud-info-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);font-weight:700;margin-bottom:4px;}
+.ud-info-val{font-size:13px;font-weight:600;color:var(--text);word-break:break-word;}
 
 
 
@@ -738,42 +732,32 @@ html,body{height:100%;overflow:hidden;}
 <!-- UTILITY DATA -->
 <div id="view-utility" class="view view-flex">
   <div class="pg-hdr" style="flex-shrink:0">
-    <div><h1 class="pg-title">Utility <em>Data</em></h1><p class="pg-sub">All utility meters and billing data organized by project and building</p></div>
+    <div><h1 class="pg-title">Utility <em>Data</em></h1><p class="pg-sub">Select a project and building to manage meters and billing data</p></div>
   </div>
   <div class="ud-layout">
-    <!-- Panel 1: Projects -->
-    <div class="ud-panel">
-      <div class="ud-panel-hdr">
-        <span class="ud-panel-title">Projects</span>
-      </div>
-      <div class="ud-panel-body" id="udProjList"></div>
-    </div>
-    <!-- Panel 2: Buildings -->
-    <div class="ud-panel">
-      <div class="ud-panel-hdr">
-        <span class="ud-panel-title">Buildings</span>
-        <div class="ud-panel-hdr-actions">
-          <button class="btn btn-em btn-sm" id="ud-add-bldg-btn" style="display:none" onclick="openBldgModal(null)">+ Add Building</button>
+    <!-- Left nav: Projects + Buildings drill-down -->
+    <div class="ud-nav">
+      <div class="ud-nav-sect">
+        <div class="ud-nav-sect-hdr">
+          <span class="ud-nav-sect-title">Projects</span>
         </div>
       </div>
-      <div class="ud-panel-body" id="udBldgList">
-        <div class="ud-empty"><div class="ud-empty-ico">📁</div>Select a project</div>
-      </div>
+      <div class="ud-nav-body" id="udNavList"></div>
     </div>
-    <!-- Panel 3: Meters -->
-    <div class="ud-panel">
-      <div class="ud-panel-hdr">
-        <span class="ud-panel-title">Meters</span>
-        <div class="ud-panel-hdr-actions">
-          <button class="btn btn-em btn-sm" id="ud-add-meter-btn" style="display:none" onclick="openMeterModal()">+ Add Meter</button>
+    <!-- Right detail: building header + meters -->
+    <div class="ud-detail-col">
+      <div class="ud-detail-hdr" id="udDetailHdr" style="display:none">
+        <div class="ud-detail-hdr-left">
+          <div class="ud-detail-hdr-title" id="udDetailHdrTitle"></div>
+          <div class="ud-detail-hdr-sub" id="udDetailHdrSub"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="btn btn-ghost btn-sm" id="ud-edit-bldg-btn" onclick="openBldgModal(window._udSelBldgId)">✏️ Edit Building</button>
+          <button class="btn btn-em btn-sm" id="ud-add-meter-btn" onclick="openMeterModal()">+ Add Meter</button>
         </div>
       </div>
-      <div id="udBldgBar" style="display:none" class="ud-bldg-bar">
-        <span class="ud-bldg-bar-name" id="udBldgBarName"></span>
-        <div class="ud-bldg-bar-meta" id="udBldgBarMeta"></div>
-      </div>
-      <div class="ud-detail-wrap" id="udDetailWrap">
-        <div class="ud-empty"><div class="ud-empty-ico">🏢</div>Select a building</div>
+      <div class="ud-detail-body" id="udDetailWrap">
+        <div class="ud-empty"><div class="ud-empty-ico">📁</div><div>Select a project and building<br>from the left to view meters</div></div>
       </div>
     </div>
   </div>
@@ -1456,7 +1440,7 @@ function sv(id,btn){
   const target=btn?.classList.contains('s-item')?btn:btn?.querySelector('.s-item')||btn;
   (target||document.querySelector(`.sidebar .s-item[onclick*="'${id}'"]`))?.classList.add('active');
   if(id==='projects') showList();
-  if(id==='utility'){ renderUDProjList(); renderUDBldgList(); renderUDDetail(); }
+  if(id==='utility'){ renderUDProjList(); renderUDDetail(); }
 }
 
 /* ── AUTH ── */
@@ -1938,7 +1922,7 @@ function toggleProjSection(e){
 }
 function renderSidebarFolders(){
   // Also refresh utility project list if it's loaded
-  if(document.getElementById('udProjList')) renderUDProjList();
+  if(document.getElementById('udNavList')) renderUDProjList();
   const c=document.getElementById('sidebarProjFolders'); if(!c) return;
   if(!projects.length){c.innerHTML='';return;}
   c.innerHTML=projects.map(p=>{
@@ -2234,108 +2218,91 @@ function calcDays(start, end, inclusive){
   return inclusive ? diff + 1 : diff;
 }
 
-/* ── RENDER PANEL 1: PROJECTS ── */
+/* ── RENDER LEFT NAV: Projects + Buildings drill-down ── */
 function renderUDProjList(){
-  const el = document.getElementById('udProjList'); if(!el) return;
+  const el = document.getElementById('udNavList'); if(!el) return;
   if(!projects.length){
     el.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">📁</div>No projects yet</div>';
     return;
   }
-  el.innerHTML = projects.map(p=>{
+  let html = '';
+  projects.forEach(p=>{
     const bldgs = getUDBldgs(p.id);
-    const active = p.id === udSelProjId ? ' active' : '';
-    return `<div class="ud-proj-item${active}" onclick="udSelectProj(${p.id})">
-      <span class="ud-proj-icon">${getFacilityIcon(p.type)}</span>
-      <span class="ud-proj-name" title="${p.name}">${p.name.length>22?p.name.slice(0,22)+'…':p.name}</span>
-      ${bldgs.length?`<span class="ud-proj-count">${bldgs.length}</span>`:''}
+    const projActive = p.id === udSelProjId ? ' active' : '';
+    html += `<div class="ud-nav-proj-item${projActive}" onclick="udSelectProj(${p.id})">
+      <span style="font-size:14px;flex-shrink:0">${getFacilityIcon(p.type)}</span>
+      <span class="ud-nav-proj-name" title="${p.name}">${p.name}</span>
+      ${bldgs.length?`<span class="ud-nav-proj-count">${bldgs.length}</span>`:''}
     </div>`;
-  }).join('');
+    // If this project is selected, show its buildings inline underneath
+    if(p.id === udSelProjId){
+      if(!bldgs.length){
+        html += `<div style="padding:6px 14px 6px 30px;font-size:11px;color:var(--text3)">No buildings —
+          <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:1px 6px" onclick="openBldgModal(null)">+ Add</button></div>`;
+      } else {
+        bldgs.forEach(b=>{
+          const mCount = (b.meters||[]).length;
+          const bldgActive = b.id === udSelBldgId ? ' active' : '';
+          html += `<div class="ud-nav-bldg-item${bldgActive}" onclick="udSelectBldg('${b.id}')">
+            <div style="flex:1;min-width:0">
+              <div class="ud-nav-bldg-name" title="${b.name}">${b.name}</div>
+              <div class="ud-nav-bldg-meta">${b.sqft?Number(b.sqft).toLocaleString()+' sf · ':''}${mCount} meter${mCount!==1?'s':''}</div>
+            </div>
+            <div class="ud-nav-bldg-actions">
+              <button class="btn btn-ghost btn-sm" style="padding:1px 5px;font-size:11px" onclick="event.stopPropagation();openBldgModal('${b.id}')" title="Edit">✏️</button>
+              <button class="btn-del" onclick="event.stopPropagation();deleteBuilding('${b.id}')" title="Delete">✕</button>
+            </div>
+          </div>`;
+        });
+        html += `<div style="padding:5px 14px 8px 30px">
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;width:100%" onclick="openBldgModal(null)">+ Add Building</button>
+        </div>`;
+      }
+    }
+  });
+  el.innerHTML = html;
 }
 
-/* ── RENDER PANEL 2: BUILDINGS ── */
-function renderUDBldgList(){
-  const el = document.getElementById('udBldgList');
-  if(!el) return;
-  const addBtn = document.getElementById('ud-add-bldg-btn');
+/* Keep old name working — it's called in several places */
+function renderUDBldgList(){ renderUDProjList(); }
 
-  if(!udSelProjId){
-    el.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">📁</div>Select a project</div>';
-    if(addBtn) addBtn.style.display='none';
-    return;
-  }
-  if(addBtn) addBtn.style.display='';
-
-  const bldgs = getUDBldgs(udSelProjId);
-  if(!bldgs.length){
-    el.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">🏢</div>No buildings yet<br><button class="btn btn-em btn-sm" style="margin-top:10px" onclick="openBldgModal(null)">+ Add Building</button></div>';
-    return;
-  }
-  el.innerHTML = bldgs.map(b=>{
-    const mCount = (b.meters||[]).length;
-    const active = b.id === udSelBldgId ? ' active' : '';
-    return `<div class="ud-bldg-item${active}" onclick="udSelectBldg('${b.id}')">
-      <div style="flex:1;min-width:0">
-        <div class="ud-bldg-name" title="${b.name}">${b.name}</div>
-        <div class="ud-bldg-meta">${b.sqft?Number(b.sqft).toLocaleString()+' sf · ':''}${mCount} meter${mCount!==1?'s':''}</div>
-      </div>
-      <div class="ud-bldg-item-actions">
-        <button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:11px" onclick="event.stopPropagation();openBldgModal('${b.id}')" title="Edit building">✏️</button>
-        <button class="btn-del" onclick="event.stopPropagation();deleteBuilding('${b.id}')" title="Delete building">✕</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-/* ── RENDER PANEL 3: METERS & BILLING ── */
+/* ── RENDER RIGHT DETAIL: Building header + Meters ── */
 function renderUDDetail(){
   const wrap = document.getElementById('udDetailWrap');
-  const meterBtn = document.getElementById('ud-add-meter-btn');
-  const bldgBar = document.getElementById('udBldgBar');
-  const bldgBarName = document.getElementById('udBldgBarName');
-  const bldgBarMeta = document.getElementById('udBldgBarMeta');
+  const hdr = document.getElementById('udDetailHdr');
+  const hdrTitle = document.getElementById('udDetailHdrTitle');
+  const hdrSub = document.getElementById('udDetailHdrSub');
   if(!wrap) return;
 
-  // Track selected building id on window for the header edit button
   window._udSelBldgId = udSelBldgId;
 
   if(!udSelBldgId || !udSelProjId){
-    wrap.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">🏢</div>Select a building</div>';
-    if(meterBtn) meterBtn.style.display='none';
-    if(bldgBar) bldgBar.style.display='none';
+    if(hdr) hdr.style.display='none';
+    wrap.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">📁</div><div>Select a project and building<br>from the left to view meters</div></div>';
     return;
   }
 
   const b = getUDBldg(udSelProjId, udSelBldgId);
   if(!b){ wrap.innerHTML='<div class="ud-empty">Building not found</div>'; return; }
 
-  // Show + Add Meter button
-  if(meterBtn) meterBtn.style.display='';
-
-  // Populate building info bar (below header, above meter list)
-  if(bldgBar){
-    bldgBar.style.display='flex';
-    if(bldgBarName) bldgBarName.textContent = b.name;
-    if(bldgBarMeta){
-      const parts = [];
-      if(b.addr) parts.push(`<span class="ud-bldg-bar-item">📍 ${b.addr}</span>`);
-      if(b.sqft) parts.push(`<span class="ud-bldg-bar-item"><strong>${Number(b.sqft).toLocaleString()}</strong> sq ft</span>`);
-      if(b.type) parts.push(`<span class="ud-bldg-bar-item">${b.type}</span>`);
-      bldgBarMeta.innerHTML = parts.join('');
-    }
+  // Show building info in the detail header
+  if(hdr) hdr.style.display='flex';
+  if(hdrTitle) hdrTitle.textContent = b.name;
+  if(hdrSub){
+    const parts = [];
+    if(b.addr) parts.push(`<span>📍 ${b.addr}</span>`);
+    if(b.sqft) parts.push(`<span>📐 ${Number(b.sqft).toLocaleString()} sq ft</span>`);
+    if(b.type) parts.push(`<span>🏢 ${b.type}</span>`);
+    const meters = b.meters || [];
+    parts.push(`<span>⚡ ${meters.length} meter${meters.length!==1?'s':''}</span>`);
+    hdrSub.innerHTML = parts.join('');
   }
 
   const meters = b.meters || [];
-  const metersHTML = meters.length
+  wrap.innerHTML = meters.length
     ? meters.map(m=>renderMeterCard(m)).join('')
-    : `<div class="ud-empty"><div class="ud-empty-ico">⚡</div>No meters yet.<br><button class="btn btn-em btn-sm" style="margin-top:10px" onclick="openMeterModal()">+ Add Meter</button></div>`;
+    : `<div class="ud-empty"><div class="ud-empty-ico">⚡</div><div>No meters yet.<br><button class="btn btn-em btn-sm" style="margin-top:12px" onclick="openMeterModal()">+ Add Meter</button></div></div>`;
 
-  wrap.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2)">${meters.length} Meter${meters.length!==1?'s':''}</div>
-    </div>
-    ${metersHTML}`;
-
-  // Restore previously open meter cards
   requestAnimationFrame(()=>{
     _openMeterIds.forEach(mid=>{
       const body = document.getElementById('mbody-'+mid);
@@ -2370,8 +2337,8 @@ function renderMeterCard(m){
     <div class="ud-meter-hdr" onclick="toggleMeterCard('${m.id}')">
       ${commodityPill(m.commodity)}
       <span class="ud-meter-label">${meterLabel(m)}</span>
-      <span style="font-size:11px;color:var(--text2);margin-right:8px">${bills.length} bill${bills.length!==1?'s':''}</span>
-      <button class="btn btn-ghost btn-sm" style="margin-right:6px" onclick="event.stopPropagation();openMeterModal('${m.id}')">✏️</button>
+      <span class="ud-meter-bills-count">${bills.length} bill${bills.length!==1?'s':''}</span>
+      <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openMeterModal('${m.id}')">✏️</button>
       <button class="btn-del" onclick="event.stopPropagation();deleteMeter('${m.id}')" title="Delete meter">✕</button>
       <span class="ud-meter-toggle" id="mtog-${m.id}">›</span>
     </div>
@@ -2380,9 +2347,7 @@ function renderMeterCard(m){
         <div class="ud-meter-info-cell"><div class="ud-info-lbl">Provider</div><div class="ud-info-val">${m.provider||'—'}</div></div>
         <div class="ud-meter-info-cell"><div class="ud-info-lbl">Account #</div><div class="ud-info-val" style="font-family:var(--mono)">${m.account||'—'}</div></div>
         <div class="ud-meter-info-cell"><div class="ud-info-lbl">Meter #</div><div class="ud-info-val" style="font-family:var(--mono)">${m.meter||'—'}</div></div>
-        <div class="ud-meter-info-cell"><div class="ud-info-lbl">Meter Address</div><div class="ud-info-val" style="font-size:11px">${m.maddr||'—'}</div></div>
-        <div class="ud-meter-info-cell"><div class="ud-info-lbl">Day Calc</div><div class="ud-info-val">${incl?'Inclusive':'Exclusive'}</div></div>
-        <div class="ud-meter-info-cell"><div class="ud-info-lbl">Records</div><div class="ud-info-val">${bills.length} billing period${bills.length!==1?'s':''}</div></div>
+        <div class="ud-meter-info-cell"><div class="ud-info-lbl">Meter Address</div><div class="ud-info-val">${m.maddr||'—'}</div></div>
       </div>
       ${billsHTML}
       <div class="ud-add-row">
@@ -2439,15 +2404,12 @@ function udSelectProj(pid){
   udSelProjId = pid;
   udSelBldgId = null;
   renderUDProjList();
-  renderUDBldgList();
   renderUDDetail();
-  const addBldg = document.getElementById('ud-add-bldg-btn');
-  if(addBldg) addBldg.style.display = '';
 }
 function udSelectBldg(bid){
-  if(udSelBldgId !== bid) _openMeterIds.clear(); // reset open cards when switching building
+  if(udSelBldgId !== bid) _openMeterIds.clear();
   udSelBldgId = bid;
-  renderUDBldgList();
+  renderUDProjList();
   renderUDDetail();
 }
 
