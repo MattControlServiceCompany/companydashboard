@@ -316,6 +316,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 
     <!-- SIDEBAR -->
     <aside class="sidebar">
+  <div class="sidebar-top">
       <div class="s-sect">
         <div class="s-lbl">Dashboard</div>
         <div class="s-item active" onclick="setView('overview',this)"><span class="s-ico">🏠</span>Overview</div>
@@ -334,7 +335,19 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
         <a class="s-item" href="energy-department.html"><span class="s-ico">💡</span>Energy Savings</a>
         <a class="s-item" href="energy-department.html"><span class="s-ico">🔌</span>WebCTRL</a>
       </div>
-    </aside>
+      </div>
+  <div class="sidebar-bottom">
+    <button class="sb-settings-btn" onclick="window.__siteUI && window.__siteUI.openSettings()">&#9881; Settings</button>
+    <div class="sb-divider"></div>
+    <div class="sb-clock" id="sb-clock">--:-- --</div>
+    <div class="sb-date" id="sb-date">Loading...</div>
+    <div class="sb-btn-row">
+      <button class="sb-btn" onclick="window.__siteUI && window.__siteUI.backupData()">Backup</button>
+      <button class="sb-btn" onclick="window.__siteUI && window.__siteUI.restoreData()">Restore</button>
+    </div>
+    <button class="sb-btn danger" style="width:100%" onclick="window.__siteUI && window.__siteUI.resetData()">Reset Data</button>
+  </div>
+</aside>
 
     <!-- CONTENT -->
     <main class="content">
@@ -698,6 +711,8 @@ function showToast(msg){
   function buildSidebarBottom() {
     var sidebar = document.querySelector('.sidebar');
     if (!sidebar) return;
+    // Skip if already hardcoded into HTML
+    if (sidebar.querySelector('.sidebar-bottom')) return;
 
     // Wrap existing sidebar content in sidebar-top
     var existingContent = sidebar.innerHTML;

@@ -586,6 +586,7 @@ html{scroll-behavior:smooth;}
 
 <div class="app-wrap">
 <aside class="sidebar">
+  <div class="sidebar-top">
   <div class="s-sect">
     <div class="s-lbl">Energy</div>
     <button class="s-item active" onclick="sv('home',this)"><span class="s-ico">🏠</span>Home</button>
@@ -605,6 +606,18 @@ html{scroll-behavior:smooth;}
     <button class="s-item" onclick="sv('specs',this)"><span class="s-ico">✍️</span>Spec Writer</button>
     <button class="s-item" onclick="sv('contracts',this)"><span class="s-ico">📋</span>Contracts</button>
     <button class="s-item" onclick="sv('webctrl',this)"><span class="s-ico">🔌</span>WebCTRL</button>
+  </div>
+  </div>
+  <div class="sidebar-bottom">
+    <button class="sb-settings-btn" onclick="window.__siteUI && window.__siteUI.openSettings()">&#9881; Settings</button>
+    <div class="sb-divider"></div>
+    <div class="sb-clock" id="sb-clock">--:-- --</div>
+    <div class="sb-date" id="sb-date">Loading...</div>
+    <div class="sb-btn-row">
+      <button class="sb-btn" onclick="window.__siteUI && window.__siteUI.backupData()">Backup</button>
+      <button class="sb-btn" onclick="window.__siteUI && window.__siteUI.restoreData()">Restore</button>
+    </div>
+    <button class="sb-btn danger" style="width:100%" onclick="window.__siteUI && window.__siteUI.resetData()">Reset Data</button>
   </div>
 </aside>
 
@@ -2940,6 +2953,8 @@ window.addEventListener('DOMContentLoaded',init);
   function buildSidebarBottom() {
     var sidebar = document.querySelector('.sidebar');
     if (!sidebar) return;
+    // Skip if already hardcoded into HTML
+    if (sidebar.querySelector('.sidebar-bottom')) return;
 
     // Wrap existing sidebar content in sidebar-top
     var existingContent = sidebar.innerHTML;
