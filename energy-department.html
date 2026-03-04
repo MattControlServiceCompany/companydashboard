@@ -760,12 +760,11 @@ html,body{height:100%;overflow:hidden;}
         <div class="ud-empty"><div class="ud-empty-ico">📁</div>Select a project</div>
       </div>
     </div>
-    <!-- Panel 3: Meters & Billing -->
+    <!-- Panel 3: Meters -->
     <div class="ud-panel">
       <div class="ud-panel-hdr">
-        <span class="ud-panel-title">Meters &amp; Billing</span>
+        <span class="ud-panel-title">Meters</span>
         <div class="ud-panel-hdr-actions">
-          <button class="btn btn-ghost btn-sm" id="ud-edit-bldg-btn" style="display:none" onclick="openBldgModal(window._udSelBldgId)">✏️ Edit Building</button>
           <button class="btn btn-em btn-sm" id="ud-add-meter-btn" style="display:none" onclick="openMeterModal()">+ Add Meter</button>
         </div>
       </div>
@@ -2291,7 +2290,6 @@ function renderUDBldgList(){
 function renderUDDetail(){
   const wrap = document.getElementById('udDetailWrap');
   const meterBtn = document.getElementById('ud-add-meter-btn');
-  const editBldgBtn = document.getElementById('ud-edit-bldg-btn');
   const bldgBar = document.getElementById('udBldgBar');
   const bldgBarName = document.getElementById('udBldgBarName');
   const bldgBarMeta = document.getElementById('udBldgBarMeta');
@@ -2303,7 +2301,6 @@ function renderUDDetail(){
   if(!udSelBldgId || !udSelProjId){
     wrap.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">🏢</div>Select a building</div>';
     if(meterBtn) meterBtn.style.display='none';
-    if(editBldgBtn) editBldgBtn.style.display='none';
     if(bldgBar) bldgBar.style.display='none';
     return;
   }
@@ -2311,9 +2308,8 @@ function renderUDDetail(){
   const b = getUDBldg(udSelProjId, udSelBldgId);
   if(!b){ wrap.innerHTML='<div class="ud-empty">Building not found</div>'; return; }
 
-  // Show/hide header action buttons
+  // Show + Add Meter button
   if(meterBtn) meterBtn.style.display='';
-  if(editBldgBtn) editBldgBtn.style.display='';
 
   // Populate building info bar (below header, above meter list)
   if(bldgBar){
