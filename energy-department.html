@@ -129,10 +129,10 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100%;
 .sb-btn.danger:hover{border-color:var(--red);color:var(--red);}
 
 /* ── CONTENT ── */
-.content{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+.content{flex:1;padding:24px 26px;overflow-y:auto;}
 .view{display:none;padding:24px 26px;animation:fadeUp .22s ease;}
-.view.active{display:block;flex:1;overflow-y:auto;}
-.view.active.view-flex{display:flex;flex-direction:column;overflow:hidden;padding-bottom:0;}
+.view.active{display:block;}
+.view.active.view-flex{display:flex;flex-direction:column;padding:24px 26px 0;height:100%;box-sizing:border-box;overflow:hidden;}
 .tab-panel{display:none;animation:fadeUp .26s ease;}
 .tab-panel.active{display:block;}
 
@@ -265,7 +265,6 @@ html,body{height:100%;overflow:hidden;}
 @keyframes fadeUp{from{opacity:0;transform:translateY(9px);}to{opacity:1;transform:translateY(0);}}
 @keyframes pulse{0%,100%{opacity:.3;transform:scale(.85);}50%{opacity:1;transform:scale(1);}}
 .nav-bar{display:none;}
-.wrap{display:flex;flex:1;overflow:hidden;}
 .pg-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;}
 .pg-title{font-family:var(--head);font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.1;}
 .pg-title em{color:var(--em);font-style:normal;}
@@ -649,7 +648,7 @@ html,body{height:100%;overflow:hidden;}
   </div>
 </aside>
 
-<div class="wrap"><main class="content">
+<main class="content">
 
 <!-- HOME -->
 <div id="view-home" class="view active">
@@ -1064,7 +1063,7 @@ html,body{height:100%;overflow:hidden;}
   </div>
 </div>
 
-</main></div></div></div>
+</main></div>
 
 <!-- PROJECT MODAL -->
 <div class="modal-bg" id="projModal" role="presentation" aria-label="Project dialog" onclick="if(event.target===this)closeProjModal()">
