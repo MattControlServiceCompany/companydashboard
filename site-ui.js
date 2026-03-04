@@ -21,6 +21,7 @@
   const DEFAULT_SETTINGS = {
     accentColor: '#3b82f6',
     defaultLoginScreen: 'index',
+    theme: 'dark',
   };
 
   /* ── LOAD / SAVE SETTINGS ── */
@@ -57,6 +58,29 @@
     root.style.setProperty('--em', hex);
     root.style.setProperty('--em-dim', 'rgba('+rgb.r+','+rgb.g+','+rgb.b+',0.1)');
     root.style.setProperty('--em-glow', 'rgba('+rgb.r+','+rgb.g+','+rgb.b+',0.22)');
+  }
+
+
+  /* ── APPLY THEME (dark / light) ── */
+  function applyTheme(mode) {
+    var isLight = mode === 'light';
+    document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
+    try { localStorage.setItem('ch_theme', isLight ? 'light' : 'dark'); } catch(e) {}
+    // Sync any inline toggle on the page (energy-department sidebar remnant guard)
+    var tog = document.getElementById('themeToggle');
+    var lbl = document.getElementById('theme-lbl');
+    if (tog) tog.checked = isLight;
+    if (lbl) lbl.textContent = isLight ? '☀️ Light Mode' : '🌙 Dark Mode';
+    // Sync the settings modal radios if open
+    var darkRad  = document.getElementById('theme-radio-dark');
+    var lightRad = document.getElementById('theme-radio-light');
+    if (darkRad)  darkRad.checked  = !isLight;
+    if (lightRad) lightRad.checked =  isLight;
+    // Update pill highlight
+    var pills = document.querySelectorAll('.theme-pill');
+    pills.forEach(function(p){
+      p.classList.toggle('active', p.getAttribute('data-theme') === (isLight ? 'light' : 'dark'));
+    });
   }
 
   /* ── CLOCK ── */
@@ -211,6 +235,7 @@
           '<button class="settings-x" onclick="window.__siteUI.closeSettings()">&#10005;</button>' +
         '</div>' +
         '<div class="settings-body">' +
+          '<div class="settings-section">' +\n            '<div class="settings-section-title">Display Mode</div>' +\n            '<div class="settings-row">' +\n              '<div>' +\n                '<div class="settings-row-label">Light / Dark Mode</div>' +\n                '<div class="settings-row-sub">Choose your preferred color scheme</div>' +\n              '</div>' +\n              '<div class="theme-pills" id="themePills">' +\n                '<button class="theme-pill" data-theme="dark" id="theme-radio-dark">🌙 Dark</button>' +\n                '<button class="theme-pill" data-theme="light" id="theme-radio-light">☀️ Light</button>' +\n              '</div>' +\n            '</div>' +\n          '</div>' +
           '<div class="settings-section">' +
             '<div class="settings-section-title">Accent Color</div>' +
             '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:10px;">' +
@@ -247,6 +272,22 @@
         document.getElementById('customColorInput').value = color;
         var s = loadSettings(); s.accentColor = color; saveSettings(s);
       };
+    });
+
+
+    // Theme pills
+    var themePills = overlay.querySelectorAll('.theme-pill');
+    themePills.forEach(function(pill){
+      pill.onclick = function(){
+        var mode = pill.getAttribute('data-theme');
+        applyTheme(mode);
+        var s = loadSettings(); s.theme = mode; saveSettings(s);
+      };
+    });
+    // Set initial pill state
+    var currentTheme = loadSettings().theme || 'dark';
+    themePills.forEach(function(p){
+      p.classList.toggle('active', p.getAttribute('data-theme') === currentTheme);
     });
 
     // Custom color input
@@ -348,6 +389,7 @@
   function initSiteUI() {
     var settings = loadSettings();
     applyAccentColor(settings.accentColor);
+    applyTheme(settings.theme || 'dark');
     buildSidebarBottom();
     buildHelpButton();
     buildSettingsModal();
@@ -374,6 +416,7 @@
     resetData: resetData,
     checkDefaultLogin: checkDefaultLogin,
     applyAccentColor: applyAccentColor,
+    applyTheme: applyTheme,
     loadSettings: loadSettings,
   };
 

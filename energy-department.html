@@ -344,60 +344,11 @@ html{scroll-behavior:smooth;}
 .pb-sqft-val{font-size:16px;font-weight:800;color:var(--em);font-family:var(--mono);}
 
 
-/* ═══════════════════════════════════════════
-   LIGHT MODE THEME
-═══════════════════════════════════════════ */
-[data-theme="light"]{
-  --bg:#f0f2f7;
-  --s1:#e4e8f2;
-  --s2:#ffffff;
-  --s3:#f5f7fc;
-  --s4:#eaedf6;
-  --border:#d3d9e8;
-  --border2:#bcc5da;
-  --em:#0099aa;
-  --em-dim:rgba(0,153,170,.1);
-  --em-glow:rgba(0,153,170,.2);
-  --em2:#0369a1;
-  --em2-dim:rgba(3,105,161,.1);
-  --warn:#b45309;
-  --warn-dim:rgba(180,83,9,.1);
-  --danger:#be123c;
-  --danger-dim:rgba(190,18,60,.1);
-  --violet:#6d28d9;
-  --violet-dim:rgba(109,40,217,.1);
-  --lime:#4d7c0f;
-  --lime-dim:rgba(77,124,15,.1);
-  --text:#1a2340;
-  --text2:#4a5672;
-  --text3:#9aa5be;
-  --accent:var(--em);
-}
-[data-theme="light"] body{background:var(--bg);color:var(--text);}
-[data-theme="light"] .modal{box-shadow:0 20px 60px rgba(0,0,0,.18);}
+
+
+/* Energy dept light-mode overrides (--em accent on white bg) */
 [data-theme="light"] .btn-em{color:#fff;}
 [data-theme="light"] .tcb.done{color:#fff;}
-[data-theme="light"] .nav-bar{background:#fff;border-bottom:1px solid var(--border);}
-[data-theme="light"] .sidebar{background:var(--s1);border-right:1px solid var(--border);}
-[data-theme="light"] .top-bar{background:#fff;border-bottom:1px solid var(--border);}
-[data-theme="light"] input[type=date]::-webkit-calendar-picker-indicator{filter:invert(0.4);}
-
-/* Theme toggle button in sidebar */
-.theme-toggle-wrap{padding:10px 12px;border-top:1px solid var(--border);margin-top:auto;}
-.theme-toggle{display:flex;align-items:center;justify-content:space-between;background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:7px 10px;cursor:default;user-select:none;}
-.theme-toggle-lbl{font-size:11px;font-weight:600;color:var(--text2);display:flex;align-items:center;gap:6px;}
-.theme-switch{position:relative;width:38px;height:20px;flex-shrink:0;}
-.theme-switch input{opacity:0;width:0;height:0;}
-.theme-track{position:absolute;inset:0;background:var(--s4);border:1px solid var(--border2);border-radius:20px;cursor:pointer;transition:background .2s,border-color .2s;}
-.theme-track:before{content:'';position:absolute;width:14px;height:14px;left:2px;top:2px;background:var(--text2);border-radius:50%;transition:transform .2s,background .2s;}
-.theme-switch input:checked + .theme-track{background:var(--em);border-color:var(--em);}
-.theme-switch input:checked + .theme-track:before{transform:translateX(18px);background:#fff;}
-
-
-/* Sidebar layout so theme toggle sticks to bottom */
-.sidebar{display:flex!important;flex-direction:column!important;}
-.sidebar .s-sect{flex:1;overflow-y:auto;}
-.theme-toggle-wrap{margin-top:auto;flex-shrink:0;}
 
 </style>
 </head><body>
@@ -452,15 +403,6 @@ html{scroll-behavior:smooth;}
     <button class="s-item" onclick="sv('specs',this)"><span class="s-ico">✍️</span>Spec Writer</button>
     <button class="s-item" onclick="sv('contracts',this)"><span class="s-ico">📋</span>Contracts</button>
     <button class="s-item" onclick="sv('webctrl',this)"><span class="s-ico">🔌</span>WebCTRL</button>
-  </div>
-  <div class="theme-toggle-wrap">
-    <div class="theme-toggle">
-      <span class="theme-toggle-lbl" id="theme-lbl">🌙 Dark Mode</span>
-      <label class="theme-switch">
-        <input type="checkbox" id="themeToggle" onchange="setTheme(this.checked?'light':'dark')">
-        <span class="theme-track"></span>
-      </label>
-    </div>
   </div>
 </aside>
 
@@ -1114,7 +1056,6 @@ const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 /* ── INIT ── */
 function init(){
-  initTheme();
   projects=sget('en_projects',[]);
   tasks=sget('en_tasks',[]);
   equipment=sget('en_equipment',[]);
@@ -2618,21 +2559,6 @@ function showToast(msg){
   toastTmr=setTimeout(()=>t.classList.remove('show'),3000);
 }
 
-/* ── THEME ── */
-function setTheme(mode){
-  const isLight = mode === 'light';
-  document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
-  try{ localStorage.setItem('ch_theme', isLight ? 'light' : 'dark'); }catch(e){}
-  const lbl = document.getElementById('theme-lbl');
-  const tog  = document.getElementById('themeToggle');
-  if(lbl) lbl.textContent = isLight ? '☀️ Light Mode' : '🌙 Dark Mode';
-  if(tog) tog.checked = isLight;
-}
-function initTheme(){
-  let saved = 'dark';
-  try{ saved = localStorage.getItem('ch_theme') || 'dark'; }catch(e){}
-  setTheme(saved);
-}
 
 window.addEventListener('DOMContentLoaded',init);
 </script>
