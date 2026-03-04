@@ -385,6 +385,197 @@
     return false;
   }
 
+  /* ══════════════════════════════════════════
+     STORE — Centralized Data Layer
+     Single source of truth for all app data.
+     All reads/writes go through Store so the
+     dashboard always stays in sync.
+  ══════════════════════════════════════════ */
+  var Store = {
+    get: function(key) {
+      try { return JSON.parse(localStorage.getItem(key)) || []; }
+      catch(e) { return []; }
+    },
+    set: function(key, data) {
+      try { localStorage.setItem(key, JSON.stringify(data)); }
+      catch(e) { console.warn('Store.set failed:', e); return; }
+      window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key: key } }));
+    },
+    update: function(key, id, newData) {
+      var items = this.get(key).map(function(item) {
+        if (item.id === id) {
+          return Object.assign({}, item, newData, { updatedAt: new Date().toISOString() });
+        }
+        return item;
+      });
+      this.set(key, items);
+    },
+    delete: function(key, id) {
+      var items = this.get(key).filter(function(item) { return item.id !== id; });
+      this.set(key, items);
+    },
+  };
+
+  /* ══════════════════════════════════════════
+     DASHBOARD CONTROLLER
+     Reads live data from Store and updates
+     index.html metric cards automatically.
+     Triggered on load and on dataUpdated events.
+  ══════════════════════════════════════════ */
+  var DashboardController = {
+    refresh: function() {
+      // Only runs on index.html — guard by checking for stat elements
+      var statStaff    = document.getElementById('dash-stat-staff');
+      var statSA       = document.getElementById('dash-stat-sa');
+      var statProjects = document.getElementById('dash-stat-projects');
+      if (!statStaff && !statSA && !statProjects) return;
+
+      // Service staff count
+      var staffData = Store.get('sv_staffData');
+      if (Array.isArray(staffData) && statStaff) {
+        statStaff.textContent = staffData.length;
+        // Also update dept card mini-stats
+        var dc = document.getElementById('dash-dc-technicians');
+        if (dc) dc.textContent = staffData.length;
+        var qa = document.getElementById('qa-staff');
+        if (qa) qa.textContent = staffData.length;
+      }
+
+      // Service Agreements count
+      var saData = Store.get('sv_saData');
+      if (Array.isArray(saData) && statSA) {
+        statSA.textContent = saData.length;
+        var dcSA = document.getElementById('dash-dc-sa');
+        if (dcSA) dcSA.textContent = saData.length;
+        var qaSA = document.getElementById('qa-pm');
+        if (qaSA) qaSA.textContent = saData.length;
+        // Update PM Schedule sidebar badge if present
+        var pmBadges = document.querySelectorAll('.pm-badge-live');
+        pmBadges.forEach(function(b){ b.textContent = saData.length; });
+      }
+
+      // Energy projects count
+      var projData = Store.get('en_projects');
+      if (Array.isArray(projData) && statProjects) {
+        statProjects.textContent = projData.length;
+      }
+    },
+  };
+
+  /* ── MOBILE SIDEBAR DRAWER ── */
+  function buildMobileSidebarToggle() {
+    // Only add if not already present
+    if (document.getElementById('sidebarToggleBtn')) return;
+    var deptNav = document.querySelector('.dept-nav');
+    if (!deptNav) return;
+
+    var btn = document.createElement('button');
+    btn.id = 'sidebarToggleBtn';
+    btn.className = 'sidebar-toggle-btn';
+    btn.setAttribute('aria-label', 'Toggle navigation menu');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-controls', 'appSidebar');
+    btn.innerHTML = '☰';
+    btn.onclick = function() {
+      var sidebar = document.getElementById('appSidebar') || document.querySelector('.sidebar');
+      if (!sidebar) return;
+      var open = sidebar.classList.toggle('drawer-open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      btn.innerHTML = open ? '✕' : '☰';
+      // Backdrop
+      var bd = document.getElementById('sidebarBackdrop');
+      if (bd) bd.style.display = open ? 'block' : 'none';
+    };
+
+    // Backdrop
+    var backdrop = document.createElement('div');
+    backdrop.id = 'sidebarBackdrop';
+    backdrop.className = 'sidebar-backdrop';
+    backdrop.style.display = 'none';
+    backdrop.onclick = function() {
+      var sidebar = document.getElementById('appSidebar') || document.querySelector('.sidebar');
+      if (sidebar) sidebar.classList.remove('drawer-open');
+      btn.setAttribute('aria-expanded', 'false');
+      btn.innerHTML = '☰';
+      backdrop.style.display = 'none';
+    };
+    document.body.appendChild(backdrop);
+    deptNav.insertBefore(btn, deptNav.firstChild);
+
+    // Give sidebar an id if it doesn't have one
+    var sidebar = document.querySelector('.sidebar');
+    if (sidebar && !sidebar.id) sidebar.id = 'appSidebar';
+  }
+
+  /* ── DEPT NAV ARIA ── */
+  function applyDeptNavAria() {
+    var nav = document.querySelector('.dept-nav');
+    if (!nav) return;
+    nav.setAttribute('role', 'tablist');
+    nav.setAttribute('aria-label', 'Department navigation');
+    var tabs = nav.querySelectorAll('.dept-tab');
+    tabs.forEach(function(tab) {
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', tab.classList.contains('active') ? 'true' : 'false');
+    });
+  }
+
+  /* ── MODAL ARIA + FOCUS TRAP + ESC ── */
+  function applyModalAccessibility() {
+    // Apply to any overlay that has .settings-overlay, .help-overlay class
+    // and any future modals. Uses MutationObserver for dynamically added ones.
+    function setupOverlay(overlay) {
+      if (overlay._a11yReady) return;
+      overlay._a11yReady = true;
+      var modal = overlay.querySelector('[class$="-modal"], .modal, [role="dialog"]');
+      if (modal) {
+        if (!modal.getAttribute('role')) modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+      }
+      overlay.addEventListener('keydown', function(e) {
+        if (!overlay.classList.contains('open')) return;
+        // ESC closes
+        if (e.key === 'Escape') {
+          overlay.classList.remove('open');
+          return;
+        }
+        // Focus trap
+        if (e.key === 'Tab') {
+          var focusable = Array.from(overlay.querySelectorAll(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          ));
+          if (!focusable.length) return;
+          var first = focusable[0];
+          var last  = focusable[focusable.length - 1];
+          if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault(); last.focus();
+          } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault(); first.focus();
+          }
+        }
+      });
+    }
+
+    // Setup existing overlays
+    document.querySelectorAll('.settings-overlay, .help-overlay, .modal-overlay').forEach(setupOverlay);
+
+    // Watch for new ones
+    var observer = new MutationObserver(function(mutations) {
+      mutations.forEach(function(m) {
+        m.addedNodes.forEach(function(node) {
+          if (node.nodeType !== 1) return;
+          if (node.classList && (node.classList.contains('settings-overlay') ||
+              node.classList.contains('help-overlay') ||
+              node.classList.contains('modal-overlay'))) {
+            setupOverlay(node);
+          }
+          node.querySelectorAll && node.querySelectorAll('.settings-overlay, .help-overlay, .modal-overlay').forEach(setupOverlay);
+        });
+      });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
   /* ── INIT ── */
   function initSiteUI() {
     var settings = loadSettings();
@@ -394,8 +585,17 @@
     buildHelpButton();
     buildSettingsModal();
     buildHelpModal();
+    buildMobileSidebarToggle();
+    applyDeptNavAria();
+    applyModalAccessibility();
     updateClock();
     setInterval(updateClock, 15000);
+
+    // Dashboard auto-refresh: run once on load, then on every Store write
+    DashboardController.refresh();
+    window.addEventListener('dataUpdated', function() {
+      DashboardController.refresh();
+    });
   }
 
   // Run when DOM is ready
@@ -419,5 +619,9 @@
     applyTheme: applyTheme,
     loadSettings: loadSettings,
   };
+
+  // Expose Store and DashboardController globally
+  window.Store = Store;
+  window.DashboardController = DashboardController;
 
 })();

@@ -613,7 +613,7 @@ html,body{height:100%;overflow:hidden;}
 
 <!-- STAFF MODAL -->
 <div class="modal-bg" id="staffModal" onclick="if(event.target.id==='staffModal')closeStaffModal()">
-  <div class="modal-box">
+  <div class="modal-box" role="dialog" aria-modal="true">
     <div class="modal-hdr"><span class="modal-title">+ Add Employee</span><button class="modal-x" onclick="closeStaffModal()">✕</button></div>
     <div class="modal-body">
       <div class="fg"><label class="fl">Full Name</label><input class="fi" id="iName" placeholder="e.g. [REDACTED]"></div>
@@ -631,7 +631,7 @@ html,body{height:100%;overflow:hidden;}
 
 <!-- PM MODAL -->
 <div class="modal-bg" id="pmModal" onclick="if(event.target.id==='pmModal')closePMModal()">
-  <div class="modal-box">
+  <div class="modal-box" role="dialog" aria-modal="true">
     <div class="modal-hdr"><span class="modal-title">+ Add SA Record</span><button class="modal-x" onclick="closePMModal()">✕</button></div>
     <div class="modal-body">
       <div class="f2">
@@ -659,7 +659,7 @@ html,body{height:100%;overflow:hidden;}
 
 <!-- DISPATCH MODAL -->
 <div class="modal-bg" id="dispatchModal" onclick="if(event.target.id==='dispatchModal')closeDispatchModal()">
-  <div class="modal-box">
+  <div class="modal-box" role="dialog" aria-modal="true">
     <div class="modal-hdr"><span class="modal-title">+ New Work Order</span><button class="modal-x" onclick="closeDispatchModal()">✕</button></div>
     <div class="modal-body">
       <div class="f2">
@@ -1018,9 +1018,14 @@ function getPMChipLabel(lbl) {
 /* ═══════════════════════════════════
    SA DATA — 57 real records from CSV
 ═══════════════════════════════════ */
-/* ── PERSISTENT STORAGE ── */
-function sset(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){console.warn('sset:',e);}}
-function sget(k,fb){try{const r=localStorage.getItem(k);return r!==null?JSON.parse(r):fb;}catch(e){return fb;}}
+/* ── PERSISTENT STORAGE — delegates to window.Store so dataUpdated events fire ── */
+function sset(k,v){
+  if(window.Store){ window.Store.set(k,v); return; }
+  try{localStorage.setItem(k,JSON.stringify(v));}catch(e){console.warn('sset:',e);}
+}
+function sget(k,fb){
+  try{const r=localStorage.getItem(k);return r!==null?JSON.parse(r):fb;}catch(e){return fb;}
+}
 
 let saData = [
   {
@@ -2389,6 +2394,20 @@ window.__siteUI={
   backupData:siteBackup, restoreData:siteRestore, resetData:siteResetData,
   checkDefaultLogin:siteCheckDefaultLogin, applyAccentColor:siteApplyAccent,
 };
+
+/* ── ESC KEY — closes any open modal-bg ── */
+document.addEventListener('keydown', function(e){
+  if(e.key !== 'Escape') return;
+  var closers = {
+    staffModal:    typeof closeStaffModal==='function'    ? closeStaffModal    : null,
+    pmModal:       typeof closePMModal==='function'       ? closePMModal       : null,
+    dispatchModal: typeof closeDispatchModal==='function' ? closeDispatchModal : null,
+  };
+  Object.keys(closers).forEach(function(id){
+    var el = document.getElementById(id);
+    if(el && el.style.display !== 'none' && closers[id]) closers[id]();
+  });
+});
 </script>
 
 </body>

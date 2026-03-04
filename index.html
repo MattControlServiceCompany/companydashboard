@@ -404,9 +404,9 @@ html,body{height:100%;overflow:hidden;}
 
         <div class="stats-row">
           <div class="stat-card"><div class="stat-lbl">Departments</div><div class="stat-val c-blue">2</div><div class="stat-meta">active portals</div></div>
-          <div class="stat-card"><div class="stat-lbl">Service Staff</div><div class="stat-val c-teal">9</div><div class="stat-meta">technicians</div></div>
-          <div class="stat-card"><div class="stat-lbl">SA Records</div><div class="stat-val c-amber">57</div><div class="stat-meta">PM agreements</div></div>
-          <div class="stat-card"><div class="stat-lbl">Energy Tools</div><div class="stat-val c-violet">12</div><div class="stat-meta">AI-powered</div></div>
+          <div class="stat-card"><div class="stat-lbl">Service Staff</div><div class="stat-val c-teal" id="dash-stat-staff">9</div><div class="stat-meta">technicians</div></div>
+          <div class="stat-card"><div class="stat-lbl">SA Records</div><div class="stat-val c-amber" id="dash-stat-sa">57</div><div class="stat-meta">PM agreements</div></div>
+          <div class="stat-card"><div class="stat-lbl">Energy Projects</div><div class="stat-val c-violet" id="dash-stat-projects">0</div><div class="stat-meta">in progress</div></div>
         </div>
 
         <div class="sec-lbl">Departments</div>
@@ -418,8 +418,8 @@ html,body{height:100%;overflow:hidden;}
               <div class="dc-name">Service Department</div>
               <div class="dc-desc">Personnel scheduling, preventative maintenance agreements, technician dispatch board, and PM calendar with auto-generated visit dates from Col M patterns.</div>
               <div class="dc-stats">
-                <div class="dc-stat"><div class="dc-stat-val" style="color:var(--accent)">9</div><div class="dc-stat-lbl">Technicians</div></div>
-                <div class="dc-stat"><div class="dc-stat-val" style="color:var(--amber)">57</div><div class="dc-stat-lbl">SA Records</div></div>
+                <div class="dc-stat"><div class="dc-stat-val" id="dash-dc-technicians" style="color:var(--accent)">9</div><div class="dc-stat-lbl">Technicians</div></div>
+                <div class="dc-stat"><div class="dc-stat-val" id="dash-dc-sa" style="color:var(--amber)">57</div><div class="dc-stat-lbl">SA Records</div></div>
                 <div class="dc-stat"><div class="dc-stat-val" style="color:var(--teal)">3</div><div class="dc-stat-lbl">Views</div></div>
               </div>
               <div class="dc-footer"><span class="dc-link">Open Service Department →</span></div>
@@ -444,7 +444,7 @@ html,body{height:100%;overflow:hidden;}
         <div class="sec-lbl">Quick Access</div>
         <div class="quick-grid">
           <a class="quick-card" href="service-department.html"><div class="qc-ico">👥</div><div><div class="qc-name">Personnel</div><div class="qc-sub">Staff schedule</div></div></a>
-          <a class="quick-card" href="service-department.html"><div class="qc-ico">🗓️</div><div><div class="qc-name">PM Schedule</div><div class="qc-sub">57 service agreements</div></div></a>
+          <a class="quick-card" href="service-department.html"><div class="qc-ico">🗓️</div><div><div class="qc-name">PM Schedule</div><div class="qc-sub"><span id="qa-pm">57</span> service agreements</div></div></a>
           <a class="quick-card" href="service-department.html"><div class="qc-ico">📡</div><div><div class="qc-name">Dispatch Board</div><div class="qc-sub">Active work orders</div></div></a>
           <a class="quick-card" href="energy-department.html"><div class="qc-ico">📄</div><div><div class="qc-name">PDF / OCR</div><div class="qc-sub">AI document extraction</div></div></a>
           <a class="quick-card" href="energy-department.html"><div class="qc-ico">🌡️</div><div><div class="qc-name">Weather Normalize</div><div class="qc-sub">HDD / CDD adjustment</div></div></a>
