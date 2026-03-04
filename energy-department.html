@@ -590,7 +590,7 @@ html,body{height:100%;overflow:hidden;}
   </div>
 </div>
 
-<div id="app" style="display:none;">
+<div id="app">
 <header class="topbar">
   <div class="t-brand"><div class="brand-mark">C</div><span class="brand-name">CompanyHub</span></div>
   <div class="t-right">
@@ -1370,7 +1370,7 @@ let currentUser=null;
 function signOut(){sessionStorage.removeItem('ch_user');window.location.href='index.html';}
 function enterApp(){
   document.getElementById('loginScreen').style.display='none';
-  document.getElementById('app').style.display='block';
+  document.getElementById('app').classList.add('visible');
   document.getElementById('topName').textContent=currentUser.name;
   document.getElementById('topAv').textContent=currentUser.initials;
 }
