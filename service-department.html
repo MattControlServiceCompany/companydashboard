@@ -442,7 +442,7 @@ html,body{height:100%;overflow:hidden;}
         <div class="ms-sq"><span></span><span></span><span></span><span></span></div>
         Sync to Outlook
       </button>
-      <div class="icon-btn" onclick="showToast('3 unread notifications')">🔔<div class="npip"></div></div>
+      <div class="icon-btn" id="notifBtn" onclick="toggleNotifPanel()" title="Notifications" style="cursor:pointer">🔔<div class="npip" id="notifPip" style="display:none"></div><span id="notifBadge" style="display:none;position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;font-size:9px;font-weight:700;border-radius:8px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 3px;border:1px solid var(--bg)">0</span></div>
       <button class="signout" onclick="signOut()">Sign Out</button>
     </div>
   </header>
@@ -674,6 +674,20 @@ html,body{height:100%;overflow:hidden;}
       </div>
     </div>
     <div class="modal-ftr"><button class="btn btn-ghost" onclick="closeDispatchModal()">Cancel</button><button class="btn btn-primary" onclick="addWorkOrder()">Save</button></div>
+  </div>
+</div>
+
+<!-- NOTIFICATION PANEL -->
+<div id="notifPanel" style="display:none;position:fixed;top:58px;right:14px;z-index:600;width:360px;max-width:95vw;background:var(--s2);border:1px solid var(--border2);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.7);animation:fadeUp .18s ease;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 17px;border-bottom:1px solid var(--border);">
+    <span style="font-size:14px;font-weight:700">🔔 Notifications</span>
+    <div style="display:flex;gap:7px;align-items:center">
+      <button class="btn btn-ghost btn-sm" onclick="clearAllNotifs()">Clear All</button>
+      <button onclick="toggleNotifPanel()" style="width:26px;height:26px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center">✕</button>
+    </div>
+  </div>
+  <div id="notifList" style="max-height:420px;overflow-y:auto;">
+    <div style="padding:20px;text-align:center;font-size:13px;color:var(--text2)">No notifications</div>
   </div>
 </div>
 
@@ -2172,9 +2186,7 @@ function setView(view,sideEl){
   if(view==='dispatch') renderDispatch();
 }
 
-/* ═══════════════════════════════════
-   TOAST
-═══════════════════════════════════ */
+/* ── TOAST ── */
 let toastTimer;
 function showToast(msg){
   const t=document.getElementById('toast');
@@ -2183,6 +2195,76 @@ function showToast(msg){
   clearTimeout(toastTimer);
   toastTimer=setTimeout(()=>t.classList.remove('show'),3400);
 }
+
+/* ── NOTIFICATIONS ── */
+let notifications=[];
+function loadNotifs(){try{const r=localStorage.getItem('ch_notifs');notifications=r?JSON.parse(r):[];}catch(e){notifications=[];}}
+function saveNotifs(){try{localStorage.setItem('ch_notifs',JSON.stringify(notifications));}catch(e){}}
+function addNotif(title,detail,icon){
+  notifications.unshift({id:Date.now(),title,detail,icon:icon||'🔔',time:new Date().toISOString()});
+  saveNotifs();refreshNotifUI();
+}
+function clearNotif(id){
+  notifications=notifications.filter(n=>n.id!==id);
+  saveNotifs();refreshNotifUI();renderNotifList();
+}
+function clearAllNotifs(){
+  notifications=[];saveNotifs();refreshNotifUI();renderNotifList();
+}
+function refreshNotifUI(){
+  const b=document.getElementById('notifBadge');
+  const p=document.getElementById('notifPip');
+  if(!b) return;
+  if(notifications.length){b.style.display='inline-block';b.textContent=notifications.length;if(p)p.style.display='block';}
+  else{b.style.display='none';if(p)p.style.display='none';}
+}
+function renderNotifList(){
+  const el=document.getElementById('notifList');if(!el) return;
+  if(!notifications.length){el.innerHTML='<div style="padding:20px;text-align:center;font-size:13px;color:var(--text2)">No notifications</div>';return;}
+  el.innerHTML=notifications.map(n=>{
+    const ago=getNotifTimeAgo(new Date(n.time));
+    return `<div style="display:flex;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border);align-items:flex-start">
+      <span style="font-size:16px;flex-shrink:0;margin-top:1px">${n.icon||'🔔'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;margin-bottom:2px">${n.title}</div>
+        <div style="font-size:12px;color:var(--text2);line-height:1.5">${n.detail}</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:3px;font-family:var(--mono)">${ago}</div>
+      </div>
+      <button onclick="clearNotif(${n.id})" style="width:22px;height:22px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;font-size:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .13s" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">✕</button>
+    </div>`;
+  }).join('');
+}
+function getNotifTimeAgo(d){
+  const s=Math.floor((Date.now()-d.getTime())/1000);
+  if(s<60) return 'Just now';
+  if(s<3600) return Math.floor(s/60)+'m ago';
+  if(s<86400) return Math.floor(s/3600)+'h ago';
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+function toggleNotifPanel(){
+  const p=document.getElementById('notifPanel');if(!p) return;
+  const open=p.style.display==='block';
+  p.style.display=open?'none':'block';
+  if(!open) renderNotifList();
+}
+document.addEventListener('click',e=>{
+  const p=document.getElementById('notifPanel');
+  const b=document.getElementById('notifBtn');
+  if(p&&p.style.display==='block'&&b&&!p.contains(e.target)&&!b.contains(e.target)) p.style.display='none';
+});
+
+/* ── NOTIFICATIONS INIT ── */
+document.addEventListener('DOMContentLoaded',function(){
+  loadNotifs();
+  if(!notifications.length){
+    notifications=[
+      {id:1,title:'PM Schedule Alert',detail:'57 service agreements are due for PM scheduling this quarter. Review the PM Schedule for assignments.',icon:'🔧',time:new Date(Date.now()-3600000).toISOString()},
+      {id:2,title:'Dispatch Board Update',detail:'3 work orders are unassigned and pending technician assignment.',icon:'📋',time:new Date(Date.now()-7200000).toISOString()},
+    ];
+    saveNotifs();
+  }
+  refreshNotifUI();
+});
 </script>
 
 

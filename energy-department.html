@@ -1482,10 +1482,8 @@ function calClick(ds){
     renderUpcomingTasks(ds);
     const panel=document.getElementById('upcomingTasksList');
     if(panel) panel.closest('.card')?.scrollIntoView({behavior:'smooth',block:'nearest'});
-    showToast(dt.length+' task'+(dt.length>1?'s':'')+' on '+new Date(ds+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}));
-  } else {
-    showToast('No tasks on '+new Date(ds+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}));
   }
+  // No toast — user is directed to the task list silently
 }
 function buildWeekStrip(){
   const el=document.getElementById('weekStrip'),rl=document.getElementById('week-range-lbl');
@@ -2971,8 +2969,8 @@ function showToast(msg){
 
 /* ── NOTIFICATIONS ── */
 let notifications=[];
-async function loadNotifs(){notifications=await sget('en_notifs',[]);}
-function saveNotifs(){sset('en_notifs',notifications);}
+async function loadNotifs(){try{const r=localStorage.getItem('ch_notifs');notifications=r?JSON.parse(r):[];}catch(e){notifications=[];}}
+function saveNotifs(){try{localStorage.setItem('ch_notifs',JSON.stringify(notifications));}catch(e){}}
 function addNotif(title,detail,icon){
   notifications.unshift({id:Date.now(),title,detail,icon:icon||'🔔',time:new Date().toISOString()});
   saveNotifs();refreshNotifUI();
@@ -3115,8 +3113,8 @@ function importUtilData(){
   sv('weather',document.querySelector('.s-item[onclick*="weather"]'));
 }
 
-window.addEventListener('DOMContentLoaded',async ()=>{
-  await loadNotifs();
+window.addEventListener('DOMContentLoaded',function(){
+  loadNotifs();
   if(!notifications.length){
     notifications=[
       {id:1,title:'Baseline Report Due',detail:'Advent Health baseline report is due in 2 days. Review M&V data before submitting.',icon:'📊',time:new Date(Date.now()-3600000).toISOString()},
