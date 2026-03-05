@@ -2448,43 +2448,82 @@ function fmtDate(d){
    NORMALIZED TAB
 ══════════════════════════════════════════ */
 function getNormRows(m, bills, incl){
-  // Build one entry per normalized calendar month (YYYY-MM).
-  // If two bills map to the same calendar month (e.g. a short overlap), merge by summing usage/cost and taking max days.
+  // Build one entry per calendar month by prorating each bill across every month it spans.
+  // A bill from 2/1–2/15 and a bill from 2/15–3/1 will correctly populate both Feb AND March:
+  //   2/1–2/15:  15 days entirely in Feb  → all usage/cost to Feb
+  //   2/15–3/1:  14 days in Feb, 1 day in March → 14/15 of usage/cost to Feb, 1/15 to March
+  // This handles both split-month billing and normal billing (majority already goes to the right month).
+
   const byMonth = {};
+  const isElec=m.commodity==='Electric', isGas=m.commodity==='Gas';
+
   bills.forEach(row=>{
-    const days = Math.max(1, parseInt(calcDays(row.start, row.end, incl))||30);
-    const isElec=m.commodity==='Electric', isGas=m.commodity==='Gas';
+    if(!row.start || !row.end) return;
+    const totalDays = Math.max(1, parseInt(calcDays(row.start, row.end, incl))||1);
     const usage = isElec ? (parseFloat(row.kwh)||0) : isGas ? (parseFloat(row.therms)||0) : (parseFloat(row.usage)||0);
-    const cost = isElec ? (parseFloat(row.totalCost)||0) : isGas ? (parseFloat(row.thermCost)||0) : (parseFloat(row.cost)||0);
-    const hdd = parseFloat(row.hdd)||0;
-    const cdd = parseFloat(row.cdd)||0;
-    const ym = normMonth(row.start, row.end, incl);
-    if(!ym) return;
-    if(byMonth[ym]){
-      // Merge: sum usage/cost, sum days, avg hdd/cdd
-      byMonth[ym].usage += usage;
-      byMonth[ym].cost  += cost;
-      byMonth[ym].days  += days;
-      if(hdd) byMonth[ym].hdd = byMonth[ym].hdd ? (byMonth[ym].hdd+hdd)/2 : hdd;
-      if(cdd) byMonth[ym].cdd = byMonth[ym].cdd ? (byMonth[ym].cdd+cdd)/2 : cdd;
-      const avgTemp2=parseFloat(row.avgTemp)||0;
-      if(avgTemp2) byMonth[ym].avgTemp = byMonth[ym].avgTemp ? (byMonth[ym].avgTemp+avgTemp2)/2 : avgTemp2;
-      byMonth[ym]._ids.push(row.id);
-    } else {
-      byMonth[ym] = { ym, start:row.start, end:row.end, days, usage, cost, hdd, cdd, avgTemp:parseFloat(row.avgTemp)||0, _ids:[row.id] };
+    const cost  = isElec ? (parseFloat(row.totalCost)||0) : isGas ? (parseFloat(row.thermCost)||0) : (parseFloat(row.cost)||0);
+    const hdd   = parseFloat(row.hdd)||0;
+    const cdd   = parseFloat(row.cdd)||0;
+    const avgTmp= parseFloat(row.avgTemp)||0;
+
+    // Count actual days per calendar month that this bill spans
+    const monthDays = {};
+    const s=new Date(row.start+'T12:00:00');
+    const e=new Date(row.end+'T12:00:00');
+    let cur=new Date(s);
+    while(cur<=e){
+      const ym=cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0');
+      monthDays[ym]=(monthDays[ym]||0)+1;
+      cur.setDate(cur.getDate()+1);
     }
+
+    // Prorate usage/cost/days into each spanned month
+    const spannedTotal=Object.values(monthDays).reduce((a,b)=>a+b,0)||1;
+    Object.entries(monthDays).forEach(([ym, daysInMonth])=>{
+      const frac = daysInMonth / spannedTotal;
+      const pUsage = usage * frac;
+      const pCost  = cost  * frac;
+      // Days: use actual days in this calendar month from the bill (not prorated)
+      const pDays  = daysInMonth;
+
+      if(byMonth[ym]){
+        byMonth[ym].usage += pUsage;
+        byMonth[ym].cost  += pCost;
+        byMonth[ym].days  += pDays;
+        // HDD/CDD/avgTemp: accumulate weighted by days
+        if(hdd)   byMonth[ym].hddSum   = (byMonth[ym].hddSum  ||0) + hdd*frac;
+        if(cdd)   byMonth[ym].cddSum   = (byMonth[ym].cddSum  ||0) + cdd*frac;
+        if(avgTmp)byMonth[ym].tmpSum   = (byMonth[ym].tmpSum  ||0) + avgTmp*frac;
+        byMonth[ym].wSum = (byMonth[ym].wSum||0) + frac;
+        byMonth[ym]._ids.push(row.id);
+      } else {
+        byMonth[ym] = {
+          ym, start:row.start, end:row.end, days:pDays,
+          usage:pUsage, cost:pCost,
+          hddSum: hdd?hdd*frac:0,
+          cddSum: cdd?cdd*frac:0,
+          tmpSum: avgTmp?avgTmp*frac:0,
+          wSum:   frac,
+          _ids:[row.id]
+        };
+      }
+    });
   });
 
   return Object.entries(byMonth).sort((a,b)=>a[0]<b[0]?-1:1).map(([ym,r])=>{
     const usagePerDay = r.days>0 ? r.usage/r.days : 0;
-    const hddNorm = r.hdd>0 ? r.usage/r.hdd : null;
-    const cddNorm = r.cdd>0 ? r.usage/r.cdd : null;
+    // Normalize accumulated weather sums back to per-month values
+    const hdd    = r.wSum>0 && r.hddSum ? r.hddSum/r.wSum : 0;
+    const cdd    = r.wSum>0 && r.cddSum ? r.cddSum/r.wSum : 0;
+    const avgTemp= r.wSum>0 && r.tmpSum ? r.tmpSum/r.wSum : 0;
+    const hddNorm = hdd>0 ? r.usage/hdd : null;
+    const cddNorm = cdd>0 ? r.usage/cdd : null;
     const [yr,mo]=ym.split('-');
     const dt=new Date(parseInt(yr),parseInt(mo)-1,1);
     const label=dt.toLocaleDateString('en-US',{month:'short',year:'numeric'});
     return {
       id: r._ids[0], ym, start: r.start, end: r.end, days: r.days,
-      usage: r.usage, usagePerDay, cost: r.cost, hdd: r.hdd, cdd: r.cdd, avgTemp: r.avgTemp||0,
+      usage: r.usage, usagePerDay, cost: r.cost, hdd, cdd, avgTemp,
       hddNorm, cddNorm, label,
       isBaseline: !!(m.baseline && m.baseline.months && m.baseline.months.includes(ym)),
     };
@@ -3210,20 +3249,21 @@ function parseBillCsv(text, fname){
 
   if(!parsed.length){ showToast('No valid rows found in CSV'); return; }
 
-  // Deduplicate: one entry per billing month (keyed by start month)
-  const byMonth={};
+  // Deduplicate: collapse exact duplicate start dates only (same bill entered twice).
+  // DO NOT deduplicate by normMonth — split-month bills (e.g. 2/1–2/15 and 2/15–3/1) must
+  // both survive so getNormRows can prorate them correctly across calendar months.
+  const byStart={};
   parsed.forEach(r=>{
-    const key=r.start.slice(0,7); // YYYY-MM
-    if(!byMonth[key]) byMonth[key]=r;
+    const key=r.start; // exact start date YYYY-MM-DD
+    if(!byStart[key]) byStart[key]=r;
     else {
-      // Merge — keep row with more data
-      const existing=byMonth[key];
-      const exScore=Object.values(existing).filter(v=>v&&v!==0&&v!=='').length;
+      // Keep row with more non-zero data fields
+      const exScore=Object.values(byStart[key]).filter(v=>v&&v!==0&&v!=='').length;
       const newScore=Object.values(r).filter(v=>v&&v!==0&&v!=='').length;
-      if(newScore>exScore) byMonth[key]=r;
+      if(newScore>exScore) byStart[key]=r;
     }
   });
-  _csvImportRows=Object.values(byMonth).sort((a,b)=>new Date(a.start)-new Date(b.start));
+  _csvImportRows=Object.values(byStart).sort((a,b)=>new Date(a.start)-new Date(b.start));
 
   // Show preview
   showBillCsvPreview(_csvImportRows, m, fname, warnings);
@@ -3305,14 +3345,13 @@ function importBillCsvRows(){
   const m=b.meters.find(m=>m.id===_csvImportMid); if(!m) return;
   m.bills=m.bills||[];
 
-  // Merge: don't duplicate periods that already exist (same YYYY-MM start)
-  const existing=new Set(m.bills.map(r=>r.start.slice(0,7)));
+  // Merge on exact start date — split-month bills (e.g. 2/1 and 2/15) are distinct rows
+  const existing=new Set(m.bills.map(r=>r.start));
   let added=0, updated=0;
   _csvImportRows.forEach(r=>{
-    const key=r.start.slice(0,7);
+    const key=r.start;
     if(existing.has(key)){
-      // Update existing row
-      const idx=m.bills.findIndex(b=>b.start.slice(0,7)===key);
+      const idx=m.bills.findIndex(b=>b.start===key);
       if(idx>=0){ Object.assign(m.bills[idx],r); updated++; }
     } else {
       m.bills.push({id:'r'+Date.now()+Math.random(),...r});
