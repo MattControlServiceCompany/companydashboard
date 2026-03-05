@@ -2177,6 +2177,21 @@ function renderUDProjList(){
 /* Keep old name working — it's called in several places */
 function renderUDBldgList(){ renderUDProjList(); }
 
+function udSelectProj(pid){
+  udSelProjId = pid;
+  udSelBldgId = null;
+  udActiveMid = null;
+  renderUDProjList();
+  renderUDDetail();
+}
+function udSelectBldg(bid){
+  if(udSelBldgId !== bid) _openMeterIds.clear();
+  udSelBldgId = bid;
+  udActiveMid = null;
+  renderUDProjList();
+  renderUDDetail();
+}
+
 /* ── RENDER RIGHT DETAIL: Building header + Meters ── */
 /* ── ACTIVE METER WORKSPACE STATE ── */
 let udActiveMid = null;
