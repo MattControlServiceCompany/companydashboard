@@ -493,7 +493,7 @@ html,body{height:100%;overflow:hidden;}
 .ud-detail-hdr-title{font-size:16px;font-weight:700;color:var(--text);}
 .ud-detail-hdr-sub{font-size:12px;color:var(--text2);display:flex;flex-wrap:wrap;gap:12px;}
 .ud-detail-hdr-sub span{display:flex;align-items:center;gap:4px;}
-.ud-detail-body{flex:1;overflow-y:auto;padding:20px;}
+.ud-detail-body{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0;}
 /* Meter cards */
 .ud-meter-card{background:var(--s3);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden;transition:border-color .14s;}
 .ud-meter-card:hover{border-color:var(--border2);}
@@ -537,6 +537,53 @@ html,body{height:100%;overflow:hidden;}
 /* Keep old classes referenced elsewhere */
 .ud-info-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);font-weight:700;margin-bottom:4px;}
 .ud-info-val{font-size:13px;font-weight:600;color:var(--text);word-break:break-word;}
+
+/* ── METER BAR (pill selector at top of detail pane) ── */
+.ma-meter-bar{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0;flex-wrap:wrap;gap:8px;}
+.ma-meter-pills{display:flex;flex-wrap:wrap;gap:6px;flex:1;min-width:0;}
+.ma-meter-pill{display:flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--border2);border-radius:8px;background:var(--s3);cursor:pointer;transition:all .13s;font-family:var(--font);}
+.ma-meter-pill:hover{border-color:var(--em);background:var(--em-dim);}
+.ma-meter-pill.active{border-color:var(--em);background:var(--em-dim);}
+#maMeterWorkspace{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;}
+.ma-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--s1);}
+.ma-tab{font-size:12px;font-weight:600;padding:9px 18px;border:none;border-bottom:2px solid transparent;background:transparent;cursor:pointer;color:var(--text3);transition:all .13s;font-family:var(--font);white-space:nowrap;margin-bottom:-1px;}
+.ma-tab:hover{color:var(--text2);}
+.ma-tab.active{color:var(--em);border-bottom-color:var(--em);}
+#maPane{flex:1;overflow-y:auto;}
+.ma-pane{display:none;flex:1;overflow-y:auto;padding:18px 20px;}
+.ma-pane.active{display:block;}
+/* Analysis stat cards */
+.ma-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:18px;}
+.ma-stat{background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:11px 14px;}
+.ma-stat-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);font-weight:700;margin-bottom:4px;}
+.ma-stat-val{font-size:18px;font-weight:700;color:var(--text);}
+.ma-stat-unit{font-size:11px;color:var(--text2);font-weight:400;}
+/* Norm table */
+.ma-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+.ma-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);font-weight:700;padding:7px 10px;text-align:left;border-bottom:1px solid var(--border);background:var(--s1);white-space:nowrap;position:sticky;top:0;}
+.ma-tbl td{padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:middle;}
+.ma-tbl tr:last-child td{border-bottom:none;}
+.ma-tbl tr.baseline-row td{background:rgba(0,212,170,.07);}
+.ma-tbl .mono{font-family:var(--mono);}
+/* Baseline selector */
+.bl-period-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:7px;margin-bottom:6px;cursor:pointer;transition:all .13s;background:var(--s3);}
+.bl-period-row:hover{border-color:var(--border2);}
+.bl-period-row.sel{border-color:var(--em);background:var(--em-dim);}
+.bl-period-row input[type=checkbox]{accent-color:var(--em);width:15px;height:15px;flex-shrink:0;}
+/* Chart container */
+.ma-chart-wrap{position:relative;background:var(--s3);border:1px solid var(--border);border-radius:9px;padding:16px;margin-bottom:16px;}
+.ma-chart-wrap canvas{max-height:260px;}
+/* CSV drop inline */
+.ma-csv-drop{border:2px dashed var(--border2);border-radius:8px;padding:14px;text-align:center;cursor:pointer;transition:all .15s;margin-bottom:10px;}
+.ma-csv-drop:hover,.ma-csv-drop.drag{border-color:var(--em);background:var(--em-dim);}
+.ma-csv-drop-title{font-size:13px;font-weight:600;color:var(--text2);margin-bottom:3px;}
+.ma-csv-drop-sub{font-size:11px;color:var(--text3);}
+/* HDD input table */
+.hdd-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px;}
+.hdd-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);font-weight:700;padding:6px 10px;text-align:left;border-bottom:1px solid var(--border);background:var(--s1);}
+.hdd-tbl td{padding:5px 8px;border-bottom:1px solid var(--border);}
+.hdd-tbl input{font-family:var(--mono);font-size:12px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:3px 7px;width:80px;outline:none;}
+.hdd-tbl input:focus{border-color:var(--em);}
 
 
 
@@ -584,7 +631,9 @@ html,body{height:100%;overflow:hidden;}
 
 
 </style>
-</head><body>
+</head>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<body>
 
 <div id="loginScreen">
   <div class="login-card">
@@ -632,8 +681,6 @@ html,body{height:100%;overflow:hidden;}
       <div class="s-proj-section" id="sidebarProjFolders"></div>
       <button class="s-item" onclick="sv('pdf',this)"><span class="s-ico">📄</span>PDF / OCR</button>
       <button class="s-item" onclick="sv('utility',this)"><span class="s-ico">⚡</span>Utility Data</button>
-      <button class="s-item" onclick="sv('weather',this)"><span class="s-ico">🌡️</span>Weather &amp; Normalize</button>
-      <button class="s-item" onclick="sv('baseline',this)"><span class="s-ico">📊</span>Baseline</button>
       <button class="s-item" onclick="sv('savings',this)"><span class="s-ico">💡</span>Energy Savings</button>
       <button class="s-item" onclick="sv('district',this)"><span class="s-ico">🗓️</span>District Calendar</button>
       <button class="s-item" onclick="sv('equipment',this)"><span class="s-ico">⚙️</span>Equipment</button>
@@ -797,57 +844,7 @@ html,body{height:100%;overflow:hidden;}
 </div>
 
 <!-- WEATHER -->
-<div id="view-weather" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Weather &amp; Date <em>Normalization</em></h1><p class="pg-sub">Normalize utility consumption for HDD, CDD, and billing period length variations</p></div>
-    <div class="hdr-actions"><button class="btn btn-ghost" onclick="openCsvModal()">📊 Import Data</button><button class="btn btn-ghost" onclick="addUtilRow()">+ Month</button><button class="btn btn-em" onclick="runNorm()">⚡ Run Normalization</button></div>
-  </div>
-  <div class="g2">
-    <div class="card">
-      <div class="card-hdr"><span class="card-title">📋 Utility Data Entry</span></div>
-      <div style="padding:14px">
-        <div class="util-hdr"><div>Month</div><div>kWh</div><div>Therms</div><div>Start</div><div>End</div><div>Days</div><div></div></div>
-        <div id="utilRows"></div>
-        <div class="fg" style="margin-top:12px"><label class="fl">Location</label><input class="fi" id="wxLoc" placeholder="e.g. Kansas City, MO"></div>
-        <div class="f2">
-          <div class="fg"><label class="fl">HDD Base °F</label><input class="fi" id="hddBase" type="number" value="65"></div>
-          <div class="fg"><label class="fl">CDD Base °F</label><input class="fi" id="cddBase" type="number" value="65"></div>
-        </div>
-      </div>
-    </div>
-    <div><div class="ai-label">🌡️ Normalization Results</div><div class="ai-box" id="wxBox" style="min-height:300px">Enter utility data, specify location and base temperatures, then click Run Normalization.</div></div>
-  </div>
-</div>
-
-<!-- BASELINE -->
-<div id="view-baseline" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Utility <em>Baseline</em></h1><p class="pg-sub">Calculate energy use baseline from 12 months of data per ASHRAE Guideline 14 / IPMVP</p></div>
-    <div class="hdr-actions"><button class="btn btn-em" onclick="calcBaseline()">📊 Calculate Baseline</button></div>
-  </div>
-  <div class="g2">
-    <div class="card">
-      <div class="card-hdr"><span class="card-title">📥 12-Month Input</span></div>
-      <div style="padding:14px">
-        <div class="fg"><label class="fl">Facility Name</label><input class="fi" id="bl-name" placeholder="e.g. Van Horn High School"></div>
-        <div class="f2">
-          <div class="fg"><label class="fl">Period Start</label><input class="fi" id="bl-start" type="month"></div>
-          <div class="fg"><label class="fl">Period End</label><input class="fi" id="bl-end" type="month"></div>
-        </div>
-        <div class="fg"><label class="fl">Utility Type</label>
-          <select class="fs" id="bl-type"><option value="electric">Electric (kWh)</option><option value="gas">Natural Gas (Therms)</option><option value="both">Both Electric &amp; Gas</option></select>
-        </div>
-        <div class="fl" style="margin-bottom:7px;display:block">Monthly Consumption</div>
-        <div id="blMonthRows"></div>
-        <div class="f2" style="margin-top:10px">
-          <div class="fg"><label class="fl">Annual HDD</label><input class="fi" id="bl-hdd" type="number" placeholder="4800"></div>
-          <div class="fg"><label class="fl">Annual CDD</label><input class="fi" id="bl-cdd" type="number" placeholder="1200"></div>
-        </div>
-      </div>
-    </div>
-    <div><div class="ai-label">📊 Baseline Results</div><div class="ai-box" id="blBox" style="min-height:220px">Enter 12 months of data and click Calculate.</div><div id="blResult"></div></div>
-  </div>
-</div>
+<!-- Weather & Normalize and Baseline are integrated into Utility Data meter workspace tabs -->
 
 <!-- ENERGY SAVINGS -->
 <div id="view-savings" class="view">
@@ -1227,6 +1224,47 @@ html,body{height:100%;overflow:hidden;}
   </div>
 </div>
 
+<!-- BILL CSV IMPORT MODAL -->
+<div class="modal-bg" id="billCsvModal" onclick="if(event.target===this)closeBillCsvModal()">
+  <div class="modal" style="width:700px;max-width:96vw">
+    <div class="modal-hdr">
+      <span class="modal-title" id="billCsvModalTitle">📥 Import Bill Periods — CSV</span>
+      <button class="modal-x" onclick="closeBillCsvModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:12px;line-height:1.7">
+        <div style="font-weight:700;margin-bottom:4px;color:var(--text)">Expected CSV columns:</div>
+        <div id="billCsvColGuide" style="font-family:var(--mono);font-size:11px;color:var(--em)"></div>
+        <div id="billCsvColNote" style="margin-top:6px;color:var(--text2)"></div>
+      </div>
+      <div class="drop-zone" id="billCsvDrop" style="padding:20px;margin-bottom:12px"
+           onclick="document.getElementById('billCsvInput').click()"
+           ondragover="event.preventDefault();this.classList.add('drag')"
+           ondragleave="this.classList.remove('drag')"
+           ondrop="handleBillCsvDrop(event)">
+        <span class="dz-ico" style="font-size:26px">📄</span>
+        <div class="dz-title" id="billCsvDropLabel" style="font-size:13px">Drop CSV file or click to browse</div>
+        <div class="dz-sub" style="font-size:11px">One row per billing period · Header row optional · Duplicates merged by month</div>
+        <input type="file" id="billCsvInput" accept=".csv,.txt" style="display:none" onchange="handleBillCsvFile(event)">
+      </div>
+      <div id="billCsvPreviewWrap" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--em)" id="billCsvPreviewLabel">Preview</div>
+          <div style="font-size:11px;color:var(--text2)" id="billCsvRowCount"></div>
+        </div>
+        <div style="overflow-x:auto;border:1px solid var(--border);border-radius:7px;max-height:260px;overflow-y:auto">
+          <table class="ud-bill-tbl" id="billCsvPreviewTable" style="min-width:unset;font-size:12px"></table>
+        </div>
+        <div id="billCsvWarnings" style="display:none;margin-top:10px;padding:10px 12px;background:var(--warn-dim);border:1px solid rgba(245,158,11,.25);border-radius:7px;font-size:12px;color:var(--warn)"></div>
+      </div>
+    </div>
+    <div class="modal-ftr">
+      <button class="btn btn-ghost" onclick="closeBillCsvModal()">Cancel</button>
+      <button class="btn btn-em" id="billCsvImportBtn" style="display:none" onclick="importBillCsvRows()">Import <span id="billCsvImportCount"></span> Period(s)</button>
+    </div>
+  </div>
+</div>
+
 <!-- TASK MODAL -->
 <div class="modal-bg" id="taskModal" role="presentation" aria-label="Task dialog" onclick="if(event.target===this)closeTaskModal()">
   <div class="modal" role="dialog" aria-modal="true" style="width:420px">
@@ -1279,63 +1317,6 @@ html,body{height:100%;overflow:hidden;}
   </div>
   <div id="notifList" style="max-height:420px;overflow-y:auto;">
     <div style="padding:20px;text-align:center;font-size:13px;color:var(--text2)">No notifications</div>
-  </div>
-</div>
-
-<!-- CSV IMPORT MODAL -->
-<div class="modal-bg" id="csvModal" onclick="if(event.target===this)closeCsvModal()">
-  <div class="modal" style="width:580px">
-    <div class="modal-hdr"><span class="modal-title">📊 Import Utility Bill Data</span><button class="modal-x" onclick="closeCsvModal()">✕</button></div>
-    <div class="modal-body">
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-        <button class="ptpill sel" id="imp-csv-btn" onclick="setImportMode('csv',this)">📁 CSV Upload</button>
-        <button class="ptpill" id="imp-manual-btn" onclick="setImportMode('manual',this)">✏️ Quick Entry</button>
-      </div>
-      <!-- CSV mode -->
-      <div id="imp-csv-mode">
-        <div class="drop-zone" id="csvDropZone" onclick="document.getElementById('csvFileInput').click()"
-             ondragover="event.preventDefault();this.classList.add('drag')"
-             ondragleave="this.classList.remove('drag')"
-             ondrop="handleCsvDrop(event)" style="padding:22px;margin-bottom:12px">
-          <span class="dz-ico" style="font-size:26px">📊</span>
-          <div class="dz-title" id="csvDropLabel" style="font-size:13px">Drop CSV file or click to browse</div>
-          <div class="dz-sub" style="font-size:11px">Columns: Month, kWh, Therms, Start Date, End Date</div>
-          <input type="file" id="csvFileInput" accept=".csv,.txt" style="display:none" onchange="handleCsvUpload(event)">
-        </div>
-        <div id="csvPreview" style="display:none;margin-bottom:10px">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--em);margin-bottom:6px">Preview (first 5 rows)</div>
-          <div style="overflow-x:auto;border:1px solid var(--border);border-radius:7px">
-            <table class="dtbl" style="font-size:12px;width:100%" id="csvPreviewTable"></table>
-          </div>
-        </div>
-        <div style="font-size:12px;color:var(--text2)"><strong style="color:var(--text)">Format:</strong> Month, kWh, Therms, StartDate, EndDate<br>
-          <span style="font-family:var(--mono);font-size:11px;color:var(--em)">Jan 2024, 45200, 0, 2024-01-01, 2024-01-31</span></div>
-      </div>
-      <!-- Quick entry mode -->
-      <div id="imp-manual-mode" style="display:none">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <span style="font-size:12px;color:var(--text2)">Enter one row per billing period</span>
-          <button class="btn btn-ghost btn-sm" onclick="addQuickRow()">+ Row</button>
-        </div>
-        <div style="overflow-x:auto;border:1px solid var(--border);border-radius:7px">
-          <table style="width:100%;border-collapse:collapse;min-width:480px">
-            <thead><tr style="background:var(--s1)">
-              <th style="font-size:10px;text-transform:uppercase;color:var(--text2);padding:7px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">Month</th>
-              <th style="font-size:10px;text-transform:uppercase;color:var(--text2);padding:7px 8px;text-align:left;border-bottom:1px solid var(--border)">kWh</th>
-              <th style="font-size:10px;text-transform:uppercase;color:var(--text2);padding:7px 8px;text-align:left;border-bottom:1px solid var(--border)">Therms</th>
-              <th style="font-size:10px;text-transform:uppercase;color:var(--text2);padding:7px 8px;text-align:left;border-bottom:1px solid var(--border)">Start</th>
-              <th style="font-size:10px;text-transform:uppercase;color:var(--text2);padding:7px 8px;text-align:left;border-bottom:1px solid var(--border)">End</th>
-              <th style="padding:7px 8px;border-bottom:1px solid var(--border)"></th>
-            </tr></thead>
-            <tbody id="quickEntryRows"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-    <div class="modal-ftr">
-      <button class="btn btn-ghost" onclick="closeCsvModal()">Cancel</button>
-      <button class="btn btn-em" onclick="importUtilData()">Import Data</button>
-    </div>
   </div>
 </div>
 
@@ -1412,7 +1393,7 @@ function init(){
     ];
     sset('en_equipment',equipment);
   }
-  buildWeekStrip(); buildHomeCal(); buildBaselineMonthRows(); buildUtilRows();
+  buildWeekStrip(); buildHomeCal();
   refreshProjDropdowns(); renderProjTable(); renderSidebarFolders();
   renderEquip(); renderUpcomingTasks(); updateHomeStats();
   document.getElementById('home-date').textContent=NOW.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
@@ -1798,8 +1779,7 @@ function renderDetail(p){
         <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Manage utility meters and billing data for this project.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
           <button class="btn btn-em btn-sm" onclick="goToProjectUtility(${p.id})">⚡ Open Utility Data →</button>
-          <button class="btn btn-ghost btn-sm" onclick="sv('weather',null)">🌡️ Weather &amp; Normalize</button>
-          <button class="btn btn-ghost btn-sm" onclick="sv('baseline',null)">📊 Baseline</button>
+          <button class="btn btn-ghost btn-sm" onclick="sv('savings',null)">💡 Energy Savings</button>
           <button class="btn btn-ghost btn-sm" onclick="sv('savings',null)">💡 Energy Savings</button>
         </div>
         <div id="ptab-utility-summary-${p.id}"></div>
@@ -1982,75 +1962,6 @@ function savePDFData(){
   showToast('Data saved to '+proj.name+' ✓');
 }
 
-/* ── WEATHER ── */
-function buildUtilRows(){
-  const el=document.getElementById('utilRows'); if(!el) return;
-  let h='';
-  for(let i=11;i>=0;i--){
-    const d=new Date(NOW.getFullYear(),NOW.getMonth()-i,1);
-    const mon=d.toLocaleDateString('en-US',{month:'short',year:'2-digit'});
-    const s=new Date(d.getFullYear(),d.getMonth(),1).toISOString().split('T')[0];
-    const e2=new Date(d.getFullYear(),d.getMonth()+1,0).toISOString().split('T')[0];
-    const days=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();
-    h+=`<div class="util-row"><div style="font-family:var(--mono);font-size:11px;color:var(--text2)">${mon}</div><input type="number" placeholder="0" id="ur-kwh-${i}"><input type="number" placeholder="0" id="ur-th-${i}"><input type="text" value="${s}" id="ur-s-${i}"><input type="text" value="${e2}" id="ur-e-${i}"><input type="number" value="${days}" id="ur-d-${i}" readonly><button class="btn-del" onclick="this.closest('.util-row').remove()">✕</button></div>`;
-  }
-  el.innerHTML=h;
-}
-function addUtilRow(){
-  const el=document.getElementById('utilRows');
-  const d=document.createElement('div'); d.className='util-row';
-  d.innerHTML='<div style="font-family:var(--mono);font-size:11px;color:var(--text2)">New</div><input type="number" placeholder="0"><input type="number" placeholder="0"><input type="text" placeholder="Start"><input type="text" placeholder="End"><input type="number" placeholder="30"><button class="btn-del" onclick="this.closest(\'.util-row\').remove()">✕</button>';
-  el.appendChild(d);
-}
-async function runNorm(){
-  const box=document.getElementById('wxBox'),loc=document.getElementById('wxLoc').value||'Kansas City, MO';
-  const rows=document.querySelectorAll('.util-row'); let data=[];
-  rows.forEach(r=>{const ins=r.querySelectorAll('input');const kwh=parseFloat(ins[0]?.value)||0,th=parseFloat(ins[1]?.value)||0;if(kwh||th)data.push({kwh,th,start:ins[2]?.value,end:ins[3]?.value,days:parseInt(ins[4]?.value)||30});});
-  if(!data.length){showToast('Enter at least one row of data');return;}
-  box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Running normalization...</div>';
-  const result=await claude(`Normalize these utility data rows for ${loc}.\nData: ${JSON.stringify(data)}\nFor each row provide consumption, days, kWh/day, estimated HDD/CDD, and HDD-normalized kWh. Return a formatted table for an M&V report.`,'You are an expert energy engineer specializing in utility data analysis and weather normalization.');
-  box.textContent=result;
-}
-
-/* ── BASELINE ── */
-function buildBaselineMonthRows(){
-  const el=document.getElementById('blMonthRows'); if(!el) return;
-  let h='';
-  for(let i=0;i<12;i++){
-    const d=new Date(NOW.getFullYear(),NOW.getMonth()-11+i,1);
-    const mon=d.toLocaleDateString('en-US',{month:'short',year:'numeric'});
-    h+=`<div class="bl-mo-row"><div class="bl-mo-lbl">${mon}</div><input class="fi" style="padding:5px 8px;font-size:12px" type="number" placeholder="kWh" id="bl-kwh-${i}"><input class="fi" style="padding:5px 8px;font-size:12px" type="number" placeholder="Therms" id="bl-th-${i}"></div>`;
-  }
-  el.innerHTML=h;
-}
-async function calcBaseline(){
-  const box=document.getElementById('blBox'),name=document.getElementById('bl-name').value||'Facility';
-  let months=[];
-  for(let i=0;i<12;i++){const k=parseFloat(document.getElementById('bl-kwh-'+i)?.value)||0,t=parseFloat(document.getElementById('bl-th-'+i)?.value)||0;if(k||t)months.push({m:i+1,kwh:k,therms:t});}
-  if(months.length<3){showToast('Enter at least 3 months of data');return;}
-  box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Calculating baseline...</div>';
-  const totalK=months.reduce((a,b)=>a+b.kwh,0),totalT=months.reduce((a,b)=>a+b.therms,0);
-  const hdd=parseFloat(document.getElementById('bl-hdd').value)||4800,cdd=parseFloat(document.getElementById('bl-cdd').value)||1200;
-  const result=await claude(`Calculate utility baseline for ${name} per ASHRAE GL14/IPMVP. Data: ${JSON.stringify(months)}, HDD: ${hdd}, CDD: ${cdd}. Provide: annual kWh/Therms, kWh/day, regression equation, R², base load, professional summary table.`,'You are an expert energy engineer and M&V professional.');
-  box.textContent=result;
-  document.getElementById('blResult').innerHTML=`<div class="bl-result"><div class="bl-title">📊 Baseline Summary — ${name}</div><div class="bl-grid"><div class="bl-item"><div class="bl-lbl">Annual kWh</div><div class="bl-val">${Math.round(totalK).toLocaleString()}<span class="bl-unit"> kWh/yr</span></div></div><div class="bl-item"><div class="bl-lbl">Annual Therms</div><div class="bl-val">${Math.round(totalT).toLocaleString()}<span class="bl-unit"> Th/yr</span></div></div><div class="bl-item"><div class="bl-lbl">Avg kWh/Mo</div><div class="bl-val">${Math.round(totalK/months.length).toLocaleString()}<span class="bl-unit"> kWh</span></div></div><div class="bl-item"><div class="bl-lbl">Data Points</div><div class="bl-val">${months.length}<span class="bl-unit"> months</span></div></div></div></div>`;
-  document.getElementById('h-base').textContent=parseInt(document.getElementById('h-base').textContent||0)+1;
-}
-
-/* ── ENERGY SAVINGS ── */
-async function calcSavings(){
-  const box=document.getElementById('svBox'),name=document.getElementById('sv-name').value||'Project';
-  const blK=parseFloat(document.getElementById('sv-bl-kwh').value)||0,blT=parseFloat(document.getElementById('sv-bl-th').value)||0,blC=parseFloat(document.getElementById('sv-bl-cost').value)||0;
-  const poK=parseFloat(document.getElementById('sv-po-kwh').value)||0,poT=parseFloat(document.getElementById('sv-po-th').value)||0,poC=parseFloat(document.getElementById('sv-po-cost').value)||0;
-  const blH=parseFloat(document.getElementById('sv-bl-hdd').value)||4800,poH=parseFloat(document.getElementById('sv-po-hdd').value)||4800;
-  const pc=parseFloat(document.getElementById('sv-cost').value)||0,rate=parseFloat(document.getElementById('sv-rate').value)||0.12;
-  if(!blK&&!blT){showToast('Enter baseline data first');return;}
-  box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Calculating M&V savings...</div>';
-  const grossK=blK-poK,grossC=blC-poC,hAdj=blH>0?poH/blH:1,adjSavK=blK*hAdj-poK,payback=pc>0&&grossC>0?(pc/grossC).toFixed(1):'N/A';
-  const result=await claude(`Write IPMVP Option B M&V savings summary for ${name}. Baseline: ${blK} kWh, ${blT} Th, $${blC}, HDD ${blH}. Post: ${poK} kWh, ${poT} Th, $${poC}, HDD ${poH}. Project cost $${pc}. Payback ${payback}yr. Rate $${rate}/kWh. Provide savings table, % reductions, payback, ROI, professional narrative.`,'You are an expert M&V professional writing per ASHRAE GL14 and IPMVP.');
-  box.textContent=result;
-  document.getElementById('svResult').innerHTML=`<div class="bl-result"><div class="bl-title">💡 Savings — ${name}</div><div class="bl-grid"><div class="bl-item"><div class="bl-lbl">Gross kWh Savings</div><div class="bl-val" style="color:var(--em)">${Math.round(grossK).toLocaleString()}<span class="bl-unit"> kWh/yr</span></div></div><div class="bl-item"><div class="bl-lbl">WX-Adj Savings</div><div class="bl-val" style="color:var(--em)">${Math.round(adjSavK).toLocaleString()}<span class="bl-unit"> kWh/yr</span></div></div><div class="bl-item"><div class="bl-lbl">Cost Savings</div><div class="bl-val" style="color:var(--em)">$${Math.round(grossC).toLocaleString()}<span class="bl-unit">/yr</span></div></div><div class="bl-item"><div class="bl-lbl">Simple Payback</div><div class="bl-val" style="color:var(--warn)">${payback}<span class="bl-unit"> yrs</span></div></div></div></div>`;
-}
 
 /* ── DISTRICT CAL ── */
 async function parseDistCal(){
@@ -2267,13 +2178,17 @@ function renderUDProjList(){
 function renderUDBldgList(){ renderUDProjList(); }
 
 /* ── RENDER RIGHT DETAIL: Building header + Meters ── */
+/* ── ACTIVE METER WORKSPACE STATE ── */
+let udActiveMid = null;
+let udActiveTab = 'bills';
+let _maCharts = {};
+
 function renderUDDetail(){
   const wrap = document.getElementById('udDetailWrap');
-  const hdr = document.getElementById('udDetailHdr');
+  const hdr  = document.getElementById('udDetailHdr');
   const hdrTitle = document.getElementById('udDetailHdrTitle');
-  const hdrSub = document.getElementById('udDetailHdrSub');
+  const hdrSub   = document.getElementById('udDetailHdrSub');
   if(!wrap) return;
-
   window._udSelBldgId = udSelBldgId;
 
   if(!udSelBldgId || !udSelProjId){
@@ -2281,87 +2196,754 @@ function renderUDDetail(){
     wrap.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">📁</div><div>Select a project and building<br>from the left to view meters</div></div>';
     return;
   }
-
   const b = getUDBldg(udSelProjId, udSelBldgId);
   if(!b){ wrap.innerHTML='<div class="ud-empty">Building not found</div>'; return; }
 
-  // Show building info in the detail header
   if(hdr) hdr.style.display='flex';
   if(hdrTitle) hdrTitle.textContent = b.name;
   if(hdrSub){
-    const parts = [];
-    if(b.addr) parts.push(`<span>📍 ${b.addr}</span>`);
-    if(b.sqft) parts.push(`<span>📐 ${Number(b.sqft).toLocaleString()} sq ft</span>`);
-    if(b.type) parts.push(`<span>🏢 ${b.type}</span>`);
-    const meters = b.meters || [];
-    parts.push(`<span>⚡ ${meters.length} meter${meters.length!==1?'s':''}</span>`);
-    hdrSub.innerHTML = parts.join('');
+    const parts=[];
+    if(b.addr) parts.push('<span>📍 '+b.addr+'</span>');
+    if(b.sqft) parts.push('<span>📐 '+Number(b.sqft).toLocaleString()+' sq ft</span>');
+    const meters=b.meters||[];
+    parts.push('<span>⚡ '+meters.length+' meter'+(meters.length!==1?'s':'')+'</span>');
+    hdrSub.innerHTML=parts.join('');
   }
 
   const meters = b.meters || [];
-  wrap.innerHTML = meters.length
-    ? meters.map(m=>renderMeterCard(m)).join('')
-    : `<div class="ud-empty"><div class="ud-empty-ico">⚡</div><div>No meters yet.<br><button class="btn btn-em btn-sm" style="margin-top:12px" onclick="openMeterModal()">+ Add Meter</button></div></div>`;
+  if(!meters.length){
+    wrap.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">⚡</div><div>No meters yet.<br><button class="btn btn-em btn-sm" style="margin-top:12px" onclick="openMeterModal()">+ Add Meter</button></div></div>';
+    return;
+  }
 
-  requestAnimationFrame(()=>{
-    _openMeterIds.forEach(mid=>{
-      const body = document.getElementById('mbody-'+mid);
-      const tog  = document.getElementById('mtog-'+mid);
-      if(body) body.classList.add('open');
-      if(tog)  tog.classList.add('open');
-    });
+  if(!udActiveMid || !meters.find(m=>m.id===udActiveMid)) udActiveMid = meters[0].id;
+
+  const pills = meters.map(m=>{
+    const active = m.id===udActiveMid;
+    const bcount = (m.bills||[]).length;
+    return '<button class="ma-meter-pill'+(active?' active':'')+'" onclick="udSelectMeter(\''+m.id+'\')">'+
+      commodityPill(m.commodity)+
+      '<span style="font-size:12px;font-weight:600;color:'+(active?'var(--text)':'var(--text2)')+'">'+
+        (m.provider||m.commodity)+'</span>'+
+      '<span style="font-size:11px;color:var(--text3)">'+bcount+' bill'+(bcount!==1?'s':'')+'</span>'+
+      '</button>';
+  }).join('');
+
+  wrap.innerHTML =
+    '<div class="ma-meter-bar">'+
+      '<div class="ma-meter-pills">'+pills+'</div>'+
+      '<div style="display:flex;gap:6px;flex-shrink:0">'+
+        '<button class="btn btn-ghost btn-sm" onclick="openMeterModal(\''+udActiveMid+'\')">✏️ Edit</button>'+
+        '<button class="btn btn-ghost btn-sm" onclick="deleteMeter(\''+udActiveMid+'\')">🗑</button>'+
+        '<button class="btn btn-em btn-sm" onclick="openMeterModal()">+ Meter</button>'+
+      '</div>'+
+    '</div>'+
+    '<div id="maMeterWorkspace"></div>';
+
+  renderMeterWorkspace();
+}
+
+function udSelectMeter(mid){ udActiveMid=mid; udActiveTab='bills'; renderUDDetail(); }
+function maSetTab(tab){ udActiveTab=tab; renderMeterWorkspace(); }
+
+function renderMeterWorkspace(){
+  const ws=document.getElementById('maMeterWorkspace'); if(!ws) return;
+  const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
+  const m=b.meters.find(m=>m.id===udActiveMid); if(!m) return;
+  const bills=(m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+  const incl=m.inclusive!==false;
+
+  const tabs=[
+    {id:'bills',label:'📋 Bills'},
+    {id:'norm',label:'🌡️ Normalized'},
+    {id:'baseline',label:'📊 Baseline'},
+    {id:'perf',label:'💡 Performance'},
+  ];
+
+  ws.innerHTML=
+    '<div class="ma-tabs">'+
+      tabs.map(t=>'<button class="ma-tab'+(t.id===udActiveTab?' active':'')+'" onclick="maSetTab(\''+t.id+'\')">'+t.label+'</button>').join('')+
+    '</div>'+
+    '<div id="maPane" style="padding:18px 20px;overflow-y:auto;flex:1"></div>';
+
+  const pane=document.getElementById('maPane');
+  if(udActiveTab==='bills')    renderBillsPane(pane,m,bills,incl);
+  if(udActiveTab==='norm')     renderNormPane(pane,m,bills,incl);
+  if(udActiveTab==='baseline') renderBaselinePane(pane,m,bills,incl);
+  if(udActiveTab==='perf')     renderPerfPane(pane,m,bills,incl);
+}
+
+/* ══════════════════════════════════════════
+   BILLS TAB
+══════════════════════════════════════════ */
+function renderBillsPane(pane, m, bills, incl){
+  const isElec = m.commodity==='Electric';
+  const isGas  = m.commodity==='Gas';
+
+  let tblHead = '<th>Start</th><th>End</th><th style="text-align:center">Days</th>';
+  if(isElec) tblHead += '<th>kWh</th><th>Demand kW</th><th>Fac. kW</th><th>kW Cost $</th><th>kWh Cost $</th><th>Total $</th>';
+  else if(isGas) tblHead += '<th>Therms</th><th>Therm Cost $</th>';
+  else tblHead += '<th>Usage</th><th>Cost $</th>';
+  tblHead += '<th></th>';
+
+  const rows = bills.map(row=>renderBillRow(row,m)).join('');
+
+  pane.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">'+
+      '<div>'+
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2)">'+
+          bills.length+' Billing Period'+(bills.length!==1?'s':'')+(bills.length?' · '+getDateRange(bills):'')+'</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:2px">Acct: '+(m.account||'—')+' · Meter: '+(m.meter||'—')+'</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+        '<button class="btn btn-ghost btn-sm" onclick="openCsvImportForMeter(\''+m.id+'\')">📥 Import CSV</button>'+
+        '<div class="ud-incl-toggle">'+
+          '<span style="font-size:11px;color:var(--text2)">Day calc:</span>'+
+          '<button class="ud-incl-btn'+(incl?' sel':'')+'" onclick="setMeterIncl(\''+m.id+'\',true)">Inclusive</button>'+
+          '<button class="ud-incl-btn'+(!incl?' sel':'')+'" onclick="setMeterIncl(\''+m.id+'\',false)">Exclusive</button>'+
+        '</div>'+
+        '<button class="btn btn-em btn-sm" onclick="openBillModal(\''+m.id+'\')">+ Add Period</button>'+
+      '</div>'+
+    '</div>'+
+    (bills.length===0 ?
+      '<div class="ma-csv-drop" onclick="openCsvImportForMeter(\''+m.id+'\')">'+
+        '<div class="ma-csv-drop-title">📥 Drop CSV or click to import bill data</div>'+
+        '<div class="ma-csv-drop-sub">One row per billing period · Electric, Gas, Water, Steam</div>'+
+      '</div>' :
+      '<div class="ud-bill-wrap"><table class="ud-bill-tbl"><thead><tr>'+tblHead+'</tr></thead><tbody>'+rows+'</tbody></table></div>'+
+      '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">'+
+        '<button class="ma-csv-drop" onclick="openCsvImportForMeter(\''+m.id+'\')" style="margin:0;padding:10px;display:flex;align-items:center;justify-content:center;gap:8px">'+
+          '<span style="font-size:13px">📥</span><span style="font-size:12px;color:var(--text2)">Import more periods via CSV</span>'+
+        '</button>'+
+      '</div>'
+    );
+}
+
+function getDateRange(bills){
+  if(!bills.length) return '';
+  const sorted=bills.slice().sort((a,b)=>new Date(a.start)-new Date(b.start));
+  return fmtMon(sorted[0].start)+' – '+fmtMon(sorted[sorted.length-1].end||sorted[sorted.length-1].start);
+}
+function fmtMon(d){
+  if(!d) return '?';
+  const dt=new Date(d+'T12:00:00');
+  return dt.toLocaleDateString('en-US',{month:'short',year:'numeric'});
+}
+function fmtDate(d){
+  if(!d) return '?';
+  const dt=new Date(d+'T12:00:00');
+  return dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+}
+
+/* ══════════════════════════════════════════
+   NORMALIZED TAB
+══════════════════════════════════════════ */
+function getNormRows(m, bills, incl){
+  return bills.map(row=>{
+    const days = Math.max(1, parseInt(calcDays(row.start, row.end, incl))||30);
+    const isElec=m.commodity==='Electric', isGas=m.commodity==='Gas';
+    const usage = isElec ? (parseFloat(row.kwh)||0) : isGas ? (parseFloat(row.therms)||0) : (parseFloat(row.usage)||0);
+    const usagePerDay = days>0 ? usage/days : 0;
+    const cost = isElec ? (parseFloat(row.totalCost)||0) : isGas ? (parseFloat(row.thermCost)||0) : (parseFloat(row.cost)||0);
+    const hdd = parseFloat(row.hdd)||0;
+    const cdd = parseFloat(row.cdd)||0;
+    const hddNorm = hdd>0 ? usage/hdd : null;
+    const cddNorm = cdd>0 ? usage/cdd : null;
+    return {
+      id: row.id, start: row.start, end: row.end, days,
+      usage, usagePerDay, cost, hdd, cdd, hddNorm, cddNorm,
+      label: fmtMon(row.start),
+      isBaseline: !!(m.baseline && row.start >= m.baseline.start && row.start <= m.baseline.end),
+    };
   });
 }
 
-function renderMeterCard(m){
-  const bills = m.bills || [];
-  const incl = m.inclusive !== false;
-  const billsHTML = bills.length ? `
-    <div class="ud-bill-wrap">
-      <table class="ud-bill-tbl">
-        <thead><tr>
-          <th>Start Date</th><th>End Date</th><th style="text-align:center">Days</th>
-          ${m.commodity==='Electric' ? '<th>kWh</th><th>Demand kW</th><th>Fac. kW</th><th>Total kW $</th><th>Total kWh $</th><th>Total Bill $</th>' : ''}
-          ${m.commodity==='Gas'      ? '<th>Therms</th><th>Therm Cost $</th>' : ''}
-          ${m.commodity==='Water'    ? '<th>HCF/kGal</th><th>Water Cost $</th>' : ''}
-          ${m.commodity==='Steam'    ? '<th>Mlb/MMBtu</th><th>Steam Cost $</th>' : ''}
-          <th></th>
-        </tr></thead>
-        <tbody>
-          ${bills.map(row=>renderBillRow(row, m)).join('')}
-        </tbody>
-      </table>
-    </div>` : '<div style="font-size:12px;color:var(--text2);padding:8px 0">No billing data yet.</div>';
+function renderNormPane(pane, m, bills, incl){
+  if(!bills.length){
+    pane.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">🌡️</div><div>Add bill data in the Bills tab first</div></div>';
+    return;
+  }
+  const unit = m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
+  const rows = getNormRows(m,bills,incl);
+  const avgPerDay = rows.reduce((s,r)=>s+r.usagePerDay,0)/rows.length;
+  const totalUsage = rows.reduce((s,r)=>s+r.usage,0);
+  const totalCost  = rows.reduce((s,r)=>s+r.cost,0);
+  const needsHDD   = rows.some(r=>!r.hdd);
 
-  return `<div class="ud-meter-card" id="mcard-${m.id}">
-    <div class="ud-meter-hdr" onclick="toggleMeterCard('${m.id}')">
-      ${commodityPill(m.commodity)}
-      <span class="ud-meter-label">${meterLabel(m)}</span>
-      <span class="ud-meter-bills-count">${bills.length} bill${bills.length!==1?'s':''}</span>
-      <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openMeterModal('${m.id}')">✏️</button>
-      <button class="btn-del" onclick="event.stopPropagation();deleteMeter('${m.id}')" title="Delete meter">✕</button>
-      <span class="ud-meter-toggle" id="mtog-${m.id}">›</span>
-    </div>
-    <div class="ud-meter-body" id="mbody-${m.id}">
-      <div class="ud-meter-info">
-        <div class="ud-meter-info-cell"><div class="ud-info-lbl">Provider</div><div class="ud-info-val">${m.provider||'—'}</div></div>
-        <div class="ud-meter-info-cell"><div class="ud-info-lbl">Account #</div><div class="ud-info-val" style="font-family:var(--mono)">${m.account||'—'}</div></div>
-        <div class="ud-meter-info-cell"><div class="ud-info-lbl">Meter #</div><div class="ud-info-val" style="font-family:var(--mono)">${m.meter||'—'}</div></div>
-        <div class="ud-meter-info-cell"><div class="ud-info-lbl">Meter Address</div><div class="ud-info-val">${m.maddr||'—'}</div></div>
-      </div>
-      ${billsHTML}
-      <div class="ud-add-row">
-        <div class="ud-incl-toggle">
-          <span>Day calc:</span>
-          <button class="ud-incl-btn ${incl?'sel':''}" onclick="setMeterIncl('${m.id}',true)">Inclusive</button>
-          <button class="ud-incl-btn ${!incl?'sel':''}" onclick="setMeterIncl('${m.id}',false)">Exclusive</button>
-        </div>
-        <button class="btn btn-em btn-sm" onclick="openBillModal('${m.id}')">+ Add Period</button>
-      </div>
-    </div>
-  </div>`;
+  // Stats
+  const statsHTML =
+    '<div class="ma-stats">'+
+      maStat(totalUsage.toLocaleString(undefined,{maximumFractionDigits:0}), unit+'/total', 'Total Usage')+
+      maStat(avgPerDay.toFixed(1), unit+'/day avg', 'Date-Normalized Avg')+
+      maStat('$'+totalCost.toLocaleString(undefined,{maximumFractionDigits:0}), 'total', 'Total Cost')+
+      maStat(rows.length+'', 'months', 'Data Points')+
+    '</div>';
+
+  // HDD/CDD input notice if missing
+  const hddNotice = needsHDD ?
+    '<div style="background:var(--warn-dim);border:1px solid rgba(245,158,11,.25);border-radius:7px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--warn)">'+
+      '⚠️ Enter monthly HDD/CDD values below to enable weather normalization. '+
+      'Tip: import from NOAA or use your location\'s climate data.'+
+    '</div>' : '';
+
+  // Table with inline HDD/CDD editing
+  const tblRows = rows.map(r=>`
+    <tr class="${r.isBaseline?'baseline-row':''}">
+      <td class="mono">${r.label}</td>
+      <td class="mono">${r.days}</td>
+      <td class="mono">${r.usage.toLocaleString(undefined,{maximumFractionDigits:1})}</td>
+      <td class="mono" style="color:var(--em);font-weight:600">${r.usagePerDay.toFixed(2)}</td>
+      <td><input class="hdd-inp" type="number" placeholder="HDD" value="${r.hdd||''}"
+        onchange="updateBillWeather('${m.id}','${r.id}','hdd',this.value)"
+        style="width:70px;font-family:var(--mono);font-size:12px;background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);outline:none"></td>
+      <td><input class="hdd-inp" type="number" placeholder="CDD" value="${r.cdd||''}"
+        onchange="updateBillWeather('${m.id}','${r.id}','cdd',this.value)"
+        style="width:70px;font-family:var(--mono);font-size:12px;background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);outline:none"></td>
+      <td class="mono" style="color:var(--em2)">${r.hddNorm!==null?r.hddNorm.toFixed(3):'—'}</td>
+      <td class="mono">${r.cost?'$'+r.cost.toLocaleString(undefined,{maximumFractionDigits:0}):'—'}</td>
+      ${r.isBaseline?'<td><span style="font-size:10px;background:var(--em-dim);color:var(--em);border:1px solid rgba(0,212,170,.2);border-radius:4px;padding:1px 6px">BL</span></td>':'<td></td>'}
+    </tr>`).join('');
+
+  pane.innerHTML =
+    statsHTML + hddNotice +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">'+
+      '<div>'+
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+unit+'/Day — Date Normalized</div>'+
+        '<div class="ma-chart-wrap" style="padding:12px"><canvas id="normChart"></canvas></div>'+
+      '</div>'+
+      '<div>'+
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">Monthly Detail + Weather Data</div>'+
+        '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:300px;overflow-y:auto">'+
+          '<table class="ma-tbl">'+
+            '<thead><tr><th>Month</th><th>Days</th><th>'+unit+'</th><th>'+unit+'/Day</th><th>HDD</th><th>CDD</th><th>'+unit+'/HDD</th><th>Cost</th><th></th></tr></thead>'+
+            '<tbody>'+tblRows+'</tbody>'+
+          '</table>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+
+  // Draw chart
+  requestAnimationFrame(()=>{ drawNormChart('normChart', rows, unit); });
 }
 
+function maStat(val, unit, lbl){
+  return '<div class="ma-stat"><div class="ma-stat-lbl">'+lbl+'</div>'+
+    '<div class="ma-stat-val">'+val+'<span class="ma-stat-unit"> '+unit+'</span></div></div>';
+}
+
+function drawNormChart(canvasId, rows, unit){
+  const canvas=document.getElementById(canvasId); if(!canvas) return;
+  if(_maCharts[canvasId]){ _maCharts[canvasId].destroy(); }
+  const labels=rows.map(r=>r.label);
+  const perDay=rows.map(r=>+r.usagePerDay.toFixed(2));
+  const blColor=rows.map(r=>r.isBaseline?'rgba(0,212,170,0.85)':'rgba(100,160,255,0.75)');
+  _maCharts[canvasId]=new Chart(canvas,{
+    type:'bar',
+    data:{
+      labels,
+      datasets:[{
+        label:unit+'/Day',
+        data:perDay,
+        backgroundColor:blColor,
+        borderColor:blColor.map(c=>c.replace('0.75','1').replace('0.85','1')),
+        borderWidth:1,
+        borderRadius:3,
+      }]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:true,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.y.toFixed(2)+' '+unit+'/day'}}},
+      scales:{
+        x:{ticks:{font:{size:10},maxRotation:45},grid:{color:'rgba(255,255,255,0.04)'}},
+        y:{ticks:{font:{size:10}},grid:{color:'rgba(255,255,255,0.06)'},title:{display:true,text:unit+'/Day',font:{size:10}}},
+      }
+    }
+  });
+}
+
+function updateBillWeather(mid, rowId, field, val){
+  const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
+  const m=b.meters.find(m=>m.id===mid); if(!m) return;
+  const row=m.bills.find(r=>r.id===rowId); if(!row) return;
+  row[field]=parseFloat(val)||0;
+  saveUtilityData();
+  // Don't re-render — user is editing inline, just save
+}
+
+/* ══════════════════════════════════════════
+   BASELINE TAB
+══════════════════════════════════════════ */
+function renderBaselinePane(pane, m, bills, incl){
+  if(bills.length<3){
+    pane.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">📊</div><div>Add at least 3 months of bill data to set a baseline</div></div>';
+    return;
+  }
+  const unit=m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
+  const rows=getNormRows(m,bills,incl);
+  const bl=m.baseline||null;
+
+  // Baseline range selector
+  const allMonths=rows.map(r=>r.start);
+  const blStart=bl?bl.start:allMonths[0];
+  const blEnd  =bl?bl.end  :allMonths[Math.min(11,allMonths.length-1)];
+
+  const blRows=rows.filter(r=>r.start>=blStart&&r.start<=blEnd);
+  const hasBl=blRows.length>=3;
+
+  // Summary stats for current baseline
+  let blStatsHTML='';
+  if(hasBl){
+    const avg=blRows.reduce((s,r)=>s+r.usagePerDay,0)/blRows.length;
+    const total=blRows.reduce((s,r)=>s+r.usage,0);
+    const cost=blRows.reduce((s,r)=>s+r.cost,0);
+    const avgHDD=blRows.filter(r=>r.hdd).reduce((s,r)=>s+r.hdd,0)/Math.max(1,blRows.filter(r=>r.hdd).length);
+    blStatsHTML=
+      '<div class="ma-stats" style="margin-bottom:14px">'+
+        maStat(blRows.length+'','months','Baseline Period')+
+        maStat(avg.toFixed(2),unit+'/day avg','Avg Daily Use')+
+        maStat(total.toLocaleString(undefined,{maximumFractionDigits:0}),unit,'Total Use')+
+        maStat(cost?'$'+cost.toLocaleString(undefined,{maximumFractionDigits:0}):'—','total','Total Cost')+
+        (avgHDD?maStat(avgHDD.toFixed(0),'HDD avg','Avg Monthly HDD'):'')+'</div>';
+  }
+
+  // Month checkboxes
+  const rowChecks=rows.map(r=>{
+    const checked=r.start>=blStart&&r.start<=blEnd;
+    return '<label class="bl-period-row" style="cursor:pointer">'+
+      '<input type="checkbox" value="'+r.start+'" '+(checked?'checked':'')+
+        ' onchange="updateBaselineRange(\''+m.id+'\')" style="accent-color:var(--em);width:14px;height:14px;flex-shrink:0">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:12px;font-weight:600;color:var(--text)">'+r.label+'</div>'+
+        '<div style="font-size:11px;color:var(--text2)">'+r.usage.toLocaleString(undefined,{maximumFractionDigits:0})+' '+unit+' · '+r.usagePerDay.toFixed(1)+'/day'+
+          (r.hdd?' · '+r.hdd+' HDD':'')+'</div>'+
+      '</div>'+
+      (checked?'<span style="font-size:10px;background:var(--em-dim);color:var(--em);border:1px solid rgba(0,212,170,.2);border-radius:4px;padding:2px 7px">✓ BL</span>':'')+
+    '</label>';
+  }).join('');
+
+  pane.innerHTML=
+    '<div style="display:grid;grid-template-columns:280px 1fr;gap:18px;align-items:start">'+
+      '<div>'+
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">Select Baseline Months</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Check the months to include in the baseline. A typical baseline is 12–36 months.</div>'+
+        '<div id="blPeriodList" style="max-height:400px;overflow-y:auto">'+rowChecks+'</div>'+
+        '<div style="margin-top:12px;display:flex;gap:6px">'+
+          '<button class="btn btn-ghost btn-sm" onclick="blSelectAll(\''+m.id+'\',true)">Select All</button>'+
+          '<button class="btn btn-ghost btn-sm" onclick="blSelectAll(\''+m.id+'\',false)">Clear</button>'+
+        '</div>'+
+      '</div>'+
+      '<div>'+
+        blStatsHTML+
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+unit+'/Day — Baseline Highlighted</div>'+
+        '<div class="ma-chart-wrap"><canvas id="blChart"></canvas></div>'+
+        (hasBl?
+          '<button class="btn btn-em" style="width:100%;margin-top:10px" onclick="saveBaseline(\''+m.id+'\')">✅ Save Baseline Period</button>':
+          '<div style="font-size:12px;color:var(--text3);text-align:center;margin-top:10px">Select at least 3 months to set baseline</div>')+
+      '</div>'+
+    '</div>';
+
+  requestAnimationFrame(()=>{ drawBlChart('blChart',rows,unit); });
+}
+
+function updateBaselineRange(mid){
+  const checked=[...document.querySelectorAll('#blPeriodList input[type=checkbox]:checked')].map(c=>c.value).sort();
+  if(checked.length<1) return;
+  const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
+  const m=b.meters.find(m=>m.id===mid); if(!m) return;
+  m.baseline={...(m.baseline||{}), start:checked[0], end:checked[checked.length-1]};
+  saveUtilityData();
+  maSetTab('baseline');
+}
+
+function blSelectAll(mid,sel){
+  document.querySelectorAll('#blPeriodList input[type=checkbox]').forEach(cb=>cb.checked=sel);
+  updateBaselineRange(mid);
+}
+
+function saveBaseline(mid){
+  const checked=[...document.querySelectorAll('#blPeriodList input[type=checkbox]:checked')].map(c=>c.value).sort();
+  if(checked.length<3){showToast('Select at least 3 months');return;}
+  const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
+  const m=b.meters.find(m=>m.id===mid); if(!m) return;
+  m.baseline={start:checked[0],end:checked[checked.length-1],months:checked};
+  saveUtilityData();
+  showToast('Baseline saved — '+checked.length+' months ✓');
+  maSetTab('baseline');
+}
+
+function drawBlChart(canvasId,rows,unit){
+  const canvas=document.getElementById(canvasId); if(!canvas) return;
+  if(_maCharts[canvasId]){_maCharts[canvasId].destroy();}
+  const labels=rows.map(r=>r.label);
+  const perDay=rows.map(r=>+r.usagePerDay.toFixed(2));
+  const colors=rows.map(r=>r.isBaseline?'rgba(0,212,170,0.85)':'rgba(120,130,160,0.45)');
+  _maCharts[canvasId]=new Chart(canvas,{
+    type:'bar',
+    data:{labels,datasets:[{label:unit+'/Day',data:perDay,backgroundColor:colors,borderColor:colors.map(c=>c.replace('0.85','1').replace('0.45','0.7')),borderWidth:1,borderRadius:3}]},
+    options:{responsive:true,maintainAspectRatio:true,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.y.toFixed(2)+' '+unit+'/day'}}},
+      scales:{x:{ticks:{font:{size:10},maxRotation:45},grid:{color:'rgba(255,255,255,0.04)'}},
+        y:{ticks:{font:{size:10}},grid:{color:'rgba(255,255,255,0.06)'},title:{display:true,text:unit+'/Day',font:{size:10}}}}
+    }
+  });
+}
+
+/* ══════════════════════════════════════════
+   PERFORMANCE TAB
+══════════════════════════════════════════ */
+function renderPerfPane(pane, m, bills, incl){
+  const bl=m.baseline;
+  if(!bl||!bl.months||bl.months.length<3){
+    pane.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">💡</div><div>Set a baseline in the Baseline tab first.<br><button class="btn btn-em btn-sm" style="margin-top:12px" onclick="maSetTab(\'baseline\')">Go to Baseline →</button></div></div>';
+    return;
+  }
+  const unit=m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
+  const rows=getNormRows(m,bills,incl);
+  const blRows=rows.filter(r=>bl.months.includes(r.start));
+  const postRows=rows.filter(r=>!bl.months.includes(r.start));
+
+  const blAvg=blRows.length?blRows.reduce((s,r)=>s+r.usagePerDay,0)/blRows.length:0;
+  const postAvg=postRows.length?postRows.reduce((s,r)=>s+r.usagePerDay,0)/postRows.length:0;
+  const savPct=blAvg>0?((blAvg-postAvg)/blAvg*100):0;
+  const blTotal=blRows.reduce((s,r)=>s+r.usage,0);
+  const postTotal=postRows.reduce((s,r)=>s+r.usage,0);
+  const blCost=blRows.reduce((s,r)=>s+r.cost,0);
+  const postCost=postRows.reduce((s,r)=>s+r.cost,0);
+  const savCost=blCost&&postCost?blCost-postCost:null;
+
+  const statsHTML=
+    '<div class="ma-stats" style="margin-bottom:16px">'+
+      maStat(blAvg.toFixed(2),unit+'/day','Baseline Avg/Day')+
+      maStat(postAvg.toFixed(2),unit+'/day','Post-BL Avg/Day')+
+      maStat((savPct>=0?'-':'+')+(Math.abs(savPct)).toFixed(1)+'%','vs baseline',savPct>=0?'Reduction':'Increase')+
+      (savCost!==null?maStat((savCost>=0?'-':'+')+' $'+Math.abs(savCost).toLocaleString(undefined,{maximumFractionDigits:0}),'total','Cost Delta'):'')+
+    '</div>';
+
+  // Line chart: baseline avg line vs actual monthly bars
+  const allRows=rows;
+  const barsColors=allRows.map(r=>bl.months.includes(r.start)?'rgba(0,212,170,0.7)':'rgba(100,160,255,0.75)');
+
+  // Savings table
+  const perfRows=postRows.map(r=>{
+    const expUsage=blAvg*r.days;
+    const sav=expUsage-r.usage;
+    const savPc=expUsage>0?sav/expUsage*100:0;
+    return '<tr>'+
+      '<td class="mono">'+r.label+'</td>'+
+      '<td class="mono">'+r.days+'</td>'+
+      '<td class="mono" style="color:var(--text2)">'+expUsage.toFixed(0)+'</td>'+
+      '<td class="mono">'+r.usage.toLocaleString(undefined,{maximumFractionDigits:0})+'</td>'+
+      '<td class="mono" style="color:'+(sav>=0?'var(--em)':'var(--danger)')+'">'+
+        (sav>=0?'−':'+')+(Math.abs(sav)).toFixed(0)+
+      '</td>'+
+      '<td class="mono" style="color:'+(savPc>=0?'var(--em)':'var(--danger)')+'">'+
+        (savPc>=0?'−':'+')+(Math.abs(savPc)).toFixed(1)+'%'+
+      '</td>'+
+    '</tr>';
+  }).join('');
+
+  pane.innerHTML=
+    statsHTML+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">'+
+      '<div>'+
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+unit+'/Day vs Baseline</div>'+
+        '<div class="ma-chart-wrap"><canvas id="perfChart"></canvas></div>'+
+        '<div style="display:flex;gap:10px;margin-top:8px;font-size:11px;color:var(--text2)">'+
+          '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(0,212,170,0.7);border-radius:2px;display:inline-block"></span>Baseline months</span>'+
+          '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(100,160,255,0.75);border-radius:2px;display:inline-block"></span>Post-baseline</span>'+
+          '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:var(--warn);border-radius:1px;display:inline-block"></span>Baseline avg</span>'+
+        '</div>'+
+      '</div>'+
+      '<div>'+
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">Monthly Savings vs Expected</div>'+
+        (postRows.length?
+          '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto">'+
+            '<table class="ma-tbl">'+
+              '<thead><tr><th>Month</th><th>Days</th><th>Expected</th><th>Actual</th><th>Saved</th><th>%</th></tr></thead>'+
+              '<tbody>'+perfRows+'</tbody>'+
+            '</table>'+
+          '</div>':
+          '<div style="font-size:12px;color:var(--text3);padding:20px;text-align:center">Add billing data after your baseline period to see performance</div>')+
+      '</div>'+
+    '</div>';
+
+  requestAnimationFrame(()=>{ drawPerfChart('perfChart',allRows,blAvg,barsColors,unit); });
+}
+
+function drawPerfChart(canvasId,rows,blAvg,colors,unit){
+  const canvas=document.getElementById(canvasId); if(!canvas) return;
+  if(_maCharts[canvasId]){_maCharts[canvasId].destroy();}
+  const labels=rows.map(r=>r.label);
+  const perDay=rows.map(r=>+r.usagePerDay.toFixed(2));
+  _maCharts[canvasId]=new Chart(canvas,{
+    type:'bar',
+    data:{
+      labels,
+      datasets:[
+        {label:unit+'/Day',data:perDay,backgroundColor:colors,borderColor:colors.map(c=>c.replace(/[\d.]+\)$/,'1)')),borderWidth:1,borderRadius:3,order:2},
+        {label:'Baseline Avg',data:rows.map(()=>+blAvg.toFixed(2)),type:'line',borderColor:'rgba(245,158,11,0.85)',backgroundColor:'transparent',borderWidth:2,borderDash:[5,4],pointRadius:0,order:1},
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:true,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{
+        if(ctx.dataset.type==='line') return 'Baseline avg: '+ctx.parsed.y.toFixed(2)+' '+unit+'/day';
+        return ctx.parsed.y.toFixed(2)+' '+unit+'/day';
+      }}}},
+      scales:{x:{ticks:{font:{size:10},maxRotation:45},grid:{color:'rgba(255,255,255,0.04)'}},
+        y:{ticks:{font:{size:10}},grid:{color:'rgba(255,255,255,0.06)'},title:{display:true,text:unit+'/Day',font:{size:10}}}}
+    }
+  });
+}
+
+/* ══════════════════════════════════════════
+   CSV IMPORT FOR METER BILLS
+══════════════════════════════════════════ */
+let _csvImportMid = null;
+let _csvImportRows = [];
+
+function openCsvImportForMeter(mid){
+  _csvImportMid=mid;
+  _csvImportRows=[];
+  const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
+  const m=b.meters.find(m=>m.id===mid); if(!m) return;
+
+  const isElec=m.commodity==='Electric', isGas=m.commodity==='Gas';
+  let cols='', note='';
+  if(isElec){
+    cols='start_date, end_date, kwh, demand_kw, fac_kw, kw_cost, kwh_cost, total_cost';
+    note='start_date and end_date required. Numeric columns: kWh, demand_kw, fac_kw, costs.';
+  } else if(isGas){
+    cols='start_date, end_date, therms, therm_cost';
+    note='start_date and end_date required. Optional: therms, therm_cost.';
+  } else {
+    cols='start_date, end_date, usage, cost';
+    note='start_date and end_date required. Optional: usage, cost.';
+  }
+  cols+= ', hdd, cdd';
+  note+=' Optional: hdd, cdd for weather normalization.';
+
+  document.getElementById('billCsvColGuide').textContent=cols;
+  document.getElementById('billCsvColNote').textContent=note;
+  document.getElementById('billCsvModalTitle').textContent='📥 Import Bills — '+m.commodity+' · '+(m.provider||'Meter');
+  document.getElementById('billCsvPreviewWrap').style.display='none';
+  document.getElementById('billCsvImportBtn').style.display='none';
+  document.getElementById('billCsvDropLabel').textContent='Drop CSV file or click to browse';
+  document.getElementById('billCsvInput').value='';
+  document.getElementById('billCsvModal').classList.add('open');
+}
+
+function closeBillCsvModal(){ document.getElementById('billCsvModal').classList.remove('open'); _csvImportMid=null; _csvImportRows=[]; }
+function handleBillCsvDrop(e){ e.preventDefault(); document.getElementById('billCsvDrop').classList.remove('drag'); const f=e.dataTransfer.files[0]; if(f) processBillCsvFile(f); }
+function handleBillCsvFile(e){ const f=e.target.files[0]; if(f) processBillCsvFile(f); }
+
+function processBillCsvFile(file){
+  const reader=new FileReader();
+  reader.onload=e=>parseBillCsv(e.target.result,file.name);
+  reader.readAsText(file);
+}
+
+function parseBillCsv(text, fname){
+  const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
+  const m=b.meters.find(m=>m.id===_csvImportMid); if(!m) return;
+  const isElec=m.commodity==='Electric', isGas=m.commodity==='Gas';
+
+  // Split lines, ignore blanks
+  const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
+  if(lines.length<2){ showToast('CSV appears empty'); return; }
+
+  // Detect header row
+  const first=lines[0].toLowerCase();
+  const hasHeader=/date|month|start|end|kwh|therm|usage/.test(first);
+  const dataLines=hasHeader?lines.slice(1):lines;
+
+  // Parse header to find column indices
+  const hdr=hasHeader?lines[0].toLowerCase().split(',').map(h=>h.trim()):null;
+  const ci=(names)=>{
+    if(!hdr) return -1;
+    for(const n of names){ const i=hdr.findIndex(h=>h.includes(n)); if(i>=0) return i; }
+    return -1;
+  };
+
+  // Column index lookups
+  const iStart  = hdr ? Math.max(ci(['start','begin','from']), 0) : 0;
+  const iEnd    = hdr ? (ci(['end','to','thru','through'])>-1?ci(['end','to','thru','through']):1) : 1;
+  const iKwh    = hdr ? ci(['kwh','consumption','usage','energy']) : 2;
+  const iDemand = hdr ? ci(['demand_kw','demand kw','peak kw','demand']) : 3;
+  const iFacKW  = hdr ? ci(['fac_kw','facility kw','fac kw']) : 4;
+  const iKwCost = hdr ? ci(['kw_cost','kw cost','demand cost','demand$','demand_cost']) : 5;
+  const iKwhCst = hdr ? ci(['kwh_cost','kwh cost','energy cost','energy$','energy_cost']) : 6;
+  const iTotCst = hdr ? ci(['total_cost','total cost','total$','bill','amount','total']) : isElec?7:3;
+  const iTherms = hdr ? ci(['therms','therm','gas','ccf','mcf']) : 2;
+  const iThCost = hdr ? ci(['therm_cost','therm cost','gas cost','gas$']) : 3;
+  const iUsage  = hdr ? ci(['usage','consumption','hcf','kgal','mlb']) : 2;
+  const iCost   = hdr ? ci(['cost','total','amount','bill$']) : 3;
+  const iHDD    = hdr ? ci(['hdd','heating degree','heat degree']) : -1;
+  const iCDD    = hdr ? ci(['cdd','cooling degree','cool degree']) : -1;
+
+  const parsed=[]; const warnings=[];
+
+  dataLines.forEach((line,idx)=>{
+    const cols=splitCsvLine(line);
+    if(cols.length<2) return;
+
+    const rawStart=(cols[iStart]||'').trim().replace(/"/g,'');
+    const rawEnd  =(iEnd>=0?(cols[iEnd]||''):'').trim().replace(/"/g,'');
+    const startD  =parseFlexDate(rawStart);
+    const endD    =parseFlexDate(rawEnd);
+
+    if(!startD){ warnings.push('Row '+(idx+1+hasHeader?idx+2:idx+1)+': could not parse start date "'+rawStart+'"'); return; }
+
+    // Derive end date if missing — last day of start month
+    const effectiveEnd=endD||lastDayOfMonth(startD);
+
+    const row={id:'r'+Date.now()+Math.random(), start:startD, end:effectiveEnd};
+
+    const g=(i)=>i>=0&&cols[i]?parseFloat(cols[i].replace(/[$,]/g,''))||0:0;
+    const gs=(i)=>i>=0&&cols[i]?cols[i].trim().replace(/"/g,''):'';
+
+    if(isElec){
+      row.kwh      = g(iKwh);
+      row.demandKW = g(iDemand);
+      row.facKW    = g(iFacKW);
+      row.kwCost   = g(iKwCost);
+      row.kwhCost  = g(iKwhCst);
+      row.totalCost= g(iTotCst);
+    } else if(isGas){
+      row.therms   = g(iTherms);
+      row.thermCost= g(iThCost);
+    } else {
+      row.usage    = g(iUsage);
+      row.cost     = g(iCost);
+    }
+    if(iHDD>=0) row.hdd=g(iHDD);
+    if(iCDD>=0) row.cdd=g(iCDD);
+
+    parsed.push(row);
+  });
+
+  if(!parsed.length){ showToast('No valid rows found in CSV'); return; }
+
+  // Deduplicate: one entry per billing month (keyed by start month)
+  const byMonth={};
+  parsed.forEach(r=>{
+    const key=r.start.slice(0,7); // YYYY-MM
+    if(!byMonth[key]) byMonth[key]=r;
+    else {
+      // Merge — keep row with more data
+      const existing=byMonth[key];
+      const exScore=Object.values(existing).filter(v=>v&&v!==0&&v!=='').length;
+      const newScore=Object.values(r).filter(v=>v&&v!==0&&v!=='').length;
+      if(newScore>exScore) byMonth[key]=r;
+    }
+  });
+  _csvImportRows=Object.values(byMonth).sort((a,b)=>new Date(a.start)-new Date(b.start));
+
+  // Show preview
+  showBillCsvPreview(_csvImportRows, m, fname, warnings);
+}
+
+function splitCsvLine(line){
+  const result=[]; let cur=''; let inQ=false;
+  for(let i=0;i<line.length;i++){
+    const c=line[i];
+    if(c==='"'){ inQ=!inQ; }
+    else if(c===','&&!inQ){ result.push(cur); cur=''; }
+    else cur+=c;
+  }
+  result.push(cur);
+  return result;
+}
+
+function parseFlexDate(s){
+  if(!s) return null;
+  s=s.trim();
+  // YYYY-MM-DD
+  if(/^\d{4}-\d{1,2}-\d{1,2}$/.test(s)) return s.length===10?s:s.replace(/^(\d{4})-(\d)-/,'$1-0$2-').replace(/-(\d)$/,'-0$1');
+  // MM/DD/YYYY or M/D/YYYY
+  const mdy=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(mdy) return mdy[3]+'-'+mdy[1].padStart(2,'0')+'-'+mdy[2].padStart(2,'0');
+  // MM-DD-YYYY
+  const mdy2=s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if(mdy2) return mdy2[3]+'-'+mdy2[1].padStart(2,'0')+'-'+mdy2[2].padStart(2,'0');
+  // Month YYYY or "Jan 2024"
+  const mv=s.match(/^(\w+)[,\s]+(\d{4})$/);
+  if(mv){ const mo=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(mv[1].toLowerCase().slice(0,3))+1; if(mo>0) return mv[2]+'-'+String(mo).padStart(2,'0')+'-01'; }
+  // YYYY-MM
+  if(/^\d{4}-\d{2}$/.test(s)) return s+'-01';
+  return null;
+}
+
+function lastDayOfMonth(dateStr){
+  const d=new Date(dateStr+'T12:00:00');
+  const last=new Date(d.getFullYear(),d.getMonth()+1,0);
+  return last.toISOString().split('T')[0];
+}
+
+function showBillCsvPreview(rows, m, fname, warnings){
+  const isElec=m.commodity==='Electric', isGas=m.commodity==='Gas';
+  document.getElementById('billCsvDropLabel').textContent='✓ '+fname+' — click to change';
+  document.getElementById('billCsvRowCount').textContent=rows.length+' period'+(rows.length!==1?'s':'')+' found';
+
+  let thead='<tr><th>Start</th><th>End</th><th>Days</th>';
+  if(isElec) thead+='<th>kWh</th><th>Dem. kW</th><th>Total $</th>';
+  else if(isGas) thead+='<th>Therms</th><th>Cost $</th>';
+  else thead+='<th>Usage</th><th>Cost $</th>';
+  thead+='<th>HDD</th><th>CDD</th></tr>';
+
+  const tbody=rows.map(r=>{
+    const days=Math.round((new Date(r.end+'T12:00:00')-new Date(r.start+'T12:00:00'))/(864e5))+1;
+    let cells='';
+    if(isElec) cells='<td>'+(r.kwh||0).toLocaleString()+'</td><td>'+(r.demandKW||'—')+'</td><td>'+(r.totalCost?'$'+(r.totalCost||0).toLocaleString():'—')+'</td>';
+    else if(isGas) cells='<td>'+(r.therms||0).toLocaleString()+'</td><td>'+(r.thermCost?'$'+(r.thermCost||0):'—')+'</td>';
+    else cells='<td>'+(r.usage||0)+'</td><td>'+(r.cost?'$'+r.cost:'—')+'</td>';
+    return '<tr><td>'+fmtDate(r.start)+'</td><td>'+fmtDate(r.end)+'</td><td>'+days+'</td>'+cells+
+      '<td>'+(r.hdd||'—')+'</td><td>'+(r.cdd||'—')+'</td></tr>';
+  }).join('');
+
+  document.getElementById('billCsvPreviewTable').innerHTML='<thead>'+thead+'</thead><tbody>'+tbody+'</tbody>';
+  document.getElementById('billCsvPreviewLabel').textContent='Preview — '+rows.length+' period'+(rows.length!==1?'s':'');
+  document.getElementById('billCsvPreviewWrap').style.display='';
+
+  const warnEl=document.getElementById('billCsvWarnings');
+  if(warnings.length){ warnEl.style.display=''; warnEl.innerHTML='⚠️ '+warnings.join('<br>'); }
+  else { warnEl.style.display='none'; }
+
+  document.getElementById('billCsvImportCount').textContent=rows.length;
+  document.getElementById('billCsvImportBtn').style.display='';
+}
+
+function importBillCsvRows(){
+  if(!_csvImportRows.length||!_csvImportMid) return;
+  const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
+  const m=b.meters.find(m=>m.id===_csvImportMid); if(!m) return;
+  m.bills=m.bills||[];
+
+  // Merge: don't duplicate periods that already exist (same YYYY-MM start)
+  const existing=new Set(m.bills.map(r=>r.start.slice(0,7)));
+  let added=0, updated=0;
+  _csvImportRows.forEach(r=>{
+    const key=r.start.slice(0,7);
+    if(existing.has(key)){
+      // Update existing row
+      const idx=m.bills.findIndex(b=>b.start.slice(0,7)===key);
+      if(idx>=0){ Object.assign(m.bills[idx],r); updated++; }
+    } else {
+      m.bills.push({id:'r'+Date.now()+Math.random(),...r});
+      existing.add(key); added++;
+    }
+  });
+
+  m.bills.sort((a,b)=>new Date(a.start)-new Date(b.start));
+  saveUtilityData();
+  closeBillCsvModal();
+  udActiveTab='bills';
+  renderMeterWorkspace();
+  showToast('Imported: '+added+' new, '+updated+' updated ✓');
+  addNotif('Bills Imported','Added '+added+' new billing period'+(added!==1?'s':'')+' to '+m.commodity+' meter','📥');
+}
+
+
+/* ── RENDER BILL ROW (used in Bills pane table) ── */
 function renderBillRow(row, m){
   const days = calcDays(row.start, row.end, m.inclusive !== false);
   if(m.commodity==='Electric'){
@@ -2388,7 +2970,6 @@ function renderBillRow(row, m){
       <td><button class="btn-del" onclick="deleteBillRow('${m.id}','${row.id}')">✕</button></td>
     </tr>`;
   }
-  // Water / Steam
   return `<tr>
     <td><input type="date" value="${row.start||''}" onchange="updateBillField('${m.id}','${row.id}','start',this.value)"></td>
     <td><input type="date" value="${row.end||''}" onchange="updateBillField('${m.id}','${row.id}','end',this.value)"></td>
@@ -2399,74 +2980,125 @@ function renderBillRow(row, m){
   </tr>`;
 }
 
-/* ── SELECTION ── */
-function udSelectProj(pid){
-  udSelProjId = pid;
-  udSelBldgId = null;
-  renderUDProjList();
-  renderUDDetail();
-}
-function udSelectBldg(bid){
-  if(udSelBldgId !== bid) _openMeterIds.clear();
-  udSelBldgId = bid;
-  renderUDProjList();
-  renderUDDetail();
-}
-
-/* ── TOGGLE METER CARD ── */
-function toggleMeterCard(mid){
-  const body = document.getElementById('mbody-'+mid);
-  const tog  = document.getElementById('mtog-'+mid);
-  if(!body) return;
-  const isOpen = body.classList.toggle('open');
-  if(tog) tog.classList.toggle('open', isOpen);
-  if(isOpen) _openMeterIds.add(mid); else _openMeterIds.delete(mid);
-}
-
-/* ── INLINE BILL FIELD UPDATE ── */
 function updateBillField(mid, rowId, field, val){
   if(!udSelProjId||!udSelBldgId) return;
-  const b = getUDBldg(udSelProjId, udSelBldgId);
-  const m = b?.meters?.find(m=>m.id===mid);
-  const row = m?.bills?.find(r=>r.id===rowId);
+  const b=getUDBldg(udSelProjId,udSelBldgId);
+  const m=b?.meters?.find(m=>m.id===mid);
+  const row=m?.bills?.find(r=>r.id===rowId);
   if(!row) return;
-  row[field] = val;
-  // Recalculate days cell live
+  row[field]=val;
   if(field==='start'||field==='end'){
-    const days = calcDays(row.start, row.end, m.inclusive!==false);
-    const cells = document.querySelectorAll(`#mbody-${mid} .days-cell`);
-    const rows  = m.bills;
-    const idx   = rows.findIndex(r=>r.id===rowId);
-    if(cells[idx]) cells[idx].textContent = days;
+    const days=calcDays(row.start,row.end,m.inclusive!==false);
+    const cells=document.querySelectorAll('.days-cell');
+    const rows=m.bills; const idx=rows.findIndex(r=>r.id===rowId);
+    if(cells[idx]) cells[idx].textContent=days;
   }
   saveUtilityData();
 }
 
-/* ── INCLUSIVE TOGGLE ON METER ── */
 function setMeterIncl(mid, val){
   if(!udSelProjId||!udSelBldgId) return;
-  const b = getUDBldg(udSelProjId, udSelBldgId);
-  const m = b?.meters?.find(m=>m.id===mid);
+  const b=getUDBldg(udSelProjId,udSelBldgId);
+  const m=b?.meters?.find(m=>m.id===mid);
   if(!m) return;
-  m.inclusive = val;
+  m.inclusive=val;
+  saveUtilityData();
+  renderMeterWorkspace();
+}
+
+function deleteMeter(mid){
+  if(!confirm('Delete this meter and all its billing data?')) return;
+  const b=getUDBldg(udSelProjId,udSelBldgId);
+  if(b) b.meters=b.meters.filter(m=>m.id!==mid);
+  if(udActiveMid===mid) udActiveMid=null;
   saveUtilityData();
   renderUDDetail();
-  toggleMeterCard(mid); // re-open card after re-render
-  requestAnimationFrame(()=>{ const body=document.getElementById('mbody-'+mid); if(body){body.classList.add('open'); const tog=document.getElementById('mtog-'+mid); if(tog) tog.classList.add('open');} });
+  renderUDProjList();
+  showToast('Meter deleted');
+}
+
+function deleteBillRow(mid, rowId){
+  const b=getUDBldg(udSelProjId,udSelBldgId);
+  const m=b?.meters?.find(m=>m.id===mid);
+  if(!m) return;
+  m.bills=m.bills.filter(r=>r.id!==rowId);
+  saveUtilityData();
+  renderMeterWorkspace();
+  showToast('Record deleted');
+}
+
+/* ── BILL MODAL (single period add/edit) ── */
+function openBillModal(mid, editRowId){
+  udSelMeterId=mid; udBillEditId=editRowId||null;
+  const b=getUDBldg(udSelProjId,udSelBldgId);
+  const m=b?.meters?.find(m=>m.id===mid); if(!m) return;
+  const row=editRowId?m.bills.find(r=>r.id===editRowId):null;
+  document.getElementById('billModalTitle').textContent=row?'✏️ Edit Billing Period':'+ Add Billing Period — '+meterLabel(m);
+  let html=`<div class="f2">
+    <div class="fg"><label class="fl">Start Date *</label><input class="fi" id="bl-start-d" type="date" value="${row?.start||''}"></div>
+    <div class="fg"><label class="fl">End Date *</label><input class="fi" id="bl-end-d" type="date" value="${row?.end||''}"></div>
+  </div>`;
+  if(m.commodity==='Electric'){
+    html+=`<div class="f3">
+      <div class="fg"><label class="fl">kWh</label><input class="fi" id="bl-kwh" type="number" placeholder="0" value="${row?.kwh||''}"></div>
+      <div class="fg"><label class="fl">Demand kW</label><input class="fi" id="bl-demandKW" type="number" placeholder="0" value="${row?.demandKW||''}"></div>
+      <div class="fg"><label class="fl">Facilities kW</label><input class="fi" id="bl-facKW" type="number" placeholder="0" value="${row?.facKW||''}"></div>
+    </div>
+    <div class="f3">
+      <div class="fg"><label class="fl">kW Cost $</label><input class="fi" id="bl-kwCost" type="number" placeholder="0.00" step="0.01" value="${row?.kwCost||''}"></div>
+      <div class="fg"><label class="fl">kWh Cost $</label><input class="fi" id="bl-kwhCost" type="number" placeholder="0.00" step="0.01" value="${row?.kwhCost||''}"></div>
+      <div class="fg"><label class="fl">Total Bill $</label><input class="fi" id="bl-totalCost" type="number" placeholder="0.00" step="0.01" value="${row?.totalCost||''}"></div>
+    </div>`;
+  } else if(m.commodity==='Gas'){
+    html+=`<div class="f2">
+      <div class="fg"><label class="fl">Therms</label><input class="fi" id="bl-therms" type="number" placeholder="0" value="${row?.therms||''}"></div>
+      <div class="fg"><label class="fl">Therm Cost $</label><input class="fi" id="bl-thermCost" type="number" placeholder="0.00" step="0.01" value="${row?.thermCost||''}"></div>
+    </div>`;
+  } else {
+    html+=`<div class="f2">
+      <div class="fg"><label class="fl">Usage</label><input class="fi" id="bl-usage" type="number" placeholder="0" value="${row?.usage||''}"></div>
+      <div class="fg"><label class="fl">Cost $</label><input class="fi" id="bl-cost" type="number" placeholder="0.00" step="0.01" value="${row?.cost||''}"></div>
+    </div>`;
+  }
+  html+=`<div class="f2" style="margin-top:8px">
+    <div class="fg"><label class="fl">HDD (optional)</label><input class="fi" id="bl-hdd" type="number" placeholder="0" value="${row?.hdd||''}"></div>
+    <div class="fg"><label class="fl">CDD (optional)</label><input class="fi" id="bl-cdd" type="number" placeholder="0" value="${row?.cdd||''}"></div>
+  </div>`;
+  document.getElementById('billModalBody').innerHTML=html;
+  document.getElementById('billModal').classList.add('open');
+}
+function closeBillModal(){ document.getElementById('billModal').classList.remove('open'); udSelMeterId=null; udBillEditId=null; }
+function saveBillRow(){
+  const start=document.getElementById('bl-start-d')?.value;
+  const end=document.getElementById('bl-end-d')?.value;
+  if(!start||!end){showToast('Start and end date required');return;}
+  const b=getUDBldg(udSelProjId,udSelBldgId);
+  const m=b?.meters?.find(m=>m.id===udSelMeterId); if(!m) return;
+  m.bills=m.bills||[];
+  const row=udBillEditId?m.bills.find(r=>r.id===udBillEditId):null;
+  const g=id=>document.getElementById(id)?.value||'';
+  let data={start,end,hdd:parseFloat(g('bl-hdd'))||0,cdd:parseFloat(g('bl-cdd'))||0};
+  if(m.commodity==='Electric') data={...data,kwh:g('bl-kwh'),demandKW:g('bl-demandKW'),facKW:g('bl-facKW'),kwCost:g('bl-kwCost'),kwhCost:g('bl-kwhCost'),totalCost:g('bl-totalCost')};
+  else if(m.commodity==='Gas') data={...data,therms:g('bl-therms'),thermCost:g('bl-thermCost')};
+  else data={...data,usage:g('bl-usage'),cost:g('bl-cost')};
+  if(row){Object.assign(row,data);showToast('Record updated ✓');}
+  else{m.bills.push({id:'r'+Date.now(),...data});showToast('Period added ✓');}
+  m.bills.sort((a,b)=>new Date(a.start)-new Date(b.start));
+  saveUtilityData(); closeBillModal(); renderMeterWorkspace();
 }
 
 /* ── BUILDING MODAL ── */
 function openBldgModal(editId){
-  const modal = document.getElementById('bldgModal');
-  document.getElementById('bm-edit-id').value = editId||'';
+  const modal=document.getElementById('bldgModal');
+  document.getElementById('bm-edit-id').value=editId||'';
   if(editId){
-    const b = getUDBldg(udSelProjId, editId);
-    document.getElementById('bldgModalTitle').textContent = '✏️ Edit Building';
-    document.getElementById('bm-name').value = b?.name||'';
-    document.getElementById('bm-addr').value = b?.addr||'';
-    document.getElementById('bm-sqft').value = b?.sqft||'';
+    const b=getUDBldg(udSelProjId,editId);
+    document.getElementById('bldgModalTitle').textContent='✏️ Edit Building';
+    document.getElementById('bm-name').value=b?.name||'';
+    document.getElementById('bm-addr').value=b?.addr||'';
+    document.getElementById('bm-sqft').value=b?.sqft||'';
   } else {
-    document.getElementById('bldgModalTitle').textContent = '+ Add Building';
+    document.getElementById('bldgModalTitle').textContent='+ Add Building';
     document.getElementById('bm-name').value='';
     document.getElementById('bm-addr').value='';
     document.getElementById('bm-sqft').value='';
@@ -2475,208 +3107,95 @@ function openBldgModal(editId){
 }
 function closeBldgModal(){ document.getElementById('bldgModal').classList.remove('open'); }
 function saveBuilding(){
-  const name = document.getElementById('bm-name').value.trim();
-  if(!name){ showToast('Enter a facility name'); return; }
-  if(!udSelProjId){ showToast('Select a project first'); return; }
-  const editId = document.getElementById('bm-edit-id').value;
-  const proj = getUDProj(udSelProjId);
+  const name=document.getElementById('bm-name').value.trim();
+  if(!name){showToast('Building name required');return;}
+  const editId=document.getElementById('bm-edit-id').value;
   if(editId){
-    const b = proj.buildings.find(b=>b.id===editId);
-    if(b){ b.name=name; b.addr=document.getElementById('bm-addr').value; b.sqft=parseInt(document.getElementById('bm-sqft').value)||0; }
-    showToast(name+' updated ✓');
+    const b=getUDBldg(udSelProjId,editId);
+    if(b){b.name=name;b.addr=document.getElementById('bm-addr').value;b.sqft=parseInt(document.getElementById('bm-sqft').value)||0;}
+    showToast('Building updated ✓');
   } else {
-    const nb = {id:'b'+Date.now(), name, addr:document.getElementById('bm-addr').value, sqft:parseInt(document.getElementById('bm-sqft').value)||0, meters:[]};
-    proj.buildings.push(nb);
-    udSelBldgId = nb.id;
-    showToast(name+' added ✓');
+    const proj=getUDProj(udSelProjId);
+    proj.buildings.push({id:'b'+Date.now(),name,addr:document.getElementById('bm-addr').value,sqft:parseInt(document.getElementById('bm-sqft').value)||0,meters:[]});
+    showToast('Building added ✓');
   }
-  saveUtilityData();
-  syncBldgSqftToProject(udSelProjId);
-  closeBldgModal();
-  renderUDBldgList();
-  renderUDDetail();
-  renderUDProjList();
-  renderProjBuildingsTab(udSelProjId);
+  saveUtilityData(); closeBldgModal(); renderUDProjList(); renderUDDetail();
 }
 function deleteBuilding(bid){
-  if(!confirm('Delete this building and all its meter data?')) return;
-  const proj = getUDProj(udSelProjId);
-  proj.buildings = proj.buildings.filter(b=>b.id!==bid);
-  if(udSelBldgId===bid){ udSelBldgId=null; }
-  saveUtilityData();
-  syncBldgSqftToProject(udSelProjId);
-  renderUDBldgList();
-  renderUDDetail();
-  renderUDProjList();
-  renderProjBuildingsTab(udSelProjId);
+  if(!confirm('Delete this building and all its meters?')) return;
+  const proj=getUDProj(udSelProjId);
+  proj.buildings=proj.buildings.filter(b=>b.id!==bid);
+  if(udSelBldgId===bid) udSelBldgId=null;
+  saveUtilityData(); renderUDProjList(); renderUDDetail();
   showToast('Building deleted');
 }
 
 /* ── METER MODAL ── */
 function setMeterInclusive(val){
-  _meterInclusive = val;
-  document.getElementById('mm-inclusive').value = val;
-  document.getElementById('mm-incl-btn').classList.toggle('sel', val);
-  document.getElementById('mm-excl-btn').classList.toggle('sel', !val);
+  _meterInclusive=val;
+  document.getElementById('mm-incl-btn').classList.toggle('sel',val);
+  document.getElementById('mm-excl-btn').classList.toggle('sel',!val);
+  document.getElementById('mm-inclusive').value=String(val);
 }
 function openMeterModal(editId){
-  if(!udSelProjId||!udSelBldgId){ showToast('Select a building first'); return; }
-  const modal = document.getElementById('meterModal');
-  document.getElementById('mm-edit-id').value = editId||'';
+  document.getElementById('mm-edit-id').value=editId||'';
+  _meterInclusive=true;
   if(editId){
-    const b = getUDBldg(udSelProjId, udSelBldgId);
-    const m = b?.meters?.find(m=>m.id===editId);
-    document.getElementById('meterModalTitle').textContent = '✏️ Edit Meter';
-    document.getElementById('mm-commodity').value = m?.commodity||'Electric';
-    document.getElementById('mm-provider').value  = m?.provider||'';
-    document.getElementById('mm-account').value   = m?.account||'';
-    document.getElementById('mm-meter').value     = m?.meter||'';
-    document.getElementById('mm-maddr').value     = m?.maddr||'';
-    const incl = m?.inclusive !== false;
-    setMeterInclusive(incl);
+    const b=getUDBldg(udSelProjId,udSelBldgId);
+    const m=b?.meters?.find(m=>m.id===editId);
+    if(m){
+      document.getElementById('meterModalTitle').textContent='✏️ Edit Meter';
+      document.getElementById('mm-commodity').value=m.commodity||'Electric';
+      document.getElementById('mm-provider').value=m.provider||'';
+      document.getElementById('mm-account').value=m.account||'';
+      document.getElementById('mm-meter').value=m.meter||'';
+      document.getElementById('mm-maddr').value=m.maddr||'';
+      _meterInclusive=m.inclusive!==false;
+    }
   } else {
-    document.getElementById('meterModalTitle').textContent = '+ Add Meter';
-    document.getElementById('mm-commodity').value = 'Electric';
-    document.getElementById('mm-provider').value  = '';
-    document.getElementById('mm-account').value   = '';
-    document.getElementById('mm-meter').value     = '';
-    document.getElementById('mm-maddr').value     = '';
-    setMeterInclusive(true);
+    document.getElementById('meterModalTitle').textContent='+ Add Meter';
+    ['mm-provider','mm-account','mm-meter','mm-maddr'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('mm-commodity').value='Electric';
   }
-  modal.classList.add('open');
+  document.getElementById('mm-incl-btn').classList.toggle('sel',_meterInclusive);
+  document.getElementById('mm-excl-btn').classList.toggle('sel',!_meterInclusive);
+  document.getElementById('mm-inclusive').value=String(_meterInclusive);
+  document.getElementById('meterModal').classList.add('open');
 }
 function closeMeterModal(){ document.getElementById('meterModal').classList.remove('open'); }
 function saveMeter(){
-  if(!udSelProjId||!udSelBldgId){ showToast('Select a building first'); return; }
-  const commodity = document.getElementById('mm-commodity').value;
-  const editId    = document.getElementById('mm-edit-id').value;
-  const b         = getUDBldg(udSelProjId, udSelBldgId);
-  if(!b) return;
-  const fields = {
-    commodity, provider:document.getElementById('mm-provider').value,
+  const editId=document.getElementById('mm-edit-id').value;
+  const incl=document.getElementById('mm-inclusive').value==='true';
+  const data={
+    commodity:document.getElementById('mm-commodity').value,
+    provider:document.getElementById('mm-provider').value,
     account:document.getElementById('mm-account').value,
     meter:document.getElementById('mm-meter').value,
     maddr:document.getElementById('mm-maddr').value,
-    inclusive: document.getElementById('mm-inclusive').value !== 'false'
+    inclusive:incl,
   };
+  const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
+  b.meters=b.meters||[];
   if(editId){
-    const m = b.meters.find(m=>m.id===editId);
-    if(m) Object.assign(m, fields);
-    _openMeterIds.add(editId); // keep it open after edit
-    showToast('Meter updated ✓');
+    const m=b.meters.find(m=>m.id===editId);
+    if(m){Object.assign(m,data);showToast('Meter updated ✓');}
   } else {
-    b.meters = b.meters || [];
-    const newId = 'm'+Date.now();
-    b.meters.push({id:newId, bills:[], ...fields});
-    _openMeterIds.add(newId); // auto-open newly added meter
+    const nm={id:'m'+Date.now(),bills:[],...data};
+    b.meters.push(nm);
+    udActiveMid=nm.id;
     showToast('Meter added ✓');
   }
-  saveUtilityData();
-  closeMeterModal();
-  renderUDDetail();
-}
-function deleteMeter(mid){
-  if(!confirm('Delete this meter and all billing data?')) return;
-  const b = getUDBldg(udSelProjId, udSelBldgId);
-  if(b) b.meters = b.meters.filter(m=>m.id!==mid);
-  saveUtilityData();
-  renderUDDetail();
-  showToast('Meter deleted');
-}
-
-/* ── BILL MODAL ── */
-function openBillModal(mid, editRowId){
-  udSelMeterId  = mid;
-  udBillEditId  = editRowId||null;
-  const b = getUDBldg(udSelProjId, udSelBldgId);
-  const m = b?.meters?.find(m=>m.id===mid);
-  if(!m) return;
-  const row = editRowId ? m.bills.find(r=>r.id===editRowId) : null;
-  document.getElementById('billModalTitle').textContent = row ? '✏️ Edit Billing Period' : '+ Add Billing Period — '+meterLabel(m);
-
-  let fieldsHTML = `
-    <div class="f2">
-      <div class="fg"><label class="fl">Start Date *</label><input class="fi" id="bl-start-d" type="date" value="${row?.start||''}"></div>
-      <div class="fg"><label class="fl">End Date *</label><input class="fi" id="bl-end-d" type="date" value="${row?.end||''}"></div>
-    </div>`;
-
-  if(m.commodity==='Electric'){
-    fieldsHTML += `
-      <div class="f3">
-        <div class="fg"><label class="fl">kWh</label><input class="fi" id="bl-kwh" type="number" placeholder="0" value="${row?.kwh||''}"></div>
-        <div class="fg"><label class="fl">Demand kW</label><input class="fi" id="bl-demandKW" type="number" placeholder="0" value="${row?.demandKW||''}"></div>
-        <div class="fg"><label class="fl">Facilities kW</label><input class="fi" id="bl-facKW" type="number" placeholder="0" value="${row?.facKW||''}"></div>
-      </div>
-      <div class="f3">
-        <div class="fg"><label class="fl">Total kW $ Charge</label><input class="fi" id="bl-kwCost" type="number" placeholder="0.00" step="0.01" value="${row?.kwCost||''}"></div>
-        <div class="fg"><label class="fl">Total kWh $ Charge</label><input class="fi" id="bl-kwhCost" type="number" placeholder="0.00" step="0.01" value="${row?.kwhCost||''}"></div>
-        <div class="fg"><label class="fl">Total Bill $</label><input class="fi" id="bl-totalCost" type="number" placeholder="0.00" step="0.01" value="${row?.totalCost||''}"></div>
-      </div>`;
-  } else if(m.commodity==='Gas'){
-    fieldsHTML += `
-      <div class="f2">
-        <div class="fg"><label class="fl">Therms</label><input class="fi" id="bl-therms" type="number" placeholder="0" value="${row?.therms||''}"></div>
-        <div class="fg"><label class="fl">Total Therm $ Charge</label><input class="fi" id="bl-thermCost" type="number" placeholder="0.00" step="0.01" value="${row?.thermCost||''}"></div>
-      </div>`;
-  } else {
-    fieldsHTML += `
-      <div class="f2">
-        <div class="fg"><label class="fl">Usage (HCF/kGal/Mlb)</label><input class="fi" id="bl-usage" type="number" placeholder="0" value="${row?.usage||''}"></div>
-        <div class="fg"><label class="fl">Total Cost $</label><input class="fi" id="bl-cost" type="number" placeholder="0.00" step="0.01" value="${row?.cost||''}"></div>
-      </div>`;
-  }
-  document.getElementById('billModalBody').innerHTML = fieldsHTML;
-  document.getElementById('billModal').classList.add('open');
-}
-function closeBillModal(){ document.getElementById('billModal').classList.remove('open'); udSelMeterId=null; udBillEditId=null; }
-function saveBillRow(){
-  const start = document.getElementById('bl-start-d')?.value;
-  const end   = document.getElementById('bl-end-d')?.value;
-  if(!start||!end){ showToast('Start and end date required'); return; }
-  const b = getUDBldg(udSelProjId, udSelBldgId);
-  const m = b?.meters?.find(m=>m.id===udSelMeterId);
-  if(!m) return;
-  m.bills = m.bills || [];
-  const row = udBillEditId ? m.bills.find(r=>r.id===udBillEditId) : null;
-  const getData = id => document.getElementById(id)?.value||'';
-  let data = {start, end};
-  if(m.commodity==='Electric'){
-    data = {...data, kwh:getData('bl-kwh'), demandKW:getData('bl-demandKW'), facKW:getData('bl-facKW'),
-      kwCost:getData('bl-kwCost'), kwhCost:getData('bl-kwhCost'), totalCost:getData('bl-totalCost')};
-  } else if(m.commodity==='Gas'){
-    data = {...data, therms:getData('bl-therms'), thermCost:getData('bl-thermCost')};
-  } else {
-    data = {...data, usage:getData('bl-usage'), cost:getData('bl-cost')};
-  }
-  if(row){ Object.assign(row, data); showToast('Record updated ✓'); }
-  else { m.bills.push({id:'r'+Date.now(), ...data}); showToast('Period added ✓'); }
-  // Sort bills by start date
-  m.bills.sort((a,b)=>new Date(a.start)-new Date(b.start));
-  saveUtilityData();
-  closeBillModal();
-  renderUDDetail();
-  requestAnimationFrame(()=>{ toggleMeterCard(udSelMeterId||m.id); });
-}
-function deleteBillRow(mid, rowId){
-  const b = getUDBldg(udSelProjId, udSelBldgId);
-  const m = b?.meters?.find(m=>m.id===mid);
-  if(!m) return;
-  m.bills = m.bills.filter(r=>r.id!==rowId);
-  saveUtilityData();
-  renderUDDetail();
-  requestAnimationFrame(()=>{ const body=document.getElementById('mbody-'+mid); if(body){body.classList.add('open'); const tog=document.getElementById('mtog-'+mid); if(tog) tog.classList.add('open');} });
-  showToast('Record deleted');
+  saveUtilityData(); closeMeterModal(); renderUDProjList(); renderUDDetail();
 }
 
 /* ── LINK FROM PROJECT DETAIL UTILITY TAB ── */
 function goToProjectUtility(projId){
   udSelProjId = projId;
   udSelBldgId = null;
+  udActiveMid = null;
   sv('utility', document.querySelector('.s-item[onclick*="utility"]'));
   renderUDProjList();
-  renderUDBldgList();
   renderUDDetail();
-  document.getElementById('ud-add-bldg-btn').style.display='';
 }
 
 /* ── INIT UTILITY TOOL ── */
@@ -3011,93 +3530,6 @@ document.addEventListener('click',e=>{
 });
 
 /* ── CSV / QUICK ENTRY IMPORT ── */
-let importMode='csv', parsedCsvRows=[];
-function openCsvModal(){
-  document.getElementById('csvModal').classList.add('open');
-  setImportMode('csv',document.getElementById('imp-csv-btn'));
-  const rows=document.getElementById('quickEntryRows');
-  if(rows&&!rows.children.length) for(let i=0;i<6;i++) addQuickRow();
-}
-function closeCsvModal(){document.getElementById('csvModal').classList.remove('open');}
-function setImportMode(mode,el){
-  importMode=mode;
-  document.querySelectorAll('#csvModal .ptpill').forEach(b=>b.classList.remove('sel'));
-  el.classList.add('sel');
-  document.getElementById('imp-csv-mode').style.display=mode==='csv'?'block':'none';
-  document.getElementById('imp-manual-mode').style.display=mode==='manual'?'block':'none';
-}
-function handleCsvDrop(e){
-  e.preventDefault();document.getElementById('csvDropZone').classList.remove('drag');
-  const f=e.dataTransfer.files[0];if(f) parseCsvFile(f);
-}
-function handleCsvUpload(e){if(e.target.files[0]) parseCsvFile(e.target.files[0]);}
-function parseCsvFile(file){
-  const reader=new FileReader();
-  reader.onload=ev=>{
-    const lines=ev.target.result.split('\n').filter(l=>l.trim());
-    parsedCsvRows=[];
-    const isHeader=lines[0]&&(lines[0].toLowerCase().includes('month')||lines[0].toLowerCase().includes('kwh'));
-    for(let i=isHeader?1:0;i<lines.length;i++){
-      const cols=lines[i].split(',').map(c=>c.trim().replace(/"/g,''));
-      if(cols.length>=2&&(cols[1]||cols[2])){
-        parsedCsvRows.push({month:cols[0]||'',kwh:cols[1]||'0',therms:cols[2]||'0',start:cols[3]||'',end:cols[4]||''});
-      }
-    }
-    document.getElementById('csvDropLabel').textContent='✓ '+file.name+' ('+parsedCsvRows.length+' rows)';
-    const prev=document.getElementById('csvPreview');
-    if(prev){
-      prev.style.display='block';
-      const tbl=document.getElementById('csvPreviewTable');
-      const head=['Month','kWh','Therms','Start','End'];
-      tbl.innerHTML=`<thead><tr>${head.map(h=>`<th style="font-size:10px;text-transform:uppercase;color:var(--text2);padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);background:var(--s1);white-space:nowrap">${h}</th>`).join('')}</tr></thead><tbody>${parsedCsvRows.slice(0,5).map(r=>`<tr>${[r.month,r.kwh,r.therms,r.start,r.end].map(v=>`<td style="padding:6px 8px;font-size:12px;border-bottom:1px solid var(--border);font-family:var(--mono)">${v||'—'}</td>`).join('')}</tr>`).join('')}</tbody>`;
-    }
-  };
-  reader.readAsText(file);
-}
-function addQuickRow(){
-  const el=document.getElementById('quickEntryRows');if(!el) return;
-  const d=new Date(NOW.getFullYear(),NOW.getMonth()-el.children.length,1);
-  const mon=d.toLocaleDateString('en-US',{month:'short',year:'numeric'});
-  const s=new Date(d.getFullYear(),d.getMonth(),1).toISOString().split('T')[0];
-  const e2=new Date(d.getFullYear(),d.getMonth()+1,0).toISOString().split('T')[0];
-  const iStyle='font-family:var(--mono);font-size:12px;background:var(--s3);border:1px solid var(--border);border-radius:5px;padding:4px 6px;color:var(--text);outline:none;width:100%;box-sizing:border-box;';
-  const tr=document.createElement('tr');
-  tr.innerHTML=`<td style="padding:3px 4px"><input style="${iStyle}min-width:80px" value="${mon}" placeholder="Jan 2024"></td>
-    <td style="padding:3px 4px"><input type="number" style="${iStyle}min-width:70px" placeholder="0"></td>
-    <td style="padding:3px 4px"><input type="number" style="${iStyle}min-width:70px" placeholder="0"></td>
-    <td style="padding:3px 4px"><input type="date" style="${iStyle}min-width:120px" value="${s}"></td>
-    <td style="padding:3px 4px"><input type="date" style="${iStyle}min-width:120px" value="${e2}"></td>
-    <td style="padding:3px 4px"><button class="btn-del" onclick="this.closest('tr').remove()">✕</button></td>`;
-  el.appendChild(tr);
-}
-function importUtilData(){
-  let rows=[];
-  if(importMode==='csv'){
-    if(!parsedCsvRows.length){showToast('Upload a CSV file first');return;}
-    rows=parsedCsvRows;
-  } else {
-    document.querySelectorAll('#quickEntryRows tr').forEach(tr=>{
-      const ins=tr.querySelectorAll('input');
-      if(ins[1]?.value||ins[2]?.value){
-        rows.push({month:ins[0]?.value||'',kwh:ins[1]?.value||'0',therms:ins[2]?.value||'0',start:ins[3]?.value||'',end:ins[4]?.value||''});
-      }
-    });
-    if(!rows.length){showToast('Enter at least one row');return;}
-  }
-  const container=document.getElementById('utilRows');
-  if(!container){showToast('Navigate to Weather & Normalize first');return;}
-  container.innerHTML='';
-  rows.forEach(r=>{
-    const days=r.start&&r.end?Math.max(1,Math.round((new Date(r.end)-new Date(r.start))/(864e5))+1):30;
-    const div=document.createElement('div'); div.className='util-row';
-    div.innerHTML=`<div style="font-family:var(--mono);font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.month}</div><input type="number" value="${r.kwh}" placeholder="0" id="ur-kwh-auto-${Date.now()}${Math.random()}"><input type="number" value="${r.therms}" placeholder="0"><input type="text" value="${r.start}" placeholder="Start"><input type="text" value="${r.end}" placeholder="End"><input type="number" value="${days}" readonly><button class="btn-del" onclick="this.closest('.util-row').remove()">✕</button>`;
-    container.appendChild(div);
-  });
-  closeCsvModal();
-  showToast(rows.length+' rows imported ✓');
-  addNotif('Utility Data Imported','Imported '+rows.length+' billing periods into Weather & Normalize','📊');
-  sv('weather',document.querySelector('.s-item[onclick*="weather"]'));
-}
 
 window.addEventListener('DOMContentLoaded',function(){
   loadNotifs();
