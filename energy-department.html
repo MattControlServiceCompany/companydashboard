@@ -522,6 +522,17 @@ html,body{height:100%;overflow:hidden;}
 .ud-bill-tbl input{font-family:var(--mono);font-size:12px;color:var(--text);background:transparent;border:none;outline:none;width:100%;padding:2px 3px;min-width:60px;}
 .ud-bill-tbl input:focus{background:var(--s4);border-radius:3px;}
 .ud-bill-tbl td.days-cell{font-family:var(--mono);font-size:12px;color:var(--em);text-align:center;}
+.ud-bill-tbl td.norm-mon-cell{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;}
+.ud-bill-gap-row td{padding:6px 10px;background:var(--s2);border-bottom:1px solid var(--border);}
+.ud-bill-gap-msg{font-size:11px;color:var(--warn);font-weight:600;display:flex;align-items:center;gap:6px;}
+.norm-info-btn{background:none;border:none;cursor:pointer;font-size:11px;color:var(--text3);padding:0 2px;vertical-align:middle;transition:color .12s;}
+.norm-info-btn:hover{color:var(--em);}
+.norm-info-tooltip{display:none;position:absolute;z-index:200;background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:10px 13px;font-size:11px;color:var(--text2);max-width:260px;line-height:1.6;box-shadow:0 4px 16px rgba(0,0,0,.3);}
+.norm-info-btn:focus .norm-info-tooltip,.norm-info-btn:hover+.norm-info-tooltip{display:block;}
+.perf-year-pills{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
+.perf-year-pill{font-size:11px;font-weight:600;padding:4px 12px;border-radius:10px;border:1px solid var(--border2);background:transparent;cursor:pointer;color:var(--text2);transition:all .13s;font-family:var(--font);}
+.perf-year-pill:hover{border-color:var(--em);color:var(--em);}
+.perf-year-pill.sel{background:var(--em-dim);border-color:var(--em);color:var(--em);}
 /* Bottom row of meter body: day calc toggle + add period button */
 .ud-add-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);}
 .ud-incl-toggle{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);flex-wrap:wrap;}
@@ -2290,17 +2301,68 @@ function renderMeterWorkspace(){
 /* ══════════════════════════════════════════
    BILLS TAB
 ══════════════════════════════════════════ */
+// Determine which calendar month a billing period "belongs to" for normalization.
+// Rule: the calendar month that contains the majority of billing days.
+function normMonth(startStr, endStr, incl){
+  if(!startStr||!endStr) return startStr||'';
+  const s=new Date(startStr+'T12:00:00'), e=new Date(endStr+'T12:00:00');
+  // Count days per calendar month
+  const counts={};
+  let cur=new Date(s);
+  while(cur<=e){
+    const key=cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0');
+    counts[key]=(counts[key]||0)+1;
+    cur.setDate(cur.getDate()+1);
+  }
+  // Return month with most days
+  return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0];
+}
+function normMonthLabel(startStr, endStr, incl){
+  const ym=normMonth(startStr,endStr,incl);
+  if(!ym) return '—';
+  const [y,mo]=ym.split('-');
+  const dt=new Date(parseInt(y),parseInt(mo)-1,1);
+  return dt.toLocaleDateString('en-US',{month:'short',year:'numeric'});
+}
+
+// Detect gap between two consecutive bills (>3 day gap between end of prev and start of next)
+function detectGap(prevEnd, nextStart){
+  if(!prevEnd||!nextStart) return false;
+  const e=new Date(prevEnd+'T12:00:00'), s=new Date(nextStart+'T12:00:00');
+  return (s-e)/(1000*60*60*24) > 3;
+}
+
 function renderBillsPane(pane, m, bills, incl){
   const isElec = m.commodity==='Electric';
   const isGas  = m.commodity==='Gas';
 
-  let tblHead = '<th>Start</th><th>End</th><th style="text-align:center">Days</th>';
+  const normInfoTip = `<span style="position:relative;display:inline-block">
+    <button class="norm-info-btn" onclick="toggleNormTip(this)" title="How is Norm. Month calculated?">ℹ️</button>
+    <div class="norm-info-tooltip" id="normInfoTip-${m.id}">
+      <strong>Normalized Month</strong><br>
+      Each billing period is assigned to the calendar month that contains the majority of its billing days.
+      For example, a bill from Jan 18 – Feb 17 spans more days in January, so it maps to <em>Jan</em>.
+      This ensures each month in the Normalized and Baseline tabs represents a consistent calendar month
+      without gaps or duplicates, regardless of when the utility reads the meter.
+    </div>
+  </span>`;
+
+  let tblHead = '<th style="white-space:nowrap">Norm. Month '+normInfoTip+'</th><th>Start</th><th>End</th><th style="text-align:center">Days</th>';
   if(isElec) tblHead += '<th>kWh</th><th>Demand kW</th><th>Fac. kW</th><th>kW Cost $</th><th>kWh Cost $</th><th>Total $</th>';
   else if(isGas) tblHead += '<th>Therms</th><th>Therm Cost $</th>';
   else tblHead += '<th>Usage</th><th>Cost $</th>';
   tblHead += '<th></th>';
 
-  const rows = bills.map(row=>renderBillRow(row,m)).join('');
+  // Build rows with gap detection
+  let tblBody = '';
+  bills.forEach((row, idx)=>{
+    if(idx>0 && detectGap(bills[idx-1].end, row.start)){
+      const gapDays=Math.round((new Date(row.start+'T12:00:00')-new Date(bills[idx-1].end+'T12:00:00'))/(1000*60*60*24));
+      const colSpan = isElec?11:isGas?7:7;
+      tblBody += `<tr class="ud-bill-gap-row"><td colspan="${colSpan}"><div class="ud-bill-gap-msg">⚠️ Gap in data — ${gapDays} day${gapDays!==1?'s':''} missing between ${fmtDate(bills[idx-1].end)} and ${fmtDate(row.start)}</div></td></tr>`;
+    }
+    tblBody += renderBillRow(row, m, incl);
+  });
 
   pane.innerHTML =
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">'+
@@ -2324,13 +2386,25 @@ function renderBillsPane(pane, m, bills, incl){
         '<div class="ma-csv-drop-title">📥 Drop CSV or click to import bill data</div>'+
         '<div class="ma-csv-drop-sub">One row per billing period · Electric, Gas, Water, Steam</div>'+
       '</div>' :
-      '<div class="ud-bill-wrap"><table class="ud-bill-tbl"><thead><tr>'+tblHead+'</tr></thead><tbody>'+rows+'</tbody></table></div>'+
+      '<div class="ud-bill-wrap"><table class="ud-bill-tbl"><thead><tr>'+tblHead+'</tr></thead><tbody>'+tblBody+'</tbody></table></div>'+
       '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">'+
         '<button class="ma-csv-drop" onclick="openCsvImportForMeter(\''+m.id+'\')" style="margin:0;padding:10px;display:flex;align-items:center;justify-content:center;gap:8px">'+
           '<span style="font-size:13px">📥</span><span style="font-size:12px;color:var(--text2)">Import more periods via CSV</span>'+
         '</button>'+
       '</div>'
     );
+}
+
+function toggleNormTip(btn){
+  // Find the tooltip sibling
+  const tip=btn.parentElement.querySelector('.norm-info-tooltip');
+  if(!tip) return;
+  const showing=tip.style.display==='block';
+  // Close all open tips first
+  document.querySelectorAll('.norm-info-tooltip').forEach(t=>t.style.display='none');
+  if(!showing) { tip.style.display='block'; }
+  // Close on outside click
+  if(!showing){ setTimeout(()=>{ document.addEventListener('click',function h(e){ if(!btn.parentElement.contains(e.target)){ tip.style.display='none'; document.removeEventListener('click',h); } }); },10); }
 }
 
 function getDateRange(bills){
@@ -2353,21 +2427,43 @@ function fmtDate(d){
    NORMALIZED TAB
 ══════════════════════════════════════════ */
 function getNormRows(m, bills, incl){
-  return bills.map(row=>{
+  // Build one entry per normalized calendar month (YYYY-MM).
+  // If two bills map to the same calendar month (e.g. a short overlap), merge by summing usage/cost and taking max days.
+  const byMonth = {};
+  bills.forEach(row=>{
     const days = Math.max(1, parseInt(calcDays(row.start, row.end, incl))||30);
     const isElec=m.commodity==='Electric', isGas=m.commodity==='Gas';
     const usage = isElec ? (parseFloat(row.kwh)||0) : isGas ? (parseFloat(row.therms)||0) : (parseFloat(row.usage)||0);
-    const usagePerDay = days>0 ? usage/days : 0;
     const cost = isElec ? (parseFloat(row.totalCost)||0) : isGas ? (parseFloat(row.thermCost)||0) : (parseFloat(row.cost)||0);
     const hdd = parseFloat(row.hdd)||0;
     const cdd = parseFloat(row.cdd)||0;
-    const hddNorm = hdd>0 ? usage/hdd : null;
-    const cddNorm = cdd>0 ? usage/cdd : null;
+    const ym = normMonth(row.start, row.end, incl);
+    if(!ym) return;
+    if(byMonth[ym]){
+      // Merge: sum usage/cost, sum days, avg hdd/cdd
+      byMonth[ym].usage += usage;
+      byMonth[ym].cost  += cost;
+      byMonth[ym].days  += days;
+      if(hdd) byMonth[ym].hdd = byMonth[ym].hdd ? (byMonth[ym].hdd+hdd)/2 : hdd;
+      if(cdd) byMonth[ym].cdd = byMonth[ym].cdd ? (byMonth[ym].cdd+cdd)/2 : cdd;
+      byMonth[ym]._ids.push(row.id);
+    } else {
+      byMonth[ym] = { ym, start:row.start, end:row.end, days, usage, cost, hdd, cdd, _ids:[row.id] };
+    }
+  });
+
+  return Object.entries(byMonth).sort((a,b)=>a[0]<b[0]?-1:1).map(([ym,r])=>{
+    const usagePerDay = r.days>0 ? r.usage/r.days : 0;
+    const hddNorm = r.hdd>0 ? r.usage/r.hdd : null;
+    const cddNorm = r.cdd>0 ? r.usage/r.cdd : null;
+    const [yr,mo]=ym.split('-');
+    const dt=new Date(parseInt(yr),parseInt(mo)-1,1);
+    const label=dt.toLocaleDateString('en-US',{month:'short',year:'numeric'});
     return {
-      id: row.id, start: row.start, end: row.end, days,
-      usage, usagePerDay, cost, hdd, cdd, hddNorm, cddNorm,
-      label: fmtMon(row.start),
-      isBaseline: !!(m.baseline && row.start >= m.baseline.start && row.start <= m.baseline.end),
+      id: r._ids[0], ym, start: r.start, end: r.end, days: r.days,
+      usage: r.usage, usagePerDay, cost: r.cost, hdd: r.hdd, cdd: r.cdd,
+      hddNorm, cddNorm, label,
+      isBaseline: !!(m.baseline && m.baseline.months && m.baseline.months.includes(ym)),
     };
   });
 }
@@ -2496,42 +2592,38 @@ function renderBaselinePane(pane, m, bills, incl){
   const rows=getNormRows(m,bills,incl);
   const bl=m.baseline||null;
 
-  // Baseline range selector
-  const allMonths=rows.map(r=>r.start);
-  const blStart=bl?bl.start:allMonths[0];
-  const blEnd  =bl?bl.end  :allMonths[Math.min(11,allMonths.length-1)];
-
-  const blRows=rows.filter(r=>r.start>=blStart&&r.start<=blEnd);
+  // Use ym keys throughout
+  const blMonths=bl&&bl.months?bl.months:[];
+  const blRows=rows.filter(r=>blMonths.includes(r.ym));
   const hasBl=blRows.length>=3;
 
-  // Summary stats for current baseline
-  let blStatsHTML='';
+  // Summary stats
+  let blStatsInner='';
   if(hasBl){
     const avg=blRows.reduce((s,r)=>s+r.usagePerDay,0)/blRows.length;
     const total=blRows.reduce((s,r)=>s+r.usage,0);
     const cost=blRows.reduce((s,r)=>s+r.cost,0);
     const avgHDD=blRows.filter(r=>r.hdd).reduce((s,r)=>s+r.hdd,0)/Math.max(1,blRows.filter(r=>r.hdd).length);
-    blStatsHTML=
-      '<div class="ma-stats" style="margin-bottom:14px">'+
-        maStat(blRows.length+'','months','Baseline Period')+
-        maStat(avg.toFixed(2),unit+'/day avg','Avg Daily Use')+
-        maStat(total.toLocaleString(undefined,{maximumFractionDigits:0}),unit,'Total Use')+
-        maStat(cost?'$'+cost.toLocaleString(undefined,{maximumFractionDigits:0}):'—','total','Total Cost')+
-        (avgHDD?maStat(avgHDD.toFixed(0),'HDD avg','Avg Monthly HDD'):'')+'</div>';
+    blStatsInner=
+      maStat(blRows.length+'','months','Baseline Period')+
+      maStat(avg.toFixed(2),unit+'/day avg','Avg Daily Use')+
+      maStat(total.toLocaleString(undefined,{maximumFractionDigits:0}),unit,'Total Use')+
+      maStat(cost?'$'+cost.toLocaleString(undefined,{maximumFractionDigits:0}):'—','total','Total Cost')+
+      (avgHDD?maStat(avgHDD.toFixed(0),'HDD avg','Avg Monthly HDD'):'');
   }
 
-  // Month checkboxes
+  // Month checkboxes — value is ym (YYYY-MM)
   const rowChecks=rows.map(r=>{
-    const checked=r.start>=blStart&&r.start<=blEnd;
+    const checked=blMonths.includes(r.ym);
     return '<label class="bl-period-row" style="cursor:pointer">'+
-      '<input type="checkbox" value="'+r.start+'" '+(checked?'checked':'')+
+      '<input type="checkbox" value="'+r.ym+'" '+(checked?'checked':'')+
         ' onchange="updateBaselineRange(\''+m.id+'\')" style="accent-color:var(--em);width:14px;height:14px;flex-shrink:0">'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:12px;font-weight:600;color:var(--text)">'+r.label+'</div>'+
         '<div style="font-size:11px;color:var(--text2)">'+r.usage.toLocaleString(undefined,{maximumFractionDigits:0})+' '+unit+' · '+r.usagePerDay.toFixed(1)+'/day'+
           (r.hdd?' · '+r.hdd+' HDD':'')+'</div>'+
       '</div>'+
-      (checked?'<span style="font-size:10px;background:var(--em-dim);color:var(--em);border:1px solid rgba(0,212,170,.2);border-radius:4px;padding:2px 7px">✓ BL</span>':'')+
+      (checked?'<span class="bl-badge" style="font-size:10px;background:var(--em-dim);color:var(--em);border:1px solid rgba(0,212,170,.2);border-radius:4px;padding:2px 7px">✓ BL</span>':'')+
     '</label>';
   }).join('');
 
@@ -2539,7 +2631,7 @@ function renderBaselinePane(pane, m, bills, incl){
     '<div style="display:grid;grid-template-columns:280px 1fr;gap:18px;align-items:start">'+
       '<div>'+
         '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">Select Baseline Months</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Check the months to include in the baseline. A typical baseline is 12–36 months.</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Check the months to include. A typical baseline is 12–36 months.</div>'+
         '<div id="blPeriodList" style="max-height:400px;overflow-y:auto">'+rowChecks+'</div>'+
         '<div style="margin-top:12px;display:flex;gap:6px">'+
           '<button class="btn btn-ghost btn-sm" onclick="blSelectAll(\''+m.id+'\',true)">Select All</button>'+
@@ -2547,12 +2639,11 @@ function renderBaselinePane(pane, m, bills, incl){
         '</div>'+
       '</div>'+
       '<div>'+
-        blStatsHTML+
+        '<div id="blStatsWrap" class="ma-stats" style="margin-bottom:14px">'+blStatsInner+'</div>'+
         '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+unit+'/Day — Baseline Highlighted</div>'+
         '<div class="ma-chart-wrap"><canvas id="blChart"></canvas></div>'+
-        (hasBl?
-          '<button class="btn btn-em" style="width:100%;margin-top:10px" onclick="saveBaseline(\''+m.id+'\')">✅ Save Baseline Period</button>':
-          '<div style="font-size:12px;color:var(--text3);text-align:center;margin-top:10px">Select at least 3 months to set baseline</div>')+
+        '<button id="blSaveBtn" class="btn btn-em" style="width:100%;margin-top:10px'+(hasBl?'':';display:none')+'" onclick="saveBaseline(\''+m.id+'\')">✅ Save Baseline Period'+(hasBl?' ('+blRows.length+' months)':'')+'</button>'+
+        (hasBl?'':'<div style="font-size:12px;color:var(--text3);text-align:center;margin-top:10px">Select at least 3 months to set baseline</div>')+
       '</div>'+
     '</div>';
 
@@ -2564,9 +2655,59 @@ function updateBaselineRange(mid){
   if(checked.length<1) return;
   const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
   const m=b.meters.find(m=>m.id===mid); if(!m) return;
-  m.baseline={...(m.baseline||{}), start:checked[0], end:checked[checked.length-1]};
+  m.baseline={...(m.baseline||{}), start:checked[0], end:checked[checked.length-1], months:checked};
   saveUtilityData();
-  maSetTab('baseline');
+  // Update stats + chart in-place without re-rendering the checkbox list (preserves scroll)
+  refreshBaselineStats(mid);
+}
+
+function refreshBaselineStats(mid){
+  const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
+  const m=b.meters.find(m=>m.id===mid); if(!m) return;
+  const bills=(m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+  const incl=m.inclusive!==false;
+  const unit=m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
+  const rows=getNormRows(m,bills,incl);
+  const bl=m.baseline;
+  const blRows=bl&&bl.months?rows.filter(r=>bl.months.includes(r.ym)):[];
+  const hasBl=blRows.length>=3;
+
+  // Update label badges on checkboxes
+  document.querySelectorAll('#blPeriodList .bl-period-row').forEach(label=>{
+    const cb=label.querySelector('input[type=checkbox]');
+    let badge=label.querySelector('.bl-badge');
+    if(cb.checked){
+      if(!badge){ badge=document.createElement('span'); badge.className='bl-badge'; badge.style.cssText='font-size:10px;background:var(--em-dim);color:var(--em);border:1px solid rgba(0,212,170,.2);border-radius:4px;padding:2px 7px'; label.appendChild(badge); }
+      badge.textContent='✓ BL';
+    } else {
+      if(badge) badge.remove();
+    }
+  });
+
+  // Update stats
+  const statsEl=document.getElementById('blStatsWrap');
+  if(statsEl && hasBl){
+    const avg=blRows.reduce((s,r)=>s+r.usagePerDay,0)/blRows.length;
+    const total=blRows.reduce((s,r)=>s+r.usage,0);
+    const cost=blRows.reduce((s,r)=>s+r.cost,0);
+    const avgHDD=blRows.filter(r=>r.hdd).reduce((s,r)=>s+r.hdd,0)/Math.max(1,blRows.filter(r=>r.hdd).length);
+    statsEl.innerHTML=
+      maStat(blRows.length+'','months','Baseline Period')+
+      maStat(avg.toFixed(2),unit+'/day avg','Avg Daily Use')+
+      maStat(total.toLocaleString(undefined,{maximumFractionDigits:0}),unit,'Total Use')+
+      maStat(cost?'$'+cost.toLocaleString(undefined,{maximumFractionDigits:0}):'—','total','Total Cost')+
+      (avgHDD?maStat(avgHDD.toFixed(0),'HDD avg','Avg Monthly HDD'):'');
+  }
+
+  // Redraw chart (colors update based on new baseline)
+  requestAnimationFrame(()=>{ drawBlChart('blChart',rows,unit); });
+
+  // Update save button
+  const saveBtn=document.getElementById('blSaveBtn');
+  if(saveBtn){
+    if(hasBl){ saveBtn.style.display=''; saveBtn.textContent='✅ Save Baseline Period ('+(bl.months||[]).length+' months)'; }
+    else saveBtn.style.display='none';
+  }
 }
 
 function blSelectAll(mid,sel){
@@ -2582,7 +2723,6 @@ function saveBaseline(mid){
   m.baseline={start:checked[0],end:checked[checked.length-1],months:checked};
   saveUtilityData();
   showToast('Baseline saved — '+checked.length+' months ✓');
-  maSetTab('baseline');
 }
 
 function drawBlChart(canvasId,rows,unit){
@@ -2605,6 +2745,8 @@ function drawBlChart(canvasId,rows,unit){
 /* ══════════════════════════════════════════
    PERFORMANCE TAB
 ══════════════════════════════════════════ */
+let _perfYearFilter = 'all'; // 'all' | '1' | '2' | '3' ...
+
 function renderPerfPane(pane, m, bills, incl){
   const bl=m.baseline;
   if(!bl||!bl.months||bl.months.length<3){
@@ -2612,33 +2754,64 @@ function renderPerfPane(pane, m, bills, incl){
     return;
   }
   const unit=m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
-  const rows=getNormRows(m,bills,incl);
-  const blRows=rows.filter(r=>bl.months.includes(r.start));
-  const postRows=rows.filter(r=>!bl.months.includes(r.start));
+  const allRows=getNormRows(m,bills,incl);
+  const blRows=allRows.filter(r=>bl.months.includes(r.ym));
+  const blStart=bl.months.slice().sort()[0];
+  const blEnd=bl.months.slice().sort()[bl.months.length-1];
+  const truePostRows=allRows.filter(r=>r.ym>blEnd);
 
   const blAvg=blRows.length?blRows.reduce((s,r)=>s+r.usagePerDay,0)/blRows.length:0;
-  const postAvg=postRows.length?postRows.reduce((s,r)=>s+r.usagePerDay,0)/postRows.length:0;
+
+  // Year filter options based on available post-baseline data
+  const maxYears=Math.max(1,Math.ceil(truePostRows.length/12));
+  const yearOptions=['all',...Array.from({length:maxYears},(_,i)=>String(i+1))];
+
+  // Apply year filter
+  let filteredPostRows=truePostRows;
+  if(_perfYearFilter!=='all'){
+    const n=parseInt(_perfYearFilter);
+    filteredPostRows=truePostRows.slice(0,n*12);
+  }
+
+  // Stats
+  const postAvg=filteredPostRows.length?filteredPostRows.reduce((s,r)=>s+r.usagePerDay,0)/filteredPostRows.length:0;
   const savPct=blAvg>0?((blAvg-postAvg)/blAvg*100):0;
-  const blTotal=blRows.reduce((s,r)=>s+r.usage,0);
-  const postTotal=postRows.reduce((s,r)=>s+r.usage,0);
   const blCost=blRows.reduce((s,r)=>s+r.cost,0);
-  const postCost=postRows.reduce((s,r)=>s+r.cost,0);
+  const postCost=filteredPostRows.reduce((s,r)=>s+r.cost,0);
   const savCost=blCost&&postCost?blCost-postCost:null;
 
   const statsHTML=
-    '<div class="ma-stats" style="margin-bottom:16px">'+
+    '<div class="ma-stats" style="margin-bottom:14px">'+
       maStat(blAvg.toFixed(2),unit+'/day','Baseline Avg/Day')+
       maStat(postAvg.toFixed(2),unit+'/day','Post-BL Avg/Day')+
-      maStat((savPct>=0?'-':'+')+(Math.abs(savPct)).toFixed(1)+'%','vs baseline',savPct>=0?'Reduction':'Increase')+
-      (savCost!==null?maStat((savCost>=0?'-':'+')+' $'+Math.abs(savCost).toLocaleString(undefined,{maximumFractionDigits:0}),'total','Cost Delta'):'')+
+      maStat((savPct>=0?'−':'+')+(Math.abs(savPct)).toFixed(1)+'%','vs baseline',savPct>=0?'Reduction':'Increase')+
+      (savCost!==null?maStat((savCost>=0?'−':'+')+' $'+Math.abs(savCost).toLocaleString(undefined,{maximumFractionDigits:0}),'total','Cost Delta'):'')+
     '</div>';
 
-  // Line chart: baseline avg line vs actual monthly bars
-  const allRows=rows;
-  const barsColors=allRows.map(r=>bl.months.includes(r.start)?'rgba(0,212,170,0.7)':'rgba(100,160,255,0.75)');
+  // Year filter pills
+  const yearPills=
+    '<div class="perf-year-pills">'+
+      '<span style="font-size:11px;color:var(--text2);align-self:center;margin-right:4px">View Post-BL:</span>'+
+      yearOptions.map(y=>
+        '<button class="perf-year-pill'+((_perfYearFilter===y)?' sel':'')+
+        '" onclick="setPerfYearFilter(\''+m.id+'\',\''+y+'\')">'+
+        (y==='all'?'All':y+' Yr'+(parseInt(y)>1?'s':''))+'</button>'
+      ).join('')+
+    '</div>';
 
-  // Savings table
-  const perfRows=postRows.map(r=>{
+  // Chart rows: era-tagged, filtered to year selection
+  const postYmCutoff=_perfYearFilter==='all'?null:(filteredPostRows.length?filteredPostRows[filteredPostRows.length-1].ym:null);
+  const chartRows=allRows
+    .filter(r=>r.ym<blStart || bl.months.includes(r.ym) || r.ym<=blEnd || _perfYearFilter==='all' || r.ym<=postYmCutoff)
+    .map(r=>({...r, era:bl.months.includes(r.ym)?'baseline':r.ym<blStart?'pre':'post'}));
+
+  const barColors=chartRows.map(r=>
+    r.era==='baseline'?'rgba(0,212,170,0.8)':
+    r.era==='pre'?'rgba(120,130,160,0.35)':'rgba(100,160,255,0.75)'
+  );
+
+  // Savings table — post-baseline only vs expected from baseline avg
+  const perfRows=filteredPostRows.map(r=>{
     const expUsage=blAvg*r.days;
     const sav=expUsage-r.usage;
     const savPc=expUsage>0?sav/expUsage*100:0;
@@ -2648,40 +2821,49 @@ function renderPerfPane(pane, m, bills, incl){
       '<td class="mono" style="color:var(--text2)">'+expUsage.toFixed(0)+'</td>'+
       '<td class="mono">'+r.usage.toLocaleString(undefined,{maximumFractionDigits:0})+'</td>'+
       '<td class="mono" style="color:'+(sav>=0?'var(--em)':'var(--danger)')+'">'+
-        (sav>=0?'−':'+')+(Math.abs(sav)).toFixed(0)+
-      '</td>'+
+        (sav>=0?'−':'+')+(Math.abs(sav)).toFixed(0)+'</td>'+
       '<td class="mono" style="color:'+(savPc>=0?'var(--em)':'var(--danger)')+'">'+
-        (savPc>=0?'−':'+')+(Math.abs(savPc)).toFixed(1)+'%'+
-      '</td>'+
+        (savPc>=0?'−':'+')+(Math.abs(savPc)).toFixed(1)+'%</td>'+
     '</tr>';
   }).join('');
 
   pane.innerHTML=
-    statsHTML+
+    statsHTML+yearPills+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">'+
       '<div>'+
         '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+unit+'/Day vs Baseline</div>'+
         '<div class="ma-chart-wrap"><canvas id="perfChart"></canvas></div>'+
-        '<div style="display:flex;gap:10px;margin-top:8px;font-size:11px;color:var(--text2)">'+
-          '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(0,212,170,0.7);border-radius:2px;display:inline-block"></span>Baseline months</span>'+
-          '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(100,160,255,0.75);border-radius:2px;display:inline-block"></span>Post-baseline</span>'+
-          '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:var(--warn);border-radius:1px;display:inline-block"></span>Baseline avg</span>'+
+        '<div style="display:flex;gap:10px;margin-top:8px;font-size:11px;color:var(--text2);flex-wrap:wrap">'+
+          '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(120,130,160,0.45);border-radius:2px;display:inline-block"></span>Pre-Baseline</span>'+
+          '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(0,212,170,0.8);border-radius:2px;display:inline-block"></span>Baseline</span>'+
+          '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(100,160,255,0.75);border-radius:2px;display:inline-block"></span>Post-Baseline</span>'+
+          '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:var(--warn);border-radius:1px;display:inline-block"></span>Baseline Avg</span>'+
         '</div>'+
       '</div>'+
       '<div>'+
-        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">Monthly Savings vs Expected</div>'+
-        (postRows.length?
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:4px">Post-Baseline Monthly vs Expected</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-bottom:8px">Expected = baseline avg/day × actual billing days</div>'+
+        (filteredPostRows.length?
           '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto">'+
             '<table class="ma-tbl">'+
               '<thead><tr><th>Month</th><th>Days</th><th>Expected</th><th>Actual</th><th>Saved</th><th>%</th></tr></thead>'+
               '<tbody>'+perfRows+'</tbody>'+
-            '</table>'+
-          '</div>':
-          '<div style="font-size:12px;color:var(--text3);padding:20px;text-align:center">Add billing data after your baseline period to see performance</div>')+
+            '</table></div>':
+          '<div style="font-size:12px;color:var(--text3);padding:20px;text-align:center">No post-baseline data yet — add billing periods after <strong>'+fmtMon(blEnd+'-01')+'</strong></div>')+
       '</div>'+
     '</div>';
 
-  requestAnimationFrame(()=>{ drawPerfChart('perfChart',allRows,blAvg,barsColors,unit); });
+  requestAnimationFrame(()=>{ drawPerfChart('perfChart',chartRows,blAvg,barColors,unit); });
+}
+
+function setPerfYearFilter(mid, val){
+  _perfYearFilter=val;
+  const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
+  const m=b.meters.find(m=>m.id===mid); if(!m) return;
+  const bills=(m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+  const incl=m.inclusive!==false;
+  const pane=document.getElementById('maPane'); if(!pane) return;
+  renderPerfPane(pane,m,bills,incl);
 }
 
 function drawPerfChart(canvasId,rows,blAvg,colors,unit){
@@ -2695,13 +2877,15 @@ function drawPerfChart(canvasId,rows,blAvg,colors,unit){
       labels,
       datasets:[
         {label:unit+'/Day',data:perDay,backgroundColor:colors,borderColor:colors.map(c=>c.replace(/[\d.]+\)$/,'1)')),borderWidth:1,borderRadius:3,order:2},
-        {label:'Baseline Avg',data:rows.map(()=>+blAvg.toFixed(2)),type:'line',borderColor:'rgba(245,158,11,0.85)',backgroundColor:'transparent',borderWidth:2,borderDash:[5,4],pointRadius:0,order:1},
+        {label:'Baseline Avg',data:rows.map(()=>+blAvg.toFixed(2)),type:'line',borderColor:'rgba(245,158,11,0.9)',backgroundColor:'transparent',borderWidth:2,borderDash:[5,4],pointRadius:0,order:1},
       ]
     },
     options:{responsive:true,maintainAspectRatio:true,
       plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{
         if(ctx.dataset.type==='line') return 'Baseline avg: '+ctx.parsed.y.toFixed(2)+' '+unit+'/day';
-        return ctx.parsed.y.toFixed(2)+' '+unit+'/day';
+        const era=rows[ctx.dataIndex]?.era;
+        const tag=era==='pre'?'Pre-Baseline':era==='baseline'?'Baseline':'Post-Baseline';
+        return tag+': '+ctx.parsed.y.toFixed(2)+' '+unit+'/day';
       }}}},
       scales:{x:{ticks:{font:{size:10},maxRotation:45},grid:{color:'rgba(255,255,255,0.04)'}},
         y:{ticks:{font:{size:10}},grid:{color:'rgba(255,255,255,0.06)'},title:{display:true,text:unit+'/Day',font:{size:10}}}}
@@ -2958,10 +3142,14 @@ function importBillCsvRows(){
 
 
 /* ── RENDER BILL ROW (used in Bills pane table) ── */
-function renderBillRow(row, m){
-  const days = calcDays(row.start, row.end, m.inclusive !== false);
+function renderBillRow(row, m, incl){
+  if(incl===undefined) incl = m.inclusive !== false;
+  const days = calcDays(row.start, row.end, incl);
+  const nm = normMonthLabel(row.start, row.end, incl);
+  const nmCell = `<td class="norm-mon-cell">${nm}</td>`;
   if(m.commodity==='Electric'){
     return `<tr>
+      ${nmCell}
       <td><input type="date" value="${row.start||''}" onchange="updateBillField('${m.id}','${row.id}','start',this.value)"></td>
       <td><input type="date" value="${row.end||''}" onchange="updateBillField('${m.id}','${row.id}','end',this.value)"></td>
       <td class="days-cell">${days}</td>
@@ -2976,6 +3164,7 @@ function renderBillRow(row, m){
   }
   if(m.commodity==='Gas'){
     return `<tr>
+      ${nmCell}
       <td><input type="date" value="${row.start||''}" onchange="updateBillField('${m.id}','${row.id}','start',this.value)"></td>
       <td><input type="date" value="${row.end||''}" onchange="updateBillField('${m.id}','${row.id}','end',this.value)"></td>
       <td class="days-cell">${days}</td>
@@ -2985,6 +3174,7 @@ function renderBillRow(row, m){
     </tr>`;
   }
   return `<tr>
+    ${nmCell}
     <td><input type="date" value="${row.start||''}" onchange="updateBillField('${m.id}','${row.id}','start',this.value)"></td>
     <td><input type="date" value="${row.end||''}" onchange="updateBillField('${m.id}','${row.id}','end',this.value)"></td>
     <td class="days-cell">${days}</td>
