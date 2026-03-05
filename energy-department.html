@@ -515,6 +515,12 @@ html,body{height:100%;overflow:hidden;}
 .ud-meter-info-cell{background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:10px 12px;}
 /* Billing rows table */
 .ud-bill-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px;margin-top:4px;}
+/* Sticky bills header + scrollable table body */
+.bills-sticky-hdr{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 18px;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0;position:sticky;top:0;z-index:10;}
+.bills-sticky-left{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.bills-sticky-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);white-space:nowrap;}
+.bills-sticky-sub{font-size:11px;color:var(--text3);}
+.bills-scroll-body{flex:1;overflow-y:auto;overflow-x:auto;}
 .ud-bill-tbl{width:100%;border-collapse:collapse;font-size:12px;min-width:500px;}
 .ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);font-weight:700;padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);background:var(--s1);white-space:nowrap;}
 .ud-bill-tbl td{padding:6px 10px;border-bottom:1px solid var(--border);vertical-align:middle;}
@@ -560,7 +566,7 @@ html,body{height:100%;overflow:hidden;}
 .ma-tab{font-size:12px;font-weight:600;padding:9px 18px;border:none;border-bottom:2px solid transparent;background:transparent;cursor:pointer;color:var(--text3);transition:all .13s;font-family:var(--font);white-space:nowrap;margin-bottom:-1px;}
 .ma-tab:hover{color:var(--text2);}
 .ma-tab.active{color:var(--em);border-bottom-color:var(--em);}
-#maPane{flex:1;overflow-y:auto;}
+#maPane{flex:1;overflow-y:auto;display:flex;flex-direction:column;}
 .ma-pane{display:none;flex:1;overflow-y:auto;padding:18px 20px;}
 .ma-pane.active{display:block;}
 /* Analysis stat cards */
@@ -1184,6 +1190,7 @@ html,body{height:100%;overflow:hidden;}
       <div class="fg"><label class="fl">Facility Name *</label><input class="fi" id="bm-name" placeholder="e.g. Van Horn High School"></div>
       <div class="fg"><label class="fl">Facility Address</label><input class="fi" id="bm-addr" placeholder="e.g. 2500 Van Horn Rd, Independence MO 64050"></div>
       <div class="fg"><label class="fl">Square Footage</label><input class="fi" id="bm-sqft" type="number" placeholder="e.g. 180000"></div>
+      <div class="fg"><label class="fl">ZIP Code <span style="font-size:10px;color:var(--text3)">(for weather data)</span></label><input class="fi" id="bm-zip" placeholder="e.g. 64050" maxlength="10"></div>
       <input type="hidden" id="bm-edit-id">
     </div>
     <div class="modal-ftr"><button class="btn btn-ghost" onclick="closeBldgModal()">Cancel</button><button class="btn btn-em" onclick="saveBuilding()">Save Building</button></div>
@@ -2230,6 +2237,7 @@ function renderUDDetail(){
   if(hdrSub){
     const parts=[];
     if(b.addr) parts.push('<span>📍 '+b.addr+'</span>');
+    if(b.zip) parts.push('<span>📮 '+b.zip+'</span>');
     if(b.sqft) parts.push('<span>📐 '+Number(b.sqft).toLocaleString()+' sq ft</span>');
     const meters=b.meters||[];
     parts.push('<span>⚡ '+meters.length+' meter'+(meters.length!==1?'s':'')+'</span>');
@@ -2292,6 +2300,12 @@ function renderMeterWorkspace(){
     '<div id="maPane" style="padding:18px 20px;overflow-y:auto;flex:1"></div>';
 
   const pane=document.getElementById('maPane');
+  // Reset pane styles — bills tab sets flex/no-padding, others need scroll + padding
+  if(udActiveTab==='bills'){
+    pane.style.cssText='flex:1;overflow:hidden;display:flex;flex-direction:column;';
+  } else {
+    pane.style.cssText='flex:1;overflow-y:auto;padding:18px 20px;display:block;';
+  }
   if(udActiveTab==='bills')    renderBillsPane(pane,m,bills,incl);
   if(udActiveTab==='norm')     renderNormPane(pane,m,bills,incl);
   if(udActiveTab==='baseline') renderBaselinePane(pane,m,bills,incl);
@@ -2364,15 +2378,24 @@ function renderBillsPane(pane, m, bills, incl){
     tblBody += renderBillRow(row, m, incl);
   });
 
-  pane.innerHTML =
-    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">'+
-      '<div>'+
-        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2)">'+
-          bills.length+' Billing Period'+(bills.length!==1?'s':'')+(bills.length?' · '+getDateRange(bills):'')+'</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-top:2px">Acct: '+(m.account||'—')+' · Meter: '+(m.meter||'—')+'</div>'+
+  if(bills.length===0){
+    pane.innerHTML=
+      '<div class="ma-csv-drop" onclick="openCsvImportForMeter(\''+m.id+'\')">'+
+        '<div class="ma-csv-drop-title">📥 Drop CSV or click to import bill data</div>'+
+        '<div class="ma-csv-drop-sub">One row per billing period · Electric, Gas, Water, Steam</div>'+
+      '</div>';
+    return;
+  }
+
+  // Sticky header (frozen) — billing count + controls
+  const stickyHdr=
+    '<div class="bills-sticky-hdr">'+
+      '<div class="bills-sticky-left">'+
+        '<div class="bills-sticky-title">'+bills.length+' Billing Period'+(bills.length!==1?'s':'')+(bills.length?' · '+getDateRange(bills):'')+' </div>'+
+        '<div class="bills-sticky-sub">Acct: '+(m.account||'—')+' · Meter: '+(m.meter||'—')+'</div>'+
       '</div>'+
-      '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
-        '<button class="btn btn-ghost btn-sm" onclick="openCsvImportForMeter(\''+m.id+'\')">📥 Import CSV</button>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+
+        '<button class="btn btn-ghost btn-sm" onclick="openCsvImportForMeter(\''+m.id+'\')">📥 Import more periods via CSV</button>'+
         '<div class="ud-incl-toggle">'+
           '<span style="font-size:11px;color:var(--text2)">Day calc:</span>'+
           '<button class="ud-incl-btn'+(incl?' sel':'')+'" onclick="setMeterIncl(\''+m.id+'\',true)">Inclusive</button>'+
@@ -2380,19 +2403,17 @@ function renderBillsPane(pane, m, bills, incl){
         '</div>'+
         '<button class="btn btn-em btn-sm" onclick="openBillModal(\''+m.id+'\')">+ Add Period</button>'+
       '</div>'+
-    '</div>'+
-    (bills.length===0 ?
-      '<div class="ma-csv-drop" onclick="openCsvImportForMeter(\''+m.id+'\')">'+
-        '<div class="ma-csv-drop-title">📥 Drop CSV or click to import bill data</div>'+
-        '<div class="ma-csv-drop-sub">One row per billing period · Electric, Gas, Water, Steam</div>'+
-      '</div>' :
-      '<div class="ud-bill-wrap"><table class="ud-bill-tbl"><thead><tr>'+tblHead+'</tr></thead><tbody>'+tblBody+'</tbody></table></div>'+
-      '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">'+
-        '<button class="ma-csv-drop" onclick="openCsvImportForMeter(\''+m.id+'\')" style="margin:0;padding:10px;display:flex;align-items:center;justify-content:center;gap:8px">'+
-          '<span style="font-size:13px">📥</span><span style="font-size:12px;color:var(--text2)">Import more periods via CSV</span>'+
-        '</button>'+
-      '</div>'
-    );
+    '</div>';
+
+  // Scrollable table body
+  const tableSection=
+    '<div class="bills-scroll-body">'+
+      '<div class="ud-bill-wrap" style="border:none;border-radius:0;margin:0">'+
+        '<table class="ud-bill-tbl"><thead><tr>'+tblHead+'</tr></thead><tbody>'+tblBody+'</tbody></table>'+
+      '</div>'+
+    '</div>';
+
+  pane.innerHTML = stickyHdr + tableSection;
 }
 
 function toggleNormTip(btn){
@@ -2446,9 +2467,11 @@ function getNormRows(m, bills, incl){
       byMonth[ym].days  += days;
       if(hdd) byMonth[ym].hdd = byMonth[ym].hdd ? (byMonth[ym].hdd+hdd)/2 : hdd;
       if(cdd) byMonth[ym].cdd = byMonth[ym].cdd ? (byMonth[ym].cdd+cdd)/2 : cdd;
+      const avgTemp2=parseFloat(row.avgTemp)||0;
+      if(avgTemp2) byMonth[ym].avgTemp = byMonth[ym].avgTemp ? (byMonth[ym].avgTemp+avgTemp2)/2 : avgTemp2;
       byMonth[ym]._ids.push(row.id);
     } else {
-      byMonth[ym] = { ym, start:row.start, end:row.end, days, usage, cost, hdd, cdd, _ids:[row.id] };
+      byMonth[ym] = { ym, start:row.start, end:row.end, days, usage, cost, hdd, cdd, avgTemp:parseFloat(row.avgTemp)||0, _ids:[row.id] };
     }
   });
 
@@ -2461,7 +2484,7 @@ function getNormRows(m, bills, incl){
     const label=dt.toLocaleDateString('en-US',{month:'short',year:'numeric'});
     return {
       id: r._ids[0], ym, start: r.start, end: r.end, days: r.days,
-      usage: r.usage, usagePerDay, cost: r.cost, hdd: r.hdd, cdd: r.cdd,
+      usage: r.usage, usagePerDay, cost: r.cost, hdd: r.hdd, cdd: r.cdd, avgTemp: r.avgTemp||0,
       hddNorm, cddNorm, label,
       isBaseline: !!(m.baseline && m.baseline.months && m.baseline.months.includes(ym)),
     };
@@ -2509,13 +2532,27 @@ function renderNormPane(pane, m, bills, incl){
       <td><input class="hdd-inp" type="number" placeholder="CDD" value="${r.cdd||''}"
         onchange="updateBillWeather('${m.id}','${r.id}','cdd',this.value)"
         style="width:70px;font-family:var(--mono);font-size:12px;background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);outline:none"></td>
+      <td class="mono" style="color:var(--text2)">${r.avgTemp!=null&&r.avgTemp>0?r.avgTemp.toFixed(1)+'°':'—'}</td>
       <td class="mono" style="color:var(--em2)">${r.hddNorm!==null?r.hddNorm.toFixed(3):'—'}</td>
       <td class="mono">${r.cost?'$'+r.cost.toLocaleString(undefined,{maximumFractionDigits:0}):'—'}</td>
       ${r.isBaseline?'<td><span style="font-size:10px;background:var(--em-dim);color:var(--em);border:1px solid rgba(0,212,170,.2);border-radius:4px;padding:1px 6px">BL</span></td>':'<td></td>'}
     </tr>`).join('');
 
+  // Weather fetch button + status
+  const b2=getUDBldg(udSelProjId,udSelBldgId);
+  const bldgZip=b2?.zip||'';
+  const wddBtn=
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">'+
+      '<button class="btn btn-ghost btn-sm" onclick="applyWeatherToMeter(\''+m.id+'\',document.getElementById(\'wdd-status\'))">'+
+        '🌡️ Fetch Weather ('+( bldgZip?'ZIP '+bldgZip:'no ZIP set')+')</button>'+
+      (bldgZip?
+        '<a href="https://www.weatherdatadepot.com" target="_blank" style="font-size:11px;color:var(--text3);text-decoration:none">weatherdatadepot.com ↗</a>':''+
+        '<span style="font-size:11px;color:var(--warn)">Add ZIP in Edit Building to enable auto-fetch</span>')+
+      '<span id="wdd-status" style="font-size:11px;color:var(--text2);flex:1;min-width:0"></span>'+
+    '</div>';
+
   pane.innerHTML =
-    statsHTML + hddNotice +
+    statsHTML + wddBtn + hddNotice +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">'+
       '<div>'+
         '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+unit+'/Day — Date Normalized</div>'+
@@ -2525,7 +2562,7 @@ function renderNormPane(pane, m, bills, incl){
         '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">Monthly Detail + Weather Data</div>'+
         '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:300px;overflow-y:auto">'+
           '<table class="ma-tbl">'+
-            '<thead><tr><th>Month</th><th>Days</th><th>'+unit+'</th><th>'+unit+'/Day</th><th>HDD</th><th>CDD</th><th>'+unit+'/HDD</th><th>Cost</th><th></th></tr></thead>'+
+            '<thead><tr><th>Month</th><th>Days</th><th>'+unit+'</th><th>'+unit+'/Day</th><th>HDD</th><th>CDD</th><th>Avg °F</th><th>'+unit+'/HDD</th><th>Cost</th><th></th></tr></thead>'+
             '<tbody>'+tblRows+'</tbody>'+
           '</table>'+
         '</div>'+
@@ -2578,6 +2615,158 @@ function updateBillWeather(mid, rowId, field, val){
   row[field]=parseFloat(val)||0;
   saveUtilityData();
   // Don't re-render — user is editing inline, just save
+}
+
+/* ══════════════════════════════════════════
+   WEATHER DATA — WeatherDataDepot.com
+   Cache key: en_wdd_{ZIP}  → [{ym:'YYYY-MM', hdd, cdd, avgTemp}, ...]
+   Logic:
+   1. Load cached data for this ZIP
+   2. Find the latest cached YYYY-MM
+   3. Last complete month = previous month if today is not last day, else current
+   4. If cache is current → return from cache
+   5. Else fetch from weatherdatadepot.com, merge new months, save cache
+══════════════════════════════════════════ */
+
+function wddLastCompleteMonth(){
+  // Returns YYYY-MM of the last fully completed month
+  // weatherdatadepot only publishes a month after it has fully ended
+  const now=new Date();
+  const y=now.getFullYear(), mo=now.getMonth(); // getMonth() is 0-based
+  // Last day of current month
+  const lastDay=new Date(y, mo+1, 0).getDate();
+  if(now.getDate()>=lastDay){
+    // Last day of month has passed — current month is complete
+    return y+'-'+String(mo+1).padStart(2,'0');
+  } else {
+    // Current month not complete — use previous month
+    const prev=new Date(y, mo, 0); // last day of previous month
+    return prev.getFullYear()+'-'+String(prev.getMonth()+1).padStart(2,'0');
+  }
+}
+
+function wddCacheKey(zip){ return 'en_wdd_'+zip.replace(/\s/g,''); }
+
+function wddLoadCache(zip){
+  try{ return JSON.parse(localStorage.getItem(wddCacheKey(zip)))||[]; }
+  catch(e){ return []; }
+}
+
+function wddSaveCache(zip, rows){
+  try{ localStorage.setItem(wddCacheKey(zip), JSON.stringify(rows)); }
+  catch(e){ console.warn('wdd cache save failed',e); }
+}
+
+// Parse HDD/CDD/AvgTemp from weatherdatadepot.com HTML response
+function wddParseHtml(html, zip){
+  const results=[];
+  // The site has a table with rows: Month | Year | HDD | CDD | AvgTemp (or similar)
+  // Try to find table rows containing month data
+  const rowRe=/<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  const cellRe=/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
+  let rowMatch;
+  while((rowMatch=rowRe.exec(html))!==null){
+    const rowHtml=rowMatch[1];
+    const cells=[];
+    let cellMatch;
+    const cr=/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
+    while((cellMatch=cr.exec(rowHtml))!==null){
+      cells.push(cellMatch[1].replace(/<[^>]+>/g,'').trim());
+    }
+    if(cells.length<3) continue;
+    // Look for month/year pattern — cells[0] or cells[1] might be a month name or number
+    const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const shortNames=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    let moIdx=-1, yr=-1;
+    // Try: cell[0]=month name, cell[1]=year
+    const m0=monthNames.findIndex(n=>cells[0].toLowerCase().startsWith(n.toLowerCase()));
+    const m0s=shortNames.findIndex(n=>cells[0].toLowerCase().startsWith(n.toLowerCase()));
+    const foundMo=m0>=0?m0:m0s>=0?m0s:-1;
+    if(foundMo>=0 && /^\d{4}$/.test(cells[1])){
+      moIdx=foundMo; yr=parseInt(cells[1]);
+      const ym=yr+'-'+String(moIdx+1).padStart(2,'0');
+      const hdd=parseFloat(cells[2])||0;
+      const cdd=parseFloat(cells[3])||0;
+      const avgTemp=parseFloat(cells[4])||0;
+      if(yr>1990 && yr<2100) results.push({ym,hdd,cdd,avgTemp});
+    }
+  }
+  return results;
+}
+
+async function wddFetchWeather(zip, statusEl){
+  if(!zip||zip.length<5){ if(statusEl) statusEl.textContent='⚠️ No ZIP code set for this building. Edit building to add one.'; return null; }
+  const lastComplete=wddLastCompleteMonth();
+  const cache=wddLoadCache(zip);
+  const cachedYms=new Set(cache.map(r=>r.ym));
+  const latestCached=cache.length?cache.slice().sort((a,b)=>a.ym<b.ym?1:-1)[0].ym:null;
+
+  if(latestCached && latestCached>=lastComplete){
+    if(statusEl) statusEl.textContent='✓ Weather data up to date ('+fmtMon(lastComplete+'-01')+')';
+    return cache;
+  }
+
+  if(statusEl) statusEl.textContent='⏳ Fetching weather data for ZIP '+zip+' from WeatherDataDepot…';
+
+  try{
+    // weatherdatadepot.com URL pattern for monthly data by zip
+    const url='https://www.weatherdatadepot.com/climate-data?zip='+encodeURIComponent(zip)+'&type=monthly';
+    const resp=await fetch(url,{mode:'cors',credentials:'omit'});
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const html=await resp.text();
+    const fetched=wddParseHtml(html, zip);
+
+    if(!fetched.length){
+      if(statusEl) statusEl.textContent='⚠️ Could not parse weather data. Try opening WeatherDataDepot manually.';
+      return cache.length?cache:null;
+    }
+
+    // Merge: add only months not already in cache, up to lastComplete
+    fetched.forEach(r=>{
+      if(r.ym<=lastComplete && !cachedYms.has(r.ym)){
+        cache.push(r);
+        cachedYms.add(r.ym);
+      }
+    });
+    cache.sort((a,b)=>a.ym<b.ym?-1:1);
+    wddSaveCache(zip, cache);
+    if(statusEl) statusEl.textContent='✓ Fetched '+fetched.length+' months — data through '+fmtMon(lastComplete+'-01')+' saved.';
+    return cache;
+  } catch(err){
+    console.warn('wddFetch error:',err);
+    if(statusEl) statusEl.textContent='⚠️ Could not reach WeatherDataDepot (network error). Check connection.';
+    return cache.length?cache:null;
+  }
+}
+
+// Apply fetched weather data to bill rows for a given meter
+// Matches by normMonth YYYY-MM → updates HDD, CDD, avgTemp on each bill row
+async function applyWeatherToMeter(mid, statusEl){
+  const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
+  const m=b.meters.find(m=>m.id===mid); if(!m) return;
+  const zip=b.zip||'';
+  const weatherRows=await wddFetchWeather(zip, statusEl);
+  if(!weatherRows||!weatherRows.length) return;
+
+  const incl=m.inclusive!==false;
+  const wddByYm={};
+  weatherRows.forEach(r=>wddByYm[r.ym]=r);
+
+  let updated=0;
+  (m.bills||[]).forEach(row=>{
+    const ym=normMonth(row.start,row.end,incl);
+    if(ym && wddByYm[ym]){
+      const w=wddByYm[ym];
+      if(w.hdd!=null) row.hdd=w.hdd;
+      if(w.cdd!=null) row.cdd=w.cdd;
+      if(w.avgTemp!=null) row.avgTemp=w.avgTemp;
+      updated++;
+    }
+  });
+  saveUtilityData();
+  if(statusEl && updated>0) statusEl.textContent+=' Applied to '+updated+' billing period'+(updated!==1?'s':'')+'.';
+  // Re-render normalized tab to reflect new data
+  if(udActiveTab==='norm') renderMeterWorkspace();
 }
 
 /* ══════════════════════════════════════════
@@ -3301,11 +3490,13 @@ function openBldgModal(editId){
     document.getElementById('bm-name').value=b?.name||'';
     document.getElementById('bm-addr').value=b?.addr||'';
     document.getElementById('bm-sqft').value=b?.sqft||'';
+    document.getElementById('bm-zip').value=b?.zip||'';
   } else {
     document.getElementById('bldgModalTitle').textContent='+ Add Building';
     document.getElementById('bm-name').value='';
     document.getElementById('bm-addr').value='';
     document.getElementById('bm-sqft').value='';
+    document.getElementById('bm-zip').value='';
   }
   modal.classList.add('open');
 }
@@ -3316,11 +3507,11 @@ function saveBuilding(){
   const editId=document.getElementById('bm-edit-id').value;
   if(editId){
     const b=getUDBldg(udSelProjId,editId);
-    if(b){b.name=name;b.addr=document.getElementById('bm-addr').value;b.sqft=parseInt(document.getElementById('bm-sqft').value)||0;}
+    if(b){b.name=name;b.addr=document.getElementById('bm-addr').value;b.sqft=parseInt(document.getElementById('bm-sqft').value)||0;b.zip=(document.getElementById('bm-zip').value||'').trim();}
     showToast('Building updated ✓');
   } else {
     const proj=getUDProj(udSelProjId);
-    proj.buildings.push({id:'b'+Date.now(),name,addr:document.getElementById('bm-addr').value,sqft:parseInt(document.getElementById('bm-sqft').value)||0,meters:[]});
+    proj.buildings.push({id:'b'+Date.now(),name,addr:document.getElementById('bm-addr').value,sqft:parseInt(document.getElementById('bm-sqft').value)||0,zip:(document.getElementById('bm-zip').value||'').trim(),meters:[]});
     showToast('Building added ✓');
   }
   saveUtilityData(); closeBldgModal(); renderUDProjList(); renderUDDetail();
