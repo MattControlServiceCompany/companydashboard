@@ -1242,6 +1242,43 @@ html,body{height:100%;overflow:hidden;}
   </div>
 </div>
 
+<!-- WEATHER DATA IMPORT MODAL -->
+<div class="modal-bg" id="wddModal" onclick="if(event.target===this)closeWddModal()">
+  <div class="modal" style="width:580px;max-width:96vw">
+    <div class="modal-hdr">
+      <span class="modal-title">🌡️ Fetch Weather Data — NOAA</span>
+      <button class="modal-x" onclick="closeWddModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:13px 15px;margin-bottom:14px">
+        <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:4px">NOAA Climate Data Online — Free API Key Required</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.6;margin-bottom:10px">
+          NOAA's API allows direct browser requests (no copy/paste needed). Get a free token by entering your email at
+          <a href="https://www.ncdc.noaa.gov/cdo-web/token" target="_blank" style="color:var(--em)">ncdc.noaa.gov/cdo-web/token ↗</a>
+          — it arrives in under a minute. Your token is saved in this browser only.
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="noaaKeyInput" class="fi" placeholder="Paste your NOAA token here…"
+            style="flex:1;font-family:var(--mono);font-size:12px"
+            oninput="localStorage.setItem('en_noaa_token',this.value.trim())">
+          <button class="btn btn-em btn-sm" onclick="noaaAutoFetch()">⬇ Fetch Now</button>
+        </div>
+      </div>
+      <div id="wddStatus" style="font-size:12px;color:var(--text2);min-height:20px;margin-bottom:10px;line-height:1.6;white-space:pre-wrap"></div>
+      <div id="wddPreview" style="display:none">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">Data to be applied</div>
+        <div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto">
+          <table class="ma-tbl" id="wddPreviewTbl"></table>
+        </div>
+      </div>
+    </div>
+    <div class="modal-ftr">
+      <button class="btn btn-ghost" onclick="closeWddModal()">Cancel</button>
+      <button class="btn btn-em" id="wddApplyBtn" style="display:none" onclick="wddApplyParsed()">✓ Apply to Meter</button>
+    </div>
+  </div>
+</div>
+
 <!-- BILL CSV IMPORT MODAL -->
 <div class="modal-bg" id="billCsvModal" onclick="if(event.target===this)closeBillCsvModal()">
   <div class="modal" style="width:700px;max-width:96vw">
@@ -2580,14 +2617,14 @@ function renderNormPane(pane, m, bills, incl){
   // Weather fetch button + status
   const b2=getUDBldg(udSelProjId,udSelBldgId);
   const bldgZip=b2?.zip||'';
+  const wddCache=bldgZip?wddLoadCache(bldgZip):[];
   const wddBtn=
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">'+
-      '<button class="btn btn-ghost btn-sm" onclick="applyWeatherToMeter(\''+m.id+'\',document.getElementById(\'wdd-status\'))">'+
-        '🌡️ Fetch Weather ('+( bldgZip?'ZIP '+bldgZip:'no ZIP set')+')</button>'+
-      (bldgZip?
-        '<a href="https://www.weatherdatadepot.com" target="_blank" style="font-size:11px;color:var(--text3);text-decoration:none">weatherdatadepot.com ↗</a>':''+
-        '<span style="font-size:11px;color:var(--warn)">Add ZIP in Edit Building to enable auto-fetch</span>')+
-      '<span id="wdd-status" style="font-size:11px;color:var(--text2);flex:1;min-width:0"></span>'+
+      '<button class="btn btn-ghost btn-sm" onclick="openWddModal(\''+m.id+'\')">'+
+        '🌡️ Fetch Weather Data'+(bldgZip?' — ZIP '+bldgZip:'')+'</button>'+
+      (!bldgZip?'<span style="font-size:11px;color:var(--warn)">Add ZIP in Edit Building to enable weather lookup</span>':'')+
+      '<span id="wdd-status" style="font-size:11px;color:var(--em);flex:1;min-width:0">'+
+        (wddCache.length?'✓ '+wddCache.length+' months cached through '+fmtMon(wddCache.slice().sort((a,b)=>b.ym.localeCompare(a.ym))[0].ym+'-01'):'')+'</span>'+
     '</div>';
 
   pane.innerHTML =
@@ -2657,157 +2694,256 @@ function updateBillWeather(mid, rowId, field, val){
 }
 
 /* ══════════════════════════════════════════
-   WEATHER DATA — WeatherDataDepot.com
-   Cache key: en_wdd_{ZIP}  → [{ym:'YYYY-MM', hdd, cdd, avgTemp}, ...]
-   Logic:
-   1. Load cached data for this ZIP
-   2. Find the latest cached YYYY-MM
-   3. Last complete month = previous month if today is not last day, else current
-   4. If cache is current → return from cache
-   5. Else fetch from weatherdatadepot.com, merge new months, save cache
+   WEATHER DATA — NOAA Climate Data Online API
+   Uses NOAA's CORS-enabled REST API — fully automatic, no copy/paste.
+   Free API key from ncdc.noaa.gov/cdo-web/token (email signup, ~1 min).
+   Flow: ZIP → nearest GSOM station → fetch HDD+CDD+TAVG monthly → cache → apply to bills.
+   Cache key: localStorage en_wdd_{ZIP} → [{ym, hdd, cdd, avgTemp}]
+   Token key:  localStorage en_noaa_token
 ══════════════════════════════════════════ */
 
+const NOAA_BASE = 'https://www.ncdc.noaa.gov/cdo-web/api/v2';
+let _wddMid    = null;
+let _wddParsed = [];
+
 function wddLastCompleteMonth(){
-  // Returns YYYY-MM of the last fully completed month
-  // weatherdatadepot only publishes a month after it has fully ended
-  const now=new Date();
-  const y=now.getFullYear(), mo=now.getMonth(); // getMonth() is 0-based
-  // Last day of current month
-  const lastDay=new Date(y, mo+1, 0).getDate();
-  if(now.getDate()>=lastDay){
-    // Last day of month has passed — current month is complete
-    return y+'-'+String(mo+1).padStart(2,'0');
-  } else {
-    // Current month not complete — use previous month
-    const prev=new Date(y, mo, 0); // last day of previous month
-    return prev.getFullYear()+'-'+String(prev.getMonth()+1).padStart(2,'0');
-  }
+  // NOAA publishes data for a month once it has fully ended
+  const now=new Date(), y=now.getFullYear(), mo=now.getMonth(); // mo is 0-based
+  // Previous month is always complete
+  const prev=new Date(y, mo, 0); // last day of prev month object
+  return prev.getFullYear()+'-'+String(prev.getMonth()+1).padStart(2,'0');
 }
-
 function wddCacheKey(zip){ return 'en_wdd_'+zip.replace(/\s/g,''); }
-
-function wddLoadCache(zip){
-  try{ return JSON.parse(localStorage.getItem(wddCacheKey(zip)))||[]; }
-  catch(e){ return []; }
+function wddLoadCache(zip){ try{ return JSON.parse(localStorage.getItem(wddCacheKey(zip)))||[]; }catch(e){ return []; } }
+function wddSaveCache(zip,rows){ try{ localStorage.setItem(wddCacheKey(zip),JSON.stringify(rows)); }catch(e){} }
+function noaaToken(){ return (localStorage.getItem('en_noaa_token')||'').trim(); }
+function wddSetStatus(msg,color){
+  const el=document.getElementById('wddStatus');
+  if(el){el.textContent=msg; el.style.color=color||'var(--text2)';}
 }
 
-function wddSaveCache(zip, rows){
-  try{ localStorage.setItem(wddCacheKey(zip), JSON.stringify(rows)); }
-  catch(e){ console.warn('wdd cache save failed',e); }
-}
-
-// Parse HDD/CDD/AvgTemp from weatherdatadepot.com HTML response
-function wddParseHtml(html, zip){
-  const results=[];
-  // The site has a table with rows: Month | Year | HDD | CDD | AvgTemp (or similar)
-  // Try to find table rows containing month data
-  const rowRe=/<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  const cellRe=/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
-  let rowMatch;
-  while((rowMatch=rowRe.exec(html))!==null){
-    const rowHtml=rowMatch[1];
-    const cells=[];
-    let cellMatch;
-    const cr=/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
-    while((cellMatch=cr.exec(rowHtml))!==null){
-      cells.push(cellMatch[1].replace(/<[^>]+>/g,'').trim());
-    }
-    if(cells.length<3) continue;
-    // Look for month/year pattern — cells[0] or cells[1] might be a month name or number
-    const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const shortNames=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    let moIdx=-1, yr=-1;
-    // Try: cell[0]=month name, cell[1]=year
-    const m0=monthNames.findIndex(n=>cells[0].toLowerCase().startsWith(n.toLowerCase()));
-    const m0s=shortNames.findIndex(n=>cells[0].toLowerCase().startsWith(n.toLowerCase()));
-    const foundMo=m0>=0?m0:m0s>=0?m0s:-1;
-    if(foundMo>=0 && /^\d{4}$/.test(cells[1])){
-      moIdx=foundMo; yr=parseInt(cells[1]);
-      const ym=yr+'-'+String(moIdx+1).padStart(2,'0');
-      const hdd=parseFloat(cells[2])||0;
-      const cdd=parseFloat(cells[3])||0;
-      const avgTemp=parseFloat(cells[4])||0;
-      if(yr>1990 && yr<2100) results.push({ym,hdd,cdd,avgTemp});
+function openWddModal(mid){
+  _wddMid=mid; _wddParsed=[];
+  const b=getUDBldg(udSelProjId,udSelBldgId);
+  const zip=b?.zip||'';
+  const keyInput=document.getElementById('noaaKeyInput');
+  if(keyInput) keyInput.value=noaaToken();
+  document.getElementById('wddPreview').style.display='none';
+  document.getElementById('wddApplyBtn').style.display='none';
+  if(!zip){
+    wddSetStatus('⚠️ No ZIP code set — edit this building to add one.','var(--warn)');
+  } else {
+    const cache=wddLoadCache(zip);
+    const latest=cache.length?cache.slice().sort((a,b)=>b.ym.localeCompare(a.ym))[0].ym:null;
+    const lastComplete=wddLastCompleteMonth();
+    if(latest && latest>=lastComplete){
+      wddSetStatus('✓ Weather cache is up to date through '+fmtMon(latest+'-01')+' ('+cache.length+' months). Click Fetch Now to refresh.','var(--em)');
+      _wddParsed=cache; wddShowPreview(cache);
+    } else if(cache.length){
+      wddSetStatus('Cache has '+cache.length+' months through '+fmtMon(latest+'-01')+'. Enter your NOAA token and click Fetch Now to get newer data.','var(--text2)');
+      _wddParsed=cache; wddShowPreview(cache);
+    } else {
+      wddSetStatus('No cached data yet for ZIP '+zip+'. Enter your NOAA token and click Fetch Now.');
     }
   }
-  return results;
+  document.getElementById('wddModal').classList.add('open');
+}
+function closeWddModal(){ document.getElementById('wddModal').classList.remove('open'); _wddMid=null; _wddParsed=[]; }
+
+// ── NOAA API ──────────────────────────────────────────────────────
+
+async function noaaGet(path){
+  const token=noaaToken();
+  const resp=await fetch(NOAA_BASE+path,{headers:{token}});
+  if(resp.status===400){ const t=await resp.text(); throw new Error('NOAA 400: '+t.slice(0,200)); }
+  if(resp.status===401||resp.status===403) throw new Error('invalid_token');
+  if(!resp.ok) throw new Error('NOAA '+resp.status);
+  return resp.json();
 }
 
-async function wddFetchWeather(zip, statusEl){
-  if(!zip||zip.length<5){ if(statusEl) statusEl.textContent='⚠️ No ZIP code set for this building. Edit building to add one.'; return null; }
+// Find the best GSOM station for a ZIP — most data coverage, closest
+async function noaaFindStation(zip){
+  wddSetStatus('⏳ Finding nearest weather station for ZIP '+zip+'…');
+  // NOAA locationid for ZIP codes is "ZIP:NNNNN"
+  const data=await noaaGet(
+    '/stations?locationid=ZIP:'+encodeURIComponent(zip)+
+    '&datasetid=GSOM&datatypeid=HDD&limit=10&sortfield=datacoverage&sortorder=desc'
+  );
+  if(!data.results||!data.results.length){
+    // Fallback: search without datatypeid filter
+    const data2=await noaaGet(
+      '/stations?locationid=ZIP:'+encodeURIComponent(zip)+
+      '&datasetid=GSOM&limit=10&sortfield=datacoverage&sortorder=desc'
+    );
+    if(!data2.results||!data2.results.length) throw new Error('no_station');
+    return data2.results[0];
+  }
+  return data.results[0];
+}
+
+// Fetch GSOM monthly data for HDD, CDD, TAVG
+async function noaaFetchGSOM(stationId, startYM, endYM){
+  // NOAA GSOM date format: YYYY-MM-DD; limit 1000 rows per request
+  const startDate=startYM+'-01';
+  // End date: last day of endYM
+  const [ey,em]=endYM.split('-').map(Number);
+  const lastDay=new Date(ey,em,0).getDate();
+  const endDate=endYM+'-'+String(lastDay).padStart(2,'0');
+
+  const url='/data?datasetid=GSOM'+
+    '&stationid='+encodeURIComponent(stationId)+
+    '&startdate='+startDate+'&enddate='+endDate+
+    '&datatypeid=HDD&datatypeid=CDD&datatypeid=TAVG'+
+    '&units=standard&limit=1000';
+
+  const data=await noaaGet(url);
+  return data.results||[];
+}
+
+// Convert flat NOAA results array → [{ym,hdd,cdd,avgTemp}]
+function noaaToMonths(rows){
+  const byYm={};
+  rows.forEach(r=>{
+    const ym=r.date.slice(0,7);
+    if(!byYm[ym]) byYm[ym]={ym,hdd:null,cdd:null,avgTemp:null};
+    if(r.datatype==='HDD')  byYm[ym].hdd    =r.value;
+    if(r.datatype==='CDD')  byYm[ym].cdd    =r.value;
+    if(r.datatype==='TAVG') byYm[ym].avgTemp=r.value;
+  });
+  return Object.values(byYm).sort((a,b)=>a.ym.localeCompare(b.ym));
+}
+
+async function noaaAutoFetch(){
+  const token=noaaToken();
+  if(!token){
+    wddSetStatus('⚠️ Enter your NOAA API token first.\nGet a free one at ncdc.noaa.gov/cdo-web/token — just enter your email and it arrives in seconds.','var(--warn)');
+    return;
+  }
+  const b=getUDBldg(udSelProjId,udSelBldgId);
+  const zip=b?.zip||'';
+  if(!zip){ wddSetStatus('⚠️ No ZIP code on this building — edit it to add one.','var(--warn)'); return; }
+
   const lastComplete=wddLastCompleteMonth();
   const cache=wddLoadCache(zip);
   const cachedYms=new Set(cache.map(r=>r.ym));
-  const latestCached=cache.length?cache.slice().sort((a,b)=>a.ym<b.ym?1:-1)[0].ym:null;
+  const sortedCache=cache.slice().sort((a,b)=>b.ym.localeCompare(a.ym));
+  const latestCached=sortedCache.length?sortedCache[0].ym:null;
 
-  if(latestCached && latestCached>=lastComplete){
-    if(statusEl) statusEl.textContent='✓ Weather data up to date ('+fmtMon(lastComplete+'-01')+')';
-    return cache;
+  // Determine fetch start: day after latest cached month, or earliest bill date
+  let fetchStartYM;
+  if(latestCached){
+    const [ly,lm]=latestCached.split('-').map(Number);
+    const next=new Date(ly,lm,1); // first day of month after latest
+    fetchStartYM=next.getFullYear()+'-'+String(next.getMonth()+1).padStart(2,'0');
+  } else {
+    // Go back to earliest bill or 4 years
+    const m2=b.meters?b.meters.find(m=>m.id===_wddMid):null;
+    const bills2=(m2?.bills||[]).slice().sort((a,c)=>a.start<c.start?-1:1);
+    const earliest=bills2.length?normMonth(bills2[0].start,bills2[0].end,m2.inclusive!==false):null;
+    const fourYearsBack=(new Date().getFullYear()-4)+'-01';
+    fetchStartYM=(earliest&&earliest<fourYearsBack)?earliest:fourYearsBack;
   }
 
-  if(statusEl) statusEl.textContent='⏳ Fetching weather data for ZIP '+zip+' from WeatherDataDepot…';
+  if(fetchStartYM>lastComplete){
+    wddSetStatus('✓ Already up to date through '+fmtMon(lastComplete+'-01')+'.','var(--em)');
+    _wddParsed=cache; wddShowPreview(cache); return;
+  }
+
+  document.getElementById('wddApplyBtn').style.display='none';
+  document.getElementById('wddPreview').style.display='none';
 
   try{
-    // weatherdatadepot.com URL pattern for monthly data by zip
-    const url='https://www.weatherdatadepot.com/climate-data?zip='+encodeURIComponent(zip)+'&type=monthly';
-    const resp=await fetch(url,{mode:'cors',credentials:'omit'});
-    if(!resp.ok) throw new Error('HTTP '+resp.status);
-    const html=await resp.text();
-    const fetched=wddParseHtml(html, zip);
+    const station=await noaaFindStation(zip);
+    const sid=station.id;
+    const sname=station.name||sid;
+    wddSetStatus('⏳ Station: '+sname+'\nFetching '+fetchStartYM+' → '+lastComplete+'…');
 
-    if(!fetched.length){
-      if(statusEl) statusEl.textContent='⚠️ Could not parse weather data. Try opening WeatherDataDepot manually.';
-      return cache.length?cache:null;
-    }
+    const rawRows=await noaaFetchGSOM(sid, fetchStartYM, lastComplete);
+    if(!rawRows.length) throw new Error('no_data');
 
-    // Merge: add only months not already in cache, up to lastComplete
-    fetched.forEach(r=>{
-      if(r.ym<=lastComplete && !cachedYms.has(r.ym)){
+    const newMonths=noaaToMonths(rawRows);
+
+    // Merge new months into cache (update existing, add new)
+    newMonths.forEach(r=>{
+      if(cachedYms.has(r.ym)){
+        const idx=cache.findIndex(c=>c.ym===r.ym);
+        if(idx>=0) cache[idx]=r;
+      } else {
         cache.push(r);
         cachedYms.add(r.ym);
       }
     });
-    cache.sort((a,b)=>a.ym<b.ym?-1:1);
-    wddSaveCache(zip, cache);
-    if(statusEl) statusEl.textContent='✓ Fetched '+fetched.length+' months — data through '+fmtMon(lastComplete+'-01')+' saved.';
-    return cache;
+    cache.sort((a,b)=>a.ym.localeCompare(b.ym));
+    wddSaveCache(zip,cache);
+
+    _wddParsed=cache;
+    const latest2=cache.slice().sort((a,b)=>b.ym.localeCompare(a.ym))[0].ym;
+    wddSetStatus(
+      '✓ Fetched '+newMonths.length+' months from NOAA ('+sname+')\n'+
+      'Total cached for ZIP '+zip+': '+cache.length+' months through '+fmtMon(latest2+'-01'),
+      'var(--em)'
+    );
+    wddShowPreview(cache);
+
   } catch(err){
-    console.warn('wddFetch error:',err);
-    if(statusEl) statusEl.textContent='⚠️ Could not reach WeatherDataDepot (network error). Check connection.';
-    return cache.length?cache:null;
+    console.error('NOAA error:',err);
+    const msg=err.message||'';
+    if(msg==='invalid_token')
+      wddSetStatus('⚠️ Invalid NOAA token — double-check it at ncdc.noaa.gov/cdo-web/token','var(--warn)');
+    else if(msg==='no_station')
+      wddSetStatus('⚠️ No NOAA weather station found for ZIP '+zip+'. Try the nearest city ZIP code.','var(--warn)');
+    else if(msg==='no_data')
+      wddSetStatus('⚠️ Station found but returned no data for this date range. The station may not have HDD/CDD records.','var(--warn)');
+    else
+      wddSetStatus('⚠️ NOAA fetch error: '+msg,'var(--warn)');
+    // Still show cached data if any
+    if(cache.length){ _wddParsed=cache; wddShowPreview(cache); }
   }
 }
 
-// Apply fetched weather data to bill rows for a given meter
-// Matches by normMonth YYYY-MM → updates HDD, CDD, avgTemp on each bill row
-async function applyWeatherToMeter(mid, statusEl){
+function wddShowPreview(rows){
+  const tbl=document.getElementById('wddPreviewTbl');
+  const preview=document.getElementById('wddPreview');
+  const applyBtn=document.getElementById('wddApplyBtn');
+  if(!rows||!rows.length){ preview.style.display='none'; applyBtn.style.display='none'; return; }
+  tbl.innerHTML=
+    '<thead><tr><th>Month</th><th>HDD</th><th>CDD</th><th>Avg °F</th></tr></thead>'+
+    '<tbody>'+rows.map(r=>`
+      <tr>
+        <td class="mono">${fmtMon(r.ym+'-01')}</td>
+        <td class="mono">${r.hdd!=null?r.hdd.toFixed(0):'—'}</td>
+        <td class="mono">${r.cdd!=null?r.cdd.toFixed(0):'—'}</td>
+        <td class="mono">${r.avgTemp!=null&&r.avgTemp>0?r.avgTemp.toFixed(1)+'°':'—'}</td>
+      </tr>`).join('')+'</tbody>';
+  preview.style.display='';
+  applyBtn.style.display='';
+  applyBtn.textContent='✓ Apply '+rows.length+' Months to Meter';
+}
+
+function wddApplyParsed(){
+  if(!_wddParsed.length||!_wddMid) return;
   const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
-  const m=b.meters.find(m=>m.id===mid); if(!m) return;
+  const m=b.meters.find(m=>m.id===_wddMid); if(!m) return;
   const zip=b.zip||'';
-  const weatherRows=await wddFetchWeather(zip, statusEl);
-  if(!weatherRows||!weatherRows.length) return;
-
   const incl=m.inclusive!==false;
-  const wddByYm={};
-  weatherRows.forEach(r=>wddByYm[r.ym]=r);
-
+  if(zip) wddSaveCache(zip,_wddParsed);
+  const byYm={}; _wddParsed.forEach(r=>byYm[r.ym]=r);
   let updated=0;
   (m.bills||[]).forEach(row=>{
     const ym=normMonth(row.start,row.end,incl);
-    if(ym && wddByYm[ym]){
-      const w=wddByYm[ym];
-      if(w.hdd!=null) row.hdd=w.hdd;
-      if(w.cdd!=null) row.cdd=w.cdd;
-      if(w.avgTemp!=null) row.avgTemp=w.avgTemp;
+    if(ym&&byYm[ym]){
+      const w=byYm[ym];
+      if(w.hdd!=null)    row.hdd    =w.hdd;
+      if(w.cdd!=null)    row.cdd    =w.cdd;
+      if(w.avgTemp!=null)row.avgTemp=w.avgTemp;
       updated++;
     }
   });
   saveUtilityData();
-  if(statusEl && updated>0) statusEl.textContent+=' Applied to '+updated+' billing period'+(updated!==1?'s':'')+'.';
-  // Re-render normalized tab to reflect new data
+  closeWddModal();
+  showToast('Weather applied to '+updated+' billing period'+(updated!==1?'s':'')+' ✓');
   if(udActiveTab==='norm') renderMeterWorkspace();
 }
-
 /* ══════════════════════════════════════════
    BASELINE TAB
 ══════════════════════════════════════════ */
