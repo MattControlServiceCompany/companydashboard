@@ -2255,6 +2255,11 @@ function udSelectBldg(bid){
 /* ── ACTIVE METER WORKSPACE STATE ── */
 let udActiveMid = null;
 let udActiveTab = 'bills';
+let udNormMode      = 'date';    // 'date' | 'weather'
+let udNormMetric    = 'perday';  // 'perday' | 'total' | 'weather'  (chart Y-axis in Norm tab)
+let udNormChartVis  = true;      // chart visible in Norm tab
+let udBlChartVis    = true;      // chart visible in Baseline tab
+let udBlOverlay     = false;     // overlay raw bill data on baseline chart
 let _maCharts = {};
 
 function renderUDDetail(){
@@ -2537,9 +2542,9 @@ function getNormRows(m, bills, incl, weatherByYm){
         byMonth[ym].days  += pDays;
         // Only accumulate bill-level weather if no ZIP weather cache
         if(!weatherByYm){
-          if(hdd)   byMonth[ym].hddSum   = (byMonth[ym].hddSum  ||0) + hdd*frac;
-          if(cdd)   byMonth[ym].cddSum   = (byMonth[ym].cddSum  ||0) + cdd*frac;
-          if(avgTmp)byMonth[ym].tmpSum   = (byMonth[ym].tmpSum  ||0) + avgTmp*frac;
+          if(hdd)   { byMonth[ym].hddSum   = (byMonth[ym].hddSum  ||0) + hdd*frac; byMonth[ym].hasHdd=true; }
+          if(cdd)   { byMonth[ym].cddSum   = (byMonth[ym].cddSum  ||0) + cdd*frac; byMonth[ym].hasCdd=true; }
+          if(avgTmp){ byMonth[ym].tmpSum   = (byMonth[ym].tmpSum  ||0) + avgTmp*frac; byMonth[ym].hasTmp=true; }
           byMonth[ym].wSum = (byMonth[ym].wSum||0) + frac;
         }
         byMonth[ym]._ids.push(row.id);
@@ -2551,6 +2556,9 @@ function getNormRows(m, bills, incl, weatherByYm){
           cddSum: (!weatherByYm&&cdd)?cdd*frac:0,
           tmpSum: (!weatherByYm&&avgTmp)?avgTmp*frac:0,
           wSum:   !weatherByYm?frac:0,
+          hasHdd: !weatherByYm&&!!hdd,
+          hasCdd: !weatherByYm&&!!cdd,
+          hasTmp: !weatherByYm&&!!avgTmp,
           _ids:[row.id]
         };
       }
@@ -2559,21 +2567,23 @@ function getNormRows(m, bills, incl, weatherByYm){
 
   return Object.entries(byMonth).sort((a,b)=>a[0]<b[0]?-1:1).map(([ym,r])=>{
     const usagePerDay = r.days>0 ? r.usage/r.days : 0;
+    // hdd/cdd/avgTemp use null to mean "no data" and 0 to mean actual zero.
+    // This lets the UI show "0" vs "—" correctly.
     let hdd, cdd, avgTemp;
     if(weatherByYm && weatherByYm[ym]){
       // Use ZIP weather cache as the authoritative source for this calendar month
       const w = weatherByYm[ym];
-      hdd     = w.hdd    || 0;
-      cdd     = w.cdd    || 0;
-      avgTemp = w.avgTemp|| 0;
+      hdd     = (w.hdd     != null) ? w.hdd     : null;
+      cdd     = (w.cdd     != null) ? w.cdd     : null;
+      avgTemp = (w.avgTemp != null) ? w.avgTemp : null;
     } else {
-      // Fallback: use bill-level weather values (prorated)
-      hdd     = r.wSum>0 && r.hddSum ? r.hddSum/r.wSum : 0;
-      cdd     = r.wSum>0 && r.cddSum ? r.cddSum/r.wSum : 0;
-      avgTemp = r.wSum>0 && r.tmpSum ? r.tmpSum/r.wSum : 0;
+      // Fallback: use bill-level weather values (prorated). null if no data was ever entered.
+      hdd     = r.hasHdd ? (r.wSum>0 ? r.hddSum/r.wSum : 0) : null;
+      cdd     = r.hasCdd ? (r.wSum>0 ? r.cddSum/r.wSum : 0) : null;
+      avgTemp = r.hasTmp ? (r.wSum>0 ? r.tmpSum/r.wSum : 0) : null;
     }
-    const hddNorm = hdd>0 ? r.usage/hdd : null;
-    const cddNorm = cdd>0 ? r.usage/cdd : null;
+    const hddNorm = (hdd != null && hdd > 0) ? r.usage/hdd : null;
+    const cddNorm = (cdd != null && cdd > 0) ? r.usage/cdd : null;
     const [yr,mo]=ym.split('-');
     const dt=new Date(parseInt(yr),parseInt(mo)-1,1);
     const label=dt.toLocaleDateString('en-US',{month:'short',year:'numeric'});
@@ -2599,6 +2609,12 @@ function getWeatherForBuilding(){
   return {byYm, cache, zip};
 }
 
+function setNormMode(mode){ udNormMode=mode; renderMeterWorkspace(); }
+function setNormMetric(metric){ udNormMetric=metric; renderMeterWorkspace(); }
+function toggleNormChart(){ udNormChartVis=!udNormChartVis; renderMeterWorkspace(); }
+function toggleBlChart(){ udBlChartVis=!udBlChartVis; renderMeterWorkspace(); }
+function toggleBlOverlay(){ udBlOverlay=!udBlOverlay; renderMeterWorkspace(); }
+
 function renderNormPane(pane, m, bills, incl){
   if(!bills.length){
     pane.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">🌡️</div><div>Add bill data in the Bills tab first</div></div>';
@@ -2607,86 +2623,142 @@ function renderNormPane(pane, m, bills, incl){
   const unit = m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
   const {byYm: weatherByYm} = getWeatherForBuilding();
   const rows = getNormRows(m,bills,incl,weatherByYm);
-  const avgPerDay = rows.reduce((s,r)=>s+r.usagePerDay,0)/rows.length;
+  const hasWeather = rows.some(r=>r.hdd != null);
+
+  // Resolve effective metric (weather falls back to perday if no data)
+  const metric = (udNormMetric==='weather' && !hasWeather) ? 'perday' : udNormMetric;
+
+  // ── Stats ──
   const totalUsage = rows.reduce((s,r)=>s+r.usage,0);
   const totalCost  = rows.reduce((s,r)=>s+r.cost,0);
-  const needsHDD   = rows.some(r=>!r.hdd);
+  const avgPerDay  = rows.reduce((s,r)=>s+r.usagePerDay,0)/rows.length;
+  const hddRows    = rows.filter(r=>r.hddNorm!=null);
+  const avgPerHDD  = hddRows.length ? hddRows.reduce((s,r)=>s+r.hddNorm,0)/hddRows.length : null;
 
-  // Stats
+  const statVal  = metric==='weather' && avgPerHDD!=null ? avgPerHDD.toFixed(2)
+                 : metric==='total'                      ? (totalUsage/rows.length).toFixed(0)
+                 : avgPerDay.toFixed(1);
+  const statUnit = metric==='weather' && avgPerHDD!=null ? unit+'/HDD avg'
+                 : metric==='total'                      ? unit+'/mo avg'
+                 : unit+'/day avg';
+  const statLbl  = metric==='weather' ? 'Weather-Normalized Avg'
+                 : metric==='total'   ? 'Avg Monthly Usage'
+                 : 'Date-Normalized Avg';
+
   const statsHTML =
     '<div class="ma-stats">'+
-      maStat(totalUsage.toLocaleString(undefined,{maximumFractionDigits:0}), unit+'/total', 'Total Usage')+
-      maStat(avgPerDay.toFixed(1), unit+'/day avg', 'Date-Normalized Avg')+
+      maStat(totalUsage.toLocaleString(undefined,{maximumFractionDigits:0}), unit+' total', 'Total Usage')+
+      maStat(statVal, statUnit, statLbl)+
       maStat('$'+totalCost.toLocaleString(undefined,{maximumFractionDigits:0}), 'total', 'Total Cost')+
       maStat(rows.length+'', 'months', 'Data Points')+
     '</div>';
 
-  // HDD/CDD notice if missing
-  const hddNotice = needsHDD ?
-    '<div style="background:var(--warn-dim);border:1px solid rgba(245,158,11,.25);border-radius:7px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--warn)">'+
-      '⚠️ No weather data loaded for this building\'s ZIP code. Upload a weather CSV using the button above to enable HDD/CDD normalization. '+
-      'Tip: export monthly HDD/CDD/avg temp from NOAA or Weather.gov for your ZIP code.'+
-    '</div>' : '';
+  // ── Control bar ──
+  const chartBtnLabel = udNormChartVis ? '📉 Hide Chart' : '📊 Show Chart';
+  const warnDisabled  = !hasWeather ? ' style="opacity:.45;cursor:not-allowed" disabled' : '';
+  const warnTip       = !hasWeather ? '<span style="font-size:11px;color:var(--text3);margin-left:4px">Upload weather CSV to enable</span>' : '';
+  const controlBar =
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:12px">'+
+      // Chart toggle
+      '<button class="ud-incl-btn sel" onclick="toggleNormChart()" style="background:var(--s3);border-color:var(--border2);color:var(--text2)">'+chartBtnLabel+'</button>'+
+      '<div style="width:1px;height:20px;background:var(--border);margin:0 2px"></div>'+
+      // Metric pills
+      '<span style="font-size:11px;color:var(--text2)">Chart metric:</span>'+
+      '<button class="ud-incl-btn'+(metric==='perday'?' sel':'')+'" onclick="setNormMetric(\'perday\')">'+unit+'/Day</button>'+
+      '<button class="ud-incl-btn'+(metric==='total'?' sel':'')+'" onclick="setNormMetric(\'total\')">'+unit+'/Month</button>'+
+      '<button class="ud-incl-btn'+(metric==='weather'?' sel':'')+'"'+warnDisabled+' onclick="setNormMetric(\'weather\')">🌡️ Weather Norm</button>'+
+      warnTip+
+    '</div>';
 
-  // Table rows — HDD/CDD read-only when ZIP weather cache is active (values come from cache)
-  const tblRows = rows.map(r=>`
-    <tr class="${r.isBaseline?'baseline-row':''}">
-      <td class="mono">${r.label}</td>
-      <td class="mono">${r.days}</td>
-      <td class="mono">${r.usage.toLocaleString(undefined,{maximumFractionDigits:1})}</td>
-      <td class="mono" style="color:var(--em);font-weight:600">${r.usagePerDay.toFixed(2)}</td>
-      ${weatherByYm ? `
-        <td class="mono" style="color:var(--text2)">${r.hdd||'—'}</td>
-        <td class="mono" style="color:var(--text2)">${r.cdd||'—'}</td>
-      ` : `
-        <td><input class="hdd-inp" type="number" placeholder="HDD" value="${r.hdd||''}"
-          onchange="updateBillWeather('${m.id}','${r.id}','hdd',this.value)"
-          style="width:70px;font-family:var(--mono);font-size:12px;background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);outline:none"></td>
-        <td><input class="hdd-inp" type="number" placeholder="CDD" value="${r.cdd||''}"
-          onchange="updateBillWeather('${m.id}','${r.id}','cdd',this.value)"
-          style="width:70px;font-family:var(--mono);font-size:12px;background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);outline:none"></td>
-      `}
-      <td class="mono" style="color:var(--text2)">${r.avgTemp!=null&&r.avgTemp>0?r.avgTemp.toFixed(1)+'°':'—'}</td>
-      <td class="mono" style="color:var(--em2)">${r.hddNorm!==null?r.hddNorm.toFixed(3):'—'}</td>
-      <td class="mono">${r.cost?'$'+r.cost.toLocaleString(undefined,{maximumFractionDigits:0}):'—'}</td>
-      ${r.isBaseline?'<td><span style="font-size:10px;background:var(--em-dim);color:var(--em);border:1px solid rgba(0,212,170,.2);border-radius:4px;padding:1px 6px">BL</span></td>':'<td></td>'}
-    </tr>`).join('');
-
-  // Weather upload button + status
+  // ── Weather upload row ──
   const b2=getUDBldg(udSelProjId,udSelBldgId);
   const bldgZip=b2?.zip||'';
   const wddCacheArr=bldgZip?wddLoadCache(bldgZip):[];
   const wddBtn=
-    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">'+
       '<button class="btn btn-ghost btn-sm" onclick="openWddModal(\''+m.id+'\')">'+
         '🌡️ Upload Weather CSV'+(bldgZip?' — ZIP '+bldgZip:'')+'</button>'+
       (!bldgZip?'<span style="font-size:11px;color:var(--warn)">Add ZIP in Edit Building to enable weather data</span>':'')+
-      '<span id="wdd-status" style="font-size:11px;color:var(--em);flex:1;min-width:0">'+
-        (wddCacheArr.length?'✓ '+wddCacheArr.length+' months loaded from ZIP '+bldgZip+' weather data — used for all meters':
-          (bldgZip?'<span style="color:var(--text3)">No weather data yet — upload a CSV to enable HDD/CDD normalization</span>':''))+
+      '<span style="font-size:11px;color:var(--em);flex:1;min-width:0">'+
+        (wddCacheArr.length ? '✓ '+wddCacheArr.length+' months loaded from ZIP '+bldgZip+' — applied to all meters'
+          : bldgZip ? '<span style="color:var(--text3)">No weather data yet — upload CSV to enable HDD/CDD normalization</span>' : '')+
       '</span>'+
     '</div>';
 
-  pane.innerHTML =
-    statsHTML + wddBtn + hddNotice +
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">'+
-      '<div>'+
-        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+unit+'/Day — Date Normalized</div>'+
-        '<div class="ma-chart-wrap" style="padding:12px"><canvas id="normChart"></canvas></div>'+
-      '</div>'+
-      '<div>'+
-        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">Monthly Detail + Weather Data</div>'+
-        '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:300px;overflow-y:auto">'+
-          '<table class="ma-tbl">'+
-            '<thead><tr><th>Month</th><th>Days</th><th>'+unit+'</th><th>'+unit+'/Day</th><th>HDD</th><th>CDD</th><th>Avg °F</th><th>'+unit+'/HDD</th><th>Cost</th><th></th></tr></thead>'+
-            '<tbody>'+tblRows+'</tbody>'+
-          '</table>'+
-        '</div>'+
+  // ── Weather warning ──
+  const wddNotice = (udNormMetric==='weather' && !hasWeather) ?
+    '<div style="background:var(--warn-dim);border:1px solid rgba(245,158,11,.25);border-radius:7px;padding:9px 13px;margin-bottom:12px;font-size:12px;color:var(--warn)">'+
+      '⚠️ No weather data loaded — showing '+unit+'/Day instead. Upload a weather CSV above.</div>' : '';
+
+  // ── Helpers ──
+  const fmtWeather = v => (v == null ? '—' : v);
+  const fmtTemp    = v => (v == null ? '—' : v > 0 ? v.toFixed(1)+'°' : '0°');
+
+  // ── Chart label ──
+  const chartLabel = metric==='weather' ? unit+'/HDD — Weather Normalized'
+                   : metric==='total'   ? unit+'/Month'
+                   : unit+'/Day — Date Normalized';
+
+  // ── Table col header ──
+  const normColHdr = metric==='weather' ? unit+'/HDD'
+                   : metric==='total'   ? unit+'/Mo'
+                   : unit+'/Day';
+
+  // ── Table rows ──
+  const tblRows = rows.map(r=>{
+    const normVal = metric==='weather' ? (r.hddNorm!=null ? r.hddNorm.toFixed(3) : '—')
+                  : metric==='total'   ? r.usage.toLocaleString(undefined,{maximumFractionDigits:0})
+                  : r.usagePerDay.toFixed(2);
+    const normColor = metric==='weather' ? 'var(--em2)' : 'var(--em)';
+
+    const hddCell = weatherByYm
+      ? `<td class="mono" style="color:var(--text2)">${fmtWeather(r.hdd)}</td>`
+      : `<td><input type="number" placeholder="—" value="${r.hdd!=null?r.hdd:''}"
+            onchange="updateBillWeather('${m.id}','${r.id}','hdd',this.value)"
+            style="width:65px;font-family:var(--mono);font-size:12px;background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);outline:none"></td>`;
+    const cddCell = weatherByYm
+      ? `<td class="mono" style="color:var(--text2)">${fmtWeather(r.cdd)}</td>`
+      : `<td><input type="number" placeholder="—" value="${r.cdd!=null?r.cdd:''}"
+            onchange="updateBillWeather('${m.id}','${r.id}','cdd',this.value)"
+            style="width:65px;font-family:var(--mono);font-size:12px;background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);outline:none"></td>`;
+
+    return `<tr class="${r.isBaseline?'baseline-row':''}">
+      <td class="mono">${r.label}</td>
+      <td class="mono">${r.days}</td>
+      <td class="mono">${r.usage.toLocaleString(undefined,{maximumFractionDigits:1})}</td>
+      <td class="mono" style="color:${normColor};font-weight:600">${normVal}</td>
+      ${hddCell}${cddCell}
+      <td class="mono" style="color:var(--text2)">${fmtTemp(r.avgTemp)}</td>
+      <td class="mono" style="color:var(--em2)">${r.hddNorm!=null?r.hddNorm.toFixed(3):'—'}</td>
+      <td class="mono">${r.cost?'$'+r.cost.toLocaleString(undefined,{maximumFractionDigits:0}):'—'}</td>
+      ${r.isBaseline?'<td><span style="font-size:10px;background:var(--em-dim);color:var(--em);border:1px solid rgba(0,212,170,.2);border-radius:4px;padding:1px 6px">BL</span></td>':'<td></td>'}
+    </tr>`;
+  }).join('');
+
+  // ── Chart section (conditionally shown) ──
+  const chartSection = udNormChartVis ?
+    '<div style="margin-bottom:16px">'+
+      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+chartLabel+'</div>'+
+      '<div class="ma-chart-wrap" style="padding:12px"><canvas id="normChart"></canvas></div>'+
+    '</div>' : '';
+
+  // ── Table section (always shown) ──
+  const tableSection =
+    '<div>'+
+      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">Monthly Detail + Weather Data</div>'+
+      '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:340px;overflow-y:auto">'+
+        '<table class="ma-tbl">'+
+          '<thead><tr><th>Month</th><th>Days</th><th>'+unit+'</th><th>'+normColHdr+'</th><th>HDD</th><th>CDD</th><th>Avg °F</th><th>'+unit+'/HDD</th><th>Cost</th><th></th></tr></thead>'+
+          '<tbody>'+tblRows+'</tbody>'+
+        '</table>'+
       '</div>'+
     '</div>';
 
-  // Draw chart
-  requestAnimationFrame(()=>{ drawNormChart('normChart', rows, unit); });
+  pane.innerHTML = statsHTML + controlBar + wddBtn + wddNotice + chartSection + tableSection;
+
+  if(udNormChartVis){
+    requestAnimationFrame(()=>{ drawNormChart('normChart', rows, unit, metric); });
+  }
 }
 
 function maStat(val, unit, lbl){
@@ -2694,31 +2766,39 @@ function maStat(val, unit, lbl){
     '<div class="ma-stat-val">'+val+'<span class="ma-stat-unit"> '+unit+'</span></div></div>';
 }
 
-function drawNormChart(canvasId, rows, unit){
+function drawNormChart(canvasId, rows, unit, metric){
   const canvas=document.getElementById(canvasId); if(!canvas) return;
   if(_maCharts[canvasId]){ _maCharts[canvasId].destroy(); }
   const labels=rows.map(r=>r.label);
-  const perDay=rows.map(r=>+r.usagePerDay.toFixed(2));
   const blColor=rows.map(r=>r.isBaseline?'rgba(0,212,170,0.85)':'rgba(100,160,255,0.75)');
+  let dataVals, yLabel, tooltipFmt;
+  if(metric==='weather'){
+    dataVals   = rows.map(r=>r.hddNorm!=null ? +r.hddNorm.toFixed(3) : null);
+    yLabel     = unit+'/HDD';
+    tooltipFmt = v=>v!=null?v.toFixed(3)+' '+unit+'/HDD':'No data';
+  } else if(metric==='total'){
+    dataVals   = rows.map(r=>+r.usage.toFixed(1));
+    yLabel     = unit+'/Month';
+    tooltipFmt = v=>v!=null?v.toLocaleString()+' '+unit:'—';
+  } else {
+    dataVals   = rows.map(r=>+r.usagePerDay.toFixed(2));
+    yLabel     = unit+'/Day';
+    tooltipFmt = v=>v!=null?v.toFixed(2)+' '+unit+'/day':'—';
+  }
   _maCharts[canvasId]=new Chart(canvas,{
     type:'bar',
-    data:{
-      labels,
-      datasets:[{
-        label:unit+'/Day',
-        data:perDay,
-        backgroundColor:blColor,
-        borderColor:blColor.map(c=>c.replace('0.75','1').replace('0.85','1')),
-        borderWidth:1,
-        borderRadius:3,
-      }]
-    },
+    data:{labels,datasets:[{
+      label:yLabel, data:dataVals,
+      backgroundColor:blColor,
+      borderColor:blColor.map(c=>c.replace('0.75','1').replace('0.85','1')),
+      borderWidth:1, borderRadius:3,
+    }]},
     options:{
-      responsive:true,maintainAspectRatio:true,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.y.toFixed(2)+' '+unit+'/day'}}},
+      responsive:true, maintainAspectRatio:true,
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:ctx=>tooltipFmt(ctx.parsed.y)}}},
       scales:{
-        x:{ticks:{font:{size:10},maxRotation:45},grid:{color:'rgba(255,255,255,0.04)'}},
-        y:{ticks:{font:{size:10}},grid:{color:'rgba(255,255,255,0.06)'},title:{display:true,text:unit+'/Day',font:{size:10}}},
+        x:{ticks:{font:{size:10},maxRotation:45}, grid:{color:'rgba(255,255,255,0.04)'}},
+        y:{ticks:{font:{size:10}}, grid:{color:'rgba(255,255,255,0.06)'}, title:{display:true,text:yLabel,font:{size:10}}},
       }
     }
   });
@@ -2893,7 +2973,6 @@ function renderBaselinePane(pane, m, bills, incl){
   const rows=getNormRows(m,bills,incl,weatherByYm);
   const bl=m.baseline||null;
 
-  // Use ym keys throughout
   const blMonths=bl&&bl.months?bl.months:[];
   const blRows=rows.filter(r=>blMonths.includes(r.ym));
   const hasBl=blRows.length>=3;
@@ -2904,7 +2983,7 @@ function renderBaselinePane(pane, m, bills, incl){
     const avg=blRows.reduce((s,r)=>s+r.usagePerDay,0)/blRows.length;
     const total=blRows.reduce((s,r)=>s+r.usage,0);
     const cost=blRows.reduce((s,r)=>s+r.cost,0);
-    const avgHDD=blRows.filter(r=>r.hdd).reduce((s,r)=>s+r.hdd,0)/Math.max(1,blRows.filter(r=>r.hdd).length);
+    const avgHDD=blRows.filter(r=>r.hdd!=null&&r.hdd>0).reduce((s,r)=>s+r.hdd,0)/Math.max(1,blRows.filter(r=>r.hdd!=null&&r.hdd>0).length);
     blStatsInner=
       maStat(blRows.length+'','months','Baseline Period')+
       maStat(avg.toFixed(2),unit+'/day avg','Avg Daily Use')+
@@ -2913,20 +2992,41 @@ function renderBaselinePane(pane, m, bills, incl){
       (avgHDD?maStat(avgHDD.toFixed(0),'HDD avg','Avg Monthly HDD'):'');
   }
 
-  // Month checkboxes — value is ym (YYYY-MM)
+  // Month checkboxes
   const rowChecks=rows.map(r=>{
     const checked=blMonths.includes(r.ym);
+    const hddNote = r.hdd!=null ? ' · '+r.hdd+' HDD' : '';
     return '<label class="bl-period-row" style="cursor:pointer">'+
       '<input type="checkbox" value="'+r.ym+'" '+(checked?'checked':'')+
         ' onchange="updateBaselineRange(\''+m.id+'\')" style="accent-color:var(--em);width:14px;height:14px;flex-shrink:0">'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:12px;font-weight:600;color:var(--text)">'+r.label+'</div>'+
-        '<div style="font-size:11px;color:var(--text2)">'+r.usage.toLocaleString(undefined,{maximumFractionDigits:0})+' '+unit+' · '+r.usagePerDay.toFixed(1)+'/day'+
-          (r.hdd?' · '+r.hdd+' HDD':'')+'</div>'+
+        '<div style="font-size:11px;color:var(--text2)">'+r.usage.toLocaleString(undefined,{maximumFractionDigits:0})+' '+unit+' · '+r.usagePerDay.toFixed(1)+'/day'+hddNote+'</div>'+
       '</div>'+
       (checked?'<span class="bl-badge" style="font-size:10px;background:var(--em-dim);color:var(--em);border:1px solid rgba(0,212,170,.2);border-radius:4px;padding:2px 7px">✓ BL</span>':'')+
     '</label>';
   }).join('');
+
+  // Chart control bar
+  const chartBtnLabel = udBlChartVis ? '📉 Hide Chart' : '📊 Show Chart';
+  const blControlBar =
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:12px">'+
+      '<button class="ud-incl-btn" onclick="toggleBlChart()" style="background:var(--s3);border-color:var(--border2);color:var(--text2)">'+chartBtnLabel+'</button>'+
+      (udBlChartVis ?
+        '<div style="width:1px;height:20px;background:var(--border);margin:0 2px"></div>'+
+        '<span style="font-size:11px;color:var(--text2)">Overlay:</span>'+
+        '<button class="ud-incl-btn'+(udBlOverlay?' sel':'')+'" onclick="toggleBlOverlay()">📋 Show Bill Data</button>'
+      : '')+
+    '</div>';
+
+  // Chart section
+  const chartSection = udBlChartVis ?
+    '<div style="margin-bottom:14px">'+
+      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+
+        unit+'/Day — Baseline Highlighted'+(udBlOverlay?' + Raw Bill Data':'')+
+      '</div>'+
+      '<div class="ma-chart-wrap"><canvas id="blChart"></canvas></div>'+
+    '</div>' : '';
 
   pane.innerHTML=
     '<div style="display:grid;grid-template-columns:280px 1fr;gap:18px;align-items:start">'+
@@ -2940,15 +3040,17 @@ function renderBaselinePane(pane, m, bills, incl){
         '</div>'+
       '</div>'+
       '<div>'+
-        '<div id="blStatsWrap" class="ma-stats" style="margin-bottom:14px">'+blStatsInner+'</div>'+
-        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+unit+'/Day — Baseline Highlighted</div>'+
-        '<div class="ma-chart-wrap"><canvas id="blChart"></canvas></div>'+
+        '<div id="blStatsWrap" class="ma-stats" style="margin-bottom:12px">'+blStatsInner+'</div>'+
+        blControlBar +
+        chartSection +
         '<button id="blSaveBtn" class="btn btn-em" style="width:100%;margin-top:10px'+(hasBl?'':';display:none')+'" onclick="saveBaseline(\''+m.id+'\')">✅ Save Baseline Period'+(hasBl?' ('+blRows.length+' months)':'')+'</button>'+
         (hasBl?'':'<div style="font-size:12px;color:var(--text3);text-align:center;margin-top:10px">Select at least 3 months to set baseline</div>')+
       '</div>'+
     '</div>';
 
-  requestAnimationFrame(()=>{ drawBlChart('blChart',rows,unit); });
+  if(udBlChartVis){
+    requestAnimationFrame(()=>{ drawBlChart('blChart', rows, unit, bills, incl, udBlOverlay); });
+  }
 }
 
 function updateBaselineRange(mid){
@@ -3002,7 +3104,9 @@ function refreshBaselineStats(mid){
   }
 
   // Redraw chart (colors update based on new baseline)
-  requestAnimationFrame(()=>{ drawBlChart('blChart',rows,unit); });
+  if(udBlChartVis){
+    requestAnimationFrame(()=>{ drawBlChart('blChart',rows,unit,bills,incl,udBlOverlay); });
+  }
 
   // Update save button
   const saveBtn=document.getElementById('blSaveBtn');
@@ -3027,19 +3131,65 @@ function saveBaseline(mid){
   showToast('Baseline saved — '+checked.length+' months ✓');
 }
 
-function drawBlChart(canvasId,rows,unit){
+function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay){
   const canvas=document.getElementById(canvasId); if(!canvas) return;
   if(_maCharts[canvasId]){_maCharts[canvasId].destroy();}
   const labels=rows.map(r=>r.label);
-  const perDay=rows.map(r=>+r.usagePerDay.toFixed(2));
-  const colors=rows.map(r=>r.isBaseline?'rgba(0,212,170,0.85)':'rgba(120,130,160,0.45)');
+  const normData=rows.map(r=>+r.usagePerDay.toFixed(2));
+  const normColors=rows.map(r=>r.isBaseline?'rgba(0,212,170,0.85)':'rgba(120,130,160,0.45)');
+  const normBorders=normColors.map(c=>c.replace('0.85','1').replace('0.45','0.7'));
+
+  const datasets=[{
+    label: unit+'/Day (Normalized)',
+    data: normData,
+    backgroundColor: normColors,
+    borderColor: normBorders,
+    borderWidth:1, borderRadius:3,
+  }];
+
+  // Overlay: raw bill data — plot kWh/Day from actual bills mapped by their norm month
+  if(showOverlay && bills && bills.length){
+    // Build a map from ym → avg usage/day from raw bills (using normMonth majority-rule)
+    const billByYm={};
+    bills.forEach(b=>{
+      if(!b.start||!b.end) return;
+      const ym=normMonth(b.start,b.end,incl);
+      const isElec=unit==='kWh', isGas=unit==='Therms';
+      const usage=isElec?(parseFloat(b.kwh)||0):isGas?(parseFloat(b.therms)||0):(parseFloat(b.usage)||0);
+      const days=Math.max(1,parseInt(calcDays(b.start,b.end,incl))||1);
+      if(!billByYm[ym]||usage>0) billByYm[ym]={usage, days, perDay:+(usage/days).toFixed(2)};
+    });
+    const rawData=rows.map(r=>billByYm[r.ym]!=null ? billByYm[r.ym].perDay : null);
+    datasets.push({
+      label: unit+'/Day (Raw Bills)',
+      data: rawData,
+      type: 'line',
+      borderColor: 'rgba(245,158,11,0.85)',
+      backgroundColor: 'rgba(245,158,11,0.12)',
+      borderWidth: 2,
+      pointRadius: 3,
+      pointBackgroundColor: 'rgba(245,158,11,1)',
+      tension: 0.3,
+      fill: false,
+    });
+  }
+
   _maCharts[canvasId]=new Chart(canvas,{
     type:'bar',
-    data:{labels,datasets:[{label:unit+'/Day',data:perDay,backgroundColor:colors,borderColor:colors.map(c=>c.replace('0.85','1').replace('0.45','0.7')),borderWidth:1,borderRadius:3}]},
-    options:{responsive:true,maintainAspectRatio:true,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.y.toFixed(2)+' '+unit+'/day'}}},
-      scales:{x:{ticks:{font:{size:10},maxRotation:45},grid:{color:'rgba(255,255,255,0.04)'}},
-        y:{ticks:{font:{size:10}},grid:{color:'rgba(255,255,255,0.06)'},title:{display:true,text:unit+'/Day',font:{size:10}}}}
+    data:{labels, datasets},
+    options:{
+      responsive:true, maintainAspectRatio:true,
+      plugins:{
+        legend:{display:showOverlay, labels:{color:'rgba(200,210,230,0.85)',font:{size:11},boxWidth:14,padding:12}},
+        tooltip:{callbacks:{label:ctx=>{
+          const v=ctx.parsed.y;
+          return v!=null ? ctx.dataset.label+': '+v.toFixed(2)+' '+unit+'/day' : '—';
+        }}}
+      },
+      scales:{
+        x:{ticks:{font:{size:10},maxRotation:45},grid:{color:'rgba(255,255,255,0.04)'}},
+        y:{ticks:{font:{size:10}},grid:{color:'rgba(255,255,255,0.06)'},title:{display:true,text:unit+'/Day',font:{size:10}}}
+      }
     }
   });
 }
