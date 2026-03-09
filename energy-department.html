@@ -1251,7 +1251,9 @@ html,body{height:100%;overflow:hidden;}
     </div>
     <div class="modal-body">
       <div style="background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:11px;color:var(--text2);line-height:1.7">
-        <div style="font-weight:700;color:var(--text);margin-bottom:4px">Expected CSV columns:</div>
+        <div style="font-weight:700;color:var(--text);margin-bottom:4px">Upload all weather data for your ZIP code</div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:8px">Data is stored by ZIP and automatically applied to <strong>all meters</strong> in this building. HDD, CDD, and average temperature are matched directly to each normalized calendar month.</div>
+        <div style="font-weight:600;color:var(--text);margin-bottom:3px">Expected CSV columns:</div>
         <div style="font-family:var(--mono);color:var(--em);margin-bottom:6px">month, year, hdd, cdd, avg_temp</div>
         Month can be a name (January, Jan) or number (1–12). avg_temp is optional.
         One row per month. Re-importing updates existing months.
@@ -1276,7 +1278,7 @@ html,body{height:100%;overflow:hidden;}
     </div>
     <div class="modal-ftr">
       <button class="btn btn-ghost" onclick="closeWddModal()">Cancel</button>
-      <button class="btn btn-em" id="wddApplyBtn" style="display:none" onclick="wddApplyParsed()">✓ Apply to Meter</button>
+      <button class="btn btn-em" id="wddApplyBtn" style="display:none" onclick="wddApplyParsed()">✓ Save Weather Data for ZIP</button>
     </div>
   </div>
 </div>
@@ -2486,12 +2488,16 @@ function fmtDate(d){
 /* ══════════════════════════════════════════
    NORMALIZED TAB
 ══════════════════════════════════════════ */
-function getNormRows(m, bills, incl){
+function getNormRows(m, bills, incl, weatherByYm){
   // Build one entry per calendar month by prorating each bill across every month it spans.
   // A bill from 2/1–2/15 and a bill from 2/15–3/1 will correctly populate both Feb AND March:
   //   2/1–2/15:  15 days entirely in Feb  → all usage/cost to Feb
   //   2/15–3/1:  14 days in Feb, 1 day in March → 14/15 of usage/cost to Feb, 1/15 to March
   // This handles both split-month billing and normal billing (majority already goes to the right month).
+  //
+  // weatherByYm: optional map of {YYYY-MM: {hdd, cdd, avgTemp}} loaded from the ZIP weather cache.
+  // When provided, HDD/CDD/avgTemp for each calendar month come from the weather CSV directly,
+  // rather than being prorated from bill-row values. This is the preferred source.
 
   const byMonth = {};
   const isElec=m.commodity==='Electric', isGas=m.commodity==='Gas';
@@ -2501,6 +2507,7 @@ function getNormRows(m, bills, incl){
     const totalDays = Math.max(1, parseInt(calcDays(row.start, row.end, incl))||1);
     const usage = isElec ? (parseFloat(row.kwh)||0) : isGas ? (parseFloat(row.therms)||0) : (parseFloat(row.usage)||0);
     const cost  = isElec ? (parseFloat(row.totalCost)||0) : isGas ? (parseFloat(row.thermCost)||0) : (parseFloat(row.cost)||0);
+    // Bill-level weather — only used as fallback if no ZIP weather cache
     const hdd   = parseFloat(row.hdd)||0;
     const cdd   = parseFloat(row.cdd)||0;
     const avgTmp= parseFloat(row.avgTemp)||0;
@@ -2522,27 +2529,28 @@ function getNormRows(m, bills, incl){
       const frac = daysInMonth / spannedTotal;
       const pUsage = usage * frac;
       const pCost  = cost  * frac;
-      // Days: use actual days in this calendar month from the bill (not prorated)
       const pDays  = daysInMonth;
 
       if(byMonth[ym]){
         byMonth[ym].usage += pUsage;
         byMonth[ym].cost  += pCost;
         byMonth[ym].days  += pDays;
-        // HDD/CDD/avgTemp: accumulate weighted by days
-        if(hdd)   byMonth[ym].hddSum   = (byMonth[ym].hddSum  ||0) + hdd*frac;
-        if(cdd)   byMonth[ym].cddSum   = (byMonth[ym].cddSum  ||0) + cdd*frac;
-        if(avgTmp)byMonth[ym].tmpSum   = (byMonth[ym].tmpSum  ||0) + avgTmp*frac;
-        byMonth[ym].wSum = (byMonth[ym].wSum||0) + frac;
+        // Only accumulate bill-level weather if no ZIP weather cache
+        if(!weatherByYm){
+          if(hdd)   byMonth[ym].hddSum   = (byMonth[ym].hddSum  ||0) + hdd*frac;
+          if(cdd)   byMonth[ym].cddSum   = (byMonth[ym].cddSum  ||0) + cdd*frac;
+          if(avgTmp)byMonth[ym].tmpSum   = (byMonth[ym].tmpSum  ||0) + avgTmp*frac;
+          byMonth[ym].wSum = (byMonth[ym].wSum||0) + frac;
+        }
         byMonth[ym]._ids.push(row.id);
       } else {
         byMonth[ym] = {
           ym, start:row.start, end:row.end, days:pDays,
           usage:pUsage, cost:pCost,
-          hddSum: hdd?hdd*frac:0,
-          cddSum: cdd?cdd*frac:0,
-          tmpSum: avgTmp?avgTmp*frac:0,
-          wSum:   frac,
+          hddSum: (!weatherByYm&&hdd)?hdd*frac:0,
+          cddSum: (!weatherByYm&&cdd)?cdd*frac:0,
+          tmpSum: (!weatherByYm&&avgTmp)?avgTmp*frac:0,
+          wSum:   !weatherByYm?frac:0,
           _ids:[row.id]
         };
       }
@@ -2551,10 +2559,19 @@ function getNormRows(m, bills, incl){
 
   return Object.entries(byMonth).sort((a,b)=>a[0]<b[0]?-1:1).map(([ym,r])=>{
     const usagePerDay = r.days>0 ? r.usage/r.days : 0;
-    // Normalize accumulated weather sums back to per-month values
-    const hdd    = r.wSum>0 && r.hddSum ? r.hddSum/r.wSum : 0;
-    const cdd    = r.wSum>0 && r.cddSum ? r.cddSum/r.wSum : 0;
-    const avgTemp= r.wSum>0 && r.tmpSum ? r.tmpSum/r.wSum : 0;
+    let hdd, cdd, avgTemp;
+    if(weatherByYm && weatherByYm[ym]){
+      // Use ZIP weather cache as the authoritative source for this calendar month
+      const w = weatherByYm[ym];
+      hdd     = w.hdd    || 0;
+      cdd     = w.cdd    || 0;
+      avgTemp = w.avgTemp|| 0;
+    } else {
+      // Fallback: use bill-level weather values (prorated)
+      hdd     = r.wSum>0 && r.hddSum ? r.hddSum/r.wSum : 0;
+      cdd     = r.wSum>0 && r.cddSum ? r.cddSum/r.wSum : 0;
+      avgTemp = r.wSum>0 && r.tmpSum ? r.tmpSum/r.wSum : 0;
+    }
     const hddNorm = hdd>0 ? r.usage/hdd : null;
     const cddNorm = cdd>0 ? r.usage/cdd : null;
     const [yr,mo]=ym.split('-');
@@ -2569,13 +2586,27 @@ function getNormRows(m, bills, incl){
   });
 }
 
+// Helper: load weather cache for the currently selected building's ZIP code.
+// Returns {byYm: {YYYY-MM: {hdd,cdd,avgTemp}}, cache: [...], zip: string}
+function getWeatherForBuilding(){
+  const b=getUDBldg(udSelProjId,udSelBldgId);
+  const zip=b?.zip||'';
+  if(!zip) return {byYm:null, cache:[], zip:''};
+  const cache=wddLoadCache(zip);
+  if(!cache.length) return {byYm:null, cache:[], zip};
+  const byYm={};
+  cache.forEach(r=>{ byYm[r.ym]=r; });
+  return {byYm, cache, zip};
+}
+
 function renderNormPane(pane, m, bills, incl){
   if(!bills.length){
     pane.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">🌡️</div><div>Add bill data in the Bills tab first</div></div>';
     return;
   }
   const unit = m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
-  const rows = getNormRows(m,bills,incl);
+  const {byYm: weatherByYm} = getWeatherForBuilding();
+  const rows = getNormRows(m,bills,incl,weatherByYm);
   const avgPerDay = rows.reduce((s,r)=>s+r.usagePerDay,0)/rows.length;
   const totalUsage = rows.reduce((s,r)=>s+r.usage,0);
   const totalCost  = rows.reduce((s,r)=>s+r.cost,0);
@@ -2590,42 +2621,50 @@ function renderNormPane(pane, m, bills, incl){
       maStat(rows.length+'', 'months', 'Data Points')+
     '</div>';
 
-  // HDD/CDD input notice if missing
+  // HDD/CDD notice if missing
   const hddNotice = needsHDD ?
     '<div style="background:var(--warn-dim);border:1px solid rgba(245,158,11,.25);border-radius:7px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--warn)">'+
-      '⚠️ Enter monthly HDD/CDD values below to enable weather normalization. '+
-      'Tip: import from NOAA or use your location\'s climate data.'+
+      '⚠️ No weather data loaded for this building\'s ZIP code. Upload a weather CSV using the button above to enable HDD/CDD normalization. '+
+      'Tip: export monthly HDD/CDD/avg temp from NOAA or Weather.gov for your ZIP code.'+
     '</div>' : '';
 
-  // Table with inline HDD/CDD editing
+  // Table rows — HDD/CDD read-only when ZIP weather cache is active (values come from cache)
   const tblRows = rows.map(r=>`
     <tr class="${r.isBaseline?'baseline-row':''}">
       <td class="mono">${r.label}</td>
       <td class="mono">${r.days}</td>
       <td class="mono">${r.usage.toLocaleString(undefined,{maximumFractionDigits:1})}</td>
       <td class="mono" style="color:var(--em);font-weight:600">${r.usagePerDay.toFixed(2)}</td>
-      <td><input class="hdd-inp" type="number" placeholder="HDD" value="${r.hdd||''}"
-        onchange="updateBillWeather('${m.id}','${r.id}','hdd',this.value)"
-        style="width:70px;font-family:var(--mono);font-size:12px;background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);outline:none"></td>
-      <td><input class="hdd-inp" type="number" placeholder="CDD" value="${r.cdd||''}"
-        onchange="updateBillWeather('${m.id}','${r.id}','cdd',this.value)"
-        style="width:70px;font-family:var(--mono);font-size:12px;background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);outline:none"></td>
+      ${weatherByYm ? `
+        <td class="mono" style="color:var(--text2)">${r.hdd||'—'}</td>
+        <td class="mono" style="color:var(--text2)">${r.cdd||'—'}</td>
+      ` : `
+        <td><input class="hdd-inp" type="number" placeholder="HDD" value="${r.hdd||''}"
+          onchange="updateBillWeather('${m.id}','${r.id}','hdd',this.value)"
+          style="width:70px;font-family:var(--mono);font-size:12px;background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);outline:none"></td>
+        <td><input class="hdd-inp" type="number" placeholder="CDD" value="${r.cdd||''}"
+          onchange="updateBillWeather('${m.id}','${r.id}','cdd',this.value)"
+          style="width:70px;font-family:var(--mono);font-size:12px;background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);outline:none"></td>
+      `}
       <td class="mono" style="color:var(--text2)">${r.avgTemp!=null&&r.avgTemp>0?r.avgTemp.toFixed(1)+'°':'—'}</td>
       <td class="mono" style="color:var(--em2)">${r.hddNorm!==null?r.hddNorm.toFixed(3):'—'}</td>
       <td class="mono">${r.cost?'$'+r.cost.toLocaleString(undefined,{maximumFractionDigits:0}):'—'}</td>
       ${r.isBaseline?'<td><span style="font-size:10px;background:var(--em-dim);color:var(--em);border:1px solid rgba(0,212,170,.2);border-radius:4px;padding:1px 6px">BL</span></td>':'<td></td>'}
     </tr>`).join('');
 
-  // Weather fetch button + status
+  // Weather upload button + status
   const b2=getUDBldg(udSelProjId,udSelBldgId);
   const bldgZip=b2?.zip||'';
-  const wddCache=bldgZip?wddLoadCache(bldgZip):[];
+  const wddCacheArr=bldgZip?wddLoadCache(bldgZip):[];
   const wddBtn=
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">'+
       '<button class="btn btn-ghost btn-sm" onclick="openWddModal(\''+m.id+'\')">'+
-        '🌡️ Fetch Weather Data'+(bldgZip?' — ZIP '+bldgZip:'')+'</button>'+      (!bldgZip?'<span style="font-size:11px;color:var(--warn)">Add ZIP in Edit Building to enable weather lookup</span>':'')+
+        '🌡️ Upload Weather CSV'+(bldgZip?' — ZIP '+bldgZip:'')+'</button>'+
+      (!bldgZip?'<span style="font-size:11px;color:var(--warn)">Add ZIP in Edit Building to enable weather data</span>':'')+
       '<span id="wdd-status" style="font-size:11px;color:var(--em);flex:1;min-width:0">'+
-        (wddCache.length?'✓ '+wddCache.length+' months cached through '+fmtMon(wddCache.slice().sort((a,b)=>b.ym.localeCompare(a.ym))[0].ym+'-01'):'')+'</span>'+
+        (wddCacheArr.length?'✓ '+wddCacheArr.length+' months loaded from ZIP '+bldgZip+' weather data — used for all meters':
+          (bldgZip?'<span style="color:var(--text3)">No weather data yet — upload a CSV to enable HDD/CDD normalization</span>':''))+
+      '</span>'+
     '</div>';
 
   pane.innerHTML =
@@ -2828,31 +2867,17 @@ function wddShowPreview(rows){
       </tr>`).join('')+'</tbody>';
   preview.style.display='';
   applyBtn.style.display='';
-  applyBtn.textContent='✓ Apply '+rows.length+' Months to Meter';
+  applyBtn.textContent='✓ Save '+rows.length+' Months of Weather Data for ZIP';
 }
 
 function wddApplyParsed(){
-  if(!_wddParsed.length||!_wddMid) return;
+  if(!_wddParsed.length) return;
   const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
-  const m=b.meters.find(m=>m.id===_wddMid); if(!m) return;
   const zip=b?.zip||'';
-  const incl=m.inclusive!==false;
+  // Save weather data to ZIP cache — getNormRows now reads from this cache directly
   if(zip) wddSaveCache(zip,_wddParsed);
-  const byYm={}; _wddParsed.forEach(r=>byYm[r.ym]=r);
-  let updated=0;
-  (m.bills||[]).forEach(row=>{
-    const ym=normMonth(row.start,row.end,incl);
-    if(ym&&byYm[ym]){
-      const w=byYm[ym];
-      if(w.hdd!=null)    row.hdd    =w.hdd;
-      if(w.cdd!=null)    row.cdd    =w.cdd;
-      if(w.avgTemp!=null)row.avgTemp=w.avgTemp;
-      updated++;
-    }
-  });
-  saveUtilityData();
   closeWddModal();
-  showToast('Weather data applied to '+updated+' billing period'+(updated!==1?'s':'')+' ✓');
+  showToast('Weather data saved — '+_wddParsed.length+' months loaded for ZIP '+zip+' ✓');
   if(udActiveTab==='norm') renderMeterWorkspace();
 }
 /* ══════════════════════════════════════════
@@ -2864,7 +2889,8 @@ function renderBaselinePane(pane, m, bills, incl){
     return;
   }
   const unit=m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
-  const rows=getNormRows(m,bills,incl);
+  const {byYm: weatherByYm} = getWeatherForBuilding();
+  const rows=getNormRows(m,bills,incl,weatherByYm);
   const bl=m.baseline||null;
 
   // Use ym keys throughout
@@ -2942,7 +2968,8 @@ function refreshBaselineStats(mid){
   const bills=(m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
   const incl=m.inclusive!==false;
   const unit=m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
-  const rows=getNormRows(m,bills,incl);
+  const {byYm: weatherByYm} = getWeatherForBuilding();
+  const rows=getNormRows(m,bills,incl,weatherByYm);
   const bl=m.baseline;
   const blRows=bl&&bl.months?rows.filter(r=>bl.months.includes(r.ym)):[];
   const hasBl=blRows.length>=3;
@@ -3029,7 +3056,8 @@ function renderPerfPane(pane, m, bills, incl){
     return;
   }
   const unit=m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
-  const allRows=getNormRows(m,bills,incl);
+  const {byYm: weatherByYm} = getWeatherForBuilding();
+  const allRows=getNormRows(m,bills,incl,weatherByYm);
   const blRows=allRows.filter(r=>bl.months.includes(r.ym));
   const blStart=bl.months.slice().sort()[0];
   const blEnd=bl.months.slice().sort()[bl.months.length-1];
