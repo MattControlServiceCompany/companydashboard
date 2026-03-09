@@ -2266,6 +2266,7 @@ let udBlOverlay     = false;     // overlay raw bill data on baseline chart
 let _perfMetric     = 'total';   // 'perday' | 'total' — perf chart metric, default monthly
 let _perfOverlay    = false;     // overlay raw bill data on perf chart
 let _perfChartVis   = true;      // perf chart visible
+let _regressionPanelVis = false; // show/hide regression coefficients panel in Norm tab
 let _maCharts = {};
 
 function renderUDDetail(){
@@ -2571,39 +2572,50 @@ function getNormRows(m, bills, incl, weatherByYm){
     });
   });
 
-  return Object.entries(byMonth).sort((a,b)=>a[0]<b[0]?-1:1).map(([ym,r])=>{
+  // Build rows first pass — compute weather, usage, etc.
+  const rawRows = Object.entries(byMonth).sort((a,b)=>a[0]<b[0]?-1:1).map(([ym,r])=>{
     const usagePerDay = r.days>0 ? r.usage/r.days : 0;
-    // hdd/cdd/avgTemp use null to mean "no data" and 0 to mean actual zero.
-    // This lets the UI show "0" vs "—" correctly.
     let hdd, cdd, avgTemp;
     if(weatherByYm && weatherByYm[ym]){
-      // Use ZIP weather cache as the authoritative source for this calendar month
       const w = weatherByYm[ym];
       hdd     = (w.hdd     != null) ? w.hdd     : null;
       cdd     = (w.cdd     != null) ? w.cdd     : null;
       avgTemp = (w.avgTemp != null) ? w.avgTemp : null;
     } else {
-      // Fallback: use bill-level weather values (prorated). null if no data was ever entered.
       hdd     = r.hasHdd ? (r.wSum>0 ? r.hddSum/r.wSum : 0) : null;
       cdd     = r.hasCdd ? (r.wSum>0 ? r.cddSum/r.wSum : 0) : null;
       avgTemp = r.hasTmp ? (r.wSum>0 ? r.tmpSum/r.wSum : 0) : null;
     }
     const hddNorm = (hdd != null && hdd > 0) ? r.usage/hdd : null;
     const cddNorm = (cdd != null && cdd > 0) ? r.usage/cdd : null;
-    // Correct weather normalization: CDD for electric (cooling-dominated), HDD for gas (heating-dominated)
     const isElecMeter = m.commodity === 'Electric';
     const weatherNorm = isElecMeter ? cddNorm : hddNorm;
-    const weatherDenom = isElecMeter ? cdd : hdd; // the degree-day value used as denominator
+    const weatherDenom = isElecMeter ? cdd : hdd;
     const [yr,mo]=ym.split('-');
     const dt=new Date(parseInt(yr),parseInt(mo)-1,1);
     const label=dt.toLocaleDateString('en-US',{month:'short',year:'numeric'});
+    // normDays: calendar days in this YYYY-MM (used for regression baseline with 'calendar' basis)
+    const normDays = calDaysInMonth(ym);
     return {
-      id: r._ids[0], ym, start: r.start, end: r.end, days: r.days,
+      id: r._ids[0], ym, start: r.start, end: r.end, days: r.days, normDays,
       usage: r.usage, usagePerDay, cost: r.cost, hdd, cdd, avgTemp,
       hddNorm, cddNorm, weatherNorm, weatherDenom, label,
       isBaseline: !!(m.baseline && m.baseline.months && m.baseline.months.includes(ym)),
+      regrBaseline: null, // filled in second pass below
     };
   });
+
+  // Second pass: compute regression using all rows, then fill regrBaseline per row
+  const proj = getUDProj(udSelProjId);
+  const normBasis = proj?.normBasis || 'calendar';
+  const reg = computeMeterRegression(rawRows);
+  rawRows.forEach(row=>{
+    row.regrBaseline = regressionBaseline(row, reg, m.commodity, normBasis);
+  });
+  // Attach regression to meter object for display in UI (not persisted, recomputed each render)
+  m._reg = reg;
+
+  return rawRows;
 }
 
 // Helper: load weather cache for the currently selected building's ZIP code.
@@ -2619,6 +2631,91 @@ function getWeatherForBuilding(){
   return {byYm, cache, zip};
 }
 
+// ── OLS simple linear regression helper ──────────────────────────────────────
+// Returns {slope, intercept, r2} for arrays x[] and y[] of equal length.
+// Requires at least 3 paired non-null points; returns null otherwise.
+function olsRegression(x, y){
+  const pts = x.map((xi,i)=>({x:xi,y:y[i]})).filter(p=>p.x!=null&&p.y!=null&&isFinite(p.x)&&isFinite(p.y));
+  const n = pts.length;
+  if(n < 3) return null;
+  const mx = pts.reduce((s,p)=>s+p.x,0)/n;
+  const my = pts.reduce((s,p)=>s+p.y,0)/n;
+  const ssxx = pts.reduce((s,p)=>s+(p.x-mx)**2,0);
+  const ssxy = pts.reduce((s,p)=>s+(p.x-mx)*(p.y-my),0);
+  if(ssxx===0) return null;
+  const slope = ssxy/ssxx;
+  const intercept = my - slope*mx;
+  const ssTot = pts.reduce((s,p)=>s+(p.y-my)**2,0);
+  const ssRes = pts.reduce((s,p)=>s+(p.y-(intercept+slope*p.x))**2,0);
+  const r2 = ssTot>0 ? Math.max(0,1-ssRes/ssTot) : 0;
+  return {slope, intercept, r2, n};
+}
+
+// ── Calendar days in a YYYY-MM month ─────────────────────────────────────────
+function calDaysInMonth(ym){
+  const [yr,mo]=ym.split('-').map(Number);
+  return new Date(yr, mo, 0).getDate(); // day 0 of next month = last day of this month
+}
+
+// ── Compute regression coefficients for a meter from its normalized rows ─────
+// Uses usage/day ~ DD/day to keep units consistent regardless of month length.
+// Returns {hdd:{slope,intercept,r2,n}, cdd:{slope,intercept,r2,n}} or nulls.
+function computeMeterRegression(rows){
+  // Filter to months that have both weather and usage data
+  const hddPts = rows.filter(r=>r.hdd!=null&&r.hdd>0&&r.days>0);
+  const cddPts = rows.filter(r=>r.cdd!=null&&r.cdd>0&&r.days>0);
+  const hddReg = olsRegression(
+    hddPts.map(r=>r.hdd/r.days),       // x: HDD per day of billing period
+    hddPts.map(r=>r.usage/r.days)       // y: usage per day
+  );
+  const cddReg = olsRegression(
+    cddPts.map(r=>r.cdd/r.days),
+    cddPts.map(r=>r.usage/r.days)
+  );
+  return {hdd: hddReg, cdd: cddReg};
+}
+
+// ── Compute regression-based baseline for a single normalized month row ───────
+// normBasis: 'calendar' → use calendar days in YYYY-MM
+//            'actual'   → use actual prorated billing days (r.days)
+// Returns the predicted baseline usage for that month, or null if no valid regression.
+// Logic:
+//   For electric: use CDD regression if CDD available, else HDD regression if available
+//   For gas:      use HDD regression if HDD available, else CDD regression if available
+//   Baseline = (intercept + slope × (DD/normDays)) × normDays
+//            = intercept×normDays + slope×DD
+// This correctly handles months with 0 DD (base load × days) and months with high DD.
+function regressionBaseline(row, reg, commodity, normBasis){
+  if(!reg) return null;
+  const normDays = normBasis==='calendar' ? calDaysInMonth(row.ym) : row.days;
+  if(!normDays) return null;
+  const isElec = commodity==='Electric';
+
+  // Choose primary/fallback regression based on commodity
+  const primary   = isElec ? reg.cdd : reg.hdd;
+  const fallback  = isElec ? reg.hdd : reg.cdd;
+  const primaryDD = isElec ? row.cdd : row.hdd;
+  const fallbackDD= isElec ? row.hdd : row.cdd;
+
+  function applyReg(r, dd){
+    if(!r) return null;
+    const ddVal = (dd!=null && isFinite(dd)) ? dd : 0;
+    return r.intercept * normDays + r.slope * ddVal;
+  }
+
+  // Use primary (preferred) if we have DD data; fall back if primary DD is null/0
+  let baseline = null;
+  if(primary && primaryDD!=null){
+    baseline = applyReg(primary, primaryDD);
+  } else if(fallback && fallbackDD!=null){
+    baseline = applyReg(fallback, fallbackDD);
+  } else if(primary){
+    // No DD for this month at all — apply with 0 DD (base load only)
+    baseline = applyReg(primary, 0);
+  }
+  return baseline!=null ? Math.max(0, baseline) : null;
+}
+
 function setNormMode(mode){ udNormMode=mode; renderMeterWorkspace(); }
 function setNormMetric(metric){ udNormMetric=metric; renderMeterWorkspace(); }
 function toggleNormChart(){ udNormChartVis=!udNormChartVis; renderMeterWorkspace(); }
@@ -2628,6 +2725,13 @@ function setBlMetric(m){ udBlMetric=m; renderMeterWorkspace(); }
 function setPerfMetric(m){ _perfMetric=m; renderMeterWorkspace(); }
 function togglePerfOverlay(){ _perfOverlay=!_perfOverlay; renderMeterWorkspace(); }
 function togglePerfChart(){ _perfChartVis=!_perfChartVis; renderMeterWorkspace(); }
+function toggleRegressionPanel(){ _regressionPanelVis=!_regressionPanelVis; renderMeterWorkspace(); }
+function setProjectNormBasis(pid, basis){
+  const proj = getUDProj(pid);
+  proj.normBasis = basis;
+  saveUtilityData();
+  renderMeterWorkspace();
+}
 
 function renderNormPane(pane, m, bills, incl){
   if(!bills.length){
@@ -2637,54 +2741,117 @@ function renderNormPane(pane, m, bills, incl){
   const unit = m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
   const isElec = m.commodity==='Electric', isGas = m.commodity==='Gas';
   const {byYm: weatherByYm} = getWeatherForBuilding();
-  const rows = getNormRows(m,bills,incl,weatherByYm);
-  // weatherNorm uses CDD for electric, HDD for gas (set in getNormRows)
-  const hasWeather = rows.some(r=>r.weatherNorm != null);
-  const weatherDDLabel = isElec ? 'CDD' : 'HDD'; // label for the degree-day column used in normalization
+  const rows = getNormRows(m,bills,incl,weatherByYm); // also sets m._reg
+  const hasWeather   = rows.some(r=>r.hdd!=null||r.cdd!=null);
+  const hasRegr      = rows.some(r=>r.regrBaseline!=null);
+  const weatherDDLabel = isElec ? 'CDD' : 'HDD';
 
-  // Resolve effective metric (weather falls back to total if no data)
+  // Project-level normalization basis
+  const proj = getUDProj(udSelProjId);
+  const normBasis = proj?.normBasis || 'calendar';
+
+  // Resolve effective metric
   const metric = (udNormMetric==='weather' && !hasWeather) ? 'total' : udNormMetric;
 
-  // ── EUI (Energy Use Intensity) — only for electric with sqft ──
+  // ── EUI ──
   const b2=getUDBldg(udSelProjId,udSelBldgId);
   const sqft = parseInt(b2?.sqft)||0;
   const hasEUI = isElec && sqft > 0;
 
   // ── Stats ──
-  const totalUsage = rows.reduce((s,r)=>s+r.usage,0);
-  const totalCost  = rows.reduce((s,r)=>s+r.cost,0);
-  const avgPerDay  = rows.reduce((s,r)=>s+r.usagePerDay,0)/rows.length;
-  const wRows      = rows.filter(r=>r.weatherNorm!=null);
-  const avgWeather = wRows.length ? wRows.reduce((s,r)=>s+r.weatherNorm,0)/wRows.length : null;
-  const avgMonthly = totalUsage / rows.length;
-
-  // EUI per month (kWh/sqft/month) and annualized (kBtu/sqft/yr)
-  const avgEuiPerMo = hasEUI ? (avgMonthly / sqft) : null;
-  // Rolling 12-month EUI: sum last 12 months of usage / sqft, converted kWh→kBtu (*3.412)
+  const totalUsage  = rows.reduce((s,r)=>s+r.usage,0);
+  const totalCost   = rows.reduce((s,r)=>s+r.cost,0);
+  const avgPerDay   = rows.reduce((s,r)=>s+r.usagePerDay,0)/rows.length;
+  const wRows       = rows.filter(r=>r.weatherNorm!=null);
+  const avgWeather  = wRows.length ? wRows.reduce((s,r)=>s+r.weatherNorm,0)/wRows.length : null;
+  const avgMonthly  = totalUsage/rows.length;
+  const avgEuiPerMo = hasEUI ? avgMonthly/sqft : null;
   const last12 = rows.slice(-12);
   const rolling12kWh = last12.reduce((s,r)=>s+r.usage,0);
-  const rolling12EUI = hasEUI && last12.length===12 ? (rolling12kWh * 3.412 / sqft) : null;
+  const rolling12EUI = hasEUI&&last12.length===12 ? rolling12kWh*3.412/sqft : null;
+  // Avg regression baseline
+  const rRows = rows.filter(r=>r.regrBaseline!=null);
+  const avgRegrBl = rRows.length ? rRows.reduce((s,r)=>s+r.regrBaseline,0)/rRows.length : null;
 
-  const statVal  = metric==='weather' && avgWeather!=null ? avgWeather.toFixed(3)
-                 : metric==='total'                      ? avgMonthly.toLocaleString(undefined,{maximumFractionDigits:0})
+  const statVal  = metric==='weather'&&avgWeather!=null ? avgWeather.toFixed(3)
+                 : metric==='total' ? avgMonthly.toLocaleString(undefined,{maximumFractionDigits:0})
                  : avgPerDay.toFixed(1);
-  const statUnit = metric==='weather' && avgWeather!=null ? unit+'/'+weatherDDLabel+' avg'
-                 : metric==='total'                      ? unit+'/mo avg'
-                 : unit+'/day avg';
+  const statUnit = metric==='weather'&&avgWeather!=null ? unit+'/'+weatherDDLabel+' avg'
+                 : metric==='total' ? unit+'/mo avg' : unit+'/day avg';
   const statLbl  = metric==='weather' ? 'Weather-Norm Avg ('+weatherDDLabel+')'
-                 : metric==='total'   ? 'Avg Monthly Usage'
-                 : 'Date-Normalized Avg';
+                 : metric==='total' ? 'Avg Monthly Usage' : 'Date-Normalized Avg';
 
   const statsHTML =
     '<div class="ma-stats" style="margin-bottom:12px">'+
       maStat(totalUsage.toLocaleString(undefined,{maximumFractionDigits:0}), unit+' total', 'Total Usage')+
       maStat(statVal, statUnit, statLbl)+
+      (hasRegr&&avgRegrBl!=null ? maStat(avgRegrBl.toLocaleString(undefined,{maximumFractionDigits:0}), unit+'/mo avg', 'Reg. Baseline Avg') : '')+
       maStat('$'+totalCost.toLocaleString(undefined,{maximumFractionDigits:0}), 'total', 'Total Cost')+
       maStat(rows.length+'', 'months', 'Data Points')+
-      (hasEUI && avgEuiPerMo!=null ? maStat(avgEuiPerMo.toFixed(3), 'kWh/sqft/mo', 'Avg EUI/Month') : '')+
-      (hasEUI && rolling12EUI!=null ? maStat(rolling12EUI.toFixed(1), 'kBtu/sqft/yr', 'Rolling 12-Mo EUI') : '')+
-      (!hasEUI && isElec ? '<div style="font-size:11px;color:var(--text3);align-self:center;padding:8px 4px">Add building sqft to see EUI</div>' : '')+
+      (hasEUI&&avgEuiPerMo!=null ? maStat(avgEuiPerMo.toFixed(3), 'kWh/sqft/mo', 'Avg EUI/Month') : '')+
+      (hasEUI&&rolling12EUI!=null ? maStat(rolling12EUI.toFixed(1), 'kBtu/sqft/yr', 'Rolling 12-Mo EUI') : '')+
+      (!hasEUI&&isElec ? '<div style="font-size:11px;color:var(--text3);align-self:center;padding:8px 4px">Add building sqft to see EUI</div>' : '')+
     '</div>';
+
+  // ── Normalization basis toggle (project-level) ──
+  const basisBar =
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;background:var(--s3);border:1px solid var(--border);border-radius:7px;flex-wrap:wrap">'+
+      '<span style="font-size:11px;font-weight:600;color:var(--text2)">📐 Period Basis:</span>'+
+      '<span style="font-size:11px;color:var(--text3)">Applied to all meters in this project —</span>'+
+      '<button class="ud-incl-btn'+(normBasis==='calendar'?' sel':'')+'" onclick="setProjectNormBasis(\''+udSelProjId+'\',\'calendar\')">📅 Calendar Month Days</button>'+
+      '<button class="ud-incl-btn'+(normBasis==='actual'?' sel':'')+'" onclick="setProjectNormBasis(\''+udSelProjId+'\',\'actual\')">📋 Actual Bill Days</button>'+
+      '<span style="font-size:11px;color:var(--text3);flex:1">'+
+        (normBasis==='calendar'
+          ? 'Normalizes to the actual calendar-month day count (e.g. Jan=31, Feb=28). Standard industry method.'
+          : 'Uses the prorated billing days actually assigned to each calendar month.')+
+      '</span>'+
+    '</div>';
+
+  // ── Regression panel ──
+  const reg = m._reg || {};
+  const regBtnLabel = _regressionPanelVis ? '▲ Hide Regression' : '▼ Show Regression Coefficients';
+  let regrPanel = '';
+  if(_regressionPanelVis){
+    const fmtReg = r => r ? `y = ${r.intercept.toFixed(4)} + ${r.slope.toFixed(4)}x &nbsp;&nbsp; R²=${r.r2.toFixed(3)} &nbsp; n=${r.n}` : '—';
+    const fmtQual = r => {
+      if(!r) return '<span style="color:var(--text3)">insufficient data</span>';
+      if(r.r2>=0.85) return '<span style="color:var(--em)">Strong fit (R²≥0.85)</span>';
+      if(r.r2>=0.65) return '<span style="color:var(--amber)">Moderate fit (R²≥0.65)</span>';
+      return '<span style="color:var(--red)">Weak fit (R²&lt;0.65) — consider more data</span>';
+    };
+    const ddUsed = isElec ? 'CDD (primary) / HDD (fallback)' : 'HDD (primary) / CDD (fallback)';
+    regrPanel =
+      '<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:12px">'+
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:10px">📈 Regression Model — '+unit+'/Day ~ DD/Day</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">'+
+          'Fits: <strong>usage/day = intercept + slope × (DD/day)</strong> using OLS linear regression.<br>'+
+          'Baseline = intercept × normDays + slope × DD_month<br>'+
+          'Degree-days used: <strong>'+ddUsed+'</strong> · Period basis: <strong>'+(normBasis==='calendar'?'Calendar month days':'Actual bill days')+'</strong>'+
+        '</div>'+
+        '<table class="ma-tbl" style="margin-bottom:8px">'+
+          '<thead><tr><th>Regression</th><th>Equation (usage/day ~ DD/day)</th><th>Points</th><th>R²</th><th>Quality</th></tr></thead>'+
+          '<tbody>'+
+            '<tr>'+
+              '<td class="mono">HDD model</td>'+
+              '<td class="mono">'+(reg.hdd?`${reg.hdd.intercept.toFixed(3)} + ${reg.hdd.slope.toFixed(3)} × HDD/day`:'—')+'</td>'+
+              '<td class="mono">'+(reg.hdd?reg.hdd.n:'—')+'</td>'+
+              '<td class="mono">'+(reg.hdd?reg.hdd.r2.toFixed(3):'—')+'</td>'+
+              '<td>'+fmtQual(reg.hdd)+'</td>'+
+            '</tr>'+
+            '<tr>'+
+              '<td class="mono">CDD model</td>'+
+              '<td class="mono">'+(reg.cdd?`${reg.cdd.intercept.toFixed(3)} + ${reg.cdd.slope.toFixed(3)} × CDD/day`:'—')+'</td>'+
+              '<td class="mono">'+(reg.cdd?reg.cdd.n:'—')+'</td>'+
+              '<td class="mono">'+(reg.cdd?reg.cdd.r2.toFixed(3):'—')+'</td>'+
+              '<td>'+fmtQual(reg.cdd)+'</td>'+
+            '</tr>'+
+          '</tbody>'+
+        '</table>'+
+        (!reg.hdd&&!reg.cdd
+          ? '<div style="font-size:11px;color:var(--warn);padding:6px 0">⚠️ No regression computed — upload weather data (HDD/CDD) with at least 3 months of non-zero degree days.</div>'
+          : '<div style="font-size:11px;color:var(--text3)">The regression baseline appears in the table and chart as the predicted usage for each month under these weather conditions, normalized to the selected period basis.</div>')+
+      '</div>';
+  }
 
   // ── Control bar ──
   const chartBtnLabel = udNormChartVis ? '📉 Hide Chart' : '📊 Show Chart';
@@ -2692,14 +2859,16 @@ function renderNormPane(pane, m, bills, incl){
   const warnTip       = !hasWeather ? '<span style="font-size:11px;color:var(--text3);margin-left:4px">Upload weather CSV to enable</span>' : '';
   const weatherBtnLabel = isElec ? '🌡️ CDD Norm' : '🌡️ HDD Norm';
   const controlBar =
-    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:12px">'+
-      '<button class="ud-incl-btn sel" onclick="toggleNormChart()" style="background:var(--s3);border-color:var(--border2);color:var(--text2)">'+chartBtnLabel+'</button>'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:10px">'+
+      '<button class="ud-incl-btn" onclick="toggleNormChart()" style="background:var(--s3);border-color:var(--border2);color:var(--text2)">'+chartBtnLabel+'</button>'+
       '<div style="width:1px;height:20px;background:var(--border);margin:0 2px"></div>'+
       '<span style="font-size:11px;color:var(--text2)">Chart:</span>'+
       '<button class="ud-incl-btn'+(metric==='total'?' sel':'')+'" onclick="setNormMetric(\'total\')">'+unit+'/Month</button>'+
       '<button class="ud-incl-btn'+(metric==='perday'?' sel':'')+'" onclick="setNormMetric(\'perday\')">'+unit+'/Day</button>'+
       '<button class="ud-incl-btn'+(metric==='weather'?' sel':'')+'"'+warnDisabled+' onclick="setNormMetric(\'weather\')">'+weatherBtnLabel+'</button>'+
       warnTip+
+      '<div style="width:1px;height:20px;background:var(--border);margin:0 2px"></div>'+
+      '<button class="ud-incl-btn'+(_regressionPanelVis?' sel':'')+'" onclick="toggleRegressionPanel()" style="font-size:10px">📈 '+regBtnLabel+'</button>'+
     '</div>';
 
   // ── Weather upload row ──
@@ -2712,11 +2881,10 @@ function renderNormPane(pane, m, bills, incl){
       (!bldgZip?'<span style="font-size:11px;color:var(--warn)">Add ZIP in Edit Building to enable weather data</span>':'')+
       '<span style="font-size:11px;color:var(--em);flex:1;min-width:0">'+
         (wddCacheArr.length ? '✓ '+wddCacheArr.length+' months loaded from ZIP '+bldgZip+' — applied to all meters'
-          : bldgZip ? '<span style="color:var(--text3)">No weather data yet — upload CSV to enable '+weatherDDLabel+' normalization</span>' : '')+
+          : bldgZip ? '<span style="color:var(--text3)">No weather data yet — upload CSV to enable regression normalization</span>' : '')+
       '</span>'+
     '</div>';
 
-  // ── Weather warning ──
   const wddNotice = (udNormMetric==='weather' && !hasWeather) ?
     '<div style="background:var(--warn-dim);border:1px solid rgba(245,158,11,.25);border-radius:7px;padding:9px 13px;margin-bottom:12px;font-size:12px;color:var(--warn)">'+
       '⚠️ No '+weatherDDLabel+' data loaded — showing '+unit+'/Month instead. Upload a weather CSV above.</div>' : '';
@@ -2727,13 +2895,12 @@ function renderNormPane(pane, m, bills, incl){
 
   // ── Chart label ──
   const chartLabel = metric==='weather' ? unit+'/'+weatherDDLabel+' — Weather Normalized'
-                   : metric==='total'   ? unit+'/Month'
-                   : unit+'/Day — Date Normalized';
+                   : metric==='total'   ? unit+'/Month'+(hasRegr?' vs Regression Baseline':'')
+                   : unit+'/Day — Date Normalized'+(hasRegr?' vs Regression Baseline':'');
 
   // ── Table col header ──
   const normColHdr = metric==='weather' ? unit+'/'+weatherDDLabel
-                   : metric==='total'   ? unit+'/Mo'
-                   : unit+'/Day';
+                   : metric==='total' ? unit+'/Mo' : unit+'/Day';
 
   // ── Table rows ──
   const tblRows = rows.map(r=>{
@@ -2742,7 +2909,11 @@ function renderNormPane(pane, m, bills, incl){
                   : r.usagePerDay.toFixed(2);
     const normColor = metric==='weather' ? 'var(--em2)' : 'var(--em)';
     const euiCell = hasEUI ? `<td class="mono" style="color:var(--text3)">${(r.usage/sqft).toFixed(4)}</td>` : '';
-
+    // Regression baseline cell — show normDays used
+    const regrCell = hasRegr
+      ? `<td class="mono" style="color:var(--violet)">${r.regrBaseline!=null?r.regrBaseline.toLocaleString(undefined,{maximumFractionDigits:0}):'—'}</td>
+         <td class="mono" style="color:var(--text3);font-size:10px">${r.normDays}</td>`
+      : '';
     const hddCell = weatherByYm
       ? `<td class="mono" style="color:var(--text2)">${fmtWeather(r.hdd)}</td>`
       : `<td><input type="number" placeholder="—" value="${r.hdd!=null?r.hdd:''}"
@@ -2753,7 +2924,6 @@ function renderNormPane(pane, m, bills, incl){
       : `<td><input type="number" placeholder="—" value="${r.cdd!=null?r.cdd:''}"
             onchange="updateBillWeather('${m.id}','${r.id}','cdd',this.value)"
             style="width:65px;font-family:var(--mono);font-size:12px;background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);outline:none"></td>`;
-
     return `<tr class="${r.isBaseline?'baseline-row':''}">
       <td class="mono">${r.label}</td>
       <td class="mono">${r.days}</td>
@@ -2762,33 +2932,34 @@ function renderNormPane(pane, m, bills, incl){
       ${hddCell}${cddCell}
       <td class="mono" style="color:var(--text2)">${fmtTemp(r.avgTemp)}</td>
       <td class="mono" style="color:var(--em2)">${r.weatherNorm!=null?r.weatherNorm.toFixed(3):'—'}</td>
-      ${euiCell}
+      ${regrCell}${euiCell}
       <td class="mono">${r.cost?'$'+r.cost.toLocaleString(undefined,{maximumFractionDigits:0}):'—'}</td>
       ${r.isBaseline?'<td><span style="font-size:10px;background:var(--em-dim);color:var(--em);border:1px solid rgba(0,212,170,.2);border-radius:4px;padding:1px 6px">BL</span></td>':'<td></td>'}
     </tr>`;
   }).join('');
 
-  // ── Chart section (conditionally shown) ──
+  // ── Chart section ──
   const chartSection = udNormChartVis ?
     '<div style="margin-bottom:16px">'+
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+chartLabel+'</div>'+
       '<div class="ma-chart-wrap" style="padding:12px"><canvas id="normChart"></canvas></div>'+
     '</div>' : '';
 
-  // ── Table section (always shown) ──
-  const euiHdr = hasEUI ? '<th>kWh/sqft</th>' : '';
+  // ── Table section ──
+  const euiHdr   = hasEUI   ? '<th>kWh/sqft</th>' : '';
+  const regrHdrs = hasRegr  ? '<th style="color:var(--violet)">Reg. Baseline</th><th style="color:var(--text3);font-size:10px">Norm Days</th>' : '';
   const tableSection =
     '<div>'+
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">Monthly Detail + Weather Data</div>'+
       '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:340px;overflow-y:auto">'+
         '<table class="ma-tbl">'+
-          '<thead><tr><th>Month</th><th>Days</th><th>'+unit+'</th><th>'+normColHdr+'</th><th>HDD</th><th>CDD</th><th>Avg °F</th><th>'+unit+'/'+weatherDDLabel+'</th>'+euiHdr+'<th>Cost</th><th></th></tr></thead>'+
+          '<thead><tr><th>Month</th><th>Days</th><th>'+unit+'</th><th>'+normColHdr+'</th><th>HDD</th><th>CDD</th><th>Avg °F</th><th>'+unit+'/'+weatherDDLabel+'</th>'+regrHdrs+euiHdr+'<th>Cost</th><th></th></tr></thead>'+
           '<tbody>'+tblRows+'</tbody>'+
         '</table>'+
       '</div>'+
     '</div>';
 
-  pane.innerHTML = statsHTML + controlBar + wddBtn + wddNotice + chartSection + tableSection;
+  pane.innerHTML = statsHTML + basisBar + controlBar + wddBtn + wddNotice + regrPanel + chartSection + tableSection;
 
   if(udNormChartVis){
     requestAnimationFrame(()=>{ drawNormChart('normChart', rows, unit, metric, weatherDDLabel); });
@@ -2814,23 +2985,58 @@ function drawNormChart(canvasId, rows, unit, metric, weatherDDLabel){
   } else if(metric==='total'){
     dataVals   = rows.map(r=>+r.usage.toFixed(1));
     yLabel     = unit+'/Month';
-    tooltipFmt = v=>v!=null?v.toLocaleString()+' '+unit:'—';
+    tooltipFmt = v=>v!=null?v.toLocaleString(undefined,{maximumFractionDigits:0})+' '+unit:'—';
   } else {
     dataVals   = rows.map(r=>+r.usagePerDay.toFixed(2));
     yLabel     = unit+'/Day';
     tooltipFmt = v=>v!=null?v.toFixed(2)+' '+unit+'/day':'—';
   }
+  // Regression baseline overlay — map to same metric scale
+  const hasRegr = rows.some(r=>r.regrBaseline!=null);
+  const regrData = hasRegr ? rows.map(r=>{
+    if(r.regrBaseline==null) return null;
+    if(metric==='total')  return +r.regrBaseline.toFixed(0);
+    if(metric==='perday') return r.normDays>0 ? +(r.regrBaseline/r.normDays).toFixed(2) : null;
+    return null; // weather metric — regression doesn't map cleanly to DD-normalised scale
+  }) : null;
+
+  const datasets = [{
+    label: yLabel, data: dataVals,
+    backgroundColor: blColor,
+    borderColor: blColor.map(c=>c.replace('0.75','1').replace('0.85','1')),
+    borderWidth:1, borderRadius:3, order:2,
+  }];
+  if(regrData && metric!=='weather'){
+    datasets.push({
+      label: 'Regression Baseline',
+      data: regrData,
+      type: 'line',
+      borderColor: 'rgba(139,92,246,0.9)',
+      backgroundColor: 'rgba(139,92,246,0.1)',
+      borderWidth: 2,
+      pointRadius: 3,
+      pointBackgroundColor: 'rgba(139,92,246,1)',
+      tension: 0.35,
+      fill: false,
+      order: 1,
+    });
+  }
+
   _maCharts[canvasId]=new Chart(canvas,{
     type:'bar',
-    data:{labels,datasets:[{
-      label:yLabel, data:dataVals,
-      backgroundColor:blColor,
-      borderColor:blColor.map(c=>c.replace('0.75','1').replace('0.85','1')),
-      borderWidth:1, borderRadius:3,
-    }]},
+    data:{labels, datasets},
     options:{
       responsive:true, maintainAspectRatio:true,
-      plugins:{legend:{display:false}, tooltip:{callbacks:{label:ctx=>tooltipFmt(ctx.parsed.y)}}},
+      plugins:{
+        legend:{display: hasRegr&&metric!=='weather', labels:{color:'rgba(200,210,230,0.85)',font:{size:10},boxWidth:12,padding:10}},
+        tooltip:{callbacks:{label:ctx=>{
+          if(ctx.dataset.label==='Regression Baseline'){
+            const v=ctx.parsed.y;
+            return 'Reg. Baseline: '+(metric==='total'?v.toLocaleString(undefined,{maximumFractionDigits:0}):v.toFixed(2))+' '+yLabel;
+          }
+          return tooltipFmt(ctx.parsed.y);
+        }}}
+      },
       scales:{
         x:{ticks:{font:{size:10},maxRotation:45}, grid:{color:'rgba(255,255,255,0.04)'}},
         y:{ticks:{font:{size:10}}, grid:{color:'rgba(255,255,255,0.06)'}, title:{display:true,text:yLabel,font:{size:10}}},
@@ -3016,19 +3222,25 @@ function renderBaselinePane(pane, m, bills, incl){
   const b3=getUDBldg(udSelProjId,udSelBldgId);
   const sqftBl=parseInt(b3?.sqft)||0;
   const hasEUI_bl= m.commodity==='Electric' && sqftBl>0;
+  const proj_bl = getUDProj(udSelProjId);
+  const normBasis_bl = proj_bl?.normBasis || 'calendar';
   let blStatsInner='';
   if(hasBl){
     const avg=blRows.reduce((s,r)=>s+r.usagePerDay,0)/blRows.length;
+    const avgMo=blRows.reduce((s,r)=>s+r.usage,0)/blRows.length;
     const total=blRows.reduce((s,r)=>s+r.usage,0);
     const cost=blRows.reduce((s,r)=>s+r.cost,0);
     const hddBlRows=blRows.filter(r=>r.hdd!=null&&r.hdd>0);
     const avgHDD=hddBlRows.length?hddBlRows.reduce((s,r)=>s+r.hdd,0)/hddBlRows.length:null;
-    // Baseline EUI: avg monthly kWh / sqft * 3.412 * 12 → kBtu/sqft/yr
     const blEUI = hasEUI_bl ? (total/blRows.length/sqftBl * 3.412 * 12) : null;
+    // Regression baseline avg over baseline months
+    const regrBlRows=blRows.filter(r=>r.regrBaseline!=null);
+    const avgRegrBl=regrBlRows.length?regrBlRows.reduce((s,r)=>s+r.regrBaseline,0)/regrBlRows.length:null;
     blStatsInner=
       maStat(blRows.length+'','months','Baseline Period')+
+      maStat(avgMo.toLocaleString(undefined,{maximumFractionDigits:0}),unit+'/mo avg','Avg Monthly Use')+
       maStat(avg.toFixed(2),unit+'/day avg','Avg Daily Use')+
-      maStat(total.toLocaleString(undefined,{maximumFractionDigits:0}),unit,'Total Use')+
+      (avgRegrBl!=null?maStat(avgRegrBl.toLocaleString(undefined,{maximumFractionDigits:0}),unit+'/mo avg','Reg. Baseline Avg'):'<div style="font-size:11px;color:var(--text3);align-self:center;padding:4px">Upload weather data for regression baseline</div>')+
       maStat(cost?'$'+cost.toLocaleString(undefined,{maximumFractionDigits:0}):'—','total','Total Cost')+
       (avgHDD!=null?maStat(avgHDD.toFixed(0),'HDD avg','Avg Monthly HDD'):'')+
       (blEUI!=null?maStat(blEUI.toFixed(1),'kBtu/sqft/yr','Baseline EUI'):'');
@@ -3050,12 +3262,15 @@ function renderBaselinePane(pane, m, bills, incl){
   }).join('');
 
   // Chart control bar
+  const hasRegrBl = rows.some(r=>r.regrBaseline!=null);
   const chartBtnLabel = udBlChartVis ? '📉 Hide Chart' : '📊 Show Chart';
-  const blChartLabel = udBlMetric==='total'
-    ? unit+'/Month — Baseline Highlighted'+(udBlOverlay?' + Raw Bills':'')
-    : unit+'/Day — Baseline Highlighted'+(udBlOverlay?' + Raw Bills':'');
+  const blChartLabel = (udBlMetric==='total'
+    ? unit+'/Month — Baseline Highlighted'
+    : unit+'/Day — Baseline Highlighted')
+    + (udBlOverlay?' + Raw Bills':'')
+    + (hasRegrBl?' + Reg. Baseline':'');
   const blControlBar =
-    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:12px">'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:10px">'+
       '<button class="ud-incl-btn" onclick="toggleBlChart()" style="background:var(--s3);border-color:var(--border2);color:var(--text2)">'+chartBtnLabel+'</button>'+
       '<div style="width:1px;height:20px;background:var(--border);margin:0 2px"></div>'+
       '<span style="font-size:11px;color:var(--text2)">Metric:</span>'+
@@ -3075,6 +3290,10 @@ function renderBaselinePane(pane, m, bills, incl){
       '<div class="ma-chart-wrap"><canvas id="blChart"></canvas></div>'+
     '</div>' : '';
 
+  // Normalization basis note
+  const basisNote = '<div style="font-size:11px;color:var(--text3);margin-bottom:10px;padding:6px 10px;background:var(--s3);border-radius:5px;border:1px solid var(--border)">'+
+    '📐 Period basis: <strong>'+(normBasis_bl==='calendar'?'Calendar month days':'Actual bill days')+'</strong> — change in Normalized tab</div>';
+
   pane.innerHTML=
     '<div style="display:grid;grid-template-columns:280px 1fr;gap:18px;align-items:start">'+
       '<div>'+
@@ -3087,6 +3306,7 @@ function renderBaselinePane(pane, m, bills, incl){
         '</div>'+
       '</div>'+
       '<div>'+
+        basisNote+
         '<div id="blStatsWrap" class="ma-stats" style="margin-bottom:12px">'+blStatsInner+'</div>'+
         blControlBar +
         chartSection +
@@ -3185,7 +3405,7 @@ function saveBaseline(mid){
 }
 
 function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay, metric){
-  metric = metric || 'total'; // default monthly
+  metric = metric || 'total';
   const canvas=document.getElementById(canvasId); if(!canvas) return;
   if(_maCharts[canvasId]){_maCharts[canvasId].destroy();}
   const labels=rows.map(r=>r.label);
@@ -3194,16 +3414,29 @@ function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay, metric){
   const yLabel = isTotal ? unit+'/Month' : unit+'/Day';
   const normColors=rows.map(r=>r.isBaseline?'rgba(0,212,170,0.85)':'rgba(120,130,160,0.45)');
   const normBorders=normColors.map(c=>c.replace('0.85','1').replace('0.45','0.7'));
+  const hasRegr = rows.some(r=>r.regrBaseline!=null);
 
   const datasets=[{
     label: yLabel+' (Normalized)',
     data: normData,
     backgroundColor: normColors,
     borderColor: normBorders,
-    borderWidth:1, borderRadius:3,
+    borderWidth:1, borderRadius:3, order:3,
   }];
 
-  // Overlay: raw bill data mapped by normMonth
+  // Regression baseline line (violet)
+  if(hasRegr){
+    datasets.push({
+      label:'Regression Baseline',
+      data: rows.map(r=> r.regrBaseline==null ? null :
+        isTotal ? +r.regrBaseline.toFixed(0) : +(r.regrBaseline/r.normDays).toFixed(2)),
+      type:'line', borderColor:'rgba(139,92,246,0.9)', backgroundColor:'rgba(139,92,246,0.1)',
+      borderWidth:2, pointRadius:2, pointBackgroundColor:'rgba(139,92,246,1)',
+      tension:0.35, fill:false, order:1,
+    });
+  }
+
+  // Raw bill overlay (amber)
   if(showOverlay && bills && bills.length){
     const billByYm={};
     bills.forEach(b=>{
@@ -3214,35 +3447,25 @@ function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay, metric){
       const days=Math.max(1,parseInt(calcDays(b.start,b.end,incl))||1);
       if(!billByYm[ym]||usage>0) billByYm[ym]={usage, days, perDay:+(usage/days).toFixed(2)};
     });
-    const rawData=rows.map(r=>{
-      const bd=billByYm[r.ym];
-      if(!bd) return null;
-      return isTotal ? +bd.usage.toFixed(0) : bd.perDay;
-    });
     datasets.push({
       label: yLabel+' (Raw Bills)',
-      data: rawData,
-      type: 'line',
-      borderColor: 'rgba(245,158,11,0.85)',
-      backgroundColor: 'rgba(245,158,11,0.12)',
-      borderWidth: 2,
-      pointRadius: 3,
-      pointBackgroundColor: 'rgba(245,158,11,1)',
-      tension: 0.3,
-      fill: false,
+      data: rows.map(r=>{ const bd=billByYm[r.ym]; return bd?(isTotal?+bd.usage.toFixed(0):bd.perDay):null; }),
+      type:'line', borderColor:'rgba(245,158,11,0.85)', backgroundColor:'rgba(245,158,11,0.12)',
+      borderWidth:2, pointRadius:3, pointBackgroundColor:'rgba(245,158,11,1)',
+      tension:0.3, fill:false, order:2,
     });
   }
 
+  const showLegend = showOverlay || hasRegr;
   _maCharts[canvasId]=new Chart(canvas,{
-    type:'bar',
-    data:{labels, datasets},
+    type:'bar', data:{labels, datasets},
     options:{
       responsive:true, maintainAspectRatio:true,
       plugins:{
-        legend:{display:showOverlay, labels:{color:'rgba(200,210,230,0.85)',font:{size:11},boxWidth:14,padding:12}},
+        legend:{display:showLegend, labels:{color:'rgba(200,210,230,0.85)',font:{size:10},boxWidth:12,padding:10}},
         tooltip:{callbacks:{label:ctx=>{
           const v=ctx.parsed.y;
-          return v!=null ? ctx.dataset.label+': '+(isTotal?v.toLocaleString():v.toFixed(2))+' '+yLabel : '—';
+          return v!=null ? ctx.dataset.label+': '+(isTotal?v.toLocaleString(undefined,{maximumFractionDigits:0}):v.toFixed(2))+' '+yLabel : '—';
         }}}
       },
       scales:{
@@ -3267,7 +3490,7 @@ function renderPerfPane(pane, m, bills, incl){
   const unit=m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
   const isElec=m.commodity==='Electric';
   const {byYm: weatherByYm} = getWeatherForBuilding();
-  const allRows=getNormRows(m,bills,incl,weatherByYm);
+  const allRows=getNormRows(m,bills,incl,weatherByYm); // sets m._reg, fills regrBaseline
   const blRows=allRows.filter(r=>bl.months.includes(r.ym));
   const blStart=bl.months.slice().sort()[0];
   const blEnd=bl.months.slice().sort()[bl.months.length-1];
@@ -3278,8 +3501,14 @@ function renderPerfPane(pane, m, bills, incl){
   const sqft5=parseInt(bldg5?.sqft)||0;
   const hasEUI_p=isElec&&sqft5>0;
 
+  // Normalization basis
+  const proj_p = getUDProj(udSelProjId);
+  const normBasis_p = proj_p?.normBasis || 'calendar';
+
+  // Baseline averages (simple, for fallback when no regression)
   const blAvgDay=blRows.length?blRows.reduce((s,r)=>s+r.usagePerDay,0)/blRows.length:0;
   const blAvgMo=blRows.length?blRows.reduce((s,r)=>s+r.usage,0)/blRows.length:0;
+  const hasRegr_p = allRows.some(r=>r.regrBaseline!=null);
 
   // Year filter
   const maxYears=Math.max(1,Math.ceil(truePostRows.length/12));
@@ -3290,25 +3519,38 @@ function renderPerfPane(pane, m, bills, incl){
     filteredPostRows=truePostRows.slice(0,n*12);
   }
 
-  // Stats
+  // Stats — use regression-based expected for post-BL if available
   const postAvgDay=filteredPostRows.length?filteredPostRows.reduce((s,r)=>s+r.usagePerDay,0)/filteredPostRows.length:0;
   const postAvgMo=filteredPostRows.length?filteredPostRows.reduce((s,r)=>s+r.usage,0)/filteredPostRows.length:0;
-  const savPct=blAvgDay>0?((blAvgDay-postAvgDay)/blAvgDay*100):0;
+
+  // Expected usage: regression baseline per month (preferred) or simple avg fallback
+  const totalExpected = filteredPostRows.reduce((s,r)=>{
+    const exp = hasRegr_p && r.regrBaseline!=null ? r.regrBaseline : blAvgMo;
+    return s + exp;
+  }, 0);
+  const totalActual = filteredPostRows.reduce((s,r)=>s+r.usage, 0);
+  const totalSavings = totalExpected - totalActual;
+  const savPct = totalExpected>0 ? (totalSavings/totalExpected*100) : 0;
+
   const blCost=blRows.reduce((s,r)=>s+r.cost,0);
   const postCost=filteredPostRows.reduce((s,r)=>s+r.cost,0);
   const savCost=blCost&&postCost?blCost-postCost:null;
 
-  // Rolling 12-mo EUI
   const last12post=truePostRows.slice(-12);
   const rolling12kWh=last12post.reduce((s,r)=>s+r.usage,0);
   const rolling12EUI=hasEUI_p&&last12post.length===12?(rolling12kWh*3.412/sqft5):null;
   const blEUI=hasEUI_p&&blRows.length?(blAvgMo*12*3.412/sqft5):null;
 
+  // Avg regression baseline for baseline period (for display)
+  const blRegrRows=blRows.filter(r=>r.regrBaseline!=null);
+  const blRegrAvgMo=blRegrRows.length?blRegrRows.reduce((s,r)=>s+r.regrBaseline,0)/blRegrRows.length:null;
+
   const statsHTML=
     '<div class="ma-stats" style="margin-bottom:12px">'+
       maStat(blAvgMo.toFixed(0),unit+'/mo avg','Baseline Avg/Month')+
+      (blRegrAvgMo!=null?maStat(blRegrAvgMo.toFixed(0),unit+'/mo avg','Reg. Baseline Avg'):'') +
       maStat(postAvgMo.toFixed(0),unit+'/mo avg','Post-BL Avg/Month')+
-      maStat((savPct>=0?'−':'+')+(Math.abs(savPct)).toFixed(1)+'%','vs baseline',savPct>=0?'Reduction':'Increase')+
+      maStat((savPct>=0?'−':'+')+(Math.abs(savPct)).toFixed(1)+'%',hasRegr_p?'vs reg. baseline':'vs baseline',savPct>=0?'Reduction':'Increase')+
       (savCost!==null?maStat((savCost>=0?'−':'+')+' $'+Math.abs(savCost).toLocaleString(undefined,{maximumFractionDigits:0}),'total','Cost Delta'):'')+
       (blEUI!=null?maStat(blEUI.toFixed(1),'kBtu/sqft/yr','Baseline EUI'):'')+
       (rolling12EUI!=null?maStat(rolling12EUI.toFixed(1),'kBtu/sqft/yr','Rolling 12-Mo EUI'):'')+
@@ -3327,11 +3569,12 @@ function renderPerfPane(pane, m, bills, incl){
 
   // Chart control bar
   const perfChartBtn = _perfChartVis ? '📉 Hide Chart' : '📊 Show Chart';
-  const perfChartLabel= _perfMetric==='total'
-    ? unit+'/Month vs Baseline'+(  _perfOverlay?' + Raw Bills':'')
-    : unit+'/Day vs Baseline'+(_perfOverlay?' + Raw Bills':'');
+  const perfChartLabel= (_perfMetric==='total'
+    ? unit+'/Month vs '+(hasRegr_p?'Reg. ':'')+'Baseline'
+    : unit+'/Day vs '+(hasRegr_p?'Reg. ':'')+'Baseline')
+    +(_perfOverlay?' + Raw Bills':'');
   const perfControlBar=
-    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:10px">'+
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:10px">'+
       '<button class="ud-incl-btn" onclick="togglePerfChart()" style="background:var(--s3);border-color:var(--border2);color:var(--text2)">'+perfChartBtn+'</button>'+
       '<div style="width:1px;height:20px;background:var(--border);margin:0 2px"></div>'+
       '<span style="font-size:11px;color:var(--text2)">Metric:</span>'+
@@ -3340,9 +3583,16 @@ function renderPerfPane(pane, m, bills, incl){
       (_perfChartVis?
         '<div style="width:1px;height:20px;background:var(--border);margin:0 2px"></div>'+
         '<span style="font-size:11px;color:var(--text2)">Overlay:</span>'+
-        '<button class="ud-incl-btn'+(_perfOverlay?' sel':'')+'" onclick="togglePerfOverlay()">📋 Raw Bills</button>'
+        '<button class="ud-incl-btn"+(_perfOverlay?" sel":"")+'" onclick="togglePerfOverlay()">📋 Raw Bills</button>'
       :'')+
     '</div>';
+
+  // Normalization basis note
+  const basisNote_p = '<div style="font-size:11px;color:var(--text3);margin-bottom:10px;padding:6px 10px;background:var(--s3);border-radius:5px;border:1px solid var(--border)">'+
+    '📐 Period basis: <strong>'+(normBasis_p==='calendar'?'Calendar month days':'Actual bill days')+'</strong> · '+
+    (hasRegr_p?'✅ Regression baseline active — expected usage calculated per-month using weather model'
+      :'⚠️ No regression — using simple baseline average as expected. Upload weather data to enable.')+
+    ' · Change in Normalized tab</div>';
 
   // Chart rows: era-tagged
   const postYmCutoff=_perfYearFilter==='all'?null:(filteredPostRows.length?filteredPostRows[filteredPostRows.length-1].ym:null);
@@ -3354,17 +3604,22 @@ function renderPerfPane(pane, m, bills, incl){
     r.era==='pre'?'rgba(120,130,160,0.35)':'rgba(100,160,255,0.75)'
   );
 
-  // Savings table — post-baseline only
+  // Savings table — regression-based expected when available, fallback to avg
   const perfRows=filteredPostRows.map(r=>{
-    const expUsage=_perfMetric==='total' ? blAvgMo : blAvgDay*r.days;
-    const actual  =_perfMetric==='total' ? r.usage  : r.usagePerDay;
+    const isTotal_p=_perfMetric==='total';
+    const expMo = hasRegr_p && r.regrBaseline!=null ? r.regrBaseline : blAvgMo;
+    const expUsage = isTotal_p ? expMo : expMo/r.normDays;
+    const actual   = isTotal_p ? r.usage : r.usagePerDay;
     const sav=expUsage-actual;
     const savPc=expUsage>0?sav/expUsage*100:0;
     const euiCell=hasEUI_p?`<td class="mono" style="color:var(--text3)">${(r.usage/sqft5).toFixed(4)}</td>`:'';
+    const isRegr = hasRegr_p && r.regrBaseline!=null;
     return '<tr>'+
       '<td class="mono">'+r.label+'</td>'+
-      '<td class="mono">'+r.days+'</td>'+
-      '<td class="mono" style="color:var(--text2)">'+(_perfMetric==='total'?expUsage.toFixed(0):expUsage.toFixed(2))+'</td>'+
+      '<td class="mono">'+r.normDays+'</td>'+
+      '<td class="mono" style="color:'+(isRegr?'var(--violet)':'var(--text2)')+'">'+
+        (isTotal_p?expUsage.toFixed(0):expUsage.toFixed(2))+
+        (isRegr?'<span style="font-size:9px;color:var(--violet);margin-left:3px">R</span>':'')+'</td>'+
       '<td class="mono">'+(_perfMetric==='total'?r.usage.toLocaleString(undefined,{maximumFractionDigits:0}):r.usagePerDay.toFixed(2))+'</td>'+
       '<td class="mono" style="color:'+(sav>=0?'var(--em)':'var(--danger)')+'">'+
         (sav>=0?'−':'+')+(Math.abs(sav)).toFixed(_perfMetric==='total'?0:2)+'</td>'+
@@ -3376,8 +3631,8 @@ function renderPerfPane(pane, m, bills, incl){
 
   const euiTblHdr=hasEUI_p?'<th>kWh/sqft</th>':'';
   const perfTableLabel=_perfMetric==='total'
-    ?'<th>Exp '+unit+'/Mo</th><th>Actual '+unit+'/Mo</th>'
-    :'<th>Exp '+unit+'/Day</th><th>Actual '+unit+'/Day</th>';
+    ?'<th>Exp '+unit+'/Mo'+(hasRegr_p?' 🔬':' ~avg')+'</th><th>Actual '+unit+'/Mo</th>'
+    :'<th>Exp '+unit+'/Day'+(hasRegr_p?' 🔬':' ~avg')+'</th><th>Actual '+unit+'/Day</th>';
 
   const chartSection=_perfChartVis?
     '<div>'+
@@ -3387,21 +3642,26 @@ function renderPerfPane(pane, m, bills, incl){
         '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(120,130,160,0.45);border-radius:2px;display:inline-block"></span>Pre-Baseline</span>'+
         '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(0,212,170,0.8);border-radius:2px;display:inline-block"></span>Baseline</span>'+
         '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(100,160,255,0.75);border-radius:2px;display:inline-block"></span>Post-Baseline</span>'+
-        '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:var(--warn);border-radius:1px;display:inline-block"></span>Baseline Avg</span>'+
+        (hasRegr_p?'<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:rgba(139,92,246,0.9);border-radius:1px;display:inline-block"></span>Reg. Baseline</span>':
+          '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:var(--warn);border-radius:1px;display:inline-block"></span>Baseline Avg</span>')+
       '</div>'+
     '</div>' : '<div></div>';
 
   pane.innerHTML=
-    statsHTML+yearPills+perfControlBar+
-    '<div style="display:grid;grid-template-columns:'+(  _perfChartVis?'1fr 1fr':'1fr')+';gap:16px;align-items:start">'+
+    statsHTML+basisNote_p+yearPills+perfControlBar+
+    '<div style="display:grid;grid-template-columns:'+(_perfChartVis?'1fr 1fr':'1fr')+';gap:16px;align-items:start">'+
       chartSection+
       '<div>'+
         '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:4px">Post-Baseline Monthly vs Expected</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-bottom:8px">Expected = baseline avg × billing days</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-bottom:8px">'+
+          (hasRegr_p
+            ? 'Expected = regression model · <span style="color:var(--violet)">🔬 R</span> = regression-derived'
+            : 'Expected = baseline avg × norm days (no weather data for regression)')+
+        '</div>'+
         (filteredPostRows.length?
           '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto">'+
             '<table class="ma-tbl">'+
-              '<thead><tr><th>Month</th><th>Days</th>'+perfTableLabel+'<th>Saved</th><th>%</th>'+euiTblHdr+'</tr></thead>'+
+              '<thead><tr><th>Month</th><th>Norm Days</th>'+perfTableLabel+'<th>Saved</th><th>%</th>'+euiTblHdr+'</tr></thead>'+
               '<tbody>'+perfRows+'</tbody>'+
             '</table></div>':
           '<div style="font-size:12px;color:var(--text3);padding:20px;text-align:center">No post-baseline data yet — add billing periods after <strong>'+fmtMon(blEnd+'-01')+'</strong></div>')+
@@ -3432,13 +3692,32 @@ function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, i
   const mainData=isTotal?rows.map(r=>+r.usage.toFixed(0)):rows.map(r=>+r.usagePerDay.toFixed(2));
   const blRef=isTotal?+blAvgMo.toFixed(0):+blAvgDay.toFixed(2);
   const yLabel=isTotal?unit+'/Month':unit+'/Day';
+  const hasRegr=rows.some(r=>r.regrBaseline!=null);
 
   const datasets=[
-    {label:yLabel,data:mainData,backgroundColor:colors,borderColor:colors.map(c=>c.replace(/[\d.]+\)$/,'1)')),borderWidth:1,borderRadius:3,order:2},
-    {label:'Baseline Avg',data:rows.map(()=>blRef),type:'line',borderColor:'rgba(245,158,11,0.9)',backgroundColor:'transparent',borderWidth:2,borderDash:[5,4],pointRadius:0,order:1},
+    {label:yLabel, data:mainData, backgroundColor:colors, borderColor:colors.map(c=>c.replace(/[\d.]+\)$/,'1)')), borderWidth:1, borderRadius:3, order:3},
   ];
 
-  // Raw bill overlay
+  // Regression baseline line (violet, preferred) — or simple avg fallback (amber dashed)
+  if(hasRegr){
+    datasets.push({
+      label:'Reg. Baseline',
+      data: rows.map(r=> r.regrBaseline==null ? null :
+        isTotal ? +r.regrBaseline.toFixed(0) : +(r.regrBaseline/r.normDays).toFixed(2)),
+      type:'line', borderColor:'rgba(139,92,246,0.9)', backgroundColor:'rgba(139,92,246,0.1)',
+      borderWidth:2, pointRadius:2, pointBackgroundColor:'rgba(139,92,246,1)',
+      tension:0.35, fill:false, order:1,
+    });
+  } else {
+    // Fallback: flat baseline average dashed line
+    datasets.push({
+      label:'Baseline Avg', data:rows.map(()=>blRef), type:'line',
+      borderColor:'rgba(245,158,11,0.9)', backgroundColor:'transparent',
+      borderWidth:2, borderDash:[5,4], pointRadius:0, order:1,
+    });
+  }
+
+  // Raw bill overlay (orange)
   if(showOverlay && bills && bills.length){
     const billByYm={};
     bills.forEach(b=>{
@@ -3449,37 +3728,28 @@ function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, i
       const days=Math.max(1,parseInt(calcDays(b.start,b.end,incl))||1);
       if(!billByYm[ym]||usage>0) billByYm[ym]={usage, days};
     });
-    const rawData=rows.map(r=>{
-      const bd=billByYm[r.ym];
-      if(!bd) return null;
-      return isTotal ? +bd.usage.toFixed(0) : +(bd.usage/bd.days).toFixed(2);
-    });
     datasets.push({
       label: yLabel+' (Raw Bills)',
-      data: rawData,
-      type:'line',
-      borderColor:'rgba(251,146,60,0.9)',
-      backgroundColor:'rgba(251,146,60,0.12)',
-      borderWidth:2,
-      pointRadius:3,
-      pointBackgroundColor:'rgba(251,146,60,1)',
-      tension:0.3,
-      fill:false,
-      order:0,
+      data: rows.map(r=>{ const bd=billByYm[r.ym]; return bd?(isTotal?+bd.usage.toFixed(0):+(bd.usage/bd.days).toFixed(2)):null; }),
+      type:'line', borderColor:'rgba(251,146,60,0.9)', backgroundColor:'rgba(251,146,60,0.12)',
+      borderWidth:2, pointRadius:3, pointBackgroundColor:'rgba(251,146,60,1)',
+      tension:0.3, fill:false, order:0,
     });
   }
 
+  const showLegend = showOverlay || hasRegr;
   _maCharts[canvasId]=new Chart(canvas,{
-    type:'bar',
-    data:{labels, datasets},
-    options:{responsive:true,maintainAspectRatio:true,
+    type:'bar', data:{labels, datasets},
+    options:{responsive:true, maintainAspectRatio:true,
       plugins:{
-        legend:{display:showOverlay,labels:{color:'rgba(200,210,230,0.85)',font:{size:10},boxWidth:12,padding:10}},
+        legend:{display:showLegend, labels:{color:'rgba(200,210,230,0.85)',font:{size:10},boxWidth:12,padding:10}},
         tooltip:{callbacks:{label:ctx=>{
-          if(ctx.dataset.type==='line'&&ctx.dataset.label==='Baseline Avg') return 'Baseline avg: '+(isTotal?ctx.parsed.y.toFixed(0):ctx.parsed.y.toFixed(2))+' '+yLabel;
+          const v=ctx.parsed.y;
+          if(ctx.dataset.label==='Reg. Baseline') return 'Reg. Baseline: '+(isTotal?v.toLocaleString(undefined,{maximumFractionDigits:0}):v.toFixed(2))+' '+yLabel;
+          if(ctx.dataset.label==='Baseline Avg') return 'Baseline avg: '+(isTotal?v.toFixed(0):v.toFixed(2))+' '+yLabel;
           const era=rows[ctx.dataIndex]?.era;
           const tag=era==='pre'?'Pre-Baseline':era==='baseline'?'Baseline':'Post-Baseline';
-          return (era?tag:ctx.dataset.label)+': '+(isTotal?ctx.parsed.y.toLocaleString():ctx.parsed.y.toFixed(2))+' '+yLabel;
+          return (era?tag:ctx.dataset.label)+': '+(isTotal?v.toLocaleString(undefined,{maximumFractionDigits:0}):v.toFixed(2))+' '+yLabel;
         }}}
       },
       scales:{x:{ticks:{font:{size:10},maxRotation:45},grid:{color:'rgba(255,255,255,0.04)'}},
