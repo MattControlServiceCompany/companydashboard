@@ -278,6 +278,8 @@ html,body{height:100%;overflow:hidden;}
 .btn-sm{padding:4px 10px;font-size:11px;border-radius:5px;}
 .btn-del{background:transparent;color:var(--text3);border:1px solid var(--border);padding:3px 8px;font-size:11px;border-radius:5px;cursor:pointer;font-family:var(--font);transition:all .13s;}
 .btn-del:hover{border-color:var(--danger);color:var(--danger);}
+.btn-edit{background:transparent;color:var(--text3);border:1px solid var(--border);padding:3px 8px;font-size:11px;border-radius:5px;cursor:pointer;font-family:var(--font);transition:all .13s;margin-right:4px;}
+.btn-edit:hover{border-color:var(--accent);color:var(--accent);}
 .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:11px;margin-bottom:20px;}
 .stat{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;position:relative;overflow:hidden;}
 .stat::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,transparent 60%,rgba(255,255,255,.018));pointer-events:none;}
@@ -2256,10 +2258,14 @@ function udSelectBldg(bid){
 let udActiveMid = null;
 let udActiveTab = 'bills';
 let udNormMode      = 'date';    // 'date' | 'weather'
-let udNormMetric    = 'perday';  // 'perday' | 'total' | 'weather'  (chart Y-axis in Norm tab)
+let udNormMetric    = 'total';   // 'perday' | 'total' | 'weather'  (chart Y-axis in Norm tab) — default monthly
 let udNormChartVis  = true;      // chart visible in Norm tab
 let udBlChartVis    = true;      // chart visible in Baseline tab
+let udBlMetric      = 'total';   // 'perday' | 'total' — baseline chart metric, default monthly
 let udBlOverlay     = false;     // overlay raw bill data on baseline chart
+let _perfMetric     = 'total';   // 'perday' | 'total' — perf chart metric, default monthly
+let _perfOverlay    = false;     // overlay raw bill data on perf chart
+let _perfChartVis   = true;      // perf chart visible
 let _maCharts = {};
 
 function renderUDDetail(){
@@ -2584,13 +2590,17 @@ function getNormRows(m, bills, incl, weatherByYm){
     }
     const hddNorm = (hdd != null && hdd > 0) ? r.usage/hdd : null;
     const cddNorm = (cdd != null && cdd > 0) ? r.usage/cdd : null;
+    // Correct weather normalization: CDD for electric (cooling-dominated), HDD for gas (heating-dominated)
+    const isElecMeter = m.commodity === 'Electric';
+    const weatherNorm = isElecMeter ? cddNorm : hddNorm;
+    const weatherDenom = isElecMeter ? cdd : hdd; // the degree-day value used as denominator
     const [yr,mo]=ym.split('-');
     const dt=new Date(parseInt(yr),parseInt(mo)-1,1);
     const label=dt.toLocaleDateString('en-US',{month:'short',year:'numeric'});
     return {
       id: r._ids[0], ym, start: r.start, end: r.end, days: r.days,
       usage: r.usage, usagePerDay, cost: r.cost, hdd, cdd, avgTemp,
-      hddNorm, cddNorm, label,
+      hddNorm, cddNorm, weatherNorm, weatherDenom, label,
       isBaseline: !!(m.baseline && m.baseline.months && m.baseline.months.includes(ym)),
     };
   });
@@ -2614,6 +2624,10 @@ function setNormMetric(metric){ udNormMetric=metric; renderMeterWorkspace(); }
 function toggleNormChart(){ udNormChartVis=!udNormChartVis; renderMeterWorkspace(); }
 function toggleBlChart(){ udBlChartVis=!udBlChartVis; renderMeterWorkspace(); }
 function toggleBlOverlay(){ udBlOverlay=!udBlOverlay; renderMeterWorkspace(); }
+function setBlMetric(m){ udBlMetric=m; renderMeterWorkspace(); }
+function setPerfMetric(m){ _perfMetric=m; renderMeterWorkspace(); }
+function togglePerfOverlay(){ _perfOverlay=!_perfOverlay; renderMeterWorkspace(); }
+function togglePerfChart(){ _perfChartVis=!_perfChartVis; renderMeterWorkspace(); }
 
 function renderNormPane(pane, m, bills, incl){
   if(!bills.length){
@@ -2621,57 +2635,74 @@ function renderNormPane(pane, m, bills, incl){
     return;
   }
   const unit = m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
+  const isElec = m.commodity==='Electric', isGas = m.commodity==='Gas';
   const {byYm: weatherByYm} = getWeatherForBuilding();
   const rows = getNormRows(m,bills,incl,weatherByYm);
-  const hasWeather = rows.some(r=>r.hdd != null);
+  // weatherNorm uses CDD for electric, HDD for gas (set in getNormRows)
+  const hasWeather = rows.some(r=>r.weatherNorm != null);
+  const weatherDDLabel = isElec ? 'CDD' : 'HDD'; // label for the degree-day column used in normalization
 
-  // Resolve effective metric (weather falls back to perday if no data)
-  const metric = (udNormMetric==='weather' && !hasWeather) ? 'perday' : udNormMetric;
+  // Resolve effective metric (weather falls back to total if no data)
+  const metric = (udNormMetric==='weather' && !hasWeather) ? 'total' : udNormMetric;
+
+  // ── EUI (Energy Use Intensity) — only for electric with sqft ──
+  const b2=getUDBldg(udSelProjId,udSelBldgId);
+  const sqft = parseInt(b2?.sqft)||0;
+  const hasEUI = isElec && sqft > 0;
 
   // ── Stats ──
   const totalUsage = rows.reduce((s,r)=>s+r.usage,0);
   const totalCost  = rows.reduce((s,r)=>s+r.cost,0);
   const avgPerDay  = rows.reduce((s,r)=>s+r.usagePerDay,0)/rows.length;
-  const hddRows    = rows.filter(r=>r.hddNorm!=null);
-  const avgPerHDD  = hddRows.length ? hddRows.reduce((s,r)=>s+r.hddNorm,0)/hddRows.length : null;
+  const wRows      = rows.filter(r=>r.weatherNorm!=null);
+  const avgWeather = wRows.length ? wRows.reduce((s,r)=>s+r.weatherNorm,0)/wRows.length : null;
+  const avgMonthly = totalUsage / rows.length;
 
-  const statVal  = metric==='weather' && avgPerHDD!=null ? avgPerHDD.toFixed(2)
-                 : metric==='total'                      ? (totalUsage/rows.length).toFixed(0)
+  // EUI per month (kWh/sqft/month) and annualized (kBtu/sqft/yr)
+  const avgEuiPerMo = hasEUI ? (avgMonthly / sqft) : null;
+  // Rolling 12-month EUI: sum last 12 months of usage / sqft, converted kWh→kBtu (*3.412)
+  const last12 = rows.slice(-12);
+  const rolling12kWh = last12.reduce((s,r)=>s+r.usage,0);
+  const rolling12EUI = hasEUI && last12.length===12 ? (rolling12kWh * 3.412 / sqft) : null;
+
+  const statVal  = metric==='weather' && avgWeather!=null ? avgWeather.toFixed(3)
+                 : metric==='total'                      ? avgMonthly.toLocaleString(undefined,{maximumFractionDigits:0})
                  : avgPerDay.toFixed(1);
-  const statUnit = metric==='weather' && avgPerHDD!=null ? unit+'/HDD avg'
+  const statUnit = metric==='weather' && avgWeather!=null ? unit+'/'+weatherDDLabel+' avg'
                  : metric==='total'                      ? unit+'/mo avg'
                  : unit+'/day avg';
-  const statLbl  = metric==='weather' ? 'Weather-Normalized Avg'
+  const statLbl  = metric==='weather' ? 'Weather-Norm Avg ('+weatherDDLabel+')'
                  : metric==='total'   ? 'Avg Monthly Usage'
                  : 'Date-Normalized Avg';
 
   const statsHTML =
-    '<div class="ma-stats">'+
+    '<div class="ma-stats" style="margin-bottom:12px">'+
       maStat(totalUsage.toLocaleString(undefined,{maximumFractionDigits:0}), unit+' total', 'Total Usage')+
       maStat(statVal, statUnit, statLbl)+
       maStat('$'+totalCost.toLocaleString(undefined,{maximumFractionDigits:0}), 'total', 'Total Cost')+
       maStat(rows.length+'', 'months', 'Data Points')+
+      (hasEUI && avgEuiPerMo!=null ? maStat(avgEuiPerMo.toFixed(3), 'kWh/sqft/mo', 'Avg EUI/Month') : '')+
+      (hasEUI && rolling12EUI!=null ? maStat(rolling12EUI.toFixed(1), 'kBtu/sqft/yr', 'Rolling 12-Mo EUI') : '')+
+      (!hasEUI && isElec ? '<div style="font-size:11px;color:var(--text3);align-self:center;padding:8px 4px">Add building sqft to see EUI</div>' : '')+
     '</div>';
 
   // ── Control bar ──
   const chartBtnLabel = udNormChartVis ? '📉 Hide Chart' : '📊 Show Chart';
   const warnDisabled  = !hasWeather ? ' style="opacity:.45;cursor:not-allowed" disabled' : '';
   const warnTip       = !hasWeather ? '<span style="font-size:11px;color:var(--text3);margin-left:4px">Upload weather CSV to enable</span>' : '';
+  const weatherBtnLabel = isElec ? '🌡️ CDD Norm' : '🌡️ HDD Norm';
   const controlBar =
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:12px">'+
-      // Chart toggle
       '<button class="ud-incl-btn sel" onclick="toggleNormChart()" style="background:var(--s3);border-color:var(--border2);color:var(--text2)">'+chartBtnLabel+'</button>'+
       '<div style="width:1px;height:20px;background:var(--border);margin:0 2px"></div>'+
-      // Metric pills
-      '<span style="font-size:11px;color:var(--text2)">Chart metric:</span>'+
-      '<button class="ud-incl-btn'+(metric==='perday'?' sel':'')+'" onclick="setNormMetric(\'perday\')">'+unit+'/Day</button>'+
+      '<span style="font-size:11px;color:var(--text2)">Chart:</span>'+
       '<button class="ud-incl-btn'+(metric==='total'?' sel':'')+'" onclick="setNormMetric(\'total\')">'+unit+'/Month</button>'+
-      '<button class="ud-incl-btn'+(metric==='weather'?' sel':'')+'"'+warnDisabled+' onclick="setNormMetric(\'weather\')">🌡️ Weather Norm</button>'+
+      '<button class="ud-incl-btn'+(metric==='perday'?' sel':'')+'" onclick="setNormMetric(\'perday\')">'+unit+'/Day</button>'+
+      '<button class="ud-incl-btn'+(metric==='weather'?' sel':'')+'"'+warnDisabled+' onclick="setNormMetric(\'weather\')">'+weatherBtnLabel+'</button>'+
       warnTip+
     '</div>';
 
   // ── Weather upload row ──
-  const b2=getUDBldg(udSelProjId,udSelBldgId);
   const bldgZip=b2?.zip||'';
   const wddCacheArr=bldgZip?wddLoadCache(bldgZip):[];
   const wddBtn=
@@ -2681,35 +2712,36 @@ function renderNormPane(pane, m, bills, incl){
       (!bldgZip?'<span style="font-size:11px;color:var(--warn)">Add ZIP in Edit Building to enable weather data</span>':'')+
       '<span style="font-size:11px;color:var(--em);flex:1;min-width:0">'+
         (wddCacheArr.length ? '✓ '+wddCacheArr.length+' months loaded from ZIP '+bldgZip+' — applied to all meters'
-          : bldgZip ? '<span style="color:var(--text3)">No weather data yet — upload CSV to enable HDD/CDD normalization</span>' : '')+
+          : bldgZip ? '<span style="color:var(--text3)">No weather data yet — upload CSV to enable '+weatherDDLabel+' normalization</span>' : '')+
       '</span>'+
     '</div>';
 
   // ── Weather warning ──
   const wddNotice = (udNormMetric==='weather' && !hasWeather) ?
     '<div style="background:var(--warn-dim);border:1px solid rgba(245,158,11,.25);border-radius:7px;padding:9px 13px;margin-bottom:12px;font-size:12px;color:var(--warn)">'+
-      '⚠️ No weather data loaded — showing '+unit+'/Day instead. Upload a weather CSV above.</div>' : '';
+      '⚠️ No '+weatherDDLabel+' data loaded — showing '+unit+'/Month instead. Upload a weather CSV above.</div>' : '';
 
   // ── Helpers ──
   const fmtWeather = v => (v == null ? '—' : v);
   const fmtTemp    = v => (v == null ? '—' : v > 0 ? v.toFixed(1)+'°' : '0°');
 
   // ── Chart label ──
-  const chartLabel = metric==='weather' ? unit+'/HDD — Weather Normalized'
+  const chartLabel = metric==='weather' ? unit+'/'+weatherDDLabel+' — Weather Normalized'
                    : metric==='total'   ? unit+'/Month'
                    : unit+'/Day — Date Normalized';
 
   // ── Table col header ──
-  const normColHdr = metric==='weather' ? unit+'/HDD'
+  const normColHdr = metric==='weather' ? unit+'/'+weatherDDLabel
                    : metric==='total'   ? unit+'/Mo'
                    : unit+'/Day';
 
   // ── Table rows ──
   const tblRows = rows.map(r=>{
-    const normVal = metric==='weather' ? (r.hddNorm!=null ? r.hddNorm.toFixed(3) : '—')
+    const normVal = metric==='weather' ? (r.weatherNorm!=null ? r.weatherNorm.toFixed(3) : '—')
                   : metric==='total'   ? r.usage.toLocaleString(undefined,{maximumFractionDigits:0})
                   : r.usagePerDay.toFixed(2);
     const normColor = metric==='weather' ? 'var(--em2)' : 'var(--em)';
+    const euiCell = hasEUI ? `<td class="mono" style="color:var(--text3)">${(r.usage/sqft).toFixed(4)}</td>` : '';
 
     const hddCell = weatherByYm
       ? `<td class="mono" style="color:var(--text2)">${fmtWeather(r.hdd)}</td>`
@@ -2729,7 +2761,8 @@ function renderNormPane(pane, m, bills, incl){
       <td class="mono" style="color:${normColor};font-weight:600">${normVal}</td>
       ${hddCell}${cddCell}
       <td class="mono" style="color:var(--text2)">${fmtTemp(r.avgTemp)}</td>
-      <td class="mono" style="color:var(--em2)">${r.hddNorm!=null?r.hddNorm.toFixed(3):'—'}</td>
+      <td class="mono" style="color:var(--em2)">${r.weatherNorm!=null?r.weatherNorm.toFixed(3):'—'}</td>
+      ${euiCell}
       <td class="mono">${r.cost?'$'+r.cost.toLocaleString(undefined,{maximumFractionDigits:0}):'—'}</td>
       ${r.isBaseline?'<td><span style="font-size:10px;background:var(--em-dim);color:var(--em);border:1px solid rgba(0,212,170,.2);border-radius:4px;padding:1px 6px">BL</span></td>':'<td></td>'}
     </tr>`;
@@ -2743,12 +2776,13 @@ function renderNormPane(pane, m, bills, incl){
     '</div>' : '';
 
   // ── Table section (always shown) ──
+  const euiHdr = hasEUI ? '<th>kWh/sqft</th>' : '';
   const tableSection =
     '<div>'+
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">Monthly Detail + Weather Data</div>'+
       '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:340px;overflow-y:auto">'+
         '<table class="ma-tbl">'+
-          '<thead><tr><th>Month</th><th>Days</th><th>'+unit+'</th><th>'+normColHdr+'</th><th>HDD</th><th>CDD</th><th>Avg °F</th><th>'+unit+'/HDD</th><th>Cost</th><th></th></tr></thead>'+
+          '<thead><tr><th>Month</th><th>Days</th><th>'+unit+'</th><th>'+normColHdr+'</th><th>HDD</th><th>CDD</th><th>Avg °F</th><th>'+unit+'/'+weatherDDLabel+'</th>'+euiHdr+'<th>Cost</th><th></th></tr></thead>'+
           '<tbody>'+tblRows+'</tbody>'+
         '</table>'+
       '</div>'+
@@ -2757,7 +2791,7 @@ function renderNormPane(pane, m, bills, incl){
   pane.innerHTML = statsHTML + controlBar + wddBtn + wddNotice + chartSection + tableSection;
 
   if(udNormChartVis){
-    requestAnimationFrame(()=>{ drawNormChart('normChart', rows, unit, metric); });
+    requestAnimationFrame(()=>{ drawNormChart('normChart', rows, unit, metric, weatherDDLabel); });
   }
 }
 
@@ -2766,16 +2800,17 @@ function maStat(val, unit, lbl){
     '<div class="ma-stat-val">'+val+'<span class="ma-stat-unit"> '+unit+'</span></div></div>';
 }
 
-function drawNormChart(canvasId, rows, unit, metric){
+function drawNormChart(canvasId, rows, unit, metric, weatherDDLabel){
+  weatherDDLabel = weatherDDLabel || 'DD';
   const canvas=document.getElementById(canvasId); if(!canvas) return;
   if(_maCharts[canvasId]){ _maCharts[canvasId].destroy(); }
   const labels=rows.map(r=>r.label);
   const blColor=rows.map(r=>r.isBaseline?'rgba(0,212,170,0.85)':'rgba(100,160,255,0.75)');
   let dataVals, yLabel, tooltipFmt;
   if(metric==='weather'){
-    dataVals   = rows.map(r=>r.hddNorm!=null ? +r.hddNorm.toFixed(3) : null);
-    yLabel     = unit+'/HDD';
-    tooltipFmt = v=>v!=null?v.toFixed(3)+' '+unit+'/HDD':'No data';
+    dataVals   = rows.map(r=>r.weatherNorm!=null ? +r.weatherNorm.toFixed(3) : null);
+    yLabel     = unit+'/'+weatherDDLabel;
+    tooltipFmt = v=>v!=null?v.toFixed(3)+' '+unit+'/'+weatherDDLabel:'No data';
   } else if(metric==='total'){
     dataVals   = rows.map(r=>+r.usage.toFixed(1));
     yLabel     = unit+'/Month';
@@ -2978,18 +3013,25 @@ function renderBaselinePane(pane, m, bills, incl){
   const hasBl=blRows.length>=3;
 
   // Summary stats
+  const b3=getUDBldg(udSelProjId,udSelBldgId);
+  const sqftBl=parseInt(b3?.sqft)||0;
+  const hasEUI_bl= m.commodity==='Electric' && sqftBl>0;
   let blStatsInner='';
   if(hasBl){
     const avg=blRows.reduce((s,r)=>s+r.usagePerDay,0)/blRows.length;
     const total=blRows.reduce((s,r)=>s+r.usage,0);
     const cost=blRows.reduce((s,r)=>s+r.cost,0);
-    const avgHDD=blRows.filter(r=>r.hdd!=null&&r.hdd>0).reduce((s,r)=>s+r.hdd,0)/Math.max(1,blRows.filter(r=>r.hdd!=null&&r.hdd>0).length);
+    const hddBlRows=blRows.filter(r=>r.hdd!=null&&r.hdd>0);
+    const avgHDD=hddBlRows.length?hddBlRows.reduce((s,r)=>s+r.hdd,0)/hddBlRows.length:null;
+    // Baseline EUI: avg monthly kWh / sqft * 3.412 * 12 → kBtu/sqft/yr
+    const blEUI = hasEUI_bl ? (total/blRows.length/sqftBl * 3.412 * 12) : null;
     blStatsInner=
       maStat(blRows.length+'','months','Baseline Period')+
       maStat(avg.toFixed(2),unit+'/day avg','Avg Daily Use')+
       maStat(total.toLocaleString(undefined,{maximumFractionDigits:0}),unit,'Total Use')+
       maStat(cost?'$'+cost.toLocaleString(undefined,{maximumFractionDigits:0}):'—','total','Total Cost')+
-      (avgHDD?maStat(avgHDD.toFixed(0),'HDD avg','Avg Monthly HDD'):'');
+      (avgHDD!=null?maStat(avgHDD.toFixed(0),'HDD avg','Avg Monthly HDD'):'')+
+      (blEUI!=null?maStat(blEUI.toFixed(1),'kBtu/sqft/yr','Baseline EUI'):'');
   }
 
   // Month checkboxes
@@ -3009,22 +3051,27 @@ function renderBaselinePane(pane, m, bills, incl){
 
   // Chart control bar
   const chartBtnLabel = udBlChartVis ? '📉 Hide Chart' : '📊 Show Chart';
+  const blChartLabel = udBlMetric==='total'
+    ? unit+'/Month — Baseline Highlighted'+(udBlOverlay?' + Raw Bills':'')
+    : unit+'/Day — Baseline Highlighted'+(udBlOverlay?' + Raw Bills':'');
   const blControlBar =
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:12px">'+
       '<button class="ud-incl-btn" onclick="toggleBlChart()" style="background:var(--s3);border-color:var(--border2);color:var(--text2)">'+chartBtnLabel+'</button>'+
+      '<div style="width:1px;height:20px;background:var(--border);margin:0 2px"></div>'+
+      '<span style="font-size:11px;color:var(--text2)">Metric:</span>'+
+      '<button class="ud-incl-btn'+(udBlMetric==='total'?' sel':'')+'" onclick="setBlMetric(\'total\')">'+unit+'/Month</button>'+
+      '<button class="ud-incl-btn'+(udBlMetric==='perday'?' sel':'')+'" onclick="setBlMetric(\'perday\')">'+unit+'/Day</button>'+
       (udBlChartVis ?
         '<div style="width:1px;height:20px;background:var(--border);margin:0 2px"></div>'+
         '<span style="font-size:11px;color:var(--text2)">Overlay:</span>'+
-        '<button class="ud-incl-btn'+(udBlOverlay?' sel':'')+'" onclick="toggleBlOverlay()">📋 Show Bill Data</button>'
+        '<button class="ud-incl-btn'+(udBlOverlay?' sel':'')+'" onclick="toggleBlOverlay()">📋 Raw Bills</button>'
       : '')+
     '</div>';
 
   // Chart section
   const chartSection = udBlChartVis ?
     '<div style="margin-bottom:14px">'+
-      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+
-        unit+'/Day — Baseline Highlighted'+(udBlOverlay?' + Raw Bill Data':'')+
-      '</div>'+
+      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+blChartLabel+'</div>'+
       '<div class="ma-chart-wrap"><canvas id="blChart"></canvas></div>'+
     '</div>' : '';
 
@@ -3049,7 +3096,7 @@ function renderBaselinePane(pane, m, bills, incl){
     '</div>';
 
   if(udBlChartVis){
-    requestAnimationFrame(()=>{ drawBlChart('blChart', rows, unit, bills, incl, udBlOverlay); });
+    requestAnimationFrame(()=>{ drawBlChart('blChart', rows, unit, bills, incl, udBlOverlay, udBlMetric); });
   }
 }
 
@@ -3089,23 +3136,29 @@ function refreshBaselineStats(mid){
   });
 
   // Update stats
+  const b4=getUDBldg(udSelProjId,udSelBldgId);
+  const sqftR=parseInt(b4?.sqft)||0;
+  const hasEUI_r=m.commodity==='Electric'&&sqftR>0;
   const statsEl=document.getElementById('blStatsWrap');
   if(statsEl && hasBl){
     const avg=blRows.reduce((s,r)=>s+r.usagePerDay,0)/blRows.length;
     const total=blRows.reduce((s,r)=>s+r.usage,0);
     const cost=blRows.reduce((s,r)=>s+r.cost,0);
-    const avgHDD=blRows.filter(r=>r.hdd).reduce((s,r)=>s+r.hdd,0)/Math.max(1,blRows.filter(r=>r.hdd).length);
+    const hddBlR=blRows.filter(r=>r.hdd!=null&&r.hdd>0);
+    const avgHDD=hddBlR.length?hddBlR.reduce((s,r)=>s+r.hdd,0)/hddBlR.length:null;
+    const blEUI=hasEUI_r?(total/blRows.length/sqftR*3.412*12):null;
     statsEl.innerHTML=
       maStat(blRows.length+'','months','Baseline Period')+
       maStat(avg.toFixed(2),unit+'/day avg','Avg Daily Use')+
       maStat(total.toLocaleString(undefined,{maximumFractionDigits:0}),unit,'Total Use')+
       maStat(cost?'$'+cost.toLocaleString(undefined,{maximumFractionDigits:0}):'—','total','Total Cost')+
-      (avgHDD?maStat(avgHDD.toFixed(0),'HDD avg','Avg Monthly HDD'):'');
+      (avgHDD!=null?maStat(avgHDD.toFixed(0),'HDD avg','Avg Monthly HDD'):'')+
+      (blEUI!=null?maStat(blEUI.toFixed(1),'kBtu/sqft/yr','Baseline EUI'):'');
   }
 
-  // Redraw chart (colors update based on new baseline)
+  // Redraw chart with current metric/overlay state
   if(udBlChartVis){
-    requestAnimationFrame(()=>{ drawBlChart('blChart',rows,unit,bills,incl,udBlOverlay); });
+    requestAnimationFrame(()=>{ drawBlChart('blChart',rows,unit,bills,incl,udBlOverlay,udBlMetric); });
   }
 
   // Update save button
@@ -3131,37 +3184,43 @@ function saveBaseline(mid){
   showToast('Baseline saved — '+checked.length+' months ✓');
 }
 
-function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay){
+function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay, metric){
+  metric = metric || 'total'; // default monthly
   const canvas=document.getElementById(canvasId); if(!canvas) return;
   if(_maCharts[canvasId]){_maCharts[canvasId].destroy();}
   const labels=rows.map(r=>r.label);
-  const normData=rows.map(r=>+r.usagePerDay.toFixed(2));
+  const isTotal = metric==='total';
+  const normData = isTotal ? rows.map(r=>+r.usage.toFixed(0)) : rows.map(r=>+r.usagePerDay.toFixed(2));
+  const yLabel = isTotal ? unit+'/Month' : unit+'/Day';
   const normColors=rows.map(r=>r.isBaseline?'rgba(0,212,170,0.85)':'rgba(120,130,160,0.45)');
   const normBorders=normColors.map(c=>c.replace('0.85','1').replace('0.45','0.7'));
 
   const datasets=[{
-    label: unit+'/Day (Normalized)',
+    label: yLabel+' (Normalized)',
     data: normData,
     backgroundColor: normColors,
     borderColor: normBorders,
     borderWidth:1, borderRadius:3,
   }];
 
-  // Overlay: raw bill data — plot kWh/Day from actual bills mapped by their norm month
+  // Overlay: raw bill data mapped by normMonth
   if(showOverlay && bills && bills.length){
-    // Build a map from ym → avg usage/day from raw bills (using normMonth majority-rule)
     const billByYm={};
     bills.forEach(b=>{
       if(!b.start||!b.end) return;
       const ym=normMonth(b.start,b.end,incl);
-      const isElec=unit==='kWh', isGas=unit==='Therms';
-      const usage=isElec?(parseFloat(b.kwh)||0):isGas?(parseFloat(b.therms)||0):(parseFloat(b.usage)||0);
+      const isElec=unit==='kWh', isGasU=unit==='Therms';
+      const usage=isElec?(parseFloat(b.kwh)||0):isGasU?(parseFloat(b.therms)||0):(parseFloat(b.usage)||0);
       const days=Math.max(1,parseInt(calcDays(b.start,b.end,incl))||1);
       if(!billByYm[ym]||usage>0) billByYm[ym]={usage, days, perDay:+(usage/days).toFixed(2)};
     });
-    const rawData=rows.map(r=>billByYm[r.ym]!=null ? billByYm[r.ym].perDay : null);
+    const rawData=rows.map(r=>{
+      const bd=billByYm[r.ym];
+      if(!bd) return null;
+      return isTotal ? +bd.usage.toFixed(0) : bd.perDay;
+    });
     datasets.push({
-      label: unit+'/Day (Raw Bills)',
+      label: yLabel+' (Raw Bills)',
       data: rawData,
       type: 'line',
       borderColor: 'rgba(245,158,11,0.85)',
@@ -3183,12 +3242,12 @@ function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay){
         legend:{display:showOverlay, labels:{color:'rgba(200,210,230,0.85)',font:{size:11},boxWidth:14,padding:12}},
         tooltip:{callbacks:{label:ctx=>{
           const v=ctx.parsed.y;
-          return v!=null ? ctx.dataset.label+': '+v.toFixed(2)+' '+unit+'/day' : '—';
+          return v!=null ? ctx.dataset.label+': '+(isTotal?v.toLocaleString():v.toFixed(2))+' '+yLabel : '—';
         }}}
       },
       scales:{
         x:{ticks:{font:{size:10},maxRotation:45},grid:{color:'rgba(255,255,255,0.04)'}},
-        y:{ticks:{font:{size:10}},grid:{color:'rgba(255,255,255,0.06)'},title:{display:true,text:unit+'/Day',font:{size:10}}}
+        y:{ticks:{font:{size:10}},grid:{color:'rgba(255,255,255,0.06)'},title:{display:true,text:yLabel,font:{size:10}}}
       }
     }
   });
@@ -3206,6 +3265,7 @@ function renderPerfPane(pane, m, bills, incl){
     return;
   }
   const unit=m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
+  const isElec=m.commodity==='Electric';
   const {byYm: weatherByYm} = getWeatherForBuilding();
   const allRows=getNormRows(m,bills,incl,weatherByYm);
   const blRows=allRows.filter(r=>bl.months.includes(r.ym));
@@ -3213,13 +3273,17 @@ function renderPerfPane(pane, m, bills, incl){
   const blEnd=bl.months.slice().sort()[bl.months.length-1];
   const truePostRows=allRows.filter(r=>r.ym>blEnd);
 
-  const blAvg=blRows.length?blRows.reduce((s,r)=>s+r.usagePerDay,0)/blRows.length:0;
+  // EUI
+  const bldg5=getUDBldg(udSelProjId,udSelBldgId);
+  const sqft5=parseInt(bldg5?.sqft)||0;
+  const hasEUI_p=isElec&&sqft5>0;
 
-  // Year filter options based on available post-baseline data
+  const blAvgDay=blRows.length?blRows.reduce((s,r)=>s+r.usagePerDay,0)/blRows.length:0;
+  const blAvgMo=blRows.length?blRows.reduce((s,r)=>s+r.usage,0)/blRows.length:0;
+
+  // Year filter
   const maxYears=Math.max(1,Math.ceil(truePostRows.length/12));
   const yearOptions=['all',...Array.from({length:maxYears},(_,i)=>String(i+1))];
-
-  // Apply year filter
   let filteredPostRows=truePostRows;
   if(_perfYearFilter!=='all'){
     const n=parseInt(_perfYearFilter);
@@ -3227,18 +3291,27 @@ function renderPerfPane(pane, m, bills, incl){
   }
 
   // Stats
-  const postAvg=filteredPostRows.length?filteredPostRows.reduce((s,r)=>s+r.usagePerDay,0)/filteredPostRows.length:0;
-  const savPct=blAvg>0?((blAvg-postAvg)/blAvg*100):0;
+  const postAvgDay=filteredPostRows.length?filteredPostRows.reduce((s,r)=>s+r.usagePerDay,0)/filteredPostRows.length:0;
+  const postAvgMo=filteredPostRows.length?filteredPostRows.reduce((s,r)=>s+r.usage,0)/filteredPostRows.length:0;
+  const savPct=blAvgDay>0?((blAvgDay-postAvgDay)/blAvgDay*100):0;
   const blCost=blRows.reduce((s,r)=>s+r.cost,0);
   const postCost=filteredPostRows.reduce((s,r)=>s+r.cost,0);
   const savCost=blCost&&postCost?blCost-postCost:null;
 
+  // Rolling 12-mo EUI
+  const last12post=truePostRows.slice(-12);
+  const rolling12kWh=last12post.reduce((s,r)=>s+r.usage,0);
+  const rolling12EUI=hasEUI_p&&last12post.length===12?(rolling12kWh*3.412/sqft5):null;
+  const blEUI=hasEUI_p&&blRows.length?(blAvgMo*12*3.412/sqft5):null;
+
   const statsHTML=
-    '<div class="ma-stats" style="margin-bottom:14px">'+
-      maStat(blAvg.toFixed(2),unit+'/day','Baseline Avg/Day')+
-      maStat(postAvg.toFixed(2),unit+'/day','Post-BL Avg/Day')+
+    '<div class="ma-stats" style="margin-bottom:12px">'+
+      maStat(blAvgMo.toFixed(0),unit+'/mo avg','Baseline Avg/Month')+
+      maStat(postAvgMo.toFixed(0),unit+'/mo avg','Post-BL Avg/Month')+
       maStat((savPct>=0?'−':'+')+(Math.abs(savPct)).toFixed(1)+'%','vs baseline',savPct>=0?'Reduction':'Increase')+
       (savCost!==null?maStat((savCost>=0?'−':'+')+' $'+Math.abs(savCost).toLocaleString(undefined,{maximumFractionDigits:0}),'total','Cost Delta'):'')+
+      (blEUI!=null?maStat(blEUI.toFixed(1),'kBtu/sqft/yr','Baseline EUI'):'')+
+      (rolling12EUI!=null?maStat(rolling12EUI.toFixed(1),'kBtu/sqft/yr','Rolling 12-Mo EUI'):'')+
     '</div>';
 
   // Year filter pills
@@ -3252,61 +3325,92 @@ function renderPerfPane(pane, m, bills, incl){
       ).join('')+
     '</div>';
 
-  // Chart rows: era-tagged, filtered to year selection
+  // Chart control bar
+  const perfChartBtn = _perfChartVis ? '📉 Hide Chart' : '📊 Show Chart';
+  const perfChartLabel= _perfMetric==='total'
+    ? unit+'/Month vs Baseline'+(  _perfOverlay?' + Raw Bills':'')
+    : unit+'/Day vs Baseline'+(_perfOverlay?' + Raw Bills':'');
+  const perfControlBar=
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:10px">'+
+      '<button class="ud-incl-btn" onclick="togglePerfChart()" style="background:var(--s3);border-color:var(--border2);color:var(--text2)">'+perfChartBtn+'</button>'+
+      '<div style="width:1px;height:20px;background:var(--border);margin:0 2px"></div>'+
+      '<span style="font-size:11px;color:var(--text2)">Metric:</span>'+
+      '<button class="ud-incl-btn'+(_perfMetric==='total'?' sel':'')+'" onclick="setPerfMetric(\'total\')">'+unit+'/Month</button>'+
+      '<button class="ud-incl-btn'+(_perfMetric==='perday'?' sel':'')+'" onclick="setPerfMetric(\'perday\')">'+unit+'/Day</button>'+
+      (_perfChartVis?
+        '<div style="width:1px;height:20px;background:var(--border);margin:0 2px"></div>'+
+        '<span style="font-size:11px;color:var(--text2)">Overlay:</span>'+
+        '<button class="ud-incl-btn'+(_perfOverlay?' sel':'')+'" onclick="togglePerfOverlay()">📋 Raw Bills</button>'
+      :'')+
+    '</div>';
+
+  // Chart rows: era-tagged
   const postYmCutoff=_perfYearFilter==='all'?null:(filteredPostRows.length?filteredPostRows[filteredPostRows.length-1].ym:null);
   const chartRows=allRows
     .filter(r=>r.ym<blStart || bl.months.includes(r.ym) || r.ym<=blEnd || _perfYearFilter==='all' || r.ym<=postYmCutoff)
     .map(r=>({...r, era:bl.months.includes(r.ym)?'baseline':r.ym<blStart?'pre':'post'}));
-
   const barColors=chartRows.map(r=>
     r.era==='baseline'?'rgba(0,212,170,0.8)':
     r.era==='pre'?'rgba(120,130,160,0.35)':'rgba(100,160,255,0.75)'
   );
 
-  // Savings table — post-baseline only vs expected from baseline avg
+  // Savings table — post-baseline only
   const perfRows=filteredPostRows.map(r=>{
-    const expUsage=blAvg*r.days;
-    const sav=expUsage-r.usage;
+    const expUsage=_perfMetric==='total' ? blAvgMo : blAvgDay*r.days;
+    const actual  =_perfMetric==='total' ? r.usage  : r.usagePerDay;
+    const sav=expUsage-actual;
     const savPc=expUsage>0?sav/expUsage*100:0;
+    const euiCell=hasEUI_p?`<td class="mono" style="color:var(--text3)">${(r.usage/sqft5).toFixed(4)}</td>`:'';
     return '<tr>'+
       '<td class="mono">'+r.label+'</td>'+
       '<td class="mono">'+r.days+'</td>'+
-      '<td class="mono" style="color:var(--text2)">'+expUsage.toFixed(0)+'</td>'+
-      '<td class="mono">'+r.usage.toLocaleString(undefined,{maximumFractionDigits:0})+'</td>'+
+      '<td class="mono" style="color:var(--text2)">'+(_perfMetric==='total'?expUsage.toFixed(0):expUsage.toFixed(2))+'</td>'+
+      '<td class="mono">'+(_perfMetric==='total'?r.usage.toLocaleString(undefined,{maximumFractionDigits:0}):r.usagePerDay.toFixed(2))+'</td>'+
       '<td class="mono" style="color:'+(sav>=0?'var(--em)':'var(--danger)')+'">'+
-        (sav>=0?'−':'+')+(Math.abs(sav)).toFixed(0)+'</td>'+
+        (sav>=0?'−':'+')+(Math.abs(sav)).toFixed(_perfMetric==='total'?0:2)+'</td>'+
       '<td class="mono" style="color:'+(savPc>=0?'var(--em)':'var(--danger)')+'">'+
         (savPc>=0?'−':'+')+(Math.abs(savPc)).toFixed(1)+'%</td>'+
+      euiCell+
     '</tr>';
   }).join('');
 
-  pane.innerHTML=
-    statsHTML+yearPills+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">'+
-      '<div>'+
-        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+unit+'/Day vs Baseline</div>'+
-        '<div class="ma-chart-wrap"><canvas id="perfChart"></canvas></div>'+
-        '<div style="display:flex;gap:10px;margin-top:8px;font-size:11px;color:var(--text2);flex-wrap:wrap">'+
-          '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(120,130,160,0.45);border-radius:2px;display:inline-block"></span>Pre-Baseline</span>'+
-          '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(0,212,170,0.8);border-radius:2px;display:inline-block"></span>Baseline</span>'+
-          '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(100,160,255,0.75);border-radius:2px;display:inline-block"></span>Post-Baseline</span>'+
-          '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:var(--warn);border-radius:1px;display:inline-block"></span>Baseline Avg</span>'+
-        '</div>'+
+  const euiTblHdr=hasEUI_p?'<th>kWh/sqft</th>':'';
+  const perfTableLabel=_perfMetric==='total'
+    ?'<th>Exp '+unit+'/Mo</th><th>Actual '+unit+'/Mo</th>'
+    :'<th>Exp '+unit+'/Day</th><th>Actual '+unit+'/Day</th>';
+
+  const chartSection=_perfChartVis?
+    '<div>'+
+      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+perfChartLabel+'</div>'+
+      '<div class="ma-chart-wrap"><canvas id="perfChart"></canvas></div>'+
+      '<div style="display:flex;gap:10px;margin-top:8px;font-size:11px;color:var(--text2);flex-wrap:wrap">'+
+        '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(120,130,160,0.45);border-radius:2px;display:inline-block"></span>Pre-Baseline</span>'+
+        '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(0,212,170,0.8);border-radius:2px;display:inline-block"></span>Baseline</span>'+
+        '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(100,160,255,0.75);border-radius:2px;display:inline-block"></span>Post-Baseline</span>'+
+        '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:var(--warn);border-radius:1px;display:inline-block"></span>Baseline Avg</span>'+
       '</div>'+
+    '</div>' : '<div></div>';
+
+  pane.innerHTML=
+    statsHTML+yearPills+perfControlBar+
+    '<div style="display:grid;grid-template-columns:'+(  _perfChartVis?'1fr 1fr':'1fr')+';gap:16px;align-items:start">'+
+      chartSection+
       '<div>'+
         '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:4px">Post-Baseline Monthly vs Expected</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-bottom:8px">Expected = baseline avg/day × actual billing days</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-bottom:8px">Expected = baseline avg × billing days</div>'+
         (filteredPostRows.length?
           '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto">'+
             '<table class="ma-tbl">'+
-              '<thead><tr><th>Month</th><th>Days</th><th>Expected</th><th>Actual</th><th>Saved</th><th>%</th></tr></thead>'+
+              '<thead><tr><th>Month</th><th>Days</th>'+perfTableLabel+'<th>Saved</th><th>%</th>'+euiTblHdr+'</tr></thead>'+
               '<tbody>'+perfRows+'</tbody>'+
             '</table></div>':
           '<div style="font-size:12px;color:var(--text3);padding:20px;text-align:center">No post-baseline data yet — add billing periods after <strong>'+fmtMon(blEnd+'-01')+'</strong></div>')+
       '</div>'+
     '</div>';
 
-  requestAnimationFrame(()=>{ drawPerfChart('perfChart',chartRows,blAvg,barColors,unit); });
+  if(_perfChartVis){
+    requestAnimationFrame(()=>{ drawPerfChart('perfChart', chartRows, blAvgDay, blAvgMo, barColors, unit, bills, incl, _perfMetric, _perfOverlay); });
+  }
 }
 
 function setPerfYearFilter(mid, val){
@@ -3319,29 +3423,67 @@ function setPerfYearFilter(mid, val){
   renderPerfPane(pane,m,bills,incl);
 }
 
-function drawPerfChart(canvasId,rows,blAvg,colors,unit){
+function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, incl, metric, showOverlay){
+  metric = metric || 'total';
   const canvas=document.getElementById(canvasId); if(!canvas) return;
   if(_maCharts[canvasId]){_maCharts[canvasId].destroy();}
   const labels=rows.map(r=>r.label);
-  const perDay=rows.map(r=>+r.usagePerDay.toFixed(2));
+  const isTotal=metric==='total';
+  const mainData=isTotal?rows.map(r=>+r.usage.toFixed(0)):rows.map(r=>+r.usagePerDay.toFixed(2));
+  const blRef=isTotal?+blAvgMo.toFixed(0):+blAvgDay.toFixed(2);
+  const yLabel=isTotal?unit+'/Month':unit+'/Day';
+
+  const datasets=[
+    {label:yLabel,data:mainData,backgroundColor:colors,borderColor:colors.map(c=>c.replace(/[\d.]+\)$/,'1)')),borderWidth:1,borderRadius:3,order:2},
+    {label:'Baseline Avg',data:rows.map(()=>blRef),type:'line',borderColor:'rgba(245,158,11,0.9)',backgroundColor:'transparent',borderWidth:2,borderDash:[5,4],pointRadius:0,order:1},
+  ];
+
+  // Raw bill overlay
+  if(showOverlay && bills && bills.length){
+    const billByYm={};
+    bills.forEach(b=>{
+      if(!b.start||!b.end) return;
+      const ym=normMonth(b.start,b.end,incl);
+      const isElecB=unit==='kWh', isGasB=unit==='Therms';
+      const usage=isElecB?(parseFloat(b.kwh)||0):isGasB?(parseFloat(b.therms)||0):(parseFloat(b.usage)||0);
+      const days=Math.max(1,parseInt(calcDays(b.start,b.end,incl))||1);
+      if(!billByYm[ym]||usage>0) billByYm[ym]={usage, days};
+    });
+    const rawData=rows.map(r=>{
+      const bd=billByYm[r.ym];
+      if(!bd) return null;
+      return isTotal ? +bd.usage.toFixed(0) : +(bd.usage/bd.days).toFixed(2);
+    });
+    datasets.push({
+      label: yLabel+' (Raw Bills)',
+      data: rawData,
+      type:'line',
+      borderColor:'rgba(251,146,60,0.9)',
+      backgroundColor:'rgba(251,146,60,0.12)',
+      borderWidth:2,
+      pointRadius:3,
+      pointBackgroundColor:'rgba(251,146,60,1)',
+      tension:0.3,
+      fill:false,
+      order:0,
+    });
+  }
+
   _maCharts[canvasId]=new Chart(canvas,{
     type:'bar',
-    data:{
-      labels,
-      datasets:[
-        {label:unit+'/Day',data:perDay,backgroundColor:colors,borderColor:colors.map(c=>c.replace(/[\d.]+\)$/,'1)')),borderWidth:1,borderRadius:3,order:2},
-        {label:'Baseline Avg',data:rows.map(()=>+blAvg.toFixed(2)),type:'line',borderColor:'rgba(245,158,11,0.9)',backgroundColor:'transparent',borderWidth:2,borderDash:[5,4],pointRadius:0,order:1},
-      ]
-    },
+    data:{labels, datasets},
     options:{responsive:true,maintainAspectRatio:true,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{
-        if(ctx.dataset.type==='line') return 'Baseline avg: '+ctx.parsed.y.toFixed(2)+' '+unit+'/day';
-        const era=rows[ctx.dataIndex]?.era;
-        const tag=era==='pre'?'Pre-Baseline':era==='baseline'?'Baseline':'Post-Baseline';
-        return tag+': '+ctx.parsed.y.toFixed(2)+' '+unit+'/day';
-      }}}},
+      plugins:{
+        legend:{display:showOverlay,labels:{color:'rgba(200,210,230,0.85)',font:{size:10},boxWidth:12,padding:10}},
+        tooltip:{callbacks:{label:ctx=>{
+          if(ctx.dataset.type==='line'&&ctx.dataset.label==='Baseline Avg') return 'Baseline avg: '+(isTotal?ctx.parsed.y.toFixed(0):ctx.parsed.y.toFixed(2))+' '+yLabel;
+          const era=rows[ctx.dataIndex]?.era;
+          const tag=era==='pre'?'Pre-Baseline':era==='baseline'?'Baseline':'Post-Baseline';
+          return (era?tag:ctx.dataset.label)+': '+(isTotal?ctx.parsed.y.toLocaleString():ctx.parsed.y.toFixed(2))+' '+yLabel;
+        }}}
+      },
       scales:{x:{ticks:{font:{size:10},maxRotation:45},grid:{color:'rgba(255,255,255,0.04)'}},
-        y:{ticks:{font:{size:10}},grid:{color:'rgba(255,255,255,0.06)'},title:{display:true,text:unit+'/Day',font:{size:10}}}}
+        y:{ticks:{font:{size:10}},grid:{color:'rgba(255,255,255,0.06)'},title:{display:true,text:yLabel,font:{size:10}}}}
     }
   });
 }
@@ -3600,40 +3742,48 @@ function renderBillRow(row, m, incl){
   const days = calcDays(row.start, row.end, incl);
   const nm = normMonthLabel(row.start, row.end, incl);
   const nmCell = `<td class="norm-mon-cell">${nm}</td>`;
+  const actionBtns = `<td style="white-space:nowrap">
+    <button class="btn-edit" onclick="openBillModal('${m.id}','${row.id}')" title="Edit">✏️</button>
+    <button class="btn-del"  onclick="deleteBillRow('${m.id}','${row.id}')" title="Delete">✕</button>
+  </td>`;
+
+  const fmt = v => (v!=null && v!=='' && !isNaN(v)) ? (+v).toLocaleString(undefined,{maximumFractionDigits:2}) : '—';
+  const fmtD= v => v ? fmtDate(v) : '—';
+
   if(m.commodity==='Electric'){
     return `<tr>
       ${nmCell}
-      <td><input type="date" value="${row.start||''}" onchange="updateBillField('${m.id}','${row.id}','start',this.value)"></td>
-      <td><input type="date" value="${row.end||''}" onchange="updateBillField('${m.id}','${row.id}','end',this.value)"></td>
-      <td class="days-cell">${days}</td>
-      <td><input type="number" value="${row.kwh||''}" placeholder="0" onchange="updateBillField('${m.id}','${row.id}','kwh',this.value)"></td>
-      <td><input type="number" value="${row.demandKW||''}" placeholder="0" onchange="updateBillField('${m.id}','${row.id}','demandKW',this.value)"></td>
-      <td><input type="number" value="${row.facKW||''}" placeholder="0" onchange="updateBillField('${m.id}','${row.id}','facKW',this.value)"></td>
-      <td><input type="number" value="${row.kwCost||''}" placeholder="0.00" onchange="updateBillField('${m.id}','${row.id}','kwCost',this.value)"></td>
-      <td><input type="number" value="${row.kwhCost||''}" placeholder="0.00" onchange="updateBillField('${m.id}','${row.id}','kwhCost',this.value)"></td>
-      <td><input type="number" value="${row.totalCost||''}" placeholder="0.00" onchange="updateBillField('${m.id}','${row.id}','totalCost',this.value)"></td>
-      <td><button class="btn-del" onclick="deleteBillRow('${m.id}','${row.id}')">✕</button></td>
+      <td class="mono">${fmtD(row.start)}</td>
+      <td class="mono">${fmtD(row.end)}</td>
+      <td class="days-cell mono">${days}</td>
+      <td class="mono">${fmt(row.kwh)}</td>
+      <td class="mono">${fmt(row.demandKW)}</td>
+      <td class="mono">${fmt(row.facKW)}</td>
+      <td class="mono">${fmt(row.kwCost)}</td>
+      <td class="mono">${fmt(row.kwhCost)}</td>
+      <td class="mono">${fmt(row.totalCost)}</td>
+      ${actionBtns}
     </tr>`;
   }
   if(m.commodity==='Gas'){
     return `<tr>
       ${nmCell}
-      <td><input type="date" value="${row.start||''}" onchange="updateBillField('${m.id}','${row.id}','start',this.value)"></td>
-      <td><input type="date" value="${row.end||''}" onchange="updateBillField('${m.id}','${row.id}','end',this.value)"></td>
-      <td class="days-cell">${days}</td>
-      <td><input type="number" value="${row.therms||''}" placeholder="0" onchange="updateBillField('${m.id}','${row.id}','therms',this.value)"></td>
-      <td><input type="number" value="${row.thermCost||''}" placeholder="0.00" onchange="updateBillField('${m.id}','${row.id}','thermCost',this.value)"></td>
-      <td><button class="btn-del" onclick="deleteBillRow('${m.id}','${row.id}')">✕</button></td>
+      <td class="mono">${fmtD(row.start)}</td>
+      <td class="mono">${fmtD(row.end)}</td>
+      <td class="days-cell mono">${days}</td>
+      <td class="mono">${fmt(row.therms)}</td>
+      <td class="mono">${fmt(row.thermCost)}</td>
+      ${actionBtns}
     </tr>`;
   }
   return `<tr>
     ${nmCell}
-    <td><input type="date" value="${row.start||''}" onchange="updateBillField('${m.id}','${row.id}','start',this.value)"></td>
-    <td><input type="date" value="${row.end||''}" onchange="updateBillField('${m.id}','${row.id}','end',this.value)"></td>
-    <td class="days-cell">${days}</td>
-    <td><input type="number" value="${row.usage||''}" placeholder="0" onchange="updateBillField('${m.id}','${row.id}','usage',this.value)"></td>
-    <td><input type="number" value="${row.cost||''}" placeholder="0.00" onchange="updateBillField('${m.id}','${row.id}','cost',this.value)"></td>
-    <td><button class="btn-del" onclick="deleteBillRow('${m.id}','${row.id}')">✕</button></td>
+    <td class="mono">${fmtD(row.start)}</td>
+    <td class="mono">${fmtD(row.end)}</td>
+    <td class="days-cell mono">${days}</td>
+    <td class="mono">${fmt(row.usage)}</td>
+    <td class="mono">${fmt(row.cost)}</td>
+    ${actionBtns}
   </tr>`;
 }
 
