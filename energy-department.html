@@ -2999,7 +2999,6 @@ function renderNormPane(pane, m, bills, incl){
       <td class="mono">${r.label}</td>
       <td class="mono">${r.days}</td>
       <td class="mono">${r.usage.toLocaleString(undefined,{maximumFractionDigits:1})}</td>
-      <td class="mono" style="color:${normColor};font-weight:600">${normVal}</td>
       ${hddCell}${cddCell}
       <td class="mono" style="color:var(--text2)">${fmtTemp(r.avgTemp)}</td>
       <td class="mono" style="color:var(--em2)">${r.weatherNorm!=null?r.weatherNorm.toFixed(3):'—'}</td>
@@ -3024,7 +3023,7 @@ function renderNormPane(pane, m, bills, incl){
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">Monthly Detail + Weather Data</div>'+
       '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:340px;overflow-y:auto">'+
         '<table class="ma-tbl">'+
-          '<thead><tr><th>Month</th><th>Days</th><th>'+unit+'</th><th>'+normColHdr+'</th><th>HDD</th><th>CDD</th><th>Avg °F</th><th>'+unit+'/'+weatherDDLabel+'</th>'+regrHdrs+euiHdr+'<th>Cost</th><th></th></tr></thead>'+
+          '<thead><tr><th>Month</th><th>Days</th><th>'+unit+'</th><th>HDD</th><th>CDD</th><th>Avg °F</th><th>'+unit+'/'+weatherDDLabel+'</th>'+regrHdrs+euiHdr+'<th>Cost</th><th></th></tr></thead>'+
           '<tbody>'+tblRows+'</tbody>'+
         '</table>'+
       '</div>'+
@@ -3304,9 +3303,33 @@ function renderBaselinePane(pane, m, bills, incl){
     const hddBlRows=blRows.filter(r=>r.hdd!=null&&r.hdd>0);
     const avgHDD=hddBlRows.length?hddBlRows.reduce((s,r)=>s+r.hdd,0)/hddBlRows.length:null;
     const blEUI = hasEUI_bl ? (total/blRows.length/sqftBl * 3.412 * 12) : null;
-    // Regression baseline avg over baseline months
     const regrBlRows=blRows.filter(r=>r.regrBaseline!=null);
     const avgRegrBl=regrBlRows.length?regrBlRows.reduce((s,r)=>s+r.regrBaseline,0)/regrBlRows.length:null;
+
+    // ── Rate calculations ──
+    const costRows = blRows.filter(r=>r.cost>0&&r.usage>0);
+    const avgRatePerUnit = costRows.length ? costRows.reduce((s,r)=>s+r.cost/r.usage,0)/costRows.length : null;
+
+    // $/kW (demand) — electric only, from raw bills in baseline months
+    let avgRatePerKW = null;
+    if(m.commodity==='Electric'){
+      const blBills = bills.filter(b=>{
+        // map bill to ym and check if that ym is in blMonths
+        const ym = normMonth(b.start,b.end,incl);
+        return blMonths.includes(ym);
+      });
+      const demandBills = blBills.filter(b=>(b.demandKW||0)>0&&(b.kwCost||0)>0);
+      avgRatePerKW = demandBills.length ? demandBills.reduce((s,b)=>s+(b.kwCost/b.demandKW),0)/demandBills.length : null;
+    }
+
+    // Summer (Jun–Sep) vs Winter (Dec–Mar) blended rates
+    const summerRows = costRows.filter(r=>{ const mo=parseInt(r.ym.split('-')[1]); return mo>=6&&mo<=9; });
+    const winterRows = costRows.filter(r=>{ const mo=parseInt(r.ym.split('-')[1]); return mo===12||mo<=3; });
+    const summerRate = summerRows.length ? summerRows.reduce((s,r)=>s+r.cost/r.usage,0)/summerRows.length : null;
+    const winterRate = winterRows.length ? winterRows.reduce((s,r)=>s+r.cost/r.usage,0)/winterRows.length : null;
+
+    const fmtRate = v => v!=null ? '$'+v.toFixed(4) : '—';
+
     blStatsInner=
       maStat(blRows.length+'','months','Baseline Period')+
       maStat(avgMo.toLocaleString(undefined,{maximumFractionDigits:0}),unit+'/mo avg','Avg Monthly Use')+
@@ -3314,7 +3337,12 @@ function renderBaselinePane(pane, m, bills, incl){
       (avgRegrBl!=null?maStat(avgRegrBl.toLocaleString(undefined,{maximumFractionDigits:0}),unit+'/mo avg','Reg. Baseline Avg'):'<div style="font-size:11px;color:var(--text3);align-self:center;padding:4px">Upload weather data for regression baseline</div>')+
       maStat(cost?'$'+cost.toLocaleString(undefined,{maximumFractionDigits:0}):'—','total','Total Cost')+
       (avgHDD!=null?maStat(avgHDD.toFixed(0),'HDD avg','Avg Monthly HDD'):'')+
-      (blEUI!=null?maStat(blEUI.toFixed(1),'kBtu/sqft/yr','Baseline EUI'):'');
+      (blEUI!=null?maStat(blEUI.toFixed(1),'kBtu/sqft/yr','Baseline EUI'):'')+
+      // Rate stats
+      (avgRatePerUnit!=null?maStat(fmtRate(avgRatePerUnit),'/'+unit+' blended','Avg Rate')  :'')+
+      (avgRatePerKW!=null  ?maStat('$'+avgRatePerKW.toFixed(2),'/kW demand','Avg $/kW')     :'')+
+      (summerRate!=null    ?maStat(fmtRate(summerRate),'/'+unit+' (Jun–Sep)','Summer Rate') :'')+
+      (winterRate!=null    ?maStat(fmtRate(winterRate),'/'+unit+' (Dec–Mar)','Winter Rate') :'');
   }
 
   // Month checkboxes
@@ -3433,18 +3461,44 @@ function refreshBaselineStats(mid){
   const statsEl=document.getElementById('blStatsWrap');
   if(statsEl && hasBl){
     const avg=blRows.reduce((s,r)=>s+r.usagePerDay,0)/blRows.length;
+    const avgMo=blRows.reduce((s,r)=>s+r.usage,0)/blRows.length;
     const total=blRows.reduce((s,r)=>s+r.usage,0);
     const cost=blRows.reduce((s,r)=>s+r.cost,0);
     const hddBlR=blRows.filter(r=>r.hdd!=null&&r.hdd>0);
     const avgHDD=hddBlR.length?hddBlR.reduce((s,r)=>s+r.hdd,0)/hddBlR.length:null;
     const blEUI=hasEUI_r?(total/blRows.length/sqftR*3.412*12):null;
+    const regrBlR=blRows.filter(r=>r.regrBaseline!=null);
+    const avgRegrBl=regrBlR.length?regrBlR.reduce((s,r)=>s+r.regrBaseline,0)/regrBlR.length:null;
+
+    // Rate calculations
+    const costRows=blRows.filter(r=>r.cost>0&&r.usage>0);
+    const avgRatePerUnit=costRows.length?costRows.reduce((s,r)=>s+r.cost/r.usage,0)/costRows.length:null;
+    let avgRatePerKW=null;
+    if(m.commodity==='Electric'){
+      const inclFlag=m.inclusive!==false;
+      const blBills=bills.filter(b=>blMonths.includes(normMonth(b.start,b.end,inclFlag)));
+      const dBills=blBills.filter(b=>(b.demandKW||0)>0&&(b.kwCost||0)>0);
+      avgRatePerKW=dBills.length?dBills.reduce((s,b)=>s+(b.kwCost/b.demandKW),0)/dBills.length:null;
+    }
+    const sumR=costRows.filter(r=>{ const mo=parseInt(r.ym.split('-')[1]); return mo>=6&&mo<=9; });
+    const winR=costRows.filter(r=>{ const mo=parseInt(r.ym.split('-')[1]); return mo===12||mo<=3; });
+    const summerRate=sumR.length?sumR.reduce((s,r)=>s+r.cost/r.usage,0)/sumR.length:null;
+    const winterRate=winR.length?winR.reduce((s,r)=>s+r.cost/r.usage,0)/winR.length:null;
+    const fmtRate=v=>v!=null?'$'+v.toFixed(4):'—';
+    const unit2=m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
+
     statsEl.innerHTML=
       maStat(blRows.length+'','months','Baseline Period')+
-      maStat(avg.toFixed(2),unit+'/day avg','Avg Daily Use')+
-      maStat(total.toLocaleString(undefined,{maximumFractionDigits:0}),unit,'Total Use')+
+      maStat(avgMo.toLocaleString(undefined,{maximumFractionDigits:0}),unit2+'/mo avg','Avg Monthly Use')+
+      maStat(avg.toFixed(2),unit2+'/day avg','Avg Daily Use')+
+      (avgRegrBl!=null?maStat(avgRegrBl.toLocaleString(undefined,{maximumFractionDigits:0}),unit2+'/mo avg','Reg. Baseline Avg'):'')+
       maStat(cost?'$'+cost.toLocaleString(undefined,{maximumFractionDigits:0}):'—','total','Total Cost')+
       (avgHDD!=null?maStat(avgHDD.toFixed(0),'HDD avg','Avg Monthly HDD'):'')+
-      (blEUI!=null?maStat(blEUI.toFixed(1),'kBtu/sqft/yr','Baseline EUI'):'');
+      (blEUI!=null?maStat(blEUI.toFixed(1),'kBtu/sqft/yr','Baseline EUI'):'')+
+      (avgRatePerUnit!=null?maStat(fmtRate(avgRatePerUnit),'/'+unit2+' blended','Avg Rate'):'')+
+      (avgRatePerKW!=null?maStat('$'+avgRatePerKW.toFixed(2),'/kW demand','Avg $/kW'):'')+
+      (summerRate!=null?maStat(fmtRate(summerRate),'/'+unit2+' (Jun–Sep)','Summer Rate'):'')+
+      (winterRate!=null?maStat(fmtRate(winterRate),'/'+unit2+' (Dec–Mar)','Winter Rate'):'');
   }
 
   // Redraw chart with current metric/overlay state
