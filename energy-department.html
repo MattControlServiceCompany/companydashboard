@@ -1449,6 +1449,8 @@ function init(){
   // Restore last active view from session
   const lastView = sessionStorage.getItem('ch_activeView');
   if(lastView && document.getElementById('view-'+lastView)) sv(lastView);
+  // Restore projects drill-down if on projects page
+  if(lastView === 'projects') restoreProjSession();
 }
 
 function updateHomeStats(){
@@ -1688,6 +1690,9 @@ function showList(){
   document.getElementById('projListView').style.display='block';
   document.getElementById('projDetailView').style.display='none';
   document.querySelectorAll('.spfi').forEach(c=>c.classList.remove('active'));
+  window._activeProjId = null;
+  window._activeProjTab = 'notes';
+  saveProjSession();
 }
 function backToList(){showList();}
 
@@ -1735,6 +1740,9 @@ function openDetail(id){
   document.querySelectorAll('.spfi').forEach(c=>c.classList.remove('active'));
   document.querySelectorAll(`.spfi[data-pid="${id}"]`).forEach(c=>c.classList.add('active'));
   document.querySelector('.content')?.scrollTo({top:0,behavior:'smooth'});
+  window._activeProjId = id;
+  if(!window._activeProjTab) window._activeProjTab = 'notes';
+  saveProjSession();
 }
 
 function renderDetail(p){
@@ -1861,6 +1869,8 @@ function sPTab(tab,el){
   document.querySelectorAll('.ptab').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('.pdt').forEach(b=>b.classList.remove('active'));
   document.getElementById('ptab-'+tab).classList.add('active'); el?.classList.add('active');
+  window._activeProjTab = tab;
+  saveProjSession();
 }
 function autoSaveNotes(id){
   const p=projects.find(p=>p.id===id);
@@ -2747,15 +2757,15 @@ function regressionBaseline(row, reg, commodity, normBasis){
 }
 
 function setNormMode(mode){ udNormMode=mode; renderMeterWorkspace(); }
-function setNormMetric(metric){ udNormMetric=metric; renderMeterWorkspace(); }
-function toggleNormChart(){ udNormChartVis=!udNormChartVis; renderMeterWorkspace(); }
-function toggleBlChart(){ udBlChartVis=!udBlChartVis; renderMeterWorkspace(); }
-function toggleBlOverlay(){ udBlOverlay=!udBlOverlay; renderMeterWorkspace(); }
-function setBlMetric(m){ udBlMetric=m; renderMeterWorkspace(); }
-function setPerfMetric(m){ _perfMetric=m; renderMeterWorkspace(); }
-function togglePerfOverlay(){ _perfOverlay=!_perfOverlay; renderMeterWorkspace(); }
-function togglePerfChart(){ _perfChartVis=!_perfChartVis; renderMeterWorkspace(); }
-function toggleRegressionPanel(){ _regressionPanelVis=!_regressionPanelVis; renderMeterWorkspace(); }
+function setNormMetric(metric){ udNormMetric=metric; saveUDSession(); renderMeterWorkspace(); }
+function toggleNormChart(){ udNormChartVis=!udNormChartVis; saveUDSession(); renderMeterWorkspace(); }
+function toggleBlChart(){ udBlChartVis=!udBlChartVis; saveUDSession(); renderMeterWorkspace(); }
+function toggleBlOverlay(){ udBlOverlay=!udBlOverlay; saveUDSession(); renderMeterWorkspace(); }
+function setBlMetric(m){ udBlMetric=m; saveUDSession(); renderMeterWorkspace(); }
+function setPerfMetric(m){ _perfMetric=m; saveUDSession(); renderMeterWorkspace(); }
+function togglePerfOverlay(){ _perfOverlay=!_perfOverlay; saveUDSession(); renderMeterWorkspace(); }
+function togglePerfChart(){ _perfChartVis=!_perfChartVis; saveUDSession(); renderMeterWorkspace(); }
+function toggleRegressionPanel(){ _regressionPanelVis=!_regressionPanelVis; saveUDSession(); renderMeterWorkspace(); }
 function setProjectNormBasis(pid, basis){
   const proj = getUDProj(pid);
   proj.normBasis = basis;
@@ -4323,25 +4333,73 @@ function goToProjectUtility(projId){
 }
 
 /* ── INIT UTILITY TOOL ── */
-/* ── UTILITY SESSION PERSISTENCE ── */
+/* ── SESSION PERSISTENCE ── */
+
+// ── Projects page ──
+function saveProjSession(){
+  const isDetail = document.getElementById('projDetailView')?.style.display !== 'none';
+  sessionStorage.setItem('ch_proj', JSON.stringify({
+    view: isDetail ? 'detail' : 'list',
+    projId: isDetail ? (window._activeProjId || null) : null,
+    tab: window._activeProjTab || 'notes',
+  }));
+}
+
+function restoreProjSession(){
+  try{
+    const s = JSON.parse(sessionStorage.getItem('ch_proj')||'{}');
+    if(s.view === 'detail' && s.projId){
+      const p = projects.find(p=>p.id===s.projId);
+      if(p){
+        openDetail(s.projId);
+        if(s.tab && s.tab !== 'notes'){
+          // find and click the matching tab button
+          const btn = document.querySelector(`.pdt[onclick*="sPTab('${s.tab}'"]`);
+          if(btn) sPTab(s.tab, btn);
+        }
+      }
+    }
+  }catch(e){}
+}
+
+// ── Utility Data ──
 function saveUDSession(){
   sessionStorage.setItem('ch_ud', JSON.stringify({
-    proj: udSelProjId,
-    bldg: udSelBldgId,
+    proj:  udSelProjId,
+    bldg:  udSelBldgId,
     meter: udActiveMid,
-    tab: udActiveTab,
+    tab:   udActiveTab,
+    normMetric:  udNormMetric,
+    normChart:   udNormChartVis,
+    blMetric:    udBlMetric,
+    blChart:     udBlChartVis,
+    blOverlay:   udBlOverlay,
+    perfMetric:  _perfMetric,
+    perfChart:   _perfChartVis,
+    perfOverlay: _perfOverlay,
+    perfYear:    _perfYearFilter,
+    regrPanel:   _regressionPanelVis,
   }));
 }
 
 function initUtilityTool(){
   loadUtilityData();
-  // Restore drill-down selection from session
   try{
     const s = JSON.parse(sessionStorage.getItem('ch_ud')||'{}');
-    if(s.proj) udSelProjId = s.proj;
-    if(s.bldg) udSelBldgId = s.bldg;
-    if(s.meter) udActiveMid = s.meter;
-    if(s.tab) udActiveTab = s.tab;
+    if(s.proj  != null) udSelProjId        = s.proj;
+    if(s.bldg  != null) udSelBldgId        = s.bldg;
+    if(s.meter != null) udActiveMid        = s.meter;
+    if(s.tab   != null) udActiveTab        = s.tab;
+    if(s.normMetric  != null) udNormMetric       = s.normMetric;
+    if(s.normChart   != null) udNormChartVis     = s.normChart;
+    if(s.blMetric    != null) udBlMetric         = s.blMetric;
+    if(s.blChart     != null) udBlChartVis       = s.blChart;
+    if(s.blOverlay   != null) udBlOverlay        = s.blOverlay;
+    if(s.perfMetric  != null) _perfMetric        = s.perfMetric;
+    if(s.perfChart   != null) _perfChartVis      = s.perfChart;
+    if(s.perfOverlay != null) _perfOverlay       = s.perfOverlay;
+    if(s.perfYear    != null) _perfYearFilter    = s.perfYear;
+    if(s.regrPanel   != null) _regressionPanelVis= s.regrPanel;
   }catch(e){}
   renderUDProjList();
   renderUDDetail();
