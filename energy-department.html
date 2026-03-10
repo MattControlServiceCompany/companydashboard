@@ -1443,7 +1443,8 @@ function init(){
   buildWeekStrip(); buildHomeCal();
   refreshProjDropdowns(); renderProjTable(); renderSidebarFolders();
   renderEquip(); renderUpcomingTasks(); updateHomeStats();
-  document.getElementById('home-date').textContent=NOW.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  const homeDateEl = document.getElementById('home-date');
+  if(homeDateEl) homeDateEl.textContent=NOW.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
   initUtilityTool();
 }
 
@@ -2151,7 +2152,23 @@ let udBillEditId = null;
 let _meterInclusive = true;
 const _openMeterIds = new Set(); // tracks which meter cards are expanded
 
-function loadUtilityData(){ utilityData = sget('en_utilityData', {}); }
+function loadUtilityData(){
+  utilityData = sget('en_utilityData', {});
+  // Migration: old format stored data per-project as en_utility_{projId}
+  // If the new combined key is empty, check for old keys and migrate them
+  if(!Object.keys(utilityData).length){
+    const migrated = {};
+    (sget('en_projects',[])).forEach(function(p){
+      const old = sget('en_utility_'+p.id, null);
+      if(old) migrated[p.id] = old;
+    });
+    if(Object.keys(migrated).length){
+      utilityData = migrated;
+      sset('en_utilityData', utilityData); // save under new key
+      console.log('Migrated utility data from old per-project keys to en_utilityData');
+    }
+  }
+}
 function saveUtilityData(){ sset('en_utilityData', utilityData); }
 
 function getUDProj(pid){ return utilityData[pid] || (utilityData[pid]={buildings:[]}), utilityData[pid]; }
