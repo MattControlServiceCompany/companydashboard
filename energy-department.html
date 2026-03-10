@@ -1448,9 +1448,25 @@ function init(){
   initUtilityTool();
   // Restore last active view from session
   const lastView = sessionStorage.getItem('ch_activeView');
+  // Read project session NOW before sv('projects') → showList() overwrites it
+  const savedProjSession = sessionStorage.getItem('ch_proj');
   if(lastView && document.getElementById('view-'+lastView)) sv(lastView);
   // Restore projects drill-down if on projects page
-  if(lastView === 'projects') restoreProjSession();
+  if(lastView === 'projects' && savedProjSession){
+    try{
+      const s = JSON.parse(savedProjSession);
+      if(s.view === 'detail' && s.projId != null){
+        const p = projects.find(p=>p.id == s.projId);
+        if(p){
+          openDetail(p.id);
+          if(s.tab && s.tab !== 'notes'){
+            const btn = document.querySelector(`.pdt[onclick*="'${s.tab}'"]`);
+            if(btn) sPTab(s.tab, btn);
+          }
+        }
+      }
+    }catch(e){}
+  }
 }
 
 function updateHomeStats(){
@@ -4348,18 +4364,18 @@ function saveProjSession(){
 function restoreProjSession(){
   try{
     const s = JSON.parse(sessionStorage.getItem('ch_proj')||'{}');
-    if(s.view === 'detail' && s.projId){
-      const p = projects.find(p=>p.id===s.projId);
+    if(s.view === 'detail' && s.projId != null){
+      // projId may be string after JSON parse — coerce to match project id type
+      const p = projects.find(p=>p.id == s.projId);
       if(p){
-        openDetail(s.projId);
+        openDetail(p.id);
         if(s.tab && s.tab !== 'notes'){
-          // find and click the matching tab button
-          const btn = document.querySelector(`.pdt[onclick*="sPTab('${s.tab}'"]`);
+          const btn = document.querySelector(`.pdt[onclick*="'${s.tab}'"]`);
           if(btn) sPTab(s.tab, btn);
         }
       }
     }
-  }catch(e){}
+  }catch(e){ console.warn('restoreProjSession error', e); }
 }
 
 // ── Utility Data ──
