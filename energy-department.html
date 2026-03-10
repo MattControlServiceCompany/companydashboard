@@ -1824,6 +1824,7 @@ function renderDetail(p){
         <button class="pdt" onclick="sPTab('contacts',this)">👥 Contacts</button>
         <button class="pdt" onclick="sPTab('buildings',this)">🏢 Buildings</button>
         <button class="pdt" onclick="sPTab('utility',this)">⚡ Utility Data</button>
+        <button class="pdt" onclick="sPTab('savings',this)">💡 Energy Savings</button>
         <button class="pdt" onclick="sPTab('docs',this)">📁 Documents</button>
       </div>
       <div id="ptab-notes" class="ptab active">
@@ -1852,13 +1853,18 @@ function renderDetail(p){
         <div id="pb-list-${p.id}"></div>
       </div>
       <div id="ptab-utility" class="ptab">
-        <div style="font-size:13px;color:var(--text2);margin-bottom:14px">Manage utility meters and billing data for this project.</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+          <div style="font-size:13px;color:var(--text2)">Manage utility meters and billing data for this project.</div>
           <button class="btn btn-em btn-sm" onclick="goToProjectUtility(${p.id})">⚡ Open Utility Data →</button>
-          <button class="btn btn-ghost btn-sm" onclick="sv('savings',null)">💡 Energy Savings</button>
-          <button class="btn btn-ghost btn-sm" onclick="sv('savings',null)">💡 Energy Savings</button>
         </div>
         <div id="ptab-utility-summary-${p.id}"></div>
+      </div>
+      <div id="ptab-savings" class="ptab">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+          <div style="font-size:13px;color:var(--text2)">Track measured energy savings and M&amp;V results for this project.</div>
+          <button class="btn btn-em btn-sm" onclick="sv('savings',null)">💡 Open Energy Savings →</button>
+        </div>
+        <div style="font-size:12px;color:var(--text3);padding:16px 0">Navigate to Energy Savings to view and edit savings calculations for this project.</div>
       </div>
       <div id="ptab-docs" class="ptab">
         <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
@@ -2532,7 +2538,7 @@ function fmtMon(d){
 function fmtDate(d){
   if(!d) return '?';
   const dt=new Date(d+'T12:00:00');
-  return dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  return (dt.getMonth()+1)+'/'+ dt.getDate()+'/'+dt.getFullYear();
 }
 
 /* ══════════════════════════════════════════
@@ -4624,16 +4630,77 @@ function renderUtilTabSummary(projId){
   if(!el) return;
   const proj = utilityData[projId] || sget('en_utility_'+projId, null);
   if(!proj||!proj.buildings||!proj.buildings.length){
-    el.innerHTML='<div style="padding:12px 0;font-size:13px;color:var(--text2)">No buildings or utility data yet. Click <strong style="color:var(--em)">Open Utility Data</strong> to get started.</div>';
+    el.innerHTML='<div style="padding:12px 0;font-size:13px;color:var(--text2)">No buildings or utility data yet. Click <strong style="color:var(--em)">Open Utility Data →</strong> to get started.</div>';
     return;
   }
+  const bldgs = proj.buildings;
   let totalMeters=0, totalBills=0;
-  proj.buildings.forEach(b=>{ (b.meters||[]).forEach(m=>{ totalMeters++; totalBills+=(m.bills||[]).length; }); });
-  el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-    <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:9px 12px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Buildings</div><div style="font-size:18px;font-weight:800;color:var(--em)">${proj.buildings.length}</div></div>
-    <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:9px 12px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Meters</div><div style="font-size:18px;font-weight:800;color:var(--em2)">${totalMeters}</div></div>
-    <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:9px 12px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Bill Records</div><div style="font-size:18px;font-weight:800;color:var(--violet)">${totalBills}</div></div>
-  </div>`;
+  bldgs.forEach(b=>{ (b.meters||[]).forEach(m=>{ totalMeters++; totalBills+=(m.bills||[]).length; }); });
+
+  // Summary counts
+  const summaryHTML =
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">'+
+      '<div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:9px 12px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Buildings</div><div style="font-size:18px;font-weight:800;color:var(--em)">'+ bldgs.length +'</div></div>'+
+      '<div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:9px 12px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Meters</div><div style="font-size:18px;font-weight:800;color:var(--em2)">'+ totalMeters +'</div></div>'+
+      '<div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:9px 12px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Bill Records</div><div style="font-size:18px;font-weight:800;color:var(--violet)">'+ totalBills +'</div></div>'+
+    '</div>';
+
+  // Building selector tabs
+  const bldgTabs = bldgs.map((b,i)=>
+    `<button class="ud-incl-btn${i===0?' sel':''}" onclick="selectProjUtilBldg('${projId}','${b.id}',this)" style="font-size:11px">${b.name||'Building '+(i+1)}</button>`
+  ).join('');
+
+  // Per-building detail renderer (shown for first building by default)
+  const firstBldg = bldgs[0];
+  const firstDetail = buildProjUtilBldgDetail(firstBldg);
+
+  el.innerHTML =
+    summaryHTML +
+    '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:10px">'+
+      '<span style="font-size:11px;font-weight:600;color:var(--text2)">Building:</span>'+
+      bldgTabs +
+    '</div>'+
+    '<div id="proj-util-bldg-detail-'+projId+'">'+firstDetail+'</div>';
+}
+
+function buildProjUtilBldgDetail(b){
+  if(!b) return '';
+  const meters = b.meters||[];
+  if(!meters.length) return '<div style="font-size:12px;color:var(--text3);padding:8px 0">No meters for this building yet.</div>';
+
+  return meters.map(m=>{
+    const bills = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+    const unit = m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
+    const latestBill = bills[bills.length-1];
+    const latestUsage = latestBill ? latestBill.kwh||latestBill.therms||latestBill.usage||0 : 0;
+    const latestCost = latestBill ? latestBill.totalCost||latestBill.thermCost||latestBill.cost||0 : 0;
+    const fmtShort = d => d ? new Date(d+'T12:00:00').toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'numeric'}) : '—';
+    const dateRange = bills.length ? fmtShort(bills[0].start)+' – '+fmtShort(latestBill.end) : '—';
+
+    return `<div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:10px 13px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
+        <div style="font-size:13px;font-weight:700">${m.name||m.commodity+' Meter'} <span style="font-size:11px;color:var(--text3);font-weight:400">${m.commodity}</span></div>
+        <div style="display:flex;gap:12px">
+          <div style="text-align:right"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Bills</div><div style="font-size:14px;font-weight:800;color:var(--em)">${bills.length}</div></div>
+          <div style="text-align:right"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Latest</div><div style="font-size:14px;font-weight:800;color:var(--em2)">${latestUsage.toLocaleString(undefined,{maximumFractionDigits:0})} ${unit}</div></div>
+          ${latestCost>0?`<div style="text-align:right"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Latest $</div><div style="font-size:14px;font-weight:800;color:var(--warn)">$${latestCost.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>`:''}
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text3)">Data range: ${dateRange}</div>
+    </div>`;
+  }).join('');
+}
+
+function selectProjUtilBldg(projId, bldgId, btn){
+  const proj = utilityData[projId] || sget('en_utility_'+projId, null);
+  if(!proj) return;
+  const bldg = (proj.buildings||[]).find(b=>b.id===bldgId);
+  const detailEl = document.getElementById('proj-util-bldg-detail-'+projId);
+  if(detailEl) detailEl.innerHTML = buildProjUtilBldgDetail(bldg);
+  // Update active tab button
+  const parent = btn?.closest('[id^="ptab-utility-summary"]');
+  if(parent) parent.querySelectorAll('.ud-incl-btn').forEach(b=>b.classList.remove('sel'));
+  btn?.classList.add('sel');
 }
 
 
