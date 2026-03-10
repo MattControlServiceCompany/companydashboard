@@ -1446,6 +1446,9 @@ function init(){
   const homeDateEl = document.getElementById('home-date');
   if(homeDateEl) homeDateEl.textContent=NOW.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
   initUtilityTool();
+  // Restore last active view from session
+  const lastView = sessionStorage.getItem('ch_activeView');
+  if(lastView && document.getElementById('view-'+lastView)) sv(lastView);
 }
 
 function updateHomeStats(){
@@ -1468,6 +1471,7 @@ function sv(id,btn){
   // btn may be a wrapper div (projects header) — activate the inner s-item if so
   const target=btn?.classList.contains('s-item')?btn:btn?.querySelector('.s-item')||btn;
   (target||document.querySelector(`.sidebar .s-item[onclick*="'${id}'"]`))?.classList.add('active');
+  sessionStorage.setItem('ch_activeView', id);
   if(id==='projects') showList();
   if(id==='utility'){ renderUDProjList(); renderUDDetail(); }
 }
