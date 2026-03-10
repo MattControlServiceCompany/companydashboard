@@ -106,7 +106,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100%;
 
 /* ── SIDEBAR LAYOUT ── */
 .app-wrap{display:flex;flex:1;overflow:hidden;}
-.sidebar{width:220px;flex-shrink:0;background:var(--s1);border-right:1px solid var(--border);padding:0;display:flex;flex-direction:column;}
+.sidebar{width:var(--sidebar-w,220px);flex-shrink:0;background:var(--s1);border-right:1px solid var(--border);padding:0;display:flex;flex-direction:column;}
 .sidebar-top{flex:1;overflow-y:auto;padding:14px 0;}
 .sidebar-bottom{padding:10px 12px 14px;flex-shrink:0;}
 .s-sect{margin-bottom:22px;}
@@ -130,17 +130,17 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100%;
 
 /* ── CONTENT ── */
 .content{flex:1;padding:24px 26px;overflow-y:auto;}
-.view{display:none;padding:24px 26px;animation:fadeUp .22s ease;}
+.view{display:none;padding:16px 18px;animation:fadeUp .22s ease;}
 .view.active{display:block;}
-.view.active.view-flex{display:flex;flex-direction:column;padding:24px 26px 0;height:100%;box-sizing:border-box;overflow:hidden;}
+.view.active.view-flex{display:flex;flex-direction:column;padding:0;height:100%;box-sizing:border-box;overflow:hidden;}
 .tab-panel{display:none;animation:fadeUp .26s ease;}
 .tab-panel.active{display:block;}
 
-/* ── PAGE HEADER ── */
-.pg-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;}
-.pg-title{font-size:22px;font-weight:800;letter-spacing:-.02em;}
-.pg-title em{color:var(--accent);font-style:normal;}
-.pg-sub{font-size:13px;color:var(--text2);margin-top:4px;}
+/* ── RESIZE HANDLES ── */
+.resize-handle{position:absolute;top:0;right:0;width:5px;height:100%;cursor:col-resize;z-index:10;background:transparent;transition:background .15s;}
+.resize-handle:hover,.resize-handle.dragging{background:var(--em);opacity:.5;}
+.sidebar{position:relative;}
+.ud-nav{position:relative;}
 
 /* ── TOAST ── */
 .toast{position:fixed;bottom:22px;right:22px;z-index:999;background:var(--s3);border:1px solid var(--accent);border-radius:10px;padding:11px 15px;font-size:12px;color:var(--text);display:flex;align-items:center;gap:8px;max-width:320px;transform:translateY(80px);opacity:0;transition:all .32s cubic-bezier(.34,1.56,.64,1);}
@@ -265,11 +265,13 @@ html,body{height:100%;overflow:hidden;}
 @keyframes fadeUp{from{opacity:0;transform:translateY(9px);}to{opacity:1;transform:translateY(0);}}
 @keyframes pulse{0%,100%{opacity:.3;transform:scale(.85);}50%{opacity:1;transform:scale(1);}}
 .nav-bar{display:none;}
-.pg-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;}
+.pg-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:12px;}
 .pg-title{font-family:var(--head);font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.1;}
 .pg-title em{color:var(--em);font-style:normal;}
 .pg-sub{font-size:13px;color:var(--text2);margin-top:4px;line-height:1.5;}
 .hdr-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+/* Non-flex views get consistent padding */
+.view.active:not(.view-flex){padding:16px 18px;}
 .btn{font-family:var(--font);font-size:12px;font-weight:600;padding:7px 14px;border-radius:7px;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .16s;line-height:1;}
 .btn-em{background:var(--accent,var(--em));color:#05080f;}
 .btn-em:hover{filter:brightness(1.1);transform:translateY(-1px);}
@@ -469,7 +471,7 @@ html,body{height:100%;overflow:hidden;}
 .toast.show{transform:translateY(0);opacity:1;}
 
 /* ── UTILITY DATA — TWO-COLUMN MASTER/DETAIL ══ */
-.ud-layout{display:grid;grid-template-columns:260px 1fr;gap:0;flex:1;min-height:0;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
+.ud-layout{display:grid;grid-template-columns:var(--ud-nav-w,260px) 1fr;gap:0;flex:1;min-height:0;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
 /* Left nav column */
 .ud-nav{display:flex;flex-direction:column;background:var(--s1);border-right:1px solid var(--border);overflow:hidden;min-height:0;}
 .ud-nav-sect{flex-shrink:0;}
@@ -689,6 +691,7 @@ html,body{height:100%;overflow:hidden;}
 
 <div class="app-wrap">
 <aside class="sidebar">
+  <div class="resize-handle" id="sidebarResizeHandle"></div>
   <div class="sidebar-top">
     <div class="s-sect">
       <div class="s-lbl">Energy</div>
@@ -726,12 +729,9 @@ html,body{height:100%;overflow:hidden;}
 
 <!-- HOME -->
 <div id="view-home" class="view active">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Energy <em>Department</em></h1><p class="pg-sub" id="home-date"></p></div>
-    <div class="hdr-actions">
-      <button class="btn btn-ghost" onclick="openTaskModal()">+ Task</button>
-      <button class="btn btn-em" onclick="sv('projects',document.getElementById('sb-proj-btn'));openProjModal()">+ New Project</button>
-    </div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;margin-bottom:14px">
+    <button class="btn btn-ghost" onclick="openTaskModal()">+ Task</button>
+    <button class="btn btn-em" onclick="sv('projects',document.getElementById('sb-proj-btn'));openProjModal()">+ New Project</button>
   </div>
   <div class="stats-row">
     <div class="stat"><div class="stat-lbl">Active Projects</div><div class="stat-val c-em" id="h-proj">0</div><div class="stat-meta">in progress</div></div>
@@ -769,12 +769,9 @@ html,body{height:100%;overflow:hidden;}
 <div id="view-projects" class="view">
   <!-- List view -->
   <div id="projListView">
-    <div class="pg-hdr">
-      <div><h1 class="pg-title">Energy <em>Projects</em></h1><p class="pg-sub">Click any row to open the full project detail</p></div>
-      <div class="hdr-actions">
-        <input class="proj-search" id="projSearchQ" placeholder="🔍 Search..." oninput="renderProjTable()">
-        <button class="btn btn-em" onclick="openProjModal()">+ New Project</button>
-      </div>
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;flex-shrink:0;margin-bottom:14px">
+      <input class="proj-search" id="projSearchQ" placeholder="🔍 Search..." oninput="renderProjTable()">
+      <button class="btn btn-em" onclick="openProjModal()">+ New Project</button>
     </div>
     <div class="card">
       <div style="overflow-x:auto">
@@ -797,12 +794,10 @@ html,body{height:100%;overflow:hidden;}
 
 <!-- UTILITY DATA -->
 <div id="view-utility" class="view view-flex">
-  <div class="pg-hdr" style="flex-shrink:0">
-    <div><h1 class="pg-title">Utility <em>Data</em></h1><p class="pg-sub">Select a project and building to manage meters and billing data</p></div>
-  </div>
   <div class="ud-layout">
     <!-- Left nav: Projects + Buildings drill-down -->
     <div class="ud-nav">
+      <div class="resize-handle" id="udNavResizeHandle"></div>
       <div class="ud-nav-sect">
         <div class="ud-nav-sect-hdr">
           <span class="ud-nav-sect-title">Projects</span>
@@ -831,7 +826,6 @@ html,body{height:100%;overflow:hidden;}
 
 <!-- PDF OCR -->
 <div id="view-pdf" class="view">
-  <div class="pg-hdr"><div><h1 class="pg-title">PDF <em>OCR Tool</em></h1><p class="pg-sub">Upload utility bills, drawings, submittals, or contracts — AI extracts and structures the data</p></div></div>
   <div class="g-6040">
     <div>
       <div class="drop-zone" id="dropZone" onclick="document.getElementById('pdfInput').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleDrop(event)">
@@ -867,9 +861,8 @@ html,body{height:100%;overflow:hidden;}
 
 <!-- ENERGY SAVINGS -->
 <div id="view-savings" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Energy <em>Savings</em></h1><p class="pg-sub">Weather-adjusted M&amp;V savings calculations</p></div>
-    <div class="hdr-actions"><button class="btn btn-em" onclick="calcSavings()">💡 Calculate Savings</button></div>
+  <div style="display:flex;justify-content:flex-end;flex-shrink:0;margin-bottom:14px">
+    <button class="btn btn-em" onclick="calcSavings()">💡 Calculate Savings</button>
   </div>
   <div class="g2">
     <div class="card">
@@ -904,7 +897,6 @@ html,body{height:100%;overflow:hidden;}
 
 <!-- DISTRICT CALENDAR -->
 <div id="view-district" class="view">
-  <div class="pg-hdr"><div><h1 class="pg-title">District <em>Calendar</em></h1><p class="pg-sub">Parse school district calendars — auto-generate BAS holiday schedules</p></div></div>
   <div class="g2">
     <div class="card">
       <div class="card-hdr"><span class="card-title">📅 Calendar Input</span></div>
@@ -928,12 +920,9 @@ html,body{height:100%;overflow:hidden;}
 
 <!-- EQUIPMENT -->
 <div id="view-equipment" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Equipment <em>Repository</em></h1><p class="pg-sub">Centralized equipment database across all projects and facilities</p></div>
-    <div class="hdr-actions">
-      <input class="fi" id="equipQ" placeholder="Search..." style="width:200px" oninput="renderEquip()">
-      <button class="btn btn-em" onclick="openEquipModal()">+ Add Equipment</button>
-    </div>
+  <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;flex-shrink:0;margin-bottom:14px">
+    <input class="fi" id="equipQ" placeholder="Search..." style="width:200px" oninput="renderEquip()">
+    <button class="btn btn-em" onclick="openEquipModal()">+ Add Equipment</button>
   </div>
   <div class="card"><div style="overflow-x:auto">
     <table class="dtbl" style="min-width:860px">
@@ -945,7 +934,6 @@ html,body{height:100%;overflow:hidden;}
 
 <!-- DRAWINGS -->
 <div id="view-drawings" class="view">
-  <div class="pg-hdr"><div><h1 class="pg-title">Construction <em>Drawings</em></h1><p class="pg-sub">Upload drawing PDFs — AI reads equipment schedules, system types, control points, and tags</p></div></div>
   <div class="g2">
     <div>
       <div class="drop-zone" onclick="document.getElementById('dwgInput').click()">
@@ -961,7 +949,6 @@ html,body{height:100%;overflow:hidden;}
 
 <!-- SPEC WRITER -->
 <div id="view-specs" class="view">
-  <div class="pg-hdr"><div><h1 class="pg-title">Controls <em>Spec Writer</em></h1><p class="pg-sub">AI-generated Division 25 controls specifications</p></div></div>
   <div class="g-4060">
     <div>
       <div class="fl" style="margin-bottom:8px;display:block">System Types</div>
@@ -1006,9 +993,9 @@ html,body{height:100%;overflow:hidden;}
 
 <!-- CONTRACTS -->
 <div id="view-contracts" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Client <em>Contracts</em></h1><p class="pg-sub">Generate complete client contracts from your template</p></div>
-    <div class="hdr-actions"><button class="btn btn-ghost" onclick="document.getElementById('tmplInput').click()">📤 Upload Template</button><input type="file" id="tmplInput" accept=".pdf,.docx,.txt" style="display:none" onchange="loadTemplate(event)"></div>
+  <div style="display:flex;justify-content:flex-end;flex-shrink:0;margin-bottom:14px">
+    <button class="btn btn-ghost" onclick="document.getElementById('tmplInput').click()">📤 Upload Template</button>
+    <input type="file" id="tmplInput" accept=".pdf,.docx,.txt" style="display:none" onchange="loadTemplate(event)">
   </div>
   <div class="g2">
     <div>
@@ -1040,7 +1027,6 @@ html,body{height:100%;overflow:hidden;}
 
 <!-- WEBCTRL -->
 <div id="view-webctrl" class="view">
-  <div class="pg-hdr"><div><h1 class="pg-title">WebCTRL <em>Logic Tool</em></h1><p class="pg-sub">AI-powered Automated Logic / WebCTRL assistant — explain, diagnose, and write control programs</p></div></div>
   <div class="wc-modes">
     <div class="wcm active" id="wcm-guide" onclick="setWCMode('guide',this)"><div class="wcm-ico">🗺️</div><div class="wcm-name">Guided Walkthrough</div><div class="wcm-desc">Step-by-step explanations of WebCTRL logic concepts</div></div>
     <div class="wcm" id="wcm-diagnose" onclick="setWCMode('diagnose',this)"><div class="wcm-ico">🔍</div><div class="wcm-name">Diagnose Logic</div><div class="wcm-desc">Paste in existing logic — get plain-English explanation and fixes</div></div>
@@ -2659,20 +2645,38 @@ function calDaysInMonth(ym){
 
 // ── Compute regression coefficients for a meter from its normalized rows ─────
 // Uses usage/day ~ DD/day to keep units consistent regardless of month length.
-// Returns {hdd:{slope,intercept,r2,n}, cdd:{slope,intercept,r2,n}} or nulls.
+// After OLS fit, applies bias correction: mean_residual is added to the intercept
+// so the model's average prediction exactly matches the average actual over training data.
+// Returns {hdd:{slope,intercept,interceptRaw,bias,r2,n}, cdd:{...}} or nulls.
 function computeMeterRegression(rows){
-  // Filter to months that have both weather and usage data
   const hddPts = rows.filter(r=>r.hdd!=null&&r.hdd>0&&r.days>0);
   const cddPts = rows.filter(r=>r.cdd!=null&&r.cdd>0&&r.days>0);
-  const hddReg = olsRegression(
-    hddPts.map(r=>r.hdd/r.days),       // x: HDD per day of billing period
-    hddPts.map(r=>r.usage/r.days)       // y: usage per day
-  );
-  const cddReg = olsRegression(
-    cddPts.map(r=>r.cdd/r.days),
-    cddPts.map(r=>r.usage/r.days)
-  );
-  return {hdd: hddReg, cdd: cddReg};
+
+  function fitWithBias(pts, ddKey){
+    const reg = olsRegression(
+      pts.map(r=>r[ddKey]/r.days),   // x: DD per day
+      pts.map(r=>r.usage/r.days)     // y: usage per day
+    );
+    if(!reg) return null;
+    // Bias correction: mean(actual - predicted) over training points
+    const meanResidual = pts.reduce((s,r)=>{
+      const predicted = reg.intercept + reg.slope * (r[ddKey]/r.days);
+      return s + (r.usage/r.days - predicted);
+    }, 0) / pts.length;
+    return {
+      slope: reg.slope,
+      interceptRaw: reg.intercept,         // original OLS intercept (for display)
+      intercept: reg.intercept + meanResidual, // bias-corrected intercept
+      bias: meanResidual,                  // stored for display in regression panel
+      r2: reg.r2,
+      n: reg.n,
+    };
+  }
+
+  return {
+    hdd: fitWithBias(hddPts, 'hdd'),
+    cdd: fitWithBias(cddPts, 'cdd'),
+  };
 }
 
 // ── Compute regression-based baseline for a single normalized month row ───────
@@ -2811,44 +2815,47 @@ function renderNormPane(pane, m, bills, incl){
   const reg = m._reg || {};
   let regrPanel = '';
   if(_regressionPanelVis){
-    const fmtReg = r => r ? `y = ${r.intercept.toFixed(4)} + ${r.slope.toFixed(4)}x &nbsp;&nbsp; R²=${r.r2.toFixed(3)} &nbsp; n=${r.n}` : '—';
     const fmtQual = r => {
       if(!r) return '<span style="color:var(--text3)">insufficient data</span>';
-      if(r.r2>=0.85) return '<span style="color:var(--em)">Strong fit (R²≥0.85)</span>';
-      if(r.r2>=0.65) return '<span style="color:var(--amber)">Moderate fit (R²≥0.65)</span>';
-      return '<span style="color:var(--red)">Weak fit (R²&lt;0.65) — consider more data</span>';
+      if(r.r2>=0.85) return '<span style="color:var(--em)">Strong (R²≥0.85)</span>';
+      if(r.r2>=0.65) return '<span style="color:var(--amber)">Moderate (R²≥0.65)</span>';
+      return '<span style="color:var(--red)">Weak (R²&lt;0.65)</span>';
     };
+    const fmtRow = (label, ddLabel, r) => r ?
+      '<tr>'+
+        '<td class="mono">'+label+'</td>'+
+        '<td class="mono">'+r.interceptRaw.toFixed(3)+'</td>'+
+        '<td class="mono" style="color:'+(r.bias>=0?'var(--em)':'var(--danger)')+'">'+
+          (r.bias>=0?'+':'')+r.bias.toFixed(3)+'</td>'+
+        '<td class="mono" style="color:var(--violet);font-weight:600">'+r.intercept.toFixed(3)+'</td>'+
+        '<td class="mono">'+r.slope.toFixed(4)+' × '+ddLabel+'/day</td>'+
+        '<td class="mono">'+r.n+'</td>'+
+        '<td class="mono">'+r.r2.toFixed(3)+'</td>'+
+        '<td>'+fmtQual(r)+'</td>'+
+      '</tr>' :
+      '<tr><td class="mono">'+label+'</td><td colspan="7" style="color:var(--text3);font-size:11px">— insufficient data (need ≥3 months with non-zero '+ddLabel+')</td></tr>';
     const ddUsed = isElec ? 'CDD (primary) / HDD (fallback)' : 'HDD (primary) / CDD (fallback)';
     regrPanel =
       '<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:12px">'+
-        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:10px">📈 Regression Model — '+unit+'/Day ~ DD/Day</div>'+
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">📈 Regression Model — '+unit+'/Day ~ DD/Day</div>'+
         '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">'+
-          'Fits: <strong>usage/day = intercept + slope × (DD/day)</strong> using OLS linear regression.<br>'+
-          'Baseline = intercept × normDays + slope × DD_month<br>'+
-          'Degree-days used: <strong>'+ddUsed+'</strong> · Period basis: <strong>'+(normBasis==='calendar'?'Calendar month days':'Actual bill days')+'</strong>'+
+          'OLS fit: <strong>usage/day = intercept + slope × (DD/day)</strong><br>'+
+          'Bias correction: mean residual (actual − predicted) added to intercept so model average = data average over training months.<br>'+
+          'Baseline/month = corrected intercept × normDays + slope × DD_month &nbsp;·&nbsp; '+
+          'DD used: <strong>'+ddUsed+'</strong> &nbsp;·&nbsp; Basis: <strong>'+(normBasis==='calendar'?'Calendar days':'Actual bill days')+'</strong>'+
         '</div>'+
+        '<div style="overflow-x:auto">'+
         '<table class="ma-tbl" style="margin-bottom:8px">'+
-          '<thead><tr><th>Regression</th><th>Equation (usage/day ~ DD/day)</th><th>Points</th><th>R²</th><th>Quality</th></tr></thead>'+
+          '<thead><tr><th>Model</th><th>Raw Intercept</th><th>Bias Correction</th><th style="color:var(--violet)">Adj. Intercept</th><th>Slope</th><th>n</th><th>R²</th><th>Fit</th></tr></thead>'+
           '<tbody>'+
-            '<tr>'+
-              '<td class="mono">HDD model</td>'+
-              '<td class="mono">'+(reg.hdd?`${reg.hdd.intercept.toFixed(3)} + ${reg.hdd.slope.toFixed(3)} × HDD/day`:'—')+'</td>'+
-              '<td class="mono">'+(reg.hdd?reg.hdd.n:'—')+'</td>'+
-              '<td class="mono">'+(reg.hdd?reg.hdd.r2.toFixed(3):'—')+'</td>'+
-              '<td>'+fmtQual(reg.hdd)+'</td>'+
-            '</tr>'+
-            '<tr>'+
-              '<td class="mono">CDD model</td>'+
-              '<td class="mono">'+(reg.cdd?`${reg.cdd.intercept.toFixed(3)} + ${reg.cdd.slope.toFixed(3)} × CDD/day`:'—')+'</td>'+
-              '<td class="mono">'+(reg.cdd?reg.cdd.n:'—')+'</td>'+
-              '<td class="mono">'+(reg.cdd?reg.cdd.r2.toFixed(3):'—')+'</td>'+
-              '<td>'+fmtQual(reg.cdd)+'</td>'+
-            '</tr>'+
+            fmtRow('HDD model','HDD',reg.hdd)+
+            fmtRow('CDD model','CDD',reg.cdd)+
           '</tbody>'+
         '</table>'+
+        '</div>'+
         (!reg.hdd&&!reg.cdd
-          ? '<div style="font-size:11px;color:var(--warn);padding:6px 0">⚠️ No regression computed — upload weather data (HDD/CDD) with at least 3 months of non-zero degree days.</div>'
-          : '<div style="font-size:11px;color:var(--text3)">The regression baseline appears in the table and chart as the predicted usage for each month under these weather conditions, normalized to the selected period basis.</div>')+
+          ? '<div style="font-size:11px;color:var(--warn);padding:6px 0">⚠️ No regression computed — upload weather data with at least 3 months of non-zero degree days.</div>'
+          : '<div style="font-size:11px;color:var(--text3)">Violet line on chart = bias-corrected regression baseline. Corrected intercept shifts the line so training-period predictions are unbiased.</div>')+
       '</div>';
   }
 
@@ -4862,6 +4869,70 @@ document.addEventListener('keydown', function(e){
     if(el && el.style.display !== 'none' && closers[id]) closers[id]();
   });
 });
+</script>
+
+<script>
+/* ── DRAG-TO-RESIZE PANELS ── */
+(function(){
+  function makeResizable(handleId, getTarget, getCurrent, setSize, minPx, maxPx) {
+    var handle = document.getElementById(handleId);
+    if (!handle) return;
+    var dragging = false, startX = 0, startW = 0;
+
+    handle.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      dragging = true;
+      startX = e.clientX;
+      startW = getCurrent();
+      handle.classList.add('dragging');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    });
+
+    document.addEventListener('mousemove', function(e) {
+      if (!dragging) return;
+      var delta = e.clientX - startX;
+      var newW = Math.min(maxPx, Math.max(minPx, startW + delta));
+      setSize(newW);
+    });
+
+    document.addEventListener('mouseup', function() {
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    });
+  }
+
+  // Left app sidebar
+  makeResizable(
+    'sidebarResizeHandle',
+    function() { return document.querySelector('.sidebar'); },
+    function() {
+      return parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w')) ||
+             document.querySelector('.sidebar').offsetWidth;
+    },
+    function(w) {
+      document.documentElement.style.setProperty('--sidebar-w', w + 'px');
+    },
+    140, 340
+  );
+
+  // Utility Data inner nav panel
+  makeResizable(
+    'udNavResizeHandle',
+    function() { return document.querySelector('.ud-nav'); },
+    function() {
+      var v = getComputedStyle(document.documentElement).getPropertyValue('--ud-nav-w').trim();
+      return v ? parseInt(v) : (document.querySelector('.ud-nav') || {offsetWidth: 260}).offsetWidth;
+    },
+    function(w) {
+      document.documentElement.style.setProperty('--ud-nav-w', w + 'px');
+    },
+    160, 480
+  );
+})();
 </script>
 
 </body></html>
