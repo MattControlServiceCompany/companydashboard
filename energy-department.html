@@ -2252,6 +2252,7 @@ function udSelectProj(pid){
   udSelProjId = pid;
   udSelBldgId = null;
   udActiveMid = null;
+  saveUDSession();
   renderUDProjList();
   renderUDDetail();
 }
@@ -2259,6 +2260,7 @@ function udSelectBldg(bid){
   if(udSelBldgId !== bid) _openMeterIds.clear();
   udSelBldgId = bid;
   udActiveMid = null;
+  saveUDSession();
   renderUDProjList();
   renderUDDetail();
 }
@@ -2339,8 +2341,8 @@ function renderUDDetail(){
   renderMeterWorkspace();
 }
 
-function udSelectMeter(mid){ udActiveMid=mid; udActiveTab='bills'; renderUDDetail(); }
-function maSetTab(tab){ udActiveTab=tab; renderMeterWorkspace(); }
+function udSelectMeter(mid){ udActiveMid=mid; udActiveTab='bills'; saveUDSession(); renderUDDetail(); }
+function maSetTab(tab){ udActiveTab=tab; saveUDSession(); renderMeterWorkspace(); }
 
 function renderMeterWorkspace(){
   const ws=document.getElementById('maMeterWorkspace'); if(!ws) return;
@@ -4321,9 +4323,28 @@ function goToProjectUtility(projId){
 }
 
 /* ── INIT UTILITY TOOL ── */
+/* ── UTILITY SESSION PERSISTENCE ── */
+function saveUDSession(){
+  sessionStorage.setItem('ch_ud', JSON.stringify({
+    proj: udSelProjId,
+    bldg: udSelBldgId,
+    meter: udActiveMid,
+    tab: udActiveTab,
+  }));
+}
+
 function initUtilityTool(){
   loadUtilityData();
+  // Restore drill-down selection from session
+  try{
+    const s = JSON.parse(sessionStorage.getItem('ch_ud')||'{}');
+    if(s.proj) udSelProjId = s.proj;
+    if(s.bldg) udSelBldgId = s.bldg;
+    if(s.meter) udActiveMid = s.meter;
+    if(s.tab) udActiveTab = s.tab;
+  }catch(e){}
   renderUDProjList();
+  renderUDDetail();
 }
 
 /* ── PROJECT BUILDINGS TAB ── */
