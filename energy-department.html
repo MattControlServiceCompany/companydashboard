@@ -2153,23 +2153,26 @@ let _meterInclusive = true;
 const _openMeterIds = new Set(); // tracks which meter cards are expanded
 
 function loadUtilityData(){
-  utilityData = sget('en_utilityData', {});
-  // Migration: old format stored data per-project as en_utility_{projId}
-  // If the new combined key is empty, check for old keys and migrate them
-  if(!Object.keys(utilityData).length){
-    const migrated = {};
-    (sget('en_projects',[])).forEach(function(p){
-      const old = sget('en_utility_'+p.id, null);
-      if(old) migrated[p.id] = old;
-    });
-    if(Object.keys(migrated).length){
-      utilityData = migrated;
-      sset('en_utilityData', utilityData); // save under new key
-      console.log('Migrated utility data from old per-project keys to en_utilityData');
-    }
+  utilityData = {};
+  // One-time migration: if old combined key exists, split into per-project keys then remove it
+  const combined = sget('en_utilityData', null);
+  if(combined && typeof combined === 'object' && Object.keys(combined).length){
+    Object.keys(combined).forEach(function(pid){ sset('en_utility_'+pid, combined[pid]); });
+    try{ localStorage.removeItem('en_utilityData'); }catch(e){}
+    console.log('Migrated en_utilityData to per-project keys');
   }
+  // Load each project from its own key
+  (sget('en_projects',[])).forEach(function(p){
+    const d = sget('en_utility_'+p.id, null);
+    if(d) utilityData[p.id] = d;
+  });
 }
-function saveUtilityData(){ sset('en_utilityData', utilityData); }
+function saveUtilityData(){
+  // Write each project to its own localStorage key
+  Object.keys(utilityData).forEach(function(pid){
+    sset('en_utility_'+pid, utilityData[pid]);
+  });
+}
 
 function getUDProj(pid){ return utilityData[pid] || (utilityData[pid]={buildings:[]}), utilityData[pid]; }
 function getUDBldgs(pid){ return getUDProj(pid).buildings; }
