@@ -4213,6 +4213,8 @@ function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, i
   const isElecB = unit==='kWh';
   const isGasB  = unit==='Therms';
   const labels=rows.map(r=>r.label);
+  const isTotal=metric==='total';
+  const mainData=isTotal?rows.map(r=>+r.usage.toFixed(0)):rows.map(r=>+r.usagePerDay.toFixed(2));
   const blRef=isTotal?+blAvgMo.toFixed(0):+blAvgDay.toFixed(2);
   const yLabel=isTotal?unit+'/Month':unit+'/Day';
   const hasRegr=rows.some(r=>r.regrBaseline!=null);
