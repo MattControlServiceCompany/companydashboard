@@ -813,6 +813,7 @@ html,body{height:100%;overflow:hidden;}
           <div class="ud-detail-hdr-sub" id="udDetailHdrSub"></div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="btn btn-ghost btn-sm" id="ud-bldg-stats-btn" onclick="toggleBldgStatsPanel()">🏢 Building Stats</button>
           <button class="btn btn-ghost btn-sm" id="ud-edit-bldg-btn" onclick="openBldgModal(window._udSelBldgId)">✏️ Edit Building</button>
           <button class="btn btn-em btn-sm" id="ud-add-meter-btn" onclick="openMeterModal()">+ Add Meter</button>
         </div>
@@ -2331,6 +2332,9 @@ function renderUDDetail(){
 
   if(hdr) hdr.style.display='flex';
   if(hdrTitle) hdrTitle.textContent = b.name;
+  _bldgStatsPanelVis = false;
+  const bsBtn = document.getElementById('ud-bldg-stats-btn');
+  if(bsBtn){ bsBtn.style.borderColor=''; bsBtn.style.color=''; }
   if(hdrSub){
     const parts=[];
     if(b.addr) parts.push('<span>📍 '+b.addr+'</span>');
@@ -2373,8 +2377,33 @@ function renderUDDetail(){
   renderMeterWorkspace();
 }
 
-function udSelectMeter(mid){ udActiveMid=mid; udActiveTab='bills'; saveUDSession(); renderUDDetail(); }
+function udSelectMeter(mid){ udActiveMid=mid; udActiveTab='bills'; _bldgStatsPanelVis=false; saveUDSession(); renderUDDetail(); }
 function maSetTab(tab){ udActiveTab=tab; saveUDSession(); renderMeterWorkspace(); }
+
+let _bldgStatsPanelVis = false;
+
+function toggleBldgStatsPanel(){
+  _bldgStatsPanelVis = !_bldgStatsPanelVis;
+  const btn = document.getElementById('ud-bldg-stats-btn');
+  if(btn){
+    btn.style.borderColor = _bldgStatsPanelVis ? 'var(--em)' : '';
+    btn.style.color       = _bldgStatsPanelVis ? 'var(--em)' : '';
+  }
+  if(_bldgStatsPanelVis){
+    const wrap = document.getElementById('udDetailWrap'); if(!wrap) return;
+    const b = getUDBldg(udSelProjId, udSelBldgId); if(!b) return;
+    // Replace wrap content with building stats pane + back button
+    wrap.innerHTML =
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;padding:12px 16px 0">'+
+        '<button class="btn btn-ghost btn-sm" onclick="toggleBldgStatsPanel()">← Back to Meters</button>'+
+      '</div>'+
+      '<div id="bldgStatsPaneInner" style="padding:0 16px 16px;overflow-y:auto"></div>';
+    const inner = document.getElementById('bldgStatsPaneInner');
+    renderBuildingStatsPane(inner, b);
+  } else {
+    renderUDDetail();
+  }
+}
 
 function renderMeterWorkspace(){
   const ws=document.getElementById('maMeterWorkspace'); if(!ws) return;
@@ -2388,7 +2417,6 @@ function renderMeterWorkspace(){
     {id:'norm',label:'🌡️ Normalized'},
     {id:'baseline',label:'📊 Baseline'},
     {id:'stats',label:'📈 Meter Stats'},
-    {id:'bldgstats',label:'🏢 Building Stats'},
     {id:'perf',label:'💡 Performance'},
   ];
 
@@ -2409,7 +2437,6 @@ function renderMeterWorkspace(){
   if(udActiveTab==='norm')      renderNormPane(pane,m,bills,incl);
   if(udActiveTab==='baseline')  renderBaselinePane(pane,m,bills,incl);
   if(udActiveTab==='stats')     renderMeterStatsPane(pane,m,bills,incl);
-  if(udActiveTab==='bldgstats') renderBuildingStatsPane(pane,b);
   if(udActiveTab==='perf')      renderPerfPane(pane,m,bills,incl);
 }
 
