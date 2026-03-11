@@ -2718,17 +2718,23 @@ function computeMeterRegression(rows){
       pts.map(r=>r.usage/r.normDays)     // y: usage per calendar day
     );
     if(!reg) return null;
-    // Bias correction: mean(actual - predicted) over training points
-    // Note: for standard OLS this is always 0 by definition, kept for numerical safety
-    const meanResidual = pts.reduce((s,r)=>{
-      const predicted = reg.intercept + reg.slope * (r[ddKey]/r.normDays);
-      return s + (r.usage/r.normDays - predicted);
-    }, 0) / pts.length;
+    // Bias correction per user's Excel method:
+    //   sumFit    = Σ (intercept × normDays + slope × DD)   over training points
+    //   sumActual = Σ actual kWh                             over training points
+    //   sumDays   = Σ normDays                               over training points
+    //   diff/day  = (sumFit - sumActual) / sumDays
+    //   correctedIntercept = interceptRaw - diff/day
+    // This forces Σ predicted = Σ actual across all training months.
+    const sumFit    = pts.reduce((s,r)=>s + reg.intercept*r.normDays + reg.slope*r[ddKey], 0);
+    const sumActual = pts.reduce((s,r)=>s + r.usage, 0);
+    const sumDays   = pts.reduce((s,r)=>s + r.normDays, 0);
+    const diffPerDay = (sumFit - sumActual) / sumDays;
+    const correctedIntercept = reg.intercept - diffPerDay;
     return {
       slope: reg.slope,
       interceptRaw: reg.intercept,
-      intercept: reg.intercept + meanResidual,
-      bias: meanResidual,
+      intercept: correctedIntercept,
+      bias: -diffPerDay,   // stored for display: negative means model was over-predicting
       r2: reg.r2,
       n: reg.n,
     };
@@ -2791,6 +2797,48 @@ function setPerfMetric(m){ _perfMetric=m; saveUDSession(); renderMeterWorkspace(
 function togglePerfOverlay(){ _perfOverlay=!_perfOverlay; saveUDSession(); renderMeterWorkspace(); }
 function togglePerfChart(){ _perfChartVis=!_perfChartVis; saveUDSession(); renderMeterWorkspace(); }
 function toggleRegressionPanel(){ _regressionPanelVis=!_regressionPanelVis; saveUDSession(); renderMeterWorkspace(); }
+
+function exportRegrCSV(mid){
+  const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
+  const m=b.meters.find(m=>m.id===mid); if(!m) return;
+  const bills=(m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+  const incl=m.inclusive!==false;
+  const {byYm:weatherByYm}=getWeatherForBuilding();
+  const rows=getNormRows(m,bills,incl,weatherByYm);
+  const isElec=m.commodity==='Electric';
+  const unit=isElec?'kWh':m.commodity==='Gas'?'Therms':'Usage';
+  const ddLabel=isElec?'CDD':'HDD';
+  const reg=m._reg;
+  const rawReg=isElec?reg?.cdd:reg?.hdd;
+
+  const pts=rows.filter(r=>(isElec?(r.cdd!=null&&r.cdd>0):(r.hdd!=null&&r.hdd>0))&&r.normDays>0);
+  const lines=[
+    ['Month','Cal Days',unit,ddLabel,unit+'/Day',ddLabel+'/Day','Fit Raw ('+unit+')','Fit Adj ('+unit+')','Raw Intercept','Bias','Adj Intercept','Slope'].join(','),
+    ...pts.map(r=>{
+      const dd=isElec?r.cdd:r.hdd;
+      const kwhDay=r.usage/r.normDays;
+      const ddDay=dd/r.normDays;
+      const fitRaw=rawReg?rawReg.interceptRaw*r.normDays+rawReg.slope*dd:'';
+      const fitAdj=rawReg?rawReg.intercept*r.normDays+rawReg.slope*dd:'';
+      return [r.label,r.normDays,r.usage.toFixed(2),dd.toFixed(2),kwhDay.toFixed(6),ddDay.toFixed(6),
+        fitRaw!==''?fitRaw.toFixed(2):'',fitAdj!==''?fitAdj.toFixed(2):'',
+        rawReg?rawReg.interceptRaw.toFixed(6):'',rawReg?rawReg.bias.toFixed(6):'',
+        rawReg?rawReg.intercept.toFixed(6):'',rawReg?rawReg.slope.toFixed(6):''].join(',');
+    }),
+    // Summary row
+    ['TOTALS',
+      pts.reduce((s,r)=>s+r.normDays,0),
+      pts.reduce((s,r)=>s+r.usage,0).toFixed(2),
+      pts.reduce((s,r)=>s+(isElec?r.cdd:r.hdd),0).toFixed(2),
+      '','','','','','','',''].join(','),
+  ];
+  const csv=lines.join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=(m.name||'meter')+'_regression_data.csv';
+  a.click();
+}
 function setProjectNormBasis(pid, basis){
   const proj = getUDProj(pid);
   proj.normBasis = basis;
@@ -2895,12 +2943,48 @@ function renderNormPane(pane, m, bills, incl){
       '</tr>' :
       '<tr><td class="mono">'+label+'</td><td colspan="7" style="color:var(--text3);font-size:11px">— insufficient data (need ≥3 months with non-zero '+ddLabel+')</td></tr>';
     const ddUsed = isElec ? 'CDD (primary) / HDD (fallback)' : 'HDD (primary) / CDD (fallback)';
+    // Build regression input data table for Excel comparison
+    const cddPtsDebug = rows.filter(r=>r.cdd!=null&&r.cdd>0&&r.normDays>0);
+    const hddPtsDebug = rows.filter(r=>r.hdd!=null&&r.hdd>0&&r.normDays>0);
+    const debugPts = isElec ? cddPtsDebug : hddPtsDebug;
+    const ddLabel2 = isElec ? 'CDD' : 'HDD';
+    const debugRows = debugPts.map(r=>{
+      const dd = isElec ? r.cdd : r.hdd;
+      const kwhPerDay = r.usage/r.normDays;
+      const ddPerDay  = dd/r.normDays;
+      const rawReg    = isElec ? reg.cdd : reg.hdd;
+      const fitLine   = rawReg ? rawReg.interceptRaw*r.normDays + rawReg.slope*dd : null;
+      const adjFit    = rawReg ? rawReg.intercept*r.normDays + rawReg.slope*dd : null;
+      return {ym:r.label, normDays:r.normDays, usage:r.usage, dd, kwhPerDay, ddPerDay, fitLine, adjFit};
+    });
+    const sumFitRaw   = debugRows.reduce((s,r)=>s+(r.fitLine||0),0);
+    const sumFitAdj   = debugRows.reduce((s,r)=>s+(r.adjFit||0),0);
+    const sumActual   = debugRows.reduce((s,r)=>s+r.usage,0);
+    const sumNormDays = debugRows.reduce((s,r)=>s+r.normDays,0);
+
+    const debugCsvId  = 'regrCsvData_'+m.id;
+    const debugTableId= 'regrDebugTable_'+m.id;
+
+    const debugTableRows = debugRows.map(r=>
+      '<tr>'+
+        '<td class="mono">'+r.ym+'</td>'+
+        '<td class="mono">'+r.normDays+'</td>'+
+        '<td class="mono">'+r.usage.toLocaleString(undefined,{maximumFractionDigits:1})+'</td>'+
+        '<td class="mono">'+r.dd.toFixed(1)+'</td>'+
+        '<td class="mono" style="color:var(--em2)">'+r.kwhPerDay.toFixed(4)+'</td>'+
+        '<td class="mono" style="color:var(--em2)">'+r.ddPerDay.toFixed(4)+'</td>'+
+        (r.fitLine!=null?'<td class="mono">'+r.fitLine.toFixed(1)+'</td>':'<td>—</td>')+
+        (r.adjFit!=null?'<td class="mono" style="color:var(--violet)">'+r.adjFit.toFixed(1)+'</td>':'<td>—</td>')+
+      '</tr>'
+    ).join('');
+
     regrPanel =
       '<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:12px">'+
         '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">📈 Regression Model — '+unit+'/Day ~ DD/Day</div>'+
         '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">'+
-          'OLS fit: <strong>usage/day = intercept + slope × (DD/day)</strong><br>'+
-          'Bias correction: mean residual (actual − predicted) added to intercept so model average = data average over training months.<br>'+
+          'OLS fit: <strong>usage/day = intercept + slope × (DD/day)</strong> — using calendar days per month as denominator.<br>'+
+          'Bias correction: <strong>(ΣfitLine − ΣactualKwh) / ΣcalendarDays</strong> subtracted from intercept, forcing total predicted kWh = total actual kWh over training months.<br>'+
+          'To replicate in Excel: use calendar days per month (not billing period days) as your day denominator for both kWh/day and DD/day columns.<br>'+
           'Baseline/month = corrected intercept × normDays + slope × DD_month &nbsp;·&nbsp; '+
           'DD used: <strong>'+ddUsed+'</strong> &nbsp;·&nbsp; Basis: <strong>'+(normBasis==='calendar'?'Calendar days':'Actual bill days')+'</strong>'+
         '</div>'+
@@ -2915,7 +2999,44 @@ function renderNormPane(pane, m, bills, incl){
         '</div>'+
         (!reg.hdd&&!reg.cdd
           ? '<div style="font-size:11px;color:var(--warn);padding:6px 0">⚠️ No regression computed — upload weather data with at least 3 months of non-zero degree days.</div>'
-          : '<div style="font-size:11px;color:var(--text3)">Violet line on chart = bias-corrected regression baseline. Corrected intercept shifts the line so training-period predictions are unbiased.</div>')+
+          : '')+
+        // Regression input data table
+        '<div style="margin-top:12px">'+
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'+
+            '<div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Regression Input Data ('+ddLabel2+' model — '+debugRows.length+' rows)</div>'+
+            '<button class="btn btn-ghost btn-sm" onclick="exportRegrCSV(\''+m.id+'\')">⬇ Export CSV</button>'+
+          '</div>'+
+          '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:7px;max-height:280px;overflow-y:auto">'+
+          '<table class="ma-tbl" id="'+debugTableId+'">'+
+            '<thead><tr>'+
+              '<th>Month</th>'+
+              '<th>Cal Days</th>'+
+              '<th>'+unit+'</th>'+
+              '<th>'+ddLabel2+'</th>'+
+              '<th style="color:var(--em2)">'+unit+'/Day</th>'+
+              '<th style="color:var(--em2)">'+ddLabel2+'/Day</th>'+
+              '<th>Fit (raw)</th>'+
+              '<th style="color:var(--violet)">Fit (adj)</th>'+
+            '</tr></thead>'+
+            '<tbody>'+debugTableRows+'</tbody>'+
+            '<tfoot style="background:var(--s1);font-weight:700">'+
+              '<tr>'+
+                '<td class="mono">Σ / Check</td>'+
+                '<td class="mono">'+sumNormDays+'</td>'+
+                '<td class="mono">'+sumActual.toLocaleString(undefined,{maximumFractionDigits:1})+'</td>'+
+                '<td></td><td></td><td></td>'+
+                '<td class="mono'+(Math.abs(sumFitRaw-sumActual)>1?' style="color:var(--warn)"':'')+'">'+sumFitRaw.toFixed(1)+'</td>'+
+                '<td class="mono" style="color:var(--violet)">'+sumFitAdj.toFixed(1)+'</td>'+
+              '</tr>'+
+            '</tfoot>'+
+          '</table>'+
+          '</div>'+
+          '<div style="font-size:10px;color:var(--text3);margin-top:5px">'+
+            'Σ Fit (adj) should equal Σ '+unit+' after bias correction. '+
+            'Highlighted '+unit+'/Day and '+ddLabel2+'/Day columns = exact x/y values fed to INTERCEPT() and SLOPE() in Excel.'+
+          '</div>'+
+          '<textarea id="'+debugCsvId+'" style="display:none"></textarea>'+
+        '</div>'+
       '</div>';
   }
 
