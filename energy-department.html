@@ -4035,7 +4035,7 @@ function renderBuildingStatsPane(pane, b){
   if(gBlRows.length){
     gBlRows.slice().sort((a,c)=>a.ym.localeCompare(c.ym)).forEach(r=>{
       const mo = parseInt(r.ym.split('-')[1])-1;
-      gasByMo[mo] = { therms: r.usage, cost: r.cost };
+      gasByMo[mo] = { therms: r.regrBaseline!=null ? r.regrBaseline : r.usage, cost: r.cost };
     });
   }
 
@@ -4043,7 +4043,7 @@ function renderBuildingStatsPane(pane, b){
   if(wBlRows.length){
     wBlRows.slice().sort((a,c)=>a.ym.localeCompare(c.ym)).forEach(r=>{
       const mo = parseInt(r.ym.split('-')[1])-1;
-      waterByMo[mo] = { kgal: r.usage, cost: r.cost };
+      waterByMo[mo] = { kgal: r.regrBaseline!=null ? r.regrBaseline : r.usage, cost: r.cost };
     });
   }
 
@@ -4293,7 +4293,7 @@ function renderBuildingStatsPane(pane, b){
             </tr>
             <tr>
               ${elecM?`
-                <th class="e-hdr">kWh</th>
+                <th class="e-hdr" title="Normalized Baseline kWh — regression-predicted usage for this calendar month">Norm.<br>kWh</th>
                 <th class="e-hdr">Actual kW</th>
                 <th class="e-hdr">Billed<br>kW</th>
                 <th class="e-hdr">Facilities kW</th>
@@ -4306,12 +4306,12 @@ function renderBuildingStatsPane(pane, b){
                 <th class="e-hdr">Cost/<br>Facilities kW</th>
               `:''}
               ${gasM?`
-                <th class="g-hdr">Therms</th>
+                <th class="g-hdr" title="Normalized Baseline Therms — regression-predicted usage for this calendar month">Norm.<br>Therms</th>
                 <th class="g-hdr">Gas Cost</th>
                 <th class="g-hdr">Cost/<br>Therm</th>
               `:''}
               ${waterM?`
-                <th class="w-hdr">kGal</th>
+                <th class="w-hdr" title="Normalized Baseline kGal — regression-predicted usage for this calendar month">Norm.<br>kGal</th>
                 <th class="w-hdr">Water<br>Cost</th>
                 <th class="w-hdr">Cost/<br>kGal</th>
               `:''}
