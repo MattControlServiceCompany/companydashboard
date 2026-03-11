@@ -2979,14 +2979,14 @@ function renderNormPane(pane, m, bills, incl){
   const statUnit = metric==='weather'&&avgWeather!=null ? unit+'/'+weatherDDLabel+' avg'
                  : metric==='total' ? unit+'/mo avg' : unit+'/day avg';
   const statLbl  = metric==='weather' ? 'Weather-Norm Avg ('+weatherDDLabel+')'
-                 : metric==='total' ? 'Avg Monthly Usage' : 'Date-Normalized Avg';
+                 : metric==='total' ? 'Avg Monthly ' + unit : unit + '/Day Avg';
 
   // ── Compact stats strip ──
   const statsHTML =
     '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">'+
       blPill(totalUsage.toLocaleString(undefined,{maximumFractionDigits:0})+' '+unit, 'Total')+
       blPill(statVal+' '+statUnit.split(' ')[0], statLbl)+
-      (hasRegr&&avgRegrBl!=null ? blPill(avgRegrBl.toLocaleString(undefined,{maximumFractionDigits:0})+' '+unit+'/mo', 'Reg. Predicted Avg', 'var(--violet)') : '')+
+      (hasRegr&&avgRegrBl!=null ? blPill(avgRegrBl.toLocaleString(undefined,{maximumFractionDigits:0})+' '+unit+'/mo', 'Normalized Baseline Avg', 'var(--violet)') : '')+
       blPill('$'+totalCost.toLocaleString(undefined,{maximumFractionDigits:0}), 'Total Cost', 'var(--em2)')+
       blPill(rows.length+' mo', 'Data Points')+
       (hasEUI&&rolling12EUI!=null ? blPill(rolling12EUI.toFixed(1)+' kBtu/sf/yr', '12-Mo EUI', 'var(--warn)') : '')+
@@ -3168,7 +3168,7 @@ function renderNormPane(pane, m, bills, incl){
         'border:1px solid '+(_regressionPanelVis?'rgba(139,92,246,0.4)':'var(--border)')+';'+
         'color:'+(_regressionPanelVis?'var(--violet)':'var(--text2)')+';'+
       '">'+
-        '<span>📈 Regression Coefficients — '+unit+'/Day ~ DD/Day model'+(hasRegr?' · <span style=\'color:var(--em);font-size:11px\'>✓ Active</span>':' · <span style=\'color:var(--text3);font-size:11px\'>Upload weather to enable</span>')+'</span>'+
+        '<span>📈 Normalized Baseline Model — Regression Coefficients'+(hasRegr?' · <span style=\'color:var(--em);font-size:11px\'>✓ Active</span>':' · <span style=\'color:var(--text3);font-size:11px\'>Upload weather to enable</span>')+'</span>'+
         '<span style="font-size:11px;color:var(--text3)">'+(_regressionPanelVis?'▲ Hide':'▼ Show')+'</span>'+
       '</button>'+
     '</div>';
@@ -3197,8 +3197,8 @@ function renderNormPane(pane, m, bills, incl){
 
   // ── Chart label ──
   const chartLabel = metric==='weather' ? unit+'/'+weatherDDLabel+' — Weather Normalized'
-                   : metric==='total'   ? unit+'/Month'+(hasRegr?' vs Regression Baseline':'')
-                   : unit+'/Day — Date Normalized'+(hasRegr?' vs Regression Baseline':'');
+                   : metric==='total'   ? hasRegr ? 'Normalized kWh vs Actual kWh' : unit+'/Month'
+                   : unit+'/Day';
 
   // ── Table col header ──
   const normColHdr = metric==='weather' ? unit+'/'+weatherDDLabel
@@ -3229,7 +3229,7 @@ function renderNormPane(pane, m, bills, incl){
     return `<tr class="${r.isBaseline?'baseline-row':''}">
       <td class="mono">${r.label}</td>
       <td class="mono">${r.days}</td>
-      <td class="mono">${r.usage.toLocaleString(undefined,{maximumFractionDigits:1})}</td>
+      <td class="mono" style="color:var(--text3);font-size:10.5px">${r.usage.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
       ${hddCell}${cddCell}
       <td class="mono" style="color:var(--text2)">${fmtTemp(r.avgTemp)}</td>
       <td class="mono" style="color:var(--em2)">${r.weatherNorm!=null?r.weatherNorm.toFixed(3):'—'}</td>
@@ -3248,13 +3248,13 @@ function renderNormPane(pane, m, bills, incl){
 
   // ── Table section ──
   const euiHdr   = hasEUI   ? '<th>kWh/sqft</th>' : '';
-  const regrHdrs = hasRegr  ? '<th style="color:var(--violet)" title="Regression-predicted usage based on weather model">Predicted</th><th style="color:var(--text3);font-size:10px">Norm Days</th>' : '';
+  const regrHdrs = hasRegr  ? '<th style="color:var(--violet)" title="Weather-normalized usage — primary output when regression is active">Normalized Baseline</th><th style="color:var(--text3);font-size:10px">Norm Days</th>' : '';
   const tableSection =
     '<div>'+
-      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">Monthly Detail + Weather Data</div>'+
+      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+(hasRegr?'Monthly Normalized Baseline + Calculation Data':'Monthly Usage + Weather Data')+'</div>'+
       '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:340px;overflow-y:auto">'+
         '<table class="ma-tbl">'+
-          '<thead><tr><th>Month</th><th>Days</th><th title="Usage prorated to calendar month — bills spanning multiple months are split proportionally. Will not match raw bill totals.">'+unit+' ⓘ</th><th>HDD</th><th>CDD</th><th>Avg °F</th><th>'+unit+'/'+weatherDDLabel+'</th>'+regrHdrs+euiHdr+'<th>Cost</th><th></th></tr></thead>'+
+          '<thead><tr><th>Month</th><th>Days</th><th title="Prorated kWh — bills split by days. Shown for calculation steps only." style="color:var(--text3);font-size:10px">Prorated '+unit+'</th><th>HDD</th><th>CDD</th><th>Avg °F</th><th>'+unit+'/'+weatherDDLabel+'</th>'+regrHdrs+euiHdr+'<th>Cost</th><th></th></tr></thead>'+
           '<tbody>'+tblRows+'</tbody>'+
         '</table>'+
       '</div>'+
@@ -3321,7 +3321,7 @@ function drawNormChart(canvasId, rows, unit, metric, weatherDDLabel){
   }];
   if(regrData && metric!=='weather'){
     datasets.push({
-      label: 'Regression Baseline',
+      label: 'Normalized Baseline',
       data: regrData,
       type: 'line',
       borderColor: 'rgba(139,92,246,0.9)',
@@ -3343,9 +3343,9 @@ function drawNormChart(canvasId, rows, unit, metric, weatherDDLabel){
       plugins:{
         legend:{display: hasRegr&&metric!=='weather', labels:{color:'rgba(200,210,230,0.85)',font:{size:10},boxWidth:12,padding:10}},
         tooltip:{callbacks:{label:ctx=>{
-          if(ctx.dataset.label==='Regression Baseline'){
+          if(ctx.dataset.label==='Normalized Baseline'){
             const v=ctx.parsed.y;
-            return 'Reg. Baseline: '+(metric==='total'?v.toLocaleString(undefined,{maximumFractionDigits:0}):v.toFixed(2))+' '+yLabel;
+            return 'Normalized Baseline: '+(metric==='total'?v.toLocaleString(undefined,{maximumFractionDigits:0}):v.toFixed(2))+' '+yLabel;
           }
           return tooltipFmt(ctx.parsed.y);
         }}}
@@ -3619,7 +3619,7 @@ function renderBaselinePane(pane, m, bills, incl){
     ? unit+'/Month — Baseline Highlighted'
     : unit+'/Day — Baseline Highlighted')
     + (udBlOverlay?' + Raw Bills':'')
-    + (hasRegrBl?' + Reg. Baseline':'');
+    + (hasRegrBl?' + Normalized Baseline':'');
   const blControlBar =
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:10px">'+
       '<button class="ud-incl-btn" onclick="toggleBlChart()" style="background:var(--s3);border-color:var(--border2);color:var(--text2)">'+chartBtnLabel+'</button>'+
@@ -3840,7 +3840,7 @@ function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay, metric){
   // Regression baseline line (violet)
   if(hasRegr){
     datasets.push({
-      label:'Regression Baseline',
+      label:'Normalized Baseline',
       data: rows.map(r=> r.regrBaseline==null ? null :
         isTotal ? +r.regrBaseline.toFixed(0) : +(r.regrBaseline/r.normDays).toFixed(2)),
       type:'line', borderColor:'rgba(139,92,246,0.9)', backgroundColor:'rgba(139,92,246,0.1)',
@@ -4298,7 +4298,7 @@ function renderMeterStatsPane(pane, m, bills, incl){
     avgHDD!=null?blPill(avgHDD.toFixed(0)+' HDD/mo','Avg Monthly HDD'):'',
     avgCDD!=null?blPill(avgCDD.toFixed(0)+' CDD/mo','Avg Monthly CDD'):'',
     avgTemp!=null?blPill(avgTemp.toFixed(1)+'°F','Avg Temperature'):'',
-    avgPredicted!=null?blPill(avgPredicted.toLocaleString(undefined,{maximumFractionDigits:0})+' '+unit+'/mo','Avg Predicted (Regression)','var(--violet)'):'',
+    avgPredicted!=null?blPill(avgPredicted.toLocaleString(undefined,{maximumFractionDigits:0})+' '+unit+'/mo','Avg Normalized Baseline','var(--violet)'):'',
     blPill((normBasis==='calendar'?'Calendar month days':'Actual bill days'),'Period Basis'),
   ].filter(Boolean);
 
@@ -4336,7 +4336,7 @@ function renderMeterStatsPane(pane, m, bills, incl){
       blPill(blRows.length+' months','Baseline Period'),
       blPill(blAvgMo.toLocaleString(undefined,{maximumFractionDigits:0})+' '+unit+'/mo','BL Avg/Month'),
       blPill(blAvgDay.toFixed(1)+' '+unit+'/day','BL Avg/Day'),
-      blRegrAvg!=null?blPill(blRegrAvg.toLocaleString(undefined,{maximumFractionDigits:0})+' '+unit+'/mo','BL Predicted Avg','var(--violet)'):'',
+      blRegrAvg!=null?blPill(blRegrAvg.toLocaleString(undefined,{maximumFractionDigits:0})+' '+unit+'/mo','BL Normalized Baseline Avg','var(--violet)'):'',
       blCost>0?blPill('$'+blCost.toLocaleString(undefined,{maximumFractionDigits:0}),'BL Total Cost','var(--em2)'):'',
       blAvgHDD!=null?blPill(blAvgHDD.toFixed(0)+' HDD/mo','BL Avg HDD'):'',
       blEUI!=null?blPill(blEUI.toFixed(1)+' kBtu/sf/yr','Baseline EUI','var(--warn)'):'',
@@ -4454,7 +4454,7 @@ function renderPerfPane(pane, m, bills, incl){
   const statsHTML=
     '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">'+
       blPill(blAvgMo.toFixed(0)+' '+unit+'/mo', 'Baseline Avg')+
-      (blRegrAvgMo!=null ? blPill(blRegrAvgMo.toFixed(0)+' '+unit+'/mo', 'Reg. Predicted Avg', 'var(--violet)') : '')+
+      (blRegrAvgMo!=null ? blPill(blRegrAvgMo.toFixed(0)+' '+unit+'/mo', 'Normalized Baseline Avg', 'var(--violet)') : '')+
       blPill(postAvgMo.toFixed(0)+' '+unit+'/mo', 'Post-BL Avg')+
       blPill((savPct>=0?'−':'+')+(Math.abs(savPct)).toFixed(1)+'%', savPct>=0?'Reduction':'Increase', savPct>=0?'var(--em)':'var(--danger)')+
       (savCost!==null ? blPill((savCost>=0?'−':'+')+' $'+Math.abs(savCost).toLocaleString(undefined,{maximumFractionDigits:0}), 'Cost Delta', savCost>=0?'var(--em)':'var(--danger)') : '')+
@@ -4476,8 +4476,8 @@ function renderPerfPane(pane, m, bills, incl){
   // Chart control bar
   const perfChartBtn = _perfChartVis ? '📉 Hide Chart' : '📊 Show Chart';
   const perfChartLabel= (_perfMetric==='total'
-    ? unit+'/Month vs '+(hasRegr_p?'Reg. ':'')+'Baseline'
-    : unit+'/Day vs '+(hasRegr_p?'Reg. ':'')+'Baseline')
+    ? hasRegr_p ? 'Normalized kWh vs Actual kWh' : unit+'/Month vs Baseline'
+    : hasRegr_p ? 'Normalized kWh/Day vs Actual' : unit+'/Day vs Baseline')
     +(_perfOverlay?' + Raw Bills':'');
   const perfControlBar=
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:10px">'+
@@ -4496,7 +4496,7 @@ function renderPerfPane(pane, m, bills, incl){
   // Normalization basis note
   const basisNote_p = '<div style="font-size:11px;color:var(--text3);margin-bottom:10px;padding:6px 10px;background:var(--s3);border-radius:5px;border:1px solid var(--border)">'+
     '📐 Period basis: <strong>'+(normBasis_p==='calendar'?'Calendar month days':'Actual bill days')+'</strong> · '+
-    (hasRegr_p?'✅ Regression baseline active — expected usage calculated per-month using weather model'
+    (hasRegr_p?'✅ Normalized Baseline active — expected usage calculated per-month using weather model'
       :'⚠️ No regression — using simple baseline average as expected. Upload weather data to enable.')+
     ' · Change in Normalized tab</div>';
 
@@ -4548,7 +4548,7 @@ function renderPerfPane(pane, m, bills, incl){
         '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(120,130,160,0.45);border-radius:2px;display:inline-block"></span>Pre-Baseline</span>'+
         '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(0,212,170,0.8);border-radius:2px;display:inline-block"></span>Baseline</span>'+
         '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(100,160,255,0.75);border-radius:2px;display:inline-block"></span>Post-Baseline</span>'+
-        (hasRegr_p?'<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:rgba(139,92,246,0.9);border-radius:1px;display:inline-block"></span>Reg. Baseline</span>':
+        (hasRegr_p?'<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:rgba(139,92,246,0.9);border-radius:1px;display:inline-block"></span>Normalized Baseline</span>':
           '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:var(--warn);border-radius:1px;display:inline-block"></span>Baseline Avg</span>')+
       '</div>'+
     '</div>' : '<div></div>';
@@ -4607,7 +4607,7 @@ function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, i
   // Regression baseline line (violet, preferred) — or simple avg fallback (amber dashed)
   if(hasRegr){
     datasets.push({
-      label:'Reg. Baseline',
+      label:'Normalized Baseline',
       data: rows.map(r=> r.regrBaseline==null ? null :
         isTotal ? +r.regrBaseline.toFixed(0) : +(r.regrBaseline/r.normDays).toFixed(2)),
       type:'line', borderColor:'rgba(139,92,246,0.9)', backgroundColor:'rgba(139,92,246,0.1)',
@@ -4650,7 +4650,7 @@ function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, i
         legend:{display:showLegend, labels:{color:'rgba(200,210,230,0.85)',font:{size:10},boxWidth:12,padding:10}},
         tooltip:{callbacks:{label:ctx=>{
           const v=ctx.parsed.y;
-          if(ctx.dataset.label==='Reg. Baseline') return 'Reg. Baseline: '+(isTotal?v.toLocaleString(undefined,{maximumFractionDigits:0}):v.toFixed(2))+' '+yLabel;
+          if(ctx.dataset.label==='Normalized Baseline') return 'Normalized Baseline: '+(isTotal?v.toLocaleString(undefined,{maximumFractionDigits:0}):v.toFixed(2))+' '+yLabel;
           if(ctx.dataset.label==='Baseline Avg') return 'Baseline avg: '+(isTotal?v.toFixed(0):v.toFixed(2))+' '+yLabel;
           const era=rows[ctx.dataIndex]?.era;
           const tag=era==='pre'?'Pre-Baseline':era==='baseline'?'Baseline':'Post-Baseline';
