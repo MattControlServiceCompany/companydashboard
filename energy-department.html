@@ -2415,23 +2415,70 @@ function renderMeterWorkspace(){
    BILLS TAB
 ══════════════════════════════════════════ */
 // Determine which calendar month a billing period "belongs to" for normalization.
-// Rule: the calendar month that contains the majority of billing days.
-function normMonth(startStr, endStr, incl){
+// Assign each bill to a calendar month.
+// Rule 1: month with the majority of billing days.
+// Rule 2: if bills are continuous and two would collide on the same month,
+//          the later bill is bumped to the next month in sequence.
+// allBills: full sorted bill array (needed for collision detection).
+//           If omitted, falls back to majority-only (safe for single-bill calls).
+function normMonth(startStr, endStr, incl, allBills){
   if(!startStr||!endStr) return startStr||'';
-  const s=new Date(startStr+'T12:00:00'), e=new Date(endStr+'T12:00:00');
-  // Count days per calendar month
-  const counts={};
-  let cur=new Date(s);
-  while(cur<=e){
-    const key=cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0');
-    counts[key]=(counts[key]||0)+1;
-    cur.setDate(cur.getDate()+1);
+
+  // Helper: month with most days in a date range
+  function majorityMonth(s, e){
+    const counts={};
+    let cur=new Date(s);
+    while(cur<=e){
+      const key=cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0');
+      counts[key]=(counts[key]||0)+1;
+      cur.setDate(cur.getDate()+1);
+    }
+    return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0];
   }
-  // Return month with most days
-  return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0];
+
+  // Helper: advance a YYYY-MM string by N months
+  function addMonths(ym, n){
+    let [y,mo]=ym.split('-').map(Number);
+    mo+=n; while(mo>12){mo-=12;y++;} while(mo<1){mo+=12;y--;}
+    return y+'-'+String(mo).padStart(2,'0');
+  }
+
+  if(!allBills || allBills.length===0){
+    const s=new Date(startStr+'T12:00:00'), e=new Date(endStr+'T12:00:00');
+    return majorityMonth(s,e);
+  }
+
+  // Build majority assignment for every bill in order
+  const sorted = allBills.filter(b=>b.start&&b.end)
+    .slice().sort((a,b)=>new Date(a.start)-new Date(b.start));
+
+  const assignments = [];
+  for(const bill of sorted){
+    const s=new Date(bill.start+'T12:00:00'), e=new Date(bill.end+'T12:00:00');
+    let ym = majorityMonth(s, e);
+    // Collision: if this month is already taken by the previous bill, bump forward
+    if(assignments.length>0){
+      const prev = assignments[assignments.length-1];
+      // Only bump if bills are continuous (gap ≤ 3 days)
+      const gapDays = (s - new Date(prev.end+'T12:00:00')) / (1000*60*60*24);
+      if(gapDays <= 3 && ym <= prev.ym){
+        ym = addMonths(prev.ym, 1);
+      }
+    }
+    assignments.push({start:bill.start, end:bill.end, ym});
+  }
+
+  // Return the assignment for the requested bill
+  const match = assignments.find(a=>a.start===startStr&&a.end===endStr);
+  if(match) return match.ym;
+
+  // Fallback: majority only
+  const s=new Date(startStr+'T12:00:00'), e=new Date(endStr+'T12:00:00');
+  return majorityMonth(s,e);
 }
-function normMonthLabel(startStr, endStr, incl){
-  const ym=normMonth(startStr,endStr,incl);
+
+function normMonthLabel(startStr, endStr, incl, allBills){
+  const ym=normMonth(startStr,endStr,incl,allBills);
   if(!ym) return '—';
   const [y,mo]=ym.split('-');
   const dt=new Date(parseInt(y),parseInt(mo)-1,1);
@@ -2474,7 +2521,7 @@ function renderBillsPane(pane, m, bills, incl){
       const colSpan = isElec?11:isGas?7:7;
       tblBody += `<tr class="ud-bill-gap-row"><td colspan="${colSpan}"><div class="ud-bill-gap-msg">⚠️ Gap in data — ${gapDays} day${gapDays!==1?'s':''} missing between ${fmtDate(bills[idx-1].end)} and ${fmtDate(row.start)}</div></td></tr>`;
     }
-    tblBody += renderBillRow(row, m, incl);
+    tblBody += renderBillRow(row, m, incl, bills);
   });
 
   if(bills.length===0){
@@ -3472,7 +3519,7 @@ function renderBaselinePane(pane, m, bills, incl){
     // Summer/Winter $/kW demand — electric only, split by season
     let summerKwRate=null, winterKwRate=null;
     if(m.commodity==='Electric'){
-      const blBills = bills.filter(b=>{ const ym=normMonth(b.start,b.end,incl); return blMonths.includes(ym); });
+      const blBills = bills.filter(b=>{ const ym=normMonth(b.start,b.end,incl,bills); return blMonths.includes(ym); });
       const demandBills = blBills.filter(b=>(b.demandKW||0)>0&&(b.kwCost||0)>0);
       const sumDem = demandBills.filter(b=>{ const mo=new Date(b.start+'T12:00:00').getMonth()+1; return mo>=6&&mo<=9; });
       const winDem = demandBills.filter(b=>{ const mo=new Date(b.start+'T12:00:00').getMonth()+1; return mo===12||mo<=3; });
@@ -3660,7 +3707,7 @@ function refreshBaselineStats(mid){
     let summerKwRate=null, winterKwRate=null;
     if(m.commodity==='Electric'){
       const inclFlag=m.inclusive!==false;
-      const blBills=bills.filter(b=>blMonths2.includes(normMonth(b.start,b.end,inclFlag)));
+      const blBills=bills.filter(b=>blMonths2.includes(normMonth(b.start,b.end,inclFlag,bills)));
       const dBills=blBills.filter(b=>(b.demandKW||0)>0&&(b.kwCost||0)>0);
       const sumDem=dBills.filter(b=>{ const mo=new Date(b.start+'T12:00:00').getMonth()+1; return mo>=6&&mo<=9; });
       const winDem=dBills.filter(b=>{ const mo=new Date(b.start+'T12:00:00').getMonth()+1; return mo===12||mo<=3; });
@@ -3768,8 +3815,7 @@ function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay, metric){
     const billByYm={};
     bills.forEach(b=>{
       if(!b.start||!b.end) return;
-      const ym=normMonth(b.start,b.end,incl);
-      const isElec=unit==='kWh', isGasU=unit==='Therms';
+      const ym=normMonth(b.start,b.end,incl,bills);
       const usage=isElec?(parseFloat(b.kwh)||0):isGasU?(parseFloat(b.therms)||0):(parseFloat(b.usage)||0);
       const days=Math.max(1,parseInt(calcDays(b.start,b.end,incl))||1);
       if(!billByYm[ym]||usage>0) billByYm[ym]={usage, days, perDay:+(usage/days).toFixed(2)};
@@ -3887,7 +3933,7 @@ function renderBuildingStatsPane(pane, m, bills, incl){
     let sumKwRate=null,winKwRate=null;
     if(isElec){
       const bMonths=blMonths;
-      const blBills=bills.filter(b=>bMonths.includes(normMonth(b.start,b.end,incl)));
+      const blBills=bills.filter(b=>bMonths.includes(normMonth(b.start,b.end,incl,bills)));
       const dBills=blBills.filter(b=>(b.demandKW||0)>0&&(b.kwCost||0)>0);
       const sDem=dBills.filter(b=>{const mo=new Date(b.start+'T12:00:00').getMonth()+1;return mo>=6&&mo<=9;});
       const wDem=dBills.filter(b=>{const mo=new Date(b.start+'T12:00:00').getMonth()+1;return mo===12||mo<=3;});
@@ -4189,8 +4235,7 @@ function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, i
     const billByYm={};
     bills.forEach(b=>{
       if(!b.start||!b.end) return;
-      const ym=normMonth(b.start,b.end,incl);
-      const isElecB=unit==='kWh', isGasB=unit==='Therms';
+      const ym=normMonth(b.start,b.end,incl,bills);
       const usage=isElecB?(parseFloat(b.kwh)||0):isGasB?(parseFloat(b.therms)||0):(parseFloat(b.usage)||0);
       const days=Math.max(1,parseInt(calcDays(b.start,b.end,incl))||1);
       if(!billByYm[ym]||usage>0) billByYm[ym]={usage, days};
@@ -4474,10 +4519,10 @@ function importBillCsvRows(){
 
 
 /* ── RENDER BILL ROW (used in Bills pane table) ── */
-function renderBillRow(row, m, incl){
+function renderBillRow(row, m, incl, allBills){
   if(incl===undefined) incl = m.inclusive !== false;
   const days = calcDays(row.start, row.end, incl);
-  const nm = normMonthLabel(row.start, row.end, incl);
+  const nm = normMonthLabel(row.start, row.end, incl, allBills||m.bills||[]);
   const nmCell = `<td class="norm-mon-cell">${nm}</td>`;
   const actionBtns = `<td style="white-space:nowrap">
     <button class="btn-edit" onclick="openBillModal('${m.id}','${row.id}')" title="Edit">✏️</button>
