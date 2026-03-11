@@ -3790,6 +3790,8 @@ function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay, metric){
   metric = metric || 'total';
   const canvas=document.getElementById(canvasId); if(!canvas) return;
   if(_maCharts[canvasId]){_maCharts[canvasId].destroy();}
+  const isElec = unit==='kWh';
+  const isGasU = unit==='Therms';
   const labels=rows.map(r=>r.label);
   const isTotal = metric==='total';
   const normData = isTotal ? rows.map(r=>+r.usage.toFixed(0)) : rows.map(r=>+r.usagePerDay.toFixed(2));
@@ -4208,9 +4210,9 @@ function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, i
   metric = metric || 'total';
   const canvas=document.getElementById(canvasId); if(!canvas) return;
   if(_maCharts[canvasId]){_maCharts[canvasId].destroy();}
+  const isElecB = unit==='kWh';
+  const isGasB  = unit==='Therms';
   const labels=rows.map(r=>r.label);
-  const isTotal=metric==='total';
-  const mainData=isTotal?rows.map(r=>+r.usage.toFixed(0)):rows.map(r=>+r.usagePerDay.toFixed(2));
   const blRef=isTotal?+blAvgMo.toFixed(0):+blAvgDay.toFixed(2);
   const yLabel=isTotal?unit+'/Month':unit+'/Day';
   const hasRegr=rows.some(r=>r.regrBaseline!=null);
