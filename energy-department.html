@@ -4044,41 +4044,43 @@ function renderBuildingStatsPane(pane, b){
   // ── CSS for this panel ──
   const css = `
     .bbd-wrap{font-family:var(--font);font-size:11px;color:var(--text);padding:4px 0 20px}
-    .bbd-title{text-align:center;font-size:15px;font-weight:800;color:var(--warn);letter-spacing:.04em;padding:8px 0 10px;text-transform:uppercase}
-    .bbd-meta{display:grid;grid-template-columns:auto 1fr 1fr;gap:0 24px;margin-bottom:10px;font-size:11px}
-    .bbd-meta-col{padding:4px 0}
-    .bbd-meta-lbl{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:3px}
-    .bbd-bl-tbl{border-collapse:collapse;font-size:10px}
-    .bbd-bl-tbl td,.bbd-bl-tbl th{border:1px solid var(--border2);padding:2px 7px;white-space:nowrap}
-    .bbd-bl-tbl th{background:var(--s3);color:var(--text2);font-weight:700}
-    .bbd-bl-tbl .bl-green{background:#1a3a2a;color:#5de8a0;font-weight:700}
-    .bbd-summary{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:6px 12px}
-    .bbd-sum-cell{display:flex;flex-direction:column;gap:2px}
-    .bbd-sum-lbl{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
-    .bbd-sum-val{font-size:13px;font-weight:700;color:var(--text);font-family:var(--mono)}
-    .bbd-sum-val.c-blue{color:#4d9de0}
-    .bbd-sum-val.c-orange{color:var(--warn)}
-    .bbd-sum-val.c-green{color:var(--em)}
-    .bbd-sum-val.c-teal{color:var(--em2)}
-    .bbd-sum-val.c-violet{color:var(--violet)}
-    .bbd-rate-block{display:flex;flex-direction:column;gap:2px}
-    .bbd-rate-row{display:flex;gap:6px;align-items:center}
-    .bbd-rate-lbl{font-size:9px;color:var(--text3);width:44px;flex-shrink:0}
-    .bbd-rate-val{font-size:11px;font-weight:700;font-family:var(--mono);color:var(--text)}
-    .bbd-rate-val2{font-size:11px;font-weight:700;font-family:var(--mono);color:#4d9de0}
-    .bbd-tbl-wrap{overflow-x:auto;margin-bottom:16px;border:1px solid var(--border);border-radius:8px}
-    .bbd-tbl{border-collapse:collapse;width:100%;font-size:10.5px}
-    .bbd-tbl th{background:#1a2540;color:var(--text2);font-weight:700;padding:5px 8px;text-align:center;border:1px solid #2a3555;white-space:nowrap;font-size:10px;letter-spacing:.2px}
-    .bbd-tbl th.e-hdr{background:#1a2d4a;color:#7ec8e3}
-    .bbd-tbl th.g-hdr{background:#2a1f10;color:#f59e0b}
-    .bbd-tbl th.w-hdr{background:#10302a;color:#34d399}
-    .bbd-tbl th.u-hdr{background:#1e1e30;color:var(--violet)}
-    .bbd-tbl td{padding:4px 8px;text-align:right;border:1px solid #1e2535;font-family:var(--mono);font-size:10.5px;white-space:nowrap}
-    .bbd-tbl td.mo{text-align:left;font-family:var(--font);font-weight:600;color:var(--text2);background:var(--s2)}
-    .bbd-tbl tr:hover td{background:rgba(255,255,255,0.025)}
-    .bbd-tbl tr.total-row td{border-top:2px solid #3a4565;font-weight:700;background:var(--s2);color:var(--text)}
-    .bbd-tbl tr.total-row td.mo{color:var(--text);font-size:11px}
-    .bbd-section-hdr{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text2);padding:8px 14px 4px;background:var(--s3);border-bottom:1px solid var(--border)}
+    .bbd-title{text-align:center;font-size:15px;font-weight:800;color:#f0c040;letter-spacing:.06em;padding:8px 0 12px;text-transform:uppercase}
+    .bbd-bl-tbl{border-collapse:collapse;font-size:10.5px}
+    .bbd-bl-tbl td,.bbd-bl-tbl th{border:1px solid rgba(255,255,255,0.15);padding:3px 10px;white-space:nowrap}
+    .bbd-bl-tbl th{background:rgba(255,255,255,0.08);color:#c8d8f0;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.4px}
+    .bbd-bl-tbl .bl-green{background:#0d3320;color:#4fffaa;font-weight:700;border-color:#1a5535}
+
+    .bbd-summary{background:#0d1525;border:1px solid rgba(255,255,255,0.12);border-radius:9px;padding:12px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:0;row-gap:0}
+    .bbd-sum-cell{display:flex;flex-direction:column;gap:3px;padding:8px 14px;border-right:1px solid rgba(255,255,255,0.07);flex:1;min-width:90px}
+    .bbd-sum-cell:last-child{border-right:none}
+    .bbd-sum-lbl{font-size:9.5px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.5px;font-weight:700;white-space:nowrap}
+    .bbd-sum-val{font-size:15px;font-weight:800;color:#e8eef8;font-family:var(--mono);line-height:1.1}
+    .bbd-sum-val.c-blue{color:#60b8ff}
+    .bbd-sum-val.c-orange{color:#ffb040}
+    .bbd-sum-val.c-green{color:#40e8a0}
+    .bbd-sum-val.c-teal{color:#40d8d0}
+    .bbd-sum-val.c-violet{color:#b090ff}
+
+    .bbd-rate-block{display:flex;flex-direction:column;gap:3px;margin-top:1px}
+    .bbd-rate-row{display:flex;gap:5px;align-items:baseline}
+    .bbd-rate-season{font-size:9px;color:#7090a8;font-weight:700;text-transform:uppercase;width:38px;flex-shrink:0;letter-spacing:.3px}
+    .bbd-rate-val{font-size:12px;font-weight:700;font-family:var(--mono);color:#e8eef8}
+
+    .bbd-tbl-wrap{overflow-x:auto;margin-bottom:16px;border:1px solid rgba(255,255,255,0.1);border-radius:9px;background:#080e1c}
+    .bbd-tbl{border-collapse:collapse;width:100%;font-size:11px}
+    .bbd-tbl th{font-weight:700;padding:6px 9px;text-align:center;border:1px solid rgba(255,255,255,0.08);white-space:nowrap;font-size:10px;letter-spacing:.2px}
+    .bbd-tbl th.mo-hdr{background:#0d1830;color:#c8d8f0;text-align:left;padding-left:12px;font-size:11px}
+    .bbd-tbl th.e-hdr{background:#0a1e38;color:#7dd8ff;border-color:rgba(100,180,255,0.15)}
+    .bbd-tbl th.g-hdr{background:#221508;color:#ffb040;border-color:rgba(255,160,50,0.2)}
+    .bbd-tbl th.w-hdr{background:#081e18;color:#40e8a0;border-color:rgba(50,220,140,0.2)}
+    .bbd-tbl th.u-hdr{background:#150d2a;color:#c090ff;border-color:rgba(180,120,255,0.2);vertical-align:middle}
+    .bbd-tbl td{padding:5px 9px;text-align:right;border:1px solid rgba(255,255,255,0.05);font-family:var(--mono);font-size:11px;white-space:nowrap;color:#d8e8f8}
+    .bbd-tbl td.mo{text-align:left;font-family:var(--font);font-weight:700;color:#c8d8f0;background:#0d1830;padding-left:12px}
+    .bbd-tbl tbody tr:nth-child(even) td{background:rgba(255,255,255,0.025)}
+    .bbd-tbl tbody tr:hover td{background:rgba(100,160,255,0.07)}
+    .bbd-tbl tbody tr:hover td.mo{background:#0d1830}
+    .bbd-tbl tr.total-row td{border-top:2px solid rgba(255,255,255,0.18);font-weight:800;background:#0d1830;color:#ffffff;font-size:11.5px}
+    .bbd-tbl tr.total-row td.mo{color:#ffffff;background:#0d1830}
   `;
 
   // ── Month row builder ──
@@ -4135,10 +4137,10 @@ function renderBuildingStatsPane(pane, b){
       <div class="bbd-title">Baseline Data</div>
 
       <!-- Meta row: baseline years + providers + units -->
-      <div style="display:grid;grid-template-columns:auto 1fr auto;gap:12px 24px;margin-bottom:12px;align-items:start;flex-wrap:wrap">
+      <div style="display:grid;grid-template-columns:auto 1fr auto;gap:12px 28px;margin-bottom:14px;align-items:start;background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:14px 18px">
         <!-- Baseline Years -->
         <div>
-          <div style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Data Baseline Years</div>
+          <div style="font-size:10px;font-weight:700;color:#8ab0d0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Data Baseline Years</div>
           <table class="bbd-bl-tbl">
             <tr>
               ${elecM?'<th>Electricity</th>':''}
@@ -4154,17 +4156,17 @@ function renderBuildingStatsPane(pane, b){
         </div>
         <!-- Providers -->
         <div>
-          <div style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Utility Providers</div>
-          ${elecM?`<div style="color:var(--text2)">Electric Company <span style="color:var(--text);font-weight:600">${elecM.provider||elecM.name||'—'}</span></div>`:''}
-          ${gasM?`<div style="color:var(--text2)">Heating Fuel Company <span style="color:var(--text);font-weight:600">${gasM.provider||gasM.name||'—'}</span></div>`:''}
-          ${waterM?`<div style="color:var(--text2)">Water Company <span style="color:var(--text);font-weight:600">${waterM.provider||waterM.name||'—'}</span></div>`:''}
+          <div style="font-size:10px;font-weight:700;color:#8ab0d0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Providers</div>
+          ${elecM?`<div style="font-size:11.5px;margin-bottom:3px;color:#8ab0d0">Electric Company <span style="color:#e8f4ff;font-weight:700">${elecM.provider||elecM.name||'—'}</span></div>`:''}
+          ${gasM?`<div style="font-size:11.5px;margin-bottom:3px;color:#8ab0d0">Heating Fuel Company <span style="color:#e8f4ff;font-weight:700">${gasM.provider||gasM.name||'—'}</span></div>`:''}
+          ${waterM?`<div style="font-size:11.5px;color:#8ab0d0">Water Company <span style="color:#e8f4ff;font-weight:700">${waterM.provider||waterM.name||'—'}</span></div>`:''}
         </div>
         <!-- Units -->
         <div>
-          <div style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Utility Units</div>
-          ${elecM?`<div style="color:var(--text2)">Electricity <span style="color:#7ec8e3;font-weight:700;margin-left:8px">kWh</span></div>`:''}
-          ${gasM?`<div style="color:var(--text2)">Heating Fuel <span style="color:var(--warn);font-weight:700;margin-left:8px">Therm</span></div>`:''}
-          ${waterM?`<div style="color:var(--text2)">Water <span style="color:#34d399;font-weight:700;margin-left:8px">kGal</span></div>`:''}
+          <div style="font-size:10px;font-weight:700;color:#8ab0d0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Units</div>
+          ${elecM?`<div style="font-size:11.5px;margin-bottom:3px;color:#8ab0d0">Electricity <span style="color:#7dd8ff;font-weight:800;margin-left:8px;font-size:12px">kWh</span></div>`:''}
+          ${gasM?`<div style="font-size:11.5px;margin-bottom:3px;color:#8ab0d0">Heating Fuel <span style="color:#ffb040;font-weight:800;margin-left:8px;font-size:12px">Therm</span></div>`:''}
+          ${waterM?`<div style="font-size:11.5px;color:#8ab0d0">Water <span style="color:#40e8a0;font-weight:800;margin-left:8px;font-size:12px">kGal</span></div>`:''}
         </div>
       </div>
 
@@ -4172,15 +4174,22 @@ function renderBuildingStatsPane(pane, b){
       <div class="bbd-summary">
         ${sqft>0?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Square Feet</div><div class="bbd-sum-val">${sqft.toLocaleString()}</div></div>`:''}
         ${kwhPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">kWh / sf</div><div class="bbd-sum-val c-blue">${kwhPerSf.toFixed(2)}</div></div>`:''}
-        ${utilityCostPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Utility Cost / sf</div><div class="bbd-sum-val">${$c(utilityCostPerSf)}</div></div>`:''}
+        ${utilityCostPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Utility Cost / sf</div><div class="bbd-sum-val c-green">${$c(utilityCostPerSf)}</div></div>`:''}
         ${hoursOperated!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Hours Operated</div><div class="bbd-sum-val">${hoursOperated.toLocaleString()}</div></div>`:''}
         ${avgWattsPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Avg Watts / sf</div><div class="bbd-sum-val c-blue">${avgWattsPerSf.toFixed(2)}</div></div>`:''}
         ${elecDolPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Electric $ / sf</div><div class="bbd-sum-val c-orange">${$c(elecDolPerSf)}</div></div>`:''}
-        <div class="bbd-sum-cell">
-          <div class="bbd-sum-lbl">Utility Rates (kWh / kW)</div>
+        <div class="bbd-sum-cell" style="min-width:110px">
+          <div class="bbd-sum-lbl">$ / kWh Rate</div>
           <div class="bbd-rate-block">
-            <div class="bbd-rate-row"><span class="bbd-rate-lbl">Summer</span><span class="bbd-rate-val">${sumKwhRate?$4(sumKwhRate):'—'}</span><span class="bbd-rate-val2" style="margin-left:6px">${sumKwRate?'$'+sumKwRate.toFixed(2):'—'}</span></div>
-            <div class="bbd-rate-row"><span class="bbd-rate-lbl">Winter</span><span class="bbd-rate-val">${winKwhRate?$4(winKwhRate):'—'}</span><span class="bbd-rate-val2" style="margin-left:6px">${winKwRate?'$'+winKwRate.toFixed(2):'—'}</span></div>
+            <div class="bbd-rate-row"><span class="bbd-rate-season">☀ Sum</span><span class="bbd-rate-val c-orange" style="font-size:13px;font-weight:800">${sumKwhRate?$4(sumKwhRate):'—'}</span></div>
+            <div class="bbd-rate-row"><span class="bbd-rate-season">❄ Win</span><span class="bbd-rate-val c-blue" style="font-size:13px;font-weight:800">${winKwhRate?$4(winKwhRate):'—'}</span></div>
+          </div>
+        </div>
+        <div class="bbd-sum-cell" style="min-width:110px">
+          <div class="bbd-sum-lbl">$ / kW Rate</div>
+          <div class="bbd-rate-block">
+            <div class="bbd-rate-row"><span class="bbd-rate-season">☀ Sum</span><span class="bbd-rate-val c-orange" style="font-size:13px;font-weight:800">${sumKwRate?'$'+sumKwRate.toFixed(2):'—'}</span></div>
+            <div class="bbd-rate-row"><span class="bbd-rate-season">❄ Win</span><span class="bbd-rate-val c-blue" style="font-size:13px;font-weight:800">${winKwRate?'$'+winKwRate.toFixed(2):'—'}</span></div>
           </div>
         </div>
         ${thermPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Therm / sf</div><div class="bbd-sum-val c-orange">${thermPerSf.toFixed(3)}</div></div>`:''}
@@ -4194,11 +4203,11 @@ function renderBuildingStatsPane(pane, b){
         <table class="bbd-tbl">
           <thead>
             <tr>
-              <th rowspan="2" style="text-align:left;padding-left:10px">Month</th>
-              ${elecM?`<th colspan="8" class="e-hdr">ELECTRICITY</th>`:''}
-              ${gasM?`<th colspan="3" class="g-hdr">HEATING FUEL</th>`:''}
-              ${waterM?`<th colspan="3" class="w-hdr">WATER</th>`:''}
-              <th rowspan="2" class="u-hdr" style="vertical-align:middle">Total<br>Utility<br>Costs</th>
+              <th rowspan="2" class="mo-hdr" style="vertical-align:middle;min-width:52px">Month</th>
+              ${elecM?`<th colspan="8" class="e-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">ELECTRICITY</th>`:''}
+              ${gasM?`<th colspan="3" class="g-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">HEATING FUEL</th>`:''}
+              ${waterM?`<th colspan="3" class="w-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">WATER</th>`:''}
+              <th rowspan="2" class="u-hdr" style="vertical-align:middle;min-width:88px;font-size:10px;line-height:1.5;padding:6px 8px">Total<br>Utility<br>Costs</th>
             </tr>
             <tr>
               ${elecM?`
