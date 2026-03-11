@@ -3626,12 +3626,15 @@ function renderBaselinePane(pane, m, bills, incl){
   const rowChecks=rows.map(r=>{
     const checked=blMonths.includes(r.ym);
     const hddNote = r.hdd!=null ? ' · '+r.hdd+' HDD' : '';
+    const dispUsage = r.regrBaseline!=null ? r.regrBaseline : r.usage;
+    const dispPerDay = r.regrBaseline!=null && r.normDays>0 ? r.regrBaseline/r.normDays : r.usagePerDay;
+    const normTag = r.regrBaseline!=null ? ' <span style="font-size:9px;color:var(--violet);opacity:.8">(norm)</span>' : '';
     return '<label class="bl-period-row" style="cursor:pointer">'+
       '<input type="checkbox" value="'+r.ym+'" '+(checked?'checked':'')+
         ' onchange="updateBaselineRange(\''+m.id+'\')" style="accent-color:var(--em);width:14px;height:14px;flex-shrink:0">'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:12px;font-weight:600;color:var(--text)">'+r.label+'</div>'+
-        '<div style="font-size:11px;color:var(--text2)">'+r.usage.toLocaleString(undefined,{maximumFractionDigits:0})+' '+unit+' · '+r.usagePerDay.toFixed(1)+'/day'+hddNote+'</div>'+
+        '<div style="font-size:11px;color:var(--text2)">'+dispUsage.toLocaleString(undefined,{maximumFractionDigits:0})+' '+unit+normTag+' · '+dispPerDay.toFixed(1)+'/day'+hddNote+'</div>'+
       '</div>'+
       (checked?'<span class="bl-badge" style="font-size:10px;background:var(--em-dim);color:var(--em);border:1px solid rgba(0,212,170,.2);border-radius:4px;padding:2px 7px">✓ BL</span>':'')+
     '</label>';
