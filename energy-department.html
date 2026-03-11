@@ -2541,7 +2541,7 @@ function renderBillsPane(pane, m, bills, incl){
   </span>`;
 
   let tblHead = '<th style="white-space:nowrap">Norm. Month '+normInfoTip+'</th><th>Start</th><th>End</th><th style="text-align:center">Days</th>';
-  if(isElec) tblHead += '<th>kWh</th><th>Demand kW</th><th>Fac. kW</th><th>Demand Cost $</th><th>Fac. kW Cost $</th><th>kWh Cost $</th><th>Total $</th>';
+  if(isElec) tblHead += '<th>kWh</th><th>Actual kW</th><th>Facilities kW</th><th>Actual kW Cost $</th><th>Facilities kW Cost $</th><th>kWh Cost $</th><th>Total $</th>';
   else if(isGas) tblHead += '<th>Therms</th><th>Therm Cost $</th>';
   else tblHead += '<th>Usage</th><th>Cost $</th>';
   tblHead += '<th></th>';
@@ -4225,16 +4225,16 @@ function renderBuildingStatsPane(pane, b){
             <tr>
               ${elecM?`
                 <th class="e-hdr">kWh</th>
-                <th class="e-hdr">Actual<br>kW</th>
+                <th class="e-hdr">Actual kW</th>
                 <th class="e-hdr">Billed<br>kW</th>
-                <th class="e-hdr">Facilities<br>kW</th>
-                <th class="e-hdr">Demand<br>(kW) Cost</th>
-                <th class="e-hdr">Facilities<br>(kW) Cost</th>
+                <th class="e-hdr">Facilities kW</th>
+                <th class="e-hdr">Actual kW<br>Cost</th>
+                <th class="e-hdr">Facilities kW<br>Cost</th>
                 <th class="e-hdr">Energy<br>Cost</th>
                 <th class="e-hdr">Electric<br>Cost</th>
                 <th class="e-hdr">Cost/<br>kWh</th>
                 <th class="e-hdr">Cost/<br>Billed kW</th>
-                <th class="e-hdr">Cost/<br>Fac kW</th>
+                <th class="e-hdr">Cost/<br>Facilities kW</th>
               `:''}
               ${gasM?`
                 <th class="g-hdr">Therms</th>
@@ -4694,8 +4694,8 @@ function openCsvImportForMeter(mid){
   const isElec=m.commodity==='Electric', isGas=m.commodity==='Gas';
   let cols='', note='';
   if(isElec){
-    cols='start_date, end_date, kwh, demand_kw, fac_kw, kw_cost, fac_kw_cost, kwh_cost, total_cost';
-    note='start_date and end_date required. Numeric columns: kwh, demand_kw, fac_kw, kw_cost, fac_kw_cost, kwh_cost, total_cost.';
+    cols='start_date, end_date, kwh, actual_kw, facilities_kw, actual_kw_cost, facilities_kw_cost, kwh_cost, total_cost';
+    note='start_date and end_date required. Numeric columns: kwh, actual_kw, facilities_kw, actual_kw_cost, facilities_kw_cost, kwh_cost, total_cost.';
   } else if(isGas){
     cols='start_date, end_date, therms, therm_cost';
     note='start_date and end_date required. Optional: therms, therm_cost.';
@@ -4750,10 +4750,10 @@ function parseBillCsv(text, fname){
   const iStart    = hdr ? Math.max(ci(['start','begin','from']), 0) : 0;
   const iEnd      = hdr ? (ci(['end','to','thru','through'])>-1?ci(['end','to','thru','through']):1) : 1;
   const iKwh      = hdr ? ci(['kwh','consumption','usage','energy']) : 2;
-  const iDemand   = hdr ? ci(['demand_kw','demand kw','peak kw','demand']) : 3;
-  const iFacKW    = hdr ? ci(['fac_kw','facility kw','fac kw']) : 4;
+  const iDemand   = hdr ? ci(['actual_kw','actual kw','demand_kw','demand kw','peak kw','demand']) : 3;
+  const iFacKW    = hdr ? ci(['facilities_kw','facilities kw','fac_kw','facility kw','fac kw']) : 4;
   const iKwCost   = hdr ? ci(['kw_cost','kw cost','demand cost','demand$','demand_cost']) : 5;
-  const iFacKWCst = hdr ? ci(['fac_kw_cost','fac kw cost','facilities kw cost','facility kw cost','fac_kwcost']) : 6;
+  const iFacKWCst = hdr ? ci(['facilities_kw_cost','facilities kw cost','actual_kw_cost','fac_kw_cost','fac kw cost','facility kw cost']) : 6;
   const iKwhCst   = hdr ? ci(['kwh_cost','kwh cost','energy cost','energy$','energy_cost']) : 7;
   const iTotCst   = hdr ? ci(['total_cost','total cost','total$','bill','amount','total']) : isElec?8:3;
   const iTherms   = hdr ? ci(['therms','therm','gas','ccf','mcf']) : 2;
@@ -4866,7 +4866,7 @@ function showBillCsvPreview(rows, m, fname, warnings){
   document.getElementById('billCsvRowCount').textContent=rows.length+' period'+(rows.length!==1?'s':'')+' found';
 
   let thead='<tr><th>Start</th><th>End</th><th>Days</th>';
-  if(isElec) thead+='<th>kWh</th><th>Dem. kW</th><th>Fac. kW</th><th>Dem. Cost</th><th>Fac. Cost</th><th>Total $</th>';
+  if(isElec) thead+='<th>kWh</th><th>Actual kW</th><th>Facilities kW</th><th>Actual kW Cost</th><th>Facilities kW Cost</th><th>Total $</th>';
   else if(isGas) thead+='<th>Therms</th><th>Cost $</th>';
   else thead+='<th>Usage</th><th>Cost $</th>';
   thead+='</tr>';
@@ -5035,11 +5035,11 @@ function openBillModal(mid, editRowId){
   if(m.commodity==='Electric'){
     html+=`<div class="f3">
       <div class="fg"><label class="fl">kWh</label><input class="fi" id="bl-kwh" type="number" placeholder="0" value="${row?.kwh||''}"></div>
-      <div class="fg"><label class="fl">Demand kW</label><input class="fi" id="bl-demandKW" type="number" placeholder="0" value="${row?.demandKW||''}"></div>
+      <div class="fg"><label class="fl">Actual kW</label><input class="fi" id="bl-demandKW" type="number" placeholder="0" value="${row?.demandKW||''}"></div>
       <div class="fg"><label class="fl">Facilities kW</label><input class="fi" id="bl-facKW" type="number" placeholder="0" value="${row?.facKW||''}"></div>
     </div>
     <div class="f3">
-      <div class="fg"><label class="fl">Demand kW Cost $</label><input class="fi" id="bl-kwCost" type="number" placeholder="0.00" step="0.01" value="${row?.kwCost||''}"></div>
+      <div class="fg"><label class="fl">Actual kW Cost $</label><input class="fi" id="bl-kwCost" type="number" placeholder="0.00" step="0.01" value="${row?.kwCost||''}"></div>
       <div class="fg"><label class="fl">Facilities kW Cost $</label><input class="fi" id="bl-facKWCost" type="number" placeholder="0.00" step="0.01" value="${row?.facKWCost||''}"></div>
       <div class="fg"><label class="fl">kWh Cost $</label><input class="fi" id="bl-kwhCost" type="number" placeholder="0.00" step="0.01" value="${row?.kwhCost||''}"></div>
     </div>
