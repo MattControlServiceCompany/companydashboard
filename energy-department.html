@@ -2904,6 +2904,7 @@ function setProjectNormBasis(pid, basis){
 }
 
 function renderNormPane(pane, m, bills, incl){
+  try {
   if(!bills.length){
     pane.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">🌡️</div><div>Add bill data in the Bills tab first</div></div>';
     return;
@@ -3237,6 +3238,9 @@ function renderNormPane(pane, m, bills, incl){
 
   if(udNormChartVis){
     requestAnimationFrame(()=>{ drawNormChart('normChart', rows, unit, metric, weatherDDLabel); });
+  }
+  } catch(e) {
+    pane.innerHTML = '<div style="padding:20px;color:var(--danger);font-family:var(--mono);font-size:12px;white-space:pre-wrap">⚠️ Render error in Normalized tab:\n'+e.stack+'</div>';
   }
 }
 
