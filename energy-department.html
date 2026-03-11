@@ -2621,6 +2621,9 @@ function getNormRows(m, bills, incl, weatherByYm){
   // Build rows first pass — compute weather, usage, etc.
   const rawRows = Object.entries(byMonth).sort((a,b)=>a[0]<b[0]?-1:1).map(([ym,r])=>{
     const usagePerDay = r.days>0 ? r.usage/r.days : 0;
+    const calDays = calDaysInMonth(ym);
+    // Flag months where bill coverage is less than 90% of calendar days — partial first/last months
+    const partial = r.days < calDays * 0.9;
     let hdd, cdd, avgTemp;
     if(weatherByYm && weatherByYm[ym]){
       const w = weatherByYm[ym];
@@ -2644,6 +2647,7 @@ function getNormRows(m, bills, incl, weatherByYm){
     const normDays = calDaysInMonth(ym);
     return {
       id: r._ids[0], ym, start: r.start, end: r.end, days: r.days, normDays,
+      partial,
       usage: r.usage, usagePerDay, cost: r.cost, hdd, cdd, avgTemp,
       hddNorm, cddNorm, weatherNorm, weatherDenom, label,
       isBaseline: !!(m.baseline && m.baseline.months && m.baseline.months.includes(ym)),
@@ -2709,8 +2713,10 @@ function calDaysInMonth(ym){
 // so the model's average prediction exactly matches the average actual over training data.
 // Returns {hdd:{slope,intercept,interceptRaw,bias,r2,n}, cdd:{...}} or nulls.
 function computeMeterRegression(rows){
-  const hddPts = rows.filter(r=>r.hdd!=null&&r.hdd>0&&r.normDays>0);
-  const cddPts = rows.filter(r=>r.cdd!=null&&r.cdd>0&&r.normDays>0);
+  // Include ALL months with weather data, including zero-DD months (they anchor the intercept).
+  // Exclude partial months (first/last billing period that doesn't cover ≥90% of the calendar month).
+  const hddPts = rows.filter(r=>!r.partial&&r.hdd!=null&&r.normDays>0);
+  const cddPts = rows.filter(r=>!r.partial&&r.cdd!=null&&r.normDays>0);
 
   function fitWithBias(pts, ddKey){
     const reg = olsRegression(
@@ -2811,7 +2817,7 @@ function exportRegrCSV(mid){
   const reg=m._reg;
   const rawReg=isElec?reg?.cdd:reg?.hdd;
 
-  const pts=rows.filter(r=>(isElec?(r.cdd!=null&&r.cdd>0):(r.hdd!=null&&r.hdd>0))&&r.normDays>0);
+  const pts=rows.filter(r=>!r.partial&&(isElec?(r.cdd!=null):(r.hdd!=null))&&r.normDays>0);
   const lines=[
     ['Month','Cal Days',unit,ddLabel,unit+'/Day',ddLabel+'/Day','Fit Raw ('+unit+')','Fit Adj ('+unit+')','Raw Intercept','Bias','Adj Intercept','Slope'].join(','),
     ...pts.map(r=>{
@@ -2944,39 +2950,54 @@ function renderNormPane(pane, m, bills, incl){
       '<tr><td class="mono">'+label+'</td><td colspan="7" style="color:var(--text3);font-size:11px">— insufficient data (need ≥3 months with non-zero '+ddLabel+')</td></tr>';
     const ddUsed = isElec ? 'CDD (primary) / HDD (fallback)' : 'HDD (primary) / CDD (fallback)';
     // Build regression input data table for Excel comparison
-    const cddPtsDebug = rows.filter(r=>r.cdd!=null&&r.cdd>0&&r.normDays>0);
-    const hddPtsDebug = rows.filter(r=>r.hdd!=null&&r.hdd>0&&r.normDays>0);
+    const cddPtsDebug = rows.filter(r=>!r.partial&&r.cdd!=null&&r.normDays>0);
+    const hddPtsDebug = rows.filter(r=>!r.partial&&r.hdd!=null&&r.normDays>0);
     const debugPts = isElec ? cddPtsDebug : hddPtsDebug;
     const ddLabel2 = isElec ? 'CDD' : 'HDD';
-    const debugRows = debugPts.map(r=>{
+    const rawReg = isElec ? reg.cdd : reg.hdd;
+
+    // Build full row list — included rows + excluded rows with reason
+    const allDebugRows = rows.map(r=>{
       const dd = isElec ? r.cdd : r.hdd;
+      const included = debugPts.includes(r);
+      let excludeReason = '';
+      if(!included){
+        if(r.partial) excludeReason = '⚠ partial ('+r.days+'/'+r.normDays+' days)';
+        else if(dd==null) excludeReason = 'no '+ddLabel2+' data';
+        else excludeReason = 'excluded';
+      }
       const kwhPerDay = r.usage/r.normDays;
-      const ddPerDay  = dd/r.normDays;
-      const rawReg    = isElec ? reg.cdd : reg.hdd;
-      const fitLine   = rawReg ? rawReg.interceptRaw*r.normDays + rawReg.slope*dd : null;
-      const adjFit    = rawReg ? rawReg.intercept*r.normDays + rawReg.slope*dd : null;
-      return {ym:r.label, normDays:r.normDays, usage:r.usage, dd, kwhPerDay, ddPerDay, fitLine, adjFit};
+      const ddPerDay  = dd!=null ? dd/r.normDays : null;
+      const fitLine   = included&&rawReg ? rawReg.interceptRaw*r.normDays + rawReg.slope*dd : null;
+      const adjFit    = included&&rawReg ? rawReg.intercept*r.normDays + rawReg.slope*dd : null;
+      return {label:r.label, normDays:r.normDays, usage:r.usage, days:r.days, dd, kwhPerDay, ddPerDay, fitLine, adjFit, included, excludeReason};
     });
-    const sumFitRaw   = debugRows.reduce((s,r)=>s+(r.fitLine||0),0);
-    const sumFitAdj   = debugRows.reduce((s,r)=>s+(r.adjFit||0),0);
-    const sumActual   = debugRows.reduce((s,r)=>s+r.usage,0);
-    const sumNormDays = debugRows.reduce((s,r)=>s+r.normDays,0);
+
+    const sumFitRaw   = allDebugRows.filter(r=>r.included).reduce((s,r)=>s+(r.fitLine||0),0);
+    const sumFitAdj   = allDebugRows.filter(r=>r.included).reduce((s,r)=>s+(r.adjFit||0),0);
+    const sumActual   = allDebugRows.filter(r=>r.included).reduce((s,r)=>s+r.usage,0);
+    const sumNormDays = allDebugRows.filter(r=>r.included).reduce((s,r)=>s+r.normDays,0);
 
     const debugCsvId  = 'regrCsvData_'+m.id;
     const debugTableId= 'regrDebugTable_'+m.id;
 
-    const debugTableRows = debugRows.map(r=>
-      '<tr>'+
-        '<td class="mono">'+r.ym+'</td>'+
-        '<td class="mono">'+r.normDays+'</td>'+
+    const debugTableRows = allDebugRows.map(r=>{
+      const rowStyle = r.included ? '' : ' style="opacity:0.45"';
+      return '<tr'+rowStyle+'>'+
+        '<td class="mono">'+r.label+'</td>'+
+        '<td class="mono">'+r.normDays+' <span style="color:var(--text3);font-size:10px">(bill:'+r.days+')</span></td>'+
         '<td class="mono">'+r.usage.toLocaleString(undefined,{maximumFractionDigits:1})+'</td>'+
-        '<td class="mono">'+r.dd.toFixed(1)+'</td>'+
-        '<td class="mono" style="color:var(--em2)">'+r.kwhPerDay.toFixed(4)+'</td>'+
-        '<td class="mono" style="color:var(--em2)">'+r.ddPerDay.toFixed(4)+'</td>'+
-        (r.fitLine!=null?'<td class="mono">'+r.fitLine.toFixed(1)+'</td>':'<td>—</td>')+
-        (r.adjFit!=null?'<td class="mono" style="color:var(--violet)">'+r.adjFit.toFixed(1)+'</td>':'<td>—</td>')+
-      '</tr>'
-    ).join('');
+        '<td class="mono">'+(r.dd!=null?r.dd.toFixed(1):'—')+'</td>'+
+        (r.included
+          ? '<td class="mono" style="color:var(--em2)">'+r.kwhPerDay.toFixed(4)+'</td>'+
+            '<td class="mono" style="color:var(--em2)">'+r.ddPerDay.toFixed(4)+'</td>'+
+            '<td class="mono">'+(r.fitLine!=null?r.fitLine.toFixed(1):'—')+'</td>'+
+            '<td class="mono" style="color:var(--violet)">'+(r.adjFit!=null?r.adjFit.toFixed(1):'—')+'</td>'+
+            '<td></td>'
+          : '<td colspan="4" style="color:var(--text3);font-size:11px">excluded — '+r.excludeReason+'</td>'+
+            '<td></td>')+
+      '</tr>';
+    }).join('');
 
     regrPanel =
       '<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:12px">'+
