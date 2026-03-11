@@ -3229,7 +3229,6 @@ function renderNormPane(pane, m, bills, incl){
     return `<tr class="${r.isBaseline?'baseline-row':''}">
       <td class="mono">${r.label}</td>
       <td class="mono">${r.days}</td>
-      <td class="mono" style="color:var(--text3);font-size:10.5px">${r.usage.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
       ${hddCell}${cddCell}
       <td class="mono" style="color:var(--text2)">${fmtTemp(r.avgTemp)}</td>
       <td class="mono" style="color:var(--em2)">${r.weatherNorm!=null?r.weatherNorm.toFixed(3):'—'}</td>
@@ -3254,19 +3253,16 @@ function renderNormPane(pane, m, bills, incl){
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+(hasRegr?'Monthly Normalized Baseline + Calculation Data':'Monthly Usage + Weather Data')+'</div>'+
       '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:340px;overflow-y:auto">'+
         '<table class="ma-tbl">'+
-          '<thead><tr><th>Month</th><th>Days</th><th title="Prorated kWh — bills split by days. Shown for calculation steps only." style="color:var(--text3);font-size:10px">Prorated '+unit+'</th><th>HDD</th><th>CDD</th><th>Avg °F</th><th>'+unit+'/'+weatherDDLabel+'</th>'+regrHdrs+euiHdr+'<th>Cost</th><th></th></tr></thead>'+
+          '<thead><tr><th>Month</th><th>Days</th><th>HDD</th><th>CDD</th><th>Avg °F</th><th>'+unit+'/'+weatherDDLabel+'</th>'+regrHdrs+euiHdr+'<th>Cost</th><th></th></tr></thead>'+
           '<tbody>'+tblRows+'</tbody>'+
         '</table>'+
-      '</div>'+
-      '<div style="font-size:11px;color:var(--text3);margin-top:6px;padding:5px 8px;background:var(--s3);border-radius:5px;border:1px solid var(--border)">'+
-        'ⓘ <strong>'+unit+' column is prorated</strong> — bills spanning multiple months are split proportionally by days. Values will not match raw bill totals on the Bills tab, which show full billing-period amounts.'+
       '</div>'+
     '</div>';
 
   pane.innerHTML = statsHTML + basisBar + controlBar + regrToggleRow + wddBtn + wddNotice + regrPanel + chartSection + tableSection;
 
   if(udNormChartVis){
-    requestAnimationFrame(()=>{ drawNormChart('normChart', rows, unit, metric, weatherDDLabel); });
+    requestAnimationFrame(()=>{ drawNormChart('normChart', rows, unit, metric, weatherDDLabel, bills, incl); });
   }
   } catch(e) {
     pane.innerHTML = '<div style="padding:20px;color:var(--danger);font-family:var(--mono);font-size:12px;white-space:pre-wrap">⚠️ Render error in Normalized tab:\n'+e.stack+'</div>';
@@ -3284,70 +3280,99 @@ function blPill(val, lbl, color){
   '</div>';
 }
 
-function drawNormChart(canvasId, rows, unit, metric, weatherDDLabel){
+function drawNormChart(canvasId, rows, unit, metric, weatherDDLabel, bills, incl){
   weatherDDLabel = weatherDDLabel || 'DD';
   const canvas=document.getElementById(canvasId); if(!canvas) return;
   if(_maCharts[canvasId]){ _maCharts[canvasId].destroy(); }
-  const labels=rows.map(r=>r.label);
-  const blColor=rows.map(r=>r.isBaseline?'rgba(0,212,170,0.85)':'rgba(100,160,255,0.75)');
-  let dataVals, yLabel, tooltipFmt;
+  const isElec = unit==='kWh';
+  const isGasU = unit==='Therms';
+  const labels = rows.map(r=>r.label);
+  const blColor = rows.map(r=>r.isBaseline?'rgba(0,212,170,0.85)':'rgba(100,160,255,0.75)');
+  const hasRegr = rows.some(r=>r.regrBaseline!=null);
+
+  let yLabel, tooltipFmt;
   if(metric==='weather'){
-    dataVals   = rows.map(r=>r.weatherNorm!=null ? +r.weatherNorm.toFixed(3) : null);
     yLabel     = unit+'/'+weatherDDLabel;
     tooltipFmt = v=>v!=null?v.toFixed(3)+' '+unit+'/'+weatherDDLabel:'No data';
   } else if(metric==='total'){
-    dataVals   = rows.map(r=>+r.usage.toFixed(1));
     yLabel     = unit+'/Month';
     tooltipFmt = v=>v!=null?v.toLocaleString(undefined,{maximumFractionDigits:0})+' '+unit:'—';
   } else {
-    dataVals   = rows.map(r=>+r.usagePerDay.toFixed(2));
     yLabel     = unit+'/Day';
     tooltipFmt = v=>v!=null?v.toFixed(2)+' '+unit+'/day':'—';
   }
-  // Regression baseline overlay — map to same metric scale
-  const hasRegr = rows.some(r=>r.regrBaseline!=null);
-  const regrData = hasRegr ? rows.map(r=>{
-    if(r.regrBaseline==null) return null;
-    if(metric==='total')  return +r.regrBaseline.toFixed(0);
-    if(metric==='perday') return r.normDays>0 ? +(r.regrBaseline/r.normDays).toFixed(2) : null;
-    return null; // weather metric — regression doesn't map cleanly to DD-normalised scale
-  }) : null;
 
-  const datasets = [{
-    label: yLabel, data: dataVals,
-    backgroundColor: blColor,
-    borderColor: blColor.map(c=>c.replace('0.75','1').replace('0.85','1')),
-    borderWidth:1, borderRadius:3, order:2,
-  }];
-  if(regrData && metric!=='weather'){
+  const datasets = [];
+
+  if(metric==='weather'){
+    // Weather-normalized: single bar series, no raw bills
+    const weatherData = rows.map(r=>r.weatherNorm!=null ? +r.weatherNorm.toFixed(3) : null);
     datasets.push({
-      label: 'Normalized Baseline',
-      data: regrData,
-      type: 'line',
-      borderColor: 'rgba(139,92,246,0.9)',
-      backgroundColor: 'rgba(139,92,246,0.1)',
-      borderWidth: 2,
-      pointRadius: 3,
-      pointBackgroundColor: 'rgba(139,92,246,1)',
-      tension: 0.35,
-      fill: false,
-      order: 1,
+      label: yLabel, data: weatherData,
+      backgroundColor: blColor,
+      borderColor: blColor.map(c=>c.replace('0.75','1').replace('0.85','1')),
+      borderWidth:1, borderRadius:3, order:2,
     });
+  } else {
+    // Non-weather metrics: bars = Normalized Baseline (when available), line = Raw Bills
+    if(hasRegr){
+      const regrData = rows.map(r=>{
+        if(r.regrBaseline==null) return null;
+        if(metric==='total')  return +r.regrBaseline.toFixed(0);
+        return r.normDays>0 ? +(r.regrBaseline/r.normDays).toFixed(2) : null;
+      });
+      datasets.push({
+        label: 'Normalized Baseline',
+        data: regrData,
+        backgroundColor: blColor,
+        borderColor: blColor.map(c=>c.replace('0.75','1').replace('0.85','1')),
+        borderWidth:1, borderRadius:3, order:2,
+      });
+    } else {
+      // No regression yet — fall back to prorated usage bars until weather model is built
+      const fallbackData = metric==='total'
+        ? rows.map(r=>+r.usage.toFixed(0))
+        : rows.map(r=>+r.usagePerDay.toFixed(2));
+      datasets.push({
+        label: yLabel+' (Prorated)', data: fallbackData,
+        backgroundColor: blColor,
+        borderColor: blColor.map(c=>c.replace('0.75','1').replace('0.85','1')),
+        borderWidth:1, borderRadius:3, order:2,
+      });
+    }
+    // Raw Bills line (amber) — always shown when bills available
+    if(bills && bills.length){
+      const billByYm={};
+      bills.forEach(b=>{
+        if(!b.start||!b.end) return;
+        const ym=normMonth(b.start,b.end,incl,bills);
+        const usage=isElec?(parseFloat(b.kwh)||0):isGasU?(parseFloat(b.therms)||0):(parseFloat(b.usage)||0);
+        const days=Math.max(1,parseInt(calcDays(b.start,b.end,incl))||1);
+        if(!billByYm[ym]||usage>0) billByYm[ym]={usage,days,perDay:+(usage/days).toFixed(2)};
+      });
+      datasets.push({
+        label: unit+'/Month (Raw Bills)',
+        data: rows.map(r=>{ const bd=billByYm[r.ym]; return bd?(metric==='total'?+bd.usage.toFixed(0):bd.perDay):null; }),
+        type:'line', borderColor:'rgba(245,158,11,0.85)', backgroundColor:'rgba(245,158,11,0.12)',
+        borderWidth:2, pointRadius:3, pointBackgroundColor:'rgba(245,158,11,1)',
+        tension:0.3, fill:false, order:1,
+      });
+    }
   }
 
+  const showLegend = metric!=='weather';
   _maCharts[canvasId]=new Chart(canvas,{
     type:'bar',
     data:{labels, datasets},
     options:{
       responsive:true, maintainAspectRatio:true,
       plugins:{
-        legend:{display: hasRegr&&metric!=='weather', labels:{color:'rgba(200,210,230,0.85)',font:{size:10},boxWidth:12,padding:10}},
+        legend:{display:showLegend, labels:{color:'rgba(200,210,230,0.85)',font:{size:10},boxWidth:12,padding:10}},
         tooltip:{callbacks:{label:ctx=>{
-          if(ctx.dataset.label==='Normalized Baseline'){
-            const v=ctx.parsed.y;
+          const v=ctx.parsed.y;
+          if(ctx.dataset.label==='Normalized Baseline')
             return 'Normalized Baseline: '+(metric==='total'?v.toLocaleString(undefined,{maximumFractionDigits:0}):v.toFixed(2))+' '+yLabel;
-          }
-          return tooltipFmt(ctx.parsed.y);
+          return ctx.dataset.label+': '+tooltipFmt(v);
         }}}
       },
       scales:{
@@ -3674,7 +3699,7 @@ function renderBaselinePane(pane, m, bills, incl){
     '</div>';
 
   if(udBlChartVis){
-    requestAnimationFrame(()=>{ drawBlChart('blChart', rows, unit, bills, incl, udBlOverlay, udBlMetric); });
+    requestAnimationFrame(()=>{ drawBlChart('blChart', blRows, unit, bills, incl, udBlOverlay, udBlMetric); });
   }
 }
 
@@ -3784,7 +3809,7 @@ function refreshBaselineStats(mid){
 
   // Redraw chart with current metric/overlay state
   if(udBlChartVis){
-    requestAnimationFrame(()=>{ drawBlChart('blChart',rows,unit,bills,incl,udBlOverlay,udBlMetric); });
+    requestAnimationFrame(()=>{ drawBlChart('blChart',blRows,unit,bills,incl,udBlOverlay,udBlMetric); });
   }
 
   // Update save button and period toggle label
@@ -3821,60 +3846,104 @@ function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay, metric){
   if(_maCharts[canvasId]){_maCharts[canvasId].destroy();}
   const isElec = unit==='kWh';
   const isGasU = unit==='Therms';
-  const labels=rows.map(r=>r.label);
   const isTotal = metric==='total';
-  const normData = isTotal ? rows.map(r=>+r.usage.toFixed(0)) : rows.map(r=>+r.usagePerDay.toFixed(2));
   const yLabel = isTotal ? unit+'/Month' : unit+'/Day';
-  const normColors=rows.map(r=>r.isBaseline?'rgba(0,212,170,0.85)':'rgba(120,130,160,0.45)');
-  const normBorders=normColors.map(c=>c.replace('0.85','1').replace('0.45','0.7'));
-  const hasRegr = rows.some(r=>r.regrBaseline!=null);
+  const MON_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-  const datasets=[{
-    label: yLabel+' (Normalized)',
-    data: normData,
-    backgroundColor: normColors,
-    borderColor: normBorders,
-    borderWidth:1, borderRadius:3, order:3,
-  }];
-
-  // Regression baseline line (violet)
-  if(hasRegr){
-    datasets.push({
-      label:'Normalized Baseline',
-      data: rows.map(r=> r.regrBaseline==null ? null :
-        isTotal ? +r.regrBaseline.toFixed(0) : +(r.regrBaseline/r.normDays).toFixed(2)),
-      type:'line', borderColor:'rgba(139,92,246,0.9)', backgroundColor:'rgba(139,92,246,0.1)',
-      borderWidth:2, pointRadius:2, pointBackgroundColor:'rgba(139,92,246,1)',
-      tension:0.35, fill:false, order:1,
+  // ── Month-average if >12 baseline months selected ──
+  // Group by calendar month (0-11), average regrBaseline/usage/normDays across years
+  let chartRows;
+  if(rows.length > 12){
+    const byMo = {}; // 0-11
+    rows.forEach(r=>{
+      const mo = parseInt(r.ym.split('-')[1]) - 1;
+      if(!byMo[mo]) byMo[mo] = {regrVals:[], usageVals:[], normDaysVals:[], costs:[], label:MON_SHORT[mo], mo};
+      if(r.regrBaseline!=null) byMo[mo].regrVals.push(r.regrBaseline);
+      byMo[mo].usageVals.push(r.usage);
+      byMo[mo].normDaysVals.push(r.normDays||30);
+      byMo[mo].costs.push(r.cost||0);
     });
+    const avg = arr => arr.length ? arr.reduce((s,v)=>s+v,0)/arr.length : null;
+    chartRows = Object.values(byMo).sort((a,b)=>a.mo-b.mo).map(g=>({
+      label: g.label,
+      ym: null, // averaged — no single ym
+      regrBaseline: g.regrVals.length ? avg(g.regrVals) : null,
+      usage: avg(g.usageVals)||0,
+      normDays: avg(g.normDaysVals)||30,
+      cost: avg(g.costs)||0,
+      isBaseline: true,
+    }));
+  } else {
+    chartRows = rows;
   }
 
-  // Raw bill overlay (amber)
-  if(showOverlay && bills && bills.length){
+  const labels = chartRows.map(r=>r.label);
+  const barColor = 'rgba(0,212,170,0.85)';
+  const barBorder = 'rgba(0,212,170,1)';
+  const hasRegr = chartRows.some(r=>r.regrBaseline!=null);
+
+  // Bars = Normalized Baseline (regrBaseline); fallback to prorated usage if no model yet
+  const barData = chartRows.map(r=>{
+    if(hasRegr){
+      if(r.regrBaseline==null) return null;
+      return isTotal ? +r.regrBaseline.toFixed(0) : +(r.regrBaseline/(r.normDays||30)).toFixed(2);
+    }
+    return isTotal ? +r.usage.toFixed(0) : +(r.usage/(r.normDays||30)).toFixed(2);
+  });
+  const barLabel = hasRegr ? 'Normalized Baseline' : yLabel+' (Prorated)';
+
+  const datasets=[{
+    label: barLabel,
+    data: barData,
+    backgroundColor: barColor,
+    borderColor: barBorder,
+    borderWidth:1, borderRadius:3, order:2,
+  }];
+
+  // Raw bill overlay (amber) — always shown on Baseline chart
+  if(bills && bills.length){
     const billByYm={};
     bills.forEach(b=>{
       if(!b.start||!b.end) return;
       const ym=normMonth(b.start,b.end,incl,bills);
       const usage=isElec?(parseFloat(b.kwh)||0):isGasU?(parseFloat(b.therms)||0):(parseFloat(b.usage)||0);
       const days=Math.max(1,parseInt(calcDays(b.start,b.end,incl))||1);
-      if(!billByYm[ym]||usage>0) billByYm[ym]={usage, days, perDay:+(usage/days).toFixed(2)};
+      if(!billByYm[ym]||usage>0) billByYm[ym]={usage,days,perDay:+(usage/days).toFixed(2)};
     });
+
+    let rawData;
+    if(rows.length > 12){
+      // Average raw bills by calendar month to match averaged bars
+      const rawByMo = {};
+      Object.entries(billByYm).forEach(([ym,bd])=>{
+        const mo = parseInt(ym.split('-')[1]) - 1;
+        if(!rawByMo[mo]) rawByMo[mo] = [];
+        rawByMo[mo].push(isTotal ? +bd.usage.toFixed(0) : bd.perDay);
+      });
+      const avgMo = arr => arr.length ? arr.reduce((s,v)=>s+v,0)/arr.length : null;
+      rawData = chartRows.map(r=>{
+        const mo = MON_SHORT.indexOf(r.label);
+        return rawByMo[mo] ? avgMo(rawByMo[mo]) : null;
+      });
+    } else {
+      rawData = chartRows.map(r=>{ const bd=billByYm[r.ym]; return bd?(isTotal?+bd.usage.toFixed(0):bd.perDay):null; });
+    }
+
     datasets.push({
-      label: yLabel+' (Raw Bills)',
-      data: rows.map(r=>{ const bd=billByYm[r.ym]; return bd?(isTotal?+bd.usage.toFixed(0):bd.perDay):null; }),
+      label: unit+'/Month (Raw Bills)',
+      data: rawData,
       type:'line', borderColor:'rgba(245,158,11,0.85)', backgroundColor:'rgba(245,158,11,0.12)',
       borderWidth:2, pointRadius:3, pointBackgroundColor:'rgba(245,158,11,1)',
-      tension:0.3, fill:false, order:2,
+      tension:0.3, fill:false, order:1,
     });
   }
 
-  const showLegend = showOverlay || hasRegr;
   _maCharts[canvasId]=new Chart(canvas,{
     type:'bar', data:{labels, datasets},
     options:{
       responsive:true, maintainAspectRatio:true,
       plugins:{
-        legend:{display:showLegend, labels:{color:'rgba(200,210,230,0.85)',font:{size:10},boxWidth:12,padding:10}},
+        legend:{display:true, labels:{color:'rgba(200,210,230,0.85)',font:{size:10},boxWidth:12,padding:10}},
         tooltip:{callbacks:{label:ctx=>{
           const v=ctx.parsed.y;
           return v!=null ? ctx.dataset.label+': '+(isTotal?v.toLocaleString(undefined,{maximumFractionDigits:0}):v.toFixed(2))+' '+yLabel : '—';
@@ -3949,7 +4018,7 @@ function renderBuildingStatsPane(pane, b){
       const facKWCost = bills_for_row.reduce((s,b)=>s+parseFloat(b.facKWCost||0),0);
       const totalElecCost = r.cost;
       elecByMo[mo] = {
-        kwh: r.usage,
+        kwh: r.regrBaseline!=null ? r.regrBaseline : r.usage,
         demandKW: demandKW||0,
         billedKW: billedKW||0,
         facKW: facKW||0,
@@ -4616,22 +4685,19 @@ function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, i
   const yLabel=isTotal?unit+'/Month':unit+'/Day';
   const hasRegr=rows.some(r=>r.regrBaseline!=null);
 
+  // Bars = Normalized Baseline when regression active; fallback to prorated usage
+  const barData = hasRegr
+    ? rows.map(r=> r.regrBaseline==null ? null :
+        isTotal ? +r.regrBaseline.toFixed(0) : +(r.regrBaseline/r.normDays).toFixed(2))
+    : mainData;
+  const barLabel = hasRegr ? 'Normalized Baseline' : yLabel;
+
   const datasets=[
-    {label:yLabel, data:mainData, backgroundColor:colors, borderColor:colors.map(c=>c.replace(/[\d.]+\)$/,'1)')), borderWidth:1, borderRadius:3, order:3},
+    {label:barLabel, data:barData, backgroundColor:colors, borderColor:colors.map(c=>c.replace(/[\d.]+\)$/,'1)')), borderWidth:1, borderRadius:3, order:3},
   ];
 
-  // Regression baseline line (violet, preferred) — or simple avg fallback (amber dashed)
-  if(hasRegr){
-    datasets.push({
-      label:'Normalized Baseline',
-      data: rows.map(r=> r.regrBaseline==null ? null :
-        isTotal ? +r.regrBaseline.toFixed(0) : +(r.regrBaseline/r.normDays).toFixed(2)),
-      type:'line', borderColor:'rgba(139,92,246,0.9)', backgroundColor:'rgba(139,92,246,0.1)',
-      borderWidth:2, pointRadius:2, pointBackgroundColor:'rgba(139,92,246,1)',
-      tension:0.35, fill:false, order:1,
-    });
-  } else {
-    // Fallback: flat baseline average dashed line
+  // Flat baseline average dashed line (fallback when no regression)
+  if(!hasRegr){
     datasets.push({
       label:'Baseline Avg', data:rows.map(()=>blRef), type:'line',
       borderColor:'rgba(245,158,11,0.9)', backgroundColor:'transparent',
@@ -4639,8 +4705,8 @@ function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, i
     });
   }
 
-  // Raw bill overlay (orange)
-  if(showOverlay && bills && bills.length){
+  // Raw bill overlay (orange) — always shown on Performance chart
+  if(bills && bills.length){
     const billByYm={};
     bills.forEach(b=>{
       if(!b.start||!b.end) return;
@@ -4658,12 +4724,11 @@ function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, i
     });
   }
 
-  const showLegend = showOverlay || hasRegr;
   _maCharts[canvasId]=new Chart(canvas,{
     type:'bar', data:{labels, datasets},
     options:{responsive:true, maintainAspectRatio:true,
       plugins:{
-        legend:{display:showLegend, labels:{color:'rgba(200,210,230,0.85)',font:{size:10},boxWidth:12,padding:10}},
+        legend:{display:true, labels:{color:'rgba(200,210,230,0.85)',font:{size:10},boxWidth:12,padding:10}},
         tooltip:{callbacks:{label:ctx=>{
           const v=ctx.parsed.y;
           if(ctx.dataset.label==='Normalized Baseline') return 'Normalized Baseline: '+(isTotal?v.toLocaleString(undefined,{maximumFractionDigits:0}):v.toFixed(2))+' '+yLabel;
