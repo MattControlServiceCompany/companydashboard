@@ -2416,11 +2416,11 @@ function renderMeterWorkspace(){
 ══════════════════════════════════════════ */
 // Determine which calendar month a billing period "belongs to" for normalization.
 // Assign each bill to a calendar month.
-// Rule 1: month with the majority of billing days.
-// Rule 2: if bills are continuous and two would collide on the same month,
-//          the later bill is bumped to the next month in sequence.
-// allBills: full sorted bill array (needed for collision detection).
-//           If omitted, falls back to majority-only (safe for single-bill calls).
+// For continuous billing cycles (gap ≤ 3 days between bills), months are assigned
+// sequentially — each bill gets the next month after the previous one.
+// The sequence is anchored by the first bill's majority-days month.
+// For non-continuous gaps, the next bill restarts from its own majority-days month.
+// allBills: full sorted bill array. If omitted, falls back to majority-only.
 function normMonth(startStr, endStr, incl, allBills){
   if(!startStr||!endStr) return startStr||'';
 
@@ -2436,10 +2436,10 @@ function normMonth(startStr, endStr, incl, allBills){
     return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0];
   }
 
-  // Helper: advance a YYYY-MM string by N months
-  function addMonths(ym, n){
+  // Helper: advance a YYYY-MM string by 1 month
+  function nextMonth(ym){
     let [y,mo]=ym.split('-').map(Number);
-    mo+=n; while(mo>12){mo-=12;y++;} while(mo<1){mo+=12;y--;}
+    mo++; if(mo>12){mo=1;y++;}
     return y+'-'+String(mo).padStart(2,'0');
   }
 
@@ -2448,31 +2448,35 @@ function normMonth(startStr, endStr, incl, allBills){
     return majorityMonth(s,e);
   }
 
-  // Build majority assignment for every bill in order
   const sorted = allBills.filter(b=>b.start&&b.end)
     .slice().sort((a,b)=>new Date(a.start)-new Date(b.start));
 
   const assignments = [];
-  for(const bill of sorted){
+  for(let i=0; i<sorted.length; i++){
+    const bill = sorted[i];
     const s=new Date(bill.start+'T12:00:00'), e=new Date(bill.end+'T12:00:00');
-    let ym = majorityMonth(s, e);
-    // Collision: if this month is already taken by the previous bill, bump forward
-    if(assignments.length>0){
-      const prev = assignments[assignments.length-1];
-      // Only bump if bills are continuous (gap ≤ 3 days)
+    let ym;
+    if(i===0){
+      // First bill: anchor on majority-days month
+      ym = majorityMonth(s, e);
+    } else {
+      const prev = assignments[i-1];
       const gapDays = (s - new Date(prev.end+'T12:00:00')) / (1000*60*60*24);
-      if(gapDays <= 3 && ym <= prev.ym){
-        ym = addMonths(prev.ym, 1);
+      if(gapDays <= 3){
+        // Continuous: always just increment from previous month
+        ym = nextMonth(prev.ym);
+      } else {
+        // Gap in data: restart from majority-days
+        ym = majorityMonth(s, e);
       }
     }
     assignments.push({start:bill.start, end:bill.end, ym});
   }
 
-  // Return the assignment for the requested bill
   const match = assignments.find(a=>a.start===startStr&&a.end===endStr);
   if(match) return match.ym;
 
-  // Fallback: majority only
+  // Fallback
   const s=new Date(startStr+'T12:00:00'), e=new Date(endStr+'T12:00:00');
   return majorityMonth(s,e);
 }
