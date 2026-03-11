@@ -2541,7 +2541,7 @@ function renderBillsPane(pane, m, bills, incl){
   </span>`;
 
   let tblHead = '<th style="white-space:nowrap">Norm. Month '+normInfoTip+'</th><th>Start</th><th>End</th><th style="text-align:center">Days</th>';
-  if(isElec) tblHead += '<th>kWh</th><th>Demand kW</th><th>Fac. kW</th><th>kW Cost $</th><th>kWh Cost $</th><th>Total $</th>';
+  if(isElec) tblHead += '<th>kWh</th><th>Demand kW</th><th>Fac. kW</th><th>Demand Cost $</th><th>Fac. kW Cost $</th><th>kWh Cost $</th><th>Total $</th>';
   else if(isGas) tblHead += '<th>Therms</th><th>Therm Cost $</th>';
   else tblHead += '<th>Usage</th><th>Cost $</th>';
   tblHead += '<th></th>';
@@ -2551,7 +2551,7 @@ function renderBillsPane(pane, m, bills, incl){
   bills.forEach((row, idx)=>{
     if(idx>0 && detectGap(bills[idx-1].end, row.start)){
       const gapDays=Math.round((new Date(row.start+'T12:00:00')-new Date(bills[idx-1].end+'T12:00:00'))/(1000*60*60*24));
-      const colSpan = isElec?11:isGas?7:7;
+      const colSpan = isElec?12:isGas?7:7;
       tblBody += `<tr class="ud-bill-gap-row"><td colspan="${colSpan}"><div class="ud-bill-gap-msg">⚠️ Gap in data — ${gapDays} day${gapDays!==1?'s':''} missing between ${fmtDate(bills[idx-1].end)} and ${fmtDate(row.start)}</div></td></tr>`;
     }
     tblBody += renderBillRow(row, m, incl, bills);
@@ -3942,16 +3942,19 @@ function renderBuildingStatsPane(pane, b){
     sorted.forEach(r=>{
       const mo = parseInt(r.ym.split('-')[1])-1; // 0-11
       const bills_for_row = elec.bills.filter(b=>normMonth(b.start,b.end,elec.incl,elec.bills)===r.ym);
-      const demandKW = bills_for_row.reduce((s,b)=>s+parseFloat(b.demandKW||0),0)/Math.max(1,bills_for_row.length);
-      const billedKW = bills_for_row.reduce((s,b)=>s+parseFloat(b.billedKW||b.demandKW||0),0)/Math.max(1,bills_for_row.length);
-      const kwCost   = bills_for_row.reduce((s,b)=>s+parseFloat(b.kwCost||0),0);
-      const energyCost= bills_for_row.reduce((s,b)=>s+(parseFloat(b.cost||0)-parseFloat(b.kwCost||0)),0);
+      const demandKW  = bills_for_row.reduce((s,b)=>s+parseFloat(b.demandKW||0),0)/Math.max(1,bills_for_row.length);
+      const billedKW  = bills_for_row.reduce((s,b)=>s+parseFloat(b.billedKW||b.demandKW||0),0)/Math.max(1,bills_for_row.length);
+      const facKW     = bills_for_row.reduce((s,b)=>s+parseFloat(b.facKW||0),0)/Math.max(1,bills_for_row.length);
+      const kwCost    = bills_for_row.reduce((s,b)=>s+parseFloat(b.kwCost||0),0);
+      const facKWCost = bills_for_row.reduce((s,b)=>s+parseFloat(b.facKWCost||0),0);
       const totalElecCost = r.cost;
       elecByMo[mo] = {
         kwh: r.usage,
         demandKW: demandKW||0,
         billedKW: billedKW||0,
+        facKW: facKW||0,
         kwCost,
+        facKWCost,
         energyCost: totalElecCost - kwCost,
         totalCost: totalElecCost,
         normDays: r.normDays,
@@ -3988,14 +3991,18 @@ function renderBuildingStatsPane(pane, b){
     kwh:s.kwh+(elecByMo[mo]?.kwh||0),
     demandKW:s.demandKW+(elecByMo[mo]?.demandKW||0),
     billedKW:s.billedKW+(elecByMo[mo]?.billedKW||0),
+    facKW:s.facKW+(elecByMo[mo]?.facKW||0),
     kwCost:s.kwCost+(elecByMo[mo]?.kwCost||0),
+    facKWCost:s.facKWCost+(elecByMo[mo]?.facKWCost||0),
     energyCost:s.energyCost+(elecByMo[mo]?.energyCost||0),
     totalCost:s.totalCost+(elecByMo[mo]?.totalCost||0),
-  }),{kwh:0,demandKW:0,billedKW:0,kwCost:0,energyCost:0,totalCost:0});
-  totE.avgDemandKW = moList.length ? totE.demandKW/moList.length : 0;
-  totE.avgBilledKW = moList.length ? totE.billedKW/moList.length : 0;
-  totE.costPerKwh  = totE.kwh>0 ? totE.totalCost/totE.kwh : 0;
+  }),{kwh:0,demandKW:0,billedKW:0,facKW:0,kwCost:0,facKWCost:0,energyCost:0,totalCost:0});
+  totE.avgDemandKW  = moList.length ? totE.demandKW/moList.length : 0;
+  totE.avgBilledKW  = moList.length ? totE.billedKW/moList.length : 0;
+  totE.avgFacKW     = moList.length ? totE.facKW/moList.length : 0;
+  totE.costPerKwh   = totE.kwh>0 ? totE.totalCost/totE.kwh : 0;
   totE.costPerBilledKW = totE.avgBilledKW>0 ? totE.totalCost/totE.avgBilledKW : 0;
+  totE.costPerFacKW    = totE.avgFacKW>0 ? totE.totalCost/totE.avgFacKW : 0;
 
   const totG = {
     therms: moList.reduce((s,mo)=>s+(gasByMo[mo]?.therms||0),0),
@@ -4076,11 +4083,12 @@ function renderBuildingStatsPane(pane, b){
     .bbd-tbl th.u-hdr{background:#150d2a;color:#c090ff;border-color:rgba(180,120,255,0.2);vertical-align:middle}
     .bbd-tbl td{padding:5px 9px;text-align:right;border:1px solid rgba(255,255,255,0.05);font-family:var(--mono);font-size:11px;white-space:nowrap;color:#d8e8f8}
     .bbd-tbl td.mo{text-align:left;font-family:var(--font);font-weight:700;color:#c8d8f0;background:#0d1830;padding-left:12px}
-    .bbd-tbl tbody tr:nth-child(even) td{background:rgba(255,255,255,0.025)}
     .bbd-tbl tbody tr:hover td{background:rgba(100,160,255,0.07)}
     .bbd-tbl tbody tr:hover td.mo{background:#0d1830}
     .bbd-tbl tr.total-row td{border-top:2px solid rgba(255,255,255,0.18);font-weight:800;background:#0d1830;color:#ffffff;font-size:11.5px}
     .bbd-tbl tr.total-row td.mo{color:#ffffff;background:#0d1830}
+    .bbd-tbl td.total-util{background:#150d2a;color:#c090ff;font-weight:700;border-left:2px solid rgba(180,120,255,0.3)}
+    .bbd-tbl tr.total-row td.total-util{background:#1a0f35;color:#d8a8ff}
   `;
 
   // ── Month row builder ──
@@ -4090,39 +4098,44 @@ function renderBuildingStatsPane(pane, b){
     const w = waterByMo[mo]||{};
     const moLabel = isTotal ? 'TOTAL' : MONTHS_SHORT[mo];
 
-    const kwh      = isTotal ? totE.kwh : (e.kwh||0);
-    const demKW    = isTotal ? totE.avgDemandKW : (e.demandKW||0);
-    const bilKW    = isTotal ? totE.avgBilledKW : (e.billedKW||0);
-    const kwCost   = isTotal ? totE.kwCost : (e.kwCost||0);
-    const engCost  = isTotal ? totE.energyCost : (e.energyCost||0);
-    const eCost    = isTotal ? totE.totalCost : (e.totalCost||0);
-    const costKwh  = kwh>0 ? eCost/kwh : null;
-    const costBilKW= bilKW>0 ? eCost/bilKW : null;
+    const kwh       = isTotal ? totE.kwh          : (e.kwh||0);
+    const demKW     = isTotal ? totE.avgDemandKW   : (e.demandKW||0);
+    const bilKW     = isTotal ? totE.avgBilledKW   : (e.billedKW||0);
+    const facKW     = isTotal ? totE.avgFacKW      : (e.facKW||0);
+    const kwCost    = isTotal ? totE.kwCost        : (e.kwCost||0);
+    const facKWCost = isTotal ? totE.facKWCost     : (e.facKWCost||0);
+    const engCost   = isTotal ? totE.energyCost    : (e.energyCost||0);
+    const eCost     = isTotal ? totE.totalCost     : (e.totalCost||0);
+    const costKwh   = kwh>0   ? eCost/kwh          : null;
+    const costBilKW = bilKW>0 ? kwCost/bilKW       : null;
+    const costFacKW = facKW>0 ? facKWCost/facKW    : null;
 
-    const therms   = isTotal ? totG.therms : (g.therms||0);
-    const gCost    = isTotal ? totG.cost : (g.cost||0);
-    const cPerTherm= therms>0 ? gCost/therms : null;
+    const therms    = isTotal ? totG.therms : (g.therms||0);
+    const gCost     = isTotal ? totG.cost   : (g.cost||0);
+    const cPerTherm = therms>0 ? gCost/therms : null;
 
     const kgal     = isTotal ? totW.kgal : (w.kgal||0);
     const wCost    = isTotal ? totW.cost : (w.cost||0);
-    const cPerKgal = kgal>0 ? wCost/kgal : null;
+    const cPerKgal = kgal>0  ? wCost/kgal : null;
 
     const totalUtil = eCost + gCost + wCost;
 
     const td = (v, cls='') => `<td${cls?' class="'+cls+'"':''}>${v}</td>`;
     const n  = (v,d=0)=>v?$(v,d):'—';
     const nc = (v,d=2)=>v?$c(v,d):'—';
+    const r4 = v=>v?'$'+v.toFixed(4):'—';
 
     return `<tr${isTotal?' class="total-row"':''}>
       ${td(moLabel,'mo')}
-      ${td(n(kwh))} ${td(n(demKW,1))} ${td(n(bilKW,1))}
-      ${td(nc(kwCost))} ${td(nc(engCost))} ${td(nc(eCost))}
-      ${td(costKwh?'$'+costKwh.toFixed(4):'—')} ${td(costBilKW?'$'+costBilKW.toFixed(4):'—')}
-      ${td(therms?n(therms):'0')} ${td(nc(gCost))} ${td(cPerTherm?'$'+cPerTherm.toFixed(4):'—')}
-      ${td(kgal?n(kgal):'0')} ${td(nc(wCost))} ${td(cPerKgal?'$'+cPerKgal.toFixed(4):'—')}
-      ${td(nc(totalUtil),'')}</tr>`;
+      ${elecM?`
+        ${td(n(kwh))} ${td(n(demKW,1))} ${td(n(bilKW,1))} ${td(n(facKW,1))}
+        ${td(nc(kwCost))} ${td(nc(facKWCost))} ${td(nc(engCost))} ${td(nc(eCost))}
+        ${td(r4(costKwh))} ${td(r4(costBilKW))} ${td(r4(costFacKW))}
+      `:''}
+      ${gasM?`${td(therms?n(therms):'0')} ${td(nc(gCost))} ${td(r4(cPerTherm))}`:''}
+      ${waterM?`${td(kgal?n(kgal):'0')} ${td(nc(wCost))} ${td(r4(cPerKgal))}`:''}
+      ${td(nc(totalUtil),'total-util')}</tr>`;
   }
-
   const moRows = moList.map(mo=>moRow(mo,false)).join('');
 
   // ── No data state ──
@@ -4204,21 +4217,24 @@ function renderBuildingStatsPane(pane, b){
           <thead>
             <tr>
               <th rowspan="2" class="mo-hdr" style="vertical-align:middle;min-width:52px">Month</th>
-              ${elecM?`<th colspan="8" class="e-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">ELECTRICITY</th>`:''}
+              ${elecM?`<th colspan="11" class="e-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">ELECTRICITY</th>`:''}
               ${gasM?`<th colspan="3" class="g-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">HEATING FUEL</th>`:''}
               ${waterM?`<th colspan="3" class="w-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">WATER</th>`:''}
-              <th rowspan="2" class="u-hdr" style="vertical-align:middle;min-width:88px;font-size:10px;line-height:1.5;padding:6px 8px">Total<br>Utility<br>Costs</th>
+              <th rowspan="2" class="u-hdr" style="vertical-align:middle;min-width:96px;font-size:10px;line-height:1.5;padding:6px 8px">Total<br>Utility<br>Costs</th>
             </tr>
             <tr>
               ${elecM?`
                 <th class="e-hdr">kWh</th>
-                <th class="e-hdr">Avg kW</th>
-                <th class="e-hdr">Billed kW</th>
-                <th class="e-hdr">Demand<br>Cost</th>
+                <th class="e-hdr">Actual<br>kW</th>
+                <th class="e-hdr">Billed<br>kW</th>
+                <th class="e-hdr">Facilities<br>kW</th>
+                <th class="e-hdr">Demand<br>(kW) Cost</th>
+                <th class="e-hdr">Facilities<br>(kW) Cost</th>
                 <th class="e-hdr">Energy<br>Cost</th>
                 <th class="e-hdr">Electric<br>Cost</th>
                 <th class="e-hdr">Cost/<br>kWh</th>
                 <th class="e-hdr">Cost/<br>Billed kW</th>
+                <th class="e-hdr">Cost/<br>Fac kW</th>
               `:''}
               ${gasM?`
                 <th class="g-hdr">Therms</th>
@@ -4678,8 +4694,8 @@ function openCsvImportForMeter(mid){
   const isElec=m.commodity==='Electric', isGas=m.commodity==='Gas';
   let cols='', note='';
   if(isElec){
-    cols='start_date, end_date, kwh, demand_kw, fac_kw, kw_cost, kwh_cost, total_cost';
-    note='start_date and end_date required. Numeric columns: kWh, demand_kw, fac_kw, costs.';
+    cols='start_date, end_date, kwh, demand_kw, fac_kw, kw_cost, fac_kw_cost, kwh_cost, total_cost';
+    note='start_date and end_date required. Numeric columns: kwh, demand_kw, fac_kw, kw_cost, fac_kw_cost, kwh_cost, total_cost.';
   } else if(isGas){
     cols='start_date, end_date, therms, therm_cost';
     note='start_date and end_date required. Optional: therms, therm_cost.';
@@ -4687,8 +4703,6 @@ function openCsvImportForMeter(mid){
     cols='start_date, end_date, usage, cost';
     note='start_date and end_date required. Optional: usage, cost.';
   }
-  cols+= ', hdd, cdd';
-  note+=' Optional: hdd, cdd for weather normalization.';
 
   document.getElementById('billCsvColGuide').textContent=cols;
   document.getElementById('billCsvColNote').textContent=note;
@@ -4733,20 +4747,19 @@ function parseBillCsv(text, fname){
   };
 
   // Column index lookups
-  const iStart  = hdr ? Math.max(ci(['start','begin','from']), 0) : 0;
-  const iEnd    = hdr ? (ci(['end','to','thru','through'])>-1?ci(['end','to','thru','through']):1) : 1;
-  const iKwh    = hdr ? ci(['kwh','consumption','usage','energy']) : 2;
-  const iDemand = hdr ? ci(['demand_kw','demand kw','peak kw','demand']) : 3;
-  const iFacKW  = hdr ? ci(['fac_kw','facility kw','fac kw']) : 4;
-  const iKwCost = hdr ? ci(['kw_cost','kw cost','demand cost','demand$','demand_cost']) : 5;
-  const iKwhCst = hdr ? ci(['kwh_cost','kwh cost','energy cost','energy$','energy_cost']) : 6;
-  const iTotCst = hdr ? ci(['total_cost','total cost','total$','bill','amount','total']) : isElec?7:3;
-  const iTherms = hdr ? ci(['therms','therm','gas','ccf','mcf']) : 2;
-  const iThCost = hdr ? ci(['therm_cost','therm cost','gas cost','gas$']) : 3;
-  const iUsage  = hdr ? ci(['usage','consumption','hcf','kgal','mlb']) : 2;
-  const iCost   = hdr ? ci(['cost','total','amount','bill$']) : 3;
-  const iHDD    = hdr ? ci(['hdd','heating degree','heat degree']) : -1;
-  const iCDD    = hdr ? ci(['cdd','cooling degree','cool degree']) : -1;
+  const iStart    = hdr ? Math.max(ci(['start','begin','from']), 0) : 0;
+  const iEnd      = hdr ? (ci(['end','to','thru','through'])>-1?ci(['end','to','thru','through']):1) : 1;
+  const iKwh      = hdr ? ci(['kwh','consumption','usage','energy']) : 2;
+  const iDemand   = hdr ? ci(['demand_kw','demand kw','peak kw','demand']) : 3;
+  const iFacKW    = hdr ? ci(['fac_kw','facility kw','fac kw']) : 4;
+  const iKwCost   = hdr ? ci(['kw_cost','kw cost','demand cost','demand$','demand_cost']) : 5;
+  const iFacKWCst = hdr ? ci(['fac_kw_cost','fac kw cost','facilities kw cost','facility kw cost','fac_kwcost']) : 6;
+  const iKwhCst   = hdr ? ci(['kwh_cost','kwh cost','energy cost','energy$','energy_cost']) : 7;
+  const iTotCst   = hdr ? ci(['total_cost','total cost','total$','bill','amount','total']) : isElec?8:3;
+  const iTherms   = hdr ? ci(['therms','therm','gas','ccf','mcf']) : 2;
+  const iThCost   = hdr ? ci(['therm_cost','therm cost','gas cost','gas$']) : 3;
+  const iUsage    = hdr ? ci(['usage','consumption','hcf','kgal','mlb']) : 2;
+  const iCost     = hdr ? ci(['cost','total','amount','bill$']) : 3;
 
   const parsed=[]; const warnings=[];
 
@@ -4770,21 +4783,20 @@ function parseBillCsv(text, fname){
     const gs=(i)=>i>=0&&cols[i]?cols[i].trim().replace(/"/g,''):'';
 
     if(isElec){
-      row.kwh      = g(iKwh);
-      row.demandKW = g(iDemand);
-      row.facKW    = g(iFacKW);
-      row.kwCost   = g(iKwCost);
-      row.kwhCost  = g(iKwhCst);
-      row.totalCost= g(iTotCst);
+      row.kwh       = g(iKwh);
+      row.demandKW  = g(iDemand);
+      row.facKW     = g(iFacKW);
+      row.kwCost    = g(iKwCost);
+      row.facKWCost = g(iFacKWCst);
+      row.kwhCost   = g(iKwhCst);
+      row.totalCost = g(iTotCst);
     } else if(isGas){
-      row.therms   = g(iTherms);
-      row.thermCost= g(iThCost);
+      row.therms    = g(iTherms);
+      row.thermCost = g(iThCost);
     } else {
-      row.usage    = g(iUsage);
-      row.cost     = g(iCost);
+      row.usage     = g(iUsage);
+      row.cost      = g(iCost);
     }
-    if(iHDD>=0) row.hdd=g(iHDD);
-    if(iCDD>=0) row.cdd=g(iCDD);
 
     parsed.push(row);
   });
@@ -4854,19 +4866,18 @@ function showBillCsvPreview(rows, m, fname, warnings){
   document.getElementById('billCsvRowCount').textContent=rows.length+' period'+(rows.length!==1?'s':'')+' found';
 
   let thead='<tr><th>Start</th><th>End</th><th>Days</th>';
-  if(isElec) thead+='<th>kWh</th><th>Dem. kW</th><th>Total $</th>';
+  if(isElec) thead+='<th>kWh</th><th>Dem. kW</th><th>Fac. kW</th><th>Dem. Cost</th><th>Fac. Cost</th><th>Total $</th>';
   else if(isGas) thead+='<th>Therms</th><th>Cost $</th>';
   else thead+='<th>Usage</th><th>Cost $</th>';
-  thead+='<th>HDD</th><th>CDD</th></tr>';
+  thead+='</tr>';
 
   const tbody=rows.map(r=>{
     const days=Math.round((new Date(r.end+'T12:00:00')-new Date(r.start+'T12:00:00'))/(864e5))+1;
     let cells='';
-    if(isElec) cells='<td>'+(r.kwh||0).toLocaleString()+'</td><td>'+(r.demandKW||'—')+'</td><td>'+(r.totalCost?'$'+(r.totalCost||0).toLocaleString():'—')+'</td>';
+    if(isElec) cells=`<td>${(r.kwh||0).toLocaleString()}</td><td>${r.demandKW||'—'}</td><td>${r.facKW||'—'}</td><td>${r.kwCost?'$'+(r.kwCost||0).toLocaleString():'—'}</td><td>${r.facKWCost?'$'+(r.facKWCost||0).toLocaleString():'—'}</td><td>${r.totalCost?'$'+(r.totalCost||0).toLocaleString():'—'}</td>`;
     else if(isGas) cells='<td>'+(r.therms||0).toLocaleString()+'</td><td>'+(r.thermCost?'$'+(r.thermCost||0):'—')+'</td>';
     else cells='<td>'+(r.usage||0)+'</td><td>'+(r.cost?'$'+r.cost:'—')+'</td>';
-    return '<tr><td>'+fmtDate(r.start)+'</td><td>'+fmtDate(r.end)+'</td><td>'+days+'</td>'+cells+
-      '<td>'+(r.hdd||'—')+'</td><td>'+(r.cdd||'—')+'</td></tr>';
+    return '<tr><td>'+fmtDate(r.start)+'</td><td>'+fmtDate(r.end)+'</td><td>'+days+'</td>'+cells+'</tr>';
   }).join('');
 
   document.getElementById('billCsvPreviewTable').innerHTML='<thead>'+thead+'</thead><tbody>'+tbody+'</tbody>';
@@ -4935,6 +4946,7 @@ function renderBillRow(row, m, incl, allBills){
       <td class="mono">${fmt(row.demandKW)}</td>
       <td class="mono">${fmt(row.facKW)}</td>
       <td class="mono">${fmt(row.kwCost)}</td>
+      <td class="mono">${fmt(row.facKWCost)}</td>
       <td class="mono">${fmt(row.kwhCost)}</td>
       <td class="mono">${fmt(row.totalCost)}</td>
       ${actionBtns}
@@ -5027,8 +5039,11 @@ function openBillModal(mid, editRowId){
       <div class="fg"><label class="fl">Facilities kW</label><input class="fi" id="bl-facKW" type="number" placeholder="0" value="${row?.facKW||''}"></div>
     </div>
     <div class="f3">
-      <div class="fg"><label class="fl">kW Cost $</label><input class="fi" id="bl-kwCost" type="number" placeholder="0.00" step="0.01" value="${row?.kwCost||''}"></div>
+      <div class="fg"><label class="fl">Demand kW Cost $</label><input class="fi" id="bl-kwCost" type="number" placeholder="0.00" step="0.01" value="${row?.kwCost||''}"></div>
+      <div class="fg"><label class="fl">Facilities kW Cost $</label><input class="fi" id="bl-facKWCost" type="number" placeholder="0.00" step="0.01" value="${row?.facKWCost||''}"></div>
       <div class="fg"><label class="fl">kWh Cost $</label><input class="fi" id="bl-kwhCost" type="number" placeholder="0.00" step="0.01" value="${row?.kwhCost||''}"></div>
+    </div>
+    <div class="f2">
       <div class="fg"><label class="fl">Total Bill $</label><input class="fi" id="bl-totalCost" type="number" placeholder="0.00" step="0.01" value="${row?.totalCost||''}"></div>
     </div>`;
   } else if(m.commodity==='Gas'){
@@ -5042,10 +5057,6 @@ function openBillModal(mid, editRowId){
       <div class="fg"><label class="fl">Cost $</label><input class="fi" id="bl-cost" type="number" placeholder="0.00" step="0.01" value="${row?.cost||''}"></div>
     </div>`;
   }
-  html+=`<div class="f2" style="margin-top:8px">
-    <div class="fg"><label class="fl">HDD (optional)</label><input class="fi" id="bl-hdd" type="number" placeholder="0" value="${row?.hdd||''}"></div>
-    <div class="fg"><label class="fl">CDD (optional)</label><input class="fi" id="bl-cdd" type="number" placeholder="0" value="${row?.cdd||''}"></div>
-  </div>`;
   document.getElementById('billModalBody').innerHTML=html;
   document.getElementById('billModal').classList.add('open');
 }
@@ -5059,8 +5070,8 @@ function saveBillRow(){
   m.bills=m.bills||[];
   const row=udBillEditId?m.bills.find(r=>r.id===udBillEditId):null;
   const g=id=>document.getElementById(id)?.value||'';
-  let data={start,end,hdd:parseFloat(g('bl-hdd'))||0,cdd:parseFloat(g('bl-cdd'))||0};
-  if(m.commodity==='Electric') data={...data,kwh:g('bl-kwh'),demandKW:g('bl-demandKW'),facKW:g('bl-facKW'),kwCost:g('bl-kwCost'),kwhCost:g('bl-kwhCost'),totalCost:g('bl-totalCost')};
+  let data={start,end};
+  if(m.commodity==='Electric') data={...data,kwh:g('bl-kwh'),demandKW:g('bl-demandKW'),facKW:g('bl-facKW'),kwCost:g('bl-kwCost'),facKWCost:g('bl-facKWCost'),kwhCost:g('bl-kwhCost'),totalCost:g('bl-totalCost')};
   else if(m.commodity==='Gas') data={...data,therms:g('bl-therms'),thermCost:g('bl-thermCost')};
   else data={...data,usage:g('bl-usage'),cost:g('bl-cost')};
   if(row){Object.assign(row,data);showToast('Record updated ✓');}
