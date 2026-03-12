@@ -4474,268 +4474,371 @@ function renderMeterDataPane(pane, m, bills, incl){
   const isElec  = m.commodity === 'Electric';
   const isGas   = m.commodity === 'Gas';
   const isWater = !isElec && !isGas;
-  const unit    = isElec ? 'kWh' : isGas ? 'Therms' : 'Usage';
   const {byYm: weatherByYm} = getWeatherForBuilding();
-  const allRows = getNormRows(m, bills, incl, weatherByYm);
-  const bl      = m.baseline || null;
-  const blMonths= bl && bl.months ? bl.months : [];
-  const blRows  = allRows.filter(r => blMonths.includes(r.ym));
+  const bldg = getUDBldg(udSelProjId, udSelBldgId);
+  const sqft = parseInt(bldg?.sqft)||0;
+  const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-  if(!allRows.length){
-    pane.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">📈</div><div>No bills entered yet.</div></div>';
+  // ── Helpers (same as Baseline Data) ──
+  const $  = (v,d=0) => v!=null ? v.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—';
+  const $c = (v,d=2) => v!=null ? '$'+v.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—';
+  const $4 = (v)     => v!=null ? '$'+v.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4}) : '—';
+  const n1 = v => (v==null||isNaN(v)) ? '—' : v.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1});
+  const nc = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const r4 = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4});
+  const r2 = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const pct= v => (v==null||isNaN(v)) ? '—' : (v*100).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+  const td = (v, cls='') => `<td${cls?' class="'+cls+'"':''}>${v}</td>`;
+
+  // ── Get baseline rows (same logic as renderBuildingStatsPane getBlRows) ──
+  const sortedBills = (bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+  const allRows = sortedBills.length ? getNormRows(m, sortedBills, incl, weatherByYm) : [];
+  const bl = m.baseline||null;
+  const blMonths = bl&&bl.months ? bl.months : [];
+  const blRowsFull = allRows.filter(r=>blMonths.includes(r.ym));
+  const blRows = blRowsFull.length>=3 ? blRowsFull : allRows.slice(-12);
+
+  if(!blRows.length){
+    pane.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">📈</div><div>No baseline data yet.<br>Go to the Baseline tab to select baseline months.</div></div>';
     return;
   }
 
-  const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const bldg = getUDBldg(udSelProjId, udSelBldgId);
-  const sqft = parseInt(bldg?.sqft)||0;
+  function blSpan(rows){ return rows.length ? rows[0].label+' to '+rows[rows.length-1].label : 'No baseline'; }
 
-  // ── Formatters ──
-  const n1  = v => (v==null||isNaN(v)) ? '—' : v.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1});
-  const n0  = v => (v==null||isNaN(v)) ? '—' : v.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
-  const nc  = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const r4  = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4});
-  const r2  = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const pct = v => (v==null||isNaN(v)) ? '—' : (v*100).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
-  const td  = (v, cls='') => `<td${cls?' class="'+cls+'"':''}>${v}</td>`;
+  // ── Build month-keyed maps ──
+  const elecByMo = {}, gasByMo = {}, waterByMo = {};
 
-  // ── Pull demand data from raw bills per norm month ──
-  // Build a map: ym -> averaged bill demand fields
-  const demandByYm = {};
   if(isElec){
-    allRows.forEach(r=>{
-      const mobills = bills.filter(b=>normMonth(b.start,b.end,incl,bills)===r.ym);
-      if(!mobills.length) return;
-      const n = Math.max(1, mobills.length);
-      demandByYm[r.ym] = {
-        demandKW:  mobills.reduce((s,b)=>s+parseFloat(b.demandKW||0),0)/n,
-        billedKW:  mobills.reduce((s,b)=>s+parseFloat(b.billedKW||b.demandKW||0),0)/n,
-        facKW:     mobills.reduce((s,b)=>s+parseFloat(b.facKW||0),0)/n,
-        kwCost:    mobills.reduce((s,b)=>s+parseFloat(b.kwCost||0),0),
-        facKWCost: mobills.reduce((s,b)=>s+parseFloat(b.facKWCost||0),0),
-        kwhCost:   mobills.reduce((s,b)=>s+parseFloat(b.kwhCost||0),0),
+    blRows.slice().sort((a,c)=>a.ym.localeCompare(c.ym)).forEach(r=>{
+      const mo = parseInt(r.ym.split('-')[1])-1;
+      const bfr = sortedBills.filter(b=>normMonth(b.start,b.end,incl,sortedBills)===r.ym);
+      const n = Math.max(1,bfr.length);
+      elecByMo[mo] = {
+        kwh:        r.regrBaseline!=null ? r.regrBaseline : r.usage,
+        demandKW:   bfr.reduce((s,b)=>s+parseFloat(b.demandKW||0),0)/n,
+        billedKW:   bfr.reduce((s,b)=>s+parseFloat(b.billedKW||b.demandKW||0),0)/n,
+        facKW:      bfr.reduce((s,b)=>s+parseFloat(b.facKW||0),0)/n,
+        kwCost:     bfr.reduce((s,b)=>s+parseFloat(b.kwCost||0),0),
+        facKWCost:  bfr.reduce((s,b)=>s+parseFloat(b.facKWCost||0),0),
+        energyCost: r.cost - bfr.reduce((s,b)=>s+parseFloat(b.kwCost||0),0),
+        totalCost:  r.cost,
+        normDays:   r.normDays,
       };
     });
-  }
-
-  // ── Build totals from allRows ──
-  const totUsage  = allRows.reduce((s,r)=>s+r.usage,0);
-  const totCost   = allRows.reduce((s,r)=>s+r.cost,0);
-  const totNormKwh= allRows.filter(r=>r.regrBaseline!=null).reduce((s,r)=>s+r.regrBaseline,0);
-  const hasRegr   = allRows.some(r=>r.regrBaseline!=null);
-
-  // Electric totals
-  let totDemKW=0,totBilKW=0,totFacKW=0,totKwCost=0,totFacKwCost=0,totKwhCost=0,totElecCost=0;
-  if(isElec){
-    allRows.forEach(r=>{
-      const d = demandByYm[r.ym]||{};
-      totDemKW    += d.demandKW||0;
-      totBilKW    += d.billedKW||0;
-      totFacKW    += d.facKW||0;
-      totKwCost   += d.kwCost||0;
-      totFacKwCost+= d.facKWCost||0;
-      totKwhCost  += d.kwhCost||0;
-      totElecCost += r.cost;
+  } else if(isGas){
+    blRows.slice().sort((a,c)=>a.ym.localeCompare(c.ym)).forEach(r=>{
+      const mo = parseInt(r.ym.split('-')[1])-1;
+      gasByMo[mo] = { therms: r.regrBaseline!=null ? r.regrBaseline : r.usage, cost: r.cost };
+    });
+  } else {
+    blRows.slice().sort((a,c)=>a.ym.localeCompare(c.ym)).forEach(r=>{
+      const mo = parseInt(r.ym.split('-')[1])-1;
+      waterByMo[mo] = { kgal: r.regrBaseline!=null ? r.regrBaseline : r.usage, cost: r.cost };
     });
   }
 
-  // ── CSS ──
-  const css = `
-    .mdd-wrap{font-family:var(--font);font-size:11px;color:var(--text);padding:4px 0 20px}
-    .mdd-title{text-align:center;font-size:15px;font-weight:800;color:#f0c040;letter-spacing:.06em;padding:8px 0 12px;text-transform:uppercase}
-    .mdd-tbl-wrap{overflow-x:auto;margin-bottom:16px;border:1px solid rgba(255,255,255,0.1);border-radius:9px;background:#080e1c}
-    .mdd-tbl{border-collapse:collapse;width:100%;font-size:11px}
-    .mdd-tbl th{font-weight:700;padding:6px 9px;text-align:center;border:1px solid rgba(255,255,255,0.08);white-space:nowrap;font-size:10px;letter-spacing:.2px}
-    .mdd-tbl th.mo-hdr{background:#0d1830;color:#c8d8f0;text-align:left;padding-left:12px;font-size:11px}
-    .mdd-tbl th.e-hdr{background:#0a1e38;color:#7dd8ff;border-color:rgba(100,180,255,0.15)}
-    .mdd-tbl th.g-hdr{background:#221508;color:#ffb040;border-color:rgba(255,160,50,0.2)}
-    .mdd-tbl th.w-hdr{background:#081e18;color:#40e8a0;border-color:rgba(50,220,140,0.2)}
-    .mdd-tbl td{padding:5px 9px;text-align:right;border:1px solid rgba(255,255,255,0.05);font-family:var(--mono);font-size:11px;white-space:nowrap;color:#d8e8f8}
-    .mdd-tbl td.mo{text-align:left;font-family:var(--font);font-weight:700;color:#c8d8f0;background:#0d1830;padding-left:12px}
-    .mdd-tbl td.bl-mo{color:#4fffaa}
-    .mdd-tbl tbody tr:hover td{background:rgba(100,160,255,0.07)}
-    .mdd-tbl tbody tr:hover td.mo{background:#0d1830}
-    .mdd-tbl tr.total-row td{border-top:2px solid rgba(255,255,255,0.18);font-weight:800;background:#0d1830;color:#ffffff;font-size:11.5px}
-    .mdd-tbl tr.total-row td.mo{color:#ffffff;background:#0d1830}
-  `;
+  const allMoKeys = Array.from(new Set([
+    ...Object.keys(elecByMo), ...Object.keys(gasByMo), ...Object.keys(waterByMo),
+  ])).map(Number).sort((a,c)=>a-c);
+  const moList = allMoKeys.length ? allMoKeys : Array.from({length:12},(_,i)=>i);
 
-  // ── Row builder ──
-  function dataRow(r, isTotal){
-    if(isTotal){
-      // Total row
-      const moLabel = 'TOTAL';
-      const usage   = totUsage;
-      const normKwh = hasRegr ? totNormKwh : null;
-      const cost    = totCost;
-      const avgDays = allRows.length ? allRows.reduce((s,r)=>s+r.normDays,0)/allRows.length : null;
-      const costPerUnit = usage>0 ? cost/usage : null;
+  // ── Totals (same logic as Baseline Data) ──
+  const totE = moList.reduce((s,mo)=>({
+    kwh:s.kwh+(elecByMo[mo]?.kwh||0), demandKW:s.demandKW+(elecByMo[mo]?.demandKW||0),
+    billedKW:s.billedKW+(elecByMo[mo]?.billedKW||0), facKW:s.facKW+(elecByMo[mo]?.facKW||0),
+    kwCost:s.kwCost+(elecByMo[mo]?.kwCost||0), facKWCost:s.facKWCost+(elecByMo[mo]?.facKWCost||0),
+    energyCost:s.energyCost+(elecByMo[mo]?.energyCost||0), totalCost:s.totalCost+(elecByMo[mo]?.totalCost||0),
+  }),{kwh:0,demandKW:0,billedKW:0,facKW:0,kwCost:0,facKWCost:0,energyCost:0,totalCost:0});
+  totE.avgDemandKW = moList.length ? totE.demandKW/moList.length : 0;
+  totE.avgBilledKW = moList.length ? totE.billedKW/moList.length : 0;
+  totE.avgFacKW    = moList.length ? totE.facKW/moList.length : 0;
+  totE.totalKWCost = totE.kwCost + totE.facKWCost;
+  totE.costPerKwh  = totE.kwh>0 ? totE.totalCost/totE.kwh : 0;
+  const _bilKWMos = moList.filter(mo=>elecByMo[mo]&&(elecByMo[mo].billedKW||0)>0&&(elecByMo[mo].kwCost||0)>0);
+  const _facKWMos = moList.filter(mo=>elecByMo[mo]&&(elecByMo[mo].facKW||0)>0&&(elecByMo[mo].facKWCost||0)>0);
+  const _totKWMos = moList.filter(mo=>elecByMo[mo]&&(elecByMo[mo].billedKW||0)>0&&((elecByMo[mo].kwCost||0)+(elecByMo[mo].facKWCost||0))>0);
+  totE.costPerBilledKW = _bilKWMos.length ? _bilKWMos.reduce((s,mo)=>s+elecByMo[mo].kwCost/elecByMo[mo].billedKW,0)/_bilKWMos.length : null;
+  totE.costPerFacKW    = _facKWMos.length ? _facKWMos.reduce((s,mo)=>s+elecByMo[mo].facKWCost/elecByMo[mo].facKW,0)/_facKWMos.length : null;
+  totE.costPerTotKW    = _totKWMos.length ? _totKWMos.reduce((s,mo)=>s+(elecByMo[mo].kwCost+elecByMo[mo].facKWCost)/elecByMo[mo].billedKW,0)/_totKWMos.length : null;
+  const _lfMos = moList.filter(mo=>elecByMo[mo]&&elecByMo[mo].demandKW>0&&elecByMo[mo].normDays>0&&elecByMo[mo].kwh>0);
+  totE.loadFactor = _lfMos.length ? _lfMos.reduce((s,mo)=>s+elecByMo[mo].kwh/(elecByMo[mo].demandKW*24*elecByMo[mo].normDays),0)/_lfMos.length : null;
+  const _mhMos = moList.filter(mo=>elecByMo[mo]&&elecByMo[mo].demandKW>0&&elecByMo[mo].kwh>0);
+  totE.minHours = _mhMos.reduce((s,mo)=>s+elecByMo[mo].kwh/elecByMo[mo].demandKW,0);
 
-      if(isElec){
-        const n = allRows.length||1;
-        const avgDemKW = totDemKW/n, avgBilKW = totBilKW/n, avgFacKW = totFacKW/n;
-        const totKWCost = totKwCost+totFacKwCost;
-        const engCost = totElecCost - totKwCost;
-        // Avg rates excl zeros
-        const _bilRows = allRows.filter(r=>{ const d=demandByYm[r.ym]; return d&&d.billedKW>0&&d.kwCost>0; });
-        const _facRows = allRows.filter(r=>{ const d=demandByYm[r.ym]; return d&&d.facKW>0&&d.facKWCost>0; });
-        const _totRows = allRows.filter(r=>{ const d=demandByYm[r.ym]; return d&&d.billedKW>0&&(d.kwCost+d.facKWCost)>0; });
-        const costBilKW = _bilRows.length ? _bilRows.reduce((s,r)=>s+demandByYm[r.ym].kwCost/demandByYm[r.ym].billedKW,0)/_bilRows.length : null;
-        const costFacKW = _facRows.length ? _facRows.reduce((s,r)=>s+demandByYm[r.ym].facKWCost/demandByYm[r.ym].facKW,0)/_facRows.length : null;
-        const costTotKW = _totRows.length ? _totRows.reduce((s,r)=>s+(demandByYm[r.ym].kwCost+demandByYm[r.ym].facKWCost)/demandByYm[r.ym].billedKW,0)/_totRows.length : null;
-        const _lfRows = allRows.filter(r=>{ const d=demandByYm[r.ym]; return d&&d.demandKW>0&&r.normDays>0&&r.regrBaseline!=null; });
-        const loadFactor = _lfRows.length ? _lfRows.reduce((s,r)=>s+r.regrBaseline/(demandByYm[r.ym].demandKW*24*r.normDays),0)/_lfRows.length : null;
-        const minHours = allRows.filter(r=>demandByYm[r.ym]?.demandKW>0).reduce((s,r)=>{
-          const normU = r.regrBaseline!=null?r.regrBaseline:r.usage;
-          return s+normU/demandByYm[r.ym].demandKW;
-        },0);
-        return `<tr class="total-row">
-          ${td(moLabel,'mo')}
-          ${td(n1(normKwh??usage))} ${td(n1(avgDemKW))} ${td(n1(avgBilKW))} ${td(n1(avgFacKW))}
-          ${td(nc(totKwCost))} ${td(nc(totFacKwCost))} ${td(nc(totKWCost))} ${td(nc(engCost))} ${td(nc(totElecCost))}
-          ${td(r4(costPerUnit))} ${td(r2(costBilKW))} ${td(r2(costFacKW))} ${td(r2(costTotKW))}
-          ${td(pct(loadFactor))} ${td(n1(minHours))}
-        </tr>`;
-      }
-      if(isGas){
-        const costPerUnit2 = usage>0 ? cost/usage : null;
-        const hddRows = allRows.filter(r=>r.hdd!=null&&r.hdd>0);
-        const avgHDD = hddRows.length ? hddRows.reduce((s,r)=>s+r.hdd,0)/hddRows.length : null;
-        return `<tr class="total-row">
-          ${td(moLabel,'mo')}
-          ${td(n1(normKwh??usage))} ${td(n0(avgHDD))} ${td(n0(null))} ${td(n0(null))}
-          ${td(nc(cost))} ${td(r4(costPerUnit2))}
-        </tr>`;
-      }
-      // Water/other
-      return `<tr class="total-row">
-        ${td(moLabel,'mo')} ${td(n1(usage))} ${td(nc(cost))} ${td(r4(usage>0?cost/usage:null))}
-      </tr>`;
-    }
+  const totG = {
+    therms: moList.reduce((s,mo)=>s+(gasByMo[mo]?.therms||0),0),
+    cost:   moList.reduce((s,mo)=>s+(gasByMo[mo]?.cost||0),0),
+  };
+  totG.costPerTherm = totG.therms>0 ? totG.cost/totG.therms : 0;
 
-    // Data row
-    const isBL = blMonths.includes(r.ym);
-    const moLabel = r.label;
-    const usage   = r.regrBaseline!=null ? r.regrBaseline : r.usage;
-    const cost    = r.cost;
-    const normDays= r.normDays;
-    const costPerUnit = usage>0&&cost>0 ? cost/usage : null;
-    const moClass = 'mo'+(isBL?' bl-mo':'');
+  const totW = {
+    kgal: moList.reduce((s,mo)=>s+(waterByMo[mo]?.kgal||0),0),
+    cost: moList.reduce((s,mo)=>s+(waterByMo[mo]?.cost||0),0),
+  };
+  const totW_costPerKgal = totW.kgal>0 ? totW.cost/totW.kgal : null;
 
-    if(isElec){
-      const d = demandByYm[r.ym]||{};
-      const demKW    = d.demandKW||null;
-      const bilKW    = d.billedKW||null;
-      const facKW    = d.facKW||null;
-      const kwCost   = d.kwCost!=null?d.kwCost:null;
-      const facKWCost= d.facKWCost!=null?d.facKWCost:null;
-      const totKWCost= (kwCost!=null||facKWCost!=null)?(kwCost||0)+(facKWCost||0):null;
-      const engCost  = cost!=null&&kwCost!=null ? cost-kwCost : null;
-      const costBilKW= bilKW&&bilKW>0&&kwCost&&kwCost>0 ? kwCost/bilKW : null;
-      const costFacKW= facKW&&facKW>0&&facKWCost&&facKWCost>0 ? facKWCost/facKW : null;
-      const costTotKW= bilKW&&bilKW>0&&totKWCost&&totKWCost>0 ? totKWCost/bilKW : null;
-      const loadFactor= usage>0&&demKW&&demKW>0&&normDays>0 ? usage/(demKW*24*normDays) : null;
-      const minHours  = usage>0&&demKW&&demKW>0 ? usage/demKW : null;
-      return `<tr>
-        ${td(moLabel, moClass)}
-        ${td(n1(usage))} ${td(n1(demKW))} ${td(n1(bilKW))} ${td(n1(facKW))}
-        ${td(nc(kwCost))} ${td(nc(facKWCost))} ${td(nc(totKWCost))} ${td(nc(engCost))} ${td(nc(cost))}
-        ${td(r4(costPerUnit))} ${td(r2(costBilKW))} ${td(r2(costFacKW))} ${td(r2(costTotKW))}
+  const totCost = totE.totalCost + totG.cost + totW.cost;
+
+  // ── Summary bar computations ──
+  const kwhPerSf      = isElec&&sqft>0 ? totE.kwh/sqft : null;
+  const costPerSf     = sqft>0 ? totCost/sqft : null;
+  const avgWattsPerSf = isElec&&sqft>0&&totE.avgDemandKW>0 ? (totE.avgDemandKW*1000)/sqft : null;
+  const elecDolPerSf  = isElec&&sqft>0 ? totE.totalCost/sqft : null;
+  const thermPerSf    = isGas&&sqft>0&&totG.therms>0 ? totG.therms/sqft : null;
+  const kbtuPerSf     = sqft>0 ? ((totE.kwh*3.412)+(totG.therms*100)+(totW.kgal*0))/sqft : null;
+  const hoursOperated = parseInt(bldg?.hoursOperated)||null;
+
+  // Seasonal rates — electric only
+  const sumMos=[5,6,7,8], winMos=[11,0,1,2];
+  function avgRateForMos(moArr,field){
+    const rows=moArr.filter(mo=>elecByMo[mo]&&elecByMo[mo].kwh>0);
+    if(!rows.length) return null;
+    return rows.reduce((s,mo)=>s+(elecByMo[mo][field]||0)/elecByMo[mo].kwh,0)/rows.length;
+  }
+  function avgKwRateForMos(moArr){
+    const rows=moArr.filter(mo=>elecByMo[mo]&&(elecByMo[mo].billedKW||elecByMo[mo].demandKW)>0&&elecByMo[mo].kwCost>0);
+    if(!rows.length) return null;
+    return rows.reduce((s,mo)=>s+elecByMo[mo].kwCost/(elecByMo[mo].billedKW||elecByMo[mo].demandKW),0)/rows.length;
+  }
+  const sumKwhRate = isElec ? avgRateForMos(sumMos,'totalCost') : null;
+  const winKwhRate = isElec ? avgRateForMos(winMos,'totalCost') : null;
+  const sumKwRate  = isElec ? avgKwRateForMos(sumMos) : null;
+  const winKwRate  = isElec ? avgKwRateForMos(winMos) : null;
+  const gasPerTherm= isGas&&totG.therms>0 ? totG.cost/totG.therms : null;
+
+  // ── Row builder (same logic as Baseline Data moRow) ──
+  function moRow(mo, isTotal){
+    const e = elecByMo[mo]||{};
+    const g = gasByMo[mo]||{};
+    const w = waterByMo[mo]||{};
+    const moLabel = isTotal ? 'TOTAL' : MONTHS_SHORT[mo];
+
+    const kwh       = isTotal ? totE.kwh         : (e.kwh!=null?e.kwh:null);
+    const demKW     = isTotal ? totE.demandKW     : (e.demandKW!=null?e.demandKW:null);
+    const bilKW     = isTotal ? totE.billedKW     : (e.billedKW!=null?e.billedKW:null);
+    const facKW     = isTotal ? totE.facKW        : (e.facKW!=null?e.facKW:null);
+    const kwCost    = isTotal ? totE.kwCost       : (e.kwCost!=null?e.kwCost:null);
+    const facKWCost = isTotal ? totE.facKWCost    : (e.facKWCost!=null?e.facKWCost:null);
+    const totKWCost = (kwCost!=null||facKWCost!=null)?(kwCost||0)+(facKWCost||0):null;
+    const engCost   = isTotal ? totE.energyCost   : (e.energyCost!=null?e.energyCost:null);
+    const eCost     = isTotal ? totE.totalCost    : (e.totalCost!=null?e.totalCost:null);
+    const normDays  = isTotal ? null              : (e.normDays||null);
+    const costKwh   = (kwh!=null&&kwh>0&&eCost!=null) ? eCost/kwh : null;
+    const costBilKW = isTotal ? totE.costPerBilledKW : (bilKW&&bilKW>0&&kwCost&&kwCost>0?kwCost/bilKW:null);
+    const costFacKW = isTotal ? totE.costPerFacKW    : (facKW&&facKW>0&&facKWCost&&facKWCost>0?facKWCost/facKW:null);
+    const costTotKW = isTotal ? totE.costPerTotKW    : (bilKW&&bilKW>0&&totKWCost&&totKWCost>0?totKWCost/bilKW:null);
+    const loadFactor= isTotal ? totE.loadFactor      : (kwh&&kwh>0&&demKW&&demKW>0&&normDays>0?kwh/(demKW*24*normDays):null);
+    const minHours  = isTotal ? totE.minHours        : (kwh&&kwh>0&&demKW&&demKW>0?kwh/demKW:null);
+
+    const therms    = isTotal ? totG.therms : (g.therms!=null?g.therms:null);
+    const gCost     = isTotal ? totG.cost   : (g.cost!=null?g.cost:null);
+    const cPerTherm = (therms!=null&&therms>0&&gCost!=null)?gCost/therms:null;
+
+    const kgal      = isTotal ? totW.kgal : (w.kgal!=null?w.kgal:null);
+    const wCost     = isTotal ? totW.cost : (w.cost!=null?w.cost:null);
+    const cPerKgal  = (kgal!=null&&kgal>0&&wCost!=null)?wCost/kgal:null;
+
+    return `<tr${isTotal?' class="total-row"':''}>
+      ${td(moLabel,'mo')}
+      ${isElec?`
+        ${td(n1(kwh))} ${td(n1(demKW))} ${td(n1(bilKW))} ${td(n1(facKW))}
+        ${td(nc(kwCost))} ${td(nc(facKWCost))} ${td(nc(totKWCost))} ${td(nc(engCost))} ${td(nc(eCost))}
+        ${td(r4(costKwh))} ${td(r2(costBilKW))} ${td(r2(costFacKW))} ${td(r2(costTotKW))}
         ${td(pct(loadFactor))} ${td(n1(minHours))}
-      </tr>`;
-    }
-    if(isGas){
-      const hdd = r.hdd!=null ? r.hdd : null;
-      const cdd = r.cdd!=null ? r.cdd : null;
-      const avgTemp = r.avgTemp!=null ? r.avgTemp : null;
-      const perHDD = usage>0&&hdd>0 ? usage/hdd : null;
-      return `<tr>
-        ${td(moLabel, moClass)}
-        ${td(n1(usage))} ${td(n0(hdd))} ${td(n0(cdd))} ${td(n1(avgTemp))}
-        ${td(nc(cost))} ${td(r4(costPerUnit))}
-      </tr>`;
-    }
-    // Water/other
-    return `<tr>
-      ${td(moLabel, moClass)} ${td(n1(usage))} ${td(nc(cost))} ${td(r4(costPerUnit))}
+      `:''}
+      ${isGas?`${td(n1(therms))} ${td(nc(gCost))} ${td(r4(cPerTherm))}`:''}
+      ${isWater?`${td(n1(kgal))} ${td(nc(wCost))} ${td(r4(cPerKgal))}`:''}
     </tr>`;
   }
+  const moRows = moList.map(mo=>moRow(mo,false)).join('');
 
-  const dataRows = allRows.map(r=>dataRow(r,false)).join('');
-
-  // ── Header ──
-  let thead = '';
-  if(isElec){
-    thead = `<thead>
-      <tr>
-        <th rowspan="2" class="mo-hdr" style="vertical-align:middle;min-width:52px">Month</th>
-        <th colspan="15" class="e-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">ELECTRICITY — ${m.provider||m.name||'Meter'}</th>
-      </tr>
-      <tr>
-        <th class="e-hdr" title="Normalized Baseline kWh">Norm.<br>kWh</th>
-        <th class="e-hdr">Actual kW</th>
-        <th class="e-hdr">Billed<br>kW</th>
-        <th class="e-hdr">Facilities kW</th>
-        <th class="e-hdr">Billed kW<br>Cost</th>
-        <th class="e-hdr">Facilities kW<br>Cost</th>
-        <th class="e-hdr">Total kW<br>Cost</th>
-        <th class="e-hdr">Energy<br>Cost</th>
-        <th class="e-hdr">Electric<br>Cost</th>
-        <th class="e-hdr">Cost/<br>kWh</th>
-        <th class="e-hdr">Cost/<br>Billed kW</th>
-        <th class="e-hdr">Cost/<br>Facilities kW</th>
-        <th class="e-hdr">Cost/<br>Total kW</th>
-        <th class="e-hdr">% Load<br>Factor</th>
-        <th class="e-hdr">Min<br>Hours</th>
-      </tr>
-    </thead>`;
-  } else if(isGas){
-    thead = `<thead>
-      <tr>
-        <th rowspan="2" class="mo-hdr" style="vertical-align:middle;min-width:52px">Month</th>
-        <th colspan="6" class="g-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">HEATING FUEL — ${m.provider||m.name||'Meter'}</th>
-      </tr>
-      <tr>
-        <th class="g-hdr" title="Normalized Baseline Therms">Norm.<br>Therms</th>
-        <th class="g-hdr">HDD</th>
-        <th class="g-hdr">CDD</th>
-        <th class="g-hdr">Avg °F</th>
-        <th class="g-hdr">Gas Cost</th>
-        <th class="g-hdr">Cost/<br>Therm</th>
-      </tr>
-    </thead>`;
-  } else {
-    thead = `<thead>
-      <tr>
-        <th class="mo-hdr" style="min-width:52px">Month</th>
-        <th class="w-hdr">Usage</th>
-        <th class="w-hdr">Cost</th>
-        <th class="w-hdr">Cost/Unit</th>
-      </tr>
-    </thead>`;
-  }
-
-  // ── Span label ──
-  const spanLabel = allRows.length ? allRows[0].label+' to '+allRows[allRows.length-1].label : '';
-  const blCount = blRows.length;
-
+  // ── Build HTML ──
   pane.innerHTML = `
-    <style>${css}</style>
-    <div class="mdd-wrap">
-      <div class="mdd-title">Meter Data — ${m.commodity}</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;font-size:11px;color:var(--text2)">
-        <span>📅 <strong style="color:var(--text)">${spanLabel}</strong> &nbsp;·&nbsp; ${allRows.length} months</span>
-        ${blCount>=3?`<span style="color:var(--em)">✓ Baseline: ${blCount} months</span>`:'<span style="color:var(--text3)">No baseline set</span>'}
-        ${m.provider?`<span>Provider: <strong style="color:var(--text)">${m.provider}</strong></span>`:''}
-        <span style="color:var(--text3);font-size:10px;margin-left:auto">Green month = baseline period</span>
+    <style>
+      .bbd-wrap{font-family:var(--font);font-size:11px;color:var(--text);padding:4px 0 20px}
+      .bbd-title{text-align:center;font-size:15px;font-weight:800;color:#f0c040;letter-spacing:.06em;padding:8px 0 12px;text-transform:uppercase}
+      .bbd-bl-tbl{border-collapse:collapse;font-size:10.5px}
+      .bbd-bl-tbl td,.bbd-bl-tbl th{border:1px solid rgba(255,255,255,0.15);padding:3px 10px;white-space:nowrap}
+      .bbd-bl-tbl th{background:rgba(255,255,255,0.08);color:#c8d8f0;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.4px}
+      .bbd-bl-tbl .bl-green{background:#0d3320;color:#4fffaa;font-weight:700;border-color:#1a5535}
+      .bbd-summary{background:#0d1525;border:1px solid rgba(255,255,255,0.12);border-radius:9px;padding:12px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:0;row-gap:0}
+      .bbd-sum-cell{display:flex;flex-direction:column;gap:3px;padding:8px 14px;border-right:1px solid rgba(255,255,255,0.07);flex:1;min-width:90px}
+      .bbd-sum-cell:last-child{border-right:none}
+      .bbd-sum-lbl{font-size:9.5px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.5px;font-weight:700;white-space:nowrap}
+      .bbd-sum-val{font-size:15px;font-weight:800;color:#e8eef8;font-family:var(--mono);line-height:1.1}
+      .bbd-sum-val.c-blue{color:#60b8ff} .bbd-sum-val.c-orange{color:#ffb040}
+      .bbd-sum-val.c-green{color:#40e8a0} .bbd-sum-val.c-violet{color:#b090ff}
+      .bbd-rate-block{display:flex;flex-direction:column;gap:3px;margin-top:1px}
+      .bbd-rate-row{display:flex;gap:5px;align-items:baseline}
+      .bbd-rate-season{font-size:9px;color:#7090a8;font-weight:700;text-transform:uppercase;width:38px;flex-shrink:0;letter-spacing:.3px}
+      .bbd-rate-val{font-size:12px;font-weight:700;font-family:var(--mono);color:#e8eef8}
+      .bbd-tbl-wrap{overflow-x:auto;margin-bottom:16px;border:1px solid rgba(255,255,255,0.1);border-radius:9px;background:#080e1c}
+      .bbd-tbl{border-collapse:collapse;width:100%;font-size:11px}
+      .bbd-tbl th{font-weight:700;padding:6px 9px;text-align:center;border:1px solid rgba(255,255,255,0.08);white-space:nowrap;font-size:10px;letter-spacing:.2px}
+      .bbd-tbl th.mo-hdr{background:#0d1830;color:#c8d8f0;text-align:left;padding-left:12px;font-size:11px}
+      .bbd-tbl th.e-hdr{background:#0a1e38;color:#7dd8ff;border-color:rgba(100,180,255,0.15)}
+      .bbd-tbl th.g-hdr{background:#221508;color:#ffb040;border-color:rgba(255,160,50,0.2)}
+      .bbd-tbl th.w-hdr{background:#081e18;color:#40e8a0;border-color:rgba(50,220,140,0.2)}
+      .bbd-tbl td{padding:5px 9px;text-align:right;border:1px solid rgba(255,255,255,0.05);font-family:var(--mono);font-size:11px;white-space:nowrap;color:#d8e8f8}
+      .bbd-tbl td.mo{text-align:left;font-family:var(--font);font-weight:700;color:#c8d8f0;background:#0d1830;padding-left:12px}
+      .bbd-tbl tbody tr:hover td{background:rgba(100,160,255,0.07)}
+      .bbd-tbl tbody tr:hover td.mo{background:#0d1830}
+      .bbd-tbl tr.total-row td{border-top:2px solid rgba(255,255,255,0.18);font-weight:800;background:#0d1830;color:#ffffff;font-size:11.5px}
+      .bbd-tbl tr.total-row td.mo{color:#ffffff;background:#0d1830}
+    </style>
+    <div class="bbd-wrap">
+      <div class="bbd-title">Meter Data</div>
+
+      <!-- Meta row -->
+      <div style="display:grid;grid-template-columns:auto 1fr auto;gap:12px 28px;margin-bottom:14px;align-items:start;background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:14px 18px">
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#8ab0d0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Data Baseline Years</div>
+          <table class="bbd-bl-tbl">
+            <tr><th>${isElec?'Electricity':isGas?'Heating Fuel':'Water'}</th></tr>
+            <tr><td class="bl-green">${blSpan(blRows)}</td></tr>
+          </table>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#8ab0d0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Provider</div>
+          <div style="font-size:11.5px;color:#8ab0d0">${isElec?'Electric':isGas?'Heating Fuel':'Water'} Company <span style="color:#e8f4ff;font-weight:700">${m.provider||m.name||'—'}</span></div>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#8ab0d0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Units</div>
+          <div style="font-size:11.5px;color:#8ab0d0">${isElec?'Electricity':''}${isGas?'Heating Fuel':''}${isWater?'Water':''} <span style="color:${isElec?'#7dd8ff':isGas?'#ffb040':'#40e8a0'};font-weight:800;margin-left:8px;font-size:12px">${isElec?'kWh':isGas?'Therm':'kGal'}</span></div>
+        </div>
       </div>
-      <div class="mdd-tbl-wrap">
-        <table class="mdd-tbl">
-          ${thead}
-          <tbody>${dataRows}</tbody>
-          <tfoot>${dataRow(null,true)}</tfoot>
+
+      <!-- Summary bar -->
+      <div class="bbd-summary">
+        ${sqft>0?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Square Feet</div><div class="bbd-sum-val">${sqft.toLocaleString()}</div></div>`:''}
+        ${kwhPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">kWh / sf</div><div class="bbd-sum-val c-blue">${kwhPerSf.toFixed(2)}</div></div>`:''}
+        ${costPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">${isElec?'Electric':isGas?'Gas':'Utility'} Cost / sf</div><div class="bbd-sum-val c-green">${$c(costPerSf)}</div></div>`:''}
+        ${hoursOperated!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Hours Operated</div><div class="bbd-sum-val">${hoursOperated.toLocaleString()}</div></div>`:''}
+        ${avgWattsPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Avg Watts / sf</div><div class="bbd-sum-val c-blue">${avgWattsPerSf.toFixed(2)}</div></div>`:''}
+        ${elecDolPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Electric $ / sf</div><div class="bbd-sum-val c-orange">${$c(elecDolPerSf)}</div></div>`:''}
+        ${isElec?`
+        <div class="bbd-sum-cell" style="min-width:110px">
+          <div class="bbd-sum-lbl">$ / kWh Rate</div>
+          <div class="bbd-rate-block">
+            <div class="bbd-rate-row"><span class="bbd-rate-season">☀ Sum</span><span class="bbd-rate-val c-orange" style="font-size:13px;font-weight:800">${sumKwhRate?$4(sumKwhRate):'—'}</span></div>
+            <div class="bbd-rate-row"><span class="bbd-rate-season">❄ Win</span><span class="bbd-rate-val c-blue" style="font-size:13px;font-weight:800">${winKwhRate?$4(winKwhRate):'—'}</span></div>
+          </div>
+        </div>
+        <div class="bbd-sum-cell" style="min-width:110px">
+          <div class="bbd-sum-lbl">$ / kW Rate</div>
+          <div class="bbd-rate-block">
+            <div class="bbd-rate-row"><span class="bbd-rate-season">☀ Sum</span><span class="bbd-rate-val c-orange" style="font-size:13px;font-weight:800">${sumKwRate?'$'+sumKwRate.toFixed(2):'—'}</span></div>
+            <div class="bbd-rate-row"><span class="bbd-rate-season">❄ Win</span><span class="bbd-rate-val c-blue" style="font-size:13px;font-weight:800">${winKwRate?'$'+winKwRate.toFixed(2):'—'}</span></div>
+          </div>
+        </div>`:''}
+        ${thermPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Therm / sf</div><div class="bbd-sum-val c-orange">${thermPerSf.toFixed(3)}</div></div>`:''}
+        ${gasPerTherm!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Gas $ / Therm</div><div class="bbd-sum-val c-orange">${$c(gasPerTherm)}</div></div>`:''}
+        ${kbtuPerSf!=null&&(isElec||isGas)?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">kBtu / sf</div><div class="bbd-sum-val c-violet">${kbtuPerSf.toFixed(2)}</div></div>`:''}
+        <div class="bbd-sum-cell"><div class="bbd-sum-lbl">${isElec?'Electric':isGas?'Gas':'Utility'} Costs / Year</div><div class="bbd-sum-val c-green">${$c(totCost,0)}</div></div>
+      </div>
+
+      <!-- Main data table -->
+      <div class="bbd-tbl-wrap">
+        <table class="bbd-tbl">
+          <thead>
+            <tr>
+              <th rowspan="2" class="mo-hdr" style="vertical-align:middle;min-width:52px">Month</th>
+              ${isElec?`<th colspan="15" class="e-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">ELECTRICITY</th>`:''}
+              ${isGas?`<th colspan="3" class="g-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">HEATING FUEL</th>`:''}
+              ${isWater?`<th colspan="3" class="w-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">WATER</th>`:''}
+            </tr>
+            <tr>
+              ${isElec?`
+                <th class="e-hdr" title="Normalized Baseline kWh">Norm.<br>kWh</th>
+                <th class="e-hdr">Actual kW</th><th class="e-hdr">Billed<br>kW</th><th class="e-hdr">Facilities kW</th>
+                <th class="e-hdr">Billed kW<br>Cost</th><th class="e-hdr">Facilities kW<br>Cost</th><th class="e-hdr">Total kW<br>Cost</th>
+                <th class="e-hdr">Energy<br>Cost</th><th class="e-hdr">Electric<br>Cost</th>
+                <th class="e-hdr">Cost/<br>kWh</th><th class="e-hdr">Cost/<br>Billed kW</th>
+                <th class="e-hdr">Cost/<br>Facilities kW</th><th class="e-hdr">Cost/<br>Total kW</th>
+                <th class="e-hdr">% Load<br>Factor</th><th class="e-hdr">Min<br>Hours</th>
+              `:''}
+              ${isGas?`
+                <th class="g-hdr" title="Normalized Baseline Therms">Norm.<br>Therms</th>
+                <th class="g-hdr">Gas Cost</th><th class="g-hdr">Cost/<br>Therm</th>
+              `:''}
+              ${isWater?`
+                <th class="w-hdr" title="Normalized Baseline kGal">Norm.<br>kGal</th>
+                <th class="w-hdr">Water<br>Cost</th><th class="w-hdr">Cost/<br>kGal</th>
+              `:''}
+            </tr>
+          </thead>
+          <tbody>${moRows}</tbody>
+          <tfoot>${moRow(null,true)}</tfoot>
         </table>
       </div>
+
+      <!-- Monthly Cost Chart -->
+      <div style="margin-top:18px;background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:16px 18px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#8ab0d0;margin-bottom:12px;text-align:center">Dollars Spent Monthly By Utility Type</div>
+        <div style="position:relative;height:300px"><canvas id="mddCostChart"></canvas></div>
+      </div>
+
     </div>`;
+
+  // ── Draw chart ──
+  requestAnimationFrame(()=>{
+    const canvas = document.getElementById('mddCostChart');
+    if(!canvas) return;
+    if(_maCharts['mddCostChart']){ _maCharts['mddCostChart'].destroy(); }
+    const MONTHS_S = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const labels = moList.map(mo => MONTHS_S[mo]);
+    const datasets = [];
+    const fmtDollar = v => '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+    if(isElec){
+      datasets.push({
+        label:'kWh Electric Cost',
+        data: moList.map(mo=>+(elecByMo[mo]?.energyCost||0).toFixed(2)),
+        backgroundColor:'rgba(100,180,255,0.85)', borderColor:'rgba(100,180,255,1)', borderWidth:0, stack:'cost',
+      });
+      datasets.push({
+        label:'kW Electric Demand Cost',
+        data: moList.map(mo=>+((elecByMo[mo]?.kwCost||0)+(elecByMo[mo]?.facKWCost||0)).toFixed(2)),
+        backgroundColor:'rgba(147,210,255,0.85)', borderColor:'rgba(147,210,255,1)', borderWidth:0, stack:'cost',
+      });
+    }
+    if(isGas){
+      datasets.push({
+        label:'Gas Cost',
+        data: moList.map(mo=>+(gasByMo[mo]?.cost||0).toFixed(2)),
+        backgroundColor:'rgba(245,130,30,0.9)', borderColor:'rgba(245,130,30,1)', borderWidth:0, stack:'cost',
+      });
+    }
+    if(isWater){
+      datasets.push({
+        label:'Water Cost',
+        data: moList.map(mo=>+(waterByMo[mo]?.cost||0).toFixed(2)),
+        backgroundColor:'rgba(50,220,140,0.8)', borderColor:'rgba(50,220,140,1)', borderWidth:0, stack:'cost',
+      });
+    }
+
+    _maCharts['mddCostChart'] = new Chart(canvas, {
+      type:'bar', data:{labels, datasets},
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{
+          legend:{display:true, position:'top', labels:{color:'rgba(200,220,240,0.9)',font:{size:11},boxWidth:14,padding:14}},
+          tooltip:{callbacks:{
+            label: ctx => ctx.parsed.y>0 ? ' '+ctx.dataset.label+': '+fmtDollar(ctx.parsed.y) : null,
+            footer: items => { const t=items.reduce((s,i)=>s+i.parsed.y,0); return t>0?'Total: '+fmtDollar(t):''; }
+          }}
+        },
+        scales:{
+          x:{stacked:true, ticks:{color:'rgba(180,200,220,0.8)',font:{size:11}}, grid:{color:'rgba(255,255,255,0.04)'}},
+          y:{stacked:true,
+            ticks:{color:'rgba(180,200,220,0.8)',font:{size:10}, callback:v=>'$'+v.toLocaleString('en-US',{maximumFractionDigits:0})},
+            grid:{color:'rgba(255,255,255,0.07)'},
+            title:{display:true,text:'Dollars Spent',color:'rgba(160,185,210,0.8)',font:{size:11}}
+          }
+        }
+      }
+    });
+  });
 }
 
 
