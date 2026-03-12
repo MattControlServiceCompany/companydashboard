@@ -3673,14 +3673,36 @@ function renderBaselinePane(pane, m, bills, incl){
   const basisNote = '<div style="font-size:11px;color:var(--text3);margin-bottom:10px;padding:6px 10px;background:var(--s3);border-radius:5px;border:1px solid var(--border)">'+
     '📐 Period basis: <strong>'+(normBasis_bl==='calendar'?'Calendar month days':'Actual bill days')+'</strong> — change in Normalized tab</div>';
 
+  // ── kW demand chart (electric only, baseline months) ──
+  const isElecBl = m.commodity === 'Electric';
+  let kwChartSection = '';
+  if(isElecBl && hasBl){
+    const kwByYm = {};
+    blRows.forEach(r=>{
+      const bfr = bills.filter(b=>normMonth(b.start,b.end,incl,bills)===r.ym);
+      const demKW = bfr.reduce((s,b)=>s+parseFloat(b.demandKW||0),0) / Math.max(1,bfr.length);
+      const bilKW = bfr.reduce((s,b)=>s+parseFloat(b.billedKW||b.demandKW||0),0) / Math.max(1,bfr.length);
+      if(demKW>0||bilKW>0) kwByYm[r.ym]={label:r.label, demKW, bilKW};
+    });
+    if(Object.keys(kwByYm).length){
+      kwChartSection =
+        '<div style="margin-bottom:14px">'+
+          '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">Actual kW Demand — Baseline Period</div>'+
+          '<div class="ma-chart-wrap"><canvas id="blKwChart"></canvas></div>'+
+        '</div>';
+    }
+  }
+
   pane.innerHTML=
     // ── Control bar ──
     blControlBar +
     basisNote +
     // ── Compact stats strip ──
     '<div id="blStatsWrap" style="margin-bottom:10px">'+blStatsInner+'</div>'+
-    // ── Chart (priority) ──
+    // ── kWh Chart ──
     chartSection +
+    // ── kW Demand Chart ──
+    kwChartSection +
     // ── Period selector (collapsible) ──
     '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-top:6px">'+
       '<button onclick="toggleBlPeriodPanel()" id="blPeriodToggleBtn" style="'+
@@ -3703,6 +3725,55 @@ function renderBaselinePane(pane, m, bills, incl){
 
   if(udBlChartVis){
     requestAnimationFrame(()=>{ drawBlChart('blChart', blRows, unit, bills, incl, udBlOverlay, udBlMetric); });
+  }
+  // Draw kW demand chart if applicable
+  if(isElecBl && hasBl && kwChartSection){
+    requestAnimationFrame(()=>{
+      const kwCanvas = document.getElementById('blKwChart');
+      if(!kwCanvas) return;
+      if(_maCharts['blKwChart']){ _maCharts['blKwChart'].destroy(); }
+      const kwEntries = blRows.map(r=>kwByYm[r.ym]).filter(Boolean);
+      const kwLabels  = kwEntries.map(e=>e.label);
+      const hasBilKW  = kwEntries.some(e=>e.bilKW>0&&Math.abs(e.bilKW-e.demKW)>0.5);
+      const datasets  = [];
+      datasets.push({
+        label: 'Actual kW',
+        data: kwEntries.map(e=>+e.demKW.toFixed(1)),
+        backgroundColor: 'rgba(100,180,255,0.75)',
+        borderColor: 'rgba(100,180,255,1)',
+        borderWidth: 1, borderRadius: 3,
+      });
+      if(hasBilKW){
+        datasets.push({
+          label: 'Billed kW',
+          data: kwEntries.map(e=>+e.bilKW.toFixed(1)),
+          backgroundColor: 'rgba(147,210,255,0.55)',
+          borderColor: 'rgba(147,210,255,1)',
+          borderWidth: 1, borderRadius: 3,
+        });
+      }
+      _maCharts['blKwChart'] = new Chart(kwCanvas, {
+        type: 'bar',
+        data: { labels: kwLabels, datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: hasBilKW, position: 'top', labels: { color:'rgba(200,220,240,0.9)', font:{size:11}, boxWidth:12, padding:12 } },
+            tooltip: { callbacks: { label: ctx => ' '+ctx.dataset.label+': '+ctx.parsed.y.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+' kW' } }
+          },
+          scales: {
+            x: { ticks:{color:'rgba(180,200,220,0.8)',font:{size:11}}, grid:{color:'rgba(255,255,255,0.04)'} },
+            y: {
+              beginAtZero: true,
+              ticks:{color:'rgba(180,200,220,0.8)',font:{size:10}},
+              grid:{color:'rgba(255,255,255,0.07)'},
+              title:{display:true,text:'kW',color:'rgba(160,185,210,0.8)',font:{size:11}}
+            }
+          }
+        }
+      });
+    });
   }
 }
 
@@ -4967,12 +5038,23 @@ function renderPerfPane(pane, m, bills, incl){
     r.era==='pre'?'rgba(120,130,160,0.35)':'rgba(100,160,255,0.75)'
   );
 
+  // ── Raw bill kWh by norm-month (for Actual kWh/Mo column) ──
+  const rawKwhByYm = {};
+  bills.forEach(b=>{
+    const ym = normMonth(b.start, b.end, incl, bills);
+    if(!ym) return;
+    const kwhVal = parseFloat(b.kwh||0);
+    rawKwhByYm[ym] = (rawKwhByYm[ym]||0) + kwhVal;
+  });
+
   // Savings table — regression-based expected when available, fallback to avg
   const perfRows=filteredPostRows.map(r=>{
     const isTotal_p=_perfMetric==='total';
     const expMo = hasRegr_p && r.regrBaseline!=null ? r.regrBaseline : blAvgMo;
     const expUsage = isTotal_p ? expMo : expMo/r.normDays;
-    const actual   = isTotal_p ? r.usage : r.usagePerDay;
+    // Use raw bill kWh for actual (not prorated r.usage)
+    const rawKwh = rawKwhByYm[r.ym] != null ? rawKwhByYm[r.ym] : r.usage;
+    const actual   = isTotal_p ? rawKwh : (r.normDays>0 ? rawKwh/r.normDays : r.usagePerDay);
     const sav=expUsage-actual;
     const savPc=expUsage>0?sav/expUsage*100:0;
     const euiCell=hasEUI_p?`<td class="mono" style="color:var(--text3)">${(r.usage/sqft5).toFixed(4)}</td>`:'';
@@ -4983,7 +5065,7 @@ function renderPerfPane(pane, m, bills, incl){
       '<td class="mono" style="color:'+(isRegr?'var(--violet)':'var(--text2)')+'">'+
         (isTotal_p?expUsage.toFixed(0):expUsage.toFixed(2))+
         (isRegr?'<span style="font-size:9px;color:var(--violet);margin-left:3px">R</span>':'')+'</td>'+
-      '<td class="mono">'+(_perfMetric==='total'?r.usage.toLocaleString(undefined,{maximumFractionDigits:0}):r.usagePerDay.toFixed(2))+'</td>'+
+      '<td class="mono">'+(_perfMetric==='total'?rawKwh.toLocaleString(undefined,{maximumFractionDigits:0}):(r.normDays>0?rawKwh/r.normDays:r.usagePerDay).toFixed(2))+'</td>'+
       '<td class="mono" style="color:'+(sav>=0?'var(--em)':'var(--danger)')+'">'+
         (sav>=0?'−':'+')+(Math.abs(sav)).toFixed(_perfMetric==='total'?0:2)+'</td>'+
       '<td class="mono" style="color:'+(savPc>=0?'var(--em)':'var(--danger)')+'">'+
@@ -4997,6 +5079,18 @@ function renderPerfPane(pane, m, bills, incl){
     ?'<th>Exp '+unit+'/Mo'+(hasRegr_p?' 🔬':' ~avg')+'</th><th>Actual '+unit+'/Mo</th>'
     :'<th>Exp '+unit+'/Day'+(hasRegr_p?' 🔬':' ~avg')+'</th><th>Actual '+unit+'/Day</th>';
 
+  // ── kW demand map for all chartRows (electric only) ──
+  const perfKwByYm = {};
+  if(isElec){
+    chartRows.forEach(r=>{
+      const bfr = bills.filter(b=>normMonth(b.start,b.end,incl,bills)===r.ym);
+      const demKW = bfr.reduce((s,b)=>s+parseFloat(b.demandKW||0),0) / Math.max(1,bfr.length);
+      const bilKW = bfr.reduce((s,b)=>s+parseFloat(b.billedKW||b.demandKW||0),0) / Math.max(1,bfr.length);
+      if(demKW>0||bilKW>0) perfKwByYm[r.ym]={demKW, bilKW, era:r.era};
+    });
+  }
+  const hasPerfKwData = Object.keys(perfKwByYm).length>0;
+
   const chartSection=_perfChartVis?
     '<div>'+
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">'+perfChartLabel+'</div>'+
@@ -5008,6 +5102,10 @@ function renderPerfPane(pane, m, bills, incl){
         (hasRegr_p?'<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:rgba(139,92,246,0.9);border-radius:1px;display:inline-block"></span>Normalized Baseline</span>':
           '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:var(--warn);border-radius:1px;display:inline-block"></span>Baseline Avg</span>')+
       '</div>'+
+      (isElec&&hasPerfKwData?
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:16px 0 8px">Actual kW Demand — All Periods</div>'+
+        '<div class="ma-chart-wrap"><canvas id="perfKwChart"></canvas></div>'
+      :'')+
     '</div>' : '<div></div>';
 
   pane.innerHTML=
@@ -5031,6 +5129,52 @@ function renderPerfPane(pane, m, bills, incl){
 
   if(_perfChartVis){
     requestAnimationFrame(()=>{ drawPerfChart('perfChart', chartRows, blAvgDay, blAvgMo, barColors, unit, bills, incl, _perfMetric, _perfOverlay); });
+    if(isElec&&hasPerfKwData){
+      requestAnimationFrame(()=>{
+        const kwCanvas = document.getElementById('perfKwChart');
+        if(!kwCanvas) return;
+        if(_maCharts['perfKwChart']){ _maCharts['perfKwChart'].destroy(); }
+        const kwLabels = chartRows.map(r=>r.label);
+        const kwColors = chartRows.map(r=>
+          r.era==='baseline'?'rgba(0,212,170,0.8)':
+          r.era==='pre'?'rgba(120,130,160,0.35)':'rgba(100,160,255,0.75)'
+        );
+        const hasBilKW2 = chartRows.some(r=>{ const d=perfKwByYm[r.ym]; return d&&d.bilKW>0&&Math.abs(d.bilKW-d.demKW)>0.5; });
+        const kwDatasets = [{
+          label: 'Actual kW',
+          data: chartRows.map(r=>{ const d=perfKwByYm[r.ym]; return d?+d.demKW.toFixed(1):null; }),
+          backgroundColor: kwColors,
+          borderColor: kwColors.map(c=>c.replace(/[\d.]+\)$/,'1)')),
+          borderWidth: 1, borderRadius: 3,
+        }];
+        if(hasBilKW2){
+          kwDatasets.push({
+            label: 'Billed kW',
+            type: 'line',
+            data: chartRows.map(r=>{ const d=perfKwByYm[r.ym]; return d&&d.bilKW>0?+d.bilKW.toFixed(1):null; }),
+            borderColor: 'rgba(255,200,80,0.85)',
+            backgroundColor: 'transparent',
+            pointBackgroundColor: 'rgba(255,200,80,0.9)',
+            borderWidth: 2, pointRadius: 3, tension: 0.3,
+          });
+        }
+        _maCharts['perfKwChart'] = new Chart(kwCanvas, {
+          type: 'bar', data: { labels: kwLabels, datasets: kwDatasets },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { display: hasBilKW2, position: 'top', labels: { color:'rgba(200,220,240,0.9)', font:{size:11}, boxWidth:12, padding:12 } },
+              tooltip: { callbacks: { label: ctx => ctx.parsed.y!=null?' '+ctx.dataset.label+': '+ctx.parsed.y.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+' kW':null } }
+            },
+            scales: {
+              x: { ticks:{color:'rgba(180,200,220,0.8)',font:{size:10},maxRotation:45}, grid:{color:'rgba(255,255,255,0.04)'} },
+              y: { beginAtZero:true, ticks:{color:'rgba(180,200,220,0.8)',font:{size:10}}, grid:{color:'rgba(255,255,255,0.07)'}, title:{display:true,text:'kW',color:'rgba(160,185,210,0.8)',font:{size:11}} }
+            }
+          }
+        });
+      });
+    }
   }
 }
 
