@@ -4320,12 +4320,6 @@ function renderBuildingStatsPane(pane, b){
         <div class="bbd-sum-cell"><div class="bbd-sum-lbl">Utility Costs / Year</div><div class="bbd-sum-val c-green">${$c(utilityCostPerYear,0)}</div></div>
       </div>
 
-      <!-- Monthly Cost Chart -->
-      <div style="margin-bottom:18px;background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:16px 18px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#8ab0d0;margin-bottom:12px;text-align:center">Dollars Spent Monthly By Utility Type</div>
-        <div style="position:relative;height:320px"><canvas id="bbdCostChart"></canvas></div>
-      </div>
-
       <!-- Main data table -->
       <div class="bbd-tbl-wrap">
         <table class="bbd-tbl">
@@ -4375,6 +4369,13 @@ function renderBuildingStatsPane(pane, b){
           </tfoot>
         </table>
       </div>
+
+      <!-- Monthly Cost Chart -->
+      <div style="margin-top:18px;background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:16px 18px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#8ab0d0;margin-bottom:12px;text-align:center">Dollars Spent Monthly By Utility Type</div>
+        <div style="position:relative;height:320px"><canvas id="bbdCostChart"></canvas></div>
+      </div>
+
     </div>`;
 
   // ── Draw monthly cost stacked bar chart ──
@@ -4440,7 +4441,9 @@ function renderBuildingStatsPane(pane, b){
             callbacks: {
               label: ctx => ' '+ctx.dataset.label+': '+fmtDollar(ctx.parsed.y),
               footer: items => {
-                const total = items.reduce((s,i)=>s+i.parsed.y,0);
+                const nonZero = items.filter(i=>i.parsed.y>0);
+                if(nonZero.length < 2) return '';
+                const total = nonZero.reduce((s,i)=>s+i.parsed.y,0);
                 return 'Total: '+fmtDollar(total);
               }
             }
