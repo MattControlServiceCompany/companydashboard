@@ -4320,6 +4320,12 @@ function renderBuildingStatsPane(pane, b){
         <div class="bbd-sum-cell"><div class="bbd-sum-lbl">Utility Costs / Year</div><div class="bbd-sum-val c-green">${$c(utilityCostPerYear,0)}</div></div>
       </div>
 
+      <!-- Monthly Cost Chart -->
+      <div style="margin-bottom:18px;background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:16px 18px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#8ab0d0;margin-bottom:12px;text-align:center">Dollars Spent Monthly By Utility Type</div>
+        <div style="position:relative;height:320px"><canvas id="bbdCostChart"></canvas></div>
+      </div>
+
       <!-- Main data table -->
       <div class="bbd-tbl-wrap">
         <table class="bbd-tbl">
@@ -4370,6 +4376,95 @@ function renderBuildingStatsPane(pane, b){
         </table>
       </div>
     </div>`;
+
+  // ── Draw monthly cost stacked bar chart ──
+  requestAnimationFrame(()=>{
+    const canvas = document.getElementById('bbdCostChart');
+    if(!canvas) return;
+    if(_maCharts['bbdCostChart']){ _maCharts['bbdCostChart'].destroy(); }
+    const MONTHS_S = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const labels = moList.map(mo => MONTHS_S[mo]);
+
+    const datasets = [];
+
+    // kWh Energy Cost (electric energy charge — no demand)
+    if(elecM){
+      datasets.push({
+        label: 'kWh Electric Cost',
+        data: moList.map(mo => +(elecByMo[mo]?.energyCost||0).toFixed(2)),
+        backgroundColor: 'rgba(100,180,255,0.85)',
+        borderColor: 'rgba(100,180,255,1)',
+        borderWidth: 0, stack: 'cost',
+      });
+      // kW Demand Cost (Billed kW Cost + Facilities kW Cost)
+      datasets.push({
+        label: 'kW Electric Demand Cost',
+        data: moList.map(mo => +((elecByMo[mo]?.kwCost||0)+(elecByMo[mo]?.facKWCost||0)).toFixed(2)),
+        backgroundColor: 'rgba(147,210,255,0.85)',
+        borderColor: 'rgba(147,210,255,1)',
+        borderWidth: 0, stack: 'cost',
+      });
+    }
+    if(gasM){
+      datasets.push({
+        label: 'Gas Cost',
+        data: moList.map(mo => +(gasByMo[mo]?.cost||0).toFixed(2)),
+        backgroundColor: 'rgba(245,130,30,0.9)',
+        borderColor: 'rgba(245,130,30,1)',
+        borderWidth: 0, stack: 'cost',
+      });
+    }
+    if(waterM){
+      datasets.push({
+        label: 'Water Cost',
+        data: moList.map(mo => +(waterByMo[mo]?.cost||0).toFixed(2)),
+        backgroundColor: 'rgba(50,220,140,0.8)',
+        borderColor: 'rgba(50,220,140,1)',
+        borderWidth: 0, stack: 'cost',
+      });
+    }
+
+    const fmtDollar = v => '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+    _maCharts['bbdCostChart'] = new Chart(canvas, {
+      type: 'bar',
+      data: { labels, datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true, position: 'top',
+            labels: { color: 'rgba(200,220,240,0.9)', font:{size:11}, boxWidth:14, padding:14 }
+          },
+          tooltip: {
+            callbacks: {
+              label: ctx => ' '+ctx.dataset.label+': '+fmtDollar(ctx.parsed.y),
+              footer: items => {
+                const total = items.reduce((s,i)=>s+i.parsed.y,0);
+                return 'Total: '+fmtDollar(total);
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            stacked: true,
+            ticks: { color:'rgba(180,200,220,0.8)', font:{size:11} },
+            grid: { color:'rgba(255,255,255,0.04)' }
+          },
+          y: {
+            stacked: true,
+            ticks: {
+              color:'rgba(180,200,220,0.8)', font:{size:10},
+              callback: v => '$'+v.toLocaleString('en-US',{maximumFractionDigits:0})
+            },
+            grid: { color:'rgba(255,255,255,0.07)' },
+            title: { display:true, text:'Dollars Spent', color:'rgba(160,185,210,0.8)', font:{size:11} }
+          }
+        }
+      }
+    });
+  });
 }
 
 let _perfYearFilter = 'all'; // 'all' | '1' | '2' | '3' ...
