@@ -32,7 +32,7 @@
   --violet:#8b5cf6;--violet-dim:rgba(139,92,246,0.1);
   --green:#22c55e;--orange:#fb923c;
   --em:#00d4aa;--em-dim:rgba(0,212,170,0.1);
-  --text:#e2e8f8;--text2:#6b7a9e;--text3:#323b56;
+  --text:#f0f4ff;--text2:#9ab0d0;--text3:#6880a8;
   --font:'Outfit',sans-serif;--mono:'JetBrains Mono',monospace;--r:10px;
 }
 
@@ -278,7 +278,8 @@ html,body{height:100%;overflow:hidden;}
 .btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border2);}
 .btn-ghost:hover{border-color:var(--accent,var(--em));color:var(--accent,var(--em));}
 .btn-sm{padding:4px 10px;font-size:11px;border-radius:5px;}
-.btn-del{background:transparent;color:var(--text3);border:1px solid var(--border);padding:3px 8px;font-size:11px;border-radius:5px;cursor:pointer;font-family:var(--font);transition:all .13s;}
+.btn-del{background:transparent;color:rgba(240,80,80,0.7);border:1px solid rgba(240,80,80,0.3);padding:3px 8px;font-size:11px;border-radius:5px;cursor:pointer;font-family:var(--font);transition:all .13s;}
+.btn-del:hover{color:#ff6060;border-color:#f05050;background:rgba(240,80,80,0.1);}
 .btn-del:hover{border-color:var(--danger);color:var(--danger);}
 .btn-edit{background:transparent;color:var(--text3);border:1px solid var(--border);padding:3px 8px;font-size:11px;border-radius:5px;cursor:pointer;font-family:var(--font);transition:all .13s;margin-right:4px;}
 .btn-edit:hover{border-color:var(--accent);color:var(--accent);}
@@ -310,8 +311,8 @@ html,body{height:100%;overflow:hidden;}
 .modal{background:var(--s2);border:1px solid var(--border2);border-radius:14px;width:640px;min-width:420px;max-width:95vw;max-height:90vh;overflow-y:auto;animation:fadeUp .18s ease;box-shadow:0 40px 80px rgba(0,0,0,.6);resize:both;overflow:auto;position:relative;}
 .modal-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--s2);z-index:1;}
 .modal-title{font-family:var(--head);font-size:15px;font-weight:700;}
-.modal-x{width:27px;height:27px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:all .13s;}
-.modal-x:hover{border-color:var(--danger);color:var(--danger);}
+.modal-x{width:27px;height:27px;border-radius:6px;border:1px solid rgba(240,80,80,0.4);background:transparent;color:#f05050;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:all .13s;}
+.modal-x:hover{border-color:#f05050;background:rgba(240,80,80,0.12);color:#ff6060;}
 .modal-body{padding:20px;}
 .modal-ftr{display:flex;justify-content:flex-end;gap:8px;padding:13px 20px;border-top:1px solid var(--border);}
 .modal-sect{font-size:11px;font-weight:700;color:var(--em);text-transform:uppercase;letter-spacing:.7px;margin:14px 0 10px;padding-bottom:5px;border-bottom:1px solid var(--border);}
@@ -563,6 +564,9 @@ html,body{height:100%;overflow:hidden;}
 .ma-meter-bar{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0;flex-wrap:wrap;gap:8px;}
 .ma-meter-pills{display:flex;flex-wrap:wrap;gap:6px;flex:1;min-width:0;}
 .ma-meter-pill{display:flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--border2);border-radius:8px;background:var(--s3);cursor:pointer;transition:all .13s;font-family:var(--font);}
+.ma-meter-pill.elec-pill{border-color:rgba(100,180,255,0.5);background:rgba(100,180,255,0.08);}
+.ma-meter-pill.gas-pill{border-color:rgba(255,176,64,0.5);background:rgba(255,176,64,0.08);}
+.ma-meter-pill.sel{border-color:var(--em2);background:rgba(var(--em2-rgb),0.12);}
 .ma-meter-pill:hover{border-color:var(--em);background:var(--em-dim);}
 .ma-meter-pill.active{border-color:var(--em);background:var(--em-dim);}
 #maMeterWorkspace{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;}
@@ -580,12 +584,14 @@ html,body{height:100%;overflow:hidden;}
 .ma-stat-val{font-size:18px;font-weight:700;color:var(--text);}
 .ma-stat-unit{font-size:11px;color:var(--text2);font-weight:400;}
 /* Norm table */
-.ma-tbl{width:100%;border-collapse:collapse;font-size:12px;}
-.ma-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);font-weight:700;padding:7px 10px;text-align:left;border-bottom:1px solid var(--border);background:var(--s1);white-space:nowrap;position:sticky;top:0;}
-.ma-tbl td{padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:middle;}
+.ma-tbl{width:100%;border-collapse:collapse;font-size:12px;table-layout:auto;}
+.ma-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#c0d0e8;font-weight:700;padding:7px 10px;text-align:left;border-bottom:2px solid rgba(255,255,255,0.14);background:var(--s1);white-space:nowrap;position:sticky;top:0;}
+.ma-tbl td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,0.09);font-size:12px;vertical-align:middle;color:var(--text);}
 .ma-tbl tr:last-child td{border-bottom:none;}
 .ma-tbl tr.baseline-row td{background:rgba(0,212,170,.07);}
 .ma-tbl .mono{font-family:var(--mono);}
+.ma-tbl td.num{font-family:var(--mono);text-align:right;}
+.ma-tbl th.num{text-align:right;}
 /* Baseline selector */
 .bl-period-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:7px;margin-bottom:6px;cursor:pointer;transition:all .13s;background:var(--s3);}
 .bl-period-row:hover{border-color:var(--border2);}
@@ -2541,9 +2547,9 @@ function renderBillsPane(pane, m, bills, incl){
   </span>`;
 
   let tblHead = '<th style="white-space:nowrap">Norm. Month '+normInfoTip+'</th><th>Start</th><th>End</th><th style="text-align:center">Days</th>';
-  if(isElec) tblHead += '<th>kWh</th><th>Actual kW</th><th>Facilities kW</th><th>Actual kW Cost $</th><th>Facilities kW Cost $</th><th>kWh Cost $</th><th>Total $</th>';
-  else if(isGas) tblHead += '<th>Therms</th><th>Therm Cost $</th>';
-  else tblHead += '<th>Usage</th><th>Cost $</th>';
+  if(isElec) tblHead += '<th class="num">kWh</th><th class="num">Actual kW</th><th class="num">Facilities kW</th><th class="num">Actual kW Cost $</th><th class="num">Facilities kW Cost $</th><th class="num">kWh Cost $</th><th class="num">Total $</th>';
+  else if(isGas) tblHead += '<th class="num">Therms</th><th class="num">Therm Cost $</th>';
+  else tblHead += '<th class="num">Usage</th><th class="num">Cost $</th>';
   tblHead += '<th></th>';
 
   // Build rows with gap detection
@@ -3207,7 +3213,7 @@ function renderNormPane(pane, m, bills, incl){
   // ── Table rows ──
   const tblRows = rows.map(r=>{
     const normVal = metric==='weather' ? (r.weatherNorm!=null ? r.weatherNorm.toFixed(3) : '—')
-                  : metric==='total'   ? r.usage.toLocaleString(undefined,{maximumFractionDigits:0})
+                  : metric==='total'   ? r.usage.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})
                   : r.usagePerDay.toFixed(2);
     const normColor = metric==='weather' ? 'var(--em2)' : 'var(--em)';
     const euiCell = hasEUI ? `<td class="mono" style="color:var(--text3)">${(r.usage/sqft).toFixed(4)}</td>` : '';
@@ -3376,7 +3382,7 @@ function drawNormChart(canvasId, rows, unit, metric, weatherDDLabel, bills, incl
         }}}
       },
       scales:{
-        x:{ticks:{font:{size:10},maxRotation:45}, grid:{color:'rgba(255,255,255,0.04)'}},
+        x:{ticks:{font:{size:10},maxRotation:45}, grid:{color:'rgba(255,255,255,0.10)'}},
         y:{ticks:{font:{size:10}}, grid:{color:'rgba(255,255,255,0.06)'}, title:{display:true,text:yLabel,font:{size:10}}},
       }
     }
@@ -3595,8 +3601,8 @@ function renderBaselinePane(pane, m, bills, incl){
     const summerRate = summerRows.length ? summerRows.reduce((s,r)=>s+r.cost/r.usage,0)/summerRows.length : null;
     const winterRate = winterRows.length ? winterRows.reduce((s,r)=>s+r.cost/r.usage,0)/winterRows.length : null;
 
-    const fmtRate = v => v!=null ? '$'+v.toFixed(4) : null;
-    const fmtKw   = v => v!=null ? '$'+v.toFixed(2) : null;
+    const fmtRate = v => v!=null ? '$'+v.toLocaleString('en-US',{minimumFractionDigits:5,maximumFractionDigits:5}) : null;
+    const fmtKw   = v => v!=null ? '$'+v.toFixed(3) : null;
 
     // Build compact pill strip
     const pills = [
@@ -3763,11 +3769,11 @@ function renderBaselinePane(pane, m, bills, incl){
             tooltip: { callbacks: { label: ctx => ' '+ctx.dataset.label+': '+ctx.parsed.y.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+' kW' } }
           },
           scales: {
-            x: { ticks:{color:'rgba(180,200,220,0.8)',font:{size:11}}, grid:{color:'rgba(255,255,255,0.04)'} },
+            x: { ticks:{color:'rgba(180,200,220,0.8)',font:{size:11}}, grid:{color:'rgba(255,255,255,0.10)'} },
             y: {
               beginAtZero: true,
               ticks:{color:'rgba(180,200,220,0.8)',font:{size:10}},
-              grid:{color:'rgba(255,255,255,0.07)'},
+              grid:{color:'rgba(255,255,255,0.12)'},
               title:{display:true,text:'kW',color:'rgba(160,185,210,0.8)',font:{size:11}}
             }
           }
@@ -4024,7 +4030,7 @@ function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay, metric){
         }}}
       },
       scales:{
-        x:{ticks:{font:{size:10},maxRotation:45},grid:{color:'rgba(255,255,255,0.04)'}},
+        x:{ticks:{font:{size:10},maxRotation:45},grid:{color:'rgba(255,255,255,0.10)'}},
         y:{ticks:{font:{size:10}},grid:{color:'rgba(255,255,255,0.06)'},title:{display:true,text:yLabel,font:{size:10}}}
       }
     }
@@ -4049,6 +4055,8 @@ function renderBuildingStatsPane(pane, b){
   const $  = (v,d=0) => v!=null ? v.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—';
   const $c = (v,d=2) => v!=null ? '$'+v.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—';
   const $4 = (v)     => v!=null ? '$'+v.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4}) : '—';
+  const $5 = (v)     => v!=null ? '$'+v.toLocaleString('en-US',{minimumFractionDigits:5,maximumFractionDigits:5}) : '—';
+  const $3kw = (v)   => v!=null ? '$'+v.toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:3}) : '—';
 
   // ── Pull baseline months for a meter ──
   function getBlRows(m){
@@ -4207,7 +4215,7 @@ function renderBuildingStatsPane(pane, b){
     .bbd-wrap{font-family:var(--font);font-size:11px;color:var(--text);padding:4px 0 20px}
     .bbd-title{text-align:center;font-size:15px;font-weight:800;color:#f0c040;letter-spacing:.06em;padding:8px 0 12px;text-transform:uppercase}
     .bbd-bl-tbl{border-collapse:collapse;font-size:10.5px}
-    .bbd-bl-tbl td,.bbd-bl-tbl th{border:1px solid rgba(255,255,255,0.15);padding:3px 10px;white-space:nowrap}
+    .bbd-bl-tbl td,.bbd-bl-tbl th{border:1px solid rgba(255,255,255,0.20);padding:3px 10px;white-space:nowrap;color:#e0eaff}
     .bbd-bl-tbl th{background:rgba(255,255,255,0.08);color:#c8d8f0;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.4px}
     .bbd-bl-tbl .bl-green{background:#0d3320;color:#4fffaa;font-weight:700;border-color:#1a5535}
 
@@ -4228,14 +4236,14 @@ function renderBuildingStatsPane(pane, b){
     .bbd-rate-val{font-size:12px;font-weight:700;font-family:var(--mono);color:#e8eef8}
 
     .bbd-tbl-wrap{overflow-x:auto;margin-bottom:16px;border:1px solid rgba(255,255,255,0.1);border-radius:9px;background:#080e1c}
-    .bbd-tbl{border-collapse:collapse;width:100%;font-size:11px}
-    .bbd-tbl th{font-weight:700;padding:6px 9px;text-align:center;border:1px solid rgba(255,255,255,0.08);white-space:nowrap;font-size:10px;letter-spacing:.2px}
+    .bbd-tbl{border-collapse:collapse;width:100%;font-size:11px;table-layout:auto}
+    .bbd-tbl th{font-weight:700;padding:6px 9px;text-align:center;border:1px solid rgba(255,255,255,0.12);white-space:nowrap;font-size:10px;letter-spacing:.2px}
     .bbd-tbl th.mo-hdr{background:#0d1830;color:#c8d8f0;text-align:left;padding-left:12px;font-size:11px}
     .bbd-tbl th.e-hdr{background:#0a1e38;color:#7dd8ff;border-color:rgba(100,180,255,0.15)}
     .bbd-tbl th.g-hdr{background:#221508;color:#ffb040;border-color:rgba(255,160,50,0.2)}
     .bbd-tbl th.w-hdr{background:#081e18;color:#40e8a0;border-color:rgba(50,220,140,0.2)}
     .bbd-tbl th.u-hdr{background:#150d2a;color:#c090ff;border-color:rgba(180,120,255,0.2);vertical-align:middle}
-    .bbd-tbl td{padding:5px 9px;text-align:right;border:1px solid rgba(255,255,255,0.05);font-family:var(--mono);font-size:11px;white-space:nowrap;color:#d8e8f8}
+    .bbd-tbl td{padding:5px 9px;text-align:right;border:1px solid rgba(255,255,255,0.10);font-family:var(--mono);font-size:11px;white-space:nowrap;color:#e8f0ff}
     .bbd-tbl td.mo{text-align:left;font-family:var(--font);font-weight:700;color:#c8d8f0;background:#0d1830;padding-left:12px}
     .bbd-tbl tbody tr:hover td{background:rgba(100,160,255,0.07)}
     .bbd-tbl tbody tr:hover td.mo{background:#0d1830}
@@ -4259,10 +4267,10 @@ function renderBuildingStatsPane(pane, b){
     const n0 = v => (v==null||isNaN(v)) ? '—' : v.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
     // $#,##0.00 — cost
     const nc = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-    // $#,##0.0000 — kWh rate
-    const r4 = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4});
-    // $#,##0.00 — kW rate (same as nc but explicit)
-    const r2 = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    // $#,##0.00000 — kWh rate (5 decimal)
+    const r4 = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:5,maximumFractionDigits:5});
+    // $#,##0.000 — kW rate (3 decimal)
+    const r2 = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:3});
     // % with 1 decimal
     const pct = v => (v==null||isNaN(v)) ? '—' : (v*100).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
     const td = (v, cls='') => `<td${cls?' class="'+cls+'"':''}>${v}</td>`;
@@ -4350,9 +4358,9 @@ function renderBuildingStatsPane(pane, b){
         <!-- Providers -->
         <div>
           <div style="font-size:10px;font-weight:700;color:#8ab0d0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Providers</div>
-          ${elecM?`<div style="font-size:11.5px;margin-bottom:3px;color:#8ab0d0">Electric Company <span style="color:#e8f4ff;font-weight:700">${elecM.provider||elecM.name||'—'}</span></div>`:''}
-          ${gasM?`<div style="font-size:11.5px;margin-bottom:3px;color:#8ab0d0">Heating Fuel Company <span style="color:#e8f4ff;font-weight:700">${gasM.provider||gasM.name||'—'}</span></div>`:''}
-          ${waterM?`<div style="font-size:11.5px;color:#8ab0d0">Water Company <span style="color:#e8f4ff;font-weight:700">${waterM.provider||waterM.name||'—'}</span></div>`:''}
+          ${elecM?`<div style="font-size:11.5px;margin-bottom:3px;color:#8ab0d0">Electric Company: <span style="color:#e8f4ff;font-weight:700">${elecM.provider||elecM.name||'—'}</span></div>`:''}
+          ${gasM?`<div style="font-size:11.5px;margin-bottom:3px;color:#8ab0d0">Heating Fuel Company: <span style="color:#e8f4ff;font-weight:700">${gasM.provider||gasM.name||'—'}</span></div>`:''}
+          ${waterM?`<div style="font-size:11.5px;color:#8ab0d0">Water Company: <span style="color:#e8f4ff;font-weight:700">${waterM.provider||waterM.name||'—'}</span></div>`:''}
         </div>
         <!-- Units -->
         <div>
@@ -4374,15 +4382,15 @@ function renderBuildingStatsPane(pane, b){
         <div class="bbd-sum-cell" style="min-width:110px">
           <div class="bbd-sum-lbl">$ / kWh Rate</div>
           <div class="bbd-rate-block">
-            <div class="bbd-rate-row"><span class="bbd-rate-season">☀ Sum</span><span class="bbd-rate-val c-orange" style="font-size:13px;font-weight:800">${sumKwhRate?$4(sumKwhRate):'—'}</span></div>
-            <div class="bbd-rate-row"><span class="bbd-rate-season">❄ Win</span><span class="bbd-rate-val c-blue" style="font-size:13px;font-weight:800">${winKwhRate?$4(winKwhRate):'—'}</span></div>
+            <div class="bbd-rate-row"><span class="bbd-rate-season">☀ Sum</span><span class="bbd-rate-val c-orange" style="font-size:13px;font-weight:800">${sumKwhRate?$5(sumKwhRate):'—'}</span></div>
+            <div class="bbd-rate-row"><span class="bbd-rate-season">❄ Win</span><span class="bbd-rate-val c-blue" style="font-size:13px;font-weight:800">${winKwhRate?$5(winKwhRate):'—'}</span></div>
           </div>
         </div>
         <div class="bbd-sum-cell" style="min-width:110px">
           <div class="bbd-sum-lbl">$ / kW Rate</div>
           <div class="bbd-rate-block">
-            <div class="bbd-rate-row"><span class="bbd-rate-season">☀ Sum</span><span class="bbd-rate-val c-orange" style="font-size:13px;font-weight:800">${sumKwRate?'$'+sumKwRate.toFixed(2):'—'}</span></div>
-            <div class="bbd-rate-row"><span class="bbd-rate-season">❄ Win</span><span class="bbd-rate-val c-blue" style="font-size:13px;font-weight:800">${winKwRate?'$'+winKwRate.toFixed(2):'—'}</span></div>
+            <div class="bbd-rate-row"><span class="bbd-rate-season">☀ Sum</span><span class="bbd-rate-val c-orange" style="font-size:13px;font-weight:800">${sumKwRate?'$'+sumKwRate.toFixed(3):'—'}</span></div>
+            <div class="bbd-rate-row"><span class="bbd-rate-season">❄ Win</span><span class="bbd-rate-val c-blue" style="font-size:13px;font-weight:800">${winKwRate?'$'+winKwRate.toFixed(3):'—'}</span></div>
           </div>
         </div>
         ${thermPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Therm / sf</div><div class="bbd-sum-val c-orange">${thermPerSf.toFixed(3)}</div></div>`:''}
@@ -4523,7 +4531,7 @@ function renderBuildingStatsPane(pane, b){
           x: {
             stacked: true,
             ticks: { color:'rgba(180,200,220,0.8)', font:{size:11} },
-            grid: { color:'rgba(255,255,255,0.04)' }
+            grid: { color:'rgba(255,255,255,0.10)' }
           },
           y: {
             stacked: true,
@@ -4531,7 +4539,7 @@ function renderBuildingStatsPane(pane, b){
               color:'rgba(180,200,220,0.8)', font:{size:10},
               callback: v => '$'+v.toLocaleString('en-US',{maximumFractionDigits:0})
             },
-            grid: { color:'rgba(255,255,255,0.07)' },
+            grid: { color:'rgba(255,255,255,0.12)' },
             title: { display:true, text:'Dollars Spent', color:'rgba(160,185,210,0.8)', font:{size:11} }
           }
         }
@@ -4555,10 +4563,12 @@ function renderMeterDataPane(pane, m, bills, incl){
   const $  = (v,d=0) => v!=null ? v.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—';
   const $c = (v,d=2) => v!=null ? '$'+v.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—';
   const $4 = (v)     => v!=null ? '$'+v.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4}) : '—';
+  const $5 = (v)     => v!=null ? '$'+v.toLocaleString('en-US',{minimumFractionDigits:5,maximumFractionDigits:5}) : '—';
+  const $3kw = (v)   => v!=null ? '$'+v.toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:3}) : '—';
   const n1 = v => (v==null||isNaN(v)) ? '—' : v.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1});
   const nc = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const r4 = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4});
-  const r2 = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const r4 = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:5,maximumFractionDigits:5});
+  const r2 = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:3});
   const pct= v => (v==null||isNaN(v)) ? '—' : (v*100).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
   const td = (v, cls='') => `<td${cls?' class="'+cls+'"':''}>${v}</td>`;
 
@@ -4730,7 +4740,7 @@ function renderMeterDataPane(pane, m, bills, incl){
       .bbd-wrap{font-family:var(--font);font-size:11px;color:var(--text);padding:4px 0 20px}
       .bbd-title{text-align:center;font-size:15px;font-weight:800;color:#f0c040;letter-spacing:.06em;padding:8px 0 12px;text-transform:uppercase}
       .bbd-bl-tbl{border-collapse:collapse;font-size:10.5px}
-      .bbd-bl-tbl td,.bbd-bl-tbl th{border:1px solid rgba(255,255,255,0.15);padding:3px 10px;white-space:nowrap}
+      .bbd-bl-tbl td,.bbd-bl-tbl th{border:1px solid rgba(255,255,255,0.20);padding:3px 10px;white-space:nowrap;color:#e0eaff}
       .bbd-bl-tbl th{background:rgba(255,255,255,0.08);color:#c8d8f0;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.4px}
       .bbd-bl-tbl .bl-green{background:#0d3320;color:#4fffaa;font-weight:700;border-color:#1a5535}
       .bbd-summary{background:#0d1525;border:1px solid rgba(255,255,255,0.12);border-radius:9px;padding:12px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:0;row-gap:0}
@@ -4745,13 +4755,13 @@ function renderMeterDataPane(pane, m, bills, incl){
       .bbd-rate-season{font-size:9px;color:#7090a8;font-weight:700;text-transform:uppercase;width:38px;flex-shrink:0;letter-spacing:.3px}
       .bbd-rate-val{font-size:12px;font-weight:700;font-family:var(--mono);color:#e8eef8}
       .bbd-tbl-wrap{overflow-x:auto;margin-bottom:16px;border:1px solid rgba(255,255,255,0.1);border-radius:9px;background:#080e1c}
-      .bbd-tbl{border-collapse:collapse;width:100%;font-size:11px}
-      .bbd-tbl th{font-weight:700;padding:6px 9px;text-align:center;border:1px solid rgba(255,255,255,0.08);white-space:nowrap;font-size:10px;letter-spacing:.2px}
+      .bbd-tbl{border-collapse:collapse;width:100%;font-size:11px;table-layout:auto}
+      .bbd-tbl th{font-weight:700;padding:6px 9px;text-align:center;border:1px solid rgba(255,255,255,0.12);white-space:nowrap;font-size:10px;letter-spacing:.2px}
       .bbd-tbl th.mo-hdr{background:#0d1830;color:#c8d8f0;text-align:left;padding-left:12px;font-size:11px}
       .bbd-tbl th.e-hdr{background:#0a1e38;color:#7dd8ff;border-color:rgba(100,180,255,0.15)}
       .bbd-tbl th.g-hdr{background:#221508;color:#ffb040;border-color:rgba(255,160,50,0.2)}
       .bbd-tbl th.w-hdr{background:#081e18;color:#40e8a0;border-color:rgba(50,220,140,0.2)}
-      .bbd-tbl td{padding:5px 9px;text-align:right;border:1px solid rgba(255,255,255,0.05);font-family:var(--mono);font-size:11px;white-space:nowrap;color:#d8e8f8}
+      .bbd-tbl td{padding:5px 9px;text-align:right;border:1px solid rgba(255,255,255,0.10);font-family:var(--mono);font-size:11px;white-space:nowrap;color:#e8f0ff}
       .bbd-tbl td.mo{text-align:left;font-family:var(--font);font-weight:700;color:#c8d8f0;background:#0d1830;padding-left:12px}
       .bbd-tbl tbody tr:hover td{background:rgba(100,160,255,0.07)}
       .bbd-tbl tbody tr:hover td.mo{background:#0d1830}
@@ -4792,15 +4802,15 @@ function renderMeterDataPane(pane, m, bills, incl){
         <div class="bbd-sum-cell" style="min-width:110px">
           <div class="bbd-sum-lbl">$ / kWh Rate</div>
           <div class="bbd-rate-block">
-            <div class="bbd-rate-row"><span class="bbd-rate-season">☀ Sum</span><span class="bbd-rate-val c-orange" style="font-size:13px;font-weight:800">${sumKwhRate?$4(sumKwhRate):'—'}</span></div>
-            <div class="bbd-rate-row"><span class="bbd-rate-season">❄ Win</span><span class="bbd-rate-val c-blue" style="font-size:13px;font-weight:800">${winKwhRate?$4(winKwhRate):'—'}</span></div>
+            <div class="bbd-rate-row"><span class="bbd-rate-season">☀ Sum</span><span class="bbd-rate-val c-orange" style="font-size:13px;font-weight:800">${sumKwhRate?$5(sumKwhRate):'—'}</span></div>
+            <div class="bbd-rate-row"><span class="bbd-rate-season">❄ Win</span><span class="bbd-rate-val c-blue" style="font-size:13px;font-weight:800">${winKwhRate?$5(winKwhRate):'—'}</span></div>
           </div>
         </div>
         <div class="bbd-sum-cell" style="min-width:110px">
           <div class="bbd-sum-lbl">$ / kW Rate</div>
           <div class="bbd-rate-block">
-            <div class="bbd-rate-row"><span class="bbd-rate-season">☀ Sum</span><span class="bbd-rate-val c-orange" style="font-size:13px;font-weight:800">${sumKwRate?'$'+sumKwRate.toFixed(2):'—'}</span></div>
-            <div class="bbd-rate-row"><span class="bbd-rate-season">❄ Win</span><span class="bbd-rate-val c-blue" style="font-size:13px;font-weight:800">${winKwRate?'$'+winKwRate.toFixed(2):'—'}</span></div>
+            <div class="bbd-rate-row"><span class="bbd-rate-season">☀ Sum</span><span class="bbd-rate-val c-orange" style="font-size:13px;font-weight:800">${sumKwRate?'$'+sumKwRate.toFixed(3):'—'}</span></div>
+            <div class="bbd-rate-row"><span class="bbd-rate-season">❄ Win</span><span class="bbd-rate-val c-blue" style="font-size:13px;font-weight:800">${winKwRate?'$'+winKwRate.toFixed(3):'—'}</span></div>
           </div>
         </div>`:''}
         ${thermPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Therm / sf</div><div class="bbd-sum-val c-orange">${thermPerSf.toFixed(3)}</div></div>`:''}
@@ -4902,10 +4912,10 @@ function renderMeterDataPane(pane, m, bills, incl){
           }}
         },
         scales:{
-          x:{stacked:true, ticks:{color:'rgba(180,200,220,0.8)',font:{size:11}}, grid:{color:'rgba(255,255,255,0.04)'}},
+          x:{stacked:true, ticks:{color:'rgba(180,200,220,0.8)',font:{size:11}}, grid:{color:'rgba(255,255,255,0.10)'}},
           y:{stacked:true,
             ticks:{color:'rgba(180,200,220,0.8)',font:{size:10}, callback:v=>'$'+v.toLocaleString('en-US',{maximumFractionDigits:0})},
-            grid:{color:'rgba(255,255,255,0.07)'},
+            grid:{color:'rgba(255,255,255,0.12)'},
             title:{display:true,text:'Dollars Spent',color:'rgba(160,185,210,0.8)',font:{size:11}}
           }
         }
@@ -4953,16 +4963,29 @@ function renderPerfPane(pane, m, bills, incl){
     filteredPostRows=truePostRows.slice(0,n*12);
   }
 
-  // Stats — use regression-based expected for post-BL if available
-  const postAvgDay=filteredPostRows.length?filteredPostRows.reduce((s,r)=>s+r.usagePerDay,0)/filteredPostRows.length:0;
-  const postAvgMo=filteredPostRows.length?filteredPostRows.reduce((s,r)=>s+r.usage,0)/filteredPostRows.length:0;
+  // ── Raw bill usage by norm-month for all commodities ──
+  const rawUsageByYm = {};
+  bills.forEach(b=>{
+    const ym = normMonth(b.start, b.end, incl, bills);
+    if(!ym) return;
+    const val = isElec ? parseFloat(b.kwh||0) : parseFloat(b.therms||b.usage||b.kwh||0);
+    rawUsageByYm[ym] = (rawUsageByYm[ym]||0) + val;
+  });
+
+  // Stats — use raw bill totals for actual, regression for expected
+  const postRawMos = filteredPostRows.map(r=>rawUsageByYm[r.ym]!=null?rawUsageByYm[r.ym]:r.usage);
+  const postAvgMo = postRawMos.length ? postRawMos.reduce((s,v)=>s+v,0)/postRawMos.length : 0;
+  const postAvgDay = filteredPostRows.length ? filteredPostRows.reduce((s,r)=>{
+    const raw=rawUsageByYm[r.ym]!=null?rawUsageByYm[r.ym]:r.usage;
+    return s+(r.normDays>0?raw/r.normDays:r.usagePerDay);
+  },0)/filteredPostRows.length : 0;
 
   // Expected usage: regression baseline per month (preferred) or simple avg fallback
   const totalExpected = filteredPostRows.reduce((s,r)=>{
     const exp = hasRegr_p && r.regrBaseline!=null ? r.regrBaseline : blAvgMo;
     return s + exp;
   }, 0);
-  const totalActual = filteredPostRows.reduce((s,r)=>s+r.usage, 0);
+  const totalActual = postRawMos.reduce((s,v)=>s+v, 0);
   const totalSavings = totalExpected - totalActual;
   const savPct = totalExpected>0 ? (totalSavings/totalExpected*100) : 0;
 
@@ -4971,7 +4994,7 @@ function renderPerfPane(pane, m, bills, incl){
   const savCost=blCost&&postCost?blCost-postCost:null;
 
   const last12post=truePostRows.slice(-12);
-  const rolling12kWh=last12post.reduce((s,r)=>s+r.usage,0);
+  const rolling12kWh=last12post.reduce((s,r)=>s+(rawUsageByYm[r.ym]!=null?rawUsageByYm[r.ym]:r.usage),0);
   const rolling12EUI=hasEUI_p&&last12post.length===12?(rolling12kWh*3.412/sqft5):null;
   const blEUI=hasEUI_p&&blRows.length?(blAvgMo*12*3.412/sqft5):null;
 
@@ -5038,46 +5061,64 @@ function renderPerfPane(pane, m, bills, incl){
     r.era==='pre'?'rgba(120,130,160,0.35)':'rgba(100,160,255,0.75)'
   );
 
-  // ── Raw bill kWh by norm-month (for Actual kWh/Mo column) ──
-  const rawKwhByYm = {};
-  bills.forEach(b=>{
-    const ym = normMonth(b.start, b.end, incl, bills);
-    if(!ym) return;
-    const kwhVal = parseFloat(b.kwh||0);
-    rawKwhByYm[ym] = (rawKwhByYm[ym]||0) + kwhVal;
-  });
+  // ── Build demand data by norm-month for post-BL kW table ──
+  const perfDemByYm = {};
+  if(isElec){
+    filteredPostRows.forEach(r=>{
+      const bfr = bills.filter(b=>normMonth(b.start,b.end,incl,bills)===r.ym);
+      if(!bfr.length) return;
+      const n = bfr.length;
+      perfDemByYm[r.ym] = {
+        demKW:  bfr.reduce((s,b)=>s+parseFloat(b.demandKW||0),0)/n,
+        bilKW:  bfr.reduce((s,b)=>s+parseFloat(b.billedKW||b.demandKW||0),0)/n,
+        kwCost: bfr.reduce((s,b)=>s+parseFloat(b.kwCost||0),0),
+        facKWCost: bfr.reduce((s,b)=>s+parseFloat(b.facKWCost||0),0),
+      };
+    });
+  }
 
   // Savings table — regression-based expected when available, fallback to avg
   const perfRows=filteredPostRows.map(r=>{
     const isTotal_p=_perfMetric==='total';
     const expMo = hasRegr_p && r.regrBaseline!=null ? r.regrBaseline : blAvgMo;
     const expUsage = isTotal_p ? expMo : expMo/r.normDays;
-    // Use raw bill kWh for actual (not prorated r.usage)
-    const rawKwh = rawKwhByYm[r.ym] != null ? rawKwhByYm[r.ym] : r.usage;
+    // Use raw bill usage for actual (not prorated r.usage)
+    const rawKwh = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
     const actual   = isTotal_p ? rawKwh : (r.normDays>0 ? rawKwh/r.normDays : r.usagePerDay);
     const sav=expUsage-actual;
     const savPc=expUsage>0?sav/expUsage*100:0;
-    const euiCell=hasEUI_p?`<td class="mono" style="color:var(--text3)">${(r.usage/sqft5).toFixed(4)}</td>`:'';
+    const euiCell=hasEUI_p?`<td class="mono" style="color:var(--text2)">${(rawKwh/sqft5).toFixed(4)}</td>`:'';
     const isRegr = hasRegr_p && r.regrBaseline!=null;
+    const dem = isElec ? (perfDemByYm[r.ym]||{}) : null;
+    const demKW = dem ? dem.demKW||0 : 0;
+    const bilKW = dem ? dem.bilKW||0 : 0;
+    const kwCostRow = dem ? (dem.kwCost||0)+(dem.facKWCost||0) : 0;
     return '<tr>'+
       '<td class="mono">'+r.label+'</td>'+
       '<td class="mono">'+r.normDays+'</td>'+
       '<td class="mono" style="color:'+(isRegr?'var(--violet)':'var(--text2)')+'">'+
-        (isTotal_p?expUsage.toFixed(0):expUsage.toFixed(2))+
+        (isTotal_p?expUsage.toLocaleString(undefined,{maximumFractionDigits:0}):expUsage.toFixed(2))+
         (isRegr?'<span style="font-size:9px;color:var(--violet);margin-left:3px">R</span>':'')+'</td>'+
       '<td class="mono">'+(_perfMetric==='total'?rawKwh.toLocaleString(undefined,{maximumFractionDigits:0}):(r.normDays>0?rawKwh/r.normDays:r.usagePerDay).toFixed(2))+'</td>'+
       '<td class="mono" style="color:'+(sav>=0?'var(--em)':'var(--danger)')+'">'+
-        (sav>=0?'−':'+')+(Math.abs(sav)).toFixed(_perfMetric==='total'?0:2)+'</td>'+
+        (sav>=0?'−':'+')+(Math.abs(isTotal_p?sav:sav)).toFixed(_perfMetric==='total'?0:2)+'</td>'+
       '<td class="mono" style="color:'+(savPc>=0?'var(--em)':'var(--danger)')+'">'+
         (savPc>=0?'−':'+')+(Math.abs(savPc)).toFixed(1)+'%</td>'+
+      (isElec&&demKW>0?'<td class="mono">'+demKW.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'</td>':'')+ 
+      (isElec&&bilKW>0?'<td class="mono">'+bilKW.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'</td>':'')+ 
+      (isElec&&kwCostRow>0?'<td class="mono">$'+kwCostRow.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>':'')+ 
       euiCell+
     '</tr>';
   }).join('');
 
-  const euiTblHdr=hasEUI_p?'<th>kWh/sqft</th>':'';
+  const euiTblHdr=hasEUI_p?'<th class="num">kWh/sqft</th>':'';
+  const hasKwData = isElec && Object.keys(perfDemByYm).length>0;
+  const demKWHdr = hasKwData ? '<th class="num">Actual kW</th>' : '';
+  const bilKWHdr = hasKwData && filteredPostRows.some(r=>{ const d=perfDemByYm[r.ym]; return d&&d.bilKW>0&&Math.abs(d.bilKW-d.demKW)>0.5; }) ? '<th class="num">Billed kW</th>' : '';
+  const kwCostHdr= hasKwData ? '<th class="num">kW Cost</th>' : '';
   const perfTableLabel=_perfMetric==='total'
-    ?'<th>Exp '+unit+'/Mo'+(hasRegr_p?' 🔬':' ~avg')+'</th><th>Actual '+unit+'/Mo</th>'
-    :'<th>Exp '+unit+'/Day'+(hasRegr_p?' 🔬':' ~avg')+'</th><th>Actual '+unit+'/Day</th>';
+    ?'<th class="num">Exp '+unit+'/Mo'+(hasRegr_p?' 🔬':' ~avg')+'</th><th class="num">Actual '+unit+'/Mo</th>'
+    :'<th class="num">Exp '+unit+'/Day'+(hasRegr_p?' 🔬':' ~avg')+'</th><th class="num">Actual '+unit+'/Day</th>';
 
   // ── kW demand map for all chartRows (electric only) ──
   const perfKwByYm = {};
@@ -5121,7 +5162,7 @@ function renderPerfPane(pane, m, bills, incl){
       (filteredPostRows.length?
         '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto">'+
           '<table class="ma-tbl">'+
-            '<thead><tr><th>Month</th><th>Norm Days</th>'+perfTableLabel+'<th>Saved</th><th>%</th>'+euiTblHdr+'</tr></thead>'+
+            '<thead><tr><th>Month</th><th class="num">Norm Days</th>'+perfTableLabel+'<th class="num">Saved</th><th class="num">%</th>'+demKWHdr+bilKWHdr+kwCostHdr+euiTblHdr+'</tr></thead>'+
             '<tbody>'+perfRows+'</tbody>'+
           '</table></div>':
         '<div style="font-size:12px;color:var(--text3);padding:20px;text-align:center">No post-baseline data yet — add billing periods after <strong>'+fmtMon(blEnd+'-01')+'</strong></div>')+
@@ -5168,8 +5209,8 @@ function renderPerfPane(pane, m, bills, incl){
               tooltip: { callbacks: { label: ctx => ctx.parsed.y!=null?' '+ctx.dataset.label+': '+ctx.parsed.y.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+' kW':null } }
             },
             scales: {
-              x: { ticks:{color:'rgba(180,200,220,0.8)',font:{size:10},maxRotation:45}, grid:{color:'rgba(255,255,255,0.04)'} },
-              y: { beginAtZero:true, ticks:{color:'rgba(180,200,220,0.8)',font:{size:10}}, grid:{color:'rgba(255,255,255,0.07)'}, title:{display:true,text:'kW',color:'rgba(160,185,210,0.8)',font:{size:11}} }
+              x: { ticks:{color:'rgba(180,200,220,0.8)',font:{size:10},maxRotation:45}, grid:{color:'rgba(255,255,255,0.10)'} },
+              y: { beginAtZero:true, ticks:{color:'rgba(180,200,220,0.8)',font:{size:10}}, grid:{color:'rgba(255,255,255,0.12)'}, title:{display:true,text:'kW',color:'rgba(160,185,210,0.8)',font:{size:11}} }
             }
           }
         });
@@ -5254,7 +5295,7 @@ function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, i
           return (era?tag:ctx.dataset.label)+': '+(isTotal?v.toLocaleString(undefined,{maximumFractionDigits:0}):v.toFixed(2))+' '+yLabel;
         }}}
       },
-      scales:{x:{ticks:{font:{size:10},maxRotation:45},grid:{color:'rgba(255,255,255,0.04)'}},
+      scales:{x:{ticks:{font:{size:10},maxRotation:45},grid:{color:'rgba(255,255,255,0.10)'}},
         y:{ticks:{font:{size:10}},grid:{color:'rgba(255,255,255,0.06)'},title:{display:true,text:yLabel,font:{size:10}}}}
     }
   });
@@ -5514,7 +5555,9 @@ function renderBillRow(row, m, incl, allBills){
     <button class="btn-del"  onclick="deleteBillRow('${m.id}','${row.id}')" title="Delete">✕</button>
   </td>`;
 
-  const fmt = v => (v!=null && v!=='' && !isNaN(v)) ? (+v).toLocaleString(undefined,{maximumFractionDigits:2}) : '—';
+  const fmt  = v => (v!=null&&v!==''&&!isNaN(v)) ? (+v).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}) : '—';
+  const fmtC = v => (v!=null&&v!==''&&!isNaN(v)) ? (+v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
+  const fmtKW= v => (v!=null&&v!==''&&!isNaN(v)) ? (+v).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}) : '—';
   const fmtD= v => v ? fmtDate(v) : '—';
 
   if(m.commodity==='Electric'){
@@ -5522,14 +5565,14 @@ function renderBillRow(row, m, incl, allBills){
       ${nmCell}
       <td class="mono">${fmtD(row.start)}</td>
       <td class="mono">${fmtD(row.end)}</td>
-      <td class="days-cell mono">${days}</td>
-      <td class="mono">${fmt(row.kwh)}</td>
-      <td class="mono">${fmt(row.demandKW)}</td>
-      <td class="mono">${fmt(row.facKW)}</td>
-      <td class="mono">${fmt(row.kwCost)}</td>
-      <td class="mono">${fmt(row.facKWCost)}</td>
-      <td class="mono">${fmt(row.kwhCost)}</td>
-      <td class="mono">${fmt(row.totalCost)}</td>
+      <td class="days-cell mono" style="text-align:right">${days}</td>
+      <td class="mono num">${fmt(row.kwh)}</td>
+      <td class="mono num">${fmtKW(row.demandKW)}</td>
+      <td class="mono num">${fmtKW(row.facKW)}</td>
+      <td class="mono num">${fmtC(row.kwCost)}</td>
+      <td class="mono num">${fmtC(row.facKWCost)}</td>
+      <td class="mono num">${fmtC(row.kwhCost)}</td>
+      <td class="mono num">${fmtC(row.totalCost)}</td>
       ${actionBtns}
     </tr>`;
   }
@@ -5538,9 +5581,9 @@ function renderBillRow(row, m, incl, allBills){
       ${nmCell}
       <td class="mono">${fmtD(row.start)}</td>
       <td class="mono">${fmtD(row.end)}</td>
-      <td class="days-cell mono">${days}</td>
-      <td class="mono">${fmt(row.therms)}</td>
-      <td class="mono">${fmt(row.thermCost)}</td>
+      <td class="days-cell mono" style="text-align:right">${days}</td>
+      <td class="mono num">${fmt(row.therms)}</td>
+      <td class="mono num">${fmtC(row.thermCost)}</td>
       ${actionBtns}
     </tr>`;
   }
