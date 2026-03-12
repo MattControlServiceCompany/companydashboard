@@ -4072,9 +4072,20 @@ function renderBuildingStatsPane(pane, b){
   totE.avgDemandKW  = moList.length ? totE.demandKW/moList.length : 0;
   totE.avgBilledKW  = moList.length ? totE.billedKW/moList.length : 0;
   totE.avgFacKW     = moList.length ? totE.facKW/moList.length : 0;
+  totE.totalKWCost  = totE.kwCost + totE.facKWCost;
   totE.costPerKwh   = totE.kwh>0 ? totE.totalCost/totE.kwh : 0;
-  totE.costPerBilledKW = totE.avgBilledKW>0 ? totE.totalCost/totE.avgBilledKW : 0;
-  totE.costPerFacKW    = totE.avgFacKW>0 ? totE.totalCost/totE.avgFacKW : 0;
+  // Cost/BilledKW and Cost/FacKW totals = avg of months with positive values
+  const _bilKWMos  = moList.filter(mo=>elecByMo[mo]&&(elecByMo[mo].billedKW||0)>0&&(elecByMo[mo].kwCost||0)>0);
+  const _facKWMos  = moList.filter(mo=>elecByMo[mo]&&(elecByMo[mo].facKW||0)>0&&(elecByMo[mo].facKWCost||0)>0);
+  const _totKWMos  = moList.filter(mo=>elecByMo[mo]&&(elecByMo[mo].billedKW||0)>0&&((elecByMo[mo].kwCost||0)+(elecByMo[mo].facKWCost||0))>0);
+  totE.costPerBilledKW = _bilKWMos.length ? _bilKWMos.reduce((s,mo)=>s+elecByMo[mo].kwCost/elecByMo[mo].billedKW,0)/_bilKWMos.length : null;
+  totE.costPerFacKW    = _facKWMos.length ? _facKWMos.reduce((s,mo)=>s+elecByMo[mo].facKWCost/elecByMo[mo].facKW,0)/_facKWMos.length : null;
+  totE.costPerTotKW    = _totKWMos.length ? _totKWMos.reduce((s,mo)=>s+(elecByMo[mo].kwCost+elecByMo[mo].facKWCost)/elecByMo[mo].billedKW,0)/_totKWMos.length : null;
+  // Load factor and min hours totals
+  const _lfMos = moList.filter(mo=>elecByMo[mo]&&elecByMo[mo].demandKW>0&&elecByMo[mo].normDays>0&&elecByMo[mo].kwh>0);
+  totE.loadFactor = _lfMos.length ? _lfMos.reduce((s,mo)=>s+elecByMo[mo].kwh/(elecByMo[mo].demandKW*24*elecByMo[mo].normDays),0)/_lfMos.length : null;
+  const _mhMos = moList.filter(mo=>elecByMo[mo]&&elecByMo[mo].demandKW>0&&elecByMo[mo].kwh>0);
+  totE.minHours = _mhMos.reduce((s,mo)=>s+elecByMo[mo].kwh/elecByMo[mo].demandKW,0);
 
   const totG = {
     therms: moList.reduce((s,mo)=>s+(gasByMo[mo]?.therms||0),0),
@@ -4170,42 +4181,68 @@ function renderBuildingStatsPane(pane, b){
     const w = waterByMo[mo]||{};
     const moLabel = isTotal ? 'TOTAL' : MONTHS_SHORT[mo];
 
-    const kwh       = isTotal ? totE.kwh          : (e.kwh||0);
-    const demKW     = isTotal ? totE.avgDemandKW   : (e.demandKW||0);
-    const bilKW     = isTotal ? totE.avgBilledKW   : (e.billedKW||0);
-    const facKW     = isTotal ? totE.avgFacKW      : (e.facKW||0);
-    const kwCost    = isTotal ? totE.kwCost        : (e.kwCost||0);
-    const facKWCost = isTotal ? totE.facKWCost     : (e.facKWCost||0);
-    const engCost   = isTotal ? totE.energyCost    : (e.energyCost||0);
-    const eCost     = isTotal ? totE.totalCost     : (e.totalCost||0);
-    const costKwh   = kwh>0   ? eCost/kwh          : null;
-    const costBilKW = bilKW>0 ? kwCost/bilKW       : null;
-    const costFacKW = facKW>0 ? facKWCost/facKW    : null;
-
-    const therms    = isTotal ? totG.therms : (g.therms||0);
-    const gCost     = isTotal ? totG.cost   : (g.cost||0);
-    const cPerTherm = therms>0 ? gCost/therms : null;
-
-    const kgal     = isTotal ? totW.kgal : (w.kgal||0);
-    const wCost    = isTotal ? totW.cost : (w.cost||0);
-    const cPerKgal = kgal>0  ? wCost/kgal : null;
-
-    const totalUtil = eCost + gCost + wCost;
-
+    // Number formatters
+    // #,##0.0 — one decimal, 0 shows as "0", null/undefined shows as "—"
+    const n1 = v => (v==null||isNaN(v)) ? '—' : v.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1});
+    // #,##0 — whole number
+    const n0 = v => (v==null||isNaN(v)) ? '—' : v.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
+    // $#,##0.00 — cost
+    const nc = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    // $#,##0.0000 — kWh rate
+    const r4 = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4});
+    // $#,##0.00 — kW rate (same as nc but explicit)
+    const r2 = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    // % with 1 decimal
+    const pct = v => (v==null||isNaN(v)) ? '—' : (v*100).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
     const td = (v, cls='') => `<td${cls?' class="'+cls+'"':''}>${v}</td>`;
-    const n  = (v,d=0)=>v?$(v,d):'—';
-    const nc = (v,d=2)=>v?$c(v,d):'—';
-    const r4 = v=>v?'$'+v.toFixed(4):'—';
+
+    const kwh       = isTotal ? totE.kwh          : (e.kwh     !=null ? e.kwh      : null);
+    const demKW     = isTotal ? totE.demandKW      : (e.demandKW!=null ? e.demandKW : null);
+    const bilKW     = isTotal ? totE.billedKW      : (e.billedKW!=null ? e.billedKW : null);
+    const facKW     = isTotal ? totE.facKW         : (e.facKW   !=null ? e.facKW    : null);
+    const kwCost    = isTotal ? totE.kwCost        : (e.kwCost  !=null ? e.kwCost   : null);
+    const facKWCost = isTotal ? totE.facKWCost     : (e.facKWCost!=null? e.facKWCost: null);
+    const totKWCost = (kwCost!=null||facKWCost!=null) ? (kwCost||0)+(facKWCost||0) : null;
+    const engCost   = isTotal ? totE.energyCost    : (e.energyCost!=null?e.energyCost:null);
+    const eCost     = isTotal ? totE.totalCost     : (e.totalCost!=null ?e.totalCost :null);
+    const normDays  = isTotal ? null               : (e.normDays||null);
+
+    // Rates
+    const costKwh   = (kwh!=null&&kwh>0&&eCost!=null)   ? eCost/kwh       : null;
+    const costBilKW = isTotal ? totE.costPerBilledKW
+                    : (bilKW!=null&&bilKW>0&&kwCost!=null&&kwCost>0) ? kwCost/bilKW    : null;
+    const costFacKW = isTotal ? totE.costPerFacKW
+                    : (facKW!=null&&facKW>0&&facKWCost!=null&&facKWCost>0) ? facKWCost/facKW : null;
+    const costTotKW = isTotal ? totE.costPerTotKW
+                    : (bilKW!=null&&bilKW>0&&totKWCost!=null&&totKWCost>0) ? totKWCost/bilKW : null;
+
+    // Load Factor = kWh / (demandKW × 24 × normDays)
+    const loadFactor = isTotal ? totE.loadFactor
+                     : (kwh!=null&&kwh>0&&demKW!=null&&demKW>0&&normDays>0) ? kwh/(demKW*24*normDays) : null;
+    // Min Hours = kWh / demandKW — total = sum of column
+    const minHours   = isTotal ? totE.minHours
+                     : (kwh!=null&&kwh>0&&demKW!=null&&demKW>0) ? kwh/demKW : null;
+
+    const therms    = isTotal ? totG.therms : (g.therms!=null ? g.therms : null);
+    const gCost     = isTotal ? totG.cost   : (g.cost  !=null ? g.cost   : null);
+    const cPerTherm = (therms!=null&&therms>0&&gCost!=null) ? gCost/therms : null;
+
+    const kgal     = isTotal ? totW.kgal : (w.kgal!=null ? w.kgal : null);
+    const wCost    = isTotal ? totW.cost : (w.cost!=null  ? w.cost : null);
+    const cPerKgal = (kgal!=null&&kgal>0&&wCost!=null) ? wCost/kgal : null;
+
+    const totalUtil = (eCost||0) + (gCost||0) + (wCost||0);
 
     return `<tr${isTotal?' class="total-row"':''}>
       ${td(moLabel,'mo')}
       ${elecM?`
-        ${td(n(kwh))} ${td(n(demKW,1))} ${td(n(bilKW,1))} ${td(n(facKW,1))}
-        ${td(nc(kwCost))} ${td(nc(facKWCost))} ${td(nc(engCost))} ${td(nc(eCost))}
-        ${td(r4(costKwh))} ${td(r4(costBilKW))} ${td(r4(costFacKW))}
+        ${td(n1(kwh))} ${td(n1(demKW))} ${td(n1(bilKW))} ${td(n1(facKW))}
+        ${td(nc(kwCost))} ${td(nc(facKWCost))} ${td(nc(totKWCost))} ${td(nc(engCost))} ${td(nc(eCost))}
+        ${td(r4(costKwh))} ${td(r2(costBilKW))} ${td(r2(costFacKW))} ${td(r2(costTotKW))}
+        ${td(pct(loadFactor))} ${td(n1(minHours))}
       `:''}
-      ${gasM?`${td(therms?n(therms):'0')} ${td(nc(gCost))} ${td(r4(cPerTherm))}`:''}
-      ${waterM?`${td(kgal?n(kgal):'0')} ${td(nc(wCost))} ${td(r4(cPerKgal))}`:''}
+      ${gasM?`${td(n1(therms))} ${td(nc(gCost))} ${td(r4(cPerTherm))}`:''}
+      ${waterM?`${td(n1(kgal))} ${td(nc(wCost))} ${td(r4(cPerKgal))}`:''}
       ${td(nc(totalUtil),'total-util')}</tr>`;
   }
   const moRows = moList.map(mo=>moRow(mo,false)).join('');
@@ -4289,7 +4326,7 @@ function renderBuildingStatsPane(pane, b){
           <thead>
             <tr>
               <th rowspan="2" class="mo-hdr" style="vertical-align:middle;min-width:52px">Month</th>
-              ${elecM?`<th colspan="11" class="e-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">ELECTRICITY</th>`:''}
+              ${elecM?`<th colspan="15" class="e-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">ELECTRICITY</th>`:''}
               ${gasM?`<th colspan="3" class="g-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">HEATING FUEL</th>`:''}
               ${waterM?`<th colspan="3" class="w-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">WATER</th>`:''}
               <th rowspan="2" class="u-hdr" style="vertical-align:middle;min-width:96px;font-size:10px;line-height:1.5;padding:6px 8px">Total<br>Utility<br>Costs</th>
@@ -4300,13 +4337,17 @@ function renderBuildingStatsPane(pane, b){
                 <th class="e-hdr">Actual kW</th>
                 <th class="e-hdr">Billed<br>kW</th>
                 <th class="e-hdr">Facilities kW</th>
-                <th class="e-hdr">Actual kW<br>Cost</th>
+                <th class="e-hdr">Billed kW<br>Cost</th>
                 <th class="e-hdr">Facilities kW<br>Cost</th>
+                <th class="e-hdr">Total kW<br>Cost</th>
                 <th class="e-hdr">Energy<br>Cost</th>
                 <th class="e-hdr">Electric<br>Cost</th>
                 <th class="e-hdr">Cost/<br>kWh</th>
                 <th class="e-hdr">Cost/<br>Billed kW</th>
                 <th class="e-hdr">Cost/<br>Facilities kW</th>
+                <th class="e-hdr">Cost/<br>Total kW</th>
+                <th class="e-hdr">% Load<br>Factor</th>
+                <th class="e-hdr">Min<br>Hours</th>
               `:''}
               ${gasM?`
                 <th class="g-hdr" title="Normalized Baseline Therms — regression-predicted usage for this calendar month">Norm.<br>Therms</th>
