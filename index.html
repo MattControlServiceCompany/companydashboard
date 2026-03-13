@@ -395,6 +395,13 @@ html,body{height:100%;overflow:hidden;}
 
       <!-- OVERVIEW -->
       <div id="view-overview" class="tab-panel active">
+        <div class="pg-hdr">
+          <div>
+            <h1 class="pg-title">Company<em>Hub</em></h1>
+            <p class="pg-sub" id="hubDateSub">Loading...</p>
+          </div>
+        </div>
+
         <div class="stats-row">
           <div class="stat-card"><div class="stat-lbl">Departments</div><div class="stat-val c-blue">2</div><div class="stat-meta">active portals</div></div>
           <div class="stat-card"><div class="stat-lbl">Service Staff</div><div class="stat-val c-teal" id="dash-stat-staff">9</div><div class="stat-meta">technicians</div></div>
@@ -449,6 +456,12 @@ html,body{height:100%;overflow:hidden;}
 
       <!-- DEPARTMENTS -->
       <div id="view-departments" class="tab-panel">
+        <div class="pg-hdr">
+          <div>
+            <h1 class="pg-title">All <em>Departments</em></h1>
+            <p class="pg-sub">Select a department to open its full portal</p>
+          </div>
+        </div>
         <div class="dept-grid">
           <a class="dept-card blue" href="service-department.html">
             <div class="dc-banner blue"></div>
@@ -541,7 +554,7 @@ function enterApp(){
   document.getElementById('topName').textContent=currentUser.name;
   document.getElementById('topAv').textContent=currentUser.initials;
   const td=new Date();
-  // hubDateSub removed —
+  document.getElementById('hubDateSub').textContent=
     td.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
 }
 function signOut(){
