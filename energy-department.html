@@ -1525,8 +1525,25 @@ html,body{height:100%;overflow:hidden;}
       </div>
       <div id="emsCsvStatus"></div>
       <div id="emsColMapper" style="display:none">
-        <div class="section-divider">Column Mapping</div>
-        <p style="font-size:11px;color:var(--text2);margin-bottom:10px">Map your spreadsheet columns to EMS Lead fields.</p>
+        <div class="section-divider" style="display:flex;align-items:center;justify-content:space-between">
+          <span>Column Mapping</span>
+          <button class="btn btn-ghost btn-sm" onclick="emsToggleFieldEditor()" style="font-size:10px;padding:3px 9px">✏️ Edit Fields</button>
+        </div>
+        <p style="font-size:11px;color:var(--text2);margin-bottom:10px">Map your spreadsheet columns to EMS Lead fields. Use <strong style="color:var(--em)">Edit Fields</strong> to add or rename mapping options.</p>
+
+        <!-- Field editor panel -->
+        <div id="emsFieldEditor" style="display:none;background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--em);margin-bottom:10px">EMS Field Options</div>
+          <div style="font-size:11px;color:var(--text2);margin-bottom:12px">These are the options shown in the "Maps to EMS Field" dropdowns. Built-in fields cannot be deleted. You can add custom fields or rename built-in labels.</div>
+          <div id="emsFieldList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px"></div>
+          <div style="display:flex;gap:7px;align-items:center">
+            <input class="fi" id="emsNewFieldKey" placeholder="field_key (no spaces)" style="flex:1;font-size:12px;padding:6px 9px">
+            <input class="fi" id="emsNewFieldLabel" placeholder="Display Label" style="flex:1.5;font-size:12px;padding:6px 9px">
+            <button class="btn btn-em btn-sm" onclick="emsAddCustomField()">+ Add</button>
+          </div>
+          <div style="font-size:10px;color:var(--text3);margin-top:6px">Field key: lowercase, underscores ok, no spaces (e.g. <code style="color:var(--em2)">district_name</code>). This becomes the property name on each lead.</div>
+        </div>
+
         <table class="map-table" id="emsMapTable">
           <thead><tr><th>Your Column (CSV header)</th><th>Sample Data</th><th>Maps to EMS Field</th></tr></thead>
           <tbody id="emsMapBody"></tbody>
@@ -1554,14 +1571,84 @@ const EMS_KEY = 'ems_leads_v1';
 const EMS_STAGES = ['Prospect','Contacted','Qualifying','Proposal','Negotiating','Won','Lost','On Hold'];
 const EMS_STAGE_COLORS = {Prospect:'#2a3450',Contacted:'#0ea5e9',Qualifying:'#f59e0b',Proposal:'#a78bfa',Negotiating:'#84cc16',Won:'#00d4aa',Lost:'#f43f5e','On Hold':'#2a3450'};
 const EMS_STAGE_CLS = {Prospect:'sp-prospect',Contacted:'sp-contacted',Qualifying:'sp-qualifying',Proposal:'sp-proposal',Negotiating:'sp-negotiating',Won:'sp-won',Lost:'sp-lost','On Hold':'sp-on-hold'};
-const EMS_LEAD_FIELDS = [
-  {key:'company',label:'Company Name *'},{key:'address',label:'Address'},{key:'city',label:'City'},{key:'state',label:'State'},{key:'zip',label:'Zip'},
-  {key:'contactName',label:'Contact Name'},{key:'contactPhone',label:'Contact Phone'},{key:'contactEmail',label:'Contact Email'},{key:'contactTitle',label:'Contact Title'},
-  {key:'buildingType',label:'Building Type'},{key:'buildingSqft',label:'Building Sq Ft'},{key:'annualValue',label:'Est. Annual Value'},
-  {key:'cscContact',label:'CSC Contact'},{key:'cscEngineer',label:'Engineer'},{key:'stage',label:'Stage'},{key:'priority',label:'Priority'},
-  {key:'type',label:'Project Type'},{key:'notes',label:'Notes'},{key:'nextAction',label:'Next Action'},{key:'nextActionDate',label:'Next Action Date'},
-  {key:'lastContact',label:'Last Contact Date'},{key:'',label:'— Skip —'}
+const EMS_FIELDS_KEY = 'ems_field_defs';
+const EMS_BUILTIN_FIELDS = [
+  {key:'company',label:'Company Name *',builtin:true},{key:'address',label:'Address',builtin:true},{key:'city',label:'City',builtin:true},{key:'state',label:'State',builtin:true},{key:'zip',label:'Zip',builtin:true},
+  {key:'contactName',label:'Contact Name',builtin:true},{key:'contactPhone',label:'Contact Phone',builtin:true},{key:'contactEmail',label:'Contact Email',builtin:true},{key:'contactTitle',label:'Contact Title',builtin:true},
+  {key:'buildingType',label:'Building Type',builtin:true},{key:'buildingSqft',label:'Building Sq Ft',builtin:true},{key:'annualValue',label:'Est. Annual Value',builtin:true},
+  {key:'cscContact',label:'CSC Contact',builtin:true},{key:'cscEngineer',label:'Engineer',builtin:true},{key:'stage',label:'Stage',builtin:true},{key:'priority',label:'Priority',builtin:true},
+  {key:'type',label:'Project Type',builtin:true},{key:'notes',label:'Notes',builtin:true},{key:'nextAction',label:'Next Action',builtin:true},{key:'nextActionDate',label:'Next Action Date',builtin:true},
+  {key:'lastContact',label:'Last Contact Date',builtin:true}
 ];
+
+function emsLoadFields(){
+  try{
+    const saved = JSON.parse(localStorage.getItem(EMS_FIELDS_KEY)||'{}');
+    // Merge: start with builtins (with any saved label overrides), then append custom fields
+    const builtins = EMS_BUILTIN_FIELDS.map(f=>({...f, label: saved.labels?.[f.key] ?? f.label}));
+    const customs = (saved.custom||[]);
+    return [...builtins, ...customs, {key:'',label:'— Skip —'}];
+  }catch(e){ return [...EMS_BUILTIN_FIELDS,{key:'',label:'— Skip —'}]; }
+}
+function emsSaveFields(fields){
+  const labels={}, custom=[];
+  fields.forEach(f=>{
+    if(!f.key) return; // skip the Skip entry
+    if(f.builtin){ if(f.label !== EMS_BUILTIN_FIELDS.find(b=>b.key===f.key)?.label) labels[f.key]=f.label; }
+    else custom.push({key:f.key,label:f.label});
+  });
+  localStorage.setItem(EMS_FIELDS_KEY, JSON.stringify({labels,custom}));
+}
+let EMS_LEAD_FIELDS = emsLoadFields();
+
+// Field editor UI
+window.emsToggleFieldEditor=function(){
+  const ed=document.getElementById('emsFieldEditor');
+  const open=ed.style.display==='none'||!ed.style.display;
+  ed.style.display=open?'block':'none';
+  if(open) emsRenderFieldList();
+};
+function emsRenderFieldList(){
+  const list=document.getElementById('emsFieldList');
+  const fields=EMS_LEAD_FIELDS.filter(f=>f.key); // exclude the Skip entry
+  list.innerHTML=fields.map((f,i)=>`
+    <div style="display:flex;align-items:center;gap:7px;padding:6px 8px;background:var(--s2);border:1px solid var(--border);border-radius:6px">
+      <code style="font-family:var(--mono);font-size:10px;color:var(--em2);width:130px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis" title="${emsEsc(f.key)}">${emsEsc(f.key)}</code>
+      <input class="fi" value="${emsEsc(f.label)}" data-idx="${i}" oninput="emsUpdateFieldLabel(this)" style="flex:1;font-size:12px;padding:5px 8px" ${f.builtin?'':''}
+        placeholder="Display label">
+      ${f.builtin
+        ? `<span style="font-size:10px;color:var(--text3);width:52px;text-align:center">built-in</span>`
+        : `<button onclick="emsRemoveField(${i})" style="background:transparent;border:1px solid rgba(240,80,80,.3);color:#f05050;border-radius:5px;cursor:pointer;padding:3px 8px;font-size:11px;font-family:var(--font)">✕</button>`
+      }
+    </div>`).join('');
+}
+window.emsUpdateFieldLabel=function(inp){
+  const i=parseInt(inp.dataset.idx);
+  EMS_LEAD_FIELDS[i].label=inp.value;
+  emsSaveFields(EMS_LEAD_FIELDS);
+  emsParseCSVPreview(); // refresh dropdowns with new label
+};
+window.emsRemoveField=function(i){
+  EMS_LEAD_FIELDS.splice(i,1);
+  emsSaveFields(EMS_LEAD_FIELDS);
+  emsRenderFieldList();
+  emsParseCSVPreview();
+};
+window.emsAddCustomField=function(){
+  let key=document.getElementById('emsNewFieldKey').value.trim().replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_]/g,'');
+  const label=document.getElementById('emsNewFieldLabel').value.trim();
+  if(!key||!label){ showToast('Enter both a field key and label ⚠'); return; }
+  if(EMS_LEAD_FIELDS.some(f=>f.key===key)){ showToast('Field key "'+key+'" already exists ⚠'); return; }
+  // Insert before the Skip entry
+  const skipIdx=EMS_LEAD_FIELDS.findIndex(f=>f.key==='');
+  EMS_LEAD_FIELDS.splice(skipIdx,0,{key,label,builtin:false});
+  emsSaveFields(EMS_LEAD_FIELDS);
+  document.getElementById('emsNewFieldKey').value='';
+  document.getElementById('emsNewFieldLabel').value='';
+  emsRenderFieldList();
+  emsParseCSVPreview();
+  showToast('Field "'+label+'" added ✓');
+};
 
 let emsLeads=[], emsActiveId=null, emsSortCol='company', emsSortAsc=true;
 let emsStageFilter='', emsPriFilter='', emsCsvHeaders=[], emsCsvRows=[];
