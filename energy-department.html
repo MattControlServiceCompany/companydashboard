@@ -22,7 +22,9 @@
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 html{scroll-behavior:smooth;}
-body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;-webkit-font-smoothing:antialiased;}
+html,body{height:100%;overflow:hidden;}
+body{font-family:var(--font);background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;}
+#app{display:flex;flex-direction:column;height:100%;}
 ::-webkit-scrollbar{width:4px;height:4px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
@@ -315,8 +317,86 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .bl-mo-row{display:grid;grid-template-columns:85px 1fr 1fr;gap:8px;align-items:center;margin-bottom:5px;}
 .bl-mo-lbl{font-family:var(--mono);font-size:11px;color:var(--text2);}
 
+
+/* ── SETTINGS MODAL ── */
+.settings-overlay{position:fixed;inset:0;background:rgba(6,8,16,.88);backdrop-filter:blur(10px);z-index:800;display:none;align-items:center;justify-content:center;}
+.settings-overlay.open{display:flex;}
+.settings-modal{background:var(--s2);border:1px solid var(--border2);border-radius:14px;width:480px;max-width:95vw;max-height:90vh;overflow-y:auto;animation:fadeUp .18s ease;box-shadow:0 40px 80px rgba(0,0,0,.6);}
+.settings-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);}
+.settings-title{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;}
+.settings-x{width:27px;height:27px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:all .13s;font-family:var(--font);}
+.settings-x:hover{border-color:var(--red);color:var(--red);}
+.settings-body{padding:20px;}
+.settings-section{margin-bottom:20px;}
+.settings-section-title{font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;}
+.settings-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--s3);border:1px solid var(--border);border-radius:8px;margin-bottom:8px;}
+.settings-row-label{font-size:13px;font-weight:500;}
+.settings-row-sub{font-size:11px;color:var(--text2);margin-top:2px;}
+.settings-select{font-family:var(--font);font-size:12px;color:var(--text);background:var(--s4);border:1px solid var(--border2);border-radius:6px;padding:5px 8px;outline:none;cursor:pointer;}
+.settings-select option{background:var(--s2);}
+
+/* Color Swatches */
+.color-swatches{display:flex;gap:8px;flex-wrap:wrap;}
+.color-swatch{width:28px;height:28px;border-radius:6px;border:2px solid transparent;cursor:pointer;transition:all .15s;position:relative;}
+.color-swatch:hover{transform:scale(1.15);}
+.color-swatch.active{border-color:#fff;box-shadow:0 0 0 2px var(--accent);}
+.color-swatch.active::after{content:'';position:absolute;inset:3px;border-radius:3px;border:1px solid rgba(255,255,255,.3);}
+
+/* Custom color input */
+.custom-color-row{display:flex;align-items:center;gap:8px;margin-top:8px;}
+.custom-color-input{width:32px;height:28px;border:none;border-radius:5px;cursor:pointer;background:transparent;padding:0;}
+.custom-color-input::-webkit-color-swatch-wrapper{padding:0;}
+.custom-color-input::-webkit-color-swatch{border-radius:5px;border:1px solid var(--border2);}
+.custom-color-label{font-size:11px;color:var(--text2);}
+
+/* Help Modal */
+.help-overlay{position:fixed;inset:0;background:rgba(6,8,16,.88);backdrop-filter:blur(10px);z-index:800;display:none;align-items:center;justify-content:center;}
+.help-overlay.open{display:flex;}
+.help-modal{background:var(--s2);border:1px solid var(--border2);border-radius:14px;width:500px;max-width:95vw;max-height:90vh;overflow-y:auto;animation:fadeUp .18s ease;box-shadow:0 40px 80px rgba(0,0,0,.6);}
+.help-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);}
+.help-title{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;}
+.help-x{width:27px;height:27px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:all .13s;font-family:var(--font);}
+.help-x:hover{border-color:var(--red);color:var(--red);}
+.help-body{padding:20px;}
+.help-item{padding:10px 12px;background:var(--s3);border:1px solid var(--border);border-radius:8px;margin-bottom:8px;}
+.help-item-title{font-size:13px;font-weight:600;margin-bottom:4px;}
+.help-item-desc{font-size:12px;color:var(--text2);line-height:1.6;}
+
+/* ── THEME PILLS (Settings Modal) ── */
+.theme-pills{display:flex;gap:6px;}
+.theme-pill{font-family:var(--font);font-size:12px;font-weight:500;padding:6px 14px;border-radius:7px;border:1px solid var(--border2);background:var(--s4);color:var(--text2);cursor:pointer;transition:all .15s;}
+.theme-pill:hover{border-color:var(--accent);color:var(--accent);}
+.theme-pill.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
+
+/* ── LIGHT MODE THEME ── */
+[data-theme="light"]{
+  --bg:#f0f2f7;
+  --s1:#e4e8f2;
+  --s2:#ffffff;
+  --s3:#f5f7fc;
+  --s4:#eaedf6;
+  --border:#d3d9e8;
+  --border2:#bcc5da;
+  --text:#1a2340;
+  --text2:#4a5672;
+  --text3:#9aa5be;
+  --em:#007a8c;
+  --em-dim:rgba(0,122,140,.1);
+  --em-glow:rgba(0,122,140,.2);
+  --em2:#0369a1;
+  --em2-dim:rgba(3,105,161,.1);
+  --warn:#b45309;
+  --warn-dim:rgba(180,83,9,.1);
+  --danger:#be123c;
+  --danger-dim:rgba(190,18,60,.1);
+  --violet:#6d28d9;
+  --violet-dim:rgba(109,40,217,.1);
+  --accent:var(--em);
+}
+[data-theme="light"] body{background:var(--bg);color:var(--text);}
 </style>
 </head><body>
+<div id="app">
 <!-- ══════════════════════ TOPBAR ══════════════════════ -->
 <header class="topbar">
   <div class="t-brand">
@@ -383,13 +463,6 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 
 <!-- ══════════════════ HOME ══════════════════ -->
 <div id="view-home" class="view active">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Energy <em>Department</em></h1><p class="pg-sub" id="home-date"></p></div>
-    <div class="hdr-actions">
-      <button class="btn btn-ghost" onclick="openTaskModal()">+ Task</button>
-      <button class="btn btn-em" onclick="sv('projects',document.getElementById('sb-projects'))">+ New Project</button>
-    </div>
-  </div>
   <div class="stats-row">
     <div class="stat"><div class="stat-lbl">Active Projects</div><div class="stat-val c-em" id="h-proj">0</div><div class="stat-meta">in progress</div></div>
     <div class="stat"><div class="stat-lbl">Tasks This Week</div><div class="stat-val c-warn" id="h-tasks">0</div><div class="stat-meta">due by Friday</div></div>
@@ -431,19 +504,14 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 
 <!-- ══════════════════ PROJECTS ══════════════════ -->
 <div id="view-projects" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Energy <em>Projects</em></h1><p class="pg-sub">Manage projects, tasks, documents, and utility data in one place</p></div>
-    <div class="hdr-actions"><button class="btn btn-em" onclick="openProjModal()">+ New Project</button></div>
-  </div>
+  <div style="display:flex;justify-content:flex-end;margin-bottom:16px;"><button class="btn btn-em" onclick="openProjModal()">+ New Project</button></div>
   <div class="proj-grid" id="projGrid"></div>
   <div id="projDetail" style="display:none"></div>
 </div>
 
 <!-- ══════════════════ PDF / OCR ══════════════════ -->
 <div id="view-pdf" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">PDF <em>OCR Tool</em></h1><p class="pg-sub">Upload utility bills, drawings, submittals, or contracts — AI extracts and structures the data</p></div>
-  </div>
+
   <div class="g-6040">
     <div>
       <div class="drop-zone" id="dropZone"
@@ -483,13 +551,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 
 <!-- ══════════════════ WEATHER & NORMALIZE ══════════════════ -->
 <div id="view-weather" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Weather &amp; Date <em>Normalization</em></h1><p class="pg-sub">Normalize utility consumption for HDD, CDD, and billing period length variations</p></div>
-    <div class="hdr-actions">
-      <button class="btn btn-ghost" onclick="addUtilRow()">+ Month</button>
-      <button class="btn btn-em" onclick="runNorm()">⚡ Run Normalization</button>
-    </div>
-  </div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px;"><button class="btn btn-ghost" onclick="addUtilRow()">+ Month</button><button class="btn btn-em" onclick="runNorm()">⚡ Run Normalization</button></div>
   <div class="g2">
     <div class="card">
       <div class="card-hdr"><span class="card-title">📋 Utility Data Entry</span></div>
@@ -515,10 +577,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 
 <!-- ══════════════════ BASELINE ══════════════════ -->
 <div id="view-baseline" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Utility <em>Baseline</em></h1><p class="pg-sub">Calculate energy use baseline from 12 months of data per ASHRAE Guideline 14 / IPMVP</p></div>
-    <div class="hdr-actions"><button class="btn btn-em" onclick="calcBaseline()">📊 Calculate Baseline</button></div>
-  </div>
+  <div style="display:flex;justify-content:flex-end;margin-bottom:16px;"><button class="btn btn-em" onclick="calcBaseline()">📊 Calculate Baseline</button></div>
   <div class="g2">
     <div class="card">
       <div class="card-hdr"><span class="card-title">📥 12-Month Input</span></div>
@@ -553,10 +612,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 
 <!-- ══════════════════ ENERGY SAVINGS ══════════════════ -->
 <div id="view-savings" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Energy <em>Savings</em></h1><p class="pg-sub">Weather-adjusted M&amp;V savings calculations — compare post-installation to baseline</p></div>
-    <div class="hdr-actions"><button class="btn btn-em" onclick="calcSavings()">💡 Calculate Savings</button></div>
-  </div>
+  <div style="display:flex;justify-content:flex-end;margin-bottom:16px;"><button class="btn btn-em" onclick="calcSavings()">💡 Calculate Savings</button></div>
   <div class="g2">
     <div class="card">
       <div class="card-hdr"><span class="card-title">📥 Savings Inputs</span></div>
@@ -594,9 +650,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 
 <!-- ══════════════════ DISTRICT CALENDAR ══════════════════ -->
 <div id="view-district" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">District <em>Calendar</em></h1><p class="pg-sub">Parse school district calendars — auto-generate BAS holiday schedules and setback recommendations</p></div>
-  </div>
+
   <div class="g2">
     <div class="card">
       <div class="card-hdr"><span class="card-title">📅 Calendar Input</span></div>
@@ -626,13 +680,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 
 <!-- ══════════════════ EQUIPMENT ══════════════════ -->
 <div id="view-equipment" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Equipment <em>Repository</em></h1><p class="pg-sub">Centralized equipment database across all projects and facilities</p></div>
-    <div class="hdr-actions">
-      <input class="fi" id="equipQ" placeholder="Search tag, type, customer..." style="width:220px" oninput="renderEquip()">
-      <button class="btn btn-em" onclick="openEquipModal()">+ Add Equipment</button>
-    </div>
-  </div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px;"><input class="fi" id="equipQ" placeholder="Search tag, type, customer..." style="width:220px" oninput="renderEquip()"><button class="btn btn-em" onclick="openEquipModal()">+ Add Equipment</button></div>
   <div class="card">
     <div style="overflow-x:auto">
       <table class="dtbl" style="min-width:860px">
@@ -645,9 +693,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 
 <!-- ══════════════════ DRAWINGS ══════════════════ -->
 <div id="view-drawings" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Construction <em>Drawings</em></h1><p class="pg-sub">Upload drawing PDFs — AI reads equipment schedules, system types, control points, and tags</p></div>
-  </div>
+
   <div class="g2">
     <div>
       <div class="drop-zone" onclick="document.getElementById('dwgInput').click()">
@@ -667,9 +713,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 
 <!-- ══════════════════ SPEC WRITER ══════════════════ -->
 <div id="view-specs" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Controls <em>Spec Writer</em></h1><p class="pg-sub">AI-generated Division 25 controls specifications — select systems and fill in project details</p></div>
-  </div>
+
   <div class="g-4060">
     <div>
       <div class="fl" style="margin-bottom:8px;display:block">System Types to Include</div>
@@ -722,13 +766,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 
 <!-- ══════════════════ CONTRACTS ══════════════════ -->
 <div id="view-contracts" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">Client <em>Contracts</em></h1><p class="pg-sub">Fill in project variables and generate a complete client contract from your template</p></div>
-    <div class="hdr-actions">
-      <button class="btn btn-ghost" onclick="document.getElementById('tmplInput').click()">📤 Upload Template</button>
-      <input type="file" id="tmplInput" accept=".pdf,.docx,.txt" style="display:none" onchange="loadTemplate(event)">
-    </div>
-  </div>
+  <div style="display:flex;justify-content:flex-end;margin-bottom:16px;"><button class="btn btn-ghost" onclick="document.getElementById('tmplInput').click()">📤 Upload Template</button><input type="file" id="tmplInput" accept=".pdf,.docx,.txt" style="display:none" onchange="loadTemplate(event)"></div>
   <div class="g2">
     <div>
       <div class="card" style="margin-bottom:14px">
@@ -761,9 +799,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 
 <!-- ══════════════════ WEBCTRL ══════════════════ -->
 <div id="view-webctrl" class="view">
-  <div class="pg-hdr">
-    <div><h1 class="pg-title">WebCTRL <em>Logic Tool</em></h1><p class="pg-sub">AI-powered Automated Logic / WebCTRL assistant — explain, diagnose, and write control programs</p></div>
-  </div>
+
   <div class="wc-modes">
     <div class="wcm active" id="wcm-guide" onclick="setWCMode('guide',this)">
       <div class="wcm-ico">🗺️</div>
@@ -1966,4 +2002,5 @@ document.addEventListener('keydown', function(e){
   });
 });
 </script>
+</div><!-- end #app -->
 </body></html>

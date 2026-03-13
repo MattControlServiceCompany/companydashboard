@@ -489,16 +489,6 @@ html,body{height:100%;overflow:hidden;}
 
       <!-- PERSONNEL SCHEDULE -->
       <div id="view-schedule" class="tab-panel active">
-        <div class="pg-hdr">
-          <div>
-            <h1 class="pg-title">Service <em>Department</em></h1>
-            <p class="pg-sub" id="schedSub">Personnel scheduling</p>
-          </div>
-          <div class="hdr-btns">
-            <button class="btn btn-ghost" onclick="syncToOutlook()">🔄 Sync to Outlook</button>
-            <button class="btn btn-primary" onclick="openStaffModal()">+ Add Employee</button>
-          </div>
-        </div>
         <div class="stats-row">
           <div class="stat-card"><div class="stat-lbl">On Duty Today</div><div class="stat-val c-blue" id="s-on">—</div><div class="stat-meta" id="s-onm">of 0 staff</div></div>
           <div class="stat-card"><div class="stat-lbl">On Leave</div><div class="stat-val c-amber" id="s-lv">—</div><div class="stat-meta">approved</div></div>
@@ -528,15 +518,9 @@ html,body{height:100%;overflow:hidden;}
 
       <!-- PM SCHEDULE -->
       <div id="view-pm" class="tab-panel">
-        <div class="pg-hdr">
-          <div>
-            <h1 class="pg-title">Preventative <em>Maintenance</em></h1>
-            <p class="pg-sub">57 service agreements — recurring PM dates auto-generated from Col M patterns</p>
-          </div>
-          <div class="hdr-btns">
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px;">
             <button class="btn btn-ghost" onclick="syncToOutlook()">🔄 Sync to Outlook</button>
             <button class="btn btn-primary" onclick="openPMModal()">+ Add SA Record</button>
-          </div>
         </div>
         <div class="stats-row">
           <div class="stat-card"><div class="stat-lbl">SA Records</div><div class="stat-val c-blue" id="pm-total">57</div><div class="stat-meta">with PM patterns</div></div>
@@ -586,15 +570,9 @@ html,body{height:100%;overflow:hidden;}
 
       <!-- DISPATCH -->
       <div id="view-dispatch" class="tab-panel">
-        <div class="pg-hdr">
-          <div>
-            <h1 class="pg-title">Technician <em>Dispatch Board</em></h1>
-            <p class="pg-sub">Work orders mirroring your SharePoint Technician Dispatch Board</p>
-          </div>
-          <div class="hdr-btns">
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px;">
             <button class="btn btn-ghost" onclick="syncToOutlook()">🔄 Sync to Outlook</button>
             <button class="btn btn-primary" onclick="openDispatchModal()">+ New Work Order</button>
-          </div>
         </div>
         <div class="card">
           <div class="card-hdr"><span class="card-title">📡 Active Work Orders</span></div>
