@@ -725,6 +725,7 @@ html,body{height:100%;overflow:hidden;}
       <button class="s-item" onclick="sv('specs',this)"><span class="s-ico">✍️</span>Spec Writer</button>
       <button class="s-item" onclick="sv('contracts',this)"><span class="s-ico">📋</span>Contracts</button>
       <button class="s-item" onclick="sv('webctrl',this)"><span class="s-ico">🔌</span>WebCTRL</button>
+      <button class="s-item" onclick="sv('ems',this)"><span class="s-ico">📊</span>EMS Leads</button>
     </div>
   </div>
   <div class="sidebar-bottom">
@@ -1087,6 +1088,914 @@ html,body{height:100%;overflow:hidden;}
     </div>
   </div>
 </div>
+
+<!-- ═══════════════════════════════════════════
+     EMS LEADS VIEW
+════════════════════════════════════════════ -->
+<div id="view-ems" class="view view-flex">
+<style>
+/* ── EMS Leads scoped styles ── */
+#view-ems .ems-nav-bar{background:var(--s1);border-bottom:1px solid var(--border);display:flex;overflow-x:auto;padding:0 18px;gap:1px;scrollbar-width:none;flex-shrink:0;}
+#view-ems .ems-nav-bar::-webkit-scrollbar{display:none;}
+#view-ems .ems-ntab{display:flex;align-items:center;gap:6px;padding:10px 14px;font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;transition:all .14s;white-space:nowrap;font-family:var(--font);}
+#view-ems .ems-ntab:hover{color:var(--text);}
+#view-ems .ems-ntab.active{color:var(--em);border-bottom-color:var(--em);font-weight:600;}
+#view-ems .ems-wrap{display:flex;flex:1;overflow:hidden;}
+#view-ems .ems-sidebar{width:190px;flex-shrink:0;background:var(--s1);border-right:1px solid var(--border);padding:18px 0;overflow-y:auto;}
+#view-ems .ems-s-sect{margin-bottom:22px;}
+#view-ems .ems-s-lbl{font-size:11px;font-weight:600;letter-spacing:.8px;color:var(--text2);text-transform:uppercase;padding:0 16px;margin-bottom:6px;}
+#view-ems .ems-s-item{display:flex;align-items:center;gap:8px;padding:9px 16px;font-size:13px;color:var(--text2);cursor:pointer;transition:all .14s;border-left:2px solid transparent;}
+#view-ems .ems-s-item:hover{color:var(--text);background:var(--s2);}
+#view-ems .ems-s-item.active{color:var(--em);background:var(--em-dim);border-left-color:var(--em);font-weight:500;}
+#view-ems .ems-s-ico{font-size:13px;width:18px;text-align:center;}
+#view-ems .ems-s-badge{margin-left:auto;font-size:10px;font-family:var(--mono);background:var(--em);color:#05080f;border-radius:9px;padding:1px 6px;font-weight:700;}
+#view-ems .ems-main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden;}
+#view-ems .ems-view{display:none;padding:22px 24px;animation:fadeUp .22s ease;flex:1;overflow-y:auto;}
+#view-ems .ems-view.active{display:block;}
+#view-ems .pg-title{font-family:var(--head);font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.1;}
+#view-ems .pg-title em{color:var(--em);font-style:normal;}
+#view-ems .pg-sub{font-size:12px;color:var(--text2);margin-top:4px;line-height:1.5;}
+#view-ems .pg-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:12px;}
+#view-ems .hdr-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+#view-ems .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:18px;}
+#view-ems .stat{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:13px 15px;position:relative;overflow:hidden;}
+#view-ems .stat::after{content:'';position:absolute;inset:0;background:linear-gradient(135deg,transparent 60%,rgba(255,255,255,.015));pointer-events:none;}
+#view-ems .stat-lbl{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.7px;font-weight:600;margin-bottom:6px;}
+#view-ems .stat-val{font-family:var(--head);font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1;}
+#view-ems .stat-meta{font-size:11px;color:var(--text2);margin-top:4px;}
+#view-ems .filter-bar{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;align-items:center;}
+#view-ems .search-box{display:flex;align-items:center;gap:7px;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;flex:1;min-width:200px;max-width:320px;}
+#view-ems .search-box input{background:none;border:none;color:var(--text);font-family:var(--font);font-size:13px;outline:none;flex:1;}
+#view-ems .search-box input::placeholder{color:var(--text3);}
+#view-ems .filter-sel{background:var(--s2);border:1px solid var(--border);border-radius:7px;color:var(--text2);font-family:var(--font);font-size:12px;padding:6px 10px;cursor:pointer;outline:none;transition:border-color .14s;}
+#view-ems .filter-sel:focus,#view-ems .filter-sel:hover{border-color:var(--em);color:var(--text);}
+#view-ems .filter-sel option{background:var(--s2);}
+#view-ems .pipeline-wrap{overflow-x:auto;padding-bottom:16px;}
+#view-ems .pipeline{display:flex;gap:13px;min-width:max-content;}
+#view-ems .stage-col{width:240px;flex-shrink:0;}
+#view-ems .stage-hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 13px;border-radius:8px 8px 0 0;border:1px solid var(--border);border-bottom:none;background:var(--s2);}
+#view-ems .stage-name{font-family:var(--head);font-size:12px;font-weight:700;display:flex;align-items:center;gap:7px;}
+#view-ems .stage-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+#view-ems .stage-count{font-family:var(--mono);font-size:11px;color:var(--text2);}
+#view-ems .stage-body{background:var(--s1);border:1px solid var(--border);border-radius:0 0 8px 8px;min-height:180px;padding:8px;display:flex;flex-direction:column;gap:7px;}
+#view-ems .stage-body.drag-over{background:var(--em-dim);border-color:var(--em);}
+#view-ems .lead-card{background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:12px 13px;cursor:pointer;transition:all .16s;position:relative;}
+#view-ems .lead-card:hover{border-color:var(--em);transform:translateY(-1px);box-shadow:0 6px 24px rgba(0,212,170,.1);}
+#view-ems .lead-card.dragging{opacity:.45;transform:rotate(2deg);}
+#view-ems .lc-company{font-family:var(--head);font-size:13px;font-weight:700;margin-bottom:4px;line-height:1.2;}
+#view-ems .lc-meta{font-size:11px;color:var(--text2);margin-bottom:8px;}
+#view-ems .lc-row{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:7px;}
+#view-ems .lc-value{font-family:var(--mono);font-size:11px;color:var(--em);}
+#view-ems .lc-date{font-size:10px;color:var(--text3);}
+#view-ems .priority-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+#view-ems .lc-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px;}
+#view-ems .tag{font-size:10px;font-family:var(--mono);padding:2px 6px;border-radius:4px;background:var(--s3);color:var(--text2);}
+#view-ems .lc-action{font-size:10px;color:var(--warn);margin-top:6px;display:flex;align-items:center;gap:4px;}
+#view-ems .overdue-flag{color:var(--danger);}
+#view-ems .tbl-wrap{overflow-x:auto;}
+#view-ems table{width:100%;border-collapse:collapse;font-size:12px;}
+#view-ems thead th{padding:9px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text2);background:var(--s2);border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;}
+#view-ems thead th:hover{color:var(--em);}
+#view-ems tbody tr{border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s;}
+#view-ems tbody tr:hover{background:var(--s2);}
+#view-ems tbody td{padding:9px 12px;color:var(--text);vertical-align:middle;}
+#view-ems .td-company{font-weight:600;font-family:var(--head);}
+#view-ems .td-mono{font-family:var(--mono);font-size:11px;}
+#view-ems .stage-pill{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;padding:3px 8px;border-radius:20px;white-space:nowrap;}
+#view-ems .sp-prospect{background:var(--s4);color:var(--text2);}
+#view-ems .sp-contacted{background:var(--em2-dim);color:var(--em2);}
+#view-ems .sp-qualifying{background:var(--warn-dim);color:var(--warn);}
+#view-ems .sp-proposal{background:var(--violet-dim);color:var(--violet);}
+#view-ems .sp-negotiating{background:var(--lime-dim);color:var(--lime);}
+#view-ems .sp-won{background:var(--em-dim);color:var(--em);}
+#view-ems .sp-lost{background:var(--danger-dim);color:var(--danger);}
+#view-ems .sp-on-hold{background:var(--s4);color:var(--text3);}
+#view-ems .pri-high{color:var(--danger);}
+#view-ems .pri-medium{color:var(--warn);}
+#view-ems .pri-low{color:var(--text2);}
+#view-ems .drawer-overlay{position:fixed;inset:0;background:rgba(5,8,15,.6);z-index:500;display:none;backdrop-filter:blur(4px);}
+#view-ems .drawer-overlay.open{display:block;}
+#view-ems .ems-drawer{position:fixed;top:0;right:-520px;width:520px;max-width:98vw;height:100vh;background:var(--s1);border-left:1px solid var(--border2);z-index:501;display:flex;flex-direction:column;transition:right .28s cubic-bezier(.4,0,.2,1);overflow:hidden;}
+#view-ems .ems-drawer.open{right:0;}
+#view-ems .drawer-hdr{display:flex;align-items:center;justify-content:space-between;padding:15px 20px;border-bottom:1px solid var(--border);background:var(--s2);flex-shrink:0;}
+#view-ems .drawer-title{font-family:var(--head);font-size:16px;font-weight:800;}
+#view-ems .drawer-hdr-actions{display:flex;gap:7px;}
+#view-ems .drawer-body{flex:1;overflow-y:auto;padding:0;}
+#view-ems .dtabs{display:flex;border-bottom:1px solid var(--border);background:var(--s2);padding:0 16px;gap:2px;}
+#view-ems .dtab{padding:9px 12px;font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;transition:all .13s;background:none;border-top:none;border-left:none;border-right:none;font-family:var(--font);white-space:nowrap;}
+#view-ems .dtab:hover{color:var(--text);}
+#view-ems .dtab.active{color:var(--em);border-bottom-color:var(--em);}
+#view-ems .dpanel{display:none;padding:18px 20px;animation:fadeUp .18s ease;}
+#view-ems .dpanel.active{display:block;}
+#view-ems .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;}
+#view-ems .detail-field{display:flex;flex-direction:column;gap:4px;}
+#view-ems .df-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text2);}
+#view-ems .df-value{font-size:13px;color:var(--text);line-height:1.4;}
+#view-ems .df-input{font-family:var(--font);font-size:13px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:7px 10px;outline:none;width:100%;transition:border-color .13s;}
+#view-ems .df-input:focus{border-color:var(--em);}
+#view-ems .df-select{font-family:var(--font);font-size:13px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:7px 10px;outline:none;width:100%;cursor:pointer;}
+#view-ems .df-select option{background:var(--s2);}
+#view-ems .df-textarea{font-family:var(--font);font-size:12px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;outline:none;width:100%;resize:vertical;min-height:80px;line-height:1.6;transition:border-color .13s;}
+#view-ems .df-textarea:focus{border-color:var(--em);}
+#view-ems .section-lbl{font-family:var(--head);font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin:16px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+#view-ems .activity-list{display:flex;flex-direction:column;gap:0;}
+#view-ems .activity-item{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);}
+#view-ems .activity-item:last-child{border-bottom:none;}
+#view-ems .act-dot{width:8px;height:8px;border-radius:50%;background:var(--em);flex-shrink:0;margin-top:4px;}
+#view-ems .act-body{flex:1;}
+#view-ems .act-text{font-size:12px;line-height:1.5;}
+#view-ems .act-time{font-size:10px;color:var(--text2);margin-top:3px;font-family:var(--mono);}
+#view-ems .act-input-row{display:flex;gap:7px;margin-top:12px;}
+#view-ems .act-input{flex:1;background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px;color:var(--text);font-family:var(--font);font-size:12px;outline:none;}
+#view-ems .act-input:focus{border-color:var(--em);}
+#view-ems .ai-tool-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
+#view-ems .ai-tool-btn{background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:9px 13px;cursor:pointer;transition:all .15s;text-align:left;font-family:var(--font);}
+#view-ems .ai-tool-btn:hover{border-color:var(--em);background:var(--em-dim);}
+#view-ems .atb-ico{font-size:16px;margin-bottom:4px;}
+#view-ems .atb-name{font-size:11px;font-weight:600;color:var(--text);}
+#view-ems .atb-desc{font-size:10px;color:var(--text2);margin-top:2px;}
+#view-ems .ai-output{background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:12px;line-height:1.7;white-space:pre-wrap;min-height:80px;margin-top:12px;display:none;}
+#view-ems .ai-output.visible{display:block;animation:fadeUp .2s ease;}
+#view-ems .ai-thinking{display:flex;align-items:center;gap:9px;color:var(--text2);font-size:12px;}
+#view-ems .tdots{display:flex;gap:4px;}
+#view-ems .tdots span{width:5px;height:5px;border-radius:50%;background:var(--em);animation:emsPulse .9s infinite;}
+#view-ems .tdots span:nth-child(2){animation-delay:.2s;}
+#view-ems .tdots span:nth-child(3){animation-delay:.4s;}
+@keyframes emsPulse{0%,100%{opacity:.2;transform:scale(.7);}50%{opacity:1;transform:scale(1);}}
+#view-ems .ems-modal-bg{position:fixed;inset:0;background:rgba(5,8,15,.88);backdrop-filter:blur(10px);z-index:700;display:none;align-items:center;justify-content:center;}
+#view-ems .ems-modal-bg.open{display:flex;}
+#view-ems .ems-modal{background:var(--s2);border:1px solid var(--border2);border-radius:14px;width:560px;max-width:96vw;max-height:92vh;overflow-y:auto;animation:fadeUp .18s ease;box-shadow:0 40px 80px rgba(0,0,0,.6);}
+#view-ems .ems-modal-lg{width:700px;}
+#view-ems .ems-modal-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--s2);z-index:1;}
+#view-ems .ems-modal-title{font-family:var(--head);font-size:15px;font-weight:700;}
+#view-ems .ems-modal-x{width:27px;height:27px;border-radius:6px;border:1px solid rgba(240,80,80,0.4);background:transparent;color:#f05050;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:all .13s;}
+#view-ems .ems-modal-x:hover{background:rgba(240,80,80,.15);}
+#view-ems .ems-modal-body{padding:20px;}
+#view-ems .ems-modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;}
+#view-ems .fg{display:flex;flex-direction:column;gap:5px;margin-bottom:14px;}
+#view-ems .fl{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;}
+#view-ems .fi,#view-ems .fs,#view-ems .fta{font-family:var(--font);font-size:13px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px;outline:none;transition:border-color .14s;width:100%;}
+#view-ems .fi:focus,#view-ems .fs:focus,#view-ems .fta:focus{border-color:var(--em);}
+#view-ems .fs option{background:var(--s2);}
+#view-ems .fta{resize:vertical;min-height:70px;line-height:1.6;}
+#view-ems .f2{display:grid;grid-template-columns:1fr 1fr;gap:11px;}
+#view-ems .f3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+#view-ems .section-divider{font-family:var(--head);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:18px 0 10px;padding-bottom:7px;border-bottom:1px solid var(--border);}
+#view-ems .csv-drop{background:var(--s3);border:2px dashed var(--border2);border-radius:10px;padding:28px;text-align:center;cursor:pointer;transition:all .16s;}
+#view-ems .csv-drop:hover,#view-ems .csv-drop.over{border-color:var(--em);background:var(--em-dim);}
+#view-ems .csv-drop p{font-size:13px;color:var(--text2);margin-top:8px;}
+#view-ems .csv-drop em{color:var(--em);font-style:normal;}
+#view-ems .map-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:12px;}
+#view-ems .map-table th{padding:7px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);border-bottom:1px solid var(--border);}
+#view-ems .map-table td{padding:7px 10px;border-bottom:1px solid var(--border);}
+#view-ems .map-table select{font-family:var(--font);font-size:12px;background:var(--s3);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:4px 8px;width:100%;}
+#view-ems .csv-preview{overflow-x:auto;max-height:200px;margin-top:10px;font-family:var(--mono);font-size:10px;background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:10px;}
+#view-ems .parse-ok{font-size:12px;color:var(--em);margin-top:8px;}
+#view-ems .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:12px;text-align:center;}
+#view-ems .empty-state .ico{font-size:40px;opacity:.3;}
+#view-ems .empty-state h3{font-family:var(--head);font-size:16px;font-weight:700;color:var(--text2);}
+#view-ems .empty-state p{font-size:12px;color:var(--text3);max-width:280px;line-height:1.6;}
+#view-ems .btn-danger{background:transparent;color:var(--danger);border:1px solid var(--danger);font-size:11px;padding:5px 10px;}
+#view-ems .btn-danger:hover{background:var(--danger);color:#fff;}
+</style>
+
+<!-- EMS Nav Tabs -->
+<div class="ems-nav-bar">
+  <button class="ems-ntab active" onclick="emsSwitch('pipeline',this)">📋 Pipeline</button>
+  <button class="ems-ntab" onclick="emsSwitch('table',this)">📊 All Leads</button>
+  <button class="ems-ntab" onclick="emsSwitch('followups',this)">🔔 Follow-ups</button>
+  <button class="ems-ntab" onclick="emsSwitch('analytics',this)">📈 Analytics</button>
+</div>
+
+<!-- EMS Content Wrap -->
+<div class="ems-wrap">
+
+  <!-- EMS Left Sidebar -->
+  <div class="ems-sidebar">
+    <div class="ems-s-sect">
+      <div class="ems-s-lbl">Pipeline</div>
+      <div class="ems-s-item active" id="esb-all" onclick="emsFilterStage('',this)"><span class="ems-s-ico">🌐</span>All Leads<span class="ems-s-badge" id="esb-count-all">0</span></div>
+      <div class="ems-s-item" id="esb-prospect" onclick="emsFilterStage('Prospect',this)"><span class="ems-s-ico">👁</span>Prospect<span class="ems-s-badge" id="esb-count-prospect" style="background:var(--s4);color:var(--text2)">0</span></div>
+      <div class="ems-s-item" id="esb-contacted" onclick="emsFilterStage('Contacted',this)"><span class="ems-s-ico">📞</span>Contacted<span class="ems-s-badge" id="esb-count-contacted" style="background:var(--em2-dim);color:var(--em2)">0</span></div>
+      <div class="ems-s-item" id="esb-qualifying" onclick="emsFilterStage('Qualifying',this)"><span class="ems-s-ico">🔍</span>Qualifying<span class="ems-s-badge" id="esb-count-qualifying" style="background:var(--warn-dim);color:var(--warn)">0</span></div>
+      <div class="ems-s-item" id="esb-proposal" onclick="emsFilterStage('Proposal',this)"><span class="ems-s-ico">📄</span>Proposal<span class="ems-s-badge" id="esb-count-proposal" style="background:var(--violet-dim);color:var(--violet)">0</span></div>
+      <div class="ems-s-item" id="esb-negotiating" onclick="emsFilterStage('Negotiating',this)"><span class="ems-s-ico">🤝</span>Negotiating<span class="ems-s-badge" id="esb-count-negotiating" style="background:var(--lime-dim);color:var(--lime)">0</span></div>
+      <div class="ems-s-item" id="esb-won" onclick="emsFilterStage('Won',this)"><span class="ems-s-ico">✅</span>Won<span class="ems-s-badge" id="esb-count-won" style="background:var(--em-dim);color:var(--em)">0</span></div>
+      <div class="ems-s-item" id="esb-lost" onclick="emsFilterStage('Lost',this)"><span class="ems-s-ico">❌</span>Lost<span class="ems-s-badge" id="esb-count-lost" style="background:var(--danger-dim);color:var(--danger)">0</span></div>
+    </div>
+    <div class="ems-s-sect">
+      <div class="ems-s-lbl">Priority</div>
+      <div class="ems-s-item" onclick="emsFilterPri('High',this)"><span class="ems-s-ico" style="color:var(--danger)">●</span>High</div>
+      <div class="ems-s-item" onclick="emsFilterPri('Medium',this)"><span class="ems-s-ico" style="color:var(--warn)">●</span>Medium</div>
+      <div class="ems-s-item" onclick="emsFilterPri('Low',this)"><span class="ems-s-ico" style="color:var(--text2)">●</span>Low</div>
+    </div>
+    <div class="ems-s-sect">
+      <div class="ems-s-lbl">Actions</div>
+      <div class="ems-s-item" onclick="emsOpenImport()"><span class="ems-s-ico">⬆</span>Import CSV</div>
+      <div class="ems-s-item" onclick="emsExportCSV()"><span class="ems-s-ico">⬇</span>Export CSV</div>
+    </div>
+  </div>
+
+  <!-- EMS Main -->
+  <div class="ems-main">
+
+    <!-- Pipeline View -->
+    <div class="ems-view active" id="eview-pipeline">
+      <div class="pg-hdr">
+        <div>
+          <div class="pg-title">EMS <em>Lead Pipeline</em></div>
+          <div class="pg-sub">Energy Management Services prospects &amp; opportunities</div>
+        </div>
+        <div class="hdr-actions">
+          <div class="filter-bar" style="margin:0">
+            <div class="search-box"><span style="color:var(--text2);font-size:13px">🔍</span><input type="text" id="epipeSearch" placeholder="Search leads..." oninput="emsRenderPipeline()"></div>
+            <select class="filter-sel" id="epipeFilterCSC" onchange="emsRenderPipeline()"><option value="">All CSC Contacts</option></select>
+          </div>
+          <button class="btn btn-em" onclick="emsOpenNew()">+ New Lead</button>
+        </div>
+      </div>
+      <div class="stats-row" id="emsStatsRow"></div>
+      <div class="pipeline-wrap">
+        <div class="pipeline" id="emsPipeline"></div>
+      </div>
+    </div>
+
+    <!-- Table View -->
+    <div class="ems-view" id="eview-table">
+      <div class="pg-hdr">
+        <div>
+          <div class="pg-title">All <em>Leads</em></div>
+          <div class="pg-sub">Spreadsheet view — click any row to open lead detail</div>
+        </div>
+        <div class="hdr-actions">
+          <button class="btn btn-ghost btn-sm" onclick="emsExportCSV()">⬇ Export CSV</button>
+          <button class="btn btn-em" onclick="emsOpenNew()">+ New Lead</button>
+        </div>
+      </div>
+      <div class="filter-bar">
+        <div class="search-box"><span style="color:var(--text2);font-size:13px">🔍</span><input type="text" id="etableSearch" placeholder="Search by company, contact, city..." oninput="emsRenderTable()"></div>
+        <select class="filter-sel" id="etableStage" onchange="emsRenderTable()">
+          <option value="">All Stages</option>
+          <option>Prospect</option><option>Contacted</option><option>Qualifying</option>
+          <option>Proposal</option><option>Negotiating</option><option>Won</option><option>Lost</option><option>On Hold</option>
+        </select>
+        <select class="filter-sel" id="etablePri" onchange="emsRenderTable()"><option value="">All Priority</option><option>High</option><option>Medium</option><option>Low</option></select>
+        <select class="filter-sel" id="etableCSC" onchange="emsRenderTable()"><option value="">All CSC</option></select>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th onclick="emsSortTable('company')">Company ↕</th>
+            <th onclick="emsSortTable('city')">Location ↕</th>
+            <th onclick="emsSortTable('stage')">Stage ↕</th>
+            <th onclick="emsSortTable('priority')">Priority ↕</th>
+            <th onclick="emsSortTable('cscContact')">CSC Contact ↕</th>
+            <th onclick="emsSortTable('annualValue')">Est. Value ↕</th>
+            <th onclick="emsSortTable('nextActionDate')">Next Action ↕</th>
+            <th onclick="emsSortTable('lastContact')">Last Contact ↕</th>
+          </tr></thead>
+          <tbody id="emsTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Follow-ups View -->
+    <div class="ems-view" id="eview-followups">
+      <div class="pg-hdr">
+        <div>
+          <div class="pg-title"><em>Follow-ups</em> Due</div>
+          <div class="pg-sub">Leads with upcoming or overdue action dates</div>
+        </div>
+      </div>
+      <div class="stats-row" id="emsFollowupStats"></div>
+      <div id="emsFollowupList"></div>
+    </div>
+
+    <!-- Analytics View -->
+    <div class="ems-view" id="eview-analytics">
+      <div class="pg-hdr">
+        <div>
+          <div class="pg-title">Pipeline <em>Analytics</em></div>
+          <div class="pg-sub">Summary metrics and conversion insights</div>
+        </div>
+      </div>
+      <div id="emsAnalyticsContent"></div>
+    </div>
+
+  </div><!-- /ems-main -->
+</div><!-- /ems-wrap -->
+
+<!-- Lead Detail Drawer -->
+<div class="drawer-overlay" id="emsDrawerOverlay" onclick="emsCloseDrawer()"></div>
+<div class="ems-drawer" id="emsLeadDrawer">
+  <div class="drawer-hdr">
+    <div class="drawer-title" id="emsDrawerTitle">Lead Detail</div>
+    <div class="drawer-hdr-actions">
+      <button class="btn btn-danger btn-sm" onclick="emsDeleteLead()">🗑 Delete</button>
+      <button class="btn btn-em btn-sm" onclick="emsSaveDrawer()">💾 Save</button>
+      <button class="ems-modal-x" onclick="emsCloseDrawer()">✕</button>
+    </div>
+  </div>
+  <div class="dtabs">
+    <button class="dtab active" onclick="emsDTab('dOv',this)">Overview</button>
+    <button class="dtab" onclick="emsDTab('dAct',this)">Activity Log</button>
+    <button class="dtab" onclick="emsDTab('dAI',this)">🤖 AI Tools</button>
+  </div>
+  <div class="drawer-body">
+    <div class="dpanel active" id="dOv">
+      <div class="section-lbl">Lead Info</div>
+      <div class="detail-grid">
+        <div class="detail-field" style="grid-column:1/-1"><div class="df-label">Company / Prospect Name</div><input class="df-input" id="ed-company" type="text"></div>
+        <div class="detail-field"><div class="df-label">Stage</div><select class="df-select" id="ed-stage"><option>Prospect</option><option>Contacted</option><option>Qualifying</option><option>Proposal</option><option>Negotiating</option><option>Won</option><option>Lost</option><option>On Hold</option></select></div>
+        <div class="detail-field"><div class="df-label">Priority</div><select class="df-select" id="ed-priority"><option>High</option><option>Medium</option><option>Low</option></select></div>
+        <div class="detail-field"><div class="df-label">CSC Point of Contact</div><input class="df-input" id="ed-cscContact" type="text" placeholder="Internal CSC rep"></div>
+        <div class="detail-field"><div class="df-label">Assigned Engineer</div><input class="df-input" id="ed-cscEngineer" type="text" placeholder="Engineer name"></div>
+        <div class="detail-field"><div class="df-label">EMS Project Type</div><select class="df-select" id="ed-type"><option value="">— Select —</option><option>Energy Audit</option><option>Controls Retrofit</option><option>BAS Upgrade</option><option>Lighting Upgrade</option><option>HVAC Optimization</option><option>Full EMS Contract</option><option>Monitoring &amp; Analytics</option><option>Demand Response</option><option>Solar/Renewables</option><option>Other</option></select></div>
+        <div class="detail-field"><div class="df-label">Estimated Annual Value ($)</div><input class="df-input" id="ed-annualValue" type="number" placeholder="0"></div>
+      </div>
+      <div class="section-lbl">Customer Contact</div>
+      <div class="detail-grid">
+        <div class="detail-field"><div class="df-label">Contact Name</div><input class="df-input" id="ed-contactName" type="text"></div>
+        <div class="detail-field"><div class="df-label">Title / Role</div><input class="df-input" id="ed-contactTitle" type="text"></div>
+        <div class="detail-field"><div class="df-label">Phone</div><input class="df-input" id="ed-contactPhone" type="tel"></div>
+        <div class="detail-field"><div class="df-label">Email</div><input class="df-input" id="ed-contactEmail" type="email"></div>
+      </div>
+      <div class="section-lbl">Site Information</div>
+      <div class="detail-grid">
+        <div class="detail-field" style="grid-column:1/-1"><div class="df-label">Address</div><input class="df-input" id="ed-address" type="text"></div>
+        <div class="detail-field"><div class="df-label">City</div><input class="df-input" id="ed-city" type="text"></div>
+        <div class="detail-field"><div class="df-label">State</div><input class="df-input" id="ed-state" type="text"></div>
+        <div class="detail-field"><div class="df-label">Zip</div><input class="df-input" id="ed-zip" type="text"></div>
+        <div class="detail-field"><div class="df-label">Building Type</div><select class="df-select" id="ed-buildingType"><option value="">— Select —</option><option>Office</option><option>School / K-12</option><option>University</option><option>Hospital</option><option>Healthcare Clinic</option><option>Retail</option><option>Warehouse / Industrial</option><option>Government / Municipal</option><option>Hotel / Hospitality</option><option>Multi-Family</option><option>Mixed-Use</option><option>Data Center</option><option>Other</option></select></div>
+        <div class="detail-field"><div class="df-label">Building Sq Ft</div><input class="df-input" id="ed-buildingSqft" type="number" placeholder="0"></div>
+      </div>
+      <div class="section-lbl">Follow-up &amp; Notes</div>
+      <div class="detail-grid">
+        <div class="detail-field"><div class="df-label">Next Action Date</div><input class="df-input" id="ed-nextActionDate" type="date"></div>
+        <div class="detail-field"><div class="df-label">Last Contact Date</div><input class="df-input" id="ed-lastContact" type="date"></div>
+        <div class="detail-field" style="grid-column:1/-1"><div class="df-label">Next Action / Task</div><input class="df-input" id="ed-nextAction" type="text" placeholder="e.g. Send proposal, Schedule site walk..."></div>
+        <div class="detail-field" style="grid-column:1/-1"><div class="df-label">Notes</div><textarea class="df-textarea" id="ed-notes" rows="4"></textarea></div>
+        <div class="detail-field" style="grid-column:1/-1"><div class="df-label">Tags (comma separated)</div><input class="df-input" id="ed-tags" type="text" placeholder="e.g. school, large-site, warm-lead"></div>
+      </div>
+    </div>
+    <div class="dpanel" id="dAct">
+      <div class="section-lbl">Activity Log</div>
+      <div id="emsActivityList" class="activity-list"></div>
+      <div class="act-input-row">
+        <input class="act-input" id="emsActNote" placeholder="Log a note, call, email, visit..." onkeydown="if(event.key==='Enter')emsAddActivity()">
+        <button class="btn btn-em btn-sm" onclick="emsAddActivity()">+ Log</button>
+      </div>
+    </div>
+    <div class="dpanel" id="dAI">
+      <div style="margin-bottom:12px;font-size:12px;color:var(--text2)">AI tools powered by Claude — uses the current lead data from the Overview tab.</div>
+      <div class="ai-tool-row">
+        <button class="ai-tool-btn" onclick="emsRunAI('outreach')"><div class="atb-ico">✉️</div><div class="atb-name">Draft Outreach</div><div class="atb-desc">Email or call script</div></button>
+        <button class="ai-tool-btn" onclick="emsRunAI('opportunity')"><div class="atb-ico">⚡</div><div class="atb-name">EMS Opportunity</div><div class="atb-desc">Estimate savings potential</div></button>
+        <button class="ai-tool-btn" onclick="emsRunAI('nextsteps')"><div class="atb-ico">🗺</div><div class="atb-name">Next Steps</div><div class="atb-desc">Stage-based recommendations</div></button>
+        <button class="ai-tool-btn" onclick="emsRunAI('objections')"><div class="atb-ico">🛡</div><div class="atb-name">Handle Objections</div><div class="atb-desc">Common objections &amp; rebuttals</div></button>
+      </div>
+      <div class="ai-output" id="emsAIOutput"></div>
+    </div>
+  </div>
+</div>
+
+<!-- New Lead Modal -->
+<div class="ems-modal-bg" id="emsNewModal">
+  <div class="ems-modal">
+    <div class="ems-modal-hdr"><div class="ems-modal-title">➕ Add New Lead</div><button class="ems-modal-x" onclick="emsCloseNew()">✕</button></div>
+    <div class="ems-modal-body">
+      <div class="section-divider">Prospect Info</div>
+      <div class="fg"><label class="fl">Company / Prospect Name *</label><input class="fi" id="enl-company" placeholder="Acme Corp"></div>
+      <div class="f2">
+        <div class="fg"><label class="fl">Stage</label><select class="fs" id="enl-stage"><option>Prospect</option><option>Contacted</option><option>Qualifying</option><option>Proposal</option><option>Negotiating</option><option>Won</option><option>Lost</option><option>On Hold</option></select></div>
+        <div class="fg"><label class="fl">Priority</label><select class="fs" id="enl-priority"><option>Medium</option><option>High</option><option>Low</option></select></div>
+      </div>
+      <div class="f2">
+        <div class="fg"><label class="fl">CSC Point of Contact</label><input class="fi" id="enl-cscContact" placeholder="Internal rep"></div>
+        <div class="fg"><label class="fl">Assigned Engineer</label><input class="fi" id="enl-cscEngineer"></div>
+      </div>
+      <div class="f2">
+        <div class="fg"><label class="fl">EMS Project Type</label><select class="fs" id="enl-type"><option value="">— Select —</option><option>Energy Audit</option><option>Controls Retrofit</option><option>BAS Upgrade</option><option>Lighting Upgrade</option><option>HVAC Optimization</option><option>Full EMS Contract</option><option>Monitoring &amp; Analytics</option><option>Demand Response</option><option>Other</option></select></div>
+        <div class="fg"><label class="fl">Est. Annual Value ($)</label><input class="fi" id="enl-value" type="number" placeholder="0"></div>
+      </div>
+      <div class="section-divider">Customer Contact</div>
+      <div class="f2">
+        <div class="fg"><label class="fl">Contact Name</label><input class="fi" id="enl-contactName"></div>
+        <div class="fg"><label class="fl">Phone</label><input class="fi" id="enl-contactPhone" type="tel"></div>
+      </div>
+      <div class="fg"><label class="fl">Email</label><input class="fi" id="enl-contactEmail" type="email"></div>
+      <div class="section-divider">Location</div>
+      <div class="fg"><label class="fl">Address</label><input class="fi" id="enl-address"></div>
+      <div class="f3">
+        <div class="fg"><label class="fl">City</label><input class="fi" id="enl-city"></div>
+        <div class="fg"><label class="fl">State</label><input class="fi" id="enl-state" placeholder="TX"></div>
+        <div class="fg"><label class="fl">Zip</label><input class="fi" id="enl-zip"></div>
+      </div>
+      <div class="f2">
+        <div class="fg"><label class="fl">Building Type</label><select class="fs" id="enl-buildingType"><option value="">— Select —</option><option>Office</option><option>School / K-12</option><option>University</option><option>Hospital</option><option>Healthcare Clinic</option><option>Retail</option><option>Warehouse / Industrial</option><option>Government / Municipal</option><option>Hotel / Hospitality</option><option>Multi-Family</option><option>Other</option></select></div>
+        <div class="fg"><label class="fl">Building Sq Ft</label><input class="fi" id="enl-sqft" type="number" placeholder="0"></div>
+      </div>
+      <div class="fg"><label class="fl">Notes</label><textarea class="fta" id="enl-notes" rows="3"></textarea></div>
+      <div class="f2">
+        <div class="fg"><label class="fl">Next Action Date</label><input class="fi" id="enl-nextDate" type="date"></div>
+        <div class="fg"><label class="fl">Next Action</label><input class="fi" id="enl-nextAction" placeholder="e.g. Schedule site walk"></div>
+      </div>
+    </div>
+    <div class="ems-modal-footer">
+      <button class="btn btn-ghost" onclick="emsCloseNew()">Cancel</button>
+      <button class="btn btn-em" onclick="emsSaveNew()">✓ Add Lead</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import Modal -->
+<div class="ems-modal-bg" id="emsImportModal">
+  <div class="ems-modal ems-modal-lg">
+    <div class="ems-modal-hdr"><div class="ems-modal-title">⬆ Import from CSV / Excel</div><button class="ems-modal-x" onclick="emsCloseImport()">✕</button></div>
+    <div class="ems-modal-body">
+      <p style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.7">Export your Excel spreadsheet as CSV (File → Save As → CSV), then paste the CSV content below, or drag &amp; drop the file. Map your columns to the correct fields below.</p>
+      <div class="csv-drop" id="emsCsvDrop" onclick="document.getElementById('emsCsvFile').click()">
+        <div style="font-size:28px">📂</div>
+        <p>Click to select a <em>.csv file</em> or paste CSV data below</p>
+      </div>
+      <input type="file" id="emsCsvFile" accept=".csv" style="display:none" onchange="emsHandleCSV(event)">
+      <div class="fg" style="margin-top:12px">
+        <label class="fl">Or paste CSV data here</label>
+        <textarea class="fta" id="emsCsvPaste" rows="5" placeholder="Paste CSV rows here..." oninput="emsParseCSVPreview()"></textarea>
+      </div>
+      <div id="emsCsvStatus"></div>
+      <div id="emsColMapper" style="display:none">
+        <div class="section-divider">Column Mapping</div>
+        <p style="font-size:11px;color:var(--text2);margin-bottom:10px">Map your spreadsheet columns to EMS Lead fields.</p>
+        <table class="map-table" id="emsMapTable">
+          <thead><tr><th>Your Column (CSV header)</th><th>Sample Data</th><th>Maps to EMS Field</th></tr></thead>
+          <tbody id="emsMapBody"></tbody>
+        </table>
+        <div class="csv-preview" id="emsCsvPreview"></div>
+      </div>
+    </div>
+    <div class="ems-modal-footer">
+      <button class="btn btn-ghost" onclick="emsCloseImport()">Cancel</button>
+      <button class="btn btn-em" id="emsImportBtn" onclick="emsRunImport()" style="display:none">⬆ Import Leads</button>
+    </div>
+  </div>
+</div>
+
+</div><!-- /view-ems -->
+
+<script>
+/* ════════════════════════════════════════
+   EMS LEADS — embedded in energy-department
+   All functions prefixed ems* to avoid conflicts
+   Selectors scoped to #view-ems / ems-specific IDs
+════════════════════════════════════════ */
+(function(){
+const EMS_KEY = 'ems_leads_v1';
+const EMS_STAGES = ['Prospect','Contacted','Qualifying','Proposal','Negotiating','Won','Lost','On Hold'];
+const EMS_STAGE_COLORS = {Prospect:'#2a3450',Contacted:'#0ea5e9',Qualifying:'#f59e0b',Proposal:'#a78bfa',Negotiating:'#84cc16',Won:'#00d4aa',Lost:'#f43f5e','On Hold':'#2a3450'};
+const EMS_STAGE_CLS = {Prospect:'sp-prospect',Contacted:'sp-contacted',Qualifying:'sp-qualifying',Proposal:'sp-proposal',Negotiating:'sp-negotiating',Won:'sp-won',Lost:'sp-lost','On Hold':'sp-on-hold'};
+const EMS_LEAD_FIELDS = [
+  {key:'company',label:'Company Name *'},{key:'address',label:'Address'},{key:'city',label:'City'},{key:'state',label:'State'},{key:'zip',label:'Zip'},
+  {key:'contactName',label:'Contact Name'},{key:'contactPhone',label:'Contact Phone'},{key:'contactEmail',label:'Contact Email'},{key:'contactTitle',label:'Contact Title'},
+  {key:'buildingType',label:'Building Type'},{key:'buildingSqft',label:'Building Sq Ft'},{key:'annualValue',label:'Est. Annual Value'},
+  {key:'cscContact',label:'CSC Contact'},{key:'cscEngineer',label:'Engineer'},{key:'stage',label:'Stage'},{key:'priority',label:'Priority'},
+  {key:'type',label:'Project Type'},{key:'notes',label:'Notes'},{key:'nextAction',label:'Next Action'},{key:'nextActionDate',label:'Next Action Date'},
+  {key:'lastContact',label:'Last Contact Date'},{key:'',label:'— Skip —'}
+];
+
+let emsLeads=[], emsActiveId=null, emsSortCol='company', emsSortAsc=true;
+let emsStageFilter='', emsPriFilter='', emsCsvHeaders=[], emsCsvRows=[];
+
+function emsLoad(){ try{ emsLeads=JSON.parse(localStorage.getItem(EMS_KEY)||'[]'); }catch(e){ emsLeads=[]; } }
+function emsSave(){ localStorage.setItem(EMS_KEY,JSON.stringify(emsLeads)); }
+function emsGenId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2); }
+function emsEsc(s){ return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function emsFmtNum(n){ if(n>=1000000) return (n/1000000).toFixed(1).replace(/\.0$/,'')+'M'; if(n>=1000) return (n/1000).toFixed(0)+'K'; return n.toLocaleString(); }
+function emsFmtDate(d){ if(!d) return ''; try{ return new Date(d+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }catch(e){ return d; } }
+function emsOverdue(d){ return d && new Date(d+'T00:00:00')<new Date(new Date().toDateString()); }
+
+function emsRenderAll(){ emsUpdateCounts(); emsRenderPipeline(); emsRenderTable(); emsRenderFollowups(); emsRenderAnalytics(); emsPopulateCSC(); }
+
+function emsUpdateCounts(){
+  document.getElementById('esb-count-all').textContent=emsLeads.length;
+  EMS_STAGES.forEach(s=>{
+    const el=document.getElementById('esb-count-'+s.toLowerCase().replace(' ','-'));
+    if(el) el.textContent=emsLeads.filter(l=>l.stage===s).length;
+  });
+}
+function emsPopulateCSC(){
+  const cscs=[...new Set(emsLeads.map(l=>l.cscContact).filter(Boolean))].sort();
+  ['epipeFilterCSC','etableCSC'].forEach(id=>{
+    const sel=document.getElementById(id); if(!sel) return;
+    const val=sel.value;
+    sel.innerHTML='<option value="">All CSC Contacts</option>'+cscs.map(c=>`<option${c===val?' selected':''}>${c}</option>`).join('');
+  });
+}
+
+// Exposed globals
+window.emsSwitch=function(view,el){
+  document.querySelectorAll('#view-ems .ems-view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('#view-ems .ems-ntab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('eview-'+view).classList.add('active');
+  el.classList.add('active');
+};
+window.emsFilterStage=function(stage,el){
+  emsStageFilter=stage; emsPriFilter='';
+  document.querySelectorAll('#view-ems .ems-s-item').forEach(i=>i.classList.remove('active'));
+  el.classList.add('active');
+  emsRenderPipeline(); emsRenderTable();
+};
+window.emsFilterPri=function(pri,el){
+  emsPriFilter=pri; emsStageFilter='';
+  document.querySelectorAll('#view-ems .ems-s-item').forEach(i=>i.classList.remove('active'));
+  el.classList.add('active');
+  emsRenderPipeline(); emsRenderTable();
+};
+
+function emsGetFiltered(){
+  const search=(document.getElementById('epipeSearch')||{}).value?.toLowerCase()||'';
+  const csc=(document.getElementById('epipeFilterCSC')||{}).value||'';
+  return emsLeads.filter(l=>{
+    if(emsStageFilter && l.stage!==emsStageFilter) return false;
+    if(emsPriFilter && l.priority!==emsPriFilter) return false;
+    if(csc && l.cscContact!==csc) return false;
+    if(search){ const hay=(l.company+l.city+l.contactName+l.cscContact+l.type+l.notes).toLowerCase(); if(!hay.includes(search)) return false; }
+    return true;
+  });
+}
+
+window.emsRenderPipeline=function(){
+  emsRenderStats();
+  const filtered=emsGetFiltered();
+  const stagesToShow=emsStageFilter?[emsStageFilter]:EMS_STAGES;
+  document.getElementById('emsPipeline').innerHTML=stagesToShow.map(stage=>{
+    const sl=filtered.filter(l=>l.stage===stage);
+    const sv2=sl.reduce((s,l)=>s+(+l.annualValue||0),0);
+    return `<div class="stage-col">
+      <div class="stage-hdr">
+        <div class="stage-name"><div class="stage-dot" style="background:${EMS_STAGE_COLORS[stage]}"></div>${stage}</div>
+        <div class="stage-count">${sl.length}${sv2>0?' · $'+emsFmtNum(sv2):''}</div>
+      </div>
+      <div class="stage-body" id="estage-${stage.replace(' ','-')}"
+        ondragover="event.preventDefault();this.classList.add('drag-over')"
+        ondragleave="this.classList.remove('drag-over')"
+        ondrop="emsDropStage('${stage}',event)">
+        ${sl.length===0?'<div style="font-size:11px;color:var(--text3);text-align:center;padding:20px 0">No leads</div>':''}
+        ${sl.map(l=>emsCardHTML(l)).join('')}
+      </div>
+    </div>`;
+  }).join('');
+};
+
+function emsRenderStats(){
+  const active=emsLeads.filter(l=>!['Lost','Won'].includes(l.stage));
+  const totalVal=emsLeads.filter(l=>l.stage!=='Lost').reduce((s,l)=>s+(+l.annualValue||0),0);
+  const won=emsLeads.filter(l=>l.stage==='Won');
+  const wonVal=won.reduce((s,l)=>s+(+l.annualValue||0),0);
+  const overdue=emsLeads.filter(l=>l.nextActionDate&&new Date(l.nextActionDate)<new Date()&&!['Won','Lost'].includes(l.stage));
+  document.getElementById('emsStatsRow').innerHTML=`
+    <div class="stat"><div class="stat-lbl">Total Leads</div><div class="stat-val c-em">${emsLeads.length}</div><div class="stat-meta">${active.length} active</div></div>
+    <div class="stat"><div class="stat-lbl">Pipeline Value</div><div class="stat-val c-em2">$${emsFmtNum(totalVal)}</div><div class="stat-meta">estimated annual</div></div>
+    <div class="stat"><div class="stat-lbl">Won Value</div><div class="stat-val c-lime">$${emsFmtNum(wonVal)}</div><div class="stat-meta">${won.length} contract${won.length!==1?'s':''}</div></div>
+    <div class="stat"><div class="stat-lbl">In Proposal</div><div class="stat-val c-violet">${emsLeads.filter(l=>['Proposal','Negotiating'].includes(l.stage)).length}</div><div class="stat-meta">active proposals</div></div>
+    <div class="stat"><div class="stat-lbl">Follow-ups Due</div><div class="stat-val ${overdue.length>0?'c-danger':'c-em'}">${overdue.length}</div><div class="stat-meta">action needed</div></div>`;
+}
+
+function emsCardHTML(l){
+  const nad=l.nextActionDate?new Date(l.nextActionDate):null;
+  const ov=nad&&nad<new Date();
+  const pc=l.priority==='High'?'var(--danger)':l.priority==='Low'?'var(--text3)':'var(--warn)';
+  return `<div class="lead-card" draggable="true"
+    ondragstart="emsDragStart('${l.id}',event)"
+    ondragend="event.target.classList.remove('dragging')"
+    onclick="emsOpenDrawer('${l.id}')">
+    <div style="display:flex;align-items:flex-start;gap:7px">
+      <div class="priority-dot" style="background:${pc};margin-top:4px"></div>
+      <div class="lc-company">${emsEsc(l.company||'—')}</div>
+    </div>
+    <div class="lc-meta">${[l.buildingType,l.city&&l.state?l.city+', '+l.state:l.city||l.state].filter(Boolean).join(' · ')||'No location set'}</div>
+    ${l.cscContact?`<div style="font-size:10px;color:var(--em2)">👤 ${emsEsc(l.cscContact)}</div>`:''}
+    ${l.tags&&l.tags.length?`<div class="lc-tags">${l.tags.slice(0,3).map(t=>`<span class="tag">${emsEsc(t)}</span>`).join('')}</div>`:''}
+    <div class="lc-row">
+      <div class="lc-value">${l.annualValue?'$'+emsFmtNum(l.annualValue):''}</div>
+      <div class="lc-date">${l.type||''}</div>
+    </div>
+    ${l.nextAction?`<div class="lc-action ${ov?'overdue-flag':''}">${ov?'⚠':'→'} ${emsEsc(l.nextAction)}${nad?' ('+emsFmtDate(l.nextActionDate)+')':''}</div>`:''}
+  </div>`;
+}
+
+let emsDragId=null;
+window.emsDragStart=function(id,e){ emsDragId=id; e.target.classList.add('dragging'); };
+window.emsDropStage=function(stage,e){
+  e.preventDefault();
+  document.querySelectorAll('#view-ems .stage-body').forEach(b=>b.classList.remove('drag-over'));
+  if(!emsDragId) return;
+  const lead=emsLeads.find(l=>l.id===emsDragId);
+  if(lead&&lead.stage!==stage){ lead.stage=stage; lead.updatedAt=new Date().toISOString(); emsSave(); emsRenderAll(); showToast('Moved to '+stage+' ✓'); }
+  emsDragId=null;
+};
+
+window.emsRenderTable=function(){
+  const search=document.getElementById('etableSearch')?.value?.toLowerCase()||'';
+  const stage=document.getElementById('etableStage')?.value||'';
+  const pri=document.getElementById('etablePri')?.value||'';
+  const csc=document.getElementById('etableCSC')?.value||'';
+  let data=emsLeads.filter(l=>{
+    if(emsStageFilter&&l.stage!==emsStageFilter) return false;
+    if(emsPriFilter&&l.priority!==emsPriFilter) return false;
+    if(stage&&l.stage!==stage) return false;
+    if(pri&&l.priority!==pri) return false;
+    if(csc&&l.cscContact!==csc) return false;
+    if(search){ const hay=(l.company+l.city+l.state+l.contactName+l.cscContact+l.type+l.notes).toLowerCase(); if(!hay.includes(search)) return false; }
+    return true;
+  });
+  data.sort((a,b)=>{ let av=a[emsSortCol]||'',bv=b[emsSortCol]||''; if(!isNaN(av)&&!isNaN(bv)) return emsSortAsc?(+av)-(+bv):(+bv)-(+av); return emsSortAsc?av.toString().localeCompare(bv.toString()):bv.toString().localeCompare(av.toString()); });
+  document.getElementById('emsTableBody').innerHTML=data.length===0
+    ?`<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text3)">No leads found</td></tr>`
+    :data.map(l=>`<tr onclick="emsOpenDrawer('${l.id}')">
+      <td class="td-company">${emsEsc(l.company||'—')}</td>
+      <td>${[l.city,l.state].filter(Boolean).join(', ')||'—'}</td>
+      <td><span class="stage-pill ${EMS_STAGE_CLS[l.stage]||''}">${l.stage||'—'}</span></td>
+      <td class="pri-${(l.priority||'').toLowerCase()}">${l.priority||'—'}</td>
+      <td>${emsEsc(l.cscContact||'—')}</td>
+      <td class="td-mono">${l.annualValue?'$'+emsFmtNum(l.annualValue):'—'}</td>
+      <td style="${emsOverdue(l.nextActionDate)?'color:var(--danger)':''}">${l.nextActionDate?emsFmtDate(l.nextActionDate):'—'}</td>
+      <td>${l.lastContact?emsFmtDate(l.lastContact):'—'}</td>
+    </tr>`).join('');
+};
+window.emsSortTable=function(col){ if(emsSortCol===col) emsSortAsc=!emsSortAsc; else{emsSortCol=col;emsSortAsc=true;} emsRenderTable(); };
+
+function emsRenderFollowups(){
+  const today=new Date(); today.setHours(0,0,0,0);
+  const week=new Date(today); week.setDate(week.getDate()+7);
+  const overdue=emsLeads.filter(l=>l.nextActionDate&&new Date(l.nextActionDate)<today&&!['Won','Lost'].includes(l.stage));
+  const thisWeek=emsLeads.filter(l=>{const d=new Date(l.nextActionDate);return l.nextActionDate&&d>=today&&d<=week&&!['Won','Lost'].includes(l.stage);});
+  const noDate=emsLeads.filter(l=>!l.nextActionDate&&!['Won','Lost'].includes(l.stage));
+  document.getElementById('emsFollowupStats').innerHTML=`
+    <div class="stat"><div class="stat-lbl">Overdue</div><div class="stat-val c-danger">${overdue.length}</div><div class="stat-meta">Past due date</div></div>
+    <div class="stat"><div class="stat-lbl">This Week</div><div class="stat-val c-warn">${thisWeek.length}</div><div class="stat-meta">Next 7 days</div></div>
+    <div class="stat"><div class="stat-lbl">No Date Set</div><div class="stat-val c-em2">${noDate.length}</div><div class="stat-meta">Need scheduling</div></div>`;
+  const sec=(title,items,color)=>items.length===0?'':`
+    <div style="margin-bottom:20px">
+      <div style="font-family:var(--head);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:${color};margin-bottom:10px;padding-bottom:7px;border-bottom:1px solid var(--border)">${title} (${items.length})</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${items.map(l=>`<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:border-color .14s" onclick="emsOpenDrawer('${l.id}')" onmouseover="this.style.borderColor='var(--em)'" onmouseout="this.style.borderColor='var(--border)'">
+          <div>
+            <div style="font-family:var(--head);font-size:13px;font-weight:700">${emsEsc(l.company)}</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:3px">${l.nextAction||'No action specified'} ${l.nextActionDate?'· '+emsFmtDate(l.nextActionDate):''}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span class="stage-pill ${EMS_STAGE_CLS[l.stage]||''}">${l.stage}</span>
+            ${l.cscContact?`<span style="font-size:11px;color:var(--em2)">${emsEsc(l.cscContact)}</span>`:''}
+          </div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  document.getElementById('emsFollowupList').innerHTML=sec('⚠ Overdue',overdue,'var(--danger)')+sec('📅 This Week',thisWeek,'var(--warn)')+sec('📋 No Date Set',noDate,'var(--em2)')||`<div class="empty-state"><div class="ico">✅</div><h3>All caught up!</h3><p>No follow-ups overdue or due this week.</p></div>`;
+}
+
+function emsRenderAnalytics(){
+  const total=emsLeads.length;
+  if(total===0){ document.getElementById('emsAnalyticsContent').innerHTML=`<div class="empty-state"><div class="ico">📈</div><h3>No data yet</h3><p>Add leads to see analytics.</p></div>`; return; }
+  const stageData=EMS_STAGES.map(s=>({stage:s,count:emsLeads.filter(l=>l.stage===s).length,val:emsLeads.filter(l=>l.stage===s).reduce((a,l)=>a+(+l.annualValue||0),0)}));
+  const byCSC={},byType={};
+  emsLeads.forEach(l=>{const k=l.cscContact||'Unassigned';byCSC[k]=(byCSC[k]||0)+1;});
+  emsLeads.forEach(l=>{const k=l.type||'Unspecified';byType[k]=(byType[k]||0)+1;});
+  const totalVal=emsLeads.reduce((s,l)=>s+(+l.annualValue||0),0);
+  const wonVal=emsLeads.filter(l=>l.stage==='Won').reduce((s,l)=>s+(+l.annualValue||0),0);
+  const closed=emsLeads.filter(l=>['Won','Lost'].includes(l.stage)).length;
+  const winRate=closed>0?Math.round(emsLeads.filter(l=>l.stage==='Won').length/closed*100):0;
+  document.getElementById('emsAnalyticsContent').innerHTML=`
+    <div class="stats-row" style="margin-bottom:20px">
+      <div class="stat"><div class="stat-lbl">Total Pipeline</div><div class="stat-val c-em">$${emsFmtNum(totalVal)}</div><div class="stat-meta">all active stages</div></div>
+      <div class="stat"><div class="stat-lbl">Won Revenue</div><div class="stat-val c-lime">$${emsFmtNum(wonVal)}</div><div class="stat-meta">${emsLeads.filter(l=>l.stage==='Won').length} contracts</div></div>
+      <div class="stat"><div class="stat-lbl">Win Rate</div><div class="stat-val c-violet">${winRate}%</div><div class="stat-meta">of closed deals</div></div>
+      <div class="stat"><div class="stat-lbl">Avg Deal Size</div><div class="stat-val c-em2">$${total>0?emsFmtNum(Math.round(totalVal/total)):0}</div><div class="stat-meta">estimated annual</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-bottom:16px">
+      <div style="background:var(--s2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden">
+        <div style="padding:13px 17px;border-bottom:1px solid var(--border);font-family:var(--head);font-size:13px;font-weight:700">Stage Breakdown</div>
+        <div style="padding:14px 16px">
+          ${stageData.filter(d=>d.count>0).map(d=>`
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+              <div style="width:80px;font-size:12px;color:var(--text2);flex-shrink:0">${d.stage}</div>
+              <div style="flex:1;background:var(--s3);border-radius:4px;height:8px;overflow:hidden"><div style="height:100%;background:${EMS_STAGE_COLORS[d.stage]};width:${Math.round(d.count/total*100)}%;border-radius:4px"></div></div>
+              <div style="width:30px;font-family:var(--mono);font-size:11px;text-align:right">${d.count}</div>
+              <div style="width:70px;font-family:var(--mono);font-size:10px;color:var(--em);text-align:right">${d.val?'$'+emsFmtNum(d.val):''}</div>
+            </div>`).join('')}
+        </div>
+      </div>
+      <div style="background:var(--s2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden">
+        <div style="padding:13px 17px;border-bottom:1px solid var(--border);font-family:var(--head);font-size:13px;font-weight:700">By CSC Contact</div>
+        <div style="padding:14px 16px">
+          ${Object.entries(byCSC).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px"><span>${k}</span><span style="font-family:var(--mono);color:var(--em)">${v}</span></div>`).join('')}
+        </div>
+      </div>
+    </div>
+    <div style="background:var(--s2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden">
+      <div style="padding:13px 17px;border-bottom:1px solid var(--border);font-family:var(--head);font-size:13px;font-weight:700">By Project Type</div>
+      <div style="padding:14px 16px;display:flex;flex-wrap:wrap;gap:10px">
+        ${Object.entries(byType).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 13px;font-size:12px"><span style="color:var(--text2)">${k}</span><span style="font-family:var(--mono);color:var(--em);margin-left:8px">${v}</span></div>`).join('')}
+      </div>
+    </div>`;
+}
+
+window.emsOpenDrawer=function(id){
+  const lead=emsLeads.find(l=>l.id===id); if(!lead) return;
+  emsActiveId=id;
+  document.getElementById('emsDrawerTitle').textContent=lead.company||'Lead Detail';
+  ['company','stage','priority','cscContact','cscEngineer','type','annualValue','contactName','contactTitle','contactPhone','contactEmail','address','city','state','zip','buildingType','buildingSqft','nextActionDate','lastContact','nextAction','notes'].forEach(f=>{
+    const el=document.getElementById('ed-'+f); if(el) el.value=lead[f]||'';
+  });
+  document.getElementById('ed-tags').value=(lead.tags||[]).join(', ');
+  emsRenderActivity(lead);
+  document.getElementById('emsDrawerOverlay').classList.add('open');
+  document.getElementById('emsLeadDrawer').classList.add('open');
+  emsDTab('dOv',document.querySelector('#view-ems .dtab'));
+  document.getElementById('emsAIOutput').classList.remove('visible');
+};
+window.emsCloseDrawer=function(){
+  document.getElementById('emsDrawerOverlay').classList.remove('open');
+  document.getElementById('emsLeadDrawer').classList.remove('open');
+  emsActiveId=null;
+};
+window.emsSaveDrawer=function(){
+  const lead=emsLeads.find(l=>l.id===emsActiveId); if(!lead) return;
+  ['company','stage','priority','cscContact','cscEngineer','type','annualValue','contactName','contactTitle','contactPhone','contactEmail','address','city','state','zip','buildingType','buildingSqft','nextActionDate','lastContact','nextAction','notes'].forEach(f=>{
+    const el=document.getElementById('ed-'+f); if(el) lead[f]=el.value;
+  });
+  lead.tags=document.getElementById('ed-tags').value.split(',').map(t=>t.trim()).filter(Boolean);
+  lead.updatedAt=new Date().toISOString();
+  document.getElementById('emsDrawerTitle').textContent=lead.company||'Lead Detail';
+  emsSave(); emsRenderAll(); showToast('Lead saved ✓');
+};
+window.emsDeleteLead=function(){
+  if(!emsActiveId) return;
+  const lead=emsLeads.find(l=>l.id===emsActiveId);
+  if(!confirm('Delete "'+( lead?.company||'this lead')+'"? This cannot be undone.')) return;
+  emsLeads=emsLeads.filter(l=>l.id!==emsActiveId);
+  emsSave(); emsCloseDrawer(); emsRenderAll(); showToast('Lead deleted');
+};
+window.emsDTab=function(id,el){
+  document.querySelectorAll('#view-ems .dpanel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('#view-ems .dtab').forEach(t=>t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  if(el) el.classList.add('active');
+};
+
+function emsRenderActivity(lead){
+  const list=lead.activity||[];
+  document.getElementById('emsActivityList').innerHTML=list.length===0
+    ?`<div style="font-size:12px;color:var(--text3);padding:16px 0">No activity logged yet.</div>`
+    :[...list].reverse().map(a=>`<div class="activity-item"><div class="act-dot" style="background:${a.color||'var(--em)'}"></div><div class="act-body"><div class="act-text">${emsEsc(a.text)}</div><div class="act-time">${a.time} · ${a.user||'You'}</div></div></div>`).join('');
+}
+window.emsAddActivity=function(){
+  const inp=document.getElementById('emsActNote');
+  const text=inp.value.trim(); if(!text) return;
+  const lead=emsLeads.find(l=>l.id===emsActiveId); if(!lead) return;
+  if(!lead.activity) lead.activity=[];
+  lead.activity.push({text,time:new Date().toLocaleString(),color:'var(--em)'});
+  lead.lastContact=new Date().toISOString().split('T')[0];
+  lead.updatedAt=new Date().toISOString();
+  inp.value=''; emsSave(); emsRenderActivity(lead);
+  document.getElementById('ed-lastContact').value=lead.lastContact;
+  showToast('Activity logged ✓');
+};
+
+window.emsOpenNew=function(){ document.getElementById('emsNewModal').classList.add('open'); };
+window.emsCloseNew=function(){ document.getElementById('emsNewModal').classList.remove('open'); };
+window.emsSaveNew=function(){
+  const company=document.getElementById('enl-company').value.trim();
+  if(!company){ showToast('Company name required ⚠'); return; }
+  const lead={
+    id:emsGenId(),company,
+    stage:document.getElementById('enl-stage').value,
+    priority:document.getElementById('enl-priority').value,
+    cscContact:document.getElementById('enl-cscContact').value,
+    cscEngineer:document.getElementById('enl-cscEngineer').value,
+    type:document.getElementById('enl-type').value,
+    annualValue:document.getElementById('enl-value').value||'',
+    contactName:document.getElementById('enl-contactName').value,
+    contactPhone:document.getElementById('enl-contactPhone').value,
+    contactEmail:document.getElementById('enl-contactEmail').value,
+    address:document.getElementById('enl-address').value,
+    city:document.getElementById('enl-city').value,
+    state:document.getElementById('enl-state').value,
+    zip:document.getElementById('enl-zip').value,
+    buildingType:document.getElementById('enl-buildingType').value,
+    buildingSqft:document.getElementById('enl-sqft').value||'',
+    notes:document.getElementById('enl-notes').value,
+    nextActionDate:document.getElementById('enl-nextDate').value,
+    nextAction:document.getElementById('enl-nextAction').value,
+    tags:[],activity:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()
+  };
+  emsLeads.push(lead); emsSave(); emsCloseNew(); emsRenderAll(); showToast(company+' added ✓');
+  ['enl-company','enl-cscContact','enl-cscEngineer','enl-value','enl-contactName','enl-contactPhone','enl-contactEmail','enl-address','enl-city','enl-state','enl-zip','enl-sqft','enl-notes','enl-nextDate','enl-nextAction'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+};
+
+window.emsOpenImport=function(){ document.getElementById('emsImportModal').classList.add('open'); };
+window.emsCloseImport=function(){ document.getElementById('emsImportModal').classList.remove('open'); };
+window.emsHandleCSV=function(e){ const f=e.target.files[0]; if(f){const r=new FileReader();r.onload=ev=>{document.getElementById('emsCsvPaste').value=ev.target.result;emsParseCSVPreview();};r.readAsText(f);} };
+
+function emsParseCsv(text){
+  return text.trim().split('\n').map(line=>{
+    const cols=[];let cur='',inQ=false;
+    for(let i=0;i<line.length;i++){
+      if(line[i]==='"'&&!inQ){inQ=true;}
+      else if(line[i]==='"'&&inQ&&line[i+1]==='"'){cur+='"';i++;}
+      else if(line[i]==='"'&&inQ){inQ=false;}
+      else if(line[i]===','&&!inQ){cols.push(cur.trim());cur='';}
+      else{cur+=line[i];}
+    }
+    cols.push(cur.trim()); return cols;
+  });
+}
+window.emsParseCSVPreview=function(){
+  const text=document.getElementById('emsCsvPaste').value.trim();
+  if(!text){document.getElementById('emsColMapper').style.display='none';document.getElementById('emsImportBtn').style.display='none';return;}
+  const parsed=emsParseCsv(text);
+  if(parsed.length<2){document.getElementById('emsCsvStatus').innerHTML='<div style="color:var(--danger);font-size:12px;margin-top:6px">Could not parse CSV.</div>';return;}
+  emsCsvHeaders=parsed[0]; emsCsvRows=parsed.slice(1).filter(r=>r.some(c=>c));
+  document.getElementById('emsCsvStatus').innerHTML=`<div class="parse-ok">✓ Found ${emsCsvRows.length} rows and ${emsCsvHeaders.length} columns</div>`;
+  const autoMap={company:['company','customer','name','account','prospect'],city:['city','town'],state:['state','st'],zip:['zip','postal'],contactName:['contact','contact name'],contactPhone:['phone','telephone'],contactEmail:['email','e-mail'],annualValue:['value','annual value','revenue'],cscContact:['csc','csc contact','rep'],notes:['notes','comments']};
+  const mapped={};
+  emsCsvHeaders.forEach((h,i)=>{const hl=h.toLowerCase().trim();for(const[field,aliases] of Object.entries(autoMap)){if(aliases.some(a=>hl.includes(a))){mapped[i]=field;break;}}});
+  const fieldOpts=EMS_LEAD_FIELDS.map(f=>`<option value="${f.key}">${f.label}</option>`).join('');
+  document.getElementById('emsMapBody').innerHTML=emsCsvHeaders.map((h,i)=>`<tr><td style="font-family:var(--mono);font-size:11px;color:var(--em)">${h||'(blank)'}</td><td style="font-size:11px;color:var(--text2)">${emsCsvRows[0]?.[i]||''}</td><td><select id="emap-${i}">${fieldOpts}</select></td></tr>`).join('');
+  emsCsvHeaders.forEach((_,i)=>{if(mapped[i]){const s=document.getElementById('emap-'+i);if(s)s.value=mapped[i];}});
+  document.getElementById('emsColMapper').style.display='block';
+  document.getElementById('emsImportBtn').style.display='inline-flex';
+  document.getElementById('emsCsvPreview').innerHTML='PREVIEW (first 3 rows):\n'+parsed.slice(0,4).map(r=>r.join(' | ')).join('\n');
+};
+window.emsRunImport=function(){
+  const mapping={};
+  emsCsvHeaders.forEach((_,i)=>{const v=document.getElementById('emap-'+i)?.value;if(v)mapping[i]=v;});
+  let added=0,skipped=0;
+  emsCsvRows.forEach(row=>{
+    const obj={id:emsGenId(),tags:[],activity:[],stage:'Prospect',priority:'Medium',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+    Object.entries(mapping).forEach(([i,field])=>{if(field&&row[i]!==undefined)obj[field]=row[+i].trim();});
+    if(!obj.company){skipped++;return;}
+    const s=EMS_STAGES.find(st=>st.toLowerCase()===(obj.stage||'').toLowerCase());
+    if(s)obj.stage=s;else obj.stage='Prospect';
+    emsLeads.push(obj);added++;
+  });
+  emsSave();emsCloseImport();emsRenderAll();showToast(`Imported ${added} leads${skipped>0?' ('+skipped+' skipped)':''} ✓`);
+  document.getElementById('emsCsvPaste').value='';
+  document.getElementById('emsColMapper').style.display='none';
+  document.getElementById('emsImportBtn').style.display='none';
+  document.getElementById('emsCsvStatus').innerHTML='';
+};
+
+window.emsExportCSV=function(){
+  const headers=['Company','Address','City','State','Zip','Contact Name','Contact Phone','Contact Email','Building Type','Sq Ft','Annual Value','CSC Contact','Engineer','Stage','Priority','Project Type','Notes','Next Action','Next Action Date','Last Contact','Created'];
+  const rows=emsLeads.map(l=>[l.company,l.address,l.city,l.state,l.zip,l.contactName,l.contactPhone,l.contactEmail,l.buildingType,l.buildingSqft,l.annualValue,l.cscContact,l.cscEngineer,l.stage,l.priority,l.type,l.notes,l.nextAction,l.nextActionDate,l.lastContact,l.createdAt?.split('T')[0]].map(v=>`"${(v||'').toString().replace(/"/g,'""')}"`));
+  const csv=[headers.join(','),...rows.map(r=>r.join(','))].join('\n');
+  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='EMS-Leads-'+new Date().toISOString().split('T')[0]+'.csv';a.click();showToast('Exported ✓');
+};
+
+window.emsRunAI=async function(tool){
+  const lead=emsLeads.find(l=>l.id===emsActiveId); if(!lead){showToast('Save lead first');return;}
+  emsSaveDrawer();
+  const out=document.getElementById('emsAIOutput');
+  out.className='ai-output visible';
+  out.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Generating...</div>';
+  const ctx=`Company: ${lead.company||'Unknown'}\nLocation: ${[lead.city,lead.state].filter(Boolean).join(', ')||'Unknown'}\nBuilding Type: ${lead.buildingType||'Unknown'}\nBuilding Size: ${lead.buildingSqft?lead.buildingSqft+' sq ft':'Unknown'}\nStage: ${lead.stage||'Prospect'}\nPriority: ${lead.priority||'Medium'}\nProject Type: ${lead.type||'Unknown'}\nCSC Contact: ${lead.cscContact||'Unassigned'}\nCustomer Contact: ${lead.contactName||'Unknown'}${lead.contactTitle?' ('+lead.contactTitle+')':''}\nEstimated Annual Value: ${lead.annualValue?'$'+lead.annualValue:'Unknown'}\nLast Contact: ${lead.lastContact||'Never'}\nNotes: ${lead.notes||'None'}`;
+  const prompts={
+    outreach:`You are an EMS sales professional. Draft a concise professional outreach email for this prospect. Goal: open a conversation about energy management. Be specific to their building type. Under 200 words.\n\nLEAD:\n${ctx}`,
+    opportunity:`You are an EMS engineer. Based on this lead, estimate: 1) Annual energy savings potential, 2) Best-fit EMS services, 3) Key systems with likely waste, 4) ROI timeframe, 5) Red flags.\n\nLEAD:\n${ctx}`,
+    nextsteps:`You are a senior sales manager. Based on this lead's stage, recommend: 1) Single most important next action, 2) Specific talking points, 3) Info still needed, 4) Timeline to close, 5) Potential obstacles.\n\nLEAD:\n${ctx}`,
+    objections:`You are a seasoned EMS salesperson. Generate: 1) Top 4 likely objections, 2) Compelling rebuttal to each, 3) Questions to uncover hidden needs.\n\nLEAD:\n${ctx}`
+  };
+  try{
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompts[tool]}]})});
+    const data=await resp.json();
+    const text=data.content?.filter(b=>b.type==='text').map(b=>b.text).join('')||'No response.';
+    out.textContent=text;
+  }catch(e){ out.textContent='AI service unavailable.'; }
+};
+
+// Drag-drop on CSV drop zone (init after DOM ready)
+document.addEventListener('DOMContentLoaded',()=>{
+  const drop=document.getElementById('emsCsvDrop');
+  if(drop){
+    drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over');});
+    drop.addEventListener('dragleave',()=>drop.classList.remove('over'));
+    drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');const f=e.dataTransfer.files[0];if(f){const r=new FileReader();r.onload=ev=>{document.getElementById('emsCsvPaste').value=ev.target.result;emsParseCSVPreview();};r.readAsText(f);}});
+  }
+});
+
+// Init
+emsLoad();
+// Render when EMS view becomes active
+const _svOrig=window.sv;
+window.sv=function(id,btn){
+  _svOrig(id,btn);
+  if(id==='ems') emsRenderAll();
+};
+
+})();
+</script>
 
 </main></div>
 
