@@ -3071,6 +3071,7 @@ const UTILITY_RULES=[
     const ptsChg     =sumMatches(t,/PTS\s+Ch[ga][\s\S]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/mg);
     const tdcKW      =t.match(/TDC\s+Ch[ga][\s\S]*?([\d,.]+)\s*kW\s+at/i)?.[1]?.replace(/,/g,'')||null;
     const tdcChg     =t.match(/TDC\s+Ch[ga][\s\S]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]||null;
+    const taxExempt  =t.match(/Tax\s+exempt[^$\n]*\$?([\d,]+\.\d{2})\s*$/im)?.[1]||null;
     const billOffset =t.match(/Bill\s+off\w+[^\n]*?(-?\$[\d,]+\.\d{2}|-[\d,]+\.\d{2}|\$[\d,]+\.\d{2})\s*$/im)?.[1]?.replace(/\$/g,'')||null;
     const franchise  =t.match(/Franchise\s+Fee[^$\n]*\$?([\d,]+\.\d{2})\s*$/im)?.[1]||null;
     const totalDue   =t.match(/Current\s+Charges[^$\n]*\$?([\d,]+\.\d{2})\s*$/im)?.[1]?.replace(/,/g,'')||null;
@@ -3103,6 +3104,7 @@ const UTILITY_RULES=[
       PTSCharge:           ptsChg,
       TDCkW:               tdcKW,
       TDCCharge:           tdcChg,
+      TaxExemptDelivery:   taxExempt,
       BillOffset:          billOffset,
       FranchiseFee:        franchise,
       TotalCurrentCharges: totalDue,
@@ -3269,9 +3271,115 @@ function renderPDFFields(parsed){
   el.innerHTML=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div><div class="ef-grid">${items.map(([k,v])=>`<div class="ef-item"><div class="ef-key">${k.replace(/([A-Z])/g,' $1').trim()}</div><input class="ef-input" value="${Array.isArray(v)?v.join(', '):(v||'')}" data-key="${k}"></div>`).join('')}</div>`;
 }
 function savePDFData(){
-  const proj=projects.find(p=>p.id===parseInt(document.getElementById('pdfProjSel').value));
-  if(!proj){showToast('Select a project first');return;}
-  showToast('Data saved to '+proj.name+' ✓');
+  // ── Get current extracted data from the output box ──
+  const box=document.getElementById('pdfAIBox');
+  let extracted=null;
+  try{ extracted=JSON.parse(box.textContent); }catch(e){}
+  if(!extracted||!extracted.UtilityCompany){showToast('No extracted data to save');return;}
+
+  const projId=parseInt(document.getElementById('pdfProjSel').value)||null;
+  const proj=projId?projects.find(p=>p.id===projId):null;
+
+  // ── Save raw bill record to en_pdf_bills database ──
+  const pdfBills=sget('en_pdf_bills',[])||[];
+  const billRecord={
+    id:'pb'+Date.now(),
+    savedAt:new Date().toISOString(),
+    projId:projId||null,
+    projName:proj?.name||'General',
+    ...extracted
+  };
+  pdfBills.push(billRecord);
+  sset('en_pdf_bills',pdfBills);
+
+  // ── Map extracted fields to billing period format ──
+  const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
+
+  // kWh charges: On-Peak + Off-Peak + ECA + EER + PTS
+  const kwhCost=(pf(extracted.EnergyOnPeakCharge)+pf(extracted.EnergyOffPeakCharge)+
+                 pf(extracted.ECACharge)+pf(extracted.EERCharge)+pf(extracted.PTSCharge)).toFixed(2);
+  // Non-facilities kW charges: Billed kW + TDC
+  const kwCost=(pf(extracted.BilledKWCharge)+pf(extracted.TDCCharge)).toFixed(2);
+  // Other charges: Customer charge + tax exempt delivery + bill offset
+  const otherCost=(pf(extracted.CustomerCharge)+pf(extracted.TaxExemptDelivery)+pf(extracted.BillOffset)).toFixed(2);
+  // Taxes/fees: Franchise fee
+  const taxCost=(pf(extracted.FranchiseFee)).toFixed(2);
+  // Total from bill
+  const totalCost=pf(extracted.TotalCurrentCharges);
+
+  // ── Validation: check components sum to total ──
+  const componentSum=(pf(extracted.FacilitiesCharge)+pf(kwCost)+pf(kwhCost)+pf(otherCost)+pf(taxCost));
+  const diff=Math.abs(componentSum-totalCost);
+  const valid=totalCost>0&&diff<0.10; // allow $0.10 rounding tolerance
+
+  // ── Format dates MM/DD/YYYY → YYYY-MM-DD for the date input ──
+  function toISO(d){
+    if(!d) return '';
+    const p=d.split('/');
+    return p.length===3?p[2]+'-'+p[0].padStart(2,'0')+'-'+p[1].padStart(2,'0'):d;
+  }
+
+  const billRow={
+    id:'r'+Date.now(),
+    start:toISO(extracted.BillingPeriodStart),
+    end:toISO(extracted.BillingPeriodEnd),
+    kwh:extracted.kWhConsumed||'',
+    demandKW:extracted.ActualKW||'',
+    billedKW:extracted.BilledKW||'',
+    facKW:extracted.FacilitiesKW||'',
+    facKWCost:extracted.FacilitiesCharge||'',
+    kwCost,
+    kwhCost,
+    otherCost,
+    taxCost,
+    totalCost:extracted.TotalCurrentCharges||'',
+    fromPDF:true,
+    pdfBillId:billRecord.id
+  };
+
+  // ── If project selected, find or prompt for matching meter ──
+  if(proj){
+    const udProj=getUDProj(proj.id);
+    // Find electric meters for this project
+    const elecMeters=[];
+    (udProj.buildings||[]).forEach(b=>(b.meters||[]).forEach(m=>{
+      if(m.commodity==='Electric') elecMeters.push({b,m});
+    }));
+
+    if(elecMeters.length===0){
+      // No electric meter exists — show message directing user
+      showToast('Raw bill saved. No electric meter found in '+proj.name+' Utility Data — add one first, then re-save.');
+    } else if(elecMeters.length===1){
+      // Exactly one electric meter — auto-add
+      const {b,m}=elecMeters[0];
+      m.bills=m.bills||[];
+      // Check for duplicate billing period
+      const dup=m.bills.find(r=>r.start===billRow.start&&r.end===billRow.end);
+      if(dup){
+        Object.assign(dup,billRow);
+        showToast('Billing period updated in Utility Data ✓');
+      } else {
+        m.bills.push(billRow);
+        m.bills.sort((a,b)=>new Date(a.start)-new Date(b.start));
+        showToast('Billing period added to Utility Data ✓');
+      }
+      saveUtilityData();
+    } else {
+      // Multiple electric meters — just save raw and notify
+      showToast('Raw bill saved. Multiple meters in '+proj.name+' — open Utility Data to assign to the correct meter.');
+    }
+  } else {
+    showToast('Raw bill saved to general database ✓');
+  }
+
+  // ── Validation warning ──
+  if(!valid&&totalCost>0){
+    const msg='⚠️ Charge components sum to $'+componentSum.toFixed(2)+' but Total Current Charges is $'+totalCost.toFixed(2)+
+              ' (diff: $'+diff.toFixed(2)+'). Review extracted values before relying on this record.';
+    setTimeout(()=>{
+      document.getElementById('pdfAIBox').textContent+='\n\n'+msg;
+    },300);
+  }
 }
 
 
@@ -6894,7 +7002,9 @@ function openBillModal(mid, editRowId){
       <div class="fg"><label class="fl">Facilities kW Cost $</label><input class="fi" id="bl-facKWCost" type="number" placeholder="0.00" step="0.01" value="${row?.facKWCost||''}"></div>
       <div class="fg"><label class="fl">kWh Cost $</label><input class="fi" id="bl-kwhCost" type="number" placeholder="0.00" step="0.01" value="${row?.kwhCost||''}"></div>
     </div>
-    <div class="f2">
+    <div class="f3">
+      <div class="fg"><label class="fl">Other Charges $</label><input class="fi" id="bl-otherCost" type="number" placeholder="0.00" step="0.01" value="${row?.otherCost||''}" title="Customer charge, tax exempt delivery, bill offset"></div>
+      <div class="fg"><label class="fl">Taxes &amp; Fees $</label><input class="fi" id="bl-taxCost" type="number" placeholder="0.00" step="0.01" value="${row?.taxCost||''}" title="Franchise fees, taxes"></div>
       <div class="fg"><label class="fl">Total Bill $</label><input class="fi" id="bl-totalCost" type="number" placeholder="0.00" step="0.01" value="${row?.totalCost||''}"></div>
     </div>`;
   } else if(m.commodity==='Gas'){
@@ -6922,7 +7032,7 @@ function saveBillRow(){
   const row=udBillEditId?m.bills.find(r=>r.id===udBillEditId):null;
   const g=id=>document.getElementById(id)?.value||'';
   let data={start,end};
-  if(m.commodity==='Electric') data={...data,kwh:g('bl-kwh'),demandKW:g('bl-demandKW'),billedKW:g('bl-billedKW'),facKW:g('bl-facKW'),kwCost:g('bl-kwCost'),facKWCost:g('bl-facKWCost'),kwhCost:g('bl-kwhCost'),totalCost:g('bl-totalCost')};
+  if(m.commodity==='Electric') data={...data,kwh:g('bl-kwh'),demandKW:g('bl-demandKW'),billedKW:g('bl-billedKW'),facKW:g('bl-facKW'),kwCost:g('bl-kwCost'),facKWCost:g('bl-facKWCost'),kwhCost:g('bl-kwhCost'),otherCost:g('bl-otherCost'),taxCost:g('bl-taxCost'),totalCost:g('bl-totalCost')};
   else if(m.commodity==='Gas') data={...data,therms:g('bl-therms'),thermCost:g('bl-thermCost')};
   else data={...data,usage:g('bl-usage'),cost:g('bl-cost')};
   if(row){Object.assign(row,data);showToast('Record updated ✓');}
