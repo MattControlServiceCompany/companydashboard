@@ -1347,6 +1347,7 @@ html,body{height:100%;overflow:hidden;}
             <div class="search-box"><span style="color:var(--text2);font-size:13px">🔍</span><input type="text" id="epipeSearch" placeholder="Search leads..." oninput="emsRenderPipeline()"></div>
             <select class="filter-sel" id="epipeFilterCSC" onchange="emsRenderPipeline()"><option value="">All CSC Contacts</option></select>
           </div>
+          <button class="btn btn-ghost" onclick="emsOpenRawTable()" title="View all leads as a spreadsheet">📋 Raw Data</button>
           <button class="btn btn-em" onclick="emsOpenNew()">+ New Lead</button>
         </div>
       </div>
@@ -1581,11 +1582,79 @@ html,body{height:100%;overflow:hidden;}
           <tbody id="emsMapBody"></tbody>
         </table>
         <div class="csv-preview" id="emsCsvPreview"></div>
+
+        <!-- Duplicate handling -->
+        <div id="emsDupPanel" style="display:none;margin-top:14px;background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:13px 15px;">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--warn);margin-bottom:8px">⚠ Duplicate Handling</div>
+          <div style="font-size:11px;color:var(--text2);margin-bottom:10px;line-height:1.6">When the same company name appears more than once — either in this file or matching an existing lead — each row's site info will be treated as a separate building/location on that company.</div>
+          <div style="display:flex;flex-direction:column;gap:7px;">
+            <label style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--s2);transition:border-color .13s" id="dupOpt-merge">
+              <input type="radio" name="emsDupMode" value="merge" checked style="margin-top:2px;accent-color:var(--em)">
+              <div>
+                <div style="font-size:12px;font-weight:600;color:var(--text)">Merge — add as buildings on existing lead <span style="font-size:10px;color:var(--em);font-weight:700;margin-left:4px">RECOMMENDED</span></div>
+                <div style="font-size:11px;color:var(--text2);margin-top:2px">Duplicate company names are grouped under one lead. Each row's address/type/sqft becomes a separate building entry.</div>
+              </div>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--s2);transition:border-color .13s" id="dupOpt-separate">
+              <input type="radio" name="emsDupMode" value="separate" style="margin-top:2px;accent-color:var(--em)">
+              <div>
+                <div style="font-size:12px;font-weight:600;color:var(--text)">Create separate lead for each row</div>
+                <div style="font-size:11px;color:var(--text2);margin-top:2px">Every CSV row becomes its own lead, even if the company name already exists.</div>
+              </div>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--s2);transition:border-color .13s" id="dupOpt-skip">
+              <input type="radio" name="emsDupMode" value="skip" style="margin-top:2px;accent-color:var(--em)">
+              <div>
+                <div style="font-size:12px;font-weight:600;color:var(--text)">Skip duplicates</div>
+                <div style="font-size:11px;color:var(--text2);margin-top:2px">If a company name already exists in your leads, that row is ignored entirely.</div>
+              </div>
+            </label>
+          </div>
+          <div id="emsDupPreview" style="margin-top:10px;font-size:11px;color:var(--text2);"></div>
+        </div>
       </div>
     </div>
     <div class="ems-modal-footer">
       <button class="btn btn-ghost" onclick="emsCloseImport()">Cancel</button>
       <button class="btn btn-em" id="emsImportBtn" onclick="emsRunImport()" style="display:none">⬆ Import Leads</button>
+    </div>
+  </div>
+</div>
+
+<!-- Raw Data Table Modal -->
+<div class="ems-modal-bg" id="emsRawModal" onclick="if(event.target===this)emsCloseRawTable()">
+  <div style="background:var(--s2);border:1px solid var(--border2);border-radius:14px;width:96vw;max-width:1400px;height:88vh;display:flex;flex-direction:column;box-shadow:0 40px 80px rgba(0,0,0,.6);animation:fadeUp .18s ease;">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);flex-shrink:0;gap:12px;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="font-family:var(--head);font-size:15px;font-weight:700">📋 Raw Lead Data</span>
+        <span id="emsRawCount" style="font-size:11px;color:var(--text2);font-family:var(--mono)"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:7px;background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:6px 11px;">
+          <span style="color:var(--text2);font-size:13px">🔍</span>
+          <input type="text" id="emsRawSearch" placeholder="Search all fields..." oninput="emsRenderRawTable()"
+            style="background:none;border:none;color:var(--text);font-family:var(--font);font-size:12px;outline:none;width:180px;">
+        </div>
+        <select id="emsRawStage" onchange="emsRenderRawTable()" style="background:var(--s3);border:1px solid var(--border);border-radius:7px;color:var(--text2);font-family:var(--font);font-size:12px;padding:6px 10px;cursor:pointer;outline:none;">
+          <option value="">All Stages</option>
+          <option>Prospect</option><option>Contacted</option><option>Qualifying</option>
+          <option>Proposal</option><option>Negotiating</option><option>Won</option><option>Lost</option><option>On Hold</option>
+        </select>
+        <button onclick="emsExportCSV()" style="font-family:var(--font);font-size:12px;font-weight:600;padding:6px 13px;border-radius:7px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.borderColor='var(--em)';this.style.color='var(--em)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--text2)'">⬇ Export CSV</button>
+        <button class="ems-modal-x" onclick="emsCloseRawTable()">✕</button>
+      </div>
+    </div>
+    <!-- Table -->
+    <div style="flex:1;overflow:auto;">
+      <table id="emsRawTbl" style="width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap;">
+        <thead id="emsRawHead" style="position:sticky;top:0;z-index:2;"></thead>
+        <tbody id="emsRawBody"></tbody>
+      </table>
+    </div>
+    <!-- Footer -->
+    <div style="padding:10px 20px;border-top:1px solid var(--border);flex-shrink:0;font-size:11px;color:var(--text3);">
+      Click any row to open lead detail. Click column headers to sort.
     </div>
   </div>
 </div>
@@ -2121,7 +2190,10 @@ window.emsSaveNew=function(){
 };
 
 window.emsOpenImport=function(){ document.getElementById('emsImportModal').classList.add('open'); };
-window.emsCloseImport=function(){ document.getElementById('emsImportModal').classList.remove('open'); };
+window.emsCloseImport=function(){
+  document.getElementById('emsImportModal').classList.remove('open');
+  document.getElementById('emsDupPanel').style.display='none';
+};
 window.emsHandleCSV=function(e){ const f=e.target.files[0]; if(f){const r=new FileReader();r.onload=ev=>{document.getElementById('emsCsvPaste').value=ev.target.result;emsParseCSVPreview();};r.readAsText(f);} };
 
 function emsParseCsv(text){
@@ -2139,7 +2211,7 @@ function emsParseCsv(text){
 }
 window.emsParseCSVPreview=function(){
   const text=document.getElementById('emsCsvPaste').value.trim();
-  if(!text){document.getElementById('emsColMapper').style.display='none';document.getElementById('emsImportBtn').style.display='none';return;}
+  if(!text){document.getElementById('emsColMapper').style.display='none';document.getElementById('emsImportBtn').style.display='none';document.getElementById('emsDupPanel').style.display='none';return;}
   const parsed=emsParseCsv(text);
   if(parsed.length<2){document.getElementById('emsCsvStatus').innerHTML='<div style="color:var(--danger);font-size:12px;margin-top:6px">Could not parse CSV.</div>';return;}
   emsCsvHeaders=parsed[0]; emsCsvRows=parsed.slice(1).filter(r=>r.some(c=>c));
@@ -2153,25 +2225,129 @@ window.emsParseCSVPreview=function(){
   document.getElementById('emsColMapper').style.display='block';
   document.getElementById('emsImportBtn').style.display='inline-flex';
   document.getElementById('emsCsvPreview').innerHTML='PREVIEW (first 3 rows):\n'+parsed.slice(0,4).map(r=>r.join(' | ')).join('\n');
+  // Show dup panel and calculate preview
+  document.getElementById('emsDupPanel').style.display='block';
+  emsUpdateDupPreview();
 };
 window.emsRunImport=function(){
   const mapping={};
   emsCsvHeaders.forEach((_,i)=>{const v=document.getElementById('emap-'+i)?.value;if(v)mapping[i]=v;});
-  let added=0,skipped=0;
+  const dupMode=document.querySelector('input[name="emsDupMode"]:checked')?.value||'merge';
+
+  // Parse all rows into objects first
+  const parsed=[];
   emsCsvRows.forEach(row=>{
-    const obj={id:emsGenId(),tags:[],activity:[],stage:'Prospect',priority:'Medium',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+    const obj={id:emsGenId(),tags:[],activity:[],stage:'Prospect',priority:'Medium',buildings:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
     Object.entries(mapping).forEach(([i,field])=>{if(field&&row[i]!==undefined)obj[field]=row[+i].trim();});
-    if(!obj.company){skipped++;return;}
+    if(!obj.company) return;
     const s=EMS_STAGES.find(st=>st.toLowerCase()===(obj.stage||'').toLowerCase());
     if(s)obj.stage=s;else obj.stage='Prospect';
-    emsLeads.push(obj);added++;
+    parsed.push(obj);
   });
-  emsSave();emsCloseImport();emsRenderAll();showToast(`Imported ${added} leads${skipped>0?' ('+skipped+' skipped)':''} ✓`);
+
+  let added=0, merged=0, skipped=0;
+
+  if(dupMode==='separate'){
+    // Just push everything as individual leads
+    parsed.forEach(obj=>{ emsLeads.push(obj); added++; });
+
+  } else if(dupMode==='skip'){
+    // Skip any row whose company already exists
+    const existingNames=new Set(emsLeads.map(l=>(l.company||'').toLowerCase().trim()));
+    parsed.forEach(obj=>{
+      if(existingNames.has(obj.company.toLowerCase().trim())){ skipped++; return; }
+      emsLeads.push(obj); added++;
+      existingNames.add(obj.company.toLowerCase().trim());
+    });
+
+  } else {
+    // MERGE mode (default)
+    // Step 1: group parsed rows by normalised company name
+    const groups={};
+    parsed.forEach(obj=>{
+      const key=obj.company.toLowerCase().trim();
+      if(!groups[key]) groups[key]=[];
+      groups[key].push(obj);
+    });
+
+    Object.entries(groups).forEach(([key,rows])=>{
+      // Check if company already exists in emsLeads
+      const existing=emsLeads.find(l=>(l.company||'').toLowerCase().trim()===key);
+
+      // Helper: extract a building object from a parsed row
+      const toBldg=(obj,label)=>({
+        id:emsBldgId(),
+        name:label||'',
+        address:obj.address||'',
+        city:obj.city||'',
+        state:obj.state||'',
+        zip:obj.zip||'',
+        sqft:obj.buildingSqft||obj.sqft||'',
+        buildingType:obj.buildingType||'',
+        notes:obj.notes||''
+      });
+
+      if(existing){
+        // Merge all rows as buildings onto the existing lead
+        if(!existing.buildings) existing.buildings=[];
+        rows.forEach((obj,i)=>{
+          const bldg=toBldg(obj, obj.address||obj.city||(rows.length>1?'Location '+(existing.buildings.length+1):''));
+          // Only add if this building address isn't already present
+          const addrKey=(bldg.address+bldg.city+bldg.state).toLowerCase().trim();
+          const dup=addrKey && existing.buildings.some(b=>(b.address+b.city+b.state).toLowerCase().trim()===addrKey);
+          if(!dup){ existing.buildings.push(bldg); merged++; }
+          else skipped++;
+        });
+        // Fill in any blank lead-level fields from first row
+        const first=rows[0];
+        ['stage','priority','cscContact','cscEngineer','type','annualValue','contactName','contactTitle','contactPhone','contactEmail','nextAction','nextActionDate','lastContact'].forEach(f=>{
+          if(!existing[f]&&first[f]) existing[f]=first[f];
+        });
+        existing.updatedAt=new Date().toISOString();
+      } else {
+        // New company — create one lead, all rows become buildings
+        const lead=rows[0];
+        if(!lead.buildings) lead.buildings=[];
+        rows.forEach((obj,i)=>{
+          const bldg=toBldg(obj, obj.address||obj.city||(rows.length>1?'Location '+(i+1):''));
+          lead.buildings.push(bldg);
+        });
+        emsLeads.push(lead);
+        added++;
+      }
+    });
+  }
+
+  emsSave();emsCloseImport();emsRenderAll();
+  const parts=[];
+  if(added) parts.push(added+' lead'+(added>1?'s':'')+' added');
+  if(merged) parts.push(merged+' building'+(merged>1?'s':'')+' merged into existing leads');
+  if(skipped) parts.push(skipped+' skipped');
+  showToast((parts.join(' · ')||'Nothing imported')+' ✓');
   document.getElementById('emsCsvPaste').value='';
   document.getElementById('emsColMapper').style.display='none';
   document.getElementById('emsImportBtn').style.display='none';
+  document.getElementById('emsDupPanel').style.display='none';
   document.getElementById('emsCsvStatus').innerHTML='';
 };
+
+function emsUpdateDupPreview(){
+  const panel=document.getElementById('emsDupPreview'); if(!panel) return;
+  // Build company name index from current CSV (requires mapping to be set, best-effort)
+  const companyColIdx=emsCsvHeaders.findIndex(h=>['company','customer','name','account','prospect'].some(a=>h.toLowerCase().includes(a)));
+  if(companyColIdx<0||!emsCsvRows.length){panel.innerHTML='';return;}
+  const names=emsCsvRows.map(r=>(r[companyColIdx]||'').toLowerCase().trim()).filter(Boolean);
+  // Within-file duplicates
+  const counts={};names.forEach(n=>{counts[n]=(counts[n]||0)+1;});
+  const inFileDups=Object.values(counts).filter(c=>c>1).length;
+  // Against existing leads
+  const existingNames=new Set(emsLeads.map(l=>(l.company||'').toLowerCase().trim()));
+  const crossDups=new Set(names.filter(n=>existingNames.has(n))).size;
+  const parts=[];
+  if(inFileDups) parts.push(`<span style="color:var(--warn)">${inFileDups} company name${inFileDups>1?'s':''} appear multiple times in this file</span>`);
+  if(crossDups) parts.push(`<span style="color:var(--em2)">${crossDups} match${crossDups>1?'':'es'} an existing lead</span>`);
+  panel.innerHTML=parts.length?'Detected: '+parts.join(' · '):'<span style="color:var(--em)">✓ No duplicates detected</span>';
+}
 
 window.emsExportCSV=function(){
   const headers=['Company','Address','City','State','Zip','Contact Name','Contact Phone','Contact Email','Building Type','Sq Ft','Annual Value','CSC Contact','Engineer','Stage','Priority','Project Type','Notes','Next Action','Next Action Date','Last Contact','Created'];
