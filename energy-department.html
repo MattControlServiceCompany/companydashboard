@@ -3230,7 +3230,8 @@ async function processPDF(file){
         if(rule){
           const extracted=rule.extract(text);
           renderPDFFields(extracted);
-          box.textContent=JSON.stringify(extracted,null,2);
+          // DEBUG: show raw OCR text after JSON so we can see exactly what Tesseract produced
+          box.textContent=JSON.stringify(extracted,null,2)+'\n\n--- RAW OCR TEXT ---\n'+text;
           document.getElementById('pdfSaveRow').style.display='block';
           refreshProjDropdowns();
           showExtractionBadge('rules',rule.name);
