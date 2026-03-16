@@ -3383,7 +3383,8 @@ function renderSavedBills(){
         </div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0">
-        <button class="btn btn-ghost btn-sm" onclick="viewSavedBill('${b.id}')">View</button>
+        <button class="btn btn-ghost btn-sm" onclick="viewSavedBill('${b.id}')">📋 Data</button>
+        ${b.hasPDF?`<button class="btn btn-ghost btn-sm" onclick="viewSavedPDF('${b.id}')">📄 PDF</button>`:''}
         <button class="btn btn-em btn-sm" onclick="openAssignModal('${b.id}')">Assign</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red)" onclick="deleteSavedBill('${b.id}')">✕</button>
       </div>
@@ -3415,8 +3416,26 @@ function deleteSavedBill(id){
   let bills=sget('en_pdf_bills',[])||[];
   bills=bills.filter(b=>b.id!==id);
   sset('en_pdf_bills',bills);
+  // Also remove stored PDF file to free storage
+  try{ localStorage.removeItem('en_pdf_file_'+id); }catch(e){}
   renderSavedBills();
   showToast('Record deleted');
+}
+
+function viewSavedPDF(id){
+  const b64=sget('en_pdf_file_'+id, null);
+  if(!b64){ showToast('PDF file not found — it may not have been stored'); return; }
+  try{
+    const bytes=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
+    const blob=new Blob([bytes],{type:'application/pdf'});
+    const url=URL.createObjectURL(blob);
+    const win=window.open(url,'_blank');
+    // Revoke after a delay to free memory once browser has loaded it
+    setTimeout(()=>URL.revokeObjectURL(url), 30000);
+    if(!win) showToast('Pop-up blocked — allow pop-ups for this site to view PDFs');
+  }catch(e){
+    showToast('Could not open PDF: '+e.message);
+  }
 }
 
 /* ── ASSIGN MODAL ── */
@@ -3518,11 +3537,23 @@ function savePDFData(){
 
   // ── Save raw bill record to en_pdf_bills database ──
   const pdfBills=sget('en_pdf_bills',[])||[];
+  const billId='pb'+Date.now();
+  // Store PDF file separately to keep bills list lean
+  let hasPDF=false;
+  if(pdfB64){
+    try{
+      sset('en_pdf_file_'+billId, pdfB64);
+      hasPDF=true;
+    }catch(e){
+      console.warn('Could not store PDF file (storage may be full):',e);
+    }
+  }
   const billRecord={
-    id:'pb'+Date.now(),
+    id:billId,
     savedAt:new Date().toISOString(),
     projId:projId||null,
     projName:proj?.name||'General',
+    hasPDF,
     ...extracted
   };
   pdfBills.push(billRecord);
