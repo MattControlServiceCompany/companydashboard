@@ -3057,8 +3057,7 @@ const UTILITY_RULES=[
     const serviceAddress=(addrBold?.[1]||addrStd?.[1])?.trim()||null;
     // ── Charges ──
     // Charge regex strategy: match label, then grab the LAST dollar amount at end of line (multiline).
-    // Single-line [^
-] fails when charge amount is on the next line (e.g. Energy Chg splits across two lines).
+    // Single-line patterns fail when charge amount is on the next line (e.g. Energy Chg splits across two lines).
     // Using [\s\S]*? with $ multiline anchor correctly finds the final $ value for each charge block.
     const custChg   =t.match(/Customer\s+Ch[ga][\s.$0-9a-zA-Z,]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]||null;
     const facKW     =t.match(/Facilities\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
