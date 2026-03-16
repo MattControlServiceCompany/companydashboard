@@ -1272,6 +1272,27 @@ html,body{height:100%;overflow:hidden;}
 #view-ems .empty-state p{font-size:12px;color:var(--text3);max-width:280px;line-height:1.6;}
 #view-ems .btn-danger{background:transparent;color:var(--danger);border:1px solid var(--danger);font-size:11px;padding:5px 10px;}
 #view-ems .btn-danger:hover{background:var(--danger);color:#fff;}
+/* ── Building Cards ── */
+#view-ems .bldg-card{background:var(--s3);border:1px solid var(--border);border-radius:8px;overflow:hidden;transition:border-color .14s;}
+#view-ems .bldg-card-hdr{display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;user-select:none;}
+#view-ems .bldg-card-hdr:hover{background:rgba(255,255,255,.02);}
+#view-ems .bldg-card-ico{font-size:13px;flex-shrink:0;}
+#view-ems .bldg-card-name{flex:1;font-size:13px;font-weight:600;color:var(--text);}
+#view-ems .bldg-card-meta{font-size:11px;color:var(--text2);margin-left:4px;}
+#view-ems .bldg-card-chevron{font-size:10px;color:var(--text3);transition:transform .2s;flex-shrink:0;}
+#view-ems .bldg-card.open .bldg-card-chevron{transform:rotate(180deg);}
+#view-ems .bldg-card-body{display:none;padding:12px 14px 14px;border-top:1px solid var(--border);background:var(--s2);}
+#view-ems .bldg-card.open .bldg-card-body{display:block;}
+#view-ems .bldg-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
+#view-ems .bldg-field{display:flex;flex-direction:column;gap:4px;}
+#view-ems .bldg-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);}
+#view-ems .bldg-input{font-family:var(--font);font-size:12px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:6px 9px;outline:none;width:100%;transition:border-color .13s;}
+#view-ems .bldg-input:focus{border-color:var(--em);}
+#view-ems .bldg-select{font-family:var(--font);font-size:12px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:6px 9px;outline:none;width:100%;cursor:pointer;}
+#view-ems .bldg-select option{background:var(--s2);}
+#view-ems .bldg-footer{display:flex;justify-content:flex-end;gap:7px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
+#view-ems .bldg-empty{font-size:12px;color:var(--text3);padding:14px 0;text-align:center;}
+#view-ems .btn-danger:hover{background:var(--danger);color:#fff;}
 </style>
 
 <!-- EMS Nav Tabs -->
@@ -1435,15 +1456,11 @@ html,body{height:100%;overflow:hidden;}
         <div class="detail-field"><div class="df-label">Phone</div><input class="df-input" id="ed-contactPhone" type="tel"></div>
         <div class="detail-field"><div class="df-label">Email</div><input class="df-input" id="ed-contactEmail" type="email"></div>
       </div>
-      <div class="section-lbl">Site Information</div>
-      <div class="detail-grid">
-        <div class="detail-field" style="grid-column:1/-1"><div class="df-label">Address</div><input class="df-input" id="ed-address" type="text"></div>
-        <div class="detail-field"><div class="df-label">City</div><input class="df-input" id="ed-city" type="text"></div>
-        <div class="detail-field"><div class="df-label">State</div><input class="df-input" id="ed-state" type="text"></div>
-        <div class="detail-field"><div class="df-label">Zip</div><input class="df-input" id="ed-zip" type="text"></div>
-        <div class="detail-field"><div class="df-label">Building Type</div><select class="df-select" id="ed-buildingType"><option value="">— Select —</option><option>Office</option><option>School / K-12</option><option>University</option><option>Hospital</option><option>Healthcare Clinic</option><option>Retail</option><option>Warehouse / Industrial</option><option>Government / Municipal</option><option>Hotel / Hospitality</option><option>Multi-Family</option><option>Mixed-Use</option><option>Data Center</option><option>Other</option></select></div>
-        <div class="detail-field"><div class="df-label">Building Sq Ft</div><input class="df-input" id="ed-buildingSqft" type="number" placeholder="0"></div>
+      <div class="section-lbl" style="display:flex;align-items:center;justify-content:space-between">
+        <span>Buildings / Sites</span>
+        <button onclick="emsAddBuilding()" style="font-family:var(--font);font-size:11px;font-weight:600;padding:3px 10px;border-radius:5px;border:1px solid var(--em);background:var(--em-dim);color:var(--em);cursor:pointer;transition:all .14s">＋ Add Building</button>
       </div>
+      <div id="emsBuildingList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:4px"></div>
       <div class="section-lbl">Follow-up &amp; Notes</div>
       <div class="detail-grid">
         <div class="detail-field"><div class="df-label">Next Action Date</div><input class="df-input" id="ed-nextActionDate" type="date"></div>
@@ -1775,7 +1792,7 @@ function emsCardHTML(l){
       <div class="priority-dot" style="background:${pc};margin-top:4px"></div>
       <div class="lc-company">${emsEsc(l.company||'—')}</div>
     </div>
-    <div class="lc-meta">${[l.buildingType,l.city&&l.state?l.city+', '+l.state:l.city||l.state].filter(Boolean).join(' · ')||'No location set'}</div>
+    <div class="lc-meta">${(()=>{const bldgs=l.buildings||[];if(bldgs.length){const first=bldgs[0];const loc=[first.city,first.state].filter(Boolean).join(', ');return (bldgs.length>1?bldgs.length+' buildings':first.buildingType||'1 building')+(loc?' · '+loc:'');}return [l.buildingType,l.city&&l.state?l.city+', '+l.state:l.city||l.state].filter(Boolean).join(' · ')||'No location set';})()}</div>
     ${l.cscContact?`<div style="font-size:10px;color:var(--em2)">👤 ${emsEsc(l.cscContact)}</div>`:''}
     ${l.tags&&l.tags.length?`<div class="lc-tags">${l.tags.slice(0,3).map(t=>`<span class="tag">${emsEsc(t)}</span>`).join('')}</div>`:''}
     <div class="lc-row">
@@ -1816,7 +1833,7 @@ window.emsRenderTable=function(){
     ?`<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text3)">No leads found</td></tr>`
     :data.map(l=>`<tr onclick="emsOpenDrawer('${l.id}')">
       <td class="td-company">${emsEsc(l.company||'—')}</td>
-      <td>${[l.city,l.state].filter(Boolean).join(', ')||'—'}</td>
+      <td>${(()=>{const bldgs=l.buildings||[];if(bldgs.length){const first=bldgs[0];const loc=[first.city,first.state].filter(Boolean).join(', ');return loc||(bldgs.length+' building'+(bldgs.length>1?'s':''));}return [l.city,l.state].filter(Boolean).join(', ')||'—';})()}</td>
       <td><span class="stage-pill ${EMS_STAGE_CLS[l.stage]||''}">${l.stage||'—'}</span></td>
       <td class="pri-${(l.priority||'').toLowerCase()}">${l.priority||'—'}</td>
       <td>${emsEsc(l.cscContact||'—')}</td>
@@ -1907,10 +1924,11 @@ window.emsOpenDrawer=function(id){
   const lead=emsLeads.find(l=>l.id===id); if(!lead) return;
   emsActiveId=id;
   document.getElementById('emsDrawerTitle').textContent=lead.company||'Lead Detail';
-  ['company','stage','priority','cscContact','cscEngineer','type','annualValue','contactName','contactTitle','contactPhone','contactEmail','address','city','state','zip','buildingType','buildingSqft','nextActionDate','lastContact','nextAction','notes'].forEach(f=>{
+  ['company','stage','priority','cscContact','cscEngineer','type','annualValue','contactName','contactTitle','contactPhone','contactEmail','nextActionDate','lastContact','nextAction','notes'].forEach(f=>{
     const el=document.getElementById('ed-'+f); if(el) el.value=lead[f]||'';
   });
   document.getElementById('ed-tags').value=(lead.tags||[]).join(', ');
+  emsRenderBuildings(lead);
   emsRenderActivity(lead);
   document.getElementById('emsDrawerOverlay').classList.add('open');
   document.getElementById('emsLeadDrawer').classList.add('open');
@@ -1924,14 +1942,120 @@ window.emsCloseDrawer=function(){
 };
 window.emsSaveDrawer=function(){
   const lead=emsLeads.find(l=>l.id===emsActiveId); if(!lead) return;
-  ['company','stage','priority','cscContact','cscEngineer','type','annualValue','contactName','contactTitle','contactPhone','contactEmail','address','city','state','zip','buildingType','buildingSqft','nextActionDate','lastContact','nextAction','notes'].forEach(f=>{
+  ['company','stage','priority','cscContact','cscEngineer','type','annualValue','contactName','contactTitle','contactPhone','contactEmail','nextActionDate','lastContact','nextAction','notes'].forEach(f=>{
     const el=document.getElementById('ed-'+f); if(el) lead[f]=el.value;
   });
   lead.tags=document.getElementById('ed-tags').value.split(',').map(t=>t.trim()).filter(Boolean);
+  // Save buildings from DOM
+  emsSaveBuildingsFromDOM(lead);
   lead.updatedAt=new Date().toISOString();
   document.getElementById('emsDrawerTitle').textContent=lead.company||'Lead Detail';
   emsSave(); emsRenderAll(); showToast('Lead saved ✓');
 };
+
+/* ── Building / Site Management ── */
+const EMS_BLDG_TYPES=['Office','School / K-12','University','Hospital','Healthcare Clinic','Retail','Warehouse / Industrial','Government / Municipal','Hotel / Hospitality','Multi-Family','Mixed-Use','Data Center','Other'];
+
+function emsBldgId(){ return 'b'+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
+
+function emsRenderBuildings(lead){
+  const bldgs = lead.buildings || [];
+  const container = document.getElementById('emsBuildingList');
+  if(bldgs.length===0){
+    container.innerHTML=`<div class="bldg-empty">No buildings added yet — click <strong style="color:var(--em)">＋ Add Building</strong> to get started.</div>`;
+    return;
+  }
+  container.innerHTML = bldgs.map((b,i)=>`
+    <div class="bldg-card${i===0?' open':''}" id="ebldg-${b.id}">
+      <div class="bldg-card-hdr" onclick="emsToggleBuilding('${b.id}')">
+        <span class="bldg-card-ico">🏢</span>
+        <span class="bldg-card-name">${emsEsc(b.name||'Building '+(i+1))}</span>
+        <span class="bldg-card-meta">${[b.city,b.state].filter(Boolean).join(', ')}</span>
+        <span class="bldg-card-chevron">▼</span>
+      </div>
+      <div class="bldg-card-body">
+        <div class="bldg-grid">
+          <div class="bldg-field" style="grid-column:1/-1">
+            <div class="bldg-lbl">Building Name / Label</div>
+            <input class="bldg-input" data-bid="${b.id}" data-field="name" value="${emsEsc(b.name||'')}" placeholder="e.g. Main Campus, Annex, Warehouse A">
+          </div>
+          <div class="bldg-field" style="grid-column:1/-1">
+            <div class="bldg-lbl">Address</div>
+            <input class="bldg-input" data-bid="${b.id}" data-field="address" value="${emsEsc(b.address||'')}" placeholder="Street address">
+          </div>
+          <div class="bldg-field">
+            <div class="bldg-lbl">City</div>
+            <input class="bldg-input" data-bid="${b.id}" data-field="city" value="${emsEsc(b.city||'')}" placeholder="City">
+          </div>
+          <div class="bldg-field">
+            <div class="bldg-lbl">State</div>
+            <input class="bldg-input" data-bid="${b.id}" data-field="state" value="${emsEsc(b.state||'')}" placeholder="State">
+          </div>
+          <div class="bldg-field">
+            <div class="bldg-lbl">Zip</div>
+            <input class="bldg-input" data-bid="${b.id}" data-field="zip" value="${emsEsc(b.zip||'')}" placeholder="Zip">
+          </div>
+          <div class="bldg-field">
+            <div class="bldg-lbl">Sq Ft</div>
+            <input class="bldg-input" data-bid="${b.id}" data-field="sqft" type="number" value="${b.sqft||''}" placeholder="0">
+          </div>
+          <div class="bldg-field" style="grid-column:1/-1">
+            <div class="bldg-lbl">Building Type</div>
+            <select class="bldg-select" data-bid="${b.id}" data-field="buildingType">
+              <option value="">— Select —</option>
+              ${EMS_BLDG_TYPES.map(t=>`<option${b.buildingType===t?' selected':''}>${t}</option>`).join('')}
+            </select>
+          </div>
+          <div class="bldg-field" style="grid-column:1/-1">
+            <div class="bldg-lbl">Notes</div>
+            <input class="bldg-input" data-bid="${b.id}" data-field="notes" value="${emsEsc(b.notes||'')}" placeholder="e.g. BAS brand, system age, contact on site...">
+          </div>
+        </div>
+        <div class="bldg-footer">
+          <button onclick="emsRemoveBuilding('${b.id}')" style="font-family:var(--font);font-size:11px;font-weight:600;padding:4px 10px;border-radius:5px;border:1px solid rgba(240,80,80,.4);background:transparent;color:#f05050;cursor:pointer;transition:all .14s" onmouseover="this.style.background='rgba(240,80,80,.12)'" onmouseout="this.style.background='transparent'">🗑 Remove</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+window.emsToggleBuilding=function(bid){
+  const card=document.getElementById('ebldg-'+bid);
+  if(card) card.classList.toggle('open');
+};
+
+window.emsAddBuilding=function(){
+  const lead=emsLeads.find(l=>l.id===emsActiveId); if(!lead) return;
+  emsSaveBuildingsFromDOM(lead); // persist any edits first
+  if(!lead.buildings) lead.buildings=[];
+  lead.buildings.push({id:emsBldgId(),name:'',address:'',city:'',state:'',zip:'',sqft:'',buildingType:'',notes:''});
+  emsSave();
+  emsRenderBuildings(lead);
+  // Open the newly added card
+  const cards=document.querySelectorAll('#emsBuildingList .bldg-card');
+  if(cards.length) cards[cards.length-1].classList.add('open');
+};
+
+window.emsRemoveBuilding=function(bid){
+  const lead=emsLeads.find(l=>l.id===emsActiveId); if(!lead) return;
+  emsSaveBuildingsFromDOM(lead);
+  lead.buildings=(lead.buildings||[]).filter(b=>b.id!==bid);
+  emsSave();
+  emsRenderBuildings(lead);
+};
+
+function emsSaveBuildingsFromDOM(lead){
+  const cards=document.querySelectorAll('#emsBuildingList .bldg-card');
+  if(!cards.length) return;
+  if(!lead.buildings) lead.buildings=[];
+  cards.forEach(card=>{
+    const bid=card.id.replace('ebldg-','');
+    const bldg=lead.buildings.find(b=>b.id===bid);
+    if(!bldg) return;
+    card.querySelectorAll('[data-bid][data-field]').forEach(inp=>{
+      bldg[inp.dataset.field]=inp.value;
+    });
+  });
+}
 window.emsDeleteLead=function(){
   if(!emsActiveId) return;
   const lead=emsLeads.find(l=>l.id===emsActiveId);
@@ -2062,7 +2186,8 @@ window.emsRunAI=async function(tool){
   const out=document.getElementById('emsAIOutput');
   out.className='ai-output visible';
   out.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Generating...</div>';
-  const ctx=`Company: ${lead.company||'Unknown'}\nLocation: ${[lead.city,lead.state].filter(Boolean).join(', ')||'Unknown'}\nBuilding Type: ${lead.buildingType||'Unknown'}\nBuilding Size: ${lead.buildingSqft?lead.buildingSqft+' sq ft':'Unknown'}\nStage: ${lead.stage||'Prospect'}\nPriority: ${lead.priority||'Medium'}\nProject Type: ${lead.type||'Unknown'}\nCSC Contact: ${lead.cscContact||'Unassigned'}\nCustomer Contact: ${lead.contactName||'Unknown'}${lead.contactTitle?' ('+lead.contactTitle+')':''}\nEstimated Annual Value: ${lead.annualValue?'$'+lead.annualValue:'Unknown'}\nLast Contact: ${lead.lastContact||'Never'}\nNotes: ${lead.notes||'None'}`;
+  const bldgCtx=(lead.buildings&&lead.buildings.length)?lead.buildings.map((b,i)=>`  Building ${i+1}: ${b.name||'Unnamed'} | ${b.buildingType||'Unknown type'} | ${b.sqft?b.sqft+' sq ft':''} | ${[b.address,b.city,b.state].filter(Boolean).join(', ')||'No address'}`).join('\n'):`  ${lead.buildingType||'Unknown'} | ${lead.buildingSqft?lead.buildingSqft+' sq ft':'Unknown size'} | ${[lead.city,lead.state].filter(Boolean).join(', ')||'Unknown location'}`;
+  const ctx=`Company: ${lead.company||'Unknown'}\nBuildings/Sites:\n${bldgCtx}\nStage: ${lead.stage||'Prospect'}\nPriority: ${lead.priority||'Medium'}\nProject Type: ${lead.type||'Unknown'}\nCSC Contact: ${lead.cscContact||'Unassigned'}\nCustomer Contact: ${lead.contactName||'Unknown'}${lead.contactTitle?' ('+lead.contactTitle+')':''}\nEstimated Annual Value: ${lead.annualValue?'$'+lead.annualValue:'Unknown'}\nLast Contact: ${lead.lastContact||'Never'}\nNotes: ${lead.notes||'None'}`;
   const prompts={
     outreach:`You are an EMS sales professional. Draft a concise professional outreach email for this prospect. Goal: open a conversation about energy management. Be specific to their building type. Under 200 words.\n\nLEAD:\n${ctx}`,
     opportunity:`You are an EMS engineer. Based on this lead, estimate: 1) Annual energy savings potential, 2) Best-fit EMS services, 3) Key systems with likely waste, 4) ROI timeframe, 5) Red flags.\n\nLEAD:\n${ctx}`,
