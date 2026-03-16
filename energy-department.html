@@ -3315,9 +3315,27 @@ async function processPDF(file){
   reader.readAsDataURL(file);
 }
 function renderPDFFields(parsed){
+  const LABELS={
+    UtilityCompany:'Utility Company',CustomerName:'Customer Name',AccountNumber:'Account Number',
+    ServiceAddress:'Service Address',RateSchedule:'Rate Schedule',
+    BillingPeriodStart:'Billing Period Start',BillingPeriodEnd:'Billing Period End',
+    NumberOfDays:'Number of Days',MeterReadStart:'Meter Read Start',MeterReadEnd:'Meter Read End',
+    StartRead:'Start Read',EndRead:'End Read',MeterMultiplier:'Meter Multiplier',MeterNumber:'Meter Number',
+    kWhConsumed:'kWh Consumed',ActualKW:'Actual kW',ActualRKVA:'Actual RKVA',
+    CustomerCharge:'Customer Charge',
+    FacilitiesKW:'Facilities kW',FacilitiesCharge:'Facilities Charge',
+    BilledKW:'Billed kW',BilledKWCharge:'Billed kW Charge',
+    EnergyOnPeakCharge:'Energy On-Peak Charge',EnergyOffPeakCharge:'Energy Off-Peak Charge',
+    ECACharge:'ECA Charge',EERCharge:'EER Charge',PTSCharge:'PTS Charge',
+    TDCkW:'TDC kW',TDCCharge:'TDC Charge',
+    TaxExemptDelivery:'Tax Exempt Delivery',BillOffset:'Bill Offset',
+    FranchiseFee:'Franchise Fee',TotalCurrentCharges:'Total Current Charges',
+    NaturalGasTherms:'Natural Gas Therms',TotalAmountDue:'Total Amount Due',
+    PeakDemandKW:'Peak Demand kW',
+  };
   const el=document.getElementById('extractedFields');
   const items=Object.entries(parsed).filter(([k,v])=>v!=null&&v!=='');
-  el.innerHTML=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div><div class="ef-grid">${items.map(([k,v])=>`<div class="ef-item"><div class="ef-key">${k.replace(/([A-Z])/g,' $1').trim()}</div><input class="ef-input" value="${Array.isArray(v)?v.join(', '):(v||'')}" data-key="${k}"></div>`).join('')}</div>`;
+  el.innerHTML=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div><div class="ef-grid">${items.map(([k,v])=>`<div class="ef-item"><div class="ef-key">${LABELS[k]||k}</div><input class="ef-input" value="${Array.isArray(v)?v.join(', '):(v||'')}" data-key="${k}"></div>`).join('')}</div>`;
 }
 /* ── SAVED BILLS DATABASE ── */
 function updateBillCountBadge(){
