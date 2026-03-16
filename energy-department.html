@@ -3036,7 +3036,13 @@ function refreshProjDropdowns(){
    4) If unrecognized → prompt user to share sample
 ── */
 const UTILITY_RULES=[
-  {name:'Evergy',detect:t=>/evergy/i.test(t),extract:t=>{
+  {name:'Evergy',detect:t=>(
+    // Detect by bill structure, NOT the logo text — OCR frequently misreads "Evergy" as "Kh Energy", "Energy", etc.
+    // These structural patterns are unique to Evergy bills and never change location or wording
+    /Billing\s+Details\s*[-–]\s*service\s+from/i.test(t) ||
+    (/Facilities\s+Ch[ga]/i.test(t) && /Demand\s+Ch[ga]/i.test(t) && /TDC\s+Ch[ga]/i.test(t)) ||
+    (/Customer\s+Ch[ga]/i.test(t) && /ECA\s+Ch[ga]/i.test(t))
+  ),extract:t=>{
     // ── Meter read table ──
     // Both 2LGAE and 2MGSE formats:
     // "MM/DD MM/DD days EndRead(-) StartRead(=) diff multiplier kWhUsed KWUsed RKVAUsed"
