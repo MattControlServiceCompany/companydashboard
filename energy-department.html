@@ -2385,6 +2385,7 @@ window.sv=function(id,btn){
 <div class="toast" id="toast"><span style="color:var(--em);font-size:14px">✓</span><span id="toastMsg">Done!</span></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js"></script>
 <script>
 /* ── CLAUDE API ── */
 async function claude(prompt,sys){
@@ -3120,16 +3121,46 @@ const UTILITY_RULES=[
   })}
 ];
 function scoreExtraction(d){return Object.values(d).filter(v=>v!==null&&v!=='').length;}
-async function extractPDFText(ab){
+async function extractPDFText(ab, statusCb){
   try{
     if(typeof pdfjsLib==='undefined') return null;
-    // Disable external worker fetch — run in fake worker (main thread) mode
     pdfjsLib.GlobalWorkerOptions.workerSrc='';
     const pdf=await pdfjsLib.getDocument({data:ab, useWorkerFetch:false, isEvalSupported:false, useSystemFonts:true}).promise;
+    const maxPages=Math.min(pdf.numPages,4);
+
+    // ── Step 1: try native text extraction ──
     let txt='';
-    for(let i=1;i<=Math.min(pdf.numPages,4);i++){const pg=await pdf.getPage(i);const c=await pg.getTextContent();txt+=c.items.map(s=>s.str).join(' ')+'\n';}
-    return txt;
-  }catch(e){return null;}
+    for(let i=1;i<=maxPages;i++){
+      const pg=await pdf.getPage(i);
+      const c=await pg.getTextContent();
+      txt+=c.items.map(s=>s.str).join(' ')+'\n';
+    }
+    if(txt.trim().length>100) return txt; // text-based PDF, done
+
+    // ── Step 2: scanned image — render pages to canvas and OCR ──
+    if(typeof Tesseract==='undefined') return null;
+    if(statusCb) statusCb('Scanned PDF detected — running OCR (this may take 15-30 seconds)...');
+    const worker=await Tesseract.createWorker('eng',1,{
+      workerPath:'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/worker.min.js',
+      langPath:'https://tessdata.projectnaptha.com/4.0.0',
+      corePath:'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract-core.wasm.js',
+      logger: m=>{ if(statusCb&&m.status==='recognizing text') statusCb('OCR progress: '+Math.round(m.progress*100)+'%'); }
+    });
+    let ocrText='';
+    for(let i=1;i<=maxPages;i++){
+      if(statusCb) statusCb('OCR scanning page '+i+' of '+maxPages+'...');
+      const pg=await pdf.getPage(i);
+      const vp=pg.getViewport({scale:2.5}); // 2.5x scale for better OCR accuracy
+      const canvas=document.createElement('canvas');
+      canvas.width=vp.width; canvas.height=vp.height;
+      const ctx=canvas.getContext('2d');
+      await pg.render({canvasContext:ctx, viewport:vp}).promise;
+      const {data:{text}}=await worker.recognize(canvas);
+      ocrText+=text+'\n';
+    }
+    await worker.terminate();
+    return ocrText.trim().length>50 ? ocrText : null;
+  }catch(e){console.error('PDF extract error:',e);return null;}
 }
 function showExtractionBadge(method,detail){
   const b=document.getElementById('extractMethodBadge');
@@ -3158,8 +3189,10 @@ async function processPDF(file){
 
     // ── UTILITY BILLS: 100% local rule-based extraction, no AI ──
     if(pdfType==='utility'){
-      const text=await extractPDFText(ab);
-      if(text){
+      const text=await extractPDFText(ab, msg=>{
+        box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> '+msg+'</div>';
+      });
+      if(text&&text.trim().length>100){
         const rule=UTILITY_RULES.find(r=>r.detect(text));
         if(rule){
           const extracted=rule.extract(text);
@@ -3177,13 +3210,15 @@ async function processPDF(file){
         dz.textContent=file.name+' — unrecognized format';
         return;
       }
-      box.innerHTML='<div style="padding:14px;font-size:13px;color:var(--text2)">&#9888; Could not extract text from this PDF. It may be a scanned image. Only text-based PDFs are supported.</div>';
+      box.innerHTML='<div style="padding:14px;font-size:13px;color:var(--text2)">&#9888; Could not extract text from this PDF even after OCR. The file may be corrupted or too low resolution.</div>';
       dz.textContent=file.name+' — could not read';
       return;
     }
 
     // ── NON-UTILITY TYPES: local text extraction only, no AI ──
-    const text=await extractPDFText(ab);
+    const text=await extractPDFText(ab, msg=>{
+      box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> '+msg+'</div>';
+    });
     if(text){
       box.textContent=text;
       dz.textContent=file.name+' ✓';
