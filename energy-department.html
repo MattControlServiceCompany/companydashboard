@@ -867,8 +867,11 @@ html,body{height:100%;overflow:hidden;}
       </div>
     </div>
     <div>
-      <div class="ai-label">🤖 AI Extraction Output</div>
-      <div class="ai-box" id="pdfAIBox" style="min-height:280px">Upload a PDF and select document type. The AI will extract all relevant structured data.</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
+        <div class="ai-label" style="margin:0">📄 Extraction Output</div>
+        <div id="extractMethodBadge" style="display:none;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;letter-spacing:.5px"></div>
+      </div>
+      <div class="ai-box" id="pdfAIBox" style="min-height:280px">Upload a PDF and select document type. For utility bills, rule-based extraction runs first — instant and free. AI is used as a fallback for unrecognized formats.</div>
     </div>
   </div>
 </div>
@@ -2381,6 +2384,7 @@ window.sv=function(id,btn){
 
 <div class="toast" id="toast"><span style="color:var(--em);font-size:14px">✓</span><span id="toastMsg">Done!</span></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
 /* ── CLAUDE API ── */
 async function claude(prompt,sys){
@@ -3023,34 +3027,130 @@ function refreshProjDropdowns(){
   });
 }
 
-/* ── PDF OCR ── */
+/* ── PDF OCR — HYBRID EXTRACTION ENGINE ──
+   1) PDF.js extracts raw text (no AI cost)
+   2) Regex rules match known utility formats
+   3) Confidence ≥ 5 fields → done, no AI call
+   4) Otherwise → claudePDF AI fallback
+── */
+const UTILITY_RULES=[
+  {name:'Evergy',detect:t=>/evergy/i.test(t),extract:t=>({
+    UtilityCompany:'Evergy',
+    AccountNumber:t.match(/account\s*(?:number|#|no\.?)[\s:]*([0-9\-]{6,20})/i)?.[1]||null,
+    ServiceAddress:t.match(/service\s*address[\s:\n]+([^\n]{10,60})/i)?.[1]?.trim()||null,
+    BillingPeriodStart:t.match(/(?:from|billing period start)[\s:]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)?.[1]||null,
+    BillingPeriodEnd:t.match(/(?:to|billing period end|through)[\s:]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)?.[1]||null,
+    NumberOfDays:t.match(/(\d+)\s*days/i)?.[1]||null,
+    kWhConsumed:t.match(/(?:total\s*)?(?:kwh|kilowatt.?hours?\s*used)[\s:]*([0-9,]+)/i)?.[1]?.replace(/,/g,'')||null,
+    PeakDemandKW:t.match(/(?:peak\s*)?demand[\s:]*([0-9.]+)\s*kw/i)?.[1]||null,
+    NaturalGasTherms:null,
+    TotalAmountDue:t.match(/(?:total\s*amount\s*due|amount\s*due|total\s*due)[\s:$]*([0-9,]+\.[0-9]{2})/i)?.[1]||null,
+    RateSchedule:t.match(/rate\s*(?:schedule|code)[\s:]*([A-Z0-9\-]{2,12})/i)?.[1]||null,
+    MeterNumber:t.match(/meter\s*(?:number|#|no\.?)[\s:]*([A-Z0-9\-]{4,20})/i)?.[1]||null,
+  })},
+  {name:'Spire / Laclede Gas',detect:t=>/spire|laclede/i.test(t),extract:t=>({
+    UtilityCompany:/spire/i.test(t)?'Spire Energy':'Laclede Gas',
+    AccountNumber:t.match(/account[\s#:]*([0-9\-]{6,20})/i)?.[1]||null,
+    ServiceAddress:t.match(/service\s*address[\s:\n]+([^\n]{10,60})/i)?.[1]?.trim()||null,
+    BillingPeriodStart:t.match(/(?:from|service\s*from)[\s:]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)?.[1]||null,
+    BillingPeriodEnd:t.match(/(?:to|service\s*to|through)[\s:]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)?.[1]||null,
+    NumberOfDays:t.match(/(\d+)\s*days/i)?.[1]||null,
+    kWhConsumed:null,PeakDemandKW:null,
+    NaturalGasTherms:t.match(/(?:therms?\s*used|ccf|total\s*therms?)[\s:]*([0-9,]+\.?\d*)/i)?.[1]?.replace(/,/g,'')||null,
+    TotalAmountDue:t.match(/(?:total|amount\s*due)[\s:$]*([0-9,]+\.[0-9]{2})/i)?.[1]||null,
+    RateSchedule:t.match(/rate[\s:]*([A-Z0-9\-]{2,12})/i)?.[1]||null,
+    MeterNumber:t.match(/meter[\s#:]*([A-Z0-9\-]{4,20})/i)?.[1]||null,
+  })},
+  {name:'Generic Utility',detect:()=>true,extract:t=>({
+    UtilityCompany:t.match(/^([A-Z][A-Za-z &]+(?:Electric|Gas|Energy|Utilities?|Power))/m)?.[1]?.trim()||null,
+    AccountNumber:t.match(/account\s*(?:number|#|no\.?)[\s:]*([0-9\-]{6,20})/i)?.[1]||null,
+    ServiceAddress:t.match(/(?:service|billing)\s*address[\s:\n]+([^\n]{10,60})/i)?.[1]?.trim()||null,
+    BillingPeriodStart:t.match(/(?:from|period\s*(?:start|from)|billing\s*from)[\s:]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)?.[1]||null,
+    BillingPeriodEnd:t.match(/(?:to|through|period\s*(?:end|to))[\s:]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)?.[1]||null,
+    NumberOfDays:t.match(/(\d+)\s*days/i)?.[1]||null,
+    kWhConsumed:t.match(/([0-9,]{3,})\s*kwh/i)?.[1]?.replace(/,/g,'')||null,
+    PeakDemandKW:t.match(/([0-9.]+)\s*kw\b/i)?.[1]||null,
+    NaturalGasTherms:t.match(/([0-9,]+\.?\d*)\s*therms?/i)?.[1]?.replace(/,/g,'')||null,
+    TotalAmountDue:t.match(/\$\s*([0-9,]+\.[0-9]{2})\b(?!.*\$\s*[0-9,]+\.[0-9]{2})/s)?.[1]||null,
+    RateSchedule:t.match(/rate\s*(?:schedule|code)?[\s:]*([A-Z][A-Z0-9\-]{1,10})/i)?.[1]||null,
+    MeterNumber:t.match(/meter\s*(?:number|#|no)?[\s:]*([A-Z0-9\-]{4,20})/i)?.[1]||null,
+  })}
+];
+function scoreExtraction(d){return Object.values(d).filter(v=>v!==null&&v!=='').length;}
+async function extractPDFText(ab){
+  try{
+    if(typeof pdfjsLib==='undefined') return null;
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await pdfjsLib.getDocument({data:ab}).promise;
+    let txt='';
+    for(let i=1;i<=Math.min(pdf.numPages,4);i++){const pg=await pdf.getPage(i);const c=await pg.getTextContent();txt+=c.items.map(s=>s.str).join(' ')+'\n';}
+    return txt;
+  }catch(e){return null;}
+}
+function showExtractionBadge(method,detail){
+  const b=document.getElementById('extractMethodBadge');
+  b.style.display='inline-block';
+  if(method==='rules'){
+    b.style.background='rgba(var(--em-rgb),.12)';b.style.color='var(--em)';b.style.border='1px solid rgba(var(--em-rgb),.25)';
+    b.textContent='⚡ Rule-Based'+(detail?' · '+detail:'')+' — no AI used';
+  } else {
+    b.style.background='rgba(139,92,246,.12)';b.style.color='#a78bfa';b.style.border='1px solid rgba(139,92,246,.25)';
+    b.textContent='🤖 AI Extraction';
+  }
+}
 let pdfType='utility',pdfB64=null;
 function setPDFType(t,el){pdfType=t;document.querySelectorAll('.ptpill').forEach(b=>b.classList.remove('sel'));el.classList.add('sel');}
 function handleDrop(e){e.preventDefault();document.getElementById('dropZone').classList.remove('drag');const f=e.dataTransfer.files[0];if(f&&f.type==='application/pdf')processPDF(f);}
 function handlePDFUpload(e){if(e.target.files[0])processPDF(e.target.files[0]);}
 async function processPDF(file){
   const box=document.getElementById('pdfAIBox'),dz=document.getElementById('dz-title');
+  document.getElementById('extractMethodBadge').style.display='none';
   dz.textContent='📄 '+file.name+' — reading...';
-  box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Reading PDF with AI vision...</div>';
+  box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Reading PDF...</div>';
   const reader=new FileReader();
   reader.onload=async ev=>{
     pdfB64=ev.target.result.split(',')[1];
+    if(pdfType==='utility'){
+      const ab=Uint8Array.from(atob(pdfB64),c=>c.charCodeAt(0)).buffer;
+      const text=await extractPDFText(ab);
+      if(text){
+        const rule=UTILITY_RULES.find(r=>r.detect(text));
+        if(rule){
+          const extracted=rule.extract(text);
+          if(scoreExtraction(extracted)>=5){
+            renderPDFFields(extracted);
+            box.textContent=JSON.stringify(extracted,null,2);
+            document.getElementById('pdfSaveRow').style.display='block';
+            refreshProjDropdowns();
+            showExtractionBadge('rules',rule.name);
+            dz.textContent=file.name+' ✓';
+            showToast('Extracted with rules ('+rule.name+') — no AI used ✓');
+            return;
+          }
+        }
+      }
+      box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Format unrecognized — using AI vision...</div>';
+    }
     const prompts={utility:`Extract ALL structured data from this utility bill. Return ONLY valid JSON: AccountNumber, ServiceAddress, BillingPeriodStart, BillingPeriodEnd, NumberOfDays, kWhConsumed, PeakDemandKW, NaturalGasTherms, TotalAmountDue, RateSchedule, UtilityCompany, MeterNumber.`,drawing:`Analyze this drawing. Return ONLY valid JSON: ProjectName, DrawingNumber, DrawingTitle, EquipmentTags (array), SystemTypes (array), ControlPoints (array), NotesAndSpecifications (array).`,submittal:`Extract equipment data. Return ONLY valid JSON: EquipmentTag, Manufacturer, ModelNumber, SerialNumber, Capacity, EfficiencyRating, ElectricalRequirements, ControlInterface.`,contract:`Extract key terms. Return ONLY valid JSON: PartyA, PartyB, ProjectDescription, ContractValue, StartDate, EndDate, PaymentTerms, ScopeOfWork, KeyObligations (array).`};
     const sys='Return ONLY valid JSON — no markdown, no backticks, no preamble.';
     const result=await claudePDF(prompts[pdfType],pdfB64,sys);
     let parsed=null;
     try{parsed=JSON.parse(result.replace(/```json|```/g,'').trim());}catch(e){}
     if(parsed){
-      const el=document.getElementById('extractedFields');
-      const items=Object.entries(parsed).filter(([k,v])=>v!=null&&v!=='');
-      el.innerHTML=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div><div class="ef-grid">${items.map(([k,v])=>`<div class="ef-item"><div class="ef-key">${k.replace(/([A-Z])/g,' $1').trim()}</div><input class="ef-input" value="${Array.isArray(v)?v.join(', '):(v||'')}" data-key="${k}"></div>`).join('')}</div>`;
+      renderPDFFields(parsed);
       box.textContent=JSON.stringify(parsed,null,2);
       document.getElementById('pdfSaveRow').style.display='block';
       refreshProjDropdowns();
+      showExtractionBadge('ai');
     } else {box.textContent=result;}
     dz.textContent=file.name+' ✓'; showToast('PDF extracted ✓');
   };
   reader.readAsDataURL(file);
+}
+function renderPDFFields(parsed){
+  const el=document.getElementById('extractedFields');
+  const items=Object.entries(parsed).filter(([k,v])=>v!=null&&v!=='');
+  el.innerHTML=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div><div class="ef-grid">${items.map(([k,v])=>`<div class="ef-item"><div class="ef-key">${k.replace(/([A-Z])/g,' $1').trim()}</div><input class="ef-input" value="${Array.isArray(v)?v.join(', '):(v||'')}" data-key="${k}"></div>`).join('')}</div>`;
 }
 function savePDFData(){
   const proj=projects.find(p=>p.id===parseInt(document.getElementById('pdfProjSel').value));
