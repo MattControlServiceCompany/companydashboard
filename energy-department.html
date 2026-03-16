@@ -3034,20 +3034,60 @@ function refreshProjDropdowns(){
    4) Otherwise → claudePDF AI fallback
 ── */
 const UTILITY_RULES=[
-  {name:'Evergy',detect:t=>/evergy/i.test(t),extract:t=>({
-    UtilityCompany:'Evergy',
-    AccountNumber:t.match(/account\s*(?:number|#|no\.?)[\s:]*([0-9\-]{6,20})/i)?.[1]||null,
-    ServiceAddress:t.match(/service\s*address[\s:\n]+([^\n]{10,60})/i)?.[1]?.trim()||null,
-    BillingPeriodStart:t.match(/(?:from|billing period start)[\s:]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)?.[1]||null,
-    BillingPeriodEnd:t.match(/(?:to|billing period end|through)[\s:]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)?.[1]||null,
-    NumberOfDays:t.match(/(\d+)\s*days/i)?.[1]||null,
-    kWhConsumed:t.match(/(?:total\s*)?(?:kwh|kilowatt.?hours?\s*used)[\s:]*([0-9,]+)/i)?.[1]?.replace(/,/g,'')||null,
-    PeakDemandKW:t.match(/(?:peak\s*)?demand[\s:]*([0-9.]+)\s*kw/i)?.[1]||null,
-    NaturalGasTherms:null,
-    TotalAmountDue:t.match(/(?:total\s*amount\s*due|amount\s*due|total\s*due)[\s:$]*([0-9,]+\.[0-9]{2})/i)?.[1]||null,
-    RateSchedule:t.match(/rate\s*(?:schedule|code)[\s:]*([A-Z0-9\-]{2,12})/i)?.[1]||null,
-    MeterNumber:t.match(/meter\s*(?:number|#|no\.?)[\s:]*([A-Z0-9\-]{4,20})/i)?.[1]||null,
-  })},
+  {name:'Evergy',detect:t=>/evergy/i.test(t),extract:t=>{
+    // ── Meter read table: "StartRead EndRead Days EndRead(-) StartRead(=) Diff (x) Multiplier (=) kWhUsed KWUsed RKVAUsed"
+    // Row pattern example: "03/11 04/09 29 32793.3849 32465.8377 327.5472 160.0000 52407.5520 313.4880 113.6640"
+    const meterRow=t.match(/(\d{2}\/\d{2})\s+(\d{2}\/\d{2})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+[\d.]+\s+([\d.]+)\s+([\d,]+\.?\d*)\s+([\d.]+)\s+([\d.]+)/);
+    // Billing period from "service from MM/DD/YYYY to MM/DD/YYYY"
+    const bpMatch=t.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);
+    // Rate schedule: e.g. "Large General All Electric Secondary Voltage - 2LGAE"
+    const rateMatch=t.match(/[-–]\s*([\dA-Z]{3,10})\s+Billing Details/i)||t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i);
+    // Charges — match label then dollar amount on same line
+    const custChg   =t.match(/Customer\s+Ch[ga].*?\$([\d,]+\.\d{2})/i)?.[1]||t.match(/Customer\s+Chg\s*\.+\s*\$([\d,]+\.\d{2})/i)?.[1]||null;
+    const facKW     =t.match(/Facilities\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
+    const facChg    =t.match(/Facilities\s+Ch[ga][^$]*\$([\d,]+\.\d{2})/i)?.[1]||null;
+    const demKW     =t.match(/Demand\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
+    const demChg    =t.match(/Demand\s+Ch[ga][^$]*\$([\d,]+\.\d{2})/i)?.[1]||null;
+    // kWh charge = sum of On-Peak + Off-Peak energy charges
+    const onPkChg   =t.match(/Energy\s+Ch[ga]\s+On\s+Pk[^$]*\$([\d,]+\.\d{2})/i)?.[1]||null;
+    const offPkChg  =t.match(/Energy\s+Ch[ga]\s+Off\s+Pk[^$]*\$([\d,]+\.\d{2})/i)?.[1]||null;
+    const kwhChgTotal=(onPkChg&&offPkChg)
+      ?(parseFloat(onPkChg.replace(/,/g,''))+parseFloat(offPkChg.replace(/,/g,''))).toFixed(2)
+      :onPkChg||offPkChg||null;
+    const tdcKW     =t.match(/TDC\s+Ch[ga][^$\n]*?([\d,.]+)\s*kW\s/i)?.[1]?.replace(/,/g,'')||null;
+    const tdcChg    =t.match(/TDC\s+Ch[ga][^$]*\$([\d,]+\.\d{2})/i)?.[1]||null;
+    const totalDue  =t.match(/Current\s+Charges[^$]*\$([\d,]+\.\d{2})/i)?.[1]||t.match(/Subtotal[^$]*\$([\d,]+\.\d{2})/i)?.[1]||null;
+    // Service address: appears as a standalone address line near the top, before "kWh Energy Use"
+    const addrMatch =t.match(/(\d+\s+[A-Z0-9 ,]+(?:ST|AVE|DR|RD|BLVD|LN|CT|PL|WAY)[^\n]*(?:KS|MO|KY|OK|NE|IA|AR)[^\n]*)/i);
+    return {
+      UtilityCompany:  'Evergy',
+      CustomerName:    t.match(/Customer\s+Name\s*:\s*([^\n]+)/i)?.[1]?.trim()||null,
+      AccountNumber:   t.match(/Account\s+Number\s*:\s*(\d[\d\s]{5,18}\d)/i)?.[1]?.replace(/\s/g,'')||null,
+      ServiceAddress:  addrMatch?.[1]?.trim()||null,
+      RateSchedule:    rateMatch?.[1]||null,
+      BillingPeriodStart: bpMatch?.[1]||null,
+      BillingPeriodEnd:   bpMatch?.[2]||null,
+      NumberOfDays:    meterRow?.[3]||t.match(/Current\s+[\d,]+\s+(\d+)\s+[\d.]+/i)?.[1]||null,
+      MeterReadStart:  meterRow?.[1]||null,
+      MeterReadEnd:    meterRow?.[2]||null,
+      StartRead:       meterRow?.[5]||null,
+      EndRead:         meterRow?.[4]||null,
+      MeterMultiplier: meterRow?.[6]||null,
+      kWhConsumed:     meterRow?.[7]?.replace(/,/g,'')||t.match(/Current\s+([\d,]+)\s+\d+\s+[\d.]+/i)?.[1]?.replace(/,/g,'')||null,
+      ActualKW:        meterRow?.[8]||null,
+      ActualRKVA:      meterRow?.[9]||null,
+      CustomerCharge:  custChg,
+      FacilitiesKW:    facKW,
+      FacilitiesCharge:facChg,
+      BilledKW:        demKW,
+      BilledKWCharge:  demChg,
+      kWhCharge:       kwhChgTotal,
+      TDCkW:           tdcKW,
+      TDCCharge:       tdcChg,
+      TotalCurrentCharges: totalDue,
+      MeterNumber:     null, // Not present on this bill format
+    };
+  }},
   {name:'Spire / Laclede Gas',detect:t=>/spire|laclede/i.test(t),extract:t=>({
     UtilityCompany:/spire/i.test(t)?'Spire Energy':'Laclede Gas',
     AccountNumber:t.match(/account[\s#:]*([0-9\-]{6,20})/i)?.[1]||null,
