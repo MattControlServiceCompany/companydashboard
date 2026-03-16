@@ -2385,7 +2385,7 @@ window.sv=function(id,btn){
 <div class="toast" id="toast"><span style="color:var(--em);font-size:14px">✓</span><span id="toastMsg">Done!</span></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 /* ── CLAUDE API ── */
 async function claude(prompt,sys){
@@ -3138,29 +3138,45 @@ async function extractPDFText(ab, statusCb){
     if(txt.trim().length>100) return txt; // text-based PDF, done
 
     // ── Step 2: scanned image — render pages to canvas and OCR ──
-    if(typeof Tesseract==='undefined') return null;
-    if(statusCb) statusCb('Scanned PDF detected — running OCR (this may take 15-30 seconds)...');
-    const worker=await Tesseract.createWorker('eng',1,{
-      workerPath:'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/worker.min.js',
-      langPath:'https://tessdata.projectnaptha.com/4.0.0',
-      corePath:'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract-core.wasm.js',
-      logger: m=>{ if(statusCb&&m.status==='recognizing text') statusCb('OCR progress: '+Math.round(m.progress*100)+'%'); }
-    });
+    if(typeof Tesseract==='undefined'){
+      if(statusCb) statusCb('OCR library not loaded — check network connection.');
+      return null;
+    }
+    if(statusCb) statusCb('Scanned PDF detected — loading OCR engine...');
+    let worker;
+    try{
+      worker=await Tesseract.createWorker('eng',1,{
+        logger: m=>{
+          if(statusCb){
+            if(m.status==='loading tesseract core') statusCb('Loading OCR engine...');
+            else if(m.status==='loading language traineddata') statusCb('Loading English language data...');
+            else if(m.status==='recognizing text') statusCb('OCR progress: '+Math.round((m.progress||0)*100)+'%');
+          }
+        }
+      });
+    }catch(workerErr){
+      if(statusCb) statusCb('OCR engine failed to load: '+workerErr.message);
+      return null;
+    }
     let ocrText='';
     for(let i=1;i<=maxPages;i++){
       if(statusCb) statusCb('OCR scanning page '+i+' of '+maxPages+'...');
       const pg=await pdf.getPage(i);
-      const vp=pg.getViewport({scale:2.5}); // 2.5x scale for better OCR accuracy
+      const vp=pg.getViewport({scale:2.5});
       const canvas=document.createElement('canvas');
       canvas.width=vp.width; canvas.height=vp.height;
       const ctx=canvas.getContext('2d');
       await pg.render({canvasContext:ctx, viewport:vp}).promise;
-      const {data:{text}}=await worker.recognize(canvas);
-      ocrText+=text+'\n';
+      try{
+        const {data:{text}}=await worker.recognize(canvas);
+        ocrText+=text+'\n';
+      }catch(pageErr){
+        if(statusCb) statusCb('OCR failed on page '+i+': '+pageErr.message);
+      }
     }
     await worker.terminate();
     return ocrText.trim().length>50 ? ocrText : null;
-  }catch(e){console.error('PDF extract error:',e);return null;}
+  }catch(e){if(statusCb)statusCb('PDF read error: '+e.message);console.error('PDF extract error:',e);return null;}
 }
 function showExtractionBadge(method,detail){
   const b=document.getElementById('extractMethodBadge');
