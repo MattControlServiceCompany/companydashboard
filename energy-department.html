@@ -3071,12 +3071,12 @@ const UTILITY_RULES=[
     const ptsChg     =sumMatches(t,/PTS\s+Ch[ga][\s\S]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/mg);
     const tdcKW      =t.match(/TDC\s+Ch[ga][\s\S]*?([\d,.]+)\s*kW\s+at/i)?.[1]?.replace(/,/g,'')||null;
     const tdcChg     =t.match(/TDC\s+Ch[ga][\s\S]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]||null;
-    const billOffset =t.match(/Bill\s+offset[\s.]+(-?\$?[\d,]+\.\d{2})\s*$/m)?.[1]?.replace(/\$/g,'')||null;
-    const franchise  =t.match(/(?:Franchise|Franchise\s+Fee)[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]||null;
-    const totalDue   =t.match(/Current\s+Charges[\s.$\d]*?([\d,]+\.\d{2})\s*$/m)?.[1]?.replace(/,/g,'')||null;
+    const billOffset =t.match(/Bill\s+[Oo]ffset[\s.]*(-?\$?[\d,]+\.\d{2})\s*$/im)?.[1]?.replace(/\$/g,'')||null;
+    const franchise  =t.match(/(?:[A-Za-z]+\s+)?Franchise(?:\s+Fee)?[\s.]*\$?([\d,]+\.\d{2})\s*$/im)?.[1]||null;
+    const totalDue   =t.match(/Current\s+Charges[\s.$\d]*?([\d,]+\.\d{2})\s*$/im)?.[1]?.replace(/,/g,'')||null;
     return {
       UtilityCompany:  'Evergy',
-      CustomerName:    t.match(/Customer\s+Name\s*:\s*([^\n:]+?)(?:\s{2,}|$)/im)?.[1]?.trim()||null,
+      CustomerName:    t.match(/Customer\s*Name\s*:?\s*([^\n:]{3,30})(?:\s{2,}|\n|$)/im)?.[1]?.trim()||null,
       AccountNumber:   t.match(/Account\s+(?:Number\s*)?:\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null,
       ServiceAddress:  serviceAddress,
       RateSchedule:    rateMatch?.[1]||null,
