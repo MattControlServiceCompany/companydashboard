@@ -3056,19 +3056,23 @@ const UTILITY_RULES=[
     const addrStd =t.match(/(\d+\s+[A-Z][A-Za-z0-9 ,]+(?:ST|AVE|DR|RD|BLVD|LN|CT|PL|WAY)[^\n]*(?:KS|MO|KY|OK|NE|IA|AR)[^\n]*)/i);
     const serviceAddress=(addrBold?.[1]||addrStd?.[1])?.trim()||null;
     // ── Charges ──
-    const custChg   =t.match(/Customer\s+Ch[ga]\s*\.+\s*\$?([\d,]+\.\d{2})/i)?.[1]||null;
+    // Charge regex strategy: match label, then grab the LAST dollar amount at end of line (multiline).
+    // Single-line [^
+] fails when charge amount is on the next line (e.g. Energy Chg splits across two lines).
+    // Using [\s\S]*? with $ multiline anchor correctly finds the final $ value for each charge block.
+    const custChg   =t.match(/Customer\s+Ch[ga][\s.$0-9a-zA-Z,]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]||null;
     const facKW     =t.match(/Facilities\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
-    const facChg    =t.match(/Facilities\s+Ch[ga][^\n]*\$?([\d,]+\.\d{2})/i)?.[1]||null;
+    const facChg    =t.match(/Facilities\s+Ch[ga][\s\S]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]||null;
     const demKW     =t.match(/Demand\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
-    const demChg    =t.match(/Demand\s+Ch[ga][^\n]*\$?([\d,]+\.\d{2})/i)?.[1]||null;
-    const onPkChg   =t.match(/Energy\s+Ch[ga]\s+On\s+Pk[^\n]*\$?([\d,]+\.\d{2})/i)?.[1]||null;
-    const offPkChg  =t.match(/Energy\s+Ch[ga]\s+Off\s+Pk[^\n]*\$?([\d,]+\.\d{2})/i)?.[1]||null;
+    const demChg    =t.match(/Demand\s+Ch[ga][\s\S]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]||null;
+    const onPkChg   =t.match(/Energy\s+Ch[ga]\s+On\s+Pk[\s\S]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]||null;
+    const offPkChg  =t.match(/Energy\s+Ch[ga]\s+Off\s+Pk[\s\S]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]||null;
     const kwhChgTotal=(onPkChg&&offPkChg)
       ?(parseFloat(onPkChg.replace(/,/g,''))+parseFloat(offPkChg.replace(/,/g,''))).toFixed(2)
       :onPkChg||offPkChg||null;
-    const tdcKW     =t.match(/TDC\s+Ch[ga][^\n]*?([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
-    const tdcChg    =t.match(/TDC\s+Ch[ga][^\n]*\$?([\d,]+\.\d{2})/i)?.[1]||null;
-    const totalDue  =t.match(/Current\s+Charges[^\n]*\$?([\d,]+\.\d{2})/i)?.[1]||t.match(/Subtotal[^\n]*\$?([\d,]+\.\d{2})/i)?.[1]||null;
+    const tdcKW     =t.match(/TDC\s+Ch[ga][\s\S]*?([\d,.]+)\s*kW\s+at/i)?.[1]?.replace(/,/g,'')||null;
+    const tdcChg    =t.match(/TDC\s+Ch[ga][\s\S]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]||null;
+    const totalDue  =t.match(/Current\s+Charges[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]?.replace(/,/g,'')||t.match(/Subtotal[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]?.replace(/,/g,'')||null;
     return {
       UtilityCompany:  'Evergy',
       CustomerName:    t.match(/Customer\s+Name\s*:\s*([^\n:]+?)(?:\s{2,}|$)/im)?.[1]?.trim()||null,
