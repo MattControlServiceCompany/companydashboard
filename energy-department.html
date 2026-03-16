@@ -3027,53 +3027,56 @@ function refreshProjDropdowns(){
   });
 }
 
-/* ── PDF OCR — HYBRID EXTRACTION ENGINE ──
-   1) PDF.js extracts raw text (no AI cost)
+/* ── PDF OCR — LOCAL EXTRACTION ENGINE ──
+   Utility bills: 100% local, no AI ever.
+   1) PDF.js extracts raw text in-browser
    2) Regex rules match known utility formats
-   3) Confidence ≥ 5 fields → done, no AI call
-   4) Otherwise → claudePDF AI fallback
+   3) If matched → extract and display
+   4) If unrecognized → prompt user to share sample
 ── */
 const UTILITY_RULES=[
   {name:'Evergy',detect:t=>/evergy/i.test(t),extract:t=>{
-    // ── Meter read table: "StartRead EndRead Days EndRead(-) StartRead(=) Diff (x) Multiplier (=) kWhUsed KWUsed RKVAUsed"
-    // Row pattern example: "03/11 04/09 29 32793.3849 32465.8377 327.5472 160.0000 52407.5520 313.4880 113.6640"
-    const meterRow=t.match(/(\d{2}\/\d{2})\s+(\d{2}\/\d{2})\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+[\d.]+\s+([\d.]+)\s+([\d,]+\.?\d*)\s+([\d.]+)\s+([\d.]+)/);
-    // Billing period from "service from MM/DD/YYYY to MM/DD/YYYY"
+    // ── Meter read table ──
+    // Both 2LGAE and 2MGSE formats:
+    // "MM/DD MM/DD days EndRead(-) StartRead(=) diff multiplier kWhUsed KWUsed RKVAUsed"
+    const meterRow=t.match(/(\d{2}\/\d{2})\s+(\d{2}\/\d{2})\s+(\d+)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+[\d,]+\.?\d*\s+([\d,.]+)\s+([\d,]+\.?\d*)\s+([\d.]+)\s+([\d.]+)/);
+    // ── Billing period ──
     const bpMatch=t.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);
-    // Rate schedule: e.g. "Large General All Electric Secondary Voltage - 2LGAE"
+    // ── Rate schedule: code right before "Billing Details" e.g. "- 2LGAE" or "- 2MGSE" ──
     const rateMatch=t.match(/[-–]\s*([\dA-Z]{3,10})\s+Billing Details/i)||t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i);
-    // Charges — match label then dollar amount on same line
-    const custChg   =t.match(/Customer\s+Ch[ga].*?\$([\d,]+\.\d{2})/i)?.[1]||t.match(/Customer\s+Chg\s*\.+\s*\$([\d,]+\.\d{2})/i)?.[1]||null;
+    // ── Service address: bold all-caps heading (2MGSE) or standalone line (2LGAE) ──
+    const addrBold=t.match(/(\d+\s+[A-Z][A-Z0-9 ]+(?:MISSION|BELLEVIEW|ST|AVE|DR|RD|BLVD|LN|CT|PL|WAY)[A-Z0-9 ,]*(?:KS|MO|KY|OK|NE|IA|AR)\b)/);
+    const addrStd =t.match(/(\d+\s+[A-Z][A-Za-z0-9 ,]+(?:ST|AVE|DR|RD|BLVD|LN|CT|PL|WAY)[^\n]*(?:KS|MO|KY|OK|NE|IA|AR)[^\n]*)/i);
+    const serviceAddress=(addrBold?.[1]||addrStd?.[1])?.trim()||null;
+    // ── Charges ──
+    const custChg   =t.match(/Customer\s+Ch[ga]\s*\.+\s*\$?([\d,]+\.\d{2})/i)?.[1]||null;
     const facKW     =t.match(/Facilities\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
-    const facChg    =t.match(/Facilities\s+Ch[ga][^$]*\$([\d,]+\.\d{2})/i)?.[1]||null;
+    const facChg    =t.match(/Facilities\s+Ch[ga][^\n]*\$?([\d,]+\.\d{2})/i)?.[1]||null;
     const demKW     =t.match(/Demand\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
-    const demChg    =t.match(/Demand\s+Ch[ga][^$]*\$([\d,]+\.\d{2})/i)?.[1]||null;
-    // kWh charge = sum of On-Peak + Off-Peak energy charges
-    const onPkChg   =t.match(/Energy\s+Ch[ga]\s+On\s+Pk[^$]*\$([\d,]+\.\d{2})/i)?.[1]||null;
-    const offPkChg  =t.match(/Energy\s+Ch[ga]\s+Off\s+Pk[^$]*\$([\d,]+\.\d{2})/i)?.[1]||null;
+    const demChg    =t.match(/Demand\s+Ch[ga][^\n]*\$?([\d,]+\.\d{2})/i)?.[1]||null;
+    const onPkChg   =t.match(/Energy\s+Ch[ga]\s+On\s+Pk[^\n]*\$?([\d,]+\.\d{2})/i)?.[1]||null;
+    const offPkChg  =t.match(/Energy\s+Ch[ga]\s+Off\s+Pk[^\n]*\$?([\d,]+\.\d{2})/i)?.[1]||null;
     const kwhChgTotal=(onPkChg&&offPkChg)
       ?(parseFloat(onPkChg.replace(/,/g,''))+parseFloat(offPkChg.replace(/,/g,''))).toFixed(2)
       :onPkChg||offPkChg||null;
-    const tdcKW     =t.match(/TDC\s+Ch[ga][^$\n]*?([\d,.]+)\s*kW\s/i)?.[1]?.replace(/,/g,'')||null;
-    const tdcChg    =t.match(/TDC\s+Ch[ga][^$]*\$([\d,]+\.\d{2})/i)?.[1]||null;
-    const totalDue  =t.match(/Current\s+Charges[^$]*\$([\d,]+\.\d{2})/i)?.[1]||t.match(/Subtotal[^$]*\$([\d,]+\.\d{2})/i)?.[1]||null;
-    // Service address: appears as a standalone address line near the top, before "kWh Energy Use"
-    const addrMatch =t.match(/(\d+\s+[A-Z0-9 ,]+(?:ST|AVE|DR|RD|BLVD|LN|CT|PL|WAY)[^\n]*(?:KS|MO|KY|OK|NE|IA|AR)[^\n]*)/i);
+    const tdcKW     =t.match(/TDC\s+Ch[ga][^\n]*?([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
+    const tdcChg    =t.match(/TDC\s+Ch[ga][^\n]*\$?([\d,]+\.\d{2})/i)?.[1]||null;
+    const totalDue  =t.match(/Current\s+Charges[^\n]*\$?([\d,]+\.\d{2})/i)?.[1]||t.match(/Subtotal[^\n]*\$?([\d,]+\.\d{2})/i)?.[1]||null;
     return {
       UtilityCompany:  'Evergy',
-      CustomerName:    t.match(/Customer\s+Name\s*:\s*([^\n]+)/i)?.[1]?.trim()||null,
-      AccountNumber:   t.match(/Account\s+Number\s*:\s*(\d[\d\s]{5,18}\d)/i)?.[1]?.replace(/\s/g,'')||null,
-      ServiceAddress:  addrMatch?.[1]?.trim()||null,
+      CustomerName:    t.match(/Customer\s+Name\s*:\s*([^\n:]+?)(?:\s{2,}|$)/im)?.[1]?.trim()||null,
+      AccountNumber:   t.match(/Account\s+(?:Number\s*)?:\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null,
+      ServiceAddress:  serviceAddress,
       RateSchedule:    rateMatch?.[1]||null,
       BillingPeriodStart: bpMatch?.[1]||null,
       BillingPeriodEnd:   bpMatch?.[2]||null,
-      NumberOfDays:    meterRow?.[3]||t.match(/Current\s+[\d,]+\s+(\d+)\s+[\d.]+/i)?.[1]||null,
+      NumberOfDays:    meterRow?.[3]||null,
       MeterReadStart:  meterRow?.[1]||null,
       MeterReadEnd:    meterRow?.[2]||null,
-      StartRead:       meterRow?.[5]||null,
-      EndRead:         meterRow?.[4]||null,
-      MeterMultiplier: meterRow?.[6]||null,
-      kWhConsumed:     meterRow?.[7]?.replace(/,/g,'')||t.match(/Current\s+([\d,]+)\s+\d+\s+[\d.]+/i)?.[1]?.replace(/,/g,'')||null,
+      StartRead:       meterRow?.[5]?.replace(/,/g,'')||null,
+      EndRead:         meterRow?.[4]?.replace(/,/g,'')||null,
+      MeterMultiplier: meterRow?.[6]?.replace(/,/g,'')||null,
+      kWhConsumed:     meterRow?.[7]?.replace(/,/g,'')||null,
       ActualKW:        meterRow?.[8]||null,
       ActualRKVA:      meterRow?.[9]||null,
       CustomerCharge:  custChg,
@@ -3085,7 +3088,7 @@ const UTILITY_RULES=[
       TDCkW:           tdcKW,
       TDCCharge:       tdcChg,
       TotalCurrentCharges: totalDue,
-      MeterNumber:     null, // Not present on this bill format
+      MeterNumber:     null,
     };
   }},
   {name:'Spire / Laclede Gas',detect:t=>/spire|laclede/i.test(t),extract:t=>({
@@ -3120,8 +3123,9 @@ function scoreExtraction(d){return Object.values(d).filter(v=>v!==null&&v!=='').
 async function extractPDFText(ab){
   try{
     if(typeof pdfjsLib==='undefined') return null;
-    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    const pdf=await pdfjsLib.getDocument({data:ab}).promise;
+    // Disable external worker fetch — run in fake worker (main thread) mode
+    pdfjsLib.GlobalWorkerOptions.workerSrc='';
+    const pdf=await pdfjsLib.getDocument({data:ab, useWorkerFetch:false, isEvalSupported:false, useSystemFonts:true}).promise;
     let txt='';
     for(let i=1;i<=Math.min(pdf.numPages,4);i++){const pg=await pdf.getPage(i);const c=await pg.getTextContent();txt+=c.items.map(s=>s.str).join(' ')+'\n';}
     return txt;
@@ -3150,40 +3154,44 @@ async function processPDF(file){
   const reader=new FileReader();
   reader.onload=async ev=>{
     pdfB64=ev.target.result.split(',')[1];
+    const ab=Uint8Array.from(atob(pdfB64),c=>c.charCodeAt(0)).buffer;
+
+    // ── UTILITY BILLS: 100% local rule-based extraction, no AI ──
     if(pdfType==='utility'){
-      const ab=Uint8Array.from(atob(pdfB64),c=>c.charCodeAt(0)).buffer;
       const text=await extractPDFText(ab);
       if(text){
         const rule=UTILITY_RULES.find(r=>r.detect(text));
         if(rule){
           const extracted=rule.extract(text);
-          if(scoreExtraction(extracted)>=5){
-            renderPDFFields(extracted);
-            box.textContent=JSON.stringify(extracted,null,2);
-            document.getElementById('pdfSaveRow').style.display='block';
-            refreshProjDropdowns();
-            showExtractionBadge('rules',rule.name);
-            dz.textContent=file.name+' ✓';
-            showToast('Extracted with rules ('+rule.name+') — no AI used ✓');
-            return;
-          }
+          renderPDFFields(extracted);
+          box.textContent=JSON.stringify(extracted,null,2);
+          document.getElementById('pdfSaveRow').style.display='block';
+          refreshProjDropdowns();
+          showExtractionBadge('rules',rule.name);
+          dz.textContent=file.name+' ✓';
+          showToast('Extracted locally — '+rule.name+' ✓');
+          return;
         }
+        // Utility format not yet in rules library
+        box.innerHTML='<div style="padding:14px;font-size:13px;line-height:1.7;color:var(--text2)">&#9888; <strong style="color:var(--text)">Utility format not recognized.</strong><br>This bill layout does not match any rules in the library yet.<br><br>Share a sample bill to have a rule set added for this format.</div>';
+        dz.textContent=file.name+' — unrecognized format';
+        return;
       }
-      box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Format unrecognized — using AI vision...</div>';
+      box.innerHTML='<div style="padding:14px;font-size:13px;color:var(--text2)">&#9888; Could not extract text from this PDF. It may be a scanned image. Only text-based PDFs are supported.</div>';
+      dz.textContent=file.name+' — could not read';
+      return;
     }
-    const prompts={utility:`Extract ALL structured data from this utility bill. Return ONLY valid JSON: AccountNumber, ServiceAddress, BillingPeriodStart, BillingPeriodEnd, NumberOfDays, kWhConsumed, PeakDemandKW, NaturalGasTherms, TotalAmountDue, RateSchedule, UtilityCompany, MeterNumber.`,drawing:`Analyze this drawing. Return ONLY valid JSON: ProjectName, DrawingNumber, DrawingTitle, EquipmentTags (array), SystemTypes (array), ControlPoints (array), NotesAndSpecifications (array).`,submittal:`Extract equipment data. Return ONLY valid JSON: EquipmentTag, Manufacturer, ModelNumber, SerialNumber, Capacity, EfficiencyRating, ElectricalRequirements, ControlInterface.`,contract:`Extract key terms. Return ONLY valid JSON: PartyA, PartyB, ProjectDescription, ContractValue, StartDate, EndDate, PaymentTerms, ScopeOfWork, KeyObligations (array).`};
-    const sys='Return ONLY valid JSON — no markdown, no backticks, no preamble.';
-    const result=await claudePDF(prompts[pdfType],pdfB64,sys);
-    let parsed=null;
-    try{parsed=JSON.parse(result.replace(/```json|```/g,'').trim());}catch(e){}
-    if(parsed){
-      renderPDFFields(parsed);
-      box.textContent=JSON.stringify(parsed,null,2);
-      document.getElementById('pdfSaveRow').style.display='block';
-      refreshProjDropdowns();
-      showExtractionBadge('ai');
-    } else {box.textContent=result;}
-    dz.textContent=file.name+' ✓'; showToast('PDF extracted ✓');
+
+    // ── NON-UTILITY TYPES: local text extraction only, no AI ──
+    const text=await extractPDFText(ab);
+    if(text){
+      box.textContent=text;
+      dz.textContent=file.name+' ✓';
+      showToast('Text extracted ✓');
+    } else {
+      box.innerHTML='<div style="padding:14px;font-size:13px;color:var(--text2)">&#9888; Could not extract text from this PDF.</div>';
+      dz.textContent=file.name+' — could not read';
+    }
   };
   reader.readAsDataURL(file);
 }
