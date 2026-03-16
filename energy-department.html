@@ -843,6 +843,17 @@ html,body{height:100%;overflow:hidden;}
 
 <!-- PDF OCR -->
 <div id="view-pdf" class="view">
+  <div class="pg-hdr">
+    <div>
+      <h1 class="pg-title">PDF <em>/ OCR</em></h1>
+      <p style="font-size:13px;color:var(--text2);margin-top:4px">Extract data from utility bills, drawings, submittals, and contracts</p>
+    </div>
+    <div class="hdr-actions">
+      <button class="btn btn-ghost" onclick="openSavedBillsModal()" id="savedBillsBtn">
+        🗄️ Saved Bills <span id="pdfBillCount" style="background:var(--em);color:var(--bg);font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;margin-left:4px;display:none"></span>
+      </button>
+    </div>
+  </div>
   <div class="g-6040">
     <div>
       <div class="drop-zone" id="dropZone" onclick="document.getElementById('pdfInput').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleDrop(event)">
@@ -874,6 +885,7 @@ html,body{height:100%;overflow:hidden;}
       <div class="ai-box" id="pdfAIBox" style="min-height:280px">Upload a PDF and select document type. For utility bills, rule-based extraction runs first — instant and free. AI is used as a fallback for unrecognized formats.</div>
     </div>
   </div>
+
 </div>
 
 <!-- WEATHER -->
@@ -2384,6 +2396,43 @@ window.sv=function(id,btn){
 
 <div class="toast" id="toast"><span style="color:var(--em);font-size:14px">✓</span><span id="toastMsg">Done!</span></div>
 
+<!-- Saved Bills Modal -->
+<div class="modal-bg" id="savedBillsModal" onclick="if(event.target===this)closeSavedBillsModal()">
+  <div class="modal" style="width:820px;max-width:96vw">
+    <div class="modal-hdr">
+      <span class="modal-title">🗄️ Saved Bill Records</span>
+      <button class="modal-x" onclick="closeSavedBillsModal()">✕</button>
+    </div>
+    <div class="modal-body" style="padding:0">
+      <div id="savedBillsList" style="padding:16px;max-height:65vh;overflow-y:auto"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Assign Bill Modal -->
+<div class="modal-bg" id="assignBillModal" onclick="if(event.target===this)closeAssignModal()">
+  <div class="modal" style="width:480px">
+    <div class="modal-hdr"><span class="modal-title">Assign Bill to Project / Building</span><button class="modal-x" onclick="closeAssignModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="fg"><label class="fl">Project</label>
+        <select class="fs" id="abm-proj" onchange="populateAssignBuildings()"></select>
+      </div>
+      <div class="fg"><label class="fl">Building</label>
+        <select class="fs" id="abm-bldg" onchange="populateAssignMeters()"></select>
+      </div>
+      <div class="fg"><label class="fl">Electric Meter</label>
+        <select class="fs" id="abm-meter"></select>
+      </div>
+      <div id="abm-validation" style="display:none;margin-top:8px;padding:10px 12px;border-radius:7px;font-size:12px;line-height:1.6;background:var(--warn-dim);border:1px solid rgba(245,158,11,.25);color:var(--warn)"></div>
+      <input type="hidden" id="abm-bill-id">
+    </div>
+    <div class="modal-ftr">
+      <button class="btn btn-ghost" onclick="closeAssignModal()">Cancel</button>
+      <button class="btn btn-em" onclick="confirmAssignBill()">Assign to Meter</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
@@ -2507,7 +2556,7 @@ function sv(id,btn){
   const target=btn?.classList.contains('s-item')?btn:btn?.querySelector('.s-item')||btn;
   (target||document.querySelector(`.sidebar .s-item[onclick*="'${id}'"]`))?.classList.add('active');
   sessionStorage.setItem('ch_activeView', id);
-  if(id==='projects') showList();
+  if(id==='pdf'){ setTimeout(updateBillCountBadge, 50); }
   if(id==='utility'){ renderUDProjList(); renderUDDetail(); }
 }
 
@@ -3270,6 +3319,173 @@ function renderPDFFields(parsed){
   const items=Object.entries(parsed).filter(([k,v])=>v!=null&&v!=='');
   el.innerHTML=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div><div class="ef-grid">${items.map(([k,v])=>`<div class="ef-item"><div class="ef-key">${k.replace(/([A-Z])/g,' $1').trim()}</div><input class="ef-input" value="${Array.isArray(v)?v.join(', '):(v||'')}" data-key="${k}"></div>`).join('')}</div>`;
 }
+/* ── SAVED BILLS DATABASE ── */
+function updateBillCountBadge(){
+  const b=sget('en_pdf_bills',[])||[];
+  const badge=document.getElementById('pdfBillCount');
+  if(!badge) return;
+  if(b.length>0){ badge.textContent=b.length; badge.style.display='inline'; }
+  else { badge.style.display='none'; }
+}
+function openSavedBillsModal(){
+  renderSavedBills();
+  document.getElementById('savedBillsModal').classList.add('open');
+}
+function closeSavedBillsModal(){
+  document.getElementById('savedBillsModal').classList.remove('open');
+}
+
+function renderSavedBills(){
+  const bills=sget('en_pdf_bills',[])||[];
+  const count=bills.length;
+  document.getElementById('pdfBillCount').textContent=count?'('+count+' record'+(count!==1?'s':'')+')':'(none)';
+  const el=document.getElementById('savedBillsList');
+  if(!count){
+    el.innerHTML='<div style="padding:16px;font-size:13px;color:var(--text2);text-align:center">No bills saved yet. Extract and save a utility bill above.</div>';
+    return;
+  }
+  // Sort newest first
+  const sorted=[...bills].sort((a,b)=>new Date(b.savedAt)-new Date(a.savedAt));
+  el.innerHTML=sorted.map(b=>{
+    const proj=b.projId?projects.find(p=>p.id===b.projId):null;
+    const assigned=proj?`<span style="color:var(--em);font-size:11px">✓ ${proj.name}</span>`
+                       :`<span style="color:var(--text3);font-size:11px">Unassigned</span>`;
+    const date=b.savedAt?new Date(b.savedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'';
+    const period=b.BillingPeriodStart&&b.BillingPeriodEnd?b.BillingPeriodStart+' – '+b.BillingPeriodEnd:'';
+    const total=b.TotalCurrentCharges?'$'+parseFloat(b.TotalCurrentCharges).toLocaleString('en-US',{minimumFractionDigits:2}):'';
+    return `<div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:13px 15px;margin-bottom:8px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center">
+      <div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:3px">${b.CustomerName||b.AccountNumber||'Unknown'} <span style="font-family:var(--mono);font-size:11px;color:var(--text2)">#${b.AccountNumber||'—'}</span></div>
+        <div style="font-size:11px;color:var(--text2);display:flex;gap:12px;flex-wrap:wrap">
+          ${period?`<span>📅 ${period}</span>`:''}
+          ${b.ServiceAddress?`<span>📍 ${b.ServiceAddress}</span>`:''}
+          ${total?`<span style="color:var(--text)">💵 ${total}</span>`:''}
+          <span>Saved ${date}</span>
+          ${assigned}
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-ghost btn-sm" onclick="viewSavedBill('${b.id}')">View</button>
+        <button class="btn btn-em btn-sm" onclick="openAssignModal('${b.id}')">Assign</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red)" onclick="deleteSavedBill('${b.id}')">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function viewSavedBill(id){
+  const bills=sget('en_pdf_bills',[])||[];
+  const b=bills.find(b=>b.id===id); if(!b) return;
+  document.getElementById('pdfAIBox').textContent=JSON.stringify(b,null,2);
+  document.getElementById('extractMethodBadge').style.display='inline-block';
+  document.getElementById('extractMethodBadge').textContent='📂 Loaded from saved records';
+  document.getElementById('extractMethodBadge').style.background='rgba(14,165,233,.12)';
+  document.getElementById('extractMethodBadge').style.color='var(--em2)';
+  document.getElementById('extractMethodBadge').style.border='1px solid rgba(14,165,233,.25)';
+  // Also re-render the extracted fields
+  renderPDFFields(b);
+  document.getElementById('pdfSaveRow').style.display='block';
+  refreshProjDropdowns();
+  window.scrollTo({top:0,behavior:'smooth'});
+  showToast('Bill loaded — review and re-save to assign to a project');
+}
+
+function deleteSavedBill(id){
+  if(!confirm('Delete this saved bill record? This cannot be undone.')) return;
+  let bills=sget('en_pdf_bills',[])||[];
+  bills=bills.filter(b=>b.id!==id);
+  sset('en_pdf_bills',bills);
+  renderSavedBills();
+  showToast('Record deleted');
+}
+
+/* ── ASSIGN MODAL ── */
+let _assignBillId=null;
+function openAssignModal(billId){
+  _assignBillId=billId;
+  document.getElementById('abm-bill-id').value=billId;
+  document.getElementById('abm-validation').style.display='none';
+  // Populate projects
+  const projSel=document.getElementById('abm-proj');
+  projSel.innerHTML='<option value="">— Select Project —</option>'+
+    projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+  // Pre-select if already assigned
+  const bills=sget('en_pdf_bills',[])||[];
+  const bill=bills.find(b=>b.id===billId);
+  if(bill?.projId) projSel.value=bill.projId;
+  populateAssignBuildings();
+  document.getElementById('assignBillModal').classList.add('open');
+}
+function closeAssignModal(){
+  document.getElementById('assignBillModal').classList.remove('open');
+  _assignBillId=null;
+}
+function populateAssignBuildings(){
+  const pid=parseInt(document.getElementById('abm-proj').value);
+  const bldgSel=document.getElementById('abm-bldg');
+  if(!pid){bldgSel.innerHTML='<option value="">— Select project first —</option>';populateAssignMeters();return;}
+  const udProj=getUDProj(pid);
+  const bldgs=udProj.buildings||[];
+  bldgSel.innerHTML='<option value="">— Select Building —</option>'+
+    bldgs.map(b=>`<option value="${b.id}">${b.name}</option>`).join('');
+  populateAssignMeters();
+}
+function populateAssignMeters(){
+  const pid=parseInt(document.getElementById('abm-proj').value);
+  const bid=document.getElementById('abm-bldg').value;
+  const meterSel=document.getElementById('abm-meter');
+  if(!pid||!bid){meterSel.innerHTML='<option value="">— Select building first —</option>';return;}
+  const udProj=getUDProj(pid);
+  const bldg=(udProj.buildings||[]).find(b=>b.id===bid);
+  const meters=(bldg?.meters||[]).filter(m=>m.commodity==='Electric');
+  if(!meters.length){meterSel.innerHTML='<option value="">No electric meters in this building</option>';return;}
+  meterSel.innerHTML=meters.map(m=>`<option value="${m.id}">${m.provider||''} ${m.account?'#'+m.account:''} ${m.maddr||''}</option>`).join('');
+}
+function confirmAssignBill(){
+  const pid=parseInt(document.getElementById('abm-proj').value);
+  const bid=document.getElementById('abm-bldg').value;
+  const mid=document.getElementById('abm-meter').value;
+  if(!pid||!bid||!mid){showToast('Select project, building, and meter');return;}
+  const bills=sget('en_pdf_bills',[])||[];
+  const bill=bills.find(b=>b.id===_assignBillId); if(!bill) return;
+  const proj=projects.find(p=>p.id===pid); if(!proj) return;
+  const udProj=getUDProj(pid);
+  const bldg=(udProj.buildings||[]).find(b=>b.id===bid); if(!bldg) return;
+  const meter=(bldg.meters||[]).find(m=>m.id===mid); if(!meter) return;
+  // Build billing row from bill data (same mapping as savePDFData)
+  const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
+  const kwhCost=(pf(bill.EnergyOnPeakCharge)+pf(bill.EnergyOffPeakCharge)+pf(bill.ECACharge)+pf(bill.EERCharge)+pf(bill.PTSCharge)).toFixed(2);
+  const kwCost=(pf(bill.BilledKWCharge)+pf(bill.TDCCharge)).toFixed(2);
+  const otherCost=(pf(bill.CustomerCharge)+pf(bill.TaxExemptDelivery)+pf(bill.BillOffset)).toFixed(2);
+  const taxCost=(pf(bill.FranchiseFee)).toFixed(2);
+  const totalCost=pf(bill.TotalCurrentCharges);
+  function toISO(d){if(!d) return '';const p=d.split('/');return p.length===3?p[2]+'-'+p[0].padStart(2,'0')+'-'+p[1].padStart(2,'0'):d;}
+  const billRow={id:'r'+Date.now(),start:toISO(bill.BillingPeriodStart),end:toISO(bill.BillingPeriodEnd),
+    kwh:bill.kWhConsumed||'',demandKW:bill.ActualKW||'',billedKW:bill.BilledKW||'',facKW:bill.FacilitiesKW||'',
+    facKWCost:bill.FacilitiesCharge||'',kwCost,kwhCost,otherCost,taxCost,totalCost:bill.TotalCurrentCharges||'',
+    fromPDF:true,pdfBillId:bill.id};
+  // Validation
+  const componentSum=pf(bill.FacilitiesCharge)+pf(kwCost)+pf(kwhCost)+pf(otherCost)+pf(taxCost);
+  const diff=Math.abs(componentSum-totalCost);
+  if(totalCost>0&&diff>=0.10){
+    const vEl=document.getElementById('abm-validation');
+    vEl.style.display='block';
+    vEl.textContent='⚠️ Components sum to $'+componentSum.toFixed(2)+' but Total is $'+totalCost.toFixed(2)+' (diff $'+diff.toFixed(2)+'). You can still assign but review the values.';
+  }
+  // Check for duplicate
+  meter.bills=meter.bills||[];
+  const dup=meter.bills.find(r=>r.start===billRow.start&&r.end===billRow.end);
+  if(dup) Object.assign(dup,billRow);
+  else { meter.bills.push(billRow); meter.bills.sort((a,b)=>new Date(a.start)-new Date(b.start)); }
+  // Update bill record with project assignment
+  bill.projId=pid; bill.projName=proj.name;
+  sset('en_pdf_bills',bills);
+  saveUtilityData();
+  closeAssignModal();
+  renderSavedBills();
+  showToast('Bill assigned to '+proj.name+' → '+meterLabel(meter)+' ✓');
+}
+
 function savePDFData(){
   // ── Get current extracted data from the output box ──
   const box=document.getElementById('pdfAIBox');
@@ -3371,6 +3587,10 @@ function savePDFData(){
   } else {
     showToast('Raw bill saved to general database ✓');
   }
+  // Refresh count badge on button
+  updateBillCountBadge();
+  // Refresh modal list if open
+  if(document.getElementById('savedBillsModal').classList.contains('open')) renderSavedBills();
 
   // ── Validation warning ──
   if(!valid&&totalCost>0){
