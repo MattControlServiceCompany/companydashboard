@@ -3376,18 +3376,20 @@ function renderSavedBills(){
 function viewSavedBill(id){
   const bills=sget('en_pdf_bills',[])||[];
   const b=bills.find(b=>b.id===id); if(!b) return;
-  document.getElementById('pdfAIBox').textContent=JSON.stringify(b,null,2);
+  // Close modal first so user can see the PDF view
+  closeSavedBillsModal();
+  // Strip internal metadata fields before displaying
+  const display=Object.fromEntries(Object.entries(b).filter(([k])=>!['id','savedAt','projId','projName','fromPDF','pdfBillId'].includes(k)));
+  document.getElementById('pdfAIBox').textContent=JSON.stringify(display,null,2);
   document.getElementById('extractMethodBadge').style.display='inline-block';
   document.getElementById('extractMethodBadge').textContent='📂 Loaded from saved records';
   document.getElementById('extractMethodBadge').style.background='rgba(14,165,233,.12)';
   document.getElementById('extractMethodBadge').style.color='var(--em2)';
   document.getElementById('extractMethodBadge').style.border='1px solid rgba(14,165,233,.25)';
-  // Also re-render the extracted fields
-  renderPDFFields(b);
+  renderPDFFields(display);
   document.getElementById('pdfSaveRow').style.display='block';
   refreshProjDropdowns();
-  window.scrollTo({top:0,behavior:'smooth'});
-  showToast('Bill loaded — review and re-save to assign to a project');
+  showToast('Bill loaded ✓');
 }
 
 function deleteSavedBill(id){
