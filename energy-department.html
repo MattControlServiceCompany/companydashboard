@@ -526,11 +526,11 @@ html,body{height:100%;overflow:hidden;}
 /* Billing rows table */
 .ud-bill-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px;margin-top:4px;}
 /* Sticky bills header + scrollable table body */
-.bills-sticky-hdr{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 18px;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0;position:sticky;top:0;z-index:10;min-height:52px;}
+.bills-sticky-hdr{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 18px;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0;}
 .bills-sticky-left{display:flex;flex-direction:column;gap:2px;min-width:0;}
 .bills-sticky-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);white-space:nowrap;}
 .bills-sticky-sub{font-size:11px;color:var(--text3);}
-.bills-scroll-body{flex:1;overflow-x:auto;}
+.bills-scroll-body{flex:1;overflow-y:auto;overflow-x:auto;min-height:0;}
 .ud-bill-tbl{width:100%;border-collapse:collapse;font-size:12px;min-width:500px;}
 .ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);font-weight:700;padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);background:var(--s1);white-space:nowrap;position:sticky;top:0;z-index:3;box-shadow:0 1px 0 var(--border);}
 .ud-bill-tbl td{padding:6px 10px;border-bottom:1px solid var(--border);vertical-align:middle;}
@@ -4499,9 +4499,8 @@ function renderBillsPane(pane, m, bills, incl){
   }
 
   // Sticky header (frozen) — billing count + controls
-  const stickyHdr=
-    '<div class="bills-sticky-hdr">'+
-      '<div class="bills-sticky-left">'+
+  const stickyHdrInner=
+          '<div class="bills-sticky-left">'+
         '<div class="bills-sticky-title">'+bills.length+' Billing Period'+(bills.length!==1?'s':'')+(bills.length?' · '+getDateRange(bills):'')+' </div>'+
         '<div class="bills-sticky-sub">Acct: '+(m.account||'—')+' · Meter: '+(m.meter||'—')+'</div>'+
       '</div>'+
@@ -4513,19 +4512,20 @@ function renderBillsPane(pane, m, bills, incl){
           '<button class="ud-incl-btn'+(!incl?' sel':'')+'" onclick="setMeterIncl(\''+m.id+'\',false)">Exclusive</button>'+
         '</div>'+
         '<button class="btn btn-em btn-sm" onclick="openBillModal(\''+m.id+'\')">+ Add Period</button>'+
-      '</div>'+
-    '</div>';
+      '</div>';
 
   // Scrollable table body
+  // Scrollable body contains: info bar + table (both scroll together, thead sticks within)
   const tableSection=
     '<div class="bills-scroll-body">'+
+      '<div class="bills-sticky-hdr" style="position:sticky;top:0;z-index:10">'+stickyHdrInner+'</div>'+
       '<div class="ud-bill-wrap" style="border:none;border-radius:0;margin:0">'+
         '<table class="ud-bill-tbl"><thead><tr>'+tblHead+'</tr></thead><tbody>'+tblBody+'</tbody></table>'+
       '</div>'+
     '</div>';
 
-  pane.innerHTML = stickyHdr + tableSection;
-  // Measure the actual sticky bar height and apply as top offset to thead th
+  pane.innerHTML = tableSection;
+  // Measure info bar height within scroll container and offset thead accordingly
   requestAnimationFrame(()=>{
     const bar = pane.querySelector('.bills-sticky-hdr');
     const ths = pane.querySelectorAll('.ud-bill-tbl th');
