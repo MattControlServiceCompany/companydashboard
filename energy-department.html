@@ -2211,7 +2211,7 @@ function emsRenderBuildings(lead){
           </div>
           <div class="bldg-field" style="grid-column:1/-1">
             <div class="bldg-lbl">Address</div>
-            <input class="bldg-input" data-bid="${b.id}" data-field="address" value="${emsEsc(b.address||'')}" placeholder="Street address">
+            <input class="bldg-input" data-bid="${b.id}" data-field="address" value="${emsEsc(b.address||'')}" placeholder="Street address" onblur="emsParseAddress(this)">
           </div>
           <div class="bldg-field">
             <div class="bldg-lbl">City</div>
@@ -2247,6 +2247,88 @@ function emsRenderBuildings(lead){
       </div>
     </div>`).join('');
 }
+
+// US state name → abbreviation map
+const EMS_STATE_MAP = {
+  'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA',
+  'colorado':'CO','connecticut':'CT','delaware':'DE','florida':'FL','georgia':'GA',
+  'hawaii':'HI','idaho':'ID','illinois':'IL','indiana':'IN','iowa':'IA',
+  'kansas':'KS','kentucky':'KY','louisiana':'LA','maine':'ME','maryland':'MD',
+  'massachusetts':'MA','michigan':'MI','minnesota':'MN','mississippi':'MS','missouri':'MO',
+  'montana':'MT','nebraska':'NE','nevada':'NV','new hampshire':'NH','new jersey':'NJ',
+  'new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND','ohio':'OH',
+  'oklahoma':'OK','oregon':'OR','pennsylvania':'PA','rhode island':'RI','south carolina':'SC',
+  'south dakota':'SD','tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT',
+  'virginia':'VA','washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY',
+  'district of columbia':'DC','washington dc':'DC','washington d.c.':'DC'
+};
+
+window.emsParseAddress=function(inp){
+  const val = inp.value.trim();
+  if(!val) return;
+  const card = inp.closest('.bldg-card');
+  if(!card) return;
+  const bid = card.id.replace('ebldg-','');
+
+  const cityInp  = card.querySelector('[data-field="city"]');
+  const stateInp = card.querySelector('[data-field="state"]');
+  const zipInp   = card.querySelector('[data-field="zip"]');
+
+  // Only auto-fill fields that are currently blank
+  const cityBlank  = !cityInp?.value.trim();
+  const stateBlank = !stateInp?.value.trim();
+  const zipBlank   = !zipInp?.value.trim();
+  if(!cityBlank && !stateBlank && !zipBlank) return;
+
+  // Extract ZIP: 5-digit (optionally +4)
+  const zipMatch = val.match(/\b(\d{5})(?:-\d{4})?\b/);
+  if(zipMatch && zipBlank && zipInp) zipInp.value = zipMatch[1];
+
+  // Remove zip from working string
+  let work = val.replace(/\b\d{5}(?:-\d{4})?\b/,'').trim().replace(/,\s*$/,'');
+
+  // Try "City, ST" or "City, State" at end
+  // Pattern: anything, comma, (state abbr or full name)
+  const stateAbbr = /,\s*([A-Z]{2})\s*$/.exec(work);
+  const stateFull = /,\s*([A-Za-z\s\.]+)\s*$/.exec(work);
+
+  let detectedCity = '', detectedState = '';
+
+  if(stateAbbr){
+    detectedState = stateAbbr[1].toUpperCase();
+    detectedCity  = work.slice(0, stateAbbr.index).replace(/.*,\s*/,'').trim();
+  } else if(stateFull){
+    const candidate = stateFull[1].trim().toLowerCase();
+    const abbr = EMS_STATE_MAP[candidate] || (candidate.length===2 ? candidate.toUpperCase() : '');
+    if(abbr){
+      detectedState = abbr;
+      detectedCity  = work.slice(0, stateFull.index).replace(/.*,\s*/,'').trim();
+    }
+  }
+
+  // If still no city, check if entire value looks like "City, State" with no street
+  // (common in imported CSVs — e.g. "Lexington, Missouri")
+  if(!detectedCity && !detectedState){
+    const simple = /^([A-Za-z\s\.\-]+),\s*([A-Za-z\s\.]+)$/.exec(val);
+    if(simple){
+      const maybeState = simple[2].trim().toLowerCase();
+      const abbr = EMS_STATE_MAP[maybeState] || (maybeState.length===2 ? maybeState.toUpperCase() : '');
+      if(abbr){ detectedCity = simple[1].trim(); detectedState = abbr; }
+    }
+  }
+
+  if(detectedCity  && cityBlank  && cityInp)  cityInp.value  = detectedCity;
+  if(detectedState && stateBlank && stateInp) stateInp.value = detectedState;
+
+  // Visual pulse to show fields were filled
+  [cityInp, stateInp, zipInp].forEach(el=>{
+    if(el && el.value && el !== inp){
+      el.style.transition='background .3s';
+      el.style.background='rgba(0,212,170,.15)';
+      setTimeout(()=>{ el.style.background=''; },1200);
+    }
+  });
+};
 
 window.emsToggleBuilding=function(bid){
   const card=document.getElementById('ebldg-'+bid);
