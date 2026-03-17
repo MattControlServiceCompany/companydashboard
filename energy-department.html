@@ -1130,9 +1130,6 @@ html,body{height:100%;overflow:hidden;}
 #view-ems .ems-main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden;}
 #view-ems .ems-view{display:none;padding:22px 24px;animation:fadeUp .22s ease;flex:1;overflow-y:auto;}
 #view-ems .ems-view.active{display:flex;flex-direction:column;}
-#view-ems #eview-table{padding-bottom:0;}
-#view-ems #eview-table .filter-bar{flex-shrink:0;}
-#view-ems #eview-table .pg-hdr{flex-shrink:0;}
 #view-ems .pg-title{font-family:var(--head);font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.1;}
 #view-ems .pg-title em{color:var(--em);font-style:normal;}
 #view-ems .pg-sub{font-size:12px;color:var(--text2);margin-top:4px;line-height:1.5;}
@@ -1174,7 +1171,7 @@ html,body{height:100%;overflow:hidden;}
 #view-ems .lc-action{font-size:10px;color:var(--warn);margin-top:6px;display:flex;align-items:center;gap:4px;}
 #view-ems .overdue-flag{color:var(--danger);}
 #view-ems .tbl-wrap{overflow:auto;flex:1;min-height:0;height:100%;}
-#view-ems #eview-table{display:flex;flex-direction:column;padding-bottom:0;}
+#view-ems #eview-table.active{display:flex;flex-direction:column;padding-bottom:0;}
 #view-ems #eview-table .filter-bar{flex-shrink:0;}
 #view-ems #eview-table .pg-hdr{flex-shrink:0;}
 #view-ems #eview-table .tbl-wrap{flex:1;min-height:0;overflow:auto;}
