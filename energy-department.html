@@ -532,7 +532,7 @@ html,body{height:100%;overflow:hidden;}
 .bills-sticky-sub{font-size:11px;color:var(--text3);}
 .bills-scroll-body{flex:1;overflow-y:auto;overflow-x:auto;}
 .ud-bill-tbl{width:100%;border-collapse:collapse;font-size:12px;min-width:500px;}
-.ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);font-weight:700;padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);background:var(--s1);white-space:nowrap;}
+.ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);font-weight:700;padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);background:var(--s1);white-space:nowrap;position:sticky;top:0;z-index:3;box-shadow:0 1px 0 var(--border);}
 .ud-bill-tbl td{padding:6px 10px;border-bottom:1px solid var(--border);vertical-align:middle;}
 .ud-bill-tbl tr:last-child td{border-bottom:none;}
 .ud-bill-tbl input{font-family:var(--mono);font-size:12px;color:var(--text);background:transparent;border:none;outline:none;width:100%;padding:2px 3px;min-width:60px;}
@@ -1126,7 +1126,10 @@ html,body{height:100%;overflow:hidden;}
 #view-ems .ems-s-badge{margin-left:auto;font-size:10px;font-family:var(--mono);background:var(--em);color:#05080f;border-radius:9px;padding:1px 6px;font-weight:700;}
 #view-ems .ems-main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden;}
 #view-ems .ems-view{display:none;padding:22px 24px;animation:fadeUp .22s ease;flex:1;overflow-y:auto;}
-#view-ems .ems-view.active{display:block;}
+#view-ems .ems-view.active{display:flex;flex-direction:column;}
+#view-ems #eview-table{padding-bottom:0;}
+#view-ems #eview-table .filter-bar{flex-shrink:0;}
+#view-ems #eview-table .pg-hdr{flex-shrink:0;}
 #view-ems .pg-title{font-family:var(--head);font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.1;}
 #view-ems .pg-title em{color:var(--em);font-style:normal;}
 #view-ems .pg-sub{font-size:12px;color:var(--text2);margin-top:4px;line-height:1.5;}
@@ -1167,9 +1170,13 @@ html,body{height:100%;overflow:hidden;}
 #view-ems .tag{font-size:10px;font-family:var(--mono);padding:2px 6px;border-radius:4px;background:var(--s3);color:var(--text2);}
 #view-ems .lc-action{font-size:10px;color:var(--warn);margin-top:6px;display:flex;align-items:center;gap:4px;}
 #view-ems .overdue-flag{color:var(--danger);}
-#view-ems .tbl-wrap{overflow-x:auto;}
+#view-ems .tbl-wrap{overflow:auto;flex:1;min-height:0;height:100%;}
+#view-ems #eview-table{display:flex;flex-direction:column;padding-bottom:0;}
+#view-ems #eview-table .filter-bar{flex-shrink:0;}
+#view-ems #eview-table .pg-hdr{flex-shrink:0;}
+#view-ems #eview-table .tbl-wrap{flex:1;min-height:0;overflow:auto;}
 #view-ems table{width:100%;border-collapse:collapse;font-size:12px;}
-#view-ems thead th{padding:9px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text2);background:var(--s2);border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;}
+#view-ems thead th{padding:9px 12px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text2);background:var(--s2);border-bottom:2px solid var(--border2);white-space:nowrap;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;box-shadow:0 1px 0 var(--border);}
 #view-ems thead th:hover{color:var(--em);}
 #view-ems tbody tr{border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s;}
 #view-ems tbody tr:hover{background:var(--s2);}
@@ -1376,11 +1383,16 @@ html,body{height:100%;overflow:hidden;}
         </select>
         <select class="filter-sel" id="etablePri" onchange="emsRenderTable()"><option value="">All Priority</option><option>High</option><option>Medium</option><option>Low</option></select>
         <select class="filter-sel" id="etableCSC" onchange="emsRenderTable()"><option value="">All CSC</option></select>
+        <select class="filter-sel" id="etableClientType" onchange="emsRenderTable()">
+          <option value="">All Client Types</option>
+          <option>School</option><option>Municipality</option><option>Apartments</option><option>Commercial</option><option>Retail</option><option>Data Center</option><option>Industrial</option><option>Healthcare</option><option>Other</option>
+        </select>
       </div>
       <div class="tbl-wrap">
         <table>
           <thead><tr>
             <th onclick="emsSortTable('company')">Company ↕</th>
+            <th onclick="emsSortTable('clientType')">Client Type ↕</th>
             <th onclick="emsSortTable('city')">Location ↕</th>
             <th onclick="emsSortTable('stage')">Stage ↕</th>
             <th onclick="emsSortTable('priority')">Priority ↕</th>
@@ -1443,6 +1455,7 @@ html,body{height:100%;overflow:hidden;}
         <div class="detail-field" style="grid-column:1/-1"><div class="df-label">Company / Prospect Name</div><input class="df-input" id="ed-company" type="text"></div>
         <div class="detail-field"><div class="df-label">Stage</div><select class="df-select" id="ed-stage"><option>Prospect</option><option>Qualifying</option><option>Proposal</option><option>Won</option><option>Lost</option></select></div>
         <div class="detail-field"><div class="df-label">Priority</div><select class="df-select" id="ed-priority"><option>High</option><option>Medium</option><option>Low</option></select></div>
+        <div class="detail-field"><div class="df-label">Client Type</div><select class="df-select" id="ed-clientType"><option value="">— Select —</option><option>School</option><option>Municipality</option><option>Apartments</option><option>Commercial</option><option>Retail</option><option>Data Center</option><option>Industrial</option><option>Healthcare</option><option>Other</option></select></div>
         <div class="detail-field"><div class="df-label">CSC Point of Contact</div><input class="df-input" id="ed-cscContact" type="text" placeholder="Internal CSC rep"></div>
         <div class="detail-field"><div class="df-label">Assigned Engineer</div><input class="df-input" id="ed-cscEngineer" type="text" placeholder="Engineer name"></div>
         <div class="detail-field"><div class="df-label">EMS Project Type</div><select class="df-select" id="ed-type"><option value="">— Select —</option><option>Energy Audit</option><option>Controls Retrofit</option><option>BAS Upgrade</option><option>Lighting Upgrade</option><option>HVAC Optimization</option><option>Full EMS Contract</option><option>Monitoring &amp; Analytics</option><option>Demand Response</option><option>Solar/Renewables</option><option>Other</option></select></div>
@@ -1501,6 +1514,7 @@ html,body{height:100%;overflow:hidden;}
         <div class="fg"><label class="fl">Stage</label><select class="fs" id="enl-stage"><option>Prospect</option><option>Qualifying</option><option>Proposal</option><option>Won</option><option>Lost</option></select></div>
         <div class="fg"><label class="fl">Priority</label><select class="fs" id="enl-priority"><option>Medium</option><option>High</option><option>Low</option></select></div>
       </div>
+      <div class="fg"><label class="fl">Client Type</label><select class="fs" id="enl-clientType"><option value="">— Select —</option><option>School</option><option>Municipality</option><option>Apartments</option><option>Commercial</option><option>Retail</option><option>Data Center</option><option>Industrial</option><option>Healthcare</option><option>Other</option></select></div>
       <div class="f2">
         <div class="fg"><label class="fl">CSC Point of Contact</label><input class="fi" id="enl-cscContact" placeholder="Internal rep"></div>
         <div class="fg"><label class="fl">Assigned Engineer</label><input class="fi" id="enl-cscEngineer"></div>
@@ -1672,6 +1686,7 @@ const EMS_STAGE_CLS = {Prospect:'sp-prospect',Contacted:'sp-contacted',Qualifyin
 const EMS_FIELDS_KEY = 'ems_field_defs';
 const EMS_BUILTIN_FIELDS = [
   {key:'company',label:'Company Name *',builtin:true},{key:'address',label:'Address',builtin:true},{key:'city',label:'City',builtin:true},{key:'state',label:'State',builtin:true},{key:'zip',label:'Zip',builtin:true},
+  {key:'clientType',label:'Client Type',builtin:true},
   {key:'contactName',label:'Contact Name',builtin:true},{key:'contactPhone',label:'Contact Phone',builtin:true},{key:'contactEmail',label:'Contact Email',builtin:true},{key:'contactTitle',label:'Contact Title',builtin:true},
   {key:'buildingType',label:'Building Type',builtin:true},{key:'buildingSqft',label:'Building Sq Ft',builtin:true},{key:'annualValue',label:'Est. Annual Value',builtin:true},
   {key:'cscContact',label:'CSC Contact',builtin:true},{key:'cscEngineer',label:'Engineer',builtin:true},{key:'stage',label:'Stage',builtin:true},{key:'priority',label:'Priority',builtin:true},
@@ -1885,20 +1900,23 @@ window.emsRenderTable=function(){
   const stage=document.getElementById('etableStage')?.value||'';
   const pri=document.getElementById('etablePri')?.value||'';
   const csc=document.getElementById('etableCSC')?.value||'';
+  const clientType=document.getElementById('etableClientType')?.value||'';
   let data=emsLeads.filter(l=>{
     if(emsStageFilter&&l.stage!==emsStageFilter) return false;
     if(emsPriFilter&&l.priority!==emsPriFilter) return false;
     if(stage&&l.stage!==stage) return false;
     if(pri&&l.priority!==pri) return false;
     if(csc&&l.cscContact!==csc) return false;
-    if(search){ const hay=(l.company+l.city+l.state+l.contactName+l.cscContact+l.type+l.notes).toLowerCase(); if(!hay.includes(search)) return false; }
+    if(clientType&&l.clientType!==clientType) return false;
+    if(search){ const hay=(l.company+(l.clientType||'')+l.city+l.state+l.contactName+l.cscContact+l.type+l.notes).toLowerCase(); if(!hay.includes(search)) return false; }
     return true;
   });
   data.sort((a,b)=>{ let av=a[emsSortCol]||'',bv=b[emsSortCol]||''; if(!isNaN(av)&&!isNaN(bv)) return emsSortAsc?(+av)-(+bv):(+bv)-(+av); return emsSortAsc?av.toString().localeCompare(bv.toString()):bv.toString().localeCompare(av.toString()); });
   document.getElementById('emsTableBody').innerHTML=data.length===0
-    ?`<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text3)">No leads found</td></tr>`
+    ?`<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text3)">No leads found</td></tr>`
     :data.map(l=>`<tr onclick="emsOpenDrawer('${l.id}')">
       <td class="td-company">${emsEsc(l.company||'—')}</td>
+      <td>${emsEsc(l.clientType||'—')}</td>
       <td>${(()=>{const bldgs=l.buildings||[];if(bldgs.length){const first=bldgs[0];const loc=[first.city,first.state].filter(Boolean).join(', ');return loc||(bldgs.length+' building'+(bldgs.length>1?'s':''));}return [l.city,l.state].filter(Boolean).join(', ')||'—';})()}</td>
       <td><span class="stage-pill ${EMS_STAGE_CLS[l.stage]||''}">${l.stage||'—'}</span></td>
       <td class="pri-${(l.priority||'').toLowerCase()}">${l.priority||'—'}</td>
@@ -1990,7 +2008,7 @@ window.emsOpenDrawer=function(id){
   const lead=emsLeads.find(l=>l.id===id); if(!lead) return;
   emsActiveId=id;
   document.getElementById('emsDrawerTitle').textContent=lead.company||'Lead Detail';
-  ['company','stage','priority','cscContact','cscEngineer','type','annualValue','contactName','contactTitle','contactPhone','contactEmail','nextActionDate','lastContact','nextAction','notes'].forEach(f=>{
+  ['company','stage','priority','clientType','cscContact','cscEngineer','type','annualValue','contactName','contactTitle','contactPhone','contactEmail','nextActionDate','lastContact','nextAction','notes'].forEach(f=>{
     const el=document.getElementById('ed-'+f); if(el) el.value=lead[f]||'';
   });
   document.getElementById('ed-tags').value=(lead.tags||[]).join(', ');
@@ -2008,7 +2026,7 @@ window.emsCloseDrawer=function(){
 };
 window.emsSaveDrawer=function(){
   const lead=emsLeads.find(l=>l.id===emsActiveId); if(!lead) return;
-  ['company','stage','priority','cscContact','cscEngineer','type','annualValue','contactName','contactTitle','contactPhone','contactEmail','nextActionDate','lastContact','nextAction','notes'].forEach(f=>{
+  ['company','stage','priority','clientType','cscContact','cscEngineer','type','annualValue','contactName','contactTitle','contactPhone','contactEmail','nextActionDate','lastContact','nextAction','notes'].forEach(f=>{
     const el=document.getElementById('ed-'+f); if(el) lead[f]=el.value;
   });
   lead.tags=document.getElementById('ed-tags').value.split(',').map(t=>t.trim()).filter(Boolean);
@@ -2170,6 +2188,7 @@ window.emsSaveNew=function(){
     id:emsGenId(),company,
     stage:document.getElementById('enl-stage').value,
     priority:document.getElementById('enl-priority').value,
+    clientType:document.getElementById('enl-clientType').value,
     cscContact:document.getElementById('enl-cscContact').value,
     cscEngineer:document.getElementById('enl-cscEngineer').value,
     type:document.getElementById('enl-type').value,
@@ -2219,7 +2238,7 @@ window.emsParseCSVPreview=function(){
   if(parsed.length<2){document.getElementById('emsCsvStatus').innerHTML='<div style="color:var(--danger);font-size:12px;margin-top:6px">Could not parse CSV.</div>';return;}
   emsCsvHeaders=parsed[0]; emsCsvRows=parsed.slice(1).filter(r=>r.some(c=>c));
   document.getElementById('emsCsvStatus').innerHTML=`<div class="parse-ok">✓ Found ${emsCsvRows.length} rows and ${emsCsvHeaders.length} columns</div>`;
-  const autoMap={company:['company','customer','name','account','prospect'],city:['city','town'],state:['state','st'],zip:['zip','postal'],contactName:['contact','contact name'],contactPhone:['phone','telephone'],contactEmail:['email','e-mail'],annualValue:['value','annual value','revenue'],cscContact:['csc','csc contact','rep'],notes:['notes','comments']};
+  const autoMap={company:['company','customer','name','account','prospect'],city:['city','town'],state:['state','st'],zip:['zip','postal'],contactName:['contact','contact name'],contactPhone:['phone','telephone'],contactEmail:['email','e-mail'],annualValue:['value','annual value','revenue'],cscContact:['csc','csc contact','rep'],notes:['notes','comments'],clientType:['client type','customer type','sector','industry','type of client']};
   const mapped={};
   emsCsvHeaders.forEach((h,i)=>{const hl=h.toLowerCase().trim();for(const[field,aliases] of Object.entries(autoMap)){if(aliases.some(a=>hl.includes(a))){mapped[i]=field;break;}}});
   const fieldOpts=EMS_LEAD_FIELDS.map(f=>`<option value="${f.key}">${f.label}</option>`).join('');
