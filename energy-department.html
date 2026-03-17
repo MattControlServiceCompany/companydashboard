@@ -4517,43 +4517,52 @@ function renderBillsPane(pane, m, bills, incl){
         '<button class="btn btn-em btn-sm" onclick="openBillModal(\''+m.id+'\')">+ Add Period</button>'+
       '</div>';
 
-  // Layout: info bar (fixed) + header table (fixed) + body table (scrolls)
-  // Both tables share a colgroup so columns stay aligned
+  // Layout: info bar (fixed) + header table (fixed) + scrolling body table
+  // Step 1: render body table naturally (auto layout) so browser sizes columns correctly
+  // Step 2: read those widths, inject colgroups into both tables, lock layout
   pane.innerHTML =
     '<div class="bills-sticky-hdr">' + stickyHdrInner + '</div>' +
-    '<div class="bills-thead-wrap" style="overflow-x:auto" id="billsTheadWrap">' +
-      '<table class="ud-bill-tbl" style="table-layout:fixed;width:max-content" id="billsHdrTbl">' +
+    '<div class="bills-thead-wrap" id="billsTheadWrap" style="overflow-x:hidden;flex-shrink:0;">' +
+      '<table class="ud-bill-tbl" id="billsHdrTbl" style="table-layout:fixed;">' +
         '<thead><tr>' + tblHead + '</tr></thead>' +
       '</table>' +
     '</div>' +
     '<div class="bills-scroll-body" id="billsScrollBody">' +
-      '<table class="ud-bill-tbl" style="table-layout:fixed;width:max-content" id="billsBodyTbl">' +
+      '<table class="ud-bill-tbl" id="billsBodyTbl">' +
         '<tbody>' + tblBody + '</tbody>' +
       '</table>' +
     '</div>';
 
-  // Sync column widths and keep horizontal scroll in sync
+  // After browser lays out the body table naturally, copy column widths to both tables
   requestAnimationFrame(()=>{
     const hdrTbl = pane.querySelector('#billsHdrTbl');
     const bodyTbl = pane.querySelector('#billsBodyTbl');
     const theadWrap = pane.querySelector('#billsTheadWrap');
     const scrollBody = pane.querySelector('#billsScrollBody');
-    if(!hdrTbl||!bodyTbl) return;
+    if(!hdrTbl || !bodyTbl) return;
 
-    // Read widths from body cells (they have actual data, more reliable)
+    // Get natural widths from the auto-layout body table
     const firstRow = bodyTbl.querySelector('tbody tr:first-child');
-    const hdrCells = hdrTbl.querySelectorAll('thead th');
-    if(firstRow){
-      const bodyCells = firstRow.querySelectorAll('td');
-      bodyCells.forEach((td, i)=>{
-        const w = td.getBoundingClientRect().width;
-        if(hdrCells[i]) hdrCells[i].style.width = w+'px';
-        td.style.width = w+'px';
-      });
-    }
+    if(!firstRow) return;
+    const tds = Array.from(firstRow.querySelectorAll('td'));
+    const widths = tds.map(td => td.getBoundingClientRect().width);
 
-    // Sync horizontal scroll between header and body
-    scrollBody.addEventListener('scroll', ()=>{ theadWrap.scrollLeft = scrollBody.scrollLeft; }, {passive:true});
+    // Build colgroup HTML
+    const colgroup = '<colgroup>' + widths.map(w => '<col style="width:' + Math.ceil(w) + 'px;min-width:' + Math.ceil(w) + 'px">').join('') + '</colgroup>';
+
+    // Inject colgroup and switch both tables to fixed layout
+    hdrTbl.insertAdjacentHTML('afterbegin', colgroup);
+    bodyTbl.insertAdjacentHTML('afterbegin', colgroup);
+    hdrTbl.style.tableLayout = 'fixed';
+    bodyTbl.style.tableLayout = 'fixed';
+
+    // Set explicit total width on both tables
+    const totalW = widths.reduce((s, w) => s + Math.ceil(w), 0);
+    hdrTbl.style.width = totalW + 'px';
+    bodyTbl.style.width = totalW + 'px';
+
+    // Sync horizontal scroll: body drives header
+    scrollBody.addEventListener('scroll', () => { theadWrap.scrollLeft = scrollBody.scrollLeft; }, {passive: true});
   });
 }
 
