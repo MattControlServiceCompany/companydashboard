@@ -526,13 +526,13 @@ html,body{height:100%;overflow:hidden;}
 /* Billing rows table */
 .ud-bill-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px;margin-top:4px;}
 /* Sticky bills header + scrollable table body */
-.bills-sticky-hdr{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 18px;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0;position:sticky;top:0;z-index:10;}
+.bills-sticky-hdr{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 18px;background:var(--s1);border-bottom:1px solid var(--border);flex-shrink:0;position:sticky;top:0;z-index:10;min-height:52px;}
 .bills-sticky-left{display:flex;flex-direction:column;gap:2px;min-width:0;}
 .bills-sticky-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);white-space:nowrap;}
 .bills-sticky-sub{font-size:11px;color:var(--text3);}
-.bills-scroll-body{flex:1;overflow-y:auto;overflow-x:auto;}
+.bills-scroll-body{flex:1;overflow-x:auto;}
 .ud-bill-tbl{width:100%;border-collapse:collapse;font-size:12px;min-width:500px;}
-.ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);font-weight:700;padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);background:var(--s1);white-space:nowrap;position:sticky;top:0;z-index:3;box-shadow:0 1px 0 var(--border);}
+.ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);font-weight:700;padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);background:var(--s1);white-space:nowrap;position:sticky;top:52px;z-index:3;box-shadow:0 1px 0 var(--border);}
 .ud-bill-tbl td{padding:6px 10px;border-bottom:1px solid var(--border);vertical-align:middle;}
 .ud-bill-tbl tr:last-child td{border-bottom:none;}
 .ud-bill-tbl input{font-family:var(--mono);font-size:12px;color:var(--text);background:transparent;border:none;outline:none;width:100%;padding:2px 3px;min-width:60px;}
