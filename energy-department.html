@@ -530,9 +530,12 @@ html,body{height:100%;overflow:hidden;}
 .bills-sticky-left{display:flex;flex-direction:column;gap:2px;min-width:0;}
 .bills-sticky-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);white-space:nowrap;}
 .bills-sticky-sub{font-size:11px;color:var(--text3);}
+.bills-thead-wrap{flex-shrink:0;overflow-x:hidden;background:var(--s1);border-bottom:2px solid var(--border2);}
+.bills-thead-wrap .ud-bill-tbl{margin:0;}
 .bills-scroll-body{flex:1;overflow-y:auto;overflow-x:auto;min-height:0;}
+.bills-scroll-body .ud-bill-tbl{margin:0;}
 .ud-bill-tbl{width:100%;border-collapse:collapse;font-size:12px;min-width:500px;}
-.ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);font-weight:700;padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);background:var(--s1);white-space:nowrap;position:sticky;top:0;z-index:3;box-shadow:0 1px 0 var(--border);}
+.ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);font-weight:700;padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);background:var(--s1);white-space:nowrap;}
 .ud-bill-tbl td{padding:6px 10px;border-bottom:1px solid var(--border);vertical-align:middle;}
 .ud-bill-tbl tr:last-child td{border-bottom:none;}
 .ud-bill-tbl input{font-family:var(--mono);font-size:12px;color:var(--text);background:transparent;border:none;outline:none;width:100%;padding:2px 3px;min-width:60px;}
@@ -4514,25 +4517,43 @@ function renderBillsPane(pane, m, bills, incl){
         '<button class="btn btn-em btn-sm" onclick="openBillModal(\''+m.id+'\')">+ Add Period</button>'+
       '</div>';
 
-  // Scrollable table body
-  // Scrollable body contains: info bar + table (both scroll together, thead sticks within)
-  const tableSection=
-    '<div class="bills-scroll-body">'+
-      '<div class="bills-sticky-hdr" style="position:sticky;top:0;z-index:10">'+stickyHdrInner+'</div>'+
-      '<div class="ud-bill-wrap" style="border:none;border-radius:0;margin:0">'+
-        '<table class="ud-bill-tbl"><thead><tr>'+tblHead+'</tr></thead><tbody>'+tblBody+'</tbody></table>'+
-      '</div>'+
+  // Layout: info bar (fixed) + header table (fixed) + body table (scrolls)
+  // Both tables share a colgroup so columns stay aligned
+  pane.innerHTML =
+    '<div class="bills-sticky-hdr">' + stickyHdrInner + '</div>' +
+    '<div class="bills-thead-wrap" style="overflow-x:auto" id="billsTheadWrap">' +
+      '<table class="ud-bill-tbl" style="table-layout:fixed;width:max-content" id="billsHdrTbl">' +
+        '<thead><tr>' + tblHead + '</tr></thead>' +
+      '</table>' +
+    '</div>' +
+    '<div class="bills-scroll-body" id="billsScrollBody">' +
+      '<table class="ud-bill-tbl" style="table-layout:fixed;width:max-content" id="billsBodyTbl">' +
+        '<tbody>' + tblBody + '</tbody>' +
+      '</table>' +
     '</div>';
 
-  pane.innerHTML = tableSection;
-  // Measure info bar height within scroll container and offset thead accordingly
+  // Sync column widths and keep horizontal scroll in sync
   requestAnimationFrame(()=>{
-    const bar = pane.querySelector('.bills-sticky-hdr');
-    const ths = pane.querySelectorAll('.ud-bill-tbl th');
-    if(bar && ths.length){
-      const h = bar.getBoundingClientRect().height;
-      ths.forEach(th => th.style.top = h + 'px');
+    const hdrTbl = pane.querySelector('#billsHdrTbl');
+    const bodyTbl = pane.querySelector('#billsBodyTbl');
+    const theadWrap = pane.querySelector('#billsTheadWrap');
+    const scrollBody = pane.querySelector('#billsScrollBody');
+    if(!hdrTbl||!bodyTbl) return;
+
+    // Read widths from body cells (they have actual data, more reliable)
+    const firstRow = bodyTbl.querySelector('tbody tr:first-child');
+    const hdrCells = hdrTbl.querySelectorAll('thead th');
+    if(firstRow){
+      const bodyCells = firstRow.querySelectorAll('td');
+      bodyCells.forEach((td, i)=>{
+        const w = td.getBoundingClientRect().width;
+        if(hdrCells[i]) hdrCells[i].style.width = w+'px';
+        td.style.width = w+'px';
+      });
     }
+
+    // Sync horizontal scroll between header and body
+    scrollBody.addEventListener('scroll', ()=>{ theadWrap.scrollLeft = scrollBody.scrollLeft; }, {passive:true});
   });
 }
 
