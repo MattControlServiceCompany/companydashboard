@@ -1390,7 +1390,10 @@ html,body{height:100%;overflow:hidden;}
           <thead><tr>
             <th onclick="emsSortTable('company')">Company ↕</th>
             <th onclick="emsSortTable('clientType')">Client Type ↕</th>
-            <th onclick="emsSortTable('city')">Location ↕</th>
+            <th onclick="emsSortTable('address')">Address ↕</th>
+            <th onclick="emsSortTable('saNum')">SA # ↕</th>
+            <th onclick="emsSortTable('webctrlVersion')">WebCTRL Ver ↕</th>
+            <th onclick="emsSortTable('renewalDate')">Renewal Date ↕</th>
             <th onclick="emsSortTable('stage')">Stage ↕</th>
             <th onclick="emsSortTable('priority')">Priority ↕</th>
             <th onclick="emsSortTable('cscContact')">CSC Contact ↕</th>
@@ -1465,6 +1468,9 @@ html,body{height:100%;overflow:hidden;}
           <select class="df-select" id="ed-clientType"></select></div>
         <div class="detail-field"><div class="df-label">CSC Point of Contact</div><input class="df-input" id="ed-cscContact" type="text" placeholder="Internal CSC rep"></div>
         <div class="detail-field"><div class="df-label">Assigned Engineer</div><input class="df-input" id="ed-cscEngineer" type="text" placeholder="Engineer name"></div>
+        <div class="detail-field"><div class="df-label">SA #</div><input class="df-input" id="ed-saNum" type="text" placeholder="e.g. SA-1234"></div>
+        <div class="detail-field"><div class="df-label">WebCTRL Version</div><input class="df-input" id="ed-webctrlVersion" type="text" placeholder="e.g. 8.5"></div>
+        <div class="detail-field"><div class="df-label">Renewal Date</div><input class="df-input" id="ed-renewalDate" type="date"></div>
         <div class="detail-field"><div class="df-label">EMS Project Type</div><select class="df-select" id="ed-type"><option value="">— Select —</option><option>Energy Audit</option><option>Controls Retrofit</option><option>BAS Upgrade</option><option>Lighting Upgrade</option><option>HVAC Optimization</option><option>Full EMS Contract</option><option>Monitoring &amp; Analytics</option><option>Demand Response</option><option>Solar/Renewables</option><option>Other</option></select></div>
         <div class="detail-field"><div class="df-label">Estimated Annual Value ($)</div><input class="df-input" id="ed-annualValue" type="number" placeholder="0"></div>
       </div>
@@ -1698,7 +1704,7 @@ const EMS_BUILTIN_FIELDS = [
   {key:'clientType',label:'Client Type',builtin:true},
   {key:'contactName',label:'Contact Name',builtin:true},{key:'contactPhone',label:'Contact Phone',builtin:true},{key:'contactEmail',label:'Contact Email',builtin:true},{key:'contactTitle',label:'Contact Title',builtin:true},
   {key:'buildingType',label:'Building Type',builtin:true},{key:'buildingSqft',label:'Building Sq Ft',builtin:true},{key:'annualValue',label:'Est. Annual Value',builtin:true},
-  {key:'cscContact',label:'CSC Contact',builtin:true},{key:'cscEngineer',label:'Engineer',builtin:true},{key:'stage',label:'Stage',builtin:true},{key:'priority',label:'Priority',builtin:true},
+  {key:'cscContact',label:'CSC Contact',builtin:true},{key:'cscEngineer',label:'Engineer',builtin:true},{key:'saNum',label:'SA #',builtin:true},{key:'webctrlVersion',label:'WebCTRL Version',builtin:true},{key:'renewalDate',label:'Renewal Date',builtin:true},{key:'stage',label:'Stage',builtin:true},{key:'priority',label:'Priority',builtin:true},
   {key:'type',label:'Project Type',builtin:true},{key:'notes',label:'Notes',builtin:true},{key:'nextAction',label:'Next Action',builtin:true},{key:'nextActionDate',label:'Next Action Date',builtin:true},
   {key:'lastContact',label:'Last Contact Date',builtin:true}
 ];
@@ -1882,7 +1888,7 @@ function emsCardHTML(l){
       <div class="priority-dot" style="background:${pc};margin-top:4px"></div>
       <div class="lc-company">${emsEsc(l.company||'—')}</div>
     </div>
-    <div class="lc-meta">${(()=>{const bldgs=l.buildings||[];if(bldgs.length){const first=bldgs[0];const loc=[first.city,first.state].filter(Boolean).join(', ');return (bldgs.length>1?bldgs.length+' buildings':first.buildingType||'1 building')+(loc?' · '+loc:'');}return [l.buildingType,l.city&&l.state?l.city+', '+l.state:l.city||l.state].filter(Boolean).join(' · ')||'No location set';})()}</div>
+    <div class="lc-meta">${(()=>{const bldgs=l.buildings||[];if(bldgs.length){const first=bldgs[0];const loc=first.address||[first.city,first.state].filter(Boolean).join(', ');return (bldgs.length>1?bldgs.length+' buildings':first.buildingType||'1 building')+(loc?' · '+loc:'');}return l.address||l.buildingType||'No location set';})()}</div>
     ${l.cscContact?`<div style="font-size:10px;color:var(--em2)">👤 ${emsEsc(l.cscContact)}</div>`:''}
     ${l.tags&&l.tags.length?`<div class="lc-tags">${l.tags.slice(0,3).map(t=>`<span class="tag">${emsEsc(t)}</span>`).join('')}</div>`:''}
     <div class="lc-row">
@@ -1917,16 +1923,19 @@ window.emsRenderTable=function(){
     if(pri&&l.priority!==pri) return false;
     if(csc&&l.cscContact!==csc) return false;
     if(clientType&&l.clientType!==clientType) return false;
-    if(search){ const hay=(l.company+(l.clientType||'')+l.city+l.state+l.contactName+l.cscContact+l.type+l.notes).toLowerCase(); if(!hay.includes(search)) return false; }
+    if(search){ const hay=(l.company+(l.clientType||'')+(l.address||'')+(l.saNum||'')+(l.webctrlVersion||'')+l.contactName+l.cscContact+l.type+l.notes).toLowerCase(); if(!hay.includes(search)) return false; }
     return true;
   });
   data.sort((a,b)=>{ let av=a[emsSortCol]||'',bv=b[emsSortCol]||''; if(!isNaN(av)&&!isNaN(bv)) return emsSortAsc?(+av)-(+bv):(+bv)-(+av); return emsSortAsc?av.toString().localeCompare(bv.toString()):bv.toString().localeCompare(av.toString()); });
   document.getElementById('emsTableBody').innerHTML=data.length===0
-    ?`<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text3)">No leads found</td></tr>`
+    ?`<tr><td colspan="12" style="text-align:center;padding:40px;color:var(--text3)">No leads found</td></tr>`
     :data.map(l=>`<tr onclick="emsOpenDrawer('${l.id}')">
       <td class="td-company">${emsEsc(l.company||'—')}</td>
       <td>${emsEsc(l.clientType||'—')}</td>
-      <td>${(()=>{const bldgs=l.buildings||[];if(bldgs.length){const first=bldgs[0];const loc=[first.city,first.state].filter(Boolean).join(', ');return loc||(bldgs.length+' building'+(bldgs.length>1?'s':''));}return [l.city,l.state].filter(Boolean).join(', ')||'—';})()}</td>
+      <td>${emsEsc((()=>{const bldgs=l.buildings||[];if(bldgs.length&&bldgs[0].address){return bldgs[0].address+(bldgs.length>1?' +'+( bldgs.length-1)+' more':'');}return l.address||'—';})())}</td>
+      <td class="td-mono">${emsEsc(l.saNum||'—')}</td>
+      <td>${emsEsc(l.webctrlVersion||'—')}</td>
+      <td style="${emsOverdue(l.renewalDate)?'color:var(--danger)':''}">${l.renewalDate?emsFmtDate(l.renewalDate):'—'}</td>
       <td><span class="stage-pill ${EMS_STAGE_CLS[l.stage]||''}">${l.stage||'—'}</span></td>
       <td class="pri-${(l.priority||'').toLowerCase()}">${l.priority||'—'}</td>
       <td>${emsEsc(l.cscContact||'—')}</td>
@@ -2015,7 +2024,7 @@ function emsRenderAnalytics(){
 
 // Keys that have dedicated inputs in the drawer — everything else is "extra"
 const EMS_KNOWN_KEYS = new Set([
-  'id','company','stage','priority','clientType','cscContact','cscEngineer','type','annualValue',
+  'id','company','stage','priority','clientType','cscContact','cscEngineer','saNum','webctrlVersion','renewalDate','type','annualValue',
   'contactName','contactTitle','contactPhone','contactEmail',
   'address','city','state','zip','buildingType','buildingSqft',
   'nextActionDate','lastContact','nextAction','notes','tags',
@@ -2026,7 +2035,7 @@ window.emsOpenDrawer=function(id){
   const lead=emsLeads.find(l=>l.id===id); if(!lead) return;
   emsActiveId=id;
   document.getElementById('emsDrawerTitle').textContent=lead.company||'Lead Detail';
-  ['company','stage','priority','clientType','cscContact','cscEngineer','type','annualValue','contactName','contactTitle','contactPhone','contactEmail','nextActionDate','lastContact','nextAction','notes'].forEach(f=>{
+  ['company','stage','priority','clientType','cscContact','cscEngineer','saNum','webctrlVersion','renewalDate','type','annualValue','contactName','contactTitle','contactPhone','contactEmail','nextActionDate','lastContact','nextAction','notes'].forEach(f=>{
     const el=document.getElementById('ed-'+f); if(el) el.value=lead[f]||'';
   });
   document.getElementById('ed-tags').value=(lead.tags||[]).join(', ');
@@ -2049,7 +2058,7 @@ window.emsCloseDrawer=function(){
 };
 window.emsSaveDrawer=function(){
   const lead=emsLeads.find(l=>l.id===emsActiveId); if(!lead) return;
-  ['company','stage','priority','clientType','cscContact','cscEngineer','type','annualValue','contactName','contactTitle','contactPhone','contactEmail','nextActionDate','lastContact','nextAction','notes'].forEach(f=>{
+  ['company','stage','priority','clientType','cscContact','cscEngineer','saNum','webctrlVersion','renewalDate','type','annualValue','contactName','contactTitle','contactPhone','contactEmail','nextActionDate','lastContact','nextAction','notes'].forEach(f=>{
     const el=document.getElementById('ed-'+f); if(el) lead[f]=el.value;
   });
   lead.tags=document.getElementById('ed-tags').value.split(',').map(t=>t.trim()).filter(Boolean);
@@ -2470,7 +2479,7 @@ window.emsParseCSVPreview=function(){
   if(parsed.length<2){document.getElementById('emsCsvStatus').innerHTML='<div style="color:var(--danger);font-size:12px;margin-top:6px">Could not parse CSV.</div>';return;}
   emsCsvHeaders=parsed[0]; emsCsvRows=parsed.slice(1).filter(r=>r.some(c=>c));
   document.getElementById('emsCsvStatus').innerHTML=`<div class="parse-ok">✓ Found ${emsCsvRows.length} rows and ${emsCsvHeaders.length} columns</div>`;
-  const autoMap={company:['company','customer','name','account','prospect'],city:['city','town'],state:['state','st'],zip:['zip','postal'],contactName:['contact','contact name'],contactPhone:['phone','telephone'],contactEmail:['email','e-mail'],annualValue:['value','annual value','revenue'],cscContact:['csc','csc contact','rep'],notes:['notes','comments'],clientType:['client type','customer type','sector','industry','type of client']};
+  const autoMap={company:['company','customer','name','account','prospect'],city:['city','town'],state:['state','st'],zip:['zip','postal'],contactName:['contact','contact name'],contactPhone:['phone','telephone'],contactEmail:['email','e-mail'],annualValue:['value','annual value','revenue'],cscContact:['csc','csc contact','rep'],notes:['notes','comments'],clientType:['client type','customer type','sector','industry','type of client'],saNum:['sa #','sa#','sa number','service agreement','contract number'],webctrlVersion:['webctrl','webctrl version','bas version','controls version'],renewalDate:['renewal','renewal date','contract renewal','expiration','expiry']};
   const mapped={};
   emsCsvHeaders.forEach((h,i)=>{const hl=h.toLowerCase().trim();for(const[field,aliases] of Object.entries(autoMap)){if(aliases.some(a=>hl.includes(a))){mapped[i]=field;break;}}});
   const fieldOpts=EMS_LEAD_FIELDS.map(f=>`<option value="${f.key}">${f.label}</option>`).join('');
