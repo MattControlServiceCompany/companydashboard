@@ -1383,10 +1383,7 @@ html,body{height:100%;overflow:hidden;}
         </select>
         <select class="filter-sel" id="etablePri" onchange="emsRenderTable()"><option value="">All Priority</option><option>High</option><option>Medium</option><option>Low</option></select>
         <select class="filter-sel" id="etableCSC" onchange="emsRenderTable()"><option value="">All CSC</option></select>
-        <select class="filter-sel" id="etableClientType" onchange="emsRenderTable()">
-          <option value="">All Client Types</option>
-          <option>School</option><option>Municipality</option><option>Apartments</option><option>Commercial</option><option>Retail</option><option>Data Center</option><option>Industrial</option><option>Healthcare</option><option>Other</option>
-        </select>
+        <select class="filter-sel" id="etableClientType" onchange="emsRenderTable()"></select>
       </div>
       <div class="tbl-wrap">
         <table>
@@ -1455,7 +1452,17 @@ html,body{height:100%;overflow:hidden;}
         <div class="detail-field" style="grid-column:1/-1"><div class="df-label">Company / Prospect Name</div><input class="df-input" id="ed-company" type="text"></div>
         <div class="detail-field"><div class="df-label">Stage</div><select class="df-select" id="ed-stage"><option>Prospect</option><option>Qualifying</option><option>Proposal</option><option>Won</option><option>Lost</option></select></div>
         <div class="detail-field"><div class="df-label">Priority</div><select class="df-select" id="ed-priority"><option>High</option><option>Medium</option><option>Low</option></select></div>
-        <div class="detail-field"><div class="df-label">Client Type</div><select class="df-select" id="ed-clientType"><option value="">— Select —</option><option>School</option><option>Municipality</option><option>Apartments</option><option>Commercial</option><option>Retail</option><option>Data Center</option><option>Industrial</option><option>Healthcare</option><option>Other</option></select></div>
+        <div class="detail-field"><div class="df-label" style="display:flex;align-items:center;justify-content:space-between">Client Type <button onclick="emsToggleClientTypeEditor()" style="font-family:var(--font);font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;font-weight:600" onmouseover="this.style.borderColor='var(--em)';this.style.color='var(--em)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--text2)'">✏️ Edit</button></div>
+          <!-- Inline client type editor -->
+          <div id="emsClientTypeEditor" style="display:none;background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:12px;margin:6px 0 8px">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--em);margin-bottom:8px">Edit Client Types</div>
+            <div id="emsClientTypeList" style="display:flex;flex-direction:column;gap:5px;margin-bottom:10px"></div>
+            <div style="display:flex;gap:7px;align-items:center">
+              <input class="df-input" id="emsNewClientType" placeholder="New client type..." style="flex:1;font-size:12px;padding:5px 8px" onkeydown="if(event.key==='Enter')emsAddClientType()">
+              <button class="btn btn-em btn-sm" onclick="emsAddClientType()">+ Add</button>
+            </div>
+          </div>
+          <select class="df-select" id="ed-clientType"></select></div>
         <div class="detail-field"><div class="df-label">CSC Point of Contact</div><input class="df-input" id="ed-cscContact" type="text" placeholder="Internal CSC rep"></div>
         <div class="detail-field"><div class="df-label">Assigned Engineer</div><input class="df-input" id="ed-cscEngineer" type="text" placeholder="Engineer name"></div>
         <div class="detail-field"><div class="df-label">EMS Project Type</div><select class="df-select" id="ed-type"><option value="">— Select —</option><option>Energy Audit</option><option>Controls Retrofit</option><option>BAS Upgrade</option><option>Lighting Upgrade</option><option>HVAC Optimization</option><option>Full EMS Contract</option><option>Monitoring &amp; Analytics</option><option>Demand Response</option><option>Solar/Renewables</option><option>Other</option></select></div>
@@ -1514,7 +1521,7 @@ html,body{height:100%;overflow:hidden;}
         <div class="fg"><label class="fl">Stage</label><select class="fs" id="enl-stage"><option>Prospect</option><option>Qualifying</option><option>Proposal</option><option>Won</option><option>Lost</option></select></div>
         <div class="fg"><label class="fl">Priority</label><select class="fs" id="enl-priority"><option>Medium</option><option>High</option><option>Low</option></select></div>
       </div>
-      <div class="fg"><label class="fl">Client Type</label><select class="fs" id="enl-clientType"><option value="">— Select —</option><option>School</option><option>Municipality</option><option>Apartments</option><option>Commercial</option><option>Retail</option><option>Data Center</option><option>Industrial</option><option>Healthcare</option><option>Other</option></select></div>
+      <div class="fg"><label class="fl">Client Type</label><select class="fs" id="enl-clientType"></select></div>
       <div class="f2">
         <div class="fg"><label class="fl">CSC Point of Contact</label><input class="fi" id="enl-cscContact" placeholder="Internal rep"></div>
         <div class="fg"><label class="fl">Assigned Engineer</label><input class="fi" id="enl-cscEngineer"></div>
@@ -1774,7 +1781,7 @@ function emsFmtNum(n){ if(n>=1000000) return (n/1000000).toFixed(1).replace(/\.0
 function emsFmtDate(d){ if(!d) return ''; try{ return new Date(d+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }catch(e){ return d; } }
 function emsOverdue(d){ return d && new Date(d+'T00:00:00')<new Date(new Date().toDateString()); }
 
-function emsRenderAll(){ emsUpdateCounts(); emsRenderPipeline(); emsRenderTable(); emsRenderFollowups(); emsRenderAnalytics(); emsPopulateCSC(); }
+function emsRenderAll(){ emsUpdateCounts(); emsRenderPipeline(); emsRenderTable(); emsRenderFollowups(); emsRenderAnalytics(); emsPopulateCSC(); emsRefreshClientTypeDropdowns(); }
 
 function emsUpdateCounts(){
   document.getElementById('esb-count-all').textContent=emsLeads.length;
@@ -2012,6 +2019,9 @@ window.emsOpenDrawer=function(id){
     const el=document.getElementById('ed-'+f); if(el) el.value=lead[f]||'';
   });
   document.getElementById('ed-tags').value=(lead.tags||[]).join(', ');
+  // Populate client type dropdown with current value selected
+  const ctEl = document.getElementById('ed-clientType');
+  if(ctEl) ctEl.innerHTML = emsClientTypeOptions(lead.clientType||'');
   emsRenderBuildings(lead);
   emsRenderActivity(lead);
   document.getElementById('emsDrawerOverlay').classList.add('open');
@@ -2039,6 +2049,97 @@ window.emsSaveDrawer=function(){
 
 /* ── Building / Site Management ── */
 const EMS_BLDG_TYPES=['Office','School / K-12','University','Hospital','Healthcare Clinic','Retail','Warehouse / Industrial','Government / Municipal','Hotel / Hospitality','Multi-Family','Mixed-Use','Data Center','Other'];
+
+/* ── Client Types — editable list ── */
+const EMS_CLIENT_TYPES_KEY = 'ems_client_types';
+const EMS_CLIENT_TYPES_DEFAULT = ['School','Municipality','Apartments','Commercial','Retail','Data Center','Industrial','Healthcare','Other'];
+
+function emsLoadClientTypes(){
+  try{
+    const saved = JSON.parse(localStorage.getItem(EMS_CLIENT_TYPES_KEY));
+    return Array.isArray(saved) && saved.length ? saved : [...EMS_CLIENT_TYPES_DEFAULT];
+  }catch(e){ return [...EMS_CLIENT_TYPES_DEFAULT]; }
+}
+function emsSaveClientTypes(types){
+  localStorage.setItem(EMS_CLIENT_TYPES_KEY, JSON.stringify(types));
+}
+let emsClientTypes = emsLoadClientTypes();
+
+function emsClientTypeOptions(selectedVal){
+  return '<option value="">— Select —</option>' +
+    emsClientTypes.map(t=>`<option${t===selectedVal?' selected':''}>${emsEsc(t)}</option>`).join('');
+}
+function emsClientTypeFilterOptions(){
+  return '<option value="">All Client Types</option>' +
+    emsClientTypes.map(t=>`<option>${emsEsc(t)}</option>`).join('');
+}
+
+// Rebuild all client type dropdowns from the current list
+function emsRefreshClientTypeDropdowns(){
+  const drawer = document.getElementById('ed-clientType');
+  const newLead = document.getElementById('enl-clientType');
+  const filter = document.getElementById('etableClientType');
+  const curDrawer = drawer?.value||'';
+  const curNew = newLead?.value||'';
+  const curFilter = filter?.value||'';
+  if(drawer) drawer.innerHTML = emsClientTypeOptions(curDrawer);
+  if(newLead) newLead.innerHTML = emsClientTypeOptions(curNew);
+  if(filter) filter.innerHTML = emsClientTypeFilterOptions();
+}
+
+// Open/close the inline client type editor panel
+window.emsToggleClientTypeEditor=function(){
+  const panel = document.getElementById('emsClientTypeEditor');
+  if(!panel) return;
+  const open = panel.style.display==='none'||!panel.style.display;
+  panel.style.display = open ? 'block' : 'none';
+  if(open) emsRenderClientTypeList();
+};
+function emsRenderClientTypeList(){
+  const list = document.getElementById('emsClientTypeList');
+  if(!list) return;
+  list.innerHTML = emsClientTypes.map((t,i)=>`
+    <div style="display:flex;align-items:center;gap:7px;padding:5px 8px;background:var(--s2);border:1px solid var(--border);border-radius:6px">
+      <input class="df-input" value="${emsEsc(t)}" data-ct-idx="${i}" oninput="emsUpdateClientType(this)"
+        style="flex:1;font-size:12px;padding:5px 8px">
+      <button onclick="emsMoveClientType(${i},-1)" title="Move up" ${i===0?'disabled':''} style="font-family:var(--font);font-size:11px;padding:3px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer">▲</button>
+      <button onclick="emsMoveClientType(${i},1)" title="Move down" ${i===emsClientTypes.length-1?'disabled':''} style="font-family:var(--font);font-size:11px;padding:3px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer">▼</button>
+      <button onclick="emsDeleteClientType(${i})" title="Delete" style="font-family:var(--font);font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid rgba(240,80,80,.4);background:transparent;color:#f05050;cursor:pointer">✕</button>
+    </div>`).join('');
+}
+window.emsUpdateClientType=function(inp){
+  const i = parseInt(inp.dataset.ctIdx);
+  emsClientTypes[i] = inp.value;
+  emsSaveClientTypes(emsClientTypes);
+  emsRefreshClientTypeDropdowns();
+};
+window.emsMoveClientType=function(i, dir){
+  const j = i + dir;
+  if(j<0||j>=emsClientTypes.length) return;
+  [emsClientTypes[i],emsClientTypes[j]] = [emsClientTypes[j],emsClientTypes[i]];
+  emsSaveClientTypes(emsClientTypes);
+  emsRenderClientTypeList();
+  emsRefreshClientTypeDropdowns();
+};
+window.emsDeleteClientType=function(i){
+  if(emsClientTypes.length<=1){ showToast('Must keep at least one client type'); return; }
+  emsClientTypes.splice(i,1);
+  emsSaveClientTypes(emsClientTypes);
+  emsRenderClientTypeList();
+  emsRefreshClientTypeDropdowns();
+};
+window.emsAddClientType=function(){
+  const inp = document.getElementById('emsNewClientType');
+  const val = inp?.value.trim();
+  if(!val){ showToast('Enter a client type name ⚠'); return; }
+  if(emsClientTypes.some(t=>t.toLowerCase()===val.toLowerCase())){ showToast('"'+val+'" already exists ⚠'); return; }
+  emsClientTypes.push(val);
+  emsSaveClientTypes(emsClientTypes);
+  if(inp) inp.value='';
+  emsRenderClientTypeList();
+  emsRefreshClientTypeDropdowns();
+  showToast('"'+val+'" added ✓');
+};
 
 function emsBldgId(){ return 'b'+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
 
@@ -2179,7 +2280,11 @@ window.emsAddActivity=function(){
   showToast('Activity logged ✓');
 };
 
-window.emsOpenNew=function(){ document.getElementById('emsNewModal').classList.add('open'); };
+window.emsOpenNew=function(){
+  document.getElementById('emsNewModal').classList.add('open');
+  const ctEl = document.getElementById('enl-clientType');
+  if(ctEl) ctEl.innerHTML = emsClientTypeOptions('');
+};
 window.emsCloseNew=function(){ document.getElementById('emsNewModal').classList.remove('open'); };
 window.emsSaveNew=function(){
   const company=document.getElementById('enl-company').value.trim();
