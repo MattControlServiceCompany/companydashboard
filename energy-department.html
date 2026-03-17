@@ -1782,12 +1782,54 @@ let emsLeads=[], emsActiveId=null, emsSortCol='company', emsSortAsc=true;
 let emsStageFilter='', emsPriFilter='', emsCsvHeaders=[], emsCsvRows=[];
 
 function emsLoad(){ try{ emsLeads=JSON.parse(localStorage.getItem(EMS_KEY)||'[]'); }catch(e){ emsLeads=[]; } }
+function emsMigrateLeads(){
+  // Run once on init to normalize all legacy data
+  emsLeads.forEach(lead=>{
+    // Migrate legacy 'sa #' key
+    if(lead['sa #'] && !lead.saNum){ lead.saNum=lead['sa #']; }
+    // Normalize date fields
+    ['renewalDate','nextActionDate','lastContact'].forEach(f=>{
+      if(lead[f]){ const iso=emsToISODate(lead[f]); if(iso) lead[f]=iso; }
+    });
+    // Clear "Not connected" from building state fields
+    (lead.buildings||[]).forEach(b=>{
+      if((b.state||'').toLowerCase()==='not connected') b.state='';
+    });
+  });
+  emsSave();
+}
 function emsSave(){ localStorage.setItem(EMS_KEY,JSON.stringify(emsLeads)); }
 function emsGenId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2); }
 function emsEsc(s){ return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function emsFmtNum(n){ if(n>=1000000) return (n/1000000).toFixed(1).replace(/\.0$/,'')+'M'; if(n>=1000) return (n/1000).toFixed(0)+'K'; return n.toLocaleString(); }
-function emsFmtDate(d){ if(!d) return ''; try{ return new Date(d+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }catch(e){ return d; } }
-function emsOverdue(d){ return d && new Date(d+'T00:00:00')<new Date(new Date().toDateString()); }
+function emsParseRawDate(d){
+  if(!d) return null;
+  const s = String(d).trim();
+  // Already ISO YYYY-MM-DD
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return new Date(s+'T00:00:00');
+  // MM/DD/YYYY or M/D/YYYY
+  const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(mdy) return new Date(+mdy[3], +mdy[1]-1, +mdy[2]);
+  // YYYY/MM/DD
+  const ymd = s.match(/^(\d{4})\/(\d{2})\/(\d{2})/);
+  if(ymd) return new Date(+ymd[1], +ymd[2]-1, +ymd[3]);
+  // DD-MM-YYYY or MM-DD-YYYY — try JS default
+  const fallback = new Date(s);
+  return isNaN(fallback) ? null : fallback;
+}
+function emsFmtDate(d){
+  if(!d) return '';
+  const dt = emsParseRawDate(d);
+  if(!dt||isNaN(dt)) return '';
+  try{ return dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }catch(e){ return ''; }
+}
+function emsToISODate(d){
+  if(!d) return '';
+  const dt = emsParseRawDate(d);
+  if(!dt||isNaN(dt)) return '';
+  return dt.toISOString().split('T')[0];
+}
+function emsOverdue(d){ if(!d) return false; const dt=emsParseRawDate(d); return dt&&!isNaN(dt)&&dt<new Date(new Date().toDateString()); }
 
 function emsRenderAll(){ emsUpdateCounts(); emsRenderPipeline(); emsRenderTable(); emsRenderFollowups(); emsRenderAnalytics(); emsPopulateCSC(); emsRefreshClientTypeDropdowns(); }
 
@@ -1935,13 +1977,13 @@ window.emsRenderTable=function(){
       <td>${emsEsc((()=>{const bldgs=l.buildings||[];if(bldgs.length&&bldgs[0].address){return bldgs[0].address+(bldgs.length>1?' +'+( bldgs.length-1)+' more':'');}return l.address||'—';})())}</td>
       <td class="td-mono">${emsEsc(l.saNum||'—')}</td>
       <td>${emsEsc(l.webctrlVersion||'—')}</td>
-      <td style="${emsOverdue(l.renewalDate)?'color:var(--danger)':''}">${l.renewalDate?emsFmtDate(l.renewalDate):'—'}</td>
+      <td style="${emsOverdue(l.renewalDate)?'color:var(--danger)':''}">${emsFmtDate(l.renewalDate)||'—'}</td>
       <td><span class="stage-pill ${EMS_STAGE_CLS[l.stage]||''}">${l.stage||'—'}</span></td>
       <td class="pri-${(l.priority||'').toLowerCase()}">${l.priority||'—'}</td>
       <td>${emsEsc(l.cscContact||'—')}</td>
       <td class="td-mono">${l.annualValue?'$'+emsFmtNum(l.annualValue):'—'}</td>
-      <td style="${emsOverdue(l.nextActionDate)?'color:var(--danger)':''}">${l.nextActionDate?emsFmtDate(l.nextActionDate):'—'}</td>
-      <td>${l.lastContact?emsFmtDate(l.lastContact):'—'}</td>
+      <td style="${emsOverdue(l.nextActionDate)?'color:var(--danger)':''}">${emsFmtDate(l.nextActionDate)||'—'}</td>
+      <td>${emsFmtDate(l.lastContact)||'—'}</td>
     </tr>`).join('');
 };
 window.emsSortTable=function(col){ if(emsSortCol===col) emsSortAsc=!emsSortAsc; else{emsSortCol=col;emsSortAsc=true;} emsRenderTable(); };
@@ -2028,11 +2070,32 @@ const EMS_KNOWN_KEYS = new Set([
   'contactName','contactTitle','contactPhone','contactEmail',
   'address','city','state','zip','buildingType','buildingSqft',
   'nextActionDate','lastContact','nextAction','notes','tags',
-  'buildings','activity','createdAt','updatedAt'
+  'buildings','activity','createdAt','updatedAt',
+  // Legacy CSV import keys — migrated on open, suppressed from Additional Fields
+  'sa #','sa#','building','location','webctrl version','webctrl','renewal date'
 ]);
 
 window.emsOpenDrawer=function(id){
   const lead=emsLeads.find(l=>l.id===id); if(!lead) return;
+
+  // ── Migrate legacy CSV keys to canonical field names ──
+  // 'sa #' (with space) → saNum
+  if(lead['sa #'] && !lead.saNum){ lead.saNum = lead['sa #']; }
+  // 'building' column → first building's name (if buildings array exists and first has no name)
+  if(lead['building'] && lead.buildings?.length && !lead.buildings[0].name){
+    lead.buildings[0].name = lead['building'];
+  }
+  // Normalize date fields that may have come in as MM/DD/YYYY
+  ['renewalDate','nextActionDate','lastContact'].forEach(f=>{
+    if(lead[f]) lead[f] = emsToISODate(lead[f]) || lead[f];
+  });
+  // Sanitize state "Not connected" — clear it so address parser can re-detect
+  if(lead.buildings){
+    lead.buildings.forEach(b=>{
+      if((b.state||'').toLowerCase()==='not connected') b.state='';
+    });
+  }
+
   emsActiveId=id;
   document.getElementById('emsDrawerTitle').textContent=lead.company||'Lead Detail';
   ['company','stage','priority','clientType','cscContact','cscEngineer','saNum','webctrlVersion','renewalDate','type','annualValue','contactName','contactTitle','contactPhone','contactEmail','nextActionDate','lastContact','nextAction','notes'].forEach(f=>{
@@ -2653,6 +2716,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
 // Init
 emsLoad();
+emsMigrateLeads(); // normalize legacy CSV data (dates, key names, bad state values)
 emsRenderAll(); // populate counts immediately on page load
 // Re-render when EMS view becomes active (handles lazy nav)
 const _svOrig=window.sv;
