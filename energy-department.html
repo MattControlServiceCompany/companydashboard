@@ -1488,6 +1488,8 @@ html,body{height:100%;overflow:hidden;}
         <div class="detail-field" style="grid-column:1/-1"><div class="df-label">Notes</div><textarea class="df-textarea" id="ed-notes" rows="4"></textarea></div>
         <div class="detail-field" style="grid-column:1/-1"><div class="df-label">Tags (comma separated)</div><input class="df-input" id="ed-tags" type="text" placeholder="e.g. school, large-site, warm-lead"></div>
       </div>
+      <!-- Extra fields from CSV import — rendered dynamically -->
+      <div id="emsExtraFields"></div>
     </div>
     <div class="dpanel" id="dAct">
       <div class="section-lbl">Activity Log</div>
@@ -2011,6 +2013,15 @@ function emsRenderAnalytics(){
     </div>`;
 }
 
+// Keys that have dedicated inputs in the drawer — everything else is "extra"
+const EMS_KNOWN_KEYS = new Set([
+  'id','company','stage','priority','clientType','cscContact','cscEngineer','type','annualValue',
+  'contactName','contactTitle','contactPhone','contactEmail',
+  'address','city','state','zip','buildingType','buildingSqft',
+  'nextActionDate','lastContact','nextAction','notes','tags',
+  'buildings','activity','createdAt','updatedAt'
+]);
+
 window.emsOpenDrawer=function(id){
   const lead=emsLeads.find(l=>l.id===id); if(!lead) return;
   emsActiveId=id;
@@ -2022,6 +2033,8 @@ window.emsOpenDrawer=function(id){
   // Populate client type dropdown with current value selected
   const ctEl = document.getElementById('ed-clientType');
   if(ctEl) ctEl.innerHTML = emsClientTypeOptions(lead.clientType||'');
+  // Render any extra fields (from CSV import) not covered by standard inputs
+  emsRenderExtraFields(lead);
   emsRenderBuildings(lead);
   emsRenderActivity(lead);
   document.getElementById('emsDrawerOverlay').classList.add('open');
@@ -2040,12 +2053,44 @@ window.emsSaveDrawer=function(){
     const el=document.getElementById('ed-'+f); if(el) lead[f]=el.value;
   });
   lead.tags=document.getElementById('ed-tags').value.split(',').map(t=>t.trim()).filter(Boolean);
+  // Save extra fields from dynamically rendered inputs
+  document.querySelectorAll('#emsExtraFields [data-extra-key]').forEach(inp=>{
+    lead[inp.dataset.extraKey] = inp.value;
+  });
   // Save buildings from DOM
   emsSaveBuildingsFromDOM(lead);
   lead.updatedAt=new Date().toISOString();
   document.getElementById('emsDrawerTitle').textContent=lead.company||'Lead Detail';
   emsSave(); emsRenderAll(); showToast('Lead saved ✓');
 };
+
+function emsRenderExtraFields(lead){
+  const container = document.getElementById('emsExtraFields');
+  if(!container) return;
+  // Find keys on the lead that aren't in the standard set
+  const extras = Object.entries(lead).filter(([k,v])=>
+    !EMS_KNOWN_KEYS.has(k) &&
+    v !== null && v !== undefined && v !== '' &&
+    typeof v !== 'object'
+  );
+  if(!extras.length){ container.innerHTML=''; return; }
+  // Use the EMS_LEAD_FIELDS labels if available, otherwise prettify the key
+  const labelFor = key => {
+    const f = EMS_LEAD_FIELDS.find(f=>f.key===key);
+    if(f) return f.label;
+    return key.replace(/_/g,' ').replace(/([A-Z])/g,' $1').trim()
+               .replace(/\b\w/g,c=>c.toUpperCase());
+  };
+  container.innerHTML =
+    '<div class="section-lbl" style="margin-top:14px">Additional Fields</div>' +
+    '<div class="detail-grid">' +
+    extras.map(([k,v])=>`
+      <div class="detail-field">
+        <div class="df-label">${emsEsc(labelFor(k))}</div>
+        <input class="df-input" data-extra-key="${emsEsc(k)}" value="${emsEsc(String(v))}" type="text">
+      </div>`).join('') +
+    '</div>';
+}
 
 /* ── Building / Site Management ── */
 const EMS_BLDG_TYPES=['Office','School / K-12','University','Hospital','Healthcare Clinic','Retail','Warehouse / Industrial','Government / Municipal','Hotel / Hospitality','Multi-Family','Mixed-Use','Data Center','Other'];
