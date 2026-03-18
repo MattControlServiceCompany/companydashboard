@@ -1388,18 +1388,18 @@ html,body{height:100%;overflow:hidden;}
       <div class="tbl-wrap">
         <table>
           <thead><tr>
-            <th onclick="emsSortTable('company')">Company ↕</th>
-            <th onclick="emsSortTable('clientType')">Client Type ↕</th>
-            <th onclick="emsSortTable('address')">Address ↕</th>
-            <th onclick="emsSortTable('saNum')">SA # ↕</th>
-            <th onclick="emsSortTable('webctrlVersion')">WebCTRL Ver ↕</th>
-            <th onclick="emsSortTable('renewalDate')">Renewal Date ↕</th>
-            <th onclick="emsSortTable('stage')">Stage ↕</th>
-            <th onclick="emsSortTable('priority')">Priority ↕</th>
-            <th onclick="emsSortTable('cscContact')">CSC Contact ↕</th>
-            <th onclick="emsSortTable('annualValue')">Est. Value ↕</th>
-            <th onclick="emsSortTable('nextActionDate')">Next Action ↕</th>
-            <th onclick="emsSortTable('lastContact')">Last Contact ↕</th>
+            <th onclick="emsSortTable('company')" data-sort-col="company" data-label="Company">Company ↕</th>
+            <th onclick="emsSortTable('clientType')" data-sort-col="clientType" data-label="Client Type">Client Type ↕</th>
+            <th onclick="emsSortTable('address')" data-sort-col="address" data-label="Address">Address ↕</th>
+            <th onclick="emsSortTable('saNum')" data-sort-col="saNum" data-label="SA #">SA # ↕</th>
+            <th onclick="emsSortTable('webctrlVersion')" data-sort-col="webctrlVersion" data-label="WebCTRL Ver">WebCTRL Ver ↕</th>
+            <th onclick="emsSortTable('renewalDate')" data-sort-col="renewalDate" data-label="Renewal Date">Renewal Date ↕</th>
+            <th onclick="emsSortTable('stage')" data-sort-col="stage" data-label="Stage">Stage ↕</th>
+            <th onclick="emsSortTable('priority')" data-sort-col="priority" data-label="Priority">Priority ↕</th>
+            <th onclick="emsSortTable('cscContact')" data-sort-col="cscContact" data-label="CSC Contact">CSC Contact ↕</th>
+            <th onclick="emsSortTable('annualValue')" data-sort-col="annualValue" data-label="Est. Value">Est. Value ↕</th>
+            <th onclick="emsSortTable('nextActionDate')" data-sort-col="nextActionDate" data-label="Next Action">Next Action ↕</th>
+            <th onclick="emsSortTable('lastContact')" data-sort-col="lastContact" data-label="Last Contact">Last Contact ↕</th>
           </tr></thead>
           <tbody id="emsTableBody"></tbody>
         </table>
@@ -1778,10 +1778,14 @@ window.emsAddCustomField=function(){
   showToast('Field "'+label+'" added ✓');
 };
 
-let emsLeads=[], emsActiveId=null, emsSortCol='company', emsSortAsc=true;
+let emsLeads=[], emsActiveId=null, emsSortCol=null, emsSortAsc=true;
 let emsStageFilter='', emsPriFilter='', emsCsvHeaders=[], emsCsvRows=[];
 
-function emsLoad(){ try{ emsLeads=JSON.parse(localStorage.getItem(EMS_KEY)||'[]'); }catch(e){ emsLeads=[]; } }
+function emsLoad(){
+  try{ emsLeads=JSON.parse(localStorage.getItem(EMS_KEY)||'[]'); }catch(e){ emsLeads=[]; }
+  // Stamp original order index — used to restore default table order
+  emsLeads.forEach((l,i)=>{ if(l._origIdx==null) l._origIdx=i; });
+}
 /* ── Data Migration: preview then confirm ── */
 const SA_PATTERNS = k=>{ const kl=k.toLowerCase().replace(/[\s#_\-\.]/g,''); return kl==='sa'||kl==='sanum'||kl==='sanumber'||kl==='serviceagreement'||kl==='serviceagreementnumber'||kl==='contractnumber'||/^sa\d/.test(kl); };
 const WC_PATTERNS = k=>{ const kl=k.toLowerCase().replace(/[\s_\-\.]/g,''); return kl.startsWith('webctrl')||kl==='wcversion'||kl==='basversion'||kl==='controlsversion'; };
@@ -2059,7 +2063,26 @@ window.emsRenderTable=function(){
     if(search){ const hay=(l.company+(l.clientType||'')+(l.address||'')+(l.saNum||'')+(l.webctrlVersion||'')+l.contactName+l.cscContact+l.type+l.notes).toLowerCase(); if(!hay.includes(search)) return false; }
     return true;
   });
-  data.sort((a,b)=>{ let av=a[emsSortCol]||'',bv=b[emsSortCol]||''; if(!isNaN(av)&&!isNaN(bv)) return emsSortAsc?(+av)-(+bv):(+bv)-(+av); return emsSortAsc?av.toString().localeCompare(bv.toString()):bv.toString().localeCompare(av.toString()); });
+  // Sort: null = original import order, otherwise sort by column
+  if(emsSortCol){
+    data.sort((a,b)=>{ let av=a[emsSortCol]||'',bv=b[emsSortCol]||''; if(!isNaN(av)&&!isNaN(bv)) return emsSortAsc?(+av)-(+bv):(+bv)-(+av); return emsSortAsc?av.toString().localeCompare(bv.toString()):bv.toString().localeCompare(av.toString()); });
+  } else {
+    data.sort((a,b)=>(a._origIdx??0)-(b._origIdx??0));
+  }
+  // Update column header indicators
+  document.querySelectorAll('#eview-table thead th').forEach(th=>{
+    const col = th.dataset.sortCol;
+    if(!col) return;
+    const base = th.dataset.label||th.textContent.replace(/[↕↑↓ ✕]/g,'').trim();
+    th.dataset.label = base;
+    if(col===emsSortCol){
+      th.innerHTML = base+' '+(emsSortAsc?'↑':'↓')+` <span onclick="event.stopPropagation();emsClearSort()" title="Clear sort" style="cursor:pointer;color:var(--text3);font-size:10px;margin-left:2px">✕</span>`;
+      th.style.color='var(--em)';
+    } else {
+      th.textContent = base+' ↕';
+      th.style.color='';
+    }
+  });
   document.getElementById('emsTableBody').innerHTML=data.length===0
     ?`<tr><td colspan="12" style="text-align:center;padding:40px;color:var(--text3)">No leads found</td></tr>`
     :data.map(l=>`<tr onclick="emsOpenDrawer('${l.id}')">
@@ -2077,7 +2100,16 @@ window.emsRenderTable=function(){
       <td>${emsFmtDate(l.lastContact)||'—'}</td>
     </tr>`).join('');
 };
-window.emsSortTable=function(col){ if(emsSortCol===col) emsSortAsc=!emsSortAsc; else{emsSortCol=col;emsSortAsc=true;} emsRenderTable(); };
+window.emsSortTable=function(col){
+  if(emsSortCol===col){
+    if(emsSortAsc){ emsSortAsc=false; }  // 2nd click: desc
+    else{ emsSortCol=null; emsSortAsc=true; }  // 3rd click: clear
+  } else {
+    emsSortCol=col; emsSortAsc=true;  // 1st click: asc
+  }
+  emsRenderTable();
+};
+window.emsClearSort=function(){ emsSortCol=null; emsSortAsc=true; emsRenderTable(); };
 
 function emsRenderFollowups(){
   const today=new Date(); today.setHours(0,0,0,0);
@@ -2161,7 +2193,7 @@ const EMS_KNOWN_KEYS = new Set([
   'contactName','contactTitle','contactPhone','contactEmail',
   'address','city','state','zip','buildingType','buildingSqft',
   'nextActionDate','lastContact','nextAction','notes','tags',
-  'buildings','activity','createdAt','updatedAt',
+  'buildings','activity','createdAt','updatedAt','_origIdx',
   // Legacy CSV import keys — migrated on open, suppressed from Additional Fields
   'sa #','sa#','building','location','webctrl version','webctrl','renewal date'
 ]);
@@ -2724,6 +2756,8 @@ window.emsRunImport=function(){
     });
   }
 
+  // Re-stamp original order indices after import
+  emsLeads.forEach((l,i)=>{ l._origIdx=i; });
   emsSave();emsCloseImport();emsRenderAll();
   const parts=[];
   if(added) parts.push(added+' lead'+(added>1?'s':'')+' added');
