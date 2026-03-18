@@ -2313,7 +2313,11 @@ function emsRefreshClientTypeDropdowns(){
   const curFilter = filter?.value||'';
   if(drawer) drawer.innerHTML = emsClientTypeOptions(curDrawer);
   if(newLead) newLead.innerHTML = emsClientTypeOptions(curNew);
-  if(filter) filter.innerHTML = emsClientTypeFilterOptions();
+  if(filter){
+    filter.innerHTML = emsClientTypeFilterOptions();
+    // Restore the previously selected filter value
+    if(curFilter) filter.value = curFilter;
+  }
 }
 
 // Open/close the inline client type editor panel
