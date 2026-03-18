@@ -1784,19 +1784,59 @@ let emsStageFilter='', emsPriFilter='', emsCsvHeaders=[], emsCsvRows=[];
 function emsLoad(){ try{ emsLeads=JSON.parse(localStorage.getItem(EMS_KEY)||'[]'); }catch(e){ emsLeads=[]; } }
 function emsMigrateLeads(){
   // Run once on init to normalize all legacy data
+  let dirty = false;
   emsLeads.forEach(lead=>{
-    // Migrate legacy 'sa #' key
-    if(lead['sa #'] && !lead.saNum){ lead.saNum=lead['sa #']; }
-    // Normalize date fields
+    // Migrate SA# — scan ALL keys for anything that looks like an SA number field
+    if(!lead.saNum){
+      const saKey = Object.keys(lead).find(k=>{
+        const kl = k.toLowerCase().replace(/\s+/g,'');
+        return kl==='sa#' || kl==='sanum' || kl==='sanumber' || kl==='sa' ||
+               k.toLowerCase().includes('sa #') || k.toLowerCase().includes('service agreement');
+      });
+      if(saKey){ lead.saNum = lead[saKey]; dirty = true; }
+    }
+    // Migrate WebCTRL version — scan for key variations
+    if(!lead.webctrlVersion){
+      const wKey = Object.keys(lead).find(k=>{
+        const kl = k.toLowerCase().replace(/\s+/g,'');
+        return kl==='webctrl' || kl==='webctrlversion' || kl==='webctrlver' ||
+               k.toLowerCase().includes('webctrl');
+      });
+      if(wKey){ lead.webctrlVersion = lead[wKey]; dirty = true; }
+    }
+    // Migrate renewal date — scan for key variations
+    if(!lead.renewalDate){
+      const rKey = Object.keys(lead).find(k=>{
+        const kl = k.toLowerCase().replace(/\s+/g,'');
+        return kl==='renewaldate' || kl==='renewal' || kl==='expiration' || kl==='expiry' ||
+               k.toLowerCase().includes('renewal') || k.toLowerCase().includes('expir');
+      });
+      if(rKey){ lead.renewalDate = lead[rKey]; dirty = true; }
+    }
+    // Normalize date fields that may have come in as MM/DD/YYYY
     ['renewalDate','nextActionDate','lastContact'].forEach(f=>{
-      if(lead[f]){ const iso=emsToISODate(lead[f]); if(iso) lead[f]=iso; }
+      if(lead[f]){ const iso=emsToISODate(lead[f]); if(iso && iso!==lead[f]){ lead[f]=iso; dirty=true; } }
     });
     // Clear "Not connected" from building state fields
     (lead.buildings||[]).forEach(b=>{
-      if((b.state||'').toLowerCase()==='not connected') b.state='';
+      if((b.state||'').toLowerCase().includes('not connect')){ b.state=''; dirty=true; }
+    });
+    // Migrate 'building' column → first building name
+    const bldgKey = Object.keys(lead).find(k=>k.toLowerCase().trim()==='building');
+    if(bldgKey && lead.buildings?.length && !lead.buildings[0].name){
+      lead.buildings[0].name = lead[bldgKey]; dirty=true;
+    }
+  });
+  // Add all non-canonical keys to EMS_KNOWN_KEYS dynamically so they're suppressed
+  emsLeads.forEach(lead=>{
+    Object.keys(lead).forEach(k=>{
+      const kl=k.toLowerCase();
+      if(kl.includes('sa #')||kl.includes('sa#')||kl.includes('webctrl')||kl.includes('renewal')||kl==='building'||kl==='location'){
+        EMS_KNOWN_KEYS.add(k);
+      }
     });
   });
-  emsSave();
+  if(dirty) emsSave();
 }
 function emsSave(){ localStorage.setItem(EMS_KEY,JSON.stringify(emsLeads)); }
 function emsGenId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2); }
@@ -2079,22 +2119,31 @@ window.emsOpenDrawer=function(id){
   const lead=emsLeads.find(l=>l.id===id); if(!lead) return;
 
   // ── Migrate legacy CSV keys to canonical field names ──
-  // 'sa #' (with space) → saNum
-  if(lead['sa #'] && !lead.saNum){ lead.saNum = lead['sa #']; }
-  // 'building' column → first building's name (if buildings array exists and first has no name)
-  if(lead['building'] && lead.buildings?.length && !lead.buildings[0].name){
-    lead.buildings[0].name = lead['building'];
+  if(!lead.saNum){
+    const saKey=Object.keys(lead).find(k=>{const kl=k.toLowerCase().replace(/\s+/g,'');return kl==='sa#'||kl==='sanum'||kl==='sanumber'||kl==='sa'||k.toLowerCase().includes('sa #')||k.toLowerCase().includes('service agreement');});
+    if(saKey) lead.saNum=lead[saKey];
   }
-  // Normalize date fields that may have come in as MM/DD/YYYY
+  if(!lead.webctrlVersion){
+    const wKey=Object.keys(lead).find(k=>{const kl=k.toLowerCase().replace(/\s+/g,'');return kl==='webctrl'||kl==='webctrlversion'||k.toLowerCase().includes('webctrl');});
+    if(wKey) lead.webctrlVersion=lead[wKey];
+  }
+  if(!lead.renewalDate){
+    const rKey=Object.keys(lead).find(k=>{const kl=k.toLowerCase().replace(/\s+/g,'');return kl==='renewaldate'||kl==='renewal'||k.toLowerCase().includes('renewal')||k.toLowerCase().includes('expir');});
+    if(rKey) lead.renewalDate=lead[rKey];
+  }
+  // Normalize date fields
   ['renewalDate','nextActionDate','lastContact'].forEach(f=>{
-    if(lead[f]) lead[f] = emsToISODate(lead[f]) || lead[f];
+    if(lead[f]){ const iso=emsToISODate(lead[f]); if(iso) lead[f]=iso; }
   });
-  // Sanitize state "Not connected" — clear it so address parser can re-detect
+  // Sanitize state "Not connected"
   if(lead.buildings){
-    lead.buildings.forEach(b=>{
-      if((b.state||'').toLowerCase()==='not connected') b.state='';
-    });
+    lead.buildings.forEach(b=>{ if((b.state||'').toLowerCase().includes('not connect')) b.state=''; });
   }
+  // Add all this lead's non-standard keys to KNOWN so they don't show in Additional Fields
+  Object.keys(lead).forEach(k=>{
+    const kl=k.toLowerCase();
+    if(kl.includes('sa #')||kl.includes('sa#')||kl.includes('webctrl')||kl.includes('renewal')||kl==='building'||kl==='location') EMS_KNOWN_KEYS.add(k);
+  });
 
   emsActiveId=id;
   document.getElementById('emsDrawerTitle').textContent=lead.company||'Lead Detail';
