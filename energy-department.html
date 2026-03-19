@@ -4994,14 +4994,15 @@ function renderBillsPane(pane, m, bills, incl){
     const scrollBody= pane.querySelector('#billsScrollBody');
     if(!hdrTbl || !bodyTbl || !scrollBody || !theadWrap) return;
 
-    // Read natural widths from body table first row
+    // Read natural widths from body table first row, enforce col min-widths
     const firstRow = bodyTbl.querySelector('tbody tr:first-child');
     if(!firstRow) return;
-    const widths = Array.from(firstRow.querySelectorAll('td')).map(td=>td.getBoundingClientRect().width);
-    if(!widths.length) return;
+    const rawWidths = Array.from(firstRow.querySelectorAll('td')).map(td=>td.getBoundingClientRect().width);
+    if(!rawWidths.length) return;
+    // Enforce minimum widths from col definitions so header text is never cut off
+    const widths = rawWidths.map((w,i)=>Math.max(Math.ceil(w), cols[i]?.w||0));
 
-    // Inject matching colgroups into both tables and lock layout
-    const cg = '<colgroup>'+widths.map(w=>`<col style="width:${Math.ceil(w)}px">`).join('')+'</colgroup>';
+    const cg = '<colgroup>'+widths.map(w=>`<col style="width:${w}px">`).join('')+'</colgroup>';
     hdrTbl.insertAdjacentHTML('afterbegin', cg);
     bodyTbl.insertAdjacentHTML('afterbegin', cg);
     hdrTbl.style.tableLayout  = 'fixed';
@@ -7389,17 +7390,45 @@ function renderPerfPane(pane, m, bills, incl){
   const blAvgMo=blRows.length?blRows.reduce((s,r)=>s+r.usage,0)/blRows.length:0;
   const hasRegr_p = allRows.some(r=>r.regrBaseline!=null);
 
-  // Build calendar-month lookup from baseline rows (0=Jan … 11=Dec)
-  // This is what the Meter Data table shows as "Normalized kWh/Therms"
-  // For post-baseline months we use the matching baseline calendar month as expected,
-  // so Jan 2026 expected = baseline January normalized value (same as Meter Data Jan row)
-  const blByCalMo = {}; // key: 0-11
-  blRows.forEach(r=>{
-    const mo = parseInt(r.ym.split('-')[1]) - 1; // 0-11
-    const val = r.regrBaseline!=null ? r.regrBaseline : r.usage;
-    if(blByCalMo[mo]==null) blByCalMo[mo] = val;
-    else blByCalMo[mo] = (blByCalMo[mo] + val) / 2; // avg if multiple baseline years have same month
+  // Baseline averages (simple fallback when no regression)
+  const blAvgDay=blRows.length?blRows.reduce((s,r)=>s+r.usagePerDay,0)/blRows.length:0;
+  const blAvgMo=blRows.length?blRows.reduce((s,r)=>s+r.usage,0)/blRows.length:0;
+  const hasRegr_p = allRows.some(r=>r.regrBaseline!=null);
+
+  // Build the same 0–11 month map that the Meter Data table uses.
+  // meterDataByMo[mo] mirrors exactly what is displayed in the Meter Data table:
+  //   .usage    = normalized kWh or Therms (regrBaseline if available, else prorated usage)
+  //   .kwhCost  = kWh energy cost $ from that baseline month's bills (electric only)
+  //   .thermCost= therm cost $ from that baseline month's bills (gas only)
+  //   .totalCost= total bill cost for that baseline month
+  const meterDataByMo = {}; // keyed 0–11
+  blRows.slice().sort((a,c)=>a.ym.localeCompare(c.ym)).forEach(r=>{
+    const mo = parseInt(r.ym.split('-')[1]) - 1;
+    const bfr = bills.filter(b=>normMonth(b.start,b.end,incl,bills)===r.ym);
+    const normUsage = r.regrBaseline!=null ? r.regrBaseline : r.usage;
+    if(meterDataByMo[mo]){
+      // Multiple baseline years share same calendar month — average them
+      const prev = meterDataByMo[mo];
+      meterDataByMo[mo] = {
+        usage:     (prev.usage + normUsage) / 2,
+        kwhCost:   prev.kwhCost  + bfr.reduce((s,b)=>s+parseFloat(b.kwhCost||0),0),
+        thermCost: prev.thermCost+ bfr.reduce((s,b)=>s+parseFloat(b.thermCost||b.cost||0),0),
+        totalCost: prev.totalCost+ r.cost,
+      };
+    } else {
+      meterDataByMo[mo] = {
+        usage:     normUsage,
+        kwhCost:   bfr.reduce((s,b)=>s+parseFloat(b.kwhCost||0),0),
+        thermCost: bfr.reduce((s,b)=>s+parseFloat(b.thermCost||b.cost||0),0),
+        totalCost: r.cost,
+      };
+    }
   });
+  const hasBlCalMap = Object.keys(meterDataByMo).length > 0;
+  // Convenience accessors matching old variable names used in row rendering
+  const blByCalMo         = Object.fromEntries(Object.entries(meterDataByMo).map(([mo,v])=>[mo,v.usage]));
+  const blKwhCostByCalMo  = Object.fromEntries(Object.entries(meterDataByMo).map(([mo,v])=>[mo,v.kwhCost]));
+  const blThermCostByCalMo= Object.fromEntries(Object.entries(meterDataByMo).map(([mo,v])=>[mo,v.thermCost]));
   const hasBlCalMap = Object.keys(blByCalMo).length > 0;
 
   // Year filter
@@ -7579,21 +7608,27 @@ function renderPerfPane(pane, m, bills, incl){
     const kwCostRow= dem ? (dem.kwCost||0)+(dem.facKWCost||0) : 0;
     const kwhRate  = dem ? dem.kwhRate||0 : 0;
     const kwhCostActual = dem ? dem.kwhCostAmt||0 : 0;
-    // Gas cost data for this month
     const gasMo    = gasCostByYm[r.ym]||null;
     const thermRate= gasMo ? gasMo.thermRate||0 : 0;
     const thermCostActual = gasMo ? gasMo.thermCostAmt||0 : 0;
-    // kWh cost savings: Exp kWh x $/kWh rate  vs  Actual kWh Cost
-    const expKwhCost = hasKwhCostSav && kwhRate>0 ? expMo*kwhRate : 0;
-    const kwhCostSav = hasKwhCostSav && kwhRate>0 ? expKwhCost - kwhCostActual : 0;
-    // kW cost savings: Baseline avg kW x current $/kW rate  vs  Actual kW Cost
+
+    // Exp kWh Cost = baseline calendar-month's actual kWh cost (from Meter Data)
+    // Actual kWh Cost = actual kWh this month × current $/kWh rate
+    const expKwhCost    = hasKwhCostSav && blKwhCostByCalMo[calMo]>0 ? blKwhCostByCalMo[calMo] : (kwhRate>0 ? expMo*kwhRate : 0);
+    const actKwhCostCalc= hasKwhCostSav && kwhRate>0 ? rawKwh*kwhRate : kwhCostActual;
+    const kwhCostSav    = hasKwhCostSav && expKwhCost>0 ? expKwhCost - actKwhCostCalc : 0;
+
+    // kW Cost Savings: Baseline avg kW × current $/kW rate vs Actual kW Cost
     const moKwRate   = hasKwCostSav && demKW>0 ? kwCostRow/demKW : 0;
     const expKwCost  = hasKwCostSav && moKwRate>0 ? blAvgDemKWP*moKwRate : 0;
     const kwCostSav  = hasKwCostSav && moKwRate>0 ? expKwCost - kwCostRow : 0;
     const totalCostSav = kwhCostSav + kwCostSav;
-    // Gas cost savings: Exp Therms x $/therm rate  vs  Actual Therm Cost
-    const expThermCost   = hasGasCostSav && thermRate>0 ? expMo*thermRate : 0;
-    const thermCostSav   = hasGasCostSav && thermRate>0 ? expThermCost - thermCostActual : 0;
+
+    // Exp Therm Cost = baseline calendar-month's actual therm cost (from Meter Data)
+    // Actual Therm Cost = actual therms × current $/therm rate
+    const expThermCost     = hasGasCostSav && blThermCostByCalMo[calMo]>0 ? blThermCostByCalMo[calMo] : (thermRate>0 ? expMo*thermRate : 0);
+    const actThermCostCalc = hasGasCostSav && thermRate>0 ? rawKwh*thermRate : thermCostActual;
+    const thermCostSav     = hasGasCostSav && expThermCost>0 ? expThermCost - actThermCostCalc : 0;
     const savColor = v => v>=0 ? 'var(--em)' : 'var(--danger)';
     const costSign = v => v>=0 ? '' : '\u2212';
     const savSign  = v => v>=0 ? '\u2212' : '+';
@@ -7611,11 +7646,11 @@ function renderPerfPane(pane, m, bills, incl){
       '<td class="mono num" style="color:'+savColor(savPc)+'">'+savSign(savPc)+Math.abs(savPc).toFixed(1)+'%</td>'+
       (hasKwhCostSav?'<td class="mono num" style="color:var(--text2)">'+(kwhRate>0?'$'+kwhRate.toFixed(5):'&mdash;')+'</td>':'')+
       (hasKwhCostSav?'<td class="mono num" style="color:var(--text2)">'+(expKwhCost>0?'$'+fmtC(expKwhCost):'&mdash;')+'</td>':'')+
-      (hasKwhCostSav?'<td class="mono num">'+(kwhCostActual>0?'$'+fmtC(kwhCostActual):'&mdash;')+'</td>':'')+
+      (hasKwhCostSav?'<td class="mono num">'+(actKwhCostCalc>0?'$'+fmtC(actKwhCostCalc):'&mdash;')+'</td>':'')+
       (hasKwhCostSav?'<td class="mono num" style="color:'+savColor(kwhCostSav)+';font-weight:600">'+(kwhRate>0?costSign(kwhCostSav)+'$'+fmtC(kwhCostSav):'&mdash;')+'</td>':'')+
       (hasGasCostSav?'<td class="mono num" style="color:var(--text2)">'+(thermRate>0?'$'+thermRate.toFixed(4):'&mdash;')+'</td>':'')+
       (hasGasCostSav?'<td class="mono num" style="color:var(--text2)">'+(expThermCost>0?'$'+fmtC(expThermCost):'&mdash;')+'</td>':'')+
-      (hasGasCostSav?'<td class="mono num">'+(thermCostActual>0?'$'+fmtC(thermCostActual):'&mdash;')+'</td>':'')+
+      (hasGasCostSav?'<td class="mono num">'+(actThermCostCalc>0?'$'+fmtC(actThermCostCalc):'&mdash;')+'</td>':'')+
       (hasGasCostSav?'<td class="mono num" style="color:'+savColor(thermCostSav)+';font-weight:600">'+(thermRate>0?costSign(thermCostSav)+'$'+fmtC(thermCostSav):'&mdash;')+'</td>':'')+
       (hasKwData   ?'<td class="mono num">'+(demKW>0?demKW.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}):'&mdash;')+'</td>':'')+
       (hasBilKW    ?'<td class="mono num">'+(bilKW>0?bilKW.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}):'&mdash;')+'</td>':'')+
@@ -7627,21 +7662,21 @@ function renderPerfPane(pane, m, bills, incl){
 
   // ── Headers (must match row cell order exactly) ──
   const perfTableLabel = _perfMetric==='total'
-    ?'<th class="num">Exp '+unit+'/Mo'+(hasRegr_p?' &#x1F52C;':' ~avg')+'</th><th class="num">Actual '+unit+'/Mo</th>'
-    :'<th class="num">Exp '+unit+'/Day'+(hasRegr_p?' &#x1F52C;':' ~avg')+'</th><th class="num">Actual '+unit+'/Day</th>';
-  const demKWHdr        = hasKwData       ? '<th class="num">Actual kW</th>'        : '';
-  const bilKWHdr        = hasBilKW        ? '<th class="num">Billed kW</th>'        : '';
-  const kwCostHdr       = hasKwCost       ? '<th class="num">Actual kW Cost</th>'   : '';
-  const kwCostSavHdr    = hasKwCostSav    ? '<th class="num">kW Cost Sav</th>'      : '';
-  const kwhRateHdr      = hasKwhCostSav   ? '<th class="num">$/kWh Rate</th>'       : '';
-  const expKwhCostHdr   = hasKwhCostSav   ? '<th class="num">Exp kWh Cost</th>'     : '';
-  const actKwhCostHdr   = hasKwhCostSav   ? '<th class="num">Actual kWh Cost</th>'  : '';
-  const kwhCostSavHdr   = hasKwhCostSav   ? '<th class="num">kWh Cost Sav</th>'     : '';
-  const totalCostSavHdr = hasTotalCostSav ? '<th class="num">Total Cost Sav</th>'   : '';
-  const thermRateHdr    = hasGasCostSav   ? '<th class="num">$/Therm Rate</th>'     : '';
-  const expThermCostHdr = hasGasCostSav   ? '<th class="num">Exp Therm Cost</th>'   : '';
-  const actThermCostHdr = hasGasCostSav   ? '<th class="num">Actual Therm Cost</th>': '';
-  const thermCostSavHdr = hasGasCostSav   ? '<th class="num">Therm Cost Sav</th>'   : '';
+    ?'<th class="num">Expected '+unit+(hasRegr_p?' &#x1F52C;':' ~avg')+'</th><th class="num">Actual '+unit+'</th>'
+    :'<th class="num">Expected '+unit+'/Day'+(hasRegr_p?' &#x1F52C;':' ~avg')+'</th><th class="num">Actual '+unit+'/Day</th>';
+  const demKWHdr        = hasKwData       ? '<th class="num">Actual kW</th>'              : '';
+  const bilKWHdr        = hasBilKW        ? '<th class="num">Billed kW</th>'              : '';
+  const kwCostHdr       = hasKwCost       ? '<th class="num">Actual kW Cost</th>'         : '';
+  const kwCostSavHdr    = hasKwCostSav    ? '<th class="num">kW Cost Savings</th>'        : '';
+  const kwhRateHdr      = hasKwhCostSav   ? '<th class="num">$ / kWh Rate</th>'           : '';
+  const expKwhCostHdr   = hasKwhCostSav   ? '<th class="num">Expected kWh Cost</th>'      : '';
+  const actKwhCostHdr   = hasKwhCostSav   ? '<th class="num">Actual kWh Cost</th>'        : '';
+  const kwhCostSavHdr   = hasKwhCostSav   ? '<th class="num">kWh Cost Savings</th>'       : '';
+  const totalCostSavHdr = hasTotalCostSav ? '<th class="num">Total Cost Savings</th>'     : '';
+  const thermRateHdr    = hasGasCostSav   ? '<th class="num">$ / Therm Rate</th>'         : '';
+  const expThermCostHdr = hasGasCostSav   ? '<th class="num">Expected Therm Cost</th>'    : '';
+  const actThermCostHdr = hasGasCostSav   ? '<th class="num">Actual Therm Cost</th>'      : '';
+  const thermCostSavHdr = hasGasCostSav   ? '<th class="num">Therm Cost Savings</th>'     : '';
   const euiTblHdr = '';
 
   // ── kW demand map for all chartRows (electric only) ──
@@ -7686,7 +7721,7 @@ function renderPerfPane(pane, m, bills, incl){
       (filteredPostRows.length?
         '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto">'+
           '<table class="ma-tbl">'+
-            '<thead><tr><th class="lbl">Month</th><th class="num">Norm Days</th>'+perfTableLabel+'<th class="num">Saved</th><th class="num">%</th>'+kwhRateHdr+expKwhCostHdr+actKwhCostHdr+kwhCostSavHdr+thermRateHdr+expThermCostHdr+actThermCostHdr+thermCostSavHdr+demKWHdr+bilKWHdr+kwCostHdr+kwCostSavHdr+totalCostSavHdr+'</tr></thead>'+
+            '<thead><tr><th class="lbl">Month</th><th class="num">Normalized Days</th>'+perfTableLabel+'<th class="num">'+unit+' Saved</th><th class="num">%</th>'+kwhRateHdr+expKwhCostHdr+actKwhCostHdr+kwhCostSavHdr+thermRateHdr+expThermCostHdr+actThermCostHdr+thermCostSavHdr+demKWHdr+bilKWHdr+kwCostHdr+kwCostSavHdr+totalCostSavHdr+'</tr></thead>'+
             '<tbody>'+perfRows+'</tbody>'+
           '</table></div>':
         '<div style="font-size:12px;color:var(--text3);padding:20px;text-align:center">No post-baseline data yet — add billing periods after <strong>'+fmtMon(blEnd+'-01')+'</strong></div>')+
