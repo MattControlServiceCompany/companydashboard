@@ -7462,22 +7462,46 @@ function renderPerfPane(pane, m, bills, incl){
     });
   }
 
-  // Savings table — regression-based expected when available, fallback to avg
+  // ── Compute column visibility ONCE — used by BOTH headers and row cells ──
+  const hasKwData   = isElec && Object.keys(perfDemByYm).length>0;
+  const hasBilKW    = hasKwData && filteredPostRows.some(r=>{ const d=perfDemByYm[r.ym]; return d&&d.bilKW>0&&Math.abs(d.bilKW-d.demKW)>0.5; });
+  const hasKwCost   = hasKwData && filteredPostRows.some(r=>{ const d=perfDemByYm[r.ym]; return d&&((d.kwCost||0)+(d.facKWCost||0))>0; });
+
+  // Per-month $/kWh rate using ONLY kwhCost $ ÷ kWh (excludes kW, other charges, customer charge, taxes)
+  const kwhRateByYm = {};
+  filteredPostRows.forEach(r=>{
+    const bfr = bills.filter(b=>normMonth(b.start,b.end,incl,bills)===r.ym);
+    const moKwhCost = bfr.reduce((s,b)=>s+parseFloat(b.kwhCost||0),0);
+    const moKwh     = bfr.reduce((s,b)=>s+parseFloat(b.usage||0),0);
+    if(moKwh>0 && moKwhCost>0) kwhRateByYm[r.ym] = moKwhCost/moKwh;
+  });
+  const hasKwhCostSav = isElec && Object.keys(kwhRateByYm).length>0;
+
+  // kW rate from baseline bills for kW cost-savings calc
+  const blBills      = bills.filter(b=>{ const ym=normMonth(b.start,b.end,incl,bills); return bl.months.includes(ym); });
+  const blDemBills   = blBills.filter(b=>parseFloat(b.demandKW||0)>0);
+  const blTotalKwCost= blBills.reduce((s,b)=>s+parseFloat(b.kwCost||0)+parseFloat(b.facKWCost||0),0);
+  const blAvgDemKW   = blDemBills.length ? blDemBills.reduce((s,b)=>s+parseFloat(b.demandKW||0),0)/blDemBills.length : 0;
+  const kwRate       = blAvgDemKW>0 ? blTotalKwCost/blAvgDemKW : 0;
+  const hasKwCostSav = hasKwCost && kwRate>0;
+
+  // ── Build table rows ──
   const perfRows=filteredPostRows.map(r=>{
     const isTotal_p=_perfMetric==='total';
     const expMo = hasRegr_p && r.regrBaseline!=null ? r.regrBaseline : blAvgMo;
     const expUsage = isTotal_p ? expMo : expMo/r.normDays;
-    // Use raw bill usage for actual (not prorated r.usage)
     const rawKwh = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
     const actual   = isTotal_p ? rawKwh : (r.normDays>0 ? rawKwh/r.normDays : r.usagePerDay);
     const sav=expUsage-actual;
     const savPc=expUsage>0?sav/expUsage*100:0;
     const euiCell=hasEUI_p?`<td class="mono" style="color:var(--text2)">${(rawKwh/sqft5).toFixed(4)}</td>`:'';
     const isRegr = hasRegr_p && r.regrBaseline!=null;
-    const dem = isElec ? (perfDemByYm[r.ym]||{}) : null;
-    const demKW = dem ? dem.demKW||0 : 0;
-    const bilKW = dem ? dem.bilKW||0 : 0;
-    const kwCostRow = dem ? (dem.kwCost||0)+(dem.facKWCost||0) : 0;
+    const dem      = isElec ? (perfDemByYm[r.ym]||{}) : null;
+    const demKW    = dem ? dem.demKW||0 : 0;
+    const bilKW    = dem ? dem.bilKW||0 : 0;
+    const kwCostRow= dem ? (dem.kwCost||0)+(dem.facKWCost||0) : 0;
+    const kwhCostSav = hasKwhCostSav && kwhRateByYm[r.ym] ? sav*kwhRateByYm[r.ym] : 0;
+    const kwSav      = hasKwCostSav && demKW>0 ? (blAvgDemKW-demKW)*kwRate : 0;
     return '<tr>'+
       '<td class="lbl">'+r.label+'</td>'+
       '<td class="mono num">'+r.normDays+'</td>'+
@@ -7486,24 +7510,30 @@ function renderPerfPane(pane, m, bills, incl){
         (isRegr?'<span style="font-size:9px;color:var(--violet);margin-left:3px">R</span>':'')+'</td>'+
       '<td class="mono num">'+(_perfMetric==='total'?rawKwh.toLocaleString('en-US',{maximumFractionDigits:0}):(r.normDays>0?rawKwh/r.normDays:r.usagePerDay).toFixed(2))+'</td>'+
       '<td class="mono num" style="color:'+(sav>=0?'var(--em)':'var(--danger)')+'">'+
-        (sav>=0?'−':'+')+(Math.abs(sav)).toLocaleString('en-US',{maximumFractionDigits:_perfMetric==='total'?0:2})+'</td>'+
+        (sav>=0?'\u2212':'+')+(Math.abs(sav)).toLocaleString('en-US',{maximumFractionDigits:_perfMetric==='total'?0:2})+'</td>'+
       '<td class="mono num" style="color:'+(savPc>=0?'var(--em)':'var(--danger)')+'">'+
-        (savPc>=0?'−':'+')+(Math.abs(savPc)).toFixed(1)+'%</td>'+
-      (isElec&&demKW>0?'<td class="mono">'+demKW.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'</td>':'')+ 
-      (isElec&&bilKW>0?'<td class="mono">'+bilKW.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'</td>':'')+ 
-      (isElec&&kwCostRow>0?'<td class="mono">$'+kwCostRow.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>':'')+ 
+        (savPc>=0?'\u2212':'+')+(Math.abs(savPc)).toFixed(1)+'%</td>'+
+      (hasKwhCostSav?'<td class="mono num" style="color:'+(kwhCostSav>=0?'var(--em)':'var(--danger)')+'">'+
+        (kwhCostSav>=0?'':'\u2212')+'$'+Math.abs(kwhCostSav).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>':'')+
+      (hasKwData?'<td class="mono num">'+(demKW>0?demKW.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}):'\u2014')+'</td>':'')+
+      (hasBilKW ?'<td class="mono num">'+(bilKW>0?bilKW.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}):'\u2014')+'</td>':'')+
+      (hasKwCost?'<td class="mono num">'+(kwCostRow>0?'$'+kwCostRow.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'\u2014')+'</td>':'')+
+      (hasKwCostSav?'<td class="mono num" style="color:'+(kwSav>=0?'var(--em)':'var(--danger)')+'">'+
+        (kwSav>=0?'':'\u2212')+'$'+Math.abs(kwSav).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>':'')+
       euiCell+
     '</tr>';
   }).join('');
 
-  const euiTblHdr=hasEUI_p?'<th class="num">kWh/sqft</th>':'';
-  const hasKwData = isElec && Object.keys(perfDemByYm).length>0;
-  const demKWHdr = hasKwData ? '<th class="num">Actual kW</th>' : '';
-  const bilKWHdr = hasKwData && filteredPostRows.some(r=>{ const d=perfDemByYm[r.ym]; return d&&d.bilKW>0&&Math.abs(d.bilKW-d.demKW)>0.5; }) ? '<th class="num">Billed kW</th>' : '';
-  const kwCostHdr= hasKwData ? '<th class="num">kW Cost</th>' : '';
+  // ── Build headers (must match row cell order exactly) ──
+  const euiTblHdr     = hasEUI_p     ? '<th class="num">kWh/sqft</th>'       : '';
+  const demKWHdr      = hasKwData    ? '<th class="num">Actual kW</th>'      : '';
+  const bilKWHdr      = hasBilKW     ? '<th class="num">Billed kW</th>'      : '';
+  const kwCostHdr     = hasKwCost    ? '<th class="num">kW Cost</th>'        : '';
+  const kwCostSavHdr  = hasKwCostSav ? '<th class="num">kW Cost Sav</th>'    : '';
+  const kwhCostSavHdr = hasKwhCostSav? '<th class="num">kWh Cost Sav</th>'   : '';
   const perfTableLabel=_perfMetric==='total'
-    ?'<th class="num">Exp '+unit+'/Mo'+(hasRegr_p?' 🔬':' ~avg')+'</th><th class="num">Actual '+unit+'/Mo</th>'
-    :'<th class="num">Exp '+unit+'/Day'+(hasRegr_p?' 🔬':' ~avg')+'</th><th class="num">Actual '+unit+'/Day</th>';
+    ?'<th class="num">Exp '+unit+'/Mo'+(hasRegr_p?' \uD83D\uDD2C':' ~avg')+'</th><th class="num">Actual '+unit+'/Mo</th>'
+    :'<th class="num">Exp '+unit+'/Day'+(hasRegr_p?' \uD83D\uDD2C':' ~avg')+'</th><th class="num">Actual '+unit+'/Day</th>';
 
   // ── kW demand map for all chartRows (electric only) ──
   const perfKwByYm = {};
@@ -7547,7 +7577,7 @@ function renderPerfPane(pane, m, bills, incl){
       (filteredPostRows.length?
         '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto">'+
           '<table class="ma-tbl">'+
-            '<thead><tr><th class="lbl">Month</th><th class="num">Norm Days</th>'+perfTableLabel+'<th class="num">Saved</th><th class="num">%</th>'+demKWHdr+bilKWHdr+kwCostHdr+euiTblHdr+'</tr></thead>'+
+            '<thead><tr><th class="lbl">Month</th><th class="num">Norm Days</th>'+perfTableLabel+'<th class="num">Saved</th><th class="num">%</th>'+kwhCostSavHdr+demKWHdr+bilKWHdr+kwCostHdr+kwCostSavHdr+euiTblHdr+'</tr></thead>'+
             '<tbody>'+perfRows+'</tbody>'+
           '</table></div>':
         '<div style="font-size:12px;color:var(--text3);padding:20px;text-align:center">No post-baseline data yet — add billing periods after <strong>'+fmtMon(blEnd+'-01')+'</strong></div>')+
