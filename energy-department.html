@@ -534,31 +534,22 @@ html,body{height:100%;overflow:hidden;}
 .bills-thead-wrap .ud-bill-tbl{margin:0;}
 .bills-scroll-body{flex:1;overflow-y:auto;overflow-x:auto;min-height:0;}
 .bills-scroll-body .ud-bill-tbl{margin:0;}
-.ud-bill-tbl{width:100%;border-collapse:collapse;font-size:12px;min-width:500px;}
-/* Header rows */
-.ud-bill-tbl thead tr.grp-row th{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;padding:4px 8px 2px;text-align:center;border:none;background:var(--s1);color:var(--text3);}
-.ud-bill-tbl thead tr.grp-row th.grp-kw{color:var(--em2);background:rgba(14,165,233,.06);}
-.ud-bill-tbl thead tr.grp-row th.grp-cost{color:var(--em);background:rgba(0,212,170,.05);}
-.ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.3px;color:var(--text2);font-weight:600;padding:5px 8px 6px;text-align:right;background:var(--s1);white-space:nowrap;line-height:1;overflow:hidden;border-top:1px solid var(--border);}
-.ud-bill-tbl th.lbl,.ud-bill-tbl th.th-center{text-align:left;}
-.ud-bill-tbl th.grp-kw-col{background:rgba(14,165,233,.06);color:var(--em2);}
-.ud-bill-tbl th.grp-cost-col{background:rgba(0,212,170,.05);color:var(--em);}
-/* Body cells */
-.ud-bill-tbl td{padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:12px;text-align:right;}
+.ud-bill-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+.ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);font-weight:700;padding:8px 12px;text-align:right;background:var(--s1);white-space:nowrap;line-height:1.2;border-bottom:1px solid var(--border2);}
+.ud-bill-tbl th.lbl{text-align:left;}
+.ud-bill-tbl td{padding:7px 12px;border-bottom:1px solid var(--border);vertical-align:middle;white-space:nowrap;font-family:var(--mono);font-size:12px;text-align:right;}
 .ud-bill-tbl td.lbl{font-family:var(--font);font-size:12px;text-align:left;}
 .ud-bill-tbl td.td-days{color:var(--text2);text-align:center;}
-.ud-bill-tbl td.grp-kw-col{background:rgba(14,165,233,.04);}
-.ud-bill-tbl td.grp-cost-col{background:rgba(0,212,170,.03);}
-.ud-bill-tbl td.td-total{font-weight:700;color:var(--text);}
+.ud-bill-tbl td.td-total{font-weight:700;}
 .ud-bill-tbl tr:last-child td{border-bottom:none;}
-.ud-bill-tbl tr:hover td,.ud-bill-tbl tr:hover td.grp-kw-col,.ud-bill-tbl tr:hover td.grp-cost-col{background:var(--s3);}
-.ud-bill-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018);}
-.ud-bill-tbl tr:nth-child(even) td.grp-kw-col{background:rgba(14,165,233,.06);}
-.ud-bill-tbl tr:nth-child(even) td.grp-cost-col{background:rgba(0,212,170,.05);}
-.ud-bill-tbl tr:nth-child(even):hover td,.ud-bill-tbl tr:nth-child(even):hover td.grp-kw-col,.ud-bill-tbl tr:nth-child(even):hover td.grp-cost-col{background:var(--s3);}
-.ud-bill-tbl input{font-family:var(--mono);font-size:12px;color:var(--text);background:transparent;border:none;outline:none;width:100%;padding:2px 3px;}
-.ud-bill-tbl input:focus{background:var(--s4);border-radius:3px;}
-.ud-bill-tbl td.norm-mon-cell{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;text-align:left;}
+.ud-bill-tbl tr:hover td{background:var(--s3);}
+.ud-bill-tbl tr:nth-child(even) td{background:rgba(255,255,255,.02);}
+.ud-bill-tbl tr:nth-child(even):hover td{background:var(--s3);}
+.ud-bill-tbl td.norm-mon-cell{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;text-align:left;}
+.ud-bill-tbl .btn-edit,.ud-bill-tbl .btn-del{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:5px;border:1px solid var(--border);background:transparent;cursor:pointer;font-size:12px;transition:all .13s;color:var(--text2);}
+.ud-bill-tbl .btn-edit:hover{border-color:var(--em);color:var(--em);}
+.ud-bill-tbl .btn-del:hover{border-color:var(--danger);color:var(--danger);}
+.ud-bill-tbl td.td-actions{white-space:nowrap;text-align:right;padding:4px 10px;}
 .ud-bill-gap-row td{padding:6px 10px;background:var(--s2);border-bottom:1px solid var(--border);}
 .ud-bill-gap-msg{font-size:11px;color:var(--warn);font-weight:600;display:flex;align-items:center;gap:6px;}
 .norm-info-btn{background:none;border:none;cursor:pointer;font-size:11px;color:var(--text3);padding:0 2px;vertical-align:middle;transition:color .12s;}
@@ -4912,37 +4903,36 @@ function renderBillsPane(pane, m, bills, incl){
     </div>
   </span>`;
 
-  // ── Column definitions — auto-fit, no fixed px widths, full values always visible ──
+  // ── Column definitions with min-width so headers never overlap ──
   const COL_BASE = [
-    {h:'Norm. Month '+normInfoTip, a:'lbl'},
-    {h:'Start',                    a:'lbl'},
-    {h:'End',                      a:'lbl'},
-    {h:'Days',                     a:'td-days'},
+    {h:'Norm. Month '+normInfoTip, a:'lbl',  w:110},
+    {h:'Start',                    a:'lbl',  w:90},
+    {h:'End',                      a:'lbl',  w:90},
+    {h:'Days',                     a:'td-days', w:50},
   ];
   const COL_ELEC = [
-    {h:'kWh',                 a:''},
-    {h:'Actual kW',           a:''},
-    {h:'Billed kW',           a:''},
-    {h:'Facilities kW',       a:''},
-    {h:'kW Cost',             a:''},
-    {h:'Fac. kW Cost',        a:''},
-    {h:'kWh Cost',            a:''},
-    {h:'Other Charges',       a:''},
-    {h:'Taxes & Fees',        a:''},
-    {h:'Total',               a:''},
+    {h:'kWh',              a:'', w:95},
+    {h:'Actual kW',        a:'', w:82},
+    {h:'Billed kW',        a:'', w:76},
+    {h:'Facilities kW',    a:'', w:90},
+    {h:'kW Cost',          a:'', w:86},
+    {h:'Fac. kW Cost',     a:'', w:92},
+    {h:'kWh Cost $',       a:'', w:86},
+    {h:'Other Charges',    a:'', w:96},
+    {h:'Taxes & Fees',     a:'', w:88},
+    {h:'Total $',          a:'', w:86},
   ];
-  const COL_GAS   = [{h:'Therms',a:''},{h:'Therm Cost',a:''}];
-  const COL_OTHER = [{h:'Usage', a:''},{h:'Cost',       a:''}];
-  const COL_ACTION= [{h:'',      a:'td-actions'}];
+  const COL_GAS   = [{h:'Therms',a:'',w:84},{h:'Therm Cost $',a:'',w:100}];
+  const COL_OTHER = [{h:'Usage', a:'',w:84},{h:'Cost $',       a:'',w:86}];
+  const COL_ACTION= [{h:'',      a:'td-actions', w:60}];
 
   const cols = [...COL_BASE, ...(isElec?COL_ELEC:isGas?COL_GAS:COL_OTHER), ...COL_ACTION];
 
   const tblHead =
     `<thead><tr>` +
-    cols.map(c=>`<th class="${c.a}">${c.h}</th>`).join('') +
+    cols.map(c=>`<th class="${c.a}" style="min-width:${c.w}px">${c.h}</th>`).join('') +
     `</tr></thead>`;
 
-  // No colgroup — let browser auto-size columns to content
   const colgroup = '';
 
   // Build rows with gap detection
@@ -6857,7 +6847,7 @@ function renderBuildingStatsPane(pane, b){
             </tr>
             <tr>
               ${elecM?`
-                <th class="e-hdr" title="Normalized Baseline kWh — regression-predicted usage for this calendar month">Norm.<br>kWh</th>
+                <th class="e-hdr" title="Normalized Baseline kWh — regression-predicted usage for this calendar month">Normalized kWh</th>
                 <th class="e-hdr">Actual kW</th>
                 <th class="e-hdr">Billed<br>kW</th>
                 <th class="e-hdr">Facilities kW</th>
@@ -6874,12 +6864,12 @@ function renderBuildingStatsPane(pane, b){
                 <th class="e-hdr">Min<br>Hours</th>
               `:''}
               ${gasM?`
-                <th class="g-hdr" title="Normalized Baseline Therms — regression-predicted usage for this calendar month">Norm.<br>Therms</th>
+                <th class="g-hdr" title="Normalized Baseline Therms — regression-predicted usage for this calendar month">Normalized Therms</th>
                 <th class="g-hdr">Gas Cost</th>
                 <th class="g-hdr">Cost/<br>Therm</th>
               `:''}
               ${waterM?`
-                <th class="w-hdr" title="Normalized Baseline kGal — regression-predicted usage for this calendar month">Norm.<br>kGal</th>
+                <th class="w-hdr" title="Normalized Baseline kGal — regression-predicted usage for this calendar month">Normalized kGal</th>
                 <th class="w-hdr">Water<br>Cost</th>
                 <th class="w-hdr">Cost/<br>kGal</th>
               `:''}
@@ -7276,7 +7266,7 @@ function renderMeterDataPane(pane, m, bills, incl){
             </tr>
             <tr>
               ${isElec?`
-                <th class="e-hdr" title="Normalized Baseline kWh">Norm.<br>kWh</th>
+                <th class="e-hdr" title="Normalized Baseline kWh">Normalized kWh</th>
                 <th class="e-hdr">Actual kW</th><th class="e-hdr">Billed<br>kW</th><th class="e-hdr">Facilities kW</th>
                 <th class="e-hdr">Billed kW<br>Cost</th><th class="e-hdr">Facilities kW<br>Cost</th><th class="e-hdr">Total kW<br>Cost</th>
                 <th class="e-hdr">Energy<br>Cost</th><th class="e-hdr">Electric<br>Cost</th>
@@ -7285,11 +7275,11 @@ function renderMeterDataPane(pane, m, bills, incl){
                 <th class="e-hdr">% Load<br>Factor</th><th class="e-hdr">Min<br>Hours</th>
               `:''}
               ${isGas?`
-                <th class="g-hdr" title="Normalized Baseline Therms">Norm.<br>Therms</th>
+                <th class="g-hdr" title="Normalized Baseline Therms">Normalized Therms</th>
                 <th class="g-hdr">Gas Cost</th><th class="g-hdr">Cost/<br>Therm</th>
               `:''}
               ${isWater?`
-                <th class="w-hdr" title="Normalized Baseline kGal">Norm.<br>kGal</th>
+                <th class="w-hdr" title="Normalized Baseline kGal">Normalized kGal</th>
                 <th class="w-hdr">Water<br>Cost</th><th class="w-hdr">Cost/<br>kGal</th>
               `:''}
             </tr>
@@ -7399,6 +7389,19 @@ function renderPerfPane(pane, m, bills, incl){
   const blAvgMo=blRows.length?blRows.reduce((s,r)=>s+r.usage,0)/blRows.length:0;
   const hasRegr_p = allRows.some(r=>r.regrBaseline!=null);
 
+  // Build calendar-month lookup from baseline rows (0=Jan … 11=Dec)
+  // This is what the Meter Data table shows as "Normalized kWh/Therms"
+  // For post-baseline months we use the matching baseline calendar month as expected,
+  // so Jan 2026 expected = baseline January normalized value (same as Meter Data Jan row)
+  const blByCalMo = {}; // key: 0-11
+  blRows.forEach(r=>{
+    const mo = parseInt(r.ym.split('-')[1]) - 1; // 0-11
+    const val = r.regrBaseline!=null ? r.regrBaseline : r.usage;
+    if(blByCalMo[mo]==null) blByCalMo[mo] = val;
+    else blByCalMo[mo] = (blByCalMo[mo] + val) / 2; // avg if multiple baseline years have same month
+  });
+  const hasBlCalMap = Object.keys(blByCalMo).length > 0;
+
   // Year filter
   const maxYears=Math.max(1,Math.ceil(truePostRows.length/12));
   const yearOptions=['all',...Array.from({length:maxYears},(_,i)=>String(i+1))];
@@ -7425,9 +7428,11 @@ function renderPerfPane(pane, m, bills, incl){
     return s+(r.normDays>0?raw/r.normDays:r.usagePerDay);
   },0)/filteredPostRows.length : 0;
 
-  // Expected usage: regression baseline per month (preferred) or simple avg fallback
+  // Expected usage: baseline normalized value for matching calendar month
   const totalExpected = filteredPostRows.reduce((s,r)=>{
-    const exp = hasRegr_p && r.regrBaseline!=null ? r.regrBaseline : blAvgMo;
+    const calMo = parseInt(r.ym.split('-')[1]) - 1;
+    const exp = hasBlCalMap && blByCalMo[calMo]!=null ? blByCalMo[calMo]
+      : (hasRegr_p && r.regrBaseline!=null ? r.regrBaseline : blAvgMo);
     return s + exp;
   }, 0);
   const totalActual = postRawMos.reduce((s,v)=>s+v, 0);
@@ -7556,13 +7561,18 @@ function renderPerfPane(pane, m, bills, incl){
   // ── Build table rows ──
   const perfRows=filteredPostRows.map(r=>{
     const isTotal_p=_perfMetric==='total';
-    const expMo    = hasRegr_p && r.regrBaseline!=null ? r.regrBaseline : blAvgMo;
+    // Expected = baseline normalized value for this calendar month (what Meter Data table shows)
+    // Falls back to regression on post-BL weather, then to simple baseline average
+    const calMo = parseInt(r.ym.split('-')[1]) - 1; // 0-11
+    const expMo = hasBlCalMap && blByCalMo[calMo]!=null
+      ? blByCalMo[calMo]
+      : (hasRegr_p && r.regrBaseline!=null ? r.regrBaseline : blAvgMo);
     const expUsage = isTotal_p ? expMo : expMo/r.normDays;
     const rawKwh   = rawUsageByYm[r.ym]!=null ? rawUsageByYm[r.ym] : r.usage;
     const actual   = isTotal_p ? rawKwh : (r.normDays>0 ? rawKwh/r.normDays : r.usagePerDay);
     const sav      = expUsage - actual;
     const savPc    = expUsage>0 ? sav/expUsage*100 : 0;
-    const isRegr   = hasRegr_p && r.regrBaseline!=null;
+    const isRegr   = hasBlCalMap && blByCalMo[calMo]!=null ? false : (hasRegr_p && r.regrBaseline!=null);
     const dem      = isElec ? (perfDemByYm[r.ym]||{}) : null;
     const demKW    = dem ? dem.demKW||0 : 0;
     const bilKW    = dem ? dem.bilKW||0 : 0;
