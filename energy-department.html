@@ -530,14 +530,19 @@ html,body{height:100%;overflow:hidden;}
 .bills-sticky-left{display:flex;flex-direction:column;gap:2px;min-width:0;}
 .bills-sticky-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);white-space:nowrap;}
 .bills-sticky-sub{font-size:11px;color:var(--text3);}
-.bills-thead-wrap{flex-shrink:0;overflow-x:hidden;background:var(--s1);border-bottom:1px solid var(--border2);}
+.bills-thead-wrap{flex-shrink:0;overflow-x:hidden;background:var(--s1);}
 .bills-thead-wrap .ud-bill-tbl{margin:0;}
 .bills-scroll-body{flex:1;overflow-y:auto;overflow-x:auto;min-height:0;}
 .bills-scroll-body .ud-bill-tbl{margin:0;}
 .ud-bill-tbl{width:100%;border-collapse:collapse;font-size:12px;}
-.ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);font-weight:700;padding:8px 12px;text-align:right;background:var(--s1);white-space:normal;line-height:1.3;border-bottom:1px solid var(--border2);}
+.ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);font-weight:700;padding:8px 10px;text-align:center;background:var(--s1);white-space:normal;line-height:1.3;border-bottom:1px solid var(--border2);border-right:1px solid var(--border2);position:relative;overflow:hidden;user-select:none;}
+.ud-bill-tbl th:last-child{border-right:none;}
 .ud-bill-tbl th.lbl{text-align:left;}
-.ud-bill-tbl td{padding:7px 12px;border-bottom:1px solid var(--border);vertical-align:middle;white-space:nowrap;font-family:var(--mono);font-size:12px;text-align:right;}
+/* Column resize handle */
+.col-resize-handle{position:absolute;right:0;top:0;bottom:0;width:5px;cursor:col-resize;background:transparent;z-index:1;}
+.col-resize-handle:hover,.col-resize-handle.dragging{background:var(--em);}
+.ud-bill-tbl td{padding:7px 10px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:middle;white-space:nowrap;font-family:var(--mono);font-size:12px;text-align:right;}
+.ud-bill-tbl td:last-child{border-right:none;}
 .ud-bill-tbl td.lbl{font-family:var(--font);font-size:12px;text-align:left;}
 .ud-bill-tbl td.td-days{color:var(--text2);text-align:center;}
 .ud-bill-tbl td.td-total{font-weight:700;}
@@ -549,7 +554,7 @@ html,body{height:100%;overflow:hidden;}
 .ud-bill-tbl .btn-edit,.ud-bill-tbl .btn-del{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:5px;border:1px solid var(--border);background:transparent;cursor:pointer;font-size:12px;transition:all .13s;color:var(--text2);}
 .ud-bill-tbl .btn-edit:hover{border-color:var(--em);color:var(--em);}
 .ud-bill-tbl .btn-del:hover{border-color:var(--danger);color:var(--danger);}
-.ud-bill-tbl td.td-actions{white-space:nowrap;text-align:right;padding:4px 10px;}
+.ud-bill-tbl td.td-actions{white-space:nowrap;text-align:center;padding:4px 8px;}
 .ud-bill-gap-row td{padding:6px 10px;background:var(--s2);border-bottom:1px solid var(--border);}
 .ud-bill-gap-msg{font-size:11px;color:var(--warn);font-weight:600;display:flex;align-items:center;gap:6px;}
 .norm-info-btn{background:none;border:none;cursor:pointer;font-size:11px;color:var(--text3);padding:0 2px;vertical-align:middle;transition:color .12s;}
@@ -4930,7 +4935,7 @@ function renderBillsPane(pane, m, bills, incl){
 
   const tblHead =
     `<thead><tr>` +
-    cols.map(c=>`<th class="${c.a}" style="min-width:${c.w}px">${c.h}</th>`).join('') +
+    cols.map((c,i)=>`<th class="${c.a}" style="min-width:${c.w}px" data-col="${i}">${c.h}<div class="col-resize-handle" data-col="${i}"></div></th>`).join('') +
     `</tr></thead>`;
 
   const colgroup = '';
@@ -5013,6 +5018,37 @@ function renderBillsPane(pane, m, bills, incl){
 
     // Sync horizontal scroll
     scrollBody.addEventListener('scroll', ()=>{ theadWrap.scrollLeft = scrollBody.scrollLeft; }, {passive:true});
+
+    // ── Column resize drag ──
+    let _resizing=null;
+    pane.addEventListener('mousedown', e=>{
+      const handle = e.target.closest('.col-resize-handle');
+      if(!handle) return;
+      e.preventDefault();
+      const colIdx = parseInt(handle.dataset.col);
+      const hdrTh  = hdrTbl.querySelector(`th[data-col="${colIdx}"]`);
+      if(!hdrTh) return;
+      const startX = e.clientX;
+      const startW = hdrTh.getBoundingClientRect().width;
+      handle.classList.add('dragging');
+      document.body.style.cursor = 'col-resize';
+      _resizing = {colIdx, startX, startW, handle};
+    });
+    document.addEventListener('mousemove', e=>{
+      if(!_resizing) return;
+      const newW = Math.max(40, _resizing.startW + (e.clientX - _resizing.startX));
+      // Apply width to both header and body colgroup cols
+      [hdrTbl, bodyTbl].forEach(tbl=>{
+        const col = tbl.querySelector(`colgroup col:nth-child(${_resizing.colIdx+1})`);
+        if(col){ col.style.width=newW+'px'; col.style.minWidth=newW+'px'; }
+      });
+    }, {passive:true});
+    document.addEventListener('mouseup', ()=>{
+      if(!_resizing) return;
+      _resizing.handle.classList.remove('dragging');
+      document.body.style.cursor = '';
+      _resizing = null;
+    });
   });
 }
 
