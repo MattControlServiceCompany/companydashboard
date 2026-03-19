@@ -6687,7 +6687,7 @@ function renderBuildingStatsPane(pane, b){
   const kwhPerSf     = sqft>0 ? totE.kwh/sqft : null;
   const utilityCostPerSf = sqft>0 ? totUtility/sqft : null;
   const avgWattsPerSf= sqft>0&&totE.avgDemandKW>0 ? (totE.avgDemandKW*1000)/sqft : null;
-  const elecDolPerSf = sqft>0&&totE.totalCost>0 ? totE.totalCost/sqft : null;
+  const elecDolPerSf = sqft>0&&totE.energyCost>0 ? totE.energyCost/sqft : null;
   const thermPerSf   = sqft>0&&totG.therms>0 ? totG.therms/sqft : null;
   const totalKbtuPerSf = sqft>0 ? ((totE.kwh*3.412)+(totG.therms*100))/sqft : null;
   const utilityCostPerYear = totUtility;
@@ -6705,8 +6705,8 @@ function renderBuildingStatsPane(pane, b){
     if(!rows.length) return null;
     return rows.reduce((s,mo)=>s+elecByMo[mo].kwCost/(elecByMo[mo].billedKW||elecByMo[mo].demandKW),0)/rows.length;
   }
-  const sumKwhRate = avgRateForMos(sumMos,'totalCost');
-  const winKwhRate = avgRateForMos(winMos,'totalCost');
+  const sumKwhRate = avgRateForMos(sumMos,'energyCost');
+  const winKwhRate = avgRateForMos(winMos,'energyCost');
   const sumKwRate  = avgKwRateForMos(sumMos);
   const winKwRate  = avgKwRateForMos(winMos);
   const gasPerTherm= totG.therms>0 ? totG.cost/totG.therms : null;
@@ -6882,7 +6882,6 @@ function renderBuildingStatsPane(pane, b){
         ${utilityCostPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Utility Cost / sf</div><div class="bbd-sum-val c-green">${$c(utilityCostPerSf)}</div></div>`:''}
         ${hoursOperated!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Hours Operated</div><div class="bbd-sum-val">${hoursOperated.toLocaleString()}</div></div>`:''}
         ${avgWattsPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Avg Watts / sf</div><div class="bbd-sum-val c-blue">${avgWattsPerSf.toFixed(2)}</div></div>`:''}
-        ${elecDolPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Electric $ / sf</div><div class="bbd-sum-val c-orange">${$c(elecDolPerSf)}</div></div>`:''}
         <div class="bbd-sum-cell" style="min-width:110px">
           <div class="bbd-sum-lbl">$ / kWh Rate</div>
           <div class="bbd-rate-block">
@@ -7167,9 +7166,9 @@ function renderMeterDataPane(pane, m, bills, incl){
 
   // ── Summary bar computations ──
   const kwhPerSf      = isElec&&sqft>0 ? totE.kwh/sqft : null;
-  const costPerSf     = sqft>0 ? totCost/sqft : null;
+  const totalUtilityCostPerSf = sqft>0 ? totCost/sqft : null; const costPerSf = totalUtilityCostPerSf;
   const avgWattsPerSf = isElec&&sqft>0&&totE.avgDemandKW>0 ? (totE.avgDemandKW*1000)/sqft : null;
-  const elecDolPerSf  = isElec&&sqft>0 ? totE.totalCost/sqft : null;
+  const elecDolPerSf  = isElec&&sqft>0 ? totE.energyCost/sqft : null;
   const thermPerSf    = isGas&&sqft>0&&totG.therms>0 ? totG.therms/sqft : null;
   const kbtuPerSf     = sqft>0 ? ((totE.kwh*3.412)+(totG.therms*100)+(totW.kgal*0))/sqft : null;
   const hoursOperated = parseInt(bldg?.hoursOperated)||null;
@@ -7186,8 +7185,8 @@ function renderMeterDataPane(pane, m, bills, incl){
     if(!rows.length) return null;
     return rows.reduce((s,mo)=>s+elecByMo[mo].kwCost/(elecByMo[mo].billedKW||elecByMo[mo].demandKW),0)/rows.length;
   }
-  const sumKwhRate = isElec ? avgRateForMos(sumMos,'totalCost') : null;
-  const winKwhRate = isElec ? avgRateForMos(winMos,'totalCost') : null;
+  const sumKwhRate = isElec ? avgRateForMos(sumMos,'energyCost') : null;
+  const winKwhRate = isElec ? avgRateForMos(winMos,'energyCost') : null;
   const sumKwRate  = isElec ? avgKwRateForMos(sumMos) : null;
   const winKwRate  = isElec ? avgKwRateForMos(winMos) : null;
   const gasPerTherm= isGas&&totG.therms>0 ? totG.cost/totG.therms : null;
@@ -7298,7 +7297,7 @@ function renderMeterDataPane(pane, m, bills, incl){
       <div class="bbd-summary">
         ${sqft>0?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Square Feet</div><div class="bbd-sum-val">${sqft.toLocaleString()}</div></div>`:''}
         ${kwhPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">kWh / sf</div><div class="bbd-sum-val c-blue">${kwhPerSf.toFixed(2)}</div></div>`:''}
-        ${costPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">${isElec?'Electric':isGas?'Gas':'Utility'} Cost / sf</div><div class="bbd-sum-val c-green">${$c(costPerSf)}</div></div>`:''}
+        ${costPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">${isElec?'Electric Energy':isGas?'Gas':'Utility'} Cost / sf</div><div class="bbd-sum-val c-green">${$c(costPerSf)}</div></div>`:''}
         ${hoursOperated!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Hours Operated</div><div class="bbd-sum-val">${hoursOperated.toLocaleString()}</div></div>`:''}
         ${avgWattsPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Avg Watts / sf</div><div class="bbd-sum-val c-blue">${avgWattsPerSf.toFixed(2)}</div></div>`:''}
         ${elecDolPerSf!=null?`<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Electric $ / sf</div><div class="bbd-sum-val c-orange">${$c(elecDolPerSf)}</div></div>`:''}
