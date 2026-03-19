@@ -535,9 +535,15 @@ html,body{height:100%;overflow:hidden;}
 .bills-scroll-body{flex:1;overflow-y:auto;overflow-x:auto;min-height:0;}
 .bills-scroll-body .ud-bill-tbl{margin:0;}
 .ud-bill-tbl{width:100%;border-collapse:collapse;font-size:12px;min-width:500px;}
-.ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);font-weight:700;padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);background:var(--s1);white-space:nowrap;}
-.ud-bill-tbl td{padding:6px 10px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);font-weight:700;padding:7px 8px;text-align:center;border-bottom:2px solid var(--border2);background:var(--s1);white-space:normal;line-height:1.35;overflow:hidden;}
+.ud-bill-tbl th.lbl{text-align:left;}
+.ud-bill-tbl td{padding:5px 8px;border-bottom:1px solid var(--border);vertical-align:middle;border-right:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ud-bill-tbl td.border-group{border-left:2px solid var(--border2);}
+.ud-bill-tbl th[style*="border-left:2px"]{position:relative;}
 .ud-bill-tbl tr:last-child td{border-bottom:none;}
+.ud-bill-tbl tr:hover td{background:var(--s3);}
+.ud-bill-tbl tr:nth-child(even) td{background:rgba(255,255,255,.015);}
+.ud-bill-tbl tr:nth-child(even):hover td{background:var(--s3);}
 .ud-bill-tbl input{font-family:var(--mono);font-size:12px;color:var(--text);background:transparent;border:none;outline:none;width:100%;padding:2px 3px;min-width:60px;}
 .ud-bill-tbl input:focus{background:var(--s4);border-radius:3px;}
 .ud-bill-tbl td.days-cell{font-family:var(--mono);font-size:12px;color:var(--em);text-align:center;}
@@ -4895,11 +4901,37 @@ function renderBillsPane(pane, m, bills, incl){
     </div>
   </span>`;
 
-  let tblHead = '<th class="lbl" style="white-space:nowrap">Norm. Month '+normInfoTip+'</th><th class="lbl">Start</th><th class="lbl">End</th><th class="num">Days</th>';
-  if(isElec) tblHead += '<th class="num">kWh</th><th class="num">Actual kW</th><th class="num">Billed kW</th><th class="num">Facilities kW</th><th class="num">Actual kW Cost $</th><th class="num">Facilities kW Cost $</th><th class="num">kWh Cost $</th><th class="num">Total $</th>';
-  else if(isGas) tblHead += '<th class="num">Therms</th><th class="num">Therm Cost $</th>';
-  else tblHead += '<th class="num">Usage</th><th class="num">Cost $</th>';
-  tblHead += '<th></th>';
+  // ── Column definitions: [label (can use <br>), minWidth px, align, groupBorder] ──
+  const COL_BASE = [
+    {h:'Norm.<br>Month '+normInfoTip, w:100, a:'lbl', g:false},
+    {h:'Start',                        w:90,  a:'lbl', g:false},
+    {h:'End',                          w:90,  a:'lbl', g:false},
+    {h:'Days',                         w:44,  a:'num', g:false},
+  ];
+  const COL_ELEC = [
+    {h:'kWh',                          w:90,  a:'num', g:false},
+    {h:'Actual<br>kW',                 w:72,  a:'num', g:true },
+    {h:'Billed<br>kW',                 w:68,  a:'num', g:false},
+    {h:'Facilities<br>kW',             w:76,  a:'num', g:false},
+    {h:'Actual<br>kW Cost',            w:86,  a:'num', g:true },
+    {h:'Facilities<br>kW Cost',        w:90,  a:'num', g:false},
+    {h:'kWh<br>Cost $',                w:82,  a:'num', g:true },
+    {h:'Other<br>Charges',             w:78,  a:'num', g:false},
+    {h:'Taxes &amp;<br>Fees',          w:72,  a:'num', g:false},
+    {h:'Total $',                      w:84,  a:'num', g:true },
+  ];
+  const COL_GAS  = [{h:'Therms',w:80,a:'num',g:false},{h:'Therm<br>Cost $',w:88,a:'num',g:false}];
+  const COL_OTHER= [{h:'Usage', w:80,a:'num',g:false},{h:'Cost $',        w:80,a:'num',g:false}];
+  const COL_ACTION = [{h:'',   w:50,  a:'num', g:false}];
+
+  const cols = [...COL_BASE, ...(isElec?COL_ELEC:isGas?COL_GAS:COL_OTHER), ...COL_ACTION];
+
+  const tblHead = cols.map(c=>
+    `<th class="${c.a}" style="min-width:${c.w}px;width:${c.w}px;${c.g?'border-left:2px solid var(--border2);':''}">${c.h}</th>`
+  ).join('');
+
+  // Build colgroup for both tables from the same col definitions
+  const colgroup = '<colgroup>'+cols.map(c=>`<col style="width:${c.w}px;min-width:${c.w}px">`).join('')+'</colgroup>';
 
   // Build rows with gap detection
   let tblBody = '';
@@ -4944,45 +4976,28 @@ function renderBillsPane(pane, m, bills, incl){
     '<div class="bills-sticky-hdr">' + stickyHdrInner + '</div>' +
     '<div class="bills-thead-wrap" id="billsTheadWrap" style="overflow-x:hidden;flex-shrink:0;">' +
       '<table class="ud-bill-tbl" id="billsHdrTbl" style="table-layout:fixed;">' +
+        colgroup +
         '<thead><tr>' + tblHead + '</tr></thead>' +
       '</table>' +
     '</div>' +
     '<div class="bills-scroll-body" id="billsScrollBody">' +
-      '<table class="ud-bill-tbl" id="billsBodyTbl">' +
+      '<table class="ud-bill-tbl" id="billsBodyTbl" style="table-layout:fixed;">' +
+        colgroup +
         '<tbody>' + tblBody + '</tbody>' +
       '</table>' +
     '</div>';
 
-  // After browser lays out the body table naturally, copy column widths to both tables
+  // Colgroups already injected — just set total width and wire up horizontal scroll sync
   requestAnimationFrame(()=>{
-    const hdrTbl = pane.querySelector('#billsHdrTbl');
-    const bodyTbl = pane.querySelector('#billsBodyTbl');
+    const hdrTbl    = pane.querySelector('#billsHdrTbl');
+    const bodyTbl   = pane.querySelector('#billsBodyTbl');
     const theadWrap = pane.querySelector('#billsTheadWrap');
-    const scrollBody = pane.querySelector('#billsScrollBody');
-    if(!hdrTbl || !bodyTbl) return;
-
-    // Get natural widths from the auto-layout body table
-    const firstRow = bodyTbl.querySelector('tbody tr:first-child');
-    if(!firstRow) return;
-    const tds = Array.from(firstRow.querySelectorAll('td'));
-    const widths = tds.map(td => td.getBoundingClientRect().width);
-
-    // Build colgroup HTML
-    const colgroup = '<colgroup>' + widths.map(w => '<col style="width:' + Math.ceil(w) + 'px;min-width:' + Math.ceil(w) + 'px">').join('') + '</colgroup>';
-
-    // Inject colgroup and switch both tables to fixed layout
-    hdrTbl.insertAdjacentHTML('afterbegin', colgroup);
-    bodyTbl.insertAdjacentHTML('afterbegin', colgroup);
-    hdrTbl.style.tableLayout = 'fixed';
-    bodyTbl.style.tableLayout = 'fixed';
-
-    // Set explicit total width on both tables
-    const totalW = widths.reduce((s, w) => s + Math.ceil(w), 0);
-    hdrTbl.style.width = totalW + 'px';
+    const scrollBody= pane.querySelector('#billsScrollBody');
+    if(!hdrTbl || !bodyTbl || !scrollBody || !theadWrap) return;
+    const totalW = cols.reduce((s,c)=>s+c.w, 0);
+    hdrTbl.style.width  = totalW + 'px';
     bodyTbl.style.width = totalW + 'px';
-
-    // Sync horizontal scroll: body drives header
-    scrollBody.addEventListener('scroll', () => { theadWrap.scrollLeft = scrollBody.scrollLeft; }, {passive: true});
+    scrollBody.addEventListener('scroll', ()=>{ theadWrap.scrollLeft = scrollBody.scrollLeft; }, {passive:true});
   });
 }
 
@@ -7994,13 +8009,15 @@ function renderBillRow(row, m, incl, allBills){
       <td class="lbl">${fmtD(row.end)}</td>
       <td class="mono num">${days}</td>
       <td class="mono num">${fmt(row.kwh)}</td>
-      <td class="mono num">${fmtKW(row.demandKW)}</td>
+      <td class="mono num border-group">${fmtKW(row.demandKW)}</td>
       <td class="mono num">${fmtKW(row.billedKW)}</td>
       <td class="mono num">${fmtKW(row.facKW)}</td>
-      <td class="mono num">${fmtC(row.kwCost)}</td>
+      <td class="mono num border-group">${fmtC(row.kwCost)}</td>
       <td class="mono num">${fmtC(row.facKWCost)}</td>
-      <td class="mono num">${fmtC(row.kwhCost)}</td>
-      <td class="mono num">${fmtC(row.totalCost)}</td>
+      <td class="mono num border-group">${fmtC(row.kwhCost)}</td>
+      <td class="mono num">${fmtC(row.otherCost)}</td>
+      <td class="mono num">${fmtC(row.taxCost)}</td>
+      <td class="mono num border-group">${fmtC(row.totalCost)}</td>
       ${actionBtns}
     </tr>`;
   }
