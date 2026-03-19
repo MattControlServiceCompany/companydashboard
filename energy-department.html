@@ -6061,26 +6061,34 @@ function renderBaselinePane(pane, m, bills, incl){
     const regrBlRows=blRows.filter(r=>r.regrBaseline!=null);
     const avgRegrBl=regrBlRows.length?regrBlRows.reduce((s,r)=>s+r.regrBaseline,0)/regrBlRows.length:null;
 
-    // ── Rate calculations ──
-    const costRows = blRows.filter(r=>r.cost>0&&r.usage>0);
-    const avgRatePerUnit = costRows.length ? costRows.reduce((s,r)=>s+r.cost/r.usage,0)/costRows.length : null;
+    // ── Rate calculations using energyCost (totalCost - kwCost) to match Meter Data $/kWh column ──
+    // Build energyCost per norm-month from baseline bills
+    const blBillsForRate = bills.filter(b=>{ const ym=normMonth(b.start,b.end,incl,bills); return blMonths.includes(ym); });
+    const energyCostByYm = {};
+    blBillsForRate.forEach(b=>{
+      const ym=normMonth(b.start,b.end,incl,bills); if(!ym) return;
+      const kwC=parseFloat(b.kwCost||0)+parseFloat(b.facKWCost||0);
+      const ec=parseFloat(b.totalCost||0)-kwC;
+      energyCostByYm[ym]=(energyCostByYm[ym]||0)+ec;
+    });
+    const costRows = blRows.filter(r=>r.usage>0&&energyCostByYm[r.ym]>0);
+    const avgRatePerUnit = costRows.length ? costRows.reduce((s,r)=>s+(energyCostByYm[r.ym]/r.usage),0)/costRows.length : null;
 
     // Summer/Winter $/kW demand — electric only, split by season
     let summerKwRate=null, winterKwRate=null;
     if(m.commodity==='Electric'){
-      const blBills = bills.filter(b=>{ const ym=normMonth(b.start,b.end,incl,bills); return blMonths.includes(ym); });
-      const demandBills = blBills.filter(b=>(b.demandKW||0)>0&&(b.kwCost||0)>0);
+      const demandBills = blBillsForRate.filter(b=>(b.demandKW||0)>0&&(b.kwCost||0)>0);
       const sumDem = demandBills.filter(b=>{ const mo=new Date(b.start+'T12:00:00').getMonth()+1; return mo>=6&&mo<=9; });
       const winDem = demandBills.filter(b=>{ const mo=new Date(b.start+'T12:00:00').getMonth()+1; return mo===12||mo<=3; });
       summerKwRate = sumDem.length ? sumDem.reduce((s,b)=>s+(b.kwCost/b.demandKW),0)/sumDem.length : null;
       winterKwRate = winDem.length ? winDem.reduce((s,b)=>s+(b.kwCost/b.demandKW),0)/winDem.length : null;
     }
 
-    // Summer (Jun–Sep) vs Winter (Dec–Mar) $/unit rates
+    // Summer (Jun–Sep) vs Winter (Dec–Mar) $/unit rates using energyCost
     const summerRows = costRows.filter(r=>{ const mo=parseInt(r.ym.split('-')[1]); return mo>=6&&mo<=9; });
     const winterRows = costRows.filter(r=>{ const mo=parseInt(r.ym.split('-')[1]); return mo===12||mo<=3; });
-    const summerRate = summerRows.length ? summerRows.reduce((s,r)=>s+r.cost/r.usage,0)/summerRows.length : null;
-    const winterRate = winterRows.length ? winterRows.reduce((s,r)=>s+r.cost/r.usage,0)/winterRows.length : null;
+    const summerRate = summerRows.length ? summerRows.reduce((s,r)=>s+(energyCostByYm[r.ym]/r.usage),0)/summerRows.length : null;
+    const winterRate = winterRows.length ? winterRows.reduce((s,r)=>s+(energyCostByYm[r.ym]/r.usage),0)/winterRows.length : null;
 
     const fmtRate = v => v!=null ? '$'+v.toLocaleString('en-US',{minimumFractionDigits:5,maximumFractionDigits:5}) : null;
     const fmtKw   = v => v!=null ? '$'+v.toFixed(3) : null;
@@ -6325,13 +6333,20 @@ function refreshBaselineStats(mid){
     const regrBlR=blRows.filter(r=>r.regrBaseline!=null);
     const avgRegrBl=regrBlR.length?regrBlR.reduce((s,r)=>s+r.regrBaseline,0)/regrBlR.length:null;
 
-    const costRows=blRows.filter(r=>r.cost>0&&r.usage>0);
-    const avgRatePerUnit=costRows.length?costRows.reduce((s,r)=>s+r.cost/r.usage,0)/costRows.length:null;
+    // Rate calculations using energyCost (totalCost - kwCost) to match Meter Data $/kWh column
+    const inclFlag=m.inclusive!==false;
+    const blBillsR=bills.filter(b=>blMonths2.includes(normMonth(b.start,b.end,inclFlag,bills)));
+    const eCostByYm2={};
+    blBillsR.forEach(b=>{
+      const ym=normMonth(b.start,b.end,inclFlag,bills); if(!ym) return;
+      const kwC=parseFloat(b.kwCost||0)+parseFloat(b.facKWCost||0);
+      eCostByYm2[ym]=(eCostByYm2[ym]||0)+parseFloat(b.totalCost||0)-kwC;
+    });
+    const costRows=blRows.filter(r=>r.usage>0&&eCostByYm2[r.ym]>0);
+    const avgRatePerUnit=costRows.length?costRows.reduce((s,r)=>s+(eCostByYm2[r.ym]/r.usage),0)/costRows.length:null;
     let summerKwRate=null, winterKwRate=null;
     if(m.commodity==='Electric'){
-      const inclFlag=m.inclusive!==false;
-      const blBills=bills.filter(b=>blMonths2.includes(normMonth(b.start,b.end,inclFlag,bills)));
-      const dBills=blBills.filter(b=>(b.demandKW||0)>0&&(b.kwCost||0)>0);
+      const dBills=blBillsR.filter(b=>(b.demandKW||0)>0&&(b.kwCost||0)>0);
       const sumDem=dBills.filter(b=>{ const mo=new Date(b.start+'T12:00:00').getMonth()+1; return mo>=6&&mo<=9; });
       const winDem=dBills.filter(b=>{ const mo=new Date(b.start+'T12:00:00').getMonth()+1; return mo===12||mo<=3; });
       summerKwRate=sumDem.length?sumDem.reduce((s,b)=>s+(b.kwCost/b.demandKW),0)/sumDem.length:null;
@@ -6339,8 +6354,8 @@ function refreshBaselineStats(mid){
     }
     const sumR=costRows.filter(r=>{ const mo=parseInt(r.ym.split('-')[1]); return mo>=6&&mo<=9; });
     const winR=costRows.filter(r=>{ const mo=parseInt(r.ym.split('-')[1]); return mo===12||mo<=3; });
-    const summerRate=sumR.length?sumR.reduce((s,r)=>s+r.cost/r.usage,0)/sumR.length:null;
-    const winterRate=winR.length?winR.reduce((s,r)=>s+r.cost/r.usage,0)/winR.length:null;
+    const summerRate=sumR.length?sumR.reduce((s,r)=>s+(eCostByYm2[r.ym]/r.usage),0)/sumR.length:null;
+    const winterRate=winR.length?winR.reduce((s,r)=>s+(eCostByYm2[r.ym]/r.usage),0)/winR.length:null;
     const fmtRate=v=>v!=null?'$'+v.toFixed(4):null;
     const fmtKw=v=>v!=null?'$'+v.toFixed(2):null;
     const unit2=m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
@@ -6641,7 +6656,7 @@ function renderBuildingStatsPane(pane, b){
   totE.avgBilledKW  = moList.length ? totE.billedKW/moList.length : 0;
   totE.avgFacKW     = moList.length ? totE.facKW/moList.length : 0;
   totE.totalKWCost  = totE.kwCost + totE.facKWCost;
-  totE.costPerKwh   = totE.kwh>0 ? totE.totalCost/totE.kwh : 0;
+  totE.costPerKwh   = totE.kwh>0 ? totE.energyCost/totE.kwh : 0;
   // Cost/BilledKW and Cost/FacKW totals = avg of months with positive values
   const _bilKWMos  = moList.filter(mo=>elecByMo[mo]&&(elecByMo[mo].billedKW||0)>0&&(elecByMo[mo].kwCost||0)>0);
   const _facKWMos  = moList.filter(mo=>elecByMo[mo]&&(elecByMo[mo].facKW||0)>0&&(elecByMo[mo].facKWCost||0)>0);
@@ -7124,7 +7139,7 @@ function renderMeterDataPane(pane, m, bills, incl){
   totE.avgBilledKW = moList.length ? totE.billedKW/moList.length : 0;
   totE.avgFacKW    = moList.length ? totE.facKW/moList.length : 0;
   totE.totalKWCost = totE.kwCost + totE.facKWCost;
-  totE.costPerKwh  = totE.kwh>0 ? totE.totalCost/totE.kwh : 0;
+  totE.costPerKwh  = totE.kwh>0 ? totE.energyCost/totE.kwh : 0;
   const _bilKWMos = moList.filter(mo=>elecByMo[mo]&&(elecByMo[mo].billedKW||0)>0&&(elecByMo[mo].kwCost||0)>0);
   const _facKWMos = moList.filter(mo=>elecByMo[mo]&&(elecByMo[mo].facKW||0)>0&&(elecByMo[mo].facKWCost||0)>0);
   const _totKWMos = moList.filter(mo=>elecByMo[mo]&&(elecByMo[mo].billedKW||0)>0&&((elecByMo[mo].kwCost||0)+(elecByMo[mo].facKWCost||0))>0);
