@@ -5019,7 +5019,8 @@ function renderBillsPane(pane, m, bills, incl){
     // Sync horizontal scroll
     scrollBody.addEventListener('scroll', ()=>{ theadWrap.scrollLeft = scrollBody.scrollLeft; }, {passive:true});
 
-    // ── Column resize drag ──
+    // ── Column resize drag — each column resizes independently ──
+    // Table uses fixed layout; resizing one col doesn't affect others; table width adjusts to total
     let _resizing=null;
     pane.addEventListener('mousedown', e=>{
       const handle = e.target.closest('.col-resize-handle');
@@ -5028,26 +5029,28 @@ function renderBillsPane(pane, m, bills, incl){
       const colIdx = parseInt(handle.dataset.col);
       const hdrTh  = hdrTbl.querySelector(`th[data-col="${colIdx}"]`);
       if(!hdrTh) return;
-      const startX = e.clientX;
-      const startW = hdrTh.getBoundingClientRect().width;
       handle.classList.add('dragging');
       document.body.style.cursor = 'col-resize';
-      _resizing = {colIdx, startX, startW, handle};
+      _resizing = {colIdx, startX:e.clientX, startW:hdrTh.getBoundingClientRect().width, handle};
     });
     document.addEventListener('mousemove', e=>{
       if(!_resizing) return;
       const newW = Math.max(40, _resizing.startW + (e.clientX - _resizing.startX));
-      // Apply width to both header and body colgroup cols
       [hdrTbl, bodyTbl].forEach(tbl=>{
         const col = tbl.querySelector(`colgroup col:nth-child(${_resizing.colIdx+1})`);
         if(col){ col.style.width=newW+'px'; col.style.minWidth=newW+'px'; }
       });
+      // Recalculate total table width so other columns don't reflow
+      const allCols = hdrTbl.querySelectorAll('colgroup col');
+      const totalW = Array.from(allCols).reduce((s,c)=>s+parseInt(c.style.width||0),0);
+      hdrTbl.style.width  = totalW+'px';
+      bodyTbl.style.width = totalW+'px';
     }, {passive:true});
     document.addEventListener('mouseup', ()=>{
       if(!_resizing) return;
       _resizing.handle.classList.remove('dragging');
-      document.body.style.cursor = '';
-      _resizing = null;
+      document.body.style.cursor='';
+      _resizing=null;
     });
   });
 }
@@ -6759,7 +6762,7 @@ function renderBuildingStatsPane(pane, b){
     const normDays  = isTotal ? null               : (e.normDays||null);
 
     // Rates
-    const costKwh   = (kwh!=null&&kwh>0&&eCost!=null)   ? eCost/kwh       : null;
+    const costKwh   = (kwh!=null&&kwh>0&&engCost!=null) ? engCost/kwh     : null;
     const costBilKW = isTotal ? totE.costPerBilledKW
                     : (bilKW!=null&&bilKW>0&&kwCost!=null&&kwCost>0) ? kwCost/bilKW    : null;
     const costFacKW = isTotal ? totE.costPerFacKW
@@ -7177,7 +7180,7 @@ function renderMeterDataPane(pane, m, bills, incl){
     const engCost   = isTotal ? totE.energyCost   : (e.energyCost!=null?e.energyCost:null);
     const eCost     = isTotal ? totE.totalCost    : (e.totalCost!=null?e.totalCost:null);
     const normDays  = isTotal ? null              : (e.normDays||null);
-    const costKwh   = (kwh!=null&&kwh>0&&eCost!=null) ? eCost/kwh : null;
+    const costKwh   = (kwh!=null&&kwh>0&&engCost!=null) ? engCost/kwh : null;
     const costBilKW = isTotal ? totE.costPerBilledKW : (bilKW&&bilKW>0&&kwCost&&kwCost>0?kwCost/bilKW:null);
     const costFacKW = isTotal ? totE.costPerFacKW    : (facKW&&facKW>0&&facKWCost&&facKWCost>0?facKWCost/facKW:null);
     const costTotKW = isTotal ? totE.costPerTotKW    : (bilKW&&bilKW>0&&totKWCost&&totKWCost>0?totKWCost/bilKW:null);
