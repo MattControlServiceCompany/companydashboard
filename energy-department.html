@@ -4998,28 +4998,41 @@ function renderBillsPane(pane, m, bills, incl){
     const scrollBody= pane.querySelector('#billsScrollBody');
     if(!hdrTbl || !bodyTbl || !scrollBody || !theadWrap) return;
 
-    // Read natural widths from body table first row, enforce col min-widths
+    const storageKey = `bills_col_widths_${m.id}`;
+
+    // Load saved widths, falling back to measured natural widths
     const firstRow = bodyTbl.querySelector('tbody tr:first-child');
     if(!firstRow) return;
     const rawWidths = Array.from(firstRow.querySelectorAll('td')).map(td=>td.getBoundingClientRect().width);
     if(!rawWidths.length) return;
-    // Enforce minimum widths from col definitions so header text is never cut off
-    const widths = rawWidths.map((w,i)=>Math.max(Math.ceil(w), cols[i]?.w||0));
 
-    const cg = '<colgroup>'+widths.map(w=>`<col style="width:${w}px">`).join('')+'</colgroup>';
-    hdrTbl.insertAdjacentHTML('afterbegin', cg);
-    bodyTbl.insertAdjacentHTML('afterbegin', cg);
-    hdrTbl.style.tableLayout  = 'fixed';
-    bodyTbl.style.tableLayout = 'fixed';
-    const totalW = widths.reduce((s,w)=>s+Math.ceil(w),0);
-    hdrTbl.style.width  = totalW+'px';
-    bodyTbl.style.width = totalW+'px';
+    let savedWidths = null;
+    try { const s=localStorage.getItem(storageKey); if(s) savedWidths=JSON.parse(s); } catch(e){}
+    const widths = rawWidths.map((w,i)=>{
+      if(savedWidths && savedWidths[i]) return Math.max(40, savedWidths[i]);
+      return Math.max(Math.ceil(w), cols[i]?.w||0);
+    });
+
+    function applyWidths(ws){
+      const cg = '<colgroup>'+ws.map(w=>`<col style="width:${w}px">`).join('')+'</colgroup>';
+      // Remove existing colgroups first
+      hdrTbl.querySelectorAll('colgroup').forEach(c=>c.remove());
+      bodyTbl.querySelectorAll('colgroup').forEach(c=>c.remove());
+      hdrTbl.insertAdjacentHTML('afterbegin', cg);
+      bodyTbl.insertAdjacentHTML('afterbegin', cg);
+      hdrTbl.style.tableLayout = 'fixed';
+      bodyTbl.style.tableLayout = 'fixed';
+      const totalW = ws.reduce((s,w)=>s+w,0);
+      hdrTbl.style.width  = totalW+'px';
+      bodyTbl.style.width = totalW+'px';
+    }
+
+    applyWidths(widths);
 
     // Sync horizontal scroll
     scrollBody.addEventListener('scroll', ()=>{ theadWrap.scrollLeft = scrollBody.scrollLeft; }, {passive:true});
 
-    // ── Column resize drag — each column resizes independently ──
-    // Table uses fixed layout; resizing one col doesn't affect others; table width adjusts to total
+    // ── Column resize drag — each column resizes independently, saves to localStorage ──
     let _resizing=null;
     pane.addEventListener('mousedown', e=>{
       const handle = e.target.closest('.col-resize-handle');
@@ -5037,18 +5050,20 @@ function renderBillsPane(pane, m, bills, incl){
       const newW = Math.max(40, _resizing.startW + (e.clientX - _resizing.startX));
       [hdrTbl, bodyTbl].forEach(tbl=>{
         const col = tbl.querySelector(`colgroup col:nth-child(${_resizing.colIdx+1})`);
-        if(col){ col.style.width=newW+'px'; col.style.minWidth=newW+'px'; }
+        if(col){ col.style.width=newW+'px'; }
       });
-      // Recalculate total table width so other columns don't reflow
-      const allCols = hdrTbl.querySelectorAll('colgroup col');
-      const totalW = Array.from(allCols).reduce((s,c)=>s+parseInt(c.style.width||0),0);
-      hdrTbl.style.width  = totalW+'px';
+      const allCols = Array.from(hdrTbl.querySelectorAll('colgroup col'));
+      const totalW = allCols.reduce((s,c)=>s+parseInt(c.style.width||0),0);
+      hdrTbl.style.width = totalW+'px';
       bodyTbl.style.width = totalW+'px';
     }, {passive:true});
     document.addEventListener('mouseup', ()=>{
       if(!_resizing) return;
       _resizing.handle.classList.remove('dragging');
       document.body.style.cursor='';
+      // Save widths to localStorage
+      const currentWidths = Array.from(hdrTbl.querySelectorAll('colgroup col')).map(c=>parseInt(c.style.width||0));
+      try{ localStorage.setItem(storageKey, JSON.stringify(currentWidths)); }catch(e){}
       _resizing=null;
     });
   });
