@@ -4912,56 +4912,38 @@ function renderBillsPane(pane, m, bills, incl){
     </div>
   </span>`;
 
-  // ── Column definitions: h=label, w=px width, a=align class, grp=group class ──
+  // ── Column definitions — auto-fit, no fixed px widths, full values always visible ──
   const COL_BASE = [
-    {h:'Norm. Month '+normInfoTip, w:106, a:'lbl',    grp:''},
-    {h:'Start',                    w:88,  a:'lbl',    grp:''},
-    {h:'End',                      w:88,  a:'lbl',    grp:''},
-    {h:'Days',                     w:46,  a:'th-center', grp:''},
+    {h:'Norm. Month '+normInfoTip, a:'lbl'},
+    {h:'Start',                    a:'lbl'},
+    {h:'End',                      a:'lbl'},
+    {h:'Days',                     a:'td-days'},
   ];
   const COL_ELEC = [
-    {h:'kWh',                      w:92,  a:'',       grp:''},
-    {h:'Actual kW',                w:76,  a:'',       grp:'grp-kw-col'},
-    {h:'Billed kW',                w:70,  a:'',       grp:'grp-kw-col'},
-    {h:'Facilities kW',            w:80,  a:'',       grp:'grp-kw-col'},
-    {h:'kW Cost',                  w:82,  a:'',       grp:'grp-kw-col'},
-    {h:'Fac. kW Cost',             w:84,  a:'',       grp:'grp-kw-col'},
-    {h:'kWh Cost',                 w:84,  a:'',       grp:'grp-cost-col'},
-    {h:'Other Charges',            w:84,  a:'',       grp:'grp-cost-col'},
-    {h:'Taxes & Fees',             w:80,  a:'',       grp:'grp-cost-col'},
-    {h:'Total',                    w:86,  a:'',       grp:'grp-cost-col'},
+    {h:'kWh',                 a:''},
+    {h:'Actual kW',           a:''},
+    {h:'Billed kW',           a:''},
+    {h:'Facilities kW',       a:''},
+    {h:'kW Cost',             a:''},
+    {h:'Fac. kW Cost',        a:''},
+    {h:'kWh Cost',            a:''},
+    {h:'Other Charges',       a:''},
+    {h:'Taxes & Fees',        a:''},
+    {h:'Total',               a:''},
   ];
-  const COL_GAS   = [{h:'Therms',w:84,a:'',grp:''},{h:'Cost',w:86,a:'',grp:'grp-cost-col'}];
-  const COL_OTHER = [{h:'Usage', w:84,a:'',grp:''},{h:'Cost',w:86,a:'',grp:'grp-cost-col'}];
-  const COL_ACTION= [{h:'',      w:52,  a:'',       grp:''}];
+  const COL_GAS   = [{h:'Therms',a:''},{h:'Therm Cost',a:''}];
+  const COL_OTHER = [{h:'Usage', a:''},{h:'Cost',       a:''}];
+  const COL_ACTION= [{h:'',      a:'td-actions'}];
 
   const cols = [...COL_BASE, ...(isElec?COL_ELEC:isGas?COL_GAS:COL_OTHER), ...COL_ACTION];
 
-  // Group header row (spanning): shows kW Demand and Costs labels over their column groups
-  let grpRow = '';
-  if(isElec){
-    grpRow =
-      `<tr class="grp-row">` +
-      // base cols (4) + kWh col (1) = 5 blank
-      `<th colspan="5"></th>` +
-      // kW group: Actual kW, Billed kW, Fac kW, kW Cost, Fac kW Cost = 5
-      `<th colspan="5" class="grp-kw">⚡ kW Demand</th>` +
-      // cost group: kWh Cost, Other, Taxes, Total = 4
-      `<th colspan="4" class="grp-cost">$ Charges</th>` +
-      // action
-      `<th></th>` +
-      `</tr>`;
-  }
-
   const tblHead =
-    `<thead>` +
-    grpRow +
-    `<tr>` +
-    cols.map(c=>`<th class="${[c.a, c.grp].filter(Boolean).join(' ')}" style="min-width:${c.w}px;width:${c.w}px">${c.h}</th>`).join('') +
+    `<thead><tr>` +
+    cols.map(c=>`<th class="${c.a}">${c.h}</th>`).join('') +
     `</tr></thead>`;
 
-  // Build colgroup
-  const colgroup = '<colgroup>'+cols.map(c=>`<col style="width:${c.w}px;min-width:${c.w}px">`).join('')+'</colgroup>';
+  // No colgroup — let browser auto-size columns to content
+  const colgroup = '';
 
   // Build rows with gap detection
   let tblBody = '';
@@ -5000,32 +4982,45 @@ function renderBillsPane(pane, m, bills, incl){
       '</div>';
 
   // Layout: info bar (fixed) + header table (fixed) + scrolling body table
-  // Step 1: render body table naturally (auto layout) so browser sizes columns correctly
-  // Step 2: read those widths, inject colgroups into both tables, lock layout
+  // Single scrollable container — thead frozen via split-table, auto column sizing
   pane.innerHTML =
     '<div class="bills-sticky-hdr">' + stickyHdrInner + '</div>' +
     '<div class="bills-thead-wrap" id="billsTheadWrap" style="overflow-x:hidden;flex-shrink:0;">' +
-      '<table class="ud-bill-tbl" id="billsHdrTbl" style="table-layout:fixed;">' +
-        colgroup + tblHead +
+      '<table class="ud-bill-tbl" id="billsHdrTbl">' +
+        tblHead +
       '</table>' +
     '</div>' +
     '<div class="bills-scroll-body" id="billsScrollBody">' +
-      '<table class="ud-bill-tbl" id="billsBodyTbl" style="table-layout:fixed;">' +
-        colgroup +
+      '<table class="ud-bill-tbl" id="billsBodyTbl">' +
         '<tbody>' + tblBody + '</tbody>' +
       '</table>' +
     '</div>';
 
-  // Colgroups already injected — just set total width and wire up horizontal scroll sync
+  // After browser auto-sizes body table, copy column widths to header table so they align
   requestAnimationFrame(()=>{
     const hdrTbl    = pane.querySelector('#billsHdrTbl');
     const bodyTbl   = pane.querySelector('#billsBodyTbl');
     const theadWrap = pane.querySelector('#billsTheadWrap');
     const scrollBody= pane.querySelector('#billsScrollBody');
     if(!hdrTbl || !bodyTbl || !scrollBody || !theadWrap) return;
-    const totalW = cols.reduce((s,c)=>s+c.w, 0);
-    hdrTbl.style.width  = totalW + 'px';
-    bodyTbl.style.width = totalW + 'px';
+
+    // Read natural widths from body table first row
+    const firstRow = bodyTbl.querySelector('tbody tr:first-child');
+    if(!firstRow) return;
+    const widths = Array.from(firstRow.querySelectorAll('td')).map(td=>td.getBoundingClientRect().width);
+    if(!widths.length) return;
+
+    // Inject matching colgroups into both tables and lock layout
+    const cg = '<colgroup>'+widths.map(w=>`<col style="width:${Math.ceil(w)}px">`).join('')+'</colgroup>';
+    hdrTbl.insertAdjacentHTML('afterbegin', cg);
+    bodyTbl.insertAdjacentHTML('afterbegin', cg);
+    hdrTbl.style.tableLayout  = 'fixed';
+    bodyTbl.style.tableLayout = 'fixed';
+    const totalW = widths.reduce((s,w)=>s+Math.ceil(w),0);
+    hdrTbl.style.width  = totalW+'px';
+    bodyTbl.style.width = totalW+'px';
+
+    // Sync horizontal scroll
     scrollBody.addEventListener('scroll', ()=>{ theadWrap.scrollLeft = scrollBody.scrollLeft; }, {passive:true});
   });
 }
@@ -7510,6 +7505,19 @@ function renderPerfPane(pane, m, bills, incl){
     });
   }
 
+  // Gas: per-month actual therms cost and $/therm rate
+  const gasCostByYm = {};
+  if(!isElec){
+    filteredPostRows.forEach(r=>{
+      const bfr = bills.filter(b=>normMonth(b.start,b.end,incl,bills)===r.ym);
+      if(!bfr.length) return;
+      const actualTherms = bfr.reduce((s,b)=>s+parseFloat(b.therms||b.usage||0),0);
+      const thermCostAmt = bfr.reduce((s,b)=>s+parseFloat(b.thermCost||b.cost||0),0);
+      if(actualTherms>0 && thermCostAmt>0)
+        gasCostByYm[r.ym] = { thermCostAmt, thermRate: thermCostAmt/actualTherms };
+    });
+  }
+
   // Baseline avg kW from baseline bills (for Expected kW Cost)
   const blBillsPerf = bills.filter(b=>{ const ym=normMonth(b.start,b.end,incl,bills); return bl.months.includes(ym); });
   const blDemBillsP = blBillsPerf.filter(b=>parseFloat(b.demandKW||0)>0);
@@ -7522,6 +7530,7 @@ function renderPerfPane(pane, m, bills, incl){
   const hasKwhCostSav = isElec && filteredPostRows.some(r=>{ const d=perfDemByYm[r.ym]; return d&&d.kwhRate>0; });
   const hasKwCostSav  = hasKwCost && blAvgDemKWP>0;
   const hasTotalCostSav = hasKwhCostSav || hasKwCostSav;
+  const hasGasCostSav = !isElec && Object.keys(gasCostByYm).length>0;
 
   // ── Build table rows ──
   const perfRows=filteredPostRows.map(r=>{
@@ -7539,6 +7548,10 @@ function renderPerfPane(pane, m, bills, incl){
     const kwCostRow= dem ? (dem.kwCost||0)+(dem.facKWCost||0) : 0;
     const kwhRate  = dem ? dem.kwhRate||0 : 0;
     const kwhCostActual = dem ? dem.kwhCostAmt||0 : 0;
+    // Gas cost data for this month
+    const gasMo    = gasCostByYm[r.ym]||null;
+    const thermRate= gasMo ? gasMo.thermRate||0 : 0;
+    const thermCostActual = gasMo ? gasMo.thermCostAmt||0 : 0;
     // kWh cost savings: Exp kWh x $/kWh rate  vs  Actual kWh Cost
     const expKwhCost = hasKwhCostSav && kwhRate>0 ? expMo*kwhRate : 0;
     const kwhCostSav = hasKwhCostSav && kwhRate>0 ? expKwhCost - kwhCostActual : 0;
@@ -7547,6 +7560,9 @@ function renderPerfPane(pane, m, bills, incl){
     const expKwCost  = hasKwCostSav && moKwRate>0 ? blAvgDemKWP*moKwRate : 0;
     const kwCostSav  = hasKwCostSav && moKwRate>0 ? expKwCost - kwCostRow : 0;
     const totalCostSav = kwhCostSav + kwCostSav;
+    // Gas cost savings: Exp Therms x $/therm rate  vs  Actual Therm Cost
+    const expThermCost   = hasGasCostSav && thermRate>0 ? expMo*thermRate : 0;
+    const thermCostSav   = hasGasCostSav && thermRate>0 ? expThermCost - thermCostActual : 0;
     const savColor = v => v>=0 ? 'var(--em)' : 'var(--danger)';
     const costSign = v => v>=0 ? '' : '\u2212';
     const savSign  = v => v>=0 ? '\u2212' : '+';
@@ -7566,11 +7582,15 @@ function renderPerfPane(pane, m, bills, incl){
       (hasKwhCostSav?'<td class="mono num" style="color:var(--text2)">'+(expKwhCost>0?'$'+fmtC(expKwhCost):'&mdash;')+'</td>':'')+
       (hasKwhCostSav?'<td class="mono num">'+(kwhCostActual>0?'$'+fmtC(kwhCostActual):'&mdash;')+'</td>':'')+
       (hasKwhCostSav?'<td class="mono num" style="color:'+savColor(kwhCostSav)+';font-weight:600">'+(kwhRate>0?costSign(kwhCostSav)+'$'+fmtC(kwhCostSav):'&mdash;')+'</td>':'')+
+      (hasGasCostSav?'<td class="mono num" style="color:var(--text2)">'+(thermRate>0?'$'+thermRate.toFixed(4):'&mdash;')+'</td>':'')+
+      (hasGasCostSav?'<td class="mono num" style="color:var(--text2)">'+(expThermCost>0?'$'+fmtC(expThermCost):'&mdash;')+'</td>':'')+
+      (hasGasCostSav?'<td class="mono num">'+(thermCostActual>0?'$'+fmtC(thermCostActual):'&mdash;')+'</td>':'')+
+      (hasGasCostSav?'<td class="mono num" style="color:'+savColor(thermCostSav)+';font-weight:600">'+(thermRate>0?costSign(thermCostSav)+'$'+fmtC(thermCostSav):'&mdash;')+'</td>':'')+
       (hasKwData   ?'<td class="mono num">'+(demKW>0?demKW.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}):'&mdash;')+'</td>':'')+
       (hasBilKW    ?'<td class="mono num">'+(bilKW>0?bilKW.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}):'&mdash;')+'</td>':'')+
       (hasKwCost   ?'<td class="mono num">'+(kwCostRow>0?'$'+fmtC(kwCostRow):'&mdash;')+'</td>':'')+
       (hasKwCostSav?'<td class="mono num" style="color:'+savColor(kwCostSav)+';font-weight:600">'+(moKwRate>0?costSign(kwCostSav)+'$'+fmtC(kwCostSav):'&mdash;')+'</td>':'')+
-      (hasTotalCostSav?'<td class="mono num" style="color:'+savColor(totalCostSav)+';font-weight:700;border-left:1px solid var(--border)">'+costSign(totalCostSav)+'$'+fmtC(totalCostSav)+'</td>':'')+
+      (hasTotalCostSav?'<td class="mono num" style="color:'+savColor(totalCostSav)+';font-weight:700">'+costSign(totalCostSav)+'$'+fmtC(totalCostSav)+'</td>':'')+
     '</tr>';
   }).join('');
 
@@ -7587,6 +7607,10 @@ function renderPerfPane(pane, m, bills, incl){
   const actKwhCostHdr   = hasKwhCostSav   ? '<th class="num">Actual kWh Cost</th>'  : '';
   const kwhCostSavHdr   = hasKwhCostSav   ? '<th class="num">kWh Cost Sav</th>'     : '';
   const totalCostSavHdr = hasTotalCostSav ? '<th class="num">Total Cost Sav</th>'   : '';
+  const thermRateHdr    = hasGasCostSav   ? '<th class="num">$/Therm Rate</th>'     : '';
+  const expThermCostHdr = hasGasCostSav   ? '<th class="num">Exp Therm Cost</th>'   : '';
+  const actThermCostHdr = hasGasCostSav   ? '<th class="num">Actual Therm Cost</th>': '';
+  const thermCostSavHdr = hasGasCostSav   ? '<th class="num">Therm Cost Sav</th>'   : '';
   const euiTblHdr = '';
 
   // ── kW demand map for all chartRows (electric only) ──
@@ -7631,7 +7655,7 @@ function renderPerfPane(pane, m, bills, incl){
       (filteredPostRows.length?
         '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto">'+
           '<table class="ma-tbl">'+
-            '<thead><tr><th class="lbl">Month</th><th class="num">Norm Days</th>'+perfTableLabel+'<th class="num">kWh Saved</th><th class="num">%</th>'+kwhRateHdr+expKwhCostHdr+actKwhCostHdr+kwhCostSavHdr+demKWHdr+bilKWHdr+kwCostHdr+kwCostSavHdr+totalCostSavHdr+'</tr></thead>'+
+            '<thead><tr><th class="lbl">Month</th><th class="num">Norm Days</th>'+perfTableLabel+'<th class="num">Saved</th><th class="num">%</th>'+kwhRateHdr+expKwhCostHdr+actKwhCostHdr+kwhCostSavHdr+thermRateHdr+expThermCostHdr+actThermCostHdr+thermCostSavHdr+demKWHdr+bilKWHdr+kwCostHdr+kwCostSavHdr+totalCostSavHdr+'</tr></thead>'+
             '<tbody>'+perfRows+'</tbody>'+
           '</table></div>':
         '<div style="font-size:12px;color:var(--text3);padding:20px;text-align:center">No post-baseline data yet — add billing periods after <strong>'+fmtMon(blEnd+'-01')+'</strong></div>')+
@@ -8021,7 +8045,7 @@ function renderBillRow(row, m, incl, allBills){
   const days = calcDays(row.start, row.end, incl);
   const nm = normMonthLabel(row.start, row.end, incl, allBills||m.bills||[]);
   const nmCell = `<td class="norm-mon-cell">${nm}</td>`;
-  const actionBtns = `<td style="white-space:nowrap">
+  const actionBtns = `<td class="td-actions">
     <button class="btn-edit" onclick="openBillModal('${m.id}','${row.id}')" title="Edit">✏️</button>
     <button class="btn-del"  onclick="deleteBillRow('${m.id}','${row.id}')" title="Delete">✕</button>
   </td>`;
@@ -8038,15 +8062,15 @@ function renderBillRow(row, m, incl, allBills){
       <td class="lbl">${fmtD(row.end)}</td>
       <td class="td-days">${days}</td>
       <td>${fmtKwh(row.kwh)}</td>
-      <td class="grp-kw-col">${fmtKW(row.demandKW)}</td>
-      <td class="grp-kw-col">${fmtKW(row.billedKW)}</td>
-      <td class="grp-kw-col">${fmtKW(row.facKW)}</td>
-      <td class="grp-kw-col">${fmtC(row.kwCost)}</td>
-      <td class="grp-kw-col">${fmtC(row.facKWCost)}</td>
-      <td class="grp-cost-col">${fmtC(row.kwhCost)}</td>
-      <td class="grp-cost-col">${fmtC(row.otherCost)}</td>
-      <td class="grp-cost-col">${fmtC(row.taxCost)}</td>
-      <td class="grp-cost-col td-total">${fmtC(row.totalCost)}</td>
+      <td>${fmtKW(row.demandKW)}</td>
+      <td>${fmtKW(row.billedKW)}</td>
+      <td>${fmtKW(row.facKW)}</td>
+      <td>${fmtC(row.kwCost)}</td>
+      <td>${fmtC(row.facKWCost)}</td>
+      <td>${fmtC(row.kwhCost)}</td>
+      <td>${fmtC(row.otherCost)}</td>
+      <td>${fmtC(row.taxCost)}</td>
+      <td class="td-total">${fmtC(row.totalCost)}</td>
       ${actionBtns}
     </tr>`;
   }
