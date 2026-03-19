@@ -7385,11 +7385,6 @@ function renderPerfPane(pane, m, bills, incl){
   const proj_p = getUDProj(udSelProjId);
   const normBasis_p = proj_p?.normBasis || 'calendar';
 
-  // Baseline averages (simple, for fallback when no regression)
-  const blAvgDay=blRows.length?blRows.reduce((s,r)=>s+r.usagePerDay,0)/blRows.length:0;
-  const blAvgMo=blRows.length?blRows.reduce((s,r)=>s+r.usage,0)/blRows.length:0;
-  const hasRegr_p = allRows.some(r=>r.regrBaseline!=null);
-
   // Baseline averages (simple fallback when no regression)
   const blAvgDay=blRows.length?blRows.reduce((s,r)=>s+r.usagePerDay,0)/blRows.length:0;
   const blAvgMo=blRows.length?blRows.reduce((s,r)=>s+r.usage,0)/blRows.length:0;
@@ -7429,7 +7424,6 @@ function renderPerfPane(pane, m, bills, incl){
   const blByCalMo         = Object.fromEntries(Object.entries(meterDataByMo).map(([mo,v])=>[mo,v.usage]));
   const blKwhCostByCalMo  = Object.fromEntries(Object.entries(meterDataByMo).map(([mo,v])=>[mo,v.kwhCost]));
   const blThermCostByCalMo= Object.fromEntries(Object.entries(meterDataByMo).map(([mo,v])=>[mo,v.thermCost]));
-  const hasBlCalMap = Object.keys(blByCalMo).length > 0;
 
   // Year filter
   const maxYears=Math.max(1,Math.ceil(truePostRows.length/12));
