@@ -5165,15 +5165,28 @@ function getNormRows(m, bills, incl, weatherByYm){
     };
   });
 
-  // Second pass: compute regression using all rows, then fill regrBaseline per row
+  // Second pass: compute regression using ALL rows for display purposes,
+  // but for baseline months use the FROZEN regression stored at baseline-save time.
+  // This prevents post-baseline bills from changing the baseline normalized values.
   const proj = getUDProj(udSelProjId);
   const normBasis = proj?.normBasis || 'calendar';
-  const reg = computeMeterRegression(rawRows);
+  const reg = computeMeterRegression(rawRows);  // full regression for non-baseline months
+  const frozenReg = m.baseline?.reg || null;    // frozen regression from baseline-only rows
+
   rawRows.forEach(row=>{
-    row.regrBaseline = regressionBaseline(row, reg, m.commodity, normBasis);
+    if(frozenReg && row.isBaseline){
+      // Baseline months: always use frozen regression so they never change
+      row.regrBaseline = regressionBaseline(row, frozenReg, m.commodity, normBasis);
+    } else if(frozenReg){
+      // Post-baseline months: apply frozen model to predict expected usage
+      row.regrBaseline = regressionBaseline(row, frozenReg, m.commodity, normBasis);
+    } else {
+      // No frozen regression yet (baseline not saved): use live regression
+      row.regrBaseline = regressionBaseline(row, reg, m.commodity, normBasis);
+    }
   });
   // Attach regression to meter object for display in UI (not persisted, recomputed each render)
-  m._reg = reg;
+  m._reg = frozenReg || reg;
 
   return rawRows;
 }
@@ -6339,7 +6352,15 @@ function saveBaseline(mid){
   if(checked.length<3){showToast('Select at least 3 months');return;}
   const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
   const m=b.meters.find(m=>m.id===mid); if(!m) return;
-  m.baseline={start:checked[0],end:checked[checked.length-1],months:checked};
+
+  // Compute frozen regression from baseline-period rows ONLY and store it
+  // This prevents post-baseline bills from ever changing the baseline model
+  const {byYm: weatherByYm} = getWeatherForBuilding();
+  const allRows = getNormRows(m, (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start)), m.inclusive!==false, weatherByYm);
+  const blOnlyRows = allRows.filter(r=>checked.includes(r.ym));
+  const frozenReg = computeMeterRegression(blOnlyRows);
+
+  m.baseline={start:checked[0],end:checked[checked.length-1],months:checked,reg:frozenReg};
   saveUtilityData();
   showToast('Baseline saved — '+checked.length+' months ✓');
 }
