@@ -7401,29 +7401,33 @@ function renderPerfPane(pane, m, bills, incl){
     const mo = parseInt(r.ym.split('-')[1]) - 1;
     const bfr = bills.filter(b=>normMonth(b.start,b.end,incl,bills)===r.ym);
     const normUsage = r.regrBaseline!=null ? r.regrBaseline : r.usage;
+    const kwCostSum   = bfr.reduce((s,b)=>s+parseFloat(b.kwCost||0),0);
+    const facKWCostSum= bfr.reduce((s,b)=>s+parseFloat(b.facKWCost||0),0);
+    // energyCost mirrors Meter Data "Energy Cost" = totalCost - kwCost (same as elecByMo.energyCost)
+    const energyCostSum = r.cost - kwCostSum;
+    const thermCostSum  = bfr.reduce((s,b)=>s+parseFloat(b.thermCost||b.cost||0),0);
     if(meterDataByMo[mo]){
-      // Multiple baseline years share same calendar month — average them
       const prev = meterDataByMo[mo];
       meterDataByMo[mo] = {
-        usage:     (prev.usage + normUsage) / 2,
-        kwhCost:   prev.kwhCost  + bfr.reduce((s,b)=>s+parseFloat(b.kwhCost||0),0),
-        thermCost: prev.thermCost+ bfr.reduce((s,b)=>s+parseFloat(b.thermCost||b.cost||0),0),
-        totalCost: prev.totalCost+ r.cost,
+        usage:      (prev.usage + normUsage) / 2,
+        energyCost: prev.energyCost + energyCostSum,
+        thermCost:  prev.thermCost  + thermCostSum,
+        totalCost:  prev.totalCost  + r.cost,
       };
     } else {
       meterDataByMo[mo] = {
-        usage:     normUsage,
-        kwhCost:   bfr.reduce((s,b)=>s+parseFloat(b.kwhCost||0),0),
-        thermCost: bfr.reduce((s,b)=>s+parseFloat(b.thermCost||b.cost||0),0),
-        totalCost: r.cost,
+        usage:      normUsage,
+        energyCost: energyCostSum,
+        thermCost:  thermCostSum,
+        totalCost:  r.cost,
       };
     }
   });
   const hasBlCalMap = Object.keys(meterDataByMo).length > 0;
-  // Convenience accessors matching old variable names used in row rendering
-  const blByCalMo         = Object.fromEntries(Object.entries(meterDataByMo).map(([mo,v])=>[mo,v.usage]));
-  const blKwhCostByCalMo  = Object.fromEntries(Object.entries(meterDataByMo).map(([mo,v])=>[mo,v.kwhCost]));
-  const blThermCostByCalMo= Object.fromEntries(Object.entries(meterDataByMo).map(([mo,v])=>[mo,v.thermCost]));
+  // Convenience accessors — energyCost matches "Energy Cost" column in Meter Data table
+  const blByCalMo          = Object.fromEntries(Object.entries(meterDataByMo).map(([mo,v])=>[mo,v.usage]));
+  const blKwhCostByCalMo   = Object.fromEntries(Object.entries(meterDataByMo).map(([mo,v])=>[mo,v.energyCost]));
+  const blThermCostByCalMo = Object.fromEntries(Object.entries(meterDataByMo).map(([mo,v])=>[mo,v.thermCost]));
 
   // Year filter
   const maxYears=Math.max(1,Math.ceil(truePostRows.length/12));
@@ -7541,15 +7545,22 @@ function renderPerfPane(pane, m, bills, incl){
       const bfr = bills.filter(b=>normMonth(b.start,b.end,incl,bills)===r.ym);
       if(!bfr.length) return;
       const n = bfr.length;
-      const actualKwh  = bfr.reduce((s,b)=>s+parseFloat(b.kwh||0),0);
-      const kwhCostAmt = bfr.reduce((s,b)=>s+parseFloat(b.kwhCost||0),0);
+      const actualKwh    = bfr.reduce((s,b)=>s+parseFloat(b.kwh||0),0);
+      const kwCostAmt    = bfr.reduce((s,b)=>s+parseFloat(b.kwCost||0),0);
+      const facKWCostAmt = bfr.reduce((s,b)=>s+parseFloat(b.facKWCost||0),0);
+      const kwhCostAmt   = bfr.reduce((s,b)=>s+parseFloat(b.kwhCost||0),0);
+      // energyCost mirrors Meter Data "Energy Cost" = totalCost - kwCost
+      const totalBillCost = bfr.reduce((s,b)=>s+parseFloat(b.totalCost||0),0);
+      const energyCostAmt = totalBillCost - kwCostAmt - facKWCostAmt;
       perfDemByYm[r.ym] = {
         demKW:     bfr.reduce((s,b)=>s+parseFloat(b.demandKW||0),0)/n,
         bilKW:     bfr.reduce((s,b)=>s+parseFloat(b.billedKW||b.demandKW||0),0)/n,
-        kwCost:    bfr.reduce((s,b)=>s+parseFloat(b.kwCost||0),0),
-        facKWCost: bfr.reduce((s,b)=>s+parseFloat(b.facKWCost||0),0),
+        kwCost:    kwCostAmt,
+        facKWCost: facKWCostAmt,
         kwhCostAmt,
-        kwhRate: actualKwh>0 && kwhCostAmt>0 ? kwhCostAmt/actualKwh : 0,
+        energyCostAmt,  // actual energy cost (totalCost - kwCost - facKWCost)
+        // $/kWh rate based on energy cost (matches Meter Data Energy Cost column)
+        kwhRate: actualKwh>0 && energyCostAmt>0 ? energyCostAmt/actualKwh : 0,
       };
     });
   }
@@ -7600,16 +7611,16 @@ function renderPerfPane(pane, m, bills, incl){
     const demKW    = dem ? dem.demKW||0 : 0;
     const bilKW    = dem ? dem.bilKW||0 : 0;
     const kwCostRow= dem ? (dem.kwCost||0)+(dem.facKWCost||0) : 0;
-    const kwhRate  = dem ? dem.kwhRate||0 : 0;
-    const kwhCostActual = dem ? dem.kwhCostAmt||0 : 0;
+    const kwhRate       = dem ? dem.kwhRate||0 : 0;
+    const kwhCostActual = dem ? dem.energyCostAmt||0 : 0;
     const gasMo    = gasCostByYm[r.ym]||null;
     const thermRate= gasMo ? gasMo.thermRate||0 : 0;
     const thermCostActual = gasMo ? gasMo.thermCostAmt||0 : 0;
 
-    // Exp kWh Cost = baseline calendar-month's actual kWh cost (from Meter Data)
-    // Actual kWh Cost = actual kWh this month × current $/kWh rate
-    const expKwhCost    = hasKwhCostSav && blKwhCostByCalMo[calMo]>0 ? blKwhCostByCalMo[calMo] : (kwhRate>0 ? expMo*kwhRate : 0);
-    const actKwhCostCalc= hasKwhCostSav && kwhRate>0 ? rawKwh*kwhRate : kwhCostActual;
+    // Exp kWh Cost = baseline calendar-month Energy Cost (matches Meter Data "Energy Cost" column)
+    // Actual kWh Cost = this month's actual Energy Cost (same definition: totalCost - kwCost)
+    const expKwhCost    = hasKwhCostSav && blKwhCostByCalMo[calMo]>0 ? blKwhCostByCalMo[calMo] : 0;
+    const actKwhCostCalc= kwhCostActual; // actual energyCostAmt from this month's bills
     const kwhCostSav    = hasKwhCostSav && expKwhCost>0 ? expKwhCost - actKwhCostCalc : 0;
 
     // kW Cost Savings: Baseline avg kW × current $/kW rate vs Actual kW Cost
