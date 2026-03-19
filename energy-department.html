@@ -530,24 +530,35 @@ html,body{height:100%;overflow:hidden;}
 .bills-sticky-left{display:flex;flex-direction:column;gap:2px;min-width:0;}
 .bills-sticky-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);white-space:nowrap;}
 .bills-sticky-sub{font-size:11px;color:var(--text3);}
-.bills-thead-wrap{flex-shrink:0;overflow-x:hidden;background:var(--s1);border-bottom:2px solid var(--border2);}
+.bills-thead-wrap{flex-shrink:0;overflow-x:hidden;background:var(--s1);border-bottom:1px solid var(--border2);}
 .bills-thead-wrap .ud-bill-tbl{margin:0;}
 .bills-scroll-body{flex:1;overflow-y:auto;overflow-x:auto;min-height:0;}
 .bills-scroll-body .ud-bill-tbl{margin:0;}
 .ud-bill-tbl{width:100%;border-collapse:collapse;font-size:12px;min-width:500px;}
-.ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);font-weight:700;padding:7px 8px;text-align:center;border-bottom:2px solid var(--border2);background:var(--s1);white-space:normal;line-height:1.35;overflow:hidden;}
-.ud-bill-tbl th.lbl{text-align:left;}
-.ud-bill-tbl td{padding:5px 8px;border-bottom:1px solid var(--border);vertical-align:middle;border-right:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.ud-bill-tbl td.border-group{border-left:2px solid var(--border2);}
-.ud-bill-tbl th[style*="border-left:2px"]{position:relative;}
+/* Header rows */
+.ud-bill-tbl thead tr.grp-row th{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;padding:4px 8px 2px;text-align:center;border:none;background:var(--s1);color:var(--text3);}
+.ud-bill-tbl thead tr.grp-row th.grp-kw{color:var(--em2);background:rgba(14,165,233,.06);}
+.ud-bill-tbl thead tr.grp-row th.grp-cost{color:var(--em);background:rgba(0,212,170,.05);}
+.ud-bill-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.3px;color:var(--text2);font-weight:600;padding:5px 8px 6px;text-align:right;background:var(--s1);white-space:nowrap;line-height:1;overflow:hidden;border-top:1px solid var(--border);}
+.ud-bill-tbl th.lbl,.ud-bill-tbl th.th-center{text-align:left;}
+.ud-bill-tbl th.grp-kw-col{background:rgba(14,165,233,.06);color:var(--em2);}
+.ud-bill-tbl th.grp-cost-col{background:rgba(0,212,170,.05);color:var(--em);}
+/* Body cells */
+.ud-bill-tbl td{padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:12px;text-align:right;}
+.ud-bill-tbl td.lbl{font-family:var(--font);font-size:12px;text-align:left;}
+.ud-bill-tbl td.td-days{color:var(--text2);text-align:center;}
+.ud-bill-tbl td.grp-kw-col{background:rgba(14,165,233,.04);}
+.ud-bill-tbl td.grp-cost-col{background:rgba(0,212,170,.03);}
+.ud-bill-tbl td.td-total{font-weight:700;color:var(--text);}
 .ud-bill-tbl tr:last-child td{border-bottom:none;}
-.ud-bill-tbl tr:hover td{background:var(--s3);}
-.ud-bill-tbl tr:nth-child(even) td{background:rgba(255,255,255,.015);}
-.ud-bill-tbl tr:nth-child(even):hover td{background:var(--s3);}
-.ud-bill-tbl input{font-family:var(--mono);font-size:12px;color:var(--text);background:transparent;border:none;outline:none;width:100%;padding:2px 3px;min-width:60px;}
+.ud-bill-tbl tr:hover td,.ud-bill-tbl tr:hover td.grp-kw-col,.ud-bill-tbl tr:hover td.grp-cost-col{background:var(--s3);}
+.ud-bill-tbl tr:nth-child(even) td{background:rgba(255,255,255,.018);}
+.ud-bill-tbl tr:nth-child(even) td.grp-kw-col{background:rgba(14,165,233,.06);}
+.ud-bill-tbl tr:nth-child(even) td.grp-cost-col{background:rgba(0,212,170,.05);}
+.ud-bill-tbl tr:nth-child(even):hover td,.ud-bill-tbl tr:nth-child(even):hover td.grp-kw-col,.ud-bill-tbl tr:nth-child(even):hover td.grp-cost-col{background:var(--s3);}
+.ud-bill-tbl input{font-family:var(--mono);font-size:12px;color:var(--text);background:transparent;border:none;outline:none;width:100%;padding:2px 3px;}
 .ud-bill-tbl input:focus{background:var(--s4);border-radius:3px;}
-.ud-bill-tbl td.days-cell{font-family:var(--mono);font-size:12px;color:var(--em);text-align:center;}
-.ud-bill-tbl td.norm-mon-cell{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;}
+.ud-bill-tbl td.norm-mon-cell{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--text);white-space:nowrap;text-align:left;}
 .ud-bill-gap-row td{padding:6px 10px;background:var(--s2);border-bottom:1px solid var(--border);}
 .ud-bill-gap-msg{font-size:11px;color:var(--warn);font-weight:600;display:flex;align-items:center;gap:6px;}
 .norm-info-btn{background:none;border:none;cursor:pointer;font-size:11px;color:var(--text3);padding:0 2px;vertical-align:middle;transition:color .12s;}
@@ -4901,36 +4912,55 @@ function renderBillsPane(pane, m, bills, incl){
     </div>
   </span>`;
 
-  // ── Column definitions: [label (can use <br>), minWidth px, align, groupBorder] ──
+  // ── Column definitions: h=label, w=px width, a=align class, grp=group class ──
   const COL_BASE = [
-    {h:'Norm.<br>Month '+normInfoTip, w:100, a:'lbl', g:false},
-    {h:'Start',                        w:90,  a:'lbl', g:false},
-    {h:'End',                          w:90,  a:'lbl', g:false},
-    {h:'Days',                         w:44,  a:'num', g:false},
+    {h:'Norm. Month '+normInfoTip, w:106, a:'lbl',    grp:''},
+    {h:'Start',                    w:88,  a:'lbl',    grp:''},
+    {h:'End',                      w:88,  a:'lbl',    grp:''},
+    {h:'Days',                     w:46,  a:'th-center', grp:''},
   ];
   const COL_ELEC = [
-    {h:'kWh',                          w:90,  a:'num', g:false},
-    {h:'Actual<br>kW',                 w:72,  a:'num', g:true },
-    {h:'Billed<br>kW',                 w:68,  a:'num', g:false},
-    {h:'Facilities<br>kW',             w:76,  a:'num', g:false},
-    {h:'Actual<br>kW Cost',            w:86,  a:'num', g:true },
-    {h:'Facilities<br>kW Cost',        w:90,  a:'num', g:false},
-    {h:'kWh<br>Cost $',                w:82,  a:'num', g:true },
-    {h:'Other<br>Charges',             w:78,  a:'num', g:false},
-    {h:'Taxes &amp;<br>Fees',          w:72,  a:'num', g:false},
-    {h:'Total $',                      w:84,  a:'num', g:true },
+    {h:'kWh',                      w:92,  a:'',       grp:''},
+    {h:'Actual kW',                w:76,  a:'',       grp:'grp-kw-col'},
+    {h:'Billed kW',                w:70,  a:'',       grp:'grp-kw-col'},
+    {h:'Facilities kW',            w:80,  a:'',       grp:'grp-kw-col'},
+    {h:'kW Cost',                  w:82,  a:'',       grp:'grp-kw-col'},
+    {h:'Fac. kW Cost',             w:84,  a:'',       grp:'grp-kw-col'},
+    {h:'kWh Cost',                 w:84,  a:'',       grp:'grp-cost-col'},
+    {h:'Other Charges',            w:84,  a:'',       grp:'grp-cost-col'},
+    {h:'Taxes & Fees',             w:80,  a:'',       grp:'grp-cost-col'},
+    {h:'Total',                    w:86,  a:'',       grp:'grp-cost-col'},
   ];
-  const COL_GAS  = [{h:'Therms',w:80,a:'num',g:false},{h:'Therm<br>Cost $',w:88,a:'num',g:false}];
-  const COL_OTHER= [{h:'Usage', w:80,a:'num',g:false},{h:'Cost $',        w:80,a:'num',g:false}];
-  const COL_ACTION = [{h:'',   w:50,  a:'num', g:false}];
+  const COL_GAS   = [{h:'Therms',w:84,a:'',grp:''},{h:'Cost',w:86,a:'',grp:'grp-cost-col'}];
+  const COL_OTHER = [{h:'Usage', w:84,a:'',grp:''},{h:'Cost',w:86,a:'',grp:'grp-cost-col'}];
+  const COL_ACTION= [{h:'',      w:52,  a:'',       grp:''}];
 
   const cols = [...COL_BASE, ...(isElec?COL_ELEC:isGas?COL_GAS:COL_OTHER), ...COL_ACTION];
 
-  const tblHead = cols.map(c=>
-    `<th class="${c.a}" style="min-width:${c.w}px;width:${c.w}px;${c.g?'border-left:2px solid var(--border2);':''}">${c.h}</th>`
-  ).join('');
+  // Group header row (spanning): shows kW Demand and Costs labels over their column groups
+  let grpRow = '';
+  if(isElec){
+    grpRow =
+      `<tr class="grp-row">` +
+      // base cols (4) + kWh col (1) = 5 blank
+      `<th colspan="5"></th>` +
+      // kW group: Actual kW, Billed kW, Fac kW, kW Cost, Fac kW Cost = 5
+      `<th colspan="5" class="grp-kw">⚡ kW Demand</th>` +
+      // cost group: kWh Cost, Other, Taxes, Total = 4
+      `<th colspan="4" class="grp-cost">$ Charges</th>` +
+      // action
+      `<th></th>` +
+      `</tr>`;
+  }
 
-  // Build colgroup for both tables from the same col definitions
+  const tblHead =
+    `<thead>` +
+    grpRow +
+    `<tr>` +
+    cols.map(c=>`<th class="${[c.a, c.grp].filter(Boolean).join(' ')}" style="min-width:${c.w}px;width:${c.w}px">${c.h}</th>`).join('') +
+    `</tr></thead>`;
+
+  // Build colgroup
   const colgroup = '<colgroup>'+cols.map(c=>`<col style="width:${c.w}px;min-width:${c.w}px">`).join('')+'</colgroup>';
 
   // Build rows with gap detection
@@ -4976,8 +5006,7 @@ function renderBillsPane(pane, m, bills, incl){
     '<div class="bills-sticky-hdr">' + stickyHdrInner + '</div>' +
     '<div class="bills-thead-wrap" id="billsTheadWrap" style="overflow-x:hidden;flex-shrink:0;">' +
       '<table class="ud-bill-tbl" id="billsHdrTbl" style="table-layout:fixed;">' +
-        colgroup +
-        '<thead><tr>' + tblHead + '</tr></thead>' +
+        colgroup + tblHead +
       '</table>' +
     '</div>' +
     '<div class="bills-scroll-body" id="billsScrollBody">' +
@@ -7997,48 +8026,48 @@ function renderBillRow(row, m, incl, allBills){
     <button class="btn-del"  onclick="deleteBillRow('${m.id}','${row.id}')" title="Delete">✕</button>
   </td>`;
 
-  const fmt  = v => (v!=null&&v!==''&&!isNaN(v)) ? (+v).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}) : '—';
-  const fmtC = v => (v!=null&&v!==''&&!isNaN(v)) ? (+v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
-  const fmtKW= v => (v!=null&&v!==''&&!isNaN(v)) ? (+v).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}) : '—';
-  const fmtD= v => v ? fmtDate(v) : '—';
+  const fmtKwh = v => (v!=null&&v!==''&&!isNaN(v)) ? (+v).toLocaleString('en-US',{maximumFractionDigits:1}) : '—';
+  const fmtKW  = v => (v!=null&&v!==''&&!isNaN(v)&&+v>0) ? (+v).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}) : '—';
+  const fmtC   = v => (v!=null&&v!==''&&!isNaN(v)&&+v>0) ? '$'+( +v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
+  const fmtD   = v => v ? fmtDate(v) : '—';
 
   if(m.commodity==='Electric'){
     return `<tr>
-      ${nmCell}
+      <td class="norm-mon-cell">${normMonthLabel(row.start,row.end,incl,allBills||m.bills||[])}</td>
       <td class="lbl">${fmtD(row.start)}</td>
       <td class="lbl">${fmtD(row.end)}</td>
-      <td class="mono num">${days}</td>
-      <td class="mono num">${fmt(row.kwh)}</td>
-      <td class="mono num border-group">${fmtKW(row.demandKW)}</td>
-      <td class="mono num">${fmtKW(row.billedKW)}</td>
-      <td class="mono num">${fmtKW(row.facKW)}</td>
-      <td class="mono num border-group">${fmtC(row.kwCost)}</td>
-      <td class="mono num">${fmtC(row.facKWCost)}</td>
-      <td class="mono num border-group">${fmtC(row.kwhCost)}</td>
-      <td class="mono num">${fmtC(row.otherCost)}</td>
-      <td class="mono num">${fmtC(row.taxCost)}</td>
-      <td class="mono num border-group">${fmtC(row.totalCost)}</td>
+      <td class="td-days">${days}</td>
+      <td>${fmtKwh(row.kwh)}</td>
+      <td class="grp-kw-col">${fmtKW(row.demandKW)}</td>
+      <td class="grp-kw-col">${fmtKW(row.billedKW)}</td>
+      <td class="grp-kw-col">${fmtKW(row.facKW)}</td>
+      <td class="grp-kw-col">${fmtC(row.kwCost)}</td>
+      <td class="grp-kw-col">${fmtC(row.facKWCost)}</td>
+      <td class="grp-cost-col">${fmtC(row.kwhCost)}</td>
+      <td class="grp-cost-col">${fmtC(row.otherCost)}</td>
+      <td class="grp-cost-col">${fmtC(row.taxCost)}</td>
+      <td class="grp-cost-col td-total">${fmtC(row.totalCost)}</td>
       ${actionBtns}
     </tr>`;
   }
   if(m.commodity==='Gas'){
     return `<tr>
-      ${nmCell}
+      <td class="norm-mon-cell">${normMonthLabel(row.start,row.end,incl,allBills||m.bills||[])}</td>
       <td class="lbl">${fmtD(row.start)}</td>
       <td class="lbl">${fmtD(row.end)}</td>
-      <td class="mono num">${days}</td>
-      <td class="mono num">${fmt(row.therms)}</td>
-      <td class="mono num">${fmtC(row.thermCost)}</td>
+      <td class="td-days">${days}</td>
+      <td>${fmtKwh(row.therms)}</td>
+      <td class="grp-cost-col td-total">${fmtC(row.thermCost)}</td>
       ${actionBtns}
     </tr>`;
   }
   return `<tr>
-    ${nmCell}
-    <td class="mono">${fmtD(row.start)}</td>
-    <td class="mono">${fmtD(row.end)}</td>
-    <td class="days-cell mono">${days}</td>
-    <td class="mono">${fmt(row.usage)}</td>
-    <td class="mono">${fmt(row.cost)}</td>
+    <td class="norm-mon-cell">${normMonthLabel(row.start,row.end,incl,allBills||m.bills||[])}</td>
+    <td class="lbl">${fmtD(row.start)}</td>
+    <td class="lbl">${fmtD(row.end)}</td>
+    <td class="td-days">${days}</td>
+    <td>${fmtKwh(row.usage)}</td>
+    <td class="grp-cost-col td-total">${fmtC(row.cost)}</td>
     ${actionBtns}
   </tr>`;
 }
