@@ -852,6 +852,18 @@ html,body{height:100%;overflow:hidden;}
           <button class="btn btn-ghost btn-sm" id="ud-view-proj-btn" onclick="viewProjectFromUtility()" title="View in Projects page">📁 View Project</button>
         </div>
       </div>
+      <!-- Project-level panels bar (shown when project selected) -->
+      <div id="udProjPanelBar" style="display:none;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--s1);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:11px;font-weight:700;color:var(--text2)" id="udProjPanelBarTitle"></span>
+        <div style="display:flex;gap:6px;margin-left:auto">
+          <button class="btn btn-ghost btn-sm" id="ud-proj-baseline-btn" onclick="toggleUDProjPanel('baseline')">📊 Project Baseline</button>
+          <button class="btn btn-ghost btn-sm" id="ud-proj-savproj-btn" onclick="toggleUDProjPanel('savproj')">📈 Projected Savings</button>
+          <button class="btn btn-ghost btn-sm" id="ud-proj-perf-btn" onclick="toggleUDProjPanel('perf')">💡 Performance</button>
+        </div>
+      </div>
+      <!-- Project-level panel content -->
+      <div id="udProjPanelContent" style="display:none;border-bottom:1px solid var(--border);overflow-y:auto;max-height:420px"></div>
+      </div>
       <div class="ud-detail-body" id="udDetailWrap">
         <div class="ud-empty"><div class="ud-empty-ico">📁</div><div>Select a project and building<br>from the left to view meters</div></div>
       </div>
@@ -3652,9 +3664,6 @@ function renderDetail(p){
         <button class="pdt" onclick="sPTab('contacts',this)">👥 Contacts</button>
         <button class="pdt" onclick="sPTab('buildings',this)">🏢 Buildings</button>
         <button class="pdt" onclick="sPTab('utility',this)">⚡ Utility Data</button>
-        <button class="pdt" onclick="sPTab('baseline',this)">📊 Baseline Data</button>
-        <button class="pdt" onclick="sPTab('projsavings',this)">📈 Projected Savings</button>
-        <button class="pdt" onclick="sPTab('performance',this)">💡 Performance</button>
         <button class="pdt" onclick="sPTab('equipment',this)">⚙️ Equipment</button>
         <button class="pdt" onclick="sPTab('district',this)">🗓️ District Calendar</button>
         <button class="pdt" onclick="sPTab('savings',this)">💡 Energy Savings</button>
@@ -3687,16 +3696,36 @@ function renderDetail(p){
         <div id="pb-list-${p.id}"></div>
       </div>
       <div id="ptab-utility" class="ptab" style="padding:0">
-        <div id="ptab-utility-inner-${p.id}" style="min-height:300px"></div>
-      </div>
-      <div id="ptab-baseline" class="ptab" style="padding:0">
-        <div id="ptab-baseline-inner-${p.id}" style="min-height:300px"></div>
-      </div>
-      <div id="ptab-projsavings" class="ptab" style="padding:0">
-        <div id="ptab-projsavings-inner-${p.id}" style="min-height:300px"></div>
-      </div>
-      <div id="ptab-performance" class="ptab" style="padding:0">
-        <div id="ptab-performance-inner-${p.id}" style="min-height:300px"></div>
+        <!-- Full Utility Data layout embedded, scoped to this project -->
+        <div style="display:grid;grid-template-columns:220px 1fr;border-top:1px solid var(--border);height:600px;overflow:hidden">
+          <!-- Left: buildings nav -->
+          <div style="background:var(--s1);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
+            <div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3)">Buildings</span>
+              <button class="btn btn-em btn-sm" style="font-size:10px;padding:2px 7px" onclick="openBldgModalForProj(${p.id})">+ Add</button>
+            </div>
+            <div id="proj-ud-bldg-nav-${p.id}" style="flex:1;overflow-y:auto"></div>
+          </div>
+          <!-- Right: meter detail -->
+          <div style="display:flex;flex-direction:column;overflow:hidden;background:var(--s2)">
+            <div id="proj-ud-detail-hdr-${p.id}" style="display:none;flex-shrink:0;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--s1);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+              <div>
+                <div id="proj-ud-hdr-title-${p.id}" style="font-size:15px;font-weight:700"></div>
+                <div id="proj-ud-hdr-sub-${p.id}" style="font-size:11px;color:var(--text2);margin-top:2px"></div>
+              </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','baseline')">📊 Baseline Data</button>
+                <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','savproj')">📈 Savings Projection</button>
+                <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','perf')">💡 Performance</button>
+                <button class="btn btn-ghost btn-sm" onclick="openBldgModal(projUDSelBldg['${p.id}'])">✏️ Edit Building</button>
+                <button class="btn btn-em btn-sm" onclick="projUDOpenMeterModal('${p.id}')">+ Add Meter</button>
+              </div>
+            </div>
+            <div id="proj-ud-body-${p.id}" style="flex:1;overflow-y:auto">
+              <div class="ud-empty"><div class="ud-empty-ico">🏢</div><div>Select a building to view meters</div></div>
+            </div>
+          </div>
+        </div>
       </div>
       <div id="ptab-equipment" class="ptab" style="padding:16px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap">
@@ -3798,10 +3827,9 @@ function renderDetail(p){
     </div>`;
   // Populate tabs after DOM is ready
   requestAnimationFrame(()=>{
-    renderUtilTabSummary(p.id);
     renderProjBuildingsTab(p.id);
-    renderProjUtilityTab(p.id);
     renderProjEquip(p.id);
+    initProjUDTab(p.id);
   });
 }
 
@@ -3816,105 +3844,143 @@ function sPTab(tab,el){
   document.querySelectorAll('.ptab').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('.pdt').forEach(b=>b.classList.remove('active'));
   document.getElementById('ptab-'+tab).classList.add('active'); el?.classList.add('active');
-  // Render embedded content on demand
   const p = activeProj;
   if(!p) return;
-  if(tab==='utility')   renderProjUtilityTab(p.id);
-  if(tab==='baseline')  renderProjBuildingLevelTab(p.id,'baseline');
-  if(tab==='projsavings') renderProjBuildingLevelTab(p.id,'projsavings');
-  if(tab==='performance') renderProjBuildingLevelTab(p.id,'performance');
+  if(tab==='utility')   initProjUDTab(p.id);
   if(tab==='equipment') renderProjEquip(p.id);
+  window._activeProjTab = tab;
+  saveProjSession();
 }
 
-// ── Project Utility Tab — full embedded Utility Data view ──
-function renderProjUtilityTab(projId){
-  const el = document.getElementById('ptab-utility-inner-'+projId);
-  if(!el) return;
+// ── Embedded Project Utility Data tab ──
+// projUDSelBldg tracks which building is selected per project
+const projUDSelBldg = {};
+const projUDSelPanel = {}; // 'baseline'|'savproj'|'perf'|null
+
+function initProjUDTab(projId){
+  renderProjUDBldgNav(projId);
+  // Auto-select first building
   const proj = utilityData[projId];
-  if(!proj||!proj.buildings||!proj.buildings.length){
-    el.innerHTML='<div style="padding:20px;font-size:13px;color:var(--text2)">No utility data yet. <button class="btn btn-em btn-sm" onclick="goToProjectUtility('+projId+')">⚡ Open Utility Data →</button></div>';
-    return;
+  const bldgs = proj?.buildings||[];
+  if(bldgs.length && !projUDSelBldg[projId]){
+    projUDSelectBldg(projId, bldgs[0].id);
+  } else if(projUDSelBldg[projId]){
+    projUDSelectBldg(projId, projUDSelBldg[projId]);
+  } else {
+    // No buildings yet
+    const body = document.getElementById('proj-ud-body-'+projId);
+    if(body) body.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">🏢</div><div>No buildings yet.<br><button class="btn btn-em btn-sm" style="margin-top:10px" onclick="openBldgModalForProj('+projId+')">+ Add Building</button></div></div>';
   }
-  const bldgs = proj.buildings;
-  // Building selector + embedded building stats panel per building
-  const tabs = bldgs.map((b,i)=>
-    `<button class="ud-incl-btn${i===0?' sel':''}" onclick="selectProjUtilTab('${projId}','${b.id}',this)" style="font-size:11px">${b.name||'Building '+(i+1)}</button>`
-  ).join('');
-  el.innerHTML=`
-    <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <span style="font-size:11px;font-weight:600;color:var(--text2)">Building:</span>${tabs}
-      <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="goToProjectUtility(${projId})">Open Full View →</button>
-    </div>
-    <div id="proj-util-tab-detail-${projId}" style="padding:16px"></div>`;
-  renderProjUtilTabBldg(projId, bldgs[0].id);
 }
 
-function selectProjUtilTab(projId, bldgId, btn){
-  const parent = btn?.closest('[id^="ptab-utility-inner"]');
-  if(parent) parent.querySelectorAll('.ud-incl-btn').forEach(b=>b.classList.remove('sel'));
-  btn?.classList.add('sel');
-  renderProjUtilTabBldg(projId, bldgId);
+function renderProjUDBldgNav(projId){
+  const nav = document.getElementById('proj-ud-bldg-nav-'+projId);
+  if(!nav) return;
+  const proj = utilityData[projId];
+  const bldgs = proj?.buildings||[];
+  if(!bldgs.length){ nav.innerHTML='<div style="padding:12px 14px;font-size:12px;color:var(--text3)">No buildings yet.</div>'; return; }
+  nav.innerHTML = bldgs.map(b=>{
+    const meters = b.meters||[];
+    const mCount = meters.length;
+    const bCount = (b.bills||[]).length + meters.reduce((s,m)=>s+(m.bills||[]).length,0);
+    const isActive = projUDSelBldg[projId]===b.id;
+    return `<div class="ud-nav-bldg-item${isActive?' active':''}" onclick="projUDSelectBldg('${projId}','${b.id}')">
+      <span style="font-size:14px">${getFacilityIcon?.(b.type)||'🏢'}</span>
+      <div style="flex:1;min-width:0">
+        <div class="ud-nav-bldg-name">${b.name||'Building'}</div>
+        <div class="ud-nav-bldg-meta">${mCount} meter${mCount!==1?'s':''}</div>
+      </div>
+      <div class="ud-nav-bldg-actions">
+        <button class="btn btn-ghost btn-sm" style="padding:1px 5px;font-size:11px" onclick="event.stopPropagation();openBldgModal('${b.id}')" title="Edit">✏️</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
-function renderProjUtilTabBldg(projId, bldgId){
-  const el = document.getElementById('proj-util-tab-detail-'+projId);
-  if(!el) return;
+function projUDSelectBldg(projId, bldgId){
+  projUDSelBldg[projId] = bldgId;
+  renderProjUDBldgNav(projId);
+  // Show header
+  const hdr = document.getElementById('proj-ud-detail-hdr-'+projId);
   const proj = utilityData[projId]; if(!proj) return;
   const b = (proj.buildings||[]).find(x=>x.id===bldgId); if(!b) return;
-  // Render Building Stats (Baseline Data view) inline
-  const pane = document.createElement('div');
-  renderBuildingStatsPane(pane, b);
-  el.innerHTML='';
-  el.appendChild(pane);
-}
-
-// ── Project Building-Level Tab (Baseline Data / Projected Savings / Performance) ──
-function renderProjBuildingLevelTab(projId, tabKey){
-  const elId = `ptab-${tabKey}-inner-${projId}`;
-  const el = document.getElementById(elId);
-  if(!el) return;
-  const proj = utilityData[projId];
-  if(!proj||!proj.buildings||!proj.buildings.length){
-    el.innerHTML='<div style="padding:20px;font-size:13px;color:var(--text2)">No utility data yet. Add buildings and meters in the Utility Data tab first.</div>';
-    return;
+  if(hdr){
+    hdr.style.display='flex';
+    const title = document.getElementById('proj-ud-hdr-title-'+projId);
+    const sub   = document.getElementById('proj-ud-hdr-sub-'+projId);
+    if(title) title.textContent = b.name||'Building';
+    if(sub){
+      const meters = b.meters||[];
+      const sqft = b.sqft ? Number(b.sqft).toLocaleString()+' sf · ' : '';
+      sub.textContent = sqft + meters.length+' meter'+(meters.length!==1?'s':'')+' · '+
+        meters.reduce((s,m)=>s+(m.bills||[]).length,0)+' bills';
+    }
   }
-  const bldgs = proj.buildings;
-  const tabs = bldgs.map((b,i)=>
-    `<button class="ud-incl-btn${i===0?' sel':''}" onclick="selectProjBldgLevelTab('${projId}','${b.id}','${tabKey}',this)" style="font-size:11px">${b.name||'Building '+(i+1)}</button>`
-  ).join('');
-  const label = tabKey==='baseline'?'📊 Baseline Data':tabKey==='projsavings'?'📈 Building Savings Projection':'💡 Building Performance';
-  el.innerHTML=`
-    <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <span style="font-size:11px;font-weight:700;color:var(--text2)">${label}</span>
-      <span style="font-size:11px;color:var(--text3)">Building:</span>${tabs}
-    </div>
-    <div id="proj-bldglevel-detail-${projId}-${tabKey}" style="padding:16px;overflow-y:auto"></div>`;
-  renderProjBldgLevelContent(projId, bldgs[0].id, tabKey);
+  // Render meter detail in body
+  renderProjUDBody(projId, bldgId);
 }
 
-function selectProjBldgLevelTab(projId, bldgId, tabKey, btn){
-  const parent = btn?.closest('[id^="ptab-'+tabKey+'-inner"]');
-  if(parent) parent.querySelectorAll('.ud-incl-btn').forEach(b=>b.classList.remove('sel'));
-  btn?.classList.add('sel');
-  renderProjBldgLevelContent(projId, bldgId, tabKey);
-}
-
-function renderProjBldgLevelContent(projId, bldgId, tabKey){
-  const el = document.getElementById(`proj-bldglevel-detail-${projId}-${tabKey}`);
-  if(!el) return;
+function renderProjUDBody(projId, bldgId){
+  const body = document.getElementById('proj-ud-body-'+projId);
+  if(!body) return;
   const proj = utilityData[projId]; if(!proj) return;
-  const b = (proj.buildings||[]).find(x=>x.id===bldgId); if(!b) return;
-  const pane = document.createElement('div');
-  // Temporarily set global selection so render functions work
-  const prevProj = udSelProjId, prevBldg = udSelBldgId;
-  udSelProjId = projId; udSelBldgId = bldgId;
-  if(tabKey==='baseline')      renderBuildingStatsPane(pane, b);
-  if(tabKey==='projsavings')   renderBldgSavProjPane(pane, b);
-  if(tabKey==='performance')   renderBldgPerfPane(pane, b);
-  udSelProjId = prevProj; udSelBldgId = prevBldg;
-  el.innerHTML='';
-  el.appendChild(pane);
+  const b = (proj.buildings||[]).find(x=>x.id===bldgId);
+  if(!b){ body.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">🏢</div><div>Building not found</div></div>'; return; }
+
+  // If a panel is toggled open, show it above the meters
+  const panel = projUDSelPanel[projId];
+  let panelHTML = '';
+  if(panel){
+    panelHTML = `<div id="proj-ud-panel-${projId}" style="border-bottom:1px solid var(--border)"></div>`;
+  }
+
+  // Render meters list (same style as udDetailWrap)
+  const meters = b.meters||[];
+  if(!meters.length){
+    body.innerHTML = panelHTML+'<div class="ud-empty"><div class="ud-empty-ico">⚡</div><div>No meters yet.<br><button class="btn btn-em btn-sm" style="margin-top:10px" onclick="projUDOpenMeterModal(\''+projId+'\')">+ Add Meter</button></div></div>';
+  } else {
+    // Reuse renderUDDetail logic: temporarily set global selection
+    const prevProj = udSelProjId, prevBldg = udSelBldgId;
+    udSelProjId = projId; udSelBldgId = bldgId;
+    const tempDiv = document.createElement('div');
+    renderUDDetail(tempDiv);
+    udSelProjId = prevProj; udSelBldgId = prevBldg;
+    body.innerHTML = panelHTML;
+    body.appendChild(tempDiv);
+  }
+
+  // Render panel content after DOM update
+  if(panel){
+    requestAnimationFrame(()=>{
+      const pEl = document.getElementById('proj-ud-panel-'+projId);
+      if(!pEl) return;
+      const pane = document.createElement('div');
+      pane.style.padding='16px';
+      const prevProj = udSelProjId, prevBldg = udSelBldgId;
+      udSelProjId = projId; udSelBldgId = bldgId;
+      if(panel==='baseline') renderBuildingStatsPane(pane, b);
+      if(panel==='savproj')  renderBldgSavProjPane(pane, b);
+      if(panel==='perf')     renderBldgPerfPane(pane, b);
+      udSelProjId = prevProj; udSelBldgId = prevBldg;
+      pEl.appendChild(pane);
+    });
+  }
 }
+
+function toggleProjUDPanel(projId, panelKey){
+  projUDSelPanel[projId] = projUDSelPanel[projId]===panelKey ? null : panelKey;
+  const bldgId = projUDSelBldg[projId];
+  if(bldgId) renderProjUDBody(projId, bldgId);
+}
+
+function projUDOpenMeterModal(projId){
+  // Set global context then open modal
+  udSelProjId = projId;
+  udSelBldgId = projUDSelBldg[projId];
+  openMeterModal();
+}
+
+
 
 // ── Project Equipment Tab ──
 function renderProjEquip(projId){
@@ -4984,14 +5050,32 @@ function renderUDProjList(){
 /* Keep old name working — it's called in several places */
 function renderUDBldgList(){ renderUDProjList(); }
 
+let _udProjPanel = null; // 'baseline'|'savproj'|'perf'|null
+
 function udSelectProj(pid){
   udSelProjId = pid;
   udSelBldgId = null;
   udActiveMid = null;
+  _udProjPanel = null;
   saveUDSession();
   renderUDProjList();
   renderUDDetail();
+  // Show project panel bar
+  const bar = document.getElementById('udProjPanelBar');
+  const barTitle = document.getElementById('udProjPanelBarTitle');
+  const p = projects.find(x=>x.id===pid);
+  if(bar){ bar.style.display='flex'; }
+  if(barTitle && p) barTitle.textContent = p.name;
+  // Hide project panel content
+  const content = document.getElementById('udProjPanelContent');
+  if(content){ content.style.display='none'; content.innerHTML=''; }
+  // Reset panel button highlights
+  ['ud-proj-baseline-btn','ud-proj-savproj-btn','ud-proj-perf-btn'].forEach(id=>{
+    const btn=document.getElementById(id);
+    if(btn){ btn.style.borderColor=''; btn.style.color=''; }
+  });
 }
+
 function udSelectBldg(bid){
   if(udSelBldgId !== bid) _openMeterIds.clear();
   udSelBldgId = bid;
@@ -4999,6 +5083,63 @@ function udSelectBldg(bid){
   saveUDSession();
   renderUDProjList();
   renderUDDetail();
+}
+
+function toggleUDProjPanel(key){
+  _udProjPanel = _udProjPanel===key ? null : key;
+  // Update button highlights
+  const map = {baseline:'ud-proj-baseline-btn', savproj:'ud-proj-savproj-btn', perf:'ud-proj-perf-btn'};
+  Object.entries(map).forEach(([k,id])=>{
+    const btn=document.getElementById(id);
+    if(!btn) return;
+    const active = _udProjPanel===k;
+    btn.style.borderColor = active?'var(--em)':'';
+    btn.style.color       = active?'var(--em)':'';
+  });
+  const content = document.getElementById('udProjPanelContent');
+  if(!content) return;
+  if(!_udProjPanel){ content.style.display='none'; content.innerHTML=''; return; }
+  // Get all buildings for this project and render per-building panels
+  const proj = utilityData[udSelProjId];
+  const bldgs = proj?.buildings||[];
+  if(!bldgs.length){ content.style.display='block'; content.innerHTML='<div style="padding:16px;font-size:13px;color:var(--text2)">No buildings in this project yet.</div>'; return; }
+  content.style.display='block';
+  content.innerHTML='';
+  // Building selector tabs
+  const tabBar = document.createElement('div');
+  tabBar.style.cssText='display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--s1)';
+  bldgs.forEach((b,i)=>{
+    const btn = document.createElement('button');
+    btn.className='ud-incl-btn'+(i===0?' sel':'');
+    btn.style.fontSize='11px';
+    btn.textContent = b.name||'Building '+(i+1);
+    btn.onclick=()=>{
+      tabBar.querySelectorAll('.ud-incl-btn').forEach(x=>x.classList.remove('sel'));
+      btn.classList.add('sel');
+      renderUDProjPanelContent(b);
+    };
+    tabBar.appendChild(btn);
+  });
+  content.appendChild(tabBar);
+  const panelDiv = document.createElement('div');
+  panelDiv.id='ud-proj-panel-inner';
+  panelDiv.style.padding='16px';
+  content.appendChild(panelDiv);
+  renderUDProjPanelContent(bldgs[0]);
+}
+
+function renderUDProjPanelContent(b){
+  const el = document.getElementById('ud-proj-panel-inner');
+  if(!el) return;
+  const pane = document.createElement('div');
+  const prevBldg = udSelBldgId;
+  udSelBldgId = b.id;
+  if(_udProjPanel==='baseline') renderBuildingStatsPane(pane, b);
+  if(_udProjPanel==='savproj')  renderBldgSavProjPane(pane, b);
+  if(_udProjPanel==='perf')     renderBldgPerfPane(pane, b);
+  udSelBldgId = prevBldg;
+  el.innerHTML='';
+  el.appendChild(pane);
 }
 
 /* ── RENDER RIGHT DETAIL: Building header + Meters ── */
@@ -5017,16 +5158,18 @@ let _perfChartVis   = true;      // perf chart visible
 let _regressionPanelVis = false; // show/hide regression coefficients panel in Norm tab
 let _maCharts = {};
 
-function renderUDDetail(){
-  const wrap = document.getElementById('udDetailWrap');
-  const hdr  = document.getElementById('udDetailHdr');
-  const hdrTitle = document.getElementById('udDetailHdrTitle');
-  const hdrSub   = document.getElementById('udDetailHdrSub');
+function renderUDDetail(targetWrap){
+  const wrap = targetWrap || document.getElementById('udDetailWrap');
+  const hdr  = targetWrap ? null : document.getElementById('udDetailHdr');
+  const hdrTitle = targetWrap ? null : document.getElementById('udDetailHdrTitle');
+  const hdrSub   = targetWrap ? null : document.getElementById('udDetailHdrSub');
   if(!wrap) return;
   window._udSelBldgId = udSelBldgId;
 
   if(!udSelBldgId || !udSelProjId){
     if(hdr) hdr.style.display='none';
+    const bar = document.getElementById('udProjPanelBar');
+    if(bar && !udSelProjId) bar.style.display='none';
     wrap.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">📁</div><div>Select a project and building<br>from the left to view meters</div></div>';
     return;
   }
