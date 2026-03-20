@@ -7457,56 +7457,320 @@ function renderMeterDataPane(pane, m, bills, incl){
 ══════════════════════════════════════════════ */
 function renderBldgPerfPane(pane, b){
   if(!b){ pane.innerHTML='<div class="ud-empty">No building selected</div>'; return; }
-  const meters = (b.meters||[]).filter(m=>(m.bills||[]).length>0);
-  if(!meters.length){
-    pane.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">💡</div><div>No meter data yet.</div></div>';
-    return;
-  }
 
-  const metersWithBaseline = meters.filter(m=>m.baseline&&(m.baseline.months||[]).length>=3);
-  if(!metersWithBaseline.length){
-    pane.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">💡</div><div>No baseline data set yet.<br>Go to the Baseline tab on each meter to set baseline months.</div></div>';
-    return;
-  }
+  const MONTH_NAMES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const $f = v => '$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 
-  // Build header
+  // ── Pull baseline spend per calendar month from all meters ──
+  // Same meterDataByMo logic as renderPerfPane, summed across all meters
+  const baselineByCalMo = {}; // 0-11 => total energyCost across all meters
+  (b.meters||[]).forEach(m=>{
+    const bl = m.baseline;
+    if(!bl||!(bl.months||[]).length) return;
+    const bills = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+    const incl  = m.inclusive!==false;
+    const allRows = bills.length ? getNormRows(m,bills,incl,null) : [];
+    const blRows  = allRows.filter(r=>bl.months.includes(r.ym));
+    blRows.forEach(r=>{
+      const mo  = parseInt(r.ym.split('-')[1])-1;
+      const bfr = bills.filter(bx=>normMonth(bx.start,bx.end,incl,bills)===r.ym);
+      const kwC = bfr.reduce((s,bx)=>s+parseFloat(bx.kwCost||0),0)+bfr.reduce((s,bx)=>s+parseFloat(bx.facKWCost||0),0);
+      // energyCost = totalCost - demand charges (matches Meter Data Energy Cost column)
+      const ec  = r.cost - kwC;
+      baselineByCalMo[mo] = (baselineByCalMo[mo]||0) + ec;
+    });
+  });
+
+  // ── Saved settings ──
+  const storeKey = 'bldgperf_cfg_'+(b.id||b.name);
+  let cfg = {};
+  try{ cfg=JSON.parse(localStorage.getItem(storeKey)||'{}'); }catch(e){}
+  const defSavingsPct = cfg.savingsPct ?? 11;
+  const defClientPct  = cfg.clientPct  ?? 5;
+  const defCscPct     = cfg.cscPct     ?? 7;
+  const defYears      = cfg.years      ?? 3;
+  const defView       = cfg.view       ?? 'monthly';
+
+  // Monthly baseline values (index 0-11), allow manual override
+  const moBase = Array.from({length:12},(_,i)=> cfg.moBase?.[i] ?? (baselineByCalMo[i]||0));
+
+  // ── Render UI ──
   pane.innerHTML=`
-    <div style="margin-bottom:18px">
-      <div style="font-size:16px;font-weight:800;font-family:var(--head);letter-spacing:-.01em">🏢 ${b.name} — Building Performance</div>
-      <div style="font-size:12px;color:var(--text2);margin-top:3px">Monthly actual vs expected — all utility meters</div>
-    </div>
-    <div id="bldgPerfMeters"></div>`;
-
-  const container = pane.querySelector('#bldgPerfMeters');
-
-  // For each meter, create a labelled sub-section and call renderPerfPane into it
-  metersWithBaseline.forEach(m=>{
-    const isElec = m.commodity==='Electric';
-    const isGas  = m.commodity==='Gas';
-    const bills  = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
-    const incl   = m.inclusive!==false;
-
-    const pill = isElec
-      ? '<span style="background:rgba(125,216,255,.15);color:#7dd8ff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;border:1px solid rgba(125,216,255,.3)">⚡ Electric</span>'
-      : isGas
-      ? '<span style="background:rgba(255,176,64,.15);color:#ffb040;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;border:1px solid rgba(255,176,64,.3)">🔥 Gas</span>'
-      : '<span style="background:rgba(64,232,160,.15);color:#40e8a0;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;border:1px solid rgba(64,232,160,.3)">💧 Water</span>';
-
-    const section = document.createElement('div');
-    section.style.cssText = 'margin-bottom:28px;border:1px solid var(--border);border-radius:10px;overflow:hidden';
-    section.innerHTML = `
-      <div style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--s1);border-bottom:1px solid var(--border)">
-        ${pill}
-        <span style="font-size:13px;font-weight:700">${m.provider||m.commodity}</span>
-        <span style="font-size:11px;color:var(--text2)">${bills.length} bills · ${(m.baseline.months||[]).length}-mo baseline</span>
+    <div style="margin-bottom:16px;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="font-size:16px;font-weight:800;font-family:var(--head);letter-spacing:-.01em">🏢 ${b.name} — Energy Savings Projection</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:3px">Baseline from Meter Data · adjust percentages and years below</div>
       </div>
-      <div class="bldg-perf-meter-pane" style="padding:16px"></div>`;
-    container.appendChild(section);
+    </div>
 
-    const subPane = section.querySelector('.bldg-perf-meter-pane');
-    renderPerfPane(subPane, m, bills, incl);
+    <!-- Controls -->
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:18px;background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:13px 16px">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Projected Savings %</label>
+        <input id="bp-savpct" type="number" value="${defSavingsPct}" min="0" max="100" step="0.1"
+          style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Client Savings %</label>
+        <input id="bp-clipct" type="number" value="${defClientPct}" min="0" max="100" step="0.1"
+          style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">CSC Compensation %</label>
+        <input id="bp-cscpct" type="number" value="${defCscPct}" min="0" max="100" step="0.1"
+          style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Years</label>
+        <select id="bp-years" style="font-family:var(--mono);font-size:13px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
+          ${[1,2,3,4,5].map(y=>`<option value="${y}"${y===defYears?' selected':''}>${y} Year${y>1?'s':''}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">View</label>
+        <div style="display:flex;gap:4px">
+          <button id="bp-v-monthly" onclick="bpSetView('monthly')"
+            style="font-family:var(--font);font-size:11px;font-weight:600;padding:5px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;background:${defView==='monthly'?'var(--em)':'transparent'};color:${defView==='monthly'?'#05080f':'var(--text2)'}">Monthly</button>
+          <button id="bp-v-quarterly" onclick="bpSetView('quarterly')"
+            style="font-family:var(--font);font-size:11px;font-weight:600;padding:5px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;background:${defView==='quarterly'?'var(--em)':'transparent'};color:${defView==='quarterly'?'#05080f':'var(--text2)'}">Quarterly</button>
+        </div>
+      </div>
+      <button onclick="bpRecalc()" style="font-family:var(--font);font-size:12px;font-weight:700;padding:7px 16px;border-radius:7px;border:none;cursor:pointer;background:var(--em);color:#05080f;align-self:flex-end">⚡ Recalculate</button>
+    </div>
+
+    <!-- Baseline monthly override table -->
+    <details style="margin-bottom:16px">
+      <summary style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;cursor:pointer;padding:4px 0">▶ Edit Monthly Baseline Spend (click to expand)</summary>
+      <div style="margin-top:10px;overflow-x:auto">
+        <table style="border-collapse:collapse;font-size:12px;width:100%">
+          <thead><tr style="background:var(--s1)">
+            ${MONTH_NAMES.map(m=>`<th style="padding:6px 10px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);border:1px solid var(--border)">${m}</th>`).join('')}
+            <th style="padding:6px 10px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);border:1px solid var(--border)">Annual Total</th>
+          </tr></thead>
+          <tbody><tr>
+            ${moBase.map((v,i)=>`<td style="border:1px solid var(--border);padding:4px"><input id="bp-mo-${i}" type="number" value="${v.toFixed(2)}" step="0.01"
+              style="width:100%;font-family:var(--mono);font-size:11px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:4px 6px;outline:none;text-align:right"></td>`).join('')}
+            <td id="bp-mo-total" style="border:1px solid var(--border);padding:6px 10px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--em);text-align:right">${$f(moBase.reduce((s,v)=>s+v,0))}</td>
+          </tr></tbody>
+        </table>
+      </div>
+    </details>
+
+    <!-- Results -->
+    <div id="bp-results"></div>`;
+
+  // Update annual total as baseline inputs change
+  pane.querySelectorAll('[id^="bp-mo-"]').forEach((inp,i)=>{
+    if(i===12) return;
+    inp.addEventListener('input',()=>{
+      const tot = Array.from({length:12},(_,j)=>parseFloat(document.getElementById('bp-mo-'+j)?.value||0)).reduce((s,v)=>s+v,0);
+      const el=document.getElementById('bp-mo-total'); if(el) el.textContent=$f(tot);
+    });
+  });
+
+  // Render on load
+  bpRecalc();
+}
+
+// Current view state
+let _bpView = 'monthly';
+function bpSetView(v){
+  _bpView=v;
+  ['monthly','quarterly'].forEach(vv=>{
+    const btn=document.getElementById('bp-v-'+vv);
+    if(!btn) return;
+    btn.style.background = vv===v?'var(--em)':'transparent';
+    btn.style.color      = vv===v?'#05080f':'var(--text2)';
+  });
+  bpRecalc();
+}
+
+function bpRecalc(){
+  const savPct  = parseFloat(document.getElementById('bp-savpct')?.value||0)/100;
+  const cliPct  = parseFloat(document.getElementById('bp-clipct')?.value||0)/100;
+  const cscPct  = parseFloat(document.getElementById('bp-cscpct')?.value||0)/100;
+  const years   = parseInt(document.getElementById('bp-years')?.value||3);
+  const view    = _bpView;
+  const moBase  = Array.from({length:12},(_,i)=>parseFloat(document.getElementById('bp-mo-'+i)?.value||0));
+  const annBase = moBase.reduce((s,v)=>s+v,0);
+
+  // Save config
+  const b = getUDBldg(udSelProjId,udSelBldgId);
+  if(b){
+    const storeKey='bldgperf_cfg_'+(b.id||b.name);
+    try{ localStorage.setItem(storeKey,JSON.stringify({
+      savingsPct:savPct*100,clientPct:cliPct*100,cscPct:cscPct*100,years,view,moBase
+    }));}catch(e){}
+  }
+
+  const MONTH_NAMES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const $f = v=>'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const $fc= v=>(v<0?'-':'')+$f(v);
+
+  // Build column definitions
+  let cols = [];
+  if(view==='monthly'){
+    for(let mo=0;mo<12;mo++) cols.push({label:MONTH_NAMES[mo],mo,yr:0});
+    cols.push({label:'Total',isTotal:true,yr:0});
+  } else {
+    // Quarterly per year
+    for(let yr=0;yr<years;yr++){
+      for(let q=0;q<4;q++){
+        const mos=[q*3,(q*3)+1,(q*3)+2];
+        cols.push({label:`Y${yr+1} Q${q+1}`,mos,yr});
+      }
+    }
+    cols.push({label:'Total',isTotal:true});
+  }
+
+  // Compute per-column values
+  function colBase(col){
+    if(col.isTotal) return cols.filter(c=>!c.isTotal).reduce((s,c)=>s+colBase(c),0);
+    if(col.mos) return col.mos.reduce((s,mo)=>s+moBase[mo],0) * years; // each year same baseline
+    if(col.mo!==undefined) return moBase[col.mo];
+    return 0;
+  }
+  // For quarterly, each year repeats the same monthly baseline
+  function colBaseQ(col){
+    if(col.isTotal) return annBase*years;
+    if(col.mos) return col.mos.reduce((s,mo)=>s+moBase[mo],0);
+    return moBase[col.mo]||0;
+  }
+
+  const rows = ['baseline','projected','savings','client','csc'].map(key=>{
+    const vals = cols.map(col=>{
+      const base = view==='monthly' ? (col.isTotal ? annBase : moBase[col.mo]) : colBaseQ(col);
+      switch(key){
+        case 'baseline':  return base;
+        case 'projected': return base*(1-savPct);
+        case 'savings':   return base*savPct;
+        case 'client':    return base*cliPct;
+        case 'csc':       return base*cscPct;
+      }
+    });
+    const labels = {baseline:'Total Baseline Utility Spend $',projected:'New Projected Utility Spend $',
+      savings:'Total Projected Utility Savings $',client:'Client Projected Utility Savings $',csc:'CSC Projected Utility Compensation $'};
+    const pcts   = {savings:(savPct*100).toFixed(0)+'%',client:(cliPct*100).toFixed(0)+'%',csc:(cscPct*100).toFixed(0)+'%'};
+    const colors = {baseline:'var(--text)',projected:'var(--text)',savings:'var(--em)',client:'#22c55e',csc:'var(--em2)'};
+    return {key,label:labels[key],vals,pct:pcts[key],color:colors[key]};
+  });
+
+  // CSC cumulative (for quarterly view line chart)
+  const cscRow = rows.find(r=>r.key==='csc');
+  let cumulative = 0;
+  const cumulativeVals = cscRow.vals.slice(0,-1).map(v=>{ cumulative+=v; return cumulative; });
+
+  // Total column savings %
+  const totalBase = rows[0].vals[rows[0].vals.length-1];
+  const totalSav  = rows[2].vals[rows[2].vals.length-1];
+  const totalPct  = totalBase>0?(totalSav/totalBase*100).toFixed(0)+'%':'—';
+
+  // ── Table HTML ──
+  const colHdrs = cols.map(c=>`<th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap">${c.label}</th>`).join('');
+
+  // Year group headers for quarterly
+  let yearHdr = '';
+  if(view==='quarterly'){
+    yearHdr='<tr style="background:var(--s1)"><th style="border:1px solid var(--border2)"></th><th style="border:1px solid var(--border2)"></th>';
+    for(let yr=0;yr<years;yr++){
+      yearHdr+=`<th colspan="4" style="text-align:center;padding:5px;font-size:11px;font-weight:700;color:var(--text);border:1px solid var(--border2);border-bottom:2px solid var(--em)">Year ${yr+1}</th>`;
+    }
+    yearHdr+='<th style="border:1px solid var(--border2)"></th></tr>';
+  }
+
+  const tableRows = rows.map(r=>{
+    const cells = r.vals.map((v,i)=>{
+      const isLast = i===r.vals.length-1;
+      return `<td style="padding:7px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${isLast?r.color:'var(--text)'};font-weight:${isLast?'700':'400'};border:1px solid var(--border);background:${isLast?'var(--s1)':'transparent'};white-space:nowrap">${$fc(v)}</td>`;
+    }).join('');
+    const pctCell = r.pct?`<td style="padding:7px 10px;text-align:center;font-family:var(--mono);font-size:12px;color:${r.color};font-weight:700;border:1px solid var(--border)">${r.pct}</td>`:'<td style="border:1px solid var(--border)"></td>';
+    return `<tr>
+      <td style="padding:7px 12px;font-size:12px;font-weight:600;color:${r.color};white-space:nowrap;border:1px solid var(--border);background:var(--s1)">${r.label}</td>
+      ${pctCell}${cells}
+    </tr>`;
+  }).join('');
+
+  // ── Chart data ──
+  const chartCols = cols.filter(c=>!c.isTotal);
+  const chartLabels = JSON.stringify(chartCols.map(c=>c.label));
+  const projVals  = JSON.stringify(chartCols.map((_,i)=>rows[1].vals[i]));
+  const cliVals   = JSON.stringify(chartCols.map((_,i)=>rows[3].vals[i]));
+  const cscVals   = JSON.stringify(chartCols.map((_,i)=>rows[4].vals[i]));
+  const cumVals   = JSON.stringify(cumulativeVals);
+  const showLine  = view==='quarterly';
+
+  const res = document.getElementById('bp-results');
+  if(!res) return;
+  res.innerHTML=`
+    <!-- Summary stats -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px">
+      <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
+        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Annual Baseline</div>
+        <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--text)">${$f(annBase)}</div>
+      </div>
+      <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
+        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Annual Projected Spend</div>
+        <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--text)">${$f(annBase*(1-savPct))}</div>
+      </div>
+      <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
+        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Total Projected Savings</div>
+        <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--em)">${$f(totalSav)}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">${totalPct} of baseline · ${years} yr${years>1?'s':''}</div>
+      </div>
+      <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
+        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">CSC Cumulative</div>
+        <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--em2)">${$f(annBase*cscPct*years)}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">over ${years} yr${years>1?'s':''}</div>
+      </div>
+    </div>
+
+    <!-- Data table -->
+    <div style="overflow-x:auto;margin-bottom:20px;border:1px solid var(--border);border-radius:8px">
+      <table style="border-collapse:collapse;width:100%;font-size:12px">
+        <thead>
+          ${yearHdr}
+          <tr style="background:var(--s1)">
+            <th style="padding:7px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)"></th>
+            <th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Savings %</th>
+            ${colHdrs}
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>
+
+    <!-- Chart -->
+    <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:16px">
+      <canvas id="bpChart" height="90"></canvas>
+    </div>`;
+
+  // Draw chart with Chart.js
+  requestAnimationFrame(()=>{
+    const ctx = document.getElementById('bpChart');
+    if(!ctx) return;
+    if(ctx._chart) ctx._chart.destroy();
+    const datasets = [
+      {label:'New Projected Utility Spend $',data:JSON.parse(projVals),backgroundColor:'rgba(34,197,94,0.75)',stack:'s'},
+      {label:'Client Projected Utility Savings $',data:JSON.parse(cliVals),backgroundColor:'rgba(20,184,166,0.85)',stack:'s'},
+      {label:'CSC Projected Utility Compensation $',data:JSON.parse(cscVals),backgroundColor:'rgba(59,130,246,0.85)',stack:'s'},
+    ];
+    if(showLine){
+      datasets.push({label:'CSC Projected Cumulative Total $',data:JSON.parse(cumVals),type:'line',borderColor:'#f97316',backgroundColor:'transparent',borderWidth:2.5,pointRadius:3,pointBackgroundColor:'#f97316',tension:0.35,stack:undefined,yAxisID:'y'});
+    }
+    ctx._chart = new Chart(ctx,{
+      type:'bar',
+      data:{labels:JSON.parse(chartLabels),datasets},
+      options:{
+        responsive:true,plugins:{legend:{labels:{color:'#6b7a9e',font:{size:11}}}},
+        scales:{
+          x:{ticks:{color:'#6b7a9e',font:{size:10}},grid:{color:'rgba(255,255,255,.04)'}},
+          y:{ticks:{color:'#6b7a9e',font:{size:10},callback:v=>'$'+v.toLocaleString()},grid:{color:'rgba(255,255,255,.06)'},stacked:true},
+        }
+      }
+    });
   });
 }
+
 function renderPerfPane(pane, m, bills, incl){
   const bl=m.baseline;
   if(!bl||!bl.months||bl.months.length<3){
