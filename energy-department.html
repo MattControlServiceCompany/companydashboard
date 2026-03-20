@@ -8380,7 +8380,8 @@ function renderPerfPane(pane, m, bills, incl){
     // Exp Therm Cost = baseline calendar-month therm cost (from Meter Data, same as Normalized column)
     // Actual Therm Cost = actual therm cost directly from this month's bills
     const expThermCost     = hasGasCostSav && blThermCostByCalMo[calMo]>0 ? blThermCostByCalMo[calMo] : 0;
-    const actThermCostCalc = thermCostActual;
+    // Actual Therm Cost = Actual Therms (from raw bill) × $/Therm Rate
+    const actThermCostCalc = hasGasCostSav && thermRate>0 ? (rawUsageByYm[r.ym]!=null?rawUsageByYm[r.ym]:r.usage) * thermRate : thermCostActual;
     const thermCostSav     = hasGasCostSav && expThermCost>0 ? expThermCost - actThermCostCalc : 0;
     const savColor = v => v>=0 ? 'var(--em)' : 'var(--danger)';
     const costSign = v => v>=0 ? '' : '\u2212';
