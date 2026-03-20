@@ -5157,6 +5157,49 @@ function fmtDate(d){
 /* ══════════════════════════════════════════
    NORMALIZED TAB
 ══════════════════════════════════════════ */
+/* ─────────────────────────────────────────────────────────────
+   buildMoMap — single authoritative source for per-calendar-month
+   baseline data. Used by Meter Data, Performance, Building Stats,
+   and Building Performance tabs. Always call this instead of
+   recomputing from raw bills independently.
+
+   Returns { elecByMo, gasByMo, waterByMo } where keys are 0–11.
+   elecByMo[mo]: { kwh, demandKW, billedKW, facKW, kwCost,
+                   facKWCost, energyCost, totalCost, normDays }
+   gasByMo[mo]:  { therms, cost }
+   waterByMo[mo]:{ kgal,   cost }
+───────────────────────────────────────────────────────────── */
+function buildMoMap(m, blRows, bills, incl){
+  const isElec  = m.commodity==='Electric';
+  const isGas   = m.commodity==='Gas';
+  const elecByMo={}, gasByMo={}, waterByMo={};
+  blRows.slice().sort((a,c)=>a.ym.localeCompare(c.ym)).forEach(r=>{
+    const mo  = parseInt(r.ym.split('-')[1])-1;
+    const bfr = bills.filter(b=>normMonth(b.start,b.end,incl,bills)===r.ym);
+    const n   = Math.max(1,bfr.length);
+    const normUsage = r.regrBaseline!=null ? r.regrBaseline : r.usage;
+    if(isElec){
+      const kwCostSum = bfr.reduce((s,b)=>s+parseFloat(b.kwCost||0),0);
+      elecByMo[mo] = {
+        kwh:        normUsage,
+        demandKW:   bfr.reduce((s,b)=>s+parseFloat(b.demandKW||0),0)/n,
+        billedKW:   bfr.reduce((s,b)=>s+parseFloat(b.billedKW||b.demandKW||0),0)/n,
+        facKW:      bfr.reduce((s,b)=>s+parseFloat(b.facKW||0),0)/n,
+        kwCost:     bfr.reduce((s,b)=>s+parseFloat(b.kwCost||0),0),
+        facKWCost:  bfr.reduce((s,b)=>s+parseFloat(b.facKWCost||0),0),
+        energyCost: r.cost - kwCostSum,
+        totalCost:  r.cost,
+        normDays:   r.normDays,
+      };
+    } else if(isGas){
+      gasByMo[mo] = { therms: normUsage, cost: r.cost };
+    } else {
+      waterByMo[mo] = { kgal: normUsage, cost: r.cost };
+    }
+  });
+  return {elecByMo, gasByMo, waterByMo};
+}
+
 function getNormRows(m, bills, incl, weatherByYm){
   // Build one entry per calendar month by prorating each bill across every month it spans.
   // A bill from 2/1–2/15 and a bill from 2/15–3/1 will correctly populate both Feb AND March:
@@ -6645,50 +6688,10 @@ function renderBuildingStatsPane(pane, b){
   // Baseline span label
   function blSpan(rows){ return rows.length ? rows[0].label+' to '+rows[rows.length-1].label : 'No baseline'; }
 
-  // ── Build month-keyed data maps ──
-  // Electric: from norm rows + raw bills for demand
-  const elecByMo = {}; // keyed 0-11 after sorting baseline months
-  if(eBlRows.length){
-    // Sort baseline rows by ym to get Jan-Dec ordering
-    const sorted = eBlRows.slice().sort((a,c)=>a.ym.localeCompare(c.ym));
-    sorted.forEach(r=>{
-      const mo = parseInt(r.ym.split('-')[1])-1; // 0-11
-      const bills_for_row = elec.bills.filter(b=>normMonth(b.start,b.end,elec.incl,elec.bills)===r.ym);
-      const demandKW  = bills_for_row.reduce((s,b)=>s+parseFloat(b.demandKW||0),0)/Math.max(1,bills_for_row.length);
-      const billedKW  = bills_for_row.reduce((s,b)=>s+parseFloat(b.billedKW||b.demandKW||0),0)/Math.max(1,bills_for_row.length);
-      const facKW     = bills_for_row.reduce((s,b)=>s+parseFloat(b.facKW||0),0)/Math.max(1,bills_for_row.length);
-      const kwCost    = bills_for_row.reduce((s,b)=>s+parseFloat(b.kwCost||0),0);
-      const facKWCost = bills_for_row.reduce((s,b)=>s+parseFloat(b.facKWCost||0),0);
-      const totalElecCost = r.cost;
-      elecByMo[mo] = {
-        kwh: r.regrBaseline!=null ? r.regrBaseline : r.usage,
-        demandKW: demandKW||0,
-        billedKW: billedKW||0,
-        facKW: facKW||0,
-        kwCost,
-        facKWCost,
-        energyCost: totalElecCost - kwCost,
-        totalCost: totalElecCost,
-        normDays: r.normDays,
-      };
-    });
-  }
-
-  const gasByMo = {};
-  if(gBlRows.length){
-    gBlRows.slice().sort((a,c)=>a.ym.localeCompare(c.ym)).forEach(r=>{
-      const mo = parseInt(r.ym.split('-')[1])-1;
-      gasByMo[mo] = { therms: r.regrBaseline!=null ? r.regrBaseline : r.usage, cost: r.cost };
-    });
-  }
-
-  const waterByMo = {};
-  if(wBlRows.length){
-    wBlRows.slice().sort((a,c)=>a.ym.localeCompare(c.ym)).forEach(r=>{
-      const mo = parseInt(r.ym.split('-')[1])-1;
-      waterByMo[mo] = { kgal: r.regrBaseline!=null ? r.regrBaseline : r.usage, cost: r.cost };
-    });
-  }
+  // ── Build month-keyed data maps (shared helper — same as Meter Data table) ──
+  const {elecByMo} = elecM && eBlRows.length ? buildMoMap(elecM, eBlRows, elec.bills, elec.incl) : {elecByMo:{}};
+  const {gasByMo}  = gasM  && gBlRows.length ? buildMoMap(gasM,  gBlRows, gas.bills,  gas.incl)  : {gasByMo:{}};
+  const {waterByMo}= waterM&& wBlRows.length ? buildMoMap(waterM,wBlRows, water.bills,water.incl): {waterByMo:{}};
 
   // ── All 12 months present in baseline (use sorted unique months across all commodities) ──
   const allMoKeys = Array.from(new Set([
@@ -7147,37 +7150,8 @@ function renderMeterDataPane(pane, m, bills, incl){
 
   function blSpan(rows){ return rows.length ? rows[0].label+' to '+rows[rows.length-1].label : 'No baseline'; }
 
-  // ── Build month-keyed maps ──
-  const elecByMo = {}, gasByMo = {}, waterByMo = {};
-
-  if(isElec){
-    blRows.slice().sort((a,c)=>a.ym.localeCompare(c.ym)).forEach(r=>{
-      const mo = parseInt(r.ym.split('-')[1])-1;
-      const bfr = sortedBills.filter(b=>normMonth(b.start,b.end,incl,sortedBills)===r.ym);
-      const n = Math.max(1,bfr.length);
-      elecByMo[mo] = {
-        kwh:        r.regrBaseline!=null ? r.regrBaseline : r.usage,
-        demandKW:   bfr.reduce((s,b)=>s+parseFloat(b.demandKW||0),0)/n,
-        billedKW:   bfr.reduce((s,b)=>s+parseFloat(b.billedKW||b.demandKW||0),0)/n,
-        facKW:      bfr.reduce((s,b)=>s+parseFloat(b.facKW||0),0)/n,
-        kwCost:     bfr.reduce((s,b)=>s+parseFloat(b.kwCost||0),0),
-        facKWCost:  bfr.reduce((s,b)=>s+parseFloat(b.facKWCost||0),0),
-        energyCost: r.cost - bfr.reduce((s,b)=>s+parseFloat(b.kwCost||0),0),
-        totalCost:  r.cost,
-        normDays:   r.normDays,
-      };
-    });
-  } else if(isGas){
-    blRows.slice().sort((a,c)=>a.ym.localeCompare(c.ym)).forEach(r=>{
-      const mo = parseInt(r.ym.split('-')[1])-1;
-      gasByMo[mo] = { therms: r.regrBaseline!=null ? r.regrBaseline : r.usage, cost: r.cost };
-    });
-  } else {
-    blRows.slice().sort((a,c)=>a.ym.localeCompare(c.ym)).forEach(r=>{
-      const mo = parseInt(r.ym.split('-')[1])-1;
-      waterByMo[mo] = { kgal: r.regrBaseline!=null ? r.regrBaseline : r.usage, cost: r.cost };
-    });
-  }
+  // ── Build month-keyed maps (shared helper — same result as Meter Data table) ──
+  const {elecByMo, gasByMo, waterByMo} = buildMoMap(m, blRows, sortedBills, incl);
 
   const allMoKeys = Array.from(new Set([
     ...Object.keys(elecByMo), ...Object.keys(gasByMo), ...Object.keys(waterByMo),
@@ -7520,47 +7494,32 @@ function renderBldgPerfPane(pane, b){
   try{ bspCfg=JSON.parse(localStorage.getItem(bspKey)||'{}'); }catch(e){}
   const savPct = (bspCfg.savingsPct ?? 11) / 100;
 
-  // ── Actual savings per calendar month ──
+  // ── Actual savings per calendar month — use buildMoMap for baseline, r.cost for actuals ──
   const actualSavingsByCalMo = {};
   (b.meters||[]).forEach(m=>{
     const bl = m.baseline;
     if(!bl||!(bl.months||[]).length) return;
-    const mbills  = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
-    const mincl   = m.inclusive!==false;
-    const misElec = m.commodity==='Electric';
-    const mAllRows= mbills.length ? getNormRows(m,mbills,mincl,null) : [];
-    const mBlMonths= bl.months;
-    const mBlEnd   = mBlMonths.slice().sort().pop();
-    const mBlRows  = mAllRows.filter(r=>mBlMonths.includes(r.ym));
+    const mbills   = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+    const mincl    = m.inclusive!==false;
+    const misElec  = m.commodity==='Electric';
+    const mAllRows = mbills.length ? getNormRows(m,mbills,mincl,null) : [];
+    const mBlEnd   = bl.months.slice().sort().pop();
+    const mBlRows  = mAllRows.filter(r=>bl.months.includes(r.ym));
     const mPostRows= mAllRows.filter(r=>r.ym>mBlEnd);
     if(!mPostRows.length) return;
-    // Build baseline cost map per calendar month
-    const mMoMap = {};
-    mBlRows.forEach(r=>{
-      const mo  = parseInt(r.ym.split('-')[1])-1;
-      const bfr = mbills.filter(bx=>normMonth(bx.start,bx.end,mincl,mbills)===r.ym);
-      const kwC = bfr.reduce((s,bx)=>s+parseFloat(bx.kwCost||0),0)+bfr.reduce((s,bx)=>s+parseFloat(bx.facKWCost||0),0);
-      const normU = r.regrBaseline!=null ? r.regrBaseline : r.usage;
-      const energyCost = r.cost - kwC;
-      // For gas, r.cost is already the prorated thermCost — matches Meter Data gasByMo.cost exactly
-      const thermCost  = misElec ? 0 : r.cost;
-      if(mMoMap[mo]){
-        mMoMap[mo].energyCost += energyCost;
-        mMoMap[mo].thermCost  += thermCost;
-        mMoMap[mo].usage = (mMoMap[mo].usage + normU)/2;
-      } else {
-        mMoMap[mo] = {usage:normU, energyCost, thermCost};
-      }
-    });
-    // Compare post-baseline actual vs expected cost
+
+    // Baseline cost map — use buildMoMap (same as Meter Data table)
+    const {elecByMo:eMo, gasByMo:gMo, waterByMo:wMo} = buildMoMap(m, mBlRows, mbills, mincl);
+    const mMoRef = misElec ? eMo : (m.commodity==='Gas' ? gMo : wMo);
+
+    // Post-baseline: compare actual cost vs baseline reference
     mPostRows.forEach(r=>{
       const calMo = parseInt(r.ym.split('-')[1])-1;
-      const ref   = mMoMap[calMo]; if(!ref) return;
+      const ref   = mMoRef[calMo]; if(!ref) return;
       const bfr   = mbills.filter(bx=>normMonth(bx.start,bx.end,mincl,mbills)===r.ym);
-      const kwC   = bfr.reduce((s,bx)=>s+parseFloat(bx.kwCost||0),0)+bfr.reduce((s,bx)=>s+parseFloat(bx.facKWCost||0),0);
-      // For gas, r.cost is already the prorated thermCost — use directly
+      const kwC   = misElec ? bfr.reduce((s,bx)=>s+parseFloat(bx.kwCost||0),0)+bfr.reduce((s,bx)=>s+parseFloat(bx.facKWCost||0),0) : 0;
       const actC  = misElec ? (r.cost - kwC) : r.cost;
-      const expC  = misElec ? ref.energyCost : ref.thermCost;
+      const expC  = misElec ? ref.energyCost : ref.cost;
       actualSavingsByCalMo[calMo] = (actualSavingsByCalMo[calMo]||0) + (expC - actC);
     });
   });
@@ -8201,32 +8160,17 @@ function renderPerfPane(pane, m, bills, incl){
   const blAvgMo=blRows.length?blRows.reduce((s,r)=>s+r.usage,0)/blRows.length:0;
   const hasRegr_p = allRows.some(r=>r.regrBaseline!=null);
 
-  // Build baseline month map using EXACTLY the same logic as renderMeterDataPane's
-  // elecByMo / gasByMo — these are the authoritative Meter Data table values.
-  const meterDataByMo = {}; // keyed 0–11
-  blRows.slice().sort((a,c)=>a.ym.localeCompare(c.ym)).forEach(r=>{
-    const mo  = parseInt(r.ym.split('-')[1]) - 1;
-    const bfr = bills.filter(b=>normMonth(b.start,b.end,incl,bills)===r.ym);
-    const n   = Math.max(1, bfr.length);
-    const normUsage = r.regrBaseline!=null ? r.regrBaseline : r.usage;
-    if(isElec){
-      // Mirror elecByMo exactly
-      const kwCostSum = bfr.reduce((s,b)=>s+parseFloat(b.kwCost||0),0);
-      meterDataByMo[mo] = {
-        usage:      normUsage,
-        energyCost: r.cost - kwCostSum,  // matches elecByMo.energyCost
-        thermCost:  0,
-        totalCost:  r.cost,
-      };
-    } else {
-      // Mirror gasByMo / waterByMo exactly — just r.cost, no bill-level aggregation
-      meterDataByMo[mo] = {
-        usage:      normUsage,
-        energyCost: 0,
-        thermCost:  r.cost,  // matches gasByMo.cost = r.cost exactly
-        totalCost:  r.cost,
-      };
-    }
+  // Use shared buildMoMap — same authoritative source as Meter Data table
+  const {elecByMo: _eMo, gasByMo: _gMo, waterByMo: _wMo} = buildMoMap(m, blRows, bills, incl);
+  const _moMap = isElec ? _eMo : (m.commodity==='Gas' ? _gMo : _wMo);
+  const meterDataByMo = {};
+  Object.entries(_moMap).forEach(([mo,v])=>{
+    meterDataByMo[mo] = {
+      usage:      isElec ? v.kwh      : (m.commodity==='Gas' ? v.therms : v.kgal),
+      energyCost: isElec ? v.energyCost : 0,
+      thermCost:  m.commodity==='Gas'   ? v.cost : 0,
+      totalCost:  v.totalCost ?? v.cost,
+    };
   });
   const hasBlCalMap = Object.keys(meterDataByMo).length > 0;
   const blByCalMo          = Object.fromEntries(Object.entries(meterDataByMo).map(([mo,v])=>[mo,v.usage]));
@@ -8369,14 +8313,14 @@ function renderPerfPane(pane, m, bills, incl){
     });
   }
 
-  // Gas: per-month actual therms cost and $/therm rate
+  // Gas: per-month actual therms cost from raw bills — same pattern as perfDemByYm for electric
   const gasCostByYm = {};
   if(!isElec){
     filteredPostRows.forEach(r=>{
       const bfr = bills.filter(b=>normMonth(b.start,b.end,incl,bills)===r.ym);
       if(!bfr.length) return;
-      const actualTherms = r.usage; // prorated therms from norm row — matches Meter Data
-      const thermCostAmt = r.cost;  // prorated thermCost from norm row — matches Meter Data gasByMo.cost
+      const actualTherms = bfr.reduce((s,b)=>s+parseFloat(b.therms||b.usage||0),0);
+      const thermCostAmt = bfr.reduce((s,b)=>s+parseFloat(b.thermCost||b.cost||0),0);
       if(actualTherms>0)
         gasCostByYm[r.ym] = { thermCostAmt, thermRate: thermCostAmt>0 ? thermCostAmt/actualTherms : 0 };
     });
