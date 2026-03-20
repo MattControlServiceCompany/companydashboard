@@ -845,6 +845,7 @@ html,body{height:100%;overflow:hidden;}
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <button class="btn btn-ghost btn-sm" id="ud-bldg-stats-btn" onclick="toggleBldgStatsPanel()">📊 Baseline Data</button>
+          <button class="btn btn-ghost btn-sm" id="ud-bldg-perf-btn" onclick="toggleBldgPerfPanel()">💡 Building Performance</button>
           <button class="btn btn-ghost btn-sm" id="ud-edit-bldg-btn" onclick="openBldgModal(window._udSelBldgId)">✏️ Edit Building</button>
           <button class="btn btn-em btn-sm" id="ud-add-meter-btn" onclick="openMeterModal()">+ Add Meter</button>
         </div>
@@ -4698,8 +4699,11 @@ function renderUDDetail(){
   if(hdr) hdr.style.display='flex';
   if(hdrTitle) hdrTitle.textContent = b.name;
   _bldgStatsPanelVis = false;
+  _bldgPerfPanelVis  = false;
   const bsBtn = document.getElementById('ud-bldg-stats-btn');
   if(bsBtn){ bsBtn.style.borderColor=''; bsBtn.style.color=''; }
+  const bpBtn = document.getElementById('ud-bldg-perf-btn');
+  if(bpBtn){ bpBtn.style.borderColor=''; bpBtn.style.color=''; }
   if(hdrSub){
     const parts=[];
     if(b.addr) parts.push('<span>📍 '+b.addr+'</span>');
@@ -4733,18 +4737,10 @@ function renderUDDetail(){
 
   wrap.innerHTML =
     '<div class="ma-meter-bar">'+
-      '<div class="ma-meter-pills">'+
-        '<button class="ma-meter-pill'+(udActiveMid==='__bldgperf__'?' active':'')+'" onclick="udSelectMeter(\'__bldgperf__\')" style="gap:6px">'+
-          '<span style="font-size:13px">🏢</span>'+
-          '<span style="font-size:12px;font-weight:600;color:'+(udActiveMid==='__bldgperf__'?'var(--text)':'var(--text2)')+'">Building Performance</span>'+
-        '</button>'+
-        pills+
-      '</div>'+
+      '<div class="ma-meter-pills">'+pills+'</div>'+
       '<div style="display:flex;gap:6px;flex-shrink:0">'+
-        (udActiveMid!=='__bldgperf__'?
-          '<button class="btn btn-ghost btn-sm" onclick="openMeterModal(\''+udActiveMid+'\')">✏️ Edit</button>'+
-          '<button class="btn-del" onclick="deleteMeter(\''+udActiveMid+'\')" title="Delete meter">✕</button>'
-        :'')+
+        '<button class="btn btn-ghost btn-sm" onclick="openMeterModal(\''+udActiveMid+'\')">✏️ Edit</button>'+
+        '<button class="btn-del" onclick="deleteMeter(\''+udActiveMid+'\')" title="Delete meter">✕</button>'+
       '</div>'+
     '</div>'+
     '<div id="maMeterWorkspace"></div>';
@@ -4754,21 +4750,20 @@ function renderUDDetail(){
 
 function udSelectMeter(mid){
   udActiveMid=mid;
-  if(mid==='__bldgperf__'){
-    _bldgStatsPanelVis=false;
-    saveUDSession();
-    renderUDDetail();
-    return;
-  }
-  udActiveTab='bills'; _bldgStatsPanelVis=false; saveUDSession(); renderUDDetail();
+  udActiveTab='bills'; _bldgStatsPanelVis=false; _bldgPerfPanelVis=false; saveUDSession(); renderUDDetail();
 }
 function maSetTab(tab){ udActiveTab=tab; saveUDSession(); renderMeterWorkspace(); }
 
 let _bldgStatsPanelVis = false;
+let _bldgPerfPanelVis  = false;
+
 function toggleBldgStatsPanel(){
   _bldgStatsPanelVis = !_bldgStatsPanelVis;
+  _bldgPerfPanelVis  = false;
   const btn = document.getElementById('ud-bldg-stats-btn');
   if(btn){ btn.style.borderColor=_bldgStatsPanelVis?'var(--em)':''; btn.style.color=_bldgStatsPanelVis?'var(--em)':''; }
+  const pbtn = document.getElementById('ud-bldg-perf-btn');
+  if(pbtn){ pbtn.style.borderColor=''; pbtn.style.color=''; }
   if(_bldgStatsPanelVis){
     const wrap=document.getElementById('udDetailWrap'); if(!wrap) return;
     const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
@@ -4781,17 +4776,27 @@ function toggleBldgStatsPanel(){
   } else { renderUDDetail(); }
 }
 
+function toggleBldgPerfPanel(){
+  _bldgPerfPanelVis  = !_bldgPerfPanelVis;
+  _bldgStatsPanelVis = false;
+  const pbtn = document.getElementById('ud-bldg-perf-btn');
+  if(pbtn){ pbtn.style.borderColor=_bldgPerfPanelVis?'var(--em)':''; pbtn.style.color=_bldgPerfPanelVis?'var(--em)':''; }
+  const sbtn = document.getElementById('ud-bldg-stats-btn');
+  if(sbtn){ sbtn.style.borderColor=''; sbtn.style.color=''; }
+  if(_bldgPerfPanelVis){
+    const wrap=document.getElementById('udDetailWrap'); if(!wrap) return;
+    const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
+    wrap.innerHTML=
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;padding:12px 16px 0">'+
+        '<button class="btn btn-ghost btn-sm" onclick="toggleBldgPerfPanel()">← Back to Meters</button>'+
+      '</div>'+
+      '<div id="bldgPerfPaneInner" style="padding:0 16px 16px;overflow-y:auto;flex:1"></div>';
+    renderBldgPerfPane(document.getElementById('bldgPerfPaneInner'),b);
+  } else { renderUDDetail(); }
+}
+
 function renderMeterWorkspace(){
   const ws=document.getElementById('maMeterWorkspace'); if(!ws) return;
-
-  // Building-level performance view
-  if(udActiveMid==='__bldgperf__'){
-    ws.style.cssText='flex:1;overflow-y:auto;padding:18px 20px;display:block;';
-    const b=getUDBldg(udSelProjId,udSelBldgId);
-    renderBldgPerfPane(ws,b);
-    return;
-  }
-
   const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
   const m=b.meters.find(m=>m.id===udActiveMid); if(!m) return;
   const bills=(m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
