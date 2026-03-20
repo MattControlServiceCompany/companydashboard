@@ -5071,6 +5071,18 @@ function udSelectBldg(bid){
   if(udSelBldgId !== bid) _openMeterIds.clear();
   udSelBldgId = bid;
   udActiveMid = null;
+  // Close any open project panel
+  if(_udProjPanel){
+    _udProjPanel = null;
+    const content = document.getElementById('udProjPanelContent');
+    if(content){ content.style.display='none'; content.innerHTML=''; }
+    const wrap = document.getElementById('udDetailWrap');
+    if(wrap) wrap.style.display='';
+    ['ud-proj-baseline-btn','ud-proj-savproj-btn','ud-proj-perf-btn'].forEach(id=>{
+      const btn=document.getElementById(id);
+      if(btn){ btn.style.borderColor=''; btn.style.color=''; }
+    });
+  }
   saveUDSession();
   renderUDProjList();
   renderUDDetail();
@@ -5084,11 +5096,24 @@ function toggleUDProjPanel(key){
     btn.style.borderColor = _udProjPanel===k?'var(--em)':'';
     btn.style.color       = _udProjPanel===k?'var(--em)':'';
   });
-  const content = document.getElementById('udProjPanelContent');
+  const content  = document.getElementById('udProjPanelContent');
+  const wrap     = document.getElementById('udDetailWrap');
+  const bldgHdr  = document.getElementById('udDetailHdr');
   if(!content) return;
-  if(!_udProjPanel){ content.style.display='none'; content.innerHTML=''; return; }
+  if(!_udProjPanel){
+    // Close: restore normal meter view
+    content.style.display='none'; content.innerHTML='';
+    if(wrap) wrap.style.display='';
+    if(bldgHdr && udSelBldgId) bldgHdr.style.display='flex';
+    return;
+  }
+  // Open: hide meter wrap and building header, show panel full-height
+  if(wrap) wrap.style.display='none';
+  if(bldgHdr) bldgHdr.style.display='none';
   content.style.display='block';
-  content.innerHTML='<div style="padding:16px;font-size:12px;color:var(--text2)">Aggregating project data...</div>';
+  content.style.maxHeight='none';
+  content.style.overflowY='auto';
+  content.innerHTML='<div style="padding:20px;font-size:12px;color:var(--text2)">Aggregating project data...</div>';
   requestAnimationFrame(()=> renderUDProjAggPanel(content));
 }
 
@@ -5200,7 +5225,7 @@ function renderUDProjAggPanel(content){
           ${eui?`<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Site EUI</div><div style="font-size:15px;font-weight:800;color:var(--violet)">${$n(eui,1)} <span style="font-size:10px;font-weight:400">kBtu/sf/yr</span></div></div>`:''}
         </div>
       </div>
-      <div style="overflow-x:auto;max-height:320px;overflow-y:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
+      <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
         <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Month</th>
           <th style="${thS}">kWh</th><th style="${thS}">Elec $</th><th style="${thS}">Therms</th><th style="${thS}">Gas $</th><th style="${thS}">Total $</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -5210,7 +5235,31 @@ function renderUDProjAggPanel(content){
           <td style="${tdS('var(--warn)')};font-weight:700">${$n(annTherms)}</td><td style="${tdS()};font-weight:700">${$f(annGasCost,2)}</td>
           <td style="${tdS('var(--em)')};font-weight:700">${$f(annTotal,2)}</td>
         </tr></tfoot>
-      </table></div>`;
+      </table></div>
+      <div style="padding:16px 18px 10px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Monthly Utility Cost</div>
+      <div style="padding:0 18px 20px;height:280px;position:relative"><canvas id="projBaselineChart"></canvas></div>`;
+    requestAnimationFrame(()=>{
+      const elecVals = MN.map((_,mo)=>elecByMo[mo]?.totalCost||0);
+      const gasVals  = MN.map((_,mo)=>gasByMo[mo]?.cost||0);
+      const cv = document.getElementById('projBaselineChart'); if(!cv) return;
+      if(_maCharts['projBaselineChart']) _maCharts['projBaselineChart'].destroy();
+      _maCharts['projBaselineChart'] = new Chart(cv, {
+        type:'bar',
+        data:{ labels:MN, datasets:[
+          {label:'Electric $', data:elecVals, backgroundColor:'rgba(14,165,233,.7)', stack:'s'},
+          {label:'Gas $',      data:gasVals,  backgroundColor:'rgba(245,158,11,.7)', stack:'s'},
+        ]},
+        options:{ responsive:true, maintainAspectRatio:false,
+          interaction:{mode:'index',intersect:false},
+          plugins:{ legend:{ display:true, position:'top', labels:{color:'rgba(200,220,240,.9)',font:{size:11},boxWidth:14,padding:14}},
+            tooltip:{ callbacks:{ label: ctx => ' '+ctx.dataset.label+': $'+ctx.parsed.y.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}),
+              footer: items => 'Total: $'+items.reduce((s,i)=>s+i.parsed.y,0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) }}},
+          scales:{ x:{stacked:true, ticks:{color:'rgba(180,200,220,.8)',font:{size:11}}, grid:{color:'rgba(255,255,255,.08)'}},
+            y:{stacked:true, ticks:{color:'rgba(180,200,220,.8)',font:{size:10},callback:v=>'$'+v.toLocaleString('en-US',{maximumFractionDigits:0})}, grid:{color:'rgba(255,255,255,.10)'},
+              title:{display:true,text:'Cost ($)',color:'rgba(160,185,210,.8)',font:{size:11}}}}
+        }
+      });
+    });
 
   } else if(_udProjPanel==='savproj'){
     const moBase=aggBaseMoMap();
@@ -5232,7 +5281,7 @@ function renderUDProjAggPanel(content){
           <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Buildings</div><div style="font-size:15px;font-weight:800">${bldgs.length}</div></div>
         </div>
       </div>
-      <div style="overflow-x:auto;max-height:320px;overflow-y:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
+      <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
         <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Month</th>
           <th style="${thS}">Baseline $</th><th style="${thS}">Projected Spend $</th><th style="${thS}">Projected Savings $</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -5240,7 +5289,30 @@ function renderUDProjAggPanel(content){
           <td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)">Annual</td>
           ${tdN(annBase)}${tdN(annBase-annProjSav)}${tdN(annProjSav,'var(--em)')}
         </tr></tfoot>
-      </table></div>`;
+      </table></div>
+      <div style="padding:16px 18px 10px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Monthly Projected Savings</div>
+      <div style="padding:0 18px 20px;height:280px;position:relative"><canvas id="projSavProjChart"></canvas></div>`;
+    requestAnimationFrame(()=>{
+      const spendVals = MN.map((_,mo)=>(moBase[mo]||0)*(1-avgSavPct));
+      const savVals   = MN.map((_,mo)=>(moBase[mo]||0)*avgSavPct);
+      const cv = document.getElementById('projSavProjChart'); if(!cv) return;
+      if(_maCharts['projSavProjChart']) _maCharts['projSavProjChart'].destroy();
+      _maCharts['projSavProjChart'] = new Chart(cv, {
+        type:'bar',
+        data:{ labels:MN, datasets:[
+          {label:'Projected Spend $',   data:spendVals, backgroundColor:'rgba(14,165,233,.6)', stack:'s'},
+          {label:'Projected Savings $', data:savVals,   backgroundColor:'rgba(0,212,170,.75)', stack:'s'},
+        ]},
+        options:{ responsive:true, maintainAspectRatio:false,
+          interaction:{mode:'index',intersect:false},
+          plugins:{ legend:{ display:true, position:'top', labels:{color:'rgba(200,220,240,.9)',font:{size:11},boxWidth:14,padding:14}},
+            tooltip:{ callbacks:{ label: ctx => ' '+ctx.dataset.label+': $'+ctx.parsed.y.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) }}},
+          scales:{ x:{stacked:true, ticks:{color:'rgba(180,200,220,.8)',font:{size:11}}, grid:{color:'rgba(255,255,255,.08)'}},
+            y:{stacked:true, ticks:{color:'rgba(180,200,220,.8)',font:{size:10},callback:v=>'$'+v.toLocaleString('en-US',{maximumFractionDigits:0})}, grid:{color:'rgba(255,255,255,.10)'},
+              title:{display:true,text:'Cost ($)',color:'rgba(160,185,210,.8)',font:{size:11}}}}
+        }
+      });
+    });
 
   } else if(_udProjPanel==='perf'){
     const moBase=aggBaseMoMap();
@@ -5282,7 +5354,7 @@ function renderUDProjAggPanel(content){
           ${hasActual&&annActSav!=null?`<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">vs Projected</div><div style="font-size:15px;font-weight:800;color:${annActSav>=annProjSav?'var(--em)':'var(--danger)'}">${annActSav>=0?'+':''}${$f(annActSav-annProjSav)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${annActSav>=annProjSav?'▲ Above':'▼ Below'} target</div></div>`:''}
         </div>
       </div>
-      <div style="overflow-x:auto;max-height:320px;overflow-y:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
+      <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
         <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Month</th>
           <th style="${thS}">Baseline $</th><th style="${thS}">Projected Savings $</th>
           <th style="${thS}">Actual Savings $</th><th style="${thS}">% of Baseline</th></tr></thead>
@@ -5294,7 +5366,30 @@ function renderUDProjAggPanel(content){
           ${tdV(hasActual?annActSav:null)}
           <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${actPct!=null&&actPct>=0?'var(--em)':'var(--danger)'};font-weight:700;border:1px solid var(--border)">${actPct!=null?(actPct>=0?'+':'')+actPct.toFixed(1)+'%':'—'}</td>
         </tr></tfoot>
-      </table></div>`;
+      </table></div>
+      <div style="padding:16px 18px 10px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Monthly Savings: Projected vs Actual</div>
+      <div style="padding:0 18px 20px;height:280px;position:relative"><canvas id="projPerfChart"></canvas></div>`;
+    requestAnimationFrame(()=>{
+      const projVals = MN.map((_,mo)=>(moBase[mo]||0)*avgSavPct);
+      const actVals  = MN.map((_,mo)=>actSavByMo[mo]!=null?actSavByMo[mo]:null);
+      const cv = document.getElementById('projPerfChart'); if(!cv) return;
+      if(_maCharts['projPerfChart']) _maCharts['projPerfChart'].destroy();
+      _maCharts['projPerfChart'] = new Chart(cv, {
+        type:'bar',
+        data:{ labels:MN, datasets:[
+          {label:'Projected Savings $', data:projVals, backgroundColor:'rgba(0,212,170,.35)', borderColor:'rgba(0,212,170,.8)', borderWidth:1},
+          {label:'Actual Savings $',    data:actVals,  backgroundColor:actVals.map(v=>v==null?'transparent':v>=0?'rgba(0,212,170,.75)':'rgba(244,63,94,.75)')},
+        ]},
+        options:{ responsive:true, maintainAspectRatio:false,
+          interaction:{mode:'index',intersect:false},
+          plugins:{ legend:{ display:true, position:'top', labels:{color:'rgba(200,220,240,.9)',font:{size:11},boxWidth:14,padding:14}},
+            tooltip:{ callbacks:{ label: ctx => ctx.parsed.y!=null?' '+ctx.dataset.label+': '+(ctx.parsed.y>=0?'+':'-')+' $'+Math.abs(ctx.parsed.y).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):null }}},
+          scales:{ x:{ticks:{color:'rgba(180,200,220,.8)',font:{size:11}},grid:{color:'rgba(255,255,255,.08)'}},
+            y:{ticks:{color:'rgba(180,200,220,.8)',font:{size:10},callback:v=>'$'+v.toLocaleString('en-US',{maximumFractionDigits:0})},grid:{color:'rgba(255,255,255,.10)'},
+              title:{display:true,text:'Savings ($)',color:'rgba(160,185,210,.8)',font:{size:11}}}}
+        }
+      });
+    });
   }
 }
 
