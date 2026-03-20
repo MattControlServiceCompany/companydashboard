@@ -5078,60 +5078,226 @@ function udSelectBldg(bid){
 
 function toggleUDProjPanel(key){
   _udProjPanel = _udProjPanel===key ? null : key;
-  // Update button highlights
   const map = {baseline:'ud-proj-baseline-btn', savproj:'ud-proj-savproj-btn', perf:'ud-proj-perf-btn'};
   Object.entries(map).forEach(([k,id])=>{
-    const btn=document.getElementById(id);
-    if(!btn) return;
-    const active = _udProjPanel===k;
-    btn.style.borderColor = active?'var(--em)':'';
-    btn.style.color       = active?'var(--em)':'';
+    const btn=document.getElementById(id); if(!btn) return;
+    btn.style.borderColor = _udProjPanel===k?'var(--em)':'';
+    btn.style.color       = _udProjPanel===k?'var(--em)':'';
   });
   const content = document.getElementById('udProjPanelContent');
   if(!content) return;
   if(!_udProjPanel){ content.style.display='none'; content.innerHTML=''; return; }
-  // Get all buildings for this project and render per-building panels
-  const proj = utilityData[udSelProjId];
-  const bldgs = proj?.buildings||[];
-  if(!bldgs.length){ content.style.display='block'; content.innerHTML='<div style="padding:16px;font-size:13px;color:var(--text2)">No buildings in this project yet.</div>'; return; }
   content.style.display='block';
-  content.innerHTML='';
-  // Building selector tabs
-  const tabBar = document.createElement('div');
-  tabBar.style.cssText='display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--s1)';
-  bldgs.forEach((b,i)=>{
-    const btn = document.createElement('button');
-    btn.className='ud-incl-btn'+(i===0?' sel':'');
-    btn.style.fontSize='11px';
-    btn.textContent = b.name||'Building '+(i+1);
-    btn.onclick=()=>{
-      tabBar.querySelectorAll('.ud-incl-btn').forEach(x=>x.classList.remove('sel'));
-      btn.classList.add('sel');
-      renderUDProjPanelContent(b);
-    };
-    tabBar.appendChild(btn);
-  });
-  content.appendChild(tabBar);
-  const panelDiv = document.createElement('div');
-  panelDiv.id='ud-proj-panel-inner';
-  panelDiv.style.padding='16px';
-  content.appendChild(panelDiv);
-  renderUDProjPanelContent(bldgs[0]);
+  content.innerHTML='<div style="padding:16px;font-size:12px;color:var(--text2)">Aggregating project data...</div>';
+  requestAnimationFrame(()=> renderUDProjAggPanel(content));
 }
 
-function renderUDProjPanelContent(b){
-  const el = document.getElementById('ud-proj-panel-inner');
-  if(!el) return;
-  const pane = document.createElement('div');
-  const prevBldg = udSelBldgId;
-  udSelBldgId = b.id;
-  if(_udProjPanel==='baseline') renderBuildingStatsPane(pane, b);
-  if(_udProjPanel==='savproj')  renderBldgSavProjPane(pane, b);
-  if(_udProjPanel==='perf')     renderBldgPerfPane(pane, b);
-  udSelBldgId = prevBldg;
-  el.innerHTML='';
-  el.appendChild(pane);
+function renderUDProjAggPanel(content){
+  const proj = utilityData[udSelProjId];
+  const bldgs = proj?.buildings||[];
+  const projMeta = projects.find(p=>p.id===udSelProjId);
+  const projName = projMeta?.name||'Project';
+  const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const $f = (v,d=0)=> v!=null ? '$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—';
+  const $n = (v,d=0)=> v!=null ? v.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—';
+
+  if(!bldgs.length){
+    content.innerHTML='<div style="padding:20px;font-size:13px;color:var(--text2)">No buildings in this project yet.</div>';
+    return;
+  }
+
+  const allMeters = [];
+  let totalSqft = 0;
+  bldgs.forEach(b=>{
+    totalSqft += parseFloat(b.sqft||0);
+    (b.meters||[]).forEach(m=>{
+      const bills = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+      allMeters.push({m, bills, incl:m.inclusive!==false, bldg:b, isElec:m.commodity==='Electric', isGas:m.commodity==='Gas'});
+    });
+  });
+
+  // Helper: aggregate baseline moBase across all meters
+  function aggBaseMoMap(){
+    const moBase={};
+    for(let i=0;i<12;i++) moBase[i]=0;
+    allMeters.forEach(({m,bills,incl,isElec,isGas})=>{
+      const bl=m.baseline; if(!bl||!bl.months||bl.months.length<3) return;
+      const allRows=bills.length?getNormRows(m,bills,incl,null):[];
+      const blRows=allRows.filter(r=>bl.months.includes(r.ym));
+      if(!blRows.length) return;
+      const {elecByMo:eM,gasByMo:gM}=buildMoMap(m,blRows,bills,incl);
+      for(let mo=0;mo<12;mo++) moBase[mo]+=(eM[mo]?.totalCost||0)+(gM[mo]?.cost||0);
+    });
+    return moBase;
+  }
+
+  function avgSavPctAcrossBldgs(moBase){
+    let wtSav=0,wtBase=0;
+    bldgs.forEach(b=>{
+      const bspKey='bldgsavproj_cfg_'+(b.id||b.name);
+      let bspCfg={}; try{ bspCfg=JSON.parse(localStorage.getItem(bspKey)||'{}'); }catch(e){}
+      const savPct=(bspCfg.savingsPct??11)/100;
+      let bldgBase=0;
+      (b.meters||[]).forEach(m=>{
+        const bills2=(m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+        const incl2=m.inclusive!==false;
+        const bl=m.baseline; if(!bl||!bl.months||bl.months.length<3) return;
+        const allRows=bills2.length?getNormRows(m,bills2,incl2,null):[];
+        const blRows=allRows.filter(r=>bl.months.includes(r.ym));
+        const {elecByMo:eM,gasByMo:gM}=buildMoMap(m,blRows,bills2,incl2);
+        for(let mo=0;mo<12;mo++) bldgBase+=(eM[mo]?.totalCost||0)+(gM[mo]?.cost||0);
+      });
+      wtSav+=savPct*bldgBase; wtBase+=bldgBase;
+    });
+    return wtBase>0?wtSav/wtBase:0.11;
+  }
+
+  const thS='padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
+
+  if(_udProjPanel==='baseline'){
+    const elecByMo={}, gasByMo={};
+    for(let i=0;i<12;i++){ elecByMo[i]={kwh:0,totalCost:0}; gasByMo[i]={therms:0,cost:0}; }
+    allMeters.forEach(({m,bills,incl,isElec,isGas})=>{
+      const bl=m.baseline; if(!bl||!bl.months||bl.months.length<3) return;
+      const allRows=bills.length?getNormRows(m,bills,incl,null):[];
+      const blRows=allRows.filter(r=>bl.months.includes(r.ym));
+      if(!blRows.length) return;
+      const {elecByMo:eM,gasByMo:gM}=buildMoMap(m,blRows,bills,incl);
+      for(let mo=0;mo<12;mo++){
+        if(isElec&&eM[mo]){ elecByMo[mo].kwh+=eM[mo].kwh||0; elecByMo[mo].totalCost+=eM[mo].totalCost||0; }
+        if(isGas&&gM[mo]){ gasByMo[mo].therms+=gM[mo].therms||0; gasByMo[mo].cost+=gM[mo].cost||0; }
+      }
+    });
+    const annKwh=Object.values(elecByMo).reduce((s,v)=>s+v.kwh,0);
+    const annElecCost=Object.values(elecByMo).reduce((s,v)=>s+v.totalCost,0);
+    const annTherms=Object.values(gasByMo).reduce((s,v)=>s+v.therms,0);
+    const annGasCost=Object.values(gasByMo).reduce((s,v)=>s+v.cost,0);
+    const annTotal=annElecCost+annGasCost;
+    const kwhRate=annKwh>0?annElecCost/annKwh:0;
+    const thermRate=annTherms>0?annGasCost/annTherms:0;
+    const annKbtu=annKwh*3.412+annTherms*100;
+    const eui=totalSqft>0?annKbtu/totalSqft:0;
+    const tdS=(color='var(--text)')=>`padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${color};border:1px solid var(--border);white-space:nowrap`;
+    const rows=MN.map((mn,mo)=>{
+      const e=elecByMo[mo],g=gasByMo[mo];
+      return `<tr><td style="padding:6px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s1)">${mn}</td>
+        <td style="${tdS('var(--em2)')}">${$n(e.kwh,0)}</td><td style="${tdS()}">${$f(e.totalCost,2)}</td>
+        <td style="${tdS('var(--warn)')}">${$n(g.therms,0)}</td><td style="${tdS()}">${$f(g.cost,2)}</td>
+        <td style="${tdS('var(--em)')}">${$f(e.totalCost+g.cost,2)}</td></tr>`;
+    }).join('');
+    content.innerHTML=`
+      <div style="padding:14px 18px;background:var(--s1);border-bottom:1px solid var(--border)">
+        <div style="font-size:14px;font-weight:800;font-family:var(--head);color:var(--em);margin-bottom:10px">📊 ${projName} — Project Baseline</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px">
+          ${totalSqft?`<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Total Sq Ft</div><div style="font-size:15px;font-weight:800">${$n(totalSqft)}</div></div>`:''}
+          <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual kWh</div><div style="font-size:15px;font-weight:800;color:var(--em2)">${$n(annKwh)}</div></div>
+          <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual Therms</div><div style="font-size:15px;font-weight:800;color:var(--warn)">${$n(annTherms)}</div></div>
+          <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Electric $/yr</div><div style="font-size:15px;font-weight:800;color:var(--em2)">${$f(annElecCost)}</div></div>
+          <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Gas $/yr</div><div style="font-size:15px;font-weight:800;color:var(--warn)">${$f(annGasCost)}</div></div>
+          <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Total Utility $/yr</div><div style="font-size:15px;font-weight:800;color:var(--em)">${$f(annTotal)}</div></div>
+          ${kwhRate?`<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Avg $/kWh</div><div style="font-size:15px;font-weight:800">${$f(kwhRate,4)}</div></div>`:''}
+          ${thermRate?`<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Avg $/Therm</div><div style="font-size:15px;font-weight:800">${$f(thermRate,2)}</div></div>`:''}
+          ${eui?`<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Site EUI</div><div style="font-size:15px;font-weight:800;color:var(--violet)">${$n(eui,1)} <span style="font-size:10px;font-weight:400">kBtu/sf/yr</span></div></div>`:''}
+        </div>
+      </div>
+      <div style="overflow-x:auto;max-height:320px;overflow-y:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
+        <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Month</th>
+          <th style="${thS}">kWh</th><th style="${thS}">Elec $</th><th style="${thS}">Therms</th><th style="${thS}">Gas $</th><th style="${thS}">Total $</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr style="background:var(--s1)">
+          <td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)">Annual</td>
+          <td style="${tdS('var(--em2)')};font-weight:700">${$n(annKwh)}</td><td style="${tdS()};font-weight:700">${$f(annElecCost,2)}</td>
+          <td style="${tdS('var(--warn)')};font-weight:700">${$n(annTherms)}</td><td style="${tdS()};font-weight:700">${$f(annGasCost,2)}</td>
+          <td style="${tdS('var(--em)')};font-weight:700">${$f(annTotal,2)}</td>
+        </tr></tfoot>
+      </table></div>`;
+
+  } else if(_udProjPanel==='savproj'){
+    const moBase=aggBaseMoMap();
+    const annBase=Object.values(moBase).reduce((s,v)=>s+v,0);
+    const avgSavPct=avgSavPctAcrossBldgs(moBase);
+    const annProjSav=annBase*avgSavPct;
+    const tdN=(v,color='var(--text)')=>`<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${color};border:1px solid var(--border);white-space:nowrap">${$f(v,2)}</td>`;
+    const rows=MN.map((mn,mo)=>{
+      const base=moBase[mo]||0;
+      return `<tr><td style="padding:6px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s1)">${mn}</td>${tdN(base)}${tdN(base*(1-avgSavPct))}${tdN(base*avgSavPct,'var(--em)')}</tr>`;
+    }).join('');
+    content.innerHTML=`
+      <div style="padding:14px 18px;background:var(--s1);border-bottom:1px solid var(--border)">
+        <div style="font-size:14px;font-weight:800;font-family:var(--head);color:var(--em);margin-bottom:10px">📈 ${projName} — Projected Savings</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
+          <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual Baseline</div><div style="font-size:15px;font-weight:800">${$f(annBase)}</div></div>
+          <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Savings</div><div style="font-size:15px;font-weight:800;color:var(--em)">${$f(annProjSav)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${(avgSavPct*100).toFixed(1)}% avg</div></div>
+          <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Spend</div><div style="font-size:15px;font-weight:800;color:var(--em2)">${$f(annBase-annProjSav)}</div></div>
+          <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Buildings</div><div style="font-size:15px;font-weight:800">${bldgs.length}</div></div>
+        </div>
+      </div>
+      <div style="overflow-x:auto;max-height:320px;overflow-y:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
+        <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Month</th>
+          <th style="${thS}">Baseline $</th><th style="${thS}">Projected Spend $</th><th style="${thS}">Projected Savings $</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr style="background:var(--s1)">
+          <td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)">Annual</td>
+          ${tdN(annBase)}${tdN(annBase-annProjSav)}${tdN(annProjSav,'var(--em)')}
+        </tr></tfoot>
+      </table></div>`;
+
+  } else if(_udProjPanel==='perf'){
+    const moBase=aggBaseMoMap();
+    const annBase=Object.values(moBase).reduce((s,v)=>s+v,0);
+    const avgSavPct=avgSavPctAcrossBldgs(moBase);
+    const annProjSav=annBase*avgSavPct;
+    const actSavByMo={};
+    allMeters.forEach(({m,bills,incl})=>{
+      const bl=m.baseline; if(!bl||!bl.months||bl.months.length<3) return;
+      const sav=getMeterPerfSavingsByCalMo(m,bills,incl);
+      Object.entries(sav).forEach(([mo,v])=>{ actSavByMo[mo]=(actSavByMo[mo]||0)+v; });
+    });
+    const hasActual=Object.keys(actSavByMo).length>0;
+    const annActSav=hasActual?Object.values(actSavByMo).reduce((s,v)=>s+v,0):null;
+    const actPct=annBase>0&&annActSav!=null?annActSav/annBase*100:null;
+    const tdV=(v,color)=>{
+      if(v==null) return `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--text3);border:1px solid var(--border)">—</td>`;
+      const c=color||(v>=0?'var(--em)':'var(--danger)');
+      return `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${c};border:1px solid var(--border);white-space:nowrap">${v>=0?'+':''}${$f(v,2)}</td>`;
+    };
+    const rows=MN.map((mn,mo)=>{
+      const base=moBase[mo]||0, proj=base*avgSavPct;
+      const act=actSavByMo[mo]!=null?actSavByMo[mo]:null;
+      const pct=act!=null&&base>0?act/base*100:null;
+      return `<tr><td style="padding:6px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s1)">${mn}</td>
+        <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border)">${$f(base,2)}</td>
+        <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--em);border:1px solid var(--border)">${$f(proj,2)}</td>
+        ${tdV(act)}
+        <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${pct==null?'var(--text3)':pct>=0?'var(--em)':'var(--danger)'};border:1px solid var(--border)">${pct!=null?(pct>=0?'+':'')+pct.toFixed(1)+'%':'—'}</td>
+      </tr>`;
+    }).join('');
+    content.innerHTML=`
+      <div style="padding:14px 18px;background:var(--s1);border-bottom:1px solid var(--border)">
+        <div style="font-size:14px;font-weight:800;font-family:var(--head);color:var(--em);margin-bottom:10px">💡 ${projName} — Performance</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
+          <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual Baseline</div><div style="font-size:15px;font-weight:800">${$f(annBase)}</div></div>
+          <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Savings</div><div style="font-size:15px;font-weight:800;color:var(--em)">${$f(annProjSav)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${(avgSavPct*100).toFixed(1)}%</div></div>
+          ${hasActual?`<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Actual Savings</div><div style="font-size:15px;font-weight:800;color:${annActSav>=0?'var(--em)':'var(--danger)'}">${annActSav>=0?'+':''}${$f(annActSav)}</div>${actPct!=null?`<div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct>=0?'+':''}${actPct.toFixed(1)}%</div>`:''}</div>`:''}
+          ${hasActual&&annActSav!=null?`<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">vs Projected</div><div style="font-size:15px;font-weight:800;color:${annActSav>=annProjSav?'var(--em)':'var(--danger)'}">${annActSav>=0?'+':''}${$f(annActSav-annProjSav)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${annActSav>=annProjSav?'▲ Above':'▼ Below'} target</div></div>`:''}
+        </div>
+      </div>
+      <div style="overflow-x:auto;max-height:320px;overflow-y:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
+        <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Month</th>
+          <th style="${thS}">Baseline $</th><th style="${thS}">Projected Savings $</th>
+          <th style="${thS}">Actual Savings $</th><th style="${thS}">% of Baseline</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr style="background:var(--s1)">
+          <td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)">Annual</td>
+          <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;font-weight:700;border:1px solid var(--border)">${$f(annBase,2)}</td>
+          <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--em);font-weight:700;border:1px solid var(--border)">${$f(annProjSav,2)}</td>
+          ${tdV(hasActual?annActSav:null)}
+          <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${actPct!=null&&actPct>=0?'var(--em)':'var(--danger)'};font-weight:700;border:1px solid var(--border)">${actPct!=null?(actPct>=0?'+':'')+actPct.toFixed(1)+'%':'—'}</td>
+        </tr></tfoot>
+      </table></div>`;
+  }
 }
+
 
 /* ── RENDER RIGHT DETAIL: Building header + Meters ── */
 /* ── ACTIVE METER WORKSPACE STATE ── */
