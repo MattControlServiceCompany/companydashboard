@@ -8413,8 +8413,8 @@ function renderPerfPane(pane, m, bills, incl){
       ? blByCalMo[calMo]
       : (hasRegr_p && r.regrBaseline!=null ? r.regrBaseline : blAvgMo);
     const expUsage = isTotal_p ? expMo : expMo/r.normDays;
-    const rawKwh   = rawUsageByYm[r.ym]!=null ? rawUsageByYm[r.ym] : r.usage;
-    const actual   = isTotal_p ? rawKwh : (r.normDays>0 ? rawKwh/r.normDays : r.usagePerDay);
+    const rawUsage = rawUsageByYm[r.ym]!=null ? rawUsageByYm[r.ym] : r.usage;
+    const actual   = isTotal_p ? rawUsage : (r.normDays>0 ? rawUsage/r.normDays : r.usagePerDay);
     const sav      = expUsage - actual;
     const savPc    = expUsage>0 ? sav/expUsage*100 : 0;
     const isRegr   = hasBlCalMap && blByCalMo[calMo]!=null ? false : (hasRegr_p && r.regrBaseline!=null);
@@ -8440,10 +8440,10 @@ function renderPerfPane(pane, m, bills, incl){
     const kwCostSav  = hasKwCostSav && moKwRate>0 ? expKwCost - kwCostRow : 0;
     const totalCostSav = kwhCostSav + kwCostSav;
 
-    // Exp Therm Cost = baseline calendar-month's actual therm cost (from Meter Data)
-    // Actual Therm Cost = actual therms × current $/therm rate
-    const expThermCost     = hasGasCostSav && blThermCostByCalMo[calMo]>0 ? blThermCostByCalMo[calMo] : (thermRate>0 ? expMo*thermRate : 0);
-    const actThermCostCalc = hasGasCostSav && thermRate>0 ? rawKwh*thermRate : thermCostActual;
+    // Exp Therm Cost = baseline calendar-month therm cost (from Meter Data, same as Normalized column)
+    // Actual Therm Cost = actual therm cost directly from this month's bills
+    const expThermCost     = hasGasCostSav && blThermCostByCalMo[calMo]>0 ? blThermCostByCalMo[calMo] : 0;
+    const actThermCostCalc = thermCostActual;
     const thermCostSav     = hasGasCostSav && expThermCost>0 ? expThermCost - actThermCostCalc : 0;
     const savColor = v => v>=0 ? 'var(--em)' : 'var(--danger)';
     const costSign = v => v>=0 ? '' : '\u2212';
@@ -8457,7 +8457,7 @@ function renderPerfPane(pane, m, bills, incl){
         (isTotal_p?expUsage.toLocaleString('en-US',{maximumFractionDigits:0}):expUsage.toFixed(2))+
         (isRegr?'<span style="font-size:9px;color:var(--violet);margin-left:3px">R</span>':'')+
       '</td>'+
-      '<td class="mono num">'+(_perfMetric==='total'?rawKwh.toLocaleString('en-US',{maximumFractionDigits:0}):(r.normDays>0?rawKwh/r.normDays:r.usagePerDay).toFixed(2))+'</td>'+
+      '<td class="mono num">'+(_perfMetric==='total'?rawUsage.toLocaleString('en-US',{maximumFractionDigits:0}):(r.normDays>0?rawUsage/r.normDays:r.usagePerDay).toFixed(2))+'</td>'+
       '<td class="mono num" style="color:'+savColor(sav)+'">'+savSign(sav)+fmtN(Math.abs(sav),_perfMetric==='total'?0:2)+'</td>'+
       '<td class="mono num" style="color:'+savColor(savPc)+'">'+savSign(savPc)+Math.abs(savPc).toFixed(1)+'%</td>'+
       (hasKwhCostSav?'<td class="mono num" style="color:var(--text2)">'+(kwhRate>0?'$'+kwhRate.toFixed(5):'&mdash;')+'</td>':'')+
