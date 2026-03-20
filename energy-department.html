@@ -7503,11 +7503,8 @@ function renderBldgPerfPane(pane, b){
     const blRows  = allRows.filter(r=>bl.months.includes(r.ym));
     blRows.forEach(r=>{
       const mo  = parseInt(r.ym.split('-')[1])-1;
-      const bfr = bills.filter(bx=>normMonth(bx.start,bx.end,incl,bills)===r.ym);
-      const kwC = bfr.reduce((s,bx)=>s+parseFloat(bx.kwCost||0),0)+bfr.reduce((s,bx)=>s+parseFloat(bx.facKWCost||0),0);
-      // energyCost = totalCost - demand charges (matches Meter Data Energy Cost column)
-      const ec  = r.cost - kwC;
-      baselineByCalMo[mo] = (baselineByCalMo[mo]||0) + ec;
+      // Use r.cost = total bill cost, matching "Total Utility Costs" column in Baseline Data tab
+      baselineByCalMo[mo] = (baselineByCalMo[mo]||0) + r.cost;
     });
   });
 
@@ -7819,11 +7816,8 @@ function renderBldgSavProjPane(pane, b){
     const blRows  = allRows.filter(r=>bl.months.includes(r.ym));
     blRows.forEach(r=>{
       const mo  = parseInt(r.ym.split('-')[1])-1;
-      const bfr = bills.filter(bx=>normMonth(bx.start,bx.end,incl,bills)===r.ym);
-      const kwC = bfr.reduce((s,bx)=>s+parseFloat(bx.kwCost||0),0)+bfr.reduce((s,bx)=>s+parseFloat(bx.facKWCost||0),0);
-      // energyCost = totalCost - demand charges (matches Meter Data Energy Cost column)
-      const ec  = r.cost - kwC;
-      baselineByCalMo[mo] = (baselineByCalMo[mo]||0) + ec;
+      // Use r.cost = total bill cost, matching "Total Utility Costs" column in Baseline Data tab
+      baselineByCalMo[mo] = (baselineByCalMo[mo]||0) + r.cost;
     });
   });
 
