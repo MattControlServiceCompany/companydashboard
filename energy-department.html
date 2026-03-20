@@ -7494,33 +7494,16 @@ function renderBldgPerfPane(pane, b){
   try{ bspCfg=JSON.parse(localStorage.getItem(bspKey)||'{}'); }catch(e){}
   const savPct = (bspCfg.savingsPct ?? 11) / 100;
 
-  // ── Actual savings per calendar month — use buildMoMap for baseline, r.cost for actuals ──
+  // ── Actual savings per calendar month ──
+  // Sum Total Cost Savings from each meter's Performance tab (same values shown there)
   const actualSavingsByCalMo = {};
   (b.meters||[]).forEach(m=>{
-    const bl = m.baseline;
-    if(!bl||!(bl.months||[]).length) return;
-    const mbills   = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
-    const mincl    = m.inclusive!==false;
-    const misElec  = m.commodity==='Electric';
-    const mAllRows = mbills.length ? getNormRows(m,mbills,mincl,null) : [];
-    const mBlEnd   = bl.months.slice().sort().pop();
-    const mBlRows  = mAllRows.filter(r=>bl.months.includes(r.ym));
-    const mPostRows= mAllRows.filter(r=>r.ym>mBlEnd);
-    if(!mPostRows.length) return;
-
-    // Baseline cost map — use buildMoMap (same as Meter Data table)
-    const {elecByMo:eMo, gasByMo:gMo, waterByMo:wMo} = buildMoMap(m, mBlRows, mbills, mincl);
-    const mMoRef = misElec ? eMo : (m.commodity==='Gas' ? gMo : wMo);
-
-    // Post-baseline: compare actual cost vs baseline reference
-    mPostRows.forEach(r=>{
-      const calMo = parseInt(r.ym.split('-')[1])-1;
-      const ref   = mMoRef[calMo]; if(!ref) return;
-      const bfr   = mbills.filter(bx=>normMonth(bx.start,bx.end,mincl,mbills)===r.ym);
-      // Actual = full bill cost from raw bills; Expected = baseline total cost from buildMoMap
-      const actC  = bfr.reduce((s,bx)=>s+parseFloat(bx.totalCost||bx.cost||0),0);
-      const expC  = ref.totalCost ?? ref.cost;
-      actualSavingsByCalMo[calMo] = (actualSavingsByCalMo[calMo]||0) + (expC - actC);
+    if(!(m.baseline?.months?.length>=3)) return;
+    const mbills = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+    const mincl  = m.inclusive!==false;
+    const mSav   = getMeterPerfSavingsByCalMo(m, mbills, mincl);
+    Object.entries(mSav).forEach(([mo,v])=>{
+      actualSavingsByCalMo[mo] = (actualSavingsByCalMo[mo]||0) + v;
     });
   });
   const hasActual = Object.keys(actualSavingsByCalMo).length > 0;
@@ -8129,6 +8112,88 @@ function bspRecalc(){
       }
     });
   });
+}
+
+/* ─────────────────────────────────────────────────────────────
+   getMeterPerfSavingsByCalMo
+   Returns {calMo(0-11): totalCostSavings} using exactly the
+   same logic as renderPerfPane's Total Cost Savings column.
+   Electric: kWh cost savings + kW cost savings.
+   Gas/Water: therm/usage cost savings.
+   This is the single source of truth for the Building Performance
+   Actual Utility Savings $ row.
+───────────────────────────────────────────────────────────── */
+function getMeterPerfSavingsByCalMo(m, bills, incl){
+  const result = {};
+  const bl = m.baseline;
+  if(!bl||!bl.months||bl.months.length<3) return result;
+
+  const isElec = m.commodity==='Electric';
+  const {byYm: weatherByYm} = getWeatherForBuilding();
+  const allRows   = bills.length ? getNormRows(m,bills,incl,weatherByYm) : [];
+  const blRows    = allRows.filter(r=>bl.months.includes(r.ym));
+  const blEnd     = bl.months.slice().sort().pop();
+  const postRows  = allRows.filter(r=>r.ym>blEnd);
+  if(!postRows.length) return result;
+
+  // Baseline maps — same as renderPerfPane
+  const {elecByMo:eMo, gasByMo:gMo} = buildMoMap(m, blRows, bills, incl);
+  const blByCalMo        = {};
+  const blKwhCostByCalMo = {};
+  const blThermCostByCalMo = {};
+  Object.entries(eMo).forEach(([mo,v])=>{ blByCalMo[mo]=v.kwh; blKwhCostByCalMo[mo]=v.energyCost; });
+  Object.entries(gMo).forEach(([mo,v])=>{ blByCalMo[mo]=v.therms; blThermCostByCalMo[mo]=v.cost; });
+
+  // Baseline avg demand kW for kW cost savings
+  const blBills    = bills.filter(b=>{ const ym=normMonth(b.start,b.end,incl,bills); return bl.months.includes(ym); });
+  const blDemBills = blBills.filter(b=>parseFloat(b.demandKW||0)>0);
+  const blAvgDemKW = blDemBills.length ? blDemBills.reduce((s,b)=>s+parseFloat(b.demandKW||0),0)/blDemBills.length : 0;
+
+  // Raw usage by ym (for gas: actual therms from raw bills)
+  const rawUsageByYm = {};
+  bills.forEach(b=>{
+    const ym = normMonth(b.start,b.end,incl,bills); if(!ym) return;
+    const val = isElec ? parseFloat(b.kwh||0) : parseFloat(b.therms||b.usage||0);
+    rawUsageByYm[ym] = (rawUsageByYm[ym]||0) + val;
+  });
+
+  postRows.forEach(r=>{
+    const calMo = parseInt(r.ym.split('-')[1])-1;
+    const bfr   = bills.filter(b=>normMonth(b.start,b.end,incl,bills)===r.ym);
+    if(!bfr.length) return;
+
+    let totalCostSav = 0;
+
+    if(isElec){
+      // kWh cost savings
+      const kwCostAmt    = bfr.reduce((s,b)=>s+parseFloat(b.kwCost||0),0);
+      const facKWCostAmt = bfr.reduce((s,b)=>s+parseFloat(b.facKWCost||0),0);
+      const totalBill    = bfr.reduce((s,b)=>s+parseFloat(b.totalCost||0),0);
+      const energyCostAmt= totalBill - kwCostAmt - facKWCostAmt;
+      const expKwhCost   = blKwhCostByCalMo[calMo]||0;
+      const kwhCostSav   = expKwhCost>0 ? expKwhCost - energyCostAmt : 0;
+
+      // kW cost savings
+      const actKWCost = kwCostAmt + facKWCostAmt;
+      const actDemKW  = bfr.reduce((s,b)=>s+parseFloat(b.demandKW||0),0)/Math.max(1,bfr.length);
+      const moKwRate  = actDemKW>0 ? actKWCost/actDemKW : 0;
+      const kwCostSav = blAvgDemKW>0 && moKwRate>0 ? blAvgDemKW*moKwRate - actKWCost : 0;
+
+      totalCostSav = kwhCostSav + kwCostSav;
+    } else {
+      // Gas: therm cost savings = expected therm cost - actual therm cost
+      const actTherms    = rawUsageByYm[r.ym] ?? bfr.reduce((s,b)=>s+parseFloat(b.therms||b.usage||0),0);
+      const actThermCost = bfr.reduce((s,b)=>s+parseFloat(b.thermCost||b.cost||0),0);
+      const thermRate    = actTherms>0 && actThermCost>0 ? actThermCost/actTherms : 0;
+      const actThermCostCalc = thermRate>0 ? actTherms*thermRate : actThermCost;
+      const expThermCost = blThermCostByCalMo[calMo]||0;
+      totalCostSav = expThermCost>0 ? expThermCost - actThermCostCalc : 0;
+    }
+
+    result[calMo] = (result[calMo]||0) + totalCostSav;
+  });
+
+  return result;
 }
 
 function renderPerfPane(pane, m, bills, incl){
