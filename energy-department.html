@@ -4799,6 +4799,8 @@ function toggleBldgPerfPanel(){
         '<button class="btn btn-ghost btn-sm" onclick="toggleBldgPerfPanel()">← Back to Meters</button>'+
       '</div>'+
       '<div id="bldgPerfPaneInner" style="padding:0 16px 16px;overflow-y:auto;flex:1"></div>';
+    const _b2=getUDBldg(udSelProjId,udSelBldgId);
+    if(_b2){ try{ const _k='bldgperf_cfg_'+(_b2.id||_b2.name); const _c=JSON.parse(localStorage.getItem(_k)||'{}'); delete _c.moBase; localStorage.setItem(_k,JSON.stringify(_c)); }catch(e){} }
     renderBldgPerfPane(document.getElementById('bldgPerfPaneInner'),b);
   } else { renderUDDetail(); }
 }
@@ -4821,6 +4823,8 @@ function toggleBldgSavProjPanel(){
         '<button class="btn btn-ghost btn-sm" onclick="toggleBldgSavProjPanel()">← Back to Meters</button>'+
       '</div>'+
       '<div id="bldgSavProjPaneInner" style="padding:0 16px 16px;overflow-y:auto;flex:1"></div>';
+    const _b3=getUDBldg(udSelProjId,udSelBldgId);
+    if(_b3){ try{ const _k='bldgsavproj_cfg_'+(_b3.id||_b3.name); const _c=JSON.parse(localStorage.getItem(_k)||'{}'); delete _c.moBase; localStorage.setItem(_k,JSON.stringify(_c)); }catch(e){} }
     renderBldgSavProjPane(document.getElementById('bldgSavProjPaneInner'),b);
   } else { renderUDDetail(); }
 }
@@ -7518,8 +7522,8 @@ function renderBldgPerfPane(pane, b){
   const defYears      = cfg.years      ?? 3;
   const defView       = cfg.view       ?? 'monthly';
 
-  // Monthly baseline values (index 0-11), allow manual override
-  const moBase = Array.from({length:12},(_,i)=> cfg.moBase?.[i] ?? (baselineByCalMo[i]||0));
+  // Monthly baseline values — always from live Baseline Data, override only if user explicitly saved manual values
+  const moBase = Array.from({length:12},(_,i)=> (cfg.moOverrides && cfg.moOverrides[i]!=null) ? cfg.moOverrides[i] : (baselineByCalMo[i]||0));
 
   // ── Render UI ──
   pane.innerHTML=`
@@ -7626,7 +7630,7 @@ function bpRecalc(){
   if(b){
     const storeKey='bldgperf_cfg_'+(b.id||b.name);
     try{ localStorage.setItem(storeKey,JSON.stringify({
-      savingsPct:savPct*100,clientPct:cliPct*100,cscPct:cscPct*100,years,view,moBase
+      savingsPct:savPct*100,clientPct:cliPct*100,cscPct:cscPct*100,years,view
     }));}catch(e){}
   }
 
@@ -7831,8 +7835,8 @@ function renderBldgSavProjPane(pane, b){
   const defYears      = cfg.years      ?? 3;
   const defView       = cfg.view       ?? 'monthly';
 
-  // Monthly baseline values (index 0-11), allow manual override
-  const moBase = Array.from({length:12},(_,i)=> cfg.moBase?.[i] ?? (baselineByCalMo[i]||0));
+  // Monthly baseline values — always from live Baseline Data, override only if user explicitly saved manual values
+  const moBase = Array.from({length:12},(_,i)=> (cfg.moOverrides && cfg.moOverrides[i]!=null) ? cfg.moOverrides[i] : (baselineByCalMo[i]||0));
 
   // ── Render UI ──
   pane.innerHTML=`
@@ -7939,7 +7943,7 @@ function bspRecalc(){
   if(b){
     const storeKey='bldgsavproj_cfg_'+(b.id||b.name);
     try{ localStorage.setItem(storeKey,JSON.stringify({
-      savingsPct:savPct*100,clientPct:cliPct*100,cscPct:cscPct*100,years,view,moBase
+      savingsPct:savPct*100,clientPct:cliPct*100,cscPct:cscPct*100,years,view
     }));}catch(e){}
   }
 
