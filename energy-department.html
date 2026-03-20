@@ -8201,43 +8201,34 @@ function renderPerfPane(pane, m, bills, incl){
   const blAvgMo=blRows.length?blRows.reduce((s,r)=>s+r.usage,0)/blRows.length:0;
   const hasRegr_p = allRows.some(r=>r.regrBaseline!=null);
 
-  // Build the same 0–11 month map that the Meter Data table uses.
-  // meterDataByMo[mo] mirrors exactly what is displayed in the Meter Data table:
-  //   .usage    = normalized kWh or Therms (regrBaseline if available, else prorated usage)
-  //   .kwhCost  = kWh energy cost $ from that baseline month's bills (electric only)
-  //   .thermCost= therm cost $ from that baseline month's bills (gas only)
-  //   .totalCost= total bill cost for that baseline month
+  // Build baseline month map using EXACTLY the same logic as renderMeterDataPane's
+  // elecByMo / gasByMo — these are the authoritative Meter Data table values.
   const meterDataByMo = {}; // keyed 0–11
   blRows.slice().sort((a,c)=>a.ym.localeCompare(c.ym)).forEach(r=>{
-    const mo = parseInt(r.ym.split('-')[1]) - 1;
+    const mo  = parseInt(r.ym.split('-')[1]) - 1;
     const bfr = bills.filter(b=>normMonth(b.start,b.end,incl,bills)===r.ym);
+    const n   = Math.max(1, bfr.length);
     const normUsage = r.regrBaseline!=null ? r.regrBaseline : r.usage;
-    const kwCostSum   = bfr.reduce((s,b)=>s+parseFloat(b.kwCost||0),0);
-    const facKWCostSum= bfr.reduce((s,b)=>s+parseFloat(b.facKWCost||0),0);
-    // energyCost mirrors Meter Data "Energy Cost" = totalCost - kwCost (same as elecByMo.energyCost)
-    const energyCostSum = r.cost - kwCostSum;
-    // thermCost: use r.cost directly — for gas r.cost is already the prorated thermCost,
-    // matching exactly what gasByMo.cost uses in the Meter Data table
-    const thermCostSum = isElec ? 0 : r.cost;
-    if(meterDataByMo[mo]){
-      const prev = meterDataByMo[mo];
-      meterDataByMo[mo] = {
-        usage:      (prev.usage + normUsage) / 2,
-        energyCost: prev.energyCost + energyCostSum,
-        thermCost:  prev.thermCost  + thermCostSum,
-        totalCost:  prev.totalCost  + r.cost,
-      };
-    } else {
+    if(isElec){
+      // Mirror elecByMo exactly
+      const kwCostSum = bfr.reduce((s,b)=>s+parseFloat(b.kwCost||0),0);
       meterDataByMo[mo] = {
         usage:      normUsage,
-        energyCost: energyCostSum,
-        thermCost:  thermCostSum,
+        energyCost: r.cost - kwCostSum,  // matches elecByMo.energyCost
+        thermCost:  0,
+        totalCost:  r.cost,
+      };
+    } else {
+      // Mirror gasByMo / waterByMo exactly — just r.cost, no bill-level aggregation
+      meterDataByMo[mo] = {
+        usage:      normUsage,
+        energyCost: 0,
+        thermCost:  r.cost,  // matches gasByMo.cost = r.cost exactly
         totalCost:  r.cost,
       };
     }
   });
   const hasBlCalMap = Object.keys(meterDataByMo).length > 0;
-  // Convenience accessors — energyCost matches "Energy Cost" column in Meter Data table
   const blByCalMo          = Object.fromEntries(Object.entries(meterDataByMo).map(([mo,v])=>[mo,v.usage]));
   const blKwhCostByCalMo   = Object.fromEntries(Object.entries(meterDataByMo).map(([mo,v])=>[mo,v.energyCost]));
   const blThermCostByCalMo = Object.fromEntries(Object.entries(meterDataByMo).map(([mo,v])=>[mo,v.thermCost]));
