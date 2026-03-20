@@ -852,8 +852,8 @@ html,body{height:100%;overflow:hidden;}
           <button class="btn btn-ghost btn-sm" id="ud-view-proj-btn" onclick="viewProjectFromUtility()" title="View in Projects page">📁 View Project</button>
         </div>
       </div>
-      <!-- Project-level panels bar (shown when project selected) -->
-      <div id="udProjPanelBar" style="display:none;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--s1);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <!-- Project-level panels bar (shown when project selected, hidden by default) -->
+      <div id="udProjPanelBar" style="display:none;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--s1);align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-size:11px;font-weight:700;color:var(--text2)" id="udProjPanelBarTitle"></span>
         <div style="display:flex;gap:6px;margin-left:auto">
           <button class="btn btn-ghost btn-sm" id="ud-proj-baseline-btn" onclick="toggleUDProjPanel('baseline')">📊 Project Baseline</button>
@@ -863,7 +863,6 @@ html,body{height:100%;overflow:hidden;}
       </div>
       <!-- Project-level panel content -->
       <div id="udProjPanelContent" style="display:none;border-bottom:1px solid var(--border);overflow-y:auto;max-height:420px"></div>
-      </div>
       <div class="ud-detail-body" id="udDetailWrap">
         <div class="ud-empty"><div class="ud-empty-ico">📁</div><div>Select a project and building<br>from the left to view meters</div></div>
       </div>
@@ -3697,7 +3696,7 @@ function renderDetail(p){
       </div>
       <div id="ptab-utility" class="ptab" style="padding:0">
         <!-- Full Utility Data layout embedded, scoped to this project -->
-        <div style="display:grid;grid-template-columns:220px 1fr;border-top:1px solid var(--border);height:600px;overflow:hidden">
+        <div style="display:grid;grid-template-columns:220px 1fr;border-top:1px solid var(--border);min-height:500px;overflow:hidden">
           <!-- Left: buildings nav -->
           <div style="background:var(--s1);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
             <div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
@@ -3708,7 +3707,7 @@ function renderDetail(p){
           </div>
           <!-- Right: meter detail -->
           <div style="display:flex;flex-direction:column;overflow:hidden;background:var(--s2)">
-            <div id="proj-ud-detail-hdr-${p.id}" style="display:none;flex-shrink:0;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--s1);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <div id="proj-ud-detail-hdr-${p.id}" style="display:none;flex-shrink:0;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--s1);align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
               <div>
                 <div id="proj-ud-hdr-title-${p.id}" style="font-size:15px;font-weight:700"></div>
                 <div id="proj-ud-hdr-sub-${p.id}" style="font-size:11px;color:var(--text2);margin-top:2px"></div>
@@ -5066,14 +5065,6 @@ function udSelectProj(pid){
   const p = projects.find(x=>x.id===pid);
   if(bar){ bar.style.display='flex'; }
   if(barTitle && p) barTitle.textContent = p.name;
-  // Hide project panel content
-  const content = document.getElementById('udProjPanelContent');
-  if(content){ content.style.display='none'; content.innerHTML=''; }
-  // Reset panel button highlights
-  ['ud-proj-baseline-btn','ud-proj-savproj-btn','ud-proj-perf-btn'].forEach(id=>{
-    const btn=document.getElementById(id);
-    if(btn){ btn.style.borderColor=''; btn.style.color=''; }
-  });
 }
 
 function udSelectBldg(bid){
@@ -5170,7 +5161,9 @@ function renderUDDetail(targetWrap){
     if(hdr) hdr.style.display='none';
     const bar = document.getElementById('udProjPanelBar');
     if(bar && !udSelProjId) bar.style.display='none';
-    wrap.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">📁</div><div>Select a project and building<br>from the left to view meters</div></div>';
+    wrap.innerHTML = udSelProjId
+      ? '<div class="ud-empty"><div class="ud-empty-ico">🏢</div><div>Select a building from the left to view meters</div></div>'
+      : '<div class="ud-empty"><div class="ud-empty-ico">📁</div><div>Select a project and building<br>from the left to view meters</div></div>';
     return;
   }
   const b = getUDBldg(udSelProjId, udSelBldgId);
