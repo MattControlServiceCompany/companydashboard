@@ -849,6 +849,7 @@ html,body{height:100%;overflow:hidden;}
           <button class="btn btn-ghost btn-sm" id="ud-bldg-perf-btn" onclick="toggleBldgPerfPanel()">💡 Building Performance</button>
           <button class="btn btn-ghost btn-sm" id="ud-edit-bldg-btn" onclick="openBldgModal(window._udSelBldgId)">✏️ Edit Building</button>
           <button class="btn btn-em btn-sm" id="ud-add-meter-btn" onclick="openMeterModal()">+ Add Meter</button>
+          <button class="btn btn-ghost btn-sm" id="ud-view-proj-btn" onclick="viewProjectFromUtility()" title="View in Projects page">📁 View Project</button>
         </div>
       </div>
       <div class="ud-detail-body" id="udDetailWrap">
@@ -3645,33 +3646,39 @@ function renderDetail(p){
       </div>
     </div>
     <div class="card">
-      <div class="pd-tabs">
-        <button class="pdt active" onclick="sPTab('notes',this)">📝 Notes &amp; Scope</button>
+      <div class="pd-tabs" style="overflow-x:auto;flex-wrap:nowrap;white-space:nowrap">
+        <button class="pdt active" onclick="sPTab('notes',this)">📝 Notes</button>
         <button class="pdt" onclick="sPTab('tasks',this)">✅ Tasks</button>
         <button class="pdt" onclick="sPTab('contacts',this)">👥 Contacts</button>
         <button class="pdt" onclick="sPTab('buildings',this)">🏢 Buildings</button>
         <button class="pdt" onclick="sPTab('utility',this)">⚡ Utility Data</button>
+        <button class="pdt" onclick="sPTab('baseline',this)">📊 Baseline Data</button>
+        <button class="pdt" onclick="sPTab('projsavings',this)">📈 Projected Savings</button>
+        <button class="pdt" onclick="sPTab('performance',this)">💡 Performance</button>
+        <button class="pdt" onclick="sPTab('equipment',this)">⚙️ Equipment</button>
+        <button class="pdt" onclick="sPTab('district',this)">🗓️ District Calendar</button>
         <button class="pdt" onclick="sPTab('savings',this)">💡 Energy Savings</button>
+        <button class="pdt" onclick="sPTab('contracts',this)">📋 Contracts</button>
         <button class="pdt" onclick="sPTab('docs',this)">📁 Documents</button>
       </div>
-      <div id="ptab-notes" class="ptab active">
+      <div id="ptab-notes" class="ptab active" style="padding:16px">
         <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">Notes / Description</div>
         <textarea class="fta" style="min-height:150px;width:100%" id="proj-notes-ta" oninput="autoSaveNotes(${p.id})">${p.notes||''}</textarea>
       </div>
-      <div id="ptab-tasks" class="ptab">
+      <div id="ptab-tasks" class="ptab" style="padding:16px">
         <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
           <button class="btn btn-em btn-sm" onclick="document.getElementById('mt-proj').value=${p.id};openTaskModal()">+ Add Task</button>
         </div>
         <div id="ptab-tasks-list">${tasksHTML}</div>
       </div>
-      <div id="ptab-contacts" class="ptab">
+      <div id="ptab-contacts" class="ptab" style="padding:16px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
           <div style="font-size:12px;color:var(--text2)">${(p.contacts&&p.contacts.length)?p.contacts.length+' contact'+(p.contacts.length!==1?'s':''):'No contacts yet'}</div>
           <button class="btn btn-em btn-sm" onclick="editProj(${p.id})">✏️ Edit Contacts</button>
         </div>
         ${buildContactsDetailHTML(p.contacts||[], p.id)}
       </div>
-      <div id="ptab-buildings" class="ptab">
+      <div id="ptab-buildings" class="ptab" style="padding:16px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <div style="font-size:12px;color:var(--text2)" id="pb-count-${p.id}"></div>
           <button class="btn btn-em btn-sm" onclick="openBldgModalForProj(${p.id})">+ Add Building</button>
@@ -3679,31 +3686,122 @@ function renderDetail(p){
         <div id="pb-sqft-bar-${p.id}"></div>
         <div id="pb-list-${p.id}"></div>
       </div>
-      <div id="ptab-utility" class="ptab">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-          <div style="font-size:13px;color:var(--text2)">Manage utility meters and billing data for this project.</div>
-          <button class="btn btn-em btn-sm" onclick="goToProjectUtility(${p.id})">⚡ Open Utility Data →</button>
-        </div>
-        <div id="ptab-utility-summary-${p.id}"></div>
+      <div id="ptab-utility" class="ptab" style="padding:0">
+        <div id="ptab-utility-inner-${p.id}" style="min-height:300px"></div>
       </div>
-      <div id="ptab-savings" class="ptab">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-          <div style="font-size:13px;color:var(--text2)">Track measured energy savings and M&amp;V results for this project.</div>
-          <button class="btn btn-em btn-sm" onclick="sv('savings',null)">💡 Open Energy Savings →</button>
-        </div>
-        <div style="font-size:12px;color:var(--text3);padding:16px 0">Navigate to Energy Savings to view and edit savings calculations for this project.</div>
+      <div id="ptab-baseline" class="ptab" style="padding:0">
+        <div id="ptab-baseline-inner-${p.id}" style="min-height:300px"></div>
       </div>
-      <div id="ptab-docs" class="ptab">
+      <div id="ptab-projsavings" class="ptab" style="padding:0">
+        <div id="ptab-projsavings-inner-${p.id}" style="min-height:300px"></div>
+      </div>
+      <div id="ptab-performance" class="ptab" style="padding:0">
+        <div id="ptab-performance-inner-${p.id}" style="min-height:300px"></div>
+      </div>
+      <div id="ptab-equipment" class="ptab" style="padding:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap">
+          <input class="fi" id="equipQ-proj-${p.id}" placeholder="Search tag, type..." style="width:200px" oninput="renderProjEquip(${p.id})">
+          <button class="btn btn-em btn-sm" onclick="openEquipModal()">+ Add Equipment</button>
+        </div>
+        <div id="ptab-equipment-body-${p.id}"></div>
+      </div>
+      <div id="ptab-district" class="ptab" style="padding:16px">
+        <div id="ptab-district-inner-${p.id}">
+          <div class="g2">
+            <div class="card">
+              <div class="card-hdr"><span class="card-title">📅 Calendar Input</span></div>
+              <div style="padding:15px">
+                <div class="fg"><label class="fl">District Name</label><input class="fi" id="dist-name-${p.id}" placeholder="e.g. Independence School District" value="${p.client||''}"></div>
+                <div class="fg"><label class="fl">Paste Calendar Text</label>
+                  <textarea class="fta" id="dist-cal-${p.id}" style="min-height:130px" placeholder="Paste school calendar text — holidays, early release days, school start/end dates..."></textarea>
+                </div>
+                <div class="f2">
+                  <div class="fg"><label class="fl">Occupied Start</label><input class="fi" id="dist-occ-s-${p.id}" placeholder="7:00 AM" value="7:00 AM"></div>
+                  <div class="fg"><label class="fl">Occupied End</label><input class="fi" id="dist-occ-e-${p.id}" placeholder="5:00 PM" value="5:00 PM"></div>
+                </div>
+                <div class="f2">
+                  <div class="fg"><label class="fl">Heat Setback °F</label><input class="fi" id="dist-sh-${p.id}" type="number" value="60"></div>
+                  <div class="fg"><label class="fl">Cool Setback °F</label><input class="fi" id="dist-sc-${p.id}" type="number" value="85"></div>
+                </div>
+                <button class="btn btn-em" style="width:100%" onclick="parseProjDistCal(${p.id})">🗓️ Parse Calendar & Generate Schedule</button>
+              </div>
+            </div>
+            <div>
+              <div class="ai-label">📅 Recommended Control Schedule</div>
+              <div class="ai-box" id="dist-box-${p.id}" style="min-height:280px">Paste calendar text and click Parse.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="ptab-savings" class="ptab" style="padding:16px">
+        <div class="g2">
+          <div class="card">
+            <div class="card-hdr"><span class="card-title">📥 Savings Inputs</span></div>
+            <div style="padding:14px">
+              <div class="fl" style="margin-bottom:6px;display:block">Baseline Period</div>
+              <div class="f3">
+                <div class="fg"><label class="fl">kWh / yr</label><input class="fi" id="sv-bl-kwh-${p.id}" type="number" placeholder="0"></div>
+                <div class="fg"><label class="fl">Therms / yr</label><input class="fi" id="sv-bl-th-${p.id}" type="number" placeholder="0"></div>
+                <div class="fg"><label class="fl">Cost / yr $</label><input class="fi" id="sv-bl-cost-${p.id}" type="number" placeholder="0"></div>
+              </div>
+              <div class="fl" style="margin-bottom:6px;display:block;margin-top:4px">Post-Installation Period</div>
+              <div class="f3">
+                <div class="fg"><label class="fl">kWh / yr</label><input class="fi" id="sv-po-kwh-${p.id}" type="number" placeholder="0"></div>
+                <div class="fg"><label class="fl">Therms / yr</label><input class="fi" id="sv-po-th-${p.id}" type="number" placeholder="0"></div>
+                <div class="fg"><label class="fl">Cost / yr $</label><input class="fi" id="sv-po-cost-${p.id}" type="number" placeholder="0"></div>
+              </div>
+              <div class="f2">
+                <div class="fg"><label class="fl">Project Cost $</label><input class="fi" id="sv-cost-${p.id}" type="number" placeholder="0"></div>
+                <div class="fg"><label class="fl">Elec Rate $/kWh</label><input class="fi" id="sv-rate-${p.id}" type="number" placeholder="0.12" step="0.001"></div>
+              </div>
+              <button class="btn btn-em" style="width:100%;margin-top:8px" onclick="calcProjSavings(${p.id})">💡 Calculate Savings</button>
+            </div>
+          </div>
+          <div>
+            <div class="ai-label">💡 Savings Results</div>
+            <div class="ai-box" id="sv-box-${p.id}" style="min-height:220px">Enter baseline and post-installation data to calculate savings.</div>
+            <div id="sv-result-${p.id}"></div>
+          </div>
+        </div>
+      </div>
+      <div id="ptab-contracts" class="ptab" style="padding:16px">
+        <div class="g2">
+          <div>
+            <div class="card" style="margin-bottom:14px">
+              <div class="card-hdr"><span class="card-title">📋 Template</span></div>
+              <div style="padding:14px" id="tmplStatus-${p.id}">
+                <div style="font-size:13px;color:var(--text2);line-height:1.6">No template loaded.</div>
+                <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="loadDefaultTemplatForProj(${p.id})">Use Generic Template</button>
+              </div>
+            </div>
+            <div class="card" id="contractVarsCard-${p.id}" style="display:none">
+              <div class="card-hdr"><span class="card-title">✏️ Contract Variables</span></div>
+              <div style="padding:14px" id="contractVars-${p.id}"></div>
+              <div style="padding:0 14px 14px"><button class="btn btn-em" style="width:100%" onclick="generateProjContract(${p.id})">📋 Generate Contract</button></div>
+            </div>
+          </div>
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
+              <div class="ai-label" style="margin:0">📋 Generated Contract</div>
+              <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('contractOut-${p.id}')?.textContent||'');showToast('Copied ✓')">📋 Copy</button>
+            </div>
+            <div class="ai-box" id="contractOut-${p.id}" style="min-height:400px;max-height:560px;overflow-y:auto">Click "Use Generic Template" to get started.</div>
+          </div>
+        </div>
+      </div>
+      <div id="ptab-docs" class="ptab" style="padding:16px">
         <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
           <button class="btn btn-em btn-sm" onclick="sv('pdf',null);showToast('Upload a PDF and save it to this project')">📄 Upload Document</button>
         </div>
         <div style="font-size:13px;color:var(--text2)">No documents yet. Use the PDF/OCR tool to save documents to this project.</div>
       </div>
     </div>`;
-  // Populate utility tab summary and buildings tab after DOM is ready
+  // Populate tabs after DOM is ready
   requestAnimationFrame(()=>{
     renderUtilTabSummary(p.id);
     renderProjBuildingsTab(p.id);
+    renderProjUtilityTab(p.id);
+    renderProjEquip(p.id);
   });
 }
 
@@ -3718,6 +3816,236 @@ function sPTab(tab,el){
   document.querySelectorAll('.ptab').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('.pdt').forEach(b=>b.classList.remove('active'));
   document.getElementById('ptab-'+tab).classList.add('active'); el?.classList.add('active');
+  // Render embedded content on demand
+  const p = activeProj;
+  if(!p) return;
+  if(tab==='utility')   renderProjUtilityTab(p.id);
+  if(tab==='baseline')  renderProjBuildingLevelTab(p.id,'baseline');
+  if(tab==='projsavings') renderProjBuildingLevelTab(p.id,'projsavings');
+  if(tab==='performance') renderProjBuildingLevelTab(p.id,'performance');
+  if(tab==='equipment') renderProjEquip(p.id);
+}
+
+// ── Project Utility Tab — full embedded Utility Data view ──
+function renderProjUtilityTab(projId){
+  const el = document.getElementById('ptab-utility-inner-'+projId);
+  if(!el) return;
+  const proj = utilityData[projId];
+  if(!proj||!proj.buildings||!proj.buildings.length){
+    el.innerHTML='<div style="padding:20px;font-size:13px;color:var(--text2)">No utility data yet. <button class="btn btn-em btn-sm" onclick="goToProjectUtility('+projId+')">⚡ Open Utility Data →</button></div>';
+    return;
+  }
+  const bldgs = proj.buildings;
+  // Building selector + embedded building stats panel per building
+  const tabs = bldgs.map((b,i)=>
+    `<button class="ud-incl-btn${i===0?' sel':''}" onclick="selectProjUtilTab('${projId}','${b.id}',this)" style="font-size:11px">${b.name||'Building '+(i+1)}</button>`
+  ).join('');
+  el.innerHTML=`
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:11px;font-weight:600;color:var(--text2)">Building:</span>${tabs}
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="goToProjectUtility(${projId})">Open Full View →</button>
+    </div>
+    <div id="proj-util-tab-detail-${projId}" style="padding:16px"></div>`;
+  renderProjUtilTabBldg(projId, bldgs[0].id);
+}
+
+function selectProjUtilTab(projId, bldgId, btn){
+  const parent = btn?.closest('[id^="ptab-utility-inner"]');
+  if(parent) parent.querySelectorAll('.ud-incl-btn').forEach(b=>b.classList.remove('sel'));
+  btn?.classList.add('sel');
+  renderProjUtilTabBldg(projId, bldgId);
+}
+
+function renderProjUtilTabBldg(projId, bldgId){
+  const el = document.getElementById('proj-util-tab-detail-'+projId);
+  if(!el) return;
+  const proj = utilityData[projId]; if(!proj) return;
+  const b = (proj.buildings||[]).find(x=>x.id===bldgId); if(!b) return;
+  // Render Building Stats (Baseline Data view) inline
+  const pane = document.createElement('div');
+  renderBuildingStatsPane(pane, b);
+  el.innerHTML='';
+  el.appendChild(pane);
+}
+
+// ── Project Building-Level Tab (Baseline Data / Projected Savings / Performance) ──
+function renderProjBuildingLevelTab(projId, tabKey){
+  const elId = `ptab-${tabKey}-inner-${projId}`;
+  const el = document.getElementById(elId);
+  if(!el) return;
+  const proj = utilityData[projId];
+  if(!proj||!proj.buildings||!proj.buildings.length){
+    el.innerHTML='<div style="padding:20px;font-size:13px;color:var(--text2)">No utility data yet. Add buildings and meters in the Utility Data tab first.</div>';
+    return;
+  }
+  const bldgs = proj.buildings;
+  const tabs = bldgs.map((b,i)=>
+    `<button class="ud-incl-btn${i===0?' sel':''}" onclick="selectProjBldgLevelTab('${projId}','${b.id}','${tabKey}',this)" style="font-size:11px">${b.name||'Building '+(i+1)}</button>`
+  ).join('');
+  const label = tabKey==='baseline'?'📊 Baseline Data':tabKey==='projsavings'?'📈 Building Savings Projection':'💡 Building Performance';
+  el.innerHTML=`
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:11px;font-weight:700;color:var(--text2)">${label}</span>
+      <span style="font-size:11px;color:var(--text3)">Building:</span>${tabs}
+    </div>
+    <div id="proj-bldglevel-detail-${projId}-${tabKey}" style="padding:16px;overflow-y:auto"></div>`;
+  renderProjBldgLevelContent(projId, bldgs[0].id, tabKey);
+}
+
+function selectProjBldgLevelTab(projId, bldgId, tabKey, btn){
+  const parent = btn?.closest('[id^="ptab-'+tabKey+'-inner"]');
+  if(parent) parent.querySelectorAll('.ud-incl-btn').forEach(b=>b.classList.remove('sel'));
+  btn?.classList.add('sel');
+  renderProjBldgLevelContent(projId, bldgId, tabKey);
+}
+
+function renderProjBldgLevelContent(projId, bldgId, tabKey){
+  const el = document.getElementById(`proj-bldglevel-detail-${projId}-${tabKey}`);
+  if(!el) return;
+  const proj = utilityData[projId]; if(!proj) return;
+  const b = (proj.buildings||[]).find(x=>x.id===bldgId); if(!b) return;
+  const pane = document.createElement('div');
+  // Temporarily set global selection so render functions work
+  const prevProj = udSelProjId, prevBldg = udSelBldgId;
+  udSelProjId = projId; udSelBldgId = bldgId;
+  if(tabKey==='baseline')      renderBuildingStatsPane(pane, b);
+  if(tabKey==='projsavings')   renderBldgSavProjPane(pane, b);
+  if(tabKey==='performance')   renderBldgPerfPane(pane, b);
+  udSelProjId = prevProj; udSelBldgId = prevBldg;
+  el.innerHTML='';
+  el.appendChild(pane);
+}
+
+// ── Project Equipment Tab ──
+function renderProjEquip(projId){
+  const el = document.getElementById('ptab-equipment-body-'+projId);
+  if(!el) return;
+  const p = projects.find(x=>x.id===projId); if(!p) return;
+  const q = (document.getElementById('equipQ-proj-'+projId)?.value||'').toLowerCase();
+  const rows = equipment.filter(e=>{
+    const matchProj = (e.projId===projId)||(e.loc||'').toLowerCase().includes((p.name||'').toLowerCase().slice(0,15));
+    const matchQ = !q||[e.tag,e.type,e.make,e.model,e.loc||''].some(f=>f.toLowerCase().includes(q));
+    return matchProj && matchQ;
+  });
+  if(!rows.length){
+    el.innerHTML='<div style="font-size:13px;color:var(--text2);padding:12px 0">No equipment linked to this project yet. <button class="btn btn-ghost btn-sm" onclick="openEquipModal()">+ Add Equipment</button></div>';
+    return;
+  }
+  el.innerHTML=`<div class="card"><div style="overflow-x:auto">
+    <table class="dtbl" style="min-width:700px">
+      <thead><tr><th>Tag</th><th>Type</th><th>Make / Model</th><th>Capacity</th><th>Efficiency</th><th>Location</th><th>Notes</th><th></th></tr></thead>
+      <tbody>${rows.map(e=>`<tr>
+        <td><span class="eq-tag">${e.tag}</span></td>
+        <td style="font-size:12px;color:var(--text2)">${e.type}</td>
+        <td><strong>${e.make}</strong> <span style="color:var(--text2)">${e.model}</span></td>
+        <td style="font-family:var(--mono);font-size:12px">${e.cap||'—'}</td>
+        <td style="font-family:var(--mono);font-size:12px">${e.eff||'—'}</td>
+        <td style="font-size:12px;color:var(--text2)">${e.loc||'—'}</td>
+        <td style="font-size:12px;color:var(--text2);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.notes||'—'}</td>
+        <td><button class="btn-del" onclick="removeEquip(${e.id})">✕</button></td>
+      </tr>`).join('')}</tbody>
+    </table>
+  </div></div>`;
+}
+
+// ── District Calendar per project ──
+async function parseProjDistCal(projId){
+  const box = document.getElementById('dist-box-'+projId);
+  const dist = document.getElementById('dist-name-'+projId)?.value||'the school district';
+  const cal  = document.getElementById('dist-cal-'+projId)?.value||'';
+  if(!cal){showToast('Paste calendar text first');return;}
+  box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Parsing calendar...</div>';
+  const os = document.getElementById('dist-occ-s-'+projId)?.value||'7:00 AM';
+  const oe = document.getElementById('dist-occ-e-'+projId)?.value||'5:00 PM';
+  const sh = document.getElementById('dist-sh-'+projId)?.value||60;
+  const sc = document.getElementById('dist-sc-'+projId)?.value||85;
+  const result = await claude(
+    `Parse this school district calendar for ${dist} and generate a BAS control schedule.\nCalendar:\n${cal}\nBuilding occupied hours: ${os}–${oe}\nHeat setback: ${sh}°F, Cool setback: ${sc}°F\nProvide: holidays list, early release days, summer/winter/spring breaks, WebCTRL exception schedule, estimated annual energy savings %, and controls spec excerpt.`,
+    'You are an expert building automation engineer specializing in school district energy programs and WebCTRL scheduling.'
+  );
+  box.textContent=result;
+}
+
+// ── Energy Savings per project ──
+async function calcProjSavings(projId){
+  const box = document.getElementById('sv-box-'+projId);
+  const p = projects.find(x=>x.id===projId);
+  const name = p?.name||'Project';
+  const blK=parseFloat(document.getElementById('sv-bl-kwh-'+projId)?.value||0);
+  const blT=parseFloat(document.getElementById('sv-bl-th-'+projId)?.value||0);
+  const blC=parseFloat(document.getElementById('sv-bl-cost-'+projId)?.value||0);
+  const poK=parseFloat(document.getElementById('sv-po-kwh-'+projId)?.value||0);
+  const poT=parseFloat(document.getElementById('sv-po-th-'+projId)?.value||0);
+  const poC=parseFloat(document.getElementById('sv-po-cost-'+projId)?.value||0);
+  const pc =parseFloat(document.getElementById('sv-cost-'+projId)?.value||0);
+  const rate=parseFloat(document.getElementById('sv-rate-'+projId)?.value||0.12);
+  if(!blK&&!blT){showToast('Enter baseline data first');return;}
+  box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Calculating savings...</div>';
+  const grossK=blK-poK,grossC=blC-poC;
+  const payback=pc>0&&grossC>0?(pc/grossC).toFixed(1):'N/A';
+  const result=await claude(
+    `Write a professional M&V savings summary for ${name}.\nBaseline: ${blK.toLocaleString()} kWh/yr, ${blT.toLocaleString()} Th/yr, $${blC.toLocaleString()}/yr.\nPost: ${poK.toLocaleString()} kWh/yr, ${poT.toLocaleString()} Th/yr, $${poC.toLocaleString()}/yr.\nGross kWh savings: ${Math.round(grossK).toLocaleString()}, Cost savings: $${Math.round(grossC).toLocaleString()}/yr, Project cost: $${pc.toLocaleString()}, Simple payback: ${payback} years, Electric rate: $${rate}/kWh.\nProvide: gross savings table, cost savings, % reductions, simple payback, ROI, and a 2-paragraph M&V narrative.`,
+    'You are an expert energy engineer writing per ASHRAE Guideline 14 and IPMVP protocols.'
+  );
+  box.textContent=result;
+  const res=document.getElementById('sv-result-'+projId);
+  if(res) res.innerHTML=`<div class="bl-result"><div class="bl-title">💡 Savings — ${name}</div><div class="bl-grid">
+    <div class="bl-item"><div class="bl-lbl">Gross kWh Savings</div><div class="bl-val c-em">${Math.round(grossK).toLocaleString()}<span class="bl-unit"> kWh/yr</span></div></div>
+    <div class="bl-item"><div class="bl-lbl">Cost Savings</div><div class="bl-val c-em">$${Math.round(grossC).toLocaleString()}<span class="bl-unit">/yr</span></div></div>
+    <div class="bl-item"><div class="bl-lbl">Simple Payback</div><div class="bl-val c-warn">${payback}<span class="bl-unit"> yrs</span></div></div>
+    <div class="bl-item"><div class="bl-lbl">% kWh Reduction</div><div class="bl-val">${blK>0?Math.round(grossK/blK*100):0}<span class="bl-unit"> %</span></div></div>
+  </div></div>`;
+}
+
+// ── Contracts per project ──
+let _projContractTemplate = {};
+function loadDefaultTemplatForProj(projId){
+  const p = projects.find(x=>x.id===projId);
+  _projContractTemplate[projId] = DEFAULT_CONTRACT;
+  const el = document.getElementById('tmplStatus-'+projId);
+  if(el) el.innerHTML='<div style="font-size:13px;color:var(--em)">✓ Using generic controls/energy services template</div>';
+  renderContractVarsForProj(projId, CONTRACT_VARS, p);
+}
+function renderContractVarsForProj(projId, vars, p){
+  const card = document.getElementById('contractVarsCard-'+projId);
+  const el   = document.getElementById('contractVars-'+projId);
+  if(!el||!card) return;
+  card.style.display='block';
+  // Pre-fill known values from project
+  const prefill = {
+    COMPANY_NAME:'Control Service Company',
+    CLIENT_NAME: p?.client||'',
+    PROJECT_NAME:p?.name||'',
+    PROJECT_ADDRESS:p?.addr||'',
+    PM_NAME:p?.pm||'',
+    CONTRACT_VALUE:p?.contract?'$'+Number(p.contract).toLocaleString():'',
+  };
+  el.innerHTML=vars.map(v=>`
+    <div class="cv-row">
+      <div class="cv-key">[${v}]</div>
+      <input class="cv-inp" id="cv-proj-${projId}-${v}" placeholder="Enter ${v.replace(/_/g,' ').toLowerCase()}..." value="${prefill[v]||''}">
+    </div>`).join('');
+}
+async function generateProjContract(projId){
+  const out = document.getElementById('contractOut-'+projId);
+  if(!out) return;
+  out.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Generating contract...</div>';
+  const tmpl = _projContractTemplate[projId]||DEFAULT_CONTRACT;
+  const vars = {};
+  document.querySelectorAll(`[id^="cv-proj-${projId}-"]`).forEach(inp=>{
+    const k=inp.id.replace(`cv-proj-${projId}-`,'');
+    vars[k]=inp.value||`[${k}]`;
+  });
+  const varList=Object.entries(vars).map(([k,v])=>`${k}: ${v}`).join('\n');
+  const result=await claude(
+    `Generate a complete professional client contract using this template and variables.\nTEMPLATE:\n${tmpl}\nVARIABLES:\n${varList}\nReplace all placeholders with the provided values. Make it complete and client-ready.`,
+    'You are a contracts specialist for building automation and energy services companies.'
+  );
+  out.textContent=result;
+  showToast('Contract generated ✓');
+}
+
+function _projTabAfter(tab){
   window._activeProjTab = tab;
   saveProjSession();
 }
@@ -4601,6 +4929,14 @@ function calcDays(start, end, inclusive){
 }
 
 /* ── RENDER LEFT NAV: Projects + Buildings drill-down ── */
+function viewProjectFromUtility(){
+  if(!udSelProjId) return;
+  const p = projects.find(x=>x.id===udSelProjId);
+  if(!p) return;
+  sv('projects', document.querySelector('.s-item[onclick*="projects"]'));
+  setTimeout(()=>{ selectProj(p.id); }, 100);
+}
+
 function renderUDProjList(){
   const el = document.getElementById('udNavList'); if(!el) return;
   if(!projects.length){
