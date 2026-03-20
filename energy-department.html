@@ -7452,8 +7452,8 @@ function renderMeterDataPane(pane, m, bills, incl){
 
 /* ══════════════════════════════════════════════
    BUILDING-LEVEL PERFORMANCE PANE
-   Shows Monthly vs Expected for ALL meters on
-   the building in a single combined view
+   Calls renderPerfPane for each meter — exact
+   same data pipeline as the meter Performance tab
 ══════════════════════════════════════════════ */
 function renderBldgPerfPane(pane, b){
   if(!b){ pane.innerHTML='<div class="ud-empty">No building selected</div>'; return; }
@@ -7463,151 +7463,50 @@ function renderBldgPerfPane(pane, b){
     return;
   }
 
-  // For each meter that has a baseline, gather post-baseline performance data
-  const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const $c=v=>v!=null?'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
-  const $cs=v=>{ if(v==null) return '<span style="color:var(--text3)">—</span>'; const neg=v<0; return '<span style="color:'+(neg?'var(--danger)':'var(--em)')+'">'+( neg?'-':'+')+'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span>'; };
-
-  // Build per-meter performance summaries
-  let meterSections = '';
-  let grandTotalSavings = 0;
-  let grandTotalRows = 0;
-
-  meters.forEach(m=>{
-    const bl = m.baseline;
-    if(!bl || !bl.months || !bl.months.length) return;
-    const incl = m.inclusive!==false;
-    const bills = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
-    const isElec = m.commodity==='Electric';
-    const isGas  = m.commodity==='Gas';
-    const unit   = isElec?'kWh':isGas?'Therms':'kGal';
-
-    // Build blMonths set
-    const blMonths = bl.months;
-    const blEnd    = blMonths.slice().sort().pop();
-
-    // Get all norm rows
-    const allRows = (m.normRows||[]).slice().sort((a,c)=>a.ym.localeCompare(c.ym));
-    const blRows  = allRows.filter(r=>blMonths.includes(r.ym));
-    const postRows= allRows.filter(r=>r.ym>blEnd);
-    if(!postRows.length) return;
-
-    // Build meterDataByMo — baseline calendar-month reference values
-    const meterDataByMo={};
-    blRows.slice().sort((a,c)=>a.ym.localeCompare(c.ym)).forEach(r=>{
-      const mo=parseInt(r.ym.split('-')[1])-1;
-      const bfr=bills.filter(bx=>normMonth(bx.start,bx.end,incl,bills)===r.ym);
-      const normUsage=r.regrBaseline!=null?r.regrBaseline:r.usage;
-      const kwCostSum=bfr.reduce((s,bx)=>s+parseFloat(bx.kwCost||0),0);
-      const facKWCostSum=bfr.reduce((s,bx)=>s+parseFloat(bx.facKWCost||0),0);
-      const energyCostSum=r.cost-kwCostSum-facKWCostSum;
-      const thermCostSum=bfr.reduce((s,bx)=>s+parseFloat(bx.thermCost||bx.cost||0),0);
-      if(meterDataByMo[mo]){
-        meterDataByMo[mo]={usage:(meterDataByMo[mo].usage+normUsage)/2,energyCost:meterDataByMo[mo].energyCost+energyCostSum,thermCost:meterDataByMo[mo].thermCost+thermCostSum};
-      } else {
-        meterDataByMo[mo]={usage:normUsage,energyCost:energyCostSum,thermCost:thermCostSum};
-      }
-    });
-
-    // Build post-baseline rows
-    let totalExpUsage=0,totalActUsage=0,totalExpCost=0,totalActCost=0,totalCostSav=0;
-    let rows='';
-    postRows.forEach(r=>{
-      const calMo=parseInt(r.ym.split('-')[1])-1;
-      const bl_mo=meterDataByMo[calMo];
-      const expUsage=bl_mo?bl_mo.usage:null;
-      const expCost =bl_mo?(isElec?bl_mo.energyCost:bl_mo.thermCost):null;
-      const actUsage=r.regrBaseline!=null?r.regrBaseline:r.usage;
-      const bfr=bills.filter(bx=>normMonth(bx.start,bx.end,incl,bills)===r.ym);
-      const kwC=bfr.reduce((s,bx)=>s+parseFloat(bx.kwCost||0),0)+bfr.reduce((s,bx)=>s+parseFloat(bx.facKWCost||0),0);
-      const actCost=isElec?(r.cost-kwC):bfr.reduce((s,bx)=>s+parseFloat(bx.thermCost||bx.cost||0),0);
-      const saved=expUsage!=null?expUsage-actUsage:null;
-      const savedPct=expUsage&&expUsage>0?saved/expUsage*100:null;
-      const costSav=expCost!=null?expCost-actCost:null;
-      const [yr,mo]=r.ym.split('-');
-      const monLbl=MONTHS[parseInt(mo)-1]+' '+yr;
-
-      if(expUsage!=null){ totalExpUsage+=expUsage; totalActUsage+=actUsage; }
-      if(expCost!=null){ totalExpCost+=expCost; totalActCost+=actCost; totalCostSav+=(costSav||0); }
-
-      const savColor=saved!=null?(saved>=0?'var(--em)':'var(--danger)'):'var(--text3)';
-      rows+=`<tr>
-        <td class="lbl">${monLbl}</td>
-        <td class="num">${expUsage!=null?Math.round(expUsage).toLocaleString():'—'}</td>
-        <td class="num">${Math.round(actUsage).toLocaleString()}</td>
-        <td class="num" style="color:${savColor}">${saved!=null?(saved>=0?'+':'')+Math.round(saved).toLocaleString():'—'}</td>
-        <td class="num" style="color:${savColor}">${savedPct!=null?(savedPct>=0?'+':'')+savedPct.toFixed(1)+'%':'—'}</td>
-        <td class="num">${expCost!=null?$c(expCost):'—'}</td>
-        <td class="num">${$c(actCost)}</td>
-        <td class="num">${costSav!=null?$cs(costSav):'—'}</td>
-      </tr>`;
-    });
-
-    grandTotalSavings+=totalCostSav;
-    grandTotalRows+=postRows.length;
-
-    const totSavColor=totalCostSav>=0?'var(--em)':'var(--danger)';
-    const pill=isElec?'<span style="background:rgba(125,216,255,.15);color:#7dd8ff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;border:1px solid rgba(125,216,255,.3)">⚡ Electric</span>':
-               isGas ?'<span style="background:rgba(255,176,64,.15);color:#ffb040;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;border:1px solid rgba(255,176,64,.3)">🔥 Gas</span>':
-                      '<span style="background:rgba(64,232,160,.15);color:#40e8a0;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;border:1px solid rgba(64,232,160,.3)">💧 Water</span>';
-
-    meterSections+=`
-      <div style="margin-bottom:22px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-          ${pill}
-          <span style="font-size:13px;font-weight:700;color:var(--text)">${m.provider||m.commodity}</span>
-          <span style="font-size:11px;color:var(--text2)">${postRows.length} post-baseline months</span>
-          ${totalCostSav!==0?`<span style="margin-left:auto;font-size:12px;font-weight:700;color:${totSavColor}">${totalCostSav>=0?'Saved':'Over'}: $${Math.abs(totalCostSav).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`:''}
-        </div>
-        <div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto">
-          <table class="ma-tbl">
-            <thead><tr>
-              <th class="lbl">Month</th>
-              <th class="num">Expected ${unit}</th>
-              <th class="num">Actual ${unit}</th>
-              <th class="num">${unit} Saved</th>
-              <th class="num">%</th>
-              <th class="num">Expected Cost</th>
-              <th class="num">Actual Cost</th>
-              <th class="num">Cost Savings</th>
-            </tr></thead>
-            <tbody>${rows}</tbody>
-            <tfoot><tr style="border-top:2px solid var(--border2);font-weight:700">
-              <td class="lbl" style="color:var(--text2);font-size:11px">TOTAL</td>
-              <td class="num">${Math.round(totalExpUsage).toLocaleString()}</td>
-              <td class="num">${Math.round(totalActUsage).toLocaleString()}</td>
-              <td class="num" style="color:${totSavColor}">${totalExpUsage>0?(totalActUsage<=totalExpUsage?'+':'')+Math.round(totalExpUsage-totalActUsage).toLocaleString():'—'}</td>
-              <td class="num" style="color:${totSavColor}">${totalExpUsage>0?((totalExpUsage-totalActUsage)/totalExpUsage*100).toFixed(1)+'%':'—'}</td>
-              <td class="num">${$c(totalExpCost)}</td>
-              <td class="num">${$c(totalActCost)}</td>
-              <td class="num">${$cs(totalCostSav)}</td>
-            </tr></tfoot>
-          </table>
-        </div>
-      </div>`;
-  });
-
-  if(!meterSections){
+  const metersWithBaseline = meters.filter(m=>m.baseline&&(m.baseline.months||[]).length>=3);
+  if(!metersWithBaseline.length){
     pane.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">💡</div><div>No baseline data set yet.<br>Go to the Baseline tab on each meter to set baseline months.</div></div>';
     return;
   }
 
-  const grandColor=grandTotalSavings>=0?'var(--em)':'var(--danger)';
+  // Build header
   pane.innerHTML=`
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
-      <div>
-        <div style="font-size:16px;font-weight:800;font-family:var(--head);letter-spacing:-.01em">🏢 ${b.name} — Building Performance</div>
-        <div style="font-size:12px;color:var(--text2);margin-top:3px">Monthly actual vs expected across all utility types</div>
-      </div>
-      ${grandTotalRows>0?`<div style="background:var(--s3);border:1px solid var(--border);border-radius:9px;padding:10px 16px;text-align:right">
-        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700">Total Cost Savings</div>
-        <div style="font-size:20px;font-weight:800;color:${grandColor};font-family:var(--head)">${grandTotalSavings>=0?'+':'-'}$${Math.abs(grandTotalSavings).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-      </div>`:''}
+    <div style="margin-bottom:18px">
+      <div style="font-size:16px;font-weight:800;font-family:var(--head);letter-spacing:-.01em">🏢 ${b.name} — Building Performance</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:3px">Monthly actual vs expected — all utility meters</div>
     </div>
-    ${meterSections}`;
+    <div id="bldgPerfMeters"></div>`;
+
+  const container = pane.querySelector('#bldgPerfMeters');
+
+  // For each meter, create a labelled sub-section and call renderPerfPane into it
+  metersWithBaseline.forEach(m=>{
+    const isElec = m.commodity==='Electric';
+    const isGas  = m.commodity==='Gas';
+    const bills  = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+    const incl   = m.inclusive!==false;
+
+    const pill = isElec
+      ? '<span style="background:rgba(125,216,255,.15);color:#7dd8ff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;border:1px solid rgba(125,216,255,.3)">⚡ Electric</span>'
+      : isGas
+      ? '<span style="background:rgba(255,176,64,.15);color:#ffb040;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;border:1px solid rgba(255,176,64,.3)">🔥 Gas</span>'
+      : '<span style="background:rgba(64,232,160,.15);color:#40e8a0;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;border:1px solid rgba(64,232,160,.3)">💧 Water</span>';
+
+    const section = document.createElement('div');
+    section.style.cssText = 'margin-bottom:28px;border:1px solid var(--border);border-radius:10px;overflow:hidden';
+    section.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--s1);border-bottom:1px solid var(--border)">
+        ${pill}
+        <span style="font-size:13px;font-weight:700">${m.provider||m.commodity}</span>
+        <span style="font-size:11px;color:var(--text2)">${bills.length} bills · ${(m.baseline.months||[]).length}-mo baseline</span>
+      </div>
+      <div class="bldg-perf-meter-pane" style="padding:16px"></div>`;
+    container.appendChild(section);
+
+    const subPane = section.querySelector('.bldg-perf-meter-pane');
+    renderPerfPane(subPane, m, bills, incl);
+  });
 }
-
-
 function renderPerfPane(pane, m, bills, incl){
   const bl=m.baseline;
   if(!bl||!bl.months||bl.months.length<3){
