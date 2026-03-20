@@ -7489,6 +7489,9 @@ function renderMeterDataPane(pane, m, bills, incl){
    Calls renderPerfPane for each meter — exact
    same data pipeline as the meter Performance tab
 ══════════════════════════════════════════════ */
+let _bpBaselineByCalMo  = null;
+let _bspBaselineByCalMo = null;
+
 function renderBldgPerfPane(pane, b){
   if(!b){ pane.innerHTML='<div class="ud-empty">No building selected</div>'; return; }
 
@@ -7522,8 +7525,9 @@ function renderBldgPerfPane(pane, b){
   const defYears      = cfg.years      ?? 3;
   const defView       = cfg.view       ?? 'monthly';
 
-  // Monthly baseline values — always from live Baseline Data, override only if user explicitly saved manual values
-  const moBase = Array.from({length:12},(_,i)=> (cfg.moOverrides && cfg.moOverrides[i]!=null) ? cfg.moOverrides[i] : (baselineByCalMo[i]||0));
+  // Store for use by bpRecalc (called outside this function)
+  _bpBaselineByCalMo = Array.from({length:12},(_,i)=>(baselineByCalMo[i]||0));
+  const moBase = _bpBaselineByCalMo;
 
   // ── Render UI ──
   pane.innerHTML=`
@@ -7569,35 +7573,10 @@ function renderBldgPerfPane(pane, b){
       <button onclick="bpRecalc()" style="font-family:var(--font);font-size:12px;font-weight:700;padding:7px 16px;border-radius:7px;border:none;cursor:pointer;background:var(--em);color:#05080f;align-self:flex-end">⚡ Recalculate</button>
     </div>
 
-    <!-- Baseline monthly override table -->
-    <details style="margin-bottom:16px">
-      <summary style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;cursor:pointer;padding:4px 0">▶ Edit Monthly Baseline Spend (click to expand)</summary>
-      <div style="margin-top:10px;overflow-x:auto">
-        <table style="border-collapse:collapse;font-size:12px;width:100%">
-          <thead><tr style="background:var(--s1)">
-            ${MONTH_NAMES.map(m=>`<th style="padding:6px 10px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);border:1px solid var(--border)">${m}</th>`).join('')}
-            <th style="padding:6px 10px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);border:1px solid var(--border)">Annual Total</th>
-          </tr></thead>
-          <tbody><tr>
-            ${moBase.map((v,i)=>`<td style="border:1px solid var(--border);padding:4px"><input id="bp-mo-${i}" type="number" value="${v.toFixed(2)}" step="0.01"
-              style="width:100%;font-family:var(--mono);font-size:11px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:4px 6px;outline:none;text-align:right"></td>`).join('')}
-            <td id="bp-mo-total" style="border:1px solid var(--border);padding:6px 10px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--em);text-align:right">${$f(moBase.reduce((s,v)=>s+v,0))}</td>
-          </tr></tbody>
-        </table>
-      </div>
-    </details>
 
     <!-- Results -->
     <div id="bp-results"></div>`;
 
-  // Update annual total as baseline inputs change
-  pane.querySelectorAll('[id^="bp-mo-"]').forEach((inp,i)=>{
-    if(i===12) return;
-    inp.addEventListener('input',()=>{
-      const tot = Array.from({length:12},(_,j)=>parseFloat(document.getElementById('bp-mo-'+j)?.value||0)).reduce((s,v)=>s+v,0);
-      const el=document.getElementById('bp-mo-total'); if(el) el.textContent=$f(tot);
-    });
-  });
 
   // Render on load
   bpRecalc();
@@ -7622,7 +7601,7 @@ function bpRecalc(){
   const cscPct  = parseFloat(document.getElementById('bp-cscpct')?.value||0)/100;
   const years   = parseInt(document.getElementById('bp-years')?.value||3);
   const view    = _bpView;
-  const moBase  = Array.from({length:12},(_,i)=>parseFloat(document.getElementById('bp-mo-'+i)?.value||0));
+  const moBase  = _bpBaselineByCalMo || Array(12).fill(0);
   const annBase = moBase.reduce((s,v)=>s+v,0);
 
   // Save config
@@ -7835,8 +7814,9 @@ function renderBldgSavProjPane(pane, b){
   const defYears      = cfg.years      ?? 3;
   const defView       = cfg.view       ?? 'monthly';
 
-  // Monthly baseline values — always from live Baseline Data, override only if user explicitly saved manual values
-  const moBase = Array.from({length:12},(_,i)=> (cfg.moOverrides && cfg.moOverrides[i]!=null) ? cfg.moOverrides[i] : (baselineByCalMo[i]||0));
+  // Store for use by bspRecalc (called outside this function)
+  _bspBaselineByCalMo = Array.from({length:12},(_,i)=>(baselineByCalMo[i]||0));
+  const moBase = _bspBaselineByCalMo;
 
   // ── Render UI ──
   pane.innerHTML=`
@@ -7882,35 +7862,10 @@ function renderBldgSavProjPane(pane, b){
       <button onclick="bspRecalc()" style="font-family:var(--font);font-size:12px;font-weight:700;padding:7px 16px;border-radius:7px;border:none;cursor:pointer;background:var(--em);color:#05080f;align-self:flex-end">⚡ Recalculate</button>
     </div>
 
-    <!-- Baseline monthly override table -->
-    <details style="margin-bottom:16px">
-      <summary style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;cursor:pointer;padding:4px 0">▶ Edit Monthly Baseline Spend (click to expand)</summary>
-      <div style="margin-top:10px;overflow-x:auto">
-        <table style="border-collapse:collapse;font-size:12px;width:100%">
-          <thead><tr style="background:var(--s1)">
-            ${MONTH_NAMES.map(m=>`<th style="padding:6px 10px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);border:1px solid var(--border)">${m}</th>`).join('')}
-            <th style="padding:6px 10px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);border:1px solid var(--border)">Annual Total</th>
-          </tr></thead>
-          <tbody><tr>
-            ${moBase.map((v,i)=>`<td style="border:1px solid var(--border);padding:4px"><input id="bsp-mo-${i}" type="number" value="${v.toFixed(2)}" step="0.01"
-              style="width:100%;font-family:var(--mono);font-size:11px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:4px 6px;outline:none;text-align:right"></td>`).join('')}
-            <td id="bsp-mo-total" style="border:1px solid var(--border);padding:6px 10px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--em);text-align:right">${$f(moBase.reduce((s,v)=>s+v,0))}</td>
-          </tr></tbody>
-        </table>
-      </div>
-    </details>
 
     <!-- Results -->
     <div id="bsp-results"></div>`;
 
-  // Update annual total as baseline inputs change
-  pane.querySelectorAll('[id^="bsp-mo-"]').forEach((inp,i)=>{
-    if(i===12) return;
-    inp.addEventListener('input',()=>{
-      const tot = Array.from({length:12},(_,j)=>parseFloat(document.getElementById('bsp-mo-'+j)?.value||0)).reduce((s,v)=>s+v,0);
-      const el=document.getElementById('bsp-mo-total'); if(el) el.textContent=$f(tot);
-    });
-  });
 
   // Render on load
   bspRecalc();
@@ -7935,7 +7890,7 @@ function bspRecalc(){
   const cscPct  = parseFloat(document.getElementById('bsp-cscpct')?.value||0)/100;
   const years   = parseInt(document.getElementById('bsp-years')?.value||3);
   const view    = _bspView;
-  const moBase  = Array.from({length:12},(_,i)=>parseFloat(document.getElementById('bsp-mo-'+i)?.value||0));
+  const moBase  = _bspBaselineByCalMo || Array(12).fill(0);
   const annBase = moBase.reduce((s,v)=>s+v,0);
 
   // Save config
