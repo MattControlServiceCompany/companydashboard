@@ -7517,9 +7517,9 @@ function renderBldgPerfPane(pane, b){
       const calMo = parseInt(r.ym.split('-')[1])-1;
       const ref   = mMoRef[calMo]; if(!ref) return;
       const bfr   = mbills.filter(bx=>normMonth(bx.start,bx.end,mincl,mbills)===r.ym);
-      const kwC   = misElec ? bfr.reduce((s,bx)=>s+parseFloat(bx.kwCost||0),0)+bfr.reduce((s,bx)=>s+parseFloat(bx.facKWCost||0),0) : 0;
-      const actC  = misElec ? (r.cost - kwC) : r.cost;
-      const expC  = misElec ? ref.energyCost : ref.cost;
+      // Actual = full bill cost from raw bills; Expected = baseline total cost from buildMoMap
+      const actC  = bfr.reduce((s,bx)=>s+parseFloat(bx.totalCost||bx.cost||0),0);
+      const expC  = ref.totalCost ?? ref.cost;
       actualSavingsByCalMo[calMo] = (actualSavingsByCalMo[calMo]||0) + (expC - actC);
     });
   });
