@@ -7542,7 +7542,8 @@ function renderBldgPerfPane(pane, b){
       const kwC = bfr.reduce((s,bx)=>s+parseFloat(bx.kwCost||0),0)+bfr.reduce((s,bx)=>s+parseFloat(bx.facKWCost||0),0);
       const normU = r.regrBaseline!=null ? r.regrBaseline : r.usage;
       const energyCost = r.cost - kwC;
-      const thermCost  = bfr.reduce((s,bx)=>s+parseFloat(bx.thermCost||bx.cost||0),0);
+      // For gas, r.cost is already the prorated thermCost — matches Meter Data gasByMo.cost exactly
+      const thermCost  = misElec ? 0 : r.cost;
       if(mMoMap[mo]){
         mMoMap[mo].energyCost += energyCost;
         mMoMap[mo].thermCost  += thermCost;
@@ -7557,9 +7558,8 @@ function renderBldgPerfPane(pane, b){
       const ref   = mMoMap[calMo]; if(!ref) return;
       const bfr   = mbills.filter(bx=>normMonth(bx.start,bx.end,mincl,mbills)===r.ym);
       const kwC   = bfr.reduce((s,bx)=>s+parseFloat(bx.kwCost||0),0)+bfr.reduce((s,bx)=>s+parseFloat(bx.facKWCost||0),0);
-      const actC  = misElec
-        ? (r.cost - kwC)
-        : bfr.reduce((s,bx)=>s+parseFloat(bx.thermCost||bx.cost||0),0);
+      // For gas, r.cost is already the prorated thermCost — use directly
+      const actC  = misElec ? (r.cost - kwC) : r.cost;
       const expC  = misElec ? ref.energyCost : ref.thermCost;
       actualSavingsByCalMo[calMo] = (actualSavingsByCalMo[calMo]||0) + (expC - actC);
     });
@@ -8216,7 +8216,9 @@ function renderPerfPane(pane, m, bills, incl){
     const facKWCostSum= bfr.reduce((s,b)=>s+parseFloat(b.facKWCost||0),0);
     // energyCost mirrors Meter Data "Energy Cost" = totalCost - kwCost (same as elecByMo.energyCost)
     const energyCostSum = r.cost - kwCostSum;
-    const thermCostSum  = bfr.reduce((s,b)=>s+parseFloat(b.thermCost||b.cost||0),0);
+    // thermCost: use r.cost directly — for gas r.cost is already the prorated thermCost,
+    // matching exactly what gasByMo.cost uses in the Meter Data table
+    const thermCostSum = isElec ? 0 : r.cost;
     if(meterDataByMo[mo]){
       const prev = meterDataByMo[mo];
       meterDataByMo[mo] = {
@@ -8382,10 +8384,10 @@ function renderPerfPane(pane, m, bills, incl){
     filteredPostRows.forEach(r=>{
       const bfr = bills.filter(b=>normMonth(b.start,b.end,incl,bills)===r.ym);
       if(!bfr.length) return;
-      const actualTherms = bfr.reduce((s,b)=>s+parseFloat(b.therms||b.usage||0),0);
-      const thermCostAmt = bfr.reduce((s,b)=>s+parseFloat(b.thermCost||b.cost||0),0);
+      const actualTherms = r.usage; // prorated therms from norm row — matches Meter Data
+      const thermCostAmt = r.cost;  // prorated thermCost from norm row — matches Meter Data gasByMo.cost
       if(actualTherms>0)
-        gasCostByYm[r.ym] = { thermCostAmt, thermRate: actualTherms>0&&thermCostAmt>0 ? thermCostAmt/actualTherms : 0 };
+        gasCostByYm[r.ym] = { thermCostAmt, thermRate: thermCostAmt>0 ? thermCostAmt/actualTherms : 0 };
     });
   }
 
