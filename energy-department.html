@@ -7490,77 +7490,131 @@ function renderMeterDataPane(pane, m, bills, incl){
    same data pipeline as the meter Performance tab
 ══════════════════════════════════════════════ */
 let _bpBaselineByCalMo  = null;
+let _bpActualSavingsByCalMo = null;
 let _bspBaselineByCalMo = null;
 
 function renderBldgPerfPane(pane, b){
   if(!b){ pane.innerHTML='<div class="ud-empty">No building selected</div>'; return; }
 
   const MONTH_NAMES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const $f = v => '$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 
-  // ── Pull baseline spend per calendar month from all meters ──
-  // Same meterDataByMo logic as renderPerfPane, summed across all meters
-  const baselineByCalMo = {}; // 0-11 => total energyCost across all meters
+  // ── Baseline spend per calendar month ──
+  const baselineByCalMo = {};
   (b.meters||[]).forEach(m=>{
     const bl = m.baseline;
     if(!bl||!(bl.months||[]).length) return;
     const bills = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
     const incl  = m.inclusive!==false;
     const allRows = bills.length ? getNormRows(m,bills,incl,null) : [];
-    const blRows  = allRows.filter(r=>bl.months.includes(r.ym));
-    blRows.forEach(r=>{
-      const mo  = parseInt(r.ym.split('-')[1])-1;
-      // Use r.cost = total bill cost, matching "Total Utility Costs" column in Baseline Data tab
+    allRows.filter(r=>bl.months.includes(r.ym)).forEach(r=>{
+      const mo = parseInt(r.ym.split('-')[1])-1;
       baselineByCalMo[mo] = (baselineByCalMo[mo]||0) + r.cost;
     });
   });
+  _bpBaselineByCalMo = Array.from({length:12},(_,i)=>(baselineByCalMo[i]||0));
+  _bpActualSavingsByCalMo = null; // reset, will be computed below
+
+  // ── Projected spend per calendar month — from BSP saved config ──
+  const bspKey = 'bldgsavproj_cfg_'+(b.id||b.name);
+  let bspCfg = {};
+  try{ bspCfg=JSON.parse(localStorage.getItem(bspKey)||'{}'); }catch(e){}
+  const savPct = (bspCfg.savingsPct ?? 11) / 100;
+
+  // ── Actual savings per calendar month ──
+  const actualSavingsByCalMo = {};
+  (b.meters||[]).forEach(m=>{
+    const bl = m.baseline;
+    if(!bl||!(bl.months||[]).length) return;
+    const mbills  = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+    const mincl   = m.inclusive!==false;
+    const misElec = m.commodity==='Electric';
+    const mAllRows= mbills.length ? getNormRows(m,mbills,mincl,null) : [];
+    const mBlMonths= bl.months;
+    const mBlEnd   = mBlMonths.slice().sort().pop();
+    const mBlRows  = mAllRows.filter(r=>mBlMonths.includes(r.ym));
+    const mPostRows= mAllRows.filter(r=>r.ym>mBlEnd);
+    if(!mPostRows.length) return;
+    // Build baseline cost map per calendar month
+    const mMoMap = {};
+    mBlRows.forEach(r=>{
+      const mo  = parseInt(r.ym.split('-')[1])-1;
+      const bfr = mbills.filter(bx=>normMonth(bx.start,bx.end,mincl,mbills)===r.ym);
+      const kwC = bfr.reduce((s,bx)=>s+parseFloat(bx.kwCost||0),0)+bfr.reduce((s,bx)=>s+parseFloat(bx.facKWCost||0),0);
+      const normU = r.regrBaseline!=null ? r.regrBaseline : r.usage;
+      const energyCost = r.cost - kwC;
+      const thermCost  = bfr.reduce((s,bx)=>s+parseFloat(bx.thermCost||bx.cost||0),0);
+      if(mMoMap[mo]){
+        mMoMap[mo].energyCost += energyCost;
+        mMoMap[mo].thermCost  += thermCost;
+        mMoMap[mo].usage = (mMoMap[mo].usage + normU)/2;
+      } else {
+        mMoMap[mo] = {usage:normU, energyCost, thermCost};
+      }
+    });
+    // Compare post-baseline actual vs expected cost
+    mPostRows.forEach(r=>{
+      const calMo = parseInt(r.ym.split('-')[1])-1;
+      const ref   = mMoMap[calMo]; if(!ref) return;
+      const bfr   = mbills.filter(bx=>normMonth(bx.start,bx.end,mincl,mbills)===r.ym);
+      const kwC   = bfr.reduce((s,bx)=>s+parseFloat(bx.kwCost||0),0)+bfr.reduce((s,bx)=>s+parseFloat(bx.facKWCost||0),0);
+      const actC  = misElec
+        ? (r.cost - kwC)
+        : bfr.reduce((s,bx)=>s+parseFloat(bx.thermCost||bx.cost||0),0);
+      const expC  = misElec ? ref.energyCost : ref.thermCost;
+      actualSavingsByCalMo[calMo] = (actualSavingsByCalMo[calMo]||0) + (expC - actC);
+    });
+  });
+  const hasActual = Object.keys(actualSavingsByCalMo).length > 0;
+  _bpActualSavingsByCalMo = actualSavingsByCalMo;
 
   // ── Saved settings ──
   const storeKey = 'bldgperf_cfg_'+(b.id||b.name);
   let cfg = {};
   try{ cfg=JSON.parse(localStorage.getItem(storeKey)||'{}'); }catch(e){}
-  const defSavingsPct = cfg.savingsPct ?? 11;
-  const defClientPct  = cfg.clientPct  ?? 5;
-  const defCscPct     = cfg.cscPct     ?? 7;
-  const defYears      = cfg.years      ?? 3;
-  const defView       = cfg.view       ?? 'monthly';
+  const defCscMode  = cfg.cscMode  ?? 'pct';  // 'pct' or 'fixed'
+  const defCscPct   = cfg.cscPct   ?? 7;
+  const defCscFixed = cfg.cscFixed ?? 500;
+  const defYears    = cfg.years    ?? 3;
+  const defView     = cfg.view     ?? 'monthly';
 
-  // Store for use by bpRecalc (called outside this function)
-  _bpBaselineByCalMo = Array.from({length:12},(_,i)=>(baselineByCalMo[i]||0));
-  const moBase = _bpBaselineByCalMo;
-
-  // ── Render UI ──
   pane.innerHTML=`
-    <div style="margin-bottom:16px;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
-      <div>
-        <div style="font-size:16px;font-weight:800;font-family:var(--head);letter-spacing:-.01em">💡 ${b.name} — Building Performance</div>
-        <div style="font-size:12px;color:var(--text2);margin-top:3px">Baseline from Meter Data · projected values from Savings Projection settings · adjust percentages below</div>
-      </div>
+    <div style="margin-bottom:14px">
+      <div style="font-size:16px;font-weight:800;font-family:var(--head);letter-spacing:-.01em">💡 ${b.name} — Building Performance</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:3px">Baseline from Meter Data · projected values from Building Savings Projection settings</div>
     </div>
 
     <!-- Controls -->
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:18px;background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:13px 16px">
+      <!-- CSC mode toggle -->
       <div style="display:flex;flex-direction:column;gap:4px">
-        <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Projected Savings %</label>
-        <input id="bp-savpct" type="number" value="${defSavingsPct}" min="0" max="100" step="0.1"
-          style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
+        <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">CSC Compensation Mode</label>
+        <div style="display:flex;gap:4px">
+          <button id="bp-mode-pct" onclick="bpSetMode('pct')"
+            style="font-family:var(--font);font-size:11px;font-weight:600;padding:5px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;background:${defCscMode==='pct'?'var(--em)':'transparent'};color:${defCscMode==='pct'?'#05080f':'var(--text2)'}">% of Actual Savings</button>
+          <button id="bp-mode-fixed" onclick="bpSetMode('fixed')"
+            style="font-family:var(--font);font-size:11px;font-weight:600;padding:5px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;background:${defCscMode==='fixed'?'var(--em)':'transparent'};color:${defCscMode==='fixed'?'#05080f':'var(--text2)'}">Fixed Monthly Cost</button>
+        </div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:4px">
-        <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Client Savings %</label>
-        <input id="bp-clipct" type="number" value="${defClientPct}" min="0" max="100" step="0.1"
-          style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
-      </div>
-      <div style="display:flex;flex-direction:column;gap:4px">
+      <!-- CSC % input (shown in pct mode) -->
+      <div id="bp-csc-pct-wrap" style="display:${defCscMode==='pct'?'flex':'none'};flex-direction:column;gap:4px">
         <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">CSC Compensation %</label>
         <input id="bp-cscpct" type="number" value="${defCscPct}" min="0" max="100" step="0.1"
           style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
       </div>
+      <!-- Fixed $ input (shown in fixed mode) -->
+      <div id="bp-csc-fixed-wrap" style="display:${defCscMode==='fixed'?'flex':'none'};flex-direction:column;gap:4px">
+        <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Fixed Monthly Cost $</label>
+        <input id="bp-cscfixed" type="number" value="${defCscFixed}" min="0" step="1"
+          style="width:100px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
+      </div>
+      <!-- Years -->
       <div style="display:flex;flex-direction:column;gap:4px">
         <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Years</label>
         <select id="bp-years" style="font-family:var(--mono);font-size:13px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
           ${[1,2,3,4,5].map(y=>`<option value="${y}"${y===defYears?' selected':''}>${y} Year${y>1?'s':''}</option>`).join('')}
         </select>
       </div>
+      <!-- View -->
       <div style="display:flex;flex-direction:column;gap:4px">
         <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">View</label>
         <div style="display:flex;gap:4px">
@@ -7573,206 +7627,186 @@ function renderBldgPerfPane(pane, b){
       <button onclick="bpRecalc()" style="font-family:var(--font);font-size:12px;font-weight:700;padding:7px 16px;border-radius:7px;border:none;cursor:pointer;background:var(--em);color:#05080f;align-self:flex-end">⚡ Recalculate</button>
     </div>
 
-
     <!-- Results -->
     <div id="bp-results"></div>`;
 
-
-  // Render on load
   bpRecalc();
 }
 
-// Current view state
 let _bpView = 'monthly';
+let _bpMode = 'pct';
+
 function bpSetView(v){
   _bpView=v;
   ['monthly','quarterly'].forEach(vv=>{
-    const btn=document.getElementById('bp-v-'+vv);
-    if(!btn) return;
+    const btn=document.getElementById('bp-v-'+vv); if(!btn) return;
     btn.style.background = vv===v?'var(--em)':'transparent';
     btn.style.color      = vv===v?'#05080f':'var(--text2)';
   });
   bpRecalc();
 }
 
+function bpSetMode(m){
+  _bpMode=m;
+  ['pct','fixed'].forEach(mm=>{
+    const btn=document.getElementById('bp-mode-'+mm); if(!btn) return;
+    btn.style.background = mm===m?'var(--em)':'transparent';
+    btn.style.color      = mm===m?'#05080f':'var(--text2)';
+  });
+  const pw=document.getElementById('bp-csc-pct-wrap');
+  const fw=document.getElementById('bp-csc-fixed-wrap');
+  if(pw) pw.style.display=m==='pct'?'flex':'none';
+  if(fw) fw.style.display=m==='fixed'?'flex':'none';
+  bpRecalc();
+}
+
 function bpRecalc(){
-  const savPct  = parseFloat(document.getElementById('bp-savpct')?.value||0)/100;
-  const cliPct  = parseFloat(document.getElementById('bp-clipct')?.value||0)/100;
-  const cscPct  = parseFloat(document.getElementById('bp-cscpct')?.value||0)/100;
-  const years   = parseInt(document.getElementById('bp-years')?.value||3);
-  const view    = _bpView;
-  const moBase  = _bpBaselineByCalMo || Array(12).fill(0);
-  const annBase = moBase.reduce((s,v)=>s+v,0);
+  const cscMode  = _bpMode;
+  const cscPct   = parseFloat(document.getElementById('bp-cscpct')?.value||0)/100;
+  const cscFixed = parseFloat(document.getElementById('bp-cscfixed')?.value||0);
+  const years    = parseInt(document.getElementById('bp-years')?.value||3);
+  const view     = _bpView;
+  const moBase   = _bpBaselineByCalMo || Array(12).fill(0);
+  const annBase  = moBase.reduce((s,v)=>s+v,0);
 
   // Save config
   const b = getUDBldg(udSelProjId,udSelBldgId);
   if(b){
     const storeKey='bldgperf_cfg_'+(b.id||b.name);
-    try{ localStorage.setItem(storeKey,JSON.stringify({
-      savingsPct:savPct*100,clientPct:cliPct*100,cscPct:cscPct*100,years,view
-    }));}catch(e){}
+    try{ localStorage.setItem(storeKey,JSON.stringify({cscMode,cscPct:cscPct*100,cscFixed,years,view})); }catch(e){}
   }
 
-  const MONTH_NAMES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const $f = v=>'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const $fc= v=>(v<0?'-':'')+$f(v);
+  // Projected spend from BSP config
+  const bspKey = b ? 'bldgsavproj_cfg_'+(b.id||b.name) : null;
+  let bspCfg = {};
+  try{ if(bspKey) bspCfg=JSON.parse(localStorage.getItem(bspKey)||'{}'); }catch(e){}
+  const savPct = (bspCfg.savingsPct ?? 11) / 100;
 
-  // Build column definitions
+  // Actual savings per calendar month (re-computed from stored data if available, or from b)
+  // We re-use _bpActualSavingsByCalMo if set, else re-derive
+  const actByMo = _bpActualSavingsByCalMo || {};
+  const hasActual = Object.keys(actByMo).length > 0;
+
+  const MONTH_NAMES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const $f  = v => v!=null ? '$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
+  const $fc = v => v!=null ? (v<0?'-':'')+$f(v) : '—';
+  const $cs = (v,force) => {
+    if(v==null && !force) return '<span style="color:var(--text3)">—</span>';
+    if(v==null) v=0;
+    const c = v>=0?'var(--em)':'var(--danger)';
+    return `<span style="color:${c}">${v>=0?'+':'-'}${$f(v)}</span>`;
+  };
+
+  // Build columns
   let cols = [];
   if(view==='monthly'){
-    for(let mo=0;mo<12;mo++) cols.push({label:MONTH_NAMES[mo],mo,yr:0});
-    cols.push({label:'Total',isTotal:true,yr:0});
+    for(let mo=0;mo<12;mo++) cols.push({label:MONTH_NAMES[mo],mo});
+    cols.push({label:'Total',isTotal:true});
   } else {
-    // Quarterly per year
     for(let yr=0;yr<years;yr++){
       for(let q=0;q<4;q++){
-        const mos=[q*3,(q*3)+1,(q*3)+2];
-        cols.push({label:`Y${yr+1} Q${q+1}`,mos,yr});
+        cols.push({label:`Y${yr+1} Q${q+1}`,mos:[q*3,q*3+1,q*3+2],yr});
       }
     }
     cols.push({label:'Total',isTotal:true});
   }
 
-  // Compute per-column values
-  function colBase(col){
-    if(col.isTotal) return cols.filter(c=>!c.isTotal).reduce((s,c)=>s+colBase(c),0);
-    if(col.mos) return col.mos.reduce((s,mo)=>s+moBase[mo],0) * years; // each year same baseline
-    if(col.mo!==undefined) return moBase[col.mo];
-    return 0;
-  }
-  // For quarterly, each year repeats the same monthly baseline
   function colBaseQ(col){
     if(col.isTotal) return annBase*years;
     if(col.mos) return col.mos.reduce((s,mo)=>s+moBase[mo],0);
     return moBase[col.mo]||0;
   }
-
-  const rows = ['baseline','projected','savings','client','csc'].map(key=>{
-    const vals = cols.map(col=>{
-      const base = view==='monthly' ? (col.isTotal ? annBase : moBase[col.mo]) : colBaseQ(col);
-      switch(key){
-        case 'baseline':  return base;
-        case 'projected': return base*(1-savPct);
-        case 'savings':   return base*savPct;
-        case 'client':    return base*cliPct;
-        case 'csc':       return base*cscPct;
-      }
-    });
-    const labels = {baseline:'Baseline Utility Spend $',projected:'Projected Utility Spend $',
-      savings:'Projected Utility Savings $',client:'Client Projected Utility Savings $',csc:'CSC Projected Utility Compensation $'};
-    const pcts   = {savings:(savPct*100).toFixed(0)+'%',client:(cliPct*100).toFixed(0)+'%',csc:(cscPct*100).toFixed(0)+'%'};
-    const colors = {baseline:'var(--text)',projected:'var(--text)',savings:'var(--em)',client:'#22c55e',csc:'var(--em2)'};
-    return {key,label:labels[key],vals,pct:pcts[key],color:colors[key]};
-  });
-
-
-  // ── Actual Utility Savings $ — from all meters' post-baseline cost savings ──
-  const actualSavingsByCalMo = {};
-  (b ? b.meters||[] : []).forEach(m=>{
-    const bl = m.baseline;
-    if(!bl||!(bl.months||[]).length) return;
-    const mbills  = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
-    const mincl   = m.inclusive!==false;
-    const misElec = m.commodity==='Electric';
-    const mAllRows= mbills.length ? getNormRows(m,mbills,mincl,null) : [];
-    const mBlMonths= bl.months;
-    const mBlEnd   = mBlMonths.slice().sort().pop();
-    const mBlRows  = mAllRows.filter(r=>mBlMonths.includes(r.ym));
-    const mPostRows= mAllRows.filter(r=>r.ym>mBlEnd);
-    if(!mPostRows.length) return;
-    // Build baseline cost map
-    const mMoMap = {};
-    mBlRows.forEach(r=>{
-      const mo  = parseInt(r.ym.split('-')[1])-1;
-      const bfr = mbills.filter(bx=>normMonth(bx.start,bx.end,mincl,mbills)===r.ym);
-      const kwC = bfr.reduce((s,bx)=>s+parseFloat(bx.kwCost||0),0)+bfr.reduce((s,bx)=>s+parseFloat(bx.facKWCost||0),0);
-      const normU = r.regrBaseline!=null ? r.regrBaseline : r.usage;
-      if(mMoMap[mo]){
-        mMoMap[mo].energyCost += r.cost - kwC;
-        mMoMap[mo].thermCost  += bfr.reduce((s,bx)=>s+parseFloat(bx.thermCost||bx.cost||0),0);
-        mMoMap[mo].usage = (mMoMap[mo].usage + normU)/2;
-      } else {
-        mMoMap[mo] = {usage:normU, energyCost:r.cost-kwC, thermCost:bfr.reduce((s,bx)=>s+parseFloat(bx.thermCost||bx.cost||0),0)};
-      }
-    });
-    mPostRows.forEach(r=>{
-      const calMo = parseInt(r.ym.split('-')[1])-1;
-      const ref   = mMoMap[calMo]; if(!ref) return;
-      const bfr   = mbills.filter(bx=>normMonth(bx.start,bx.end,mincl,mbills)===r.ym);
-      const kwC   = bfr.reduce((s,bx)=>s+parseFloat(bx.kwCost||0),0)+bfr.reduce((s,bx)=>s+parseFloat(bx.facKWCost||0),0);
-      const actC  = misElec ? (r.cost-kwC) : bfr.reduce((s,bx)=>s+parseFloat(bx.thermCost||bx.cost||0),0);
-      const expC  = misElec ? ref.energyCost : ref.thermCost;
-      actualSavingsByCalMo[calMo] = (actualSavingsByCalMo[calMo]||0) + (expC - actC);
-    });
-  });
-  const hasActual = Object.keys(actualSavingsByCalMo).length > 0;
-  const actSavMo  = Array.from({length:12},(_,i)=>actualSavingsByCalMo[i]??null);
-  const annActSav = hasActual ? actSavMo.reduce((s,v)=>s+(v||0),0) : null;
-
-  // Add actual savings row after projected savings row
-  const projSavRow = rows.find(r=>r.key==='savings');
-  const projSavIdx = rows.indexOf(projSavRow);
-  if(hasActual){
-    const actColor = annActSav>=0 ? '#22c55e' : 'var(--danger)';
-    const actPct   = annBase>0 ? (annActSav/annBase*100).toFixed(0)+'%' : null;
-    // Build vals to match cols
-    const actVals  = cols.map(col=>{
-      if(col.isTotal) return annActSav;
-      if(col.mo!==undefined) return actualSavingsByCalMo[col.mo]??null;
-      if(col.mos) return col.mos.reduce((s,mo)=>s+(actualSavingsByCalMo[mo]||0),0);
-      return null;
-    });
-    rows.splice(projSavIdx+1, 0, {key:'actual', label:'Actual Utility Savings $', vals:actVals, pct:actPct, color:actColor, isActual:true});
+  function getBase(col){
+    if(view==='monthly') return col.isTotal ? annBase : (moBase[col.mo]||0);
+    return colBaseQ(col);
+  }
+  function getActSav(col){
+    if(!hasActual) return null;
+    if(col.isTotal) return Object.values(actByMo).reduce((s,v)=>s+v,0);
+    if(col.mos) return col.mos.reduce((s,mo)=>s+(actByMo[mo]||0),0);
+    return actByMo[col.mo]??null;
+  }
+  function getCscVal(col){
+    const act = getActSav(col);
+    if(act==null) return null;
+    if(cscMode==='pct') return act * cscPct;
+    // fixed mode: fixed per month × number of months in col
+    const nMos = col.isTotal ? (view==='monthly'?12:12*years) : (col.mos?col.mos.length:1);
+    return cscFixed * nMos;
+  }
+  function getCliVal(col){
+    const act = getActSav(col);
+    const csc = getCscVal(col);
+    if(act==null || csc==null) return null;
+    return act - csc;
   }
 
-  // CSC cumulative (for quarterly view line chart)
-  const cscRow = rows.find(r=>r.key==='csc');
-  let cumulative = 0;
-  const cumulativeVals = cscRow.vals.slice(0,-1).map(v=>{ cumulative+=v; return cumulative; });
+  // Row definitions
+  const annActSav  = hasActual ? Object.values(actByMo).reduce((s,v)=>s+v,0) : null;
+  const annProjSav = annBase * savPct;
+  const projPct    = annBase>0 ? (annProjSav/annBase*100).toFixed(0)+'%' : null;
+  const actPct     = hasActual && annBase>0 ? (annActSav/annBase*100).toFixed(1)+'%' : null;
 
-  // Total column savings %
-  const totalBase = rows[0].vals[rows[0].vals.length-1];
-  const totalSav  = rows[2].vals[rows[2].vals.length-1];
-  const totalPct  = totalBase>0?(totalSav/totalBase*100).toFixed(0)+'%':'—';
+  const thS = 'padding:7px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
+  const colHdrs = cols.map(c=>`<th style="${thS}">${c.label}</th>`).join('');
 
-  // ── Table HTML ──
-  const colHdrs = cols.map(c=>`<th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap">${c.label}</th>`).join('');
-
-  // Year group headers for quarterly
-  let yearHdr = '';
+  let yearHdr='';
   if(view==='quarterly'){
     yearHdr='<tr style="background:var(--s1)"><th style="border:1px solid var(--border2)"></th><th style="border:1px solid var(--border2)"></th>';
-    for(let yr=0;yr<years;yr++){
-      yearHdr+=`<th colspan="4" style="text-align:center;padding:5px;font-size:11px;font-weight:700;color:var(--text);border:1px solid var(--border2);border-bottom:2px solid var(--em)">Year ${yr+1}</th>`;
-    }
+    for(let yr=0;yr<years;yr++) yearHdr+=`<th colspan="4" style="text-align:center;padding:5px;font-size:11px;font-weight:700;color:var(--text);border:1px solid var(--border2);border-bottom:2px solid var(--em)">Year ${yr+1}</th>`;
     yearHdr+='<th style="border:1px solid var(--border2)"></th></tr>';
   }
 
-  const tableRows = rows.map(r=>{
-    const cells = r.vals.map((v,i)=>{
-      const isLast = i===r.vals.length-1;
-      if(r.isActual){
-        const c = v==null?'var(--text3)':v>=0?'var(--em)':'var(--danger)';
-        const disp = v==null?'—':(v>=0?'+':'-')+'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-        return `<td style="padding:7px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${c};font-weight:${isLast?'700':'400'};border:1px solid var(--border);background:${isLast?'var(--s1)':'transparent'};white-space:nowrap">${disp}</td>`;
-      }
-      return `<td style="padding:7px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${isLast?r.color:'var(--text)'};font-weight:${isLast?'700':'400'};border:1px solid var(--border);background:${isLast?'var(--s1)':'transparent'};white-space:nowrap">${$fc(v)}</td>`;
-    }).join('');
-    const pctCell = r.pct?`<td style="padding:7px 10px;text-align:center;font-family:var(--mono);font-size:12px;color:${r.color};font-weight:700;border:1px solid var(--border)">${r.pct}</td>`:'<td style="border:1px solid var(--border)"></td>';
-    return `<tr>
-      <td style="padding:7px 12px;font-size:12px;font-weight:600;color:${r.color};white-space:nowrap;border:1px solid var(--border);background:var(--s1)">${r.label}</td>
-      ${pctCell}${cells}
-    </tr>`;
-  }).join('');
+  // Row builder
+  const tdS = (color,isLast,isActual) =>
+    `padding:7px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${color};font-weight:${isLast?'700':'400'};border:1px solid var(--border);background:${isLast?'var(--s1)':'transparent'};white-space:nowrap`;
 
-  // ── Chart data ──
+  function makeRow(label, color, colFn, pctLabel){
+    const cells = cols.map((col,i)=>{
+      const isLast = i===cols.length-1;
+      const v = colFn(col);
+      const disp = v==null ? '<span style="color:var(--text3)">—</span>' : $cs(v);
+      return `<td style="${tdS(v==null?'var(--text3)':v>=0?'var(--em)':'var(--danger)',isLast,true)}">${disp}</td>`;
+    }).join('');
+    const pctCell = pctLabel!=null
+      ? `<td style="padding:7px 10px;text-align:center;font-family:var(--mono);font-size:12px;color:${color};font-weight:700;border:1px solid var(--border)">${pctLabel}</td>`
+      : `<td style="border:1px solid var(--border)"></td>`;
+    return `<tr><td style="padding:7px 12px;font-size:12px;font-weight:600;color:${color};white-space:nowrap;border:1px solid var(--border);background:var(--s1)">${label}</td>${pctCell}${cells}</tr>`;
+  }
+
+  function makeRegRow(label, color, colFn, pctLabel){
+    const cells = cols.map((col,i)=>{
+      const isLast = i===cols.length-1;
+      const v = colFn(col);
+      return `<td style="${tdS(isLast?color:'var(--text)',isLast,false)}">${$fc(v)}</td>`;
+    }).join('');
+    const pctCell = pctLabel!=null
+      ? `<td style="padding:7px 10px;text-align:center;font-family:var(--mono);font-size:12px;color:${color};font-weight:700;border:1px solid var(--border)">${pctLabel}</td>`
+      : `<td style="border:1px solid var(--border)"></td>`;
+    return `<tr><td style="padding:7px 12px;font-size:12px;font-weight:600;color:${color};white-space:nowrap;border:1px solid var(--border);background:var(--s1)">${label}</td>${pctCell}${cells}</tr>`;
+  }
+
+  const tableRows =
+    makeRegRow('Baseline Utility Spend $',     'var(--text)', col=>getBase(col),                       null) +
+    makeRegRow('Projected Utility Spend $',     'var(--text)', col=>getBase(col)*(1-savPct),             null) +
+    makeRegRow('Projected Utility Savings $',   'var(--em)',   col=>getBase(col)*savPct,                 projPct) +
+    (hasActual ? makeRow('Actual Utility Savings $', annActSav>=0?'var(--em)':'var(--danger)', col=>getActSav(col), actPct) : '') +
+    (hasActual ? makeRow('Client Utility Savings $', '#22c55e', col=>getCliVal(col), cscMode==='pct'?(100-cscPct*100).toFixed(0)+'%':null) : '') +
+    (hasActual ? makeRow('CSC Utility Compensation $', 'var(--em2)', col=>getCscVal(col), cscMode==='pct'?(cscPct*100).toFixed(0)+'%':null) : '');
+
+  // Chart data — use projected spend, client savings, csc compensation
   const chartCols = cols.filter(c=>!c.isTotal);
   const chartLabels = JSON.stringify(chartCols.map(c=>c.label));
-  const projVals  = JSON.stringify(chartCols.map((_,i)=>rows[1].vals[i]));
-  const cliVals   = JSON.stringify(chartCols.map((_,i)=>rows[3].vals[i]));
-  const cscVals   = JSON.stringify(chartCols.map((_,i)=>rows[4].vals[i]));
-  const cumVals   = JSON.stringify(cumulativeVals);
-  const showLine  = view==='quarterly';
+  const projSpendVals = JSON.stringify(chartCols.map(col=>getBase(col)*(1-savPct)));
+  const cliVals  = JSON.stringify(chartCols.map(col=>hasActual?Math.max(0,getCliVal(col)||0):0));
+  const cscVals  = JSON.stringify(chartCols.map(col=>hasActual?Math.max(0,getCscVal(col)||0):0));
+  // CSC cumulative
+  let cum=0;
+  const cumVals = JSON.stringify(chartCols.map(col=>{ cum+=(hasActual?Math.max(0,getCscVal(col)||0):0); return cum; }));
+  const showLine = view==='quarterly';
+
+  const annCsc = hasActual ? (getCscVal({isTotal:true})||0) : 0;
+  const annCli = hasActual ? (getCliVal({isTotal:true})||0) : 0;
 
   const res = document.getElementById('bp-results');
   if(!res) return;
@@ -7781,22 +7815,27 @@ function bpRecalc(){
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px">
       <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
         <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Annual Baseline</div>
-        <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--text)">${$f(annBase)}</div>
+        <div style="font-size:18px;font-weight:800;font-family:var(--head)">${$f(annBase)}</div>
       </div>
       <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
-        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Annual Projected Spend</div>
-        <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--text)">${$f(annBase*(1-savPct))}</div>
+        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Projected Savings</div>
+        <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--em)">${$f(annProjSav)}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">${projPct||''} of baseline</div>
+      </div>
+      ${hasActual?`
+      <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
+        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Actual Savings</div>
+        <div style="font-size:18px;font-weight:800;font-family:var(--head);color:${annActSav>=0?'var(--em)':'var(--danger)'}">${annActSav>=0?'+':''}${$f(annActSav)}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct||''} of baseline</div>
       </div>
       <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
-        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Total Projected Savings</div>
-        <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--em)">${$f(totalSav)}</div>
-        <div style="font-size:11px;color:var(--text2);margin-top:2px">${totalPct} of baseline · ${years} yr${years>1?'s':''}</div>
+        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">CSC Compensation</div>
+        <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--em2)">${$f(annCsc)}</div>
       </div>
       <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
-        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">CSC Cumulative</div>
-        <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--em2)">${$f(annBase*cscPct*years)}</div>
-        <div style="font-size:11px;color:var(--text2);margin-top:2px">over ${years} yr${years>1?'s':''}</div>
-      </div>
+        <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Client Savings</div>
+        <div style="font-size:18px;font-weight:800;font-family:var(--head);color:#22c55e">${$f(annCli)}</div>
+      </div>`:''}
     </div>
 
     <!-- Data table -->
@@ -7806,7 +7845,7 @@ function bpRecalc(){
           ${yearHdr}
           <tr style="background:var(--s1)">
             <th style="padding:7px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)"></th>
-            <th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Savings %</th>
+            <th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">%</th>
             ${colHdrs}
           </tr>
         </thead>
@@ -7819,24 +7858,21 @@ function bpRecalc(){
       <canvas id="bpChart" height="90"></canvas>
     </div>`;
 
-  // Draw chart with Chart.js
   requestAnimationFrame(()=>{
-    const ctx = document.getElementById('bpChart');
-    if(!ctx) return;
+    const ctx = document.getElementById('bpChart'); if(!ctx) return;
     if(ctx._chart) ctx._chart.destroy();
     const datasets = [
-      {label:'Projected Utility Spend $',data:JSON.parse(projVals),backgroundColor:'rgba(34,197,94,0.75)',stack:'s'},
-      {label:'Client Projected Utility Savings $',data:JSON.parse(cliVals),backgroundColor:'rgba(20,184,166,0.85)',stack:'s'},
-      {label:'CSC Projected Utility Compensation $',data:JSON.parse(cscVals),backgroundColor:'rgba(59,130,246,0.85)',stack:'s'},
+      {label:'Projected Utility Spend $',     data:JSON.parse(projSpendVals), backgroundColor:'rgba(34,197,94,0.75)',  stack:'s'},
+      {label:'Client Utility Savings $',       data:JSON.parse(cliVals),       backgroundColor:'rgba(20,184,166,0.85)', stack:'s'},
+      {label:'CSC Utility Compensation $',     data:JSON.parse(cscVals),       backgroundColor:'rgba(59,130,246,0.85)', stack:'s'},
     ];
-    if(showLine){
-      datasets.push({label:'CSC Projected Cumulative Total $',data:JSON.parse(cumVals),type:'line',borderColor:'#f97316',backgroundColor:'transparent',borderWidth:2.5,pointRadius:3,pointBackgroundColor:'#f97316',tension:0.35,stack:undefined,yAxisID:'y'});
-    }
+    if(showLine) datasets.push({label:'CSC Cumulative $',data:JSON.parse(cumVals),type:'line',borderColor:'#f97316',backgroundColor:'transparent',borderWidth:2.5,pointRadius:3,pointBackgroundColor:'#f97316',tension:0.35,stack:undefined,yAxisID:'y'});
     ctx._chart = new Chart(ctx,{
       type:'bar',
       data:{labels:JSON.parse(chartLabels),datasets},
       options:{
-        responsive:true,plugins:{legend:{labels:{color:'#6b7a9e',font:{size:11}}}},
+        responsive:true,
+        plugins:{legend:{labels:{color:'#6b7a9e',font:{size:11}}}},
         scales:{
           x:{ticks:{color:'#6b7a9e',font:{size:10}},grid:{color:'rgba(255,255,255,.04)'}},
           y:{ticks:{color:'#6b7a9e',font:{size:10},callback:v=>'$'+v.toLocaleString()},grid:{color:'rgba(255,255,255,.06)'},stacked:true},
@@ -8348,8 +8384,8 @@ function renderPerfPane(pane, m, bills, incl){
       if(!bfr.length) return;
       const actualTherms = bfr.reduce((s,b)=>s+parseFloat(b.therms||b.usage||0),0);
       const thermCostAmt = bfr.reduce((s,b)=>s+parseFloat(b.thermCost||b.cost||0),0);
-      if(actualTherms>0 && thermCostAmt>0)
-        gasCostByYm[r.ym] = { thermCostAmt, thermRate: thermCostAmt/actualTherms };
+      if(actualTherms>0)
+        gasCostByYm[r.ym] = { thermCostAmt, thermRate: actualTherms>0&&thermCostAmt>0 ? thermCostAmt/actualTherms : 0 };
     });
   }
 
