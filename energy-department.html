@@ -3816,24 +3816,24 @@ function renderDetail(p){
             </div>
           </div>
           <div style="overflow-x:auto">
-            <table class="dtbl sv-matrix-tbl" style="min-width:1800px" id="sv-matrix-tbl-${p.id}">
+            <table class="dtbl sv-matrix-tbl" style="min-width:2400px" id="sv-matrix-tbl-${p.id}">
               <thead>
                 <tr>
-                  <th style="width:30px">✓</th>
-                  <th style="width:50px">Msr #</th>
-                  <th style="min-width:140px">Building</th>
-                  <th style="min-width:180px">Measure Description</th>
-                  <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(59,130,246,0.07)">Electric kWh Savings / Month</th>
-                  <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(245,158,11,0.07)">Electric kW Savings / Month</th>
-                  <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(20,184,166,0.07)">Gas Therms Savings / Month</th>
-                  <th style="border-left:2px solid var(--border2);text-align:center;background:rgba(34,197,94,0.07)">Total Est. $ Savings/Yr</th>
-                  <th style="text-align:center;width:32px"></th>
+                  <th style="width:28px">✓</th>
+                  <th style="width:44px">Msr #</th>
+                  <th style="min-width:130px">Building</th>
+                  <th style="min-width:190px">Measure Description</th>
+                  <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(59,130,246,0.07)">⚡ Electric kWh Savings / Month</th>
+                  <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(245,158,11,0.07)">⚡ Electric kW Savings / Month</th>
+                  <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(20,184,166,0.07)">🔥 Gas Therms Savings / Month</th>
+                  <th style="border-left:2px solid var(--border2);text-align:center;background:rgba(34,197,94,0.07);min-width:110px">💰 Est. $/Yr</th>
+                  <th style="width:28px"></th>
                 </tr>
                 <tr>
                   <th></th><th></th><th></th><th></th>
-                  ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(m=>`<th style="border-left:${m==='Jan'?'2px':'1px'} solid var(--border${m==='Jan'?'2':''});font-size:10px;padding:5px 4px">${m}</th>`).join('')}
-                  ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(m=>`<th style="border-left:${m==='Jan'?'2px':'1px'} solid var(--border${m==='Jan'?'2':''});font-size:10px;padding:5px 4px">${m}</th>`).join('')}
-                  ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(m=>`<th style="border-left:${m==='Jan'?'2px':'1px'} solid var(--border${m==='Jan'?'2':''});font-size:10px;padding:5px 4px">${m}</th>`).join('')}
+                  ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(m=>`<th style="border-left:${m==='Jan'?'2px':'1px'} solid var(--border${m==='Jan'?'2':''});font-size:10px;padding:4px 2px;width:58px;text-align:center">${m}</th>`).join('')}
+                  ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(m=>`<th style="border-left:${m==='Jan'?'2px':'1px'} solid var(--border${m==='Jan'?'2':''});font-size:10px;padding:4px 2px;width:58px;text-align:center">${m}</th>`).join('')}
+                  ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(m=>`<th style="border-left:${m==='Jan'?'2px':'1px'} solid var(--border${m==='Jan'?'2':''});font-size:10px;padding:4px 2px;width:58px;text-align:center">${m}</th>`).join('')}
                   <th style="border-left:2px solid var(--border2)"></th><th></th>
                 </tr>
               </thead>
@@ -4115,8 +4115,9 @@ function renderProjBaselineRates(projId){
 
   // If no buildings, show a placeholder row
   if(!bldgs.length){
-    tbody.innerHTML=`<tr><td colspan="6" style="text-align:center;color:var(--text2);padding:14px;font-size:12px">
-      No buildings added yet — add buildings in the Buildings tab first.
+    tbody.innerHTML=`<tr><td colspan="6" style="text-align:center;color:var(--text2);padding:18px;font-size:12px">
+      No buildings found in Utility Data for this project.<br>
+      <span style="font-size:11px;color:var(--text3)">Add buildings in the <strong style="color:var(--accent)">Buildings</strong> tab → then add them as utility meters in the <strong style="color:var(--accent)">Utility Data</strong> tab.</span>
     </td></tr>`;
     return;
   }
@@ -4124,12 +4125,12 @@ function renderProjBaselineRates(projId){
   tbody.innerHTML = bldgs.map(b=>{
     const r = sd.blRates[b.id] || {};
     return `<tr>
-      <td style="font-weight:600;font-size:12px">${b.name}</td>
-      <td style="border-left:2px solid var(--border2)"><input class="bl-rate-inp" type="number" step="0.0001" placeholder="0.0681" value="${r.kwhSummer||''}" id="blr-kwhs-${projId}-${b.id}"></td>
-      <td><input class="bl-rate-inp" type="number" step="0.0001" placeholder="0.0582" value="${r.kwhWinter||''}" id="blr-kwhw-${projId}-${b.id}"></td>
-      <td style="border-left:2px solid var(--border2)"><input class="bl-rate-inp" type="number" step="0.01" placeholder="16.997" value="${r.kwSummer||''}" id="blr-kws-${projId}-${b.id}"></td>
-      <td><input class="bl-rate-inp" type="number" step="0.01" placeholder="11.797" value="${r.kwWinter||''}" id="blr-kww-${projId}-${b.id}"></td>
-      <td style="border-left:2px solid var(--border2)"><input class="bl-rate-inp" type="number" step="0.001" placeholder="0.798" value="${r.thermRate||''}" id="blr-therm-${projId}-${b.id}"></td>
+      <td style="font-weight:600;font-size:13px;white-space:nowrap">${b.name}</td>
+      <td style="border-left:2px solid var(--border2)"><input class="bl-rate-inp" type="number" step="0.0001" placeholder="0.0681" value="${r.kwhSummer||''}" id="blr-kwhs-${projId}-${b.id}" style="width:80px"></td>
+      <td><input class="bl-rate-inp" type="number" step="0.0001" placeholder="0.0582" value="${r.kwhWinter||''}" id="blr-kwhw-${projId}-${b.id}" style="width:80px"></td>
+      <td style="border-left:2px solid var(--border2)"><input class="bl-rate-inp" type="number" step="0.01" placeholder="16.997" value="${r.kwSummer||''}" id="blr-kws-${projId}-${b.id}" style="width:80px"></td>
+      <td><input class="bl-rate-inp" type="number" step="0.01" placeholder="11.797" value="${r.kwWinter||''}" id="blr-kww-${projId}-${b.id}" style="width:80px"></td>
+      <td style="border-left:2px solid var(--border2)"><input class="bl-rate-inp" type="number" step="0.001" placeholder="0.798" value="${r.thermRate||''}" id="blr-therm-${projId}-${b.id}" style="width:80px"></td>
     </tr>`;
   }).join('');
 }
@@ -4198,9 +4199,9 @@ function renderSavingsMatrix(projId){
   }
 
   tbody.innerHTML = sd.measures.map(m=>{
-    const kwhCells = m.kwh.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:3px 2px;background:rgba(59,130,246,0.03)"><input class="sv-num-inp kwh-col" type="number" step="any" value="${v||''}" placeholder="0" onchange="updateMsrVal('${projId}','${m.id}','kwh',${i},this.value)" onfocusout="autoSaveMsr('${projId}')"></td>`).join('');
-    const kwCells  = m.kw.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:3px 2px;background:rgba(245,158,11,0.03)"><input class="sv-num-inp kw-col" type="number" step="any" value="${v||''}" placeholder="0" onchange="updateMsrVal('${projId}','${m.id}','kw',${i},this.value)" onfocusout="autoSaveMsr('${projId}')"></td>`).join('');
-    const gasCells = m.gas.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:3px 2px;background:rgba(20,184,166,0.03)"><input class="sv-num-inp gas-col" type="number" step="any" value="${v||''}" placeholder="0" onchange="updateMsrVal('${projId}','${m.id}','gas',${i},this.value)" onfocusout="autoSaveMsr('${projId}')"></td>`).join('');
+    const kwhCells = m.kwh.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:2px 1px;background:rgba(59,130,246,0.03)"><input class="sv-num-inp kwh-col" type="number" step="any" value="${v||''}" placeholder="0" style="width:54px" onchange="updateMsrVal('${projId}','${m.id}','kwh',${i},this.value)" onfocusout="autoSaveMsr('${projId}')"></td>`).join('');
+    const kwCells  = m.kw.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:2px 1px;background:rgba(245,158,11,0.03)"><input class="sv-num-inp kw-col" type="number" step="any" value="${v||''}" placeholder="0" style="width:54px" onchange="updateMsrVal('${projId}','${m.id}','kw',${i},this.value)" onfocusout="autoSaveMsr('${projId}')"></td>`).join('');
+    const gasCells = m.gas.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:2px 1px;background:rgba(20,184,166,0.03)"><input class="sv-num-inp gas-col" type="number" step="any" value="${v||''}" placeholder="0" style="width:54px" onchange="updateMsrVal('${projId}','${m.id}','gas',${i},this.value)" onfocusout="autoSaveMsr('${projId}')"></td>`).join('');
     const dollarStr = m.totalDollar>0 ? '$'+Math.round(m.totalDollar).toLocaleString() : '—';
     return `<tr id="sv-msr-row-${projId}-${m.id}">
       <td style="text-align:center"><input type="checkbox" class="sv-sel-cb" ${m.selected?'checked':''} onchange="updateMsrSel('${projId}','${m.id}',this.checked)"></td>
