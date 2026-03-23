@@ -940,38 +940,30 @@ html,body{height:100%;overflow:hidden;}
 <!-- Weather & Normalize and Baseline are integrated into Utility Data meter workspace tabs -->
 
 <!-- ENERGY SAVINGS -->
-<div id="view-savings" class="view">
-  <div style="display:flex;justify-content:flex-end;flex-shrink:0;margin-bottom:14px">
-    <button class="btn btn-em" onclick="calcSavings()">💡 Calculate Savings</button>
-  </div>
-  <div class="g2">
-    <div class="card">
-      <div class="card-hdr"><span class="card-title">📥 Savings Inputs</span></div>
-      <div style="padding:14px">
-        <div class="fg"><label class="fl">Project Name</label><input class="fi" id="sv-name" placeholder="e.g. Van Horn HS BAS Upgrade"></div>
-        <div class="fl" style="margin-bottom:6px;display:block">Baseline Period</div>
-        <div class="f3">
-          <div class="fg"><label class="fl">kWh / yr</label><input class="fi" id="sv-bl-kwh" type="number" placeholder="0"></div>
-          <div class="fg"><label class="fl">Therms / yr</label><input class="fi" id="sv-bl-th" type="number" placeholder="0"></div>
-          <div class="fg"><label class="fl">Cost / yr $</label><input class="fi" id="sv-bl-cost" type="number" placeholder="0"></div>
+<div id="view-savings" class="view view-flex">
+  <div class="ud-layout">
+    <div class="ud-nav" id="svProjNav" style="min-width:200px;max-width:240px">
+      <div class="ud-nav-sect">
+        <div class="ud-nav-sect-hdr"><span class="ud-nav-sect-title">Projects</span></div>
+      </div>
+      <div class="ud-nav-body" id="svNavList"></div>
+    </div>
+    <div class="ud-detail-col">
+      <div id="svDetailHdr" style="display:none;flex-shrink:0;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--s1);align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-size:16px;font-weight:700" id="svDetailHdrTitle"></div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px" id="svDetailHdrSub"></div>
         </div>
-        <div class="fl" style="margin-bottom:6px;display:block;margin-top:4px">Post-Installation Period</div>
-        <div class="f3">
-          <div class="fg"><label class="fl">kWh / yr</label><input class="fi" id="sv-po-kwh" type="number" placeholder="0"></div>
-          <div class="fg"><label class="fl">Therms / yr</label><input class="fi" id="sv-po-th" type="number" placeholder="0"></div>
-          <div class="fg"><label class="fl">Cost / yr $</label><input class="fi" id="sv-po-cost" type="number" placeholder="0"></div>
-        </div>
-        <div class="f2">
-          <div class="fg"><label class="fl">Baseline HDD</label><input class="fi" id="sv-bl-hdd" type="number" placeholder="4800"></div>
-          <div class="fg"><label class="fl">Post HDD</label><input class="fi" id="sv-po-hdd" type="number" placeholder="4800"></div>
-        </div>
-        <div class="f2">
-          <div class="fg"><label class="fl">Project Cost $</label><input class="fi" id="sv-cost" type="number" placeholder="0"></div>
-          <div class="fg"><label class="fl">Elec Rate $/kWh</label><input class="fi" id="sv-rate" type="number" placeholder="0.12" step="0.001"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="svSaveProjBaselineRates()">💾 Save Rates</button>
+          <button class="btn btn-ghost btn-sm" onclick="svAddMeasure()">+ Add Measure</button>
+          <button class="btn btn-em btn-sm" onclick="svRecalc()">⚡ Recalc $ Savings</button>
         </div>
       </div>
+      <div class="ud-detail-body" id="svDetailWrap">
+        <div class="ud-empty"><div class="ud-empty-ico">💡</div><div>Select a project from the left<br>to view and edit energy savings</div></div>
+      </div>
     </div>
-    <div><div class="ai-label">💡 Savings Results</div><div class="ai-box" id="svBox" style="min-height:220px">Enter baseline and post-installation data to calculate savings.</div><div id="svResult"></div></div>
   </div>
 </div>
 
@@ -3350,6 +3342,7 @@ function sv(id,btn){
   sessionStorage.setItem('ch_activeView', id);
   if(id==='pdf'){ setTimeout(updateBillCountBadge, 50); }
   if(id==='utility'){ renderUDProjList(); renderUDDetail(); }
+  if(id==='savings'){ renderSvProjNav(); renderSvDetail(); }
 }
 
 /* ── AUTH ── */
@@ -4288,6 +4281,285 @@ function initSavingsTab(projId){
 
 async function calcProjSavings(projId){ initSavingsTab(projId); }
 
+// ══════════════════════════════════════════════════════
+//  STANDALONE ENERGY SAVINGS PAGE  (mirrors project tab)
+// ══════════════════════════════════════════════════════
+let svSelProjId = null;
+
+function renderSvProjNav(){
+  const nav = document.getElementById('svNavList'); if(!nav) return;
+  if(!projects.length){
+    nav.innerHTML='<div style="padding:16px;font-size:12px;color:var(--text2)">No projects yet.</div>';
+    return;
+  }
+  nav.innerHTML = projects.map(p=>{
+    const sd = getProjSavingsData(p.id);
+    const mCount = sd.measures.length;
+    const active = p.id === svSelProjId;
+    const borderColor = active ? 'var(--accent)' : 'transparent';
+    const bg = active ? 'var(--accent-dim)' : 'transparent';
+    const fw = active ? '700' : '500';
+    const col = active ? 'var(--text)' : 'var(--text2)';
+    return `<div class="ud-nav-bldg-item${active?' active':''}" onclick="svSelectProj(${p.id})"
+      style="padding:10px 14px;cursor:pointer;border-left:2px solid ${borderColor};background:${bg}">
+      <div style="font-size:13px;font-weight:${fw};color:${col};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px">${mCount} measure${mCount!==1?'s':''} · ${p.status||'active'}</div>
+    </div>`;
+  }).join('');
+}
+
+function svSelectProj(projId){
+  svSelProjId = projId;
+  renderSvProjNav();
+  renderSvDetail();
+}
+
+function renderSvDetail(){
+  const wrap = document.getElementById('svDetailWrap');
+  const hdr  = document.getElementById('svDetailHdr');
+  const hdrTitle = document.getElementById('svDetailHdrTitle');
+  const hdrSub   = document.getElementById('svDetailHdrSub');
+  if(!wrap) return;
+
+  if(!svSelProjId){
+    if(hdr) hdr.style.display='none';
+    wrap.innerHTML='<div class="ud-empty"><div class="ud-empty-ico">💡</div><div>Select a project from the left<br>to view and edit energy savings</div></div>';
+    return;
+  }
+  const p = projects.find(x=>x.id===svSelProjId);
+  if(!p){ wrap.innerHTML='<div class="ud-empty">Project not found</div>'; return; }
+  if(hdr) hdr.style.display='flex';
+  if(hdrTitle) hdrTitle.textContent = p.name;
+  if(hdrSub){
+    const bldgs = getUDBldgs(svSelProjId);
+    hdrSub.textContent = [p.client, p.status, bldgs.length ? bldgs.length+' building'+(bldgs.length!==1?'s':'') : null].filter(Boolean).join(' · ');
+  }
+
+  const sd = getProjSavingsData(svSelProjId);
+  const bldgs = getUDBldgs(svSelProjId);
+  const MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  // ── Baseline Rates rows ──
+  let ratesRows;
+  if(!bldgs.length){
+    ratesRows = `<tr><td colspan="6" style="text-align:center;color:var(--text2);padding:18px;font-size:12px">
+      No buildings in Utility Data for this project yet.<br>
+      <span style="font-size:11px;color:var(--text3)">Add buildings via the <strong style="color:var(--accent)">Buildings</strong> tab in Projects, then add meters in <strong style="color:var(--accent)">Utility Data</strong>.</span>
+    </td></tr>`;
+  } else {
+    ratesRows = bldgs.map(b=>{
+      const r = sd.blRates[b.id]||{};
+      const pid = svSelProjId, bid = b.id;
+      return `<tr>
+        <td style="font-weight:600;font-size:13px;white-space:nowrap">${b.name}</td>
+        <td style="border-left:2px solid var(--border2)"><input class="bl-rate-inp" type="number" step="0.0001" placeholder="0.0681" value="${r.kwhSummer||''}" id="sv-blr-kwhs-${pid}-${bid}"></td>
+        <td><input class="bl-rate-inp" type="number" step="0.0001" placeholder="0.0582" value="${r.kwhWinter||''}" id="sv-blr-kwhw-${pid}-${bid}"></td>
+        <td style="border-left:2px solid var(--border2)"><input class="bl-rate-inp" type="number" step="0.01" placeholder="16.997" value="${r.kwSummer||''}" id="sv-blr-kws-${pid}-${bid}"></td>
+        <td><input class="bl-rate-inp" type="number" step="0.01" placeholder="11.797" value="${r.kwWinter||''}" id="sv-blr-kww-${pid}-${bid}"></td>
+        <td style="border-left:2px solid var(--border2)"><input class="bl-rate-inp" type="number" step="0.001" placeholder="0.798" value="${r.thermRate||''}" id="sv-blr-therm-${pid}-${bid}"></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Month header helper ──
+  const moHdrs = () => MO.map((m,i)=>`<th style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});font-size:10px;padding:4px 2px;width:58px;text-align:center">${m}</th>`).join('');
+
+  // ── Measure rows ──
+  const bldgOpts = bldgs.map(b=>`<option value="${b.id}">${b.name}</option>`).join('');
+  let msrRows;
+  if(!sd.measures.length){
+    msrRows = `<tr><td colspan="42" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
+      No measures yet — click "+ Add Measure" in the header to begin.
+    </td></tr>`;
+  } else {
+    msrRows = sd.measures.map(m=>{
+      const pid = svSelProjId, mid = m.id;
+      const kwhCells = m.kwh.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:2px 1px;background:rgba(59,130,246,0.03)"><input class="sv-num-inp kwh-col" type="number" step="any" value="${v||''}" placeholder="0" style="width:54px" onchange="svUpdateMsrVal('${mid}','kwh',${i},this.value)" onfocusout="svAutoSave()"></td>`).join('');
+      const kwCells  = m.kw.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:2px 1px;background:rgba(245,158,11,0.03)"><input class="sv-num-inp kw-col" type="number" step="any" value="${v||''}" placeholder="0" style="width:54px" onchange="svUpdateMsrVal('${mid}','kw',${i},this.value)" onfocusout="svAutoSave()"></td>`).join('');
+      const gasCells = m.gas.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:2px 1px;background:rgba(20,184,166,0.03)"><input class="sv-num-inp gas-col" type="number" step="any" value="${v||''}" placeholder="0" style="width:54px" onchange="svUpdateMsrVal('${mid}','gas',${i},this.value)" onfocusout="svAutoSave()"></td>`).join('');
+      const dollar = m.totalDollar>0 ? '$'+Math.round(m.totalDollar).toLocaleString() : '—';
+      const selOpts = bldgOpts.replace(`value="${m.bldgId}"`, `value="${m.bldgId}" selected`);
+      return `<tr id="sv-pg-msr-row-${mid}">
+        <td style="text-align:center"><input type="checkbox" class="sv-sel-cb" ${m.selected?'checked':''} onchange="svUpdateMsrSel('${mid}',this.checked)"></td>
+        <td><input class="sv-msr-txt" style="width:44px;text-align:center" placeholder="#" value="${m.msrNum||''}" onchange="svUpdateMsrField('${mid}','msrNum',this.value)" onfocusout="svAutoSave()"></td>
+        <td><select class="sv-msr-sel" onchange="svUpdateMsrField('${mid}','bldgId',this.value)">${selOpts}</select></td>
+        <td><input class="sv-msr-txt" style="width:100%;min-width:160px" placeholder="e.g. BAS Setpoint Optimization 74/70°F" value="${m.desc||''}" onchange="svUpdateMsrField('${mid}','desc',this.value)" onfocusout="svAutoSave()"></td>
+        ${kwhCells}${kwCells}${gasCells}
+        <td class="sv-total-cell" style="border-left:2px solid var(--border2)" id="sv-pg-total-${mid}">${dollar}</td>
+        <td style="text-align:center"><button class="btn-del" onclick="svRemoveMeasure('${mid}')">✕</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Footer totals ──
+  const selMsrs = sd.measures.filter(m=>m.selected);
+  const totKwh=Array(12).fill(0), totKw=Array(12).fill(0), totGas=Array(12).fill(0);
+  let grandTotal=0;
+  selMsrs.forEach(m=>{
+    m.kwh.forEach((v,i)=>totKwh[i]+=(parseFloat(v)||0));
+    m.kw.forEach((v,i)=>totKw[i]+=(parseFloat(v)||0));
+    m.gas.forEach((v,i)=>totGas[i]+=(parseFloat(v)||0));
+    grandTotal+=(parseFloat(m.totalDollar)||0);
+  });
+  const fmtN = v => v ? v.toLocaleString(undefined,{maximumFractionDigits:0}) : '';
+  const footRow = `<tr class="sv-foot-row">
+    <td colspan="4" style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
+    ${totKwh.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
+    ${totKw.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--amber);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
+    ${totGas.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--teal);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
+    <td class="sv-total-cell sv-foot-total" style="border-left:2px solid var(--border2)">${grandTotal>0?'$'+Math.round(grandTotal).toLocaleString():'—'}</td>
+    <td></td>
+  </tr>`;
+
+  // ── Summary card ──
+  const annKwh = totKwh.reduce((a,b)=>a+b,0);
+  const annKwAvg = totKw.reduce((a,b)=>a+b,0)/12;
+  const annGas = totGas.reduce((a,b)=>a+b,0);
+  const sc = selMsrs.length;
+  const summaryHtml = sc ? `<div class="bl-result">
+    <div class="bl-title">💡 Selected Measures — ${p.name} (${sc} measure${sc!==1?'s':''})</div>
+    <div class="bl-grid">
+      <div class="bl-item"><div class="bl-lbl">Annual kWh Savings</div><div class="bl-val" style="color:var(--accent)">${Math.round(annKwh).toLocaleString()}<span class="bl-unit"> kWh/yr</span></div></div>
+      <div class="bl-item"><div class="bl-lbl">Avg kW Reduction</div><div class="bl-val" style="color:var(--amber)">${annKwAvg.toFixed(1)}<span class="bl-unit"> kW avg</span></div></div>
+      <div class="bl-item"><div class="bl-lbl">Annual Gas Savings</div><div class="bl-val" style="color:var(--teal)">${Math.round(annGas).toLocaleString()}<span class="bl-unit"> Therms/yr</span></div></div>
+      <div class="bl-item"><div class="bl-lbl">Total Est. $/Yr</div><div class="bl-val" style="color:var(--green)">${grandTotal>0?'$'+Math.round(grandTotal).toLocaleString():'—'}</div></div>
+    </div>
+  </div>` : '';
+
+  wrap.innerHTML = `<div style="padding:16px;overflow-y:auto;flex:1;min-height:0;display:flex;flex-direction:column;gap:16px">
+
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">📊 Baseline Utility Rates by Building</span></div>
+      <div style="overflow-x:auto">
+        <table class="dtbl" style="min-width:900px">
+          <thead><tr>
+            <th style="min-width:160px">Building</th>
+            <th colspan="2" style="text-align:center;border-left:2px solid var(--border2)">Electric $/kWh</th>
+            <th colspan="2" style="text-align:center;border-left:2px solid var(--border2)">Electric $/kW</th>
+            <th style="text-align:center;border-left:2px solid var(--border2)">Gas $/Therm</th>
+          </tr><tr>
+            <th></th>
+            <th style="border-left:2px solid var(--border2)">Summer</th><th>Winter</th>
+            <th style="border-left:2px solid var(--border2)">Summer</th><th>Winter</th>
+            <th style="border-left:2px solid var(--border2)">Rate</th>
+          </tr></thead>
+          <tbody>${ratesRows}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">💡 Energy Savings Measures</span></div>
+      <div style="overflow-x:auto">
+        <table class="dtbl sv-matrix-tbl" style="min-width:2400px">
+          <thead>
+            <tr>
+              <th style="width:28px">✓</th><th style="width:44px">Msr #</th>
+              <th style="min-width:130px">Building</th><th style="min-width:190px">Measure Description</th>
+              <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(59,130,246,0.07)">⚡ Electric kWh Savings / Month</th>
+              <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(245,158,11,0.07)">⚡ Electric kW Savings / Month</th>
+              <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(20,184,166,0.07)">🔥 Gas Therms Savings / Month</th>
+              <th style="border-left:2px solid var(--border2);text-align:center;background:rgba(34,197,94,0.07);min-width:110px">💰 Est. $/Yr</th>
+              <th style="width:28px"></th>
+            </tr>
+            <tr>
+              <th></th><th></th><th></th><th></th>
+              ${moHdrs()}${moHdrs()}${moHdrs()}
+              <th style="border-left:2px solid var(--border2)"></th><th></th>
+            </tr>
+          </thead>
+          <tbody>${msrRows}</tbody>
+          <tfoot>${footRow}</tfoot>
+        </table>
+      </div>
+    </div>
+
+    ${summaryHtml}
+  </div>`;
+}
+
+// ── Savings page action handlers ──
+function svSaveProjBaselineRates(){
+  if(!svSelProjId) return;
+  const bldgs = getUDBldgs(svSelProjId);
+  const sd = getProjSavingsData(svSelProjId);
+  bldgs.forEach(b=>{
+    const pid=svSelProjId, bid=b.id;
+    sd.blRates[bid]={
+      kwhSummer: parseFloat(document.getElementById('sv-blr-kwhs-'+pid+'-'+bid)?.value)||0,
+      kwhWinter: parseFloat(document.getElementById('sv-blr-kwhw-'+pid+'-'+bid)?.value)||0,
+      kwSummer:  parseFloat(document.getElementById('sv-blr-kws-'+pid+'-'+bid)?.value)||0,
+      kwWinter:  parseFloat(document.getElementById('sv-blr-kww-'+pid+'-'+bid)?.value)||0,
+      thermRate: parseFloat(document.getElementById('sv-blr-therm-'+pid+'-'+bid)?.value)||0,
+    };
+  });
+  sset('en_projects', projects);
+  showToast('Baseline rates saved ✓');
+  svRecalc();
+}
+
+function svAddMeasure(){
+  if(!svSelProjId) return;
+  addSavingsMeasure(svSelProjId);
+  renderSvProjNav();
+  renderSvDetail();
+}
+
+function svRemoveMeasure(msrId){
+  if(!svSelProjId) return;
+  removeSavingsMeasure(svSelProjId, msrId);
+  renderSvProjNav();
+  renderSvDetail();
+}
+
+function svUpdateMsrVal(msrId, type, moIdx, val){
+  if(svSelProjId) updateMsrVal(svSelProjId, msrId, type, moIdx, val);
+}
+function svUpdateMsrField(msrId, field, val){
+  if(!svSelProjId) return;
+  updateMsrField(svSelProjId, msrId, field, val);
+  renderSvProjNav();
+}
+function svUpdateMsrSel(msrId, checked){
+  if(!svSelProjId) return;
+  updateMsrSel(svSelProjId, msrId, checked);
+  renderSvDetail();
+}
+function svAutoSave(){ if(svSelProjId) sset('en_projects', projects); }
+
+function svRecalc(){
+  if(!svSelProjId) return;
+  const sd = getProjSavingsData(svSelProjId);
+  // Flush DOM values into data model
+  sd.measures.forEach(m=>{
+    const row = document.getElementById('sv-pg-msr-row-'+m.id); if(!row) return;
+    ['kwh-col','kw-col','gas-col'].forEach((cls,ti)=>{
+      const type = ['kwh','kw','gas'][ti];
+      row.querySelectorAll('input.'+cls).forEach((inp,i)=>{ m[type][i]=parseFloat(inp.value)||0; });
+    });
+  });
+  // Recalculate dollar totals using baseline rates
+  sd.measures.forEach(m=>{
+    const rates = sd.blRates[m.bldgId]||{};
+    let total=0;
+    for(let mo=0;mo<12;mo++){
+      const s = SUMMER_MOS.includes(mo);
+      total += (m.kwh[mo]||0)*(s ? (rates.kwhSummer||0) : (rates.kwhWinter||0));
+      total += (m.kw[mo]||0) *(s ? (rates.kwSummer||0)  : (rates.kwWinter||0));
+      total += (m.gas[mo]||0)*(rates.thermRate||0);
+    }
+    m.totalDollar = total;
+  });
+  sset('en_projects', projects);
+  renderSvDetail();
+  showToast('Savings recalculated ✓');
+}
+
+// Navigate directly to savings page for a given project (e.g. from project header link)
+function openSavingsForProj(projId){
+  svSelProjId = projId;
+  sv('savings', document.querySelector('.s-item[onclick*="\'savings\'"]'));
+}
 
 // ── Contracts per project ──
 let _projContractTemplate = {};
