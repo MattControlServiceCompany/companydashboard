@@ -3341,8 +3341,8 @@ function sv(id,btn){
   (target||document.querySelector(`.sidebar .s-item[onclick*="'${id}'"]`))?.classList.add('active');
   sessionStorage.setItem('ch_activeView', id);
   if(id==='pdf'){ setTimeout(updateBillCountBadge, 50); }
-  if(id==='utility'){ renderUDProjList(); renderUDDetail(); }
-  if(id==='savings'){ renderSvProjNav(); renderSvDetail(); }
+  if(id==='utility'){ renderUDProjList(); requestAnimationFrame(()=>{ renderUDDetail(); }); }
+  if(id==='savings'){ requestAnimationFrame(()=>{ renderSvProjNav(); renderSvDetail(); }); }
 }
 
 /* ── AUTH ── */
