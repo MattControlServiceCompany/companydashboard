@@ -496,7 +496,7 @@ html,body{height:100%;overflow:hidden;}
 .toast.show{transform:translateY(0);opacity:1;}
 
 /* ── UTILITY DATA — TWO-COLUMN MASTER/DETAIL ══ */
-.ud-layout{display:grid;grid-template-columns:var(--ud-nav-w,260px) 1fr;gap:0;flex:1;min-height:0;height:100%;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
+.ud-layout{display:grid;grid-template-columns:var(--ud-nav-w,260px) 1fr;grid-template-rows:1fr;gap:0;flex:1;min-height:0;align-self:stretch;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
 /* Left nav column */
 .ud-nav{display:flex;flex-direction:column;background:var(--s1);border-right:1px solid var(--border);overflow:hidden;min-height:0;}
 .ud-nav-sect{flex-shrink:0;}
@@ -522,7 +522,7 @@ html,body{height:100%;overflow:hidden;}
 .ud-detail-hdr-title{font-size:16px;font-weight:700;color:var(--text);}
 .ud-detail-hdr-sub{font-size:12px;color:var(--text2);display:flex;flex-wrap:wrap;gap:12px;}
 .ud-detail-hdr-sub span{display:flex;align-items:center;gap:4px;}
-.ud-detail-body{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0;}
+.ud-detail-body{display:flex;flex-direction:column;overflow:hidden;min-height:0;}
 /* Meter cards */
 .ud-meter-card{background:var(--s3);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden;transition:border-color .14s;}
 .ud-meter-card:hover{border-color:var(--border2);}
@@ -3341,8 +3341,26 @@ function sv(id,btn){
   (target||document.querySelector(`.sidebar .s-item[onclick*="'${id}'"]`))?.classList.add('active');
   sessionStorage.setItem('ch_activeView', id);
   if(id==='pdf'){ setTimeout(updateBillCountBadge, 50); }
-  if(id==='utility'){ renderUDProjList(); requestAnimationFrame(()=>{ renderUDDetail(); }); }
-  if(id==='savings'){ requestAnimationFrame(()=>{ renderSvProjNav(); renderSvDetail(); }); }
+  if(id==='utility'){
+    renderUDProjList();
+    requestAnimationFrame(()=>{
+      // Force ud-layout to fill its container with an explicit pixel height
+      const layout = document.querySelector('#view-utility .ud-layout');
+      const viewEl = document.getElementById('view-utility');
+      if(layout && viewEl){
+        layout.style.height = viewEl.clientHeight + 'px';
+      }
+      renderUDDetail();
+    });
+  }
+  if(id==='savings'){
+    requestAnimationFrame(()=>{
+      const layout = document.querySelector('#view-savings .ud-layout');
+      const viewEl = document.getElementById('view-savings');
+      if(layout && viewEl){ layout.style.height = viewEl.clientHeight + 'px'; }
+      renderSvProjNav(); renderSvDetail();
+    });
+  }
 }
 
 /* ── AUTH ── */
@@ -6080,7 +6098,7 @@ function renderMeterWorkspace(){
     '<div class="ma-tabs">'+
       tabs.map(t=>'<button class="ma-tab'+(t.id===udActiveTab?' active':'')+'" onclick="maSetTab(\''+t.id+'\')">'+t.label+'</button>').join('')+
     '</div>'+
-    '<div id="maPane" style="padding:18px 20px;overflow-y:auto;flex:1"></div>';
+    '<div id="maPane" style="padding:18px 20px;overflow-y:auto;"></div>';
 
   const pane=document.getElementById('maPane');
   // Reset pane styles — bills tab sets flex/no-padding, others need scroll + padding
@@ -10951,6 +10969,16 @@ window.addEventListener('DOMContentLoaded',function(){
   }
   refreshNotifUI();
   init();
+});
+window.addEventListener('resize', ()=>{
+  ['utility','savings'].forEach(id=>{
+    const viewEl = document.getElementById('view-'+id);
+    const layout = viewEl?.querySelector('.ud-layout');
+    if(layout && viewEl && viewEl.classList.contains('active')){
+      layout.style.height = viewEl.clientHeight + 'px';
+      renderUDDetail();
+    }
+  });
 });
 </script>
 
