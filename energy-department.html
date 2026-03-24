@@ -496,7 +496,7 @@ html,body{height:100%;overflow:hidden;}
 .toast.show{transform:translateY(0);opacity:1;}
 
 /* ── UTILITY DATA — TWO-COLUMN MASTER/DETAIL ══ */
-.ud-layout{display:grid;grid-template-columns:var(--ud-nav-w,260px) 1fr;grid-template-rows:1fr;gap:0;flex:1;min-height:0;align-self:stretch;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
+.ud-layout{display:grid;grid-template-columns:var(--ud-nav-w,260px) 1fr;grid-template-rows:1fr;gap:0;width:100%;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
 /* Left nav column */
 .ud-nav{display:flex;flex-direction:column;background:var(--s1);border-right:1px solid var(--border);overflow:hidden;min-height:0;}
 .ud-nav-sect{flex-shrink:0;}
@@ -3344,20 +3344,13 @@ function sv(id,btn){
   if(id==='utility'){
     renderUDProjList();
     requestAnimationFrame(()=>{
-      // Force ud-layout to fill its container with an explicit pixel height
-      const layout = document.querySelector('#view-utility .ud-layout');
-      const viewEl = document.getElementById('view-utility');
-      if(layout && viewEl){
-        layout.style.height = viewEl.clientHeight + 'px';
-      }
+      _setUDLayoutHeight('utility');
       renderUDDetail();
     });
   }
   if(id==='savings'){
     requestAnimationFrame(()=>{
-      const layout = document.querySelector('#view-savings .ud-layout');
-      const viewEl = document.getElementById('view-savings');
-      if(layout && viewEl){ layout.style.height = viewEl.clientHeight + 'px'; }
+      _setUDLayoutHeight('savings');
       renderSvProjNav(); renderSvDetail();
     });
   }
@@ -4099,6 +4092,14 @@ async function parseProjDistCal(projId){
 //  ENERGY SAVINGS MATRIX — per-project measure table
 // ══════════════════════════════════════════════════════
 const SUMMER_MOS=[4,5,6,7,8,9]; // May–Oct (0-indexed)
+
+// Set ud-layout height by measuring fixed chrome above it
+function _setUDLayoutHeight(viewId){
+  const appWrap = document.querySelector('.app-wrap');
+  const layout  = document.querySelector('#view-'+viewId+' .ud-layout');
+  if(!appWrap || !layout) return;
+  layout.style.height = appWrap.clientHeight + 'px';
+}
 
 function getProjSavingsData(projId){
   const p = projects.find(x=>x.id===projId);
@@ -10973,11 +10974,7 @@ window.addEventListener('DOMContentLoaded',function(){
 window.addEventListener('resize', ()=>{
   ['utility','savings'].forEach(id=>{
     const viewEl = document.getElementById('view-'+id);
-    const layout = viewEl?.querySelector('.ud-layout');
-    if(layout && viewEl && viewEl.classList.contains('active')){
-      layout.style.height = viewEl.clientHeight + 'px';
-      renderUDDetail();
-    }
+    if(viewEl && viewEl.classList.contains('active')) _setUDLayoutHeight(id);
   });
 });
 </script>
