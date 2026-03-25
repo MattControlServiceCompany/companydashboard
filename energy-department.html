@@ -5917,6 +5917,16 @@ function renderUDProjAggPanel(content){
 /* ── RENDER RIGHT DETAIL: Building header + Meters ── */
 /* ── ACTIVE METER WORKSPACE STATE ── */
 let udActiveMid = null;
+const _udActiveMids = {}; // per-container active meter: keyed by wrap element id
+
+function _getActiveMid(wrap){
+  if(!wrap || wrap === document.getElementById('udDetailWrap')) return udActiveMid;
+  return _udActiveMids[wrap.id] !== undefined ? _udActiveMids[wrap.id] : udActiveMid;
+}
+function _setActiveMid(wrap, mid){
+  if(!wrap || wrap === document.getElementById('udDetailWrap')){ udActiveMid = mid; return; }
+  _udActiveMids[wrap.id] = mid;
+}
 let udActiveTab = 'bills';
 let udNormMode      = 'date';    // 'date' | 'weather'
 let udNormMetric    = 'total';   // 'perday' | 'total' | 'weather'  (chart Y-axis in Norm tab) — default monthly
@@ -5978,14 +5988,18 @@ function renderUDDetail(targetWrap){
     return;
   }
 
-  if(!udActiveMid || !meters.find(m=>m.id===udActiveMid)) udActiveMid = meters[0].id;
+  // Use per-container active mid so standalone and embed don't share state
+  let _curMid = _getActiveMid(wrap);
+  if(!_curMid || !meters.find(m=>m.id===_curMid)){ _curMid = meters[0].id; _setActiveMid(wrap, _curMid); }
+  if(wrap === document.getElementById('udDetailWrap')) udActiveMid = _curMid;
+  else udActiveMid = _curMid; // temporarily set global so renderMeterWorkspace works
 
   const pills = meters.map(m=>{
-    const active = m.id===udActiveMid;
+    const active = m.id===_curMid;
     const bcount = (m.bills||[]).length;
     const _pCls = m.commodity==='Electric'?' elec-pill':m.commodity==='Gas'?' gas-pill':'';
     const _pTxt = m.commodity==='Electric'?'#7dd8ff':m.commodity==='Gas'?'#ffb040':'var(--text2)';
-    return '<button class="ma-meter-pill'+_pCls+(active?' active':'')+'" onclick="udSelectMeter(\''+m.id+'\')">'+
+    return '<button class="ma-meter-pill'+_pCls+(active?' active':'')+'" onclick="udSelectMeter(\''+m.id+'\',this)">'+
       commodityPill(m.commodity)+
       '<span style="font-size:12px;font-weight:600;color:'+(active?'var(--text)':_pTxt)+'">'+
         (m.provider||m.commodity)+'</span>'+
@@ -6006,9 +6020,15 @@ function renderUDDetail(targetWrap){
   renderMeterWorkspace();
 }
 
-function udSelectMeter(mid){
+function udSelectMeter(mid, el){
+  if(el){
+    const ws = el.closest('[id^="proj-ud-body"]') || el.closest('#udDetailWrap');
+    if(ws){ window._udActiveWrap = ws; _setActiveMid(ws, mid); }
+  }
   udActiveMid=mid;
-  udActiveTab='bills'; _bldgStatsPanelVis=false; _bldgPerfPanelVis=false; _bldgSavProjPanelVis=false; saveUDSession(); renderUDDetail();
+  udActiveTab='bills'; _bldgStatsPanelVis=false; _bldgPerfPanelVis=false; _bldgSavProjPanelVis=false; saveUDSession();
+  const isEmbed = window._udActiveWrap && window._udActiveWrap !== document.getElementById('udDetailWrap');
+  renderUDDetail(isEmbed ? window._udActiveWrap : undefined);
 }
 function maSetTab(tab, el){
   udActiveTab=tab; saveUDSession();
