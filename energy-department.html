@@ -4758,81 +4758,69 @@ function refreshProjDropdowns(){
    3) If matched → extract and display
    4) If unrecognized → prompt user to share sample
 ── */
+// Evergy per-section extractor
+function _extractEvergy(t,acctOverride,addrOverride){
+  const sum=(t,re)=>{const ms=[...t.matchAll(re)];return ms.length?ms.reduce((s,m)=>s+parseFloat(m[1].replace(/,/g,'')),0).toFixed(2):null;};
+  const chg=(re)=>t.match(re)?.[1]?.replace(/,/g,'')||null;
+  const meterRow=t.match(/(\d{2}\/\d{2})\s+(\d{2}\/\d{2})\s+(\d+)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+[\d,]+\.?\d*\s+([\d,.]+)\s+([\d,]+\.?\d*)\s+([\d.]+)\s+([\d.]+)/);
+  const bpMatch=t.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);
+  const rateMatch=t.match(/[-\u2013]\s*([\dA-Z]{3,10})\s+Billing\s+Details/i)||t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i);
+  const energyPlain=sum(t,/Energy\s+Ch[ga](?!\s+On\s+Pk)(?!\s+Off\s+Pk)[\s\S]*?[.\s]+\$?([\d,]+\.\d{2})\s*$/mg);
+  return {
+    UtilityCompany:'Evergy',
+    CustomerName:t.match(/Customer\s*Name[^A-Za-z\n]*([A-Z][A-Z0-9 #]+?)(?=\s+Account|\n)/im)?.[1]?.trim()||null,
+    AccountNumber:acctOverride||t.match(/Account\s+(?:Number\s*)?:\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null,
+    ServiceAddress:addrOverride||null,
+    RateSchedule:rateMatch?.[1]||null,
+    BillingPeriodStart:bpMatch?.[1]||null,
+    BillingPeriodEnd:bpMatch?.[2]||null,
+    NumberOfDays:meterRow?.[3]||null,
+    MeterReadStart:meterRow?.[1]||null,
+    MeterReadEnd:meterRow?.[2]||null,
+    StartRead:meterRow?.[5]?.replace(/,/g,'')||null,
+    EndRead:meterRow?.[4]?.replace(/,/g,'')||null,
+    MeterMultiplier:meterRow?.[6]?.replace(/,/g,'')||null,
+    kWhConsumed:meterRow?.[7]?.replace(/,/g,'')||null,
+    ActualKW:meterRow?.[8]||null,
+    ActualRKVA:meterRow?.[9]||null,
+    CustomerCharge:chg(/Customer\s+Ch[ga][\s\S]*?[.\s]+\$?([\d,]+\.\d{2})/),
+    FacilitiesKW:t.match(/Facilities\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null,
+    FacilitiesCharge:chg(/Facilities\s+Ch[ga][\s\S]*?[.\s]+\$?([\d,]+\.\d{2})/),
+    BilledKW:t.match(/Demand\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null,
+    BilledKWCharge:chg(/Demand\s+Ch[ga][\s\S]*?[.\s]+\$?([\d,]+\.\d{2})/),
+    EnergyOnPeakCharge:chg(/Energy\s+Ch[ga]\s+On\s+Pk[\s\S]*?[.\s]+\$?([\d,]+\.\d{2})/)||energyPlain,
+    EnergyOffPeakCharge:chg(/Energy\s+Ch[ga]\s+Off\s+Pk[\s\S]*?[.\s]+\$?([\d,]+\.\d{2})/),
+    ECACharge:sum(t,/ECA\s+Ch[ga][\s\S]*?[.\s]+\$?([\d,]+\.\d{2})\s*$/mg),
+    EERCharge:sum(t,/EER\s+Ch[ga][\s\S]*?[.\s]+\$?([\d,]+\.\d{2})\s*$/mg),
+    PTSCharge:sum(t,/PTS\s+Ch[ga][\s\S]*?[.\s]+\$?([\d,]+\.\d{2})\s*$/mg),
+    TDCkW:t.match(/TDC\s+Ch[ga][\s\S]*?([\d,.]+)\s*kW\s+at/i)?.[1]?.replace(/,/g,'')||null,
+    TDCCharge:chg(/TDC\s+Ch[ga][\s\S]*?[.\s]+\$?([\d,]+\.\d{2})/),
+    TaxExemptDelivery:chg(/Tax\s+exempt[^$\n]*\$?([\d,]+\.\d{2})/i),
+    BillOffset:t.match(/Bill\s+off\w+[^\n]*?(-?\$[\d,]+\.\d{2}|-[\d,]+\.\d{2}|\$[\d,]+\.\d{2})/im)?.[1]?.replace(/\$/g,'')||null,
+    FranchiseFee:chg(/Franchise\s+Fee[^$\n]*\$?([\d,]+\.\d{2})/i),
+    TotalCurrentCharges:t.match(/Current\s+Charges[\s\S]*?\$\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g,'')||null,
+    MeterNumber:null,
+  };
+}
+
 const UTILITY_RULES=[
   {name:'Evergy',detect:t=>(
-    // Detect by bill structure, NOT the logo text — OCR frequently misreads "Evergy" as "Kh Energy", "Energy", etc.
-    // These structural patterns are unique to Evergy bills and never change location or wording
-    /Billing\s+Details\s*[-–]\s*service\s+from/i.test(t) ||
+    /Billing\s+Details\s*[-\u2013]\s*service\s+from/i.test(t) ||
     (/Facilities\s+Ch[ga]/i.test(t) && /Demand\s+Ch[ga]/i.test(t) && /TDC\s+Ch[ga]/i.test(t)) ||
     (/Customer\s+Ch[ga]/i.test(t) && /ECA\s+Ch[ga]/i.test(t))
-  ),extract:t=>{
-    // ── Meter read table ──
-    // Both 2LGAE and 2MGSE formats:
-    // "MM/DD MM/DD days EndRead(-) StartRead(=) diff multiplier kWhUsed KWUsed RKVAUsed"
-    const meterRow=t.match(/(\d{2}\/\d{2})\s+(\d{2}\/\d{2})\s+(\d+)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+[\d,]+\.?\d*\s+([\d,.]+)\s+([\d,]+\.?\d*)\s+([\d.]+)\s+([\d.]+)/);
-    // ── Billing period ──
-    const bpMatch=t.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);
-    // ── Rate schedule: code right before "Billing Details" e.g. "- 2LGAE" or "- 2MGSE" ──
-    const rateMatch=t.match(/[-–]\s*([\dA-Z]{3,10})\s+Billing Details/i)||t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i);
-    // ── Service address: bold all-caps heading (2MGSE) or standalone line (2LGAE) ──
-    const addrBold=t.match(/(\d+\s+[A-Z][A-Z0-9 ]+(?:MISSION|BELLEVIEW|ST|AVE|DR|RD|BLVD|LN|CT|PL|WAY)[A-Z0-9 ,]*(?:KS|MO|KY|OK|NE|IA|AR)\b)/);
-    const addrStd =t.match(/(\d+\s+[A-Z][A-Za-z0-9 ,]+(?:ST|AVE|DR|RD|BLVD|LN|CT|PL|WAY)[^\n]*(?:KS|MO|KY|OK|NE|IA|AR)[^\n]*)/i);
-    const serviceAddress=(addrBold?.[1]||addrStd?.[1])?.trim()||null;
-    // ── Charges ──
-    // Charge regex: [\s\S]*? with multiline $ anchor grabs the LAST dollar amount per charge block.
-    // sumMatches() sums all instances of repeating charges (e.g. multiple ECA, PTS lines).
-    const sumMatches=(t,re)=>{const ms=[...t.matchAll(re)];return ms.length?ms.reduce((s,m)=>s+parseFloat(m[1].replace(/,/g,'')),0).toFixed(2):null;};
-    const custChg    =t.match(/Customer\s+Ch[ga][\s.$0-9a-zA-Z,]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]||null;
-    const facKW      =t.match(/Facilities\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
-    const facChg     =t.match(/Facilities\s+Ch[ga][\s\S]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]||null;
-    const demKW      =t.match(/Demand\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
-    const demChg     =t.match(/Demand\s+Ch[ga][\s\S]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]||null;
-    const onPkChg    =t.match(/Energy\s+Ch[ga]\s+On\s+Pk[\s\S]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]||null;
-    const offPkChg   =t.match(/Energy\s+Ch[ga]\s+Off\s+Pk[\s\S]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]||null;
-    const ecaChg     =sumMatches(t,/ECA\s+Ch[ga][\s\S]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/mg);
-    const eerChg     =sumMatches(t,/EER\s+Ch[ga][\s\S]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/mg);
-    const ptsChg     =sumMatches(t,/PTS\s+Ch[ga][\s\S]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/mg);
-    const tdcKW      =t.match(/TDC\s+Ch[ga][\s\S]*?([\d,.]+)\s*kW\s+at/i)?.[1]?.replace(/,/g,'')||null;
-    const tdcChg     =t.match(/TDC\s+Ch[ga][\s\S]*?[\s.]+\$?([\d,]+\.\d{2})\s*$/m)?.[1]||null;
-    const taxExempt  =t.match(/Tax\s+exempt[^$\n]*\$?([\d,]+\.\d{2})\s*$/im)?.[1]||null;
-    const billOffset =t.match(/Bill\s+off\w+[^\n]*?(-?\$[\d,]+\.\d{2}|-[\d,]+\.\d{2}|\$[\d,]+\.\d{2})\s*$/im)?.[1]?.replace(/\$/g,'')||null;
-    const franchise  =t.match(/Franchise\s+Fee[^$\n]*\$?([\d,]+\.\d{2})\s*$/im)?.[1]||null;
-    const totalDue   =t.match(/Current\s+Charges[^$\n]*\$?([\d,]+\.\d{2})\s*$/im)?.[1]?.replace(/,/g,'')||null;
-    return {
-      UtilityCompany:  'Evergy',
-      CustomerName:    t.match(/Customer\s*Name[^A-Za-z\n]*([A-Z][A-Z0-9 #]+?)(?=\s+Account|\n)/im)?.[1]?.trim()||null,
-      AccountNumber:   t.match(/Account\s+(?:Number\s*)?:\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null,
-      ServiceAddress:  serviceAddress,
-      RateSchedule:    rateMatch?.[1]||null,
-      BillingPeriodStart: bpMatch?.[1]||null,
-      BillingPeriodEnd:   bpMatch?.[2]||null,
-      NumberOfDays:    meterRow?.[3]||null,
-      MeterReadStart:  meterRow?.[1]||null,
-      MeterReadEnd:    meterRow?.[2]||null,
-      StartRead:       meterRow?.[5]?.replace(/,/g,'')||null,
-      EndRead:         meterRow?.[4]?.replace(/,/g,'')||null,
-      MeterMultiplier: meterRow?.[6]?.replace(/,/g,'')||null,
-      kWhConsumed:     meterRow?.[7]?.replace(/,/g,'')||null,
-      ActualKW:        meterRow?.[8]||null,
-      ActualRKVA:      meterRow?.[9]||null,
-      CustomerCharge:  custChg,
-      FacilitiesKW:    facKW,
-      FacilitiesCharge:facChg,
-      BilledKW:        demKW,
-      BilledKWCharge:  demChg,
-      EnergyOnPeakCharge:  onPkChg,
-      EnergyOffPeakCharge: offPkChg,
-      ECACharge:           ecaChg,
-      EERCharge:           eerChg,
-      PTSCharge:           ptsChg,
-      TDCkW:               tdcKW,
-      TDCCharge:           tdcChg,
-      TaxExemptDelivery:   taxExempt,
-      BillOffset:          billOffset,
-      FranchiseFee:        franchise,
-      TotalCurrentCharges: totalDue,
-      MeterNumber:         null,
-    };
+  ),
+  extractAll:t=>{
+    // Split multi-bill PDF into per-billing-period sections
+    const sections=t.split(/(?=(?:[\s\S]*?[-\u2013]\s*[\dA-Z]{3,10}\s+)?Billing\s+Details\s*[-\u2013]\s*service\s+from)/i).filter(s=>/service\s+from/i.test(s));
+    if(!sections.length) sections.push(t);
+    const acct=t.match(/Account\s+(?:Number\s*)?:\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null;
+    const addrM=t.match(/^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m);
+    return sections.map(s=>_extractEvergy(s,acct,addrM?.[1]?.trim()||null));
+  },
+  extract:t=>{
+    const acct=t.match(/Account\s+(?:Number\s*)?:\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null;
+    const addrM=t.match(/^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m);
+    return _extractEvergy(t,acct,addrM?.[1]?.trim()||null);
   }},
   {name:'Spire / Laclede Gas',detect:t=>/spire|laclede/i.test(t),extract:t=>({
     UtilityCompany:/spire/i.test(t)?'Spire Energy':'Laclede Gas',
@@ -4953,14 +4941,31 @@ async function processPDF(file){
       if(text&&text.trim().length>100){
         const rule=UTILITY_RULES.find(r=>r.detect(text));
         if(rule){
-          const extracted=rule.extract(text);
-          renderPDFFields(extracted);
-          box.textContent=JSON.stringify(extracted,null,2);
-          document.getElementById('pdfSaveRow').style.display='block';
-          refreshProjDropdowns();
-          showExtractionBadge('rules',rule.name);
-          dz.textContent=file.name+' ✓';
-          showToast('Extracted locally — '+rule.name+' ✓');
+          // Use extractAll if available (multi-bill PDF support)
+          const bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
+          const validBills = bills.filter(b=>b.BillingPeriodStart||b.kWhConsumed);
+          if(validBills.length>1){
+            // Multi-bill: store all, show first, let user browse
+            window._pdfMultiBills = validBills;
+            window._pdfMultiIdx  = 0;
+            renderMultiBillUI(validBills, box);
+            renderPDFFields(validBills[0]);
+            document.getElementById('pdfSaveRow').style.display='block';
+            refreshProjDropdowns();
+            showExtractionBadge('rules',rule.name+' · '+validBills.length+' billing periods');
+            dz.textContent=file.name+' ✓ ('+validBills.length+' periods)';
+            showToast(validBills.length+' billing periods extracted ✓');
+          } else {
+            const extracted = validBills[0]||bills[0];
+            window._pdfMultiBills = null;
+            renderPDFFields(extracted);
+            box.textContent=JSON.stringify(extracted,null,2);
+            document.getElementById('pdfSaveRow').style.display='block';
+            refreshProjDropdowns();
+            showExtractionBadge('rules',rule.name);
+            dz.textContent=file.name+' ✓';
+            showToast('Extracted locally — '+rule.name+' ✓');
+          }
           return;
         }
         // Utility format not yet in rules library
@@ -4987,6 +4992,38 @@ async function processPDF(file){
     }
   };
   reader.readAsDataURL(file);
+}
+function renderMultiBillUI(bills, box){
+  const idx = window._pdfMultiIdx||0;
+  const b = bills[idx];
+  const nav = bills.map((bill,i)=>{
+    const lbl = bill.BillingPeriodStart ? bill.BillingPeriodStart.slice(0,7) : 'Period '+(i+1);
+    const active = i===idx;
+    return `<button onclick="selectMultiBill(${i})" style="font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:5px;border:1px solid ${active?'var(--accent)':'var(--border2)'};background:${active?'var(--accent-dim)':'transparent'};color:${active?'var(--accent)':'var(--text2)'};cursor:pointer">${lbl}</button>`;
+  }).join('');
+  box.innerHTML=`<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+    <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">Billing Period:</span>${nav}
+    <button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="margin-left:auto">💾 Save All ${bills.length} Periods</button>
+  </div>
+  <pre style="font-size:11px;color:var(--text);white-space:pre-wrap;word-break:break-word">${JSON.stringify(b,null,2)}</pre>`;
+}
+function selectMultiBill(i){
+  const bills = window._pdfMultiBills; if(!bills) return;
+  window._pdfMultiIdx = i;
+  const box = document.getElementById('pdfAIBox');
+  renderMultiBillUI(bills, box);
+  renderPDFFields(bills[i]);
+}
+async function savePDFAllBills(){
+  const bills = window._pdfMultiBills; if(!bills||!bills.length) return;
+  const pid = parseInt(document.getElementById('pdfProjSel').value);
+  if(!pid){ showToast('Select a project first'); return; }
+  let saved = 0;
+  for(const bill of bills){
+    const ok = await _saveSinglePDFBill(bill, pid);
+    if(ok) saved++;
+  }
+  showToast(saved+' of '+bills.length+' periods saved ✓');
 }
 function renderPDFFields(parsed){
   const LABELS={
@@ -5199,6 +5236,45 @@ function confirmAssignBill(){
   showToast('Bill assigned to '+proj.name+' → '+meterLabel(meter)+' ✓');
 }
 
+async function _saveSinglePDFBill(extracted, projId){
+  if(!extracted||!extracted.UtilityCompany) return false;
+  const proj=projId?projects.find(p=>p.id===projId):null;
+  const pdfBills=await sget('en_pdf_bills',[])||[];
+  const billId='pb'+Date.now();
+  let hasPDF=false;
+  if(pdfB64){try{await sset('en_pdf_file_'+billId,pdfB64);hasPDF=true;}catch(e){}}
+  const billRecord={id:billId,savedAt:new Date().toISOString(),projId:projId||null,projName:proj?.name||'General',hasPDF,...extracted};
+  pdfBills.push(billRecord);
+  await sset('en_pdf_bills',pdfBills);
+  const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
+  function toISO(d){if(!d)return '';const p=d.split('/');return p.length===3?p[2]+'-'+p[0].padStart(2,'0')+'-'+p[1].padStart(2,'0'):d;}
+  const kwhCost=(pf(extracted.EnergyOnPeakCharge)+pf(extracted.EnergyOffPeakCharge)+pf(extracted.ECACharge)+pf(extracted.EERCharge)+pf(extracted.PTSCharge)).toFixed(2);
+  const kwCost=(pf(extracted.BilledKWCharge)+pf(extracted.TDCCharge)).toFixed(2);
+  const otherCost=(pf(extracted.CustomerCharge)+pf(extracted.TaxExemptDelivery)+pf(extracted.BillOffset)).toFixed(2);
+  const taxCost=(pf(extracted.FranchiseFee)).toFixed(2);
+  const totalCost=pf(extracted.TotalCurrentCharges);
+  const componentSum=pf(extracted.FacilitiesCharge)+pf(kwCost)+pf(kwhCost)+pf(otherCost)+pf(taxCost);
+  const diff=Math.abs(componentSum-totalCost);
+  const billRow={id:'r'+Date.now(),start:toISO(extracted.BillingPeriodStart),end:toISO(extracted.BillingPeriodEnd),kwh:extracted.kWhConsumed||'',demandKW:extracted.ActualKW||'',billedKW:extracted.BilledKW||'',facKW:extracted.FacilitiesKW||'',facKWCost:extracted.FacilitiesCharge||'',kwCost,kwhCost,otherCost,taxCost,totalCost:extracted.TotalCurrentCharges||'',fromPDF:true,pdfBillId:billRecord.id};
+  if(proj){
+    const udProj=getUDProj(proj.id);
+    const elecMeters=[];
+    (udProj.buildings||[]).forEach(b=>(b.meters||[]).forEach(m=>{if(m.commodity==='Electric')elecMeters.push({b,m});}));
+    if(elecMeters.length===1){
+      const {b,m}=elecMeters[0];
+      m.bills=m.bills||[];
+      const dup=m.bills.find(r=>r.start===billRow.start&&r.end===billRow.end);
+      if(dup){Object.assign(dup,billRow);}else{m.bills.push(billRow);m.bills.sort((a,b)=>new Date(a.start)-new Date(b.start));}
+      saveUtilityData();
+    }
+  }
+  updateBillCountBadge();
+  if(totalCost>0&&diff>0.10){
+    console.warn('Bill validation: components $'+componentSum.toFixed(2)+' vs total $'+totalCost.toFixed(2));
+  }
+  return true;
+}
+
 function savePDFData(){
   // ── Get current extracted data from the output box ──
   const box=document.getElementById('pdfAIBox');
@@ -5207,125 +5283,15 @@ function savePDFData(){
   if(!extracted||!extracted.UtilityCompany){showToast('No extracted data to save');return;}
 
   const projId=parseInt(document.getElementById('pdfProjSel').value)||null;
-  const proj=projId?projects.find(p=>p.id===projId):null;
-
-  // ── Save raw bill record to en_pdf_bills database ──
-  const pdfBills=sget('en_pdf_bills',[])||[];
-  const billId='pb'+Date.now();
-  // Store PDF file separately to keep bills list lean
-  let hasPDF=false;
-  if(pdfB64){
-    try{
-      sset('en_pdf_file_'+billId, pdfB64);
-      hasPDF=true;
-    }catch(e){
-      console.warn('Could not store PDF file (storage may be full):',e);
+  _saveSinglePDFBill(extracted, projId).then(ok=>{
+    const proj=projId?projects.find(p=>p.id===projId):null;
+    if(ok){
+      showToast(proj?'Saved to '+proj.name+' ✓':'Saved to general database ✓');
+      if(document.getElementById('savedBillsModal').classList.contains('open')) renderSavedBills();
     }
-  }
-  const billRecord={
-    id:billId,
-    savedAt:new Date().toISOString(),
-    projId:projId||null,
-    projName:proj?.name||'General',
-    hasPDF,
-    ...extracted
-  };
-  pdfBills.push(billRecord);
-  sset('en_pdf_bills',pdfBills);
-
-  // ── Map extracted fields to billing period format ──
-  const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
-
-  // kWh charges: On-Peak + Off-Peak + ECA + EER + PTS
-  const kwhCost=(pf(extracted.EnergyOnPeakCharge)+pf(extracted.EnergyOffPeakCharge)+
-                 pf(extracted.ECACharge)+pf(extracted.EERCharge)+pf(extracted.PTSCharge)).toFixed(2);
-  // Non-facilities kW charges: Billed kW + TDC
-  const kwCost=(pf(extracted.BilledKWCharge)+pf(extracted.TDCCharge)).toFixed(2);
-  // Other charges: Customer charge + tax exempt delivery + bill offset
-  const otherCost=(pf(extracted.CustomerCharge)+pf(extracted.TaxExemptDelivery)+pf(extracted.BillOffset)).toFixed(2);
-  // Taxes/fees: Franchise fee
-  const taxCost=(pf(extracted.FranchiseFee)).toFixed(2);
-  // Total from bill
-  const totalCost=pf(extracted.TotalCurrentCharges);
-
-  // ── Validation: check components sum to total ──
-  const componentSum=(pf(extracted.FacilitiesCharge)+pf(kwCost)+pf(kwhCost)+pf(otherCost)+pf(taxCost));
-  const diff=Math.abs(componentSum-totalCost);
-  const valid=totalCost>0&&diff<0.10; // allow $0.10 rounding tolerance
-
-  // ── Format dates MM/DD/YYYY → YYYY-MM-DD for the date input ──
-  function toISO(d){
-    if(!d) return '';
-    const p=d.split('/');
-    return p.length===3?p[2]+'-'+p[0].padStart(2,'0')+'-'+p[1].padStart(2,'0'):d;
-  }
-
-  const billRow={
-    id:'r'+Date.now(),
-    start:toISO(extracted.BillingPeriodStart),
-    end:toISO(extracted.BillingPeriodEnd),
-    kwh:extracted.kWhConsumed||'',
-    demandKW:extracted.ActualKW||'',
-    billedKW:extracted.BilledKW||'',
-    facKW:extracted.FacilitiesKW||'',
-    facKWCost:extracted.FacilitiesCharge||'',
-    kwCost,
-    kwhCost,
-    otherCost,
-    taxCost,
-    totalCost:extracted.TotalCurrentCharges||'',
-    fromPDF:true,
-    pdfBillId:billRecord.id
-  };
-
-  // ── If project selected, find or prompt for matching meter ──
-  if(proj){
-    const udProj=getUDProj(proj.id);
-    // Find electric meters for this project
-    const elecMeters=[];
-    (udProj.buildings||[]).forEach(b=>(b.meters||[]).forEach(m=>{
-      if(m.commodity==='Electric') elecMeters.push({b,m});
-    }));
-
-    if(elecMeters.length===0){
-      // No electric meter exists — show message directing user
-      showToast('Raw bill saved. No electric meter found in '+proj.name+' Utility Data — add one first, then re-save.');
-    } else if(elecMeters.length===1){
-      // Exactly one electric meter — auto-add
-      const {b,m}=elecMeters[0];
-      m.bills=m.bills||[];
-      // Check for duplicate billing period
-      const dup=m.bills.find(r=>r.start===billRow.start&&r.end===billRow.end);
-      if(dup){
-        Object.assign(dup,billRow);
-        showToast('Billing period updated in Utility Data ✓');
-      } else {
-        m.bills.push(billRow);
-        m.bills.sort((a,b)=>new Date(a.start)-new Date(b.start));
-        showToast('Billing period added to Utility Data ✓');
-      }
-      saveUtilityData();
-    } else {
-      // Multiple electric meters — just save raw and notify
-      showToast('Raw bill saved. Multiple meters in '+proj.name+' — open Utility Data to assign to the correct meter.');
-    }
-  } else {
-    showToast('Raw bill saved to general database ✓');
-  }
-  // Refresh count badge on button
-  updateBillCountBadge();
-  // Refresh modal list if open
-  if(document.getElementById('savedBillsModal').classList.contains('open')) renderSavedBills();
-
-  // ── Validation warning ──
-  if(!valid&&totalCost>0){
-    const msg='⚠️ Charge components sum to $'+componentSum.toFixed(2)+' but Total Current Charges is $'+totalCost.toFixed(2)+
-              ' (diff: $'+diff.toFixed(2)+'). Review extracted values before relying on this record.';
-    setTimeout(()=>{
-      document.getElementById('pdfAIBox').textContent+='\n\n'+msg;
-    },300);
-  }
+  });
 }
+
 
 
 /* ── DISTRICT CAL ── */
