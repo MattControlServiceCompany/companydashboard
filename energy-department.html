@@ -4001,6 +4001,8 @@ function renderProjUDBody(projId, bldgId){
     const tempDiv = document.createElement('div');
     renderUDDetail(tempDiv);
     udSelProjId = prevProj; udSelBldgId = prevBldg;
+    // Restore _udActiveWrap to the standalone UD page wrap so it isn't left pointing at tempDiv
+    window._udActiveWrap = document.getElementById('udDetailWrap');
     body.innerHTML = panelHTML;
     body.appendChild(tempDiv);
   }
@@ -5930,7 +5932,7 @@ let _maCharts = {};
 
 function renderUDDetail(targetWrap){
   const wrap = targetWrap || document.getElementById('udDetailWrap');
-  if(!targetWrap) window._udActiveWrap = wrap;  // track the standalone UD wrap
+  window._udActiveWrap = wrap;  // always track which wrap is being rendered into
   const hdr  = targetWrap ? null : document.getElementById('udDetailHdr');
   const hdrTitle = targetWrap ? null : document.getElementById('udDetailHdrTitle');
   const hdrSub   = targetWrap ? null : document.getElementById('udDetailHdrSub');
@@ -6008,7 +6010,15 @@ function udSelectMeter(mid){
   udActiveMid=mid;
   udActiveTab='bills'; _bldgStatsPanelVis=false; _bldgPerfPanelVis=false; _bldgSavProjPanelVis=false; saveUDSession(); renderUDDetail();
 }
-function maSetTab(tab){ udActiveTab=tab; saveUDSession(); renderMeterWorkspace(); }
+function maSetTab(tab, el){
+  udActiveTab=tab; saveUDSession();
+  // Scope to whichever maMeterWorkspace the clicked tab lives in
+  if(el){
+    const ws = el.closest('[id^="proj-ud-body"]') || el.closest('#udDetailWrap');
+    if(ws) window._udActiveWrap = ws;
+  }
+  renderMeterWorkspace();
+}
 
 let _bldgStatsPanelVis = false;
 let _bldgPerfPanelVis  = false;
@@ -6100,7 +6110,7 @@ function renderMeterWorkspace(){
 
   ws.innerHTML=
     '<div class="ma-tabs">'+
-      tabs.map(t=>'<button class="ma-tab'+(t.id===udActiveTab?' active':'')+'" onclick="maSetTab(\''+t.id+'\')">'+t.label+'</button>').join('')+
+      tabs.map(t=>'<button class="ma-tab'+(t.id===udActiveTab?' active':'')+'" onclick="maSetTab(\''+t.id+'\',this)">'+t.label+'</button>').join('')+
     '</div>'+
     '<div id="maPane" style="padding:18px 20px;overflow-y:auto;"></div>';
 
