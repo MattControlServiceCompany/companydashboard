@@ -5930,6 +5930,7 @@ let _maCharts = {};
 
 function renderUDDetail(targetWrap){
   const wrap = targetWrap || document.getElementById('udDetailWrap');
+  if(!targetWrap) window._udActiveWrap = wrap;  // track the standalone UD wrap
   const hdr  = targetWrap ? null : document.getElementById('udDetailHdr');
   const hdrTitle = targetWrap ? null : document.getElementById('udDetailHdrTitle');
   const hdrSub   = targetWrap ? null : document.getElementById('udDetailHdrSub');
@@ -6081,7 +6082,9 @@ function toggleBldgSavProjPanel(){
 }
 
 function renderMeterWorkspace(){
-  const ws=document.getElementById('maMeterWorkspace'); if(!ws) return;
+  const _wrap = window._udActiveWrap || document.getElementById('udDetailWrap');
+  const ws = _wrap ? _wrap.querySelector('#maMeterWorkspace') : document.getElementById('maMeterWorkspace');
+  if(!ws) return;
   const b=getUDBldg(udSelProjId,udSelBldgId); if(!b) return;
   const m=b.meters.find(m=>m.id===udActiveMid); if(!m) return;
   const bills=(m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
@@ -6101,7 +6104,7 @@ function renderMeterWorkspace(){
     '</div>'+
     '<div id="maPane" style="padding:18px 20px;overflow-y:auto;"></div>';
 
-  const pane=document.getElementById('maPane');
+  const pane=ws.querySelector('#maPane') || document.getElementById('maPane');
   // Reset pane styles — bills tab sets flex/no-padding, others need scroll + padding
   if(udActiveTab==='bills'){
     pane.style.cssText='';
@@ -9899,7 +9902,8 @@ function setPerfYearFilter(mid, val){
   const m=b.meters.find(m=>m.id===mid); if(!m) return;
   const bills=(m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
   const incl=m.inclusive!==false;
-  const pane=document.getElementById('maPane'); if(!pane) return;
+  const _aw2 = window._udActiveWrap || document.getElementById('udDetailWrap');
+  const pane = (_aw2 ? _aw2.querySelector('#maPane') : null) || document.getElementById('maPane'); if(!pane) return;
   renderPerfPane(pane,m,bills,incl);
 }
 
