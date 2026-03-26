@@ -4784,29 +4784,52 @@ function refreshProjDropdowns(){
 // Evergy per-section extractor
 function _extractEvergy(t,acctOverride,addrOverride){
   const sum=(t,re)=>{const ms=[...t.matchAll(re)];return ms.length?ms.reduce((s,m)=>s+parseFloat(m[1].replace(/,/g,'')),0).toFixed(2):null;};
-  // Charge helper: match LAST dollar amount on the charge line(s), not an intermediate rate
   const chg=(re)=>t.match(re)?.[1]?.replace(/,/g,'')||null;
-  const chgLast=(re)=>{const ms=[...t.matchAll(re)];return ms.length?ms[ms.length-1][1].replace(/,/g,''):null;};
-  // Two-column PDF fallback: finds all lines containing keyword, returns last $X,XXX.XX on each line summed.
-  // Handles bills where PDF.js merges left-column chart text with right-column charge line at same y-coord,
-  // breaking end-of-line $ anchors. The last dollar value on a charge line is always the charge amount
-  // (intermediate rates like "$0.06407 per kWh" are always followed by more text).
-  const sumLastDollar=(keyword,excludeRe)=>{
-    const lines=t.split('\n').filter(l=>new RegExp(keyword,'i').test(l)&&!(excludeRe&&excludeRe.test(l)));
-    if(!lines.length) return null;
+
+  // ── Charge extractor ──────────────────────────────────────────────────────────
+  // PDF.js merges left-column chart text with right-column charge lines at the same
+  // y-coordinate, so end-of-line anchors break. This function handles all layouts:
+  //   • "Customer Chg ..... $105.97"              (dollar on keyword line)
+  //   • "210000 Demand Chg ... $3,105.46"          (chart number prefix)
+  //   • "Energy Chg ... kWh at $0.06407\n140000 per kWh ... $5,512.40"  (2-line)
+  //   • "ECA Chg ... for\nJul Aug ... kWh ... $158.97"  (chart label injected mid)
+  //   • "$2,027.18 Period kWh Days..."            (chart cols appended after dollar)
+  // Strategy: for each keyword line, take the last $X.XX that is NOT a rate
+  // (i.e. not preceded by "at $" and not followed by " per k"). If no dollar on
+  // the keyword line, scan forward up to 6 lines stopping at the next charge keyword.
+  const CHG_STOP=/(?:Customer|Facilities|Demand|Energy\s+Ch[ga]|ECA|EER|PTS|TDC|RkVA|Subtotal|Current\s+Charges)\b/i;
+  const getAmt=(line)=>{
+    const ms=[...line.matchAll(/\$([\d,]+\.\d{2})/g)];
+    let best=null;
+    for(const m of ms){
+      const before=line.slice(Math.max(0,m.index-4),m.index);
+      const after=line.slice(m.index+m[0].length,m.index+m[0].length+10);
+      if(/at\s*$/.test(before)) continue;   // skip rate: "kWh at $0.06407"
+      if(/\s*per\s+k/i.test(after)) continue; // skip rate: "$2.577 per kW"
+      best=parseFloat(m[1].replace(/,/g,''));
+    }
+    return best;
+  };
+  const xChg=(keyword,excludeRe)=>{
+    const lines=t.split('\n');
     let total=0,found=false;
-    for(const line of lines){
-      const dollars=[...line.matchAll(/\$\s*([\d,]+\.\d{2})/g)];
-      if(!dollars.length) continue;
-      // Skip lines where last dollar is a per-unit rate (followed by "per kW" or "per kWh")
-      const lastMatch=dollars[dollars.length-1];
-      const after=line.slice(lastMatch.index+lastMatch[0].length);
-      if(/per\s+k[Ww]/i.test(after)) continue;
-      total+=parseFloat(lastMatch[1].replace(/,/g,''));
-      found=true;
+    for(let i=0;i<lines.length;i++){
+      if(!new RegExp(keyword,'i').test(lines[i])) continue;
+      if(excludeRe&&excludeRe.test(lines[i])) continue;
+      const a=getAmt(lines[i]);
+      if(a!==null){total+=a;found=true;}
+      else{
+        for(let j=i+1;j<Math.min(i+6,lines.length);j++){
+          const l=lines[j];
+          if(CHG_STOP.test(l)&&!/per\s+k[Wh]/i.test(l)&&!/^[\d,]+\.\d+\s+kWh\s+at/i.test(l)) break;
+          const ja=getAmt(l);
+          if(ja!==null){total+=ja;found=true;break;}
+        }
+      }
     }
     return found?total.toFixed(2):null;
   };
+  // ─────────────────────────────────────────────────────────────────────────────
 
   // ── Billing period ──
   const bpMatch=t.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);
@@ -4836,27 +4859,20 @@ function _extractEvergy(t,acctOverride,addrOverride){
   // Rate schedule: code appears just before 'Billing Details' (possibly on previous line after y-split)
   const rateMatch=t.match(/[-\u2013]\s*([\dA-Z]{3,10})[^\n]*?\n?[^\n]*?Billing\s+Details/i)||t.match(/[-\u2013]\s*([\dA-Z]{3,10})\s+Billing\s+Details/i)||t.match(/LGS[^\n]*[-\u2013]\s*([\dA-Z]{3,10})\s*$/im)||t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i);
 
-  // ── Charges ── use $ anchor on line end to get charge amount, not intermediate rate ──
-  // For charges with dotted leaders: "Customer Chg .... $105.97"
-  // For charges on continuation lines: "per kWh .... $2,858.38" (next line after Energy Chg)
-  // custChg, facChg, demChg: SUM all matching lines — bills split across rate periods
-  // (e.g. summer/winter transition) can have 2 Customer Chg lines, 2 Facilities Chg lines, etc.
-  // Each charge uses: (1) end-of-line anchored sum across lines, (2) single-line fallback, (3) two-column layout fallback via sumLastDollar
-  const custChg   =sum(t,/Customer\s+Ch[ga][^\n]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg)||chg(/Customer\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m)||sumLastDollar('Customer\\s+Ch[ga]');
+  // ── Charges ──
+  const custChg   =xChg('Customer\\s+Ch[ga]');
   const facKW     =t.match(/Facilities\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
-  const facChg    =sum(t,/Facilities\s+Ch[ga][^\n]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg)||chg(/Facilities\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m)||sumLastDollar('Facilities\\s+Ch[ga]');
+  const facChg    =xChg('Facilities\\s+Ch[ga]');
   const demKW     =t.match(/Demand\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
-  const demChg    =sum(t,/Demand\s+Ch[ga][^\n]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg)||chg(/Demand\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m)||sumLastDollar('Demand\\s+Ch[ga]');
-  // Energy: On-Peak (explicit label), Off-Peak (explicit label), or sum of all plain tier lines
-  const onPkChg   =chg(/Energy\s+Ch[ga]\s+On\s+Pk[\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m)||sumLastDollar('Energy\\s+Ch[ga]\\s+On\\s+Pk');
-  const offPkChg  =chg(/Energy\s+Ch[ga]\s+Off\s+Pk[\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m)||sumLastDollar('Energy\\s+Ch[ga]\\s+Off\\s+Pk');
-  const tieredChg =sum(t,/Energy\s+Ch[ga](?!\s+On\s+Pk)(?!\s+Off\s+Pk)[\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg)||sumLastDollar('Energy\\s+Ch[ga]',/On\s+Pk|Off\s+Pk/i);
-  const ecaChg    =sum(t,/ECA\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg)||sumLastDollar('ECA\\s+Ch[ga]');
-  const eerChg    =sum(t,/EER\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg)||sumLastDollar('EER\\s+Ch[ga]');
-  const ptsChg    =sum(t,/PTS\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg)||sumLastDollar('PTS\\s+Ch[ga]');
+  const demChg    =xChg('Demand\\s+Ch[ga]');
+  const onPkChg   =xChg('Energy\\s+Ch[ga]\\s+On\\s+Pk');
+  const offPkChg  =xChg('Energy\\s+Ch[ga]\\s+Off\\s+Pk');
+  const tieredChg =xChg('Energy\\s+Ch[ga]',/On\s+Pk|Off\s+Pk/i);
+  const ecaChg    =xChg('ECA\\s+Ch[ga]');
+  const eerChg    =xChg('EER\\s+Ch[ga]');
+  const ptsChg    =xChg('PTS\\s+Ch[ga]');
   const tdcKW     =t.match(/TDC\s+Ch[ga][\s\S]*?([\d,.]+)\s*kW\s+at/i)?.[1]?.replace(/,/g,'')||null;
-  // TDC: last-dollar approach is safe here — the last $ on a TDC line is always the charge, not the per-kW rate
-  const tdcChg    =chg(/TDC\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m)||sumLastDollar('TDC\\s+Ch[ga]');
+  const tdcChg    =xChg('TDC\\s+Ch[ga]');
   const taxExempt =chg(/Tax\s+exempt[^$\n]*\$([\d,]+\.\d{2})/i);
   const billOffset=t.match(/Bill\s+off\w+[^\n]*?(-?\$[\d,]+\.\d{2}|-[\d,]+\.\d{2}|\$[\d,]+\.\d{2})/im)?.[1]?.replace(/\$/g,'')||null;
   const franchise =chg(/Franchise\s+Fee[^$\n]*\$([\d,]+\.\d{2})/i);
@@ -4907,22 +4923,28 @@ const UTILITY_RULES=[
   ),
   extractAll:t=>{
     // Split on "Billing Details - service from" headers to isolate each billing period.
-    // Each bill can span 2-4 pages; pages after the first say "(Continued)" with no
-    // new "Billing Details" header. We split on the header as a boundary, then
-    // re-join any fragment that has no date (i.e. a "Continued" page) back onto
-    // the preceding section so all charge lines stay with the correct billing period.
+    // Three merge rules applied in order:
+    // 1. Fragment with NO date pair -> "Continued" page, append to previous section
+    // 2. Fragment with SAME date pair as previous -> continuation page of same bill
+    //    (some 4-page bills have "Billing Details" on both page 2 and page 3), merge in
+    // 3. Fragment with NEW date pair -> new billing period, start new section
     const acct=t.match(/Account\s+(?:Number\s*)?:\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null;
     const addrM=t.match(/^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m);
     const raw=t.split(/(?=Billing\s+Details\s*[-\u2013\-]\s*service\s+from)/i);
-    // Merge fragments without a "service from ... to ..." date pair back onto the prior section
+    const getDatePair=s=>{const m=s.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);return m?m[1]+'|'+m[2]:null;};
     const sections=[];
     for(const frag of raw){
-      const hasDates=/service\s+from\s+\d{2}\/\d{2}\/\d{4}\s+to\s+\d{2}\/\d{2}\/\d{4}/i.test(frag);
-      if(hasDates||sections.length===0){
-        sections.push(frag);
-      } else {
-        // "Continued" page — append to previous section
+      const dates=getDatePair(frag);
+      const isBillingHeader=/^Billing\s+Details/i.test(frag.trim());
+      if(!isBillingHeader||!dates){
+        // No Billing Details header or no dates -> append to previous (Continued page)
+        if(sections.length) sections[sections.length-1]+=frag;
+        else sections.push(frag);
+      } else if(sections.length&&getDatePair(sections[sections.length-1])===dates){
+        // Same date pair as previous -> continuation of same bill, merge in
         sections[sections.length-1]+=frag;
+      } else {
+        sections.push(frag);
       }
     }
     const validSections=sections.filter(s=>/service\s+from\s+\d{2}\/\d{2}\/\d{4}/i.test(s));
