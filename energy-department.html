@@ -4784,6 +4784,26 @@ function _extractEvergy(t,acctOverride,addrOverride){
   // Charge helper: match LAST dollar amount on the charge line(s), not an intermediate rate
   const chg=(re)=>t.match(re)?.[1]?.replace(/,/g,'')||null;
   const chgLast=(re)=>{const ms=[...t.matchAll(re)];return ms.length?ms[ms.length-1][1].replace(/,/g,''):null;};
+  // Two-column PDF fallback: finds all lines containing keyword, returns last $X,XXX.XX on each line summed.
+  // Handles bills where PDF.js merges left-column chart text with right-column charge line at same y-coord,
+  // breaking end-of-line $ anchors. The last dollar value on a charge line is always the charge amount
+  // (intermediate rates like "$0.06407 per kWh" are always followed by more text).
+  const sumLastDollar=(keyword,excludeRe)=>{
+    const lines=t.split('\n').filter(l=>new RegExp(keyword,'i').test(l)&&!(excludeRe&&excludeRe.test(l)));
+    if(!lines.length) return null;
+    let total=0,found=false;
+    for(const line of lines){
+      const dollars=[...line.matchAll(/\$\s*([\d,]+\.\d{2})/g)];
+      if(!dollars.length) continue;
+      // Skip lines where last dollar is a per-unit rate (followed by "per kW" or "per kWh")
+      const lastMatch=dollars[dollars.length-1];
+      const after=line.slice(lastMatch.index+lastMatch[0].length);
+      if(/per\s+k[Ww]/i.test(after)) continue;
+      total+=parseFloat(lastMatch[1].replace(/,/g,''));
+      found=true;
+    }
+    return found?total.toFixed(2):null;
+  };
 
   // ── Billing period ──
   const bpMatch=t.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);
@@ -4818,21 +4838,22 @@ function _extractEvergy(t,acctOverride,addrOverride){
   // For charges on continuation lines: "per kWh .... $2,858.38" (next line after Energy Chg)
   // custChg, facChg, demChg: SUM all matching lines — bills split across rate periods
   // (e.g. summer/winter transition) can have 2 Customer Chg lines, 2 Facilities Chg lines, etc.
-  const custChg   =sum(t,/Customer\s+Ch[ga][^\n]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg)||chg(/Customer\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m);
+  // Each charge uses: (1) end-of-line anchored sum across lines, (2) single-line fallback, (3) two-column layout fallback via sumLastDollar
+  const custChg   =sum(t,/Customer\s+Ch[ga][^\n]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg)||chg(/Customer\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m)||sumLastDollar('Customer\\s+Ch[ga]');
   const facKW     =t.match(/Facilities\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
-  const facChg    =sum(t,/Facilities\s+Ch[ga][^\n]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg)||chg(/Facilities\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m);
+  const facChg    =sum(t,/Facilities\s+Ch[ga][^\n]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg)||chg(/Facilities\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m)||sumLastDollar('Facilities\\s+Ch[ga]');
   const demKW     =t.match(/Demand\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
-  const demChg    =sum(t,/Demand\s+Ch[ga][^\n]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg)||chg(/Demand\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m);
+  const demChg    =sum(t,/Demand\s+Ch[ga][^\n]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg)||chg(/Demand\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m)||sumLastDollar('Demand\\s+Ch[ga]');
   // Energy: On-Peak (explicit label), Off-Peak (explicit label), or sum of all plain tier lines
-  const onPkChg   =chg(/Energy\s+Ch[ga]\s+On\s+Pk[\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m);
-  const offPkChg  =chg(/Energy\s+Ch[ga]\s+Off\s+Pk[\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m);
-  const tieredChg =sum(t,/Energy\s+Ch[ga](?!\s+On\s+Pk)(?!\s+Off\s+Pk)[\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg);
-  const ecaChg    =sum(t,/ECA\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg);
-  const eerChg    =sum(t,/EER\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg);
-  const ptsChg    =sum(t,/PTS\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg);
+  const onPkChg   =chg(/Energy\s+Ch[ga]\s+On\s+Pk[\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m)||sumLastDollar('Energy\\s+Ch[ga]\\s+On\\s+Pk');
+  const offPkChg  =chg(/Energy\s+Ch[ga]\s+Off\s+Pk[\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m)||sumLastDollar('Energy\\s+Ch[ga]\\s+Off\\s+Pk');
+  const tieredChg =sum(t,/Energy\s+Ch[ga](?!\s+On\s+Pk)(?!\s+Off\s+Pk)[\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg)||sumLastDollar('Energy\\s+Ch[ga]',/On\s+Pk|Off\s+Pk/i);
+  const ecaChg    =sum(t,/ECA\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg)||sumLastDollar('ECA\\s+Ch[ga]');
+  const eerChg    =sum(t,/EER\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg)||sumLastDollar('EER\\s+Ch[ga]');
+  const ptsChg    =sum(t,/PTS\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg)||sumLastDollar('PTS\\s+Ch[ga]');
   const tdcKW     =t.match(/TDC\s+Ch[ga][\s\S]*?([\d,.]+)\s*kW\s+at/i)?.[1]?.replace(/,/g,'')||null;
-  // TDC: must use $ end-of-line to avoid matching the per-kW rate ($2.51004)
-  const tdcChg    =chg(/TDC\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m);
+  // TDC: last-dollar approach is safe here — the last $ on a TDC line is always the charge, not the per-kW rate
+  const tdcChg    =chg(/TDC\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m)||sumLastDollar('TDC\\s+Ch[ga]');
   const taxExempt =chg(/Tax\s+exempt[^$\n]*\$([\d,]+\.\d{2})/i);
   const billOffset=t.match(/Bill\s+off\w+[^\n]*?(-?\$[\d,]+\.\d{2}|-[\d,]+\.\d{2}|\$[\d,]+\.\d{2})/im)?.[1]?.replace(/\$/g,'')||null;
   const franchise =chg(/Franchise\s+Fee[^$\n]*\$([\d,]+\.\d{2})/i);
