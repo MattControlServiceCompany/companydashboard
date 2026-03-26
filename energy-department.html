@@ -4761,11 +4761,60 @@ function refreshProjDropdowns(){
 // Evergy per-section extractor
 function _extractEvergy(t,acctOverride,addrOverride){
   const sum=(t,re)=>{const ms=[...t.matchAll(re)];return ms.length?ms.reduce((s,m)=>s+parseFloat(m[1].replace(/,/g,'')),0).toFixed(2):null;};
+  // Charge helper: match LAST dollar amount on the charge line(s), not an intermediate rate
   const chg=(re)=>t.match(re)?.[1]?.replace(/,/g,'')||null;
-  const meterRow=t.match(/(\d{2}\/\d{2})\s+(\d{2}\/\d{2})\s+(\d+)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+[\d,]+\.?\d*\s+([\d,.]+)\s+([\d,]+\.?\d*)\s+([\d.]+)\s+([\d.]+)/);
+  const chgLast=(re)=>{const ms=[...t.matchAll(re)];return ms.length?ms[ms.length-1][1].replace(/,/g,''):null;};
+
+  // ── Billing period ──
   const bpMatch=t.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);
+  // Calculate days from billing dates (not from meter read table which may be a sub-period)
+  let numDays=null;
+  if(bpMatch){
+    try{
+      const s=new Date(bpMatch[1]), e=new Date(bpMatch[2]);
+      numDays=String(Math.round((e-s)/(1000*60*60*24)));
+    }catch(ex){}
+  }
+
+  // ── Meter read table (used for reads/multiplier/kW only, NOT days) ──
+  const meterRow=t.match(/(\d{2}\/\d{2})\s+(\d{2}\/\d{2})\s+\d+\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+[\d,]+\.?\d*\s+([\d,.]+)\s+[\d,]+\.?\d*\s+([\d.]+)\s+([\d.]+)/);
+
+  // ── kWh Consumed: prefer ECA/PTS/EER line totals (full billing period); fall back to sum of Energy Chg tiers ──
+  const adjKwh=(()=>{
+    const fromAdj=[...t.matchAll(/(?:ECA|EER|PTS)\s+Ch[ga][\s\S]*?for\s+([\d,]+\.?\d*)\s*kWh/gi)].map(m=>parseFloat(m[1].replace(/,/g,'')));
+    if(fromAdj.length) return String(Math.max(...fromAdj));
+    // Tier sum from Energy Chg lines
+    const fromEnergy=[...t.matchAll(/Energy\s+Ch[ga]\s+([\d,]+\.?\d*)\s*kWh/gi)].map(m=>parseFloat(m[1].replace(/,/g,'')));
+    if(fromEnergy.length) return String(fromEnergy.reduce((a,b)=>a+b,0));
+    return null;
+  })();
+
+  // ── Rate schedule ──
   const rateMatch=t.match(/[-\u2013]\s*([\dA-Z]{3,10})\s+Billing\s+Details/i)||t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i);
-  const energyPlain=sum(t,/Energy\s+Ch[ga](?!\s+On\s+Pk)(?!\s+Off\s+Pk)[\s\S]*?[.\s]+\$?([\d,]+\.\d{2})\s*$/mg);
+
+  // ── Charges ── use $ anchor on line end to get charge amount, not intermediate rate ──
+  // For charges with dotted leaders: "Customer Chg .... $105.97"
+  // For charges on continuation lines: "per kWh .... $2,858.38" (next line after Energy Chg)
+  const custChg   =chg(/Customer\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m);
+  const facKW     =t.match(/Facilities\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
+  const facChg    =chg(/Facilities\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m);
+  const demKW     =t.match(/Demand\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
+  const demChg    =chg(/Demand\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m);
+  // Energy: On-Peak (explicit label), Off-Peak (explicit label), or sum of all plain tier lines
+  const onPkChg   =chg(/Energy\s+Ch[ga]\s+On\s+Pk[\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m);
+  const offPkChg  =chg(/Energy\s+Ch[ga]\s+Off\s+Pk[\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m);
+  const tieredChg =sum(t,/Energy\s+Ch[ga](?!\s+On\s+Pk)(?!\s+Off\s+Pk)[\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg);
+  const ecaChg    =sum(t,/ECA\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg);
+  const eerChg    =sum(t,/EER\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg);
+  const ptsChg    =sum(t,/PTS\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/mg);
+  const tdcKW     =t.match(/TDC\s+Ch[ga][\s\S]*?([\d,.]+)\s*kW\s+at/i)?.[1]?.replace(/,/g,'')||null;
+  // TDC: must use $ end-of-line to avoid matching the per-kW rate ($2.51004)
+  const tdcChg    =chg(/TDC\s+Ch[ga][\s\S]*?[.\s]+\$([\d,]+\.\d{2})\s*$/m);
+  const taxExempt =chg(/Tax\s+exempt[^$\n]*\$([\d,]+\.\d{2})/i);
+  const billOffset=t.match(/Bill\s+off\w+[^\n]*?(-?\$[\d,]+\.\d{2}|-[\d,]+\.\d{2}|\$[\d,]+\.\d{2})/im)?.[1]?.replace(/\$/g,'')||null;
+  const franchise =chg(/Franchise\s+Fee[^$\n]*\$([\d,]+\.\d{2})/i);
+  const totalDue  =t.match(/Current\s+Charges[\s\S]*?\$\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g,'')||null;
+
   return {
     UtilityCompany:'Evergy',
     CustomerName:t.match(/Customer\s*Name[^A-Za-z\n]*([A-Z][A-Z0-9 #]+?)(?=\s+Account|\n)/im)?.[1]?.trim()||null,
@@ -4774,31 +4823,31 @@ function _extractEvergy(t,acctOverride,addrOverride){
     RateSchedule:rateMatch?.[1]||null,
     BillingPeriodStart:bpMatch?.[1]||null,
     BillingPeriodEnd:bpMatch?.[2]||null,
-    NumberOfDays:meterRow?.[3]||null,
+    NumberOfDays:numDays,
     MeterReadStart:meterRow?.[1]||null,
     MeterReadEnd:meterRow?.[2]||null,
-    StartRead:meterRow?.[5]?.replace(/,/g,'')||null,
-    EndRead:meterRow?.[4]?.replace(/,/g,'')||null,
-    MeterMultiplier:meterRow?.[6]?.replace(/,/g,'')||null,
-    kWhConsumed:meterRow?.[7]?.replace(/,/g,'')||null,
-    ActualKW:meterRow?.[8]||null,
-    ActualRKVA:meterRow?.[9]||null,
-    CustomerCharge:chg(/Customer\s+Ch[ga][\s\S]*?[.\s]+\$?([\d,]+\.\d{2})/),
-    FacilitiesKW:t.match(/Facilities\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null,
-    FacilitiesCharge:chg(/Facilities\s+Ch[ga][\s\S]*?[.\s]+\$?([\d,]+\.\d{2})/),
-    BilledKW:t.match(/Demand\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null,
-    BilledKWCharge:chg(/Demand\s+Ch[ga][\s\S]*?[.\s]+\$?([\d,]+\.\d{2})/),
-    EnergyOnPeakCharge:chg(/Energy\s+Ch[ga]\s+On\s+Pk[\s\S]*?[.\s]+\$?([\d,]+\.\d{2})/)||energyPlain,
-    EnergyOffPeakCharge:chg(/Energy\s+Ch[ga]\s+Off\s+Pk[\s\S]*?[.\s]+\$?([\d,]+\.\d{2})/),
-    ECACharge:sum(t,/ECA\s+Ch[ga][\s\S]*?[.\s]+\$?([\d,]+\.\d{2})\s*$/mg),
-    EERCharge:sum(t,/EER\s+Ch[ga][\s\S]*?[.\s]+\$?([\d,]+\.\d{2})\s*$/mg),
-    PTSCharge:sum(t,/PTS\s+Ch[ga][\s\S]*?[.\s]+\$?([\d,]+\.\d{2})\s*$/mg),
-    TDCkW:t.match(/TDC\s+Ch[ga][\s\S]*?([\d,.]+)\s*kW\s+at/i)?.[1]?.replace(/,/g,'')||null,
-    TDCCharge:chg(/TDC\s+Ch[ga][\s\S]*?[.\s]+\$?([\d,]+\.\d{2})/),
-    TaxExemptDelivery:chg(/Tax\s+exempt[^$\n]*\$?([\d,]+\.\d{2})/i),
-    BillOffset:t.match(/Bill\s+off\w+[^\n]*?(-?\$[\d,]+\.\d{2}|-[\d,]+\.\d{2}|\$[\d,]+\.\d{2})/im)?.[1]?.replace(/\$/g,'')||null,
-    FranchiseFee:chg(/Franchise\s+Fee[^$\n]*\$?([\d,]+\.\d{2})/i),
-    TotalCurrentCharges:t.match(/Current\s+Charges[\s\S]*?\$\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g,'')||null,
+    StartRead:meterRow?.[4]?.replace(/,/g,'')||null,
+    EndRead:meterRow?.[3]?.replace(/,/g,'')||null,
+    MeterMultiplier:meterRow?.[5]?.replace(/,/g,'')||null,
+    kWhConsumed:adjKwh,
+    ActualKW:meterRow?.[6]||null,
+    ActualRKVA:meterRow?.[7]||null,
+    CustomerCharge:custChg,
+    FacilitiesKW:facKW,
+    FacilitiesCharge:facChg,
+    BilledKW:demKW,
+    BilledKWCharge:demChg,
+    EnergyOnPeakCharge:onPkChg||tieredChg,  // on-peak or sum of tiers
+    EnergyOffPeakCharge:offPkChg,
+    ECACharge:ecaChg,
+    EERCharge:eerChg,
+    PTSCharge:ptsChg,
+    TDCkW:tdcKW,
+    TDCCharge:tdcChg,
+    TaxExemptDelivery:taxExempt,
+    BillOffset:billOffset,
+    FranchiseFee:franchise,
+    TotalCurrentCharges:totalDue,
     MeterNumber:null,
   };
 }
@@ -4998,7 +5047,7 @@ function renderMultiBillUI(bills, box){
   const idx = window._pdfMultiIdx||0;
   const b = bills[idx];
   const nav = bills.map((bill,i)=>{
-    const lbl = bill.BillingPeriodStart ? bill.BillingPeriodStart.slice(0,7) : 'Period '+(i+1);
+    const lbl = bill.BillingPeriodStart ? (()=>{const p=bill.BillingPeriodStart.split('/');return p[2]?p[0]+'/'+p[2].slice(2):'Period '+(i+1);})() : 'Period '+(i+1);
     const active = i===idx;
     return `<button onclick="selectMultiBill(${i})" style="font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:5px;border:1px solid ${active?'var(--accent)':'var(--border2)'};background:${active?'var(--accent-dim)':'transparent'};color:${active?'var(--accent)':'var(--text2)'};cursor:pointer">${lbl}</button>`;
   }).join('');
