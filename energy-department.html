@@ -909,6 +909,7 @@ html,body{height:100%;overflow:hidden;}
         <div class="dz-title" id="dz-title">Drop PDF here or click to browse</div>
         <div class="dz-sub">Utility bills · Drawings · Equipment submittals · Contracts</div>
         <input type="file" id="pdfInput" accept=".pdf" style="display:none" onchange="handlePDFUpload(event)">
+      <div id="pdfClearBtn" style="display:none;margin-top:8px;text-align:right"><button class="btn btn-ghost btn-sm" onclick="clearPDFOCR()">✕ Clear / Load New PDF</button></div>
       </div>
       <div style="margin-top:12px">
         <div class="fl" style="margin-bottom:6px">Document Type</div>
@@ -920,9 +921,18 @@ html,body{height:100%;overflow:hidden;}
         </div>
       </div>
       <div id="extractedFields"></div>
+      <!-- Auto-assign banner: shown when extracted AccountNumber matches a known meter -->
+      <div id="pdfAutoAssignBanner" style="display:none;margin-top:10px;padding:11px 14px;background:rgba(var(--em-rgb),.08);border:1px solid rgba(var(--em-rgb),.3);border-radius:8px;font-size:12px;line-height:1.5">
+        <div style="font-weight:600;color:var(--em);margin-bottom:4px">⚡ Meter Match Found</div>
+        <div id="pdfAutoAssignMsg" style="color:var(--text2);margin-bottom:8px"></div>
+        <div style="display:flex;gap:7px">
+          <button class="btn btn-em btn-sm" onclick="confirmAutoAssign()">✓ Confirm & Save to This Meter</button>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('pdfAutoAssignBanner').style.display='none'">Dismiss</button>
+        </div>
+      </div>
       <div id="pdfSaveRow" style="display:none;margin-top:12px">
         <div class="fl" style="margin-bottom:5px">Save to project</div>
-        <div style="display:flex;gap:8px"><select class="fs" id="pdfProjSel" style="flex:1"></select><button class="btn btn-em" onclick="savePDFData()">Save</button></div>
+        <div style="display:flex;gap:8px"><select class="fs" id="pdfProjSel" style="flex:1"></select><button class="btn btn-em" onclick="savePDFData()">Save</button><button class="btn btn-ghost" onclick="clearPDFOCR()" title="Clear extracted data and reset">✕ Clear</button></div>
       </div>
     </div>
     <div>
@@ -4800,7 +4810,8 @@ function _extractEvergy(t,acctOverride,addrOverride){
   })();
 
   // ── Rate schedule ──
-  const rateMatch=t.match(/[-\u2013]\s*([\dA-Z]{3,10})\s+Billing\s+Details/i)||t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i);
+  // Rate schedule: code appears just before 'Billing Details' (possibly on previous line after y-split)
+  const rateMatch=t.match(/[-\u2013]\s*([\dA-Z]{3,10})[^\n]*?\n?[^\n]*?Billing\s+Details/i)||t.match(/[-\u2013]\s*([\dA-Z]{3,10})\s+Billing\s+Details/i)||t.match(/LGS[^\n]*[-\u2013]\s*([\dA-Z]{3,10})\s*$/im)||t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i);
 
   // ── Charges ── use $ anchor on line end to get charge amount, not intermediate rate ──
   // For charges with dotted leaders: "Customer Chg .... $105.97"
@@ -4871,28 +4882,28 @@ const UTILITY_RULES=[
     (/Customer\s+Ch[ga]/i.test(t) && /ECA\s+Ch[ga]/i.test(t))
   ),
   extractAll:t=>{
-    // Split on "Billing Details - service from", then deduplicate using the
-    // "Billing Date: MM/DD/YYYY" page header (invoice date, top-right of every page).
-    // Continued pages repeat the "Billing Details" header for the same billing period,
-    // which previously created duplicate sections. Grouping by Billing Date — which is
-    // unique per invoice and printed on every page including Continued pages — merges
-    // all fragments for the same bill before extraction runs.
+    // Split on "Billing Details - service from" headers to isolate each billing period.
+    // Each bill can span 2-4 pages; pages after the first say "(Continued)" with no
+    // new "Billing Details" header. We split on the header as a boundary, then
+    // re-join any fragment that has no date (i.e. a "Continued" page) back onto
+    // the preceding section so all charge lines stay with the correct billing period.
     const acct=t.match(/Account\s+(?:Number\s*)?:\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null;
     const addrM=t.match(/^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m);
-    const raw=t.split(/(?=Billing\s+Details\s*[-\u2013\-]\s*service\s+from)/i)
-               .filter(s=>s.trim().length>20);
-    if(!raw.length) return [_extractEvergy(t,acct,addrM?.[1]?.trim()||null)];
-    // Group fragments by Billing Date (invoice date in page header)
-    const groups=new Map();
+    const raw=t.split(/(?=Billing\s+Details\s*[-\u2013\-]\s*service\s+from)/i);
+    // Merge fragments without a "service from ... to ..." date pair back onto the prior section
+    const sections=[];
     for(const frag of raw){
-      const bdM=frag.match(/Billing\s+Date:\s*(\d{2}\/\d{2}\/\d{4})/i);
-      const sfM=frag.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})/i);
-      const key=bdM?.[1]||sfM?.[1]||('_'+groups.size);
-      groups.set(key, (groups.get(key)||'')+frag+'\n');
+      const hasDates=/service\s+from\s+\d{2}\/\d{2}\/\d{4}\s+to\s+\d{2}\/\d{2}\/\d{4}/i.test(frag);
+      if(hasDates||sections.length===0){
+        sections.push(frag);
+      } else {
+        // "Continued" page — append to previous section
+        sections[sections.length-1]+=frag;
+      }
     }
-    const validGroups=[...groups.values()].filter(s=>/service\s+from\s+\d{2}\/\d{2}\/\d{4}/i.test(s));
-    if(!validGroups.length) return [_extractEvergy(t,acct,addrM?.[1]?.trim()||null)];
-    return validGroups.map(s=>_extractEvergy(s,acct,addrM?.[1]?.trim()||null));
+    const validSections=sections.filter(s=>/service\s+from\s+\d{2}\/\d{2}\/\d{4}/i.test(s));
+    if(!validSections.length) return [_extractEvergy(t,acct,addrM?.[1]?.trim()||null)];
+    return validSections.map(s=>_extractEvergy(s,acct,addrM?.[1]?.trim()||null));
   },
   extract:t=>{
     const acct=t.match(/Account\s+(?:Number\s*)?:\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null;
@@ -4912,6 +4923,55 @@ const UTILITY_RULES=[
     RateSchedule:t.match(/rate[\s:]*([A-Z0-9\-]{2,12})/i)?.[1]||null,
     MeterNumber:t.match(/meter[\s#:]*([A-Z0-9\-]{4,20})/i)?.[1]||null,
   })},
+  {name:'City of Louisburg',
+   detect:t=>/louisburg|louisburgkansas/i.test(t)&&(/GAS|WATER|SEWER/i.test(t)),
+   extract:t=>({
+    UtilityCompany:'City of Louisburg',
+    AccountNumber:t.match(/Account\s*(?:Number)?[:\s]+([\w\-]{4,20})/i)?.[1]?.trim()||null,
+    ServiceAddress:t.match(/(?:Service\s*Address|service\s*addr)[^\n]*\n([^\n]{5,60})/i)?.[1]?.trim()||
+                   t.match(/\d+\s+[A-Z][A-Z\s]{3,30}(?:DR|ST|AVE|BLVD|RD|LN|WAY|CT)[^\n]*/im)?.[0]?.trim()||null,
+    BillingPeriodStart:t.match(/Billing\s*Period\s*From[:\s]+(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1]||null,
+    BillingPeriodEnd:t.match(/Billing\s*Period\s*To[:\s]+(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1]||null,
+    NumberOfDays:t.match(/#\s*of\s*Days[:\s]*(\d+)/i)?.[1]||null,
+    BillDate:t.match(/Bill\s*Date[:\s]+(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1]||null,
+    RateSchedule:null,
+    // Gas usage — value after "GAS" charge label (CCF or therms depending on meter)
+    NaturalGasCCF:t.match(/^GAS[\s\t]+(\d[\d,.]+)/im)?.[1]?.replace(/,/g,'')||null,
+    WaterUsage:t.match(/^WATER[\s\t]+(\d[\d,.]+)/im)?.[1]?.replace(/,/g,'')||null,
+    GasCharge:t.match(/^GAS[\s\S]*?[\t ]+([\d,]+\.\d{2})\s*$/im)?.[1]?.replace(/,/g,'')||
+              t.match(/GAS[^\n]*(\$?[\d,]+\.\d{2})/i)?.[1]?.replace(/[$,]/g,'')||null,
+    WaterCharge:t.match(/^WATER[^\n]*(\$?[\d,]+\.\d{2})/im)?.[1]?.replace(/[$,]/g,'')||null,
+    FuelAdjustment:t.match(/FUEL\s*ADJ[^\n]*([-\$\d,.]+)/i)?.[1]?.replace(/[$]/g,'')||null,
+    SewerCharge:t.match(/SEWER[^\n]*(\$?[\d,]+\.\d{2})/i)?.[1]?.replace(/[$,]/g,'')||null,
+    StormwaterCharge:t.match(/STORM\w*[^\n]*(\$?[\d,]+\.\d{2})/i)?.[1]?.replace(/[$,]/g,'')||null,
+    TotalCurrentCharges:t.match(/Current\s*Bill[:\s]*(\$?[\d,]+\.\d{2})/i)?.[1]?.replace(/[$,]/g,'')||null,
+    TotalAmountDue:t.match(/Total\s*Amount\s*Due[:\s]*(\$?[\d,]+\.\d{2})/i)?.[1]?.replace(/[$,]/g,'')||null,
+    MeterNumber:null,
+  })},
+  {name:'Propane / Fuel Oil Delivery',
+   detect:t=>/propane|gallon|gal\b|fuel\s*oil|lp\s*gas|mfa\s*oil/i.test(t)&&/net\s*(?:due|delivery)|invoice/i.test(t),
+   extract:t=>({
+    UtilityCompany:t.match(/^(MFA\s*OIL[^\n]*|[A-Z][A-Za-z\s&]+(?:Oil|Propane|Fuel|Energy|Gas)[^\n]{0,30})/m)?.[1]?.trim()||'Propane/Fuel Delivery',
+    CustomerName:t.match(/(?:USD|Customer[^:\n]*)[^\n]*(USD\s*\d+[^\n]*)/i)?.[1]?.trim()||
+                 t.match(/Customer#?[:\s]*\d+\s+([^\n]+)/i)?.[2]?.trim()||null,
+    AccountNumber:t.match(/Customer#?[:\s]*(\d{4,12})/i)?.[1]||null,
+    InvoiceNumber:t.match(/Invoice\s*#?[:\s]*(\d{6,12})/i)?.[1]||null,
+    ServiceAddress:t.match(/Delivery\s*Address[:\s]*([^\n]{10,60})/i)?.[1]?.trim()||null,
+    BillDate:t.match(/Date[:\s]+(\d{2}\/\d{2}\/\d{4})/i)?.[1]||null,
+    BillingPeriodStart:t.match(/Date[:\s]+(\d{2}\/\d{2}\/\d{4})/i)?.[1]||null,
+    BillingPeriodEnd:t.match(/Date[:\s]+(\d{2}\/\d{2}\/\d{4})/i)?.[1]||null,
+    NumberOfDays:null,
+    RateSchedule:null,
+    // Delivery quantity and pricing
+    GallonsDelivered:t.match(/(?:NET\s*DELIVERY|Gallons?|Qty)[:\s]*([\d,]+\.?\d*)\s*(?:GAL|GALLON)/i)?.[1]?.replace(/,/g,'')||
+                     t.match(/([\d,]+\.\d)\s*G(?:ALLONS?)?\b/i)?.[1]?.replace(/,/g,'')||null,
+    UnitPrice:t.match(/\$([\d]+\.[\d]{4})/)?.[1]||t.match(/Unit\s*Price[:\s]*\$?([\d.]+)/i)?.[1]||null,
+    FuelType:t.match(/(PROPANE|FUEL\s*OIL|HEATING\s*OIL|DIESEL|KEROSENE)/i)?.[1]||'Propane',
+    TotalCurrentCharges:t.match(/Net\s*Due[:\s]*\$?([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g,'')||
+                        t.match(/Invoice\s*Sub[:\s]*\$?([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g,'')||null,
+    TotalAmountDue:t.match(/Net\s*Due[:\s]*\$?([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g,'')||null,
+    MeterNumber:null,
+  })},
   {name:'Generic Utility',detect:()=>true,extract:t=>({
     UtilityCompany:t.match(/^([A-Z][A-Za-z &]+(?:Electric|Gas|Energy|Utilities?|Power))/m)?.[1]?.trim()||null,
     AccountNumber:t.match(/account\s*(?:number|#|no\.?)[\s:]*([0-9\-]{6,20})/i)?.[1]||null,
@@ -4928,23 +4988,97 @@ const UTILITY_RULES=[
   })}
 ];
 function scoreExtraction(d){return Object.values(d).filter(v=>v!==null&&v!=='').length;}
+
+// ── Auto-assign: scan all meters across all projects/buildings for account or meter number match ──
+let _autoAssignTarget=null; // {projId, bldgId, meterId}
+function findMeterMatch(extracted){
+  if(!extracted) return null;
+  const acct=(extracted.AccountNumber||'').replace(/[\s\-]/g,'').toLowerCase();
+  const meterNum=(extracted.MeterNumber||'').replace(/[\s\-]/g,'').toLowerCase();
+  for(const proj of projects){
+    const udProj=getUDProj(proj.id);
+    for(const bldg of (udProj.buildings||[])){
+      for(const m of (bldg.meters||[])){
+        const mAcct=(m.account||'').replace(/[\s\-]/g,'').toLowerCase();
+        const mMeter=(m.meter||'').replace(/[\s\-]/g,'').toLowerCase();
+        if((acct&&mAcct&&acct===mAcct)||(meterNum&&mMeter&&meterNum===mMeter)){
+          return {proj,bldg,meter:m,projId:proj.id,bldgId:bldg.id,meterId:m.id};
+        }
+      }
+    }
+  }
+  return null;
+}
+function showAutoAssignBanner(match, extracted){
+  if(!match) return;
+  _autoAssignTarget=match;
+  const banner=document.getElementById('pdfAutoAssignBanner');
+  const msg=document.getElementById('pdfAutoAssignMsg');
+  const periods=Array.isArray(window._pdfMultiBills)?window._pdfMultiBills.length:1;
+  msg.textContent='Account '+( match.meter.account||match.meter.meter||'#')+' matches meter in '+match.proj.name+' → '+match.bldg.name+'. Save '+(periods>1?'all '+periods+' billing periods':'this bill')+' directly to that meter?';
+  banner.style.display='block';
+}
+async function confirmAutoAssign(){
+  if(!_autoAssignTarget||!window._pdfMultiBills) return;
+  const {proj,bldg,meter,projId}=_autoAssignTarget;
+  const bills=window._pdfMultiBills;
+  let saved=0;
+  for(const bill of bills){
+    // Inject directly into the matched meter, bypassing the 1-meter auto-detect
+    const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
+    function toISO(d){if(!d)return '';const p=d.split('/');return p.length===3?p[2]+'-'+p[0].padStart(2,'0')+'-'+p[1].padStart(2,'0'):d;}
+    const kwhCost=(pf(bill.EnergyOnPeakCharge)+pf(bill.EnergyOffPeakCharge)+pf(bill.ECACharge)+pf(bill.EERCharge)+pf(bill.PTSCharge)).toFixed(2);
+    const kwCost=(pf(bill.BilledKWCharge)+pf(bill.TDCCharge)).toFixed(2);
+    const otherCost=(pf(bill.CustomerCharge)+pf(bill.TaxExemptDelivery)+pf(bill.BillOffset)).toFixed(2);
+    const taxCost=(pf(bill.FranchiseFee)).toFixed(2);
+    const billRow={id:'r'+Date.now()+'_'+saved,start:toISO(bill.BillingPeriodStart),end:toISO(bill.BillingPeriodEnd),
+      kwh:bill.kWhConsumed||bill.NaturalGasCCF||bill.GallonsDelivered||'',
+      demandKW:bill.ActualKW||'',billedKW:bill.BilledKW||'',facKW:bill.FacilitiesKW||'',
+      facKWCost:bill.FacilitiesCharge||'',kwCost,kwhCost,otherCost,taxCost,
+      totalCost:bill.TotalCurrentCharges||bill.TotalAmountDue||'',fromPDF:true};
+    meter.bills=meter.bills||[];
+    const dup=meter.bills.find(r=>r.start===billRow.start&&r.end===billRow.end);
+    if(dup){Object.assign(dup,billRow);}else{meter.bills.push(billRow);meter.bills.sort((a,b)=>new Date(a.start)-new Date(b.start));}
+    saved++;
+  }
+  saveUtilityData();
+  document.getElementById('pdfAutoAssignBanner').style.display='none';
+  _autoAssignTarget=null;
+  showToast(saved+' bill'+(saved!==1?'s':'')+' saved to '+meter.provider+' → '+proj.name+' ✓');
+}
+
+function clearPDFOCR(){
+  pdfB64=null;
+  window._pdfMultiBills=null;
+  window._pdfMultiIdx=0;
+  document.getElementById('dz-title').textContent='Drop PDF here or click to browse';
+  document.getElementById('pdfInput').value='';
+  document.getElementById('extractedFields').innerHTML='';
+  document.getElementById('pdfSaveRow').style.display='none';
+  document.getElementById('pdfClearBtn').style.display='none';
+  document.getElementById('extractMethodBadge').style.display='none';
+  document.getElementById('pdfAutoAssignBanner').style.display='none';
+  document.getElementById('pdfAIBox').textContent='Upload a PDF and select document type. For utility bills, rule-based extraction runs first — instant and free. AI is used as a fallback for unrecognized formats.';
+  showToast('Cleared ✓');
+}
 async function extractPDFText(ab, statusCb){
-  // Per-page hybrid: extract native text from every page; pages returning <20 chars
-  // are image pages — OCR those individually. Handles mixed PDFs where early pages
-  // are digital text and later pages are scanned images (e.g. a multi-year bill file).
-  // The old approach returned as soon as ANY text was found, silently dropping all
-  // image pages that followed.
   try{
     if(typeof pdfjsLib==='undefined') return null;
     pdfjsLib.GlobalWorkerOptions.workerSrc='';
     const pdf=await pdfjsLib.getDocument({data:ab, useWorkerFetch:false, isEvalSupported:false, useSystemFonts:true}).promise;
-    const maxPages=Math.min(pdf.numPages,50);
+    const maxPages=Math.min(pdf.numPages,50); // support full-year multi-bill PDFs
 
-    // Helper: extract one page as line-grouped text using y-position
-    async function extractPageText(pg){
+    // ── Step 1: try native text extraction ──
+    let txt='';
+    for(let i=1;i<=maxPages;i++){
+      const pg=await pdf.getPage(i);
       const c=await pg.getTextContent();
+      // Group by y-position to reconstruct real line breaks.
+      // PDF.js transform[5]=y coord; items within 2px share a line.
+      // Prevents all charge lines on a page merging into one string,
+      // which broke end-of-line anchored charge regexes.
       const items=c.items.filter(s=>s.str&&s.str.trim());
-      if(!items.length) return '';
+      if(!items.length){txt+='\n';continue;}
       items.sort((a,b)=>{
         const dy=b.transform[5]-a.transform[5];
         return Math.abs(dy)>2 ? dy : a.transform[4]-b.transform[4];
@@ -4955,60 +5089,54 @@ async function extractPDFText(ab, statusCb){
         if(curY===null||Math.abs(y-curY)>2){
           if(curLine.length) pageLines.push(curLine.join(' '));
           curLine=[item.str]; curY=y;
-        } else { curLine.push(item.str); }
-      }
-      if(curLine.length) pageLines.push(curLine.join(' '));
-      return pageLines.join('\n');
-    }
-
-    // ── Pass 1: native text extraction, flag sparse pages as image pages ──
-    const pageTexts=[];
-    const imagePageNums=[];
-    for(let i=1;i<=maxPages;i++){
-      const pg=await pdf.getPage(i);
-      const t=await extractPageText(pg);
-      pageTexts.push(t);
-      if(t.trim().length<20) imagePageNums.push(i); // sparse = likely image
-    }
-
-    // ── Pass 2: OCR image pages only ──
-    if(imagePageNums.length>0){
-      if(typeof Tesseract==='undefined'){
-        if(statusCb) statusCb('Warning: '+imagePageNums.length+' image page(s) skipped — OCR library not loaded.');
-      } else {
-        if(statusCb) statusCb('Found '+imagePageNums.length+' image page(s) — starting OCR...');
-        let worker;
-        try{
-          worker=await Tesseract.createWorker('eng',1,{
-            logger:m=>{
-              if(statusCb){
-                if(m.status==='loading tesseract core') statusCb('Loading OCR engine...');
-                else if(m.status==='loading language traineddata') statusCb('Loading language data...');
-                else if(m.status==='recognizing text') statusCb('OCR scanning image pages... '+Math.round((m.progress||0)*100)+'%');
-              }
-            }
-          });
-          for(const pgNum of imagePageNums){
-            if(statusCb) statusCb('OCR page '+pgNum+' of '+maxPages+'...');
-            const pg=await pdf.getPage(pgNum);
-            const vp=pg.getViewport({scale:2.5});
-            const canvas=document.createElement('canvas');
-            canvas.width=vp.width; canvas.height=vp.height;
-            await pg.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
-            try{
-              const {data:{text}}=await worker.recognize(canvas);
-              pageTexts[pgNum-1]=text; // replace sparse entry with OCR result
-            }catch(e){ /* keep sparse text if OCR fails on this page */ }
-          }
-          await worker.terminate();
-        }catch(workerErr){
-          if(statusCb) statusCb('OCR engine error: '+workerErr.message);
+        } else {
+          curLine.push(item.str);
         }
       }
+      if(curLine.length) pageLines.push(curLine.join(' '));
+      txt+=pageLines.join('\n')+'\n';
     }
+    if(txt.trim().length>100) return txt; // text-based PDF, done
 
-    const combined=pageTexts.join('\n');
-    return combined.trim().length>50 ? combined : null;
+    // ── Step 2: scanned image — render pages to canvas and OCR ──
+    if(typeof Tesseract==='undefined'){
+      if(statusCb) statusCb('OCR library not loaded — check network connection.');
+      return null;
+    }
+    if(statusCb) statusCb('Scanned PDF detected — loading OCR engine...');
+    let worker;
+    try{
+      worker=await Tesseract.createWorker('eng',1,{
+        logger: m=>{
+          if(statusCb){
+            if(m.status==='loading tesseract core') statusCb('Loading OCR engine...');
+            else if(m.status==='loading language traineddata') statusCb('Loading English language data...');
+            else if(m.status==='recognizing text') statusCb('OCR progress: '+Math.round((m.progress||0)*100)+'%');
+          }
+        }
+      });
+    }catch(workerErr){
+      if(statusCb) statusCb('OCR engine failed to load: '+workerErr.message);
+      return null;
+    }
+    let ocrText='';
+    for(let i=1;i<=maxPages;i++){
+      if(statusCb) statusCb('OCR scanning page '+i+' of '+maxPages+'...');
+      const pg=await pdf.getPage(i);
+      const vp=pg.getViewport({scale:2.5});
+      const canvas=document.createElement('canvas');
+      canvas.width=vp.width; canvas.height=vp.height;
+      const ctx=canvas.getContext('2d');
+      await pg.render({canvasContext:ctx, viewport:vp}).promise;
+      try{
+        const {data:{text}}=await worker.recognize(canvas);
+        ocrText+=text+'\n';
+      }catch(pageErr){
+        if(statusCb) statusCb('OCR failed on page '+i+': '+pageErr.message);
+      }
+    }
+    await worker.terminate();
+    return ocrText.trim().length>50 ? ocrText : null;
   }catch(e){if(statusCb)statusCb('PDF read error: '+e.message);console.error('PDF extract error:',e);return null;}
 }
 function showExtractionBadge(method,detail){
@@ -5054,10 +5182,12 @@ async function processPDF(file){
             renderMultiBillUI(validBills, box);
             renderPDFFields(validBills[0]);
             document.getElementById('pdfSaveRow').style.display='block';
+            document.getElementById('pdfClearBtn').style.display='block';
             refreshProjDropdowns();
             showExtractionBadge('rules',rule.name+' · '+validBills.length+' billing periods');
             dz.textContent=file.name+' ✓ ('+validBills.length+' periods)';
             showToast(validBills.length+' billing periods extracted ✓');
+            showAutoAssignBanner(findMeterMatch(validBills[0]), validBills[0]);
           } else {
             const extracted = validBills[0]||bills[0];
             window._pdfMultiBills = [extracted]; // always store as array for consistency
@@ -5065,10 +5195,12 @@ async function processPDF(file){
             renderPDFFields(extracted);
             box.textContent=JSON.stringify(extracted,null,2);
             document.getElementById('pdfSaveRow').style.display='block';
+            document.getElementById('pdfClearBtn').style.display='block';
             refreshProjDropdowns();
             showExtractionBadge('rules',rule.name+' · 1 billing period');
             dz.textContent=file.name+' ✓';
             showToast('Extracted locally — '+rule.name+' ✓');
+            showAutoAssignBanner(findMeterMatch(extracted), extracted);
           }
           return;
         }
@@ -5352,28 +5484,66 @@ async function _saveSinglePDFBill(extracted, projId){
   await sset('en_pdf_bills',pdfBills);
   const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
   function toISO(d){if(!d)return '';const p=d.split('/');return p.length===3?p[2]+'-'+p[0].padStart(2,'0')+'-'+p[1].padStart(2,'0'):d;}
+  // Detect bill commodity type for correct field mapping
+  const isGas=!!(extracted.NaturalGasTherms||extracted.NaturalGasCCF||extracted.GasCharge);
+  const isPropane=!!(extracted.GallonsDelivered||extracted.FuelType);
+  // Electric cost breakdown
   const kwhCost=(pf(extracted.EnergyOnPeakCharge)+pf(extracted.EnergyOffPeakCharge)+pf(extracted.ECACharge)+pf(extracted.EERCharge)+pf(extracted.PTSCharge)).toFixed(2);
   const kwCost=(pf(extracted.BilledKWCharge)+pf(extracted.TDCCharge)).toFixed(2);
   const otherCost=(pf(extracted.CustomerCharge)+pf(extracted.TaxExemptDelivery)+pf(extracted.BillOffset)).toFixed(2);
   const taxCost=(pf(extracted.FranchiseFee)).toFixed(2);
-  const totalCost=pf(extracted.TotalCurrentCharges);
+  const totalCost=pf(extracted.TotalCurrentCharges||extracted.TotalAmountDue);
   const componentSum=pf(extracted.FacilitiesCharge)+pf(kwCost)+pf(kwhCost)+pf(otherCost)+pf(taxCost);
   const diff=Math.abs(componentSum-totalCost);
-  const billRow={id:'r'+Date.now(),start:toISO(extracted.BillingPeriodStart),end:toISO(extracted.BillingPeriodEnd),kwh:extracted.kWhConsumed||'',demandKW:extracted.ActualKW||'',billedKW:extracted.BilledKW||'',facKW:extracted.FacilitiesKW||'',facKWCost:extracted.FacilitiesCharge||'',kwCost,kwhCost,otherCost,taxCost,totalCost:extracted.TotalCurrentCharges||'',fromPDF:true,pdfBillId:billRecord.id};
+  // Usage quantity: kWh for electric, CCF/therms for gas, gallons for propane
+  const usageQty=extracted.kWhConsumed||extracted.NaturalGasTherms||extracted.NaturalGasCCF||extracted.GallonsDelivered||'';
+  const billRow={id:'r'+Date.now(),start:toISO(extracted.BillingPeriodStart),end:toISO(extracted.BillingPeriodEnd),
+    kwh:usageQty,demandKW:extracted.ActualKW||'',billedKW:extracted.BilledKW||'',
+    facKW:extracted.FacilitiesKW||'',facKWCost:extracted.FacilitiesCharge||'',
+    kwCost,kwhCost,otherCost,taxCost,
+    totalCost:extracted.TotalCurrentCharges||extracted.TotalAmountDue||'',
+    fromPDF:true,pdfBillId:billRecord.id};
   if(proj){
     const udProj=getUDProj(proj.id);
-    const elecMeters=[];
-    (udProj.buildings||[]).forEach(b=>(b.meters||[]).forEach(m=>{if(m.commodity==='Electric')elecMeters.push({b,m});}));
-    if(elecMeters.length===1){
-      const {b,m}=elecMeters[0];
-      m.bills=m.bills||[];
-      const dup=m.bills.find(r=>r.start===billRow.start&&r.end===billRow.end);
-      if(dup){Object.assign(dup,billRow);}else{m.bills.push(billRow);m.bills.sort((a,b)=>new Date(a.start)-new Date(b.start));}
-      saveUtilityData();
+    // First try: match by account or meter number (most precise)
+    const acctClean=(extracted.AccountNumber||'').replace(/[\s\-]/g,'').toLowerCase();
+    const meterClean=(extracted.MeterNumber||'').replace(/[\s\-]/g,'').toLowerCase();
+    let matched=false;
+    if(acctClean||meterClean){
+      for(const b of (udProj.buildings||[])){
+        for(const m of (b.meters||[])){
+          const ma=(m.account||'').replace(/[\s\-]/g,'').toLowerCase();
+          const mm=(m.meter||'').replace(/[\s\-]/g,'').toLowerCase();
+          if((acctClean&&ma&&acctClean===ma)||(meterClean&&mm&&meterClean===mm)){
+            m.bills=m.bills||[];
+            const dup=m.bills.find(r=>r.start===billRow.start&&r.end===billRow.end);
+            if(dup){Object.assign(dup,billRow);}else{m.bills.push(billRow);m.bills.sort((a,b)=>new Date(a.start)-new Date(b.start));}
+            matched=true; break;
+          }
+        }
+        if(matched) break;
+      }
     }
+    // Second try: single matching commodity meter
+    if(!matched){
+      const commodity=isGas?'Gas':isPropane?'Propane':'Electric';
+      const typeMeters=[];
+      (udProj.buildings||[]).forEach(b=>(b.meters||[]).forEach(m=>{
+        if(m.commodity===commodity||(isPropane&&m.commodity==='Propane')||(isGas&&(m.commodity==='Gas'||m.commodity==='Natural Gas')))
+          typeMeters.push({b,m});
+      }));
+      if(typeMeters.length===1){
+        const {b,m}=typeMeters[0];
+        m.bills=m.bills||[];
+        const dup=m.bills.find(r=>r.start===billRow.start&&r.end===billRow.end);
+        if(dup){Object.assign(dup,billRow);}else{m.bills.push(billRow);m.bills.sort((a,b)=>new Date(a.start)-new Date(b.start));}
+        matched=true;
+      }
+    }
+    if(matched) saveUtilityData();
   }
   updateBillCountBadge();
-  if(totalCost>0&&diff>0.10){
+  if(totalCost>0&&diff>0.10&&!isGas&&!isPropane){
     console.warn('Bill validation: components $'+componentSum.toFixed(2)+' vs total $'+totalCost.toFixed(2));
   }
   return true;
