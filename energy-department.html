@@ -2695,7 +2695,7 @@ window.emsParseCSVPreview=function(){
   if(parsed.length<2){document.getElementById('emsCsvStatus').innerHTML='<div style="color:var(--danger);font-size:12px;margin-top:6px">Could not parse CSV.</div>';return;}
   emsCsvHeaders=parsed[0]; emsCsvRows=parsed.slice(1).filter(r=>r.some(c=>c));
   document.getElementById('emsCsvStatus').innerHTML=`<div class="parse-ok">✓ Found ${emsCsvRows.length} rows and ${emsCsvHeaders.length} columns</div>`;
-  const autoMap={company:['company','customer','name','account','prospect'],city:['city','town'],state:['state','st'],zip:['zip','postal'],contactName:['contact','contact name'],contactPhone:['phone','telephone'],contactEmail:['email','e-mail'],annualValue:['value','annual value','revenue'],cscContact:['csc','csc contact','rep'],notes:['notes','comments'],clientType:['client type','customer type','sector','industry','type of client'],saNum:['sa #','sa#','sa number','service agreement','contract number'],webctrlVersion:['webctrl','webctrl version','bas version','controls version'],renewalDate:['renewal','renewal date','contract renewal','expiration','expiry']};
+  const autoMap={company:['company','customer','name','account','prospect'],city:['city','town'],state:['state','st'],zip:['zip','postal'],contactName:['contact','contact name','primary contact'],contactPhone:['phone','telephone'],contactEmail:['email','e-mail'],annualValue:['value','annual value','revenue'],cscContact:['csc','csc contact','rep','owner','sales team member'],stage:['status'],notes:['notes','comments'],clientType:['client type','customer type','sector','industry','type of client'],saNum:['sa #','sa#','sa number','service agreement','contract number'],webctrlVersion:['webctrl','webctrl version','bas version','controls version'],renewalDate:['renewal','renewal date','contract renewal','expiration','expiry']};
   const mapped={};
   emsCsvHeaders.forEach((h,i)=>{const hl=h.toLowerCase().trim();for(const[field,aliases] of Object.entries(autoMap)){if(aliases.some(a=>hl.includes(a))){mapped[i]=field;break;}}});
   const fieldOpts=EMS_LEAD_FIELDS.map(f=>`<option value="${f.key}">${f.label}</option>`).join('');
@@ -2719,8 +2719,18 @@ window.emsRunImport=function(){
     const obj={id:emsGenId(),tags:[],activity:[],stage:'Prospect',priority:'Medium',buildings:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
     Object.entries(mapping).forEach(([i,field])=>{if(field&&row[i]!==undefined)obj[field]=row[+i].trim();});
     if(!obj.company) return;
-    const s=EMS_STAGES.find(st=>st.toLowerCase()===(obj.stage||'').toLowerCase());
-    if(s)obj.stage=s;else obj.stage='Prospect';
+    // Normalize CSC-style status strings to EMS pipeline stages
+    const rawStage=(obj.stage||'').toLowerCase().trim();
+    const cscStageMap=[
+      {test:s=>s.includes('closed won')||s==='won',stage:'Won'},
+      {test:s=>s.includes('closed lost')||s.includes('lost'),stage:'Lost'},
+      {test:s=>s.includes('proposal'),stage:'Proposal'},
+      {test:s=>s.includes('qualifying')||s.includes('qualify'),stage:'Qualifying'},
+      {test:s=>s.includes('prospect')||s.includes('lead')||s.includes('new'),stage:'Prospect'},
+    ];
+    const cscMatch=cscStageMap.find(m=>m.test(rawStage));
+    if(cscMatch) obj.stage=cscMatch.stage;
+    else { const s=EMS_STAGES.find(st=>st.toLowerCase()===rawStage); obj.stage=s||'Prospect'; }
     parsed.push(obj);
   });
 
@@ -4861,28 +4871,36 @@ const UTILITY_RULES=[
     (/Customer\s+Ch[ga]/i.test(t) && /ECA\s+Ch[ga]/i.test(t))
   ),
   extractAll:t=>{
-    // Split on "Billing Details - service from" headers to isolate each billing period.
-    // Each bill can span 2-4 pages; pages after the first say "(Continued)" with no
-    // new "Billing Details" header. We split on the header as a boundary, then
-    // re-join any fragment that has no date (i.e. a "Continued" page) back onto
-    // the preceding section so all charge lines stay with the correct billing period.
+    // Split on "Billing Details - service from" headers to get per-period sections.
+    // Problem: "Continued" pages repeat this header for the SAME billing period,
+    // so a 3-page bill produces 2 sections with identical dates = duplicate records.
+    //
+    // Fix: after splitting, group sections by their "Billing Date: MM/DD/YYYY" page
+    // header (the invoice date printed top-right on every page of a bill).
+    // Sections sharing the same Billing Date belong to the same invoice — merge them.
+    // This is the authoritative dedup key because it is unique per invoice and
+    // appears on every page including Continued pages.
     const acct=t.match(/Account\s+(?:Number\s*)?:\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null;
     const addrM=t.match(/^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m);
-    const raw=t.split(/(?=Billing\s+Details\s*[-\u2013\-]\s*service\s+from)/i);
-    // Merge fragments without a "service from ... to ..." date pair back onto the prior section
-    const sections=[];
+    const raw=t.split(/(?=Billing\s+Details\s*[-\u2013\-]\s*service\s+from)/i)
+               .filter(s=>s.trim().length>20);
+    if(!raw.length) return [_extractEvergy(t,acct,addrM?.[1]?.trim()||null)];
+    // Group by Billing Date (invoice date in page header: "Billing Date: MM/DD/YYYY")
+    const groups=new Map(); // billingDate -> accumulated text
     for(const frag of raw){
-      const hasDates=/service\s+from\s+\d{2}\/\d{2}\/\d{4}\s+to\s+\d{2}\/\d{2}\/\d{4}/i.test(frag);
-      if(hasDates||sections.length===0){
-        sections.push(frag);
+      const bdM=frag.match(/Billing\s+Date:\s*(\d{2}\/\d{2}\/\d{4})/i);
+      // Fall back to service-from start date if no Billing Date header found
+      const sfM=frag.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})/i);
+      const key=bdM?.[1]||sfM?.[1]||('_'+groups.size);
+      if(groups.has(key)){
+        groups.set(key, groups.get(key)+'\n'+frag);
       } else {
-        // "Continued" page — append to previous section
-        sections[sections.length-1]+=frag;
+        groups.set(key, frag);
       }
     }
-    const validSections=sections.filter(s=>/service\s+from\s+\d{2}\/\d{2}\/\d{4}/i.test(s));
-    if(!validSections.length) return [_extractEvergy(t,acct,addrM?.[1]?.trim()||null)];
-    return validSections.map(s=>_extractEvergy(s,acct,addrM?.[1]?.trim()||null));
+    const validGroups=[...groups.values()].filter(s=>/service\s+from\s+\d{2}\/\d{2}\/\d{4}/i.test(s));
+    if(!validGroups.length) return [_extractEvergy(t,acct,addrM?.[1]?.trim()||null)];
+    return validGroups.map(s=>_extractEvergy(s,acct,addrM?.[1]?.trim()||null));
   },
   extract:t=>{
     const acct=t.match(/Account\s+(?:Number\s*)?:\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null;
