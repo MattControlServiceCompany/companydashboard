@@ -4871,32 +4871,24 @@ const UTILITY_RULES=[
     (/Customer\s+Ch[ga]/i.test(t) && /ECA\s+Ch[ga]/i.test(t))
   ),
   extractAll:t=>{
-    // Split on "Billing Details - service from" headers to get per-period sections.
-    // Problem: "Continued" pages repeat this header for the SAME billing period,
-    // so a 3-page bill produces 2 sections with identical dates = duplicate records.
-    //
-    // Fix: after splitting, group sections by their "Billing Date: MM/DD/YYYY" page
-    // header (the invoice date printed top-right on every page of a bill).
-    // Sections sharing the same Billing Date belong to the same invoice — merge them.
-    // This is the authoritative dedup key because it is unique per invoice and
-    // appears on every page including Continued pages.
+    // Split on "Billing Details - service from", then deduplicate using the
+    // "Billing Date: MM/DD/YYYY" page header (invoice date, top-right of every page).
+    // Continued pages repeat the "Billing Details" header for the same billing period,
+    // which previously created duplicate sections. Grouping by Billing Date — which is
+    // unique per invoice and printed on every page including Continued pages — merges
+    // all fragments for the same bill before extraction runs.
     const acct=t.match(/Account\s+(?:Number\s*)?:\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null;
     const addrM=t.match(/^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m);
     const raw=t.split(/(?=Billing\s+Details\s*[-\u2013\-]\s*service\s+from)/i)
                .filter(s=>s.trim().length>20);
     if(!raw.length) return [_extractEvergy(t,acct,addrM?.[1]?.trim()||null)];
-    // Group by Billing Date (invoice date in page header: "Billing Date: MM/DD/YYYY")
-    const groups=new Map(); // billingDate -> accumulated text
+    // Group fragments by Billing Date (invoice date in page header)
+    const groups=new Map();
     for(const frag of raw){
       const bdM=frag.match(/Billing\s+Date:\s*(\d{2}\/\d{2}\/\d{4})/i);
-      // Fall back to service-from start date if no Billing Date header found
       const sfM=frag.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})/i);
       const key=bdM?.[1]||sfM?.[1]||('_'+groups.size);
-      if(groups.has(key)){
-        groups.set(key, groups.get(key)+'\n'+frag);
-      } else {
-        groups.set(key, frag);
-      }
+      groups.set(key, (groups.get(key)||'')+frag+'\n');
     }
     const validGroups=[...groups.values()].filter(s=>/service\s+from\s+\d{2}\/\d{2}\/\d{4}/i.test(s));
     if(!validGroups.length) return [_extractEvergy(t,acct,addrM?.[1]?.trim()||null)];
@@ -4937,23 +4929,22 @@ const UTILITY_RULES=[
 ];
 function scoreExtraction(d){return Object.values(d).filter(v=>v!==null&&v!=='').length;}
 async function extractPDFText(ab, statusCb){
+  // Per-page hybrid: extract native text from every page; pages returning <20 chars
+  // are image pages — OCR those individually. Handles mixed PDFs where early pages
+  // are digital text and later pages are scanned images (e.g. a multi-year bill file).
+  // The old approach returned as soon as ANY text was found, silently dropping all
+  // image pages that followed.
   try{
     if(typeof pdfjsLib==='undefined') return null;
     pdfjsLib.GlobalWorkerOptions.workerSrc='';
     const pdf=await pdfjsLib.getDocument({data:ab, useWorkerFetch:false, isEvalSupported:false, useSystemFonts:true}).promise;
-    const maxPages=Math.min(pdf.numPages,50); // support full-year multi-bill PDFs
+    const maxPages=Math.min(pdf.numPages,50);
 
-    // ── Step 1: try native text extraction ──
-    let txt='';
-    for(let i=1;i<=maxPages;i++){
-      const pg=await pdf.getPage(i);
+    // Helper: extract one page as line-grouped text using y-position
+    async function extractPageText(pg){
       const c=await pg.getTextContent();
-      // Group by y-position to reconstruct real line breaks.
-      // PDF.js transform[5]=y coord; items within 2px share a line.
-      // Prevents all charge lines on a page merging into one string,
-      // which broke end-of-line anchored charge regexes.
       const items=c.items.filter(s=>s.str&&s.str.trim());
-      if(!items.length){txt+='\n';continue;}
+      if(!items.length) return '';
       items.sort((a,b)=>{
         const dy=b.transform[5]-a.transform[5];
         return Math.abs(dy)>2 ? dy : a.transform[4]-b.transform[4];
@@ -4964,54 +4955,60 @@ async function extractPDFText(ab, statusCb){
         if(curY===null||Math.abs(y-curY)>2){
           if(curLine.length) pageLines.push(curLine.join(' '));
           curLine=[item.str]; curY=y;
-        } else {
-          curLine.push(item.str);
-        }
+        } else { curLine.push(item.str); }
       }
       if(curLine.length) pageLines.push(curLine.join(' '));
-      txt+=pageLines.join('\n')+'\n';
+      return pageLines.join('\n');
     }
-    if(txt.trim().length>100) return txt; // text-based PDF, done
 
-    // ── Step 2: scanned image — render pages to canvas and OCR ──
-    if(typeof Tesseract==='undefined'){
-      if(statusCb) statusCb('OCR library not loaded — check network connection.');
-      return null;
-    }
-    if(statusCb) statusCb('Scanned PDF detected — loading OCR engine...');
-    let worker;
-    try{
-      worker=await Tesseract.createWorker('eng',1,{
-        logger: m=>{
-          if(statusCb){
-            if(m.status==='loading tesseract core') statusCb('Loading OCR engine...');
-            else if(m.status==='loading language traineddata') statusCb('Loading English language data...');
-            else if(m.status==='recognizing text') statusCb('OCR progress: '+Math.round((m.progress||0)*100)+'%');
-          }
-        }
-      });
-    }catch(workerErr){
-      if(statusCb) statusCb('OCR engine failed to load: '+workerErr.message);
-      return null;
-    }
-    let ocrText='';
+    // ── Pass 1: native text extraction, flag sparse pages as image pages ──
+    const pageTexts=[];
+    const imagePageNums=[];
     for(let i=1;i<=maxPages;i++){
-      if(statusCb) statusCb('OCR scanning page '+i+' of '+maxPages+'...');
       const pg=await pdf.getPage(i);
-      const vp=pg.getViewport({scale:2.5});
-      const canvas=document.createElement('canvas');
-      canvas.width=vp.width; canvas.height=vp.height;
-      const ctx=canvas.getContext('2d');
-      await pg.render({canvasContext:ctx, viewport:vp}).promise;
-      try{
-        const {data:{text}}=await worker.recognize(canvas);
-        ocrText+=text+'\n';
-      }catch(pageErr){
-        if(statusCb) statusCb('OCR failed on page '+i+': '+pageErr.message);
+      const t=await extractPageText(pg);
+      pageTexts.push(t);
+      if(t.trim().length<20) imagePageNums.push(i); // sparse = likely image
+    }
+
+    // ── Pass 2: OCR image pages only ──
+    if(imagePageNums.length>0){
+      if(typeof Tesseract==='undefined'){
+        if(statusCb) statusCb('Warning: '+imagePageNums.length+' image page(s) skipped — OCR library not loaded.');
+      } else {
+        if(statusCb) statusCb('Found '+imagePageNums.length+' image page(s) — starting OCR...');
+        let worker;
+        try{
+          worker=await Tesseract.createWorker('eng',1,{
+            logger:m=>{
+              if(statusCb){
+                if(m.status==='loading tesseract core') statusCb('Loading OCR engine...');
+                else if(m.status==='loading language traineddata') statusCb('Loading language data...');
+                else if(m.status==='recognizing text') statusCb('OCR scanning image pages... '+Math.round((m.progress||0)*100)+'%');
+              }
+            }
+          });
+          for(const pgNum of imagePageNums){
+            if(statusCb) statusCb('OCR page '+pgNum+' of '+maxPages+'...');
+            const pg=await pdf.getPage(pgNum);
+            const vp=pg.getViewport({scale:2.5});
+            const canvas=document.createElement('canvas');
+            canvas.width=vp.width; canvas.height=vp.height;
+            await pg.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+            try{
+              const {data:{text}}=await worker.recognize(canvas);
+              pageTexts[pgNum-1]=text; // replace sparse entry with OCR result
+            }catch(e){ /* keep sparse text if OCR fails on this page */ }
+          }
+          await worker.terminate();
+        }catch(workerErr){
+          if(statusCb) statusCb('OCR engine error: '+workerErr.message);
+        }
       }
     }
-    await worker.terminate();
-    return ocrText.trim().length>50 ? ocrText : null;
+
+    const combined=pageTexts.join('\n');
+    return combined.trim().length>50 ? combined : null;
   }catch(e){if(statusCb)statusCb('PDF read error: '+e.message);console.error('PDF extract error:',e);return null;}
 }
 function showExtractionBadge(method,detail){
