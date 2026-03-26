@@ -4811,7 +4811,7 @@ const UTILITY_RULES=[
   ),
   extractAll:t=>{
     // Split multi-bill PDF into per-billing-period sections
-    const sections=t.split(/(?=(?:[\s\S]*?[-\u2013]\s*[\dA-Z]{3,10}\s+)?Billing\s+Details\s*[-\u2013]\s*service\s+from)/i).filter(s=>/service\s+from/i.test(s));
+    const sections=t.split(/(?=Billing\s+Details\s*[-\u2013]\s*service\s+from)/i).filter(s=>/BillingPeriodStart|service\s+from/i.test(s)||/\d{2}\/\d{2}\/\d{4}/.test(s));
     if(!sections.length) sections.push(t);
     const acct=t.match(/Account\s+(?:Number\s*)?:\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null;
     const addrM=t.match(/^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m);
@@ -4856,7 +4856,7 @@ async function extractPDFText(ab, statusCb){
     if(typeof pdfjsLib==='undefined') return null;
     pdfjsLib.GlobalWorkerOptions.workerSrc='';
     const pdf=await pdfjsLib.getDocument({data:ab, useWorkerFetch:false, isEvalSupported:false, useSystemFonts:true}).promise;
-    const maxPages=Math.min(pdf.numPages,4);
+    const maxPages=Math.min(pdf.numPages,50); // support full-year multi-bill PDFs
 
     // ── Step 1: try native text extraction ──
     let txt='';
@@ -4957,12 +4957,13 @@ async function processPDF(file){
             showToast(validBills.length+' billing periods extracted ✓');
           } else {
             const extracted = validBills[0]||bills[0];
-            window._pdfMultiBills = null;
+            window._pdfMultiBills = [extracted]; // always store as array for consistency
+            window._pdfMultiIdx = 0;
             renderPDFFields(extracted);
             box.textContent=JSON.stringify(extracted,null,2);
             document.getElementById('pdfSaveRow').style.display='block';
             refreshProjDropdowns();
-            showExtractionBadge('rules',rule.name);
+            showExtractionBadge('rules',rule.name+' · 1 billing period');
             dz.textContent=file.name+' ✓';
             showToast('Extracted locally — '+rule.name+' ✓');
           }
