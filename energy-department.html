@@ -488,6 +488,51 @@ html,body{height:100%;overflow:hidden;}
 .eq-tag{font-family:var(--mono);font-size:11px;font-weight:600;background:var(--em2-dim);color:var(--em2);border:1px solid rgba(14,165,233,.2);padding:2px 7px;border-radius:5px;}
 .hchip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:10px;margin:3px;}
 .hc-hol{background:var(--warn-dim);color:var(--warn);border:1px solid rgba(245,158,11,.2);}
+.hc-sch{background:var(--em2-dim);color:var(--em2);border:1px solid rgba(14,165,233,.2);}
+.hc-ev{background:var(--violet-dim);color:var(--violet);border:1px solid rgba(167,139,250,.2);}
+/* ── DISTRICT CAL visual ── */
+.dc-input-tabs{display:flex;gap:4px;margin-bottom:12px;}
+.dc-itab{font-family:var(--font);font-size:12px;font-weight:600;padding:6px 14px;border-radius:7px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;transition:all .13s;}
+.dc-itab.active{background:var(--em-dim);border-color:var(--em);color:var(--em);}
+.dc-input-panel{display:none;}.dc-input-panel.active{display:block;}
+.dc-drop-zone{border:2px dashed var(--border2);border-radius:10px;padding:24px 16px;text-align:center;cursor:pointer;transition:all .18s;background:var(--s2);margin-bottom:10px;}
+.dc-drop-zone:hover,.dc-drop-zone.drag{border-color:var(--em);background:var(--em-dim);}
+.dc-url-row{display:flex;gap:7px;}.dc-url-row .fi{flex:1;}
+.dc-cal-wrap{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-top:14px;}
+.dc-cal-nav{display:flex;align-items:center;justify-content:space-between;padding:10px 15px;border-bottom:1px solid var(--border);}
+.dc-cal-title{font-family:var(--head);font-size:13px;font-weight:700;}
+.dc-month-block{border-bottom:1px solid var(--border);}.dc-month-block:last-child{border-bottom:none;}
+.dc-month-hdr{font-family:var(--head);font-size:12px;font-weight:700;padding:8px 14px;background:var(--s2);border-bottom:1px solid var(--border);}
+.dc-dow-row{display:grid;grid-template-columns:repeat(7,1fr);padding:4px 8px 0;}
+.dc-dow{text-align:center;font-size:9px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:2px 0;}
+.dc-days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;padding:3px 8px 8px;}
+.dc-day{min-height:54px;border-radius:5px;padding:3px 4px;background:transparent;border:1px solid transparent;position:relative;}
+.dc-day.has-ev{cursor:pointer;}.dc-day.has-ev:hover{background:var(--s3);}
+.dc-day.dc-today{background:var(--em-dim);border-color:var(--em);}
+.dc-day.dc-other{opacity:.18;pointer-events:none;}
+.dc-day-n{font-size:10px;font-weight:700;line-height:1;color:var(--text);}
+.dc-day.dc-today .dc-day-n{color:var(--em);}
+.dc-day-evs{margin-top:2px;display:flex;flex-direction:column;gap:1px;}
+.dc-ev-pill{font-size:8px;padding:1px 3px;border-radius:3px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5;}
+.ev-holiday{background:rgba(245,158,11,.25);color:var(--warn);}
+.ev-noschool{background:rgba(244,63,94,.2);color:var(--danger);}
+.ev-early{background:rgba(167,139,250,.2);color:var(--violet);}
+.ev-pd{background:rgba(14,165,233,.2);color:var(--em2);}
+.ev-break{background:rgba(0,212,170,.15);color:var(--em);}
+.ev-event{background:rgba(132,204,22,.15);color:var(--lime);}
+.dc-legend{display:flex;flex-wrap:wrap;gap:6px;padding:9px 14px;border-top:1px solid var(--border);background:var(--s2);}
+.dc-leg-item{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2);}
+.dc-leg-dot{width:8px;height:8px;border-radius:2px;}
+.dc-ev-row{display:flex;align-items:flex-start;gap:9px;padding:7px 10px;border-radius:7px;background:var(--s3);border:1px solid var(--border);margin-bottom:5px;}
+.dc-ev-date{font-family:var(--mono);font-size:10px;color:var(--text2);white-space:nowrap;min-width:70px;padding-top:1px;}
+.dc-ev-name{font-size:12px;line-height:1.4;}
+.dc-ev-type-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-top:1px;}
+.dc-stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;}
+.dc-stat{background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;text-align:center;}
+.dc-stat-val{font-family:var(--head);font-size:21px;font-weight:800;}
+.dc-stat-lbl{font-size:10px;color:var(--text2);margin-top:2px;}
+.dc-progress{display:none;align-items:center;gap:9px;font-size:12px;color:var(--text2);padding:8px 0;}
+.dc-progress.show{display:flex;}
 .cv-row{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--s3);border:1px solid var(--border);border-radius:7px;margin-bottom:6px;}
 .cv-key{font-family:var(--mono);font-size:11px;color:var(--warn);font-weight:600;min-width:160px;flex-shrink:0;}
 .cv-inp{flex:1;font-family:var(--font);font-size:13px;color:var(--text);background:transparent;border:none;outline:none;padding:2px 4px;}
@@ -982,24 +1027,139 @@ html,body{height:100%;overflow:hidden;}
 
 <!-- DISTRICT CALENDAR -->
 <div id="view-district" class="view">
-  <div class="g2">
-    <div class="card">
-      <div class="card-hdr"><span class="card-title">📅 Calendar Input</span></div>
-      <div style="padding:15px">
-        <div class="fg"><label class="fl">District Name</label><input class="fi" id="dist-name" placeholder="e.g. Independence School District"></div>
-        <div class="fg"><label class="fl">Paste Calendar Text</label><textarea class="fta" id="dist-cal" style="min-height:130px" placeholder="Paste school calendar text..."></textarea></div>
-        <div class="f2">
-          <div class="fg"><label class="fl">Occupied Start</label><input class="fi" id="dist-occ-s" placeholder="7:00 AM"></div>
-          <div class="fg"><label class="fl">Occupied End</label><input class="fi" id="dist-occ-e" placeholder="5:00 PM"></div>
+  <div class="pg-hdr">
+    <div><h1 class="pg-title">District <em>Calendar</em></h1><p class="pg-sub">Load a district PDF calendar via URL or upload — events are parsed locally and displayed in a visual schedule</p></div>
+    <div class="hdr-actions">
+      <button class="btn btn-ghost btn-sm" onclick="dcClear()">✕ Clear</button>
+      <button class="btn btn-em btn-sm" onclick="dcExport()">⬇ Export Schedule</button>
+    </div>
+  </div>
+
+  <div class="g-6040">
+    <!-- LEFT col: input + calendar -->
+    <div>
+      <!-- Input mode tabs -->
+      <div class="dc-input-tabs">
+        <button class="dc-itab active" id="dc-tab-url" onclick="dcTab('url',this)">🔗 Paste URL</button>
+        <button class="dc-itab" id="dc-tab-pdf" onclick="dcTab('pdf',this)">📄 Upload PDF</button>
+        <button class="dc-itab" id="dc-tab-text" onclick="dcTab('text',this)">📋 Paste Text</button>
+      </div>
+
+      <!-- URL panel -->
+      <div class="dc-input-panel active" id="dc-panel-url">
+        <div class="fg">
+          <label class="fl">PDF Calendar URL</label>
+          <div class="dc-url-row">
+            <input class="fi" id="dc-url" placeholder="https://...calendar.pdf">
+            <button class="btn btn-em" onclick="dcLoadURL()">Load</button>
+          </div>
+          <div class="fhint">Paste a direct link to the district's PDF calendar. If blocked by CORS, download and upload the PDF instead.</div>
         </div>
-        <div class="f2">
-          <div class="fg"><label class="fl">Heat Setback °F</label><input class="fi" id="dist-sh" type="number" value="60"></div>
-          <div class="fg"><label class="fl">Cool Setback °F</label><input class="fi" id="dist-sc" type="number" value="85"></div>
+      </div>
+
+      <!-- PDF upload panel -->
+      <div class="dc-input-panel" id="dc-panel-pdf">
+        <div class="dc-drop-zone" id="dcDropZone"
+             onclick="document.getElementById('dcFileInput').click()"
+             ondragover="event.preventDefault();this.classList.add('drag')"
+             ondragleave="this.classList.remove('drag')"
+             ondrop="dcDrop(event)">
+          <div style="font-size:28px;margin-bottom:6px">📅</div>
+          <div style="font-family:var(--head);font-size:13px;font-weight:700;margin-bottom:3px" id="dcDropLabel">Drop PDF calendar here or click to browse</div>
+          <div style="font-size:11px;color:var(--text2)">District calendar PDFs accepted</div>
+          <input type="file" id="dcFileInput" accept=".pdf" style="display:none" onchange="dcFileChosen(event)">
         </div>
-        <button class="btn btn-em" style="width:100%" onclick="parseDistCal()">🗓️ Parse Calendar &amp; Generate Schedule</button>
+      </div>
+
+      <!-- Text paste panel -->
+      <div class="dc-input-panel" id="dc-panel-text">
+        <div class="fg">
+          <label class="fl">Paste Calendar Text</label>
+          <textarea class="fta" id="dist-cal" style="min-height:110px" placeholder="Paste school calendar text — holidays, early release days, school start/end dates, professional development days..."></textarea>
+        </div>
+        <button class="btn btn-em" style="width:100%;margin-bottom:10px" onclick="dcParseText()">📅 Parse Calendar</button>
+      </div>
+
+      <!-- Settings -->
+      <div class="card" style="margin-bottom:10px">
+        <div class="card-hdr"><span class="card-title">⚙️ Settings</span></div>
+        <div style="padding:11px">
+          <div class="f2" style="margin-bottom:8px">
+            <div class="fg" style="margin:0"><label class="fl">District Name</label><input class="fi" id="dist-name" placeholder="e.g. USD 416 Pratt"></div>
+            <div class="fg" style="margin:0"><label class="fl">School Year</label><input class="fi" id="dist-year" placeholder="e.g. 2025-2026"></div>
+          </div>
+          <div class="f2" style="margin-bottom:8px">
+            <div class="fg" style="margin:0"><label class="fl">Occupied Start</label><input class="fi" id="dist-occ-s" value="7:00 AM"></div>
+            <div class="fg" style="margin:0"><label class="fl">Occupied End</label><input class="fi" id="dist-occ-e" value="5:00 PM"></div>
+          </div>
+          <div class="f2" style="margin:0">
+            <div class="fg" style="margin:0"><label class="fl">Heat Setback °F</label><input class="fi" id="dist-sh" type="number" value="60"></div>
+            <div class="fg" style="margin:0"><label class="fl">Cool Setback °F</label><input class="fi" id="dist-sc" type="number" value="85"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dc-progress" id="dcProgress"><div class="tdots"><span></span><span></span><span></span></div><span id="dcProgressMsg">Loading...</span></div>
+
+      <!-- Visual calendar -->
+      <div id="dcCalWrap" style="display:none">
+        <div class="dc-cal-wrap">
+          <div class="dc-cal-nav">
+            <span class="dc-cal-title" id="dcCalTitle">📅 District Calendar</span>
+            <div style="display:flex;gap:5px">
+              <button class="cnav" onclick="dcNav(-1)">‹</button>
+              <button class="cnav" onclick="dcNav(1)">›</button>
+            </div>
+          </div>
+          <div id="dcCalMonths"></div>
+          <div class="dc-legend">
+            <div class="dc-leg-item"><div class="dc-leg-dot" style="background:var(--warn)"></div>Holiday</div>
+            <div class="dc-leg-item"><div class="dc-leg-dot" style="background:var(--danger)"></div>No School</div>
+            <div class="dc-leg-item"><div class="dc-leg-dot" style="background:var(--violet)"></div>Early Release</div>
+            <div class="dc-leg-item"><div class="dc-leg-dot" style="background:var(--em2)"></div>Prof Dev</div>
+            <div class="dc-leg-item"><div class="dc-leg-dot" style="background:var(--em)"></div>Break</div>
+            <div class="dc-leg-item"><div class="dc-leg-dot" style="background:var(--lime)"></div>Event</div>
+          </div>
+        </div>
       </div>
     </div>
-    <div><div class="ai-label">📅 Control Schedule</div><div class="ai-box" id="distBox" style="min-height:280px">Paste calendar text and click Parse.</div><div id="distChips" style="margin-top:12px"></div></div>
+
+    <!-- RIGHT col: stats + event list + BAS schedule -->
+    <div>
+      <div id="dcStatsRow" style="display:none" class="dc-stat-row">
+        <div class="dc-stat"><div class="dc-stat-val c-warn" id="dc-s-hol">—</div><div class="dc-stat-lbl">Holidays</div></div>
+        <div class="dc-stat"><div class="dc-stat-val c-violet" id="dc-s-early">—</div><div class="dc-stat-lbl">Early Release</div></div>
+        <div class="dc-stat"><div class="dc-stat-val c-em2" id="dc-s-pd">—</div><div class="dc-stat-lbl">Prof Dev</div></div>
+        <div class="dc-stat"><div class="dc-stat-val c-em" id="dc-s-break">—</div><div class="dc-stat-lbl">Break Days</div></div>
+      </div>
+
+      <div id="dcEventCard" style="display:none" class="card" style="margin-bottom:12px">
+        <div class="card-hdr">
+          <span class="card-title">📋 All Events</span>
+          <input class="fi" id="dcSearch" placeholder="Filter..." style="width:110px;padding:4px 8px;font-size:11px" oninput="dcFilterEvents()">
+        </div>
+        <div style="max-height:320px;overflow-y:auto;padding:9px" id="dcEventList"></div>
+      </div>
+
+      <div id="dcBasCard" style="display:none" class="card">
+        <div class="card-hdr">
+          <span class="card-title">🔌 WebCTRL Exception Schedule</span>
+          <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('distBox').textContent).then(()=>showToast('Copied ✓'))">Copy</button>
+        </div>
+        <div style="padding:12px">
+          <div class="ai-box" id="distBox" style="min-height:100px;max-height:280px;overflow-y:auto;font-family:var(--mono);font-size:11px;line-height:1.7"></div>
+        </div>
+      </div>
+
+      <!-- Empty state -->
+      <div id="dcEmpty" class="card">
+        <div style="padding:44px 20px;text-align:center">
+          <div style="font-size:40px;margin-bottom:10px">🗓️</div>
+          <div style="font-family:var(--head);font-size:14px;font-weight:700;margin-bottom:5px">No calendar loaded</div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.6">Paste a PDF URL, upload a PDF, or paste calendar text on the left. Events are detected and placed on a visual calendar — no AI involved.</div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -4096,22 +4256,7 @@ function renderProjEquip(projId){
 }
 
 // ── District Calendar per project ──
-async function parseProjDistCal(projId){
-  const box = document.getElementById('dist-box-'+projId);
-  const dist = document.getElementById('dist-name-'+projId)?.value||'the school district';
-  const cal  = document.getElementById('dist-cal-'+projId)?.value||'';
-  if(!cal){showToast('Paste calendar text first');return;}
-  box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Parsing calendar...</div>';
-  const os = document.getElementById('dist-occ-s-'+projId)?.value||'7:00 AM';
-  const oe = document.getElementById('dist-occ-e-'+projId)?.value||'5:00 PM';
-  const sh = document.getElementById('dist-sh-'+projId)?.value||60;
-  const sc = document.getElementById('dist-sc-'+projId)?.value||85;
-  const result = await claude(
-    `Parse this school district calendar for ${dist} and generate a BAS control schedule.\nCalendar:\n${cal}\nBuilding occupied hours: ${os}–${oe}\nHeat setback: ${sh}°F, Cool setback: ${sc}°F\nProvide: holidays list, early release days, summer/winter/spring breaks, WebCTRL exception schedule, estimated annual energy savings %, and controls spec excerpt.`,
-    'You are an expert building automation engineer specializing in school district energy programs and WebCTRL scheduling.'
-  );
-  box.textContent=result;
-}
+// parseProjDistCal — handled by shim in DISTRICT CALENDAR block above
 
 // ══════════════════════════════════════════════════════
 //  ENERGY SAVINGS MATRIX — per-project measure table
@@ -5638,15 +5783,388 @@ function savePDFData(){
 
 
 
-/* ── DISTRICT CAL ── */
-async function parseDistCal(){
-  const box=document.getElementById('distBox'),cal=document.getElementById('dist-cal').value;
+/* ══════════════════════════════════════
+   DISTRICT CALENDAR — no AI, pure JS
+══════════════════════════════════════ */
+let dcEvents=[], dcViewYear=new Date().getFullYear(), dcViewMonth=new Date().getMonth();
+
+// ── Tab switching ──
+function dcTab(mode,el){
+  document.querySelectorAll('.dc-itab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.dc-input-panel').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('dc-panel-'+mode).classList.add('active');
+}
+
+// ── URL load ──
+async function dcLoadURL(){
+  const url=document.getElementById('dc-url').value.trim();
+  if(!url){showToast('Paste a URL first');return;}
+  dcShowProg('Fetching PDF...');
+  try{
+    const resp=await fetch(url);
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const buf=await resp.arrayBuffer();
+    dcShowProg('Extracting text from PDF...');
+    const text=await dcExtractPDFText(buf);
+    dcParseAndRender(text, url.split('/').pop());
+  }catch(e){
+    dcHideProg();
+    showToast('Fetch failed — try uploading the PDF directly');
+    document.getElementById('dcEmpty').style.display='block';
+  }
+}
+
+// ── File upload / drop ──
+function dcDrop(e){
+  e.preventDefault();
+  document.getElementById('dcDropZone').classList.remove('drag');
+  const f=e.dataTransfer.files[0];
+  if(f&&f.type==='application/pdf') dcReadFile(f); else showToast('Drop a PDF file');
+}
+function dcFileChosen(e){const f=e.target.files[0]; if(f) dcReadFile(f);}
+async function dcReadFile(file){
+  document.getElementById('dcDropLabel').textContent='Loading: '+file.name;
+  dcShowProg('Reading PDF...');
+  const buf=await file.arrayBuffer();
+  dcShowProg('Extracting text from PDF...');
+  const text=await dcExtractPDFText(buf);
+  dcParseAndRender(text, file.name);
+}
+
+// ── PDF text extraction via PDF.js ──
+async function dcExtractPDFText(arrayBuffer){
+  // Load PDF.js from CDN if not already loaded
+  if(!window.pdfjsLib){
+    await new Promise((res,rej)=>{
+      const s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      s.onload=res; s.onerror=rej;
+      document.head.appendChild(s);
+    });
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+  const pdf=await window.pdfjsLib.getDocument({data:arrayBuffer}).promise;
+  let fullText='';
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p);
+    const content=await page.getTextContent();
+    fullText+=content.items.map(i=>i.str).join(' ')+'\n';
+  }
+  return fullText;
+}
+
+// ── Text paste parse ──
+function dcParseText(){
+  const text=document.getElementById('dist-cal').value.trim();
+  if(!text){showToast('Paste calendar text first');return;}
+  dcParseAndRender(text,'pasted text');
+}
+
+// ── Core parser: text → events ──
+function dcParseAndRender(text, sourceName){
+  dcHideProg();
+  const events=dcExtractEvents(text);
+  if(!events.length){
+    showToast('No dates found in '+sourceName+'. Try pasting text instead.');
+    document.getElementById('dcEmpty').style.display='block';
+    return;
+  }
+  dcEvents=events;
+  // Set view to first event month
+  const first=new Date(events[0].date+'T12:00:00');
+  dcViewYear=first.getFullYear(); dcViewMonth=first.getMonth();
+  dcRenderAll();
+  showToast('Loaded '+events.length+' events from '+sourceName+' ✓');
+}
+
+// ── Event extraction: regex-based date+keyword detection ──
+function dcExtractEvents(text){
+  const events=[];
+  const seen=new Set();
+
+  // Keyword → type mapping (ordered: most specific first)
+  const KEYWORDS=[
+    {re:/early\s*(release|dismissal|out|close)|half[\s-]day/i,            type:'early',   label:'Early Release'},
+    {re:/professional\s*dev|prof\.?\s*dev|inservice|in[\s-]service|teacher\s*(work|inst)|pd\s*day/i, type:'pd', label:'Prof Dev'},
+    {re:/no\s*school|school\s*(closed?|not\s*in\s*session|holiday)|classes?\s*(cancel|suspend)/i, type:'noschool', label:'No School'},
+    {re:/thanksgiving/i,                                                   type:'holiday', label:'Thanksgiving'},
+    {re:/christmas|winter\s*break|holiday\s*break|winter\s*recess/i,       type:'break',   label:'Winter Break'},
+    {re:/spring\s*break|spring\s*recess/i,                                 type:'break',   label:'Spring Break'},
+    {re:/fall\s*break|autumn\s*break/i,                                    type:'break',   label:'Fall Break'},
+    {re:/summer\s*break|last\s*day|end\s*of\s*school/i,                    type:'break',   label:'Summer Break'},
+    {re:/martin\s*luther\s*king|mlk/i,                                     type:'holiday', label:'MLK Day'},
+    {re:/president'?s?[\s-]*day|presidents?[\s-]*day/i,                    type:'holiday', label:"Presidents' Day"},
+    {re:/memorial\s*day/i,                                                  type:'holiday', label:'Memorial Day'},
+    {re:/labor\s*day/i,                                                     type:'holiday', label:'Labor Day'},
+    {re:/veterans?[\s-]*day/i,                                              type:'holiday', label:"Veterans' Day"},
+    {re:/independence\s*day|july\s*4th|4th\s*of\s*july/i,                  type:'holiday', label:'Independence Day'},
+    {re:/new\s*year/i,                                                      type:'holiday', label:"New Year's"},
+    {re:/columbus\s*day|indigenous\s*peoples/i,                             type:'holiday', label:'Columbus Day'},
+    {re:/holiday/i,                                                         type:'holiday', label:'Holiday'},
+    {re:/first\s*day|school\s*start|school\s*begin|back\s*to\s*school/i,   type:'event',   label:'First Day'},
+    {re:/graduation|commencement/i,                                         type:'event',   label:'Graduation'},
+    {re:/snow\s*day|weather|inclement/i,                                    type:'noschool',label:'No School'},
+  ];
+
+  const MONTHS_LONG='January|February|March|April|May|June|July|August|September|October|November|December';
+  const MONTHS_SHORT='Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec';
+
+  // Date patterns to try (order: most specific first)
+  const DATE_PATS=[
+    // MM/DD/YYYY or MM-DD-YYYY
+    /\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/g,
+    // Month DD, YYYY  or  Month DD YYYY
+    new RegExp(`\\b(${MONTHS_LONG}|${MONTHS_SHORT})\\.?\\s+(\\d{1,2}),?\\s+(\\d{4})\\b`,'gi'),
+    // Month DD (no year — will use guessed year)
+    new RegExp(`\\b(${MONTHS_LONG}|${MONTHS_SHORT})\\.?\\s+(\\d{1,2})\\b(?!\\s*,?\\s*\\d{4})`,'gi'),
+    // YYYY-MM-DD
+    /\b(\d{4})-(\d{2})-(\d{2})\b/g,
+  ];
+
+  const MONTH_MAP={january:0,february:1,march:2,april:3,may:4,june:5,july:6,august:7,september:8,october:9,november:10,december:11,
+    jan:0,feb:1,mar:2,apr:3,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+
+  // Split into lines for context-window keyword matching
+  const lines=text.split(/\n/);
+
+  function addEvent(dateStr, name, type){
+    const key=dateStr+'|'+name;
+    if(seen.has(key)) return;
+    seen.add(key);
+    events.push({date:dateStr, name, type});
+  }
+
+  function guessType(context){
+    for(const kw of KEYWORDS){
+      if(kw.re.test(context)) return {type:kw.type, label:kw.label};
+    }
+    return null;
+  }
+
+  function toISO(y,m,d){
+    return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+
+  // Guess the school year from text (e.g. "2025-2026" → start=2025)
+  let guessYear=new Date().getFullYear();
+  const syMatch=text.match(/\b(20\d\d)[–\-\/](20\d\d)\b/);
+  if(syMatch) guessYear=parseInt(syMatch[1]);
+  const yearInText=text.match(/\b(20\d\d)\b/);
+  if(!syMatch && yearInText) guessYear=parseInt(yearInText[1]);
+
+  // Process each line
+  lines.forEach(line=>{
+    const kw=guessType(line);
+    if(!kw) return; // only process lines that have a keyword
+
+    // Try each date pattern on this line
+    let found=false;
+
+    // Pattern 1: MM/DD/YYYY
+    let m;
+    const p1=new RegExp(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/,'g');
+    while((m=p1.exec(line))!==null){
+      const mo=parseInt(m[1])-1, d=parseInt(m[2]), y=parseInt(m[3]);
+      if(mo>=0&&mo<12&&d>=1&&d<=31){ addEvent(toISO(y,mo,d), kw.label, kw.type); found=true; }
+    }
+
+    // Pattern 2: Month DD, YYYY
+    const p2=new RegExp(`\\b(${MONTHS_LONG}|${MONTHS_SHORT})\\.?\\s+(\\d{1,2}),?\\s+(\\d{4})\\b`,'gi');
+    while((m=p2.exec(line))!==null){
+      const mo=MONTH_MAP[m[1].toLowerCase()];
+      const d=parseInt(m[2]), y=parseInt(m[3]);
+      if(mo!==undefined&&d>=1&&d<=31){ addEvent(toISO(y,mo,d), kw.label, kw.type); found=true; }
+    }
+
+    // Pattern 3: Month DD (no year)
+    if(!found){
+      const p3=new RegExp(`\\b(${MONTHS_LONG}|${MONTHS_SHORT})\\.?\\s+(\\d{1,2})\\b`,'gi');
+      while((m=p3.exec(line))!==null){
+        const mo=MONTH_MAP[m[1].toLowerCase()];
+        const d=parseInt(m[2]);
+        if(mo===undefined||d<1||d>31) continue;
+        // Pick year: if month is Aug–Dec use guessYear, else guessYear+1
+        const y=mo>=7?guessYear:guessYear+1;
+        addEvent(toISO(y,mo,d), kw.label, kw.type); found=true;
+      }
+    }
+
+    // Pattern 4: YYYY-MM-DD
+    const p4=/\b(\d{4})-(\d{2})-(\d{2})\b/g;
+    while((m=p4.exec(line))!==null){
+      const y=parseInt(m[1]),mo=parseInt(m[2])-1,d=parseInt(m[3]);
+      if(mo>=0&&mo<12&&d>=1&&d<=31){ addEvent(toISO(y,mo,d), kw.label, kw.type); found=true; }
+    }
+  });
+
+  // Also scan for date ranges (e.g. "Dec 22 – Jan 3") and expand them
+  const rangeRe=new RegExp(
+    `(${MONTHS_LONG}|${MONTHS_SHORT})\\.?\\s+(\\d{1,2})\\s*[–\\-—]+\\s*(${MONTHS_LONG}|${MONTHS_SHORT})?\\.?\\s*(\\d{1,2})`,
+    'gi'
+  );
+  let rCtx=text;
+  while((m=rangeRe.exec(rCtx))!==null){
+    const context=rCtx.substring(Math.max(0,m.index-80), m.index+m[0].length+80);
+    const kw=guessType(context)||{type:'noschool',label:'No School'};
+    const mo1=MONTH_MAP[m[1].toLowerCase()];
+    const d1=parseInt(m[2]);
+    const mo2=m[3]?MONTH_MAP[m[3].toLowerCase()]:mo1;
+    const d2=parseInt(m[4]);
+    if(mo1===undefined||mo2===undefined) continue;
+    const y1=mo1>=7?guessYear:guessYear+1;
+    const y2=mo2>=7?guessYear:guessYear+1;
+    // Expand range day by day (cap at 60)
+    let cur=new Date(y1,mo1,d1); const end=new Date(y2,mo2,d2); let cnt=0;
+    while(cur<=end&&cnt<60){
+      addEvent(toISO(cur.getFullYear(),cur.getMonth(),cur.getDate()), kw.label, kw.type);
+      cur.setDate(cur.getDate()+1); cnt++;
+    }
+  }
+
+  return events.sort((a,b)=>a.date.localeCompare(b.date));
+}
+
+// ── Render everything ──
+function dcRenderAll(){
+  const dist=document.getElementById('dist-name').value||'District Calendar';
+  const yr=document.getElementById('dist-year').value||'';
+  document.getElementById('dcCalTitle').textContent='📅 '+dist+(yr?' — '+yr:'');
+
+  // Stats
+  const hol=dcEvents.filter(e=>e.type==='holiday'||e.type==='noschool').length;
+  const early=dcEvents.filter(e=>e.type==='early').length;
+  const pd=dcEvents.filter(e=>e.type==='pd').length;
+  const brk=dcEvents.filter(e=>e.type==='break').length;
+  document.getElementById('dc-s-hol').textContent=hol;
+  document.getElementById('dc-s-early').textContent=early;
+  document.getElementById('dc-s-pd').textContent=pd;
+  document.getElementById('dc-s-break').textContent=brk;
+
+  // BAS schedule
+  const os=document.getElementById('dist-occ-s').value||'7:00 AM';
+  const oe=document.getElementById('dist-occ-e').value||'5:00 PM';
+  const sh=document.getElementById('dist-sh').value||60;
+  const sc=document.getElementById('dist-sc').value||85;
+  const basLines=dcEvents.map(ev=>{
+    const d=new Date(ev.date+'T12:00:00');
+    const ds=d.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});
+    const schName=ev.name.toUpperCase().replace(/\s+/g,'_').substring(0,20);
+    return `${ds} | ${schName.padEnd(22)} | Unocc | Heat:${sh}°F Cool:${sc}°F | (Normal: ${os}–${oe})`;
+  });
+  document.getElementById('distBox').textContent=
+    `WebCTRL Exception Schedule — ${dist} ${yr}\nGenerated: ${new Date().toLocaleDateString()}\n${'─'.repeat(70)}\n`+
+    `DATE       | SCHEDULE NAME            | MODE  | SETPOINTS\n${'─'.repeat(70)}\n`+
+    basLines.join('\n');
+
+  // Show elements
+  document.getElementById('dcStatsRow').style.display='grid';
+  document.getElementById('dcEventCard').style.display='block';
+  document.getElementById('dcBasCard').style.display='block';
+  document.getElementById('dcCalWrap').style.display='block';
+  document.getElementById('dcEmpty').style.display='none';
+
+  dcRenderCalendar();
+  dcRenderEventList();
+}
+
+// ── Calendar grid ──
+function dcNav(dir){
+  dcViewMonth+=dir;
+  if(dcViewMonth>11){dcViewMonth=0;dcViewYear++;}
+  if(dcViewMonth<0){dcViewMonth=11;dcViewYear--;}
+  dcRenderCalendar();
+}
+function dcRenderCalendar(){
+  const byDate={};
+  dcEvents.forEach(ev=>{if(!byDate[ev.date])byDate[ev.date]=[];byDate[ev.date].push(ev);});
+  const MO=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const today=new Date(); today.setHours(0,0,0,0);
+  let html='';
+  for(let m=0;m<3;m++){
+    let mo=dcViewMonth+m, yr=dcViewYear;
+    if(mo>11){mo-=12;yr++;}
+    const fd=new Date(yr,mo,1).getDay();
+    const dim=new Date(yr,mo+1,0).getDate();
+    html+=`<div class="dc-month-block"><div class="dc-month-hdr">${MO[mo]} ${yr}</div>
+      <div class="dc-dow-row"><div class="dc-dow">Su</div><div class="dc-dow">Mo</div><div class="dc-dow">Tu</div><div class="dc-dow">We</div><div class="dc-dow">Th</div><div class="dc-dow">Fr</div><div class="dc-dow">Sa</div></div>
+      <div class="dc-days">`;
+    for(let b=0;b<fd;b++) html+=`<div class="dc-day dc-other"></div>`;
+    for(let d=1;d<=dim;d++){
+      const ds=`${yr}-${String(mo+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const evs=byDate[ds]||[];
+      const isToday=new Date(yr,mo,d).getTime()===today.getTime();
+      html+=`<div class="dc-day${isToday?' dc-today':''}${evs.length?' has-ev':''}"${evs.length?` title="${evs.map(e=>e.name).join(', ')}"`:''}>
+        <div class="dc-day-n">${d}</div>
+        <div class="dc-day-evs">${evs.slice(0,2).map(ev=>`<div class="dc-ev-pill ev-${ev.type}">${ev.name}</div>`).join('')}${evs.length>2?`<div class="dc-ev-pill ev-event">+${evs.length-2}</div>`:''}</div>
+      </div>`;
+    }
+    html+=`</div></div>`;
+  }
+  document.getElementById('dcCalMonths').innerHTML=html;
+}
+
+// ── Event list ──
+function dcRenderEventList(filter=''){
+  const fl=filter.toLowerCase();
+  const TYPE_COLOR={holiday:'var(--warn)',noschool:'var(--danger)',early:'var(--violet)',pd:'var(--em2)',break:'var(--em)',event:'var(--lime)'};
+  const TYPE_LBL={holiday:'Holiday',noschool:'No School',early:'Early Release',pd:'Prof Dev',break:'Break',event:'Event'};
+  const filtered=fl?dcEvents.filter(e=>e.name.toLowerCase().includes(fl)||e.type.includes(fl)):dcEvents;
+  document.getElementById('dcEventList').innerHTML=filtered.length
+    ?filtered.map(ev=>{
+        const d=new Date(ev.date+'T12:00:00');
+        const ds=d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+        return `<div class="dc-ev-row"><div class="dc-ev-date">${ds}</div><div><div class="dc-ev-name">${ev.name}</div><div class="dc-ev-type-lbl" style="color:${TYPE_COLOR[ev.type]||'var(--text2)'}">${TYPE_LBL[ev.type]||ev.type}</div></div></div>`;
+      }).join('')
+    :'<div style="font-size:12px;color:var(--text2);padding:6px">No events match.</div>';
+}
+function dcFilterEvents(){dcRenderEventList(document.getElementById('dcSearch').value);}
+
+// ── Helpers ──
+function dcShowProg(msg){document.getElementById('dcProgressMsg').textContent=msg;document.getElementById('dcProgress').classList.add('show');}
+function dcHideProg(){document.getElementById('dcProgress').classList.remove('show');}
+function dcClear(){
+  dcEvents=[];
+  document.getElementById('dist-cal').value='';
+  document.getElementById('dc-url').value='';
+  document.getElementById('dcCalMonths').innerHTML='';
+  document.getElementById('dcCalWrap').style.display='none';
+  document.getElementById('dcStatsRow').style.display='none';
+  document.getElementById('dcEventCard').style.display='none';
+  document.getElementById('dcBasCard').style.display='none';
+  document.getElementById('dcEmpty').style.display='block';
+  document.getElementById('dcDropLabel').textContent='Drop PDF calendar here or click to browse';
+  showToast('Calendar cleared');
+}
+function dcExport(){
+  if(!dcEvents.length){showToast('No calendar data to export');return;}
+  const txt=document.getElementById('distBox').textContent;
+  const blob=new Blob([txt],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  const dist=(document.getElementById('dist-name').value||'District').replace(/\s+/g,'_');
+  a.download=dist+'_Calendar_Schedule.txt'; a.click();
+  showToast('Exported ✓');
+}
+
+// ── Legacy shims for per-project district tab ──
+async function parseDistCal(){dcParseText();}
+async function parseProjDistCal(projId){
+  const cal=document.getElementById('dist-cal-'+projId)?.value||'';
   if(!cal){showToast('Paste calendar text first');return;}
-  box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Parsing calendar...</div>';
-  const dist=document.getElementById('dist-name').value||'the district',os=document.getElementById('dist-occ-s').value||'7:00 AM',oe=document.getElementById('dist-occ-e').value||'5:00 PM',sh=document.getElementById('dist-sh').value||60,sc=document.getElementById('dist-sc').value||85;
-  const result=await claude(`Parse this ${dist} school calendar and generate a complete BAS control schedule.\n\nCalendar:\n${cal}\n\nOccupied: ${os}–${oe}, Heat setback: ${sh}°F, Cool setback: ${sc}°F\n\nProvide: holiday list with dates, early release days, break periods, formatted WebCTRL exception schedule, estimated annual savings %.`,'You are an expert BAS engineer specializing in school district energy programs and WebCTRL scheduling.');
-  box.textContent=result;
-  document.getElementById('distChips').innerHTML='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--em);margin-bottom:6px">Detected Categories</div>'+['🏖 Summer Break','📚 School Days','⏰ Early Release','🎄 Winter Break','🌸 Spring Break','📋 Professional Days','🦃 Thanksgiving'].map(l=>`<span class="hchip hc-hol">${l}</span>`).join('');
+  const box=document.getElementById('dist-box-'+projId);
+  const events=dcExtractEvents(cal);
+  if(!events.length){box.textContent='No dates found. Make sure the calendar text includes dates and keywords like "no school", "holiday", "early release", etc.';return;}
+  const os=document.getElementById('dist-occ-s-'+projId)?.value||'7:00 AM';
+  const oe=document.getElementById('dist-occ-e-'+projId)?.value||'5:00 PM';
+  const sh=document.getElementById('dist-sh-'+projId)?.value||60;
+  const sc=document.getElementById('dist-sc-'+projId)?.value||85;
+  const dist=document.getElementById('dist-name-'+projId)?.value||'District';
+  const lines=events.map(ev=>{
+    const d=new Date(ev.date+'T12:00:00').toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});
+    return `${d} | ${ev.name.substring(0,22).padEnd(22)} | Unocc | Heat:${sh}°F Cool:${sc}°F`;
+  });
+  box.textContent=`${dist} — WebCTRL Exception Schedule\nOccupied: ${os}–${oe}\n${'─'.repeat(60)}\n`+lines.join('\n')+`\n\nTotal events: ${events.length}`;
 }
 
 /* ── EQUIPMENT ── */
