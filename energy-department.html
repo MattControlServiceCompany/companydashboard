@@ -12596,17 +12596,40 @@ function openSolarCalc(projId){
       <!-- BASELINE UTILITY DATA — auto-populated from project bills -->
       <div class="card" style="margin-bottom:16px">
         <div class="card-hdr"><span class="card-title">📊 Baseline Utility Demand &amp; Consumption</span></div>
-        <div style="padding:16px;overflow-x:auto">
+        <div style="padding:12px;overflow-x:auto">
           <div style="font-size:12px;color:var(--text2);margin-bottom:10px">Auto-populated from project baseline bills. Edit values if needed.</div>
-          <table class="dtbl" style="min-width:900px;font-size:11px">
-            <thead><tr><th>Baseline</th>${months.map(m=>`<th style="text-align:center;width:62px">${m}</th>`).join('')}</tr></thead>
+          <table class="dtbl" style="min-width:1100px;font-size:10px;border-collapse:collapse">
+            <thead><tr>
+              <th style="text-align:center;padding:3px 4px;font-size:9px">Month</th>
+              <th style="text-align:center;padding:3px 4px;font-size:9px">kWh</th>
+              <th style="text-align:center;padding:3px 4px;font-size:9px">Billing kW</th>
+              <th style="text-align:center;padding:3px 4px;font-size:9px">Fac kW</th>
+              <th style="text-align:center;padding:3px 4px;font-size:9px">On-Pk kWh</th>
+              <th style="text-align:center;padding:3px 4px;font-size:9px">Off-Pk kWh</th>
+              <th style="text-align:center;padding:3px 4px;font-size:9px;border-left:2px solid var(--border)">Total Bill $</th>
+              <th style="text-align:center;padding:3px 4px;font-size:9px">ECA $</th>
+              <th style="text-align:center;padding:3px 4px;font-size:9px">EER $</th>
+              <th style="text-align:center;padding:3px 4px;font-size:9px">PTS $</th>
+              <th style="text-align:center;padding:3px 4px;font-size:9px">TDC $</th>
+            </tr></thead>
             <tbody>
-              <tr><td style="font-weight:600">kWh</td>${months.map((m,i)=>`<td><input class="fi sc-bl-kwh" data-mi="${i}" type="number" style="width:62px;text-align:right;padding:3px 4px;font-size:10px" value="${blBills.kwh[i]||''}"></td>`).join('')}</tr>
-              <tr><td style="font-weight:600">Billing kW</td>${months.map((m,i)=>`<td><input class="fi sc-bl-kw" data-mi="${i}" type="number" style="width:62px;text-align:right;padding:3px 4px;font-size:10px" value="${blBills.billedKw[i]||''}"></td>`).join('')}</tr>
-              <tr><td style="font-weight:600">Facilities kW</td>${months.map((m,i)=>`<td><input class="fi sc-bl-fackw" data-mi="${i}" type="number" style="width:62px;text-align:right;padding:3px 4px;font-size:10px" value="${blBills.facKw[i]||''}"></td>`).join('')}</tr>
-              <tr><td style="font-weight:600">On-Peak kWh</td>${months.map((m,i)=>`<td><input class="fi sc-bl-onpk" data-mi="${i}" type="number" style="width:62px;text-align:right;padding:3px 4px;font-size:10px" value="${blBills.onPeakKwh[i]||''}"></td>`).join('')}</tr>
-              <tr><td style="font-weight:600">Off-Peak kWh</td>${months.map((m,i)=>`<td><input class="fi sc-bl-offpk" data-mi="${i}" type="number" style="width:62px;text-align:right;padding:3px 4px;font-size:10px" value="${blBills.offPeakKwh[i]||''}"></td>`).join('')}</tr>
-              <tr style="background:rgba(59,130,246,0.04)"><td style="font-weight:600">Total Bill $</td>${months.map((m,i)=>`<td><input class="fi sc-bl-total" data-mi="${i}" type="number" style="width:62px;text-align:right;padding:3px 4px;font-size:10px" value="${blBills.totalCost[i]||''}"></td>`).join('')}</tr>
+              ${months.map((m,i)=>{
+                const is='width:62px;text-align:right;padding:3px 4px;font-size:10px';
+                const bg=i%2===0?'':'background:rgba(255,255,255,0.02)';
+                return '<tr style="'+bg+'">'+
+                  '<td style="font-weight:600;padding:3px 6px;font-size:11px">'+m+'</td>'+
+                  '<td><input class="fi sc-bl-kwh" data-mi="'+i+'" type="number" style="'+is+'" value="'+(blBills.kwh[i]||'')+'"></td>'+
+                  '<td><input class="fi sc-bl-kw" data-mi="'+i+'" type="number" style="'+is+'" value="'+(blBills.billedKw[i]||'')+'"></td>'+
+                  '<td><input class="fi sc-bl-fackw" data-mi="'+i+'" type="number" style="'+is+'" value="'+(blBills.facKw[i]||'')+'"></td>'+
+                  '<td><input class="fi sc-bl-onpk" data-mi="'+i+'" type="number" style="'+is+'" value="'+(blBills.onPeakKwh[i]||'')+'"></td>'+
+                  '<td><input class="fi sc-bl-offpk" data-mi="'+i+'" type="number" style="'+is+'" value="'+(blBills.offPeakKwh[i]||'')+'"></td>'+
+                  '<td style="border-left:2px solid var(--border)"><input class="fi sc-bl-total" data-mi="'+i+'" type="number" style="'+is+'" value="'+(blBills.totalCost[i]||'')+'"></td>'+
+                  '<td><input class="fi sc-bl-eca" data-mi="'+i+'" type="number" style="'+is+'" value="'+(blBills.ecaCharge[i]||'')+'"></td>'+
+                  '<td><input class="fi sc-bl-eer" data-mi="'+i+'" type="number" style="'+is+'" value="'+(blBills.eerCharge[i]||'')+'"></td>'+
+                  '<td><input class="fi sc-bl-pts" data-mi="'+i+'" type="number" style="'+is+'" value="'+(blBills.ptsCharge[i]||'')+'"></td>'+
+                  '<td><input class="fi sc-bl-tdc" data-mi="'+i+'" type="number" style="'+is+'" value="'+(blBills.tdcCharge[i]||'')+'"></td>'+
+                '</tr>';
+              }).join('')}
             </tbody>
           </table>
         </div>
@@ -12620,8 +12643,9 @@ function openSolarCalc(projId){
             <div class="fg"><label class="fl">Rate Schedule Preset</label>
               <select class="fs" id="sc-rateSchedule" onchange="solarRatePreset()">
                 <option value="custom">Custom / Manual Entry</option>
+                <option value="2LGSF" selected>Evergy 2LGSF — Large General Service</option>
                 <option value="2LGSEW">Evergy 2LGSEW — Large General Service Wind</option>
-                <option value="2MGAEW" selected>Evergy 2MGAEW — Medium General All-Electric Wind</option>
+                <option value="2MGAEW">Evergy 2MGAEW — Medium General All-Electric Wind</option>
                 <option value="2SGSE">Evergy 2SGSE — Small General Service</option>
               </select>
             </div>
@@ -12643,14 +12667,14 @@ function openSolarCalc(projId){
                 <tr><td>Facilities Charge</td><td colspan="2"><input class="fi sc-rate" id="sc-facRate" type="number" value="${savedSolar.facRate||savedSolar.facCharge||2.854}" style="width:90px"></td><td>$/kW</td></tr>
                 <tr><td>Demand Charge</td><td><input class="fi sc-rate" id="sc-demandSum" type="number" value="${savedSolar.demandSum||3.995}" style="width:90px"></td><td><input class="fi sc-rate" id="sc-demandWin" type="number" value="${savedSolar.demandWin||1.327}" style="width:90px"></td><td>$/kW</td></tr>
                 <tr style="background:rgba(59,130,246,0.03)"><td colspan="4" style="font-size:10px;font-weight:700;color:var(--text2)">ENERGY CHARGES — On-Peak / Off-Peak (Standard Bill)</td></tr>
-                <tr><td>On-Peak Energy</td><td><input class="fi sc-rate" id="sc-onPeakSum" type="number" value="${savedSolar.onPeakSum||0.06596}" style="width:90px"></td><td><input class="fi sc-rate" id="sc-onPeakWin" type="number" value="${savedSolar.onPeakWin||0.06612}" style="width:90px"></td><td>$/kWh</td></tr>
-                <tr><td>Off-Peak Energy</td><td><input class="fi sc-rate" id="sc-offPeakSum" type="number" value="${savedSolar.offPeakSum||0.04714}" style="width:90px"></td><td><input class="fi sc-rate" id="sc-offPeakWin" type="number" value="${savedSolar.offPeakWin||0.04017}" style="width:90px"></td><td>$/kWh</td></tr>
+                <tr><td>On-Peak Energy</td><td><input class="fi sc-rate" id="sc-onPeakSum" type="number" value="${savedSolar.onPeakSum||0.10304}" style="width:90px"></td><td><input class="fi sc-rate" id="sc-onPeakWin" type="number" value="${savedSolar.onPeakWin||0.05734}" style="width:90px"></td><td>$/kWh</td></tr>
+                <tr><td>Off-Peak Energy</td><td><input class="fi sc-rate" id="sc-offPeakSum" type="number" value="${savedSolar.offPeakSum||0.10304}" style="width:90px"></td><td><input class="fi sc-rate" id="sc-offPeakWin" type="number" value="${savedSolar.offPeakWin||0.05734}" style="width:90px"></td><td>$/kWh</td></tr>
                 <tr style="background:rgba(245,158,11,0.03)"><td colspan="4" style="font-size:10px;font-weight:700;color:var(--text2)">SOLAR TIER RATES — Hours Use (Net Metering)</td></tr>
-                <tr><td>Solar — 1st 180 hrs</td><td><input class="fi sc-rate" id="sc-tier1Sum" type="number" value="${savedSolar.tier1Sum||0.08339}" style="width:90px"></td><td><input class="fi sc-rate" id="sc-tier1Win" type="number" value="${savedSolar.tier1Win||0.03723}" style="width:90px"></td><td>$/kWh</td></tr>
-                <tr><td>Solar — Next 180 hrs</td><td><input class="fi sc-rate" id="sc-tier2Sum" type="number" value="${savedSolar.tier2Sum||0.05362}" style="width:90px"></td><td><input class="fi sc-rate" id="sc-tier2Win" type="number" value="${savedSolar.tier2Win||0.02734}" style="width:90px"></td><td>$/kWh</td></tr>
+                <tr><td>Solar — 1st 180 hrs</td><td><input class="fi sc-rate" id="sc-tier1Sum" type="number" value="${savedSolar.tier1Sum||0.04515}" style="width:90px"></td><td><input class="fi sc-rate" id="sc-tier1Win" type="number" value="${savedSolar.tier1Win||0.04515}" style="width:90px"></td><td>$/kWh</td></tr>
+                <tr><td>Solar — Next 180 hrs</td><td><input class="fi sc-rate" id="sc-tier2Sum" type="number" value="${savedSolar.tier2Sum||0.05252}" style="width:90px"></td><td><input class="fi sc-rate" id="sc-tier2Win" type="number" value="${savedSolar.tier2Win||0.05252}" style="width:90px"></td><td>$/kWh</td></tr>
                 <tr><td>Solar — Over 360 hrs</td><td><input class="fi sc-rate" id="sc-tier3Sum" type="number" value="${savedSolar.tier3Sum||0.05425}" style="width:90px"></td><td><input class="fi sc-rate" id="sc-tier3Win" type="number" value="${savedSolar.tier3Win||0.02377}" style="width:90px"></td><td>$/kWh</td></tr>
                 <tr style="background:rgba(34,197,94,0.03)"><td colspan="4" style="font-size:10px;font-weight:700;color:var(--text2)">RIDERS & OTHER</td></tr>
-                <tr><td>ECA Rate</td><td colspan="2"><input class="fi sc-rate" id="sc-ecaRate" type="number" value="${savedSolar.ecaRate||0}" style="width:90px"></td><td>$/kWh</td></tr>
+                <tr><td>ECA Rate</td><td colspan="2"><input class="fi sc-rate" id="sc-ecaRate" type="number" value="${savedSolar.ecaRate||0.03066}" style="width:90px"></td><td>$/kWh</td></tr>
                 <tr><td>EER Rate</td><td colspan="2"><input class="fi sc-rate" id="sc-eerRate" type="number" value="${savedSolar.eerRate||0}" style="width:90px"></td><td>$/kWh</td></tr>
                 <tr><td>PTS Rate</td><td colspan="2"><input class="fi sc-rate" id="sc-ptsRate" type="number" value="${savedSolar.ptsRate||0}" style="width:90px"></td><td>$/kWh</td></tr>
                 <tr><td>TDC Charge</td><td colspan="2"><input class="fi sc-rate" id="sc-tdcRate" type="number" value="${savedSolar.tdcRate||0}" style="width:90px"></td><td>$/kW</td></tr>
@@ -12824,6 +12848,7 @@ function solarUpdateTotal(){
 function solarRatePreset(){
   const sched = document.getElementById('sc-rateSchedule')?.value;
   const presets = {
+    '2LGSF':{custCharge:48.90,facRate:2.854,demandSum:3.995,demandWin:1.327,onPeakSum:0.10304,onPeakWin:0.05734,offPeakSum:0.10304,offPeakWin:0.05734,tier1Sum:0.04515,tier1Win:0.04515,tier2Sum:0.05252,tier2Win:0.05252,tier3Sum:0.05425,tier3Win:0.02377,overProdSum:0.03,overProdWin:0.03,renewPart:377.40,ecaRate:0.03066,eerRate:0,ptsRate:0,tdcRate:0},
     '2MGAEW':{custCharge:48.90,facRate:2.854,demandSum:3.995,demandWin:1.327,onPeakSum:0.06596,onPeakWin:0.06612,offPeakSum:0.04714,offPeakWin:0.04017,tier1Sum:0.08339,tier1Win:0.03723,tier2Sum:0.05362,tier2Win:0.02734,tier3Sum:0.05425,tier3Win:0.02377,overProdSum:0.03,overProdWin:0.03,renewPart:377.40,ecaRate:0,eerRate:0,ptsRate:0,tdcRate:0},
     '2LGSEW':{custCharge:105.97,facRate:3.069,demandSum:6.62,demandWin:3.361,onPeakSum:0.06596,onPeakWin:0.06612,offPeakSum:0.04714,offPeakWin:0.04017,tier1Sum:0.06596,tier1Win:0.06612,tier2Sum:0.04714,tier2Win:0.04017,tier3Sum:0.02696,tier3Win:0.03001,overProdSum:0.03,overProdWin:0.03,renewPart:1528.84,ecaRate:0,eerRate:0,ptsRate:0,tdcRate:0},
     '2SGSE':{custCharge:17.70,facRate:2.726,demandSum:0,demandWin:0,onPeakSum:0.13675,onPeakWin:0.10884,offPeakSum:0.06005,offPeakWin:0.05131,tier1Sum:0.13675,tier1Win:0.10884,tier2Sum:0.06005,tier2Win:0.05131,tier3Sum:0.05366,tier3Win:0.04046,overProdSum:0.03,overProdWin:0.03,renewPart:0,ecaRate:0,eerRate:0,ptsRate:0,tdcRate:0},
