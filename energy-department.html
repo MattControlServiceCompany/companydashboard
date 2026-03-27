@@ -12902,7 +12902,9 @@ function solarCalcRun(projId){
     const eFranchise=eSubtotal*(franchisePct/100);
     const eTotal=eSubtotal+eFranchise;
     existingAnnual+=eTotal;
-    existingProfile.push({cust:eCust,fac:eFac,demand:eDemand,onPk:eOnPk,offPk:eOffPk,eca:eEca,eer:eEer,pts:ePts,tdc:eTdc,renew:eRenew,franchise:eFranchise,total:eTotal});
+    existingProfile.push({cust:eCust,fac:eFac,demand:eDemand,onPkKwh:baseOnPk,onPk:eOnPk,offPkKwh:baseOffPk,offPk:eOffPk,
+      noneKwh:Math.max(0,baseKwh-baseOnPk-baseOffPk),eca:eEca,eer:eEer,pts:ePts,tdc:eTdc,renew:eRenew,franchise:eFranchise,total:eTotal,
+      kwh:baseKwh,actualKw:blKw[i],billingKw,facKw,solarCredit:0,isSummer});
 
     // ── POST-SOLAR bill ──
     const solarKwh=production[i];
@@ -12942,10 +12944,15 @@ function solarCalcRun(projId){
     const pFranchise=Math.max(0,pSubtotal)*(franchisePct/100);
     const pTotal=pSubtotal+pFranchise;
     postSolarAnnual+=pTotal;
-    postSolarProfile.push({cust:pCust,fac:pFac,demand:pDemand,onPk:pOnPk,offPk:pOffPk,eca:pEca,eer:pEer,pts:pPts,tdc:pTdc,renew:pRenew,
-      solarCredit,franchise:pFranchise,total:pTotal,newKwh,overProdKwh,t1Kwh,t2Kwh,t3Kwh,isSummer,billingKw,solarKwh:solarKwh});
+    postSolarProfile.push({cust:pCust,fac:pFac,demand:pDemand,onPkKwh:newOnPk,onPk:pOnPk,offPkKwh:newOffPk,offPk:pOffPk,
+      noneKwh:Math.max(0,newKwh-newOnPk-newOffPk),eca:pEca,eer:pEer,pts:pPts,tdc:pTdc,renew:pRenew,
+      solarCredit,franchise:pFranchise,total:pTotal,newKwh,overProdKwh,t1Kwh,t2Kwh,t3Kwh,isSummer,
+      actualKw:blKw[i],billingKw,facKw,solarKwh:solarKwh,kwh:newKwh});
 
-    savingsProfile.push({savings:eTotal-pTotal});
+    const demandSav=0; // demand doesn't change in this model
+    const consumeSav=(eOnPk-pOnPk)+(eOffPk-pOffPk);
+    const otherSav=(eEca-pEca)+(eEer-pEer)+(ePts-pPts)+(eTdc-pTdc)+solarCredit+(eFranchise-pFranchise);
+    savingsProfile.push({savings:eTotal-pTotal,demandSav,consumeSav,otherSav,totalSav:eTotal-pTotal});
   }
 
   const totalSavings=existingAnnual-postSolarAnnual;
@@ -13014,75 +13021,141 @@ function solarCalcRun(projId){
       </div>
     </div>`;
 
-  // ── Render detailed results ──
+  // ── Helper: build row-per-month profile table matching Excel layout ──
   const resultsWrap=document.getElementById('sc-results');
   if(!resultsWrap) return;
-  const mkRow=(label,vals,cls)=>`<tr${cls?' style="'+cls+'"':''}><td style="font-size:11px;white-space:nowrap">${label}</td>${vals.map(v=>`<td style="text-align:right;font-family:var(--mono);font-size:10px">${v}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono);font-size:11px">${typeof vals[0]==='string'&&vals[0].startsWith('$')?fmtD2(vals.reduce((a,v)=>a+parseFloat(v.replace(/[\$,]/g,''))||0,0)):''}</td></tr>`;
+  const mc='text-align:right;font-family:var(--mono);font-size:10px;padding:3px 4px';
+  const hc='text-align:center;font-size:9px;padding:3px 4px;white-space:nowrap';
+  const sumArr=(arr,key)=>arr.reduce((a,e)=>a+(typeof e[key]==='number'?e[key]:0),0);
 
-  resultsWrap.innerHTML=`
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-hdr"><span class="card-title">📊 Existing Electric Cost Profile</span></div>
-      <div style="padding:16px;overflow-x:auto">
-        <table class="dtbl" style="min-width:900px;font-size:11px">
-          <thead><tr><th>Charge</th>${months.map(m=>`<th style="text-align:center;width:62px">${m}</th>`).join('')}<th style="text-align:right;font-weight:800">Annual</th></tr></thead>
-          <tbody>
-            ${mkRow('Customer $',existingProfile.map(e=>fmtD2(e.cust)))}
-            ${mkRow('Facilities $',existingProfile.map(e=>fmtD2(e.fac)))}
-            ${mkRow('Demand $',existingProfile.map(e=>fmtD2(e.demand)))}
-            ${mkRow('On-Peak $',existingProfile.map(e=>fmtD2(e.onPk)))}
-            ${mkRow('Off-Peak $',existingProfile.map(e=>fmtD2(e.offPk)))}
-            ${mkRow('ECA $',existingProfile.map(e=>fmtD2(e.eca)))}
-            ${mkRow('EER $',existingProfile.map(e=>fmtD2(e.eer)))}
-            ${mkRow('PTS $',existingProfile.map(e=>fmtD2(e.pts)))}
-            ${mkRow('TDC $',existingProfile.map(e=>fmtD2(e.tdc)))}
-            ${mkRow('Renewable $',existingProfile.map(e=>fmtD2(e.renew)))}
-            ${mkRow('Franchise $',existingProfile.map(e=>fmtD2(e.franchise)))}
-            <tr style="background:rgba(59,130,246,0.06);font-weight:700"><td>TOTAL</td>${existingProfile.map(e=>`<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmtD2(e.total)}</td>`).join('')}<td style="text-align:right;font-family:var(--mono);font-size:12px;font-weight:800">${fmtD2(existingAnnual)}</td></tr>
-          </tbody>
+  function buildProfileTable(title,icon,profile,annual,showSolarCols){
+    const rows=profile.map((e,i)=>{
+      const bg=i%2===0?'':'background:rgba(255,255,255,0.02)';
+      const season=e.isSummer?'☀️':'❄️';
+      return `<tr style="${bg}">
+        <td style="font-weight:600;font-size:11px;padding:3px 6px">${months[i]}</td>
+        <td style="${mc}">${e.actualKw?e.actualKw.toFixed(1):''}</td>
+        <td style="${mc}">${e.billingKw?e.billingKw.toFixed(1):''}</td>
+        <td style="${mc};font-weight:600">${fmt(e.kwh)}</td>
+        <td style="${mc}">${fmt(Math.round(e.onPkKwh))}</td>
+        <td style="${mc};color:var(--green)">${fmtD2(e.onPk)}</td>
+        <td style="${mc}">${fmt(Math.round(e.offPkKwh))}</td>
+        <td style="${mc};color:var(--green)">${fmtD2(e.offPk)}</td>
+        <td style="${mc}">${fmt(Math.round(e.noneKwh))}</td>
+        <td style="${mc};border-left:2px solid var(--border)">${fmtD2(e.cust)}</td>
+        <td style="${mc}">${fmtD2(e.demand)}</td>
+        <td style="${mc}">${fmtD2(e.fac)}</td>
+        <td style="${mc}">${fmtD2(e.onPk+e.offPk)}</td>
+        <td style="${mc}">${fmtD2(e.renew)}</td>
+        <td style="${mc}">${fmtD2(e.eca)}</td>
+        <td style="${mc}">${fmtD2(e.eer)}</td>
+        <td style="${mc}">${fmtD2(e.pts)}</td>
+        <td style="${mc}">${fmtD2(e.tdc)}</td>
+        <td style="${mc};color:var(--amber)">${e.solarCredit>0?'-'+fmtD2(e.solarCredit):''}</td>
+        <td style="${mc}">${fmtD2(e.franchise)}</td>
+        <td style="${mc};font-weight:800;color:var(--em);border-left:2px solid var(--border)">${fmtD2(e.total)}</td>
+        <td style="${mc};font-size:9px">${season}</td>
+      </tr>`;
+    });
+    const tot=`<tr style="background:rgba(59,130,246,0.06);font-weight:700;border-top:2px solid var(--border)">
+      <td style="font-weight:800;padding:4px 6px">TOTAL</td>
+      <td></td><td></td>
+      <td style="${mc};font-weight:800">${fmt(sumArr(profile,'kwh'))}</td>
+      <td style="${mc}">${fmt(Math.round(sumArr(profile,'onPkKwh')))}</td>
+      <td style="${mc};color:var(--green)">${fmtD2(sumArr(profile,'onPk'))}</td>
+      <td style="${mc}">${fmt(Math.round(sumArr(profile,'offPkKwh')))}</td>
+      <td style="${mc};color:var(--green)">${fmtD2(sumArr(profile,'offPk'))}</td>
+      <td style="${mc}">${fmt(Math.round(sumArr(profile,'noneKwh')))}</td>
+      <td style="${mc};border-left:2px solid var(--border)">${fmtD2(sumArr(profile,'cust'))}</td>
+      <td style="${mc}">${fmtD2(sumArr(profile,'demand'))}</td>
+      <td style="${mc}">${fmtD2(sumArr(profile,'fac'))}</td>
+      <td style="${mc}">${fmtD2(sumArr(profile,'onPk')+sumArr(profile,'offPk'))}</td>
+      <td style="${mc}">${fmtD2(sumArr(profile,'renew'))}</td>
+      <td style="${mc}">${fmtD2(sumArr(profile,'eca'))}</td>
+      <td style="${mc}">${fmtD2(sumArr(profile,'eer'))}</td>
+      <td style="${mc}">${fmtD2(sumArr(profile,'pts'))}</td>
+      <td style="${mc}">${fmtD2(sumArr(profile,'tdc'))}</td>
+      <td style="${mc};color:var(--amber)">${sumArr(profile,'solarCredit')>0?'-'+fmtD2(sumArr(profile,'solarCredit')):''}</td>
+      <td style="${mc}">${fmtD2(sumArr(profile,'franchise'))}</td>
+      <td style="${mc};font-weight:800;font-size:12px;color:var(--em);border-left:2px solid var(--border)">${fmtD2(annual)}</td>
+      <td></td>
+    </tr>`;
+    return `<div class="card" style="margin-bottom:16px">
+      <div class="card-hdr"><span class="card-title">${icon} ${title}</span></div>
+      <div style="padding:12px;overflow-x:auto">
+        <table class="dtbl" style="min-width:1400px;font-size:10px;border-collapse:collapse">
+          <thead><tr>
+            <th style="${hc}">Month</th>
+            <th style="${hc}">Actual kW</th><th style="${hc}">Billing kW</th>
+            <th style="${hc}">kWh</th>
+            <th colspan="2" style="${hc};border-bottom:1px solid var(--accent)">On-Peak</th>
+            <th colspan="2" style="${hc};border-bottom:1px solid var(--accent)">Off-Peak</th>
+            <th style="${hc}">None kWh</th>
+            <th style="${hc};border-left:2px solid var(--border)">Customer $</th>
+            <th style="${hc}">Demand $</th>
+            <th style="${hc}">Facilities $</th>
+            <th style="${hc}">Consumption $</th>
+            <th style="${hc}">Renewable $</th>
+            <th style="${hc}">ECA $</th>
+            <th style="${hc}">EER $</th>
+            <th style="${hc}">PTS $</th>
+            <th style="${hc}">TDC $</th>
+            <th style="${hc}">Solar Credit</th>
+            <th style="${hc}">Franchise $</th>
+            <th style="${hc};border-left:2px solid var(--border);font-weight:800">TOTAL $</th>
+            <th style="${hc}"></th>
+          </tr>
+          <tr style="font-size:8px;color:var(--text3)">
+            <th></th><th></th><th></th><th></th>
+            <th style="text-align:center">kWh</th><th style="text-align:center">$ Cost</th>
+            <th style="text-align:center">kWh</th><th style="text-align:center">$ Cost</th>
+            <th></th><th style="border-left:2px solid var(--border)"></th>
+            <th></th><th></th><th></th><th></th><th></th><th></th><th></th><th></th><th></th><th></th>
+            <th style="border-left:2px solid var(--border)"></th><th></th>
+          </tr></thead>
+          <tbody>${rows.join('')}${tot}</tbody>
         </table>
       </div>
-    </div>
+    </div>`;
+  }
 
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-hdr"><span class="card-title">☀️ Post-Solar Electric Cost Profile</span></div>
-      <div style="padding:16px;overflow-x:auto">
-        <table class="dtbl" style="min-width:900px;font-size:11px">
-          <thead><tr><th>Charge</th>${months.map(m=>`<th style="text-align:center;width:62px">${m}</th>`).join('')}<th style="text-align:right;font-weight:800">Annual</th></tr></thead>
-          <tbody>
-            <tr style="background:rgba(245,158,11,0.04)"><td style="font-size:11px">Solar kWh</td>${postSolarProfile.map(e=>`<td style="text-align:right;font-family:var(--mono);font-size:10px">${fmt(e.solarKwh)}</td>`).join('')}<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(totalProd)}</td></tr>
-            <tr style="background:rgba(245,158,11,0.04)"><td style="font-size:11px">Net kWh</td>${postSolarProfile.map(e=>`<td style="text-align:right;font-family:var(--mono);font-size:10px">${fmt(e.newKwh)}</td>`).join('')}<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(postSolarProfile.reduce((a,e)=>a+e.newKwh,0))}</td></tr>
-            ${mkRow('Customer $',postSolarProfile.map(e=>fmtD2(e.cust)))}
-            ${mkRow('Facilities $',postSolarProfile.map(e=>fmtD2(e.fac)))}
-            ${mkRow('Demand $',postSolarProfile.map(e=>fmtD2(e.demand)))}
-            ${mkRow('On-Peak $',postSolarProfile.map(e=>fmtD2(e.onPk)))}
-            ${mkRow('Off-Peak $',postSolarProfile.map(e=>fmtD2(e.offPk)))}
-            ${mkRow('ECA $',postSolarProfile.map(e=>fmtD2(e.eca)))}
-            ${mkRow('EER $',postSolarProfile.map(e=>fmtD2(e.eer)))}
-            ${mkRow('PTS $',postSolarProfile.map(e=>fmtD2(e.pts)))}
-            ${mkRow('TDC $',postSolarProfile.map(e=>fmtD2(e.tdc)))}
-            ${mkRow('Renewable $',postSolarProfile.map(e=>fmtD2(e.renew)))}
-            ${postSolarProfile.some(e=>e.solarCredit>0)?mkRow('Solar Credit $',postSolarProfile.map(e=>e.solarCredit>0?'-'+fmtD2(e.solarCredit):'$0.00')):''}
-            ${mkRow('Franchise $',postSolarProfile.map(e=>fmtD2(e.franchise)))}
-            <tr style="background:rgba(34,197,94,0.06);font-weight:700"><td>TOTAL</td>${postSolarProfile.map(e=>`<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmtD2(e.total)}</td>`).join('')}<td style="text-align:right;font-family:var(--mono);font-size:12px;font-weight:800">${fmtD2(postSolarAnnual)}</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+  // ── SAVINGS TABLE ──
+  const savingsRows=savingsProfile.map((s,i)=>{
+    const bg=i%2===0?'':'background:rgba(255,255,255,0.02)';
+    return `<tr style="${bg}">
+      <td style="font-weight:600;font-size:11px;padding:3px 6px">${months[i]}</td>
+      <td style="${mc}">${fmtD2(s.demandSav)}</td>
+      <td style="${mc}">${fmtD2(s.consumeSav)}</td>
+      <td style="${mc}">${fmtD2(s.otherSav)}</td>
+      <td style="${mc};font-weight:800;color:${s.totalSav>=0?'var(--green)':'var(--red)'}">${fmtD2(s.totalSav)}</td>
+    </tr>`;
+  }).join('');
+  const savTotD=savingsProfile.reduce((a,s)=>a+s.demandSav,0);
+  const savTotC=savingsProfile.reduce((a,s)=>a+s.consumeSav,0);
+  const savTotO=savingsProfile.reduce((a,s)=>a+s.otherSav,0);
 
+  resultsWrap.innerHTML=
+    buildProfileTable('Existing Electric Cost Profile','📊',existingProfile,existingAnnual,false)+
+    buildProfileTable('Post-Solar Electric Cost Profile (After Solar)','☀️',postSolarProfile,postSolarAnnual,true)+`
     <div class="card" style="margin-bottom:16px">
-      <div class="card-hdr"><span class="card-title">💰 Monthly Savings = Existing − Post-Solar</span></div>
-      <div style="padding:16px;overflow-x:auto">
-        <table class="dtbl" style="min-width:900px;font-size:11px">
-          <thead><tr><th>Detail</th>${months.map(m=>`<th style="text-align:center;width:62px">${m}</th>`).join('')}<th style="text-align:right;font-weight:800">Annual</th></tr></thead>
-          <tbody>
-            <tr><td style="font-weight:600">Existing $</td>${existingProfile.map(e=>`<td style="text-align:right;font-family:var(--mono);font-size:10px">${fmtD2(e.total)}</td>`).join('')}<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmtD2(existingAnnual)}</td></tr>
-            <tr><td style="font-weight:600">Post-Solar $</td>${postSolarProfile.map(e=>`<td style="text-align:right;font-family:var(--mono);font-size:10px">${fmtD2(e.total)}</td>`).join('')}<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmtD2(postSolarAnnual)}</td></tr>
-            <tr style="background:rgba(34,197,94,0.08)"><td style="font-weight:800;color:var(--green)">SAVINGS</td>${savingsProfile.map(s=>`<td style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:700;color:${s.savings>=0?'var(--green)':'var(--red)'}">${fmtD2(s.savings)}</td>`).join('')}<td style="text-align:right;font-family:var(--mono);font-size:13px;font-weight:800;color:var(--green)">${fmtD2(totalSavings)}</td></tr>
-            <tr><td>Season</td>${postSolarProfile.map(e=>`<td style="text-align:center;font-size:10px">${e.isSummer?'☀️':'❄️'}</td>`).join('')}<td></td></tr>
-            <tr style="background:rgba(59,130,246,0.03)"><td style="font-size:11px">Tier 1 kWh</td>${postSolarProfile.map(e=>`<td style="text-align:right;font-family:var(--mono);font-size:10px">${fmt(e.t1Kwh)}</td>`).join('')}<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(postSolarProfile.reduce((a,e)=>a+e.t1Kwh,0))}</td></tr>
-            <tr style="background:rgba(59,130,246,0.03)"><td style="font-size:11px">Tier 2 kWh</td>${postSolarProfile.map(e=>`<td style="text-align:right;font-family:var(--mono);font-size:10px">${fmt(e.t2Kwh)}</td>`).join('')}<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(postSolarProfile.reduce((a,e)=>a+e.t2Kwh,0))}</td></tr>
-            <tr style="background:rgba(59,130,246,0.03)"><td style="font-size:11px">Tier 3 kWh</td>${postSolarProfile.map(e=>`<td style="text-align:right;font-family:var(--mono);font-size:10px">${fmt(e.t3Kwh)}</td>`).join('')}<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(postSolarProfile.reduce((a,e)=>a+e.t3Kwh,0))}</td></tr>
-            ${postSolarProfile.some(e=>e.overProdKwh>0)?`<tr style="background:rgba(245,158,11,0.04)"><td style="font-size:11px">Overprod kWh</td>${postSolarProfile.map(e=>`<td style="text-align:right;font-family:var(--mono);font-size:10px">${e.overProdKwh>0?fmt(e.overProdKwh):''}</td>`).join('')}<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(postSolarProfile.reduce((a,e)=>a+e.overProdKwh,0))}</td></tr>`:''}
+      <div class="card-hdr"><span class="card-title">💰 SAVINGS = Existing − Post-Solar</span></div>
+      <div style="padding:12px;overflow-x:auto">
+        <table class="dtbl" style="min-width:500px;font-size:11px">
+          <thead><tr>
+            <th style="${hc}">Month</th>
+            <th style="${hc}">Demand Charges $</th>
+            <th style="${hc}">Consumption Charges $</th>
+            <th style="${hc}">Other Charges $</th>
+            <th style="${hc};font-weight:800">TOTAL SAVINGS $</th>
+          </tr></thead>
+          <tbody>${savingsRows}
+            <tr style="background:rgba(34,197,94,0.08);font-weight:700;border-top:2px solid var(--border)">
+              <td style="font-weight:800;padding:4px 6px">ANNUAL</td>
+              <td style="${mc};font-weight:700">${fmtD2(savTotD)}</td>
+              <td style="${mc};font-weight:700">${fmtD2(savTotC)}</td>
+              <td style="${mc};font-weight:700">${fmtD2(savTotO)}</td>
+              <td style="${mc};font-weight:800;font-size:13px;color:var(--green)">${fmtD2(totalSavings)}</td>
+            </tr>
           </tbody>
         </table>
         <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
