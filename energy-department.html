@@ -330,6 +330,9 @@ html,body{height:100%;overflow:hidden;}
 /* Savings Matrix */
 .sv-matrix-tbl th{padding:6px 5px;font-size:10px;}
 .sv-matrix-tbl td{padding:4px 3px;font-size:12px;}
+.hvl-method-btn{background:var(--s3);border:1px solid var(--border);color:var(--text2);border-radius:7px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;font-family:var(--font);}
+.hvl-method-btn:hover{border-color:var(--accent);color:var(--accent);}
+.hvl-method-btn.active{background:var(--accent-dim);border-color:var(--accent);color:var(--accent);}
 .sv-num-inp{font-family:var(--mono);font-size:11px;color:var(--text);background:transparent;border:none;outline:none;width:54px;padding:3px 4px;border-radius:3px;text-align:right;}
 .sv-num-inp:focus{background:var(--s4);}
 .sv-num-inp.kwh-col:focus{background:rgba(59,130,246,0.15);}
@@ -1013,6 +1016,7 @@ html,body{height:100%;overflow:hidden;}
           <div style="font-size:12px;color:var(--text2);margin-top:2px" id="svDetailHdrSub"></div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="if(svSelProjId)openCalcTemplates(svSelProjId)">📐 Calc Templates</button>
           <button class="btn btn-ghost btn-sm" onclick="svSaveProjBaselineRates()">💾 Save Rates</button>
           <button class="btn btn-ghost btn-sm" onclick="svAddMeasure()">+ Add Measure</button>
           <button class="btn btn-em btn-sm" onclick="svRecalc()">⚡ Recalc $ Savings</button>
@@ -3083,6 +3087,29 @@ window.sv=function(id,btn){
         </div>
         <div class="fg"><label class="fl">Square Footage</label><input class="fi" id="mp-sqft" type="number" placeholder="180000"></div>
       </div>
+      <div class="modal-sect">HVAC Equipment</div>
+      <div class="f2">
+        <div class="fg"><label class="fl">Cooling System</label>
+          <select class="fs" id="mp-coolType"><option value="">— Select —</option><option>Chiller Plant</option><option>DX Split System</option><option>DX Packaged/RTU</option><option>Heat Pump</option><option>PTAC/PTHP</option><option>VRF</option><option>Evaporative</option><option>None</option></select>
+        </div>
+        <div class="fg"><label class="fl">Heating System</label>
+          <select class="fs" id="mp-heatType"><option value="">— Select —</option><option>Gas Furnace</option><option>Gas Boiler / Hot Water Plant</option><option>Electric Furnace</option><option>Electric Boiler</option><option>Heat Pump</option><option>VRF</option><option>Steam</option><option>Radiant</option><option>None</option></select>
+        </div>
+      </div>
+      <div class="f2">
+        <div class="fg"><label class="fl">Cooling Efficiency</label>
+          <div style="display:flex;gap:6px">
+            <input class="fi" id="mp-coolEff" type="number" step="0.01" placeholder="e.g. 0.86">
+            <select class="fs" id="mp-coolEffUnit" style="width:100px"><option>kW/Ton</option><option>EER</option><option>SEER</option><option>COP</option></select>
+          </div>
+        </div>
+        <div class="fg"><label class="fl">Heating Efficiency</label>
+          <div style="display:flex;gap:6px">
+            <input class="fi" id="mp-heatEff" type="number" step="0.01" placeholder="e.g. 0.80">
+            <select class="fs" id="mp-heatEffUnit" style="width:100px"><option>AFUE</option><option>COP</option><option>HSPF</option></select>
+          </div>
+        </div>
+      </div>
       <div class="modal-sect">People &amp; Status</div>
       <div class="f2">
         <div class="fg"><label class="fl">Status</label>
@@ -3870,6 +3897,8 @@ function renderDetail(p){
         <button class="pdt" onclick="sPTab('buildings',this)">🏢 Buildings</button>
         <button class="pdt" onclick="sPTab('utility',this)">⚡ Utility Data</button>
         <button class="pdt" onclick="sPTab('equipment',this)">⚙️ Equipment</button>
+        <button class="pdt" onclick="sPTab('hvacload',this)">🌡️ HVAC Load Est</button>
+        <button class="pdt" onclick="sPTab('energygfx',this)">📈 Energy Graphics</button>
         <button class="pdt" onclick="sPTab('district',this)">🗓️ District Calendar</button>
         <button class="pdt" onclick="sPTab('savings',this)">💡 Energy Savings</button>
         <button class="pdt" onclick="sPTab('contracts',this)">📋 Contracts</button>
@@ -3939,6 +3968,148 @@ function renderDetail(p){
         </div>
         <div id="ptab-equipment-body-${p.id}"></div>
       </div>
+      <div id="ptab-hvacload" class="ptab" style="padding:16px;overflow-y:auto">
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-hdr" style="justify-content:space-between">
+            <span class="card-title">🌡️ HVAC vs Non-HVAC Load Estimation</span>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-ghost btn-sm" onclick="hvacLoadSave(${p.id})">💾 Save</button>
+              <button class="btn btn-em btn-sm" onclick="hvacLoadCalc(${p.id})">⚡ Calculate</button>
+            </div>
+          </div>
+          <div style="padding:16px">
+            <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Estimate how much of total building energy is HVAC (heating + cooling) vs lighting, plug loads, and other equipment. Separate estimates for kWh, kW, and gas.</div>
+            <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+              <button class="btn btn-sm hvl-method-btn active" onclick="hvacLoadMethod(${p.id},'thumb',this)">📐 Rules of Thumb</button>
+              <button class="btn btn-sm hvl-method-btn" onclick="hvacLoadMethod(${p.id},'benchmark',this)">📊 Building Benchmark</button>
+              <button class="btn btn-sm hvl-method-btn" onclick="hvacLoadMethod(${p.id},'nameplate',this)">🔧 Nameplate Data</button>
+            </div>
+            <!-- Rules of Thumb Panel -->
+            <div id="hvl-thumb-${p.id}" class="hvl-panel">
+              <div style="font-size:12px;font-weight:600;color:var(--em);margin-bottom:10px">Rules of Thumb — Industry Standard Estimates</div>
+              <div class="g2" style="gap:12px">
+                <div class="card" style="background:var(--s1);padding:14px">
+                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">⚡ Electric (kWh) Breakdown</div>
+                  <div class="fg"><label class="fl">HVAC % of Total kWh</label><input class="fi hvl-in" id="hvl-t-kwhPct-${p.id}" type="number" value="45" min="0" max="100" step="1"><div class="fhint">Typical: 30-60% depending on climate & building type</div></div>
+                  <div class="fg"><label class="fl">Cooling % of HVAC kWh</label><input class="fi hvl-in" id="hvl-t-coolKwhPct-${p.id}" type="number" value="65" min="0" max="100"><div class="fhint">Typical: 55-75%</div></div>
+                  <div class="fg"><label class="fl">Heating % of HVAC kWh (electric heat only)</label><input class="fi hvl-in" id="hvl-t-heatKwhPct-${p.id}" type="number" value="${p.heatType&&(p.heatType.includes('Electric')||p.heatType.includes('Heat Pump')||p.heatType.includes('VRF'))?'35':'0'}" min="0" max="100"><div class="fhint">${p.heatType&&(p.heatType.includes('Gas'))?"0% — Gas heat doesn't use electric kWh for heating":"Typical: 25-45% if electric/heat pump"}</div></div>
+                </div>
+                <div class="card" style="background:var(--s1);padding:14px">
+                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">⚡ Electric Demand (kW) Breakdown</div>
+                  <div class="fg"><label class="fl">HVAC % of Peak kW</label><input class="fi hvl-in" id="hvl-t-kwPct-${p.id}" type="number" value="55" min="0" max="100"><div class="fhint">Typical: 40-65% — HVAC is usually the largest demand driver</div></div>
+                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin:14px 0 10px">🔥 Gas (Therms) Breakdown</div>
+                  <div class="fg"><label class="fl">HVAC % of Total Gas</label><input class="fi hvl-in" id="hvl-t-gasPct-${p.id}" type="number" value="${p.heatType&&p.heatType.includes('Gas')?'85':'15'}" min="0" max="100"><div class="fhint">${p.heatType&&p.heatType.includes('Gas')?"Typical: 70-95% for gas-heated buildings":"Typical: 0-20% for DHW/kitchen only"}</div></div>
+                </div>
+              </div>
+            </div>
+            <!-- Benchmark Panel -->
+            <div id="hvl-benchmark-${p.id}" class="hvl-panel" style="display:none">
+              <div style="font-size:12px;font-weight:600;color:var(--em);margin-bottom:10px">Building Type Benchmark — Based on CBECS & Industry Data</div>
+              <div class="fg"><label class="fl">Building Type</label>
+                <select class="fs hvl-in" id="hvl-b-type-${p.id}" onchange="hvacLoadBenchFill(${p.id})">
+                  <option value="">— Select —</option>
+                  <option ${p.type==='K-12 School'?'selected':''}>K-12 School</option>
+                  <option>College / University</option>
+                  <option>Hospital / Healthcare</option>
+                  <option>Office Building</option>
+                  <option>Warehouse / Industrial</option>
+                  <option>Retail</option>
+                  <option>Municipal / Government</option>
+                  <option>Data Center</option>
+                </select>
+              </div>
+              <div class="fg"><label class="fl">Climate Zone</label>
+                <select class="fs hvl-in" id="hvl-b-climate-${p.id}" onchange="hvacLoadBenchFill(${p.id})">
+                  <option value="4A" selected>4A — Mixed Humid (Kansas City)</option>
+                  <option value="1A">1A — Very Hot Humid</option>
+                  <option value="2A">2A — Hot Humid</option>
+                  <option value="3A">3A — Warm Humid</option>
+                  <option value="3B">3B — Warm Dry</option>
+                  <option value="4A">4A — Mixed Humid</option>
+                  <option value="4B">4B — Mixed Dry</option>
+                  <option value="5A">5A — Cool Humid</option>
+                  <option value="5B">5B — Cool Dry</option>
+                  <option value="6A">6A — Cold Humid</option>
+                  <option value="7">7 — Very Cold</option>
+                </select>
+              </div>
+              <div id="hvl-b-results-${p.id}" style="margin-top:12px">
+                <div style="font-size:12px;color:var(--text3)">Select building type and climate to load benchmarks</div>
+              </div>
+            </div>
+            <!-- Nameplate Data Panel -->
+            <div id="hvl-nameplate-${p.id}" class="hvl-panel" style="display:none">
+              <div style="font-size:12px;font-weight:600;color:var(--em);margin-bottom:10px">Nameplate Data — Enter Real Equipment Data</div>
+              <div class="g2" style="gap:12px">
+                <div class="card" style="background:var(--s1);padding:14px">
+                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">Cooling Equipment</div>
+                  <div class="fg"><label class="fl">Total Cooling Capacity (Tons)</label><input class="fi hvl-in" id="hvl-n-coolTons-${p.id}" type="number" placeholder="e.g. 66"></div>
+                  <div class="fg"><label class="fl">Efficiency (kW/Ton)</label><input class="fi hvl-in" id="hvl-n-coolKwTon-${p.id}" type="number" step="0.01" value="${p.coolEff||'0.86'}"></div>
+                  <div class="fg"><label class="fl">Estimated EFLH Cooling</label><input class="fi hvl-in" id="hvl-n-coolEFLH-${p.id}" type="number" value="1200"><div class="fhint">Equivalent Full Load Hours — KC typical: 1000-1400</div></div>
+                </div>
+                <div class="card" style="background:var(--s1);padding:14px">
+                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">Heating Equipment</div>
+                  <div class="fg"><label class="fl">Total Heating Capacity (MBH)</label><input class="fi hvl-in" id="hvl-n-heatMBH-${p.id}" type="number" placeholder="e.g. 595"></div>
+                  <div class="fg"><label class="fl">Efficiency (${p.heatType&&p.heatType.includes('Gas')?'AFUE':'COP'})</label><input class="fi hvl-in" id="hvl-n-heatEff-${p.id}" type="number" step="0.01" value="${p.heatEff||'0.80'}"></div>
+                  <div class="fg"><label class="fl">Estimated EFLH Heating</label><input class="fi hvl-in" id="hvl-n-heatEFLH-${p.id}" type="number" value="1600"><div class="fhint">Equivalent Full Load Hours — KC typical: 1400-1800</div></div>
+                  <div class="fg"><label class="fl">Fuel Type</label>
+                    <select class="fs hvl-in" id="hvl-n-heatFuel-${p.id}">
+                      <option value="gas" ${!p.heatType||p.heatType.includes('Gas')?'selected':''}>Natural Gas</option>
+                      <option value="electric" ${p.heatType&&(p.heatType.includes('Electric')||p.heatType.includes('Heat Pump')||p.heatType.includes('VRF'))?'selected':''}>Electric</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">Non-HVAC Loads</div>
+                <div class="g2" style="gap:12px">
+                  <div class="fg"><label class="fl">Lighting Watt/sqft</label><input class="fi hvl-in" id="hvl-n-lightW-${p.id}" type="number" step="0.01" value="1.0"><div class="fhint">LED: 0.4-0.8, T8 Fluor: 1.0-1.4</div></div>
+                  <div class="fg"><label class="fl">Lighting Hours/Year</label><input class="fi hvl-in" id="hvl-n-lightHrs-${p.id}" type="number" value="3000"></div>
+                  <div class="fg"><label class="fl">Plug Load Watt/sqft</label><input class="fi hvl-in" id="hvl-n-plugW-${p.id}" type="number" step="0.01" value="1.5"><div class="fhint">Office: 1-3, School: 0.5-1.5</div></div>
+                  <div class="fg"><label class="fl">Plug Load Hours/Year</label><input class="fi hvl-in" id="hvl-n-plugHrs-${p.id}" type="number" value="2500"></div>
+                </div>
+                <div class="fg"><label class="fl">Other Base Electric kWh/yr (DHW, kitchen, etc.)</label><input class="fi hvl-in" id="hvl-n-otherKwh-${p.id}" type="number" value="0"></div>
+                <div class="fg"><label class="fl">Non-HVAC Gas Therms/yr (DHW, kitchen)</label><input class="fi hvl-in" id="hvl-n-otherGas-${p.id}" type="number" value="0"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- RESULTS -->
+        <div id="hvl-results-${p.id}"></div>
+      </div>
+      <div id="ptab-energygfx" class="ptab" style="padding:16px;overflow-y:auto">
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-hdr" style="justify-content:space-between">
+            <span class="card-title">📈 Energy Graphics — Baseline vs Performance</span>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-ghost btn-sm" onclick="egfxExport(${p.id})">⬇ Export</button>
+              <button class="btn btn-em btn-sm" onclick="egfxRefresh(${p.id})">🔄 Refresh</button>
+            </div>
+          </div>
+          <div style="padding:16px">
+            <div class="g2" style="gap:12px;margin-bottom:16px">
+              <div class="card" style="background:var(--s1);padding:14px;text-align:center">
+                <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Baseline EUI</div>
+                <div id="egfx-blEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--accent);margin:6px 0">—</div>
+                <div style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
+              </div>
+              <div class="card" style="background:var(--s1);padding:14px;text-align:center">
+                <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Current EUI</div>
+                <div id="egfx-curEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--em);margin:6px 0">—</div>
+                <div style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
+              </div>
+              <div class="card" style="background:var(--s1);padding:14px;text-align:center">
+                <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">CBECS Benchmark</div>
+                <div id="egfx-cbecs-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--amber);margin:6px 0">—</div>
+                <div style="font-size:11px;color:var(--text2)">kBtu/ft² (${p.type||'K-12 School'})</div>
+              </div>
+            </div>
+            <div id="egfx-charts-${p.id}">
+              <div style="font-size:13px;color:var(--text3);text-align:center;padding:40px">Add utility data to buildings to see energy graphics. Baseline and year-over-year kWh, kW, and gas consumption will appear here.</div>
+            </div>
+          </div>
+        </div>
+      </div>
       <div id="ptab-district" class="ptab" style="padding:16px">
         <div id="ptab-district-inner-${p.id}">
           <div class="g2">
@@ -3997,6 +4168,7 @@ function renderDetail(p){
           <div class="card-hdr" style="flex-wrap:wrap;gap:8px">
             <span class="card-title">💡 Energy Savings Measures</span>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <button class="btn btn-ghost btn-sm" onclick="openCalcTemplates(${p.id})">📐 Calc Templates</button>
               <button class="btn btn-ghost btn-sm" onclick="addSavingsMeasure(${p.id})">+ Add Measure</button>
               <button class="btn btn-em btn-sm" onclick="calcProjSavingsMatrix(${p.id})">⚡ Recalc All $ Savings</button>
             </div>
@@ -4087,6 +4259,8 @@ function sPTab(tab,el){
   if(tab==='utility')   initProjUDTab(p.id);
   if(tab==='equipment') renderProjEquip(p.id);
   if(tab==='savings')   initSavingsTab(p.id);
+  if(tab==='hvacload')  { /* rendered inline, no init needed */ }
+  if(tab==='energygfx') egfxRefresh(p.id);
   window._activeProjTab = tab;
   saveProjSession();
 }
@@ -4832,6 +5006,12 @@ function editProj(id){
   const fv={name:p.name,client:p.client,addr:p.addr,sqft:p.sqft,pm:p.pm,tech:p.tech,sa:p.sa,contract:p.contract,savings:p.savings,start:p.start,end:p.end,progress:p.progress,notes:p.notes,tags:p.tags};
   Object.entries(fv).forEach(([k,v])=>{const e=document.getElementById('mp-'+k);if(e)e.value=v||'';});
   document.getElementById('mp-type').value=p.type||'K-12 School';
+  document.getElementById('mp-coolType').value=p.coolType||'';
+  document.getElementById('mp-heatType').value=p.heatType||'';
+  document.getElementById('mp-coolEff').value=p.coolEff||'';
+  document.getElementById('mp-coolEffUnit').value=p.coolEffUnit||'kW/Ton';
+  document.getElementById('mp-heatEff').value=p.heatEff||'';
+  document.getElementById('mp-heatEffUnit').value=p.heatEffUnit||'AFUE';
   document.getElementById('mp-status').value=p.status||'planning';
   document.getElementById('mp-phase').value=p.phase||'';
   document.getElementById('mp-priority').value=p.priority||'normal';
@@ -4853,7 +5033,7 @@ function saveProject(){
   const editId=document.getElementById('mp-edit-id').value;
   // Set legacy fields from first contact for backwards compat
   const fc=_modalContacts[0];
-  const fields={name,client:document.getElementById('mp-client').value,addr:document.getElementById('mp-addr').value,type:document.getElementById('mp-type').value,sqft:parseInt(document.getElementById('mp-sqft').value)||0,status:document.getElementById('mp-status').value,phase:document.getElementById('mp-phase').value,pm:document.getElementById('mp-pm').value,tech:document.getElementById('mp-tech').value,sa:document.getElementById('mp-sa').value.trim(),contacts:[..._modalContacts],contact:fc?(fc.first+' '+fc.last).trim():'',phone:fc?fc.phone:'',email:fc?fc.email:'',contract:parseFloat(document.getElementById('mp-contract').value)||0,savings:parseFloat(document.getElementById('mp-savings').value)||0,start:document.getElementById('mp-start').value,end:document.getElementById('mp-end').value,progress:Math.max(0,Math.min(100,parseInt(document.getElementById('mp-progress').value)||0)),priority:document.getElementById('mp-priority').value,notes:document.getElementById('mp-notes').value,tags:document.getElementById('mp-tags').value};
+  const fields={name,client:document.getElementById('mp-client').value,addr:document.getElementById('mp-addr').value,type:document.getElementById('mp-type').value,sqft:parseInt(document.getElementById('mp-sqft').value)||0,coolType:document.getElementById('mp-coolType').value,heatType:document.getElementById('mp-heatType').value,coolEff:parseFloat(document.getElementById('mp-coolEff').value)||0,coolEffUnit:document.getElementById('mp-coolEffUnit').value,heatEff:parseFloat(document.getElementById('mp-heatEff').value)||0,heatEffUnit:document.getElementById('mp-heatEffUnit').value,status:document.getElementById('mp-status').value,phase:document.getElementById('mp-phase').value,pm:document.getElementById('mp-pm').value,tech:document.getElementById('mp-tech').value,sa:document.getElementById('mp-sa').value.trim(),contacts:[..._modalContacts],contact:fc?(fc.first+' '+fc.last).trim():'',phone:fc?fc.phone:'',email:fc?fc.email:'',contract:parseFloat(document.getElementById('mp-contract').value)||0,savings:parseFloat(document.getElementById('mp-savings').value)||0,start:document.getElementById('mp-start').value,end:document.getElementById('mp-end').value,progress:Math.max(0,Math.min(100,parseInt(document.getElementById('mp-progress').value)||0)),priority:document.getElementById('mp-priority').value,notes:document.getElementById('mp-notes').value,tags:document.getElementById('mp-tags').value};
   if(editId){
     const idx=projects.findIndex(p=>p.id==editId);
     if(idx>-1) projects[idx]={...projects[idx],...fields};
@@ -11839,6 +12019,595 @@ window.addEventListener('resize', ()=>{
     if(viewEl && viewEl.classList.contains('active')) _setUDLayoutHeight(id);
   });
 });
+
+/* ══════════════════════════════════════════════════════
+   HVAC LOAD ESTIMATION
+══════════════════════════════════════════════════════ */
+function hvacLoadMethod(projId, method, btn){
+  document.querySelectorAll('.hvl-method-btn').forEach(b=>{b.classList.remove('active');b.style.background='';b.style.borderColor='';b.style.color='';});
+  btn.classList.add('active'); btn.style.background='var(--accent-dim)'; btn.style.borderColor='var(--accent)'; btn.style.color='var(--accent)';
+  ['thumb','benchmark','nameplate'].forEach(m=>{
+    const el=document.getElementById(`hvl-${m}-${projId}`);
+    if(el) el.style.display = m===method ? '' : 'none';
+  });
+}
+
+// CBECS-derived benchmark data: {buildingType: {climateZone: {kwhHvacPct, kwHvacPct, gasHvacPct}}}
+const HVAC_BENCHMARKS = {
+  'K-12 School':       {default:{kwhPct:42,kwPct:50,gasPct:82}, '1A':{kwhPct:55,kwPct:60,gasPct:30},'2A':{kwhPct:50,kwPct:58,gasPct:55},'3A':{kwhPct:47,kwPct:55,gasPct:70},'4A':{kwhPct:42,kwPct:50,gasPct:82},'5A':{kwhPct:38,kwPct:48,gasPct:88},'6A':{kwhPct:34,kwPct:45,gasPct:92},'7':{kwhPct:30,kwPct:42,gasPct:95}},
+  'College / University':{default:{kwhPct:45,kwPct:52,gasPct:78},'4A':{kwhPct:45,kwPct:52,gasPct:78}},
+  'Hospital / Healthcare':{default:{kwhPct:40,kwPct:48,gasPct:60},'4A':{kwhPct:40,kwPct:48,gasPct:60}},
+  'Office Building':   {default:{kwhPct:38,kwPct:50,gasPct:75},'4A':{kwhPct:38,kwPct:50,gasPct:75}},
+  'Warehouse / Industrial':{default:{kwhPct:25,kwPct:30,gasPct:85},'4A':{kwhPct:25,kwPct:30,gasPct:85}},
+  'Retail':            {default:{kwhPct:40,kwPct:52,gasPct:70},'4A':{kwhPct:40,kwPct:52,gasPct:70}},
+  'Municipal / Government':{default:{kwhPct:42,kwPct:50,gasPct:78},'4A':{kwhPct:42,kwPct:50,gasPct:78}},
+  'Data Center':       {default:{kwhPct:38,kwPct:40,gasPct:15},'4A':{kwhPct:38,kwPct:40,gasPct:15}},
+};
+
+// CBECS National Median EUI by building type
+const CBECS_EUI = {
+  'K-12 School':48.5,'College / University':84.3,'Hospital / Healthcare':148.1,
+  'Office Building':52.9,'Warehouse / Industrial':26.5,'Retail':44.3,
+  'Municipal / Government':56.1,'Data Center':350,'Other':52.4,
+  'Elementary School':42,'Middle School':52.6,'High School':44
+};
+
+function hvacLoadBenchFill(projId){
+  const type = document.getElementById(`hvl-b-type-${projId}`)?.value;
+  const clim = document.getElementById(`hvl-b-climate-${projId}`)?.value||'4A';
+  const wrap = document.getElementById(`hvl-b-results-${projId}`);
+  if(!type||!wrap) return;
+  const data = HVAC_BENCHMARKS[type];
+  if(!data){wrap.innerHTML='<div style="color:var(--text3)">No benchmark data for this type</div>';return;}
+  const vals = data[clim]||data.default;
+  wrap.innerHTML=`
+    <div class="g2" style="gap:12px">
+      <div class="card" style="background:var(--s1);padding:14px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">Benchmark Values (${type} / Zone ${clim})</div>
+        <div class="fg"><label class="fl">HVAC % of Total kWh</label><input class="fi hvl-in" id="hvl-b-kwhPct-${projId}" type="number" value="${vals.kwhPct}"></div>
+        <div class="fg"><label class="fl">HVAC % of Peak kW</label><input class="fi hvl-in" id="hvl-b-kwPct-${projId}" type="number" value="${vals.kwPct}"></div>
+        <div class="fg"><label class="fl">HVAC % of Total Gas</label><input class="fi hvl-in" id="hvl-b-gasPct-${projId}" type="number" value="${vals.gasPct}"></div>
+      </div>
+      <div class="card" style="background:var(--s1);padding:14px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">EUI Reference</div>
+        <div style="font-size:13px;color:var(--text2);line-height:1.7">
+          CBECS National Median: <strong style="color:var(--em)">${CBECS_EUI[type]||'N/A'} kBtu/ft²</strong><br>
+          Climate zone ${clim} adjustments applied to HVAC split percentages.
+        </div>
+      </div>
+    </div>`;
+}
+
+function hvacLoadCalc(projId){
+  const p = projects.find(x=>x.id===projId); if(!p) return;
+  const sqft = p.sqft||0;
+  // Determine which method is active
+  const thumbEl = document.getElementById(`hvl-thumb-${projId}`);
+  const benchEl = document.getElementById(`hvl-benchmark-${projId}`);
+  const npEl    = document.getElementById(`hvl-nameplate-${projId}`);
+  let method='thumb';
+  if(benchEl&&benchEl.style.display!=='none') method='benchmark';
+  if(npEl&&npEl.style.display!=='none') method='nameplate';
+
+  // Get total utility data from project buildings
+  let totalKwh=0, totalKw=0, totalGas=0;
+  const bldgs = p.buildings||[];
+  bldgs.forEach(b=>{
+    (b.meters||[]).forEach(m=>{
+      if(m.type==='electric'){
+        (m.bills||[]).forEach(bill=>{totalKwh+=(bill.kwh||0);totalKw=Math.max(totalKw,bill.kw||0);});
+      } else if(m.type==='gas'){
+        (m.bills||[]).forEach(bill=>{totalGas+=(bill.therms||0);});
+      }
+    });
+  });
+
+  let hvacKwhPct, hvacKwPct, hvacGasPct;
+  let coolKwh=0,heatKwhElec=0,heatGas=0,lightKwh=0,plugKwh=0,otherKwh=0,otherGas=0;
+  let estimatedTotalKwh=totalKwh, estimatedTotalKw=totalKw, estimatedTotalGas=totalGas;
+
+  if(method==='thumb'){
+    hvacKwhPct = parseFloat(document.getElementById(`hvl-t-kwhPct-${projId}`)?.value)||0;
+    hvacKwPct  = parseFloat(document.getElementById(`hvl-t-kwPct-${projId}`)?.value)||0;
+    hvacGasPct = parseFloat(document.getElementById(`hvl-t-gasPct-${projId}`)?.value)||0;
+  } else if(method==='benchmark'){
+    hvacKwhPct = parseFloat(document.getElementById(`hvl-b-kwhPct-${projId}`)?.value)||0;
+    hvacKwPct  = parseFloat(document.getElementById(`hvl-b-kwPct-${projId}`)?.value)||0;
+    hvacGasPct = parseFloat(document.getElementById(`hvl-b-gasPct-${projId}`)?.value)||0;
+  } else { // nameplate
+    const coolTons = parseFloat(document.getElementById(`hvl-n-coolTons-${projId}`)?.value)||0;
+    const coolKwTon = parseFloat(document.getElementById(`hvl-n-coolKwTon-${projId}`)?.value)||0.86;
+    const coolEFLH = parseFloat(document.getElementById(`hvl-n-coolEFLH-${projId}`)?.value)||1200;
+    const heatMBH = parseFloat(document.getElementById(`hvl-n-heatMBH-${projId}`)?.value)||0;
+    const heatEff = parseFloat(document.getElementById(`hvl-n-heatEff-${projId}`)?.value)||0.8;
+    const heatEFLH = parseFloat(document.getElementById(`hvl-n-heatEFLH-${projId}`)?.value)||1600;
+    const heatFuel = document.getElementById(`hvl-n-heatFuel-${projId}`)?.value||'gas';
+    const lightW = parseFloat(document.getElementById(`hvl-n-lightW-${projId}`)?.value)||0;
+    const lightHrs = parseFloat(document.getElementById(`hvl-n-lightHrs-${projId}`)?.value)||0;
+    const plugW = parseFloat(document.getElementById(`hvl-n-plugW-${projId}`)?.value)||0;
+    const plugHrs = parseFloat(document.getElementById(`hvl-n-plugHrs-${projId}`)?.value)||0;
+    otherKwh = parseFloat(document.getElementById(`hvl-n-otherKwh-${projId}`)?.value)||0;
+    otherGas = parseFloat(document.getElementById(`hvl-n-otherGas-${projId}`)?.value)||0;
+
+    coolKwh = coolTons * coolKwTon * coolEFLH;
+    if(heatFuel==='electric'){
+      heatKwhElec = (heatMBH * 1000 / 3412) / (heatEff||1) * heatEFLH; // MBH→kW then * hours
+    } else {
+      heatGas = (heatMBH * 1000 / 100000) / (heatEff||1) * heatEFLH; // MBH→therms then * hours
+    }
+    lightKwh = (lightW * sqft / 1000) * lightHrs;
+    plugKwh = (plugW * sqft / 1000) * plugHrs;
+
+    estimatedTotalKwh = coolKwh + heatKwhElec + lightKwh + plugKwh + otherKwh;
+    estimatedTotalGas = heatGas + otherGas;
+    if(estimatedTotalKwh>0){
+      hvacKwhPct = ((coolKwh+heatKwhElec)/estimatedTotalKwh)*100;
+    } else hvacKwhPct=0;
+    hvacKwPct = coolTons>0 ? Math.min(70, (coolTons*coolKwTon / Math.max(estimatedTotalKw||1, (estimatedTotalKwh/2000))) * 100) : 50;
+    if(estimatedTotalGas>0){
+      hvacGasPct = (heatGas/estimatedTotalGas)*100;
+    } else hvacGasPct=0;
+    // Use utility data if available
+    if(totalKwh>0) estimatedTotalKwh=totalKwh;
+    if(totalKw>0) estimatedTotalKw=totalKw;
+    if(totalGas>0) estimatedTotalGas=totalGas;
+  }
+
+  const hvacKwh = estimatedTotalKwh * (hvacKwhPct/100);
+  const nonHvacKwh = estimatedTotalKwh - hvacKwh;
+  const hvacKw = estimatedTotalKw * (hvacKwPct/100);
+  const nonHvacKw = estimatedTotalKw - hvacKw;
+  const hvacGasT = estimatedTotalGas * (hvacGasPct/100);
+  const nonHvacGas = estimatedTotalGas - hvacGasT;
+
+  // Monthly distribution (simplified — cooling peaks summer, heating peaks winter)
+  const coolDist = [0.02,0.02,0.04,0.06,0.12,0.17,0.20,0.18,0.12,0.05,0.01,0.01]; // KC cooling shape
+  const heatDist = [0.18,0.15,0.12,0.06,0.01,0.00,0.00,0.00,0.01,0.06,0.14,0.27]; // KC heating shape
+  const flatDist = [1/12,1/12,1/12,1/12,1/12,1/12,1/12,1/12,1/12,1/12,1/12,1/12];
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  // Determine cooling vs heating kWh split
+  let coolPctOfHvac = 0.65;
+  if(method==='thumb'){
+    coolPctOfHvac = (parseFloat(document.getElementById(`hvl-t-coolKwhPct-${projId}`)?.value)||65)/100;
+  }
+  const coolKwhTotal = hvacKwh * coolPctOfHvac;
+  const heatKwhTotal = hvacKwh * (1-coolPctOfHvac);
+
+  const fmt = n => n>=10000?Math.round(n).toLocaleString():n>=100?Math.round(n).toLocaleString():n.toFixed(1);
+  const pct = n => n.toFixed(1)+'%';
+
+  // Save to project
+  p.hvacLoadEst = {method, hvacKwhPct, hvacKwPct, hvacGasPct, totalKwh:estimatedTotalKwh, totalKw:estimatedTotalKw, totalGas:estimatedTotalGas};
+  sset('en_projects', projects);
+
+  const wrap = document.getElementById(`hvl-results-${projId}`);
+  if(!wrap) return;
+  wrap.innerHTML=`
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-hdr"><span class="card-title">📊 Load Breakdown Results</span></div>
+      <div style="padding:16px">
+        ${totalKwh===0&&method!=='nameplate'?'<div style="background:var(--warn-dim);border:1px solid var(--warn);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--warn);margin-bottom:14px">⚠️ No utility data found for this project. Add utility bills to buildings for more accurate results. Showing percentage-based estimates only.</div>':''}
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:20px">
+          <div class="card" style="background:var(--s1);padding:14px;text-align:center">
+            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Total kWh/yr</div>
+            <div style="font-size:22px;font-weight:800;font-family:var(--mono);color:var(--text);margin:4px 0">${fmt(estimatedTotalKwh)}</div>
+            <div style="display:flex;justify-content:center;gap:12px;margin-top:6px">
+              <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--accent);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">HVAC ${pct(hvacKwhPct)}</span></div>
+              <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--teal);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">Other ${pct(100-hvacKwhPct)}</span></div>
+            </div>
+          </div>
+          <div class="card" style="background:var(--s1);padding:14px;text-align:center">
+            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Peak kW</div>
+            <div style="font-size:22px;font-weight:800;font-family:var(--mono);color:var(--text);margin:4px 0">${fmt(estimatedTotalKw)}</div>
+            <div style="display:flex;justify-content:center;gap:12px;margin-top:6px">
+              <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--accent);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">HVAC ${pct(hvacKwPct)}</span></div>
+              <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--teal);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">Other ${pct(100-hvacKwPct)}</span></div>
+            </div>
+          </div>
+          <div class="card" style="background:var(--s1);padding:14px;text-align:center">
+            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Gas Therms/yr</div>
+            <div style="font-size:22px;font-weight:800;font-family:var(--mono);color:var(--text);margin:4px 0">${fmt(estimatedTotalGas)}</div>
+            <div style="display:flex;justify-content:center;gap:12px;margin-top:6px">
+              <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--accent);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">HVAC ${pct(hvacGasPct)}</span></div>
+              <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--teal);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">Other ${pct(100-hvacGasPct)}</span></div>
+            </div>
+          </div>
+        </div>
+        <!-- Monthly breakdown table -->
+        <div style="overflow-x:auto">
+          <table class="dtbl" style="min-width:800px">
+            <thead>
+              <tr><th>Category</th>${months.map(m=>`<th style="text-align:center;width:58px">${m}</th>`).join('')}<th style="text-align:right">Annual</th></tr>
+            </thead>
+            <tbody>
+              <tr style="background:rgba(59,130,246,0.05)"><td style="font-weight:600">Cooling kWh</td>${coolDist.map(d=>`<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(coolKwhTotal*d)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(coolKwhTotal)}</td></tr>
+              <tr style="background:rgba(244,63,94,0.05)"><td style="font-weight:600">Heating kWh</td>${heatDist.map(d=>`<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(heatKwhTotal*d)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(heatKwhTotal)}</td></tr>
+              <tr><td style="font-weight:600;color:var(--teal)">Non-HVAC kWh</td>${flatDist.map(d=>`<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(nonHvacKwh*d)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(nonHvacKwh)}</td></tr>
+              <tr style="border-top:2px solid var(--border2)"><td style="font-weight:800">Total kWh</td>${months.map((_,i)=>`<td style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:700">${fmt(coolKwhTotal*coolDist[i]+heatKwhTotal*heatDist[i]+nonHvacKwh*flatDist[i])}</td>`).join('')}<td style="text-align:right;font-weight:800;font-family:var(--mono);color:var(--em)">${fmt(estimatedTotalKwh)}</td></tr>
+              <tr><td colspan="${months.length+2}" style="height:8px;border:none"></td></tr>
+              <tr style="background:rgba(244,63,94,0.05)"><td style="font-weight:600">HVAC Gas Therms</td>${heatDist.map(d=>`<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(hvacGasT*d)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(hvacGasT)}</td></tr>
+              <tr><td style="font-weight:600;color:var(--teal)">Non-HVAC Gas Therms</td>${flatDist.map(d=>`<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(nonHvacGas*d)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(nonHvacGas)}</td></tr>
+              <tr style="border-top:2px solid var(--border2)"><td style="font-weight:800">Total Gas Therms</td>${months.map((_,i)=>`<td style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:700">${fmt(hvacGasT*heatDist[i]+nonHvacGas*flatDist[i])}</td>`).join('')}<td style="text-align:right;font-weight:800;font-family:var(--mono);color:var(--em)">${fmt(estimatedTotalGas)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+  showToast('HVAC load estimate calculated ✓');
+}
+
+function hvacLoadSave(projId){
+  hvacLoadCalc(projId);
+  showToast('HVAC load estimate saved to project ✓');
+}
+
+/* ══════════════════════════════════════════════════════
+   CALC TEMPLATES MODAL
+══════════════════════════════════════════════════════ */
+const CALC_TEMPLATES = [
+  {id:'solar', name:'Solar', icon:'☀️', desc:'PV array savings with configurable rate schedules, net metering, and Helioscope data', status:'ready'},
+  {id:'bas', name:'BAS', icon:'🏢', desc:'Building Automation savings using weather bin data, setpoints, and schedules', status:'coming'},
+  {id:'oa', name:'Outside Air', icon:'🌬️', desc:'OA economizer and ventilation optimization savings', status:'coming'},
+  {id:'lighting', name:'Lighting', icon:'💡', desc:'LED retrofit savings with wattage reduction and controls', status:'coming'},
+  {id:'weatherization', name:'Weatherization', icon:'🏠', desc:'Envelope improvements — insulation, windows, air sealing', status:'coming'},
+  {id:'thermal', name:'Thermal Storage', icon:'❄️', desc:'Ice/chilled water storage for demand shifting', status:'coming'},
+  {id:'battery', name:'Battery Storage', icon:'🔋', desc:'Battery energy storage system sizing and demand reduction', status:'coming'},
+  {id:'rtu', name:'RTU Replacement', icon:'🔄', desc:'Rooftop unit replacement — efficiency upgrade savings', status:'coming'},
+  {id:'peakdemand', name:'Peak Load Demand', icon:'⚡', desc:'Demand response and peak load reduction strategies', status:'coming'},
+];
+
+function openCalcTemplates(projId){
+  // Build or show modal
+  let modal = document.getElementById('calcTemplatesModal');
+  if(!modal){
+    modal = document.createElement('div');
+    modal.id='calcTemplatesModal';
+    modal.className='modal-bg';
+    modal.onclick=e=>{if(e.target===modal)modal.classList.remove('open');};
+    modal.innerHTML=`<div class="modal" style="max-width:720px">
+      <div class="modal-hdr"><span class="modal-title">📐 Energy Savings Calc Templates</span><button class="modal-x" onclick="document.getElementById('calcTemplatesModal').classList.remove('open')">✕</button></div>
+      <div class="modal-body" id="calcTemplatesBody" style="max-height:70vh;overflow-y:auto"></div>
+    </div>`;
+    document.body.appendChild(modal);
+  }
+  const body = document.getElementById('calcTemplatesBody');
+  body.innerHTML=`<div style="font-size:12px;color:var(--text2);margin-bottom:16px">Select a calculator template to estimate energy savings for a specific measure. Results can be imported as a savings measure row.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+      ${CALC_TEMPLATES.map(t=>`
+        <button class="card" style="background:var(--s1);padding:14px;border:1px solid var(--border);cursor:${t.status==='ready'?'pointer':'default'};text-align:left;transition:all .15s;opacity:${t.status==='ready'?'1':'0.5'}" ${t.status==='ready'?`onclick="launchCalcTemplate('${t.id}',${projId})"`:''}
+          onmouseenter="if('${t.status}'==='ready')this.style.borderColor='var(--accent)'"
+          onmouseleave="this.style.borderColor='var(--border)'">
+          <div style="font-size:24px;margin-bottom:6px">${t.icon}</div>
+          <div style="font-size:13px;font-weight:700;margin-bottom:4px">${t.name}</div>
+          <div style="font-size:11px;color:var(--text2);line-height:1.5">${t.desc}</div>
+          ${t.status==='coming'?'<div style="font-size:10px;color:var(--amber);margin-top:6px;font-weight:600">Coming Soon</div>':'<div style="font-size:10px;color:var(--em);margin-top:6px;font-weight:600">✓ Available</div>'}
+        </button>`).join('')}
+    </div>`;
+  modal.classList.add('open');
+}
+
+function launchCalcTemplate(templateId, projId){
+  document.getElementById('calcTemplatesModal')?.classList.remove('open');
+  if(templateId==='solar'){
+    openSolarCalcModal(projId);
+  } else {
+    showToast(`${templateId.toUpperCase()} calculator coming soon`);
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   SOLAR CALC TEMPLATE
+══════════════════════════════════════════════════════ */
+function openSolarCalcModal(projId){
+  const p = projects.find(x=>x.id===projId);
+  let modal = document.getElementById('solarCalcModal');
+  if(!modal){
+    modal = document.createElement('div');
+    modal.id='solarCalcModal';
+    modal.className='modal-bg';
+    modal.onclick=e=>{if(e.target===modal)modal.classList.remove('open');};
+    document.body.appendChild(modal);
+  }
+  const savedSolar = p?.solarCalc||{};
+  modal.innerHTML=`<div class="modal" style="max-width:960px">
+    <div class="modal-hdr"><span class="modal-title">☀️ Solar Savings Calculator</span><button class="modal-x" onclick="document.getElementById('solarCalcModal').classList.remove('open')">✕</button></div>
+    <div class="modal-body" style="max-height:78vh;overflow-y:auto">
+      <div class="modal-sect">Array Configuration</div>
+      <div class="f2">
+        <div class="fg"><label class="fl">Solar Array Size (kW DC)</label><input class="fi" id="sc-arrayKw" type="number" value="${savedSolar.arrayKw||115}" step="1"></div>
+        <div class="fg"><label class="fl">Array Cost ($/Watt)</label><input class="fi" id="sc-costPerWatt" type="number" value="${savedSolar.costPerWatt||2.50}" step="0.01"></div>
+      </div>
+      <div class="f2">
+        <div class="fg"><label class="fl">Tax Credit %</label><input class="fi" id="sc-taxCredit" type="number" value="${savedSolar.taxCredit||30}" min="0" max="100"></div>
+        <div class="fg"><label class="fl">Net Metering (Max kW)</label><input class="fi" id="sc-netMeterMax" type="number" value="${savedSolar.netMeterMax||150}" step="1"><div class="fhint">Set to 0 if no net metering</div></div>
+      </div>
+      <div class="modal-sect">Monthly Solar Production (kWh from Helioscope or PVWatts)</div>
+      <div style="overflow-x:auto">
+        <table class="dtbl" style="min-width:700px" id="sc-prod-tbl">
+          <thead><tr><th>Month</th><th>Jan</th><th>Feb</th><th>Mar</th><th>Apr</th><th>May</th><th>Jun</th><th>Jul</th><th>Aug</th><th>Sep</th><th>Oct</th><th>Nov</th><th>Dec</th><th style="font-weight:800">Annual</th></tr></thead>
+          <tbody><tr>
+            <td style="font-weight:600">kWh</td>
+            ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map((m,i)=>{
+              const defaults = [8995,9972,12436,13663,17115,17595,17494,16258,14113,12341,9096,7063];
+              return `<td><input class="fi sc-prod" id="sc-prod-${i}" type="number" style="width:66px;text-align:right;padding:4px 6px;font-size:11px" value="${savedSolar.production?savedSolar.production[i]:defaults[i]}"></td>`;
+            }).join('')}
+            <td style="font-weight:800;font-family:var(--mono)" id="sc-prod-total">—</td>
+          </tr></tbody>
+        </table>
+      </div>
+      <div class="modal-sect">Electric Rate Schedule</div>
+      <div class="fg"><label class="fl">Rate Schedule</label>
+        <select class="fs" id="sc-rateSchedule" onchange="solarRatePreset()">
+          <option value="custom">Custom / Manual Entry</option>
+          <option value="2LGSEW">Evergy 2LGSEW — Large General Service Wind</option>
+          <option value="2MGAEW" selected>Evergy 2MGAEW — Medium General All-Electric Wind</option>
+          <option value="2SGSE">Evergy 2SGSE — Small General Service</option>
+        </select>
+      </div>
+      <div class="f2">
+        <div class="fg"><label class="fl">Summer Start (Month)</label>
+          <select class="fs" id="sc-summerStart"><option value="5">May</option><option value="6" selected>June</option></select>
+        </div>
+        <div class="fg"><label class="fl">Winter Start (Month)</label>
+          <select class="fs" id="sc-winterStart"><option value="9">September</option><option value="10" selected>October</option></select>
+        </div>
+      </div>
+      <div style="overflow-x:auto;margin-top:8px">
+        <table class="dtbl" style="min-width:500px">
+          <thead><tr><th>Rate Component</th><th>Summer</th><th>Winter</th><th>Unit</th></tr></thead>
+          <tbody>
+            <tr><td>Customer Charge</td><td><input class="fi sc-rate" id="sc-custCharge" type="number" step="0.01" value="${savedSolar.custCharge||48.90}" style="width:90px"></td><td>—</td><td>$/mo</td></tr>
+            <tr><td>Facilities Charge</td><td colspan="2"><input class="fi sc-rate" id="sc-facCharge" type="number" step="0.001" value="${savedSolar.facCharge||2.854}" style="width:90px"></td><td>$/kW</td></tr>
+            <tr><td>Demand Charge</td><td><input class="fi sc-rate" id="sc-demandSum" type="number" step="0.001" value="${savedSolar.demandSum||3.995}" style="width:90px"></td><td><input class="fi sc-rate" id="sc-demandWin" type="number" step="0.001" value="${savedSolar.demandWin||1.327}" style="width:90px"></td><td>$/kW</td></tr>
+            <tr><td>Energy — 1st 180 hrs</td><td><input class="fi sc-rate" id="sc-tier1Sum" type="number" step="0.00001" value="${savedSolar.tier1Sum||0.08339}" style="width:90px"></td><td><input class="fi sc-rate" id="sc-tier1Win" type="number" step="0.00001" value="${savedSolar.tier1Win||0.03723}" style="width:90px"></td><td>$/kWh</td></tr>
+            <tr><td>Energy — Next 180 hrs</td><td><input class="fi sc-rate" id="sc-tier2Sum" type="number" step="0.00001" value="${savedSolar.tier2Sum||0.05362}" style="width:90px"></td><td><input class="fi sc-rate" id="sc-tier2Win" type="number" step="0.00001" value="${savedSolar.tier2Win||0.02734}" style="width:90px"></td><td>$/kWh</td></tr>
+            <tr><td>Energy — Over 360 hrs</td><td><input class="fi sc-rate" id="sc-tier3Sum" type="number" step="0.00001" value="${savedSolar.tier3Sum||0.05425}" style="width:90px"></td><td><input class="fi sc-rate" id="sc-tier3Win" type="number" step="0.00001" value="${savedSolar.tier3Win||0.02377}" style="width:90px"></td><td>$/kWh</td></tr>
+            <tr><td>Solar Overproduction Credit</td><td><input class="fi sc-rate" id="sc-overProdSum" type="number" step="0.001" value="${savedSolar.overProdSum||0.03}" style="width:90px"></td><td><input class="fi sc-rate" id="sc-overProdWin" type="number" step="0.001" value="${savedSolar.overProdWin||0.03}" style="width:90px"></td><td>$/kWh</td></tr>
+            <tr><td>Renewable Participation</td><td colspan="2"><input class="fi sc-rate" id="sc-renewPart" type="number" step="0.01" value="${savedSolar.renewPart||377.40}" style="width:90px"></td><td>$/mo</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="document.getElementById('solarCalcModal').classList.remove('open')">Cancel</button>
+        <button class="btn btn-em" onclick="solarCalcRun(${projId})">⚡ Calculate Solar Savings</button>
+      </div>
+      <div id="sc-results" style="margin-top:16px"></div>
+    </div>
+  </div>`;
+  modal.classList.add('open');
+  solarUpdateTotal();
+  solarRatePreset();
+  // Listen for production changes
+  document.querySelectorAll('.sc-prod').forEach(inp=>inp.addEventListener('input',solarUpdateTotal));
+}
+
+function solarUpdateTotal(){
+  let total=0;
+  for(let i=0;i<12;i++) total+=parseFloat(document.getElementById(`sc-prod-${i}`)?.value)||0;
+  const el=document.getElementById('sc-prod-total');
+  if(el) el.textContent=Math.round(total).toLocaleString();
+}
+
+function solarRatePreset(){
+  const sched = document.getElementById('sc-rateSchedule')?.value;
+  const presets = {
+    '2MGAEW':{custCharge:48.90,facCharge:2.854,demandSum:3.995,demandWin:1.327,tier1Sum:0.08339,tier1Win:0.03723,tier2Sum:0.05362,tier2Win:0.02734,tier3Sum:0.05425,tier3Win:0.02377,overProdSum:0.03,overProdWin:0.03,renewPart:377.40},
+    '2LGSEW':{custCharge:105.97,facCharge:3.069,demandSum:6.62,demandWin:3.361,tier1Sum:0.06596,tier1Win:0.06612,tier2Sum:0.04714,tier2Win:0.04017,tier3Sum:0.02696,tier3Win:0.03001,overProdSum:0.03,overProdWin:0.03,renewPart:1528.84},
+    '2SGSE':{custCharge:17.70,facCharge:2.726,demandSum:0,demandWin:0,tier1Sum:0.13675,tier1Win:0.10884,tier2Sum:0.06005,tier2Win:0.05131,tier3Sum:0.05366,tier3Win:0.04046,overProdSum:0.03,overProdWin:0.03,renewPart:0},
+  };
+  if(!presets[sched]) return;
+  const pr = presets[sched];
+  Object.entries(pr).forEach(([k,v])=>{const el=document.getElementById('sc-'+k);if(el)el.value=v;});
+}
+
+function solarCalcRun(projId){
+  const p = projects.find(x=>x.id===projId);
+  const arrayKw = parseFloat(document.getElementById('sc-arrayKw')?.value)||0;
+  const costPerWatt = parseFloat(document.getElementById('sc-costPerWatt')?.value)||0;
+  const taxCredit = parseFloat(document.getElementById('sc-taxCredit')?.value)||0;
+  const production = [];
+  for(let i=0;i<12;i++) production.push(parseFloat(document.getElementById(`sc-prod-${i}`)?.value)||0);
+  const totalProd = production.reduce((a,b)=>a+b,0);
+
+  // Rates
+  const tier1Sum=parseFloat(document.getElementById('sc-tier1Sum')?.value)||0;
+  const tier1Win=parseFloat(document.getElementById('sc-tier1Win')?.value)||0;
+  const tier2Sum=parseFloat(document.getElementById('sc-tier2Sum')?.value)||0;
+  const tier2Win=parseFloat(document.getElementById('sc-tier2Win')?.value)||0;
+  const tier3Sum=parseFloat(document.getElementById('sc-tier3Sum')?.value)||0;
+  const tier3Win=parseFloat(document.getElementById('sc-tier3Win')?.value)||0;
+
+  const summerStart=parseInt(document.getElementById('sc-summerStart')?.value)||6;
+  const winterStart=parseInt(document.getElementById('sc-winterStart')?.value)||10;
+
+  // Simple blended rate calc for each month
+  let totalSavings = 0;
+  const monthlySavings = production.map((kwh,i)=>{
+    const month=i+1;
+    const isSummer = month>=summerStart && month<winterStart;
+    // Use weighted average of tiers (simplified — assumes production offsets highest tier first)
+    const avgRate = isSummer ?
+      (tier1Sum*0.4 + tier2Sum*0.35 + tier3Sum*0.25) :
+      (tier1Win*0.4 + tier2Win*0.35 + tier3Win*0.25);
+    const savings = kwh * avgRate;
+    totalSavings += savings;
+    return {kwh,savings,rate:avgRate};
+  });
+
+  const totalCost = arrayKw * 1000 * costPerWatt;
+  const costAfterTax = totalCost * (1 - taxCredit/100);
+  const paybackYrs = totalSavings>0 ? totalCost / totalSavings : 0;
+  const paybackTax = totalSavings>0 ? costAfterTax / totalSavings : 0;
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const fmt = n => Math.round(n).toLocaleString();
+  const fmtD = n => '$'+Math.round(n).toLocaleString();
+
+  // Save to project
+  const solarCalc = {arrayKw,costPerWatt,taxCredit,production,totalProd,totalSavings,totalCost,costAfterTax,paybackYrs,paybackTax,
+    netMeterMax:parseFloat(document.getElementById('sc-netMeterMax')?.value)||0,
+    custCharge:parseFloat(document.getElementById('sc-custCharge')?.value)||0,
+    facCharge:parseFloat(document.getElementById('sc-facCharge')?.value)||0,
+    demandSum:parseFloat(document.getElementById('sc-demandSum')?.value)||0,
+    demandWin:parseFloat(document.getElementById('sc-demandWin')?.value)||0,
+    tier1Sum,tier1Win,tier2Sum,tier2Win,tier3Sum,tier3Win,
+    overProdSum:parseFloat(document.getElementById('sc-overProdSum')?.value)||0,
+    overProdWin:parseFloat(document.getElementById('sc-overProdWin')?.value)||0,
+    renewPart:parseFloat(document.getElementById('sc-renewPart')?.value)||0
+  };
+  if(p){p.solarCalc=solarCalc;sset('en_projects',projects);}
+
+  const wrap = document.getElementById('sc-results');
+  if(!wrap) return;
+  wrap.innerHTML=`
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-hdr"><span class="card-title">☀️ Solar Savings Summary</span></div>
+      <div style="padding:16px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px">
+          <div class="card" style="background:var(--s1);padding:12px;text-align:center">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase">Array Size</div>
+            <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:var(--accent)">${arrayKw} kW</div>
+          </div>
+          <div class="card" style="background:var(--s1);padding:12px;text-align:center">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase">Annual Production</div>
+            <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:var(--em)">${fmt(totalProd)} kWh</div>
+          </div>
+          <div class="card" style="background:var(--s1);padding:12px;text-align:center">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase">Annual Savings</div>
+            <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:var(--green)">${fmtD(totalSavings)}</div>
+          </div>
+          <div class="card" style="background:var(--s1);padding:12px;text-align:center">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase">System Cost</div>
+            <div style="font-size:20px;font-weight:800;font-family:var(--mono)">${fmtD(totalCost)}</div>
+          </div>
+          <div class="card" style="background:var(--s1);padding:12px;text-align:center">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase">Cost w/ Tax Credit</div>
+            <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:var(--teal)">${fmtD(costAfterTax)}</div>
+          </div>
+          <div class="card" style="background:var(--s1);padding:12px;text-align:center">
+            <div style="font-size:10px;color:var(--text3);text-transform:uppercase">Payback (w/ credit)</div>
+            <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:var(--amber)">${paybackTax.toFixed(1)} yrs</div>
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="dtbl" style="min-width:700px">
+            <thead><tr><th>Month</th>${months.map(m=>`<th style="text-align:center">${m}</th>`).join('')}<th style="text-align:right;font-weight:800">Annual</th></tr></thead>
+            <tbody>
+              <tr><td>Solar kWh</td>${monthlySavings.map(s=>`<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(s.kwh)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(totalProd)}</td></tr>
+              <tr><td>Avg Rate $/kWh</td>${monthlySavings.map(s=>`<td style="text-align:right;font-family:var(--mono);font-size:11px">${s.rate.toFixed(4)}</td>`).join('')}<td style="text-align:right;font-family:var(--mono)">${(totalSavings/totalProd).toFixed(4)}</td></tr>
+              <tr style="background:rgba(34,197,94,0.06)"><td style="font-weight:700">$ Savings</td>${monthlySavings.map(s=>`<td style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--green)">${fmtD(s.savings)}</td>`).join('')}<td style="text-align:right;font-weight:800;font-family:var(--mono);color:var(--green)">${fmtD(totalSavings)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-em btn-sm" onclick="solarAddAsMeasure(${projId})">+ Add as Savings Measure</button>
+        </div>
+      </div>
+    </div>`;
+  showToast('Solar savings calculated ✓');
+}
+
+function solarAddAsMeasure(projId){
+  const p = projects.find(x=>x.id===projId);
+  if(!p||!p.solarCalc) return;
+  const sc = p.solarCalc;
+  // Distribute savings as kWh by month using production distribution
+  const totalProd = sc.production.reduce((a,b)=>a+b,0);
+  if(!p.savingsMeasures) p.savingsMeasures=[];
+  const measure = {
+    id: Date.now(),
+    enabled: true,
+    building: 'All',
+    desc: `Solar PV — ${sc.arrayKw} kW Array`,
+    kwhByMonth: sc.production.map(k=>Math.round(k)),
+    kwByMonth: [0,0,0,0,0,0,0,0,0,0,0,0],
+    gasByMonth: [0,0,0,0,0,0,0,0,0,0,0,0],
+    estAnnual: Math.round(sc.totalSavings)
+  };
+  p.savingsMeasures.push(measure);
+  sset('en_projects',projects);
+  document.getElementById('solarCalcModal')?.classList.remove('open');
+  // Switch to savings tab and refresh
+  const btn = document.querySelector('.pdt[onclick*="savings"]');
+  if(btn) sPTab('savings',btn);
+  showToast('Solar measure added to savings matrix ✓');
+}
+
+/* ══════════════════════════════════════════════════════
+   ENERGY GRAPHICS — per project
+══════════════════════════════════════════════════════ */
+function egfxRefresh(projId){
+  const p = projects.find(x=>x.id===projId); if(!p) return;
+  const sqft = p.sqft||1;
+  const bldgs = p.buildings||[];
+  let totalKwh=0, totalKw=0, totalGas=0;
+  let monthlyKwh=new Array(12).fill(0), monthlyKw=new Array(12).fill(0), monthlyGas=new Array(12).fill(0);
+
+  bldgs.forEach(b=>{
+    (b.meters||[]).forEach(m=>{
+      (m.bills||[]).forEach(bill=>{
+        const mo = bill.month ? (['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(bill.month.toLowerCase().slice(0,3))) : -1;
+        if(m.type==='electric'){
+          totalKwh+=(bill.kwh||0); totalKw=Math.max(totalKw,bill.kw||0);
+          if(mo>=0){monthlyKwh[mo]+=(bill.kwh||0);monthlyKw[mo]=Math.max(monthlyKw[mo],bill.kw||0);}
+        } else if(m.type==='gas'){
+          totalGas+=(bill.therms||0);
+          if(mo>=0) monthlyGas[mo]+=(bill.therms||0);
+        }
+      });
+    });
+  });
+
+  const kbtu = totalKwh * 3.412 + totalGas * 100;
+  const eui = kbtu / sqft;
+  const cbecsEui = CBECS_EUI[p.type]||48.5;
+
+  const blEl = document.getElementById(`egfx-blEui-${projId}`);
+  const curEl = document.getElementById(`egfx-curEui-${projId}`);
+  const cbEl = document.getElementById(`egfx-cbecs-${projId}`);
+  if(blEl) blEl.textContent = eui>0?eui.toFixed(1):'—';
+  if(curEl) curEl.textContent = eui>0?eui.toFixed(1):'—';
+  if(cbEl) cbEl.textContent = cbecsEui.toFixed(1);
+
+  const chartsEl = document.getElementById(`egfx-charts-${projId}`);
+  if(!chartsEl) return;
+  if(totalKwh===0&&totalGas===0){
+    chartsEl.innerHTML='<div style="font-size:13px;color:var(--text3);text-align:center;padding:40px">Add utility data to buildings to see energy graphics.</div>';
+    return;
+  }
+
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const maxKwh = Math.max(...monthlyKwh,1);
+  const maxGas = Math.max(...monthlyGas,1);
+
+  chartsEl.innerHTML=`
+    <div class="card" style="background:var(--s1);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">⚡ Monthly Electric kWh</div>
+      <div style="display:flex;align-items:flex-end;gap:4px;height:120px">
+        ${monthlyKwh.map((v,i)=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
+          <div style="font-size:9px;font-family:var(--mono);color:var(--text3)">${v>0?Math.round(v/1000)+'k':''}</div>
+          <div style="width:100%;background:var(--accent);border-radius:3px 3px 0 0;height:${(v/maxKwh)*100}px;min-height:${v>0?2:0}px;transition:height .3s"></div>
+          <div style="font-size:9px;color:var(--text3)">${months[i]}</div>
+        </div>`).join('')}
+      </div>
+    </div>
+    ${totalGas>0?`<div class="card" style="background:var(--s1);padding:14px">
+      <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">🔥 Monthly Gas Therms</div>
+      <div style="display:flex;align-items:flex-end;gap:4px;height:120px">
+        ${monthlyGas.map((v,i)=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
+          <div style="font-size:9px;font-family:var(--mono);color:var(--text3)">${v>0?Math.round(v).toLocaleString():''}</div>
+          <div style="width:100%;background:var(--amber);border-radius:3px 3px 0 0;height:${(v/maxGas)*100}px;min-height:${v>0?2:0}px;transition:height .3s"></div>
+          <div style="font-size:9px;color:var(--text3)">${months[i]}</div>
+        </div>`).join('')}
+      </div>
+    </div>`:''}`;
+  showToast('Energy graphics refreshed ✓');
+}
+function egfxExport(projId){ showToast('Export coming soon'); }
+
+/* ══════════════════════════════════════════════════════
+   WIRE UP NEW TABS IN sPTab
+══════════════════════════════════════════════════════ */
 </script>
 
 
