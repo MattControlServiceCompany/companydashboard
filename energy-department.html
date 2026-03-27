@@ -5134,7 +5134,7 @@ async function extractPDFText(ab, statusCb){
     if(typeof pdfjsLib==='undefined') return null;
     pdfjsLib.GlobalWorkerOptions.workerSrc='';
     const pdf=await pdfjsLib.getDocument({data:ab, useWorkerFetch:false, isEvalSupported:false, useSystemFonts:true}).promise;
-    const maxPages=Math.min(pdf.numPages,50); // support full-year multi-bill PDFs
+    const maxPages=Math.min(pdf.numPages,200); // support multi-year bill PDFs (2yr+ can exceed 60 pages)
 
     // ── Step 1: try native text extraction ──
     let txt='';
