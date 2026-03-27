@@ -4696,8 +4696,8 @@ function renderSvDetail(){
   if(hdr) hdr.style.display='flex';
   if(hdrTitle) hdrTitle.textContent = p.name;
   if(hdrSub){
-    const bldgs = getUDBldgs(svSelProjId);
-    hdrSub.textContent = [p.client, p.status, bldgs.length ? bldgs.length+' building'+(bldgs.length!==1?'s':'') : null].filter(Boolean).join(' · ');
+    const hdrBldgs = getUDBldgs(svSelProjId);
+    hdrSub.textContent = [p.client, p.status, hdrBldgs.length ? hdrBldgs.length+' building'+(hdrBldgs.length!==1?'s':'') : null].filter(Boolean).join(' · ');
   }
 
   const sd = getProjSavingsData(svSelProjId);
@@ -12201,8 +12201,8 @@ function hvacLoadCalc(projId){
   sset('en_projects', projects);
 
   // Get buildings for the "Create Savings Measure" building selector
-  const bldgs = (typeof getUDBldgs==='function') ? getUDBldgs(projId) : (p.buildings||[]);
-  const bldgOpts = bldgs.map(b=>`<option value="${b.id}">${b.name||'Building'}</option>`).join('');
+  const udBldgs = (typeof getUDBldgs==='function') ? getUDBldgs(projId) : (p.buildings||[]);
+  const bldgOpts = udBldgs.map(b=>`<option value="${b.id}">${b.name||'Building'}</option>`).join('');
 
   const wrap = document.getElementById(`hvl-results-${projId}`);
   if(!wrap) return;
