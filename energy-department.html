@@ -12493,8 +12493,8 @@ function launchCalcTemplate(templateId, projId){
 }
 
 /* ══════════════════════════════════════════════════════
-   SOLAR CALC TEMPLATE — Full-page inline view
-   PDR-Compliant: 8 Sections (A-H) matching Excel cell-for-cell
+   SOLAR CALC — Full-page inline view
+   PDR-Compliant: 8 Sections (A-H), live auto-calc
 ══════════════════════════════════════════════════════ */
 function openSolarCalc(projId){
   const p = projects.find(x=>x.id===projId);
@@ -12503,90 +12503,70 @@ function openSolarCalc(projId){
     ? document.getElementById('ptab-savings')
     : document.getElementById('svDetailWrap');
   if(!wrap) return;
-  const savedSolar = p?.solarCalc||{};
+  const sv = p?.solarCalc||{};
   const arrays = p?.solarArrays||[];
   const blBills = _solarGetBaselineBills(p);
-  const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-  const defaults = [8995,9972,12436,13663,17115,17595,17494,16258,14113,12341,9096,7063];
-  // Default capacity factors for KC area (fraction of nameplate kW)
-  const defaultCapFactor = [0.15,0.17,0.22,0.27,0.35,0.40,0.45,0.42,0.33,0.25,0.18,0.20];
-  const rateSchedule = savedSolar.rateScheduleName||'2LGSF';
-  const isWindRate = rateSchedule.endsWith('W');
-
-  // Baseline bill data: per-bill ECA/EER/PTS/TDC RATES (not dollar amounts)
-  const bl = savedSolar.blOverrides||{};
+  const MO = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const DEFS = [8995,9972,12436,13663,17115,17595,17494,16258,14113,12341,9096,7063];
+  const DEFCF = [0.15,0.17,0.22,0.27,0.35,0.40,0.45,0.42,0.33,0.25,0.18,0.20];
+  const bl = sv.blOverrides||{};
 
   wrap.innerHTML=`
     <div style="padding:20px;overflow-y:auto;flex:1" id="sc-main-wrap">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" onclick="openCalcTemplates(${projId},'${_calcTemplateContext.returnTo}')">← Templates</button>
-        <h2 style="font-size:18px;font-weight:700;margin:0">☀️ Solar Bill Recalculation Engine</h2>
+        <h2 style="font-size:18px;font-weight:700;margin:0">☀️ Solar Calc</h2>
         <div style="flex:1"></div>
-        <button class="btn btn-ghost btn-sm" onclick="solarSaveInputs(${projId})">💾 Save Inputs</button>
-        <button class="btn btn-em btn-sm" onclick="solarCalcRun(${projId})">⚡ Calculate</button>
+        <button class="btn btn-ghost btn-sm" onclick="solarSaveInputs(${projId})">💾 Save</button>
       </div>
 
-      <!-- SUMMARY — populated after calculation -->
-      <div id="sc-summary"></div>
+      <!-- SUMMARY KPIs — always visible, live-updating -->
+      <div id="sc-summary" style="margin-bottom:16px"></div>
 
-      <!-- ═══ SECTION A: BASELINE UTILITY DEMAND & CONSUMPTION ═══ -->
+      <!-- ═══ A — BASELINE UTILITY DEMAND & CONSUMPTION ═══ -->
       <div class="card" style="margin-bottom:16px">
         <div class="card-hdr"><span class="card-title">A — Baseline Utility Demand &amp; Consumption</span></div>
         <div style="padding:12px;overflow-x:auto">
-          <div style="font-size:11px;color:var(--text2);margin-bottom:10px">Row-per-month bill data. Dates/amounts from bills; ECA/EER/PTS/TDC are per-bill <b>rates</b>, not dollar amounts.</div>
+          <div style="font-size:11px;color:var(--text2);margin-bottom:8px">Row-per-month bill data. ECA/EER/PTS/TDC columns are per-bill <b>rates</b>, not dollar amounts.</div>
           <table class="dtbl" style="min-width:1500px;font-size:10px;border-collapse:collapse" id="sc-baseline-tbl">
             <thead><tr>
-              <th style="text-align:center;padding:3px 4px;font-size:9px">Month</th>
-              <th style="text-align:center;padding:3px 4px;font-size:9px">Start Date</th>
-              <th style="text-align:center;padding:3px 4px;font-size:9px">End Date</th>
-              <th style="text-align:center;padding:3px 4px;font-size:9px">Days</th>
-              <th style="text-align:center;padding:3px 4px;font-size:9px">Bill Amt $</th>
-              <th style="text-align:center;padding:3px 4px;font-size:9px;border-left:2px solid var(--border)">kWh</th>
-              <th style="text-align:center;padding:3px 4px;font-size:9px">Peak kW</th>
-              <th style="text-align:center;padding:3px 4px;font-size:9px">Fac kW</th>
-              <th style="text-align:center;padding:3px 4px;font-size:9px">Off-Peak kWh</th>
-              <th style="text-align:center;padding:3px 4px;font-size:9px;border-left:2px solid var(--border)">Start ECA Rate</th>
-              <th style="text-align:center;padding:3px 4px;font-size:9px">End ECA Rate</th>
-              <th style="text-align:center;padding:3px 4px;font-size:9px">Start EER Rate</th>
-              <th style="text-align:center;padding:3px 4px;font-size:9px">End EER Rate</th>
-              <th style="text-align:center;padding:3px 4px;font-size:9px">Start PTS Rate</th>
-              <th style="text-align:center;padding:3px 4px;font-size:9px">End PTS Rate</th>
-              <th style="text-align:center;padding:3px 4px;font-size:9px">Start TDC $/kW</th>
-              <th style="text-align:center;padding:3px 4px;font-size:9px">End TDC $/kW</th>
+              ${['Month','Start Date','End Date','Days','Bill Amt $'].map(h=>`<th style="text-align:center;padding:3px 4px;font-size:9px">${h}</th>`).join('')}
+              ${['kWh','Peak kW','Fac kW','Off-Peak kWh'].map(h=>`<th style="text-align:center;padding:3px 4px;font-size:9px;${h==='kWh'?'border-left:2px solid var(--border)':''}">${h}</th>`).join('')}
+              ${['Start ECA','End ECA','Start EER','End EER','Start PTS','End PTS','Start TDC','End TDC'].map(h=>`<th style="text-align:center;padding:3px 4px;font-size:9px;${h==='Start ECA'?'border-left:2px solid var(--border)':''}">${h}</th>`).join('')}
             </tr></thead>
             <tbody>
-              ${months.map((m,i)=>{
-                const is='width:68px;text-align:right;padding:3px 4px;font-size:10px';
+              ${MO.map((m,i)=>{
+                const is='width:64px;text-align:right;padding:3px 4px;font-size:10px';
                 const isd='width:90px;padding:3px 4px;font-size:10px';
-                const bg=i%2===0?'':'background:rgba(255,255,255,0.02)';
-                return '<tr style="'+bg+'">'+
-                  '<td style="font-weight:600;padding:3px 6px;font-size:11px">'+m+'</td>'+
-                  '<td><input class="fi sc-bl-startDate" data-mi="'+i+'" type="date" style="'+isd+'" value="'+(bl.startDate?.[i]||blBills.startDate?.[i]||'')+'"></td>'+
-                  '<td><input class="fi sc-bl-endDate" data-mi="'+i+'" type="date" style="'+isd+'" value="'+(bl.endDate?.[i]||blBills.endDate?.[i]||'')+'"></td>'+
-                  '<td class="sc-bl-days" data-mi="'+i+'" style="text-align:center;font-family:var(--mono);font-size:10px;color:var(--text2)">—</td>'+
-                  '<td><input class="fi sc-bl-billAmt" data-mi="'+i+'" type="number" style="'+is+'" value="'+(bl.billAmt?.[i]||blBills.totalCost?.[i]||'')+'"></td>'+
-                  '<td style="border-left:2px solid var(--border)"><input class="fi sc-bl-kwh" data-mi="'+i+'" type="number" style="'+is+'" value="'+(bl.kwh?.[i]||blBills.kwh?.[i]||'')+'"></td>'+
-                  '<td><input class="fi sc-bl-kw" data-mi="'+i+'" type="number" style="'+is+'" value="'+(bl.kw?.[i]||blBills.billedKw?.[i]||'')+'"></td>'+
-                  '<td><input class="fi sc-bl-fackw" data-mi="'+i+'" type="number" style="'+is+'" value="'+(bl.fackw?.[i]||blBills.facKw?.[i]||'')+'"></td>'+
-                  '<td><input class="fi sc-bl-offpk" data-mi="'+i+'" type="number" style="'+is+'" value="'+(bl.offpk?.[i]||blBills.offPeakKwh?.[i]||'')+'"></td>'+
-                  '<td style="border-left:2px solid var(--border)"><input class="fi sc-bl-ecaStart" data-mi="'+i+'" type="number" step="0.00001" style="'+is+'" value="'+(bl.ecaStart?.[i]||'')+'"></td>'+
-                  '<td><input class="fi sc-bl-ecaEnd" data-mi="'+i+'" type="number" step="0.00001" style="'+is+'" value="'+(bl.ecaEnd?.[i]||'')+'"></td>'+
-                  '<td><input class="fi sc-bl-eerStart" data-mi="'+i+'" type="number" step="0.00001" style="'+is+'" value="'+(bl.eerStart?.[i]||'')+'"></td>'+
-                  '<td><input class="fi sc-bl-eerEnd" data-mi="'+i+'" type="number" step="0.00001" style="'+is+'" value="'+(bl.eerEnd?.[i]||'')+'"></td>'+
-                  '<td><input class="fi sc-bl-ptsStart" data-mi="'+i+'" type="number" step="0.00001" style="'+is+'" value="'+(bl.ptsStart?.[i]||'')+'"></td>'+
-                  '<td><input class="fi sc-bl-ptsEnd" data-mi="'+i+'" type="number" step="0.00001" style="'+is+'" value="'+(bl.ptsEnd?.[i]||'')+'"></td>'+
-                  '<td><input class="fi sc-bl-tdcStart" data-mi="'+i+'" type="number" step="0.00001" style="'+is+'" value="'+(bl.tdcStart?.[i]||'')+'"></td>'+
-                  '<td><input class="fi sc-bl-tdcEnd" data-mi="'+i+'" type="number" step="0.00001" style="'+is+'" value="'+(bl.tdcEnd?.[i]||'')+'"></td>'+
-                '</tr>';
+                const bg=i%2?'background:rgba(255,255,255,0.015)':'';
+                const v=(key,fb)=>bl[key]?.[i]||fb?.[i]||'';
+                return `<tr style="${bg}">
+                  <td style="font-weight:600;padding:3px 6px;font-size:11px">${m}</td>
+                  <td><input class="fi sc-bl sc-bl-startDate" data-mi="${i}" type="date" style="${isd}" value="${v('startDate',blBills.startDate)}"></td>
+                  <td><input class="fi sc-bl sc-bl-endDate" data-mi="${i}" type="date" style="${isd}" value="${v('endDate',blBills.endDate)}"></td>
+                  <td class="sc-bl-days" data-mi="${i}" style="text-align:center;font-family:var(--mono);font-size:10px;color:var(--text2)">—</td>
+                  <td><input class="fi sc-bl sc-bl-billAmt" data-mi="${i}" type="number" style="${is}" value="${v('billAmt',blBills.totalCost)}"></td>
+                  <td style="border-left:2px solid var(--border)"><input class="fi sc-bl sc-bl-kwh" data-mi="${i}" type="number" style="${is}" value="${v('kwh',blBills.kwh)}"></td>
+                  <td><input class="fi sc-bl sc-bl-kw" data-mi="${i}" type="number" style="${is}" value="${v('kw',blBills.billedKw)}"></td>
+                  <td><input class="fi sc-bl sc-bl-fackw" data-mi="${i}" type="number" style="${is}" value="${v('fackw',blBills.facKw)}"></td>
+                  <td><input class="fi sc-bl sc-bl-offpk" data-mi="${i}" type="number" style="${is}" value="${v('offpk',blBills.offPeakKwh)}"></td>
+                  <td style="border-left:2px solid var(--border)"><input class="fi sc-bl sc-bl-ecaStart" data-mi="${i}" type="number" step="any" style="${is}" value="${v('ecaStart',[])}"></td>
+                  <td><input class="fi sc-bl sc-bl-ecaEnd" data-mi="${i}" type="number" step="any" style="${is}" value="${v('ecaEnd',[])}"></td>
+                  <td><input class="fi sc-bl sc-bl-eerStart" data-mi="${i}" type="number" step="any" style="${is}" value="${v('eerStart',[])}"></td>
+                  <td><input class="fi sc-bl sc-bl-eerEnd" data-mi="${i}" type="number" step="any" style="${is}" value="${v('eerEnd',[])}"></td>
+                  <td><input class="fi sc-bl sc-bl-ptsStart" data-mi="${i}" type="number" step="any" style="${is}" value="${v('ptsStart',[])}"></td>
+                  <td><input class="fi sc-bl sc-bl-ptsEnd" data-mi="${i}" type="number" step="any" style="${is}" value="${v('ptsEnd',[])}"></td>
+                  <td><input class="fi sc-bl sc-bl-tdcStart" data-mi="${i}" type="number" step="any" style="${is}" value="${v('tdcStart',[])}"></td>
+                  <td><input class="fi sc-bl sc-bl-tdcEnd" data-mi="${i}" type="number" step="any" style="${is}" value="${v('tdcEnd',[])}"></td>
+                </tr>`;
               }).join('')}
               <tr style="background:rgba(59,130,246,0.06);font-weight:700;border-top:2px solid var(--border)">
-                <td style="font-weight:800;padding:4px 6px">TOTALS</td>
-                <td></td><td></td><td></td>
-                <td id="sc-bl-total-billAmt" style="text-align:right;font-family:var(--mono);font-size:10px;padding:3px 4px">—</td>
-                <td id="sc-bl-total-kwh" style="text-align:right;font-family:var(--mono);font-size:10px;padding:3px 4px;border-left:2px solid var(--border)">—</td>
-                <td id="sc-bl-total-kw" style="text-align:right;font-family:var(--mono);font-size:10px;padding:3px 4px">—</td>
-                <td id="sc-bl-total-fackw" style="text-align:right;font-family:var(--mono);font-size:10px;padding:3px 4px">—</td>
-                <td id="sc-bl-total-offpk" style="text-align:right;font-family:var(--mono);font-size:10px;padding:3px 4px">—</td>
+                <td style="font-weight:800;padding:4px 6px">TOTALS</td><td></td><td></td><td></td>
+                <td id="sc-bl-tot-billAmt" style="text-align:right;font-family:var(--mono);font-size:10px;padding:3px 4px">—</td>
+                <td id="sc-bl-tot-kwh" style="text-align:right;font-family:var(--mono);font-size:10px;padding:3px 4px;border-left:2px solid var(--border)">—</td>
+                <td id="sc-bl-tot-kw" style="text-align:right;font-family:var(--mono);font-size:10px;padding:3px 4px">—</td>
+                <td id="sc-bl-tot-fackw" style="text-align:right;font-family:var(--mono);font-size:10px;padding:3px 4px">—</td>
+                <td id="sc-bl-tot-offpk" style="text-align:right;font-family:var(--mono);font-size:10px;padding:3px 4px">—</td>
                 <td colspan="8"></td>
               </tr>
             </tbody>
@@ -12594,36 +12574,33 @@ function openSolarCalc(projId){
         </div>
       </div>
 
-      <!-- ═══ SECTION B: RATE CARD ═══ -->
+      <!-- ═══ B — RATE CARD ═══ -->
       <div class="card" style="margin-bottom:16px">
         <div class="card-hdr"><span class="card-title">B — Rate Card</span>
-          <select class="fs" id="sc-rateSchedule" onchange="solarRatePreset()" style="width:280px;font-size:11px">
+          <select class="fs" id="sc-rateSchedule" style="width:280px;font-size:11px">
             <option value="custom">Custom / Manual Entry</option>
-            <option value="2LGSF" ${rateSchedule==='2LGSF'?'selected':''}>Evergy 2LGSF — Large General Service</option>
-            <option value="2LGSEW" ${rateSchedule==='2LGSEW'?'selected':''}>Evergy 2LGSEW — Large General Service Wind</option>
-            <option value="2MGAEW" ${rateSchedule==='2MGAEW'?'selected':''}>Evergy 2MGAEW — Medium General All-Electric Wind</option>
-            <option value="2SGSE" ${rateSchedule==='2SGSE'?'selected':''}>Evergy 2SGSE — Small General Service</option>
+            <option value="2LGSF" ${(sv.rateScheduleName||'2LGSF')==='2LGSF'?'selected':''}>Evergy 2LGSF — Large General Service</option>
+            <option value="2LGSEW" ${sv.rateScheduleName==='2LGSEW'?'selected':''}>Evergy 2LGSEW — Large General Service Wind</option>
+            <option value="2MGAEW" ${sv.rateScheduleName==='2MGAEW'?'selected':''}>Evergy 2MGAEW — Medium General All-Electric Wind</option>
+            <option value="2SGSE" ${sv.rateScheduleName==='2SGSE'?'selected':''}>Evergy 2SGSE — Small General Service</option>
           </select>
         </div>
-        <div style="padding:16px;font-family:var(--mono);font-size:12px;line-height:2.0" id="sc-ratecard-body">
-          <!-- Rate card rendered by solarRenderRateCard() -->
-        </div>
+        <div style="padding:20px 24px;font-family:var(--mono);font-size:13px;line-height:2.2;white-space:pre;overflow-x:auto;color:var(--text)" id="sc-ratecard-body"></div>
       </div>
 
-      <!-- ═══ SECTION C: SOLAR PRODUCTION PER HELIOSCOPE ANALYSIS ═══ -->
+      <!-- ═══ C — SOLAR PRODUCTION ═══ -->
       <div class="card" style="margin-bottom:16px">
         <div class="card-hdr"><span class="card-title">C — Solar Production per Helioscope Analysis</span>
           <button class="btn btn-ghost btn-sm" onclick="solarAddArray(${projId})">+ Add Array</button>
         </div>
         <div style="padding:12px;overflow-x:auto" id="sc-arrays-wrap">
           ${arrays.length===0?`
-            <div style="font-size:12px;color:var(--text2);margin-bottom:10px">No arrays defined. Add an array or enter production manually below.</div>
+            <div style="font-size:12px;color:var(--text2);margin-bottom:8px">No arrays defined yet. Add an array or enter production manually below.</div>
             <table class="dtbl" style="min-width:700px;font-size:10px" id="sc-prod-tbl">
-              <thead><tr><th>Month</th>${months.map(m=>'<th style="text-align:center">'+m+'</th>').join('')}<th style="font-weight:800">Annual</th></tr></thead>
-              <tbody><tr>
-                <td style="font-weight:600">kWh</td>
-                ${months.map((m,i)=>'<td><input class="fi sc-prod" id="sc-prod-'+i+'" type="number" style="width:66px;text-align:right;padding:4px 6px;font-size:11px" value="'+(savedSolar.production?savedSolar.production[i]:defaults[i])+'"></td>').join('')}
-                <td style="font-weight:800;font-family:var(--mono)" id="sc-prod-total">—</td>
+              <thead><tr><th></th>${MO.map(m=>'<th style="text-align:center">'+m+'</th>').join('')}<th style="font-weight:800;text-align:right">Annual</th></tr></thead>
+              <tbody><tr><td style="font-weight:600">kWh</td>
+                ${MO.map((m,i)=>'<td><input class="fi sc-inp sc-prod" id="sc-prod-'+i+'" type="number" style="width:62px;text-align:right;padding:3px 5px;font-size:11px" value="'+(sv.production?sv.production[i]:DEFS[i])+'"></td>').join('')}
+                <td style="font-weight:800;font-family:var(--mono);text-align:right" id="sc-prod-total">—</td>
               </tr></tbody>
             </table>
           `:''}
@@ -12631,44 +12608,30 @@ function openSolarCalc(projId){
             <div class="card" style="background:var(--s1);padding:12px;margin-bottom:10px;border:1px solid var(--border)" data-array-id="${arr.id}">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
                 <input class="fi sc-arr-name" data-ai="${ai}" value="${arr.name||'Array '+(ai+1)}" style="flex:1;font-weight:700;font-size:13px">
-                <div style="display:flex;align-items:center;gap:4px">
-                  <input class="fi sc-arr-kw" data-ai="${ai}" type="number" value="${arr.kw||0}" style="width:80px" placeholder="kW DC">
-                  <span style="font-size:11px;color:var(--text2);white-space:nowrap">kW DC</span>
-                </div>
-                <select class="fs sc-arr-src" data-ai="${ai}" style="width:120px;font-size:11px">
+                <input class="fi sc-inp sc-arr-kw" data-ai="${ai}" type="number" value="${arr.kw||0}" style="width:80px" placeholder="kW DC">
+                <span style="font-size:11px;color:var(--text2)">kW DC</span>
+                <select class="fs sc-arr-src" data-ai="${ai}" style="width:110px;font-size:11px">
                   <option value="helioscope" ${arr.source==='helioscope'?'selected':''}>Helioscope</option>
                   <option value="pvwatts" ${arr.source==='pvwatts'?'selected':''}>PVWatts</option>
                   <option value="manual" ${arr.source==='manual'?'selected':''}>Manual</option>
                 </select>
-                <button class="btn btn-ghost btn-sm" onclick="solarRemoveArray(${projId},${ai})" title="Remove array" style="color:var(--red)">✕</button>
+                <button class="btn btn-ghost btn-sm" onclick="solarRemoveArray(${projId},${ai})" style="color:var(--red)">✕</button>
               </div>
-              <table class="dtbl" style="min-width:900px;font-size:10px">
-                <thead><tr>
-                  <th style="width:80px"></th>
-                  ${months.map(m=>'<th style="text-align:center;width:56px">'+m+'</th>').join('')}
-                  <th style="text-align:right;font-weight:800">Annual</th>
-                </tr></thead>
+              <table class="dtbl" style="min-width:860px;font-size:10px">
+                <thead><tr><th style="width:70px"></th>${MO.map(m=>'<th style="text-align:center;width:54px">'+m+'</th>').join('')}<th style="text-align:right;font-weight:800">Annual</th></tr></thead>
                 <tbody>
-                  <tr><td style="font-weight:600;font-size:9px;color:var(--text2)">kW %</td>
-                    ${months.map((m,mi)=>'<td><input class="fi sc-arr-capfactor" data-ai="'+ai+'" data-mi="'+mi+'" type="number" step="0.01" style="width:50px;text-align:right;padding:2px 3px;font-size:9px" value="'+(arr.capFactor?arr.capFactor[mi]:defaultCapFactor[mi])+'"></td>').join('')}
-                    <td></td>
-                  </tr>
-                  <tr><td style="font-weight:600;font-size:9px;color:var(--text2)">Array kW</td>
-                    ${months.map((m,mi)=>'<td class="sc-arr-arraykw" data-ai="'+ai+'" data-mi="'+mi+'" style="text-align:right;font-family:var(--mono);font-size:9px;padding:2px 3px;color:var(--text2)">—</td>').join('')}
-                    <td></td>
-                  </tr>
+                  <tr><td style="font-size:9px;color:var(--text2);font-weight:600">kW %</td>
+                    ${MO.map((m,mi)=>'<td><input class="fi sc-inp sc-arr-capfactor" data-ai="'+ai+'" data-mi="'+mi+'" type="number" step="0.01" style="width:48px;text-align:right;padding:2px 3px;font-size:9px" value="'+(arr.capFactor?arr.capFactor[mi]:DEFCF[mi])+'"></td>').join('')}<td></td></tr>
+                  <tr><td style="font-size:9px;color:var(--text2);font-weight:600">Array kW</td>
+                    ${MO.map((m,mi)=>'<td class="sc-arr-arraykw" data-ai="'+ai+'" data-mi="'+mi+'" style="text-align:right;font-family:var(--mono);font-size:9px;padding:2px 3px;color:var(--text2)">—</td>').join('')}<td></td></tr>
                   <tr><td style="font-weight:600">kWh</td>
-                    ${months.map((m,mi)=>'<td><input class="fi sc-arr-prod" data-ai="'+ai+'" data-mi="'+mi+'" type="number" style="width:56px;text-align:right;padding:3px 4px;font-size:10px" value="'+(arr.production?arr.production[mi]:defaults[mi])+'"></td>').join('')}
-                    <td style="text-align:right;font-weight:700;font-family:var(--mono)" class="sc-arr-total" data-ai="${ai}">—</td>
-                  </tr>
-                  <tr><td style="font-weight:600;font-size:9px;color:var(--text2)">Scaled kW</td>
-                    ${months.map((m,mi)=>'<td class="sc-arr-scaledkw" data-ai="'+ai+'" data-mi="'+mi+'" style="text-align:right;font-family:var(--mono);font-size:9px;padding:2px 3px;color:var(--accent)">—</td>').join('')}
-                    <td></td>
-                  </tr>
-                  <tr><td style="font-weight:600;font-size:9px;color:var(--text2)">Scaled kWh</td>
-                    ${months.map((m,mi)=>'<td class="sc-arr-scaledkwh" data-ai="'+ai+'" data-mi="'+mi+'" style="text-align:right;font-family:var(--mono);font-size:9px;padding:2px 3px;color:var(--accent)">—</td>').join('')}
-                    <td class="sc-arr-scaledtotal" data-ai="${ai}" style="text-align:right;font-weight:700;font-family:var(--mono);font-size:9px;color:var(--accent)">—</td>
-                  </tr>
+                    ${MO.map((m,mi)=>'<td><input class="fi sc-inp sc-arr-prod" data-ai="'+ai+'" data-mi="'+mi+'" type="number" style="width:54px;text-align:right;padding:3px 4px;font-size:10px" value="'+(arr.production?arr.production[mi]:DEFS[mi])+'"></td>').join('')}
+                    <td style="text-align:right;font-weight:700;font-family:var(--mono)" class="sc-arr-total" data-ai="${ai}">—</td></tr>
+                  <tr><td style="font-size:9px;color:var(--accent);font-weight:600">Scaled kW</td>
+                    ${MO.map((m,mi)=>'<td class="sc-arr-scaledkw" data-ai="'+ai+'" data-mi="'+mi+'" style="text-align:right;font-family:var(--mono);font-size:9px;padding:2px 3px;color:var(--accent)">—</td>').join('')}<td></td></tr>
+                  <tr><td style="font-size:9px;color:var(--accent);font-weight:600">Scaled kWh</td>
+                    ${MO.map((m,mi)=>'<td class="sc-arr-scaledkwh" data-ai="'+ai+'" data-mi="'+mi+'" style="text-align:right;font-family:var(--mono);font-size:9px;padding:2px 3px;color:var(--accent)">—</td>').join('')}
+                    <td class="sc-arr-scaledtotal" data-ai="${ai}" style="text-align:right;font-weight:700;font-family:var(--mono);font-size:9px;color:var(--accent)">—</td></tr>
                 </tbody>
               </table>
             </div>
@@ -12676,1145 +12639,366 @@ function openSolarCalc(projId){
         </div>
       </div>
 
-      <!-- ═══ SYSTEM CONFIGURATION ═══ -->
+      <!-- ═══ SYSTEM CONFIG ═══ -->
       <div class="card" style="margin-bottom:16px">
         <div class="card-hdr"><span class="card-title">System Configuration</span></div>
         <div style="padding:16px">
-          <div class="f2">
-            <div class="fg"><label class="fl">Total Array Size (kW DC)</label><input class="fi" id="sc-arrayKw" type="number" value="${savedSolar.arrayKw||arrays.reduce((a,ar)=>a+(ar.kw||0),0)||115}"></div>
-            <div class="fg"><label class="fl">Array Cost ($/Watt)</label><input class="fi" id="sc-costPerWatt" type="number" value="${savedSolar.costPerWatt||2.50}"></div>
-          </div>
-          <div class="f3">
-            <div class="fg"><label class="fl">Tax Credit %</label><input class="fi" id="sc-taxCredit" type="number" value="${savedSolar.taxCredit||30}"></div>
-            <div class="fg"><label class="fl">Net Metering (Max kW)</label><input class="fi" id="sc-netMeterMax" type="number" value="${savedSolar.netMeterMax||150}"><div class="fhint">Set to 0 if no net metering</div></div>
-            <div class="fg"><label class="fl">Savings % (pre-solar)</label><input class="fi" id="sc-savingsPct" type="number" value="${savedSolar.savingsPct||0}" placeholder="0"><div class="fhint">Apply BAS/other savings before solar (Section E)</div></div>
-          </div>
-          <div class="f2">
-            <div class="fg"><label class="fl">Billing kW Override</label><input class="fi" id="sc-billingKw" type="number" value="${savedSolar.billingKw||''}" placeholder="Auto from utility data"><div class="fhint">Leave blank to use per-month peak kW from baseline.</div></div>
-            <div class="fg"><label class="fl">Summer Change / Winter Change</label>
-              <div style="display:flex;gap:6px;align-items:center">
-                <input class="fi" id="sc-summerChange" type="text" value="${savedSolar.summerChange||'5/31'}" style="width:70px;text-align:center" placeholder="5/31">
-                <span style="font-size:11px;color:var(--text2)">/</span>
-                <input class="fi" id="sc-winterChange" type="text" value="${savedSolar.winterChange||'9/30'}" style="width:70px;text-align:center" placeholder="9/30">
-              </div>
-              <div class="fhint">Season boundary dates for summer/winter proration</div>
-            </div>
-          </div>
-          <div class="fg"><label class="fl">ECA Minimum kWh Threshold</label><input class="fi" id="sc-ecaThreshold" type="number" value="${savedSolar.ecaThreshold||18813.204}" style="width:160px"><div class="fhint">Only kWh above this threshold are subject to ECA charges (default 18,813.204)</div></div>
+          <div class="f2"><div class="fg"><label class="fl">Total Array Size (kW DC)</label><input class="fi sc-inp" id="sc-arrayKw" type="number" value="${sv.arrayKw||arrays.reduce((a,ar)=>a+(ar.kw||0),0)||115}"></div>
+            <div class="fg"><label class="fl">Array Cost ($/Watt)</label><input class="fi sc-inp" id="sc-costPerWatt" type="number" value="${sv.costPerWatt||2.50}"></div></div>
+          <div class="f3"><div class="fg"><label class="fl">Tax Credit %</label><input class="fi sc-inp" id="sc-taxCredit" type="number" value="${sv.taxCredit||30}"></div>
+            <div class="fg"><label class="fl">Net Metering Max kW</label><input class="fi sc-inp" id="sc-netMeterMax" type="number" value="${sv.netMeterMax||150}"></div>
+            <div class="fg"><label class="fl">Savings % (pre-solar)</label><input class="fi sc-inp" id="sc-savingsPct" type="number" value="${sv.savingsPct||0}" placeholder="0"><div class="fhint">BAS/other savings applied before solar (Section E)</div></div></div>
+          <div class="f2"><div class="fg"><label class="fl">Billing kW Override</label><input class="fi sc-inp" id="sc-billingKw" type="number" value="${sv.billingKw||''}" placeholder="Auto from baseline"></div>
+            <div class="fg"><label class="fl">Summer / Winter Change</label><div style="display:flex;gap:6px;align-items:center"><input class="fi sc-inp" id="sc-summerChange" type="text" value="${sv.summerChange||'5/31'}" style="width:65px;text-align:center"><span style="color:var(--text3)">/</span><input class="fi sc-inp" id="sc-winterChange" type="text" value="${sv.winterChange||'9/30'}" style="width:65px;text-align:center"></div></div></div>
+          <div class="fg" style="max-width:200px"><label class="fl">ECA Min kWh Threshold</label><input class="fi sc-inp" id="sc-ecaThreshold" type="number" value="${sv.ecaThreshold||18813.204}"></div>
         </div>
       </div>
 
-      <!-- RESULTS — populated after calculation (Sections D, E, F, G, H) -->
+      <!-- ═══ RESULTS D-H — always visible, live-updating ═══ -->
       <div id="sc-results"></div>
-    </div>`;
 
-  // Initialize computed fields
-  _solarComputeBaselineDays();
-  _solarComputeBaselineTotals();
-  solarUpdateTotal();
-  solarUpdateArrayTotals();
-  solarRenderRateCard();
-  // Attach listeners
-  document.querySelectorAll('.sc-prod').forEach(inp=>inp.addEventListener('input',solarUpdateTotal));
-  document.querySelectorAll('.sc-arr-prod,.sc-arr-capfactor,.sc-arr-kw').forEach(inp=>inp.addEventListener('input',()=>{solarUpdateArrayTotals();solarUpdateArrayDerived();}));
-  document.querySelectorAll('.sc-bl-startDate,.sc-bl-endDate').forEach(inp=>inp.addEventListener('change',_solarComputeBaselineDays));
-  document.querySelectorAll('[class^="sc-bl-"]').forEach(inp=>inp.addEventListener('input',_solarComputeBaselineTotals));
-  document.getElementById('sc-rateSchedule')?.addEventListener('change',solarRenderRateCard);
-  solarUpdateArrayDerived();
-}
-
-/* ── Compute bill period days from start/end dates ── */
-function _solarComputeBaselineDays(){
-  for(let i=0;i<12;i++){
-    const s=document.querySelector(`.sc-bl-startDate[data-mi="${i}"]`)?.value;
-    const e=document.querySelector(`.sc-bl-endDate[data-mi="${i}"]`)?.value;
-    const cell=document.querySelector(`.sc-bl-days[data-mi="${i}"]`);
-    if(s&&e&&cell){
-      const days=Math.round((new Date(e)-new Date(s))/(86400000));
-      cell.textContent=days>0?days:'—';
-    } else if(cell){ cell.textContent='—'; }
-  }
-}
-
-/* ── Compute baseline totals row ── */
-function _solarComputeBaselineTotals(){
-  const fields=['billAmt','kwh','kw','fackw','offpk'];
-  fields.forEach(f=>{
-    let sum=0;
-    document.querySelectorAll(`.sc-bl-${f}`).forEach(inp=>{sum+=parseFloat(inp.value)||0;});
-    const el=document.getElementById(`sc-bl-total-${f}`);
-    if(el) el.textContent=f==='billAmt'?'$'+sum.toFixed(2):Math.round(sum).toLocaleString();
-  });
-}
-
-/* ── Render the Rate Card in compact Excel-matching layout ── */
-function solarRenderRateCard(){
-  const sched=document.getElementById('sc-rateSchedule')?.value||'2LGSF';
-  const isWind=sched.endsWith('W');
-  const body=document.getElementById('sc-ratecard-body');
-  if(!body) return;
-  const savedSolar={}; // Read from DOM or use defaults
-  const pf=(id,def)=>{const el=document.getElementById(id);return el?parseFloat(el.value)||def:def;};
-
-  body.innerHTML=`
-    <div style="display:grid;grid-template-columns:200px 100px 100px 100px;gap:0;font-size:12px;line-height:1.4">
-      <div style="padding:6px 0">
-        <div style="margin-bottom:12px">
-          <span style="color:var(--text2)">CUSTOMER CHARGE:</span>
-          <input class="fi sc-rate" id="sc-custCharge" type="number" step="0.01" style="width:80px;display:inline;margin-left:8px;font-family:var(--mono);font-size:12px;padding:2px 6px" value="${pf('sc-custCharge',48.90)}"> <span style="color:var(--text3);font-size:10px">$/mo</span>
-        </div>
-        <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px">
-          <span style="color:var(--text2);font-size:11px">Franchise Fee</span>
-          <input class="fi sc-rate" id="sc-franchiseFeeDecimal" type="number" step="0.00001" style="width:70px;font-family:var(--mono);font-size:11px;padding:2px 4px" value="${pf('sc-franchiseFeeDecimal',0)}">
-          <input class="fi sc-rate" id="sc-franchisePct" type="number" step="0.001" style="width:70px;font-family:var(--mono);font-size:11px;padding:2px 4px" value="${pf('sc-franchisePct',5.263)}">
-          <span style="color:var(--text3);font-size:9px">(0 = tax exempt)</span>
-        </div>
-        <div style="margin-bottom:12px">
-          <span style="color:var(--text2)">FACILITIES CHARGE:</span>
-          <input class="fi sc-rate" id="sc-facRate" type="number" step="0.001" style="width:80px;display:inline;margin-left:8px;font-family:var(--mono);font-size:12px;padding:2px 6px" value="${pf('sc-facRate',2.854)}"> <span style="color:var(--text3);font-size:10px">$/kW</span>
-        </div>
+      <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-em btn-sm" onclick="solarAddAsMeasure(${projId})">+ Add as Savings Measure</button>
       </div>
-    </div>
-    <table class="dtbl" style="min-width:500px;font-size:11px;margin-bottom:8px">
-      <thead><tr><th style="text-align:left;font-size:10px">DEMAND CHARGE</th><th style="text-align:center;font-size:10px;color:var(--amber)">SUMMER</th><th style="text-align:center;font-size:10px;color:var(--accent)">WINTER</th><th style="font-size:10px">Unit</th></tr></thead>
-      <tbody>
-        <tr><td>NET METERING</td><td><input class="fi sc-rate" id="sc-nmDemandSum" type="number" step="0.001" style="width:90px;font-family:var(--mono)" value="${pf('sc-nmDemandSum',9.831)}"></td><td><input class="fi sc-rate" id="sc-nmDemandWin" type="number" step="0.001" style="width:90px;font-family:var(--mono)" value="${pf('sc-nmDemandWin',1.327)}"></td><td>$/kW</td></tr>
-        <tr><td>(standard)</td><td><input class="fi sc-rate" id="sc-demandSum" type="number" step="0.001" style="width:90px;font-family:var(--mono)" value="${pf('sc-demandSum',3.995)}"></td><td><input class="fi sc-rate" id="sc-demandWin" type="number" step="0.001" style="width:90px;font-family:var(--mono)" value="${pf('sc-demandWin',2.776)}"></td><td>$/kW</td></tr>
-      </tbody>
-    </table>
-    <table class="dtbl" style="min-width:500px;font-size:11px;margin-bottom:8px">
-      <thead><tr><th style="text-align:left;font-size:10px">ENERGY CHARGE</th><th style="text-align:center;font-size:10px;color:var(--amber)">SUMMER</th><th style="text-align:center;font-size:10px;color:var(--accent)">WINTER</th><th style="font-size:10px">Unit</th>
-        <th style="font-size:9px;color:var(--text3)">Change Date</th></tr></thead>
-      <tbody>
-        <tr><td>On-Peak kWh</td><td><input class="fi sc-rate" id="sc-onPeakSum" type="number" step="0.00001" style="width:90px;font-family:var(--mono)" value="${pf('sc-onPeakSum',0.10304)}"></td><td><input class="fi sc-rate" id="sc-onPeakWin" type="number" step="0.00001" style="width:90px;font-family:var(--mono)" value="${pf('sc-onPeakWin',0.03723)}"></td><td>$/kWh</td>
-          <td style="font-size:9px;color:var(--text3)">Summer: <span id="sc-sumChangeDisp">5/31</span></td></tr>
-        <tr><td>Off-Peak kWh</td><td><input class="fi sc-rate" id="sc-offPeakSum" type="number" step="0.00001" style="width:90px;font-family:var(--mono)" value="${pf('sc-offPeakSum',0.05734)}"></td><td><input class="fi sc-rate" id="sc-offPeakWin" type="number" step="0.00001" style="width:90px;font-family:var(--mono)" value="${pf('sc-offPeakWin',0.03266)}"></td><td>$/kWh</td>
-          <td style="font-size:9px;color:var(--text3)">Winter: <span id="sc-winChangeDisp">9/30</span></td></tr>
-      </tbody>
-    </table>
-    <table class="dtbl" style="min-width:500px;font-size:11px;margin-bottom:8px">
-      <thead><tr><th style="text-align:left;font-size:10px">SOLAR RATE CHARGE</th><th style="text-align:center;font-size:10px;color:var(--amber)">SUMMER</th><th style="text-align:center;font-size:10px;color:var(--accent)">WINTER</th><th style="font-size:10px">Unit</th></tr></thead>
-      <tbody>
-        <tr><td>First 180 Hours</td><td><input class="fi sc-rate" id="sc-tier1Sum" type="number" step="0.00001" style="width:90px;font-family:var(--mono)" value="${pf('sc-tier1Sum',0.08551)}"></td><td><input class="fi sc-rate" id="sc-tier1Win" type="number" step="0.00001" style="width:90px;font-family:var(--mono)" value="${pf('sc-tier1Win',0.04515)}"></td><td>$/kWh</td></tr>
-        <tr><td>Next 180 Hours</td><td><input class="fi sc-rate" id="sc-tier2Sum" type="number" step="0.00001" style="width:90px;font-family:var(--mono)" value="${pf('sc-tier2Sum',0.05362)}"></td><td><input class="fi sc-rate" id="sc-tier2Win" type="number" step="0.00001" style="width:90px;font-family:var(--mono)" value="${pf('sc-tier2Win',0.02734)}"></td><td>$/kWh</td></tr>
-        <tr><td>Over 360 Hours</td><td><input class="fi sc-rate" id="sc-tier3Sum" type="number" step="0.00001" style="width:90px;font-family:var(--mono)" value="${pf('sc-tier3Sum',0.05425)}"></td><td><input class="fi sc-rate" id="sc-tier3Win" type="number" step="0.00001" style="width:90px;font-family:var(--mono)" value="${pf('sc-tier3Win',0.02377)}"></td><td>$/kWh</td></tr>
-        <tr><td>Solar Over Production</td><td><input class="fi sc-rate" id="sc-overProdSum" type="number" step="0.00001" style="width:90px;font-family:var(--mono)" value="${pf('sc-overProdSum',0.03)}"></td><td><input class="fi sc-rate" id="sc-overProdWin" type="number" step="0.00001" style="width:90px;font-family:var(--mono)" value="${pf('sc-overProdWin',0.03)}"></td><td>$/kWh</td></tr>
-      </tbody>
-    </table>
-    <table class="dtbl" style="min-width:500px;font-size:11px;margin-bottom:8px">
-      <thead><tr><th style="text-align:left;font-size:10px">RIDERS</th><th style="text-align:center;font-size:10px">Rate</th><th></th><th style="font-size:10px">Unit</th></tr></thead>
-      <tbody>
-        <tr><td>ECA Rate</td><td><input class="fi sc-rate" id="sc-ecaRate" type="number" step="0.00001" style="width:90px;font-family:var(--mono)" value="${pf('sc-ecaRate',0.03066)}"></td><td></td><td>$/kWh</td></tr>
-        <tr><td>EER Rate</td><td><input class="fi sc-rate" id="sc-eerRate" type="number" step="0.00001" style="width:90px;font-family:var(--mono)" value="${pf('sc-eerRate',0)}"></td><td></td><td>$/kWh</td></tr>
-        <tr><td>PTS Rate</td><td><input class="fi sc-rate" id="sc-ptsRate" type="number" step="0.00001" style="width:90px;font-family:var(--mono)" value="${pf('sc-ptsRate',0)}"></td><td></td><td>$/kWh</td></tr>
-        <tr><td>TDC Charge</td><td><input class="fi sc-rate" id="sc-tdcRate" type="number" step="0.00001" style="width:90px;font-family:var(--mono)" value="${pf('sc-tdcRate',0)}"></td><td></td><td>$/kW</td></tr>
-      </tbody>
-    </table>
-    <div id="sc-renewableLines" style="${isWind?'':'display:none'}">
-      <table class="dtbl" style="min-width:500px;font-size:11px">
-        <tbody>
-          <tr style="background:rgba(132,204,22,0.04)"><td>Renewable Participation Charge</td><td><input class="fi sc-rate" id="sc-renewPart" type="number" step="0.01" style="width:100px;font-family:var(--mono)" value="${pf('sc-renewPart',377.40)}"></td><td>$/mo</td></tr>
-          <tr style="background:rgba(132,204,22,0.04)"><td>New Renewable Participation Charge</td><td><input class="fi sc-rate" id="sc-newRenewPart" type="number" step="0.01" style="width:100px;font-family:var(--mono)" value="${pf('sc-newRenewPart',377.40)}"></td><td>$/mo</td></tr>
-        </tbody>
-      </table>
     </div>`;
-  // Update change date displays
-  const sc=document.getElementById('sc-summerChange');
-  const wc=document.getElementById('sc-winterChange');
-  if(sc) document.getElementById('sc-sumChangeDisp').textContent=sc.value;
-  if(wc) document.getElementById('sc-winChangeDisp').textContent=wc.value;
+
+  // Build rate card
+  _scBuildRateCard(sv);
+  // Compute derived fields
+  _scComputeDays(); _scComputeTotals(); _scUpdateProdTotal(); _scUpdateArrayDerived();
+  // Initial live calc
+  _scLiveCalc(projId);
+  // Attach live-calc listeners to ALL inputs
+  document.querySelectorAll('#sc-main-wrap .sc-inp, #sc-main-wrap .sc-bl, #sc-main-wrap .sc-rate, #sc-main-wrap .sc-prod').forEach(inp=>{
+    inp.addEventListener('input', ()=>_scLiveCalc(projId));
+    inp.addEventListener('change', ()=>_scLiveCalc(projId));
+  });
+  document.querySelectorAll('.sc-bl-startDate,.sc-bl-endDate').forEach(inp=>inp.addEventListener('change',()=>{_scComputeDays();_scLiveCalc(projId);}));
+  document.getElementById('sc-rateSchedule')?.addEventListener('change',()=>{_scApplyPreset();_scBuildRateCard();_scLiveCalc(projId);});
 }
 
-/* ── Update array derived rows (Array kW, Scaled kW, Scaled kWh) ── */
-function solarUpdateArrayDerived(){
-  document.querySelectorAll('.sc-arr-kw').forEach(kwInp=>{
-    const ai=kwInp.dataset.ai;
-    const arrKw=parseFloat(kwInp.value)||0;
-    const baseKw=115; // base array size for scaling
-    for(let mi=0;mi<12;mi++){
-      const cfInp=document.querySelector(`.sc-arr-capfactor[data-ai="${ai}"][data-mi="${mi}"]`);
-      const cf=cfInp?parseFloat(cfInp.value)||0:0;
-      // Array kW = arrKw × capFactor
-      const arrayKwCell=document.querySelector(`.sc-arr-arraykw[data-ai="${ai}"][data-mi="${mi}"]`);
-      if(arrayKwCell) arrayKwCell.textContent=(arrKw*cf).toFixed(1);
-      // Scaled kW = arrKw × capFactor (same as Array kW when using actual size)
-      const scaledKwCell=document.querySelector(`.sc-arr-scaledkw[data-ai="${ai}"][data-mi="${mi}"]`);
-      if(scaledKwCell) scaledKwCell.textContent=(arrKw*cf).toFixed(1);
-      // Scaled kWh = production × (arrKw / baseKw)
-      const prodInp=document.querySelector(`.sc-arr-prod[data-ai="${ai}"][data-mi="${mi}"]`);
-      const prodKwh=prodInp?parseFloat(prodInp.value)||0:0;
-      const scaledKwhCell=document.querySelector(`.sc-arr-scaledkwh[data-ai="${ai}"][data-mi="${mi}"]`);
-      if(scaledKwhCell) scaledKwhCell.textContent=Math.round(prodKwh*(arrKw/baseKw)).toLocaleString();
-    }
-    // Scaled total
-    let scaledTotal=0;
-    document.querySelectorAll(`.sc-arr-scaledkwh[data-ai="${ai}"]`).forEach(el=>{
-      scaledTotal+=parseInt(el.textContent.replace(/,/g,''))||0;
-    });
-    const totalEl=document.querySelector(`.sc-arr-scaledtotal[data-ai="${ai}"]`);
-    if(totalEl) totalEl.textContent=scaledTotal.toLocaleString();
+/* ── Rate Card: exact Excel layout in monospaced pre-formatted text with inline inputs ── */
+function _scBuildRateCard(sv){
+  const body=document.getElementById('sc-ratecard-body'); if(!body) return;
+  const pf=(id,def)=>{const el=document.getElementById(id);return el?(parseFloat(el.value)||def):def;};
+  const sched=document.getElementById('sc-rateSchedule')?.value||'2LGSF';
+  const isW=sched.endsWith('W');
+  // Use a real table that mimics the exact Excel compact card layout
+  const ri='class="fi sc-rate sc-inp" style="width:82px;font-family:var(--mono);font-size:12px;padding:2px 6px;text-align:right;background:var(--s3);border:1px solid var(--border);border-radius:4px" type="number" step="any"';
+  body.innerHTML=`<table style="border-collapse:collapse;font-family:var(--mono);font-size:12px;line-height:1;width:100%;max-width:680px">
+<tr><td colspan="4" style="padding:6px 0;font-weight:700;color:var(--text2);font-size:11px;letter-spacing:1px">CUSTOMER CHARGE:</td></tr>
+<tr><td colspan="2" style="padding:2px 0"><span style="color:var(--text3);margin-right:10px">$</span><input ${ri} id="sc-custCharge" value="${pf('sc-custCharge',48.90)}"></td><td colspan="2" style="color:var(--text3);font-size:11px;padding:2px 8px">$/mo</td></tr>
+<tr><td colspan="4" style="padding:10px 0 2px 0"><span style="color:var(--text2);font-size:11px;margin-right:12px">Franchise Fee</span><input ${ri} id="sc-franchiseFeeDecimal" value="${pf('sc-franchiseFeeDecimal',0)}" style="width:72px;font-family:var(--mono);font-size:11px;padding:2px 4px;text-align:right;background:var(--s3);border:1px solid var(--border);border-radius:4px"><span style="margin:0 8px;color:var(--text3)"></span><input ${ri} id="sc-franchisePct" value="${pf('sc-franchisePct',5.263)}" style="width:72px;font-family:var(--mono);font-size:11px;padding:2px 4px;text-align:right;background:var(--s3);border:1px solid var(--border);border-radius:4px"><span style="color:var(--text3);font-size:10px;margin-left:8px">(0 = tax exempt)</span></td></tr>
+<tr><td colspan="4" style="padding:10px 0 0 0;font-weight:700;color:var(--text2);font-size:11px;letter-spacing:1px">FACILITIES CHARGE:</td></tr>
+<tr><td colspan="2" style="padding:2px 0"><span style="color:var(--text3);margin-right:10px">$</span><input ${ri} id="sc-facRate" value="${pf('sc-facRate',2.854)}"></td><td colspan="2" style="color:var(--text3);font-size:11px;padding:2px 8px">$/kW</td></tr>
+<tr><td colspan="4" style="padding:14px 0 4px 0;border-top:1px solid var(--border)"></td></tr>
+<tr style="color:var(--text2);font-size:10px;font-weight:700;letter-spacing:1px"><td style="width:200px">DEMAND CHARGE:</td><td style="text-align:center;width:140px;color:var(--amber)">SUMMER</td><td style="text-align:center;width:140px;color:var(--accent)">WINTER</td><td></td></tr>
+<tr><td style="padding:6px 0">NET METERING:</td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-nmDemandSum" value="${pf('sc-nmDemandSum',9.831)}"> <span style="color:var(--text3);font-size:10px">$/kW</span></td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-nmDemandWin" value="${pf('sc-nmDemandWin',1.327)}"> <span style="color:var(--text3);font-size:10px">$/kW</span></td><td></td></tr>
+<tr><td style="padding:6px 0">(standard):</td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-demandSum" value="${pf('sc-demandSum',3.995)}"> <span style="color:var(--text3);font-size:10px">$/kW</span></td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-demandWin" value="${pf('sc-demandWin',2.776)}"> <span style="color:var(--text3);font-size:10px">$/kW</span></td><td></td></tr>
+<tr><td colspan="4" style="padding:14px 0 4px 0;border-top:1px solid var(--border)"></td></tr>
+<tr style="color:var(--text2);font-size:10px;font-weight:700;letter-spacing:1px"><td>ENERGY CHARGE:</td><td style="text-align:center;color:var(--amber)">SUMMER</td><td style="text-align:center;color:var(--accent)">WINTER</td><td></td></tr>
+<tr><td style="padding:6px 0">On-Peak kWh</td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-onPeakSum" value="${pf('sc-onPeakSum',0.10304)}"> <span style="color:var(--text3);font-size:10px">$/kWh</span></td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-onPeakWin" value="${pf('sc-onPeakWin',0.03723)}"> <span style="color:var(--text3);font-size:10px">$/kWh</span></td><td style="font-size:10px;color:var(--text3);padding-left:10px">Summer Change: <span id="sc-sumChangeDisp">${document.getElementById('sc-summerChange')?.value||'5/31'}</span></td></tr>
+<tr><td style="padding:6px 0">Off-Peak kWh</td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-offPeakSum" value="${pf('sc-offPeakSum',0.05734)}"> <span style="color:var(--text3);font-size:10px">$/kWh</span></td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-offPeakWin" value="${pf('sc-offPeakWin',0.03266)}"> <span style="color:var(--text3);font-size:10px">$/kWh</span></td><td style="font-size:10px;color:var(--text3);padding-left:10px">Winter Change: <span id="sc-winChangeDisp">${document.getElementById('sc-winterChange')?.value||'9/30'}</span></td></tr>
+<tr><td colspan="4" style="padding:14px 0 4px 0;border-top:1px solid var(--border)"></td></tr>
+<tr style="color:var(--text2);font-size:10px;font-weight:700;letter-spacing:1px"><td>SOLAR RATE CHARGE:</td><td style="text-align:center;color:var(--amber)">SUMMER</td><td style="text-align:center;color:var(--accent)">WINTER</td><td></td></tr>
+<tr><td style="padding:6px 0">First 180 Hours</td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-tier1Sum" value="${pf('sc-tier1Sum',0.08551)}"> <span style="color:var(--text3);font-size:10px">$/kWh</span></td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-tier1Win" value="${pf('sc-tier1Win',0.04515)}"> <span style="color:var(--text3);font-size:10px">$/kWh</span></td><td></td></tr>
+<tr><td style="padding:6px 0">Next 180 Hours</td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-tier2Sum" value="${pf('sc-tier2Sum',0.05362)}"> <span style="color:var(--text3);font-size:10px">$/kWh</span></td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-tier2Win" value="${pf('sc-tier2Win',0.02734)}"> <span style="color:var(--text3);font-size:10px">$/kWh</span></td><td></td></tr>
+<tr><td style="padding:6px 0">Over 360 Hours</td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-tier3Sum" value="${pf('sc-tier3Sum',0.05425)}"> <span style="color:var(--text3);font-size:10px">$/kWh</span></td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-tier3Win" value="${pf('sc-tier3Win',0.02377)}"> <span style="color:var(--text3);font-size:10px">$/kWh</span></td><td></td></tr>
+<tr><td style="padding:6px 0">Solar Over Production</td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-overProdSum" value="${pf('sc-overProdSum',0.03)}"> <span style="color:var(--text3);font-size:10px">$/kWh</span></td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-overProdWin" value="${pf('sc-overProdWin',0.03)}"> <span style="color:var(--text3);font-size:10px">$/kWh</span></td><td></td></tr>
+<tr><td colspan="4" style="padding:14px 0 4px 0;border-top:1px solid var(--border)"></td></tr>
+<tr style="color:var(--text2);font-size:10px;font-weight:700;letter-spacing:1px"><td>RIDERS:</td><td style="text-align:center">RATE</td><td></td><td></td></tr>
+<tr><td style="padding:6px 0">ECA Rate</td><td style="text-align:center;padding:4px"><input ${ri} id="sc-ecaRate" value="${pf('sc-ecaRate',0.03066)}"> <span style="color:var(--text3);font-size:10px">$/kWh</span></td><td></td><td></td></tr>
+<tr><td style="padding:6px 0">EER Rate</td><td style="text-align:center;padding:4px"><input ${ri} id="sc-eerRate" value="${pf('sc-eerRate',0)}"> <span style="color:var(--text3);font-size:10px">$/kWh</span></td><td></td><td></td></tr>
+<tr><td style="padding:6px 0">PTS Rate</td><td style="text-align:center;padding:4px"><input ${ri} id="sc-ptsRate" value="${pf('sc-ptsRate',0)}"> <span style="color:var(--text3);font-size:10px">$/kWh</span></td><td></td><td></td></tr>
+<tr><td style="padding:6px 0">TDC Charge</td><td style="text-align:center;padding:4px"><input ${ri} id="sc-tdcRate" value="${pf('sc-tdcRate',0)}"> <span style="color:var(--text3);font-size:10px">$/kW</span></td><td></td><td></td></tr>
+<tr id="sc-renewRow1" style="${isW?'':'display:none'}"><td colspan="4" style="padding:12px 0 4px 0;border-top:1px solid var(--border)"></td></tr>
+<tr id="sc-renewRow2" style="${isW?'':'display:none'}"><td style="padding:6px 0">Renewable Participation Charge:</td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-renewPart" value="${pf('sc-renewPart',377.40)}"> <span style="color:var(--text3);font-size:10px">$/mo</span></td><td></td><td></td></tr>
+<tr id="sc-renewRow3" style="${isW?'':'display:none'}"><td style="padding:6px 0">New Renewable Participation Charge:</td><td style="text-align:center;padding:4px"><span style="color:var(--text3)">$</span><input ${ri} id="sc-newRenewPart" value="${pf('sc-newRenewPart',377.40)}"> <span style="color:var(--text3);font-size:10px">$/mo</span></td><td></td><td></td></tr>
+</table>`;
+  // Re-attach listeners for rate card inputs
+  body.querySelectorAll('.sc-rate').forEach(inp=>{
+    inp.addEventListener('input',()=>{const pid=_calcTemplateContext?.projId;if(pid)_scLiveCalc(pid);});
   });
 }
 
-/* ── Solar array helpers ── */
-function solarAddArray(projId){
-  const p=projects.find(x=>x.id===projId);if(!p) return;
-  p.solarArrays=p.solarArrays||[];
-  const defaults=[8995,9972,12436,13663,17115,17595,17494,16258,14113,12341,9096,7063];
-  const defaultCapFactor=[0.15,0.17,0.22,0.27,0.35,0.40,0.45,0.42,0.33,0.25,0.18,0.20];
-  p.solarArrays.push({id:'sa'+Date.now(),name:'Array '+(p.solarArrays.length+1),kw:115,production:[...defaults],capFactor:[...defaultCapFactor],source:'helioscope'});
-  sset('en_projects',projects);
-  openSolarCalc(projId);
-  showToast('Array added ✓');
-}
-function solarRemoveArray(projId,ai){
-  const p=projects.find(x=>x.id===projId);if(!p||!p.solarArrays) return;
-  p.solarArrays.splice(ai,1);
-  sset('en_projects',projects);
-  openSolarCalc(projId);
-  showToast('Array removed');
-}
-function solarUpdateArrayTotals(){
-  document.querySelectorAll('.sc-arr-total').forEach(el=>{
-    const ai=el.dataset.ai;
-    let total=0;
-    document.querySelectorAll(`.sc-arr-prod[data-ai="${ai}"]`).forEach(inp=>{total+=parseFloat(inp.value)||0;});
-    el.textContent=Math.round(total).toLocaleString();
-  });
-}
-function _solarReadArraysFromDOM(p){
-  const arrays=p?.solarArrays||[];
-  arrays.forEach((arr,ai)=>{
-    const nameEl=document.querySelector(`.sc-arr-name[data-ai="${ai}"]`);
-    if(nameEl) arr.name=nameEl.value;
-    const kwEl=document.querySelector(`.sc-arr-kw[data-ai="${ai}"]`);
-    if(kwEl) arr.kw=parseFloat(kwEl.value)||0;
-    const srcEl=document.querySelector(`.sc-arr-src[data-ai="${ai}"]`);
-    if(srcEl) arr.source=srcEl.value;
-    arr.production=arr.production||new Array(12).fill(0);
-    arr.capFactor=arr.capFactor||new Array(12).fill(0);
-    for(let mi=0;mi<12;mi++){
-      const inp=document.querySelector(`.sc-arr-prod[data-ai="${ai}"][data-mi="${mi}"]`);
-      if(inp) arr.production[mi]=parseFloat(inp.value)||0;
-      const cfInp=document.querySelector(`.sc-arr-capfactor[data-ai="${ai}"][data-mi="${mi}"]`);
-      if(cfInp) arr.capFactor[mi]=parseFloat(cfInp.value)||0;
-    }
-  });
-  return arrays;
-}
-
-/* ── Baseline bill extraction from project utility data ── */
-function _solarGetBaselineBills(p){
-  const result={kwh:new Array(12).fill(0),billedKw:new Array(12).fill(0),facKw:new Array(12).fill(0),
-    onPeakKwh:new Array(12).fill(0),offPeakKwh:new Array(12).fill(0),totalCost:new Array(12).fill(0),
-    startDate:new Array(12).fill(''),endDate:new Array(12).fill(''),
-    customerCharge:new Array(12).fill(0),demandCharge:new Array(12).fill(0),facilitiesCharge:new Array(12).fill(0),
-    ecaCharge:new Array(12).fill(0),eerCharge:new Array(12).fill(0),ptsCharge:new Array(12).fill(0),
-    tdcCharge:new Array(12).fill(0),renewableCharge:new Array(12).fill(0),franchiseFee:new Array(12).fill(0),
-    onPeakCost:new Array(12).fill(0),offPeakCost:new Array(12).fill(0)};
-  const moNames=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-  const bldgs=p?.buildings||[];
-  bldgs.forEach(b=>{
-    (b.meters||[]).forEach(m=>{
-      if(m.type!=='electric'&&m.commodity!=='Electric') return;
-      const blIdx=m.baseline?.startIdx;
-      const blMonths=m.baseline?.months;
-      const bills=m.bills||[];
-      const useBills=blIdx!=null&&blMonths?bills.slice(blIdx,blIdx+blMonths):bills;
-      useBills.forEach(bill=>{
-        let mi=-1;
-        if(bill.month) mi=moNames.indexOf(bill.month.toLowerCase().slice(0,3));
-        else if(bill.normMonth) mi=moNames.indexOf(bill.normMonth.toLowerCase().slice(0,3));
-        else if(bill.end){const d=new Date(bill.end);if(!isNaN(d))mi=d.getMonth();}
-        if(mi<0) return;
-        const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
-        result.kwh[mi]+=pf(bill.kwh)||pf(bill.usage);
-        result.billedKw[mi]=Math.max(result.billedKw[mi],pf(bill.billedKW)||pf(bill.demandKW));
-        result.facKw[mi]=Math.max(result.facKw[mi],pf(bill.facKW));
-        result.onPeakKwh[mi]+=pf(bill.onPeakKwh);
-        result.offPeakKwh[mi]+=pf(bill.offPeakKwh);
-        result.totalCost[mi]+=pf(bill.totalCost);
-        if(bill.start) result.startDate[mi]=bill.start;
-        if(bill.end) result.endDate[mi]=bill.end;
-        result.customerCharge[mi]+=pf(bill.customerCharge);
-        result.demandCharge[mi]+=pf(bill.demandCharge);
-        result.facilitiesCharge[mi]+=pf(bill.facilitiesCharge);
-        result.ecaCharge[mi]+=pf(bill.ecaCharge);
-        result.eerCharge[mi]+=pf(bill.eerCharge);
-        result.ptsCharge[mi]+=pf(bill.ptsCharge);
-        result.tdcCharge[mi]+=pf(bill.tdcCharge);
-        result.renewableCharge[mi]+=pf(bill.renewableCharge);
-        result.franchiseFee[mi]+=pf(bill.franchiseFee);
-        result.onPeakCost[mi]+=pf(bill.onPeakCost);
-        result.offPeakCost[mi]+=pf(bill.offPeakCost);
-      });
-    });
-  });
-  return result;
-}
-
-function solarSaveInputs(projId){
-  const p = projects.find(x=>x.id===projId); if(!p) return;
-  _solarReadArraysFromDOM(p);
-  const production = [];
-  for(let i=0;i<12;i++) production.push(parseFloat(document.getElementById(`sc-prod-${i}`)?.value)||0);
-  // Baseline overrides from DOM — now includes all Section A fields
-  const blOverrides={};
-  ['kwh','kw','fackw','offpk','billAmt','startDate','endDate',
-   'ecaStart','ecaEnd','eerStart','eerEnd','ptsStart','ptsEnd','tdcStart','tdcEnd'].forEach(key=>{
-    blOverrides[key]=[];
-    document.querySelectorAll(`.sc-bl-${key}`).forEach(inp=>{
-      const mi=parseInt(inp.dataset.mi);
-      blOverrides[key][mi]=key.includes('Date')?inp.value:(parseFloat(inp.value)||0);
-    });
-  });
-  p.solarCalc = {
-    ...(p.solarCalc||{}),
-    arrayKw: parseFloat(document.getElementById('sc-arrayKw')?.value)||0,
-    costPerWatt: parseFloat(document.getElementById('sc-costPerWatt')?.value)||0,
-    taxCredit: parseFloat(document.getElementById('sc-taxCredit')?.value)||0,
-    netMeterMax: parseFloat(document.getElementById('sc-netMeterMax')?.value)||0,
-    billingKw: parseFloat(document.getElementById('sc-billingKw')?.value)||0,
-    savingsPct: parseFloat(document.getElementById('sc-savingsPct')?.value)||0,
-    summerChange: document.getElementById('sc-summerChange')?.value||'5/31',
-    winterChange: document.getElementById('sc-winterChange')?.value||'9/30',
-    ecaThreshold: parseFloat(document.getElementById('sc-ecaThreshold')?.value)||18813.204,
-    rateScheduleName: document.getElementById('sc-rateSchedule')?.value||'2LGSF',
-    production,
-    blOverrides,
-    franchisePct: parseFloat(document.getElementById('sc-franchisePct')?.value)||0,
-    franchiseFeeDecimal: parseFloat(document.getElementById('sc-franchiseFeeDecimal')?.value)||0,
-    custCharge: parseFloat(document.getElementById('sc-custCharge')?.value)||0,
-    facRate: parseFloat(document.getElementById('sc-facRate')?.value)||0,
-    demandSum: parseFloat(document.getElementById('sc-demandSum')?.value)||0,
-    demandWin: parseFloat(document.getElementById('sc-demandWin')?.value)||0,
-    nmDemandSum: parseFloat(document.getElementById('sc-nmDemandSum')?.value)||0,
-    nmDemandWin: parseFloat(document.getElementById('sc-nmDemandWin')?.value)||0,
-    onPeakSum: parseFloat(document.getElementById('sc-onPeakSum')?.value)||0,
-    onPeakWin: parseFloat(document.getElementById('sc-onPeakWin')?.value)||0,
-    offPeakSum: parseFloat(document.getElementById('sc-offPeakSum')?.value)||0,
-    offPeakWin: parseFloat(document.getElementById('sc-offPeakWin')?.value)||0,
-    tier1Sum: parseFloat(document.getElementById('sc-tier1Sum')?.value)||0,
-    tier1Win: parseFloat(document.getElementById('sc-tier1Win')?.value)||0,
-    tier2Sum: parseFloat(document.getElementById('sc-tier2Sum')?.value)||0,
-    tier2Win: parseFloat(document.getElementById('sc-tier2Win')?.value)||0,
-    tier3Sum: parseFloat(document.getElementById('sc-tier3Sum')?.value)||0,
-    tier3Win: parseFloat(document.getElementById('sc-tier3Win')?.value)||0,
-    overProdSum: parseFloat(document.getElementById('sc-overProdSum')?.value)||0,
-    overProdWin: parseFloat(document.getElementById('sc-overProdWin')?.value)||0,
-    renewPart: parseFloat(document.getElementById('sc-renewPart')?.value)||0,
-    newRenewPart: parseFloat(document.getElementById('sc-newRenewPart')?.value)||0,
-    ecaRate: parseFloat(document.getElementById('sc-ecaRate')?.value)||0,
-    eerRate: parseFloat(document.getElementById('sc-eerRate')?.value)||0,
-    ptsRate: parseFloat(document.getElementById('sc-ptsRate')?.value)||0,
-    tdcRate: parseFloat(document.getElementById('sc-tdcRate')?.value)||0,
-  };
-  sset('en_projects', projects);
-  showToast('Solar inputs saved ✓');
-}
-
-function solarUpdateTotal(){
-  let total=0;
-  for(let i=0;i<12;i++) total+=parseFloat(document.getElementById(`sc-prod-${i}`)?.value)||0;
-  const el=document.getElementById('sc-prod-total');
-  if(el) el.textContent=Math.round(total).toLocaleString();
-}
-
-function solarRatePreset(){
-  const sched = document.getElementById('sc-rateSchedule')?.value;
-  const presets = {
+/* ── Preset applicator ── */
+function _scApplyPreset(){
+  const sched=document.getElementById('sc-rateSchedule')?.value;
+  const P={
     '2LGSF':{custCharge:48.90,facRate:2.854,demandSum:3.995,demandWin:2.776,nmDemandSum:9.831,nmDemandWin:1.327,onPeakSum:0.10304,onPeakWin:0.03723,offPeakSum:0.05734,offPeakWin:0.03266,tier1Sum:0.08551,tier1Win:0.04515,tier2Sum:0.05362,tier2Win:0.02734,tier3Sum:0.05425,tier3Win:0.02377,overProdSum:0.03,overProdWin:0.03,renewPart:0,newRenewPart:0,ecaRate:0.03066,eerRate:0,ptsRate:0,tdcRate:0,franchisePct:5.263,franchiseFeeDecimal:0.05263},
     '2MGAEW':{custCharge:48.90,facRate:2.854,demandSum:3.995,demandWin:2.776,nmDemandSum:9.831,nmDemandWin:1.327,onPeakSum:0.06596,onPeakWin:0.06612,offPeakSum:0.04714,offPeakWin:0.04017,tier1Sum:0.08339,tier1Win:0.03723,tier2Sum:0.05362,tier2Win:0.02734,tier3Sum:0.05425,tier3Win:0.02377,overProdSum:0.03,overProdWin:0.03,renewPart:377.40,newRenewPart:377.40,ecaRate:0,eerRate:0,ptsRate:0,tdcRate:0,franchisePct:5.263,franchiseFeeDecimal:0.05263},
     '2LGSEW':{custCharge:105.97,facRate:3.069,demandSum:6.62,demandWin:3.361,nmDemandSum:9.831,nmDemandWin:1.327,onPeakSum:0.06596,onPeakWin:0.06612,offPeakSum:0.04714,offPeakWin:0.04017,tier1Sum:0.06596,tier1Win:0.06612,tier2Sum:0.04714,tier2Win:0.04017,tier3Sum:0.02696,tier3Win:0.03001,overProdSum:0.03,overProdWin:0.03,renewPart:1528.84,newRenewPart:1528.84,ecaRate:0,eerRate:0,ptsRate:0,tdcRate:0,franchisePct:5.263,franchiseFeeDecimal:0.05263},
     '2SGSE':{custCharge:17.70,facRate:2.726,demandSum:0,demandWin:0,nmDemandSum:0,nmDemandWin:0,onPeakSum:0.13675,onPeakWin:0.10884,offPeakSum:0.06005,offPeakWin:0.05131,tier1Sum:0.13675,tier1Win:0.10884,tier2Sum:0.06005,tier2Win:0.05131,tier3Sum:0.05366,tier3Win:0.04046,overProdSum:0.03,overProdWin:0.03,renewPart:0,newRenewPart:0,ecaRate:0,eerRate:0,ptsRate:0,tdcRate:0,franchisePct:5.263,franchiseFeeDecimal:0.05263},
   };
-  if(!presets[sched]) return;
-  const pr = presets[sched];
-  Object.entries(pr).forEach(([k,v])=>{const el=document.getElementById('sc-'+k);if(el)el.value=v;});
-  // Show/hide renewable lines based on wind rate
-  const renewDiv=document.getElementById('sc-renewableLines');
-  if(renewDiv) renewDiv.style.display=sched.endsWith('W')?'':'none';
+  if(!P[sched]) return;
+  Object.entries(P[sched]).forEach(([k,v])=>{const el=document.getElementById('sc-'+k);if(el)el.value=v;});
 }
+
+/* ── Helpers ── */
+function _scComputeDays(){for(let i=0;i<12;i++){const s=document.querySelector(`.sc-bl-startDate[data-mi="${i}"]`)?.value,e=document.querySelector(`.sc-bl-endDate[data-mi="${i}"]`)?.value,c=document.querySelector(`.sc-bl-days[data-mi="${i}"]`);if(s&&e&&c){const d=Math.round((new Date(e)-new Date(s))/864e5);c.textContent=d>0?d:'—';}else if(c)c.textContent='—';}}
+function _scComputeTotals(){['billAmt','kwh','kw','fackw','offpk'].forEach(f=>{let s=0;document.querySelectorAll(`.sc-bl-${f}`).forEach(inp=>{s+=parseFloat(inp.value)||0;});const el=document.getElementById(`sc-bl-tot-${f}`);if(el)el.textContent=f==='billAmt'?'$'+s.toFixed(2):Math.round(s).toLocaleString();});}
+function _scUpdateProdTotal(){let t=0;for(let i=0;i<12;i++)t+=parseFloat(document.getElementById(`sc-prod-${i}`)?.value)||0;const el=document.getElementById('sc-prod-total');if(el)el.textContent=Math.round(t).toLocaleString();}
+function _scUpdateArrayDerived(){document.querySelectorAll('.sc-arr-kw').forEach(kwI=>{const ai=kwI.dataset.ai,kw=parseFloat(kwI.value)||0;let sT=0;for(let mi=0;mi<12;mi++){const cf=parseFloat(document.querySelector(`.sc-arr-capfactor[data-ai="${ai}"][data-mi="${mi}"]`)?.value)||0;const akC=document.querySelector(`.sc-arr-arraykw[data-ai="${ai}"][data-mi="${mi}"]`);if(akC)akC.textContent=(kw*cf).toFixed(1);const skC=document.querySelector(`.sc-arr-scaledkw[data-ai="${ai}"][data-mi="${mi}"]`);if(skC)skC.textContent=(kw*cf).toFixed(1);const prod=parseFloat(document.querySelector(`.sc-arr-prod[data-ai="${ai}"][data-mi="${mi}"]`)?.value)||0;const scaled=Math.round(prod*(kw/115));const skwhC=document.querySelector(`.sc-arr-scaledkwh[data-ai="${ai}"][data-mi="${mi}"]`);if(skwhC)skwhC.textContent=scaled.toLocaleString();sT+=scaled;}const stC=document.querySelector(`.sc-arr-scaledtotal[data-ai="${ai}"]`);if(stC)stC.textContent=sT.toLocaleString();let pT=0;document.querySelectorAll(`.sc-arr-prod[data-ai="${ai}"]`).forEach(inp=>{pT+=parseFloat(inp.value)||0;});const tC=document.querySelector(`.sc-arr-total[data-ai="${ai}"]`);if(tC)tC.textContent=Math.round(pT).toLocaleString();});}
+
+function solarAddArray(projId){const p=projects.find(x=>x.id===projId);if(!p)return;p.solarArrays=p.solarArrays||[];const D=[8995,9972,12436,13663,17115,17595,17494,16258,14113,12341,9096,7063];const CF=[0.15,0.17,0.22,0.27,0.35,0.40,0.45,0.42,0.33,0.25,0.18,0.20];p.solarArrays.push({id:'sa'+Date.now(),name:'Array '+(p.solarArrays.length+1),kw:115,production:[...D],capFactor:[...CF],source:'helioscope'});sset('en_projects',projects);openSolarCalc(projId);showToast('Array added ✓');}
+function solarRemoveArray(projId,ai){const p=projects.find(x=>x.id===projId);if(!p||!p.solarArrays)return;p.solarArrays.splice(ai,1);sset('en_projects',projects);openSolarCalc(projId);showToast('Array removed');}
+function _solarReadArraysFromDOM(p){const arrays=p?.solarArrays||[];arrays.forEach((arr,ai)=>{const nE=document.querySelector(`.sc-arr-name[data-ai="${ai}"]`);if(nE)arr.name=nE.value;const kE=document.querySelector(`.sc-arr-kw[data-ai="${ai}"]`);if(kE)arr.kw=parseFloat(kE.value)||0;const sE=document.querySelector(`.sc-arr-src[data-ai="${ai}"]`);if(sE)arr.source=sE.value;arr.production=arr.production||Array(12).fill(0);arr.capFactor=arr.capFactor||Array(12).fill(0);for(let mi=0;mi<12;mi++){const pI=document.querySelector(`.sc-arr-prod[data-ai="${ai}"][data-mi="${mi}"]`);if(pI)arr.production[mi]=parseFloat(pI.value)||0;const cI=document.querySelector(`.sc-arr-capfactor[data-ai="${ai}"][data-mi="${mi}"]`);if(cI)arr.capFactor[mi]=parseFloat(cI.value)||0;}});return arrays;}
+function _solarGetBaselineBills(p){const R={kwh:Array(12).fill(0),billedKw:Array(12).fill(0),facKw:Array(12).fill(0),onPeakKwh:Array(12).fill(0),offPeakKwh:Array(12).fill(0),totalCost:Array(12).fill(0),startDate:Array(12).fill(''),endDate:Array(12).fill(''),customerCharge:Array(12).fill(0),demandCharge:Array(12).fill(0),facilitiesCharge:Array(12).fill(0),ecaCharge:Array(12).fill(0),eerCharge:Array(12).fill(0),ptsCharge:Array(12).fill(0),tdcCharge:Array(12).fill(0),renewableCharge:Array(12).fill(0),franchiseFee:Array(12).fill(0),onPeakCost:Array(12).fill(0),offPeakCost:Array(12).fill(0)};const mn=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];(p?.buildings||[]).forEach(b=>{(b.meters||[]).forEach(m=>{if(m.type!=='electric'&&m.commodity!=='Electric')return;const bi=m.baseline?.startIdx,bm=m.baseline?.months,bills=m.bills||[],use=bi!=null&&bm?bills.slice(bi,bi+bm):bills;use.forEach(bill=>{let mi=-1;if(bill.month)mi=mn.indexOf(bill.month.toLowerCase().slice(0,3));else if(bill.normMonth)mi=mn.indexOf(bill.normMonth.toLowerCase().slice(0,3));else if(bill.end){const d=new Date(bill.end);if(!isNaN(d))mi=d.getMonth();}if(mi<0)return;const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;R.kwh[mi]+=pf(bill.kwh)||pf(bill.usage);R.billedKw[mi]=Math.max(R.billedKw[mi],pf(bill.billedKW)||pf(bill.demandKW));R.facKw[mi]=Math.max(R.facKw[mi],pf(bill.facKW));R.onPeakKwh[mi]+=pf(bill.onPeakKwh);R.offPeakKwh[mi]+=pf(bill.offPeakKwh);R.totalCost[mi]+=pf(bill.totalCost);if(bill.start)R.startDate[mi]=bill.start;if(bill.end)R.endDate[mi]=bill.end;R.ecaCharge[mi]+=pf(bill.ecaCharge);R.eerCharge[mi]+=pf(bill.eerCharge);R.ptsCharge[mi]+=pf(bill.ptsCharge);R.tdcCharge[mi]+=pf(bill.tdcCharge);R.franchiseFee[mi]+=pf(bill.franchiseFee);R.onPeakCost[mi]+=pf(bill.onPeakCost);R.offPeakCost[mi]+=pf(bill.offPeakCost);});});});return R;}
+
+function solarSaveInputs(projId){const p=projects.find(x=>x.id===projId);if(!p)return;_solarReadArraysFromDOM(p);const prod=[];for(let i=0;i<12;i++)prod.push(parseFloat(document.getElementById(`sc-prod-${i}`)?.value)||0);const bl={};['kwh','kw','fackw','offpk','billAmt','startDate','endDate','ecaStart','ecaEnd','eerStart','eerEnd','ptsStart','ptsEnd','tdcStart','tdcEnd'].forEach(key=>{bl[key]=[];document.querySelectorAll(`.sc-bl-${key}`).forEach(inp=>{const mi=parseInt(inp.dataset.mi);bl[key][mi]=key.includes('Date')?inp.value:(parseFloat(inp.value)||0);});});const gv=id=>{const el=document.getElementById(id);return el?parseFloat(el.value)||0:0;};p.solarCalc={...(p.solarCalc||{}),arrayKw:gv('sc-arrayKw'),costPerWatt:gv('sc-costPerWatt'),taxCredit:gv('sc-taxCredit'),netMeterMax:gv('sc-netMeterMax'),billingKw:gv('sc-billingKw'),savingsPct:gv('sc-savingsPct'),summerChange:document.getElementById('sc-summerChange')?.value||'5/31',winterChange:document.getElementById('sc-winterChange')?.value||'9/30',ecaThreshold:gv('sc-ecaThreshold')||18813.204,rateScheduleName:document.getElementById('sc-rateSchedule')?.value||'2LGSF',production:prod,blOverrides:bl,franchisePct:gv('sc-franchisePct'),franchiseFeeDecimal:gv('sc-franchiseFeeDecimal'),custCharge:gv('sc-custCharge'),facRate:gv('sc-facRate'),demandSum:gv('sc-demandSum'),demandWin:gv('sc-demandWin'),nmDemandSum:gv('sc-nmDemandSum'),nmDemandWin:gv('sc-nmDemandWin'),onPeakSum:gv('sc-onPeakSum'),onPeakWin:gv('sc-onPeakWin'),offPeakSum:gv('sc-offPeakSum'),offPeakWin:gv('sc-offPeakWin'),tier1Sum:gv('sc-tier1Sum'),tier1Win:gv('sc-tier1Win'),tier2Sum:gv('sc-tier2Sum'),tier2Win:gv('sc-tier2Win'),tier3Sum:gv('sc-tier3Sum'),tier3Win:gv('sc-tier3Win'),overProdSum:gv('sc-overProdSum'),overProdWin:gv('sc-overProdWin'),renewPart:gv('sc-renewPart'),newRenewPart:gv('sc-newRenewPart'),ecaRate:gv('sc-ecaRate'),eerRate:gv('sc-eerRate'),ptsRate:gv('sc-ptsRate'),tdcRate:gv('sc-tdcRate')};sset('en_projects',projects);showToast('Solar calc saved ✓');}
 
 /* ══════════════════════════════════════════════════════
-   SOLAR CALC RUN — Full Bill Recalculation Engine
-   Sections D, E, F, G, H — PDR-Compliant
+   LIVE CALC ENGINE — runs on every input change
+   Computes D, E, F, G, H and renders all tables + summary
 ══════════════════════════════════════════════════════ */
-function solarCalcRun(projId){
-  const p = projects.find(x=>x.id===projId);
+let _scCalcTimer=null;
+function _scLiveCalc(projId){
+  // Debounce: wait 120ms after last input
+  clearTimeout(_scCalcTimer);
+  _scCalcTimer=setTimeout(()=>_scDoCalc(projId),120);
+}
+
+function _scDoCalc(projId){
+  _scComputeTotals(); _scUpdateProdTotal(); _scUpdateArrayDerived(); _scComputeDays();
+  const p=projects.find(x=>x.id===projId);
   const gv=id=>{const el=document.getElementById(id);return el?parseFloat(el.value)||0:0;};
-  const arrayKw=gv('sc-arrayKw'), costPerWatt=gv('sc-costPerWatt'), taxCredit=gv('sc-taxCredit');
-  const franchisePctRaw=gv('sc-franchisePct');
-  const franchiseFeeDecimal=gv('sc-franchiseFeeDecimal');
-  // Use the decimal if non-zero; else derive from percentage
-  const ffDecimal=franchiseFeeDecimal>0?franchiseFeeDecimal:(franchisePctRaw/100);
-  const savingsPct=gv('sc-savingsPct')/100;
-  const ecaThreshold=gv('sc-ecaThreshold')||18813.204;
-
-  // Parse summer/winter change dates
-  const summerChangeStr=document.getElementById('sc-summerChange')?.value||'5/31';
-  const winterChangeStr=document.getElementById('sc-winterChange')?.value||'9/30';
-  const parseDateStr=(s,yr)=>{const [mo,dy]=s.split('/').map(Number);return new Date(yr,mo-1,dy);};
-
-  // Rate schedule
-  const rateSchedule=document.getElementById('sc-rateSchedule')?.value||'2LGSF';
-  const isWindRate=rateSchedule.endsWith('W');
-
-  // Aggregate solar production
+  const MO=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const arrayKw=gv('sc-arrayKw'),costPerWatt=gv('sc-costPerWatt'),taxCredit=gv('sc-taxCredit');
+  const ffDec=gv('sc-franchiseFeeDecimal')||(gv('sc-franchisePct')/100);
+  const savPct=gv('sc-savingsPct')/100;
+  const ecaThresh=gv('sc-ecaThreshold')||18813.204;
+  const sumChg=document.getElementById('sc-summerChange')?.value||'5/31';
+  const winChg=document.getElementById('sc-winterChange')?.value||'9/30';
+  const parseDS=(s,yr)=>{const p=s.split('/').map(Number);return new Date(yr,p[0]-1,p[1]);};
+  const sched=document.getElementById('sc-rateSchedule')?.value||'2LGSF';
+  const isW=sched.endsWith('W');
+  // Rates
+  const R={cust:gv('sc-custCharge'),fac:gv('sc-facRate'),dS:gv('sc-demandSum'),dW:gv('sc-demandWin'),nmS:gv('sc-nmDemandSum'),nmW:gv('sc-nmDemandWin'),opS:gv('sc-onPeakSum'),opW:gv('sc-onPeakWin'),ofS:gv('sc-offPeakSum'),ofW:gv('sc-offPeakWin'),t1S:gv('sc-tier1Sum'),t1W:gv('sc-tier1Win'),t2S:gv('sc-tier2Sum'),t2W:gv('sc-tier2Win'),t3S:gv('sc-tier3Sum'),t3W:gv('sc-tier3Win'),opS2:gv('sc-overProdSum'),opW2:gv('sc-overProdWin'),rp:isW?gv('sc-renewPart'):0,eca:gv('sc-ecaRate'),eer:gv('sc-eerRate'),pts:gv('sc-ptsRate'),tdc:gv('sc-tdcRate')};
+  // Production
   const arrays=_solarReadArraysFromDOM(p);
-  let production=new Array(12).fill(0);
-  if(arrays.length>0){
-    arrays.forEach(arr=>{(arr.production||[]).forEach((v,i)=>{production[i]+=v;});});
-  } else {
-    for(let i=0;i<12;i++) production[i]=parseFloat(document.getElementById(`sc-prod-${i}`)?.value)||0;
-  }
-  // Solar kW per month (from arrays)
-  let solarKwPerMonth=new Array(12).fill(0);
-  if(arrays.length>0){
-    arrays.forEach(arr=>{
-      const kw=arr.kw||0;
-      (arr.capFactor||[]).forEach((cf,i)=>{solarKwPerMonth[i]+=kw*cf;});
-    });
-  }
-  const totalProd=production.reduce((a,b)=>a+b,0);
+  let prod=Array(12).fill(0),solKw=Array(12).fill(0);
+  if(arrays.length>0){arrays.forEach(a=>{(a.production||[]).forEach((v,i)=>{prod[i]+=v;});const kw=a.kw||0;(a.capFactor||[]).forEach((cf,i)=>{solKw[i]+=kw*cf;});});}
+  else{for(let i=0;i<12;i++)prod[i]=parseFloat(document.getElementById(`sc-prod-${i}`)?.value)||0;}
+  const totProd=prod.reduce((a,b)=>a+b,0);
+  // Baseline
+  const bKwh=[],bKw=[],bFKw=[],bOff=[],bSD=[],bED=[];
+  const bEcaS=[],bEcaE=[],bEerS=[],bEerE=[],bPtsS=[],bPtsE=[],bTdcS=[],bTdcE=[];
+  for(let i=0;i<12;i++){const q=c=>parseFloat(document.querySelector(`.sc-bl-${c}[data-mi="${i}"]`)?.value)||0;const qd=c=>document.querySelector(`.sc-bl-${c}[data-mi="${i}"]`)?.value||'';bKwh.push(q('kwh'));bKw.push(q('kw'));bFKw.push(q('fackw'));bOff.push(q('offpk'));bSD.push(qd('startDate'));bED.push(qd('endDate'));bEcaS.push(q('ecaStart'));bEcaE.push(q('ecaEnd'));bEerS.push(q('eerStart'));bEerE.push(q('eerEnd'));bPtsS.push(q('ptsStart'));bPtsE.push(q('ptsEnd'));bTdcS.push(q('tdcStart'));bTdcE.push(q('tdcEnd'));}
+  const bOn=bKwh.map((k,i)=>Math.max(0,k-bOff[i]));
+  const manKw=gv('sc-billingKw');
 
-  // Read baseline from DOM
-  const blKwh=[],blKw=[],blFacKw=[],blOffPk=[],blStartDate=[],blEndDate=[];
-  const blEcaStartR=[],blEcaEndR=[],blEerStartR=[],blEerEndR=[];
-  const blPtsStartR=[],blPtsEndR=[],blTdcStartR=[],blTdcEndR=[];
+  // Proration helper
+  function prorate(i){
+    const days=(bSD[i]&&bED[i])?Math.round((new Date(bED[i])-new Date(bSD[i]))/864e5):30;
+    const d=days>0?days:30;
+    const yr=bSD[i]?new Date(bSD[i]).getFullYear():new Date().getFullYear();
+    const sD=parseDS(sumChg,yr),wD=parseDS(winChg,yr);
+    const st=bSD[i]?new Date(bSD[i]):new Date(yr,i,1),en=bED[i]?new Date(bED[i]):new Date(yr,i+1,0);
+    let sumD=0,winD=0;
+    if(st<sD&&en>=sD){winD=Math.round((sD-st)/864e5);sumD=d-winD;}
+    else if(st<wD&&en>=wD){sumD=Math.round((wD-st)/864e5);winD=d-sumD;}
+    else if(st>=sD&&st<wD){sumD=d;}
+    else{winD=d;}
+    const sR=d>0?sumD/d:0,wR=d>0?winD/d:0;
+    const smD=bSD[i]?Math.min(d,Math.round((new Date(yr,st.getMonth()+1,0)-st)/864e5)):d;
+    const emD=d-smD;
+    const sKwh=+(bKwh[i]*(smD/d)).toFixed(4),eKwh=+(bKwh[i]*(emD/d)).toFixed(4);
+    const ecaEl=Math.max(bKwh[i]-ecaThresh,0),sEca=d>0?+(ecaEl*(smD/d)).toFixed(4):0,eEca=ecaEl-sEca;
+    return{d,sumD,winD,sR,wR,smD,emD,sKwh,eKwh,ecaEl,sEca,eEca,fKw:bFKw[i]||bKw[i]};
+  }
+
+  // Bill calculators
+  function calcStd(i,kwh,akw,offpk,bkw){
+    const pr=prorate(i),bilKw=bkw||akw||manKw||arrayKw,fkw=pr.fKw||bilKw;
+    const onpk=Math.max(0,kwh-offpk);
+    const sR=pr.sR,wR=pr.wR;
+    const eOnPk=+(onpk*sR*R.opS).toFixed(2)+ +(onpk*wR*R.opW).toFixed(2);
+    const eOffPk=+(offpk*sR*R.ofS).toFixed(2)+ +(offpk*wR*R.ofW).toFixed(2);
+    const sBKw=pr.sumD>0?(akw>R.dS?bilKw*sR:R.dS*sR):0;
+    const wBKw=pr.winD>0?(akw>R.dW?bilKw*wR:R.dW*wR):0;
+    const eDem=+(sBKw*R.dS).toFixed(2)+ +(wBKw*R.dW).toFixed(2);
+    const eFac=+(fkw*R.fac).toFixed(2);
+    const ecS=bEcaS[i]||R.eca,ecE=bEcaE[i]||R.eca;
+    const eEca=+(pr.sEca*ecS).toFixed(2)+ +(pr.eEca*ecE).toFixed(2);
+    const erS=bEerS[i]||R.eer,erE=bEerE[i]||R.eer;
+    const eEer=+(pr.sKwh*erS).toFixed(2)+ +(pr.eKwh*erE).toFixed(2);
+    const ptS=bPtsS[i]||R.pts,ptE=bPtsE[i]||R.pts;
+    const ePts=ptS===ptE?+(kwh*ptS).toFixed(2):+(pr.sKwh*ptS).toFixed(2)+ +(pr.eKwh*ptE).toFixed(2);
+    const tdS=bTdcS[i]||R.tdc,tdE=bTdcE[i]||R.tdc;
+    const eTdc=+(bilKw*(pr.smD/pr.d)*tdS).toFixed(2)+ +(bilKw*(pr.emD/pr.d)*tdE).toFixed(2);
+    const sub=R.cust+eDem+eFac+eOnPk+eOffPk+R.rp+eEca+eEer+ePts+eTdc;
+    const ff=+(sub*ffDec).toFixed(2);
+    const isSummer=pr.sumD>=pr.winD;
+    return{mo:MO[i],cust:R.cust,dem:eDem,fac:eFac,onKwh:onpk,onPk:eOnPk,offKwh:offpk,offPk:eOffPk,noneKwh:0,cons:eOnPk+eOffPk,ren:R.rp,eca:eEca,eer:eEer,pts:ePts,tdc:eTdc,sc:0,ff,tot:sub+ff,kwh,akw,bilKw,fkw,isS:isSummer,pr};
+  }
+
+  function calcNM(i,ex,sKwh,sKw){
+    const nKwh=Math.max(0,ex.kwh-sKwh),nAkw=Math.max(0,ex.akw-sKw),nBkw=Math.max(0,ex.bilKw-sKw),nFkw=Math.max(0,ex.fkw-sKw);
+    const pr=ex.pr,sR=pr.sR,wR=pr.wR;
+    const pCust=R.cust;
+    const sBKw=pr.sumD>0?(nBkw>R.dS?nBkw*sR:R.dS*sR):0;
+    const wBKw=pr.winD>0?(nBkw>R.dW?nBkw*wR:R.dW*wR):0;
+    const pDem=+(sBKw*R.dS).toFixed(2)+ +(wBKw*R.dW).toFixed(2);
+    const pFac=+(nFkw*R.fac).toFixed(2);
+    const sKwhS=nKwh*sR,sKwhW=nKwh*wR,sKwS=nBkw*sR,sKwW=nBkw*wR;
+    let st1=0,st2=0,st3=0;if(sKwS>0){const r=sKwhS/sKwS;st1=r>180?sKwS*180:sKwhS;st2=r>360?sKwS*180:Math.max(0,sKwhS-st1);st3=Math.max(0,sKwhS-st1-st2);}else st1=sKwhS;
+    let wt1=0,wt2=0,wt3=0;if(sKwW>0){const r=sKwhW/sKwW;wt1=r>180?sKwW*180:sKwhW;wt2=r>360?sKwW*180:Math.max(0,sKwhW-wt1);wt3=Math.max(0,sKwhW-wt1-wt2);}else wt1=sKwhW;
+    const pT1=+(st1*R.t1S).toFixed(2)+ +(wt1*R.t1W).toFixed(2);
+    const pT2=+(st2*R.t2S).toFixed(2)+ +(wt2*R.t2W).toFixed(2);
+    const pT3=+(st3*R.t3S).toFixed(2)+ +(wt3*R.t3W).toFixed(2);
+    const pCon=pT1+pT2+pT3;
+    const ecaEl=Math.max(nKwh-ecaThresh,0);const ecS=bEcaS[i]||R.eca,ecE=bEcaE[i]||R.eca;
+    const pEca=+(ecaEl*(pr.smD/pr.d)*ecS).toFixed(2)+ +(ecaEl*(pr.emD/pr.d)*ecE).toFixed(2);
+    const erS=bEerS[i]||R.eer,erE=bEerE[i]||R.eer;const pEer=+(nKwh*(pr.smD/pr.d)*erS).toFixed(2)+ +(nKwh*(pr.emD/pr.d)*erE).toFixed(2);
+    const ptS=bPtsS[i]||R.pts,ptE=bPtsE[i]||R.pts;const pPts=ptS===ptE?+(nKwh*ptS).toFixed(2):+(nKwh*(pr.smD/pr.d)*ptS).toFixed(2)+ +(nKwh*(pr.emD/pr.d)*ptE).toFixed(2);
+    const tdS=bTdcS[i]||R.tdc,tdE=bTdcE[i]||R.tdc;const pTdc=+(nBkw*(pr.smD/pr.d)*tdS).toFixed(2)+ +(nBkw*(pr.emD/pr.d)*tdE).toFixed(2);
+    let opKwh=0,sc=0;if(sKwh>ex.kwh){opKwh=sKwh-ex.kwh;sc=+(opKwh*(ex.isS?R.opS2:R.opW2)).toFixed(2);}
+    const sub=pCust+pDem+pFac+pCon+pEca+pEer+pPts+pTdc;
+    const ff=+(sub*ffDec).toFixed(2);
+    return{mo:MO[i],cust:pCust,dem:pDem,fac:pFac,onKwh:st1+wt1,onPk:pT1,offKwh:st2+wt2,offPk:pT2,noneKwh:st3+wt3,noneCh:pT3,cons:pCon,ren:0,eca:pEca,eer:pEer,pts:pPts,tdc:pTdc,sc,ff,tot:sub+ff-sc,kwh:nKwh,akw:nAkw,bilKw:nBkw,fkw:nFkw,isS:ex.isS,t1:st1+wt1,t2:st2+wt2,t3:st3+wt3,opKwh};
+  }
+
+  function calcBTM(i,ex,sKwh,sKw){
+    const nKwh=Math.max(0,ex.kwh-sKwh),nAkw=Math.max(0,ex.akw-sKw),nBkw=Math.max(0,ex.bilKw-sKw),nFkw=Math.max(0,ex.fkw-sKw);
+    const pr=ex.pr,sR=pr.sR,wR=pr.wR;
+    const offR=ex.kwh>0?ex.offKwh/ex.kwh:0.4;
+    const nOff=nKwh*offR,nOn=nKwh-nOff;
+    const pOnPk=+(nOn*sR*R.opS).toFixed(2)+ +(nOn*wR*R.opW).toFixed(2);
+    const pOffPk=+(nOff*sR*R.ofS).toFixed(2)+ +(nOff*wR*R.ofW).toFixed(2);
+    const sBKw=pr.sumD>0?nBkw*sR:0,wBKw=pr.winD>0?nBkw*wR:0;
+    const pDem=+(sBKw*R.nmS).toFixed(2)+ +(wBKw*R.nmW).toFixed(2);
+    const pFac=+(nFkw*R.fac).toFixed(2);
+    const ecaEl=Math.max(nKwh-ecaThresh,0);const ecS=bEcaS[i]||R.eca,ecE=bEcaE[i]||R.eca;
+    const pEca=+(ecaEl*(pr.smD/pr.d)*ecS).toFixed(2)+ +(ecaEl*(pr.emD/pr.d)*ecE).toFixed(2);
+    const erS=bEerS[i]||R.eer,erE=bEerE[i]||R.eer;const pEer=+(nKwh*(pr.smD/pr.d)*erS).toFixed(2)+ +(nKwh*(pr.emD/pr.d)*erE).toFixed(2);
+    const ptS=bPtsS[i]||R.pts,ptE=bPtsE[i]||R.pts;const pPts=ptS===ptE?+(nKwh*ptS).toFixed(2):+(nKwh*(pr.smD/pr.d)*ptS).toFixed(2)+ +(nKwh*(pr.emD/pr.d)*ptE).toFixed(2);
+    const tdS=bTdcS[i]||R.tdc,tdE=bTdcE[i]||R.tdc;const pTdc=+(nBkw*(pr.smD/pr.d)*tdS).toFixed(2)+ +(nBkw*(pr.emD/pr.d)*tdE).toFixed(2);
+    const sub=R.cust+pDem+pFac+pOnPk+pOffPk+R.rp+pEca+pEer+pPts+pTdc;
+    const ff=+(sub*ffDec).toFixed(2);
+    return{mo:MO[i],cust:R.cust,dem:pDem,fac:pFac,onKwh:nOn,onPk:pOnPk,offKwh:nOff,offPk:pOffPk,noneKwh:0,cons:pOnPk+pOffPk,ren:R.rp,eca:pEca,eer:pEer,pts:pPts,tdc:pTdc,sc:0,ff,tot:sub+ff,kwh:nKwh,akw:nAkw,bilKw:nBkw,fkw:nFkw,isS:ex.isS};
+  }
+
+  // Run all profiles
+  const dP=[],eP=[],fP=[],gP=[],nmSav=[],btmSav=[];
+  let dA=0,eA=0,fA=0,gA=0;
   for(let i=0;i<12;i++){
-    const q=(cls)=>parseFloat(document.querySelector(`.sc-bl-${cls}[data-mi="${i}"]`)?.value)||0;
-    const qd=(cls)=>document.querySelector(`.sc-bl-${cls}[data-mi="${i}"]`)?.value||'';
-    blKwh.push(q('kwh')); blKw.push(q('kw')); blFacKw.push(q('fackw'));
-    blOffPk.push(q('offpk'));
-    blStartDate.push(qd('startDate')); blEndDate.push(qd('endDate'));
-    blEcaStartR.push(q('ecaStart')); blEcaEndR.push(q('ecaEnd'));
-    blEerStartR.push(q('eerStart')); blEerEndR.push(q('eerEnd'));
-    blPtsStartR.push(q('ptsStart')); blPtsEndR.push(q('ptsEnd'));
-    blTdcStartR.push(q('tdcStart')); blTdcEndR.push(q('tdcEnd'));
+    const bilKw=bKw[i]||manKw||arrayKw;
+    const d=calcStd(i,bKwh[i],bKw[i],bOff[i],bilKw);dP.push(d);dA+=d.tot;
+    const bsK=bKwh[i]*(1-savPct),bsW=bKw[i]*(1-savPct),bsO=bOff[i]*(1-savPct),bsB=bilKw*(1-savPct);
+    const e=calcStd(i,bsK,bsW,bsO,bsB);eP.push(e);eA+=e.tot;
+    const sk=prod[i],skw=solKw[i];
+    const f=calcNM(i,e,sk,skw);fP.push(f);fA+=f.tot;
+    const g=calcBTM(i,e,sk,skw);gP.push(g);gA+=g.tot;
+    nmSav.push({dS:(e.dem-f.dem)+(e.fac-f.fac)+(e.tdc-f.tdc),cS:(e.onPk+e.offPk)-f.cons,oP:f.sc,oS:(e.cust-f.cust)+(e.ren-f.ren)+(e.eca-f.eca)+(e.eer-f.eer)+(e.pts-f.pts)+(e.ff-f.ff),tS:e.tot-f.tot});
+    btmSav.push({dS:(e.dem-g.dem)+(e.fac-g.fac)+(e.tdc-g.tdc),cS:(e.onPk+e.offPk)-(g.onPk+g.offPk),oP:0,oS:(e.cust-g.cust)+(e.ren-g.ren)+(e.eca-g.eca)+(e.eer-g.eer)+(e.pts-g.pts)+(e.ff-g.ff),tS:e.tot-g.tot});
   }
-  // On-peak = total kWh - off-peak (from actual bill data)
-  const blOnPk=blKwh.map((kwh,i)=>Math.max(0,kwh-blOffPk[i]));
-  const manualKw=gv('sc-billingKw');
+  const nmTot=eA-fA,btmTot=eA-gA,best=Math.max(nmTot,btmTot);
+  const totCost=arrayKw*1000*costPerWatt,costAT=totCost*(1-taxCredit/100);
+  const payback=best>0?costAT/best:0;
 
-  // Rate card values
-  const custCharge=gv('sc-custCharge'), facRate=gv('sc-facRate');
-  const demandSum=gv('sc-demandSum'), demandWin=gv('sc-demandWin');
-  const nmDemandSum=gv('sc-nmDemandSum'), nmDemandWin=gv('sc-nmDemandWin');
-  const onPeakSum=gv('sc-onPeakSum'), onPeakWin=gv('sc-onPeakWin');
-  const offPeakSum=gv('sc-offPeakSum'), offPeakWin=gv('sc-offPeakWin');
-  const tier1Sum=gv('sc-tier1Sum'), tier1Win=gv('sc-tier1Win');
-  const tier2Sum=gv('sc-tier2Sum'), tier2Win=gv('sc-tier2Win');
-  const tier3Sum=gv('sc-tier3Sum'), tier3Win=gv('sc-tier3Win');
-  const overProdSum=gv('sc-overProdSum'), overProdWin=gv('sc-overProdWin');
-  const renewPart=isWindRate?gv('sc-renewPart'):0;
-  const ecaRateCard=gv('sc-ecaRate'), eerRateCard=gv('sc-eerRate'), ptsRateCard=gv('sc-ptsRate'), tdcRateCard=gv('sc-tdcRate');
-
-  const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-  const fmtN=n=>Math.round(n).toLocaleString();
-  const fmtD=n=>'$'+(n<0?'-':'')+Math.abs(Math.round(n)).toLocaleString();
-  const fmtD2=n=>n<0?'-$'+Math.abs(n).toFixed(2):'$'+n.toFixed(2);
-
-  /* ══ PRORATION ENGINE — Summer/Winter split per bill period ══ */
-  function prorateBill(i){
-    const startStr=blStartDate[i], endStr=blEndDate[i];
-    const totalKwh=blKwh[i], actualKw=blKw[i], facKw=blFacKw[i]||actualKw;
-    const offPeakKwh=blOffPk[i];
-    const totalDays=startStr&&endStr?Math.round((new Date(endStr)-new Date(startStr))/86400000):30;
-    const days=totalDays>0?totalDays:30;
-
-    // Determine year for season boundary dates
-    const yr=startStr?new Date(startStr).getFullYear():new Date().getFullYear();
-    const summerDate=parseDateStr(summerChangeStr,yr);
-    const winterDate=parseDateStr(winterChangeStr,yr);
-    const start=startStr?new Date(startStr):new Date(yr,i,1);
-    const end=endStr?new Date(endStr):new Date(yr,i+1,0);
-
-    // Calculate summer/winter day split
-    let summerDays=0, winterDays=0;
-    // Check if period crosses summer boundary (5/31)
-    if(start<summerDate && end>=summerDate){
-      winterDays=Math.round((summerDate-start)/86400000);
-      summerDays=days-winterDays;
-    } else if(start<winterDate && end>=winterDate){
-      summerDays=Math.round((winterDate-start)/86400000);
-      winterDays=days-summerDays;
-    } else if(start>=summerDate && start<winterDate){
-      summerDays=days; winterDays=0;
-    } else {
-      winterDays=days; summerDays=0;
-    }
-
-    const sumRatio=days>0?summerDays/days:0;
-    const winRatio=days>0?winterDays/days:0;
-
-    // Prorate kWh, kW by season
-    const sumKwh=+(totalKwh*sumRatio).toFixed(3);
-    const winKwh=+(totalKwh*winRatio).toFixed(3);
-    const sumKw=+(actualKw*sumRatio).toFixed(3);
-    const winKw=+(actualKw*winRatio).toFixed(3);
-
-    // Off-peak split proportional to season
-    const offPkRatio=totalKwh>0?offPeakKwh/totalKwh:0;
-    const sumOffPk=+(sumKwh*offPkRatio).toFixed(4);
-    const winOffPk=+(winKwh*offPkRatio).toFixed(4);
-    const sumOnPk=sumKwh-sumOffPk;
-    const winOnPk=winKwh-winOffPk;
-
-    // Billing kW with minimum check (Excel BP logic)
-    const sumBillingKw=summerDays>0?(actualKw>demandSum?sumKw:demandSum*sumRatio):0;
-    const winBillingKw=winterDays>0?(actualKw>demandWin?winKw:demandWin*winRatio):0;
-
-    // Bill period proration for start/end month (ECA/EER/PTS/TDC)
-    const startMonthDays=startStr?Math.min(days, Math.round((new Date(yr,start.getMonth()+1,0)-start)/86400000)):days;
-    const endMonthDays=days-startMonthDays;
-    const startKwh=+(totalKwh*(startMonthDays/days)).toFixed(4);
-    const endKwh=+(totalKwh*(endMonthDays/days)).toFixed(4);
-
-    // ECA: only kWh above threshold
-    const ecaEligibleKwh=Math.max(totalKwh-ecaThreshold,0);
-    const startEcaKwh=days>0?+(ecaEligibleKwh*(startMonthDays/days)).toFixed(4):0;
-    const endEcaKwh=ecaEligibleKwh-startEcaKwh;
-
-    return {days,summerDays,winterDays,sumRatio,winRatio,
-      sumKwh,winKwh,sumKw,winKw,sumOnPk,winOnPk,sumOffPk,winOffPk,
-      sumBillingKw,winBillingKw,
-      startMonthDays,endMonthDays,startKwh,endKwh,
-      ecaEligibleKwh,startEcaKwh,endEcaKwh,
-      facKw};
-  }
-
-  /* ══ Build bill profile for one month (used by D, E, F, G) ══ */
-  function calcExistingBill(i,kwh,actualKw,offPkKwh,billingKwOverride){
-    const pr=prorateBill(i);
-    const billingKw=billingKwOverride||actualKw||manualKw||arrayKw;
-    const facKw=pr.facKw||billingKw;
-    const onPkKwh=Math.max(0,kwh-offPkKwh);
-
-    // Recalculate proration with potentially adjusted kWh
-    const sumR=pr.sumRatio, winR=pr.winRatio;
-    const sumOnPk=onPkKwh*sumR, winOnPk=onPkKwh*winR;
-    const sumOffPk=offPkKwh*sumR, winOffPk=offPkKwh*winR;
-    const sumBKw=pr.sumBillingKw, winBKw=pr.winBillingKw;
-
-    // Energy charges using on-peak/off-peak rates with summer/winter proration
-    const eOnPk=+(sumOnPk*onPeakSum).toFixed(2) + +(winOnPk*onPeakWin).toFixed(2);
-    const eOffPk=+(sumOffPk*offPeakSum).toFixed(2) + +(winOffPk*offPeakWin).toFixed(2);
-    const eNoneKwh=0; // "None" kWh bucket (usually 0 for on/off-peak schedules)
-
-    const eCust=custCharge;
-    const eDemand=+(sumBKw*demandSum).toFixed(2) + +(winBKw*demandWin).toFixed(2);
-    const eFac=+(facKw*facRate).toFixed(2);
-    const eConsumption=eOnPk+eOffPk;
-    const eRenew=renewPart;
-
-    // ECA with per-bill varying rates and proration
-    const ecaStart=blEcaStartR[i]||ecaRateCard;
-    const ecaEnd=blEcaEndR[i]||ecaRateCard;
-    const eEca=+(pr.startEcaKwh*ecaStart).toFixed(2) + +(pr.endEcaKwh*ecaEnd).toFixed(2);
-
-    // EER with proration
-    const eerStart=blEerStartR[i]||eerRateCard;
-    const eerEnd=blEerEndR[i]||eerRateCard;
-    const eEer=+(pr.startKwh*eerStart).toFixed(2) + +(pr.endKwh*eerEnd).toFixed(2);
-
-    // PTS with proration (if start==end, use total kWh × rate)
-    const ptsStart=blPtsStartR[i]||ptsRateCard;
-    const ptsEnd=blPtsEndR[i]||ptsRateCard;
-    const ePts=ptsStart===ptsEnd?+(kwh*ptsStart).toFixed(2):+(pr.startKwh*ptsStart).toFixed(2)+ +(pr.endKwh*ptsEnd).toFixed(2);
-
-    // TDC with proration (kW × rate)
-    const tdcStart=blTdcStartR[i]||tdcRateCard;
-    const tdcEnd=blTdcEndR[i]||tdcRateCard;
-    const eTdc=+(billingKw*(pr.startMonthDays/pr.days)*tdcStart).toFixed(2)+ +(billingKw*(pr.endMonthDays/pr.days)*tdcEnd).toFixed(2);
-
-    const eSubtotal=eCust+eDemand+eFac+eConsumption+eRenew+eEca+eEer+ePts+eTdc;
-    const eFranchise=+(eSubtotal*ffDecimal).toFixed(2);
-    const eTotal=eSubtotal+eFranchise;
-    const isSummer=pr.summerDays>=pr.winterDays;
-
-    return {month:months[i],cust:eCust,demand:eDemand,fac:eFac,
-      onPkKwh:onPkKwh,onPk:eOnPk,offPkKwh:offPkKwh,offPk:eOffPk,
-      noneKwh:eNoneKwh,consumption:eConsumption,
-      renew:eRenew,eca:eEca,eer:eEer,pts:ePts,tdc:eTdc,
-      solarCredit:0,franchise:eFranchise,total:eTotal,
-      kwh,actualKw,billingKw,facKw,isSummer,proration:pr};
-  }
-
-  /* ══ Net Metering post-solar bill (Section F) ══ */
-  function calcNetMeteringBill(i,existing,solarKwh,solarKw){
-    const baseKwh=existing.kwh;
-    const newKwh=Math.max(0,baseKwh-solarKwh);
-    const newActualKw=Math.max(0,existing.actualKw-solarKw);
-    const newFacKw=Math.max(0,existing.facKw-solarKw);
-    const newBillingKw=Math.max(0,existing.billingKw-solarKw);
-    const pr=existing.proration;
-
-    // Customer charge conditional: if actualKw > 24, use custCharge; else standard
-    const pCust=newActualKw>24?custCharge:custCharge;
-
-    // Demand charge uses STANDARD rates (not net metering) per PDR Section F
-    const sumBKw=pr.summerDays>0?(newBillingKw>demandSum?newBillingKw*pr.sumRatio:demandSum*pr.sumRatio):0;
-    const winBKw=pr.winterDays>0?(newBillingKw>demandWin?newBillingKw*pr.winRatio:demandWin*pr.winRatio):0;
-    const pDemand=+(sumBKw*demandSum).toFixed(2)+ +(winBKw*demandWin).toFixed(2);
-
-    const pFac=+(newFacKw*facRate).toFixed(2);
-
-    // Solar tier rates — hours-use logic based on kWh/kW ratio
-    const sumR=pr.sumRatio, winR=pr.winRatio;
-    const sumKwh=newKwh*sumR, winKwh=newKwh*winR;
-    const sumKw=newBillingKw*sumR, winKw=newBillingKw*winR;
-
-    // Tier split: summer
-    let st1=0,st2=0,st3=0;
-    if(sumKw>0){
-      const ratio=sumKwh/sumKw;
-      st1=ratio>180?sumKw*180:sumKwh;
-      st2=ratio>360?sumKw*180:Math.max(0,sumKwh-st1);
-      st3=Math.max(0,sumKwh-st1-st2);
-    } else { st1=sumKwh; }
-    // Tier split: winter
-    let wt1=0,wt2=0,wt3=0;
-    if(winKw>0){
-      const ratio=winKwh/winKw;
-      wt1=ratio>180?winKw*180:winKwh;
-      wt2=ratio>360?winKw*180:Math.max(0,winKwh-wt1);
-      wt3=Math.max(0,winKwh-wt1-wt2);
-    } else { wt1=winKwh; }
-
-    const pTier1=+(st1*tier1Sum).toFixed(2)+ +(wt1*tier1Win).toFixed(2);
-    const pTier2=+(st2*tier2Sum).toFixed(2)+ +(wt2*tier2Win).toFixed(2);
-    const pTier3=+(st3*tier3Sum).toFixed(2)+ +(wt3*tier3Win).toFixed(2);
-    const pConsumption=pTier1+pTier2+pTier3;
-
-    // NO renewable participation for net metering (PDR Section F)
-    const pRenew=0;
-
-    // ECA/EER/PTS/TDC use reduced kWh
-    const ecaEligible=Math.max(newKwh-ecaThreshold,0);
-    const ecaStart=blEcaStartR[i]||ecaRateCard, ecaEnd=blEcaEndR[i]||ecaRateCard;
-    const pEca=+(ecaEligible*(pr.startMonthDays/pr.days)*ecaStart).toFixed(2)+ +(ecaEligible*(pr.endMonthDays/pr.days)*ecaEnd).toFixed(2);
-    const eerStart=blEerStartR[i]||eerRateCard, eerEnd=blEerEndR[i]||eerRateCard;
-    const pEer=+(newKwh*(pr.startMonthDays/pr.days)*eerStart).toFixed(2)+ +(newKwh*(pr.endMonthDays/pr.days)*eerEnd).toFixed(2);
-    const ptsStart=blPtsStartR[i]||ptsRateCard, ptsEnd=blPtsEndR[i]||ptsRateCard;
-    const pPts=ptsStart===ptsEnd?+(newKwh*ptsStart).toFixed(2):+(newKwh*(pr.startMonthDays/pr.days)*ptsStart).toFixed(2)+ +(newKwh*(pr.endMonthDays/pr.days)*ptsEnd).toFixed(2);
-    const tdcStart=blTdcStartR[i]||tdcRateCard, tdcEnd=blTdcEndR[i]||tdcRateCard;
-    const pTdc=+(newBillingKw*(pr.startMonthDays/pr.days)*tdcStart).toFixed(2)+ +(newBillingKw*(pr.endMonthDays/pr.days)*tdcEnd).toFixed(2);
-
-    // Solar overproduction credit
-    let overProdKwh=0, solarCredit=0;
-    if(solarKwh>baseKwh){
-      overProdKwh=solarKwh-baseKwh;
-      const isSummer=pr.summerDays>=pr.winterDays;
-      solarCredit=+(overProdKwh*(isSummer?overProdSum:overProdWin)).toFixed(2);
-    }
-
-    const pSubtotal=pCust+pDemand+pFac+pConsumption+pRenew+pEca+pEer+pPts+pTdc;
-    const pFranchise=+((pSubtotal)*ffDecimal).toFixed(2);
-    const pTotal=pSubtotal+pFranchise-solarCredit;
-
-    return {month:months[i],cust:pCust,demand:pDemand,fac:pFac,
-      onPkKwh:st1+wt1,onPk:pTier1,offPkKwh:st2+wt2,offPk:pTier2,
-      noneKwh:st3+wt3,noneCharge:pTier3,consumption:pConsumption,
-      renew:pRenew,eca:pEca,eer:pEer,pts:pPts,tdc:pTdc,
-      solarCredit,franchise:pFranchise,total:pTotal,overProdKwh,
-      kwh:newKwh,actualKw:newActualKw,billingKw:newBillingKw,facKw:newFacKw,
-      isSummer:pr.summerDays>=pr.winterDays,
-      t1Kwh:st1+wt1,t2Kwh:st2+wt2,t3Kwh:st3+wt3,
-      tierLabels:['First 180 hrs','Next 180 hrs','Over 360 hrs']};
-  }
-
-  /* ══ Behind the Meter post-solar bill (Section G) ══ */
-  function calcBehindMeterBill(i,existing,solarKwh,solarKw){
-    const baseKwh=existing.kwh;
-    const newKwh=Math.max(0,baseKwh-solarKwh);
-    const newActualKw=Math.max(0,existing.actualKw-solarKw);
-    const newFacKw=Math.max(0,existing.facKw-solarKw);
-    const newBillingKw=Math.max(0,existing.billingKw-solarKw);
-    const pr=existing.proration;
-    const sumR=pr.sumRatio, winR=pr.winRatio;
-
-    // Uses standard On-Peak/Off-Peak energy rates (NOT solar tier rates)
-    const offPkRatio=existing.kwh>0?existing.offPkKwh/existing.kwh:0.4;
-    const newOffPk=newKwh*offPkRatio;
-    const newOnPk=newKwh-newOffPk;
-
-    const sumOnPk=newOnPk*sumR, winOnPk=newOnPk*winR;
-    const sumOffPk=newOffPk*sumR, winOffPk=newOffPk*winR;
-
-    const pOnPk=+(sumOnPk*onPeakSum).toFixed(2)+ +(winOnPk*onPeakWin).toFixed(2);
-    const pOffPk=+(sumOffPk*offPeakSum).toFixed(2)+ +(winOffPk*offPeakWin).toFixed(2);
-
-    const pCust=custCharge;
-    // Uses Net Metering demand rates (PDR Section G)
-    const sumBKw=pr.summerDays>0?newBillingKw*sumR:0;
-    const winBKw=pr.winterDays>0?newBillingKw*winR:0;
-    const pDemand=+(sumBKw*nmDemandSum).toFixed(2)+ +(winBKw*nmDemandWin).toFixed(2);
-    const pFac=+(newFacKw*facRate).toFixed(2);
-
-    // INCLUDES Renewable Participation Charge (PDR Section G)
-    const pRenew=renewPart;
-
-    // Riders
-    const ecaEligible=Math.max(newKwh-ecaThreshold,0);
-    const ecaStart=blEcaStartR[i]||ecaRateCard, ecaEnd=blEcaEndR[i]||ecaRateCard;
-    const pEca=+(ecaEligible*(pr.startMonthDays/pr.days)*ecaStart).toFixed(2)+ +(ecaEligible*(pr.endMonthDays/pr.days)*ecaEnd).toFixed(2);
-    const eerStart=blEerStartR[i]||eerRateCard, eerEnd=blEerEndR[i]||eerRateCard;
-    const pEer=+(newKwh*(pr.startMonthDays/pr.days)*eerStart).toFixed(2)+ +(newKwh*(pr.endMonthDays/pr.days)*eerEnd).toFixed(2);
-    const ptsStart=blPtsStartR[i]||ptsRateCard, ptsEnd=blPtsEndR[i]||ptsRateCard;
-    const pPts=ptsStart===ptsEnd?+(newKwh*ptsStart).toFixed(2):+(newKwh*(pr.startMonthDays/pr.days)*ptsStart).toFixed(2)+ +(newKwh*(pr.endMonthDays/pr.days)*ptsEnd).toFixed(2);
-    const tdcStart=blTdcStartR[i]||tdcRateCard, tdcEnd=blTdcEndR[i]||tdcRateCard;
-    const pTdc=+(newBillingKw*(pr.startMonthDays/pr.days)*tdcStart).toFixed(2)+ +(newBillingKw*(pr.endMonthDays/pr.days)*tdcEnd).toFixed(2);
-
-    // NO solar overproduction credit for BTM (PDR Section G)
-    const solarCredit=0;
-
-    const pSubtotal=pCust+pDemand+pFac+pOnPk+pOffPk+pRenew+pEca+pEer+pPts+pTdc;
-    const pFranchise=+(pSubtotal*ffDecimal).toFixed(2);
-    const pTotal=pSubtotal+pFranchise;
-
-    return {month:months[i],cust:pCust,demand:pDemand,fac:pFac,
-      onPkKwh:newOnPk,onPk:pOnPk,offPkKwh:newOffPk,offPk:pOffPk,
-      noneKwh:0,consumption:pOnPk+pOffPk,
-      renew:pRenew,eca:pEca,eer:pEer,pts:pPts,tdc:pTdc,
-      solarCredit:0,franchise:pFranchise,total:pTotal,
-      kwh:newKwh,actualKw:newActualKw,billingKw:newBillingKw,facKw:newFacKw,
-      isSummer:pr.summerDays>=pr.winterDays};
-  }
-
-  // ══ RUN ALL PROFILES ══
-  const existingProfile=[],beforeSolarProfile=[],netMeterProfile=[],behindMeterProfile=[];
-  const nmSavings=[],btmSavings=[];
-  let existingAnnual=0,beforeSolarAnnual=0,nmAnnual=0,btmAnnual=0;
-
-  for(let i=0;i<12;i++){
-    const baseKwh=blKwh[i];
-    const billingKw=blKw[i]||manualKw||arrayKw;
-    const offPkKwh=blOffPk[i];
-
-    // Section D: Existing Electric Cost Profile
-    const eRow=calcExistingBill(i,baseKwh,blKw[i],offPkKwh,billingKw);
-    existingProfile.push(eRow);
-    existingAnnual+=eRow.total;
-
-    // Section E: Before Solar (apply savings %)
-    const bsKwh=baseKwh*(1-savingsPct);
-    const bsKw=blKw[i]*(1-savingsPct);
-    const bsOffPk=offPkKwh*(1-savingsPct);
-    const bsBillingKw=billingKw*(1-savingsPct);
-    const bsRow=calcExistingBill(i,bsKwh,bsKw,bsOffPk,bsBillingKw);
-    beforeSolarProfile.push(bsRow);
-    beforeSolarAnnual+=bsRow.total;
-
-    // Section F: Net Metering Post-Solar
-    const solarKwh=production[i];
-    const solarKw=solarKwPerMonth[i]||(arrayKw>0?arrayKw*(solarKwh/(totalProd/12||1))*0.003:0);
-    const nmRow=calcNetMeteringBill(i,bsRow,solarKwh,solarKw);
-    netMeterProfile.push(nmRow);
-    nmAnnual+=nmRow.total;
-
-    // Section G: Behind the Meter Post-Solar
-    const btmRow=calcBehindMeterBill(i,bsRow,solarKwh,solarKw);
-    behindMeterProfile.push(btmRow);
-    btmAnnual+=btmRow.total;
-
-    // Savings: NM
-    const nmDemSav=(bsRow.demand-nmRow.demand)+(bsRow.fac-nmRow.fac)+(bsRow.tdc-nmRow.tdc);
-    const nmConSav=(bsRow.onPk+bsRow.offPk)-(nmRow.consumption);
-    const nmOverProd=nmRow.solarCredit;
-    const nmOther=(bsRow.cust-nmRow.cust)+(bsRow.renew-nmRow.renew)+(bsRow.eca-nmRow.eca)+(bsRow.eer-nmRow.eer)+(bsRow.pts-nmRow.pts)+(bsRow.franchise-nmRow.franchise);
-    nmSavings.push({demandSav:nmDemSav,consumeSav:nmConSav,overProdSav:nmOverProd,otherSav:nmOther,totalSav:bsRow.total-nmRow.total});
-
-    // Savings: BTM
-    const btmDemSav=(bsRow.demand-btmRow.demand)+(bsRow.fac-btmRow.fac)+(bsRow.tdc-btmRow.tdc);
-    const btmConSav=(bsRow.onPk+bsRow.offPk)-(btmRow.onPk+btmRow.offPk);
-    const btmOther=(bsRow.cust-btmRow.cust)+(bsRow.renew-btmRow.renew)+(bsRow.eca-btmRow.eca)+(bsRow.eer-btmRow.eer)+(bsRow.pts-btmRow.pts)+(bsRow.franchise-btmRow.franchise);
-    btmSavings.push({demandSav:btmDemSav,consumeSav:btmConSav,overProdSav:0,otherSav:btmOther,totalSav:bsRow.total-btmRow.total});
-  }
-
-  const nmTotalSavings=beforeSolarAnnual-nmAnnual;
-  const btmTotalSavings=beforeSolarAnnual-btmAnnual;
-  const bestSavings=Math.max(nmTotalSavings,btmTotalSavings);
-  const totalCost=arrayKw*1000*costPerWatt;
-  const costAfterTax=totalCost*(1-taxCredit/100);
-  const paybackYrs=bestSavings>0?totalCost/bestSavings:0;
-  const paybackTax=bestSavings>0?costAfterTax/bestSavings:0;
-
-  // Save to project
-  solarSaveInputs(projId);
-  if(p){
-    p.solarCalc.totalProd=totalProd;p.solarCalc.totalSavings=bestSavings;
-    p.solarCalc.totalCost=totalCost;p.solarCalc.costAfterTax=costAfterTax;
-    p.solarCalc.paybackYrs=paybackYrs;p.solarCalc.paybackTax=paybackTax;
-    p.solarCalc.nmSavings=nmTotalSavings;p.solarCalc.btmSavings=btmTotalSavings;
-    p.solarCalc.monthlySavings=nmSavings.map((s,i)=>({kwh:production[i],savings:s.totalSav}));
-    sset('en_projects',projects);
-  }
-
-  const noUtilData=blKwh.every(k=>k===0)&&manualKw===0;
-
-  // ══ RENDER SUMMARY ══
-  const summaryWrap=document.getElementById('sc-summary');
-  if(summaryWrap) summaryWrap.innerHTML=`
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-hdr"><span class="card-title">☀️ Solar Savings Summary</span></div>
-      <div style="padding:16px">
-        ${noUtilData?'<div style="background:var(--warn-dim);border:1px solid var(--warn);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--warn);margin-bottom:14px">⚠️ No baseline utility data found. Populate the Baseline table or add utility bills to buildings for accurate recalculation.</div>':''}
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
-          <div class="card" style="background:var(--s1);padding:12px;text-align:center">
-            <div style="font-size:10px;color:var(--text3);text-transform:uppercase">Array Size</div>
-            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--accent)">${arrayKw} kW</div>
-          </div>
-          <div class="card" style="background:var(--s1);padding:12px;text-align:center">
-            <div style="font-size:10px;color:var(--text3);text-transform:uppercase">Annual Production</div>
-            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--em)">${fmtN(totalProd)} kWh</div>
-          </div>
-          <div class="card" style="background:var(--s1);padding:12px;text-align:center">
-            <div style="font-size:10px;color:var(--text3);text-transform:uppercase">Baseline $/yr</div>
-            <div style="font-size:18px;font-weight:800;font-family:var(--mono)">${fmtD(existingAnnual)}</div>
-          </div>
-          <div class="card" style="background:var(--s1);padding:12px;text-align:center">
-            <div style="font-size:10px;color:var(--text3);text-transform:uppercase">Net Meter $/yr</div>
-            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--teal)">${fmtD(nmAnnual)}</div>
-          </div>
-          <div class="card" style="background:var(--s1);padding:12px;text-align:center">
-            <div style="font-size:10px;color:var(--text3);text-transform:uppercase">BTM $/yr</div>
-            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--violet)">${fmtD(btmAnnual)}</div>
-          </div>
-          <div class="card" style="background:var(--s1);padding:12px;text-align:center">
-            <div style="font-size:10px;color:var(--text3);text-transform:uppercase">NM Savings</div>
-            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--green)">${fmtD(nmTotalSavings)}</div>
-          </div>
-          <div class="card" style="background:var(--s1);padding:12px;text-align:center">
-            <div style="font-size:10px;color:var(--text3);text-transform:uppercase">BTM Savings</div>
-            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--green)">${fmtD(btmTotalSavings)}</div>
-          </div>
-          <div class="card" style="background:var(--s1);padding:12px;text-align:center">
-            <div style="font-size:10px;color:var(--text3);text-transform:uppercase">System Cost</div>
-            <div style="font-size:18px;font-weight:800;font-family:var(--mono)">${fmtD(totalCost)}</div>
-          </div>
-          <div class="card" style="background:var(--s1);padding:12px;text-align:center">
-            <div style="font-size:10px;color:var(--text3);text-transform:uppercase">After Tax Credit</div>
-            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--teal)">${fmtD(costAfterTax)}</div>
-          </div>
-          <div class="card" style="background:var(--s1);padding:12px;text-align:center">
-            <div style="font-size:10px;color:var(--text3);text-transform:uppercase">Payback (w/ credit)</div>
-            <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--amber)">${paybackTax.toFixed(1)} yrs</div>
-          </div>
-        </div>
-      </div>
-    </div>`;
-
-  // ══ RENDER RESULT TABLES (Sections D, E, F, G, H) ══
-  const resultsWrap=document.getElementById('sc-results');
-  if(!resultsWrap) return;
+  // Formatters
+  const fn=n=>Math.round(n).toLocaleString();
+  const fd=n=>'$'+(n<0?'-':'')+Math.abs(Math.round(n)).toLocaleString();
+  const f2=n=>n<0?'-$'+Math.abs(n).toFixed(2):'$'+n.toFixed(2);
+  const sa=(a,k)=>a.reduce((s,e)=>s+(e[k]||0),0);
   const mc='text-align:right;font-family:var(--mono);font-size:10px;padding:3px 4px';
   const hc='text-align:center;font-size:9px;padding:3px 4px;white-space:nowrap';
-  const sumArr=(arr,key)=>arr.reduce((a,e)=>a+(typeof e[key]==='number'?e[key]:0),0);
 
-  // ── Profile table builder (used by D, E, G) — On-Peak/Off-Peak layout ──
-  function buildStandardProfileTable(title,icon,label,profile,annual){
-    const rows=profile.map((e,i)=>{
-      const bg=i%2===0?'':'background:rgba(255,255,255,0.02)';
-      const season=e.isSummer?'☀️':'❄️';
-      return `<tr style="${bg}">
-        <td style="font-weight:600;font-size:11px;padding:3px 6px">${months[i]}</td>
-        <td style="${mc}">${e.actualKw?e.actualKw.toFixed(1):''}</td>
-        <td style="${mc}">${e.billingKw?e.billingKw.toFixed(1):''}</td>
-        <td style="${mc};font-weight:600">${fmtN(e.kwh)}</td>
-        <td style="${mc}">${fmtN(Math.round(e.onPkKwh))}</td>
-        <td style="${mc};color:var(--green)">${fmtD2(e.onPk)}</td>
-        <td style="${mc}">${fmtN(Math.round(e.offPkKwh))}</td>
-        <td style="${mc};color:var(--green)">${fmtD2(e.offPk)}</td>
-        <td style="${mc}">${fmtN(Math.round(e.noneKwh))}</td>
-        <td style="${mc};border-left:2px solid var(--border)">${fmtD2(e.cust)}</td>
-        <td style="${mc}">${fmtD2(e.demand)}</td>
-        <td style="${mc}">${fmtD2(e.fac)}</td>
-        <td style="${mc}">${fmtD2(e.consumption)}</td>
-        <td style="${mc}">${e.renew>0?fmtD2(e.renew):''}</td>
-        <td style="${mc}">${fmtD2(e.eca)}</td>
-        <td style="${mc}">${fmtD2(e.eer)}</td>
-        <td style="${mc}">${fmtD2(e.pts)}</td>
-        <td style="${mc}">${fmtD2(e.tdc)}</td>
-        <td style="${mc};color:var(--amber)">${e.solarCredit>0?'-'+fmtD2(e.solarCredit):''}</td>
-        <td style="${mc}">${fmtD2(e.franchise)}</td>
-        <td style="${mc};font-weight:800;color:var(--em);border-left:2px solid var(--border)">${fmtD2(e.total)}</td>
-        <td style="${mc};font-size:9px">${season}</td>
-      </tr>`;
+  // Summary KPIs
+  const sumEl=document.getElementById('sc-summary');
+  if(sumEl){
+    const noData=bKwh.every(k=>k===0)&&!manKw;
+    const kpi=(lbl,val,col)=>`<div class="card" style="background:var(--s1);padding:10px 12px;text-align:center"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">${lbl}</div><div style="font-size:17px;font-weight:800;font-family:var(--mono);color:var(--${col})">${val}</div></div>`;
+    sumEl.innerHTML=`${noData?'<div style="background:var(--warn-dim);border:1px solid var(--warn);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--warn);margin-bottom:12px">⚠️ No baseline data — populate Section A for accurate results.</div>':''}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:8px">${kpi('Array',arrayKw+' kW','accent')}${kpi('Production',fn(totProd)+' kWh','em')}${kpi('Baseline $/yr',fd(dA),'text')}${kpi('NM $/yr',fd(fA),'teal')}${kpi('BTM $/yr',fd(gA),'violet')}${kpi('NM Savings',fd(nmTot),'green')}${kpi('BTM Savings',fd(btmTot),'green')}${kpi('System Cost',fd(totCost),'text')}${kpi('After Credit',fd(costAT),'teal')}${kpi('Payback',payback.toFixed(1)+' yrs','amber')}</div>`;
+  }
+
+  // Table builders — exact Excel match
+  // Determine if rate has 3 tiers (None column visible) or 2 tiers (None hidden)
+  const is3Tier=sched.match(/1LGA/i)?true:false; // 1LGAE etc have 3 tiers; 2LGSF, 2MGAEW etc have 2
+  const noneCS=is3Tier?2:0; // colspan for None group (0=hidden)
+
+  function stdTbl(lbl,sec,prof,ann,savArr){
+    const showSav=!!savArr;
+    let rows='';prof.forEach((e,i)=>{
+      const bg=i%2?'background:rgba(255,255,255,0.015)':'';
+      let r=`<tr style="${bg}"><td style="font-weight:600;font-size:11px;padding:3px 6px">${MO[i]}</td><td style="${mc}">${e.akw?e.akw.toFixed(1):''}</td><td style="${mc}">${e.bilKw?e.bilKw.toFixed(1):''}</td><td style="${mc};font-weight:600">${fn(e.kwh)}</td><td style="${mc}">${fn(Math.round(e.onKwh))}</td><td style="${mc}">${f2(e.onPk)}</td><td style="${mc}">${fn(Math.round(e.offKwh))}</td><td style="${mc}">${f2(e.offPk)}</td>`;
+      if(is3Tier) r+=`<td style="${mc}">${e.noneKwh?fn(Math.round(e.noneKwh)):'-'}</td><td style="${mc}">${e.noneCh?f2(e.noneCh):'$-'}</td>`;
+      r+=`<td style="${mc};border-left:2px solid var(--border)">${f2(e.cust)}</td><td style="${mc}">${f2(e.dem)}</td><td style="${mc}">${f2(e.fac)}</td><td style="${mc}">${f2(e.cons)}</td><td style="${mc}">${e.ren>0?f2(e.ren):''}</td><td style="${mc}">${f2(e.eca)}</td><td style="${mc}">${f2(e.eer)}</td><td style="${mc}">${f2(e.pts)}</td><td style="${mc}">${f2(e.tdc)}</td><td style="${mc};color:var(--amber)">${e.sc>0?'-'+f2(e.sc):''}</td><td style="${mc}">${f2(e.ff)}</td><td style="${mc};font-weight:700;border-left:2px solid var(--border)">${f2(e.tot)}</td>`;
+      if(showSav){const s=savArr[i];r+=`<td style="${mc}">${f2(s.dS)}</td><td style="${mc}">${f2(s.cS)}</td><td style="${mc}">${f2(s.oS)}</td><td style="${mc};font-weight:700;color:var(--green)">${f2(s.tS)}</td>`;}
+      r+=`</tr>`;rows+=r;
     });
-    return `<div class="card" style="margin-bottom:16px">
-      <div class="card-hdr"><span class="card-title">${icon} ${label} — ${title}</span></div>
-      <div style="padding:12px;overflow-x:auto">
-        <table class="dtbl" style="min-width:1400px;font-size:10px;border-collapse:collapse">
-          <thead><tr>
-            <th style="${hc}">Month</th><th style="${hc}">Actual kW</th><th style="${hc}">Billing kW</th>
-            <th style="${hc}">kWh</th>
-            <th colspan="2" style="${hc};border-bottom:1px solid var(--accent)">On-Peak</th>
-            <th colspan="2" style="${hc};border-bottom:1px solid var(--accent)">Off-Peak</th>
-            <th style="${hc}">None kWh</th>
-            <th style="${hc};border-left:2px solid var(--border)">Customer $</th><th style="${hc}">Demand $</th>
-            <th style="${hc}">Facilities $</th><th style="${hc}">Consumption $</th><th style="${hc}">Renewable $</th>
-            <th style="${hc}">ECA $</th><th style="${hc}">EER $</th><th style="${hc}">PTS $</th><th style="${hc}">TDC $</th>
-            <th style="${hc}">Solar Credit</th><th style="${hc}">Franchise $</th>
-            <th style="${hc};border-left:2px solid var(--border);font-weight:800">TOTAL $</th><th style="${hc}"></th>
-          </tr>
-          <tr style="font-size:8px;color:var(--text3)"><th></th><th></th><th></th><th></th>
-            <th style="text-align:center">kWh</th><th style="text-align:center">$ Cost</th>
-            <th style="text-align:center">kWh</th><th style="text-align:center">$ Cost</th>
-            <th></th><th style="border-left:2px solid var(--border)"></th>
-            <th></th><th></th><th></th><th></th><th></th><th></th><th></th><th></th><th></th><th></th>
-            <th style="border-left:2px solid var(--border)"></th><th></th>
-          </tr></thead>
-          <tbody>${rows.join('')}
-            <tr style="background:rgba(59,130,246,0.06);font-weight:700;border-top:2px solid var(--border)">
-              <td style="font-weight:800;padding:4px 6px">TOTAL</td><td></td><td></td>
-              <td style="${mc};font-weight:800">${fmtN(sumArr(profile,'kwh'))}</td>
-              <td style="${mc}">${fmtN(Math.round(sumArr(profile,'onPkKwh')))}</td>
-              <td style="${mc};color:var(--green)">${fmtD2(sumArr(profile,'onPk'))}</td>
-              <td style="${mc}">${fmtN(Math.round(sumArr(profile,'offPkKwh')))}</td>
-              <td style="${mc};color:var(--green)">${fmtD2(sumArr(profile,'offPk'))}</td>
-              <td style="${mc}">${fmtN(Math.round(sumArr(profile,'noneKwh')))}</td>
-              <td style="${mc};border-left:2px solid var(--border)">${fmtD2(sumArr(profile,'cust'))}</td>
-              <td style="${mc}">${fmtD2(sumArr(profile,'demand'))}</td>
-              <td style="${mc}">${fmtD2(sumArr(profile,'fac'))}</td>
-              <td style="${mc}">${fmtD2(sumArr(profile,'consumption'))}</td>
-              <td style="${mc}">${fmtD2(sumArr(profile,'renew'))}</td>
-              <td style="${mc}">${fmtD2(sumArr(profile,'eca'))}</td>
-              <td style="${mc}">${fmtD2(sumArr(profile,'eer'))}</td>
-              <td style="${mc}">${fmtD2(sumArr(profile,'pts'))}</td>
-              <td style="${mc}">${fmtD2(sumArr(profile,'tdc'))}</td>
-              <td style="${mc};color:var(--amber)">${sumArr(profile,'solarCredit')>0?'-'+fmtD2(sumArr(profile,'solarCredit')):''}</td>
-              <td style="${mc}">${fmtD2(sumArr(profile,'franchise'))}</td>
-              <td style="${mc};font-weight:800;font-size:12px;color:var(--em);border-left:2px solid var(--border)">${fmtD2(annual)}</td>
-              <td></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>`;
+    const t=prof;
+    let tot=`<tr style="background:rgba(59,130,246,0.06);font-weight:700;border-top:2px solid var(--border)"><td style="font-weight:800;padding:4px 6px"></td><td style="${mc}">${sa(t,'akw').toFixed(1)}</td><td style="${mc}">${sa(t,'bilKw').toFixed(1)}</td><td style="${mc};font-weight:800">${fn(sa(t,'kwh'))}</td><td style="${mc}">${fn(Math.round(sa(t,'onKwh')))}</td><td style="${mc}">${f2(sa(t,'onPk'))}</td><td style="${mc}">${fn(Math.round(sa(t,'offKwh')))}</td><td style="${mc}">${f2(sa(t,'offPk'))}</td>`;
+    if(is3Tier) tot+=`<td style="${mc}">${fn(Math.round(sa(t,'noneKwh')))}</td><td style="${mc}">${f2(sa(t,'noneCh'))}</td>`;
+    tot+=`<td style="${mc};border-left:2px solid var(--border)">${f2(sa(t,'cust'))}</td><td style="${mc}">${f2(sa(t,'dem'))}</td><td style="${mc}">${f2(sa(t,'fac'))}</td><td style="${mc}">${f2(sa(t,'cons'))}</td><td style="${mc}">${f2(sa(t,'ren'))}</td><td style="${mc}">${f2(sa(t,'eca'))}</td><td style="${mc}">${f2(sa(t,'eer'))}</td><td style="${mc}">${f2(sa(t,'pts'))}</td><td style="${mc}">${f2(sa(t,'tdc'))}</td><td style="${mc};color:var(--amber)">${sa(t,'sc')>0?'-'+f2(sa(t,'sc')):''}</td><td style="${mc}">${f2(sa(t,'ff'))}</td><td style="${mc};font-weight:800;border-left:2px solid var(--border)">${f2(ann)}</td>`;
+    if(showSav){const tD=savArr.reduce((a,s)=>a+s.dS,0),tC=savArr.reduce((a,s)=>a+s.cS,0),tO=savArr.reduce((a,s)=>a+s.oS,0),tS=savArr.reduce((a,s)=>a+s.tS,0);tot+=`<td style="${mc};font-weight:700">${f2(tD)}</td><td style="${mc};font-weight:700">${f2(tC)}</td><td style="${mc};font-weight:700">${f2(tO)}</td><td style="${mc};font-weight:800;color:var(--green)">${f2(tS)}</td>`;}
+    tot+=`</tr>`;
+
+    // Header row 1: group headers
+    let h1=`<tr><th style="${hc}" rowspan="2">Month</th><th style="${hc}" rowspan="2">ACTUAL KW</th><th style="${hc}" rowspan="2">BILLING KW</th><th style="${hc}" rowspan="2">kWh</th><th colspan="2" style="${hc};border-bottom:1px solid var(--text3)">On-Peak kWh</th><th colspan="2" style="${hc};border-bottom:1px solid var(--text3)">Off-Peak kWh</th>`;
+    if(is3Tier) h1+=`<th colspan="2" style="${hc};border-bottom:1px solid var(--text3)">None</th>`;
+    h1+=`<th colspan="11" style="${hc};border-left:2px solid var(--border);border-bottom:1px solid var(--text3)">TOTALS</th><th style="${hc}" rowspan="2" colspan="1"></th>`;
+    if(showSav) h1+=`<th colspan="4" style="${hc};border-left:2px solid var(--border);border-bottom:1px solid var(--text3)">SAVINGS</th>`;
+    h1+=`</tr>`;
+
+    // Header row 2: column headers
+    let h2=`<tr><th style="${hc}">kWh</th><th style="${hc}">kWh $ COST</th><th style="${hc}">kWh</th><th style="${hc}">kWh $ COST</th>`;
+    if(is3Tier) h2+=`<th style="${hc}">kWh</th><th style="${hc}">kWh $ COST</th>`;
+    h2+=`<th style="${hc};border-left:2px solid var(--border)">Customer Charge $</th><th style="${hc}">Demand Charge $</th><th style="${hc}">Facilities Charge $</th><th style="${hc}">Consumption Charges $</th><th style="${hc}">Renewable Participation Charge $</th><th style="${hc}">ECA Charge $</th><th style="${hc}">EER Charge $</th><th style="${hc}">PTS Charge $</th><th style="${hc}">TDC Charge $</th><th style="${hc}">Solar Over Production Credit $</th><th style="${hc}">Franchise Fee $</th><th style="${hc};font-weight:800;border-left:2px solid var(--border)">TOTAL COST $</th>`;
+    if(showSav) h2+=`<th style="${hc};border-left:2px solid var(--border)">Demand Charges $</th><th style="${hc}">Consumption Charges $</th><th style="${hc}">Other Charges $</th><th style="${hc};font-weight:800">TOTAL SAVINGS $</th>`;
+    h2+=`</tr>`;
+
+    return`<div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">${sec} — ${lbl}</span></div><div style="padding:12px;overflow-x:auto"><table class="dtbl" style="min-width:1500px;font-size:10px;border-collapse:collapse"><thead>${h1}${h2}</thead><tbody>${rows}${tot}</tbody></table></div></div>`;
   }
 
-  // ── Net Metering profile table (Section F) — Solar Tier layout ──
-  function buildNetMeterProfileTable(profile,annual){
-    const rows=profile.map((e,i)=>{
-      const bg=i%2===0?'':'background:rgba(255,255,255,0.02)';
-      const season=e.isSummer?'☀️':'❄️';
-      return `<tr style="${bg}">
-        <td style="font-weight:600;font-size:11px;padding:3px 6px">${months[i]}</td>
-        <td style="${mc}">${e.actualKw?e.actualKw.toFixed(1):''}</td>
-        <td style="${mc}">${e.billingKw?e.billingKw.toFixed(1):''}</td>
-        <td style="${mc};font-weight:600">${fmtN(e.kwh)}</td>
-        <td style="${mc}">${fmtN(Math.round(e.t1Kwh||0))}</td>
-        <td style="${mc};color:var(--green)">${fmtD2(e.onPk)}</td>
-        <td style="${mc}">${fmtN(Math.round(e.t2Kwh||0))}</td>
-        <td style="${mc};color:var(--green)">${fmtD2(e.offPk)}</td>
-        <td style="${mc}">${fmtN(Math.round(e.t3Kwh||0))}</td>
-        <td style="${mc};color:var(--green)">${fmtD2(e.noneCharge||0)}</td>
-        <td style="${mc};border-left:2px solid var(--border)">${fmtD2(e.cust)}</td>
-        <td style="${mc}">${fmtD2(e.demand)}</td>
-        <td style="${mc}">${fmtD2(e.fac)}</td>
-        <td style="${mc}">${fmtD2(e.consumption)}</td>
-        <td style="${mc}">${fmtD2(e.eca)}</td>
-        <td style="${mc}">${fmtD2(e.eer)}</td>
-        <td style="${mc}">${fmtD2(e.pts)}</td>
-        <td style="${mc}">${fmtD2(e.tdc)}</td>
-        <td style="${mc};color:var(--amber);font-weight:600">${e.solarCredit>0?'-'+fmtD2(e.solarCredit):''}</td>
-        <td style="${mc}">${fmtD2(e.franchise)}</td>
-        <td style="${mc};font-weight:800;color:var(--em);border-left:2px solid var(--border)">${fmtD2(e.total)}</td>
-        <td style="${mc};font-size:9px">${season}</td>
-      </tr>`;
+  function nmTbl(prof,ann,savArr){
+    const showSav=!!savArr;
+    let rows='';prof.forEach((e,i)=>{
+      const bg=i%2?'background:rgba(255,255,255,0.015)':'';
+      let r=`<tr style="${bg}"><td style="font-weight:600;font-size:11px;padding:3px 6px">${MO[i]}</td><td style="${mc}">${e.akw?e.akw.toFixed(1):''}</td><td style="${mc}">${e.bilKw?e.bilKw.toFixed(1):''}</td><td style="${mc};font-weight:600">${fn(e.kwh)}</td><td style="${mc}">${fn(Math.round(e.t1))}</td><td style="${mc}">${f2(e.onPk)}</td><td style="${mc}">${fn(Math.round(e.t2))}</td><td style="${mc}">${f2(e.offPk)}</td><td style="${mc}">${fn(Math.round(e.t3))}</td><td style="${mc}">${f2(e.noneCh||0)}</td><td style="${mc};border-left:2px solid var(--border)">${f2(e.cust)}</td><td style="${mc}">${f2(e.dem)}</td><td style="${mc}">${f2(e.fac)}</td><td style="${mc}">${f2(e.cons)}</td><td style="${mc}">${f2(e.eca)}</td><td style="${mc}">${f2(e.eer)}</td><td style="${mc}">${f2(e.pts)}</td><td style="${mc}">${f2(e.tdc)}</td><td style="${mc};color:var(--amber);font-weight:600">${e.sc>0?'-'+f2(e.sc):''}</td><td style="${mc}">${f2(e.ff)}</td><td style="${mc};font-weight:700;border-left:2px solid var(--border)">${f2(e.tot)}</td>`;
+      if(showSav){const s=savArr[i];r+=`<td style="${mc}">${f2(s.dS)}</td><td style="${mc}">${f2(s.cS)}</td><td style="${mc};color:var(--amber)">${s.oP>0?f2(s.oP):''}</td><td style="${mc}">${f2(s.oS)}</td><td style="${mc};font-weight:700;color:var(--green)">${f2(s.tS)}</td>`;}
+      r+=`</tr>`;rows+=r;
     });
-    return `<div class="card" style="margin-bottom:16px">
-      <div class="card-hdr"><span class="card-title">☀️ F — Proposed Post-Solar — Net Metering</span></div>
-      <div style="padding:12px;overflow-x:auto">
-        <table class="dtbl" style="min-width:1400px;font-size:10px;border-collapse:collapse">
-          <thead><tr>
-            <th style="${hc}">Month</th><th style="${hc}">Actual kW</th><th style="${hc}">Billing kW</th>
-            <th style="${hc}">kWh</th>
-            <th colspan="2" style="${hc};border-bottom:1px solid var(--amber)">First 180 hrs</th>
-            <th colspan="2" style="${hc};border-bottom:1px solid var(--amber)">Next 180 hrs</th>
-            <th colspan="2" style="${hc};border-bottom:1px solid var(--amber)">Over 360 hrs</th>
-            <th style="${hc};border-left:2px solid var(--border)">Customer $</th><th style="${hc}">Demand $</th>
-            <th style="${hc}">Facilities $</th><th style="${hc}">Consumption $</th>
-            <th style="${hc}">ECA $</th><th style="${hc}">EER $</th><th style="${hc}">PTS $</th><th style="${hc}">TDC $</th>
-            <th style="${hc};color:var(--amber)">Solar OverProd</th><th style="${hc}">Franchise $</th>
-            <th style="${hc};border-left:2px solid var(--border);font-weight:800">TOTAL $</th><th style="${hc}"></th>
-          </tr>
-          <tr style="font-size:8px;color:var(--text3)"><th></th><th></th><th></th><th></th>
-            <th style="text-align:center">kWh</th><th style="text-align:center">$ Cost</th>
-            <th style="text-align:center">kWh</th><th style="text-align:center">$ Cost</th>
-            <th style="text-align:center">kWh</th><th style="text-align:center">$ Cost</th>
-            <th style="border-left:2px solid var(--border)"></th>
-            <th></th><th></th><th></th><th></th><th></th><th></th><th></th><th></th><th></th>
-            <th style="border-left:2px solid var(--border)"></th><th></th>
-          </tr></thead>
-          <tbody>${rows.join('')}
-            <tr style="background:rgba(59,130,246,0.06);font-weight:700;border-top:2px solid var(--border)">
-              <td style="font-weight:800;padding:4px 6px">TOTAL</td><td></td><td></td>
-              <td style="${mc};font-weight:800">${fmtN(sumArr(profile,'kwh'))}</td>
-              <td style="${mc}">${fmtN(Math.round(sumArr(profile,'t1Kwh')))}</td>
-              <td style="${mc};color:var(--green)">${fmtD2(sumArr(profile,'onPk'))}</td>
-              <td style="${mc}">${fmtN(Math.round(sumArr(profile,'t2Kwh')))}</td>
-              <td style="${mc};color:var(--green)">${fmtD2(sumArr(profile,'offPk'))}</td>
-              <td style="${mc}">${fmtN(Math.round(sumArr(profile,'t3Kwh')))}</td>
-              <td style="${mc};color:var(--green)">${fmtD2(sumArr(profile,'noneCharge'))}</td>
-              <td style="${mc};border-left:2px solid var(--border)">${fmtD2(sumArr(profile,'cust'))}</td>
-              <td style="${mc}">${fmtD2(sumArr(profile,'demand'))}</td>
-              <td style="${mc}">${fmtD2(sumArr(profile,'fac'))}</td>
-              <td style="${mc}">${fmtD2(sumArr(profile,'consumption'))}</td>
-              <td style="${mc}">${fmtD2(sumArr(profile,'eca'))}</td>
-              <td style="${mc}">${fmtD2(sumArr(profile,'eer'))}</td>
-              <td style="${mc}">${fmtD2(sumArr(profile,'pts'))}</td>
-              <td style="${mc}">${fmtD2(sumArr(profile,'tdc'))}</td>
-              <td style="${mc};color:var(--amber)">${sumArr(profile,'solarCredit')>0?'-'+fmtD2(sumArr(profile,'solarCredit')):''}</td>
-              <td style="${mc}">${fmtD2(sumArr(profile,'franchise'))}</td>
-              <td style="${mc};font-weight:800;font-size:12px;color:var(--em);border-left:2px solid var(--border)">${fmtD2(annual)}</td>
-              <td></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>`;
+    const t=prof;
+    let tot=`<tr style="background:rgba(59,130,246,0.06);font-weight:700;border-top:2px solid var(--border)"><td style="font-weight:800;padding:4px 6px"></td><td></td><td></td><td style="${mc};font-weight:800">${fn(sa(t,'kwh'))}</td><td style="${mc}">${fn(Math.round(sa(t,'t1')))}</td><td style="${mc}">${f2(sa(t,'onPk'))}</td><td style="${mc}">${fn(Math.round(sa(t,'t2')))}</td><td style="${mc}">${f2(sa(t,'offPk'))}</td><td style="${mc}">${fn(Math.round(sa(t,'t3')))}</td><td style="${mc}">${f2(sa(t,'noneCh'))}</td><td style="${mc};border-left:2px solid var(--border)">${f2(sa(t,'cust'))}</td><td style="${mc}">${f2(sa(t,'dem'))}</td><td style="${mc}">${f2(sa(t,'fac'))}</td><td style="${mc}">${f2(sa(t,'cons'))}</td><td style="${mc}">${f2(sa(t,'eca'))}</td><td style="${mc}">${f2(sa(t,'eer'))}</td><td style="${mc}">${f2(sa(t,'pts'))}</td><td style="${mc}">${f2(sa(t,'tdc'))}</td><td style="${mc};color:var(--amber)">${sa(t,'sc')>0?'-'+f2(sa(t,'sc')):''}</td><td style="${mc}">${f2(sa(t,'ff'))}</td><td style="${mc};font-weight:800;border-left:2px solid var(--border)">${f2(ann)}</td>`;
+    if(showSav){const tD=savArr.reduce((a,s)=>a+s.dS,0),tC=savArr.reduce((a,s)=>a+s.cS,0),tOP=savArr.reduce((a,s)=>a+(s.oP||0),0),tO=savArr.reduce((a,s)=>a+s.oS,0),tS=savArr.reduce((a,s)=>a+s.tS,0);tot+=`<td style="${mc};font-weight:700">${f2(tD)}</td><td style="${mc};font-weight:700">${f2(tC)}</td><td style="${mc};font-weight:700;color:var(--amber)">${f2(tOP)}</td><td style="${mc};font-weight:700">${f2(tO)}</td><td style="${mc};font-weight:800;color:var(--green)">${f2(tS)}</td>`;}
+    tot+=`</tr>`;
+
+    let h1=`<tr><th style="${hc}" rowspan="2">Month</th><th style="${hc}" rowspan="2">ACTUAL KW</th><th style="${hc}" rowspan="2">BILLING KW</th><th style="${hc}" rowspan="2">kWh</th><th colspan="2" style="${hc};border-bottom:1px solid var(--text3)">First 180 Hours</th><th colspan="2" style="${hc};border-bottom:1px solid var(--text3)">Next 180 Hours</th><th colspan="2" style="${hc};border-bottom:1px solid var(--text3)">Over 360 Hours</th><th colspan="11" style="${hc};border-left:2px solid var(--border);border-bottom:1px solid var(--text3)">TOTALS</th>`;
+    if(showSav) h1+=`<th colspan="5" style="${hc};border-left:2px solid var(--border);border-bottom:1px solid var(--text3)">SAVINGS</th>`;
+    h1+=`</tr>`;
+    let h2=`<tr><th style="${hc}">kWh</th><th style="${hc}">kWh $ COST</th><th style="${hc}">kWh</th><th style="${hc}">kWh $ COST</th><th style="${hc}">kWh</th><th style="${hc}">kWh $ COST</th><th style="${hc};border-left:2px solid var(--border)">Customer Charge $</th><th style="${hc}">Demand Charge $</th><th style="${hc}">Facilities Charge $</th><th style="${hc}">Consumption Charges $</th><th style="${hc}">ECA Charge $</th><th style="${hc}">EER Charge $</th><th style="${hc}">PTS Charge $</th><th style="${hc}">TDC Charge $</th><th style="${hc}">Solar Over Production Credit $</th><th style="${hc}">Franchise Fee $</th><th style="${hc};font-weight:800;border-left:2px solid var(--border)">TOTAL COST $</th>`;
+    if(showSav) h2+=`<th style="${hc};border-left:2px solid var(--border)">Demand Charges $</th><th style="${hc}">Consumption Charges $</th><th style="${hc}">Solar Overproduction</th><th style="${hc}">Other Charges $</th><th style="${hc};font-weight:800">TOTAL SAVINGS $</th>`;
+    h2+=`</tr>`;
+
+    return`<div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">F — PROPOSED POST-SOLAR — Net Metering</span></div><div style="padding:12px;overflow-x:auto"><table class="dtbl" style="min-width:1500px;font-size:10px;border-collapse:collapse"><thead>${h1}${h2}</thead><tbody>${rows}${tot}</tbody></table></div></div>`;
   }
 
-  // ── Savings table builder ──
-  function buildSavingsTable(title,icon,savings,totalSav,showOverProd){
-    const sRows=savings.map((s,i)=>{
-      const bg=i%2===0?'':'background:rgba(255,255,255,0.02)';
-      return `<tr style="${bg}">
-        <td style="font-weight:600;font-size:11px;padding:3px 6px">${months[i]}</td>
-        <td style="${mc}">${fmtD2(s.demandSav)}</td>
-        <td style="${mc}">${fmtD2(s.consumeSav)}</td>
-        ${showOverProd?`<td style="${mc};color:var(--amber)">${s.overProdSav>0?fmtD2(s.overProdSav):''}</td>`:''}
-        <td style="${mc}">${fmtD2(s.otherSav)}</td>
-        <td style="${mc};font-weight:800;color:${s.totalSav>=0?'var(--green)':'var(--red)'}">${fmtD2(s.totalSav)}</td>
-      </tr>`;
-    }).join('');
-    const totD=savings.reduce((a,s)=>a+s.demandSav,0);
-    const totC=savings.reduce((a,s)=>a+s.consumeSav,0);
-    const totOP=savings.reduce((a,s)=>a+(s.overProdSav||0),0);
-    const totO=savings.reduce((a,s)=>a+s.otherSav,0);
-    return `<div class="card" style="margin-bottom:16px">
-      <div class="card-hdr"><span class="card-title">${icon} ${title}</span></div>
-      <div style="padding:12px;overflow-x:auto">
-        <table class="dtbl" style="min-width:${showOverProd?'600':'500'}px;font-size:11px">
-          <thead><tr>
-            <th style="${hc}">Month</th><th style="${hc}">Demand $</th><th style="${hc}">Consumption $</th>
-            ${showOverProd?`<th style="${hc}">Solar OverProd $</th>`:''}
-            <th style="${hc}">Other $</th><th style="${hc};font-weight:800">TOTAL SAVINGS $</th>
-          </tr></thead>
-          <tbody>${sRows}
-            <tr style="background:rgba(34,197,94,0.08);font-weight:700;border-top:2px solid var(--border)">
-              <td style="font-weight:800;padding:4px 6px">ANNUAL</td>
-              <td style="${mc};font-weight:700">${fmtD2(totD)}</td>
-              <td style="${mc};font-weight:700">${fmtD2(totC)}</td>
-              ${showOverProd?`<td style="${mc};font-weight:700;color:var(--amber)">${fmtD2(totOP)}</td>`:''}
-              <td style="${mc};font-weight:700">${fmtD2(totO)}</td>
-              <td style="${mc};font-weight:800;font-size:13px;color:var(--green)">${fmtD2(totalSav)}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>`;
+  // H — Effective Rates
+  function effTbl(){
+    const rows=[];for(let i=0;i<12;i++){const ns=nmSav[i],sk=solKw[i]||0,skwh=prod[i]||0;rows.push({mo:MO[i],mDR:sk>0?ns.dS/sk:0,mUR:skwh>0?ns.cS/skwh:0,isS:dP[i].isS,sk,skwh,dS:ns.dS,cS:ns.cS});}
+    const sR=rows.filter(r=>r.isS),wR=rows.filter(r=>!r.isS);
+    const sDR=sR.reduce((a,r)=>a+r.sk,0)>0?sR.reduce((a,r)=>a+r.dS,0)/sR.reduce((a,r)=>a+r.sk,0):0;
+    const wDR=wR.reduce((a,r)=>a+r.sk,0)>0?wR.reduce((a,r)=>a+r.dS,0)/wR.reduce((a,r)=>a+r.sk,0):0;
+    const sUR=sR.reduce((a,r)=>a+r.skwh,0)>0?sR.reduce((a,r)=>a+r.cS,0)/sR.reduce((a,r)=>a+r.skwh,0):0;
+    const wUR=wR.reduce((a,r)=>a+r.skwh,0)>0?wR.reduce((a,r)=>a+r.cS,0)/wR.reduce((a,r)=>a+r.skwh,0):0;
+    let h='';rows.forEach((r,i)=>{const bg=i%2?'background:rgba(255,255,255,0.015)':'';h+=`<tr style="${bg}"><td style="font-weight:600;font-size:11px;padding:3px 6px">${r.mo}</td><td style="${mc}">${r.mDR.toFixed(3)}</td><td style="${mc}">${(r.isS?sDR:wDR).toFixed(3)}</td><td style="${mc};color:${r.isS?'var(--amber)':'var(--accent)'};font-weight:600">${r.isS?'SUMMER':'WINTER'}</td><td style="${mc}">${(r.isS?sUR:wUR).toFixed(5)}</td><td style="${mc}">${r.mUR.toFixed(5)}</td></tr>`;});
+    return`<div class="card" style="margin-bottom:16px"><div class="card-hdr"><span class="card-title">H — EFFECTIVE RATES</span></div><div style="padding:12px;overflow-x:auto"><table class="dtbl" style="min-width:600px;font-size:11px"><thead><tr><th style="${hc}">Month</th><th style="${hc}">Monthly Demand/Facilities Rate</th><th style="${hc}">Seasonal Demand/Facilities Rate</th><th style="${hc}">BILLING SEASON</th><th style="${hc}">Seasonal Usage Rate</th><th style="${hc}">Monthly Usage Rate</th></tr></thead><tbody>${h}</tbody></table></div></div>`;
   }
 
-  // ── Section H: Effective Rates ──
-  function buildEffectiveRatesTable(){
-    const rows=[];
-    for(let i=0;i<12;i++){
-      const nm=nmSavings[i];
-      const sKw=solarKwPerMonth[i]||0;
-      const sKwh=production[i]||0;
-      const isSummer=existingProfile[i].isSummer;
-      const monthDemRate=sKw>0?(nm.demandSav/sKw):0;
-      const monthUsageRate=sKwh>0?(nm.consumeSav/sKwh):0;
-      rows.push({month:months[i],monthDemRate,monthUsageRate,isSummer,solarKw:sKw,solarKwh:sKwh,demSav:nm.demandSav,conSav:nm.consumeSav});
-    }
-    // Seasonal aggregation
-    const summerRows=rows.filter(r=>r.isSummer);
-    const winterRows=rows.filter(r=>!r.isSummer);
-    const seasonalDemSum=summerRows.reduce((a,r)=>a+r.demSav,0);
-    const seasonalDemWin=winterRows.reduce((a,r)=>a+r.demSav,0);
-    const seasonalKwSum=summerRows.reduce((a,r)=>a+r.solarKw,0);
-    const seasonalKwWin=winterRows.reduce((a,r)=>a+r.solarKw,0);
-    const seasonalConSum=summerRows.reduce((a,r)=>a+r.conSav,0);
-    const seasonalConWin=winterRows.reduce((a,r)=>a+r.conSav,0);
-    const seasonalKwhSum=summerRows.reduce((a,r)=>a+r.solarKwh,0);
-    const seasonalKwhWin=winterRows.reduce((a,r)=>a+r.solarKwh,0);
-    const seasonDemRateSum=seasonalKwSum>0?seasonalDemSum/seasonalKwSum:0;
-    const seasonDemRateWin=seasonalKwWin>0?seasonalDemWin/seasonalKwWin:0;
-    const seasonUsageRateSum=seasonalKwhSum>0?seasonalConSum/seasonalKwhSum:0;
-    const seasonUsageRateWin=seasonalKwhWin>0?seasonalConWin/seasonalKwhWin:0;
-
-    const rRows=rows.map((r,i)=>{
-      const bg=i%2===0?'':'background:rgba(255,255,255,0.02)';
-      const sDemRate=r.isSummer?seasonDemRateSum:seasonDemRateWin;
-      const sUsageRate=r.isSummer?seasonUsageRateSum:seasonUsageRateWin;
-      return `<tr style="${bg}">
-        <td style="font-weight:600;font-size:11px;padding:3px 6px">${r.month}</td>
-        <td style="${mc}">${r.monthDemRate.toFixed(3)}</td>
-        <td style="${mc}">${sDemRate.toFixed(3)}</td>
-        <td style="${mc};color:${r.isSummer?'var(--amber)':'var(--accent)'};font-weight:600">${r.isSummer?'SUMMER':'WINTER'}</td>
-        <td style="${mc}">${sUsageRate.toFixed(5)}</td>
-        <td style="${mc}">${r.monthUsageRate.toFixed(5)}</td>
-      </tr>`;
-    });
-    return `<div class="card" style="margin-bottom:16px">
-      <div class="card-hdr"><span class="card-title">📈 H — Effective Rates</span></div>
-      <div style="padding:12px;overflow-x:auto">
-        <table class="dtbl" style="min-width:600px;font-size:11px">
-          <thead><tr>
-            <th style="${hc}">Month</th>
-            <th style="${hc}">Monthly Demand/Fac Rate $/kW</th>
-            <th style="${hc}">Seasonal Demand/Fac Rate $/kW</th>
-            <th style="${hc}">Billing Season</th>
-            <th style="${hc}">Seasonal Usage Rate $/kWh</th>
-            <th style="${hc}">Monthly Usage Rate $/kWh</th>
-          </tr></thead>
-          <tbody>${rRows.join('')}</tbody>
-        </table>
-      </div>
-    </div>`;
-  }
-
-  // ══ ASSEMBLE ALL SECTIONS ══
-  resultsWrap.innerHTML=
-    buildStandardProfileTable('Existing Electric Cost Profile','📊','D',existingProfile,existingAnnual)+
-    (savingsPct>0?buildStandardProfileTable('Existing Before Solar','📋','E',beforeSolarProfile,beforeSolarAnnual):'')+
-    buildNetMeterProfileTable(netMeterProfile,nmAnnual)+
-    buildSavingsTable('Net Metering SAVINGS = Before Solar − Post-Solar','💰',nmSavings,nmTotalSavings,true)+
-    buildStandardProfileTable('Proposed Post-Solar — Behind the Meter','🔌','G',behindMeterProfile,btmAnnual)+
-    buildSavingsTable('BTM SAVINGS = Before Solar − Post-Solar','💰',btmSavings,btmTotalSavings,false)+
-    buildEffectiveRatesTable()+`
-    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn btn-em btn-sm" onclick="solarAddAsMeasure(${projId})">+ Add as Savings Measure</button>
-    </div>`;
-
-  showToast('Solar bill recalculation complete ✓');
+  // Render all — SAVINGS embedded in Section E and F, not separate cards
+  const rW=document.getElementById('sc-results');
+  if(!rW) return;
+  rW.innerHTML=
+    stdTbl('EXISTING ELECTRIC COST PROFILE','D',dP,dA,null)+
+    stdTbl('EXISTING ELECTRIC COST PROFILE (BEFORE SOLAR)','E',eP,eA,nmSav)+
+    nmTbl(fP,fA,nmSav)+
+    stdTbl('PROPOSED POST-SOLAR — Behind the Meter','G',gP,gA,btmSav)+
+    effTbl();
 }
 
-function solarAddAsMeasure(projId){
-  const p = projects.find(x=>x.id===projId);
-  if(!p||!p.solarCalc) return;
-  const sc = p.solarCalc;
-  const sd = getProjSavingsData(projId);
-  const bldgs = (typeof getUDBldgs==='function') ? getUDBldgs(projId) : (p.buildings||[]);
-  sd.measures.push({
-    id: 'm'+Date.now(),
-    selected: true,
-    msrNum: (sd.measures.length+1)+'',
-    bldgId: bldgs[0]?.id||'',
-    desc: `Solar PV — ${sc.arrayKw} kW Array`,
-    kwh: (sc.production||[]).map(k=>Math.round(k)),
-    kw: Array(12).fill(0),
-    gas: Array(12).fill(0),
-    totalDollar: 0,
-    source: 'solar'
-  });
-  sset('en_projects',projects);
-  closeCalcTemplate();
-  showToast('Solar measure added to savings matrix ✓');
-}
+function solarAddAsMeasure(projId){const p=projects.find(x=>x.id===projId);if(!p||!p.solarCalc)return;const sc=p.solarCalc;const sd=getProjSavingsData(projId);const bldgs=(typeof getUDBldgs==='function')?getUDBldgs(projId):(p.buildings||[]);sd.measures.push({id:'m'+Date.now(),selected:true,msrNum:(sd.measures.length+1)+'',bldgId:bldgs[0]?.id||'',desc:`Solar PV — ${sc.arrayKw} kW Array`,kwh:(sc.production||[]).map(k=>Math.round(k)),kw:Array(12).fill(0),gas:Array(12).fill(0),totalDollar:0,source:'solar'});sset('en_projects',projects);closeCalcTemplate();showToast('Solar measure added to savings matrix ✓');}
+
 /* ══════════════════════════════════════════════════════
    ENERGY GRAPHICS — per project
 ══════════════════════════════════════════════════════ */
