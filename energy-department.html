@@ -12743,7 +12743,64 @@ function _scUpdateArrayDerived(){document.querySelectorAll('.sc-arr-kw').forEach
 function solarAddArray(projId){const p=projects.find(x=>x.id===projId);if(!p)return;p.solarArrays=p.solarArrays||[];const D=[8995,9972,12436,13663,17115,17595,17494,16258,14113,12341,9096,7063];const CF=[0.15,0.17,0.22,0.27,0.35,0.40,0.45,0.42,0.33,0.25,0.18,0.20];p.solarArrays.push({id:'sa'+Date.now(),name:'Array '+(p.solarArrays.length+1),kw:115,production:[...D],capFactor:[...CF],source:'helioscope'});sset('en_projects',projects);openSolarCalc(projId);showToast('Array added ✓');}
 function solarRemoveArray(projId,ai){const p=projects.find(x=>x.id===projId);if(!p||!p.solarArrays)return;p.solarArrays.splice(ai,1);sset('en_projects',projects);openSolarCalc(projId);showToast('Array removed');}
 function _solarReadArraysFromDOM(p){const arrays=p?.solarArrays||[];arrays.forEach((arr,ai)=>{const nE=document.querySelector(`.sc-arr-name[data-ai="${ai}"]`);if(nE)arr.name=nE.value;const kE=document.querySelector(`.sc-arr-kw[data-ai="${ai}"]`);if(kE)arr.kw=parseFloat(kE.value)||0;const sE=document.querySelector(`.sc-arr-src[data-ai="${ai}"]`);if(sE)arr.source=sE.value;arr.production=arr.production||Array(12).fill(0);arr.capFactor=arr.capFactor||Array(12).fill(0);for(let mi=0;mi<12;mi++){const pI=document.querySelector(`.sc-arr-prod[data-ai="${ai}"][data-mi="${mi}"]`);if(pI)arr.production[mi]=parseFloat(pI.value)||0;const cI=document.querySelector(`.sc-arr-capfactor[data-ai="${ai}"][data-mi="${mi}"]`);if(cI)arr.capFactor[mi]=parseFloat(cI.value)||0;}});return arrays;}
-function _solarGetBaselineBills(p,meterFilter){const R={kwh:Array(12).fill(0),billedKw:Array(12).fill(0),facKw:Array(12).fill(0),onPeakKwh:Array(12).fill(0),offPeakKwh:Array(12).fill(0),totalCost:Array(12).fill(0),startDate:Array(12).fill(''),endDate:Array(12).fill(''),customerCharge:Array(12).fill(0),demandCharge:Array(12).fill(0),facilitiesCharge:Array(12).fill(0),ecaCharge:Array(12).fill(0),eerCharge:Array(12).fill(0),ptsCharge:Array(12).fill(0),tdcCharge:Array(12).fill(0),renewableCharge:Array(12).fill(0),franchiseFee:Array(12).fill(0),onPeakCost:Array(12).fill(0),offPeakCost:Array(12).fill(0)};const mn=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];const [filterBid,filterMid]=meterFilter?meterFilter.split('|'):['',''];(p?.buildings||[]).forEach(b=>{if(filterBid&&b.id!==filterBid) return;(b.meters||[]).forEach(m=>{if(m.type!=='electric'&&m.commodity!=='Electric')return;if(filterMid&&m.id!==filterMid) return;const bi=m.baseline?.startIdx,bm=m.baseline?.months,bills=m.bills||[],use=bi!=null&&bm?bills.slice(bi,bi+bm):bills;use.forEach(bill=>{let mi=-1;if(bill.month)mi=mn.indexOf(bill.month.toLowerCase().slice(0,3));else if(bill.normMonth)mi=mn.indexOf(bill.normMonth.toLowerCase().slice(0,3));else if(bill.end){const d=new Date(bill.end);if(!isNaN(d))mi=d.getMonth();}if(mi<0)return;const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;R.kwh[mi]+=pf(bill.kwh)||pf(bill.usage);R.billedKw[mi]=Math.max(R.billedKw[mi],pf(bill.billedKW)||pf(bill.demandKW));R.facKw[mi]=Math.max(R.facKw[mi],pf(bill.facKW));R.onPeakKwh[mi]+=pf(bill.onPeakKwh);R.offPeakKwh[mi]+=pf(bill.offPeakKwh);R.totalCost[mi]+=pf(bill.totalCost);if(bill.start)R.startDate[mi]=bill.start;if(bill.end)R.endDate[mi]=bill.end;R.ecaCharge[mi]+=pf(bill.ecaCharge);R.eerCharge[mi]+=pf(bill.eerCharge);R.ptsCharge[mi]+=pf(bill.ptsCharge);R.tdcCharge[mi]+=pf(bill.tdcCharge);R.franchiseFee[mi]+=pf(bill.franchiseFee);R.onPeakCost[mi]+=pf(bill.onPeakCost);R.offPeakCost[mi]+=pf(bill.offPeakCost);});});});return R;}
+function _solarGetBaselineBills(p,meterFilter){
+  const R={kwh:Array(12).fill(0),billedKw:Array(12).fill(0),facKw:Array(12).fill(0),onPeakKwh:Array(12).fill(0),offPeakKwh:Array(12).fill(0),totalCost:Array(12).fill(0),startDate:Array(12).fill(''),endDate:Array(12).fill(''),customerCharge:Array(12).fill(0),demandCharge:Array(12).fill(0),facilitiesCharge:Array(12).fill(0),ecaCharge:Array(12).fill(0),eerCharge:Array(12).fill(0),ptsCharge:Array(12).fill(0),tdcCharge:Array(12).fill(0),renewableCharge:Array(12).fill(0),franchiseFee:Array(12).fill(0),onPeakCost:Array(12).fill(0),offPeakCost:Array(12).fill(0)};
+  const [filterBid,filterMid]=meterFilter?meterFilter.split('|'):['',''];
+  const bldgs=(typeof getUDBldgs==='function')?getUDBldgs(p.id):(p?.buildings||[]);
+  bldgs.forEach(b=>{
+    if(filterBid&&b.id!==filterBid) return;
+    (b.meters||[]).forEach(m=>{
+      if(m.type!=='electric'&&m.commodity!=='Electric') return;
+      if(filterMid&&m.id!==filterMid) return;
+      const blMonths=m.baseline?.months||[]; // array of 'YYYY-MM' strings
+      const bills=m.bills||[];
+      // Filter to baseline-selected months only; if no baseline set, use all bills
+      const use=blMonths.length?bills.filter(bill=>{
+        // Get year-month from bill end date to match baseline month format
+        if(!bill.end) return false;
+        const d=new Date(bill.end); if(isNaN(d)) return false;
+        const ym=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+        return blMonths.includes(ym);
+      }):bills;
+      // Accumulate raw bill data by calendar month (from end date)
+      const moCount=Array(12).fill(0); // track count for averaging if >12 baseline months
+      use.forEach(bill=>{
+        let mi=-1;
+        if(bill.end){const d=new Date(bill.end); if(!isNaN(d)) mi=d.getMonth();}
+        if(mi<0&&bill.start){const d=new Date(bill.start); if(!isNaN(d)) mi=d.getMonth();}
+        if(mi<0) return;
+        moCount[mi]++;
+        const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
+        R.kwh[mi]+=pf(bill.kwh)||pf(bill.usage);
+        R.billedKw[mi]=Math.max(R.billedKw[mi],pf(bill.billedKW)||pf(bill.demandKW)||pf(bill.kw));
+        R.facKw[mi]=Math.max(R.facKw[mi],pf(bill.facKW)||pf(bill.facilitiesKW));
+        R.onPeakKwh[mi]+=pf(bill.onPeakKwh);
+        R.offPeakKwh[mi]+=pf(bill.offPeakKwh);
+        R.totalCost[mi]+=pf(bill.totalCost);
+        if(bill.start) R.startDate[mi]=bill.start;
+        if(bill.end) R.endDate[mi]=bill.end;
+        R.ecaCharge[mi]+=pf(bill.ecaCharge);
+        R.eerCharge[mi]+=pf(bill.eerCharge);
+        R.ptsCharge[mi]+=pf(bill.ptsCharge);
+        R.tdcCharge[mi]+=pf(bill.tdcCharge);
+        R.franchiseFee[mi]+=pf(bill.franchiseFee);
+        R.onPeakCost[mi]+=pf(bill.onPeakCost);
+        R.offPeakCost[mi]+=pf(bill.offPeakCost);
+      });
+      // Average if multiple baseline years have data for the same calendar month
+      for(let i=0;i<12;i++){
+        if(moCount[i]>1){
+          const n=moCount[i];
+          R.kwh[i]/=n; R.onPeakKwh[i]/=n; R.offPeakKwh[i]/=n;
+          R.totalCost[i]/=n; R.ecaCharge[i]/=n; R.eerCharge[i]/=n;
+          R.ptsCharge[i]/=n; R.tdcCharge[i]/=n; R.franchiseFee[i]/=n;
+          R.onPeakCost[i]/=n; R.offPeakCost[i]/=n;
+        }
+      }
+    });
+  });
+  return R;
+}
 
 /* ── When user changes building/meter selector, re-populate baseline and re-render ── */
 function _scMeterChanged(projId){
