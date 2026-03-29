@@ -4194,7 +4194,7 @@ function sPTab(tab,el){
   document.querySelectorAll('.ptab').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('.pdt').forEach(b=>b.classList.remove('active'));
   document.getElementById('ptab-'+tab).classList.add('active'); el?.classList.add('active');
-  const p = activeProj;
+  const p = projects.find(x=>x.id===window._activeProjId);
   if(!p) return;
   if(tab==='utility')   initProjUDTab(p.id);
   if(tab==='equipment') renderProjEquip(p.id);
@@ -4694,7 +4694,7 @@ function _renderSavingsContent(wrap, projId){
         <td style="text-align:center"><input type="checkbox" class="sv-sel-cb" ${m.selected?'checked':''} onchange="svUpdateMsrSel('${mid}',this.checked)"></td>
         <td><input class="sv-msr-txt" style="width:44px;text-align:center" placeholder="#" value="${m.msrNum||''}" onchange="svUpdateMsrField('${mid}','msrNum',this.value)" onfocusout="svAutoSave()"></td>
         <td><select class="sv-msr-sel" onchange="svUpdateMsrField('${mid}','bldgId',this.value)">${selOpts}</select></td>
-        <td><div style="display:flex;align-items:center;gap:4px"><input class="sv-msr-txt" style="flex:1;min-width:130px" placeholder="e.g. BAS Setpoint Optimization 74/70°F" value="${m.desc||''}" onchange="svUpdateMsrField('${mid}','desc',this.value)" onfocusout="svAutoSave()"><button class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px;flex-shrink:0" onclick="openCalcForMeasure(${pid},'${mid}')" title="Open calc template for this measure">📐</button>${srcBadge}</div></td>
+        <td><div style="display:flex;align-items:center;gap:4px"><input class="sv-msr-txt" style="flex:1;min-width:130px" placeholder="e.g. BAS Setpoint Optimization 74/70°F" value="${m.desc||''}" onchange="svUpdateMsrField('${mid}','desc',this.value)" onfocusout="svAutoSave()"><button class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px;flex-shrink:0" onclick="openCalcForMeasure(${pid},'${mid}','${wrap.id==='ptab-savings'?'ptab':'sv'}')" title="Open calc template for this measure">📐</button>${srcBadge}</div></td>
         ${kwhCells}${kwCells}${gasCells}
         <td class="sv-total-cell" style="border-left:2px solid var(--border2)" id="sv-pg-total-${mid}">${dollar}</td>
         <td style="text-align:center"><button class="btn-del" onclick="svRemoveMeasure('${mid}')">✕</button></td>
@@ -12418,9 +12418,8 @@ const CALC_TEMPLATES = [
 let _calcTemplateContext = null; // {projId, returnTo:'sv'|'ptab', targetMeasureId:null}
 
 /* Open calc templates targeted at a specific measure row */
-function openCalcForMeasure(projId, msrId){
-  const returnTo = document.getElementById('ptab-savings')?.offsetParent!==null ? 'ptab' : 'sv';
-  openCalcTemplates(projId, returnTo, msrId);
+function openCalcForMeasure(projId, msrId, returnTo){
+  openCalcTemplates(projId, returnTo||'sv', msrId);
 }
 
 function openCalcTemplates(projId, returnTo, targetMeasureId){
