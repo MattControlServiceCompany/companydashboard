@@ -11256,8 +11256,9 @@ function renderBillRow(row, m, incl, allBills){
   const days = calcDays(row.start, row.end, incl);
   const nm = normMonthLabel(row.start, row.end, incl, allBills||m.bills||[]);
   const nmCell = `<td class="norm-mon-cell">${nm}</td>`;
+  const pdfBtn = row.pdfBillId ? `<button class="btn-edit" onclick="viewSavedPDF('${row.pdfBillId}')" title="View source PDF" style="color:var(--accent)">📄</button>` : '';
   const actionBtns = `<td class="td-actions">
-    <button class="btn-edit" onclick="openBillModal('${m.id}','${row.id}')" title="Edit">✏️</button>
+    ${pdfBtn}<button class="btn-edit" onclick="openBillModal('${m.id}','${row.id}')" title="Edit">✏️</button>
     <button class="btn-del"  onclick="deleteBillRow('${m.id}','${row.id}')" title="Delete">✕</button>
   </td>`;
 
