@@ -5432,19 +5432,21 @@ async function extractPDFText(ab, statusCb){
     if(typeof pdfjsLib==='undefined') return null;
     pdfjsLib.GlobalWorkerOptions.workerSrc='';
     const pdf=await pdfjsLib.getDocument({data:ab, useWorkerFetch:false, isEvalSupported:false, useSystemFonts:true}).promise;
-    const maxPages=Math.min(pdf.numPages,200); // support multi-year bill PDFs (2yr+ can exceed 60 pages)
+    const maxPages=Math.min(pdf.numPages,200);
 
-    // ── Step 1: try native text extraction ──
-    let txt='';
+    // ── Step 1: extract native text per page, track which pages have no text ──
+    const pageTexts=[];
+    const ocrNeeded=[];
     for(let i=1;i<=maxPages;i++){
+      if(statusCb) statusCb('Reading page '+i+' of '+maxPages+'...');
       const pg=await pdf.getPage(i);
       const c=await pg.getTextContent();
-      // Group by y-position to reconstruct real line breaks.
-      // PDF.js transform[5]=y coord; items within 2px share a line.
-      // Prevents all charge lines on a page merging into one string,
-      // which broke end-of-line anchored charge regexes.
       const items=c.items.filter(s=>s.str&&s.str.trim());
-      if(!items.length){txt+='\n';continue;}
+      if(!items.length){
+        pageTexts.push('');
+        ocrNeeded.push(i);
+        continue;
+      }
       items.sort((a,b)=>{
         const dy=b.transform[5]-a.transform[5];
         return Math.abs(dy)>2 ? dy : a.transform[4]-b.transform[4];
@@ -5460,49 +5462,52 @@ async function extractPDFText(ab, statusCb){
         }
       }
       if(curLine.length) pageLines.push(curLine.join(' '));
-      txt+=pageLines.join('\n')+'\n';
+      const pageTxt=pageLines.join('\n');
+      pageTexts.push(pageTxt);
+      // If page has very little text (<40 chars), it's likely a scanned image page
+      if(pageTxt.trim().length<40) ocrNeeded.push(i);
     }
-    if(txt.trim().length>100) return txt; // text-based PDF, done
 
-    // ── Step 2: scanned image — render pages to canvas and OCR ──
-    if(typeof Tesseract==='undefined'){
-      if(statusCb) statusCb('OCR library not loaded — check network connection.');
-      return null;
-    }
-    if(statusCb) statusCb('Scanned PDF detected — loading OCR engine...');
-    let worker;
-    try{
-      worker=await Tesseract.createWorker('eng',1,{
-        logger: m=>{
-          if(statusCb){
-            if(m.status==='loading tesseract core') statusCb('Loading OCR engine...');
-            else if(m.status==='loading language traineddata') statusCb('Loading English language data...');
-            else if(m.status==='recognizing text') statusCb('OCR progress: '+Math.round((m.progress||0)*100)+'%');
-          }
-        }
-      });
-    }catch(workerErr){
-      if(statusCb) statusCb('OCR engine failed to load: '+workerErr.message);
-      return null;
-    }
-    let ocrText='';
-    for(let i=1;i<=maxPages;i++){
-      if(statusCb) statusCb('OCR scanning page '+i+' of '+maxPages+'...');
-      const pg=await pdf.getPage(i);
-      const vp=pg.getViewport({scale:2.5});
-      const canvas=document.createElement('canvas');
-      canvas.width=vp.width; canvas.height=vp.height;
-      const ctx=canvas.getContext('2d');
-      await pg.render({canvasContext:ctx, viewport:vp}).promise;
+    // ── Step 2: OCR any pages that had no/little native text ──
+    if(ocrNeeded.length>0 && typeof Tesseract!=='undefined'){
+      if(statusCb) statusCb('Found '+ocrNeeded.length+' scanned page'+(ocrNeeded.length>1?'s':'')+' — loading OCR engine...');
+      let worker;
       try{
-        const {data:{text}}=await worker.recognize(canvas);
-        ocrText+=text+'\n';
-      }catch(pageErr){
-        if(statusCb) statusCb('OCR failed on page '+i+': '+pageErr.message);
+        worker=await Tesseract.createWorker('eng',1,{
+          logger: m=>{
+            if(statusCb){
+              if(m.status==='loading tesseract core') statusCb('Loading OCR engine...');
+              else if(m.status==='loading language traineddata') statusCb('Loading English language data...');
+              else if(m.status==='recognizing text') statusCb('OCR: '+Math.round((m.progress||0)*100)+'%');
+            }
+          }
+        });
+      }catch(workerErr){
+        if(statusCb) statusCb('OCR engine failed to load: '+workerErr.message);
+        // Return whatever native text we got
+        return pageTexts.join('\n').trim().length>50 ? pageTexts.join('\n') : null;
       }
+      for(let idx=0;idx<ocrNeeded.length;idx++){
+        const pgNum=ocrNeeded[idx];
+        if(statusCb) statusCb('OCR scanning page '+pgNum+' of '+maxPages+' ('+(idx+1)+'/'+ocrNeeded.length+' scanned pages)...');
+        const pg=await pdf.getPage(pgNum);
+        const vp=pg.getViewport({scale:2.5});
+        const canvas=document.createElement('canvas');
+        canvas.width=vp.width; canvas.height=vp.height;
+        const ctx=canvas.getContext('2d');
+        await pg.render({canvasContext:ctx, viewport:vp}).promise;
+        try{
+          const {data:{text}}=await worker.recognize(canvas);
+          pageTexts[pgNum-1]=text; // replace empty/short text with OCR result
+        }catch(pageErr){
+          if(statusCb) statusCb('OCR failed on page '+pgNum+': '+pageErr.message);
+        }
+      }
+      await worker.terminate();
     }
-    await worker.terminate();
-    return ocrText.trim().length>50 ? ocrText : null;
+
+    const fullText=pageTexts.join('\n');
+    return fullText.trim().length>50 ? fullText : null;
   }catch(e){if(statusCb)statusCb('PDF read error: '+e.message);console.error('PDF extract error:',e);return null;}
 }
 function showExtractionBadge(method,detail){
