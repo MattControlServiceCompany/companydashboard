@@ -5107,7 +5107,10 @@ function _extractEvergy(t,acctOverride,addrOverride){
       const before=line.slice(Math.max(0,m.index-4),m.index);
       const after=line.slice(m.index+m[0].length,m.index+m[0].length+10);
       if(/at\s*$/.test(before)) continue;   // skip rate: "kWh at $0.06407"
-      if(/\s*per\s+k/i.test(after)) continue; // skip rate: "$2.577 per kW"
+      if(/\s*[Pp][eo]r\s+k/i.test(after)) continue; // skip rate: "$2.577 per kW" / OCR "Por kW"
+      // Skip small values that look like rates (under $1, with 4+ decimal digits in original)
+      const val=parseFloat(m[1].replace(/,/g,''));
+      if(val<1 && /\.\d{3,}/.test(m[1])) continue; // skip rates like $0.03288, $0.00085
       best=parseFloat(m[1].replace(/,/g,''));
     }
     return best;
@@ -5181,7 +5184,24 @@ function _extractEvergy(t,acctOverride,addrOverride){
   const tdcKW     =t.match(new RegExp('TDC\\s+'+C+'[\\s\\S]*?([\\d,.]+)\\s*kW\\s+at','i'))?.[1]?.replace(/,/g,'')||null;
   const tdcChg    =xChg('TDC\\s+'+C);
   const taxExempt =chg(/Tax\s+exempt[^$\n]*\$([\d,]+\.\d{2})/i);
-  const billOffset=t.match(/Bill\s+off\w+[^\n]*?(-?\$[\d,]+\.\d{2}|-[\d,]+\.\d{2}|\$[\d,]+\.\d{2})/im)?.[1]?.replace(/\$/g,'')||null;
+  // Bill offset / credit: match "Bill offset" or any line with a negative dollar amount before Subtotal
+  const billOffset=(()=>{
+    const m1=t.match(/Bill\s+off\w+[^\n]*?(-?\$[\d,]+\.\d{2}|-[\d,]+\.\d{2}|\$[\d,]+\.\d{2})/im);
+    if(m1) return m1[1].replace(/\$/g,'');
+    // OCR fallback: find negative dollar amount on a standalone line near Subtotal
+    const lines=t.split('\n');
+    for(let i=0;i<lines.length;i++){
+      if(/Subtotal/i.test(lines[i])){
+        // Check up to 3 lines before Subtotal for a negative amount
+        for(let j=Math.max(0,i-3);j<i;j++){
+          const neg=lines[j].match(/-\$?([\d,]+\.\d{2})/);
+          if(neg && !/Payment|Previously|Late/i.test(lines[j])) return '-'+neg[1].replace(/,/g,'');
+        }
+        break;
+      }
+    }
+    return null;
+  })();
   const franchise =chg(/Franch[il1]se\s+Fee[^$\n]*\$([\d,]+\.\d{2})/i);
   const totalDue  =t.match(/Current\s+Charges[\s\S]*?\$\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g,'')||null;
 
