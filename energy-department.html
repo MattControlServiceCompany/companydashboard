@@ -5487,21 +5487,43 @@ async function extractPDFText(ab, statusCb){
         // Return whatever native text we got
         return pageTexts.join('\n').trim().length>50 ? pageTexts.join('\n') : null;
       }
+      // Key patterns that should appear on a valid Evergy bill page
+      const BILL_SIGNALS=[/service\s+from\s+\d{2}\/\d{2}/i, /Current\s+Charges/i, /\$[\d,]+\.\d{2}/, /kWh/i, /Demand\s+Ch/i, /Customer\s+Ch/i, /Account\s+Number/i, /Billing\s+Date/i];
+      const scorePage=txt=>{let s=0;BILL_SIGNALS.forEach(rx=>{if(rx.test(txt))s++;});return s;};
+      // OCR settings to try — different render scales and Tesseract PSM modes
+      const OCR_PASSES=[
+        {scale:2.5, psm:null, label:'2.5x'},
+        {scale:3.0, psm:null, label:'3.0x'},
+        {scale:3.5, psm:null, label:'3.5x high-res'},
+      ];
+
       for(let idx=0;idx<ocrNeeded.length;idx++){
         const pgNum=ocrNeeded[idx];
-        if(statusCb) statusCb('OCR scanning page '+pgNum+' of '+maxPages+' ('+(idx+1)+'/'+ocrNeeded.length+' scanned pages)...');
-        const pg=await pdf.getPage(pgNum);
-        const vp=pg.getViewport({scale:2.5});
-        const canvas=document.createElement('canvas');
-        canvas.width=vp.width; canvas.height=vp.height;
-        const ctx=canvas.getContext('2d');
-        await pg.render({canvasContext:ctx, viewport:vp}).promise;
-        try{
-          const {data:{text}}=await worker.recognize(canvas);
-          pageTexts[pgNum-1]=text; // replace empty/short text with OCR result
-        }catch(pageErr){
-          if(statusCb) statusCb('OCR failed on page '+pgNum+': '+pageErr.message);
+        let bestText='', bestScore=0;
+
+        for(let pass=0;pass<OCR_PASSES.length;pass++){
+          const cfg=OCR_PASSES[pass];
+          if(statusCb) statusCb('OCR page '+pgNum+'/'+maxPages+' ('+(idx+1)+'/'+ocrNeeded.length+') — pass '+(pass+1)+'/'+OCR_PASSES.length+' ('+cfg.label+')...');
+          const pg=await pdf.getPage(pgNum);
+          const vp=pg.getViewport({scale:cfg.scale});
+          const canvas=document.createElement('canvas');
+          canvas.width=vp.width; canvas.height=vp.height;
+          const ctx=canvas.getContext('2d');
+          await pg.render({canvasContext:ctx, viewport:vp}).promise;
+          try{
+            const params=cfg.psm ? {tessedit_pageseg_mode:cfg.psm} : {};
+            const {data:{text}}=await worker.recognize(canvas, params);
+            const score=scorePage(text);
+            if(score>bestScore||(score===bestScore&&text.length>bestText.length)){
+              bestText=text; bestScore=score;
+            }
+            // If we found 3+ key patterns, good enough — stop retrying this page
+            if(score>=3) break;
+          }catch(pageErr){
+            if(statusCb) statusCb('OCR failed on page '+pgNum+' pass '+(pass+1)+': '+pageErr.message);
+          }
         }
+        pageTexts[pgNum-1]=bestText;
       }
       await worker.terminate();
     }
