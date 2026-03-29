@@ -5935,7 +5935,22 @@ function confirmAssignBill(){
   const billRow={id:'r'+Date.now(),start:toISO(bill.BillingPeriodStart),end:toISO(bill.BillingPeriodEnd),
     kwh:bill.kWhConsumed||'',demandKW:bill.ActualKW||'',billedKW:bill.BilledKW||'',facKW:bill.FacilitiesKW||'',
     facKWCost:bill.FacilitiesCharge||'',kwCost,kwhCost,otherCost,taxCost,totalCost:bill.TotalCurrentCharges||'',
-    fromPDF:true,pdfBillId:bill.id};
+    fromPDF:true,pdfBillId:bill.id,
+    rateSchedule:bill.RateSchedule||'',
+    onPeakKwh:bill.OnPeakKWh||bill.EnergyOnPeakKWh||'',
+    offPeakKwh:bill.OffPeakKWh||bill.EnergyOffPeakKWh||'',
+    onPeakCost:bill.EnergyOnPeakCharge||'',
+    offPeakCost:bill.EnergyOffPeakCharge||'',
+    customerCharge:bill.CustomerCharge||'',
+    demandCharge:bill.BilledKWCharge||'',
+    facilitiesCharge:bill.FacilitiesCharge||'',
+    ecaCharge:bill.ECACharge||'',
+    eerCharge:bill.EERCharge||'',
+    ptsCharge:bill.PTSCharge||'',
+    tdcCharge:bill.TDCCharge||'',
+    renewableCharge:bill.RenewableCharge||'',
+    franchiseFee:bill.FranchiseFee||'',
+    solarCredit:bill.SolarCredit||''};
   // Validation
   const componentSum=pf(bill.FacilitiesCharge)+pf(kwCost)+pf(kwhCost)+pf(otherCost)+pf(taxCost);
   const diff=Math.abs(componentSum-totalCost);
