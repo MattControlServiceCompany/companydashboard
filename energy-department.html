@@ -5491,7 +5491,6 @@ async function extractPDFText(ab, statusCb){
             if(statusCb){
               if(m.status==='loading tesseract core') statusCb('Loading OCR engine...');
               else if(m.status==='loading language traineddata') statusCb('Loading English language data...');
-              else if(m.status==='recognizing text') statusCb('OCR: '+Math.round((m.progress||0)*100)+'%');
             }
           }
         });
