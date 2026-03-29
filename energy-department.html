@@ -5186,7 +5186,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
   const taxExempt =chg(/Tax\s+exempt[^$\n]*\$([\d,]+\.\d{2})/i);
   // Bill offset / credit: match "Bill offset" or any line with a negative dollar amount before Subtotal
   const billOffset=(()=>{
-    const m1=t.match(/Bill\s+off\w+[^\n]*?(-?\$[\d,]+\.\d{2}|-[\d,]+\.\d{2}|\$[\d,]+\.\d{2})/im);
+    const m1=t.match(/Bill\s+[0O]ff\w*[^\n]*?(-?\$[\d,]+\.\d{2}|-[\d,]+\.\d{2}|\$[\d,]+\.\d{2})/im);
     if(m1) return m1[1].replace(/\$/g,'');
     // OCR fallback: find negative dollar amount on a standalone line near Subtotal
     const lines=t.split('\n');
@@ -5203,12 +5203,23 @@ function _extractEvergy(t,acctOverride,addrOverride){
     return null;
   })();
   const franchise =chg(/Franch[il1]se\s+Fee[^$\n]*\$([\d,]+\.\d{2})/i);
-  const totalDue  =t.match(/Current\s+Charges[\s\S]*?\$\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g,'')||null;
+  const totalDue  =(()=>{
+    // Try Current Charges line first
+    const m=t.match(/Current\s+Charges[\s\S]*?\$\s*([\d,]+\.\d{2})/i);
+    if(m) return m[1].replace(/,/g,'');
+    // Try Subtotal
+    const m2=t.match(/Subtotal[\s\S]*?\$\s*([\d,]+\.\d{2})/i);
+    if(m2) return m2[1].replace(/,/g,'');
+    // Fallback: sum all extracted charges (for OCR'd sections missing the total line)
+    const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
+    const sum=pf(custChg)+pf(facChg)+pf(demChg)+pf(onPkChg||tieredChg)+pf(offPkChg)+pf(ecaChg)+pf(eerChg)+pf(ptsChg)+pf(tdcChg)+pf(taxExempt)+pf(franchise);
+    return sum>0 ? sum.toFixed(2) : null;
+  })();
 
   return {
     UtilityCompany:'Evergy',
     CustomerName:t.match(/Customer\s*Name[^A-Za-z\n]*([A-Z][A-Z0-9 #]+?)(?=\s+Account|\n)/im)?.[1]?.trim()||null,
-    AccountNumber:acctOverride||t.match(/Account\s+(?:Number\s*)?:\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null,
+    AccountNumber:acctOverride||t.match(/Account\s+(?:Number\s*)?[:\s©®]\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null,
     ServiceAddress:addrOverride||null,
     RateSchedule:rateMatch?.[1]||null,
     BillingPeriodStart:bpMatch?.[1]||null,
@@ -5247,7 +5258,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
 const _EVG_BILLING_DETAILS=/B[il1]{2}[il1]ng\s+D[ec]t[ao][il1]{1,2}[s5]?\s*[-\u2013\—]\s*[s5]erv[il1]ce\s+from/i;
 const _EVG_SERVICE_FROM=/[s5]erv[il1]ce\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i;
 const _EVG_CHG=/Ch[gaq9][.:]?/i; // matches Chg, Cha, Chq, Ch9, Chg.
-const _EVG_ACCT=/[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s]\s*(\d[\d ]{4,18}\d)/m;
+const _EVG_ACCT=/[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s©®]\s*(\d[\d ]{4,18}\d)/m;
 const _EVG_ADDR=/^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m;
 
 const UTILITY_RULES=[
