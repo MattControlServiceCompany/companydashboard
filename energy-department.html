@@ -4141,69 +4141,7 @@ function renderDetail(p){
         </div>
       </div>
       <div id="ptab-savings" class="ptab" style="padding:16px;overflow-y:auto">
-        <!-- BASELINE UTILITY DATA TABLE -->
-        <div class="card" style="margin-bottom:16px">
-          <div class="card-hdr" style="justify-content:space-between">
-            <span class="card-title">📊 Baseline Utility Rates by Building</span>
-            <button class="btn btn-ghost btn-sm" onclick="saveProjBaselineRates(${p.id})">💾 Save Rates</button>
-          </div>
-          <div style="overflow-x:auto">
-            <table class="dtbl" style="min-width:900px" id="bl-rates-tbl-${p.id}">
-              <thead><tr>
-                <th style="min-width:160px">Building</th>
-                <th colspan="2" style="text-align:center;border-left:2px solid var(--border2)">Electric $/kWh</th>
-                <th colspan="2" style="text-align:center;border-left:2px solid var(--border2)">Electric $/kW</th>
-                <th style="text-align:center;border-left:2px solid var(--border2)">Gas $/Therm</th>
-              </tr>
-              <tr>
-                <th></th>
-                <th style="border-left:2px solid var(--border2)">Summer</th><th>Winter</th>
-                <th style="border-left:2px solid var(--border2)">Summer</th><th>Winter</th>
-                <th style="border-left:2px solid var(--border2)">Rate</th>
-              </tr></thead>
-              <tbody id="bl-rates-body-${p.id}"></tbody>
-            </table>
-          </div>
-        </div>
-        <!-- SAVINGS MEASURES MATRIX -->
-        <div class="card" style="margin-bottom:16px">
-          <div class="card-hdr" style="flex-wrap:wrap;gap:8px">
-            <span class="card-title">💡 Energy Savings Measures</span>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <button class="btn btn-ghost btn-sm" onclick="openCalcTemplates(${p.id},'ptab')">📐 Calc Templates</button>
-              <button class="btn btn-ghost btn-sm" onclick="addSavingsMeasure(${p.id})">+ Add Measure</button>
-              <button class="btn btn-em btn-sm" onclick="calcProjSavingsMatrix(${p.id})">⚡ Recalc All $ Savings</button>
-            </div>
-          </div>
-          <div style="overflow-x:auto">
-            <table class="dtbl sv-matrix-tbl" style="min-width:2400px" id="sv-matrix-tbl-${p.id}">
-              <thead>
-                <tr>
-                  <th style="width:28px">✓</th>
-                  <th style="width:44px">Msr #</th>
-                  <th style="min-width:130px">Building</th>
-                  <th style="min-width:190px">Measure Description</th>
-                  <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(59,130,246,0.07)">⚡ Electric kWh Savings / Month</th>
-                  <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(245,158,11,0.07)">⚡ Electric kW Savings / Month</th>
-                  <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(20,184,166,0.07)">🔥 Gas Therms Savings / Month</th>
-                  <th style="border-left:2px solid var(--border2);text-align:center;background:rgba(34,197,94,0.07);min-width:110px">💰 Est. $/Yr</th>
-                  <th style="width:28px"></th>
-                </tr>
-                <tr>
-                  <th></th><th></th><th></th><th></th>
-                  ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(m=>`<th style="border-left:${m==='Jan'?'2px':'1px'} solid var(--border${m==='Jan'?'2':''});font-size:10px;padding:4px 2px;width:58px;text-align:center">${m}</th>`).join('')}
-                  ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(m=>`<th style="border-left:${m==='Jan'?'2px':'1px'} solid var(--border${m==='Jan'?'2':''});font-size:10px;padding:4px 2px;width:58px;text-align:center">${m}</th>`).join('')}
-                  ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(m=>`<th style="border-left:${m==='Jan'?'2px':'1px'} solid var(--border${m==='Jan'?'2':''});font-size:10px;padding:4px 2px;width:58px;text-align:center">${m}</th>`).join('')}
-                  <th style="border-left:2px solid var(--border2)"></th><th></th>
-                </tr>
-              </thead>
-              <tbody id="sv-matrix-body-${p.id}"></tbody>
-              <tfoot id="sv-matrix-foot-${p.id}"></tfoot>
-            </table>
-          </div>
-        </div>
-        <!-- SUMMARY CARD -->
-        <div id="sv-summary-${p.id}"></div>
+        <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading savings data...</div>
       </div>
       <div id="ptab-contracts" class="ptab" style="padding:16px">
         <div class="g2">
@@ -4751,11 +4689,12 @@ function _renderSavingsContent(wrap, projId){
       const gasCells = m.gas.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:2px 1px;background:rgba(20,184,166,0.03)"><input class="sv-num-inp gas-col" type="number" step="any" value="${v||''}" placeholder="0" style="width:54px" onchange="svUpdateMsrVal('${mid}','gas',${i},this.value)" onfocusout="svAutoSave()"></td>`).join('');
       const dollar = m.totalDollar>0 ? '$'+Math.round(m.totalDollar).toLocaleString() : '—';
       const selOpts = bldgOpts.replace(`value="${m.bldgId}"`, `value="${m.bldgId}" selected`);
+      const srcBadge = m.source ? `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--accent-dim);color:var(--accent);font-weight:600;white-space:nowrap">${m.source==='solar'?'☀️ Solar':m.source}</span>` : '';
       return `<tr id="sv-pg-msr-row-${mid}">
         <td style="text-align:center"><input type="checkbox" class="sv-sel-cb" ${m.selected?'checked':''} onchange="svUpdateMsrSel('${mid}',this.checked)"></td>
         <td><input class="sv-msr-txt" style="width:44px;text-align:center" placeholder="#" value="${m.msrNum||''}" onchange="svUpdateMsrField('${mid}','msrNum',this.value)" onfocusout="svAutoSave()"></td>
         <td><select class="sv-msr-sel" onchange="svUpdateMsrField('${mid}','bldgId',this.value)">${selOpts}</select></td>
-        <td><input class="sv-msr-txt" style="width:100%;min-width:160px" placeholder="e.g. BAS Setpoint Optimization 74/70°F" value="${m.desc||''}" onchange="svUpdateMsrField('${mid}','desc',this.value)" onfocusout="svAutoSave()"></td>
+        <td><div style="display:flex;align-items:center;gap:4px"><input class="sv-msr-txt" style="flex:1;min-width:130px" placeholder="e.g. BAS Setpoint Optimization 74/70°F" value="${m.desc||''}" onchange="svUpdateMsrField('${mid}','desc',this.value)" onfocusout="svAutoSave()"><button class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px;flex-shrink:0" onclick="openCalcForMeasure(${pid},'${mid}')" title="Open calc template for this measure">📐</button>${srcBadge}</div></td>
         ${kwhCells}${kwCells}${gasCells}
         <td class="sv-total-cell" style="border-left:2px solid var(--border2)" id="sv-pg-total-${mid}">${dollar}</td>
         <td style="text-align:center"><button class="btn-del" onclick="svRemoveMeasure('${mid}')">✕</button></td>
@@ -12476,10 +12415,16 @@ const CALC_TEMPLATES = [
   {id:'peakdemand', name:'Peak Load Demand', icon:'⚡', desc:'Demand response and peak load reduction strategies', status:'coming'},
 ];
 
-let _calcTemplateContext = null; // {projId, returnTo:'sv'|'ptab'}
+let _calcTemplateContext = null; // {projId, returnTo:'sv'|'ptab', targetMeasureId:null}
 
-function openCalcTemplates(projId, returnTo){
-  _calcTemplateContext = {projId, returnTo: returnTo||'sv'};
+/* Open calc templates targeted at a specific measure row */
+function openCalcForMeasure(projId, msrId){
+  const returnTo = document.getElementById('ptab-savings')?.offsetParent!==null ? 'ptab' : 'sv';
+  openCalcTemplates(projId, returnTo, msrId);
+}
+
+function openCalcTemplates(projId, returnTo, targetMeasureId){
+  _calcTemplateContext = {projId, returnTo: returnTo||'sv', targetMeasureId: targetMeasureId||null};
   const wrap = _calcTemplateContext.returnTo==='ptab'
     ? document.getElementById('ptab-savings')
     : document.getElementById('svDetailWrap');
@@ -12490,7 +12435,9 @@ function openCalcTemplates(projId, returnTo){
         <button class="btn btn-ghost btn-sm" onclick="closeCalcTemplate()">← Back to Savings</button>
         <h2 style="font-size:18px;font-weight:700;margin:0">📐 Energy Savings Calc Templates</h2>
       </div>
-      <div style="font-size:13px;color:var(--text2);margin-bottom:20px">Select a calculator template to estimate energy savings for a specific measure. Results can be imported as a savings measure row.</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:20px">${_calcTemplateContext.targetMeasureId
+        ? `<span style="display:inline-flex;align-items:center;gap:6px">Calc results will be applied to <strong style="color:var(--accent)">Measure #${(()=>{const sd=getProjSavingsData(projId);const m=sd.measures.find(x=>x.id===_calcTemplateContext.targetMeasureId);return m?.msrNum||'?';})()}</strong> — <em>${(()=>{const sd=getProjSavingsData(projId);const m=sd.measures.find(x=>x.id===_calcTemplateContext.targetMeasureId);return m?.desc||'(no description)';})()}</em></span>`
+        : 'Select a calculator template to estimate energy savings. Results can be added as a new savings measure row.'}</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
         ${CALC_TEMPLATES.map(t=>`
           <button class="card" style="background:var(--s1);padding:18px;border:1px solid var(--border);cursor:${t.status==='ready'?'pointer':'default'};text-align:left;transition:all .15s;opacity:${t.status==='ready'?'1':'0.5'}" ${t.status==='ready'?`onclick="launchCalcTemplate('${t.id}',${projId})"`:''}
@@ -12710,7 +12657,9 @@ function openSolarCalc(projId){
       <div id="sc-results"></div>
 
       <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn btn-em btn-sm" onclick="solarAddAsMeasure(${projId})">+ Add as Savings Measure</button>
+        ${_calcTemplateContext?.targetMeasureId
+          ? `<button class="btn btn-em btn-sm" onclick="solarApplyToMeasure(${projId})">⚡ Apply to Measure #${(()=>{const sd=getProjSavingsData(projId);const m=sd.measures.find(x=>x.id===_calcTemplateContext.targetMeasureId);return m?.msrNum||'?';})()}</button>`
+          : `<button class="btn btn-em btn-sm" onclick="solarAddAsMeasure(${projId})">+ Add as New Measure</button>`}
       </div>
     </div>`;
 
@@ -13063,6 +13012,33 @@ function _scDoCalc(projId){
 }
 
 function solarAddAsMeasure(projId){const p=projects.find(x=>x.id===projId);if(!p||!p.solarCalc)return;const sc=p.solarCalc;const sd=getProjSavingsData(projId);const bldgs=(typeof getUDBldgs==='function')?getUDBldgs(projId):(p.buildings||[]);sd.measures.push({id:'m'+Date.now(),selected:true,msrNum:(sd.measures.length+1)+'',bldgId:bldgs[0]?.id||'',desc:`Solar PV — ${sc.arrayKw} kW Array`,kwh:(sc.production||[]).map(k=>Math.round(k)),kw:Array(12).fill(0),gas:Array(12).fill(0),totalDollar:0,source:'solar'});sset('en_projects',projects);closeCalcTemplate();showToast('Solar measure added to savings matrix ✓');}
+
+function solarApplyToMeasure(projId){
+  const p=projects.find(x=>x.id===projId);
+  if(!p||!p.solarCalc||!_calcTemplateContext?.targetMeasureId) return;
+  const sc=p.solarCalc;
+  const sd=getProjSavingsData(projId);
+  const m=sd.measures.find(x=>x.id===_calcTemplateContext.targetMeasureId);
+  if(!m){ showToast('Measure not found'); return; }
+  // Apply solar production as kWh savings
+  m.kwh=(sc.production||[]).map(k=>Math.round(k));
+  m.source='solar';
+  if(!m.desc || m.desc.trim()==='') m.desc=`Solar PV — ${sc.arrayKw} kW Array`;
+  // Recalc dollar savings using baseline rates
+  const rates=sd.blRates[m.bldgId]||{};
+  let total=0;
+  for(let mo=0;mo<12;mo++){
+    const isSummer=SUMMER_MOS.includes(mo);
+    total+=(m.kwh[mo]||0)*(isSummer?(rates.kwhSummer||0):(rates.kwhWinter||0));
+    total+=(m.kw[mo]||0)*(isSummer?(rates.kwSummer||0):(rates.kwWinter||0));
+    total+=(m.gas[mo]||0)*(rates.thermRate||0);
+  }
+  m.totalDollar=total;
+  sset('en_projects',projects);
+  const msrNum=m.msrNum;
+  closeCalcTemplate();
+  showToast('Solar calc applied to Measure #'+msrNum+' ✓');
+}
 
 /* ══════════════════════════════════════════════════════
    ENERGY GRAPHICS — per project
