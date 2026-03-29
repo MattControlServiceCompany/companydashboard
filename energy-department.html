@@ -778,6 +778,10 @@ html,body{height:100%;overflow:hidden;}
       🔔<span class="npip" id="notifPip" style="display:none"></span>
       <span id="notifBadge" style="display:none;position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;font-size:9px;font-weight:700;border-radius:8px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 3px;border:1px solid var(--bg)">0</span>
     </button>
+    <div id="globalTaskStatus" style="display:none;align-items:center;gap:6px;font-size:11px;color:var(--accent);background:var(--accent-dim);border:1px solid rgba(59,130,246,0.2);border-radius:7px;padding:4px 10px;cursor:pointer;white-space:nowrap;animation:fadeUp .3s ease" onclick="globalTaskGoTo()">
+      <div class="tdots" style="display:inline-flex;gap:2px"><span style="width:4px;height:4px;border-radius:50%;background:var(--accent);animation:spin 1s infinite"></span></div>
+      <span id="globalTaskLabel">Processing...</span>
+    </div>
     <button class="signout" onclick="signOut()">Sign Out</button>
   </div>
 </header>
@@ -5095,7 +5099,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
   // Strategy: for each keyword line, take the last $X.XX that is NOT a rate
   // (i.e. not preceded by "at $" and not followed by " per k"). If no dollar on
   // the keyword line, scan forward up to 6 lines stopping at the next charge keyword.
-  const CHG_STOP=/(?:Customer|Facilities|Demand|Energy\s+Ch[ga]|ECA|EER|PTS|TDC|RkVA|Subtotal|Current\s+Charges)\b/i;
+  const CHG_STOP=/(?:Customer|Fac[il1]{2}[il1]t[il1]es|Demand|Energy\s+Ch[gaq9]|ECA|EER|PTS|TDC|RkVA|Subtotal|Current\s+Charges)\b/i;
   const getAmt=(line)=>{
     const ms=[...line.matchAll(/\$([\d,]+\.\d{2})/g)];
     let best=null;
@@ -5129,8 +5133,8 @@ function _extractEvergy(t,acctOverride,addrOverride){
   };
   // ─────────────────────────────────────────────────────────────────────────────
 
-  // ── Billing period ──
-  const bpMatch=t.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);
+  // ── Billing period (OCR-tolerant) ──
+  const bpMatch=t.match(_EVG_SERVICE_FROM)||t.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);
   // Calculate days from billing dates (not from meter read table which may be a sub-period)
   let numDays=null;
   if(bpMatch){
@@ -5145,11 +5149,14 @@ function _extractEvergy(t,acctOverride,addrOverride){
 
   // ── kWh Consumed: prefer ECA/PTS/EER line totals (full billing period); fall back to sum of Energy Chg tiers ──
   const adjKwh=(()=>{
-    const fromAdj=[...t.matchAll(/(?:ECA|EER|PTS)\s+Ch[ga][\s\S]*?for\s+([\d,]+\.?\d*)\s*kWh/gi)].map(m=>parseFloat(m[1].replace(/,/g,'')));
+    const fromAdj=[...t.matchAll(/(?:ECA|EER|PTS)\s+Ch[gaq9][\s\S]*?(?:for\s+)?([\d,]+\.?\d*)\s*kWh/gi)].map(m=>parseFloat(m[1].replace(/,/g,'')));
     if(fromAdj.length) return String(Math.max(...fromAdj));
     // Tier sum from Energy Chg lines
-    const fromEnergy=[...t.matchAll(/Energy\s+Ch[ga]\s+([\d,]+\.?\d*)\s*kWh/gi)].map(m=>parseFloat(m[1].replace(/,/g,'')));
+    const fromEnergy=[...t.matchAll(/Energy\s+Ch[gaq9]\s+([\d,]+\.?\d*)\s*kWh/gi)].map(m=>parseFloat(m[1].replace(/,/g,'')));
     if(fromEnergy.length) return String(fromEnergy.reduce((a,b)=>a+b,0));
+    // Last resort: look for standalone large kWh number near "kWh Used" or "kWh Consumed"
+    const fallback=t.match(/kWh\s+(?:Used|Consumed)[^\d]*([\d,]+\.?\d*)/i)||t.match(/([\d,]{4,}\.?\d*)\s*kWh\s+(?:Used|Consumed)/i);
+    if(fallback) return fallback[1].replace(/,/g,'');
     return null;
   })();
 
@@ -5158,22 +5165,24 @@ function _extractEvergy(t,acctOverride,addrOverride){
   const rateMatch=t.match(/[-\u2013]\s*([\dA-Z]{3,10})[^\n]*?\n?[^\n]*?Billing\s+Details/i)||t.match(/[-\u2013]\s*([\dA-Z]{3,10})\s+Billing\s+Details/i)||t.match(/LGS[^\n]*[-\u2013]\s*([\dA-Z]{3,10})\s*$/im)||t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i);
 
   // ── Charges ──
-  const custChg   =xChg('Customer\\s+Ch[ga]');
-  const facKW     =t.match(/Facilities\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
-  const facChg    =xChg('Facilities\\s+Ch[ga]');
-  const demKW     =t.match(/Demand\s+Ch[ga]\s+([\d,.]+)\s*kW/i)?.[1]?.replace(/,/g,'')||null;
-  const demChg    =xChg('Demand\\s+Ch[ga]');
-  const onPkChg   =xChg('Energy\\s+Ch[ga]\\s+On\\s+Pk');
-  const offPkChg  =xChg('Energy\\s+Ch[ga]\\s+Off\\s+Pk');
-  const tieredChg =xChg('Energy\\s+Ch[ga]',/On\s+Pk|Off\s+Pk/i);
-  const ecaChg    =xChg('ECA\\s+Ch[ga]');
-  const eerChg    =xChg('EER\\s+Ch[ga]');
-  const ptsChg    =xChg('PTS\\s+Ch[ga]');
-  const tdcKW     =t.match(/TDC\s+Ch[ga][\s\S]*?([\d,.]+)\s*kW\s+at/i)?.[1]?.replace(/,/g,'')||null;
-  const tdcChg    =xChg('TDC\\s+Ch[ga]');
+  // OCR-tolerant charge keywords: Ch[gaq9] catches Chg/Cha/Chq/Ch9
+  const C='Ch[gaq9][.:]?';
+  const custChg   =xChg('Customer\\s+'+C);
+  const facKW     =t.match(new RegExp('Fac[il1]{2}[il1]t[il1]es\\s+'+C+'\\s+([\\d,.]+)\\s*kW','i'))?.[1]?.replace(/,/g,'')||null;
+  const facChg    =xChg('Fac[il1]{2}[il1]t[il1]es\\s+'+C);
+  const demKW     =t.match(new RegExp('Demand\\s+'+C+'\\s+([\\d,.]+)\\s*kW','i'))?.[1]?.replace(/,/g,'')||null;
+  const demChg    =xChg('Demand\\s+'+C);
+  const onPkChg   =xChg('Energy\\s+'+C+'\\s+On\\s+Pk');
+  const offPkChg  =xChg('Energy\\s+'+C+'\\s+Off\\s+Pk');
+  const tieredChg =xChg('Energy\\s+'+C,/On\s+Pk|Off\s+Pk/i);
+  const ecaChg    =xChg('ECA\\s+'+C);
+  const eerChg    =xChg('EER\\s+'+C);
+  const ptsChg    =xChg('PTS\\s+'+C);
+  const tdcKW     =t.match(new RegExp('TDC\\s+'+C+'[\\s\\S]*?([\\d,.]+)\\s*kW\\s+at','i'))?.[1]?.replace(/,/g,'')||null;
+  const tdcChg    =xChg('TDC\\s+'+C);
   const taxExempt =chg(/Tax\s+exempt[^$\n]*\$([\d,]+\.\d{2})/i);
   const billOffset=t.match(/Bill\s+off\w+[^\n]*?(-?\$[\d,]+\.\d{2}|-[\d,]+\.\d{2}|\$[\d,]+\.\d{2})/im)?.[1]?.replace(/\$/g,'')||null;
-  const franchise =chg(/Franchise\s+Fee[^$\n]*\$([\d,]+\.\d{2})/i);
+  const franchise =chg(/Franch[il1]se\s+Fee[^$\n]*\$([\d,]+\.\d{2})/i);
   const totalDue  =t.match(/Current\s+Charges[\s\S]*?\$\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g,'')||null;
 
   return {
@@ -5213,45 +5222,49 @@ function _extractEvergy(t,acctOverride,addrOverride){
   };
 }
 
+// OCR-tolerant patterns for Evergy bills
+// Common OCR misreads: g→q/9, l→1/I, D→O, a→o, s→5, i→l, e→c
+const _EVG_BILLING_DETAILS=/B[il1]{2}[il1]ng\s+D[ec]t[ao][il1]{1,2}[s5]?\s*[-\u2013\—]\s*[s5]erv[il1]ce\s+from/i;
+const _EVG_SERVICE_FROM=/[s5]erv[il1]ce\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i;
+const _EVG_CHG=/Ch[gaq9][.:]?/i; // matches Chg, Cha, Chq, Ch9, Chg.
+const _EVG_ACCT=/[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s]\s*(\d[\d ]{4,18}\d)/m;
+const _EVG_ADDR=/^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m;
+
 const UTILITY_RULES=[
   {name:'Evergy',detect:t=>(
+    _EVG_BILLING_DETAILS.test(t) ||
     /Billing\s+Details\s*[-\u2013]\s*service\s+from/i.test(t) ||
-    (/Facilities\s+Ch[ga]/i.test(t) && /Demand\s+Ch[ga]/i.test(t) && /TDC\s+Ch[ga]/i.test(t)) ||
-    (/Customer\s+Ch[ga]/i.test(t) && /ECA\s+Ch[ga]/i.test(t))
+    (/Fac[il1]{2}[il1]t[il1]es\s+Ch[gaq9]/i.test(t) && /Demand\s+Ch[gaq9]/i.test(t) && /TDC\s+Ch[gaq9]/i.test(t)) ||
+    (/Customer\s+Ch[gaq9]/i.test(t) && /ECA\s+Ch[gaq9]/i.test(t)) ||
+    (/Current\s+Charges/i.test(t) && /Evergy|evergy/i.test(t))
   ),
   extractAll:t=>{
-    // Split on "Billing Details - service from" headers to isolate each billing period.
-    // Three merge rules applied in order:
-    // 1. Fragment with NO date pair -> "Continued" page, append to previous section
-    // 2. Fragment with SAME date pair as previous -> continuation page of same bill
-    //    (some 4-page bills have "Billing Details" on both page 2 and page 3), merge in
-    // 3. Fragment with NEW date pair -> new billing period, start new section
-    const acct=t.match(/Account\s+(?:Number\s*)?:\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null;
-    const addrM=t.match(/^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m);
-    const raw=t.split(/(?=Billing\s+Details\s*[-\u2013\-]\s*service\s+from)/i);
-    const getDatePair=s=>{const m=s.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);return m?m[1]+'|'+m[2]:null;};
+    const acct=t.match(_EVG_ACCT)?.[1]?.replace(/\s/g,'')||null;
+    const addrM=t.match(_EVG_ADDR);
+    // Split on Billing Details headers — use both strict and OCR-tolerant patterns
+    const splitRe=new RegExp('(?=(?:'+_EVG_BILLING_DETAILS.source+'|Billing\\s+Details\\s*[-\\u2013\\-]\\s*service\\s+from))','gi');
+    const raw=t.split(splitRe);
+    const getDatePair=s=>{const m=s.match(_EVG_SERVICE_FROM)||s.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);return m?m[1]+'|'+m[2]:null;};
     const sections=[];
     for(const frag of raw){
       const dates=getDatePair(frag);
-      const isBillingHeader=/^Billing\s+Details/i.test(frag.trim());
+      const isBillingHeader=_EVG_BILLING_DETAILS.test(frag.trim())||/^Billing\s+Details/i.test(frag.trim());
       if(!isBillingHeader||!dates){
-        // No Billing Details header or no dates -> append to previous (Continued page)
         if(sections.length) sections[sections.length-1]+=frag;
         else sections.push(frag);
       } else if(sections.length&&getDatePair(sections[sections.length-1])===dates){
-        // Same date pair as previous -> continuation of same bill, merge in
         sections[sections.length-1]+=frag;
       } else {
         sections.push(frag);
       }
     }
-    const validSections=sections.filter(s=>/service\s+from\s+\d{2}\/\d{2}\/\d{4}/i.test(s));
+    const validSections=sections.filter(s=>_EVG_SERVICE_FROM.test(s)||/service\s+from\s+\d{2}\/\d{2}\/\d{4}/i.test(s));
     if(!validSections.length) return [_extractEvergy(t,acct,addrM?.[1]?.trim()||null)];
     return validSections.map(s=>_extractEvergy(s,acct,addrM?.[1]?.trim()||null));
   },
   extract:t=>{
-    const acct=t.match(/Account\s+(?:Number\s*)?:\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null;
-    const addrM=t.match(/^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m);
+    const acct=t.match(_EVG_ACCT)?.[1]?.replace(/\s/g,'')||null;
+    const addrM=t.match(_EVG_ADDR);
     return _extractEvergy(t,acct,addrM?.[1]?.trim()||null);
   }},
   {name:'Spire / Laclede Gas',detect:t=>/spire|laclede/i.test(t),extract:t=>({
@@ -5547,11 +5560,33 @@ let pdfType='utility',pdfB64=null;
 function setPDFType(t,el){pdfType=t;document.querySelectorAll('.ptpill').forEach(b=>b.classList.remove('sel'));el.classList.add('sel');}
 function handleDrop(e){e.preventDefault();document.getElementById('dropZone').classList.remove('drag');const f=e.dataTransfer.files[0];if(f&&f.type==='application/pdf')processPDF(f);}
 function handlePDFUpload(e){if(e.target.files[0])processPDF(e.target.files[0]);}
+// ── Global background task indicator ──
+let _globalTaskView=null; // which view to navigate to when clicked
+function globalTaskShow(label, targetView){
+  _globalTaskView=targetView||null;
+  const el=document.getElementById('globalTaskStatus');
+  const lbl=document.getElementById('globalTaskLabel');
+  if(el){el.style.display='flex'; if(lbl) lbl.textContent=label;}
+}
+function globalTaskUpdate(label){
+  const lbl=document.getElementById('globalTaskLabel');
+  if(lbl) lbl.textContent=label;
+}
+function globalTaskDone(){
+  const el=document.getElementById('globalTaskStatus');
+  if(el) el.style.display='none';
+  _globalTaskView=null;
+}
+function globalTaskGoTo(){
+  if(_globalTaskView) sv(_globalTaskView);
+}
+
 async function processPDF(file){
   const box=document.getElementById('pdfAIBox'),dz=document.getElementById('dz-title');
   document.getElementById('extractMethodBadge').style.display='none';
   dz.textContent='📄 '+file.name+' — reading...';
   box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Reading PDF...</div>';
+  globalTaskShow('📄 Extracting '+file.name+'...', 'pdf');
   const reader=new FileReader();
   reader.onload=async ev=>{
     pdfB64=ev.target.result.split(',')[1];
@@ -5561,6 +5596,7 @@ async function processPDF(file){
     if(pdfType==='utility'){
       const text=await extractPDFText(ab, msg=>{
         box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> '+msg+'</div>';
+        globalTaskUpdate('📄 '+msg);
       });
       if(text&&text.trim().length>100){
         window._pdfRawText=text;
@@ -5597,21 +5633,25 @@ async function processPDF(file){
             showToast('Extracted locally — '+rule.name+' ✓');
             showAutoAssignBanner(findMeterMatch(extracted), extracted);
           }
+          globalTaskDone();
           return;
         }
         // Utility format not yet in rules library
         box.innerHTML='<div style="padding:14px;font-size:13px;line-height:1.7;color:var(--text2)">&#9888; <strong style="color:var(--text)">Utility format not recognized.</strong><br>This bill layout does not match any rules in the library yet.<br><br>Share a sample bill to have a rule set added for this format.</div>';
         dz.textContent=file.name+' — unrecognized format';
+        globalTaskDone();
         return;
       }
       box.innerHTML='<div style="padding:14px;font-size:13px;color:var(--text2)">&#9888; Could not extract text from this PDF even after OCR. The file may be corrupted or too low resolution.</div>';
       dz.textContent=file.name+' — could not read';
+      globalTaskDone();
       return;
     }
 
     // ── NON-UTILITY TYPES: local text extraction only, no AI ──
     const text=await extractPDFText(ab, msg=>{
       box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> '+msg+'</div>';
+      globalTaskUpdate('📄 '+msg);
     });
     if(text){
       box.textContent=text;
@@ -5621,6 +5661,7 @@ async function processPDF(file){
       box.innerHTML='<div style="padding:14px;font-size:13px;color:var(--text2)">&#9888; Could not extract text from this PDF.</div>';
       dz.textContent=file.name+' — could not read';
     }
+    globalTaskDone();
   };
   reader.readAsDataURL(file);
 }
