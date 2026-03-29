@@ -1017,7 +1017,7 @@ html,body{height:100%;overflow:hidden;}
           <div style="font-size:16px;font-weight:700" id="svDetailHdrTitle"></div>
           <div style="font-size:12px;color:var(--text2);margin-top:2px" id="svDetailHdrSub"></div>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div style="display:flex;gap:8px;flex-wrap:wrap" id="svDetailHdrBtns">
           <button class="btn btn-ghost btn-sm" onclick="if(svSelProjId)openCalcTemplates(svSelProjId,'sv')">📐 Calc Templates</button>
           <button class="btn btn-ghost btn-sm" onclick="svSaveProjBaselineRates()">💾 Save Rates</button>
           <button class="btn btn-ghost btn-sm" onclick="svAddMeasure()">+ Add Measure</button>
@@ -4639,9 +4639,10 @@ function calcProjSavingsMatrix(projId){
 }
 
 function initSavingsTab(projId){
-  renderProjBaselineRates(projId);
-  renderSavingsMatrix(projId);
-  calcProjSavingsMatrix(projId);
+  // Render the SAME savings view as the sidebar Energy Savings page
+  const wrap = document.getElementById('ptab-savings');
+  if(!wrap) return;
+  _renderSavingsContent(wrap, projId);
 }
 
 async function calcProjSavings(projId){ initSavingsTab(projId); }
@@ -4699,9 +4700,15 @@ function renderSvDetail(){
     const hdrBldgs = getUDBldgs(svSelProjId);
     hdrSub.textContent = [p.client, p.status, hdrBldgs.length ? hdrBldgs.length+' building'+(hdrBldgs.length!==1?'s':'') : null].filter(Boolean).join(' · ');
   }
+  _renderSavingsContent(wrap, svSelProjId);
+}
 
-  const sd = getProjSavingsData(svSelProjId);
-  const bldgs = getUDBldgs(svSelProjId);
+/* ── Shared savings renderer — used by BOTH sidebar Energy Savings page AND project tab ── */
+function _renderSavingsContent(wrap, projId){
+  const p = projects.find(x=>x.id===projId);
+  if(!p){ wrap.innerHTML='<div class="ud-empty">Project not found</div>'; return; }
+  const sd = getProjSavingsData(projId);
+  const bldgs = getUDBldgs(projId);
   const MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
   // ── Baseline Rates rows ──
@@ -4714,7 +4721,7 @@ function renderSvDetail(){
   } else {
     ratesRows = bldgs.map(b=>{
       const r = sd.blRates[b.id]||{};
-      const pid = svSelProjId, bid = b.id;
+      const pid = projId, bid = b.id;
       return `<tr>
         <td style="font-weight:600;font-size:13px;white-space:nowrap">${b.name}</td>
         <td style="border-left:2px solid var(--border2)"><input class="bl-rate-inp" type="number" step="0.0001" placeholder="0.0681" value="${r.kwhSummer||''}" id="sv-blr-kwhs-${pid}-${bid}"></td>
@@ -4738,7 +4745,7 @@ function renderSvDetail(){
     </td></tr>`;
   } else {
     msrRows = sd.measures.map(m=>{
-      const pid = svSelProjId, mid = m.id;
+      const pid = projId, mid = m.id;
       const kwhCells = m.kwh.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:2px 1px;background:rgba(59,130,246,0.03)"><input class="sv-num-inp kwh-col" type="number" step="any" value="${v||''}" placeholder="0" style="width:54px" onchange="svUpdateMsrVal('${mid}','kwh',${i},this.value)" onfocusout="svAutoSave()"></td>`).join('');
       const kwCells  = m.kw.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:2px 1px;background:rgba(245,158,11,0.03)"><input class="sv-num-inp kw-col" type="number" step="any" value="${v||''}" placeholder="0" style="width:54px" onchange="svUpdateMsrVal('${mid}','kw',${i},this.value)" onfocusout="svAutoSave()"></td>`).join('');
       const gasCells = m.gas.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:2px 1px;background:rgba(20,184,166,0.03)"><input class="sv-num-inp gas-col" type="number" step="any" value="${v||''}" placeholder="0" style="width:54px" onchange="svUpdateMsrVal('${mid}','gas',${i},this.value)" onfocusout="svAutoSave()"></td>`).join('');
@@ -4814,7 +4821,15 @@ function renderSvDetail(){
     </div>
 
     <div class="card">
-      <div class="card-hdr"><span class="card-title">💡 Energy Savings Measures</span></div>
+      <div class="card-hdr" style="flex-wrap:wrap;gap:8px">
+        <span class="card-title">💡 Energy Savings Measures</span>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-left:auto">
+          <button class="btn btn-ghost btn-sm" onclick="openCalcTemplates(${projId},'${wrap.id==='ptab-savings'?'ptab':'sv'}')">📐 Calc Templates</button>
+          <button class="btn btn-ghost btn-sm" onclick="_svSaveRatesFrom(${projId})">💾 Save Rates</button>
+          <button class="btn btn-ghost btn-sm" onclick="_svAddMeasureFrom(${projId})">+ Add Measure</button>
+          <button class="btn btn-em btn-sm" onclick="_svRecalcFrom(${projId})">⚡ Recalc $ Savings</button>
+        </div>
+      </div>
       <div style="overflow-x:auto">
         <table class="dtbl sv-matrix-tbl" style="min-width:2400px">
           <thead>
@@ -4846,10 +4861,14 @@ function renderSvDetail(){
 // ── Savings page action handlers ──
 function svSaveProjBaselineRates(){
   if(!svSelProjId) return;
-  const bldgs = getUDBldgs(svSelProjId);
-  const sd = getProjSavingsData(svSelProjId);
+  _svSaveRatesFrom(svSelProjId);
+}
+
+function _svSaveRatesFrom(pid){
+  const bldgs = getUDBldgs(pid);
+  const sd = getProjSavingsData(pid);
   bldgs.forEach(b=>{
-    const pid=svSelProjId, bid=b.id;
+    const bid=b.id;
     sd.blRates[bid]={
       kwhSummer: parseFloat(document.getElementById('sv-blr-kwhs-'+pid+'-'+bid)?.value)||0,
       kwhWinter: parseFloat(document.getElementById('sv-blr-kwhw-'+pid+'-'+bid)?.value)||0,
@@ -4860,7 +4879,20 @@ function svSaveProjBaselineRates(){
   });
   sset('en_projects', projects);
   showToast('Baseline rates saved ✓');
-  svRecalc();
+  _svRecalcFrom(pid);
+}
+
+function _svAddMeasureFrom(pid){
+  addSavingsMeasure(pid);
+  // Re-render whichever view is active
+  if(document.getElementById('ptab-savings')?.offsetParent!==null) initSavingsTab(pid);
+  else { renderSvProjNav(); renderSvDetail(); }
+}
+
+function _svRecalcFrom(pid){
+  calcProjSavingsMatrix(pid);
+  if(document.getElementById('ptab-savings')?.offsetParent!==null) initSavingsTab(pid);
+  else renderSvDetail();
 }
 
 function svAddMeasure(){
@@ -12476,6 +12508,9 @@ function openCalcTemplates(projId, returnTo){
 function closeCalcTemplate(){
   if(!_calcTemplateContext) return;
   const {projId, returnTo} = _calcTemplateContext;
+  // Restore parent savings header buttons
+  const hdrBtns=document.getElementById('svDetailHdrBtns');
+  if(hdrBtns) hdrBtns.style.display='';
   if(returnTo==='ptab'){
     initSavingsTab(projId);
   } else {
@@ -12503,9 +12538,24 @@ function openSolarCalc(projId){
     ? document.getElementById('ptab-savings')
     : document.getElementById('svDetailWrap');
   if(!wrap) return;
+  // Hide parent savings buttons while solar calc is open
+  const hdrBtns=document.getElementById('svDetailHdrBtns');
+  if(hdrBtns) hdrBtns.style.display='none';
   const sv = p?.solarCalc||{};
   const arrays = p?.solarArrays||[];
-  const blBills = _solarGetBaselineBills(p);
+  // Build building/meter options from project utility data
+  const bldgs = (typeof getUDBldgs==='function') ? getUDBldgs(projId) : (p.buildings||[]);
+  let bldgMeterOpts='<option value="">All buildings / All electric meters</option>';
+  bldgs.forEach(b=>{
+    (b.meters||[]).forEach(m=>{
+      if(m.type!=='electric'&&m.commodity!=='Electric') return;
+      const label=(b.name||'Building')+ ' — ' +(m.name||m.commodity||'Electric');
+      const val=b.id+'|'+m.id;
+      const sel=(sv.selectedMeter===val)?'selected':'';
+      bldgMeterOpts+=`<option value="${val}" ${sel}>${label}</option>`;
+    });
+  });
+  const blBills = _solarGetBaselineBills(p, sv.selectedMeter||'');
   const MO = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
   const DEFS = [8995,9972,12436,13663,17115,17595,17494,16258,14113,12341,9096,7063];
   const DEFCF = [0.15,0.17,0.22,0.27,0.35,0.40,0.45,0.42,0.33,0.25,0.18,0.20];
@@ -12525,7 +12575,9 @@ function openSolarCalc(projId){
 
       <!-- ═══ A — BASELINE UTILITY DEMAND & CONSUMPTION ═══ -->
       <div class="card" style="margin-bottom:16px">
-        <div class="card-hdr"><span class="card-title">A — Baseline Utility Demand &amp; Consumption</span></div>
+        <div class="card-hdr"><span class="card-title">A — Baseline Utility Demand &amp; Consumption</span>
+          <select class="fs" id="sc-meterSelect" style="width:320px;font-size:11px" onchange="_scMeterChanged(${projId})">${bldgMeterOpts}</select>
+        </div>
         <div style="padding:12px;overflow-x:auto">
           <div style="font-size:11px;color:var(--text2);margin-bottom:8px">Row-per-month bill data. ECA/EER/PTS/TDC columns are per-bill <b>rates</b>, not dollar amounts.</div>
           <table class="dtbl" style="min-width:1500px;font-size:10px;border-collapse:collapse" id="sc-baseline-tbl">
@@ -12743,7 +12795,20 @@ function _scUpdateArrayDerived(){document.querySelectorAll('.sc-arr-kw').forEach
 function solarAddArray(projId){const p=projects.find(x=>x.id===projId);if(!p)return;p.solarArrays=p.solarArrays||[];const D=[8995,9972,12436,13663,17115,17595,17494,16258,14113,12341,9096,7063];const CF=[0.15,0.17,0.22,0.27,0.35,0.40,0.45,0.42,0.33,0.25,0.18,0.20];p.solarArrays.push({id:'sa'+Date.now(),name:'Array '+(p.solarArrays.length+1),kw:115,production:[...D],capFactor:[...CF],source:'helioscope'});sset('en_projects',projects);openSolarCalc(projId);showToast('Array added ✓');}
 function solarRemoveArray(projId,ai){const p=projects.find(x=>x.id===projId);if(!p||!p.solarArrays)return;p.solarArrays.splice(ai,1);sset('en_projects',projects);openSolarCalc(projId);showToast('Array removed');}
 function _solarReadArraysFromDOM(p){const arrays=p?.solarArrays||[];arrays.forEach((arr,ai)=>{const nE=document.querySelector(`.sc-arr-name[data-ai="${ai}"]`);if(nE)arr.name=nE.value;const kE=document.querySelector(`.sc-arr-kw[data-ai="${ai}"]`);if(kE)arr.kw=parseFloat(kE.value)||0;const sE=document.querySelector(`.sc-arr-src[data-ai="${ai}"]`);if(sE)arr.source=sE.value;arr.production=arr.production||Array(12).fill(0);arr.capFactor=arr.capFactor||Array(12).fill(0);for(let mi=0;mi<12;mi++){const pI=document.querySelector(`.sc-arr-prod[data-ai="${ai}"][data-mi="${mi}"]`);if(pI)arr.production[mi]=parseFloat(pI.value)||0;const cI=document.querySelector(`.sc-arr-capfactor[data-ai="${ai}"][data-mi="${mi}"]`);if(cI)arr.capFactor[mi]=parseFloat(cI.value)||0;}});return arrays;}
-function _solarGetBaselineBills(p){const R={kwh:Array(12).fill(0),billedKw:Array(12).fill(0),facKw:Array(12).fill(0),onPeakKwh:Array(12).fill(0),offPeakKwh:Array(12).fill(0),totalCost:Array(12).fill(0),startDate:Array(12).fill(''),endDate:Array(12).fill(''),customerCharge:Array(12).fill(0),demandCharge:Array(12).fill(0),facilitiesCharge:Array(12).fill(0),ecaCharge:Array(12).fill(0),eerCharge:Array(12).fill(0),ptsCharge:Array(12).fill(0),tdcCharge:Array(12).fill(0),renewableCharge:Array(12).fill(0),franchiseFee:Array(12).fill(0),onPeakCost:Array(12).fill(0),offPeakCost:Array(12).fill(0)};const mn=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];(p?.buildings||[]).forEach(b=>{(b.meters||[]).forEach(m=>{if(m.type!=='electric'&&m.commodity!=='Electric')return;const bi=m.baseline?.startIdx,bm=m.baseline?.months,bills=m.bills||[],use=bi!=null&&bm?bills.slice(bi,bi+bm):bills;use.forEach(bill=>{let mi=-1;if(bill.month)mi=mn.indexOf(bill.month.toLowerCase().slice(0,3));else if(bill.normMonth)mi=mn.indexOf(bill.normMonth.toLowerCase().slice(0,3));else if(bill.end){const d=new Date(bill.end);if(!isNaN(d))mi=d.getMonth();}if(mi<0)return;const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;R.kwh[mi]+=pf(bill.kwh)||pf(bill.usage);R.billedKw[mi]=Math.max(R.billedKw[mi],pf(bill.billedKW)||pf(bill.demandKW));R.facKw[mi]=Math.max(R.facKw[mi],pf(bill.facKW));R.onPeakKwh[mi]+=pf(bill.onPeakKwh);R.offPeakKwh[mi]+=pf(bill.offPeakKwh);R.totalCost[mi]+=pf(bill.totalCost);if(bill.start)R.startDate[mi]=bill.start;if(bill.end)R.endDate[mi]=bill.end;R.ecaCharge[mi]+=pf(bill.ecaCharge);R.eerCharge[mi]+=pf(bill.eerCharge);R.ptsCharge[mi]+=pf(bill.ptsCharge);R.tdcCharge[mi]+=pf(bill.tdcCharge);R.franchiseFee[mi]+=pf(bill.franchiseFee);R.onPeakCost[mi]+=pf(bill.onPeakCost);R.offPeakCost[mi]+=pf(bill.offPeakCost);});});});return R;}
+function _solarGetBaselineBills(p,meterFilter){const R={kwh:Array(12).fill(0),billedKw:Array(12).fill(0),facKw:Array(12).fill(0),onPeakKwh:Array(12).fill(0),offPeakKwh:Array(12).fill(0),totalCost:Array(12).fill(0),startDate:Array(12).fill(''),endDate:Array(12).fill(''),customerCharge:Array(12).fill(0),demandCharge:Array(12).fill(0),facilitiesCharge:Array(12).fill(0),ecaCharge:Array(12).fill(0),eerCharge:Array(12).fill(0),ptsCharge:Array(12).fill(0),tdcCharge:Array(12).fill(0),renewableCharge:Array(12).fill(0),franchiseFee:Array(12).fill(0),onPeakCost:Array(12).fill(0),offPeakCost:Array(12).fill(0)};const mn=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];const [filterBid,filterMid]=meterFilter?meterFilter.split('|'):['',''];(p?.buildings||[]).forEach(b=>{if(filterBid&&b.id!==filterBid) return;(b.meters||[]).forEach(m=>{if(m.type!=='electric'&&m.commodity!=='Electric')return;if(filterMid&&m.id!==filterMid) return;const bi=m.baseline?.startIdx,bm=m.baseline?.months,bills=m.bills||[],use=bi!=null&&bm?bills.slice(bi,bi+bm):bills;use.forEach(bill=>{let mi=-1;if(bill.month)mi=mn.indexOf(bill.month.toLowerCase().slice(0,3));else if(bill.normMonth)mi=mn.indexOf(bill.normMonth.toLowerCase().slice(0,3));else if(bill.end){const d=new Date(bill.end);if(!isNaN(d))mi=d.getMonth();}if(mi<0)return;const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;R.kwh[mi]+=pf(bill.kwh)||pf(bill.usage);R.billedKw[mi]=Math.max(R.billedKw[mi],pf(bill.billedKW)||pf(bill.demandKW));R.facKw[mi]=Math.max(R.facKw[mi],pf(bill.facKW));R.onPeakKwh[mi]+=pf(bill.onPeakKwh);R.offPeakKwh[mi]+=pf(bill.offPeakKwh);R.totalCost[mi]+=pf(bill.totalCost);if(bill.start)R.startDate[mi]=bill.start;if(bill.end)R.endDate[mi]=bill.end;R.ecaCharge[mi]+=pf(bill.ecaCharge);R.eerCharge[mi]+=pf(bill.eerCharge);R.ptsCharge[mi]+=pf(bill.ptsCharge);R.tdcCharge[mi]+=pf(bill.tdcCharge);R.franchiseFee[mi]+=pf(bill.franchiseFee);R.onPeakCost[mi]+=pf(bill.onPeakCost);R.offPeakCost[mi]+=pf(bill.offPeakCost);});});});return R;}
+
+/* ── When user changes building/meter selector, re-populate baseline and re-render ── */
+function _scMeterChanged(projId){
+  const sel=document.getElementById('sc-meterSelect')?.value||'';
+  const p=projects.find(x=>x.id===projId);if(!p)return;
+  p.solarCalc=p.solarCalc||{};
+  p.solarCalc.selectedMeter=sel;
+  // Clear baseline overrides so fresh data loads
+  p.solarCalc.blOverrides={};
+  sset('en_projects',projects);
+  openSolarCalc(projId);
+  showToast('Baseline loaded from selected meter ✓');
+}
 
 function solarSaveInputs(projId){const p=projects.find(x=>x.id===projId);if(!p)return;_solarReadArraysFromDOM(p);const prod=[];for(let i=0;i<12;i++)prod.push(parseFloat(document.getElementById(`sc-prod-${i}`)?.value)||0);const bl={};['kwh','kw','fackw','offpk','billAmt','startDate','endDate','ecaStart','ecaEnd','eerStart','eerEnd','ptsStart','ptsEnd','tdcStart','tdcEnd'].forEach(key=>{bl[key]=[];document.querySelectorAll(`.sc-bl-${key}`).forEach(inp=>{const mi=parseInt(inp.dataset.mi);bl[key][mi]=key.includes('Date')?inp.value:(parseFloat(inp.value)||0);});});const gv=id=>{const el=document.getElementById(id);return el?parseFloat(el.value)||0:0;};p.solarCalc={...(p.solarCalc||{}),arrayKw:gv('sc-arrayKw'),costPerWatt:gv('sc-costPerWatt'),taxCredit:gv('sc-taxCredit'),netMeterMax:gv('sc-netMeterMax'),billingKw:gv('sc-billingKw'),savingsPct:gv('sc-savingsPct'),summerChange:document.getElementById('sc-summerChange')?.value||'5/31',winterChange:document.getElementById('sc-winterChange')?.value||'9/30',ecaThreshold:gv('sc-ecaThreshold')||18813.204,rateScheduleName:document.getElementById('sc-rateSchedule')?.value||'2LGSF',production:prod,blOverrides:bl,franchisePct:gv('sc-franchisePct'),franchiseFeeDecimal:gv('sc-franchiseFeeDecimal'),custCharge:gv('sc-custCharge'),facRate:gv('sc-facRate'),demandSum:gv('sc-demandSum'),demandWin:gv('sc-demandWin'),nmDemandSum:gv('sc-nmDemandSum'),nmDemandWin:gv('sc-nmDemandWin'),onPeakSum:gv('sc-onPeakSum'),onPeakWin:gv('sc-onPeakWin'),offPeakSum:gv('sc-offPeakSum'),offPeakWin:gv('sc-offPeakWin'),tier1Sum:gv('sc-tier1Sum'),tier1Win:gv('sc-tier1Win'),tier2Sum:gv('sc-tier2Sum'),tier2Win:gv('sc-tier2Win'),tier3Sum:gv('sc-tier3Sum'),tier3Win:gv('sc-tier3Win'),overProdSum:gv('sc-overProdSum'),overProdWin:gv('sc-overProdWin'),renewPart:gv('sc-renewPart'),newRenewPart:gv('sc-newRenewPart'),ecaRate:gv('sc-ecaRate'),eerRate:gv('sc-eerRate'),ptsRate:gv('sc-ptsRate'),tdcRate:gv('sc-tdcRate')};sset('en_projects',projects);showToast('Solar calc saved ✓');}
 
@@ -12809,7 +12874,7 @@ function _scDoCalc(projId){
 
   // Bill calculators
   function calcStd(i,kwh,akw,offpk,bkw){
-    const pr=prorate(i),bilKw=bkw||akw||manKw||arrayKw,fkw=pr.fKw||bilKw;
+    const pr=prorate(i),bilKw=bkw||akw||manKw||0,fkw=pr.fKw||bilKw;
     const onpk=Math.max(0,kwh-offpk);
     const sR=pr.sR,wR=pr.wR;
     const eOnPk=+(onpk*sR*R.opS).toFixed(2)+ +(onpk*wR*R.opW).toFixed(2);
@@ -12882,7 +12947,7 @@ function _scDoCalc(projId){
   const dP=[],eP=[],fP=[],gP=[],nmSav=[],btmSav=[];
   let dA=0,eA=0,fA=0,gA=0;
   for(let i=0;i<12;i++){
-    const bilKw=bKw[i]||manKw||arrayKw;
+    const bilKw=bKw[i]||manKw||0;
     const d=calcStd(i,bKwh[i],bKw[i],bOff[i],bilKw);dP.push(d);dA+=d.tot;
     const bsK=bKwh[i]*(1-savPct),bsW=bKw[i]*(1-savPct),bsO=bOff[i]*(1-savPct),bsB=bilKw*(1-savPct);
     const e=calcStd(i,bsK,bsW,bsO,bsB);eP.push(e);eA+=e.tot;
