@@ -12524,7 +12524,7 @@ function hvacLoadCreateMeasure(projId){
 ══════════════════════════════════════════════════════ */
 const CALC_TEMPLATES = [
   {id:'solar', name:'Solar', icon:'☀️', desc:'PV array savings with configurable rate schedules, net metering, and Helioscope data', status:'ready'},
-  {id:'bas', name:'BAS', icon:'🏢', desc:'Building Automation savings using weather bin data, setpoints, and schedules. Upload temp/humidity CSV for your city.', status:'coming'},
+  {id:'bas', name:'BAS', icon:'🏢', desc:'Building Automation savings using weather bin data, setpoints, and schedules. Upload temp/humidity CSV for your city.', status:'ready'},
   {id:'oa', name:'Outside Air', icon:'🌬️', desc:'OA economizer and ventilation optimization savings', status:'coming'},
   {id:'lighting', name:'Lighting', icon:'💡', desc:'LED retrofit savings with wattage reduction and controls', status:'coming'},
   {id:'weatherization', name:'Weatherization', icon:'🏠', desc:'Envelope improvements — insulation, windows, air sealing', status:'coming'},
@@ -12587,6 +12587,8 @@ function closeCalcTemplate(){
 function launchCalcTemplate(templateId, projId){
   if(templateId==='solar'){
     openSolarCalc(projId);
+  } else if(templateId==='bas'){
+    openBASCalc(projId);
   } else {
     showToast(`${templateId.toUpperCase()} calculator coming soon`);
   }
@@ -13213,6 +13215,753 @@ function solarApplyToMeasure(projId){
   const msrNum=m.msrNum;
   closeCalcTemplate();
   showToast('Solar calc applied to Measure #'+msrNum+' ✓');
+}
+
+/* ══════════════════════════════════════════════════════
+   BAS SAVINGS CALCULATOR
+══════════════════════════════════════════════════════ */
+
+/* ── A. Load Profile Constants ── */
+const BAS_COOL_CURVE = [
+  [55,0],[60,0],[65,0.05],[70,0.186],[75,0.321],
+  [80,0.457],[85,0.593],[90,0.729],[95,0.864],[100,1.0]
+];
+const BAS_HEAT_CURVE = [
+  [-2.5,1.00],[2.5,0.93],[7.5,0.86],[12.5,0.79],[17.5,0.72],
+  [22.5,0.65],[27.5,0.58],[32.5,0.51],[37.5,0.44],[42.5,0.37],[47.5,0.30]
+];
+const BAS_VRF_COP = [
+  [-2.5,0.80],[2.5,0.80],[7.5,0.80],[12.5,0.80],[17.5,0.80],
+  [22.5,0.80],[27.5,0.80],[32.5,0.80],[37.5,1.34],[42.5,3.50],[47.5,3.50]
+];
+const BAS_TEMP_BINS = [82.5,77.5,72.5,67.5,62.5,57.5,52.5,47.5,42.5,37.5,32.5,27.5,22.5,17.5,12.5,7.5,2.5,-2.5,-7.5];
+const BAS_MONTH_DAYS = [31,28,31,30,31,30,31,31,30,31,30,31];
+const BAS_MO = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+
+function _bcInterp(curve, temp){
+  if(temp<=curve[0][0]) return curve[0][1];
+  if(temp>=curve[curve.length-1][0]) return curve[curve.length-1][1];
+  for(let i=0;i<curve.length-1;i++){
+    if(temp>=curve[i][0]&&temp<=curve[i+1][0]){
+      const f=(temp-curve[i][0])/(curve[i+1][0]-curve[i][0]);
+      return curve[i][1]+f*(curve[i+1][1]-curve[i][1]);
+    }
+  }
+  return 0;
+}
+
+/* ── B. Weather Data — 17 cities, compact climate normals ── */
+const BAS_CITIES = [
+  {id:1,name:'Pittsburgh, PA',mean:[27,30,39,50,60,69,73,71,64,52,42,32],diur:[16,17,19,21,21,20,19,19,19,19,16,15],std:[10,10,11,11,10,8,7,7,9,10,10,10]},
+  {id:2,name:'Wichita, KS',mean:[31,36,46,56,66,76,81,80,71,58,45,33],diur:[20,21,22,23,21,22,23,23,23,23,20,19],std:[12,12,13,12,10,9,8,8,11,12,12,12]},
+  {id:3,name:'Philadelphia, PA',mean:[32,34,43,53,63,73,78,76,68,57,46,36],diur:[16,17,18,19,19,19,18,18,18,18,16,15],std:[10,10,11,10,9,8,7,7,8,9,10,10]},
+  {id:4,name:'Kansas City, MO',mean:[28,33,44,55,65,75,80,78,69,57,44,32],diur:[18,19,21,22,21,21,21,22,22,21,18,17],std:[12,12,13,12,10,9,8,8,11,12,12,12]},
+  {id:5,name:'Baltimore, MD',mean:[33,36,44,54,64,73,78,76,69,57,47,37],diur:[16,17,18,19,19,19,18,18,18,18,16,15],std:[10,10,10,10,9,8,7,7,8,9,10,10]},
+  {id:6,name:'Boulder, CO',mean:[34,36,42,49,58,68,74,72,63,52,41,33],diur:[24,24,26,27,26,27,27,27,27,26,23,23],std:[12,12,13,12,11,10,9,9,11,12,12,12]},
+  {id:7,name:'Cheyenne, WY',mean:[27,29,35,42,51,61,68,66,56,45,34,27],diur:[22,22,22,22,22,24,25,25,24,22,20,20],std:[12,12,13,12,11,10,9,9,11,12,12,12]},
+  {id:8,name:'Phoenix, AZ',mean:[55,58,63,71,80,90,95,93,87,75,63,54],diur:[21,23,25,27,29,31,27,26,27,26,23,21],std:[8,8,9,9,8,7,6,6,7,8,8,8]},
+  {id:9,name:'Brownsville, TX',mean:[61,64,70,76,81,85,86,87,84,78,70,63],diur:[16,16,17,16,14,14,15,15,14,16,16,15],std:[8,8,8,7,5,4,4,4,5,7,8,8]},
+  {id:10,name:'Belmar, NJ',mean:[32,33,40,50,59,69,75,74,67,56,46,36],diur:[15,16,17,17,17,17,17,17,17,17,15,14],std:[9,9,10,9,8,7,6,6,8,9,9,9]},
+  {id:11,name:'Chicago, IL',mean:[24,28,38,49,60,70,75,73,66,53,41,28],diur:[15,16,18,19,20,20,19,19,19,18,15,14],std:[12,11,12,11,10,9,8,8,10,11,11,11]},
+  {id:12,name:'New York, NY',mean:[33,35,43,53,63,72,77,76,68,57,47,37],diur:[14,15,16,17,17,17,16,16,16,16,14,13],std:[9,9,10,9,8,7,6,6,8,9,9,9]},
+  {id:13,name:'Columbia, MO',mean:[29,34,44,55,65,74,79,77,69,57,44,33],diur:[18,19,21,22,21,21,21,22,22,21,18,17],std:[11,11,12,11,10,9,8,8,10,11,11,11]},
+  {id:14,name:'Minneapolis, MN',mean:[14,20,33,47,59,69,74,71,62,49,33,19],diur:[17,18,20,22,22,22,21,21,21,20,16,15],std:[14,13,13,12,11,10,8,8,10,11,12,13]},
+  {id:15,name:'Dallas, TX',mean:[45,49,57,65,74,82,86,86,79,67,56,46],diur:[19,19,20,20,18,18,19,20,19,19,18,18],std:[11,11,11,10,8,7,6,6,8,10,11,11]},
+  {id:16,name:'St Louis, MO',mean:[30,35,45,56,66,75,80,78,70,58,45,34],diur:[17,18,20,21,20,20,20,21,21,20,17,16],std:[11,11,12,11,10,9,8,8,10,11,11,11]},
+  {id:17,name:'City, ST (template)',mean:[40,42,48,55,63,72,77,75,68,57,47,41],diur:[18,18,20,20,20,20,20,20,20,20,18,18],std:[10,10,10,10,10,10,10,10,10,10,10,10]}
+];
+
+let _basWeatherCache={};
+function _basGenerateTMY(cityIdx){
+  if(_basWeatherCache[cityIdx]) return _basWeatherCache[cityIdx];
+  const c=BAS_CITIES.find(x=>x.id===cityIdx);
+  if(!c) return null;
+  let seed=cityIdx*7919;
+  function rng(){seed=(seed*16807+0)%2147483647;return seed/2147483647;}
+  function gaussRng(){let u=0,v=0;while(u===0)u=rng();while(v===0)v=rng();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+  const hb=[];
+  for(let m=0;m<12;m++){
+    hb[m]=[];
+    for(let b=0;b<BAS_TEMP_BINS.length;b++) hb[m][b]=new Array(24).fill(0);
+    const days=BAS_MONTH_DAYS[m];
+    const meanT=c.mean[m];
+    const diur=c.diur[m];
+    const sd=c.std[m];
+    for(let d=0;d<days;d++){
+      const dayOffset=gaussRng()*sd*0.3;
+      for(let h=0;h<24;h++){
+        const diurnalFrac=Math.sin((h-6)*Math.PI/12);
+        const temp=meanT+dayOffset+(diur/2)*diurnalFrac+gaussRng()*sd*0.35;
+        let bi=BAS_TEMP_BINS.length-1;
+        for(let b=0;b<BAS_TEMP_BINS.length;b++){
+          if(temp>=(BAS_TEMP_BINS[b]-2.5)){bi=b;break;}
+        }
+        hb[m][bi][h]++;
+      }
+    }
+  }
+  _basWeatherCache[cityIdx]={hourlyBins:hb,cityName:c.name};
+  return _basWeatherCache[cityIdx];
+}
+
+/* ── C. Main UI Render ── */
+function openBASCalc(projId){
+  const p=projects.find(x=>x.id===projId);
+  if(!_calcTemplateContext) _calcTemplateContext={projId,returnTo:'sv'};
+  const wrap=_calcTemplateContext.returnTo==='ptab'
+    ? document.getElementById('ptab-savings')
+    : document.getElementById('svDetailWrap');
+  if(!wrap) return;
+  const hdrBtns=document.getElementById('svDetailHdrBtns');
+  if(hdrBtns) hdrBtns.style.display='none';
+  const bc=p?.basCalc||{};
+  const sqft=bc.sqft||(p?.sqft)||0;
+  const cityOpts=BAS_CITIES.map(c=>`<option value="${c.id}" ${(bc.city||4)===c.id?'selected':''}>${c.name}</option>`).join('');
+  const hasMsr=!!_calcTemplateContext?.targetMeasureId;
+  const msrLabel=hasMsr?(()=>{const sd=getProjSavingsData(projId);const m=sd.measures.find(x=>x.id===_calcTemplateContext.targetMeasureId);return '#'+(m?.msrNum||'?');})():'';
+
+  wrap.innerHTML=`
+  <div style="padding:20px;overflow-y:auto;flex:1" id="bc-main-wrap">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="openCalcTemplates(${projId},'${_calcTemplateContext.returnTo}')">← Templates</button>
+      <h2 style="font-size:18px;font-weight:700;margin:0">🏢 BAS Savings Calc</h2>
+      <div style="flex:1"></div>
+      <button class="btn btn-ghost btn-sm" onclick="bcSaveInputs(${projId})">💾 Save</button>
+      ${hasMsr
+        ?`<button class="btn btn-em btn-sm" onclick="bcApplyToMeasure(${projId})">⚡ Apply to Measure ${msrLabel}</button>`
+        :`<button class="btn btn-em btn-sm" onclick="bcAddAsMeasure(${projId})">+ Add as Savings Measure</button>`}
+    </div>
+
+    <!-- SUMMARY KPIs -->
+    <div id="bc-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px">
+      <div class="card" style="padding:14px;text-align:center;background:var(--s1)">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px">Annual kWh Savings</div>
+        <div style="font-size:22px;font-weight:700;font-family:var(--mono);color:var(--em);margin-top:4px" id="bc-kpi-kwh">—</div>
+      </div>
+      <div class="card" style="padding:14px;text-align:center;background:var(--s1)">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px">Heating Gas Savings</div>
+        <div style="font-size:22px;font-weight:700;font-family:var(--mono);color:var(--amber);margin-top:4px" id="bc-kpi-gas">—</div>
+      </div>
+      <div class="card" style="padding:14px;text-align:center;background:var(--s1)">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px">Cooling kWh Saved</div>
+        <div style="font-size:22px;font-weight:700;font-family:var(--mono);color:var(--em2);margin-top:4px" id="bc-kpi-cool">—</div>
+      </div>
+      <div class="card" style="padding:14px;text-align:center;background:var(--s1)">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px">Evergy Rebate</div>
+        <div style="font-size:22px;font-weight:700;font-family:var(--mono);color:var(--green);margin-top:4px" id="bc-kpi-rebate">—</div>
+      </div>
+    </div>
+
+    <!-- A — BUILDING & EQUIPMENT -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-hdr"><span class="card-title">A — Building &amp; Equipment</span></div>
+      <div style="padding:14px">
+        <div class="f3">
+          <div class="fg"><label class="fl">Building SqFt</label><input class="fi bc-inp" id="bc-sqft" type="number" value="${sqft}" placeholder="e.g. 50000"></div>
+          <div class="fg"><label class="fl">Heating Source</label><select class="fs bc-inp" id="bc-heatSrc">
+            <option value="1" ${(bc.heatSrc||2)==1?'selected':''}>1 — Gas (MCF)</option>
+            <option value="2" ${(bc.heatSrc||2)==2?'selected':''}>2 — Electric (kWh)</option>
+            <option value="3" ${(bc.heatSrc||2)==3?'selected':''}>3 — Gas (Therms)</option>
+            <option value="4" ${(bc.heatSrc||2)==4?'selected':''}>4 — Both (Electric + Gas)</option>
+          </select></div>
+          <div class="fg"><label class="fl">% of VRF kWh</label><input class="fi bc-inp" id="bc-vrfPct" type="number" value="${bc.vrfPct||0}" min="0" max="100" step="1"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr) repeat(3,auto);gap:10px;margin-top:8px;align-items:end">
+          <div class="fg"><label class="fl">Cooling Eff (kW/Ton)</label><input class="fi bc-inp" id="bc-coolEff" type="number" step="0.01" value="${bc.coolEff||0.86}"></div>
+          <div class="fg"><label class="fl">Gas AFUE</label><input class="fi bc-inp" id="bc-afue" type="number" step="0.01" value="${bc.afue||0.80}"></div>
+          <div class="fg"><label class="fl">Electric COP</label><input class="fi bc-inp" id="bc-elecCOP" type="number" step="0.1" value="${bc.elecCOP||1.0}"></div>
+          <div style="text-align:center;padding:6px 10px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
+            <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Max Tons</div>
+            <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--em2)" id="bc-dispTons">—</div>
+          </div>
+          <div style="text-align:center;padding:6px 10px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
+            <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Max MBtu/h</div>
+            <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--amber)" id="bc-dispMbtu">—</div>
+          </div>
+          <div style="text-align:center;padding:6px 10px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
+            <div style="font-size:9px;color:var(--text3);text-transform:uppercase">OA CFM</div>
+            <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--text2)" id="bc-dispCfm">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- B — LOCATION & WEATHER -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-hdr"><span class="card-title">B — Location &amp; Weather Data</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <select class="fs bc-inp" id="bc-city" style="width:200px;font-size:11px">${cityOpts}</select>
+        </div>
+      </div>
+      <div style="padding:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div style="font-size:12px;color:var(--text2)" id="bc-weatherStatus">${bc.weatherOverride?'Using uploaded data ('+bc.weatherOverride.rowsParsed+' rows)':'Using generated TMY data'}</div>
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer">
+          📂 Upload Weather CSV
+          <input type="file" accept=".csv,.txt" id="bc-weatherUpload" style="display:none" onchange="_bcHandleCSV(this,${projId})">
+        </label>
+        ${bc.weatherOverride?`<button class="btn btn-ghost btn-sm" onclick="_bcClearWeather(${projId})">✕ Clear Upload</button>`:''}
+      </div>
+    </div>
+
+    <!-- C — OPERATING CONDITIONS -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+      <!-- EXISTING -->
+      <div class="card">
+        <div class="card-hdr"><span class="card-title" style="color:var(--amber)">Existing Conditions</span></div>
+        <div style="padding:14px">
+          <div class="f2">
+            <div class="fg"><label class="fl">Cool Occ SP (°F)</label><input class="fi bc-inp" id="bc-exCoolOcc" type="number" value="${bc.exCoolOcc??55}"></div>
+            <div class="fg"><label class="fl">Cool Unocc SP (°F)</label><input class="fi bc-inp" id="bc-exCoolUnocc" type="number" value="${bc.exCoolUnocc??70}"></div>
+          </div>
+          <div class="f2">
+            <div class="fg"><label class="fl">Heat Occ SP (°F)</label><input class="fi bc-inp" id="bc-exHeatOcc" type="number" value="${bc.exHeatOcc??70}"></div>
+            <div class="fg"><label class="fl">Heat Unocc SP (°F)</label><input class="fi bc-inp" id="bc-exHeatUnocc" type="number" value="${bc.exHeatUnocc??60}"></div>
+          </div>
+          <div class="fg"><label class="fl">OA Shut Off When Unoccupied?</label><select class="fs bc-inp" id="bc-exOAShutoff">
+            <option value="no" ${(bc.exOAShutoff||'no')==='no'?'selected':''}>No</option>
+            <option value="yes" ${bc.exOAShutoff==='yes'?'selected':''}>Yes</option>
+          </select></div>
+          <div style="font-size:11px;font-weight:600;color:var(--text2);margin:10px 0 6px;text-transform:uppercase;letter-spacing:1px">Schedule (24hr)</div>
+          <div class="f2">
+            <div class="fg"><label class="fl">M-F On</label><input class="fi bc-inp" id="bc-exMfOn" type="number" min="0" max="24" value="${bc.exMfOn??0}"></div>
+            <div class="fg"><label class="fl">M-F Off</label><input class="fi bc-inp" id="bc-exMfOff" type="number" min="0" max="24" value="${bc.exMfOff??24}"></div>
+          </div>
+          <div class="f2">
+            <div class="fg"><label class="fl">Sat On</label><input class="fi bc-inp" id="bc-exSatOn" type="number" min="0" max="24" value="${bc.exSatOn??0}"></div>
+            <div class="fg"><label class="fl">Sat Off</label><input class="fi bc-inp" id="bc-exSatOff" type="number" min="0" max="24" value="${bc.exSatOff??24}"></div>
+          </div>
+          <div class="f2">
+            <div class="fg"><label class="fl">Sun On</label><input class="fi bc-inp" id="bc-exSunOn" type="number" min="0" max="24" value="${bc.exSunOn??0}"></div>
+            <div class="fg"><label class="fl">Sun Off</label><input class="fi bc-inp" id="bc-exSunOff" type="number" min="0" max="24" value="${bc.exSunOff??24}"></div>
+          </div>
+        </div>
+      </div>
+      <!-- NEW -->
+      <div class="card">
+        <div class="card-hdr"><span class="card-title" style="color:var(--em)">New (Proposed) Conditions</span></div>
+        <div style="padding:14px">
+          <div class="f2">
+            <div class="fg"><label class="fl">Cool Occ SP (°F)</label><input class="fi bc-inp" id="bc-newCoolOcc" type="number" value="${bc.newCoolOcc??50}"></div>
+            <div class="fg"><label class="fl">Cool Unocc SP (°F)</label><input class="fi bc-inp" id="bc-newCoolUnocc" type="number" value="${bc.newCoolUnocc??85}"></div>
+          </div>
+          <div class="f2">
+            <div class="fg"><label class="fl">Heat Occ SP (°F)</label><input class="fi bc-inp" id="bc-newHeatOcc" type="number" value="${bc.newHeatOcc??60}"></div>
+            <div class="fg"><label class="fl">Heat Unocc SP (°F)</label><input class="fi bc-inp" id="bc-newHeatUnocc" type="number" value="${bc.newHeatUnocc??55}"></div>
+          </div>
+          <div class="fg"><label class="fl">OA Shut Off When Unoccupied?</label><select class="fs bc-inp" id="bc-newOAShutoff">
+            <option value="no" ${(bc.newOAShutoff||'yes')==='no'?'selected':''}>No</option>
+            <option value="yes" ${(bc.newOAShutoff||'yes')==='yes'?'selected':''}>Yes</option>
+          </select></div>
+          <div style="font-size:11px;font-weight:600;color:var(--text2);margin:10px 0 6px;text-transform:uppercase;letter-spacing:1px">Schedule (24hr)</div>
+          <div class="f2">
+            <div class="fg"><label class="fl">M-F On</label><input class="fi bc-inp" id="bc-newMfOn" type="number" min="0" max="24" value="${bc.newMfOn??5}"></div>
+            <div class="fg"><label class="fl">M-F Off</label><input class="fi bc-inp" id="bc-newMfOff" type="number" min="0" max="24" value="${bc.newMfOff??21}"></div>
+          </div>
+          <div class="f2">
+            <div class="fg"><label class="fl">Sat On</label><input class="fi bc-inp" id="bc-newSatOn" type="number" min="0" max="24" value="${bc.newSatOn??6}"></div>
+            <div class="fg"><label class="fl">Sat Off</label><input class="fi bc-inp" id="bc-newSatOff" type="number" min="0" max="24" value="${bc.newSatOff??19}"></div>
+          </div>
+          <div class="f2">
+            <div class="fg"><label class="fl">Sun On</label><input class="fi bc-inp" id="bc-newSunOn" type="number" min="0" max="24" value="${bc.newSunOn??6}"></div>
+            <div class="fg"><label class="fl">Sun Off</label><input class="fi bc-inp" id="bc-newSunOff" type="number" min="0" max="24" value="${bc.newSunOff??19}"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- D — CALIBRATION -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-hdr"><span class="card-title">D — Calibration (Match to Utility Analysis)</span></div>
+      <div style="padding:14px">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:10px">Enter actual annual energy from utility analysis. Leave blank to skip calibration (factor = 1.0).</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;align-items:end">
+          <div class="fg"><label class="fl">Existing Cooling kWh (from UA)</label><input class="fi bc-inp" id="bc-calCoolKwh" type="number" value="${bc.calCoolKwh||''}"></div>
+          <div class="fg"><label class="fl">Existing Heating kWh (from UA)</label><input class="fi bc-inp" id="bc-calHeatKwh" type="number" value="${bc.calHeatKwh||''}"></div>
+          <div style="text-align:center;padding:8px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
+            <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Cool Adj Factor</div>
+            <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--em2)" id="bc-adjCool">1.000</div>
+          </div>
+          <div style="text-align:center;padding:8px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
+            <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Heat Adj Factor</div>
+            <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--amber)" id="bc-adjHeat">1.000</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- E — PEAK DEMAND -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-hdr"><span class="card-title">E — Peak Demand Hours</span></div>
+      <div style="padding:14px">
+        <div class="f2" style="max-width:400px">
+          <div class="fg"><label class="fl">Peak Start (24hr)</label><input class="fi bc-inp" id="bc-peakStart" type="number" min="0" max="23" value="${bc.peakStart??16}"></div>
+          <div class="fg"><label class="fl">Peak End (24hr)</label><input class="fi bc-inp" id="bc-peakEnd" type="number" min="1" max="24" value="${bc.peakEnd??18}"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- F — RESULTS -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-hdr"><span class="card-title">F — Results</span></div>
+      <div style="padding:14px;overflow-x:auto" id="bc-results">
+        <div style="text-align:center;padding:40px;color:var(--text3);font-size:13px">Enter building square footage above to calculate savings...</div>
+      </div>
+    </div>
+
+  </div>`;
+
+  // Attach live-calc listeners
+  wrap.querySelectorAll('.bc-inp').forEach(inp=>{
+    inp.addEventListener('input',()=>_bcLiveCalc(projId));
+    inp.addEventListener('change',()=>_bcLiveCalc(projId));
+  });
+  _bcLiveCalc(projId);
+}
+
+/* ── D. Calculation Engine ── */
+let _bcCalcTimer=null;
+function _bcLiveCalc(projId){
+  clearTimeout(_bcCalcTimer);
+  _bcCalcTimer=setTimeout(()=>_bcDoCalc(projId),150);
+}
+
+function _bcGv(id){const e=document.getElementById(id);if(!e)return 0;if(e.tagName==='SELECT')return e.value;return parseFloat(e.value)||0;}
+
+function _bcDoCalc(projId){
+  const p=projects.find(x=>x.id===projId);
+  if(!p) return;
+
+  const sqft=_bcGv('bc-sqft');
+  const heatSrc=parseInt(_bcGv('bc-heatSrc'))||2;
+  const vrfPct=(_bcGv('bc-vrfPct')||0)/100;
+  const coolEff=_bcGv('bc-coolEff')||0.86;
+  const afue=_bcGv('bc-afue')||0.80;
+  const elecCOP=_bcGv('bc-elecCOP')||1.0;
+  const cityIdx=parseInt(_bcGv('bc-city'))||4;
+
+  const exCoolOcc=_bcGv('bc-exCoolOcc');
+  const exCoolUnocc=_bcGv('bc-exCoolUnocc');
+  const exHeatOcc=_bcGv('bc-exHeatOcc');
+  const exHeatUnocc=_bcGv('bc-exHeatUnocc');
+  const exOAShutoff=document.getElementById('bc-exOAShutoff')?.value==='yes';
+  const exMfOn=_bcGv('bc-exMfOn'),exMfOff=_bcGv('bc-exMfOff');
+  const exSatOn=_bcGv('bc-exSatOn'),exSatOff=_bcGv('bc-exSatOff');
+  const exSunOn=_bcGv('bc-exSunOn'),exSunOff=_bcGv('bc-exSunOff');
+
+  const newCoolOcc=_bcGv('bc-newCoolOcc');
+  const newCoolUnocc=_bcGv('bc-newCoolUnocc');
+  const newHeatOcc=_bcGv('bc-newHeatOcc');
+  const newHeatUnocc=_bcGv('bc-newHeatUnocc');
+  const newOAShutoff=document.getElementById('bc-newOAShutoff')?.value==='yes';
+  const newMfOn=_bcGv('bc-newMfOn'),newMfOff=_bcGv('bc-newMfOff');
+  const newSatOn=_bcGv('bc-newSatOn'),newSatOff=_bcGv('bc-newSatOff');
+  const newSunOn=_bcGv('bc-newSunOn'),newSunOff=_bcGv('bc-newSunOff');
+
+  const calCoolKwh=_bcGv('bc-calCoolKwh');
+  const calHeatKwh=_bcGv('bc-calHeatKwh');
+  const peakStart=_bcGv('bc-peakStart');
+  const peakEnd=_bcGv('bc-peakEnd');
+
+  const maxTons=sqft/300;
+  const maxMbtu=sqft*30/1000;
+  const oaCfm=sqft*0.1;
+  const el=id=>document.getElementById(id);
+  if(el('bc-dispTons')) el('bc-dispTons').textContent=maxTons?maxTons.toFixed(1):'—';
+  if(el('bc-dispMbtu')) el('bc-dispMbtu').textContent=maxMbtu?maxMbtu.toFixed(1):'—';
+  if(el('bc-dispCfm')) el('bc-dispCfm').textContent=oaCfm?Math.round(oaCfm).toLocaleString():'—';
+
+  if(!sqft){_bcRenderEmpty();return;}
+
+  const weather=p.basCalc?.weatherOverride||_basGenerateTMY(cityIdx);
+  if(!weather){_bcRenderEmpty();return;}
+  const hb=weather.hourlyBins;
+
+  function isOcc(h,on,off){if(on===off)return false;return(on<off)?(h>=on&&h<off):(h>=on||h<off);}
+
+  const exCoolM=new Array(12).fill(0), exHeatKwhM=new Array(12).fill(0), exHeatGasM=new Array(12).fill(0);
+  const newCoolM=new Array(12).fill(0), newHeatKwhM=new Array(12).fill(0), newHeatGasM=new Array(12).fill(0);
+  const exPeakCoolM=new Array(12).fill(0), newPeakCoolM=new Array(12).fill(0);
+
+  for(let m=0;m<12;m++){
+    for(let bi=0;bi<BAS_TEMP_BINS.length;bi++){
+      const binTemp=BAS_TEMP_BINS[bi];
+      const coolPct=_bcInterp(BAS_COOL_CURVE,binTemp);
+      const heatPct=_bcInterp(BAS_HEAT_CURVE,binTemp);
+      const vrfCOP=_bcInterp(BAS_VRF_COP,binTemp);
+
+      // Existing cooling load profile
+      const exOccCoolTons=((exCoolOcc-10)>=binTemp)?0:maxTons*coolPct;
+      const exUnoccCoolTons=(exCoolUnocc>=binTemp)?0:
+        (exOccCoolTons>0&&(binTemp-exCoolOcc+10)>0?(binTemp-exCoolUnocc)/(binTemp-exCoolOcc+10)*exOccCoolTons:0);
+
+      // Existing heating load (MBtu/h)
+      let exOccHeatMbtu=0;
+      if((binTemp+10)<=exHeatOcc){
+        if(heatSrc===2||heatSrc===4){
+          const rawLoad=maxMbtu*heatPct;
+          exOccHeatMbtu=(rawLoad*vrfPct)/Math.max(vrfCOP,0.1)+(rawLoad*(1-vrfPct))/Math.max(elecCOP,0.1);
+        } else {
+          exOccHeatMbtu=(maxMbtu*heatPct)/Math.max(afue,0.1);
+        }
+      }
+      const exUnoccHeatMbtu=(binTemp>=exHeatUnocc)?0:
+        (exOccHeatMbtu>0&&(exHeatOcc-binTemp)>0?(exHeatUnocc-binTemp)/(exHeatOcc-binTemp)*exOccHeatMbtu:0);
+
+      // New cooling: scale by setpoint ratio
+      let newOccCoolTons=0;
+      if(!((newCoolOcc-10)>=binTemp)){
+        const exDenom=binTemp-exCoolOcc+10;
+        const newDenom=binTemp-newCoolOcc+10;
+        newOccCoolTons=(exDenom>0&&exOccCoolTons>0)?maxTons*coolPct*(newDenom/exDenom):maxTons*coolPct;
+        if(newOccCoolTons<0) newOccCoolTons=0;
+      }
+      const newUnoccCoolTons=(newCoolUnocc>=binTemp)?0:
+        (newOccCoolTons>0&&(binTemp-newCoolOcc+10)>0?(binTemp-newCoolUnocc)/(binTemp-newCoolOcc+10)*newOccCoolTons:0);
+
+      // New heating: scale by setpoint ratio
+      let newOccHeatMbtu=0;
+      if((binTemp+10)<=newHeatOcc){
+        const exHeatDenom=exHeatOcc-binTemp;
+        const newHeatDenom=newHeatOcc-binTemp;
+        const scale=(exHeatDenom>0)?newHeatDenom/exHeatDenom:1;
+        if(heatSrc===2||heatSrc===4){
+          const rawLoad=maxMbtu*heatPct*Math.max(scale,0);
+          newOccHeatMbtu=(rawLoad*vrfPct)/Math.max(vrfCOP,0.1)+(rawLoad*(1-vrfPct))/Math.max(elecCOP,0.1);
+        } else {
+          newOccHeatMbtu=(maxMbtu*heatPct*Math.max(scale,0))/Math.max(afue,0.1);
+        }
+      }
+      const newUnoccHeatMbtu=(binTemp>=newHeatUnocc)?0:
+        (newOccHeatMbtu>0&&(newHeatOcc-binTemp)>0?(newHeatUnocc-binTemp)/(newHeatOcc-binTemp)*newOccHeatMbtu:0);
+
+      // OA loads (MBtu)
+      const exOACoolMbtu=Math.max(0,(binTemp>exCoolOcc)?1.08*oaCfm*(binTemp-exCoolOcc)/1000:0);
+      const exOAHeatMbtu=Math.max(0,(binTemp<exHeatOcc)?1.08*oaCfm*(exHeatOcc-binTemp)/1000:0);
+      const newOACoolMbtu=Math.max(0,(binTemp>newCoolOcc)?1.08*oaCfm*(binTemp-newCoolOcc)/1000:0);
+      const newOAHeatMbtu=Math.max(0,(binTemp<newHeatOcc)?1.08*oaCfm*(newHeatOcc-binTemp)/1000:0);
+
+      for(let h=0;h<24;h++){
+        const hrs=hb[m][bi][h];
+        if(!hrs) continue;
+
+        // Existing schedule occupancy weights
+        const exOccMF=isOcc(h,exMfOn,exMfOff)?1:0;
+        const exOccSat=isOcc(h,exSatOn,exSatOff)?1:0;
+        const exOccSun=isOcc(h,exSunOn,exSunOff)?1:0;
+        const exOccW=exOccMF*(5/7)+exOccSat*(1/7)+exOccSun*(1/7);
+        const exUnoccW=1-exOccW;
+
+        // Existing cooling: ton-hours → kWh
+        const exCoolTH=hrs*(exOccCoolTons*exOccW+exUnoccCoolTons*exUnoccW);
+        const exCoolKwh_h=exCoolTH*coolEff;
+        const exOAShut=(exOAShutoff&&exUnoccW>0);
+        const exOACoolKwh_h=hrs*(exOACoolMbtu/12)*coolEff*(exOAShut?exOccW:1);
+        exCoolM[m]+=exCoolKwh_h+exOACoolKwh_h;
+
+        // Existing heating
+        const exHeatMbtu_h=hrs*(exOccHeatMbtu*exOccW+exUnoccHeatMbtu*exUnoccW);
+        const exOAHeatMbtu_h=hrs*exOAHeatMbtu*(exOAShut?exOccW:1);
+        const exTotalHeatMbtu=exHeatMbtu_h+exOAHeatMbtu_h;
+        if(heatSrc===1){ exHeatGasM[m]+=exTotalHeatMbtu*0.001; }
+        else if(heatSrc===2){ exHeatKwhM[m]+=exTotalHeatMbtu*0.293; }
+        else if(heatSrc===3){ exHeatGasM[m]+=exTotalHeatMbtu*0.01; }
+        else { exHeatKwhM[m]+=exTotalHeatMbtu*0.293; }
+
+        // New schedule occupancy weights
+        const newOccMF=isOcc(h,newMfOn,newMfOff)?1:0;
+        const newOccSat=isOcc(h,newSatOn,newSatOff)?1:0;
+        const newOccSun=isOcc(h,newSunOn,newSunOff)?1:0;
+        const newOccW=newOccMF*(5/7)+newOccSat*(1/7)+newOccSun*(1/7);
+        const newUnoccW=1-newOccW;
+
+        // New cooling
+        const newCoolTH=hrs*(newOccCoolTons*newOccW+newUnoccCoolTons*newUnoccW);
+        const newCoolKwh_h=newCoolTH*coolEff;
+        const newOAShut=(newOAShutoff&&newUnoccW>0);
+        const newOACoolKwh_h=hrs*(newOACoolMbtu/12)*coolEff*(newOAShut?newOccW:1);
+        newCoolM[m]+=newCoolKwh_h+newOACoolKwh_h;
+
+        // New heating
+        const newHeatMbtu_h=hrs*(newOccHeatMbtu*newOccW+newUnoccHeatMbtu*newUnoccW);
+        const newOAHeatMbtu_h=hrs*newOAHeatMbtu*(newOAShut?newOccW:1);
+        const newTotalHeatMbtu=newHeatMbtu_h+newOAHeatMbtu_h;
+        if(heatSrc===1){ newHeatGasM[m]+=newTotalHeatMbtu*0.001; }
+        else if(heatSrc===2){ newHeatKwhM[m]+=newTotalHeatMbtu*0.293; }
+        else if(heatSrc===3){ newHeatGasM[m]+=newTotalHeatMbtu*0.01; }
+        else { newHeatKwhM[m]+=newTotalHeatMbtu*0.293; }
+
+        // Peak tracking
+        const isPeak=(h>=peakStart&&h<peakEnd);
+        if(isPeak){
+          exPeakCoolM[m]+=exCoolKwh_h+exOACoolKwh_h;
+          newPeakCoolM[m]+=newCoolKwh_h+newOACoolKwh_h;
+        }
+      }
+    }
+  }
+
+  // Calibration factors
+  const rawExCoolTotal=exCoolM.reduce((a,b)=>a+b,0);
+  const rawExHeatTotal=exHeatKwhM.reduce((a,b)=>a+b,0);
+  let coolAdj=1,heatAdj=1;
+  if(calCoolKwh>0&&rawExCoolTotal>0) coolAdj=calCoolKwh/rawExCoolTotal;
+  if(calHeatKwh>0&&rawExHeatTotal>0) heatAdj=calHeatKwh/rawExHeatTotal;
+  if(el('bc-adjCool')) el('bc-adjCool').textContent=coolAdj.toFixed(3);
+  if(el('bc-adjHeat')) el('bc-adjHeat').textContent=heatAdj.toFixed(3);
+
+  // Compute savings with calibration
+  const coolSavM=[],heatKwhSavM=[],heatGasSavM=[],totalKwhSavM=[];
+  const peakKwhSavM=[],nonPeakKwhSavM=[];
+  let annCoolSav=0,annHeatKwhSav=0,annHeatGasSav=0,annTotalKwh=0,annPeak=0,annNonPeak=0;
+  const gasLabel=(heatSrc===1)?'MCF':(heatSrc===3)?'Therms':'Therms';
+
+  for(let m=0;m<12;m++){
+    const cs=(exCoolM[m]-newCoolM[m])*coolAdj;
+    const hs=(exHeatKwhM[m]-newHeatKwhM[m])*heatAdj;
+    const gs=(exHeatGasM[m]-newHeatGasM[m])*(heatAdj);
+    coolSavM[m]=cs;
+    heatKwhSavM[m]=hs;
+    heatGasSavM[m]=gs;
+    totalKwhSavM[m]=cs+hs;
+    const pkSav=(exPeakCoolM[m]-newPeakCoolM[m])*coolAdj;
+    peakKwhSavM[m]=pkSav;
+    nonPeakKwhSavM[m]=(cs-pkSav)+hs;
+    annCoolSav+=cs; annHeatKwhSav+=hs; annHeatGasSav+=gs;
+    annTotalKwh+=cs+hs; annPeak+=pkSav; annNonPeak+=(cs-pkSav)+hs;
+  }
+
+  // Evergy rebate
+  const rebatePeak=Math.max(0,annPeak)*0.10;
+  const rebateNonPeak=Math.max(0,annNonPeak)*0.04;
+  const totalRebate=rebatePeak+rebateNonPeak;
+
+  // Update KPIs
+  const fmt=n=>n?Math.round(n).toLocaleString():'0';
+  const fmtD=n=>n?'$'+Math.round(n).toLocaleString():'$0';
+  if(el('bc-kpi-kwh')) el('bc-kpi-kwh').textContent=fmt(annTotalKwh)+' kWh';
+  if(el('bc-kpi-gas')) el('bc-kpi-gas').textContent=fmt(annHeatGasSav)+' '+gasLabel;
+  if(el('bc-kpi-cool')) el('bc-kpi-cool').textContent=fmt(annCoolSav)+' kWh';
+  if(el('bc-kpi-rebate')) el('bc-kpi-rebate').textContent=fmtD(totalRebate);
+
+  // Store for measure integration
+  p._bcResults={
+    kwhSavings:totalKwhSavM,gasSavings:heatGasSavM,
+    coolKwhSavings:coolSavM,heatKwhSavings:heatKwhSavM,
+    peakKwhSavings:peakKwhSavM,nonPeakKwhSavings:nonPeakKwhSavM,
+    annTotalKwh,annHeatGasSav,totalRebate
+  };
+
+  // Render results table
+  const res=el('bc-results');
+  if(!res) return;
+  let html=`<table class="dtbl" style="font-size:11px;border-collapse:collapse;width:100%">
+    <thead><tr>
+      <th style="text-align:left;padding:5px 8px;font-size:10px">Month</th>
+      <th style="text-align:right;padding:5px 6px;font-size:10px">Exist Cool kWh</th>
+      <th style="text-align:right;padding:5px 6px;font-size:10px">New Cool kWh</th>
+      <th style="text-align:right;padding:5px 6px;font-size:10px;color:var(--em2)">Cool Saved</th>
+      <th style="text-align:right;padding:5px 6px;font-size:10px">Heat kWh Saved</th>
+      <th style="text-align:right;padding:5px 6px;font-size:10px">Heat ${gasLabel} Saved</th>
+      <th style="text-align:right;padding:5px 6px;font-size:10px;color:var(--em);font-weight:700">Total kWh</th>
+      <th style="text-align:right;padding:5px 6px;font-size:10px;color:var(--amber)">Peak kWh</th>
+      <th style="text-align:right;padding:5px 6px;font-size:10px">Non-Peak kWh</th>
+    </tr></thead><tbody>`;
+  for(let m=0;m<12;m++){
+    const bg=m%2?'background:rgba(255,255,255,0.015)':'';
+    html+=`<tr style="${bg}">
+      <td style="font-weight:600;padding:4px 8px">${BAS_MO[m]}</td>
+      <td style="text-align:right;padding:4px 6px;font-family:var(--mono);font-size:10px;color:var(--text2)">${fmt(exCoolM[m]*coolAdj)}</td>
+      <td style="text-align:right;padding:4px 6px;font-family:var(--mono);font-size:10px;color:var(--text2)">${fmt(newCoolM[m]*coolAdj)}</td>
+      <td style="text-align:right;padding:4px 6px;font-family:var(--mono);font-size:10px;color:var(--em2)">${fmt(coolSavM[m])}</td>
+      <td style="text-align:right;padding:4px 6px;font-family:var(--mono);font-size:10px">${fmt(heatKwhSavM[m])}</td>
+      <td style="text-align:right;padding:4px 6px;font-family:var(--mono);font-size:10px">${fmt(heatGasSavM[m])}</td>
+      <td style="text-align:right;padding:4px 6px;font-family:var(--mono);font-size:10px;color:var(--em);font-weight:600">${fmt(totalKwhSavM[m])}</td>
+      <td style="text-align:right;padding:4px 6px;font-family:var(--mono);font-size:10px;color:var(--amber)">${fmt(peakKwhSavM[m])}</td>
+      <td style="text-align:right;padding:4px 6px;font-family:var(--mono);font-size:10px">${fmt(nonPeakKwhSavM[m])}</td>
+    </tr>`;
+  }
+  html+=`<tr style="border-top:2px solid var(--border);font-weight:700">
+    <td style="padding:6px 8px">TOTAL</td>
+    <td style="text-align:right;padding:6px;font-family:var(--mono);font-size:11px;color:var(--text2)">${fmt(exCoolM.reduce((a,b)=>a+b,0)*coolAdj)}</td>
+    <td style="text-align:right;padding:6px;font-family:var(--mono);font-size:11px;color:var(--text2)">${fmt(newCoolM.reduce((a,b)=>a+b,0)*coolAdj)}</td>
+    <td style="text-align:right;padding:6px;font-family:var(--mono);font-size:11px;color:var(--em2)">${fmt(annCoolSav)}</td>
+    <td style="text-align:right;padding:6px;font-family:var(--mono);font-size:11px">${fmt(annHeatKwhSav)}</td>
+    <td style="text-align:right;padding:6px;font-family:var(--mono);font-size:11px">${fmt(annHeatGasSav)}</td>
+    <td style="text-align:right;padding:6px;font-family:var(--mono);font-size:11px;color:var(--em)">${fmt(annTotalKwh)}</td>
+    <td style="text-align:right;padding:6px;font-family:var(--mono);font-size:11px;color:var(--amber)">${fmt(annPeak)}</td>
+    <td style="text-align:right;padding:6px;font-family:var(--mono);font-size:11px">${fmt(annNonPeak)}</td>
+  </tr></tbody></table>`;
+
+  // Evergy rebate summary
+  html+=`<div style="margin-top:14px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+    <div style="background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:10px 16px">
+      <span style="font-size:11px;color:var(--text2)">Peak kWh × $0.10 =</span>
+      <span style="font-family:var(--mono);font-weight:700;color:var(--amber);margin-left:6px">${fmtD(rebatePeak)}</span>
+    </div>
+    <div style="background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:10px 16px">
+      <span style="font-size:11px;color:var(--text2)">Non-Peak kWh × $0.04 =</span>
+      <span style="font-family:var(--mono);font-weight:700;color:var(--text);margin-left:6px">${fmtD(rebateNonPeak)}</span>
+    </div>
+    <div style="background:var(--em-dim);border:1px solid var(--em);border-radius:8px;padding:10px 16px">
+      <span style="font-size:11px;color:var(--em)">Total Evergy Rebate =</span>
+      <span style="font-family:var(--mono);font-weight:700;color:var(--em);font-size:16px;margin-left:6px">${fmtD(totalRebate)}</span>
+    </div>
+  </div>`;
+
+  res.innerHTML=html;
+}
+
+function _bcRenderEmpty(){
+  const el=document.getElementById('bc-results');
+  if(el) el.innerHTML='<div style="text-align:center;padding:40px;color:var(--text3);font-size:13px">Enter building square footage above to calculate savings...</div>';
+  ['bc-kpi-kwh','bc-kpi-gas','bc-kpi-cool','bc-kpi-rebate'].forEach(id=>{
+    const e=document.getElementById(id);if(e) e.textContent='—';
+  });
+}
+
+/* ── E. Save ── */
+function bcSaveInputs(projId){
+  const p=projects.find(x=>x.id===projId);
+  if(!p) return;
+  p.basCalc={
+    ...(p.basCalc||{}),
+    sqft:_bcGv('bc-sqft'),
+    heatSrc:parseInt(_bcGv('bc-heatSrc'))||2,
+    vrfPct:_bcGv('bc-vrfPct'),
+    coolEff:_bcGv('bc-coolEff'),
+    afue:_bcGv('bc-afue'),
+    elecCOP:_bcGv('bc-elecCOP'),
+    city:parseInt(_bcGv('bc-city'))||4,
+    exCoolOcc:_bcGv('bc-exCoolOcc'),exCoolUnocc:_bcGv('bc-exCoolUnocc'),
+    exHeatOcc:_bcGv('bc-exHeatOcc'),exHeatUnocc:_bcGv('bc-exHeatUnocc'),
+    exOAShutoff:document.getElementById('bc-exOAShutoff')?.value||'no',
+    exMfOn:_bcGv('bc-exMfOn'),exMfOff:_bcGv('bc-exMfOff'),
+    exSatOn:_bcGv('bc-exSatOn'),exSatOff:_bcGv('bc-exSatOff'),
+    exSunOn:_bcGv('bc-exSunOn'),exSunOff:_bcGv('bc-exSunOff'),
+    newCoolOcc:_bcGv('bc-newCoolOcc'),newCoolUnocc:_bcGv('bc-newCoolUnocc'),
+    newHeatOcc:_bcGv('bc-newHeatOcc'),newHeatUnocc:_bcGv('bc-newHeatUnocc'),
+    newOAShutoff:document.getElementById('bc-newOAShutoff')?.value||'yes',
+    newMfOn:_bcGv('bc-newMfOn'),newMfOff:_bcGv('bc-newMfOff'),
+    newSatOn:_bcGv('bc-newSatOn'),newSatOff:_bcGv('bc-newSatOff'),
+    newSunOn:_bcGv('bc-newSunOn'),newSunOff:_bcGv('bc-newSunOff'),
+    calCoolKwh:_bcGv('bc-calCoolKwh'),calHeatKwh:_bcGv('bc-calHeatKwh'),
+    peakStart:_bcGv('bc-peakStart'),peakEnd:_bcGv('bc-peakEnd'),
+    weatherOverride:p.basCalc?.weatherOverride||null
+  };
+  sset('en_projects',projects);
+  showToast('BAS calc saved ✓');
+}
+
+/* ── F. Measure Integration ── */
+function bcAddAsMeasure(projId){
+  const p=projects.find(x=>x.id===projId);
+  if(!p||!p._bcResults){showToast('Run calculation first');return;}
+  const r=p._bcResults;
+  const sd=getProjSavingsData(projId);
+  const bldgs=(typeof getUDBldgs==='function')?getUDBldgs(projId):(p.buildings||[]);
+  const cityName=BAS_CITIES.find(c=>c.id===(p.basCalc?.city||4))?.name||'Unknown';
+  sd.measures.push({
+    id:'m'+Date.now(),selected:true,
+    msrNum:(sd.measures.length+1)+'',
+    bldgId:bldgs[0]?.id||'',
+    desc:'BAS HVAC Optimization — '+cityName+' — '+(p.basCalc?.sqft||0)+' sf',
+    kwh:r.kwhSavings.map(k=>Math.round(k)),
+    kw:Array(12).fill(0),
+    gas:r.gasSavings.map(g=>Math.round(g)),
+    totalDollar:0,
+    source:'bas'
+  });
+  sset('en_projects',projects);
+  closeCalcTemplate();
+  showToast('BAS measure added to savings matrix ✓');
+}
+
+function bcApplyToMeasure(projId){
+  const p=projects.find(x=>x.id===projId);
+  if(!p||!p._bcResults||!_calcTemplateContext?.targetMeasureId){showToast('No target measure');return;}
+  const r=p._bcResults;
+  const sd=getProjSavingsData(projId);
+  const m=sd.measures.find(x=>x.id===_calcTemplateContext.targetMeasureId);
+  if(!m){showToast('Measure not found');return;}
+  m.kwh=r.kwhSavings.map(k=>Math.round(k));
+  m.gas=r.gasSavings.map(g=>Math.round(g));
+  m.source='bas';
+  const cityName=BAS_CITIES.find(c=>c.id===(p.basCalc?.city||4))?.name||'Unknown';
+  if(!m.desc||m.desc.trim()==='') m.desc='BAS HVAC Optimization — '+cityName;
+  const rates=sd.blRates[m.bldgId]||{};
+  const SUMMER_MOS=[4,5,6,7,8,9];
+  let total=0;
+  for(let mo=0;mo<12;mo++){
+    const isSummer=SUMMER_MOS.includes(mo);
+    total+=(m.kwh[mo]||0)*(isSummer?(rates.kwhSummer||0):(rates.kwhWinter||0));
+    total+=(m.gas[mo]||0)*(rates.thermRate||0);
+  }
+  m.totalDollar=total;
+  sset('en_projects',projects);
+  const msrNum=m.msrNum;
+  closeCalcTemplate();
+  showToast('BAS calc applied to Measure #'+msrNum+' ✓');
+}
+
+/* ── G. Weather CSV Upload ── */
+function _bcHandleCSV(input,projId){
+  const file=input.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const text=e.target.result;
+      const lines=text.split(/\r?\n/).filter(l=>l.trim());
+      if(lines.length<10){showToast('CSV too short — expected weather bin data');return;}
+      const header=lines[0].toLowerCase();
+      const delim=header.includes('\t')?'\t':',';
+      const rows=lines.slice(1).map(l=>l.split(delim));
+      const hb=[];
+      for(let m=0;m<12;m++){
+        hb[m]=[];
+        for(let b=0;b<BAS_TEMP_BINS.length;b++) hb[m][b]=new Array(24).fill(0);
+      }
+      const moMap={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11,
+        january:0,february:1,march:2,april:3,june:5,july:6,august:7,september:8,october:9,november:10,december:11};
+      let parsed=0;
+      rows.forEach(r=>{
+        if(r.length<26) return;
+        const tempMid=parseFloat(r[0]);
+        const moStr=(r[1]||'').trim().toLowerCase().replace(/\./g,'');
+        const mi=moMap[moStr]??moMap[moStr.slice(0,3)];
+        if(isNaN(tempMid)||mi===undefined) return;
+        let bi=-1;
+        for(let b=0;b<BAS_TEMP_BINS.length;b++){
+          if(Math.abs(BAS_TEMP_BINS[b]-tempMid)<3){bi=b;break;}
+        }
+        if(bi<0) return;
+        for(let h=0;h<24;h++){
+          hb[mi][bi][h]=parseFloat(r[h+2])||0;
+        }
+        parsed++;
+      });
+      if(parsed<20){showToast('Could not parse enough rows ('+parsed+' found). Check CSV format.');return;}
+      const p=projects.find(x=>x.id===projId);
+      if(!p) return;
+      if(!p.basCalc) p.basCalc={};
+      p.basCalc.weatherOverride={hourlyBins:hb,cityName:file.name,rowsParsed:parsed};
+      sset('en_projects',projects);
+      openBASCalc(projId);
+      showToast('Weather data uploaded ✓ ('+parsed+' rows)');
+    }catch(err){
+      showToast('CSV parse error: '+err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function _bcClearWeather(projId){
+  const p=projects.find(x=>x.id===projId);
+  if(!p||!p.basCalc) return;
+  p.basCalc.weatherOverride=null;
+  sset('en_projects',projects);
+  openBASCalc(projId);
+  showToast('Weather data cleared — using generated TMY');
 }
 
 /* ══════════════════════════════════════════════════════
