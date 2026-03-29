@@ -5435,9 +5435,29 @@ function togglePDFRawText(){
     box._showingRaw=true;
     btn.textContent='← Back';
     const text=window._pdfRawText||'(no raw text captured — try reloading the PDF)';
-    const sections=text.split(/(?=Billing\s+Details\s*[-\u2013]\s*service\s+from)/i);
-    const preview=(sections[1]||sections[0]||text).slice(0,5000);
-    box.innerHTML='<pre style="font-size:10px;line-height:1.5;white-space:pre-wrap;word-break:break-all;color:var(--text2);margin:0">'+preview.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre>';
+    const splitRe=new RegExp('(?=(?:'+_EVG_BILLING_DETAILS.source+'|Billing\\s+Details\\s*[-\\u2013\\-]\\s*service\\s+from))','gi');
+    const raw=text.split(splitRe);
+    // Match sections to bills the same way extractAll does
+    const getDP=s=>{const m=s.match(_EVG_SERVICE_FROM)||s.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);return m?m[1]+'|'+m[2]:null;};
+    const sections=[];
+    for(const frag of raw){
+      const dates=getDP(frag);
+      const isHdr=_EVG_BILLING_DETAILS.test(frag.trim())||/^Billing\s+Details/i.test(frag.trim());
+      if(!isHdr||!dates){
+        if(sections.length) sections[sections.length-1]+=frag;
+        else sections.push(frag);
+      } else if(sections.length&&getDP(sections[sections.length-1])===dates){
+        sections[sections.length-1]+=frag;
+      } else {
+        sections.push(frag);
+      }
+    }
+    const validSections=sections.filter(s=>_EVG_SERVICE_FROM.test(s)||/service\s+from\s+\d{2}\/\d{2}\/\d{4}/i.test(s));
+    // Show section matching currently selected bill index
+    const idx=window._pdfMultiIdx||0;
+    const section=validSections[idx]||validSections[0]||text;
+    const label='Section '+(idx+1)+' of '+validSections.length;
+    box.innerHTML='<div style="font-size:11px;color:var(--accent);margin-bottom:8px;font-weight:600">'+label+'</div><pre style="font-size:10px;line-height:1.5;white-space:pre-wrap;word-break:break-all;color:var(--text2);margin:0">'+section.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre>';
   }
 }
 async function extractPDFText(ab, statusCb){
