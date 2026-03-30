@@ -11500,8 +11500,29 @@ function deleteBillRow(mid, rowId){
   if(!m) return;
   m.bills=m.bills.filter(r=>r.id!==rowId);
   saveUtilityData();
-  renderMeterWorkspace();
-  showToast('Record deleted');
+  // Immediately remove the row from the visible table so the UI updates instantly
+  const tbody=document.getElementById('billsBodyTbl');
+  if(tbody){
+    const rows=tbody.querySelectorAll('tbody tr');
+    rows.forEach(tr=>{
+      const delBtn=tr.querySelector('.btn-del');
+      if(delBtn && delBtn.getAttribute('onclick') && delBtn.getAttribute('onclick').indexOf(rowId)!==-1){
+        tr.style.transition='opacity .2s,transform .2s';
+        tr.style.opacity='0';
+        tr.style.transform='translateX(20px)';
+        setTimeout(()=>tr.remove(),200);
+      }
+    });
+  }
+  // Update the billing period count in the sticky header
+  const stickyTitle=document.querySelector('.bills-sticky-title');
+  if(stickyTitle && m.bills){
+    const n=m.bills.length;
+    stickyTitle.textContent=n+' Billing Period'+(n!==1?'s':'')+(n?' · '+getDateRange(m.bills.slice().sort((a,c)=>new Date(a.start)-new Date(c.start))):'');
+  }
+  // Full re-render after animation (also handles edge cases like gap-row cleanup)
+  setTimeout(()=>renderMeterWorkspace(),250);
+  showToast('Bill period deleted');
 }
 
 /* ── BILL MODAL (single period add/edit) ── */
