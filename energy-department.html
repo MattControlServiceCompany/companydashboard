@@ -4472,6 +4472,38 @@ function saveProjBaselineRates(projId){
   calcProjSavingsMatrix(projId);
 }
 
+function calcBldgDefaultRates(projId, bldgId){
+  const b = getUDBldg(projId, bldgId);
+  if(!b) return {kwhSummer:0,kwhWinter:0,kwSummer:0,kwWinter:0,thermRate:0};
+  const meters = b.meters||[];
+  const elecM = meters.find(m=>m.commodity==='Electric');
+  const gasM = meters.find(m=>m.commodity==='Gas');
+  const SUMMER=[5,6,7,8];
+  let sumKwhCost=0,sumKwh=0,winKwhCost=0,winKwh=0;
+  let sumKwCost=0,sumKwCount=0,winKwCost=0,winKwCount=0;
+  let totalTherms=0,totalGasCost=0;
+  if(elecM)(elecM.bills||[]).forEach(bill=>{
+    const mo=new Date(bill.start).getMonth();
+    const kwh=bill.kwh||bill.usage||0;
+    const kw=bill.kw||bill.demKW||bill.billedKw||0;
+    const kwhCost=bill.kwhCost||bill.energyCost||0;
+    const kwCost=bill.kwCost||bill.demandCost||0;
+    if(SUMMER.includes(mo)){sumKwhCost+=kwhCost;sumKwh+=kwh;if(kw>0){sumKwCost+=kwCost;sumKwCount++;}}
+    else{winKwhCost+=kwhCost;winKwh+=kwh;if(kw>0){winKwCost+=kwCost;winKwCount++;}}
+  });
+  if(gasM)(gasM.bills||[]).forEach(bill=>{
+    totalTherms+=(bill.therms||bill.usage||0);
+    totalGasCost+=(bill.totalCost||bill.cost||0);
+  });
+  return {
+    kwhSummer: sumKwh>0?Math.round(sumKwhCost/sumKwh*10000)/10000:0,
+    kwhWinter: winKwh>0?Math.round(winKwhCost/winKwh*10000)/10000:0,
+    kwSummer: sumKwCount>0?Math.round(sumKwCost/sumKwCount*100)/100:0,
+    kwWinter: winKwCount>0?Math.round(winKwCost/winKwCount*100)/100:0,
+    thermRate: totalTherms>0?Math.round(totalGasCost/totalTherms*1000)/1000:0
+  };
+}
+
 function addSavingsMeasure(projId){
   const sd = getProjSavingsData(projId);
   const bldgs = getUDBldgs(projId);
@@ -4481,6 +4513,7 @@ function addSavingsMeasure(projId){
     msrNum:(sd.measures.length+1)+'',
     bldgId:firstBldg?.id||'', desc:'',
     sqft: firstBldg ? (parseFloat(firstBldg.sqft)||0) : 0,
+    rates: firstBldg ? calcBldgDefaultRates(projId, firstBldg.id) : {kwhSummer:0,kwhWinter:0,kwSummer:0,kwWinter:0,thermRate:0},
     kwh:Array(12).fill(0), kw:Array(12).fill(0), gas:Array(12).fill(0),
     totalDollar:0
   });
@@ -4579,11 +4612,12 @@ function updateMsrField(projId,msrId,field,val){
   const sd=getProjSavingsData(projId);
   const m=sd.measures.find(x=>x.id===msrId); if(!m) return;
   m[field]=val;
-  // Auto-populate sqft when building changes
+  // Auto-populate sqft and rates when building changes
   if(field==='bldgId' && val){
     const bldg = getUDBldg(projId, val);
-    if(bldg && bldg.sqft){
+    if(bldg){
       m.sqft = parseFloat(bldg.sqft)||0;
+      m.rates = calcBldgDefaultRates(projId, val);
       const sqftInp = document.querySelector(`#sv-msr-row-${projId}-${msrId} .sv-sqft-inp, #sv-pg-msr-row-${msrId} .sv-sqft-inp`);
       if(sqftInp) sqftInp.value = m.sqft||'';
     }
@@ -4610,7 +4644,7 @@ function calcProjSavingsMatrix(projId){
   });
   // Recalculate $ per measure using seasonal rates
   sd.measures.forEach(m=>{
-    const rates=sd.blRates[m.bldgId]||{};
+    const rates=m.rates||sd.blRates[m.bldgId]||{};
     let total=0;
     for(let mo=0;mo<12;mo++){
       const isSummer=SUMMER_MOS.includes(mo);
@@ -4698,6 +4732,16 @@ function _renderSavingsContent(wrap, projId){
   if(!p){ wrap.innerHTML='<div class="ud-empty">Project not found</div>'; return; }
   const sd = getProjSavingsData(projId);
   const bldgs = getUDBldgs(projId);
+  // Migrate old per-building rates to per-measure rates
+  let _migrated = false;
+  sd.measures.forEach(m=>{
+    if(!m.rates && sd.blRates && sd.blRates[m.bldgId]){
+      m.rates = {...sd.blRates[m.bldgId]};
+      _migrated = true;
+    }
+    if(!m.rates) m.rates = calcBldgDefaultRates(projId, m.bldgId);
+  });
+  if(_migrated) sset('en_projects', projects);
   const MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
   // ── Baseline Rates rows ──
@@ -4928,7 +4972,7 @@ function svRecalc(){
   });
   // Recalculate dollar totals using baseline rates
   sd.measures.forEach(m=>{
-    const rates = sd.blRates[m.bldgId]||{};
+    const rates = m.rates||sd.blRates[m.bldgId]||{};
     let total=0;
     for(let mo=0;mo<12;mo++){
       const s = SUMMER_MOS.includes(mo);
@@ -14226,6 +14270,7 @@ function hvacLoadCreateMeasure(projId){
     msrNum: (sd.measures.length+1)+'',
     bldgId: bldgId,
     sqft: _bldgForSqft ? (parseFloat(_bldgForSqft.sqft)||0) : 0,
+    rates: bldgId ? calcBldgDefaultRates(projId, bldgId) : {kwhSummer:0,kwhWinter:0,kwSummer:0,kwWinter:0,thermRate:0},
     desc: desc,
     kwh: kwhSavings,
     kw: kwSavings,
