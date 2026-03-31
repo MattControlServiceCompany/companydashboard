@@ -4090,6 +4090,11 @@ function renderDetail(p){
                 <div id="egfx-cbecs-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--amber);margin:6px 0">—</div>
                 <div style="font-size:11px;color:var(--text2)">kBtu/ft² (${p.type||'K-12 School'})</div>
               </div>
+              <div class="card" style="background:var(--s1);padding:14px;text-align:center">
+                <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Cost Savings</div>
+                <div id="egfx-costSav-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--green);margin:6px 0">—</div>
+                <div id="egfx-costSavSub-${p.id}" style="font-size:11px;color:var(--text2)">vs baseline</div>
+              </div>
             </div>
             <div id="egfx-charts-${p.id}">
               <div style="font-size:13px;color:var(--text3);text-align:center;padding:40px">Add utility data to buildings to see energy graphics. Baseline and year-over-year kWh, kW, and gas consumption will appear here.</div>
@@ -15671,7 +15676,7 @@ function _bcClearWeather(projId){
 function egfxRefresh(projId){
   const p = projects.find(x=>x.id===projId); if(!p) return;
   const sqft = p.sqft||1;
-  const bldgs = p.buildings||[];
+  const bldgs = getUDBldgs(projId);
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const moNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
 
@@ -15684,8 +15689,8 @@ function egfxRefresh(projId){
 
   bldgs.forEach(b=>{
     (b.meters||[]).forEach(m=>{
-      const isElec = m.type==='electric';
-      const isGas = m.type==='gas';
+      const isElec = m.commodity==='Electric';
+      const isGas = m.commodity==='Gas';
       const bl = m.baseline||{};
       const blMonths = bl.months||{};
 
@@ -15749,9 +15754,29 @@ function egfxRefresh(projId){
   const blEl = document.getElementById(`egfx-blEui-${projId}`);
   const curEl = document.getElementById(`egfx-curEui-${projId}`);
   const cbEl = document.getElementById(`egfx-cbecs-${projId}`);
-  if(blEl) blEl.textContent = blEui>0 ? blEui.toFixed(1) : '—';
+  if(blEl) blEl.textContent = blEui>0 ? blEui.toFixed(1) : 'No baseline data';
+  if(blEl && blEui===0) blEl.style.fontSize = '14px';
   if(curEl) curEl.textContent = curEui>0 ? curEui.toFixed(1) : '—';
   if(cbEl) cbEl.textContent = cbecsEui.toFixed(1);
+  const costSavEl = document.getElementById(`egfx-costSav-${projId}`);
+  const costSavSubEl = document.getElementById(`egfx-costSavSub-${projId}`);
+  const totalBlCost = blCost.reduce((a,b)=>a+b,0);
+  let totalCurCost = 0;
+  if(latestYear && yearData[latestYear]){
+    totalCurCost = yearData[latestYear].cost.reduce((a,b)=>a+b,0);
+  }
+  if(costSavEl){
+    if(totalBlCost>0 && totalCurCost>0){
+      const savings = totalBlCost - totalCurCost;
+      const pct = (savings/totalBlCost*100);
+      costSavEl.textContent = (savings>=0?'':'−') + '$' + Math.abs(Math.round(savings)).toLocaleString();
+      costSavEl.style.color = savings>=0 ? 'var(--green)' : 'var(--danger)';
+      if(costSavSubEl) costSavSubEl.textContent = pct.toFixed(1)+'% vs baseline';
+    } else {
+      costSavEl.textContent = 'No baseline data';
+      costSavEl.style.fontSize = '14px';
+    }
+  }
 
   const chartsEl = document.getElementById(`egfx-charts-${projId}`);
   if(!chartsEl) return;
