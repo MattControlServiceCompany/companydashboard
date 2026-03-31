@@ -351,6 +351,16 @@ html,body{height:100%;overflow:hidden;}
 .sv-msr-sel{font-family:var(--font);font-size:11px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:3px 5px;width:100%;}
 .sv-msr-txt{font-family:var(--font);font-size:11px;color:var(--text);background:transparent;border:none;outline:none;width:100%;padding:3px 4px;}
 .sv-msr-txt:focus{background:var(--s4);border-radius:3px;}
+.sv-detail-toggle{cursor:pointer;user-select:none;font-size:10px;color:var(--text3);transition:transform .15s;display:inline-block;width:16px;text-align:center;}
+.sv-detail-toggle.open{transform:rotate(90deg);}
+.sv-detail-row{background:var(--s1);border-top:1px dashed var(--border);}
+.sv-detail-row td{padding:10px 14px !important;}
+.sv-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:12px;}
+.sv-rate-group{display:flex;flex-wrap:wrap;gap:8px;}
+.sv-rate-field{display:flex;flex-direction:column;gap:2px;}
+.sv-rate-field label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;}
+.sv-rate-field input{width:90px;font-family:var(--mono);font-size:12px;}
+.sv-intensity{font-family:var(--mono);font-size:13px;font-weight:700;}
 .dtbl tr.clickable:hover td{background:rgba(0,212,170,.05);}
 .week-strip{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin-bottom:20px;}
 .wday{background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:10px 8px;text-align:center;cursor:pointer;transition:all .14s;}
@@ -4536,18 +4546,21 @@ function renderSavingsMatrix(projId){
   if(!tbody) return;
   const bldgOpts = bldgs.map(b=>`<option value="${b.id}">${b.name}</option>`).join('');
   if(!sd.measures.length){
-    tbody.innerHTML=`<tr><td colspan="43" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
+    tbody.innerHTML=`<tr><td colspan="44" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
       No measures yet — click "+ Add Measure" to start building your savings projection.
     </td></tr>`;
     renderSavingsFooter(projId, sd);
     return;
   }
   tbody.innerHTML = sd.measures.map(m=>{
+    const r = m.rates||{};
+    const annMsrKwh = m.kwh.reduce((a,b)=>a+(parseFloat(b)||0),0);
     const kwhCells = m.kwh.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:2px 1px;background:rgba(59,130,246,0.03)"><input class="sv-num-inp kwh-col" type="number" step="any" value="${v||''}" placeholder="0" style="width:54px" onchange="updateMsrVal('${projId}','${m.id}','kwh',${i},this.value)" onfocusout="autoSaveMsr('${projId}')"></td>`).join('');
     const kwCells  = m.kw.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:2px 1px;background:rgba(245,158,11,0.03)"><input class="sv-num-inp kw-col" type="number" step="any" value="${v||''}" placeholder="0" style="width:54px" onchange="updateMsrVal('${projId}','${m.id}','kw',${i},this.value)" onfocusout="autoSaveMsr('${projId}')"></td>`).join('');
     const gasCells = m.gas.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:2px 1px;background:rgba(20,184,166,0.03)"><input class="sv-num-inp gas-col" type="number" step="any" value="${v||''}" placeholder="0" style="width:54px" onchange="updateMsrVal('${projId}','${m.id}','gas',${i},this.value)" onfocusout="autoSaveMsr('${projId}')"></td>`).join('');
     const dollarStr = m.totalDollar>0 ? '$'+Math.round(m.totalDollar).toLocaleString() : '—';
     return `<tr id="sv-msr-row-${projId}-${m.id}">
+      <td style="text-align:center;vertical-align:top;padding-top:6px"><span class="sv-detail-toggle" id="sv-dtog-${m.id}" onclick="svToggleDetail('${m.id}')">▶</span></td>
       <td style="text-align:center"><input type="checkbox" class="sv-sel-cb" ${m.selected?'checked':''} onchange="updateMsrSel('${projId}','${m.id}',this.checked)"></td>
       <td><input class="sv-msr-txt" style="width:44px;text-align:center" placeholder="#" value="${m.msrNum||''}" onchange="updateMsrField('${projId}','${m.id}','msrNum',this.value)"></td>
       <td><select class="sv-msr-sel" onchange="updateMsrField('${projId}','${m.id}','bldgId',this.value)">${bldgOpts.replace(`value="${m.bldgId}"`,`value="${m.bldgId}" selected`)}</select></td>
@@ -4556,6 +4569,31 @@ function renderSavingsMatrix(projId){
       ${kwhCells}${kwCells}${gasCells}
       <td class="sv-total-cell" style="border-left:2px solid var(--border2)" id="sv-msr-total-${projId}-${m.id}">${dollarStr}</td>
       <td style="text-align:center"><button class="btn-del" onclick="removeSavingsMeasure('${projId}','${m.id}')">✕</button></td>
+    </tr>
+    <tr id="sv-detail-${m.id}" class="sv-detail-row" style="display:none">
+      <td colspan="44" style="padding:12px 16px">
+        <div class="sv-detail-grid">
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Utility Rates</div>
+            <div class="sv-rate-group">
+              <div class="sv-rate-field"><label>kWh $/Summer</label><input class="fi" type="number" step="0.0001" value="${r.kwhSummer||''}" onchange="svUpdateMsrRate('${m.id}','kwhSummer',parseFloat(this.value)||0)"></div>
+              <div class="sv-rate-field"><label>kWh $/Winter</label><input class="fi" type="number" step="0.0001" value="${r.kwhWinter||''}" onchange="svUpdateMsrRate('${m.id}','kwhWinter',parseFloat(this.value)||0)"></div>
+              <div class="sv-rate-field"><label>kW $/Summer</label><input class="fi" type="number" step="0.01" value="${r.kwSummer||''}" onchange="svUpdateMsrRate('${m.id}','kwSummer',parseFloat(this.value)||0)"></div>
+              <div class="sv-rate-field"><label>kW $/Winter</label><input class="fi" type="number" step="0.01" value="${r.kwWinter||''}" onchange="svUpdateMsrRate('${m.id}','kwWinter',parseFloat(this.value)||0)"></div>
+              <div class="sv-rate-field"><label>Gas $/Therm</label><input class="fi" type="number" step="0.001" value="${r.thermRate||''}" onchange="svUpdateMsrRate('${m.id}','thermRate',parseFloat(this.value)||0)"></div>
+            </div>
+            <button class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:11px" onclick="svResetMsrRates('${m.id}')">Reset to Building Defaults</button>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Intensity Metrics</div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div>Sq Ft: <span class="sv-intensity" style="color:var(--text)">${m.sqft?Number(m.sqft).toLocaleString():'—'}</span></div>
+              <div>kWh/sf saved: <span class="sv-intensity" style="color:var(--accent)">${m.sqft>0&&annMsrKwh>0?(annMsrKwh/m.sqft).toFixed(1):'—'}</span></div>
+              <div>$/sf saved: <span class="sv-intensity" style="color:var(--green)">${m.sqft>0&&m.totalDollar>0?'$'+(m.totalDollar/m.sqft).toFixed(2):'—'}</span></div>
+            </div>
+          </div>
+        </div>
+      </td>
     </tr>`;
   }).join('');
   renderSavingsFooter(projId, sd);
@@ -4575,7 +4613,7 @@ function renderSavingsFooter(projId, sd){
   });
   const fmtN=v=>v?v.toLocaleString(undefined,{maximumFractionDigits:0}):'';
   tfoot.innerHTML=`<tr class="sv-foot-row">
-    <td colspan="5" style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
+    <td colspan="6" style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
     ${totKwh.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
     ${totKw.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--amber);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
     ${totGas.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--teal);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
@@ -4744,28 +4782,6 @@ function _renderSavingsContent(wrap, projId){
   if(_migrated) sset('en_projects', projects);
   const MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-  // ── Baseline Rates rows ──
-  let ratesRows;
-  if(!bldgs.length){
-    ratesRows = `<tr><td colspan="6" style="text-align:center;color:var(--text2);padding:18px;font-size:12px">
-      No buildings in Utility Data for this project yet.<br>
-      <span style="font-size:11px;color:var(--text3)">Add buildings via the <strong style="color:var(--accent)">Buildings</strong> tab in Projects, then add meters in <strong style="color:var(--accent)">Utility Data</strong>.</span>
-    </td></tr>`;
-  } else {
-    ratesRows = bldgs.map(b=>{
-      const r = sd.blRates[b.id]||{};
-      const pid = projId, bid = b.id;
-      return `<tr>
-        <td style="font-weight:600;font-size:13px;white-space:nowrap">${b.name}</td>
-        <td style="border-left:2px solid var(--border2)"><input class="bl-rate-inp" type="number" step="0.0001" placeholder="0.0681" value="${r.kwhSummer||''}" id="sv-blr-kwhs-${pid}-${bid}"></td>
-        <td><input class="bl-rate-inp" type="number" step="0.0001" placeholder="0.0582" value="${r.kwhWinter||''}" id="sv-blr-kwhw-${pid}-${bid}"></td>
-        <td style="border-left:2px solid var(--border2)"><input class="bl-rate-inp" type="number" step="0.01" placeholder="16.997" value="${r.kwSummer||''}" id="sv-blr-kws-${pid}-${bid}"></td>
-        <td><input class="bl-rate-inp" type="number" step="0.01" placeholder="11.797" value="${r.kwWinter||''}" id="sv-blr-kww-${pid}-${bid}"></td>
-        <td style="border-left:2px solid var(--border2)"><input class="bl-rate-inp" type="number" step="0.001" placeholder="0.798" value="${r.thermRate||''}" id="sv-blr-therm-${pid}-${bid}"></td>
-      </tr>`;
-    }).join('');
-  }
-
   // ── Month header helper ──
   const moHdrs = () => MO.map((m,i)=>`<th style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});font-size:10px;padding:4px 2px;width:58px;text-align:center">${m}</th>`).join('');
 
@@ -4773,12 +4789,14 @@ function _renderSavingsContent(wrap, projId){
   const bldgOpts = bldgs.map(b=>`<option value="${b.id}">${b.name}</option>`).join('');
   let msrRows;
   if(!sd.measures.length){
-    msrRows = `<tr><td colspan="43" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
+    msrRows = `<tr><td colspan="44" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
       No measures yet — click "+ Add Measure" in the header to begin.
     </td></tr>`;
   } else {
     msrRows = sd.measures.map(m=>{
       const pid = projId, mid = m.id;
+      const r = m.rates||{};
+      const annMsrKwh = m.kwh.reduce((a,b)=>a+(parseFloat(b)||0),0);
       const kwhCells = m.kwh.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:2px 1px;background:rgba(59,130,246,0.03)"><input class="sv-num-inp kwh-col" type="number" step="any" value="${v||''}" placeholder="0" style="width:54px" onchange="svUpdateMsrVal('${mid}','kwh',${i},this.value)" onfocusout="svAutoSave()"></td>`).join('');
       const kwCells  = m.kw.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:2px 1px;background:rgba(245,158,11,0.03)"><input class="sv-num-inp kw-col" type="number" step="any" value="${v||''}" placeholder="0" style="width:54px" onchange="svUpdateMsrVal('${mid}','kw',${i},this.value)" onfocusout="svAutoSave()"></td>`).join('');
       const gasCells = m.gas.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});padding:2px 1px;background:rgba(20,184,166,0.03)"><input class="sv-num-inp gas-col" type="number" step="any" value="${v||''}" placeholder="0" style="width:54px" onchange="svUpdateMsrVal('${mid}','gas',${i},this.value)" onfocusout="svAutoSave()"></td>`).join('');
@@ -4786,6 +4804,7 @@ function _renderSavingsContent(wrap, projId){
       const selOpts = bldgOpts.replace(`value="${m.bldgId}"`, `value="${m.bldgId}" selected`);
       const srcBadge = m.source ? `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--accent-dim);color:var(--accent);font-weight:600;white-space:nowrap">${m.source==='solar'?'☀️ Solar':m.source}</span>` : '';
       return `<tr id="sv-pg-msr-row-${mid}">
+        <td style="text-align:center;vertical-align:top;padding-top:6px"><span class="sv-detail-toggle" id="sv-dtog-${mid}" onclick="svToggleDetail('${mid}')">▶</span></td>
         <td style="text-align:center"><input type="checkbox" class="sv-sel-cb" ${m.selected?'checked':''} onchange="svUpdateMsrSel('${mid}',this.checked)"></td>
         <td><input class="sv-msr-txt" style="width:44px;text-align:center" placeholder="#" value="${m.msrNum||''}" onchange="svUpdateMsrField('${mid}','msrNum',this.value)" onfocusout="svAutoSave()"></td>
         <td><select class="sv-msr-sel" onchange="svUpdateMsrField('${mid}','bldgId',this.value)">${selOpts}</select></td>
@@ -4794,6 +4813,31 @@ function _renderSavingsContent(wrap, projId){
         ${kwhCells}${kwCells}${gasCells}
         <td class="sv-total-cell" style="border-left:2px solid var(--border2)" id="sv-pg-total-${mid}">${dollar}</td>
         <td style="text-align:center"><button class="btn-del" onclick="svRemoveMeasure('${mid}')">✕</button></td>
+      </tr>
+      <tr id="sv-detail-${mid}" class="sv-detail-row" style="display:none">
+        <td colspan="44" style="padding:12px 16px">
+          <div class="sv-detail-grid">
+            <div>
+              <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Utility Rates</div>
+              <div class="sv-rate-group">
+                <div class="sv-rate-field"><label>kWh $/Summer</label><input class="fi" type="number" step="0.0001" value="${r.kwhSummer||''}" onchange="svUpdateMsrRate('${mid}','kwhSummer',parseFloat(this.value)||0)"></div>
+                <div class="sv-rate-field"><label>kWh $/Winter</label><input class="fi" type="number" step="0.0001" value="${r.kwhWinter||''}" onchange="svUpdateMsrRate('${mid}','kwhWinter',parseFloat(this.value)||0)"></div>
+                <div class="sv-rate-field"><label>kW $/Summer</label><input class="fi" type="number" step="0.01" value="${r.kwSummer||''}" onchange="svUpdateMsrRate('${mid}','kwSummer',parseFloat(this.value)||0)"></div>
+                <div class="sv-rate-field"><label>kW $/Winter</label><input class="fi" type="number" step="0.01" value="${r.kwWinter||''}" onchange="svUpdateMsrRate('${mid}','kwWinter',parseFloat(this.value)||0)"></div>
+                <div class="sv-rate-field"><label>Gas $/Therm</label><input class="fi" type="number" step="0.001" value="${r.thermRate||''}" onchange="svUpdateMsrRate('${mid}','thermRate',parseFloat(this.value)||0)"></div>
+              </div>
+              <button class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:11px" onclick="svResetMsrRates('${mid}')">Reset to Building Defaults</button>
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Intensity Metrics</div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div>Sq Ft: <span class="sv-intensity" style="color:var(--text)">${m.sqft?Number(m.sqft).toLocaleString():'—'}</span></div>
+                <div>kWh/sf saved: <span class="sv-intensity" style="color:var(--accent)">${m.sqft>0&&annMsrKwh>0?(annMsrKwh/m.sqft).toFixed(1):'—'}</span></div>
+                <div>$/sf saved: <span class="sv-intensity" style="color:var(--green)">${m.sqft>0&&m.totalDollar>0?'$'+(m.totalDollar/m.sqft).toFixed(2):'—'}</span></div>
+              </div>
+            </div>
+          </div>
+        </td>
       </tr>`;
     }).join('');
   }
@@ -4810,7 +4854,7 @@ function _renderSavingsContent(wrap, projId){
   });
   const fmtN = v => v ? v.toLocaleString(undefined,{maximumFractionDigits:0}) : '';
   const footRow = `<tr class="sv-foot-row">
-    <td colspan="5" style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
+    <td colspan="6" style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
     ${totKwh.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
     ${totKw.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--amber);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
     ${totGas.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--teal);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
@@ -4836,31 +4880,10 @@ function _renderSavingsContent(wrap, projId){
   wrap.innerHTML = `<div style="padding:16px;overflow-y:auto;flex:1;min-height:0;display:flex;flex-direction:column;gap:16px">
 
     <div class="card">
-      <div class="card-hdr"><span class="card-title">📊 Baseline Utility Rates by Building</span></div>
-      <div style="overflow-x:auto">
-        <table class="dtbl" style="min-width:900px">
-          <thead><tr>
-            <th style="min-width:160px">Building</th>
-            <th colspan="2" style="text-align:center;border-left:2px solid var(--border2)">Electric $/kWh</th>
-            <th colspan="2" style="text-align:center;border-left:2px solid var(--border2)">Electric $/kW</th>
-            <th style="text-align:center;border-left:2px solid var(--border2)">Gas $/Therm</th>
-          </tr><tr>
-            <th></th>
-            <th style="border-left:2px solid var(--border2)">Summer</th><th>Winter</th>
-            <th style="border-left:2px solid var(--border2)">Summer</th><th>Winter</th>
-            <th style="border-left:2px solid var(--border2)">Rate</th>
-          </tr></thead>
-          <tbody>${ratesRows}</tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card">
       <div class="card-hdr" style="flex-wrap:wrap;gap:8px">
         <span class="card-title">💡 Energy Savings Measures</span>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-left:auto">
           <button class="btn btn-ghost btn-sm" onclick="openCalcTemplates(${projId},'${wrap.id==='ptab-savings'?'ptab':'sv'}')">📐 Calc Templates</button>
-          <button class="btn btn-ghost btn-sm" onclick="_svSaveRatesFrom(${projId})">💾 Save Rates</button>
           <button class="btn btn-ghost btn-sm" onclick="_svAddMeasureFrom(${projId})">+ Add Measure</button>
           <button class="btn btn-em btn-sm" onclick="_svRecalcFrom(${projId})">⚡ Recalc $ Savings</button>
         </div>
@@ -4869,7 +4892,7 @@ function _renderSavingsContent(wrap, projId){
         <table class="dtbl sv-matrix-tbl" style="min-width:2400px">
           <thead>
             <tr>
-              <th style="width:28px">✓</th><th style="width:44px">Msr #</th>
+              <th style="width:20px"></th><th style="width:28px">✓</th><th style="width:44px">Msr #</th>
               <th style="min-width:130px">Building</th><th style="width:74px">Sq Ft</th><th style="min-width:190px">Measure Description</th>
               <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(59,130,246,0.07)">⚡ Electric kWh Savings / Month</th>
               <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(245,158,11,0.07)">⚡ Electric kW Savings / Month</th>
@@ -4878,7 +4901,7 @@ function _renderSavingsContent(wrap, projId){
               <th style="width:28px"></th>
             </tr>
             <tr>
-              <th></th><th></th><th></th><th></th><th></th>
+              <th></th><th></th><th></th><th></th><th></th><th></th>
               ${moHdrs()}${moHdrs()}${moHdrs()}
               <th style="border-left:2px solid var(--border2)"></th><th></th>
             </tr>
@@ -4958,6 +4981,39 @@ function svUpdateMsrSel(msrId, checked){
   renderSvDetail();
 }
 function svAutoSave(){ if(svSelProjId) sset('en_projects', projects); }
+
+function svToggleDetail(msrId){
+  const row = document.getElementById('sv-detail-'+msrId);
+  const tog = document.getElementById('sv-dtog-'+msrId);
+  if(!row) return;
+  const open = row.style.display !== 'none';
+  row.style.display = open ? 'none' : 'table-row';
+  if(tog) tog.classList.toggle('open', !open);
+}
+
+function svUpdateMsrRate(msrId, field, val){
+  const pid = svSelProjId || window._activeProjId;
+  if(!pid) return;
+  const sd = getProjSavingsData(pid);
+  const m = sd.measures.find(x=>x.id===msrId);
+  if(!m) return;
+  if(!m.rates) m.rates = {};
+  m.rates[field] = val;
+  sset('en_projects', projects);
+}
+
+function svResetMsrRates(msrId){
+  const pid = svSelProjId || window._activeProjId;
+  if(!pid) return;
+  const sd = getProjSavingsData(pid);
+  const m = sd.measures.find(x=>x.id===msrId);
+  if(!m) return;
+  m.rates = calcBldgDefaultRates(pid, m.bldgId);
+  sset('en_projects', projects);
+  if(document.getElementById('ptab-savings')?.offsetParent!==null) initSavingsTab(pid);
+  else renderSvDetail();
+  showToast('Rates reset to building defaults ✓');
+}
 
 function svRecalc(){
   if(!svSelProjId) return;
