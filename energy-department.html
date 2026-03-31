@@ -12379,6 +12379,7 @@ function renderMeetingEditorBody(){
   </div>`;
   // Recurring schedule section
   const _p = projects.find(x=>x.id===_editingMeetingProjId);
+  const tmpl = getDefaultTemplate();
   const _recur = (_p?.recurringMeetings||[]).find(r=>r.active) || null;
   const _nths = ['','1st','2nd','3rd','4th'];
   const _dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -12408,9 +12409,15 @@ function renderMeetingEditorBody(){
         ${ti >= 2 ? `<button class="btn btn-ghost btn-sm" onclick="mtgRemoveContactTable(${ti})" style="color:var(--warn)">✕</button>` : ''}
       </div>
       <div class="mtg-contact-hdr"><span>Name</span><span>Mobile Phone</span><span>E-mail</span><span style="width:28px"></span></div>`;
+    // Build picker source
+    const _projContacts = _p?.contacts||[];
+    const _tmplContacts = tmpl.cscContacts||[];
+    const _pickerSrc = ti===0 ? _tmplContacts : _projContacts;
+
     ct.contacts.forEach((c, ci) => {
+      const pickerHtml = _pickerSrc.length ? `<select class="fs" style="width:auto;min-width:44px;flex-shrink:0;padding:4px" onchange="mtgPickContact(${ti},${ci},this.value,${ti===0})"><option value="">📋</option>${_pickerSrc.map((pc,pci)=>{const pcName=pc.name||((pc.first||'')+(pc.last?' '+pc.last:'')).trim()||'Contact';return '<option value="'+pci+'">'+esc(pcName)+'</option>';}).join('')}</select>` : '';
       h += `<div class="mtg-contact-row">
-        <input class="fi" value="${esc(c.name)}" onchange="mtgUpdateContact(${ti},${ci},'name',this.value)">
+        <div style="display:flex;gap:4px;flex:1">${pickerHtml}<input class="fi" style="flex:1" value="${esc(c.name)}" onchange="mtgUpdateContact(${ti},${ci},'name',this.value)"></div>
         <input class="fi" value="${esc(c.phone)}" onchange="mtgUpdateContact(${ti},${ci},'phone',this.value)">
         <input class="fi" value="${esc(c.email)}" onchange="mtgUpdateContact(${ti},${ci},'email',this.value)">
         <button class="btn btn-ghost btn-sm" onclick="mtgRemoveContact(${ti},${ci})" style="color:var(--warn)">✕</button>
@@ -12458,6 +12465,21 @@ function mtgAddContact(ti){ _editingMeeting.contactTables[ti].contacts.push({nam
 function mtgRemoveContact(ti,ci){ _editingMeeting.contactTables[ti].contacts.splice(ci,1); renderMeetingEditorBody(); }
 function mtgAddContactTable(){ _editingMeeting.contactTables.push({label:'Additional Contacts',contacts:[{name:'',phone:'',email:''}]}); renderMeetingEditorBody(); }
 function mtgRemoveContactTable(ti){ _editingMeeting.contactTables.splice(ti,1); renderMeetingEditorBody(); }
+function mtgPickContact(tableIdx, contactIdx, pickerValue, isCsc){
+  if(pickerValue===''||pickerValue===undefined) return;
+  const idx = parseInt(pickerValue);
+  const p = projects.find(x=>x.id===_editingMeetingProjId);
+  const tmpl = getDefaultTemplate();
+  const src = isCsc ? (tmpl.cscContacts||[])[idx] : (p?.contacts||[])[idx];
+  if(!src) return;
+  const ct = _editingMeeting.contactTables[tableIdx];
+  if(!ct || !ct.contacts[contactIdx]) return;
+  const name = src.name || ((src.title?src.title+' ':'') + (src.first||'') + (src.last?' '+src.last:'')).trim();
+  ct.contacts[contactIdx].name = name;
+  ct.contacts[contactIdx].phone = src.phone || '';
+  ct.contacts[contactIdx].email = src.email || '';
+  renderMeetingEditorBody();
+}
 
 // Topic helpers
 function mtgUpdateTopic(ti,v){ _editingMeeting.topics[ti].text = v; }
