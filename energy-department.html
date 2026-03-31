@@ -421,6 +421,10 @@ html,body{height:100%;overflow:hidden;}
 .pd-prog-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--em),var(--em2));transition:width .4s ease;}
 .pd-prog-input{width:55px;font-family:var(--mono);font-size:12px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:5px;padding:3px 6px;outline:none;}
 .pd-prog-input:focus{border-color:var(--accent,var(--em));}
+.pd-hero-compact{display:none;align-items:center;gap:12px;padding:8px 18px;background:var(--s2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;font-size:12px;color:var(--text2);overflow:hidden;white-space:nowrap;flex-wrap:nowrap;}
+.pd-hero-compact .phc-name{font-weight:700;font-size:13px;color:var(--text);max-width:240px;overflow:hidden;text-overflow:ellipsis;}
+.pd-hero-compact .phc-sep{color:var(--border2);margin:0 2px;}
+.pd-hero-compact .phc-val{font-family:var(--mono);color:var(--text);}
 .pd-tabs{display:flex;gap:2px;padding:12px 18px 0;border-bottom:1px solid var(--border);}
 .pdt{font-family:var(--font);font-size:12px;font-weight:500;padding:6px 12px;border-radius:6px 6px 0 0;border:none;cursor:pointer;color:var(--text2);background:transparent;border-bottom:2px solid transparent;transition:all .13s;}
 .pdt.active{color:var(--em);border-bottom-color:var(--em);font-weight:600;}
@@ -3979,6 +3983,19 @@ function renderDetail(p){
         <div class="pd-cell"><div class="pd-cell-lbl">Open Tasks</div><div class="pd-cell-val" style="color:${openTasks>0?'var(--warn)':'inherit'}">${openTasks}</div></div>
       </div>
     </div>
+    <div class="pd-hero-compact" id="pd-hero-compact">
+      <span class="phc-name">${p.name}</span>
+      <span class="phc-sep">|</span>
+      <span>SA# <span class="phc-val">${p.sa||'—'}</span></span>
+      <span class="phc-sep">|</span>
+      <span>Savings <span class="phc-val">${p.savings?'$'+Number(p.savings).toLocaleString()+'/yr':'—'}</span></span>
+      <span class="phc-sep">|</span>
+      <span><span class="phc-val">${p.start?new Date(p.start+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</span> → <span class="phc-val">${p.end?new Date(p.end+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</span></span>
+      <span class="phc-sep">|</span>
+      <span>Tasks <span class="phc-val" style="${openTasks>0?'color:var(--warn)':''}">${openTasks}</span></span>
+      <span class="phc-sep">|</span>
+      <span><span class="phc-val">${getUDBldgs(p.id).length}</span> bldg${getUDBldgs(p.id).length!==1?'s':''} <span class="phc-val">${getUDBldgs(p.id).reduce((s,b)=>s+parseInt(b.sqft||0),0)?Number(getUDBldgs(p.id).reduce((s,b)=>s+parseInt(b.sqft||0),0)).toLocaleString()+' sf':''}</span></span>
+    </div>
     <div class="card">
       <div class="pd-tabs" style="overflow-x:auto;flex-wrap:nowrap;white-space:nowrap">
         <button class="pdt active" onclick="sPTab('notes',this)">📝 Notes</button>
@@ -4206,7 +4223,14 @@ function sPTab(tab,el){
   document.getElementById('ptab-'+tab).classList.add('active'); el?.classList.add('active');
   // Full-window mode: hide project hero for data-intensive tabs
   const hero = document.querySelector('.pd-hero');
-  if(hero) hero.style.display = FULLWIN_TABS.includes(tab) ? 'none' : '';
+  const compact = document.getElementById('pd-hero-compact');
+  if(FULLWIN_TABS.includes(tab)){
+    if(hero) hero.style.display = 'none';
+    if(compact) compact.style.display = 'flex';
+  } else {
+    if(hero) hero.style.display = '';
+    if(compact) compact.style.display = 'none';
+  }
   const p = projects.find(x=>x.id===window._activeProjId);
   if(!p) return;
   if(tab==='utility')   initProjUDTab(p.id);
