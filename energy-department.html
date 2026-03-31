@@ -4059,7 +4059,7 @@ function renderDetail(p){
         </div>
         <div id="ptab-equipment-body-${p.id}"></div>
       </div>
-      <div id="ptab-hvacload" class="ptab" style="padding:0;overflow-y:auto;display:none">
+      <div id="ptab-hvacload" class="ptab" style="padding:0;overflow-y:auto">
         <div id="hvl-container-${p.id}" style="display:flex;flex-direction:column;height:100%;min-height:0">
           <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading HVAC load data...</div>
         </div>
@@ -4212,7 +4212,7 @@ function sPTab(tab,el){
   if(tab==='utility')   initProjUDTab(p.id);
   if(tab==='equipment') renderProjEquip(p.id);
   if(tab==='savings')   initSavingsTab(p.id);
-  if(tab==='hvacload')  initHvacLoadTab(p.id);
+  if(tab==='hvacload')  requestAnimationFrame(()=>initHvacLoadTab(p.id));
   if(tab==='energygfx') egfxRefresh(p.id);
   if(tab==='meetings')  renderMeetingsList(p.id);
   window._activeProjTab = tab;
