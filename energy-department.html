@@ -4200,11 +4200,7 @@ function renderDetail(p){
               <button class="ptpill" onclick="mtgFilterSet('minutes',${p.id},this)">Minutes</button>
             </div>
           </div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-ghost btn-sm" onclick="openMtgTemplateSettings()">⚙️</button>
-            <button class="btn btn-ghost btn-sm" onclick="openRecurringSetup(${p.id})">🔄 Recurring</button>
-            <button class="btn btn-em btn-sm" onclick="openMeetingEditor(${p.id})">+ New Agenda</button>
-          </div>
+          <button class="btn btn-em btn-sm" onclick="openMeetingEditor(${p.id})">+ New Agenda</button>
         </div>
         <div id="mtg-recur-info-${p.id}" style="margin-bottom:10px"></div>
         <div id="mtg-list-${p.id}"></div>
@@ -12234,17 +12230,23 @@ let _editingMeetingProjId = null;
 
 function getDefaultTemplate(){
   let t = sget('en_meetingTemplates',null);
-  if(!t) {
-    t = {
-      id: Date.now(),
-      name: 'Energy Management Services',
-      cscContacts: [
-        {name:'Matt Miller', phone:'[REDACTED-PHONE]', email:'[REDACTED-EMAIL]'},
-        {name:'[REDACTED]', phone:'[REDACTED-PHONE]', email:'[REDACTED-EMAIL]'}
-      ],
-      sectionHeading: 'Energy Management Services Program',
-      defaultEndTopic: 'Questions?'
-    };
+  if(!t || !t.defaultTopics) {
+    t = t || {};
+    t.id = t.id || Date.now();
+    t.name = t.name || 'Energy Management Services';
+    t.cscContacts = t.cscContacts || [
+      {name:'Matt Miller', phone:'[REDACTED-PHONE]', email:'[REDACTED-EMAIL]'},
+      {name:'[REDACTED]', phone:'[REDACTED-PHONE]', email:'[REDACTED-EMAIL]'}
+    ];
+    t.sectionHeading = t.sectionHeading || 'Energy Management Services Program';
+    t.defaultEndTopic = t.defaultEndTopic || 'Questions?';
+    t.defaultTopics = [
+      {text:'Project Status Update', subItems:[]},
+      {text:'Energy Savings Review', subItems:[]},
+      {text:'Upcoming Milestones / Action Items', subItems:[]},
+      {text:'Open Issues', subItems:[]},
+      {text:'Questions?', subItems:[]}
+    ];
     sset('en_meetingTemplates', t);
   }
   return t;
@@ -12311,8 +12313,25 @@ function openMeetingEditor(projId, meetingId){
     _editingMeeting = JSON.parse(JSON.stringify(p.meetings.find(m=>m.id===meetingId)));
     if(!_editingMeeting) return;
   } else {
-    const now = new Date();
+    let now = new Date();
     now.setMinutes(0); now.setSeconds(0);
+    // Auto-populate date from recurring schedule
+    const _recur = (p.recurringMeetings||[]).find(r=>r.active);
+    if(_recur && typeof getNthWeekdayOfMonth==='function'){
+      for(let offset=0;offset<3;offset++){
+        const checkDate = new Date(now.getFullYear(), now.getMonth()+offset, 1);
+        const meetDate = getNthWeekdayOfMonth(checkDate.getFullYear(), checkDate.getMonth(), _recur.nthWeek, _recur.weekday);
+        if(meetDate && meetDate >= new Date()){
+          const dateStr = meetDate.toISOString().slice(0,10);
+          const exists = (p.meetings||[]).some(m=>m.type==='agenda'&&m.date&&m.date.slice(0,10)===dateStr);
+          if(!exists){
+            meetDate.setHours(parseInt(_recur.time?.split(':')[0])||9, parseInt(_recur.time?.split(':')[1])||0);
+            now = meetDate;
+            break;
+          }
+        }
+      }
+    }
     _editingMeeting = {
       id: Date.now(),
       type: 'agenda',
@@ -12324,11 +12343,16 @@ function openMeetingEditor(projId, meetingId){
         { label: (p.client||p.name||'Project')+' Key Contacts', contacts: (p.contacts||[]).map(c=>({name:((c.title?c.title+' ':'')+c.first+' '+c.last).trim(), phone:c.phone||'', email:c.email||''})) }
       ],
       sectionHeading: tmpl.sectionHeading,
-      topics: [{ text: tmpl.defaultEndTopic, subItems: [] }],
+      topics: JSON.parse(JSON.stringify(tmpl.defaultTopics || [{ text: tmpl.defaultEndTopic||'Questions?', subItems: [] }])),
       history: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
+    // Carry forward topics from previous meeting if enabled
+    if(_recur && _recur.carryForward){
+      const lastAgenda = (p.meetings||[]).filter(m=>m.type==='agenda').sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
+      if(lastAgenda && lastAgenda.topics) _editingMeeting.topics = JSON.parse(JSON.stringify(lastAgenda.topics));
+    }
   }
   document.getElementById('meetingModalTitle').textContent = meetingId ? `Edit Meeting ${_editingMeeting.type==='agenda'?'Agenda':'Minutes'}` : 'New Meeting Agenda';
   document.getElementById('mtgConvertBtn').style.display = _editingMeeting.type==='agenda' && meetingId ? '' : 'none';
