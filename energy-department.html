@@ -4304,6 +4304,121 @@ function initDashboardTab(projId){
   if(typeof renderDashCalendar === 'function') renderDashCalendar(projId);
 }
 
+// ── Dashboard Calendar ──
+let _dashCalMonth = null;
+
+function renderDashCalendar(projId){
+  const wrap = document.getElementById('dash-cal-'+projId);
+  if(!wrap) return;
+  const p = projects.find(x=>x.id===projId);
+  if(!p){ wrap.innerHTML=''; return; }
+  const now = new Date();
+  if(!_dashCalMonth) _dashCalMonth = {year:now.getFullYear(), month:now.getMonth()};
+  const {year, month} = _dashCalMonth;
+  const monthName = new Date(year, month).toLocaleDateString('en-US',{month:'long',year:'numeric'});
+
+  // Collect events for this month
+  const events = [];
+  (p.meetings||[]).forEach(m=>{
+    const d = new Date(m.date);
+    if(d.getFullYear()===year && d.getMonth()===month){
+      events.push({day:d.getDate(), label:(m.type==='agenda'?'Agenda':'Minutes')+': '+(m.projectNickname||'Meeting'), color:'var(--accent)', type:'meeting'});
+    }
+  });
+  (p.recurringMeetings||[]).filter(r=>r.active).forEach(r=>{
+    if(typeof getNthWeekdayOfMonth==='function'){
+      const meetDate = getNthWeekdayOfMonth(year, month, r.nthWeek, r.weekday);
+      if(meetDate){
+        const d = meetDate.getDate();
+        if(!events.some(e=>e.day===d && e.type==='meeting')){
+          events.push({day:d, label:'Recurring: '+(r.time||''), color:'var(--accent)', type:'meeting'});
+        }
+      }
+    }
+  });
+  (typeof tasks!=='undefined'?tasks:[]).filter(t=>t.projId===projId&&t.due).forEach(t=>{
+    const d = new Date(t.due+'T12:00:00');
+    if(d.getFullYear()===year && d.getMonth()===month){
+      events.push({day:d.getDate(), label:t.text||'Task', color:'var(--amber)', type:'task'});
+    }
+  });
+  (p.districtCalendar||[]).forEach(ev=>{
+    const d = new Date(ev.date+'T12:00:00');
+    if(d.getFullYear()===year && d.getMonth()===month){
+      events.push({day:d.getDate(), label:ev.name, color:'var(--teal)', type:'district'});
+    }
+  });
+
+  // Build calendar grid
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const dayNames = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+  let cells = dayNames.map(d=>`<div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3);padding:4px 0">${d}</div>`).join('');
+  for(let i=0;i<firstDay;i++) cells += '<div></div>';
+  for(let d=1;d<=daysInMonth;d++){
+    const dayEvents = events.filter(e=>e.day===d);
+    const isToday = d===now.getDate() && month===now.getMonth() && year===now.getFullYear();
+    const dots = dayEvents.slice(0,3).map(e=>`<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:${e.color}"></span>`).join('');
+    cells += `<div style="text-align:center;padding:4px 2px;cursor:${dayEvents.length?'pointer':'default'};border-radius:6px;${isToday?'background:var(--accent-dim);font-weight:700;color:var(--accent)':''}" onclick="dashCalShowDay(${projId},${year},${month},${d})">
+      <div style="font-size:12px">${d}</div>
+      ${dots?`<div style="display:flex;gap:2px;justify-content:center;margin-top:1px">${dots}</div>`:''}
+    </div>`;
+  }
+
+  wrap.innerHTML = `<div class="card">
+    <div class="card-hdr" style="justify-content:space-between">
+      <button class="btn btn-ghost btn-sm" onclick="dashCalNav(${projId},-1)">◀</button>
+      <span class="card-title" style="font-size:13px">${monthName}</span>
+      <button class="btn btn-ghost btn-sm" onclick="dashCalNav(${projId},1)">▶</button>
+    </div>
+    <div style="padding:8px 12px;display:grid;grid-template-columns:repeat(7,1fr);gap:2px">${cells}</div>
+    <div id="dash-cal-detail-${projId}" style="padding:0 12px 12px;font-size:12px"></div>
+  </div>`;
+}
+
+function dashCalNav(projId, dir){
+  if(!_dashCalMonth) _dashCalMonth = {year:new Date().getFullYear(), month:new Date().getMonth()};
+  _dashCalMonth.month += dir;
+  if(_dashCalMonth.month > 11){ _dashCalMonth.month=0; _dashCalMonth.year++; }
+  if(_dashCalMonth.month < 0){ _dashCalMonth.month=11; _dashCalMonth.year--; }
+  renderDashCalendar(projId);
+}
+
+function dashCalShowDay(projId, year, month, day){
+  const wrap = document.getElementById('dash-cal-detail-'+projId);
+  if(!wrap) return;
+  const p = projects.find(x=>x.id===projId); if(!p) return;
+  const events = [];
+  (p.meetings||[]).forEach(m=>{
+    const d = new Date(m.date);
+    if(d.getFullYear()===year && d.getMonth()===month && d.getDate()===day)
+      events.push({label:(m.type==='agenda'?'📋 Agenda':'📝 Minutes')+': '+(m.projectNickname||'Meeting'), color:'var(--accent)'});
+  });
+  (p.recurringMeetings||[]).filter(r=>r.active).forEach(r=>{
+    if(typeof getNthWeekdayOfMonth==='function'){
+      const meetDate = getNthWeekdayOfMonth(year, month, r.nthWeek, r.weekday);
+      if(meetDate && meetDate.getDate()===day)
+        events.push({label:'🔄 Recurring meeting '+(r.time||''), color:'var(--accent)'});
+    }
+  });
+  (typeof tasks!=='undefined'?tasks:[]).filter(t=>t.projId===projId&&t.due).forEach(t=>{
+    const d = new Date(t.due+'T12:00:00');
+    if(d.getFullYear()===year && d.getMonth()===month && d.getDate()===day)
+      events.push({label:'✅ '+t.text, color:'var(--amber)'});
+  });
+  (p.districtCalendar||[]).forEach(ev=>{
+    const d = new Date(ev.date+'T12:00:00');
+    if(d.getFullYear()===year && d.getMonth()===month && d.getDate()===day)
+      events.push({label:'🗓️ '+ev.name, color:'var(--teal)'});
+  });
+  if(!events.length){ wrap.innerHTML=''; return; }
+  const dateStr = new Date(year,month,day).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  wrap.innerHTML = `<div style="border-top:1px solid var(--border);padding-top:8px;margin-top:4px">
+    <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px">${dateStr}</div>
+    ${events.map(e=>`<div style="padding:3px 0;color:var(--text2)"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${e.color};margin-right:6px"></span>${e.label}</div>`).join('')}
+  </div>`;
+}
+
 function updateProg(id,val){
   const p=projects.find(p=>p.id===id); if(!p) return;
   const n=Math.max(0,Math.min(100,parseInt(val)||0));
