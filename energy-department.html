@@ -3472,12 +3472,18 @@ window.sv=function(id,btn){
 
 <!-- Meeting Editor Modal -->
 <div class="modal-bg" id="meetingModal" onclick="if(event.target===this)closeMeetingModal()">
-  <div class="modal" style="width:920px;max-height:92vh">
+  <div class="modal" style="width:min(1200px,92vw);max-height:92vh;display:flex;flex-direction:column">
     <div class="modal-hdr">
       <span class="modal-title" id="meetingModalTitle">New Meeting Agenda</span>
       <button class="modal-x" onclick="closeMeetingModal()">✕</button>
     </div>
-    <div class="modal-body" id="meetingModalBody" style="overflow-y:auto;max-height:68vh"></div>
+    <div style="display:flex;flex:1;min-height:0;overflow:hidden">
+      <div class="modal-body" id="meetingModalBody" style="overflow-y:auto;flex:1;min-width:0;max-height:68vh;padding:16px"></div>
+      <div id="mtgPreviewPane" style="width:420px;flex-shrink:0;border-left:1px solid var(--border);background:var(--s1);overflow:hidden;display:flex;flex-direction:column">
+        <div style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)">PDF Preview</div>
+        <iframe id="mtgPreviewFrame" style="flex:1;border:none;background:#fff"></iframe>
+      </div>
+    </div>
     <div class="modal-ftr" id="meetingModalFtr">
       <button class="btn btn-ghost" onclick="closeMeetingModal()">Cancel</button>
       <button class="btn btn-ghost" onclick="showMeetingHistory()">🕑 History</button>
@@ -12367,15 +12373,15 @@ function renderMeetingEditorBody(){
   let h = '';
   // Header section
   h += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
-    <div class="fg"><label class="fl">Project Nickname</label><input class="fi" id="mtg-nickname" value="${esc(m.projectNickname)}"></div>
+    <div class="fg"><label class="fl">Project Nickname</label><input class="fi" id="mtg-nickname" value="${esc(m.projectNickname)}" oninput="mtgSchedulePreview()"></div>
     <div class="fg"><label class="fl">Document Type</label>
       <div style="display:flex;gap:4px;margin-top:4px">
         <button class="ptpill ${m.type==='agenda'?'sel':''}" onclick="_editingMeeting.type='agenda';renderMeetingEditorBody()">Agenda</button>
         <button class="ptpill ${m.type==='minutes'?'sel':''}" onclick="_editingMeeting.type='minutes';renderMeetingEditorBody()">Minutes</button>
       </div>
     </div>
-    <div class="fg"><label class="fl">Meeting Date & Time</label><input class="fi" type="datetime-local" id="mtg-date" value="${m.date}"></div>
-    <div class="fg"><label class="fl">Section Heading</label><input class="fi" id="mtg-heading" value="${esc(m.sectionHeading)}"></div>
+    <div class="fg"><label class="fl">Meeting Date & Time</label><input class="fi" type="datetime-local" id="mtg-date" value="${m.date}" oninput="mtgSchedulePreview()"></div>
+    <div class="fg"><label class="fl">Section Heading</label><input class="fi" id="mtg-heading" value="${esc(m.sectionHeading)}" oninput="mtgSchedulePreview()"></div>
   </div>`;
   // Recurring schedule section
   const _p = projects.find(x=>x.id===_editingMeetingProjId);
@@ -12454,13 +12460,14 @@ function renderMeetingEditorBody(){
   });
   h += `<button class="btn btn-ghost btn-sm" onclick="mtgAddTopic()">+ Add Topic</button>`;
   body.innerHTML = h;
+  mtgSchedulePreview();
 }
 
 function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 // Contact table helpers
-function mtgUpdateCtLabel(ti,v){ _editingMeeting.contactTables[ti].label = v; }
-function mtgUpdateContact(ti,ci,f,v){ _editingMeeting.contactTables[ti].contacts[ci][f] = v; }
+function mtgUpdateCtLabel(ti,v){ _editingMeeting.contactTables[ti].label = v; mtgSchedulePreview(); }
+function mtgUpdateContact(ti,ci,f,v){ _editingMeeting.contactTables[ti].contacts[ci][f] = v; mtgSchedulePreview(); }
 function mtgAddContact(ti){ _editingMeeting.contactTables[ti].contacts.push({name:'',phone:'',email:''}); renderMeetingEditorBody(); }
 function mtgRemoveContact(ti,ci){ _editingMeeting.contactTables[ti].contacts.splice(ci,1); renderMeetingEditorBody(); }
 function mtgAddContactTable(){ _editingMeeting.contactTables.push({label:'Additional Contacts',contacts:[{name:'',phone:'',email:''}]}); renderMeetingEditorBody(); }
@@ -12482,8 +12489,8 @@ function mtgPickContact(tableIdx, contactIdx, pickerValue, isCsc){
 }
 
 // Topic helpers
-function mtgUpdateTopic(ti,v){ _editingMeeting.topics[ti].text = v; }
-function mtgUpdateSubItem(ti,si,v){ _editingMeeting.topics[ti].subItems[si] = v; }
+function mtgUpdateTopic(ti,v){ _editingMeeting.topics[ti].text = v; mtgSchedulePreview(); }
+function mtgUpdateSubItem(ti,si,v){ _editingMeeting.topics[ti].subItems[si] = v; mtgSchedulePreview(); }
 function mtgAddSubItem(ti){ _editingMeeting.topics[ti].subItems.push(''); renderMeetingEditorBody(); }
 function mtgRemoveSubItem(ti,si){ _editingMeeting.topics[ti].subItems.splice(si,1); renderMeetingEditorBody(); }
 function mtgAddTopic(){
@@ -12505,6 +12512,33 @@ function mtgRemoveTopic(ti){ _editingMeeting.topics.splice(ti,1); renderMeetingE
 function mtgToggleRecurring(checked){
   const el = document.getElementById('mtg-recur-fields');
   if(el) el.style.display = checked ? '' : 'none';
+}
+
+let _mtgPreviewTimer = null;
+function mtgSchedulePreview(){
+  clearTimeout(_mtgPreviewTimer);
+  _mtgPreviewTimer = setTimeout(mtgRenderPreview, 500);
+}
+
+function mtgRenderPreview(){
+  if(!_editingMeeting) return;
+  const frame = document.getElementById('mtgPreviewFrame');
+  if(!frame) return;
+  try {
+    const nick = document.getElementById('mtg-nickname');
+    if(nick) _editingMeeting.projectNickname = nick.value;
+    const dt = document.getElementById('mtg-date');
+    if(dt) _editingMeeting.date = dt.value;
+    const hd = document.getElementById('mtg-heading');
+    if(hd) _editingMeeting.sectionHeading = hd.value;
+    const doc = buildMeetingPDF(_editingMeeting, true);
+    if(doc){
+      const uri = doc.output('datauristring');
+      frame.src = uri;
+    }
+  } catch(e){
+    console.warn('Meeting preview error:', e);
+  }
 }
 
 function closeMeetingModal(){
@@ -12878,7 +12912,7 @@ function generateMeetingPDF(){
   buildMeetingPDF(_editingMeeting);
 }
 
-function buildMeetingPDF(m){
+function buildMeetingPDF(m, returnDoc){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:'pt', format:'letter'});
   const pw = 612, ph = 792;
@@ -13039,6 +13073,7 @@ function buildMeetingPDF(m){
   // Save
   const dateFile = (m.date||'').split('T')[0].replace(/-/g,'.');
   const filename = `${m.projectNickname||'Meeting'} - ${(m.sectionHeading||'').replace(' Program','')} ${m.type==='agenda'?'Meeting Agenda':'Meeting Minutes'} ${dateFile}.pdf`;
+  if(returnDoc) return doc;
   doc.save(filename);
   showToast('PDF generated ✓');
 }
