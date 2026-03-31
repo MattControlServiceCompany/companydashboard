@@ -4130,29 +4130,25 @@ function renderDetail(p){
         </div>
       </div>
       <div id="ptab-district" class="ptab" style="padding:16px">
-        <div id="ptab-district-inner-${p.id}">
-          <div class="g2">
-            <div class="card">
-              <div class="card-hdr"><span class="card-title">📅 Calendar Input</span></div>
-              <div style="padding:15px">
-                <div class="fg"><label class="fl">District Name</label><input class="fi" id="dist-name-${p.id}" placeholder="e.g. Independence School District" value="${p.client||''}"></div>
-                <div class="fg"><label class="fl">Paste Calendar Text</label>
-                  <textarea class="fta" id="dist-cal-${p.id}" style="min-height:130px" placeholder="Paste school calendar text — holidays, early release days, school start/end dates..."></textarea>
-                </div>
-                <div class="f2">
-                  <div class="fg"><label class="fl">Occupied Start</label><input class="fi" id="dist-occ-s-${p.id}" placeholder="7:00 AM" value="7:00 AM"></div>
-                  <div class="fg"><label class="fl">Occupied End</label><input class="fi" id="dist-occ-e-${p.id}" placeholder="5:00 PM" value="5:00 PM"></div>
-                </div>
-                <div class="f2">
-                  <div class="fg"><label class="fl">Heat Setback °F</label><input class="fi" id="dist-sh-${p.id}" type="number" value="60"></div>
-                  <div class="fg"><label class="fl">Cool Setback °F</label><input class="fi" id="dist-sc-${p.id}" type="number" value="85"></div>
-                </div>
-                <button class="btn btn-em" style="width:100%" onclick="parseProjDistCal(${p.id})">🗓️ Parse Calendar & Generate Schedule</button>
+        <div id="ptab-district-inner-${p.id}" style="padding:16px">
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-hdr" style="justify-content:space-between">
+              <span class="card-title">🗓️ District Calendar</span>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-ghost btn-sm" onclick="distCalAddRow(${p.id})">+ Add Event</button>
+                <button class="btn btn-em btn-sm" onclick="distCalParse(${p.id})">📋 Parse from Text</button>
               </div>
             </div>
-            <div>
-              <div class="ai-label">📅 Recommended Control Schedule</div>
-              <div class="ai-box" id="dist-box-${p.id}" style="min-height:280px">Paste calendar text and click Parse.</div>
+            <div style="padding:16px">
+              <div id="distcal-parse-${p.id}" style="display:none;margin-bottom:16px">
+                <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Paste school calendar text or upload a PDF. Dates and events will be extracted automatically.</div>
+                <textarea class="fta" id="distcal-text-${p.id}" style="min-height:120px" placeholder="Paste calendar text here — holidays, breaks, early release days, first/last day of school..."></textarea>
+                <div style="display:flex;gap:8px;margin-top:8px">
+                  <button class="btn btn-em btn-sm" onclick="distCalRunParse(${p.id})">Extract Events</button>
+                  <button class="btn btn-ghost btn-sm" onclick="document.getElementById('distcal-parse-${p.id}').style.display='none'">Cancel</button>
+                </div>
+              </div>
+              <div id="distcal-table-${p.id}"></div>
             </div>
           </div>
         </div>
@@ -4249,6 +4245,7 @@ function sPTab(tab,el){
   if(tab==='hvacload')  requestAnimationFrame(()=>initHvacLoadTab(p.id));
   if(tab==='energygfx') egfxRefresh(p.id);
   if(tab==='meetings')  renderMeetingsList(p.id);
+  if(tab==='district')  renderDistCalTable(p.id);
   window._activeProjTab = tab;
   saveProjSession();
 }
@@ -6610,6 +6607,132 @@ function dcExport(){
   const dist=(document.getElementById('dist-name').value||'District').replace(/\s+/g,'_');
   a.download=dist+'_Calendar_Schedule.txt'; a.click();
   showToast('Exported ✓');
+}
+
+// ── District Calendar CRUD + Parse (new flow) ──
+const DIST_CAL_TYPES = ['Holiday','Break','Early Release','Teacher Day','First/Last Day','Other'];
+
+function renderDistCalTable(projId){
+  const p = projects.find(x=>x.id===projId); if(!p) return;
+  p.districtCalendar = p.districtCalendar || [];
+  const wrap = document.getElementById('distcal-table-'+projId);
+  if(!wrap) return;
+  if(!p.districtCalendar.length){
+    wrap.innerHTML = '<div style="text-align:center;color:var(--text3);padding:30px;font-size:13px">No calendar events yet. Click "+ Add Event" or "Parse from Text" to add district calendar dates.</div>';
+    return;
+  }
+  const rows = p.districtCalendar.sort((a,b)=>new Date(a.date)-new Date(b.date));
+  const typeOpts = DIST_CAL_TYPES.map(t=>`<option>${t}</option>`).join('');
+  wrap.innerHTML = `<table class="dtbl" style="width:100%">
+    <thead><tr><th style="width:140px">Date</th><th>Event Name</th><th style="width:140px">Type</th><th style="width:36px"></th></tr></thead>
+    <tbody>${rows.map((ev,i)=>{
+      const selType = ev.type||'Other';
+      const opts = DIST_CAL_TYPES.map(t=>`<option${t===selType?' selected':''}>${t}</option>`).join('');
+      return `<tr>
+      <td><input class="fi" type="date" value="${ev.date||''}" onchange="distCalUpdate(${projId},${i},'date',this.value)" style="font-family:var(--mono)"></td>
+      <td><input class="fi" value="${esc(ev.name||'')}" onchange="distCalUpdate(${projId},${i},'name',this.value)" style="width:100%"></td>
+      <td><select class="fs" onchange="distCalUpdate(${projId},${i},'type',this.value)">${opts}</select></td>
+      <td><button class="btn-del" onclick="distCalRemove(${projId},${i})">✕</button></td>
+    </tr>`;}).join('')}</tbody>
+  </table>`;
+}
+
+function distCalAddRow(projId){
+  const p = projects.find(x=>x.id===projId); if(!p) return;
+  p.districtCalendar = p.districtCalendar || [];
+  p.districtCalendar.push({id:Date.now(), date:'', name:'', type:'Holiday'});
+  sset('en_projects', projects);
+  renderDistCalTable(projId);
+}
+
+function distCalUpdate(projId, idx, field, val){
+  const p = projects.find(x=>x.id===projId); if(!p) return;
+  if(!p.districtCalendar[idx]) return;
+  p.districtCalendar[idx][field] = val;
+  sset('en_projects', projects);
+}
+
+function distCalRemove(projId, idx){
+  const p = projects.find(x=>x.id===projId); if(!p) return;
+  p.districtCalendar.splice(idx, 1);
+  sset('en_projects', projects);
+  renderDistCalTable(projId);
+}
+
+function distCalParse(projId){
+  document.getElementById('distcal-parse-'+projId).style.display = '';
+}
+
+function distCalRunParse(projId){
+  const text = document.getElementById('distcal-text-'+projId)?.value||'';
+  if(!text.trim()){ showToast('Paste calendar text first'); return; }
+  const events = dcExtractCalendarEvents(text);
+  if(!events.length){ showToast('No events found — try different text'); return; }
+  const p = projects.find(x=>x.id===projId); if(!p) return;
+  p.districtCalendar = p.districtCalendar || [];
+  events.forEach(ev=>{
+    if(!p.districtCalendar.some(e=>e.date===ev.date && e.name===ev.name)){
+      p.districtCalendar.push({id:Date.now()+Math.random(), ...ev});
+    }
+  });
+  sset('en_projects', projects);
+  document.getElementById('distcal-parse-'+projId).style.display = 'none';
+  renderDistCalTable(projId);
+  showToast(events.length+' events extracted ✓');
+}
+
+function dcExtractCalendarEvents(text){
+  const events = [];
+  const lines = text.split(/\n/);
+  const datePatterns = [
+    /(\d{1,2})\/(\d{1,2})\/(\d{4})/,
+    /(\d{1,2})\/(\d{1,2})\/(\d{2})/,
+    /(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s*(\d{4})?/i,
+    /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.?\s+(\d{1,2}),?\s*(\d{4})?/i,
+  ];
+  const typeKeywords = {
+    'Holiday': /holiday|mlk|martin luther|presidents|memorial|labor day|independence|thanksgiving|christmas|new year|veteran/i,
+    'Break': /break|recess/i,
+    'Early Release': /early release|early dismiss|early out|half day/i,
+    'Teacher Day': /teacher|in-?service|professional dev|pd day|staff dev|workday|planning/i,
+    'First/Last Day': /first day|last day|school (begins|starts|ends)|commencement|graduation/i,
+  };
+  function detectType(name){
+    for(const [type, re] of Object.entries(typeKeywords)){
+      if(re.test(name)) return type;
+    }
+    return 'Other';
+  }
+  const monthMap = {january:0,february:1,march:2,april:3,may:4,june:5,july:6,august:7,september:8,october:9,november:10,december:11,jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+  const currentYear = new Date().getFullYear();
+  lines.forEach(line=>{
+    line = line.trim();
+    if(!line) return;
+    let date = null, rest = line;
+    for(const pat of datePatterns){
+      const m = line.match(pat);
+      if(m){
+        if(/^\d/.test(m[1])){
+          let yr = m[3]||''+currentYear;
+          if(yr.length===2) yr = '20'+yr;
+          date = yr+'-'+String(m[1]).padStart(2,'0')+'-'+String(m[2]).padStart(2,'0');
+        } else {
+          const mo = monthMap[m[1].toLowerCase()];
+          if(mo===undefined) break;
+          const day = m[2];
+          const yr = m[3]||currentYear;
+          date = yr+'-'+String(mo+1).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+        }
+        rest = line.replace(m[0],'').replace(/^[\s\-–—:,]+/,'').trim();
+        break;
+      }
+    }
+    if(date && rest && rest.length>1){
+      rest = rest.replace(/^[\s\-–—:,]+/,'').replace(/[\s\-–—:,]+$/,'');
+      if(rest.length>1) events.push({date, name:rest, type:detectType(rest)});
+    }
+  });
+  return events;
 }
 
 // ── Legacy shims for per-project district tab ──
