@@ -4059,114 +4059,10 @@ function renderDetail(p){
         </div>
         <div id="ptab-equipment-body-${p.id}"></div>
       </div>
-      <div id="ptab-hvacload" class="ptab" style="padding:16px;overflow-y:auto">
-        <div class="card" style="margin-bottom:16px">
-          <div class="card-hdr" style="justify-content:space-between">
-            <span class="card-title">🌡️ HVAC vs Non-HVAC Load Estimation</span>
-            <div style="display:flex;gap:8px">
-              <button class="btn btn-ghost btn-sm" onclick="hvacLoadSave(${p.id})">💾 Save</button>
-              <button class="btn btn-em btn-sm" onclick="hvacLoadCalc(${p.id})">⚡ Calculate</button>
-            </div>
-          </div>
-          <div style="padding:16px">
-            <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Estimate how much of total building energy is HVAC (heating + cooling) vs lighting, plug loads, and other equipment. Separate estimates for kWh, kW, and gas.</div>
-            <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-              <button class="btn btn-sm hvl-method-btn active" onclick="hvacLoadMethod(${p.id},'thumb',this)">📐 Rules of Thumb</button>
-              <button class="btn btn-sm hvl-method-btn" onclick="hvacLoadMethod(${p.id},'benchmark',this)">📊 Building Benchmark</button>
-              <button class="btn btn-sm hvl-method-btn" onclick="hvacLoadMethod(${p.id},'nameplate',this)">🔧 Nameplate Data</button>
-            </div>
-            <!-- Rules of Thumb Panel -->
-            <div id="hvl-thumb-${p.id}" class="hvl-panel">
-              <div style="font-size:12px;font-weight:600;color:var(--em);margin-bottom:10px">Rules of Thumb — Industry Standard Estimates</div>
-              <div class="g2" style="gap:12px">
-                <div class="card" style="background:var(--s1);padding:14px">
-                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">⚡ Electric (kWh) Breakdown</div>
-                  <div class="fg"><label class="fl">HVAC % of Total kWh</label><input class="fi hvl-in" id="hvl-t-kwhPct-${p.id}" type="number" value="45" min="0" max="100" step="1"><div class="fhint">Typical: 30-60% depending on climate & building type</div></div>
-                  <div class="fg"><label class="fl">Cooling % of HVAC kWh</label><input class="fi hvl-in" id="hvl-t-coolKwhPct-${p.id}" type="number" value="65" min="0" max="100"><div class="fhint">Typical: 55-75%</div></div>
-                  <div class="fg"><label class="fl">Heating % of HVAC kWh (electric heat only)</label><input class="fi hvl-in" id="hvl-t-heatKwhPct-${p.id}" type="number" value="${p.heatType&&(p.heatType.includes('Electric')||p.heatType.includes('Heat Pump')||p.heatType.includes('VRF'))?'35':'0'}" min="0" max="100"><div class="fhint">${p.heatType&&(p.heatType.includes('Gas'))?"0% — Gas heat doesn't use electric kWh for heating":"Typical: 25-45% if electric/heat pump"}</div></div>
-                </div>
-                <div class="card" style="background:var(--s1);padding:14px">
-                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">⚡ Electric Demand (kW) Breakdown</div>
-                  <div class="fg"><label class="fl">HVAC % of Peak kW</label><input class="fi hvl-in" id="hvl-t-kwPct-${p.id}" type="number" value="55" min="0" max="100"><div class="fhint">Typical: 40-65% — HVAC is usually the largest demand driver</div></div>
-                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin:14px 0 10px">🔥 Gas (Therms) Breakdown</div>
-                  <div class="fg"><label class="fl">HVAC % of Total Gas</label><input class="fi hvl-in" id="hvl-t-gasPct-${p.id}" type="number" value="${p.heatType&&p.heatType.includes('Gas')?'85':'15'}" min="0" max="100"><div class="fhint">${p.heatType&&p.heatType.includes('Gas')?"Typical: 70-95% for gas-heated buildings":"Typical: 0-20% for DHW/kitchen only"}</div></div>
-                </div>
-              </div>
-            </div>
-            <!-- Benchmark Panel -->
-            <div id="hvl-benchmark-${p.id}" class="hvl-panel" style="display:none">
-              <div style="font-size:12px;font-weight:600;color:var(--em);margin-bottom:10px">Building Type Benchmark — Based on CBECS & Industry Data</div>
-              <div class="fg"><label class="fl">Building Type</label>
-                <select class="fs hvl-in" id="hvl-b-type-${p.id}" onchange="hvacLoadBenchFill(${p.id})">
-                  <option value="">— Select —</option>
-                  <option ${p.type==='K-12 School'?'selected':''}>K-12 School</option>
-                  <option>College / University</option>
-                  <option>Hospital / Healthcare</option>
-                  <option>Office Building</option>
-                  <option>Warehouse / Industrial</option>
-                  <option>Retail</option>
-                  <option>Municipal / Government</option>
-                  <option>Data Center</option>
-                </select>
-              </div>
-              <div class="fg"><label class="fl">Climate Zone</label>
-                <select class="fs hvl-in" id="hvl-b-climate-${p.id}" onchange="hvacLoadBenchFill(${p.id})">
-                  <option value="4A" selected>4A — Mixed Humid (Kansas City)</option>
-                  <option value="1A">1A — Very Hot Humid</option>
-                  <option value="2A">2A — Hot Humid</option>
-                  <option value="3A">3A — Warm Humid</option>
-                  <option value="3B">3B — Warm Dry</option>
-                  <option value="4A">4A — Mixed Humid</option>
-                  <option value="4B">4B — Mixed Dry</option>
-                  <option value="5A">5A — Cool Humid</option>
-                  <option value="5B">5B — Cool Dry</option>
-                  <option value="6A">6A — Cold Humid</option>
-                  <option value="7">7 — Very Cold</option>
-                </select>
-              </div>
-              <div id="hvl-b-results-${p.id}" style="margin-top:12px">
-                <div style="font-size:12px;color:var(--text3)">Select building type and climate to load benchmarks</div>
-              </div>
-            </div>
-            <!-- Nameplate Data Panel -->
-            <div id="hvl-nameplate-${p.id}" class="hvl-panel" style="display:none">
-              <div style="font-size:12px;font-weight:600;color:var(--em);margin-bottom:10px">Nameplate Data — Enter Real Equipment Data</div>
-              <div class="g2" style="gap:12px">
-                <div class="card" style="background:var(--s1);padding:14px">
-                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">Cooling Equipment</div>
-                  <div class="fg"><label class="fl">Total Cooling Capacity (Tons)</label><input class="fi hvl-in" id="hvl-n-coolTons-${p.id}" type="number" placeholder="e.g. 66"></div>
-                  <div class="fg"><label class="fl">Efficiency (kW/Ton)</label><input class="fi hvl-in" id="hvl-n-coolKwTon-${p.id}" type="number" step="0.01" value="${p.coolEff||'0.86'}"></div>
-                  <div class="fg"><label class="fl">Estimated EFLH Cooling</label><input class="fi hvl-in" id="hvl-n-coolEFLH-${p.id}" type="number" value="1200"><div class="fhint">Equivalent Full Load Hours — KC typical: 1000-1400</div></div>
-                </div>
-                <div class="card" style="background:var(--s1);padding:14px">
-                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">Heating Equipment</div>
-                  <div class="fg"><label class="fl">Total Heating Capacity (MBH)</label><input class="fi hvl-in" id="hvl-n-heatMBH-${p.id}" type="number" placeholder="e.g. 595"></div>
-                  <div class="fg"><label class="fl">Efficiency (${p.heatType&&p.heatType.includes('Gas')?'AFUE':'COP'})</label><input class="fi hvl-in" id="hvl-n-heatEff-${p.id}" type="number" step="0.01" value="${p.heatEff||'0.80'}"></div>
-                  <div class="fg"><label class="fl">Estimated EFLH Heating</label><input class="fi hvl-in" id="hvl-n-heatEFLH-${p.id}" type="number" value="1600"><div class="fhint">Equivalent Full Load Hours — KC typical: 1400-1800</div></div>
-                  <div class="fg"><label class="fl">Fuel Type</label>
-                    <select class="fs hvl-in" id="hvl-n-heatFuel-${p.id}">
-                      <option value="gas" ${!p.heatType||p.heatType.includes('Gas')?'selected':''}>Natural Gas</option>
-                      <option value="electric" ${p.heatType&&(p.heatType.includes('Electric')||p.heatType.includes('Heat Pump')||p.heatType.includes('VRF'))?'selected':''}>Electric</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-              <div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
-                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">Non-HVAC Loads</div>
-                <div class="g2" style="gap:12px">
-                  <div class="fg"><label class="fl">Lighting Watt/sqft</label><input class="fi hvl-in" id="hvl-n-lightW-${p.id}" type="number" step="0.01" value="1.0"><div class="fhint">LED: 0.4-0.8, T8 Fluor: 1.0-1.4</div></div>
-                  <div class="fg"><label class="fl">Lighting Hours/Year</label><input class="fi hvl-in" id="hvl-n-lightHrs-${p.id}" type="number" value="3000"></div>
-                  <div class="fg"><label class="fl">Plug Load Watt/sqft</label><input class="fi hvl-in" id="hvl-n-plugW-${p.id}" type="number" step="0.01" value="1.5"><div class="fhint">Office: 1-3, School: 0.5-1.5</div></div>
-                  <div class="fg"><label class="fl">Plug Load Hours/Year</label><input class="fi hvl-in" id="hvl-n-plugHrs-${p.id}" type="number" value="2500"></div>
-                </div>
-                <div class="fg"><label class="fl">Other Base Electric kWh/yr (DHW, kitchen, etc.)</label><input class="fi hvl-in" id="hvl-n-otherKwh-${p.id}" type="number" value="0"></div>
-                <div class="fg"><label class="fl">Non-HVAC Gas Therms/yr (DHW, kitchen)</label><input class="fi hvl-in" id="hvl-n-otherGas-${p.id}" type="number" value="0"></div>
-              </div>
-            </div>
-          </div>
+      <div id="ptab-hvacload" class="ptab" style="padding:0;overflow-y:auto;display:none">
+        <div id="hvl-container-${p.id}" style="display:flex;flex-direction:column;height:100%;min-height:0">
+          <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading HVAC load data...</div>
         </div>
-        <!-- RESULTS -->
-        <div id="hvl-results-${p.id}"></div>
       </div>
       <div id="ptab-energygfx" class="ptab" style="padding:16px;overflow-y:auto">
         <div class="card" style="margin-bottom:16px">
@@ -4298,16 +4194,20 @@ function updateProg(id,val){
   const f=document.getElementById('hpf'); if(f) f.style.width=n+'%';
   sset('en_projects',projects); renderProjTable();
 }
+const FULLWIN_TABS = ['savings','hvacload','utility','energygfx'];
 function sPTab(tab,el){
   document.querySelectorAll('.ptab').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('.pdt').forEach(b=>b.classList.remove('active'));
   document.getElementById('ptab-'+tab).classList.add('active'); el?.classList.add('active');
+  // Full-window mode: hide project hero for data-intensive tabs
+  const hero = document.querySelector('.pd-hero');
+  if(hero) hero.style.display = FULLWIN_TABS.includes(tab) ? 'none' : '';
   const p = projects.find(x=>x.id===window._activeProjId);
   if(!p) return;
   if(tab==='utility')   initProjUDTab(p.id);
   if(tab==='equipment') renderProjEquip(p.id);
   if(tab==='savings')   initSavingsTab(p.id);
-  if(tab==='hvacload')  { /* rendered inline, no init needed */ }
+  if(tab==='hvacload')  initHvacLoadTab(p.id);
   if(tab==='energygfx') egfxRefresh(p.id);
   if(tab==='meetings')  renderMeetingsList(p.id);
   window._activeProjTab = tab;
@@ -4546,10 +4446,12 @@ function saveProjBaselineRates(projId){
 function addSavingsMeasure(projId){
   const sd = getProjSavingsData(projId);
   const bldgs = getUDBldgs(projId);
+  const firstBldg = bldgs[0];
   sd.measures.push({
     id:'m'+Date.now(), selected:true,
     msrNum:(sd.measures.length+1)+'',
-    bldgId:bldgs[0]?.id||'', desc:'',
+    bldgId:firstBldg?.id||'', desc:'',
+    sqft: firstBldg ? (parseFloat(firstBldg.sqft)||0) : 0,
     kwh:Array(12).fill(0), kw:Array(12).fill(0), gas:Array(12).fill(0),
     totalDollar:0
   });
@@ -4572,7 +4474,7 @@ function renderSavingsMatrix(projId){
   if(!tbody) return;
   const bldgOpts = bldgs.map(b=>`<option value="${b.id}">${b.name}</option>`).join('');
   if(!sd.measures.length){
-    tbody.innerHTML=`<tr><td colspan="42" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
+    tbody.innerHTML=`<tr><td colspan="43" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
       No measures yet — click "+ Add Measure" to start building your savings projection.
     </td></tr>`;
     renderSavingsFooter(projId, sd);
@@ -4587,6 +4489,7 @@ function renderSavingsMatrix(projId){
       <td style="text-align:center"><input type="checkbox" class="sv-sel-cb" ${m.selected?'checked':''} onchange="updateMsrSel('${projId}','${m.id}',this.checked)"></td>
       <td><input class="sv-msr-txt" style="width:44px;text-align:center" placeholder="#" value="${m.msrNum||''}" onchange="updateMsrField('${projId}','${m.id}','msrNum',this.value)"></td>
       <td><select class="sv-msr-sel" onchange="updateMsrField('${projId}','${m.id}','bldgId',this.value)">${bldgOpts.replace(`value="${m.bldgId}"`,`value="${m.bldgId}" selected`)}</select></td>
+      <td><input class="sv-num-inp sv-sqft-inp" type="number" style="width:68px" placeholder="0" value="${m.sqft||''}" onchange="updateMsrField('${projId}','${m.id}','sqft',parseFloat(this.value)||0)"></td>
       <td><input class="sv-msr-txt" style="width:100%;min-width:160px" placeholder="e.g. BAS Setpoint Optimization 74/70°F" value="${m.desc||''}" onchange="updateMsrField('${projId}','${m.id}','desc',this.value)"></td>
       ${kwhCells}${kwCells}${gasCells}
       <td class="sv-total-cell" style="border-left:2px solid var(--border2)" id="sv-msr-total-${projId}-${m.id}">${dollarStr}</td>
@@ -4610,7 +4513,7 @@ function renderSavingsFooter(projId, sd){
   });
   const fmtN=v=>v?v.toLocaleString(undefined,{maximumFractionDigits:0}):'';
   tfoot.innerHTML=`<tr class="sv-foot-row">
-    <td colspan="4" style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
+    <td colspan="5" style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
     ${totKwh.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
     ${totKw.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--amber);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
     ${totGas.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--teal);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
@@ -4646,7 +4549,17 @@ function updateMsrVal(projId,msrId,type,moIdx,val){
 function updateMsrField(projId,msrId,field,val){
   const sd=getProjSavingsData(projId);
   const m=sd.measures.find(x=>x.id===msrId); if(!m) return;
-  m[field]=val; sset('en_projects',projects);
+  m[field]=val;
+  // Auto-populate sqft when building changes
+  if(field==='bldgId' && val){
+    const bldg = getUDBldg(projId, val);
+    if(bldg && bldg.sqft){
+      m.sqft = parseFloat(bldg.sqft)||0;
+      const sqftInp = document.querySelector(`#sv-msr-row-${projId}-${msrId} .sv-sqft-inp, #sv-pg-msr-row-${msrId} .sv-sqft-inp`);
+      if(sqftInp) sqftInp.value = m.sqft||'';
+    }
+  }
+  sset('en_projects',projects);
 }
 function updateMsrSel(projId,msrId,checked){
   const sd=getProjSavingsData(projId);
@@ -4787,7 +4700,7 @@ function _renderSavingsContent(wrap, projId){
   const bldgOpts = bldgs.map(b=>`<option value="${b.id}">${b.name}</option>`).join('');
   let msrRows;
   if(!sd.measures.length){
-    msrRows = `<tr><td colspan="42" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
+    msrRows = `<tr><td colspan="43" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
       No measures yet — click "+ Add Measure" in the header to begin.
     </td></tr>`;
   } else {
@@ -4803,6 +4716,7 @@ function _renderSavingsContent(wrap, projId){
         <td style="text-align:center"><input type="checkbox" class="sv-sel-cb" ${m.selected?'checked':''} onchange="svUpdateMsrSel('${mid}',this.checked)"></td>
         <td><input class="sv-msr-txt" style="width:44px;text-align:center" placeholder="#" value="${m.msrNum||''}" onchange="svUpdateMsrField('${mid}','msrNum',this.value)" onfocusout="svAutoSave()"></td>
         <td><select class="sv-msr-sel" onchange="svUpdateMsrField('${mid}','bldgId',this.value)">${selOpts}</select></td>
+        <td><input class="sv-num-inp sv-sqft-inp" type="number" style="width:68px" placeholder="0" value="${m.sqft||''}" onchange="svUpdateMsrField('${mid}','sqft',parseFloat(this.value)||0)" onfocusout="svAutoSave()"></td>
         <td><div style="display:flex;align-items:center;gap:4px"><input class="sv-msr-txt" style="flex:1;min-width:130px" placeholder="e.g. BAS Setpoint Optimization 74/70°F" value="${m.desc||''}" onchange="svUpdateMsrField('${mid}','desc',this.value)" onfocusout="svAutoSave()"><button class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px;flex-shrink:0" onclick="openCalcForMeasure(${pid},'${mid}','${wrap.id==='ptab-savings'?'ptab':'sv'}')" title="Open calc template for this measure">📐</button>${srcBadge}</div></td>
         ${kwhCells}${kwCells}${gasCells}
         <td class="sv-total-cell" style="border-left:2px solid var(--border2)" id="sv-pg-total-${mid}">${dollar}</td>
@@ -4823,7 +4737,7 @@ function _renderSavingsContent(wrap, projId){
   });
   const fmtN = v => v ? v.toLocaleString(undefined,{maximumFractionDigits:0}) : '';
   const footRow = `<tr class="sv-foot-row">
-    <td colspan="4" style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
+    <td colspan="5" style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
     ${totKwh.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
     ${totKw.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--amber);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
     ${totGas.map((v,i)=>`<td style="border-left:${i===0?'2px':'1px'} solid var(--border${i===0?'2':''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--teal);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
@@ -4883,7 +4797,7 @@ function _renderSavingsContent(wrap, projId){
           <thead>
             <tr>
               <th style="width:28px">✓</th><th style="width:44px">Msr #</th>
-              <th style="min-width:130px">Building</th><th style="min-width:190px">Measure Description</th>
+              <th style="min-width:130px">Building</th><th style="width:74px">Sq Ft</th><th style="min-width:190px">Measure Description</th>
               <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(59,130,246,0.07)">⚡ Electric kWh Savings / Month</th>
               <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(245,158,11,0.07)">⚡ Electric kW Savings / Month</th>
               <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(20,184,166,0.07)">🔥 Gas Therms Savings / Month</th>
@@ -4891,7 +4805,7 @@ function _renderSavingsContent(wrap, projId){
               <th style="width:28px"></th>
             </tr>
             <tr>
-              <th></th><th></th><th></th><th></th>
+              <th></th><th></th><th></th><th></th><th></th>
               ${moHdrs()}${moHdrs()}${moHdrs()}
               <th style="border-left:2px solid var(--border2)"></th><th></th>
             </tr>
@@ -13055,15 +12969,901 @@ window.addEventListener('resize', ()=>{
 });
 
 /* ══════════════════════════════════════════════════════
-   HVAC LOAD ESTIMATION
+   HVAC LOAD ESTIMATION — Per-Building with Reverse Utility Analysis
 ══════════════════════════════════════════════════════ */
+let _hvlSelBldg = {}; // track selected building per project
+let _hvlMethod = {}; // track selected method per project-building
+let _hvlRevData = {}; // reverse utility analysis data per project-building
+
+const EQUIP_TYPES = ['Interior Lighting','Exterior Lighting','Cooling','Electric Heating','Ventilation Fans','Pumps','Plug Loads','Generic Elect. Equipment'];
+const GAS_EQUIP_TYPES = ['Gas Heating','Domestic Hot Water','Kitchen Equipment','Other Gas'];
+const EQUIP_UNITS = ['Watts','kW','Hp'];
+const GAS_EQUIP_UNITS = ['Btu/hr','BHp','lbs/hr','MMBtu/hr'];
+const MO_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function _hvlKey(projId,bldgId){ return projId+'_'+bldgId; }
+
+function _getRevData(projId,bldgId){
+  const k = _hvlKey(projId,bldgId);
+  if(!_hvlRevData[k]) _hvlRevData[k] = {equipment:[], gasEquipment:[], heatingMonths:[0,1,2,3,10,11], coolingMonths:[4,5,6,7,8,9]};
+  // Also persist in project data
+  const p = projects.find(x=>x.id===projId);
+  if(p){
+    if(!p.hvacRevData) p.hvacRevData = {};
+    if(p.hvacRevData[bldgId]){
+      _hvlRevData[k] = p.hvacRevData[bldgId];
+    }
+  }
+  return _hvlRevData[k];
+}
+
+function _saveRevData(projId,bldgId){
+  const k = _hvlKey(projId,bldgId);
+  const p = projects.find(x=>x.id===projId);
+  if(p){
+    if(!p.hvacRevData) p.hvacRevData = {};
+    p.hvacRevData[bldgId] = _hvlRevData[k];
+    sset('en_projects', projects);
+  }
+}
+
+function initHvacLoadTab(projId){
+  const p = projects.find(x=>x.id===projId); if(!p) return;
+  const wrap = document.getElementById('hvl-container-'+projId);
+  if(!wrap) return;
+  const bldgs = getUDBldgs(projId);
+  if(!_hvlSelBldg[projId] && bldgs.length) _hvlSelBldg[projId] = bldgs[0].id;
+  const selBid = _hvlSelBldg[projId];
+  const selBldg = bldgs.find(b=>b.id===selBid);
+
+  // Building selector bar
+  const bldgPills = bldgs.map(b=>{
+    const active = b.id===selBid;
+    return `<button class="ptpill${active?' sel':''}" onclick="_hvlSelectBldg(${projId},'${b.id}')" style="${active?'background:var(--accent-dim);border-color:var(--accent);color:var(--accent)':''}">
+      ${b.name||'Building'} ${b.sqft?'<span style=\"font-size:10px;opacity:.7\">('+Number(b.sqft).toLocaleString()+' sf)</span>':''}
+    </button>`;
+  }).join('');
+
+  if(!bldgs.length){
+    wrap.innerHTML=`<div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">
+      No buildings in Utility Data for this project yet.<br>Add buildings via the <strong style="color:var(--accent)">Buildings</strong> tab, then add meters in <strong style="color:var(--accent)">Utility Data</strong>.
+    </div>`;
+    return;
+  }
+
+  const method = _hvlMethod[_hvlKey(projId,selBid)] || 'thumb';
+
+  wrap.innerHTML=`
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-shrink:0">
+      <span style="font-size:13px;font-weight:700;color:var(--text)">🌡️ HVAC Load Estimation</span>
+      <span style="font-size:11px;color:var(--text3)">Building:</span>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">${bldgPills}</div>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="hvacLoadSave(${projId})">💾 Save</button>
+        <button class="btn btn-em btn-sm" onclick="hvacLoadCalc(${projId})">⚡ Calculate</button>
+      </div>
+    </div>
+    <div style="padding:16px;overflow-y:auto;flex:1;min-height:0">
+      <div id="hvl-baseline-summary-${projId}" style="margin-bottom:16px"></div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-hdr"><span class="card-title">Method</span></div>
+        <div style="padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-sm hvl-method-btn${method==='thumb'?' active':''}" onclick="hvacLoadMethod(${projId},'thumb',this)">📐 Rules of Thumb</button>
+          <button class="btn btn-sm hvl-method-btn${method==='benchmark'?' active':''}" onclick="hvacLoadMethod(${projId},'benchmark',this)">📊 Building Benchmark</button>
+          <button class="btn btn-sm hvl-method-btn${method==='nameplate'?' active':''}" onclick="hvacLoadMethod(${projId},'nameplate',this)">🔧 Nameplate Data</button>
+          <button class="btn btn-sm hvl-method-btn${method==='reverse'?' active':''}" onclick="hvacLoadMethod(${projId},'reverse',this)">📊 Reverse Utility Analysis</button>
+        </div>
+      </div>
+      <div id="hvl-method-content-${projId}"></div>
+      <div id="hvl-results-${projId}"></div>
+    </div>`;
+
+  // Render baseline summary for selected building
+  _hvlRenderBaselineSummary(projId, selBldg);
+  // Render method content
+  _hvlRenderMethod(projId, selBid, method);
+}
+
+function _hvlSelectBldg(projId, bldgId){
+  _hvlSelBldg[projId] = bldgId;
+  initHvacLoadTab(projId);
+}
+
+function _hvlRenderBaselineSummary(projId, b){
+  const wrap = document.getElementById('hvl-baseline-summary-'+projId);
+  if(!wrap || !b) return;
+  const sqft = parseInt(b.sqft)||0;
+  const meters = b.meters||[];
+  const elecM = meters.find(m=>m.commodity==='Electric');
+  const gasM = meters.find(m=>m.commodity==='Gas');
+
+  // Gather baseline bills
+  function getBillsByMonth(meter){
+    if(!meter) return {};
+    const bills = (meter.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+    const byMo = {};
+    bills.forEach(bill=>{
+      const d = new Date(bill.start);
+      const mo = d.getMonth();
+      // Use latest bill for each month
+      byMo[mo] = bill;
+    });
+    return byMo;
+  }
+
+  const eByMo = getBillsByMonth(elecM);
+  const gByMo = getBillsByMonth(gasM);
+
+  // Calculate totals
+  let totKwh=0, maxKw=0, totKwCost=0, totKwhCost=0, totElecCost=0;
+  let totTherms=0, totGasCost=0;
+  MO_SHORT.forEach((_,i)=>{
+    const eb = eByMo[i];
+    if(eb){
+      totKwh += (eb.kwh||eb.usage||0);
+      maxKw = Math.max(maxKw, eb.kw||eb.demKW||eb.billedKw||0);
+      totKwCost += (eb.kwCost||eb.demandCost||0);
+      totKwhCost += (eb.kwhCost||eb.energyCost||0);
+      totElecCost += (eb.totalCost||eb.cost||0);
+    }
+    const gb = gByMo[i];
+    if(gb){
+      totTherms += (gb.therms||gb.usage||0);
+      totGasCost += (gb.totalCost||gb.cost||0);
+    }
+  });
+
+  const fmt = n => n>=1000 ? Math.round(n).toLocaleString() : n>0 ? n.toFixed(1) : '—';
+  const $c = n => n>0 ? '$'+n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
+
+  wrap.innerHTML=`<div class="card">
+    <div class="card-hdr"><span class="card-title">📊 Baseline Data — ${b.name||'Building'}</span>
+      <span style="font-size:11px;color:var(--text3);margin-left:auto">${sqft?Number(sqft).toLocaleString()+' sq ft':'No sq ft set'}</span>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="dtbl" style="min-width:900px;font-size:12px">
+        <thead>
+          <tr>
+            <th style="width:80px">Month</th>
+            <th style="text-align:right">kWh</th>
+            <th style="text-align:right">Actual kW</th>
+            <th style="text-align:right">kW Cost</th>
+            <th style="text-align:right">kWh Cost</th>
+            <th style="text-align:right">Electric Cost</th>
+            <th style="text-align:right">Avg $/kWh</th>
+            <th style="text-align:right">Avg $/kW</th>
+            <th style="text-align:right">Load Factor</th>
+            <th style="border-left:2px solid var(--border2);text-align:right">Therms</th>
+            <th style="text-align:right">Avg $/Therm</th>
+            <th style="text-align:right">Gas Cost</th>
+            <th style="text-align:right;border-left:2px solid var(--border2)">Total Utility</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${MO_SHORT.map((mo,i)=>{
+            const eb = eByMo[i]||{};
+            const gb = gByMo[i]||{};
+            const kwh = eb.kwh||eb.usage||0;
+            const kw = eb.kw||eb.demKW||eb.billedKw||0;
+            const kwCost = eb.kwCost||eb.demandCost||0;
+            const kwhCost = eb.kwhCost||eb.energyCost||0;
+            const eCost = eb.totalCost||eb.cost||0;
+            const avgKwh = kwh>0&&kwhCost>0 ? kwhCost/kwh : 0;
+            const avgKw = kw>0&&kwCost>0 ? kwCost/kw : 0;
+            const days = eb.days||30;
+            const lf = kw>0&&kwh>0 ? kwh/(kw*24*days) : 0;
+            const therms = gb.therms||gb.usage||0;
+            const gCost = gb.totalCost||gb.cost||0;
+            const avgTherm = therms>0&&gCost>0 ? gCost/therms : 0;
+            return `<tr>
+              <td style="font-weight:600">${mo}</td>
+              <td style="text-align:right;font-family:var(--mono)">${kwh?Math.round(kwh).toLocaleString():'—'}</td>
+              <td style="text-align:right;font-family:var(--mono)">${kw?kw.toFixed(1):'—'}</td>
+              <td style="text-align:right;font-family:var(--mono)">${kwCost?$c(kwCost):'—'}</td>
+              <td style="text-align:right;font-family:var(--mono)">${kwhCost?$c(kwhCost):'—'}</td>
+              <td style="text-align:right;font-family:var(--mono);font-weight:600">${eCost?$c(eCost):'—'}</td>
+              <td style="text-align:right;font-family:var(--mono);font-size:11px">${avgKwh?'$'+avgKwh.toFixed(4):'—'}</td>
+              <td style="text-align:right;font-family:var(--mono);font-size:11px">${avgKw?'$'+avgKw.toFixed(2):'—'}</td>
+              <td style="text-align:right;font-family:var(--mono);font-size:11px">${lf?(lf*100).toFixed(1)+'%':'—'}</td>
+              <td style="border-left:2px solid var(--border2);text-align:right;font-family:var(--mono)">${therms?Math.round(therms).toLocaleString():'—'}</td>
+              <td style="text-align:right;font-family:var(--mono);font-size:11px">${avgTherm?'$'+avgTherm.toFixed(3):'—'}</td>
+              <td style="text-align:right;font-family:var(--mono);font-weight:600">${gCost?$c(gCost):'—'}</td>
+              <td style="text-align:right;font-family:var(--mono);font-weight:700;border-left:2px solid var(--border2)">${(eCost+gCost)>0?$c(eCost+gCost):'—'}</td>
+            </tr>`;
+          }).join('')}
+          <tr style="border-top:2px solid var(--border2);font-weight:800">
+            <td>TOTAL</td>
+            <td style="text-align:right;font-family:var(--mono)">${totKwh?Math.round(totKwh).toLocaleString():'—'}</td>
+            <td style="text-align:right;font-family:var(--mono)">${maxKw?maxKw.toFixed(1):'—'}</td>
+            <td style="text-align:right;font-family:var(--mono)">${totKwCost?$c(totKwCost):'—'}</td>
+            <td style="text-align:right;font-family:var(--mono)">${totKwhCost?$c(totKwhCost):'—'}</td>
+            <td style="text-align:right;font-family:var(--mono);color:var(--em)">${totElecCost?$c(totElecCost):'—'}</td>
+            <td style="text-align:right;font-family:var(--mono);font-size:11px">${totKwh>0&&totKwhCost>0?'$'+(totKwhCost/totKwh).toFixed(4):'—'}</td>
+            <td></td>
+            <td></td>
+            <td style="border-left:2px solid var(--border2);text-align:right;font-family:var(--mono)">${totTherms?Math.round(totTherms).toLocaleString():'—'}</td>
+            <td style="text-align:right;font-family:var(--mono);font-size:11px">${totTherms>0&&totGasCost>0?'$'+(totGasCost/totTherms).toFixed(3):'—'}</td>
+            <td style="text-align:right;font-family:var(--mono);color:var(--em)">${totGasCost?$c(totGasCost):'—'}</td>
+            <td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--em);border-left:2px solid var(--border2)">${(totElecCost+totGasCost)>0?$c(totElecCost+totGasCost):'—'}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    ${sqft>0 && totKwh>0 ? `<div style="padding:8px 16px;display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--text2)">
+      <span>kWh/sf: <strong style="color:var(--accent)">${(totKwh/sqft).toFixed(1)}</strong></span>
+      <span>kBtu/sf: <strong style="color:var(--em)">${(((totKwh*3.412)+(totTherms*100))/sqft).toFixed(1)}</strong></span>
+      <span>$/sf: <strong style="color:var(--green)">${((totElecCost+totGasCost)/sqft).toFixed(2)}</strong></span>
+      ${totTherms>0?`<span>Therms/sf: <strong style="color:var(--teal)">${(totTherms/sqft).toFixed(2)}</strong></span>`:''}
+    </div>`:''}
+  </div>`;
+}
+
+function _hvlRenderMethod(projId, bldgId, method){
+  const wrap = document.getElementById('hvl-method-content-'+projId);
+  if(!wrap) return;
+  _hvlMethod[_hvlKey(projId,bldgId)] = method;
+  if(method==='reverse'){
+    _hvlRenderReverse(projId, bldgId);
+  } else {
+    _hvlRenderTraditional(projId, bldgId, method);
+  }
+}
+
+function _hvlRenderTraditional(projId, bldgId, method){
+  const wrap = document.getElementById('hvl-method-content-'+projId);
+  if(!wrap) return;
+  const p = projects.find(x=>x.id===projId); if(!p) return;
+  const b = getUDBldg(projId, bldgId);
+
+  if(method==='thumb'){
+    wrap.innerHTML=`<div class="card" style="margin-bottom:16px">
+      <div class="card-hdr"><span class="card-title">📐 Rules of Thumb — Industry Standard Estimates</span></div>
+      <div style="padding:16px">
+        <div class="g2" style="gap:12px">
+          <div class="card" style="background:var(--s1);padding:14px">
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">⚡ Electric (kWh) Breakdown</div>
+            <div class="fg"><label class="fl">HVAC % of Total kWh</label><input class="fi hvl-in" id="hvl-t-kwhPct-${projId}" type="number" value="45" min="0" max="100" step="1"><div class="fhint">Typical: 30-60% depending on climate & building type</div></div>
+            <div class="fg"><label class="fl">Cooling % of HVAC kWh</label><input class="fi hvl-in" id="hvl-t-coolKwhPct-${projId}" type="number" value="65" min="0" max="100"><div class="fhint">Typical: 55-75%</div></div>
+            <div class="fg"><label class="fl">Heating % of HVAC kWh (electric heat only)</label><input class="fi hvl-in" id="hvl-t-heatKwhPct-${projId}" type="number" value="${p.heatType&&(p.heatType.includes('Electric')||p.heatType.includes('Heat Pump')||p.heatType.includes('VRF'))?'35':'0'}" min="0" max="100"><div class="fhint">${p.heatType&&(p.heatType.includes('Gas'))?"0% — Gas heat doesn't use electric kWh for heating":"Typical: 25-45% if electric/heat pump"}</div></div>
+          </div>
+          <div class="card" style="background:var(--s1);padding:14px">
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">⚡ Electric Demand (kW) Breakdown</div>
+            <div class="fg"><label class="fl">HVAC % of Peak kW</label><input class="fi hvl-in" id="hvl-t-kwPct-${projId}" type="number" value="55" min="0" max="100"><div class="fhint">Typical: 40-65% — HVAC is usually the largest demand driver</div></div>
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin:14px 0 10px">🔥 Gas (Therms) Breakdown</div>
+            <div class="fg"><label class="fl">HVAC % of Total Gas</label><input class="fi hvl-in" id="hvl-t-gasPct-${projId}" type="number" value="${p.heatType&&p.heatType.includes('Gas')?'85':'15'}" min="0" max="100"><div class="fhint">${p.heatType&&p.heatType.includes('Gas')?"Typical: 70-95% for gas-heated buildings":"Typical: 0-20% for DHW/kitchen only"}</div></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  } else if(method==='benchmark'){
+    wrap.innerHTML=`<div class="card" style="margin-bottom:16px">
+      <div class="card-hdr"><span class="card-title">📊 Building Type Benchmark — Based on CBECS & Industry Data</span></div>
+      <div style="padding:16px">
+        <div class="fg"><label class="fl">Building Type</label>
+          <select class="fs hvl-in" id="hvl-b-type-${projId}" onchange="hvacLoadBenchFill(${projId})">
+            <option value="">— Select —</option>
+            <option ${p.type==='K-12 School'?'selected':''}>K-12 School</option>
+            <option>College / University</option><option>Hospital / Healthcare</option>
+            <option>Office Building</option><option>Warehouse / Industrial</option>
+            <option>Retail</option><option>Municipal / Government</option><option>Data Center</option>
+          </select>
+        </div>
+        <div class="fg"><label class="fl">Climate Zone</label>
+          <select class="fs hvl-in" id="hvl-b-climate-${projId}" onchange="hvacLoadBenchFill(${projId})">
+            <option value="4A" selected>4A — Mixed Humid (Kansas City)</option>
+            <option value="1A">1A — Very Hot Humid</option><option value="2A">2A — Hot Humid</option>
+            <option value="3A">3A — Warm Humid</option><option value="3B">3B — Warm Dry</option>
+            <option value="5A">5A — Cool Humid</option><option value="5B">5B — Cool Dry</option>
+            <option value="6A">6A — Cold Humid</option><option value="7">7 — Very Cold</option>
+          </select>
+        </div>
+        <div id="hvl-b-results-${projId}" style="margin-top:12px">
+          <div style="font-size:12px;color:var(--text3)">Select building type and climate to load benchmarks</div>
+        </div>
+      </div>
+    </div>`;
+    if(p.type) hvacLoadBenchFill(projId);
+  } else if(method==='nameplate'){
+    wrap.innerHTML=`<div class="card" style="margin-bottom:16px">
+      <div class="card-hdr"><span class="card-title">🔧 Nameplate Data — Enter Real Equipment Data</span></div>
+      <div style="padding:16px">
+        <div class="g2" style="gap:12px">
+          <div class="card" style="background:var(--s1);padding:14px">
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">Cooling Equipment</div>
+            <div class="fg"><label class="fl">Total Cooling Capacity (Tons)</label><input class="fi hvl-in" id="hvl-n-coolTons-${projId}" type="number" placeholder="e.g. 66"></div>
+            <div class="fg"><label class="fl">Efficiency (kW/Ton)</label><input class="fi hvl-in" id="hvl-n-coolKwTon-${projId}" type="number" step="0.01" value="${p.coolEff||'0.86'}"></div>
+            <div class="fg"><label class="fl">Estimated EFLH Cooling</label><input class="fi hvl-in" id="hvl-n-coolEFLH-${projId}" type="number" value="1200"><div class="fhint">KC typical: 1000-1400</div></div>
+          </div>
+          <div class="card" style="background:var(--s1);padding:14px">
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">Heating Equipment</div>
+            <div class="fg"><label class="fl">Total Heating Capacity (MBH)</label><input class="fi hvl-in" id="hvl-n-heatMBH-${projId}" type="number" placeholder="e.g. 595"></div>
+            <div class="fg"><label class="fl">Efficiency (${p.heatType&&p.heatType.includes('Gas')?'AFUE':'COP'})</label><input class="fi hvl-in" id="hvl-n-heatEff-${projId}" type="number" step="0.01" value="${p.heatEff||'0.80'}"></div>
+            <div class="fg"><label class="fl">Estimated EFLH Heating</label><input class="fi hvl-in" id="hvl-n-heatEFLH-${projId}" type="number" value="1600"><div class="fhint">KC typical: 1400-1800</div></div>
+            <div class="fg"><label class="fl">Fuel Type</label>
+              <select class="fs hvl-in" id="hvl-n-heatFuel-${projId}">
+                <option value="gas" ${!p.heatType||p.heatType.includes('Gas')?'selected':''}>Natural Gas</option>
+                <option value="electric" ${p.heatType&&(p.heatType.includes('Electric')||p.heatType.includes('Heat Pump')||p.heatType.includes('VRF'))?'selected':''}>Electric</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">Non-HVAC Loads</div>
+          <div class="g2" style="gap:12px">
+            <div class="fg"><label class="fl">Lighting Watt/sqft</label><input class="fi hvl-in" id="hvl-n-lightW-${projId}" type="number" step="0.01" value="1.0"><div class="fhint">LED: 0.4-0.8, T8 Fluor: 1.0-1.4</div></div>
+            <div class="fg"><label class="fl">Lighting Hours/Year</label><input class="fi hvl-in" id="hvl-n-lightHrs-${projId}" type="number" value="3000"></div>
+            <div class="fg"><label class="fl">Plug Load Watt/sqft</label><input class="fi hvl-in" id="hvl-n-plugW-${projId}" type="number" step="0.01" value="1.5"><div class="fhint">Office: 1-3, School: 0.5-1.5</div></div>
+            <div class="fg"><label class="fl">Plug Load Hours/Year</label><input class="fi hvl-in" id="hvl-n-plugHrs-${projId}" type="number" value="2500"></div>
+          </div>
+          <div class="fg"><label class="fl">Other Base Electric kWh/yr (DHW, kitchen, etc.)</label><input class="fi hvl-in" id="hvl-n-otherKwh-${projId}" type="number" value="0"></div>
+          <div class="fg"><label class="fl">Non-HVAC Gas Therms/yr (DHW, kitchen)</label><input class="fi hvl-in" id="hvl-n-otherGas-${projId}" type="number" value="0"></div>
+        </div>
+      </div>
+    </div>`;
+  }
+}
+
+/* ── Reverse Utility Analysis ── */
+function _hvlRenderReverse(projId, bldgId){
+  const wrap = document.getElementById('hvl-method-content-'+projId);
+  if(!wrap) return;
+  const rd = _getRevData(projId, bldgId);
+  const b = getUDBldg(projId, bldgId);
+  const sqft = parseInt(b?.sqft)||0;
+
+  // Get actual baseline monthly kW, kWh, therms from bills
+  const meters = b?.meters||[];
+  const elecM = meters.find(m=>m.commodity==='Electric');
+  const gasM = meters.find(m=>m.commodity==='Gas');
+  const actualKw = Array(12).fill(0), actualKwh = Array(12).fill(0), actualTherms = Array(12).fill(0);
+  const avgKwhRate = Array(12).fill(0), avgKwRate = Array(12).fill(0), avgThermRate = Array(12).fill(0);
+  if(elecM){
+    (elecM.bills||[]).forEach(bill=>{
+      const mo = new Date(bill.start).getMonth();
+      const kwh = bill.kwh||bill.usage||0;
+      const kw = bill.kw||bill.demKW||bill.billedKw||0;
+      actualKwh[mo] = kwh;
+      actualKw[mo] = kw;
+      const kwhCost = bill.kwhCost||bill.energyCost||0;
+      const kwCost = bill.kwCost||bill.demandCost||0;
+      avgKwhRate[mo] = kwh>0 ? kwhCost/kwh : 0;
+      avgKwRate[mo] = kw>0 ? kwCost/kw : 0;
+    });
+  }
+  if(gasM){
+    (gasM.bills||[]).forEach(bill=>{
+      const mo = new Date(bill.start).getMonth();
+      const therms = bill.therms||bill.usage||0;
+      const gCost = bill.totalCost||bill.cost||0;
+      actualTherms[mo] = therms;
+      avgThermRate[mo] = therms>0 ? gCost/therms : 0;
+    });
+  }
+
+  // Sub-tab state
+  const revTab = rd._activeTab||'kw';
+
+  wrap.innerHTML=`<div class="card" style="margin-bottom:16px">
+    <div class="card-hdr" style="flex-wrap:wrap;gap:8px">
+      <span class="card-title">📊 Reverse Utility Analysis — ${b?.name||'Building'}</span>
+      <div style="display:flex;gap:4px;margin-left:auto">
+        <button class="ptpill${revTab==='kw'?' sel':''}" onclick="_hvlRevTab(${projId},'${bldgId}','kw')">⚡ kW Demand</button>
+        <button class="ptpill${revTab==='kwh'?' sel':''}" onclick="_hvlRevTab(${projId},'${bldgId}','kwh')">⚡ kWh Energy</button>
+        <button class="ptpill${revTab==='gas'?' sel':''}" onclick="_hvlRevTab(${projId},'${bldgId}','gas')">🔥 Gas</button>
+      </div>
+    </div>
+    <div style="padding:12px 16px">
+      <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:11px;color:var(--text3)">Heating months:</span>
+        ${MO_SHORT.map((mo,i)=>`<label style="font-size:11px;display:flex;align-items:center;gap:2px;cursor:pointer">
+          <input type="checkbox" ${rd.heatingMonths.includes(i)?'checked':''} onchange="_hvlRevToggleSeason(${projId},'${bldgId}','heating',${i},this.checked)">
+          ${mo}
+        </label>`).join('')}
+      </div>
+      <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:11px;color:var(--text3)">Cooling months:</span>
+        ${MO_SHORT.map((mo,i)=>`<label style="font-size:11px;display:flex;align-items:center;gap:2px;cursor:pointer">
+          <input type="checkbox" ${rd.coolingMonths.includes(i)?'checked':''} onchange="_hvlRevToggleSeason(${projId},'${bldgId}','cooling',${i},this.checked)">
+          ${mo}
+        </label>`).join('')}
+      </div>
+      <div id="hvl-rev-content-${projId}"></div>
+    </div>
+  </div>`;
+
+  _hvlRevRenderTab(projId, bldgId, revTab, actualKw, actualKwh, actualTherms, avgKwRate, avgKwhRate, avgThermRate);
+}
+
+function _hvlRevTab(projId, bldgId, tab){
+  const rd = _getRevData(projId, bldgId);
+  rd._activeTab = tab;
+  _hvlRenderReverse(projId, bldgId);
+}
+
+function _hvlRevToggleSeason(projId, bldgId, season, moIdx, checked){
+  const rd = _getRevData(projId, bldgId);
+  const arr = season==='heating' ? rd.heatingMonths : rd.coolingMonths;
+  if(checked && !arr.includes(moIdx)) arr.push(moIdx);
+  if(!checked) { const idx=arr.indexOf(moIdx); if(idx>=0) arr.splice(idx,1); }
+  _saveRevData(projId, bldgId);
+}
+
+function _hvlRevRenderTab(projId, bldgId, tab, actualKw, actualKwh, actualTherms, avgKwRate, avgKwhRate, avgThermRate){
+  const wrap = document.getElementById('hvl-rev-content-'+projId);
+  if(!wrap) return;
+  const rd = _getRevData(projId, bldgId);
+
+  if(tab==='kw'){
+    _hvlRevRenderKw(wrap, projId, bldgId, rd, actualKw, avgKwRate);
+  } else if(tab==='kwh'){
+    _hvlRevRenderKwh(wrap, projId, bldgId, rd, actualKwh, avgKwhRate, avgKwRate);
+  } else {
+    _hvlRevRenderGas(wrap, projId, bldgId, rd, actualTherms, avgThermRate);
+  }
+}
+
+/* ── kW Demand Reverse Tab ── */
+function _hvlRevRenderKw(wrap, projId, bldgId, rd, actualKw, avgKwRate){
+  const equip = rd.equipment||[];
+  const moHdr = MO_SHORT.map((m,i)=>`<th style="text-align:center;width:52px;font-size:10px;border-left:1px solid var(--border)">${m}</th>`).join('');
+
+  // Calculate totals
+  const modeledKw = Array(12).fill(0);
+  equip.forEach(eq=>{
+    const maxKw = _eqMaxKw(eq);
+    const demFactors = eq.demandFactors||Array(12).fill(0);
+    for(let i=0;i<12;i++){
+      let contrib = maxKw * (demFactors[i]/100);
+      // Apply seasonal exclusions
+      if(eq.type==='Cooling' && !rd.coolingMonths.includes(i)) contrib=0;
+      if(eq.type==='Electric Heating' && !rd.heatingMonths.includes(i)) contrib=0;
+      if(eq.demandProfile!==false) modeledKw[i] += contrib;
+    }
+  });
+  const totalActual = actualKw.reduce((s,v)=>s+v,0);
+  const totalModeled = modeledKw.reduce((s,v)=>s+v,0);
+  const annualMatch = totalActual>0 ? (totalModeled/totalActual*100).toFixed(1)+'%' : '—';
+
+  // Match % row
+  const matchRow = MO_SHORT.map((_,i)=>{
+    const pct = actualKw[i]>0 ? (modeledKw[i]/actualKw[i]*100) : 0;
+    const color = pct>=90&&pct<=110 ? 'var(--green)' : pct>=75&&pct<=125 ? 'var(--amber)' : 'var(--danger)';
+    return `<td style="text-align:center;font-family:var(--mono);font-size:10px;border-left:1px solid var(--border);color:${actualKw[i]>0?color:'var(--text3)'}">${actualKw[i]>0?pct.toFixed(0)+'%':'—'}</td>`;
+  }).join('');
+
+  wrap.innerHTML=`
+    <div style="margin-bottom:12px;display:flex;gap:16px;align-items:center">
+      <span style="font-size:12px;color:var(--text2)">Annual Match: <strong style="color:var(--em)">${annualMatch}</strong></span>
+      <button class="btn btn-ghost btn-sm" onclick="_hvlRevAddEquip(${projId},'${bldgId}')">+ Add Equipment</button>
+    </div>
+    <div style="overflow-x:auto;margin-bottom:16px">
+      <table class="dtbl" style="min-width:1400px;font-size:11px">
+        <thead>
+          <tr>
+            <th style="width:30px">#</th>
+            <th style="min-width:140px">Equipment Name</th>
+            <th style="min-width:110px">Type</th>
+            <th style="width:40px">Qty</th>
+            <th style="width:60px">Size</th>
+            <th style="width:60px">Units</th>
+            <th style="width:50px">In kW?</th>
+            <th style="width:60px;text-align:right">Max kW</th>
+            ${moHdr}
+            <th style="width:28px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${equip.map((eq,idx)=>{
+            const maxKw = _eqMaxKw(eq);
+            const df = eq.demandFactors||Array(12).fill(0);
+            const typeOpts = EQUIP_TYPES.map(t=>`<option${t===eq.type?' selected':''}>${t}</option>`).join('');
+            const unitOpts = EQUIP_UNITS.map(u=>`<option${u===eq.units?' selected':''}>${u}</option>`).join('');
+            return `<tr>
+              <td style="text-align:center;color:var(--text3)">${idx+1}</td>
+              <td><input class="sv-msr-txt" style="width:100%" value="${eq.name||''}" onchange="_hvlRevUpdEquip(${projId},'${bldgId}',${idx},'name',this.value)"></td>
+              <td><select class="sv-msr-sel" style="width:100%" onchange="_hvlRevUpdEquip(${projId},'${bldgId}',${idx},'type',this.value)">${typeOpts}</select></td>
+              <td><input class="sv-num-inp" type="number" style="width:38px" value="${eq.qty||1}" onchange="_hvlRevUpdEquip(${projId},'${bldgId}',${idx},'qty',parseFloat(this.value)||1)"></td>
+              <td><input class="sv-num-inp" type="number" style="width:56px" step="any" value="${eq.size||''}" placeholder="0" onchange="_hvlRevUpdEquip(${projId},'${bldgId}',${idx},'size',parseFloat(this.value)||0)"></td>
+              <td><select class="sv-msr-sel" style="width:58px" onchange="_hvlRevUpdEquip(${projId},'${bldgId}',${idx},'units',this.value)">${unitOpts}</select></td>
+              <td style="text-align:center"><input type="checkbox" ${eq.demandProfile!==false?'checked':''} onchange="_hvlRevUpdEquip(${projId},'${bldgId}',${idx},'demandProfile',this.checked)"></td>
+              <td style="text-align:right;font-family:var(--mono);font-weight:600">${maxKw.toFixed(1)}</td>
+              ${df.map((v,mi)=>`<td style="border-left:1px solid var(--border);padding:1px"><input class="sv-num-inp" type="number" style="width:46px;text-align:center" min="0" max="100" value="${v||''}" placeholder="0" onchange="_hvlRevUpdDf(${projId},'${bldgId}',${idx},${mi},parseFloat(this.value)||0)"></td>`).join('')}
+              <td><button class="btn-del" onclick="_hvlRevRemEquip(${projId},'${bldgId}',${idx})">✕</button></td>
+            </tr>`;
+          }).join('')}
+          ${!equip.length?`<tr><td colspan="${20}" style="text-align:center;color:var(--text3);padding:16px">No equipment yet — click "+ Add Equipment"</td></tr>`:''}
+        </tbody>
+        <tfoot>
+          <tr style="font-weight:700;border-top:2px solid var(--border2)">
+            <td colspan="7">MODELED kW</td>
+            <td style="text-align:right;font-family:var(--mono)">${modeledKw.reduce((s,v)=>s+v,0)>0?(modeledKw.reduce((s,v)=>Math.max(s,v),0)).toFixed(1):'—'}</td>
+            ${modeledKw.map((v,i)=>`<td style="text-align:center;font-family:var(--mono);font-size:10px;border-left:1px solid var(--border);color:var(--accent)">${v>0?v.toFixed(1):'—'}</td>`).join('')}
+            <td></td>
+          </tr>
+          <tr style="font-weight:700">
+            <td colspan="7">ACTUAL kW</td>
+            <td></td>
+            ${actualKw.map((v,i)=>`<td style="text-align:center;font-family:var(--mono);font-size:10px;border-left:1px solid var(--border)">${v>0?v.toFixed(1):'—'}</td>`).join('')}
+            <td></td>
+          </tr>
+          <tr style="font-weight:700">
+            <td colspan="7">MATCH %</td>
+            <td style="text-align:right;font-family:var(--mono);color:var(--em)">${annualMatch}</td>
+            ${matchRow}
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    ${_hvlRevKwCostBreakdown(equip, rd, modeledKw, avgKwRate, projId)}`;
+}
+
+function _hvlRevKwCostBreakdown(equip, rd, modeledKw, avgKwRate, projId){
+  if(!equip.length) return '';
+  // Group by type and calculate kW cost allocation
+  const typeKw = {};
+  EQUIP_TYPES.forEach(t=>typeKw[t]=Array(12).fill(0));
+  equip.forEach(eq=>{
+    const maxKw = _eqMaxKw(eq);
+    const df = eq.demandFactors||Array(12).fill(0);
+    for(let i=0;i<12;i++){
+      let contrib = maxKw*(df[i]/100);
+      if(eq.type==='Cooling'&&!rd.coolingMonths.includes(i)) contrib=0;
+      if(eq.type==='Electric Heating'&&!rd.heatingMonths.includes(i)) contrib=0;
+      if(eq.demandProfile!==false) typeKw[eq.type||'Generic Elect. Equipment'][i]+=contrib;
+    }
+  });
+  const usedTypes = EQUIP_TYPES.filter(t=>typeKw[t].some(v=>v>0));
+  if(!usedTypes.length) return '';
+  const colors = {'Interior Lighting':'#60a5fa','Exterior Lighting':'#a78bfa','Cooling':'#34d399','Electric Heating':'#f87171','Ventilation Fans':'#fbbf24','Pumps':'#2dd4bf','Plug Loads':'#fb923c','Generic Elect. Equipment':'#94a3b8'};
+  return `<div class="card" style="margin-bottom:16px">
+    <div class="card-hdr"><span class="card-title">💰 kW Cost Allocation by End Use</span></div>
+    <div style="overflow-x:auto">
+      <table class="dtbl" style="min-width:900px;font-size:11px">
+        <thead><tr><th>End Use</th>${MO_SHORT.map(m=>`<th style="text-align:right;font-size:10px">${m}</th>`).join('')}<th style="text-align:right">Annual</th></tr></thead>
+        <tbody>
+          ${usedTypes.map(t=>{
+            const annualCost = typeKw[t].reduce((s,v,i)=>s+v*avgKwRate[i],0);
+            return `<tr>
+              <td style="font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${colors[t]||'#94a3b8'};margin-right:4px"></span>${t}</td>
+              ${typeKw[t].map((v,i)=>`<td style="text-align:right;font-family:var(--mono)">${(v*avgKwRate[i])>0?'$'+(v*avgKwRate[i]).toFixed(0):'—'}</td>`).join('')}
+              <td style="text-align:right;font-family:var(--mono);font-weight:700">${annualCost>0?'$'+Math.round(annualCost).toLocaleString():'—'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+/* ── kWh Energy Reverse Tab ── */
+function _hvlRevRenderKwh(wrap, projId, bldgId, rd, actualKwh, avgKwhRate, avgKwRate){
+  const equip = rd.equipment||[];
+  const moHdr = MO_SHORT.map(m=>`<th style="text-align:center;width:52px;font-size:10px;border-left:1px solid var(--border)">${m}</th>`).join('');
+
+  const modeledKwh = Array(12).fill(0);
+  equip.forEach(eq=>{
+    const maxKw = _eqMaxKw(eq);
+    const lf = eq.loadFactors||Array(12).fill(0);
+    const df = eq.demandFactors||Array(12).fill(0);
+    for(let i=0;i<12;i++){
+      // kWh = kW (from demand profile) * (8760/12) * load factor %
+      const kw = maxKw * (df[i]/100);
+      const kwh = kw * (8760/12) * (lf[i]/100);
+      modeledKwh[i] += kwh;
+    }
+  });
+  const totalActual = actualKwh.reduce((s,v)=>s+v,0);
+  const totalModeled = modeledKwh.reduce((s,v)=>s+v,0);
+  const annualMatch = totalActual>0 ? (totalModeled/totalActual*100).toFixed(1)+'%' : '—';
+
+  const matchRow = MO_SHORT.map((_,i)=>{
+    const pct = actualKwh[i]>0 ? (modeledKwh[i]/actualKwh[i]*100) : 0;
+    const color = pct>=90&&pct<=110 ? 'var(--green)' : pct>=75&&pct<=125 ? 'var(--amber)' : 'var(--danger)';
+    return `<td style="text-align:center;font-family:var(--mono);font-size:10px;border-left:1px solid var(--border);color:${actualKwh[i]>0?color:'var(--text3)'}">${actualKwh[i]>0?pct.toFixed(0)+'%':'—'}</td>`;
+  }).join('');
+
+  wrap.innerHTML=`
+    <div style="margin-bottom:12px;display:flex;gap:16px;align-items:center">
+      <span style="font-size:12px;color:var(--text2)">Annual Match: <strong style="color:var(--em)">${annualMatch}</strong></span>
+      <span style="font-size:11px;color:var(--text3)">Enter monthly load factor % — the fraction of max capacity each piece runs</span>
+    </div>
+    <div style="overflow-x:auto;margin-bottom:16px">
+      <table class="dtbl" style="min-width:1300px;font-size:11px">
+        <thead>
+          <tr>
+            <th style="width:30px">#</th>
+            <th style="min-width:140px">Equipment Name</th>
+            <th style="min-width:100px">Type</th>
+            <th style="width:60px;text-align:right">Max kW</th>
+            <th style="width:60px;text-align:right">Hours</th>
+            <th style="width:50px;text-align:right">% kWh</th>
+            ${moHdr}
+          </tr>
+          <tr><th colspan="6" style="font-size:10px;color:var(--text3)">Monthly Load Factor %</th>${MO_SHORT.map(()=>'<th></th>').join('')}</tr>
+        </thead>
+        <tbody>
+          ${equip.map((eq,idx)=>{
+            const maxKw = _eqMaxKw(eq);
+            const lf = eq.loadFactors||Array(12).fill(0);
+            const df = eq.demandFactors||Array(12).fill(0);
+            const annKwh = lf.reduce((s,v,i)=>s + maxKw*(df[i]/100)*(8760/12)*(v/100), 0);
+            const hours = maxKw>0 ? annKwh/maxKw : 0;
+            const pctOfTotal = totalModeled>0 ? (annKwh/totalModeled*100).toFixed(1) : '0';
+            return `<tr>
+              <td style="text-align:center;color:var(--text3)">${idx+1}</td>
+              <td style="font-weight:500">${eq.name||'—'}</td>
+              <td style="font-size:10px;color:var(--text2)">${eq.type||'—'}</td>
+              <td style="text-align:right;font-family:var(--mono)">${maxKw.toFixed(1)}</td>
+              <td style="text-align:right;font-family:var(--mono)">${hours>0?Math.round(hours).toLocaleString():'—'}</td>
+              <td style="text-align:right;font-family:var(--mono);font-size:10px">${pctOfTotal}%</td>
+              ${lf.map((v,mi)=>`<td style="border-left:1px solid var(--border);padding:1px"><input class="sv-num-inp" type="number" style="width:46px;text-align:center" min="0" max="100" value="${v||''}" placeholder="0" onchange="_hvlRevUpdLf(${projId},'${bldgId}',${idx},${mi},parseFloat(this.value)||0)"></td>`).join('')}
+            </tr>`;
+          }).join('')}
+          ${!equip.length?`<tr><td colspan="${18}" style="text-align:center;color:var(--text3);padding:16px">Add equipment in the kW Demand tab first</td></tr>`:''}
+        </tbody>
+        <tfoot>
+          <tr style="font-weight:700;border-top:2px solid var(--border2)">
+            <td colspan="6">MODELED kWh</td>
+            ${modeledKwh.map((v,i)=>`<td style="text-align:center;font-family:var(--mono);font-size:10px;border-left:1px solid var(--border);color:var(--accent)">${v>0?Math.round(v).toLocaleString():'—'}</td>`).join('')}
+          </tr>
+          <tr style="font-weight:700">
+            <td colspan="6">ACTUAL kWh</td>
+            ${actualKwh.map(v=>`<td style="text-align:center;font-family:var(--mono);font-size:10px;border-left:1px solid var(--border)">${v>0?Math.round(v).toLocaleString():'—'}</td>`).join('')}
+          </tr>
+          <tr style="font-weight:700">
+            <td colspan="6">MATCH %</td>
+            ${matchRow}
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    ${_hvlRevKwhCostBreakdown(equip, rd, avgKwhRate, avgKwRate, projId)}`;
+}
+
+function _hvlRevKwhCostBreakdown(equip, rd, avgKwhRate, avgKwRate, projId){
+  if(!equip.length) return '';
+  const typeKwh = {};
+  EQUIP_TYPES.forEach(t=>typeKwh[t]=Array(12).fill(0));
+  equip.forEach(eq=>{
+    const maxKw = _eqMaxKw(eq);
+    const lf = eq.loadFactors||Array(12).fill(0);
+    const df = eq.demandFactors||Array(12).fill(0);
+    for(let i=0;i<12;i++){
+      const kwh = maxKw*(df[i]/100)*(8760/12)*(lf[i]/100);
+      typeKwh[eq.type||'Generic Elect. Equipment'][i] += kwh;
+    }
+  });
+  const usedTypes = EQUIP_TYPES.filter(t=>typeKwh[t].some(v=>v>0));
+  if(!usedTypes.length) return '';
+  const colors = {'Interior Lighting':'#60a5fa','Exterior Lighting':'#a78bfa','Cooling':'#34d399','Electric Heating':'#f87171','Ventilation Fans':'#fbbf24','Pumps':'#2dd4bf','Plug Loads':'#fb923c','Generic Elect. Equipment':'#94a3b8'};
+  return `<div class="card" style="margin-bottom:16px">
+    <div class="card-hdr"><span class="card-title">💰 Electric Cost Allocation (kWh + kW) by End Use</span></div>
+    <div style="overflow-x:auto">
+      <table class="dtbl" style="min-width:900px;font-size:11px">
+        <thead><tr><th>End Use</th>${MO_SHORT.map(m=>`<th style="text-align:right;font-size:10px">${m}</th>`).join('')}<th style="text-align:right">Annual</th></tr></thead>
+        <tbody>
+          ${usedTypes.map(t=>{
+            const annualCost = typeKwh[t].reduce((s,v,i)=>s+v*avgKwhRate[i],0);
+            return `<tr>
+              <td style="font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${colors[t]||'#94a3b8'};margin-right:4px"></span>${t}</td>
+              ${typeKwh[t].map((v,i)=>`<td style="text-align:right;font-family:var(--mono)">${(v*avgKwhRate[i])>0?'$'+(v*avgKwhRate[i]).toFixed(0):'—'}</td>`).join('')}
+              <td style="text-align:right;font-family:var(--mono);font-weight:700">${annualCost>0?'$'+Math.round(annualCost).toLocaleString():'—'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+/* ── Gas Reverse Tab ── */
+function _hvlRevRenderGas(wrap, projId, bldgId, rd, actualTherms, avgThermRate){
+  const gasEq = rd.gasEquipment||[];
+  const moHdr = MO_SHORT.map(m=>`<th style="text-align:center;width:52px;font-size:10px;border-left:1px solid var(--border)">${m}</th>`).join('');
+
+  const modeledTherms = Array(12).fill(0);
+  gasEq.forEach(eq=>{
+    const maxThermHr = _gasMaxThermHr(eq);
+    const uf = eq.utilFactors||Array(12).fill(0);
+    for(let i=0;i<12;i++){
+      modeledTherms[i] += maxThermHr * (8760/12) * (uf[i]/100);
+    }
+  });
+  const totalActual = actualTherms.reduce((s,v)=>s+v,0);
+  const totalModeled = modeledTherms.reduce((s,v)=>s+v,0);
+  const annualMatch = totalActual>0 ? (totalModeled/totalActual*100).toFixed(1)+'%' : '—';
+
+  const matchRow = MO_SHORT.map((_,i)=>{
+    const pct = actualTherms[i]>0 ? (modeledTherms[i]/actualTherms[i]*100) : 0;
+    const color = pct>=90&&pct<=110 ? 'var(--green)' : pct>=75&&pct<=125 ? 'var(--amber)' : 'var(--danger)';
+    return `<td style="text-align:center;font-family:var(--mono);font-size:10px;border-left:1px solid var(--border);color:${actualTherms[i]>0?color:'var(--text3)'}">${actualTherms[i]>0?pct.toFixed(0)+'%':'—'}</td>`;
+  }).join('');
+
+  wrap.innerHTML=`
+    <div style="margin-bottom:12px;display:flex;gap:16px;align-items:center">
+      <span style="font-size:12px;color:var(--text2)">Annual Match: <strong style="color:var(--em)">${annualMatch}</strong></span>
+      <button class="btn btn-ghost btn-sm" onclick="_hvlRevAddGasEquip(${projId},'${bldgId}')">+ Add Gas Equipment</button>
+    </div>
+    <div style="overflow-x:auto;margin-bottom:16px">
+      <table class="dtbl" style="min-width:1300px;font-size:11px">
+        <thead>
+          <tr>
+            <th style="width:30px">#</th>
+            <th style="min-width:140px">Equipment Name</th>
+            <th style="min-width:100px">Type</th>
+            <th style="width:40px">Qty</th>
+            <th style="width:60px">Size</th>
+            <th style="width:70px">Units</th>
+            <th style="width:65px;text-align:right">Therm/hr</th>
+            ${moHdr}
+            <th style="width:28px"></th>
+          </tr>
+          <tr><th colspan="7" style="font-size:10px;color:var(--text3)">Monthly Utilization %</th>${MO_SHORT.map(()=>'<th></th>').join('')}<th></th></tr>
+        </thead>
+        <tbody>
+          ${gasEq.map((eq,idx)=>{
+            const maxTh = _gasMaxThermHr(eq);
+            const uf = eq.utilFactors||Array(12).fill(0);
+            const typeOpts = GAS_EQUIP_TYPES.map(t=>`<option${t===eq.type?' selected':''}>${t}</option>`).join('');
+            const unitOpts = GAS_EQUIP_UNITS.map(u=>`<option${u===eq.units?' selected':''}>${u}</option>`).join('');
+            return `<tr>
+              <td style="text-align:center;color:var(--text3)">${idx+1}</td>
+              <td><input class="sv-msr-txt" style="width:100%" value="${eq.name||''}" onchange="_hvlRevUpdGasEquip(${projId},'${bldgId}',${idx},'name',this.value)"></td>
+              <td><select class="sv-msr-sel" style="width:100%" onchange="_hvlRevUpdGasEquip(${projId},'${bldgId}',${idx},'type',this.value)">${typeOpts}</select></td>
+              <td><input class="sv-num-inp" type="number" style="width:38px" value="${eq.qty||1}" onchange="_hvlRevUpdGasEquip(${projId},'${bldgId}',${idx},'qty',parseFloat(this.value)||1)"></td>
+              <td><input class="sv-num-inp" type="number" style="width:56px" step="any" value="${eq.size||''}" placeholder="0" onchange="_hvlRevUpdGasEquip(${projId},'${bldgId}',${idx},'size',parseFloat(this.value)||0)"></td>
+              <td><select class="sv-msr-sel" style="width:68px" onchange="_hvlRevUpdGasEquip(${projId},'${bldgId}',${idx},'units',this.value)">${unitOpts}</select></td>
+              <td style="text-align:right;font-family:var(--mono);font-weight:600">${maxTh.toFixed(2)}</td>
+              ${uf.map((v,mi)=>`<td style="border-left:1px solid var(--border);padding:1px"><input class="sv-num-inp" type="number" style="width:46px;text-align:center" min="0" max="100" value="${v||''}" placeholder="0" onchange="_hvlRevUpdGasUf(${projId},'${bldgId}',${idx},${mi},parseFloat(this.value)||0)"></td>`).join('')}
+              <td><button class="btn-del" onclick="_hvlRevRemGasEquip(${projId},'${bldgId}',${idx})">✕</button></td>
+            </tr>`;
+          }).join('')}
+          ${!gasEq.length?`<tr><td colspan="${20}" style="text-align:center;color:var(--text3);padding:16px">No gas equipment yet — click "+ Add Gas Equipment"</td></tr>`:''}
+        </tbody>
+        <tfoot>
+          <tr style="font-weight:700;border-top:2px solid var(--border2)">
+            <td colspan="7">MODELED Therms</td>
+            ${modeledTherms.map(v=>`<td style="text-align:center;font-family:var(--mono);font-size:10px;border-left:1px solid var(--border);color:var(--accent)">${v>0?Math.round(v).toLocaleString():'—'}</td>`).join('')}
+            <td></td>
+          </tr>
+          <tr style="font-weight:700">
+            <td colspan="7">ACTUAL Therms</td>
+            ${actualTherms.map(v=>`<td style="text-align:center;font-family:var(--mono);font-size:10px;border-left:1px solid var(--border)">${v>0?Math.round(v).toLocaleString():'—'}</td>`).join('')}
+            <td></td>
+          </tr>
+          <tr style="font-weight:700">
+            <td colspan="7">MATCH %</td>
+            ${matchRow}
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    ${_hvlRevGasCostBreakdown(gasEq, avgThermRate)}`;
+}
+
+function _hvlRevGasCostBreakdown(gasEq, avgThermRate){
+  if(!gasEq.length) return '';
+  const typeTherms = {};
+  GAS_EQUIP_TYPES.forEach(t=>typeTherms[t]=Array(12).fill(0));
+  gasEq.forEach(eq=>{
+    const maxTh = _gasMaxThermHr(eq);
+    const uf = eq.utilFactors||Array(12).fill(0);
+    for(let i=0;i<12;i++){
+      typeTherms[eq.type||'Other Gas'][i] += maxTh*(8760/12)*(uf[i]/100);
+    }
+  });
+  const usedTypes = GAS_EQUIP_TYPES.filter(t=>typeTherms[t].some(v=>v>0));
+  if(!usedTypes.length) return '';
+  const colors = {'Gas Heating':'#f87171','Domestic Hot Water':'#60a5fa','Kitchen Equipment':'#fbbf24','Other Gas':'#94a3b8'};
+  return `<div class="card" style="margin-bottom:16px">
+    <div class="card-hdr"><span class="card-title">💰 Gas Cost Allocation by End Use</span></div>
+    <div style="overflow-x:auto">
+      <table class="dtbl" style="min-width:900px;font-size:11px">
+        <thead><tr><th>End Use</th>${MO_SHORT.map(m=>`<th style="text-align:right;font-size:10px">${m}</th>`).join('')}<th style="text-align:right">Annual</th></tr></thead>
+        <tbody>
+          ${usedTypes.map(t=>{
+            const annualCost = typeTherms[t].reduce((s,v,i)=>s+v*avgThermRate[i],0);
+            return `<tr>
+              <td style="font-weight:600"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${colors[t]||'#94a3b8'};margin-right:4px"></span>${t}</td>
+              ${typeTherms[t].map((v,i)=>`<td style="text-align:right;font-family:var(--mono)">${(v*avgThermRate[i])>0?'$'+(v*avgThermRate[i]).toFixed(0):'—'}</td>`).join('')}
+              <td style="text-align:right;font-family:var(--mono);font-weight:700">${annualCost>0?'$'+Math.round(annualCost).toLocaleString():'—'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+/* ── Unit conversion helpers ── */
+function _eqMaxKw(eq){
+  const qty = eq.qty||1;
+  const size = eq.size||0;
+  if(eq.units==='Hp') return qty * size * 0.746;
+  if(eq.units==='Watts') return qty * size / 1000;
+  return qty * size; // kW
+}
+
+function _gasMaxThermHr(eq){
+  const qty = eq.qty||1;
+  const size = eq.size||0;
+  if(eq.units==='BHp') return qty * size * 0.03346;
+  if(eq.units==='lbs/hr') return qty * size * 0.001;
+  if(eq.units==='MMBtu/hr') return qty * size * 10;
+  return qty * size / 100000; // Btu/hr → Therm/hr
+}
+
+/* ── CRUD for reverse analysis equipment ── */
+function _hvlRevAddEquip(projId, bldgId){
+  const rd = _getRevData(projId, bldgId);
+  if(!rd.equipment) rd.equipment = [];
+  rd.equipment.push({name:'', type:'Cooling', qty:1, size:0, units:'kW', demandProfile:true, demandFactors:Array(12).fill(0), loadFactors:Array(12).fill(0)});
+  _saveRevData(projId, bldgId);
+  _hvlRenderReverse(projId, bldgId);
+}
+function _hvlRevRemEquip(projId, bldgId, idx){
+  const rd = _getRevData(projId, bldgId);
+  rd.equipment.splice(idx,1);
+  _saveRevData(projId, bldgId);
+  _hvlRenderReverse(projId, bldgId);
+}
+function _hvlRevUpdEquip(projId, bldgId, idx, field, val){
+  const rd = _getRevData(projId, bldgId);
+  if(!rd.equipment[idx]) return;
+  rd.equipment[idx][field] = val;
+  _saveRevData(projId, bldgId);
+}
+function _hvlRevUpdDf(projId, bldgId, idx, moIdx, val){
+  const rd = _getRevData(projId, bldgId);
+  if(!rd.equipment[idx]) return;
+  if(!rd.equipment[idx].demandFactors) rd.equipment[idx].demandFactors = Array(12).fill(0);
+  rd.equipment[idx].demandFactors[moIdx] = val;
+  _saveRevData(projId, bldgId);
+}
+function _hvlRevUpdLf(projId, bldgId, idx, moIdx, val){
+  const rd = _getRevData(projId, bldgId);
+  if(!rd.equipment[idx]) return;
+  if(!rd.equipment[idx].loadFactors) rd.equipment[idx].loadFactors = Array(12).fill(0);
+  rd.equipment[idx].loadFactors[moIdx] = val;
+  _saveRevData(projId, bldgId);
+}
+function _hvlRevAddGasEquip(projId, bldgId){
+  const rd = _getRevData(projId, bldgId);
+  if(!rd.gasEquipment) rd.gasEquipment = [];
+  rd.gasEquipment.push({name:'', type:'Gas Heating', qty:1, size:0, units:'Btu/hr', utilFactors:Array(12).fill(0)});
+  _saveRevData(projId, bldgId);
+  _hvlRenderReverse(projId, bldgId);
+}
+function _hvlRevRemGasEquip(projId, bldgId, idx){
+  const rd = _getRevData(projId, bldgId);
+  rd.gasEquipment.splice(idx,1);
+  _saveRevData(projId, bldgId);
+  _hvlRenderReverse(projId, bldgId);
+}
+function _hvlRevUpdGasEquip(projId, bldgId, idx, field, val){
+  const rd = _getRevData(projId, bldgId);
+  if(!rd.gasEquipment[idx]) return;
+  rd.gasEquipment[idx][field] = val;
+  _saveRevData(projId, bldgId);
+}
+function _hvlRevUpdGasUf(projId, bldgId, idx, moIdx, val){
+  const rd = _getRevData(projId, bldgId);
+  if(!rd.gasEquipment[idx]) return;
+  if(!rd.gasEquipment[idx].utilFactors) rd.gasEquipment[idx].utilFactors = Array(12).fill(0);
+  rd.gasEquipment[idx].utilFactors[moIdx] = val;
+  _saveRevData(projId, bldgId);
+}
+
 function hvacLoadMethod(projId, method, btn){
   document.querySelectorAll('.hvl-method-btn').forEach(b=>{b.classList.remove('active');b.style.background='';b.style.borderColor='';b.style.color='';});
   btn.classList.add('active'); btn.style.background='var(--accent-dim)'; btn.style.borderColor='var(--accent)'; btn.style.color='var(--accent)';
-  ['thumb','benchmark','nameplate'].forEach(m=>{
-    const el=document.getElementById(`hvl-${m}-${projId}`);
-    if(el) el.style.display = m===method ? '' : 'none';
-  });
+  const bldgId = _hvlSelBldg[projId];
+  if(bldgId) _hvlRenderMethod(projId, bldgId, method);
+  // Clear results when switching methods
+  const resWrap = document.getElementById('hvl-results-'+projId);
+  if(resWrap) resWrap.innerHTML='';
 }
 
 // CBECS-derived benchmark data: {buildingType: {climateZone: {kwhHvacPct, kwHvacPct, gasHvacPct}}}
@@ -13114,31 +13914,48 @@ function hvacLoadBenchFill(projId){
 
 function hvacLoadCalc(projId){
   const p = projects.find(x=>x.id===projId); if(!p) return;
-  const sqft = p.sqft||0;
+  // Use selected building's sqft and data
+  const selBid = _hvlSelBldg[projId];
+  const selBldg = selBid ? getUDBldg(projId, selBid) : null;
+  const sqft = selBldg ? (parseInt(selBldg.sqft)||0) : (p.sqft||0);
   // Determine which method is active
-  const thumbEl = document.getElementById(`hvl-thumb-${projId}`);
-  const benchEl = document.getElementById(`hvl-benchmark-${projId}`);
-  const npEl    = document.getElementById(`hvl-nameplate-${projId}`);
-  let method='thumb';
-  if(benchEl&&benchEl.style.display!=='none') method='benchmark';
-  if(npEl&&npEl.style.display!=='none') method='nameplate';
+  const method = selBid ? (_hvlMethod[_hvlKey(projId,selBid)]||'thumb') : 'thumb';
 
-  // Get total utility data from project buildings — use BASELINE data when available
+  // If reverse analysis method, the calc is already done inline — just show toast
+  if(method==='reverse'){
+    showToast('Reverse utility analysis data is calculated inline ✓');
+    return;
+  }
+
+  // Get total utility data from selected building
   let totalKwh=0, totalKw=0, totalGas=0;
-  const bldgs = p.buildings||[];
-  bldgs.forEach(b=>{
-    (b.meters||[]).forEach(m=>{
-      const bl = m.baseline||{};
-      const bills = m.bills||[];
-      // Prefer baseline bills; fall back to all bills
-      const useBills = bl.startIdx!==undefined ? bills.filter((_,i)=>{const bm=bl.months||{};return bm[i]!==false;}) : bills;
-      if(m.type==='electric'){
-        useBills.forEach(bill=>{totalKwh+=(bill.kwh||bill.usage||0);totalKw=Math.max(totalKw,bill.kw||bill.demKW||0);});
-      } else if(m.type==='gas'){
-        useBills.forEach(bill=>{totalGas+=(bill.therms||bill.usage||0);});
-      }
+  if(selBldg){
+    (selBldg.meters||[]).forEach(m=>{
+      (m.bills||[]).forEach(bill=>{
+        if(m.commodity==='Electric'){
+          totalKwh+=(bill.kwh||bill.usage||0);
+          totalKw=Math.max(totalKw,bill.kw||bill.demKW||0);
+        } else if(m.commodity==='Gas'){
+          totalGas+=(bill.therms||bill.usage||0);
+        }
+      });
     });
-  });
+  } else {
+    // Fallback to old project buildings approach
+    const bldgs = p.buildings||[];
+    bldgs.forEach(b=>{
+      (b.meters||[]).forEach(m=>{
+        const bl = m.baseline||{};
+        const bills = m.bills||[];
+        const useBills = bl.startIdx!==undefined ? bills.filter((_,i)=>{const bm=bl.months||{};return bm[i]!==false;}) : bills;
+        if(m.type==='electric'){
+          useBills.forEach(bill=>{totalKwh+=(bill.kwh||bill.usage||0);totalKw=Math.max(totalKw,bill.kw||bill.demKW||0);});
+        } else if(m.type==='gas'){
+          useBills.forEach(bill=>{totalGas+=(bill.therms||bill.usage||0);});
+        }
+      });
+    });
+  }
 
   let hvacKwhPct, hvacKwPct, hvacGasPct;
   let coolKwh=0,heatKwhElec=0,heatGas=0,lightKwh=0,plugKwh=0,otherKwh=0,otherGas=0;
@@ -13232,9 +14049,10 @@ function hvacLoadCalc(projId){
   };
   sset('en_projects', projects);
 
-  // Get buildings for the "Create Savings Measure" building selector
+  // Get buildings for the "Create Savings Measure" building selector (pre-select current building)
   const udBldgs = (typeof getUDBldgs==='function') ? getUDBldgs(projId) : (p.buildings||[]);
-  const bldgOpts = udBldgs.map(b=>`<option value="${b.id}">${b.name||'Building'}</option>`).join('');
+  const _hvlSelBid = _hvlSelBldg[projId]||'';
+  const bldgOpts = udBldgs.map(b=>`<option value="${b.id}"${b.id===_hvlSelBid?' selected':''}>${b.name||'Building'}</option>`).join('');
 
   const wrap = document.getElementById(`hvl-results-${projId}`);
   if(!wrap) return;
@@ -13372,11 +14190,13 @@ function hvacLoadCreateMeasure(projId){
 
   // Add to the project's savings data using the existing structure
   const sd = getProjSavingsData(projId);
+  const _bldgForSqft = bldgId ? getUDBldg(projId, bldgId) : null;
   sd.measures.push({
     id: 'm'+Date.now(),
     selected: true,
     msrNum: (sd.measures.length+1)+'',
     bldgId: bldgId,
+    sqft: _bldgForSqft ? (parseFloat(_bldgForSqft.sqft)||0) : 0,
     desc: desc,
     kwh: kwhSavings,
     kw: kwSavings,
