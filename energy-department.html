@@ -440,6 +440,8 @@ html,body{height:100%;overflow:hidden;}
 .pdt.active{color:var(--em);border-bottom-color:var(--em);font-weight:600;}
 .ptab{display:none;padding:18px;}
 .ptab.active{display:block;}
+.dash-grid{display:grid;grid-template-columns:1fr 360px;gap:16px;}
+@media(max-width:900px){.dash-grid{grid-template-columns:1fr;}}
 /* ── SIDEBAR PROJECT FOLDERS ── */
 .s-proj-header{display:flex;align-items:center;position:relative;}
 .s-proj-toggle{flex:1;text-align:left;}
@@ -4008,7 +4010,8 @@ function renderDetail(p){
     </div>
     <div class="card">
       <div class="pd-tabs" style="overflow-x:auto;flex-wrap:nowrap;white-space:nowrap">
-        <button class="pdt active" onclick="sPTab('notes',this)">📝 Notes</button>
+        <button class="pdt active" onclick="sPTab('dashboard',this)">📊 Dashboard</button>
+        <button class="pdt" onclick="sPTab('notes',this)">📝 Notes</button>
         <button class="pdt" onclick="sPTab('tasks',this)">✅ Tasks</button>
         <button class="pdt" onclick="sPTab('contacts',this)">👥 Contacts</button>
         <button class="pdt" onclick="sPTab('buildings',this)">🏢 Buildings</button>
@@ -4022,7 +4025,13 @@ function renderDetail(p){
         <button class="pdt" onclick="sPTab('meetings',this)">📋 Meetings</button>
         <button class="pdt" onclick="sPTab('docs',this)">📁 Documents</button>
       </div>
-      <div id="ptab-notes" class="ptab active" style="padding:16px">
+      <div id="ptab-dashboard" class="ptab active" style="padding:16px;overflow-y:auto">
+        <div class="dash-grid">
+          <div id="dash-perf-${p.id}"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
+          <div id="dash-cal-${p.id}"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
+        </div>
+      </div>
+      <div id="ptab-notes" class="ptab" style="padding:16px">
         <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">Notes / Description</div>
         <textarea class="fta" style="min-height:150px;width:100%" id="proj-notes-ta" oninput="autoSaveNotes(${p.id})">${p.notes||''}</textarea>
       </div>
@@ -4212,7 +4221,87 @@ function renderDetail(p){
     renderProjBuildingsTab(p.id);
     renderProjEquip(p.id);
     initProjUDTab(p.id);
+    initDashboardTab(p.id);
   });
+}
+
+function initDashboardTab(projId){
+  const p = projects.find(x=>x.id===projId); if(!p) return;
+  const perfWrap = document.getElementById('dash-perf-'+projId);
+  if(!perfWrap) return;
+  const bldgs = getUDBldgs(projId);
+  const estSavings = parseFloat(p.savings)||0;
+
+  if(!bldgs.length || !bldgs.some(b=>(b.meters||[]).some(m=>(m.bills||[]).length>0))){
+    perfWrap.innerHTML = '<div class="card"><div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">Add buildings and utility data to see performance summary.<br><span style="font-size:11px">Use the <strong style="color:var(--accent)">Utility Data</strong> tab to get started.</span></div></div>';
+    return;
+  }
+
+  let totalBl=0, totalCur=0;
+  const bldgRows = bldgs.map(b=>{
+    const meters = b.meters||[];
+    let blCost=0, curCost=0;
+    meters.forEach(m=>{
+      const bills = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+      const bl = m.baseline||{};
+      const blMonths = bl.months||{};
+      bills.forEach((bill,i)=>{
+        const cost = bill.totalCost||bill.cost||0;
+        const isBl = Object.keys(blMonths).length>0 ? blMonths[i]===true : (bl.startIdx===undefined);
+        if(isBl) blCost += cost;
+      });
+      bills.slice(-12).forEach(bill=>{ curCost += (bill.totalCost||bill.cost||0); });
+    });
+    totalBl += blCost;
+    totalCur += curCost;
+    const sav = blCost - curCost;
+    const savPct = blCost>0 ? (sav/blCost*100) : 0;
+    let status = 'No Data', statusColor = 'var(--text3)';
+    if(blCost>0 && curCost>0){
+      if(sav<0){ status='Over Budget'; statusColor='var(--danger)'; }
+      else if(estSavings>0 && sav >= estSavings*0.8){ status='On Track'; statusColor='var(--green)'; }
+      else if(sav>0){ status='Below Target'; statusColor='var(--amber)'; }
+      else { status='No Savings'; statusColor='var(--text3)'; }
+    }
+    return {name:b.name, blCost, curCost, sav, savPct, status, statusColor};
+  });
+
+  const totalSav = totalBl - totalCur;
+  const totalPct = totalBl>0 ? (totalSav/totalBl*100) : 0;
+  const $c = n => '$'+Math.round(Math.abs(n)).toLocaleString();
+
+  perfWrap.innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div style="padding:20px;display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+        <div style="flex:1;min-width:160px">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Total Savings vs Baseline</div>
+          <div style="font-size:32px;font-weight:800;font-family:var(--mono);color:${totalSav>=0?'var(--green)':'var(--danger)'};margin:4px 0">${totalSav>=0?'':'-'}${$c(totalSav)}<span style="font-size:16px;font-weight:600;color:var(--text2)">/yr</span></div>
+          <div style="font-size:12px;color:var(--text2)">${totalPct>=0?'+':''}${totalPct.toFixed(1)}% vs baseline · ${bldgs.length} building${bldgs.length!==1?'s':''}</div>
+        </div>
+        <div style="display:flex;gap:16px">
+          <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Baseline</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(totalBl)}</div></div>
+          <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Current</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(totalCur)}</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Building Performance</span></div>
+      <div style="overflow-x:auto">
+        <table class="dtbl" style="width:100%;font-size:12px">
+          <thead><tr><th>Building</th><th style="text-align:right">Baseline $/yr</th><th style="text-align:right">Current $/yr</th><th style="text-align:right">Savings $</th><th style="text-align:right">%</th><th style="text-align:center">Status</th></tr></thead>
+          <tbody>${bldgRows.map(r=>`<tr>
+            <td style="font-weight:600">${r.name||'—'}</td>
+            <td style="text-align:right;font-family:var(--mono)">${r.blCost>0?$c(r.blCost):'—'}</td>
+            <td style="text-align:right;font-family:var(--mono)">${r.curCost>0?$c(r.curCost):'—'}</td>
+            <td style="text-align:right;font-family:var(--mono);color:${r.sav>=0?'var(--green)':'var(--danger)'}">${r.blCost>0?(r.sav>=0?'':'-')+$c(r.sav):'—'}</td>
+            <td style="text-align:right;font-family:var(--mono)">${r.blCost>0?r.savPct.toFixed(1)+'%':'—'}</td>
+            <td style="text-align:center;font-weight:600;color:${r.statusColor}">${r.status}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  if(typeof renderDashCalendar === 'function') renderDashCalendar(projId);
 }
 
 function updateProg(id,val){
@@ -4239,6 +4328,7 @@ function sPTab(tab,el){
   }
   const p = projects.find(x=>x.id===window._activeProjId);
   if(!p) return;
+  if(tab==='dashboard') initDashboardTab(p.id);
   if(tab==='utility')   initProjUDTab(p.id);
   if(tab==='equipment') renderProjEquip(p.id);
   if(tab==='savings')   initSavingsTab(p.id);
