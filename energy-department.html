@@ -3983,6 +3983,15 @@ function renderDetail(p){
         <div class="pd-cell"><div class="pd-cell-lbl">Open Tasks</div><div class="pd-cell-val" style="color:${openTasks>0?'var(--warn)':'inherit'}">${openTasks}</div></div>
       </div>
     </div>
+    <!-- Project-level buttons row — always visible at top when project is open -->
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 18px;background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;flex-wrap:wrap">
+      <span style="font-size:11px;font-weight:700;color:var(--text2)">Project:</span>
+      <button class="btn btn-ghost btn-sm" id="pd-proj-baseline-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'baseline')">📊 Project Baseline</button>
+      <button class="btn btn-ghost btn-sm" id="pd-proj-savproj-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'savproj')">📈 Projected Savings</button>
+      <button class="btn btn-ghost btn-sm" id="pd-proj-perf-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'perf')">💡 Performance</button>
+    </div>
+    <!-- Project-level panel content (shown when project-level buttons clicked) -->
+    <div id="pd-proj-panel-content-${p.id}" style="display:none;border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;overflow-y:auto;max-height:500px"></div>
     <div class="pd-hero-compact" id="pd-hero-compact" style="display:flex">
       <span class="phc-name">${p.name}</span>
       <span class="phc-sep">|</span>
@@ -4004,15 +4013,6 @@ function renderDetail(p){
         <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px" onclick="openProjModal();editProj(${p.id})">✏️ Edit</button>
       </span>
     </div>
-    <!-- Project-level buttons row -->
-    <div style="display:flex;align-items:center;gap:8px;padding:8px 18px;background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;flex-wrap:wrap">
-      <span style="font-size:11px;font-weight:700;color:var(--text2)">Project:</span>
-      <button class="btn btn-ghost btn-sm" id="pd-proj-baseline-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'baseline')">📊 Project Baseline</button>
-      <button class="btn btn-ghost btn-sm" id="pd-proj-savproj-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'savproj')">📈 Projected Savings</button>
-      <button class="btn btn-ghost btn-sm" id="pd-proj-perf-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'perf')">💡 Performance</button>
-    </div>
-    <!-- Project-level panel content (shown when project-level buttons clicked) -->
-    <div id="pd-proj-panel-content-${p.id}" style="display:none;border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;overflow-y:auto;max-height:500px"></div>
     <div class="card">
       <div class="pd-tabs" id="pdTabBar" style="overflow-x:auto;flex-wrap:nowrap;white-space:nowrap">
         ${_getProjTabHTML()}
