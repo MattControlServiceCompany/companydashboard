@@ -414,6 +414,7 @@ html,body{height:100%;overflow:hidden;}
 .pdt.drag-over{border-left:2px solid var(--accent);}.pdt.dragging{opacity:.4;}
 .ptab{display:none;padding:18px;}
 .ptab.active{display:block;}
+#ptab-dashboard.active{display:flex;flex-direction:column;padding:0;}
 .dash-grid{display:grid;grid-template-columns:1fr 360px;gap:16px;}
 @media(max-width:900px){.dash-grid{grid-template-columns:1fr;}}
 /* ── SIDEBAR PROJECT FOLDERS ── */
@@ -3945,7 +3946,7 @@ function renderDetail(p){
     .map(t=>`<span style="font-size:11px;padding:2px 8px;border-radius:8px;background:var(--s4);border:1px solid var(--border2);color:var(--text2);margin:2px 2px 0 0;display:inline-block">${t}</span>`).join('');
 
   document.getElementById('projDetailContent').innerHTML=`
-    <div class="pd-hero">
+    <div class="pd-hero" style="display:none">
       <div class="pd-hero-top">
         <div style="flex:1;min-width:0">
           <div style="margin-bottom:8px">
@@ -3982,38 +3983,34 @@ function renderDetail(p){
         <div class="pd-cell"><div class="pd-cell-lbl">Open Tasks</div><div class="pd-cell-val" style="color:${openTasks>0?'var(--warn)':'inherit'}">${openTasks}</div></div>
       </div>
     </div>
-    <div class="pd-hero-compact" id="pd-hero-compact">
-      ${(()=>{
-        const _bldgs=getUDBldgs(p.id);
-        const _sqft=_bldgs.reduce((s,b)=>s+parseInt(b.sqft||0),0);
-        let _blCost=0,_blKwh=0;
-        _bldgs.forEach(b=>(b.meters||[]).forEach(m=>{
-          const blBills=_dashGetBaselineBills(m);
-          blBills.forEach(bill=>{_blCost+=(bill.totalCost||bill.cost||0);_blKwh+=(bill.kwh||0);});
-        }));
-        const _eui=(_sqft>0&&_blKwh>0)?(_blKwh*3.412/_sqft).toFixed(1):'—';
-        return '<span class="phc-name">'+p.name+'</span>'+
-          '<span class="phc-sep">|</span>'+
-          '<span>SA# <span class="phc-val">'+(p.sa||'—')+'</span></span>'+
-          '<span class="phc-sep">|</span>'+
-          '<span>Savings <span class="phc-val">'+(p.savings?'$'+Number(p.savings).toLocaleString()+'/yr':'—')+'</span></span>'+
-          '<span class="phc-sep">|</span>'+
-          '<span><span class="phc-val">'+(p.start?new Date(p.start+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—')+'</span> → <span class="phc-val">'+(p.end?new Date(p.end+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—')+'</span></span>'+
-          '<span class="phc-sep">|</span>'+
-          '<span>Baseline <span class="phc-val">'+(_blCost>0?'$'+Math.round(_blCost).toLocaleString():'—')+'</span></span>'+
-          '<span class="phc-sep">|</span>'+
-          '<span>EUI <span class="phc-val">'+_eui+'</span></span>'+
-          '<span class="phc-sep">|</span>'+
-          '<span>Tasks <span class="phc-val" style="'+(openTasks>0?'color:var(--warn)':'')+'">'+openTasks+'</span></span>'+
-          '<span class="phc-sep">|</span>'+
-          '<span><span class="phc-val">'+_bldgs.length+'</span> bldg'+(_bldgs.length!==1?'s':'')+' <span class="phc-val">'+(_sqft?Number(_sqft).toLocaleString()+' sf':'')+'</span></span>';
-      })()}
+    <div class="pd-hero-compact" id="pd-hero-compact" style="display:flex">
+      <span class="phc-name">${p.name}</span>
+      <span class="phc-sep">|</span>
+      <span>SA# <span class="phc-val">${p.sa||'—'}</span></span>
+      <span class="phc-sep">|</span>
+      <span>Savings <span class="phc-val">${p.savings?'$'+Number(p.savings).toLocaleString()+'/yr':'—'}</span></span>
+      <span class="phc-sep">|</span>
+      <span><span class="phc-val">${p.start?new Date(p.start+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</span> → <span class="phc-val">${p.end?new Date(p.end+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</span></span>
+      <span class="phc-sep">|</span>
+      <span id="phc-baseline-${p.id}">Baseline <span class="phc-val">—</span></span>
+      <span class="phc-sep">|</span>
+      <span id="phc-eui-${p.id}">EUI <span class="phc-val">—</span></span>
+      <span class="phc-sep">|</span>
+      <span>Tasks <span class="phc-val" style="${openTasks>0?'color:var(--warn)':''}">${openTasks}</span></span>
+      <span class="phc-sep">|</span>
+      <span><span class="phc-val">${getUDBldgs(p.id).length}</span> bldg${getUDBldgs(p.id).length!==1?'s':''} <span class="phc-val">${getUDBldgs(p.id).reduce((s,b)=>s+parseInt(b.sqft||0),0)?Number(getUDBldgs(p.id).reduce((s,b)=>s+parseInt(b.sqft||0),0)).toLocaleString()+' sf':''}</span></span>
+      <span class="phc-sep">|</span>
+      <span style="display:flex;gap:4px;margin-left:auto;flex-shrink:0">
+        <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px" onclick="sPTab('utility',document.querySelector('.pdt[data-tab=utility]'))">📊 Baseline Data</button>
+        <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px" onclick="sPTab('savings',document.querySelector('.pdt[data-tab=savings]'))">📈 Savings</button>
+        <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px" onclick="openProjModal();editProj(${p.id})">✏️ Edit</button>
+      </span>
     </div>
     <div class="card">
       <div class="pd-tabs" id="pdTabBar" style="overflow-x:auto;flex-wrap:nowrap;white-space:nowrap">
         ${_getProjTabHTML()}
       </div>
-      <div id="ptab-dashboard" class="ptab active" style="padding:0;overflow-y:auto;display:flex;flex-direction:column">
+      <div id="ptab-dashboard" class="ptab active" style="padding:0;overflow-y:auto">
         <div id="dash-hdr-${p.id}"></div>
         <div style="padding:16px;overflow-y:auto;flex:1">
           <div class="dash-grid">
@@ -4210,7 +4207,28 @@ function renderDetail(p){
     renderProjEquip(p.id);
     initProjUDTab(p.id);
     initDashboardTab(p.id);
+    _updateCompactHdrBaseline(p.id);
   });
+}
+
+function _updateCompactHdrBaseline(projId){
+  const bldgs = getUDBldgs(projId);
+  const sqft = bldgs.reduce((s,b)=>s+parseInt(b.sqft||0),0);
+  let blCost=0, blKwh=0, totalCost=0, totalKwh=0;
+  bldgs.forEach(b=>(b.meters||[]).forEach(m=>{
+    const blBills = _dashGetBaselineBills(m);
+    blBills.forEach(bill=>{ blCost+=(parseFloat(bill.totalCost)||parseFloat(bill.cost)||0); blKwh+=(parseFloat(bill.kwh)||parseFloat(bill.usage)||0); });
+    // Also tally all bills for fallback display
+    (m.bills||[]).forEach(bill=>{ totalCost+=(parseFloat(bill.totalCost)||parseFloat(bill.cost)||0); totalKwh+=(parseFloat(bill.kwh)||parseFloat(bill.usage)||0); });
+  }));
+  const useCost = blCost>0 ? blCost : totalCost;
+  const useKwh = blKwh>0 ? blKwh : totalKwh;
+  const label = blCost>0 ? 'Baseline' : 'Total Cost';
+  const eui = (sqft>0 && useKwh>0) ? (useKwh*3.412/sqft).toFixed(1) : '—';
+  const blEl = document.getElementById('phc-baseline-'+projId);
+  const euiEl = document.getElementById('phc-eui-'+projId);
+  if(blEl) blEl.innerHTML = label+' <span class="phc-val">'+(useCost>0?'$'+Math.round(useCost).toLocaleString():'—')+'</span>';
+  if(euiEl) euiEl.innerHTML = 'EUI <span class="phc-val">'+eui+'</span>';
 }
 
 function _dashGetBaselineBills(m){
@@ -4521,16 +4539,11 @@ function sPTab(tab,el){
   document.querySelectorAll('.ptab').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('.pdt').forEach(b=>b.classList.remove('active'));
   document.getElementById('ptab-'+tab).classList.add('active'); el?.classList.add('active');
-  // Full-window mode: hide project hero for data-intensive tabs
+  // Always use compact header — full hero is hidden on all tabs
   const hero = document.querySelector('.pd-hero');
   const compact = document.getElementById('pd-hero-compact');
-  if(FULLWIN_TABS.includes(tab)){
-    if(hero) hero.style.display = 'none';
-    if(compact) compact.style.display = 'flex';
-  } else {
-    if(hero) hero.style.display = '';
-    if(compact) compact.style.display = 'none';
-  }
+  if(hero) hero.style.display = 'none';
+  if(compact) compact.style.display = 'flex';
   const p = projects.find(x=>x.id===window._activeProjId);
   if(!p) return;
   if(tab==='dashboard') initDashboardTab(p.id);
