@@ -5839,8 +5839,8 @@ function scoreExtraction(d){return Object.values(d).filter(v=>v!==null&&v!=='').
 // Expected fields per utility type — fields that should almost always have values
 const EXPECTED_FIELDS={
   Evergy:{
-    critical:['BillingPeriodStart','BillingPeriodEnd','kWhConsumed','TotalCurrentCharges'],
-    important:['CustomerCharge','AccountNumber','NumberOfDays','RateSchedule'],
+    critical:['BillingPeriodStart','BillingPeriodEnd','kWhConsumed','TotalCurrentCharges','ActualKW'],
+    important:['CustomerCharge','AccountNumber','NumberOfDays','RateSchedule','CustomerName','FacilitiesKW','FacilitiesCharge','BilledKWCharge','EnergyOnPeakCharge'],
     chargeFields:['CustomerCharge','FacilitiesCharge','BilledKWCharge','EnergyOnPeakCharge','ECACharge','EERCharge','TDCCharge','FranchiseFee'],
   },
   'Spire / Laclede Gas':{
@@ -6097,6 +6097,163 @@ function _analyzeMeterBills(bills, m){
     if(rowFlags.length) flags[b.id]=rowFlags;
   });
   return flags;
+}
+
+// ── POST-EXTRACTION VERIFICATION ──
+// Uses historical meter data + logical rules to fix extraction errors
+function _postExtractionVerify(bills, utilityName, rawText){
+  if(!bills.length) return bills;
+  const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
+
+  // Gather historical bills for the same account
+  function getHistorical(acct){
+    const hist=[];
+    if(!acct) return hist;
+    const acctClean=acct.replace(/[\s\-]/g,'').toLowerCase();
+    for(const proj of (typeof projects!=='undefined'?projects:[])){
+      const udProj=getUDProj(proj.id);
+      for(const bldg of (udProj.buildings||[])){
+        for(const m of (bldg.meters||[])){
+          if((m.account||'').replace(/[\s\-]/g,'').toLowerCase()===acctClean){
+            for(const b of (m.bills||[])) hist.push(b);
+          }
+        }
+      }
+    }
+    return hist;
+  }
+
+  // Fields that are almost always present on every bill for a given account
+  const ALWAYS_PRESENT_FIELDS = {
+    Evergy: ['CustomerCharge','FacilitiesCharge','BilledKWCharge','EnergyOnPeakCharge','ECACharge','TDCCharge','FranchiseFee','TotalCurrentCharges','kWhConsumed','ActualKW','RateSchedule','CustomerName','FacilitiesKW'],
+    _default: ['TotalCurrentCharges','TotalAmountDue']
+  };
+
+  const alwaysFields = ALWAYS_PRESENT_FIELDS[utilityName] || ALWAYS_PRESENT_FIELDS._default;
+
+  for(let i=0; i<bills.length; i++){
+    const b=bills[i];
+    const hist=getHistorical(b.AccountNumber);
+
+    // 1. Fill missing fields from historical averages/medians
+    if(hist.length>=2){
+      // Map extracted field names to saved bill field names
+      const FIELD_MAP={
+        CustomerCharge:{saved:'customerCharge'},
+        FacilitiesCharge:{saved:'facilitiesCharge'},
+        FacilitiesKW:{saved:'facKW'},
+        RateSchedule:{saved:'rateSchedule'},
+        CustomerName:{saved:'customerName'},
+      };
+
+      for(const field of alwaysFields){
+        const val=b[field];
+        if(val!==null&&val!==undefined&&val!=='') continue; // already has value
+        const mapping=FIELD_MAP[field];
+        if(!mapping) continue;
+        // Check if all/most historical bills have this field
+        const histVals=hist.map(h=>h[mapping.saved]).filter(v=>v!==null&&v!==undefined&&v!=='');
+        const presence=histVals.length/hist.length;
+        if(presence>=0.8){
+          // This field is present on 80%+ of historical bills — likely an OCR miss
+          // For numeric fields, use median; for strings, use most common
+          const numVals=histVals.map(v=>parseFloat(String(v).replace(/,/g,''))).filter(v=>!isNaN(v)&&v>0);
+          if(numVals.length>=2){
+            numVals.sort((a,c)=>a-c);
+            const median=numVals[Math.floor(numVals.length/2)];
+            b[field]=median.toFixed(2);
+            b['_recovered_'+field]=true; // mark as recovered from historical data
+          } else if(histVals.length){
+            // String field — use most common
+            const freq={};
+            histVals.forEach(v=>{freq[v]=(freq[v]||0)+1;});
+            const best=Object.entries(freq).sort((a,c)=>c[1]-a[1])[0];
+            if(best){
+              b[field]=best[0];
+              b['_recovered_'+field]=true;
+            }
+          }
+        }
+      }
+
+      // 2. Check for order-of-magnitude outliers (10x or 100x off)
+      const numericChecks=['kWhConsumed','ActualKW','TotalCurrentCharges','CustomerCharge','BilledKWCharge','EnergyOnPeakCharge','FacilitiesCharge'];
+      for(const field of numericChecks){
+        const val=pf(b[field]);
+        if(val<=0) continue;
+        const SAVED_MAP={kWhConsumed:'kwh',ActualKW:'demandKW',TotalCurrentCharges:'totalCost',CustomerCharge:'customerCharge',BilledKWCharge:'demandCharge',EnergyOnPeakCharge:'onPeakCost',FacilitiesCharge:'facilitiesCharge'};
+        const savedField=SAVED_MAP[field];
+        if(!savedField) continue;
+        const histVals=hist.map(h=>parseFloat(h[savedField])||0).filter(v=>v>0);
+        if(histVals.length<3) continue;
+        const mean=histVals.reduce((a,c)=>a+c,0)/histVals.length;
+        if(mean<=0) continue;
+        const ratio=val/mean;
+        // If value is 10x+ or 0.1x the average, it's likely a decimal point error or OCR digit error
+        if(ratio>=8||ratio<=0.12){
+          // Try to correct: if it's ~10x, divide by 10; if ~100x, divide by 100; if ~0.1x, multiply by 10
+          let corrected=null;
+          if(ratio>=80&&ratio<=120) corrected=val/100;
+          else if(ratio>=8&&ratio<=12) corrected=val/10;
+          else if(ratio>=0.008&&ratio<=0.012) corrected=val*100;
+          else if(ratio>=0.08&&ratio<=0.12) corrected=val*10;
+          if(corrected!==null){
+            const corrRatio=corrected/mean;
+            if(corrRatio>0.3&&corrRatio<3){
+              b[field]=corrected.toFixed(2);
+              b['_corrected_'+field]={original:val,corrected,reason:'Order of magnitude correction (was '+ratio.toFixed(1)+'x average)'};
+            }
+          }
+        }
+      }
+
+      // 3. Recalculate total if components don't sum correctly
+      if(utilityName==='Evergy'){
+        const compSum=pf(b.CustomerCharge)+pf(b.FacilitiesCharge)+pf(b.BilledKWCharge)
+          +pf(b.EnergyOnPeakCharge)+pf(b.EnergyOffPeakCharge)+pf(b.ECACharge)
+          +pf(b.EERCharge)+pf(b.PTSCharge)+pf(b.TDCCharge)
+          +pf(b.TaxExemptDelivery)+pf(b.BillOffset)+pf(b.FranchiseFee);
+        const total=pf(b.TotalCurrentCharges);
+        if(compSum>0&&total>0){
+          const diff=Math.abs(compSum-total);
+          // If components are close to a historical average total, trust components
+          if(diff>2){
+            const histTotals=hist.map(h=>parseFloat(h.totalCost)||0).filter(v=>v>0);
+            if(histTotals.length>=3){
+              const avgTotal=histTotals.reduce((a,c)=>a+c,0)/histTotals.length;
+              const compRatio=compSum/avgTotal;
+              const totalRatio=total/avgTotal;
+              // If component sum is closer to average than the stated total, use component sum
+              if(Math.abs(compRatio-1)<Math.abs(totalRatio-1)&&diff>total*0.05){
+                b['_corrected_TotalCurrentCharges']={original:total,corrected:compSum,reason:'Component sum ($'+compSum.toFixed(2)+') is closer to historical average ($'+avgTotal.toFixed(2)+') than stated total ($'+total.toFixed(2)+')'};
+                b.TotalCurrentCharges=compSum.toFixed(2);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 4. Cross-bill consistency within the same PDF (multi-bill)
+    if(bills.length>1){
+      // If most bills in this PDF have a field but one doesn't, flag it harder
+      for(const field of alwaysFields){
+        if(b[field]!==null&&b[field]!==undefined&&b[field]!=='') continue;
+        const othersHave=bills.filter((ob,oi)=>oi!==i&&ob[field]!==null&&ob[field]!==undefined&&ob[field]!=='').length;
+        if(othersHave>=Math.max(1,bills.length-1)){
+          // All other bills in this PDF have this field — very likely OCR miss
+          const otherVals=bills.filter((ob,oi)=>oi!==i).map(ob=>pf(ob[field])).filter(v=>v>0);
+          if(otherVals.length){
+            otherVals.sort((a,c)=>a-c);
+            const median=otherVals[Math.floor(otherVals.length/2)];
+            b[field]=median.toFixed(2);
+            b['_recovered_'+field]=true;
+          }
+        }
+      }
+    }
+  }
+  return bills;
 }
 
 // Run full validation + stats on extracted bill(s), return combined warnings per bill index
@@ -6476,8 +6633,10 @@ async function processPDF(file){
             }
           }
 
-          // ── Run validation + statistical analysis on final bills ──
-          const finalBills=validBills.length?validBills:(bills.length?bills:[]);
+          // ── POST-EXTRACTION VERIFICATION: use historical data + logic to fix issues ──
+          let finalBills=validBills.length?validBills:(bills.length?bills:[]);
+          statusMsg('Verifying extraction against historical data...');
+          finalBills = _postExtractionVerify(finalBills, rule.name, text);
           const analysisResults=analyzeBillExtraction(finalBills, rule.name);
           window._pdfBillWarnings=analysisResults;
 
@@ -6546,10 +6705,16 @@ async function processPDF(file){
 function renderMultiBillUI(bills, box){
   const idx = window._pdfMultiIdx||0;
   const b = bills[idx];
+  const warnings = window._pdfBillWarnings||[];
   const nav = bills.map((bill,i)=>{
     const lbl = bill.BillingPeriodStart ? (()=>{const p=bill.BillingPeriodStart.split('/');return p[2]?p[0]+'/'+p[2].slice(2):'Period '+(i+1);})() : 'Period '+(i+1);
     const active = i===idx;
-    return `<button onclick="selectMultiBill(${i})" style="font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:5px;border:1px solid ${active?'var(--accent)':'var(--border2)'};background:${active?'var(--accent-dim)':'transparent'};color:${active?'var(--accent)':'var(--text2)'};cursor:pointer">${lbl}</button>`;
+    const bw = warnings[i]?.warnings||[];
+    const hasIssues = bw.some(w=>w.level==='error'||w.level==='warn');
+    const pillColor = active ? 'var(--accent)' : hasIssues ? 'var(--amber)' : 'var(--text2)';
+    const pillBorder = active ? 'var(--accent)' : hasIssues ? 'var(--amber)' : 'var(--border2)';
+    const pillBg = active ? 'var(--accent-dim)' : hasIssues ? 'var(--amber-dim)' : 'transparent';
+    return `<button onclick="selectMultiBill(${i})" style="font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${hasIssues?'700':'400'}">${lbl}${hasIssues?' ⚠':''}</button>`;
   }).join('');
   box.innerHTML=`<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
     <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">Billing Period:</span>${nav}
@@ -6610,12 +6775,18 @@ function renderPDFFields(parsed, warnings){
   const wBorder={error:'rgba(239,68,68,.3)',warn:'rgba(245,158,11,.3)',info:'rgba(96,165,250,.2)'};
   const wIcon={error:'⛔','warn':'⚠️',info:'ℹ️'};
 
-  // Build field HTML with inline warnings
-  const fieldHtml=items.map(([k,v])=>{
+  // Build field HTML with inline warnings + recovery/correction indicators
+  const fieldHtml=items.filter(([k])=>!k.startsWith('_recovered_')&&!k.startsWith('_corrected_')).map(([k,v])=>{
     const fw=warnMap[k]||[];
-    const borderStyle=fw.length?'border-left:3px solid '+wColor[fw[0].level]:'';
+    const recovered = parsed['_recovered_'+k];
+    const corrected = parsed['_corrected_'+k];
+    let borderStyle=fw.length?'border-left:3px solid '+wColor[fw[0].level]:'';
+    if(recovered&&!fw.length) borderStyle='border-left:3px solid #a78bfa;padding-left:8px';
+    if(corrected&&!fw.length) borderStyle='border-left:3px solid #fb923c;padding-left:8px';
     const warnHtml=fw.map(w=>`<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:${wBg[w.level]};border:1px solid ${wBorder[w.level]};color:${wColor[w.level]};line-height:1.4">${wIcon[w.level]} ${w.message}</div>`).join('');
-    return `<div class="ef-item" style="${borderStyle?borderStyle+';padding-left:8px':''}"><div class="ef-key">${LABELS[k]||k}</div><input class="ef-input" value="${Array.isArray(v)?v.join(', '):(v||'')}" data-key="${k}">${warnHtml}</div>`;
+    const recoveredHtml=recovered?'<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.25);color:#a78bfa;line-height:1.4">🔄 Recovered from historical bills — verify this value</div>':'';
+    const correctedHtml=corrected?'<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.25);color:#fb923c;line-height:1.4">🔧 Auto-corrected: was '+corrected.original+' → '+corrected.corrected+' ('+corrected.reason+')</div>':'';
+    return `<div class="ef-item" style="${borderStyle?borderStyle+(borderStyle.includes('padding')?'':';padding-left:8px'):''}"><div class="ef-key">${LABELS[k]||k}</div><input class="ef-input" value="${Array.isArray(v)?v.join(', '):(v||'')}" data-key="${k}">${warnHtml}${recoveredHtml}${correctedHtml}</div>`;
   }).join('');
 
   // Missing critical fields (not in items because they're null) — show as flagged empty fields
@@ -6633,7 +6804,14 @@ function renderPDFFields(parsed, warnings){
     if(errorCount) parts.push('<span style="color:#ef4444;font-weight:700">'+errorCount+' missing</span>');
     if(warnCount) parts.push('<span style="color:#f59e0b;font-weight:700">'+warnCount+' warning'+(warnCount>1?'s':'')+'</span>');
     if(infoCount) parts.push('<span style="color:#60a5fa">'+infoCount+' note'+(infoCount>1?'s':'')+'</span>');
-    summaryHtml='<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);font-size:12px;line-height:1.5;color:var(--text2)">Data Analysis: '+parts.join(' · ')+'<br><span style="font-size:11px;opacity:.8">Review flagged fields below. Missing values may indicate OCR issues — edit fields to correct.</span></div>';
+    // Build clickable field links for each warning
+    const flaggedFields = warnings.filter(w=>w.level==='error'||w.level==='warn').map(w=>{
+      const label = LABELS[w.field]||w.field;
+      const color = w.level==='error'?'#ef4444':'#f59e0b';
+      return `<a href="#" onclick="event.preventDefault();document.querySelector('.ef-input[data-key=\\'${w.field}\\']')?.closest('.ef-item')?.scrollIntoView({behavior:'smooth',block:'center'});document.querySelector('.ef-input[data-key=\\'${w.field}\\']')?.focus()" style="color:${color};text-decoration:underline;cursor:pointer;font-size:11px">${label}</a>`;
+    });
+    const flagLinks = flaggedFields.length ? '<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">'+flaggedFields.join('')+'</div>' : '';
+    summaryHtml='<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);font-size:12px;line-height:1.5;color:var(--text2)">Data Analysis: '+parts.join(' · ')+'<br><span style="font-size:11px;opacity:.8">Click a field to jump to it. Missing values may indicate OCR issues — edit to correct.</span>'+flagLinks+'</div>';
   } else if(warnings.length===0 && items.length>5){
     summaryHtml='<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);font-size:12px;color:#22c55e">✓ All expected fields present — values within normal ranges</div>';
   }
