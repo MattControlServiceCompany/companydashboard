@@ -3986,9 +3986,8 @@ function renderDetail(p){
         const _sqft=_bldgs.reduce((s,b)=>s+parseInt(b.sqft||0),0);
         let _blCost=0,_blKwh=0;
         _bldgs.forEach(b=>(b.meters||[]).forEach(m=>{
-          const bills=(m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
-          const bm=(m.baseline||{}).months||{};
-          if(Object.keys(bm).length) bills.forEach((bill,i)=>{ if(bm[i]===true){_blCost+=(bill.totalCost||bill.cost||0);_blKwh+=(bill.kwh||0);} });
+          const blBills=_dashGetBaselineBills(m);
+          blBills.forEach(bill=>{_blCost+=(bill.totalCost||bill.cost||0);_blKwh+=(bill.kwh||0);});
         }));
         const _eui=(_sqft>0&&_blKwh>0)?(_blKwh*3.412/_sqft).toFixed(1):'—';
         return '<span class="phc-name">'+p.name+'</span>'+
@@ -4216,10 +4215,13 @@ function _dashGetBaselineBills(m){
   // Return only bills selected as baseline for this meter
   const bills = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
   const bl = m.baseline||{};
-  const blMonths = bl.months||{};
-  const hasSelection = Object.keys(blMonths).length>0;
-  if(!hasSelection) return [];
-  return bills.filter((_,i)=>blMonths[i]===true);
+  const blMonths = bl.months||[];
+  if(!blMonths.length) return [];
+  const incl = m.inclusive!==false;
+  return bills.filter(b=>{
+    const ym = normMonth(b.start, b.end, incl, bills);
+    return blMonths.includes(ym);
+  });
 }
 
 function initDashboardTab(projId){
@@ -9631,10 +9633,38 @@ function renderBaselinePane(pane, m, bills, incl){
     }
   }
 
+  // ── Baseline validation warnings ──
+  let blWarnings = '';
+  if(hasBl){
+    const warns = [];
+    // 1. Check < 12 months
+    if(blRows.length < 12){
+      warns.push('⚠ Only '+blRows.length+' month'+(blRows.length!==1?'s':'')+' selected. A minimum of 12 consecutive months is recommended for a reliable baseline.');
+    }
+    // 2. Check for gaps (non-concurrent months)
+    const sortedYms = blRows.map(r=>r.ym).sort();
+    for(let gi=1;gi<sortedYms.length;gi++){
+      const [py,pm]=sortedYms[gi-1].split('-').map(Number);
+      const [cy,cm]=sortedYms[gi].split('-').map(Number);
+      const expected = pm===12 ? (py+1)+'-01' : py+'-'+(pm+1<10?'0':'')+(pm+1);
+      if(sortedYms[gi]!==expected){
+        warns.push('⚠ Gap detected between '+sortedYms[gi-1]+' and '+sortedYms[gi]+'. Baseline months should be consecutive for accurate regression analysis.');
+        break;
+      }
+    }
+    if(warns.length){
+      blWarnings = '<div style="margin-bottom:10px">'+warns.map(w=>
+        '<div style="font-size:12px;color:var(--amber);background:var(--amber-dim);border:1px solid rgba(245,158,11,.25);border-radius:6px;padding:8px 12px;margin-bottom:6px;font-weight:500">'+w+'</div>'
+      ).join('')+'</div>';
+    }
+  }
+
   pane.innerHTML=
     // ── Control bar ──
     blControlBar +
     basisNote +
+    // ── Baseline validation warnings ──
+    blWarnings +
     // ── Compact stats strip ──
     '<div id="blStatsWrap" style="margin-bottom:10px">'+blStatsInner+'</div>'+
     // ── kWh Chart ──
@@ -14102,15 +14132,16 @@ function _hvlRenderBaselineSummary(projId, b){
   const elecM = meters.find(m=>m.commodity==='Electric');
   const gasM = meters.find(m=>m.commodity==='Gas');
 
-  // Gather baseline bills
+  // Gather baseline-selected bills (falls back to all bills if no baseline set)
   function getBillsByMonth(meter){
     if(!meter) return {};
-    const bills = (meter.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+    const blBills = _dashGetBaselineBills(meter);
+    const bills = blBills.length ? blBills : (meter.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
     const byMo = {};
     bills.forEach(bill=>{
-      const d = new Date(bill.start);
+      const d = new Date(bill.start+'T12:00:00');
       const mo = d.getMonth();
-      // Use latest bill for each month
+      // Use latest bill for each calendar month
       byMo[mo] = bill;
     });
     return byMo;
