@@ -5729,6 +5729,225 @@ const UTILITY_RULES=[
 ];
 function scoreExtraction(d){return Object.values(d).filter(v=>v!==null&&v!=='').length;}
 
+// ══════════════════════════════════════════════════════════════════════════════
+// BILL DATA VALIDATION & STATISTICAL ANALYSIS
+// Validates extracted bill data, flags missing fields, detects statistical
+// outliers by comparing against historical bills for the same account/meter.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Expected fields per utility type — fields that should almost always have values
+const EXPECTED_FIELDS={
+  Evergy:{
+    critical:['BillingPeriodStart','BillingPeriodEnd','kWhConsumed','TotalCurrentCharges'],
+    important:['CustomerCharge','AccountNumber','NumberOfDays','RateSchedule'],
+    chargeFields:['CustomerCharge','FacilitiesCharge','BilledKWCharge','EnergyOnPeakCharge','ECACharge','EERCharge','TDCCharge','FranchiseFee'],
+  },
+  'Spire / Laclede Gas':{
+    critical:['BillingPeriodStart','BillingPeriodEnd','NaturalGasTherms','TotalAmountDue'],
+    important:['AccountNumber','NumberOfDays'],
+    chargeFields:[],
+  },
+  'City of Louisburg':{
+    critical:['BillingPeriodStart','BillingPeriodEnd','TotalAmountDue'],
+    important:['AccountNumber','NumberOfDays'],
+    chargeFields:[],
+  },
+  'Propane / Fuel Oil Delivery':{
+    critical:['GallonsDelivered','TotalCurrentCharges'],
+    important:['BillDate','UnitPrice'],
+    chargeFields:[],
+  },
+  _default:{
+    critical:['BillingPeriodStart','BillingPeriodEnd','TotalAmountDue'],
+    important:['AccountNumber'],
+    chargeFields:[],
+  }
+};
+
+// Validate a single extracted bill — returns array of {level, field, message}
+function validateBillData(extracted, utilityName){
+  const warnings=[];
+  if(!extracted) return [{level:'error',field:'_all',message:'No data extracted'}];
+  const spec=EXPECTED_FIELDS[utilityName]||EXPECTED_FIELDS._default;
+
+  // Check critical fields
+  for(const f of spec.critical){
+    const v=extracted[f];
+    if(v===null||v===undefined||v===''){
+      warnings.push({level:'error',field:f,message:'Missing — this field is normally present on '+utilityName+' bills'});
+    }
+  }
+  // Check important fields
+  for(const f of spec.important){
+    const v=extracted[f];
+    if(v===null||v===undefined||v===''){
+      warnings.push({level:'warn',field:f,message:'Missing — usually present on '+utilityName+' bills'});
+    }
+  }
+
+  // Validate charge math: component charges should sum to ~total
+  const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
+  if(utilityName==='Evergy'){
+    const total=pf(extracted.TotalCurrentCharges);
+    if(total>0){
+      const compSum=pf(extracted.CustomerCharge)+pf(extracted.FacilitiesCharge)+pf(extracted.BilledKWCharge)
+        +pf(extracted.EnergyOnPeakCharge)+pf(extracted.EnergyOffPeakCharge)+pf(extracted.ECACharge)
+        +pf(extracted.EERCharge)+pf(extracted.PTSCharge)+pf(extracted.TDCCharge)
+        +pf(extracted.TaxExemptDelivery)+pf(extracted.BillOffset)+pf(extracted.FranchiseFee);
+      const diff=Math.abs(compSum-total);
+      if(diff>1.00){
+        warnings.push({level:'warn',field:'TotalCurrentCharges',
+          message:'Charges sum to $'+compSum.toFixed(2)+' but total is $'+total.toFixed(2)+' (diff $'+diff.toFixed(2)+')'});
+      }
+    }
+    // Zero charge fields that should have values
+    for(const f of spec.chargeFields){
+      if(extracted[f]!==null && extracted[f]!==undefined && extracted[f]!=='' && pf(extracted[f])===0){
+        warnings.push({level:'info',field:f,message:'Value is $0.00 — verify this is correct'});
+      }
+    }
+  }
+
+  // Validate billing period days are reasonable (15-45 typical, warn outside 10-90)
+  const days=pf(extracted.NumberOfDays);
+  if(days>0 && (days<10||days>90)){
+    warnings.push({level:'warn',field:'NumberOfDays',message:days+' days is unusual — typical billing period is 28-33 days'});
+  }
+
+  // Validate date format and logic
+  if(extracted.BillingPeriodStart && extracted.BillingPeriodEnd){
+    try{
+      const s=new Date(extracted.BillingPeriodStart), e=new Date(extracted.BillingPeriodEnd);
+      if(e<=s) warnings.push({level:'error',field:'BillingPeriodEnd',message:'End date is before or equal to start date'});
+      if(e>new Date(Date.now()+86400000*60)) warnings.push({level:'warn',field:'BillingPeriodEnd',message:'End date is in the future — possible OCR misread'});
+    }catch(ex){}
+  }
+
+  // Validate kWh is reasonable (non-zero for electric)
+  if(utilityName==='Evergy'){
+    const kwh=pf(extracted.kWhConsumed);
+    if(kwh>0 && kwh<10) warnings.push({level:'warn',field:'kWhConsumed',message:kwh+' kWh seems very low — possible OCR misread'});
+    if(kwh>5000000) warnings.push({level:'warn',field:'kWhConsumed',message:kwh.toLocaleString()+' kWh seems very high — possible OCR misread'});
+  }
+
+  return warnings;
+}
+
+// Statistical outlier detection — compare against historical bills for same account/meter
+function detectStatisticalOutliers(extracted){
+  const warnings=[];
+  if(!extracted||!extracted.AccountNumber) return warnings;
+  const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
+  const acct=(extracted.AccountNumber||'').replace(/[\s\-]/g,'').toLowerCase();
+
+  // Gather historical bills from all meters across all projects
+  const historicalBills=[];
+  for(const proj of (typeof projects!=='undefined'?projects:[])){
+    const udProj=getUDProj(proj.id);
+    for(const bldg of (udProj.buildings||[])){
+      for(const m of (bldg.meters||[])){
+        const ma=(m.account||'').replace(/[\s\-]/g,'').toLowerCase();
+        if(acct&&ma&&acct===ma){
+          for(const b of (m.bills||[])){
+            historicalBills.push(b);
+          }
+        }
+      }
+    }
+  }
+
+  // Also check en_pdf_bills for matching account
+  const pdfBills=sget('en_pdf_bills',[])||[];
+  for(const b of pdfBills){
+    const ba=(b.AccountNumber||'').replace(/[\s\-]/g,'').toLowerCase();
+    if(acct&&ba&&acct===ba) historicalBills.push(b);
+  }
+
+  if(historicalBills.length<3) return warnings; // Need at least 3 historical bills for meaningful stats
+
+  // Helper: compute mean and stddev for a numeric field across historical bills
+  function getStats(bills, fieldOrFn){
+    const vals=bills.map(b=>typeof fieldOrFn==='function'?fieldOrFn(b):pf(b[fieldOrFn])).filter(v=>v>0);
+    if(vals.length<3) return null;
+    const mean=vals.reduce((a,b)=>a+b,0)/vals.length;
+    const variance=vals.reduce((a,b)=>a+(b-mean)**2,0)/vals.length;
+    const stddev=Math.sqrt(variance);
+    const min=Math.min(...vals);
+    const max=Math.max(...vals);
+    return {mean,stddev,min,max,count:vals.length};
+  }
+
+  // Check kWh
+  const kwhVal=pf(extracted.kWhConsumed);
+  if(kwhVal>0){
+    const kwhStats=getStats(historicalBills,b=>pf(b.kwh||b.kWhConsumed));
+    if(kwhStats){
+      const zScore=kwhStats.stddev>0?Math.abs(kwhVal-kwhStats.mean)/kwhStats.stddev:0;
+      if(zScore>3){
+        warnings.push({level:'warn',field:'kWhConsumed',
+          message:'Statistical outlier: '+kwhVal.toLocaleString()+' kWh is '+zScore.toFixed(1)+'σ from average '+Math.round(kwhStats.mean).toLocaleString()+' kWh (based on '+kwhStats.count+' bills)'});
+      } else if(kwhVal>kwhStats.max*2||kwhVal<kwhStats.min*0.3){
+        warnings.push({level:'info',field:'kWhConsumed',
+          message:'Unusual: '+kwhVal.toLocaleString()+' kWh vs historical range '+Math.round(kwhStats.min).toLocaleString()+'–'+Math.round(kwhStats.max).toLocaleString()+' kWh'});
+      }
+    }
+  }
+
+  // Check total charges
+  const totalVal=pf(extracted.TotalCurrentCharges||extracted.TotalAmountDue);
+  if(totalVal>0){
+    const totalStats=getStats(historicalBills,b=>pf(b.totalCost||b.TotalCurrentCharges||b.TotalAmountDue));
+    if(totalStats){
+      const zScore=totalStats.stddev>0?Math.abs(totalVal-totalStats.mean)/totalStats.stddev:0;
+      if(zScore>3){
+        warnings.push({level:'warn',field:'TotalCurrentCharges',
+          message:'Statistical outlier: $'+totalVal.toFixed(2)+' is '+zScore.toFixed(1)+'σ from average $'+totalStats.mean.toFixed(2)+' (based on '+totalStats.count+' bills)'});
+      } else if(totalVal>totalStats.max*2||totalVal<totalStats.min*0.3){
+        warnings.push({level:'info',field:'TotalCurrentCharges',
+          message:'Unusual: $'+totalVal.toFixed(2)+' vs historical range $'+totalStats.min.toFixed(2)+'–$'+totalStats.max.toFixed(2)});
+      }
+    }
+  }
+
+  // Check demand kW (electric only)
+  const demandVal=pf(extracted.ActualKW||extracted.BilledKW);
+  if(demandVal>0){
+    const demStats=getStats(historicalBills,b=>pf(b.demandKW||b.ActualKW||b.billedKW||b.BilledKW));
+    if(demStats){
+      const zScore=demStats.stddev>0?Math.abs(demandVal-demStats.mean)/demStats.stddev:0;
+      if(zScore>3){
+        warnings.push({level:'warn',field:'ActualKW',
+          message:'Statistical outlier: '+demandVal+' kW is '+zScore.toFixed(1)+'σ from average '+demStats.mean.toFixed(1)+' kW'});
+      }
+    }
+  }
+
+  return warnings;
+}
+
+// Run full validation + stats on extracted bill(s), return combined warnings per bill index
+function analyzeBillExtraction(bills, utilityName){
+  const results=[];
+  for(let i=0;i<bills.length;i++){
+    const b=bills[i];
+    const vWarnings=validateBillData(b, utilityName||b.UtilityCompany||'_default');
+    const sWarnings=detectStatisticalOutliers(b);
+    results.push({billIndex:i, warnings:[...vWarnings,...sWarnings]});
+  }
+  return results;
+}
+
+// Count critical missing fields that OCR retry might fix
+function countCriticalMissing(extracted, utilityName){
+  const spec=EXPECTED_FIELDS[utilityName]||EXPECTED_FIELDS._default;
+  let count=0;
+  for(const f of spec.critical){
+    const v=extracted[f];
+    if(v===null||v===undefined||v==='') count++;
+  }
+  return count;
+}
+
 // ── Auto-assign: scan all meters across all projects/buildings for account or meter number match ──
 let _autoAssignTarget=null; // {projId, bldgId, meterId}
 function findMeterMatch(extracted){
@@ -5792,6 +6011,7 @@ function clearPDFOCR(){
   window._pdfMultiBills=null;
   window._pdfMultiIdx=0;
   window._pdfRawText=null;
+  window._pdfBillWarnings=null;
   document.getElementById('dz-title').textContent='Drop PDF here or click to browse';
   document.getElementById('pdfInput').value='';
   document.getElementById('extractedFields').innerHTML='';
@@ -5996,43 +6216,125 @@ async function processPDF(file){
 
     // ── UTILITY BILLS: 100% local rule-based extraction, no AI ──
     if(pdfType==='utility'){
-      const text=await extractPDFText(ab, msg=>{
+      const statusMsg=msg=>{
         box.innerHTML='<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> '+msg+'</div>';
         globalTaskUpdate('📄 '+msg);
-      });
+      };
+      let text=await extractPDFText(ab, statusMsg);
       if(text&&text.trim().length>100){
         window._pdfRawText=text;
         document.getElementById('pdfDebugBtn').style.display='inline-block';
         const rule=UTILITY_RULES.find(r=>r.detect(text));
         if(rule){
           // Use extractAll if available (multi-bill PDF support)
-          const bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
-          const validBills = bills.filter(b=>b.BillingPeriodStart||b.kWhConsumed);
-          if(validBills.length>1){
+          let bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
+          let validBills = bills.filter(b=>b.BillingPeriodStart||b.kWhConsumed);
+
+          // ── OCR RETRY: If critical fields are missing, retry with enhanced OCR ──
+          const retryBills=validBills.length?validBills:bills;
+          const worstMissing=Math.max(...retryBills.map(b=>countCriticalMissing(b,rule.name)));
+          if(worstMissing>0 && typeof Tesseract!=='undefined'){
+            statusMsg('Validating extraction... '+worstMissing+' critical field'+(worstMissing>1?'s':'')+' missing — retrying OCR...');
+            // Retry with aggressive OCR settings on all pages (not just blank ones)
+            const RETRY_SCALES=[3.0, 3.5, 4.0];
+            let bestText=text, bestMissing=worstMissing;
+            let retryWorker;
+            try{
+              retryWorker=await Tesseract.createWorker('eng',1,{logger:m=>{
+                if(m.status==='loading tesseract core') statusMsg('Loading OCR engine for retry...');
+              }});
+            }catch(e){retryWorker=null;}
+            if(retryWorker){
+              const pdf2=await pdfjsLib.getDocument({data:ab,useWorkerFetch:false,isEvalSupported:false,useSystemFonts:true}).promise;
+              const maxPg=Math.min(pdf2.numPages,200);
+              for(const scale of RETRY_SCALES){
+                if(bestMissing===0) break;
+                statusMsg('OCR retry at '+scale+'x scale ('+bestMissing+' missing field'+(bestMissing>1?'s':'')+')...');
+                const retryTexts=[];
+                for(let i=1;i<=maxPg;i++){
+                  const pg=await pdf2.getPage(i);
+                  const vp=pg.getViewport({scale});
+                  const canvas=document.createElement('canvas');
+                  canvas.width=vp.width;canvas.height=vp.height;
+                  const ctx=canvas.getContext('2d');
+                  await pg.render({canvasContext:ctx,viewport:vp}).promise;
+                  try{
+                    const {data:{text:ocrText}}=await retryWorker.recognize(canvas);
+                    retryTexts.push(ocrText);
+                  }catch(e){retryTexts.push('');}
+                }
+                const retryFull=retryTexts.join('\n');
+                if(retryFull.trim().length>100){
+                  const retryRule=UTILITY_RULES.find(r=>r.detect(retryFull));
+                  if(retryRule){
+                    const retryBills2=retryRule.extractAll?retryRule.extractAll(retryFull):[retryRule.extract(retryFull)];
+                    const retryValid=retryBills2.filter(b=>b.BillingPeriodStart||b.kWhConsumed);
+                    const retryCheck=retryValid.length?retryValid:retryBills2;
+                    const retryMissing=Math.max(...retryCheck.map(b=>countCriticalMissing(b,retryRule.name)));
+                    if(retryMissing<bestMissing){
+                      bestText=retryFull;bestMissing=retryMissing;
+                      bills=retryBills2;validBills=retryValid;
+                      window._pdfRawText=retryFull;
+                    }
+                    // Also merge: fill in any null fields from retry into original
+                    if(retryCheck.length===retryBills.length){
+                      for(let bi=0;bi<retryBills.length;bi++){
+                        const orig=retryBills[bi],retry=retryCheck[bi];
+                        if(!orig||!retry) continue;
+                        for(const [k,v] of Object.entries(retry)){
+                          if((orig[k]===null||orig[k]===undefined||orig[k]==='')&&v!==null&&v!==undefined&&v!==''){
+                            orig[k]=v; // fill gap from retry
+                          }
+                        }
+                      }
+                      // Recount after merge
+                      const mergedMissing=Math.max(...retryBills.map(b=>countCriticalMissing(b,rule.name)));
+                      if(mergedMissing<bestMissing){
+                        bestMissing=mergedMissing;
+                        bills=retryBills.slice();validBills=bills.filter(b=>b.BillingPeriodStart||b.kWhConsumed);
+                      }
+                    }
+                    if(bestMissing===0) break;
+                  }
+                }
+              }
+              await retryWorker.terminate();
+            }
+          }
+
+          // ── Run validation + statistical analysis on final bills ──
+          const finalBills=validBills.length?validBills:(bills.length?bills:[]);
+          const analysisResults=analyzeBillExtraction(finalBills, rule.name);
+          window._pdfBillWarnings=analysisResults;
+
+          if(finalBills.length>1){
             // Multi-bill: store all, show first, let user browse
-            window._pdfMultiBills = validBills;
+            window._pdfMultiBills = finalBills;
             window._pdfMultiIdx  = 0;
-            renderMultiBillUI(validBills, box);
-            renderPDFFields(validBills[0]);
+            renderMultiBillUI(finalBills, box);
+            renderPDFFields(finalBills[0], analysisResults[0]?.warnings||[]);
             document.getElementById('pdfSaveRow').style.display='block';
             document.getElementById('pdfClearBtn').style.display='block';
             refreshProjDropdowns();
-            showExtractionBadge('rules',rule.name+' · '+validBills.length+' billing periods');
-            dz.textContent=file.name+' ✓ ('+validBills.length+' periods)';
-            showToast(validBills.length+' billing periods extracted ✓');
-            showAutoAssignBanner(findMeterMatch(validBills[0]), validBills[0]);
+            const warnCount=analysisResults.reduce((s,r)=>s+r.warnings.filter(w=>w.level==='error'||w.level==='warn').length,0);
+            showExtractionBadge('rules',rule.name+' · '+finalBills.length+' periods'+(warnCount?' · '+warnCount+' warning'+(warnCount>1?'s':''):''));
+            dz.textContent=file.name+' ✓ ('+finalBills.length+' periods'+(warnCount?', '+warnCount+' warnings':'')+')';
+            showToast(finalBills.length+' billing periods extracted'+(warnCount?' — '+warnCount+' warning'+(warnCount>1?'s':'')+' found':''));
+            showAutoAssignBanner(findMeterMatch(finalBills[0]), finalBills[0]);
           } else {
-            const extracted = validBills[0]||bills[0];
+            const extracted = finalBills[0]||bills[0];
             window._pdfMultiBills = [extracted]; // always store as array for consistency
             window._pdfMultiIdx = 0;
-            renderPDFFields(extracted);
+            const billWarnings=analysisResults[0]?.warnings||[];
+            renderPDFFields(extracted, billWarnings);
             box.textContent=JSON.stringify(extracted,null,2);
             document.getElementById('pdfSaveRow').style.display='block';
             document.getElementById('pdfClearBtn').style.display='block';
             refreshProjDropdowns();
-            showExtractionBadge('rules',rule.name+' · 1 billing period');
-            dz.textContent=file.name+' ✓';
-            showToast('Extracted locally — '+rule.name+' ✓');
+            const warnCount=billWarnings.filter(w=>w.level==='error'||w.level==='warn').length;
+            showExtractionBadge('rules',rule.name+' · 1 period'+(warnCount?' · '+warnCount+' warning'+(warnCount>1?'s':''):''));
+            dz.textContent=file.name+' ✓'+(warnCount?' ('+warnCount+' warnings)':'');
+            showToast('Extracted locally — '+rule.name+(warnCount?' — '+warnCount+' warning'+(warnCount>1?'s':''):' ✓'));
             showAutoAssignBanner(findMeterMatch(extracted), extracted);
           }
           globalTaskDone();
@@ -6086,7 +6388,8 @@ function selectMultiBill(i){
   window._pdfMultiIdx = i;
   const box = document.getElementById('pdfAIBox');
   renderMultiBillUI(bills, box);
-  renderPDFFields(bills[i]);
+  const billWarnings=(window._pdfBillWarnings||[])[i]?.warnings||[];
+  renderPDFFields(bills[i], billWarnings);
 }
 async function savePDFAllBills(){
   const bills = window._pdfMultiBills; if(!bills||!bills.length) return;
@@ -6099,7 +6402,8 @@ async function savePDFAllBills(){
   }
   showToast(saved+' of '+bills.length+' periods saved ✓');
 }
-function renderPDFFields(parsed){
+function renderPDFFields(parsed, warnings){
+  warnings=warnings||[];
   const LABELS={
     UtilityCompany:'Utility Company',CustomerName:'Customer Name',AccountNumber:'Account Number',
     ServiceAddress:'Service Address',RateSchedule:'Rate Schedule',
@@ -6120,7 +6424,47 @@ function renderPDFFields(parsed){
   };
   const el=document.getElementById('extractedFields');
   const items=Object.entries(parsed).filter(([k,v])=>v!=null&&v!=='');
-  el.innerHTML=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div><div class="ef-grid">${items.map(([k,v])=>`<div class="ef-item"><div class="ef-key">${LABELS[k]||k}</div><input class="ef-input" value="${Array.isArray(v)?v.join(', '):(v||'')}" data-key="${k}"></div>`).join('')}</div>`;
+  // Build warning lookup by field name
+  const warnMap={};
+  for(const w of warnings){
+    if(!warnMap[w.field]) warnMap[w.field]=[];
+    warnMap[w.field].push(w);
+  }
+  // Warning color map
+  const wColor={error:'#ef4444',warn:'#f59e0b',info:'#60a5fa'};
+  const wBg={error:'rgba(239,68,68,.08)',warn:'rgba(245,158,11,.08)',info:'rgba(96,165,250,.06)'};
+  const wBorder={error:'rgba(239,68,68,.3)',warn:'rgba(245,158,11,.3)',info:'rgba(96,165,250,.2)'};
+  const wIcon={error:'⛔','warn':'⚠️',info:'ℹ️'};
+
+  // Build field HTML with inline warnings
+  const fieldHtml=items.map(([k,v])=>{
+    const fw=warnMap[k]||[];
+    const borderStyle=fw.length?'border-left:3px solid '+wColor[fw[0].level]:'';
+    const warnHtml=fw.map(w=>`<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:${wBg[w.level]};border:1px solid ${wBorder[w.level]};color:${wColor[w.level]};line-height:1.4">${wIcon[w.level]} ${w.message}</div>`).join('');
+    return `<div class="ef-item" style="${borderStyle?borderStyle+';padding-left:8px':''}"><div class="ef-key">${LABELS[k]||k}</div><input class="ef-input" value="${Array.isArray(v)?v.join(', '):(v||'')}" data-key="${k}">${warnHtml}</div>`;
+  }).join('');
+
+  // Missing critical fields (not in items because they're null) — show as flagged empty fields
+  const missingHtml=warnings.filter(w=>w.level==='error'&&w.field!=='_all'&&!items.find(([k])=>k===w.field)).map(w=>{
+    return `<div class="ef-item" style="border-left:3px solid ${wColor.error};padding-left:8px;opacity:.85"><div class="ef-key" style="color:${wColor.error}">${LABELS[w.field]||w.field}</div><input class="ef-input" value="" data-key="${w.field}" placeholder="Missing — edit to add" style="border-color:${wBorder.error}"><div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:${wBg.error};border:1px solid ${wBorder.error};color:${wColor.error};line-height:1.4">${wIcon.error} ${w.message}</div></div>`;
+  }).join('');
+
+  // Summary banner
+  const errorCount=warnings.filter(w=>w.level==='error').length;
+  const warnCount=warnings.filter(w=>w.level==='warn').length;
+  const infoCount=warnings.filter(w=>w.level==='info').length;
+  let summaryHtml='';
+  if(errorCount||warnCount){
+    const parts=[];
+    if(errorCount) parts.push('<span style="color:#ef4444;font-weight:700">'+errorCount+' missing</span>');
+    if(warnCount) parts.push('<span style="color:#f59e0b;font-weight:700">'+warnCount+' warning'+(warnCount>1?'s':'')+'</span>');
+    if(infoCount) parts.push('<span style="color:#60a5fa">'+infoCount+' note'+(infoCount>1?'s':'')+'</span>');
+    summaryHtml='<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);font-size:12px;line-height:1.5;color:var(--text2)">Data Analysis: '+parts.join(' · ')+'<br><span style="font-size:11px;opacity:.8">Review flagged fields below. Missing values may indicate OCR issues — edit fields to correct.</span></div>';
+  } else if(warnings.length===0 && items.length>5){
+    summaryHtml='<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);font-size:12px;color:#22c55e">✓ All expected fields present — values within normal ranges</div>';
+  }
+
+  el.innerHTML=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${summaryHtml}<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
 }
 /* ── SAVED BILLS DATABASE ── */
 function updateBillCountBadge(){
