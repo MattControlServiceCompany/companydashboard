@@ -30,7 +30,7 @@
   --amber:#f59e0b;--amber-dim:rgba(245,158,11,0.12);
   --red:#f43f5e;--red-dim:rgba(244,63,94,0.1);
   --violet:#8b5cf6;--violet-dim:rgba(139,92,246,0.1);
-  --green:#22c55e;--orange:#fb923c;
+  --green:#22c55e;--orange:#fb923c;--lime:#84cc16;--lime-dim:rgba(132,204,22,0.12);
   --em:#00d4aa;--em-dim:rgba(0,212,170,0.1);
   --warn:#f59e0b;--warn-dim:rgba(245,158,11,0.14);
   --danger:#f43f5e;--danger-dim:rgba(244,63,94,0.12);
@@ -227,35 +227,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100%;
   --danger-dim:rgba(190,18,60,.1);
   --violet:#6d28d9;
   --violet-dim:rgba(109,40,217,.1);
-  --accent:var(--em);
-}
-[data-theme="light"] body{background:var(--bg);color:var(--text);}
-[data-theme="light"] .topbar{background:rgba(240,242,247,.97);border-bottom-color:var(--border);}
-[data-theme="light"] .dept-nav{background:var(--s1);border-bottom-color:var(--border);}
-[data-theme="light"] .theme-pill.active{color:#fff;}
-[data-theme="light"] .modal{box-shadow:0 20px 60px rgba(0,0,0,.18);}
-[data-theme="light"] .settings-modal,[data-theme="light"] .help-modal{box-shadow:0 20px 60px rgba(0,0,0,.18);}
-  --bg:#f0f2f7;
-  --s1:#e4e8f2;
-  --s2:#ffffff;
-  --s3:#f5f7fc;
-  --s4:#eaedf6;
-  --border:#d3d9e8;
-  --border2:#bcc5da;
-  --text:#1a2340;
-  --text2:#4a5672;
-  --text3:#9aa5be;
-  --em:#007a8c;
-  --em-dim:rgba(0,122,140,.1);
-  --em-glow:rgba(0,122,140,.2);
-  --em2:#0369a1;
-  --em2-dim:rgba(3,105,161,.1);
-  --warn:#b45309;
-  --warn-dim:rgba(180,83,9,.1);
-  --danger:#be123c;
-  --danger-dim:rgba(190,18,60,.1);
-  --violet:#6d28d9;
-  --violet-dim:rgba(109,40,217,.1);
+  --lime:#65a30d;
+  --lime-dim:rgba(101,163,13,0.12);
   --accent:var(--em);
 }
 [data-theme="light"] body{background:var(--bg);color:var(--text);}
@@ -296,7 +269,7 @@ html,body{height:100%;overflow:hidden;}
 .stat-lbl{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.7px;font-weight:600;margin-bottom:7px;}
 .stat-val{font-family:var(--head);font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1;}
 .stat-meta{font-size:11px;color:var(--text2);margin-top:5px;}
-.c-em{color:var(--em);}.c-em2{color:var(--em2);}.c-warn{color:var(--warn);}.c-violet{color:var(--violet);}
+.c-em{color:var(--em);}.c-em2{color:var(--em2);}.c-warn{color:var(--warn);}.c-violet{color:var(--violet);}.c-lime{color:var(--lime);}
 .card{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
 .card-hdr{display:flex;align-items:center;justify-content:space-between;padding:13px 17px;border-bottom:1px solid var(--border);}
 .card-title{font-family:var(--head);font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px;}
@@ -7486,7 +7459,7 @@ function viewProjectFromUtility(){
   const p = projects.find(x=>x.id===udSelProjId);
   if(!p) return;
   sv('projects', document.querySelector('.s-item[onclick*="projects"]'));
-  setTimeout(()=>{ selectProj(p.id); }, 100);
+  setTimeout(()=>{ openDetail(p.id); }, 100);
 }
 
 function renderUDProjList(){
@@ -12533,6 +12506,7 @@ function openMeterModal(editId){
   document.getElementById('meterModal').classList.add('open');
 }
 function closeMeterModal(){ document.getElementById('meterModal').classList.remove('open'); }
+function updateMeterModalFields(){ /* commodity fields are shared across types — no field changes needed */ }
 function saveMeter(){
   const editId=document.getElementById('mm-edit-id').value;
   const incl=document.getElementById('mm-inclusive').value==='true';
