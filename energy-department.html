@@ -409,8 +409,9 @@ html,body{height:100%;overflow:hidden;}
 .pd-hero-compact .phc-sep{color:var(--border2);margin:0 2px;}
 .pd-hero-compact .phc-val{font-family:var(--mono);color:var(--text);}
 .pd-tabs{display:flex;gap:2px;padding:12px 18px 0;border-bottom:1px solid var(--border);}
-.pdt{font-family:var(--font);font-size:12px;font-weight:500;padding:6px 12px;border-radius:6px 6px 0 0;border:none;cursor:pointer;color:var(--text2);background:transparent;border-bottom:2px solid transparent;transition:all .13s;}
+.pdt{font-family:var(--font);font-size:12px;font-weight:500;padding:6px 12px;border-radius:6px 6px 0 0;border:none;cursor:pointer;color:var(--text2);background:transparent;border-bottom:2px solid transparent;transition:all .13s;user-select:none;}
 .pdt.active{color:var(--em);border-bottom-color:var(--em);font-weight:600;}
+.pdt.drag-over{border-left:2px solid var(--accent);}.pdt.dragging{opacity:.4;}
 .ptab{display:none;padding:18px;}
 .ptab.active{display:block;}
 .dash-grid{display:grid;grid-template-columns:1fr 360px;gap:16px;}
@@ -3606,7 +3607,7 @@ function init(){
         if(p){
           openDetail(p.id);
           if(s.tab && s.tab !== 'notes'){
-            const btn = document.querySelector(`.pdt[onclick*="'${s.tab}'"]`);
+            const btn = document.querySelector(`.pdt[data-tab="${s.tab}"]`);
             if(btn) sPTab(s.tab, btn);
           }
         }
@@ -3980,39 +3981,44 @@ function renderDetail(p){
       </div>
     </div>
     <div class="pd-hero-compact" id="pd-hero-compact">
-      <span class="phc-name">${p.name}</span>
-      <span class="phc-sep">|</span>
-      <span>SA# <span class="phc-val">${p.sa||'—'}</span></span>
-      <span class="phc-sep">|</span>
-      <span>Savings <span class="phc-val">${p.savings?'$'+Number(p.savings).toLocaleString()+'/yr':'—'}</span></span>
-      <span class="phc-sep">|</span>
-      <span><span class="phc-val">${p.start?new Date(p.start+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</span> → <span class="phc-val">${p.end?new Date(p.end+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</span></span>
-      <span class="phc-sep">|</span>
-      <span>Tasks <span class="phc-val" style="${openTasks>0?'color:var(--warn)':''}">${openTasks}</span></span>
-      <span class="phc-sep">|</span>
-      <span><span class="phc-val">${getUDBldgs(p.id).length}</span> bldg${getUDBldgs(p.id).length!==1?'s':''} <span class="phc-val">${getUDBldgs(p.id).reduce((s,b)=>s+parseInt(b.sqft||0),0)?Number(getUDBldgs(p.id).reduce((s,b)=>s+parseInt(b.sqft||0),0)).toLocaleString()+' sf':''}</span></span>
+      ${(()=>{
+        const _bldgs=getUDBldgs(p.id);
+        const _sqft=_bldgs.reduce((s,b)=>s+parseInt(b.sqft||0),0);
+        let _blCost=0,_blKwh=0;
+        _bldgs.forEach(b=>(b.meters||[]).forEach(m=>{
+          const bills=(m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+          const bm=(m.baseline||{}).months||{};
+          if(Object.keys(bm).length) bills.forEach((bill,i)=>{ if(bm[i]===true){_blCost+=(bill.totalCost||bill.cost||0);_blKwh+=(bill.kwh||0);} });
+        }));
+        const _eui=(_sqft>0&&_blKwh>0)?(_blKwh*3.412/_sqft).toFixed(1):'—';
+        return '<span class="phc-name">'+p.name+'</span>'+
+          '<span class="phc-sep">|</span>'+
+          '<span>SA# <span class="phc-val">'+(p.sa||'—')+'</span></span>'+
+          '<span class="phc-sep">|</span>'+
+          '<span>Savings <span class="phc-val">'+(p.savings?'$'+Number(p.savings).toLocaleString()+'/yr':'—')+'</span></span>'+
+          '<span class="phc-sep">|</span>'+
+          '<span><span class="phc-val">'+(p.start?new Date(p.start+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—')+'</span> → <span class="phc-val">'+(p.end?new Date(p.end+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—')+'</span></span>'+
+          '<span class="phc-sep">|</span>'+
+          '<span>Baseline <span class="phc-val">'+(_blCost>0?'$'+Math.round(_blCost).toLocaleString():'—')+'</span></span>'+
+          '<span class="phc-sep">|</span>'+
+          '<span>EUI <span class="phc-val">'+_eui+'</span></span>'+
+          '<span class="phc-sep">|</span>'+
+          '<span>Tasks <span class="phc-val" style="'+(openTasks>0?'color:var(--warn)':'')+'">'+openTasks+'</span></span>'+
+          '<span class="phc-sep">|</span>'+
+          '<span><span class="phc-val">'+_bldgs.length+'</span> bldg'+(_bldgs.length!==1?'s':'')+' <span class="phc-val">'+(_sqft?Number(_sqft).toLocaleString()+' sf':'')+'</span></span>';
+      })()}
     </div>
     <div class="card">
-      <div class="pd-tabs" style="overflow-x:auto;flex-wrap:nowrap;white-space:nowrap">
-        <button class="pdt active" onclick="sPTab('dashboard',this)">📊 Dashboard</button>
-        <button class="pdt" onclick="sPTab('notes',this)">📝 Notes</button>
-        <button class="pdt" onclick="sPTab('tasks',this)">✅ Tasks</button>
-        <button class="pdt" onclick="sPTab('contacts',this)">👥 Contacts</button>
-        <button class="pdt" onclick="sPTab('buildings',this)">🏢 Buildings</button>
-        <button class="pdt" onclick="sPTab('utility',this)">⚡ Utility Data</button>
-        <button class="pdt" onclick="sPTab('equipment',this)">⚙️ Equipment</button>
-        <button class="pdt" onclick="sPTab('hvacload',this)">🌡️ HVAC Load Est</button>
-        <button class="pdt" onclick="sPTab('energygfx',this)">📈 Energy Graphics</button>
-        <button class="pdt" onclick="sPTab('district',this)">🗓️ District Calendar</button>
-        <button class="pdt" onclick="sPTab('savings',this)">💡 Energy Savings</button>
-        <button class="pdt" onclick="sPTab('contracts',this)">📋 Contracts</button>
-        <button class="pdt" onclick="sPTab('meetings',this)">📋 Meetings</button>
-        <button class="pdt" onclick="sPTab('docs',this)">📁 Documents</button>
+      <div class="pd-tabs" id="pdTabBar" style="overflow-x:auto;flex-wrap:nowrap;white-space:nowrap">
+        ${_getProjTabHTML()}
       </div>
-      <div id="ptab-dashboard" class="ptab active" style="padding:16px;overflow-y:auto">
-        <div class="dash-grid">
-          <div id="dash-perf-${p.id}"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
-          <div id="dash-cal-${p.id}"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
+      <div id="ptab-dashboard" class="ptab active" style="padding:0;overflow-y:auto;display:flex;flex-direction:column">
+        <div id="dash-hdr-${p.id}"></div>
+        <div style="padding:16px;overflow-y:auto;flex:1">
+          <div class="dash-grid">
+            <div id="dash-perf-${p.id}"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
+            <div id="dash-cal-${p.id}"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
+          </div>
         </div>
       </div>
       <div id="ptab-notes" class="ptab" style="padding:16px">
@@ -4198,6 +4204,7 @@ function renderDetail(p){
     </div>`;
   // Populate tabs after DOM is ready
   requestAnimationFrame(()=>{
+    _initTabDrag();
     renderProjBuildingsTab(p.id);
     renderProjEquip(p.id);
     initProjUDTab(p.id);
@@ -4205,12 +4212,38 @@ function renderDetail(p){
   });
 }
 
+function _dashGetBaselineBills(m){
+  // Return only bills selected as baseline for this meter
+  const bills = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
+  const bl = m.baseline||{};
+  const blMonths = bl.months||{};
+  const hasSelection = Object.keys(blMonths).length>0;
+  if(!hasSelection) return [];
+  return bills.filter((_,i)=>blMonths[i]===true);
+}
+
 function initDashboardTab(projId){
   const p = projects.find(x=>x.id===projId); if(!p) return;
+  const hdrWrap = document.getElementById('dash-hdr-'+projId);
   const perfWrap = document.getElementById('dash-perf-'+projId);
   if(!perfWrap) return;
   const bldgs = getUDBldgs(projId);
   const estSavings = parseFloat(p.savings)||0;
+
+  // Render header bar (like HVAC Load Est)
+  if(hdrWrap){
+    const totalSqft = bldgs.reduce((s,b)=>s+parseInt(b.sqft||0),0);
+    const meterCount = bldgs.reduce((s,b)=>s+(b.meters||[]).length,0);
+    const billCount = bldgs.reduce((s,b)=>s+(b.meters||[]).reduce((s2,m)=>s2+(m.bills||[]).length,0),0);
+    const blMeterCount = bldgs.reduce((s,b)=>s+(b.meters||[]).filter(m=>m.baseline&&Object.keys(m.baseline.months||{}).length>0).length,0);
+    hdrWrap.innerHTML = `<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-shrink:0">
+      <span style="font-size:13px;font-weight:700;color:var(--text)">📊 Project Dashboard</span>
+      <span style="font-size:11px;color:var(--text3)">
+        ${bldgs.length} building${bldgs.length!==1?'s':''}${totalSqft?' · '+Number(totalSqft).toLocaleString()+' sf':''} · ${meterCount} meter${meterCount!==1?'s':''} · ${billCount} bill${billCount!==1?'s':''}
+      </span>
+      ${blMeterCount<meterCount?'<span style="font-size:11px;color:var(--amber);font-weight:600">⚠ '+blMeterCount+'/'+meterCount+' meters have baselines set</span>':'<span style="font-size:11px;color:var(--green)">✓ All meters have baselines</span>'}
+    </div>`;
+  }
 
   if(!bldgs.length || !bldgs.some(b=>(b.meters||[]).some(m=>(m.bills||[]).length>0))){
     perfWrap.innerHTML = '<div class="card"><div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">Add buildings and utility data to see performance summary.<br><span style="font-size:11px">Use the <strong style="color:var(--accent)">Utility Data</strong> tab to get started.</span></div></div>';
@@ -4220,22 +4253,26 @@ function initDashboardTab(projId){
   let totalBl=0, totalCur=0;
   const bldgRows = bldgs.map(b=>{
     const meters = b.meters||[];
-    let blCost=0, curCost=0;
+    const sqft = parseInt(b.sqft||0);
+    let blCost=0, curCost=0, blKwh=0, curKwh=0, blPeriod='';
     meters.forEach(m=>{
+      const blBills = _dashGetBaselineBills(m);
+      blBills.forEach(bill=>{ blCost += (bill.totalCost||bill.cost||0); blKwh += (bill.kwh||0); });
       const bills = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
-      const bl = m.baseline||{};
-      const blMonths = bl.months||{};
-      bills.forEach((bill,i)=>{
-        const cost = bill.totalCost||bill.cost||0;
-        const isBl = Object.keys(blMonths).length>0 ? blMonths[i]===true : (bl.startIdx===undefined);
-        if(isBl) blCost += cost;
-      });
-      bills.slice(-12).forEach(bill=>{ curCost += (bill.totalCost||bill.cost||0); });
+      bills.slice(-12).forEach(bill=>{ curCost += (bill.totalCost||bill.cost||0); curKwh += (bill.kwh||0); });
+      // Baseline period label
+      if(blBills.length){
+        const first = blBills[0].start, last = blBills[blBills.length-1].end||blBills[blBills.length-1].start;
+        if(first && !blPeriod) blPeriod = new Date(first+'T12:00:00').toLocaleDateString('en-US',{month:'short',year:'2-digit'})+' – '+new Date(last+'T12:00:00').toLocaleDateString('en-US',{month:'short',year:'2-digit'});
+      }
     });
     totalBl += blCost;
     totalCur += curCost;
     const sav = blCost - curCost;
     const savPct = blCost>0 ? (sav/blCost*100) : 0;
+    // EUI: kBtu/sf/yr (1 kWh = 3.412 kBtu)
+    const blEUI = (sqft>0 && blKwh>0) ? (blKwh*3.412/sqft) : 0;
+    const curEUI = (sqft>0 && curKwh>0) ? (curKwh*3.412/sqft) : 0;
     let status = 'No Data', statusColor = 'var(--text3)';
     if(blCost>0 && curCost>0){
       if(sav<0){ status='Over Budget'; statusColor='var(--danger)'; }
@@ -4243,7 +4280,7 @@ function initDashboardTab(projId){
       else if(sav>0){ status='Below Target'; statusColor='var(--amber)'; }
       else { status='No Savings'; statusColor='var(--text3)'; }
     }
-    return {name:b.name, blCost, curCost, sav, savPct, status, statusColor};
+    return {name:b.name, sqft, blCost, curCost, sav, savPct, blEUI, curEUI, blPeriod, status, statusColor};
   });
 
   const totalSav = totalBl - totalCur;
@@ -4261,6 +4298,7 @@ function initDashboardTab(projId){
         <div style="display:flex;gap:16px">
           <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Baseline</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(totalBl)}</div></div>
           <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Current</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(totalCur)}</div></div>
+          ${estSavings>0?'<div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Target</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">$'+Number(estSavings).toLocaleString()+'</div></div>':''}
         </div>
       </div>
     </div>
@@ -4268,11 +4306,15 @@ function initDashboardTab(projId){
       <div class="card-hdr"><span class="card-title">Building Performance</span></div>
       <div style="overflow-x:auto">
         <table class="dtbl" style="width:100%;font-size:12px">
-          <thead><tr><th>Building</th><th style="text-align:right">Baseline $/yr</th><th style="text-align:right">Current $/yr</th><th style="text-align:right">Savings $</th><th style="text-align:right">%</th><th style="text-align:center">Status</th></tr></thead>
+          <thead><tr><th>Building</th><th style="text-align:right">Sq Ft</th><th style="text-align:right">Baseline Period</th><th style="text-align:right">Baseline $/yr</th><th style="text-align:right">EUI</th><th style="text-align:right">Current $/yr</th><th style="text-align:right">Cur EUI</th><th style="text-align:right">Savings $</th><th style="text-align:right">%</th><th style="text-align:center">Status</th></tr></thead>
           <tbody>${bldgRows.map(r=>`<tr>
             <td style="font-weight:600">${r.name||'—'}</td>
+            <td style="text-align:right;font-size:11px;color:var(--text2)">${r.sqft?Number(r.sqft).toLocaleString():'—'}</td>
+            <td style="text-align:right;font-size:11px;color:var(--text2)">${r.blPeriod||'—'}</td>
             <td style="text-align:right;font-family:var(--mono)">${r.blCost>0?$c(r.blCost):'—'}</td>
+            <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--text2)">${r.blEUI>0?r.blEUI.toFixed(1):'—'}</td>
             <td style="text-align:right;font-family:var(--mono)">${r.curCost>0?$c(r.curCost):'—'}</td>
+            <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--text2)">${r.curEUI>0?r.curEUI.toFixed(1):'—'}</td>
             <td style="text-align:right;font-family:var(--mono);color:${r.sav>=0?'var(--green)':'var(--danger)'}">${r.blCost>0?(r.sav>=0?'':'-')+$c(r.sav):'—'}</td>
             <td style="text-align:right;font-family:var(--mono)">${r.blCost>0?r.savPct.toFixed(1)+'%':'—'}</td>
             <td style="text-align:center;font-weight:600;color:${r.statusColor}">${r.status}</td>
@@ -4406,6 +4448,70 @@ function updateProg(id,val){
   const f=document.getElementById('hpf'); if(f) f.style.width=n+'%';
   sset('en_projects',projects); renderProjTable();
 }
+/* ── PROJECT TAB ORDER (draggable) ── */
+const PROJ_TABS_DEFAULT = [
+  {id:'dashboard',label:'📊 Dashboard'},
+  {id:'notes',label:'📝 Notes'},
+  {id:'tasks',label:'✅ Tasks'},
+  {id:'contacts',label:'👥 Contacts'},
+  {id:'buildings',label:'🏢 Buildings'},
+  {id:'utility',label:'⚡ Utility Data'},
+  {id:'equipment',label:'⚙️ Equipment'},
+  {id:'hvacload',label:'🌡️ HVAC Load Est'},
+  {id:'energygfx',label:'📈 Energy Graphics'},
+  {id:'district',label:'🗓️ District Calendar'},
+  {id:'savings',label:'💡 Energy Savings'},
+  {id:'contracts',label:'📋 Contracts'},
+  {id:'meetings',label:'📋 Meetings'},
+  {id:'docs',label:'📁 Documents'},
+];
+function _getProjTabOrder(){
+  try{const o=JSON.parse(localStorage.getItem('ch_projTabOrder'));if(Array.isArray(o)&&o.length===PROJ_TABS_DEFAULT.length) return o;}catch(e){}
+  return PROJ_TABS_DEFAULT.map(t=>t.id);
+}
+function _saveProjTabOrder(order){ localStorage.setItem('ch_projTabOrder',JSON.stringify(order)); }
+function _getProjTabHTML(){
+  const order=_getProjTabOrder();
+  const activeTab = window._activeProjTab||'dashboard';
+  return order.map(id=>{
+    const t=PROJ_TABS_DEFAULT.find(x=>x.id===id); if(!t) return '';
+    return `<button class="pdt${id===activeTab?' active':''}" draggable="true" data-tab="${id}" onclick="sPTab('${id}',this)">${t.label}</button>`;
+  }).join('');
+}
+function _initTabDrag(){
+  const bar=document.getElementById('pdTabBar'); if(!bar) return;
+  let dragId=null;
+  bar.addEventListener('dragstart',e=>{
+    const btn=e.target.closest('.pdt'); if(!btn) return;
+    dragId=btn.dataset.tab;
+    btn.classList.add('dragging');
+    e.dataTransfer.effectAllowed='move';
+  });
+  bar.addEventListener('dragend',e=>{
+    const btn=e.target.closest('.pdt'); if(btn) btn.classList.remove('dragging');
+    bar.querySelectorAll('.pdt').forEach(b=>b.classList.remove('drag-over'));
+    dragId=null;
+  });
+  bar.addEventListener('dragover',e=>{
+    e.preventDefault(); e.dataTransfer.dropEffect='move';
+    const btn=e.target.closest('.pdt');
+    bar.querySelectorAll('.pdt').forEach(b=>b.classList.remove('drag-over'));
+    if(btn && btn.dataset.tab!==dragId) btn.classList.add('drag-over');
+  });
+  bar.addEventListener('drop',e=>{
+    e.preventDefault();
+    const btn=e.target.closest('.pdt'); if(!btn||!dragId) return;
+    const dropId=btn.dataset.tab; if(dropId===dragId) return;
+    const order=_getProjTabOrder();
+    const fromIdx=order.indexOf(dragId), toIdx=order.indexOf(dropId);
+    if(fromIdx<0||toIdx<0) return;
+    order.splice(fromIdx,1);
+    order.splice(toIdx,0,dragId);
+    _saveProjTabOrder(order);
+    bar.innerHTML=_getProjTabHTML();
+  });
+}
+
 const FULLWIN_TABS = ['savings','hvacload','utility','energygfx'];
 function sPTab(tab,el){
   document.querySelectorAll('.ptab').forEach(b=>b.classList.remove('active'));
@@ -13430,7 +13536,7 @@ function restoreProjSession(){
       if(p){
         openDetail(p.id);
         if(s.tab && s.tab !== 'notes'){
-          const btn = document.querySelector(`.pdt[onclick*="'${s.tab}'"]`);
+          const btn = document.querySelector(`.pdt[data-tab="${s.tab}"]`);
           if(btn) sPTab(s.tab, btn);
         }
       }
@@ -15136,7 +15242,7 @@ function hvacLoadCreateMeasure(projId){
   showToast(`Measure "${desc}" added: ${parts.join(' + ')} annual savings`);
 
   // Navigate to savings tab and refresh
-  const btn = document.querySelector('.pdt[onclick*="savings"]');
+  const btn = document.querySelector('.pdt[data-tab="savings"]');
   if(btn) sPTab('savings', btn);
 }
 
