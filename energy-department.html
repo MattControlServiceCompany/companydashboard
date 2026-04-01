@@ -3998,11 +3998,9 @@ function renderDetail(p){
       <span class="phc-sep">|</span>
       <span>Tasks <span class="phc-val" style="${openTasks>0?'color:var(--warn)':''}">${openTasks}</span></span>
       <span class="phc-sep">|</span>
-      <span><span class="phc-val">${getUDBldgs(p.id).length}</span> bldg${getUDBldgs(p.id).length!==1?'s':''} <span class="phc-val">${getUDBldgs(p.id).reduce((s,b)=>s+parseInt(b.sqft||0),0)?Number(getUDBldgs(p.id).reduce((s,b)=>s+parseInt(b.sqft||0),0)).toLocaleString()+' sf':''}</span></span>
+      <span><span class="phc-val">${getUDBldgs(p.id).length}</span> building${getUDBldgs(p.id).length!==1?'s':''} · <span class="phc-val">${getUDBldgs(p.id).reduce((s,b)=>s+parseInt(b.sqft||0),0)?Number(getUDBldgs(p.id).reduce((s,b)=>s+parseInt(b.sqft||0),0)).toLocaleString()+' total sf':''}</span></span>
       <span class="phc-sep">|</span>
       <span style="display:flex;gap:4px;margin-left:auto;flex-shrink:0">
-        <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px" onclick="sPTab('utility',document.querySelector('.pdt[data-tab=utility]'))">📊 Baseline Data</button>
-        <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px" onclick="sPTab('savings',document.querySelector('.pdt[data-tab=savings]'))">📈 Savings</button>
         <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px" onclick="openProjModal();editProj(${p.id})">✏️ Edit</button>
       </span>
     </div>
@@ -4035,14 +4033,6 @@ function renderDetail(p){
           <button class="btn btn-em btn-sm" onclick="editProj(${p.id})">✏️ Edit Contacts</button>
         </div>
         ${buildContactsDetailHTML(p.contacts||[], p.id)}
-      </div>
-      <div id="ptab-buildings" class="ptab" style="padding:16px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <div style="font-size:12px;color:var(--text2)" id="pb-count-${p.id}"></div>
-          <button class="btn btn-em btn-sm" onclick="openBldgModalForProj(${p.id})">+ Add Building</button>
-        </div>
-        <div id="pb-sqft-bar-${p.id}"></div>
-        <div id="pb-list-${p.id}"></div>
       </div>
       <div id="ptab-utility" class="ptab" style="padding:0">
         <!-- Full Utility Data layout embedded, scoped to this project -->
@@ -4133,17 +4123,42 @@ function renderDetail(p){
               <span class="card-title">🗓️ District Calendar</span>
               <div style="display:flex;gap:8px">
                 <button class="btn btn-ghost btn-sm" onclick="distCalAddRow(${p.id})">+ Add Event</button>
-                <button class="btn btn-em btn-sm" onclick="distCalParse(${p.id})">📋 Parse from Text</button>
+                <button class="btn btn-em btn-sm" onclick="distCalShowImport(${p.id})">📥 Import Calendar</button>
               </div>
             </div>
             <div style="padding:16px">
-              <div id="distcal-parse-${p.id}" style="display:none;margin-bottom:16px">
-                <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Paste school calendar text or upload a PDF. Dates and events will be extracted automatically.</div>
-                <textarea class="fta" id="distcal-text-${p.id}" style="min-height:120px" placeholder="Paste calendar text here — holidays, breaks, early release days, first/last day of school..."></textarea>
-                <div style="display:flex;gap:8px;margin-top:8px">
-                  <button class="btn btn-em btn-sm" onclick="distCalRunParse(${p.id})">Extract Events</button>
-                  <button class="btn btn-ghost btn-sm" onclick="document.getElementById('distcal-parse-${p.id}').style.display='none'">Cancel</button>
+              <div id="distcal-import-${p.id}" style="display:none;margin-bottom:16px">
+                <div style="display:flex;gap:4px;margin-bottom:10px">
+                  <button class="ptpill sel" onclick="distCalImportTab(${p.id},'url',this)">🔗 URL</button>
+                  <button class="ptpill" onclick="distCalImportTab(${p.id},'pdf',this)">📄 PDF Upload</button>
+                  <button class="ptpill" onclick="distCalImportTab(${p.id},'text',this)">📋 Paste Text</button>
                 </div>
+                <div id="distcal-import-url-${p.id}">
+                  <div style="display:flex;gap:8px;margin-bottom:8px">
+                    <input class="fi" id="distcal-url-${p.id}" placeholder="https://...calendar.pdf" style="flex:1">
+                    <button class="btn btn-em btn-sm" onclick="distCalLoadURL(${p.id})">Load</button>
+                  </div>
+                  <div style="font-size:11px;color:var(--text3)">Paste a direct link to the district's PDF calendar. If blocked by CORS, use PDF Upload instead.</div>
+                </div>
+                <div id="distcal-import-pdf-${p.id}" style="display:none">
+                  <div style="border:2px dashed var(--border2);border-radius:8px;padding:20px;text-align:center;cursor:pointer;margin-bottom:8px"
+                       onclick="document.getElementById('distcal-file-${p.id}').click()"
+                       ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+                       ondragleave="this.style.borderColor='var(--border2)'"
+                       ondrop="distCalDropFile(event,${p.id})">
+                    <div style="font-size:24px;margin-bottom:4px">📅</div>
+                    <div style="font-size:12px;font-weight:600">Drop PDF here or click to browse</div>
+                    <input type="file" id="distcal-file-${p.id}" accept=".pdf" style="display:none" onchange="distCalFileChosen(event,${p.id})">
+                  </div>
+                </div>
+                <div id="distcal-import-text-${p.id}" style="display:none">
+                  <textarea class="fta" id="distcal-text-${p.id}" style="min-height:120px" placeholder="Paste calendar text here — holidays, breaks, early release days, first/last day of school..."></textarea>
+                  <div style="display:flex;gap:8px;margin-top:8px">
+                    <button class="btn btn-em btn-sm" onclick="distCalRunParse(${p.id})">Extract Events</button>
+                  </div>
+                </div>
+                <div id="distcal-import-status-${p.id}" style="display:none;margin-top:8px;font-size:12px;color:var(--text2)"></div>
+                <div style="margin-top:8px;text-align:right"><button class="btn btn-ghost btn-sm" onclick="document.getElementById('distcal-import-${p.id}').style.display='none'">Cancel</button></div>
               </div>
               <div id="distcal-table-${p.id}"></div>
             </div>
@@ -4203,7 +4218,6 @@ function renderDetail(p){
   // Populate tabs after DOM is ready
   requestAnimationFrame(()=>{
     _initTabDrag();
-    renderProjBuildingsTab(p.id);
     renderProjEquip(p.id);
     initProjUDTab(p.id);
     initDashboardTab(p.id);
@@ -4276,33 +4290,41 @@ function initDashboardTab(projId){
   const bldgRows = bldgs.map(b=>{
     const meters = b.meters||[];
     const sqft = parseInt(b.sqft||0);
-    let blCost=0, curCost=0, blKwh=0, curKwh=0, blPeriod='';
+    let blCost=0, curCost=0, blKwh=0, curKwh=0, blPeriod='', allCost=0, allKwh=0;
+    let hasBaseline = false;
     meters.forEach(m=>{
       const blBills = _dashGetBaselineBills(m);
-      blBills.forEach(bill=>{ blCost += (bill.totalCost||bill.cost||0); blKwh += (bill.kwh||0); });
+      if(blBills.length) hasBaseline = true;
+      blBills.forEach(bill=>{ blCost += (parseFloat(bill.totalCost)||parseFloat(bill.cost)||0); blKwh += (parseFloat(bill.kwh)||parseFloat(bill.usage)||0); });
       const bills = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
-      bills.slice(-12).forEach(bill=>{ curCost += (bill.totalCost||bill.cost||0); curKwh += (bill.kwh||0); });
+      bills.slice(-12).forEach(bill=>{ curCost += (parseFloat(bill.totalCost)||parseFloat(bill.cost)||0); curKwh += (parseFloat(bill.kwh)||parseFloat(bill.usage)||0); });
+      // Tally all bills as fallback when no baseline is set
+      (m.bills||[]).forEach(bill=>{ allCost += (parseFloat(bill.totalCost)||parseFloat(bill.cost)||0); allKwh += (parseFloat(bill.kwh)||parseFloat(bill.usage)||0); });
       // Baseline period label
       if(blBills.length){
         const first = blBills[0].start, last = blBills[blBills.length-1].end||blBills[blBills.length-1].start;
         if(first && !blPeriod) blPeriod = new Date(first+'T12:00:00').toLocaleDateString('en-US',{month:'short',year:'2-digit'})+' – '+new Date(last+'T12:00:00').toLocaleDateString('en-US',{month:'short',year:'2-digit'});
       }
     });
-    totalBl += blCost;
+    // Fallback: if no baseline set, use all bills
+    const useCost = blCost>0 ? blCost : allCost;
+    const useKwh = blKwh>0 ? blKwh : allKwh;
+    const blLabel = hasBaseline ? 'Baseline' : 'Total Cost';
+    totalBl += useCost;
     totalCur += curCost;
-    const sav = blCost - curCost;
-    const savPct = blCost>0 ? (sav/blCost*100) : 0;
+    const sav = useCost - curCost;
+    const savPct = useCost>0 ? (sav/useCost*100) : 0;
     // EUI: kBtu/sf/yr (1 kWh = 3.412 kBtu)
-    const blEUI = (sqft>0 && blKwh>0) ? (blKwh*3.412/sqft) : 0;
+    const blEUI = (sqft>0 && useKwh>0) ? (useKwh*3.412/sqft) : 0;
     const curEUI = (sqft>0 && curKwh>0) ? (curKwh*3.412/sqft) : 0;
     let status = 'No Data', statusColor = 'var(--text3)';
-    if(blCost>0 && curCost>0){
+    if(useCost>0 && curCost>0){
       if(sav<0){ status='Over Budget'; statusColor='var(--danger)'; }
       else if(estSavings>0 && sav >= estSavings*0.8){ status='On Track'; statusColor='var(--green)'; }
       else if(sav>0){ status='Below Target'; statusColor='var(--amber)'; }
       else { status='No Savings'; statusColor='var(--text3)'; }
     }
-    return {name:b.name, sqft, blCost, curCost, sav, savPct, blEUI, curEUI, blPeriod, status, statusColor};
+    return {name:b.name, sqft, blCost:useCost, curCost, sav, savPct, blEUI, curEUI, blPeriod:blPeriod||'All Bills', blLabel, status, statusColor};
   });
 
   const totalSav = totalBl - totalCur;
@@ -4476,7 +4498,6 @@ const PROJ_TABS_DEFAULT = [
   {id:'notes',label:'📝 Notes'},
   {id:'tasks',label:'✅ Tasks'},
   {id:'contacts',label:'👥 Contacts'},
-  {id:'buildings',label:'🏢 Buildings'},
   {id:'utility',label:'⚡ Utility Data'},
   {id:'equipment',label:'⚙️ Equipment'},
   {id:'hvacload',label:'🌡️ HVAC Load Est'},
@@ -4753,7 +4774,7 @@ function renderProjBaselineRates(projId){
   if(!bldgs.length){
     tbody.innerHTML=`<tr><td colspan="6" style="text-align:center;color:var(--text2);padding:18px;font-size:12px">
       No buildings found in Utility Data for this project.<br>
-      <span style="font-size:11px;color:var(--text3)">Add buildings via the <strong style="color:var(--accent)">Buildings</strong> tab → add meters in <strong style="color:var(--accent)">Utility Data</strong> → then return here.</span>
+      <span style="font-size:11px;color:var(--text3)">Add buildings and meters in the <strong style="color:var(--accent)">Utility Data</strong> tab, then return here.</span>
     </td></tr>`;
     return;
   }
@@ -5699,8 +5720,8 @@ function _extractEvergy(t,acctOverride,addrOverride){
   const C='(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])[.:]?';
   // Customer: "Customer Chg" or OCR garble like "CUSIOMET CNG", "Customar Chg", "CUSIOMER CNG"
   const custChg   =xChg('C[ua][s5][t1iI][o0][mM][eao][r1tT]\\s+'+C);
-  const facKW     =t.match(new RegExp('Fac[il1]{2}[il1]t[il1]es\\s+'+C+'\\s+([\\d,.]+)\\s*[kK][Ww]','i'))?.[1]?.replace(/,/g,'')||null;
-  const facChg    =xChg('Fac[il1]{2}[il1]t[il1]es\\s+'+C);
+  const facKW     =t.match(new RegExp('Fac[il1]{1,3}[il1]?t[il1]es\\s+'+C+'\\s+([\\d,.]+)\\s*[kK][Ww]','i'))?.[1]?.replace(/,/g,'')||null;
+  const facChg    =xChg('Fac[il1]{1,3}[il1]?t[il1]es\\s+'+C);
   const demKW     =t.match(new RegExp('Demand\\s+'+C+'\\s+([\\d,.]+)\\s*[kK][Ww]','i'))?.[1]?.replace(/,/g,'')||null;
   const demChg    =xChg('Demand\\s+'+C);
   const onPkChg   =xChg('Energy\\s+'+C+'\\s+On\\s+P[kK]');
@@ -5827,7 +5848,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
         // First charge line is Customer Charge — scan next few lines for first dollar amount
         for(let j=i+1;j<Math.min(i+4,lines.length);j++){
           // Skip lines that are clearly Facilities or Demand (they come later)
-          if(/Fac[il1]{2}|Demand|Energy/i.test(lines[j])) break;
+          if(/Fac[il1]{1,3}|Demand|Energy/i.test(lines[j])) break;
           const amt=getAmt(lines[j]);
           if(amt!==null && amt>10 && amt<500){
             result.CustomerCharge=amt.toFixed(2);
@@ -6930,12 +6951,42 @@ function renderPDFFields(parsed, warnings){
     'EnergyOnPeakCharge','EnergyOffPeakCharge','ECACharge','EERCharge','PTSCharge',
     'TDCCharge','TaxExemptDelivery','BillOffset','FranchiseFee','TotalCurrentCharges','TotalAmountDue',
     'GasCharge','WaterCharge','SewerCharge','StormwaterCharge','FuelAdjustment']);
+  // Fields that should NOT be number-formatted (show raw value from PDF)
+  const ID_FIELDS=new Set(['AccountNumber','MeterNumber']);
+  // Grouped field order — each sub-array renders as a row (paired fields side by side)
+  const FIELD_GROUPS=[
+    ['UtilityCompany'],
+    ['CustomerName'],
+    ['AccountNumber','MeterNumber'],
+    ['ServiceAddress'],
+    ['RateSchedule','NumberOfDays'],
+    ['BillingPeriodStart','BillingPeriodEnd'],
+    ['MeterReadStart','MeterReadEnd'],
+    ['StartRead','EndRead'],
+    ['MeterMultiplier'],
+    ['kWhConsumed','ActualKW'],
+    ['ActualRKVA'],
+    ['FacilitiesKW','BilledKW'],
+    ['TDCkW'],
+    ['CustomerCharge'],
+    ['FacilitiesCharge','BilledKWCharge'],
+    ['EnergyOnPeakCharge','EnergyOffPeakCharge'],
+    ['ECACharge','EERCharge'],
+    ['PTSCharge','TDCCharge'],
+    ['RkVACharge'],
+    ['TaxExemptDelivery','BillOffset'],
+    ['FranchiseFee','TotalCurrentCharges'],
+    ['NaturalGasTherms','TotalAmountDue'],
+    ['PeakDemandKW'],
+  ];
   const el=document.getElementById('extractedFields');
-  // Show ALL known fields (including null) so user can spot missing data
-  // Use LABELS key order for consistent display, then append any extra extracted fields
-  const knownKeys=Object.keys(LABELS);
-  const extraKeys=Object.keys(parsed).filter(k=>!knownKeys.includes(k)&&!k.startsWith('_'));
-  const allKeys=[...knownKeys.filter(k=>k in parsed||warnings.some(w=>w.field===k)),...extraKeys];
+  // Collect all grouped keys + any extra extracted fields not in groups
+  const groupedKeys=new Set(FIELD_GROUPS.flat());
+  const extraKeys=Object.keys(parsed).filter(k=>!groupedKeys.has(k)&&!k.startsWith('_'));
+  // Build final groups: standard groups (filtered to present fields) + extras
+  const finalGroups=FIELD_GROUPS.map(g=>g.filter(k=>k in parsed||warnings.some(w=>w.field===k))).filter(g=>g.length>0);
+  if(extraKeys.length) extraKeys.forEach(k=>finalGroups.push([k]));
+  const allKeys=finalGroups.flat();
   const items=allKeys.map(k=>[k,parsed[k]??'']);
   // Build warning lookup by field name
   const warnMap={};
@@ -6951,7 +7002,7 @@ function renderPDFFields(parsed, warnings){
 
   // Build field HTML with inline warnings + magnitude/missing flags
   // Shows ALL fields including null/empty so user can spot missing data
-  const fieldHtml=items.filter(([k])=>!k.startsWith('_')).map(([k,v])=>{
+  const fieldItems=items.filter(([k])=>!k.startsWith('_')).map(([k,v])=>{
     const fw=warnMap[k]||[];
     const magFlag = parsed['_magnitude_flag_'+k];
     const likelyMissing = parsed['_likely_missing_'+k];
@@ -6964,9 +7015,12 @@ function renderPDFFields(parsed, warnings){
     const warnHtml=fw.map(w=>`<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:${wBg[w.level]};border:1px solid ${wBorder[w.level]};color:${wColor[w.level]};line-height:1.4">${wIcon[w.level]} ${w.message}</div>`).join('');
     const magHtml=magFlag?'<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.25);color:#fb923c;line-height:1.4">⚠️ Possible OCR error: value is '+magFlag.ratio.toFixed(1)+'x the historical average ('+magFlag.mean.toLocaleString(undefined,{maximumFractionDigits:2})+'). Verify against source bill.</div>':'';
     const likelyHtml=likelyMissing&&isEmpty?'<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.25);color:#a78bfa;line-height:1.4">🔍 Historical data shows this field is present on 80%+ of prior bills — likely an OCR miss</div>':'';
-    // Format numeric values with commas and $ for charges
+    // Format numeric values with commas and $ for charges (skip ID fields like Account/Meter numbers)
     let displayVal = Array.isArray(v) ? v.join(', ') : (v??'');
-    if(typeof displayVal==='string'&&displayVal!==''){
+    if(ID_FIELDS.has(k)){
+      // Show raw value — no commas, no decimal formatting
+      displayVal = String(displayVal);
+    } else if(typeof displayVal==='string'&&displayVal!==''){
       const num=parseFloat(String(displayVal).replace(/,/g,''));
       if(!isNaN(num)&&String(displayVal).match(/^-?[\d,.\-]+$/)){
         const isCharge=CHARGE_FIELDS.has(k);
@@ -6977,6 +7031,15 @@ function renderPDFFields(parsed, warnings){
     const keyStyle=isEmpty&&!fw.length?'color:var(--text3)':'';
     const inputStyle=isEmpty?'border-color:var(--border2);color:var(--text3)':'';
     return `<div class="ef-item" style="${borderStyle}"><div class="ef-key" style="${keyStyle}">${LABELS[k]||k}</div><input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty?'—':''}" style="${inputStyle}">${warnHtml}${magHtml}${likelyHtml}</div>`;
+  });
+  // Build grouped rows — pairs render side by side
+  const fieldHtml=finalGroups.map(group=>{
+    const cells=group.map(k=>{
+      const idx=allKeys.indexOf(k);
+      return idx>=0?fieldItems[idx]:'';
+    }).filter(Boolean);
+    if(cells.length===1) return cells[0];
+    return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${cells.join('')}</div>`;
   }).join('');
   const missingHtml='';
 
@@ -7750,6 +7813,75 @@ function distCalRemove(projId, idx){
   p.districtCalendar.splice(idx, 1);
   sset('en_projects', projects);
   renderDistCalTable(projId);
+}
+
+function distCalShowImport(projId){
+  document.getElementById('distcal-import-'+projId).style.display = '';
+}
+function distCalImportTab(projId, mode, btn){
+  btn.parentElement.querySelectorAll('.ptpill').forEach(b=>b.classList.remove('sel'));
+  btn.classList.add('sel');
+  ['url','pdf','text'].forEach(m=>{
+    const el=document.getElementById('distcal-import-'+m+'-'+projId);
+    if(el) el.style.display = m===mode ? '' : 'none';
+  });
+}
+async function distCalLoadURL(projId){
+  const url = document.getElementById('distcal-url-'+projId)?.value?.trim();
+  if(!url){ showToast('Paste a URL first'); return; }
+  const status = document.getElementById('distcal-import-status-'+projId);
+  if(status){ status.style.display=''; status.textContent='Fetching PDF...'; }
+  try{
+    const resp = await fetch(url);
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const buf = await resp.arrayBuffer();
+    if(status) status.textContent='Extracting text from PDF...';
+    const text = await dcExtractPDFText(buf);
+    distCalProcessText(projId, text);
+  }catch(e){
+    if(status){ status.textContent='Fetch failed — try uploading the PDF directly'; }
+    showToast('Could not fetch URL — try PDF upload instead');
+  }
+}
+function distCalDropFile(e, projId){
+  e.preventDefault();
+  e.currentTarget.style.borderColor='var(--border2)';
+  const f = e.dataTransfer.files[0];
+  if(f && f.type==='application/pdf') distCalReadFile(f, projId);
+  else showToast('Drop a PDF file');
+}
+function distCalFileChosen(e, projId){
+  const f = e.target.files[0];
+  if(f) distCalReadFile(f, projId);
+}
+async function distCalReadFile(file, projId){
+  const status = document.getElementById('distcal-import-status-'+projId);
+  if(status){ status.style.display=''; status.textContent='Reading: '+file.name+'...'; }
+  const buf = await file.arrayBuffer();
+  if(status) status.textContent='Extracting text from PDF...';
+  const text = await dcExtractPDFText(buf);
+  distCalProcessText(projId, text);
+}
+function distCalProcessText(projId, text){
+  const events = dcExtractCalendarEvents(text);
+  const status = document.getElementById('distcal-import-status-'+projId);
+  if(!events.length){
+    if(status) status.textContent='No events found — try different source';
+    showToast('No events found'); return;
+  }
+  const p = projects.find(x=>x.id===projId); if(!p) return;
+  p.districtCalendar = p.districtCalendar || [];
+  let added=0;
+  events.forEach(ev=>{
+    if(!p.districtCalendar.some(e=>e.date===ev.date && e.name===ev.name)){
+      p.districtCalendar.push({id:Date.now()+Math.random(), ...ev});
+      added++;
+    }
+  });
+  sset('en_projects', projects);
+  document.getElementById('distcal-import-'+projId).style.display='none';
+  renderDistCalTable(projId);
+  showToast(added+' events imported ✓');
 }
 
 function distCalParse(projId){
@@ -14200,7 +14332,6 @@ function deleteBldgFromProj(projId, bldgId){
   if(udSelBldgId===bldgId) udSelBldgId=null;
   saveUtilityData();
   syncBldgSqftToProject(projId);
-  renderProjBuildingsTab(projId);
   renderUDProjList();
   showToast('Building deleted');
 }
@@ -14569,7 +14700,7 @@ function initHvacLoadTab(projId){
 
   if(!bldgs.length){
     wrap.innerHTML=`<div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">
-      No buildings in Utility Data for this project yet.<br>Add buildings via the <strong style="color:var(--accent)">Buildings</strong> tab, then add meters in <strong style="color:var(--accent)">Utility Data</strong>.
+      No buildings in Utility Data for this project yet.<br>Add buildings and meters in the <strong style="color:var(--accent)">Utility Data</strong> tab.
     </div>`;
     return;
   }
@@ -15658,7 +15789,7 @@ function hvacLoadCalc(projId){
         <div style="font-size:12px;color:var(--text2);margin-bottom:14px">Use the HVAC load breakdown above to create a savings measure. Enter the expected % reduction for each component — the monthly kWh, kW, and gas savings will be auto-calculated and added to the Energy Savings matrix.</div>
         <div class="f2" style="gap:12px">
           <div class="fg"><label class="fl">Building</label>
-            <select class="fs" id="hvl-msr-bldg-${projId}">${bldgOpts||'<option value="">No buildings — add via Buildings tab</option>'}</select>
+            <select class="fs" id="hvl-msr-bldg-${projId}">${bldgOpts||'<option value="">No buildings — add via Utility Data tab</option>'}</select>
           </div>
           <div class="fg"><label class="fl">Measure Description</label>
             <input class="fi" id="hvl-msr-desc-${projId}" value="BAS Optimization" placeholder="e.g. BAS Optimization, Schedule Change, Setpoint Adjustment">
