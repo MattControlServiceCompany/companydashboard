@@ -8407,6 +8407,7 @@ function renderUDDetail(targetWrap){
       '<div class="ma-meter-pills">'+pills+'</div>'+
       '<div style="display:flex;gap:6px;flex-shrink:0">'+
         '<button class="btn btn-ghost btn-sm" onclick="openMeterModal(\''+udActiveMid+'\')">✏️ Edit</button>'+
+        '<button class="btn btn-ghost btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deleteAllBills(\''+udActiveMid+'\')" title="Delete all bills in this meter">🗑 Clear Bills</button>'+
         '<button class="btn-del" onclick="deleteMeter(\''+udActiveMid+'\')" title="Delete meter">✕</button>'+
       '</div>'+
     '</div>'+
@@ -12799,6 +12800,18 @@ function deleteMeter(mid){
   showToast('Meter deleted');
 }
 
+function deleteAllBills(mid){
+  const b=getUDBldg(udSelProjId,udSelBldgId);
+  const m=b?.meters?.find(m=>m.id===mid);
+  if(!m||!m.bills||!m.bills.length) return;
+  const count=m.bills.length;
+  if(!confirm('Delete all '+count+' billing period'+(count!==1?'s':'')+' from this meter? This cannot be undone.')) return;
+  m.bills=[];
+  if(m.baseline) m.baseline={};
+  saveUtilityData();
+  renderMeterWorkspace();
+  showToast(count+' billing period'+(count!==1?'s':'')+' deleted');
+}
 function deleteBillRow(mid, rowId){
   const b=getUDBldg(udSelProjId,udSelBldgId);
   const m=b?.meters?.find(m=>m.id===mid);
