@@ -5670,14 +5670,35 @@ function _extractEvergy(t,acctOverride,addrOverride){
 
   // ── Rate schedule ──
   // Rate schedule: code appears just before 'Billing Details' (possibly on previous line after y-split)
-  const rateMatch=t.match(/[-\u2013]\s*([\dA-Z]{3,10})[^\n]*?\n?[^\n]*?Billing\s+Details/i)||t.match(/[-\u2013]\s*([\dA-Z]{3,10})\s+Billing\s+Details/i)||t.match(/LGS[^\n]*[-\u2013]\s*([\dA-Z]{3,10})\s*$/im)||t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i);
+  // Fallback: rate schedule is always under the service address on page 2/3
+  const rateMatch=t.match(/[-\u2013]\s*([\dA-Z]{3,10})[^\n]*?\n?[^\n]*?Billing\s+Details/i)||t.match(/[-\u2013]\s*([\dA-Z]{3,10})\s+Billing\s+Details/i)||t.match(/LGS[^\n]*[-\u2013]\s*([\dA-Z]{3,10})\s*$/im)||t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i)||(()=>{
+    // Structural fallback: find the rate code near the address on page 2/3
+    // Pattern: address line (with state abbrev), then rate code on a nearby line before "Billing Details"
+    const lines=t.split('\n');
+    for(let i=0;i<lines.length;i++){
+      if(/Billing\s+Details/i.test(lines[i])){
+        // Look up to 8 lines before Billing Details for a standalone rate code
+        for(let j=Math.max(0,i-8);j<i;j++){
+          const line=lines[j].trim();
+          // Rate codes are typically short alphanumeric like "LGS", "MGS-T", "SGS", "LPS" etc.
+          const rm=line.match(/^([A-Z]{2,5}(?:-[A-Z0-9]{1,3})?)$/);
+          if(rm) return rm;
+          // Also match "LGS - 28M" style (code - modifier) on its own line or after address
+          const rm2=line.match(/\b([A-Z]{2,5})\s*[-\u2013]\s*([A-Z0-9]{1,5})\s*$/);
+          if(rm2) return [null, rm2[1]+'-'+rm2[2]];
+        }
+        break;
+      }
+    }
+    return null;
+  })();
 
   // ── Charges ──
   // OCR-tolerant charge keywords: very loose matching for OCR garble
   // "Chg" can become: CNG, CHG, Ghg, Ch9, Cha, Chq, etc.
   const C='(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])[.:]?';
-  // Customer: "Customer Chg" or OCR garble like "CUSIOMET CNG", "Customar Chg"
-  const custChg   =xChg('C[ua][s5][t1][o0]m[eao][r1t]\\s+'+C);
+  // Customer: "Customer Chg" or OCR garble like "CUSIOMET CNG", "Customar Chg", "CUSIOMER CNG"
+  const custChg   =xChg('C[ua][s5][t1iI][o0][mM][eao][r1tT]\\s+'+C);
   const facKW     =t.match(new RegExp('Fac[il1]{2}[il1]t[il1]es\\s+'+C+'\\s+([\\d,.]+)\\s*[kK][Ww]','i'))?.[1]?.replace(/,/g,'')||null;
   const facChg    =xChg('Fac[il1]{2}[il1]t[il1]es\\s+'+C);
   const demKW     =t.match(new RegExp('Demand\\s+'+C+'\\s+([\\d,.]+)\\s*[kK][Ww]','i'))?.[1]?.replace(/,/g,'')||null;
@@ -5713,9 +5734,36 @@ function _extractEvergy(t,acctOverride,addrOverride){
   })();
   const franchise =chg(/Franch[il1]se\s+Fee[^$\n]*\$([\d,]+\.\d{2})/i);
   const totalDue  =(()=>{
-    // Try Current Charges line first
-    const m=t.match(/Current\s+Charges[\s\S]*?\$\s*([\d,]+\.\d{2})/i);
-    if(m) return m[1].replace(/,/g,'');
+    // Prefer "Current Charges" in the billing detail section (page 2/3, near Subtotal)
+    // Page 1 "Current Charges" may be a summary total that differs from the utility detail total.
+    // Strategy: find ALL "Current Charges" lines, prefer the one after "Billing Details" or "Subtotal".
+    const lines=t.split('\n');
+    let bestVal=null, bestDist=Infinity;
+    let subtotalIdx=-1, bdIdx=-1;
+    for(let i=0;i<lines.length;i++){
+      if(/Subtotal/i.test(lines[i])) subtotalIdx=i;
+      if(/Billing\s+Details/i.test(lines[i])) bdIdx=i;
+    }
+    // Also check for "Utility" line under page 1 Current Charges (matches detail page total)
+    for(let i=0;i<lines.length;i++){
+      if(/Current\s+Charges/i.test(lines[i])){
+        const amt=getAmt(lines[i]);
+        if(amt!==null){
+          // Distance from Subtotal line — closer = better (detail page)
+          const dist=subtotalIdx>=0?Math.abs(i-subtotalIdx):Infinity;
+          if(dist<bestDist){bestDist=dist;bestVal=amt;}
+        }
+        // Check next line for "Utility" sub-line (page 1 format: Current Charges / Utility: $X)
+        if(i+1<lines.length && /Utilit/i.test(lines[i+1])){
+          const uAmt=getAmt(lines[i+1]);
+          if(uAmt!==null){
+            const dist=subtotalIdx>=0?Math.abs(i+1-subtotalIdx):1;
+            if(dist<bestDist){bestDist=dist;bestVal=uAmt;}
+          }
+        }
+      }
+    }
+    if(bestVal!==null) return bestVal.toFixed(2);
     // Try Subtotal
     const m2=t.match(/Subtotal[\s\S]*?\$\s*([\d,]+\.\d{2})/i);
     if(m2) return m2[1].replace(/,/g,'');
@@ -5725,7 +5773,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
     return sum>0 ? sum.toFixed(2) : null;
   })();
 
-  return {
+  const result = {
     UtilityCompany:'Evergy',
     CustomerName:t.match(/Customer\s*Name[^A-Za-z\n]*([A-Z][A-Z0-9 #]+?)(?=\s+Account|\n)/im)?.[1]?.trim()
       ||t.match(/Customer\s*Name\s*:\s*\n\s*(?:Account[^\n]*\n\s*)?([A-Z][A-Z0-9 #]+)/im)?.[1]?.trim()
@@ -5763,6 +5811,40 @@ function _extractEvergy(t,acctOverride,addrOverride){
     TotalCurrentCharges:totalDue,
     MeterNumber:null,
   };
+
+  // ── STRUCTURAL POSITION FALLBACK: use bill structure to recover missing values ──
+  // Evergy bills always have charges in a consistent order after "Billing Details - service from":
+  //   1. Customer Charge (always first line item)
+  //   2. Facilities Charge
+  //   3. Demand Charge
+  //   4. Energy charges (On/Off Peak)
+  //   ... then ECA, EER, PTS, TDC, RkVA, Tax exempt, Bill offset, Subtotal
+  if(!result.CustomerCharge){
+    // Customer Charge is always the FIRST dollar amount after "Billing Details - service from"
+    const lines=t.split('\n');
+    for(let i=0;i<lines.length;i++){
+      if(/Billing\s+Details|B[il1]{2}[il1]ng\s+D[ec]t[ao][il1]/i.test(lines[i])&&/service\s+from|serv[il1]ce\s+from/i.test(lines[i])){
+        // First charge line is Customer Charge — scan next few lines for first dollar amount
+        for(let j=i+1;j<Math.min(i+4,lines.length);j++){
+          // Skip lines that are clearly Facilities or Demand (they come later)
+          if(/Fac[il1]{2}|Demand|Energy/i.test(lines[j])) break;
+          const amt=getAmt(lines[j]);
+          if(amt!==null && amt>10 && amt<500){
+            result.CustomerCharge=amt.toFixed(2);
+            break;
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  // ── METER NUMBER EXTRACTION ──
+  if(!result.MeterNumber){
+    const meterNumMatch=t.match(/Meter\s*(?:Number|No|#|Num)[^A-Za-z0-9\n]*(\d[\d\-A-Z]{3,20})/im)
+      ||t.match(/Meter\s*:\s*(\d[\d\-A-Z]{3,20})/im);
+    if(meterNumMatch) result.MeterNumber=meterNumMatch[1].trim();
+  }
 
   // ── CHARGE RECONCILIATION: if sum doesn't match total, try to recover missing charges ──
   const _pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
@@ -5988,7 +6070,12 @@ function validateBillData(extracted, utilityName){
   for(const f of spec.important){
     const v=extracted[f];
     if(v===null||v===undefined||v===''){
-      warnings.push({level:'warn',field:f,message:'Missing — usually present on '+utilityName+' bills'});
+      // Check if this field was auto-recovered (don't warn about recovered fields)
+      if(extracted['_auto_recovered_'+f]){
+        warnings.push({level:'info',field:f,message:'Auto-recovered '+extracted['_auto_recovered_'+f]});
+      } else {
+        warnings.push({level:'warn',field:f,message:'Missing — usually present on '+utilityName+' bills'});
+      }
     }
   }
 
@@ -6241,7 +6328,9 @@ function _postExtractionVerify(bills, utilityName, rawText){
     const b=bills[i];
     const hist=getHistorical(b.AccountNumber);
 
-    // 1. Flag missing fields that historical data shows should be present (do NOT auto-fill)
+    // 1. Auto-recover missing fields using raw text structure + historical data
+    //    These fields are 100% present on every bill — if null, it's an OCR garble, not a missing field.
+    //    Use structural position in the raw text as primary recovery, historical data as validation.
     if(hist.length>=2){
       const FIELD_MAP={
         CustomerCharge:{saved:'customerCharge'},FacilitiesCharge:{saved:'facilitiesCharge'},
@@ -6253,11 +6342,36 @@ function _postExtractionVerify(bills, utilityName, rawText){
         if(val!==null&&val!==undefined&&val!=='') continue;
         const mapping=FIELD_MAP[field];
         if(!mapping) continue;
-        const histVals=hist.map(h=>h[mapping.saved]).filter(v=>v!==null&&v!==undefined&&v!=='');
+        const histVals=hist.map(h=>parseFloat(h[mapping.saved])||0).filter(v=>v>0);
         const presence=histVals.length/hist.length;
         if(presence>=0.8){
-          // Flag as likely OCR miss — do NOT fill in a value, just mark it
-          b['_likely_missing_'+field]=true;
+          // Try to recover from raw text using structural position before flagging
+          let recovered=false;
+
+          // For RateSchedule: grab from historical if consistent (rate doesn't change often)
+          if(field==='RateSchedule' && !recovered){
+            const histRates=hist.map(h=>h[mapping.saved]).filter(v=>v&&v!=='');
+            if(histRates.length>0){
+              // Use most recent rate schedule
+              b.RateSchedule=histRates[histRates.length-1];
+              b['_auto_recovered_'+field]='from historical data';
+              recovered=true;
+            }
+          }
+
+          // For CustomerName: grab from historical (name doesn't change)
+          if(field==='CustomerName' && !recovered){
+            const histNames=hist.map(h=>h[mapping.saved]).filter(v=>v&&v!=='');
+            if(histNames.length>0){
+              b.CustomerName=histNames[histNames.length-1];
+              b['_auto_recovered_'+field]='from historical data';
+              recovered=true;
+            }
+          }
+
+          if(!recovered){
+            b['_likely_missing_'+field]=true;
+          }
         }
       }
 

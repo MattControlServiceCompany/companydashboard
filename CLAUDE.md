@@ -2,9 +2,27 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+
+## Repository
+
+- **GitHub:** https://github.com/MattControlServiceCompany/companydashboard
+- **Local repo:** `C:\Users\Matt Miller\AI\companydashboard` — run all git commands here
+- **OneDrive backup:** `C:\Users\Matt Miller\OneDrive - Control Service Company\AI` — file backup only, NOT a git repo
+
+## Deployment
+After completing code changes, always push to GitHub. Never wait for the user to ask.
+
+## Bug Fixing Guidelines
+When fixing a bug related to a UI action (e.g., delete, update), check ALL places where that action occurs — modals, tables, lists — not just the first instance found. Ask the user to confirm scope if unclear.
+When the user provides a screenshot showing a bug, treat it as the source of truth. Do not argue or re-interpret — fix exactly what the screenshot shows.
+
+## Code Quality
+Do not fake or hardcode values for status displays, metrics, or calculated fields. Always read from the real data source. If unsure how to access real data, ask.
+
 ## Project Overview
 
 **CompanyHub** is an internal web dashboard for Control Service Company (CSC), a building automation / energy services company in the KC metro area. It is a static frontend app (vanilla HTML/CSS/JS, no build tools or framework) with all data stored in browser `localStorage`. There is no backend.
+Always test changes locally before considering work complete.
 
 ## File Structure
 
@@ -69,3 +87,4 @@ One exception: `test_evergy_regex.js` — run with `node test_evergy_regex.js` b
 - **PDF bill field mapping**: `kwCost` = BilledKWCharge + TDCCharge; `kwhCost` = On/Off-Peak + ECA + EER + PTS; `otherCost` = CustomerCharge + TaxExemptDelivery + BillOffset; `taxCost` = FranchiseFee. Validation tolerance is $0.10 — do not change.
 - **Inline CSS duplication**: site-ui styles exist both in standalone `site-ui.css` and inline in each HTML file. Keep them in sync.
 - The `ems-leads.html` page uses different fonts (Syne/DM Sans/DM Mono) and a slightly different token set than the other pages.
+
