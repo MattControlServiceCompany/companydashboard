@@ -6761,7 +6761,12 @@ function renderPDFFields(parsed, warnings){
     PeakDemandKW:'Peak Demand kW',
   };
   const el=document.getElementById('extractedFields');
-  const items=Object.entries(parsed).filter(([k,v])=>v!=null&&v!=='');
+  // Show ALL known fields (including null) so user can spot missing data
+  // Use LABELS key order for consistent display, then append any extra extracted fields
+  const knownKeys=Object.keys(LABELS);
+  const extraKeys=Object.keys(parsed).filter(k=>!knownKeys.includes(k)&&!k.startsWith('_'));
+  const allKeys=[...knownKeys.filter(k=>k in parsed||warnings.some(w=>w.field===k)),...extraKeys];
+  const items=allKeys.map(k=>[k,parsed[k]??'']);
   // Build warning lookup by field name
   const warnMap={};
   for(const w of warnings){
@@ -6775,30 +6780,33 @@ function renderPDFFields(parsed, warnings){
   const wIcon={error:'⛔','warn':'⚠️',info:'ℹ️'};
 
   // Build field HTML with inline warnings + magnitude/missing flags
-  const fieldHtml=items.filter(([k])=>!k.startsWith('_likely_missing_')&&!k.startsWith('_magnitude_flag_')&&!k.startsWith('_sum_mismatch')).map(([k,v])=>{
+  // Shows ALL fields including null/empty so user can spot missing data
+  const fieldHtml=items.filter(([k])=>!k.startsWith('_')).map(([k,v])=>{
     const fw=warnMap[k]||[];
     const magFlag = parsed['_magnitude_flag_'+k];
-    let borderStyle=fw.length?'border-left:3px solid '+wColor[fw[0].level]:'';
-    if(magFlag&&!fw.length) borderStyle='border-left:3px solid #fb923c;padding-left:8px';
+    const likelyMissing = parsed['_likely_missing_'+k];
+    const isEmpty = v===null||v===undefined||v==='';
+    // Border: red for errors, amber for warnings, orange for magnitude flags, dim for empty
+    let borderStyle='';
+    if(fw.length) borderStyle='border-left:3px solid '+wColor[fw[0].level]+';padding-left:8px';
+    else if(magFlag) borderStyle='border-left:3px solid #fb923c;padding-left:8px';
+    else if(isEmpty) borderStyle='border-left:3px solid var(--border2);padding-left:8px;opacity:.7';
     const warnHtml=fw.map(w=>`<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:${wBg[w.level]};border:1px solid ${wBorder[w.level]};color:${wColor[w.level]};line-height:1.4">${wIcon[w.level]} ${w.message}</div>`).join('');
     const magHtml=magFlag?'<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.25);color:#fb923c;line-height:1.4">⚠️ Possible OCR error: value is '+magFlag.ratio.toFixed(1)+'x the historical average ('+magFlag.mean.toLocaleString(undefined,{maximumFractionDigits:2})+'). Verify against source bill.</div>':'';
+    const likelyHtml=likelyMissing&&isEmpty?'<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.25);color:#a78bfa;line-height:1.4">🔍 Historical data shows this field is present on 80%+ of prior bills — likely an OCR miss</div>':'';
     // Format numeric values with commas for display
-    let displayVal = Array.isArray(v) ? v.join(', ') : (v||'');
-    if(typeof displayVal==='string'||typeof displayVal==='number'){
+    let displayVal = Array.isArray(v) ? v.join(', ') : (v??'');
+    if(typeof displayVal==='string'&&displayVal!==''){
       const num=parseFloat(String(displayVal).replace(/,/g,''));
       if(!isNaN(num)&&String(displayVal).match(/^[\d,.\-]+$/)){
         displayVal=num.toLocaleString('en-US',{minimumFractionDigits:String(displayVal).includes('.')?2:0,maximumFractionDigits:2});
       }
     }
-    return `<div class="ef-item" style="${borderStyle?borderStyle+(borderStyle.includes('padding')?'':';padding-left:8px'):''}"><div class="ef-key">${LABELS[k]||k}</div><input class="ef-input" value="${displayVal}" data-key="${k}">${warnHtml}${magHtml}</div>`;
+    const keyStyle=isEmpty&&!fw.length?'color:var(--text3)':'';
+    const inputStyle=isEmpty?'border-color:var(--border2);color:var(--text3)':'';
+    return `<div class="ef-item" style="${borderStyle}"><div class="ef-key" style="${keyStyle}">${LABELS[k]||k}</div><input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty?'—':''}" style="${inputStyle}">${warnHtml}${magHtml}${likelyHtml}</div>`;
   }).join('');
-
-  // Missing critical fields (not in items because they're null) — show as flagged empty fields
-  const missingHtml=warnings.filter(w=>w.level==='error'&&w.field!=='_all'&&!items.find(([k])=>k===w.field)).map(w=>{
-    const likelyMissing = parsed['_likely_missing_'+w.field];
-    const extraNote = likelyMissing ? '<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.25);color:#a78bfa;line-height:1.4">🔍 Historical data shows this field is present on 80%+ of prior bills for this account — likely an OCR miss</div>' : '';
-    return `<div class="ef-item" style="border-left:3px solid ${wColor.error};padding-left:8px;opacity:.85"><div class="ef-key" style="color:${wColor.error}">${LABELS[w.field]||w.field}</div><input class="ef-input" value="" data-key="${w.field}" placeholder="Missing — edit to add" style="border-color:${wBorder.error}"><div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:${wBg.error};border:1px solid ${wBorder.error};color:${wColor.error};line-height:1.4">${wIcon.error} ${w.message}</div>${extraNote}</div>`;
-  }).join('');
+  const missingHtml='';
 
   // Show sum mismatch warning if present
   const sumMismatch = parsed['_sum_mismatch'];
