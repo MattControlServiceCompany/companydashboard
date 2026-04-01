@@ -2861,6 +2861,7 @@ window.emsSaveNew=function(){
   ['enl-company','enl-cscContact','enl-cscEngineer','enl-value','enl-contactName','enl-contactPhone','enl-contactEmail','enl-address','enl-city','enl-state','enl-zip','enl-sqft','enl-notes','enl-nextDate','enl-nextAction'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
 };
 
+window.emsCloseRawTable=function(){ document.getElementById('emsRawModal').classList.remove('open'); };
 window.emsOpenImport=function(){ document.getElementById('emsImportModal').classList.add('open'); };
 window.emsCloseImport=function(){
   document.getElementById('emsImportModal').classList.remove('open');
