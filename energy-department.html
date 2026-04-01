@@ -6726,7 +6726,15 @@ function renderPDFFields(parsed, warnings){
     if(magFlag&&!fw.length) borderStyle='border-left:3px solid #fb923c;padding-left:8px';
     const warnHtml=fw.map(w=>`<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:${wBg[w.level]};border:1px solid ${wBorder[w.level]};color:${wColor[w.level]};line-height:1.4">${wIcon[w.level]} ${w.message}</div>`).join('');
     const magHtml=magFlag?'<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.25);color:#fb923c;line-height:1.4">⚠️ Possible OCR error: value is '+magFlag.ratio.toFixed(1)+'x the historical average ('+magFlag.mean.toLocaleString(undefined,{maximumFractionDigits:2})+'). Verify against source bill.</div>':'';
-    return `<div class="ef-item" style="${borderStyle?borderStyle+(borderStyle.includes('padding')?'':';padding-left:8px'):''}"><div class="ef-key">${LABELS[k]||k}</div><input class="ef-input" value="${Array.isArray(v)?v.join(', '):(v||'')}" data-key="${k}">${warnHtml}${magHtml}</div>`;
+    // Format numeric values with commas for display
+    let displayVal = Array.isArray(v) ? v.join(', ') : (v||'');
+    if(typeof displayVal==='string'||typeof displayVal==='number'){
+      const num=parseFloat(String(displayVal).replace(/,/g,''));
+      if(!isNaN(num)&&String(displayVal).match(/^[\d,.\-]+$/)){
+        displayVal=num.toLocaleString('en-US',{minimumFractionDigits:String(displayVal).includes('.')?2:0,maximumFractionDigits:2});
+      }
+    }
+    return `<div class="ef-item" style="${borderStyle?borderStyle+(borderStyle.includes('padding')?'':';padding-left:8px'):''}"><div class="ef-key">${LABELS[k]||k}</div><input class="ef-input" value="${displayVal}" data-key="${k}">${warnHtml}${magHtml}</div>`;
   }).join('');
 
   // Missing critical fields (not in items because they're null) — show as flagged empty fields
