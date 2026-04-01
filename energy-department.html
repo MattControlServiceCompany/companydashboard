@@ -5549,10 +5549,11 @@ function _extractEvergy(t,acctOverride,addrOverride){
   //   • "Energy Chg ... kWh at $0.06407\n140000 per kWh ... $5,512.40"  (2-line)
   //   • "ECA Chg ... for\nJul Aug ... kWh ... $158.97"  (chart label injected mid)
   //   • "$2,027.18 Period kWh Days..."            (chart cols appended after dollar)
-  // Strategy: for each keyword line, take the last $X.XX that is NOT a rate
-  // (i.e. not preceded by "at $" and not followed by " per k"). If no dollar on
-  // the keyword line, scan forward up to 6 lines stopping at the next charge keyword.
-  const CHG_STOP=/(?:Customer|Fac[il1]{2}[il1]t[il1]es|Demand|Energy\s+Ch[gaq9]|ECA|EER|PTS|TDC|RkVA|Subtotal|Current\s+Charges)\b/i;
+  //   • "CUSIOMET CNG ..... $105.97"              (OCR garbled keyword)
+  //   • "Facilities Ghg ... $1,394.55"            (OCR letter swap)
+  // Strategy: for each keyword line, take the last $X.XX that is NOT a rate.
+  // Uses very loose OCR-tolerant patterns that handle common letter swaps.
+  const CHG_STOP=/(?:Cust|Fac[il1]{2}|Demand|Energy\s+C|ECA|EER|PTS|TDC|RkVA|Subtotal|Current\s+Charges)\b/i;
   const getAmt=(line)=>{
     const ms=[...line.matchAll(/\$([\d,]+\.\d{2})/g)];
     let best=null;
@@ -5621,21 +5622,25 @@ function _extractEvergy(t,acctOverride,addrOverride){
   const rateMatch=t.match(/[-\u2013]\s*([\dA-Z]{3,10})[^\n]*?\n?[^\n]*?Billing\s+Details/i)||t.match(/[-\u2013]\s*([\dA-Z]{3,10})\s+Billing\s+Details/i)||t.match(/LGS[^\n]*[-\u2013]\s*([\dA-Z]{3,10})\s*$/im)||t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i);
 
   // ── Charges ──
-  // OCR-tolerant charge keywords: Ch[gaq9] catches Chg/Cha/Chq/Ch9
-  const C='Ch[gaq9][.:]?';
-  const custChg   =xChg('Customer\\s+'+C);
-  const facKW     =t.match(new RegExp('Fac[il1]{2}[il1]t[il1]es\\s+'+C+'\\s+([\\d,.]+)\\s*kW','i'))?.[1]?.replace(/,/g,'')||null;
+  // OCR-tolerant charge keywords: very loose matching for OCR garble
+  // "Chg" can become: CNG, CHG, Ghg, Ch9, Cha, Chq, etc.
+  const C='(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])[.:]?';
+  // Customer: "Customer Chg" or OCR garble like "CUSIOMET CNG", "Customar Chg"
+  const custChg   =xChg('C[ua][s5][t1][o0]m[eao][r1t]\\s+'+C);
+  const facKW     =t.match(new RegExp('Fac[il1]{2}[il1]t[il1]es\\s+'+C+'\\s+([\\d,.]+)\\s*[kK][Ww]','i'))?.[1]?.replace(/,/g,'')||null;
   const facChg    =xChg('Fac[il1]{2}[il1]t[il1]es\\s+'+C);
-  const demKW     =t.match(new RegExp('Demand\\s+'+C+'\\s+([\\d,.]+)\\s*kW','i'))?.[1]?.replace(/,/g,'')||null;
+  const demKW     =t.match(new RegExp('Demand\\s+'+C+'\\s+([\\d,.]+)\\s*[kK][Ww]','i'))?.[1]?.replace(/,/g,'')||null;
   const demChg    =xChg('Demand\\s+'+C);
-  const onPkChg   =xChg('Energy\\s+'+C+'\\s+On\\s+Pk');
-  const offPkChg  =xChg('Energy\\s+'+C+'\\s+Off\\s+Pk');
-  const tieredChg =xChg('Energy\\s+'+C,/On\s+Pk|Off\s+Pk/i);
+  const onPkChg   =xChg('Energy\\s+'+C+'\\s+On\\s+P[kK]');
+  const offPkChg  =xChg('Energy\\s+'+C+'\\s+Off\\s+P[kK]');
+  const tieredChg =xChg('Energy\\s+'+C,/On\s+P[kK]|Off\s+P[kK]/i);
   const ecaChg    =xChg('ECA\\s+'+C);
   const eerChg    =xChg('EER\\s+'+C);
   const ptsChg    =xChg('PTS\\s+'+C);
-  const tdcKW     =t.match(new RegExp('TDC\\s+'+C+'[\\s\\S]*?([\\d,.]+)\\s*kW\\s+at','i'))?.[1]?.replace(/,/g,'')||null;
+  const tdcKW     =t.match(new RegExp('TDC\\s+'+C+'[\\s\\S]*?([\\d,.]+)\\s*[kK][Ww]\\s+at','i'))?.[1]?.replace(/,/g,'')||null;
   const tdcChg    =xChg('TDC\\s+'+C);
+  // RkVA charge (reactive power)
+  const rkvaChg   =xChg('R[kK]VA\\s+'+C);
   const taxExempt =chg(/Tax\s+exempt[^$\n]*\$([\d,]+\.\d{2})/i);
   // Bill offset / credit: match "Bill offset" or any line with a negative dollar amount before Subtotal
   const billOffset=(()=>{
@@ -5671,7 +5676,9 @@ function _extractEvergy(t,acctOverride,addrOverride){
 
   return {
     UtilityCompany:'Evergy',
-    CustomerName:t.match(/Customer\s*Name[^A-Za-z\n]*([A-Z][A-Z0-9 #]+?)(?=\s+Account|\n)/im)?.[1]?.trim()||null,
+    CustomerName:t.match(/Customer\s*Name[^A-Za-z\n]*([A-Z][A-Z0-9 #]+?)(?=\s+Account|\n)/im)?.[1]?.trim()
+      ||t.match(/Customer\s*Name\s*:\s*\n\s*(?:Account[^\n]*\n\s*)?([A-Z][A-Z0-9 #]+)/im)?.[1]?.trim()
+      ||t.match(/Customer\s*Name\s*:\s*([A-Z][A-Z0-9 #]{2,})/im)?.[1]?.trim()||null,
     AccountNumber:acctOverride||t.match(/Account\s+(?:Number\s*)?[:\s©®]\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null,
     ServiceAddress:addrOverride||null,
     RateSchedule:rateMatch?.[1]||null,
@@ -5698,12 +5705,60 @@ function _extractEvergy(t,acctOverride,addrOverride){
     PTSCharge:ptsChg,
     TDCkW:tdcKW,
     TDCCharge:tdcChg,
+    RkVACharge:rkvaChg,
     TaxExemptDelivery:taxExempt,
     BillOffset:billOffset,
     FranchiseFee:franchise,
     TotalCurrentCharges:totalDue,
     MeterNumber:null,
   };
+
+  // ── CHARGE RECONCILIATION: if sum doesn't match total, try to recover missing charges ──
+  const _pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
+  const _compSum=_pf(result.CustomerCharge)+_pf(result.FacilitiesCharge)+_pf(result.BilledKWCharge)
+    +_pf(result.EnergyOnPeakCharge)+_pf(result.EnergyOffPeakCharge)+_pf(result.ECACharge)
+    +_pf(result.EERCharge)+_pf(result.PTSCharge)+_pf(result.TDCCharge)+_pf(result.RkVACharge)
+    +_pf(result.TaxExemptDelivery)+_pf(result.BillOffset)+_pf(result.FranchiseFee);
+  const _total=_pf(result.TotalCurrentCharges);
+  if(_total>0&&Math.abs(_compSum-_total)>1){
+    // Try to find missing charges by scanning ALL dollar amounts between "Billing Details" and "Subtotal"
+    const bdIdx=t.search(/Billing\s+Details/i);
+    const stIdx=t.search(/Subtotal/i);
+    if(bdIdx>=0&&stIdx>bdIdx){
+      const section=t.substring(bdIdx,stIdx);
+      const allAmts=[];
+      const lines2=section.split('\n');
+      for(const line of lines2){
+        const ms=[...line.matchAll(/\$([\d,]+\.\d{2})/g)];
+        for(const m of ms){
+          const before=line.slice(Math.max(0,m.index-4),m.index);
+          const after=line.slice(m.index+m[0].length,m.index+m[0].length+10);
+          if(/at\s*$/.test(before)) continue;
+          if(/\s*[Pp][eo]r\s+k/i.test(after)) continue;
+          const val=parseFloat(m[1].replace(/,/g,''));
+          if(val<1&&/\.\d{3,}/.test(m[1])) continue;
+          allAmts.push({val,line:line.trim()});
+        }
+      }
+      // Find amounts not already captured
+      const capturedVals=Object.values(result).filter(v=>v!==null&&v!=='').map(v=>_pf(v)).filter(v=>v>0);
+      const uncaptured=allAmts.filter(a=>!capturedVals.some(c=>Math.abs(c-a.val)<0.01)&&Math.abs(a.val)>0.5);
+      // Try to assign uncaptured amounts to missing fields
+      for(const uc of uncaptured){
+        const lcLine=uc.line.toLowerCase();
+        if(!result.CustomerCharge&&/cust|custo/i.test(lcLine)) result.CustomerCharge=uc.val.toFixed(2);
+        else if(!result.FacilitiesCharge&&/facil|facl/i.test(lcLine)) result.FacilitiesCharge=uc.val.toFixed(2);
+        else if(!result.RkVACharge&&/rkva|rkv/i.test(lcLine)) result.RkVACharge=uc.val.toFixed(2);
+        // Also try to recover FacilitiesKW from the same line
+        if(!result.FacilitiesKW&&/facil|facl/i.test(lcLine)){
+          const kwM=uc.line.match(/([\d,.]+)\s*[kK][Ww]/);
+          if(kwM) result.FacilitiesKW=kwM[1].replace(/,/g,'');
+        }
+      }
+    }
+  }
+
+  return result;
 }
 
 // OCR-tolerant patterns for Evergy bills
@@ -5841,7 +5896,7 @@ const EXPECTED_FIELDS={
   Evergy:{
     critical:['BillingPeriodStart','BillingPeriodEnd','kWhConsumed','TotalCurrentCharges'],
     important:['ActualKW','CustomerCharge','AccountNumber','NumberOfDays','RateSchedule','CustomerName','FacilitiesKW','FacilitiesCharge','BilledKWCharge','EnergyOnPeakCharge'],
-    chargeFields:['CustomerCharge','FacilitiesCharge','BilledKWCharge','EnergyOnPeakCharge','ECACharge','EERCharge','TDCCharge','FranchiseFee'],
+    chargeFields:['CustomerCharge','FacilitiesCharge','BilledKWCharge','EnergyOnPeakCharge','ECACharge','EERCharge','TDCCharge'],
   },
   'Spire / Laclede Gas':{
     critical:['BillingPeriodStart','BillingPeriodEnd','NaturalGasTherms','TotalAmountDue'],
@@ -5894,7 +5949,7 @@ function validateBillData(extracted, utilityName){
       const compSum=pf(extracted.CustomerCharge)+pf(extracted.FacilitiesCharge)+pf(extracted.BilledKWCharge)
         +pf(extracted.EnergyOnPeakCharge)+pf(extracted.EnergyOffPeakCharge)+pf(extracted.ECACharge)
         +pf(extracted.EERCharge)+pf(extracted.PTSCharge)+pf(extracted.TDCCharge)
-        +pf(extracted.TaxExemptDelivery)+pf(extracted.BillOffset)+pf(extracted.FranchiseFee);
+        +pf(extracted.RkVACharge)+pf(extracted.TaxExemptDelivery)+pf(extracted.BillOffset)+pf(extracted.FranchiseFee);
       const diff=Math.abs(compSum-total);
       if(diff>1.00){
         warnings.push({level:'warn',field:'TotalCurrentCharges',
@@ -6178,7 +6233,7 @@ function _postExtractionVerify(bills, utilityName, rawText){
         const compSum=pf(b.CustomerCharge)+pf(b.FacilitiesCharge)+pf(b.BilledKWCharge)
           +pf(b.EnergyOnPeakCharge)+pf(b.EnergyOffPeakCharge)+pf(b.ECACharge)
           +pf(b.EERCharge)+pf(b.PTSCharge)+pf(b.TDCCharge)
-          +pf(b.TaxExemptDelivery)+pf(b.BillOffset)+pf(b.FranchiseFee);
+          +pf(b.RkVACharge)+pf(b.TaxExemptDelivery)+pf(b.BillOffset)+pf(b.FranchiseFee);
         const total=pf(b.TotalCurrentCharges);
         if(compSum>0&&total>0){
           const diff=Math.abs(compSum-total);
@@ -6695,6 +6750,7 @@ function renderPDFFields(parsed, warnings){
     kWhConsumed:'kWh Consumed',ActualKW:'Actual kW',ActualRKVA:'Actual RKVA',
     CustomerCharge:'Customer Charge',
     FacilitiesKW:'Facilities kW',FacilitiesCharge:'Facilities Charge',
+    RkVACharge:'RkVA Charge',
     BilledKW:'Billed kW',BilledKWCharge:'Billed kW Charge',
     EnergyOnPeakCharge:'Energy On-Peak Charge',EnergyOffPeakCharge:'Energy Off-Peak Charge',
     ECACharge:'ECA Charge',EERCharge:'EER Charge',PTSCharge:'PTS Charge',
