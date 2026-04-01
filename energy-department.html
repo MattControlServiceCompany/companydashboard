@@ -3650,6 +3650,10 @@ function sv(id,btn){
       renderSvProjNav(); renderSvDetail();
     });
   }
+  if(id==='projects'){
+    showList();
+    renderProjTable();
+  }
 }
 
 /* ── AUTH ── */
@@ -4524,10 +4528,10 @@ function renderProjUDBody(projId, bldgId){
     const tempDiv = document.createElement('div');
     renderUDDetail(tempDiv);
     udSelProjId = prevProj; udSelBldgId = prevBldg;
-    // Restore _udActiveWrap to the standalone UD page wrap so it isn't left pointing at tempDiv
-    window._udActiveWrap = document.getElementById('udDetailWrap');
     body.innerHTML = panelHTML;
-    body.appendChild(tempDiv);
+    // Move rendered content into the proj-ud-body so meter clicks resolve to this container
+    while(tempDiv.firstChild) body.appendChild(tempDiv.firstChild);
+    // _udActiveWrap will be re-resolved by _resolveEmbedContext on each meter/tab click
   }
 
   // Render panel content after DOM update
@@ -7961,11 +7965,23 @@ function renderUDDetail(targetWrap){
   renderMeterWorkspace();
 }
 
-function udSelectMeter(mid, el){
-  if(el){
-    const ws = el.closest('[id^="proj-ud-body"]') || el.closest('#udDetailWrap');
-    if(ws){ window._udActiveWrap = ws; _setActiveMid(ws, mid); }
+function _resolveEmbedContext(el){
+  // When called from a Projects-embed meter/tab, set the correct proj/bldg context
+  if(!el) return null;
+  const ws = el.closest('[id^="proj-ud-body"]') || el.closest('#udDetailWrap');
+  if(!ws) return null;
+  window._udActiveWrap = ws;
+  const m = ws.id && ws.id.match(/^proj-ud-body-(\d+)$/);
+  if(m){
+    const pid = Number(m[1]);
+    udSelProjId = pid;
+    udSelBldgId = projUDSelBldg[pid] || udSelBldgId;
   }
+  return ws;
+}
+function udSelectMeter(mid, el){
+  const ws = _resolveEmbedContext(el);
+  if(ws) _setActiveMid(ws, mid);
   udActiveMid=mid;
   udActiveTab='bills'; _bldgStatsPanelVis=false; _bldgPerfPanelVis=false; _bldgSavProjPanelVis=false; saveUDSession();
   const isEmbed = window._udActiveWrap && window._udActiveWrap !== document.getElementById('udDetailWrap');
@@ -7973,11 +7989,7 @@ function udSelectMeter(mid, el){
 }
 function maSetTab(tab, el){
   udActiveTab=tab; saveUDSession();
-  // Scope to whichever maMeterWorkspace the clicked tab lives in
-  if(el){
-    const ws = el.closest('[id^="proj-ud-body"]') || el.closest('#udDetailWrap');
-    if(ws) window._udActiveWrap = ws;
-  }
+  _resolveEmbedContext(el);
   renderMeterWorkspace();
 }
 
