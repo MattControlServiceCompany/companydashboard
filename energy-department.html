@@ -5604,16 +5604,67 @@ function _extractEvergy(t,acctOverride,addrOverride){
   // ── Meter read table (used for reads/multiplier/kW only, NOT days) ──
   const meterRow=t.match(/(\d{2}\/\d{2})\s+(\d{2}\/\d{2})\s+\d+\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+[\d,]+\.?\d*\s+([\d,.]+)\s+[\d,]+\.?\d*\s+([\d.]+)\s+([\d.]+)/);
 
-  // ── kWh Consumed: prefer ECA/PTS/EER line totals (full billing period); fall back to sum of Energy Chg tiers ──
-  const adjKwh=(()=>{
-    const fromAdj=[...t.matchAll(/(?:ECA|EER|PTS)\s+Ch[gaq9][\s\S]*?(?:for\s+)?([\d,]+\.?\d*)\s*kWh/gi)].map(m=>parseFloat(m[1].replace(/,/g,'')));
-    if(fromAdj.length) return String(Math.max(...fromAdj));
-    // Tier sum from Energy Chg lines
-    const fromEnergy=[...t.matchAll(/Energy\s+Ch[gaq9]\s+([\d,]+\.?\d*)\s*kWh/gi)].map(m=>parseFloat(m[1].replace(/,/g,'')));
-    if(fromEnergy.length) return String(fromEnergy.reduce((a,b)=>a+b,0));
-    // Last resort: look for standalone large kWh number near "kWh Used" or "kWh Consumed"
-    const fallback=t.match(/kWh\s+(?:Used|Consumed)[^\d]*([\d,]+\.?\d*)/i)||t.match(/([\d,]{4,}\.?\d*)\s*kWh\s+(?:Used|Consumed)/i);
-    if(fallback) return fallback[1].replace(/,/g,'');
+  // ── kWh Consumed: multi-source with cross-validation ──
+  // Source 1: Meter read table — (EndRead - StartRead) × Multiplier (most reliable)
+  // Source 2: ECA/EER/PTS charge line kWh quantities (full billing period total)
+  // Source 3: Sum of Energy Chg tier kWh quantities
+  // Validation: Evergy values always have a decimal point; values without decimals are OCR errors
+  const _validKwh = v => {
+    // All Evergy numeric values have decimals — a whole number > 10000 without decimal is suspicious
+    if(v > 10000 && v === Math.floor(v)) return false;
+    // Sanity: kWh should be between 100 and 2,000,000 for commercial
+    return v > 0 && v < 2000000;
+  };
+
+  // Source 1: meter read calculation
+  const meterKwh = (()=>{
+    if(!meterRow) return null;
+    const endR = parseFloat((meterRow[3]||'').replace(/,/g,''));
+    const startR = parseFloat((meterRow[4]||'').replace(/,/g,''));
+    const mult = parseFloat((meterRow[5]||'').replace(/,/g,''));
+    if(endR>0 && startR>0 && mult>0){
+      const calc = (endR - startR) * mult;
+      if(_validKwh(calc)) return calc;
+    }
+    // Also check kWh Used column directly
+    const kwhUsed = parseFloat((meterRow[0]||'').replace(/,/g,''));
+    // Match the full row again for kWh Used field (8th group)
+    const fullRow = t.match(/\d{2}\/\d{2}\s+\d{2}\/\d{2}\s+\d+\s+[\d,]+\.?\d*\s+[\d,]+\.?\d*\s+[\d,]+\.?\d*\s+[\d,.]+\s+([\d,]+\.?\d*)\s+[\d.]+/);
+    if(fullRow){
+      const directKwh = parseFloat(fullRow[1].replace(/,/g,''));
+      if(_validKwh(directKwh)) return directKwh;
+    }
+    return null;
+  })();
+
+  // Source 2: ECA/EER/PTS line kWh (only trust values with decimals)
+  const fromAdj=[...t.matchAll(/(?:ECA|EER|PTS)\s+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])[\s\S]*?(?:for\s+)?([\d,]+\.\d+)\s*kWh/gi)]
+    .map(m=>parseFloat(m[1].replace(/,/g,'')))
+    .filter(v=>_validKwh(v));
+  const adjKwhVal = fromAdj.length ? Math.max(...fromAdj) : null;
+
+  // Source 3: Energy tier sum
+  const fromEnergy=[...t.matchAll(/Energy\s+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])\s+(?:On\s+Pk\s+\w+\s+|Off\s+Pk\s+\w+\s+)?([\d,]+\.\d+)\s*kWh/gi)]
+    .map(m=>parseFloat(m[1].replace(/,/g,'')))
+    .filter(v=>v>0);
+  const tierKwh = fromEnergy.length ? fromEnergy.reduce((a,b)=>a+b,0) : null;
+
+  // Pick best source: prefer meter read calc, then adj lines, then tier sum
+  const adjKwh = (()=>{
+    // If meter read gives a value, cross-validate against adj lines
+    if(meterKwh && adjKwhVal){
+      const ratio = meterKwh / adjKwhVal;
+      // They should be very close (within 1%)
+      if(ratio > 0.99 && ratio < 1.01) return String(meterKwh);
+      // If they disagree, trust meter read (it's from digital meter data, not OCR'd charge text)
+      return String(meterKwh);
+    }
+    if(meterKwh) return String(meterKwh);
+    if(adjKwhVal) return String(adjKwhVal);
+    if(tierKwh && _validKwh(tierKwh)) return String(tierKwh);
+    // Last resort
+    const fallback=t.match(/kWh\s+(?:Used|Consumed)[^\d]*([\d,]+\.\d+)/i)||t.match(/([\d,]+\.\d+)\s*kWh\s+(?:Used|Consumed)/i);
+    if(fallback){const v=parseFloat(fallback[1].replace(/,/g,'')); if(_validKwh(v)) return String(v);}
     return null;
   })();
 
@@ -6760,6 +6811,11 @@ function renderPDFFields(parsed, warnings){
     NaturalGasTherms:'Natural Gas Therms',TotalAmountDue:'Total Amount Due',
     PeakDemandKW:'Peak Demand kW',
   };
+  // Fields that represent dollar charges — prefix with $ in display
+  const CHARGE_FIELDS=new Set(['CustomerCharge','FacilitiesCharge','RkVACharge','BilledKWCharge',
+    'EnergyOnPeakCharge','EnergyOffPeakCharge','ECACharge','EERCharge','PTSCharge',
+    'TDCCharge','TaxExemptDelivery','BillOffset','FranchiseFee','TotalCurrentCharges','TotalAmountDue',
+    'GasCharge','WaterCharge','SewerCharge','StormwaterCharge','FuelAdjustment']);
   const el=document.getElementById('extractedFields');
   // Show ALL known fields (including null) so user can spot missing data
   // Use LABELS key order for consistent display, then append any extra extracted fields
@@ -6794,12 +6850,14 @@ function renderPDFFields(parsed, warnings){
     const warnHtml=fw.map(w=>`<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:${wBg[w.level]};border:1px solid ${wBorder[w.level]};color:${wColor[w.level]};line-height:1.4">${wIcon[w.level]} ${w.message}</div>`).join('');
     const magHtml=magFlag?'<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.25);color:#fb923c;line-height:1.4">⚠️ Possible OCR error: value is '+magFlag.ratio.toFixed(1)+'x the historical average ('+magFlag.mean.toLocaleString(undefined,{maximumFractionDigits:2})+'). Verify against source bill.</div>':'';
     const likelyHtml=likelyMissing&&isEmpty?'<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.25);color:#a78bfa;line-height:1.4">🔍 Historical data shows this field is present on 80%+ of prior bills — likely an OCR miss</div>':'';
-    // Format numeric values with commas for display
+    // Format numeric values with commas and $ for charges
     let displayVal = Array.isArray(v) ? v.join(', ') : (v??'');
     if(typeof displayVal==='string'&&displayVal!==''){
       const num=parseFloat(String(displayVal).replace(/,/g,''));
-      if(!isNaN(num)&&String(displayVal).match(/^[\d,.\-]+$/)){
-        displayVal=num.toLocaleString('en-US',{minimumFractionDigits:String(displayVal).includes('.')?2:0,maximumFractionDigits:2});
+      if(!isNaN(num)&&String(displayVal).match(/^-?[\d,.\-]+$/)){
+        const isCharge=CHARGE_FIELDS.has(k);
+        const formatted=Math.abs(num).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+        displayVal=(num<0?'-':'')+(isCharge?'$':'')+formatted;
       }
     }
     const keyStyle=isEmpty&&!fw.length?'color:var(--text3)':'';
