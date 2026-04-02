@@ -749,16 +749,7 @@ tr.bill-flagged td:first-child{box-shadow:inset 3px 0 0 var(--amber);}
 .cc-card-meta a{color:var(--em);text-decoration:none;}
 .cc-card-meta a:hover{text-decoration:underline;}
 
-/* ── PROJECT BUILDINGS TAB ── */
-.pb-bldg-card{display:grid;grid-template-columns:1fr auto;align-items:start;gap:10px;background:var(--s3);border:1px solid var(--border);border-radius:9px;padding:12px 14px;margin-bottom:8px;transition:border-color .13s;}
-.pb-bldg-card:hover{border-color:var(--border2);}
-.pb-bldg-name{font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px;}
-.pb-bldg-meta{font-size:11px;color:var(--text2);display:flex;flex-wrap:wrap;gap:8px;margin-top:2px;}
-.pb-bldg-meta span{display:flex;align-items:center;gap:3px;}
-.pb-bldg-actions{display:flex;gap:5px;flex-shrink:0;}
-.pb-sqft-total{display:flex;align-items:center;justify-content:space-between;background:var(--em-dim);border:1px solid rgba(0,212,170,.2);border-radius:8px;padding:9px 14px;margin-bottom:12px;}
-.pb-sqft-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--em);}
-.pb-sqft-val{font-size:16px;font-weight:800;color:var(--em);font-family:var(--mono);}
+
 
 
 
@@ -4237,9 +4228,9 @@ function _updateCompactHdrBaseline(projId){
   let blCost=0, blKwh=0, totalCost=0, totalKwh=0;
   bldgs.forEach(b=>(b.meters||[]).forEach(m=>{
     const blBills = _dashGetBaselineBills(m);
-    blBills.forEach(bill=>{ blCost+=(parseFloat(bill.totalCost)||parseFloat(bill.cost)||0); blKwh+=(parseFloat(bill.kwh)||parseFloat(bill.usage)||0); });
+    blBills.forEach(bill=>{ blCost+=(parseFloat(bill.totalCost)||parseFloat(bill.thermCost)||parseFloat(bill.cost)||0); blKwh+=(parseFloat(bill.kwh)||parseFloat(bill.usage)||0); if(m.commodity==='Gas') blKwh+=(parseFloat(bill.therms)||0); });
     // Also tally all bills for fallback display
-    (m.bills||[]).forEach(bill=>{ totalCost+=(parseFloat(bill.totalCost)||parseFloat(bill.cost)||0); totalKwh+=(parseFloat(bill.kwh)||parseFloat(bill.usage)||0); });
+    (m.bills||[]).forEach(bill=>{ totalCost+=(parseFloat(bill.totalCost)||parseFloat(bill.thermCost)||parseFloat(bill.cost)||0); totalKwh+=(parseFloat(bill.kwh)||parseFloat(bill.usage)||0); if(m.commodity==='Gas') totalKwh+=(parseFloat(bill.therms)||0); });
   }));
   const useCost = blCost>0 ? blCost : totalCost;
   const useKwh = blKwh>0 ? blKwh : totalKwh;
@@ -4301,11 +4292,11 @@ function initDashboardTab(projId){
     meters.forEach(m=>{
       const blBills = _dashGetBaselineBills(m);
       if(blBills.length) hasBaseline = true;
-      blBills.forEach(bill=>{ blCost += (parseFloat(bill.totalCost)||parseFloat(bill.cost)||0); blKwh += (parseFloat(bill.kwh)||parseFloat(bill.usage)||0); });
+      blBills.forEach(bill=>{ blCost += (parseFloat(bill.totalCost)||parseFloat(bill.thermCost)||parseFloat(bill.cost)||0); blKwh += (parseFloat(bill.kwh)||parseFloat(bill.usage)||0); if(m.commodity==='Gas') blKwh+=(parseFloat(bill.therms)||0); });
       const bills = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
-      bills.slice(-12).forEach(bill=>{ curCost += (parseFloat(bill.totalCost)||parseFloat(bill.cost)||0); curKwh += (parseFloat(bill.kwh)||parseFloat(bill.usage)||0); });
+      bills.slice(-12).forEach(bill=>{ curCost += (parseFloat(bill.totalCost)||parseFloat(bill.thermCost)||parseFloat(bill.cost)||0); curKwh += (parseFloat(bill.kwh)||parseFloat(bill.usage)||0); if(m.commodity==='Gas') curKwh+=(parseFloat(bill.therms)||0); });
       // Tally all bills as fallback when no baseline is set
-      (m.bills||[]).forEach(bill=>{ allCost += (parseFloat(bill.totalCost)||parseFloat(bill.cost)||0); allKwh += (parseFloat(bill.kwh)||parseFloat(bill.usage)||0); });
+      (m.bills||[]).forEach(bill=>{ allCost += (parseFloat(bill.totalCost)||parseFloat(bill.thermCost)||parseFloat(bill.cost)||0); allKwh += (parseFloat(bill.kwh)||parseFloat(bill.usage)||0); if(m.commodity==='Gas') allKwh+=(parseFloat(bill.therms)||0); });
       // Baseline period label
       if(blBills.length){
         const first = blBills[0].start, last = blBills[blBills.length-1].end||blBills[blBills.length-1].start;
@@ -4515,7 +4506,7 @@ const PROJ_TABS_DEFAULT = [
   {id:'docs',label:'📁 Documents'},
 ];
 function _getProjTabOrder(){
-  try{const o=JSON.parse(localStorage.getItem('ch_projTabOrder'));if(Array.isArray(o)&&o.length===PROJ_TABS_DEFAULT.length) return o;}catch(e){}
+  try{const o=JSON.parse(localStorage.getItem('ch_projTabOrder'));if(Array.isArray(o)){const valid=new Set(PROJ_TABS_DEFAULT.map(t=>t.id));const filtered=o.filter(id=>valid.has(id));if(filtered.length) return filtered;}}catch(e){}
   return PROJ_TABS_DEFAULT.map(t=>t.id);
 }
 function _saveProjTabOrder(order){ localStorage.setItem('ch_projTabOrder',JSON.stringify(order)); }
@@ -5964,7 +5955,7 @@ const UTILITY_RULES=[
   {name:'Evergy',detect:t=>(
     _EVG_BILLING_DETAILS.test(t) ||
     /Billing\s+Details\s*[-\u2013]\s*service\s+from/i.test(t) ||
-    (/Fac[il1]{2}[il1]t[il1]es\s+Ch[gaq9]/i.test(t) && /Demand\s+Ch[gaq9]/i.test(t) && /TDC\s+Ch[gaq9]/i.test(t)) ||
+    (/Fac[il1]{1,3}[il1]?t[il1]es\s+Ch[gaq9]/i.test(t) && /Demand\s+Ch[gaq9]/i.test(t) && /TDC\s+Ch[gaq9]/i.test(t)) ||
     (/Customer\s+Ch[gaq9]/i.test(t) && /ECA\s+Ch[gaq9]/i.test(t)) ||
     (/Current\s+Charges/i.test(t) && /Evergy|evergy/i.test(t))
   ),
@@ -7455,6 +7446,7 @@ function dcTab(mode,el){
 async function dcLoadURL(){
   const url=document.getElementById('dc-url').value.trim();
   if(!url){showToast('Paste a URL first');return;}
+  if(!/^https?:\/\//i.test(url)){showToast('URL must start with https://');return;}
   dcShowProg('Fetching PDF...');
   try{
     const resp=await fetch(url);
@@ -7866,6 +7858,7 @@ function distCalImportTab(projId, mode, btn){
 async function distCalLoadURL(projId){
   const url = document.getElementById('distcal-url-'+projId)?.value?.trim();
   if(!url){ showToast('Paste a URL first'); return; }
+  if(!/^https?:\/\//i.test(url)){ showToast('URL must start with https://'); return; }
   const status = document.getElementById('distcal-import-status-'+projId);
   if(status){ status.style.display=''; status.textContent='Fetching PDF...'; }
   try{
@@ -14274,184 +14267,11 @@ function initUtilityTool(){
   renderUDDetail();
 }
 
-/* ── PROJECT BUILDINGS TAB ── */
-function renderProjBuildingsTab(projId){
-  const listEl  = document.getElementById('pb-list-'+projId);
-  const countEl = document.getElementById('pb-count-'+projId);
-  const sqftEl  = document.getElementById('pb-sqft-bar-'+projId);
-  const sqftCell= document.getElementById('pd-sqft-cell-'+projId);
-  if(!listEl) return;
-
-  const bldgs = getUDBldgs(projId);
-  const totalSqft = bldgs.reduce((s,b)=>s+(parseInt(b.sqft)||0), 0);
-
-  // Update count label
-  if(countEl) countEl.textContent = bldgs.length
-    ? bldgs.length+' building'+(bldgs.length!==1?'s':'')+' · '+totalSqft.toLocaleString()+' total sf'
-    : 'No buildings yet';
-
-  // Update summary sqft bar
-  if(sqftEl){
-    sqftEl.innerHTML = bldgs.length
-      ? `<div class="pb-sqft-total">
-          <span class="pb-sqft-lbl">Total Project Square Footage</span>
-          <span class="pb-sqft-val">${totalSqft.toLocaleString()} sf</span>
-        </div>`
-      : '';
-  }
-
-  // Update the info grid sqft cell
-  if(sqftCell){
-    const p = projects.find(p=>p.id===projId);
-    const displaySqft = bldgs.length ? totalSqft : (p?.sqft||0);
-    sqftCell.textContent = displaySqft ? Number(displaySqft).toLocaleString()+' sf' : '—';
-    if(bldgs.length) sqftCell.title = 'Sum of '+bldgs.length+' building'+(bldgs.length!==1?'s':'');
-  }
-
-  // Render building cards
-  if(!bldgs.length){
-    listEl.innerHTML=`<div style="font-size:13px;color:var(--text2);padding:8px 0">
-      No buildings added yet.
-      <button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="openBldgModalForProj(${projId})">+ Add Building</button>
-    </div>`;
-    return;
-  }
-
-  listEl.innerHTML = bldgs.map(b=>{
-    const mCount = (b.meters||[]).length;
-    return `<div class="pb-bldg-card">
-      <div>
-        <div class="pb-bldg-name">${b.name}</div>
-        <div class="pb-bldg-meta">
-          ${b.sqft?`<span>📐 ${Number(b.sqft).toLocaleString()} sf</span>`:''}
-          ${b.addr?`<span>📍 ${b.addr}</span>`:''}
-          <span>⚡ ${mCount} meter${mCount!==1?'s':''}</span>
-        </div>
-      </div>
-      <div class="pb-bldg-actions">
-        <button class="btn btn-ghost btn-sm" onclick="openBldgModalForProj(${projId},'${b.id}')" title="Edit building">✏️</button>
-        <button class="btn btn-ghost btn-sm" onclick="goToBldgInUtility(${projId},'${b.id}')" title="Open in Utility Data">⚡</button>
-        <button class="btn-del" onclick="deleteBldgFromProj(${projId},'${b.id}')" title="Delete building">✕</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
 /* Open building modal pre-selected to a specific project (from Projects tool) */
 function openBldgModalForProj(projId, editId){
   udSelProjId = projId;   // sync selection so saveBuilding knows which project
   openBldgModal(editId||null);
 }
-
-/* Navigate to a specific building in the Utility Data tool */
-function goToBldgInUtility(projId, bldgId){
-  udSelProjId  = projId;
-  udSelBldgId  = bldgId;
-  sv('utility', document.querySelector('.s-item[onclick*="utility"]'));
-  renderUDProjList();
-  renderUDBldgList();
-  renderUDDetail();
-}
-
-/* Sync total sqft from buildings back into the project record */
-function syncBldgSqftToProject(projId){
-  const bldgs = getUDBldgs(projId);
-  const total = bldgs.reduce((s,b)=>s+(parseInt(b.sqft)||0), 0);
-  const p = projects.find(p=>p.id===projId);
-  if(p && bldgs.length){ p.sqft = total; sset('en_projects', projects); }
-}
-
-/* Delete a building from within the Projects tab */
-function deleteBldgFromProj(projId, bldgId){
-  if(!confirm('Delete this building and all its meter data?')) return;
-  const proj = getUDProj(projId);
-  proj.buildings = proj.buildings.filter(b=>b.id!==bldgId);
-  if(udSelBldgId===bldgId) udSelBldgId=null;
-  saveUtilityData();
-  syncBldgSqftToProject(projId);
-  renderUDProjList();
-  showToast('Building deleted');
-}
-
-
-function renderUtilTabSummary(projId){
-  const el = document.getElementById('ptab-utility-summary-'+projId);
-  if(!el) return;
-  const proj = utilityData[projId] || sget('en_utility_'+projId, null);
-  if(!proj||!proj.buildings||!proj.buildings.length){
-    el.innerHTML='<div style="padding:12px 0;font-size:13px;color:var(--text2)">No buildings or utility data yet. Click <strong style="color:var(--em)">Open Utility Data →</strong> to get started.</div>';
-    return;
-  }
-  const bldgs = proj.buildings;
-  let totalMeters=0, totalBills=0;
-  bldgs.forEach(b=>{ (b.meters||[]).forEach(m=>{ totalMeters++; totalBills+=(m.bills||[]).length; }); });
-
-  // Summary counts
-  const summaryHTML =
-    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">'+
-      '<div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:9px 12px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Buildings</div><div style="font-size:18px;font-weight:800;color:var(--em)">'+ bldgs.length +'</div></div>'+
-      '<div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:9px 12px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Meters</div><div style="font-size:18px;font-weight:800;color:var(--em2)">'+ totalMeters +'</div></div>'+
-      '<div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:9px 12px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Bill Records</div><div style="font-size:18px;font-weight:800;color:var(--violet)">'+ totalBills +'</div></div>'+
-    '</div>';
-
-  // Building selector tabs
-  const bldgTabs = bldgs.map((b,i)=>
-    `<button class="ud-incl-btn${i===0?' sel':''}" onclick="selectProjUtilBldg('${projId}','${b.id}',this)" style="font-size:11px">${b.name||'Building '+(i+1)}</button>`
-  ).join('');
-
-  // Per-building detail renderer (shown for first building by default)
-  const firstBldg = bldgs[0];
-  const firstDetail = buildProjUtilBldgDetail(firstBldg);
-
-  el.innerHTML =
-    summaryHTML +
-    '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:10px">'+
-      '<span style="font-size:11px;font-weight:600;color:var(--text2)">Building:</span>'+
-      bldgTabs +
-    '</div>'+
-    '<div id="proj-util-bldg-detail-'+projId+'">'+firstDetail+'</div>';
-}
-
-function buildProjUtilBldgDetail(b){
-  if(!b) return '';
-  const meters = b.meters||[];
-  if(!meters.length) return '<div style="font-size:12px;color:var(--text3);padding:8px 0">No meters for this building yet.</div>';
-
-  return meters.map(m=>{
-    const bills = (m.bills||[]).slice().sort((a,c)=>new Date(a.start)-new Date(c.start));
-    const unit = m.commodity==='Electric'?'kWh':m.commodity==='Gas'?'Therms':'Usage';
-    const latestBill = bills[bills.length-1];
-    const latestUsage = latestBill ? latestBill.kwh||latestBill.therms||latestBill.usage||0 : 0;
-    const latestCost = latestBill ? latestBill.totalCost||latestBill.thermCost||latestBill.cost||0 : 0;
-    const fmtShort = d => d ? new Date(d+'T12:00:00').toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'numeric'}) : '—';
-    const dateRange = bills.length ? fmtShort(bills[0].start)+' – '+fmtShort(latestBill.end) : '—';
-
-    return `<div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:10px 13px;margin-bottom:8px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
-        <div style="font-size:13px;font-weight:700">${m.name||m.commodity+' Meter'} <span style="font-size:11px;color:var(--text3);font-weight:400">${m.commodity}</span></div>
-        <div style="display:flex;gap:12px">
-          <div style="text-align:right"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Bills</div><div style="font-size:14px;font-weight:800;color:var(--em)">${bills.length}</div></div>
-          <div style="text-align:right"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Latest</div><div style="font-size:14px;font-weight:800;color:var(--em2)">${latestUsage.toLocaleString(undefined,{maximumFractionDigits:0})} ${unit}</div></div>
-          ${latestCost>0?`<div style="text-align:right"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Latest $</div><div style="font-size:14px;font-weight:800;color:var(--warn)">$${latestCost.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>`:''}
-        </div>
-      </div>
-      <div style="font-size:11px;color:var(--text3)">Data range: ${dateRange}</div>
-    </div>`;
-  }).join('');
-}
-
-function selectProjUtilBldg(projId, bldgId, btn){
-  const proj = utilityData[projId] || sget('en_utility_'+projId, null);
-  if(!proj) return;
-  const bldg = (proj.buildings||[]).find(b=>b.id===bldgId);
-  const detailEl = document.getElementById('proj-util-bldg-detail-'+projId);
-  if(detailEl) detailEl.innerHTML = buildProjUtilBldgDetail(bldg);
-  // Update active tab button
-  const parent = btn?.closest('[id^="ptab-utility-summary"]');
-  if(parent) parent.querySelectorAll('.ud-incl-btn').forEach(b=>b.classList.remove('sel'));
-  btn?.classList.add('sel');
-}
-
 
 /* ── CLIENT CONTACTS ── */
 let _modalContacts = [];
