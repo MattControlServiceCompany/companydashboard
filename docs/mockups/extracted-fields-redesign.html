@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Extracted Fields Redesign Mockup</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --s1: #16213e;
+    --s2: #1a1a2e;
+    --s3: #222244;
+    --s4: #2a2a4a;
+    --border: rgba(255,255,255,.08);
+    --border2: rgba(255,255,255,.04);
+    --text: #e8e8f0;
+    --text2: #a0a0b8;
+    --text3: #666680;
+    --em: #f0f0ff;
+    --accent: #6c63ff;
+    --mono: 'Consolas', 'SF Mono', 'Fira Code', monospace;
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --red: #ef4444;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+    max-width: 700px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 16px; color: var(--em); margin-bottom: 4px; }
+  .desc { font-size: 12px; color: var(--text2); margin-bottom: 20px; line-height: 1.5; }
+  .section-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .7px;
+    color: var(--accent);
+    margin: 16px 0 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(108,99,255,.2);
+  }
+  .ef-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .ef-item {
+    background: var(--s3);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 7px 10px;
+    display: flex;
+    flex-direction: column;
+  }
+  .ef-item.wide {
+    grid-column: 1 / -1;
+  }
+  .ef-key {
+    font-size: 9px;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+  .ef-val {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--em);
+  }
+  .ef-val.empty {
+    color: var(--text3);
+  }
+  /* Charge row with running total */
+  .charge-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 6px;
+    align-items: stretch;
+  }
+  .charge-row .ef-item {
+    min-width: 0;
+  }
+  .running-total {
+    display: flex;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text3);
+    white-space: nowrap;
+    padding: 0 2px;
+    min-width: 72px;
+    justify-content: flex-end;
+  }
+  .running-total.match {
+    color: var(--green);
+    font-weight: 700;
+  }
+  .running-total.mismatch {
+    color: var(--red);
+    font-weight: 700;
+  }
+  /* Non-charge 2-col row */
+  .pair-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 8px 0;
+  }
+  .legend {
+    display: flex;
+    gap: 16px;
+    margin: 12px 0 4px;
+    font-size: 10px;
+    color: var(--text3);
+  }
+  .legend span { display: flex; align-items: center; gap: 4px; }
+  .legend .dot {
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+  }
+</style>
+</head>
+<body>
+
+<h1>Extracted Fields Redesign</h1>
+<p class="desc">
+  Fields ordered to match Evergy Billing Details layout. Running total accumulates on charge rows
+  so you can verify the sum matches Total Current Charges. Only Utility Company, Customer Name,
+  and Service Address are double-wide.
+</p>
+
+<!-- ── ACCOUNT INFO (no running total) ── -->
+<div class="section-label">Account Info</div>
+<div class="ef-grid">
+  <div class="ef-item wide">
+    <div class="ef-key">Utility Company</div>
+    <div class="ef-val">Evergy</div>
+  </div>
+  <div class="ef-item wide">
+    <div class="ef-key">Customer Name</div>
+    <div class="ef-val">USD #416</div>
+  </div>
+  <div class="ef-item wide">
+    <div class="ef-key">Service Address</div>
+    <div class="ef-val">202 AQUATIC DR,NEW HS LOUISBURG KS</div>
+  </div>
+</div>
+<div class="pair-row" style="margin-top:6px">
+  <div class="ef-item">
+    <div class="ef-key">Account Number</div>
+    <div class="ef-val">2885731561</div>
+  </div>
+  <div class="ef-item">
+    <div class="ef-key">Meter Number</div>
+    <div class="ef-val empty">&mdash;</div>
+  </div>
+</div>
+
+<!-- ── BILLING PERIOD & METER ── -->
+<div class="section-label">Billing Period &amp; Meter</div>
+<div class="pair-row">
+  <div class="ef-item">
+    <div class="ef-key">Rate Schedule</div>
+    <div class="ef-val">2LGSF</div>
+  </div>
+  <div class="ef-item">
+    <div class="ef-key">Number of Days</div>
+    <div class="ef-val">30</div>
+  </div>
+</div>
+<div class="pair-row" style="margin-top:6px">
+  <div class="ef-item">
+    <div class="ef-key">Billing Period Start</div>
+    <div class="ef-val">12/30/2024</div>
+  </div>
+  <div class="ef-item">
+    <div class="ef-key">Billing Period End</div>
+    <div class="ef-val">01/29/2025</div>
+  </div>
+</div>
+<div class="pair-row" style="margin-top:6px">
+  <div class="ef-item">
+    <div class="ef-key">Meter Read Start</div>
+    <div class="ef-val">12/31</div>
+  </div>
+  <div class="ef-item">
+    <div class="ef-key">Meter Read End</div>
+    <div class="ef-val">01/30</div>
+  </div>
+</div>
+<div class="pair-row" style="margin-top:6px">
+  <div class="ef-item">
+    <div class="ef-key">Start Read</div>
+    <div class="ef-val">44,560.5584</div>
+  </div>
+  <div class="ef-item">
+    <div class="ef-key">End Read</div>
+    <div class="ef-val">45,215.1026</div>
+  </div>
+</div>
+<div class="pair-row" style="margin-top:6px">
+  <div class="ef-item">
+    <div class="ef-key">Meter Multiplier</div>
+    <div class="ef-val">160.0000</div>
+  </div>
+  <div class="ef-item">
+    <div class="ef-key">kWh Consumed</div>
+    <div class="ef-val">104,727.07</div>
+  </div>
+</div>
+<div class="pair-row" style="margin-top:6px">
+  <div class="ef-item">
+    <div class="ef-key">Actual kW</div>
+    <div class="ef-val">292.4160</div>
+  </div>
+  <div class="ef-item">
+    <div class="ef-key">Actual RKVA</div>
+    <div class="ef-val">231.1680</div>
+  </div>
+</div>
+
+<!-- ── CHARGES (with running total) ── -->
+<div class="section-label">Charges</div>
+<div class="legend">
+  <span><span class="dot" style="background:var(--text3)"></span> Running total</span>
+  <span><span class="dot" style="background:var(--green)"></span> Matches bill total</span>
+</div>
+
+<!-- Customer Charge -->
+<div class="charge-row" style="margin-top:6px">
+  <div class="ef-item" style="grid-column: 1 / 3">
+    <div class="ef-key">Customer Charge</div>
+    <div class="ef-val">$102.86</div>
+  </div>
+  <div class="running-total">$102.86</div>
+</div>
+
+<!-- Facilities -->
+<div class="charge-row" style="margin-top:6px">
+  <div class="ef-item">
+    <div class="ef-key">Facilities kW</div>
+    <div class="ef-val">545.1840</div>
+  </div>
+  <div class="ef-item">
+    <div class="ef-key">Facilities Charge</div>
+    <div class="ef-val">$1,363.51</div>
+  </div>
+  <div class="running-total">$1,466.37</div>
+</div>
+
+<!-- Demand -->
+<div class="charge-row" style="margin-top:6px">
+  <div class="ef-item">
+    <div class="ef-key">Billed kW</div>
+    <div class="ef-val">292.4160</div>
+  </div>
+  <div class="ef-item">
+    <div class="ef-key">Billed kW Charge</div>
+    <div class="ef-val">$1,666.19</div>
+  </div>
+  <div class="running-total">$3,132.56</div>
+</div>
+
+<!-- Energy On Peak -->
+<div class="charge-row" style="margin-top:6px">
+  <div class="ef-item" style="grid-column: 1 / 3">
+    <div class="ef-key">Energy On-Peak Charge</div>
+    <div class="ef-val">$515.57</div>
+  </div>
+  <div class="running-total">$3,648.13</div>
+</div>
+
+<!-- Energy Off Peak -->
+<div class="charge-row" style="margin-top:6px">
+  <div class="ef-item" style="grid-column: 1 / 3">
+    <div class="ef-key">Energy Off-Peak Charge</div>
+    <div class="ef-val">$3,003.55</div>
+  </div>
+  <div class="running-total">$6,651.68</div>
+</div>
+
+<!-- RkVA -->
+<div class="charge-row" style="margin-top:6px">
+  <div class="ef-item" style="grid-column: 1 / 3">
+    <div class="ef-key">RkVA Charge</div>
+    <div class="ef-val">$56.33</div>
+  </div>
+  <div class="running-total">$6,708.01</div>
+</div>
+
+<!-- Tax Exempt -->
+<div class="charge-row" style="margin-top:6px">
+  <div class="ef-item" style="grid-column: 1 / 3">
+    <div class="ef-key">Tax Exempt Delivery</div>
+    <div class="ef-val empty">&mdash;</div>
+  </div>
+  <div class="running-total">$6,708.01</div>
+</div>
+
+<!-- ECA -->
+<div class="charge-row" style="margin-top:6px">
+  <div class="ef-item" style="grid-column: 1 / 3">
+    <div class="ef-key">ECA Charge</div>
+    <div class="ef-val">$2,151.78</div>
+  </div>
+  <div class="running-total">$8,859.79</div>
+</div>
+
+<!-- EER -->
+<div class="charge-row" style="margin-top:6px">
+  <div class="ef-item" style="grid-column: 1 / 3">
+    <div class="ef-key">EER Charge</div>
+    <div class="ef-val">$0.00</div>
+  </div>
+  <div class="running-total">$8,859.79</div>
+</div>
+
+<!-- PTS -->
+<div class="charge-row" style="margin-top:6px">
+  <div class="ef-item" style="grid-column: 1 / 3">
+    <div class="ef-key">PTS Charge</div>
+    <div class="ef-val">$238.78</div>
+  </div>
+  <div class="running-total">$9,098.57</div>
+</div>
+
+<!-- TDC -->
+<div class="charge-row" style="margin-top:6px">
+  <div class="ef-item">
+    <div class="ef-key">TDC kW</div>
+    <div class="ef-val">292.4160</div>
+  </div>
+  <div class="ef-item">
+    <div class="ef-key">TDC Charge</div>
+    <div class="ef-val">$721.63</div>
+  </div>
+  <div class="running-total">$9,820.20</div>
+</div>
+
+<!-- Bill Offset -->
+<div class="charge-row" style="margin-top:6px">
+  <div class="ef-item" style="grid-column: 1 / 3">
+    <div class="ef-key">Bill Offset</div>
+    <div class="ef-val empty">&mdash;</div>
+  </div>
+  <div class="running-total">$9,820.20</div>
+</div>
+
+<!-- Franchise Fee -->
+<div class="charge-row" style="margin-top:6px">
+  <div class="ef-item" style="grid-column: 1 / 3">
+    <div class="ef-key">Franchise Fee</div>
+    <div class="ef-val empty">&mdash;</div>
+  </div>
+  <div class="running-total">$9,820.20</div>
+</div>
+
+<div class="divider" style="margin: 10px 0 6px"></div>
+
+<!-- Total -->
+<div class="charge-row">
+  <div class="ef-item" style="grid-column: 1 / 3; border: 1px solid rgba(34,197,94,.3); background: rgba(34,197,94,.06)">
+    <div class="ef-key" style="color: var(--green)">Total Current Charges</div>
+    <div class="ef-val" style="font-weight: 700; font-size: 14px">$9,820.20</div>
+  </div>
+  <div class="running-total match">$9,820.20 &#10003;</div>
+</div>
+
+<div style="margin-top:24px; padding: 16px; background: var(--s3); border-radius: 8px; border: 1px solid var(--border)">
+  <div style="font-size: 11px; font-weight: 700; color: var(--accent); margin-bottom: 8px">DESIGN NOTES</div>
+  <ul style="font-size: 11px; color: var(--text2); line-height: 1.8; padding-left: 16px">
+    <li><strong>Field order</strong> matches Evergy Billing Details: Customer &rarr; Facilities &rarr; Demand &rarr; Energy On/Off Pk &rarr; RkVA &rarr; Tax Exempt &rarr; ECA &rarr; EER &rarr; PTS &rarr; TDC &rarr; Bill Offset &rarr; Franchise Fee &rarr; Total</li>
+    <li><strong>Double-wide cells</strong> only for Utility Company, Customer Name, and Service Address</li>
+    <li><strong>Running total</strong> accumulates charge fields only, shown right of each charge row</li>
+    <li>Total row highlights <span style="color:var(--green)">green with checkmark</span> when running total matches, or <span style="color:var(--red)">red</span> if mismatched</li>
+    <li>kW quantity fields (Facilities kW, Billed kW, TDC kW) are paired with their charge on the same row</li>
+    <li>Non-charge kW fields (Meter Multiplier, Actual RKVA) are single-width, paired 2-per-row</li>
+    <li>All fields remain editable inputs (shown as static text in this mockup)</li>
+  </ul>
+</div>
+
+</body>
+</html>

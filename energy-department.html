@@ -441,10 +441,18 @@ html,body{height:100%;overflow:hidden;}
 .pdf-type-pills{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0;}
 .ptpill{font-size:11px;font-weight:600;padding:4px 11px;border-radius:20px;border:1px solid var(--border2);cursor:pointer;background:transparent;color:var(--text2);transition:all .13s;font-family:var(--font);}
 .ptpill.sel{background:var(--em-dim);border-color:var(--em);color:var(--em);}
-.ef-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;}
-.ef-item{background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:9px 11px;}
-.ef-key{font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:3px;}
+.ef-grid{display:flex;flex-direction:column;gap:6px;margin-top:12px;}
+.ef-pair{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.ef-charge-row{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:stretch;}
+.ef-charge-row.single-charge{grid-template-columns:1fr auto;}
+.ef-item{background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:7px 10px;}
+.ef-item.wide{grid-column:1/-1;}
+.ef-key{font-size:9px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:2px;}
 .ef-input{font-family:var(--mono);font-size:12px;color:var(--em);background:transparent;border:none;outline:none;width:100%;}
+.ef-running{display:flex;align-items:center;justify-content:flex-end;font-family:var(--mono);font-size:10px;color:var(--text3);white-space:nowrap;min-width:72px;padding:0 2px;}
+.ef-running.match{color:#22c55e;font-weight:700;}
+.ef-running.mismatch{color:#ef4444;font-weight:700;}
+.ef-section{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--accent);margin:12px 0 4px;padding-bottom:4px;border-bottom:1px solid rgba(var(--accent-rgb,108,99,255),.2);}
 .ai-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--em);margin-bottom:7px;display:flex;align-items:center;gap:6px;}
 .ai-box{background:var(--s1);border:1px solid var(--border);border-radius:9px;padding:15px 17px;font-size:13px;line-height:1.8;color:var(--text);white-space:pre-wrap;word-break:break-word;}
 .ai-thinking{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--text2);padding:10px 0;}
@@ -5585,6 +5593,28 @@ function refreshProjDropdowns(){
    3) If matched → extract and display
    4) If unrecognized → prompt user to share sample
 ── */
+// ── Evergy Billing Details — expected charge line ordering ──
+// Reference: Evergy bills always list charges in this order after "Billing Details":
+//  1. Customer Charge — always line 1
+//  2. Facilities Charge — always line 2, per kW
+//  3. Demand Charge — always line 3 (may split onto line 4 during summer/winter changeover
+//     if billing period includes 5/15 or 9/15)
+//  4. Energy Charge On Peak — next after Demand (shifted down if Demand split)
+//  5. Energy Charge Off Peak — next after On Peak (shifted down if Demand split)
+//     If no On/Off Peak, 3 tiers of Energy Charges appear here instead
+//  6. RkVA Charge — below Energy Charges
+//  7. Tax Exempt Delivery — below Energy or RkVA
+//  8. ECA Charge
+//  9. EER Charge
+// 10. PTS Charge
+// 11. TDC Charge
+// 12. Bill Offset
+// 13. Subtotal
+// 14. Tax / Fee (Franchise Fee)
+// 15. Current Charges — always last line
+const _EVG_CHARGE_ORDER=['CustomerCharge','FacilitiesCharge','BilledKWCharge',
+  'EnergyOnPeakCharge','EnergyOffPeakCharge','RkVACharge','TaxExemptDelivery',
+  'ECACharge','EERCharge','PTSCharge','TDCCharge','BillOffset','FranchiseFee'];
 // Evergy per-section extractor
 function _extractEvergy(t,acctOverride,addrOverride){
   const sum=(t,re)=>{const ms=[...t.matchAll(re)];return ms.length?ms.reduce((s,m)=>s+parseFloat(m[1].replace(/,/g,'')),0).toFixed(2):null;};
@@ -5887,13 +5917,8 @@ function _extractEvergy(t,acctOverride,addrOverride){
     MeterNumber:null,
   };
 
-  // ── STRUCTURAL POSITION FALLBACK: use bill structure to recover missing values ──
-  // Evergy bills always have charges in a consistent order after "Billing Details - service from":
-  //   1. Customer Charge (always first line item)
-  //   2. Facilities Charge
-  //   3. Demand Charge
-  //   4. Energy charges (On/Off Peak)
-  //   ... then ECA, EER, PTS, TDC, RkVA, Tax exempt, Bill offset, Subtotal
+  // ── STRUCTURAL POSITION FALLBACK: use _EVG_CHARGE_ORDER to recover missing values ──
+  // See charge ordering constant defined above _extractEvergy.
   if(!result.CustomerCharge){
     // Customer Charge is always the FIRST dollar amount after "Billing Details - service from"
     const lines=t.split('\n');
@@ -5902,7 +5927,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
         // First charge line is Customer Charge — scan next few lines for first dollar amount
         for(let j=i+1;j<Math.min(i+4,lines.length);j++){
           // Skip lines that are clearly Facilities or Demand (they come later)
-          if(/Fac[il1]{1,3}|Demand|Energy/i.test(lines[j])) break;
+          if(/Fac\S|Demand|Energy/i.test(lines[j])) break;
           const amt=getAmt(lines[j]);
           if(amt!==null && amt>10 && amt<500){
             result.CustomerCharge=amt.toFixed(2);
@@ -7007,41 +7032,49 @@ function renderPDFFields(parsed, warnings){
     'GasCharge','WaterCharge','SewerCharge','StormwaterCharge','FuelAdjustment']);
   // Fields that should NOT be number-formatted (show raw value from PDF)
   const ID_FIELDS=new Set(['AccountNumber','MeterNumber']);
-  // Grouped field order — each sub-array renders as a row (paired fields side by side)
-  const FIELD_GROUPS=[
-    ['UtilityCompany'],
-    ['CustomerName'],
-    ['AccountNumber','MeterNumber'],
-    ['ServiceAddress'],
-    ['RateSchedule','NumberOfDays'],
-    ['BillingPeriodStart','BillingPeriodEnd'],
-    ['MeterReadStart','MeterReadEnd'],
-    ['StartRead','EndRead'],
-    ['MeterMultiplier'],
-    ['kWhConsumed','ActualKW'],
-    ['ActualRKVA'],
-    ['FacilitiesKW','BilledKW'],
-    ['TDCkW'],
-    ['CustomerCharge'],
-    ['FacilitiesCharge','BilledKWCharge'],
-    ['EnergyOnPeakCharge','EnergyOffPeakCharge'],
-    ['ECACharge','EERCharge'],
-    ['PTSCharge','TDCCharge'],
-    ['RkVACharge'],
-    ['TaxExemptDelivery','BillOffset'],
-    ['FranchiseFee','TotalCurrentCharges'],
-    ['NaturalGasTherms','TotalAmountDue'],
-    ['PeakDemandKW'],
+  // ── Field layout matching Evergy Billing Details order ──
+  // type: 'wide' = full width, 'pair' = two fields side-by-side,
+  //       'charge' = charge row with running total, 'charge-pair' = kW + charge with running total
+  // chargeKey identifies which field in the row is the dollar charge for running total
+  const FIELD_LAYOUT=[
+    // Account info
+    {section:'Account Info'},
+    {type:'wide',fields:['UtilityCompany']},
+    {type:'wide',fields:['CustomerName']},
+    {type:'wide',fields:['ServiceAddress']},
+    {type:'pair',fields:['AccountNumber','MeterNumber']},
+    // Billing period & meter
+    {section:'Billing Period & Meter'},
+    {type:'pair',fields:['RateSchedule','NumberOfDays']},
+    {type:'pair',fields:['BillingPeriodStart','BillingPeriodEnd']},
+    {type:'pair',fields:['MeterReadStart','MeterReadEnd']},
+    {type:'pair',fields:['StartRead','EndRead']},
+    {type:'pair',fields:['MeterMultiplier','kWhConsumed']},
+    {type:'pair',fields:['ActualKW','ActualRKVA']},
+    // Charges — ordered per Evergy Billing Details
+    {section:'Charges'},
+    {type:'charge',fields:['CustomerCharge'],chargeKey:'CustomerCharge'},
+    {type:'charge-pair',fields:['FacilitiesKW','FacilitiesCharge'],chargeKey:'FacilitiesCharge'},
+    {type:'charge-pair',fields:['BilledKW','BilledKWCharge'],chargeKey:'BilledKWCharge'},
+    {type:'charge',fields:['EnergyOnPeakCharge'],chargeKey:'EnergyOnPeakCharge'},
+    {type:'charge',fields:['EnergyOffPeakCharge'],chargeKey:'EnergyOffPeakCharge'},
+    {type:'charge',fields:['RkVACharge'],chargeKey:'RkVACharge'},
+    {type:'charge',fields:['TaxExemptDelivery'],chargeKey:'TaxExemptDelivery'},
+    {type:'charge',fields:['ECACharge'],chargeKey:'ECACharge'},
+    {type:'charge',fields:['EERCharge'],chargeKey:'EERCharge'},
+    {type:'charge',fields:['PTSCharge'],chargeKey:'PTSCharge'},
+    {type:'charge-pair',fields:['TDCkW','TDCCharge'],chargeKey:'TDCCharge'},
+    {type:'charge',fields:['BillOffset'],chargeKey:'BillOffset'},
+    {type:'charge',fields:['FranchiseFee'],chargeKey:'FranchiseFee'},
+    {type:'total',fields:['TotalCurrentCharges'],chargeKey:'TotalCurrentCharges'},
+    // Extra fields (gas, etc.)
+    {type:'pair',fields:['NaturalGasTherms','TotalAmountDue']},
+    {type:'pair',fields:['PeakDemandKW']},
   ];
   const el=document.getElementById('extractedFields');
-  // Collect all grouped keys + any extra extracted fields not in groups
-  const groupedKeys=new Set(FIELD_GROUPS.flat());
-  const extraKeys=Object.keys(parsed).filter(k=>!groupedKeys.has(k)&&!k.startsWith('_'));
-  // Build final groups: standard groups (filtered to present fields) + extras
-  const finalGroups=FIELD_GROUPS.map(g=>g.filter(k=>k in parsed||warnings.some(w=>w.field===k))).filter(g=>g.length>0);
-  if(extraKeys.length) extraKeys.forEach(k=>finalGroups.push([k]));
-  const allKeys=finalGroups.flat();
-  const items=allKeys.map(k=>[k,parsed[k]??'']);
+  // Collect all layout keys + any extra extracted fields not in layout
+  const layoutKeys=new Set(FIELD_LAYOUT.flatMap(r=>r.fields||[]));
+  const extraKeys=Object.keys(parsed).filter(k=>!layoutKeys.has(k)&&!k.startsWith('_'));
   // Build warning lookup by field name
   const warnMap={};
   for(const w of warnings){
@@ -7054,14 +7087,14 @@ function renderPDFFields(parsed, warnings){
   const wBorder={error:'rgba(239,68,68,.3)',warn:'rgba(245,158,11,.3)',info:'rgba(96,165,250,.2)'};
   const wIcon={error:'⛔','warn':'⚠️',info:'ℹ️'};
 
-  // Build field HTML with inline warnings + magnitude/missing flags
-  // Shows ALL fields including null/empty so user can spot missing data
-  const fieldItems=items.filter(([k])=>!k.startsWith('_')).map(([k,v])=>{
+  // Helper: build a single field cell HTML
+  const _pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
+  function buildCell(k){
+    const v=parsed[k]??'';
     const fw=warnMap[k]||[];
-    const magFlag = parsed['_magnitude_flag_'+k];
-    const likelyMissing = parsed['_likely_missing_'+k];
-    const isEmpty = v===null||v===undefined||v==='';
-    // Border: red for errors, amber for warnings, orange for magnitude flags, dim for empty
+    const magFlag=parsed['_magnitude_flag_'+k];
+    const likelyMissing=parsed['_likely_missing_'+k];
+    const isEmpty=v===null||v===undefined||v==='';
     let borderStyle='';
     if(fw.length) borderStyle='border-left:3px solid '+wColor[fw[0].level]+';padding-left:8px';
     else if(magFlag) borderStyle='border-left:3px solid #fb923c;padding-left:8px';
@@ -7069,12 +7102,9 @@ function renderPDFFields(parsed, warnings){
     const warnHtml=fw.map(w=>`<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:${wBg[w.level]};border:1px solid ${wBorder[w.level]};color:${wColor[w.level]};line-height:1.4">${wIcon[w.level]} ${w.message}</div>`).join('');
     const magHtml=magFlag?'<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.25);color:#fb923c;line-height:1.4">⚠️ Possible OCR error: value is '+magFlag.ratio.toFixed(1)+'x the historical average ('+magFlag.mean.toLocaleString(undefined,{maximumFractionDigits:2})+'). Verify against source bill.</div>':'';
     const likelyHtml=likelyMissing&&isEmpty?'<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.25);color:#a78bfa;line-height:1.4">🔍 Historical data shows this field is present on 80%+ of prior bills — likely an OCR miss</div>':'';
-    // Format numeric values with commas and $ for charges (skip ID fields like Account/Meter numbers)
-    let displayVal = Array.isArray(v) ? v.join(', ') : (v??'');
-    if(ID_FIELDS.has(k)){
-      // Show raw value — no commas, no decimal formatting
-      displayVal = String(displayVal);
-    } else if(typeof displayVal==='string'&&displayVal!==''){
+    let displayVal=Array.isArray(v)?v.join(', '):(v??'');
+    if(ID_FIELDS.has(k)){displayVal=String(displayVal);}
+    else if(typeof displayVal==='string'&&displayVal!==''){
       const num=parseFloat(String(displayVal).replace(/,/g,''));
       if(!isNaN(num)&&String(displayVal).match(/^-?[\d,.\-]+$/)){
         const isCharge=CHARGE_FIELDS.has(k);
@@ -7085,16 +7115,53 @@ function renderPDFFields(parsed, warnings){
     const keyStyle=isEmpty&&!fw.length?'color:var(--text3)':'';
     const inputStyle=isEmpty?'border-color:var(--border2);color:var(--text3)':'';
     return `<div class="ef-item" style="${borderStyle}"><div class="ef-key" style="${keyStyle}">${LABELS[k]||k}</div><input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty?'—':''}" style="${inputStyle}">${warnHtml}${magHtml}${likelyHtml}</div>`;
+  }
+
+  // Build layout HTML with running total on charge rows
+  let runningTotal=0;
+  const totalVal=_pf(parsed.TotalCurrentCharges);
+  const rows=FIELD_LAYOUT.map(row=>{
+    if(row.section) return `<div class="ef-section">${row.section}</div>`;
+    const fields=row.fields.filter(k=>k in parsed||warnings.some(w=>w.field===k));
+    if(!fields.length) return '';
+    if(row.type==='wide'){
+      return buildCell(fields[0]);
+    }
+    if(row.type==='pair'){
+      if(fields.length===1) return `<div class="ef-pair">${buildCell(fields[0])}</div>`;
+      return `<div class="ef-pair">${fields.map(k=>buildCell(k)).join('')}</div>`;
+    }
+    if(row.type==='charge'){
+      const chargeVal=_pf(parsed[row.chargeKey]);
+      runningTotal+=chargeVal;
+      const rtFmt=runningTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+      return `<div class="ef-charge-row single-charge">${buildCell(fields[0])}<div class="ef-running">$${rtFmt}</div></div>`;
+    }
+    if(row.type==='charge-pair'){
+      const chargeVal=_pf(parsed[row.chargeKey]);
+      runningTotal+=chargeVal;
+      const rtFmt=runningTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+      return `<div class="ef-charge-row">${fields.map(k=>buildCell(k)).join('')}<div class="ef-running">$${rtFmt}</div></div>`;
+    }
+    if(row.type==='total'){
+      const rtFmt=runningTotal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+      const match=totalVal>0&&Math.abs(runningTotal-totalVal)<0.02;
+      const mismatch=totalVal>0&&!match;
+      const cls=match?'match':mismatch?'mismatch':'';
+      const icon=match?' ✓':mismatch?' ✗':'';
+      const itemStyle=match?'border:1px solid rgba(34,197,94,.3);background:rgba(34,197,94,.06)':mismatch?'border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.06)':'';
+      return `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:6px"><div class="ef-charge-row single-charge"><div class="ef-item" style="${itemStyle}"><div class="ef-key" style="color:${match?'#22c55e':mismatch?'#ef4444':'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges??'')!==''?'$'+totalVal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px"></div><div class="ef-running ${cls}">$${rtFmt}${icon}</div></div></div>`;
+    }
+    return '';
   });
-  // Build grouped rows — pairs render side by side
-  const fieldHtml=finalGroups.map(group=>{
-    const cells=group.map(k=>{
-      const idx=allKeys.indexOf(k);
-      return idx>=0?fieldItems[idx]:'';
-    }).filter(Boolean);
-    if(cells.length===1) return cells[0];
-    return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${cells.join('')}</div>`;
-  }).join('');
+  // Append extra fields not in layout
+  if(extraKeys.length){
+    for(let i=0;i<extraKeys.length;i+=2){
+      if(i+1<extraKeys.length) rows.push(`<div class="ef-pair">${buildCell(extraKeys[i])}${buildCell(extraKeys[i+1])}</div>`);
+      else rows.push(`<div class="ef-pair">${buildCell(extraKeys[i])}</div>`);
+    }
+  }
+  const fieldHtml=rows.filter(Boolean).join('');
   const missingHtml='';
 
   // Show sum mismatch warning if present
@@ -7119,7 +7186,7 @@ function renderPDFFields(parsed, warnings){
     });
     const flagLinks = flaggedFields.length ? '<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">'+flaggedFields.join('')+'</div>' : '';
     summaryHtml='<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);font-size:12px;line-height:1.5;color:var(--text2)">Data Analysis: '+parts.join(' · ')+'<br><span style="font-size:11px;opacity:.8">Click a field to jump to it. Missing values may indicate OCR issues — edit to correct.</span>'+flagLinks+'</div>';
-  } else if(warnings.length===0 && items.length>5){
+  } else if(warnings.length===0 && Object.keys(parsed).filter(k=>!k.startsWith('_')).length>5){
     summaryHtml='<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);font-size:12px;color:#22c55e">✓ All expected fields present — values within normal ranges</div>';
   }
 
