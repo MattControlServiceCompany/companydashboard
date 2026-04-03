@@ -435,6 +435,10 @@ html,body{height:100%;overflow:hidden;}
 /* ── PDF/AI/etc ── */
 .drop-zone{border:2px dashed var(--border2);border-radius:12px;padding:36px 22px;text-align:center;cursor:pointer;transition:all .2s;background:var(--s2);}
 .drop-zone:hover,.drop-zone.drag{border-color:var(--em);background:var(--em-dim);}
+.drop-zone.collapsed{padding:8px 16px;min-height:0;cursor:default;border-style:solid;display:flex;align-items:center;justify-content:space-between;text-align:left;}
+.drop-zone.collapsed .dz-ico,.drop-zone.collapsed .dz-sub{display:none;}
+.drop-zone.collapsed .dz-title{font-size:12px;margin:0;}
+.drop-zone.collapsed #pdfClearBtn{margin-top:0;}
 .dz-ico{font-size:38px;margin-bottom:10px;display:block;}
 .dz-title{font-family:var(--head);font-size:15px;font-weight:700;margin-bottom:5px;}
 .dz-sub{font-size:12px;color:var(--text2);line-height:1.5;}
@@ -978,7 +982,7 @@ tr.bill-flagged td:first-child{box-shadow:inset 3px 0 0 var(--amber);}
         <input type="file" id="pdfInput" accept=".pdf" style="display:none" onchange="handlePDFUpload(event)">
       <div id="pdfClearBtn" style="display:none;margin-top:8px;text-align:right"><button class="btn btn-ghost btn-sm" onclick="clearPDFOCR()">✕ Clear / Load New PDF</button></div>
       </div>
-      <div style="margin-top:12px">
+      <div id="pdfTypeSection" style="margin-top:12px">
         <div class="fl" style="margin-bottom:6px">Document Type</div>
         <div class="pdf-type-pills">
           <button class="ptpill sel" onclick="setPDFType('utility',this)">🔌 Utility Bill</button>
@@ -5598,7 +5602,7 @@ function refreshProjDropdowns(){
 //  1. Customer Charge — always line 1
 //  2. Facilities Charge — always line 2, per kW
 //  3. Demand Charge — always line 3 (may split onto line 4 during summer/winter changeover
-//     if billing period includes 5/15 or 9/15)
+//     if billing period includes changeover dates: Kansas uses 5/30 and 9/30, Missouri uses 5/15 and 9/15)
 //  4. Energy Charge On Peak — next after Demand (shifted down if Demand split)
 //  5. Energy Charge Off Peak — next after On Peak (shifted down if Demand split)
 //     If no On/Off Peak, 3 tiers of Energy Charges appear here instead
@@ -5944,6 +5948,44 @@ function _extractEvergy(t,acctOverride,addrOverride){
     const meterNumMatch=t.match(/Meter\s*(?:Number|No|#|Num)[^A-Za-z0-9\n]*(\d[\d\-A-Z]{3,20})/im)
       ||t.match(/Meter\s*:\s*(\d[\d\-A-Z]{3,20})/im);
     if(meterNumMatch) result.MeterNumber=meterNumMatch[1].trim();
+  }
+
+  // ── SMART FALLBACKS: infer missing meter/usage fields from available data ──
+
+  // 1. ActualKW fallback from Demand Charge kW (non-round = actual metered value)
+  if(!result.ActualKW && result.BilledKW){
+    const bkw=parseFloat(String(result.BilledKW).replace(/,/g,''));
+    if(!isNaN(bkw) && bkw>0 && bkw%1!==0) result.ActualKW=result.BilledKW;
+  }
+
+  // 2. kWhConsumed fallback from largest kWh value in billing details
+  if(!result.kWhConsumed){
+    const allKwh=[...t.matchAll(/([\d,]+\.\d+)\s*kWh/gi)]
+      .map(m=>parseFloat(m[1].replace(/,/g,'')))
+      .filter(v=>v>100 && v<2000000);
+    if(allKwh.length) result.kWhConsumed=String(Math.max(...allKwh));
+  }
+
+  // 3. MeterReadStart/End fallback from billing period dates (meter read = billing +1 day)
+  if(!result.MeterReadStart && result.BillingPeriodStart){
+    try{
+      const d=new Date(result.BillingPeriodStart);
+      d.setDate(d.getDate()+1);
+      result.MeterReadStart=String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0');
+    }catch(e){}
+  }
+  if(!result.MeterReadEnd && result.BillingPeriodEnd){
+    try{
+      const d=new Date(result.BillingPeriodEnd);
+      d.setDate(d.getDate()+1);
+      result.MeterReadEnd=String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0');
+    }catch(e){}
+  }
+
+  // 4. ActualRKVA fallback from RkVA charge line kW value
+  if(!result.ActualRKVA){
+    const rkvaKwM=t.match(/R[kK]VA\s+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])[.:]?\s+([\d,.]+)\s*[kK][Ww]/i);
+    if(rkvaKwM) result.ActualRKVA=rkvaKwM[1].replace(/,/g,'');
   }
 
   // ── CHARGE RECONCILIATION: if sum doesn't match total, try to recover missing charges ──
@@ -6611,6 +6653,8 @@ function clearPDFOCR(){
   document.getElementById('extractedFields').innerHTML='';
   document.getElementById('pdfSaveRow').style.display='none';
   document.getElementById('pdfClearBtn').style.display='none';
+  document.getElementById('dropZone').classList.remove('collapsed');
+  document.getElementById('pdfTypeSection').style.display='';
   document.getElementById('extractMethodBadge').style.display='none';
   document.getElementById('pdfAutoAssignBanner').style.display='none';
   const dbg=document.getElementById('pdfDebugBtn');
@@ -6911,6 +6955,8 @@ async function processPDF(file){
             renderPDFFields(finalBills[0], analysisResults[0]?.warnings||[]);
             document.getElementById('pdfSaveRow').style.display='block';
             document.getElementById('pdfClearBtn').style.display='block';
+            document.getElementById('dropZone').classList.add('collapsed');
+            document.getElementById('pdfTypeSection').style.display='none';
             refreshProjDropdowns();
             const warnCount=analysisResults.reduce((s,r)=>s+r.warnings.filter(w=>w.level==='error'||w.level==='warn').length,0);
             showExtractionBadge('rules',rule.name+' · '+finalBills.length+' periods'+(warnCount?' · '+warnCount+' warning'+(warnCount>1?'s':''):''));
@@ -6926,6 +6972,8 @@ async function processPDF(file){
             box.textContent=JSON.stringify(extracted,null,2);
             document.getElementById('pdfSaveRow').style.display='block';
             document.getElementById('pdfClearBtn').style.display='block';
+            document.getElementById('dropZone').classList.add('collapsed');
+            document.getElementById('pdfTypeSection').style.display='none';
             refreshProjDropdowns();
             const warnCount=billWarnings.filter(w=>w.level==='error'||w.level==='warn').length;
             showExtractionBadge('rules',rule.name+' · 1 period'+(warnCount?' · '+warnCount+' warning'+(warnCount>1?'s':''):''));
