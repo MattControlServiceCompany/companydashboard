@@ -5653,6 +5653,32 @@ function _extractEvergy(t,acctOverride,addrOverride){
   // ── Meter read table (used for reads/multiplier/kW only, NOT days) ──
   const meterRow=t.match(/(\d{2}\/\d{2})\s+(\d{2}\/\d{2})\s+\d+\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+[\d,]+\.?\d*\s+([\d,.]+)\s+[\d,]+\.?\d*\s+([\d.]+)\s+([\d.]+)/);
 
+  // ── Multi-line labeled meter table (fallback for PDF.js text layout) ──
+  // Some PDFs produce each meter field on its own labeled line:
+  //   Start Read Date\n12/31\n...\nEnd Read (-)\n45,215.1026\n...
+  const _mlMeter=(()=>{
+    if(meterRow) return null;
+    const startDateM=t.match(/Start\s+Read\s+Date\s*\n\s*(\d{2}\/\d{2})/i);
+    const endDateM=t.match(/End\s+Read\s+Date\s*\n\s*(\d{2}\/\d{2})/i);
+    const endReadM=t.match(/End\s+Read\s*\([^)]*\)\s*\n\s*([\d,]+\.\d+)/i);
+    const startReadM=t.match(/Start\s+Read\s*\([^)]*\)\s*\n\s*([\d,]+\.\d+)/i);
+    const multM=t.match(/Meter\s+Multiplier\s*\([^)]*\)\s*\n\s*([\d,]+\.\d+)/i);
+    const kwUsedM=t.match(/KW\s+Used\s+([\d,]+\.\d+)/i);
+    const rkvaUsedM=t.match(/RKVA\s+Used\s+([\d,]+\.\d+)/i);
+    if(startDateM||endDateM||endReadM||startReadM){
+      return {
+        startDate:startDateM?.[1]||null,
+        endDate:endDateM?.[1]||null,
+        endRead:endReadM?.[1]?.replace(/,/g,'')||null,
+        startRead:startReadM?.[1]?.replace(/,/g,'')||null,
+        multiplier:multM?.[1]?.replace(/,/g,'')||null,
+        kwUsed:kwUsedM?.[1]?.replace(/,/g,'')||null,
+        rkvaUsed:rkvaUsedM?.[1]?.replace(/,/g,'')||null,
+      };
+    }
+    return null;
+  })();
+
   // ── kWh Consumed: multi-source with cross-validation ──
   // Source 1: Meter read table — (EndRead - StartRead) × Multiplier (most reliable)
   // Source 2: ECA/EER/PTS charge line kWh quantities (full billing period total)
@@ -5833,14 +5859,14 @@ function _extractEvergy(t,acctOverride,addrOverride){
     BillingPeriodStart:bpMatch?.[1]||null,
     BillingPeriodEnd:bpMatch?.[2]||null,
     NumberOfDays:numDays,
-    MeterReadStart:meterRow?.[1]||null,
-    MeterReadEnd:meterRow?.[2]||null,
-    StartRead:meterRow?.[4]?.replace(/,/g,'')||null,
-    EndRead:meterRow?.[3]?.replace(/,/g,'')||null,
-    MeterMultiplier:meterRow?.[5]?.replace(/,/g,'')||null,
+    MeterReadStart:meterRow?.[1]||_mlMeter?.startDate||null,
+    MeterReadEnd:meterRow?.[2]||_mlMeter?.endDate||null,
+    StartRead:meterRow?.[4]?.replace(/,/g,'')||_mlMeter?.startRead||null,
+    EndRead:meterRow?.[3]?.replace(/,/g,'')||_mlMeter?.endRead||null,
+    MeterMultiplier:meterRow?.[5]?.replace(/,/g,'')||_mlMeter?.multiplier||null,
     kWhConsumed:adjKwh,
-    ActualKW:meterRow?.[6]||null,
-    ActualRKVA:meterRow?.[7]||null,
+    ActualKW:meterRow?.[6]||_mlMeter?.kwUsed||null,
+    ActualRKVA:meterRow?.[7]||_mlMeter?.rkvaUsed||null,
     CustomerCharge:custChg,
     FacilitiesKW:facKW,
     FacilitiesCharge:facChg,
