@@ -168,9 +168,12 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const facChg = xChg('Fac\\S*\\s+' + C);
   const demKW = t.match(new RegExp('Demand\\s+' + C + '\\s+([\\d,.]+)\\s*[kK][Ww]', 'i'))?.[1]?.replace(/,/g, '') || null;
   const demChg = xChg('Demand\\s+' + C);
-  const onPkChg = xChg('Energy\\s+' + C + '\\s+On\\s+P[kK]');
-  const offPkChg = xChg('Energy\\s+' + C + '\\s+Off\\s+P[kK]');
-  const tieredChg = xChg('Energy\\s+' + C, /On\s+P[kK]|Off\s+P[kK]/i);
+  // Date-aware: Kansas switched from 3-tier to On/Off Peak on 12/21/2023
+  const _billDate = bpMatch ? new Date(bpMatch[1]) : null;
+  const _isOnOffPeak = !_billDate || _billDate >= new Date('12/21/2023');
+  const onPkChg = _isOnOffPeak ? xChg('Energy\\s+' + C + '\\s+On\\s+P[kK]') : null;
+  const offPkChg = _isOnOffPeak ? xChg('Energy\\s+' + C + '\\s+Off\\s+P[kK]') : null;
+  const tieredChg = !_isOnOffPeak ? xChg('Energy\\s+' + C, /On\s+P[kK]|Off\s+P[kK]/i) : null;
   const ecaChg = xChg('ECA\\s+' + C);
   const eerChg = xChg('EER\\s+' + C);
   const ptsChg = xChg('PTS\\s+' + C);
@@ -368,6 +371,9 @@ assert(r1.TDCCharge === '1199.76', `T1 TDCCharge (got ${r1.TDCCharge})`);
 assert(r1.RkVACharge === '100.83', `T1 RkVACharge (got ${r1.RkVACharge})`);
 assert(r1.TotalCurrentCharges === '16912.24', `T1 TotalCurrentCharges (got ${r1.TotalCurrentCharges})`);
 assert(r1.kWhConsumed !== null, `T1 kWhConsumed not null (got ${r1.kWhConsumed})`);
+// Pre-12/21/2023: should use 3-tier energy (NOT On/Off Peak)
+assert(r1.EnergyOnPeakCharge !== null, `T1 pre-2023 uses tiered energy as OnPeak (got ${r1.EnergyOnPeakCharge})`);
+assert(r1.EnergyOffPeakCharge === null, `T1 pre-2023 no Off Peak (got ${r1.EnergyOffPeakCharge})`);
 
 // ─── Test 2: Multi-line labeled meter table (real PDF format — THE BUG) ──────
 console.log('\n--- Test 2: Multi-line meter table (real PDF layout — BUG) ---');
