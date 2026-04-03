@@ -5602,7 +5602,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
   //   • "Facilities Ghg ... $1,394.55"            (OCR letter swap)
   // Strategy: for each keyword line, take the last $X.XX that is NOT a rate.
   // Uses very loose OCR-tolerant patterns that handle common letter swaps.
-  const CHG_STOP=/(?:Cust|Fac[il1]{2}|Demand|Energy\s+C|ECA|EER|PTS|TDC|RkVA|Subtotal|Current\s+Charges)\b/i;
+  const CHG_STOP=/(?:Cust|Fac\S|Demand|Energy\s+C|ECA|EER|PTS|TDC|RkVA|Subtotal|Current\s+Charges)/i;
   const getAmt=(line)=>{
     const ms=[...line.matchAll(/\$([\d,]+\.\d{2})/g)];
     let best=null;
@@ -5748,8 +5748,8 @@ function _extractEvergy(t,acctOverride,addrOverride){
   const C='(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])[.:]?';
   // Customer: "Customer Chg" or OCR garble like "CUSIOMET CNG", "Customar Chg", "CUSIOMER CNG"
   const custChg   =xChg('C[ua][s5][t1iI][o0][mM][eao][r1tT]\\s+'+C);
-  const facKW     =t.match(new RegExp('Fac[il1]{1,3}[il1]?t[il1]es\\s+'+C+'\\s+([\\d,.]+)\\s*[kK][Ww]','i'))?.[1]?.replace(/,/g,'')||null;
-  const facChg    =xChg('Fac[il1]{1,3}[il1]?t[il1]es\\s+'+C);
+  const facKW     =t.match(new RegExp('Fac\\S*\\s+'+C+'\\s+([\\d,.]+)\\s*[kK][Ww]','i'))?.[1]?.replace(/,/g,'')||null;
+  const facChg    =xChg('Fac\\S*\\s+'+C);
   const demKW     =t.match(new RegExp('Demand\\s+'+C+'\\s+([\\d,.]+)\\s*[kK][Ww]','i'))?.[1]?.replace(/,/g,'')||null;
   const demChg    =xChg('Demand\\s+'+C);
   const onPkChg   =xChg('Energy\\s+'+C+'\\s+On\\s+P[kK]');
@@ -5929,10 +5929,10 @@ function _extractEvergy(t,acctOverride,addrOverride){
       for(const uc of uncaptured){
         const lcLine=uc.line.toLowerCase();
         if(!result.CustomerCharge&&/cust|custo/i.test(lcLine)) result.CustomerCharge=uc.val.toFixed(2);
-        else if(!result.FacilitiesCharge&&/facil|facl/i.test(lcLine)) result.FacilitiesCharge=uc.val.toFixed(2);
+        else if(!result.FacilitiesCharge&&/fac/i.test(lcLine)) result.FacilitiesCharge=uc.val.toFixed(2);
         else if(!result.RkVACharge&&/rkva|rkv/i.test(lcLine)) result.RkVACharge=uc.val.toFixed(2);
         // Also try to recover FacilitiesKW from the same line
-        if(!result.FacilitiesKW&&/facil|facl/i.test(lcLine)){
+        if(!result.FacilitiesKW&&/fac/i.test(lcLine)){
           const kwM=uc.line.match(/([\d,.]+)\s*[kK][Ww]/);
           if(kwM) result.FacilitiesKW=kwM[1].replace(/,/g,'');
         }
@@ -5955,7 +5955,7 @@ const UTILITY_RULES=[
   {name:'Evergy',detect:t=>(
     _EVG_BILLING_DETAILS.test(t) ||
     /Billing\s+Details\s*[-\u2013]\s*service\s+from/i.test(t) ||
-    (/Fac[il1]{1,3}[il1]?t[il1]es\s+Ch[gaq9]/i.test(t) && /Demand\s+Ch[gaq9]/i.test(t) && /TDC\s+Ch[gaq9]/i.test(t)) ||
+    (/Fac\S*\s+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])/i.test(t) && /Demand\s+Ch[gaq9]/i.test(t) && /TDC\s+Ch[gaq9]/i.test(t)) ||
     (/Customer\s+Ch[gaq9]/i.test(t) && /ECA\s+Ch[gaq9]/i.test(t)) ||
     (/Current\s+Charges/i.test(t) && /Evergy|evergy/i.test(t))
   ),
