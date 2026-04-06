@@ -6774,9 +6774,12 @@ function clearPDFOCR(){
 function savePDFDebug(){
   const raw=window._pdfRawText||'(no raw text)';
   const bills=window._pdfMultiBills||[];
-  const idx=window._pdfMultiIdx||0;
-  const bill=bills[idx]||{};
-  const output='=== EXTRACTION RESULT (bill '+(idx+1)+' of '+bills.length+') ===\n'+JSON.stringify(bill,null,2)+'\n\n=== RAW OCR TEXT ===\n'+raw;
+  let output='=== EXTRACTION RESULTS ('+bills.length+' bills) ===\n';
+  for(let i=0;i<bills.length;i++){
+    output+='\n--- Bill '+(i+1)+' of '+bills.length+' ('+((bills[i]||{}).BillingPeriodStart||'?')+' to '+((bills[i]||{}).BillingPeriodEnd||'?')+') ---\n';
+    output+=JSON.stringify(bills[i]||{},null,2)+'\n';
+  }
+  output+='\n=== RAW OCR TEXT ===\n'+raw;
   // Save to Downloads as a file
   const blob=new Blob([output],{type:'text/plain'});
   const a=document.createElement('a');
