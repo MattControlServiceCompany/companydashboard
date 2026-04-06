@@ -6096,6 +6096,39 @@ function _extractEvergy(t,acctOverride,addrOverride){
     }
   }
 
+  // ── CROSS-VALIDATE CHARGES: rate × quantity vs OCR'd dollar amount ──
+  // OCR frequently garbles digits (0↔6↔8, 3↔8). Where we have both the rate and
+  // quantity on the charge line, calculate expected = rate × quantity and use it
+  // if the OCR'd amount doesn't match (tolerance $0.02 for rounding).
+  const _xvChg=(keyword,resultField)=>{
+    if(!result[resultField]) return;
+    const lines2=t.split('\n');
+    let calcTotal=0,found=false;
+    for(const line of lines2){
+      if(!new RegExp(keyword,'i').test(line)) continue;
+      // Extract: quantity kW/kWh at $rate per kW/kWh
+      const rateM=line.match(/([\d,]+\.\d+)\s*[kK][Ww][h]?\s+at\s+\$([\d,]+\.\d+)\s+per\s+[kK][Ww]/i);
+      if(rateM){
+        const qty=parseFloat(rateM[1].replace(/,/g,''));
+        const rate=parseFloat(rateM[2].replace(/,/g,''));
+        if(qty>0&&rate>0){calcTotal+=qty*rate;found=true;}
+      }
+    }
+    if(!found) return;
+    const extracted=parseFloat(String(result[resultField]).replace(/,/g,''));
+    const diff=Math.abs(calcTotal-extracted);
+    // Only override if difference is small (OCR digit error, not proration).
+    // Prorated charges ("for X of Y days") show full rate but partial charge — diff is large.
+    // OCR digit errors typically change one digit — diff is <1% of the value.
+    if(diff>0.02 && diff<Math.max(10,extracted*0.01)){
+      result[resultField]=calcTotal.toFixed(2);
+    }
+  };
+  _xvChg('Fac\\S*\\s+'+C,'FacilitiesCharge');
+  _xvChg('Demand\\s+'+C,'BilledKWCharge');
+  _xvChg('R[kK]VA\\s+'+C,'RkVACharge');
+  _xvChg('TDC\\s+'+C,'TDCCharge');
+
   // ── DECIMAL FORMAT ENFORCEMENT (per Evergy Billing Details rules) ──
   // kW = #,###.#### (4 dp), kWh = #,###.#### (4 dp), charges = $#,###.## (2 dp)
   // StartRead/EndRead = ##,###.#### (4 dp), MeterMultiplier = ##.#### (4 dp)

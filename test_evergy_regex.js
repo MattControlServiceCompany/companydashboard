@@ -361,6 +361,32 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
   }
 
+  // ── CROSS-VALIDATE CHARGES: rate × quantity vs OCR'd dollar amount ──
+  const _xvChg = (keyword, resultField) => {
+    if (!result[resultField]) return;
+    const lines2 = t.split('\n');
+    let calcTotal = 0, found = false;
+    for (const line of lines2) {
+      if (!new RegExp(keyword, 'i').test(line)) continue;
+      const rateM = line.match(/([\d,]+\.\d+)\s*[kK][Ww][h]?\s+at\s+\$([\d,]+\.\d+)\s+per\s+[kK][Ww]/i);
+      if (rateM) {
+        const qty = parseFloat(rateM[1].replace(/,/g, ''));
+        const rate = parseFloat(rateM[2].replace(/,/g, ''));
+        if (qty > 0 && rate > 0) { calcTotal += qty * rate; found = true; }
+      }
+    }
+    if (!found) return;
+    const extracted = parseFloat(String(result[resultField]).replace(/,/g, ''));
+    const diff = Math.abs(calcTotal - extracted);
+    if (diff > 0.02 && diff < Math.max(10, extracted * 0.01)) {
+      result[resultField] = calcTotal.toFixed(2);
+    }
+  };
+  _xvChg('Fac\\S*\\s+' + C, 'FacilitiesCharge');
+  _xvChg('Demand\\s+' + C, 'BilledKWCharge');
+  _xvChg('R[kK]VA\\s+' + C, 'RkVACharge');
+  _xvChg('TDC\\s+' + C, 'TDCCharge');
+
   // ── DECIMAL FORMAT ENFORCEMENT (per Evergy Billing Details rules) ──
   const _pad4 = v => { if (!v) return v; const n = parseFloat(String(v).replace(/,/g, '')); return isNaN(n) ? v : n.toFixed(4); };
   for (const k of ['FacilitiesKW', 'BilledKW', 'ActualKW', 'ActualRKVA', 'TDCkW']) {
@@ -656,7 +682,7 @@ assert(r6.TDCkW === '541.8240', `T6 TDCkW with dash-KW on next line (got ${r6.TD
 assert(r6.TDCCharge === '1455.34', `T6 TDCCharge (got ${r6.TDCCharge})`);
 // Other charges should still extract correctly
 assert(r6.CustomerCharge === '102.86', `T6 CustomerCharge (got ${r6.CustomerCharge})`);
-assert(r6.FacilitiesCharge === '1447.54', `T6 FacilitiesCharge (got ${r6.FacilitiesCharge})`);
+assert(r6.FacilitiesCharge === '1442.54', `T6 FacilitiesCharge cross-validated (got ${r6.FacilitiesCharge})`);
 assert(r6.FacilitiesKW === '576.7840', `T6 FacilitiesKW (got ${r6.FacilitiesKW})`);
 assert(r6.ECACharge === '3348.74', `T6 ECACharge (got ${r6.ECACharge})`);
 assert(r6.EERCharge === '36.37', `T6 EERCharge (got ${r6.EERCharge})`);
@@ -922,6 +948,56 @@ const r11b = _extractEvergy(multiBillText, '1111111111', null);
 assert(r11b.CustomerCharge === '50.00', `T11b Multi-bill targets acct 1 charges (got ${r11b.CustomerCharge})`);
 assert(r11b.FacilitiesKW === '100.0000', `T11b Multi-bill targets acct 1 FacKW (got ${r11b.FacilitiesKW})`);
 assert(r11b.TotalCurrentCharges === '300.10', `T11b Multi-bill targets acct 1 total (got ${r11b.TotalCurrentCharges})`);
+
+// ─── Test 12: Cross-validate charges against rate × quantity ────────────────
+console.log('\n--- Test 12: Charge cross-validation (rate × kW/kWh) ---');
+
+// OCR misreads a digit in the dollar amount, but rate and kW are correct.
+// 545.1840 × $2.501 = $1,363.51, NOT $1,368.51 (OCR read 3 as 8)
+const crossValBill = `Billing Details - service from 06/29/2025 to 07/29/2025
+Customer Chg... ccna $102.86
+Facilities Chg 545.1840 KW at $2.501 per kW . $1,368.51
+Demand Chg 519.4080 kW at $11.744 per kW $6,099.93
+Energy Chg On Pk Sum 31,213.6320 kWh at
+$0.07299 per kWh $2,278.28
+Energy Chg Off Pk Sum 148,786.1280 kWh at
+$0.03888 per kWh $5,784.80
+RkVA Chg 113.4480 kW at $0.663 per kW ..... $75.22
+ECA Chg for 179,999.7600 kWh $3,957.83
+EER Chg for 179,999.7600 kWh $0.00
+PTS Chg for 179,999.7600 kWh $153.00
+TDC Chg for 519.4080 kW at $2.68601 per kW $1,395.16
+Subtotal $21,210.59
+Current Charges $21,210.59`;
+
+const r12a = _extractEvergy(crossValBill, null, null);
+// FacilitiesCharge should be corrected to rate × kW = 545.1840 × 2.501 = $1,363.51
+assert(r12a.FacilitiesCharge === '1363.51', `T12a FacilitiesCharge cross-validated (got ${r12a.FacilitiesCharge})`);
+// Demand: 519.4080 × 11.744 = $6,099.93 — OCR is correct, should stay
+assert(r12a.BilledKWCharge === '6099.93', `T12a DemandChg unchanged when correct (got ${r12a.BilledKWCharge})`);
+// RkVA: 113.4480 × 0.663 = $75.22 — correct
+assert(r12a.RkVACharge === '75.22', `T12a RkVACharge unchanged when correct (got ${r12a.RkVACharge})`);
+
+// OCR misreads RkVA charge: 84.9600 × $0.663 = $56.33, but OCR says $58.33
+const crossValBill2 = `Billing Details - service from 12/30/2024 to 01/29/2025
+Customer Chg $102.86
+Facilities Chg 545.1840 kW at $2.501 per kW $1,363.51
+Demand Chg 292.4160 kW at $5.698 per kW $1,666.19
+Energy Chg On Pk Win 13,377.6240 kWh at $0.03854 per kWh $515.57
+Energy Chg Off Pk Win 91,348.9440 kWh at $0.03288 per kWh $3,003.55
+RkVA Chg 84.9600 kW at $0.663 per kW $58.33
+ECA Chg for 104,726.5680 kWh $2,151.78
+EER Chg for 104,726.5680 kWh $0.00
+PTS Chg for 104,726.5680 kWh $238.78
+TDC Chg for 292.4160 kW $721.63
+Tax exempt delivery cost from bill $1,945.83
+Bill Offset -$1,945.83
+Subtotal $9,822.20
+Current Charges $9,822.20`;
+
+const r12b = _extractEvergy(crossValBill2, null, null);
+// RkVA: 84.9600 × 0.663 = $56.33, not $58.33
+assert(r12b.RkVACharge === '56.33', `T12b RkVACharge cross-validated (got ${r12b.RkVACharge})`);
 
 // =============================================================================
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
