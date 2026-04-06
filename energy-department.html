@@ -5627,6 +5627,37 @@ const _EVG_CHARGE_ORDER=['CustomerCharge','FacilitiesCharge','BilledKWCharge',
   'ECACharge','EERCharge','PTSCharge','TDCCharge','BillOffset','FranchiseFee'];
 // Evergy per-section extractor
 function _extractEvergy(t,acctOverride,addrOverride){
+  // ── OCR digit cleanup: replace 'o'/'O' with '0' in numeric contexts ──
+  t=t.replace(/(\d)o/gi,'$10').replace(/o(\d)/gi,'0$1');
+
+  // ── Multi-bill scoping: if text has multiple Billing Details sections, scope to target account ──
+  if(acctOverride){
+    const bdMarkers=[];
+    const bdRe=/Billing\s+Details\s*[-\u2013]\s*service\s+from/gi;
+    let m;
+    while((m=bdRe.exec(t))!==null) bdMarkers.push(m.index);
+    if(bdMarkers.length>1){
+      // Find section start: search backwards from each Billing Details for "Customer Name" or "Account"
+      const secStarts=bdMarkers.map(idx=>{
+        const before=t.slice(Math.max(0,idx-500),idx);
+        // Find LAST "Customer Name" before this Billing Details (closest to it)
+        let cnIdx=-1;
+        const cnRe=/Customer\s*Name/gi;
+        let cm;while((cm=cnRe.exec(before))!==null) cnIdx=cm.index;
+        return cnIdx>=0?Math.max(0,idx-500)+cnIdx:Math.max(0,idx-200);
+      });
+      for(let s=0;s<bdMarkers.length;s++){
+        const header=t.slice(secStarts[s],bdMarkers[s]);
+        if(header.includes(acctOverride)){
+          const start=secStarts[s];
+          const end=s+1<secStarts.length?secStarts[s+1]:t.length;
+          t=t.slice(start,end);
+          break;
+        }
+      }
+    }
+  }
+
   const sum=(t,re)=>{const ms=[...t.matchAll(re)];return ms.length?ms.reduce((s,m)=>s+parseFloat(m[1].replace(/,/g,'')),0).toFixed(2):null;};
   const chg=(re)=>t.match(re)?.[1]?.replace(/,/g,'')||null;
 
@@ -5884,21 +5915,30 @@ function _extractEvergy(t,acctOverride,addrOverride){
         }
       }
     }
-    if(bestVal!==null) return bestVal.toFixed(2);
+    if(bestVal!==null) {
+      // Cross-validate: if extracted total is much LARGER than calculated sum, it's likely
+      // a page-1 account summary total, not the detail total. Trust the sum instead.
+      const pf2=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
+      const calcSum=pf2(custChg)+pf2(facChg)+pf2(demChg)+pf2(onPkChg||tieredChg)+pf2(offPkChg)+pf2(rkvaChg)+pf2(ecaChg)+pf2(eerChg)+pf2(ptsChg)+pf2(tdcChg)+pf2(taxExempt)+pf2(billOffset)+pf2(franchise);
+      if(calcSum>0 && bestVal>calcSum*1.5){
+        return calcSum.toFixed(2);
+      }
+      return bestVal.toFixed(2);
+    }
     // Try Subtotal
     const m2=t.match(/Subtotal[\s\S]*?\$\s*([\d,]+\.\d{2})/i);
     if(m2) return m2[1].replace(/,/g,'');
     // Fallback: sum all extracted charges (for OCR'd sections missing the total line)
     const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
-    const sum=pf(custChg)+pf(facChg)+pf(demChg)+pf(onPkChg||tieredChg)+pf(offPkChg)+pf(ecaChg)+pf(eerChg)+pf(ptsChg)+pf(tdcChg)+pf(taxExempt)+pf(franchise);
+    const sum=pf(custChg)+pf(facChg)+pf(demChg)+pf(onPkChg||tieredChg)+pf(offPkChg)+pf(rkvaChg)+pf(ecaChg)+pf(eerChg)+pf(ptsChg)+pf(tdcChg)+pf(taxExempt)+pf(billOffset)+pf(franchise);
     return sum>0 ? sum.toFixed(2) : null;
   })();
 
   const result = {
     UtilityCompany:'Evergy',
-    CustomerName:t.match(/Customer\s*Name[^A-Za-z\n]*([A-Z][A-Z0-9 #]+?)(?=\s+Account|\n)/im)?.[1]?.trim()
-      ||t.match(/Customer\s*Name\s*:\s*\n\s*(?:Account[^\n]*\n\s*)?([A-Z][A-Z0-9 #]+)/im)?.[1]?.trim()
-      ||t.match(/Customer\s*Name\s*:\s*([A-Z][A-Z0-9 #]{2,})/im)?.[1]?.trim()||null,
+    CustomerName:t.match(/Customer\s*Name[^A-Za-z\n]*([A-Z][A-Z0-9 #]+?)(?=\s+(?:Account|Page)|\n)/im)?.[1]?.trim()
+      ||t.match(/Customer\s*Name\s*:\s*\n\s*(?:Account[^\n]*\n\s*)?([A-Z][A-Z0-9 #]+?)(?=\s+Page|\s*$)/im)?.[1]?.trim()
+      ||t.match(/Customer\s*Name\s*:\s*([A-Z][A-Z0-9 #]{2,}?)(?=\s+Page|\s*$)/im)?.[1]?.trim()||null,
     AccountNumber:acctOverride||t.match(/Account\s+(?:Number\s*)?[:\s©®]\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g,'')||null,
     ServiceAddress:addrOverride||null,
     RateSchedule:rateMatch?.[1]||null,
@@ -5932,6 +5972,11 @@ function _extractEvergy(t,acctOverride,addrOverride){
     TotalCurrentCharges:totalDue,
     MeterNumber:null,
   };
+
+  // Bill Offset = negative of Tax Exempt Delivery (Evergy business rule)
+  if(!result.BillOffset && result.TaxExemptDelivery){
+    result.BillOffset = '-' + result.TaxExemptDelivery;
+  }
 
   // ── STRUCTURAL POSITION FALLBACK: use _EVG_CHARGE_ORDER to recover missing values ──
   // See charge ordering constant defined above _extractEvergy.
@@ -6044,6 +6089,17 @@ function _extractEvergy(t,acctOverride,addrOverride){
       }
     }
   }
+
+  // ── DECIMAL FORMAT ENFORCEMENT (per Evergy Billing Details rules) ──
+  // kW = #,###.#### (4 dp), kWh = #,###.#### (4 dp), charges = $#,###.## (2 dp)
+  // StartRead/EndRead = ##,###.#### (4 dp), MeterMultiplier = ##.#### (4 dp)
+  const _pad4=v=>{if(!v)return v;const n=parseFloat(String(v).replace(/,/g,''));return isNaN(n)?v:n.toFixed(4);};
+  for(const k of ['FacilitiesKW','BilledKW','ActualKW','ActualRKVA','TDCkW']){
+    if(result[k]) result[k]=_pad4(result[k]);
+  }
+  if(result.StartRead) result.StartRead=_pad4(result.StartRead);
+  if(result.EndRead) result.EndRead=_pad4(result.EndRead);
+  if(result.MeterMultiplier) result.MeterMultiplier=_pad4(result.MeterMultiplier);
 
   return result;
 }

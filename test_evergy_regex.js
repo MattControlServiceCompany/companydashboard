@@ -28,6 +28,35 @@ const _EVG_ADDR = /^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH
 
 // ─── Full _extractEvergy (copied from source, keep in sync) ──────────────────
 function _extractEvergy(t, acctOverride, addrOverride) {
+  // ── OCR digit cleanup: replace 'o'/'O' with '0' in numeric contexts ──
+  t = t.replace(/(\d)o/gi, '$10').replace(/o(\d)/gi, '0$1');
+
+  // ── Multi-bill scoping: if text has multiple Billing Details sections, scope to target account ──
+  if (acctOverride) {
+    const bdMarkers = [];
+    const bdRe = /Billing\s+Details\s*[-\u2013]\s*service\s+from/gi;
+    let m;
+    while ((m = bdRe.exec(t)) !== null) bdMarkers.push(m.index);
+    if (bdMarkers.length > 1) {
+      const secStarts = bdMarkers.map(idx => {
+        const before = t.slice(Math.max(0, idx - 500), idx);
+        let cnIdx = -1;
+        const cnRe = /Customer\s*Name/gi;
+        let cm; while ((cm = cnRe.exec(before)) !== null) cnIdx = cm.index;
+        return cnIdx >= 0 ? Math.max(0, idx - 500) + cnIdx : Math.max(0, idx - 200);
+      });
+      for (let s = 0; s < bdMarkers.length; s++) {
+        const header = t.slice(secStarts[s], bdMarkers[s]);
+        if (header.includes(acctOverride)) {
+          const start = secStarts[s];
+          const end = s + 1 < secStarts.length ? secStarts[s + 1] : t.length;
+          t = t.slice(start, end);
+          break;
+        }
+      }
+    }
+  }
+
   const sum = (t, re) => { const ms = [...t.matchAll(re)]; return ms.length ? ms.reduce((s, m) => s + parseFloat(m[1].replace(/,/g, '')), 0).toFixed(2) : null; };
   const chg = (re) => t.match(re)?.[1]?.replace(/,/g, '') || null;
 
@@ -221,19 +250,26 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         }
       }
     }
-    if (bestVal !== null) return bestVal.toFixed(2);
+    if (bestVal !== null) {
+      const pf2 = v => v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0;
+      const calcSum = pf2(custChg) + pf2(facChg) + pf2(demChg) + pf2(onPkChg || tieredChg) + pf2(offPkChg) + pf2(rkvaChg) + pf2(ecaChg) + pf2(eerChg) + pf2(ptsChg) + pf2(tdcChg) + pf2(taxExempt) + pf2(billOffset) + pf2(franchise);
+      if (calcSum > 0 && bestVal > calcSum * 1.5) {
+        return calcSum.toFixed(2);
+      }
+      return bestVal.toFixed(2);
+    }
     const m2 = t.match(/Subtotal[\s\S]*?\$\s*([\d,]+\.\d{2})/i);
     if (m2) return m2[1].replace(/,/g, '');
     const pf = v => v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0;
-    const sumVal = pf(custChg) + pf(facChg) + pf(demChg) + pf(onPkChg || tieredChg) + pf(offPkChg) + pf(ecaChg) + pf(eerChg) + pf(ptsChg) + pf(tdcChg) + pf(taxExempt) + pf(franchise);
+    const sumVal = pf(custChg) + pf(facChg) + pf(demChg) + pf(onPkChg || tieredChg) + pf(offPkChg) + pf(rkvaChg) + pf(ecaChg) + pf(eerChg) + pf(ptsChg) + pf(tdcChg) + pf(taxExempt) + pf(billOffset) + pf(franchise);
     return sumVal > 0 ? sumVal.toFixed(2) : null;
   })();
 
   const result = {
     UtilityCompany: 'Evergy',
-    CustomerName: t.match(/Customer\s*Name[^A-Za-z\n]*([A-Z][A-Z0-9 #]+?)(?=\s+Account|\n)/im)?.[1]?.trim()
-      || t.match(/Customer\s*Name\s*:\s*\n\s*(?:Account[^\n]*\n\s*)?([A-Z][A-Z0-9 #]+)/im)?.[1]?.trim()
-      || t.match(/Customer\s*Name\s*:\s*([A-Z][A-Z0-9 #]{2,})/im)?.[1]?.trim() || null,
+    CustomerName: t.match(/Customer\s*Name[^A-Za-z\n]*([A-Z][A-Z0-9 #]+?)(?=\s+(?:Account|Page)|\n)/im)?.[1]?.trim()
+      || t.match(/Customer\s*Name\s*:\s*\n\s*(?:Account[^\n]*\n\s*)?([A-Z][A-Z0-9 #]+?)(?=\s+Page|\s*$)/im)?.[1]?.trim()
+      || t.match(/Customer\s*Name\s*:\s*([A-Z][A-Z0-9 #]{2,}?)(?=\s+Page|\s*$)/im)?.[1]?.trim() || null,
     AccountNumber: acctOverride || t.match(/Account\s+(?:Number\s*)?[:\s\u00a9\u00ae]\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g, '') || null,
     ServiceAddress: addrOverride || null,
     RateSchedule: rateMatch?.[1] || null,
@@ -267,6 +303,11 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     TotalCurrentCharges: totalDue,
     MeterNumber: null,
   };
+
+  // Bill Offset = negative of Tax Exempt Delivery (Evergy business rule)
+  if(!result.BillOffset && result.TaxExemptDelivery){
+    result.BillOffset = '-' + result.TaxExemptDelivery;
+  }
 
   // ── METER NUMBER EXTRACTION ──
   if (!result.MeterNumber) {
@@ -315,6 +356,15 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       }
     }
   }
+
+  // ── DECIMAL FORMAT ENFORCEMENT (per Evergy Billing Details rules) ──
+  const _pad4 = v => { if (!v) return v; const n = parseFloat(String(v).replace(/,/g, '')); return isNaN(n) ? v : n.toFixed(4); };
+  for (const k of ['FacilitiesKW', 'BilledKW', 'ActualKW', 'ActualRKVA', 'TDCkW']) {
+    if (result[k]) result[k] = _pad4(result[k]);
+  }
+  if (result.StartRead) result.StartRead = _pad4(result.StartRead);
+  if (result.EndRead) result.EndRead = _pad4(result.EndRead);
+  if (result.MeterMultiplier) result.MeterMultiplier = _pad4(result.MeterMultiplier);
 
   return result;
 }
@@ -611,6 +661,263 @@ assert(r6.RkVACharge === '57.25', `T6 RkVACharge (got ${r6.RkVACharge})`);
 assert(r6.TaxExemptDelivery === '1945.83', `T6 TaxExemptDelivery (got ${r6.TaxExemptDelivery})`);
 assert(r6.BillOffset === '-1,945.83' || r6.BillOffset === '-1945.83', `T6 BillOffset (got ${r6.BillOffset})`);
 assert(r6.TotalCurrentCharges === '13517.51', `T6 TotalCurrentCharges (got ${r6.TotalCurrentCharges})`);
+
+// ─── Test 7: CustomerName stops before Page ────────────────────────────────
+console.log('\n--- Test 7: CustomerName stops before Page ---');
+
+const pageAfterNameBill = `Customer Name © USD #416 Page 2012
+Account Number © 2885731561
+202 AQUATIC DR,NEW HS LOUISBURG KS
+Billing Details - service from 09/28/2025 to 10/27/2025
+Customer Chg $102.86
+Subtotal $102.86
+Current Charges $102.86`;
+const r7a_name = _extractEvergy(pageAfterNameBill, null, null);
+assert(r7a_name.CustomerName === 'USD #416', `T7a CustomerName stops before Page (got "${r7a_name.CustomerName}")`);
+
+const pageOnAccountLineBill = `Customer Name © USD #416
+Account Number © 2885731561 Page 2012
+202 AQUATIC DR,NEW HS LOUISBURG KS
+Billing Details - service from 09/28/2025 to 10/27/2025
+Customer Chg $102.86
+Subtotal $102.86
+Current Charges $102.86`;
+const r7b_name = _extractEvergy(pageOnAccountLineBill, null, null);
+assert(r7b_name.CustomerName === 'USD #416', `T7b CustomerName with Page on Account line (got "${r7b_name.CustomerName}")`);
+
+const normalNameBill = `Customer Name © LOUISBURG SCHOOL DIST
+Account Number © 123
+Billing Details - service from 09/28/2025 to 10/27/2025
+Customer Chg $50.00
+Subtotal $50.00
+Current Charges $50.00`;
+const r7c_name = _extractEvergy(normalNameBill, null, null);
+assert(r7c_name.CustomerName === 'LOUISBURG SCHOOL DIST', `T7c Normal multi-word name (got "${r7c_name.CustomerName}")`);
+
+// ─── Test 8: BillOffset and TotalCurrentCharges bugs ───────────────────────
+console.log('\n--- Test 8: BillOffset fallback + TotalCurrentCharges sum fixes ---');
+
+// 8a: BillOffset fallback from TaxExemptDelivery when OCR garbles "Bill Offset" line
+const billOffsetFallbackBill = `Billing Details - service from 12/30/2024 to 01/29/2025
+
+Customer Chg $102.86
+Facilities Chg 545.1840 kW at $2.501 per kW $1,363.51
+Demand Chg 292.4160 kW at $5.698 per kW $1,666.19
+Energy Chg On Pk Win 13,377.6240 kWh at $0.03854 per kWh $515.57
+Energy Chg Off Pk Win 91,348.9440 kWh at $0.03288 per kWh $3,003.55
+RkVA Chg 84.9600 kW at $0.663 per kW $56.33
+ECA Chg for 101,235.6824 kWh $2,079.38
+ECA Chg for 3,490.8856 kWh $72.40
+EER Chg for 104,726.5680 kWh $0.00
+PTS Chg for 104,726.5680 kWh $238.78
+TDC Chg for 292.4160 kW $721.63
+Tax exempt delivery cost from bill $1,945.83
+Bi!! 0ffS3t garbled line completely unreadable
+Subtotal $9,820.20
+Current Charges $9,820.20`;
+
+const r8a = _extractEvergy(billOffsetFallbackBill, null, null);
+assert(r8a.TaxExemptDelivery === '1945.83', `T8a TaxExemptDelivery extracted (got ${r8a.TaxExemptDelivery})`);
+assert(r8a.BillOffset === '-1945.83', `T8a BillOffset fallback from TaxExempt (got ${r8a.BillOffset})`);
+
+// 8b: TotalCurrentCharges sum formula includes rkvaChg and billOffset
+const sumFormulaTestBill = `Billing Details - service from 12/30/2024 to 01/29/2025
+
+Customer Chg $102.86
+Facilities Chg 545.1840 kW at $2.501 per kW $1,363.51
+Demand Chg 292.4160 kW at $5.698 per kW $1,666.19
+Energy Chg On Pk Win 13,377.6240 kWh at $0.03854 per kWh $515.57
+Energy Chg Off Pk Win 91,348.9440 kWh at $0.03288 per kWh $3,003.55
+RkVA Chg 84.9600 kW at $0.663 per kW $56.33
+ECA Chg for 101,235.6824 kWh $2,079.38
+ECA Chg for 3,490.8856 kWh $72.40
+EER Chg for 104,726.5680 kWh $0.00
+PTS Chg for 104,726.5680 kWh $238.78
+TDC Chg for 292.4160 kW $721.63
+Tax exempt delivery cost from bill $1,945.83
+Bill Offset -$1,945.83
+Franchise Fee $173.80`;
+
+const r8b = _extractEvergy(sumFormulaTestBill, null, null);
+assert(r8b.RkVACharge === '56.33', `T8b RkVACharge extracted (got ${r8b.RkVACharge})`);
+assert(r8b.BillOffset === '-1945.83' || r8b.BillOffset === '-1,945.83', `T8b BillOffset extracted (got ${r8b.BillOffset})`);
+const pf8 = v => v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0;
+const expectedSum8b = pf8(r8b.CustomerCharge) + pf8(r8b.FacilitiesCharge) + pf8(r8b.BilledKWCharge)
+  + pf8(r8b.EnergyOnPeakCharge) + pf8(r8b.EnergyOffPeakCharge) + pf8(r8b.RkVACharge)
+  + pf8(r8b.ECACharge) + pf8(r8b.EERCharge) + pf8(r8b.PTSCharge) + pf8(r8b.TDCCharge)
+  + pf8(r8b.TaxExemptDelivery) + pf8(r8b.BillOffset) + pf8(r8b.FranchiseFee);
+assert(r8b.TotalCurrentCharges === expectedSum8b.toFixed(2), `T8b TotalCurrentCharges = sum of all charges (expected ${expectedSum8b.toFixed(2)}, got ${r8b.TotalCurrentCharges})`);
+
+// 8c: TotalCurrentCharges prefers detail-page "Current Charges" over page-1 summary
+const wrongTotalBill = `Current Charges $25,000.00
+Utility $25,000.00
+
+Billing Details - service from 12/30/2024 to 01/29/2025
+
+Customer Chg $102.86
+Facilities Chg 545.1840 kW at $2.501 per kW $1,363.51
+Demand Chg 292.4160 kW at $5.698 per kW $1,666.19
+Energy Chg On Pk Win 13,377.6240 kWh at $0.03854 per kWh $515.57
+Energy Chg Off Pk Win 91,348.9440 kWh at $0.03288 per kWh $3,003.55
+RkVA Chg 84.9600 kW at $0.663 per kW $56.33
+ECA Chg for 101,235.6824 kWh $2,079.38
+ECA Chg for 3,490.8856 kWh $72.40
+EER Chg for 104,726.5680 kWh $0.00
+PTS Chg for 104,726.5680 kWh $238.78
+TDC Chg for 292.4160 kW $721.63
+Tax exempt delivery cost from bill $1,945.83
+Bill Offset -$1,945.83
+Franchise Fee $173.80
+Subtotal $9,994.00
+Current Charges $9,994.00`;
+
+const r8c = _extractEvergy(wrongTotalBill, null, null);
+assert(r8c.TotalCurrentCharges === '9994.00', `T8c TotalCurrentCharges prefers detail over summary (got ${r8c.TotalCurrentCharges})`);
+
+// 8d: When only wrong page-1 "Current Charges" exists, trust calculated sum
+const wrongTotalBill2 = `Current Charges $25,000.00
+
+Billing Details - service from 12/30/2024 to 01/29/2025
+
+Customer Chg $102.86
+Facilities Chg 545.1840 kW at $2.501 per kW $1,363.51
+Demand Chg 292.4160 kW at $5.698 per kW $1,666.19
+Energy Chg On Pk Win 13,377.6240 kWh at $0.03854 per kWh $515.57
+Energy Chg Off Pk Win 91,348.9440 kWh at $0.03288 per kWh $3,003.55
+RkVA Chg 84.9600 kW at $0.663 per kW $56.33
+ECA Chg for 101,235.6824 kWh $2,079.38
+ECA Chg for 3,490.8856 kWh $72.40
+EER Chg for 104,726.5680 kWh $0.00
+PTS Chg for 104,726.5680 kWh $238.78
+TDC Chg for 292.4160 kW $721.63
+Tax exempt delivery cost from bill $1,945.83
+Bill Offset -$1,945.83
+Franchise Fee $173.80`;
+
+const r8d = _extractEvergy(wrongTotalBill2, null, null);
+const expectedSum8d = pf8(r8d.CustomerCharge) + pf8(r8d.FacilitiesCharge) + pf8(r8d.BilledKWCharge)
+  + pf8(r8d.EnergyOnPeakCharge) + pf8(r8d.EnergyOffPeakCharge) + pf8(r8d.RkVACharge)
+  + pf8(r8d.ECACharge) + pf8(r8d.EERCharge) + pf8(r8d.PTSCharge) + pf8(r8d.TDCCharge)
+  + pf8(r8d.TaxExemptDelivery) + pf8(r8d.BillOffset) + pf8(r8d.FranchiseFee);
+assert(r8d.TotalCurrentCharges !== '25000.00', `T8d TotalCurrentCharges should NOT be wrong page-1 value (got ${r8d.TotalCurrentCharges})`);
+assert(r8d.TotalCurrentCharges === expectedSum8d.toFixed(2), `T8d TotalCurrentCharges = calculated sum ${expectedSum8d.toFixed(2)} (got ${r8d.TotalCurrentCharges})`);
+
+// ─── Test 9: OCR o→0 digit cleanup in numeric contexts ────────────────────
+console.log('\n--- Test 9: OCR o→0 digit cleanup ---');
+
+// OCR sometimes reads '0' as 'o' or 'O' in dollar amounts and kWh values
+const ocrDigitBill = `Billing Details - service from 09/28/2025 to 10/27/2025
+Customer Chg $1o2.86
+Facilities Chg 545.1840 kW at $2.501 per kW $1,447.54
+Demand Chg 292.416o kW at $5.698 per kW $1,666.19
+Energy Chg On Pk Win 13,377.624O kWh at $0.03854 per kWh $515.57
+Energy Chg Off Pk Win 91,348.944o kWh at $0.03288 per kWh $3,0o3.55
+RkVA Chg 84.9600 kW at $0.663 per kW $56.33
+ECA Chg for 1O4,726.5680 kWh $2,151.78
+EER Chg for 104,726.5680 kWh $0.00
+PTS Chg for 104,726.5680 kWh $238.78
+TDC Chg for 292.4160 kW $721.63
+Tax exempt delivery cost from bill $1,945.83
+Bill Offset -$1,945.83
+Subtotal $10,751.54
+Current Charges $1o,751.54`;
+
+const r9 = _extractEvergy(ocrDigitBill, null, null);
+assert(r9.CustomerCharge === '102.86', `T9 CustomerCharge o→0 fix (got ${r9.CustomerCharge})`);
+assert(r9.EnergyOffPeakCharge === '3003.55', `T9 EnergyOffPeak o→0 fix (got ${r9.EnergyOffPeakCharge})`);
+assert(r9.TotalCurrentCharges === '10751.54', `T9 TotalCurrentCharges o→0 fix (got ${r9.TotalCurrentCharges})`);
+
+// ─── Test 10: Decimal format enforcement per Evergy rules ──────────────────
+console.log('\n--- Test 10: Decimal format enforcement ---');
+
+// Per Evergy Billing Details.txt:
+// kWh = #,###.#### (4 decimal), kW = #,###.#### (4 decimal)
+// Charges = $#,###.## (2 decimal), Reads = ##,###.#### (4 decimal)
+// MeterMultiplier = ##.#### (4 decimal)
+const formatBill = `Billing Details - service from 09/28/2025 to 10/27/2025
+
+Start Read Date
+09/29
+
+End Read Date
+10/28
+
+End Read (-)
+48,209.7332
+
+Start Read (=)
+47,366.0397
+
+Meter Multiplier (=)
+160.0000
+
+kWh Used 134990.9600
+
+KW Used 529.44
+
+RKVA Used 89.232
+
+Customer Chg $102.86
+Facilities Chg 545.184 kW at $2.501 per kW $1,363.51
+Demand Chg 529.44 kW at $5.698 per kW $3,016.75
+Energy Chg On Pk Win 22,577.376 kWh at $0.03854 per kWh $870.13
+Energy Chg Off Pk Win 112,413.576 kWh at $0.03288 per kWh $3,696.16
+RkVA Chg 89.232 kW at $0.663 per kW $59.16
+ECA Chg for 134,990.952 kWh $2,865.36
+EER Chg for 134,990.952 kWh $0.00
+PTS Chg for 134,990.952 kWh $114.74
+TDC Chg for 529.44 kW $1,418.88
+Tax exempt delivery cost from bill $1,945.83
+Bill Offset -$1,945.83
+Subtotal $13,507.55
+Current Charges $13,507.55`;
+
+const r10 = _extractEvergy(formatBill, null, null);
+// kW values should have 4 decimal places
+assert(r10.FacilitiesKW === '545.1840', `T10 FacilitiesKW 4 decimals (got ${r10.FacilitiesKW})`);
+assert(r10.BilledKW === '529.4400', `T10 BilledKW 4 decimals (got ${r10.BilledKW})`);
+assert(r10.ActualKW === '529.4400', `T10 ActualKW 4 decimals (got ${r10.ActualKW})`);
+assert(r10.ActualRKVA === '89.2320', `T10 ActualRKVA 4 decimals (got ${r10.ActualRKVA})`);
+// Charges should have exactly 2 decimal places
+assert(/^\d+\.\d{2}$/.test(r10.CustomerCharge), `T10 CustomerCharge 2 decimals (got ${r10.CustomerCharge})`);
+assert(/^\d+\.\d{2}$/.test(r10.FacilitiesCharge), `T10 FacilitiesCharge 2 decimals (got ${r10.FacilitiesCharge})`);
+// MeterMultiplier should have 4 decimal places
+assert(r10.MeterMultiplier === '160.0000', `T10 MeterMultiplier 4 decimals (got ${r10.MeterMultiplier})`);
+// StartRead/EndRead should have 4 decimal places
+assert(r10.StartRead === '47366.0397', `T10 StartRead 4 decimals (got ${r10.StartRead})`);
+assert(r10.EndRead === '48209.7332', `T10 EndRead 4 decimals (got ${r10.EndRead})`);
+
+// ─── Test 11: Multi-bill scoping ───────────────────────────────────────────
+console.log('\n--- Test 11: Multi-bill scoping ---');
+
+// PDF with two different accounts' billing details — should only extract the targeted one
+const multiBillText = `Customer Name © BUILDING A
+Account Number © 1111111111
+Billing Details - service from 09/28/2025 to 10/27/2025
+Customer Chg $50.00
+Facilities Chg 100.0000 kW at $2.501 per kW $250.10
+Subtotal $300.10
+Current Charges $300.10
+
+Customer Name © BUILDING B
+Account Number © 2222222222
+Billing Details - service from 09/28/2025 to 10/27/2025
+Customer Chg $75.00
+Facilities Chg 200.0000 kW at $2.501 per kW $500.20
+Subtotal $575.20
+Current Charges $575.20`;
+
+// When acctOverride targets account 2222222222, should get BUILDING B's data
+const r11a = _extractEvergy(multiBillText, '2222222222', null);
+assert(r11a.CustomerCharge === '75.00', `T11a Multi-bill targets acct 2 charges (got ${r11a.CustomerCharge})`);
+assert(r11a.FacilitiesKW === '200.0000', `T11a Multi-bill targets acct 2 FacKW (got ${r11a.FacilitiesKW})`);
+assert(r11a.TotalCurrentCharges === '575.20', `T11a Multi-bill targets acct 2 total (got ${r11a.TotalCurrentCharges})`);
+
+// When acctOverride targets account 1111111111, should get BUILDING A's data
+const r11b = _extractEvergy(multiBillText, '1111111111', null);
+assert(r11b.CustomerCharge === '50.00', `T11b Multi-bill targets acct 1 charges (got ${r11b.CustomerCharge})`);
+assert(r11b.FacilitiesKW === '100.0000', `T11b Multi-bill targets acct 1 FacKW (got ${r11b.FacilitiesKW})`);
+assert(r11b.TotalCurrentCharges === '300.10', `T11b Multi-bill targets acct 1 total (got ${r11b.TotalCurrentCharges})`);
 
 // =============================================================================
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
