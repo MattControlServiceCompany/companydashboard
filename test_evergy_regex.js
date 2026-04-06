@@ -37,7 +37,10 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     const bdRe = /Billing\s+Details\s*[-\u2013]\s*service\s+from/gi;
     let m;
     while ((m = bdRe.exec(t)) !== null) bdMarkers.push(m.index);
-    if (bdMarkers.length > 1) {
+    const _sf = /[s5]erv[il1]ce\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i;
+    const bdDates = bdMarkers.map(idx => { const dm = t.slice(idx, idx + 200).match(_sf); return dm ? dm[1] + '|' + dm[2] : null; });
+    const uniqueDates = new Set(bdDates.filter(Boolean));
+    if (bdMarkers.length > 1 && uniqueDates.size > 1) {
       const secStarts = bdMarkers.map(idx => {
         const before = t.slice(Math.max(0, idx - 500), idx);
         let cnIdx = -1;
@@ -191,7 +194,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   })();
 
   // ── Charges ──
-  const C = '(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])[.:]?';
+  const C = '(?:Ch[gaq9]|C[HhNnRr][Gg]|Gh[gq9])[.:]?';
   const custChg = xChg('C[ua][s5][t1iI][o0][mM][eao][r1tT]\\s+' + C);
   const facKW = t.match(new RegExp('Fac\\S*\\s+' + C + '\\s+([\\d,.]+)\\s*[kK][Ww]', 'i'))?.[1]?.replace(/,/g, '') || null;
   const facChg = xChg('Fac\\S*\\s+' + C);
@@ -305,7 +308,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   };
 
   // Bill Offset = negative of Tax Exempt Delivery (Evergy business rule)
-  if(!result.BillOffset && result.TaxExemptDelivery){
+  // Always derive from TaxExempt — OCR frequently garbles the BillOffset line and its digits
+  if(result.TaxExemptDelivery){
     result.BillOffset = '-' + result.TaxExemptDelivery;
   }
 
@@ -901,7 +905,7 @@ Current Charges $300.10
 
 Customer Name © BUILDING B
 Account Number © 2222222222
-Billing Details - service from 09/28/2025 to 10/27/2025
+Billing Details - service from 10/27/2025 to 11/26/2025
 Customer Chg $75.00
 Facilities Chg 200.0000 kW at $2.501 per kW $500.20
 Subtotal $575.20
