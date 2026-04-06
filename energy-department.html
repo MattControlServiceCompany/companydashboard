@@ -5858,11 +5858,11 @@ function _extractEvergy(t,acctOverride,addrOverride){
   // Kansas Evergy switched from 3-tier to On/Off Peak on 12/21/2023.
   // Before that date: 3 tiers (First 180h, Next 180h, Over 360h).
   // After: On Pk Sum/Win + Off Pk Sum/Win.
-  const _billDate=bpMatch?new Date(bpMatch[1]):null;
-  const _isOnOffPeak=!_billDate||_billDate>=new Date('12/21/2023');
-  const onPkChg   =_isOnOffPeak?xChg('Energy\\s+'+C+'\\s+On\\s+P[kK]'):null;
-  const offPkChg  =_isOnOffPeak?xChg('Energy\\s+'+C+'\\s+Off\\s+P[kK]'):null;
-  const tieredChg =!_isOnOffPeak?xChg('Energy\\s+'+C,/On\s+P[kK]|Off\s+P[kK]/i):null;
+  // Always extract both formats — changeover bills (spanning 12/21/2023) have both.
+  // tieredChg excludes On/Off Pk lines so there's no double-counting.
+  const onPkChg   =xChg('Energy\\s+'+C+'\\s+On\\s+P[kK]');
+  const offPkChg  =xChg('Energy\\s+'+C+'\\s+Off\\s+P[kK]');
+  const tieredChg =xChg('Energy\\s+'+C,/On\s+P[kK]|Off\s+P[kK]/i);
   const ecaChg    =xChg('ECA\\s+'+C);
   const eerChg    =xChg('EER\\s+'+C);
   const ptsChg    =xChg('PTS\\s+'+C);
@@ -5924,7 +5924,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
       // Cross-validate: if extracted total is much LARGER than calculated sum, it's likely
       // a page-1 account summary total, not the detail total. Trust the sum instead.
       const pf2=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
-      const calcSum=pf2(custChg)+pf2(facChg)+pf2(demChg)+pf2(onPkChg||tieredChg)+pf2(offPkChg)+pf2(rkvaChg)+pf2(ecaChg)+pf2(eerChg)+pf2(ptsChg)+pf2(tdcChg)+pf2(taxExempt)+pf2(billOffset)+pf2(franchise);
+      const calcSum=pf2(custChg)+pf2(facChg)+pf2(demChg)+pf2(onPkChg)+pf2(tieredChg)+pf2(offPkChg)+pf2(rkvaChg)+pf2(ecaChg)+pf2(eerChg)+pf2(ptsChg)+pf2(tdcChg)+pf2(taxExempt)+pf2(billOffset)+pf2(franchise);
       if(calcSum>0 && bestVal>calcSum*1.5){
         return calcSum.toFixed(2);
       }
@@ -5935,7 +5935,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
     if(m2) return m2[1].replace(/,/g,'');
     // Fallback: sum all extracted charges (for OCR'd sections missing the total line)
     const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
-    const sum=pf(custChg)+pf(facChg)+pf(demChg)+pf(onPkChg||tieredChg)+pf(offPkChg)+pf(rkvaChg)+pf(ecaChg)+pf(eerChg)+pf(ptsChg)+pf(tdcChg)+pf(taxExempt)+pf(billOffset)+pf(franchise);
+    const sum=pf(custChg)+pf(facChg)+pf(demChg)+pf(onPkChg)+pf(tieredChg)+pf(offPkChg)+pf(rkvaChg)+pf(ecaChg)+pf(eerChg)+pf(ptsChg)+pf(tdcChg)+pf(taxExempt)+pf(billOffset)+pf(franchise);
     return sum>0 ? sum.toFixed(2) : null;
   })();
 
@@ -5963,7 +5963,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
     FacilitiesCharge:facChg,
     BilledKW:demKW,
     BilledKWCharge:demChg,
-    EnergyOnPeakCharge:onPkChg||tieredChg,  // on-peak or sum of tiers
+    EnergyOnPeakCharge:(()=>{const p=v=>v?parseFloat(v):0;const s=p(onPkChg)+p(tieredChg);return s>0?s.toFixed(2):null;})(),
     EnergyOffPeakCharge:offPkChg,
     ECACharge:ecaChg,
     EERCharge:eerChg,

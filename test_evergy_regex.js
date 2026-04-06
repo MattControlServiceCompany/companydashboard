@@ -200,12 +200,10 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const facChg = xChg('Fac\\S*\\s+' + C);
   const demKW = t.match(new RegExp('Demand\\s+' + C + '\\s+([\\d,.]+)\\s*[kK][Ww]', 'i'))?.[1]?.replace(/,/g, '') || null;
   const demChg = xChg('Demand\\s+' + C);
-  // Date-aware: Kansas switched from 3-tier to On/Off Peak on 12/21/2023
-  const _billDate = bpMatch ? new Date(bpMatch[1]) : null;
-  const _isOnOffPeak = !_billDate || _billDate >= new Date('12/21/2023');
-  const onPkChg = _isOnOffPeak ? xChg('Energy\\s+' + C + '\\s+On\\s+P[kK]') : null;
-  const offPkChg = _isOnOffPeak ? xChg('Energy\\s+' + C + '\\s+Off\\s+P[kK]') : null;
-  const tieredChg = !_isOnOffPeak ? xChg('Energy\\s+' + C, /On\s+P[kK]|Off\s+P[kK]/i) : null;
+  // Always extract both formats — changeover bills (spanning 12/21/2023) have both.
+  const onPkChg = xChg('Energy\\s+' + C + '\\s+On\\s+P[kK]');
+  const offPkChg = xChg('Energy\\s+' + C + '\\s+Off\\s+P[kK]');
+  const tieredChg = xChg('Energy\\s+' + C, /On\s+P[kK]|Off\s+P[kK]/i);
   const ecaChg = xChg('ECA\\s+' + C);
   const eerChg = xChg('EER\\s+' + C);
   const ptsChg = xChg('PTS\\s+' + C);
@@ -255,7 +253,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
     if (bestVal !== null) {
       const pf2 = v => v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0;
-      const calcSum = pf2(custChg) + pf2(facChg) + pf2(demChg) + pf2(onPkChg || tieredChg) + pf2(offPkChg) + pf2(rkvaChg) + pf2(ecaChg) + pf2(eerChg) + pf2(ptsChg) + pf2(tdcChg) + pf2(taxExempt) + pf2(billOffset) + pf2(franchise);
+      const calcSum = pf2(custChg) + pf2(facChg) + pf2(demChg) + pf2(onPkChg) + pf2(tieredChg) + pf2(offPkChg) + pf2(rkvaChg) + pf2(ecaChg) + pf2(eerChg) + pf2(ptsChg) + pf2(tdcChg) + pf2(taxExempt) + pf2(billOffset) + pf2(franchise);
       if (calcSum > 0 && bestVal > calcSum * 1.5) {
         return calcSum.toFixed(2);
       }
@@ -264,7 +262,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     const m2 = t.match(/Subtotal[\s\S]*?\$\s*([\d,]+\.\d{2})/i);
     if (m2) return m2[1].replace(/,/g, '');
     const pf = v => v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0;
-    const sumVal = pf(custChg) + pf(facChg) + pf(demChg) + pf(onPkChg || tieredChg) + pf(offPkChg) + pf(rkvaChg) + pf(ecaChg) + pf(eerChg) + pf(ptsChg) + pf(tdcChg) + pf(taxExempt) + pf(billOffset) + pf(franchise);
+    const sumVal = pf(custChg) + pf(facChg) + pf(demChg) + pf(onPkChg) + pf(tieredChg) + pf(offPkChg) + pf(rkvaChg) + pf(ecaChg) + pf(eerChg) + pf(ptsChg) + pf(tdcChg) + pf(taxExempt) + pf(billOffset) + pf(franchise);
     return sumVal > 0 ? sumVal.toFixed(2) : null;
   })();
 
@@ -292,7 +290,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     FacilitiesCharge: facChg,
     BilledKW: demKW,
     BilledKWCharge: demChg,
-    EnergyOnPeakCharge: onPkChg || tieredChg,
+    EnergyOnPeakCharge: (() => { const p = v => v ? parseFloat(v) : 0; const s = p(onPkChg) + p(tieredChg); return s > 0 ? s.toFixed(2) : null; })(),
     EnergyOffPeakCharge: offPkChg,
     ECACharge: ecaChg,
     EERCharge: eerChg,
@@ -998,6 +996,47 @@ Current Charges $9,822.20`;
 const r12b = _extractEvergy(crossValBill2, null, null);
 // RkVA: 84.9600 × 0.663 = $56.33, not $58.33
 assert(r12b.RkVACharge === '56.33', `T12b RkVACharge cross-validated (got ${r12b.RkVACharge})`);
+
+// ─── Test 13: Changeover bill with both 3-tier and On/Off Peak energy ──────
+console.log('\n--- Test 13: Changeover bill (3-tier + On/Off Peak) ---');
+
+// Bill spanning 12/21/2023 rate change: 22 days at old 3-tier rates, 12 days at new On/Off Peak
+const changeoverBill = `Billing Details - service from 11/28/2023 to 01/01/2024
+Customer Chg $68.57
+Facilities Chg 589.1040 kW at $2.577 per kW (for 22 of 34 days) $982.31
+Demand Chg 470.6400 kW at $3.287 per kW (for 22 of 34 days) $1,001.00
+Energy Chg 54,815.7176 kWh at $0.06406 per kWh (for 22 of 34 days) $3,511.49
+Energy Chg 14,328.5704 kWh at $0.03924 per kWh (for 22 of 34 days) $562.25
+RkVA Chg 115.8000 kW at $0.682 per kW (for 22 of 34 days) $51.10
+ECA Chg for 6,285.8444 kWh $52.49
+ECA Chg for 62,858.4436 kWh $473.95
+EER Chg for 69,144.2880 kWh $2.77
+PTS Chg for 69,144.2880 kWh $118.93
+TDC Chg for 470.6400 kW at $2.51004 per kW $764.39
+Customer Chg $36.30
+Facilities Chg 589.1040 kW at $2.501 per kW (for 12 of 34 days) $520.01
+Demand Chg 470.6400 kW at $5.698 per kW (for 12 of 34 days) $946.48
+Energy Chg On Pk Win 1,983.3120 kWh at $0.03854 per kWh (for 12 of 34 days) $76.44
+Energy Chg Off Pk Win 21,622.3920 kWh at $0.03288 per kWh (for 12 of 34 days) $710.94
+RkVA Chg 115.8000 kW at $0.663 per kW (for 12 of 34 days) $27.10
+ECA Chg for 21,638.5620 kWh $163.15
+ECA Chg for 1,967.1420 kWh $32.99
+EER Chg for 23,605.7040 kWh $0.94
+PTS Chg for 23,605.7040 kWh $40.60
+TDC Chg for 470.6400 kW at $2.51004 per kW $416.94
+Subtotal $10,561.14
+Current Charges $10,561.14`;
+
+const r13 = _extractEvergy(changeoverBill, null, null);
+// 3-tier energy (22 days): $3,511.49 + $562.25 = $4,073.74
+// On/Off Peak (12 days): On=$76.44, Off=$710.94
+// EnergyOnPeakCharge should include BOTH: $4,073.74 + $76.44 = $4,150.18
+assert(r13.EnergyOnPeakCharge === '4150.18', `T13 EnergyOnPeakCharge includes tiered+onPeak (got ${r13.EnergyOnPeakCharge})`);
+assert(r13.EnergyOffPeakCharge === '710.94', `T13 EnergyOffPeakCharge (got ${r13.EnergyOffPeakCharge})`);
+// Customer Chg sums both periods
+assert(r13.CustomerCharge === '104.87', `T13 CustomerCharge sums both periods (got ${r13.CustomerCharge})`);
+// Total should match
+assert(r13.TotalCurrentCharges === '10561.14', `T13 TotalCurrentCharges (got ${r13.TotalCurrentCharges})`);
 
 // =============================================================================
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
