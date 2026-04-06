@@ -5642,7 +5642,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
   //   • "Facilities Ghg ... $1,394.55"            (OCR letter swap)
   // Strategy: for each keyword line, take the last $X.XX that is NOT a rate.
   // Uses very loose OCR-tolerant patterns that handle common letter swaps.
-  const CHG_STOP=/(?:Cust|Fac\S|Demand|Energy\s+C|ECA|EER|PTS|TDC|RkVA|Subtotal|Current\s+Charges)/i;
+  const CHG_STOP=/(?:Cust|Fac\S|Demand|Energy\s+C|\bECA|\bEER|\bPTS|\bTDC|\bRkVA|Subtotal|Current\s+Charges)/i;
   const getAmt=(line)=>{
     const ms=[...line.matchAll(/\$([\d,]+\.\d{2})/g)];
     let best=null;
@@ -5830,7 +5830,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
   const ecaChg    =xChg('ECA\\s+'+C);
   const eerChg    =xChg('EER\\s+'+C);
   const ptsChg    =xChg('PTS\\s+'+C);
-  const tdcKW     =t.match(new RegExp('TDC\\s+'+C+'[\\s\\S]*?([\\d,.]+)\\s*[kK][Ww]\\s+at','i'))?.[1]?.replace(/,/g,'')||null;
+  const tdcKW     =t.match(new RegExp('TDC\\s+'+C+'[\\s\\S]*?([\\d,.]+)[\\s\\-]*[kK][Ww]\\s+at','i'))?.[1]?.replace(/,/g,'')||null;
   const tdcChg    =xChg('TDC\\s+'+C);
   // RkVA charge (reactive power)
   const rkvaChg   =xChg('R[kK]VA\\s+'+C);

@@ -31,7 +31,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const sum = (t, re) => { const ms = [...t.matchAll(re)]; return ms.length ? ms.reduce((s, m) => s + parseFloat(m[1].replace(/,/g, '')), 0).toFixed(2) : null; };
   const chg = (re) => t.match(re)?.[1]?.replace(/,/g, '') || null;
 
-  const CHG_STOP = /(?:Cust|Fac\S|Demand|Energy\s+C|ECA|EER|PTS|TDC|RkVA|Subtotal|Current\s+Charges)/i;
+  const CHG_STOP = /(?:Cust|Fac\S|Demand|Energy\s+C|\bECA|\bEER|\bPTS|\bTDC|\bRkVA|Subtotal|Current\s+Charges)/i;
   const getAmt = (line) => {
     const ms = [...line.matchAll(/\$([\d,]+\.\d{2})/g)];
     let best = null;
@@ -177,7 +177,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const ecaChg = xChg('ECA\\s+' + C);
   const eerChg = xChg('EER\\s+' + C);
   const ptsChg = xChg('PTS\\s+' + C);
-  const tdcKW = t.match(new RegExp('TDC\\s+' + C + '[\\s\\S]*?([\\d,.]+)\\s*[kK][Ww]\\s+at', 'i'))?.[1]?.replace(/,/g, '') || null;
+  const tdcKW = t.match(new RegExp('TDC\\s+' + C + '[\\s\\S]*?([\\d,.]+)[\\s\\-]*[kK][Ww]\\s+at', 'i'))?.[1]?.replace(/,/g, '') || null;
   const tdcChg = xChg('TDC\\s+' + C);
   const rkvaChg = xChg('R[kK]VA\\s+' + C);
   const taxExempt = chg(/Tax\s+exempt[^$\n]*\$([\d,]+\.\d{2})/i);
@@ -548,6 +548,69 @@ function extractFacChgOnly(text) {
 assert(extractFacChgOnly('Factor analysis $500.00') === null, 'No false positive: "Factor analysis"');
 assert(extractFacChgOnly('Fact sheet $200.00') === null, 'No false positive: "Fact sheet"');
 assert(extractFacChgOnly('Facilities Chg $1,381.17') === '1381.17', 'True positive: clean Facilities');
+
+// ─── Test 6: OCR garble in continuation lines (CHG_STOP false positive) ─────
+console.log('\n--- Test 6: OCR garble in charge continuation lines ---');
+
+const garbledChartBill = `Billing Details - service from 09/28/2025 to 10/27/2025
+Customer Chg esr arate $102.86
+tah Energy Use Facilities Chg 576.7840 KW at $2.501 per kW . $1,447.54
+210000 I "Demand Chg 541.8240 kW at $11.744 per kW
+(for 2 of 29 days) ..cocvreeeveerieieniinre enn $438.84
+140000 —————— i Demand Chg 541.8240 kW at $5.698 per kW
+(for 27 of 29 days) ...eveeeeveiereereerrien sirens $2,874.40
+70000 | Energy Chg On Pk Sum 2,478.2160 kWh at
+$0.07299 per kWh... cnn $180.88
+0 Energy Chg On Pk Win 22,426.6080 kWh at
+Oct Nov Dec Jan Mar Mar Apr May Jun Ju Aug Sep Oct $0.03854 per KWh ..oviveeeeecirecenecsrecie sienna $864.32
+. Energy Chg Off Pk Sum 11,377.6080 kWh at
+Comparative Usage Information
+_— Wn Days WWh/day Avg Temp $0.03888 por kWh ......oovvveeeireireeesinnecsieinens $442.36
+Curent 144,883 E) 48353 Tes" Energy Chg Off Pk Win 108,580.9440 kWh at
+Previous 173,365 32 5477 70° $0.03288 per kWh ......coolviiveceniiiieierienes $3,570.14
+Last Year 117,082 31 3,7768 63°
+RkVA Chg 86.3520 kW at $0.663 per kW ....... $57.25
+Tax exempt delivery cost from bill ..........ccee.. $1,945.83 pie
+ECA Chg 09-29-2025-09-30-2025 for #2
+: 9,990.5777 kWh at $0.02253 per kWh ............ $225.09
+N ECA Chg 10-01-2025-10-27-2025 for
+134,872.7983 kWh at $0.02316 per kWh ........ $3,123.65
+EER Chg 09-29-2025-10-14-2025 for
+79,924.6212 kWh at $0.00 per kWh ............... $0.00
+EER Chg 10-15-2025-10-27-2025 for
+64,938.7548 kWh at $0.00056 per kWh .......... $36.37
+PTS Chg 09-29-2025-10-27-2025 for
+144,863.3760 kWh at $0.00085 per kWh ........ $123.13
+TDC Chg 09-29-2025-10-27-2025 for 541.8240
+- KW at $2.68601 per kW .....ccueviccincecccens $1,455.34 E
+Bill 0ffSOt vein -$1,945.83
+Subtotal $13,517.51
+Current Charges $13,517.51
+
+Customer Name © USD #416
+Account Number © 2885731561 Page 2012
+Biling Date: 12/01/2025
+202 AQUATIC DR,NEW HS LOUISBURG KS
+LGS Primary Voltage - 2LGSF`;
+
+const r6 = _extractEvergy(garbledChartBill, '2885731561', '202 AQUATIC DR,NEW HS LOUISBURG KS');
+// BilledKWCharge: split Demand Chg with OCR garble containing "eer" in continuation lines
+assert(r6.BilledKWCharge === '3313.24', `T6 BilledKWCharge split demand with garble (got ${r6.BilledKWCharge})`);
+assert(r6.BilledKW === '541.8240', `T6 BilledKW (got ${r6.BilledKW})`);
+// TDCkW: value on one line, "- KW at" on next line (OCR dash before KW)
+assert(r6.TDCkW === '541.8240', `T6 TDCkW with dash-KW on next line (got ${r6.TDCkW})`);
+assert(r6.TDCCharge === '1455.34', `T6 TDCCharge (got ${r6.TDCCharge})`);
+// Other charges should still extract correctly
+assert(r6.CustomerCharge === '102.86', `T6 CustomerCharge (got ${r6.CustomerCharge})`);
+assert(r6.FacilitiesCharge === '1447.54', `T6 FacilitiesCharge (got ${r6.FacilitiesCharge})`);
+assert(r6.FacilitiesKW === '576.7840', `T6 FacilitiesKW (got ${r6.FacilitiesKW})`);
+assert(r6.ECACharge === '3348.74', `T6 ECACharge (got ${r6.ECACharge})`);
+assert(r6.EERCharge === '36.37', `T6 EERCharge (got ${r6.EERCharge})`);
+assert(r6.PTSCharge === '123.13', `T6 PTSCharge (got ${r6.PTSCharge})`);
+assert(r6.RkVACharge === '57.25', `T6 RkVACharge (got ${r6.RkVACharge})`);
+assert(r6.TaxExemptDelivery === '1945.83', `T6 TaxExemptDelivery (got ${r6.TaxExemptDelivery})`);
+assert(r6.BillOffset === '-1,945.83' || r6.BillOffset === '-1945.83', `T6 BillOffset (got ${r6.BillOffset})`);
+assert(r6.TotalCurrentCharges === '13517.51', `T6 TotalCurrentCharges (got ${r6.TotalCurrentCharges})`);
 
 // =============================================================================
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
