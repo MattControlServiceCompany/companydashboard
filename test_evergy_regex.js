@@ -268,9 +268,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 
   const result = {
     UtilityCompany: 'Evergy',
-    CustomerName: t.match(/Customer\s*Name[^A-Za-z\n]*([A-Z][A-Z0-9 #]+?)(?=\s+(?:Account|Page)|\n)/im)?.[1]?.trim()
-      || t.match(/Customer\s*Name\s*:\s*\n\s*(?:Account[^\n]*\n\s*)?([A-Z][A-Z0-9 #]+?)(?=\s+Page|\s*$)/im)?.[1]?.trim()
-      || t.match(/Customer\s*Name\s*:\s*([A-Z][A-Z0-9 #]{2,}?)(?=\s+Page|\s*$)/im)?.[1]?.trim() || null,
+    CustomerName: t.match(/Customer\s*Name[^A-Za-z\n]*([A-Z][A-Z0-9 #]+?)(?=\s+(?:Account|Page)|\n)/im)?.[1]?.replace(/\s*£.*$/, '').trim()
+      || t.match(/Customer\s*Name\s*:\s*\n\s*(?:Account[^\n]*\n\s*)?([A-Z][A-Z0-9 #]+?)(?=\s+Page|\s*$)/im)?.[1]?.replace(/\s*£.*$/, '').trim()
+      || t.match(/Customer\s*Name\s*:\s*([A-Z][A-Z0-9 #]{2,}?)(?=\s+Page|\s*$)/im)?.[1]?.replace(/\s*£.*$/, '').trim() || null,
     AccountNumber: acctOverride || t.match(/Account\s+(?:Number\s*)?[:\s\u00a9\u00ae]\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g, '') || null,
     ServiceAddress: addrOverride || null,
     RateSchedule: rateMatch?.[1] || null,
