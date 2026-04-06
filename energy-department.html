@@ -1011,6 +1011,7 @@ tr.bill-flagged td:first-child{box-shadow:inset 3px 0 0 var(--amber);}
         <div class="ai-label" style="margin:0">📄 Extraction Output</div>
         <div style="display:flex;align-items:center;gap:7px">
           <button id="pdfDebugBtn" style="display:none;font-size:11px;padding:3px 9px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;font-family:var(--font)" onclick="togglePDFRawText()">🔍 Raw Text</button>
+          <button id="pdfSaveDebugBtn" style="display:none;font-size:11px;padding:3px 9px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;font-family:var(--font)" onclick="savePDFDebug()">💾 Save Debug</button>
           <div id="extractMethodBadge" style="display:none;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;letter-spacing:.5px"></div>
         </div>
       </div>
@@ -6732,6 +6733,21 @@ function clearPDFOCR(){
   box.textContent='Upload a PDF and select document type. For utility bills, rule-based extraction runs first — instant and free. AI is used as a fallback for unrecognized formats.';
   showToast('Cleared ✓');
 }
+function savePDFDebug(){
+  const raw=window._pdfRawText||'(no raw text)';
+  const bills=window._pdfMultiBills||[];
+  const idx=window._pdfMultiIdx||0;
+  const bill=bills[idx]||{};
+  const output='=== EXTRACTION RESULT (bill '+(idx+1)+' of '+bills.length+') ===\n'+JSON.stringify(bill,null,2)+'\n\n=== RAW OCR TEXT ===\n'+raw;
+  // Save to Downloads as a file
+  const blob=new Blob([output],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='evergy-debug.txt';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('Debug file saved to Downloads');
+}
 function togglePDFRawText(){
   const box=document.getElementById('pdfAIBox');
   const btn=document.getElementById('pdfDebugBtn');
@@ -6930,6 +6946,7 @@ async function processPDF(file){
       if(text&&text.trim().length>100){
         window._pdfRawText=text;
         document.getElementById('pdfDebugBtn').style.display='inline-block';
+        document.getElementById('pdfSaveDebugBtn').style.display='inline-block';
         const rule=UTILITY_RULES.find(r=>r.detect(text));
         if(rule){
           // Use extractAll if available (multi-bill PDF support)
