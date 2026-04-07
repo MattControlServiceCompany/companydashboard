@@ -5774,7 +5774,10 @@ function _extractEvergy(t,acctOverride,addrOverride){
         const qty=parseFloat(rateM[1].replace(/,/g,''));
         const rate=parseFloat(rateM[3].replace(/,/g,''));
         const unit='k'+rateM[2];
-        if(!isNaN(qty)&&!isNaN(rate)&&rate>0&&qty>0){
+        // Sanity: Evergy rates are < $100/kW and < $1/kWh. Values like 70000 or 140000
+        // are chart Y-axis numbers merged into charge lines by PDF text extraction.
+        const maxRate=unit.toLowerCase().includes('h')?1:100; // kWh < $1, kW < $100
+        if(!isNaN(qty)&&!isNaN(rate)&&rate>0&&rate<maxRate&&qty>0&&qty<5000000){
           results.push({qty,rate,unit,computed:Math.round(qty*rate*100)/100});
         }
       }
@@ -5969,35 +5972,50 @@ function _extractEvergy(t,acctOverride,addrOverride){
         if(_validKwh(deliveredKwh)) return deliveredKwh;
       }
     }
-    // Single meter row — prefer the kWh Used column (printed on the bill, authoritative)
-    // over (EndRead - StartRead) × Multiplier (which can be wrong if reads have OCR digit errors)
+    // Single meter row — gather all kWh candidates and pick the best
     if(!meterRow) return null;
+    const candidates=[];
+    // Candidate 1: Direct kWh Used column
     const directKwhRaw=(meterRow[8]||'').replace(/,/g,'');
     const directKwh = parseFloat(directKwhRaw);
-    if(_validKwh(directKwh)) return directKwh;
-    // OCR sometimes strips commas and decimal from kWh Used (e.g. "1053648000" = "105,364.8000")
-    // Evergy kWh values have 4 decimal places — try inserting decimal at position that gives 4dp
-    if(directKwhRaw.length>=8 && !directKwhRaw.includes('.')){
+    if(_validKwh(directKwh)) candidates.push({val:directKwh,src:'direct'});
+    // Candidate 1b: Repair garbled kWh (e.g. "1053648000" = "105,364.8000" with stripped punctuation)
+    if(!_validKwh(directKwh) && directKwhRaw.length>=8 && !directKwhRaw.includes('.')){
       const repaired=directKwhRaw.slice(0,-4)+'.'+directKwhRaw.slice(-4);
       const repairedVal=parseFloat(repaired);
-      if(_validKwh(repairedVal)) return repairedVal;
+      if(_validKwh(repairedVal)) candidates.push({val:repairedVal,src:'repaired'});
     }
-    // Try Difference × Multiplier as another source
+    // Candidate 2: Difference × Multiplier (fewer digits = less OCR error risk)
     const diffVal = parseFloat((meterRow[6]||'').replace(/,/g,''));
     const multVal = parseFloat((meterRow[7]||'').replace(/,/g,''));
     if(diffVal>0 && multVal>0){
       const diffTimesM=parseFloat((diffVal*multVal).toFixed(4));
-      if(_validKwh(diffTimesM)) return diffTimesM;
+      if(_validKwh(diffTimesM)) candidates.push({val:diffTimesM,src:'diff×mult'});
     }
-    // Fallback: calculate from reads if kWh Used column is missing/invalid
+    // Candidate 3: (EndRead - StartRead) × Multiplier
     const endR = parseFloat((meterRow._fixedEndRead||meterRow[4]||'').replace(/,/g,''));
     const startR = parseFloat((meterRow._fixedStartRead||meterRow[5]||'').replace(/,/g,''));
     const mult = parseFloat((meterRow[7]||'').replace(/,/g,''));
     if(endR>0 && startR>0 && mult>0){
       const calc = parseFloat(((endR - startR) * mult).toFixed(4));
-      if(_validKwh(calc)) return calc;
+      if(_validKwh(calc)) candidates.push({val:calc,src:'read×mult'});
     }
-    return null;
+    if(!candidates.length) return null;
+    if(candidates.length===1) return candidates[0].val;
+    // Multiple candidates: find consensus — if 2+ agree within 1%, use that value
+    for(let a=0;a<candidates.length;a++){
+      for(let b=a+1;b<candidates.length;b++){
+        const ratio=candidates[a].val/candidates[b].val;
+        if(ratio>0.99&&ratio<1.01) return candidates[a].val;
+      }
+    }
+    // No consensus — prefer diff×mult (fewest digits, least OCR error), then direct, then read calc
+    const prefer=['diff×mult','repaired','direct','read×mult'];
+    for(const src of prefer){
+      const c=candidates.find(x=>x.src===src);
+      if(c) return c.val;
+    }
+    return candidates[0].val;
   })();
 
   // Source 2: ECA/EER/PTS line kWh (only trust values with decimals)
@@ -6312,6 +6330,22 @@ function _extractEvergy(t,acctOverride,addrOverride){
     if(rkvaKwM) result.ActualRKVA=rkvaKwM[1].replace(/,/g,'');
   }
 
+  // 5. Fill missing charges from rate × qty when OCR garbles the dollar amount
+  if(result._rates){
+    const _chargeFields=['CustomerCharge','FacilitiesCharge','BilledKWCharge',
+      'EnergyOnPeakCharge','EnergyOffPeakCharge','ECACharge','EERCharge',
+      'PTSCharge','TDCCharge','RkVACharge'];
+    for(const field of _chargeFields){
+      if(result[field]===null||result[field]===undefined||result[field]===''){
+        const ri=result._rates[field];
+        if(ri&&ri.computed>0&&ri.computed<1e6){
+          result[field]=ri.computed.toFixed(2);
+          result['_rate_filled_'+field]=true;
+        }
+      }
+    }
+  }
+
   // ── CHARGE RECONCILIATION: if sum doesn't match total, try to recover missing charges ──
   const _pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
   const _compSum=_pf(result.CustomerCharge)+_pf(result.FacilitiesCharge)+_pf(result.BilledKWCharge)
@@ -6369,6 +6403,18 @@ function _extractEvergy(t,acctOverride,addrOverride){
   if(result.ReadDifference) result.ReadDifference=_pad4(result.ReadDifference);
   if(result.MeterMultiplier) result.MeterMultiplier=_pad4(result.MeterMultiplier);
   if(result.kWhConsumed) result.kWhConsumed=_pad4(result.kWhConsumed);
+
+  // ── SANITY CHECK: EndRead and StartRead should be similar magnitude ──
+  // OCR garble like "54020031.0000" (should be ~54020.xxxx) is caught here.
+  // If EndRead/StartRead differ by more than 10x, the larger one is likely garbled.
+  if(result.EndRead&&result.StartRead){
+    const er=parseFloat(result.EndRead), sr=parseFloat(result.StartRead);
+    if(er>0&&sr>0){
+      const ratio=er/sr;
+      if(ratio>10) result.EndRead=null; // EndRead is garbled
+      else if(ratio<0.1) result.StartRead=null; // StartRead is garbled
+    }
+  }
 
   // ── CROSS-VALIDATION: meter read calc vs kWhConsumed ──
   // For multi-meter (meter change): calculate per-row and sum. For single-meter: one calc.
