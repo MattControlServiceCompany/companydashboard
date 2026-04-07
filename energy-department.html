@@ -14188,6 +14188,52 @@
             const hasQty = qtyVal > 0;
             const hasRate = ri.rate > 0;
 
+            // ── SPLIT CHARGE HANDLING ──
+            // When a charge has multiple parts (e.g. Demand at two rates during a rate changeover),
+            // validate each part independently. The total charge = sum of part charges, and each part
+            // uses the SAME kW but a DIFFERENT rate. Don't try to do single qty × rate = total charge.
+            if (ri.parts && ri.parts.length > 1) {
+              // Validate each part: qty × rate should equal the part's computed charge
+              let allPartsValid = true;
+              const partDetails = [];
+              for (const part of ri.parts) {
+                const partExpected = Math.round(part.qty * part.rate * 100) / 100;
+                const partDiff = Math.abs(partExpected - part.computed);
+                partDetails.push({ qty: part.qty, rate: part.rate, charge: part.computed, diff: partDiff });
+                if (partDiff > 0.02) allPartsValid = false;
+              }
+              // Verify the total computed sum matches the extracted charge
+              const computedTotal = ri.parts.reduce((s, p) => s + p.computed, 0);
+              const totalDiff = Math.abs(computedTotal - chargeVal);
+              if (totalDiff > 0.1 && hasCharge) {
+                result['_rate_mismatch_' + chargeField] = {
+                  splitCharge: true,
+                  parts: partDetails,
+                  computedTotal: Math.round(computedTotal * 100) / 100,
+                  actualCharge: chargeVal,
+                  diff: totalDiff,
+                };
+              }
+              // For split charges, BilledKW = the kW from any part (they're the same kW value).
+              // Don't "correct" it from the summed qty.
+              if (qtyField && hasQty) {
+                const partKW = ri.parts[0].qty;
+                // If extracted kW matches a part's kW, it's correct — don't touch it
+                if (Math.abs(qtyVal - partKW) < 0.01) {
+                  // kW matches the split charge lines — all good
+                } else if (!hasCharge) {
+                  // Missing charge — compute from parts sum
+                  result[chargeField] = computedTotal.toFixed(2);
+                  result['_rate_filled_' + chargeField] = true;
+                }
+              } else if (!hasQty && qtyField && ri.parts.length > 0) {
+                // Missing kW — use the kW from the first part (all parts should have same kW)
+                result[qtyField] = ri.parts[0].qty.toFixed(4);
+                result['_rate_filled_' + qtyField] = true;
+              }
+              continue; // Skip single-rate validation below
+            }
+
             if (hasRate && hasQty && !hasCharge) {
               // Missing charge → compute from qty × rate
               const computed = Math.round(qtyVal * ri.rate * 100) / 100;
@@ -14242,21 +14288,21 @@
                     // Trust charge over qty (charge is $X.XX with 2dp, less room for error).
                     // Correct qty from charge/rate.
                     if (qtyField && qtyDiff > 0.01) {
+                      const unitLabel = ri.unit || 'kW';
                       result['_auto_corrected_' + qtyField] = {
                         original: result[qtyField],
                         corrected: expectedQty.toFixed(4),
                         rate: ri.rate,
                         qty: expectedQty,
-                        unit: ri.unit,
+                        unit: unitLabel,
                         reason:
-                          '$' +
                           chargeVal.toFixed(2) +
-                          ' / $' +
+                          ' / ' +
                           ri.rate.toFixed(5) +
                           ' = ' +
                           expectedQty.toFixed(4) +
                           ' ' +
-                          ri.unit,
+                          unitLabel,
                       };
                       result[qtyField] = expectedQty.toFixed(4);
                     }
@@ -16626,8 +16672,12 @@
               ? '<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.25);color:#a78bfa;line-height:1.4">🔍 Historical data shows this field is present on 80%+ of prior bills — likely an OCR miss</div>'
               : '';
           // Auto-correction indicator: green border, shows original value and math, with revert button
+          // Use $ prefix only for charge fields, not for kW/kWh quantity fields
+          const _acIsCharge = CHARGE_FIELDS.has(k);
+          const _acPfx = _acIsCharge ? '$' : '';
+          const _acDp = _acIsCharge ? 2 : 4;
           const correctHtml = autoCorrect
-            ? `<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);color:#22c55e;line-height:1.4">✓ Corrected from $${parseFloat(autoCorrect.original).toFixed(2)} → $${parseFloat(autoCorrect.corrected).toFixed(2)}<br><span style="opacity:.8">${autoCorrect.reason}</span> <a href="#" onclick="event.preventDefault();this.closest('.ef-item').querySelector('.ef-input').value='$${parseFloat(autoCorrect.original).toFixed(2)}';this.closest('.ef-item').querySelector('.ef-input').dispatchEvent(new Event('change'));this.closest('div').remove()" style="color:#22c55e;text-decoration:underline;margin-left:6px">↩ Revert</a></div>`
+            ? `<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);color:#22c55e;line-height:1.4">✓ Corrected from ${_acPfx}${parseFloat(autoCorrect.original).toFixed(_acDp)} → ${_acPfx}${parseFloat(autoCorrect.corrected).toFixed(_acDp)}<br><span style="opacity:.8">${autoCorrect.reason}</span> <a href="#" onclick="event.preventDefault();this.closest('.ef-item').querySelector('.ef-input').value='${_acPfx}${parseFloat(autoCorrect.original).toFixed(_acDp)}';this.closest('.ef-item').querySelector('.ef-input').dispatchEvent(new Event('change'));this.closest('div').remove()" style="color:#22c55e;text-decoration:underline;margin-left:6px">↩ Revert</a></div>`
             : '';
           const consensusHtml =
             ocrConsensus && !autoCorrect
