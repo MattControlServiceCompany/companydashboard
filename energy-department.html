@@ -7312,12 +7312,23 @@ async function extractPDFText(ab, statusCb){
       }
       // Key patterns that should appear on a valid Evergy bill page
       const BILL_SIGNALS=[/service\s+from\s+\d{2}\/\d{2}/i, /Current\s+Charges/i, /\$[\d,]+\.\d{2}/, /kWh/i, /Demand\s+Ch/i, /Customer\s+Ch/i, /Account\s+Number/i, /Billing\s+Date/i];
-      const scorePage=txt=>{let s=0;BILL_SIGNALS.forEach(rx=>{if(rx.test(txt))s++;});return s;};
+      // Score = keyword matches + bonus for digit quality (dollar amounts with proper formatting)
+      const scorePage=txt=>{
+        let s=0;
+        BILL_SIGNALS.forEach(rx=>{if(rx.test(txt))s++;});
+        // Bonus for well-formed dollar amounts (indicates good digit OCR quality)
+        const dollarAmts=(txt.match(/\$[\d,]+\.\d{2}/g)||[]).length;
+        s+=Math.min(dollarAmts/5, 2); // up to 2 bonus points for having many proper dollar amounts
+        // Bonus for well-formed kWh values with decimals
+        const kwhVals=(txt.match(/[\d,]+\.\d{4}\s*kWh/gi)||[]).length;
+        s+=Math.min(kwhVals/3, 1); // up to 1 bonus point
+        return s;
+      };
       // OCR settings to try — different render scales and Tesseract PSM modes
       const OCR_PASSES=[
+        {scale:2.0, psm:null, label:'2x'},
         {scale:2.5, psm:null, label:'2.5x'},
-        {scale:3.0, psm:null, label:'3.0x'},
-        {scale:3.5, psm:null, label:'3.5x high-res'},
+        {scale:3.0, psm:null, label:'3x'},
       ];
 
       // Store all OCR pass texts for consensus re-extraction on mismatched values
@@ -7344,8 +7355,9 @@ async function extractPDFText(ab, statusCb){
             if(score>bestScore||(score===bestScore&&text.length>bestText.length)){
               bestText=text; bestScore=score;
             }
-            // If we found 3+ key patterns, good enough — stop retrying this page
-            if(score>=3) break;
+            // Always run all passes — don't early-exit. The scoring function accounts for
+            // text quality (digit accuracy), not just keyword presence. A higher-scale pass
+            // may produce better digit recognition even if an earlier pass found the keywords.
           }catch(pageErr){
             if(statusCb) statusCb('OCR failed on page '+pgNum+' pass '+(pass+1)+': '+pageErr.message);
           }
