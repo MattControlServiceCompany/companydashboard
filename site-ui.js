@@ -3,19 +3,19 @@
    Clock, Backup/Restore, Reset, Settings, Help, Theming
 ═══════════════════════════════════════════════════ */
 
-(function(){
+(function () {
   'use strict';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
-    { name:'Blue',    hex:'#3b82f6' },
-    { name:'Teal',    hex:'#14b8a6' },
-    { name:'Violet',  hex:'#8b5cf6' },
-    { name:'Rose',    hex:'#f43f5e' },
-    { name:'Amber',   hex:'#f59e0b' },
-    { name:'Emerald', hex:'#10b981' },
-    { name:'Sky',     hex:'#0ea5e9' },
-    { name:'Orange',  hex:'#f97316' },
+    { name: 'Blue', hex: '#3b82f6' },
+    { name: 'Teal', hex: '#14b8a6' },
+    { name: 'Violet', hex: '#8b5cf6' },
+    { name: 'Rose', hex: '#f43f5e' },
+    { name: 'Amber', hex: '#f59e0b' },
+    { name: 'Emerald', hex: '#10b981' },
+    { name: 'Sky', hex: '#0ea5e9' },
+    { name: 'Orange', hex: '#f97316' },
   ];
 
   const DEFAULT_SETTINGS = {
@@ -29,7 +29,9 @@
     try {
       const s = localStorage.getItem('ch_settings');
       return s ? Object.assign({}, DEFAULT_SETTINGS, JSON.parse(s)) : Object.assign({}, DEFAULT_SETTINGS);
-    } catch(e) { return Object.assign({}, DEFAULT_SETTINGS); }
+    } catch (e) {
+      return Object.assign({}, DEFAULT_SETTINGS);
+    }
   }
   function saveSettings(settings) {
     localStorage.setItem('ch_settings', JSON.stringify(settings));
@@ -37,48 +39,49 @@
 
   /* ── APPLY ACCENT COLOR ── */
   function hexToRgb(hex) {
-    const r = parseInt(hex.slice(1,3),16);
-    const g = parseInt(hex.slice(3,5),16);
-    const b = parseInt(hex.slice(5,7),16);
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
     return { r, g, b };
   }
   function applyAccentColor(hex) {
     const root = document.documentElement;
     const rgb = hexToRgb(hex);
     root.style.setProperty('--accent', hex);
-    root.style.setProperty('--accent-dim', 'rgba('+rgb.r+','+rgb.g+','+rgb.b+',0.12)');
-    root.style.setProperty('--accent-glow', 'rgba('+rgb.r+','+rgb.g+','+rgb.b+',0.25)');
+    root.style.setProperty('--accent-dim', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.12)');
+    root.style.setProperty('--accent-glow', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.25)');
 
     // Also update --blue and --blue-dim/--blue-glow for pages that still use --blue
     root.style.setProperty('--blue', hex);
-    root.style.setProperty('--blue-dim', 'rgba('+rgb.r+','+rgb.g+','+rgb.b+',0.12)');
-    root.style.setProperty('--blue-glow', 'rgba('+rgb.r+','+rgb.g+','+rgb.b+',0.25)');
+    root.style.setProperty('--blue-dim', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.12)');
+    root.style.setProperty('--blue-glow', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.25)');
 
     // Update --em and --em-dim for energy page compatibility
     root.style.setProperty('--em', hex);
-    root.style.setProperty('--em-dim', 'rgba('+rgb.r+','+rgb.g+','+rgb.b+',0.1)');
-    root.style.setProperty('--em-glow', 'rgba('+rgb.r+','+rgb.g+','+rgb.b+',0.22)');
+    root.style.setProperty('--em-dim', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.1)');
+    root.style.setProperty('--em-glow', 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.22)');
   }
-
 
   /* ── APPLY THEME (dark / light) ── */
   function applyTheme(mode) {
     var isLight = mode === 'light';
     document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
-    try { localStorage.setItem('ch_theme', isLight ? 'light' : 'dark'); } catch(e) {}
+    try {
+      localStorage.setItem('ch_theme', isLight ? 'light' : 'dark');
+    } catch (e) {}
     // Sync any inline toggle on the page (energy-department sidebar remnant guard)
     var tog = document.getElementById('themeToggle');
     var lbl = document.getElementById('theme-lbl');
     if (tog) tog.checked = isLight;
     if (lbl) lbl.textContent = isLight ? '☀️ Light Mode' : '🌙 Dark Mode';
     // Sync the settings modal radios if open
-    var darkRad  = document.getElementById('theme-radio-dark');
+    var darkRad = document.getElementById('theme-radio-dark');
     var lightRad = document.getElementById('theme-radio-light');
-    if (darkRad)  darkRad.checked  = !isLight;
-    if (lightRad) lightRad.checked =  isLight;
+    if (darkRad) darkRad.checked = !isLight;
+    if (lightRad) lightRad.checked = isLight;
     // Update pill highlight
     var pills = document.querySelectorAll('.theme-pill');
-    pills.forEach(function(p){
+    pills.forEach(function (p) {
       p.classList.toggle('active', p.getAttribute('data-theme') === (isLight ? 'light' : 'dark'));
     });
   }
@@ -92,12 +95,26 @@
     var h = now.getHours();
     var m = now.getMinutes();
     var ampm = h >= 12 ? 'PM' : 'AM';
-    h = h % 12; if (h === 0) h = 12;
+    h = h % 12;
+    if (h === 0) h = 12;
     var timeStr = (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m + ' ' + ampm;
     el.textContent = timeStr;
 
-    var days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    var months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
     var dateStr = days[now.getDay()] + ', ' + months[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear();
     elDate.textContent = dateStr;
   }
@@ -132,14 +149,14 @@
     var input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json';
-    input.onchange = function(e) {
+    input.onchange = function (e) {
       var file = e.target.files[0];
       if (!file) return;
       var reader = new FileReader();
-      reader.onload = function(ev) {
+      reader.onload = function (ev) {
         try {
           var data = JSON.parse(ev.target.result);
-          Object.keys(data).forEach(function(key) {
+          Object.keys(data).forEach(function (key) {
             if (key.startsWith('__session__')) {
               sessionStorage.setItem(key.replace('__session__', ''), data[key]);
             } else {
@@ -147,8 +164,10 @@
             }
           });
           if (typeof showToast === 'function') showToast('Data restored — reloading...');
-          setTimeout(function(){ location.reload(); }, 1200);
-        } catch(err) {
+          setTimeout(function () {
+            location.reload();
+          }, 1200);
+        } catch (err) {
           if (typeof showToast === 'function') showToast('Invalid backup file');
         }
       };
@@ -163,7 +182,9 @@
     localStorage.clear();
     sessionStorage.clear();
     if (typeof showToast === 'function') showToast('All data reset — reloading...');
-    setTimeout(function(){ location.reload(); }, 1200);
+    setTimeout(function () {
+      location.reload();
+    }, 1200);
   }
 
   /* ── BUILD SIDEBAR BOTTOM ── */
@@ -184,8 +205,8 @@
       '<div class="sb-clock" id="sb-clock">--:-- --</div>' +
       '<div class="sb-date" id="sb-date">Loading...</div>' +
       '<div class="sb-btn-row">' +
-        '<button class="sb-btn" onclick="window.__siteUI.backupData()" title="Backup all data">Backup</button>' +
-        '<button class="sb-btn" onclick="window.__siteUI.restoreData()" title="Restore from backup">Restore</button>' +
+      '<button class="sb-btn" onclick="window.__siteUI.backupData()" title="Backup all data">Backup</button>' +
+      '<button class="sb-btn" onclick="window.__siteUI.restoreData()" title="Restore from backup">Restore</button>' +
       '</div>' +
       '<button class="sb-btn danger" style="width:100%" onclick="window.__siteUI.resetData()">Reset Data</button>';
     sidebar.appendChild(bottom);
@@ -200,7 +221,9 @@
     helpBtn.className = 'help-btn';
     helpBtn.title = 'Help';
     helpBtn.textContent = '?';
-    helpBtn.onclick = function(){ window.__siteUI.openHelp(); };
+    helpBtn.onclick = function () {
+      window.__siteUI.openHelp();
+    };
     tRight.insertBefore(helpBtn, tRight.firstChild);
   }
 
@@ -209,104 +232,147 @@
     var overlay = document.createElement('div');
     overlay.className = 'settings-overlay';
     overlay.id = 'settingsOverlay';
-    overlay.onclick = function(e){ if(e.target===overlay) closeSettings(); };
+    overlay.onclick = function (e) {
+      if (e.target === overlay) closeSettings();
+    };
 
     var settings = loadSettings();
 
-    var swatchesHTML = COLOR_PRESETS.map(function(c){
+    var swatchesHTML = COLOR_PRESETS.map(function (c) {
       var isActive = settings.accentColor === c.hex ? ' active' : '';
-      return '<div class="color-swatch'+isActive+'" data-color="'+c.hex+'" style="background:'+c.hex+'" title="'+c.name+'"></div>';
+      return (
+        '<div class="color-swatch' +
+        isActive +
+        '" data-color="' +
+        c.hex +
+        '" style="background:' +
+        c.hex +
+        '" title="' +
+        c.name +
+        '"></div>'
+      );
     }).join('');
 
     var loginOptions = [
-      { value:'index', label:'Dashboard (index.html)' },
-      { value:'service-department', label:'Service Department' },
-      { value:'energy-department', label:'Energy Department' },
+      { value: 'index', label: 'Dashboard (index.html)' },
+      { value: 'service-department', label: 'Service Department' },
+      { value: 'energy-department', label: 'Energy Department' },
     ];
-    var loginSelectHTML = loginOptions.map(function(o){
-      var sel = settings.defaultLoginScreen === o.value ? ' selected' : '';
-      return '<option value="'+o.value+'"'+sel+'>'+o.label+'</option>';
-    }).join('');
+    var loginSelectHTML = loginOptions
+      .map(function (o) {
+        var sel = settings.defaultLoginScreen === o.value ? ' selected' : '';
+        return '<option value="' + o.value + '"' + sel + '>' + o.label + '</option>';
+      })
+      .join('');
 
     overlay.innerHTML =
       '<div class="settings-modal">' +
-        '<div class="settings-hdr">' +
-          '<span class="settings-title">&#9881; Settings</span>' +
-          '<button class="settings-x" onclick="window.__siteUI.closeSettings()">&#10005;</button>' +
-        '</div>' +
-        '<div class="settings-body">' +
-          '<div class="settings-section">' +\n            '<div class="settings-section-title">Display Mode</div>' +\n            '<div class="settings-row">' +\n              '<div>' +\n                '<div class="settings-row-label">Light / Dark Mode</div>' +\n                '<div class="settings-row-sub">Choose your preferred color scheme</div>' +\n              '</div>' +\n              '<div class="theme-pills" id="themePills">' +\n                '<button class="theme-pill" data-theme="dark" id="theme-radio-dark">🌙 Dark</button>' +\n                '<button class="theme-pill" data-theme="light" id="theme-radio-light">☀️ Light</button>' +\n              '</div>' +\n            '</div>' +\n          '</div>' +
-          '<div class="settings-section">' +
-            '<div class="settings-section-title">Accent Color</div>' +
-            '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:10px;">' +
-              '<div class="color-swatches" id="colorSwatches">' + swatchesHTML + '</div>' +
-              '<div class="custom-color-row">' +
-                '<input type="color" class="custom-color-input" id="customColorInput" value="'+settings.accentColor+'">' +
-                '<span class="custom-color-label">Custom color</span>' +
-              '</div>' +
-            '</div>' +
-          '</div>' +
-          '<div class="settings-section">' +
-            '<div class="settings-section-title">Default Login Screen</div>' +
-            '<div class="settings-row">' +
-              '<div>' +
-                '<div class="settings-row-label">Landing page after sign-in</div>' +
-                '<div class="settings-row-sub">Choose which page opens by default</div>' +
-              '</div>' +
-              '<select class="settings-select" id="defaultLoginSelect">' + loginSelectHTML + '</select>' +
-            '</div>' +
-          '</div>' +
-        '</div>' +
+      '<div class="settings-hdr">' +
+      '<span class="settings-title">&#9881; Settings</span>' +
+      '<button class="settings-x" onclick="window.__siteUI.closeSettings()">&#10005;</button>' +
+      '</div>' +
+      '<div class="settings-body">' +
+      '<div class="settings-section">' +
+      '<div class="settings-section-title">Display Mode</div>' +
+      '<div class="settings-row">' +
+      '<div>' +
+      '<div class="settings-row-label">Light / Dark Mode</div>' +
+      '<div class="settings-row-sub">Choose your preferred color scheme</div>' +
+      '</div>' +
+      '<div class="theme-pills" id="themePills">' +
+      '<button class="theme-pill" data-theme="dark" id="theme-radio-dark">🌙 Dark</button>' +
+      '<button class="theme-pill" data-theme="light" id="theme-radio-light">☀️ Light</button>' +
+      '</div>' +
+      '</div>' +
+      '</div>' +
+      '<div class="settings-section">' +
+      '<div class="settings-section-title">Accent Color</div>' +
+      '<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:10px;">' +
+      '<div class="color-swatches" id="colorSwatches">' +
+      swatchesHTML +
+      '</div>' +
+      '<div class="custom-color-row">' +
+      '<input type="color" class="custom-color-input" id="customColorInput" value="' +
+      settings.accentColor +
+      '">' +
+      '<span class="custom-color-label">Custom color</span>' +
+      '</div>' +
+      '</div>' +
+      '</div>' +
+      '<div class="settings-section">' +
+      '<div class="settings-section-title">Default Login Screen</div>' +
+      '<div class="settings-row">' +
+      '<div>' +
+      '<div class="settings-row-label">Landing page after sign-in</div>' +
+      '<div class="settings-row-sub">Choose which page opens by default</div>' +
+      '</div>' +
+      '<select class="settings-select" id="defaultLoginSelect">' +
+      loginSelectHTML +
+      '</select>' +
+      '</div>' +
+      '</div>' +
+      '</div>' +
       '</div>';
 
     document.body.appendChild(overlay);
 
     // Swatch click handlers
     var swatches = overlay.querySelectorAll('.color-swatch');
-    swatches.forEach(function(sw){
-      sw.onclick = function(){
-        swatches.forEach(function(s){ s.classList.remove('active'); });
+    swatches.forEach(function (sw) {
+      sw.onclick = function () {
+        swatches.forEach(function (s) {
+          s.classList.remove('active');
+        });
         sw.classList.add('active');
         var color = sw.getAttribute('data-color');
         applyAccentColor(color);
         document.getElementById('customColorInput').value = color;
-        var s = loadSettings(); s.accentColor = color; saveSettings(s);
+        var s = loadSettings();
+        s.accentColor = color;
+        saveSettings(s);
       };
     });
 
-
     // Theme pills
     var themePills = overlay.querySelectorAll('.theme-pill');
-    themePills.forEach(function(pill){
-      pill.onclick = function(){
+    themePills.forEach(function (pill) {
+      pill.onclick = function () {
         var mode = pill.getAttribute('data-theme');
         applyTheme(mode);
-        var s = loadSettings(); s.theme = mode; saveSettings(s);
+        var s = loadSettings();
+        s.theme = mode;
+        saveSettings(s);
       };
     });
     // Set initial pill state
     var currentTheme = loadSettings().theme || 'dark';
-    themePills.forEach(function(p){
+    themePills.forEach(function (p) {
       p.classList.toggle('active', p.getAttribute('data-theme') === currentTheme);
     });
 
     // Custom color input
     var customInput = document.getElementById('customColorInput');
-    customInput.oninput = function(){
+    customInput.oninput = function () {
       var color = customInput.value;
-      swatches.forEach(function(s){ s.classList.remove('active'); });
+      swatches.forEach(function (s) {
+        s.classList.remove('active');
+      });
       // Check if matches a preset
-      swatches.forEach(function(s){
-        if(s.getAttribute('data-color').toLowerCase() === color.toLowerCase()) s.classList.add('active');
+      swatches.forEach(function (s) {
+        if (s.getAttribute('data-color').toLowerCase() === color.toLowerCase()) s.classList.add('active');
       });
       applyAccentColor(color);
-      var s = loadSettings(); s.accentColor = color; saveSettings(s);
+      var s = loadSettings();
+      s.accentColor = color;
+      saveSettings(s);
     };
 
     // Default login select
     var loginSelect = document.getElementById('defaultLoginSelect');
-    loginSelect.onchange = function(){
-      var s = loadSettings(); s.defaultLoginScreen = loginSelect.value; saveSettings(s);
+    loginSelect.onchange = function () {
+      var s = loadSettings();
+      s.defaultLoginScreen = loginSelect.value;
+      saveSettings(s);
     };
   }
 
@@ -324,36 +390,38 @@
     var overlay = document.createElement('div');
     overlay.className = 'help-overlay';
     overlay.id = 'helpOverlay';
-    overlay.onclick = function(e){ if(e.target===overlay) closeHelp(); };
+    overlay.onclick = function (e) {
+      if (e.target === overlay) closeHelp();
+    };
 
     overlay.innerHTML =
       '<div class="help-modal">' +
-        '<div class="help-hdr">' +
-          '<span class="help-title">&#10068; Help</span>' +
-          '<button class="help-x" onclick="window.__siteUI.closeHelp()">&#10005;</button>' +
-        '</div>' +
-        '<div class="help-body">' +
-          '<div class="help-item">' +
-            '<div class="help-item-title">Navigation</div>' +
-            '<div class="help-item-desc">Use the top tab bar to switch between Dashboard, Service Department, and Energy Department. The sidebar provides section-specific navigation within each department.</div>' +
-          '</div>' +
-          '<div class="help-item">' +
-            '<div class="help-item-title">Settings</div>' +
-            '<div class="help-item-desc">Click Settings in the sidebar bottom to change accent colors and set your default login screen.</div>' +
-          '</div>' +
-          '<div class="help-item">' +
-            '<div class="help-item-title">Backup &amp; Restore</div>' +
-            '<div class="help-item-desc">Use the Backup button to download all your data as a JSON file. Use Restore to load a previously saved backup.</div>' +
-          '</div>' +
-          '<div class="help-item">' +
-            '<div class="help-item-title">Reset Data</div>' +
-            '<div class="help-item-desc">Clears all local data and settings. This action cannot be undone.</div>' +
-          '</div>' +
-          '<div class="help-item">' +
-            '<div class="help-item-title">Microsoft 365 Sign-In</div>' +
-            '<div class="help-item-desc">Sign in with your company M365 account for live Outlook calendar sync. Demo mode is available without credentials.</div>' +
-          '</div>' +
-        '</div>' +
+      '<div class="help-hdr">' +
+      '<span class="help-title">&#10068; Help</span>' +
+      '<button class="help-x" onclick="window.__siteUI.closeHelp()">&#10005;</button>' +
+      '</div>' +
+      '<div class="help-body">' +
+      '<div class="help-item">' +
+      '<div class="help-item-title">Navigation</div>' +
+      '<div class="help-item-desc">Use the top tab bar to switch between Dashboard, Service Department, and Energy Department. The sidebar provides section-specific navigation within each department.</div>' +
+      '</div>' +
+      '<div class="help-item">' +
+      '<div class="help-item-title">Settings</div>' +
+      '<div class="help-item-desc">Click Settings in the sidebar bottom to change accent colors and set your default login screen.</div>' +
+      '</div>' +
+      '<div class="help-item">' +
+      '<div class="help-item-title">Backup &amp; Restore</div>' +
+      '<div class="help-item-desc">Use the Backup button to download all your data as a JSON file. Use Restore to load a previously saved backup.</div>' +
+      '</div>' +
+      '<div class="help-item">' +
+      '<div class="help-item-title">Reset Data</div>' +
+      '<div class="help-item-desc">Clears all local data and settings. This action cannot be undone.</div>' +
+      '</div>' +
+      '<div class="help-item">' +
+      '<div class="help-item-title">Microsoft 365 Sign-In</div>' +
+      '<div class="help-item-desc">Sign in with your company M365 account for live Outlook calendar sync. Demo mode is available without credentials.</div>' +
+      '</div>' +
+      '</div>' +
       '</div>';
 
     document.body.appendChild(overlay);
@@ -372,7 +440,7 @@
   function checkDefaultLogin() {
     var settings = loadSettings();
     var defaultPage = settings.defaultLoginScreen || 'index';
-    var currentPage = location.pathname.split('/').pop().replace('.html','') || 'index';
+    var currentPage = location.pathname.split('/').pop().replace('.html', '') || 'index';
     // Only redirect from the login page (index) after successful login
     // This is called from enterApp — we expose it globally
     if (currentPage === 'index' && defaultPage !== 'index') {
@@ -392,17 +460,24 @@
      dashboard always stays in sync.
   ══════════════════════════════════════════ */
   var Store = {
-    get: function(key) {
-      try { return JSON.parse(localStorage.getItem(key)) || []; }
-      catch(e) { return []; }
+    get: function (key) {
+      try {
+        return JSON.parse(localStorage.getItem(key)) || [];
+      } catch (e) {
+        return [];
+      }
     },
-    set: function(key, data) {
-      try { localStorage.setItem(key, JSON.stringify(data)); }
-      catch(e) { console.warn('Store.set failed:', e); return; }
+    set: function (key, data) {
+      try {
+        localStorage.setItem(key, JSON.stringify(data));
+      } catch (e) {
+        console.warn('Store.set failed:', e);
+        return;
+      }
       window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key: key } }));
     },
-    update: function(key, id, newData) {
-      var items = this.get(key).map(function(item) {
+    update: function (key, id, newData) {
+      var items = this.get(key).map(function (item) {
         if (item.id === id) {
           return Object.assign({}, item, newData, { updatedAt: new Date().toISOString() });
         }
@@ -410,8 +485,10 @@
       });
       this.set(key, items);
     },
-    delete: function(key, id) {
-      var items = this.get(key).filter(function(item) { return item.id !== id; });
+    delete: function (key, id) {
+      var items = this.get(key).filter(function (item) {
+        return item.id !== id;
+      });
       this.set(key, items);
     },
   };
@@ -423,10 +500,10 @@
      Triggered on load and on dataUpdated events.
   ══════════════════════════════════════════ */
   var DashboardController = {
-    refresh: function() {
+    refresh: function () {
       // Only runs on index.html — guard by checking for stat elements
-      var statStaff    = document.getElementById('dash-stat-staff');
-      var statSA       = document.getElementById('dash-stat-sa');
+      var statStaff = document.getElementById('dash-stat-staff');
+      var statSA = document.getElementById('dash-stat-sa');
       var statProjects = document.getElementById('dash-stat-projects');
       if (!statStaff && !statSA && !statProjects) return;
 
@@ -451,7 +528,9 @@
         if (qaSA) qaSA.textContent = saData.length;
         // Update PM Schedule sidebar badge if present
         var pmBadges = document.querySelectorAll('.pm-badge-live');
-        pmBadges.forEach(function(b){ b.textContent = saData.length; });
+        pmBadges.forEach(function (b) {
+          b.textContent = saData.length;
+        });
       }
 
       // Energy projects count
@@ -476,7 +555,7 @@
     btn.setAttribute('aria-expanded', 'false');
     btn.setAttribute('aria-controls', 'appSidebar');
     btn.innerHTML = '☰';
-    btn.onclick = function() {
+    btn.onclick = function () {
       var sidebar = document.getElementById('appSidebar') || document.querySelector('.sidebar');
       if (!sidebar) return;
       var open = sidebar.classList.toggle('drawer-open');
@@ -492,7 +571,7 @@
     backdrop.id = 'sidebarBackdrop';
     backdrop.className = 'sidebar-backdrop';
     backdrop.style.display = 'none';
-    backdrop.onclick = function() {
+    backdrop.onclick = function () {
       var sidebar = document.getElementById('appSidebar') || document.querySelector('.sidebar');
       if (sidebar) sidebar.classList.remove('drawer-open');
       btn.setAttribute('aria-expanded', 'false');
@@ -514,7 +593,7 @@
     nav.setAttribute('role', 'tablist');
     nav.setAttribute('aria-label', 'Department navigation');
     var tabs = nav.querySelectorAll('.dept-tab');
-    tabs.forEach(function(tab) {
+    tabs.forEach(function (tab) {
       tab.setAttribute('role', 'tab');
       tab.setAttribute('aria-selected', tab.classList.contains('active') ? 'true' : 'false');
     });
@@ -532,7 +611,7 @@
         if (!modal.getAttribute('role')) modal.setAttribute('role', 'dialog');
         modal.setAttribute('aria-modal', 'true');
       }
-      overlay.addEventListener('keydown', function(e) {
+      overlay.addEventListener('keydown', function (e) {
         if (!overlay.classList.contains('open')) return;
         // ESC closes
         if (e.key === 'Escape') {
@@ -541,16 +620,20 @@
         }
         // Focus trap
         if (e.key === 'Tab') {
-          var focusable = Array.from(overlay.querySelectorAll(
-            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-          ));
+          var focusable = Array.from(
+            overlay.querySelectorAll(
+              'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+            ),
+          );
           if (!focusable.length) return;
           var first = focusable[0];
-          var last  = focusable[focusable.length - 1];
+          var last = focusable[focusable.length - 1];
           if (e.shiftKey && document.activeElement === first) {
-            e.preventDefault(); last.focus();
+            e.preventDefault();
+            last.focus();
           } else if (!e.shiftKey && document.activeElement === last) {
-            e.preventDefault(); first.focus();
+            e.preventDefault();
+            first.focus();
           }
         }
       });
@@ -560,16 +643,20 @@
     document.querySelectorAll('.settings-overlay, .help-overlay, .modal-overlay').forEach(setupOverlay);
 
     // Watch for new ones
-    var observer = new MutationObserver(function(mutations) {
-      mutations.forEach(function(m) {
-        m.addedNodes.forEach(function(node) {
+    var observer = new MutationObserver(function (mutations) {
+      mutations.forEach(function (m) {
+        m.addedNodes.forEach(function (node) {
           if (node.nodeType !== 1) return;
-          if (node.classList && (node.classList.contains('settings-overlay') ||
+          if (
+            node.classList &&
+            (node.classList.contains('settings-overlay') ||
               node.classList.contains('help-overlay') ||
-              node.classList.contains('modal-overlay'))) {
+              node.classList.contains('modal-overlay'))
+          ) {
             setupOverlay(node);
           }
-          node.querySelectorAll && node.querySelectorAll('.settings-overlay, .help-overlay, .modal-overlay').forEach(setupOverlay);
+          node.querySelectorAll &&
+            node.querySelectorAll('.settings-overlay, .help-overlay, .modal-overlay').forEach(setupOverlay);
         });
       });
     });
@@ -593,7 +680,7 @@
 
     // Dashboard auto-refresh: run once on load, then on every Store write
     DashboardController.refresh();
-    window.addEventListener('dataUpdated', function() {
+    window.addEventListener('dataUpdated', function () {
       DashboardController.refresh();
     });
   }
@@ -623,5 +710,4 @@
   // Expose Store and DashboardController globally
   window.Store = Store;
   window.DashboardController = DashboardController;
-
 })();

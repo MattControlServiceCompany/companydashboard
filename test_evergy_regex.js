@@ -8,12 +8,18 @@
 
 'use strict';
 
-let passed = 0, failed = 0;
+let passed = 0,
+  failed = 0;
 const failures = [];
 
 function assert(condition, msg) {
-  if (condition) { passed++; }
-  else { failed++; failures.push(msg); console.log(`  FAIL: ${msg}`); }
+  if (condition) {
+    passed++;
+  } else {
+    failed++;
+    failures.push(msg);
+    console.log(`  FAIL: ${msg}`);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -24,7 +30,8 @@ function assert(condition, msg) {
 const _EVG_BILLING_DETAILS = /B[il1]{2}[il1]ng\s+D[ec]t[ao][il1]{1,2}[s5]?\s*[-\u2013\u2014]\s*[s5]erv[il1]ce\s+from/i;
 const _EVG_SERVICE_FROM = /[s5]erv[il1]ce\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i;
 const _EVG_ACCT = /[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s\u00a9\u00ae]\s*(\d[\d ]{4,18}\d)/m;
-const _EVG_ADDR = /^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m;
+const _EVG_ADDR =
+  /^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m;
 
 // ─── Full _extractEvergy (copied from source, keep in sync) ──────────────────
 function _extractEvergy(t, acctOverride, addrOverride) {
@@ -38,14 +45,18 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     let m;
     while ((m = bdRe.exec(t)) !== null) bdMarkers.push(m.index);
     const _sf = /[s5]erv[il1]ce\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i;
-    const bdDates = bdMarkers.map(idx => { const dm = t.slice(idx, idx + 200).match(_sf); return dm ? dm[1] + '|' + dm[2] : null; });
+    const bdDates = bdMarkers.map((idx) => {
+      const dm = t.slice(idx, idx + 200).match(_sf);
+      return dm ? dm[1] + '|' + dm[2] : null;
+    });
     const uniqueDates = new Set(bdDates.filter(Boolean));
     if (bdMarkers.length > 1 && uniqueDates.size > 1) {
-      const secStarts = bdMarkers.map(idx => {
+      const secStarts = bdMarkers.map((idx) => {
         const before = t.slice(Math.max(0, idx - 500), idx);
         let cnIdx = -1;
         const cnRe = /Customer\s*Name/gi;
-        let cm; while ((cm = cnRe.exec(before)) !== null) cnIdx = cm.index;
+        let cm;
+        while ((cm = cnRe.exec(before)) !== null) cnIdx = cm.index;
         return cnIdx >= 0 ? Math.max(0, idx - 500) + cnIdx : Math.max(0, idx - 200);
       });
       for (let s = 0; s < bdMarkers.length; s++) {
@@ -60,7 +71,10 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
   }
 
-  const sum = (t, re) => { const ms = [...t.matchAll(re)]; return ms.length ? ms.reduce((s, m) => s + parseFloat(m[1].replace(/,/g, '')), 0).toFixed(2) : null; };
+  const sum = (t, re) => {
+    const ms = [...t.matchAll(re)];
+    return ms.length ? ms.reduce((s, m) => s + parseFloat(m[1].replace(/,/g, '')), 0).toFixed(2) : null;
+  };
   const chg = (re) => t.match(re)?.[1]?.replace(/,/g, '') || null;
 
   const CHG_STOP = /(?:Cust|Fac\S|Demand|Energy\s+C|\bECA|\bEER|\bPTS|\bTDC|\bRkVA|Subtotal|Current\s+Charges)/i;
@@ -80,35 +94,46 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   };
   const xChg = (keyword, excludeRe) => {
     const lines = t.split('\n');
-    let total = 0, found = false;
+    let total = 0,
+      found = false;
     for (let i = 0; i < lines.length; i++) {
       if (!new RegExp(keyword, 'i').test(lines[i])) continue;
       if (excludeRe && excludeRe.test(lines[i])) continue;
       const a = getAmt(lines[i]);
-      if (a !== null) { total += a; found = true; }
-      else {
+      if (a !== null) {
+        total += a;
+        found = true;
+      } else {
         for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
           const l = lines[j];
           if (CHG_STOP.test(l) && !/per\s+k[Wh]/i.test(l) && !/^[\d,]+\.\d+\s+kWh\s+at/i.test(l)) break;
           const ja = getAmt(l);
-          if (ja !== null) { total += ja; found = true; break; }
+          if (ja !== null) {
+            total += ja;
+            found = true;
+            break;
+          }
         }
       }
     }
     return found ? total.toFixed(2) : null;
   };
 
-  const bpMatch = t.match(_EVG_SERVICE_FROM) || t.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);
+  const bpMatch =
+    t.match(_EVG_SERVICE_FROM) || t.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);
   let numDays = null;
   if (bpMatch) {
     try {
-      const s = new Date(bpMatch[1]), e = new Date(bpMatch[2]);
+      const s = new Date(bpMatch[1]),
+        e = new Date(bpMatch[2]);
       numDays = String(Math.round((e - s) / (1000 * 60 * 60 * 24)));
     } catch (ex) {}
   }
 
   // ── Meter read table: single-row format ──
-  const meterRow = t.match(/(\d{2}\/\d{2})\s+(\d{2}\/\d{2})\s+\d+\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+[\d,]+\.?\d*\s+([\d,.]+)\s+[\d,]+\.?\d*\s+([\d.]+)\s+([\d.]+)/);
+  const meterRow = t.match(
+    /(\d{2}\/\d{2})\s+(\d{2}\/\d{2})\s+\d+\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+[\d,]+\.?\d*\s+([\d,.]+)\s+[\d,]+\.?\d*\s+([\d.]+)\s+([\d.]+)/,
+  );
 
   // ── Meter read table: multi-line labeled format (fallback) ──
   // Real PDF text often has each field on its own labeled line:
@@ -137,7 +162,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   })();
 
   // ── kWh Consumed: multi-source with cross-validation ──
-  const _validKwh = v => {
+  const _validKwh = (v) => {
     if (v > 10000 && v === Math.floor(v)) return false;
     return v > 0 && v < 2000000;
   };
@@ -154,14 +179,20 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     return null;
   })();
 
-  const fromAdj = [...t.matchAll(/(?:ECA|EER|PTS)\s+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])[\s\S]*?(?:for\s+)?([\d,]+\.\d+)\s*kWh/gi)]
-    .map(m => parseFloat(m[1].replace(/,/g, '')))
-    .filter(v => _validKwh(v));
+  const fromAdj = [
+    ...t.matchAll(/(?:ECA|EER|PTS)\s+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])[\s\S]*?(?:for\s+)?([\d,]+\.\d+)\s*kWh/gi),
+  ]
+    .map((m) => parseFloat(m[1].replace(/,/g, '')))
+    .filter((v) => _validKwh(v));
   const adjKwhVal = fromAdj.length ? Math.max(...fromAdj) : null;
 
-  const fromEnergy = [...t.matchAll(/Energy\s+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])\s+(?:On\s+Pk\s+\w+\s+|Off\s+Pk\s+\w+\s+)?([\d,]+\.\d+)\s*kWh/gi)]
-    .map(m => parseFloat(m[1].replace(/,/g, '')))
-    .filter(v => v > 0);
+  const fromEnergy = [
+    ...t.matchAll(
+      /Energy\s+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])\s+(?:On\s+Pk\s+\w+\s+|Off\s+Pk\s+\w+\s+)?([\d,]+\.\d+)\s*kWh/gi,
+    ),
+  ]
+    .map((m) => parseFloat(m[1].replace(/,/g, '')))
+    .filter((v) => v > 0);
   const tierKwh = fromEnergy.length ? fromEnergy.reduce((a, b) => a + b, 0) : null;
 
   const adjKwh = (() => {
@@ -171,34 +202,45 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     if (meterKwh) return String(meterKwh);
     if (adjKwhVal) return String(adjKwhVal);
     if (tierKwh && _validKwh(tierKwh)) return String(tierKwh);
-    const fallback = t.match(/kWh\s+(?:Used|Consumed)[^\d]*([\d,]+\.\d+)/i) || t.match(/([\d,]+\.\d+)\s*kWh\s+(?:Used|Consumed)/i);
-    if (fallback) { const v = parseFloat(fallback[1].replace(/,/g, '')); if (_validKwh(v)) return String(v); }
-    return null;
-  })();
-
-  const rateMatch = t.match(/[-\u2013]\s*([\dA-Z]{3,10})[^\n]*?\n?[^\n]*?Billing\s+Details/i) || t.match(/[-\u2013]\s*([\dA-Z]{3,10})\s+Billing\s+Details/i) || t.match(/LGS[^\n]*[-\u2013]\s*([\dA-Z]{3,10})\s*$/im) || t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i) || (() => {
-    const lines = t.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      if (/Billing\s+Details/i.test(lines[i])) {
-        for (let j = Math.max(0, i - 8); j < i; j++) {
-          const line = lines[j].trim();
-          const rm = line.match(/^([A-Z]{2,5}(?:-[A-Z0-9]{1,3})?)$/);
-          if (rm) return rm;
-          const rm2 = line.match(/\b([A-Z]{2,5})\s*[-\u2013]\s*([A-Z0-9]{1,5})\s*$/);
-          if (rm2) return [null, rm2[1] + '-' + rm2[2]];
-        }
-        break;
-      }
+    const fallback =
+      t.match(/kWh\s+(?:Used|Consumed)[^\d]*([\d,]+\.\d+)/i) || t.match(/([\d,]+\.\d+)\s*kWh\s+(?:Used|Consumed)/i);
+    if (fallback) {
+      const v = parseFloat(fallback[1].replace(/,/g, ''));
+      if (_validKwh(v)) return String(v);
     }
     return null;
   })();
 
+  const rateMatch =
+    t.match(/[-\u2013]\s*([\dA-Z]{3,10})[^\n]*?\n?[^\n]*?Billing\s+Details/i) ||
+    t.match(/[-\u2013]\s*([\dA-Z]{3,10})\s+Billing\s+Details/i) ||
+    t.match(/LGS[^\n]*[-\u2013]\s*([\dA-Z]{3,10})\s*$/im) ||
+    t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i) ||
+    (() => {
+      const lines = t.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (/Billing\s+Details/i.test(lines[i])) {
+          for (let j = Math.max(0, i - 8); j < i; j++) {
+            const line = lines[j].trim();
+            const rm = line.match(/^([A-Z]{2,5}(?:-[A-Z0-9]{1,3})?)$/);
+            if (rm) return rm;
+            const rm2 = line.match(/\b([A-Z]{2,5})\s*[-\u2013]\s*([A-Z0-9]{1,5})\s*$/);
+            if (rm2) return [null, rm2[1] + '-' + rm2[2]];
+          }
+          break;
+        }
+      }
+      return null;
+    })();
+
   // ── Charges ──
   const C = '(?:Ch[gaq9]|C[HhNnRr][Gg]|Gh[gq9])[.:]?';
   const custChg = xChg('C[ua][s5][t1iI][o0][mM][eao][r1tT]\\s+' + C);
-  const facKW = t.match(new RegExp('Fac\\S*\\s+' + C + '\\s+([\\d,.]+)\\s*[kK][Ww]', 'i'))?.[1]?.replace(/,/g, '') || null;
+  const facKW =
+    t.match(new RegExp('Fac\\S*\\s+' + C + '\\s+([\\d,.]+)\\s*[kK][Ww]', 'i'))?.[1]?.replace(/,/g, '') || null;
   const facChg = xChg('Fac\\S*\\s+' + C);
-  const demKW = t.match(new RegExp('Demand\\s+' + C + '\\s+([\\d,.]+)\\s*[kK][Ww]', 'i'))?.[1]?.replace(/,/g, '') || null;
+  const demKW =
+    t.match(new RegExp('Demand\\s+' + C + '\\s+([\\d,.]+)\\s*[kK][Ww]', 'i'))?.[1]?.replace(/,/g, '') || null;
   const demChg = xChg('Demand\\s+' + C);
   // Always extract both formats — changeover bills (spanning 12/21/2023) have both.
   const onPkChg = xChg('Energy\\s+' + C + '\\s+On\\s+P[kK]');
@@ -207,7 +249,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const ecaChg = xChg('ECA\\s+' + C);
   const eerChg = xChg('EER\\s+' + C);
   const ptsChg = xChg('PTS\\s+' + C);
-  const tdcKW = t.match(new RegExp('TDC\\s+' + C + '[\\s\\S]*?([\\d,.]+)[\\s\\-]*[kK][Ww]\\s+at', 'i'))?.[1]?.replace(/,/g, '') || null;
+  const tdcKW =
+    t.match(new RegExp('TDC\\s+' + C + '[\\s\\S]*?([\\d,.]+)[\\s\\-]*[kK][Ww]\\s+at', 'i'))?.[1]?.replace(/,/g, '') ||
+    null;
   const tdcChg = xChg('TDC\\s+' + C);
   const rkvaChg = xChg('R[kK]VA\\s+' + C);
   const taxExempt = chg(/Tax\s+exempt[^$\n]*\$([\d,]+\.\d{2})/i);
@@ -229,8 +273,10 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const franchise = chg(/Franch[il1]se\s+Fee[^$\n]*\$([\d,]+\.\d{2})/i);
   const totalDue = (() => {
     const lines = t.split('\n');
-    let bestVal = null, bestDist = Infinity;
-    let subtotalIdx = -1, bdIdx = -1;
+    let bestVal = null,
+      bestDist = Infinity;
+    let subtotalIdx = -1,
+      bdIdx = -1;
     for (let i = 0; i < lines.length; i++) {
       if (/Subtotal/i.test(lines[i])) subtotalIdx = i;
       if (/Billing\s+Details/i.test(lines[i])) bdIdx = i;
@@ -240,20 +286,40 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         const amt = getAmt(lines[i]);
         if (amt !== null) {
           const dist = subtotalIdx >= 0 ? Math.abs(i - subtotalIdx) : Infinity;
-          if (dist < bestDist) { bestDist = dist; bestVal = amt; }
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestVal = amt;
+          }
         }
         if (i + 1 < lines.length && /Utilit/i.test(lines[i + 1])) {
           const uAmt = getAmt(lines[i + 1]);
           if (uAmt !== null) {
             const dist = subtotalIdx >= 0 ? Math.abs(i + 1 - subtotalIdx) : 1;
-            if (dist < bestDist) { bestDist = dist; bestVal = uAmt; }
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestVal = uAmt;
+            }
           }
         }
       }
     }
     if (bestVal !== null) {
-      const pf2 = v => v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0;
-      const calcSum = pf2(custChg) + pf2(facChg) + pf2(demChg) + pf2(onPkChg) + pf2(tieredChg) + pf2(offPkChg) + pf2(rkvaChg) + pf2(ecaChg) + pf2(eerChg) + pf2(ptsChg) + pf2(tdcChg) + pf2(taxExempt) + pf2(billOffset) + pf2(franchise);
+      const pf2 = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+      const calcSum =
+        pf2(custChg) +
+        pf2(facChg) +
+        pf2(demChg) +
+        pf2(onPkChg) +
+        pf2(tieredChg) +
+        pf2(offPkChg) +
+        pf2(rkvaChg) +
+        pf2(ecaChg) +
+        pf2(eerChg) +
+        pf2(ptsChg) +
+        pf2(tdcChg) +
+        pf2(taxExempt) +
+        pf2(billOffset) +
+        pf2(franchise);
       if (calcSum > 0 && bestVal > calcSum * 1.5) {
         return calcSum.toFixed(2);
       }
@@ -261,17 +327,45 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
     const m2 = t.match(/Subtotal[\s\S]*?\$\s*([\d,]+\.\d{2})/i);
     if (m2) return m2[1].replace(/,/g, '');
-    const pf = v => v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0;
-    const sumVal = pf(custChg) + pf(facChg) + pf(demChg) + pf(onPkChg) + pf(tieredChg) + pf(offPkChg) + pf(rkvaChg) + pf(ecaChg) + pf(eerChg) + pf(ptsChg) + pf(tdcChg) + pf(taxExempt) + pf(billOffset) + pf(franchise);
+    const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+    const sumVal =
+      pf(custChg) +
+      pf(facChg) +
+      pf(demChg) +
+      pf(onPkChg) +
+      pf(tieredChg) +
+      pf(offPkChg) +
+      pf(rkvaChg) +
+      pf(ecaChg) +
+      pf(eerChg) +
+      pf(ptsChg) +
+      pf(tdcChg) +
+      pf(taxExempt) +
+      pf(billOffset) +
+      pf(franchise);
     return sumVal > 0 ? sumVal.toFixed(2) : null;
   })();
 
   const result = {
     UtilityCompany: 'Evergy',
-    CustomerName: t.match(/Customer\s*Name[^A-Za-z\n]*([A-Z][A-Z0-9 #]+?)(?=\s+(?:Account|Page)|\n)/im)?.[1]?.replace(/\s*£.*$/, '').trim()
-      || t.match(/Customer\s*Name\s*:\s*\n\s*(?:Account[^\n]*\n\s*)?([A-Z][A-Z0-9 #]+?)(?=\s+Page|\s*$)/im)?.[1]?.replace(/\s*£.*$/, '').trim()
-      || t.match(/Customer\s*Name\s*:\s*([A-Z][A-Z0-9 #]{2,}?)(?=\s+Page|\s*$)/im)?.[1]?.replace(/\s*£.*$/, '').trim() || null,
-    AccountNumber: acctOverride || t.match(/Account\s+(?:Number\s*)?[:\s\u00a9\u00ae]\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g, '') || null,
+    CustomerName:
+      t
+        .match(/Customer\s*Name[^A-Za-z\n]*([A-Z][A-Z0-9 #]+?)(?=\s+(?:Account|Page)|\n)/im)?.[1]
+        ?.replace(/\s*£.*$/, '')
+        .trim() ||
+      t
+        .match(/Customer\s*Name\s*:\s*\n\s*(?:Account[^\n]*\n\s*)?([A-Z][A-Z0-9 #]+?)(?=\s+Page|\s*$)/im)?.[1]
+        ?.replace(/\s*£.*$/, '')
+        .trim() ||
+      t
+        .match(/Customer\s*Name\s*:\s*([A-Z][A-Z0-9 #]{2,}?)(?=\s+Page|\s*$)/im)?.[1]
+        ?.replace(/\s*£.*$/, '')
+        .trim() ||
+      null,
+    AccountNumber:
+      acctOverride ||
+      t.match(/Account\s+(?:Number\s*)?[:\s\u00a9\u00ae]\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g, '') ||
+      null,
     ServiceAddress: addrOverride || null,
     RateSchedule: rateMatch?.[1] || null,
     BillingPeriodStart: bpMatch?.[1] || null,
@@ -290,7 +384,11 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     FacilitiesCharge: facChg,
     BilledKW: demKW,
     BilledKWCharge: demChg,
-    EnergyOnPeakCharge: (() => { const p = v => v ? parseFloat(v) : 0; const s = p(onPkChg) + p(tieredChg); return s > 0 ? s.toFixed(2) : null; })(),
+    EnergyOnPeakCharge: (() => {
+      const p = (v) => (v ? parseFloat(v) : 0);
+      const s = p(onPkChg) + p(tieredChg);
+      return s > 0 ? s.toFixed(2) : null;
+    })(),
     EnergyOffPeakCharge: offPkChg,
     ECACharge: ecaChg,
     EERCharge: eerChg,
@@ -307,23 +405,34 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 
   // Bill Offset = negative of Tax Exempt Delivery (Evergy business rule)
   // Always derive from TaxExempt — OCR frequently garbles the BillOffset line and its digits
-  if(result.TaxExemptDelivery){
+  if (result.TaxExemptDelivery) {
     result.BillOffset = '-' + result.TaxExemptDelivery;
   }
 
   // ── METER NUMBER EXTRACTION ──
   if (!result.MeterNumber) {
-    const meterNumMatch = t.match(/Meter\s*(?:Number|No|#|Num)[^A-Za-z0-9\n]*(\d[\d\-A-Z]{3,20})/im)
-      || t.match(/Meter\s*:\s*(\d[\d\-A-Z]{3,20})/im);
+    const meterNumMatch =
+      t.match(/Meter\s*(?:Number|No|#|Num)[^A-Za-z0-9\n]*(\d[\d\-A-Z]{3,20})/im) ||
+      t.match(/Meter\s*:\s*(\d[\d\-A-Z]{3,20})/im);
     if (meterNumMatch) result.MeterNumber = meterNumMatch[1].trim();
   }
 
   // ── CHARGE RECONCILIATION ──
-  const _pf = v => v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0;
-  const _compSum = _pf(result.CustomerCharge) + _pf(result.FacilitiesCharge) + _pf(result.BilledKWCharge)
-    + _pf(result.EnergyOnPeakCharge) + _pf(result.EnergyOffPeakCharge) + _pf(result.ECACharge)
-    + _pf(result.EERCharge) + _pf(result.PTSCharge) + _pf(result.TDCCharge) + _pf(result.RkVACharge)
-    + _pf(result.TaxExemptDelivery) + _pf(result.BillOffset) + _pf(result.FranchiseFee);
+  const _pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+  const _compSum =
+    _pf(result.CustomerCharge) +
+    _pf(result.FacilitiesCharge) +
+    _pf(result.BilledKWCharge) +
+    _pf(result.EnergyOnPeakCharge) +
+    _pf(result.EnergyOffPeakCharge) +
+    _pf(result.ECACharge) +
+    _pf(result.EERCharge) +
+    _pf(result.PTSCharge) +
+    _pf(result.TDCCharge) +
+    _pf(result.RkVACharge) +
+    _pf(result.TaxExemptDelivery) +
+    _pf(result.BillOffset) +
+    _pf(result.FranchiseFee);
   const _total = _pf(result.TotalCurrentCharges);
   if (_total > 0 && Math.abs(_compSum - _total) > 1) {
     const bdIdx2 = t.search(/Billing\s+Details/i);
@@ -344,8 +453,13 @@ function _extractEvergy(t, acctOverride, addrOverride) {
           allAmts.push({ val, line: line.trim() });
         }
       }
-      const capturedVals = Object.values(result).filter(v => v !== null && v !== '').map(v => _pf(v)).filter(v => v > 0);
-      const uncaptured = allAmts.filter(a => !capturedVals.some(c => Math.abs(c - a.val) < 0.01) && Math.abs(a.val) > 0.5);
+      const capturedVals = Object.values(result)
+        .filter((v) => v !== null && v !== '')
+        .map((v) => _pf(v))
+        .filter((v) => v > 0);
+      const uncaptured = allAmts.filter(
+        (a) => !capturedVals.some((c) => Math.abs(c - a.val) < 0.01) && Math.abs(a.val) > 0.5,
+      );
       for (const uc of uncaptured) {
         const lcLine = uc.line.toLowerCase();
         if (!result.CustomerCharge && /cust|custo/i.test(lcLine)) result.CustomerCharge = uc.val.toFixed(2);
@@ -360,7 +474,11 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   }
 
   // ── DECIMAL FORMAT ENFORCEMENT (per Evergy Billing Details rules) ──
-  const _pad4 = v => { if (!v) return v; const n = parseFloat(String(v).replace(/,/g, '')); return isNaN(n) ? v : n.toFixed(4); };
+  const _pad4 = (v) => {
+    if (!v) return v;
+    const n = parseFloat(String(v).replace(/,/g, ''));
+    return isNaN(n) ? v : n.toFixed(4);
+  };
   for (const k of ['FacilitiesKW', 'BilledKW', 'ActualKW', 'ActualRKVA', 'TDCkW']) {
     if (result[k]) result[k] = _pad4(result[k]);
   }
@@ -585,14 +703,18 @@ const C_local = '(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])[.:]?';
 function extractFacChgOnly(text) {
   // Inline version for isolated tests
   const lines = text.split('\n');
-  let total = 0, found = false;
+  let total = 0,
+    found = false;
   const kw = 'Fac\\S*\\s+' + C_local;
   for (let i = 0; i < lines.length; i++) {
     if (!new RegExp(kw, 'i').test(lines[i])) continue;
     const ms = [...lines[i].matchAll(/\$([\d,]+\.\d{2})/g)];
     for (const m of ms) {
       const val = parseFloat(m[1].replace(/,/g, ''));
-      if (val >= 1) { total += val; found = true; }
+      if (val >= 1) {
+        total += val;
+        found = true;
+      }
     }
   }
   return found ? total.toFixed(2) : null;
@@ -685,7 +807,10 @@ Customer Chg $102.86
 Subtotal $102.86
 Current Charges $102.86`;
 const r7b_name = _extractEvergy(pageOnAccountLineBill, null, null);
-assert(r7b_name.CustomerName === 'USD #416', `T7b CustomerName with Page on Account line (got "${r7b_name.CustomerName}")`);
+assert(
+  r7b_name.CustomerName === 'USD #416',
+  `T7b CustomerName with Page on Account line (got "${r7b_name.CustomerName}")`,
+);
 
 const normalNameBill = `Customer Name © LOUISBURG SCHOOL DIST
 Account Number © 123
@@ -694,7 +819,10 @@ Customer Chg $50.00
 Subtotal $50.00
 Current Charges $50.00`;
 const r7c_name = _extractEvergy(normalNameBill, null, null);
-assert(r7c_name.CustomerName === 'LOUISBURG SCHOOL DIST', `T7c Normal multi-word name (got "${r7c_name.CustomerName}")`);
+assert(
+  r7c_name.CustomerName === 'LOUISBURG SCHOOL DIST',
+  `T7c Normal multi-word name (got "${r7c_name.CustomerName}")`,
+);
 
 // ─── Test 8: BillOffset and TotalCurrentCharges bugs ───────────────────────
 console.log('\n--- Test 8: BillOffset fallback + TotalCurrentCharges sum fixes ---');
@@ -742,13 +870,29 @@ Franchise Fee $173.80`;
 
 const r8b = _extractEvergy(sumFormulaTestBill, null, null);
 assert(r8b.RkVACharge === '56.33', `T8b RkVACharge extracted (got ${r8b.RkVACharge})`);
-assert(r8b.BillOffset === '-1945.83' || r8b.BillOffset === '-1,945.83', `T8b BillOffset extracted (got ${r8b.BillOffset})`);
-const pf8 = v => v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0;
-const expectedSum8b = pf8(r8b.CustomerCharge) + pf8(r8b.FacilitiesCharge) + pf8(r8b.BilledKWCharge)
-  + pf8(r8b.EnergyOnPeakCharge) + pf8(r8b.EnergyOffPeakCharge) + pf8(r8b.RkVACharge)
-  + pf8(r8b.ECACharge) + pf8(r8b.EERCharge) + pf8(r8b.PTSCharge) + pf8(r8b.TDCCharge)
-  + pf8(r8b.TaxExemptDelivery) + pf8(r8b.BillOffset) + pf8(r8b.FranchiseFee);
-assert(r8b.TotalCurrentCharges === expectedSum8b.toFixed(2), `T8b TotalCurrentCharges = sum of all charges (expected ${expectedSum8b.toFixed(2)}, got ${r8b.TotalCurrentCharges})`);
+assert(
+  r8b.BillOffset === '-1945.83' || r8b.BillOffset === '-1,945.83',
+  `T8b BillOffset extracted (got ${r8b.BillOffset})`,
+);
+const pf8 = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+const expectedSum8b =
+  pf8(r8b.CustomerCharge) +
+  pf8(r8b.FacilitiesCharge) +
+  pf8(r8b.BilledKWCharge) +
+  pf8(r8b.EnergyOnPeakCharge) +
+  pf8(r8b.EnergyOffPeakCharge) +
+  pf8(r8b.RkVACharge) +
+  pf8(r8b.ECACharge) +
+  pf8(r8b.EERCharge) +
+  pf8(r8b.PTSCharge) +
+  pf8(r8b.TDCCharge) +
+  pf8(r8b.TaxExemptDelivery) +
+  pf8(r8b.BillOffset) +
+  pf8(r8b.FranchiseFee);
+assert(
+  r8b.TotalCurrentCharges === expectedSum8b.toFixed(2),
+  `T8b TotalCurrentCharges = sum of all charges (expected ${expectedSum8b.toFixed(2)}, got ${r8b.TotalCurrentCharges})`,
+);
 
 // 8c: TotalCurrentCharges prefers detail-page "Current Charges" over page-1 summary
 const wrongTotalBill = `Current Charges $25,000.00
@@ -774,7 +918,10 @@ Subtotal $9,994.00
 Current Charges $9,994.00`;
 
 const r8c = _extractEvergy(wrongTotalBill, null, null);
-assert(r8c.TotalCurrentCharges === '9994.00', `T8c TotalCurrentCharges prefers detail over summary (got ${r8c.TotalCurrentCharges})`);
+assert(
+  r8c.TotalCurrentCharges === '9994.00',
+  `T8c TotalCurrentCharges prefers detail over summary (got ${r8c.TotalCurrentCharges})`,
+);
 
 // 8d: When only wrong page-1 "Current Charges" exists, trust calculated sum
 const wrongTotalBill2 = `Current Charges $25,000.00
@@ -797,12 +944,28 @@ Bill Offset -$1,945.83
 Franchise Fee $173.80`;
 
 const r8d = _extractEvergy(wrongTotalBill2, null, null);
-const expectedSum8d = pf8(r8d.CustomerCharge) + pf8(r8d.FacilitiesCharge) + pf8(r8d.BilledKWCharge)
-  + pf8(r8d.EnergyOnPeakCharge) + pf8(r8d.EnergyOffPeakCharge) + pf8(r8d.RkVACharge)
-  + pf8(r8d.ECACharge) + pf8(r8d.EERCharge) + pf8(r8d.PTSCharge) + pf8(r8d.TDCCharge)
-  + pf8(r8d.TaxExemptDelivery) + pf8(r8d.BillOffset) + pf8(r8d.FranchiseFee);
-assert(r8d.TotalCurrentCharges !== '25000.00', `T8d TotalCurrentCharges should NOT be wrong page-1 value (got ${r8d.TotalCurrentCharges})`);
-assert(r8d.TotalCurrentCharges === expectedSum8d.toFixed(2), `T8d TotalCurrentCharges = calculated sum ${expectedSum8d.toFixed(2)} (got ${r8d.TotalCurrentCharges})`);
+const expectedSum8d =
+  pf8(r8d.CustomerCharge) +
+  pf8(r8d.FacilitiesCharge) +
+  pf8(r8d.BilledKWCharge) +
+  pf8(r8d.EnergyOnPeakCharge) +
+  pf8(r8d.EnergyOffPeakCharge) +
+  pf8(r8d.RkVACharge) +
+  pf8(r8d.ECACharge) +
+  pf8(r8d.EERCharge) +
+  pf8(r8d.PTSCharge) +
+  pf8(r8d.TDCCharge) +
+  pf8(r8d.TaxExemptDelivery) +
+  pf8(r8d.BillOffset) +
+  pf8(r8d.FranchiseFee);
+assert(
+  r8d.TotalCurrentCharges !== '25000.00',
+  `T8d TotalCurrentCharges should NOT be wrong page-1 value (got ${r8d.TotalCurrentCharges})`,
+);
+assert(
+  r8d.TotalCurrentCharges === expectedSum8d.toFixed(2),
+  `T8d TotalCurrentCharges = calculated sum ${expectedSum8d.toFixed(2)} (got ${r8d.TotalCurrentCharges})`,
+);
 
 // ─── Test 9: OCR o→0 digit cleanup in numeric contexts ────────────────────
 console.log('\n--- Test 9: OCR o→0 digit cleanup ---');
@@ -955,7 +1118,10 @@ const r13 = _extractEvergy(changeoverBill, null, null);
 // 3-tier energy (22 days): $3,511.49 + $562.25 = $4,073.74
 // On/Off Peak (12 days): On=$76.44, Off=$710.94
 // EnergyOnPeakCharge should include BOTH: $4,073.74 + $76.44 = $4,150.18
-assert(r13.EnergyOnPeakCharge === '4150.18', `T13 EnergyOnPeakCharge includes tiered+onPeak (got ${r13.EnergyOnPeakCharge})`);
+assert(
+  r13.EnergyOnPeakCharge === '4150.18',
+  `T13 EnergyOnPeakCharge includes tiered+onPeak (got ${r13.EnergyOnPeakCharge})`,
+);
 assert(r13.EnergyOffPeakCharge === '710.94', `T13 EnergyOffPeakCharge (got ${r13.EnergyOffPeakCharge})`);
 // Customer Chg sums both periods
 assert(r13.CustomerCharge === '104.87', `T13 CustomerCharge sums both periods (got ${r13.CustomerCharge})`);
