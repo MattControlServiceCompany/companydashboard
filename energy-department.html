@@ -13883,6 +13883,9 @@
             ?.replace(/,/g, '') || null;
         const tdcChg = xChg('TDC\\s+' + C);
         // RkVA charge (reactive power)
+        // The kVAR qty on the bill is the OVERAGE above 50% of billing kW demand, not total reactive.
+        // E.g. 500 kW demand → 250 kVAR free; if reactive = 300, bill shows 50 kVAR × $0.663 = $33.15
+        // The meter table RKVA Used is the full value; the charge line qty is only the excess.
         const rkvaChg = xChg('R[kK]VA\\s+' + C);
         const taxExempt = chg(/Tax\s+exempt[^$\n]*\$([\d,]+\.\d{2})/i);
         // Bill offset / credit: match "Bill offset" or any line with a negative dollar amount before Subtotal
