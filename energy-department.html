@@ -7315,11 +7315,9 @@ async function extractPDFText(ab, statusCb){
       const scorePage=txt=>{let s=0;BILL_SIGNALS.forEach(rx=>{if(rx.test(txt))s++;});return s;};
       // OCR settings to try — different render scales and Tesseract PSM modes
       const OCR_PASSES=[
-        {scale:1.0, psm:null, label:'1x native'},
-        {scale:1.5, psm:null, label:'1.5x'},
-        {scale:2.0, psm:null, label:'2x'},
         {scale:2.5, psm:null, label:'2.5x'},
         {scale:3.0, psm:null, label:'3.0x'},
+        {scale:3.5, psm:null, label:'3.5x high-res'},
       ];
 
       // Store all OCR pass texts for consensus re-extraction on mismatched values
