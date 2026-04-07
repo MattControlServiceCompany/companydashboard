@@ -2342,12 +2342,12 @@
       }
       .ef-charge-row {
         display: grid;
-        grid-template-columns: 1fr 1fr auto auto;
-        gap: 6px;
+        grid-template-columns: 1fr 1fr 1fr auto;
+        gap: 4px;
         align-items: stretch;
       }
-      .ef-charge-row.single-charge {
-        grid-template-columns: 1fr auto auto;
+      .ef-charge-row.no-rate {
+        grid-template-columns: 1fr auto;
       }
       .ef-item {
         background: var(--s3);
@@ -2357,6 +2357,9 @@
       }
       .ef-item.wide {
         grid-column: 1/-1;
+      }
+      .ef-item.right .ef-input {
+        text-align: right;
       }
       .ef-key {
         font-size: 9px;
@@ -2393,18 +2396,6 @@
       .ef-running.mismatch {
         color: #ef4444;
         font-weight: 700;
-      }
-      .ef-rate {
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        font-family: var(--mono);
-        font-size: 9px;
-        color: var(--text3);
-        white-space: nowrap;
-        min-width: 60px;
-        padding: 0 2px;
-        opacity: 0.7;
       }
       .ef-section {
         font-size: 10px;
@@ -13486,8 +13477,10 @@
             if (!new RegExp(keyword, 'i').test(lines[i])) continue;
             if (excludeRe && excludeRe.test(lines[i])) continue;
             // Look for "qty kW/kWh at $rate" pattern on this line and next few lines
+            // Allow stray OCR characters (single digits, punctuation) between qty and unit
+            // e.g. "578.7840 3\nKW at $2.68601" → block becomes "578.7840 3 KW at $2.68601"
             const block = lines.slice(i, Math.min(i + 4, lines.length)).join(' ');
-            const rateM = block.match(/([\d,]+\.?\d*)\s*k([Ww]h?)\s+at\s+\$?([\d,.]+)/i);
+            const rateM = block.match(/([\d,]+\.\d{2,})\s*(?:\d\s+)?k([Ww]h?)\s+at\s+\$?([\d,.]+)/i);
             if (rateM) {
               const qty = parseFloat(rateM[1].replace(/,/g, ''));
               const rate = parseFloat(rateM[3].replace(/,/g, ''));
@@ -16565,20 +16558,27 @@
           { type: 'pair', fields: ['kWhConsumed'] },
           { type: 'pair', fields: ['ActualKW', 'ActualRKVA'] },
           // Charges — ordered per Evergy Billing Details
+          // type 'charge-line': shows qty | rate | charge | running total (uniform layout)
+          // qtyField/chargeField identify the extracted fields; rateKey looks up _rates
           { section: 'Charges' },
-          { type: 'charge', fields: ['CustomerCharge'], chargeKey: 'CustomerCharge' },
-          { type: 'charge-pair', fields: ['FacilitiesKW', 'FacilitiesCharge'], chargeKey: 'FacilitiesCharge' },
-          { type: 'charge-pair', fields: ['BilledKW', 'BilledKWCharge'], chargeKey: 'BilledKWCharge' },
-          { type: 'charge', fields: ['EnergyOnPeakCharge'], chargeKey: 'EnergyOnPeakCharge' },
-          { type: 'charge', fields: ['EnergyOffPeakCharge'], chargeKey: 'EnergyOffPeakCharge' },
-          { type: 'charge', fields: ['RkVACharge'], chargeKey: 'RkVACharge' },
-          { type: 'charge', fields: ['TaxExemptDelivery'], chargeKey: 'TaxExemptDelivery' },
-          { type: 'charge', fields: ['ECACharge'], chargeKey: 'ECACharge' },
-          { type: 'charge', fields: ['EERCharge'], chargeKey: 'EERCharge' },
-          { type: 'charge', fields: ['PTSCharge'], chargeKey: 'PTSCharge' },
-          { type: 'charge-pair', fields: ['TDCkW', 'TDCCharge'], chargeKey: 'TDCCharge' },
-          { type: 'charge', fields: ['BillOffset'], chargeKey: 'BillOffset' },
-          { type: 'charge', fields: ['FranchiseFee'], chargeKey: 'FranchiseFee' },
+          { type: 'charge-line', chargeField: 'CustomerCharge', rateKey: null },
+          {
+            type: 'charge-line',
+            chargeField: 'FacilitiesCharge',
+            qtyField: 'FacilitiesKW',
+            rateKey: 'FacilitiesCharge',
+          },
+          { type: 'charge-line', chargeField: 'BilledKWCharge', qtyField: 'BilledKW', rateKey: 'BilledKWCharge' },
+          { type: 'charge-line', chargeField: 'EnergyOnPeakCharge', rateKey: 'EnergyOnPeakCharge' },
+          { type: 'charge-line', chargeField: 'EnergyOffPeakCharge', rateKey: 'EnergyOffPeakCharge' },
+          { type: 'charge-line', chargeField: 'RkVACharge', rateKey: 'RkVACharge' },
+          { type: 'charge-line', chargeField: 'TaxExemptDelivery', rateKey: null },
+          { type: 'charge-line', chargeField: 'ECACharge', rateKey: 'ECACharge' },
+          { type: 'charge-line', chargeField: 'EERCharge', rateKey: 'EERCharge' },
+          { type: 'charge-line', chargeField: 'PTSCharge', rateKey: 'PTSCharge' },
+          { type: 'charge-line', chargeField: 'TDCCharge', qtyField: 'TDCkW', rateKey: 'TDCCharge' },
+          { type: 'charge-line', chargeField: 'BillOffset', rateKey: null },
+          { type: 'charge-line', chargeField: 'FranchiseFee', rateKey: null },
           { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
           // Extra fields (gas, etc.)
           { type: 'pair', fields: ['NaturalGasTherms', 'TotalAmountDue'] },
@@ -16586,7 +16586,9 @@
         ];
         const el = document.getElementById('extractedFields');
         // Collect all layout keys + any extra extracted fields not in layout
-        const layoutKeys = new Set(FIELD_LAYOUT.flatMap((r) => r.fields || []));
+        const layoutKeys = new Set(
+          FIELD_LAYOUT.flatMap((r) => [...(r.fields || []), r.chargeField, r.qtyField].filter(Boolean)),
+        );
         const extraKeys = Object.keys(parsed).filter((k) => !layoutKeys.has(k) && !k.startsWith('_'));
         // Build warning lookup by field name
         const warnMap = {};
@@ -16669,62 +16671,90 @@
 
         // Build layout HTML with running total on charge rows
         let runningTotal = 0;
-        // Helper: format rate info for display in the rate column
-        // Format a single rate part for display
-        function fmtRatePart(p) {
-          const isKwh = p.unit.toLowerCase().includes('h');
-          const rateDp = isKwh ? 5 : 3;
-          const qtyFmt = p.qty.toLocaleString('en-US', { maximumFractionDigits: 4 });
-          const rateFmt = p.rate.toFixed(rateDp);
-          const chgFmt =
-            p.ocrCharge != null
-              ? '$' + p.ocrCharge.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-              : '';
-          return { qtyFmt, rateFmt, chgFmt, unit: p.unit };
+
+        // Helper: build a read-only rate text box (not editable, just for display)
+        function buildRateBox(label, value) {
+          const empty = !value;
+          const style = empty ? 'opacity:.5' : '';
+          return `<div class="ef-item" style="${style}"><div class="ef-key">${label}</div><input class="ef-input" value="${value || '—'}" readonly style="color:var(--text2);font-size:11px" tabindex="-1"></div>`;
         }
 
-        // Build rate cell — single line for single charges
-        function buildRateCell(chargeKey) {
-          const ri = parsed._rates?.[chargeKey];
-          if (!ri) return '<div class="ef-rate"></div>';
-          const parts = ri.parts || [ri];
-          if (parts.length === 1) {
-            const f = fmtRatePart(parts[0]);
-            return `<div class="ef-rate">${f.qtyFmt} ${f.unit} @ $${f.rateFmt}</div>`;
-          }
-          // Multi-part: show each on its own line
-          const lines = parts
-            .map((p) => {
-              const f = fmtRatePart(p);
-              return `${f.qtyFmt} ${f.unit} @ $${f.rateFmt} = ${f.chgFmt}`;
-            })
-            .join('<br>');
-          return `<div class="ef-rate" style="flex-direction:column;align-items:flex-end;line-height:1.4">${lines}</div>`;
+        // Helper: build a charge cell with right-aligned value
+        function buildChargeCell(k) {
+          const html = buildCell(k);
+          return html.replace('class="ef-item"', 'class="ef-item right"');
         }
+
+        // Format numbers for display
+        const fmtDollar = (v) =>
+          v != null ? '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+        const fmtQty = (v, unit) =>
+          v != null ? v.toLocaleString('en-US', { maximumFractionDigits: 4 }) + ' ' + (unit || '') : '';
+        const fmtRate = (r, unit) => {
+          if (r == null) return '';
+          const isKwh = (unit || '').toLowerCase().includes('h');
+          return '$' + r.toFixed(isKwh ? 5 : 3) + '/' + (unit || '');
+        };
 
         const totalVal = _pf(parsed.TotalCurrentCharges);
         const rows = FIELD_LAYOUT.map((row) => {
           if (row.section) return `<div class="ef-section">${row.section}</div>`;
-          const fields = row.fields.filter((k) => k in parsed || warnings.some((w) => w.field === k));
-          if (!fields.length) return '';
+
+          // ── charge-line: uniform qty | rate | charge | running total ──
+          if (row.type === 'charge-line') {
+            const ri = parsed._rates?.[row.rateKey];
+            const parts = ri?.parts || [];
+            const chargeVal = _pf(parsed[row.chargeField]);
+            runningTotal += chargeVal;
+            const rtFmt = runningTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            // No rate data — simple row: charge + running total
+            if (!row.rateKey || !ri) {
+              return `<div class="ef-charge-row no-rate">${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
+            }
+
+            // Single part — one row: qty | rate | charge | running total
+            if (parts.length <= 1) {
+              const p = parts[0] || ri;
+              const qtyLabel = row.qtyField ? LABELS[row.qtyField] || row.qtyField : 'Qty';
+              const qtyHtml = row.qtyField
+                ? buildCell(row.qtyField)
+                : `<div class="ef-item"><div class="ef-key">${qtyLabel}</div><input class="ef-input" value="${fmtQty(p.qty, p.unit)}" readonly tabindex="-1"></div>`;
+              return `<div class="ef-charge-row">${qtyHtml}${buildRateBox('Rate', fmtRate(p.rate, p.unit))}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
+            }
+
+            // Multiple parts — show each part as its own row, all contribute to the same charge total
+            const label = LABELS[row.chargeField] || row.chargeField;
+            const partRows = parts
+              .map((p, idx) => {
+                const qtyLabel = row.qtyField ? LABELS[row.qtyField] || row.qtyField : 'Qty';
+                const partLabel = parts.length > 1 ? qtyLabel + ' (' + (idx + 1) + ')' : qtyLabel;
+                const qtyHtml =
+                  idx === 0 && row.qtyField
+                    ? buildCell(row.qtyField)
+                    : `<div class="ef-item"><div class="ef-key">${partLabel}</div><input class="ef-input" value="${fmtQty(p.qty, p.unit)}" readonly tabindex="-1"></div>`;
+                const chargeLabel = parts.length > 1 ? label + ' (' + (idx + 1) + ')' : label;
+                const partCharge = p.ocrCharge != null ? p.ocrCharge : p.computed;
+                const chargeHtml = `<div class="ef-item right"><div class="ef-key">${chargeLabel}</div><input class="ef-input" value="${fmtDollar(partCharge)}" readonly tabindex="-1" style="text-align:right"></div>`;
+                // Only show running total on the last part row
+                const rtHtml =
+                  idx === parts.length - 1
+                    ? `<div class="ef-running">$${rtFmt}</div>`
+                    : '<div class="ef-running"></div>';
+                return `<div class="ef-charge-row">${qtyHtml}${buildRateBox('Rate', fmtRate(p.rate, p.unit))}${chargeHtml}${rtHtml}</div>`;
+              })
+              .join('');
+            return partRows;
+          }
+
+          const fields = (row.fields || []).filter((k) => k in parsed || warnings.some((w) => w.field === k));
+          if (!fields.length && row.type !== 'total') return '';
           if (row.type === 'wide') {
             return buildCell(fields[0]);
           }
           if (row.type === 'pair') {
             if (fields.length === 1) return `<div class="ef-pair">${buildCell(fields[0])}</div>`;
             return `<div class="ef-pair">${fields.map((k) => buildCell(k)).join('')}</div>`;
-          }
-          if (row.type === 'charge') {
-            const chargeVal = _pf(parsed[row.chargeKey]);
-            runningTotal += chargeVal;
-            const rtFmt = runningTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            return `<div class="ef-charge-row single-charge">${buildCell(fields[0])}${buildRateCell(row.chargeKey)}<div class="ef-running">$${rtFmt}</div></div>`;
-          }
-          if (row.type === 'charge-pair') {
-            const chargeVal = _pf(parsed[row.chargeKey]);
-            runningTotal += chargeVal;
-            const rtFmt = runningTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            return `<div class="ef-charge-row">${fields.map((k) => buildCell(k)).join('')}${buildRateCell(row.chargeKey)}<div class="ef-running">$${rtFmt}</div></div>`;
           }
           if (row.type === 'total') {
             const rtFmt = runningTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -16737,7 +16767,7 @@
               : mismatch
                 ? 'border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.06)'
                 : '';
-            return `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:6px"><div class="ef-charge-row single-charge"><div class="ef-item" style="${itemStyle}"><div class="ef-key" style="color:${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges ?? '') !== '' ? '$' + totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px"></div><div class="ef-rate"></div><div class="ef-running ${cls}">$${rtFmt}${icon}</div></div></div>`;
+            return `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:6px"><div class="ef-charge-row no-rate"><div class="ef-item right" style="${itemStyle}"><div class="ef-key" style="color:${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges ?? '') !== '' ? '$' + totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px;text-align:right"></div><div class="ef-running ${cls}">$${rtFmt}${icon}</div></div></div>`;
           }
           return '';
         });
