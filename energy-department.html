@@ -7517,7 +7517,11 @@ function renderPDFFields(parsed, warnings){
       const num=parseFloat(String(displayVal).replace(/,/g,''));
       if(!isNaN(num)&&String(displayVal).match(/^-?[\d,.\-]+$/)){
         const isCharge=CHARGE_FIELDS.has(k);
-        const formatted=Math.abs(num).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+        // Preserve original decimal places — don't truncate kW/kWh values (4dp) to 2dp
+        const origDecimals=(String(displayVal).split('.')[1]||'').length;
+        const minDp=isCharge?2:Math.min(origDecimals,2);
+        const maxDp=Math.max(origDecimals,2);
+        const formatted=Math.abs(num).toLocaleString('en-US',{minimumFractionDigits:minDp,maximumFractionDigits:maxDp});
         displayVal=(num<0?'-':'')+(isCharge?'$':'')+formatted;
       }
     }
