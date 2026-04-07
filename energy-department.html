@@ -6163,10 +6163,11 @@ function _extractEvergy(t,acctOverride,addrOverride){
     // Try Subtotal
     const m2=t.match(/Subtotal[\s\S]*?\$\s*([\d,]+\.\d{2})/i);
     if(m2) return m2[1].replace(/,/g,'');
-    // Do NOT fall back to summing charges here — charges may be incomplete at this point
-    // (e.g. CustomerCharge not yet recovered by structural fallback). Let TotalCurrentCharges
-    // stay null; _postExtractionVerify will compute it from the fully-recovered charges.
-    return null;
+    // Fallback: sum all extracted charges. This may be incomplete (e.g. CustomerCharge not yet
+    // recovered by structural fallback), so _postExtractionVerify will recompute if needed.
+    const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
+    const sum=pf(custChg)+pf(facChg)+pf(demChg)+pf(onPkChg)+pf(tieredChg)+pf(offPkChg)+pf(rkvaChg)+pf(ecaChg)+pf(eerChg)+pf(ptsChg)+pf(tdcChg)+pf(taxExempt)+pf(billOffset)+pf(franchise);
+    return sum>0 ? sum.toFixed(2) : null;
   })();
 
   const result = {
@@ -6997,8 +6998,10 @@ function _postExtractionVerify(bills, utilityName, rawText){
 
     }
 
-    // 3. If TotalCurrentCharges is null, compute from fully-recovered charges
-    // This handles cases where "Current Charges"/"Subtotal" was in a different section
+    // 3. Recompute TotalCurrentCharges from fully-recovered charges when needed
+    // The initial totalDue may have been a fallback sum computed BEFORE structural recovery
+    // filled in missing charges (e.g. CustomerCharge). If the current charge sum is higher
+    // than the stored total, the total was incomplete — update it.
     if(utilityName==='Evergy'){
       const compSum=pf(b.CustomerCharge)+pf(b.FacilitiesCharge)+pf(b.BilledKWCharge)
         +pf(b.EnergyOnPeakCharge)+pf(b.EnergyOffPeakCharge)+pf(b.ECACharge)
@@ -7006,6 +7009,11 @@ function _postExtractionVerify(bills, utilityName, rawText){
         +pf(b.RkVACharge)+pf(b.TaxExemptDelivery)+pf(b.BillOffset)+pf(b.FranchiseFee);
       const total=pf(b.TotalCurrentCharges);
       if(!total&&compSum>0){
+        b.TotalCurrentCharges=compSum.toFixed(2);
+        b._totalFromChargeSum=true;
+      } else if(total>0&&compSum>total&&(compSum-total)>0.50){
+        // Charge sum is higher than extracted total — total was likely a premature sum
+        // missing charges that were recovered later. Update to the full sum.
         b.TotalCurrentCharges=compSum.toFixed(2);
         b._totalFromChargeSum=true;
       }
