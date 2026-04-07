@@ -16423,10 +16423,22 @@
             const lbl =
               bill.BillingPeriodStart && bill.BillingPeriodEnd
                 ? (() => {
-                    const ym = normMonth(bill.BillingPeriodStart, bill.BillingPeriodEnd);
-                    if (!ym) return 'Period ' + (i + 1);
-                    const [y, m] = ym.split('-');
-                    return m + '/' + y;
+                    try {
+                      const s = new Date(bill.BillingPeriodStart);
+                      const e = new Date(bill.BillingPeriodEnd);
+                      if (isNaN(s) || isNaN(e)) return 'Period ' + (i + 1);
+                      const counts = {};
+                      let cur = new Date(s);
+                      while (cur <= e) {
+                        const key = String(cur.getMonth() + 1).padStart(2, '0') + '/' + cur.getFullYear();
+                        counts[key] = (counts[key] || 0) + 1;
+                        cur.setDate(cur.getDate() + 1);
+                      }
+                      const best = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+                      return best.length ? best[0][0] : 'Period ' + (i + 1);
+                    } catch (ex) {
+                      return 'Period ' + (i + 1);
+                    }
                   })()
                 : 'Period ' + (i + 1);
             const active = i === idx;
