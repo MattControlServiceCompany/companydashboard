@@ -6705,42 +6705,66 @@ function _postExtractionVerify(bills, utilityName, rawText){
         }
       }
 
-      // 3. If charges don't sum to total, flag as likely missing charge line (do NOT override total)
-      if(utilityName==='Evergy'){
-        const compSum=pf(b.CustomerCharge)+pf(b.FacilitiesCharge)+pf(b.BilledKWCharge)
-          +pf(b.EnergyOnPeakCharge)+pf(b.EnergyOffPeakCharge)+pf(b.ECACharge)
-          +pf(b.EERCharge)+pf(b.PTSCharge)+pf(b.TDCCharge)
-          +pf(b.RkVACharge)+pf(b.TaxExemptDelivery)+pf(b.BillOffset)+pf(b.FranchiseFee);
-        const total=pf(b.TotalCurrentCharges);
-        if(compSum>0&&total>0){
-          const diff=Math.abs(compSum-total);
-          if(diff>1){
-            b['_sum_mismatch']={compSum,total,diff,
-              reason:'Charges sum to $'+compSum.toFixed(2)+' but total is $'+total.toFixed(2)+' — likely a charge was missed during extraction'};
+    }
 
-            // ── AUTO-CORRECTION via rate × quantity cross-validation ──
-            // If a charge's OCR'd value ≠ rate×qty AND the difference ≈ the total mismatch,
-            // replacing that charge makes the total balance → high confidence correction.
-            if(b._rates){
-              const totalDiff=compSum-total; // positive = sum too high, negative = sum too low
-              const corrections=[];
-              for(const [field,ri] of Object.entries(b._rates)){
-                const ocrVal=pf(b[field]);
-                if(!ocrVal||!ri.computed) continue;
-                const chargeDiff=ocrVal-ri.computed; // positive = OCR too high
-                // Does correcting this single charge resolve the total mismatch?
-                if(Math.abs(chargeDiff)>0.02 && Math.abs(totalDiff-chargeDiff)<0.50){
-                  corrections.push({field,ocrVal,computed:ri.computed,chargeDiff,
-                    residual:Math.abs(totalDiff-chargeDiff),rate:ri.rate,qty:ri.qty,unit:ri.unit});
-                }
+    // 3. If charges don't sum to total, flag as likely missing charge line (do NOT override total)
+    // This runs for every bill regardless of historical data — only needs the bill's own values
+    if(utilityName==='Evergy'){
+      const compSum=pf(b.CustomerCharge)+pf(b.FacilitiesCharge)+pf(b.BilledKWCharge)
+        +pf(b.EnergyOnPeakCharge)+pf(b.EnergyOffPeakCharge)+pf(b.ECACharge)
+        +pf(b.EERCharge)+pf(b.PTSCharge)+pf(b.TDCCharge)
+        +pf(b.RkVACharge)+pf(b.TaxExemptDelivery)+pf(b.BillOffset)+pf(b.FranchiseFee);
+      const total=pf(b.TotalCurrentCharges);
+      if(compSum>0&&total>0){
+        const diff=Math.abs(compSum-total);
+        if(diff>1){
+          b['_sum_mismatch']={compSum,total,diff,
+            reason:'Charges sum to $'+compSum.toFixed(2)+' but total is $'+total.toFixed(2)+' — likely a charge was missed during extraction'};
+
+          // ── AUTO-CORRECTION via rate × quantity cross-validation ──
+          // If a charge's OCR'd value ≠ rate×qty AND the difference ≈ the total mismatch,
+          // replacing that charge makes the total balance → high confidence correction.
+          if(b._rates){
+            const totalDiff=compSum-total; // positive = sum too high, negative = sum too low
+            const corrections=[];
+            for(const [field,ri] of Object.entries(b._rates)){
+              const ocrVal=pf(b[field]);
+              if(!ocrVal||!ri.computed) continue;
+              // Skip garbage rate extractions (chart numbers picked up as rates)
+              if(ri.computed>1e6||ri.rate>10000) continue;
+              const chargeDiff=ocrVal-ri.computed; // positive = OCR too high
+              // Does correcting this single charge resolve the total mismatch?
+              if(Math.abs(chargeDiff)>0.02 && Math.abs(totalDiff-chargeDiff)<0.50){
+                corrections.push({field,ocrVal,computed:ri.computed,chargeDiff,
+                  residual:Math.abs(totalDiff-chargeDiff),rate:ri.rate,qty:ri.qty,unit:ri.unit});
               }
-              // Try single corrections first (most common case)
-              if(corrections.length===1){
-                const c=corrections[0];
-                b['_auto_corrected_'+c.field]={original:b[c.field],corrected:c.computed.toFixed(2),
-                  rate:c.rate,qty:c.qty,unit:c.unit,reason:c.qty.toFixed(4)+' '+c.unit+' × $'+c.rate.toFixed(5)+' = $'+c.computed.toFixed(2)};
-                b[c.field]=c.computed.toFixed(2);
-                // Recompute sum and clear mismatch if resolved
+            }
+            // Try single corrections first (most common case)
+            if(corrections.length===1){
+              const c=corrections[0];
+              b['_auto_corrected_'+c.field]={original:b[c.field],corrected:c.computed.toFixed(2),
+                rate:c.rate,qty:c.qty,unit:c.unit,reason:c.qty.toFixed(4)+' '+c.unit+' × $'+c.rate.toFixed(5)+' = $'+c.computed.toFixed(2)};
+              b[c.field]=c.computed.toFixed(2);
+              // Recompute sum and clear mismatch if resolved
+              const newSum=pf(b.CustomerCharge)+pf(b.FacilitiesCharge)+pf(b.BilledKWCharge)
+                +pf(b.EnergyOnPeakCharge)+pf(b.EnergyOffPeakCharge)+pf(b.ECACharge)
+                +pf(b.EERCharge)+pf(b.PTSCharge)+pf(b.TDCCharge)
+                +pf(b.RkVACharge)+pf(b.TaxExemptDelivery)+pf(b.BillOffset)+pf(b.FranchiseFee);
+              const newDiff=Math.abs(newSum-total);
+              if(newDiff<=1){
+                delete b['_sum_mismatch'];
+              } else {
+                b['_sum_mismatch']={compSum:newSum,total,diff:newDiff,
+                  reason:'Charges sum to $'+newSum.toFixed(2)+' after correction, but total is $'+total.toFixed(2)};
+              }
+            } else if(corrections.length>1){
+              // Multiple charges off — try each, pick the one with smallest residual
+              corrections.sort((a,b2)=>a.residual-b2.residual);
+              const best=corrections[0];
+              if(best.residual<0.50){
+                b['_auto_corrected_'+best.field]={original:b[best.field],corrected:best.computed.toFixed(2),
+                  rate:best.rate,qty:best.qty,unit:best.unit,reason:best.qty.toFixed(4)+' '+best.unit+' × $'+best.rate.toFixed(5)+' = $'+best.computed.toFixed(2)};
+                b[best.field]=best.computed.toFixed(2);
                 const newSum=pf(b.CustomerCharge)+pf(b.FacilitiesCharge)+pf(b.BilledKWCharge)
                   +pf(b.EnergyOnPeakCharge)+pf(b.EnergyOffPeakCharge)+pf(b.ECACharge)
                   +pf(b.EERCharge)+pf(b.PTSCharge)+pf(b.TDCCharge)
@@ -6751,26 +6775,6 @@ function _postExtractionVerify(bills, utilityName, rawText){
                 } else {
                   b['_sum_mismatch']={compSum:newSum,total,diff:newDiff,
                     reason:'Charges sum to $'+newSum.toFixed(2)+' after correction, but total is $'+total.toFixed(2)};
-                }
-              } else if(corrections.length>1){
-                // Multiple charges off — try each, pick the one with smallest residual
-                corrections.sort((a,b2)=>a.residual-b2.residual);
-                const best=corrections[0];
-                if(best.residual<0.50){
-                  b['_auto_corrected_'+best.field]={original:b[best.field],corrected:best.computed.toFixed(2),
-                    rate:best.rate,qty:best.qty,unit:best.unit,reason:best.qty.toFixed(4)+' '+best.unit+' × $'+best.rate.toFixed(5)+' = $'+best.computed.toFixed(2)};
-                  b[best.field]=best.computed.toFixed(2);
-                  const newSum=pf(b.CustomerCharge)+pf(b.FacilitiesCharge)+pf(b.BilledKWCharge)
-                    +pf(b.EnergyOnPeakCharge)+pf(b.EnergyOffPeakCharge)+pf(b.ECACharge)
-                    +pf(b.EERCharge)+pf(b.PTSCharge)+pf(b.TDCCharge)
-                    +pf(b.RkVACharge)+pf(b.TaxExemptDelivery)+pf(b.BillOffset)+pf(b.FranchiseFee);
-                  const newDiff=Math.abs(newSum-total);
-                  if(newDiff<=1){
-                    delete b['_sum_mismatch'];
-                  } else {
-                    b['_sum_mismatch']={compSum:newSum,total,diff:newDiff,
-                      reason:'Charges sum to $'+newSum.toFixed(2)+' after correction, but total is $'+total.toFixed(2)};
-                  }
                 }
               }
             }
