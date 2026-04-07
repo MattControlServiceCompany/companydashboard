@@ -5801,7 +5801,8 @@ function _extractEvergy(t,acctOverride,addrOverride){
   // ── Meter read table (supports multi-row: meter changes and solar net metering) ──
   // Format: StartDate EndDate Days EndRead(-) StartRead(=) Diff (x)Mult (=)kWhUsed KWUsed RKVAUsed
   // Groups: [1]StartDate [2]EndDate [3]Days [4]EndRead [5]StartRead [6]Difference [7]Mult [8]kWhUsed [9]KWUsed [10]RKVAUsed
-  const _meterRe=/(\d{2}\/\d{2})\s+(\d{2}\/\d{2})\s+(\d+)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+([\d,.]+)\s+([\d,]+\.?\d*)\s+([\d.]+)\s+([\d.]+)/g;
+  // Allow 1 or 2 digit month/day (OCR sometimes drops leading zeros, e.g. "1/30" instead of "01/30")
+  const _meterRe=/(\d{1,2}\/\d{1,2})\s+(\d{1,2}\/\d{1,2})\s+(\d+)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+([\d,.]+)\s+([\d,]+\.?\d*)\s+([\d.]+)\s+([\d.]+)/g;
   const _meterRows=[];
   let _mm;
   while((_mm=_meterRe.exec(t))!==null) _meterRows.push(_mm);
@@ -6148,6 +6149,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
     MeterReadEnd:_meterCombined?.endDate||meterRow?.[2]||_mlMeter?.endDate||null,
     StartRead:_meterCombined?.startRead||meterRow?._fixedStartRead||meterRow?.[5]?.replace(/,/g,'')||_mlMeter?.startRead||null,
     EndRead:_meterCombined?.endRead||meterRow?._fixedEndRead||meterRow?.[4]?.replace(/,/g,'')||_mlMeter?.endRead||null,
+    ReadDifference:meterRow?.[6]?.replace(/,/g,'')||null,
     MeterMultiplier:_meterCombined?.multiplier||meterRow?.[7]?.replace(/,/g,'')||_mlMeter?.multiplier||null,
     kWhConsumed:adjKwh,
     ActualKW:_meterCombined?.kw||meterRow?.[9]||_mlMeter?.kwUsed||null,
@@ -6347,6 +6349,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
   }
   if(result.StartRead) result.StartRead=_pad4(result.StartRead);
   if(result.EndRead) result.EndRead=_pad4(result.EndRead);
+  if(result.ReadDifference) result.ReadDifference=_pad4(result.ReadDifference);
   if(result.MeterMultiplier) result.MeterMultiplier=_pad4(result.MeterMultiplier);
   if(result.kWhConsumed) result.kWhConsumed=_pad4(result.kWhConsumed);
 
@@ -7661,7 +7664,7 @@ function renderPDFFields(parsed, warnings){
     ServiceAddress:'Service Address',RateSchedule:'Rate Schedule',
     BillingPeriodStart:'Billing Period Start',BillingPeriodEnd:'Billing Period End',
     NumberOfDays:'Number of Days',MeterReadStart:'Meter Read Start',MeterReadEnd:'Meter Read End',
-    StartRead:'Start Read',EndRead:'End Read',MeterMultiplier:'Meter Multiplier',MeterNumber:'Meter Number',
+    StartRead:'Start Read',EndRead:'End Read',ReadDifference:'Read Difference',MeterMultiplier:'Meter Multiplier',MeterNumber:'Meter Number',
     kWhConsumed:'kWh Consumed',ActualKW:'Actual kW',ActualRKVA:'Actual RKVA',
     CustomerCharge:'Customer Charge',
     FacilitiesKW:'Facilities kW',FacilitiesCharge:'Facilities Charge',
@@ -7699,7 +7702,8 @@ function renderPDFFields(parsed, warnings){
     {type:'pair',fields:['BillingPeriodStart','BillingPeriodEnd']},
     {type:'pair',fields:['MeterReadStart','MeterReadEnd']},
     {type:'pair',fields:['StartRead','EndRead']},
-    {type:'pair',fields:['MeterMultiplier','kWhConsumed']},
+    {type:'pair',fields:['ReadDifference','MeterMultiplier']},
+    {type:'pair',fields:['kWhConsumed']},
     {type:'pair',fields:['ActualKW','ActualRKVA']},
     // Charges — ordered per Evergy Billing Details
     {section:'Charges'},
