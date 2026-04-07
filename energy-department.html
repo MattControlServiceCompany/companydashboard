@@ -5713,6 +5713,33 @@ function _extractEvergy(t,acctOverride,addrOverride){
     }
     return found?total.toFixed(2):null;
   };
+  // ── Rate extraction: captures rate and quantity from charge lines for cross-validation ──
+  // Evergy charge lines show: "[keyword] [qty] kW at $[rate]/kW $[charge]"
+  // Returns {qty, rate, unit, computed} or null
+  const xRate=(keyword,excludeRe)=>{
+    const lines=t.split('\n');
+    const results=[];
+    for(let i=0;i<lines.length;i++){
+      if(!new RegExp(keyword,'i').test(lines[i])) continue;
+      if(excludeRe&&excludeRe.test(lines[i])) continue;
+      // Look for "qty kW/kWh at $rate" pattern on this line and next few lines
+      const block=lines.slice(i,Math.min(i+4,lines.length)).join(' ');
+      const rateM=block.match(/([\d,]+\.?\d*)\s*k([Ww]h?)\s+at\s+\$?([\d,.]+)/i);
+      if(rateM){
+        const qty=parseFloat(rateM[1].replace(/,/g,''));
+        const rate=parseFloat(rateM[3].replace(/,/g,''));
+        const unit='k'+rateM[2];
+        if(!isNaN(qty)&&!isNaN(rate)&&rate>0&&qty>0){
+          results.push({qty,rate,unit,computed:Math.round(qty*rate*100)/100});
+        }
+      }
+    }
+    if(!results.length) return null;
+    // Sum all matches (handles split demand charges across changeover months)
+    return {qty:results.reduce((s,r)=>s+r.qty,0), rate:results[0].rate,
+      unit:results[0].unit, computed:results.reduce((s,r)=>s+r.computed,0),
+      parts:results.length>1?results:undefined};
+  };
   // ─────────────────────────────────────────────────────────────────────────────
 
   // ── Billing period (OCR-tolerant) ──
@@ -5977,6 +6004,34 @@ function _extractEvergy(t,acctOverride,addrOverride){
     TotalCurrentCharges:totalDue,
     MeterNumber:null,
   };
+
+  // ── Rate info for cross-validation (rate × qty vs OCR'd charge) ──
+  const _rates={};
+  const _rFac=xRate('Fac\\S*\\s+'+C);
+  const _rDem=xRate('Demand\\s+'+C);
+  const _rOnPk=xRate('Energy\\s+'+C+'\\s+On\\s+P[kK]');
+  const _rOffPk=xRate('Energy\\s+'+C+'\\s+Off\\s+P[kK]');
+  const _rTiered=xRate('Energy\\s+'+C,/On\s+P[kK]|Off\s+P[kK]/i);
+  const _rEca=xRate('ECA\\s+'+C);
+  const _rEer=xRate('EER\\s+'+C);
+  const _rPts=xRate('PTS\\s+'+C);
+  const _rTdc=xRate('TDC\\s+'+C);
+  const _rRkva=xRate('R[kK]VA\\s+'+C);
+  if(_rFac) _rates.FacilitiesCharge=_rFac;
+  if(_rDem) _rates.BilledKWCharge=_rDem;
+  if(_rOnPk||_rTiered){
+    // Combine on-peak and tiered (changeover bills have both)
+    const parts=[_rOnPk,_rTiered].filter(Boolean);
+    _rates.EnergyOnPeakCharge={qty:parts.reduce((s,r)=>s+r.qty,0),rate:parts[0].rate,
+      unit:parts[0].unit,computed:parts.reduce((s,r)=>s+r.computed,0)};
+  }
+  if(_rOffPk) _rates.EnergyOffPeakCharge=_rOffPk;
+  if(_rEca) _rates.ECACharge=_rEca;
+  if(_rEer) _rates.EERCharge=_rEer;
+  if(_rPts) _rates.PTSCharge=_rPts;
+  if(_rTdc) _rates.TDCCharge=_rTdc;
+  if(_rRkva) _rates.RkVACharge=_rRkva;
+  if(Object.keys(_rates).length) result._rates=_rates;
 
   // Bill Offset = negative of Tax Exempt Delivery (Evergy business rule)
   // Always derive from TaxExempt — OCR frequently garbles the BillOffset line and its digits
@@ -6662,6 +6717,63 @@ function _postExtractionVerify(bills, utilityName, rawText){
           if(diff>1){
             b['_sum_mismatch']={compSum,total,diff,
               reason:'Charges sum to $'+compSum.toFixed(2)+' but total is $'+total.toFixed(2)+' — likely a charge was missed during extraction'};
+
+            // ── AUTO-CORRECTION via rate × quantity cross-validation ──
+            // If a charge's OCR'd value ≠ rate×qty AND the difference ≈ the total mismatch,
+            // replacing that charge makes the total balance → high confidence correction.
+            if(b._rates){
+              const totalDiff=compSum-total; // positive = sum too high, negative = sum too low
+              const corrections=[];
+              for(const [field,ri] of Object.entries(b._rates)){
+                const ocrVal=pf(b[field]);
+                if(!ocrVal||!ri.computed) continue;
+                const chargeDiff=ocrVal-ri.computed; // positive = OCR too high
+                // Does correcting this single charge resolve the total mismatch?
+                if(Math.abs(chargeDiff)>0.02 && Math.abs(totalDiff-chargeDiff)<0.50){
+                  corrections.push({field,ocrVal,computed:ri.computed,chargeDiff,
+                    residual:Math.abs(totalDiff-chargeDiff),rate:ri.rate,qty:ri.qty,unit:ri.unit});
+                }
+              }
+              // Try single corrections first (most common case)
+              if(corrections.length===1){
+                const c=corrections[0];
+                b['_auto_corrected_'+c.field]={original:b[c.field],corrected:c.computed.toFixed(2),
+                  rate:c.rate,qty:c.qty,unit:c.unit,reason:c.qty.toFixed(4)+' '+c.unit+' × $'+c.rate.toFixed(5)+' = $'+c.computed.toFixed(2)};
+                b[c.field]=c.computed.toFixed(2);
+                // Recompute sum and clear mismatch if resolved
+                const newSum=pf(b.CustomerCharge)+pf(b.FacilitiesCharge)+pf(b.BilledKWCharge)
+                  +pf(b.EnergyOnPeakCharge)+pf(b.EnergyOffPeakCharge)+pf(b.ECACharge)
+                  +pf(b.EERCharge)+pf(b.PTSCharge)+pf(b.TDCCharge)
+                  +pf(b.RkVACharge)+pf(b.TaxExemptDelivery)+pf(b.BillOffset)+pf(b.FranchiseFee);
+                const newDiff=Math.abs(newSum-total);
+                if(newDiff<=1){
+                  delete b['_sum_mismatch'];
+                } else {
+                  b['_sum_mismatch']={compSum:newSum,total,diff:newDiff,
+                    reason:'Charges sum to $'+newSum.toFixed(2)+' after correction, but total is $'+total.toFixed(2)};
+                }
+              } else if(corrections.length>1){
+                // Multiple charges off — try each, pick the one with smallest residual
+                corrections.sort((a,b2)=>a.residual-b2.residual);
+                const best=corrections[0];
+                if(best.residual<0.50){
+                  b['_auto_corrected_'+best.field]={original:b[best.field],corrected:best.computed.toFixed(2),
+                    rate:best.rate,qty:best.qty,unit:best.unit,reason:best.qty.toFixed(4)+' '+best.unit+' × $'+best.rate.toFixed(5)+' = $'+best.computed.toFixed(2)};
+                  b[best.field]=best.computed.toFixed(2);
+                  const newSum=pf(b.CustomerCharge)+pf(b.FacilitiesCharge)+pf(b.BilledKWCharge)
+                    +pf(b.EnergyOnPeakCharge)+pf(b.EnergyOffPeakCharge)+pf(b.ECACharge)
+                    +pf(b.EERCharge)+pf(b.PTSCharge)+pf(b.TDCCharge)
+                    +pf(b.RkVACharge)+pf(b.TaxExemptDelivery)+pf(b.BillOffset)+pf(b.FranchiseFee);
+                  const newDiff=Math.abs(newSum-total);
+                  if(newDiff<=1){
+                    delete b['_sum_mismatch'];
+                  } else {
+                    b['_sum_mismatch']={compSum:newSum,total,diff:newDiff,
+                      reason:'Charges sum to $'+newSum.toFixed(2)+' after correction, but total is $'+total.toFixed(2)};
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -6937,9 +7049,12 @@ async function extractPDFText(ab, statusCb){
         {scale:3.5, psm:null, label:'3.5x high-res'},
       ];
 
+      // Store all OCR pass texts for consensus re-extraction on mismatched values
+      const allPassTexts={};
       for(let idx=0;idx<ocrNeeded.length;idx++){
         const pgNum=ocrNeeded[idx];
         let bestText='', bestScore=0;
+        allPassTexts[pgNum]=[];
 
         for(let pass=0;pass<OCR_PASSES.length;pass++){
           const cfg=OCR_PASSES[pass];
@@ -6954,6 +7069,7 @@ async function extractPDFText(ab, statusCb){
             const params=cfg.psm ? {tessedit_pageseg_mode:cfg.psm} : {};
             const {data:{text}}=await worker.recognize(canvas, params);
             const score=scorePage(text);
+            allPassTexts[pgNum].push({scale:cfg.scale,label:cfg.label,text,score});
             if(score>bestScore||(score===bestScore&&text.length>bestText.length)){
               bestText=text; bestScore=score;
             }
@@ -6966,6 +7082,8 @@ async function extractPDFText(ab, statusCb){
         pageTexts[pgNum-1]=bestText;
       }
       await worker.terminate();
+      // Save all pass texts for consensus re-extraction
+      window._pdfOcrPasses=allPassTexts;
     }
 
     const fullText=pageTexts.join('\n');
@@ -7112,6 +7230,69 @@ async function processPDF(file){
           let finalBills=validBills.length?validBills:(bills.length?bills:[]);
           statusMsg('Verifying extraction against historical data...');
           finalBills = _postExtractionVerify(finalBills, rule.name, text);
+
+          // ── MULTI-PASS OCR CONSENSUS: re-extract from alternate passes for mismatched values ──
+          const passTexts=window._pdfOcrPasses||{};
+          const hasAltPasses=Object.values(passTexts).some(p=>p.length>1);
+          if(hasAltPasses && rule.name==='Evergy'){
+            const billsWithMismatch=finalBills.filter(b=>b._sum_mismatch);
+            if(billsWithMismatch.length>0){
+              statusMsg('Trying alternate OCR passes for '+billsWithMismatch.length+' mismatched bill(s)...');
+              // Build alternate full texts from non-best passes
+              const altTexts=[];
+              for(const passes of Object.values(passTexts)){
+                for(const p of passes){
+                  // Collect all unique pass texts (they may differ from the best)
+                  if(!altTexts.includes(p.text)&&p.text!==text) altTexts.push(p.text);
+                }
+              }
+              for(const b of billsWithMismatch){
+                if(!b._sum_mismatch) continue; // may have been resolved by rate correction
+                const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
+                const CHARGE_CHECK=['CustomerCharge','FacilitiesCharge','BilledKWCharge',
+                  'EnergyOnPeakCharge','EnergyOffPeakCharge','ECACharge','EERCharge',
+                  'PTSCharge','TDCCharge','RkVACharge','TaxExemptDelivery','BillOffset','FranchiseFee'];
+                const total=pf(b.TotalCurrentCharges);
+                const currentSum=CHARGE_CHECK.reduce((s,f)=>s+pf(b[f]),0);
+                const currentDiff=currentSum-total;
+                // Try re-extracting from each alternate OCR text
+                for(const altText of altTexts){
+                  try{
+                    const altBills=rule.extract(altText);
+                    if(!altBills||!altBills.length) continue;
+                    // Find the alt bill matching this bill's period
+                    const altBill=altBills.find(ab=>ab.BillingPeriodStart===b.BillingPeriodStart&&ab.BillingPeriodEnd===b.BillingPeriodEnd)||altBills[0];
+                    // Check each charge field: if alt has a different value that reduces the mismatch
+                    for(const field of CHARGE_CHECK){
+                      const altVal=pf(altBill[field]);
+                      const curVal=pf(b[field]);
+                      if(Math.abs(altVal-curVal)<0.01) continue; // same value
+                      // Would swapping this field reduce the total mismatch?
+                      const newSum=currentSum-curVal+altVal;
+                      const newDiff=Math.abs(newSum-total);
+                      if(newDiff<Math.abs(currentDiff)&&newDiff<=1.00){
+                        b['_ocr_consensus_'+field]={original:b[field],consensus:altVal.toFixed(2),
+                          reason:'Alternate OCR pass produced a value that resolves the sum mismatch'};
+                        b[field]=altVal.toFixed(2);
+                        // Recompute and possibly clear mismatch
+                        const reSum=CHARGE_CHECK.reduce((s,f)=>s+pf(b[f]),0);
+                        const reDiff=Math.abs(reSum-total);
+                        if(reDiff<=1){
+                          delete b._sum_mismatch;
+                        } else {
+                          b._sum_mismatch={compSum:reSum,total,diff:reDiff,
+                            reason:'Charges sum to $'+reSum.toFixed(2)+' after OCR consensus, but total is $'+total.toFixed(2)};
+                        }
+                        break; // resolved this field, check if mismatch is gone
+                      }
+                    }
+                    if(!b._sum_mismatch) break; // mismatch resolved, stop trying alt texts
+                  }catch(e){/* alt extraction failed, skip */}
+                }
+              }
+            }
+          }
+
           const analysisResults=analyzeBillExtraction(finalBills, rule.name);
           window._pdfBillWarnings=analysisResults;
 
@@ -7312,14 +7493,20 @@ function renderPDFFields(parsed, warnings){
     const fw=warnMap[k]||[];
     const magFlag=parsed['_magnitude_flag_'+k];
     const likelyMissing=parsed['_likely_missing_'+k];
+    const autoCorrect=parsed['_auto_corrected_'+k];
+    const ocrConsensus=parsed['_ocr_consensus_'+k];
     const isEmpty=v===null||v===undefined||v==='';
     let borderStyle='';
-    if(fw.length) borderStyle='border-left:3px solid '+wColor[fw[0].level]+';padding-left:8px';
+    if(autoCorrect||ocrConsensus) borderStyle='border-left:3px solid #22c55e;padding-left:8px';
+    else if(fw.length) borderStyle='border-left:3px solid '+wColor[fw[0].level]+';padding-left:8px';
     else if(magFlag) borderStyle='border-left:3px solid #fb923c;padding-left:8px';
     else if(isEmpty) borderStyle='border-left:3px solid var(--border2);padding-left:8px;opacity:.7';
     const warnHtml=fw.map(w=>`<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:${wBg[w.level]};border:1px solid ${wBorder[w.level]};color:${wColor[w.level]};line-height:1.4">${wIcon[w.level]} ${w.message}</div>`).join('');
     const magHtml=magFlag?'<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.25);color:#fb923c;line-height:1.4">⚠️ Possible OCR error: value is '+magFlag.ratio.toFixed(1)+'x the historical average ('+magFlag.mean.toLocaleString(undefined,{maximumFractionDigits:2})+'). Verify against source bill.</div>':'';
     const likelyHtml=likelyMissing&&isEmpty?'<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.25);color:#a78bfa;line-height:1.4">🔍 Historical data shows this field is present on 80%+ of prior bills — likely an OCR miss</div>':'';
+    // Auto-correction indicator: green border, shows original value and math, with revert button
+    const correctHtml=autoCorrect?`<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);color:#22c55e;line-height:1.4">✓ Corrected from $${parseFloat(autoCorrect.original).toFixed(2)} → $${parseFloat(autoCorrect.corrected).toFixed(2)}<br><span style="opacity:.8">${autoCorrect.reason}</span> <a href="#" onclick="event.preventDefault();this.closest('.ef-item').querySelector('.ef-input').value='$${parseFloat(autoCorrect.original).toFixed(2)}';this.closest('.ef-item').querySelector('.ef-input').dispatchEvent(new Event('change'));this.closest('div').remove()" style="color:#22c55e;text-decoration:underline;margin-left:6px">↩ Revert</a></div>`:'';
+    const consensusHtml=ocrConsensus&&!autoCorrect?`<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);color:#22c55e;line-height:1.4">✓ Corrected from $${parseFloat(ocrConsensus.original).toFixed(2)} → $${parseFloat(ocrConsensus.consensus).toFixed(2)}<br><span style="opacity:.8">Alternate OCR pass resolved sum mismatch</span> <a href="#" onclick="event.preventDefault();this.closest('.ef-item').querySelector('.ef-input').value='$${parseFloat(ocrConsensus.original).toFixed(2)}';this.closest('.ef-item').querySelector('.ef-input').dispatchEvent(new Event('change'));this.closest('div').remove()" style="color:#22c55e;text-decoration:underline;margin-left:6px">↩ Revert</a></div>`:'';
     let displayVal=Array.isArray(v)?v.join(', '):(v??'');
     if(ID_FIELDS.has(k)){displayVal=String(displayVal);}
     else if(typeof displayVal==='string'&&displayVal!==''){
@@ -7332,7 +7519,7 @@ function renderPDFFields(parsed, warnings){
     }
     const keyStyle=isEmpty&&!fw.length?'color:var(--text3)':'';
     const inputStyle=isEmpty?'border-color:var(--border2);color:var(--text3)':'';
-    return `<div class="ef-item" style="${borderStyle}"><div class="ef-key" style="${keyStyle}">${LABELS[k]||k}</div><input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty?'—':''}" style="${inputStyle}">${warnHtml}${magHtml}${likelyHtml}</div>`;
+    return `<div class="ef-item" style="${borderStyle}"><div class="ef-key" style="${keyStyle}">${LABELS[k]||k}</div><input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty?'—':''}" style="${inputStyle}">${correctHtml}${consensusHtml}${warnHtml}${magHtml}${likelyHtml}</div>`;
   }
 
   // Build layout HTML with running total on charge rows
@@ -7382,18 +7569,36 @@ function renderPDFFields(parsed, warnings){
   const fieldHtml=rows.filter(Boolean).join('');
   const missingHtml='';
 
-  // Show sum mismatch warning if present
+  // Show sum mismatch warning if present (red, not amber)
   const sumMismatch = parsed['_sum_mismatch'];
-  const sumMismatchHtml = sumMismatch ? '<div style="padding:8px 12px;margin:6px 0;border-radius:6px;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.25);font-size:12px;color:#fb923c;line-height:1.5">🔍 <strong>Charge sum mismatch:</strong> '+sumMismatch.reason+' (diff $'+sumMismatch.diff.toFixed(2)+'). The total on the bill is likely correct — check if a charge line was missed during extraction.</div>' : '';
+  const sumMismatchHtml = sumMismatch ? '<div style="padding:8px 12px;margin:6px 0;border-radius:6px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.25);font-size:12px;color:#ef4444;line-height:1.5">⛔ <strong>Charge sum mismatch:</strong> '+sumMismatch.reason+' (diff $'+sumMismatch.diff.toFixed(2)+'). The total on the bill is likely correct — check if a charge line was missed during extraction.</div>' : '';
+
+  // Show auto-correction banner if any fields were corrected (rate×qty or OCR consensus)
+  const correctedFields=Object.keys(parsed).filter(k=>k.startsWith('_auto_corrected_')).map(k=>({field:k.replace('_auto_corrected_',''),info:parsed[k],type:'rate'}));
+  const consensusFields=Object.keys(parsed).filter(k=>k.startsWith('_ocr_consensus_')).map(k=>({field:k.replace('_ocr_consensus_',''),info:parsed[k],type:'consensus'}));
+  const allCorrected=[...correctedFields,...consensusFields];
+  let correctionHtml='';
+  if(allCorrected.length){
+    const parts=allCorrected.map(c=>{
+      const label=LABELS[c.field]||c.field;
+      const origVal=parseFloat(c.info.original).toFixed(2);
+      const newVal=parseFloat(c.type==='rate'?c.info.corrected:c.info.consensus).toFixed(2);
+      const method=c.type==='rate'?c.info.reason:'alternate OCR pass';
+      return ' <strong>'+label+'</strong> $'+origVal+' → $'+newVal+' ('+method+')';
+    });
+    correctionHtml='<div style="padding:8px 12px;margin:6px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.25);font-size:12px;color:#22c55e;line-height:1.5">✓ <strong>Auto-corrected '+allCorrected.length+' field'+(allCorrected.length>1?'s':'')+'</strong>:'+parts.join(';')+'</div>';
+  }
 
   // Summary banner
   const errorCount=warnings.filter(w=>w.level==='error').length;
   const warnCount=warnings.filter(w=>w.level==='warn').length;
   const infoCount=warnings.filter(w=>w.level==='info').length;
+  const hasSumIssue=!!sumMismatch;
   let summaryHtml='';
-  if(errorCount||warnCount){
+  if(errorCount||warnCount||hasSumIssue){
     const parts=[];
     if(errorCount) parts.push('<span style="color:#ef4444;font-weight:700">'+errorCount+' missing</span>');
+    if(hasSumIssue) parts.push('<span style="color:#ef4444;font-weight:700">sum mismatch</span>');
     if(warnCount) parts.push('<span style="color:#f59e0b;font-weight:700">'+warnCount+' warning'+(warnCount>1?'s':'')+'</span>');
     if(infoCount) parts.push('<span style="color:#60a5fa">'+infoCount+' note'+(infoCount>1?'s':'')+'</span>');
     // Build clickable field links for each warning
@@ -7403,12 +7608,17 @@ function renderPDFFields(parsed, warnings){
       return `<a href="#" onclick="event.preventDefault();document.querySelector('.ef-input[data-key=\\'${w.field}\\']')?.closest('.ef-item')?.scrollIntoView({behavior:'smooth',block:'center'});document.querySelector('.ef-input[data-key=\\'${w.field}\\']')?.focus()" style="color:${color};text-decoration:underline;cursor:pointer;font-size:11px">${label}</a>`;
     });
     const flagLinks = flaggedFields.length ? '<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">'+flaggedFields.join('')+'</div>' : '';
-    summaryHtml='<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);font-size:12px;line-height:1.5;color:var(--text2)">Data Analysis: '+parts.join(' · ')+'<br><span style="font-size:11px;opacity:.8">Click a field to jump to it. Missing values may indicate OCR issues — edit to correct.</span>'+flagLinks+'</div>';
+    // Use red background if sum mismatch or errors, amber if only warnings
+    const bannerBg = (hasSumIssue||errorCount) ? 'rgba(239,68,68,.06)' : 'rgba(245,158,11,.06)';
+    const bannerBorder = (hasSumIssue||errorCount) ? 'rgba(239,68,68,.2)' : 'rgba(245,158,11,.2)';
+    summaryHtml='<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:'+bannerBg+';border:1px solid '+bannerBorder+';font-size:12px;line-height:1.5;color:var(--text2)">Data Analysis: '+parts.join(' · ')+'<br><span style="font-size:11px;opacity:.8">Click a field to jump to it. Missing values may indicate OCR issues — edit to correct.</span>'+flagLinks+'</div>';
+  } else if(correctedFields.length && !errorCount && !warnCount){
+    summaryHtml='<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);font-size:12px;color:#22c55e">✓ All expected fields present — '+correctedFields.length+' value'+(correctedFields.length>1?'s':'')+' auto-corrected via rate × quantity</div>';
   } else if(warnings.length===0 && Object.keys(parsed).filter(k=>!k.startsWith('_')).length>5){
     summaryHtml='<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);font-size:12px;color:#22c55e">✓ All expected fields present — values within normal ranges</div>';
   }
 
-  el.innerHTML=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${summaryHtml}${sumMismatchHtml}<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
+  el.innerHTML=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${summaryHtml}${correctionHtml}${sumMismatchHtml}<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
 }
 /* ── SAVED BILLS DATABASE ── */
 function updateBillCountBadge(){
