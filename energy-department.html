@@ -5826,11 +5826,11 @@ function _extractEvergy(t,acctOverride,addrOverride){
     }
     // Meter change: sum kWh and RKVA, take max KW, use overall start/end dates
     const first=_meterRows[0], last=_meterRows[_meterRows.length-1];
-    let totalKwh=0, maxKw=0, totalRkva=0;
+    let totalKwh=0, maxKw=0, maxRkva=0;
     for(const r of _meterRows){
       totalKwh+=pn(r[7]);
       maxKw=Math.max(maxKw,pn(r[8]));
-      totalRkva+=pn(r[9]);
+      maxRkva=Math.max(maxRkva,pn(r[9]));
     }
     return {
       type:'meter_change',rows:_meterRows.length,
@@ -5838,7 +5838,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
       startRead:first[5]?.replace(/,/g,''), endRead:last[4]?.replace(/,/g,''),
       multiplier:first[6]?.replace(/,/g,''),
       kwh:parseFloat(totalKwh.toFixed(4)),
-      kw:maxKw.toFixed(4), rkva:totalRkva.toFixed(4),
+      kw:maxKw.toFixed(4), rkva:maxRkva.toFixed(4),
     };
   })();
 
