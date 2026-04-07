@@ -6333,6 +6333,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
 
   // 5. THREE-WAY VERIFICATION: qty × rate = charge
   // For each charge line, if we have any 2 of {qty, rate, charge}, compute and verify the 3rd.
+  const _pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
   // Also recover missing kW/kWh values from charge/rate, and missing charges from qty×rate.
   if(result._rates){
     // Map charge fields to their quantity fields
@@ -6411,7 +6412,6 @@ function _extractEvergy(t,acctOverride,addrOverride){
   }
 
   // ── CHARGE RECONCILIATION: if sum doesn't match total, try to recover missing charges ──
-  const _pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
   const _compSum=_pf(result.CustomerCharge)+_pf(result.FacilitiesCharge)+_pf(result.BilledKWCharge)
     +_pf(result.EnergyOnPeakCharge)+_pf(result.EnergyOffPeakCharge)+_pf(result.ECACharge)
     +_pf(result.EERCharge)+_pf(result.PTSCharge)+_pf(result.TDCCharge)+_pf(result.RkVACharge)
