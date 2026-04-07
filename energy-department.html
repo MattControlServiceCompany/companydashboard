@@ -13475,9 +13475,10 @@
           }
           return found ? total.toFixed(2) : null;
         };
-        // ── Rate extraction: captures rate and quantity from charge lines for cross-validation ──
-        // Evergy charge lines show: "[keyword] [qty] kW at $[rate]/kW $[charge]"
-        // Returns {qty, rate, unit, computed} or null
+        // ── Rate extraction: captures rate, quantity, AND OCR'd charge from each charge line ──
+        // Evergy charge lines: "[keyword] [qty] kW/kWh at $[rate] per kW/kWh ... $[charge]"
+        // Returns {qty, rate, unit, computed, parts[]} or null
+        // Each part: {qty, rate, unit, computed, ocrCharge}
         const xRate = (keyword, excludeRe) => {
           const lines = t.split('\n');
           const results = [];
@@ -13495,18 +13496,34 @@
               // are chart Y-axis numbers merged into charge lines by PDF text extraction.
               const maxRate = unit.toLowerCase().includes('h') ? 1 : 100; // kWh < $1, kW < $100
               if (!isNaN(qty) && !isNaN(rate) && rate > 0 && rate < maxRate && qty > 0 && qty < 5000000) {
-                results.push({ qty, rate, unit, computed: Math.round(qty * rate * 100) / 100 });
+                // Also capture the OCR'd dollar charge from this line
+                let ocrCharge = getAmt(lines[i]);
+                if (ocrCharge === null) {
+                  // Check next few lines for the charge amount
+                  for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+                    ocrCharge = getAmt(lines[j]);
+                    if (ocrCharge !== null) break;
+                    if (CHG_STOP.test(lines[j])) break;
+                  }
+                }
+                results.push({
+                  qty,
+                  rate,
+                  unit,
+                  computed: Math.round(qty * rate * 100) / 100,
+                  ocrCharge,
+                });
               }
             }
           }
           if (!results.length) return null;
-          // Sum all matches (handles split demand charges across changeover months)
+          // Always include parts array for uniform handling
           return {
             qty: results.reduce((s, r) => s + r.qty, 0),
             rate: results[0].rate,
             unit: results[0].unit,
             computed: results.reduce((s, r) => s + r.computed, 0),
-            parts: results.length > 1 ? results : undefined,
+            parts: results,
           };
         };
         // ─────────────────────────────────────────────────────────────────────────────
@@ -14079,12 +14096,14 @@
         if (_rDem) _rates.BilledKWCharge = _rDem;
         if (_rOnPk || _rTiered) {
           // Combine on-peak and tiered (changeover bills have both)
-          const parts = [_rOnPk, _rTiered].filter(Boolean);
+          // Flatten inner parts from both sources so each individual charge line is preserved
+          const allParts = [_rOnPk, _rTiered].filter(Boolean).flatMap((r) => r.parts || [r]);
           _rates.EnergyOnPeakCharge = {
-            qty: parts.reduce((s, r) => s + r.qty, 0),
-            rate: parts[0].rate,
-            unit: parts[0].unit,
-            computed: parts.reduce((s, r) => s + r.computed, 0),
+            qty: allParts.reduce((s, r) => s + r.qty, 0),
+            rate: allParts[0].rate,
+            unit: allParts[0].unit,
+            computed: allParts.reduce((s, r) => s + r.computed, 0),
+            parts: allParts,
           };
         }
         if (_rOffPk) _rates.EnergyOffPeakCharge = _rOffPk;
@@ -14195,142 +14214,72 @@
             if (!ri || ri.rate <= 0) continue;
             const qtyField = QTY_MAP[chargeField];
             const chargeVal = _pf(result[chargeField]);
-            const qtyVal = qtyField ? _pf(result[qtyField]) : ri.qty;
-            const hasCharge = chargeVal > 0;
-            const hasQty = qtyVal > 0;
-            const hasRate = ri.rate > 0;
+            const parts = ri.parts || [ri];
 
-            // ── SPLIT CHARGE HANDLING ──
-            // When a charge has multiple parts (e.g. Demand at two rates during a rate changeover),
-            // validate each part independently. The total charge = sum of part charges, and each part
-            // uses the SAME kW but a DIFFERENT rate. Don't try to do single qty × rate = total charge.
-            if (ri.parts && ri.parts.length > 1) {
-              // Validate each part: qty × rate should equal the part's computed charge
-              let allPartsValid = true;
-              const partDetails = [];
-              for (const part of ri.parts) {
-                const partExpected = Math.round(part.qty * part.rate * 100) / 100;
-                const partDiff = Math.abs(partExpected - part.computed);
-                partDetails.push({ qty: part.qty, rate: part.rate, charge: part.computed, diff: partDiff });
-                if (partDiff > 0.02) allPartsValid = false;
-              }
-              // Verify the total computed sum matches the extracted charge
-              const computedTotal = ri.parts.reduce((s, p) => s + p.computed, 0);
-              const totalDiff = Math.abs(computedTotal - chargeVal);
-              if (totalDiff > 0.1 && hasCharge) {
-                result['_rate_mismatch_' + chargeField] = {
-                  splitCharge: true,
-                  parts: partDetails,
-                  computedTotal: Math.round(computedTotal * 100) / 100,
-                  actualCharge: chargeVal,
-                  diff: totalDiff,
-                };
-              }
-              // For split charges, BilledKW = the kW from any part (they're the same kW value).
-              // Don't "correct" it from the summed qty.
-              if (qtyField && hasQty) {
-                const partKW = ri.parts[0].qty;
-                // If extracted kW matches a part's kW, it's correct — don't touch it
-                if (Math.abs(qtyVal - partKW) < 0.01) {
-                  // kW matches the split charge lines — all good
-                } else if (!hasCharge) {
-                  // Missing charge — compute from parts sum
-                  result[chargeField] = computedTotal.toFixed(2);
-                  result['_rate_filled_' + chargeField] = true;
+            // ── PER-PART VALIDATION ──
+            // Every charge line gets the same validation: qty × rate ≈ ocrCharge.
+            // For multi-line charges (split demand, split ECA, etc.), each line is checked independently.
+            const partDetails = [];
+            for (const part of parts) {
+              const expected = Math.round(part.qty * part.rate * 100) / 100;
+              const actual = part.ocrCharge ?? part.computed;
+              const diff = Math.abs(expected - actual);
+              partDetails.push({
+                qty: part.qty,
+                rate: part.rate,
+                unit: part.unit,
+                computed: expected,
+                ocrCharge: actual,
+                diff,
+                valid: diff <= 0.02,
+              });
+            }
+
+            // Verify the sum of per-line charges matches the extracted total charge
+            const computedTotal = Math.round(parts.reduce((s, p) => s + p.computed, 0) * 100) / 100;
+            const ocrTotal = parts.reduce((s, p) => s + (p.ocrCharge ?? p.computed), 0);
+            const totalDiff = Math.abs(ocrTotal - chargeVal);
+
+            if (totalDiff > 0.1 && chargeVal > 0) {
+              result['_rate_mismatch_' + chargeField] = {
+                splitCharge: parts.length > 1,
+                parts: partDetails,
+                computedTotal,
+                ocrTotal: Math.round(ocrTotal * 100) / 100,
+                actualCharge: chargeVal,
+                diff: totalDiff,
+              };
+            }
+
+            // Flag any individual parts where qty × rate ≠ ocrCharge
+            const badParts = partDetails.filter((p) => !p.valid);
+            if (badParts.length > 0) {
+              result['_part_mismatches_' + chargeField] = badParts;
+            }
+
+            // For kW charges with a qty field: validate the extracted kW against the parts
+            if (qtyField) {
+              const qtyVal = _pf(result[qtyField]);
+              if (qtyVal > 0) {
+                // For split kW charges, all parts use the same kW — don't sum them
+                const partKW = parts[0].qty;
+                const allSameKW = parts.every((p) => Math.abs(p.qty - partKW) < 0.01);
+                if (allSameKW && Math.abs(qtyVal - partKW) < 0.01) {
+                  // Extracted kW matches the charge lines — all good
+                } else if (!allSameKW) {
+                  // Different kW values across parts (unusual) — leave as-is
                 }
-              } else if (!hasQty && qtyField && ri.parts.length > 0) {
-                // Missing kW — use the kW from the first part (all parts should have same kW)
-                result[qtyField] = ri.parts[0].qty.toFixed(4);
-                result['_rate_filled_' + qtyField] = true;
-              }
-              continue; // Skip single-rate validation below
-            }
-
-            if (hasRate && hasQty && !hasCharge) {
-              // Missing charge → compute from qty × rate
-              const computed = Math.round(qtyVal * ri.rate * 100) / 100;
-              if (computed > 0 && computed < 1e6) {
-                result[chargeField] = computed.toFixed(2);
-                result['_rate_filled_' + chargeField] = true;
-              }
-            }
-            if (hasRate && hasCharge && !hasQty && qtyField) {
-              // Missing qty → compute from charge / rate
-              const computed = parseFloat((chargeVal / ri.rate).toFixed(4));
-              if (computed > 0 && computed < 5e6) {
-                result[qtyField] = computed.toFixed(4);
+              } else if (parts.length > 0) {
+                // Missing kW — recover from the first part
+                result[qtyField] = parts[0].qty.toFixed(4);
                 result['_rate_filled_' + qtyField] = true;
               }
             }
-            if (hasQty && hasCharge && hasRate) {
-              // All three present — cross-verify using rate as anchor (smallest number, most reliable).
-              // qty × rate =? charge.  charge / rate =? qty.  charge / qty =? rate.
-              const expectedCharge = Math.round(qtyVal * ri.rate * 100) / 100;
-              const expectedQty = parseFloat((chargeVal / ri.rate).toFixed(4));
-              const expectedRate = qtyVal > 0 ? parseFloat((chargeVal / qtyVal).toFixed(5)) : 0;
-              const chargeDiff = Math.abs(expectedCharge - chargeVal);
-              const qtyDiff = Math.abs(expectedQty - qtyVal);
-              const rateDiff = Math.abs(expectedRate - ri.rate);
 
-              if (chargeDiff > 0.02 || qtyDiff > 0.01) {
-                // Something doesn't match. Determine which value is wrong:
-                // Check if charge/qty confirms the rate — if so, rate is good, find the odd one out.
-                const rateConfirmed = rateDiff < 0.0001; // charge/qty ≈ rate → rate is correct
-
-                if (rateConfirmed) {
-                  // Rate is confirmed by charge/qty. Both charge and qty agree on the rate.
-                  // The mismatch is likely floating point — all three are probably correct.
-                } else {
-                  // Rate from charge line is our anchor. Figure out which of qty/charge is wrong.
-                  // charge/rate → what qty should be.  qty×rate → what charge should be.
-                  if (qtyDiff > 0.01 && chargeDiff <= 0.02) {
-                    // qty×rate ≈ charge means qty is correct (and charge is correct). Shouldn't be here.
-                  } else if (chargeDiff > 0.02 && qtyDiff <= 0.01) {
-                    // charge/rate ≈ qty means charge doesn't match qty×rate.
-                    // Charge may be OCR'd wrong. Flag it.
-                    result['_rate_mismatch_' + chargeField] = {
-                      qty: qtyVal,
-                      rate: ri.rate,
-                      expectedCharge,
-                      actualCharge: chargeVal,
-                      diff: chargeDiff,
-                    };
-                  } else {
-                    // Both qty and charge disagree with rate×other.
-                    // Trust charge over qty (charge is $X.XX with 2dp, less room for error).
-                    // Correct qty from charge/rate.
-                    if (qtyField && qtyDiff > 0.01) {
-                      const unitLabel = ri.unit || 'kW';
-                      result['_auto_corrected_' + qtyField] = {
-                        original: result[qtyField],
-                        corrected: expectedQty.toFixed(4),
-                        rate: ri.rate,
-                        qty: expectedQty,
-                        unit: unitLabel,
-                        reason:
-                          chargeVal.toFixed(2) +
-                          ' / ' +
-                          ri.rate.toFixed(5) +
-                          ' = ' +
-                          expectedQty.toFixed(4) +
-                          ' ' +
-                          unitLabel,
-                      };
-                      result[qtyField] = expectedQty.toFixed(4);
-                    }
-                    // Also flag the charge mismatch for transparency
-                    if (chargeDiff > 0.02) {
-                      result['_rate_mismatch_' + chargeField] = {
-                        qty: qtyVal,
-                        rate: ri.rate,
-                        expectedCharge,
-                        actualCharge: chargeVal,
-                        diff: chargeDiff,
-                      };
-                    }
-                  }
-                }
-              }
+            // Missing charge — compute from parts sum
+            if (chargeVal <= 0 && computedTotal > 0) {
+              result[chargeField] = computedTotal.toFixed(2);
+              result['_rate_filled_' + chargeField] = true;
             }
           }
           // Also try to recover TDCkW from TDCCharge/rate when xRate didn't capture the TDC rate
@@ -16721,21 +16670,36 @@
         // Build layout HTML with running total on charge rows
         let runningTotal = 0;
         // Helper: format rate info for display in the rate column
+        // Format a single rate part for display
+        function fmtRatePart(p) {
+          const isKwh = p.unit.toLowerCase().includes('h');
+          const rateDp = isKwh ? 5 : 3;
+          const qtyFmt = p.qty.toLocaleString('en-US', { maximumFractionDigits: 4 });
+          const rateFmt = p.rate.toFixed(rateDp);
+          const chgFmt =
+            p.ocrCharge != null
+              ? '$' + p.ocrCharge.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+              : '';
+          return { qtyFmt, rateFmt, chgFmt, unit: p.unit };
+        }
+
+        // Build rate cell — single line for single charges
         function buildRateCell(chargeKey) {
           const ri = parsed._rates?.[chargeKey];
           if (!ri) return '<div class="ef-rate"></div>';
-          if (ri.parts && ri.parts.length > 1) {
-            // Split charge — show each rate on its own line
-            const lines = ri.parts
-              .map(
-                (p) =>
-                  `${p.qty.toLocaleString('en-US', { maximumFractionDigits: 4 })} ${p.unit} @ $${p.rate.toFixed(p.unit.toLowerCase().includes('h') ? 5 : 3)}`,
-              )
-              .join('<br>');
-            return `<div class="ef-rate" style="flex-direction:column;align-items:flex-end;line-height:1.4">${lines}</div>`;
+          const parts = ri.parts || [ri];
+          if (parts.length === 1) {
+            const f = fmtRatePart(parts[0]);
+            return `<div class="ef-rate">${f.qtyFmt} ${f.unit} @ $${f.rateFmt}</div>`;
           }
-          const rateStr = ri.rate.toFixed(ri.unit.toLowerCase().includes('h') ? 5 : 3);
-          return `<div class="ef-rate">${ri.qty.toLocaleString('en-US', { maximumFractionDigits: 4 })} ${ri.unit} @ $${rateStr}</div>`;
+          // Multi-part: show each on its own line
+          const lines = parts
+            .map((p) => {
+              const f = fmtRatePart(p);
+              return `${f.qtyFmt} ${f.unit} @ $${f.rateFmt} = ${f.chgFmt}`;
+            })
+            .join('<br>');
+          return `<div class="ef-rate" style="flex-direction:column;align-items:flex-end;line-height:1.4">${lines}</div>`;
         }
 
         const totalVal = _pf(parsed.TotalCurrentCharges);
