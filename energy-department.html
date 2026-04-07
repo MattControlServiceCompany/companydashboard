@@ -13476,8 +13476,20 @@
             // Look for "qty kW/kWh at $rate" pattern on this line and next few lines
             // Allow stray OCR characters (single digits, punctuation) between qty and unit
             // e.g. "578.7840 3\nKW at $2.68601" → block becomes "578.7840 3 KW at $2.68601"
+            // Also handle chart Y-axis numbers between "at" and the actual rate:
+            // e.g. "27,170.0880 kWh at 140000 — $0.07299 per kWh" → skip 140000, use $0.07299
             const block = lines.slice(i, Math.min(i + 4, lines.length)).join(' ');
-            const rateM = block.match(/([\d,]+\.\d{2,})\s*(?:\d\s+)?k([Ww]h?)\s+at\s+\$?([\d,.]+)/i);
+            // Try the direct pattern first: qty kW/kWh at $rate (no junk between at and rate)
+            let rateM = block.match(/([\d,]+\.\d{2,})\s*(?:\d\s+)?k([Ww]h?)\s+at\s+\$([\d,.]+)/i);
+            if (!rateM) {
+              // Fallback: allow junk (chart numbers, OCR garbage) between "at" and "$rate"
+              // Match: qty kWh at [anything] $rate per kW/kWh
+              rateM = block.match(/([\d,]+\.\d{2,})\s*(?:\d\s+)?k([Ww]h?)\s+at\s+[\s\S]*?\$([\d,.]+)\s*per\s+k[Ww]/i);
+            }
+            if (!rateM) {
+              // Last resort: qty kWh at [anything] $rate (no "per kW" required)
+              rateM = block.match(/([\d,]+\.\d{2,})\s*(?:\d\s+)?k([Ww]h?)\s+at[\s\S]*?\$([\d,.]+)/i);
+            }
             if (rateM) {
               const qty = parseFloat(rateM[1].replace(/,/g, ''));
               const rate = parseFloat(rateM[3].replace(/,/g, ''));
