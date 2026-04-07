@@ -16418,17 +16418,15 @@
         const warnings = window._pdfBillWarnings || [];
         const nav = bills
           .map((bill, i) => {
-            // Label by the month the bill covers — use end date's month (same as Utility Data page)
-            // e.g. 01/29/2024 - 02/27/2024 → "02/2024"
-            const lbl = bill.BillingPeriodEnd
-              ? (() => {
-                  const p = bill.BillingPeriodEnd.split('/');
-                  return p[2] ? p[0] + '/' + p[2] : 'Period ' + (i + 1);
-                })()
-              : bill.BillingPeriodStart
+            // Label by the majority month the bill covers (same logic as Utility Data page)
+            // e.g. 01/29/2024 - 02/27/2024 → most days in Feb → "02/2024"
+            const lbl =
+              bill.BillingPeriodStart && bill.BillingPeriodEnd
                 ? (() => {
-                    const p = bill.BillingPeriodStart.split('/');
-                    return p[2] ? p[0] + '/' + p[2] : 'Period ' + (i + 1);
+                    const ym = normMonth(bill.BillingPeriodStart, bill.BillingPeriodEnd);
+                    if (!ym) return 'Period ' + (i + 1);
+                    const [y, m] = ym.split('-');
+                    return m + '/' + y;
                   })()
                 : 'Period ' + (i + 1);
             const active = i === idx;
