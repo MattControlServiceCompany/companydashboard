@@ -6331,17 +6331,80 @@ function _extractEvergy(t,acctOverride,addrOverride){
     if(rkvaKwM) result.ActualRKVA=rkvaKwM[1].replace(/,/g,'');
   }
 
-  // 5. Fill missing charges from rate × qty when OCR garbles the dollar amount
+  // 5. THREE-WAY VERIFICATION: qty × rate = charge
+  // For each charge line, if we have any 2 of {qty, rate, charge}, compute and verify the 3rd.
+  // Also recover missing kW/kWh values from charge/rate, and missing charges from qty×rate.
   if(result._rates){
-    const _chargeFields=['CustomerCharge','FacilitiesCharge','BilledKWCharge',
-      'EnergyOnPeakCharge','EnergyOffPeakCharge','ECACharge','EERCharge',
-      'PTSCharge','TDCCharge','RkVACharge'];
-    for(const field of _chargeFields){
-      if(result[field]===null||result[field]===undefined||result[field]===''){
-        const ri=result._rates[field];
-        if(ri&&ri.computed>0&&ri.computed<1e6){
-          result[field]=ri.computed.toFixed(2);
-          result['_rate_filled_'+field]=true;
+    // Map charge fields to their quantity fields
+    const QTY_MAP={
+      FacilitiesCharge:'FacilitiesKW', BilledKWCharge:'BilledKW',
+      TDCCharge:'TDCkW', RkVACharge:null, // RkVA qty is in rate info but not a separate field
+      EnergyOnPeakCharge:null, EnergyOffPeakCharge:null, // kWh qty from rate info
+      ECACharge:null, EERCharge:null, PTSCharge:null,
+    };
+    for(const [chargeField, ri] of Object.entries(result._rates)){
+      if(!ri||ri.rate<=0) continue;
+      const qtyField=QTY_MAP[chargeField];
+      const chargeVal=_pf(result[chargeField]);
+      const qtyVal=qtyField?_pf(result[qtyField]):ri.qty;
+      const hasCharge=chargeVal>0;
+      const hasQty=qtyVal>0;
+      const hasRate=ri.rate>0;
+
+      if(hasRate&&hasQty&&!hasCharge){
+        // Missing charge → compute from qty × rate
+        const computed=Math.round(qtyVal*ri.rate*100)/100;
+        if(computed>0&&computed<1e6){
+          result[chargeField]=computed.toFixed(2);
+          result['_rate_filled_'+chargeField]=true;
+        }
+      }
+      if(hasRate&&hasCharge&&!hasQty&&qtyField){
+        // Missing qty → compute from charge / rate
+        const computed=parseFloat((chargeVal/ri.rate).toFixed(4));
+        if(computed>0&&computed<5e6){
+          result[qtyField]=computed.toFixed(4);
+          result['_rate_filled_'+qtyField]=true;
+        }
+      }
+      if(hasQty&&hasCharge&&hasRate){
+        // All three present — cross-verify
+        const expectedCharge=Math.round(qtyVal*ri.rate*100)/100;
+        const chargeDiff=Math.abs(expectedCharge-chargeVal);
+        if(chargeDiff>0.02){
+          result['_rate_mismatch_'+chargeField]={
+            qty:qtyVal,rate:ri.rate,expectedCharge:expectedCharge,actualCharge:chargeVal,diff:chargeDiff};
+        }
+        // Also verify qty: charge / rate should ≈ qty
+        if(qtyField){
+          const expectedQty=parseFloat((chargeVal/ri.rate).toFixed(4));
+          const qtyDiff=Math.abs(expectedQty-qtyVal);
+          if(qtyDiff>0.01){
+            result['_qty_mismatch_'+qtyField]={
+              charge:chargeVal,rate:ri.rate,expectedQty:expectedQty,actualQty:qtyVal,diff:qtyDiff};
+          }
+        }
+      }
+    }
+    // Also try to recover TDCkW from TDCCharge/rate when xRate didn't capture the TDC rate
+    // but we can derive it from the charge and a known TDC rate from the raw text
+    if(!result._rates.TDCCharge&&result.TDCCharge){
+      // Look for TDC rate directly in the text
+      const tdcRateM=t.match(/TDC\s+(?:Ch[gaq9]|C[HhNnRr][Gg]|Gh[gq9])[\s\S]{0,100}?\$?([\d.]+)\s*per\s+k[Ww]/i);
+      if(tdcRateM){
+        const tdcRate=parseFloat(tdcRateM[1]);
+        const tdcCharge=_pf(result.TDCCharge);
+        if(tdcRate>0&&tdcCharge>0){
+          const tdcQty=parseFloat((tdcCharge/tdcRate).toFixed(4));
+          if(tdcQty>0&&tdcQty<5e6){
+            if(!result.TDCkW||result.TDCkW===null){
+              result.TDCkW=tdcQty.toFixed(4);
+              result['_rate_filled_TDCkW']=true;
+            }
+            // Store rate info for debug
+            result._rates.TDCCharge={qty:tdcQty,rate:tdcRate,unit:'kW',
+              computed:Math.round(tdcQty*tdcRate*100)/100};
+          }
         }
       }
     }
