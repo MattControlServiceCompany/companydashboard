@@ -2342,12 +2342,12 @@
       }
       .ef-charge-row {
         display: grid;
-        grid-template-columns: 1fr 1fr auto;
+        grid-template-columns: 1fr 1fr auto auto;
         gap: 6px;
         align-items: stretch;
       }
       .ef-charge-row.single-charge {
-        grid-template-columns: 1fr auto;
+        grid-template-columns: 1fr auto auto;
       }
       .ef-item {
         background: var(--s3);
@@ -2393,6 +2393,18 @@
       .ef-running.mismatch {
         color: #ef4444;
         font-weight: 700;
+      }
+      .ef-rate {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        font-family: var(--mono);
+        font-size: 9px;
+        color: var(--text3);
+        white-space: nowrap;
+        min-width: 60px;
+        padding: 0 2px;
+        opacity: 0.7;
       }
       .ef-section {
         font-size: 10px;
@@ -16708,6 +16720,24 @@
 
         // Build layout HTML with running total on charge rows
         let runningTotal = 0;
+        // Helper: format rate info for display in the rate column
+        function buildRateCell(chargeKey) {
+          const ri = parsed._rates?.[chargeKey];
+          if (!ri) return '<div class="ef-rate"></div>';
+          if (ri.parts && ri.parts.length > 1) {
+            // Split charge — show each rate on its own line
+            const lines = ri.parts
+              .map(
+                (p) =>
+                  `${p.qty.toLocaleString('en-US', { maximumFractionDigits: 4 })} ${p.unit} @ $${p.rate.toFixed(p.unit.toLowerCase().includes('h') ? 5 : 3)}`,
+              )
+              .join('<br>');
+            return `<div class="ef-rate" style="flex-direction:column;align-items:flex-end;line-height:1.4">${lines}</div>`;
+          }
+          const rateStr = ri.rate.toFixed(ri.unit.toLowerCase().includes('h') ? 5 : 3);
+          return `<div class="ef-rate">${ri.qty.toLocaleString('en-US', { maximumFractionDigits: 4 })} ${ri.unit} @ $${rateStr}</div>`;
+        }
+
         const totalVal = _pf(parsed.TotalCurrentCharges);
         const rows = FIELD_LAYOUT.map((row) => {
           if (row.section) return `<div class="ef-section">${row.section}</div>`;
@@ -16724,13 +16754,13 @@
             const chargeVal = _pf(parsed[row.chargeKey]);
             runningTotal += chargeVal;
             const rtFmt = runningTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            return `<div class="ef-charge-row single-charge">${buildCell(fields[0])}<div class="ef-running">$${rtFmt}</div></div>`;
+            return `<div class="ef-charge-row single-charge">${buildCell(fields[0])}${buildRateCell(row.chargeKey)}<div class="ef-running">$${rtFmt}</div></div>`;
           }
           if (row.type === 'charge-pair') {
             const chargeVal = _pf(parsed[row.chargeKey]);
             runningTotal += chargeVal;
             const rtFmt = runningTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            return `<div class="ef-charge-row">${fields.map((k) => buildCell(k)).join('')}<div class="ef-running">$${rtFmt}</div></div>`;
+            return `<div class="ef-charge-row">${fields.map((k) => buildCell(k)).join('')}${buildRateCell(row.chargeKey)}<div class="ef-running">$${rtFmt}</div></div>`;
           }
           if (row.type === 'total') {
             const rtFmt = runningTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -16743,7 +16773,7 @@
               : mismatch
                 ? 'border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.06)'
                 : '';
-            return `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:6px"><div class="ef-charge-row single-charge"><div class="ef-item" style="${itemStyle}"><div class="ef-key" style="color:${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges ?? '') !== '' ? '$' + totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px"></div><div class="ef-running ${cls}">$${rtFmt}${icon}</div></div></div>`;
+            return `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:6px"><div class="ef-charge-row single-charge"><div class="ef-item" style="${itemStyle}"><div class="ef-key" style="color:${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges ?? '') !== '' ? '$' + totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px"></div><div class="ef-rate"></div><div class="ef-running ${cls}">$${rtFmt}${icon}</div></div></div>`;
           }
           return '';
         });
