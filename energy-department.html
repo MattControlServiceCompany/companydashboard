@@ -2346,9 +2346,6 @@
         gap: 4px;
         align-items: stretch;
       }
-      .ef-charge-row.no-rate {
-        grid-template-columns: 1fr auto;
-      }
       .ef-item {
         background: var(--s3);
         border: 1px solid var(--border);
@@ -2358,8 +2355,8 @@
       .ef-item.wide {
         grid-column: 1/-1;
       }
-      .ef-item.right .ef-input {
-        text-align: right;
+      .ef-item.center .ef-input {
+        text-align: center;
       }
       .ef-key {
         font-size: 9px;
@@ -16421,12 +16418,19 @@
         const warnings = window._pdfBillWarnings || [];
         const nav = bills
           .map((bill, i) => {
-            const lbl = bill.BillingPeriodStart
+            // Label by the month the bill covers — use end date's month (same as Utility Data page)
+            // e.g. 01/29/2024 - 02/27/2024 → "02/2024"
+            const lbl = bill.BillingPeriodEnd
               ? (() => {
-                  const p = bill.BillingPeriodStart.split('/');
-                  return p[2] ? p[0] + '/' + p[2].slice(2) : 'Period ' + (i + 1);
+                  const p = bill.BillingPeriodEnd.split('/');
+                  return p[2] ? p[0] + '/' + p[2] : 'Period ' + (i + 1);
                 })()
-              : 'Period ' + (i + 1);
+              : bill.BillingPeriodStart
+                ? (() => {
+                    const p = bill.BillingPeriodStart.split('/');
+                    return p[2] ? p[0] + '/' + p[2] : 'Period ' + (i + 1);
+                  })()
+                : 'Period ' + (i + 1);
             const active = i === idx;
             const bw = warnings[i]?.warnings || [];
             const hasIssues = bw.some((w) => w.level === 'error' || w.level === 'warn');
@@ -16493,7 +16497,7 @@
           ActualRKVA: 'Actual RKVA',
           CustomerCharge: 'Customer Charge',
           FacilitiesKW: 'Facilities kW',
-          FacilitiesCharge: 'Facilities Charge',
+          FacilitiesCharge: 'Facilities kW Charge',
           RkVACharge: 'RkVA Charge',
           BilledKW: 'Billed kW',
           BilledKWCharge: 'Billed kW Charge',
@@ -16503,7 +16507,7 @@
           EERCharge: 'EER Charge',
           PTSCharge: 'PTS Charge',
           TDCkW: 'TDC kW',
-          TDCCharge: 'TDC Charge',
+          TDCCharge: 'TDC kW Charge',
           TaxExemptDelivery: 'Tax Exempt Delivery',
           BillOffset: 'Bill Offset',
           FranchiseFee: 'Franchise Fee',
@@ -16559,26 +16563,46 @@
           { type: 'pair', fields: ['ActualKW', 'ActualRKVA'] },
           // Charges — ordered per Evergy Billing Details
           // type 'charge-line': shows qty | rate | charge | running total (uniform layout)
-          // qtyField/chargeField identify the extracted fields; rateKey looks up _rates
+          // label: base name for consistent labeling (e.g. "Facilities kW" → "Facilities kW", "Facilities kW Rate", "Facilities kW Charge")
+          // qtyField: extracted field key for the qty (editable); if null, qty comes from _rates
+          // chargeField: extracted field key for the charge (editable)
+          // rateKey: key in _rates for rate info; null = no rate data (charge-only row)
           { section: 'Charges' },
-          { type: 'charge-line', chargeField: 'CustomerCharge', rateKey: null },
+          { type: 'charge-line', label: 'Customer', chargeField: 'CustomerCharge', rateKey: null },
           {
             type: 'charge-line',
+            label: 'Facilities kW',
             chargeField: 'FacilitiesCharge',
             qtyField: 'FacilitiesKW',
             rateKey: 'FacilitiesCharge',
           },
-          { type: 'charge-line', chargeField: 'BilledKWCharge', qtyField: 'BilledKW', rateKey: 'BilledKWCharge' },
-          { type: 'charge-line', chargeField: 'EnergyOnPeakCharge', rateKey: 'EnergyOnPeakCharge' },
-          { type: 'charge-line', chargeField: 'EnergyOffPeakCharge', rateKey: 'EnergyOffPeakCharge' },
-          { type: 'charge-line', chargeField: 'RkVACharge', rateKey: 'RkVACharge' },
-          { type: 'charge-line', chargeField: 'TaxExemptDelivery', rateKey: null },
-          { type: 'charge-line', chargeField: 'ECACharge', rateKey: 'ECACharge' },
-          { type: 'charge-line', chargeField: 'EERCharge', rateKey: 'EERCharge' },
-          { type: 'charge-line', chargeField: 'PTSCharge', rateKey: 'PTSCharge' },
-          { type: 'charge-line', chargeField: 'TDCCharge', qtyField: 'TDCkW', rateKey: 'TDCCharge' },
-          { type: 'charge-line', chargeField: 'BillOffset', rateKey: null },
-          { type: 'charge-line', chargeField: 'FranchiseFee', rateKey: null },
+          {
+            type: 'charge-line',
+            label: 'Billed kW',
+            chargeField: 'BilledKWCharge',
+            qtyField: 'BilledKW',
+            rateKey: 'BilledKWCharge',
+          },
+          {
+            type: 'charge-line',
+            label: 'Energy On-Peak',
+            chargeField: 'EnergyOnPeakCharge',
+            rateKey: 'EnergyOnPeakCharge',
+          },
+          {
+            type: 'charge-line',
+            label: 'Energy Off-Peak',
+            chargeField: 'EnergyOffPeakCharge',
+            rateKey: 'EnergyOffPeakCharge',
+          },
+          { type: 'charge-line', label: 'RkVA', chargeField: 'RkVACharge', rateKey: 'RkVACharge' },
+          { type: 'charge-line', label: 'Tax Exempt', chargeField: 'TaxExemptDelivery', rateKey: null },
+          { type: 'charge-line', label: 'ECA', chargeField: 'ECACharge', rateKey: 'ECACharge' },
+          { type: 'charge-line', label: 'EER', chargeField: 'EERCharge', rateKey: 'EERCharge' },
+          { type: 'charge-line', label: 'PTS', chargeField: 'PTSCharge', rateKey: 'PTSCharge' },
+          { type: 'charge-line', label: 'TDC kW', chargeField: 'TDCCharge', qtyField: 'TDCkW', rateKey: 'TDCCharge' },
+          { type: 'charge-line', label: 'Bill Offset', chargeField: 'BillOffset', rateKey: null },
+          { type: 'charge-line', label: 'Franchise Fee', chargeField: 'FranchiseFee', rateKey: null },
           { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
           // Extra fields (gas, etc.)
           { type: 'pair', fields: ['NaturalGasTherms', 'TotalAmountDue'] },
@@ -16679,10 +16703,10 @@
           return `<div class="ef-item" style="${style}"><div class="ef-key">${label}</div><input class="ef-input" value="${value || '—'}" readonly style="color:var(--text2);font-size:11px" tabindex="-1"></div>`;
         }
 
-        // Helper: build a charge cell with right-aligned value
+        // Helper: build a charge cell with center-aligned value
         function buildChargeCell(k) {
           const html = buildCell(k);
-          return html.replace('class="ef-item"', 'class="ef-item right"');
+          return html.replace('class="ef-item"', 'class="ef-item center"');
         }
 
         // Format numbers for display
@@ -16707,41 +16731,38 @@
             const chargeVal = _pf(parsed[row.chargeField]);
             runningTotal += chargeVal;
             const rtFmt = runningTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const base = row.label;
 
-            // No rate data — simple row: charge + running total
+            // No rate data — empty qty & rate cells, charge in 3rd column
             if (!row.rateKey || !ri) {
-              return `<div class="ef-charge-row no-rate">${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
+              const emptyCell = '<div></div>';
+              return `<div class="ef-charge-row">${emptyCell}${emptyCell}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
             }
 
             // Single part — one row: qty | rate | charge | running total
             if (parts.length <= 1) {
               const p = parts[0] || ri;
-              const qtyLabel = row.qtyField ? LABELS[row.qtyField] || row.qtyField : 'Qty';
               const qtyHtml = row.qtyField
                 ? buildCell(row.qtyField)
-                : `<div class="ef-item"><div class="ef-key">${qtyLabel}</div><input class="ef-input" value="${fmtQty(p.qty, p.unit)}" readonly tabindex="-1"></div>`;
-              return `<div class="ef-charge-row">${qtyHtml}${buildRateBox('Rate', fmtRate(p.rate, p.unit))}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
+                : `<div class="ef-item"><div class="ef-key">${base}</div><input class="ef-input" value="${fmtQty(p.qty, p.unit)}" data-key="_qty_${row.chargeField}"></div>`;
+              return `<div class="ef-charge-row">${qtyHtml}${buildRateBox(base + ' Rate', fmtRate(p.rate, p.unit))}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
             }
 
-            // Multiple parts — show each part as its own row, all contribute to the same charge total
-            const label = LABELS[row.chargeField] || row.chargeField;
+            // Multiple parts — show each part as its own row
             const partRows = parts
               .map((p, idx) => {
-                const qtyLabel = row.qtyField ? LABELS[row.qtyField] || row.qtyField : 'Qty';
-                const partLabel = parts.length > 1 ? qtyLabel + ' (' + (idx + 1) + ')' : qtyLabel;
+                const suffix = ' (' + (idx + 1) + ')';
                 const qtyHtml =
                   idx === 0 && row.qtyField
                     ? buildCell(row.qtyField)
-                    : `<div class="ef-item"><div class="ef-key">${partLabel}</div><input class="ef-input" value="${fmtQty(p.qty, p.unit)}" readonly tabindex="-1"></div>`;
-                const chargeLabel = parts.length > 1 ? label + ' (' + (idx + 1) + ')' : label;
+                    : `<div class="ef-item"><div class="ef-key">${base}${suffix}</div><input class="ef-input" value="${fmtQty(p.qty, p.unit)}" data-key="_qty_${row.chargeField}_${idx}"></div>`;
                 const partCharge = p.ocrCharge != null ? p.ocrCharge : p.computed;
-                const chargeHtml = `<div class="ef-item right"><div class="ef-key">${chargeLabel}</div><input class="ef-input" value="${fmtDollar(partCharge)}" readonly tabindex="-1" style="text-align:right"></div>`;
-                // Only show running total on the last part row
+                const chargeHtml = `<div class="ef-item center"><div class="ef-key">${base} Charge${suffix}</div><input class="ef-input" value="${fmtDollar(partCharge)}" data-key="_chg_${row.chargeField}_${idx}" style="text-align:center"></div>`;
                 const rtHtml =
                   idx === parts.length - 1
                     ? `<div class="ef-running">$${rtFmt}</div>`
                     : '<div class="ef-running"></div>';
-                return `<div class="ef-charge-row">${qtyHtml}${buildRateBox('Rate', fmtRate(p.rate, p.unit))}${chargeHtml}${rtHtml}</div>`;
+                return `<div class="ef-charge-row">${qtyHtml}${buildRateBox(base + ' Rate' + suffix, fmtRate(p.rate, p.unit))}${chargeHtml}${rtHtml}</div>`;
               })
               .join('');
             return partRows;
@@ -16767,7 +16788,7 @@
               : mismatch
                 ? 'border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.06)'
                 : '';
-            return `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:6px"><div class="ef-charge-row no-rate"><div class="ef-item right" style="${itemStyle}"><div class="ef-key" style="color:${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges ?? '') !== '' ? '$' + totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px;text-align:right"></div><div class="ef-running ${cls}">$${rtFmt}${icon}</div></div></div>`;
+            return `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:6px"><div class="ef-charge-row"><div></div><div></div><div class="ef-item center" style="${itemStyle}"><div class="ef-key" style="color:${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges ?? '') !== '' ? '$' + totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px;text-align:center"></div><div class="ef-running ${cls}">$${rtFmt}${icon}</div></div></div>`;
           }
           return '';
         });
