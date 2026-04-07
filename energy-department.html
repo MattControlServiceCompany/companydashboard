@@ -6163,10 +6163,10 @@ function _extractEvergy(t,acctOverride,addrOverride){
     // Try Subtotal
     const m2=t.match(/Subtotal[\s\S]*?\$\s*([\d,]+\.\d{2})/i);
     if(m2) return m2[1].replace(/,/g,'');
-    // Fallback: sum all extracted charges (for OCR'd sections missing the total line)
-    const pf=v=>v?parseFloat(String(v).replace(/,/g,''))||0:0;
-    const sum=pf(custChg)+pf(facChg)+pf(demChg)+pf(onPkChg)+pf(tieredChg)+pf(offPkChg)+pf(rkvaChg)+pf(ecaChg)+pf(eerChg)+pf(ptsChg)+pf(tdcChg)+pf(taxExempt)+pf(billOffset)+pf(franchise);
-    return sum>0 ? sum.toFixed(2) : null;
+    // Do NOT fall back to summing charges here — charges may be incomplete at this point
+    // (e.g. CustomerCharge not yet recovered by structural fallback). Let TotalCurrentCharges
+    // stay null; _postExtractionVerify will compute it from the fully-recovered charges.
+    return null;
   })();
 
   const result = {
@@ -6997,25 +6997,30 @@ function _postExtractionVerify(bills, utilityName, rawText){
 
     }
 
-    // 3. If charges don't sum to total, flag as likely missing charge line (do NOT override total)
-    // This runs for every bill regardless of historical data — only needs the bill's own values
+    // 3. If TotalCurrentCharges is null, compute from fully-recovered charges
+    // This handles cases where "Current Charges"/"Subtotal" was in a different section
     if(utilityName==='Evergy'){
       const compSum=pf(b.CustomerCharge)+pf(b.FacilitiesCharge)+pf(b.BilledKWCharge)
         +pf(b.EnergyOnPeakCharge)+pf(b.EnergyOffPeakCharge)+pf(b.ECACharge)
         +pf(b.EERCharge)+pf(b.PTSCharge)+pf(b.TDCCharge)
         +pf(b.RkVACharge)+pf(b.TaxExemptDelivery)+pf(b.BillOffset)+pf(b.FranchiseFee);
       const total=pf(b.TotalCurrentCharges);
-      if(compSum>0&&total>0){
-        const diff=Math.abs(compSum-total);
+      if(!total&&compSum>0){
+        b.TotalCurrentCharges=compSum.toFixed(2);
+        b._totalFromChargeSum=true;
+      }
+      const totalFinal=pf(b.TotalCurrentCharges);
+      if(compSum>0&&totalFinal>0){
+        const diff=Math.abs(compSum-totalFinal);
         if(diff>1){
-          b['_sum_mismatch']={compSum,total,diff,
-            reason:'Charges sum to $'+compSum.toFixed(2)+' but total is $'+total.toFixed(2)+' — likely a charge was missed during extraction'};
+          b['_sum_mismatch']={compSum,total:totalFinal,diff,
+            reason:'Charges sum to $'+compSum.toFixed(2)+' but total is $'+totalFinal.toFixed(2)+' — likely a charge was missed during extraction'};
 
           // ── AUTO-CORRECTION via rate × quantity cross-validation ──
           // If a charge's OCR'd value ≠ rate×qty AND the difference ≈ the total mismatch,
           // replacing that charge makes the total balance → high confidence correction.
           if(b._rates){
-            const totalDiff=compSum-total; // positive = sum too high, negative = sum too low
+            const totalDiff=compSum-totalFinal; // positive = sum too high, negative = sum too low
             const corrections=[];
             for(const [field,ri] of Object.entries(b._rates)){
               const ocrVal=pf(b[field]);
@@ -7040,12 +7045,12 @@ function _postExtractionVerify(bills, utilityName, rawText){
                 +pf(b.EnergyOnPeakCharge)+pf(b.EnergyOffPeakCharge)+pf(b.ECACharge)
                 +pf(b.EERCharge)+pf(b.PTSCharge)+pf(b.TDCCharge)
                 +pf(b.RkVACharge)+pf(b.TaxExemptDelivery)+pf(b.BillOffset)+pf(b.FranchiseFee);
-              const newDiff=Math.abs(newSum-total);
+              const newDiff=Math.abs(newSum-totalFinal);
               if(newDiff<=1){
                 delete b['_sum_mismatch'];
               } else {
-                b['_sum_mismatch']={compSum:newSum,total,diff:newDiff,
-                  reason:'Charges sum to $'+newSum.toFixed(2)+' after correction, but total is $'+total.toFixed(2)};
+                b['_sum_mismatch']={compSum:newSum,total:totalFinal,diff:newDiff,
+                  reason:'Charges sum to $'+newSum.toFixed(2)+' after correction, but total is $'+totalFinal.toFixed(2)};
               }
             } else if(corrections.length>1){
               // Multiple charges off — try each, pick the one with smallest residual
@@ -7059,12 +7064,12 @@ function _postExtractionVerify(bills, utilityName, rawText){
                   +pf(b.EnergyOnPeakCharge)+pf(b.EnergyOffPeakCharge)+pf(b.ECACharge)
                   +pf(b.EERCharge)+pf(b.PTSCharge)+pf(b.TDCCharge)
                   +pf(b.RkVACharge)+pf(b.TaxExemptDelivery)+pf(b.BillOffset)+pf(b.FranchiseFee);
-                const newDiff=Math.abs(newSum-total);
+                const newDiff=Math.abs(newSum-totalFinal);
                 if(newDiff<=1){
                   delete b['_sum_mismatch'];
                 } else {
-                  b['_sum_mismatch']={compSum:newSum,total,diff:newDiff,
-                    reason:'Charges sum to $'+newSum.toFixed(2)+' after correction, but total is $'+total.toFixed(2)};
+                  b['_sum_mismatch']={compSum:newSum,total:totalFinal,diff:newDiff,
+                    reason:'Charges sum to $'+newSum.toFixed(2)+' after correction, but total is $'+totalFinal.toFixed(2)};
                 }
               }
             }
