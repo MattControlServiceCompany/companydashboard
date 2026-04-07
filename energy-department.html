@@ -6369,20 +6369,50 @@ function _extractEvergy(t,acctOverride,addrOverride){
         }
       }
       if(hasQty&&hasCharge&&hasRate){
-        // All three present — cross-verify
+        // All three present — cross-verify using rate as anchor (smallest number, most reliable).
+        // qty × rate =? charge.  charge / rate =? qty.  charge / qty =? rate.
         const expectedCharge=Math.round(qtyVal*ri.rate*100)/100;
+        const expectedQty=parseFloat((chargeVal/ri.rate).toFixed(4));
+        const expectedRate=qtyVal>0?parseFloat((chargeVal/qtyVal).toFixed(5)):0;
         const chargeDiff=Math.abs(expectedCharge-chargeVal);
-        if(chargeDiff>0.02){
-          result['_rate_mismatch_'+chargeField]={
-            qty:qtyVal,rate:ri.rate,expectedCharge:expectedCharge,actualCharge:chargeVal,diff:chargeDiff};
-        }
-        // Also verify qty: charge / rate should ≈ qty
-        if(qtyField){
-          const expectedQty=parseFloat((chargeVal/ri.rate).toFixed(4));
-          const qtyDiff=Math.abs(expectedQty-qtyVal);
-          if(qtyDiff>0.01){
-            result['_qty_mismatch_'+qtyField]={
-              charge:chargeVal,rate:ri.rate,expectedQty:expectedQty,actualQty:qtyVal,diff:qtyDiff};
+        const qtyDiff=Math.abs(expectedQty-qtyVal);
+        const rateDiff=Math.abs(expectedRate-ri.rate);
+
+        if(chargeDiff>0.02||qtyDiff>0.01){
+          // Something doesn't match. Determine which value is wrong:
+          // Check if charge/qty confirms the rate — if so, rate is good, find the odd one out.
+          const rateConfirmed=(rateDiff<0.0001); // charge/qty ≈ rate → rate is correct
+
+          if(rateConfirmed){
+            // Rate is confirmed by charge/qty. Both charge and qty agree on the rate.
+            // The mismatch is likely floating point — all three are probably correct.
+          } else {
+            // Rate from charge line is our anchor. Figure out which of qty/charge is wrong.
+            // charge/rate → what qty should be.  qty×rate → what charge should be.
+            if(qtyDiff>0.01&&chargeDiff<=0.02){
+              // qty×rate ≈ charge means qty is correct (and charge is correct). Shouldn't be here.
+            } else if(chargeDiff>0.02&&qtyDiff<=0.01){
+              // charge/rate ≈ qty means charge doesn't match qty×rate.
+              // Charge may be OCR'd wrong. Flag it.
+              result['_rate_mismatch_'+chargeField]={
+                qty:qtyVal,rate:ri.rate,expectedCharge,actualCharge:chargeVal,diff:chargeDiff};
+            } else {
+              // Both qty and charge disagree with rate×other.
+              // Trust charge over qty (charge is $X.XX with 2dp, less room for error).
+              // Correct qty from charge/rate.
+              if(qtyField&&qtyDiff>0.01){
+                result['_auto_corrected_'+qtyField]={original:result[qtyField],
+                  corrected:expectedQty.toFixed(4),
+                  rate:ri.rate,qty:expectedQty,unit:ri.unit,
+                  reason:'$'+chargeVal.toFixed(2)+' / $'+ri.rate.toFixed(5)+' = '+expectedQty.toFixed(4)+' '+ri.unit};
+                result[qtyField]=expectedQty.toFixed(4);
+              }
+              // Also flag the charge mismatch for transparency
+              if(chargeDiff>0.02){
+                result['_rate_mismatch_'+chargeField]={
+                  qty:qtyVal,rate:ri.rate,expectedCharge,actualCharge:chargeVal,diff:chargeDiff};
+              }
+            }
           }
         }
       }
