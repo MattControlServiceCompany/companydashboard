@@ -3550,6 +3550,51 @@ function sget(k,fb){
   try{const r=localStorage.getItem(k);return r!==null?JSON.parse(r):fb;}catch(e){return fb;}
 }
 
+/* ── IndexedDB helpers for large PDF file storage ── */
+const _pdfDB={db:null,NAME:'en_pdf_store',STORE:'files',VER:1};
+function _openPdfDB(){
+  if(_pdfDB.db) return Promise.resolve(_pdfDB.db);
+  return new Promise((resolve,reject)=>{
+    const req=indexedDB.open(_pdfDB.NAME,_pdfDB.VER);
+    req.onupgradeneeded=()=>{ req.result.createObjectStore(_pdfDB.STORE); };
+    req.onsuccess=()=>{ _pdfDB.db=req.result; resolve(_pdfDB.db); };
+    req.onerror=()=>reject(req.error);
+  });
+}
+async function pdfStore(id,base64){
+  try{
+    const db=await _openPdfDB();
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction(_pdfDB.STORE,'readwrite');
+      tx.objectStore(_pdfDB.STORE).put(base64,id);
+      tx.oncomplete=()=>resolve(true);
+      tx.onerror=()=>reject(tx.error);
+    });
+  }catch(e){ console.warn('pdfStore failed:',e); return false; }
+}
+async function pdfLoad(id){
+  try{
+    const db=await _openPdfDB();
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction(_pdfDB.STORE,'readonly');
+      const req=tx.objectStore(_pdfDB.STORE).get(id);
+      req.onsuccess=()=>resolve(req.result||null);
+      req.onerror=()=>reject(req.error);
+    });
+  }catch(e){ console.warn('pdfLoad failed:',e); return null; }
+}
+async function pdfDelete(id){
+  try{
+    const db=await _openPdfDB();
+    return new Promise((resolve)=>{
+      const tx=db.transaction(_pdfDB.STORE,'readwrite');
+      tx.objectStore(_pdfDB.STORE).delete(id);
+      tx.oncomplete=()=>resolve(true);
+      tx.onerror=()=>resolve(false);
+    });
+  }catch(e){ return false; }
+}
+
 /* ── STATE ── */
 let projects=[],tasks=[],equipment=[];
 let hCalY,hCalM;
@@ -5801,7 +5846,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
     const startR = parseFloat((meterRow[4]||'').replace(/,/g,''));
     const mult = parseFloat((meterRow[5]||'').replace(/,/g,''));
     if(endR>0 && startR>0 && mult>0){
-      const calc = (endR - startR) * mult;
+      const calc = parseFloat(((endR - startR) * mult).toFixed(4));
       if(_validKwh(calc)) return calc;
     }
     // Also check kWh Used column directly
@@ -5825,7 +5870,7 @@ function _extractEvergy(t,acctOverride,addrOverride){
   const fromEnergy=[...t.matchAll(/Energy\s+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])\s+(?:On\s+Pk\s+\w+\s+|Off\s+Pk\s+\w+\s+)?([\d,]+\.\d+)\s*kWh/gi)]
     .map(m=>parseFloat(m[1].replace(/,/g,'')))
     .filter(v=>v>0);
-  const tierKwh = fromEnergy.length ? fromEnergy.reduce((a,b)=>a+b,0) : null;
+  const tierKwh = fromEnergy.length ? parseFloat(fromEnergy.reduce((a,b)=>a+b,0).toFixed(4)) : null;
 
   // Pick best source: prefer meter read calc, then adj lines, then tier sum
   const adjKwh = (()=>{
@@ -6161,6 +6206,33 @@ function _extractEvergy(t,acctOverride,addrOverride){
   if(result.StartRead) result.StartRead=_pad4(result.StartRead);
   if(result.EndRead) result.EndRead=_pad4(result.EndRead);
   if(result.MeterMultiplier) result.MeterMultiplier=_pad4(result.MeterMultiplier);
+  if(result.kWhConsumed) result.kWhConsumed=_pad4(result.kWhConsumed);
+
+  // ── CROSS-VALIDATION: meter read calc vs kWhConsumed ──
+  // If all three meter fields are present, verify kWhConsumed matches (EndRead - StartRead) * MeterMultiplier
+  if(result.EndRead && result.StartRead && result.MeterMultiplier){
+    const _er=parseFloat(String(result.EndRead).replace(/,/g,''));
+    const _sr=parseFloat(String(result.StartRead).replace(/,/g,''));
+    const _mm=parseFloat(String(result.MeterMultiplier).replace(/,/g,''));
+    if(_er>0 && _sr>0 && _mm>0){
+      const meterCalcKwh=parseFloat(((_er - _sr) * _mm).toFixed(4));
+      const extractedKwh=parseFloat(String(result.kWhConsumed||'0').replace(/,/g,''));
+      if(extractedKwh>0 && meterCalcKwh>0){
+        const diff=Math.abs(meterCalcKwh - extractedKwh);
+        const tolerance=Math.max(1, extractedKwh * 0.01); // 1% or 1 kWh, whichever is larger
+        if(diff > tolerance){
+          // Meter read calculation is more reliable than OCR-extracted kWhConsumed
+          // (meter data is digital; kWhConsumed may be OCR misread)
+          if(_validKwh(meterCalcKwh)){
+            result.kWhConsumed=meterCalcKwh.toFixed(4);
+          }
+        }
+      } else if(!extractedKwh && _validKwh(meterCalcKwh)){
+        // kWhConsumed was missing — fill it from meter read
+        result.kWhConsumed=meterCalcKwh.toFixed(4);
+      }
+    }
+  }
 
   return result;
 }
@@ -6883,7 +6955,7 @@ async function confirmAutoAssign(){
     // Save PDF file and create bill record
     const billId='pb'+Date.now()+'_'+saved;
     let hasPDF=false;
-    if(pdfB64){try{sset('en_pdf_file_'+billId,pdfB64);hasPDF=true;}catch(e){}}
+    if(pdfB64){hasPDF=await pdfStore('en_pdf_file_'+billId,pdfB64);}
     const pdfBills=sget('en_pdf_bills',[])||[];
     pdfBills.push({id:billId,savedAt:new Date().toISOString(),projId:projId,projName:proj?.name||'',hasPDF,...bill});
     sset('en_pdf_bills',pdfBills);
@@ -6895,7 +6967,7 @@ async function confirmAutoAssign(){
       kwh:bill.kWhConsumed||bill.NaturalGasCCF||bill.GallonsDelivered||'',
       demandKW:bill.ActualKW||'',billedKW:bill.BilledKW||'',facKW:bill.FacilitiesKW||'',
       facKWCost:bill.FacilitiesCharge||'',kwCost,kwhCost,otherCost,taxCost,
-      totalCost:bill.TotalCurrentCharges||bill.TotalAmountDue||'',fromPDF:true,pdfBillId:billId};
+      totalCost:bill.TotalCurrentCharges||bill.TotalAmountDue||'',fromPDF:true,pdfBillId:billId,hasPDF};
     meter.bills=meter.bills||[];
     const dup=meter.bills.find(r=>r.start===billRow.start&&r.end===billRow.end);
     if(dup){Object.assign(dup,billRow);}else{meter.bills.push(billRow);meter.bills.sort((a,b)=>new Date(a.start)-new Date(b.start));}
@@ -7689,7 +7761,7 @@ function viewSavedBill(id){
   // Close modal first so user can see the PDF view
   closeSavedBillsModal();
   // Strip internal metadata fields before displaying
-  const display=Object.fromEntries(Object.entries(b).filter(([k])=>!['id','savedAt','projId','projName','fromPDF','pdfBillId'].includes(k)));
+  const display=Object.fromEntries(Object.entries(b).filter(([k])=>!['id','savedAt','projId','projName','fromPDF','pdfBillId','hasPDF'].includes(k)));
   document.getElementById('pdfAIBox').textContent=JSON.stringify(display,null,2);
   document.getElementById('extractMethodBadge').style.display='inline-block';
   document.getElementById('extractMethodBadge').textContent='📂 Loaded from saved records';
@@ -7708,7 +7780,8 @@ function deleteSavedBill(id){
   let bills=sget('en_pdf_bills',[])||[];
   bills=bills.filter(b=>b.id!==id);
   sset('en_pdf_bills',bills);
-  // Also remove stored PDF file to free storage
+  // Also remove stored PDF file from IndexedDB (and legacy localStorage) to free storage
+  pdfDelete('en_pdf_file_'+id);
   try{ localStorage.removeItem('en_pdf_file_'+id); }catch(e){}
   // Animate the card out so user sees the deletion
   const card=document.querySelector('[data-bill-id="'+id+'"]');
@@ -7729,8 +7802,10 @@ function deleteSavedBill(id){
   showToast('Record deleted');
 }
 
-function viewSavedPDF(id){
-  const b64=sget('en_pdf_file_'+id, null);
+async function viewSavedPDF(id){
+  // Try IndexedDB first, fall back to legacy localStorage
+  let b64=await pdfLoad('en_pdf_file_'+id);
+  if(!b64) b64=sget('en_pdf_file_'+id, null);
   if(!b64){ showToast('PDF file not found — it may not have been stored'); return; }
   try{
     const bytes=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
@@ -7809,7 +7884,7 @@ function confirmAssignBill(){
   const billRow={id:'r'+Date.now(),start:toISO(bill.BillingPeriodStart),end:toISO(bill.BillingPeriodEnd),
     kwh:bill.kWhConsumed||'',demandKW:bill.ActualKW||'',billedKW:bill.BilledKW||'',facKW:bill.FacilitiesKW||'',
     facKWCost:bill.FacilitiesCharge||'',kwCost,kwhCost,otherCost,taxCost,totalCost:bill.TotalCurrentCharges||'',
-    fromPDF:true,pdfBillId:bill.id,
+    fromPDF:true,pdfBillId:bill.id,hasPDF:!!bill.hasPDF,
     rateSchedule:bill.RateSchedule||'',
     onPeakKwh:bill.OnPeakKWh||bill.EnergyOnPeakKWh||'',
     offPeakKwh:bill.OffPeakKWh||bill.EnergyOffPeakKWh||'',
@@ -7853,7 +7928,7 @@ async function _saveSinglePDFBill(extracted, projId){
   const pdfBills=await sget('en_pdf_bills',[])||[];
   const billId='pb'+Date.now();
   let hasPDF=false;
-  if(pdfB64){try{await sset('en_pdf_file_'+billId,pdfB64);hasPDF=true;}catch(e){}}
+  if(pdfB64){hasPDF=await pdfStore('en_pdf_file_'+billId,pdfB64);}
   const billRecord={id:billId,savedAt:new Date().toISOString(),projId:projId||null,projName:proj?.name||'General',hasPDF,...extracted};
   pdfBills.push(billRecord);
   await sset('en_pdf_bills',pdfBills);
@@ -7877,7 +7952,7 @@ async function _saveSinglePDFBill(extracted, projId){
     facKW:extracted.FacilitiesKW||'',facKWCost:extracted.FacilitiesCharge||'',
     kwCost,kwhCost,otherCost,taxCost,
     totalCost:extracted.TotalCurrentCharges||extracted.TotalAmountDue||'',
-    fromPDF:true,pdfBillId:billRecord.id,
+    fromPDF:true,pdfBillId:billRecord.id,hasPDF,
     rateSchedule:extracted.RateSchedule||'',
     onPeakKwh:extracted.OnPeakKWh||extracted.EnergyOnPeakKWh||'',
     offPeakKwh:extracted.OffPeakKWh||extracted.EnergyOffPeakKWh||'',
@@ -10166,7 +10241,7 @@ function renderNormPane(pane, m, bills, incl){
       return '<tr'+rowStyle+'>'+
         '<td class="mono">'+r.label+'</td>'+
         '<td class="mono">'+r.normDays+' <span style="color:var(--text3);font-size:10px">(bill:'+r.days+')</span></td>'+
-        '<td class="mono">'+r.usage.toLocaleString(undefined,{maximumFractionDigits:1})+'</td>'+
+        '<td class="mono">'+r.usage.toLocaleString(undefined,{minimumFractionDigits:4,maximumFractionDigits:4})+'</td>'+
         '<td class="mono">'+(r.dd!=null?r.dd.toFixed(1):'—')+'</td>'+
         (r.included
           ? '<td class="mono" style="color:var(--em2)">'+r.kwhPerDay.toFixed(4)+'</td>'+
@@ -10224,7 +10299,7 @@ function renderNormPane(pane, m, bills, incl){
               '<tr>'+
                 '<td class="mono">Σ / Check</td>'+
                 '<td class="mono">'+sumNormDays+'</td>'+
-                '<td class="mono">'+sumActual.toLocaleString(undefined,{maximumFractionDigits:1})+'</td>'+
+                '<td class="mono">'+sumActual.toLocaleString(undefined,{minimumFractionDigits:4,maximumFractionDigits:4})+'</td>'+
                 '<td></td><td></td><td></td>'+
                 '<td class="mono'+(Math.abs(sumFitRaw-sumActual)>1?' style="color:var(--warn)"':'')+'">'+sumFitRaw.toFixed(1)+'</td>'+
                 '<td class="mono" style="color:var(--violet)">'+sumFitAdj.toFixed(1)+'</td>'+
@@ -10306,7 +10381,7 @@ function renderNormPane(pane, m, bills, incl){
   // ── Table rows ──
   const tblRows = rows.map(r=>{
     const normVal = metric==='weather' ? (r.weatherNorm!=null ? r.weatherNorm.toFixed(3) : '—')
-                  : metric==='total'   ? r.usage.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})
+                  : metric==='total'   ? r.usage.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4})
                   : r.usagePerDay.toFixed(2);
     const normColor = metric==='weather' ? 'var(--em2)' : 'var(--em)';
     const euiCell = hasEUI ? `<td class="mono" style="color:var(--text3)">${(r.usage/sqft).toFixed(4)}</td>` : '';
@@ -10895,7 +10970,7 @@ function renderBaselinePane(pane, m, bills, incl){
           interaction: { mode: 'index', intersect: false },
           plugins: {
             legend: { display: hasBilKW, position: 'top', labels: { color:'rgba(200,220,240,0.9)', font:{size:11}, boxWidth:12, padding:12 } },
-            tooltip: { callbacks: { label: ctx => ' '+ctx.dataset.label+': '+ctx.parsed.y.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+' kW' } }
+            tooltip: { callbacks: { label: ctx => ' '+ctx.dataset.label+': '+ctx.parsed.y.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4})+' kW' } }
           },
           scales: {
             x: { ticks:{color:'rgba(180,200,220,0.8)',font:{size:11}}, grid:{color:'rgba(255,255,255,0.10)'} },
@@ -11366,7 +11441,7 @@ function renderBuildingStatsPane(pane, b){
 
     // Number formatters
     // #,##0.0 — one decimal, 0 shows as "0", null/undefined shows as "—"
-    const n1 = v => (v==null||isNaN(v)) ? '—' : v.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1});
+    const n1 = v => (v==null||isNaN(v)) ? '—' : v.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4});
     // #,##0 — whole number
     const n0 = v => (v==null||isNaN(v)) ? '—' : v.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
     // $#,##0.00 — cost
@@ -11668,7 +11743,7 @@ function renderMeterDataPane(pane, m, bills, incl){
   const $4 = (v)     => v!=null ? '$'+v.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4}) : '—';
   const $5 = (v)     => v!=null ? '$'+v.toLocaleString('en-US',{minimumFractionDigits:5,maximumFractionDigits:5}) : '—';
   const $3kw = (v)   => v!=null ? '$'+v.toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:3}) : '—';
-  const n1 = v => (v==null||isNaN(v)) ? '—' : v.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1});
+  const n1 = v => (v==null||isNaN(v)) ? '—' : v.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4});
   const nc = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const r4 = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:5,maximumFractionDigits:5});
   const r2 = v => (v==null||isNaN(v)) ? '—' : '$'+v.toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:3});
@@ -13055,8 +13130,8 @@ function renderPerfPane(pane, m, bills, incl){
       (hasGasCostSav?'<td class="mono num" style="color:var(--text2)">'+(expThermCost>0?'$'+fmtC(expThermCost):'&mdash;')+'</td>':'')+
       (hasGasCostSav?'<td class="mono num">'+(actThermCostCalc>0?'$'+fmtC(actThermCostCalc):'&mdash;')+'</td>':'')+
       (hasGasCostSav?'<td class="mono num" style="color:'+savColor(thermCostSav)+';font-weight:600">'+(thermRate>0?costSign(thermCostSav)+'$'+fmtC(thermCostSav):'&mdash;')+'</td>':'')+
-      (hasKwData   ?'<td class="mono num">'+(demKW>0?demKW.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}):'&mdash;')+'</td>':'')+
-      (hasBilKW    ?'<td class="mono num">'+(bilKW>0?bilKW.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}):'&mdash;')+'</td>':'')+
+      (hasKwData   ?'<td class="mono num">'+(demKW>0?demKW.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4}):'&mdash;')+'</td>':'')+
+      (hasBilKW    ?'<td class="mono num">'+(bilKW>0?bilKW.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4}):'&mdash;')+'</td>':'')+
       (hasKwCost   ?'<td class="mono num">'+(kwCostRow>0?'$'+fmtC(kwCostRow):'&mdash;')+'</td>':'')+
       (hasKwCostSav?'<td class="mono num" style="color:'+savColor(kwCostSav)+';font-weight:600">'+(moKwRate>0?costSign(kwCostSav)+'$'+fmtC(kwCostSav):'&mdash;')+'</td>':'')+
       (hasTotalCostSav?'<td class="mono num" style="color:'+savColor(totalCostSav)+';font-weight:700">'+costSign(totalCostSav)+'$'+fmtC(totalCostSav)+'</td>':'')+
@@ -13169,7 +13244,7 @@ function renderPerfPane(pane, m, bills, incl){
             interaction: { mode: 'index', intersect: false },
             plugins: {
               legend: { display: hasBilKW2, position: 'top', labels: { color:'rgba(200,220,240,0.9)', font:{size:11}, boxWidth:12, padding:12 } },
-              tooltip: { callbacks: { label: ctx => ctx.parsed.y!=null?' '+ctx.dataset.label+': '+ctx.parsed.y.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+' kW':null } }
+              tooltip: { callbacks: { label: ctx => ctx.parsed.y!=null?' '+ctx.dataset.label+': '+ctx.parsed.y.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4})+' kW':null } }
             },
             scales: {
               x: { ticks:{color:'rgba(180,200,220,0.8)',font:{size:10},maxRotation:45}, grid:{color:'rgba(255,255,255,0.10)'} },
@@ -13516,14 +13591,14 @@ function renderBillRow(row, m, incl, allBills){
   const days = calcDays(row.start, row.end, incl);
   const nm = normMonthLabel(row.start, row.end, incl, allBills||m.bills||[]);
   const nmCell = `<td class="norm-mon-cell">${nm}</td>`;
-  const pdfBtn = row.pdfBillId ? `<button class="btn-edit" onclick="viewSavedPDF('${row.pdfBillId}')" title="View source PDF" style="color:var(--accent)">📄</button>` : '';
+  const pdfBtn = (row.pdfBillId && row.hasPDF) ? `<button class="btn-edit" onclick="viewSavedPDF('${row.pdfBillId}')" title="View source PDF" style="color:var(--accent)">📄</button>` : '';
   const actionBtns = `<td class="td-actions">
     ${pdfBtn}<button class="btn-edit" onclick="openBillModal('${m.id}','${row.id}')" title="Edit">✏️</button>
     <button class="btn-del"  onclick="deleteBillRow('${m.id}','${row.id}')" title="Delete">✕</button>
   </td>`;
 
-  const fmtKwh = v => (v!=null&&v!==''&&!isNaN(v)) ? (+v).toLocaleString('en-US',{maximumFractionDigits:1}) : '—';
-  const fmtKW  = v => (v!=null&&v!==''&&!isNaN(v)&&+v>0) ? (+v).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}) : '—';
+  const fmtKwh = v => (v!=null&&v!==''&&!isNaN(v)) ? (+v).toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4}) : '—';
+  const fmtKW  = v => (v!=null&&v!==''&&!isNaN(v)&&+v>0) ? (+v).toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4}) : '—';
   const fmtC   = v => (v!=null&&v!==''&&!isNaN(v)&&+v>0) ? '$'+( +v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
   const fmtD   = v => v ? fmtDate(v) : '—';
 
