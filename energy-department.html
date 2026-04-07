@@ -16396,6 +16396,12 @@
                   );
                   showAutoAssignBanner(findMeterMatch(extracted), extracted);
                 }
+                // Auto-save debug file on every successful extraction
+                try {
+                  savePDFDebug();
+                } catch (e) {
+                  console.warn('Auto-save debug failed:', e);
+                }
                 globalTaskDone();
                 return;
               }
