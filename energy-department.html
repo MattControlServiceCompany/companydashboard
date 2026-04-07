@@ -16739,40 +16739,63 @@
             const ri = parsed._rates?.[row.rateKey];
             const parts = ri?.parts || [];
             const chargeVal = _pf(parsed[row.chargeField]);
-            runningTotal += chargeVal;
-            const rtFmt = runningTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             const base = row.label;
+
+            // Determine the unit label for this charge (kW or kWh)
+            // Energy charges are always kWh even if OCR drops the 'h'
+            const ENERGY_CHARGES = new Set([
+              'EnergyOnPeakCharge',
+              'EnergyOffPeakCharge',
+              'ECACharge',
+              'EERCharge',
+              'PTSCharge',
+            ]);
+            const unitLabel = ENERGY_CHARGES.has(row.chargeField) ? 'kWh' : parts[0]?.unit || ri?.unit || 'kW';
 
             // No rate data — empty qty & rate cells, charge in 3rd column
             if (!row.rateKey || !ri) {
+              runningTotal += chargeVal;
+              const rtFmt = runningTotal.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              });
               const emptyCell = '<div></div>';
               return `<div class="ef-charge-row">${emptyCell}${emptyCell}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
             }
 
+            // Full label with unit: "Energy On-Peak kWh", "Facilities kW"
+            const qtyLabel = base + ' ' + unitLabel;
+
             // Single part — one row: qty | rate | charge | running total
             if (parts.length <= 1) {
+              runningTotal += chargeVal;
+              const rtFmt = runningTotal.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              });
               const p = parts[0] || ri;
               const qtyHtml = row.qtyField
                 ? buildCell(row.qtyField)
-                : `<div class="ef-item"><div class="ef-key">${base}</div><input class="ef-input" value="${fmtQty(p.qty, p.unit)}" data-key="_qty_${row.chargeField}"></div>`;
-              return `<div class="ef-charge-row">${qtyHtml}${buildRateBox(base + ' Rate', fmtRate(p.rate, p.unit))}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
+                : `<div class="ef-item"><div class="ef-key">${qtyLabel}</div><input class="ef-input" value="${fmtQty(p.qty, unitLabel)}" data-key="_qty_${row.chargeField}"></div>`;
+              return `<div class="ef-charge-row">${qtyHtml}${buildRateBox(qtyLabel + ' Rate', fmtRate(p.rate, unitLabel))}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
             }
 
-            // Multiple parts — show each part as its own row
+            // Multiple parts — each part gets its own running total
             const partRows = parts
               .map((p, idx) => {
                 const suffix = ' (' + (idx + 1) + ')';
+                const partCharge = p.ocrCharge != null ? p.ocrCharge : p.computed;
+                runningTotal += partCharge;
+                const rtFmt = runningTotal.toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                });
                 const qtyHtml =
                   idx === 0 && row.qtyField
                     ? buildCell(row.qtyField)
-                    : `<div class="ef-item"><div class="ef-key">${base}${suffix}</div><input class="ef-input" value="${fmtQty(p.qty, p.unit)}" data-key="_qty_${row.chargeField}_${idx}"></div>`;
-                const partCharge = p.ocrCharge != null ? p.ocrCharge : p.computed;
+                    : `<div class="ef-item"><div class="ef-key">${qtyLabel}${suffix}</div><input class="ef-input" value="${fmtQty(p.qty, unitLabel)}" data-key="_qty_${row.chargeField}_${idx}"></div>`;
                 const chargeHtml = `<div class="ef-item center"><div class="ef-key">${base} Charge${suffix}</div><input class="ef-input" value="${fmtDollar(partCharge)}" data-key="_chg_${row.chargeField}_${idx}" style="text-align:center"></div>`;
-                const rtHtml =
-                  idx === parts.length - 1
-                    ? `<div class="ef-running">$${rtFmt}</div>`
-                    : '<div class="ef-running"></div>';
-                return `<div class="ef-charge-row">${qtyHtml}${buildRateBox(base + ' Rate' + suffix, fmtRate(p.rate, p.unit))}${chargeHtml}${rtHtml}</div>`;
+                return `<div class="ef-charge-row">${qtyHtml}${buildRateBox(qtyLabel + ' Rate' + suffix, fmtRate(p.rate, unitLabel))}${chargeHtml}<div class="ef-running">$${rtFmt}</div></div>`;
               })
               .join('');
             return partRows;
