@@ -6265,29 +6265,35 @@ function _extractEvergy(t,acctOverride,addrOverride){
   if(result.kWhConsumed) result.kWhConsumed=_pad4(result.kWhConsumed);
 
   // ── CROSS-VALIDATION: meter read calc vs kWhConsumed ──
-  // Skip for multi-meter bills (meter change/solar) — the combined kWh is already calculated correctly
-  // For single-meter: verify kWhConsumed matches (EndRead - StartRead) * MeterMultiplier
-  if(!_meterCombined && result.EndRead && result.StartRead && result.MeterMultiplier){
-    const _er=parseFloat(String(result.EndRead).replace(/,/g,''));
-    const _sr=parseFloat(String(result.StartRead).replace(/,/g,''));
-    const _mm=parseFloat(String(result.MeterMultiplier).replace(/,/g,''));
-    if(_er>0 && _sr>0 && _mm>0){
-      const meterCalcKwh=parseFloat(((_er - _sr) * _mm).toFixed(4));
-      const extractedKwh=parseFloat(String(result.kWhConsumed||'0').replace(/,/g,''));
-      if(extractedKwh>0 && meterCalcKwh>0){
-        const diff=Math.abs(meterCalcKwh - extractedKwh);
-        const tolerance=Math.max(1, extractedKwh * 0.01); // 1% or 1 kWh, whichever is larger
-        if(diff > tolerance){
-          // Meter read calculation is more reliable than OCR-extracted kWhConsumed
-          // (meter data is digital; kWhConsumed may be OCR misread)
-          if(_validKwh(meterCalcKwh)){
-            result.kWhConsumed=meterCalcKwh.toFixed(4);
-          }
-        }
-      } else if(!extractedKwh && _validKwh(meterCalcKwh)){
-        // kWhConsumed was missing — fill it from meter read
-        result.kWhConsumed=meterCalcKwh.toFixed(4);
+  // For multi-meter (meter change): calculate per-row and sum. For single-meter: one calc.
+  const _cvMeterCalc=(()=>{
+    const pn=s=>parseFloat((s||'').replace(/,/g,''))||0;
+    if(_meterCombined && _meterCombined.type==='meter_change'){
+      // Sum (EndRead - StartRead) × Multiplier for each row
+      let total=0;
+      for(const r of _meterRows){
+        const er=pn(r[4]), sr=pn(r[5]), mm=pn(r[6]);
+        if(er>0 && sr>0 && mm>0) total+=parseFloat(((er-sr)*mm).toFixed(4));
       }
+      return total>0?total:null;
+    }
+    // Single meter row
+    if(result.EndRead && result.StartRead && result.MeterMultiplier){
+      const er=pn(result.EndRead), sr=pn(result.StartRead), mm=pn(result.MeterMultiplier);
+      if(er>0 && sr>0 && mm>0) return parseFloat(((er-sr)*mm).toFixed(4));
+    }
+    return null;
+  })();
+  if(_cvMeterCalc!==null){
+    const extractedKwh=parseFloat(String(result.kWhConsumed||'0').replace(/,/g,''));
+    if(extractedKwh>0 && _cvMeterCalc>0){
+      const diff=Math.abs(_cvMeterCalc - extractedKwh);
+      const tolerance=Math.max(1, extractedKwh * 0.01);
+      if(diff > tolerance && _validKwh(_cvMeterCalc)){
+        result.kWhConsumed=_cvMeterCalc.toFixed(4);
+      }
+    } else if(!extractedKwh && _validKwh(_cvMeterCalc)){
+      result.kWhConsumed=_cvMeterCalc.toFixed(4);
     }
   }
 
