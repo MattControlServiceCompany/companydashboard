@@ -5891,8 +5891,12 @@ function _extractEvergy(t,acctOverride,addrOverride){
         if(_validKwh(deliveredKwh)) return deliveredKwh;
       }
     }
-    // Single meter row
+    // Single meter row — prefer the kWh Used column (printed on the bill, authoritative)
+    // over (EndRead - StartRead) × Multiplier (which can be wrong if reads have OCR digit errors)
     if(!meterRow) return null;
+    const directKwh = parseFloat((meterRow[7]||'').replace(/,/g,''));
+    if(_validKwh(directKwh)) return directKwh;
+    // Fallback: calculate from reads if kWh Used column is missing/invalid
     const endR = parseFloat((meterRow[4]||'').replace(/,/g,''));
     const startR = parseFloat((meterRow[5]||'').replace(/,/g,''));
     const mult = parseFloat((meterRow[6]||'').replace(/,/g,''));
@@ -5900,9 +5904,6 @@ function _extractEvergy(t,acctOverride,addrOverride){
       const calc = parseFloat(((endR - startR) * mult).toFixed(4));
       if(_validKwh(calc)) return calc;
     }
-    // Also check kWh Used column directly (7th capture group)
-    const directKwh = parseFloat((meterRow[7]||'').replace(/,/g,''));
-    if(_validKwh(directKwh)) return directKwh;
     return null;
   })();
 
@@ -6289,8 +6290,11 @@ function _extractEvergy(t,acctOverride,addrOverride){
     if(extractedKwh>0 && _cvMeterCalc>0){
       const diff=Math.abs(_cvMeterCalc - extractedKwh);
       const tolerance=Math.max(1, extractedKwh * 0.01);
-      if(diff > tolerance && _validKwh(_cvMeterCalc)){
-        result.kWhConsumed=_cvMeterCalc.toFixed(4);
+      if(diff > tolerance){
+        // Flag the discrepancy but do NOT override — the kWh Used column from the bill
+        // is more reliable than (EndRead - StartRead) × Multiplier when reads have OCR errors.
+        // The cross-validation serves as a warning, not an auto-correction for kWh.
+        result._kwhCrossCheck={extracted:extractedKwh,calculated:_cvMeterCalc,diff};
       }
     } else if(!extractedKwh && _validKwh(_cvMeterCalc)){
       result.kWhConsumed=_cvMeterCalc.toFixed(4);
