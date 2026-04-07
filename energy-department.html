@@ -5811,9 +5811,11 @@ function _extractEvergy(t,acctOverride,addrOverride){
   // Tesseract frequently confuses 0↔6↔8↔3 (round digits) and occasionally 1↔7, 5↔6.
   // The meter table has built-in checksums: EndRead - StartRead = Difference, Diff × Mult = kWhUsed.
   // When these don't match, try single-digit substitutions on the reads to find a value that satisfies.
+  // Full confusable digit map — OCR confuses round digits (0,3,6,8,9) and stroke digits (1,4,5,7)
   const _CONFUSABLE={
-    '0':['6','8','3'],'3':['8','0','6'],'6':['0','8','5'],'8':['0','6','3','9'],
-    '1':['7','4'],'7':['1'],'5':['6','3'],'9':['8','0'],'4':['1'],
+    '0':['6','8','3','9'],'1':['7','4','9'],'2':['7','3'],'3':['8','0','6','5'],
+    '4':['1','9'],'5':['6','3','8'],'6':['0','8','5','9'],
+    '7':['1','2'],'8':['0','6','3','9','5'],'9':['8','0','4','6'],
   };
   function _tryDigitFix(ocrStr, targetVal, tolerance){
     // Try single-digit substitutions on ocrStr to get a number within tolerance of targetVal
@@ -5970,8 +5972,23 @@ function _extractEvergy(t,acctOverride,addrOverride){
     // Single meter row — prefer the kWh Used column (printed on the bill, authoritative)
     // over (EndRead - StartRead) × Multiplier (which can be wrong if reads have OCR digit errors)
     if(!meterRow) return null;
-    const directKwh = parseFloat((meterRow[8]||'').replace(/,/g,''));
+    const directKwhRaw=(meterRow[8]||'').replace(/,/g,'');
+    const directKwh = parseFloat(directKwhRaw);
     if(_validKwh(directKwh)) return directKwh;
+    // OCR sometimes strips commas and decimal from kWh Used (e.g. "1053648000" = "105,364.8000")
+    // Evergy kWh values have 4 decimal places — try inserting decimal at position that gives 4dp
+    if(directKwhRaw.length>=8 && !directKwhRaw.includes('.')){
+      const repaired=directKwhRaw.slice(0,-4)+'.'+directKwhRaw.slice(-4);
+      const repairedVal=parseFloat(repaired);
+      if(_validKwh(repairedVal)) return repairedVal;
+    }
+    // Try Difference × Multiplier as another source
+    const diffVal = parseFloat((meterRow[6]||'').replace(/,/g,''));
+    const multVal = parseFloat((meterRow[7]||'').replace(/,/g,''));
+    if(diffVal>0 && multVal>0){
+      const diffTimesM=parseFloat((diffVal*multVal).toFixed(4));
+      if(_validKwh(diffTimesM)) return diffTimesM;
+    }
     // Fallback: calculate from reads if kWh Used column is missing/invalid
     const endR = parseFloat((meterRow._fixedEndRead||meterRow[4]||'').replace(/,/g,''));
     const startR = parseFloat((meterRow._fixedStartRead||meterRow[5]||'').replace(/,/g,''));
@@ -7298,9 +7315,11 @@ async function extractPDFText(ab, statusCb){
       const scorePage=txt=>{let s=0;BILL_SIGNALS.forEach(rx=>{if(rx.test(txt))s++;});return s;};
       // OCR settings to try — different render scales and Tesseract PSM modes
       const OCR_PASSES=[
+        {scale:1.0, psm:null, label:'1x native'},
+        {scale:1.5, psm:null, label:'1.5x'},
+        {scale:2.0, psm:null, label:'2x'},
         {scale:2.5, psm:null, label:'2.5x'},
         {scale:3.0, psm:null, label:'3.0x'},
-        {scale:3.5, psm:null, label:'3.5x high-res'},
       ];
 
       // Store all OCR pass texts for consensus re-extraction on mismatched values
