@@ -13478,7 +13478,14 @@
             // e.g. "578.7840 3\nKW at $2.68601" → block becomes "578.7840 3 KW at $2.68601"
             // Also handle chart Y-axis numbers between "at" and the actual rate:
             // e.g. "27,170.0880 kWh at 140000 — $0.07299 per kWh" → skip 140000, use $0.07299
-            const block = lines.slice(i, Math.min(i + 4, lines.length)).join(' ');
+            // IMPORTANT: Stop block at next charge keyword to avoid matching RkVA/TDC/etc.
+            const blockLines = [lines[i]];
+            for (let bi = i + 1; bi < Math.min(i + 4, lines.length); bi++) {
+              if (CHG_STOP.test(lines[bi]) && !/per\s+k[Ww]/i.test(lines[bi]) && !/^\s*k[Ww]\s+at/i.test(lines[bi]))
+                break;
+              blockLines.push(lines[bi]);
+            }
+            const block = blockLines.join(' ');
             // Try the direct pattern first: qty kW/kWh at $rate (no junk between at and rate)
             let rateM = block.match(/([\d,]+\.\d{2,})\s*(?:\d\s+)?k([Ww]h?)\s+at\s+\$([\d,.]+)/i);
             if (!rateM) {
