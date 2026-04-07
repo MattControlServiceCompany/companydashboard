@@ -5798,8 +5798,49 @@ function _extractEvergy(t,acctOverride,addrOverride){
     }catch(ex){}
   }
 
-  // ── Meter read table (used for reads/multiplier/kW only, NOT days) ──
-  const meterRow=t.match(/(\d{2}\/\d{2})\s+(\d{2}\/\d{2})\s+\d+\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+[\d,]+\.?\d*\s+([\d,.]+)\s+[\d,]+\.?\d*\s+([\d.]+)\s+([\d.]+)/);
+  // ── Meter read table (supports multi-row: meter changes and solar net metering) ──
+  // Format: StartDate EndDate Days EndRead(-) StartRead(=) Diff (x)Mult (=)kWhUsed KWUsed RKVAUsed
+  // Single row: standard bill. Two rows: meter change (sum kWh/RKVA) or solar net meter (Delivered/Received).
+  const _meterRe=/(\d{2}\/\d{2})\s+(\d{2}\/\d{2})\s+(\d+)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+[\d,]+\.?\d*\s+([\d,.]+)\s+([\d,]+\.?\d*)\s+([\d.]+)\s+([\d.]+)/g;
+  const _meterRows=[];
+  let _mm;
+  while((_mm=_meterRe.exec(t))!==null) _meterRows.push(_mm);
+  // Check for Delivered/Received labels near meter table (solar net metering indicator)
+  const _hasSolarLabels=/\bDeliver/i.test(t)&&/\bRece[iv]/i.test(t)&&(()=>{
+    // Only flag solar if the labels appear within ~200 chars of the meter table
+    const tableIdx=_meterRows.length?_meterRows[0].index:t.length;
+    const region=t.slice(Math.max(0,tableIdx-300),tableIdx+500);
+    return /\bDeliver/i.test(region)&&/\bRece[iv]/i.test(region);
+  })();
+  // Combine meter rows into a single effective meter reading
+  const meterRow=_meterRows.length?_meterRows[0]:null;
+  const _meterCombined=(()=>{
+    if(_meterRows.length<=1) return null; // single row handled by meterRow directly
+    const pn=s=>parseFloat((s||'').replace(/,/g,''))||0;
+    if(_hasSolarLabels){
+      // Solar net metering: find the Delivered row (typically the larger kWh value)
+      // For now, use the row with more kWh — Delivered consumption > Received generation for most commercial
+      // TODO: when we see real solar bills, refine this with actual Delivered/Received label matching
+      const sorted=[..._meterRows].sort((a,b)=>pn(b[7])-pn(a[7]));
+      return {type:'solar',rows:_meterRows.length,delivered:sorted[0],received:sorted[1]};
+    }
+    // Meter change: sum kWh and RKVA, take max KW, use overall start/end dates
+    const first=_meterRows[0], last=_meterRows[_meterRows.length-1];
+    let totalKwh=0, maxKw=0, totalRkva=0;
+    for(const r of _meterRows){
+      totalKwh+=pn(r[7]);
+      maxKw=Math.max(maxKw,pn(r[8]));
+      totalRkva+=pn(r[9]);
+    }
+    return {
+      type:'meter_change',rows:_meterRows.length,
+      startDate:first[1], endDate:last[2],
+      startRead:first[5]?.replace(/,/g,''), endRead:last[4]?.replace(/,/g,''),
+      multiplier:first[6]?.replace(/,/g,''),
+      kwh:parseFloat(totalKwh.toFixed(4)),
+      kw:maxKw.toFixed(4), rkva:totalRkva.toFixed(4),
+    };
+  })();
 
   // ── Multi-line labeled meter table (fallback for PDF.js text layout) ──
   // Some PDFs produce each meter field on its own labeled line:
@@ -5839,24 +5880,29 @@ function _extractEvergy(t,acctOverride,addrOverride){
     return v > 0 && v < 2000000;
   };
 
-  // Source 1: meter read calculation
+  // Source 1: meter read calculation (handles multi-row meter changes)
   const meterKwh = (()=>{
+    // Multi-meter: combined kWh already calculated (meter change = summed, solar = delivered only)
+    if(_meterCombined){
+      if(_meterCombined.type==='meter_change' && _validKwh(_meterCombined.kwh)) return _meterCombined.kwh;
+      if(_meterCombined.type==='solar'){
+        const pn=s=>parseFloat((s||'').replace(/,/g,''))||0;
+        const deliveredKwh=pn(_meterCombined.delivered[7]);
+        if(_validKwh(deliveredKwh)) return deliveredKwh;
+      }
+    }
+    // Single meter row
     if(!meterRow) return null;
-    const endR = parseFloat((meterRow[3]||'').replace(/,/g,''));
-    const startR = parseFloat((meterRow[4]||'').replace(/,/g,''));
-    const mult = parseFloat((meterRow[5]||'').replace(/,/g,''));
+    const endR = parseFloat((meterRow[4]||'').replace(/,/g,''));
+    const startR = parseFloat((meterRow[5]||'').replace(/,/g,''));
+    const mult = parseFloat((meterRow[6]||'').replace(/,/g,''));
     if(endR>0 && startR>0 && mult>0){
       const calc = parseFloat(((endR - startR) * mult).toFixed(4));
       if(_validKwh(calc)) return calc;
     }
-    // Also check kWh Used column directly
-    const kwhUsed = parseFloat((meterRow[0]||'').replace(/,/g,''));
-    // Match the full row again for kWh Used field (8th group)
-    const fullRow = t.match(/\d{2}\/\d{2}\s+\d{2}\/\d{2}\s+\d+\s+[\d,]+\.?\d*\s+[\d,]+\.?\d*\s+[\d,]+\.?\d*\s+[\d,.]+\s+([\d,]+\.?\d*)\s+[\d.]+/);
-    if(fullRow){
-      const directKwh = parseFloat(fullRow[1].replace(/,/g,''));
-      if(_validKwh(directKwh)) return directKwh;
-    }
+    // Also check kWh Used column directly (7th capture group)
+    const directKwh = parseFloat((meterRow[7]||'').replace(/,/g,''));
+    if(_validKwh(directKwh)) return directKwh;
     return null;
   })();
 
@@ -6022,14 +6068,14 @@ function _extractEvergy(t,acctOverride,addrOverride){
     BillingPeriodStart:bpMatch?.[1]||null,
     BillingPeriodEnd:bpMatch?.[2]||null,
     NumberOfDays:numDays,
-    MeterReadStart:meterRow?.[1]||_mlMeter?.startDate||null,
-    MeterReadEnd:meterRow?.[2]||_mlMeter?.endDate||null,
-    StartRead:meterRow?.[4]?.replace(/,/g,'')||_mlMeter?.startRead||null,
-    EndRead:meterRow?.[3]?.replace(/,/g,'')||_mlMeter?.endRead||null,
-    MeterMultiplier:meterRow?.[5]?.replace(/,/g,'')||_mlMeter?.multiplier||null,
+    MeterReadStart:_meterCombined?.startDate||meterRow?.[1]||_mlMeter?.startDate||null,
+    MeterReadEnd:_meterCombined?.endDate||meterRow?.[2]||_mlMeter?.endDate||null,
+    StartRead:_meterCombined?.startRead||meterRow?.[5]?.replace(/,/g,'')||_mlMeter?.startRead||null,
+    EndRead:_meterCombined?.endRead||meterRow?.[4]?.replace(/,/g,'')||_mlMeter?.endRead||null,
+    MeterMultiplier:_meterCombined?.multiplier||meterRow?.[6]?.replace(/,/g,'')||_mlMeter?.multiplier||null,
     kWhConsumed:adjKwh,
-    ActualKW:meterRow?.[6]||_mlMeter?.kwUsed||null,
-    ActualRKVA:meterRow?.[7]||_mlMeter?.rkvaUsed||null,
+    ActualKW:_meterCombined?.kw||meterRow?.[8]||_mlMeter?.kwUsed||null,
+    ActualRKVA:_meterCombined?.rkva||meterRow?.[9]||_mlMeter?.rkvaUsed||null,
     CustomerCharge:custChg,
     FacilitiesKW:facKW,
     FacilitiesCharge:facChg,
@@ -6049,6 +6095,16 @@ function _extractEvergy(t,acctOverride,addrOverride){
     TotalCurrentCharges:totalDue,
     MeterNumber:null,
   };
+
+  // Flag multi-meter bills for transparency in debug output
+  if(_meterCombined){
+    result._meterInfo={type:_meterCombined.type,rows:_meterCombined.rows};
+    if(_meterCombined.type==='meter_change'){
+      result._meterInfo.note='Meter change: '+_meterCombined.rows+' meter lines summed for kWh/RKVA, max KW used';
+    } else if(_meterCombined.type==='solar'){
+      result._meterInfo.note='Solar net meter: using Delivered row only for consumption';
+    }
+  }
 
   // ── Rate info for cross-validation (rate × qty vs OCR'd charge) ──
   const _rates={};
@@ -6209,8 +6265,9 @@ function _extractEvergy(t,acctOverride,addrOverride){
   if(result.kWhConsumed) result.kWhConsumed=_pad4(result.kWhConsumed);
 
   // ── CROSS-VALIDATION: meter read calc vs kWhConsumed ──
-  // If all three meter fields are present, verify kWhConsumed matches (EndRead - StartRead) * MeterMultiplier
-  if(result.EndRead && result.StartRead && result.MeterMultiplier){
+  // Skip for multi-meter bills (meter change/solar) — the combined kWh is already calculated correctly
+  // For single-meter: verify kWhConsumed matches (EndRead - StartRead) * MeterMultiplier
+  if(!_meterCombined && result.EndRead && result.StartRead && result.MeterMultiplier){
     const _er=parseFloat(String(result.EndRead).replace(/,/g,''));
     const _sr=parseFloat(String(result.StartRead).replace(/,/g,''));
     const _mm=parseFloat(String(result.MeterMultiplier).replace(/,/g,''));
