@@ -7203,6 +7203,61 @@ function _postExtractionVerify(bills, utilityName, rawText){
     }
   }
 
+  // ── FACILITIES KW ROLLING PEAK VALIDATION ──
+  // FacilitiesKW is the highest demand in the past 12 months (rolling peak).
+  // It only changes when a new monthly BilledKW exceeds the previous peak.
+  // If FacilitiesKW changes between consecutive bills, verify it's legitimate:
+  //   Legitimate: new FacilitiesKW = current BilledKW (new peak set this month)
+  //   OCR error:  new FacilitiesKW ≠ BilledKW, and decimal digits match prior value
+  //               (e.g. 576.7840 vs 578.7840 — same .7840, just integer digit swap)
+  if(bills.length>1 && utilityName==='Evergy'){
+    for(let i=1;i<bills.length;i++){
+      const prev=bills[i-1], curr=bills[i];
+      // Only compare same account
+      const acct1=(prev.AccountNumber||'').replace(/[\s\-]/g,'');
+      const acct2=(curr.AccountNumber||'').replace(/[\s\-]/g,'');
+      if(acct1&&acct2&&acct1!==acct2) continue;
+      const prevFac=pf(prev.FacilitiesKW), currFac=pf(curr.FacilitiesKW);
+      const currBilled=pf(curr.BilledKW);
+      if(!prevFac||!currFac||Math.abs(prevFac-currFac)<0.001) continue;
+      // FacilitiesKW changed — is it legitimate?
+      if(Math.abs(currFac-currBilled)<0.001){
+        // New FacilitiesKW = current BilledKW → could be a new peak.
+        // Check: were all previous BilledKW values below this?
+        // Look back up to 11 bills for the same account.
+        let allBelow=true;
+        for(let j=Math.max(0,i-11);j<i;j++){
+          const pAcct=(bills[j].AccountNumber||'').replace(/[\s\-]/g,'');
+          if(pAcct&&acct2&&pAcct!==acct2) continue;
+          if(pf(bills[j].BilledKW)>=currFac-0.001){allBelow=false;break;}
+        }
+        if(allBelow) continue; // Legitimate new peak — skip correction
+      }
+      // Check if decimal digits match (strong indicator of integer-digit OCR error)
+      const prevDec=(String(prev.FacilitiesKW).split('.')[1]||'');
+      const currDec=(String(curr.FacilitiesKW).split('.')[1]||'');
+      if(prevDec===currDec && prevDec.length>=3){
+        // Same decimal portion (e.g. both .7840) — integer digit OCR error.
+        // Use the previous bill's FacilitiesKW (the established rolling peak).
+        curr['_auto_corrected_FacilitiesKW']={original:curr.FacilitiesKW,
+          corrected:prev.FacilitiesKW,rate:0,qty:0,unit:'kW',
+          reason:'Rolling 12-month peak: decimal .'+currDec+' matches prior bill, integer digit OCR error ('+curr.FacilitiesKW+' → '+prev.FacilitiesKW+')'};
+        curr.FacilitiesKW=prev.FacilitiesKW;
+        // Also recompute FacilitiesCharge if we have the rate
+        if(curr._rates&&curr._rates.FacilitiesCharge){
+          const newCharge=Math.round(pf(prev.FacilitiesKW)*curr._rates.FacilitiesCharge.rate*100)/100;
+          if(newCharge>0){
+            curr['_auto_corrected_FacilitiesCharge']={original:curr.FacilitiesCharge,
+              corrected:newCharge.toFixed(2),rate:curr._rates.FacilitiesCharge.rate,
+              qty:pf(prev.FacilitiesKW),unit:'kW',
+              reason:prev.FacilitiesKW+' kW × $'+curr._rates.FacilitiesCharge.rate.toFixed(5)+' = $'+newCharge.toFixed(2)};
+            curr.FacilitiesCharge=newCharge.toFixed(2);
+          }
+        }
+      }
+    }
+  }
+
   // ── NEIGHBOR-BILL FALLBACK ──
   // When a bill has null fields, borrow from adjacent bills in the same multi-bill PDF
   // that share the same AccountNumber (and MeterNumber when both have one).
