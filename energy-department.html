@@ -13688,8 +13688,9 @@
         // Format: StartDate EndDate Days EndRead(-) StartRead(=) Diff (x)Mult (=)kWhUsed KWUsed RKVAUsed
         // Groups: [1]StartDate [2]EndDate [3]Days [4]EndRead [5]StartRead [6]Difference [7]Mult [8]kWhUsed [9]KWUsed [10]RKVAUsed
         // Allow 1 or 2 digit month/day (OCR sometimes drops leading zeros, e.g. "1/30" instead of "01/30")
+        // Meter regex: tolerates missing date slashes (1231 → 12/31), +/- signs between columns, and extra whitespace
         const _meterRe =
-          /(\d{1,2}\/\d{1,2})\s+(\d{1,2}\/\d{1,2})\s+(\d+)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+([\d,]+\.?\d*)\s+([\d,.]+)\s+([\d,]+\.?\d*)\s+([\d.]+)\s+([\d.]+)/g;
+          /(\d{1,2}\/?\d{1,2})\s+(\d{1,2}\/?\d{1,2})\s+(\d+)\s+[-+]?\s*([\d,]+\.?\d*)\s+[-+]?\s*([\d,]+\.?\d*)\s+[-+]?\s*([\d,]+\.?\d*)\s+[-+]?\s*([\d,.]+)\s+[-+]?\s*([\d,]+\.?\d*)\s+([\d,.]+)\s+([\d,.]+)/g;
         const _meterRows = [];
         let _mm;
         while ((_mm = _meterRe.exec(t)) !== null) _meterRows.push(_mm);
@@ -15818,6 +15819,21 @@
           }
         }
 
+        // Clean up no-op corrections: if a field was corrected then corrected back to its original value, remove the correction record
+        for (const b of bills) {
+          for (const key of Object.keys(b)) {
+            if (!key.startsWith('_auto_corrected_')) continue;
+            const corr = b[key];
+            if (!corr) continue;
+            const field = key.replace('_auto_corrected_', '');
+            const origVal = String(corr.original || '').replace(/,/g, '');
+            const finalVal = String(b[field] || '').replace(/,/g, '');
+            if (origVal && finalVal && parseFloat(origVal).toFixed(4) === parseFloat(finalVal).toFixed(4)) {
+              delete b[key]; // No net change — remove the correction warning
+            }
+          }
+        }
+
         return bills;
       }
 
@@ -16914,7 +16930,7 @@
         const el = document.getElementById('extractedFields');
         // Collect all layout keys + any extra extracted fields not in layout
         const layoutKeys = new Set(
-          FIELD_LAYOUT.flatMap((r) => [...(r.fields || []), r.chargeField, r.qtyField].filter(Boolean)),
+          FIELD_LAYOUT.flatMap((r) => [...(r.fields || []), r.chargeField, r.qtyField, r.kwField].filter(Boolean)),
         );
         const extraKeys = Object.keys(parsed).filter((k) => !layoutKeys.has(k) && !k.startsWith('_'));
         // Build warning lookup by field name
