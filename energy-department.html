@@ -3184,14 +3184,14 @@
         border-right: none;
         padding: 0;
       }
-      /* Collapse toggle button */
-      .ud-nav-toggle {
+      /* Collapse/expand tab — sits on the detail column left edge, always visible */
+      .ud-collapse-tab {
         position: absolute;
         top: 50%;
-        right: -14px;
+        left: 0;
         transform: translateY(-50%);
-        width: 14px;
-        height: 40px;
+        width: 18px;
+        height: 48px;
         background: var(--s3);
         border: 1px solid var(--border);
         border-left: none;
@@ -3200,44 +3200,19 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 10px;
+        font-size: 11px;
         color: var(--text2);
-        z-index: 5;
+        z-index: 10;
         transition: background 0.15s;
       }
-      .ud-nav-toggle:hover {
+      .ud-collapse-tab:hover {
         background: var(--s4);
         color: var(--text);
       }
-      .ud-layout.nav-collapsed .ud-nav-toggle {
-        right: auto;
-        left: 0;
-        border-left: 1px solid var(--border);
-        border-radius: 0 6px 6px 0;
-      }
-      /* Collapsed state: show toggle on the detail column instead */
+      /* Hide old toggle buttons */
+      .ud-nav-toggle,
       .ud-expand-btn {
-        position: absolute;
-        top: 50%;
-        left: 0;
-        transform: translateY(-50%);
-        width: 14px;
-        height: 40px;
-        background: var(--s3);
-        border: 1px solid var(--border);
-        border-left: none;
-        border-radius: 0 6px 6px 0;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 10px;
-        color: var(--text2);
-        z-index: 5;
-      }
-      .ud-expand-btn:hover {
-        background: var(--s4);
-        color: var(--text);
+        display: none;
       }
       /* Left nav column */
       .ud-nav {
@@ -4557,7 +4532,6 @@
               <!-- Left nav: Projects + Buildings drill-down -->
               <div class="ud-nav">
                 <div class="resize-handle" id="udNavResizeHandle"></div>
-                <div class="ud-nav-toggle" onclick="toggleUdNav('udLayout')" title="Collapse panel">◀</div>
                 <div class="ud-nav-sect">
                   <div class="ud-nav-sect-hdr">
                     <span class="ud-nav-sect-title">Projects</span>
@@ -4567,15 +4541,7 @@
               </div>
               <!-- Right detail: project header + building header + meters -->
               <div class="ud-detail-col">
-                <div
-                  class="ud-expand-btn"
-                  id="udExpandBtn"
-                  style="display: none"
-                  onclick="toggleUdNav('udLayout')"
-                  title="Show buildings panel"
-                >
-                  ▶
-                </div>
+                <div class="ud-collapse-tab" onclick="toggleUdNav('udLayout')" title="Toggle buildings panel">◀</div>
                 <!-- Project-level panels bar (shown when project selected, above building header) -->
                 <div
                   id="udProjPanelBar"
@@ -11276,7 +11242,7 @@
         document.getElementById('projDetailView').style.display = 'none';
         document.querySelectorAll('.spfi').forEach((c) => c.classList.remove('active'));
         window._activeProjId = null;
-        window._activeProjTab = 'notes';
+        window._activeProjTab = sget('ch_defaultProjTab', 'dashboard');
         saveProjSession();
       }
       function backToList() {
@@ -11340,7 +11306,9 @@
         document.querySelectorAll(`.spfi[data-pid="${id}"]`).forEach((c) => c.classList.add('active'));
         document.querySelector('.view.active')?.scrollTo({ top: 0, behavior: 'smooth' });
         window._activeProjId = id;
-        if (!window._activeProjTab) window._activeProjTab = 'notes';
+        const _dfltTab = sget('ch_defaultProjTab', 'dashboard');
+        if (!window._activeProjTab || _dfltTab !== 'last')
+          window._activeProjTab = _dfltTab === 'last' ? window._activeProjTab || 'dashboard' : _dfltTab;
         saveProjSession();
       }
 
@@ -11473,7 +11441,6 @@
         <div class="ud-layout" id="projUdLayout-${p.id}" style="border-top:1px solid var(--border);min-height:500px">
           <!-- Left: buildings nav -->
           <div class="ud-nav" style="max-width:240px">
-            <div class="ud-nav-toggle" onclick="toggleUdNav('projUdLayout-${p.id}')" title="Collapse panel">◀</div>
             <div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
               <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3)">Buildings</span>
               <button class="btn btn-em btn-sm" style="font-size:10px;padding:2px 7px" onclick="openBldgModalForProj(${p.id})">+ Add</button>
@@ -11482,7 +11449,7 @@
           </div>
           <!-- Right: meter detail -->
           <div class="ud-detail-col">
-            <div class="ud-expand-btn" style="display:none" onclick="toggleUdNav('projUdLayout-${p.id}')" title="Show buildings panel">▶</div>
+            <div class="ud-collapse-tab" onclick="toggleUdNav('projUdLayout-${p.id}')" title="Toggle buildings panel">◀</div>
             <div id="proj-ud-detail-hdr-${p.id}" style="display:none;flex-shrink:0;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--s1);align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
               <div>
                 <div id="proj-ud-hdr-title-${p.id}" style="font-size:15px;font-weight:700"></div>
@@ -18491,20 +18458,40 @@
 
       function dcExtractCalendarEvents(text) {
         const events = [];
-        const lines = text.split(/\n/);
-        const datePatterns = [
-          /(\d{1,2})\/(\d{1,2})\/(\d{4})/,
-          /(\d{1,2})\/(\d{1,2})\/(\d{2})/,
-          /(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s*(\d{4})?/i,
-          /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.?\s+(\d{1,2}),?\s*(\d{4})?/i,
-        ];
+        const monthMap = {
+          january: 1,
+          february: 2,
+          march: 3,
+          april: 4,
+          may: 5,
+          june: 6,
+          july: 7,
+          august: 8,
+          september: 9,
+          october: 10,
+          november: 11,
+          december: 12,
+          jan: 1,
+          feb: 2,
+          mar: 3,
+          apr: 4,
+          jun: 6,
+          jul: 7,
+          aug: 8,
+          sep: 9,
+          oct: 10,
+          nov: 11,
+          dec: 12,
+        };
         const typeKeywords = {
           Holiday:
             /holiday|mlk|martin luther|presidents|memorial|labor day|independence|thanksgiving|christmas|new year|veteran/i,
           Break: /break|recess/i,
-          'Early Release': /early release|early dismiss|early out|half day/i,
-          'Teacher Day': /teacher|in-?service|professional dev|pd day|staff dev|workday|planning/i,
-          'First/Last Day': /first day|last day|school (begins|starts|ends)|commencement|graduation/i,
+          'Early Release': /early release|early dismiss|early out|half day|early dismissal/i,
+          'Teacher Day': /teacher|in-?service|professional dev|pd day|staff dev|workday|planning|staff pd|onboarding/i,
+          'First/Last Day': /first day|last day|1st day|school (begins|starts|ends|resumes)|commencement|graduation/i,
+          Conference: /conference|pt conference/i,
+          'End of Quarter': /end of.*quarter|end of.*semester/i,
         };
         function detectType(name) {
           for (const [type, re] of Object.entries(typeKeywords)) {
@@ -18512,65 +18499,128 @@
           }
           return 'Other';
         }
-        const monthMap = {
-          january: 0,
-          february: 1,
-          march: 2,
-          april: 3,
-          may: 4,
-          june: 5,
-          july: 6,
-          august: 7,
-          september: 8,
-          october: 9,
-          november: 10,
-          december: 11,
-          jan: 0,
-          feb: 1,
-          mar: 2,
-          apr: 3,
-          may: 4,
-          jun: 5,
-          jul: 6,
-          aug: 7,
-          sep: 8,
-          oct: 9,
-          nov: 10,
-          dec: 11,
-        };
-        const currentYear = new Date().getFullYear();
-        lines.forEach((line) => {
+
+        // Detect school year from header (e.g. "2025-2026 School Calendar")
+        const yearMatch = text.match(/(\d{4})\s*[-–]\s*(\d{4})\s+(?:School|District|Academic)/i);
+        const startSchoolYear = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
+        const endSchoolYear = yearMatch ? parseInt(yearMatch[2]) : startSchoolYear + 1;
+        // Map month numbers to the correct year (Aug-Dec = startYear, Jan-Jul = endYear)
+        function yearForMonth(mo) {
+          return mo >= 8 ? startSchoolYear : endSchoolYear;
+        }
+
+        // Also detect month-year headers like "August-25" → month 8, year 2025
+        const monthYearMap = {};
+        const myRe =
+          /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s*[-–]\s*(\d{2,4})\b/gi;
+        let myM;
+        while ((myM = myRe.exec(text)) !== null) {
+          const mo = monthMap[myM[1].toLowerCase()];
+          let yr = parseInt(myM[2]);
+          if (yr < 100) yr += 2000;
+          if (mo) monthYearMap[mo] = yr;
+        }
+
+        // Strategy 1: Parse "MONTH day(-day) - description" format (school calendar PDFs)
+        // Split text into sections by month headers (ALL CAPS month name on its own or at start of line)
+        const monthHeaderRe =
+          /^(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\b/i;
+        // First, collect all text after the month grid area (skip lines with "SU M T W TH F SA")
+        const cleanLines = text
+          .split(/\n/)
+          .filter((l) => !/\bSU\s+M\s+T\s+W\b/i.test(l) && !/^\s*\d[\d\s]+$/.test(l.trim()));
+        let currentMonth = null;
+        let currentYear = startSchoolYear;
+        const pendingText = [];
+
+        cleanLines.forEach((line) => {
           line = line.trim();
           if (!line) return;
-          let date = null,
-            rest = line;
-          for (const pat of datePatterns) {
-            const m = line.match(pat);
-            if (m) {
-              if (/^\d/.test(m[1])) {
-                let yr = m[3] || '' + currentYear;
-                if (yr.length === 2) yr = '20' + yr;
-                date = yr + '-' + String(m[1]).padStart(2, '0') + '-' + String(m[2]).padStart(2, '0');
-              } else {
-                const mo = monthMap[m[1].toLowerCase()];
-                if (mo === undefined) break;
-                const day = m[2];
-                const yr = m[3] || currentYear;
-                date = yr + '-' + String(mo + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
-              }
-              rest = line
-                .replace(m[0], '')
-                .replace(/^[\s\-–—:,]+/, '')
-                .trim();
-              break;
+          const headerM = line.match(monthHeaderRe);
+          if (headerM) {
+            // Process any pending text from previous month
+            if (currentMonth !== null && pendingText.length) {
+              _parseMonthEvents(pendingText.join(' '), currentMonth, currentYear, events, detectType);
+              pendingText.length = 0;
             }
-          }
-          if (date && rest && rest.length > 1) {
-            rest = rest.replace(/^[\s\-–—:,]+/, '').replace(/[\s\-–—:,]+$/, '');
-            if (rest.length > 1) events.push({ date, name: rest, type: detectType(rest) });
+            currentMonth = monthMap[headerM[1].toLowerCase()];
+            currentYear = monthYearMap[currentMonth] || yearForMonth(currentMonth);
+            // Rest of line after month name may have events
+            const rest = line.slice(headerM[0].length).trim();
+            if (rest) pendingText.push(rest);
+          } else if (currentMonth !== null) {
+            pendingText.push(line);
           }
         });
+        // Process final month
+        if (currentMonth !== null && pendingText.length) {
+          _parseMonthEvents(pendingText.join(' '), currentMonth, currentYear, events, detectType);
+        }
+
+        // Strategy 2: Parse standard date formats (fallback for non-school calendars)
+        if (!events.length) {
+          const datePatterns = [
+            /(\d{1,2})\/(\d{1,2})\/(\d{2,4})/,
+            /(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s*(\d{4})?/i,
+            /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.?\s+(\d{1,2}),?\s*(\d{4})?/i,
+          ];
+          text.split(/\n/).forEach((line) => {
+            line = line.trim();
+            if (!line) return;
+            for (const pat of datePatterns) {
+              const m = line.match(pat);
+              if (m) {
+                let date;
+                if (/^\d/.test(m[1])) {
+                  let yr = m[3] || '' + startSchoolYear;
+                  if (String(yr).length === 2) yr = '20' + yr;
+                  date = yr + '-' + String(m[1]).padStart(2, '0') + '-' + String(m[2]).padStart(2, '0');
+                } else {
+                  const mo = monthMap[m[1].toLowerCase()];
+                  if (!mo) break;
+                  const yr = m[3] || yearForMonth(mo);
+                  date = yr + '-' + String(mo).padStart(2, '0') + '-' + String(m[2]).padStart(2, '0');
+                }
+                const rest = line
+                  .replace(m[0], '')
+                  .replace(/^[\s\-–—:,]+/, '')
+                  .trim();
+                if (date && rest.length > 1) events.push({ date, name: rest, type: detectType(rest) });
+                break;
+              }
+            }
+          });
+        }
         return events;
+      }
+
+      // Parse "day(-day) - description" pairs within a month's event text
+      function _parseMonthEvents(text, month, year, events, detectType) {
+        // Find all "number(-number) - text" boundaries by position, then slice descriptions between them
+        const re = /(\d{1,2})(?:-(\d{1,2}))?\s+[-–]\s+/g;
+        let m;
+        const positions = [];
+        while ((m = re.exec(text)) !== null) {
+          positions.push({
+            idx: m.index,
+            dayStart: parseInt(m[1]),
+            dayEnd: m[2] ? parseInt(m[2]) : parseInt(m[1]),
+            descStart: m.index + m[0].length,
+          });
+        }
+        for (let i = 0; i < positions.length; i++) {
+          const descEnd = i < positions.length - 1 ? positions[i + 1].idx : text.length;
+          const desc = text
+            .slice(positions[i].descStart, descEnd)
+            .trim()
+            .replace(/[\s;,]+$/, '');
+          if (!desc || desc.length < 2) continue;
+          const type = detectType(desc);
+          for (let d = positions[i].dayStart; d <= positions[i].dayEnd; d++) {
+            const dateStr = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+            events.push({ date: dateStr, name: desc, type });
+          }
+        }
       }
 
       // ── Legacy shims for per-project district tab ──
@@ -20232,11 +20282,9 @@
         const layout = document.getElementById(layoutId);
         if (!layout) return;
         const isCollapsed = layout.classList.toggle('nav-collapsed');
-        // Toggle the collapse/expand buttons
-        const navToggle = layout.querySelector('.ud-nav-toggle');
-        const expandBtn = layout.querySelector('.ud-expand-btn');
-        if (navToggle) navToggle.style.display = isCollapsed ? 'none' : '';
-        if (expandBtn) expandBtn.style.display = isCollapsed ? '' : 'none';
+        // Flip the arrow on the collapse tab
+        const tab = layout.querySelector('.ud-collapse-tab');
+        if (tab) tab.textContent = isCollapsed ? '▶' : '◀';
       }
 
       function toggleNormTip(btn) {
@@ -32451,6 +32499,20 @@
           '<div><div class="settings-row-label">Landing page after sign-in</div><div class="settings-row-sub">Choose which page opens by default</div></div>' +
           '<select class="settings-select" onchange="siteSetDefaultLogin(this.value)">' +
           loginOpts +
+          '</select>' +
+          '</div>' +
+          '</div>' +
+          '<div class="settings-section">' +
+          '<div class="settings-section-title">Project Default Tab</div>' +
+          '<div class="settings-row">' +
+          '<div><div class="settings-row-label">Tab shown when opening a project</div><div class="settings-row-sub">Dashboard or last used tab</div></div>' +
+          '<select class="settings-select" onchange="sset(\'ch_defaultProjTab\',this.value)">' +
+          '<option value="dashboard"' +
+          (sget('ch_defaultProjTab', 'dashboard') === 'dashboard' ? ' selected' : '') +
+          '>Dashboard</option>' +
+          '<option value="last"' +
+          (sget('ch_defaultProjTab', 'dashboard') === 'last' ? ' selected' : '') +
+          '>Last Used Tab</option>' +
           '</select>' +
           '</div>' +
           '</div>' +
