@@ -3172,6 +3172,72 @@
         border: 1px solid var(--border);
         border-radius: var(--r);
         overflow: hidden;
+        transition: grid-template-columns 0.25s ease;
+      }
+      .ud-layout.nav-collapsed {
+        grid-template-columns: 0px 1fr;
+      }
+      .ud-layout.nav-collapsed .ud-nav {
+        width: 0;
+        min-width: 0;
+        overflow: hidden;
+        border-right: none;
+        padding: 0;
+      }
+      /* Collapse toggle button */
+      .ud-nav-toggle {
+        position: absolute;
+        top: 50%;
+        right: -14px;
+        transform: translateY(-50%);
+        width: 14px;
+        height: 40px;
+        background: var(--s3);
+        border: 1px solid var(--border);
+        border-left: none;
+        border-radius: 0 6px 6px 0;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        color: var(--text2);
+        z-index: 5;
+        transition: background 0.15s;
+      }
+      .ud-nav-toggle:hover {
+        background: var(--s4);
+        color: var(--text);
+      }
+      .ud-layout.nav-collapsed .ud-nav-toggle {
+        right: auto;
+        left: 0;
+        border-left: 1px solid var(--border);
+        border-radius: 0 6px 6px 0;
+      }
+      /* Collapsed state: show toggle on the detail column instead */
+      .ud-expand-btn {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        transform: translateY(-50%);
+        width: 14px;
+        height: 40px;
+        background: var(--s3);
+        border: 1px solid var(--border);
+        border-left: none;
+        border-radius: 0 6px 6px 0;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        color: var(--text2);
+        z-index: 5;
+      }
+      .ud-expand-btn:hover {
+        background: var(--s4);
+        color: var(--text);
       }
       /* Left nav column */
       .ud-nav {
@@ -3181,6 +3247,7 @@
         border-right: 1px solid var(--border);
         overflow: hidden;
         min-height: 0;
+        position: relative;
       }
       .ud-nav-sect {
         flex-shrink: 0;
@@ -3286,6 +3353,7 @@
         overflow: hidden;
         min-height: 0;
         background: var(--s2);
+        position: relative;
       }
       .ud-detail-hdr {
         display: flex;
@@ -4485,10 +4553,11 @@
 
           <!-- UTILITY DATA -->
           <div id="view-utility" class="view view-flex">
-            <div class="ud-layout">
+            <div class="ud-layout" id="udLayout">
               <!-- Left nav: Projects + Buildings drill-down -->
               <div class="ud-nav">
                 <div class="resize-handle" id="udNavResizeHandle"></div>
+                <div class="ud-nav-toggle" onclick="toggleUdNav('udLayout')" title="Collapse panel">◀</div>
                 <div class="ud-nav-sect">
                   <div class="ud-nav-sect-hdr">
                     <span class="ud-nav-sect-title">Projects</span>
@@ -4498,6 +4567,15 @@
               </div>
               <!-- Right detail: project header + building header + meters -->
               <div class="ud-detail-col">
+                <div
+                  class="ud-expand-btn"
+                  id="udExpandBtn"
+                  style="display: none"
+                  onclick="toggleUdNav('udLayout')"
+                  title="Show buildings panel"
+                >
+                  ▶
+                </div>
                 <!-- Project-level panels bar (shown when project selected, above building header) -->
                 <div
                   id="udProjPanelBar"
@@ -4745,10 +4823,7 @@
                     ></div>
                   </div>
                 </div>
-                <div class="ai-box" id="pdfAIBox" style="min-height: 280px">
-                  Upload a PDF and select document type. Rule-based extraction runs locally in your browser — instant
-                  and private.
-                </div>
+                <div class="ai-box" id="pdfAIBox" style="min-height: 280px">Upload a PDF and select document type.</div>
               </div>
             </div>
           </div>
@@ -11395,17 +11470,19 @@
       </div>
       <div id="ptab-utility" class="ptab" style="padding:0">
         <!-- Full Utility Data layout embedded, scoped to this project -->
-        <div style="display:grid;grid-template-columns:220px 1fr;border-top:1px solid var(--border);min-height:500px;overflow:hidden">
+        <div class="ud-layout" id="projUdLayout-${p.id}" style="border-top:1px solid var(--border);min-height:500px">
           <!-- Left: buildings nav -->
-          <div style="background:var(--s1);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
-            <div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+          <div class="ud-nav" style="max-width:240px">
+            <div class="ud-nav-toggle" onclick="toggleUdNav('projUdLayout-${p.id}')" title="Collapse panel">◀</div>
+            <div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
               <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3)">Buildings</span>
               <button class="btn btn-em btn-sm" style="font-size:10px;padding:2px 7px" onclick="openBldgModalForProj(${p.id})">+ Add</button>
             </div>
             <div id="proj-ud-bldg-nav-${p.id}" style="flex:1;overflow-y:auto"></div>
           </div>
           <!-- Right: meter detail -->
-          <div style="display:flex;flex-direction:column;overflow:hidden;background:var(--s2)">
+          <div class="ud-detail-col">
+            <div class="ud-expand-btn" style="display:none" onclick="toggleUdNav('projUdLayout-${p.id}')" title="Show buildings panel">▶</div>
             <div id="proj-ud-detail-hdr-${p.id}" style="display:none;flex-shrink:0;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--s1);align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
               <div>
                 <div id="proj-ud-hdr-title-${p.id}" style="font-size:15px;font-weight:700"></div>
@@ -15933,8 +16010,7 @@
         }
         const box = document.getElementById('pdfAIBox');
         box._showingRaw = false;
-        box.textContent =
-          'Upload a PDF and select document type. Rule-based extraction runs locally in your browser — instant and private.';
+        box.textContent = 'Upload a PDF and select document type.';
         showToast('Cleared ✓');
       }
       function savePDFDebug() {
@@ -20150,6 +20226,17 @@
             _resizing = null;
           });
         });
+      }
+
+      function toggleUdNav(layoutId) {
+        const layout = document.getElementById(layoutId);
+        if (!layout) return;
+        const isCollapsed = layout.classList.toggle('nav-collapsed');
+        // Toggle the collapse/expand buttons
+        const navToggle = layout.querySelector('.ud-nav-toggle');
+        const expandBtn = layout.querySelector('.ud-expand-btn');
+        if (navToggle) navToggle.style.display = isCollapsed ? 'none' : '';
+        if (expandBtn) expandBtn.style.display = isCollapsed ? '' : 'none';
       }
 
       function toggleNormTip(btn) {
