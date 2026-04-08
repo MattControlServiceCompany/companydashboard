@@ -14069,7 +14069,7 @@
           let subtotalIdx = -1,
             bdIdx = -1;
           for (let i = 0; i < lines.length; i++) {
-            if (/Subtotal/i.test(lines[i])) subtotalIdx = i;
+            if (/Sub[tl]?ota[l1]/i.test(lines[i])) subtotalIdx = i;
             if (/Billing\s+Details/i.test(lines[i])) bdIdx = i;
           }
           // Also check for "Utility" line under page 1 Current Charges (matches detail page total)
@@ -14078,7 +14078,8 @@
               const amt = getAmt(lines[i]);
               if (amt !== null) {
                 // Distance from Subtotal line — closer = better (detail page)
-                const dist = subtotalIdx >= 0 ? Math.abs(i - subtotalIdx) : Infinity;
+                // When no Subtotal found, use line index as tiebreaker (prefer LAST match = detail page)
+                const dist = subtotalIdx >= 0 ? Math.abs(i - subtotalIdx) : lines.length - i;
                 if (dist < bestDist) {
                   bestDist = dist;
                   bestVal = amt;
@@ -14088,7 +14089,7 @@
               if (i + 1 < lines.length && /Utilit/i.test(lines[i + 1])) {
                 const uAmt = getAmt(lines[i + 1]);
                 if (uAmt !== null) {
-                  const dist = subtotalIdx >= 0 ? Math.abs(i + 1 - subtotalIdx) : 1;
+                  const dist = subtotalIdx >= 0 ? Math.abs(i + 1 - subtotalIdx) : lines.length - i - 1;
                   if (dist < bestDist) {
                     bestDist = dist;
                     bestVal = uAmt;
@@ -14122,7 +14123,7 @@
             return bestVal.toFixed(2);
           }
           // Try Subtotal
-          const m2 = t.match(/Subtotal[\s\S]*?\$\s*([\d,]+\.\d{2})/i);
+          const m2 = t.match(/Sub[tl]?ota[l1][\s\S]*?\$\s*([\d,]+\.\d{2})/i);
           if (m2) return m2[1].replace(/,/g, '');
           // Fallback: sum all extracted charges. This may be incomplete (e.g. CustomerCharge not yet
           // recovered by structural fallback), so _postExtractionVerify will recompute if needed.
@@ -15643,6 +15644,30 @@
           }
         }
 
+        // ── HELPER: find consensus Facilities rate from neighboring bills ──
+        // When OCR garbles the rate (e.g. "$2079" instead of "$2.979"), the rate used to
+        // recompute FacilitiesCharge will be wrong. Compare against neighbors on same account.
+        function _getNeighborFacRate(bills, idx) {
+          const acct = (bills[idx].AccountNumber || '').replace(/[\s\-]/g, '');
+          const rates = [];
+          for (let j = Math.max(0, idx - 6); j < Math.min(bills.length, idx + 7); j++) {
+            if (j === idx) continue;
+            const b = bills[j];
+            if ((b.AccountNumber || '').replace(/[\s\-]/g, '') !== acct) continue;
+            if (b._rates && b._rates.FacilitiesCharge && b._rates.FacilitiesCharge.rate > 0) {
+              rates.push(b._rates.FacilitiesCharge.rate);
+            }
+          }
+          if (rates.length === 0) return null;
+          // Find the most common rate (mode)
+          const counts = {};
+          for (const r of rates) {
+            const key = r.toFixed(5);
+            counts[key] = (counts[key] || 0) + 1;
+          }
+          return parseFloat(Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]);
+        }
+
         // ── FACILITIES KW ROLLING PEAK VALIDATION ──
         // FacilitiesKW is the highest demand in the past 12 months (rolling peak).
         // It only changes when a new monthly BilledKW exceeds the previous peak.
@@ -15701,21 +15726,22 @@
               };
               curr.FacilitiesKW = prev.FacilitiesKW;
               // Also recompute FacilitiesCharge if we have the rate
+              // Validate rate against neighbors — OCR may garble it (e.g. "$2079" → 2.079 instead of 2.979)
               if (curr._rates && curr._rates.FacilitiesCharge) {
-                const newCharge = Math.round(pf(prev.FacilitiesKW) * curr._rates.FacilitiesCharge.rate * 100) / 100;
+                let facRate = curr._rates.FacilitiesCharge.rate;
+                const neighborRate = _getNeighborFacRate(bills, i);
+                if (neighborRate && Math.abs(neighborRate - facRate) > 0.01) {
+                  facRate = neighborRate; // neighbor consensus rate is more reliable
+                }
+                const newCharge = Math.round(pf(prev.FacilitiesKW) * facRate * 100) / 100;
                 if (newCharge > 0) {
                   curr['_auto_corrected_FacilitiesCharge'] = {
                     original: curr.FacilitiesCharge,
                     corrected: newCharge.toFixed(2),
-                    rate: curr._rates.FacilitiesCharge.rate,
+                    rate: facRate,
                     qty: pf(prev.FacilitiesKW),
                     unit: 'kW',
-                    reason:
-                      prev.FacilitiesKW +
-                      ' kW × $' +
-                      curr._rates.FacilitiesCharge.rate.toFixed(5) +
-                      ' = $' +
-                      newCharge.toFixed(2),
+                    reason: prev.FacilitiesKW + ' kW × $' + facRate.toFixed(5) + ' = $' + newCharge.toFixed(2),
                   };
                   curr.FacilitiesCharge = newCharge.toFixed(2);
                 }
@@ -15827,19 +15853,25 @@
                     ' carries forward',
                 };
                 // Recompute FacilitiesCharge if rate is available
+                // Validate rate against neighbors — OCR may garble it
                 if (nb._rates && nb._rates.FacilitiesCharge && nb._rates.FacilitiesCharge.rate > 0) {
-                  const newCharge = Math.round(newPeak * nb._rates.FacilitiesCharge.rate * 100) / 100;
+                  let facRate = nb._rates.FacilitiesCharge.rate;
+                  const neighborRate = _getNeighborFacRate(bills, j);
+                  if (neighborRate && Math.abs(neighborRate - facRate) > 0.01) {
+                    facRate = neighborRate;
+                  }
+                  const newCharge = Math.round(newPeak * facRate * 100) / 100;
                   if (newCharge > 0) {
                     nb['_auto_corrected_FacilitiesCharge'] = {
                       original: nb.FacilitiesCharge,
                       corrected: newCharge.toFixed(2),
-                      rate: nb._rates.FacilitiesCharge.rate,
+                      rate: facRate,
                       qty: newPeak,
                       unit: 'kW',
                       reason:
                         newPeak.toFixed(4) +
                         ' kW × $' +
-                        nb._rates.FacilitiesCharge.rate.toFixed(5) +
+                        facRate.toFixed(5) +
                         ' = $' +
                         newCharge.toFixed(2) +
                         ' (peak propagated)',
@@ -17300,6 +17332,50 @@
         }
 
         el.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${summaryHtml}${correctionHtml}${sumMismatchHtml}<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
+
+        // ── Wire up change handlers: update data + recalculate total when user edits ──
+        el.querySelectorAll('.ef-input[data-key]').forEach((inp) => {
+          inp.addEventListener('change', () => {
+            const key = inp.dataset.key;
+            if (!key) return;
+            let val = inp.value.replace(/^\$/, '').replace(/,/g, '').trim();
+            if (val === '' || val === '—') val = null;
+            // Update the underlying bill data
+            const bills = window._pdfMultiBills;
+            const idx = window._pdfMultiIdx || 0;
+            if (!bills || !bills[idx]) return;
+            const b = bills[idx];
+            b[key] = val;
+            // Recalculate TotalCurrentCharges from charge sum when a charge field changes
+            const CHARGE_SUM_FIELDS = [
+              'CustomerCharge',
+              'FacilitiesCharge',
+              'BilledKWCharge',
+              'EnergyOnPeakCharge',
+              'EnergyOffPeakCharge',
+              'ECACharge',
+              'EERCharge',
+              'PTSCharge',
+              'TDCCharge',
+              'RkVACharge',
+              'TaxExemptDelivery',
+              'BillOffset',
+              'FranchiseFee',
+            ];
+            if (CHARGE_SUM_FIELDS.includes(key)) {
+              const pf2 = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+              const compSum = CHARGE_SUM_FIELDS.reduce((s, f) => s + pf2(b[f]), 0);
+              if (compSum > 0) {
+                b.TotalCurrentCharges = compSum.toFixed(2);
+              }
+              // Clear stale sum mismatch since user manually corrected a value
+              delete b._sum_mismatch;
+            }
+            // Re-render to update running total and validation display
+            const billWarnings = (window._pdfBillWarnings || [])[idx]?.warnings || [];
+            renderPDFFields(b, billWarnings);
+          });
+        });
       }
       /* ── SAVED BILLS DATABASE ── */
       function updateBillCountBadge() {
