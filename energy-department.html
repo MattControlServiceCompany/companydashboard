@@ -15661,16 +15661,19 @@
           }
         }
 
-        // ── NEW PEAK LOGIC: When ActualKW exceeds rolling 12-month peak ──
-        // If ActualKW > FacilitiesKW from previous month, then the new peak was set this month.
-        // In that case: FacilitiesKW = ActualKW = BilledKW (they should all match).
+        // ── NEW PEAK LOGIC + FORWARD PROPAGATION ──
+        // When ActualKW exceeds the rolling 12-month peak, a new peak is set.
+        // FacilitiesKW = ActualKW = BilledKW for that month.
+        // Then propagate: all subsequent bills must have FacilitiesKW >= the new peak
+        // (the peak can only decrease when it rolls off after 12 months).
+        // This also undoes any incorrect rolling peak corrections applied earlier.
         for (let i = 0; i < bills.length; i++) {
           const b = bills[i];
           const actualKW = pf(b.ActualKW);
           const facKW = pf(b.FacilitiesKW);
           const billedKW = pf(b.BilledKW);
           if (actualKW > 0 && facKW > 0 && actualKW > facKW) {
-            // New peak set this month — FacilitiesKW should equal ActualKW
+            // New peak set this month
             b.FacilitiesKW = b.ActualKW;
             if (billedKW > 0 && Math.abs(billedKW - actualKW) > 0.01) {
               b.BilledKW = b.ActualKW;
@@ -15685,6 +15688,51 @@
                 facKW.toFixed(4) +
                 ')',
             };
+            // Forward propagation: update all subsequent bills within 12 months
+            const newPeak = pf(b.FacilitiesKW);
+            for (let j = i + 1; j < bills.length && j < i + 12; j++) {
+              const nb = bills[j];
+              const nbFacKW = pf(nb.FacilitiesKW);
+              // If a subsequent bill's FacilitiesKW is less than the new peak, it's wrong
+              if (nbFacKW > 0 && nbFacKW < newPeak) {
+                const nbOriginal = nb._auto_corrected_FacilitiesKW?.original || nb.FacilitiesKW;
+                nb.FacilitiesKW = newPeak.toFixed(4);
+                nb['_auto_corrected_FacilitiesKW'] = {
+                  original: nbOriginal,
+                  corrected: nb.FacilitiesKW,
+                  reason:
+                    'Forward propagation: peak of ' +
+                    newPeak.toFixed(4) +
+                    ' kW set in bill ' +
+                    (i + 1) +
+                    ' carries forward',
+                };
+                // Recompute FacilitiesCharge if rate is available
+                if (nb._rates && nb._rates.FacilitiesCharge && nb._rates.FacilitiesCharge.rate > 0) {
+                  const newCharge = Math.round(newPeak * nb._rates.FacilitiesCharge.rate * 100) / 100;
+                  if (newCharge > 0) {
+                    nb['_auto_corrected_FacilitiesCharge'] = {
+                      original: nb.FacilitiesCharge,
+                      corrected: newCharge.toFixed(2),
+                      rate: nb._rates.FacilitiesCharge.rate,
+                      qty: newPeak,
+                      unit: 'kW',
+                      reason:
+                        newPeak.toFixed(4) +
+                        ' kW × $' +
+                        nb._rates.FacilitiesCharge.rate.toFixed(5) +
+                        ' = $' +
+                        newCharge.toFixed(2) +
+                        ' (peak propagated)',
+                    };
+                    nb.FacilitiesCharge = newCharge.toFixed(2);
+                  }
+                }
+              }
+              // If a subsequent bill sets an even higher peak, stop propagating this one
+              const nbActual = pf(nb.ActualKW);
+              if (nbActual > newPeak) break;
+            }
           }
         }
 
@@ -16167,7 +16215,7 @@
           b.style.background = 'rgba(var(--em-rgb),.12)';
           b.style.color = 'var(--em)';
           b.style.border = '1px solid rgba(var(--em-rgb),.25)';
-          b.textContent = '⚡ Rule-Based' + (detail ? ' · ' + detail : '') + ' — local extraction';
+          b.textContent = '⚡ Rule-Based' + (detail ? ' · ' + detail : '');
         } else {
           b.style.background = 'rgba(139,92,246,.12)';
           b.style.color = '#a78bfa';
