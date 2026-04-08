@@ -16050,9 +16050,7 @@
         window._pdfBillWarnings = null;
         document.getElementById('dz-title').textContent = 'Drop PDF here or click to browse';
         document.getElementById('pdfInput').value = '';
-        const efEl = document.getElementById('extractedFields');
-        efEl.innerHTML = '';
-        efEl.style.display = ''; // restore visibility after multi-bill mode
+        document.getElementById('extractedFields').innerHTML = '';
         document.getElementById('pdfSaveRow').style.display = 'none';
         document.getElementById('pdfClearBtn').style.display = 'none';
         document.getElementById('dropZone').classList.remove('collapsed');
@@ -16681,11 +16679,21 @@
                 window._pdfBillWarnings = analysisResults;
 
                 if (finalBills.length > 1) {
-                  // Multi-bill: store all, show first, let user browse
+                  // Multi-bill: store all, start on newest bill
                   window._pdfMultiBills = finalBills;
-                  window._pdfMultiIdx = 0;
+                  // Find the newest bill by BillingPeriodEnd date
+                  let newestIdx = 0;
+                  let newestDate = 0;
+                  finalBills.forEach((fb, fi) => {
+                    const d = new Date(fb.BillingPeriodEnd || fb.BillingPeriodStart || 0).getTime();
+                    if (d > newestDate) {
+                      newestDate = d;
+                      newestIdx = fi;
+                    }
+                  });
+                  window._pdfMultiIdx = newestIdx;
                   renderMultiBillUI(finalBills, box);
-                  renderPDFFields(finalBills[0], analysisResults[0]?.warnings || []);
+                  renderPDFFields(finalBills[newestIdx], analysisResults[newestIdx]?.warnings || []);
                   document.getElementById('pdfSaveRow').style.display = 'block';
                   document.getElementById('pdfClearBtn').style.display = 'block';
                   document.getElementById('dropZone').classList.add('collapsed');
@@ -16837,16 +16845,19 @@
             return `<button onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasIssues ? '700' : '400'};width:100%;text-align:left;white-space:nowrap">${p.lbl}${hasIssues ? ' ⚠' : ''}</button>`;
           })
           .join('');
-        // Hide standalone extractedFields — content renders into right panel
-        const standaloneEF = document.getElementById('extractedFields');
-        if (standaloneEF) standaloneEF.style.display = 'none';
+        // Move "Save All" button into the extraction method badge area
+        const badgeEl = document.getElementById('extractMethodBadge');
+        if (badgeEl) {
+          badgeEl.style.display = 'inline-block';
+          badgeEl.innerHTML = `<button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="font-size:10px;padding:3px 12px">Save All ${bills.length} Periods</button>`;
+        }
+        // Two-column layout inside pdfAIBox: billing periods nav on left, JSON output on right
         box.innerHTML = `<div style="display:flex;gap:14px;align-items:flex-start">
-  <div style="flex:0 0 auto;min-width:110px;display:flex;flex-direction:column;gap:3px;position:sticky;top:0">
+  <div style="flex:0 0 auto;min-width:110px;max-height:70vh;overflow-y:auto;display:flex;flex-direction:column;gap:3px">
     <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:4px">Billing Periods</span>
     ${nav}
-    <button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="margin-top:8px;width:100%;font-size:10px">Save All ${bills.length}</button>
   </div>
-  <div id="multiBillContent" style="flex:1;min-width:0;overflow:auto"></div>
+  <pre style="flex:1;min-width:0;font-size:11px;color:var(--text);white-space:pre-wrap;word-break:break-word;margin:0;overflow:auto;max-height:70vh">${JSON.stringify(b, null, 2)}</pre>
 </div>`;
       }
       function selectMultiBill(i) {
@@ -17012,8 +17023,7 @@
           { type: 'pair', fields: ['NaturalGasTherms', 'TotalAmountDue'] },
           { type: 'pair', fields: ['PeakDemandKW'] },
         ];
-        // In multi-bill mode, render into the right panel; otherwise use standalone div
-        const el = document.getElementById('multiBillContent') || document.getElementById('extractedFields');
+        const el = document.getElementById('extractedFields');
         // Collect all layout keys + any extra extracted fields not in layout
         const layoutKeys = new Set(
           FIELD_LAYOUT.flatMap((r) => [...(r.fields || []), r.chargeField, r.qtyField, r.kwField].filter(Boolean)),
