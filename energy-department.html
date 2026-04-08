@@ -62,7 +62,7 @@
         --text2: #9ab0d0;
         --text3: #6880a8;
         --font: 'Outfit', sans-serif;
-        --mono: 'JetBrains Mono', monospace;
+        --mono: 'Outfit', sans-serif;
         --r: 10px;
       }
 
@@ -16835,14 +16835,33 @@
             const active = p.i === idx;
             const bw = warnings[p.i]?.warnings || [];
             const hasIssues = bw.some((w) => w.level === 'error' || w.level === 'warn');
-            const hasSumMismatch = bw.some(
-              (w) => w.field === 'TotalCurrentCharges' && w.level === 'warn' && /sum/i.test(w.message),
-            );
+            // Also check for running total mismatch directly from bill data
+            const bill = bills[p.i];
+            const _pf2 = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+            const _chargeSum =
+              _pf2(bill.CustomerCharge) +
+              _pf2(bill.FacilitiesCharge) +
+              _pf2(bill.BilledKWCharge) +
+              _pf2(bill.EnergyOnPeakCharge) +
+              _pf2(bill.EnergyOffPeakCharge) +
+              _pf2(bill.ECACharge) +
+              _pf2(bill.EERCharge) +
+              _pf2(bill.PTSCharge) +
+              _pf2(bill.TDCCharge) +
+              _pf2(bill.RkVACharge) +
+              _pf2(bill.TaxExemptDelivery) +
+              _pf2(bill.BillOffset) +
+              _pf2(bill.FranchiseFee);
+            const _totalVal = _pf2(bill.TotalCurrentCharges);
+            const hasSumMismatch =
+              bw.some((w) => w.field === 'TotalCurrentCharges' && w.level === 'warn' && /sum/i.test(w.message)) ||
+              (_totalVal > 0 && _chargeSum > 0 && Math.abs(_chargeSum - _totalVal) >= 0.5);
+            const hasAnyIssue = hasIssues || hasSumMismatch;
             const issueColor = hasSumMismatch ? '--red' : '--amber';
-            const pillColor = active ? 'var(--accent)' : hasIssues ? 'var(' + issueColor + ')' : 'var(--text2)';
-            const pillBorder = active ? 'var(--accent)' : hasIssues ? 'var(' + issueColor + ')' : 'var(--border2)';
-            const pillBg = active ? 'var(--accent-dim)' : hasIssues ? 'var(' + issueColor + '-dim)' : 'transparent';
-            return `<button onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasIssues ? '700' : '400'};width:100%;text-align:left;white-space:nowrap">${p.lbl}${hasIssues ? ' ⚠' : ''}</button>`;
+            const pillColor = active ? 'var(--accent)' : hasAnyIssue ? 'var(' + issueColor + ')' : 'var(--text2)';
+            const pillBorder = active ? 'var(--accent)' : hasAnyIssue ? 'var(' + issueColor + ')' : 'var(--border2)';
+            const pillBg = active ? 'var(--accent-dim)' : hasAnyIssue ? 'var(' + issueColor + '-dim)' : 'transparent';
+            return `<button onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasAnyIssue ? '700' : '400'};width:100%;text-align:left;white-space:nowrap">${p.lbl}${hasAnyIssue ? ' ⚠' : ''}</button>`;
           })
           .join('');
         // Move "Save All" button into the extraction method badge area
@@ -17308,10 +17327,12 @@
         }
 
         // Summary banner
+        // Also detect display-time running total mismatch (charge sum ≠ TotalCurrentCharges)
+        const runningTotalMismatch = totalVal > 0 && Math.abs(runningTotal - totalVal) >= 0.02;
         const errorCount = warnings.filter((w) => w.level === 'error').length;
         const warnCount = warnings.filter((w) => w.level === 'warn').length;
         const infoCount = warnings.filter((w) => w.level === 'info').length;
-        const hasSumIssue = !!sumMismatch;
+        const hasSumIssue = !!sumMismatch || runningTotalMismatch;
         let summaryHtml = '';
         if (errorCount || warnCount || hasSumIssue) {
           const parts = [];
