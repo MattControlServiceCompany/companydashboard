@@ -13637,8 +13637,18 @@
               const unit = 'k' + rateM[2];
               // Sanity: Evergy rates are < $100/kW and < $1/kWh. Values like 70000 or 140000
               // are chart Y-axis numbers merged into charge lines by PDF text extraction.
-              const maxRate = unit.toLowerCase().includes('h') ? 1 : 100; // kWh < $1, kW < $100
-              if (!isNaN(qty) && !isNaN(rate) && rate > 0 && rate < maxRate && qty > 0 && qty < 5000000) {
+              const isKwh = unit.toLowerCase().includes('h');
+              const maxRate = isKwh ? 1 : 100; // kWh < $1, kW < $100
+              let adjRate = rate;
+              // Fix OCR-dropped decimal: $2079 → $2.079, $3069 → $3.069
+              if (adjRate >= maxRate && !isKwh) {
+                // Try inserting decimal after first digit
+                const rStr = rateM[3].replace(/,/g, '');
+                const fixed = rStr[0] + '.' + rStr.slice(1);
+                const fixedRate = parseFloat(fixed);
+                if (fixedRate > 0 && fixedRate < maxRate) adjRate = fixedRate;
+              }
+              if (!isNaN(qty) && !isNaN(adjRate) && adjRate > 0 && adjRate < maxRate && qty > 0 && qty < 5000000) {
                 // Also capture the OCR'd dollar charge from this line
                 let ocrCharge = getAmt(lines[i]);
                 if (ocrCharge === null) {
@@ -13651,9 +13661,9 @@
                 }
                 results.push({
                   qty,
-                  rate,
+                  rate: adjRate,
                   unit,
-                  computed: Math.round(qty * rate * 100) / 100,
+                  computed: Math.round(qty * adjRate * 100) / 100,
                   ocrCharge,
                 });
               }
@@ -14517,6 +14527,32 @@
               if (!result.FacilitiesKW && /fac/i.test(lcLine)) {
                 const kwM = uc.line.match(/([\d,.]+)\s*[kK][Ww]/);
                 if (kwM) result.FacilitiesKW = kwM[1].replace(/,/g, '');
+              }
+            }
+          }
+        }
+
+        // ── RKVA DECIMAL FIX: ActualRKVA should have same decimal places as ActualKW ──
+        // OCR often drops the decimal from RKVA (e.g. "538100" should be "53.8100")
+        if (result.ActualRKVA && result.ActualKW) {
+          const rkvaStr = String(result.ActualRKVA).replace(/,/g, '');
+          const kwStr = String(result.ActualKW).replace(/,/g, '');
+          const kwVal = parseFloat(kwStr);
+          const rkvaVal = parseFloat(rkvaStr);
+          // If RKVA has no decimal but KW does, or RKVA is way too large relative to KW
+          if (kwVal > 0 && rkvaVal > 0 && !rkvaStr.includes('.') && kwStr.includes('.')) {
+            // Insert decimal at same position as KW's decimal
+            const kwDecPos = kwStr.indexOf('.');
+            const kwIntDigits = kwStr.split('.')[0].length;
+            const kwDecDigits = kwStr.split('.')[1]?.length || 0;
+            // RKVA should have similar magnitude — try inserting decimal to give same decimal places
+            if (rkvaStr.length > kwDecDigits) {
+              const fixed =
+                rkvaStr.slice(0, rkvaStr.length - kwDecDigits) + '.' + rkvaStr.slice(rkvaStr.length - kwDecDigits);
+              const fixedVal = parseFloat(fixed);
+              // Sanity: RKVA is typically 0-500, similar order of magnitude as KW
+              if (fixedVal > 0 && fixedVal < kwVal * 5) {
+                result.ActualRKVA = fixed;
               }
             }
           }
@@ -17155,7 +17191,7 @@
             const diffLine = mismatch
               ? `<div style="font-size:10px;color:${diff >= 0 ? '#f59e0b' : '#ef4444'};margin-top:2px">Diff: ${diff >= 0 ? '+' : '-'}$${diffFmt}</div>`
               : '';
-            return `<div style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px"><div class="ef-charge-row"><div></div><div></div><div class="ef-item center" style="${itemStyle}"><div class="ef-key" style="color:${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges ?? '') !== '' ? '$' + totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px;text-align:center"></div><div class="ef-running ${cls}" style="font-weight:700;font-size:12px">$${rtFmt}${icon}${diffLine}</div></div></div>`;
+            return `<div style="border-top:2px solid var(--border);margin-top:4px;padding-top:4px"><div class="ef-charge-row"><div></div><div></div><div class="ef-item center" style="${itemStyle}"><div class="ef-key" style="color:${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges ?? '') !== '' ? '$' + totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px;text-align:center"></div><div class="ef-running ${cls}" style="font-weight:700;font-size:11px;flex-direction:column;align-items:flex-end"><span>$${rtFmt}${icon}</span>${diffLine}</div></div></div>`;
           }
           return '';
         });
