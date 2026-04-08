@@ -13555,7 +13555,8 @@
         //   • "Facilities Ghg ... $1,394.55"            (OCR letter swap)
         // Strategy: for each keyword line, take the last $X.XX that is NOT a rate.
         // Uses very loose OCR-tolerant patterns that handle common letter swaps.
-        const CHG_STOP = /(?:Cust|Fac\S|Demand|Energy\s+C|\bECA|\bEER|\bPTS|\bTDC|\bRkVA|Subtotal|Current\s+Charges)/i;
+        const CHG_STOP =
+          /(?:Cust|Fac\S|Demand|Energy\s+C|\bECA|\bEER|\bPTS|\bTD[CG]|\bRkVA|Subtotal|Current\s+Charges)/i;
         const getAmt = (line) => {
           const ms = [...line.matchAll(/\$([\d,]+\.\d{2})/g)];
           let best = null;
@@ -13648,7 +13649,7 @@
                 const fixedRate = parseFloat(fixed);
                 if (fixedRate > 0 && fixedRate < maxRate) adjRate = fixedRate;
               }
-              if (!isNaN(qty) && !isNaN(adjRate) && adjRate > 0 && adjRate < maxRate && qty > 0 && qty < 5000000) {
+              if (!isNaN(qty) && !isNaN(adjRate) && adjRate >= 0 && adjRate < maxRate && qty > 0 && qty < 5000000) {
                 // Also capture the OCR'd dollar charge from this line
                 let ocrCharge = getAmt(lines[i]);
                 if (ocrCharge === null) {
@@ -14031,9 +14032,9 @@
         const ptsChg = xChg('PTS\\s+' + C);
         const tdcKW =
           t
-            .match(new RegExp('TDC\\s+' + C + '[\\s\\S]*?([\\d,.]+)[\\s\\-]*[kK][Ww]\\s+at', 'i'))?.[1]
+            .match(new RegExp('TD[CG]\\s+' + C + '[\\s\\S]*?([\\d,.]+)[\\s\\-]*[kK][Ww]\\s+at', 'i'))?.[1]
             ?.replace(/,/g, '') || null;
-        const tdcChg = xChg('TDC\\s+' + C);
+        const tdcChg = xChg('TD[CG]\\s+' + C);
         // RkVA charge (reactive power)
         // The kVAR qty on the bill is the OVERAGE above 50% of billing kW demand, not total reactive.
         // E.g. 500 kW demand → 250 kVAR free; if reactive = 300, bill shows 50 kVAR × $0.663 = $33.15
@@ -14248,7 +14249,7 @@
         const _rEca = xRate('ECA\\s+' + C);
         const _rEer = xRate('EER\\s+' + C);
         const _rPts = xRate('PTS\\s+' + C);
-        const _rTdc = xRate('TDC\\s+' + C);
+        const _rTdc = xRate('TD[CG]\\s+' + C);
         const _rRkva = xRate('R[kK]VA\\s+' + C);
         if (_rFac) _rates.FacilitiesCharge = _rFac;
         if (_rDem) _rates.BilledKWCharge = _rDem;
@@ -14449,7 +14450,7 @@
           if (!result._rates.TDCCharge && result.TDCCharge) {
             // Look for TDC rate directly in the text
             const tdcRateM = t.match(
-              /TDC\s+(?:Ch[gaq9]|C[HhNnRr][Gg]|Gh[gq9])[\s\S]{0,100}?\$?([\d.]+)\s*per\s+k[Ww]/i,
+              /TD[CG]\s+(?:Ch[gaq9]|C[HhNnRr][Gg]|Gh[gq9])[\s\S]{0,100}?\$?([\d.]+)\s*per\s+k[Ww]/i,
             );
             if (tdcRateM) {
               const tdcRate = parseFloat(tdcRateM[1]);
@@ -16049,7 +16050,9 @@
         window._pdfBillWarnings = null;
         document.getElementById('dz-title').textContent = 'Drop PDF here or click to browse';
         document.getElementById('pdfInput').value = '';
-        document.getElementById('extractedFields').innerHTML = '';
+        const efEl = document.getElementById('extractedFields');
+        efEl.innerHTML = '';
+        efEl.style.display = ''; // restore visibility after multi-bill mode
         document.getElementById('pdfSaveRow').style.display = 'none';
         document.getElementById('pdfClearBtn').style.display = 'none';
         document.getElementById('dropZone').classList.remove('collapsed');
@@ -16788,33 +16791,41 @@
         const idx = window._pdfMultiIdx || 0;
         const b = bills[idx];
         const warnings = window._pdfBillWarnings || [];
-        const nav = bills
-          .map((bill, i) => {
-            // Label by the majority month the bill covers (same logic as Utility Data page)
-            // e.g. 01/29/2024 - 02/27/2024 → most days in Feb → "02/2024"
-            const lbl =
-              bill.BillingPeriodStart && bill.BillingPeriodEnd
-                ? (() => {
-                    try {
-                      const s = new Date(bill.BillingPeriodStart);
-                      const e = new Date(bill.BillingPeriodEnd);
-                      if (isNaN(s) || isNaN(e)) return 'Period ' + (i + 1);
-                      const counts = {};
-                      let cur = new Date(s);
-                      while (cur <= e) {
-                        const key = String(cur.getMonth() + 1).padStart(2, '0') + '/' + cur.getFullYear();
-                        counts[key] = (counts[key] || 0) + 1;
-                        cur.setDate(cur.getDate() + 1);
-                      }
-                      const best = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-                      return best.length ? best[0][0] : 'Period ' + (i + 1);
-                    } catch (ex) {
-                      return 'Period ' + (i + 1);
+        // Build period labels with sort indices for descending order
+        const periods = bills.map((bill, i) => {
+          const lbl =
+            bill.BillingPeriodStart && bill.BillingPeriodEnd
+              ? (() => {
+                  try {
+                    const s = new Date(bill.BillingPeriodStart);
+                    const e = new Date(bill.BillingPeriodEnd);
+                    if (isNaN(s) || isNaN(e)) return 'Period ' + (i + 1);
+                    const counts = {};
+                    let cur = new Date(s);
+                    while (cur <= e) {
+                      const key = String(cur.getMonth() + 1).padStart(2, '0') + '/' + cur.getFullYear();
+                      counts[key] = (counts[key] || 0) + 1;
+                      cur.setDate(cur.getDate() + 1);
                     }
-                  })()
-                : 'Period ' + (i + 1);
-            const active = i === idx;
-            const bw = warnings[i]?.warnings || [];
+                    const best = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+                    return best.length ? best[0][0] : 'Period ' + (i + 1);
+                  } catch (ex) {
+                    return 'Period ' + (i + 1);
+                  }
+                })()
+              : 'Period ' + (i + 1);
+          // Parse a sortable date from BillingPeriodEnd (or Start)
+          const sortDate = bill.BillingPeriodEnd
+            ? new Date(bill.BillingPeriodEnd)
+            : new Date(bill.BillingPeriodStart || 0);
+          return { i, lbl, sortDate };
+        });
+        // Sort descending by date (newest first)
+        periods.sort((a, b) => b.sortDate - a.sortDate);
+        const nav = periods
+          .map((p) => {
+            const active = p.i === idx;
+            const bw = warnings[p.i]?.warnings || [];
             const hasIssues = bw.some((w) => w.level === 'error' || w.level === 'warn');
             const hasSumMismatch = bw.some(
               (w) => w.field === 'TotalCurrentCharges' && w.level === 'warn' && /sum/i.test(w.message),
@@ -16823,14 +16834,20 @@
             const pillColor = active ? 'var(--accent)' : hasIssues ? 'var(' + issueColor + ')' : 'var(--text2)';
             const pillBorder = active ? 'var(--accent)' : hasIssues ? 'var(' + issueColor + ')' : 'var(--border2)';
             const pillBg = active ? 'var(--accent-dim)' : hasIssues ? 'var(' + issueColor + '-dim)' : 'transparent';
-            return `<button onclick="selectMultiBill(${i})" style="font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${hasIssues ? '700' : '400'}">${lbl}${hasIssues ? ' ⚠' : ''}</button>`;
+            return `<button onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasIssues ? '700' : '400'};width:100%;text-align:left;white-space:nowrap">${p.lbl}${hasIssues ? ' ⚠' : ''}</button>`;
           })
           .join('');
-        box.innerHTML = `<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-    <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">Billing Period:</span>${nav}
-    <button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="margin-left:auto">💾 Save All ${bills.length} Periods</button>
+        // Hide standalone extractedFields — content renders into right panel
+        const standaloneEF = document.getElementById('extractedFields');
+        if (standaloneEF) standaloneEF.style.display = 'none';
+        box.innerHTML = `<div style="display:flex;gap:14px;align-items:flex-start">
+  <div style="flex:0 0 auto;min-width:110px;display:flex;flex-direction:column;gap:3px;position:sticky;top:0">
+    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:4px">Billing Periods</span>
+    ${nav}
+    <button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="margin-top:8px;width:100%;font-size:10px">Save All ${bills.length}</button>
   </div>
-  <pre style="font-size:11px;color:var(--text);white-space:pre-wrap;word-break:break-word">${JSON.stringify(b, null, 2)}</pre>`;
+  <div id="multiBillContent" style="flex:1;min-width:0;overflow:auto"></div>
+</div>`;
       }
       function selectMultiBill(i) {
         const bills = window._pdfMultiBills;
@@ -16995,7 +17012,8 @@
           { type: 'pair', fields: ['NaturalGasTherms', 'TotalAmountDue'] },
           { type: 'pair', fields: ['PeakDemandKW'] },
         ];
-        const el = document.getElementById('extractedFields');
+        // In multi-bill mode, render into the right panel; otherwise use standalone div
+        const el = document.getElementById('multiBillContent') || document.getElementById('extractedFields');
         // Collect all layout keys + any extra extracted fields not in layout
         const layoutKeys = new Set(
           FIELD_LAYOUT.flatMap((r) => [...(r.fields || []), r.chargeField, r.qtyField, r.kwField].filter(Boolean)),
@@ -17145,15 +17163,19 @@
             ]);
             const unitLabel = ENERGY_CHARGES.has(row.chargeField) ? 'kWh' : parts[0]?.unit || ri?.unit || 'kW';
 
-            // No rate data — empty qty & rate cells, charge in 3rd column
+            // No rate data — still show editable qty & rate boxes so user can fill them in
             if (!row.rateKey || !ri) {
               runningTotal += chargeVal;
               const rtFmt = runningTotal.toLocaleString('en-US', {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               });
-              const emptyCell = '<div></div>';
-              return `<div class="ef-charge-row">${emptyCell}${emptyCell}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
+              const noRateLabel = base + ' ' + unitLabel;
+              const qtyHtml = row.qtyField
+                ? buildCell(row.qtyField)
+                : `<div class="ef-item" style="opacity:.5"><div class="ef-key">${noRateLabel}</div><input class="ef-input" value="" data-key="_qty_${row.chargeField}" placeholder="—"></div>`;
+              const rateHtml = buildRateBox(noRateLabel + ' Rate', '');
+              return `<div class="ef-charge-row">${qtyHtml}${rateHtml}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
             }
 
             // Full label with unit: "Energy On-Peak kWh", "Facilities kW"
