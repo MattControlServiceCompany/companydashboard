@@ -664,7 +664,7 @@
       .view.active {
         display: flex;
         flex-direction: column;
-        padding: 16px 18px;
+        padding: 16px 18px 64px;
         overflow-y: auto;
         flex: 1;
         min-height: 0;
@@ -1453,6 +1453,9 @@
         border-bottom: 1px solid var(--border);
         background: var(--s1);
         white-space: nowrap;
+        position: sticky;
+        top: 0;
+        z-index: 2;
       }
       .dtbl td {
         padding: 10px 13px;
@@ -2254,7 +2257,7 @@
         flex-shrink: 0;
         line-height: 16px;
       }
-      /* ── PDF/AI/etc ── */
+      /* ── PDF/OCR/etc ── */
       .drop-zone {
         border: 2px dashed var(--border2);
         border-radius: 12px;
@@ -3304,6 +3307,7 @@
       .ud-detail-body {
         overflow-y: auto;
         flex: 1;
+        padding-bottom: 64px;
       }
       /* Meter cards */
       .ud-meter-card {
@@ -3408,6 +3412,10 @@
         border: 1px solid var(--border);
         border-radius: 8px;
         margin-top: 4px;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
       }
       /* Sticky bills header + scrollable table body */
       .bills-sticky-hdr {
@@ -3450,7 +3458,8 @@
       .bills-scroll-body {
         overflow-y: auto;
         overflow-x: auto;
-        max-height: calc(100vh - 280px);
+        flex: 1;
+        min-height: 0;
       }
       .bills-scroll-body .ud-bill-tbl {
         margin: 0;
@@ -4413,7 +4422,7 @@
           <!-- PROJECTS -->
           <div id="view-projects" class="view">
             <!-- List view -->
-            <div id="projListView">
+            <div id="projListView" style="display: flex; flex-direction: column; flex: 1; min-height: 0">
               <div
                 style="
                   display: flex;
@@ -4427,8 +4436,8 @@
                 <input class="proj-search" id="projSearchQ" placeholder="🔍 Search..." oninput="renderProjTable()" />
                 <button class="btn btn-em" onclick="openProjModal()">+ New Project</button>
               </div>
-              <div class="card">
-                <div style="overflow-x: auto">
+              <div class="card" style="display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden">
+                <div style="overflow: auto; flex: 1; min-height: 0">
                   <table class="dtbl" style="min-width: 900px">
                     <thead>
                       <tr>
@@ -4711,8 +4720,8 @@
                   </div>
                 </div>
                 <div class="ai-box" id="pdfAIBox" style="min-height: 280px">
-                  Upload a PDF and select document type. For utility bills, rule-based extraction runs first — instant
-                  and free. AI is used as a fallback for unrecognized formats.
+                  Upload a PDF and select document type. Rule-based extraction runs locally in your browser — instant
+                  and private.
                 </div>
               </div>
             </div>
@@ -5014,7 +5023,7 @@
                     </div>
                     <div style="font-size: 12px; color: var(--text2); line-height: 1.6">
                       Paste a PDF URL, upload a PDF, or paste calendar text on the left. Events are detected and placed
-                      on a visual calendar — no AI involved.
+                      on a visual calendar automatically.
                     </div>
                   </div>
                 </div>
@@ -5268,7 +5277,7 @@
                   </div>
                 </div>
                 <button class="btn btn-em" onclick="runWC('guide')">🗺️ Explain This</button>
-                <div class="ai-label" style="margin-top: 14px">🤖 Explanation</div>
+                <div class="ai-label" style="margin-top: 14px">💡 Explanation</div>
                 <div class="logic-out" id="wc-g-out">Ask any WebCTRL or Automated Logic question above.</div>
               </div>
             </div>
@@ -5288,7 +5297,7 @@
                   ><input class="fi" id="wc-d-issue" placeholder="e.g. AHU never goes to occupied mode..." />
                 </div>
                 <button class="btn btn-em" onclick="runWC('diagnose')">🔍 Diagnose</button>
-                <div class="ai-label" style="margin-top: 14px">🤖 Diagnosis</div>
+                <div class="ai-label" style="margin-top: 14px">🔍 Diagnosis</div>
                 <div class="logic-out" id="wc-d-out">Paste logic above and click Diagnose.</div>
               </div>
             </div>
@@ -5315,7 +5324,7 @@
                 </div>
                 <button class="btn btn-em" onclick="runWC('write')">✍️ Write Logic</button>
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 14px">
-                  <div class="ai-label" style="margin: 0">🤖 Generated Logic</div>
+                  <div class="ai-label" style="margin: 0">⚙️ Generated Logic</div>
                   <button
                     class="btn btn-ghost btn-sm"
                     onclick="
@@ -6757,7 +6766,7 @@
               <div class="dtabs">
                 <button class="dtab active" onclick="emsDTab('dOv', this)">Overview</button>
                 <button class="dtab" onclick="emsDTab('dAct', this)">Activity Log</button>
-                <button class="dtab" onclick="emsDTab('dAI', this)">🤖 AI Tools</button>
+                <button class="dtab" onclick="emsDTab('dAI', this)">🔧 Tools</button>
               </div>
               <div class="drawer-body">
                 <div class="dpanel active" id="dOv">
@@ -6989,7 +6998,7 @@
                 </div>
                 <div class="dpanel" id="dAI">
                   <div style="margin-bottom: 12px; font-size: 12px; color: var(--text2)">
-                    AI tools powered by Claude — uses the current lead data from the Overview tab.
+                    Tools use the current lead data from the Overview tab.
                   </div>
                   <div class="ai-tool-row">
                     <button class="ai-tool-btn" onclick="emsRunAI('outreach')">
@@ -9510,7 +9519,7 @@
                       .join('') || 'No response.';
                   out.textContent = text;
                 } catch (e) {
-                  out.textContent = 'AI service unavailable.';
+                  out.textContent = 'Service unavailable.';
                 }
               };
 
@@ -11527,7 +11536,11 @@
               <button class="ptpill" onclick="mtgFilterSet('minutes',${p.id},this)">Minutes</button>
             </div>
           </div>
-          <button class="btn btn-em btn-sm" onclick="openMeetingEditor(${p.id})">+ New Agenda</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="generatePerformanceReport(${p.id},'quarterly')">📊 Quarterly Report</button>
+            <button class="btn btn-ghost btn-sm" onclick="generatePerformanceReport(${p.id},'annual')">📈 Annual Report</button>
+            <button class="btn btn-em btn-sm" onclick="openMeetingEditor(${p.id})">+ New Agenda</button>
+          </div>
         </div>
         <div id="mtg-recur-info-${p.id}" style="margin-bottom:10px"></div>
         <div id="mtg-list-${p.id}"></div>
@@ -11554,28 +11567,38 @@
         const sqft = bldgs.reduce((s, b) => s + parseInt(b.sqft || 0), 0);
         let blCost = 0,
           blKwh = 0,
+          blTherms = 0,
           totalCost = 0,
-          totalKwh = 0;
+          totalKwh = 0,
+          totalTherms = 0;
         bldgs.forEach((b) =>
           (b.meters || []).forEach((m) => {
             const blBills = _dashGetBaselineBills(m);
             blBills.forEach((bill) => {
               blCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
-              blKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-              if (m.commodity === 'Gas') blKwh += parseFloat(bill.therms) || 0;
+              if (m.commodity === 'Gas') {
+                blTherms += parseFloat(bill.therms) || 0;
+              } else {
+                blKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+              }
             });
             // Also tally all bills for fallback display
             (m.bills || []).forEach((bill) => {
               totalCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
-              totalKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-              if (m.commodity === 'Gas') totalKwh += parseFloat(bill.therms) || 0;
+              if (m.commodity === 'Gas') {
+                totalTherms += parseFloat(bill.therms) || 0;
+              } else {
+                totalKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+              }
             });
           }),
         );
         const useCost = blCost > 0 ? blCost : totalCost;
         const useKwh = blKwh > 0 ? blKwh : totalKwh;
+        const useTherms = blTherms > 0 ? blTherms : totalTherms;
         const label = blCost > 0 ? 'Baseline' : 'Total Cost';
-        const eui = sqft > 0 && useKwh > 0 ? ((useKwh * 3.412) / sqft).toFixed(1) : '—';
+        const kBtu = useKwh * 3.412 + useTherms * 100;
+        const eui = sqft > 0 && kBtu > 0 ? (kBtu / sqft).toFixed(1) : '—';
         const blEl = document.getElementById('phc-baseline-' + projId);
         const euiEl = document.getElementById('phc-eui-' + projId);
         if (blEl)
@@ -11646,29 +11669,41 @@
             curCost = 0,
             blKwh = 0,
             curKwh = 0,
+            blTherms = 0,
+            curTherms = 0,
             blPeriod = '',
             allCost = 0,
-            allKwh = 0;
+            allKwh = 0,
+            allTherms = 0;
           let hasBaseline = false;
           meters.forEach((m) => {
             const blBills = _dashGetBaselineBills(m);
             if (blBills.length) hasBaseline = true;
             blBills.forEach((bill) => {
               blCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
-              blKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-              if (m.commodity === 'Gas') blKwh += parseFloat(bill.therms) || 0;
+              if (m.commodity === 'Gas') {
+                blTherms += parseFloat(bill.therms) || 0;
+              } else {
+                blKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+              }
             });
             const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
             bills.slice(-12).forEach((bill) => {
               curCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
-              curKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-              if (m.commodity === 'Gas') curKwh += parseFloat(bill.therms) || 0;
+              if (m.commodity === 'Gas') {
+                curTherms += parseFloat(bill.therms) || 0;
+              } else {
+                curKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+              }
             });
             // Tally all bills as fallback when no baseline is set
             (m.bills || []).forEach((bill) => {
               allCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
-              allKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-              if (m.commodity === 'Gas') allKwh += parseFloat(bill.therms) || 0;
+              if (m.commodity === 'Gas') {
+                allTherms += parseFloat(bill.therms) || 0;
+              } else {
+                allKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+              }
             });
             // Baseline period label
             if (blBills.length) {
@@ -11684,14 +11719,17 @@
           // Fallback: if no baseline set, use all bills
           const useCost = blCost > 0 ? blCost : allCost;
           const useKwh = blKwh > 0 ? blKwh : allKwh;
+          const useTherms = blTherms > 0 ? blTherms : allTherms;
           const blLabel = hasBaseline ? 'Baseline' : 'Total Cost';
           totalBl += useCost;
           totalCur += curCost;
           const sav = useCost - curCost;
           const savPct = useCost > 0 ? (sav / useCost) * 100 : 0;
-          // EUI: kBtu/sf/yr (1 kWh = 3.412 kBtu)
-          const blEUI = sqft > 0 && useKwh > 0 ? (useKwh * 3.412) / sqft : 0;
-          const curEUI = sqft > 0 && curKwh > 0 ? (curKwh * 3.412) / sqft : 0;
+          // EUI: kBtu/sf/yr (1 kWh = 3.412 kBtu, 1 therm = 100 kBtu)
+          const blKBtu = useKwh * 3.412 + useTherms * 100;
+          const curKBtu = curKwh * 3.412 + curTherms * 100;
+          const blEUI = sqft > 0 && blKBtu > 0 ? blKBtu / sqft : 0;
+          const curEUI = sqft > 0 && curKBtu > 0 ? curKBtu / sqft : 0;
           let status = 'No Data',
             statusColor = 'var(--text3)';
           if (useCost > 0 && curCost > 0) {
@@ -11748,7 +11786,7 @@
       <div class="card-hdr"><span class="card-title">Building Performance</span></div>
       <div style="overflow-x:auto">
         <table class="dtbl" style="width:100%;font-size:12px">
-          <thead><tr><th>Building</th><th style="text-align:right">Sq Ft</th><th style="text-align:right">Baseline Period</th><th style="text-align:right">Baseline $/yr</th><th style="text-align:right">EUI</th><th style="text-align:right">Current $/yr</th><th style="text-align:right">Cur EUI</th><th style="text-align:right">Savings $</th><th style="text-align:right">%</th><th style="text-align:center">Status</th></tr></thead>
+          <thead><tr><th>Building</th><th style="text-align:right">Sq Ft</th><th style="text-align:right">Period</th><th style="text-align:right">${bldgRows.some((r) => r.blLabel === 'Baseline') ? 'Baseline' : 'Total Cost'} $/yr</th><th style="text-align:right">EUI</th><th style="text-align:right">Current $/yr</th><th style="text-align:right">Cur EUI</th><th style="text-align:right">Savings $</th><th style="text-align:right">%</th><th style="text-align:center">Status</th></tr></thead>
           <tbody>${bldgRows
             .map(
               (r) => `<tr>
@@ -12452,6 +12490,21 @@
           renderSavingsFooter(projId, sd);
           return;
         }
+        // Auto-sync SQFT from current building data if measure has a building assigned
+        let _msrDataChanged = false;
+        sd.measures.forEach((m) => {
+          if (m.bldgId) {
+            const bldg = getUDBldg(projId, m.bldgId);
+            if (bldg) {
+              const bldgSqft = parseFloat(bldg.sqft) || 0;
+              if (bldgSqft > 0 && (m.sqft || 0) !== bldgSqft) {
+                m.sqft = bldgSqft;
+                _msrDataChanged = true;
+              }
+            }
+          }
+        });
+        if (_msrDataChanged) sset('en_projects', projects);
         tbody.innerHTML = sd.measures
           .map((m) => {
             const r = m.rates || {};
@@ -13316,7 +13369,7 @@
       }
 
       /* ── PDF OCR — LOCAL EXTRACTION ENGINE ──
-   Utility bills: 100% local, no AI ever.
+   Utility bills: 100% local rule-based extraction.
    1) PDF.js extracts raw text in-browser
    2) Regex rules match known utility formats
    3) If matched → extract and display
@@ -14119,6 +14172,10 @@
           };
         }
         if (_rOffPk) _rates.EnergyOffPeakCharge = _rOffPk;
+        // Flag energy format: 'on_off_peak' if On-Peak found, 'tiered' if only tiered, 'changeover' if both
+        if (_rOnPk && _rTiered) result._energyFormat = 'changeover';
+        else if (_rOnPk || _rOffPk) result._energyFormat = 'on_off_peak';
+        else if (_rTiered) result._energyFormat = 'tiered';
         if (_rEca) _rates.ECACharge = _rEca;
         if (_rEer) _rates.EERCharge = _rEer;
         if (_rPts) _rates.PTSCharge = _rPts;
@@ -14401,16 +14458,32 @@
         if (result.kWhConsumed) result.kWhConsumed = _pad4(result.kWhConsumed);
 
         // ── SANITY CHECK: EndRead and StartRead should be similar magnitude ──
-        // OCR garble like "54020031.0000" (should be ~54020.xxxx) is caught here.
-        // If EndRead/StartRead differ by more than 10x, the larger one is likely garbled.
+        // OCR garble like "512252699" (should be "51,225.2699") — missing decimal/comma.
+        // Check 1: If one value has a decimal and the other doesn't, the one without is likely garbled.
+        // Check 2: If values differ by more than 10x, the larger one is garbled.
+        // Check 3: Meter reads typically range 1,000–999,999. Values over 10M are suspect.
         if (result.EndRead && result.StartRead) {
-          const er = parseFloat(result.EndRead),
-            sr = parseFloat(result.StartRead);
+          const erStr = String(result.EndRead),
+            srStr = String(result.StartRead);
+          const er = parseFloat(erStr),
+            sr = parseFloat(srStr);
           if (er > 0 && sr > 0) {
-            const ratio = er / sr;
-            if (ratio > 10)
-              result.EndRead = null; // EndRead is garbled
-            else if (ratio < 0.1) result.StartRead = null; // StartRead is garbled
+            // Check for missing decimal (one has it, the other doesn't)
+            const erDec = erStr.includes('.'),
+              srDec = srStr.includes('.');
+            if (erDec !== srDec && Math.max(er, sr) / Math.min(er, sr) > 100) {
+              if (!erDec) result.EndRead = null;
+              else result.StartRead = null;
+            }
+            // Absolute magnitude check — reads over 10M are almost certainly garbled
+            if (result.EndRead && er > 10000000) result.EndRead = null;
+            if (result.StartRead && sr > 10000000) result.StartRead = null;
+            // Ratio check
+            if (result.EndRead && result.StartRead) {
+              const ratio = parseFloat(result.EndRead) / parseFloat(result.StartRead);
+              if (ratio > 10) result.EndRead = null;
+              else if (ratio < 0.1) result.StartRead = null;
+            }
           }
         }
 
@@ -14526,6 +14599,12 @@
               const r = _extractEvergy(s, acct, addrM?.[1]?.trim() || null);
               if (!r.CustomerName && fullCustName) r.CustomerName = fullCustName;
               if (!r.RateSchedule && fullRate) r.RateSchedule = fullRate;
+              // Track page ranges from %%PAGE_N%% markers
+              const pageMarkers = [...s.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => parseInt(m[1]));
+              if (pageMarkers.length) {
+                r._pageStart = Math.min(...pageMarkers);
+                r._pageEnd = Math.max(...pageMarkers);
+              }
               return r;
             });
             // ── NEIGHBOR-BILL FALLBACK (extractAll) ──
@@ -15559,6 +15638,56 @@
           }
         }
 
+        // ── CROSS-BILL CONSISTENCY: CustomerCharge and FacilitiesKW ──
+        // CustomerCharge is a fixed monthly fee — should be identical across all bills on the same rate.
+        // FacilitiesKW is a rolling 12-month peak — shouldn't all be identical unless demand never changed.
+        // If all bills have the same value, flag for OCR review (likely copied from one good read).
+        if (bills.length >= 3) {
+          const custCharges = bills.map((b) => pf(b.CustomerCharge)).filter((v) => v > 0);
+          const facKWs = bills.map((b) => pf(b.FacilitiesKW)).filter((v) => v > 0);
+          // CustomerCharge: all same is expected (fixed fee) — no action needed
+          // FacilitiesKW: if ALL are identical across 3+ bills, that's suspicious
+          // (real FacilitiesKW changes when a new peak is set)
+          if (facKWs.length >= 3) {
+            const allSame = facKWs.every((v) => Math.abs(v - facKWs[0]) < 0.001);
+            if (allSame) {
+              bills.forEach((b) => {
+                if (!b._warnings) b._warnings = [];
+                b._warnings.push(
+                  'FacilitiesKW is identical across all bills (' + facKWs[0].toFixed(4) + ') — verify OCR accuracy',
+                );
+              });
+            }
+          }
+        }
+
+        // ── NEW PEAK LOGIC: When ActualKW exceeds rolling 12-month peak ──
+        // If ActualKW > FacilitiesKW from previous month, then the new peak was set this month.
+        // In that case: FacilitiesKW = ActualKW = BilledKW (they should all match).
+        for (let i = 0; i < bills.length; i++) {
+          const b = bills[i];
+          const actualKW = pf(b.ActualKW);
+          const facKW = pf(b.FacilitiesKW);
+          const billedKW = pf(b.BilledKW);
+          if (actualKW > 0 && facKW > 0 && actualKW > facKW) {
+            // New peak set this month — FacilitiesKW should equal ActualKW
+            b.FacilitiesKW = b.ActualKW;
+            if (billedKW > 0 && Math.abs(billedKW - actualKW) > 0.01) {
+              b.BilledKW = b.ActualKW;
+            }
+            b['_auto_corrected_FacilitiesKW'] = {
+              original: facKW.toFixed(4),
+              corrected: b.FacilitiesKW,
+              reason:
+                'New 12-month peak: ActualKW (' +
+                actualKW.toFixed(4) +
+                ') exceeds prior FacilitiesKW (' +
+                facKW.toFixed(4) +
+                ')',
+            };
+          }
+        }
+
         return bills;
       }
 
@@ -15638,19 +15767,17 @@
           // Save PDF file and create bill record
           const billId = 'pb' + Date.now() + '_' + saved;
           let hasPDF = false;
-          if (pdfB64) {
-            hasPDF = await pdfStore('en_pdf_file_' + billId, pdfB64);
+          // Store PDF once under a shared key (not per-bill) to avoid duplication
+          const pdfKey = 'en_pdf_shared_' + (bills[0]?._pdfSharedKey || Date.now());
+          if (pdfB64 && saved === 0) {
+            hasPDF = await pdfStore(pdfKey, pdfB64);
+            // Mark all bills with shared key
+            bills.forEach((b) => (b._pdfSharedKey = pdfKey));
+          } else if (pdfB64) {
+            hasPDF = true; // Already stored on first bill
           }
-          const pdfBills = sget('en_pdf_bills', []) || [];
-          pdfBills.push({
-            id: billId,
-            savedAt: new Date().toISOString(),
-            projId: projId,
-            projName: proj?.name || '',
-            hasPDF,
-            ...bill,
-          });
-          sset('en_pdf_bills', pdfBills);
+          // Bills go directly to meter.bills — no need to also store in en_pdf_bills
+          // (Saved Bills is for unassigned bills only)
           const kwhCost = (
             pf(bill.EnergyOnPeakCharge) +
             pf(bill.EnergyOffPeakCharge) +
@@ -15678,6 +15805,9 @@
             fromPDF: true,
             pdfBillId: billId,
             hasPDF,
+            pdfKey: pdfKey || null,
+            pdfPageStart: bill._pageStart || null,
+            pdfPageEnd: bill._pageEnd || null,
           };
           meter.bills = meter.bills || [];
           const dup = meter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
@@ -15720,7 +15850,7 @@
         const box = document.getElementById('pdfAIBox');
         box._showingRaw = false;
         box.textContent =
-          'Upload a PDF and select document type. For utility bills, rule-based extraction runs first — instant and free. AI is used as a fallback for unrecognized formats.';
+          'Upload a PDF and select document type. Rule-based extraction runs locally in your browser — instant and private.';
         showToast('Cleared ✓');
       }
       function savePDFDebug() {
@@ -16021,7 +16151,8 @@
             window._pdfOcrPasses = allPassTexts;
           }
 
-          const fullText = pageTexts.join('\n');
+          // Insert page markers so extractAll can track page ranges per bill
+          const fullText = pageTexts.map((t, i) => '%%PAGE_' + (i + 1) + '%%\n' + t).join('\n');
           return fullText.trim().length > 50 ? fullText : null;
         } catch (e) {
           if (statusCb) statusCb('PDF read error: ' + e.message);
@@ -16036,12 +16167,12 @@
           b.style.background = 'rgba(var(--em-rgb),.12)';
           b.style.color = 'var(--em)';
           b.style.border = '1px solid rgba(var(--em-rgb),.25)';
-          b.textContent = '⚡ Rule-Based' + (detail ? ' · ' + detail : '') + ' — no AI used';
+          b.textContent = '⚡ Rule-Based' + (detail ? ' · ' + detail : '') + ' — local extraction';
         } else {
           b.style.background = 'rgba(139,92,246,.12)';
           b.style.color = '#a78bfa';
           b.style.border = '1px solid rgba(139,92,246,.25)';
-          b.textContent = '🤖 AI Extraction';
+          b.textContent = '📄 Text Extraction';
         }
       }
       let pdfType = 'utility',
@@ -16097,7 +16228,7 @@
           pdfB64 = ev.target.result.split(',')[1];
           const ab = Uint8Array.from(atob(pdfB64), (c) => c.charCodeAt(0)).buffer;
 
-          // ── UTILITY BILLS: 100% local rule-based extraction, no AI ──
+          // ── UTILITY BILLS: 100% local rule-based extraction ──
           if (pdfType === 'utility') {
             const statusMsg = (msg) => {
               box.innerHTML =
@@ -16419,7 +16550,7 @@
             return;
           }
 
-          // ── NON-UTILITY TYPES: local text extraction only, no AI ──
+          // ── NON-UTILITY TYPES: local text extraction only ──
           const text = await extractPDFText(ab, (msg) => {
             box.innerHTML =
               '<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> ' +
@@ -16598,7 +16729,6 @@
           { type: 'pair', fields: ['StartRead', 'EndRead'] },
           { type: 'pair', fields: ['ReadDifference', 'MeterMultiplier'] },
           { type: 'pair', fields: ['kWhConsumed'] },
-          { type: 'pair', fields: ['ActualKW', 'ActualRKVA'] },
           // Charges — ordered per Evergy Billing Details
           // type 'charge-line': shows qty | rate | charge | running total (uniform layout)
           // label: base name for consistent labeling (e.g. "Facilities kW" → "Facilities kW", "Facilities kW Rate", "Facilities kW Charge")
@@ -16607,6 +16737,7 @@
           // rateKey: key in _rates for rate info; null = no rate data (charge-only row)
           { section: 'Charges' },
           { type: 'charge-line', label: 'Customer', chargeField: 'CustomerCharge', rateKey: null },
+          { type: 'pair', fields: ['ActualKW', 'ActualRKVA'] },
           {
             type: 'charge-line',
             label: 'Facilities kW',
@@ -16767,7 +16898,10 @@
             const ri = parsed._rates?.[row.rateKey];
             const parts = ri?.parts || [];
             const chargeVal = _pf(parsed[row.chargeField]);
-            const base = row.label;
+            // For tiered energy, hide Off-Peak row and relabel On-Peak parts as Tier 1/2/3
+            const isTiered = parsed._energyFormat === 'tiered';
+            if (isTiered && row.chargeField === 'EnergyOffPeakCharge') return '';
+            const base = isTiered && row.chargeField === 'EnergyOnPeakCharge' ? 'Energy' : row.label;
 
             // Determine the unit label for this charge (kW or kWh)
             // Energy charges are always kWh even if OCR drops the 'h'
@@ -16811,7 +16945,8 @@
             // Multiple parts — each part gets its own running total
             const partRows = parts
               .map((p, idx) => {
-                const suffix = ' (' + (idx + 1) + ')';
+                const suffix =
+                  isTiered && row.chargeField === 'EnergyOnPeakCharge' ? ' Tier ' + (idx + 1) : ' (' + (idx + 1) + ')';
                 const partCharge = p.ocrCharge != null ? p.ocrCharge : p.computed;
                 runningTotal += partCharge;
                 const rtFmt = runningTotal.toLocaleString('en-US', {
@@ -16849,7 +16984,15 @@
               : mismatch
                 ? 'border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.06)'
                 : '';
-            return `<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:6px"><div class="ef-charge-row"><div></div><div></div><div class="ef-item center" style="${itemStyle}"><div class="ef-key" style="color:${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges ?? '') !== '' ? '$' + totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px;text-align:center"></div><div class="ef-running ${cls}">$${rtFmt}${icon}</div></div></div>`;
+            const diff = totalVal > 0 ? totalVal - runningTotal : 0;
+            const diffFmt = Math.abs(diff).toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            });
+            const diffLine = mismatch
+              ? `<div style="font-size:10px;color:${diff >= 0 ? '#f59e0b' : '#ef4444'};margin-top:2px">Diff: ${diff >= 0 ? '+' : '-'}$${diffFmt}</div>`
+              : '';
+            return `<div style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px"><div class="ef-charge-row"><div></div><div></div><div class="ef-item center" style="${itemStyle}"><div class="ef-key" style="color:${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges ?? '') !== '' ? '$' + totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px;text-align:center"></div><div class="ef-running ${cls}" style="display:flex;flex-direction:column;align-items:flex-end;border-top:2px solid ${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'};padding-top:4px"><div style="font-weight:700;font-size:13px">$${rtFmt}${icon}</div>${diffLine}</div></div></div>`;
           }
           return '';
         });
@@ -17018,7 +17161,7 @@
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0">
         <button class="btn btn-ghost btn-sm" onclick="viewSavedBill('${b.id}')">📋 Data</button>
-        ${b.hasPDF ? `<button class="btn btn-ghost btn-sm" onclick="viewSavedPDF('${b.id}')">📄 PDF</button>` : ''}
+        ${b.hasPDF ? `<button class="btn btn-ghost btn-sm" onclick="viewSavedPDF('${b.id}',${b.pdfPageStart || 'null'},${b.pdfPageEnd || 'null'},'${b.pdfKey || ''}')">📄 PDF</button>` : ''}
         <button class="btn btn-em btn-sm" onclick="openAssignModal('${b.id}')">Assign</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red)" onclick="deleteSavedBill('${b.id}')">✕</button>
       </div>
@@ -17084,22 +17227,63 @@
         showToast('Record deleted');
       }
 
-      async function viewSavedPDF(id) {
-        // Try IndexedDB first, fall back to legacy localStorage
+      async function viewSavedPDF(id, pageStart, pageEnd, pdfKey) {
+        // Try per-bill key, shared key, then legacy localStorage
         let b64 = await pdfLoad('en_pdf_file_' + id);
+        if (!b64 && pdfKey) b64 = await pdfLoad(pdfKey);
         if (!b64) b64 = sget('en_pdf_file_' + id, null);
+        if (!b64) {
+          // Try looking up the bill record for its shared pdfKey
+          const bills = sget('en_pdf_bills', []) || [];
+          const rec = bills.find((b) => b.id === id || b.pdfBillId === id);
+          if (rec?.pdfKey) b64 = await pdfLoad(rec.pdfKey);
+          if (rec && !pageStart) {
+            pageStart = rec.pdfPageStart;
+            pageEnd = rec.pdfPageEnd;
+          }
+        }
         if (!b64) {
           showToast('PDF file not found — it may not have been stored');
           return;
         }
         try {
           const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-          const blob = new Blob([bytes], { type: 'application/pdf' });
-          const url = URL.createObjectURL(blob);
-          const win = window.open(url, '_blank');
-          // Revoke after a delay to free memory once browser has loaded it
-          setTimeout(() => URL.revokeObjectURL(url), 30000);
-          if (!win) showToast('Pop-up blocked — allow pop-ups for this site to view PDFs');
+          // If we have page range info, render only those pages using PDF.js
+          if (pageStart && pageEnd && window.pdfjsLib) {
+            const pdf = await window.pdfjsLib.getDocument({ data: bytes }).promise;
+            const start = Math.max(1, pageStart);
+            const end = Math.min(pdf.numPages, pageEnd);
+            // Render pages to a printable HTML window
+            const win = window.open('', '_blank');
+            if (!win) {
+              showToast('Pop-up blocked — allow pop-ups for this site to view PDFs');
+              return;
+            }
+            win.document.write(
+              '<html><head><title>Bill Pages ' +
+                start +
+                '-' +
+                end +
+                '</title><style>body{margin:0;background:#333;display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px} canvas{max-width:100%;background:white;box-shadow:0 2px 8px rgba(0,0,0,0.5)}</style></head><body>',
+            );
+            for (let p = start; p <= end; p++) {
+              const pg = await pdf.getPage(p);
+              const vp = pg.getViewport({ scale: 1.5 });
+              const canvas = win.document.createElement('canvas');
+              canvas.width = vp.width;
+              canvas.height = vp.height;
+              win.document.body.appendChild(canvas);
+              await pg.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+            }
+            win.document.write('</body></html>');
+            win.document.close();
+          } else {
+            const blob = new Blob([bytes], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            const win = window.open(url, '_blank');
+            setTimeout(() => URL.revokeObjectURL(url), 30000);
+            if (!win) showToast('Pop-up blocked — allow pop-ups for this site to view PDFs');
+          }
         } catch (e) {
           showToast('Could not open PDF: ' + e.message);
         }
@@ -17248,22 +17432,46 @@
             diff.toFixed(2) +
             '). You can still assign but review the values.';
         }
-        // Check for duplicate
+        // Check for duplicate — merge new data with existing if found
         meter.bills = meter.bills || [];
         const dup = meter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
-        if (dup) Object.assign(dup, billRow);
-        else {
+        if (dup) {
+          // Merge: keep existing data, fill in any new non-empty fields
+          for (const [key, val] of Object.entries(billRow)) {
+            if (key === 'id') continue; // keep existing ID
+            const existing = dup[key];
+            const newVal = val;
+            // Update if existing is empty/null but new has data
+            if (
+              (!existing || existing === '' || existing === '0' || existing === '0.00') &&
+              newVal &&
+              newVal !== '' &&
+              newVal !== '0' &&
+              newVal !== '0.00'
+            ) {
+              dup[key] = newVal;
+            }
+            // Also update if new value is different and likely more accurate (from OCR re-extraction)
+            if (newVal && newVal !== '' && existing !== newVal && billRow.fromPDF) {
+              dup[key] = newVal;
+            }
+          }
+        } else {
           meter.bills.push(billRow);
           meter.bills.sort((a, b) => new Date(a.start) - new Date(b.start));
         }
-        // Update bill record with project assignment
+        // Remove from Saved Bills after assignment — it's now in Utility Data
+        const updatedBills = bills.filter((b) => b.id !== _assignBillId);
+        sset('en_pdf_bills', updatedBills);
+        // Update bill record with project assignment (in case it wasn't removed)
         bill.projId = pid;
         bill.projName = proj.name;
-        sset('en_pdf_bills', bills);
         saveUtilityData();
         closeAssignModal();
         renderSavedBills();
-        showToast('Bill assigned to ' + proj.name + ' → ' + meterLabel(meter) + ' ✓');
+        showToast(
+          (dup ? 'Bill merged with existing → ' : 'Bill assigned to ') + proj.name + ' → ' + meterLabel(meter) + ' ✓',
+        );
       }
 
       async function _saveSinglePDFBill(extracted, projId) {
@@ -17440,7 +17648,7 @@
       }
 
       /* ══════════════════════════════════════
-   DISTRICT CALENDAR — no AI, pure JS
+   DISTRICT CALENDAR — pure JS
 ══════════════════════════════════════ */
       let dcEvents = [],
         dcViewYear = new Date().getFullYear(),
@@ -22327,7 +22535,7 @@
     .bbd-bl-tbl th{background:rgba(255,255,255,0.08);color:#c8d8f0;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.4px}
     .bbd-bl-tbl .bl-green{background:#0d3320;color:#4fffaa;font-weight:700;border-color:#1a5535}
 
-    .bbd-summary{background:#0d1525;border:1px solid rgba(255,255,255,0.12);border-radius:9px;padding:12px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:0;row-gap:0}
+    .bbd-summary{background:#0d1525;border:1px solid rgba(255,255,255,0.12);border-radius:9px;padding:12px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:0;row-gap:10px}
     .bbd-sum-cell{display:flex;flex-direction:column;gap:3px;padding:8px 14px;border-right:1px solid rgba(255,255,255,0.07);flex:1;min-width:90px}
     .bbd-sum-cell:last-child{border-right:none}
     .bbd-sum-lbl{font-size:9.5px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.5px;font-weight:700;white-space:nowrap}
@@ -22962,7 +23170,7 @@
       .bbd-bl-tbl td,.bbd-bl-tbl th{border:1px solid rgba(255,255,255,0.20);padding:3px 10px;white-space:nowrap;color:#e0eaff}
       .bbd-bl-tbl th{background:rgba(255,255,255,0.08);color:#c8d8f0;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.4px}
       .bbd-bl-tbl .bl-green{background:#0d3320;color:#4fffaa;font-weight:700;border-color:#1a5535}
-      .bbd-summary{background:#0d1525;border:1px solid rgba(255,255,255,0.12);border-radius:9px;padding:12px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:0;row-gap:0}
+      .bbd-summary{background:#0d1525;border:1px solid rgba(255,255,255,0.12);border-radius:9px;padding:12px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:0;row-gap:10px}
       .bbd-sum-cell{display:flex;flex-direction:column;gap:3px;padding:8px 14px;border-right:1px solid rgba(255,255,255,0.07);flex:1;min-width:90px}
       .bbd-sum-cell:last-child{border-right:none}
       .bbd-sum-lbl{font-size:9.5px;color:var(--mdd-lbl-color,#8ab0d0);text-transform:uppercase;letter-spacing:.5px;font-weight:700;white-space:nowrap}
@@ -24222,10 +24430,12 @@
         // Year filter
         const maxYears = Math.max(1, Math.ceil(truePostRows.length / 12));
         const yearOptions = ['all', ...Array.from({ length: maxYears }, (_, i) => String(i + 1))];
-        let filteredPostRows = truePostRows;
+        // Filter out partial months (< 90% of calendar days) so they don't skew the display
+        const fullPostRows = truePostRows.filter((r) => !r.partial);
+        let filteredPostRows = fullPostRows;
         if (_perfYearFilter !== 'all') {
           const n = parseInt(_perfYearFilter);
-          filteredPostRows = truePostRows.slice(0, n * 12);
+          filteredPostRows = fullPostRows.slice(0, n * 12);
         }
 
         // ── Raw bill usage by norm-month for all commodities ──
@@ -24603,6 +24813,11 @@
                   (thermRate > 0 ? costSign(thermCostSav) + '$' + fmtC(thermCostSav) : '&mdash;') +
                   '</td>'
                 : '') +
+              (hasKwData && blAvgDemKWP > 0
+                ? '<td class="mono num" style="color:var(--text2)">' +
+                  blAvgDemKWP.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) +
+                  '</td>'
+                : '') +
               (hasKwData
                 ? '<td class="mono num">' +
                   (demKW > 0
@@ -24657,6 +24872,7 @@
               '</th><th class="num">Actual ' +
               unit +
               '/Day</th>';
+        const expKWHdr = hasKwData && blAvgDemKWP > 0 ? '<th class="num">Expected kW</th>' : '';
         const demKWHdr = hasKwData ? '<th class="num">Actual kW</th>' : '';
         const bilKWHdr = hasBilKW ? '<th class="num">Billed kW</th>' : '';
         const kwCostHdr = hasKwCost ? '<th class="num">Actual kW Cost</th>' : '';
@@ -24701,7 +24917,7 @@
             '</div>' +
             (isElec && hasPerfKwData
               ? '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:16px 0 8px">Actual kW Demand — All Periods</div>' +
-                '<div class="ma-chart-wrap"><canvas id="perfKwChart"></canvas></div>'
+                '<div class="ma-chart-wrap" style="height:280px"><canvas id="perfKwChart"></canvas></div>'
               : '') +
             '</div>'
           : '<div></div>';
@@ -24733,6 +24949,7 @@
               expThermCostHdr +
               actThermCostHdr +
               thermCostSavHdr +
+              expKWHdr +
               demKWHdr +
               bilKWHdr +
               kwCostHdr +
@@ -25369,7 +25586,7 @@
         const nmCell = `<td class="norm-mon-cell">${nm}</td>`;
         const pdfBtn =
           row.pdfBillId && row.hasPDF
-            ? `<button class="btn-edit" onclick="viewSavedPDF('${row.pdfBillId}')" title="View source PDF" style="color:var(--accent)">📄</button>`
+            ? `<button class="btn-edit" onclick="viewSavedPDF('${row.pdfBillId}',${row.pdfPageStart || 'null'},${row.pdfPageEnd || 'null'},'${row.pdfKey || ''}')" title="View source PDF" style="color:var(--accent)">📄</button>`
             : '';
         const actionBtns = `<td class="td-actions">
     ${pdfBtn}<button class="btn-edit" onclick="openBillModal('${m.id}','${row.id}')" title="Edit">✏️</button>
@@ -25881,8 +26098,21 @@
           t.sectionHeading = t.sectionHeading || 'Energy Management Services Program';
           t.defaultEndTopic = t.defaultEndTopic || 'Questions?';
           t.defaultTopics = [
-            { text: 'Project Status Update', subItems: [] },
-            { text: 'Energy Savings Review', subItems: [] },
+            { text: 'BAS Updates', subItems: ['Review current system status and any proposed changes.'] },
+            {
+              text: 'Energy Savings Review',
+              subItems: ['Review utility bill trends and savings performance vs baseline.'],
+            },
+            { text: 'Monthly Reviews', subItems: ['Confirm next monthly review date and time.'] },
+            { text: 'Quarterly Reviews', subItems: ['Review upcoming quarterly review schedule.'] },
+            {
+              text: 'Onsite Technical Labor Services',
+              subItems: ['Review any scheduled onsite work or deficiency items.'],
+            },
+            {
+              text: 'Equipment & Maintenance Updates',
+              subItems: ['Status of any pending equipment orders or installations.'],
+            },
             { text: 'Upcoming Milestones / Action Items', subItems: [] },
             { text: 'Open Issues', subItems: [] },
             { text: 'Questions?', subItems: [] },
@@ -26029,6 +26259,8 @@
           _editingMeeting.type === 'agenda' && meetingId ? '' : 'none';
         renderMeetingEditorBody();
         document.getElementById('meetingModal').classList.add('open');
+        // Trigger PDF preview after modal opens
+        setTimeout(mtgSchedulePreview, 300);
       }
 
       function renderMeetingEditorBody() {
@@ -26871,6 +27103,241 @@
         if (returnDoc) return doc;
         doc.save(filename);
         showToast('PDF generated ✓');
+      }
+
+      /* ── QUARTERLY / ANNUAL PERFORMANCE REPORTS ── */
+      function generatePerformanceReport(projId, type) {
+        const p = projects.find((x) => x.id === projId);
+        if (!p) return;
+        const bldgs = getUDBldgs(projId);
+        if (!bldgs.length) {
+          showToast('No buildings with utility data — add data in Utility Data tab first');
+          return;
+        }
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+        const pw = 612,
+          ph = 792,
+          ml = 54,
+          mr = 40;
+        const contentW = pw - ml - mr;
+        let y = 36;
+
+        // Header
+        try {
+          doc.addImage(CSC_HEADER_B64, 'JPEG', 0, 0, pw, 145);
+        } catch (e) {}
+        y = 155;
+
+        // Title
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.setTextColor(0, 0, 0);
+        const now = new Date();
+        const reportTitle =
+          type === 'quarterly' ? 'Quarterly Savings Performance Report' : 'Annual Savings Performance Report';
+        doc.text(reportTitle, pw / 2, y, { align: 'center' });
+        y += 18;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        doc.text(p.client || p.name || '', pw / 2, y, { align: 'center' });
+        y += 14;
+        const monthNames = [
+          'January',
+          'February',
+          'March',
+          'April',
+          'May',
+          'June',
+          'July',
+          'August',
+          'September',
+          'October',
+          'November',
+          'December',
+        ];
+        doc.text(monthNames[now.getMonth()] + ' ' + now.getFullYear(), pw / 2, y, { align: 'center' });
+        y += 24;
+
+        // Summary section
+        let totalBlCost = 0,
+          totalCurCost = 0,
+          totalBlKBtu = 0,
+          totalCurKBtu = 0;
+        const totalSqft = bldgs.reduce((s, b) => s + parseInt(b.sqft || 0), 0);
+        const bldgData = bldgs.map((b) => {
+          const meters = b.meters || [];
+          const sqft = parseInt(b.sqft || 0);
+          let blCost = 0,
+            curCost = 0,
+            blKwh = 0,
+            curKwh = 0,
+            blTherms = 0,
+            curTherms = 0;
+          const periodMonths = type === 'quarterly' ? 3 : 12;
+          meters.forEach((m) => {
+            const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+            const blBills = _dashGetBaselineBills(m);
+            blBills.forEach((bill) => {
+              blCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || 0;
+              if (m.commodity === 'Gas') blTherms += parseFloat(bill.therms) || 0;
+              else blKwh += parseFloat(bill.kwh) || 0;
+            });
+            bills.slice(-periodMonths).forEach((bill) => {
+              curCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || 0;
+              if (m.commodity === 'Gas') curTherms += parseFloat(bill.therms) || 0;
+              else curKwh += parseFloat(bill.kwh) || 0;
+            });
+          });
+          const blKBtu = blKwh * 3.412 + blTherms * 100;
+          const curKBtu = curKwh * 3.412 + curTherms * 100;
+          const sav = blCost - curCost;
+          const savPct = blCost > 0 ? (sav / blCost) * 100 : 0;
+          totalBlCost += blCost;
+          totalCurCost += curCost;
+          totalBlKBtu += blKBtu;
+          totalCurKBtu += curKBtu;
+          return {
+            name: b.name,
+            sqft,
+            blCost,
+            curCost,
+            sav,
+            savPct,
+            blEUI: sqft > 0 ? blKBtu / sqft : 0,
+            curEUI: sqft > 0 ? curKBtu / sqft : 0,
+          };
+        });
+
+        // Summary box
+        const totalSav = totalBlCost - totalCurCost;
+        const totalPct = totalBlCost > 0 ? (totalSav / totalBlCost) * 100 : 0;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text('Executive Summary', ml, y);
+        y += 16;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        const $c = (n) => '$' + Math.round(Math.abs(n)).toLocaleString();
+        doc.text('Baseline Cost: ' + $c(totalBlCost) + '/yr', ml, y);
+        y += 14;
+        doc.text(
+          'Current Cost (' + (type === 'quarterly' ? 'Last 3 Months' : 'Last 12 Months') + '): ' + $c(totalCurCost),
+          ml,
+          y,
+        );
+        y += 14;
+        doc.text('Savings: ' + (totalSav >= 0 ? '' : '-') + $c(totalSav) + ' (' + totalPct.toFixed(1) + '%)', ml, y);
+        y += 14;
+        if (totalSqft > 0) {
+          doc.text('Baseline EUI: ' + (totalBlKBtu / totalSqft).toFixed(1) + ' kBtu/sf/yr', ml, y);
+          y += 14;
+          doc.text('Current EUI: ' + (totalCurKBtu / totalSqft).toFixed(1) + ' kBtu/sf/yr', ml, y);
+          y += 14;
+        }
+        y += 10;
+
+        // Building table
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text('Building Performance', ml, y);
+        y += 16;
+        // Table header
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        const cols = ['Building', 'Sq Ft', 'Baseline $/yr', 'Current $/yr', 'Savings', '%', 'BL EUI', 'Cur EUI'];
+        const colWidths = [
+          contentW * 0.22,
+          contentW * 0.1,
+          contentW * 0.13,
+          contentW * 0.13,
+          contentW * 0.12,
+          contentW * 0.08,
+          contentW * 0.11,
+          contentW * 0.11,
+        ];
+        let cx = ml;
+        cols.forEach((c, i) => {
+          doc.text(c, cx, y);
+          cx += colWidths[i];
+        });
+        y += 2;
+        doc.line(ml, y, ml + contentW, y);
+        y += 10;
+        // Table rows
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        bldgData.forEach((r) => {
+          if (y > ph - 80) {
+            doc.addPage();
+            y = 40;
+          }
+          cx = ml;
+          doc.text(r.name || '—', cx, y);
+          cx += colWidths[0];
+          doc.text(r.sqft ? r.sqft.toLocaleString() : '—', cx, y);
+          cx += colWidths[1];
+          doc.text($c(r.blCost), cx, y);
+          cx += colWidths[2];
+          doc.text($c(r.curCost), cx, y);
+          cx += colWidths[3];
+          doc.text((r.sav >= 0 ? '' : '-') + $c(r.sav), cx, y);
+          cx += colWidths[4];
+          doc.text(r.blCost > 0 ? r.savPct.toFixed(1) + '%' : '—', cx, y);
+          cx += colWidths[5];
+          doc.text(r.blEUI > 0 ? r.blEUI.toFixed(1) : '—', cx, y);
+          cx += colWidths[6];
+          doc.text(r.curEUI > 0 ? r.curEUI.toFixed(1) : '—', cx, y);
+          y += 13;
+        });
+        y += 10;
+
+        // Recommendations section
+        if (y > ph - 120) {
+          doc.addPage();
+          y = 40;
+        }
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text('Observations & Recommendations', ml, y);
+        y += 16;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        if (totalSav > 0) {
+          doc.text(
+            '• Overall savings are positive at ' + totalPct.toFixed(1) + '% reduction from baseline.',
+            ml + 10,
+            y,
+          );
+          y += 14;
+        } else {
+          doc.text(
+            '• Costs have increased ' + Math.abs(totalPct).toFixed(1) + '% vs baseline — review usage patterns.',
+            ml + 10,
+            y,
+          );
+          y += 14;
+        }
+        doc.text('• Continue monitoring monthly utility bills for trends.', ml + 10, y);
+        y += 14;
+        doc.text('• Review BAS schedules and setpoints for optimization opportunities.', ml + 10, y);
+        y += 14;
+
+        // Footer
+        try {
+          doc.addImage(CSC_FOOTER_B64, 'JPEG', 0, ph - 55, pw, 55);
+        } catch (e) {}
+
+        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '.');
+        const filename =
+          (p.client || p.name || 'Project') +
+          ' - ' +
+          (type === 'quarterly' ? 'Quarterly' : 'Annual') +
+          ' Savings Report ' +
+          dateStr +
+          '.pdf';
+        doc.save(filename);
+        showToast(type === 'quarterly' ? 'Quarterly report generated ✓' : 'Annual report generated ✓');
       }
 
       /* ── SESSION PERSISTENCE ── */
