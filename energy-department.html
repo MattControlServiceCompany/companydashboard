@@ -664,7 +664,7 @@
       .view.active {
         display: flex;
         flex-direction: column;
-        padding: 16px 18px 64px;
+        padding: 16px 18px;
         overflow-y: auto;
         flex: 1;
         min-height: 0;
@@ -2345,9 +2345,26 @@
       }
       .ef-charge-row {
         display: grid;
-        grid-template-columns: 1fr 1fr 1fr auto;
+        grid-template-columns: 1fr 1fr 1fr;
         gap: 4px;
         align-items: stretch;
+      }
+      .ef-running-line {
+        display: flex;
+        justify-content: flex-end;
+        padding: 1px 6px 3px 0;
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--text3);
+        border-top: 1px solid var(--border);
+      }
+      .ef-running-line.match {
+        color: #22c55e;
+        font-weight: 700;
+      }
+      .ef-running-line.mismatch {
+        color: #ef4444;
+        font-weight: 700;
       }
       .ef-item {
         background: var(--s3);
@@ -3460,6 +3477,7 @@
         overflow-x: auto;
         flex: 1;
         min-height: 0;
+        padding-bottom: 48px;
       }
       .bills-scroll-body .ud-bill-tbl {
         margin: 0;
@@ -4616,7 +4634,15 @@
                     onchange="handlePDFUpload(event)"
                   />
                   <div id="pdfClearBtn" style="display: none; margin-top: 8px; text-align: right">
-                    <button class="btn btn-ghost btn-sm" onclick="clearPDFOCR()">✕ Clear / Load New PDF</button>
+                    <button
+                      class="btn btn-ghost btn-sm"
+                      onclick="
+                        event.stopPropagation();
+                        clearPDFOCR();
+                      "
+                    >
+                      ✕ Clear
+                    </button>
                   </div>
                 </div>
                 <div id="pdfTypeSection" style="margin-top: 12px">
@@ -13310,7 +13336,16 @@
       /* ── SIDEBAR FOLDERS ── */
       function getFacilityIcon(type) {
         const t = (type || '').toLowerCase();
-        if (t.includes('k-12') || t.includes('school')) return '🏫';
+        if (
+          t.includes('k-12') ||
+          t.includes('school') ||
+          t.includes('district') ||
+          t.includes('education') ||
+          t.includes('elementary') ||
+          t.includes('middle') ||
+          t.includes('high school')
+        )
+          return '🏫';
         if (t.includes('college') || t.includes('university')) return '🎓';
         if (t.includes('hospital') || t.includes('health')) return '🏥';
         if (t.includes('office')) return '🏢';
@@ -13322,7 +13357,7 @@
         if (t.includes('hotel') || t.includes('hospitality')) return '🏨';
         if (t.includes('lab') || t.includes('laboratory')) return '🔬';
         if (t.includes('airport') || t.includes('transit')) return '✈️';
-        return '🏗️';
+        return '🏢';
       }
       function toggleProjSection(e) {
         if (e) e.stopPropagation();
@@ -15160,6 +15195,7 @@
             const z = Math.abs(val - s.mean) / s.stddev;
             if (z > 2.5) {
               rowFlags.push({
+                field: c.field,
                 msg:
                   c.label +
                   ' (' +
@@ -16776,7 +16812,7 @@
           { type: 'pair', fields: ['MeterReadStart', 'MeterReadEnd'] },
           { type: 'pair', fields: ['StartRead', 'EndRead'] },
           { type: 'pair', fields: ['ReadDifference', 'MeterMultiplier'] },
-          { type: 'pair', fields: ['kWhConsumed'] },
+          { type: 'pair', fields: ['kWhConsumed', 'ActualRKVA'] },
           // Charges — ordered per Evergy Billing Details
           // type 'charge-line': shows qty | rate | charge | running total (uniform layout)
           // label: base name for consistent labeling (e.g. "Facilities kW" → "Facilities kW", "Facilities kW Rate", "Facilities kW Charge")
@@ -16784,8 +16820,13 @@
           // chargeField: extracted field key for the charge (editable)
           // rateKey: key in _rates for rate info; null = no rate data (charge-only row)
           { section: 'Charges' },
-          { type: 'charge-line', label: 'Customer', chargeField: 'CustomerCharge', rateKey: null },
-          { type: 'pair', fields: ['ActualKW', 'ActualRKVA'] },
+          {
+            type: 'charge-line-with-kw',
+            label: 'Customer',
+            chargeField: 'CustomerCharge',
+            rateKey: null,
+            kwField: 'ActualKW',
+          },
           {
             type: 'charge-line',
             label: 'Facilities kW',
@@ -16941,6 +16982,19 @@
         const rows = FIELD_LAYOUT.map((row) => {
           if (row.section) return `<div class="ef-section">${row.section}</div>`;
 
+          // ── charge-line-with-kw: charge row with a kW field in the first column ──
+          if (row.type === 'charge-line-with-kw') {
+            const chargeVal = _pf(parsed[row.chargeField]);
+            runningTotal += chargeVal;
+            const rtFmt = runningTotal.toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            });
+            const kwCell = row.kwField ? buildCell(row.kwField) : '<div></div>';
+            const emptyCell = '<div></div>';
+            return `<div class="ef-charge-row">${kwCell}${emptyCell}${buildChargeCell(row.chargeField)}</div><div class="ef-running-line">$${rtFmt}</div>`;
+          }
+
           // ── charge-line: uniform qty | rate | charge | running total ──
           if (row.type === 'charge-line') {
             const ri = parsed._rates?.[row.rateKey];
@@ -16970,7 +17024,7 @@
                 maximumFractionDigits: 2,
               });
               const emptyCell = '<div></div>';
-              return `<div class="ef-charge-row">${emptyCell}${emptyCell}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
+              return `<div class="ef-charge-row">${emptyCell}${emptyCell}${buildChargeCell(row.chargeField)}</div><div class="ef-running-line">$${rtFmt}</div>`;
             }
 
             // Full label with unit: "Energy On-Peak kWh", "Facilities kW"
@@ -16987,7 +17041,7 @@
               const qtyHtml = row.qtyField
                 ? buildCell(row.qtyField)
                 : `<div class="ef-item"><div class="ef-key">${qtyLabel}</div><input class="ef-input" value="${fmtQty(p.qty, unitLabel)}" data-key="_qty_${row.chargeField}"></div>`;
-              return `<div class="ef-charge-row">${qtyHtml}${buildRateBox(qtyLabel + ' Rate', fmtRate(p.rate, unitLabel))}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
+              return `<div class="ef-charge-row">${qtyHtml}${buildRateBox(qtyLabel + ' Rate', fmtRate(p.rate, unitLabel))}${buildChargeCell(row.chargeField)}</div><div class="ef-running-line">$${rtFmt}</div>`;
             }
 
             // Multiple parts — each part gets its own running total
@@ -17006,7 +17060,7 @@
                     ? buildCell(row.qtyField)
                     : `<div class="ef-item"><div class="ef-key">${qtyLabel}${suffix}</div><input class="ef-input" value="${fmtQty(p.qty, unitLabel)}" data-key="_qty_${row.chargeField}_${idx}"></div>`;
                 const chargeHtml = `<div class="ef-item center"><div class="ef-key">${base} Charge${suffix}</div><input class="ef-input" value="${fmtDollar(partCharge)}" data-key="_chg_${row.chargeField}_${idx}" style="text-align:center"></div>`;
-                return `<div class="ef-charge-row">${qtyHtml}${buildRateBox(qtyLabel + ' Rate' + suffix, fmtRate(p.rate, unitLabel))}${chargeHtml}<div class="ef-running">$${rtFmt}</div></div>`;
+                return `<div class="ef-charge-row">${qtyHtml}${buildRateBox(qtyLabel + ' Rate' + suffix, fmtRate(p.rate, unitLabel))}${chargeHtml}</div><div class="ef-running-line">$${rtFmt}</div>`;
               })
               .join('');
             return partRows;
@@ -17040,7 +17094,7 @@
             const diffLine = mismatch
               ? `<div style="font-size:10px;color:${diff >= 0 ? '#f59e0b' : '#ef4444'};margin-top:2px">Diff: ${diff >= 0 ? '+' : '-'}$${diffFmt}</div>`
               : '';
-            return `<div style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px"><div class="ef-charge-row"><div></div><div></div><div class="ef-item center" style="${itemStyle}"><div class="ef-key" style="color:${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges ?? '') !== '' ? '$' + totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px;text-align:center"></div><div class="ef-running ${cls}" style="display:flex;flex-direction:column;align-items:flex-end;border-top:2px solid ${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'};padding-top:4px"><div style="font-weight:700;font-size:13px">$${rtFmt}${icon}</div>${diffLine}</div></div></div>`;
+            return `<div style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px"><div class="ef-charge-row"><div></div><div></div><div class="ef-item center" style="${itemStyle}"><div class="ef-key" style="color:${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges ?? '') !== '' ? '$' + totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px;text-align:center"></div></div><div class="ef-running-line ${cls}" style="border-top:2px solid ${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'};padding-top:4px;font-weight:700;font-size:12px"><span>$${rtFmt}${icon}</span></div>${diffLine}</div>`;
           }
           return '';
         });
@@ -17152,7 +17206,7 @@
       }
       /* ── SAVED BILLS DATABASE ── */
       function updateBillCountBadge() {
-        const b = sget('en_pdf_bills', []) || [];
+        const b = (sget('en_pdf_bills', []) || []).filter((x) => !x.projId);
         const badge = document.getElementById('pdfBillCount');
         if (!badge) return;
         if (b.length > 0) {
@@ -17171,23 +17225,23 @@
       }
 
       function renderSavedBills() {
-        const bills = sget('en_pdf_bills', []) || [];
+        let bills = sget('en_pdf_bills', []) || [];
+        // Remove bills that have already been assigned to a meter
+        const origLen = bills.length;
+        bills = bills.filter((b) => !b.projId);
+        if (bills.length !== origLen) sset('en_pdf_bills', bills);
         const count = bills.length;
         updateBillCountBadge();
         const el = document.getElementById('savedBillsList');
         if (!count) {
           el.innerHTML =
-            '<div style="padding:16px;font-size:13px;color:var(--text2);text-align:center">No bills saved yet. Extract and save a utility bill above.</div>';
+            '<div style="padding:16px;font-size:13px;color:var(--text2);text-align:center">No unassigned bills. Assigned bills appear in the Utility Data bills table for their meter.</div>';
           return;
         }
         // Sort newest first
         const sorted = [...bills].sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
         el.innerHTML = sorted
           .map((b) => {
-            const proj = b.projId ? projects.find((p) => p.id === b.projId) : null;
-            const assigned = proj
-              ? `<span style="color:var(--em);font-size:11px">✓ ${proj.name}</span>`
-              : `<span style="color:var(--text3);font-size:11px">Unassigned</span>`;
             const date = b.savedAt
               ? new Date(b.savedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
               : '';
@@ -19874,10 +19928,10 @@
           }
           const flags = billFlags[row.id] || [];
           if (flags.length) flagCount++;
-          const rowHtml = renderBillRow(row, m, incl, bills);
-          // Add amber background for flagged rows
+          let rowHtml = renderBillRow(row, m, incl, bills);
+          // Add amber background and info icons for flagged rows
           if (flags.length) {
-            tblBody += rowHtml.replace(
+            rowHtml = rowHtml.replace(
               '<tr>',
               '<tr class="bill-flagged" title="' +
                 flags
@@ -19886,9 +19940,38 @@
                   .replace(/"/g, '&quot;') +
                 '">',
             );
-          } else {
-            tblBody += rowHtml;
+            // Inject ℹ️ icon next to flagged field values
+            // Map flag fields to their column index in the Electric row
+            const fieldColMap = isElec
+              ? {
+                  kwh: 4,
+                  demandKW: 5,
+                  billedKW: 6,
+                  facKW: 7,
+                  kwCost: 8,
+                  facKWCost: 9,
+                  kwhCost: 10,
+                  totalCost: 13,
+                  days: 3,
+                }
+              : isGas
+                ? { therms: 4, thermCost: 5, days: 3 }
+                : { usage: 4, cost: 5, days: 3 };
+            flags.forEach((f) => {
+              if (!f.field || !fieldColMap[f.field]) return;
+              const colIdx = fieldColMap[f.field];
+              // Find the Nth <td> and prepend an info icon
+              let tdCount = 0;
+              rowHtml = rowHtml.replace(/<td([^>]*)>/g, (match, attrs) => {
+                tdCount++;
+                if (tdCount === colIdx + 1) {
+                  return `<td${attrs}><span title="${f.msg.replace(/"/g, '&quot;')}" style="cursor:help;color:var(--amber);font-size:10px;margin-right:3px;opacity:0.8">ⓘ</span>`;
+                }
+                return match;
+              });
+            });
           }
+          tblBody += rowHtml;
         });
 
         if (bills.length === 0) {
