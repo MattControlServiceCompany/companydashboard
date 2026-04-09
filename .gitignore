@@ -1,1 +1,143 @@
+# =============================================================================
+# .gitignore — CompanyHub security policy
+# NOTHING below should ever reach GitHub. When in doubt, add it here.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# AI agent configuration (prompt injection risk)
+# ---------------------------------------------------------------------------
+CLAUDE.md
+GEMINI.md
+AGENTS.md
+.claude/
+.claude*
+.cursorrules
+.cursor/
+.copilot/
+.github/copilot/
+.aider*
+.continue/
+cline_docs/
+.windsurf/
+
+# ---------------------------------------------------------------------------
+# Credentials, secrets, keys, tokens
+# ---------------------------------------------------------------------------
+.env
+.env.*
+.env.local
+.env.development
+.env.production
+*.pem
+*.key
+*.pfx
+*.p12
+*.crt
+*.cer
+*.der
+*.jks
+*.keystore
+id_rsa
+id_ed25519
+*.pub
+credentials.json
+client_secret*.json
+service-account*.json
+token.json
+tokens.json
+auth.json
+secrets.json
+secrets.yaml
+secrets.yml
+*.secret
+.htpasswd
+.netrc
+.npmrc
+.pypirc
+
+# ---------------------------------------------------------------------------
+# Environment and config files that may contain secrets
+# ---------------------------------------------------------------------------
+*.local
+local.settings.json
+appsettings.Development.json
+appsettings.Local.json
+web.config
+config.private.*
+
+# ---------------------------------------------------------------------------
+# Test and demo files
+# ---------------------------------------------------------------------------
+test_*.js
+test_*.html
+test_*.py
+*_test.js
+*_test.html
+*.test.js
+*.spec.js
+demo_*.html
+demo_*.js
+scratch.*
+temp.*
+tmp.*
+*-draft.*
+
+# ---------------------------------------------------------------------------
+# Internal docs, mockups, AI planning files
+# ---------------------------------------------------------------------------
+docs/mockups/
+docs/superpowers/
+docs/drafts/
+*.draft.md
+
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
 node_modules/
+bower_components/
+vendor/
+package-lock.json
+
+# ---------------------------------------------------------------------------
+# OS generated files
+# ---------------------------------------------------------------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# ---------------------------------------------------------------------------
+# IDE and editor files
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.bak
+*.tmp
+*.orig
+
+# ---------------------------------------------------------------------------
+# Logs, debug output, crash reports
+# ---------------------------------------------------------------------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+ocr-debug.txt
+debug/
+logs/
+
+# ---------------------------------------------------------------------------
+# Build artifacts (if ever added)
+# ---------------------------------------------------------------------------
+dist/
+build/
+out/
+.cache/
+.parcel-cache/
