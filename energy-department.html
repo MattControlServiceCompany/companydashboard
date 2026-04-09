@@ -10729,135 +10729,11 @@
         projects = sget('en_projects', []);
         tasks = sget('en_tasks', []);
         equipment = sget('en_equipment', []);
-        if (!projects.length) {
-          const fmt = (n) => {
-            const d = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + n);
-            return d.toISOString().split('T')[0];
-          };
-          projects = [
-            {
-              id: 1,
-              name: 'Independence School District — Energy Audit',
-              client: 'Independence School District',
-              addr: '620 W Maple Ave, Independence MO',
-              type: 'K-12 School',
-              sqft: 2400000,
-              status: 'active',
-              phase: 'Audit / Assessment',
-              pm: '[REDACTED]',
-              tech: '[REDACTED]',
-              contact: '[REDACTED]',
-              phone: '[REDACTED-PHONE]',
-              email: '[REDACTED-EMAIL]',
-              contract: 185000,
-              savings: 32000,
-              start: '2025-01-15',
-              end: '2025-12-31',
-              priority: 'high',
-              notes: 'Multi-building audit across 35 sites. Focus on BAS optimization and lighting retrofits.',
-              tags: 'BAS, K-12, audit, Evergy',
-              progress: 35,
-            },
-            {
-              id: 2,
-              name: 'Advent Health — Utility Baseline',
-              client: 'Advent Health at Shawnee Mission',
-              addr: '9119 Medical Building, Lenexa KS',
-              type: 'Hospital / Healthcare',
-              sqft: 820000,
-              status: 'active',
-              phase: 'M&V',
-              pm: '[REDACTED]',
-              tech: '[REDACTED]',
-              contact: '[REDACTED]',
-              phone: '[REDACTED-PHONE]',
-              email: '[REDACTED-EMAIL]',
-              contract: 62000,
-              savings: 18500,
-              start: '2025-03-01',
-              end: '2025-09-30',
-              priority: 'normal',
-              notes: 'Establishing utility baseline across all campus buildings pre-BAS upgrade.',
-              tags: 'healthcare, baseline, M&V',
-              progress: 70,
-            },
-            {
-              id: 3,
-              name: 'Evergy — Demand Response',
-              client: 'Evergy',
-              addr: '1200 Main St, Kansas City MO',
-              type: 'Office Building',
-              sqft: 180000,
-              status: 'planning',
-              phase: 'Design',
-              pm: '[REDACTED]',
-              tech: '',
-              contact: '[REDACTED]',
-              phone: '[REDACTED-PHONE]',
-              email: '[REDACTED-EMAIL]',
-              contract: 48000,
-              savings: 9200,
-              start: '2025-06-01',
-              end: '2025-12-31',
-              priority: 'normal',
-              notes: 'Demand response enrollment and peak shaving control strategy.',
-              tags: 'DR, demand response, utility',
-              progress: 10,
-            },
-          ];
-          sset('en_projects', projects);
+        // Projects load from localStorage only — no hardcoded seed data
+        if (false) {
+          /* seed data removed — real PII was here */
         }
-        if (!tasks.length) {
-          const fmt = (n) => {
-            const d = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + n);
-            return d.toISOString().split('T')[0];
-          };
-          tasks = [
-            { id: 1, text: 'Submit baseline report — Advent Health', due: fmt(2), projId: 2, pri: 'high', done: false },
-            { id: 2, text: 'Schedule site walk — ISD Van Horn HS', due: fmt(1), projId: 1, pri: 'normal', done: false },
-            { id: 3, text: 'Review Evergy DR contract terms', due: fmt(5), projId: 3, pri: 'normal', done: false },
-            { id: 4, text: 'Upload utility bills Q1 — ISD', due: fmt(4), projId: 1, pri: 'high', done: false },
-          ];
-          sset('en_tasks', tasks);
-        }
-        if (!equipment.length) {
-          equipment = [
-            {
-              id: 1,
-              tag: 'AHU-1',
-              type: 'AHU',
-              make: 'Trane',
-              model: 'UCCA-120',
-              cap: '10,000 CFM / 120 MBH',
-              eff: '0.8 kW/Ton',
-              loc: 'ISD Van Horn HS — Mech Room A',
-              notes: 'Installed 2018.',
-            },
-            {
-              id: 2,
-              tag: 'CH-1',
-              type: 'Chiller',
-              make: 'York',
-              model: 'YCAL0047',
-              cap: '47 Tons',
-              eff: '2.8 kW/Ton',
-              loc: 'Advent Health — Central Plant',
-              notes: 'Air-cooled scroll. 2015 vintage.',
-            },
-            {
-              id: 3,
-              tag: 'BLR-1',
-              type: 'Boiler',
-              make: 'Cleaver-Brooks',
-              model: 'FLX-750',
-              cap: '750 MBH',
-              eff: '94% AFUE',
-              loc: 'ISD Van Horn HS — Boiler Room',
-              notes: 'Natural gas. 2020 install.',
-            },
-          ];
-          sset('en_equipment', equipment);
-        }
+        // Tasks and equipment load from localStorage only — no hardcoded seed data
         // Migrate: add meetings arrays to existing projects
         projects.forEach((p) => {
           if (!p.meetings) p.meetings = [];
@@ -26740,10 +26616,7 @@
           t = t || {};
           t.id = t.id || Date.now();
           t.name = t.name || 'Energy Management Services';
-          t.cscContacts = t.cscContacts || [
-            { name: 'Matt Miller', phone: '[REDACTED-PHONE]', email: '[REDACTED-EMAIL]' },
-            { name: '[REDACTED]', phone: '[REDACTED-PHONE]', email: '[REDACTED-EMAIL]' },
-          ];
+          t.cscContacts = t.cscContacts || []; // Contacts entered by user, never hardcoded
           t.sectionHeading = t.sectionHeading || 'Energy Management Services Program';
           t.defaultEndTopic = t.defaultEndTopic || 'Questions?';
           t.defaultTopics = [
