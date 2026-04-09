@@ -16184,6 +16184,27 @@
             ') ---\n';
           output += JSON.stringify(bills[i] || {}, null, 2) + '\n';
         }
+        // Include OCR pass scores if available
+        const passScores = window._pdfPassScores || [];
+        if (passScores.length) {
+          output += '\n=== OCR PASS SCORES ===\n';
+          output += 'Page | Pass       | Score | Time   | Chars | Error\n';
+          output += '-----+------------+-------+--------+-------+------\n';
+          for (const p of passScores) {
+            output +=
+              String(p.page).padStart(4) +
+              ' | ' +
+              (p.pass || '').padEnd(10) +
+              ' | ' +
+              String(p.score).padStart(5) +
+              ' | ' +
+              String(p.time).padStart(6) +
+              ' | ' +
+              String(p.chars).padStart(5) +
+              (p.error ? ' | ' + p.error : '') +
+              '\n';
+          }
+        }
         output += '\n=== RAW OCR TEXT ===\n' + raw;
         // Save to Downloads as a file
         const blob = new Blob([output], { type: 'text/plain' });
@@ -16307,14 +16328,23 @@
               );
             let worker;
             try {
-              worker = await Tesseract.createWorker('eng', 1, {
-                logger: (m) => {
-                  if (statusCb) {
-                    if (m.status === 'loading tesseract core') statusCb('Loading OCR engine...');
-                    else if (m.status === 'loading language traineddata') statusCb('Loading English language data...');
-                  }
+              worker = await Tesseract.createWorker(
+                'eng',
+                1,
+                {
+                  logger: (m) => {
+                    if (statusCb) {
+                      if (m.status === 'loading tesseract core') statusCb('Loading OCR engine...');
+                      else if (m.status === 'loading language traineddata')
+                        statusCb('Loading English language data...');
+                    }
+                  },
                 },
-              });
+                // Init-only params: disable dictionary correction so "/" isn't "corrected" to digits
+                { load_system_dawg: 0, load_freq_dawg: 0 },
+              );
+              // Set params that persist across recognize() calls
+              await worker.setParameters({ preserve_interword_spaces: '1' });
             } catch (workerErr) {
               if (statusCb) statusCb('OCR engine failed to load: ' + workerErr.message);
               // Return whatever native text we got
@@ -16345,23 +16375,13 @@
               s += Math.min(kwhVals / 3, 1); // up to 1 bonus point
               return s;
             };
-            // OCR settings to try — different render scales and Tesseract PSM modes
-            // Dictionary correction disabled: Tesseract's English dictionary "corrects" symbols like /
-            // into digits because "/" doesn't appear in English words. This is the main cause of date
-            // garbling (12/01 → 12001). Also preserve spaces to maintain table column alignment.
-            const OCR_BASE_PARAMS = {
-              load_system_dawg: '0',
-              load_freq_dawg: '0',
-              preserve_interword_spaces: '1',
-            };
-            // Primary passes — run on every page
-            // PSM 3 = fully automatic (default), PSM 6 = single uniform block (better for structured docs)
+            // OCR settings: dictionary disabled at worker init (load_system_dawg/load_freq_dawg=0)
+            // and preserve_interword_spaces set via setParameters above.
+            // Primary passes — run on every page (4 passes, back to original count)
             const OCR_PASSES = [
               { scale: 2.0, psm: null, label: '2x' },
               { scale: 2.5, psm: null, label: '2.5x' },
-              { scale: 2.5, psm: '6', label: '2.5x PSM6' },
               { scale: 3.0, psm: null, label: '3x' },
-              { scale: 3.0, psm: '6', label: '3x PSM6' },
               { scale: 3.5, psm: null, label: '3.5x' },
             ];
             // Retry passes — only run if primary passes have issues (low score or missing values)
@@ -16369,8 +16389,19 @@
               { scale: 1.0, psm: null, label: '1x retry' },
               { scale: 1.5, psm: null, label: '1.5x retry' },
               { scale: 4.0, psm: null, label: '4x retry' },
-              { scale: 4.0, psm: '6', label: '4x PSM6 retry' },
             ];
+            // Timeout for individual recognize() calls (90 seconds) — prevents Tesseract hangs
+            const OCR_TIMEOUT_MS = 90000;
+            const recognizeWithTimeout = (w, canvas, params) => {
+              return Promise.race([
+                w.recognize(canvas, params),
+                new Promise((_, reject) =>
+                  setTimeout(() => reject(new Error('OCR timeout after 90s')), OCR_TIMEOUT_MS),
+                ),
+              ]);
+            };
+            // Track pass scores for debug output
+            const passScoreLog = [];
 
             // Store all OCR pass texts for consensus re-extraction on mismatched values
             const allPassTexts = {};
@@ -16408,20 +16439,34 @@
                 const ctx = canvas.getContext('2d');
                 await pg.render({ canvasContext: ctx, viewport: vp }).promise;
                 try {
-                  const params = { ...OCR_BASE_PARAMS, ...(cfg.psm ? { tessedit_pageseg_mode: cfg.psm } : {}) };
+                  const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm } : {};
+                  const t0 = performance.now();
                   const {
                     data: { text },
-                  } = await worker.recognize(canvas, params);
+                  } = await recognizeWithTimeout(worker, canvas, params);
+                  const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
                   const score = scorePage(text);
                   allPassTexts[pgNum].push({ scale: cfg.scale, label: cfg.label, text, score });
+                  passScoreLog.push({
+                    page: pgNum,
+                    pass: cfg.label,
+                    score: score.toFixed(1),
+                    time: elapsed + 's',
+                    chars: text.length,
+                  });
                   if (score > bestScore || (score === bestScore && text.length > bestText.length)) {
                     bestText = text;
                     bestScore = score;
                   }
-                  // Always run all passes — don't early-exit. The scoring function accounts for
-                  // text quality (digit accuracy), not just keyword presence. A higher-scale pass
-                  // may produce better digit recognition even if an earlier pass found the keywords.
                 } catch (pageErr) {
+                  passScoreLog.push({
+                    page: pgNum,
+                    pass: cfg.label,
+                    score: 'FAIL',
+                    time: '—',
+                    chars: 0,
+                    error: pageErr.message,
+                  });
                   if (statusCb)
                     statusCb('OCR failed on page ' + pgNum + ' pass ' + (pass + 1) + ': ' + pageErr.message);
                 }
@@ -16454,17 +16499,34 @@
                   const ctx = canvas.getContext('2d');
                   await pg.render({ canvasContext: ctx, viewport: vp }).promise;
                   try {
-                    const params = { ...OCR_BASE_PARAMS, ...(cfg.psm ? { tessedit_pageseg_mode: cfg.psm } : {}) };
+                    const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm } : {};
+                    const t0 = performance.now();
                     const {
                       data: { text },
-                    } = await worker.recognize(canvas, params);
+                    } = await recognizeWithTimeout(worker, canvas, params);
+                    const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
                     const score = scorePage(text);
                     allPassTexts[pgNum].push({ scale: cfg.scale, label: cfg.label, text, score });
+                    passScoreLog.push({
+                      page: pgNum,
+                      pass: cfg.label,
+                      score: score.toFixed(1),
+                      time: elapsed + 's',
+                      chars: text.length,
+                    });
                     if (score > bestScore || (score === bestScore && text.length > bestText.length)) {
                       bestText = text;
                       bestScore = score;
                     }
                   } catch (pageErr) {
+                    passScoreLog.push({
+                      page: pgNum,
+                      pass: cfg.label,
+                      score: 'FAIL',
+                      time: '—',
+                      chars: 0,
+                      error: pageErr.message,
+                    });
                     if (statusCb)
                       statusCb('OCR retry failed on page ' + pgNum + ' (' + cfg.label + '): ' + pageErr.message);
                   }
@@ -16475,6 +16537,8 @@
             await worker.terminate();
             // Save all pass texts for consensus re-extraction
             window._pdfOcrPasses = allPassTexts;
+            // Save pass score log for debug output
+            window._pdfPassScores = passScoreLog;
           }
 
           // Insert page markers so extractAll can track page ranges per bill
@@ -16591,11 +16655,17 @@
                     bestMissing = worstMissing;
                   let retryWorker;
                   try {
-                    retryWorker = await Tesseract.createWorker('eng', 1, {
-                      logger: (m) => {
-                        if (m.status === 'loading tesseract core') statusMsg('Loading OCR engine for retry...');
+                    retryWorker = await Tesseract.createWorker(
+                      'eng',
+                      1,
+                      {
+                        logger: (m) => {
+                          if (m.status === 'loading tesseract core') statusMsg('Loading OCR engine for retry...');
+                        },
                       },
-                    });
+                      { load_system_dawg: 0, load_freq_dawg: 0 },
+                    );
+                    await retryWorker.setParameters({ preserve_interword_spaces: '1' });
                   } catch (e) {
                     retryWorker = null;
                   }
@@ -16630,11 +16700,7 @@
                         try {
                           const {
                             data: { text: ocrText },
-                          } = await retryWorker.recognize(canvas, {
-                            load_system_dawg: '0',
-                            load_freq_dawg: '0',
-                            preserve_interword_spaces: '1',
-                          });
+                          } = await retryWorker.recognize(canvas);
                           retryTexts.push(ocrText);
                         } catch (e) {
                           retryTexts.push('');
