@@ -13729,7 +13729,7 @@
         while ((_mm = _meterRe.exec(t)) !== null) _meterRows.push(_mm);
 
         // Normalize meter row date fields (groups 1 & 2) to MM/DD format
-        // Handles OCR garble: "12001" → "12/01", "1028" → "10/28", "1/28" → "01/28"
+        // OCR commonly reads "/" as "0", so 12/01 → 12001, 9/28 → 9028
         const _normMeterDate = (s) => {
           if (!s) return s;
           if (s.includes('/')) {
@@ -13737,33 +13737,32 @@
             const [m, d] = s.split('/');
             return m.padStart(2, '0') + '/' + d.padStart(2, '0');
           }
-          // No slash — try to split digits into MM and DD
-          // 3 digits: first 1 is month (e.g. "128" → 1/28)
-          // 4 digits: first 2 are month (e.g. "1028" → 10/28)
-          // 5 digits: likely OCR stutter — try first 2 as month, last 2 as day (e.g. "12001" → 12/01)
+          // No slash — OCR read the "/" as "0" or dropped it entirely
+          // Try all valid MM/DD splits and pick the one with valid month+day
           const len = s.length;
-          let mo, dy;
+          const candidates = [];
+          if (len === 5) {
+            // Most common: "12001" = 12 + garbled_slash + 01
+            candidates.push([s.slice(0, 2), s.slice(3)]); // MM + 0 + DD (slash→0)
+            candidates.push([s.slice(0, 1), s.slice(2)]); // M + 0 + DD  (e.g. 9028 won't hit here, handled by len===4)
+          }
           if (len === 4) {
-            mo = parseInt(s.slice(0, 2), 10);
-            dy = parseInt(s.slice(2), 10);
-          } else if (len === 3) {
-            mo = parseInt(s[0], 10);
-            dy = parseInt(s.slice(1), 10);
-          } else if (len === 5) {
-            // Try first 2 as month, last 2 as day (skip middle OCR junk digit)
-            mo = parseInt(s.slice(0, 2), 10);
-            dy = parseInt(s.slice(3), 10);
-            // If that gives invalid day, try first 2 + next 2
-            if (dy < 1 || dy > 31) {
-              dy = parseInt(s.slice(2, 4), 10);
+            // "1028" = 10/28 (slash dropped) OR "9028" = 9 + 0(garbled/) + 28
+            candidates.push([s.slice(0, 2), s.slice(2)]); // MM/DD slash dropped
+            candidates.push([s.slice(0, 1), s.slice(2)]); // M + 0(garbled/) + DD
+          }
+          if (len === 3) {
+            // "128" = 1/28 (slash dropped)
+            candidates.push([s.slice(0, 1), s.slice(1)]);
+          }
+          for (const [mStr, dStr] of candidates) {
+            const mo = parseInt(mStr, 10),
+              dy = parseInt(dStr, 10);
+            if (mo >= 1 && mo <= 12 && dy >= 1 && dy <= 31) {
+              return String(mo).padStart(2, '0') + '/' + String(dy).padStart(2, '0');
             }
-          } else {
-            return s; // can't parse, leave as-is
           }
-          if (mo >= 1 && mo <= 12 && dy >= 1 && dy <= 31) {
-            return String(mo).padStart(2, '0') + '/' + String(dy).padStart(2, '0');
-          }
-          return s;
+          return s; // can't parse, leave as-is
         };
         for (const row of _meterRows) {
           row[1] = _normMeterDate(row[1]);
