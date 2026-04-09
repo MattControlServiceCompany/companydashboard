@@ -9554,42 +9554,7 @@
                 out.className = 'ai-output visible';
                 out.innerHTML =
                   '<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Generating...</div>';
-                const bldgCtx =
-                  lead.buildings && lead.buildings.length
-                    ? lead.buildings
-                        .map(
-                          (b, i) =>
-                            `  Building ${i + 1}: ${b.name || 'Unnamed'} | ${b.buildingType || 'Unknown type'} | ${b.sqft ? b.sqft + ' sq ft' : ''} | ${[b.address, b.city, b.state].filter(Boolean).join(', ') || 'No address'}`,
-                        )
-                        .join('\n')
-                    : `  ${lead.buildingType || 'Unknown'} | ${lead.buildingSqft ? lead.buildingSqft + ' sq ft' : 'Unknown size'} | ${[lead.city, lead.state].filter(Boolean).join(', ') || 'Unknown location'}`;
-                const ctx = `Company: ${lead.company || 'Unknown'}\nBuildings/Sites:\n${bldgCtx}\nStage: ${lead.stage || 'Prospect'}\nPriority: ${lead.priority || 'Medium'}\nProject Type: ${lead.type || 'Unknown'}\nCSC Contact: ${lead.cscContact || 'Unassigned'}\nCustomer Contact: ${lead.contactName || 'Unknown'}${lead.contactTitle ? ' (' + lead.contactTitle + ')' : ''}\nEstimated Annual Value: ${lead.annualValue ? '$' + lead.annualValue : 'Unknown'}\nLast Contact: ${lead.lastContact || 'Never'}\nNotes: ${lead.notes || 'None'}`;
-                const prompts = {
-                  outreach: `You are an EMS sales professional. Draft a concise professional outreach email for this prospect. Goal: open a conversation about energy management. Be specific to their building type. Under 200 words.\n\nLEAD:\n${ctx}`,
-                  opportunity: `You are an EMS engineer. Based on this lead, estimate: 1) Annual energy savings potential, 2) Best-fit EMS services, 3) Key systems with likely waste, 4) ROI timeframe, 5) Red flags.\n\nLEAD:\n${ctx}`,
-                  nextsteps: `You are a senior sales manager. Based on this lead's stage, recommend: 1) Single most important next action, 2) Specific talking points, 3) Info still needed, 4) Timeline to close, 5) Potential obstacles.\n\nLEAD:\n${ctx}`,
-                  objections: `You are a seasoned EMS salesperson. Generate: 1) Top 4 likely objections, 2) Compelling rebuttal to each, 3) Questions to uncover hidden needs.\n\nLEAD:\n${ctx}`,
-                };
-                try {
-                  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      model: 'claude-sonnet-4-20250514',
-                      max_tokens: 1000,
-                      messages: [{ role: 'user', content: prompts[tool] }],
-                    }),
-                  });
-                  const data = await resp.json();
-                  const text =
-                    data.content
-                      ?.filter((b) => b.type === 'text')
-                      .map((b) => b.text)
-                      .join('') || 'No response.';
-                  out.textContent = text;
-                } catch (e) {
-                  out.textContent = 'Service unavailable.';
-                }
+                out.textContent = 'AI features are not available — this app has no backend API connection.';
               };
 
               // Drag-drop on CSV drop zone (init after DOM ready)
@@ -9767,7 +9732,8 @@
                 <label class="fl">Project Manager</label><input class="fi" id="mp-pm" placeholder="e.g. [REDACTED]" />
               </div>
               <div class="fg">
-                <label class="fl">Field Technician</label><input class="fi" id="mp-tech" placeholder="e.g. [REDACTED]" />
+                <label class="fl">Field Technician</label
+                ><input class="fi" id="mp-tech" placeholder="e.g. [REDACTED]" />
               </div>
             </div>
             <!-- hidden legacy fields kept for data compat -->
@@ -10405,6 +10371,60 @@
         </div>
       </div>
 
+      <!-- Duplicate Bill Comparison Modal -->
+      <div class="modal-bg" id="dupCompareModal" onclick="if (event.target === this) closeDupModal();">
+        <div class="modal" style="width: 760px; max-width: 96vw">
+          <div class="modal-hdr">
+            <span class="modal-title" id="dupModalTitle">&#9888; Duplicate Bill</span>
+            <button class="modal-x" onclick="closeDupModal()">&#10005;</button>
+          </div>
+          <div
+            style="
+              padding: 8px 16px;
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              border-bottom: 1px solid var(--border);
+            "
+          >
+            <div style="display: flex; gap: 8px">
+              <button
+                class="btn btn-em btn-sm"
+                onclick="applyDupSelections()"
+                style="font-size: 11px; padding: 4px 14px"
+              >
+                Apply Selected
+              </button>
+              <button
+                class="btn btn-sm"
+                onclick="skipDupBill()"
+                style="
+                  font-size: 11px;
+                  padding: 4px 14px;
+                  border: 1px solid var(--border2);
+                  background: transparent;
+                  color: var(--text2);
+                "
+              >
+                Skip
+              </button>
+            </div>
+            <div id="dupModalNav" style="font-size: 11px; color: var(--text2)"></div>
+          </div>
+          <div
+            id="dupModalInfo"
+            style="padding: 8px 16px; font-size: 11px; color: var(--text2); border-bottom: 1px solid var(--border)"
+          ></div>
+          <div class="modal-body" style="padding: 0; max-height: 60vh; overflow-y: auto">
+            <table id="dupCompareTable" style="width: 100%; border-collapse: collapse; font-size: 12px"></table>
+          </div>
+          <div
+            id="dupModalFooter"
+            style="padding: 8px 16px; font-size: 11px; color: var(--text2); border-top: 1px solid var(--border)"
+          ></div>
+        </div>
+      </div>
+
       <!-- Assign Bill Modal -->
       <div class="modal-bg" id="assignBillModal" onclick="if (event.target === this) closeAssignModal();">
         <div class="modal" style="width: 480px">
@@ -10565,50 +10585,12 @@
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
     <script>
-      /* ── CLAUDE API ── */
+      /* ── AI API (disabled — no backend) ── */
       async function claude(prompt, sys) {
-        try {
-          const r = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              model: 'claude-sonnet-4-20250514',
-              max_tokens: 1000,
-              system: sys || 'You are an expert building automation and energy engineering assistant.',
-              messages: [{ role: 'user', content: prompt }],
-            }),
-          });
-          const d = await r.json();
-          return d.error ? '⚠️ ' + d.error.message : (d.content || []).map((b) => b.text || '').join('');
-        } catch (e) {
-          return '⚠️ ' + e.message;
-        }
+        return 'AI features are not available — this app has no backend API connection.';
       }
       async function claudePDF(prompt, b64, sys) {
-        try {
-          const r = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              model: 'claude-sonnet-4-20250514',
-              max_tokens: 1000,
-              system: sys || 'You are an expert document analyst.',
-              messages: [
-                {
-                  role: 'user',
-                  content: [
-                    { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } },
-                    { type: 'text', text: prompt },
-                  ],
-                },
-              ],
-            }),
-          });
-          const d = await r.json();
-          return d.error ? '⚠️ ' + d.error.message : (d.content || []).map((b) => b.text || '').join('');
-        } catch (e) {
-          return '⚠️ ' + e.message;
-        }
+        return 'AI features are not available — this app has no backend API connection.';
       }
 
       /* ── STORAGE — delegates to window.Store so dataUpdated events fire ── */
@@ -15947,8 +15929,24 @@
         if (!_autoAssignTarget || !window._pdfMultiBills) return;
         const { proj, bldg, meter, projId } = _autoAssignTarget;
         const bills = window._pdfMultiBills;
+        const dupMap = window._pdfDupMap || {};
+        const hasDups = Object.keys(dupMap).length > 0;
+        if (hasDups) {
+          // If any bills have unresolved dup actions, warn the user
+          const unresolved = Object.values(dupMap).filter((d) => d.action === null);
+          if (unresolved.length > 0) {
+            showToast(unresolved.length + ' duplicate bill(s) need review — click yellow-dot pills to resolve');
+            return;
+          }
+        }
         let saved = 0;
-        for (const bill of bills) {
+        for (let _bi = 0; _bi < bills.length; _bi++) {
+          const bill = bills[_bi];
+          // Check dup action for this bill
+          const billDup = dupMap[_bi];
+          if (billDup && billDup.action === 'skip') {
+            continue; // Skip this duplicate
+          }
           const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
           function toISO(d) {
             if (!d) return '';
@@ -16024,6 +16022,7 @@
         window._pdfMultiIdx = 0;
         window._pdfRawText = null;
         window._pdfBillWarnings = null;
+        window._pdfDupMap = null;
         document.getElementById('dz-title').textContent = 'Drop PDF here or click to browse';
         document.getElementById('pdfInput').value = '';
         document.getElementById('extractedFields').innerHTML = '';
@@ -16043,6 +16042,441 @@
         box.textContent = 'Upload a PDF and select document type.';
         showToast('Cleared ✓');
       }
+
+      function _buildDiffFields(extracted, existing) {
+        // Compare extracted fields to existing bill record
+        // extracted uses raw field names (AccountNumber, BillingPeriodStart, etc.)
+        // existing assigned bills use billRow format (start, end, kwh, etc.)
+        // We need to map between them
+        const FIELD_MAP = {
+          // extracted key → existing billRow key
+          BillingPeriodStart: 'start',
+          BillingPeriodEnd: 'end',
+          kWhConsumed: 'kwh',
+          ActualKW: 'demandKW',
+          BilledKW: 'billedKW',
+          FacilitiesKW: 'facKW',
+          FacilitiesCharge: 'facKWCost',
+          TotalCurrentCharges: 'totalCost',
+          RateSchedule: 'rateSchedule',
+          CustomerCharge: 'customerCharge',
+          BilledKWCharge: 'demandCharge',
+          EnergyOnPeakCharge: 'onPeakCost',
+          EnergyOffPeakCharge: 'offPeakCost',
+          ECACharge: 'ecaCharge',
+          EERCharge: 'eerCharge',
+          PTSCharge: 'ptsCharge',
+          TDCCharge: 'tdcCharge',
+          FranchiseFee: 'franchiseFee',
+          TaxExemptDelivery: null, // in otherCost aggregate
+          BillOffset: null, // in otherCost aggregate
+        };
+        // For saved (unassigned) bills, fields map 1:1 (same raw keys)
+        const isSaved = !existing.start && existing.BillingPeriodStart !== undefined;
+        const toISO = (d) => {
+          if (!d) return '';
+          const p = d.split('/');
+          return p.length === 3 ? p[2] + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0') : d;
+        };
+        const normVal = (v) => {
+          if (v === null || v === undefined || v === '') return '';
+          return String(v)
+            .replace(/[$,\s]/g, '')
+            .toLowerCase();
+        };
+
+        const diffs = [];
+        const COMPARE_KEYS = [
+          'AccountNumber',
+          'MeterNumber',
+          'CustomerName',
+          'ServiceAddress',
+          'RateSchedule',
+          'BillingPeriodStart',
+          'BillingPeriodEnd',
+          'MeterReadStart',
+          'MeterReadEnd',
+          'StartRead',
+          'EndRead',
+          'kWhConsumed',
+          'ActualKW',
+          'BilledKW',
+          'FacilitiesKW',
+          'CustomerCharge',
+          'FacilitiesCharge',
+          'BilledKWCharge',
+          'EnergyOnPeakCharge',
+          'EnergyOffPeakCharge',
+          'ECACharge',
+          'EERCharge',
+          'PTSCharge',
+          'TDCCharge',
+          'TaxExemptDelivery',
+          'BillOffset',
+          'FranchiseFee',
+          'TotalCurrentCharges',
+          'NumberOfDays',
+        ];
+
+        for (const key of COMPARE_KEYS) {
+          const newVal = extracted[key] ?? '';
+          let existVal = '';
+          if (isSaved) {
+            existVal = existing[key] ?? '';
+          } else {
+            // Assigned bill — map to billRow format
+            const mapped = FIELD_MAP[key];
+            if (mapped === null) continue; // Aggregated field, skip
+            if (mapped === undefined) continue; // Not stored in billRow
+            existVal = existing[mapped] ?? '';
+            // Convert dates: extracted is MM/DD/YYYY, billRow is YYYY-MM-DD
+            if (key === 'BillingPeriodStart' || key === 'BillingPeriodEnd') {
+              existVal = existVal; // already ISO
+              const newISO = toISO(String(newVal));
+              if (normVal(newISO) === normVal(existVal)) continue;
+              diffs.push({ key, newVal, existVal, newNorm: newISO, existNorm: existVal });
+              continue;
+            }
+          }
+          if (normVal(newVal) !== normVal(existVal)) {
+            diffs.push({ key, newVal: String(newVal), existVal: String(existVal) });
+          }
+        }
+        return diffs;
+      }
+
+      async function _checkDuplicates(bills) {
+        const dupMap = {};
+        // Load all saved (unassigned) bills
+        const pdfBills = (await sget('en_pdf_bills', [])) || [];
+        // Build a list of all assigned bills across all projects/buildings/meters
+        const assignedBills = [];
+        for (const p of projects) {
+          const ud = utilityData[p.id];
+          if (!ud) continue;
+          for (const b of ud.buildings || []) {
+            for (const m of b.meters || []) {
+              for (const bill of m.bills || []) {
+                assignedBills.push({
+                  bill,
+                  projId: p.id,
+                  projName: p.name,
+                  bldgName: b.name,
+                  meterLabel: m.commodity + ' · Acct ' + (m.account || '—') + ' · Meter ' + (m.meter || '—'),
+                  meter: m,
+                  hasPDF: !!bill.hasPDF,
+                  pdfKey: bill.pdfKey || null,
+                });
+              }
+            }
+          }
+        }
+        // Normalize helper
+        const norm = (v) => (v || '').replace(/[\s\-]/g, '').toLowerCase();
+        // Normalize billing period to "Month YYYY" for fuzzy matching
+        const normPeriod = (start, end) => {
+          try {
+            const s = new Date(start);
+            const e = new Date(end);
+            if (isNaN(s) || isNaN(e)) return '';
+            const months = [
+              'January',
+              'February',
+              'March',
+              'April',
+              'May',
+              'June',
+              'July',
+              'August',
+              'September',
+              'October',
+              'November',
+              'December',
+            ];
+            return months[e.getMonth()] + ' ' + e.getFullYear();
+          } catch (ex) {
+            return '';
+          }
+        };
+        // Convert extracted date (MM/DD/YYYY) to ISO (YYYY-MM-DD) for comparison
+        const toISO = (d) => {
+          if (!d) return '';
+          const p = d.split('/');
+          return p.length === 3 ? p[2] + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0') : d;
+        };
+
+        for (let i = 0; i < bills.length; i++) {
+          const ext = bills[i];
+          const extAcct = norm(ext.AccountNumber);
+          const extStart = toISO(ext.BillingPeriodStart);
+          const extEnd = toISO(ext.BillingPeriodEnd);
+          const extPeriod = normPeriod(ext.BillingPeriodStart, ext.BillingPeriodEnd);
+          const extMeter = norm(ext.MeterNumber);
+          if (!extAcct && !extStart) continue; // Can't match without identity
+
+          // Search assigned bills
+          for (const ab of assignedBills) {
+            const existAcct = norm(ab.meter.account);
+            const existMeter = norm(ab.meter.meter);
+            const acctMatch = extAcct && existAcct && extAcct === existAcct;
+            const meterMatch = extMeter && existMeter && extMeter === existMeter;
+            const periodMatch = extStart && ab.bill.start === extStart && extEnd && ab.bill.end === extEnd;
+            const fuzzyPeriod = extPeriod && normPeriod(ab.bill.start, ab.bill.end) === extPeriod;
+            if ((acctMatch || meterMatch) && (periodMatch || fuzzyPeriod)) {
+              // Build diff fields
+              const diffFields = _buildDiffFields(ext, ab.bill);
+              dupMap[i] = {
+                existing: ab.bill,
+                location: ab.projName + ' > ' + ab.bldgName + ' > ' + ab.meterLabel,
+                locationType: 'assigned',
+                projId: ab.projId,
+                meter: ab.meter,
+                hasPDF: ab.hasPDF,
+                pdfKey: ab.pdfKey,
+                matchFields: { account: acctMatch, period: periodMatch, meter: meterMatch },
+                diffFields,
+                action: null, // null = user hasn't decided yet
+                fieldSelections: {}, // per-field: true = use new, false = keep existing
+              };
+              break; // First match wins
+            }
+          }
+          if (dupMap[i]) continue; // Already matched to assigned
+
+          // Search unassigned saved bills
+          for (const sb of pdfBills) {
+            const sbAcct = norm(sb.AccountNumber);
+            const sbStart = toISO(sb.BillingPeriodStart);
+            const sbEnd = toISO(sb.BillingPeriodEnd);
+            const sbPeriod = normPeriod(sb.BillingPeriodStart, sb.BillingPeriodEnd);
+            const sbMeter = norm(sb.MeterNumber);
+            const acctMatch = extAcct && sbAcct && extAcct === sbAcct;
+            const meterMatch = extMeter && sbMeter && extMeter === sbMeter;
+            const periodMatch = extStart && sbStart === extStart && extEnd && sbEnd === extEnd;
+            const fuzzyPeriod = extPeriod && sbPeriod === extPeriod;
+            if ((acctMatch || meterMatch) && (periodMatch || fuzzyPeriod)) {
+              const diffFields = _buildDiffFields(ext, sb);
+              dupMap[i] = {
+                existing: sb,
+                location: 'Saved Bills' + (sb.projName ? ' (' + sb.projName + ')' : ''),
+                locationType: 'saved',
+                savedBillId: sb.id,
+                hasPDF: !!sb.hasPDF,
+                pdfKey: sb.pdfKey || null,
+                matchFields: { account: acctMatch, period: periodMatch, meter: meterMatch },
+                diffFields,
+                action: null,
+                fieldSelections: {},
+              };
+              break;
+            }
+          }
+        }
+        window._pdfDupMap = dupMap;
+        return dupMap;
+      }
+
+      function _dupBulkAction(action) {
+        const dupMap = window._pdfDupMap || {};
+        for (const idx of Object.keys(dupMap)) {
+          dupMap[idx].action = action;
+        }
+        // Re-render to reflect the action
+        const bills = window._pdfMultiBills;
+        const box = document.getElementById('pdfAIBox');
+        if (bills && box) renderMultiBillUI(bills, box);
+        const i = window._pdfMultiIdx || 0;
+        const billWarnings = (window._pdfBillWarnings || [])[i]?.warnings || [];
+        if (bills && bills[i]) renderPDFFields(bills[i], billWarnings);
+        showToast(Object.keys(dupMap).length + ' duplicate bills set to ' + action);
+      }
+
+      function openDupModal(billIdx) {
+        window._dupModalIdx = billIdx;
+        _renderDupModal(billIdx);
+        document.getElementById('dupCompareModal').classList.add('open');
+      }
+      function closeDupModal() {
+        document.getElementById('dupCompareModal').classList.remove('open');
+      }
+
+      function _renderDupModal(billIdx) {
+        const dupMap = window._pdfDupMap || {};
+        const dup = dupMap[billIdx];
+        const bills = window._pdfMultiBills || [];
+        const ext = bills[billIdx];
+        if (!dup || !ext) return;
+
+        // Title
+        const period = (ext.BillingPeriodStart || '?') + ' to ' + (ext.BillingPeriodEnd || '?');
+        document.getElementById('dupModalTitle').innerHTML = '&#9888; Duplicate Bill &mdash; ' + period;
+
+        // Nav
+        const dupIndices = Object.keys(dupMap)
+          .map(Number)
+          .sort((a, b) => a - b);
+        const pos = dupIndices.indexOf(billIdx);
+        const prevIdx = pos > 0 ? dupIndices[pos - 1] : null;
+        const nextIdx = pos < dupIndices.length - 1 ? dupIndices[pos + 1] : null;
+        document.getElementById('dupModalNav').innerHTML =
+          (prevIdx !== null
+            ? `<a href="#" onclick="event.preventDefault();openDupModal(${prevIdx})" style="color:var(--accent)">&larr; Prev</a>`
+            : '<span style="opacity:.3">&larr; Prev</span>') +
+          ` &nbsp;|&nbsp; Duplicate ${pos + 1} of ${dupIndices.length} &nbsp;|&nbsp; ` +
+          (nextIdx !== null
+            ? `<a href="#" onclick="event.preventDefault();openDupModal(${nextIdx})" style="color:var(--accent)">Next &rarr;</a>`
+            : '<span style="opacity:.3">Next &rarr;</span>');
+
+        // Info
+        const matchParts = [];
+        if (dup.matchFields.account) matchParts.push('Account');
+        if (dup.matchFields.period) matchParts.push('Period');
+        if (dup.matchFields.meter) matchParts.push('Meter');
+        const pdfHtml = dup.hasPDF
+          ? `<span style="cursor:pointer;text-decoration:underline;color:var(--accent)" onclick="_viewDupPDF(${billIdx})">&#128196; PDF stored</span>`
+          : 'No PDF stored';
+        document.getElementById('dupModalInfo').innerHTML =
+          '<div>' +
+          dup.location +
+          '</div>' +
+          '<div>Match basis: ' +
+          matchParts.join(' + ') +
+          ' &#10003; &middot; ' +
+          pdfHtml +
+          '</div>';
+
+        // Comparison table
+        const LABELS = {
+          AccountNumber: 'Account Number',
+          MeterNumber: 'Meter Number',
+          CustomerName: 'Customer Name',
+          ServiceAddress: 'Service Address',
+          RateSchedule: 'Rate Schedule',
+          BillingPeriodStart: 'Billing Period Start',
+          BillingPeriodEnd: 'Billing Period End',
+          NumberOfDays: 'Number of Days',
+          MeterReadStart: 'Meter Read Start',
+          MeterReadEnd: 'Meter Read End',
+          StartRead: 'Start Read',
+          EndRead: 'End Read',
+          kWhConsumed: 'kWh Consumed',
+          ActualKW: 'Actual kW',
+          BilledKW: 'Billed kW',
+          FacilitiesKW: 'Facilities kW',
+          CustomerCharge: 'Customer Charge',
+          FacilitiesCharge: 'Facilities Charge',
+          BilledKWCharge: 'Billed kW Charge',
+          EnergyOnPeakCharge: 'On-Peak Charge',
+          EnergyOffPeakCharge: 'Off-Peak Charge',
+          ECACharge: 'ECA Charge',
+          EERCharge: 'EER Charge',
+          PTSCharge: 'PTS Charge',
+          TDCCharge: 'TDC Charge',
+          TaxExemptDelivery: 'Tax Exempt Delivery',
+          BillOffset: 'Bill Offset',
+          FranchiseFee: 'Franchise Fee',
+          TotalCurrentCharges: 'Total Current Charges',
+        };
+
+        // Build rows: differing fields first, then matching
+        const diffs = dup.diffFields || [];
+        const diffKeys = new Set(diffs.map((d) => d.key));
+        const allKeys = Object.keys(LABELS);
+
+        // Initialize field selections: new values selected by default for differing fields
+        for (const d of diffs) {
+          if (dup.fieldSelections[d.key] === undefined) {
+            dup.fieldSelections[d.key] = true; // true = use new
+          }
+        }
+
+        let tableHtml =
+          '<thead><tr style="border-bottom:2px solid var(--border)"><th style="padding:6px 12px;text-align:left;color:var(--text2);font-weight:600">Field</th><th style="padding:6px 12px;text-align:left;color:var(--text2);font-weight:600">Existing</th><th style="padding:6px 12px;text-align:left;color:var(--text2);font-weight:600">New (extracted)</th></tr></thead><tbody>';
+
+        // Differing fields first
+        for (const d of diffs) {
+          const useNew = dup.fieldSelections[d.key] !== false;
+          const selExist = !useNew ? 'border-left:3px solid #22c55e;opacity:1' : 'opacity:.5';
+          const selNew = useNew ? 'border-left:3px solid #22c55e;opacity:1' : 'opacity:.5';
+          tableHtml += `<tr style="background:rgba(245,158,11,.06)">
+  <td style="padding:6px 12px;font-weight:600;color:#f59e0b">${LABELS[d.key] || d.key}</td>
+  <td style="padding:6px 12px;cursor:pointer;${selExist}" onclick="_toggleDupField(${billIdx},'${d.key}',false)">${d.existVal || '<em style="opacity:.4">(empty)</em>'}</td>
+  <td style="padding:6px 12px;cursor:pointer;${selNew}" onclick="_toggleDupField(${billIdx},'${d.key}',true)">${d.newVal || '<em style="opacity:.4">(empty)</em>'}</td>
+</tr>`;
+        }
+
+        // Matching fields (muted)
+        for (const key of allKeys) {
+          if (diffKeys.has(key)) continue;
+          const val = ext[key];
+          if (val === null || val === undefined || val === '') continue;
+          tableHtml += `<tr><td style="padding:6px 12px;color:var(--text3)">${LABELS[key] || key}</td><td style="padding:6px 12px;color:var(--text3)">${val}</td><td style="padding:6px 12px;color:var(--text3)">${val}</td></tr>`;
+        }
+
+        tableHtml += '</tbody>';
+        document.getElementById('dupCompareTable').innerHTML = tableHtml;
+
+        // Footer
+        const totalFields = allKeys.filter((k) => ext[k] !== null && ext[k] !== undefined && ext[k] !== '').length;
+        document.getElementById('dupModalFooter').innerHTML =
+          diffs.length + ' of ' + totalFields + ' fields differ' + (diffs.length > 0 ? ' &mdash; possible rebill' : '');
+      }
+
+      function _toggleDupField(billIdx, fieldKey, useNew) {
+        const dup = (window._pdfDupMap || {})[billIdx];
+        if (!dup) return;
+        dup.fieldSelections[fieldKey] = useNew;
+        _renderDupModal(billIdx); // Re-render to update selection styling
+      }
+
+      function applyDupSelections() {
+        const billIdx = window._dupModalIdx;
+        const dup = (window._pdfDupMap || {})[billIdx];
+        if (!dup) return;
+        dup.action = 'field-select'; // Custom per-field action
+        closeDupModal();
+        // Re-render pills and fields to reflect the decision
+        const bills = window._pdfMultiBills;
+        const box = document.getElementById('pdfAIBox');
+        if (bills && box) renderMultiBillUI(bills, box);
+        showToast('Field selections saved for this bill');
+      }
+
+      function skipDupBill() {
+        const billIdx = window._dupModalIdx;
+        const dup = (window._pdfDupMap || {})[billIdx];
+        if (!dup) return;
+        dup.action = 'skip';
+        closeDupModal();
+        const bills = window._pdfMultiBills;
+        const box = document.getElementById('pdfAIBox');
+        if (bills && box) renderMultiBillUI(bills, box);
+        showToast('Bill will be skipped on save');
+      }
+
+      async function _viewDupPDF(billIdx) {
+        const dup = (window._pdfDupMap || {})[billIdx];
+        if (!dup || !dup.hasPDF) {
+          showToast('No PDF stored for existing bill');
+          return;
+        }
+        // Use existing viewSavedPDF infrastructure
+        const pdfKey = dup.pdfKey;
+        if (!pdfKey) {
+          showToast('PDF key not found');
+          return;
+        }
+        const data = await pdfRetrieve(pdfKey);
+        if (!data) {
+          showToast('PDF not found in storage');
+          return;
+        }
+        // Open in new tab
+        const blob = new Blob([Uint8Array.from(atob(data), (c) => c.charCodeAt(0))], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+      }
+
       function savePDFDebug() {
         const raw = window._pdfRawText || '(no raw text)';
         const bills = window._pdfMultiBills || [];
@@ -16757,6 +17191,8 @@
                 if (finalBills.length > 1) {
                   // Multi-bill: store all, start on newest bill
                   window._pdfMultiBills = finalBills;
+                  // Check for duplicates before rendering
+                  await _checkDuplicates(finalBills);
                   // Find the newest bill by BillingPeriodEnd date
                   let newestIdx = 0;
                   let newestDate = 0;
@@ -16804,6 +17240,7 @@
                   const extracted = finalBills[0] || bills[0];
                   window._pdfMultiBills = [extracted]; // always store as array for consistency
                   window._pdfMultiIdx = 0;
+                  await _checkDuplicates([extracted]);
                   const billWarnings = analysisResults[0]?.warnings || [];
                   renderPDFFields(extracted, billWarnings);
                   box.textContent = JSON.stringify(extracted, null, 2);
@@ -16937,9 +17374,43 @@
             const pillColor = active ? 'var(--accent)' : hasAnyIssue ? 'var(' + issueColor + ')' : 'var(--text2)';
             const pillBorder = active ? 'var(--accent)' : hasAnyIssue ? 'var(' + issueColor + ')' : 'var(--border2)';
             const pillBg = active ? 'var(--accent-dim)' : hasAnyIssue ? 'var(' + issueColor + '-dim)' : 'transparent';
-            return `<button onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasAnyIssue ? '700' : '400'};width:100%;text-align:left;white-space:nowrap">${p.lbl}${hasAnyIssue ? ' ⚠' : ''}</button>`;
+            const isDup = !!dupMap[p.i];
+            const dupDot = isDup
+              ? '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#f59e0b;margin-left:6px;vertical-align:middle" title="Duplicate bill"></span>'
+              : '';
+            return `<button onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasAnyIssue ? '700' : '400'};width:100%;text-align:left;white-space:nowrap">${p.lbl}${hasAnyIssue ? ' ⚠' : ''}${dupDot}</button>`;
           })
           .join('');
+        // Duplicate summary banner
+        const dupMap = window._pdfDupMap || {};
+        const dupIndices = Object.keys(dupMap).map(Number);
+        let dupBannerHtml = '';
+        if (dupIndices.length > 0) {
+          // Count by location type
+          const assignedCount = dupIndices.filter((i) => dupMap[i].locationType === 'assigned').length;
+          const savedCount = dupIndices.filter((i) => dupMap[i].locationType === 'saved').length;
+          const parts = [];
+          if (assignedCount) {
+            // Group by location
+            const locs = {};
+            dupIndices
+              .filter((i) => dupMap[i].locationType === 'assigned')
+              .forEach((i) => {
+                const loc = dupMap[i].location;
+                locs[loc] = (locs[loc] || 0) + 1;
+              });
+            Object.entries(locs).forEach(([loc, cnt]) => parts.push(cnt + ' assigned to ' + loc));
+          }
+          if (savedCount) parts.push(savedCount + ' in Saved Bills');
+          dupBannerHtml = `<div style="padding:8px 12px;margin:0 0 8px;border-radius:6px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);font-size:12px;color:#f59e0b;line-height:1.6">
+  <strong>&#9888; ${dupIndices.length} of ${bills.length} bills already exist</strong> &mdash; ${parts.join(', ')}
+  <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+    <button onclick="_dupBulkAction('skip')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:#f59e0b;cursor:pointer">Skip All Duplicates</button>
+    <button onclick="_dupBulkAction('overwrite')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:#f59e0b;cursor:pointer">Overwrite All</button>
+    <button onclick="_dupBulkAction('merge')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:#f59e0b;cursor:pointer">Merge All</button>
+  </div>
+</div>`;
+        }
         // Move "Save All" button into the extraction method badge area
         const badgeEl = document.getElementById('extractMethodBadge');
         if (badgeEl) {
@@ -16947,7 +17418,7 @@
           badgeEl.innerHTML = `<button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="font-size:10px;padding:3px 12px">Save All ${bills.length} Periods</button>`;
         }
         // Two-column layout inside pdfAIBox: billing periods nav on left, JSON output on right
-        box.innerHTML = `<div style="display:flex;gap:14px;align-items:flex-start">
+        box.innerHTML = `${dupBannerHtml}<div style="display:flex;gap:14px;align-items:flex-start">
   <div style="flex:0 0 auto;min-width:110px;display:flex;flex-direction:column;gap:3px">
     <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:4px">Billing Periods</span>
     ${nav}
@@ -16972,15 +17443,158 @@
           showToast('Select a project first');
           return;
         }
-        let saved = 0;
-        for (const bill of bills) {
-          const ok = await _saveSinglePDFBill(bill, pid);
+        const dupMap = window._pdfDupMap || {};
+        let saved = 0,
+          skipped = 0,
+          updated = 0;
+        for (let i = 0; i < bills.length; i++) {
+          const dup = dupMap[i];
+          if (dup && dup.action === 'skip') {
+            skipped++;
+            continue;
+          }
+          if (dup && (dup.action === 'overwrite' || dup.action === 'merge' || dup.action === 'field-select')) {
+            const ok = await _applyDupUpdate(i, bills[i], dup);
+            if (ok) updated++;
+            continue;
+          }
+          // No dup or no action chosen — save normally
+          const ok = await _saveSinglePDFBill(bills[i], pid);
           if (ok) saved++;
         }
-        showToast(saved + ' of ' + bills.length + ' periods saved ✓');
+        const parts = [];
+        if (saved) parts.push(saved + ' saved');
+        if (updated) parts.push(updated + ' updated');
+        if (skipped) parts.push(skipped + ' skipped');
+        showToast(parts.join(', ') + ' (' + bills.length + ' total)');
+      }
+
+      async function _applyDupUpdate(billIdx, extracted, dup) {
+        const toISO = (d) => {
+          if (!d) return '';
+          const p = d.split('/');
+          return p.length === 3 ? p[2] + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0') : d;
+        };
+        const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+
+        if (dup.locationType === 'assigned') {
+          // Update existing bill on meter
+          const existing = dup.existing;
+          const FIELD_MAP = {
+            kWhConsumed: 'kwh',
+            ActualKW: 'demandKW',
+            BilledKW: 'billedKW',
+            FacilitiesKW: 'facKW',
+            FacilitiesCharge: 'facKWCost',
+            TotalCurrentCharges: 'totalCost',
+            RateSchedule: 'rateSchedule',
+            CustomerCharge: 'customerCharge',
+            BilledKWCharge: 'demandCharge',
+            EnergyOnPeakCharge: 'onPeakCost',
+            EnergyOffPeakCharge: 'offPeakCost',
+            ECACharge: 'ecaCharge',
+            EERCharge: 'eerCharge',
+            PTSCharge: 'ptsCharge',
+            TDCCharge: 'tdcCharge',
+            FranchiseFee: 'franchiseFee',
+          };
+
+          if (dup.action === 'overwrite') {
+            // Replace all mapped fields
+            for (const [extKey, billKey] of Object.entries(FIELD_MAP)) {
+              if (extracted[extKey] !== undefined && extracted[extKey] !== null && extracted[extKey] !== '') {
+                existing[billKey] = extracted[extKey];
+              }
+            }
+            // Recalculate cost aggregates
+            existing.kwhCost = (
+              pf(extracted.EnergyOnPeakCharge) +
+              pf(extracted.EnergyOffPeakCharge) +
+              pf(extracted.ECACharge) +
+              pf(extracted.EERCharge) +
+              pf(extracted.PTSCharge)
+            ).toFixed(2);
+            existing.kwCost = (pf(extracted.BilledKWCharge) + pf(extracted.TDCCharge)).toFixed(2);
+            existing.otherCost = (
+              pf(extracted.CustomerCharge) +
+              pf(extracted.TaxExemptDelivery) +
+              pf(extracted.BillOffset)
+            ).toFixed(2);
+            existing.taxCost = pf(extracted.FranchiseFee).toFixed(2);
+          } else if (dup.action === 'merge') {
+            // Fill only empty fields
+            for (const [extKey, billKey] of Object.entries(FIELD_MAP)) {
+              if ((!existing[billKey] || existing[billKey] === '') && extracted[extKey]) {
+                existing[billKey] = extracted[extKey];
+              }
+            }
+          } else if (dup.action === 'field-select') {
+            // Apply per-field selections
+            for (const d of dup.diffFields) {
+              const useNew = dup.fieldSelections[d.key] !== false;
+              if (useNew && FIELD_MAP[d.key]) {
+                existing[FIELD_MAP[d.key]] = extracted[d.key];
+              }
+            }
+            // Recalculate cost aggregates from current existing values
+            existing.kwhCost = (
+              pf(existing.onPeakCost) +
+              pf(existing.offPeakCost) +
+              pf(existing.ecaCharge) +
+              pf(existing.eerCharge) +
+              pf(existing.ptsCharge)
+            ).toFixed(2);
+            existing.kwCost = (pf(existing.demandCharge) + pf(existing.tdcCharge)).toFixed(2);
+            existing.otherCost = (
+              pf(existing.customerCharge) +
+              pf(extracted.TaxExemptDelivery) +
+              pf(extracted.BillOffset)
+            ).toFixed(2);
+            existing.taxCost = pf(existing.franchiseFee).toFixed(2);
+          }
+          saveUtilityData();
+          return true;
+        } else if (dup.locationType === 'saved') {
+          // Update existing saved bill record
+          const pdfBills = (await sget('en_pdf_bills', [])) || [];
+          const sb = pdfBills.find((b) => b.id === dup.savedBillId);
+          if (!sb) return false;
+          if (dup.action === 'overwrite') {
+            const COMPARE_KEYS = Object.keys(extracted).filter((k) => !k.startsWith('_'));
+            for (const key of COMPARE_KEYS) {
+              if (extracted[key] !== undefined && extracted[key] !== null && extracted[key] !== '') {
+                sb[key] = extracted[key];
+              }
+            }
+          } else if (dup.action === 'merge') {
+            const COMPARE_KEYS = Object.keys(extracted).filter((k) => !k.startsWith('_'));
+            for (const key of COMPARE_KEYS) {
+              if ((!sb[key] || sb[key] === '') && extracted[key]) {
+                sb[key] = extracted[key];
+              }
+            }
+          } else if (dup.action === 'field-select') {
+            for (const d of dup.diffFields) {
+              const useNew = dup.fieldSelections[d.key] !== false;
+              if (useNew) sb[d.key] = extracted[d.key];
+            }
+          }
+          sb.savedAt = new Date().toISOString(); // Update timestamp
+          await sset('en_pdf_bills', pdfBills);
+          return true;
+        }
+        return false;
       }
       function renderPDFFields(parsed, warnings) {
         warnings = warnings || [];
+        // Duplicate field comparison data
+        const _dupIdx = window._pdfMultiIdx || 0;
+        const _dupInfo = (window._pdfDupMap || {})[_dupIdx] || null;
+        const _dupDiffSet = new Set((_dupInfo?.diffFields || []).map((d) => d.key));
+        const _dupDiffMap = {};
+        (_dupInfo?.diffFields || []).forEach((d) => {
+          _dupDiffMap[d.key] = d;
+        });
         const LABELS = {
           UtilityCompany: 'Utility Company',
           CustomerName: 'Customer Name',
@@ -17146,8 +17760,11 @@
           const autoCorrect = parsed['_auto_corrected_' + k];
           const ocrConsensus = parsed['_ocr_consensus_' + k];
           const isEmpty = v === null || v === undefined || v === '';
+          const isDupDiff = _dupDiffSet.has(k);
+          const dupDiff = _dupDiffMap[k];
           let borderStyle = '';
-          if (autoCorrect || ocrConsensus) borderStyle = 'border-left:3px solid #22c55e;padding-left:8px';
+          if (isDupDiff) borderStyle = 'border-left:3px solid #f59e0b;padding-left:8px';
+          else if (autoCorrect || ocrConsensus) borderStyle = 'border-left:3px solid #22c55e;padding-left:8px';
           else if (fw.length) borderStyle = 'border-left:3px solid ' + wColor[fw[0].level] + ';padding-left:8px';
           else if (magFlag) borderStyle = 'border-left:3px solid #fb923c;padding-left:8px';
           else if (isEmpty) borderStyle = 'border-left:3px solid var(--border2);padding-left:8px;opacity:.7';
@@ -17200,7 +17817,12 @@
           }
           const keyStyle = isEmpty && !fw.length ? 'color:var(--text3)' : '';
           const inputStyle = isEmpty ? 'border-color:var(--border2);color:var(--text3)' : '';
-          return `<div class="ef-item" style="${borderStyle}"><div class="ef-key" style="${keyStyle}">${LABELS[k] || k}</div><input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty ? '—' : ''}" style="${inputStyle}">${correctHtml}${consensusHtml}${warnHtml}${magHtml}${likelyHtml}</div>`;
+          const dupKeyStyle = isDupDiff ? 'color:#f59e0b' : keyStyle;
+          const dupInputStyle = isDupDiff ? inputStyle + ';color:#f59e0b' : inputStyle;
+          const dupIcon = isDupDiff
+            ? `<span title="Existing: ${(dupDiff.existVal || '(empty)').replace(/"/g, '&quot;')}" style="cursor:help;color:#f59e0b;font-size:11px;margin-left:4px">&#9432;</span>`
+            : '';
+          return `<div class="ef-item" style="${borderStyle}"><div class="ef-key" style="${dupKeyStyle}">${LABELS[k] || k}${dupIcon}</div><input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty ? '—' : ''}" style="${dupInputStyle}">${correctHtml}${consensusHtml}${warnHtml}${magHtml}${likelyHtml}</div>`;
         }
 
         // Build layout HTML with running total on charge rows
@@ -17460,7 +18082,24 @@
             '<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);font-size:12px;color:#22c55e">✓ All expected fields present — values within normal ranges</div>';
         }
 
-        el.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${summaryHtml}${correctionHtml}${sumMismatchHtml}<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
+        // Duplicate info banner at top of extracted fields
+        let dupFieldBannerHtml = '';
+        if (_dupInfo) {
+          const diffCount = _dupInfo.diffFields.length;
+          const totalFields = Object.keys(parsed).filter((k) => !k.startsWith('_')).length;
+          const actionLabel = _dupInfo.action ? ' — action: <strong>' + _dupInfo.action + '</strong>' : '';
+          const pdfStatus = _dupInfo.hasPDF
+            ? `<span style="cursor:pointer;text-decoration:underline" onclick="_viewDupPDF(${_dupIdx})">&#128196; PDF stored</span>`
+            : 'No PDF stored';
+          dupFieldBannerHtml = `<div style="padding:8px 12px;margin:6px 0;border-radius:6px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.25);font-size:12px;color:#f59e0b;line-height:1.6">
+  <strong>&#9888; Duplicate Bill</strong> &mdash; ${_dupInfo.location}${actionLabel}<br>
+  <span style="font-size:11px">${diffCount} of ${totalFields} fields differ${diffCount > 0 ? ' — possible rebill' : ''} &middot; ${pdfStatus}</span>
+  <div style="margin-top:6px;display:flex;gap:6px">
+    <button onclick="openDupModal(${_dupIdx})" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.1);color:#f59e0b;cursor:pointer;font-weight:600">Compare &amp; Choose Fields</button>
+  </div>
+</div>`;
+        }
+        el.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${dupFieldBannerHtml}${summaryHtml}${correctionHtml}${sumMismatchHtml}<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
 
         // ── Wire up change handlers: update data + recalculate total when user edits ──
         el.querySelectorAll('.ef-input[data-key]').forEach((inp) => {
