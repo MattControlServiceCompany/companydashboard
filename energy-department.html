@@ -16346,11 +16346,22 @@
               return s;
             };
             // OCR settings to try — different render scales and Tesseract PSM modes
+            // Dictionary correction disabled: Tesseract's English dictionary "corrects" symbols like /
+            // into digits because "/" doesn't appear in English words. This is the main cause of date
+            // garbling (12/01 → 12001). Also preserve spaces to maintain table column alignment.
+            const OCR_BASE_PARAMS = {
+              load_system_dawg: '0',
+              load_freq_dawg: '0',
+              preserve_interword_spaces: '1',
+            };
             // Primary passes — run on every page
+            // PSM 3 = fully automatic (default), PSM 6 = single uniform block (better for structured docs)
             const OCR_PASSES = [
               { scale: 2.0, psm: null, label: '2x' },
               { scale: 2.5, psm: null, label: '2.5x' },
+              { scale: 2.5, psm: '6', label: '2.5x PSM6' },
               { scale: 3.0, psm: null, label: '3x' },
+              { scale: 3.0, psm: '6', label: '3x PSM6' },
               { scale: 3.5, psm: null, label: '3.5x' },
             ];
             // Retry passes — only run if primary passes have issues (low score or missing values)
@@ -16358,6 +16369,7 @@
               { scale: 1.0, psm: null, label: '1x retry' },
               { scale: 1.5, psm: null, label: '1.5x retry' },
               { scale: 4.0, psm: null, label: '4x retry' },
+              { scale: 4.0, psm: '6', label: '4x PSM6 retry' },
             ];
 
             // Store all OCR pass texts for consensus re-extraction on mismatched values
@@ -16396,7 +16408,7 @@
                 const ctx = canvas.getContext('2d');
                 await pg.render({ canvasContext: ctx, viewport: vp }).promise;
                 try {
-                  const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm } : {};
+                  const params = { ...OCR_BASE_PARAMS, ...(cfg.psm ? { tessedit_pageseg_mode: cfg.psm } : {}) };
                   const {
                     data: { text },
                   } = await worker.recognize(canvas, params);
@@ -16442,7 +16454,7 @@
                   const ctx = canvas.getContext('2d');
                   await pg.render({ canvasContext: ctx, viewport: vp }).promise;
                   try {
-                    const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm } : {};
+                    const params = { ...OCR_BASE_PARAMS, ...(cfg.psm ? { tessedit_pageseg_mode: cfg.psm } : {}) };
                     const {
                       data: { text },
                     } = await worker.recognize(canvas, params);
@@ -16618,7 +16630,11 @@
                         try {
                           const {
                             data: { text: ocrText },
-                          } = await retryWorker.recognize(canvas);
+                          } = await retryWorker.recognize(canvas, {
+                            load_system_dawg: '0',
+                            load_freq_dawg: '0',
+                            preserve_interword_spaces: '1',
+                          });
                           retryTexts.push(ocrText);
                         } catch (e) {
                           retryTexts.push('');
