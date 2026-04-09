@@ -16638,23 +16638,20 @@
               );
             let worker;
             try {
-              worker = await Tesseract.createWorker(
-                'eng',
-                1,
-                {
-                  logger: (m) => {
-                    if (statusCb) {
-                      if (m.status === 'loading tesseract core') statusCb('Loading OCR engine...');
-                      else if (m.status === 'loading language traineddata')
-                        statusCb('Loading English language data...');
-                    }
-                  },
+              worker = await Tesseract.createWorker('eng', 1, {
+                logger: (m) => {
+                  if (statusCb) {
+                    if (m.status === 'loading tesseract core') statusCb('Loading OCR engine...');
+                    else if (m.status === 'loading language traineddata') statusCb('Loading English language data...');
+                  }
                 },
-                // Init-only params: disable dictionary correction so "/" isn't "corrected" to digits
-                { load_system_dawg: 0, load_freq_dawg: 0 },
-              );
-              // Set params that persist across recognize() calls
-              await worker.setParameters({ preserve_interword_spaces: '1' });
+              });
+              // Disable dictionary correction so "/" isn't "corrected" to digits
+              await worker.setParameters({
+                preserve_interword_spaces: '1',
+                load_system_dawg: '0',
+                load_freq_dawg: '0',
+              });
             } catch (workerErr) {
               if (statusCb) statusCb('OCR engine failed to load: ' + workerErr.message);
               // Return whatever native text we got
@@ -16702,13 +16699,47 @@
             ];
             // Timeout for individual recognize() calls (90 seconds) — prevents Tesseract hangs
             const OCR_TIMEOUT_MS = 90000;
-            const recognizeWithTimeout = (w, canvas, params) => {
-              return Promise.race([
-                w.recognize(canvas, params),
-                new Promise((_, reject) =>
-                  setTimeout(() => reject(new Error('OCR timeout after 90s')), OCR_TIMEOUT_MS),
-                ),
-              ]);
+            // Helper to create a fresh worker with correct params
+            const _createOCRWorker = async (loggerCb) => {
+              const w = await Tesseract.createWorker('eng', 1, {
+                logger: loggerCb || (() => {}),
+              });
+              await w.setParameters({
+                preserve_interword_spaces: '1',
+                load_system_dawg: '0',
+                load_freq_dawg: '0',
+              });
+              return w;
+            };
+            // On timeout: terminate the hung worker and create a fresh one.
+            // Returns { result, newWorker } — newWorker is set only if the worker was replaced.
+            const recognizeWithTimeout = async (w, canvas, params) => {
+              let timedOut = false;
+              const timer = setTimeout(() => {
+                timedOut = true;
+              }, OCR_TIMEOUT_MS);
+              try {
+                const result = await Promise.race([
+                  w.recognize(canvas, params),
+                  new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('OCR timeout after 90s')), OCR_TIMEOUT_MS),
+                  ),
+                ]);
+                clearTimeout(timer);
+                return { result, newWorker: null };
+              } catch (err) {
+                clearTimeout(timer);
+                if (timedOut) {
+                  // Kill the hung worker — its queued recognize() call will never finish
+                  try {
+                    await w.terminate();
+                  } catch (_) {}
+                  // Create a fresh worker so the next call starts clean
+                  const fresh = await _createOCRWorker();
+                  throw Object.assign(err, { _replacementWorker: fresh });
+                }
+                throw err;
+              }
             };
             // Track pass scores for debug output
             const passScoreLog = [];
@@ -16751,9 +16782,8 @@
                 try {
                   const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm } : {};
                   const t0 = performance.now();
-                  const {
-                    data: { text },
-                  } = await recognizeWithTimeout(worker, canvas, params);
+                  const { result: ocrResult } = await recognizeWithTimeout(worker, canvas, params);
+                  const text = ocrResult.data.text;
                   const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
                   const score = scorePage(text);
                   allPassTexts[pgNum].push({ scale: cfg.scale, label: cfg.label, text, score });
@@ -16769,6 +16799,8 @@
                     bestScore = score;
                   }
                 } catch (pageErr) {
+                  // If timeout killed the worker, swap in the fresh replacement
+                  if (pageErr._replacementWorker) worker = pageErr._replacementWorker;
                   passScoreLog.push({
                     page: pgNum,
                     pass: cfg.label,
@@ -16811,9 +16843,8 @@
                   try {
                     const params = cfg.psm ? { tessedit_pageseg_mode: cfg.psm } : {};
                     const t0 = performance.now();
-                    const {
-                      data: { text },
-                    } = await recognizeWithTimeout(worker, canvas, params);
+                    const { result: ocrResult } = await recognizeWithTimeout(worker, canvas, params);
+                    const text = ocrResult.data.text;
                     const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
                     const score = scorePage(text);
                     allPassTexts[pgNum].push({ scale: cfg.scale, label: cfg.label, text, score });
@@ -16829,6 +16860,7 @@
                       bestScore = score;
                     }
                   } catch (pageErr) {
+                    if (pageErr._replacementWorker) worker = pageErr._replacementWorker;
                     passScoreLog.push({
                       page: pgNum,
                       pass: cfg.label,
@@ -16965,17 +16997,16 @@
                     bestMissing = worstMissing;
                   let retryWorker;
                   try {
-                    retryWorker = await Tesseract.createWorker(
-                      'eng',
-                      1,
-                      {
-                        logger: (m) => {
-                          if (m.status === 'loading tesseract core') statusMsg('Loading OCR engine for retry...');
-                        },
+                    retryWorker = await Tesseract.createWorker('eng', 1, {
+                      logger: (m) => {
+                        if (m.status === 'loading tesseract core') statusMsg('Loading OCR engine for retry...');
                       },
-                      { load_system_dawg: 0, load_freq_dawg: 0 },
-                    );
-                    await retryWorker.setParameters({ preserve_interword_spaces: '1' });
+                    });
+                    await retryWorker.setParameters({
+                      preserve_interword_spaces: '1',
+                      load_system_dawg: '0',
+                      load_freq_dawg: '0',
+                    });
                   } catch (e) {
                     retryWorker = null;
                   }
@@ -17026,11 +17057,10 @@
                         const ctx = canvas.getContext('2d');
                         await pg.render({ canvasContext: ctx, viewport: vp }).promise;
                         try {
-                          const {
-                            data: { text: ocrText },
-                          } = await recognizeWithTimeout(retryWorker, canvas, {});
-                          retryTexts.push(ocrText);
+                          const { result: retryResult } = await recognizeWithTimeout(retryWorker, canvas, {});
+                          retryTexts.push(retryResult.data.text);
                         } catch (e) {
+                          if (e._replacementWorker) retryWorker = e._replacementWorker;
                           retryTexts.push('');
                         }
                       }
