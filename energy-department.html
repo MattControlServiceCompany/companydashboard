@@ -16677,12 +16677,25 @@
                       useSystemFonts: true,
                     }).promise;
                     const maxPg = Math.min(pdf2.numPages, 200);
+                    // Only retry pages belonging to bills with missing critical fields
+                    const retryPages = new Set();
+                    for (const b of retryBills) {
+                      if (countCriticalMissing(b, rule.name) > 0) {
+                        const ps = b._pageStart || 1;
+                        const pe = b._pageEnd || maxPg;
+                        for (let p = ps; p <= pe; p++) retryPages.add(p);
+                      }
+                    }
                     for (const scale of RETRY_SCALES) {
                       if (bestMissing === 0) break;
                       statusMsg(
                         'OCR retry at ' +
                           scale +
-                          'x scale (' +
+                          'x scale — ' +
+                          retryPages.size +
+                          ' page' +
+                          (retryPages.size !== 1 ? 's' : '') +
+                          ' (' +
                           bestMissing +
                           ' missing field' +
                           (bestMissing > 1 ? 's' : '') +
@@ -16690,6 +16703,11 @@
                       );
                       const retryTexts = [];
                       for (let i = 1; i <= maxPg; i++) {
+                        if (!retryPages.has(i)) {
+                          // Reuse existing text for pages that don't need retry
+                          retryTexts.push(pageTexts[i - 1] || '');
+                          continue;
+                        }
                         const pg = await pdf2.getPage(i);
                         const vp = pg.getViewport({ scale });
                         const canvas = document.createElement('canvas');
@@ -16700,7 +16718,7 @@
                         try {
                           const {
                             data: { text: ocrText },
-                          } = await retryWorker.recognize(canvas);
+                          } = await recognizeWithTimeout(retryWorker, canvas, {});
                           retryTexts.push(ocrText);
                         } catch (e) {
                           retryTexts.push('');
