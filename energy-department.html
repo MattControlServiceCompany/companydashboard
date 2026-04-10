@@ -17956,9 +17956,10 @@
           badgeEl.innerHTML = `<button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="font-size:10px;padding:3px 12px">Save All ${bills.length} Periods</button>`;
         }
         // Two-column layout inside pdfAIBox: pills column on the left, JSON on the right.
-        // The "Month / Billing Periods" labels are plain sticky text (no borders/boxes), and
-        // the JSON <pre> has a matching top margin so its first line aligns with the first
-        // pill row (i.e. "inline with the Billing Periods pills", not with the header).
+        // Both columns contain an identical sticky header at the top (the JSON side uses
+        // visibility:hidden to preserve the space without showing labels), guaranteeing the
+        // JSON's first line sits exactly at the same Y as the first pill row — no magic
+        // padding math required. The "Month / Billing Periods" labels are plain sticky text.
         box.innerHTML = `${dupBannerHtml}<div style="display:flex;gap:10px;align-items:flex-start">
   <div class="ef-pill-col" style="flex:0 0 auto;min-width:220px">
     <div class="ef-pill-sticky">
@@ -17967,7 +17968,13 @@
     </div>
     ${nav}
   </div>
-  <pre style="flex:1;min-width:0;font-size:11px;color:var(--text);white-space:pre-wrap;word-break:break-word;margin:0 0 0 0;padding-top:22px">${JSON.stringify(b, null, 2)}</pre>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+    <div class="ef-pill-sticky" aria-hidden="true" style="visibility:hidden">
+      <div class="ef-pill-sticky-month">Month</div>
+      <div class="ef-pill-sticky-label">Billing Periods</div>
+    </div>
+    <pre style="font-size:11px;color:var(--text);white-space:pre-wrap;word-break:break-word;margin:0">${JSON.stringify(b, null, 2)}</pre>
+  </div>
 </div>`;
       }
       function selectMultiBill(i) {
