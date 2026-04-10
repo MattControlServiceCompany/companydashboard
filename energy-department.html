@@ -15706,35 +15706,20 @@
               };
               b.kWhConsumed = consensusKwh.toFixed(4);
             }
-            // TDCCharge qty represents ACTUAL kW the customer hit. On rate changeover or meter change
-            // bills, parts carry different kW values per period — they are NOT additive, they are
-            // charged separately at their own rates. The correct aggregate for a single bill's ActualKW
-            // is MAX (the peak kW across the periods).
-            // BilledKWCharge is deliberately NOT used as a cross-validation source because Evergy LGS
-            // Secondary rates have a 200 kW minimum billed demand floor — BilledKW can legitimately
-            // exceed ActualKW. FacilitiesKW is a 12-month rolling peak; only a last-resort fallback.
-            const tdcKwMax = getPartsQtyMax('TDCCharge');
-            const facKW = pf(b.FacilitiesKW);
+            // ActualKW can only be trusted from the meter table (KW Used column). It canNOT be
+            // cross-validated from any charge line:
+            //   - TDC Chg qty uses BilledKW, not ActualKW
+            //   - Demand Chg qty is BilledKW (floored at 200 kW on LGS Secondary)
+            //   - Facilities Chg qty is the rolling 12-month peak
+            // If the meter table ActualKW is clearly garbled (out of range), we null it and flag
+            // it as missing so the user knows to correct manually — we don't guess from charges.
             const curKw = pf(b.ActualKW);
             const kwOutOfRange = curKw > 0 && (curKw > 10000 || curKw < 0.1);
-            let consensusKw = null;
-            let kwConsensusReason = '';
-            if (tdcKwMax && tdcKwMax > 0 && tdcKwMax < 10000) {
-              consensusKw = tdcKwMax;
-              kwConsensusReason = 'Cross-validated from TDC Chg qty (max of parts for rate/meter changeover)';
-            } else if (kwOutOfRange && facKW > 0 && facKW < 10000) {
-              consensusKw = facKW;
-              kwConsensusReason = 'FacilitiesKW fallback (meter table garbled, no TDC consensus)';
+            if (kwOutOfRange) {
+              b['_likely_missing_ActualKW'] = true;
+              b.ActualKW = null;
             }
-            const kwOffFromConsensus = consensusKw && curKw > 0 && Math.abs(curKw - consensusKw) / consensusKw > 0.05;
-            if (consensusKw && (kwOutOfRange || kwOffFromConsensus || !curKw)) {
-              b['_auto_corrected_ActualKW'] = {
-                original: b.ActualKW,
-                corrected: consensusKw.toFixed(4),
-                reason: kwConsensusReason,
-              };
-              b.ActualKW = consensusKw.toFixed(4);
-            }
+            const tdcKwMax = getPartsQtyMax('TDCCharge');
             // TDCkW should equal the peak kW across TDC charge line parts (same rule as ActualKW)
             const curTdcKw = pf(b.TDCkW);
             if (tdcKwMax && curTdcKw > 0 && Math.abs(curTdcKw - tdcKwMax) / tdcKwMax > 0.05) {
