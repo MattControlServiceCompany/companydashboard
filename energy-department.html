@@ -2422,6 +2422,10 @@
         border: none;
         outline: none;
         width: 100%;
+        /* Outfit (the current --mono) is NOT truly monospace, so digits/slashes have variable
+           widths. tabular-nums forces all digits to occupy the same width so numeric columns
+           align vertically without needing to change text alignment. */
+        font-variant-numeric: tabular-nums;
       }
       .ef-running {
         display: flex;
@@ -17638,7 +17642,7 @@
             const dupDot = isDup
               ? '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#f59e0b;margin-left:6px;vertical-align:middle" title="Duplicate bill"></span>'
               : '';
-            return `<button onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasAnyIssue ? '700' : '400'};width:100%;text-align:left;white-space:nowrap">${p.lbl}${hasAnyIssue ? ' ⚠' : ''}${dupDot}</button>`;
+            return `<button onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasAnyIssue ? '700' : '400'};width:100%;text-align:left;white-space:nowrap">${p.lbl}${hasAnyIssue ? ' ⚠' : ''}${dupDot}</button>`;
           })
           .join('');
         // Duplicate summary banner
@@ -18113,11 +18117,7 @@
           const dupIcon = isDupDiff
             ? `<span title="Existing: ${(dupDiff.existVal || '(empty)').replace(/"/g, '&quot;')}" style="cursor:help;color:#f59e0b;font-size:11px;margin-left:4px">&#9432;</span>`
             : '';
-          // Right-align numeric inputs so columns line up on the decimal; text stays default-aligned.
-          const isNumeric =
-            !ID_FIELDS.has(k) && typeof displayVal === 'string' && /^-?\$?[\d,]+(?:\.\d+)?$/.test(displayVal);
-          const alignStyle = isNumeric ? ';text-align:right;font-variant-numeric:tabular-nums' : '';
-          const inputHtml = `<input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty ? '—' : ''}" style="${dupInputStyle}${alignStyle}">`;
+          const inputHtml = `<input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty ? '—' : ''}" style="${dupInputStyle}">`;
           const keyHtml = `<div class="ef-key" style="${dupKeyStyle}">${LABELS[k] || k}${dupIcon}</div>`;
           // Input on the left, icons on the right — cell height stays constant regardless of
           // how much warning/correction text there is (tooltip holds the full explanation).
