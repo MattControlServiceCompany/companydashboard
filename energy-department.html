@@ -17621,9 +17621,12 @@
               _pf2(bill.BillOffset) +
               _pf2(bill.FranchiseFee);
             const _totalVal = _pf2(bill.TotalCurrentCharges);
+            // Sum mismatch threshold matches the Data Analysis panel exactly (>= $0.02) so the
+            // pill and banner are always consistent. Sum mismatch is high severity — we don't want
+            // a pill showing "all good" while the panel says "sum mismatch".
             const hasSumMismatch =
               bw.some((w) => w.field === 'TotalCurrentCharges' && w.level === 'warn' && /sum/i.test(w.message)) ||
-              (_totalVal > 0 && _chargeSum > 0 && Math.abs(_chargeSum - _totalVal) >= 0.5);
+              (_totalVal > 0 && _chargeSum > 0 && Math.abs(_chargeSum - _totalVal) >= 0.02);
             const hasAnyIssue = hasIssues || hasSumMismatch;
             const issueColor = hasSumMismatch ? '--red' : '--amber';
             // Issue color wins for border+text so warnings stay visible even when the pill is selected;
@@ -18287,14 +18290,39 @@
         const fieldHtml = rows.filter(Boolean).join('');
         const missingHtml = '';
 
-        // Show sum mismatch warning if present (red, not amber)
+        // Compute sum mismatch from CURRENT data (not a stale stored flag). This is the
+        // source of truth — the stored `_sum_mismatch` flag gets cleared by auto-correction
+        // even when a small residual diff remains, but the pill and banner should reflect
+        // what's actually in the data right now.
+        const _CHARGE_SUM_KEYS_RPF = [
+          'CustomerCharge',
+          'FacilitiesCharge',
+          'BilledKWCharge',
+          'EnergyOnPeakCharge',
+          'EnergyOffPeakCharge',
+          'ECACharge',
+          'EERCharge',
+          'PTSCharge',
+          'TDCCharge',
+          'RkVACharge',
+          'TaxExemptDelivery',
+          'BillOffset',
+          'FranchiseFee',
+        ];
+        const _currentChargeSum = _CHARGE_SUM_KEYS_RPF.reduce((s, f) => s + _pf(parsed[f]), 0);
+        const _currentSumDiff = totalVal > 0 && _currentChargeSum > 0 ? _currentChargeSum - totalVal : 0;
+        const hasCurrentSumMismatch = Math.abs(_currentSumDiff) >= 0.02;
         const sumMismatch = parsed['_sum_mismatch'];
-        const sumMismatchHtml = sumMismatch
-          ? '<div style="padding:8px 12px;margin:6px 0;border-radius:6px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.25);font-size:12px;color:#ef4444;line-height:1.5">⛔ <strong>Charge sum mismatch:</strong> ' +
-            sumMismatch.reason +
-            ' (diff $' +
-            sumMismatch.diff.toFixed(2) +
-            '). The total on the bill is likely correct — check if a charge line was missed during extraction.</div>'
+        // Big, loud banner for sum mismatch — this is a high-severity issue that must never be
+        // lost in a sea of other notifications. Renders at the very top of the extracted fields.
+        const sumMismatchHtml = hasCurrentSumMismatch
+          ? `<div style="padding:12px 16px;margin:8px 0;border-radius:8px;background:rgba(239,68,68,.18);border:2px solid #ef4444;color:#ef4444;font-size:14px;font-weight:700;line-height:1.5;display:flex;align-items:flex-start;gap:12px">
+  <span style="font-size:22px;line-height:1">&#9940;</span>
+  <div style="flex:1">
+    <div style="font-size:15px">SUM MISMATCH &mdash; $${Math.abs(_currentSumDiff).toFixed(2)} ${_currentSumDiff > 0 ? 'OVER' : 'UNDER'} Total Current Charges</div>
+    <div style="font-size:12px;font-weight:500;color:#fca5a5;margin-top:3px">Charge sum is $${_currentChargeSum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} but the bill total is $${totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. A charge line was likely missed during extraction &mdash; check every field below against the source PDF.</div>
+  </div>
+</div>`
           : '';
 
         // Show auto-correction banner if any fields were corrected (rate×qty or OCR consensus)
@@ -18325,12 +18353,12 @@
         }
 
         // Summary banner
-        // Also detect display-time running total mismatch (charge sum ≠ TotalCurrentCharges)
-        const runningTotalMismatch = totalVal > 0 && Math.abs(runningTotal - totalVal) >= 0.02;
         const errorCount = warnings.filter((w) => w.level === 'error').length;
         const warnCount = warnings.filter((w) => w.level === 'warn').length;
         const infoCount = warnings.filter((w) => w.level === 'info').length;
-        const hasSumIssue = !!sumMismatch || runningTotalMismatch;
+        // Sum mismatch is detected from current data (same source as the big banner above) so the
+        // Data Analysis line and the big banner are always consistent.
+        const hasSumIssue = hasCurrentSumMismatch;
         let summaryHtml = '';
         if (errorCount || warnCount || hasSumIssue) {
           const parts = [];
@@ -18399,7 +18427,7 @@
   <button onclick="openDupModal(${_dupIdx})" style="flex-shrink:0;font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.1);color:#f59e0b;cursor:pointer;font-weight:600">Compare &amp; Choose Fields</button>
 </div>`;
         }
-        el.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${dupFieldBannerHtml}${summaryHtml}${correctionHtml}${sumMismatchHtml}<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
+        el.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${sumMismatchHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
 
         // ── Wire up change handlers: update data + recalculate total when user edits ──
         el.querySelectorAll('.ef-input[data-key]').forEach((inp) => {
