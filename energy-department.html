@@ -17384,6 +17384,8 @@
         });
         // Sort descending by date (newest first)
         periods.sort((a, b) => b.sortDate - a.sortDate);
+        // Duplicate map must be declared before the nav closure below reads it (TDZ)
+        const dupMap = window._pdfDupMap || {};
         const nav = periods
           .map((p) => {
             const active = p.i === idx;
@@ -17423,7 +17425,6 @@
           })
           .join('');
         // Duplicate summary banner
-        const dupMap = window._pdfDupMap || {};
         const dupIndices = Object.keys(dupMap).map(Number);
         let dupBannerHtml = '';
         if (dupIndices.length > 0) {
