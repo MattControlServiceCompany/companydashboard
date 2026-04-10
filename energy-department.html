@@ -12,6 +12,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
+    />
     <title>CompanyHub — Energy Department</title>
     <link
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
@@ -4261,7 +4265,11 @@
       }
     </style>
   </head>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"
+    integrity="sha384-bs/nf9FbdNouRbMiFcrcZfLXYPKiPaGVGplVbv7dLGECccEXDW+S3zjqSKR5ZEaD"
+    crossorigin="anonymous"
+  ></script>
   <body>
     <div id="loginScreen">
       <div class="login-card">
@@ -10581,9 +10589,21 @@
     </div>
     <!-- /app -->
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
+      integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"
+      integrity="sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"
+      integrity="sha384-5MXQT3yrGpx6/FO6Z5JlMsn1xsN/OggV+b88W2CfpNqmvPfmv7JW/O8x78GzptfE"
+      crossorigin="anonymous"
+    ></script>
     <script>
       /* ── AI API (disabled — no backend) ── */
       async function claude(prompt, sys) {
@@ -13556,35 +13576,16 @@
         // ── Meter read table (supports multi-row: meter changes and solar net metering) ──
         // Format: StartDate EndDate Days EndRead(-) StartRead(=) Diff (x)Mult (=)kWhUsed KWUsed RKVAUsed
         // Groups: [1]StartDate [2]EndDate [3]Days [4]EndRead [5]StartRead [6]Difference [7]Mult [8]kWhUsed [9]KWUsed [10]RKVAUsed
-        // Allow 1 or 2 digit month/day (OCR sometimes drops leading zeros, e.g. "1/30" instead of "01/30")
-        // Meter regex: tolerates missing date slashes (1231 → 12/31), +/- signs between columns, extra whitespace,
-        // OCR garbage chars (©, ®, letters) between columns, and colons misread as commas (174:0058 → 174,0058)
-        const _SEP = '(?:[^\\d\\n]*?\\s+)'; // separator: optional non-digit junk + whitespace
-        // Date pattern: MM/DD with optional slash, or 3-5 digits from OCR garble (12001 → 12/01)
-        const _DATE = '(\\d{1,2}\\/?\\d{1,3})';
-        const _meterRe = new RegExp(
-          _DATE +
-            _SEP + // [1] StartDate
-            _DATE +
-            _SEP + // [2] EndDate
-            '(\\d+)' +
-            _SEP + // [3] Days
-            '[-+]?\\s*([\\d,:]+\\.?\\d*)' +
-            _SEP + // [4] EndRead (allow : for OCR'd commas)
-            '[-+]?\\s*([\\d,:]+\\.?\\d*)' +
-            _SEP + // [5] StartRead
-            '[-+]?\\s*([\\d,:]+\\.?\\d*)' +
-            _SEP + // [6] Difference
-            '[-+]?\\s*([\\d,:.]+)' +
-            _SEP + // [7] Multiplier
-            '[-+]?\\s*([\\d,:]+\\.?\\d*)\\s+' + // [8] kWhUsed
-            '([\\d,.]+)\\s+' + // [9] KWUsed
-            '([\\d,.]+)', // [10] RKVAUsed
-          'g',
-        );
+        // Pre-normalize OCR junk to spaces (1:1 char replacement, preserves length) and colons→commas,
+        // so the regex can use a simple strict \s+ separator with unambiguous quantifiers. This avoids
+        // Firefox "too much recursion" from catastrophic backtracking on long OCR lines.
+        const _meterT = t.replace(/[^\d\s+\-./,:\n]/g, ' ').replace(/:/g, ',');
+        // Date pattern supports MM/DD (with optional slash) and 3-5 digit OCR garble like "12001" → "12/01"
+        const _meterRe =
+          /(\d{1,2}\/?\d{1,3})\s+(\d{1,2}\/?\d{1,3})\s+(\d+)\s+[-+]?\s*([\d,]+(?:\.\d+)?)\s+[-+]?\s*([\d,]+(?:\.\d+)?)\s+[-+]?\s*([\d,]+(?:\.\d+)?)\s+[-+]?\s*([\d,.]+)\s+[-+]?\s*([\d,]+(?:\.\d+)?)\s+([\d,.]+)\s+([\d,.]+)/g;
         const _meterRows = [];
         let _mm;
-        while ((_mm = _meterRe.exec(t)) !== null) _meterRows.push(_mm);
+        while ((_mm = _meterRe.exec(_meterT)) !== null) _meterRows.push(_mm);
 
         // Normalize meter row date fields (groups 1 & 2) to MM/DD format
         // OCR commonly reads "/" as "0", so 12/01 → 12001, 9/28 → 9028
@@ -16638,19 +16639,27 @@
               );
             let worker;
             try {
-              worker = await Tesseract.createWorker('eng', 1, {
-                logger: (m) => {
-                  if (statusCb) {
-                    if (m.status === 'loading tesseract core') statusCb('Loading OCR engine...');
-                    else if (m.status === 'loading language traineddata') statusCb('Loading English language data...');
-                  }
+              // Dictionary params (load_system_dawg/load_freq_dawg) are init-only and MUST be passed
+              // in createWorker's 4th arg. Setting them via setParameters is silently ignored by Tesseract.
+              worker = await Tesseract.createWorker(
+                'eng',
+                1,
+                {
+                  logger: (m) => {
+                    if (statusCb) {
+                      if (m.status === 'loading tesseract core') statusCb('Loading OCR engine...');
+                      else if (m.status === 'loading language traineddata')
+                        statusCb('Loading English language data...');
+                    }
+                  },
                 },
-              });
-              // Disable dictionary correction so "/" isn't "corrected" to digits
+                {
+                  load_system_dawg: '0',
+                  load_freq_dawg: '0',
+                },
+              );
               await worker.setParameters({
                 preserve_interword_spaces: '1',
-                load_system_dawg: '0',
-                load_freq_dawg: '0',
               });
             } catch (workerErr) {
               if (statusCb) statusCb('OCR engine failed to load: ' + workerErr.message);
@@ -16699,16 +16708,16 @@
             ];
             // Timeout for individual recognize() calls (90 seconds) — prevents Tesseract hangs
             const OCR_TIMEOUT_MS = 90000;
-            // Helper to create a fresh worker with correct params
+            // Helper to create a fresh worker with correct params.
+            // Dictionary params are init-only — must go in createWorker's 4th arg, not setParameters.
             const _createOCRWorker = async (loggerCb) => {
-              const w = await Tesseract.createWorker('eng', 1, {
-                logger: loggerCb || (() => {}),
-              });
-              await w.setParameters({
-                preserve_interword_spaces: '1',
-                load_system_dawg: '0',
-                load_freq_dawg: '0',
-              });
+              const w = await Tesseract.createWorker(
+                'eng',
+                1,
+                { logger: loggerCb || (() => {}) },
+                { load_system_dawg: '0', load_freq_dawg: '0' },
+              );
+              await w.setParameters({ preserve_interword_spaces: '1' });
               return w;
             };
             // On timeout: terminate the hung worker and create a fresh one.
@@ -16997,16 +17006,18 @@
                     bestMissing = worstMissing;
                   let retryWorker;
                   try {
-                    retryWorker = await Tesseract.createWorker('eng', 1, {
-                      logger: (m) => {
-                        if (m.status === 'loading tesseract core') statusMsg('Loading OCR engine for retry...');
+                    // Dictionary params must go in createWorker's 4th arg (init-only)
+                    retryWorker = await Tesseract.createWorker(
+                      'eng',
+                      1,
+                      {
+                        logger: (m) => {
+                          if (m.status === 'loading tesseract core') statusMsg('Loading OCR engine for retry...');
+                        },
                       },
-                    });
-                    await retryWorker.setParameters({
-                      preserve_interword_spaces: '1',
-                      load_system_dawg: '0',
-                      load_freq_dawg: '0',
-                    });
+                      { load_system_dawg: '0', load_freq_dawg: '0' },
+                    );
+                    await retryWorker.setParameters({ preserve_interword_spaces: '1' });
                   } catch (e) {
                     retryWorker = null;
                   }
