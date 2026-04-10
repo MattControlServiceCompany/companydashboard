@@ -15708,12 +15708,11 @@
             }
             // ActualKW recovery rule (Evergy LGS Secondary minimum 200 kW billed demand):
             //   BilledKW = max(ActualKW, 200)
-            // Corollary:
-            //   - If BilledKW > 200, the floor is NOT applied, so ActualKW == BilledKW.
-            //     We can recover ActualKW from the Demand Chg line's max kW with certainty.
-            //   - If BilledKW <= 200, the floor MAY be applied; ActualKW is unknown, only bounded.
-            // Primary source is the meter table KW Used column. When that's garbled, fall back to
-            // BilledKW from Demand Chg parts only when > 200 kW (so the identity holds).
+            // Corollary: when BilledKW > 200, the floor is NOT applied, so ActualKW == BilledKW
+            // by mathematical identity — we can recover ActualKW from the Demand Chg line.
+            // When BilledKW <= 200, we keep whatever the meter table reading was; the user can
+            // see it and correct it manually if it's garbled (ActualKW < 200 is legitimate on
+            // low-demand months and shouldn't be nulled).
             const curKw = pf(b.ActualKW);
             const kwOutOfRange = curKw > 0 && (curKw > 10000 || curKw < 0.1);
             const demandKwMax = getPartsQtyMax('BilledKWCharge');
@@ -15727,9 +15726,6 @@
                   ' kW) exceeds the 200 kW LGS Secondary minimum, so ActualKW = BilledKW by identity',
               };
               b.ActualKW = demandKwMax.toFixed(4);
-            } else if (kwOutOfRange) {
-              b['_likely_missing_ActualKW'] = true;
-              b.ActualKW = null;
             }
             const tdcKwMax = getPartsQtyMax('TDCCharge');
             // TDCkW should equal the peak kW across TDC charge line parts (same rule as ActualKW)
