@@ -15706,16 +15706,28 @@
               };
               b.kWhConsumed = consensusKwh.toFixed(4);
             }
-            // ActualKW can only be trusted from the meter table (KW Used column). It canNOT be
-            // cross-validated from any charge line:
-            //   - TDC Chg qty uses BilledKW, not ActualKW
-            //   - Demand Chg qty is BilledKW (floored at 200 kW on LGS Secondary)
-            //   - Facilities Chg qty is the rolling 12-month peak
-            // If the meter table ActualKW is clearly garbled (out of range), we null it and flag
-            // it as missing so the user knows to correct manually — we don't guess from charges.
+            // ActualKW recovery rule (Evergy LGS Secondary minimum 200 kW billed demand):
+            //   BilledKW = max(ActualKW, 200)
+            // Corollary:
+            //   - If BilledKW > 200, the floor is NOT applied, so ActualKW == BilledKW.
+            //     We can recover ActualKW from the Demand Chg line's max kW with certainty.
+            //   - If BilledKW <= 200, the floor MAY be applied; ActualKW is unknown, only bounded.
+            // Primary source is the meter table KW Used column. When that's garbled, fall back to
+            // BilledKW from Demand Chg parts only when > 200 kW (so the identity holds).
             const curKw = pf(b.ActualKW);
             const kwOutOfRange = curKw > 0 && (curKw > 10000 || curKw < 0.1);
-            if (kwOutOfRange) {
+            const demandKwMax = getPartsQtyMax('BilledKWCharge');
+            if ((!curKw || kwOutOfRange) && demandKwMax && demandKwMax > 200 && demandKwMax < 10000) {
+              b['_auto_corrected_ActualKW'] = {
+                original: b.ActualKW,
+                corrected: demandKwMax.toFixed(4),
+                reason:
+                  'BilledKW (' +
+                  demandKwMax.toFixed(4) +
+                  ' kW) exceeds the 200 kW LGS Secondary minimum, so ActualKW = BilledKW by identity',
+              };
+              b.ActualKW = demandKwMax.toFixed(4);
+            } else if (kwOutOfRange) {
               b['_likely_missing_ActualKW'] = true;
               b.ActualKW = null;
             }
