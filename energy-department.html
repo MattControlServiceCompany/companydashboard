@@ -2341,19 +2341,20 @@
         flex-direction: column;
         gap: 6px;
         margin-top: 12px;
-        max-width: 760px;
       }
       .ef-row {
         display: flex;
         align-items: flex-start;
-        gap: 8px;
+        gap: 10px;
       }
+      /* Input holds a number/date/short string — give it a fixed sensible width and let the
+         warning column grab all remaining space beside it. */
       .ef-row > .ef-input {
-        flex: 1 1 auto;
+        flex: 0 0 180px;
         min-width: 0;
       }
       .ef-warn-col {
-        flex: 0 1 55%;
+        flex: 1 1 auto;
         min-width: 0;
         display: flex;
         flex-direction: column;
