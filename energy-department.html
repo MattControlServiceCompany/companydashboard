@@ -2448,33 +2448,13 @@
       .ef-ac-revert:hover {
         background: rgba(34, 197, 94, 0.2);
       }
-      /* Sticky header blocks — pin the extracted-fields header/banners and the pills column
-         headers to the top of the .view.active scroll container (which already sits below
-         the 54px topbar, so top:0 is correct relative to this ancestor). */
-      .ef-sticky-header {
-        position: sticky;
-        top: 0;
-        z-index: 90;
-        background: var(--bg);
-        padding: 10px 0 8px;
-        margin-top: -10px;
-        border-bottom: 1px solid var(--border);
-        margin-bottom: 6px;
-      }
+      /* Pill column container — flex layout for pill rows. The "frozen header" behavior
+         is handled by the parent view-flex layout (pdfFrozenHdr outside the scroll area),
+         so no position:sticky hacks are needed inside the column. */
       .ef-pill-col {
         display: flex;
         flex-direction: column;
         gap: 3px;
-      }
-      .ef-pill-sticky {
-        position: sticky;
-        top: 0;
-        z-index: 50;
-        background: var(--s1);
-        padding: 0 0 6px;
-        display: flex;
-        gap: 8px;
-        align-items: flex-end;
       }
       .ef-pill-sticky-month {
         flex: 0 0 62px;
@@ -4811,169 +4791,191 @@
           </div>
 
           <!-- PDF OCR -->
-          <div id="view-pdf" class="view">
-            <div class="pg-hdr">
-              <div>
-                <h1 class="pg-title">PDF <em>/ OCR</em></h1>
-                <p style="font-size: 13px; color: var(--text2); margin-top: 4px">
-                  Extract data from utility bills, drawings, submittals, and contracts
-                </p>
-              </div>
-              <div class="hdr-actions">
-                <button class="btn btn-ghost" onclick="openSavedBillsModal()" id="savedBillsBtn">
-                  🗄️ Saved Bills
-                  <span
-                    id="pdfBillCount"
-                    style="
-                      background: var(--em);
-                      color: var(--bg);
-                      font-size: 10px;
-                      font-weight: 700;
-                      padding: 1px 6px;
-                      border-radius: 8px;
-                      margin-left: 4px;
-                      display: none;
-                    "
-                  ></span>
-                </button>
-              </div>
-            </div>
-            <div class="g-6040">
-              <div>
-                <div
-                  class="drop-zone"
-                  id="dropZone"
-                  onclick="document.getElementById('pdfInput').click()"
-                  ondragover="
-                    event.preventDefault();
-                    this.classList.add('drag');
-                  "
-                  ondragleave="this.classList.remove('drag')"
-                  ondrop="handleDrop(event)"
-                >
-                  <span class="dz-ico">📄</span>
-                  <div class="dz-title" id="dz-title">Drop PDF here or click to browse</div>
-                  <div class="dz-sub">Utility bills · Drawings · Equipment submittals · Contracts</div>
-                  <input
-                    type="file"
-                    id="pdfInput"
-                    accept=".pdf"
-                    style="display: none"
-                    onchange="handlePDFUpload(event)"
-                  />
-                  <div id="pdfClearBtn" style="display: none; margin-top: 8px; text-align: right">
-                    <button
-                      class="btn btn-ghost btn-sm"
-                      onclick="
-                        event.stopPropagation();
-                        clearPDFOCR();
-                      "
-                    >
-                      ✕ Clear
-                    </button>
-                  </div>
+          <div id="view-pdf" class="view view-flex">
+            <div
+              id="pdfFrozenHdr"
+              style="
+                flex-shrink: 0;
+                padding: 16px 18px 10px;
+                border-bottom: 1px solid var(--border);
+                background: var(--bg);
+              "
+            >
+              <div class="pg-hdr">
+                <div>
+                  <h1 class="pg-title">PDF <em>/ OCR</em></h1>
+                  <p style="font-size: 13px; color: var(--text2); margin-top: 4px">
+                    Extract data from utility bills, drawings, submittals, and contracts
+                  </p>
                 </div>
-                <div id="pdfTypeSection" style="margin-top: 12px">
-                  <div class="fl" style="margin-bottom: 6px">Document Type</div>
-                  <div class="pdf-type-pills">
-                    <button class="ptpill sel" onclick="setPDFType('utility', this)">🔌 Utility Bill</button>
-                    <button class="ptpill" onclick="setPDFType('drawing', this)">📐 Drawing</button>
-                    <button class="ptpill" onclick="setPDFType('submittal', this)">⚙️ Submittal</button>
-                    <button class="ptpill" onclick="setPDFType('contract', this)">📋 Contract</button>
-                  </div>
-                </div>
-                <div id="extractedFields"></div>
-                <!-- Auto-assign banner: shown when extracted AccountNumber matches a known meter -->
-                <div
-                  id="pdfAutoAssignBanner"
-                  style="
-                    display: none;
-                    margin-top: 10px;
-                    padding: 11px 14px;
-                    background: rgba(var(--em-rgb), 0.08);
-                    border: 1px solid rgba(var(--em-rgb), 0.3);
-                    border-radius: 8px;
-                    font-size: 12px;
-                    line-height: 1.5;
-                  "
-                >
-                  <div style="font-weight: 600; color: var(--em); margin-bottom: 4px">⚡ Meter Match Found</div>
-                  <div id="pdfAutoAssignMsg" style="color: var(--text2); margin-bottom: 8px"></div>
-                  <div style="display: flex; gap: 7px">
-                    <button class="btn btn-em btn-sm" onclick="confirmAutoAssign()">
-                      ✓ Confirm & Save to This Meter
-                    </button>
-                    <button
-                      class="btn btn-ghost btn-sm"
-                      onclick="document.getElementById('pdfAutoAssignBanner').style.display = 'none'"
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                </div>
-                <div id="pdfSaveRow" style="display: none; margin-top: 12px">
-                  <div class="fl" style="margin-bottom: 5px">Save to project</div>
-                  <div style="display: flex; gap: 8px">
-                    <select class="fs" id="pdfProjSel" style="flex: 1"></select
-                    ><button class="btn btn-em" onclick="savePDFData()">Save</button
-                    ><button class="btn btn-ghost" onclick="clearPDFOCR()" title="Clear extracted data and reset">
-                      ✕ Clear
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div>
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px">
-                  <div class="ai-label" style="margin: 0">📄 Extraction Output</div>
-                  <div style="display: flex; align-items: center; gap: 7px">
-                    <button
-                      id="pdfDebugBtn"
+                <div class="hdr-actions">
+                  <button class="btn btn-ghost" onclick="openSavedBillsModal()" id="savedBillsBtn">
+                    🗄️ Saved Bills
+                    <span
+                      id="pdfBillCount"
                       style="
-                        display: none;
-                        font-size: 11px;
-                        padding: 3px 9px;
-                        border-radius: 6px;
-                        border: 1px solid var(--border2);
-                        background: transparent;
-                        color: var(--text2);
-                        cursor: pointer;
-                        font-family: var(--font);
-                      "
-                      onclick="togglePDFRawText()"
-                    >
-                      🔍 Raw Text
-                    </button>
-                    <button
-                      id="pdfSaveDebugBtn"
-                      style="
-                        display: none;
-                        font-size: 11px;
-                        padding: 3px 9px;
-                        border-radius: 6px;
-                        border: 1px solid var(--border2);
-                        background: transparent;
-                        color: var(--text2);
-                        cursor: pointer;
-                        font-family: var(--font);
-                      "
-                      onclick="savePDFDebug()"
-                    >
-                      💾 Save Debug
-                    </button>
-                    <div
-                      id="extractMethodBadge"
-                      style="
-                        display: none;
+                        background: var(--em);
+                        color: var(--bg);
                         font-size: 10px;
                         font-weight: 700;
-                        padding: 3px 9px;
-                        border-radius: 10px;
-                        letter-spacing: 0.5px;
+                        padding: 1px 6px;
+                        border-radius: 8px;
+                        margin-left: 4px;
+                        display: none;
                       "
-                    ></div>
+                    ></span>
+                  </button>
+                </div>
+              </div>
+              <div class="g-6040" style="margin-top: 12px">
+                <div>
+                  <div
+                    class="drop-zone"
+                    id="dropZone"
+                    onclick="document.getElementById('pdfInput').click()"
+                    ondragover="
+                      event.preventDefault();
+                      this.classList.add('drag');
+                    "
+                    ondragleave="this.classList.remove('drag')"
+                    ondrop="handleDrop(event)"
+                  >
+                    <span class="dz-ico">📄</span>
+                    <div class="dz-title" id="dz-title">Drop PDF here or click to browse</div>
+                    <div class="dz-sub">Utility bills · Drawings · Equipment submittals · Contracts</div>
+                    <input
+                      type="file"
+                      id="pdfInput"
+                      accept=".pdf"
+                      style="display: none"
+                      onchange="handlePDFUpload(event)"
+                    />
+                    <div id="pdfClearBtn" style="display: none; margin-top: 8px; text-align: right">
+                      <button
+                        class="btn btn-ghost btn-sm"
+                        onclick="
+                          event.stopPropagation();
+                          clearPDFOCR();
+                        "
+                      >
+                        ✕ Clear
+                      </button>
+                    </div>
+                  </div>
+                  <div id="pdfTypeSection" style="margin-top: 12px">
+                    <div class="fl" style="margin-bottom: 6px">Document Type</div>
+                    <div class="pdf-type-pills">
+                      <button class="ptpill sel" onclick="setPDFType('utility', this)">🔌 Utility Bill</button>
+                      <button class="ptpill" onclick="setPDFType('drawing', this)">📐 Drawing</button>
+                      <button class="ptpill" onclick="setPDFType('submittal', this)">⚙️ Submittal</button>
+                      <button class="ptpill" onclick="setPDFType('contract', this)">📋 Contract</button>
+                    </div>
+                  </div>
+                  <div id="extractedFieldsHdr"></div>
+                </div>
+                <div>
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px">
+                    <div class="ai-label" style="margin: 0">📄 Extraction Output</div>
+                    <div style="display: flex; align-items: center; gap: 7px">
+                      <button
+                        id="pdfDebugBtn"
+                        style="
+                          display: none;
+                          font-size: 11px;
+                          padding: 3px 9px;
+                          border-radius: 6px;
+                          border: 1px solid var(--border2);
+                          background: transparent;
+                          color: var(--text2);
+                          cursor: pointer;
+                          font-family: var(--font);
+                        "
+                        onclick="togglePDFRawText()"
+                      >
+                        🔍 Raw Text
+                      </button>
+                      <button
+                        id="pdfSaveDebugBtn"
+                        style="
+                          display: none;
+                          font-size: 11px;
+                          padding: 3px 9px;
+                          border-radius: 6px;
+                          border: 1px solid var(--border2);
+                          background: transparent;
+                          color: var(--text2);
+                          cursor: pointer;
+                          font-family: var(--font);
+                        "
+                        onclick="savePDFDebug()"
+                      >
+                        💾 Save Debug
+                      </button>
+                      <div
+                        id="extractMethodBadge"
+                        style="
+                          display: none;
+                          font-size: 10px;
+                          font-weight: 700;
+                          padding: 3px 9px;
+                          border-radius: 10px;
+                          letter-spacing: 0.5px;
+                        "
+                      ></div>
+                    </div>
+                  </div>
+                  <div id="pdfPillsHdr"></div>
+                </div>
+              </div>
+            </div>
+            <div id="pdfScrollBody" style="flex: 1; overflow-y: auto; padding: 10px 18px 16px; min-height: 0">
+              <div class="g-6040">
+                <div>
+                  <div id="extractedFieldsGrid"></div>
+                  <!-- Auto-assign banner: shown when extracted AccountNumber matches a known meter -->
+                  <div
+                    id="pdfAutoAssignBanner"
+                    style="
+                      display: none;
+                      margin-top: 10px;
+                      padding: 11px 14px;
+                      background: rgba(var(--em-rgb), 0.08);
+                      border: 1px solid rgba(var(--em-rgb), 0.3);
+                      border-radius: 8px;
+                      font-size: 12px;
+                      line-height: 1.5;
+                    "
+                  >
+                    <div style="font-weight: 600; color: var(--em); margin-bottom: 4px">⚡ Meter Match Found</div>
+                    <div id="pdfAutoAssignMsg" style="color: var(--text2); margin-bottom: 8px"></div>
+                    <div style="display: flex; gap: 7px">
+                      <button class="btn btn-em btn-sm" onclick="confirmAutoAssign()">
+                        ✓ Confirm & Save to This Meter
+                      </button>
+                      <button
+                        class="btn btn-ghost btn-sm"
+                        onclick="document.getElementById('pdfAutoAssignBanner').style.display = 'none'"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                  <div id="pdfSaveRow" style="display: none; margin-top: 12px">
+                    <div class="fl" style="margin-bottom: 5px">Save to project</div>
+                    <div style="display: flex; gap: 8px">
+                      <select class="fs" id="pdfProjSel" style="flex: 1"></select
+                      ><button class="btn btn-em" onclick="savePDFData()">Save</button
+                      ><button class="btn btn-ghost" onclick="clearPDFOCR()" title="Clear extracted data and reset">
+                        ✕ Clear
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <div class="ai-box" id="pdfAIBox" style="min-height: 280px">Upload a PDF and select document type.</div>
+                <div>
+                  <div class="ai-box" id="pdfAIBox" style="min-height: 280px">
+                    Upload a PDF and select document type.
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -16484,7 +16486,9 @@
         window._pdfDupMap = null;
         document.getElementById('dz-title').textContent = 'Drop PDF here or click to browse';
         document.getElementById('pdfInput').value = '';
-        document.getElementById('extractedFields').innerHTML = '';
+        document.getElementById('extractedFieldsHdr').innerHTML = '';
+        document.getElementById('extractedFieldsGrid').innerHTML = '';
+        document.getElementById('pdfPillsHdr').innerHTML = '';
         document.getElementById('pdfSaveRow').style.display = 'none';
         document.getElementById('pdfClearBtn').style.display = 'none';
         document.getElementById('dropZone').classList.remove('collapsed');
@@ -17955,26 +17959,24 @@
           badgeEl.style.display = 'inline-block';
           badgeEl.innerHTML = `<button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="font-size:10px;padding:3px 12px">Save All ${bills.length} Periods</button>`;
         }
-        // Two-column layout inside pdfAIBox: pills column on the left, JSON on the right.
-        // Both columns contain an identical sticky header at the top (the JSON side uses
-        // visibility:hidden to preserve the space without showing labels), guaranteeing the
-        // JSON's first line sits exactly at the same Y as the first pill row — no magic
-        // padding math required. The "Month / Billing Periods" labels are plain sticky text.
-        box.innerHTML = `${dupBannerHtml}<div style="display:flex;gap:10px;align-items:flex-start">
-  <div class="ef-pill-col" style="flex:0 0 auto;min-width:220px">
-    <div class="ef-pill-sticky">
-      <div class="ef-pill-sticky-month">Month</div>
-      <div class="ef-pill-sticky-label">Billing Periods</div>
-    </div>
-    ${nav}
+        // The Month / Billing Periods header + duplicate banner are written to the frozen
+        // #pdfPillsHdr (outside the scroll area) so they stay pinned at the top. The pills
+        // rows + JSON output go into pdfAIBox which lives in the scrollable body. Since the
+        // frozen grid and the scroll grid both use .g-6040 with identical column widths,
+        // the pills column aligns with the header column above it, and the JSON aligns with
+        // the empty space to the right of the header.
+        const pillsHdrEl = document.getElementById('pdfPillsHdr');
+        if (pillsHdrEl) {
+          pillsHdrEl.innerHTML = `${dupBannerHtml}<div style="display:flex;gap:10px">
+  <div style="flex:0 0 auto;min-width:220px;display:flex;gap:8px;align-items:flex-end">
+    <div class="ef-pill-sticky-month">Month</div>
+    <div class="ef-pill-sticky-label">Billing Periods</div>
   </div>
-  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
-    <div class="ef-pill-sticky" aria-hidden="true" style="visibility:hidden">
-      <div class="ef-pill-sticky-month">Month</div>
-      <div class="ef-pill-sticky-label">Billing Periods</div>
-    </div>
-    <pre style="font-size:11px;color:var(--text);white-space:pre-wrap;word-break:break-word;margin:0">${JSON.stringify(b, null, 2)}</pre>
-  </div>
+</div>`;
+        }
+        box.innerHTML = `<div style="display:flex;gap:10px;align-items:flex-start">
+  <div class="ef-pill-col" style="flex:0 0 auto;min-width:220px">${nav}</div>
+  <pre style="flex:1;min-width:0;font-size:11px;color:var(--text);white-space:pre-wrap;word-break:break-word;margin:0">${JSON.stringify(b, null, 2)}</pre>
 </div>`;
       }
       function selectMultiBill(i) {
@@ -18322,7 +18324,9 @@
           { type: 'pair', fields: ['NaturalGasTherms', 'TotalAmountDue'] },
           { type: 'pair', fields: ['PeakDemandKW'] },
         ];
-        const el = document.getElementById('extractedFields');
+        const elHdr = document.getElementById('extractedFieldsHdr');
+        const el = document.getElementById('extractedFieldsGrid');
+        if (!elHdr || !el) return;
         // Collect all layout keys + any extra extracted fields not in layout
         const layoutKeys = new Set(
           FIELD_LAYOUT.flatMap((r) => [...(r.fields || []), r.chargeField, r.qtyField, r.kwField].filter(Boolean)),
@@ -18783,10 +18787,13 @@
   <button onclick="openDupModal(${_dupIdx})" style="flex-shrink:0;font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.1);color:#f59e0b;cursor:pointer;font-weight:600">Compare &amp; Choose Fields</button>
 </div>`;
         }
-        // Everything above the field grid (title + all banners) is pinned via ef-sticky-header
-        // so it stays visible as the user scrolls through the fields — the first grid row
-        // is Account Info, per FIELD_LAYOUT.
-        el.innerHTML = `<div class="ef-sticky-header"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${sumMismatchHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}</div><div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
+        // Split output between the frozen header (title + banners) and the scrollable grid
+        // body (the actual field cells). The header lives in #pdfFrozenHdr which is
+        // flex-shrink:0, and the grid is in #pdfScrollBody which is the flex:1 overflow-y
+        // scroll container — so everything above Account Info stays frozen exactly like
+        // the Utility Data page, no position:sticky tricks required.
+        elHdr.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${sumMismatchHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}`;
+        el.innerHTML = `<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
 
         // ── Wire up change handlers: update data + recalculate total when user edits ──
         el.querySelectorAll('.ef-input[data-key]').forEach((inp) => {
