@@ -2344,24 +2344,25 @@
       }
       .ef-row {
         display: flex;
-        align-items: flex-start;
-        gap: 10px;
+        align-items: center;
+        gap: 6px;
       }
-      /* Input holds a number/date/short string — give it a fixed sensible width and let the
-         warning column grab all remaining space beside it. */
       .ef-row > .ef-input {
-        flex: 0 0 180px;
-        min-width: 0;
-      }
-      .ef-warn-col {
         flex: 1 1 auto;
         min-width: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
       }
-      .ef-warn-col > div {
-        margin-top: 0 !important;
+      /* Compact icon strip — hover any icon to see the full explanation in a tooltip.
+         Cell height stays constant regardless of how much warning text there is. */
+      .ef-icons {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 13px;
+      }
+      .ef-ico {
+        cursor: help;
+        line-height: 1;
       }
       .ef-pair {
         display: grid;
@@ -18020,6 +18021,14 @@
 
         // Helper: build a single field cell HTML
         const _pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+        // Escape double quotes and newlines so a message can live inside a title="..." attribute.
+        const _titleEscape = (s) =>
+          String(s || '')
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\n/g, ' ');
         function buildCell(k) {
           const v = parsed[k] ?? '';
           const fw = warnMap[k] || [];
@@ -18036,35 +18045,45 @@
           else if (fw.length) borderStyle = 'border-left:3px solid ' + wColor[fw[0].level] + ';padding-left:8px';
           else if (magFlag) borderStyle = 'border-left:3px solid #fb923c;padding-left:8px';
           else if (isEmpty) borderStyle = 'border-left:3px solid var(--border2);padding-left:8px;opacity:.7';
-          const warnHtml = fw
-            .map(
-              (w) =>
-                `<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:${wBg[w.level]};border:1px solid ${wBorder[w.level]};color:${wColor[w.level]};line-height:1.4">${wIcon[w.level]} ${w.message}</div>`,
-            )
-            .join('');
-          const magHtml = magFlag
-            ? '<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.25);color:#fb923c;line-height:1.4">⚠️ Possible OCR error: value is ' +
-              magFlag.ratio.toFixed(1) +
-              'x the historical average (' +
-              magFlag.mean.toLocaleString(undefined, { maximumFractionDigits: 2 }) +
-              '). Verify against source bill.</div>'
-            : '';
-          const likelyHtml =
-            likelyMissing && isEmpty
-              ? '<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.25);color:#a78bfa;line-height:1.4">🔍 Historical data shows this field is present on 80%+ of prior bills — likely an OCR miss</div>'
-              : '';
-          // Auto-correction indicator: green border, shows original value and math, with revert button
-          // Use $ prefix only for charge fields, not for kW/kWh quantity fields
+          // Build a compact icon strip — each icon carries the full explanation in its title
+          // attribute (hover to see). This keeps cell heights uniform regardless of how much
+          // warning/correction text there is.
           const _acIsCharge = CHARGE_FIELDS.has(k);
           const _acPfx = _acIsCharge ? '$' : '';
           const _acDp = _acIsCharge ? 2 : 4;
-          const correctHtml = autoCorrect
-            ? `<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);color:#22c55e;line-height:1.4">✓ Corrected from ${_acPfx}${parseFloat(autoCorrect.original).toFixed(_acDp)} → ${_acPfx}${parseFloat(autoCorrect.corrected).toFixed(_acDp)}<br><span style="opacity:.8">${autoCorrect.reason}</span> <a href="#" onclick="event.preventDefault();this.closest('.ef-item').querySelector('.ef-input').value='${_acPfx}${parseFloat(autoCorrect.original).toFixed(_acDp)}';this.closest('.ef-item').querySelector('.ef-input').dispatchEvent(new Event('change'));this.closest('div').remove()" style="color:#22c55e;text-decoration:underline;margin-left:6px">↩ Revert</a></div>`
-            : '';
-          const consensusHtml =
-            ocrConsensus && !autoCorrect
-              ? `<div style="font-size:10px;margin-top:3px;padding:3px 6px;border-radius:4px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);color:#22c55e;line-height:1.4">✓ Corrected from $${parseFloat(ocrConsensus.original).toFixed(2)} → $${parseFloat(ocrConsensus.consensus).toFixed(2)}<br><span style="opacity:.8">Alternate OCR pass resolved sum mismatch</span> <a href="#" onclick="event.preventDefault();this.closest('.ef-item').querySelector('.ef-input').value='$${parseFloat(ocrConsensus.original).toFixed(2)}';this.closest('.ef-item').querySelector('.ef-input').dispatchEvent(new Event('change'));this.closest('div').remove()" style="color:#22c55e;text-decoration:underline;margin-left:6px">↩ Revert</a></div>`
-              : '';
+          const icons = [];
+          if (autoCorrect) {
+            const origFmt = _acPfx + parseFloat(autoCorrect.original).toFixed(_acDp);
+            const corrFmt = _acPfx + parseFloat(autoCorrect.corrected).toFixed(_acDp);
+            const msg = `Corrected from ${origFmt} → ${corrFmt}. ${autoCorrect.reason || ''}`;
+            icons.push(`<span class="ef-ico" title="${_titleEscape(msg)}" style="color:#22c55e">&#10003;</span>`);
+          }
+          if (ocrConsensus && !autoCorrect) {
+            const origFmt = '$' + parseFloat(ocrConsensus.original).toFixed(2);
+            const corrFmt = '$' + parseFloat(ocrConsensus.consensus).toFixed(2);
+            const msg = `Corrected from ${origFmt} → ${corrFmt}. Alternate OCR pass resolved sum mismatch`;
+            icons.push(`<span class="ef-ico" title="${_titleEscape(msg)}" style="color:#22c55e">&#10003;</span>`);
+          }
+          for (const w of fw) {
+            icons.push(
+              `<span class="ef-ico" title="${_titleEscape(w.message)}" style="color:${wColor[w.level]}">${wIcon[w.level]}</span>`,
+            );
+          }
+          if (magFlag) {
+            const msg =
+              'Possible OCR error: value is ' +
+              magFlag.ratio.toFixed(1) +
+              'x the historical average (' +
+              magFlag.mean.toLocaleString(undefined, { maximumFractionDigits: 2 }) +
+              '). Verify against source bill.';
+            icons.push(`<span class="ef-ico" title="${_titleEscape(msg)}" style="color:#fb923c">&#9888;</span>`);
+          }
+          if (likelyMissing && isEmpty) {
+            icons.push(
+              `<span class="ef-ico" title="${_titleEscape('Historical data shows this field is present on 80%+ of prior bills — likely an OCR miss')}" style="color:#a78bfa">&#128269;</span>`,
+            );
+          }
+          const iconsHtml = icons.length ? `<span class="ef-icons">${icons.join('')}</span>` : '';
           let displayVal = Array.isArray(v) ? v.join(', ') : (v ?? '');
           if (ID_FIELDS.has(k)) {
             displayVal = String(displayVal);
@@ -18091,14 +18110,16 @@
           const dupIcon = isDupDiff
             ? `<span title="Existing: ${(dupDiff.existVal || '(empty)').replace(/"/g, '&quot;')}" style="cursor:help;color:#f59e0b;font-size:11px;margin-left:4px">&#9432;</span>`
             : '';
-          const warningsHtml = correctHtml + consensusHtml + warnHtml + magHtml + likelyHtml;
-          // When there are warnings/corrections, lay the input and warnings out side-by-side
-          // (value on the left, explanation on the right) so cells stay compact vertically.
-          const inputHtml = `<input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty ? '—' : ''}" style="${dupInputStyle}">`;
-          const bodyHtml = warningsHtml
-            ? `<div class="ef-row">${inputHtml}<div class="ef-warn-col">${warningsHtml}</div></div>`
-            : inputHtml;
-          return `<div class="ef-item" style="${borderStyle}"><div class="ef-key" style="${dupKeyStyle}">${LABELS[k] || k}${dupIcon}</div>${bodyHtml}</div>`;
+          // Right-align numeric inputs so columns line up on the decimal; text stays default-aligned.
+          const isNumeric =
+            !ID_FIELDS.has(k) && typeof displayVal === 'string' && /^-?\$?[\d,]+(?:\.\d+)?$/.test(displayVal);
+          const alignStyle = isNumeric ? ';text-align:right;font-variant-numeric:tabular-nums' : '';
+          const inputHtml = `<input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty ? '—' : ''}" style="${dupInputStyle}${alignStyle}">`;
+          const keyHtml = `<div class="ef-key" style="${dupKeyStyle}">${LABELS[k] || k}${dupIcon}</div>`;
+          // Input on the left, icons on the right — cell height stays constant regardless of
+          // how much warning/correction text there is (tooltip holds the full explanation).
+          const bodyHtml = iconsHtml ? `<div class="ef-row">${inputHtml}${iconsHtml}</div>` : inputHtml;
+          return `<div class="ef-item" style="${borderStyle}">${keyHtml}${bodyHtml}</div>`;
         }
 
         // Build layout HTML with running total on charge rows
