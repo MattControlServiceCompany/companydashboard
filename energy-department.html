@@ -2351,6 +2351,20 @@
         flex: 1 1 auto;
         min-width: 0;
       }
+      /* Auto-correct row: input shrinks to content so the green check sits next to the value. */
+      .ef-row-fit {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .ef-row-fit > .ef-input {
+        flex: 0 0 auto;
+        width: auto;
+        min-width: 60px;
+      }
+      .ef-row-fit > .ef-icons {
+        margin-left: auto;
+      }
       /* Compact icon strip — hover any icon to see the full explanation in a tooltip.
          Cell height stays constant regardless of how much warning text there is. */
       .ef-icons {
@@ -2363,6 +2377,42 @@
       .ef-ico {
         cursor: help;
         line-height: 1;
+      }
+      /* Auto-correct hover popup — appears on any hover over the cell, styled as a green
+         border box with green text and a Revert button (matches the previous inline layout). */
+      .ef-ac-tooltip {
+        display: none;
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        right: 0;
+        z-index: 20;
+        padding: 8px 10px;
+        background: rgba(34, 197, 94, 0.08);
+        border: 1px solid #22c55e;
+        border-radius: 6px;
+        color: #22c55e;
+        font-size: 11px;
+        line-height: 1.45;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+      }
+      .ef-item:hover .ef-ac-tooltip {
+        display: block;
+      }
+      .ef-ac-revert {
+        margin-top: 6px;
+        padding: 3px 10px;
+        font-size: 10px;
+        background: transparent;
+        border: 1px solid #22c55e;
+        border-radius: 4px;
+        color: #22c55e;
+        cursor: pointer;
+        font-family: var(--font);
+        font-weight: 600;
+      }
+      .ef-ac-revert:hover {
+        background: rgba(34, 197, 94, 0.2);
       }
       .ef-pair {
         display: grid;
@@ -2399,6 +2449,7 @@
         border: 1px solid var(--border);
         border-radius: 7px;
         padding: 7px 10px;
+        position: relative;
       }
       .ef-item.wide {
         grid-column: 1/-1;
@@ -17681,18 +17732,46 @@
         const idx = window._pdfMultiIdx || 0;
         const b = bills[idx];
         const warnings = window._pdfBillWarnings || [];
+        // Short MM/DD/YY date format for the pill labels
+        const _shortDt = (s) => (s ? String(s).replace(/^(\d{1,2}\/\d{1,2}\/)\d{2}(\d{2})$/, '$1$2') : s);
+        // Majority-month label (e.g. "Mar 2024") for a bill's period. Uses majority-days
+        // inline to avoid the MM/DD/YYYY ↔ YYYY-MM-DD format mismatch with normMonth.
+        const _monthLabel = (bill) => {
+          const parse = (str) => {
+            if (!str) return null;
+            const m = String(str).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            return m ? new Date(+m[3], +m[1] - 1, +m[2]) : null;
+          };
+          const s = parse(bill.BillingPeriodStart);
+          const e = parse(bill.BillingPeriodEnd);
+          if (!s || !e || s > e) return '';
+          const counts = {};
+          let cur = new Date(s);
+          while (cur <= e) {
+            const key = cur.getFullYear() + '-' + (cur.getMonth() + 1);
+            counts[key] = (counts[key] || 0) + 1;
+            cur.setDate(cur.getDate() + 1);
+          }
+          const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+          const [y, mo] = top.split('-').map(Number);
+          return new Date(y, mo - 1, 1).toLocaleDateString('en-US', {
+            month: 'short',
+            year: 'numeric',
+          });
+        };
         // Build period labels with sort indices for descending order.
-        // Label is the full billing period date range (MM/DD/YYYY–MM/DD/YYYY) for unambiguous identification.
+        // Pill label is MM/DD/YY-MM/DD/YY (short year, hyphen); month column shows "Mon YYYY".
         const periods = bills.map((bill, i) => {
           const lbl =
             bill.BillingPeriodStart && bill.BillingPeriodEnd
-              ? bill.BillingPeriodStart + '–' + bill.BillingPeriodEnd
+              ? _shortDt(bill.BillingPeriodStart) + '-' + _shortDt(bill.BillingPeriodEnd)
               : 'Period ' + (i + 1);
+          const monthLbl = _monthLabel(bill);
           // Parse a sortable date from BillingPeriodEnd (or Start)
           const sortDate = bill.BillingPeriodEnd
             ? new Date(bill.BillingPeriodEnd)
             : new Date(bill.BillingPeriodStart || 0);
-          return { i, lbl, sortDate };
+          return { i, lbl, monthLbl, sortDate };
         });
         // Sort descending by date (newest first)
         periods.sort((a, b) => b.sortDate - a.sortDate);
@@ -17741,6 +17820,14 @@
             return `<button onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasAnyIssue ? '700' : '400'};width:100%;text-align:left;white-space:nowrap">${p.lbl}${hasAnyIssue ? ' ⚠' : ''}${dupDot}</button>`;
           })
           .join('');
+        // Month-label column — one entry per pill, same row height (5px vert padding + 1px
+        // transparent border to match the pills) so rows line up visually.
+        const monthsCol = periods
+          .map(
+            (p) =>
+              `<div style="font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;padding:5px 0;border:1px solid transparent;color:var(--text2);white-space:nowrap;text-align:right">${p.monthLbl || ''}</div>`,
+          )
+          .join('');
         // Duplicate summary banner
         const dupIndices = Object.keys(dupMap).map(Number);
         let dupBannerHtml = '';
@@ -17776,9 +17863,14 @@
           badgeEl.style.display = 'inline-block';
           badgeEl.innerHTML = `<button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="font-size:10px;padding:3px 12px">Save All ${bills.length} Periods</button>`;
         }
-        // Two-column layout inside pdfAIBox: billing periods nav on left, JSON output on right
-        box.innerHTML = `${dupBannerHtml}<div style="display:flex;gap:14px;align-items:flex-start">
-  <div style="flex:0 0 auto;min-width:110px;display:flex;flex-direction:column;gap:3px">
+        // Three-column layout inside pdfAIBox: month labels | billing period pills | JSON output.
+        // The month column shifts the pills and JSON to the right to make room for "Mon YYYY" labels.
+        box.innerHTML = `${dupBannerHtml}<div style="display:flex;gap:10px;align-items:flex-start">
+  <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:3px">
+    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:4px;text-align:right">Month</span>
+    ${monthsCol}
+  </div>
+  <div style="flex:0 0 auto;min-width:150px;display:flex;flex-direction:column;gap:3px">
     <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:4px">Billing Periods</span>
     ${nav}
   </div>
@@ -17793,6 +17885,32 @@
         renderMultiBillUI(bills, box);
         const billWarnings = (window._pdfBillWarnings || [])[i]?.warnings || [];
         renderPDFFields(bills[i], billWarnings);
+      }
+      // Restore an auto-corrected field to its original OCR value and strip the correction marker,
+      // then re-render so the green border / checkmark / tooltip go away.
+      function revertAutoCorrect(field) {
+        const bills = window._pdfMultiBills;
+        const idx = window._pdfMultiIdx || 0;
+        if (!bills || !bills[idx]) return;
+        const b = bills[idx];
+        const ac = b['_auto_corrected_' + field];
+        if (!ac) return;
+        b[field] = ac.original;
+        delete b['_auto_corrected_' + field];
+        const billWarnings = (window._pdfBillWarnings || [])[idx]?.warnings || [];
+        renderPDFFields(b, billWarnings);
+      }
+      function revertOCRConsensus(field) {
+        const bills = window._pdfMultiBills;
+        const idx = window._pdfMultiIdx || 0;
+        if (!bills || !bills[idx]) return;
+        const b = bills[idx];
+        const oc = b['_ocr_consensus_' + field];
+        if (!oc) return;
+        b[field] = oc.original;
+        delete b['_ocr_consensus_' + field];
+        const billWarnings = (window._pdfBillWarnings || [])[idx]?.warnings || [];
+        renderPDFFields(b, billWarnings);
       }
       async function savePDFAllBills() {
         const bills = window._pdfMultiBills;
@@ -18154,19 +18272,22 @@
           const _acIsCharge = CHARGE_FIELDS.has(k);
           const _acPfx = _acIsCharge ? '$' : '';
           const _acDp = _acIsCharge ? 2 : 4;
-          const icons = [];
+          // The auto-correct / OCR-consensus checkmark is rendered inline next to the value
+          // (not in the right-side icon strip) and paired with a full-cell hover popup below.
+          let acInlineIcon = '';
+          let acTooltipHtml = '';
           if (autoCorrect) {
             const origFmt = _acPfx + parseFloat(autoCorrect.original).toFixed(_acDp);
             const corrFmt = _acPfx + parseFloat(autoCorrect.corrected).toFixed(_acDp);
-            const msg = `Corrected from ${origFmt} → ${corrFmt}. ${autoCorrect.reason || ''}`;
-            icons.push(`<span class="ef-ico" title="${_titleEscape(msg)}" style="color:#22c55e">&#10003;</span>`);
-          }
-          if (ocrConsensus && !autoCorrect) {
+            acInlineIcon = `<span class="ef-ico" style="color:#22c55e">&#10003;</span>`;
+            acTooltipHtml = `<div class="ef-ac-tooltip">Corrected from <b>${origFmt}</b> &rarr; <b>${corrFmt}</b>.<br>${_titleEscape(autoCorrect.reason || '')}<br><button class="ef-ac-revert" onclick="revertAutoCorrect('${k}')">&#8634; Revert</button></div>`;
+          } else if (ocrConsensus) {
             const origFmt = '$' + parseFloat(ocrConsensus.original).toFixed(2);
             const corrFmt = '$' + parseFloat(ocrConsensus.consensus).toFixed(2);
-            const msg = `Corrected from ${origFmt} → ${corrFmt}. Alternate OCR pass resolved sum mismatch`;
-            icons.push(`<span class="ef-ico" title="${_titleEscape(msg)}" style="color:#22c55e">&#10003;</span>`);
+            acInlineIcon = `<span class="ef-ico" style="color:#22c55e">&#10003;</span>`;
+            acTooltipHtml = `<div class="ef-ac-tooltip">Corrected from <b>${origFmt}</b> &rarr; <b>${corrFmt}</b>.<br>Alternate OCR pass resolved sum mismatch<br><button class="ef-ac-revert" onclick="revertOCRConsensus('${k}')">&#8634; Revert</button></div>`;
           }
+          const icons = [];
           for (const w of fw) {
             icons.push(
               `<span class="ef-ico" title="${_titleEscape(w.message)}" style="color:${wColor[w.level]}">${wIcon[w.level]}</span>`,
@@ -18213,12 +18334,24 @@
           const dupIcon = isDupDiff
             ? `<span title="Existing: ${(dupDiff.existVal || '(empty)').replace(/"/g, '&quot;')}" style="cursor:help;color:#f59e0b;font-size:11px;margin-left:4px">&#9432;</span>`
             : '';
-          const inputHtml = `<input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty ? '—' : ''}" style="${dupInputStyle}">`;
+          // When auto-corrected, size the input to roughly fit its value so the green check
+          // sits immediately next to the value instead of at the far right of the cell.
+          const _hasAc = !!(autoCorrect || ocrConsensus);
+          const _fitSize = _hasAc ? Math.max(String(displayVal).length + 1, 5) : null;
+          const sizeAttr = _fitSize ? ` size="${_fitSize}"` : '';
+          const inputHtml = `<input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty ? '—' : ''}" style="${dupInputStyle}"${sizeAttr}>`;
           const keyHtml = `<div class="ef-key" style="${dupKeyStyle}">${LABELS[k] || k}${dupIcon}</div>`;
-          // Input on the left, icons on the right — cell height stays constant regardless of
-          // how much warning/correction text there is (tooltip holds the full explanation).
-          const bodyHtml = iconsHtml ? `<div class="ef-row">${inputHtml}${iconsHtml}</div>` : inputHtml;
-          return `<div class="ef-item" style="${borderStyle}">${keyHtml}${bodyHtml}</div>`;
+          // Layout:
+          //  - Auto-correct: input is content-sized so the green check sits right next to it;
+          //    any other warning icons still float to the far right of the row.
+          //  - No auto-correct: input stretches full-width and warning icons sit on the right.
+          let bodyHtml;
+          if (_hasAc) {
+            bodyHtml = `<div class="ef-row-fit">${inputHtml}${acInlineIcon}${iconsHtml}</div>`;
+          } else {
+            bodyHtml = iconsHtml ? `<div class="ef-row">${inputHtml}${iconsHtml}</div>` : inputHtml;
+          }
+          return `<div class="ef-item" style="${borderStyle}">${keyHtml}${bodyHtml}${acTooltipHtml}</div>`;
         }
 
         // Build layout HTML with running total on charge rows
