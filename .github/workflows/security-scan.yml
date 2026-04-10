@@ -1,0 +1,162 @@
+name: Security Scan
+
+# Server-side PII and secrets scan. Mirrors the local pre-commit hook so that
+# even if someone bypasses the local hook (--no-verify, fresh clone without
+# hooks installed, etc.) GitHub itself will catch and block the push.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+jobs:
+  scan:
+    name: PII and secrets scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine files to scan
+        id: files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+          else
+            # First push to a branch — scan all tracked files
+            BASE=""
+            HEAD="${{ github.sha }}"
+          fi
+          if [ -n "$BASE" ]; then
+            git diff --name-only --diff-filter=ACM "$BASE" "$HEAD" > changed_files.txt || true
+          else
+            git ls-files > changed_files.txt
+          fi
+          echo "Files to scan:"
+          cat changed_files.txt
+
+      - name: Scan for phone numbers
+        run: |
+          FOUND=0
+          PHONE='\([0-9]{3}\)\s*[0-9]{3}[-.][0-9]{4}|[0-9]{3}[-. ][0-9]{3}[-. ][0-9]{4}'
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            [ ! -f "$file" ] && continue
+            case "$file" in
+              *.html|*.js|*.css|*.json|*.md|*.txt|*.yaml|*.yml)
+                if grep -oP "$PHONE" "$file" > /tmp/matches.txt 2>/dev/null && [ -s /tmp/matches.txt ]; then
+                  echo "::error file=$file::Phone number pattern detected"
+                  head -5 /tmp/matches.txt
+                  FOUND=1
+                fi
+                ;;
+            esac
+          done < changed_files.txt
+          exit $FOUND
+
+      - name: Scan for emails (excluding safe patterns)
+        run: |
+          FOUND=0
+          EMAIL='[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.(com|org|edu|net|gov|io|co)'
+          SAFE='example\.com|placeholder|noreply@|test@test|demo@|anthropic\.com|github\.com'
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            [ ! -f "$file" ] && continue
+            case "$file" in
+              *.html|*.js|*.css|*.json|*.md|*.txt|*.yaml|*.yml)
+                if grep -oiP "$EMAIL" "$file" 2>/dev/null | grep -viP "$SAFE" > /tmp/matches.txt && [ -s /tmp/matches.txt ]; then
+                  echo "::error file=$file::Email address detected"
+                  head -5 /tmp/matches.txt
+                  FOUND=1
+                fi
+                ;;
+            esac
+          done < changed_files.txt
+          exit $FOUND
+
+      - name: Scan for API keys and secrets
+        run: |
+          FOUND=0
+          PATTERNS=(
+            'sk-[a-zA-Z0-9]{20,}'
+            'sk-ant-[a-zA-Z0-9-]{20,}'
+            'AKIA[0-9A-Z]{16}'
+            'ghp_[a-zA-Z0-9]{36}'
+            'gho_[a-zA-Z0-9]{36}'
+            'xox[bpas]-[a-zA-Z0-9-]+'
+            'api[_-]?key\s*[:=]\s*["\x27][a-zA-Z0-9]'
+            'password\s*[:=]\s*["\x27][^\s]'
+            'secret\s*[:=]\s*["\x27][a-zA-Z0-9]'
+            'token\s*[:=]\s*["\x27][a-zA-Z0-9]'
+            'Bearer\s+[a-zA-Z0-9._-]{20,}'
+          )
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            [ ! -f "$file" ] && continue
+            case "$file" in
+              *.html|*.js|*.css|*.json|*.md|*.txt|*.yaml|*.yml|*.env)
+                for p in "${PATTERNS[@]}"; do
+                  if grep -oP "$p" "$file" > /tmp/matches.txt 2>/dev/null && [ -s /tmp/matches.txt ]; then
+                    echo "::error file=$file::Secret or credential pattern detected"
+                    head -3 /tmp/matches.txt
+                    FOUND=1
+                  fi
+                done
+                ;;
+            esac
+          done < changed_files.txt
+          exit $FOUND
+
+      - name: Scan for client name blocklist
+        run: |
+          FOUND=0
+          NAMES=( # REDACTED client blocklist — do not edit inline; use the block below
+            'controlservice\.com' # REDACTED
+            'adventhealth' # REDACTED
+            'isdschools' # REDACTED
+            'kcpublicschools' # REDACTED
+            'pembrokehill' # REDACTED
+            'nixaschools' # REDACTED
+            'downstreamcasino' # REDACTED
+            'copaken-brooks' # REDACTED
+            'younglife\.org' # REDACTED
+            'evangel\.edu' # REDACTED
+            'kindredbio' # REDACTED
+            'loewshotels' # REDACTED
+            'crawfordcountykansas' # REDACTED
+          )
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            [ ! -f "$file" ] && continue
+            case "$file" in
+              *.html|*.js|*.css|*.json|*.md|*.txt|*.yaml|*.yml)
+                FILTERED=$(grep -viP 'demo@|Demo User|placeholder|example\.com|REDACTED' "$file" 2>/dev/null)
+                for n in "${NAMES[@]}"; do
+                  if echo "$FILTERED" | grep -oiP "$n" > /tmp/matches.txt 2>/dev/null && [ -s /tmp/matches.txt ]; then
+                    echo "::error file=$file::Client or company name detected: $n"
+                    FOUND=1
+                  fi
+                done
+                ;;
+            esac
+          done < changed_files.txt
+          exit $FOUND
+
+      - name: Check for banned file types
+        run: |
+          FOUND=0
+          BANNED='\.env$|credentials\.json|\.pem$|\.key$|\.pfx$|id_rsa|id_ed25519|client_secret|service-account|^CLAUDE\.md$|^GEMINI\.md$|^AGENTS\.md$|\.cursorrules'
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            if echo "$file" | grep -qiP "$BANNED"; then
+              echo "::error file=$file::Banned file type committed"
+              FOUND=1
+            fi
+          done < changed_files.txt
+          exit $FOUND
