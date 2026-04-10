@@ -13576,13 +13576,15 @@
         // ── Meter read table (supports multi-row: meter changes and solar net metering) ──
         // Format: StartDate EndDate Days EndRead(-) StartRead(=) Diff (x)Mult (=)kWhUsed KWUsed RKVAUsed
         // Groups: [1]StartDate [2]EndDate [3]Days [4]EndRead [5]StartRead [6]Difference [7]Mult [8]kWhUsed [9]KWUsed [10]RKVAUsed
-        // Pre-normalize OCR junk to spaces (1:1 char replacement, preserves length) and colons→commas,
-        // so the regex can use a simple strict \s+ separator with unambiguous quantifiers. This avoids
-        // Firefox "too much recursion" from catastrophic backtracking on long OCR lines.
+        // Pre-normalize OCR junk to spaces (1:1 char replacement, preserves length) and colons→commas.
+        // The separator is [^\S\n]+ (whitespace EXCLUDING newline) so a single meter row must live on
+        // one line — prevents the regex from chaining numeric tokens across lines and matching things
+        // like the barcode digits at the bottom of each bill page. Unambiguous quantifiers also avoid
+        // Firefox "too much recursion" from catastrophic backtracking.
         const _meterT = t.replace(/[^\d\s+\-./,:\n]/g, ' ').replace(/:/g, ',');
         // Date pattern supports MM/DD (with optional slash) and 3-5 digit OCR garble like "12001" → "12/01"
         const _meterRe =
-          /(\d{1,2}\/?\d{1,3})\s+(\d{1,2}\/?\d{1,3})\s+(\d+)\s+[-+]?\s*([\d,]+(?:\.\d+)?)\s+[-+]?\s*([\d,]+(?:\.\d+)?)\s+[-+]?\s*([\d,]+(?:\.\d+)?)\s+[-+]?\s*([\d,.]+)\s+[-+]?\s*([\d,]+(?:\.\d+)?)\s+([\d,.]+)\s+([\d,.]+)/g;
+          /(\d{1,2}\/?\d{1,3})[^\S\n]+(\d{1,2}\/?\d{1,3})[^\S\n]+(\d+)[^\S\n]+[-+]?[^\S\n]*([\d,]+(?:\.\d+)?)[^\S\n]+[-+]?[^\S\n]*([\d,]+(?:\.\d+)?)[^\S\n]+[-+]?[^\S\n]*([\d,]+(?:\.\d+)?)[^\S\n]+[-+]?[^\S\n]*([\d,.]+)[^\S\n]+[-+]?[^\S\n]*([\d,]+(?:\.\d+)?)[^\S\n]+([\d,.]+)[^\S\n]+([\d,.]+)/g;
         const _meterRows = [];
         let _mm;
         while ((_mm = _meterRe.exec(_meterT)) !== null) _meterRows.push(_mm);
@@ -17414,8 +17416,10 @@
               (_totalVal > 0 && _chargeSum > 0 && Math.abs(_chargeSum - _totalVal) >= 0.5);
             const hasAnyIssue = hasIssues || hasSumMismatch;
             const issueColor = hasSumMismatch ? '--red' : '--amber';
-            const pillColor = active ? 'var(--accent)' : hasAnyIssue ? 'var(' + issueColor + ')' : 'var(--text2)';
-            const pillBorder = active ? 'var(--accent)' : hasAnyIssue ? 'var(' + issueColor + ')' : 'var(--border2)';
+            // Issue color wins for border+text so warnings stay visible even when the pill is selected;
+            // active state still shows through the background color (accent-dim vs issue-dim).
+            const pillColor = hasAnyIssue ? 'var(' + issueColor + ')' : active ? 'var(--accent)' : 'var(--text2)';
+            const pillBorder = hasAnyIssue ? 'var(' + issueColor + ')' : active ? 'var(--accent)' : 'var(--border2)';
             const pillBg = active ? 'var(--accent-dim)' : hasAnyIssue ? 'var(' + issueColor + '-dim)' : 'transparent';
             const isDup = !!dupMap[p.i];
             const dupDot = isDup
@@ -17444,10 +17448,10 @@
             Object.entries(locs).forEach(([loc, cnt]) => parts.push(cnt + ' assigned to ' + loc));
           }
           if (savedCount) parts.push(savedCount + ' in Saved Bills');
-          dupBannerHtml = `<div style="padding:8px 12px;margin:0 0 8px;border-radius:6px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);font-size:12px;color:#f59e0b;line-height:1.6">
-  <strong>&#9888; ${dupIndices.length} of ${bills.length} bills already exist</strong> &mdash; ${parts.join(', ')}
-  <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
-    <button onclick="_dupBulkAction('skip')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:#f59e0b;cursor:pointer">Skip All Duplicates</button>
+          dupBannerHtml = `<div style="padding:5px 12px;margin:0 0 8px;border-radius:6px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);font-size:12px;color:#f59e0b;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+  <span style="flex:1;min-width:0"><strong>&#9888; ${dupIndices.length} of ${bills.length} bills already exist</strong> &mdash; ${parts.join(', ')}</span>
+  <div style="display:flex;gap:6px;flex-shrink:0">
+    <button onclick="_dupBulkAction('skip')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:#f59e0b;cursor:pointer">Skip All</button>
     <button onclick="_dupBulkAction('overwrite')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:#f59e0b;cursor:pointer">Overwrite All</button>
     <button onclick="_dupBulkAction('merge')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:#f59e0b;cursor:pointer">Merge All</button>
   </div>
@@ -18097,19 +18101,22 @@
               return `<a href="#" onclick="event.preventDefault();document.querySelector('.ef-input[data-key=\\'${w.field}\\']')?.closest('.ef-item')?.scrollIntoView({behavior:'smooth',block:'center'});document.querySelector('.ef-input[data-key=\\'${w.field}\\']')?.focus()" style="color:${color};text-decoration:underline;cursor:pointer;font-size:11px">${label}</a>`;
             });
           const flagLinks = flaggedFields.length
-            ? '<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">' + flaggedFields.join('') + '</div>'
+            ? '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;flex-shrink:0">' +
+              flaggedFields.join('') +
+              '</div>'
             : '';
           // Use red background if sum mismatch or errors, amber if only warnings
           const bannerBg = hasSumIssue || errorCount ? 'rgba(239,68,68,.06)' : 'rgba(245,158,11,.06)';
           const bannerBorder = hasSumIssue || errorCount ? 'rgba(239,68,68,.2)' : 'rgba(245,158,11,.2)';
           summaryHtml =
-            '<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:' +
+            '<div style="padding:5px 12px;margin:8px 0;border-radius:6px;background:' +
             bannerBg +
             ';border:1px solid ' +
             bannerBorder +
-            ';font-size:12px;line-height:1.5;color:var(--text2)">Data Analysis: ' +
+            ';font-size:12px;color:var(--text2);display:flex;align-items:center;gap:10px;flex-wrap:wrap" title="Click a field to jump to it">' +
+            '<span style="flex:1;min-width:0">Data Analysis: ' +
             parts.join(' · ') +
-            '<br><span style="font-size:11px;opacity:.8">Click a field to jump to it. Missing values may indicate OCR issues — edit to correct.</span>' +
+            '</span>' +
             flagLinks +
             '</div>';
         } else if (correctedFields.length && !errorCount && !warnCount) {
@@ -18133,12 +18140,9 @@
           const pdfStatus = _dupInfo.hasPDF
             ? `<span style="cursor:pointer;text-decoration:underline" onclick="_viewDupPDF(${_dupIdx})">&#128196; PDF stored</span>`
             : 'No PDF stored';
-          dupFieldBannerHtml = `<div style="padding:8px 12px;margin:6px 0;border-radius:6px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.25);font-size:12px;color:#f59e0b;line-height:1.6">
-  <strong>&#9888; Duplicate Bill</strong> &mdash; ${_dupInfo.location}${actionLabel}<br>
-  <span style="font-size:11px">${diffCount} of ${totalFields} fields differ${diffCount > 0 ? ' — possible rebill' : ''} &middot; ${pdfStatus}</span>
-  <div style="margin-top:6px;display:flex;gap:6px">
-    <button onclick="openDupModal(${_dupIdx})" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.1);color:#f59e0b;cursor:pointer;font-weight:600">Compare &amp; Choose Fields</button>
-  </div>
+          dupFieldBannerHtml = `<div style="padding:5px 12px;margin:6px 0;border-radius:6px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.25);font-size:12px;color:#f59e0b;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+  <span style="flex:1;min-width:0"><strong>&#9888; Duplicate Bill</strong> &mdash; ${_dupInfo.location}${actionLabel} &middot; <span style="font-size:11px">${diffCount} of ${totalFields} differ${diffCount > 0 ? ' — possible rebill' : ''} &middot; ${pdfStatus}</span></span>
+  <button onclick="openDupModal(${_dupIdx})" style="flex-shrink:0;font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.1);color:#f59e0b;cursor:pointer;font-weight:600">Compare &amp; Choose Fields</button>
 </div>`;
         }
         el.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${dupFieldBannerHtml}${summaryHtml}${correctionHtml}${sumMismatchHtml}<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
