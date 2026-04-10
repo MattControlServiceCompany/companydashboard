@@ -15786,10 +15786,90 @@
             } else if (!curBilledKw && billedKwMax && billedKwMax < 10000) {
               b.BilledKW = billedKwMax.toFixed(4);
             }
-            // Meter multiplier sanity: Evergy uses a small known set; >10,000 is almost certainly OCR garble
-            const mult = pf(b.MeterMultiplier);
-            if (mult > 10000) {
-              b['_mult_flag'] = { value: mult, reason: 'Meter multiplier > 10,000 is almost certainly OCR garble' };
+            // ── Meter table cross-validation: ReadDifference / MeterMultiplier / kWhConsumed ──
+            // Two identities anchor the meter table:
+            //   (1) EndRead - StartRead = ReadDifference
+            //   (2) ReadDifference × MeterMultiplier = kWhConsumed
+            // And one sanity rule:
+            //   ReadDifference ≤ EndRead  (unless EndRead < StartRead, which is a meter rollover)
+            // MeterMultiplier is almost always consistent across bills for the same meter, so
+            // neighbor bills provide a trustworthy reference when OCR garbles the current bill.
+            const _getNeighborMult = () => {
+              const acct = (b.AccountNumber || '').replace(/[\s\-]/g, '');
+              const multCounts = {};
+              for (let j = Math.max(0, i - 6); j < Math.min(bills.length, i + 7); j++) {
+                if (j === i) continue;
+                const nb = bills[j];
+                if ((nb.AccountNumber || '').replace(/[\s\-]/g, '') !== acct) continue;
+                const nm = pf(nb.MeterMultiplier);
+                if (nm > 0 && nm <= 10000) {
+                  const key = nm.toFixed(4);
+                  multCounts[key] = (multCounts[key] || 0) + 1;
+                }
+              }
+              const sorted = Object.entries(multCounts).sort((a, c) => c[1] - a[1]);
+              return sorted.length ? parseFloat(sorted[0][0]) : null;
+            };
+            const curMult = pf(b.MeterMultiplier);
+            const neighborMult = _getNeighborMult();
+            // Correct an obviously-garbled multiplier (> 10k or way off neighbor consensus)
+            if (neighborMult && neighborMult > 0) {
+              const multOutOfRange = curMult > 10000;
+              const multOffNeighbor = curMult > 0 && Math.abs(curMult - neighborMult) / neighborMult > 0.05;
+              if (multOutOfRange || multOffNeighbor || !curMult) {
+                b['_auto_corrected_MeterMultiplier'] = {
+                  original: b.MeterMultiplier,
+                  corrected: neighborMult.toFixed(4),
+                  reason: 'Neighbor bills on the same account use ' + neighborMult.toFixed(4),
+                };
+                b.MeterMultiplier = neighborMult.toFixed(4);
+              }
+            } else if (curMult > 10000) {
+              b['_likely_missing_MeterMultiplier'] = true;
+              b.MeterMultiplier = null;
+            }
+            // Recompute ReadDifference via the two identities when the current value is suspect.
+            const endR = pf(b.EndRead);
+            const startR = pf(b.StartRead);
+            const multNow = pf(b.MeterMultiplier);
+            const kwhNow = pf(b.kWhConsumed);
+            const curDiff = pf(b.ReadDifference);
+            // Sanity check: ReadDifference must not exceed EndRead (unless rollover).
+            const diffExceedsEnd = curDiff > 0 && endR > 0 && startR > 0 && endR >= startR && curDiff > endR;
+            // Cross-check against EndRead - StartRead
+            const subtractionDiff = endR > startR && startR > 0 ? endR - startR : null;
+            const diffOffSubtraction =
+              subtractionDiff !== null &&
+              curDiff > 0 &&
+              Math.abs(curDiff - subtractionDiff) / Math.max(subtractionDiff, 1) > 0.02;
+            // Cross-check against kWhConsumed / MeterMultiplier
+            const kwhDerivedDiff = kwhNow > 0 && multNow > 0 ? kwhNow / multNow : null;
+            const diffOffKwh =
+              kwhDerivedDiff !== null &&
+              curDiff > 0 &&
+              Math.abs(curDiff - kwhDerivedDiff) / Math.max(kwhDerivedDiff, 1) > 0.02;
+            if (diffExceedsEnd || diffOffSubtraction || diffOffKwh || !curDiff) {
+              // Prefer subtraction (most direct) when we have both reads; otherwise use kWh/multiplier
+              let recovered = null;
+              let reason = '';
+              if (subtractionDiff !== null && subtractionDiff > 0 && subtractionDiff < 1000000) {
+                recovered = subtractionDiff;
+                reason = 'EndRead − StartRead = ' + subtractionDiff.toFixed(4);
+              } else if (kwhDerivedDiff !== null && kwhDerivedDiff > 0 && kwhDerivedDiff < 1000000) {
+                recovered = kwhDerivedDiff;
+                reason = 'kWhConsumed ÷ MeterMultiplier = ' + kwhDerivedDiff.toFixed(4);
+              }
+              if (recovered !== null && recovered > 0) {
+                b['_auto_corrected_ReadDifference'] = {
+                  original: b.ReadDifference,
+                  corrected: recovered.toFixed(4),
+                  reason,
+                };
+                b.ReadDifference = recovered.toFixed(4);
+              } else if (diffExceedsEnd) {
+                b['_likely_missing_ReadDifference'] = true;
+                b.ReadDifference = null;
+              }
             }
             // Final sanity strip: if ActualKW/BilledKW/FacilitiesKW are still in the insane range, null them
             for (const kwField of ['ActualKW', 'BilledKW', 'FacilitiesKW', 'TDCkW', 'ActualRKVA']) {
