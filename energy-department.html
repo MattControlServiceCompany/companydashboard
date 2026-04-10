@@ -2341,6 +2341,26 @@
         flex-direction: column;
         gap: 6px;
         margin-top: 12px;
+        max-width: 760px;
+      }
+      .ef-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .ef-row > .ef-input {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .ef-warn-col {
+        flex: 0 1 55%;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .ef-warn-col > div {
+        margin-top: 0 !important;
       }
       .ef-pair {
         display: grid;
@@ -13572,9 +13592,16 @@
             }
           }
           if (!results.length) return null;
-          // Always include parts array for uniform handling
+          // Aggregate the parts array into a single rate info object.
+          // kWh charges: parts represent portions of the same total period (seasonal split,
+          // prorated days) and SUM to the full-month kWh.
+          // kW charges: parts can represent DIFFERENT per-period kW values on rate changeover or
+          // meter change bills. They are NOT additive — each is charged separately at its own
+          // rate. The representative "bill period peak" is MAX of parts.
+          const aggIsKwh = (results[0].unit || '').toLowerCase().includes('h');
+          const aggQty = aggIsKwh ? results.reduce((s, r) => s + r.qty, 0) : Math.max(...results.map((r) => r.qty));
           return {
-            qty: results.reduce((s, r) => s + r.qty, 0),
+            qty: aggQty,
             rate: results[0].rate,
             unit: results[0].unit,
             computed: results.reduce((s, r) => s + r.computed, 0),
@@ -14364,11 +14391,14 @@
             const parts = ri.parts || [ri];
 
             // ── PER-PART VALIDATION ──
-            // Every charge line gets the same validation: qty × rate ≈ ocrCharge.
+            // Every charge line gets the same validation: qty × rate × (prorationRatio) ≈ ocrCharge.
             // For multi-line charges (split demand, split ECA, etc.), each line is checked independently.
+            // If the line has "(for N of Y days)" proration, the expected charge is prorated too —
+            // otherwise prorated charges falsely appear as big mismatches.
             const partDetails = [];
             for (const part of parts) {
-              const expected = Math.round(part.qty * part.rate * 100) / 100;
+              const ratio = part.prorationNum && part.prorationDen ? part.prorationNum / part.prorationDen : 1;
+              const expected = Math.round(part.qty * part.rate * ratio * 100) / 100;
               const actual = part.ocrCharge ?? part.computed;
               const diff = Math.abs(expected - actual);
               partDetails.push({
@@ -14378,7 +14408,7 @@
                 computed: expected,
                 ocrCharge: actual,
                 diff,
-                valid: diff <= 0.02,
+                valid: diff <= 0.05,
               });
             }
 
@@ -15613,11 +15643,22 @@
           for (let i = 0; i < bills.length; i++) {
             const b = bills[i];
             if (!b._rates) continue;
+            // kWh charge line parts represent portions of the SAME total period (seasonal split,
+            // prorated days, etc.) so their qty should sum to kWhConsumed.
             const getPartsQtySum = (rateKey) => {
               const r = b._rates[rateKey];
               if (!r || !r.parts || !r.parts.length) return null;
               const s = r.parts.reduce((a, p) => a + (p.qty || 0), 0);
               return s > 0 ? s : null;
+            };
+            // kW charge line parts can represent DIFFERENT kW values on meter-change bills
+            // (old meter + new meter mid-month), so summing is wrong — the true ActualKW is the MAX.
+            // On seasonal rate changeover bills, both parts have the same kW and MAX == either one.
+            const getPartsQtyMax = (rateKey) => {
+              const r = b._rates[rateKey];
+              if (!r || !r.parts || !r.parts.length) return null;
+              const m = Math.max(...r.parts.map((p) => p.qty || 0));
+              return m > 0 ? m : null;
             };
             // Collect implied kWh from each charge line that spans the full period
             const kwhImplied = [];
@@ -15664,52 +15705,87 @@
               };
               b.kWhConsumed = consensusKwh.toFixed(4);
             }
-            // Implied kW from TDC charge (same quantity as ActualKW for the current month)
-            const tdcQty = getPartsQtySum('TDCCharge');
-            // BilledKW from its charge line (when not split-demand; when split, sum may be > ActualKW)
-            const billedRate = b._rates.BilledKWCharge;
-            const billedQty =
-              billedRate && billedRate.parts && billedRate.parts.length === 1 ? billedRate.parts[0].qty : null;
-            const kwImplied = [];
-            if (tdcQty) kwImplied.push({ source: 'TDCCharge', value: tdcQty });
-            if (billedQty) kwImplied.push({ source: 'BilledKWCharge', value: billedQty });
-            // FacilitiesKW is a rolling 12-month peak — can equal current month OR be higher, so only
-            // use it as a fallback anchor when the current ActualKW is clearly nonsense.
+            // TDCCharge qty represents ACTUAL kW the customer hit. On rate changeover or meter change
+            // bills, parts carry different kW values per period — they are NOT additive, they are
+            // charged separately at their own rates. The correct aggregate for a single bill's ActualKW
+            // is MAX (the peak kW across the periods).
+            // BilledKWCharge is deliberately NOT used as a cross-validation source because Evergy LGS
+            // Secondary rates have a 200 kW minimum billed demand floor — BilledKW can legitimately
+            // exceed ActualKW. FacilitiesKW is a 12-month rolling peak; only a last-resort fallback.
+            const tdcKwMax = getPartsQtyMax('TDCCharge');
             const facKW = pf(b.FacilitiesKW);
             const curKw = pf(b.ActualKW);
-            const kwOutOfRange = curKw > 0 && (curKw > 10000 || curKw < 0.5);
-            // Prefer consensus from TDC/BilledKW (both should equal ActualKW for non-split months)
+            const kwOutOfRange = curKw > 0 && (curKw > 10000 || curKw < 0.1);
             let consensusKw = null;
-            if (kwImplied.length >= 2 && Math.abs(kwImplied[0].value - kwImplied[1].value) < 0.5) {
-              consensusKw = kwImplied[0].value;
-            } else if (kwImplied.length === 1) {
-              consensusKw = kwImplied[0].value;
+            let kwConsensusReason = '';
+            if (tdcKwMax && tdcKwMax > 0 && tdcKwMax < 10000) {
+              consensusKw = tdcKwMax;
+              kwConsensusReason = 'Cross-validated from TDC Chg qty (max of parts for rate/meter changeover)';
             } else if (kwOutOfRange && facKW > 0 && facKW < 10000) {
               consensusKw = facKW;
+              kwConsensusReason = 'FacilitiesKW fallback (meter table garbled, no TDC consensus)';
             }
             const kwOffFromConsensus = consensusKw && curKw > 0 && Math.abs(curKw - consensusKw) / consensusKw > 0.05;
             if (consensusKw && (kwOutOfRange || kwOffFromConsensus || !curKw)) {
               b['_auto_corrected_ActualKW'] = {
                 original: b.ActualKW,
                 corrected: consensusKw.toFixed(4),
-                reason:
-                  'Cross-validated from ' +
-                  kwImplied.map((x) => x.source).join(', ') +
-                  (consensusKw === facKW ? ' (FacilitiesKW fallback)' : ''),
+                reason: kwConsensusReason,
               };
               b.ActualKW = consensusKw.toFixed(4);
             }
-            // TDCkW should equal ActualKW
+            // TDCkW should equal the peak kW across TDC charge line parts (same rule as ActualKW)
             const curTdcKw = pf(b.TDCkW);
-            if (tdcQty && curTdcKw > 0 && Math.abs(curTdcKw - tdcQty) / tdcQty > 0.05) {
+            if (tdcKwMax && curTdcKw > 0 && Math.abs(curTdcKw - tdcKwMax) / tdcKwMax > 0.05) {
               b['_auto_corrected_TDCkW'] = {
                 original: b.TDCkW,
-                corrected: tdcQty.toFixed(4),
-                reason: 'Derived from TDC Chg qty',
+                corrected: tdcKwMax.toFixed(4),
+                reason: 'Derived from TDC Chg qty (max of parts)',
               };
-              b.TDCkW = tdcQty.toFixed(4);
-            } else if (!curTdcKw && tdcQty) {
-              b.TDCkW = tdcQty.toFixed(4);
+              b.TDCkW = tdcKwMax.toFixed(4);
+            } else if (!curTdcKw && tdcKwMax) {
+              b.TDCkW = tdcKwMax.toFixed(4);
+            }
+            // FacilitiesKW: on rate changeover bills, the Facilities Chg line splits into two parts
+            // with different per-period kW values. The current-period Facilities kW is the MAX.
+            // (The rolling 12-month peak validation runs separately downstream.)
+            const facKwMax = getPartsQtyMax('FacilitiesCharge');
+            const curFacKw = pf(b.FacilitiesKW);
+            if (
+              facKwMax &&
+              facKwMax > 0 &&
+              facKwMax < 10000 &&
+              curFacKw > 0 &&
+              Math.abs(curFacKw - facKwMax) / facKwMax > 0.05
+            ) {
+              b['_auto_corrected_FacilitiesKW'] = {
+                original: b.FacilitiesKW,
+                corrected: facKwMax.toFixed(4),
+                reason: 'Cross-validated from Facilities Chg qty (max of parts)',
+              };
+              b.FacilitiesKW = facKwMax.toFixed(4);
+            } else if (!curFacKw && facKwMax && facKwMax < 10000) {
+              b.FacilitiesKW = facKwMax.toFixed(4);
+            }
+            // BilledKW: same rule — on changeover bills, parts have different per-period kW values.
+            // Use MAX of parts as the representative bill-period billed demand.
+            const billedKwMax = getPartsQtyMax('BilledKWCharge');
+            const curBilledKw = pf(b.BilledKW);
+            if (
+              billedKwMax &&
+              billedKwMax > 0 &&
+              billedKwMax < 10000 &&
+              curBilledKw > 0 &&
+              Math.abs(curBilledKw - billedKwMax) / billedKwMax > 0.05
+            ) {
+              b['_auto_corrected_BilledKW'] = {
+                original: b.BilledKW,
+                corrected: billedKwMax.toFixed(4),
+                reason: 'Cross-validated from Demand Chg qty (max of parts)',
+              };
+              b.BilledKW = billedKwMax.toFixed(4);
+            } else if (!curBilledKw && billedKwMax && billedKwMax < 10000) {
+              b.BilledKW = billedKwMax.toFixed(4);
             }
             // Meter multiplier sanity: Evergy uses a small known set; >10,000 is almost certainly OCR garble
             const mult = pf(b.MeterMultiplier);
@@ -17510,28 +17586,12 @@
         const idx = window._pdfMultiIdx || 0;
         const b = bills[idx];
         const warnings = window._pdfBillWarnings || [];
-        // Build period labels with sort indices for descending order
+        // Build period labels with sort indices for descending order.
+        // Label is the full billing period date range (MM/DD/YYYY–MM/DD/YYYY) for unambiguous identification.
         const periods = bills.map((bill, i) => {
           const lbl =
             bill.BillingPeriodStart && bill.BillingPeriodEnd
-              ? (() => {
-                  try {
-                    const s = new Date(bill.BillingPeriodStart);
-                    const e = new Date(bill.BillingPeriodEnd);
-                    if (isNaN(s) || isNaN(e)) return 'Period ' + (i + 1);
-                    const counts = {};
-                    let cur = new Date(s);
-                    while (cur <= e) {
-                      const key = String(cur.getMonth() + 1).padStart(2, '0') + '/' + cur.getFullYear();
-                      counts[key] = (counts[key] || 0) + 1;
-                      cur.setDate(cur.getDate() + 1);
-                    }
-                    const best = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-                    return best.length ? best[0][0] : 'Period ' + (i + 1);
-                  } catch (ex) {
-                    return 'Period ' + (i + 1);
-                  }
-                })()
+              ? bill.BillingPeriodStart + '–' + bill.BillingPeriodEnd
               : 'Period ' + (i + 1);
           // Parse a sortable date from BillingPeriodEnd (or Start)
           const sortDate = bill.BillingPeriodEnd
@@ -18037,7 +18097,14 @@
           const dupIcon = isDupDiff
             ? `<span title="Existing: ${(dupDiff.existVal || '(empty)').replace(/"/g, '&quot;')}" style="cursor:help;color:#f59e0b;font-size:11px;margin-left:4px">&#9432;</span>`
             : '';
-          return `<div class="ef-item" style="${borderStyle}"><div class="ef-key" style="${dupKeyStyle}">${LABELS[k] || k}${dupIcon}</div><input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty ? '—' : ''}" style="${dupInputStyle}">${correctHtml}${consensusHtml}${warnHtml}${magHtml}${likelyHtml}</div>`;
+          const warningsHtml = correctHtml + consensusHtml + warnHtml + magHtml + likelyHtml;
+          // When there are warnings/corrections, lay the input and warnings out side-by-side
+          // (value on the left, explanation on the right) so cells stay compact vertically.
+          const inputHtml = `<input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty ? '—' : ''}" style="${dupInputStyle}">`;
+          const bodyHtml = warningsHtml
+            ? `<div class="ef-row">${inputHtml}<div class="ef-warn-col">${warningsHtml}</div></div>`
+            : inputHtml;
+          return `<div class="ef-item" style="${borderStyle}"><div class="ef-key" style="${dupKeyStyle}">${LABELS[k] || k}${dupIcon}</div>${bodyHtml}</div>`;
         }
 
         // Build layout HTML with running total on charge rows
