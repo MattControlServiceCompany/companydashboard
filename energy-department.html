@@ -2378,26 +2378,60 @@
         cursor: help;
         line-height: 1;
       }
-      /* Auto-correct hover popup — appears on any hover over the cell, styled as a green
-         border box with green text and a Revert button (matches the previous inline layout). */
+      /* Cell hover popup — appears on any hover over the cell, styled as a solid-background
+         bordered box. Default color is green (auto-correct); level-* variants recolor to
+         match warning severity so the $0-charge info icon etc. share the same popup style. */
       .ef-ac-tooltip {
         display: none;
         position: absolute;
         top: calc(100% + 4px);
         left: 0;
         right: 0;
-        z-index: 20;
+        z-index: 30;
         padding: 8px 10px;
-        background: rgba(34, 197, 94, 0.08);
+        background: var(--s1);
         border: 1px solid #22c55e;
         border-radius: 6px;
         color: #22c55e;
         font-size: 11px;
         line-height: 1.45;
-        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
       }
       .ef-item:hover .ef-ac-tooltip {
         display: block;
+      }
+      .ef-ac-tooltip.level-info {
+        border-color: #60a5fa;
+        color: #60a5fa;
+      }
+      .ef-ac-tooltip.level-info .ef-ac-revert {
+        border-color: #60a5fa;
+        color: #60a5fa;
+      }
+      .ef-ac-tooltip.level-info .ef-ac-revert:hover {
+        background: rgba(96, 165, 250, 0.2);
+      }
+      .ef-ac-tooltip.level-warn {
+        border-color: #f59e0b;
+        color: #f59e0b;
+      }
+      .ef-ac-tooltip.level-warn .ef-ac-revert {
+        border-color: #f59e0b;
+        color: #f59e0b;
+      }
+      .ef-ac-tooltip.level-warn .ef-ac-revert:hover {
+        background: rgba(245, 158, 11, 0.2);
+      }
+      .ef-ac-tooltip.level-error {
+        border-color: #ef4444;
+        color: #ef4444;
+      }
+      .ef-ac-tooltip.level-error .ef-ac-revert {
+        border-color: #ef4444;
+        color: #ef4444;
+      }
+      .ef-ac-tooltip.level-error .ef-ac-revert:hover {
+        background: rgba(239, 68, 68, 0.2);
       }
       .ef-ac-revert {
         margin-top: 6px;
@@ -2413,6 +2447,45 @@
       }
       .ef-ac-revert:hover {
         background: rgba(34, 197, 94, 0.2);
+      }
+      /* Sticky header blocks — pin the extracted-fields header/banners and the pills column
+         headers below the topbar (54px) so they stay visible as the user scrolls. */
+      .ef-sticky-header {
+        position: sticky;
+        top: 54px;
+        z-index: 90;
+        background: var(--bg);
+        padding-bottom: 4px;
+      }
+      .ef-pill-col {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .ef-pill-sticky {
+        position: sticky;
+        top: 54px;
+        z-index: 50;
+        background: var(--bg);
+        padding-bottom: 4px;
+      }
+      .ef-pill-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .ef-pill-month {
+        flex: 0 0 62px;
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+        font-size: 11px;
+        color: var(--text2);
+        text-align: right;
+        white-space: nowrap;
+      }
+      .ef-pill-btn {
+        flex: 1 1 auto;
+        min-width: 0;
       }
       .ef-pair {
         display: grid;
@@ -17817,16 +17890,11 @@
             const dupDot = isDup
               ? '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#f59e0b;margin-left:6px;vertical-align:middle" title="Duplicate bill"></span>'
               : '';
-            return `<button onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasAnyIssue ? '700' : '400'};width:100%;text-align:left;white-space:nowrap">${p.lbl}${hasAnyIssue ? ' ⚠' : ''}${dupDot}</button>`;
+            // Each row contains the month label AND the pill button in the same flex row,
+            // so they're guaranteed to line up vertically regardless of font or padding.
+            const pillBtn = `<button class="ef-pill-btn" onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasAnyIssue ? '700' : '400'};text-align:left;white-space:nowrap">${p.lbl}${hasAnyIssue ? ' ⚠' : ''}${dupDot}</button>`;
+            return `<div class="ef-pill-row"><div class="ef-pill-month">${p.monthLbl || ''}</div>${pillBtn}</div>`;
           })
-          .join('');
-        // Month-label column — one entry per pill, same row height (5px vert padding + 1px
-        // transparent border to match the pills) so rows line up visually.
-        const monthsCol = periods
-          .map(
-            (p) =>
-              `<div style="font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;padding:5px 0;border:1px solid transparent;color:var(--text2);white-space:nowrap;text-align:right">${p.monthLbl || ''}</div>`,
-          )
           .join('');
         // Duplicate summary banner
         const dupIndices = Object.keys(dupMap).map(Number);
@@ -17863,15 +17931,17 @@
           badgeEl.style.display = 'inline-block';
           badgeEl.innerHTML = `<button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="font-size:10px;padding:3px 12px">Save All ${bills.length} Periods</button>`;
         }
-        // Three-column layout inside pdfAIBox: month labels | billing period pills | JSON output.
-        // The month column shifts the pills and JSON to the right to make room for "Mon YYYY" labels.
+        // Two-column layout inside pdfAIBox: pills column (month label + pill per row) on the
+        // left, JSON output on the right. The pills column header (Month / Billing Periods) is
+        // sticky-pinned under the topbar so the labels stay visible while the user scrolls.
         box.innerHTML = `${dupBannerHtml}<div style="display:flex;gap:10px;align-items:flex-start">
-  <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:3px">
-    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:4px;text-align:right">Month</span>
-    ${monthsCol}
-  </div>
-  <div style="flex:0 0 auto;min-width:150px;display:flex;flex-direction:column;gap:3px">
-    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:4px">Billing Periods</span>
+  <div class="ef-pill-col" style="flex:0 0 auto;min-width:220px">
+    <div class="ef-pill-sticky">
+      <div class="ef-pill-row" style="margin-bottom:4px">
+        <div class="ef-pill-month" style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">Month</div>
+        <div class="ef-pill-btn" style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);padding-left:12px">Billing Periods</div>
+      </div>
+    </div>
     ${nav}
   </div>
   <pre style="flex:1;min-width:0;font-size:11px;color:var(--text);white-space:pre-wrap;word-break:break-word;margin:0">${JSON.stringify(b, null, 2)}</pre>
@@ -18272,26 +18342,39 @@
           const _acIsCharge = CHARGE_FIELDS.has(k);
           const _acPfx = _acIsCharge ? '$' : '';
           const _acDp = _acIsCharge ? 2 : 4;
-          // The auto-correct / OCR-consensus checkmark is rendered inline next to the value
-          // (not in the right-side icon strip) and paired with a full-cell hover popup below.
-          let acInlineIcon = '';
-          let acTooltipHtml = '';
+          // Unified inline-icon + hover-popup treatment for EVERY cell signal:
+          //   auto-correct, OCR consensus, field warnings (error/warn/info), magnitude
+          //   flag, and likely-missing. One icon shows inline next to the value; the
+          //   popup aggregates every message and opens on hover of the whole cell.
+          // Priority for inline icon color / popup level: ac > error > warn > info.
+          const _pop = [];
+          const _reverts = [];
+          let _popLevel = null; // 'ac' | 'error' | 'warn' | 'info'
+          const _bumpLevel = (lv) => {
+            const order = { ac: 1, info: 2, warn: 3, error: 4 };
+            if (!_popLevel || (order[lv] || 0) > (order[_popLevel] || 0)) _popLevel = lv;
+          };
           if (autoCorrect) {
             const origFmt = _acPfx + parseFloat(autoCorrect.original).toFixed(_acDp);
             const corrFmt = _acPfx + parseFloat(autoCorrect.corrected).toFixed(_acDp);
-            acInlineIcon = `<span class="ef-ico" style="color:#22c55e">&#10003;</span>`;
-            acTooltipHtml = `<div class="ef-ac-tooltip">Corrected from <b>${origFmt}</b> &rarr; <b>${corrFmt}</b>.<br>${_titleEscape(autoCorrect.reason || '')}<br><button class="ef-ac-revert" onclick="revertAutoCorrect('${k}')">&#8634; Revert</button></div>`;
-          } else if (ocrConsensus) {
+            _pop.push(
+              `<div style="margin-bottom:4px">&#10003; Corrected from <b>${origFmt}</b> &rarr; <b>${corrFmt}</b>. ${_titleEscape(autoCorrect.reason || '')}</div>`,
+            );
+            _reverts.push(`<button class="ef-ac-revert" onclick="revertAutoCorrect('${k}')">&#8634; Revert</button>`);
+            _bumpLevel('ac');
+          }
+          if (ocrConsensus) {
             const origFmt = '$' + parseFloat(ocrConsensus.original).toFixed(2);
             const corrFmt = '$' + parseFloat(ocrConsensus.consensus).toFixed(2);
-            acInlineIcon = `<span class="ef-ico" style="color:#22c55e">&#10003;</span>`;
-            acTooltipHtml = `<div class="ef-ac-tooltip">Corrected from <b>${origFmt}</b> &rarr; <b>${corrFmt}</b>.<br>Alternate OCR pass resolved sum mismatch<br><button class="ef-ac-revert" onclick="revertOCRConsensus('${k}')">&#8634; Revert</button></div>`;
-          }
-          const icons = [];
-          for (const w of fw) {
-            icons.push(
-              `<span class="ef-ico" title="${_titleEscape(w.message)}" style="color:${wColor[w.level]}">${wIcon[w.level]}</span>`,
+            _pop.push(
+              `<div style="margin-bottom:4px">&#10003; Corrected from <b>${origFmt}</b> &rarr; <b>${corrFmt}</b>. Alternate OCR pass resolved sum mismatch</div>`,
             );
+            _reverts.push(`<button class="ef-ac-revert" onclick="revertOCRConsensus('${k}')">&#8634; Revert</button>`);
+            _bumpLevel('ac');
+          }
+          for (const w of fw) {
+            _pop.push(`<div style="margin-bottom:4px">${wIcon[w.level]} ${_titleEscape(w.message)}</div>`);
+            _bumpLevel(w.level);
           }
           if (magFlag) {
             const msg =
@@ -18300,14 +18383,30 @@
               'x the historical average (' +
               magFlag.mean.toLocaleString(undefined, { maximumFractionDigits: 2 }) +
               '). Verify against source bill.';
-            icons.push(`<span class="ef-ico" title="${_titleEscape(msg)}" style="color:#fb923c">&#9888;</span>`);
+            _pop.push(`<div style="margin-bottom:4px">&#9888; ${_titleEscape(msg)}</div>`);
+            _bumpLevel('warn');
           }
           if (likelyMissing && isEmpty) {
-            icons.push(
-              `<span class="ef-ico" title="${_titleEscape('Historical data shows this field is present on 80%+ of prior bills — likely an OCR miss')}" style="color:#a78bfa">&#128269;</span>`,
-            );
+            const msg = 'Historical data shows this field is present on 80%+ of prior bills — likely an OCR miss';
+            _pop.push(`<div style="margin-bottom:4px">&#128269; ${_titleEscape(msg)}</div>`);
+            _bumpLevel('info');
           }
-          const iconsHtml = icons.length ? `<span class="ef-icons">${icons.join('')}</span>` : '';
+          // Inline icon uses a single character + level color. Auto-correct keeps the
+          // green checkmark even if other warnings are present (user wants the check next
+          // to auto-corrected values).
+          const _levelColor = { ac: '#22c55e', error: '#ef4444', warn: '#f59e0b', info: '#60a5fa' };
+          const _levelIcon = { ac: '&#10003;', error: '⛔', warn: '⚠️', info: 'ℹ️' };
+          const _inlineLevel = autoCorrect || ocrConsensus ? 'ac' : _popLevel;
+          const acInlineIcon = _inlineLevel
+            ? `<span class="ef-ico" style="color:${_levelColor[_inlineLevel]}">${_levelIcon[_inlineLevel]}</span>`
+            : '';
+          const _popClass =
+            _popLevel && _popLevel !== 'ac' && !(autoCorrect || ocrConsensus) ? ` level-${_popLevel}` : '';
+          const acTooltipHtml = _pop.length
+            ? `<div class="ef-ac-tooltip${_popClass}">${_pop.join('')}${_reverts.join('')}</div>`
+            : '';
+          // Right-side icon strip is retired — all icons show inline next to the value.
+          const iconsHtml = '';
           let displayVal = Array.isArray(v) ? v.join(', ') : (v ?? '');
           if (ID_FIELDS.has(k)) {
             displayVal = String(displayVal);
@@ -18334,23 +18433,17 @@
           const dupIcon = isDupDiff
             ? `<span title="Existing: ${(dupDiff.existVal || '(empty)').replace(/"/g, '&quot;')}" style="cursor:help;color:#f59e0b;font-size:11px;margin-left:4px">&#9432;</span>`
             : '';
-          // When auto-corrected, size the input to roughly fit its value so the green check
-          // sits immediately next to the value instead of at the far right of the cell.
-          const _hasAc = !!(autoCorrect || ocrConsensus);
-          const _fitSize = _hasAc ? Math.max(String(displayVal).length + 1, 5) : null;
+          // If there's any signal to show (correction, warning, mag flag, likely missing),
+          // size the input to its value so the icon sits right next to the value instead
+          // of at the far right of the cell.
+          const _hasPopup = _pop.length > 0;
+          const _fitSize = _hasPopup ? Math.max(String(displayVal).length + 1, 5) : null;
           const sizeAttr = _fitSize ? ` size="${_fitSize}"` : '';
           const inputHtml = `<input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty ? '—' : ''}" style="${dupInputStyle}"${sizeAttr}>`;
           const keyHtml = `<div class="ef-key" style="${dupKeyStyle}">${LABELS[k] || k}${dupIcon}</div>`;
-          // Layout:
-          //  - Auto-correct: input is content-sized so the green check sits right next to it;
-          //    any other warning icons still float to the far right of the row.
-          //  - No auto-correct: input stretches full-width and warning icons sit on the right.
-          let bodyHtml;
-          if (_hasAc) {
-            bodyHtml = `<div class="ef-row-fit">${inputHtml}${acInlineIcon}${iconsHtml}</div>`;
-          } else {
-            bodyHtml = iconsHtml ? `<div class="ef-row">${inputHtml}${iconsHtml}</div>` : inputHtml;
-          }
+          // Every cell with a popup uses the fit-layout so the inline icon sits immediately
+          // next to the value. Cells with no signals keep the full-width input.
+          const bodyHtml = _hasPopup ? `<div class="ef-row-fit">${inputHtml}${acInlineIcon}</div>` : inputHtml;
           return `<div class="ef-item" style="${borderStyle}">${keyHtml}${bodyHtml}${acTooltipHtml}</div>`;
         }
 
@@ -18566,10 +18659,14 @@
         if (allCorrected.length) {
           const parts = allCorrected.map((c) => {
             const label = LABELS[c.field] || c.field;
-            const origVal = parseFloat(c.info.original).toFixed(2);
-            const newVal = parseFloat(c.type === 'rate' ? c.info.corrected : c.info.consensus).toFixed(2);
+            // Charges are dollars with 2 decimals; kW/kWh/meter reads are 4 decimals with no $
+            const _isChg = CHARGE_FIELDS.has(c.field);
+            const _pfx = _isChg ? '$' : '';
+            const _dp = _isChg ? 2 : 4;
+            const origVal = _pfx + parseFloat(c.info.original).toFixed(_dp);
+            const newVal = _pfx + parseFloat(c.type === 'rate' ? c.info.corrected : c.info.consensus).toFixed(_dp);
             const method = c.type === 'rate' ? c.info.reason : 'alternate OCR pass';
-            return ' <strong>' + label + '</strong> $' + origVal + ' → $' + newVal + ' (' + method + ')';
+            return ' <strong>' + label + '</strong> ' + origVal + ' → ' + newVal + ' (' + method + ')';
           });
           correctionHtml =
             '<div style="padding:8px 12px;margin:6px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.25);font-size:12px;color:#22c55e;line-height:1.5">✓ <strong>Auto-corrected ' +
@@ -18656,7 +18753,10 @@
   <button onclick="openDupModal(${_dupIdx})" style="flex-shrink:0;font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.1);color:#f59e0b;cursor:pointer;font-weight:600">Compare &amp; Choose Fields</button>
 </div>`;
         }
-        el.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${sumMismatchHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
+        // Everything above the field grid (title + all banners) is pinned via ef-sticky-header
+        // so it stays visible as the user scrolls through the fields — the first grid row
+        // is Account Info, per FIELD_LAYOUT.
+        el.innerHTML = `<div class="ef-sticky-header"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${sumMismatchHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}</div><div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
 
         // ── Wire up change handlers: update data + recalculate total when user edits ──
         el.querySelectorAll('.ef-input[data-key]').forEach((inp) => {
