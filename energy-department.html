@@ -2471,10 +2471,27 @@
         top: 0;
         z-index: 50;
         background: var(--s1);
-        padding: 4px 0 6px;
-        margin-top: -4px;
-        border-bottom: 1px solid var(--border);
-        margin-bottom: 4px;
+        padding: 0 0 6px;
+        display: flex;
+        gap: 8px;
+        align-items: flex-end;
+      }
+      .ef-pill-sticky-month {
+        flex: 0 0 62px;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text2);
+        text-align: right;
+      }
+      .ef-pill-sticky-label {
+        flex: 1 1 auto;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text2);
       }
       .ef-pill-row {
         display: flex;
@@ -17938,20 +17955,19 @@
           badgeEl.style.display = 'inline-block';
           badgeEl.innerHTML = `<button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="font-size:10px;padding:3px 12px">Save All ${bills.length} Periods</button>`;
         }
-        // Two-column layout inside pdfAIBox: pills column (month label + pill per row) on the
-        // left, JSON output on the right. The pills column header (Month / Billing Periods) is
-        // sticky-pinned under the topbar so the labels stay visible while the user scrolls.
+        // Two-column layout inside pdfAIBox: pills column on the left, JSON on the right.
+        // The "Month / Billing Periods" labels are plain sticky text (no borders/boxes), and
+        // the JSON <pre> has a matching top margin so its first line aligns with the first
+        // pill row (i.e. "inline with the Billing Periods pills", not with the header).
         box.innerHTML = `${dupBannerHtml}<div style="display:flex;gap:10px;align-items:flex-start">
   <div class="ef-pill-col" style="flex:0 0 auto;min-width:220px">
     <div class="ef-pill-sticky">
-      <div class="ef-pill-row" style="margin-bottom:4px">
-        <div class="ef-pill-month" style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">Month</div>
-        <div class="ef-pill-btn" style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);padding-left:12px">Billing Periods</div>
-      </div>
+      <div class="ef-pill-sticky-month">Month</div>
+      <div class="ef-pill-sticky-label">Billing Periods</div>
     </div>
     ${nav}
   </div>
-  <pre style="flex:1;min-width:0;font-size:11px;color:var(--text);white-space:pre-wrap;word-break:break-word;margin:0">${JSON.stringify(b, null, 2)}</pre>
+  <pre style="flex:1;min-width:0;font-size:11px;color:var(--text);white-space:pre-wrap;word-break:break-word;margin:0 0 0 0;padding-top:22px">${JSON.stringify(b, null, 2)}</pre>
 </div>`;
       }
       function selectMultiBill(i) {
