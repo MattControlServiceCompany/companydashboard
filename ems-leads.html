@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';" />
     <title>CompanyHub — EMS Leads</title>
     <link
       href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap"
@@ -2766,8 +2767,8 @@
           .map(
             (h, i) => `
     <tr>
-      <td style="font-family:var(--mono);font-size:11px;color:var(--em)">${h || '(blank)'}</td>
-      <td style="font-size:11px;color:var(--text2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${csvRows[0]?.[i] || ''}</td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--em)">${esc(h) || '(blank)'}</td>
+      <td style="font-size:11px;color:var(--text2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(csvRows[0]?.[i]) || ''}</td>
       <td><select class="map-table select" id="map-${i}">${fieldOpts}</select></td>
     </tr>`,
           )
@@ -2786,7 +2787,7 @@
           'PREVIEW (first 3 rows):\n' +
           parsed
             .slice(0, 4)
-            .map((r) => r.join(' | '))
+            .map((r) => r.map((c) => esc(c)).join(' | '))
             .join('\n');
       }
 
@@ -2895,62 +2896,12 @@
       }
 
       /* ═══════════════════════════════════
-   AI TOOLS
+   AI TOOLS (disabled — no backend)
 ═══════════════════════════════════ */
       async function runAITool(tool) {
-        const lead = leads.find((l) => l.id === activeLeadId);
-        if (!lead) {
-          showToast('Save lead first');
-          return;
-        }
-        // Refresh from drawer fields
-        saveDrawerChanges();
         const out = document.getElementById('aiOutput');
         out.className = 'ai-output visible';
-        out.innerHTML =
-          '<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Generating...</div>';
-
-        const context = `
-Company: ${lead.company || 'Unknown'}
-Location: ${[lead.city, lead.state].filter(Boolean).join(', ') || 'Unknown'}
-Building Type: ${lead.buildingType || 'Unknown'}
-Building Size: ${lead.buildingSqft ? lead.buildingSqft + ' sq ft' : 'Unknown'}
-Stage: ${lead.stage || 'Prospect'}
-Priority: ${lead.priority || 'Medium'}
-Project Type: ${lead.type || 'Unknown'}
-CSC Contact: ${lead.cscContact || 'Unassigned'}
-Customer Contact: ${lead.contactName || 'Unknown'}${lead.contactTitle ? ' (' + lead.contactTitle + ')' : ''}
-Estimated Annual Value: ${lead.annualValue ? '$' + lead.annualValue : 'Unknown'}
-Last Contact: ${lead.lastContact || 'Never'}
-Notes: ${lead.notes || 'None'}`;
-
-        const prompts = {
-          outreach: `You are an Energy Management Services (EMS) sales professional at a controls and energy services company. Draft a concise, professional outreach email for the following prospect. The goal is to open a conversation about energy management opportunities. Be specific to their building type and location. Keep it under 200 words.\n\nLEAD DATA:\n${context}`,
-          opportunity: `You are an EMS engineer evaluating a prospect's energy savings potential. Based on the following lead data, estimate:\n1. Likely annual energy savings potential (give a realistic $ range)\n2. Best-fit EMS service offerings for this building type\n3. Key systems likely to have energy waste\n4. ROI timeframe estimate\n5. Red flags or risks\n\nLEAD DATA:\n${context}`,
-          nextsteps: `You are a senior sales manager at an energy services company. Based on this lead's current stage and information, recommend:\n1. The single most important next action to advance this deal\n2. Specific talking points for the next contact\n3. What info you still need to gather\n4. Timeline recommendation to close\n5. Potential obstacles to watch for\n\nLEAD DATA:\n${context}`,
-          objections: `You are a seasoned EMS salesperson. For this prospect, generate:\n1. The top 4 likely objections they will raise about EMS services\n2. A specific, compelling rebuttal to each objection\n3. Any questions to ask that would uncover hidden needs\n\nLEAD DATA:\n${context}`,
-        };
-
-        try {
-          const resp = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              model: 'claude-sonnet-4-20250514',
-              max_tokens: 1000,
-              messages: [{ role: 'user', content: prompts[tool] }],
-            }),
-          });
-          const data = await resp.json();
-          const text =
-            data.content
-              ?.filter((b) => b.type === 'text')
-              .map((b) => b.text)
-              .join('') || 'No response.';
-          out.textContent = text;
-        } catch (e) {
-          out.textContent = 'AI service unavailable. Check your network connection or API access.';
-        }
+        out.textContent = 'AI features are not available — this app has no backend API connection.';
       }
 
       /* ═══════════════════════════════════
