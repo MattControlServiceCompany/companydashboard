@@ -3344,18 +3344,17 @@
         border-right: none;
         padding: 0;
       }
-      /* Collapse/expand tab — sits on the detail column left edge, always visible */
+      /* Collapse/expand tab — straddles the divider between nav and detail, vertically centered */
       .ud-collapse-tab {
         position: absolute;
         top: 50%;
-        left: 0;
+        left: -9px;
         transform: translateY(-50%);
         width: 18px;
         height: 48px;
         background: var(--s3);
         border: 1px solid var(--border);
-        border-left: none;
-        border-radius: 0 6px 6px 0;
+        border-radius: 6px;
         cursor: pointer;
         display: flex;
         align-items: center;
@@ -3527,6 +3526,7 @@
       .ud-detail-body {
         overflow-y: auto;
         flex: 1;
+        min-height: 0;
         padding-bottom: 64px;
       }
       /* Meter cards */
@@ -4018,7 +4018,10 @@
         background: var(--em-dim);
       }
       #maMeterWorkspace {
-        display: block;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
       }
       .ma-tabs {
         display: flex;
@@ -4026,6 +4029,9 @@
         border-bottom: 1px solid var(--border);
         flex-shrink: 0;
         background: var(--s1);
+        position: sticky;
+        top: 0;
+        z-index: 5;
       }
       .ma-tab {
         font-size: 12px;
@@ -4050,6 +4056,8 @@
       }
       #maPane {
         overflow-y: auto;
+        flex: 1;
+        min-height: 0;
       }
       .ma-pane {
         display: none;
@@ -10772,6 +10780,7 @@
       integrity="sha384-5MXQT3yrGpx6/FO6Z5JlMsn1xsN/OggV+b88W2CfpNqmvPfmv7JW/O8x78GzptfE"
       crossorigin="anonymous"
     ></script>
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js" crossorigin="anonymous"></script>
     <script>
       /* ── AI API (disabled — no backend) ── */
       async function claude(prompt, sys) {
@@ -11902,7 +11911,7 @@
     </div>
     <div class="card">
       <div class="card-hdr"><span class="card-title">Building Performance</span></div>
-      <div style="overflow-x:auto">
+      <div style="overflow:auto;max-height:60vh">
         <table class="dtbl" style="width:100%;font-size:12px">
           <thead><tr><th>Building</th><th style="text-align:right">Sq Ft</th><th style="text-align:right">Period</th><th style="text-align:right">${bldgRows.some((r) => r.blLabel === 'Baseline') ? 'Baseline' : 'Total Cost'} $/yr</th><th style="text-align:right">EUI</th><th style="text-align:right">Current $/yr</th><th style="text-align:right">Cur EUI</th><th style="text-align:right">Savings $</th><th style="text-align:right">%</th><th style="text-align:center">Status</th></tr></thead>
           <tbody>${bldgRows
@@ -18977,42 +18986,24 @@
         }
         try {
           const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-          // If we have page range info, render only those pages using PDF.js
-          if (pageStart && pageEnd && window.pdfjsLib) {
-            const pdf = await window.pdfjsLib.getDocument({ data: bytes }).promise;
+          let outBytes = bytes;
+          if (pageStart && pageEnd && window.PDFLib) {
+            const srcDoc = await window.PDFLib.PDFDocument.load(bytes);
+            const total = srcDoc.getPageCount();
             const start = Math.max(1, pageStart);
-            const end = Math.min(pdf.numPages, pageEnd);
-            // Render pages to a printable HTML window
-            const win = window.open('', '_blank');
-            if (!win) {
-              showToast('Pop-up blocked — allow pop-ups for this site to view PDFs');
-              return;
-            }
-            win.document.write(
-              '<html><head><title>Bill Pages ' +
-                start +
-                '-' +
-                end +
-                '</title><style>body{margin:0;background:#333;display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px} canvas{max-width:100%;background:white;box-shadow:0 2px 8px rgba(0,0,0,0.5)}</style></head><body>',
-            );
-            for (let p = start; p <= end; p++) {
-              const pg = await pdf.getPage(p);
-              const vp = pg.getViewport({ scale: 1.5 });
-              const canvas = win.document.createElement('canvas');
-              canvas.width = vp.width;
-              canvas.height = vp.height;
-              win.document.body.appendChild(canvas);
-              await pg.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-            }
-            win.document.write('</body></html>');
-            win.document.close();
-          } else {
-            const blob = new Blob([bytes], { type: 'application/pdf' });
-            const url = URL.createObjectURL(blob);
-            const win = window.open(url, '_blank');
-            setTimeout(() => URL.revokeObjectURL(url), 30000);
-            if (!win) showToast('Pop-up blocked — allow pop-ups for this site to view PDFs');
+            const end = Math.min(total, pageEnd);
+            const outDoc = await window.PDFLib.PDFDocument.create();
+            const idxs = [];
+            for (let p = start; p <= end; p++) idxs.push(p - 1);
+            const copied = await outDoc.copyPages(srcDoc, idxs);
+            copied.forEach((pg) => outDoc.addPage(pg));
+            outBytes = await outDoc.save();
           }
+          const blob = new Blob([outBytes], { type: 'application/pdf' });
+          const url = URL.createObjectURL(blob);
+          const win = window.open(url, '_blank');
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+          if (!win) showToast('Pop-up blocked — allow pop-ups for this site to view PDFs');
         } catch (e) {
           showToast('Could not open PDF: ' + e.message);
         }
@@ -20141,39 +20132,57 @@
           _parseMonthEvents(pendingText.join(' '), currentMonth, currentYear, events, detectType);
         }
 
-        // Strategy 2: Parse standard date formats (fallback for non-school calendars)
-        if (!events.length) {
-          const datePatterns = [
-            /(\d{1,2})\/(\d{1,2})\/(\d{2,4})/,
-            /(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s*(\d{4})?/i,
-            /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.?\s+(\d{1,2}),?\s*(\d{4})?/i,
-          ];
-          text.split(/\n/).forEach((line) => {
-            line = line.trim();
-            if (!line) return;
-            for (const pat of datePatterns) {
-              const m = line.match(pat);
-              if (m) {
-                let date;
-                if (/^\d/.test(m[1])) {
-                  let yr = m[3] || '' + startSchoolYear;
-                  if (String(yr).length === 2) yr = '20' + yr;
-                  date = yr + '-' + String(m[1]).padStart(2, '0') + '-' + String(m[2]).padStart(2, '0');
-                } else {
-                  const mo = monthMap[m[1].toLowerCase()];
-                  if (!mo) break;
-                  const yr = m[3] || yearForMonth(mo);
-                  date = yr + '-' + String(mo).padStart(2, '0') + '-' + String(m[2]).padStart(2, '0');
-                }
-                const rest = line
-                  .replace(m[0], '')
-                  .replace(/^[\s\-–—:,]+/, '')
-                  .trim();
-                if (date && rest.length > 1) events.push({ date, name: rest, type: detectType(rest) });
-                break;
+        // Strategy 2: Scan the whole text for date tokens and pair each with the
+        // text that follows it up to the next date token. Works when Strategy 1's
+        // month-header parse returned nothing OR only a single bogus event (common
+        // when OCR flattens the PDF into one line and no month headers are detected).
+        if (events.length <= 1) {
+          events.length = 0;
+          const dateRe =
+            /(\d{1,2})\/(\d{1,2})\/(\d{2,4})|(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+(\d{1,2})(?:\s*[-–]\s*(\d{1,2}))?,?\s*(\d{4})?/gi;
+          const hits = [];
+          let mm;
+          while ((mm = dateRe.exec(text)) !== null) {
+            let iso, dayEnd;
+            if (mm[1]) {
+              // numeric form 12/25/2024
+              let yr = mm[3];
+              if (!yr) yr = startSchoolYear;
+              if (String(yr).length === 2) yr = '20' + yr;
+              iso = yr + '-' + String(mm[1]).padStart(2, '0') + '-' + String(mm[2]).padStart(2, '0');
+              dayEnd = parseInt(mm[2]);
+            } else {
+              const mo = monthMap[mm[4].toLowerCase().replace(/\.$/, '')];
+              if (!mo) continue;
+              const yr = mm[7] || monthYearMap[mo] || yearForMonth(mo);
+              iso = yr + '-' + String(mo).padStart(2, '0') + '-' + String(mm[5]).padStart(2, '0');
+              dayEnd = mm[6] ? parseInt(mm[6]) : parseInt(mm[5]);
+            }
+            hits.push({ idx: mm.index, end: mm.index + mm[0].length, iso, dayEnd, match: mm[0] });
+          }
+          for (let i = 0; i < hits.length; i++) {
+            const h = hits[i];
+            const sliceEnd = i < hits.length - 1 ? hits[i + 1].idx : Math.min(text.length, h.end + 160);
+            let name = text
+              .slice(h.end, sliceEnd)
+              .replace(/\s+/g, ' ')
+              .replace(/^[\s\-–—:,]+/, '')
+              .replace(/[\s\-–—:,]+$/, '')
+              .trim();
+            // Trim at obvious separators so one event doesn't swallow the next line
+            const stop = name.search(/\s(?:•|·|\|)\s|\s{3,}/);
+            if (stop > 2) name = name.slice(0, stop).trim();
+            if (name.length < 2 || name.length > 80) continue;
+            events.push({ date: h.iso, name, type: detectType(name) });
+            // Expand day ranges (e.g. "Dec 23-27 - Winter Break")
+            if (h.dayEnd && /\d{4}-\d{2}-(\d{2})$/.test(h.iso)) {
+              const startDay = parseInt(h.iso.slice(-2));
+              for (let d = startDay + 1; d <= h.dayEnd; d++) {
+                const isoD = h.iso.slice(0, 8) + String(d).padStart(2, '0');
+                events.push({ date: isoD, name, type: detectType(name) });
               }
             }
-          });
+          }
         }
         return events;
       }
@@ -27937,6 +27946,11 @@
 
       function getDefaultTemplate() {
         let t = sget('en_meetingTemplates', null);
+        // Upgrade legacy templates from the sparse v1 defaults to v2 rich defaults
+        // so existing users see the richer agenda without losing their other settings.
+        if (t && t.defaultTopics && !t.defaultTopicsVersion) {
+          t.defaultTopics = null;
+        }
         if (!t || !t.defaultTopics) {
           t = t || {};
           t.id = t.id || Date.now();
@@ -27945,25 +27959,71 @@
           t.sectionHeading = t.sectionHeading || 'Energy Management Services Program';
           t.defaultEndTopic = t.defaultEndTopic || 'Questions?';
           t.defaultTopics = [
-            { text: 'BAS Updates', subItems: ['Review current system status and any proposed changes.'] },
             {
-              text: 'Energy Savings Review',
-              subItems: ['Review utility bill trends and savings performance vs baseline.'],
+              text: 'Welcome & Review of Previous Meeting',
+              subItems: [
+                'Confirm attendance and introductions.',
+                'Review action items and open issues from the prior meeting.',
+                'Note any items completed, carried forward, or reassigned.',
+              ],
             },
-            { text: 'Monthly Reviews', subItems: ['Confirm next monthly review date and time.'] },
-            { text: 'Quarterly Reviews', subItems: ['Review upcoming quarterly review schedule.'] },
+            {
+              text: 'BAS (Building Automation) Updates',
+              subItems: [
+                'Current system status — controllers, sensors, network health.',
+                'Setpoint or schedule changes made since last meeting.',
+                'Pending programming changes or graphics requests.',
+                'Open BAS work orders and targeted completion dates.',
+              ],
+            },
+            {
+              text: 'Energy Savings Performance Review',
+              subItems: [
+                'Utility bill trends vs baseline (kWh, kW, therms, $).',
+                'Weather-normalized usage for the most recent month(s).',
+                'Year-to-date savings vs guarantee / target.',
+                'Any anomalies, spikes, or regressions to investigate.',
+              ],
+            },
+            {
+              text: 'Building & Equipment Updates',
+              subItems: [
+                'Equipment status: chillers, boilers, AHUs, pumps, VFDs.',
+                'Recent repairs, replacements, or commissioning work.',
+                'Pending equipment orders, delivery and install dates.',
+                'Any new or deferred capital needs identified.',
+              ],
+            },
             {
               text: 'Onsite Technical Labor Services',
-              subItems: ['Review any scheduled onsite work or deficiency items.'],
+              subItems: [
+                'Hours used this period vs allocation.',
+                'Scheduled onsite work for the next period.',
+                'Deficiency items from last site visit.',
+              ],
             },
             {
-              text: 'Equipment & Maintenance Updates',
-              subItems: ['Status of any pending equipment orders or installations.'],
+              text: 'Measurement & Verification / Monthly Review',
+              subItems: [
+                'Confirm next monthly data review date.',
+                'Confirm next quarterly review date and scope.',
+                'Review any reports that need to be generated or delivered.',
+              ],
             },
-            { text: 'Upcoming Milestones / Action Items', subItems: [] },
-            { text: 'Open Issues', subItems: [] },
+            {
+              text: 'Upcoming Milestones & Action Items',
+              subItems: [
+                'New action items with owners and due dates.',
+                'Upcoming project milestones and dependencies.',
+              ],
+            },
+            {
+              text: 'Open Issues & Discussion',
+              subItems: ['Items raised by owner, facilities staff, or CSC team.'],
+            },
             { text: 'Questions?', subItems: [] },
           ];
+          t.defaultTopicsVersion = 2;
           sset('en_meetingTemplates', t);
         }
         return t;
@@ -31068,6 +31128,9 @@
 
         showToast(`Measure "${desc}" added: ${parts.join(' + ')} annual savings`);
 
+        // Recalculate the $ savings so the measure shows a real total instead of $0
+        _svRecalcFrom(projId);
+
         // Navigate to savings tab and refresh
         const btn = document.querySelector('.pdt[data-tab="savings"]');
         if (btn) sPTab('savings', btn);
@@ -33613,23 +33676,35 @@
             const isElec = m.commodity === 'Electric';
             const isGas = m.commodity === 'Gas';
             const bl = m.baseline || {};
-            const blMonths = bl.months || {};
+            // bl.months is an array of year-month strings like ['2024-01','2024-02',...]
+            // populated when the user saves a baseline period. When missing, fall back to
+            // treating every bill as baseline so graphics still render against stored data.
+            const blSet = Array.isArray(bl.months) && bl.months.length ? new Set(bl.months) : null;
 
             (m.bills || []).forEach((bill) => {
-              let mi = -1;
-              if (bill.normMonth) mi = moNames.indexOf(bill.normMonth.toLowerCase().slice(0, 3));
-              else if (bill.month) mi = moNames.indexOf(bill.month.toLowerCase().slice(0, 3));
+              // Prefer bill.end/start ISO dates so month + year are consistent with baseline YMs
+              const ymSrc = bill.end || bill.start || '';
+              let yr = null,
+                mi = -1,
+                ym = null;
+              if (ymSrc && /^\d{4}-\d{2}/.test(ymSrc)) {
+                yr = parseInt(ymSrc.slice(0, 4));
+                mi = parseInt(ymSrc.slice(5, 7)) - 1;
+                ym = ymSrc.slice(0, 7);
+              } else {
+                if (bill.normMonth) mi = moNames.indexOf(bill.normMonth.toLowerCase().slice(0, 3));
+                else if (bill.month) mi = moNames.indexOf(bill.month.toLowerCase().slice(0, 3));
+                if (bill.end) yr = new Date(bill.end).getFullYear();
+                else if (bill.start) yr = new Date(bill.start).getFullYear();
+                if (yr && mi >= 0) ym = yr + '-' + String(mi + 1).padStart(2, '0');
+              }
               if (mi < 0) return;
 
-              // Determine year from bill dates
-              let yr = null;
-              if (bill.end) yr = new Date(bill.end).getFullYear();
-              else if (bill.start) yr = new Date(bill.start).getFullYear();
+              // Baseline membership: if a baseline was saved, use its YM set;
+              // otherwise treat every bill as baseline so charts still render.
+              const isBaseline = blSet ? ym && blSet.has(ym) : true;
 
-              // Check if this bill is in baseline
-              const isBaseline = blMonths[mi] !== undefined ? blMonths[mi] : bl.startIdx !== undefined ? false : true;
-
-              if (isBaseline || !bl.startIdx) {
+              if (isBaseline) {
                 // Baseline data
                 if (isElec) {
                   blKwh[mi] += bill.kwh || bill.usage || 0;
