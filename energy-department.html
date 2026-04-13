@@ -3528,10 +3528,17 @@
         gap: 4px;
       }
       .ud-detail-body {
-        overflow-y: auto;
-        flex: 1;
+        /* Must be display:flex so #maMeterWorkspace inside can honor flex:1 and
+           constrain its children to the available height. Previously this was a
+           block container with overflow-y:auto, which meant every flex:1 inside
+           (maMeterWorkspace, maPane, bills-scroll-body) was a no-op and the bills
+           table expanded to natural height — hiding the horizontal scrollbar below
+           the fold and breaking the sticky thead behavior. */
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 0;
         min-height: 0;
-        padding-bottom: 64px;
+        overflow: hidden;
       }
       /* Meter cards */
       .ud-meter-card {
@@ -3682,9 +3689,9 @@
       .bills-scroll-body {
         overflow-y: auto;
         overflow-x: auto;
-        flex: 1;
+        flex: 1 1 0;
         min-height: 0;
-        padding-bottom: 48px;
+        min-width: 0;
       }
       .bills-scroll-body .ud-bill-tbl {
         margin: 0;
@@ -15048,14 +15055,82 @@
               const r = _extractEvergy(s, acct, addrM?.[1]?.trim() || null);
               if (!r.CustomerName && fullCustName) r.CustomerName = fullCustName;
               if (!r.RateSchedule && fullRate) r.RateSchedule = fullRate;
-              // Track page ranges from %%PAGE_N%% markers
-              const pageMarkers = [...s.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => parseInt(m[1]));
-              if (pageMarkers.length) {
-                r._pageStart = Math.min(...pageMarkers);
-                r._pageEnd = Math.max(...pageMarkers);
-              }
               return r;
             });
+
+            // ── PAGE RANGE POST-PROCESSING ──
+            // The old logic took min/max of %%PAGE_N%% markers inside each "Billing Details"
+            // section, but that overcounted: the Evergy cover page (page 1 of each bill) is
+            // before the "Billing Details" header, and the next bill's cover page was often
+            // included at the end of the previous section. Result: PDF viewer opened 5+ pages
+            // when the bill really only owns 2-3. Fix: locate each bill's cover page in the
+            // full text by matching "For service from MM/DD/YYYY to MM/DD/YYYY" on the
+            // Account Summary line (only appears on the cover), then pageEnd = the page right
+            // before the NEXT bill's cover (or the final page for the last bill).
+            const _pageMarkers = [...t.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => ({
+              page: parseInt(m[1]),
+              idx: m.index,
+            }));
+            const _pageForIdx = (idx) => {
+              let pg = 1;
+              for (const pm of _pageMarkers) {
+                if (pm.idx <= idx) pg = pm.page;
+                else break;
+              }
+              return pg;
+            };
+            const _maxPage = _pageMarkers.length ? _pageMarkers[_pageMarkers.length - 1].page : 1;
+            const coverStarts = [];
+            for (const r of results) {
+              if (!r.BillingPeriodStart || !r.BillingPeriodEnd) {
+                coverStarts.push(null);
+                continue;
+              }
+              // Match only on the Account Summary cover line, not the Billing Details header.
+              // The cover line reads: "For service from 06/05/2023 to 07/05/2023"
+              // The details header reads: "Billing Details - service from 06/05/2023 to 07/05/2023"
+              // We reject matches within 40 chars of "Billing Details" so the cover wins.
+              const datePatt = new RegExp(
+                'For\\s+service\\s+from\\s+' +
+                  r.BillingPeriodStart.replace(/[./\\]/g, '[./]') +
+                  '\\s+to\\s+' +
+                  r.BillingPeriodEnd.replace(/[./\\]/g, '[./]'),
+                'gi',
+              );
+              let coverIdx = -1;
+              let mm;
+              while ((mm = datePatt.exec(t)) !== null) {
+                const before = t.slice(Math.max(0, mm.index - 40), mm.index);
+                if (/Billing\s+Details/i.test(before)) continue;
+                coverIdx = mm.index;
+                break;
+              }
+              coverStarts.push(coverIdx >= 0 ? _pageForIdx(coverIdx) : null);
+            }
+            for (let i = 0; i < results.length; i++) {
+              const r = results[i];
+              const start = coverStarts[i];
+              if (start) {
+                r._pageStart = start;
+                // Find the next valid cover start after this one to bound pageEnd
+                let nextStart = null;
+                for (let j = i + 1; j < coverStarts.length; j++) {
+                  if (coverStarts[j] && coverStarts[j] > start) {
+                    nextStart = coverStarts[j];
+                    break;
+                  }
+                }
+                r._pageEnd = nextStart ? nextStart - 1 : _maxPage;
+              } else {
+                // Fallback: scan the section text for page markers if we couldn't anchor to a cover
+                const s = validSections[i] || '';
+                const pm = [...s.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => parseInt(m[1]));
+                if (pm.length) {
+                  r._pageStart = Math.min(...pm);
+                  r._pageEnd = Math.max(...pm);
+                }
+              }
+            }
             // ── NEIGHBOR-BILL FALLBACK (extractAll) ──
             const _NBR_FIELDS = ['UtilityCompany', 'CustomerName', 'ServiceAddress', 'RateSchedule', 'CustomerCharge'];
             const _acctNorm = (s) => (s || '').replace(/[\s\-]/g, '').toLowerCase();
@@ -20794,6 +20869,78 @@
         Object.keys(utilityData).forEach(function (pid) {
           sset('en_utility_' + pid, utilityData[pid]);
         });
+      }
+
+      /* ══════════════════════════════════════════════════════
+         UTILITY DATA AUDIT LOG
+         Every change to saved bill data runs through logUtilityAudit so the
+         History modal can surface WHO changed WHAT and WHEN. Stored in its
+         own localStorage key so the entry list doesn't bloat the project
+         records. Hard cap at 500 entries (oldest dropped first).
+      ══════════════════════════════════════════════════════ */
+      const AUDIT_LOG_KEY = 'en_utility_audit_log';
+      const AUDIT_LOG_MAX = 500;
+
+      function logUtilityAudit(entry) {
+        try {
+          const log = sget(AUDIT_LOG_KEY, []) || [];
+          const full = {
+            ts: new Date().toISOString(),
+            action: entry.action || 'unknown',
+            projId: entry.projId || null,
+            projName: entry.projName || '',
+            bldgId: entry.bldgId || null,
+            bldgName: entry.bldgName || '',
+            meterId: entry.meterId || null,
+            meterLabel: entry.meterLabel || '',
+            period: entry.period || '',
+            source: entry.source || 'manual',
+            changes: entry.changes || null,
+            note: entry.note || '',
+          };
+          log.unshift(full);
+          if (log.length > AUDIT_LOG_MAX) log.length = AUDIT_LOG_MAX;
+          sset(AUDIT_LOG_KEY, log);
+        } catch (e) {
+          console.warn('audit log write failed', e);
+        }
+      }
+
+      function _auditCtxFromIds(projId, bldgId, meterId) {
+        const p = projects.find((x) => x.id === projId);
+        const b = getUDBldg(projId, bldgId);
+        const m = b?.meters?.find((mm) => mm.id === meterId);
+        return {
+          projId,
+          projName: p?.name || '',
+          bldgId,
+          bldgName: b?.name || '',
+          meterId,
+          meterLabel: m ? meterLabel(m) : '',
+        };
+      }
+
+      function _auditPeriodLabel(row) {
+        if (!row) return '';
+        if (row.start && row.end) return row.start + ' to ' + row.end;
+        if (row.BillingPeriodStart && row.BillingPeriodEnd)
+          return row.BillingPeriodStart + ' to ' + row.BillingPeriodEnd;
+        return '';
+      }
+
+      function _auditDiffBillFields(before, after) {
+        if (!before || !after) return null;
+        const diffs = [];
+        const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+        for (const k of keys) {
+          if (k.startsWith('_') || k === 'id') continue;
+          const bv = before[k];
+          const av = after[k];
+          if (String(bv || '') !== String(av || '')) {
+            diffs.push({ field: k, from: bv, to: av });
+          }
+        }
+        return diffs.length ? diffs : null;
       }
 
       function getUDProj(pid) {
