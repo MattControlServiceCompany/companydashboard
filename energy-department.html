@@ -4800,7 +4800,8 @@
 
           <!-- PDF OCR -->
           <div id="view-pdf" class="view view-flex">
-            <div id="pdfFrozenHdr" style="flex-shrink: 0; padding: 16px 18px 0; background: var(--bg)">
+            <!-- Page title bar — stays frozen at top, spans full width -->
+            <div id="pdfPageHdr" style="flex-shrink: 0; padding: 16px 18px 10px; background: var(--bg)">
               <div class="pg-hdr">
                 <div>
                   <h1 class="pg-title">PDF <em>/ OCR</em></h1>
@@ -4827,113 +4828,13 @@
                   </button>
                 </div>
               </div>
-              <div class="g-6040" style="margin-top: 12px">
-                <div>
-                  <div
-                    class="drop-zone"
-                    id="dropZone"
-                    onclick="document.getElementById('pdfInput').click()"
-                    ondragover="
-                      event.preventDefault();
-                      this.classList.add('drag');
-                    "
-                    ondragleave="this.classList.remove('drag')"
-                    ondrop="handleDrop(event)"
-                  >
-                    <span class="dz-ico">📄</span>
-                    <div class="dz-title" id="dz-title">Drop PDF here or click to browse</div>
-                    <div class="dz-sub">Utility bills · Drawings · Equipment submittals · Contracts</div>
-                    <input
-                      type="file"
-                      id="pdfInput"
-                      accept=".pdf"
-                      style="display: none"
-                      onchange="handlePDFUpload(event)"
-                    />
-                    <div id="pdfClearBtn" style="display: none; margin-top: 8px; text-align: right">
-                      <button
-                        class="btn btn-ghost btn-sm"
-                        onclick="
-                          event.stopPropagation();
-                          clearPDFOCR();
-                        "
-                      >
-                        ✕ Clear
-                      </button>
-                    </div>
-                  </div>
-                  <div id="pdfTypeSection" style="margin-top: 12px">
-                    <div class="fl" style="margin-bottom: 6px">Document Type</div>
-                    <div class="pdf-type-pills">
-                      <button class="ptpill sel" onclick="setPDFType('utility', this)">🔌 Utility Bill</button>
-                      <button class="ptpill" onclick="setPDFType('drawing', this)">📐 Drawing</button>
-                      <button class="ptpill" onclick="setPDFType('submittal', this)">⚙️ Submittal</button>
-                      <button class="ptpill" onclick="setPDFType('contract', this)">📋 Contract</button>
-                    </div>
-                  </div>
-                  <div id="extractedFieldsHdr"></div>
-                </div>
-                <div>
-                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px">
-                    <div class="ai-label" style="margin: 0">📄 Extraction Output</div>
-                    <div style="display: flex; align-items: center; gap: 7px">
-                      <button
-                        id="pdfDebugBtn"
-                        style="
-                          display: none;
-                          font-size: 11px;
-                          padding: 3px 9px;
-                          border-radius: 6px;
-                          border: 1px solid var(--border2);
-                          background: transparent;
-                          color: var(--text2);
-                          cursor: pointer;
-                          font-family: var(--font);
-                        "
-                        onclick="togglePDFRawText()"
-                      >
-                        🔍 Raw Text
-                      </button>
-                      <button
-                        id="pdfSaveDebugBtn"
-                        style="
-                          display: none;
-                          font-size: 11px;
-                          padding: 3px 9px;
-                          border-radius: 6px;
-                          border: 1px solid var(--border2);
-                          background: transparent;
-                          color: var(--text2);
-                          cursor: pointer;
-                          font-family: var(--font);
-                        "
-                        onclick="savePDFDebug()"
-                      >
-                        💾 Save Debug
-                      </button>
-                      <div
-                        id="extractMethodBadge"
-                        style="
-                          display: none;
-                          font-size: 10px;
-                          font-weight: 700;
-                          padding: 3px 9px;
-                          border-radius: 10px;
-                          letter-spacing: 0.5px;
-                        "
-                      ></div>
-                    </div>
-                  </div>
-                  <div id="pdfPillsHdr"></div>
-                </div>
-              </div>
             </div>
-            <!-- Main area below the frozen header is a flex row with two independently scrolling
-                 columns: the extracted field grid on the left (~60%) and the Extraction Output on
-                 the right (~40%). Each column scrolls on its own; pdfScrollBody itself does NOT
-                 scroll so the two columns can behave independently. -->
+            <!-- Two true side-by-side columns. Each column is a self-contained flex column that
+                 goes from the top of the body area to the bottom and manages its own vertical
+                 scrolling. No shared frozen header across columns — that caused the visual gap
+                 between the "Extraction Output" label and the JSON box in previous layouts. -->
             <div
-              id="pdfScrollBody"
+              id="pdfBody"
               style="
                 flex: 1;
                 display: flex;
@@ -4944,10 +4845,63 @@
                 overflow: hidden;
               "
             >
+              <!-- LEFT COLUMN: drop zone → doc type → extracted fields. Scrolls as a unit. -->
               <div
                 id="pdfLeftCol"
-                style="flex: 3 1 0; min-width: 0; min-height: 0; height: 100%; overflow-y: auto; padding-right: 4px"
+                style="
+                  flex: 3 1 0;
+                  min-width: 0;
+                  min-height: 0;
+                  height: 100%;
+                  overflow-y: auto;
+                  padding-right: 4px;
+                  display: flex;
+                  flex-direction: column;
+                "
               >
+                <div
+                  class="drop-zone"
+                  id="dropZone"
+                  onclick="document.getElementById('pdfInput').click()"
+                  ondragover="
+                    event.preventDefault();
+                    this.classList.add('drag');
+                  "
+                  ondragleave="this.classList.remove('drag')"
+                  ondrop="handleDrop(event)"
+                >
+                  <span class="dz-ico">📄</span>
+                  <div class="dz-title" id="dz-title">Drop PDF here or click to browse</div>
+                  <div class="dz-sub">Utility bills · Drawings · Equipment submittals · Contracts</div>
+                  <input
+                    type="file"
+                    id="pdfInput"
+                    accept=".pdf"
+                    style="display: none"
+                    onchange="handlePDFUpload(event)"
+                  />
+                  <div id="pdfClearBtn" style="display: none; margin-top: 8px; text-align: right">
+                    <button
+                      class="btn btn-ghost btn-sm"
+                      onclick="
+                        event.stopPropagation();
+                        clearPDFOCR();
+                      "
+                    >
+                      ✕ Clear
+                    </button>
+                  </div>
+                </div>
+                <div id="pdfTypeSection" style="margin-top: 12px">
+                  <div class="fl" style="margin-bottom: 6px">Document Type</div>
+                  <div class="pdf-type-pills">
+                    <button class="ptpill sel" onclick="setPDFType('utility', this)">🔌 Utility Bill</button>
+                    <button class="ptpill" onclick="setPDFType('drawing', this)">📐 Drawing</button>
+                    <button class="ptpill" onclick="setPDFType('submittal', this)">⚙️ Submittal</button>
+                    <button class="ptpill" onclick="setPDFType('contract', this)">📋 Contract</button>
+                  </div>
+                </div>
+                <div id="extractedFieldsHdr"></div>
                 <div id="extractedFieldsGrid"></div>
                 <!-- Auto-assign banner: shown when extracted AccountNumber matches a known meter -->
                 <div
@@ -4988,18 +4942,83 @@
                   </div>
                 </div>
               </div>
+              <!-- RIGHT COLUMN: Extraction Output label + buttons + pills stay pinned at top,
+                   JSON box (pdfAIBox) fills the remainder and scrolls on its own. -->
               <div
                 id="pdfRightCol"
                 style="
                   flex: 2 1 0;
-                  min-width: 320px;
+                  min-width: 340px;
                   min-height: 0;
                   height: 100%;
                   display: flex;
                   flex-direction: column;
                 "
               >
-                <div class="ai-box" id="pdfAIBox" style="flex: 1 1 auto; min-height: 200px; overflow-y: auto">
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    margin-bottom: 7px;
+                    flex-shrink: 0;
+                  "
+                >
+                  <div class="ai-label" style="margin: 0">📄 Extraction Output</div>
+                  <div style="display: flex; align-items: center; gap: 7px">
+                    <button
+                      id="pdfDebugBtn"
+                      style="
+                        display: none;
+                        font-size: 11px;
+                        padding: 3px 9px;
+                        border-radius: 6px;
+                        border: 1px solid var(--border2);
+                        background: transparent;
+                        color: var(--text2);
+                        cursor: pointer;
+                        font-family: var(--font);
+                      "
+                      onclick="togglePDFRawText()"
+                    >
+                      🔍 Raw Text
+                    </button>
+                    <button
+                      id="pdfSaveDebugBtn"
+                      style="
+                        display: none;
+                        font-size: 11px;
+                        padding: 3px 9px;
+                        border-radius: 6px;
+                        border: 1px solid var(--border2);
+                        background: transparent;
+                        color: var(--text2);
+                        cursor: pointer;
+                        font-family: var(--font);
+                      "
+                      onclick="savePDFDebug()"
+                    >
+                      💾 Save Debug
+                    </button>
+                    <div
+                      id="extractMethodBadge"
+                      style="
+                        display: none;
+                        font-size: 10px;
+                        font-weight: 700;
+                        padding: 3px 9px;
+                        border-radius: 10px;
+                        letter-spacing: 0.5px;
+                      "
+                    ></div>
+                  </div>
+                </div>
+                <div id="pdfPillsHdr" style="flex-shrink: 0"></div>
+                <div
+                  class="ai-box"
+                  id="pdfAIBox"
+                  style="flex: 1 1 auto; min-height: 200px; overflow-y: auto; margin-top: 4px"
+                >
                   Upload a PDF and select document type.
                 </div>
               </div>
