@@ -10780,11 +10780,7 @@
       integrity="sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F"
       crossorigin="anonymous"
     ></script>
-    <script
-      src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"
-      integrity="sha384-5MXQT3yrGpx6/FO6Z5JlMsn1xsN/OggV+b88W2CfpNqmvPfmv7JW/O8x78GzptfE"
-      crossorigin="anonymous"
-    ></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js" crossorigin="anonymous"></script>
     <script>
       /* ── AI API (disabled — no backend) ── */
@@ -17553,7 +17549,10 @@
         const reader = new FileReader();
         reader.onload = async (ev) => {
           pdfB64 = ev.target.result.split(',')[1];
-          const ab = Uint8Array.from(atob(pdfB64), (c) => c.charCodeAt(0)).buffer;
+          // pdf.js transfers ownership of the ArrayBuffer to its worker and detaches it,
+          // so a single buffer cannot be reused across calls. Decode fresh bytes for each
+          // pdf.js invocation via this helper.
+          const freshBytes = () => Uint8Array.from(atob(pdfB64), (c) => c.charCodeAt(0));
 
           // ── UTILITY BILLS: 100% local rule-based extraction ──
           if (pdfType === 'utility') {
@@ -17564,7 +17563,7 @@
                 '</div>';
               globalTaskUpdate('📄 ' + msg);
             };
-            let text = await extractPDFText(ab, statusMsg);
+            let text = await extractPDFText(freshBytes(), statusMsg);
             if (text && text.trim().length > 100) {
               window._pdfRawText = text;
               document.getElementById('pdfDebugBtn').style.display = 'inline-block';
@@ -17609,7 +17608,7 @@
                   }
                   if (retryWorker) {
                     const pdf2 = await pdfjsLib.getDocument({
-                      data: ab,
+                      data: freshBytes(),
                       useWorkerFetch: false,
                       isEvalSupported: false,
                       useSystemFonts: true,
