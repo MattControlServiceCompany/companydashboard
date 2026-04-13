@@ -3329,6 +3329,14 @@
         grid-template-rows: 1fr;
         gap: 0;
         width: 100%;
+        /* flex:1 + min-height:0 so this grid takes the full remaining height of
+           its view-flex parent. Without these, .ud-layout took natural content
+           height and every flex:1 below it (ud-detail-body → maMeterWorkspace →
+           maPane → bills-scroll-body) had no anchored ceiling — the bills table
+           would expand to its own content height and push the horizontal
+           scrollbar below the viewport. */
+        flex: 1 1 0;
+        min-height: 0;
         border: 1px solid var(--border);
         border-radius: var(--r);
         overflow: hidden;
