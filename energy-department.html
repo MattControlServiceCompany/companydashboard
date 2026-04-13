@@ -3484,7 +3484,11 @@
       .ud-detail-col {
         display: flex;
         flex-direction: column;
-        overflow: hidden;
+        /* overflow must allow the collapse tab to escape on the left so it can straddle
+           the divider between the buildings panel and the data column. Children that need
+           internal scrolling (.ud-detail-body, .ud-meter-card contents, etc.) have their
+           own overflow-y: auto — no need to clip at the column level. */
+        overflow: visible;
         min-height: 0;
         background: var(--s2);
         position: relative;
