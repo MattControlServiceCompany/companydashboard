@@ -83,11 +83,14 @@ tmp.*
 *-draft.*
 
 # ---------------------------------------------------------------------------
-# Internal docs, mockups, AI planning files
+# Internal docs, mockups, AI planning files, dashboard logic
 # ---------------------------------------------------------------------------
 docs/mockups/
 docs/superpowers/
 docs/drafts/
+docs/dashboardlogic.md
+docs/dashboardlogic*.md
+docs/energy-department-notes.txt
 *.draft.md
 
 # ---------------------------------------------------------------------------
