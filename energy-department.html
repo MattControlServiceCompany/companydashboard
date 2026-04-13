@@ -3498,6 +3498,12 @@
            own overflow-y: auto — no need to clip at the column level. */
         overflow: visible;
         min-height: 0;
+        /* CRITICAL: without min-width:0 this grid cell inherits its content's min-content
+           width (the bills table, ~1295px). The grid row then grows wider than its parent
+           and .ud-layout's overflow:hidden clips the action column and the meter
+           buttons on the right with no scrollbar. min-width:0 lets this column shrink to
+           fit the grid cell so the inner .bills-scroll-body can show its OWN scrollbar. */
+        min-width: 0;
         background: var(--s2);
         position: relative;
       }
@@ -3541,11 +3547,14 @@
            block container with overflow-y:auto, which meant every flex:1 inside
            (maMeterWorkspace, maPane, bills-scroll-body) was a no-op and the bills
            table expanded to natural height — hiding the horizontal scrollbar below
-           the fold and breaking the sticky thead behavior. */
+           the fold and breaking the sticky thead behavior. min-width:0 is critical
+           alongside min-height:0 so the width constraint propagates down to the
+           bills table body where overflow-x:auto can actually engage. */
         display: flex;
         flex-direction: column;
         flex: 1 1 0;
         min-height: 0;
+        min-width: 0;
         overflow: hidden;
       }
       /* Meter cards */
@@ -4051,6 +4060,7 @@
         flex-direction: column;
         flex: 1;
         min-height: 0;
+        min-width: 0;
       }
       .ma-tabs {
         display: flex;
@@ -21914,9 +21924,12 @@
         const pane = ws.querySelector('#maPane') || document.getElementById('maPane');
         // Reset pane styles — bills tab needs the pane to be a flex column so the inner
         // .bills-scroll-body gets flex:1 and its horizontal scrollbar lands at the bottom
-        // of the visible area. Other tabs just want padding + default block layout.
+        // of the visible area. min-width:0 on the pane is mandatory alongside min-height:0
+        // so the bills-scroll-body can shrink below the table's intrinsic content width
+        // and show its horizontal scrollbar instead of letting the table push the whole
+        // column wider than .ud-layout can accommodate.
         if (udActiveTab === 'bills') {
-          pane.style.cssText = 'display:flex;flex-direction:column;min-height:0;overflow:hidden;';
+          pane.style.cssText = 'display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;';
         } else {
           pane.style.cssText = 'display:block;padding:18px 20px;overflow-y:auto;';
         }
