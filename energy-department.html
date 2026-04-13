@@ -4925,54 +4925,61 @@
                     </div>
                   </div>
                   <div id="pdfPillsHdr"></div>
-                  <div
-                    class="ai-box"
-                    id="pdfAIBox"
-                    style="max-height: 46vh; min-height: 140px; overflow-y: auto; margin-top: 8px"
-                  >
-                    Upload a PDF and select document type.
-                  </div>
                 </div>
               </div>
             </div>
-            <div id="pdfScrollBody" style="flex: 1; overflow-y: auto; padding: 0 18px 16px; min-height: 0">
-              <div id="extractedFieldsGrid"></div>
-              <!-- Auto-assign banner: shown when extracted AccountNumber matches a known meter -->
-              <div
-                id="pdfAutoAssignBanner"
-                style="
-                  display: none;
-                  margin-top: 10px;
-                  padding: 11px 14px;
-                  background: rgba(var(--em-rgb), 0.08);
-                  border: 1px solid rgba(var(--em-rgb), 0.3);
-                  border-radius: 8px;
-                  font-size: 12px;
-                  line-height: 1.5;
-                "
-              >
-                <div style="font-weight: 600; color: var(--em); margin-bottom: 4px">⚡ Meter Match Found</div>
-                <div id="pdfAutoAssignMsg" style="color: var(--text2); margin-bottom: 8px"></div>
-                <div style="display: flex; gap: 7px">
-                  <button class="btn btn-em btn-sm" onclick="confirmAutoAssign()">
-                    ✓ Confirm & Save to This Meter
-                  </button>
-                  <button
-                    class="btn btn-ghost btn-sm"
-                    onclick="document.getElementById('pdfAutoAssignBanner').style.display = 'none'"
-                  >
-                    Dismiss
-                  </button>
+            <!-- Main area below the frozen header is a flex row with two independently scrolling
+                 columns: the extracted field grid on the left (~60%) and the Extraction Output on
+                 the right (~40%). Each column scrolls on its own; pdfScrollBody itself does NOT
+                 scroll so the two columns can behave independently. -->
+            <div
+              id="pdfScrollBody"
+              style="flex: 1; display: flex; gap: 16px; padding: 0 18px 16px; min-height: 0; overflow: hidden"
+            >
+              <div id="pdfLeftCol" style="flex: 3; min-width: 0; min-height: 0; overflow-y: auto; padding-right: 4px">
+                <div id="extractedFieldsGrid"></div>
+                <!-- Auto-assign banner: shown when extracted AccountNumber matches a known meter -->
+                <div
+                  id="pdfAutoAssignBanner"
+                  style="
+                    display: none;
+                    margin-top: 10px;
+                    padding: 11px 14px;
+                    background: rgba(var(--em-rgb), 0.08);
+                    border: 1px solid rgba(var(--em-rgb), 0.3);
+                    border-radius: 8px;
+                    font-size: 12px;
+                    line-height: 1.5;
+                  "
+                >
+                  <div style="font-weight: 600; color: var(--em); margin-bottom: 4px">⚡ Meter Match Found</div>
+                  <div id="pdfAutoAssignMsg" style="color: var(--text2); margin-bottom: 8px"></div>
+                  <div style="display: flex; gap: 7px">
+                    <button class="btn btn-em btn-sm" onclick="confirmAutoAssign()">
+                      ✓ Confirm & Save to This Meter
+                    </button>
+                    <button
+                      class="btn btn-ghost btn-sm"
+                      onclick="document.getElementById('pdfAutoAssignBanner').style.display = 'none'"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+                <div id="pdfSaveRow" style="display: none; margin-top: 12px">
+                  <div class="fl" style="margin-bottom: 5px">Save to project</div>
+                  <div style="display: flex; gap: 8px">
+                    <select class="fs" id="pdfProjSel" style="flex: 1"></select
+                    ><button class="btn btn-em" onclick="savePDFData()">Save</button
+                    ><button class="btn btn-ghost" onclick="clearPDFOCR()" title="Clear extracted data and reset">
+                      ✕ Clear
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div id="pdfSaveRow" style="display: none; margin-top: 12px">
-                <div class="fl" style="margin-bottom: 5px">Save to project</div>
-                <div style="display: flex; gap: 8px">
-                  <select class="fs" id="pdfProjSel" style="flex: 1"></select
-                  ><button class="btn btn-em" onclick="savePDFData()">Save</button
-                  ><button class="btn btn-ghost" onclick="clearPDFOCR()" title="Clear extracted data and reset">
-                    ✕ Clear
-                  </button>
+              <div id="pdfRightCol" style="flex: 2; min-width: 0; min-height: 0; display: flex; flex-direction: column">
+                <div class="ai-box" id="pdfAIBox" style="flex: 1; min-height: 0; overflow-y: auto">
+                  Upload a PDF and select document type.
                 </div>
               </div>
             </div>
