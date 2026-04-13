@@ -16764,6 +16764,25 @@
             pdfKey: pdfKey || null,
             pdfPageStart: bill._pageStart || null,
             pdfPageEnd: bill._pageEnd || null,
+            // Individual charge components — the Edit Billing Period modal reads these
+            // directly, so dropping them here leaves the rider/energy/demand/franchise
+            // inputs blank even though the PDF extractor captured real values. Must stay
+            // in sync with the single-bill path in _saveSinglePDFBill.
+            rateSchedule: bill.RateSchedule || '',
+            onPeakKwh: bill.OnPeakKWh || bill.EnergyOnPeakKWh || '',
+            offPeakKwh: bill.OffPeakKWh || bill.EnergyOffPeakKWh || '',
+            onPeakCost: bill.EnergyOnPeakCharge || '',
+            offPeakCost: bill.EnergyOffPeakCharge || '',
+            customerCharge: bill.CustomerCharge || '',
+            demandCharge: bill.BilledKWCharge || '',
+            facilitiesCharge: bill.FacilitiesCharge || '',
+            ecaCharge: bill.ECACharge || '',
+            eerCharge: bill.EERCharge || '',
+            ptsCharge: bill.PTSCharge || '',
+            tdcCharge: bill.TDCCharge || '',
+            renewableCharge: bill.RenewableCharge || '',
+            franchiseFee: bill.FranchiseFee || '',
+            solarCredit: bill.SolarCredit || '',
           };
           meter.bills = meter.bills || [];
           const dup = meter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
@@ -18360,6 +18379,9 @@
         if (dup.locationType === 'assigned') {
           // Update existing bill on meter
           const existing = dup.existing;
+          // Keep this list complete — any extracted field that the Edit Billing Period
+          // modal renders MUST have a row here, otherwise re-extracting a bill can't
+          // backfill a missing value (merge/overwrite skip anything not in the map).
           const FIELD_MAP = {
             kWhConsumed: 'kwh',
             ActualKW: 'demandKW',
@@ -18368,6 +18390,10 @@
             FacilitiesCharge: 'facKWCost',
             TotalCurrentCharges: 'totalCost',
             RateSchedule: 'rateSchedule',
+            OnPeakKWh: 'onPeakKwh',
+            EnergyOnPeakKWh: 'onPeakKwh',
+            OffPeakKWh: 'offPeakKwh',
+            EnergyOffPeakKWh: 'offPeakKwh',
             CustomerCharge: 'customerCharge',
             BilledKWCharge: 'demandCharge',
             EnergyOnPeakCharge: 'onPeakCost',
@@ -18376,8 +18402,14 @@
             EERCharge: 'eerCharge',
             PTSCharge: 'ptsCharge',
             TDCCharge: 'tdcCharge',
+            RenewableCharge: 'renewableCharge',
+            SolarCredit: 'solarCredit',
             FranchiseFee: 'franchiseFee',
           };
+          // Facilities is also stored in the newer `facilitiesCharge` key; keep both
+          // synced when extraction provides a value, so the modal's Demand Charges
+          // section and the legacy facKWCost field stay in agreement.
+          if (extracted.FacilitiesCharge) existing.facilitiesCharge = extracted.FacilitiesCharge;
 
           // Page-range metadata lives on the extracted bill as _pageStart / _pageEnd
           // (from the %%PAGE_N%% markers inserted by extractPDFText). Any overwrite or
@@ -18389,29 +18421,39 @@
             if (extracted._pageEnd) existing.pdfPageEnd = extracted._pageEnd;
             if (extracted._pdfSharedKey) existing.pdfKey = extracted._pdfSharedKey;
           };
+          // Recalculate cost aggregates from whatever is currently on `existing` AFTER
+          // the field-level updates have been applied. Reading back from existing (instead
+          // of from the raw extracted payload) preserves values the user manually entered,
+          // and also keeps previously-correct aggregates from silently dropping when a
+          // re-extraction is noisier than the first pass and misses some constituent charges.
+          const _recalcAggregates = () => {
+            existing.kwhCost = (
+              pf(existing.onPeakCost) +
+              pf(existing.offPeakCost) +
+              pf(existing.ecaCharge) +
+              pf(existing.eerCharge) +
+              pf(existing.ptsCharge)
+            ).toFixed(2);
+            existing.kwCost = (pf(existing.demandCharge) + pf(existing.tdcCharge)).toFixed(2);
+            // Tax exempt delivery and bill offset aren't stored in billRow, so they have
+            // to come from the new extraction if the user asked to apply it; otherwise
+            // customerCharge is the only otherCost contributor we can still reconstruct.
+            existing.otherCost = (
+              pf(existing.customerCharge) +
+              pf(extracted.TaxExemptDelivery) +
+              pf(extracted.BillOffset)
+            ).toFixed(2);
+            existing.taxCost = pf(existing.franchiseFee).toFixed(2);
+          };
           if (dup.action === 'overwrite') {
-            // Replace all mapped fields
+            // Replace all mapped fields with extracted value when non-empty
             for (const [extKey, billKey] of Object.entries(FIELD_MAP)) {
               if (extracted[extKey] !== undefined && extracted[extKey] !== null && extracted[extKey] !== '') {
                 existing[billKey] = extracted[extKey];
               }
             }
             _copyPageRange();
-            // Recalculate cost aggregates
-            existing.kwhCost = (
-              pf(extracted.EnergyOnPeakCharge) +
-              pf(extracted.EnergyOffPeakCharge) +
-              pf(extracted.ECACharge) +
-              pf(extracted.EERCharge) +
-              pf(extracted.PTSCharge)
-            ).toFixed(2);
-            existing.kwCost = (pf(extracted.BilledKWCharge) + pf(extracted.TDCCharge)).toFixed(2);
-            existing.otherCost = (
-              pf(extracted.CustomerCharge) +
-              pf(extracted.TaxExemptDelivery) +
-              pf(extracted.BillOffset)
-            ).toFixed(2);
-            existing.taxCost = pf(extracted.FranchiseFee).toFixed(2);
+            _recalcAggregates();
           } else if (dup.action === 'merge') {
             // Fill only empty fields
             for (const [extKey, billKey] of Object.entries(FIELD_MAP)) {
@@ -18423,6 +18465,7 @@
             if (!existing.pdfPageStart && extracted._pageStart) existing.pdfPageStart = extracted._pageStart;
             if (!existing.pdfPageEnd && extracted._pageEnd) existing.pdfPageEnd = extracted._pageEnd;
             if (!existing.pdfKey && extracted._pdfSharedKey) existing.pdfKey = extracted._pdfSharedKey;
+            _recalcAggregates();
           } else if (dup.action === 'field-select') {
             // Apply per-field selections
             for (const d of dup.diffFields) {
@@ -18432,21 +18475,7 @@
               }
             }
             _copyPageRange();
-            // Recalculate cost aggregates from current existing values
-            existing.kwhCost = (
-              pf(existing.onPeakCost) +
-              pf(existing.offPeakCost) +
-              pf(existing.ecaCharge) +
-              pf(existing.eerCharge) +
-              pf(existing.ptsCharge)
-            ).toFixed(2);
-            existing.kwCost = (pf(existing.demandCharge) + pf(existing.tdcCharge)).toFixed(2);
-            existing.otherCost = (
-              pf(existing.customerCharge) +
-              pf(extracted.TaxExemptDelivery) +
-              pf(extracted.BillOffset)
-            ).toFixed(2);
-            existing.taxCost = pf(existing.franchiseFee).toFixed(2);
+            _recalcAggregates();
           }
           saveUtilityData();
           return true;
