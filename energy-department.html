@@ -16944,31 +16944,25 @@
         }
         // Normalize helper
         const norm = (v) => (v || '').replace(/[\s\-]/g, '').toLowerCase();
-        // Normalize billing period to "Month YYYY" for fuzzy matching
-        const normPeriod = (start, end) => {
-          try {
-            const s = new Date(start);
-            const e = new Date(end);
-            if (isNaN(s) || isNaN(e)) return '';
-            const months = [
-              'January',
-              'February',
-              'March',
-              'April',
-              'May',
-              'June',
-              'July',
-              'August',
-              'September',
-              'October',
-              'November',
-              'December',
-            ];
-            return months[e.getMonth()] + ' ' + e.getFullYear();
-          } catch (ex) {
-            return '';
-          }
+        // Fuzzy period match: treat two bills as the same billing cycle only when BOTH
+        // the start and end dates are within 5 days of each other. Previously this used
+        // "same Month YYYY of the end date" which false-matched any two bills ending in
+        // the same calendar month (e.g. 02/01–03/03 vs 03/02–03/27 both ended in March).
+        const FUZZY_DAY_TOLERANCE = 5;
+        const dayDiff = (a, b) => {
+          if (!a || !b) return Infinity;
+          const da = new Date(a);
+          const db = new Date(b);
+          if (isNaN(da) || isNaN(db)) return Infinity;
+          return Math.abs((da - db) / 86400000);
         };
+        const periodClose = (s1, e1, s2, e2) =>
+          !!s1 &&
+          !!e1 &&
+          !!s2 &&
+          !!e2 &&
+          dayDiff(s1, s2) <= FUZZY_DAY_TOLERANCE &&
+          dayDiff(e1, e2) <= FUZZY_DAY_TOLERANCE;
         // Convert extracted date (MM/DD/YYYY) to ISO (YYYY-MM-DD) for comparison
         const toISO = (d) => {
           if (!d) return '';
@@ -16981,7 +16975,6 @@
           const extAcct = norm(ext.AccountNumber);
           const extStart = toISO(ext.BillingPeriodStart);
           const extEnd = toISO(ext.BillingPeriodEnd);
-          const extPeriod = normPeriod(ext.BillingPeriodStart, ext.BillingPeriodEnd);
           const extMeter = norm(ext.MeterNumber);
           if (!extAcct && !extStart) continue; // Can't match without identity
 
@@ -16992,7 +16985,7 @@
             const acctMatch = extAcct && existAcct && extAcct === existAcct;
             const meterMatch = extMeter && existMeter && extMeter === existMeter;
             const periodMatch = extStart && ab.bill.start === extStart && extEnd && ab.bill.end === extEnd;
-            const fuzzyPeriod = extPeriod && normPeriod(ab.bill.start, ab.bill.end) === extPeriod;
+            const fuzzyPeriod = !periodMatch && periodClose(extStart, extEnd, ab.bill.start, ab.bill.end);
             if ((acctMatch || meterMatch) && (periodMatch || fuzzyPeriod)) {
               // Build diff fields
               const diffFields = _buildDiffFields(ext, ab.bill);
@@ -17019,12 +17012,11 @@
             const sbAcct = norm(sb.AccountNumber);
             const sbStart = toISO(sb.BillingPeriodStart);
             const sbEnd = toISO(sb.BillingPeriodEnd);
-            const sbPeriod = normPeriod(sb.BillingPeriodStart, sb.BillingPeriodEnd);
             const sbMeter = norm(sb.MeterNumber);
             const acctMatch = extAcct && sbAcct && extAcct === sbAcct;
             const meterMatch = extMeter && sbMeter && extMeter === sbMeter;
             const periodMatch = extStart && sbStart === extStart && extEnd && sbEnd === extEnd;
-            const fuzzyPeriod = extPeriod && sbPeriod === extPeriod;
+            const fuzzyPeriod = !periodMatch && periodClose(extStart, extEnd, sbStart, sbEnd);
             if ((acctMatch || meterMatch) && (periodMatch || fuzzyPeriod)) {
               const diffFields = _buildDiffFields(ext, sb);
               dupMap[i] = {
