@@ -4021,6 +4021,16 @@
         border-color: var(--em);
         background: var(--em-dim);
       }
+      /* Inline Add Meter pill — dashed border, muted background, brightens on hover */
+      .ma-meter-pill.ma-add-meter-pill {
+        border-style: dashed;
+        border-color: var(--border2);
+        background: transparent;
+      }
+      .ma-meter-pill.ma-add-meter-pill:hover {
+        border-color: var(--em);
+        background: var(--em-dim);
+      }
       #maMeterWorkspace {
         display: flex;
         flex-direction: column;
@@ -4779,7 +4789,14 @@
                     >
                       ✏️ Edit Building
                     </button>
-                    <button class="btn btn-em btn-sm" id="ud-add-meter-btn" onclick="openMeterModal()">
+                    <!-- Header + Add Meter button is hidden; the inline Add Meter pill lives
+                         directly to the right of the meter pills in .ma-meter-bar. -->
+                    <button
+                      class="btn btn-em btn-sm"
+                      id="ud-add-meter-btn"
+                      onclick="openMeterModal()"
+                      style="display: none"
+                    >
                       + Add Meter
                     </button>
                     <button
@@ -10618,13 +10635,16 @@
               align-items: center;
               justify-content: space-between;
               border-bottom: 1px solid var(--border);
+              flex-wrap: wrap;
+              gap: 8px;
             "
           >
-            <div style="display: flex; gap: 8px">
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center">
               <button
                 class="btn btn-em btn-sm"
                 onclick="applyDupSelections()"
                 style="font-size: 11px; padding: 4px 14px"
+                title="Apply the per-field choices you made below to only this bill"
               >
                 Apply Selected
               </button>
@@ -10638,8 +10658,55 @@
                   background: transparent;
                   color: var(--text2);
                 "
+                title="Skip only this bill on save"
               >
                 Skip
+              </button>
+              <span style="color: var(--border2); font-size: 11px; margin: 0 4px">|</span>
+              <span style="font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.4px"
+                >All duplicates</span
+              >
+              <button
+                class="btn btn-sm"
+                onclick="_dupBulkAction('skip')"
+                style="
+                  font-size: 11px;
+                  padding: 4px 12px;
+                  border: 1px solid rgba(245, 158, 11, 0.4);
+                  background: transparent;
+                  color: #f59e0b;
+                "
+                title="Skip every duplicate bill — the existing records stay untouched"
+              >
+                Skip All
+              </button>
+              <button
+                class="btn btn-sm"
+                onclick="_dupBulkAction('overwrite')"
+                style="
+                  font-size: 11px;
+                  padding: 4px 12px;
+                  border: 1px solid rgba(245, 158, 11, 0.4);
+                  background: transparent;
+                  color: #f59e0b;
+                "
+                title="Replace every existing record with the newly extracted values"
+              >
+                Overwrite All
+              </button>
+              <button
+                class="btn btn-sm"
+                onclick="_dupBulkAction('merge')"
+                style="
+                  font-size: 11px;
+                  padding: 4px 12px;
+                  border: 1px solid rgba(245, 158, 11, 0.4);
+                  background: transparent;
+                  color: #f59e0b;
+                "
+                title="Fill only the empty fields on the existing records from the new extraction"
+              >
+                Merge All
               </button>
             </div>
             <div id="dupModalNav" style="font-size: 11px; color: var(--text2)"></div>
@@ -18227,6 +18294,16 @@
             FranchiseFee: 'franchiseFee',
           };
 
+          // Page-range metadata lives on the extracted bill as _pageStart / _pageEnd
+          // (from the %%PAGE_N%% markers inserted by extractPDFText). Any overwrite or
+          // merge that lands a fresh extraction should pull those values through so the
+          // Saved Bills PDF viewer slices to the correct pages. Without this copy the
+          // old record keeps its stale (or null) page range and always opens the full PDF.
+          const _copyPageRange = () => {
+            if (extracted._pageStart) existing.pdfPageStart = extracted._pageStart;
+            if (extracted._pageEnd) existing.pdfPageEnd = extracted._pageEnd;
+            if (extracted._pdfSharedKey) existing.pdfKey = extracted._pdfSharedKey;
+          };
           if (dup.action === 'overwrite') {
             // Replace all mapped fields
             for (const [extKey, billKey] of Object.entries(FIELD_MAP)) {
@@ -18234,6 +18311,7 @@
                 existing[billKey] = extracted[extKey];
               }
             }
+            _copyPageRange();
             // Recalculate cost aggregates
             existing.kwhCost = (
               pf(extracted.EnergyOnPeakCharge) +
@@ -18256,6 +18334,10 @@
                 existing[billKey] = extracted[extKey];
               }
             }
+            // Page range: only fill if missing, never overwrite a valid existing range
+            if (!existing.pdfPageStart && extracted._pageStart) existing.pdfPageStart = extracted._pageStart;
+            if (!existing.pdfPageEnd && extracted._pageEnd) existing.pdfPageEnd = extracted._pageEnd;
+            if (!existing.pdfKey && extracted._pdfSharedKey) existing.pdfKey = extracted._pdfSharedKey;
           } else if (dup.action === 'field-select') {
             // Apply per-field selections
             for (const d of dup.diffFields) {
@@ -18264,6 +18346,7 @@
                 existing[FIELD_MAP[d.key]] = extracted[d.key];
               }
             }
+            _copyPageRange();
             // Recalculate cost aggregates from current existing values
             existing.kwhCost = (
               pf(existing.onPeakCost) +
@@ -18294,6 +18377,10 @@
                 sb[key] = extracted[key];
               }
             }
+            // Copy fresh page range on overwrite so the PDF viewer slices correctly
+            if (extracted._pageStart) sb.pdfPageStart = extracted._pageStart;
+            if (extracted._pageEnd) sb.pdfPageEnd = extracted._pageEnd;
+            if (extracted._pdfSharedKey) sb.pdfKey = extracted._pdfSharedKey;
           } else if (dup.action === 'merge') {
             const COMPARE_KEYS = Object.keys(extracted).filter((k) => !k.startsWith('_'));
             for (const key of COMPARE_KEYS) {
@@ -18301,11 +18388,17 @@
                 sb[key] = extracted[key];
               }
             }
+            // Fill missing page range without overwriting a valid existing one
+            if (!sb.pdfPageStart && extracted._pageStart) sb.pdfPageStart = extracted._pageStart;
+            if (!sb.pdfPageEnd && extracted._pageEnd) sb.pdfPageEnd = extracted._pageEnd;
+            if (!sb.pdfKey && extracted._pdfSharedKey) sb.pdfKey = extracted._pdfSharedKey;
           } else if (dup.action === 'field-select') {
             for (const d of dup.diffFields) {
               const useNew = dup.fieldSelections[d.key] !== false;
               if (useNew) sb[d.key] = extracted[d.key];
             }
+            if (extracted._pageStart) sb.pdfPageStart = extracted._pageStart;
+            if (extracted._pageEnd) sb.pdfPageEnd = extracted._pageEnd;
           }
           sb.savedAt = new Date().toISOString(); // Update timestamp
           await sset('en_pdf_bills', pdfBills);
@@ -18965,18 +19058,19 @@
             '<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);font-size:12px;color:#22c55e">✓ All expected fields present — values within normal ranges</div>';
         }
 
-        // Duplicate info banner at top of extracted fields
+        // Duplicate info banner at top of extracted fields.
+        // Kept intentionally compact — the full location + differing-fields list already
+        // lives in the right-column summary at the top of pdfPillsHdr. This is just a
+        // one-liner to make the per-bill status and action button obvious from the grid.
         let dupFieldBannerHtml = '';
         if (_dupInfo) {
           const diffCount = _dupInfo.diffFields.length;
-          const totalFields = Object.keys(parsed).filter((k) => !k.startsWith('_')).length;
-          const actionLabel = _dupInfo.action ? ' — action: <strong>' + _dupInfo.action + '</strong>' : '';
-          const pdfStatus = _dupInfo.hasPDF
-            ? `<span style="cursor:pointer;text-decoration:underline" onclick="_viewDupPDF(${_dupIdx})">&#128196; PDF stored</span>`
-            : 'No PDF stored';
-          dupFieldBannerHtml = `<div style="padding:5px 12px;margin:6px 0;border-radius:6px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.25);font-size:12px;color:#f59e0b;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-  <span style="flex:1;min-width:0"><strong>&#9888; Duplicate Bill</strong> &mdash; ${_dupInfo.location}${actionLabel} &middot; <span style="font-size:11px">${diffCount} of ${totalFields} differ${diffCount > 0 ? ' — possible rebill' : ''} &middot; ${pdfStatus}</span></span>
-  <button onclick="openDupModal(${_dupIdx})" style="flex-shrink:0;font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.1);color:#f59e0b;cursor:pointer;font-weight:600">Compare &amp; Choose Fields</button>
+          const actionLabel = _dupInfo.action
+            ? ' · <span style="color:var(--em);font-weight:700">' + _dupInfo.action + '</span>'
+            : '';
+          dupFieldBannerHtml = `<div style="padding:4px 10px;margin:4px 0;border-radius:5px;background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.2);font-size:11px;color:#f59e0b;display:flex;align-items:center;gap:8px">
+  <span style="flex:1;min-width:0">&#9888; Duplicate · ${diffCount} field${diffCount === 1 ? '' : 's'} differ${actionLabel}</span>
+  <button onclick="openDupModal(${_dupIdx})" style="flex-shrink:0;font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:#f59e0b;cursor:pointer;font-weight:600">Compare</button>
 </div>`;
         }
         // Split output between the frozen header (title + banners) and the scrollable grid
@@ -21414,34 +21508,41 @@
         if (wrap === document.getElementById('udDetailWrap')) udActiveMid = _curMid;
         else udActiveMid = _curMid; // temporarily set global so renderMeterWorkspace works
 
-        const pills = meters
-          .map((m) => {
-            const active = m.id === _curMid;
-            const bcount = (m.bills || []).length;
-            const _pCls = m.commodity === 'Electric' ? ' elec-pill' : m.commodity === 'Gas' ? ' gas-pill' : '';
-            const _pTxt = m.commodity === 'Electric' ? '#7dd8ff' : m.commodity === 'Gas' ? '#ffb040' : 'var(--text2)';
-            return (
-              '<button class="ma-meter-pill' +
-              _pCls +
-              (active ? ' active' : '') +
-              '" onclick="udSelectMeter(\'' +
-              m.id +
-              '\',this)">' +
-              commodityPill(m.commodity) +
-              '<span style="font-size:12px;font-weight:600;color:' +
-              (active ? 'var(--text)' : _pTxt) +
-              '">' +
-              (m.provider || m.commodity) +
-              '</span>' +
-              '<span style="font-size:11px;color:var(--text3)">' +
-              bcount +
-              ' bill' +
-              (bcount !== 1 ? 's' : '') +
-              '</span>' +
-              '</button>'
-            );
-          })
-          .join('');
+        const pills =
+          meters
+            .map((m) => {
+              const active = m.id === _curMid;
+              const bcount = (m.bills || []).length;
+              const _pCls = m.commodity === 'Electric' ? ' elec-pill' : m.commodity === 'Gas' ? ' gas-pill' : '';
+              const _pTxt = m.commodity === 'Electric' ? '#7dd8ff' : m.commodity === 'Gas' ? '#ffb040' : 'var(--text2)';
+              return (
+                '<button class="ma-meter-pill' +
+                _pCls +
+                (active ? ' active' : '') +
+                '" onclick="udSelectMeter(\'' +
+                m.id +
+                '\',this)">' +
+                commodityPill(m.commodity) +
+                '<span style="font-size:12px;font-weight:600;color:' +
+                (active ? 'var(--text)' : _pTxt) +
+                '">' +
+                (m.provider || m.commodity) +
+                '</span>' +
+                '<span style="font-size:11px;color:var(--text3)">' +
+                bcount +
+                ' bill' +
+                (bcount !== 1 ? 's' : '') +
+                '</span>' +
+                '</button>'
+              );
+            })
+            .join('') +
+          // Add Meter pill sits directly after the existing meter pills so users don't
+          // have to hunt for the add button in the header bar.
+          '<button class="ma-meter-pill ma-add-meter-pill" onclick="openMeterModal()" title="Add a new meter to this building">' +
+          '<span style="font-size:14px;font-weight:700;color:var(--em)">+</span>' +
+          '<span style="font-size:12px;font-weight:600;color:var(--em)">Add Meter</span>' +
+          '</button>';
 
         wrap.innerHTML =
           '<div class="ma-meter-bar">' +
@@ -21656,11 +21757,13 @@
           '<div id="maPane" style="padding:18px 20px;overflow-y:auto;"></div>';
 
         const pane = ws.querySelector('#maPane') || document.getElementById('maPane');
-        // Reset pane styles — bills tab sets flex/no-padding, others need scroll + padding
+        // Reset pane styles — bills tab needs the pane to be a flex column so the inner
+        // .bills-scroll-body gets flex:1 and its horizontal scrollbar lands at the bottom
+        // of the visible area. Other tabs just want padding + default block layout.
         if (udActiveTab === 'bills') {
-          pane.style.cssText = '';
+          pane.style.cssText = 'display:flex;flex-direction:column;min-height:0;overflow:hidden;';
         } else {
-          pane.style.cssText = 'padding:18px 20px;';
+          pane.style.cssText = 'display:block;padding:18px 20px;overflow-y:auto;';
         }
         if (udActiveTab === 'bills') renderBillsPane(pane, m, bills, incl);
         if (udActiveTab === 'norm') renderNormPane(pane, m, bills, incl);
