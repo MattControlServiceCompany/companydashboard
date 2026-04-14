@@ -15179,12 +15179,62 @@
             for (const m of sfMatches) {
               byPair.set(m.start + '|' + m.end, m);
             }
-            const uniqueBills = Array.from(byPair.values()).sort((a, b) => a.idx - b.idx);
+            let uniqueBills = Array.from(byPair.values()).sort((a, b) => a.idx - b.idx);
+
+            // ── FUZZY DATE-PAIR MERGE ──
+            // OCR can read the SAME bill's start date differently on two pages
+            // (e.g. "01/28/2026" on the cover, "01/29/2026" on the billing-details
+            // page). The exact-key dedup above leaves both as separate entries,
+            // producing a phantom "extra bill" with overlapping page ranges. Walk
+            // adjacent entries (sorted by idx) and merge when the end dates match
+            // AND start dates are within ±2 days — Evergy bills are ~30 days so
+            // legit adjacent bills never share an end date, so this is safe.
+            // Prefer the entry that has a "Billing Details" header within 40 chars
+            // before its idx (that's the charge-line page — richer section).
+            const _parseMDY = (s) => {
+              const mm = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+              if (!mm) return null;
+              return new Date(parseInt(mm[3]), parseInt(mm[1]) - 1, parseInt(mm[2]));
+            };
+            const _dayDelta = (a, b) => {
+              const da = _parseMDY(a);
+              const db = _parseMDY(b);
+              if (!da || !db) return Infinity;
+              return Math.abs((da - db) / 86400000);
+            };
+            const _hasBdBefore = (m) => {
+              const before = t.slice(Math.max(0, m.idx - 40), m.idx);
+              return /Billing\s+Details/i.test(before);
+            };
+            const _merged = [];
+            let _fuzzyMerges = 0;
+            for (const m of uniqueBills) {
+              const prev = _merged.length ? _merged[_merged.length - 1] : null;
+              if (prev && prev.end === m.end && _dayDelta(prev.start, m.start) <= 2) {
+                _fuzzyMerges++;
+                const prevIsBd = _hasBdBefore(prev);
+                const curIsBd = _hasBdBefore(m);
+                if (curIsBd && !prevIsBd) {
+                  _merged[_merged.length - 1] = m;
+                } else if (prevIsBd && !curIsBd) {
+                  // keep prev
+                } else {
+                  // both or neither — prefer the later idx (billing-details page
+                  // is usually later in the PDF text than the cover page).
+                  if (m.idx > prev.idx) _merged[_merged.length - 1] = m;
+                }
+                continue;
+              }
+              _merged.push(m);
+            }
+            uniqueBills = _merged;
             console.log(
               '[Evergy extractAll] raw service-from matches:',
               sfMatches.length,
               'unique bills:',
               uniqueBills.length,
+              '· fuzzy-merged:',
+              _fuzzyMerges,
             );
 
             // Build sections by slicing between unique bill start positions. Each
@@ -15461,6 +15511,29 @@
                 if (!r._pageStart) r._pageStart = fallbackStart;
                 if (!r._pageEnd) r._pageEnd = fallbackEnd;
                 r._pageRangeSource = (r._pageRangeSource || '') + ' chain-fallback';
+              }
+            }
+            // ── OVERLAP CLAMP ──
+            // After all fallback strategies run, different bills may have computed
+            // their ranges using different strategies (billing-date / bd-header /
+            // cover-anchor / section-scan / chain-fallback), producing overlapping
+            // ranges where one bill greedily spans pages that rightfully belong to
+            // later bills. This was the root cause of Bill 23 in ocr-debug(77).txt
+            // covering pages 50-59 while Bills 24-31 collapsed to single pages
+            // 52-59 *inside* Bill 23's range — Bill 23 then extracted fields from
+            // 10 pages of mixed OCR text and dragged neighbor-bill data into its
+            // own output. Walk results in order and clamp each bill's _pageEnd to
+            // never exceed (next bill's _pageStart - 1).
+            for (let i = 0; i < results.length - 1; i++) {
+              const r = results[i];
+              const nxt = results[i + 1];
+              if (!r._pageEnd || !nxt._pageStart) continue;
+              if (r._pageEnd >= nxt._pageStart) {
+                const origEnd = r._pageEnd;
+                r._pageEnd = Math.max(r._pageStart || 1, nxt._pageStart - 1);
+                if (r._pageEnd < origEnd) {
+                  r._pageRangeSource = (r._pageRangeSource || '') + ' clamped';
+                }
               }
             }
             // ── NEIGHBOR-BILL FALLBACK (extractAll) ──
