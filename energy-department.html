@@ -10675,6 +10675,34 @@
               </button>
               <button
                 class="btn btn-sm"
+                onclick="overwriteDupBill()"
+                style="
+                  font-size: 11px;
+                  padding: 4px 14px;
+                  border: 1px solid rgba(239, 68, 68, 0.4);
+                  background: transparent;
+                  color: #ef4444;
+                "
+                title="Replace the existing record with the newly extracted values (this bill only)"
+              >
+                Overwrite
+              </button>
+              <button
+                class="btn btn-sm"
+                onclick="mergeDupBill()"
+                style="
+                  font-size: 11px;
+                  padding: 4px 14px;
+                  border: 1px solid rgba(34, 197, 94, 0.4);
+                  background: transparent;
+                  color: #22c55e;
+                "
+                title="Fill only the empty fields on the existing record from the new extraction (this bill only)"
+              >
+                Merge
+              </button>
+              <button
+                class="btn btn-sm"
                 onclick="skipDupBill()"
                 style="
                   font-size: 11px;
@@ -16366,6 +16394,54 @@
             } else if (!curBilledKw && billedKwMax && billedKwMax < 10000) {
               b.BilledKW = billedKwMax.toFixed(4);
             }
+            // ── ActualKW sanity clamp: ActualKW ≤ BilledKW (physical constraint) ──
+            // BilledKW is derived by the utility as max(ActualKW, LGS floor, 12-month ratchet).
+            // That means BilledKW is ALWAYS ≥ ActualKW by construction — if OCR produces an
+            // ActualKW that exceeds BilledKW, the meter-table reading is wrong (common garble:
+            // "475.5360" read as "4755360", "578.784" as "5787840", etc.). Clamp down to the
+            // smaller of BilledKW and FacilitiesKW so the correction respects both physical
+            // constraints ("Actual kW can never be more than Billed kW or Facilities kW") in
+            // one shot. Runs AFTER BilledKW and FacilitiesKW have been cross-validated against
+            // their rate-line qty, so the clamp target is trustworthy.
+            //
+            // This rule intentionally does NOT fire on ActualKW > FacilitiesKW alone — a real
+            // new 12-month peak has ActualKW == BilledKW > prior FacilitiesKW, and is handled
+            // by the downstream "new peak + forward propagation" logic. Firing here would
+            // swallow legitimate peak growth. The strict trigger is ActualKW > BilledKW,
+            // which is physically impossible and therefore always an OCR error.
+            //
+            // Respects prior _auto_corrected_ActualKW markers: if an earlier rule (e.g. the
+            // 200 kW LGS floor recovery above) already wrote one, we don't overwrite it.
+            const curActual = pf(b.ActualKW);
+            const curBilledFinal = pf(b.BilledKW);
+            const curFacFinal = pf(b.FacilitiesKW);
+            if (curActual > 0 && curBilledFinal > 0 && curActual > curBilledFinal + 0.001) {
+              let clampTarget = curBilledFinal;
+              let clampSource = 'BilledKW';
+              if (curFacFinal > 0 && curFacFinal < clampTarget) {
+                clampTarget = curFacFinal;
+                clampSource = 'FacilitiesKW';
+              }
+              if (!b['_auto_corrected_ActualKW']) {
+                const facPart = curFacFinal > 0 ? ' or FacilitiesKW (' + curFacFinal.toFixed(4) + ')' : '';
+                b['_auto_corrected_ActualKW'] = {
+                  original: b.ActualKW,
+                  corrected: clampTarget.toFixed(4),
+                  reason:
+                    'ActualKW (' +
+                    curActual.toFixed(4) +
+                    ') cannot exceed BilledKW (' +
+                    curBilledFinal.toFixed(4) +
+                    ')' +
+                    facPart +
+                    ' — clamped to ' +
+                    clampSource +
+                    ' = ' +
+                    clampTarget.toFixed(4),
+                };
+                b.ActualKW = clampTarget.toFixed(4);
+              }
+            }
             // ── Meter table cross-validation: ReadDifference / MeterMultiplier / kWhConsumed ──
             // Two identities anchor the meter table:
             //   (1) EndRead - StartRead = ReadDifference
@@ -17366,6 +17442,36 @@
         const box = document.getElementById('pdfAIBox');
         if (bills && box) renderMultiBillUI(bills, box);
         showToast('Bill will be skipped on save');
+      }
+
+      function overwriteDupBill() {
+        const billIdx = window._dupModalIdx;
+        const dup = (window._pdfDupMap || {})[billIdx];
+        if (!dup) return;
+        dup.action = 'overwrite';
+        closeDupModal();
+        const bills = window._pdfMultiBills;
+        const box = document.getElementById('pdfAIBox');
+        if (bills && box) renderMultiBillUI(bills, box);
+        const i = window._pdfMultiIdx || 0;
+        const billWarnings = (window._pdfBillWarnings || [])[i]?.warnings || [];
+        if (bills && bills[i]) renderPDFFields(bills[i], billWarnings);
+        showToast('Bill will be overwritten on save');
+      }
+
+      function mergeDupBill() {
+        const billIdx = window._dupModalIdx;
+        const dup = (window._pdfDupMap || {})[billIdx];
+        if (!dup) return;
+        dup.action = 'merge';
+        closeDupModal();
+        const bills = window._pdfMultiBills;
+        const box = document.getElementById('pdfAIBox');
+        if (bills && box) renderMultiBillUI(bills, box);
+        const i = window._pdfMultiIdx || 0;
+        const billWarnings = (window._pdfBillWarnings || [])[i]?.warnings || [];
+        if (bills && bills[i]) renderPDFFields(bills[i], billWarnings);
+        showToast('Bill will be merged on save');
       }
 
       async function _viewDupPDF(billIdx) {
