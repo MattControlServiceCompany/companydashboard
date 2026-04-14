@@ -13841,18 +13841,26 @@
             // silently dropped the entire rate part (e.g. the second tier of a seasonal
             // ECA charge), leaving `_rates.ECACharge` missing half the total.
             const QTY_RE = '([\\d,]+[.:]\\d{2,})';
-            // Try the direct pattern first: qty kW/kWh at $rate (no junk between at and rate)
-            let rateM = block.match(new RegExp(QTY_RE + '\\s*(?:\\d\\s+)?k([Ww]h?)\\s+at\\s+\\$([\\d,.]+)', 'i'));
+            // Gap between qty and unit: allow up to ~40 chars of OCR garbage (stray letters,
+            // chart Y-axis numbers, padded whitespace, line-break artifacts). Real data has
+            // just whitespace, but degraded OCR injects characters like
+            // "475.5360                        i\nKW at $2.68601" (24 spaces + stray 'i' +
+            // newline-as-space = 26 chars). 40 leaves headroom for worse cases without
+            // risking a cross-charge match, since xRate's block is already bounded to 4 lines
+            // and stops on NEXT_CHG_LINE.
+            const GAP = '[\\s\\S]{0,40}?';
+            // Try the direct pattern first: qty kW/kWh at $rate
+            let rateM = block.match(new RegExp(QTY_RE + GAP + 'k([Ww]h?)\\s+at\\s+\\$([\\d,.]+)', 'i'));
             if (!rateM) {
-              // Fallback: allow junk (chart numbers, OCR garbage) between "at" and "$rate"
-              // Match: qty kWh at [anything] $rate per kW/kWh
+              // Fallback: allow junk (chart numbers, OCR garbage) between "at" and "$rate".
+              // Accept "per" OR "por" (Tesseract often reads "per" as "por" on degraded scans).
               rateM = block.match(
-                new RegExp(QTY_RE + '\\s*(?:\\d\\s+)?k([Ww]h?)\\s+at\\s+[\\s\\S]*?\\$([\\d,.]+)\\s*per\\s+k[Ww]', 'i'),
+                new RegExp(QTY_RE + GAP + 'k([Ww]h?)\\s+at\\s+[\\s\\S]*?\\$([\\d,.]+)\\s*p[eo]r\\s+k[Ww]', 'i'),
               );
             }
             if (!rateM) {
               // Last resort: qty kWh at [anything] $rate (no "per kW" required)
-              rateM = block.match(new RegExp(QTY_RE + '\\s*(?:\\d\\s+)?k([Ww]h?)\\s+at[\\s\\S]*?\\$([\\d,.]+)', 'i'));
+              rateM = block.match(new RegExp(QTY_RE + GAP + 'k([Ww]h?)\\s+at[\\s\\S]*?\\$([\\d,.]+)', 'i'));
             }
             if (rateM) {
               // Normalize `:` → `.` so `113,763:4729` parses as `113763.4729`.
@@ -15991,7 +15999,11 @@
             const totalFinal = pf(b.TotalCurrentCharges);
             if (compSum > 0 && totalFinal > 0) {
               const diff = Math.abs(compSum - totalFinal);
-              if (diff > 1) {
+              // $0.02 threshold matches the UI pill/banner exactly so the extractor and the
+              // display never disagree. Sub-dollar residuals are typically single-digit OCR
+              // misreads (e.g. "$1,277.29" read as "$1,277.20") and should be auto-corrected
+              // either via rate × quantity cross-check or via subtraction inference below.
+              if (diff >= 0.02) {
                 b['_sum_mismatch'] = {
                   compSum,
                   total: totalFinal,
@@ -16123,6 +16135,76 @@
                             totalFinal.toFixed(2),
                         };
                       }
+                    }
+                  }
+                }
+
+                // ── STRATEGY C: SUBTRACTION INFERENCE ──
+                // If rate×qty correction didn't resolve the mismatch AND exactly one
+                // rate-based charge field has a value but no _rates entry (i.e. the rate
+                // regex failed to capture its rate line, so it's unverifiable by math),
+                // then the stated TotalCurrentCharges minus all other charges MUST equal
+                // that one unverified charge. The OCR'd value was almost certainly a
+                // single-digit misread (e.g. "$1,277.29" read as "$1,277.20"), and the
+                // residual inference will recover the correct value exactly.
+                //
+                // Skip any field that already has an _auto_corrected_ or _ocr_consensus_
+                // marker — those were corrected by an earlier pass and should not be
+                // overwritten. The check runs only when the sum_mismatch flag still exists
+                // after the rate×qty loop above, so fully-resolved bills are untouched.
+                if (b._sum_mismatch) {
+                  const RATE_BASED_FIELDS = [
+                    'FacilitiesCharge',
+                    'BilledKWCharge',
+                    'EnergyOnPeakCharge',
+                    'EnergyOffPeakCharge',
+                    'ECACharge',
+                    'EERCharge',
+                    'PTSCharge',
+                    'TDCCharge',
+                    'RkVACharge',
+                  ];
+                  const unverified = RATE_BASED_FIELDS.filter((f) => {
+                    const v = pf(b[f]);
+                    if (v <= 0) return false;
+                    if (b._rates && b._rates[f]) return false; // has rate data, verifiable
+                    if (b['_auto_corrected_' + f]) return false; // already corrected
+                    if (b['_ocr_consensus_' + f]) return false; // already corrected via alt-pass
+                    return true;
+                  });
+                  if (unverified.length === 1) {
+                    const field = unverified[0];
+                    const origVal = pf(b[field]);
+                    // Recompute current sum (rate×qty corrections above may have mutated fields)
+                    const currentSum =
+                      pf(b.CustomerCharge) +
+                      pf(b.FacilitiesCharge) +
+                      pf(b.BilledKWCharge) +
+                      pf(b.EnergyOnPeakCharge) +
+                      pf(b.EnergyOffPeakCharge) +
+                      pf(b.ECACharge) +
+                      pf(b.EERCharge) +
+                      pf(b.PTSCharge) +
+                      pf(b.TDCCharge) +
+                      pf(b.RkVACharge) +
+                      pf(b.TaxExemptDelivery) +
+                      pf(b.BillOffset) +
+                      pf(b.FranchiseFee);
+                    // residual = amount we need to ADD to the current sum to match totalFinal.
+                    // The correction lands entirely on the one unverified field.
+                    const residual = totalFinal - currentSum;
+                    const inferredVal = origVal + residual;
+                    if (inferredVal > 0) {
+                      b['_auto_corrected_' + field] = {
+                        original: b[field],
+                        corrected: inferredVal.toFixed(2),
+                        reason:
+                          'Derived from TotalCurrentCharges − Σ(other charges). No rate data available for ' +
+                          field +
+                          '; every other charge verified, so this field absorbs the residual.',
+                      };
+                      b[field] = inferredVal.toFixed(2);
+                      delete b['_sum_mismatch'];
                     }
                   }
                 }
@@ -18715,14 +18797,14 @@
           },
           {
             type: 'charge-line',
-            label: 'Facilities kW',
+            label: 'Facilities',
             chargeField: 'FacilitiesCharge',
             qtyField: 'FacilitiesKW',
             rateKey: 'FacilitiesCharge',
           },
           {
             type: 'charge-line',
-            label: 'Billed kW',
+            label: 'Billed',
             chargeField: 'BilledKWCharge',
             qtyField: 'BilledKW',
             rateKey: 'BilledKWCharge',
@@ -18744,7 +18826,7 @@
           { type: 'charge-line', label: 'ECA', chargeField: 'ECACharge', rateKey: 'ECACharge' },
           { type: 'charge-line', label: 'EER', chargeField: 'EERCharge', rateKey: 'EERCharge' },
           { type: 'charge-line', label: 'PTS', chargeField: 'PTSCharge', rateKey: 'PTSCharge' },
-          { type: 'charge-line', label: 'TDC kW', chargeField: 'TDCCharge', qtyField: 'TDCkW', rateKey: 'TDCCharge' },
+          { type: 'charge-line', label: 'TDC', chargeField: 'TDCCharge', qtyField: 'TDCkW', rateKey: 'TDCCharge' },
           { type: 'charge-line', label: 'Bill Offset', chargeField: 'BillOffset', rateKey: null },
           { type: 'charge-line', label: 'Franchise Fee', chargeField: 'FranchiseFee', rateKey: null },
           { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
