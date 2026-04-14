@@ -16742,7 +16742,14 @@
             pf(bill.PTSCharge)
           ).toFixed(2);
           const kwCost = (pf(bill.BilledKWCharge) + pf(bill.TDCCharge)).toFixed(2);
-          const otherCost = (pf(bill.CustomerCharge) + pf(bill.TaxExemptDelivery) + pf(bill.BillOffset)).toFixed(2);
+          // otherCost folds in the RkVA reactive-power charge because it has no dedicated
+          // column in the bills table — without it here the value would be silently dropped.
+          const otherCost = (
+            pf(bill.CustomerCharge) +
+            pf(bill.TaxExemptDelivery) +
+            pf(bill.BillOffset) +
+            pf(bill.RkVACharge)
+          ).toFixed(2);
           const taxCost = pf(bill.FranchiseFee).toFixed(2);
           const billRow = {
             id: 'r' + Date.now() + '_' + saved,
@@ -16780,6 +16787,7 @@
             eerCharge: bill.EERCharge || '',
             ptsCharge: bill.PTSCharge || '',
             tdcCharge: bill.TDCCharge || '',
+            rkvaCharge: bill.RkVACharge || '',
             renewableCharge: bill.RenewableCharge || '',
             franchiseFee: bill.FranchiseFee || '',
             solarCredit: bill.SolarCredit || '',
@@ -18402,6 +18410,7 @@
             EERCharge: 'eerCharge',
             PTSCharge: 'ptsCharge',
             TDCCharge: 'tdcCharge',
+            RkVACharge: 'rkvaCharge',
             RenewableCharge: 'renewableCharge',
             SolarCredit: 'solarCredit',
             FranchiseFee: 'franchiseFee',
@@ -18437,9 +18446,11 @@
             existing.kwCost = (pf(existing.demandCharge) + pf(existing.tdcCharge)).toFixed(2);
             // Tax exempt delivery and bill offset aren't stored in billRow, so they have
             // to come from the new extraction if the user asked to apply it; otherwise
-            // customerCharge is the only otherCost contributor we can still reconstruct.
+            // customerCharge + rkvaCharge are the otherCost contributors we can still
+            // reconstruct from the post-merge row.
             existing.otherCost = (
               pf(existing.customerCharge) +
+              pf(existing.rkvaCharge) +
               pf(extracted.TaxExemptDelivery) +
               pf(extracted.BillOffset)
             ).toFixed(2);
@@ -19630,10 +19641,15 @@
           pf(extracted.PTSCharge)
         ).toFixed(2);
         const kwCost = (pf(extracted.BilledKWCharge) + pf(extracted.TDCCharge)).toFixed(2);
+        // otherCost: customer charge + tax-exempt delivery + bill offset + RkVA reactive
+        // power charge. RkVA isn't shown as its own column in the bills table, so folding
+        // it into otherCost here keeps the extracted value on the row (where the edit
+        // modal and total validation can still see it) instead of silently dropping it.
         const otherCost = (
           pf(extracted.CustomerCharge) +
           pf(extracted.TaxExemptDelivery) +
-          pf(extracted.BillOffset)
+          pf(extracted.BillOffset) +
+          pf(extracted.RkVACharge)
         ).toFixed(2);
         const taxCost = pf(extracted.FranchiseFee).toFixed(2);
         const totalCost = pf(extracted.TotalCurrentCharges || extracted.TotalAmountDue);
@@ -19675,6 +19691,7 @@
           eerCharge: extracted.EERCharge || '',
           ptsCharge: extracted.PTSCharge || '',
           tdcCharge: extracted.TDCCharge || '',
+          rkvaCharge: extracted.RkVACharge || '',
           renewableCharge: extracted.RenewableCharge || '',
           franchiseFee: extracted.FranchiseFee || '',
           solarCredit: extracted.SolarCredit || '',
@@ -28109,7 +28126,8 @@
             row?.ecaCharge ||
             row?.eerCharge ||
             row?.ptsCharge ||
-            row?.tdcCharge
+            row?.tdcCharge ||
+            row?.rkvaCharge
           );
           html += `<div style="margin:8px 0 4px;display:flex;align-items:center;gap:6px"><span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Usage &amp; Demand</span><hr style="flex:1;border:none;border-top:1px solid var(--border)"></div>
     <div class="f2" style="margin-bottom:2px">
@@ -28149,8 +28167,13 @@
     </div>
     <div class="f3">
       <div class="fg"><label class="fl">TDC $</label><input class="fi" id="bl-tdcCharge" type="number" placeholder="0.00" value="${row?.tdcCharge || ''}"></div>
+      <div class="fg"><label class="fl">RkVA $ <span style="font-size:9px;color:var(--text3)">(reactive power)</span></label><input class="fi" id="bl-rkvaCharge" type="number" placeholder="0.00" value="${row?.rkvaCharge || ''}"></div>
       <div class="fg"><label class="fl">Renewable $</label><input class="fi" id="bl-renewableCharge" type="number" placeholder="0.00" value="${row?.renewableCharge || ''}"></div>
+    </div>
+    <div class="f3">
       <div class="fg"><label class="fl">Solar Credit $</label><input class="fi" id="bl-solarCredit" type="number" placeholder="0.00" value="${row?.solarCredit || ''}"></div>
+      <div class="fg"></div>
+      <div class="fg"></div>
     </div>
     <div style="margin:10px 0 4px;display:flex;align-items:center;gap:6px"><span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Other &amp; Total</span><hr style="flex:1;border:none;border-top:1px solid var(--border)"></div>
     <div class="f3">
@@ -28196,6 +28219,7 @@
           pf('bl-eerCharge') +
           pf('bl-ptsCharge') +
           pf('bl-tdcCharge') +
+          pf('bl-rkvaCharge') +
           pf('bl-renewableCharge') +
           pf('bl-franchiseFee') +
           pf('bl-otherCost') +
@@ -28247,6 +28271,7 @@
             eerCharge: g('bl-eerCharge'),
             ptsCharge: g('bl-ptsCharge'),
             tdcCharge: g('bl-tdcCharge'),
+            rkvaCharge: g('bl-rkvaCharge'),
             renewableCharge: g('bl-renewableCharge'),
             franchiseFee: g('bl-franchiseFee'),
             solarCredit: g('bl-solarCredit'),
