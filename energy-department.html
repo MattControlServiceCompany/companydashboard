@@ -11632,7 +11632,13 @@
       </div>
       <div id="ptab-utility" class="ptab" style="padding:0">
         <!-- Full Utility Data layout embedded, scoped to this project -->
-        <div class="ud-layout" id="projUdLayout-${p.id}" style="border-top:1px solid var(--border);min-height:500px">
+        <!-- The Projects-tab embed of Utility Data uses a viewport-based min-height
+             because the parent .ptab is display:block (not a flex container), so
+             .ud-layout's flex:1 in the CSS file is a no-op here and we need an
+             explicit height floor. 78vh leaves room for the top bar + project hero
+             + tab bar while still filling most of the window. Previous value was
+             500px which made the bills table pane feel cut short on larger screens. -->
+        <div class="ud-layout" id="projUdLayout-${p.id}" style="border-top:1px solid var(--border);min-height:78vh">
           <!-- Left: buildings nav -->
           <div class="ud-nav" style="max-width:240px">
             <div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
@@ -11657,7 +11663,13 @@
                 <button class="btn btn-em btn-sm" onclick="projUDOpenMeterModal('${p.id}')">+ Add Meter</button>
               </div>
             </div>
-            <div id="proj-ud-body-${p.id}" style="flex:1;overflow-y:auto">
+            <!-- Must mirror the standalone Utility Data body layout: display:flex +
+                 flex-direction:column + min-height:0 + min-width:0 so the inner
+                 #maMeterWorkspace → .ma-pane → .bills-scroll-body flex chain has an
+                 anchored ceiling. Without display:flex here, maMeterWorkspace's
+                 flex:1 + min-height:0 collapsed the bills body to zero height,
+                 leaving the user with headers + flag banner but no visible rows. -->
+            <div id="proj-ud-body-${p.id}" style="flex:1 1 0;display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden">
               <div class="ud-empty"><div class="ud-empty-ico">🏢</div><div>Select a building to view meters</div></div>
             </div>
           </div>
