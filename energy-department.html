@@ -15106,34 +15106,84 @@
           extractAll: (t) => {
             const acct = t.match(_EVG_ACCT)?.[1]?.replace(/\s/g, '') || null;
             const addrM = t.match(_EVG_ADDR);
-            // Split on Billing Details headers — use both strict and OCR-tolerant patterns
-            const splitRe = new RegExp(
-              '(?=(?:' + _EVG_BILLING_DETAILS.source + '|Billing\\s+Details\\s*[-\\u2013\\-]\\s*service\\s+from))',
-              'gi',
-            );
-            const raw = t.split(splitRe);
-            const getDatePair = (s) => {
-              const m =
-                s.match(_EVG_SERVICE_FROM) ||
-                s.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);
-              return m ? m[1] + '|' + m[2] : null;
-            };
-            const sections = [];
-            for (const frag of raw) {
-              const dates = getDatePair(frag);
-              const isBillingHeader = _EVG_BILLING_DETAILS.test(frag.trim()) || /^Billing\s+Details/i.test(frag.trim());
-              if (!isBillingHeader || !dates) {
-                if (sections.length) sections[sections.length - 1] += frag;
-                else sections.push(frag);
-              } else if (sections.length && getDatePair(sections[sections.length - 1]) === dates) {
-                sections[sections.length - 1] += frag;
-              } else {
-                sections.push(frag);
-              }
+            // ── Multi-bill split (rewritten) ──
+            // The earlier split relied on matching "Billing Details - service from"
+            // headers directly, and when Tesseract OCR garbled even ONE header past
+            // what the fuzzy regex tolerated, the merge logic dropped that bill's
+            // text into the PREVIOUS section — silently combining multiple bills
+            // into one section. Result: extractAll returned N-1, N-2, or fewer
+            // results than actual billing periods, and every downstream step
+            // (page ranges, overwrite, dup detection) was off.
+            //
+            // New strategy: anchor on the "service from MM/DD/YYYY to MM/DD/YYYY"
+            // date pair itself. Dates are the most OCR-stable part of the bill
+            // (digits + slashes) so this catches every bill even on degraded scans.
+            // Each bill mentions its date pair TWICE (cover + billing-details
+            // header), so we dedupe by date pair and keep the LAST occurrence
+            // (which is the billing-details section, where the charge lines live).
+            const sfRe = /service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/gi;
+            const sfMatches = [];
+            let sfM;
+            while ((sfM = sfRe.exec(t)) !== null) {
+              sfMatches.push({ idx: sfM.index, start: sfM[1], end: sfM[2], length: sfM[0].length });
             }
-            const validSections = sections.filter(
-              (s) => _EVG_SERVICE_FROM.test(s) || /service\s+from\s+\d{2}\/\d{2}\/\d{4}/i.test(s),
+            // Dedupe by date pair — keep the LAST occurrence so section boundaries
+            // line up with the billing-details page, not the cover.
+            const byPair = new Map();
+            for (const m of sfMatches) {
+              byPair.set(m.start + '|' + m.end, m);
+            }
+            const uniqueBills = Array.from(byPair.values()).sort((a, b) => a.idx - b.idx);
+            console.log(
+              '[Evergy extractAll] raw service-from matches:',
+              sfMatches.length,
+              'unique bills:',
+              uniqueBills.length,
             );
+
+            // Build sections by slicing between unique bill start positions. The
+            // section for bill i runs from its own idx to the next bill's idx, so
+            // each section contains exactly one bill's charge lines.
+            let validSections;
+            if (uniqueBills.length > 0) {
+              validSections = uniqueBills.map((b, i) => {
+                const start = b.idx;
+                const end = i + 1 < uniqueBills.length ? uniqueBills[i + 1].idx : t.length;
+                return t.slice(start, end);
+              });
+            } else {
+              // Fall back to the old split approach when no service-from dates
+              // were found at all (truly unrecognizable OCR).
+              const splitRe = new RegExp(
+                '(?=(?:' + _EVG_BILLING_DETAILS.source + '|Billing\\s+Details\\s*[-\\u2013\\-]\\s*service\\s+from))',
+                'gi',
+              );
+              const raw = t.split(splitRe);
+              const getDatePair = (s) => {
+                const m =
+                  s.match(_EVG_SERVICE_FROM) ||
+                  s.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);
+                return m ? m[1] + '|' + m[2] : null;
+              };
+              const sections = [];
+              for (const frag of raw) {
+                const dates = getDatePair(frag);
+                const isBillingHeader =
+                  _EVG_BILLING_DETAILS.test(frag.trim()) || /^Billing\s+Details/i.test(frag.trim());
+                if (!isBillingHeader || !dates) {
+                  if (sections.length) sections[sections.length - 1] += frag;
+                  else sections.push(frag);
+                } else if (sections.length && getDatePair(sections[sections.length - 1]) === dates) {
+                  sections[sections.length - 1] += frag;
+                } else {
+                  sections.push(frag);
+                }
+              }
+              validSections = sections.filter(
+                (s) => _EVG_SERVICE_FROM.test(s) || /service\s+from\s+\d{2}\/\d{2}\/\d{4}/i.test(s),
+              );
+              console.log('[Evergy extractAll] fell back to Billing-Details split, sections:', validSections.length);
+            }
             if (!validSections.length) return [_extractEvergy(t, acct, addrM?.[1]?.trim() || null)];
             // Extract CustomerName and RateSchedule from full text — per-section extraction
             // often misses these because the header block (Customer Name, Account, Address, Rate)
@@ -15154,15 +15204,22 @@
               return r;
             });
 
-            // ── PAGE RANGE POST-PROCESSING ──
-            // The old logic took min/max of %%PAGE_N%% markers inside each "Billing Details"
-            // section, but that overcounted: the Evergy cover page (page 1 of each bill) is
-            // before the "Billing Details" header, and the next bill's cover page was often
-            // included at the end of the previous section. Result: PDF viewer opened 5+ pages
-            // when the bill really only owns 2-3. Fix: locate each bill's cover page in the
-            // full text by matching "For service from MM/DD/YYYY to MM/DD/YYYY" on the
-            // Account Summary line (only appears on the cover), then pageEnd = the page right
-            // before the NEXT bill's cover (or the final page for the last bill).
+            // ── PAGE RANGE POST-PROCESSING (rewritten) ──
+            // The earlier cover-page anchoring approach relied on matching
+            // "For service from MM/DD/YYYY to MM/DD/YYYY" on each bill's cover, which
+            // is unreliable because Tesseract OCR frequently garbles the cover page
+            // text. When the regex missed, the chain-fallback produced overlapping /
+            // duplicate ranges across bills.
+            //
+            // New approach: anchor on the "Billing Details - service from" header
+            // position, which is (a) always present (extractAll already splits on it),
+            // (b) more OCR-tolerant (the _EVG_BILLING_DETAILS regex has character-class
+            // fuzzing), and (c) aligns 1:1 with the results[] entries because they
+            // were produced by splitting on exactly this regex. For each bill:
+            //   _pageStart = (billing-details page) - 1   // cover page sits right before
+            //   _pageEnd   = (next bill's billing-details page) - 2  // one before next cover
+            // Last bill gets _pageEnd = _maxPage. Every result gets a range, no chain
+            // fallback required, no duplicate-neighbor bug.
             const _pageMarkers = [...t.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => ({
               page: parseInt(m[1]),
               idx: m.index,
@@ -15176,67 +15233,157 @@
               return pg;
             };
             const _maxPage = _pageMarkers.length ? _pageMarkers[_pageMarkers.length - 1].page : 1;
-            const coverStarts = [];
-            for (const r of results) {
-              if (!r.BillingPeriodStart || !r.BillingPeriodEnd) {
-                coverStarts.push(null);
-                continue;
-              }
-              // Match only on the Account Summary cover line, not the Billing Details header.
-              // The cover line reads: "For service from 06/05/2023 to 07/05/2023"
-              // The details header reads: "Billing Details - service from 06/05/2023 to 07/05/2023"
-              // We reject matches within 40 chars of "Billing Details" so the cover wins.
-              const datePatt = new RegExp(
-                'For\\s+service\\s+from\\s+' +
-                  r.BillingPeriodStart.replace(/[./\\]/g, '[./]') +
-                  '\\s+to\\s+' +
-                  r.BillingPeriodEnd.replace(/[./\\]/g, '[./]'),
-                'gi',
-              );
-              let coverIdx = -1;
-              let mm;
-              while ((mm = datePatt.exec(t)) !== null) {
-                const before = t.slice(Math.max(0, mm.index - 40), mm.index);
-                if (/Billing\s+Details/i.test(before)) continue;
-                coverIdx = mm.index;
-                break;
-              }
-              coverStarts.push(coverIdx >= 0 ? _pageForIdx(coverIdx) : null);
+
+            // ── STRATEGY 1: Billing Date + Account Number per-page grouping ──
+            // Each Evergy page has a "Billing Date: MM/DD/YYYY" and "Account Number :
+            // XXX" printed in its header. Every page of the SAME bill shares the same
+            // (account, billingDate) pair, so grouping pages by that pair gives the
+            // exact page range for each bill — more reliable than any regex anchor
+            // because the header text is in a consistent layout that OCR handles well
+            // and the digits of the date are OCR-stable.
+            const _pageTextMap = {};
+            for (let _pi = 0; _pi < _pageMarkers.length; _pi++) {
+              const _pg = _pageMarkers[_pi].page;
+              const _pStart = _pageMarkers[_pi].idx;
+              const _pEnd = _pi + 1 < _pageMarkers.length ? _pageMarkers[_pi + 1].idx : t.length;
+              _pageTextMap[_pg] = t.slice(_pStart, _pEnd);
             }
-            for (let i = 0; i < results.length; i++) {
-              const r = results[i];
-              const start = coverStarts[i];
-              if (start) {
-                r._pageStart = start;
-                // Find the next valid cover start after this one to bound pageEnd
-                let nextStart = null;
-                for (let j = i + 1; j < coverStarts.length; j++) {
-                  if (coverStarts[j] && coverStarts[j] > start) {
-                    nextStart = coverStarts[j];
-                    break;
+            const _bdKeyRe = /Billing\s*Date\s*[:\s]+(\d{2}\/\d{2}\/\d{4})/i;
+            const _acctKeyRe = /Account\s*(?:Number)?\s*[:\s©®]+(\d[\d\s\-]{4,18}\d)/i;
+            const _billsByKey = {}; // 'acct|date' → [page numbers]
+            for (const [_pgStr, _pgText] of Object.entries(_pageTextMap)) {
+              const _pg = parseInt(_pgStr);
+              const _bdM = _pgText.match(_bdKeyRe);
+              if (!_bdM) continue;
+              const _acctM = _pgText.match(_acctKeyRe);
+              const _acct = _acctM ? _acctM[1].replace(/[\s\-]/g, '') : '';
+              const _key = _acct + '|' + _bdM[1];
+              if (!_billsByKey[_key]) _billsByKey[_key] = [];
+              _billsByKey[_key].push(_pg);
+            }
+            // Order unique keys by their FIRST page so they match results[] order.
+            const _orderedKeys = [];
+            const _seenKeys = new Set();
+            for (let _pg = 1; _pg <= _maxPage; _pg++) {
+              const _pgText = _pageTextMap[_pg];
+              if (!_pgText) continue;
+              const _bdM = _pgText.match(_bdKeyRe);
+              if (!_bdM) continue;
+              const _acctM = _pgText.match(_acctKeyRe);
+              const _acct = _acctM ? _acctM[1].replace(/[\s\-]/g, '') : '';
+              const _key = _acct + '|' + _bdM[1];
+              if (_seenKeys.has(_key)) continue;
+              _seenKeys.add(_key);
+              _orderedKeys.push(_key);
+            }
+            console.log(
+              '[Evergy page-anchor] results:',
+              results.length,
+              '· unique billing-date keys:',
+              _orderedKeys.length,
+            );
+            let _billingDateAnchorOk = false;
+            if (_orderedKeys.length === results.length && _orderedKeys.length > 0) {
+              for (let i = 0; i < results.length; i++) {
+                const _pages = _billsByKey[_orderedKeys[i]] || [];
+                if (_pages.length > 0) {
+                  results[i]._pageStart = Math.min(..._pages);
+                  results[i]._pageEnd = Math.max(..._pages);
+                  results[i]._pageRangeSource = 'billing-date';
+                }
+              }
+              _billingDateAnchorOk = results.every((r) => r._pageStart && r._pageEnd);
+              console.log('[Evergy page-anchor] billing-date strategy OK:', _billingDateAnchorOk);
+            }
+
+            // Find every Billing Details header position in the full text. Used as
+            // fallback when billing-date anchoring can't establish a 1:1 mapping.
+            const _bdFindRe = new RegExp(
+              '(?:' + _EVG_BILLING_DETAILS.source + '|Billing\\s+Details\\s*[-\\u2013\\-]\\s*service\\s+from)',
+              'gi',
+            );
+            const bdPositions = [];
+            let _bdM;
+            while ((_bdM = _bdFindRe.exec(t)) !== null) bdPositions.push(_bdM.index);
+
+            if (_billingDateAnchorOk) {
+              // Primary strategy already populated every result — skip fallbacks.
+            } else if (bdPositions.length === results.length) {
+              // Clean 1:1 mapping — most common case.
+              for (let i = 0; i < results.length; i++) {
+                const r = results[i];
+                const bdPage = _pageForIdx(bdPositions[i]);
+                // Cover is the page right before Billing Details. Clamp to 1 minimum.
+                r._pageStart = Math.max(1, bdPage - 1);
+                if (i + 1 < results.length) {
+                  const nextBdPage = _pageForIdx(bdPositions[i + 1]);
+                  // Next cover is (nextBdPage - 1), so this bill ends one page before
+                  // the next cover: nextBdPage - 2. Guard against negative deltas on
+                  // same-page bills (nextBdPage === bdPage is a split issue, treat it
+                  // as a same-page range).
+                  r._pageEnd = Math.max(r._pageStart, nextBdPage - 2);
+                } else {
+                  r._pageEnd = _maxPage;
+                }
+                r._pageRangeSource = 'bd-header';
+              }
+            } else {
+              // Mismatch — fall back to the original cover-anchoring approach. This
+              // should be rare but can happen if extractAll merged duplicate-date
+              // sections or the regex over-matched on OCR noise.
+              const coverStarts = [];
+              for (const r of results) {
+                if (!r.BillingPeriodStart || !r.BillingPeriodEnd) {
+                  coverStarts.push(null);
+                  continue;
+                }
+                const datePatt = new RegExp(
+                  'For\\s+service\\s+from\\s+' +
+                    r.BillingPeriodStart.replace(/[./\\]/g, '[./]') +
+                    '\\s+to\\s+' +
+                    r.BillingPeriodEnd.replace(/[./\\]/g, '[./]'),
+                  'gi',
+                );
+                let coverIdx = -1;
+                let mm;
+                while ((mm = datePatt.exec(t)) !== null) {
+                  const before = t.slice(Math.max(0, mm.index - 40), mm.index);
+                  if (/Billing\s+Details/i.test(before)) continue;
+                  coverIdx = mm.index;
+                  break;
+                }
+                coverStarts.push(coverIdx >= 0 ? _pageForIdx(coverIdx) : null);
+              }
+              for (let i = 0; i < results.length; i++) {
+                const r = results[i];
+                const start = coverStarts[i];
+                if (start) {
+                  r._pageStart = start;
+                  let nextStart = null;
+                  for (let j = i + 1; j < coverStarts.length; j++) {
+                    if (coverStarts[j] && coverStarts[j] > start) {
+                      nextStart = coverStarts[j];
+                      break;
+                    }
+                  }
+                  r._pageEnd = nextStart ? nextStart - 1 : _maxPage;
+                  r._pageRangeSource = 'cover-anchor';
+                } else {
+                  const s = validSections[i] || '';
+                  const pm = [...s.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => parseInt(m[1]));
+                  if (pm.length) {
+                    r._pageStart = Math.min(...pm);
+                    r._pageEnd = Math.max(...pm);
+                    r._pageRangeSource = 'section-scan';
                   }
                 }
-                r._pageEnd = nextStart ? nextStart - 1 : _maxPage;
-              } else {
-                // Fallback 1: scan the section text for page markers if we couldn't anchor to a cover
-                const s = validSections[i] || '';
-                const pm = [...s.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => parseInt(m[1]));
-                if (pm.length) {
-                  r._pageStart = Math.min(...pm);
-                  r._pageEnd = Math.max(...pm);
-                }
               }
             }
-            // Fallback 2 (chain-based): if a bill STILL has no page range after the
-            // cover-anchor and section-scan attempts, it gets the previous bill's
-            // _pageEnd + 1 as the start and either the next anchored bill's start - 1
-            // or _maxPage as the end. This guarantees every bill has SOME page range
-            // so the viewer never falls back to the whole PDF. Critical for the last
-            // bill in a sequence when Tesseract OCR garbles its cover line.
+            // Final safety net: any result still missing a range gets the chain
+            // fallback (previous bill's end + 1 → next bill's start - 1 or _maxPage).
             for (let i = 0; i < results.length; i++) {
               const r = results[i];
               if (r._pageStart && r._pageEnd) continue;
-              // Find previous bill with a known _pageEnd
               let prevEnd = 0;
               for (let j = i - 1; j >= 0; j--) {
                 if (results[j]._pageEnd) {
@@ -15244,7 +15391,6 @@
                   break;
                 }
               }
-              // Find next bill with a known _pageStart for the upper bound
               let nextStart = null;
               for (let j = i + 1; j < results.length; j++) {
                 if (results[j]._pageStart) {
@@ -15257,7 +15403,7 @@
               if (fallbackStart <= fallbackEnd && fallbackStart >= 1 && fallbackEnd <= _maxPage) {
                 if (!r._pageStart) r._pageStart = fallbackStart;
                 if (!r._pageEnd) r._pageEnd = fallbackEnd;
-                r._pageRangeSource = 'chain-fallback';
+                r._pageRangeSource = (r._pageRangeSource || '') + ' chain-fallback';
               }
             }
             // ── NEIGHBOR-BILL FALLBACK (extractAll) ──
@@ -20495,16 +20641,68 @@
             }
           }
           console.log('[viewSavedPDF]', sliceMsg);
-          showToast(sliceMsg);
           const blob = new Blob([outBytes], { type: 'application/pdf' });
           const url = URL.createObjectURL(blob);
-          const win = window.open(url, '_blank');
-          setTimeout(() => URL.revokeObjectURL(url), 60000);
-          if (!win) showToast('Pop-up blocked — allow pop-ups for this site to view PDFs');
+          // Open the PDF in an in-page modal with the slice message banner at the
+          // top so the user sees exactly what range was rendered without losing the
+          // message to a new-tab context switch. Clicking 'Open in new tab' still
+          // gives the native viewer experience if the user wants it.
+          _showPdfModal(url, sliceMsg);
         } catch (e) {
           console.error('[viewSavedPDF] failed entirely:', e);
           showToast('Could not open PDF: ' + e.message);
         }
+      }
+
+      // In-page PDF viewer modal. Keeps the slice-state message visible alongside
+      // the PDF so feedback about page range / fallbacks is obvious.
+      function _showPdfModal(blobUrl, statusMsg) {
+        const existing = document.getElementById('pdfViewerModal');
+        if (existing) existing.remove();
+        const modal = document.createElement('div');
+        modal.id = 'pdfViewerModal';
+        modal.className = 'modal-bg open';
+        modal.style.cssText = 'display:flex;align-items:center;justify-content:center;z-index:10000';
+        modal.onclick = (ev) => {
+          if (ev.target === modal) _closePdfModal(modal, blobUrl);
+        };
+        modal.innerHTML =
+          '<div class="modal" style="width:90vw;max-width:1100px;height:90vh;display:flex;flex-direction:column">' +
+          '<div class="modal-hdr" style="flex-shrink:0">' +
+          '<span class="modal-title">&#128196; PDF Viewer</span>' +
+          '<button class="modal-x" onclick="document.getElementById(\'pdfViewerModal\').remove()">&#10005;</button>' +
+          '</div>' +
+          '<div style="padding:10px 16px;font-size:12px;color:var(--text);background:rgba(245,158,11,.12);border-bottom:1px solid rgba(245,158,11,.35);display:flex;align-items:center;gap:12px;flex-shrink:0">' +
+          '<span style="font-size:14px">&#9432;</span>' +
+          '<span style="flex:1;font-weight:600">' +
+          statusMsg +
+          '</span>' +
+          '<button class="btn btn-ghost btn-sm" onclick="window.open(\'' +
+          blobUrl +
+          '\',\'_blank\')" style="font-size:11px;padding:3px 10px">Open in new tab</button>' +
+          '</div>' +
+          '<div class="modal-body" style="padding:0;flex:1;min-height:0">' +
+          '<iframe src="' +
+          blobUrl +
+          '" style="width:100%;height:100%;border:0" title="PDF viewer"></iframe>' +
+          '</div></div>';
+        document.body.appendChild(modal);
+        // Revoke the blob URL when the modal is removed so we don't leak memory.
+        const obs = new MutationObserver(() => {
+          if (!document.getElementById('pdfViewerModal')) {
+            try {
+              URL.revokeObjectURL(blobUrl);
+            } catch (e) {}
+            obs.disconnect();
+          }
+        });
+        obs.observe(document.body, { childList: true });
+      }
+      function _closePdfModal(modal, blobUrl) {
+        try {
+          URL.revokeObjectURL(blobUrl);
+        } catch (e) {}
+        modal.remove();
       }
 
       /* ── ASSIGN MODAL ── */
