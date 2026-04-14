@@ -19270,6 +19270,13 @@
             if (extracted._pdfSharedKey) {
               existing.pdfKey = extracted._pdfSharedKey;
               existing.hasPDF = true;
+              // renderBillRow gates the 📄 button on (row.pdfBillId && row.hasPDF).
+              // Some older bills were saved without a pdfBillId (either via a legacy
+              // code path or with the field cleared), so even after we set hasPDF=true
+              // the gate still fails and the button stays hidden. Backfill it here.
+              if (!existing.pdfBillId) {
+                existing.pdfBillId = 'pb' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+              }
             }
           };
           // Recalculate cost aggregates from whatever is currently on `existing` AFTER
@@ -19339,6 +19346,9 @@
             if (!existing.pdfKey && extracted._pdfSharedKey) {
               existing.pdfKey = extracted._pdfSharedKey;
               existing.hasPDF = true;
+              if (!existing.pdfBillId) {
+                existing.pdfBillId = 'pb' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+              }
             }
             _recalcAggregates();
           } else if (dup.action === 'field-select') {
@@ -28856,9 +28866,16 @@
         const days = calcDays(row.start, row.end, incl);
         const nm = normMonthLabel(row.start, row.end, incl, allBills || m.bills || []);
         const nmCell = `<td class="norm-mon-cell">${nm}</td>`;
+        // Show the 📄 button whenever the row has ANY usable PDF reference —
+        // either an old per-bill pdfBillId OR a shared pdfKey. Bills saved via the
+        // batch shared-key path (_ensureBatchPdfStored) may legitimately have no
+        // pdfBillId but still have a valid pdfKey pointing at IndexedDB or the
+        // localStorage fallback, and gating on pdfBillId alone hides the button for
+        // those rows. viewSavedPDF already handles an empty first arg gracefully.
+        const pdfLookupId = row.pdfBillId || row.id || '';
         const pdfBtn =
-          row.pdfBillId && row.hasPDF
-            ? `<button class="btn-edit" onclick="viewSavedPDF('${row.pdfBillId}',${row.pdfPageStart || 'null'},${row.pdfPageEnd || 'null'},'${row.pdfKey || ''}')" title="View source PDF" style="color:var(--accent)">📄</button>`
+          (row.hasPDF || row.pdfKey) && (row.pdfBillId || row.pdfKey)
+            ? `<button class="btn-edit" onclick="viewSavedPDF('${pdfLookupId}',${row.pdfPageStart || 'null'},${row.pdfPageEnd || 'null'},'${row.pdfKey || ''}')" title="View source PDF" style="color:var(--accent)">📄</button>`
             : '';
         const actionBtns = `<td class="td-actions">
     ${pdfBtn}<button class="btn-edit" onclick="openBillModal('${m.id}','${row.id}')" title="Edit">✏️</button>
