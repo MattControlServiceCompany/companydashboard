@@ -17266,19 +17266,113 @@
         return dupMap;
       }
 
-      function _dupBulkAction(action) {
+      // "All" buttons — process every duplicate sequentially (one at a time), executing
+      // the action immediately. For overwrite/merge this runs _applyDupUpdate on each
+      // dup in order, yielding to the UI between iterations so the user sees LHS pills
+      // recolor one by one as each bill is processed. For skip we just mark — nothing
+      // to execute, the Save All flow honors the skip flag. Each processed dup is
+      // tagged `action: 'processed'` so the Save All loop doesn't re-apply it and
+      // doesn't mistake it for an un-handled new bill either.
+      // "All" buttons — process EVERY extracted bill sequentially (one at a time),
+      // handling duplicates via their action and saving non-duplicates via the normal
+      // save path. User mental model: "I click 'Overwrite All' and I expect every bill
+      // in this extraction to be handled — dups get overwritten, new bills get saved."
+      //
+      // Flow:
+      //   action='skip'      → dups marked skip, non-dups saved via _saveSinglePDFBill
+      //   action='overwrite' → dups run _applyDupUpdate, non-dups saved via _saveSinglePDFBill
+      //   action='merge'     → dups run _applyDupUpdate, non-dups saved via _saveSinglePDFBill
+      //
+      // A 120 ms yield between iterations lets the browser paint each bill's re-render
+      // so LHS pills visibly update one at a time — "one billing period at a time" in
+      // the user's words. Processed dups get tagged `action: 'processed'` so a later
+      // Save All click won't re-apply them.
+      async function _dupBulkAction(action) {
         const dupMap = window._pdfDupMap || {};
-        for (const idx of Object.keys(dupMap)) {
-          dupMap[idx].action = action;
-        }
-        // Re-render to reflect the action
         const bills = window._pdfMultiBills;
-        const box = document.getElementById('pdfAIBox');
-        if (bills && box) renderMultiBillUI(bills, box);
-        const i = window._pdfMultiIdx || 0;
-        const billWarnings = (window._pdfBillWarnings || [])[i]?.warnings || [];
-        if (bills && bills[i]) renderPDFFields(bills[i], billWarnings);
-        showToast(Object.keys(dupMap).length + ' duplicate bills set to ' + action);
+        if (!bills || !bills.length) return;
+        closeDupModal();
+
+        const reRender = () => {
+          const box = document.getElementById('pdfAIBox');
+          if (box) renderMultiBillUI(bills, box);
+          const i = window._pdfMultiIdx || 0;
+          const billWarnings = (window._pdfBillWarnings || [])[i]?.warnings || [];
+          if (bills[i]) renderPDFFields(bills[i], billWarnings);
+        };
+
+        // If ANY bill in the extraction is a non-duplicate, we need a project to save
+        // it into. Check upfront so we can fail fast instead of halfway through the
+        // sequence. If every bill is a duplicate, no project is required.
+        const hasNonDups = bills.some((_, i) => !dupMap[i]);
+        let pid = null;
+        if (hasNonDups) {
+          pid = parseInt(document.getElementById('pdfProjSel').value);
+          if (!pid) {
+            showToast('Select a project first');
+            return;
+          }
+        }
+
+        const verb = action === 'overwrite' ? 'overwritten' : action === 'merge' ? 'merged' : 'skipped';
+        let dupHandled = 0; // dups that got overwritten/merged (or marked skip)
+        let saved = 0; // non-dups that got newly saved
+        let failed = 0;
+
+        for (let i = 0; i < bills.length; i++) {
+          const dup = dupMap[i];
+          showToast('Processing bill ' + (i + 1) + ' of ' + bills.length + '…');
+
+          if (dup) {
+            // Duplicate: apply the action. Skip is mark-only; overwrite/merge execute.
+            if (dup.action === 'processed') {
+              dupHandled++;
+            } else if (action === 'skip') {
+              dup.action = 'skip';
+              dupHandled++;
+            } else {
+              dup.action = action;
+              let ok = false;
+              try {
+                ok = await _applyDupUpdate(i, bills[i], dup);
+              } catch (e) {
+                ok = false;
+              }
+              if (ok) {
+                dup.action = 'processed';
+                dupHandled++;
+              } else {
+                dup.action = action; // leave marked for retry on Save All
+                failed++;
+              }
+            }
+          } else {
+            // Non-duplicate: save normally. This is what the user expects when they
+            // click "Overwrite All" / "Merge All" / "Skip All" on an extraction that
+            // has both dups and new bills — every bill gets handled in one click.
+            let ok = false;
+            try {
+              ok = await _saveSinglePDFBill(bills[i], pid);
+            } catch (e) {
+              ok = false;
+            }
+            if (ok) saved++;
+            else failed++;
+          }
+
+          reRender();
+          // Brief yield so the browser paints the re-render before the next iteration —
+          // without this the updates batch and the user sees only the final state. 120ms
+          // is short enough that "All N bills" still feels snappy.
+          await new Promise((r) => setTimeout(r, 120));
+        }
+
+        const parts = [];
+        if (dupHandled) parts.push(dupHandled + ' ' + verb);
+        if (saved) parts.push(saved + ' saved');
+        if (failed) parts.push(failed + ' failed');
+        if (!parts.length) parts.push('nothing to do');
+        showToast(parts.join(', ') + ' (' + bills.length + ' total)');
       }
 
       function openDupModal(billIdx) {
@@ -17444,34 +17538,51 @@
         showToast('Bill will be skipped on save');
       }
 
-      function overwriteDupBill() {
+      // Per-bill Overwrite / Merge — execute immediately against the single bill the
+      // user is viewing, mirror of the "All" buttons but scoped to one dup. On success
+      // the dup is tagged `action: 'processed'` so Save All won't re-apply it.
+      async function overwriteDupBill() {
         const billIdx = window._dupModalIdx;
         const dup = (window._pdfDupMap || {})[billIdx];
-        if (!dup) return;
+        const bills = window._pdfMultiBills;
+        if (!dup || !bills || !bills[billIdx]) return;
         dup.action = 'overwrite';
         closeDupModal();
-        const bills = window._pdfMultiBills;
+        let ok = false;
+        try {
+          ok = await _applyDupUpdate(billIdx, bills[billIdx], dup);
+        } catch (e) {
+          ok = false;
+        }
+        if (ok) dup.action = 'processed';
         const box = document.getElementById('pdfAIBox');
-        if (bills && box) renderMultiBillUI(bills, box);
+        if (box) renderMultiBillUI(bills, box);
         const i = window._pdfMultiIdx || 0;
         const billWarnings = (window._pdfBillWarnings || [])[i]?.warnings || [];
-        if (bills && bills[i]) renderPDFFields(bills[i], billWarnings);
-        showToast('Bill will be overwritten on save');
+        if (bills[i]) renderPDFFields(bills[i], billWarnings);
+        showToast(ok ? 'Bill overwritten' : 'Overwrite failed — try again');
       }
 
-      function mergeDupBill() {
+      async function mergeDupBill() {
         const billIdx = window._dupModalIdx;
         const dup = (window._pdfDupMap || {})[billIdx];
-        if (!dup) return;
+        const bills = window._pdfMultiBills;
+        if (!dup || !bills || !bills[billIdx]) return;
         dup.action = 'merge';
         closeDupModal();
-        const bills = window._pdfMultiBills;
+        let ok = false;
+        try {
+          ok = await _applyDupUpdate(billIdx, bills[billIdx], dup);
+        } catch (e) {
+          ok = false;
+        }
+        if (ok) dup.action = 'processed';
         const box = document.getElementById('pdfAIBox');
-        if (bills && box) renderMultiBillUI(bills, box);
+        if (box) renderMultiBillUI(bills, box);
         const i = window._pdfMultiIdx || 0;
         const billWarnings = (window._pdfBillWarnings || [])[i]?.warnings || [];
-        if (bills && bills[i]) renderPDFFields(bills[i], billWarnings);
-        showToast('Bill will be merged on save');
+        if (bills[i]) renderPDFFields(bills[i], billWarnings);
+        showToast(ok ? 'Bill merged' : 'Merge failed — try again');
       }
 
       async function _viewDupPDF(billIdx) {
@@ -18583,16 +18694,27 @@
         const dupMap = window._pdfDupMap || {};
         let saved = 0,
           skipped = 0,
-          updated = 0;
+          updated = 0,
+          alreadyProcessed = 0;
         for (let i = 0; i < bills.length; i++) {
           const dup = dupMap[i];
+          if (dup && dup.action === 'processed') {
+            // Already overwritten/merged via the per-bill or "All" buttons on the dup
+            // modal. Don't re-run _applyDupUpdate (wastes work, bumps savedAt), and
+            // don't fall through to _saveSinglePDFBill (would create a second record).
+            alreadyProcessed++;
+            continue;
+          }
           if (dup && dup.action === 'skip') {
             skipped++;
             continue;
           }
           if (dup && (dup.action === 'overwrite' || dup.action === 'merge' || dup.action === 'field-select')) {
             const ok = await _applyDupUpdate(i, bills[i], dup);
-            if (ok) updated++;
+            if (ok) {
+              dup.action = 'processed';
+              updated++;
+            }
             continue;
           }
           // No dup or no action chosen — save normally
@@ -18602,6 +18724,7 @@
         const parts = [];
         if (saved) parts.push(saved + ' saved');
         if (updated) parts.push(updated + ' updated');
+        if (alreadyProcessed) parts.push(alreadyProcessed + ' already processed');
         if (skipped) parts.push(skipped + ' skipped');
         showToast(parts.join(', ') + ' (' + bills.length + ' total)');
       }
