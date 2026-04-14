@@ -17019,17 +17019,51 @@
       //
       // Idempotent — if the batch is already tagged with a shared key, returns the
       // existing one without re-storing.
+      //
+      // Falls back to localStorage if IndexedDB (pdfStore) fails — a corporate
+      // machine may have IndexedDB disabled by group policy, and without a fallback
+      // every saved bill silently loses its PDF reference. The fallback writes the
+      // base64 string directly via localStorage.setItem(key, pdfB64) (raw, not JSON)
+      // so viewSavedPDF can retrieve it via localStorage.getItem(key). Subject to the
+      // ~5MB per-origin localStorage quota.
       async function _ensureBatchPdfStored(bills) {
         if (!bills || !bills.length) return null;
         const existingKey = bills[0]._pdfSharedKey;
-        if (existingKey) return existingKey;
-        if (!pdfB64) return null;
+        if (existingKey) {
+          console.log('[_ensureBatchPdfStored] reusing existing key:', existingKey);
+          return existingKey;
+        }
+        if (!pdfB64) {
+          console.log('[_ensureBatchPdfStored] no pdfB64 — nothing to store');
+          return null;
+        }
         const key = 'en_pdf_shared_' + Date.now();
-        const ok = await pdfStore(key, pdfB64);
-        if (!ok) return null;
+        let stored = false;
+        try {
+          stored = await pdfStore(key, pdfB64);
+        } catch (e) {
+          console.warn('[_ensureBatchPdfStored] pdfStore threw:', e);
+          stored = false;
+        }
+        if (!stored) {
+          // IndexedDB failed — try localStorage as a fallback. Use localStorage.setItem
+          // directly (not sset) to avoid JSON wrapping and avoid firing a dataUpdated
+          // event for a potentially-multi-MB write.
+          try {
+            localStorage.setItem(key, pdfB64);
+            stored = true;
+            console.warn('[_ensureBatchPdfStored] IndexedDB pdfStore failed, used localStorage fallback for', key);
+            showToast('PDF saved to local fallback (IndexedDB unavailable on this machine)');
+          } catch (e) {
+            console.error('[_ensureBatchPdfStored] both IndexedDB and localStorage failed — PDF not stored', e);
+            showToast("Couldn't store PDF — IndexedDB blocked and localStorage full. Bills saved without PDF.");
+            return null;
+          }
+        }
         bills.forEach((b) => {
           b._pdfSharedKey = key;
         });
+        console.log('[_ensureBatchPdfStored] stored PDF under', key, '— tagged', bills.length, 'bills');
         return key;
       }
 
@@ -17086,6 +17120,11 @@
           taxCost,
           totalCost: extracted.TotalCurrentCharges || extracted.TotalAmountDue || '',
           fromPDF: true,
+          // pdfBillId is REQUIRED for the Bills table render to show the 📄 button
+          // (renderBillRow gates on `row.pdfBillId && row.hasPDF`). Without it the
+          // button is suppressed even though the PDF is stored and loadable, so every
+          // non-duplicate match-saved bill silently loses its viewer button.
+          pdfBillId: 'pb' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
           hasPDF: !!extracted._pdfSharedKey,
           pdfPageStart: extracted._pageStart || null,
           pdfPageEnd: extracted._pageEnd || null,
@@ -20233,22 +20272,39 @@
       }
 
       async function viewSavedPDF(id, pageStart, pageEnd, pdfKey) {
-        // Try per-bill key, shared key, then legacy localStorage
+        // Resolution order:
+        //   1. IndexedDB per-bill key (legacy _saveSinglePDFBill path)
+        //   2. IndexedDB shared key (the _ensureBatchPdfStored path)
+        //   3. localStorage fallback at the shared key (when IndexedDB is blocked)
+        //   4. legacy localStorage per-bill key
+        //   5. last-resort: find record in en_pdf_bills and retry with its pdfKey
         let b64 = await pdfLoad('en_pdf_file_' + id);
         if (!b64 && pdfKey) b64 = await pdfLoad(pdfKey);
+        if (!b64 && pdfKey) {
+          try {
+            b64 = localStorage.getItem(pdfKey);
+          } catch (e) {}
+        }
         if (!b64) b64 = sget('en_pdf_file_' + id, null);
         if (!b64) {
-          // Try looking up the bill record for its shared pdfKey
           const bills = sget('en_pdf_bills', []) || [];
           const rec = bills.find((b) => b.id === id || b.pdfBillId === id);
-          if (rec?.pdfKey) b64 = await pdfLoad(rec.pdfKey);
+          if (rec?.pdfKey) {
+            b64 = await pdfLoad(rec.pdfKey);
+            if (!b64) {
+              try {
+                b64 = localStorage.getItem(rec.pdfKey);
+              } catch (e) {}
+            }
+          }
           if (rec && !pageStart) {
             pageStart = rec.pdfPageStart;
             pageEnd = rec.pdfPageEnd;
           }
         }
         if (!b64) {
-          showToast('PDF file not found — it may not have been stored');
+          console.warn('[viewSavedPDF] no PDF found for', { id, pageStart, pageEnd, pdfKey });
+          showToast('PDF file not found — tried IndexedDB + localStorage for key ' + (pdfKey || '?'));
           return;
         }
         try {
