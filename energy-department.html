@@ -17010,6 +17010,29 @@
         );
       }
 
+      // Store the current extraction's source PDF once per session and tag every bill
+      // in the batch with a shared key, so downstream save paths (_saveBillToMatchedMeter,
+      // _applyDupUpdate's _copyPageRange, _saveSinglePDFBill) all reference the SAME
+      // stored PDF via `_pdfSharedKey`. Without this, bulk saves silently drop the PDF
+      // (new bills end up with pdfKey=null, and dup overwrites write new page ranges
+      // against OLD stored PDFs producing blank slices).
+      //
+      // Idempotent — if the batch is already tagged with a shared key, returns the
+      // existing one without re-storing.
+      async function _ensureBatchPdfStored(bills) {
+        if (!bills || !bills.length) return null;
+        const existingKey = bills[0]._pdfSharedKey;
+        if (existingKey) return existingKey;
+        if (!pdfB64) return null;
+        const key = 'en_pdf_shared_' + Date.now();
+        const ok = await pdfStore(key, pdfB64);
+        if (!ok) return null;
+        bills.forEach((b) => {
+          b._pdfSharedKey = key;
+        });
+        return key;
+      }
+
       // Save a single extracted bill directly to a matched meter (from findMeterMatch).
       // Reuses the same billRow shape as _saveSinglePDFBill and confirmAutoAssign so the
       // record lands in the same storage structure. Returns a destination description
@@ -17063,6 +17086,7 @@
           taxCost,
           totalCost: extracted.TotalCurrentCharges || extracted.TotalAmountDue || '',
           fromPDF: true,
+          hasPDF: !!extracted._pdfSharedKey,
           pdfPageStart: extracted._pageStart || null,
           pdfPageEnd: extracted._pageEnd || null,
           pdfKey: extracted._pdfSharedKey || null,
@@ -17563,6 +17587,13 @@
         }
         console.log('[_dupBulkAction] bills:', bills.length, 'dupMap keys:', Object.keys(dupMap).length);
         closeDupModal();
+        // Store the source PDF once per session and tag every bill with a shared key.
+        // Must run BEFORE the save loop so per-bill save paths can read
+        // extracted._pdfSharedKey and land the right pdfKey on their stored records.
+        // Without this the PDFs go blank — new bills get pdfKey=null and dup overwrites
+        // get new page ranges written against old/missing PDFs.
+        const sharedKey = await _ensureBatchPdfStored(bills);
+        console.log('[_dupBulkAction] shared PDF key:', sharedKey);
 
         const reRender = () => {
           const box = document.getElementById('pdfAIBox');
@@ -19048,6 +19079,10 @@
         // bills route themselves without needing a project picker.
         const selectedPid = parseInt(document.getElementById('pdfProjSel').value) || null;
         const dupMap = window._pdfDupMap || {};
+        // Store the source PDF once for the whole batch and tag every bill with a
+        // shared key BEFORE any individual save runs (same rule as _dupBulkAction —
+        // without this the pdfKey / page-range wiring produces blank slices).
+        await _ensureBatchPdfStored(bills);
         const unassignedIdx = [];
         for (let i = 0; i < bills.length; i++) {
           if (dupMap[i] && dupMap[i].action === 'skip') continue;
@@ -19193,7 +19228,10 @@
           const _copyPageRange = () => {
             if (extracted._pageStart) existing.pdfPageStart = extracted._pageStart;
             if (extracted._pageEnd) existing.pdfPageEnd = extracted._pageEnd;
-            if (extracted._pdfSharedKey) existing.pdfKey = extracted._pdfSharedKey;
+            if (extracted._pdfSharedKey) {
+              existing.pdfKey = extracted._pdfSharedKey;
+              existing.hasPDF = true;
+            }
           };
           // Recalculate cost aggregates from whatever is currently on `existing` AFTER
           // the field-level updates have been applied. Reading back from existing (instead
@@ -19259,7 +19297,10 @@
             // Page range: only fill if missing, never overwrite a valid existing range
             if (!existing.pdfPageStart && extracted._pageStart) existing.pdfPageStart = extracted._pageStart;
             if (!existing.pdfPageEnd && extracted._pageEnd) existing.pdfPageEnd = extracted._pageEnd;
-            if (!existing.pdfKey && extracted._pdfSharedKey) existing.pdfKey = extracted._pdfSharedKey;
+            if (!existing.pdfKey && extracted._pdfSharedKey) {
+              existing.pdfKey = extracted._pdfSharedKey;
+              existing.hasPDF = true;
+            }
             _recalcAggregates();
           } else if (dup.action === 'field-select') {
             // Apply per-field selections
@@ -19289,7 +19330,10 @@
             // Copy fresh page range on overwrite so the PDF viewer slices correctly
             if (extracted._pageStart) sb.pdfPageStart = extracted._pageStart;
             if (extracted._pageEnd) sb.pdfPageEnd = extracted._pageEnd;
-            if (extracted._pdfSharedKey) sb.pdfKey = extracted._pdfSharedKey;
+            if (extracted._pdfSharedKey) {
+              sb.pdfKey = extracted._pdfSharedKey;
+              sb.hasPDF = true;
+            }
           } else if (dup.action === 'merge') {
             const COMPARE_KEYS = Object.keys(extracted).filter((k) => !k.startsWith('_'));
             for (const key of COMPARE_KEYS) {
@@ -19300,7 +19344,10 @@
             // Fill missing page range without overwriting a valid existing one
             if (!sb.pdfPageStart && extracted._pageStart) sb.pdfPageStart = extracted._pageStart;
             if (!sb.pdfPageEnd && extracted._pageEnd) sb.pdfPageEnd = extracted._pageEnd;
-            if (!sb.pdfKey && extracted._pdfSharedKey) sb.pdfKey = extracted._pdfSharedKey;
+            if (!sb.pdfKey && extracted._pdfSharedKey) {
+              sb.pdfKey = extracted._pdfSharedKey;
+              sb.hasPDF = true;
+            }
           } else if (dup.action === 'field-select') {
             for (const d of dup.diffFields) {
               const useNew = dup.fieldSelections[d.key] !== false;
