@@ -15187,14 +15187,25 @@
               uniqueBills.length,
             );
 
-            // Build sections by slicing between unique bill start positions. The
-            // section for bill i runs from its own idx to the next bill's idx, so
-            // each section contains exactly one bill's charge lines.
+            // Build sections by slicing between unique bill start positions. Each
+            // section extends from the MIDPOINT between the previous bill's idx and
+            // this bill's idx up to the midpoint between this bill's idx and the
+            // next bill's idx. This keeps the cover page text (which sits BEFORE
+            // the "service from" occurrence on the billing-details page) inside
+            // the section of the bill it belongs to, so fields that live on the
+            // cover (CustomerCharge, CustomerName, etc) are captured properly and
+            // the OCR retry trigger doesn't fire on false-positive "missing field"
+            // counts that the earlier naive slicing was producing.
+            //
+            // First section starts at 0 to capture any preamble/account header.
+            // Last section extends to t.length.
             let validSections;
             if (uniqueBills.length > 0) {
               validSections = uniqueBills.map((b, i) => {
-                const start = b.idx;
-                const end = i + 1 < uniqueBills.length ? uniqueBills[i + 1].idx : t.length;
+                const prevIdx = i > 0 ? uniqueBills[i - 1].idx : null;
+                const nextIdx = i + 1 < uniqueBills.length ? uniqueBills[i + 1].idx : null;
+                const start = prevIdx !== null ? Math.floor((prevIdx + b.idx) / 2) : 0;
+                const end = nextIdx !== null ? Math.floor((b.idx + nextIdx) / 2) : t.length;
                 return t.slice(start, end);
               });
             } else {
@@ -19140,9 +19151,18 @@
                 let validBills = bills.filter((b) => b.BillingPeriodStart || b.kWhConsumed);
 
                 // ── OCR RETRY: If critical fields are missing, retry with enhanced OCR ──
+                // Trigger threshold: only retry when the total missing-field count
+                // across all bills is meaningful relative to the batch size. For a
+                // 33-bill batch, firing retry on a single missing field means
+                // hi-res OCR'ing 3 pages × 3 scales (up to ~13 minutes on slow
+                // browsers) to recover one value — not worth it. Retry only when
+                // worstMissing >= 2 OR missing-per-bill ratio >= 0.1.
                 const retryBills = validBills.length ? validBills : bills;
                 const worstMissing = Math.max(...retryBills.map((b) => countCriticalMissing(b, rule.name)));
-                if (worstMissing > 0 && typeof Tesseract !== 'undefined') {
+                const totalMissing = retryBills.reduce((s, b) => s + countCriticalMissing(b, rule.name), 0);
+                const missingRatio = retryBills.length > 0 ? totalMissing / retryBills.length : 0;
+                const retryWarranted = worstMissing >= 2 || missingRatio >= 0.1;
+                if (worstMissing > 0 && retryWarranted && typeof Tesseract !== 'undefined') {
                   statusMsg(
                     'Validating extraction... ' +
                       worstMissing +
@@ -19179,6 +19199,18 @@
                       useSystemFonts: true,
                     }).promise;
                     const maxPg = Math.min(pdf2.numPages, 200);
+                    // Rebuild pageTexts from the fullText returned by extractPDFText
+                    // so the retry loop can reuse non-retried pages without pulling
+                    // from extractPDFText's local scope (which would throw
+                    // "pageTexts is not defined"). fullText has %%PAGE_N%% markers;
+                    // split on them to recover per-page text.
+                    const pageTexts = new Array(maxPg).fill('');
+                    const _pgRe = /%%PAGE_(\d+)%%\n([\s\S]*?)(?=%%PAGE_\d+%%|$)/g;
+                    let _pgm;
+                    while ((_pgm = _pgRe.exec(text)) !== null) {
+                      const pgNum = parseInt(_pgm[1]);
+                      if (pgNum >= 1 && pgNum <= maxPg) pageTexts[pgNum - 1] = _pgm[2];
+                    }
                     // Only retry pages belonging to bills with missing critical fields
                     const retryPages = new Set();
                     for (const b of retryBills) {
