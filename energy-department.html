@@ -15206,6 +15206,13 @@
               const before = t.slice(Math.max(0, m.idx - 40), m.idx);
               return /Billing\s+Details/i.test(before);
             };
+            // Each surviving entry tracks _groupIdxs = [...all idxs in its merge
+            // group...] so that section-boundary computation below uses the
+            // EARLIEST and LATEST idxs of the group, not just the winner's idx.
+            // Without this, dropping a phantom entry widens the PREVIOUS bill's
+            // section onto the phantom's territory, absorbing cover-page text
+            // from the next bill (regression observed in ocr-debug(79).txt:
+            // Bill 31 picked up meter-change data from the Feb bill's cover).
             const _merged = [];
             let _fuzzyMerges = 0;
             for (const m of uniqueBills) {
@@ -15214,20 +15221,36 @@
                 _fuzzyMerges++;
                 const prevIsBd = _hasBdBefore(prev);
                 const curIsBd = _hasBdBefore(m);
-                if (curIsBd && !prevIsBd) {
-                  _merged[_merged.length - 1] = m;
-                } else if (prevIsBd && !curIsBd) {
-                  // keep prev
-                } else {
-                  // both or neither — prefer the later idx (billing-details page
-                  // is usually later in the PDF text than the cover page).
-                  if (m.idx > prev.idx) _merged[_merged.length - 1] = m;
-                }
+                let winner;
+                if (curIsBd && !prevIsBd) winner = m;
+                else if (prevIsBd && !curIsBd) winner = prev;
+                else winner = m.idx > prev.idx ? m : prev;
+                // Preserve merge-group idxs on the winner for boundary calc.
+                const groupIdxs = (prev._groupIdxs || [prev.idx]).concat(m._groupIdxs || [m.idx]);
+                winner._groupIdxs = groupIdxs;
+                _merged[_merged.length - 1] = winner;
                 continue;
               }
+              m._groupIdxs = [m.idx];
               _merged.push(m);
             }
             uniqueBills = _merged;
+
+            // ── CHAIN CONTINUITY NORMALIZATION ──
+            // Consecutive Evergy bills always share a meter-read date
+            // (prev.end === cur.start). When OCR misreads a digit in one of the
+            // two date instances, the merged winner may still have a slightly
+            // wrong start date. Walk adjacent pairs and snap cur.start to
+            // prev.end whenever the gap is ≤2 days. This authoritatively fixes
+            // labels like "01/28 → 03/02" → "01/29 → 03/02" when Bill 31 ends
+            // on 01/29/2026.
+            for (let _i = 1; _i < uniqueBills.length; _i++) {
+              const _p = uniqueBills[_i - 1];
+              const _c = uniqueBills[_i];
+              if (_p.end && _c.start && _p.end !== _c.start && _dayDelta(_p.end, _c.start) <= 2) {
+                _c.start = _p.end;
+              }
+            }
             console.log(
               '[Evergy extractAll] raw service-from matches:',
               sfMatches.length,
@@ -15251,11 +15274,23 @@
             // Last section extends to t.length.
             let validSections;
             if (uniqueBills.length > 0) {
+              // Use min/max of each bill's merge group so section boundaries
+              // reflect the ORIGINAL idx range of all the match instances that
+              // collapsed into this winner, not just the winner's own idx.
+              // Prevents the previous bill's section from absorbing dropped
+              // phantom-match territory.
               validSections = uniqueBills.map((b, i) => {
-                const prevIdx = i > 0 ? uniqueBills[i - 1].idx : null;
-                const nextIdx = i + 1 < uniqueBills.length ? uniqueBills[i + 1].idx : null;
-                const start = prevIdx !== null ? Math.floor((prevIdx + b.idx) / 2) : 0;
-                const end = nextIdx !== null ? Math.floor((b.idx + nextIdx) / 2) : t.length;
+                const groupIdxs = b._groupIdxs || [b.idx];
+                const curEarliest = Math.min(...groupIdxs);
+                const curLatest = Math.max(...groupIdxs);
+                const prevLatest =
+                  i > 0 ? Math.max(...(uniqueBills[i - 1]._groupIdxs || [uniqueBills[i - 1].idx])) : null;
+                const nextEarliest =
+                  i + 1 < uniqueBills.length
+                    ? Math.min(...(uniqueBills[i + 1]._groupIdxs || [uniqueBills[i + 1].idx]))
+                    : null;
+                const start = prevLatest !== null ? Math.floor((prevLatest + curEarliest) / 2) : 0;
+                const end = nextEarliest !== null ? Math.floor((curLatest + nextEarliest) / 2) : t.length;
                 return t.slice(start, end);
               });
             } else {
@@ -15304,10 +15339,28 @@
               t.match(/[-\u2013]\s*([\dA-Z]{3,10})\s+Billing\s+Details/i)?.[1] ||
               t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i)?.[1] ||
               null;
-            const results = validSections.map((s) => {
+            const results = validSections.map((s, i) => {
               const r = _extractEvergy(s, acct, addrM?.[1]?.trim() || null);
               if (!r.CustomerName && fullCustName) r.CustomerName = fullCustName;
               if (!r.RateSchedule && fullRate) r.RateSchedule = fullRate;
+              // Override BillingPeriodStart/End with the winning uniqueBills
+              // entry's date pair. The section text may still contain BOTH the
+              // dropped phantom match and the winning match (midpoint slicing
+              // doesn't physically remove text), and _extractEvergy picks the
+              // FIRST occurrence of service-from it finds — which may be the
+              // phantom one. The uniqueBills entry has already been chain-
+              // normalized (snapping to the prior bill's end date) so it's the
+              // authoritative label for this bill.
+              const winner = uniqueBills[i];
+              if (winner && winner.start && winner.end) {
+                r.BillingPeriodStart = winner.start;
+                r.BillingPeriodEnd = winner.end;
+                const ds = _parseMDY(winner.start);
+                const de = _parseMDY(winner.end);
+                if (ds && de) {
+                  r.NumberOfDays = String(Math.round((de - ds) / 86400000));
+                }
+              }
               return r;
             });
 
