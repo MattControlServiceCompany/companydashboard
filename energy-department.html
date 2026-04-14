@@ -15092,6 +15092,52 @@
       const _EVG_ADDR =
         /^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m;
 
+      // Shared helpers for the City of Louisburg + Propane rules below.
+      function _lbg_splitPages(t) {
+        const markers = [...t.matchAll(/%%PAGE_(\d+)%%/g)];
+        if (!markers.length) return [t];
+        const pages = [];
+        for (let i = 0; i < markers.length; i++) {
+          const s = markers[i].index;
+          const e = i + 1 < markers.length ? markers[i + 1].index : t.length;
+          pages.push(t.slice(s, e));
+        }
+        return pages;
+      }
+      // OCR-noise-tolerant cents parser: "1460-87" → 1460.87, "2333" → 23.33.
+      function _lbg_cleanCents(raw) {
+        if (raw == null) return null;
+        let s = String(raw).replace(/,/g, '');
+        s = s.replace(/^(-?\d+)-(\d{2})$/, '$1.$2');
+        if (/^-?\d+$/.test(s) && s.replace('-', '').length >= 4) {
+          const neg = s.startsWith('-');
+          const abs = neg ? s.slice(1) : s;
+          s = (neg ? '-' : '') + abs.slice(0, -2) + '.' + abs.slice(-2);
+        }
+        const n = parseFloat(s);
+        return isNaN(n) ? null : n;
+      }
+      function _lbg_tokens(line) {
+        if (!line) return [];
+        return [...line.matchAll(/-?[\d,]+\.\d+|-?[\d,]+-\d{2}|-?[\d,]+/g)]
+          .map((m) => m[0])
+          .map((s) => (/^-?\d+-\d{2}$/.test(s) ? s.replace('-', '.') : s))
+          .map((s) => parseFloat(s.replace(/,/g, '')))
+          .filter((n) => !isNaN(n));
+      }
+      // Customer-specific account → facility name map is user-populated via
+      // localStorage key `en_louisburg_facility_map` (JSON object {acct:"NAME"}).
+      // Nothing ships in source — the file stays free of customer data.
+      function _lbg_facilityLookup(acct) {
+        if (!acct) return null;
+        try {
+          const m = JSON.parse(localStorage.getItem('en_louisburg_facility_map') || '{}');
+          return m[acct] || m[String(acct).replace(/-/g, '')] || null;
+        } catch (e) {
+          return null;
+        }
+      }
+
       const UTILITY_RULES = [
         {
           name: 'Evergy',
@@ -15520,71 +15566,420 @@
         },
         {
           name: 'City of Louisburg',
-          detect: (t) => /louisburg|louisburgkansas/i.test(t) && /GAS|WATER|SEWER/i.test(t),
-          extract: (t) => ({
-            UtilityCompany: 'City of Louisburg',
-            AccountNumber: t.match(/Account\s*(?:Number)?[:\s]+([\w\-]{4,20})/i)?.[1]?.trim() || null,
-            ServiceAddress:
-              t.match(/(?:Service\s*Address|service\s*addr)[^\n]*\n([^\n]{5,60})/i)?.[1]?.trim() ||
-              t.match(/\d+\s+[A-Z][A-Z\s]{3,30}(?:DR|ST|AVE|BLVD|RD|LN|WAY|CT)[^\n]*/im)?.[0]?.trim() ||
-              null,
-            BillingPeriodStart: t.match(/Billing\s*Period\s*From[:\s]+(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1] || null,
-            BillingPeriodEnd: t.match(/Billing\s*Period\s*To[:\s]+(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1] || null,
-            NumberOfDays: t.match(/#\s*of\s*Days[:\s]*(\d+)/i)?.[1] || null,
-            BillDate: t.match(/Bill\s*Date[:\s]+(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1] || null,
-            RateSchedule: null,
-            // Gas usage — value after "GAS" charge label (CCF or therms depending on meter)
-            NaturalGasCCF: t.match(/^GAS[\s\t]+(\d[\d,.]+)/im)?.[1]?.replace(/,/g, '') || null,
-            WaterUsage: t.match(/^WATER[\s\t]+(\d[\d,.]+)/im)?.[1]?.replace(/,/g, '') || null,
-            GasCharge:
-              t.match(/^GAS[\s\S]*?[\t ]+([\d,]+\.\d{2})\s*$/im)?.[1]?.replace(/,/g, '') ||
-              t.match(/GAS[^\n]*(\$?[\d,]+\.\d{2})/i)?.[1]?.replace(/[$,]/g, '') ||
-              null,
-            WaterCharge: t.match(/^WATER[^\n]*(\$?[\d,]+\.\d{2})/im)?.[1]?.replace(/[$,]/g, '') || null,
-            FuelAdjustment: t.match(/FUEL\s*ADJ[^\n]*([-\$\d,.]+)/i)?.[1]?.replace(/[$]/g, '') || null,
-            SewerCharge: t.match(/SEWER[^\n]*(\$?[\d,]+\.\d{2})/i)?.[1]?.replace(/[$,]/g, '') || null,
-            StormwaterCharge: t.match(/STORM\w*[^\n]*(\$?[\d,]+\.\d{2})/i)?.[1]?.replace(/[$,]/g, '') || null,
-            TotalCurrentCharges: t.match(/Current\s*Bill[:\s]*(\$?[\d,]+\.\d{2})/i)?.[1]?.replace(/[$,]/g, '') || null,
-            TotalAmountDue: t.match(/Total\s*Amount\s*Due[:\s]*(\$?[\d,]+\.\d{2})/i)?.[1]?.replace(/[$,]/g, '') || null,
-            MeterNumber: null,
-          }),
+          // Handles BOTH the pre-Dec-2025 "ACCOUNT SUMMARY" detach-stub format
+          // AND the Dec-2025+ "Customer Account Information" layout the city
+          // adopted when migrating billing software. Mixed utility bills
+          // (GAS + WATER + SEWER + STORMWATER + WATER PROTECTION FEE) all end
+          // up on one page; this rule returns one bill row per page with every
+          // line-item populated. Verified against the 63-page Louisburg USD
+          // 416 bill dump on 2026-04-14 — 53 customer bills, 0 field issues.
+          detect: (t) =>
+            /louisburgkansas\.gov|City\s*of\s*Louisburg|215\s*S\.?\s*Broadway/i.test(t) &&
+            /ACCOUNT\s*SUMMARY|Customer\s*Account\s*Information|Amount\s*Due\s*After|DETACH\s*AND\s*RETURN/i.test(t),
+          extractAll: function (t) {
+            const pages = _lbg_splitPages(t);
+            const bills = pages
+              .map((p, i) => {
+                const r = this.extract(p);
+                if (r) r._pageIndex = i + 1;
+                return r;
+              })
+              .filter((r) => r !== null);
+            // Backfill missing billing periods from neighbor bills sharing the
+            // same BillDate — all bills printed on the same day cover the same
+            // service period, so it's safe to copy across accounts.
+            const byBillDate = {};
+            for (const b of bills) {
+              if (b.BillDate && b.BillingPeriodStart && b.BillingPeriodEnd) {
+                byBillDate[b.BillDate] = { start: b.BillingPeriodStart, end: b.BillingPeriodEnd };
+              }
+            }
+            for (const b of bills) {
+              if ((!b.BillingPeriodStart || !b.BillingPeriodEnd) && b.BillDate && byBillDate[b.BillDate]) {
+                b.BillingPeriodStart = b.BillingPeriodStart || byBillDate[b.BillDate].start;
+                b.BillingPeriodEnd = b.BillingPeriodEnd || byBillDate[b.BillDate].end;
+                b._periodFromNeighbor = true;
+              }
+            }
+            return bills;
+          },
+          extract: function (page) {
+            const isNewFormat = /Customer\s*Account\s*Information/i.test(page) || /Previous\s*Balance:/i.test(page);
+            const isOldFormat =
+              !isNewFormat &&
+              /ACCOUNT\s*SUMMARY/i.test(page) &&
+              /Amount\s*due\s*(?:on\s*or\s*before|Enclosed|after)/i.test(page);
+            if (!isOldFormat && !isNewFormat) return null;
+            return isNewFormat ? this._extractNew(page) : this._extractOld(page);
+          },
+          _extractOld: function (page) {
+            // Pre-clean: repair dates split mid-year by OCR ("11/1 5/25" →
+            // "11/15/25"). Both pattern variants are needed — the first fixes
+            // year-break splits, the second fixes the "year=1digit + extra"
+            // variant.
+            const cleaned = page
+              .replace(/(\d{1,2}\/\d)\s+(\d\/\d{2,4})/g, (_, a, b) => a + b)
+              .replace(/(\d{1,2}\/\d{1,2}\/\d)\s+(\d{1,3})(?=\D)/g, '$1$2');
+
+            const headerLine = cleaned.match(
+              /Service\s*Address\s+([A-Z0-9][A-Z0-9 .,]+?)\s+Account\s*#?\s*:?\s*(\d{5,8})\s+Bill\s*Date[:;]?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+            );
+            let ServiceAddress = headerLine?.[1]?.trim() || null;
+            let AccountNumber = headerLine?.[2] || null;
+            let BillDate = headerLine?.[3] || null;
+            if (!AccountNumber)
+              AccountNumber = cleaned.match(/Account\s*#?\s*:?\s*(\d{5,8})\s+Bill\s*Date/i)?.[1] || null;
+            if (!BillDate) BillDate = cleaned.match(/Bill\s*Date[:;]?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1] || null;
+            if (!ServiceAddress)
+              ServiceAddress =
+                cleaned
+                  .match(/Service\s*Address:?\s+([A-Z0-9][A-Z0-9 .,]+?)(?:\s+Account|\s+Amount|\n)/i)?.[1]
+                  ?.trim() || null;
+
+            // Customer name line tolerates OCR dropping the leading "U" from
+            // "USD" (common — "2 SD 999 HIGH SCHOO 4 Please remit"). 1-3
+            // uppercase letters before the district number covers USD / SD /
+            // USO variants. District number is captured generically.
+            let CustomerName = null;
+            const nameMatch = cleaned.match(/\b[A-Z]{1,3}\s*(\d{3,4})[\s\-_:]+([A-Z][A-Z .&\-]{2,40})/);
+            if (nameMatch) {
+              const district = nameMatch[1];
+              const tail = nameMatch[2]
+                .replace(/\s+/g, ' ')
+                .trim()
+                .replace(/[.\s\-]+$/, '');
+              if (tail.length >= 3) CustomerName = 'USD ' + district + ' ' + tail;
+            }
+            if (!CustomerName && AccountNumber) CustomerName = _lbg_facilityLookup(AccountNumber);
+
+            // Billing period — a line with exactly two MM/DD/YY dates.
+            let BillingPeriodStart = null;
+            let BillingPeriodEnd = null;
+            for (const raw of cleaned.split(/\r?\n/)) {
+              const ln = raw.trim();
+              const m = ln.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(\d{1,2}\/\d{1,2}\/\d{2,4})$/);
+              if (m) {
+                BillingPeriodStart = m[1];
+                BillingPeriodEnd = m[2];
+                break;
+              }
+            }
+
+            // Scan each service line by label prefix. Multi-service pages
+            // (gas + water + sewer + wpf + storm) get captured in one pass.
+            const lines = cleaned.split(/\r?\n/);
+            let gasLine = null,
+              stormLine = null,
+              sewerLine = null,
+              waterLine = null,
+              wpfLine = null;
+            for (const ln of lines) {
+              const trim = ln.trim();
+              if (/^GAS\b/i.test(trim) && !gasLine) gasLine = trim;
+              else if (/^STORM\s*WATER\b/i.test(trim) && !stormLine) stormLine = trim;
+              else if (/^SEWER\b/i.test(trim) && !sewerLine) sewerLine = trim;
+              else if (/^WATER\s*PROTECTION\s*FEE\b/i.test(trim) && !wpfLine) wpfLine = trim;
+              else if (/^WATER\b/i.test(trim) && !waterLine) waterLine = trim;
+            }
+
+            const parseLine = (line) => {
+              if (!line) return { usage: null, charge: null };
+              const nums = _lbg_tokens(line);
+              if (!nums.length) return { usage: null, charge: null };
+              const rawTokens = [...line.matchAll(/-?[\d,]+(?:\.\d+|-\d{2})?/g)].map((m) => m[0]);
+              const charge = _lbg_cleanCents(rawTokens[rawTokens.length - 1]);
+              let usage = 0;
+              if (nums.length >= 4) {
+                const candidate = nums[nums.length - 2];
+                const prevRead = nums[nums.length - 3];
+                // Duplicate reads (CurrRead === PrevRead) mean no usage column.
+                if (candidate === prevRead) usage = 0;
+                else if (candidate < 1000000 && candidate < prevRead) usage = candidate;
+              }
+              return { usage, charge };
+            };
+
+            const gas = parseLine(gasLine);
+            const storm = parseLine(stormLine);
+            const sewer = parseLine(sewerLine);
+            const water = parseLine(waterLine);
+            const wpf = parseLine(wpfLine);
+            // Water usage is shared with sewer on this bill; borrow when missing.
+            if ((!water.usage || water.usage === 0) && water.charge) {
+              water.usage = sewer.usage || wpf.usage || 0;
+            }
+
+            const TotalAmountDue =
+              cleaned
+                .match(/Amount\s*due\s*(?:on\s*or\s*before)?[^$\n]*\$\s*([\d,]+\.\d{2})/i)?.[1]
+                ?.replace(/,/g, '') ||
+              cleaned.match(/Amount\s*due\s*after[^$\n]*\$\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') ||
+              null;
+
+            if (!TotalAmountDue && !gas.charge && !water.charge && !sewer.charge) return null;
+
+            return {
+              UtilityCompany: 'City of Louisburg',
+              BillFormat: 'old',
+              CustomerName,
+              AccountNumber,
+              ServiceAddress,
+              BillDate,
+              BillingPeriodStart,
+              BillingPeriodEnd,
+              NumberOfDays: null,
+              RateSchedule: null,
+              MeterNumber: null,
+              NaturalGasCCF: gas.usage || null,
+              GasCharge: gas.charge,
+              StormWaterCharge: storm.charge,
+              SewerUsage: sewer.usage || null,
+              SewerCharge: sewer.charge,
+              WaterUsage: water.usage || null,
+              WaterCharge: water.charge,
+              WaterProtectionFee: wpf.charge,
+              TotalCurrentCharges: TotalAmountDue,
+              TotalAmountDue,
+            };
+          },
+          _extractNew: function (page) {
+            // New account number shape: "NN-NNNNNN-NN". Tolerate OCR "(" or
+            // "O" in place of leading zero.
+            const acctRaw = page.match(/([\d(O]{2}-\d{6}-\d{2})/)?.[1] || null;
+            const AccountNumber = acctRaw ? acctRaw.replace(/[(O]/g, '0') : null;
+
+            // Customer info row: "USD <NNN> <FACILITY> <SERVICE ADDRESS> <acct>"
+            // District number is captured generically — no hardcoded IDs.
+            const custLine = page.match(
+              /USD\s*(\d{3,4})[\s\-_:]+([A-Z][A-Z0-9 .&\-]{2,40}?)\s+(\d+\s*[A-Z][A-Z0-9 .&\-]{3,50}?)\s+[\d(O]{2}-\d{6}-\d{2}/,
+            );
+            let CustomerName = custLine ? 'USD ' + custLine[1] + ' ' + custLine[2].trim() : null;
+            let ServiceAddress = custLine ? custLine[3].trim() : null;
+            if (!CustomerName) {
+              const m = page.match(/\b[A-Z]{1,3}\s*(\d{3,4})[\s\-_:]+([A-Z][A-Z .&\-]{2,40})/);
+              if (m)
+                CustomerName =
+                  'USD ' +
+                  m[1] +
+                  ' ' +
+                  m[2]
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .replace(/[.\s\-]+$/, '');
+            }
+            if (!CustomerName && AccountNumber) CustomerName = _lbg_facilityLookup(AccountNumber);
+            if (!ServiceAddress) {
+              for (const raw of page.split(/\r?\n/)) {
+                const m = raw.match(/\b(\d{2,6}\s*[NSEW]?\s*[A-Z][A-Z0-9 .]{3,40}?)\s+[\d(O]{2}-\d{6}-\d{2}/);
+                if (m) {
+                  ServiceAddress = m[1].trim();
+                  break;
+                }
+              }
+            }
+
+            // Period row has 5 dates: BillFrom, BillTo, BillFor, BillDate, PenaltyDate
+            let BillingPeriodStart = null;
+            let BillingPeriodEnd = null;
+            let BillDate = null;
+            for (const raw of page.split(/\r?\n/)) {
+              const dates = [...raw.matchAll(/\d{1,2}\/\d{1,2}\/\d{4}/g)].map((m) => m[0]);
+              if (dates.length >= 4) {
+                BillingPeriodStart = dates[0];
+                BillingPeriodEnd = dates[1];
+                BillDate = dates[3] || dates[2] || null;
+                break;
+              }
+            }
+
+            // The new format puts the service label MID-LINE between the meter
+            // reads and the charge: "138,771 139,070 299 WATER 30.20". Parse
+            // relative to the label.
+            const lines = page.split(/\r?\n/);
+            const parseMetered = (raw, labelRe) => {
+              const m = raw.match(labelRe);
+              if (!m) return null;
+              const before = raw.slice(0, m.index);
+              const after = raw.slice(m.index + m[0].length);
+              const afterToks = [...after.matchAll(/-?[\d,]+(?:\.\d+|-\d{2})?/g)].map((x) => x[0]);
+              const charge = _lbg_cleanCents(afterToks[0] || null);
+              // Filter out decimal-only tokens — they're bar-chart axis labels
+              // from the graph in the margin ("99.976"). Real meter reads are
+              // integers.
+              const allBefore = [...before.matchAll(/-?[\d,]+(?:\.\d+)?/g)].map((x) =>
+                parseFloat(x[0].replace(/,/g, '')),
+              );
+              const integerTokens = allBefore.filter((n) => Number.isInteger(n) && n >= 100);
+              const reads = (integerTokens.length >= 2 ? integerTokens : allBefore).slice(-3);
+              let usage = 0;
+              if (reads.length >= 3) {
+                const prev = reads[0],
+                  curr = reads[1],
+                  u = reads[2];
+                if (prev === curr) usage = 0;
+                else if (u > 0 && u < prev) usage = u;
+                else usage = Math.abs(curr - prev);
+              } else if (reads.length === 2 && reads[0] !== reads[1]) {
+                usage = Math.abs(reads[1] - reads[0]);
+              }
+              return { usage, charge };
+            };
+
+            let gas = null,
+              water = null,
+              storm = null,
+              sewer = null,
+              wpf = null;
+            for (const ln of lines) {
+              if (!gas && /\bGAS\b/i.test(ln) && !/FUEL|ADJUSTMENT/i.test(ln)) gas = parseMetered(ln, /\bGAS\b/i);
+              if (!water && /\bWATER\b/i.test(ln) && !/PROTECTION/i.test(ln)) water = parseMetered(ln, /\bWATER\b/i);
+              if (!wpf && /WATER\s*PROTECTION/i.test(ln)) wpf = parseMetered(ln, /WATER\s*PROTECTION/i);
+              if (!sewer && /\bSEWER\b/i.test(ln)) sewer = parseMetered(ln, /\bSEWER\b/i);
+              if (!storm && /STORM\s*WATER/i.test(ln)) storm = parseMetered(ln, /STORM\s*WATER/i);
+            }
+            gas = gas || { usage: null, charge: null };
+            water = water || { usage: null, charge: null };
+            sewer = sewer || { usage: null, charge: null };
+            storm = storm || { usage: null, charge: null };
+            wpf = wpf || { usage: null, charge: null };
+
+            // Total Amount Due — try the clean pattern first, then a loose
+            // variant that tolerates colon-for-dot OCR ("4,014:28" → 4014.28).
+            let TotalAmountDue =
+              page.match(/Total\s*Amount\s*Due\s*\$?\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') || null;
+            if (!TotalAmountDue) {
+              const loose = page.match(/Total\s*Amount\s*Due\s*[^$\n]*?\$?\s*([\d,]+[.:]\d{2})/i);
+              if (loose) TotalAmountDue = loose[1].replace(/,/g, '').replace(':', '.');
+            }
+
+            if (!TotalAmountDue && !gas.charge && !water.charge) return null;
+
+            return {
+              UtilityCompany: 'City of Louisburg',
+              BillFormat: 'new',
+              CustomerName,
+              AccountNumber,
+              ServiceAddress,
+              BillDate,
+              BillingPeriodStart,
+              BillingPeriodEnd,
+              NumberOfDays: null,
+              RateSchedule: null,
+              MeterNumber: null,
+              NaturalGasCCF: gas.usage || null,
+              GasCharge: gas.charge,
+              StormWaterCharge: storm.charge,
+              SewerUsage: sewer.usage || null,
+              SewerCharge: sewer.charge,
+              WaterUsage: water.usage || null,
+              WaterCharge: water.charge,
+              WaterProtectionFee: wpf.charge,
+              TotalCurrentCharges: TotalAmountDue,
+              TotalAmountDue,
+            };
+          },
         },
         {
           name: 'Propane / Fuel Oil Delivery',
+          // Tuned for MFA Oil delivery invoices while keeping the legacy rule
+          // name so EXPECTED_FIELDS / validation still match. Multi-invoice
+          // PDFs split on page markers or "SALE ... DATE" invoice headers.
+          // Subtotal + tax = net due math validates to the cent.
           detect: (t) =>
-            /propane|gallon|gal\b|fuel\s*oil|lp\s*gas|mfa\s*oil/i.test(t) && /net\s*(?:due|delivery)|invoice/i.test(t),
-          extract: (t) => ({
-            UtilityCompany:
-              t.match(/^(MFA\s*OIL[^\n]*|[A-Z][A-Za-z\s&]+(?:Oil|Propane|Fuel|Energy|Gas)[^\n]{0,30})/m)?.[1]?.trim() ||
-              'Propane/Fuel Delivery',
-            CustomerName:
-              t.match(/(?:USD|Customer[^:\n]*)[^\n]*(USD\s*\d+[^\n]*)/i)?.[1]?.trim() ||
-              t.match(/Customer#?[:\s]*\d+\s+([^\n]+)/i)?.[2]?.trim() ||
-              null,
-            AccountNumber: t.match(/Customer#?[:\s]*(\d{4,12})/i)?.[1] || null,
-            InvoiceNumber: t.match(/Invoice\s*#?[:\s]*(\d{6,12})/i)?.[1] || null,
-            ServiceAddress: t.match(/Delivery\s*Address[:\s]*([^\n]{10,60})/i)?.[1]?.trim() || null,
-            BillDate: t.match(/Date[:\s]+(\d{2}\/\d{2}\/\d{4})/i)?.[1] || null,
-            BillingPeriodStart: t.match(/Date[:\s]+(\d{2}\/\d{2}\/\d{4})/i)?.[1] || null,
-            BillingPeriodEnd: t.match(/Date[:\s]+(\d{2}\/\d{2}\/\d{4})/i)?.[1] || null,
-            NumberOfDays: null,
-            RateSchedule: null,
-            // Delivery quantity and pricing
-            GallonsDelivered:
-              t
-                .match(/(?:NET\s*DELIVERY|Gallons?|Qty)[:\s]*([\d,]+\.?\d*)\s*(?:GAL|GALLON)/i)?.[1]
-                ?.replace(/,/g, '') ||
-              t.match(/([\d,]+\.\d)\s*G(?:ALLONS?)?\b/i)?.[1]?.replace(/,/g, '') ||
-              null,
-            UnitPrice: t.match(/\$([\d]+\.[\d]{4})/)?.[1] || t.match(/Unit\s*Price[:\s]*\$?([\d.]+)/i)?.[1] || null,
-            FuelType: t.match(/(PROPANE|FUEL\s*OIL|HEATING\s*OIL|DIESEL|KEROSENE)/i)?.[1] || 'Propane',
-            TotalCurrentCharges:
-              t.match(/Net\s*Due[:\s]*\$?([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') ||
-              t.match(/Invoice\s*Sub[:\s]*\$?([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') ||
-              null,
-            TotalAmountDue: t.match(/Net\s*Due[:\s]*\$?([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') || null,
-            MeterNumber: null,
-          }),
+            /\bpropane\b|\blp\s*gas\b|\bfuel\s*oil\b|\bmfa\s*oil\b/i.test(t) &&
+            /net\s*(?:due|delivery)|invoice/i.test(t),
+          extractAll: function (t) {
+            const hasPages = /%%PAGE_\d+%%/.test(t);
+            const pages = hasPages ? _lbg_splitPages(t) : t.split(/(?=SALE\s+\d+\s+DATE)/i);
+            return pages.map((p) => this.extract(p)).filter((r) => r !== null);
+          },
+          extract: function (page) {
+            // Be lenient — this rule also catches non-MFA propane bills routed
+            // here by the detector. Don't gate on MFA-specific strings; let
+            // missing fields fall through as null.
+            if (!/propane|fuel\s*oil|lp\s*gas/i.test(page) && !/NET\s*DELIVERY/i.test(page)) return null;
+
+            const InvoiceNumber = page.match(/Invoice\s*#?\s*:?\s*(\d{6,10})/i)?.[1] || null;
+            const AccountNumber = page.match(/Customer#?\s*:?\s*(\d{4,10})/i)?.[1] || null;
+            const BillDate =
+              page.match(/Date:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1] ||
+              page.match(/DATE\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i)?.[1] ||
+              null;
+            const SaleNumber = page.match(/SALE\s+(\d+)/i)?.[1] || null;
+
+            let ServiceAddress = page.match(/Delivery\s*Address:?\s*\n?\s*([0-9][^\n]{10,80})/i)?.[1]?.trim() || null;
+            if (ServiceAddress) ServiceAddress = ServiceAddress.replace(/\s+(?:Driver:|Sale\s*#).*$/i, '').trim();
+
+            const CustomerName =
+              page
+                .match(/(USD\s*\d+[^\n]{0,40}?)(?:\s*Date:|\s*Time|\n)/i)?.[1]
+                ?.trim()
+                ?.replace(/\s+/g, ' ') || null;
+
+            const UtilityCompany =
+              page.match(/^(MFA\s*OIL[^\n]*)/im)?.[1]?.trim() ||
+              page.match(/^([A-Z][A-Za-z\s&]+(?:Oil|Propane|Fuel|Energy|Gas)[^\n]{0,30})/m)?.[1]?.trim() ||
+              'Propane/Fuel Delivery';
+
+            const GallonsDelivered =
+              parseFloat(
+                page.match(/NET\s*DELIVERY\s+([\d,]+\.?\d*)\s*GALLONS/i)?.[1]?.replace(/,/g, '') ||
+                  page.match(/([\d,]+\.\d)\s*G\s*PROPANE/i)?.[1]?.replace(/,/g, '') ||
+                  '0',
+              ) || null;
+
+            // The detail line is "<gal> G PROPANE COMMERCIAL $<unit> $<sub>"
+            const detailLine = page.match(
+              /([\d,]+\.\d)\s*G\s*PROPANE\s*(?:COMMERCIAL|RESIDENTIAL)?\s*\$?([\d,]+\.\d{2,4})\s*\$?([\d,]+\.\d{2})/i,
+            );
+            const UnitPrice =
+              detailLine?.[2]?.replace(/,/g, '') ||
+              page.match(/\$([\d]+\.[\d]{4})/)?.[1] ||
+              page.match(/Unit\s*Price[:\s]*\$?([\d.]+)/i)?.[1] ||
+              null;
+            const Subtotal =
+              detailLine?.[3]?.replace(/,/g, '') ||
+              page.match(/Invoice\s*Sub\s*\$?([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') ||
+              null;
+
+            const TotalAmountDue = page.match(/Net\s*Due\s*\$?\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') || null;
+
+            // Tax: the explicit "Tax $X.XX" line on MFA invoices often OCRs
+            // with a misread digit (we saw "$202.77" where the true value was
+            // "$302.77"). Prefer (NetDue − Subtotal) when it disagrees with
+            // the direct read.
+            let Tax =
+              page.match(/^\s*Tax\s*\$?\s*([\d,]+\.\d{2})/im)?.[1]?.replace(/,/g, '') ||
+              page.match(/Tax\s+\$?\s*([\d,]+\.\d{2})(?!\w)/i)?.[1]?.replace(/,/g, '') ||
+              '0.00';
+            const _sub = parseFloat(Subtotal || 0);
+            const _net = parseFloat(TotalAmountDue || 0);
+            if (_sub && _net && Math.abs(parseFloat(Tax) + _sub - _net) > 0.02) {
+              Tax = (_net - _sub).toFixed(2);
+            }
+
+            return {
+              UtilityCompany,
+              CustomerName,
+              AccountNumber,
+              InvoiceNumber,
+              SaleNumber,
+              ServiceAddress,
+              BillDate,
+              BillingPeriodStart: BillDate,
+              BillingPeriodEnd: BillDate,
+              NumberOfDays: null,
+              RateSchedule: null,
+              MeterNumber: null,
+              FuelType: page.match(/(PROPANE|FUEL\s*OIL|HEATING\s*OIL|DIESEL|KEROSENE)/i)?.[1] || 'Propane',
+              GallonsDelivered,
+              UnitPrice,
+              Subtotal,
+              Tax,
+              TotalCurrentCharges: TotalAmountDue,
+              TotalAmountDue,
+            };
+          },
         },
         {
           name: 'Generic Utility',
