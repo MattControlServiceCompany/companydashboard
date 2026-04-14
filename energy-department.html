@@ -15218,13 +15218,46 @@
                 }
                 r._pageEnd = nextStart ? nextStart - 1 : _maxPage;
               } else {
-                // Fallback: scan the section text for page markers if we couldn't anchor to a cover
+                // Fallback 1: scan the section text for page markers if we couldn't anchor to a cover
                 const s = validSections[i] || '';
                 const pm = [...s.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => parseInt(m[1]));
                 if (pm.length) {
                   r._pageStart = Math.min(...pm);
                   r._pageEnd = Math.max(...pm);
                 }
+              }
+            }
+            // Fallback 2 (chain-based): if a bill STILL has no page range after the
+            // cover-anchor and section-scan attempts, it gets the previous bill's
+            // _pageEnd + 1 as the start and either the next anchored bill's start - 1
+            // or _maxPage as the end. This guarantees every bill has SOME page range
+            // so the viewer never falls back to the whole PDF. Critical for the last
+            // bill in a sequence when Tesseract OCR garbles its cover line.
+            for (let i = 0; i < results.length; i++) {
+              const r = results[i];
+              if (r._pageStart && r._pageEnd) continue;
+              // Find previous bill with a known _pageEnd
+              let prevEnd = 0;
+              for (let j = i - 1; j >= 0; j--) {
+                if (results[j]._pageEnd) {
+                  prevEnd = results[j]._pageEnd;
+                  break;
+                }
+              }
+              // Find next bill with a known _pageStart for the upper bound
+              let nextStart = null;
+              for (let j = i + 1; j < results.length; j++) {
+                if (results[j]._pageStart) {
+                  nextStart = results[j]._pageStart;
+                  break;
+                }
+              }
+              const fallbackStart = prevEnd + 1;
+              const fallbackEnd = nextStart ? nextStart - 1 : _maxPage;
+              if (fallbackStart <= fallbackEnd && fallbackStart >= 1 && fallbackEnd <= _maxPage) {
+                if (!r._pageStart) r._pageStart = fallbackStart;
+                if (!r._pageEnd) r._pageEnd = fallbackEnd;
+                r._pageRangeSource = 'chain-fallback';
               }
             }
             // ── NEIGHBOR-BILL FALLBACK (extractAll) ──
@@ -20412,52 +20445,53 @@
           let outBytes = bytes;
           let sliceMsg = 'Opening full PDF (no stored page range)';
           if (pageStart && pageEnd && window.PDFLib) {
-            const srcDoc = await window.PDFLib.PDFDocument.load(bytes);
-            const total = srcDoc.getPageCount();
-            let start = Math.max(1, parseInt(pageStart, 10) || 1);
-            let end = Math.min(total, parseInt(pageEnd, 10) || total);
-            // Guard against inverted or out-of-range values that would produce an
-            // empty slice. Swap if inverted; fall back to whole PDF if both ends land
-            // outside the file.
-            if (start > end) {
-              console.warn('[viewSavedPDF] page range inverted, swapping', { start, end });
-              const t = start;
-              start = end;
-              end = t;
-            }
-            if (start > total) {
-              console.warn('[viewSavedPDF] pageStart exceeds total pages, falling back to full PDF', {
-                pageStart,
-                total,
-              });
-              showToast(
-                'Stored page range (' +
-                  pageStart +
-                  '–' +
-                  pageEnd +
-                  ') is outside this PDF (' +
-                  total +
-                  ' pages). Showing full PDF.',
-              );
-              sliceMsg = 'Showing full PDF (' + total + ' pages)';
-            } else {
-              const outDoc = await window.PDFLib.PDFDocument.create();
-              const idxs = [];
-              for (let p = start; p <= end; p++) idxs.push(p - 1);
-              if (idxs.length === 0) {
-                console.warn('[viewSavedPDF] slice produced 0 pages, falling back to full PDF', {
-                  start,
-                  end,
+            // pdf-lib's copyPages can throw internal errors ("can't access property
+            // 'node', h is undefined") on PDFs with cross-reference issues or damaged
+            // page nodes. Isolate the slice in its own try/catch so a slice failure
+            // falls back to showing the full PDF instead of dead-ending the viewer.
+            try {
+              const srcDoc = await window.PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true });
+              const total = srcDoc.getPageCount();
+              let start = Math.max(1, parseInt(pageStart, 10) || 1);
+              let end = Math.min(total, parseInt(pageEnd, 10) || total);
+              if (start > end) {
+                console.warn('[viewSavedPDF] page range inverted, swapping', { start, end });
+                const t = start;
+                start = end;
+                end = t;
+              }
+              if (start > total) {
+                console.warn('[viewSavedPDF] pageStart exceeds total pages, falling back to full PDF', {
+                  pageStart,
                   total,
                 });
-                showToast('Stored range was empty — showing full PDF (' + total + ' pages)');
-                sliceMsg = 'Showing full PDF (' + total + ' pages, range was empty)';
+                sliceMsg =
+                  'Stored range ' + pageStart + '–' + pageEnd + ' is outside the PDF (' + total + ' pages). Full PDF.';
               } else {
-                const copied = await outDoc.copyPages(srcDoc, idxs);
-                copied.forEach((pg) => outDoc.addPage(pg));
-                outBytes = await outDoc.save();
-                sliceMsg = 'Showing pages ' + start + '–' + end + ' of ' + total + ' (' + idxs.length + ' pages)';
+                const idxs = [];
+                for (let p = start; p <= end; p++) {
+                  const idx = p - 1;
+                  if (idx >= 0 && idx < total) idxs.push(idx);
+                }
+                if (idxs.length === 0) {
+                  console.warn('[viewSavedPDF] slice produced 0 valid indices, falling back to full PDF', {
+                    start,
+                    end,
+                    total,
+                  });
+                  sliceMsg = 'Slice range was empty — showing full PDF (' + total + ' pages)';
+                } else {
+                  const outDoc = await window.PDFLib.PDFDocument.create();
+                  const copied = await outDoc.copyPages(srcDoc, idxs);
+                  copied.forEach((pg) => outDoc.addPage(pg));
+                  outBytes = await outDoc.save();
+                  sliceMsg = 'Showing pages ' + start + '–' + end + ' of ' + total + ' (' + idxs.length + ' pages)';
+                }
               }
+            } catch (sliceErr) {
+              console.error('[viewSavedPDF] pdf-lib slice failed, falling back to full PDF:', sliceErr);
+              sliceMsg = 'Slice failed (' + (sliceErr.message || 'pdf-lib error') + ') — showing full PDF';
+              // outBytes is already `bytes` (the full PDF) — nothing else to do.
             }
           }
           console.log('[viewSavedPDF]', sliceMsg);
@@ -20468,7 +20502,7 @@
           setTimeout(() => URL.revokeObjectURL(url), 60000);
           if (!win) showToast('Pop-up blocked — allow pop-ups for this site to view PDFs');
         } catch (e) {
-          console.error('[viewSavedPDF] failed:', e);
+          console.error('[viewSavedPDF] failed entirely:', e);
           showToast('Could not open PDF: ' + e.message);
         }
       }
