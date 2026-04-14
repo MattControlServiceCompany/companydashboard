@@ -19265,6 +19265,16 @@
           // Saved Bills PDF viewer slices to the correct pages. Without this copy the
           // old record keeps its stale (or null) page range and always opens the full PDF.
           const _copyPageRange = () => {
+            console.log(
+              '[_copyPageRange] billIdx',
+              billIdx,
+              'extracted pages',
+              extracted._pageStart,
+              '→',
+              extracted._pageEnd,
+              'shared key',
+              extracted._pdfSharedKey,
+            );
             if (extracted._pageStart) existing.pdfPageStart = extracted._pageStart;
             if (extracted._pageEnd) existing.pdfPageEnd = extracted._pageEnd;
             if (extracted._pdfSharedKey) {
@@ -19278,6 +19288,14 @@
                 existing.pdfBillId = 'pb' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
               }
             }
+            console.log(
+              '[_copyPageRange] after — existing pages',
+              existing.pdfPageStart,
+              '→',
+              existing.pdfPageEnd,
+              'pdfKey',
+              existing.pdfKey,
+            );
           };
           // Recalculate cost aggregates from whatever is currently on `existing` AFTER
           // the field-level updates have been applied. Reading back from existing (instead
@@ -20281,8 +20299,28 @@
         showToast('Record deleted');
       }
 
+      // Scan all meters across all projects for a bill row matching id/pdfBillId.
+      // Used as a last-resort to recover a row's stored page range when the onclick
+      // passes null (e.g. a row that was saved before pdfPageStart was tracked). The
+      // search is O(total bills) but only runs on-demand when the viewer needs it.
+      function _findMeterBillById(id) {
+        if (!id) return null;
+        for (const proj of projects || []) {
+          const udProj = getUDProj(proj.id);
+          for (const b of udProj.buildings || []) {
+            for (const m of b.meters || []) {
+              for (const r of m.bills || []) {
+                if (r.id === id || r.pdfBillId === id) return r;
+              }
+            }
+          }
+        }
+        return null;
+      }
+
       async function viewSavedPDF(id, pageStart, pageEnd, pdfKey) {
-        // Resolution order:
+        console.log('[viewSavedPDF] called with', { id, pageStart, pageEnd, pdfKey });
+        // Resolution order for the PDF bytes:
         //   1. IndexedDB per-bill key (legacy _saveSinglePDFBill path)
         //   2. IndexedDB shared key (the _ensureBatchPdfStored path)
         //   3. localStorage fallback at the shared key (when IndexedDB is blocked)
@@ -20317,6 +20355,58 @@
           showToast('PDF file not found — tried IndexedDB + localStorage for key ' + (pdfKey || '?'));
           return;
         }
+
+        // Page range fallback ladder — run whenever we don't already have both start
+        // and end, so we don't show the full PDF for a row that has a real range
+        // somewhere else.
+        //   (a) Scan the currently-loaded Utility Data meter bills (the row's live
+        //       home). Works for bills that were saved via _applyDupUpdate or
+        //       _saveBillToMatchedMeter.
+        //   (b) Scan window._pdfMultiBills (the current extraction session) by
+        //       period. Works when the row's stored pdfPageStart is still null (old
+        //       row) but the user just re-extracted and the extractor populated
+        //       _pageStart/_pageEnd on the in-memory bill — viewer gets the range
+        //       even before the user runs a new Overwrite All.
+        if ((!pageStart || !pageEnd) && id) {
+          const meterRow = _findMeterBillById(id);
+          if (meterRow) {
+            console.log('[viewSavedPDF] meter row found', {
+              stored: { pageStart: meterRow.pdfPageStart, pageEnd: meterRow.pdfPageEnd },
+            });
+            if (!pageStart) pageStart = meterRow.pdfPageStart;
+            if (!pageEnd) pageEnd = meterRow.pdfPageEnd;
+            // Also try matching a currently-extracted bill by period, in case the
+            // meter row's stored values were written when _pageStart wasn't tracked.
+            if ((!pageStart || !pageEnd) && Array.isArray(window._pdfMultiBills)) {
+              const extMatch = window._pdfMultiBills.find((eb) => {
+                const toISO = (d) => {
+                  if (!d) return '';
+                  const p = d.split('/');
+                  return p.length === 3 ? p[2] + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0') : d;
+                };
+                return toISO(eb.BillingPeriodStart) === meterRow.start && toISO(eb.BillingPeriodEnd) === meterRow.end;
+              });
+              if (extMatch) {
+                console.log('[viewSavedPDF] recovered pages from current extraction', {
+                  pageStart: extMatch._pageStart,
+                  pageEnd: extMatch._pageEnd,
+                });
+                if (!pageStart && extMatch._pageStart) pageStart = extMatch._pageStart;
+                if (!pageEnd && extMatch._pageEnd) pageEnd = extMatch._pageEnd;
+                // Persist back to the meter row so next click doesn't re-scan.
+                if (pageStart && pageEnd) {
+                  meterRow.pdfPageStart = pageStart;
+                  meterRow.pdfPageEnd = pageEnd;
+                  saveUtilityData();
+                }
+              }
+            }
+          } else {
+            console.warn('[viewSavedPDF] could not find meter row for id', id);
+          }
+        }
+
+        console.log('[viewSavedPDF] final page range', { pageStart, pageEnd });
         try {
           const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
           let outBytes = bytes;
