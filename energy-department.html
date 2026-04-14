@@ -13749,6 +13749,13 @@
         // Uses very loose OCR-tolerant patterns that handle common letter swaps.
         const CHG_STOP =
           /(?:Cust|Fac\S|Demand|Energy\s+C|\bECA|\bEER|\bPTS|\bTD[CG]|\bRkVA|Subtotal|Current\s+Charges)/i;
+        // Line-anchored variant of CHG_STOP — matches when a new charge starts the line
+        // (after optional chart-column numbers / leading whitespace). Used to stop block
+        // building without being fooled by continuation lines that merely contain "per kW".
+        // The full CHG_STOP plus a "per kW" exemption previously let RkVA Chg lines be
+        // absorbed into the preceding Energy Off Pk block, corrupting the rate match.
+        const NEXT_CHG_LINE =
+          /^\s*(?:[\d,]+\s+)*(?:Cust|Fac[\S]|Demand|Energy[\s.]+(?:Ch|CN|Gh)|\bECA|\bEER|\bPTS|\bTD[CG]|\bR[kK]VA|Subtotal|Current\s+Charges)/i;
         const getAmt = (line) => {
           const ms = [...line.matchAll(/\$([\d,]+\.\d{2})/g)];
           let best = null;
@@ -13778,7 +13785,7 @@
             } else {
               for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
                 const l = lines[j];
-                if (CHG_STOP.test(l) && !/per\s+k[Wh]/i.test(l) && !/^[\d,]+\.\d+\s+kWh\s+at/i.test(l)) break;
+                if (NEXT_CHG_LINE.test(l)) break;
                 const ja = getAmt(l);
                 if (ja !== null) {
                   total += ja;
@@ -13805,27 +13812,39 @@
             // e.g. "578.7840 3\nKW at $2.68601" → block becomes "578.7840 3 KW at $2.68601"
             // Also handle chart Y-axis numbers between "at" and the actual rate:
             // e.g. "27,170.0880 kWh at 140000 — $0.07299 per kWh" → skip 140000, use $0.07299
-            // IMPORTANT: Stop block at next charge keyword to avoid matching RkVA/TDC/etc.
+            // IMPORTANT: Stop block when the NEXT line starts a new charge (RkVA/TDC/etc).
+            // NEXT_CHG_LINE is line-anchored — a continuation line containing "$0.03288 per
+            // kWh" won't match (it starts with chart numbers or garbage, not a charge name),
+            // but a line that starts with "RkVA Chg ..." or "TDC Chg ..." will match and
+            // stop the block so off-peak rate extraction can't bleed into it.
             const blockLines = [lines[i]];
             for (let bi = i + 1; bi < Math.min(i + 4, lines.length); bi++) {
-              if (CHG_STOP.test(lines[bi]) && !/per\s+k[Ww]/i.test(lines[bi]) && !/^\s*k[Ww]\s+at/i.test(lines[bi]))
-                break;
+              if (NEXT_CHG_LINE.test(lines[bi])) break;
               blockLines.push(lines[bi]);
             }
             const block = blockLines.join(' ');
+            // Qty pattern: accept either `.` or `:` as the decimal separator. Tesseract
+            // occasionally misreads `113,763.4729` as `113,763:4729` when the dot pixel
+            // is near a tall character above it, and before this fallback the regex
+            // silently dropped the entire rate part (e.g. the second tier of a seasonal
+            // ECA charge), leaving `_rates.ECACharge` missing half the total.
+            const QTY_RE = '([\\d,]+[.:]\\d{2,})';
             // Try the direct pattern first: qty kW/kWh at $rate (no junk between at and rate)
-            let rateM = block.match(/([\d,]+\.\d{2,})\s*(?:\d\s+)?k([Ww]h?)\s+at\s+\$([\d,.]+)/i);
+            let rateM = block.match(new RegExp(QTY_RE + '\\s*(?:\\d\\s+)?k([Ww]h?)\\s+at\\s+\\$([\\d,.]+)', 'i'));
             if (!rateM) {
               // Fallback: allow junk (chart numbers, OCR garbage) between "at" and "$rate"
               // Match: qty kWh at [anything] $rate per kW/kWh
-              rateM = block.match(/([\d,]+\.\d{2,})\s*(?:\d\s+)?k([Ww]h?)\s+at\s+[\s\S]*?\$([\d,.]+)\s*per\s+k[Ww]/i);
+              rateM = block.match(
+                new RegExp(QTY_RE + '\\s*(?:\\d\\s+)?k([Ww]h?)\\s+at\\s+[\\s\\S]*?\\$([\\d,.]+)\\s*per\\s+k[Ww]', 'i'),
+              );
             }
             if (!rateM) {
               // Last resort: qty kWh at [anything] $rate (no "per kW" required)
-              rateM = block.match(/([\d,]+\.\d{2,})\s*(?:\d\s+)?k([Ww]h?)\s+at[\s\S]*?\$([\d,.]+)/i);
+              rateM = block.match(new RegExp(QTY_RE + '\\s*(?:\\d\\s+)?k([Ww]h?)\\s+at[\\s\\S]*?\\$([\\d,.]+)', 'i'));
             }
             if (rateM) {
-              const qty = parseFloat(rateM[1].replace(/,/g, ''));
+              // Normalize `:` → `.` so `113,763:4729` parses as `113763.4729`.
+              const qty = parseFloat(rateM[1].replace(/,/g, '').replace(':', '.'));
               const rate = parseFloat(rateM[3].replace(/,/g, ''));
               const unit = 'k' + rateM[2];
               // Sanity: Evergy rates are < $100/kW and < $1/kWh. Values like 70000 or 140000
@@ -14284,36 +14303,47 @@
         // OCR-tolerant charge keywords: very loose matching for OCR garble
         // "Chg" can become: CNG, CHG, Ghg, Ch9, Cha, Chq, etc.
         const C = '(?:Ch[gaq9]|C[HhNnRr][Gg]|Gh[gq9])[.:]?';
+        // Separator between the charge name and "Chg". OCR frequently inserts a stray
+        // period instead of a space (e.g. "TDC.Chg", "ECA.Chg"), so we allow either
+        // whitespace or a period here. Must match at least one character so keywords
+        // like "Customer Chg" vs "CustomerChg" don't collide (none of these legitimately
+        // run together, but we want to fail closed on the unseparated case).
+        const SEP = '[\\s.]+';
         // Customer: "Customer Chg" or OCR garble like "CUSIOMET CNG", "Customar Chg", "CUSIOMER CNG"
-        const custChg = xChg('C[ua][s5][t1iI][o0][mM][eao][r1tT]\\s+' + C);
+        const custChg = xChg('C[ua][s5][t1iI][o0][mM][eao][r1tT]' + SEP + C);
         const facKW =
-          t.match(new RegExp('Fac\\S*\\s+' + C + '\\s+([\\d,.]+)\\s*[kK][Ww]', 'i'))?.[1]?.replace(/,/g, '') || null;
-        const facChg = xChg('Fac\\S*\\s+' + C);
+          t.match(new RegExp('Fac\\S*' + SEP + C + '\\s+([\\d,.]+)\\s*[kK][Ww]', 'i'))?.[1]?.replace(/,/g, '') || null;
+        const facChg = xChg('Fac\\S*' + SEP + C);
         const demKW =
-          t.match(new RegExp('Demand\\s+' + C + '\\s+([\\d,.]+)\\s*[kK][Ww]', 'i'))?.[1]?.replace(/,/g, '') || null;
-        const demChg = xChg('Demand\\s+' + C);
+          t.match(new RegExp('Demand' + SEP + C + '\\s+([\\d,.]+)\\s*[kK][Ww]', 'i'))?.[1]?.replace(/,/g, '') || null;
+        const demChg = xChg('Demand' + SEP + C);
         // ── Energy charges: date-aware On/Off Peak vs 3-tier ──
         // Kansas Evergy switched from 3-tier to On/Off Peak on 12/21/2023.
         // Before that date: 3 tiers (First 180h, Next 180h, Over 360h).
         // After: On Pk Sum/Win + Off Pk Sum/Win.
         // Always extract both formats — changeover bills (spanning 12/21/2023) have both.
         // tieredChg excludes On/Off Pk lines so there's no double-counting.
-        const onPkChg = xChg('Energy\\s+' + C + '\\s+On\\s+P[kK]');
-        const offPkChg = xChg('Energy\\s+' + C + '\\s+Off\\s+P[kK]');
-        const tieredChg = xChg('Energy\\s+' + C, /On\s+P[kK]|Off\s+P[kK]/i);
-        const ecaChg = xChg('ECA\\s+' + C);
-        const eerChg = xChg('EER\\s+' + C);
-        const ptsChg = xChg('PTS\\s+' + C);
+        const onPkChg = xChg('Energy' + SEP + C + '\\s+On\\s+P[kK]');
+        const offPkChg = xChg('Energy' + SEP + C + '\\s+Off\\s+P[kK]');
+        const tieredChg = xChg('Energy' + SEP + C, /On\s+P[kK]|Off\s+P[kK]/i);
+        const ecaChg = xChg('ECA' + SEP + C);
+        const eerChg = xChg('EER' + SEP + C);
+        const ptsChg = xChg('PTS' + SEP + C);
+        // TDC kW qty lives on the charge line as "for <qty>" (OCR frequently splits
+        // this across two lines with "KW at $rate" on the next line, and leaves stray
+        // garbage characters like trailing 'i' or '(2' before the newline). Anchor the
+        // qty capture off the "for" keyword instead of off "kW at" so we don't depend
+        // on the garbage characters between qty and the kW token.
         const tdcKW =
           t
-            .match(new RegExp('TD[CG]\\s+' + C + '[\\s\\S]*?([\\d,.]+)[\\s\\-]*[kK][Ww]\\s+at', 'i'))?.[1]
+            .match(new RegExp('TD[CG]' + SEP + C + '[\\s\\S]{0,150}?for\\s+([\\d,]+\\.\\d{2,})', 'i'))?.[1]
             ?.replace(/,/g, '') || null;
-        const tdcChg = xChg('TD[CG]\\s+' + C);
+        const tdcChg = xChg('TD[CG]' + SEP + C);
         // RkVA charge (reactive power)
         // The kVAR qty on the bill is the OVERAGE above 50% of billing kW demand, not total reactive.
         // E.g. 500 kW demand → 250 kVAR free; if reactive = 300, bill shows 50 kVAR × $0.663 = $33.15
         // The meter table RKVA Used is the full value; the charge line qty is only the excess.
-        const rkvaChg = xChg('R[kK]VA\\s+' + C);
+        const rkvaChg = xChg('R[kK]VA' + SEP + C);
         // Broadened: handle OCR variants "Tox exempt", "lax exempt", and wrapped lines.
         const taxExempt =
           chg(/[TIl][a@o0]x\s+e?xempt[^$\n]*\$([\d,]+\.\d{2})/i) ||
@@ -14553,16 +14583,16 @@
 
         // ── Rate info for cross-validation (rate × qty vs OCR'd charge) ──
         const _rates = {};
-        const _rFac = xRate('Fac\\S*\\s+' + C);
-        const _rDem = xRate('Demand\\s+' + C);
-        const _rOnPk = xRate('Energy\\s+' + C + '\\s+On\\s+P[kK]');
-        const _rOffPk = xRate('Energy\\s+' + C + '\\s+Off\\s+P[kK]');
-        const _rTiered = xRate('Energy\\s+' + C, /On\s+P[kK]|Off\s+P[kK]/i);
-        const _rEca = xRate('ECA\\s+' + C);
-        const _rEer = xRate('EER\\s+' + C);
-        const _rPts = xRate('PTS\\s+' + C);
-        const _rTdc = xRate('TD[CG]\\s+' + C);
-        const _rRkva = xRate('R[kK]VA\\s+' + C);
+        const _rFac = xRate('Fac\\S*' + SEP + C);
+        const _rDem = xRate('Demand' + SEP + C);
+        const _rOnPk = xRate('Energy' + SEP + C + '\\s+On\\s+P[kK]');
+        const _rOffPk = xRate('Energy' + SEP + C + '\\s+Off\\s+P[kK]');
+        const _rTiered = xRate('Energy' + SEP + C, /On\s+P[kK]|Off\s+P[kK]/i);
+        const _rEca = xRate('ECA' + SEP + C);
+        const _rEer = xRate('EER' + SEP + C);
+        const _rPts = xRate('PTS' + SEP + C);
+        const _rTdc = xRate('TD[CG]' + SEP + C);
+        const _rRkva = xRate('R[kK]VA' + SEP + C);
         if (_rFac) _rates.FacilitiesCharge = _rFac;
         if (_rDem) _rates.BilledKWCharge = _rDem;
         if (_rOnPk || _rTiered) {
@@ -18432,29 +18462,48 @@
           };
           // Recalculate cost aggregates from whatever is currently on `existing` AFTER
           // the field-level updates have been applied. Reading back from existing (instead
-          // of from the raw extracted payload) preserves values the user manually entered,
-          // and also keeps previously-correct aggregates from silently dropping when a
-          // re-extraction is noisier than the first pass and misses some constituent charges.
+          // of from the raw extracted payload) preserves values the user manually entered
+          // in the Edit Billing Period modal. But we also have a SECOND safety rule:
+          // never overwrite a valid aggregate with a NEW value that is materially lower
+          // than the old one. A noisier re-extraction that misses some constituent charges
+          // would otherwise overwrite a correct $4,821.93 kwhCost with $755.93 simply
+          // because only the on-peak portion landed — that would silently corrupt the
+          // Utility Data bills table. The only way an aggregate goes DOWN is if the user
+          // explicitly overwrote (action === 'overwrite'), in which case we trust their
+          // intent. For merge and field-select we keep the higher value.
+          const preserveHigher = (label, newVal, oldRaw) => {
+            const newNum = parseFloat(newVal);
+            const oldNum = parseFloat(String(oldRaw || '').replace(/,/g, '')) || 0;
+            if (dup.action === 'overwrite') return newVal; // trust explicit intent
+            if (isNaN(newNum)) return oldRaw || '';
+            // Allow small rounding drift but never a real decrease.
+            if (oldNum > newNum + 0.5) return String(oldNum.toFixed(2));
+            return newVal;
+          };
           const _recalcAggregates = () => {
-            existing.kwhCost = (
+            const newKwhCost = (
               pf(existing.onPeakCost) +
               pf(existing.offPeakCost) +
               pf(existing.ecaCharge) +
               pf(existing.eerCharge) +
               pf(existing.ptsCharge)
             ).toFixed(2);
-            existing.kwCost = (pf(existing.demandCharge) + pf(existing.tdcCharge)).toFixed(2);
+            const newKwCost = (pf(existing.demandCharge) + pf(existing.tdcCharge)).toFixed(2);
             // Tax exempt delivery and bill offset aren't stored in billRow, so they have
             // to come from the new extraction if the user asked to apply it; otherwise
             // customerCharge + rkvaCharge are the otherCost contributors we can still
             // reconstruct from the post-merge row.
-            existing.otherCost = (
+            const newOtherCost = (
               pf(existing.customerCharge) +
               pf(existing.rkvaCharge) +
               pf(extracted.TaxExemptDelivery) +
               pf(extracted.BillOffset)
             ).toFixed(2);
-            existing.taxCost = pf(existing.franchiseFee).toFixed(2);
+            const newTaxCost = pf(existing.franchiseFee).toFixed(2);
+            existing.kwhCost = preserveHigher('kwhCost', newKwhCost, existing.kwhCost);
+            existing.kwCost = preserveHigher('kwCost', newKwCost, existing.kwCost);
+            existing.otherCost = preserveHigher('otherCost', newOtherCost, existing.otherCost);
+            existing.taxCost = preserveHigher('taxCost', newTaxCost, existing.taxCost);
           };
           if (dup.action === 'overwrite') {
             // Replace all mapped fields with extracted value when non-empty
