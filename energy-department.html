@@ -20410,24 +20410,65 @@
         try {
           const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
           let outBytes = bytes;
+          let sliceMsg = 'Opening full PDF (no stored page range)';
           if (pageStart && pageEnd && window.PDFLib) {
             const srcDoc = await window.PDFLib.PDFDocument.load(bytes);
             const total = srcDoc.getPageCount();
-            const start = Math.max(1, pageStart);
-            const end = Math.min(total, pageEnd);
-            const outDoc = await window.PDFLib.PDFDocument.create();
-            const idxs = [];
-            for (let p = start; p <= end; p++) idxs.push(p - 1);
-            const copied = await outDoc.copyPages(srcDoc, idxs);
-            copied.forEach((pg) => outDoc.addPage(pg));
-            outBytes = await outDoc.save();
+            let start = Math.max(1, parseInt(pageStart, 10) || 1);
+            let end = Math.min(total, parseInt(pageEnd, 10) || total);
+            // Guard against inverted or out-of-range values that would produce an
+            // empty slice. Swap if inverted; fall back to whole PDF if both ends land
+            // outside the file.
+            if (start > end) {
+              console.warn('[viewSavedPDF] page range inverted, swapping', { start, end });
+              const t = start;
+              start = end;
+              end = t;
+            }
+            if (start > total) {
+              console.warn('[viewSavedPDF] pageStart exceeds total pages, falling back to full PDF', {
+                pageStart,
+                total,
+              });
+              showToast(
+                'Stored page range (' +
+                  pageStart +
+                  '–' +
+                  pageEnd +
+                  ') is outside this PDF (' +
+                  total +
+                  ' pages). Showing full PDF.',
+              );
+              sliceMsg = 'Showing full PDF (' + total + ' pages)';
+            } else {
+              const outDoc = await window.PDFLib.PDFDocument.create();
+              const idxs = [];
+              for (let p = start; p <= end; p++) idxs.push(p - 1);
+              if (idxs.length === 0) {
+                console.warn('[viewSavedPDF] slice produced 0 pages, falling back to full PDF', {
+                  start,
+                  end,
+                  total,
+                });
+                showToast('Stored range was empty — showing full PDF (' + total + ' pages)');
+                sliceMsg = 'Showing full PDF (' + total + ' pages, range was empty)';
+              } else {
+                const copied = await outDoc.copyPages(srcDoc, idxs);
+                copied.forEach((pg) => outDoc.addPage(pg));
+                outBytes = await outDoc.save();
+                sliceMsg = 'Showing pages ' + start + '–' + end + ' of ' + total + ' (' + idxs.length + ' pages)';
+              }
+            }
           }
+          console.log('[viewSavedPDF]', sliceMsg);
+          showToast(sliceMsg);
           const blob = new Blob([outBytes], { type: 'application/pdf' });
           const url = URL.createObjectURL(blob);
           const win = window.open(url, '_blank');
           setTimeout(() => URL.revokeObjectURL(url), 60000);
           if (!win) showToast('Pop-up blocked — allow pop-ups for this site to view PDFs');
         } catch (e) {
+          console.error('[viewSavedPDF] failed:', e);
           showToast('Could not open PDF: ' + e.message);
         }
       }
