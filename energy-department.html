@@ -24878,7 +24878,7 @@
           const projs = sget('en_projects', []) || [];
           for (let i = 0; i < projs.length && !preBldgId; i++) {
             const p = projs[i];
-            const bldgs = p.buildings || [];
+            const bldgs = (utilityData[p.id] && utilityData[p.id].buildings) || [];
             for (let j = 0; j < bldgs.length; j++) {
               if ((bldgs[j].meters || []).find((m) => m.id === targetId)) {
                 preProjId = p.id;
@@ -24985,14 +24985,14 @@
 
         let html = '';
         projs.forEach(function (p) {
-          const bldgs = p.buildings || [];
+          const bldgs = (utilityData[p.id] && utilityData[p.id].buildings) || [];
           const projHasBills = bldgs.some(function (b) {
             return (b.meters || []).some(function (m) {
               return (m.bills || []).length;
             });
           });
           if (!projHasBills) return;
-          const projChecked = preProjId && p.id === preProjId ? 'checked' : '';
+          const projChecked = preProjId && String(p.id) === String(preProjId) ? 'checked' : '';
           html +=
             '<div class="exp-proj" data-pid="' +
             p.id +
@@ -25130,15 +25130,16 @@
           const bid = cb.getAttribute('data-bid');
           const mid = cb.getAttribute('data-mid');
           const p = projs.find(function (x) {
-            return x.id === pid;
+            return String(x.id) === String(pid);
           });
           if (!p) return;
-          const b = (p.buildings || []).find(function (x) {
-            return x.id === bid;
+          const bldgs = (utilityData[p.id] && utilityData[p.id].buildings) || [];
+          const b = bldgs.find(function (x) {
+            return String(x.id) === String(bid);
           });
           if (!b) return;
           const m = (b.meters || []).find(function (x) {
-            return x.id === mid;
+            return String(x.id) === String(mid);
           });
           if (!m) return;
           (m.bills || []).forEach(function (bill) {
