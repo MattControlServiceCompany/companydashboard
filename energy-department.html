@@ -13927,6 +13927,32 @@
                     prorationDen = y;
                   }
                 }
+                // ── DATE-RANGE PRORATION (fallback) ──
+                // Evergy TDC/ECA/PTS/EER charge lines often encode proration as a date range
+                // instead of "for N of Y days". Example from Bill 23 (LHS.pdf pages 50-51):
+                //   "TDC Chg 04-30-2025-04-30-2025 for 529.4400 kW at $2.46781 per kW" → 1 day
+                //   "TDC Chg 05-01-2025-05-29-2025 for 529.4400 kW at $2.68729 per kW" → 29 days
+                // Without proration detection, xRate computed 529.44 × 2.68729 = $1,422.76 for
+                // part 2 but the actual PDF amount is $1,375.33 (= full charge × 29/30). Parse
+                // the date range and derive prorationNum/Den using the outer `numDays` closure.
+                if (prorationNum === null) {
+                  const drM = block.match(/\b(\d{2})-(\d{2})-(\d{4})-(\d{2})-(\d{2})-(\d{4})\b/);
+                  if (drM) {
+                    try {
+                      const totalDays = parseInt(numDays, 10);
+                      if (totalDays > 0) {
+                        const startD = new Date(parseInt(drM[3]), parseInt(drM[1]) - 1, parseInt(drM[2]));
+                        const endD = new Date(parseInt(drM[6]), parseInt(drM[4]) - 1, parseInt(drM[5]));
+                        const rangeDays = Math.round((endD - startD) / 86400000) + 1; // inclusive
+                        if (rangeDays > 0 && rangeDays <= totalDays + 1) {
+                          prorationRatio = rangeDays / totalDays;
+                          prorationNum = rangeDays;
+                          prorationDen = totalDays;
+                        }
+                      }
+                    } catch (e) {}
+                  }
+                }
                 // Also capture the OCR'd dollar charge from this line
                 let ocrCharge = getAmt(lines[i]);
                 if (ocrCharge === null) {
@@ -14453,14 +14479,25 @@
           let bestVal = null,
             bestDist = Infinity;
           let subtotalIdx = -1,
-            bdIdx = -1;
+            bdIdx = -1,
+            lastBdIdx = -1;
           for (let i = 0; i < lines.length; i++) {
             if (/Sub[tl]?ota[l1]/i.test(lines[i])) subtotalIdx = i;
-            if (/Billing\s+Details/i.test(lines[i])) bdIdx = i;
+            if (/Billing\s+Details/i.test(lines[i])) {
+              if (bdIdx < 0) bdIdx = i;
+              lastBdIdx = i;
+            }
           }
+          // SECTION-BLEED GUARD: a section may contain TRAILING text from the previous bill
+          // (e.g. Bill 24 LHS page 52 inheriting Bill 23's "Current Charges $13,507.55" from
+          // the end of page 51 via midpoint slicing). The ONLY Current Charges line that
+          // belongs to THIS bill is one that appears at or after the LAST "Billing Details"
+          // header in the section — anything before lastBdIdx is contamination.
           // Also check for "Utility" line under page 1 Current Charges (matches detail page total)
           for (let i = 0; i < lines.length; i++) {
             if (/Current\s+Charges/i.test(lines[i])) {
+              // Reject Current Charges that appear BEFORE the last Billing Details header.
+              if (lastBdIdx >= 0 && i < lastBdIdx) continue;
               const amt = getAmt(lines[i]);
               if (amt !== null) {
                 // Distance from Subtotal line — closer = better (detail page)
@@ -14508,9 +14545,23 @@
             }
             return bestVal.toFixed(2);
           }
-          // Try Subtotal
-          const m2 = t.match(/Sub[tl]?ota[l1][\s\S]*?\$\s*([\d,]+\.\d{2})/i);
-          if (m2) return m2[1].replace(/,/g, '');
+          // Try Subtotal — but only the LAST one in the section, and only if it appears
+          // after the last "Billing Details" header (same section-bleed guard as above).
+          const _bdLastCharIdx = (() => {
+            const re = /Billing\s+Details/gi;
+            let last = -1,
+              _m;
+            while ((_m = re.exec(t)) !== null) last = _m.index;
+            return last;
+          })();
+          const _stRe = /Sub[tl]?ota[l1][\s\S]*?\$\s*([\d,]+\.\d{2})/gi;
+          let _stLastM = null;
+          let _stM;
+          while ((_stM = _stRe.exec(t)) !== null) {
+            if (_bdLastCharIdx >= 0 && _stM.index < _bdLastCharIdx) continue;
+            _stLastM = _stM;
+          }
+          if (_stLastM) return _stLastM[1].replace(/,/g, '');
           // Fallback: sum all extracted charges. This may be incomplete (e.g. CustomerCharge not yet
           // recovered by structural fallback), so _postExtractionVerify will recompute if needed.
           const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
@@ -14641,12 +14692,34 @@
         const _rPts = xRate('PTS' + SEP + C);
         const _rTdc = xRate('TD[CG]' + SEP + C);
         const _rRkva = xRate('R[kK]VA' + SEP + C);
-        if (_rFac) _rates.FacilitiesCharge = _rFac;
-        if (_rDem) _rates.BilledKWCharge = _rDem;
-        if (_rOnPk || _rTiered) {
+        // ── UNIT-TYPE VALIDATION ──
+        // xRate's GAP tolerance (40 chars including newlines) can occasionally match qty/rate
+        // from the NEXT charge line when the current line's qty/rate was OCR-garbled. On
+        // Bill 30 LHS page 58, xRate for EnergyOffPeakCharge captured RkVA Chg's
+        // {qty: 116.04, rate: 0.663, unit: 'kW'} because the Off-Peak line's own qty was
+        // unreadable. Reject any kWh-based charge that came back with unit='kW' — it's
+        // definitely cross-field aliasing.
+        const _unitIsKwh = (r) => r && r.unit && r.unit.toLowerCase().includes('h');
+        const _unitIsKw = (r) => r && r.unit && !r.unit.toLowerCase().includes('h');
+        const _kwhCharges = [_rOnPk, _rTiered, _rOffPk, _rEca, _rEer, _rPts];
+        for (let _i = 0; _i < _kwhCharges.length; _i++) {
+          if (_kwhCharges[_i] && _unitIsKw(_kwhCharges[_i])) {
+            _kwhCharges[_i] = null;
+          }
+        }
+        const [_rOnPkOk, _rTieredOk, _rOffPkOk, _rEcaOk, _rEerOk, _rPtsOk] = _kwhCharges;
+        // Facilities/Demand/TDC/RkVA are kW-based — same check in reverse.
+        const _rFacOk = _unitIsKw(_rFac) ? _rFac : null;
+        const _rDemOk = _unitIsKw(_rDem) ? _rDem : null;
+        const _rTdcOk = _unitIsKw(_rTdc) ? _rTdc : null;
+        const _rRkvaOk = _unitIsKw(_rRkva) ? _rRkva : null;
+
+        if (_rFacOk) _rates.FacilitiesCharge = _rFacOk;
+        if (_rDemOk) _rates.BilledKWCharge = _rDemOk;
+        if (_rOnPkOk || _rTieredOk) {
           // Combine on-peak and tiered (changeover bills have both)
           // Flatten inner parts from both sources so each individual charge line is preserved
-          const allParts = [_rOnPk, _rTiered].filter(Boolean).flatMap((r) => r.parts || [r]);
+          const allParts = [_rOnPkOk, _rTieredOk].filter(Boolean).flatMap((r) => r.parts || [r]);
           _rates.EnergyOnPeakCharge = {
             qty: allParts.reduce((s, r) => s + r.qty, 0),
             rate: allParts[0].rate,
@@ -14655,16 +14728,16 @@
             parts: allParts,
           };
         }
-        if (_rOffPk) _rates.EnergyOffPeakCharge = _rOffPk;
+        if (_rOffPkOk) _rates.EnergyOffPeakCharge = _rOffPkOk;
         // Flag energy format: 'on_off_peak' if On-Peak found, 'tiered' if only tiered, 'changeover' if both
-        if (_rOnPk && _rTiered) result._energyFormat = 'changeover';
-        else if (_rOnPk || _rOffPk) result._energyFormat = 'on_off_peak';
-        else if (_rTiered) result._energyFormat = 'tiered';
-        if (_rEca) _rates.ECACharge = _rEca;
-        if (_rEer) _rates.EERCharge = _rEer;
-        if (_rPts) _rates.PTSCharge = _rPts;
-        if (_rTdc) _rates.TDCCharge = _rTdc;
-        if (_rRkva) _rates.RkVACharge = _rRkva;
+        if (_rOnPkOk && _rTieredOk) result._energyFormat = 'changeover';
+        else if (_rOnPkOk || _rOffPkOk) result._energyFormat = 'on_off_peak';
+        else if (_rTieredOk) result._energyFormat = 'tiered';
+        if (_rEcaOk) _rates.ECACharge = _rEcaOk;
+        if (_rEerOk) _rates.EERCharge = _rEerOk;
+        if (_rPtsOk) _rates.PTSCharge = _rPtsOk;
+        if (_rTdcOk) _rates.TDCCharge = _rTdcOk;
+        if (_rRkvaOk) _rates.RkVACharge = _rRkvaOk;
         if (Object.keys(_rates).length) result._rates = _rates;
 
         // Bill Offset = negative of Tax Exempt Delivery (Evergy business rule)
@@ -14875,6 +14948,24 @@
             if (chargeVal <= 0 && computedTotal > 0) {
               result[chargeField] = computedTotal.toFixed(2);
               result['_rate_filled_' + chargeField] = true;
+            }
+            // ── MULTI-PART CHARGE RECOVERY ──
+            // When xChg captured only the FIRST part of a multi-part charge (e.g. TDC split
+            // across proration date ranges like Bill 23 LHS pages 50-51), chargeVal is
+            // significantly less than the parts sum. Replace with computedTotal which now
+            // respects the date-range proration added above. Only fires when parts are split
+            // and the shortfall is meaningful (>$0.50 AND >10% of the computed total).
+            else if (parts.length > 1 && computedTotal > 0 && chargeVal > 0) {
+              const diff = Math.abs(chargeVal - computedTotal);
+              const rel = diff / computedTotal;
+              if (diff > 0.5 && rel > 0.1) {
+                result[chargeField] = computedTotal.toFixed(2);
+                result['_multi_part_recovered_' + chargeField] = {
+                  original: chargeVal.toFixed(2),
+                  corrected: computedTotal.toFixed(2),
+                  partsCount: parts.length,
+                };
+              }
             }
           }
           // Also try to recover TDCkW from TDCCharge/rate when xRate didn't capture the TDC rate
