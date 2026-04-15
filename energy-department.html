@@ -4826,6 +4826,14 @@
                     </button>
                     <button
                       class="btn btn-ghost btn-sm"
+                      id="ud-export-data-btn"
+                      onclick="openExportModal('building')"
+                      title="Export utility bill data to JSON or CSV"
+                    >
+                      📤 Export Data
+                    </button>
+                    <button
+                      class="btn btn-ghost btn-sm"
                       id="ud-view-proj-btn"
                       onclick="viewProjectFromUtility()"
                       title="View in Projects page"
@@ -11688,6 +11696,7 @@
                 <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','savproj')">📈 Savings Projection</button>
                 <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','perf')">💡 Performance</button>
                 <button class="btn btn-ghost btn-sm" onclick="openBldgModal(projUDSelBldg['${p.id}'])">✏️ Edit Building</button>
+                <button class="btn btn-ghost btn-sm" onclick="openExportModal('building','${p.id}')" title="Export utility bill data to JSON or CSV">📤 Export Data</button>
                 <button class="btn btn-em btn-sm" onclick="projUDOpenMeterModal('${p.id}')">+ Add Meter</button>
               </div>
             </div>
@@ -24180,6 +24189,9 @@
           m.id +
           '\',false)">Exclusive</button>' +
           '</div>' +
+          '<button class="btn btn-ghost btn-sm" onclick="openExportModal(\'meter\',\'' +
+          m.id +
+          '\')" title="Export this meter\'s billing data">📤 Export</button>' +
           '<button class="btn btn-em btn-sm" onclick="openBillModal(\'' +
           m.id +
           '\')">+ Add Period</button>' +
@@ -24843,6 +24855,497 @@
         a.download = (m.name || 'meter') + '_regression_data.csv';
         a.click();
       }
+
+      /* ============================================================
+       * Export Utility Data modal — JSON / CSV with per-export
+       * scope tree + field checklist. Opened from three places:
+       *   1. Bills sticky header (meter hint → pre-check that meter)
+       *   2. .ud-detail-hdr      (building hint → udSelProj/udSelBldg)
+       *   3. proj-ud-detail-hdr  (building hint → projUDSelBldg[pid])
+       * Settings modal exposes defaults only; per-export checkboxes
+       * override. See dashboardlogic Update 78.
+       * ============================================================ */
+      function openExportModal(hint, targetId) {
+        if (!document.getElementById('exportDataModal')) _buildExportModalDOM();
+        const modal = document.getElementById('exportDataModal');
+        modal.classList.add('open');
+
+        let preProjId = null,
+          preBldgId = null,
+          preMeterId = null;
+        if (hint === 'meter' && targetId) {
+          preMeterId = targetId;
+          const projs = sget('en_projects', []) || [];
+          for (let i = 0; i < projs.length && !preBldgId; i++) {
+            const p = projs[i];
+            const bldgs = p.buildings || [];
+            for (let j = 0; j < bldgs.length; j++) {
+              if ((bldgs[j].meters || []).find((m) => m.id === targetId)) {
+                preProjId = p.id;
+                preBldgId = bldgs[j].id;
+                break;
+              }
+            }
+          }
+        } else if (hint === 'building' && targetId) {
+          preProjId = targetId;
+          if (typeof projUDSelBldg !== 'undefined' && projUDSelBldg[targetId]) {
+            preBldgId = projUDSelBldg[targetId];
+          }
+        } else if (hint === 'building' && !targetId) {
+          if (typeof udSelProjId !== 'undefined') preProjId = udSelProjId;
+          if (typeof udSelBldgId !== 'undefined') preBldgId = udSelBldgId;
+        }
+
+        _renderExportScopeTree(preProjId, preBldgId, preMeterId);
+
+        // Format defaults from ch_settings
+        let defFmt = { json: true, csv: false };
+        try {
+          const s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
+          if (s && s.defaultExportFormat && typeof s.defaultExportFormat === 'object') {
+            defFmt.json = s.defaultExportFormat.json !== false;
+            defFmt.csv = !!s.defaultExportFormat.csv;
+          }
+        } catch (e) {}
+        const cbJ = document.getElementById('exportFmtJson');
+        const cbC = document.getElementById('exportFmtCsv');
+        if (cbJ) cbJ.checked = defFmt.json;
+        if (cbC) cbC.checked = defFmt.csv;
+      }
+
+      function closeExportModal() {
+        const m = document.getElementById('exportDataModal');
+        if (m) m.classList.remove('open');
+      }
+
+      function _buildExportModalDOM() {
+        const el = document.createElement('div');
+        el.id = 'exportDataModal';
+        el.className = 'modal-bg';
+        el.onclick = function (e) {
+          if (e.target === el) closeExportModal();
+        };
+        el.innerHTML =
+          '<div class="modal" style="width:820px;max-width:96vw">' +
+          '<div class="modal-hdr">' +
+          '<span class="modal-title">📤 Export Utility Data</span>' +
+          '<button class="modal-x" onclick="closeExportModal()">&#10005;</button>' +
+          '</div>' +
+          '<div class="modal-body" style="display:flex;flex-direction:column;gap:16px">' +
+          // Scope
+          '<div>' +
+          '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);margin-bottom:8px">What to export</div>' +
+          '<div style="display:flex;gap:8px;margin-bottom:8px">' +
+          '<button class="btn btn-ghost btn-sm" onclick="_exportScopeSelectAll()">Select all</button>' +
+          '<button class="btn btn-ghost btn-sm" onclick="_exportScopeSelectNone()">Select none</button>' +
+          '</div>' +
+          '<div id="exportScopeTree" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:8px;background:var(--s1);font-size:12px"></div>' +
+          '</div>' +
+          // Fields
+          '<div>' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+          '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3)">Fields to include</div>' +
+          '<div id="exportFieldsCount" style="font-size:11px;color:var(--text2)"></div>' +
+          '</div>' +
+          '<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">' +
+          '<button class="btn btn-ghost btn-sm" onclick="_exportFieldsSelectAll()">All</button>' +
+          '<button class="btn btn-ghost btn-sm" onclick="_exportFieldsSelectNone()">None</button>' +
+          '<button class="btn btn-ghost btn-sm" onclick="_exportFieldsExcludeDebug()">Exclude debug flags</button>' +
+          '</div>' +
+          '<div id="exportFieldsList" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:8px;background:var(--s1);font-size:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px 12px"></div>' +
+          '</div>' +
+          // Format
+          '<div>' +
+          '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);margin-bottom:8px">Format</div>' +
+          '<div style="display:flex;gap:16px;align-items:center;font-size:13px;flex-wrap:wrap">' +
+          '<label style="display:flex;align-items:center;gap:6px;cursor:pointer">' +
+          '<input type="checkbox" id="exportFmtJson" checked> JSON' +
+          '</label>' +
+          '<label style="display:flex;align-items:center;gap:6px;cursor:pointer">' +
+          '<input type="checkbox" id="exportFmtCsv"> CSV' +
+          '</label>' +
+          '<span style="font-size:11px;color:var(--text3);margin-left:auto">Default set in Settings → Default Export Format</span>' +
+          '</div>' +
+          '</div>' +
+          // Footer
+          '<div style="display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--border);padding-top:14px">' +
+          '<button class="btn btn-ghost btn-sm" onclick="closeExportModal()">Cancel</button>' +
+          '<button class="btn btn-em btn-sm" id="exportDoBtn" onclick="_doExport()">💾 Download</button>' +
+          '</div>' +
+          '</div>' + // modal-body
+          '</div>'; // modal
+        document.body.appendChild(el);
+      }
+
+      function _renderExportScopeTree(preProjId, preBldgId, preMeterId) {
+        const tree = document.getElementById('exportScopeTree');
+        if (!tree) return;
+        const projs = sget('en_projects', []) || [];
+
+        let html = '';
+        projs.forEach(function (p) {
+          const bldgs = p.buildings || [];
+          const projHasBills = bldgs.some(function (b) {
+            return (b.meters || []).some(function (m) {
+              return (m.bills || []).length;
+            });
+          });
+          if (!projHasBills) return;
+          const projChecked = preProjId && p.id === preProjId ? 'checked' : '';
+          html +=
+            '<div class="exp-proj" data-pid="' +
+            p.id +
+            '" style="margin-bottom:4px">' +
+            '<label style="display:flex;align-items:center;gap:6px;font-weight:600;cursor:pointer">' +
+            '<input type="checkbox" class="exp-cb exp-cb-proj" data-pid="' +
+            p.id +
+            '" ' +
+            projChecked +
+            ' onchange="_exportScopeToggleProj(\'' +
+            p.id +
+            '\')"> ' +
+            '📁 ' +
+            (p.name || 'Project ' + p.id) +
+            '</label>' +
+            '<div style="padding-left:20px">';
+          bldgs.forEach(function (b) {
+            const meters = (b.meters || []).filter(function (m) {
+              return (m.bills || []).length;
+            });
+            if (!meters.length) return;
+            const bldgChecked =
+              preBldgId && b.id === preBldgId ? 'checked' : projChecked && !preBldgId ? 'checked' : '';
+            html +=
+              '<div class="exp-bldg" data-pid="' +
+              p.id +
+              '" data-bid="' +
+              b.id +
+              '" style="margin:3px 0">' +
+              '<label style="display:flex;align-items:center;gap:6px;font-weight:500;cursor:pointer">' +
+              '<input type="checkbox" class="exp-cb exp-cb-bldg" data-pid="' +
+              p.id +
+              '" data-bid="' +
+              b.id +
+              '" ' +
+              bldgChecked +
+              ' onchange="_exportScopeToggleBldg(\'' +
+              p.id +
+              "','" +
+              b.id +
+              '\')"> ' +
+              '🏢 ' +
+              (b.name || 'Building ' + b.id) +
+              '</label>' +
+              '<div style="padding-left:20px">';
+            meters.forEach(function (m) {
+              const billCount = (m.bills || []).length;
+              const meterChecked = preMeterId
+                ? m.id === preMeterId
+                  ? 'checked'
+                  : ''
+                : preBldgId && b.id === preBldgId
+                  ? 'checked'
+                  : bldgChecked
+                    ? 'checked'
+                    : '';
+              html +=
+                '<label class="exp-meter" data-pid="' +
+                p.id +
+                '" data-bid="' +
+                b.id +
+                '" data-mid="' +
+                m.id +
+                '" style="display:flex;align-items:center;gap:6px;cursor:pointer">' +
+                '<input type="checkbox" class="exp-cb exp-cb-meter" data-pid="' +
+                p.id +
+                '" data-bid="' +
+                b.id +
+                '" data-mid="' +
+                m.id +
+                '" ' +
+                meterChecked +
+                ' onchange="_exportScopeToggleMeter()"> ' +
+                '⚡ ' +
+                (m.name || 'Meter ' + m.id) +
+                ' <span style="color:var(--text3);font-size:11px">(' +
+                billCount +
+                ' bill' +
+                (billCount !== 1 ? 's' : '') +
+                ')</span>' +
+                '</label>';
+            });
+            html += '</div></div>';
+          });
+          html += '</div></div>';
+        });
+        if (!html) html = '<div style="color:var(--text3);padding:8px">No bills found in any project.</div>';
+        tree.innerHTML = html;
+        _refreshExportFieldsList();
+      }
+
+      function _exportScopeToggleProj(pid) {
+        const proj = document.querySelector('.exp-cb-proj[data-pid="' + pid + '"]');
+        if (!proj) return;
+        const checked = proj.checked;
+        document
+          .querySelectorAll('.exp-cb-bldg[data-pid="' + pid + '"], .exp-cb-meter[data-pid="' + pid + '"]')
+          .forEach(function (cb) {
+            cb.checked = checked;
+          });
+        _refreshExportFieldsList();
+      }
+      function _exportScopeToggleBldg(pid, bid) {
+        const b = document.querySelector('.exp-cb-bldg[data-pid="' + pid + '"][data-bid="' + bid + '"]');
+        if (!b) return;
+        const checked = b.checked;
+        document
+          .querySelectorAll('.exp-cb-meter[data-pid="' + pid + '"][data-bid="' + bid + '"]')
+          .forEach(function (cb) {
+            cb.checked = checked;
+          });
+        _refreshExportFieldsList();
+      }
+      function _exportScopeToggleMeter() {
+        _refreshExportFieldsList();
+      }
+      function _exportScopeSelectAll() {
+        document.querySelectorAll('#exportScopeTree .exp-cb').forEach(function (cb) {
+          cb.checked = true;
+        });
+        _refreshExportFieldsList();
+      }
+      function _exportScopeSelectNone() {
+        document.querySelectorAll('#exportScopeTree .exp-cb').forEach(function (cb) {
+          cb.checked = false;
+        });
+        _refreshExportFieldsList();
+      }
+
+      function _getExportSelectedBills() {
+        const projs = sget('en_projects', []) || [];
+        const selected = [];
+        document.querySelectorAll('#exportScopeTree .exp-cb-meter:checked').forEach(function (cb) {
+          const pid = cb.getAttribute('data-pid');
+          const bid = cb.getAttribute('data-bid');
+          const mid = cb.getAttribute('data-mid');
+          const p = projs.find(function (x) {
+            return x.id === pid;
+          });
+          if (!p) return;
+          const b = (p.buildings || []).find(function (x) {
+            return x.id === bid;
+          });
+          if (!b) return;
+          const m = (b.meters || []).find(function (x) {
+            return x.id === mid;
+          });
+          if (!m) return;
+          (m.bills || []).forEach(function (bill) {
+            selected.push({
+              projectName: p.name || '',
+              projectId: p.id,
+              buildingName: b.name || '',
+              buildingId: b.id,
+              meterName: m.name || '',
+              meterId: m.id,
+              meterAccount: m.account || '',
+              meterNumber: m.meter || '',
+              meterCommodity: m.commodity || '',
+              bill: bill,
+            });
+          });
+        });
+        return selected;
+      }
+
+      function _refreshExportFieldsList() {
+        const selectedBills = _getExportSelectedBills();
+        const keys = {};
+        selectedBills.forEach(function (entry) {
+          Object.keys(entry.bill || {}).forEach(function (k) {
+            keys[k] = true;
+          });
+        });
+        const meta = [
+          'projectName',
+          'projectId',
+          'buildingName',
+          'buildingId',
+          'meterName',
+          'meterId',
+          'meterAccount',
+          'meterNumber',
+          'meterCommodity',
+        ];
+        const billKeys = Object.keys(keys).sort();
+        const list = document.getElementById('exportFieldsList');
+        if (!list) return;
+
+        const prior = {};
+        list.querySelectorAll('input[type=checkbox]').forEach(function (cb) {
+          prior[cb.getAttribute('data-field')] = cb.checked;
+        });
+
+        let html = '';
+        meta.forEach(function (k) {
+          const checked = prior[k] === false ? '' : 'checked';
+          html +=
+            '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text2)">' +
+            '<input type="checkbox" data-field="' +
+            k +
+            '" data-meta="1" ' +
+            checked +
+            '> ' +
+            '<span>' +
+            k +
+            '</span>' +
+            '</label>';
+        });
+        billKeys.forEach(function (k) {
+          const isDebug = k.charAt(0) === '_';
+          const checked = prior[k] === false ? '' : 'checked';
+          html +=
+            '<label style="display:flex;align-items:center;gap:6px;cursor:pointer' +
+            (isDebug ? ';color:var(--text3)' : '') +
+            '">' +
+            '<input type="checkbox" data-field="' +
+            k +
+            '" ' +
+            (isDebug ? 'data-debug="1" ' : '') +
+            checked +
+            '> ' +
+            '<span>' +
+            k +
+            (isDebug ? ' <em style="font-size:10px;color:var(--text3)">(debug)</em>' : '') +
+            '</span>' +
+            '</label>';
+        });
+        if (!html) {
+          html =
+            '<div style="color:var(--text3);padding:8px;grid-column:1/-1">Select at least one meter above to see fields.</div>';
+        }
+        list.innerHTML = html;
+
+        const count = document.getElementById('exportFieldsCount');
+        if (count) {
+          const total = meta.length + billKeys.length;
+          count.textContent =
+            selectedBills.length +
+            ' bill' +
+            (selectedBills.length !== 1 ? 's' : '') +
+            ' · ' +
+            total +
+            ' field' +
+            (total !== 1 ? 's' : '');
+        }
+      }
+
+      function _exportFieldsSelectAll() {
+        document.querySelectorAll('#exportFieldsList input[type=checkbox]').forEach(function (cb) {
+          cb.checked = true;
+        });
+      }
+      function _exportFieldsSelectNone() {
+        document.querySelectorAll('#exportFieldsList input[type=checkbox]').forEach(function (cb) {
+          cb.checked = false;
+        });
+      }
+      function _exportFieldsExcludeDebug() {
+        document.querySelectorAll('#exportFieldsList input[type=checkbox]').forEach(function (cb) {
+          if (cb.getAttribute('data-debug') === '1') cb.checked = false;
+          else cb.checked = true;
+        });
+      }
+
+      function _doExport() {
+        const selectedBills = _getExportSelectedBills();
+        if (!selectedBills.length) {
+          showToast('Select at least one meter to export.');
+          return;
+        }
+        const wantJson = document.getElementById('exportFmtJson').checked;
+        const wantCsv = document.getElementById('exportFmtCsv').checked;
+        if (!wantJson && !wantCsv) {
+          showToast('Pick at least one format: JSON or CSV.');
+          return;
+        }
+        const fieldCbs = Array.from(document.querySelectorAll('#exportFieldsList input[type=checkbox]:checked'));
+        if (!fieldCbs.length) {
+          showToast('Select at least one field to export.');
+          return;
+        }
+        const metaFields = [];
+        const billFields = [];
+        fieldCbs.forEach(function (cb) {
+          const f = cb.getAttribute('data-field');
+          if (cb.getAttribute('data-meta') === '1') metaFields.push(f);
+          else billFields.push(f);
+        });
+
+        const rows = selectedBills.map(function (entry) {
+          const row = {};
+          metaFields.forEach(function (f) {
+            row[f] = entry[f];
+          });
+          billFields.forEach(function (f) {
+            row[f] = entry.bill && Object.prototype.hasOwnProperty.call(entry.bill, f) ? entry.bill[f] : null;
+          });
+          return row;
+        });
+
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const baseName = 'utility-data-export-' + ts;
+
+        if (wantJson) {
+          const payload = {
+            exportedAt: new Date().toISOString(),
+            rowCount: rows.length,
+            fields: metaFields.concat(billFields),
+            rows: rows,
+          };
+          _exportTriggerDownload(
+            new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
+            baseName + '.json',
+          );
+        }
+        if (wantCsv) {
+          const headers = metaFields.concat(billFields);
+          const esc = function (v) {
+            if (v == null) return '';
+            if (typeof v === 'object') v = JSON.stringify(v);
+            const s = String(v);
+            if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+            return s;
+          };
+          const csvLines = [headers.join(',')].concat(
+            rows.map(function (r) {
+              return headers
+                .map(function (h) {
+                  return esc(r[h]);
+                })
+                .join(',');
+            }),
+          );
+          _exportTriggerDownload(new Blob([csvLines.join('\r\n')], { type: 'text/csv' }), baseName + '.csv');
+        }
+        showToast('Exported ' + rows.length + ' bill' + (rows.length !== 1 ? 's' : '') + '.');
+        closeExportModal();
+      }
+
+      function _exportTriggerDownload(blob, filename) {
+        const a = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 100);
+      }
+
       function setProjectNormBasis(pid, basis) {
         const proj = getUDProj(pid);
         proj.normBasis = basis;
@@ -36631,6 +37134,20 @@
           '</select>' +
           '</div>' +
           '</div>' +
+          '<div class="settings-section">' +
+          '<div class="settings-section-title">Default Export Format</div>' +
+          '<div class="settings-row">' +
+          '<div><div class="settings-row-label">Utility data export</div><div class="settings-row-sub">Formats pre-checked when the Export Data modal opens. You can still override per export.</div></div>' +
+          '<div style="display:flex;gap:14px;align-items:center;font-size:13px">' +
+          '<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="siteDefExpJson" ' +
+          (s.defaultExportFormat && s.defaultExportFormat.json === false ? '' : 'checked') +
+          ' onchange="siteSetDefaultExportFormat(\'json\', this.checked)"> JSON</label>' +
+          '<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="siteDefExpCsv" ' +
+          (s.defaultExportFormat && s.defaultExportFormat.csv === true ? 'checked' : '') +
+          ' onchange="siteSetDefaultExportFormat(\'csv\', this.checked)"> CSV</label>' +
+          '</div>' +
+          '</div>' +
+          '</div>' +
           '</div>' +
           '</div>';
         document.body.appendChild(el);
@@ -36655,6 +37172,16 @@
         try {
           var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
           s.defaultLoginScreen = val;
+          localStorage.setItem('ch_settings', JSON.stringify(s));
+        } catch (e) {}
+      }
+      function siteSetDefaultExportFormat(fmt, checked) {
+        try {
+          var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
+          if (!s.defaultExportFormat || typeof s.defaultExportFormat !== 'object') {
+            s.defaultExportFormat = { json: true, csv: false };
+          }
+          s.defaultExportFormat[fmt] = !!checked;
           localStorage.setItem('ch_settings', JSON.stringify(s));
         } catch (e) {}
       }
