@@ -13927,15 +13927,21 @@
                     prorationDen = y;
                   }
                 }
-                // ── DATE-RANGE PRORATION (fallback) ──
-                // Evergy TDC/ECA/PTS/EER charge lines often encode proration as a date range
-                // instead of "for N of Y days". Example from Bill 23 (LHS.pdf pages 50-51):
-                //   "TDC Chg 04-30-2025-04-30-2025 for 529.4400 kW at $2.46781 per kW" → 1 day
-                //   "TDC Chg 05-01-2025-05-29-2025 for 529.4400 kW at $2.68729 per kW" → 29 days
-                // Without proration detection, xRate computed 529.44 × 2.68729 = $1,422.76 for
-                // part 2 but the actual PDF amount is $1,375.33 (= full charge × 29/30). Parse
-                // the date range and derive prorationNum/Den using the outer `numDays` closure.
-                if (prorationNum === null) {
+                // ── DATE-RANGE PRORATION (kW-charges only) ──
+                // Evergy kW-based charge lines (TDC, Facilities, Demand, RkVA) can be split
+                // across two date ranges when the rate changes mid-period. Both parts carry
+                // the SAME qty (the period's peak kW) but different rates, and the billed
+                // amount is the full rate × qty prorated by (range days / total bill days).
+                // Example from Bill 23 (LHS.pdf pages 50-51):
+                //   "TDC Chg 04-30-2025-04-30-2025 for 529.4400 kW at $2.46781 per kW" → 1/30
+                //   "TDC Chg 05-01-2025-05-29-2025 for 529.4400 kW at $2.68729 per kW" → 29/30
+                // kWh-based charges (ECA, EER, PTS, Energy On/Off Peak) also use date ranges,
+                // but those describe WHICH kWh fall in each rate tier — each part already has
+                // its own per-tier qty (NOT the whole-period qty), so prorating would double-
+                // deflate the computed values. Strictly gate this to unit='kW' so kWh charges
+                // pass through unprorated and their computed values equal qty × rate directly.
+                const _isKwUnit = !unit.toLowerCase().includes('h');
+                if (prorationNum === null && _isKwUnit) {
                   const drM = block.match(/\b(\d{2})-(\d{2})-(\d{4})-(\d{2})-(\d{2})-(\d{4})\b/);
                   if (drM) {
                     try {
@@ -14950,21 +14956,29 @@
               result['_rate_filled_' + chargeField] = true;
             }
             // ── MULTI-PART CHARGE RECOVERY ──
-            // When xChg captured only the FIRST part of a multi-part charge (e.g. TDC split
-            // across proration date ranges like Bill 23 LHS pages 50-51), chargeVal is
+            // When xChg captured only the FIRST part of a kW-charge that was split across a
+            // rate change (e.g. Bill 23 TDC Chg on LHS pages 50-51), chargeVal is
             // significantly less than the parts sum. Replace with computedTotal which now
-            // respects the date-range proration added above. Only fires when parts are split
-            // and the shortfall is meaningful (>$0.50 AND >10% of the computed total).
+            // respects the date-range proration added above.
+            //
+            // GATED on "all parts share the same qty" — that's the structural signature of
+            // rate-change proration (same peak kW, different rate tiers). kWh charges with
+            // tiered rates have DIFFERENT qty per part (kWh consumed in each tier) and must
+            // NOT be touched by recovery — their xChg sum is already correct.
             else if (parts.length > 1 && computedTotal > 0 && chargeVal > 0) {
-              const diff = Math.abs(chargeVal - computedTotal);
-              const rel = diff / computedTotal;
-              if (diff > 0.5 && rel > 0.1) {
-                result[chargeField] = computedTotal.toFixed(2);
-                result['_multi_part_recovered_' + chargeField] = {
-                  original: chargeVal.toFixed(2),
-                  corrected: computedTotal.toFixed(2),
-                  partsCount: parts.length,
-                };
+              const firstQty = parts[0].qty;
+              const allSameQty = parts.every((p) => Math.abs(p.qty - firstQty) < 0.01);
+              if (allSameQty) {
+                const diff = Math.abs(chargeVal - computedTotal);
+                const rel = diff / computedTotal;
+                if (diff > 0.5 && rel > 0.1) {
+                  result[chargeField] = computedTotal.toFixed(2);
+                  result['_multi_part_recovered_' + chargeField] = {
+                    original: chargeVal.toFixed(2),
+                    corrected: computedTotal.toFixed(2),
+                    partsCount: parts.length,
+                  };
+                }
               }
             }
           }
