@@ -15411,17 +15411,18 @@
               _fuzzyMerges,
             );
 
-            // ── PAGE-FIRST SECTION RESOLUTION (Update 80) ──
-            // Resolve each bill's page range BEFORE section building by grouping
-            // pages on their "Billing Date:" + "Account Number:" headers. When
-            // every bill maps cleanly to a page group, slice sections as the
-            // concatenation of that bill's page texts — no midpoint bleed on
-            // dense multi-bill scanned PDFs (fixes Bill 33 in Louisburg HS where
-            // midpoint slicing was dragging Bill 32's PTS/TDC/meter data into
-            // Bill 33's section). Falls back to midpoint slicing per-bill when
-            // page grouping can't match every bill (e.g. OCR-garbled Billing Date
-            // headers). See dashboardlogic.md Update 77 note: "A page-boundary
-            // section builder would be the real fix but is deferred."
+            // ── PAGE-FIRST SECTION RESOLUTION (Update 80b) ──
+            // Resolve each bill's page range BEFORE section building by anchoring
+            // on the page containing each bill's "service from" winning idx —
+            // which is the bill's Billing Details page by construction of the
+            // dedup+fuzzy-merge logic above (Update 75 preferred bd-anchored
+            // idxs when merging). Concatenate cover + billing-details pages
+            // into the section text. No per-page header reading — the 80a
+            // attempt used Billing Date + Account Number grouping which was
+            // strictly more fragile than the OCR guarantees, and a single
+            // garbled page tripped the gate for the whole batch. uniqueBills
+            // already has N entries by construction, so idx→page gives N
+            // page ranges with no 1:1-gate to fail.
             const _pfPageMarkers = [...t.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => ({
               page: parseInt(m[1]),
               idx: m.index,
@@ -15442,87 +15443,89 @@
               const _pEnd = _pi + 1 < _pfPageMarkers.length ? _pfPageMarkers[_pi + 1].idx : t.length;
               _pfPageTextMap[_pg] = t.slice(_pStart, _pEnd);
             }
-            // Same regexes as the existing Strategy-1 block (kept below as a
-            // fallback). Build page→key map and key→pages map in one pass so
-            // each bill can look up its group by the page its winning idx lands on.
-            const _pfBdKeyRe = /Billing\s*Date\s*[:\s]+(\d{2}\/\d{2}\/\d{4})/i;
-            const _pfAcctKeyRe = /Account\s*(?:Number)?\s*[:\s©®]+(\d[\d\s\-]{4,18}\d)/i;
-            const _pfPageToKey = {};
-            const _pfBillsByKey = {};
-            for (let _pg = 1; _pg <= _pfMaxPage; _pg++) {
-              const _pgText = _pfPageTextMap[_pg];
-              if (!_pgText) continue;
-              const _bdM = _pgText.match(_pfBdKeyRe);
-              if (!_bdM) continue;
-              const _acctM = _pgText.match(_pfAcctKeyRe);
-              const _acct = _acctM ? _acctM[1].replace(/[\s\-]/g, '') : '';
-              const _key = _acct + '|' + _bdM[1];
-              _pfPageToKey[_pg] = _key;
-              if (!_pfBillsByKey[_key]) _pfBillsByKey[_key] = [];
-              _pfBillsByKey[_key].push(_pg);
-            }
-            // For each bill, try to find its page group by looking up the page
-            // that its winning idx (or any of its _groupIdxs, including dropped
-            // phantom duplicates) falls on. First match wins. This handles the
-            // edge case where a bill's billing-details page has OCR-garbled
-            // header text but the cover page (dropped by exact-dedup but still
-            // in _groupIdxs) has a readable one.
+            // For each bill, pick the best "billing-details anchor idx" from
+            // the merged group: prefer an idx that has "Billing Details" within
+            // 40 chars before it (that's definitively the billing-details page,
+            // matching Update 75 Fix A's _hasBdBefore logic). Fall back to the
+            // largest idx in the group (LAST occurrence of service-from is
+            // typically on the billing-details page because extractAll dedup
+            // keeps the last match). Compute bdPage from that idx.
             let _pageFirstOk = uniqueBills.length > 0 && _pfPageMarkers.length > 0;
+            const _pfBdPages = [];
             for (const b of uniqueBills) {
               const idxs = b._groupIdxs || [b.idx];
-              let matchedKey = null;
+              let bdIdx = null;
               for (const ix of idxs) {
-                const pg = _pfPageForIdx(ix);
-                if (_pfPageToKey[pg]) {
-                  matchedKey = _pfPageToKey[pg];
+                const before = t.slice(Math.max(0, ix - 40), ix);
+                if (/Billing\s+Details/i.test(before)) {
+                  bdIdx = ix;
                   break;
                 }
               }
-              if (!matchedKey) {
-                b._pfPageGroup = null;
-                _pageFirstOk = false;
-                continue;
-              }
-              b._pfPageGroup = _pfBillsByKey[matchedKey].slice().sort((a, b) => a - b);
-              b._pfPageStart = b._pfPageGroup[0];
-              b._pfPageEnd = b._pfPageGroup[b._pfPageGroup.length - 1];
+              if (bdIdx === null) bdIdx = Math.max(...idxs);
+              _pfBdPages.push(_pfPageForIdx(bdIdx));
             }
-            // Defensive: pageFirstOk also requires UNIQUE groups — if two bills
-            // mapped to the same (acct, billingDate) key, that's a header
-            // collision (shouldn't happen on real Evergy bills but could happen
-            // on degraded OCR) and we should fall back.
+            // Apply bd-header formula (same as Update 75's bd-header fallback):
+            //   _pageStart[i] = max(1, bdPage[i] - 1)       // cover is 1 page before
+            //   _pageEnd[i]   = max(_pageStart[i], bdPage[i+1] - 2)  // one before next cover
+            //   _pageEnd[last] = _maxPage
+            // Build each section as the concatenation of pages [_pageStart.._pageEnd].
             if (_pageFirstOk) {
-              const _pfSeen = new Set();
-              for (const b of uniqueBills) {
-                const k = b._pfPageStart + '|' + b._pfPageEnd;
-                if (_pfSeen.has(k)) {
+              for (let i = 0; i < uniqueBills.length; i++) {
+                const bdPage = _pfBdPages[i];
+                const pageStart = Math.max(1, bdPage - 1);
+                let pageEnd;
+                if (i + 1 < uniqueBills.length) {
+                  const nextBdPage = _pfBdPages[i + 1];
+                  pageEnd = Math.max(pageStart, nextBdPage - 2);
+                } else {
+                  pageEnd = _pfMaxPage;
+                }
+                // Guard against corrupt ranges.
+                if (pageEnd < pageStart || pageStart < 1 || pageEnd > _pfMaxPage) {
                   _pageFirstOk = false;
                   break;
                 }
-                _pfSeen.add(k);
+                const pages = [];
+                for (let p = pageStart; p <= pageEnd; p++) pages.push(p);
+                uniqueBills[i]._pfPageGroup = pages;
+                uniqueBills[i]._pfPageStart = pageStart;
+                uniqueBills[i]._pfPageEnd = pageEnd;
               }
             }
-            // Second defense: page ranges must be in ascending order and
-            // non-overlapping across bills. If bill[i]._pfPageStart overlaps
-            // bill[i-1]._pfPageEnd, treat the whole batch as failed.
+            // Defense: bdPages must be strictly ascending (monotonic page order
+            // across bills). If not, something is structurally wrong (e.g. fuzzy
+            // merge produced an out-of-order idx) and we fall back.
             if (_pageFirstOk) {
-              for (let _i = 1; _i < uniqueBills.length; _i++) {
-                if (uniqueBills[_i]._pfPageStart <= uniqueBills[_i - 1]._pfPageEnd) {
+              for (let i = 1; i < _pfBdPages.length; i++) {
+                if (_pfBdPages[i] < _pfBdPages[i - 1]) {
                   _pageFirstOk = false;
                   break;
                 }
               }
             }
-            console.log(
-              '[Evergy page-first] pageFirstOk:',
-              _pageFirstOk,
-              '· bills:',
-              uniqueBills.length,
-              '· grouped:',
-              uniqueBills.filter((b) => b._pfPageGroup).length,
-              '· maxPage:',
-              _pfMaxPage,
-            );
+            if (_pageFirstOk) {
+              console.log(
+                '[Evergy page-first] OK · bills:',
+                uniqueBills.length,
+                '· bdPages:',
+                _pfBdPages.join(','),
+                '· maxPage:',
+                _pfMaxPage,
+              );
+            } else {
+              console.warn(
+                '[Evergy page-first] FALLBACK to midpoint slicing · bills:',
+                uniqueBills.length,
+                '· pageMarkers:',
+                _pfPageMarkers.length,
+                '· bdPages:',
+                _pfBdPages.join(','),
+                '· maxPage:',
+                _pfMaxPage,
+                '· reason: either no page markers, empty uniqueBills, non-ascending bdPages, or corrupt computed range',
+              );
+            }
 
             // Build sections. When page-first grouping succeeded, each section is
             // the concatenation of the bill's page texts in page order — no
