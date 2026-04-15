@@ -15411,26 +15411,133 @@
               _fuzzyMerges,
             );
 
-            // Build sections by slicing between unique bill start positions. Each
-            // section extends from the MIDPOINT between the previous bill's idx and
-            // this bill's idx up to the midpoint between this bill's idx and the
-            // next bill's idx. This keeps the cover page text (which sits BEFORE
-            // the "service from" occurrence on the billing-details page) inside
-            // the section of the bill it belongs to, so fields that live on the
-            // cover (CustomerCharge, CustomerName, etc) are captured properly and
-            // the OCR retry trigger doesn't fire on false-positive "missing field"
-            // counts that the earlier naive slicing was producing.
+            // ── PAGE-FIRST SECTION RESOLUTION (Update 80) ──
+            // Resolve each bill's page range BEFORE section building by grouping
+            // pages on their "Billing Date:" + "Account Number:" headers. When
+            // every bill maps cleanly to a page group, slice sections as the
+            // concatenation of that bill's page texts — no midpoint bleed on
+            // dense multi-bill scanned PDFs (fixes Bill 33 in Louisburg HS where
+            // midpoint slicing was dragging Bill 32's PTS/TDC/meter data into
+            // Bill 33's section). Falls back to midpoint slicing per-bill when
+            // page grouping can't match every bill (e.g. OCR-garbled Billing Date
+            // headers). See dashboardlogic.md Update 77 note: "A page-boundary
+            // section builder would be the real fix but is deferred."
+            const _pfPageMarkers = [...t.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => ({
+              page: parseInt(m[1]),
+              idx: m.index,
+            }));
+            const _pfPageForIdx = (idx) => {
+              let pg = 1;
+              for (const pm of _pfPageMarkers) {
+                if (pm.idx <= idx) pg = pm.page;
+                else break;
+              }
+              return pg;
+            };
+            const _pfMaxPage = _pfPageMarkers.length ? _pfPageMarkers[_pfPageMarkers.length - 1].page : 1;
+            const _pfPageTextMap = {};
+            for (let _pi = 0; _pi < _pfPageMarkers.length; _pi++) {
+              const _pg = _pfPageMarkers[_pi].page;
+              const _pStart = _pfPageMarkers[_pi].idx;
+              const _pEnd = _pi + 1 < _pfPageMarkers.length ? _pfPageMarkers[_pi + 1].idx : t.length;
+              _pfPageTextMap[_pg] = t.slice(_pStart, _pEnd);
+            }
+            // Same regexes as the existing Strategy-1 block (kept below as a
+            // fallback). Build page→key map and key→pages map in one pass so
+            // each bill can look up its group by the page its winning idx lands on.
+            const _pfBdKeyRe = /Billing\s*Date\s*[:\s]+(\d{2}\/\d{2}\/\d{4})/i;
+            const _pfAcctKeyRe = /Account\s*(?:Number)?\s*[:\s©®]+(\d[\d\s\-]{4,18}\d)/i;
+            const _pfPageToKey = {};
+            const _pfBillsByKey = {};
+            for (let _pg = 1; _pg <= _pfMaxPage; _pg++) {
+              const _pgText = _pfPageTextMap[_pg];
+              if (!_pgText) continue;
+              const _bdM = _pgText.match(_pfBdKeyRe);
+              if (!_bdM) continue;
+              const _acctM = _pgText.match(_pfAcctKeyRe);
+              const _acct = _acctM ? _acctM[1].replace(/[\s\-]/g, '') : '';
+              const _key = _acct + '|' + _bdM[1];
+              _pfPageToKey[_pg] = _key;
+              if (!_pfBillsByKey[_key]) _pfBillsByKey[_key] = [];
+              _pfBillsByKey[_key].push(_pg);
+            }
+            // For each bill, try to find its page group by looking up the page
+            // that its winning idx (or any of its _groupIdxs, including dropped
+            // phantom duplicates) falls on. First match wins. This handles the
+            // edge case where a bill's billing-details page has OCR-garbled
+            // header text but the cover page (dropped by exact-dedup but still
+            // in _groupIdxs) has a readable one.
+            let _pageFirstOk = uniqueBills.length > 0 && _pfPageMarkers.length > 0;
+            for (const b of uniqueBills) {
+              const idxs = b._groupIdxs || [b.idx];
+              let matchedKey = null;
+              for (const ix of idxs) {
+                const pg = _pfPageForIdx(ix);
+                if (_pfPageToKey[pg]) {
+                  matchedKey = _pfPageToKey[pg];
+                  break;
+                }
+              }
+              if (!matchedKey) {
+                b._pfPageGroup = null;
+                _pageFirstOk = false;
+                continue;
+              }
+              b._pfPageGroup = _pfBillsByKey[matchedKey].slice().sort((a, b) => a - b);
+              b._pfPageStart = b._pfPageGroup[0];
+              b._pfPageEnd = b._pfPageGroup[b._pfPageGroup.length - 1];
+            }
+            // Defensive: pageFirstOk also requires UNIQUE groups — if two bills
+            // mapped to the same (acct, billingDate) key, that's a header
+            // collision (shouldn't happen on real Evergy bills but could happen
+            // on degraded OCR) and we should fall back.
+            if (_pageFirstOk) {
+              const _pfSeen = new Set();
+              for (const b of uniqueBills) {
+                const k = b._pfPageStart + '|' + b._pfPageEnd;
+                if (_pfSeen.has(k)) {
+                  _pageFirstOk = false;
+                  break;
+                }
+                _pfSeen.add(k);
+              }
+            }
+            // Second defense: page ranges must be in ascending order and
+            // non-overlapping across bills. If bill[i]._pfPageStart overlaps
+            // bill[i-1]._pfPageEnd, treat the whole batch as failed.
+            if (_pageFirstOk) {
+              for (let _i = 1; _i < uniqueBills.length; _i++) {
+                if (uniqueBills[_i]._pfPageStart <= uniqueBills[_i - 1]._pfPageEnd) {
+                  _pageFirstOk = false;
+                  break;
+                }
+              }
+            }
+            console.log(
+              '[Evergy page-first] pageFirstOk:',
+              _pageFirstOk,
+              '· bills:',
+              uniqueBills.length,
+              '· grouped:',
+              uniqueBills.filter((b) => b._pfPageGroup).length,
+              '· maxPage:',
+              _pfMaxPage,
+            );
+
+            // Build sections. When page-first grouping succeeded, each section is
+            // the concatenation of the bill's page texts in page order — no
+            // midpoints, no bleed from adjacent bills. When it failed, fall back
+            // to the original midpoint-of-_groupIdxs slicing.
             //
-            // First section starts at 0 to capture any preamble/account header.
-            // Last section extends to t.length.
+            // First section (fallback only) starts at 0 to capture any preamble/
+            // account header. Last section extends to t.length.
             let validSections;
             if (uniqueBills.length > 0) {
-              // Use min/max of each bill's merge group so section boundaries
-              // reflect the ORIGINAL idx range of all the match instances that
-              // collapsed into this winner, not just the winner's own idx.
-              // Prevents the previous bill's section from absorbing dropped
-              // phantom-match territory.
               validSections = uniqueBills.map((b, i) => {
+                if (_pageFirstOk && b._pfPageGroup) {
+                  return b._pfPageGroup.map((pg) => _pfPageTextMap[pg]).join('');
+                }
+                // Fallback: midpoint-of-_groupIdxs slicing (pre-Update 80 behavior).
                 const groupIdxs = b._groupIdxs || [b.idx];
                 const curEarliest = Math.min(...groupIdxs);
                 const curLatest = Math.max(...groupIdxs);
@@ -15515,183 +15622,211 @@
               return r;
             });
 
-            // ── PAGE RANGE POST-PROCESSING (rewritten) ──
-            // The earlier cover-page anchoring approach relied on matching
-            // "For service from MM/DD/YYYY to MM/DD/YYYY" on each bill's cover, which
-            // is unreliable because Tesseract OCR frequently garbles the cover page
-            // text. When the regex missed, the chain-fallback produced overlapping /
-            // duplicate ranges across bills.
-            //
-            // New approach: anchor on the "Billing Details - service from" header
-            // position, which is (a) always present (extractAll already splits on it),
-            // (b) more OCR-tolerant (the _EVG_BILLING_DETAILS regex has character-class
-            // fuzzing), and (c) aligns 1:1 with the results[] entries because they
-            // were produced by splitting on exactly this regex. For each bill:
-            //   _pageStart = (billing-details page) - 1   // cover page sits right before
-            //   _pageEnd   = (next bill's billing-details page) - 2  // one before next cover
-            // Last bill gets _pageEnd = _maxPage. Every result gets a range, no chain
-            // fallback required, no duplicate-neighbor bug.
-            const _pageMarkers = [...t.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => ({
-              page: parseInt(m[1]),
-              idx: m.index,
-            }));
-            const _pageForIdx = (idx) => {
-              let pg = 1;
-              for (const pm of _pageMarkers) {
-                if (pm.idx <= idx) pg = pm.page;
-                else break;
-              }
-              return pg;
-            };
-            const _maxPage = _pageMarkers.length ? _pageMarkers[_pageMarkers.length - 1].page : 1;
-
-            // ── STRATEGY 1: Billing Date + Account Number per-page grouping ──
-            // Each Evergy page has a "Billing Date: MM/DD/YYYY" and "Account Number :
-            // XXX" printed in its header. Every page of the SAME bill shares the same
-            // (account, billingDate) pair, so grouping pages by that pair gives the
-            // exact page range for each bill — more reliable than any regex anchor
-            // because the header text is in a consistent layout that OCR handles well
-            // and the digits of the date are OCR-stable.
-            const _pageTextMap = {};
-            for (let _pi = 0; _pi < _pageMarkers.length; _pi++) {
-              const _pg = _pageMarkers[_pi].page;
-              const _pStart = _pageMarkers[_pi].idx;
-              const _pEnd = _pi + 1 < _pageMarkers.length ? _pageMarkers[_pi + 1].idx : t.length;
-              _pageTextMap[_pg] = t.slice(_pStart, _pEnd);
-            }
-            const _bdKeyRe = /Billing\s*Date\s*[:\s]+(\d{2}\/\d{2}\/\d{4})/i;
-            const _acctKeyRe = /Account\s*(?:Number)?\s*[:\s©®]+(\d[\d\s\-]{4,18}\d)/i;
-            const _billsByKey = {}; // 'acct|date' → [page numbers]
-            for (const [_pgStr, _pgText] of Object.entries(_pageTextMap)) {
-              const _pg = parseInt(_pgStr);
-              const _bdM = _pgText.match(_bdKeyRe);
-              if (!_bdM) continue;
-              const _acctM = _pgText.match(_acctKeyRe);
-              const _acct = _acctM ? _acctM[1].replace(/[\s\-]/g, '') : '';
-              const _key = _acct + '|' + _bdM[1];
-              if (!_billsByKey[_key]) _billsByKey[_key] = [];
-              _billsByKey[_key].push(_pg);
-            }
-            // Order unique keys by their FIRST page so they match results[] order.
-            const _orderedKeys = [];
-            const _seenKeys = new Set();
-            for (let _pg = 1; _pg <= _maxPage; _pg++) {
-              const _pgText = _pageTextMap[_pg];
-              if (!_pgText) continue;
-              const _bdM = _pgText.match(_bdKeyRe);
-              if (!_bdM) continue;
-              const _acctM = _pgText.match(_acctKeyRe);
-              const _acct = _acctM ? _acctM[1].replace(/[\s\-]/g, '') : '';
-              const _key = _acct + '|' + _bdM[1];
-              if (_seenKeys.has(_key)) continue;
-              _seenKeys.add(_key);
-              _orderedKeys.push(_key);
-            }
-            console.log(
-              '[Evergy page-anchor] results:',
-              results.length,
-              '· unique billing-date keys:',
-              _orderedKeys.length,
-            );
-            let _billingDateAnchorOk = false;
-            if (_orderedKeys.length === results.length && _orderedKeys.length > 0) {
+            // ── PAGE-FIRST STAMPING (Update 80) ──
+            // When page-first grouping succeeded above, stamp each result with
+            // the page range resolved from its (acct, billingDate) group. This
+            // short-circuits the full fallback cascade below — the cascade
+            // still runs as a safety net when _pageFirstOk is false.
+            if (_pageFirstOk) {
               for (let i = 0; i < results.length; i++) {
-                const _pages = _billsByKey[_orderedKeys[i]] || [];
-                if (_pages.length > 0) {
-                  results[i]._pageStart = Math.min(..._pages);
-                  results[i]._pageEnd = Math.max(..._pages);
-                  results[i]._pageRangeSource = 'billing-date';
+                const ub = uniqueBills[i];
+                if (ub && ub._pfPageGroup) {
+                  results[i]._pageStart = ub._pfPageStart;
+                  results[i]._pageEnd = ub._pfPageEnd;
+                  results[i]._pageRangeSource = 'page-first';
                 }
               }
-              _billingDateAnchorOk = results.every((r) => r._pageStart && r._pageEnd);
-              console.log('[Evergy page-anchor] billing-date strategy OK:', _billingDateAnchorOk);
             }
 
-            // Find every Billing Details header position in the full text. Used as
-            // fallback when billing-date anchoring can't establish a 1:1 mapping.
-            const _bdFindRe = new RegExp(
-              '(?:' + _EVG_BILLING_DETAILS.source + '|Billing\\s+Details\\s*[-\\u2013\\-]\\s*service\\s+from)',
-              'gi',
-            );
-            const bdPositions = [];
-            let _bdM;
-            while ((_bdM = _bdFindRe.exec(t)) !== null) bdPositions.push(_bdM.index);
+            // ── PAGE RANGE POST-PROCESSING (fallback when page-first fails) ──
+            // This cascade only runs when the Update 80 page-first stamping
+            // above couldn't establish a 1:1 bill→page-group match (e.g. OCR
+            // garbled every Billing Date header on one page). When page-first
+            // succeeded, every result already has _pageStart/_pageEnd set, so
+            // this cascade is a no-op defense; gating it saves work AND
+            // prevents a fallback strategy from overwriting a correct page-
+            // first range with a degraded one.
+            if (!_pageFirstOk) {
+              // The earlier cover-page anchoring approach relied on matching
+              // "For service from MM/DD/YYYY to MM/DD/YYYY" on each bill's cover, which
+              // is unreliable because Tesseract OCR frequently garbles the cover page
+              // text. When the regex missed, the chain-fallback produced overlapping /
+              // duplicate ranges across bills.
+              //
+              // New approach: anchor on the "Billing Details - service from" header
+              // position, which is (a) always present (extractAll already splits on it),
+              // (b) more OCR-tolerant (the _EVG_BILLING_DETAILS regex has character-class
+              // fuzzing), and (c) aligns 1:1 with the results[] entries because they
+              // were produced by splitting on exactly this regex. For each bill:
+              //   _pageStart = (billing-details page) - 1   // cover page sits right before
+              //   _pageEnd   = (next bill's billing-details page) - 2  // one before next cover
+              // Last bill gets _pageEnd = _maxPage. Every result gets a range, no chain
+              // fallback required, no duplicate-neighbor bug.
+              const _pageMarkers = [...t.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => ({
+                page: parseInt(m[1]),
+                idx: m.index,
+              }));
+              const _pageForIdx = (idx) => {
+                let pg = 1;
+                for (const pm of _pageMarkers) {
+                  if (pm.idx <= idx) pg = pm.page;
+                  else break;
+                }
+                return pg;
+              };
+              const _maxPage = _pageMarkers.length ? _pageMarkers[_pageMarkers.length - 1].page : 1;
 
-            if (_billingDateAnchorOk) {
-              // Primary strategy already populated every result — skip fallbacks.
-            } else if (bdPositions.length === results.length) {
-              // Clean 1:1 mapping — most common case.
-              for (let i = 0; i < results.length; i++) {
-                const r = results[i];
-                const bdPage = _pageForIdx(bdPositions[i]);
-                // Cover is the page right before Billing Details. Clamp to 1 minimum.
-                r._pageStart = Math.max(1, bdPage - 1);
-                if (i + 1 < results.length) {
-                  const nextBdPage = _pageForIdx(bdPositions[i + 1]);
-                  // Next cover is (nextBdPage - 1), so this bill ends one page before
-                  // the next cover: nextBdPage - 2. Guard against negative deltas on
-                  // same-page bills (nextBdPage === bdPage is a split issue, treat it
-                  // as a same-page range).
-                  r._pageEnd = Math.max(r._pageStart, nextBdPage - 2);
-                } else {
-                  r._pageEnd = _maxPage;
-                }
-                r._pageRangeSource = 'bd-header';
+              // ── STRATEGY 1: Billing Date + Account Number per-page grouping ──
+              // Each Evergy page has a "Billing Date: MM/DD/YYYY" and "Account Number :
+              // XXX" printed in its header. Every page of the SAME bill shares the same
+              // (account, billingDate) pair, so grouping pages by that pair gives the
+              // exact page range for each bill — more reliable than any regex anchor
+              // because the header text is in a consistent layout that OCR handles well
+              // and the digits of the date are OCR-stable.
+              const _pageTextMap = {};
+              for (let _pi = 0; _pi < _pageMarkers.length; _pi++) {
+                const _pg = _pageMarkers[_pi].page;
+                const _pStart = _pageMarkers[_pi].idx;
+                const _pEnd = _pi + 1 < _pageMarkers.length ? _pageMarkers[_pi + 1].idx : t.length;
+                _pageTextMap[_pg] = t.slice(_pStart, _pEnd);
               }
-            } else {
-              // Mismatch — fall back to the original cover-anchoring approach. This
-              // should be rare but can happen if extractAll merged duplicate-date
-              // sections or the regex over-matched on OCR noise.
-              const coverStarts = [];
-              for (const r of results) {
-                if (!r.BillingPeriodStart || !r.BillingPeriodEnd) {
-                  coverStarts.push(null);
-                  continue;
-                }
-                const datePatt = new RegExp(
-                  'For\\s+service\\s+from\\s+' +
-                    r.BillingPeriodStart.replace(/[./\\]/g, '[./]') +
-                    '\\s+to\\s+' +
-                    r.BillingPeriodEnd.replace(/[./\\]/g, '[./]'),
-                  'gi',
-                );
-                let coverIdx = -1;
-                let mm;
-                while ((mm = datePatt.exec(t)) !== null) {
-                  const before = t.slice(Math.max(0, mm.index - 40), mm.index);
-                  if (/Billing\s+Details/i.test(before)) continue;
-                  coverIdx = mm.index;
-                  break;
-                }
-                coverStarts.push(coverIdx >= 0 ? _pageForIdx(coverIdx) : null);
+              const _bdKeyRe = /Billing\s*Date\s*[:\s]+(\d{2}\/\d{2}\/\d{4})/i;
+              const _acctKeyRe = /Account\s*(?:Number)?\s*[:\s©®]+(\d[\d\s\-]{4,18}\d)/i;
+              const _billsByKey = {}; // 'acct|date' → [page numbers]
+              for (const [_pgStr, _pgText] of Object.entries(_pageTextMap)) {
+                const _pg = parseInt(_pgStr);
+                const _bdM = _pgText.match(_bdKeyRe);
+                if (!_bdM) continue;
+                const _acctM = _pgText.match(_acctKeyRe);
+                const _acct = _acctM ? _acctM[1].replace(/[\s\-]/g, '') : '';
+                const _key = _acct + '|' + _bdM[1];
+                if (!_billsByKey[_key]) _billsByKey[_key] = [];
+                _billsByKey[_key].push(_pg);
               }
-              for (let i = 0; i < results.length; i++) {
-                const r = results[i];
-                const start = coverStarts[i];
-                if (start) {
-                  r._pageStart = start;
-                  let nextStart = null;
-                  for (let j = i + 1; j < coverStarts.length; j++) {
-                    if (coverStarts[j] && coverStarts[j] > start) {
-                      nextStart = coverStarts[j];
-                      break;
+              // Order unique keys by their FIRST page so they match results[] order.
+              const _orderedKeys = [];
+              const _seenKeys = new Set();
+              for (let _pg = 1; _pg <= _maxPage; _pg++) {
+                const _pgText = _pageTextMap[_pg];
+                if (!_pgText) continue;
+                const _bdM = _pgText.match(_bdKeyRe);
+                if (!_bdM) continue;
+                const _acctM = _pgText.match(_acctKeyRe);
+                const _acct = _acctM ? _acctM[1].replace(/[\s\-]/g, '') : '';
+                const _key = _acct + '|' + _bdM[1];
+                if (_seenKeys.has(_key)) continue;
+                _seenKeys.add(_key);
+                _orderedKeys.push(_key);
+              }
+              console.log(
+                '[Evergy page-anchor] results:',
+                results.length,
+                '· unique billing-date keys:',
+                _orderedKeys.length,
+              );
+              let _billingDateAnchorOk = false;
+              if (_orderedKeys.length === results.length && _orderedKeys.length > 0) {
+                for (let i = 0; i < results.length; i++) {
+                  const _pages = _billsByKey[_orderedKeys[i]] || [];
+                  if (_pages.length > 0) {
+                    results[i]._pageStart = Math.min(..._pages);
+                    results[i]._pageEnd = Math.max(..._pages);
+                    results[i]._pageRangeSource = 'billing-date';
+                  }
+                }
+                _billingDateAnchorOk = results.every((r) => r._pageStart && r._pageEnd);
+                console.log('[Evergy page-anchor] billing-date strategy OK:', _billingDateAnchorOk);
+              }
+
+              // Find every Billing Details header position in the full text. Used as
+              // fallback when billing-date anchoring can't establish a 1:1 mapping.
+              const _bdFindRe = new RegExp(
+                '(?:' + _EVG_BILLING_DETAILS.source + '|Billing\\s+Details\\s*[-\\u2013\\-]\\s*service\\s+from)',
+                'gi',
+              );
+              const bdPositions = [];
+              let _bdM;
+              while ((_bdM = _bdFindRe.exec(t)) !== null) bdPositions.push(_bdM.index);
+
+              if (_billingDateAnchorOk) {
+                // Primary strategy already populated every result — skip fallbacks.
+              } else if (bdPositions.length === results.length) {
+                // Clean 1:1 mapping — most common case.
+                for (let i = 0; i < results.length; i++) {
+                  const r = results[i];
+                  const bdPage = _pageForIdx(bdPositions[i]);
+                  // Cover is the page right before Billing Details. Clamp to 1 minimum.
+                  r._pageStart = Math.max(1, bdPage - 1);
+                  if (i + 1 < results.length) {
+                    const nextBdPage = _pageForIdx(bdPositions[i + 1]);
+                    // Next cover is (nextBdPage - 1), so this bill ends one page before
+                    // the next cover: nextBdPage - 2. Guard against negative deltas on
+                    // same-page bills (nextBdPage === bdPage is a split issue, treat it
+                    // as a same-page range).
+                    r._pageEnd = Math.max(r._pageStart, nextBdPage - 2);
+                  } else {
+                    r._pageEnd = _maxPage;
+                  }
+                  r._pageRangeSource = 'bd-header';
+                }
+              } else {
+                // Mismatch — fall back to the original cover-anchoring approach. This
+                // should be rare but can happen if extractAll merged duplicate-date
+                // sections or the regex over-matched on OCR noise.
+                const coverStarts = [];
+                for (const r of results) {
+                  if (!r.BillingPeriodStart || !r.BillingPeriodEnd) {
+                    coverStarts.push(null);
+                    continue;
+                  }
+                  const datePatt = new RegExp(
+                    'For\\s+service\\s+from\\s+' +
+                      r.BillingPeriodStart.replace(/[./\\]/g, '[./]') +
+                      '\\s+to\\s+' +
+                      r.BillingPeriodEnd.replace(/[./\\]/g, '[./]'),
+                    'gi',
+                  );
+                  let coverIdx = -1;
+                  let mm;
+                  while ((mm = datePatt.exec(t)) !== null) {
+                    const before = t.slice(Math.max(0, mm.index - 40), mm.index);
+                    if (/Billing\s+Details/i.test(before)) continue;
+                    coverIdx = mm.index;
+                    break;
+                  }
+                  coverStarts.push(coverIdx >= 0 ? _pageForIdx(coverIdx) : null);
+                }
+                for (let i = 0; i < results.length; i++) {
+                  const r = results[i];
+                  const start = coverStarts[i];
+                  if (start) {
+                    r._pageStart = start;
+                    let nextStart = null;
+                    for (let j = i + 1; j < coverStarts.length; j++) {
+                      if (coverStarts[j] && coverStarts[j] > start) {
+                        nextStart = coverStarts[j];
+                        break;
+                      }
+                    }
+                    r._pageEnd = nextStart ? nextStart - 1 : _maxPage;
+                    r._pageRangeSource = 'cover-anchor';
+                  } else {
+                    const s = validSections[i] || '';
+                    const pm = [...s.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => parseInt(m[1]));
+                    if (pm.length) {
+                      r._pageStart = Math.min(...pm);
+                      r._pageEnd = Math.max(...pm);
+                      r._pageRangeSource = 'section-scan';
                     }
                   }
-                  r._pageEnd = nextStart ? nextStart - 1 : _maxPage;
-                  r._pageRangeSource = 'cover-anchor';
-                } else {
-                  const s = validSections[i] || '';
-                  const pm = [...s.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => parseInt(m[1]));
-                  if (pm.length) {
-                    r._pageStart = Math.min(...pm);
-                    r._pageEnd = Math.max(...pm);
-                    r._pageRangeSource = 'section-scan';
-                  }
                 }
               }
-            }
+            } // end if (!_pageFirstOk) — fallback cascade
             // Final safety net: any result still missing a range gets the chain
             // fallback (previous bill's end + 1 → next bill's start - 1 or _maxPage).
+            // Runs in both modes: no-op when every result already has a page
+            // range (the common case under page-first), populates missing
+            // ranges when the cascade above left some bills unresolved.
             for (let i = 0; i < results.length; i++) {
               const r = results[i];
               if (r._pageStart && r._pageEnd) continue;
