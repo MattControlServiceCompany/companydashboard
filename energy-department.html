@@ -24525,36 +24525,41 @@
     </div>
   </span>`;
 
-        // ── Column definitions with min-width so headers never overlap ──
+        // ── Column definitions (Update 82) ──
+        // Generated from BILL_SCHEMA so the data table shows exactly the same
+        // fields the Edit Billing Period modal + PDF/OCR card use. The base
+        // columns (Norm. Month, Start, End, Days) come first, then one column
+        // per schema field, with the skip-list below removing fields that are
+        // redundant with the base (start/end) or too noisy to show inline
+        // (long text fields like address/name — those stay in the edit modal).
         const COL_BASE = [
           { h: 'Norm. Month ' + normInfoTip, a: 'lbl', w: 110 },
           { h: 'Start', a: 'lbl', w: 90 },
           { h: 'End', a: 'lbl', w: 90 },
           { h: 'Days', a: '', w: 50 },
         ];
-        const COL_ELEC = [
-          { h: 'kWh', a: '', w: 95 },
-          { h: 'Actual kW', a: '', w: 82 },
-          { h: 'Billed kW', a: '', w: 76 },
-          { h: 'Facilities kW', a: '', w: 90 },
-          { h: 'kW Cost $', a: '', w: 86 },
-          { h: 'Facilities kW Cost $', a: '', w: 110 },
-          { h: 'kWh Cost $', a: '', w: 86 },
-          { h: 'Other Charges $', a: '', w: 96 },
-          { h: 'Taxes & Fees $', a: '', w: 88 },
-          { h: 'Total $', a: '', w: 86 },
-        ];
-        const COL_GAS = [
-          { h: 'Therms', a: '', w: 84 },
-          { h: 'Therm Cost $', a: '', w: 100 },
-        ];
-        const COL_OTHER = [
-          { h: 'Usage', a: '', w: 84 },
-          { h: 'Cost $', a: '', w: 86 },
-        ];
+        // Fields whose value is already reflected in the base columns, or
+        // whose text shape makes them unfit for a table cell. Kept in the
+        // modal + schema so the user can still edit them; just hidden from
+        // the table.
+        const TABLE_SKIP_KEYS = new Set([
+          'start',
+          'end',
+          'numberOfDays',
+          'utilityCompany',
+          'customerName',
+          'serviceAddress',
+        ]);
+        const schemaForTable = _billSchemaFor(m.commodity).filter((e) => !e.section && !TABLE_SKIP_KEYS.has(e.key));
+        const COL_FIELDS = schemaForTable.map((e) => ({
+          h: e.label + (e.type === 'currency' ? ' $' : ''),
+          a: e.type === 'text' || e.type === 'date' ? 'lbl' : '',
+          w: _billColumnWidth(e),
+          k: e.key,
+          entry: e,
+        }));
         const COL_ACTION = [{ h: '', a: 'td-actions', w: 60 }];
-
-        const cols = [...COL_BASE, ...(isElec ? COL_ELEC : isGas ? COL_GAS : COL_OTHER), ...COL_ACTION];
+        const cols = [...COL_BASE, ...COL_FIELDS, ...COL_ACTION];
 
         const tblHead =
           `<thead><tr>` +
@@ -24574,17 +24579,24 @@
         // Build rows with gap detection + outlier highlighting
         let tblBody = '';
         let flagCount = 0;
+        // Build a dynamic field→column-index map from the cols array so flag
+        // icons land on the right column even after Update 82 added new
+        // commodity-aware columns. Column 0..3 are base (days at 3); field
+        // columns start at 4. `days` is always base column 3.
+        const fieldColMap = { days: 3 };
+        cols.forEach((c, i) => {
+          if (c.k) fieldColMap[c.k] = i;
+        });
         bills.forEach((row, idx) => {
           if (idx > 0 && detectGap(bills[idx - 1].end, row.start)) {
             const gapDays = Math.round(
               (new Date(row.start + 'T12:00:00') - new Date(bills[idx - 1].end + 'T12:00:00')) / (1000 * 60 * 60 * 24),
             );
-            const colSpan = isElec ? 15 : isGas ? 7 : 7;
-            tblBody += `<tr class="ud-bill-gap-row"><td colspan="${colSpan}"><div class="ud-bill-gap-msg">⚠️ Gap in data — ${gapDays} day${gapDays !== 1 ? 's' : ''} missing between ${fmtDate(bills[idx - 1].end)} and ${fmtDate(row.start)}</div></td></tr>`;
+            tblBody += `<tr class="ud-bill-gap-row"><td colspan="${cols.length}"><div class="ud-bill-gap-msg">⚠️ Gap in data — ${gapDays} day${gapDays !== 1 ? 's' : ''} missing between ${fmtDate(bills[idx - 1].end)} and ${fmtDate(row.start)}</div></td></tr>`;
           }
           const flags = billFlags[row.id] || [];
           if (flags.length) flagCount++;
-          let rowHtml = renderBillRow(row, m, incl, bills);
+          let rowHtml = renderBillRow(row, m, incl, bills, cols);
           // Add amber background and info icons for flagged rows
           if (flags.length) {
             rowHtml = rowHtml.replace(
@@ -24596,27 +24608,9 @@
                   .replace(/"/g, '&quot;') +
                 '">',
             );
-            // Inject ℹ️ icon next to flagged field values
-            // Map flag fields to their column index in the Electric row
-            const fieldColMap = isElec
-              ? {
-                  kwh: 4,
-                  demandKW: 5,
-                  billedKW: 6,
-                  facKW: 7,
-                  kwCost: 8,
-                  facKWCost: 9,
-                  kwhCost: 10,
-                  totalCost: 13,
-                  days: 3,
-                }
-              : isGas
-                ? { therms: 4, thermCost: 5, days: 3 }
-                : { usage: 4, cost: 5, days: 3 };
             flags.forEach((f) => {
-              if (!f.field || !fieldColMap[f.field]) return;
+              if (f.field == null || fieldColMap[f.field] == null) return;
               const colIdx = fieldColMap[f.field];
-              // Find the Nth <td> and prepend an info icon
               let tdCount = 0;
               rowHtml = rowHtml.replace(/<td([^>]*)>/g, (match, attrs) => {
                 tdCount++;
@@ -30932,11 +30926,9 @@
       }
 
       /* ── RENDER BILL ROW (used in Bills pane table) ── */
-      function renderBillRow(row, m, incl, allBills) {
+      function renderBillRow(row, m, incl, allBills, cols) {
         if (incl === undefined) incl = m.inclusive !== false;
         const days = calcDays(row.start, row.end, incl);
-        const nm = normMonthLabel(row.start, row.end, incl, allBills || m.bills || []);
-        const nmCell = `<td class="norm-mon-cell">${nm}</td>`;
         // Show the 📄 button whenever the row has ANY usable PDF reference —
         // either an old per-bill pdfBillId OR a shared pdfKey. Bills saved via the
         // batch shared-key path (_ensureBatchPdfStored) may legitimately have no
@@ -30953,59 +30945,50 @@
     <button class="btn-del"  onclick="deleteBillRow('${m.id}','${row.id}')" title="Delete">✕</button>
   </td>`;
 
-        const fmtKwh = (v) =>
-          v != null && v !== '' && !isNaN(v)
-            ? (+v).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
-            : '—';
-        const fmtKW = (v) =>
-          v != null && v !== '' && !isNaN(v) && +v > 0
-            ? (+v).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
-            : '—';
-        const fmtC = (v) =>
-          v != null && v !== '' && !isNaN(v) && +v > 0
-            ? '$' + (+v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-            : '—';
         const fmtD = (v) => (v ? fmtDate(v) : '—');
-
-        if (m.commodity === 'Electric') {
-          return `<tr>
-      <td class="norm-mon-cell">${normMonthLabel(row.start, row.end, incl, allBills || m.bills || [])}</td>
-      <td class="lbl">${fmtD(row.start)}</td>
-      <td class="lbl">${fmtD(row.end)}</td>
-      <td class="td-days">${days}</td>
-      <td>${fmtKwh(row.kwh)}</td>
-      <td>${fmtKW(row.demandKW)}</td>
-      <td>${fmtKW(row.billedKW)}</td>
-      <td>${fmtKW(row.facKW)}</td>
-      <td>${fmtC(row.kwCost)}</td>
-      <td>${fmtC(row.facKWCost)}</td>
-      <td>${fmtC(row.kwhCost)}</td>
-      <td>${fmtC(row.otherCost)}</td>
-      <td>${fmtC(row.taxCost)}</td>
-      <td class="td-total">${fmtC(row.totalCost)}</td>
-      ${actionBtns}
-    </tr>`;
+        // Update 82: schema-driven cells. renderBillsPane passes the cols
+        // array; each field column pulls its value via _billReadValue (honors
+        // fallbackKey for legacy data) and formats it via _billFormatValue.
+        // When called without `cols` (legacy callers), fall back to the
+        // schema for the meter's commodity.
+        if (!cols) {
+          const schemaForTable = _billSchemaFor(m.commodity).filter(
+            (e) =>
+              !e.section &&
+              !['start', 'end', 'numberOfDays', 'utilityCompany', 'customerName', 'serviceAddress'].includes(e.key),
+          );
+          cols = [
+            {},
+            {},
+            {},
+            {},
+            ...schemaForTable.map((e) => ({
+              k: e.key,
+              entry: e,
+              a: e.type === 'text' || e.type === 'date' ? 'lbl' : '',
+            })),
+            {},
+          ];
         }
-        if (m.commodity === 'Gas') {
-          return `<tr>
-      <td class="norm-mon-cell">${normMonthLabel(row.start, row.end, incl, allBills || m.bills || [])}</td>
-      <td class="lbl">${fmtD(row.start)}</td>
-      <td class="lbl">${fmtD(row.end)}</td>
-      <td class="td-days">${days}</td>
-      <td>${fmtKwh(row.therms)}</td>
-      <td class="grp-cost-col td-total">${fmtC(row.thermCost)}</td>
-      ${actionBtns}
-    </tr>`;
+        let html =
+          '<tr>' +
+          `<td class="norm-mon-cell">${normMonthLabel(row.start, row.end, incl, allBills || m.bills || [])}</td>` +
+          `<td class="lbl">${fmtD(row.start)}</td>` +
+          `<td class="lbl">${fmtD(row.end)}</td>` +
+          `<td class="td-days">${days}</td>`;
+        for (let i = 4; i < cols.length - 1; i++) {
+          const c = cols[i];
+          if (!c.entry) {
+            html += '<td>—</td>';
+            continue;
+          }
+          const raw = _billReadValue(row, c.entry);
+          const formatted = _billFormatValue(raw, c.entry);
+          const cls = c.entry.key === 'totalCost' ? 'td-total' : c.a || '';
+          html += `<td${cls ? ' class="' + cls + '"' : ''}>${formatted}</td>`;
         }
-        return `<tr>
-    <td class="norm-mon-cell">${normMonthLabel(row.start, row.end, incl, allBills || m.bills || [])}</td>
-    <td class="lbl">${fmtD(row.start)}</td>
-    <td class="lbl">${fmtD(row.end)}</td>
-    <td class="td-days">${days}</td>
-    <td>${fmtKwh(row.usage)}</td>
-    <td class="grp-cost-col td-total">${fmtC(row.cost)}</td>
-    ${actionBtns}
-  </tr>`;
+        html += actionBtns + '</tr>';
+        return html;
       }
 
       function updateBillField(mid, rowId, field, val) {
@@ -31102,6 +31085,216 @@
         showToast('Bill period deleted');
       }
 
+      /* ── BILL SCHEMA (Update 82) ──
+         Single source of truth for bill fields per commodity. Used by:
+         - openBillModal     → builds the edit form
+         - saveBillRow       → writes fields back to the saved row
+         - renderBillsPane   → generates the data-table columns
+         - renderBillRow     → generates row cells
+         Mirrors the PDF/OCR card layout in renderPDFFields._COMMODITY_LAYOUTS
+         so the two views show the same sections, same fields, same labels.
+
+         Entry shape:
+           { section: 'Name' }                            // section header
+           { key, label, type, pdfKey, fallbackKey? }     // field
+         - key:         camelCase saved-row field name (modal input id = 'bl-' + key)
+         - label:       display text for modal label + table column header
+         - type:        'text' | 'date' | 'number' | 'currency'
+         - pdfKey:      PascalCase extractor field name (optional — used by
+                        the PDF ingestion save path field map downstream)
+         - fallbackKey: legacy camelCase key to read from when the modern
+                        key is empty on an existing saved row (e.g. old
+                        bills used `facKWCost` for what's now `facilitiesCharge`)
+      */
+      const BILL_SCHEMA = {
+        Electric: [
+          { section: 'Account Info' },
+          { key: 'utilityCompany', label: 'Utility Company', type: 'text', pdfKey: 'UtilityCompany' },
+          { key: 'customerName', label: 'Customer Name', type: 'text', pdfKey: 'CustomerName' },
+          { key: 'serviceAddress', label: 'Service Address', type: 'text', pdfKey: 'ServiceAddress' },
+          { key: 'accountNumber', label: 'Account Number', type: 'text', pdfKey: 'AccountNumber' },
+          { key: 'meterNumber', label: 'Meter Number', type: 'text', pdfKey: 'MeterNumber' },
+          { section: 'Billing Period & Meter' },
+          { key: 'start', label: 'Start Date', type: 'date', pdfKey: 'BillingPeriodStart' },
+          { key: 'end', label: 'End Date', type: 'date', pdfKey: 'BillingPeriodEnd' },
+          { key: 'rateSchedule', label: 'Rate Schedule', type: 'text', pdfKey: 'RateSchedule' },
+          { key: 'numberOfDays', label: 'Number of Days', type: 'number', pdfKey: 'NumberOfDays' },
+          { key: 'meterReadStart', label: 'Meter Read Start', type: 'text', pdfKey: 'MeterReadStart' },
+          { key: 'meterReadEnd', label: 'Meter Read End', type: 'text', pdfKey: 'MeterReadEnd' },
+          { key: 'startRead', label: 'Start Read', type: 'number', pdfKey: 'StartRead' },
+          { key: 'endRead', label: 'End Read', type: 'number', pdfKey: 'EndRead' },
+          { key: 'readDifference', label: 'Read Difference', type: 'number', pdfKey: 'ReadDifference' },
+          { key: 'meterMultiplier', label: 'Meter Multiplier', type: 'number', pdfKey: 'MeterMultiplier' },
+          { key: 'kwh', label: 'kWh Consumed', type: 'number', pdfKey: 'kWhConsumed' },
+          { key: 'onPeakKwh', label: 'On-Peak kWh', type: 'number', pdfKey: 'OnPeakKWh' },
+          { key: 'offPeakKwh', label: 'Off-Peak kWh', type: 'number', pdfKey: 'OffPeakKWh' },
+          { key: 'demandKW', label: 'Actual kW', type: 'number', pdfKey: 'ActualKW' },
+          { key: 'actualRKVA', label: 'Actual RKVA', type: 'number', pdfKey: 'ActualRKVA' },
+          { section: 'Charges' },
+          { key: 'customerCharge', label: 'Customer Charge', type: 'currency', pdfKey: 'CustomerCharge' },
+          { key: 'facKW', label: 'Facilities kW', type: 'number', pdfKey: 'FacilitiesKW' },
+          {
+            key: 'facilitiesCharge',
+            label: 'Facilities Charge',
+            type: 'currency',
+            pdfKey: 'FacilitiesCharge',
+            fallbackKey: 'facKWCost',
+          },
+          { key: 'billedKW', label: 'Billed kW', type: 'number', pdfKey: 'BilledKW' },
+          { key: 'demandCharge', label: 'Billed kW Charge', type: 'currency', pdfKey: 'BilledKWCharge' },
+          { key: 'onPeakCost', label: 'Energy On-Peak Charge', type: 'currency', pdfKey: 'EnergyOnPeakCharge' },
+          { key: 'offPeakCost', label: 'Energy Off-Peak Charge', type: 'currency', pdfKey: 'EnergyOffPeakCharge' },
+          { key: 'rkvaCharge', label: 'RkVA Charge', type: 'currency', pdfKey: 'RkVACharge' },
+          { key: 'taxExemptDelivery', label: 'Tax Exempt Delivery', type: 'currency', pdfKey: 'TaxExemptDelivery' },
+          { key: 'ecaCharge', label: 'ECA Charge', type: 'currency', pdfKey: 'ECACharge' },
+          { key: 'eerCharge', label: 'EER Charge', type: 'currency', pdfKey: 'EERCharge' },
+          { key: 'ptsCharge', label: 'PTS Charge', type: 'currency', pdfKey: 'PTSCharge' },
+          { key: 'tdcKW', label: 'TDC kW', type: 'number', pdfKey: 'TDCkW' },
+          { key: 'tdcCharge', label: 'TDC kW Charge', type: 'currency', pdfKey: 'TDCCharge' },
+          { key: 'billOffset', label: 'Bill Offset', type: 'currency', pdfKey: 'BillOffset' },
+          { key: 'franchiseFee', label: 'Franchise Fee', type: 'currency', pdfKey: 'FranchiseFee' },
+          { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
+        ],
+        Gas: [
+          { section: 'Account Info' },
+          { key: 'utilityCompany', label: 'Utility Company', type: 'text', pdfKey: 'UtilityCompany' },
+          { key: 'customerName', label: 'Customer Name', type: 'text', pdfKey: 'CustomerName' },
+          { key: 'serviceAddress', label: 'Service Address', type: 'text', pdfKey: 'ServiceAddress' },
+          { key: 'accountNumber', label: 'Account Number', type: 'text', pdfKey: 'AccountNumber' },
+          { section: 'Billing Period' },
+          { key: 'start', label: 'Start Date', type: 'date', pdfKey: 'BillingPeriodStart' },
+          { key: 'end', label: 'End Date', type: 'date', pdfKey: 'BillingPeriodEnd' },
+          { key: 'billDate', label: 'Bill Date', type: 'text', pdfKey: 'BillDate' },
+          { section: 'Charges' },
+          { key: 'naturalGasCCF', label: 'Natural Gas (CCF)', type: 'number', pdfKey: 'NaturalGasCCF' },
+          { key: 'gasCharge', label: 'Gas Charge', type: 'currency', pdfKey: 'GasCharge' },
+          { key: 'fuelAdjustment', label: 'Fuel Adjustment', type: 'currency', pdfKey: 'FuelAdjustment' },
+          { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
+        ],
+        Water: [
+          { section: 'Account Info' },
+          { key: 'utilityCompany', label: 'Utility Company', type: 'text', pdfKey: 'UtilityCompany' },
+          { key: 'customerName', label: 'Customer Name', type: 'text', pdfKey: 'CustomerName' },
+          { key: 'serviceAddress', label: 'Service Address', type: 'text', pdfKey: 'ServiceAddress' },
+          { key: 'accountNumber', label: 'Account Number', type: 'text', pdfKey: 'AccountNumber' },
+          { section: 'Billing Period' },
+          { key: 'start', label: 'Start Date', type: 'date', pdfKey: 'BillingPeriodStart' },
+          { key: 'end', label: 'End Date', type: 'date', pdfKey: 'BillingPeriodEnd' },
+          { key: 'billDate', label: 'Bill Date', type: 'text', pdfKey: 'BillDate' },
+          { section: 'Charges' },
+          { key: 'waterUsage', label: 'Water Usage', type: 'number', pdfKey: 'WaterUsage' },
+          { key: 'waterCharge', label: 'Water Charge', type: 'currency', pdfKey: 'WaterCharge' },
+          {
+            key: 'waterProtectionFee',
+            label: 'Water Protection Fee',
+            type: 'currency',
+            pdfKey: 'WaterProtectionFee',
+          },
+          { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
+        ],
+        Sewer: [
+          { section: 'Account Info' },
+          { key: 'utilityCompany', label: 'Utility Company', type: 'text', pdfKey: 'UtilityCompany' },
+          { key: 'customerName', label: 'Customer Name', type: 'text', pdfKey: 'CustomerName' },
+          { key: 'serviceAddress', label: 'Service Address', type: 'text', pdfKey: 'ServiceAddress' },
+          { key: 'accountNumber', label: 'Account Number', type: 'text', pdfKey: 'AccountNumber' },
+          { section: 'Billing Period' },
+          { key: 'start', label: 'Start Date', type: 'date', pdfKey: 'BillingPeriodStart' },
+          { key: 'end', label: 'End Date', type: 'date', pdfKey: 'BillingPeriodEnd' },
+          { key: 'billDate', label: 'Bill Date', type: 'text', pdfKey: 'BillDate' },
+          { section: 'Charges' },
+          { key: 'sewerUsage', label: 'Sewer Usage', type: 'number', pdfKey: 'SewerUsage' },
+          { key: 'sewerCharge', label: 'Sewer Charge', type: 'currency', pdfKey: 'SewerCharge' },
+          { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
+        ],
+        Stormwater: [
+          { section: 'Account Info' },
+          { key: 'utilityCompany', label: 'Utility Company', type: 'text', pdfKey: 'UtilityCompany' },
+          { key: 'customerName', label: 'Customer Name', type: 'text', pdfKey: 'CustomerName' },
+          { key: 'serviceAddress', label: 'Service Address', type: 'text', pdfKey: 'ServiceAddress' },
+          { key: 'accountNumber', label: 'Account Number', type: 'text', pdfKey: 'AccountNumber' },
+          { section: 'Billing Period' },
+          { key: 'start', label: 'Start Date', type: 'date', pdfKey: 'BillingPeriodStart' },
+          { key: 'end', label: 'End Date', type: 'date', pdfKey: 'BillingPeriodEnd' },
+          { key: 'billDate', label: 'Bill Date', type: 'text', pdfKey: 'BillDate' },
+          { section: 'Charges' },
+          { key: 'stormWaterCharge', label: 'Stormwater Charge', type: 'currency', pdfKey: 'StormWaterCharge' },
+          { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
+        ],
+        Propane: [
+          { section: 'Account Info' },
+          { key: 'utilityCompany', label: 'Utility Company', type: 'text', pdfKey: 'UtilityCompany' },
+          { key: 'customerName', label: 'Customer Name', type: 'text', pdfKey: 'CustomerName' },
+          { key: 'serviceAddress', label: 'Service Address', type: 'text', pdfKey: 'ServiceAddress' },
+          { key: 'accountNumber', label: 'Account Number', type: 'text', pdfKey: 'AccountNumber' },
+          { key: 'invoiceNumber', label: 'Invoice Number', type: 'text', pdfKey: 'InvoiceNumber' },
+          { key: 'saleNumber', label: 'Sale Number', type: 'text', pdfKey: 'SaleNumber' },
+          { section: 'Delivery' },
+          { key: 'deliveryDate', label: 'Delivery Date', type: 'date', pdfKey: 'DeliveryDate' },
+          { key: 'fuelType', label: 'Fuel Type', type: 'text', pdfKey: 'FuelType' },
+          { key: 'gallonsDelivered', label: 'Gallons Delivered', type: 'number', pdfKey: 'GallonsDelivered' },
+          { key: 'unitPrice', label: 'Unit Price', type: 'currency', pdfKey: 'UnitPrice' },
+          { section: 'Charges' },
+          { key: 'subtotal', label: 'Subtotal', type: 'currency', pdfKey: 'Subtotal' },
+          { key: 'tax', label: 'Tax', type: 'currency', pdfKey: 'Tax' },
+          { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
+        ],
+      };
+      // Pick a schema for a meter's commodity. Falls back to a minimal
+      // generic schema when no specific one exists.
+      function _billSchemaFor(commodity) {
+        return BILL_SCHEMA[commodity] || BILL_SCHEMA._generic || BILL_SCHEMA.Electric;
+      }
+      // Helper: read a field value from a row, honoring fallbackKey for
+      // legacy rows that were saved before the field was renamed.
+      function _billReadValue(row, entry) {
+        if (!row) return '';
+        const direct = row[entry.key];
+        if (direct !== undefined && direct !== null && direct !== '') return direct;
+        if (entry.fallbackKey) {
+          const legacy = row[entry.fallbackKey];
+          if (legacy !== undefined && legacy !== null && legacy !== '') return legacy;
+        }
+        return '';
+      }
+      // Helper: format a value for table display based on the schema entry.
+      function _billFormatValue(val, entry) {
+        const hasVal = val !== undefined && val !== null && val !== '' && !isNaN(val);
+        if (entry.type === 'currency') {
+          if (!hasVal || +val === 0) return '—';
+          return '$' + (+val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        if (entry.type === 'number') {
+          if (!hasVal) return val || '—';
+          if (/kwh/i.test(entry.key)) {
+            return (+val).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+          }
+          if (/kw$/i.test(entry.key) || /rkva/i.test(entry.key)) {
+            return +val > 0
+              ? (+val).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+              : '—';
+          }
+          return (+val).toLocaleString('en-US');
+        }
+        if (entry.type === 'date') return val ? fmtDate(val) : '—';
+        return val || '—';
+      }
+      // Helper: default column width for a schema entry based on type/key.
+      function _billColumnWidth(entry) {
+        if (entry.type === 'currency') return 100;
+        if (entry.type === 'date') return 90;
+        if (entry.type === 'text') {
+          if (/address|name|company/i.test(entry.key)) return 160;
+          return 120;
+        }
+        if (entry.type === 'number') {
+          if (/kwh/i.test(entry.key)) return 110;
+          if (/kw$/i.test(entry.key) || /rkva/i.test(entry.key)) return 95;
+          return 95;
+        }
+        return 95;
+      }
+
       /* ── BILL MODAL (single period add/edit) ── */
       function openBillModal(mid, editRowId) {
         udSelMeterId = mid;
@@ -31113,91 +31306,108 @@
         document.getElementById('billModalTitle').textContent = row
           ? '✏️ Edit Billing Period'
           : '+ Add Billing Period — ' + meterLabel(m);
-        let html = `<div class="f2">
-    <div class="fg"><label class="fl">Start Date *</label><input class="fi" id="bl-start-d" type="date" value="${row?.start || ''}"></div>
-    <div class="fg"><label class="fl">End Date *</label><input class="fi" id="bl-end-d" type="date" value="${row?.end || ''}"></div>
-  </div>`;
-        if (m.commodity === 'Electric') {
-          const hasDetail = !!(
-            row?.onPeakKwh ||
-            row?.offPeakKwh ||
-            row?.customerCharge ||
-            row?.demandCharge ||
-            row?.facilitiesCharge ||
-            row?.ecaCharge ||
-            row?.eerCharge ||
-            row?.ptsCharge ||
-            row?.tdcCharge ||
-            row?.rkvaCharge
-          );
-          html += `<div style="margin:8px 0 4px;display:flex;align-items:center;gap:6px"><span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Usage &amp; Demand</span><hr style="flex:1;border:none;border-top:1px solid var(--border)"></div>
-    <div class="f2" style="margin-bottom:2px">
-      <div class="fg"><label class="fl">Rate Schedule</label><input class="fi" id="bl-rateSchedule" type="text" placeholder="e.g. 2MGAEW" value="${row?.rateSchedule || ''}"></div>
-      <div class="fg"><label class="fl">Total kWh</label><input class="fi" id="bl-kwh" type="number" placeholder="0" value="${row?.kwh || ''}"></div>
-    </div>
-    <div class="f2" style="margin-bottom:2px">
-      <div class="fg"><label class="fl">On-Peak kWh</label><input class="fi" id="bl-onPeakKwh" type="number" placeholder="0" value="${row?.onPeakKwh || ''}"></div>
-      <div class="fg"><label class="fl">Off-Peak kWh</label><input class="fi" id="bl-offPeakKwh" type="number" placeholder="0" value="${row?.offPeakKwh || ''}"></div>
-    </div>
-    <div class="f3">
-      <div class="fg"><label class="fl">Actual kW</label><input class="fi" id="bl-demandKW" type="number" placeholder="0" value="${row?.demandKW || ''}"></div>
-      <div class="fg"><label class="fl">Billed kW</label><input class="fi" id="bl-billedKW" type="number" placeholder="0" value="${row?.billedKW || ''}"></div>
-      <div class="fg"><label class="fl">Facilities kW</label><input class="fi" id="bl-facKW" type="number" placeholder="0" value="${row?.facKW || ''}"></div>
-    </div>
-    <div style="margin:10px 0 4px;display:flex;align-items:center;gap:6px"><span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Energy Charges</span><hr style="flex:1;border:none;border-top:1px solid var(--border)"></div>
-    <div class="f3">
-      <div class="fg"><label class="fl">On-Peak Cost $</label><input class="fi" id="bl-onPeakCost" type="number" placeholder="0.00" value="${row?.onPeakCost || ''}"></div>
-      <div class="fg"><label class="fl">Off-Peak Cost $</label><input class="fi" id="bl-offPeakCost" type="number" placeholder="0.00" value="${row?.offPeakCost || ''}"></div>
-      <div class="fg"><label class="fl">kWh Cost $ <span style="font-size:9px;color:var(--text3)">(total energy)</span></label><input class="fi" id="bl-kwhCost" type="number" placeholder="0.00" value="${row?.kwhCost || ''}"></div>
-    </div>
-    <div style="margin:10px 0 4px;display:flex;align-items:center;gap:6px"><span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Demand Charges</span><hr style="flex:1;border:none;border-top:1px solid var(--border)"></div>
-    <div class="f3">
-      <div class="fg"><label class="fl">Customer Charge $</label><input class="fi" id="bl-customerCharge" type="number" placeholder="0.00" value="${row?.customerCharge || ''}"></div>
-      <div class="fg"><label class="fl">Demand Charge $</label><input class="fi" id="bl-demandCharge" type="number" placeholder="0.00" value="${row?.demandCharge || ''}"></div>
-      <div class="fg"><label class="fl">Facilities Charge $</label><input class="fi" id="bl-facilitiesCharge" type="number" placeholder="0.00" value="${row?.facilitiesCharge || ''}"></div>
-    </div>
-    <div class="f2">
-      <div class="fg"><label class="fl">Actual kW Cost $ <span style="font-size:9px;color:var(--text3)">(legacy)</span></label><input class="fi" id="bl-kwCost" type="number" placeholder="0.00" value="${row?.kwCost || ''}"></div>
-      <div class="fg"><label class="fl">Facilities kW Cost $ <span style="font-size:9px;color:var(--text3)">(legacy)</span></label><input class="fi" id="bl-facKWCost" type="number" placeholder="0.00" value="${row?.facKWCost || ''}"></div>
-    </div>
-    <div style="margin:10px 0 4px;display:flex;align-items:center;gap:6px"><span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Rider Charges</span><hr style="flex:1;border:none;border-top:1px solid var(--border)"></div>
-    <div class="f3">
-      <div class="fg"><label class="fl">ECA $</label><input class="fi" id="bl-ecaCharge" type="number" placeholder="0.00" value="${row?.ecaCharge || ''}"></div>
-      <div class="fg"><label class="fl">EER $</label><input class="fi" id="bl-eerCharge" type="number" placeholder="0.00" value="${row?.eerCharge || ''}"></div>
-      <div class="fg"><label class="fl">PTS $</label><input class="fi" id="bl-ptsCharge" type="number" placeholder="0.00" value="${row?.ptsCharge || ''}"></div>
-    </div>
-    <div class="f3">
-      <div class="fg"><label class="fl">TDC $</label><input class="fi" id="bl-tdcCharge" type="number" placeholder="0.00" value="${row?.tdcCharge || ''}"></div>
-      <div class="fg"><label class="fl">RkVA $ <span style="font-size:9px;color:var(--text3)">(reactive power)</span></label><input class="fi" id="bl-rkvaCharge" type="number" placeholder="0.00" value="${row?.rkvaCharge || ''}"></div>
-      <div class="fg"><label class="fl">Renewable $</label><input class="fi" id="bl-renewableCharge" type="number" placeholder="0.00" value="${row?.renewableCharge || ''}"></div>
-    </div>
-    <div class="f3">
-      <div class="fg"><label class="fl">Solar Credit $</label><input class="fi" id="bl-solarCredit" type="number" placeholder="0.00" value="${row?.solarCredit || ''}"></div>
-      <div class="fg"></div>
-      <div class="fg"></div>
-    </div>
-    <div style="margin:10px 0 4px;display:flex;align-items:center;gap:6px"><span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Other &amp; Total</span><hr style="flex:1;border:none;border-top:1px solid var(--border)"></div>
-    <div class="f3">
-      <div class="fg"><label class="fl">Franchise Fee $</label><input class="fi" id="bl-franchiseFee" type="number" placeholder="0.00" value="${row?.franchiseFee || ''}"></div>
-      <div class="fg"><label class="fl">Other Charges $</label><input class="fi" id="bl-otherCost" type="number" placeholder="0.00" value="${row?.otherCost || ''}" title="Customer charge, tax exempt delivery, bill offset"></div>
-      <div class="fg"><label class="fl">Taxes &amp; Fees $</label><input class="fi" id="bl-taxCost" type="number" placeholder="0.00" value="${row?.taxCost || ''}" title="Franchise fees, taxes"></div>
-    </div>
-    <div class="f2">
-      <div class="fg"><label class="fl">Total Bill $</label><input class="fi" id="bl-totalCost" type="number" placeholder="0.00" value="${row?.totalCost || ''}"></div>
-      <div class="fg" style="display:flex;align-items:flex-end;padding-bottom:2px"><button class="btn btn-ghost btn-sm" type="button" onclick="billAutoSum()" title="Sum individual line items into Total">Σ Auto-Sum</button></div>
-    </div>`;
-        } else if (m.commodity === 'Gas') {
-          html += `<div class="f2">
-      <div class="fg"><label class="fl">Therms</label><input class="fi" id="bl-therms" type="number" placeholder="0" value="${row?.therms || ''}"></div>
-      <div class="fg"><label class="fl">Therm Cost $</label><input class="fi" id="bl-thermCost" type="number" placeholder="0.00" step="0.01" value="${row?.thermCost || ''}"></div>
-    </div>`;
-        } else {
-          html += `<div class="f2">
-      <div class="fg"><label class="fl">Usage</label><input class="fi" id="bl-usage" type="number" placeholder="0" value="${row?.usage || ''}"></div>
-      <div class="fg"><label class="fl">Cost $</label><input class="fi" id="bl-cost" type="number" placeholder="0.00" step="0.01" value="${row?.cost || ''}"></div>
-    </div>`;
+        // Update 82: schema-driven form generator. Pulls the per-commodity
+        // field layout from BILL_SCHEMA so the Edit Billing Period modal
+        // matches the PDF/OCR extracted-output card exactly (same sections,
+        // same fields, same labels). Field input ids are `bl-<camelCaseKey>`
+        // so saveBillRow can read them back via a symmetric schema loop.
+        const schema = _billSchemaFor(m.commodity);
+        // Group schema entries into sections while preserving order.
+        const sections = [];
+        let current = null;
+        for (const e of schema) {
+          if (e.section) {
+            if (current) sections.push(current);
+            current = { title: e.section, fields: [] };
+          } else {
+            if (!current) current = { title: '', fields: [] };
+            current.fields.push(e);
+          }
         }
-        document.getElementById('billModalBody').innerHTML = html;
+        if (current) sections.push(current);
+        const sectionHeader = (title) =>
+          title
+            ? `<div style="margin:10px 0 4px;display:flex;align-items:center;gap:6px"><span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">${title}</span><hr style="flex:1;border:none;border-top:1px solid var(--border)"></div>`
+            : '';
+        const inputFor = (entry) => {
+          const raw = _billReadValue(row, entry);
+          const val = raw === undefined || raw === null ? '' : String(raw).replace(/"/g, '&quot;');
+          const id = 'bl-' + entry.key;
+          const required = entry.key === 'start' || entry.key === 'end' ? ' *' : '';
+          const label = `<label class="fl">${entry.label}${required}</label>`;
+          let inputType = 'text';
+          let placeholder = '';
+          let step = '';
+          if (entry.type === 'date') {
+            inputType = 'date';
+          } else if (entry.type === 'number') {
+            inputType = 'number';
+            placeholder = '0';
+            if (/kwh|kw$|rkva/i.test(entry.key)) step = ' step="0.0001"';
+          } else if (entry.type === 'currency') {
+            inputType = 'number';
+            placeholder = '0.00';
+            step = ' step="0.01"';
+          }
+          return `<div class="fg">${label}<input class="fi" id="${id}" type="${inputType}"${step} placeholder="${placeholder}" value="${val}"></div>`;
+        };
+        // Lay fields out in rows. Wide fields (text addresses/names) get a
+        // full row each so long strings aren't cramped; everything else packs
+        // three per row. Each section closes with a trailing auto-sum button
+        // only on the Charges section, matching the pre-Update-82 UX.
+        const isWide = (e) => e.type === 'text' && /utilitycompany|customername|serviceaddress/i.test(e.key);
+        let body = '';
+        for (const sec of sections) {
+          body += sectionHeader(sec.title);
+          let i = 0;
+          const fields = sec.fields;
+          while (i < fields.length) {
+            const e = fields[i];
+            if (isWide(e)) {
+              body += `<div class="f1">${inputFor(e)}</div>`;
+              i += 1;
+              continue;
+            }
+            // Pack 3 narrow fields per row (or fewer at the tail).
+            const row3 = [];
+            while (row3.length < 3 && i < fields.length && !isWide(fields[i])) {
+              row3.push(fields[i]);
+              i += 1;
+            }
+            body += `<div class="f3">${row3.map(inputFor).join('')}</div>`;
+          }
+          // Auto-sum button at the end of the Charges section (Electric only).
+          if (sec.title === 'Charges' && m.commodity === 'Electric') {
+            body += `<div class="f2"><div class="fg"></div><div class="fg" style="display:flex;align-items:flex-end;padding-bottom:2px"><button class="btn btn-ghost btn-sm" type="button" onclick="billAutoSum()" title="Sum individual line items into Total">Σ Auto-Sum</button></div></div>`;
+          }
+        }
+        // Hidden backward-compat inputs for any field the legacy modal
+        // referenced that isn't in the current schema (e.g. `kwCost`,
+        // `facKWCost`, `kwhCost`, `otherCost`, `taxCost`, `renewableCharge`,
+        // `solarCredit`, `therms`, `thermCost`, `usage`, `cost`). The old
+        // modal exposed these as editable aggregates; the new schema matches
+        // the PDF/OCR card exactly (per Update 82) and drops the aggregates.
+        // Existing saved rows may still carry their values — we keep them
+        // intact by including hidden inputs so saveBillRow still round-trips
+        // them without clobbering.
+        const LEGACY_PASSTHROUGH = [
+          'kwCost',
+          'facKWCost',
+          'kwhCost',
+          'otherCost',
+          'taxCost',
+          'renewableCharge',
+          'solarCredit',
+          'therms',
+          'thermCost',
+          'usage',
+          'cost',
+        ];
+        for (const k of LEGACY_PASSTHROUGH) {
+          const v = row && row[k] != null ? String(row[k]).replace(/"/g, '&quot;') : '';
+          body += `<input type="hidden" id="bl-${k}" value="${v}">`;
+        }
+        document.getElementById('billModalBody').innerHTML = body;
         document.getElementById('billModal').classList.add('open');
       }
       function closeBillModal() {
@@ -31234,51 +31444,50 @@
         }
       }
       function saveBillRow() {
-        const start = document.getElementById('bl-start-d')?.value;
-        const end = document.getElementById('bl-end-d')?.value;
-        if (!start || !end) {
-          showToast('Start and end date required');
-          return;
-        }
         const b = getUDBldg(udSelProjId, udSelBldgId);
         const m = b?.meters?.find((m) => m.id === udSelMeterId);
         if (!m) return;
         m.bills = m.bills || [];
         const row = udBillEditId ? m.bills.find((r) => r.id === udBillEditId) : null;
         const g = (id) => document.getElementById(id)?.value || '';
-        let data = { start, end };
-        if (m.commodity === 'Electric')
-          data = {
-            ...data,
-            kwh: g('bl-kwh'),
-            demandKW: g('bl-demandKW'),
-            billedKW: g('bl-billedKW'),
-            facKW: g('bl-facKW'),
-            kwCost: g('bl-kwCost'),
-            facKWCost: g('bl-facKWCost'),
-            kwhCost: g('bl-kwhCost'),
-            otherCost: g('bl-otherCost'),
-            taxCost: g('bl-taxCost'),
-            totalCost: g('bl-totalCost'),
-            rateSchedule: g('bl-rateSchedule'),
-            onPeakKwh: g('bl-onPeakKwh'),
-            offPeakKwh: g('bl-offPeakKwh'),
-            onPeakCost: g('bl-onPeakCost'),
-            offPeakCost: g('bl-offPeakCost'),
-            customerCharge: g('bl-customerCharge'),
-            demandCharge: g('bl-demandCharge'),
-            facilitiesCharge: g('bl-facilitiesCharge'),
-            ecaCharge: g('bl-ecaCharge'),
-            eerCharge: g('bl-eerCharge'),
-            ptsCharge: g('bl-ptsCharge'),
-            tdcCharge: g('bl-tdcCharge'),
-            rkvaCharge: g('bl-rkvaCharge'),
-            renewableCharge: g('bl-renewableCharge'),
-            franchiseFee: g('bl-franchiseFee'),
-            solarCredit: g('bl-solarCredit'),
-          };
-        else if (m.commodity === 'Gas') data = { ...data, therms: g('bl-therms'), thermCost: g('bl-thermCost') };
-        else data = { ...data, usage: g('bl-usage'), cost: g('bl-cost') };
+        // Update 82: schema-driven writer. Iterates BILL_SCHEMA[commodity] and
+        // reads each field from `bl-<key>` input. Legacy aggregate fields
+        // (kwCost, facKWCost, kwhCost, otherCost, taxCost, renewableCharge,
+        // solarCredit, therms, thermCost, usage, cost) are round-tripped via
+        // hidden inputs populated by openBillModal so existing saved rows
+        // don't lose data.
+        const schema = _billSchemaFor(m.commodity);
+        const data = {};
+        for (const entry of schema) {
+          if (entry.section) continue;
+          const v = g('bl-' + entry.key);
+          if (v !== '') data[entry.key] = v;
+          else if (entry.key === 'start' || entry.key === 'end') data[entry.key] = '';
+        }
+        // Legacy passthroughs — preserve any values already on the row.
+        const LEGACY_PASSTHROUGH = [
+          'kwCost',
+          'facKWCost',
+          'kwhCost',
+          'otherCost',
+          'taxCost',
+          'renewableCharge',
+          'solarCredit',
+          'therms',
+          'thermCost',
+          'usage',
+          'cost',
+        ];
+        for (const k of LEGACY_PASSTHROUGH) {
+          const v = g('bl-' + k);
+          if (v !== '') data[k] = v;
+        }
+        const start = data.start;
+        const end = data.end;
+        if (!start || !end) {
+          showToast('Start and end date required');
+          return;
+        }
         if (row) {
           Object.assign(row, data);
           showToast('Record updated ✓');
