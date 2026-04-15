@@ -16014,13 +16014,16 @@
             /ACCOUNT\s*SUMMARY|Customer\s*Account\s*Information|Amount\s*Due\s*After|DETACH\s*AND\s*RETURN/i.test(t),
           extractAll: function (t) {
             const pages = _lbg_splitPages(t);
-            const bills = pages
-              .map((p, i) => {
-                const r = this.extract(p);
-                if (r) r._pageIndex = i + 1;
-                return r;
-              })
-              .filter((r) => r !== null);
+            // extract() now returns an array of per-commodity bills per page
+            // (Update 81). flatMap flattens, and _pageIndex stamps the same
+            // index on every commodity split from the same page.
+            const bills = pages.flatMap((p, i) => {
+              const r = this.extract(p);
+              if (!r) return [];
+              const arr = Array.isArray(r) ? r : [r];
+              for (const b of arr) b._pageIndex = i + 1;
+              return arr;
+            });
             // Backfill missing billing periods from neighbor bills sharing the
             // same BillDate — all bills printed on the same day cover the same
             // service period, so it's safe to copy across accounts.
@@ -16152,9 +16155,11 @@
               cleaned.match(/Amount\s*due\s*after[^$\n]*\$\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') ||
               null;
 
-            if (!TotalAmountDue && !gas.charge && !water.charge && !sewer.charge) return null;
+            if (!TotalAmountDue && !gas.charge && !water.charge && !sewer.charge && !storm.charge) return null;
 
-            return {
+            // Update 81: emit one bill per commodity that has a real charge.
+            // Same per-commodity splitting as _extractNew above.
+            const shared = {
               UtilityCompany: 'City of Louisburg',
               BillFormat: 'old',
               CustomerName,
@@ -16166,17 +16171,56 @@
               NumberOfDays: null,
               RateSchedule: null,
               MeterNumber: null,
-              NaturalGasCCF: gas.usage || null,
-              GasCharge: gas.charge,
-              StormWaterCharge: storm.charge,
-              SewerUsage: sewer.usage || null,
-              SewerCharge: sewer.charge,
-              WaterUsage: water.usage || null,
-              WaterCharge: water.charge,
-              WaterProtectionFee: wpf.charge,
-              TotalCurrentCharges: TotalAmountDue,
-              TotalAmountDue,
             };
+            const bills = [];
+            if (gas.charge != null && gas.charge !== 0) {
+              const gasTotal = gas.charge.toFixed(2);
+              bills.push({
+                ...shared,
+                Commodity: 'Gas',
+                NaturalGasCCF: gas.usage || null,
+                GasCharge: gas.charge,
+                TotalCurrentCharges: gasTotal,
+                TotalAmountDue: gasTotal,
+              });
+            }
+            if (water.charge != null && water.charge !== 0) {
+              const waterTotal = (water.charge + (wpf.charge || 0)).toFixed(2);
+              bills.push({
+                ...shared,
+                Commodity: 'Water',
+                WaterUsage: water.usage || null,
+                WaterCharge: water.charge,
+                WaterProtectionFee: wpf.charge,
+                TotalCurrentCharges: waterTotal,
+                TotalAmountDue: waterTotal,
+              });
+            }
+            if (sewer.charge != null && sewer.charge !== 0) {
+              const sewerTotal = sewer.charge.toFixed(2);
+              bills.push({
+                ...shared,
+                Commodity: 'Sewer',
+                SewerUsage: sewer.usage || null,
+                SewerCharge: sewer.charge,
+                TotalCurrentCharges: sewerTotal,
+                TotalAmountDue: sewerTotal,
+              });
+            }
+            if (storm.charge != null && storm.charge !== 0) {
+              const stormTotal = storm.charge.toFixed(2);
+              bills.push({
+                ...shared,
+                Commodity: 'Stormwater',
+                StormWaterCharge: storm.charge,
+                TotalCurrentCharges: stormTotal,
+                TotalAmountDue: stormTotal,
+              });
+            }
+            if (bills.length === 0 && TotalAmountDue) {
+              bills.push({ ...shared, Commodity: 'Other', TotalCurrentCharges: TotalAmountDue, TotalAmountDue });
+            }
+            return bills;
           },
           _extractNew: function (page) {
             // New account number shape: "NN-NNNNNN-NN". Tolerate OCR "(" or
@@ -16239,24 +16283,54 @@
               const after = raw.slice(m.index + m[0].length);
               const afterToks = [...after.matchAll(/-?[\d,]+(?:\.\d+|-\d{2})?/g)].map((x) => x[0]);
               const charge = _lbg_cleanCents(afterToks[0] || null);
-              // Filter out decimal-only tokens — they're bar-chart axis labels
-              // from the graph in the margin ("99.976"). Real meter reads are
-              // integers.
+              // Parse all numeric tokens in the before segment. Integers >=100
+              // are meter reads; decimals >=100 are explicit usage columns (gas
+              // CCF prints as "9,648.18"). Small decimals are bar-chart axis
+              // labels and ignored.
               const allBefore = [...before.matchAll(/-?[\d,]+(?:\.\d+)?/g)].map((x) =>
                 parseFloat(x[0].replace(/,/g, '')),
               );
               const integerTokens = allBefore.filter((n) => Number.isInteger(n) && n >= 100);
-              const reads = (integerTokens.length >= 2 ? integerTokens : allBefore).slice(-3);
               let usage = 0;
-              if (reads.length >= 3) {
-                const prev = reads[0],
-                  curr = reads[1],
-                  u = reads[2];
-                if (prev === curr) usage = 0;
-                else if (u > 0 && u < prev) usage = u;
-                else usage = Math.abs(curr - prev);
-              } else if (reads.length === 2 && reads[0] !== reads[1]) {
-                usage = Math.abs(reads[1] - reads[0]);
+              // Case A: 3+ integer tokens with the last one equal to the diff
+              // of the two preceding — the line printed "prev curr usage" and
+              // the third int IS the explicit usage column. Water bills look
+              // like "4,409,255 4,482,828 73,573 WATER $677.95" where
+              // 73573 = 4482828 - 4409255.
+              if (integerTokens.length >= 3) {
+                const a = integerTokens[integerTokens.length - 3];
+                const b = integerTokens[integerTokens.length - 2];
+                const c = integerTokens[integerTokens.length - 1];
+                const diffAB = Math.abs(b - a);
+                if (diffAB > 0 && Math.abs(c - diffAB) <= Math.max(2, diffAB * 0.05)) {
+                  usage = c;
+                }
+              }
+              // Case B: 2 integer reads + a decimal usage column AFTER the
+              // second int. Gas CCF prints as "30,751 39,931 9,648.18 GAS"
+              // where 9648.18 is the pressure-factor-adjusted usage (not the
+              // raw subtraction 9180). Prefer the printed decimal when it's
+              // within 30% of the subtraction.
+              if (usage === 0 && integerTokens.length >= 2) {
+                const prev = integerTokens[integerTokens.length - 2];
+                const curr = integerTokens[integerTokens.length - 1];
+                const computed = prev === curr ? 0 : Math.abs(curr - prev);
+                const currIdx = allBefore.lastIndexOf(curr);
+                const trailing = allBefore.slice(currIdx + 1);
+                const decimalUsage = trailing.find(
+                  (n) => !Number.isInteger(n) && n >= 100 && (!computed || Math.abs(n - computed) < computed * 0.3),
+                );
+                if (decimalUsage != null) usage = decimalUsage;
+                else usage = computed;
+              }
+              // Case C: degraded OCR — fall back to last 3 numbers of any type.
+              if (usage === 0 && integerTokens.length < 2 && allBefore.length >= 2) {
+                const reads = allBefore.slice(-3);
+                if (reads.length >= 3) {
+                  usage = reads[2] > 0 && reads[2] < reads[0] ? reads[2] : Math.abs(reads[1] - reads[0]);
+                } else if (reads.length === 2) {
+                  usage = Math.abs(reads[1] - reads[0]);
+                }
               }
               return { usage, charge };
             };
@@ -16267,6 +16341,18 @@
               sewer = null,
               wpf = null;
             for (const ln of lines) {
+              // Skip section-header lines like "100- Water" and "300 - Gas":
+              // those are column titles at the top of the bill layout and
+              // contain no meter reads. When OCR collapses columns, the
+              // "Previous Balance $5,145.91" text ends up on the same visual
+              // line and the charge regex grabs it — producing a WaterCharge
+              // that's actually the previous balance. Reject the section
+              // headers outright.
+              if (/^\s*\d{3}\s*-\s*(water|gas|sewer|storm)/i.test(ln)) continue;
+              // Also reject any line that contains "Previous Balance" — even
+              // if a commodity label is on it, the after-text charge will be
+              // the previous-balance dollar amount, not the current charge.
+              if (/Previous\s*Balance/i.test(ln)) continue;
               if (!gas && /\bGAS\b/i.test(ln) && !/FUEL|ADJUSTMENT/i.test(ln)) gas = parseMetered(ln, /\bGAS\b/i);
               if (!water && /\bWATER\b/i.test(ln) && !/PROTECTION/i.test(ln)) water = parseMetered(ln, /\bWATER\b/i);
               if (!wpf && /WATER\s*PROTECTION/i.test(ln)) wpf = parseMetered(ln, /WATER\s*PROTECTION/i);
@@ -16279,6 +16365,21 @@
             storm = storm || { usage: null, charge: null };
             wpf = wpf || { usage: null, charge: null };
 
+            // Fuel Adjustment — line item on gas bills. Typically negative
+            // ("-$385.93") when fuel costs dropped since the prior month.
+            // Regex uses `[^\d-]*` between the label and the number so the
+            // literal minus sign is captured into the signed group.
+            const fuelAdjMatch = page.match(/FUEL\s*ADJUSTMENT[^\d-]*(-?\$?-?[\d,]+\.\d{2})/i);
+            let signedFuelAdj = null;
+            if (fuelAdjMatch) {
+              signedFuelAdj = parseFloat(fuelAdjMatch[1].replace(/[\$,]/g, ''));
+              // Some bills print the negative as parens: "($385.93)". Detect
+              // and flip the sign in that case.
+              if (signedFuelAdj > 0 && /FUEL\s*ADJUSTMENT[^\n]*\(\s*\$?[\d,]+\.\d{2}\s*\)/i.test(page)) {
+                signedFuelAdj = -signedFuelAdj;
+              }
+            }
+
             // Total Amount Due — try the clean pattern first, then a loose
             // variant that tolerates colon-for-dot OCR ("4,014:28" → 4014.28).
             let TotalAmountDue =
@@ -16288,9 +16389,13 @@
               if (loose) TotalAmountDue = loose[1].replace(/,/g, '').replace(':', '.');
             }
 
-            if (!TotalAmountDue && !gas.charge && !water.charge) return null;
+            if (!TotalAmountDue && !gas.charge && !water.charge && !sewer.charge && !storm.charge) return null;
 
-            return {
+            // ── Emit one bill per commodity with a real charge ──
+            // Each split bill carries ONLY that commodity's fields plus shared
+            // account info. No cross-commodity field pollution. The data table
+            // downstream can keep gas/water/sewer meters clean.
+            const shared = {
               UtilityCompany: 'City of Louisburg',
               BillFormat: 'new',
               CustomerName,
@@ -16302,17 +16407,66 @@
               NumberOfDays: null,
               RateSchedule: null,
               MeterNumber: null,
-              NaturalGasCCF: gas.usage || null,
-              GasCharge: gas.charge,
-              StormWaterCharge: storm.charge,
-              SewerUsage: sewer.usage || null,
-              SewerCharge: sewer.charge,
-              WaterUsage: water.usage || null,
-              WaterCharge: water.charge,
-              WaterProtectionFee: wpf.charge,
-              TotalCurrentCharges: TotalAmountDue,
-              TotalAmountDue,
             };
+            const bills = [];
+            if (gas.charge != null && gas.charge !== 0) {
+              const gasTotal = (gas.charge + (signedFuelAdj || 0)).toFixed(2);
+              bills.push({
+                ...shared,
+                Commodity: 'Gas',
+                NaturalGasCCF: gas.usage || null,
+                GasCharge: gas.charge,
+                FuelAdjustment: signedFuelAdj,
+                TotalCurrentCharges: gasTotal,
+                TotalAmountDue: gasTotal,
+              });
+            }
+            if (water.charge != null && water.charge !== 0) {
+              const waterTotal = (water.charge + (wpf.charge || 0)).toFixed(2);
+              bills.push({
+                ...shared,
+                Commodity: 'Water',
+                WaterUsage: water.usage || null,
+                WaterCharge: water.charge,
+                WaterProtectionFee: wpf.charge,
+                TotalCurrentCharges: waterTotal,
+                TotalAmountDue: waterTotal,
+              });
+            }
+            if (sewer.charge != null && sewer.charge !== 0) {
+              const sewerTotal = sewer.charge.toFixed(2);
+              bills.push({
+                ...shared,
+                Commodity: 'Sewer',
+                SewerUsage: sewer.usage || null,
+                SewerCharge: sewer.charge,
+                TotalCurrentCharges: sewerTotal,
+                TotalAmountDue: sewerTotal,
+              });
+            }
+            if (storm.charge != null && storm.charge !== 0) {
+              const stormTotal = storm.charge.toFixed(2);
+              bills.push({
+                ...shared,
+                Commodity: 'Stormwater',
+                StormWaterCharge: storm.charge,
+                TotalCurrentCharges: stormTotal,
+                TotalAmountDue: stormTotal,
+              });
+            }
+            // If nothing parsed cleanly but the bill has a Total Amount Due,
+            // emit a single "Other" bill so the user sees SOMETHING rather than
+            // losing the row entirely. Rare — usually only hit on heavily
+            // degraded OCR.
+            if (bills.length === 0 && TotalAmountDue) {
+              bills.push({
+                ...shared,
+                Commodity: 'Other',
+                TotalCurrentCharges: TotalAmountDue,
+                TotalAmountDue,
+              });
+            }
+            return bills;
           },
         },
         {
@@ -16394,17 +16548,27 @@
               Tax = (_net - _sub).toFixed(2);
             }
 
+            // Update 81: propane deliveries are single-date events, not
+            // billing periods. Emit DeliveryDate instead of BillingPeriodStart/End.
+            // Normalize to 4-digit year so "04/29/25" and "01/16/2025" match.
+            const _normDate = (d) => {
+              if (!d) return null;
+              const mm = d.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+              if (!mm) return d;
+              let y = mm[3];
+              if (y.length === 2) y = (parseInt(y) > 50 ? '19' : '20') + y;
+              return mm[1].padStart(2, '0') + '/' + mm[2].padStart(2, '0') + '/' + y;
+            };
+            const DeliveryDate = _normDate(BillDate);
             return {
+              Commodity: 'Propane',
               UtilityCompany,
               CustomerName,
               AccountNumber,
               InvoiceNumber,
               SaleNumber,
               ServiceAddress,
-              BillDate,
-              BillingPeriodStart: BillDate,
-              BillingPeriodEnd: BillDate,
-              NumberOfDays: null,
+              DeliveryDate,
               RateSchedule: null,
               MeterNumber: null,
               FuelType: page.match(/(PROPANE|FUEL\s*OIL|HEATING\s*OIL|DIESEL|KEROSENE)/i)?.[1] || 'Propane',
@@ -19970,6 +20134,11 @@
             const m = String(str).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
             return m ? new Date(+m[3], +m[1] - 1, +m[2]) : null;
           };
+          // Single-date delivery events (propane) use DeliveryDate directly.
+          if (bill.DeliveryDate) {
+            const d = parse(bill.DeliveryDate);
+            return d ? d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '';
+          }
           const s = parse(bill.BillingPeriodStart);
           const e = parse(bill.BillingPeriodEnd);
           if (!s || !e || s > e) return '';
@@ -19988,17 +20157,28 @@
           });
         };
         // Build period labels with sort indices for descending order.
-        // Pill label is MM/DD/YY-MM/DD/YY (short year, hyphen); month column shows "Mon YYYY".
+        // Pill label is MM/DD/YY-MM/DD/YY for billing periods, MM/DD/YY for
+        // single-date delivery events (propane). Month column shows "Mon YYYY".
         const periods = bills.map((bill, i) => {
-          const lbl =
-            bill.BillingPeriodStart && bill.BillingPeriodEnd
-              ? _shortDt(bill.BillingPeriodStart) + '-' + _shortDt(bill.BillingPeriodEnd)
-              : 'Period ' + (i + 1);
+          let lbl;
+          let sortSource;
+          if (bill.DeliveryDate) {
+            lbl = _shortDt(bill.DeliveryDate);
+            sortSource = bill.DeliveryDate;
+          } else if (bill.BillingPeriodStart && bill.BillingPeriodEnd) {
+            lbl = _shortDt(bill.BillingPeriodStart) + '-' + _shortDt(bill.BillingPeriodEnd);
+            sortSource = bill.BillingPeriodEnd;
+          } else {
+            lbl = 'Period ' + (i + 1);
+            sortSource = bill.BillingPeriodStart || bill.BillDate || 0;
+          }
+          // Append a commodity suffix when multiple splits share the same date
+          // (Louisburg combined bills → "2/20/26 · Water", "2/20/26 · Gas", etc.)
+          if (bill.Commodity && bill.Commodity !== 'Propane') {
+            lbl = lbl + ' · ' + bill.Commodity;
+          }
           const monthLbl = _monthLabel(bill);
-          // Parse a sortable date from BillingPeriodEnd (or Start)
-          const sortDate = bill.BillingPeriodEnd
-            ? new Date(bill.BillingPeriodEnd)
-            : new Date(bill.BillingPeriodStart || 0);
+          const sortDate = new Date(sortSource);
           return { i, lbl, monthLbl, sortDate };
         });
         // Sort descending by date (newest first)
@@ -20471,6 +20651,7 @@
           _dupDiffMap[d.key] = d;
         });
         const LABELS = {
+          Commodity: 'Commodity',
           UtilityCompany: 'Utility Company',
           CustomerName: 'Customer Name',
           AccountNumber: 'Account Number',
@@ -20478,6 +20659,8 @@
           RateSchedule: 'Rate Schedule',
           BillingPeriodStart: 'Billing Period Start',
           BillingPeriodEnd: 'Billing Period End',
+          BillDate: 'Bill Date',
+          DeliveryDate: 'Delivery Date',
           NumberOfDays: 'Number of Days',
           MeterReadStart: 'Meter Read Start',
           MeterReadEnd: 'Meter Read End',
@@ -20507,8 +20690,24 @@
           FranchiseFee: 'Franchise Fee',
           TotalCurrentCharges: 'Total Current Charges',
           NaturalGasTherms: 'Natural Gas Therms',
+          NaturalGasCCF: 'Natural Gas (CCF)',
+          GasCharge: 'Gas Charge',
+          FuelAdjustment: 'Fuel Adjustment',
+          WaterUsage: 'Water Usage',
+          WaterCharge: 'Water Charge',
+          WaterProtectionFee: 'Water Protection Fee',
+          SewerUsage: 'Sewer Usage',
+          SewerCharge: 'Sewer Charge',
+          StormWaterCharge: 'Stormwater Charge',
           TotalAmountDue: 'Total Amount Due',
           PeakDemandKW: 'Peak Demand kW',
+          InvoiceNumber: 'Invoice Number',
+          SaleNumber: 'Sale Number',
+          FuelType: 'Fuel Type',
+          GallonsDelivered: 'Gallons Delivered',
+          UnitPrice: 'Unit Price',
+          Subtotal: 'Subtotal',
+          Tax: 'Tax',
         };
         // Fields that represent dollar charges — prefix with $ in display
         const CHARGE_FIELDS = new Set([
@@ -20530,8 +20729,12 @@
           'GasCharge',
           'WaterCharge',
           'SewerCharge',
-          'StormwaterCharge',
+          'StormWaterCharge',
+          'WaterProtectionFee',
           'FuelAdjustment',
+          'Subtotal',
+          'Tax',
+          'UnitPrice',
         ]);
         // Fields that MUST display with 4 decimal places (kW, kWh, meter reads per Evergy Billing Details rules)
         const FOURDP_FIELDS = new Set([
@@ -20547,19 +20750,26 @@
           'kWhConsumed',
         ]);
         // Fields that should NOT be number-formatted (show raw value from PDF)
-        const ID_FIELDS = new Set(['AccountNumber', 'MeterNumber']);
-        // ── Field layout matching Evergy Billing Details order ──
-        // type: 'wide' = full width, 'pair' = two fields side-by-side,
-        //       'charge' = charge row with running total, 'charge-pair' = kW + charge with running total
-        // chargeKey identifies which field in the row is the dollar charge for running total
-        const FIELD_LAYOUT = [
-          // Account info
+        const ID_FIELDS = new Set([
+          'AccountNumber',
+          'MeterNumber',
+          'InvoiceNumber',
+          'SaleNumber',
+          'Commodity',
+          'FuelType',
+        ]);
+        // ── Field layouts per commodity (Update 81) ──
+        // Pick the layout based on the bill's Commodity / FuelType / UtilityCompany
+        // so non-electric bills don't show empty Evergy charge rows.
+        //   type: 'wide' = full width, 'pair' = two fields side-by-side,
+        //         'charge-line' = qty | rate | charge | running total,
+        //         'total' = total row with running check
+        const _LAYOUT_ELECTRIC = [
           { section: 'Account Info' },
           { type: 'wide', fields: ['UtilityCompany'] },
           { type: 'wide', fields: ['CustomerName'] },
           { type: 'wide', fields: ['ServiceAddress'] },
           { type: 'pair', fields: ['AccountNumber', 'MeterNumber'] },
-          // Billing period & meter
           { section: 'Billing Period & Meter' },
           { type: 'pair', fields: ['RateSchedule', 'NumberOfDays'] },
           { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
@@ -20567,12 +20777,6 @@
           { type: 'pair', fields: ['StartRead', 'EndRead'] },
           { type: 'pair', fields: ['ReadDifference', 'MeterMultiplier'] },
           { type: 'pair', fields: ['kWhConsumed', 'ActualRKVA'] },
-          // Charges — ordered per Evergy Billing Details
-          // type 'charge-line': shows qty | rate | charge | running total (uniform layout)
-          // label: base name for consistent labeling (e.g. "Facilities kW" → "Facilities kW", "Facilities kW Rate", "Facilities kW Charge")
-          // qtyField: extracted field key for the qty (editable); if null, qty comes from _rates
-          // chargeField: extracted field key for the charge (editable)
-          // rateKey: key in _rates for rate info; null = no rate data (charge-only row)
           { section: 'Charges' },
           {
             type: 'charge-line-with-kw',
@@ -20616,10 +20820,105 @@
           { type: 'charge-line', label: 'Bill Offset', chargeField: 'BillOffset', rateKey: null },
           { type: 'charge-line', label: 'Franchise Fee', chargeField: 'FranchiseFee', rateKey: null },
           { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
-          // Extra fields (gas, etc.)
-          { type: 'pair', fields: ['NaturalGasTherms', 'TotalAmountDue'] },
-          { type: 'pair', fields: ['PeakDemandKW'] },
         ];
+        const _LAYOUT_GAS = [
+          { section: 'Account Info' },
+          { type: 'wide', fields: ['UtilityCompany'] },
+          { type: 'wide', fields: ['CustomerName'] },
+          { type: 'wide', fields: ['ServiceAddress'] },
+          { type: 'pair', fields: ['AccountNumber', 'Commodity'] },
+          { section: 'Billing Period' },
+          { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
+          { type: 'pair', fields: ['BillDate'] },
+          { section: 'Charges' },
+          { type: 'pair', fields: ['NaturalGasCCF'] },
+          { type: 'charge-line', label: 'Gas', chargeField: 'GasCharge', rateKey: null },
+          { type: 'charge-line', label: 'Fuel Adjustment', chargeField: 'FuelAdjustment', rateKey: null },
+          { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
+        ];
+        const _LAYOUT_WATER = [
+          { section: 'Account Info' },
+          { type: 'wide', fields: ['UtilityCompany'] },
+          { type: 'wide', fields: ['CustomerName'] },
+          { type: 'wide', fields: ['ServiceAddress'] },
+          { type: 'pair', fields: ['AccountNumber', 'Commodity'] },
+          { section: 'Billing Period' },
+          { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
+          { type: 'pair', fields: ['BillDate'] },
+          { section: 'Charges' },
+          { type: 'pair', fields: ['WaterUsage'] },
+          { type: 'charge-line', label: 'Water', chargeField: 'WaterCharge', rateKey: null },
+          { type: 'charge-line', label: 'Water Protection Fee', chargeField: 'WaterProtectionFee', rateKey: null },
+          { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
+        ];
+        const _LAYOUT_SEWER = [
+          { section: 'Account Info' },
+          { type: 'wide', fields: ['UtilityCompany'] },
+          { type: 'wide', fields: ['CustomerName'] },
+          { type: 'wide', fields: ['ServiceAddress'] },
+          { type: 'pair', fields: ['AccountNumber', 'Commodity'] },
+          { section: 'Billing Period' },
+          { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
+          { type: 'pair', fields: ['BillDate'] },
+          { section: 'Charges' },
+          { type: 'pair', fields: ['SewerUsage'] },
+          { type: 'charge-line', label: 'Sewer', chargeField: 'SewerCharge', rateKey: null },
+          { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
+        ];
+        const _LAYOUT_STORMWATER = [
+          { section: 'Account Info' },
+          { type: 'wide', fields: ['UtilityCompany'] },
+          { type: 'wide', fields: ['CustomerName'] },
+          { type: 'wide', fields: ['ServiceAddress'] },
+          { type: 'pair', fields: ['AccountNumber', 'Commodity'] },
+          { section: 'Billing Period' },
+          { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
+          { type: 'pair', fields: ['BillDate'] },
+          { section: 'Charges' },
+          { type: 'charge-line', label: 'Stormwater', chargeField: 'StormWaterCharge', rateKey: null },
+          { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
+        ];
+        const _LAYOUT_PROPANE = [
+          { section: 'Account Info' },
+          { type: 'wide', fields: ['UtilityCompany'] },
+          { type: 'wide', fields: ['CustomerName'] },
+          { type: 'wide', fields: ['ServiceAddress'] },
+          { type: 'pair', fields: ['AccountNumber', 'Commodity'] },
+          { type: 'pair', fields: ['InvoiceNumber', 'SaleNumber'] },
+          { section: 'Delivery' },
+          { type: 'pair', fields: ['DeliveryDate', 'FuelType'] },
+          { type: 'pair', fields: ['GallonsDelivered', 'UnitPrice'] },
+          { section: 'Charges' },
+          { type: 'charge-line', label: 'Subtotal', chargeField: 'Subtotal', rateKey: null },
+          { type: 'charge-line', label: 'Tax', chargeField: 'Tax', rateKey: null },
+          { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
+        ];
+        // Detect the commodity for this bill and pick a layout. Priority:
+        // 1. explicit Commodity field (Louisburg split + propane)
+        // 2. FuelType field (propane fallback when Commodity missing)
+        // 3. UtilityCompany name hints (generic gas / spire)
+        // 4. Evergy / electric default
+        const _detectCommodity = (b) => {
+          const c = (b.Commodity || '').toLowerCase();
+          if (c === 'gas') return 'gas';
+          if (c === 'water') return 'water';
+          if (c === 'sewer') return 'sewer';
+          if (c === 'stormwater') return 'stormwater';
+          if (c === 'propane' || b.FuelType) return 'propane';
+          const uc = (b.UtilityCompany || '').toLowerCase();
+          if (/spire|laclede|kansas\s*gas|atmos|black\s*hills/.test(uc)) return 'gas';
+          if (/propane|mfa\s*oil|fuel\s*oil/.test(uc)) return 'propane';
+          return 'electric';
+        };
+        const _COMMODITY_LAYOUTS = {
+          electric: _LAYOUT_ELECTRIC,
+          gas: _LAYOUT_GAS,
+          water: _LAYOUT_WATER,
+          sewer: _LAYOUT_SEWER,
+          stormwater: _LAYOUT_STORMWATER,
+          propane: _LAYOUT_PROPANE,
+        };
+        const FIELD_LAYOUT = _COMMODITY_LAYOUTS[_detectCommodity(parsed)] || _LAYOUT_ELECTRIC;
         const elHdr = document.getElementById('extractedFieldsHdr');
         const el = document.getElementById('extractedFieldsGrid');
         if (!elHdr || !el) return;
