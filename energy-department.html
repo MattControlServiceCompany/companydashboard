@@ -13923,11 +13923,18 @@
               if (!isNaN(qty) && !isNaN(adjRate) && adjRate >= 0 && adjRate < maxRate && qty > 0 && qty < maxQty) {
                 // Detect proration: "(for N of Y days)" applies a fraction to the computed charge.
                 // Example: 304.2 kW × $11.683 × (29/31) = $3,324.68. Parens may be garbled by OCR.
+                // STRICTLY kW-only — same rationale as the date-range proration gate below.
+                // On Evergy LGS tiered-kWh bills (ECA, EER, PTS, EnergyOn/OffPeak), each part's
+                // qty is ALREADY the segment's kWh used, NOT the whole-period kWh. Applying an
+                // N/Y day ratio to a segment whose qty was already proportional to the segment's
+                // days double-deflates computed (9530.679 × 0.01668 × (2/32) = 9.94 instead of
+                // the correct 158.97 for Bill 1 ECA part 0). The Update 77 hotfix gated the
+                // date-range branch but missed this "for N of Y days" branch — same fix applies.
                 let prorationRatio = 1;
                 let prorationNum = null;
                 let prorationDen = null;
                 const prM = block.match(/for\s+(\d{1,3})\s+of\s+(\d{1,3})\s+d/i);
-                if (prM) {
+                if (prM && !isKwh) {
                   const n = parseInt(prM[1], 10);
                   const y = parseInt(prM[2], 10);
                   if (n > 0 && y > 0 && n <= y && y <= 366) {
@@ -14975,19 +14982,49 @@
             // tiered rates have DIFFERENT qty per part (kWh consumed in each tier) and must
             // NOT be touched by recovery — their xChg sum is already correct.
             else if (parts.length > 1 && computedTotal > 0 && chargeVal > 0) {
-              const firstQty = parts[0].qty;
-              const allSameQty = parts.every((p) => Math.abs(p.qty - firstQty) < 0.01);
-              if (allSameQty) {
-                const diff = Math.abs(chargeVal - computedTotal);
-                const rel = diff / computedTotal;
-                if (diff > 0.5 && rel > 0.1) {
-                  result[chargeField] = computedTotal.toFixed(2);
-                  result['_multi_part_recovered_' + chargeField] = {
-                    original: chargeVal.toFixed(2),
-                    corrected: computedTotal.toFixed(2),
-                    partsCount: parts.length,
-                  };
+              // ── OCR GROUND-TRUTH DEFENSE ──
+              // If the sum of the per-part OCR'd charges reconciles with the top-level OCR
+              // charge within $0.02, the bill's own arithmetic is self-consistent — trust it
+              // and do NOT substitute computedTotal, which can be wrong (proration bugs, rate
+              // misreads, tier-boundary misattribution). computed is math; ocrCharge is ink.
+              // Bill 1 ECA on LHS.pdf: ocrCharges 158.97 + 2027.18 = 2186.15 exactly matches
+              // result.ECACharge=2186.15; computedTotal came back as 1910.42 due to proration
+              // bugs. Without this gate, recovery clobbered the correct OCR value with wrong math.
+              const ocrReconciles = Math.abs(ocrTotal - chargeVal) <= 0.02;
+              if (!ocrReconciles) {
+                const firstQty = parts[0].qty;
+                const allSameQty = parts.every((p) => Math.abs(p.qty - firstQty) < 0.01);
+                if (allSameQty) {
+                  const diff = Math.abs(chargeVal - computedTotal);
+                  const rel = diff / computedTotal;
+                  if (diff > 0.5 && rel > 0.1) {
+                    result[chargeField] = computedTotal.toFixed(2);
+                    result['_multi_part_recovered_' + chargeField] = {
+                      original: chargeVal.toFixed(2),
+                      corrected: computedTotal.toFixed(2),
+                      partsCount: parts.length,
+                    };
+                  }
                 }
+              }
+            }
+
+            // ── POPULATE TOP-LEVEL kWh QTY FIELDS FOR SAVE PATH ──
+            // The save paths (_saveSinglePDFBill, _applyDupUpdate, _saveBillToMatchedMeter)
+            // read result.OnPeakKWh / result.OffPeakKWh when building the Utility Data row.
+            // Without this, onPeakKwh / offPeakKwh stay null in the saved row even though
+            // onPeakCost / offPeakCost populate from the charge dollars. The kWh qty lives
+            // in _rates.EnergyOn(Off)PeakCharge.qty — mirror it to the top-level result.
+            const KWH_QTY_MAP = {
+              EnergyOnPeakCharge: 'OnPeakKWh',
+              EnergyOffPeakCharge: 'OffPeakKWh',
+            };
+            const kwhField = KWH_QTY_MAP[chargeField];
+            if (kwhField && ri.qty > 0 && ri.unit && ri.unit.toLowerCase().includes('h')) {
+              const existing = _pf(result[kwhField]);
+              if (existing <= 0) {
+                result[kwhField] = ri.qty.toFixed(4);
+                result['_rate_filled_' + kwhField] = true;
               }
             }
           }
@@ -25298,8 +25335,7 @@
           return row;
         });
 
-        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        const baseName = 'utility-data-export-' + ts;
+        const baseName = _getExportFilename(selectedBills);
 
         if (wantJson) {
           const payload = {
@@ -25348,6 +25384,66 @@
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
         }, 100);
+      }
+
+      /* Derive a human-friendly base filename from the current selection.
+       * Degrades by scope level: single meter → Project_Building_Commodity_<Mtr|Acct>id_date,
+       * single building → Project_Building_date, single project → Project_date,
+       * multi-project → utility-data-export_date. Prefers meter number over account. */
+      function _getExportFilename(selectedBills) {
+        const projIds = new Set();
+        const bldgIds = new Set();
+        const meterIds = new Set();
+        let first = null;
+        selectedBills.forEach(function (e) {
+          projIds.add(e.projectId);
+          bldgIds.add(e.buildingId);
+          meterIds.add(e.meterId);
+          if (!first) first = e;
+        });
+        const sanitize = function (s) {
+          return String(s || '')
+            .replace(/[^\w\-]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 60);
+        };
+        const today = new Date();
+        const dateStr =
+          today.getFullYear() +
+          '-' +
+          String(today.getMonth() + 1).padStart(2, '0') +
+          '-' +
+          String(today.getDate()).padStart(2, '0');
+        if (!first) return 'utility-data-export_' + dateStr;
+
+        if (meterIds.size === 1) {
+          const parts = [];
+          if (first.projectName) parts.push(sanitize(first.projectName));
+          if (first.buildingName) parts.push(sanitize(first.buildingName));
+          if (first.meterCommodity) parts.push(sanitize(first.meterCommodity));
+          // Prefer meter number over account number
+          if (first.meterNumber) {
+            parts.push('Mtr' + sanitize(first.meterNumber));
+          } else if (first.meterAccount) {
+            parts.push('Acct' + sanitize(first.meterAccount));
+          }
+          parts.push(dateStr);
+          return parts.join('_');
+        }
+        if (bldgIds.size === 1) {
+          const parts = [];
+          if (first.projectName) parts.push(sanitize(first.projectName));
+          if (first.buildingName) parts.push(sanitize(first.buildingName));
+          parts.push(dateStr);
+          return parts.join('_');
+        }
+        if (projIds.size === 1) {
+          const parts = [];
+          if (first.projectName) parts.push(sanitize(first.projectName));
+          parts.push(dateStr);
+          return parts.join('_');
+        }
+        return 'utility-data-export_' + dateStr;
       }
 
       function setProjectNormBasis(pid, basis) {
