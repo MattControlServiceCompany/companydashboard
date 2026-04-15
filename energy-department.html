@@ -15465,22 +15465,32 @@
               if (bdIdx === null) bdIdx = Math.max(...idxs);
               _pfBdPages.push(_pfPageForIdx(bdIdx));
             }
-            // Apply bd-header formula (same as Update 75's bd-header fallback):
-            //   _pageStart[i] = max(1, bdPage[i] - 1)       // cover is 1 page before
-            //   _pageEnd[i]   = max(_pageStart[i], bdPage[i+1] - 2)  // one before next cover
-            //   _pageEnd[last] = _maxPage
-            // Build each section as the concatenation of pages [_pageStart.._pageEnd].
+            // Partition pages across bills so each bill ALWAYS owns its own
+            // billing-details page, plus a cover page when there is room before
+            // the previous bill's bd. The previous Update 80b formula used
+            // `pageEnd = max(pageStart, nextBdPage - 2)` which excluded the
+            // bill's OWN bdPage when adjacent bills had bdPages only 1 apart
+            // (e.g. Bill 32 bd=61, Bill 33 bd=62: pageEnd = max(60, 60) = 60,
+            // so Bill 32 lost page 61 and Bill 33 stole it). Corrected rule:
+            //   pageStart[0]   = 1                            // first bill gets preamble
+            //   pageStart[i]   = bdPage[i] - 1                // cover, if bdPage[i] - 1 > bdPage[i-1]
+            //                  = bdPage[i]                    // else no cover room (adjacent bills)
+            //   pageEnd[i]     = bdPage[i]                    // always own bdPage (non-last)
+            //   pageEnd[last]  = maxPage                      // last bill extends to EOF
+            // Net effect: each bill owns exactly its own bdPage plus (when
+            // available) a cover page immediately before it. No bill ever
+            // reaches into a neighbor's bdPage.
             if (_pageFirstOk) {
               for (let i = 0; i < uniqueBills.length; i++) {
                 const bdPage = _pfBdPages[i];
-                const pageStart = Math.max(1, bdPage - 1);
-                let pageEnd;
-                if (i + 1 < uniqueBills.length) {
-                  const nextBdPage = _pfBdPages[i + 1];
-                  pageEnd = Math.max(pageStart, nextBdPage - 2);
+                const prevBd = i > 0 ? _pfBdPages[i - 1] : 0;
+                let pageStart;
+                if (i === 0) {
+                  pageStart = 1;
                 } else {
-                  pageEnd = _pfMaxPage;
+                  pageStart = bdPage - 1 > prevBd ? bdPage - 1 : bdPage;
                 }
+                const pageEnd = i + 1 < uniqueBills.length ? bdPage : _pfMaxPage;
                 // Guard against corrupt ranges.
                 if (pageEnd < pageStart || pageStart < 1 || pageEnd > _pfMaxPage) {
                   _pageFirstOk = false;
