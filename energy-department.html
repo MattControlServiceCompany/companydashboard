@@ -25041,14 +25041,16 @@
             meters.forEach(function (m) {
               const billCount = (m.bills || []).length;
               const meterChecked = preMeterId
-                ? m.id === preMeterId
+                ? String(m.id) === String(preMeterId)
                   ? 'checked'
                   : ''
-                : preBldgId && b.id === preBldgId
+                : preBldgId && String(b.id) === String(preBldgId)
                   ? 'checked'
                   : bldgChecked
                     ? 'checked'
                     : '';
+              const commodityIcon =
+                m.commodity === 'Gas' ? '🔥' : m.commodity === 'Water' ? '💧' : m.commodity === 'Steam' ? '♨️' : '⚡';
               html +=
                 '<label class="exp-meter" data-pid="' +
                 p.id +
@@ -25066,8 +25068,9 @@
                 '" ' +
                 meterChecked +
                 ' onchange="_exportScopeToggleMeter()"> ' +
-                '⚡ ' +
-                (m.name || 'Meter ' + m.id) +
+                commodityIcon +
+                ' ' +
+                meterLabel(m) +
                 ' <span style="color:var(--text3);font-size:11px">(' +
                 billCount +
                 ' bill' +
@@ -25148,7 +25151,7 @@
               projectId: p.id,
               buildingName: b.name || '',
               buildingId: b.id,
-              meterName: m.name || '',
+              meterName: meterLabel(m),
               meterId: m.id,
               meterAccount: m.account || '',
               meterNumber: m.meter || '',
