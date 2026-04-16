@@ -3788,6 +3788,10 @@
         overflow: hidden;
         text-overflow: ellipsis;
         font-family: var(--mono);
+        /* Update 96: `--mono` is actually Outfit (proportional), so `1` and
+           `8` render at different widths by default. Tabular figures force
+           all digits to the same width so same-precision values line up. */
+        font-variant-numeric: tabular-nums;
         font-size: 12px;
         text-align: right;
       }
