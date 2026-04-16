@@ -3837,6 +3837,104 @@
       tr.bill-flagged td:first-child {
         box-shadow: inset 3px 0 0 var(--amber);
       }
+      /* Update 90: sticky left columns (Norm Month / Start / End) */
+      .ud-bill-tbl th.sticky-col,
+      .ud-bill-tbl td.sticky-col {
+        position: sticky;
+        background: var(--s1);
+        z-index: 3;
+      }
+      .ud-bill-tbl th.sticky-col {
+        z-index: 4;
+      }
+      .ud-bill-tbl td.sticky-col {
+        background: var(--s2);
+      }
+      .ud-bill-tbl tr:nth-child(even) td.sticky-col {
+        background: var(--s1);
+      }
+      .ud-bill-tbl tr:hover td.sticky-col {
+        background: var(--s3);
+      }
+      .ud-bill-tbl tr.bill-flagged td.sticky-col {
+        background: var(--amber-dim) !important;
+      }
+      /* Empty terminator row at bottom with visible borders on every cell */
+      .ud-bill-tbl tr.ud-bill-empty-row td {
+        border-bottom: 1px solid var(--border) !important;
+        border-right: 1px solid var(--border);
+        height: 28px;
+        background: transparent !important;
+      }
+      .ud-bill-tbl tr.ud-bill-empty-row td:last-child {
+        border-right: none;
+      }
+      /* Gear icon in column-header for the actions column */
+      .ud-bill-tbl .btn-table-settings {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+        background: transparent;
+        cursor: pointer;
+        font-size: 13px;
+        color: var(--text2);
+        transition: all 0.13s;
+        padding: 0;
+      }
+      .ud-bill-tbl .btn-table-settings:hover {
+        border-color: var(--em);
+        color: var(--em);
+      }
+      /* Bills-table Settings modal content */
+      .bts-view-toggle {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 12px;
+      }
+      .bts-view-btn {
+        flex: 1;
+        padding: 8px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: transparent;
+        cursor: pointer;
+        color: var(--text2);
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .bts-view-btn.sel {
+        border-color: var(--em);
+        color: var(--em);
+        background: rgba(59, 130, 246, 0.12);
+      }
+      .bts-section-hdr {
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--text2);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 10px 0 6px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 4px;
+      }
+      .bts-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 4px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .bts-row:hover {
+        background: var(--s2);
+      }
+      .bts-row input[type='checkbox'] {
+        cursor: pointer;
+      }
       .ud-bill-gap-msg {
         font-size: 11px;
         color: var(--warn);
@@ -24665,6 +24763,241 @@
         return (s - e) / (1000 * 60 * 60 * 24) > 3;
       }
 
+      // ── CONDENSED VIEW CATEGORIES (Update 90) ──
+      // In condensed view, the Bills data table collapses the per-line charge
+      // columns into aggregate "category" columns (kWh Cost, kW Cost, Other
+      // Charges, etc.) for an at-a-glance total breakdown. Detailed view keeps
+      // the full BILL_SCHEMA column set. Per-meter preference stored in
+      // localStorage['bills_view_state_' + meterId].
+      //
+      // Each entry: { label, type, w, compute?, key? }
+      //  - compute(row) returns the value to display
+      //  - key is an alternative — read row[key] directly (for totalCost)
+      const _pfBills = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+      const CONDENSED_CATEGORIES = {
+        Electric: [
+          { label: 'On-Peak kWh', type: 'number', w: 110, compute: (r) => _pfBills(r.onPeakKwh) },
+          { label: 'Off-Peak kWh', type: 'number', w: 110, compute: (r) => _pfBills(r.offPeakKwh) },
+          { label: 'Total kWh', type: 'number', w: 110, compute: (r) => _pfBills(r.kwh) },
+          {
+            label: 'kWh Cost $',
+            type: 'currency',
+            w: 100,
+            compute: (r) =>
+              _pfBills(r.onPeakCost) +
+              _pfBills(r.offPeakCost) +
+              _pfBills(r.ecaCharge) +
+              _pfBills(r.eerCharge) +
+              _pfBills(r.ptsCharge),
+          },
+          { label: 'Billed kW', type: 'number', w: 90, compute: (r) => _pfBills(r.billedKW) },
+          {
+            label: 'kW Cost $',
+            type: 'currency',
+            w: 100,
+            compute: (r) => _pfBills(r.demandCharge) + _pfBills(r.tdcCharge),
+          },
+          {
+            label: 'Other Charges $',
+            type: 'currency',
+            w: 120,
+            compute: (r) =>
+              _pfBills(r.customerCharge) +
+              _pfBills(r.facilitiesCharge || r.facKWCost) +
+              _pfBills(r.rkvaCharge) +
+              _pfBills(r.taxExemptDelivery) +
+              _pfBills(r.billOffset),
+          },
+          { label: 'Franchise Fee $', type: 'currency', w: 110, compute: (r) => _pfBills(r.franchiseFee) },
+          { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
+        ],
+        Gas: [
+          { label: 'CCF', type: 'number', w: 90, compute: (r) => _pfBills(r.naturalGasCCF) },
+          { label: 'Therms', type: 'number', w: 90, compute: (r) => _pfBills(r.naturalGasTherms) },
+          {
+            label: 'Gas Cost $',
+            type: 'currency',
+            w: 100,
+            compute: (r) => _pfBills(r.gasCharge) + _pfBills(r.fuelAdjustment),
+          },
+          { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
+        ],
+        Water: [
+          { label: 'Usage', type: 'number', w: 100, compute: (r) => _pfBills(r.waterUsage) },
+          {
+            label: 'Water Cost $',
+            type: 'currency',
+            w: 110,
+            compute: (r) => _pfBills(r.waterCharge) + _pfBills(r.waterProtectionFee),
+          },
+          { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
+        ],
+        Sewer: [
+          { label: 'Usage', type: 'number', w: 100, compute: (r) => _pfBills(r.sewerUsage) },
+          { label: 'Sewer Cost $', type: 'currency', w: 110, compute: (r) => _pfBills(r.sewerCharge) },
+          { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
+        ],
+        Stormwater: [
+          { label: 'Stormwater Cost $', type: 'currency', w: 130, compute: (r) => _pfBills(r.stormWaterCharge) },
+          { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
+        ],
+        Propane: [
+          { label: 'Gallons', type: 'number', w: 100, compute: (r) => _pfBills(r.gallonsDelivered) },
+          { label: 'Unit Price $', type: 'currency', w: 100, compute: (r) => _pfBills(r.unitPrice) },
+          {
+            label: 'Subtotal $',
+            type: 'currency',
+            w: 100,
+            compute: (r) => _pfBills(r.subtotal),
+          },
+          { label: 'Tax $', type: 'currency', w: 90, compute: (r) => _pfBills(r.tax) },
+          { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
+        ],
+      };
+      function _billsTableViewState(mid) {
+        try {
+          const raw = localStorage.getItem('bills_view_state_' + mid);
+          if (raw) {
+            const s = JSON.parse(raw);
+            if (s && typeof s === 'object') {
+              return {
+                mode: s.mode === 'condensed' ? 'condensed' : 'detailed',
+                hidden: Array.isArray(s.hidden) ? s.hidden : [],
+              };
+            }
+          }
+        } catch (e) {}
+        return { mode: 'detailed', hidden: [] };
+      }
+      function _saveBillsTableViewState(mid, state) {
+        try {
+          localStorage.setItem('bills_view_state_' + mid, JSON.stringify(state));
+        } catch (e) {}
+      }
+
+      // Build the Bills-table Settings modal body for a given meter. Shows a
+      // Detailed/Condensed view toggle, then a checkbox list of every
+      // togglable column for that commodity + mode.
+      function openBillsTableSettings(mid) {
+        // Resolve meter — search across all projects/buildings since the
+        // sticky-header context may not be fully in scope (safer than relying
+        // on udSelProjId/udSelBldgId for this popup).
+        let meter = null;
+        for (const p of projects || []) {
+          const ud = utilityData && utilityData[p.id];
+          if (!ud) continue;
+          for (const bl of ud.buildings || []) {
+            for (const mm of bl.meters || []) {
+              if (mm.id === mid) {
+                meter = mm;
+                break;
+              }
+            }
+            if (meter) break;
+          }
+          if (meter) break;
+        }
+        if (!meter) return;
+        const state = _billsTableViewState(mid);
+        // Togglable columns depend on mode.
+        let items;
+        if (state.mode === 'condensed' && CONDENSED_CATEGORIES[meter.commodity]) {
+          items = CONDENSED_CATEGORIES[meter.commodity].map((c) => ({
+            key: c.label,
+            label: c.label,
+          }));
+        } else {
+          const SKIP = new Set([
+            'start',
+            'end',
+            'numberOfDays',
+            'utilityCompany',
+            'customerName',
+            'serviceAddress',
+            'accountNumber',
+            'meterNumber',
+          ]);
+          items = _billSchemaFor(meter.commodity)
+            .filter((e) => !e.section && !SKIP.has(e.key))
+            .map((e) => ({ key: e.key, label: e.label }));
+        }
+        const hiddenSet = new Set(state.hidden || []);
+        const viewToggle = `
+          <div class="bts-view-toggle">
+            <button class="bts-view-btn${state.mode === 'detailed' ? ' sel' : ''}" onclick="setBillsTableViewMode('${mid}','detailed')">Detailed</button>
+            <button class="bts-view-btn${state.mode === 'condensed' ? ' sel' : ''}" onclick="setBillsTableViewMode('${mid}','condensed')">Condensed</button>
+          </div>
+          <div class="bts-section-hdr">
+            Columns shown (${state.mode === 'condensed' ? 'condensed categories' : 'detailed fields'})
+          </div>`;
+        const rowsHtml = items
+          .map(
+            (it) =>
+              `<label class="bts-row">
+                <input type="checkbox" data-key="${String(it.key).replace(/"/g, '&quot;')}" ${hiddenSet.has(it.key) ? '' : 'checked'}>
+                <span>${it.label}</span>
+              </label>`,
+          )
+          .join('');
+        // Dynamic modal overlay — uses the site's existing .modal-bg/.modal
+        // pattern so styling matches the rest of the app. Built on open,
+        // destroyed on close to avoid stale state.
+        const existing = document.getElementById('billsTableSettingsModal');
+        if (existing) existing.remove();
+        const overlay = document.createElement('div');
+        overlay.id = 'billsTableSettingsModal';
+        overlay.className = 'modal-bg open';
+        overlay.style.zIndex = '10000';
+        overlay.setAttribute('onclick', 'if (event.target === this) closeBillsTableSettings();');
+        overlay.innerHTML = `
+          <div class="modal" style="width:480px;min-width:360px;max-height:80vh">
+            <div class="modal-hdr">
+              <span class="modal-title">⚙ Bills Table Settings</span>
+              <button class="modal-x" onclick="closeBillsTableSettings()">✕</button>
+            </div>
+            <div class="modal-body bts-modal-body" data-meter-id="${mid}">
+              ${viewToggle}
+              <div class="bts-rows-wrap">${rowsHtml}</div>
+              <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+                <button class="btn btn-ghost" onclick="closeBillsTableSettings()">Cancel</button>
+                <button class="btn btn-em" onclick="saveBillsTableSettings('${mid}')">Save</button>
+              </div>
+            </div>
+          </div>`;
+        document.body.appendChild(overlay);
+      }
+      function closeBillsTableSettings() {
+        const el = document.getElementById('billsTableSettingsModal');
+        if (el) el.remove();
+      }
+      // Called when the user clicks Detailed or Condensed inside the modal.
+      // We persist the mode change immediately and re-open the modal with the
+      // new mode's column list, so the user can fine-tune hidden columns
+      // against the view they're actually going to see.
+      function setBillsTableViewMode(mid, mode) {
+        const state = _billsTableViewState(mid);
+        state.mode = mode === 'condensed' ? 'condensed' : 'detailed';
+        // Reset hidden list when switching modes — the key namespaces differ
+        // (detailed uses schema keys, condensed uses category labels).
+        state.hidden = [];
+        _saveBillsTableViewState(mid, state);
+        openBillsTableSettings(mid);
+      }
+      function saveBillsTableSettings(mid) {
+        const body = document.querySelector('#billsTableSettingsModal .bts-modal-body');
+        if (!body) return;
+        const state = _billsTableViewState(mid);
+        const hidden = [];
+        body.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+          if (!cb.checked) hidden.push(cb.getAttribute('data-key'));
+        });
+        state.hidden = hidden;
+        _saveBillsTableViewState(mid, state);
+        closeBillsTableSettings();
+        // Re-render the meter's bills pane so the new column set shows.
+        if (typeof renderMeterWorkspace === 'function') renderMeterWorkspace();
+      }
+
       function renderBillsPane(pane, m, bills, incl) {
         const isElec = m.commodity === 'Electric';
         const isGas = m.commodity === 'Gas';
@@ -24680,17 +25013,16 @@
     </div>
   </span>`;
 
-        // ── Column definitions (Update 82) ──
-        // Generated from BILL_SCHEMA so the data table shows exactly the same
-        // fields the Edit Billing Period modal + PDF/OCR card use. The base
-        // columns (Norm. Month, Start, End, Days) come first, then one column
-        // per schema field, with the skip-list below removing fields that are
-        // redundant with the base (start/end) or too noisy to show inline
-        // (long text fields like address/name — those stay in the edit modal).
+        // ── Column definitions (Update 82, revised in Update 90) ──
+        // Base columns (Norm. Month, Start, End, Days) come first and are
+        // sticky-frozen to the left edge so they stay visible during horizontal
+        // scroll. Then commodity-dependent columns (detailed OR condensed —
+        // see Update 90 view mode). Action column last, with a gear button
+        // that opens the per-meter table settings modal.
         const COL_BASE = [
-          { h: 'Norm. Month ' + normInfoTip, a: 'lbl', w: 110 },
-          { h: 'Start', a: 'lbl', w: 90 },
-          { h: 'End', a: 'lbl', w: 90 },
+          { h: 'Norm. Month ' + normInfoTip, a: 'lbl', w: 110, sticky: true },
+          { h: 'Start', a: 'lbl', w: 90, sticky: true },
+          { h: 'End', a: 'lbl', w: 90, sticky: true },
           { h: 'Days', a: '', w: 50 },
         ];
         // Fields whose value is already reflected in the base columns, or
@@ -24709,24 +25041,51 @@
           'accountNumber',
           'meterNumber',
         ]);
-        const schemaForTable = _billSchemaFor(m.commodity).filter((e) => !e.section && !TABLE_SKIP_KEYS.has(e.key));
-        const COL_FIELDS = schemaForTable.map((e) => ({
-          h: e.label + (e.type === 'currency' ? ' $' : ''),
-          a: e.type === 'text' || e.type === 'date' ? 'lbl' : '',
-          w: _billColumnWidth(e),
-          k: e.key,
-          entry: e,
-        }));
-        const COL_ACTION = [{ h: '', a: 'td-actions', w: 60 }];
+        const viewState = _billsTableViewState(m.id);
+        const hiddenSet = new Set(viewState.hidden || []);
+        // Condensed view: use CONDENSED_CATEGORIES[commodity] (falls back to
+        // the detailed schema if no category map exists). Hidden toggles still
+        // apply (user can hide individual category columns if desired).
+        // Detailed view: use the full BILL_SCHEMA column set minus skips + hidden.
+        let COL_FIELDS;
+        if (viewState.mode === 'condensed' && CONDENSED_CATEGORIES[m.commodity]) {
+          COL_FIELDS = CONDENSED_CATEGORIES[m.commodity]
+            .filter((c) => !hiddenSet.has(c.label))
+            .map((c) => ({
+              h: c.label,
+              a: c.type === 'text' || c.type === 'date' ? 'lbl' : '',
+              w: c.w || 100,
+              k: c.label,
+              category: c,
+            }));
+        } else {
+          const schemaForTable = _billSchemaFor(m.commodity).filter(
+            (e) => !e.section && !TABLE_SKIP_KEYS.has(e.key) && !hiddenSet.has(e.key),
+          );
+          COL_FIELDS = schemaForTable.map((e) => ({
+            h: e.label + (e.type === 'currency' ? ' $' : ''),
+            a: e.type === 'text' || e.type === 'date' ? 'lbl' : '',
+            w: _billColumnWidth(e),
+            k: e.key,
+            entry: e,
+          }));
+        }
+        const COL_ACTION = [
+          {
+            h: `<button class="btn-table-settings" onclick="openBillsTableSettings('${m.id}')" title="Column settings">⚙</button>`,
+            a: 'td-actions',
+            w: 60,
+          },
+        ];
         const cols = [...COL_BASE, ...COL_FIELDS, ...COL_ACTION];
 
         const tblHead =
           `<thead><tr>` +
           cols
-            .map(
-              (c, i) =>
-                `<th class="${c.a}" style="min-width:${c.w}px" data-col="${i}">${c.h}<div class="col-resize-handle" data-col="${i}"></div></th>`,
-            )
+            .map((c, i) => {
+              const sticky = c.sticky ? ' sticky-col' : '';
+              return `<th class="${c.a}${sticky}" style="min-width:${c.w}px" data-col="${i}">${c.h}<div class="col-resize-handle" data-col="${i}"></div></th>`;
+            })
             .join('') +
           `</tr></thead>`;
 
@@ -24782,6 +25141,16 @@
           }
           tblBody += rowHtml;
         });
+        // Empty terminator row with visible borders (Update 90) — gives the
+        // table a clean bottom edge instead of blending into the scroll area.
+        if (bills.length > 0) {
+          tblBody +=
+            '<tr class="ud-bill-empty-row">' +
+            cols
+              .map((c, i) => `<td${c.sticky ? ' class="sticky-col" data-sticky="' + i + '"' : ''}>&nbsp;</td>`)
+              .join('') +
+            '</tr>';
+        }
 
         if (bills.length === 0) {
           pane.innerHTML =
@@ -24904,6 +25273,21 @@
             const totalW = ws.reduce((s, w) => s + w, 0);
             hdrTbl.style.width = totalW + 'px';
             bodyTbl.style.width = totalW + 'px';
+            // Sticky columns (Update 90): compute cumulative left offsets for
+            // cols flagged `sticky: true` in the cols array and apply them to
+            // every matching header + body cell. cols[0..2] are Norm Month /
+            // Start / End by construction.
+            let cumLeft = 0;
+            for (let i = 0; i < cols.length; i++) {
+              if (!cols[i].sticky) continue;
+              const w = ws[i];
+              const hdrCell = hdrTbl.querySelector(`th[data-col="${i}"]`);
+              if (hdrCell) hdrCell.style.left = cumLeft + 'px';
+              bodyTbl.querySelectorAll(`td[data-sticky="${i}"]`).forEach((td) => {
+                td.style.left = cumLeft + 'px';
+              });
+              cumLeft += w || 0;
+            }
           }
 
           applyWidths(widths);
@@ -31129,14 +31513,43 @@
             {},
           ];
         }
+        // First 3 base columns (Norm Month, Start, End) get the sticky-col
+        // class so they stay pinned during horizontal scroll. Days (col 3) is
+        // NOT sticky — it's the first column that scrolls with the body.
         let html =
           '<tr>' +
-          `<td class="norm-mon-cell">${normMonthLabel(row.start, row.end, incl, allBills || m.bills || [])}</td>` +
-          `<td class="lbl">${fmtD(row.start)}</td>` +
-          `<td class="lbl">${fmtD(row.end)}</td>` +
+          `<td class="norm-mon-cell sticky-col" data-sticky="0">${normMonthLabel(row.start, row.end, incl, allBills || m.bills || [])}</td>` +
+          `<td class="lbl sticky-col" data-sticky="1">${fmtD(row.start)}</td>` +
+          `<td class="lbl sticky-col" data-sticky="2">${fmtD(row.end)}</td>` +
           `<td class="td-days">${days}</td>`;
         for (let i = 4; i < cols.length - 1; i++) {
           const c = cols[i];
+          // Condensed-view column (Update 90): render via category.compute
+          // or direct row key. No BILL_SCHEMA entry needed.
+          if (c.category) {
+            let val = 0;
+            if (typeof c.category.compute === 'function') {
+              val = c.category.compute(row);
+            } else if (c.category.key) {
+              val = _pfBills(row[c.category.key]);
+            }
+            const cls = c.category.type === 'currency' ? 'td-total' : c.a || '';
+            const formatted =
+              c.category.type === 'currency'
+                ? val === 0
+                  ? '—'
+                  : '$' + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                : c.category.type === 'number'
+                  ? val === 0
+                    ? '—'
+                    : val.toLocaleString('en-US', {
+                        minimumFractionDigits: /kwh|kw\b|rkva|gallon|ccf|therm|usage/i.test(c.category.label) ? 2 : 0,
+                        maximumFractionDigits: 4,
+                      })
+                  : val || '—';
+            html += `<td${cls ? ' class="' + cls + '"' : ''}>${formatted}</td>`;
+            continue;
+          }
           if (!c.entry) {
             html += '<td>—</td>';
             continue;
@@ -31801,28 +32214,26 @@
         udBillEditId = null;
       }
       function billAutoSum() {
-        const pf = (id) => {
-          const v = document.getElementById(id)?.value;
-          return v ? parseFloat(v) || 0 : 0;
-        };
-        const sum =
-          pf('bl-onPeakCost') +
-          pf('bl-offPeakCost') +
-          pf('bl-customerCharge') +
-          pf('bl-demandCharge') +
-          pf('bl-facilitiesCharge') +
-          pf('bl-ecaCharge') +
-          pf('bl-eerCharge') +
-          pf('bl-ptsCharge') +
-          pf('bl-tdcCharge') +
-          pf('bl-rkvaCharge') +
-          pf('bl-renewableCharge') +
-          pf('bl-franchiseFee') +
-          pf('bl-otherCost') +
-          pf('bl-taxCost') -
-          pf('bl-solarCredit');
+        // Walk the same `.ef-charge-row[data-charge-key]` elements that
+        // `_billRecalcRunningTotals` uses so Auto-Sum and the running-total
+        // column always agree. The old formula summed legacy aggregate
+        // fields (kwCost / otherCost / taxCost / solarCredit) that the new
+        // 3-column layout doesn't render — producing a different total than
+        // what the user sees on the right side of the modal.
+        let sum = 0;
+        document.querySelectorAll('.ef-charge-row[data-charge-key]').forEach((r) => {
+          const ck = r.getAttribute('data-charge-key');
+          if (ck === 'TotalCurrentCharges') return;
+          const chargeInp = r.querySelector('.bl-charge-input');
+          if (chargeInp) sum += parseFloat(chargeInp.value) || 0;
+        });
         if (sum > 0) {
-          document.getElementById('bl-totalCost').value = sum.toFixed(2);
+          const totalInp = document.getElementById('bl-totalCost');
+          if (totalInp) {
+            totalInp.value = sum.toFixed(2);
+            // Refresh the running-total match indicator so the ✓/✗ state updates
+            _billRecalcRow('TotalCurrentCharges');
+          }
           showToast('Total auto-summed: $' + sum.toFixed(2));
         } else {
           showToast('Fill in individual charges first');
