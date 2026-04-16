@@ -17189,255 +17189,187 @@
             }
           }
 
-          // 3. Recompute TotalCurrentCharges from fully-recovered charges when needed
-          // The initial totalDue may have been a fallback sum computed BEFORE structural recovery
-          // filled in missing charges (e.g. CustomerCharge). If the current charge sum is higher
-          // than the stored total, the total was incomplete — update it.
+          // ──────────────────────────────────────────────────────────────
+          // Stage 3: Total validation + coherent per-charge reconciliation (Update 86)
+          // ──────────────────────────────────────────────────────────────
+          // The old code clobbered `TotalCurrentCharges` with compSum whenever they
+          // disagreed by >$0.50, BEFORE running the per-charge math validators. If a
+          // single charge had an OCR bleed (e.g. EER regex reaching forward to PTS's
+          // $86.61), compSum was inflated and the clean OCR'd total got thrown away.
+          //
+          // Re-ordered so that reconciliation is purposeful:
+          //   3a. Measure — read ocrTotal, compute compSum from current charges.
+          //   3b. Reconcile per-charge math (Strategy B: rate×qty corrections that
+          //       close the gap to ocrTotal → apply high-confidence fix).
+          //   3c. Subtraction inference (Strategy C: a lone charge with no _rates
+          //       entry absorbs the residual — OCR single-digit misread).
+          //   3d. Final total decision:
+          //       - ocrTotal missing  → use compSum.
+          //       - compSum matches ocrTotal within $0.02 → keep ocrTotal.
+          //       - compSum still > ocrTotal AND no _rate_mismatch_* flags remain
+          //         → ocrTotal was likely a page-1 summary missing detail charges;
+          //           accept compSum and mark _totalFromChargeSum with reason.
+          //       - Residual remains → flag _sum_mismatch, keep ocrTotal for review.
+          //       NEVER silently clobber ocrTotal when there's evidence of per-charge
+          //       contamination.
           if (utilityName === 'Evergy') {
-            const compSum =
-              pf(b.CustomerCharge) +
-              pf(b.FacilitiesCharge) +
-              pf(b.BilledKWCharge) +
-              pf(b.EnergyOnPeakCharge) +
-              pf(b.EnergyOffPeakCharge) +
-              pf(b.ECACharge) +
-              pf(b.EERCharge) +
-              pf(b.PTSCharge) +
-              pf(b.TDCCharge) +
-              pf(b.RkVACharge) +
-              pf(b.TaxExemptDelivery) +
-              pf(b.BillOffset) +
-              pf(b.FranchiseFee);
-            const total = pf(b.TotalCurrentCharges);
-            if (!total && compSum > 0) {
-              b.TotalCurrentCharges = compSum.toFixed(2);
-              b._totalFromChargeSum = true;
-            } else if (total > 0 && compSum > total && compSum - total > 0.5) {
-              // Charge sum is higher than extracted total — total was likely a premature sum
-              // missing charges that were recovered later. Update to the full sum.
-              // (Update 85) Guard: if any `_rate_mismatch_*` flag exists on the bill, the
-              // per-charge values are contaminated (e.g. EER bled into PTS, or vice-versa)
-              // and compSum is inflated. Prefer the OCR'd total, flag the discrepancy via
-              // _sum_mismatch below, and let the user see it rather than silently clobber.
-              const hasRateMismatch = Object.keys(b).some((k) => k.startsWith('_rate_mismatch_'));
-              if (hasRateMismatch) {
-                // Keep the OCR'd total; _sum_mismatch below will surface the discrepancy.
-              } else {
+            const CHARGE_FIELDS = [
+              'CustomerCharge',
+              'FacilitiesCharge',
+              'BilledKWCharge',
+              'EnergyOnPeakCharge',
+              'EnergyOffPeakCharge',
+              'ECACharge',
+              'EERCharge',
+              'PTSCharge',
+              'TDCCharge',
+              'RkVACharge',
+              'TaxExemptDelivery',
+              'BillOffset',
+              'FranchiseFee',
+            ];
+            const _sumCharges = () => CHARGE_FIELDS.reduce((s, f) => s + pf(b[f]), 0);
+
+            // 3a. Measure
+            const ocrTotal = pf(b.TotalCurrentCharges);
+            let compSum = _sumCharges();
+
+            if (!ocrTotal) {
+              // No OCR'd total — compSum is the only evidence we have.
+              if (compSum > 0) {
                 b.TotalCurrentCharges = compSum.toFixed(2);
                 b._totalFromChargeSum = true;
+                b._totalSource = 'compSum (no OCR total available)';
               }
-            }
-            const totalFinal = pf(b.TotalCurrentCharges);
-            if (compSum > 0 && totalFinal > 0) {
-              const diff = Math.abs(compSum - totalFinal);
-              // $0.02 threshold matches the UI pill/banner exactly so the extractor and the
-              // display never disagree. Sub-dollar residuals are typically single-digit OCR
-              // misreads (e.g. "$1,277.29" read as "$1,277.20") and should be auto-corrected
-              // either via rate × quantity cross-check or via subtraction inference below.
-              if (diff >= 0.02) {
-                b['_sum_mismatch'] = {
-                  compSum,
-                  total: totalFinal,
-                  diff,
-                  reason:
-                    'Charges sum to $' +
-                    compSum.toFixed(2) +
-                    ' but total is $' +
-                    totalFinal.toFixed(2) +
-                    ' — likely a charge was missed during extraction',
-                };
+            } else if (Math.abs(compSum - ocrTotal) < 0.02) {
+              // 3a'. Already consistent — done, no mutation needed.
+            } else {
+              // Disagreement between ocrTotal and compSum. Run principled diagnosis.
 
-                // ── AUTO-CORRECTION via rate × quantity cross-validation ──
-                // If a charge's OCR'd value ≠ rate×qty AND the difference ≈ the total mismatch,
-                // replacing that charge makes the total balance → high confidence correction.
-                if (b._rates) {
-                  const totalDiff = compSum - totalFinal; // positive = sum too high, negative = sum too low
-                  const corrections = [];
-                  for (const [field, ri] of Object.entries(b._rates)) {
-                    const ocrVal = pf(b[field]);
-                    if (!ocrVal || !ri.computed) continue;
-                    // Skip garbage rate extractions (chart numbers picked up as rates)
-                    if (ri.computed > 1e6 || ri.rate > 10000) continue;
-                    const chargeDiff = ocrVal - ri.computed; // positive = OCR too high
-                    // Does correcting this single charge resolve the total mismatch?
-                    if (Math.abs(chargeDiff) > 0.02 && Math.abs(totalDiff - chargeDiff) < 0.5) {
-                      corrections.push({
-                        field,
-                        ocrVal,
-                        computed: ri.computed,
-                        chargeDiff,
-                        residual: Math.abs(totalDiff - chargeDiff),
-                        rate: ri.rate,
-                        qty: ri.qty,
-                        unit: ri.unit,
-                      });
-                    }
-                  }
-                  // Try single corrections first (most common case)
-                  if (corrections.length === 1) {
-                    const c = corrections[0];
-                    b['_auto_corrected_' + c.field] = {
-                      original: b[c.field],
-                      corrected: c.computed.toFixed(2),
-                      rate: c.rate,
-                      qty: c.qty,
-                      unit: c.unit,
-                      reason:
-                        c.qty.toFixed(4) + ' ' + c.unit + ' × $' + c.rate.toFixed(5) + ' = $' + c.computed.toFixed(2),
-                    };
-                    b[c.field] = c.computed.toFixed(2);
-                    // Recompute sum and clear mismatch if resolved
-                    const newSum =
-                      pf(b.CustomerCharge) +
-                      pf(b.FacilitiesCharge) +
-                      pf(b.BilledKWCharge) +
-                      pf(b.EnergyOnPeakCharge) +
-                      pf(b.EnergyOffPeakCharge) +
-                      pf(b.ECACharge) +
-                      pf(b.EERCharge) +
-                      pf(b.PTSCharge) +
-                      pf(b.TDCCharge) +
-                      pf(b.RkVACharge) +
-                      pf(b.TaxExemptDelivery) +
-                      pf(b.BillOffset) +
-                      pf(b.FranchiseFee);
-                    const newDiff = Math.abs(newSum - totalFinal);
-                    if (newDiff <= 1) {
-                      delete b['_sum_mismatch'];
-                    } else {
-                      b['_sum_mismatch'] = {
-                        compSum: newSum,
-                        total: totalFinal,
-                        diff: newDiff,
-                        reason:
-                          'Charges sum to $' +
-                          newSum.toFixed(2) +
-                          ' after correction, but total is $' +
-                          totalFinal.toFixed(2),
-                      };
-                    }
-                  } else if (corrections.length > 1) {
-                    // Multiple charges off — try each, pick the one with smallest residual
-                    corrections.sort((a, b2) => a.residual - b2.residual);
-                    const best = corrections[0];
-                    if (best.residual < 0.5) {
-                      b['_auto_corrected_' + best.field] = {
-                        original: b[best.field],
-                        corrected: best.computed.toFixed(2),
-                        rate: best.rate,
-                        qty: best.qty,
-                        unit: best.unit,
-                        reason:
-                          best.qty.toFixed(4) +
-                          ' ' +
-                          best.unit +
-                          ' × $' +
-                          best.rate.toFixed(5) +
-                          ' = $' +
-                          best.computed.toFixed(2),
-                      };
-                      b[best.field] = best.computed.toFixed(2);
-                      const newSum =
-                        pf(b.CustomerCharge) +
-                        pf(b.FacilitiesCharge) +
-                        pf(b.BilledKWCharge) +
-                        pf(b.EnergyOnPeakCharge) +
-                        pf(b.EnergyOffPeakCharge) +
-                        pf(b.ECACharge) +
-                        pf(b.EERCharge) +
-                        pf(b.PTSCharge) +
-                        pf(b.TDCCharge) +
-                        pf(b.RkVACharge) +
-                        pf(b.TaxExemptDelivery) +
-                        pf(b.BillOffset) +
-                        pf(b.FranchiseFee);
-                      const newDiff = Math.abs(newSum - totalFinal);
-                      if (newDiff <= 1) {
-                        delete b['_sum_mismatch'];
-                      } else {
-                        b['_sum_mismatch'] = {
-                          compSum: newSum,
-                          total: totalFinal,
-                          diff: newDiff,
-                          reason:
-                            'Charges sum to $' +
-                            newSum.toFixed(2) +
-                            ' after correction, but total is $' +
-                            totalFinal.toFixed(2),
-                        };
-                      }
-                    }
+              // 3b. Strategy B — find rate×qty corrections that close the gap.
+              const targetDelta = compSum - ocrTotal; // positive ⇒ charges too high, negative ⇒ too low
+              if (b._rates && Math.abs(targetDelta) >= 0.02) {
+                const candidates = [];
+                for (const [field, ri] of Object.entries(b._rates)) {
+                  const ocrVal = pf(b[field]);
+                  if (!ocrVal || !ri.computed) continue;
+                  // Skip garbage extractions (chart numbers picked up as rates)
+                  if (ri.computed > 1e6 || ri.rate > 10000) continue;
+                  const chargeDelta = ocrVal - ri.computed; // positive ⇒ OCR too high
+                  // Does swapping OCR → computed close the gap?
+                  if (Math.abs(chargeDelta) > 0.02 && Math.abs(targetDelta - chargeDelta) < 0.5) {
+                    candidates.push({
+                      field,
+                      ocrVal,
+                      computed: ri.computed,
+                      residual: Math.abs(targetDelta - chargeDelta),
+                      rate: ri.rate,
+                      qty: ri.qty,
+                      unit: ri.unit,
+                    });
                   }
                 }
+                // Apply best correction (smallest residual to ocrTotal)
+                if (candidates.length > 0) {
+                  candidates.sort((a, c) => a.residual - c.residual);
+                  const best = candidates[0];
+                  b['_auto_corrected_' + best.field] = {
+                    original: b[best.field],
+                    corrected: best.computed.toFixed(2),
+                    rate: best.rate,
+                    qty: best.qty,
+                    unit: best.unit,
+                    reason:
+                      best.qty.toFixed(4) +
+                      ' ' +
+                      best.unit +
+                      ' × $' +
+                      best.rate.toFixed(5) +
+                      ' = $' +
+                      best.computed.toFixed(2),
+                  };
+                  b[best.field] = best.computed.toFixed(2);
+                  compSum = _sumCharges();
+                }
+              }
 
-                // ── STRATEGY C: SUBTRACTION INFERENCE ──
-                // If rate×qty correction didn't resolve the mismatch AND exactly one
-                // rate-based charge field has a value but no _rates entry (i.e. the rate
-                // regex failed to capture its rate line, so it's unverifiable by math),
-                // then the stated TotalCurrentCharges minus all other charges MUST equal
-                // that one unverified charge. The OCR'd value was almost certainly a
-                // single-digit misread (e.g. "$1,277.29" read as "$1,277.20"), and the
-                // residual inference will recover the correct value exactly.
-                //
-                // Skip any field that already has an _auto_corrected_ or _ocr_consensus_
-                // marker — those were corrected by an earlier pass and should not be
-                // overwritten. The check runs only when the sum_mismatch flag still exists
-                // after the rate×qty loop above, so fully-resolved bills are untouched.
-                if (b._sum_mismatch) {
-                  const RATE_BASED_FIELDS = [
-                    'FacilitiesCharge',
-                    'BilledKWCharge',
-                    'EnergyOnPeakCharge',
-                    'EnergyOffPeakCharge',
-                    'ECACharge',
-                    'EERCharge',
-                    'PTSCharge',
-                    'TDCCharge',
-                    'RkVACharge',
-                  ];
-                  const unverified = RATE_BASED_FIELDS.filter((f) => {
-                    const v = pf(b[f]);
-                    if (v <= 0) return false;
-                    if (b._rates && b._rates[f]) return false; // has rate data, verifiable
-                    if (b['_auto_corrected_' + f]) return false; // already corrected
-                    if (b['_ocr_consensus_' + f]) return false; // already corrected via alt-pass
-                    return true;
-                  });
-                  if (unverified.length === 1) {
-                    const field = unverified[0];
-                    const origVal = pf(b[field]);
-                    // Recompute current sum (rate×qty corrections above may have mutated fields)
-                    const currentSum =
-                      pf(b.CustomerCharge) +
-                      pf(b.FacilitiesCharge) +
-                      pf(b.BilledKWCharge) +
-                      pf(b.EnergyOnPeakCharge) +
-                      pf(b.EnergyOffPeakCharge) +
-                      pf(b.ECACharge) +
-                      pf(b.EERCharge) +
-                      pf(b.PTSCharge) +
-                      pf(b.TDCCharge) +
-                      pf(b.RkVACharge) +
-                      pf(b.TaxExemptDelivery) +
-                      pf(b.BillOffset) +
-                      pf(b.FranchiseFee);
-                    // residual = amount we need to ADD to the current sum to match totalFinal.
-                    // The correction lands entirely on the one unverified field.
-                    const residual = totalFinal - currentSum;
-                    const inferredVal = origVal + residual;
-                    if (inferredVal > 0) {
-                      b['_auto_corrected_' + field] = {
-                        original: b[field],
-                        corrected: inferredVal.toFixed(2),
-                        reason:
-                          'Derived from TotalCurrentCharges − Σ(other charges). No rate data available for ' +
-                          field +
-                          '; every other charge verified, so this field absorbs the residual.',
-                      };
-                      b[field] = inferredVal.toFixed(2);
-                      delete b['_sum_mismatch'];
-                    }
+              // 3c. Strategy C — subtraction inference for a lone unverified field.
+              // Only runs if a gap remains AND exactly one rate-based charge has no
+              // _rates entry (meaning we can't verify it by math).
+              if (Math.abs(compSum - ocrTotal) >= 0.02) {
+                const RATE_BASED = [
+                  'FacilitiesCharge',
+                  'BilledKWCharge',
+                  'EnergyOnPeakCharge',
+                  'EnergyOffPeakCharge',
+                  'ECACharge',
+                  'EERCharge',
+                  'PTSCharge',
+                  'TDCCharge',
+                  'RkVACharge',
+                ];
+                const unverified = RATE_BASED.filter((f) => {
+                  const v = pf(b[f]);
+                  if (v <= 0) return false;
+                  if (b._rates && b._rates[f]) return false;
+                  if (b['_auto_corrected_' + f]) return false;
+                  if (b['_ocr_consensus_' + f]) return false;
+                  return true;
+                });
+                if (unverified.length === 1) {
+                  const f = unverified[0];
+                  const origVal = pf(b[f]);
+                  const residual = ocrTotal - (compSum - origVal);
+                  if (residual > 0) {
+                    b['_auto_corrected_' + f] = {
+                      original: b[f],
+                      corrected: residual.toFixed(2),
+                      reason:
+                        'Derived from TotalCurrentCharges − Σ(other charges). No rate data for ' +
+                        f +
+                        '; every other charge verified, so this field absorbs the residual.',
+                    };
+                    b[f] = residual.toFixed(2);
+                    compSum = _sumCharges();
                   }
+                }
+              }
+
+              // 3d. Final decision — evidence-weighted, never blind.
+              const finalDelta = compSum - ocrTotal;
+              if (Math.abs(finalDelta) < 0.02) {
+                // Reconciled. Keep ocrTotal. No flag needed.
+              } else {
+                // Still disagree. Check if any per-charge rate mismatches remain
+                // (signal that compSum is still contaminated).
+                const hasRateMismatch = Object.keys(b).some((k) => k.startsWith('_rate_mismatch_'));
+                if (finalDelta > 0.5 && !hasRateMismatch) {
+                  // compSum > ocrTotal, all per-charge math verifies → ocrTotal was
+                  // likely a page-1 summary that excluded some detail charges that
+                  // extracted cleanly. Trust compSum.
+                  b.TotalCurrentCharges = compSum.toFixed(2);
+                  b._totalFromChargeSum = true;
+                  b._totalSource =
+                    'compSum (ocrTotal of $' +
+                    ocrTotal.toFixed(2) +
+                    ' appears to be an incomplete summary; no per-charge rate mismatches remain to cast doubt on compSum)';
+                } else {
+                  // Can't confidently reconcile — flag for user, keep ocrTotal.
+                  b._sum_mismatch = {
+                    compSum,
+                    total: ocrTotal,
+                    diff: Math.abs(finalDelta),
+                    reason:
+                      'Charges sum to $' +
+                      compSum.toFixed(2) +
+                      ' vs OCR total $' +
+                      ocrTotal.toFixed(2) +
+                      (hasRateMismatch
+                        ? '. Per-charge rate mismatches remain after correction attempts — user review needed.'
+                        : finalDelta > 0
+                          ? '. No rate mismatches to pinpoint, but compSum exceeds OCR total by less than the switch threshold.'
+                          : '. A charge was likely missed during extraction.'),
+                  };
                 }
               }
             }
