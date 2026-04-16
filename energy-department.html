@@ -24704,6 +24704,10 @@
           'utilityCompany',
           'customerName',
           'serviceAddress',
+          // accountNumber / meterNumber already display in the meter header above
+          // the bills data table — don't repeat them per-row.
+          'accountNumber',
+          'meterNumber',
         ]);
         const schemaForTable = _billSchemaFor(m.commodity).filter((e) => !e.section && !TABLE_SKIP_KEYS.has(e.key));
         const COL_FIELDS = schemaForTable.map((e) => ({
