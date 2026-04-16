@@ -32165,7 +32165,10 @@
           const e = schemaEntry(pdfKey);
           const val = escapeAttr(readVal(pdfKey));
           const id = 'bl-' + e.key;
-          const required = e.key === 'start' || e.key === 'end' ? ' <span style="color:#ef4444">*</span>' : '';
+          // Start/End dates are required (save path validates) but no visual
+          // marker — the save error toast surfaces the requirement when a
+          // user tries to save without them.
+          const required = '';
           let inputType = 'text';
           let step = '';
           let ph = '';
