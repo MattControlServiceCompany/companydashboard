@@ -25145,9 +25145,11 @@
         // see Update 90 view mode). Action column last, with a gear button
         // that opens the per-meter table settings modal.
         const COL_BASE = [
-          { h: 'Norm. Month ' + normInfoTip, a: 'lbl', w: 110, sticky: true },
-          { h: 'Start', a: 'lbl', w: 90, sticky: true },
-          { h: 'End', a: 'lbl', w: 90, sticky: true },
+          { h: 'Norm. Month ' + normInfoTip, a: 'lbl', w: 110, minW: 100, sticky: true },
+          // Start/End widths must fit "12/31/2026" (10 chars) at the tabular
+          // font — 105px minimum so saved resize widths can't clip dates.
+          { h: 'Start', a: 'lbl', w: 105, minW: 105, sticky: true },
+          { h: 'End', a: 'lbl', w: 105, minW: 105, sticky: true },
           { h: 'Days', a: '', w: 50 },
         ];
         // Fields whose value is already reflected in the base columns, or
@@ -25403,9 +25405,13 @@
             const s = localStorage.getItem(storageKey);
             if (s) savedWidths = JSON.parse(s);
           } catch (e) {}
+          // Update 97: `minW` on a col is a hard floor that saved widths can't
+          // undercut — ensures date columns (and any other structurally-wide
+          // fields) can't be shrunk below readability by a stale resize save.
           const widths = rawWidths.map((w, i) => {
-            if (savedWidths && savedWidths[i]) return Math.max(40, savedWidths[i]);
-            return Math.max(Math.ceil(w), cols[i]?.w || 0);
+            const floor = Math.max(40, cols[i]?.minW || 0);
+            if (savedWidths && savedWidths[i]) return Math.max(floor, savedWidths[i]);
+            return Math.max(Math.ceil(w), cols[i]?.w || 0, floor);
           });
 
           function applyWidths(ws) {
@@ -32059,7 +32065,8 @@
       // Helper: default column width for a schema entry based on type/key.
       function _billColumnWidth(entry) {
         if (entry.type === 'currency') return 100;
-        if (entry.type === 'date') return 90;
+        // Date columns must fit MM/DD/YYYY — 105px at 12px tabular font.
+        if (entry.type === 'date') return 105;
         if (entry.type === 'text') {
           if (/address|name|company/i.test(entry.key)) return 160;
           return 120;
