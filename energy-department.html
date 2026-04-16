@@ -32010,14 +32010,38 @@
         }
         if (entry.type === 'number') {
           if (!hasVal) return val || '—';
-          if (/kwh/i.test(entry.key)) {
+          // Update 94: match renderPDFFields' FOURDP_FIELDS set exactly —
+          // every kW/kWh quantity, meter read, read-difference, and meter
+          // multiplier renders with 4 decimal places per Evergy Billing
+          // Details rules. Without explicit min/maxFractionDigits, the
+          // default `.toLocaleString()` caps at 3 digits AND strips trailing
+          // zeros, so 54,656.8791 showed as "54,656.879" while 100 showed as
+          // "100" — same place-value intent, inconsistent rendered width.
+          const FOURDP_PDF_KEYS = new Set([
+            'FacilitiesKW',
+            'BilledKW',
+            'ActualKW',
+            'ActualRKVA',
+            'TDCkW',
+            'StartRead',
+            'EndRead',
+            'ReadDifference',
+            'MeterMultiplier',
+            'kWhConsumed',
+            'OnPeakKWh',
+            'OffPeakKWh',
+          ]);
+          if (
+            FOURDP_PDF_KEYS.has(entry.pdfKey) ||
+            /kwh/i.test(entry.key) ||
+            /kw$/i.test(entry.key) ||
+            /rkva/i.test(entry.key) ||
+            /read$|multiplier|difference/i.test(entry.key)
+          ) {
+            if (+val === 0) return '—';
             return (+val).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
           }
-          if (/kw$/i.test(entry.key) || /rkva/i.test(entry.key)) {
-            return +val > 0
-              ? (+val).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
-              : '—';
-          }
+          // Default numeric fields (e.g. numberOfDays) — integer display.
           return (+val).toLocaleString('en-US');
         }
         if (entry.type === 'date') return val ? fmtDate(val) : '—';
