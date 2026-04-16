@@ -3852,6 +3852,11 @@
         white-space: nowrap;
         text-align: center;
         padding: 4px 8px;
+        /* Update 95: action cells contain icon buttons, not text — disable
+           the overflow:hidden + text-overflow:ellipsis from the generic td
+           rule so the 📄 / ✏️ / ✕ buttons don't get clipped to "…". */
+        overflow: visible;
+        text-overflow: clip;
       }
       .ud-bill-gap-row td {
         padding: 6px 10px;
