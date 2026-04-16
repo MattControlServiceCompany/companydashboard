@@ -15008,6 +15008,26 @@
                 }
               }
             }
+            // ── SINGLE-PART CHARGE RECOVERY (Update 85) ──
+            // When a charge line has exactly one part, that part's OCR charge column
+            // came back null (meaning it was garbled/truncated on the line), and the
+            // top-level chargeVal differs materially from qty × rate, trust the math.
+            // Classic case: LHS.pdf page 58 Bill 30 — EER charge column was OCR'd as
+            // just "06" (column cutoff) so parts[0].ocrCharge = null, and the top-level
+            // EER regex reached forward and captured PTS's $86.61. qty × rate = 57.06
+            // is ground truth here because the rate was successfully parsed from the
+            // same line (via "$0.00056 per kWh") and qty matches kWhConsumed.
+            else if (parts.length === 1 && parts[0].ocrCharge == null && computedTotal > 0 && chargeVal > 0) {
+              const diff = Math.abs(chargeVal - computedTotal);
+              if (diff > 0.5) {
+                result[chargeField] = computedTotal.toFixed(2);
+                result['_single_part_recovered_' + chargeField] = {
+                  original: chargeVal.toFixed(2),
+                  corrected: computedTotal.toFixed(2),
+                  reason: 'ocr_null_charge_bleed',
+                };
+              }
+            }
 
             // ── POPULATE TOP-LEVEL kWh QTY FIELDS FOR SAVE PATH ──
             // The save paths (_saveSinglePDFBill, _applyDupUpdate, _saveBillToMatchedMeter)
@@ -17195,8 +17215,17 @@
             } else if (total > 0 && compSum > total && compSum - total > 0.5) {
               // Charge sum is higher than extracted total — total was likely a premature sum
               // missing charges that were recovered later. Update to the full sum.
-              b.TotalCurrentCharges = compSum.toFixed(2);
-              b._totalFromChargeSum = true;
+              // (Update 85) Guard: if any `_rate_mismatch_*` flag exists on the bill, the
+              // per-charge values are contaminated (e.g. EER bled into PTS, or vice-versa)
+              // and compSum is inflated. Prefer the OCR'd total, flag the discrepancy via
+              // _sum_mismatch below, and let the user see it rather than silently clobber.
+              const hasRateMismatch = Object.keys(b).some((k) => k.startsWith('_rate_mismatch_'));
+              if (hasRateMismatch) {
+                // Keep the OCR'd total; _sum_mismatch below will surface the discrepancy.
+              } else {
+                b.TotalCurrentCharges = compSum.toFixed(2);
+                b._totalFromChargeSum = true;
+              }
             }
             const totalFinal = pf(b.TotalCurrentCharges);
             if (compSum > 0 && totalFinal > 0) {
