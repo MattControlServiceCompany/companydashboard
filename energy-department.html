@@ -18283,11 +18283,28 @@
           id: 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
           start: toISO(extracted.BillingPeriodStart),
           end: toISO(extracted.BillingPeriodEnd),
+          // Metadata (Update 84 — previously dropped on match-save path)
+          utilityCompany: extracted.UtilityCompany || '',
+          customerName: extracted.CustomerName || '',
+          serviceAddress: extracted.ServiceAddress || '',
+          accountNumber: extracted.AccountNumber || '',
+          meterNumber: extracted.MeterNumber || '',
+          numberOfDays: extracted.NumberOfDays || '',
+          meterReadStart: extracted.MeterReadStart || '',
+          meterReadEnd: extracted.MeterReadEnd || '',
+          startRead: extracted.StartRead || '',
+          endRead: extracted.EndRead || '',
+          readDifference: extracted.ReadDifference || '',
+          meterMultiplier: extracted.MeterMultiplier || '',
+          billDate: extracted.BillDate || '',
+          commodity: extracted.Commodity || '',
           kwh: usageQty,
           demandKW: extracted.ActualKW || '',
+          actualRKVA: extracted.ActualRKVA || '',
           billedKW: extracted.BilledKW || '',
           facKW: extracted.FacilitiesKW || '',
           facKWCost: extracted.FacilitiesCharge || '',
+          tdcKW: extracted.TDCkW || '',
           kwCost,
           kwhCost,
           otherCost,
@@ -18316,9 +18333,31 @@
           ptsCharge: extracted.PTSCharge || '',
           tdcCharge: extracted.TDCCharge || '',
           rkvaCharge: extracted.RkVACharge || '',
+          taxExemptDelivery: extracted.TaxExemptDelivery || '',
+          billOffset: extracted.BillOffset || '',
           renewableCharge: extracted.RenewableCharge || '',
           franchiseFee: extracted.FranchiseFee || '',
           solarCredit: extracted.SolarCredit || '',
+          // Non-electric commodity fields — written when the extractor emits them,
+          // empty string otherwise so the Edit modal's per-commodity layout renders cleanly.
+          naturalGasCCF: extracted.NaturalGasCCF || '',
+          naturalGasTherms: extracted.NaturalGasTherms || '',
+          gasCharge: extracted.GasCharge || '',
+          fuelAdjustment: extracted.FuelAdjustment || '',
+          waterUsage: extracted.WaterUsage || '',
+          waterCharge: extracted.WaterCharge || '',
+          waterProtectionFee: extracted.WaterProtectionFee || '',
+          sewerUsage: extracted.SewerUsage || '',
+          sewerCharge: extracted.SewerCharge || '',
+          stormWaterCharge: extracted.StormWaterCharge || '',
+          invoiceNumber: extracted.InvoiceNumber || '',
+          saleNumber: extracted.SaleNumber || '',
+          deliveryDate: extracted.DeliveryDate || '',
+          fuelType: extracted.FuelType || '',
+          gallonsDelivered: extracted.GallonsDelivered || '',
+          unitPrice: extracted.UnitPrice || '',
+          subtotal: extracted.Subtotal || '',
+          tax: extracted.Tax || '',
         };
         // Re-fetch the live meter reference from the store — the match object may hold
         // a stale snapshot if projects were mutated between findMeterMatch and now.
@@ -18501,6 +18540,17 @@
           // extracted key → existing billRow key
           BillingPeriodStart: 'start',
           BillingPeriodEnd: 'end',
+          // Metadata (Update 84 — now compared so diff-count is accurate)
+          UtilityCompany: 'utilityCompany',
+          CustomerName: 'customerName',
+          ServiceAddress: 'serviceAddress',
+          AccountNumber: 'accountNumber',
+          MeterNumber: 'meterNumber',
+          NumberOfDays: 'numberOfDays',
+          MeterReadStart: 'meterReadStart',
+          MeterReadEnd: 'meterReadEnd',
+          StartRead: 'startRead',
+          EndRead: 'endRead',
           kWhConsumed: 'kwh',
           ActualKW: 'demandKW',
           BilledKW: 'billedKW',
@@ -18517,8 +18567,8 @@
           PTSCharge: 'ptsCharge',
           TDCCharge: 'tdcCharge',
           FranchiseFee: 'franchiseFee',
-          TaxExemptDelivery: null, // in otherCost aggregate
-          BillOffset: null, // in otherCost aggregate
+          TaxExemptDelivery: 'taxExemptDelivery',
+          BillOffset: 'billOffset',
         };
         // For saved (unassigned) bills, fields map 1:1 (same raw keys)
         const isSaved = !existing.start && existing.BillingPeriodStart !== undefined;
@@ -20233,8 +20283,12 @@
             const pillBorder = hasAnyIssue ? 'var(' + issueColor + ')' : active ? 'var(--accent)' : 'var(--border2)';
             const pillBg = active ? 'var(--accent-dim)' : hasAnyIssue ? 'var(' + issueColor + '-dim)' : 'transparent';
             const isDup = !!dupMap[p.i];
+            // Update 84: show the diff-field COUNT in amber instead of a dot, so
+            // the user can see at a glance how many fields differ between the
+            // existing saved bill and the freshly extracted one.
+            const diffCount = isDup ? (dupMap[p.i].diffFields || []).length : 0;
             const dupDot = isDup
-              ? '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#f59e0b;margin-left:6px;vertical-align:middle" title="Duplicate bill"></span>'
+              ? `<span style="display:inline-block;margin-left:6px;vertical-align:middle;color:#f59e0b;font-weight:700;font-size:11px;font-family:var(--mono)" title="Duplicate bill — ${diffCount} differing field${diffCount === 1 ? '' : 's'}">${diffCount}</span>`
               : '';
             // Each row contains the month label AND the pill button in the same flex row,
             // so they're guaranteed to line up vertically regardless of font or padding.
@@ -20452,8 +20506,25 @@
           // modal renders MUST have a row here, otherwise re-extracting a bill can't
           // backfill a missing value (merge/overwrite skip anything not in the map).
           const FIELD_MAP = {
+            // Metadata (Update 84 — previously dropped on overwrite/merge)
+            UtilityCompany: 'utilityCompany',
+            CustomerName: 'customerName',
+            ServiceAddress: 'serviceAddress',
+            AccountNumber: 'accountNumber',
+            MeterNumber: 'meterNumber',
+            NumberOfDays: 'numberOfDays',
+            MeterReadStart: 'meterReadStart',
+            MeterReadEnd: 'meterReadEnd',
+            StartRead: 'startRead',
+            EndRead: 'endRead',
+            ReadDifference: 'readDifference',
+            MeterMultiplier: 'meterMultiplier',
+            BillDate: 'billDate',
+            Commodity: 'commodity',
+            // Electric usage + charges
             kWhConsumed: 'kwh',
             ActualKW: 'demandKW',
+            ActualRKVA: 'actualRKVA',
             BilledKW: 'billedKW',
             FacilitiesKW: 'facKW',
             FacilitiesCharge: 'facKWCost',
@@ -20470,11 +20541,35 @@
             ECACharge: 'ecaCharge',
             EERCharge: 'eerCharge',
             PTSCharge: 'ptsCharge',
+            TDCkW: 'tdcKW',
             TDCCharge: 'tdcCharge',
             RkVACharge: 'rkvaCharge',
+            TaxExemptDelivery: 'taxExemptDelivery',
+            BillOffset: 'billOffset',
             RenewableCharge: 'renewableCharge',
             SolarCredit: 'solarCredit',
             FranchiseFee: 'franchiseFee',
+            // Gas
+            NaturalGasCCF: 'naturalGasCCF',
+            NaturalGasTherms: 'naturalGasTherms',
+            GasCharge: 'gasCharge',
+            FuelAdjustment: 'fuelAdjustment',
+            // Water / Sewer / Stormwater
+            WaterUsage: 'waterUsage',
+            WaterCharge: 'waterCharge',
+            WaterProtectionFee: 'waterProtectionFee',
+            SewerUsage: 'sewerUsage',
+            SewerCharge: 'sewerCharge',
+            StormWaterCharge: 'stormWaterCharge',
+            // Propane
+            InvoiceNumber: 'invoiceNumber',
+            SaleNumber: 'saleNumber',
+            DeliveryDate: 'deliveryDate',
+            FuelType: 'fuelType',
+            GallonsDelivered: 'gallonsDelivered',
+            UnitPrice: 'unitPrice',
+            Subtotal: 'subtotal',
+            Tax: 'tax',
           };
           // Facilities is also stored in the newer `facilitiesCharge` key; keep both
           // synced when extraction provides a value, so the modal's Demand Charges
@@ -22114,11 +22209,28 @@
           id: 'r' + Date.now(),
           start: toISO(extracted.BillingPeriodStart),
           end: toISO(extracted.BillingPeriodEnd),
+          // Metadata (Update 84 — previously dropped on single-PDF save path)
+          utilityCompany: extracted.UtilityCompany || '',
+          customerName: extracted.CustomerName || '',
+          serviceAddress: extracted.ServiceAddress || '',
+          accountNumber: extracted.AccountNumber || '',
+          meterNumber: extracted.MeterNumber || '',
+          numberOfDays: extracted.NumberOfDays || '',
+          meterReadStart: extracted.MeterReadStart || '',
+          meterReadEnd: extracted.MeterReadEnd || '',
+          startRead: extracted.StartRead || '',
+          endRead: extracted.EndRead || '',
+          readDifference: extracted.ReadDifference || '',
+          meterMultiplier: extracted.MeterMultiplier || '',
+          billDate: extracted.BillDate || '',
+          commodity: extracted.Commodity || '',
           kwh: usageQty,
           demandKW: extracted.ActualKW || '',
+          actualRKVA: extracted.ActualRKVA || '',
           billedKW: extracted.BilledKW || '',
           facKW: extracted.FacilitiesKW || '',
           facKWCost: extracted.FacilitiesCharge || '',
+          tdcKW: extracted.TDCkW || '',
           kwCost,
           kwhCost,
           otherCost,
@@ -22140,9 +22252,29 @@
           ptsCharge: extracted.PTSCharge || '',
           tdcCharge: extracted.TDCCharge || '',
           rkvaCharge: extracted.RkVACharge || '',
+          taxExemptDelivery: extracted.TaxExemptDelivery || '',
+          billOffset: extracted.BillOffset || '',
           renewableCharge: extracted.RenewableCharge || '',
           franchiseFee: extracted.FranchiseFee || '',
           solarCredit: extracted.SolarCredit || '',
+          naturalGasCCF: extracted.NaturalGasCCF || '',
+          naturalGasTherms: extracted.NaturalGasTherms || '',
+          gasCharge: extracted.GasCharge || '',
+          fuelAdjustment: extracted.FuelAdjustment || '',
+          waterUsage: extracted.WaterUsage || '',
+          waterCharge: extracted.WaterCharge || '',
+          waterProtectionFee: extracted.WaterProtectionFee || '',
+          sewerUsage: extracted.SewerUsage || '',
+          sewerCharge: extracted.SewerCharge || '',
+          stormWaterCharge: extracted.StormWaterCharge || '',
+          invoiceNumber: extracted.InvoiceNumber || '',
+          saleNumber: extracted.SaleNumber || '',
+          deliveryDate: extracted.DeliveryDate || '',
+          fuelType: extracted.FuelType || '',
+          gallonsDelivered: extracted.GallonsDelivered || '',
+          unitPrice: extracted.UnitPrice || '',
+          subtotal: extracted.Subtotal || '',
+          tax: extracted.Tax || '',
         };
         if (proj) {
           const udProj = getUDProj(proj.id);
