@@ -2277,14 +2277,18 @@
         background: var(--em-dim);
       }
       .drop-zone.collapsed {
-        padding: 8px 16px;
-        min-height: 0;
+        /* Update 99: raise padding + min-height so the Clear button pill
+           fits comfortably inside the collapsed drop zone. Previous 8px
+           padding + min-height:0 made the container shorter than the button. */
+        padding: 10px 16px;
+        min-height: 48px;
         cursor: default;
         border-style: solid;
         display: flex;
         align-items: center;
         justify-content: space-between;
         text-align: left;
+        gap: 12px;
       }
       .drop-zone.collapsed .dz-ico,
       .drop-zone.collapsed .dz-sub {
@@ -2293,9 +2297,30 @@
       .drop-zone.collapsed .dz-title {
         font-size: 12px;
         margin: 0;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .drop-zone.collapsed #pdfClearBtn {
         margin-top: 0;
+        flex-shrink: 0;
+      }
+      /* Update 99: freeze the Extracted Output header (title + sum-mismatch /
+         dup / correction banners) at the top of the left column's scroll
+         container so everything ABOVE the Account Info section stays pinned
+         as the user scrolls through the data fields. */
+      #extractedFieldsHdr {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: var(--s2);
+        margin: 0 -4px 0 0;
+        padding-right: 4px;
+      }
+      #extractedFieldsHdr:empty {
+        display: none;
       }
       .dz-ico {
         font-size: 38px;
@@ -17916,7 +17941,12 @@
             if (isNaN(p1) || isNaN(p2)) return Infinity;
             return Math.abs((p1 - p2) / 86400000);
           };
-          // 1. Sequential-read mismatch flags (existing behavior, kept)
+          // 1. Sequential-read mismatch flags — with meter-change / rollover
+          //    auto-detection. When next.StartRead is near-zero while
+          //    curr.EndRead is large, that's a new meter install or a
+          //    physical odometer rollover, NOT an OCR error. Record a
+          //    `_meterChange` marker instead of a mismatch so the UI can
+          //    treat it as expected continuity.
           for (let i = 0; i < bills.length - 1; i++) {
             const curr = bills[i],
               next = bills[i + 1];
@@ -17925,6 +17955,23 @@
             const endR = pfR(curr.EndRead);
             const startR = pfR(next.StartRead);
             if (endR > 0 && startR > 0 && Math.abs(endR - startR) > 0.001) {
+              // Meter change / odometer rollover: next.StartRead < 10 AND
+              // prev.EndRead > 1000 (substantially different magnitudes).
+              // Don't flag — the near-zero read is the new meter's zero point.
+              const isMeterChange = startR < 10 && endR > 1000;
+              if (isMeterChange) {
+                next._meterChange = {
+                  priorEnd: curr.EndRead,
+                  newStart: next.StartRead,
+                  reason:
+                    'New meter installed (or odometer rollover) — StartRead of ' +
+                    next.StartRead +
+                    ' is the zero point of the replacement, not a continuation of ' +
+                    curr.EndRead +
+                    '.',
+                };
+                continue;
+              }
               curr._seqReadMismatch = {
                 field: 'EndRead',
                 value: curr.EndRead,
