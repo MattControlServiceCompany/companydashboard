@@ -17887,22 +17887,44 @@
           }
         }
 
-        // ── SEQUENTIAL READ VALIDATION ──
-        // In a multi-bill PDF for the same account, bill N's EndRead should = bill N+1's StartRead.
-        // If they don't match, flag the discrepancy (helps catch OCR digit errors in reads).
+        // ── SEQUENTIAL READ VALIDATION + CROSS-BILL RECOVERY (Update 98) ──
+        // Multi-bill Evergy PDFs are a chain of continuous readings on one
+        // account. A bill's period should abut its neighbors' periods and a
+        // bill's StartRead should equal the previous bill's EndRead (unless
+        // there was a meter change or an odometer rollover). We lean on this
+        // structure to:
+        //   1. Flag non-matching reads between adjacent bills (OCR digit errors).
+        //   2. Recover a missing StartRead from the previous EndRead when
+        //      periods are continuous.
+        //   3. Recover a missing EndRead from the next StartRead.
+        //   4. Apply arithmetic recovery on every bill: given any 3 of
+        //      {StartRead, EndRead, ReadDifference, MeterMultiplier,
+        //      kWhConsumed}, compute the 4th via the two relations:
+        //         EndRead − StartRead = ReadDifference
+        //         ReadDifference × MeterMultiplier = kWhConsumed
         if (bills.length > 1) {
+          const pfR = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+          const sameAcct = (a, b) => {
+            const x = (a.AccountNumber || '').replace(/[\s\-]/g, '');
+            const y = (b.AccountNumber || '').replace(/[\s\-]/g, '');
+            return !x || !y || x === y;
+          };
+          const dayDiff = (d1, d2) => {
+            if (!d1 || !d2) return Infinity;
+            const p1 = new Date(d1 + 'T12:00:00');
+            const p2 = new Date(d2 + 'T12:00:00');
+            if (isNaN(p1) || isNaN(p2)) return Infinity;
+            return Math.abs((p1 - p2) / 86400000);
+          };
+          // 1. Sequential-read mismatch flags (existing behavior, kept)
           for (let i = 0; i < bills.length - 1; i++) {
             const curr = bills[i],
               next = bills[i + 1];
             if (!curr.EndRead || !next.StartRead) continue;
-            // Only compare bills from the same account
-            const acct1 = (curr.AccountNumber || '').replace(/[\s\-]/g, '');
-            const acct2 = (next.AccountNumber || '').replace(/[\s\-]/g, '');
-            if (acct1 && acct2 && acct1 !== acct2) continue;
-            const endR = parseFloat(String(curr.EndRead).replace(/,/g, ''));
-            const startR = parseFloat(String(next.StartRead).replace(/,/g, ''));
+            if (!sameAcct(curr, next)) continue;
+            const endR = pfR(curr.EndRead);
+            const startR = pfR(next.StartRead);
             if (endR > 0 && startR > 0 && Math.abs(endR - startR) > 0.001) {
-              // Reads don't match — flag both bills
               curr._seqReadMismatch = {
                 field: 'EndRead',
                 value: curr.EndRead,
@@ -17915,6 +17937,107 @@
                 expected: curr.EndRead,
                 prevBill: curr.BillingPeriodStart + '–' + curr.BillingPeriodEnd,
               };
+            }
+          }
+          // 2. Cross-bill continuity recovery — copy a missing read from the
+          //    neighbor when billing periods abut (within 5 days).
+          for (let i = 0; i < bills.length; i++) {
+            const curr = bills[i];
+            const prev = i > 0 ? bills[i - 1] : null;
+            const next = i < bills.length - 1 ? bills[i + 1] : null;
+            if (!curr.StartRead && prev && sameAcct(curr, prev) && prev.EndRead) {
+              if (dayDiff(prev.BillingPeriodEnd, curr.BillingPeriodStart) <= 5) {
+                curr.StartRead = prev.EndRead;
+                curr._auto_recovered_StartRead = {
+                  original: null,
+                  corrected: curr.StartRead,
+                  reason:
+                    "Copied from previous bill's EndRead (" +
+                    prev.EndRead +
+                    ') — billing period continuous with ' +
+                    prev.BillingPeriodEnd +
+                    '.',
+                };
+              }
+            }
+            if (!curr.EndRead && next && sameAcct(curr, next) && next.StartRead) {
+              if (dayDiff(curr.BillingPeriodEnd, next.BillingPeriodStart) <= 5) {
+                curr.EndRead = next.StartRead;
+                curr._auto_recovered_EndRead = {
+                  original: null,
+                  corrected: curr.EndRead,
+                  reason:
+                    "Copied from next bill's StartRead (" +
+                    next.StartRead +
+                    ') — billing period continuous with ' +
+                    next.BillingPeriodStart +
+                    '.',
+                };
+              }
+            }
+          }
+          // 3. Arithmetic recovery pass: fill any remaining missing value
+          //    from the two identities above. Cascaded so a recovered
+          //    ReadDifference can subsequently yield a missing StartRead/EndRead.
+          for (const b of bills) {
+            for (let pass = 0; pass < 2; pass++) {
+              const sR = pfR(b.StartRead),
+                eR = pfR(b.EndRead),
+                dR = pfR(b.ReadDifference),
+                mM = pfR(b.MeterMultiplier),
+                kC = pfR(b.kWhConsumed);
+              // EndRead − StartRead = ReadDifference
+              if (sR > 0 && eR > 0 && !dR) {
+                const v = eR - sR;
+                b.ReadDifference = v.toFixed(4);
+                b._auto_recovered_ReadDifference = {
+                  original: null,
+                  corrected: b.ReadDifference,
+                  reason: `EndRead (${eR}) − StartRead (${sR}) = ${v.toFixed(4)}.`,
+                };
+              } else if (dR > 0 && sR > 0 && !eR) {
+                const v = sR + dR;
+                b.EndRead = v.toFixed(4);
+                b._auto_recovered_EndRead = {
+                  original: null,
+                  corrected: b.EndRead,
+                  reason: `StartRead (${sR}) + ReadDifference (${dR}) = ${v.toFixed(4)}.`,
+                };
+              } else if (dR > 0 && eR > 0 && !sR) {
+                const v = eR - dR;
+                b.StartRead = v.toFixed(4);
+                b._auto_recovered_StartRead = {
+                  original: null,
+                  corrected: b.StartRead,
+                  reason: `EndRead (${eR}) − ReadDifference (${dR}) = ${v.toFixed(4)}.`,
+                };
+              }
+              // ReadDifference × MeterMultiplier = kWhConsumed
+              if (dR > 0 && mM > 0 && !kC) {
+                const v = dR * mM;
+                b.kWhConsumed = v.toFixed(4);
+                b._auto_recovered_kWhConsumed = {
+                  original: null,
+                  corrected: b.kWhConsumed,
+                  reason: `ReadDifference (${dR}) × MeterMultiplier (${mM}) = ${v.toFixed(4)}.`,
+                };
+              } else if (kC > 0 && mM > 0 && !dR) {
+                const v = kC / mM;
+                b.ReadDifference = v.toFixed(4);
+                b._auto_recovered_ReadDifference = {
+                  original: null,
+                  corrected: b.ReadDifference,
+                  reason: `kWhConsumed (${kC}) / MeterMultiplier (${mM}) = ${v.toFixed(4)}.`,
+                };
+              } else if (kC > 0 && dR > 0 && !mM) {
+                const v = kC / dR;
+                b.MeterMultiplier = v.toFixed(4);
+                b._auto_recovered_MeterMultiplier = {
+                  original: null,
+                  corrected: b.MeterMultiplier,
+                  reason: `kWhConsumed (${kC}) / ReadDifference (${dR}) = ${v.toFixed(4)}.`,
+                };
+              }
             }
           }
         }
