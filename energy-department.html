@@ -3851,21 +3851,26 @@
       tr.bill-flagged td:first-child {
         box-shadow: inset 3px 0 0 var(--amber);
       }
-      /* Update 90 / 91: sticky left columns (Norm Month / Start / End).
-         Use !important to hard-override the zebra-stripe rule on even rows
-         (same specificity as `.ud-bill-tbl tr:nth-child(even) td` — without
-         !important, source-order wins but any later CSS edit breaks this).
-         box-shadow simulates a right-border that survives horizontal scroll
-         even when border-collapse:collapse clips the real border. */
+      /* Update 90 / 91 / 92: sticky left columns (Norm Month / Start / End).
+         Content from scrolling columns must NEVER show behind the sticky
+         cells — requires: (a) solid opaque background-color, (b) z-index
+         higher than any scrolling cell's effective stacking level, and
+         (c) a right-edge separator (box-shadow beats a real border because
+         border-collapse:collapse clips the cell's own borders during scroll).
+         Empty terminator row is a deliberate exception: the whole row is
+         transparent so the bottom of the data table has a visible gap. */
       .ud-bill-tbl th.sticky-col,
       .ud-bill-tbl td.sticky-col {
         position: sticky !important;
-        z-index: 3;
+        z-index: 20;
         background-color: var(--s1) !important;
-        box-shadow: inset -1px 0 var(--border);
+        background-clip: padding-box;
+        box-shadow:
+          1px 0 0 var(--border) inset,
+          -1px 0 0 var(--border);
       }
       .ud-bill-tbl th.sticky-col {
-        z-index: 4;
+        z-index: 25;
       }
       .ud-bill-tbl tr:hover td.sticky-col {
         background-color: var(--s3) !important;
@@ -3874,7 +3879,7 @@
         background-color: var(--amber-dim) !important;
       }
       .ud-bill-tbl tr.ud-bill-empty-row td.sticky-col {
-        background-color: transparent !important;
+        background-color: var(--s1) !important;
       }
       /* Empty terminator row at bottom with visible borders on every cell */
       .ud-bill-tbl tr.ud-bill-empty-row td {
