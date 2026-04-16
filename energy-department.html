@@ -3729,7 +3729,15 @@
       }
       .ud-bill-tbl {
         width: 100%;
-        border-collapse: collapse;
+        /* Update 92: separate (not collapse) so each cell paints its OWN
+           right + bottom borders. With collapse, adjacent cells SHARE one
+           1px border line — and on sticky cells during horizontal scroll,
+           that shared line is treated as part of the scrolled column, not
+           the frozen one, so scrolled text showed through the border gap.
+           Separate gives every cell an opaque 1px solid-color edge that
+           nothing can bleed through. */
+        border-collapse: separate;
+        border-spacing: 0;
         font-size: 12px;
       }
       .ud-bill-tbl th {
@@ -3865,9 +3873,11 @@
         z-index: 20;
         background-color: var(--s1) !important;
         background-clip: padding-box;
-        box-shadow:
-          1px 0 0 var(--border) inset,
-          -1px 0 0 var(--border);
+        /* Solid right border painted by the cell itself. With the table now
+           using border-collapse:separate, this border is owned by the sticky
+           cell and has no collapsed-edge transparency for scrolled text to
+           bleed through. */
+        border-right: 1px solid var(--border) !important;
       }
       .ud-bill-tbl th.sticky-col {
         z-index: 25;
