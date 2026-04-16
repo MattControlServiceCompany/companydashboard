@@ -20520,7 +20520,17 @@
         const b = bills[idx];
         const warnings = window._pdfBillWarnings || [];
         // Short MM/DD/YY date format for the pill labels
-        const _shortDt = (s) => (s ? String(s).replace(/^(\d{1,2}\/\d{1,2}\/)\d{2}(\d{2})$/, '$1$2') : s);
+        // Update 100: standardize extracted date strings to MM/DD/YYYY with
+        // zero-padded month and day (previously stripped to MM/DD/YY).
+        const _shortDt = (s) => {
+          if (!s) return s;
+          const m = String(s).match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+          if (!m) return s;
+          const mm = m[1].padStart(2, '0');
+          const dd = m[2].padStart(2, '0');
+          const yyyy = m[3].length === 2 ? '20' + m[3] : m[3];
+          return mm + '/' + dd + '/' + yyyy;
+        };
         // Majority-month label (e.g. "Mar 2024") for a bill's period. Uses majority-days
         // inline to avoid the MM/DD/YYYY ↔ YYYY-MM-DD format mismatch with normMonth.
         // Tie-break (Update 83): when two months have equal day counts, the
@@ -25732,7 +25742,11 @@
       function fmtDate(d) {
         if (!d) return '?';
         const dt = new Date(d + 'T12:00:00');
-        return dt.getMonth() + 1 + '/' + dt.getDate() + '/' + dt.getFullYear();
+        // Update 100: zero-pad month and day so every date renders as
+        // MM/DD/YYYY (##/##/####) — consistent alignment across the app.
+        const mm = String(dt.getMonth() + 1).padStart(2, '0');
+        const dd = String(dt.getDate()).padStart(2, '0');
+        return mm + '/' + dd + '/' + dt.getFullYear();
       }
 
       /* ══════════════════════════════════════════
