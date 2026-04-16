@@ -20993,7 +20993,21 @@
         const layoutKeys = new Set(
           FIELD_LAYOUT.flatMap((r) => [...(r.fields || []), r.chargeField, r.qtyField, r.kwField].filter(Boolean)),
         );
-        const extraKeys = Object.keys(parsed).filter((k) => !layoutKeys.has(k) && !k.startsWith('_'));
+        // Fields that are displayed implicitly inside a charge-line row (e.g.
+        // OnPeakKWh appears as the qty column on the Energy On-Peak charge-line
+        // via `_rates.EnergyOnPeakCharge.parts[0].qty`, not as a dedicated
+        // pair row) — exclude them from the "extras" tail so they don't render
+        // as stray fields below the Total Current Charges row.
+        const IMPLICITLY_RENDERED = new Set([
+          'OnPeakKWh',
+          'OffPeakKWh',
+          'EnergyOnPeakKWh',
+          'EnergyOffPeakKWh',
+          'TotalAmountDue',
+        ]);
+        const extraKeys = Object.keys(parsed).filter(
+          (k) => !layoutKeys.has(k) && !IMPLICITLY_RENDERED.has(k) && !k.startsWith('_'),
+        );
         // Build warning lookup by field name
         const warnMap = {};
         for (const w of warnings) {
@@ -21053,8 +21067,15 @@
           if (autoCorrect) {
             const origFmt = _acPfx + parseFloat(autoCorrect.original).toFixed(_acDp);
             const corrFmt = _acPfx + parseFloat(autoCorrect.corrected).toFixed(_acDp);
+            // Detect decimal-shift corrections: original and corrected share the
+            // same digit sequence once $/commas/decimals are stripped (e.g.
+            // "24708945" → "2470.8945", "5787840" → "578.7840"). Those don't
+            // need a long descriptive reason — the value change speaks for itself.
+            const _digits = (v) => String(v).replace(/[^\d]/g, '');
+            const isDecimalShift = _digits(autoCorrect.original) === _digits(autoCorrect.corrected);
+            const reasonSuffix = isDecimalShift ? '' : '. ' + _titleEscape(autoCorrect.reason || '');
             _pop.push(
-              `<div style="margin-bottom:4px">&#10003; Corrected from <b>${origFmt}</b> &rarr; <b>${corrFmt}</b>. ${_titleEscape(autoCorrect.reason || '')}</div>`,
+              `<div style="margin-bottom:4px">&#10003; Corrected from <b>${origFmt}</b> &rarr; <b>${corrFmt}</b>${reasonSuffix}</div>`,
             );
             _reverts.push(`<button class="ef-ac-revert" onclick="revertAutoCorrect('${k}')">&#8634; Revert</button>`);
             _bumpLevel('ac');
