@@ -3695,9 +3695,23 @@
         font-size: 11px;
         color: var(--text3);
       }
+      /* Update 91: hide header wrapper scrollbar. The inline style on the
+         #billsTheadWrap element switches from overflow-x:hidden to
+         overflow-x:auto so the sticky-col cells in the header engage
+         properly — but we don't want the scrollbar to render visually,
+         since the body already shows one and the two are JS-synced. */
+      .bills-thead-wrap {
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+      .bills-thead-wrap::-webkit-scrollbar {
+        display: none;
+        width: 0;
+        height: 0;
+      }
       .bills-thead-wrap {
         flex-shrink: 0;
-        overflow-x: hidden;
+        overflow-x: auto;
         background: var(--s1);
       }
       .bills-thead-wrap .ud-bill-tbl {
@@ -3837,27 +3851,30 @@
       tr.bill-flagged td:first-child {
         box-shadow: inset 3px 0 0 var(--amber);
       }
-      /* Update 90: sticky left columns (Norm Month / Start / End) */
+      /* Update 90 / 91: sticky left columns (Norm Month / Start / End).
+         Use !important to hard-override the zebra-stripe rule on even rows
+         (same specificity as `.ud-bill-tbl tr:nth-child(even) td` — without
+         !important, source-order wins but any later CSS edit breaks this).
+         box-shadow simulates a right-border that survives horizontal scroll
+         even when border-collapse:collapse clips the real border. */
       .ud-bill-tbl th.sticky-col,
       .ud-bill-tbl td.sticky-col {
-        position: sticky;
-        background: var(--s1);
+        position: sticky !important;
         z-index: 3;
+        background-color: var(--s1) !important;
+        box-shadow: inset -1px 0 var(--border);
       }
       .ud-bill-tbl th.sticky-col {
         z-index: 4;
       }
-      .ud-bill-tbl td.sticky-col {
-        background: var(--s2);
-      }
-      .ud-bill-tbl tr:nth-child(even) td.sticky-col {
-        background: var(--s1);
-      }
       .ud-bill-tbl tr:hover td.sticky-col {
-        background: var(--s3);
+        background-color: var(--s3) !important;
       }
       .ud-bill-tbl tr.bill-flagged td.sticky-col {
-        background: var(--amber-dim) !important;
+        background-color: var(--amber-dim) !important;
+      }
+      .ud-bill-tbl tr.ud-bill-empty-row td.sticky-col {
+        background-color: transparent !important;
       }
       /* Empty terminator row at bottom with visible borders on every cell */
       .ud-bill-tbl tr.ud-bill-empty-row td {
@@ -24776,8 +24793,6 @@
       const _pfBills = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
       const CONDENSED_CATEGORIES = {
         Electric: [
-          { label: 'On-Peak kWh', type: 'number', w: 110, compute: (r) => _pfBills(r.onPeakKwh) },
-          { label: 'Off-Peak kWh', type: 'number', w: 110, compute: (r) => _pfBills(r.offPeakKwh) },
           { label: 'Total kWh', type: 'number', w: 110, compute: (r) => _pfBills(r.kwh) },
           {
             label: 'kWh Cost $',
@@ -24790,12 +24805,41 @@
               _pfBills(r.eerCharge) +
               _pfBills(r.ptsCharge),
           },
+          {
+            // Blended kWh rate = sum of kWh charges / kWh consumed
+            label: 'kWh Rate $/kWh',
+            type: 'rate',
+            w: 110,
+            compute: (r) => {
+              const cost =
+                _pfBills(r.onPeakCost) +
+                _pfBills(r.offPeakCost) +
+                _pfBills(r.ecaCharge) +
+                _pfBills(r.eerCharge) +
+                _pfBills(r.ptsCharge);
+              const kwh = _pfBills(r.kwh);
+              return kwh > 0 ? cost / kwh : 0;
+            },
+          },
+          { label: 'Actual kW', type: 'number', w: 90, compute: (r) => _pfBills(r.demandKW) },
           { label: 'Billed kW', type: 'number', w: 90, compute: (r) => _pfBills(r.billedKW) },
+          { label: 'Facilities kW', type: 'number', w: 100, compute: (r) => _pfBills(r.facKW) },
           {
             label: 'kW Cost $',
             type: 'currency',
             w: 100,
             compute: (r) => _pfBills(r.demandCharge) + _pfBills(r.tdcCharge),
+          },
+          {
+            // Blended kW rate = sum of kW charges / billed kW
+            label: 'kW Rate $/kW',
+            type: 'rate',
+            w: 110,
+            compute: (r) => {
+              const cost = _pfBills(r.demandCharge) + _pfBills(r.tdcCharge);
+              const kw = _pfBills(r.billedKW) || _pfBills(r.demandKW);
+              return kw > 0 ? cost / kw : 0;
+            },
           },
           {
             label: 'Other Charges $',
@@ -25222,7 +25266,7 @@
           stickyHdrInner +
           '</div>' +
           flagBanner +
-          '<div class="bills-thead-wrap" id="billsTheadWrap" style="overflow-x:hidden;flex-shrink:0;">' +
+          '<div class="bills-thead-wrap" id="billsTheadWrap" style="overflow-x:auto;flex-shrink:0;">' +
           '<table class="ud-bill-tbl" id="billsHdrTbl">' +
           tblHead +
           '</table>' +
@@ -31534,19 +31578,31 @@
               val = _pfBills(row[c.category.key]);
             }
             const cls = c.category.type === 'currency' ? 'td-total' : c.a || '';
-            const formatted =
-              c.category.type === 'currency'
-                ? val === 0
+            let formatted;
+            if (c.category.type === 'currency') {
+              formatted =
+                val === 0
                   ? '—'
-                  : '$' + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                : c.category.type === 'number'
-                  ? val === 0
-                    ? '—'
-                    : val.toLocaleString('en-US', {
-                        minimumFractionDigits: /kwh|kw\b|rkva|gallon|ccf|therm|usage/i.test(c.category.label) ? 2 : 0,
-                        maximumFractionDigits: 4,
-                      })
-                  : val || '—';
+                  : '$' + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            } else if (c.category.type === 'rate') {
+              // Blended per-unit rates use 5 decimals — typical utility rate
+              // precision (e.g. $0.03854/kWh).
+              formatted =
+                val === 0
+                  ? '—'
+                  : '$' + val.toLocaleString('en-US', { minimumFractionDigits: 5, maximumFractionDigits: 5 });
+            } else if (c.category.type === 'number') {
+              const isQty = /kwh|kw\b|rkva|gallon|ccf|therm|usage/i.test(c.category.label);
+              formatted =
+                val === 0
+                  ? '—'
+                  : val.toLocaleString('en-US', {
+                      minimumFractionDigits: isQty ? 2 : 0,
+                      maximumFractionDigits: 4,
+                    });
+            } else {
+              formatted = val || '—';
+            }
             html += `<td${cls ? ' class="' + cls + '"' : ''}>${formatted}</td>`;
             continue;
           }
