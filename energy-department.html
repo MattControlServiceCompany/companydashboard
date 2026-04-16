@@ -3794,7 +3794,6 @@
         text-align: left;
       }
       .ud-bill-tbl td.td-days {
-        color: var(--text2);
         text-align: center;
       }
       .ud-bill-tbl td.td-total {
@@ -3890,6 +3889,58 @@
       }
       .ud-bill-tbl tr.ud-bill-empty-row td.sticky-col {
         background-color: var(--s1) !important;
+      }
+      /* Update 93: right-sticky columns (Total Cost + Actions). Mirrors the
+         left-sticky rules but anchors to the right edge and uses a left
+         border instead of a right border. */
+      .ud-bill-tbl th.sticky-col-right,
+      .ud-bill-tbl td.sticky-col-right {
+        position: sticky !important;
+        z-index: 20;
+        background-color: var(--s1) !important;
+        background-clip: padding-box;
+        border-left: 1px solid var(--border) !important;
+      }
+      .ud-bill-tbl th.sticky-col-right {
+        z-index: 25;
+      }
+      .ud-bill-tbl tr:hover td.sticky-col-right {
+        background-color: var(--s3) !important;
+      }
+      .ud-bill-tbl tr.bill-flagged td.sticky-col-right {
+        background-color: var(--amber-dim) !important;
+      }
+      .ud-bill-tbl tr.ud-bill-empty-row td.sticky-col-right {
+        background-color: var(--s1) !important;
+      }
+      /* Table Settings header — full cell is clickable, gear icon above a
+         "Table Settings" label. Lives as a child <div> inside the <th> so
+         the col-resize-handle sibling stays functional. */
+      .bts-header-btn {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        cursor: pointer;
+        padding: 4px 8px;
+        line-height: 1.1;
+        border-radius: 4px;
+        transition: background 0.13s;
+        user-select: none;
+      }
+      .bts-header-btn:hover {
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .bts-icon {
+        font-size: 14px;
+      }
+      .bts-label {
+        font-size: 9px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text2);
       }
       /* Empty terminator row at bottom with visible borders on every cell */
       .ud-bill-tbl tr.ud-bill-empty-row td {
@@ -25106,6 +25157,8 @@
         // the detailed schema if no category map exists). Hidden toggles still
         // apply (user can hide individual category columns if desired).
         // Detailed view: use the full BILL_SCHEMA column set minus skips + hidden.
+        // Total Cost gets rightSticky:true (Update 93) so it stays pinned to the
+        // right edge alongside the Actions column.
         let COL_FIELDS;
         if (viewState.mode === 'condensed' && CONDENSED_CATEGORIES[m.commodity]) {
           COL_FIELDS = CONDENSED_CATEGORIES[m.commodity]
@@ -25116,6 +25169,7 @@
               w: c.w || 100,
               k: c.label,
               category: c,
+              rightSticky: c.key === 'totalCost',
             }));
         } else {
           const schemaForTable = _billSchemaFor(m.commodity).filter(
@@ -25127,13 +25181,21 @@
             w: _billColumnWidth(e),
             k: e.key,
             entry: e,
+            rightSticky: e.key === 'totalCost',
           }));
         }
+        // Action/settings column: gear icon + "Table Settings" label, full
+        // cell is clickable (resize handle is a sibling div so clicks on the
+        // 5px right edge still resize without triggering the modal).
         const COL_ACTION = [
           {
-            h: `<button class="btn-table-settings" onclick="openBillsTableSettings('${m.id}')" title="Column settings">⚙</button>`,
+            h: `<div class="bts-header-btn" onclick="openBillsTableSettings('${m.id}')" title="Table Settings">
+                  <span class="bts-icon">⚙</span>
+                  <span class="bts-label">Table Settings</span>
+                </div>`,
             a: 'td-actions',
-            w: 60,
+            w: 110,
+            rightSticky: true,
           },
         ];
         const cols = [...COL_BASE, ...COL_FIELDS, ...COL_ACTION];
@@ -25142,8 +25204,10 @@
           `<thead><tr>` +
           cols
             .map((c, i) => {
-              const sticky = c.sticky ? ' sticky-col' : '';
-              return `<th class="${c.a}${sticky}" style="min-width:${c.w}px" data-col="${i}">${c.h}<div class="col-resize-handle" data-col="${i}"></div></th>`;
+              const classes = [c.a];
+              if (c.sticky) classes.push('sticky-col');
+              if (c.rightSticky) classes.push('sticky-col-right');
+              return `<th class="${classes.filter(Boolean).join(' ')}" style="min-width:${c.w}px" data-col="${i}">${c.h}<div class="col-resize-handle" data-col="${i}"></div></th>`;
             })
             .join('') +
           `</tr></thead>`;
@@ -25206,7 +25270,16 @@
           tblBody +=
             '<tr class="ud-bill-empty-row">' +
             cols
-              .map((c, i) => `<td${c.sticky ? ' class="sticky-col" data-sticky="' + i + '"' : ''}>&nbsp;</td>`)
+              .map((c, i) => {
+                const classes = [];
+                if (c.sticky) classes.push('sticky-col');
+                if (c.rightSticky) classes.push('sticky-col-right');
+                const classAttr = classes.length ? ' class="' + classes.join(' ') + '"' : '';
+                const dataAttr =
+                  (c.sticky ? ' data-sticky="' + i + '"' : '') +
+                  (c.rightSticky ? ' data-sticky-right="' + i + '"' : '');
+                return '<td' + classAttr + dataAttr + '>&nbsp;</td>';
+              })
               .join('') +
             '</tr>';
         }
@@ -25332,10 +25405,9 @@
             const totalW = ws.reduce((s, w) => s + w, 0);
             hdrTbl.style.width = totalW + 'px';
             bodyTbl.style.width = totalW + 'px';
-            // Sticky columns (Update 90): compute cumulative left offsets for
-            // cols flagged `sticky: true` in the cols array and apply them to
-            // every matching header + body cell. cols[0..2] are Norm Month /
-            // Start / End by construction.
+            // Left-sticky columns (Update 90): compute cumulative left
+            // offsets for cols flagged `sticky: true` (Norm Month / Start /
+            // End) and apply them to every matching header + body cell.
             let cumLeft = 0;
             for (let i = 0; i < cols.length; i++) {
               if (!cols[i].sticky) continue;
@@ -25346,6 +25418,21 @@
                 td.style.left = cumLeft + 'px';
               });
               cumLeft += w || 0;
+            }
+            // Right-sticky columns (Update 93): iterate BACKWARDS from the
+            // last col, accumulating from the right edge. cols flagged
+            // `rightSticky: true` (Total Cost + Actions) get their `right`
+            // style set so they pin to the right edge during horizontal scroll.
+            let cumRight = 0;
+            for (let i = cols.length - 1; i >= 0; i--) {
+              if (!cols[i].rightSticky) continue;
+              const w = ws[i];
+              const hdrCell = hdrTbl.querySelector(`th[data-col="${i}"]`);
+              if (hdrCell) hdrCell.style.right = cumRight + 'px';
+              bodyTbl.querySelectorAll(`td[data-sticky-right="${i}"]`).forEach((td) => {
+                td.style.right = cumRight + 'px';
+              });
+              cumRight += w || 0;
             }
           }
 
@@ -31542,7 +31629,9 @@
           (row.hasPDF || row.pdfKey) && (row.pdfBillId || row.pdfKey)
             ? `<button class="btn-edit" onclick="viewSavedPDF('${pdfLookupId}',${row.pdfPageStart || 'null'},${row.pdfPageEnd || 'null'},'${row.pdfKey || ''}')" title="View source PDF" style="color:var(--accent)">📄</button>`
             : '';
-        const actionBtns = `<td class="td-actions">
+        // Actions column is always the last col and is right-sticky.
+        const _actionColIdx = (cols || []).length - 1;
+        const actionBtns = `<td class="td-actions sticky-col-right" data-sticky-right="${_actionColIdx}">
     ${pdfBtn}<button class="btn-edit" onclick="openBillModal('${m.id}','${row.id}')" title="Edit">✏️</button>
     <button class="btn-del"  onclick="deleteBillRow('${m.id}','${row.id}')" title="Delete">✕</button>
   </td>`;
@@ -31618,7 +31707,10 @@
             } else {
               formatted = val || '—';
             }
-            html += `<td${cls ? ' class="' + cls + '"' : ''}>${formatted}</td>`;
+            const rightCls = c.rightSticky ? ' sticky-col-right' : '';
+            const rightAttr = c.rightSticky ? ' data-sticky-right="' + i + '"' : '';
+            const finalCls = (cls + rightCls).trim();
+            html += `<td${finalCls ? ' class="' + finalCls + '"' : ''}${rightAttr}>${formatted}</td>`;
             continue;
           }
           if (!c.entry) {
@@ -31628,7 +31720,10 @@
           const raw = _billReadValue(row, c.entry);
           const formatted = _billFormatValue(raw, c.entry);
           const cls = c.entry.key === 'totalCost' ? 'td-total' : c.a || '';
-          html += `<td${cls ? ' class="' + cls + '"' : ''}>${formatted}</td>`;
+          const rightCls = c.rightSticky ? ' sticky-col-right' : '';
+          const rightAttr = c.rightSticky ? ' data-sticky-right="' + i + '"' : '';
+          const finalCls = (cls + rightCls).trim();
+          html += `<td${finalCls ? ' class="' + finalCls + '"' : ''}${rightAttr}>${formatted}</td>`;
         }
         html += actionBtns + '</tr>';
         return html;
