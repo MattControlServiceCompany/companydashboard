@@ -3781,6 +3781,12 @@
         border-right: 1px solid var(--border);
         vertical-align: middle;
         white-space: nowrap;
+        /* Update 94: clip + ellipsis so content stays inside its cell.
+           Without these, fixed-layout columns with nowrap content spill
+           into neighbor columns when the cell is narrower than the text,
+           which makes sticky columns look like they're bleeding through. */
+        overflow: hidden;
+        text-overflow: ellipsis;
         font-family: var(--mono);
         font-size: 12px;
         text-align: right;
