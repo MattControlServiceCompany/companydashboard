@@ -14643,7 +14643,10 @@
         const onPkChg = xChg('Energy' + SEP + C + '\\s+On\\s+P[kK]');
         const offPkChg = xChg('Energy' + SEP + C + '\\s+Off\\s+P[kK]');
         const tieredChg = xChg('Energy' + SEP + C, /On\s+P[kK]|Off\s+P[kK]/i);
-        const ecaChg = xChg('ECA' + SEP + C);
+        // E[CG]A tolerates Tesseract's C↔G confusion — e.g. the second ECA
+        // part on Louis Elementary's Oct 2025 bill prints as "EGA Chg", which
+        // a strict `ECA` match silently skipped so the $121.10 part was lost.
+        const ecaChg = xChg('E[CG]A' + SEP + C);
         const eerChg = xChg('EER' + SEP + C);
         const ptsChg = xChg('PTS' + SEP + C);
         // TDC kW qty lives on the charge line as "for <qty>" (OCR frequently splits
@@ -14661,13 +14664,19 @@
         // E.g. 500 kW demand → 250 kVAR free; if reactive = 300, bill shows 50 kVAR × $0.663 = $33.15
         // The meter table RKVA Used is the full value; the charge line qty is only the excess.
         const rkvaChg = xChg('R[kK]VA' + SEP + C);
-        // Broadened: handle OCR variants "Tox exempt", "lax exempt", and wrapped lines.
+        // Broadened: handle OCR variants "Tox exempt", "lax exempt", wrapped
+        // lines, and stray punctuation like the smart quote in "Tax ‘exempt
+        // delivery cost from bill" that Tesseract inserts on degraded scans.
+        // `SEP_T` allows whitespace, straight/curly quotes/apostrophes, or
+        // backticks between "Tax" and "exempt".
+        const SEP_T = "[\\s'`\\u2018\\u2019\\u201C\\u201D]+";
         const taxExempt =
-          chg(/[TIl][a@o0]x\s+e?xempt[^$\n]*\$([\d,]+\.\d{2})/i) ||
+          chg(new RegExp('[TIl][a@o0]x' + SEP_T + 'e?xempt[^$\\n]*\\$([\\d,]+\\.\\d{2})', 'i')) ||
           (() => {
             const lines = t.split('\n');
+            const taxRe = new RegExp('[TIl][a@o0]x' + SEP_T + 'e?xempt', 'i');
             for (let i = 0; i < lines.length; i++) {
-              if (/[TIl][a@o0]x\s+e?xempt/i.test(lines[i])) {
+              if (taxRe.test(lines[i])) {
                 const sameLine = lines[i].match(/\$([\d,]+\.\d{2})/);
                 if (sameLine) return sameLine[1].replace(/,/g, '');
                 for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
@@ -14948,7 +14957,7 @@
         const _rOnPk = xRate('Energy' + SEP + C + '\\s+On\\s+P[kK]');
         const _rOffPk = xRate('Energy' + SEP + C + '\\s+Off\\s+P[kK]');
         const _rTiered = xRate('Energy' + SEP + C, /On\s+P[kK]|Off\s+P[kK]/i);
-        const _rEca = xRate('ECA' + SEP + C);
+        const _rEca = xRate('E[CG]A' + SEP + C);
         const _rEer = xRate('EER' + SEP + C);
         const _rPts = xRate('PTS' + SEP + C);
         const _rTdc = xRate('TD[CG]' + SEP + C);
@@ -15001,10 +15010,21 @@
         if (_rRkvaOk) _rates.RkVACharge = _rRkvaOk;
         if (Object.keys(_rates).length) result._rates = _rates;
 
-        // Bill Offset = negative of Tax Exempt Delivery (Evergy business rule)
-        // Always derive from TaxExempt — OCR frequently garbles the BillOffset line and its digits
-        if (result.TaxExemptDelivery) {
+        // Evergy business rule: Bill Offset and Tax Exempt Delivery are always
+        // mirror opposites — same absolute amount, opposite signs. If either
+        // is present but the other is missing, derive the missing one.
+        // Previously only ran one direction (TaxExempt → BillOffset), so a
+        // bill where the TaxExempt line was OCR-garbled (e.g. Louis Elementary
+        // Oct 2025 where "Tax ‘exempt" broke the regex) lost the $790.51
+        // value even though BillOffset captured "-$790.51".
+        const _pfTE = (v) => (v ? parseFloat(String(v).replace(/[$,\s]/g, '')) || 0 : 0);
+        const _teVal = _pfTE(result.TaxExemptDelivery);
+        const _boVal = _pfTE(result.BillOffset);
+        if (_teVal && !_boVal) {
           result.BillOffset = '-' + result.TaxExemptDelivery;
+        } else if (_boVal && !_teVal) {
+          // BillOffset is negative; TaxExemptDelivery is the positive mirror.
+          result.TaxExemptDelivery = Math.abs(_boVal).toFixed(2);
         }
 
         // ── STRUCTURAL POSITION FALLBACK: use _EVG_CHARGE_ORDER to recover missing values ──
