@@ -14605,26 +14605,44 @@
           return sum > 0 ? sum.toFixed(2) : null;
         })();
 
+        // Post-clean helper for CustomerName: Evergy bills often print other
+        // columns (Page X of Y, the `£` OCR artifact, stray column-separator
+        // characters) on the same line as the customer name. The regexes match
+        // greedily enough to occasionally pull those in. Strip:
+        //   1. `£` and anything after (known OCR artifact).
+        //   2. Anything after 3+ consecutive whitespace chars (OCR column gap —
+        //      e.g. "USD #416                R           -" → "USD #416").
+        //   3. Trailing single non-letter stray chars (dashes, bullets, pipes)
+        //      with or without leading whitespace.
+        //   4. Trailing single isolated letter (e.g. "USD 416 R" → "USD 416")
+        //      — safer than stripping 2-char tails which could be legit
+        //      abbreviations (HS / MS / ES / HQ).
+        const _cleanCustomerName = (s) => {
+          if (s == null) return null;
+          return String(s)
+            .replace(/\s*£.*$/, '')
+            .replace(/\s{3,}.*$/, '')
+            .replace(/[\s\-·•|]+$/, '')
+            .replace(/\s+[A-Za-z]$/, '')
+            .trim();
+        };
         const result = {
           UtilityCompany: 'Evergy',
           CustomerName:
             // Relaxed: allow mixed-case letters so OCR producing "Circle Grove Elem" or
             // "CIRCLE GROVE" both match. The strict uppercase-only pattern missed bills
             // where Tesseract returned proper case.
-            t
-              .match(/Customer\s*Name[^A-Za-z\n]*([A-Za-z][A-Za-z0-9 .&'#\-]{2,}?)(?=\s+(?:Account|Page)|\n)/im)?.[1]
-              ?.replace(/\s*£.*$/, '')
-              .trim() ||
-            t
-              .match(
+            _cleanCustomerName(
+              t.match(/Customer\s*Name[^A-Za-z\n]*([A-Za-z][A-Za-z0-9 .&'#\-]{2,}?)(?=\s+(?:Account|Page)|\n)/im)?.[1],
+            ) ||
+            _cleanCustomerName(
+              t.match(
                 /Customer\s*Name\s*:?\s*\n\s*(?:Account[^\n]*\n\s*)?([A-Za-z][A-Za-z0-9 .&'#\-]{2,}?)(?=\s+Page|\s*$)/im,
-              )?.[1]
-              ?.replace(/\s*£.*$/, '')
-              .trim() ||
-            t
-              .match(/Customer\s*Name\s*:?\s*([A-Za-z][A-Za-z0-9 .&'#\-]{2,}?)(?=\s+(?:Page|Account)|\s*$)/im)?.[1]
-              ?.replace(/\s*£.*$/, '')
-              .trim() ||
+              )?.[1],
+            ) ||
+            _cleanCustomerName(
+              t.match(/Customer\s*Name\s*:?\s*([A-Za-z][A-Za-z0-9 .&'#\-]{2,}?)(?=\s+(?:Page|Account)|\s*$)/im)?.[1],
+            ) ||
             null,
           AccountNumber:
             acctOverride ||
