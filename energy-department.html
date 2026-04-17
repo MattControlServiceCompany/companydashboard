@@ -14053,16 +14053,19 @@
           }
           return best;
         };
-        const xChg = (keyword, excludeRe) => {
+        const _xChgParts = {};
+        const xChg = (keyword, excludeRe, _partsKey) => {
           const lines = t.split('\n');
           let total = 0,
             found = false;
+          const parts = [];
           for (let i = 0; i < lines.length; i++) {
             if (!new RegExp(keyword, 'i').test(lines[i])) continue;
             if (excludeRe && excludeRe.test(lines[i])) continue;
             const a = getAmt(lines[i]);
             if (a !== null) {
               total += a;
+              parts.push(a);
               found = true;
             } else {
               for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
@@ -14071,12 +14074,14 @@
                 const ja = getAmt(l);
                 if (ja !== null) {
                   total += ja;
+                  parts.push(ja);
                   found = true;
                   break;
                 }
               }
             }
           }
+          if (_partsKey && parts.length > 1) _xChgParts[_partsKey] = parts;
           return found ? total.toFixed(2) : null;
         };
         // ── Rate extraction: captures rate, quantity, AND OCR'd charge from each charge line ──
@@ -14639,7 +14644,7 @@
         // run together, but we want to fail closed on the unseparated case).
         const SEP = '[\\s.]+';
         // Customer: "Customer Chg" or OCR garble like "CUSIOMET CNG", "Customar Chg", "CUSIOMER CNG"
-        const custChg = xChg('C[ua][s5][t1iI][o0][mM][eao][r1tT]' + SEP + C);
+        const custChg = xChg('C[ua][s5][t1iI][o0][mM][eao][r1tT]' + SEP + C, null, 'CustomerCharge');
         const facKW =
           t.match(new RegExp('Fac\\S*' + SEP + C + '\\s+([\\d,.]+)\\s*[kK][Ww]', 'i'))?.[1]?.replace(/,/g, '') || null;
         const facChg = xChg('Fac\\S*' + SEP + C);
@@ -14682,23 +14687,28 @@
         // `SEP_T` allows whitespace, straight/curly quotes/apostrophes, or
         // backticks between "Tax" and "exempt".
         const SEP_T = "[\\s'`\\u2018\\u2019\\u201C\\u201D]+";
-        const taxExempt =
-          chg(new RegExp('[TIl][a@o0]x' + SEP_T + 'e?xempt[^$\\n]*\\$([\\d,]+\\.\\d{2})', 'i')) ||
-          (() => {
-            const lines = t.split('\n');
-            const taxRe = new RegExp('[TIl][a@o0]x' + SEP_T + 'e?xempt', 'i');
-            for (let i = 0; i < lines.length; i++) {
-              if (taxRe.test(lines[i])) {
-                const sameLine = lines[i].match(/\$([\d,]+\.\d{2})/);
-                if (sameLine) return sameLine[1].replace(/,/g, '');
-                for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
-                  const nextLine = lines[j].match(/\$([\d,]+\.\d{2})/);
-                  if (nextLine) return nextLine[1].replace(/,/g, '');
-                }
+        const _taxExemptParts = [];
+        const taxExempt = (() => {
+          const lines = t.split('\n');
+          const taxRe = new RegExp('[TIl][a@o0]x' + SEP_T + 'e?xempt', 'i');
+          for (let i = 0; i < lines.length; i++) {
+            if (!taxRe.test(lines[i])) continue;
+            const sameLine = lines[i].match(/\$([\d,]+\.\d{2})/);
+            if (sameLine) {
+              _taxExemptParts.push(parseFloat(sameLine[1].replace(/,/g, '')));
+              continue;
+            }
+            for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+              const nextLine = lines[j].match(/\$([\d,]+\.\d{2})/);
+              if (nextLine) {
+                _taxExemptParts.push(parseFloat(nextLine[1].replace(/,/g, '')));
+                break;
               }
             }
-            return null;
-          })();
+          }
+          if (!_taxExemptParts.length) return null;
+          return _taxExemptParts.reduce((a, b) => a + b, 0).toFixed(2);
+        })();
         // Bill offset / credit: match "Bill offset" or any line with a negative dollar amount before Subtotal
         const billOffset = (() => {
           const m1 = t.match(/Bill\s+[0O]ff\w*[^\n]*?(-?\$[\d,]+\.\d{2}|-[\d,]+\.\d{2}|\$[\d,]+\.\d{2})/im);
@@ -14718,23 +14728,30 @@
           return null;
         })();
         // Broadened: allow OCR garbles in "Franchise Fee" and accept franchise lines with
-        // the amount on the next line too (PDF column wrap).
-        const franchise =
-          chg(/Franch[il1]?[is5]?[e3]?\s+F[e3]{1,2}[^$\n]*\$([\d,]+\.\d{2})/i) ||
-          (() => {
-            const lines = t.split('\n');
-            for (let i = 0; i < lines.length; i++) {
-              if (/Franch[il1]?[is5]?[e3]?\s+F[e3]{1,2}/i.test(lines[i])) {
-                const sameLine = lines[i].match(/\$([\d,]+\.\d{2})/);
-                if (sameLine) return sameLine[1].replace(/,/g, '');
-                for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
-                  const nextLine = lines[j].match(/\$([\d,]+\.\d{2})/);
-                  if (nextLine) return nextLine[1].replace(/,/g, '');
-                }
+        // the amount on the next line too (PDF column wrap). Sums ALL matches for changeover
+        // bills that have two prorated Franchise Fee lines.
+        const _franchiseParts = [];
+        const franchise = (() => {
+          const lines = t.split('\n');
+          const franRe = /Franch[il1]?[is5]?[e3]?\s+F[e3]{1,2}/i;
+          for (let i = 0; i < lines.length; i++) {
+            if (!franRe.test(lines[i])) continue;
+            const sameLine = lines[i].match(/\$([\d,]+\.\d{2})/);
+            if (sameLine) {
+              _franchiseParts.push(parseFloat(sameLine[1].replace(/,/g, '')));
+              continue;
+            }
+            for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+              const nextLine = lines[j].match(/\$([\d,]+\.\d{2})/);
+              if (nextLine) {
+                _franchiseParts.push(parseFloat(nextLine[1].replace(/,/g, '')));
+                break;
               }
             }
-            return null;
-          })();
+          }
+          if (!_franchiseParts.length) return null;
+          return _franchiseParts.reduce((a, b) => a + b, 0).toFixed(2);
+        })();
         // Subtotal is the second independent total the bill prints (alongside
         // "Current Charges"). For Evergy tax-exempt accounts these two values
         // are always identical, so extracting both gives _postExtractionVerify
@@ -15067,6 +15084,35 @@
         if (_rPtsOk) _rates.PTSCharge = _rPtsOk;
         if (_rTdcOk) _rates.TDCCharge = _rTdcOk;
         if (_rRkvaOk) _rates.RkVACharge = _rRkvaOk;
+        if (_taxExemptParts.length > 1) {
+          _rates.TaxExemptDelivery = {
+            qty: null,
+            rate: null,
+            unit: null,
+            computed: _taxExemptParts.reduce((a, b) => a + b, 0),
+            parts: _taxExemptParts.map((v) => ({ qty: null, rate: null, unit: null, computed: v, ocrCharge: v })),
+          };
+        }
+        if (_franchiseParts.length > 1) {
+          _rates.FranchiseFee = {
+            qty: null,
+            rate: null,
+            unit: null,
+            computed: _franchiseParts.reduce((a, b) => a + b, 0),
+            parts: _franchiseParts.map((v) => ({ qty: null, rate: null, unit: null, computed: v, ocrCharge: v })),
+          };
+        }
+        for (const [chargeKey, partAmounts] of Object.entries(_xChgParts)) {
+          if (!_rates[chargeKey]) {
+            _rates[chargeKey] = {
+              qty: null,
+              rate: null,
+              unit: null,
+              computed: partAmounts.reduce((a, b) => a + b, 0),
+              parts: partAmounts.map((v) => ({ qty: null, rate: null, unit: null, computed: v, ocrCharge: v })),
+            };
+          }
+        }
         if (Object.keys(_rates).length) result._rates = _rates;
 
         // Evergy business rule: Bill Offset and Tax Exempt Delivery are always
@@ -18790,6 +18836,20 @@
             Meter2_KW: bill.Meter2_KW || '',
             Meter2_RKVA: bill.Meter2_RKVA || '',
           };
+          if (bill._rates) {
+            const cp = {};
+            for (const [k, v] of Object.entries(bill._rates)) {
+              if (v.parts && v.parts.length > 1) {
+                cp[k] = v.parts.map((p) => ({
+                  qty: p.qty || null,
+                  rate: p.rate || null,
+                  unit: p.unit || null,
+                  charge: p.ocrCharge != null ? p.ocrCharge : p.computed,
+                }));
+              }
+            }
+            if (Object.keys(cp).length) billRow._chargeParts = cp;
+          }
           meter.bills = meter.bills || [];
           const dup = meter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
           if (dup) {
@@ -19001,6 +19061,20 @@
           Meter2_KW: extracted.Meter2_KW || '',
           Meter2_RKVA: extracted.Meter2_RKVA || '',
         };
+        if (extracted._rates) {
+          const cp = {};
+          for (const [k, v] of Object.entries(extracted._rates)) {
+            if (v.parts && v.parts.length > 1) {
+              cp[k] = v.parts.map((p) => ({
+                qty: p.qty || null,
+                rate: p.rate || null,
+                unit: p.unit || null,
+                charge: p.ocrCharge != null ? p.ocrCharge : p.computed,
+              }));
+            }
+          }
+          if (Object.keys(cp).length) billRow._chargeParts = cp;
+        }
         // Re-fetch the live meter reference from the store — the match object may hold
         // a stale snapshot if projects were mutated between findMeterMatch and now.
         const liveProj = projects.find((p) => p.id === match.projId);
@@ -21584,7 +21658,7 @@
             type: 'charge-line-with-kw',
             label: 'Customer',
             chargeField: 'CustomerCharge',
-            rateKey: null,
+            rateKey: 'CustomerCharge',
             kwField: 'ActualKW',
           },
           {
@@ -21614,13 +21688,13 @@
             rateKey: 'EnergyOffPeakCharge',
           },
           { type: 'charge-line', label: 'RkVA', chargeField: 'RkVACharge', rateKey: 'RkVACharge' },
-          { type: 'charge-line', label: 'Tax Exempt', chargeField: 'TaxExemptDelivery', rateKey: null },
+          { type: 'charge-line', label: 'Tax Exempt', chargeField: 'TaxExemptDelivery', rateKey: 'TaxExemptDelivery' },
           { type: 'charge-line', label: 'ECA', chargeField: 'ECACharge', rateKey: 'ECACharge' },
           { type: 'charge-line', label: 'EER', chargeField: 'EERCharge', rateKey: 'EERCharge' },
           { type: 'charge-line', label: 'PTS', chargeField: 'PTSCharge', rateKey: 'PTSCharge' },
           { type: 'charge-line', label: 'TDC', chargeField: 'TDCCharge', qtyField: 'TDCkW', rateKey: 'TDCCharge' },
-          { type: 'charge-line', label: 'Bill Offset', chargeField: 'BillOffset', rateKey: null },
-          { type: 'charge-line', label: 'Franchise Fee', chargeField: 'FranchiseFee', rateKey: null },
+          { type: 'charge-line', label: 'Bill Offset', chargeField: 'BillOffset', rateKey: 'BillOffset' },
+          { type: 'charge-line', label: 'Franchise Fee', chargeField: 'FranchiseFee', rateKey: 'FranchiseFee' },
           { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
         ];
         const _LAYOUT_GAS = [
@@ -22828,6 +22902,20 @@
           Meter2_KW: bill.Meter2_KW || '',
           Meter2_RKVA: bill.Meter2_RKVA || '',
         };
+        if (bill._rates) {
+          const cp = {};
+          for (const [k, v] of Object.entries(bill._rates)) {
+            if (v.parts && v.parts.length > 1) {
+              cp[k] = v.parts.map((p) => ({
+                qty: p.qty || null,
+                rate: p.rate || null,
+                unit: p.unit || null,
+                charge: p.ocrCharge != null ? p.ocrCharge : p.computed,
+              }));
+            }
+          }
+          if (Object.keys(cp).length) billRow._chargeParts = cp;
+        }
         // Validation
         const componentSum = pf(bill.FacilitiesCharge) + pf(kwCost) + pf(kwhCost) + pf(otherCost) + pf(taxCost);
         const diff = Math.abs(componentSum - totalCost);
