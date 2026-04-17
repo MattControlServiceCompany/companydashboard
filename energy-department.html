@@ -1,11 +1,19 @@
 <!doctype html>
 <html lang="en">
   <script>
-    // Apply saved theme before paint to prevent flash
     (function () {
       try {
-        const t = localStorage.getItem('ch_theme');
+        var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
+        var t = s.theme || localStorage.getItem('ch_theme');
         if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        var uc = s.uiCustom;
+        if (uc && uc.fonts) {
+          var r = document.documentElement.style;
+          if (uc.fonts.baseSize) r.setProperty('--base-sz', uc.fonts.baseSize + 'px');
+          if (uc.fonts.sidebarSize) r.setProperty('--sidebar-font-sz', uc.fonts.sidebarSize + 'px');
+          if (uc.fonts.bodyFont) r.setProperty('--font', "'" + uc.fonts.bodyFont + "', sans-serif");
+          if (uc.fonts.headFont) r.setProperty('--head', "'" + uc.fonts.headFont + "', sans-serif");
+        }
       } catch (e) {}
     })();
   </script>
@@ -69,6 +77,9 @@
         --font: 'Outfit', sans-serif;
         --mono: 'Outfit', sans-serif;
         --r: 10px;
+        --head: 'Outfit', sans-serif;
+        --base-sz: 14px;
+        --sidebar-font-sz: 14px;
       }
 
       /* ── RESET ── */
@@ -89,6 +100,7 @@
       }
       body {
         font-family: var(--font);
+        font-size: var(--base-sz);
         background: var(--bg);
         color: var(--text);
         height: 100%;
@@ -546,7 +558,7 @@
         align-items: center;
         gap: 8px;
         padding: 9px 16px;
-        font-size: 14px;
+        font-size: var(--sidebar-font-sz);
         color: var(--text2);
         cursor: pointer;
         transition: all 0.14s;
