@@ -3658,6 +3658,11 @@
         color: var(--violet);
         border: 1px solid rgba(167, 139, 250, 0.2);
       }
+      .ud-meter-propane {
+        background: var(--warn-dim);
+        color: var(--orange);
+        border: 1px solid rgba(251, 146, 60, 0.2);
+      }
       .ud-meter-label {
         flex: 1;
         font-size: 13px;
@@ -10521,6 +10526,7 @@
                 <option value="Gas">Gas</option>
                 <option value="Water">Water</option>
                 <option value="Steam">Steam</option>
+                <option value="Propane">Propane</option>
               </select>
             </div>
             <div class="f2">
@@ -24598,6 +24604,7 @@
           Gas: 'ud-meter-gas',
           Water: 'ud-meter-water',
           Steam: 'ud-meter-steam',
+          Propane: 'ud-meter-propane',
         };
         return `<span class="ud-meter-pill ${map[c] || 'ud-meter-elec'}">${c}</span>`;
       }
@@ -27218,7 +27225,15 @@
                     ? 'checked'
                     : '';
               const commodityIcon =
-                m.commodity === 'Gas' ? '🔥' : m.commodity === 'Water' ? '💧' : m.commodity === 'Steam' ? '♨️' : '⚡';
+                m.commodity === 'Gas'
+                  ? '🔥'
+                  : m.commodity === 'Water'
+                    ? '💧'
+                    : m.commodity === 'Steam'
+                      ? '♨️'
+                      : m.commodity === 'Propane'
+                        ? '🛢️'
+                        : '⚡';
               html +=
                 '<label class="exp-meter" data-pid="' +
                 p.id +
@@ -28924,6 +28939,11 @@
           '\')">✅ Save' +
           (hasBl ? ' (' + blRows.length + ' mo)' : '') +
           '</button>' +
+          '<button class="btn btn-ghost btn-sm" style="' +
+          (hasBl ? '' : 'display:none;') +
+          'font-size:11px" onclick="saveBaselineToAllMeters(\'' +
+          m.id +
+          '\')" title="Apply this baseline period to all other meters in this building">📋 Apply to All Meters</button>' +
           '</div>' +
           '</div>' +
           '</div>';
@@ -29228,6 +29248,45 @@
         m.baseline = { start: checked[0], end: checked[checked.length - 1], months: checked, reg: frozenReg };
         saveUtilityData();
         showToast('Baseline saved — ' + checked.length + ' months ✓');
+      }
+
+      function saveBaselineToAllMeters(sourceMid) {
+        const b = getUDBldg(udSelProjId, udSelBldgId);
+        if (!b) return;
+        const srcMeter = b.meters.find((m) => m.id === sourceMid);
+        if (!srcMeter || !srcMeter.baseline || !srcMeter.baseline.months || srcMeter.baseline.months.length < 3) {
+          showToast('Save a baseline on this meter first');
+          return;
+        }
+        const blMonths = srcMeter.baseline.months;
+        const otherMeters = b.meters.filter((m) => m.id !== sourceMid && (m.bills || []).length > 0);
+        if (!otherMeters.length) {
+          showToast('No other meters with bills in this building');
+          return;
+        }
+        const { byYm: weatherByYm } = getWeatherForBuilding();
+        let count = 0;
+        otherMeters.forEach((m) => {
+          const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+          const allRows = getNormRows(m, bills, m.inclusive !== false, weatherByYm);
+          const validMonths = blMonths.filter((ym) => allRows.some((r) => r.ym === ym));
+          if (validMonths.length < 3) return;
+          const blOnlyRows = allRows.filter((r) => validMonths.includes(r.ym));
+          const frozenReg = computeMeterRegression(blOnlyRows);
+          m.baseline = {
+            start: validMonths[0],
+            end: validMonths[validMonths.length - 1],
+            months: validMonths,
+            reg: frozenReg,
+          };
+          count++;
+        });
+        if (count === 0) {
+          showToast('No other meters had enough matching months (need 3+)');
+          return;
+        }
+        saveUtilityData();
+        showToast('Baseline applied to ' + count + ' other meter' + (count !== 1 ? 's' : '') + ' ✓');
       }
 
       function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay, metric) {
