@@ -4709,6 +4709,42 @@
       .cc-card-meta a:hover {
         text-decoration: underline;
       }
+      .show-calc [data-calc-formula]::after {
+        content: '\0192';
+        display: inline-block;
+        margin-left: 4px;
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--accent);
+        background: var(--accent-dim);
+        border-radius: 3px;
+        padding: 0 3px;
+        cursor: pointer;
+        vertical-align: super;
+        line-height: 1;
+      }
+      .calc-popover {
+        position: fixed;
+        z-index: 850;
+        background: var(--s3);
+        border: 1px solid var(--border2);
+        border-radius: var(--r);
+        padding: 10px 14px;
+        font-size: 12px;
+        color: var(--text2);
+        max-width: 320px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+        line-height: 1.5;
+        display: none;
+      }
+      .calc-popover .calc-pop-title {
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--text3);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 4px;
+      }
     </style>
   </head>
   <script
@@ -4812,7 +4848,7 @@
       </nav>
 
       <div class="app-wrap">
-        <aside class="sidebar">
+        <aside class="sidebar" data-ui-id="en-sidebar">
           <div class="resize-handle" id="sidebarResizeHandle"></div>
           <div class="sidebar-top">
             <div class="s-sect">
@@ -4861,7 +4897,7 @@
 
         <main class="content">
           <!-- HOME -->
-          <div id="view-home" class="view active">
+          <div id="view-home" class="view active" data-ui-id="en-home">
             <div style="display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0; margin-bottom: 14px">
               <button class="btn btn-ghost" onclick="openTaskModal()">+ Task</button>
               <button
@@ -4874,37 +4910,61 @@
                 + New Project
               </button>
             </div>
-            <div class="stats-row">
+            <div class="stats-row" data-ui-id="en-home-stats">
               <div class="stat">
                 <div class="stat-lbl">Active Projects</div>
-                <div class="stat-val c-em" id="h-proj">0</div>
+                <div
+                  class="stat-val c-em"
+                  id="h-proj"
+                  data-calc-formula="Count of projects where status is active or in_progress"
+                >
+                  0
+                </div>
                 <div class="stat-meta">in progress</div>
               </div>
               <div class="stat">
                 <div class="stat-lbl">Tasks This Week</div>
-                <div class="stat-val c-warn" id="h-tasks">0</div>
+                <div
+                  class="stat-val c-warn"
+                  id="h-tasks"
+                  data-calc-formula="Tasks due this week (Monday through Friday of current week)"
+                >
+                  0
+                </div>
                 <div class="stat-meta">due by Friday</div>
               </div>
               <div class="stat">
                 <div class="stat-lbl">Equipment Records</div>
-                <div class="stat-val c-em2" id="h-equip">0</div>
+                <div
+                  class="stat-val c-em2"
+                  id="h-equip"
+                  data-calc-formula="Total equipment records across all projects and buildings"
+                >
+                  0
+                </div>
                 <div class="stat-meta">in repository</div>
               </div>
               <div class="stat">
                 <div class="stat-lbl">Baselines Set</div>
-                <div class="stat-val c-violet" id="h-base">0</div>
+                <div
+                  class="stat-val c-violet"
+                  id="h-base"
+                  data-calc-formula="Count of projects with at least one meter that has a baseline period set"
+                >
+                  0
+                </div>
                 <div class="stat-meta">projects</div>
               </div>
             </div>
-            <div class="card" style="margin-bottom: 18px">
+            <div class="card" style="margin-bottom: 18px" data-ui-id="en-home-week-card">
               <div class="card-hdr">
                 <span class="card-title">📅 Current Week</span
                 ><span style="font-size: 12px; color: var(--text2)" id="week-range-lbl"></span>
               </div>
               <div style="padding: 13px 15px"><div class="week-strip" id="weekStrip"></div></div>
             </div>
-            <div class="g-6040">
-              <div class="cal-outer">
+            <div class="g-6040" data-ui-id="en-home-grid">
+              <div class="cal-outer" data-ui-id="en-home-calendar">
                 <div class="cal-top">
                   <span style="font-family: var(--head); font-size: 14px; font-weight: 700">📅 Monthly Calendar</span>
                   <div class="cal-nav">
@@ -4926,7 +4986,11 @@
                   <div class="days-g" id="hCalDays"></div>
                 </div>
               </div>
-              <div class="card" style="display: flex; flex-direction: column; min-height: 0">
+              <div
+                class="card"
+                style="display: flex; flex-direction: column; min-height: 0"
+                data-ui-id="en-home-tasks-card"
+              >
                 <div class="card-hdr">
                   <span class="card-title">✅ Upcoming Tasks</span
                   ><button class="btn btn-ghost btn-sm" onclick="openTaskModal()">+ Add</button>
@@ -4937,7 +5001,7 @@
           </div>
 
           <!-- PROJECTS -->
-          <div id="view-projects" class="view">
+          <div id="view-projects" class="view" data-ui-id="en-projects">
             <!-- List view -->
             <div id="projListView" style="display: flex; flex-direction: column; flex: 1; min-height: 0">
               <div
@@ -4983,7 +5047,7 @@
           </div>
 
           <!-- UTILITY DATA -->
-          <div id="view-utility" class="view view-flex">
+          <div id="view-utility" class="view view-flex" data-ui-id="en-utility">
             <div class="ud-layout" id="udLayout">
               <!-- Left nav: Projects + Buildings drill-down -->
               <div class="ud-nav">
@@ -5098,7 +5162,7 @@
           </div>
 
           <!-- PDF OCR -->
-          <div id="view-pdf" class="view view-flex">
+          <div id="view-pdf" class="view view-flex" data-ui-id="en-pdf">
             <!-- Page title bar — stays frozen at top, spans full width -->
             <div id="pdfPageHdr" style="flex-shrink: 0; padding: 16px 18px 10px; background: var(--bg)">
               <div class="pg-hdr">
@@ -5328,7 +5392,7 @@
           <!-- Weather & Normalize and Baseline are integrated into Utility Data meter workspace tabs -->
 
           <!-- ENERGY SAVINGS -->
-          <div id="view-savings" class="view view-flex">
+          <div id="view-savings" class="view view-flex" data-ui-id="en-savings">
             <div class="ud-layout">
               <div class="ud-nav" id="svProjNav" style="min-width: 200px; max-width: 240px">
                 <div class="ud-nav-sect">
@@ -5378,7 +5442,7 @@
           </div>
 
           <!-- DISTRICT CALENDAR -->
-          <div id="view-district" class="view">
+          <div id="view-district" class="view" data-ui-id="en-district">
             <div class="pg-hdr">
               <div>
                 <h1 class="pg-title">District <em>Calendar</em></h1>
@@ -5629,7 +5693,7 @@
           </div>
 
           <!-- EQUIPMENT -->
-          <div id="view-equipment" class="view">
+          <div id="view-equipment" class="view" data-ui-id="en-equipment">
             <div
               style="
                 display: flex;
@@ -12001,22 +12065,22 @@
                   <div class="g2" style="gap:12px;margin-bottom:16px">
                     <div class="card" style="background:var(--s1);padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Baseline EUI</div>
-                      <div id="egfx-blEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--accent);margin:6px 0">—</div>
+                      <div id="egfx-blEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--accent);margin:6px 0" data-calc-formula="Baseline EUI = total baseline kBtu / building sqft. kBtu = kWh x 3.412 + therms x 100">—</div>
                       <div style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
                     </div>
                     <div class="card" style="background:var(--s1);padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Current EUI</div>
-                      <div id="egfx-curEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--em);margin:6px 0">—</div>
+                      <div id="egfx-curEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--em);margin:6px 0" data-calc-formula="Current EUI = total current-year kBtu / building sqft">—</div>
                       <div style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
                     </div>
                     <div class="card" style="background:var(--s1);padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">CBECS Benchmark</div>
-                      <div id="egfx-cbecs-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--amber);margin:6px 0">—</div>
+                      <div id="egfx-cbecs-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--amber);margin:6px 0" data-calc-formula="CBECS benchmark EUI for building type. Source: DOE Commercial Buildings Energy Consumption Survey">—</div>
                       <div style="font-size:11px;color:var(--text2)">kBtu/ft² (${p.type || 'K-12 School'})</div>
                     </div>
                     <div class="card" style="background:var(--s1);padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Cost Savings</div>
-                      <div id="egfx-costSav-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--green);margin:6px 0">—</div>
+                      <div id="egfx-costSav-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--green);margin:6px 0" data-calc-formula="Baseline annual cost minus current annual cost across all building meters">—</div>
                       <div id="egfx-costSavSub-${p.id}" style="font-size:11px;color:var(--text2)">vs baseline</div>
                     </div>
                   </div>
@@ -39760,6 +39824,72 @@
         if (sub) sub.textContent = val + 'px';
       }
 
+      function uiCustomToggleCalc(on) {
+        var uc = _uiCustomGet();
+        uc.showCalcFormulas = on;
+        _uiCustomSave(uc);
+        uiCustomApply();
+      }
+
+      function uiCustomExport() {
+        var uc = _uiCustomGet();
+        var json = JSON.stringify(uc, null, 2);
+        var blob = new Blob([json], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        var d = new Date();
+        a.download =
+          'companyhub-layout-' +
+          d.getFullYear() +
+          '-' +
+          String(d.getMonth() + 1).padStart(2, '0') +
+          '-' +
+          String(d.getDate()).padStart(2, '0') +
+          '.json';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('Layout exported');
+      }
+
+      function uiCustomImport() {
+        var inp = document.createElement('input');
+        inp.type = 'file';
+        inp.accept = '.json';
+        inp.onchange = function () {
+          var file = inp.files[0];
+          if (!file) return;
+          var reader = new FileReader();
+          reader.onload = function (e) {
+            try {
+              var data = JSON.parse(e.target.result);
+              if (!data.version || !data.pages) {
+                showToast('Invalid layout file');
+                return;
+              }
+              _uiCustomSave(data);
+              showToast('Layout imported — reloading...');
+              setTimeout(function () {
+                location.reload();
+              }, 500);
+            } catch (err) {
+              showToast('Failed to parse file: ' + err.message);
+            }
+          };
+          reader.readAsText(file);
+        };
+        inp.click();
+      }
+
+      function uiCustomResetAll() {
+        if (!confirm('Reset all UI customizations (fonts, layout, colors)? This cannot be undone.')) return;
+        _uiCustomSave({ version: 1, pages: {}, fonts: {} });
+        showToast('Customizations reset — reloading...');
+        setTimeout(function () {
+          location.reload();
+        }, 500);
+      }
+
       /* Accent color */
       function siteApplyAccent(hex) {
         var r = parseInt(hex.slice(1, 3), 16),
@@ -39879,6 +40009,18 @@
         var accent = s.accentColor || '#3b82f6';
         var theme = s.theme || localStorage.getItem('ch_theme') || 'dark';
         var defPage = s.defaultLoginScreen || 'index';
+        var uc = s.uiCustom || { fonts: {} };
+        var ucf = uc.fonts || {};
+        var fontOpts = UI_CUSTOM_SAFE_FONTS.map(function (f) {
+          return (
+            '<option value="' + f + '"' + ((ucf.bodyFont || 'Outfit') === f ? ' selected' : '') + '>' + f + '</option>'
+          );
+        }).join('');
+        var headFontOpts = UI_CUSTOM_SAFE_FONTS.map(function (f) {
+          return (
+            '<option value="' + f + '"' + ((ucf.headFont || 'Outfit') === f ? ' selected' : '') + '>' + f + '</option>'
+          );
+        }).join('');
 
         var swatches = COLOR_PRESETS.map(function (c) {
           return (
@@ -39992,6 +40134,60 @@
           '<div class="settings-row" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">' +
           '<div><div class="settings-row-label">Reset individual meters</div><div class="settings-row-sub">Clear all per-meter table customizations so every meter uses these defaults</div></div>' +
           '<button class="btn btn-ghost" style="color:var(--red);border-color:var(--red)" onclick="siteResetAllMeterTableSettings()">Reset All Meters</button>' +
+          '</div>' +
+          '</div>' +
+          '<div class="settings-section">' +
+          '<div class="settings-section-title">Fonts &amp; Text Size</div>' +
+          '<div class="settings-row">' +
+          '<div><div class="settings-row-label">Body Font</div><div class="settings-row-sub">Main text across the site</div></div>' +
+          '<select class="settings-select" onchange="uiCustomSetFont(\'bodyFont\',this.value)">' +
+          fontOpts +
+          '</select>' +
+          '</div>' +
+          '<div class="settings-row">' +
+          '<div><div class="settings-row-label">Heading Font</div><div class="settings-row-sub">Titles and section headers</div></div>' +
+          '<select class="settings-select" onchange="uiCustomSetFont(\'headFont\',this.value)">' +
+          headFontOpts +
+          '</select>' +
+          '</div>' +
+          '<div class="settings-row">' +
+          '<div><div class="settings-row-label">Base Text Size</div><div class="settings-row-sub">' +
+          (ucf.baseSize || 14) +
+          'px</div></div>' +
+          '<input type="range" min="12" max="18" value="' +
+          (ucf.baseSize || 14) +
+          '" style="width:140px" oninput="uiCustomSetFontSize(\'baseSize\',parseInt(this.value),this)">' +
+          '</div>' +
+          '<div class="settings-row">' +
+          '<div><div class="settings-row-label">Sidebar Text Size</div><div class="settings-row-sub">' +
+          (ucf.sidebarSize || 14) +
+          'px</div></div>' +
+          '<input type="range" min="11" max="15" value="' +
+          (ucf.sidebarSize || 14) +
+          '" style="width:140px" oninput="uiCustomSetFontSize(\'sidebarSize\',parseInt(this.value),this)">' +
+          '</div>' +
+          '</div>' +
+          '<div class="settings-section">' +
+          '<div class="settings-section-title">Calculation Transparency</div>' +
+          '<div class="settings-row">' +
+          '<div><div class="settings-row-label">Show Calculations</div><div class="settings-row-sub">Display a &#402; badge on computed values &mdash; click to see the formula</div></div>' +
+          '<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" ' +
+          (uc.showCalcFormulas ? 'checked' : '') +
+          ' onchange="uiCustomToggleCalc(this.checked)"> On</label>' +
+          '</div>' +
+          '</div>' +
+          '<div class="settings-section">' +
+          '<div class="settings-section-title">Layout Management</div>' +
+          '<div class="settings-row">' +
+          '<div><div class="settings-row-label">Export / Import</div><div class="settings-row-sub">Save your customizations to a file or load from a previous export</div></div>' +
+          '<div style="display:flex;gap:8px">' +
+          '<button class="btn btn-ghost btn-sm" onclick="uiCustomExport()">Export</button>' +
+          '<button class="btn btn-ghost btn-sm" onclick="uiCustomImport()">Import</button>' +
+          '</div>' +
+          '</div>' +
+          '<div class="settings-row" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">' +
+          '<div><div class="settings-row-label">Reset All Customizations</div><div class="settings-row-sub">Clear all font, color, and layout preferences</div></div>' +
+          '<button class="btn btn-ghost" style="color:var(--red);border-color:var(--red)" onclick="uiCustomResetAll()">Reset All</button>' +
           '</div>' +
           '</div>' +
           '</div>' +
@@ -40277,6 +40473,31 @@
           160,
           480,
         );
+      })();
+    </script>
+    <div class="calc-popover" id="calcPopover">
+      <div class="calc-pop-title">Calculation</div>
+      <div id="calcPopoverText"></div>
+    </div>
+    <script>
+      (function _calcPopoverInit() {
+        document.addEventListener('click', function (e) {
+          var el = e.target.closest('[data-calc-formula]');
+          var pop = document.getElementById('calcPopover');
+          if (!pop) return;
+          if (el && document.documentElement.classList.contains('show-calc')) {
+            var formula = el.getAttribute('data-calc-formula');
+            var escaped = formula.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            document.getElementById('calcPopoverText').innerHTML = escaped;
+            var rect = el.getBoundingClientRect();
+            pop.style.left = Math.min(rect.left, window.innerWidth - 340) + 'px';
+            pop.style.top = rect.bottom + 6 + 'px';
+            pop.style.display = 'block';
+            e.stopPropagation();
+          } else {
+            pop.style.display = 'none';
+          }
+        });
       })();
     </script>
   </body>
