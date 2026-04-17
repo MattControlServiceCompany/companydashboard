@@ -39210,7 +39210,12 @@
           bldgId: bldgs[0]?.id || '',
           desc: 'BAS HVAC Optimization — ' + cityName + ' — ' + (p.basCalc?.sqft || 0) + ' sf',
           kwh: r.kwhSavings.map((k) => Math.round(k)),
-          kw: Array(12).fill(0),
+          kw: r.peakKwhSavings
+            ? r.peakKwhSavings.map((pk) => {
+                const hrs = (p.basCalc?.peakEnd || 18) - (p.basCalc?.peakStart || 16);
+                return hrs > 0 ? Math.round((pk / hrs) * 10) / 10 : 0;
+              })
+            : Array(12).fill(0),
           gas: r.gasSavings.map((g) => Math.round(g)),
           totalDollar: 0,
           source: 'bas',
@@ -39234,6 +39239,12 @@
           return;
         }
         m.kwh = r.kwhSavings.map((k) => Math.round(k));
+        m.kw = r.peakKwhSavings
+          ? r.peakKwhSavings.map((pk) => {
+              const hrs = (p.basCalc?.peakEnd || 18) - (p.basCalc?.peakStart || 16);
+              return hrs > 0 ? Math.round((pk / hrs) * 10) / 10 : 0;
+            })
+          : Array(12).fill(0);
         m.gas = r.gasSavings.map((g) => Math.round(g));
         m.source = 'bas';
         const cityName = BAS_CITIES.find((c) => c.id === (p.basCalc?.city || 4))?.name || 'Unknown';
@@ -39301,9 +39312,9 @@
             };
             let parsed = 0;
             rows.forEach((r) => {
-              if (r.length < 26) return;
-              const tempMid = parseFloat(r[0]);
-              const moStr = (r[1] || '').trim().toLowerCase().replace(/\./g, '');
+              if (r.length < 28) return;
+              const tempMid = parseFloat(r[1]);
+              const moStr = (r[3] || '').trim().toLowerCase().replace(/\./g, '');
               const mi = moMap[moStr] ?? moMap[moStr.slice(0, 3)];
               if (isNaN(tempMid) || mi === undefined) return;
               let bi = -1;
@@ -39315,7 +39326,7 @@
               }
               if (bi < 0) return;
               for (let h = 0; h < 24; h++) {
-                hb[mi][bi][h] = parseFloat(r[h + 2]) || 0;
+                hb[mi][bi][h] = parseFloat(r[h + 4]) || 0;
               }
               parsed++;
             });
