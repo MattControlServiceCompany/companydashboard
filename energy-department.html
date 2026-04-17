@@ -39682,6 +39682,84 @@
         } catch (e) {}
       }
 
+      /* UI Customization persistence */
+      const UI_CUSTOM_SAFE_FONTS = ['Outfit', 'Inter', 'DM Sans', 'Roboto', 'IBM Plex Sans'];
+
+      function _uiCustomGet() {
+        try {
+          var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
+          return s.uiCustom || { version: 1, pages: {}, fonts: {} };
+        } catch (e) {
+          return { version: 1, pages: {}, fonts: {} };
+        }
+      }
+
+      function _uiCustomSave(uc) {
+        try {
+          var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
+          s.uiCustom = uc;
+          localStorage.setItem('ch_settings', JSON.stringify(s));
+        } catch (e) {
+          console.warn('uiCustom save failed', e);
+        }
+      }
+
+      function _uiCustomLoadFont(fontName) {
+        if (fontName === 'Outfit') return;
+        var id = 'ui-font-' + fontName.replace(/\s/g, '-');
+        if (document.getElementById(id)) return;
+        var link = document.createElement('link');
+        link.id = id;
+        link.rel = 'stylesheet';
+        link.href =
+          'https://fonts.googleapis.com/css2?family=' +
+          encodeURIComponent(fontName) +
+          ':wght@300;400;500;600;700;800&display=swap';
+        document.head.appendChild(link);
+      }
+
+      function uiCustomApply() {
+        var uc = _uiCustomGet();
+        var r = document.documentElement.style;
+        if (uc.fonts) {
+          if (uc.fonts.baseSize) r.setProperty('--base-sz', uc.fonts.baseSize + 'px');
+          if (uc.fonts.sidebarSize) r.setProperty('--sidebar-font-sz', uc.fonts.sidebarSize + 'px');
+          if (uc.fonts.bodyFont && UI_CUSTOM_SAFE_FONTS.includes(uc.fonts.bodyFont)) {
+            r.setProperty('--font', "'" + uc.fonts.bodyFont + "', sans-serif");
+            _uiCustomLoadFont(uc.fonts.bodyFont);
+          }
+          if (uc.fonts.headFont && UI_CUSTOM_SAFE_FONTS.includes(uc.fonts.headFont)) {
+            r.setProperty('--head', "'" + uc.fonts.headFont + "', sans-serif");
+            _uiCustomLoadFont(uc.fonts.headFont);
+          }
+        }
+        if (uc.showCalcFormulas) {
+          document.documentElement.classList.add('show-calc');
+        } else {
+          document.documentElement.classList.remove('show-calc');
+        }
+      }
+
+      function uiCustomSetFont(key, val) {
+        if (!UI_CUSTOM_SAFE_FONTS.includes(val)) return;
+        var uc = _uiCustomGet();
+        if (!uc.fonts) uc.fonts = {};
+        uc.fonts[key] = val;
+        _uiCustomSave(uc);
+        uiCustomApply();
+      }
+
+      function uiCustomSetFontSize(key, val, el) {
+        if (val < 10 || val > 20) return;
+        var uc = _uiCustomGet();
+        if (!uc.fonts) uc.fonts = {};
+        uc.fonts[key] = val;
+        _uiCustomSave(uc);
+        uiCustomApply();
+        var sub = el?.closest('.settings-row')?.querySelector('.settings-row-sub');
+        if (sub) sub.textContent = val + 'px';
+      }
+
       /* Accent color */
       function siteApplyAccent(hex) {
         var r = parseInt(hex.slice(1, 3), 16),
@@ -39771,6 +39849,7 @@
 
       /* Init saved settings on load */
       document.addEventListener('DOMContentLoaded', function () {
+        uiCustomApply();
         try {
           var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
           if (s.accentColor) siteApplyAccent(s.accentColor);
