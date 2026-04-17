@@ -10555,6 +10555,8 @@
             </div>
             <input type="hidden" id="mm-inclusive" value="true" />
             <input type="hidden" id="mm-edit-id" />
+            <input type="hidden" id="mm-target-bldg" />
+            <input type="hidden" id="mm-target-proj" />
           </div>
           <div class="modal-ftr">
             <button class="btn btn-ghost" onclick="closeMeterModal()">Cancel</button
@@ -33641,6 +33643,8 @@
       }
       function openMeterModal(editId) {
         document.getElementById('mm-edit-id').value = editId || '';
+        document.getElementById('mm-target-bldg').value = udSelBldgId || '';
+        document.getElementById('mm-target-proj').value = udSelProjId || '';
         _meterInclusive = true;
         if (editId) {
           const b = getUDBldg(udSelProjId, udSelBldgId);
@@ -33683,7 +33687,9 @@
           maddr: document.getElementById('mm-maddr').value,
           inclusive: incl,
         };
-        const b = getUDBldg(udSelProjId, udSelBldgId);
+        const _targetProjId = document.getElementById('mm-target-proj').value || udSelProjId;
+        const _targetBldgId = document.getElementById('mm-target-bldg').value || udSelBldgId;
+        const b = getUDBldg(_targetProjId, _targetBldgId);
         if (!b) return;
         b.meters = b.meters || [];
         if (editId) {
@@ -33696,7 +33702,7 @@
           const nm = { id: 'm' + Date.now(), bills: [], ...data };
           b.meters.push(nm);
           udActiveMid = nm.id;
-          showToast('Meter added ✓');
+          showToast('Meter added to ' + (b.name || 'building') + ' ✓');
         }
         saveUtilityData();
         closeMeterModal();
