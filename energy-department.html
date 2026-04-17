@@ -8152,8 +8152,8 @@
                 Qualifying: '#f59e0b',
                 Proposal: '#a78bfa',
                 Negotiating: '#84cc16',
-                Won: '#00d4aa',
-                Lost: '#f43f5e',
+                Won: 'var(--teal)',
+                Lost: 'var(--red)',
                 'On Hold': '#2a3450',
               };
               const EMS_STAGE_CLS = {
@@ -8239,7 +8239,7 @@
       ${
         f.builtin
           ? `<span style="font-size:10px;color:var(--text3);width:52px;text-align:center">built-in</span>`
-          : `<button onclick="emsRemoveField(${i})" style="background:transparent;border:1px solid rgba(240,80,80,.3);color:#f05050;border-radius:5px;cursor:pointer;padding:3px 8px;font-size:11px;font-family:var(--font)">✕</button>`
+          : `<button onclick="emsRemoveField(${i})" style="background:transparent;border:1px solid rgba(240,80,80,.3);color:var(--red);border-radius:5px;cursor:pointer;padding:3px 8px;font-size:11px;font-family:var(--font)">✕</button>`
       }
     </div>`,
                   )
@@ -9244,7 +9244,7 @@
         style="flex:1;font-size:12px;padding:5px 8px">
       <button onclick="emsMoveClientType(${i},-1)" title="Move up" ${i === 0 ? 'disabled' : ''} style="font-family:var(--font);font-size:11px;padding:3px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer">▲</button>
       <button onclick="emsMoveClientType(${i},1)" title="Move down" ${i === emsClientTypes.length - 1 ? 'disabled' : ''} style="font-family:var(--font);font-size:11px;padding:3px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer">▼</button>
-      <button onclick="emsDeleteClientType(${i})" title="Delete" style="font-family:var(--font);font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid rgba(240,80,80,.4);background:transparent;color:#f05050;cursor:pointer">✕</button>
+      <button onclick="emsDeleteClientType(${i})" title="Delete" style="font-family:var(--font);font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid rgba(240,80,80,.4);background:transparent;color:var(--red);cursor:pointer">✕</button>
     </div>`,
                   )
                   .join('');
@@ -9352,7 +9352,7 @@
           </div>
         </div>
         <div class="bldg-footer">
-          <button onclick="emsRemoveBuilding('${b.id}')" style="font-family:var(--font);font-size:11px;font-weight:600;padding:4px 10px;border-radius:5px;border:1px solid rgba(240,80,80,.4);background:transparent;color:#f05050;cursor:pointer;transition:all .14s" onmouseover="this.style.background='rgba(240,80,80,.12)'" onmouseout="this.style.background='transparent'">🗑 Remove</button>
+          <button onclick="emsRemoveBuilding('${b.id}')" style="font-family:var(--font);font-size:11px;font-weight:600;padding:4px 10px;border-radius:5px;border:1px solid rgba(240,80,80,.4);background:transparent;color:var(--red);cursor:pointer;transition:all .14s" onmouseover="this.style.background='rgba(240,80,80,.12)'" onmouseout="this.style.background='transparent'">🗑 Remove</button>
         </div>
       </div>
     </div>`,
@@ -10508,6 +10508,21 @@
         </div>
       </div>
 
+      <!-- AUDIT LOG MODAL -->
+      <div class="modal-bg" id="auditLogModal" onclick="if (event.target === this) closeAuditLogModal();">
+        <div class="modal" style="width: 800px; max-width: 96vw; max-height: 90vh">
+          <div class="modal-hdr">
+            <span class="modal-title">📋 Utility Data History</span
+            ><button class="modal-x" onclick="closeAuditLogModal()">✕</button>
+          </div>
+          <div class="modal-body" id="auditLogBody" style="overflow-y: auto; max-height: 65vh"></div>
+          <div class="modal-ftr">
+            <button class="btn btn-ghost" onclick="clearAuditLog()" style="color: var(--red)">Clear History</button
+            ><button class="btn btn-ghost" onclick="closeAuditLogModal()">Close</button>
+          </div>
+        </div>
+      </div>
+
       <!-- WEATHER DATA CSV MODAL -->
       <div class="modal-bg" id="wddModal" onclick="if (event.target === this) closeWddModal();">
         <div class="modal" style="width: 520px; max-width: 96vw">
@@ -11452,7 +11467,9 @@
           const dt = tasks.filter((t) => t.due === ds && !t.done);
           const dots = dt
             .slice(0, 4)
-            .map((t) => `<div class="cdot" style="background:${t.pri === 'high' ? '#f43f5e' : '#00d4aa'}"></div>`)
+            .map(
+              (t) => `<div class="cdot" style="background:${t.pri === 'high' ? 'var(--red)' : 'var(--teal)'}"></div>`,
+            )
             .join('');
           const isT = isCur && d === NOW.getDate();
           h += `<div class="cday${isT ? ' ctoday' : ''}" onclick="calClick('${ds}')"><div class="cday-n">${d}</div>${dots ? `<div class="cday-dots">${dots}</div>` : ''}</div>`;
@@ -11505,7 +11522,9 @@
           const dt = tasks.filter((t) => t.due === ds && !t.done);
           const dots = dt
             .slice(0, 4)
-            .map((t) => `<div class="wdot" style="background:${t.pri === 'high' ? '#f43f5e' : '#00d4aa'}"></div>`)
+            .map(
+              (t) => `<div class="wdot" style="background:${t.pri === 'high' ? 'var(--red)' : 'var(--teal)'}"></div>`,
+            )
             .join('');
           h += `<div class="wday${isT ? ' is-today' : ''}" onclick="calClick('${ds}')"><div class="wday-name">${DAYS[d.getDay()]}</div><div class="wday-num">${d.getDate()}</div><div class="wday-count">${dt.length ? dt.length + ' task' + (dt.length > 1 ? 's' : '') : '<span style="color:var(--text3);font-size:9px">no tasks</span>'}</div><div class="wday-dots">${dots}</div></div>`;
         }
@@ -19531,7 +19550,7 @@
           '<div style="width:100%;height:10px;background:var(--s2);border-radius:5px;overflow:hidden;margin-bottom:10px">' +
           '<div id="bpBar" style="width:0%;height:100%;background:var(--accent);transition:width .2s"></div>' +
           '</div>' +
-          '<div id="bpErrors" style="font-size:11px;color:#ef4444;max-height:80px;overflow-y:auto"></div>';
+          '<div id="bpErrors" style="font-size:11px;color:var(--red);max-height:80px;overflow-y:auto"></div>';
         el.style.display = 'block';
       }
       function _bulkProgressUpdate(i, total, msg, errMsg) {
@@ -19850,7 +19869,7 @@
           const selExist = !useNew ? 'border-left:3px solid #22c55e;opacity:1' : 'opacity:.5';
           const selNew = useNew ? 'border-left:3px solid #22c55e;opacity:1' : 'opacity:.5';
           tableHtml += `<tr style="background:rgba(245,158,11,.06)">
-        <td style="padding:6px 12px;font-weight:600;color:#f59e0b">${LABELS[d.key] || d.key}</td>
+        <td style="padding:6px 12px;font-weight:600;color:var(--amber)">${LABELS[d.key] || d.key}</td>
         <td style="padding:6px 12px;cursor:pointer;${selExist}" onclick="_toggleDupField(${billIdx},'${d.key}',false)">${d.existVal || '<em style="opacity:.4">(empty)</em>'}</td>
         <td style="padding:6px 12px;cursor:pointer;${selNew}" onclick="_toggleDupField(${billIdx},'${d.key}',true)">${d.newVal || '<em style="opacity:.4">(empty)</em>'}</td>
       </tr>`;
@@ -21014,7 +21033,7 @@
             // existing saved bill and the freshly extracted one.
             const diffCount = isDup ? (dupMap[p.i].diffFields || []).length : 0;
             const dupDot = isDup
-              ? `<span style="display:inline-block;margin-left:6px;vertical-align:middle;color:#f59e0b;font-weight:700;font-size:11px;font-family:var(--mono)" title="Duplicate bill — ${diffCount} differing field${diffCount === 1 ? '' : 's'}">${diffCount}</span>`
+              ? `<span style="display:inline-block;margin-left:6px;vertical-align:middle;color:var(--amber);font-weight:700;font-size:11px;font-family:var(--mono)" title="Duplicate bill — ${diffCount} differing field${diffCount === 1 ? '' : 's'}">${diffCount}</span>`
               : '';
             // Each row contains the month label AND the pill button in the same flex row,
             // so they're guaranteed to line up vertically regardless of font or padding.
@@ -21042,12 +21061,12 @@
             Object.entries(locs).forEach(([loc, cnt]) => parts.push(cnt + ' assigned to ' + loc));
           }
           if (savedCount) parts.push(savedCount + ' in Saved Bills');
-          dupBannerHtml = `<div style="padding:5px 12px;margin:0 0 8px;border-radius:6px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);font-size:12px;color:#f59e0b;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          dupBannerHtml = `<div style="padding:5px 12px;margin:0 0 8px;border-radius:6px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);font-size:12px;color:var(--amber);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span style="flex:1;min-width:0"><strong>&#9888; ${dupIndices.length} of ${bills.length} bills already exist</strong> &mdash; ${parts.join(', ')}</span>
         <div style="display:flex;gap:6px;flex-shrink:0">
-          <button onclick="_dupBulkAction('skip')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:#f59e0b;cursor:pointer">Skip All</button>
-          <button onclick="_dupBulkAction('overwrite')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:#f59e0b;cursor:pointer">Overwrite All</button>
-          <button onclick="_dupBulkAction('merge')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:#f59e0b;cursor:pointer">Merge All</button>
+          <button onclick="_dupBulkAction('skip')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:var(--amber);cursor:pointer">Skip All</button>
+          <button onclick="_dupBulkAction('overwrite')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:var(--amber);cursor:pointer">Overwrite All</button>
+          <button onclick="_dupBulkAction('merge')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:var(--amber);cursor:pointer">Merge All</button>
         </div>
       </div>`;
         }
@@ -21954,10 +21973,10 @@
           }
           const keyStyle = isEmpty && !fw.length ? 'color:var(--text3)' : '';
           const inputStyle = isEmpty ? 'border-color:var(--border2);color:var(--text3)' : '';
-          const dupKeyStyle = isDupDiff ? 'color:#f59e0b' : keyStyle;
-          const dupInputStyle = isDupDiff ? inputStyle + ';color:#f59e0b' : inputStyle;
+          const dupKeyStyle = isDupDiff ? 'color:var(--amber)' : keyStyle;
+          const dupInputStyle = isDupDiff ? inputStyle + ';color:var(--amber)' : inputStyle;
           const dupIcon = isDupDiff
-            ? `<span title="Existing: ${(dupDiff.existVal || '(empty)').replace(/"/g, '&quot;')}" style="cursor:help;color:#f59e0b;font-size:11px;margin-left:4px">&#9432;</span>`
+            ? `<span title="Existing: ${(dupDiff.existVal || '(empty)').replace(/"/g, '&quot;')}" style="cursor:help;color:var(--amber);font-size:11px;margin-left:4px">&#9432;</span>`
             : '';
           // If there's any signal to show (correction, warning, mag flag, likely missing),
           // size the input to its value so the icon sits right next to the value instead
@@ -22182,7 +22201,7 @@
           ? `<div style="padding:14px 18px;margin:10px 0;border-radius:10px;background:rgba(239,68,68,.22);border:2px solid #ef4444;color:#fecaca;font-size:14px;line-height:1.5;display:flex;align-items:flex-start;gap:12px;box-shadow:0 0 0 3px rgba(239,68,68,.08)">
         <span style="font-size:26px;line-height:1">&#9940;</span>
         <div style="flex:1">
-          <div style="font-size:16px;font-weight:800;color:#ef4444;letter-spacing:.2px">SUM MISMATCH &mdash; $${Math.abs(_currentSumDiff).toFixed(2)} ${_currentSumDiff > 0 ? 'OVER' : 'UNDER'} Total Current Charges</div>
+          <div style="font-size:16px;font-weight:800;color:var(--red);letter-spacing:.2px">SUM MISMATCH &mdash; $${Math.abs(_currentSumDiff).toFixed(2)} ${_currentSumDiff > 0 ? 'OVER' : 'UNDER'} Total Current Charges</div>
           <div style="font-size:12px;font-weight:500;color:#fca5a5;margin-top:4px">Charge sum is $${_currentChargeSum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} but the bill total is $${totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.${_labelsMissing ? ' Blank charges: <strong>' + _labelsMissing + '</strong>.' : ''} Check every field below against the source PDF.</div>
         </div>
       </div>`
@@ -22226,7 +22245,7 @@
             .join(', ');
           const _acMoreCount = allCorrected.length > 3 ? ' +' + (allCorrected.length - 3) + ' more' : '';
           correctionHtml =
-            '<details style="padding:6px 12px;margin:6px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.25);font-size:12px;color:#22c55e;line-height:1.4">' +
+            '<details style="padding:6px 12px;margin:6px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.25);font-size:12px;color:var(--green);line-height:1.4">' +
             '<summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px">' +
             '<span>✓ Auto-corrected <strong>' +
             allCorrected.length +
@@ -22253,17 +22272,20 @@
         let summaryHtml = '';
         if (errorCount || warnCount) {
           const parts = [];
-          if (errorCount) parts.push('<span style="color:#ef4444;font-weight:700">' + errorCount + ' missing</span>');
+          if (errorCount)
+            parts.push('<span style="color:var(--red);font-weight:700">' + errorCount + ' missing</span>');
           if (warnCount)
             parts.push(
-              '<span style="color:#f59e0b;font-weight:700">' +
+              '<span style="color:var(--amber);font-weight:700">' +
                 warnCount +
                 ' warning' +
                 (warnCount > 1 ? 's' : '') +
                 '</span>',
             );
           if (infoCount)
-            parts.push('<span style="color:#60a5fa">' + infoCount + ' note' + (infoCount > 1 ? 's' : '') + '</span>');
+            parts.push(
+              '<span style="color:var(--accent)">' + infoCount + ' note' + (infoCount > 1 ? 's' : '') + '</span>',
+            );
           // Build clickable field links for each warning
           const flaggedFields = warnings
             .filter((w) => w.level === 'error' || w.level === 'warn')
@@ -22302,14 +22324,14 @@
             '</div>';
         } else if (correctedFields.length && !errorCount && !warnCount) {
           summaryHtml =
-            '<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);font-size:12px;color:#22c55e">✓ All expected fields present — ' +
+            '<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);font-size:12px;color:var(--green)">✓ All expected fields present — ' +
             correctedFields.length +
             ' value' +
             (correctedFields.length > 1 ? 's' : '') +
             ' auto-corrected via rate × quantity</div>';
         } else if (warnings.length === 0 && Object.keys(parsed).filter((k) => !k.startsWith('_')).length > 5) {
           summaryHtml =
-            '<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);font-size:12px;color:#22c55e">✓ All expected fields present — values within normal ranges</div>';
+            '<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);font-size:12px;color:var(--green)">✓ All expected fields present — values within normal ranges</div>';
         }
 
         // Duplicate info banner at top of extracted fields.
@@ -22331,12 +22353,12 @@
           // this specific bill even if _pdfMultiIdx changes before the click fires.
           const bi = _dupIdx;
           dupFieldBannerHtml = `<div style="padding:5px 10px;margin:4px 0;border-radius:6px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);font-size:11px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:nowrap">
-        <span style="color:#f59e0b;font-weight:700;white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.3px">DUPLICATE BILL &middot; ${diffCount} field${diffCount === 1 ? '' : 's'} differ${actLabel}</span>
+        <span style="color:var(--amber);font-weight:700;white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.3px">DUPLICATE BILL &middot; ${diffCount} field${diffCount === 1 ? '' : 's'} differ${actLabel}</span>
         <div style="display:flex;gap:4px;flex-shrink:0;margin-left:auto">
-          <button onclick="window._pdfMultiIdx=${bi};window._dupModalIdx=${bi};overwriteDupBill()" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(239,68,68,.5);background:rgba(239,68,68,.12);color:#ef4444;cursor:pointer;font-weight:700">Overwrite</button>
-          <button onclick="window._pdfMultiIdx=${bi};window._dupModalIdx=${bi};mergeDupBill()" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(34,197,94,.5);background:rgba(34,197,94,.12);color:#22c55e;cursor:pointer;font-weight:700">Merge</button>
+          <button onclick="window._pdfMultiIdx=${bi};window._dupModalIdx=${bi};overwriteDupBill()" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(239,68,68,.5);background:rgba(239,68,68,.12);color:var(--red);cursor:pointer;font-weight:700">Overwrite</button>
+          <button onclick="window._pdfMultiIdx=${bi};window._dupModalIdx=${bi};mergeDupBill()" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(34,197,94,.5);background:rgba(34,197,94,.12);color:var(--green);cursor:pointer;font-weight:700">Merge</button>
           <button onclick="window._pdfMultiIdx=${bi};window._dupModalIdx=${bi};skipDupBill()" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;font-weight:600">Skip</button>
-          <button onclick="openDupModal(${bi})" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(245,158,11,.5);background:transparent;color:#f59e0b;cursor:pointer;font-weight:600" title="Compare fields side-by-side">Compare</button>
+          <button onclick="openDupModal(${bi})" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(245,158,11,.5);background:transparent;color:var(--amber);cursor:pointer;font-weight:600" title="Compare fields side-by-side">Compare</button>
         </div>
       </div>`;
         } else if (_anyDups > 0) {
@@ -22347,9 +22369,9 @@
           // broken.
           const firstDupKey = Object.keys(window._pdfDupMap || {})[0];
           dupFieldBannerHtml = `<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.3);font-size:11px;color:var(--text2);display:flex;align-items:center;gap:8px">
-        <span style="color:#60a5fa;font-weight:700">&#9432;</span>
+        <span style="color:var(--accent);font-weight:700">&#9432;</span>
         <span style="flex:1">This bill is not a duplicate. ${_anyDups} other bill${_anyDups === 1 ? '' : 's'} in this extraction are duplicates.</span>
-        <button onclick="selectMultiBill(${firstDupKey})" style="font-size:10px;padding:3px 10px;border-radius:4px;border:1px solid rgba(96,165,250,.4);background:transparent;color:#60a5fa;cursor:pointer;font-weight:600">Jump to first duplicate</button>
+        <button onclick="selectMultiBill(${firstDupKey})" style="font-size:10px;padding:3px 10px;border-radius:4px;border:1px solid rgba(96,165,250,.4);background:transparent;color:var(--accent);cursor:pointer;font-weight:600">Jump to first duplicate</button>
       </div>`;
         }
         // Split output between the frozen header (title + banners) and the scrollable grid
@@ -24407,6 +24429,76 @@
         return diffs.length ? diffs : null;
       }
 
+      function openAuditLogModal() {
+        const log = sget(AUDIT_LOG_KEY, []) || [];
+        const body = document.getElementById('auditLogBody');
+        if (!log.length) {
+          body.innerHTML =
+            '<div style="text-align:center;color:var(--text3);padding:40px">No history entries yet. Changes to billing data will appear here.</div>';
+        } else {
+          const actionLabels = {
+            add: '➕ Added',
+            edit: '✏️ Edited',
+            delete: '🗑️ Deleted',
+            delete_all: '🗑️ Cleared All',
+            extract: '📄 Extracted',
+            move: '↗️ Moved',
+          };
+          const rows = log
+            .map((e) => {
+              const dt = new Date(e.ts);
+              const timeStr =
+                dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+                ' ' +
+                dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+              let details = e.note || '';
+              if (e.changes && e.changes.length) {
+                details = e.changes.map((c) => c.field + ': ' + (c.from || '—') + ' → ' + (c.to || '—')).join('; ');
+              }
+              if (details.length > 120) details = details.slice(0, 117) + '…';
+              return (
+                '<tr>' +
+                '<td style="padding:4px 8px;white-space:nowrap;color:var(--text3);font-size:11px">' +
+                timeStr +
+                '</td>' +
+                '<td style="padding:4px 8px;white-space:nowrap">' +
+                (actionLabels[e.action] || e.action) +
+                '</td>' +
+                '<td style="padding:4px 8px;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis">' +
+                (e.projName || '') +
+                '</td>' +
+                '<td style="padding:4px 8px;white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis">' +
+                (e.meterLabel || '') +
+                '</td>' +
+                '<td style="padding:4px 8px;font-family:var(--mono);font-size:11px;white-space:nowrap">' +
+                (e.period || '') +
+                '</td>' +
+                '<td style="padding:4px 8px;font-size:11px;color:var(--text2);max-width:250px;overflow:hidden;text-overflow:ellipsis" title="' +
+                (details || '').replace(/"/g, '&quot;') +
+                '">' +
+                details +
+                '</td>' +
+                '</tr>'
+              );
+            })
+            .join('');
+          body.innerHTML =
+            '<table class="dtbl" style="width:100%;font-size:12px"><thead><tr><th>Time</th><th>Action</th><th>Project</th><th>Meter</th><th>Period</th><th>Details</th></tr></thead><tbody>' +
+            rows +
+            '</tbody></table>';
+        }
+        document.getElementById('auditLogModal').classList.add('open');
+      }
+      function closeAuditLogModal() {
+        document.getElementById('auditLogModal').classList.remove('open');
+      }
+      function clearAuditLog() {
+        if (!confirm('Clear all history entries? This cannot be undone.')) return;
+        sset(AUDIT_LOG_KEY, []);
+        openAuditLogModal();
+        showToast('History cleared');
+      }
+
       function getUDProj(pid) {
         return (utilityData[pid] || (utilityData[pid] = { buildings: [] }), utilityData[pid]);
       }
@@ -25161,6 +25253,7 @@
           pills +
           '</div>' +
           '<div style="display:flex;gap:6px;flex-shrink:0">' +
+          '<button class="btn btn-ghost btn-sm" onclick="openAuditLogModal()" title="View change history">📋 History</button>' +
           '<button class="btn btn-ghost btn-sm" onclick="openMeterModal(\'' +
           udActiveMid +
           '\')">✏️ Edit</button>' +
@@ -25906,6 +25999,15 @@
               /(<td class="norm-mon-cell[^"]*"[^>]*>)/,
               '$1<span title="Meter change — click to expand" style="font-size:10px;margin-right:3px;opacity:0.7">⚡</span>',
             );
+          } else if (row._chargeParts && Object.keys(row._chargeParts).length) {
+            rowHtml = rowHtml.replace(
+              '<tr>',
+              '<tr style="cursor:pointer" onclick="toggleChargeDetail(\'' + row.id + '\')">',
+            );
+            rowHtml = rowHtml.replace(
+              /(<td class="norm-mon-cell[^"]*"[^>]*>)/,
+              '$1<span title="Charge line items — click to expand" style="font-size:10px;margin-right:3px;opacity:0.7">💲</span>',
+            );
           }
           // Add amber background and info icons for flagged rows
           if (flags.length) {
@@ -26021,6 +26123,60 @@
               '</tr>' +
               '</table></td></tr>';
             tblBody += mtrDetail;
+          }
+          if (row._chargeParts && Object.keys(row._chargeParts).length) {
+            const cpId = 'charge-detail-' + row.id;
+            let cpRows = '';
+            for (const [chargeField, parts] of Object.entries(row._chargeParts)) {
+              const label = chargeField
+                .replace(/([A-Z])/g, ' $1')
+                .replace(/^ /, '')
+                .replace(/Charge$/, '')
+                .trim();
+              cpRows +=
+                '<tr style="color:var(--text2);font-weight:600"><td colspan="5" style="padding:4px 10px;border-top:1px solid var(--border)">' +
+                label +
+                '</td></tr>';
+              parts.forEach((p, i) => {
+                const fmtAmt =
+                  p.charge != null
+                    ? '$' +
+                      parseFloat(p.charge).toLocaleString('en-US', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })
+                    : '—';
+                const fmtQty =
+                  p.qty != null
+                    ? parseFloat(p.qty).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+                    : '—';
+                const fmtRate =
+                  p.rate != null
+                    ? '$' +
+                      parseFloat(p.rate).toLocaleString('en-US', { minimumFractionDigits: 6, maximumFractionDigits: 6 })
+                    : '—';
+                cpRows +=
+                  '<tr><td style="padding:2px 10px;color:var(--text3)">(' +
+                  (i + 1) +
+                  ')</td><td style="padding:2px 10px;font-family:var(--mono)">' +
+                  fmtQty +
+                  '</td><td style="padding:2px 10px;font-family:var(--mono)">' +
+                  fmtRate +
+                  '</td><td style="padding:2px 10px;color:var(--text3)">' +
+                  (p.unit || '') +
+                  '</td><td style="padding:2px 10px;font-family:var(--mono);font-weight:600">' +
+                  fmtAmt +
+                  '</td></tr>';
+              });
+            }
+            tblBody +=
+              '<tr id="' +
+              cpId +
+              '" style="display:none" class="charge-detail-row"><td colspan="' +
+              cols.length +
+              '" style="padding:6px 12px;background:var(--s2)"><table style="width:auto;border-collapse:collapse;font-size:12px;margin:2px 0"><tr style="color:var(--text2);font-weight:600;font-size:10px"><td style="padding:2px 10px">#</td><td style="padding:2px 10px">Qty</td><td style="padding:2px 10px">Rate</td><td style="padding:2px 10px">Unit</td><td style="padding:2px 10px">Amount</td></tr>' +
+              cpRows +
+              '</table></td></tr>';
           }
         });
         // Empty terminator row with visible borders (Update 90) — gives the
@@ -30618,7 +30774,7 @@
             </div>
             <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Client Savings</div>
-              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:#22c55e">${$f(annCli)}</div>
+              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--green)">${$f(annCli)}</div>
             </div>`
                 : ''
             }
@@ -32549,6 +32705,8 @@
           )
         )
           return;
+        const _actx = _auditCtxFromIds(udSelProjId, udSelBldgId, mid);
+        logUtilityAudit({ action: 'delete_all', ..._actx, note: count + ' bills deleted', source: 'manual' });
         m.bills = [];
         if (m.baseline) m.baseline = {};
         saveUtilityData();
@@ -32559,10 +32717,25 @@
         const el = document.getElementById('meter-detail-' + rowId);
         if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
       }
+      function toggleChargeDetail(rowId) {
+        const el = document.getElementById('charge-detail-' + rowId);
+        if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+      }
       function deleteBillRow(mid, rowId) {
         const b = getUDBldg(udSelProjId, udSelBldgId);
         const m = b?.meters?.find((m) => m.id === mid);
         if (!m) return;
+        const _delRow = m.bills.find((r) => r.id === rowId);
+        if (_delRow) {
+          const _actx = _auditCtxFromIds(udSelProjId, udSelBldgId, mid);
+          logUtilityAudit({
+            action: 'delete',
+            ..._actx,
+            period: _auditPeriodLabel(_delRow),
+            source: 'manual',
+            note: 'totalCost=' + (_delRow.totalCost || ''),
+          });
+        }
         m.bills = m.bills.filter((r) => r.id !== rowId);
         saveUtilityData();
         // Immediately remove the row from the visible table so the UI updates instantly
@@ -33129,6 +33302,23 @@
         };
         // Assemble the body
         let body = '';
+        if (row) {
+          const bldgs = getUDBldgs(udSelProjId);
+          let moveOpts = '';
+          bldgs.forEach((bl) => {
+            (bl.meters || []).forEach((mt) => {
+              if (mt.id === mid) return;
+              const label = (bl.name || 'Building') + ' — ' + (mt.name || mt.commodity || 'Meter');
+              moveOpts += '<option value="' + bl.id + '|' + mt.id + '">' + label + '</option>';
+            });
+          });
+          if (moveOpts) {
+            body +=
+              '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:16px;background:var(--s1)"><div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Move to Different Meter</div><select class="fs" id="bl-move-meter" style="width:100%"><option value="">— Keep on current meter —</option>' +
+              moveOpts +
+              '</select></div>';
+          }
+        }
         for (const r of layout) {
           if (r.section) {
             body += `<div class="ef-section">${r.section}</div>`;
@@ -33249,11 +33439,48 @@
           showToast('Start and end date required');
           return;
         }
+        const _moveSel = document.getElementById('bl-move-meter')?.value || '';
+        if (_moveSel && row) {
+          const [_mvBldgId, _mvMeterId] = _moveSel.split('|');
+          const _mvBldg = getUDBldg(udSelProjId, _mvBldgId);
+          const _mvMeter = _mvBldg?.meters?.find((mt) => mt.id === _mvMeterId);
+          if (_mvMeter) {
+            Object.assign(row, data);
+            m.bills = m.bills.filter((r) => r.id !== row.id);
+            _mvMeter.bills = _mvMeter.bills || [];
+            _mvMeter.bills.push(row);
+            _mvMeter.bills.sort((a, c) => new Date(a.start) - new Date(c.start));
+            const _actx = _auditCtxFromIds(udSelProjId, udSelBldgId, udSelMeterId);
+            logUtilityAudit({
+              action: 'move',
+              ..._actx,
+              period: _auditPeriodLabel(row),
+              note: 'Moved to ' + (_mvBldg.name || '') + ' — ' + meterLabel(_mvMeter),
+              source: 'manual',
+            });
+            saveUtilityData();
+            closeBillModal();
+            renderMeterWorkspace();
+            showToast('Bill moved to ' + meterLabel(_mvMeter) + ' ✓');
+            return;
+          }
+        }
+        const _actx = _auditCtxFromIds(udSelProjId, udSelBldgId, udSelMeterId);
         if (row) {
+          const _before = { ...row };
           Object.assign(row, data);
+          logUtilityAudit({
+            action: 'edit',
+            ..._actx,
+            period: _auditPeriodLabel(row),
+            changes: _auditDiffBillFields(_before, data),
+            source: 'manual',
+          });
           showToast('Record updated ✓');
         } else {
-          m.bills.push({ id: 'r' + Date.now(), ...data });
+          const _newRow = { id: 'r' + Date.now(), ...data };
+          m.bills.push(_newRow);
+          logUtilityAudit({ action: 'add', ..._actx, period: _auditPeriodLabel(_newRow), source: 'manual' });
           showToast('Period added ✓');
         }
         m.bills.sort((a, b) => new Date(a.start) - new Date(b.start));
@@ -36272,29 +36499,17 @@
             });
           });
         } else {
-          // Fallback to old project buildings approach
-          const bldgs = p.buildings || [];
+          const bldgs = getUDBldgs(projId);
           bldgs.forEach((b) => {
             (b.meters || []).forEach((m) => {
-              const bl = m.baseline || {};
-              const bills = m.bills || [];
-              const useBills =
-                bl.startIdx !== undefined
-                  ? bills.filter((_, i) => {
-                      const bm = bl.months || {};
-                      return bm[i] !== false;
-                    })
-                  : bills;
-              if (m.type === 'electric') {
-                useBills.forEach((bill) => {
+              (m.bills || []).forEach((bill) => {
+                if (m.commodity === 'Electric') {
                   totalKwh += bill.kwh || bill.usage || 0;
                   totalKw = Math.max(totalKw, bill.kw || bill.demKW || 0);
-                });
-              } else if (m.type === 'gas') {
-                useBills.forEach((bill) => {
+                } else if (m.commodity === 'Gas') {
                   totalGas += bill.therms || bill.usage || 0;
-                });
-              }
+                }
+              });
             });
           });
         }
@@ -39548,7 +39763,7 @@
         { name: 'Blue', hex: '#3b82f6' },
         { name: 'Teal', hex: '#14b8a6' },
         { name: 'Violet', hex: '#8b5cf6' },
-        { name: 'Rose', hex: '#f43f5e' },
+        { name: 'Rose', hex: 'var(--red)' },
         { name: 'Amber', hex: '#f59e0b' },
         { name: 'Emerald', hex: '#10b981' },
         { name: 'Sky', hex: '#0ea5e9' },
