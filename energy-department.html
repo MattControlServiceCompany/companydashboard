@@ -4750,6 +4750,128 @@
         letter-spacing: 0.5px;
         margin-bottom: 4px;
       }
+      /* ── UI Edit Mode ── */
+      .ui-edit-mode {
+        outline: 2px dashed var(--amber) !important;
+        outline-offset: -2px;
+      }
+      .ui-edit-toolbar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 40px;
+        z-index: 900;
+        background: var(--s3);
+        border-bottom: 2px solid var(--amber);
+        display: none;
+        align-items: center;
+        padding: 0 16px;
+        gap: 12px;
+        font-size: 12px;
+      }
+      .ui-edit-mode .ui-edit-toolbar {
+        display: flex;
+      }
+      .ui-edit-mode .topbar {
+        top: 40px;
+      }
+      .ui-edit-mode .sidebar {
+        top: 40px;
+        height: calc(100vh - 40px);
+      }
+      .ui-edit-mode .content {
+        margin-top: 40px;
+      }
+      .ui-edit-toolbar .uet-label {
+        color: var(--amber);
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        font-size: 11px;
+      }
+      .ui-edit-toolbar .uet-tabs {
+        display: flex;
+        gap: 4px;
+        margin: 0 auto;
+      }
+      .ui-edit-toolbar .uet-tab {
+        padding: 4px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text2);
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .ui-edit-toolbar .uet-tab.active {
+        background: var(--amber);
+        color: var(--bg);
+        border-color: var(--amber);
+      }
+      .ui-edit-toolbar .uet-actions {
+        display: flex;
+        gap: 6px;
+      }
+      [data-ui-id].ui-el-hover {
+        outline: 1px dashed var(--accent);
+        outline-offset: 2px;
+        cursor: pointer;
+        position: relative;
+      }
+      .ui-inspector {
+        position: fixed;
+        right: 0;
+        top: 40px;
+        width: 280px;
+        height: calc(100vh - 40px);
+        background: var(--s2);
+        border-left: 1px solid var(--border);
+        z-index: 899;
+        transform: translateX(100%);
+        transition: transform 0.2s ease;
+        overflow-y: auto;
+        display: none;
+        flex-direction: column;
+      }
+      .ui-edit-mode .ui-inspector {
+        display: flex;
+      }
+      .ui-inspector.open {
+        transform: translateX(0);
+      }
+      .ui-inspector-hdr {
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text);
+      }
+      .ui-inspector-body {
+        padding: 14px;
+        flex: 1;
+        overflow-y: auto;
+      }
+      .ui-color-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        font-size: 12px;
+      }
+      .ui-color-row label {
+        flex: 1;
+        color: var(--text2);
+      }
+      .ui-color-row input[type='color'] {
+        width: 32px;
+        height: 24px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        cursor: pointer;
+        background: transparent;
+      }
     </style>
   </head>
   <script
@@ -4888,6 +5010,7 @@
             </div>
           </div>
           <div class="sidebar-bottom">
+            <button class="sb-settings-btn" id="uiCustomizeBtn" onclick="uiEditToggle()">&#9998; Customize</button>
             <button class="sb-settings-btn" onclick="siteOpenSettings()">&#9881; Settings</button>
             <div class="sb-divider"></div>
             <div class="sb-clock" id="sb-clock">--:-- --</div>
@@ -12365,8 +12488,10 @@
                   new Date(last + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
             }
           });
-          // Fallback: if no baseline set, use all bills
-          const useCost = blCost > 0 ? blCost : allCost;
+          // Fallback: if no baseline set, annualize allCost to match curCost's 12-month window
+          const totalBillCount = meters.reduce((s, m) => s + (m.bills || []).length, 0);
+          const annualizedAllCost = totalBillCount > 12 ? (allCost / totalBillCount) * 12 : allCost;
+          const useCost = blCost > 0 ? blCost : annualizedAllCost;
           const useKwh = blKwh > 0 ? blKwh : allKwh;
           const useTherms = blTherms > 0 ? blTherms : allTherms;
           const blLabel = hasBaseline ? 'Baseline' : 'Total Cost';
@@ -15508,6 +15633,17 @@
                 // flags so _postExtractionVerify's final decision doesn't treat them as
                 // unresolved contamination and block trusting compSum.
                 delete result['_rate_mismatch_' + chargeField];
+                delete result['_part_mismatches_' + chargeField];
+              }
+            }
+
+            // ── MULTI-PART NULL-OCR FLAG CLEANUP ──
+            // For kWh charges (ECA, EER, PTS) where all parts have ocrCharge == null,
+            // per-part validation flags are false alarms — the parts were garbled but
+            // the total charge was correct or recovered. Clear the stale flag.
+            if (parts.length > 1 && result['_part_mismatches_' + chargeField]) {
+              const allPartsOcrNull = parts.every((p) => p.ocrCharge == null);
+              if (allPartsOcrNull) {
                 delete result['_part_mismatches_' + chargeField];
               }
             }
@@ -39867,6 +40003,45 @@
         } else {
           document.documentElement.classList.remove('show-calc');
         }
+        var pageName = 'energy-department';
+        var pg = uc.pages?.[pageName];
+        if (pg) {
+          if (pg.colors) {
+            for (var uiId in pg.colors) {
+              var el = document.querySelector('[data-ui-id="' + uiId + '"]');
+              if (!el) {
+                console.warn('uiCustom: missing element', uiId);
+                continue;
+              }
+              var cols = pg.colors[uiId];
+              if (cols.background) el.style.background = cols.background;
+              if (cols.borderColor) el.style.borderColor = cols.borderColor;
+              if (cols.color) el.style.color = cols.color;
+            }
+          }
+          if (pg.layout) {
+            for (var uiId in pg.layout) {
+              var el = document.querySelector('[data-ui-id="' + uiId + '"]');
+              if (!el) continue;
+              var lay = pg.layout[uiId];
+              if (lay.order != null) el.style.order = lay.order;
+              if (lay.columns) el.style.gridTemplateColumns = lay.columns;
+            }
+          }
+          if (pg.hiddenElements && pg.hiddenElements.length) {
+            pg.hiddenElements.forEach(function (key) {
+              var parts = key.split(':btn:');
+              if (parts.length === 2) {
+                var el = document.querySelector('[data-ui-id="' + parts[0] + '"]');
+                if (el) {
+                  var btns = el.querySelectorAll('button, .btn, .s-item');
+                  var idx = parseInt(parts[1]);
+                  if (btns[idx]) btns[idx].style.display = 'none';
+                }
+              }
+            });
+          }
+        }
       }
 
       function uiCustomSetFont(key, val) {
@@ -39950,6 +40125,211 @@
         if (!confirm('Reset all UI customizations (fonts, layout, colors)? This cannot be undone.')) return;
         _uiCustomSave({ version: 1, pages: {}, fonts: {} });
         showToast('Customizations reset — reloading...');
+        setTimeout(function () {
+          location.reload();
+        }, 500);
+      }
+
+      /* ── UI Edit Mode ── */
+      let _uiEditMode = false;
+      let _uiEditTab = 'colors';
+      let _uiSelectedEl = null;
+      const _uiPageName = 'energy-department';
+
+      function uiEditToggle() {
+        _uiEditMode = !_uiEditMode;
+        document.documentElement.classList.toggle('ui-edit-mode', _uiEditMode);
+        const btn = document.getElementById('uiCustomizeBtn');
+        if (btn) btn.textContent = _uiEditMode ? '✕ Exit Customize' : '✎ Customize';
+        if (!_uiEditMode) {
+          _uiEditCleanup();
+          document.getElementById('uiInspector')?.classList.remove('open');
+        } else {
+          _uiEditAttachHovers();
+        }
+      }
+
+      function _uiEditAttachHovers() {
+        document.querySelectorAll('[data-ui-id]').forEach((el) => {
+          el.addEventListener('mouseenter', _uiElMouseEnter);
+          el.addEventListener('mouseleave', _uiElMouseLeave);
+          el.addEventListener('click', _uiElClick);
+        });
+      }
+
+      function _uiEditCleanup() {
+        document.querySelectorAll('[data-ui-id]').forEach((el) => {
+          el.classList.remove('ui-el-hover');
+          el.removeEventListener('mouseenter', _uiElMouseEnter);
+          el.removeEventListener('mouseleave', _uiElMouseLeave);
+          el.removeEventListener('click', _uiElClick);
+        });
+        _uiSelectedEl = null;
+      }
+
+      function _uiElMouseEnter(e) {
+        if (_uiEditMode) this.classList.add('ui-el-hover');
+      }
+      function _uiElMouseLeave(e) {
+        if (_uiEditMode) this.classList.remove('ui-el-hover');
+      }
+      function _uiElClick(e) {
+        if (!_uiEditMode) return;
+        e.stopPropagation();
+        e.preventDefault();
+        _uiSelectedEl = this;
+        const uiId = this.getAttribute('data-ui-id');
+        document.getElementById('uiInspectorTitle').textContent = uiId;
+        const inspector = document.getElementById('uiInspector');
+        inspector.classList.add('open');
+        _uiRenderInspector();
+      }
+
+      function uiEditSetTab(tab, btn) {
+        _uiEditTab = tab;
+        document.querySelectorAll('.uet-tab').forEach((b) => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        _uiRenderInspector();
+      }
+
+      function _uiRenderInspector() {
+        const body = document.getElementById('uiInspectorBody');
+        if (!body || !_uiSelectedEl) {
+          if (body)
+            body.innerHTML =
+              '<div style="color:var(--text3);font-size:12px;padding:20px;text-align:center">Click an element on the page to inspect it</div>';
+          return;
+        }
+        const uiId = _uiSelectedEl.getAttribute('data-ui-id');
+        if (_uiEditTab === 'colors') {
+          const cs = getComputedStyle(_uiSelectedEl);
+          const uc = _uiCustomGet();
+          const pageCols = uc.pages?.[_uiPageName]?.colors?.[uiId] || {};
+          body.innerHTML =
+            '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">Colors</div>' +
+            _uiColorRow('Background', 'background', pageCols.background || _uiRgbToHex(cs.backgroundColor)) +
+            _uiColorRow('Border', 'borderColor', pageCols.borderColor || _uiRgbToHex(cs.borderColor)) +
+            _uiColorRow('Text', 'color', pageCols.color || _uiRgbToHex(cs.color)) +
+            '<button class="btn btn-ghost btn-sm" style="margin-top:12px;font-size:11px;width:100%" onclick="_uiResetElementColors()">Reset to Default</button>';
+        } else if (_uiEditTab === 'layout') {
+          const cs = getComputedStyle(_uiSelectedEl);
+          const order = _uiSelectedEl.style.order || 'auto';
+          body.innerHTML =
+            '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">Layout</div>' +
+            '<div style="font-size:12px;color:var(--text2);margin-bottom:8px">Order: <input type="number" class="fi" style="width:60px;font-size:12px" value="' +
+            (parseInt(order) || 0) +
+            '" onchange="_uiSetOrder(parseInt(this.value))"></div>' +
+            '<div style="font-size:11px;color:var(--text3);margin-top:8px">Drag-to-reorder coming in a future update.</div>';
+        } else if (_uiEditTab === 'buttons') {
+          const btns = _uiSelectedEl.querySelectorAll('button, .btn, .s-item');
+          let html =
+            '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">Buttons</div>';
+          if (!btns.length) {
+            html += '<div style="font-size:12px;color:var(--text3)">No buttons in this element</div>';
+          } else {
+            btns.forEach((b, i) => {
+              const label = b.textContent.trim().slice(0, 30) || 'Button ' + (i + 1);
+              const hidden = b.style.display === 'none';
+              html +=
+                '<label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:6px;cursor:pointer"><input type="checkbox" ' +
+                (hidden ? '' : 'checked') +
+                ' onchange="_uiToggleBtn(this,' +
+                i +
+                ')"> ' +
+                label +
+                '</label>';
+            });
+          }
+          body.innerHTML = html;
+        }
+      }
+
+      function _uiColorRow(label, prop, currentVal) {
+        return (
+          '<div class="ui-color-row"><label>' +
+          label +
+          '</label><input type="color" value="' +
+          (currentVal || '#000000') +
+          '" onchange="_uiSetColor(\'' +
+          prop +
+          '\',this.value)"></div>'
+        );
+      }
+
+      function _uiRgbToHex(rgb) {
+        if (!rgb || rgb === 'transparent' || rgb === 'rgba(0, 0, 0, 0)') return '#000000';
+        const m = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        if (!m) return rgb.startsWith('#') ? rgb : '#000000';
+        return '#' + [m[1], m[2], m[3]].map((n) => parseInt(n).toString(16).padStart(2, '0')).join('');
+      }
+
+      function _uiSetColor(prop, hex) {
+        if (!_uiSelectedEl) return;
+        _uiSelectedEl.style[prop] = hex;
+        const uiId = _uiSelectedEl.getAttribute('data-ui-id');
+        var uc = _uiCustomGet();
+        if (!uc.pages) uc.pages = {};
+        if (!uc.pages[_uiPageName]) uc.pages[_uiPageName] = {};
+        if (!uc.pages[_uiPageName].colors) uc.pages[_uiPageName].colors = {};
+        if (!uc.pages[_uiPageName].colors[uiId]) uc.pages[_uiPageName].colors[uiId] = {};
+        uc.pages[_uiPageName].colors[uiId][prop] = hex;
+        _uiCustomSave(uc);
+      }
+
+      function _uiResetElementColors() {
+        if (!_uiSelectedEl) return;
+        _uiSelectedEl.style.background = '';
+        _uiSelectedEl.style.borderColor = '';
+        _uiSelectedEl.style.color = '';
+        const uiId = _uiSelectedEl.getAttribute('data-ui-id');
+        var uc = _uiCustomGet();
+        if (uc.pages?.[_uiPageName]?.colors?.[uiId]) {
+          delete uc.pages[_uiPageName].colors[uiId];
+          _uiCustomSave(uc);
+        }
+        _uiRenderInspector();
+        showToast('Colors reset');
+      }
+
+      function _uiSetOrder(val) {
+        if (!_uiSelectedEl) return;
+        _uiSelectedEl.style.order = val;
+        const uiId = _uiSelectedEl.getAttribute('data-ui-id');
+        var uc = _uiCustomGet();
+        if (!uc.pages) uc.pages = {};
+        if (!uc.pages[_uiPageName]) uc.pages[_uiPageName] = {};
+        if (!uc.pages[_uiPageName].layout) uc.pages[_uiPageName].layout = {};
+        if (!uc.pages[_uiPageName].layout[uiId]) uc.pages[_uiPageName].layout[uiId] = {};
+        uc.pages[_uiPageName].layout[uiId].order = val;
+        _uiCustomSave(uc);
+      }
+
+      function _uiToggleBtn(cb, idx) {
+        if (!_uiSelectedEl) return;
+        const btns = _uiSelectedEl.querySelectorAll('button, .btn, .s-item');
+        if (btns[idx]) btns[idx].style.display = cb.checked ? '' : 'none';
+        const uiId = _uiSelectedEl.getAttribute('data-ui-id');
+        var uc = _uiCustomGet();
+        if (!uc.pages) uc.pages = {};
+        if (!uc.pages[_uiPageName]) uc.pages[_uiPageName] = {};
+        if (!uc.pages[_uiPageName].hiddenElements) uc.pages[_uiPageName].hiddenElements = [];
+        const key = uiId + ':btn:' + idx;
+        const arr = uc.pages[_uiPageName].hiddenElements;
+        if (cb.checked) {
+          const i = arr.indexOf(key);
+          if (i >= 0) arr.splice(i, 1);
+        } else {
+          if (!arr.includes(key)) arr.push(key);
+        }
+        _uiCustomSave(uc);
+      }
+
+      function uiEditResetPage() {
+        if (!confirm('Reset all customizations for this page?')) return;
+        var uc = _uiCustomGet();
+        if (uc.pages) delete uc.pages[_uiPageName];
+        _uiCustomSave(uc);
+        showToast('Page customizations reset — reloading...');
         setTimeout(function () {
           location.reload();
         }, 500);
@@ -40540,6 +40920,34 @@
         );
       })();
     </script>
+    <!-- UI EDIT MODE TOOLBAR -->
+    <div class="ui-edit-toolbar" id="uiEditToolbar">
+      <span class="uet-label">Customize Mode</span>
+      <div class="uet-tabs">
+        <button class="uet-tab active" onclick="uiEditSetTab('colors', this)">Colors</button>
+        <button class="uet-tab" onclick="uiEditSetTab('layout', this)">Layout</button>
+        <button class="uet-tab" onclick="uiEditSetTab('buttons', this)">Buttons</button>
+      </div>
+      <div class="uet-actions">
+        <button class="btn btn-ghost btn-sm" style="font-size: 11px" onclick="uiCustomExport()">Export</button>
+        <button class="btn btn-ghost btn-sm" style="font-size: 11px" onclick="uiCustomImport()">Import</button>
+        <button class="btn btn-ghost btn-sm" style="font-size: 11px; color: var(--red)" onclick="uiEditResetPage()">
+          Reset Page
+        </button>
+        <button
+          class="btn btn-ghost btn-sm"
+          style="font-size: 11px; color: var(--amber); border-color: var(--amber)"
+          onclick="uiEditToggle()"
+        >
+          Exit
+        </button>
+      </div>
+    </div>
+    <!-- UI INSPECTOR PANEL -->
+    <div class="ui-inspector" id="uiInspector">
+      <div class="ui-inspector-hdr" id="uiInspectorTitle">Select an element</div>
+      <div class="ui-inspector-body" id="uiInspectorBody"></div>
+    </div>
     <div class="calc-popover" id="calcPopover">
       <div class="calc-pop-title">Calculation</div>
       <div id="calcPopoverText"></div>
