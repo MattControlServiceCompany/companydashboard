@@ -17891,9 +17891,10 @@
               b.ActualKW = demandKwMax.toFixed(4);
             }
             const tdcKwMax = getPartsQtyMax('TDCCharge');
-            // TDCkW should equal the peak kW across TDC charge line parts (same rule as ActualKW)
             const curTdcKw = pf(b.TDCkW);
-            if (tdcKwMax && curTdcKw > 0 && Math.abs(curTdcKw - tdcKwMax) / tdcKwMax > 0.05) {
+            const tdcKwParts = b._rates?.TDCCharge?.parts || [];
+            const tdcKwMatchesPart = curTdcKw > 0 && tdcKwParts.some((p) => Math.abs(curTdcKw - (p.qty || 0)) < 0.01);
+            if (tdcKwMax && curTdcKw > 0 && !tdcKwMatchesPart && Math.abs(curTdcKw - tdcKwMax) / tdcKwMax > 0.05) {
               b['_auto_corrected_TDCkW'] = {
                 original: b.TDCkW,
                 corrected: tdcKwMax.toFixed(4),
@@ -17904,15 +17905,18 @@
               b.TDCkW = tdcKwMax.toFixed(4);
             }
             // FacilitiesKW: on rate changeover bills, the Facilities Chg line splits into two parts
-            // with different per-period kW values. The current-period Facilities kW is the MAX.
-            // (The rolling 12-month peak validation runs separately downstream.)
+            // with different per-period kW values. Only override if the extracted value doesn't
+            // match any part's qty — matching means the meter table reading is valid for that period.
             const facKwMax = getPartsQtyMax('FacilitiesCharge');
             const curFacKw = pf(b.FacilitiesKW);
+            const facKwParts = b._rates?.FacilitiesCharge?.parts || [];
+            const facKwMatchesPart = curFacKw > 0 && facKwParts.some((p) => Math.abs(curFacKw - (p.qty || 0)) < 0.01);
             if (
               facKwMax &&
               facKwMax > 0 &&
               facKwMax < 10000 &&
               curFacKw > 0 &&
+              !facKwMatchesPart &&
               Math.abs(curFacKw - facKwMax) / facKwMax > 0.05
             ) {
               b['_auto_corrected_FacilitiesKW'] = {
@@ -17924,15 +17928,20 @@
             } else if (!curFacKw && facKwMax && facKwMax < 10000) {
               b.FacilitiesKW = facKwMax.toFixed(4);
             }
-            // BilledKW: same rule — on changeover bills, parts have different per-period kW values.
-            // Use MAX of parts as the representative bill-period billed demand.
+            // BilledKW: on changeover bills, parts have different per-period kW values.
+            // Only override if the extracted value doesn't match ANY part's qty —
+            // matching any part means the meter table reading is valid for that period.
             const billedKwMax = getPartsQtyMax('BilledKWCharge');
             const curBilledKw = pf(b.BilledKW);
+            const billedKwParts = b._rates?.BilledKWCharge?.parts || [];
+            const billedKwMatchesPart =
+              curBilledKw > 0 && billedKwParts.some((p) => Math.abs(curBilledKw - (p.qty || 0)) < 0.01);
             if (
               billedKwMax &&
               billedKwMax > 0 &&
               billedKwMax < 10000 &&
               curBilledKw > 0 &&
+              !billedKwMatchesPart &&
               Math.abs(curBilledKw - billedKwMax) / billedKwMax > 0.05
             ) {
               b['_auto_corrected_BilledKW'] = {
@@ -18580,6 +18589,21 @@
             const finalVal = String(b[field] || '').replace(/,/g, '');
             if (origVal && finalVal && parseFloat(origVal).toFixed(4) === parseFloat(finalVal).toFixed(4)) {
               delete b[key]; // No net change — remove the correction warning
+            }
+          }
+          // Clear magnitude flags when the CORRECTED value is within normal range.
+          // Magnitude flags are set against original (pre-correction) values in Stage 2,
+          // but auto-corrections in Stage 3+ may have fixed the value. Re-evaluate using
+          // the final corrected value — only keep the flag if it's still an outlier.
+          for (const key of Object.keys(b)) {
+            if (!key.startsWith('_magnitude_flag_')) continue;
+            const field = key.replace('_magnitude_flag_', '');
+            const correctedVal = pf(b[field]);
+            if (correctedVal <= 0) continue;
+            const flag = b[key];
+            const correctedRatio = correctedVal / flag.mean;
+            if (correctedRatio < 8 && correctedRatio > 0.12) {
+              delete b[key];
             }
           }
         }
