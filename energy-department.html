@@ -25289,6 +25289,16 @@
             }
           }
         } catch (e) {}
+        try {
+          const s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
+          if (s.defaultTableSettings && typeof s.defaultTableSettings === 'object') {
+            const d = s.defaultTableSettings;
+            return {
+              mode: d.mode === 'condensed' ? 'condensed' : 'detailed',
+              hidden: Array.isArray(d.hidden) ? d.hidden : [],
+            };
+          }
+        } catch (e) {}
         return { mode: 'detailed', hidden: [] };
       }
       function _saveBillsTableViewState(mid, state) {
@@ -39217,6 +39227,17 @@
           '</div>' +
           '</div>' +
           '</div>' +
+          '<div class="settings-section">' +
+          '<div class="settings-section-title">Default Table Settings</div>' +
+          '<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:12px">' +
+          '<div><div class="settings-row-label">Bills data table defaults</div><div class="settings-row-sub">Applied to meters without individual table settings</div></div>' +
+          _siteBuildDefaultTableSection(s) +
+          '</div>' +
+          '<div class="settings-row" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">' +
+          '<div><div class="settings-row-label">Reset individual meters</div><div class="settings-row-sub">Clear all per-meter table customizations so every meter uses these defaults</div></div>' +
+          '<button class="btn btn-ghost" style="color:var(--red);border-color:var(--red)" onclick="siteResetAllMeterTableSettings()">Reset All Meters</button>' +
+          '</div>' +
+          '</div>' +
           '</div>' +
           '</div>';
         document.body.appendChild(el);
@@ -39253,6 +39274,151 @@
           s.defaultExportFormat[fmt] = !!checked;
           localStorage.setItem('ch_settings', JSON.stringify(s));
         } catch (e) {}
+      }
+
+      /* Default Table Settings helpers */
+      function _siteGetDefaultTableSettings() {
+        try {
+          var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
+          var d = s.defaultTableSettings;
+          if (d && typeof d === 'object') {
+            return {
+              mode: d.mode === 'condensed' ? 'condensed' : 'detailed',
+              hidden: Array.isArray(d.hidden) ? d.hidden : [],
+            };
+          }
+        } catch (e) {}
+        return { mode: 'detailed', hidden: [] };
+      }
+      function _siteSaveDefaultTableSettings(state) {
+        try {
+          var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
+          s.defaultTableSettings = state;
+          localStorage.setItem('ch_settings', JSON.stringify(s));
+        } catch (e) {}
+      }
+      function _siteDefaultTableColItems(mode) {
+        var SKIP = new Set([
+          'start',
+          'end',
+          'numberOfDays',
+          'utilityCompany',
+          'customerName',
+          'serviceAddress',
+          'accountNumber',
+          'meterNumber',
+        ]);
+        var seen = new Set();
+        var items = [];
+        if (mode === 'condensed') {
+          var commodities = ['Electric', 'Gas', 'Water', 'Sewer', 'Stormwater', 'Propane'];
+          for (var ci = 0; ci < commodities.length; ci++) {
+            var cats = CONDENSED_CATEGORIES[commodities[ci]];
+            if (!cats) continue;
+            for (var j = 0; j < cats.length; j++) {
+              if (!seen.has(cats[j].label)) {
+                seen.add(cats[j].label);
+                items.push({ key: cats[j].label, label: cats[j].label });
+              }
+            }
+          }
+        } else {
+          var commodities = ['Electric', 'Gas', 'Water', 'Sewer', 'Stormwater', 'Propane'];
+          for (var ci = 0; ci < commodities.length; ci++) {
+            var schema = _billSchemaFor(commodities[ci]);
+            for (var j = 0; j < schema.length; j++) {
+              var e = schema[j];
+              if (e.section || SKIP.has(e.key) || seen.has(e.key)) continue;
+              seen.add(e.key);
+              items.push({ key: e.key, label: e.label });
+            }
+          }
+        }
+        return items;
+      }
+      function _siteBuildDefaultTableSection(s) {
+        var state = _siteGetDefaultTableSettings();
+        var items = _siteDefaultTableColItems(state.mode);
+        var hiddenSet = {};
+        for (var i = 0; i < state.hidden.length; i++) hiddenSet[state.hidden[i]] = true;
+        var toggle =
+          '<div style="display:flex;gap:6px">' +
+          '<button class="bts-view-btn' +
+          (state.mode === 'detailed' ? ' sel' : '') +
+          '" onclick="siteSetDefaultTableMode(\'detailed\')" style="padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:' +
+          (state.mode === 'detailed' ? 'var(--accent)' : 'transparent') +
+          ';color:' +
+          (state.mode === 'detailed' ? '#fff' : 'var(--text2)') +
+          ';cursor:pointer;font-size:12px">Detailed</button>' +
+          '<button class="bts-view-btn' +
+          (state.mode === 'condensed' ? ' sel' : '') +
+          '" onclick="siteSetDefaultTableMode(\'condensed\')" style="padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:' +
+          (state.mode === 'condensed' ? 'var(--accent)' : 'transparent') +
+          ';color:' +
+          (state.mode === 'condensed' ? '#fff' : 'var(--text2)') +
+          ';cursor:pointer;font-size:12px">Condensed</button>' +
+          '</div>';
+        var colLabel =
+          '<div style="font-size:12px;color:var(--text3);margin-top:8px">Columns shown (' +
+          (state.mode === 'condensed' ? 'condensed categories' : 'detailed fields') +
+          ')</div>';
+        var rows = '';
+        for (var i = 0; i < items.length; i++) {
+          var it = items[i];
+          var esc = String(it.key).replace(/"/g, '&quot;');
+          rows +=
+            '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:2px 0">' +
+            '<input type="checkbox" data-dts-key="' +
+            esc +
+            '"' +
+            (hiddenSet[it.key] ? '' : ' checked') +
+            ' onchange="siteDefaultTableToggleCol(\'' +
+            esc +
+            '\', this.checked)"> ' +
+            it.label +
+            '</label>';
+        }
+        return (
+          toggle +
+          colLabel +
+          '<div id="siteDefaultTableCols" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:1px;padding:6px 0">' +
+          rows +
+          '</div>'
+        );
+      }
+      function siteSetDefaultTableMode(mode) {
+        var state = _siteGetDefaultTableSettings();
+        state.mode = mode === 'condensed' ? 'condensed' : 'detailed';
+        state.hidden = [];
+        _siteSaveDefaultTableSettings(state);
+        var overlay = document.getElementById('siteSettingsOverlay');
+        if (overlay) overlay.remove();
+        siteBuildSettingsModal();
+        siteOpenSettings();
+      }
+      function siteDefaultTableToggleCol(key, checked) {
+        var state = _siteGetDefaultTableSettings();
+        var set = {};
+        for (var i = 0; i < state.hidden.length; i++) set[state.hidden[i]] = true;
+        if (checked) {
+          delete set[key];
+        } else {
+          set[key] = true;
+        }
+        state.hidden = Object.keys(set);
+        _siteSaveDefaultTableSettings(state);
+      }
+      function siteResetAllMeterTableSettings() {
+        if (!confirm('Reset all individual meter table settings? Meters will use the site default.')) return;
+        var toRemove = [];
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf('bills_view_state_') === 0) toRemove.push(k);
+        }
+        for (var i = 0; i < toRemove.length; i++) localStorage.removeItem(toRemove[i]);
+        if (typeof showToast === 'function')
+          showToast('All meter table settings reset to default (' + toRemove.length + ' cleared)');
+        if (typeof renderMeterWorkspace === 'function') renderMeterWorkspace();
       }
 
       /* Expose for backward compat */
