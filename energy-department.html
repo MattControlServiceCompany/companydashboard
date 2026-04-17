@@ -2328,6 +2328,8 @@
         background: var(--s2);
         margin: 0 -4px 0 0;
         padding-right: 4px;
+        border-bottom: 1px solid var(--border);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
       }
       #extractedFieldsHdr:empty {
         display: none;
@@ -14967,6 +14969,29 @@
           if (_meterCombined.type === 'meter_change') {
             result._meterInfo.note =
               'Meter change: ' + _meterCombined.rows + ' meter lines summed for kWh, max KW/RKVA used';
+            const _mrClean = (s) => (s || '').replace(/,/g, '');
+            if (_meterRows.length >= 2) {
+              const m1 = _meterRows[0],
+                m2 = _meterRows[1];
+              result.Meter1_ReadStart = m1[1] || null;
+              result.Meter1_ReadEnd = m1[2] || null;
+              result.Meter1_StartRead = m1._fixedStartRead || _mrClean(m1[5]) || null;
+              result.Meter1_EndRead = m1._fixedEndRead || _mrClean(m1[4]) || null;
+              result.Meter1_ReadDiff = _mrClean(m1[6]) || null;
+              result.Meter1_Multiplier = _mrClean(m1[7]) || null;
+              result.Meter1_kWh = _mrClean(m1[8]) || null;
+              result.Meter1_KW = _mrClean(m1[9]) || null;
+              result.Meter1_RKVA = _mrClean(m1[10]) || null;
+              result.Meter2_ReadStart = m2[1] || null;
+              result.Meter2_ReadEnd = m2[2] || null;
+              result.Meter2_StartRead = m2._fixedStartRead || _mrClean(m2[5]) || null;
+              result.Meter2_EndRead = m2._fixedEndRead || _mrClean(m2[4]) || null;
+              result.Meter2_ReadDiff = _mrClean(m2[6]) || null;
+              result.Meter2_Multiplier = _mrClean(m2[7]) || null;
+              result.Meter2_kWh = _mrClean(m2[8]) || null;
+              result.Meter2_KW = _mrClean(m2[9]) || null;
+              result.Meter2_RKVA = _mrClean(m2[10]) || null;
+            }
           } else if (_meterCombined.type === 'solar') {
             result._meterInfo.note = 'Solar net meter: using Delivered row only for consumption';
           }
@@ -17941,65 +17966,92 @@
             const curBilledFinal = pf(b.BilledKW);
             const curFacFinal = pf(b.FacilitiesKW);
             if (curActual > 0 && curBilledFinal > 0 && curActual > curBilledFinal + 0.001) {
-              // DECIMAL-SHIFT RECOVERY FIRST (Bill 29 Nov 2025 Louis Elementary):
+              // CHARGE-LINE CONSENSUS FIRST: BilledKW == TDCkW proves the real demand.
+              // When two independent charge lines (Demand Chg and TDC Chg) agree on the
+              // kW value AND it has decimals (not a round minimum floor), ActualKW must
+              // equal them — no floor was applied, so Actual = Billed = TDC by identity.
+              // This is stronger evidence than decimal-shift guessing because the charge
+              // lines were extracted cleanly even when the meter table was garbled.
+              const curTdcFinal = pf(b.TDCkW);
+              const billedTdcAgree =
+                curBilledFinal > 0 &&
+                curTdcFinal > 0 &&
+                Math.abs(curBilledFinal - curTdcFinal) < 0.01 &&
+                curBilledFinal % 1 !== 0;
+              if (!b['_auto_corrected_ActualKW'] && billedTdcAgree) {
+                b['_auto_corrected_ActualKW'] = {
+                  original: b.ActualKW,
+                  corrected: curBilledFinal.toFixed(4),
+                  reason:
+                    'BilledKW (' +
+                    curBilledFinal.toFixed(4) +
+                    ') == TDCkW (' +
+                    curTdcFinal.toFixed(4) +
+                    ') with decimals — no minimum floor applied, so ActualKW = BilledKW by identity',
+                };
+                b.ActualKW = curBilledFinal.toFixed(4);
+              }
+              // DECIMAL-SHIFT RECOVERY (Bill 29 Nov 2025 Louis Elementary):
               // OCR commonly drops the decimal on the meter table kW column
               // (e.g. "198.7920" → "1987920"). When curActual is far larger than
               // BilledKW (>2x), try shifting the decimal left by powers of 10 and
               // pick the largest result that still fits under BilledKW AND
               // FacilitiesKW. This preserves the real sub-floor reading instead
               // of clamping to the LGS 200 kW minimum, which would wipe it out.
-              let decimalShifted = null;
-              if (!b['_auto_corrected_ActualKW'] && curActual > curBilledFinal * 2) {
-                const facLimit = curFacFinal > 0 ? curFacFinal : Infinity;
-                let best = null;
-                for (const div of [10, 100, 1000, 10000, 100000]) {
-                  const v = curActual / div;
-                  if (v > 0.1 && v <= curBilledFinal + 0.001 && v <= facLimit + 0.001) {
-                    if (best === null || v > best) best = v;
+              else {
+                let decimalShifted = null;
+                if (!b['_auto_corrected_ActualKW'] && curActual > curBilledFinal * 2) {
+                  const facLimit = curFacFinal > 0 ? curFacFinal : Infinity;
+                  let best = null;
+                  for (const div of [10, 100, 1000, 10000, 100000]) {
+                    const v = curActual / div;
+                    if (v > 0.1 && v <= curBilledFinal + 0.001 && v <= facLimit + 0.001) {
+                      if (best === null || v > best) best = v;
+                    }
                   }
+                  if (best !== null) decimalShifted = best;
                 }
-                if (best !== null) decimalShifted = best;
-              }
-              if (decimalShifted !== null) {
-                b['_auto_corrected_ActualKW'] = {
-                  original: b.ActualKW,
-                  corrected: decimalShifted.toFixed(4),
-                  reason:
-                    'OCR dropped the decimal point on the meter table kW reading — recovered ' +
-                    decimalShifted.toFixed(4) +
-                    ' kW (fits under BilledKW ' +
-                    curBilledFinal.toFixed(4) +
-                    (curFacFinal > 0 ? ' and FacilitiesKW ' + curFacFinal.toFixed(4) : '') +
-                    ')',
-                };
-                b.ActualKW = decimalShifted.toFixed(4);
-              } else {
-                let clampTarget = curBilledFinal;
-                let clampSource = 'BilledKW';
-                if (curFacFinal > 0 && curFacFinal < clampTarget) {
-                  clampTarget = curFacFinal;
-                  clampSource = 'FacilitiesKW';
-                }
-                if (!b['_auto_corrected_ActualKW']) {
-                  const facPart = curFacFinal > 0 ? ' or FacilitiesKW (' + curFacFinal.toFixed(4) + ')' : '';
+                if (decimalShifted !== null) {
                   b['_auto_corrected_ActualKW'] = {
                     original: b.ActualKW,
-                    corrected: clampTarget.toFixed(4),
+                    corrected: decimalShifted.toFixed(4),
                     reason:
-                      'ActualKW (' +
-                      curActual.toFixed(4) +
-                      ') cannot exceed BilledKW (' +
+                      'OCR dropped the decimal point on the meter table kW reading — recovered ' +
+                      decimalShifted.toFixed(4) +
+                      ' kW (fits under BilledKW ' +
                       curBilledFinal.toFixed(4) +
-                      ')' +
-                      facPart +
-                      ' — clamped to ' +
-                      clampSource +
-                      ' = ' +
-                      clampTarget.toFixed(4),
+                      (curFacFinal > 0 ? ' and FacilitiesKW ' + curFacFinal.toFixed(4) : '') +
+                      ')',
                   };
-                  b.ActualKW = clampTarget.toFixed(4);
+                  b.ActualKW = decimalShifted.toFixed(4);
+                } else {
+                  let clampTarget = curBilledFinal;
+                  let clampSource = 'BilledKW';
+                  if (curFacFinal > 0 && curFacFinal < clampTarget) {
+                    clampTarget = curFacFinal;
+                    clampSource = 'FacilitiesKW';
+                  }
+                  if (!b['_auto_corrected_ActualKW']) {
+                    const facPart = curFacFinal > 0 ? ' or FacilitiesKW (' + curFacFinal.toFixed(4) + ')' : '';
+                    b['_auto_corrected_ActualKW'] = {
+                      original: b.ActualKW,
+                      corrected: clampTarget.toFixed(4),
+                      reason:
+                        'ActualKW (' +
+                        curActual.toFixed(4) +
+                        ') cannot exceed BilledKW (' +
+                        curBilledFinal.toFixed(4) +
+                        ')' +
+                        facPart +
+                        ' — clamped to ' +
+                        clampSource +
+                        ' = ' +
+                        clampTarget.toFixed(4),
+                    };
+                    b.ActualKW = clampTarget.toFixed(4);
+                  }
                 }
-              }
+              } // end else (decimal-shift / clamp branch)
             }
             // ── Meter table cross-validation: ReadDifference / MeterMultiplier / kWhConsumed ──
             // Two identities anchor the meter table:
@@ -18695,6 +18747,24 @@
             renewableCharge: bill.RenewableCharge || '',
             franchiseFee: bill.FranchiseFee || '',
             solarCredit: bill.SolarCredit || '',
+            Meter1_ReadStart: bill.Meter1_ReadStart || '',
+            Meter1_ReadEnd: bill.Meter1_ReadEnd || '',
+            Meter1_StartRead: bill.Meter1_StartRead || '',
+            Meter1_EndRead: bill.Meter1_EndRead || '',
+            Meter1_ReadDiff: bill.Meter1_ReadDiff || '',
+            Meter1_Multiplier: bill.Meter1_Multiplier || '',
+            Meter1_kWh: bill.Meter1_kWh || '',
+            Meter1_KW: bill.Meter1_KW || '',
+            Meter1_RKVA: bill.Meter1_RKVA || '',
+            Meter2_ReadStart: bill.Meter2_ReadStart || '',
+            Meter2_ReadEnd: bill.Meter2_ReadEnd || '',
+            Meter2_StartRead: bill.Meter2_StartRead || '',
+            Meter2_EndRead: bill.Meter2_EndRead || '',
+            Meter2_ReadDiff: bill.Meter2_ReadDiff || '',
+            Meter2_Multiplier: bill.Meter2_Multiplier || '',
+            Meter2_kWh: bill.Meter2_kWh || '',
+            Meter2_KW: bill.Meter2_KW || '',
+            Meter2_RKVA: bill.Meter2_RKVA || '',
           };
           meter.bills = meter.bills || [];
           const dup = meter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
@@ -18888,6 +18958,24 @@
           unitPrice: extracted.UnitPrice || '',
           subtotal: extracted.Subtotal || '',
           tax: extracted.Tax || '',
+          Meter1_ReadStart: extracted.Meter1_ReadStart || '',
+          Meter1_ReadEnd: extracted.Meter1_ReadEnd || '',
+          Meter1_StartRead: extracted.Meter1_StartRead || '',
+          Meter1_EndRead: extracted.Meter1_EndRead || '',
+          Meter1_ReadDiff: extracted.Meter1_ReadDiff || '',
+          Meter1_Multiplier: extracted.Meter1_Multiplier || '',
+          Meter1_kWh: extracted.Meter1_kWh || '',
+          Meter1_KW: extracted.Meter1_KW || '',
+          Meter1_RKVA: extracted.Meter1_RKVA || '',
+          Meter2_ReadStart: extracted.Meter2_ReadStart || '',
+          Meter2_ReadEnd: extracted.Meter2_ReadEnd || '',
+          Meter2_StartRead: extracted.Meter2_StartRead || '',
+          Meter2_EndRead: extracted.Meter2_EndRead || '',
+          Meter2_ReadDiff: extracted.Meter2_ReadDiff || '',
+          Meter2_Multiplier: extracted.Meter2_Multiplier || '',
+          Meter2_kWh: extracted.Meter2_kWh || '',
+          Meter2_KW: extracted.Meter2_KW || '',
+          Meter2_RKVA: extracted.Meter2_RKVA || '',
         };
         // Re-fetch the live meter reference from the store — the match object may hold
         // a stale snapshot if projects were mutated between findMeterMatch and now.
@@ -21354,6 +21442,24 @@
           UnitPrice: 'Unit Price',
           Subtotal: 'Subtotal',
           Tax: 'Tax',
+          Meter1_ReadStart: 'Read Start',
+          Meter1_ReadEnd: 'Read End',
+          Meter1_StartRead: 'Start Read',
+          Meter1_EndRead: 'End Read',
+          Meter1_ReadDiff: 'Read Difference',
+          Meter1_Multiplier: 'Multiplier',
+          Meter1_kWh: 'kWh Used',
+          Meter1_KW: 'KW Used',
+          Meter1_RKVA: 'RKVA Used',
+          Meter2_ReadStart: 'Read Start',
+          Meter2_ReadEnd: 'Read End',
+          Meter2_StartRead: 'Start Read',
+          Meter2_EndRead: 'End Read',
+          Meter2_ReadDiff: 'Read Difference',
+          Meter2_Multiplier: 'Multiplier',
+          Meter2_kWh: 'kWh Used',
+          Meter2_KW: 'KW Used',
+          Meter2_RKVA: 'RKVA Used',
         };
         // Fields that represent dollar charges — prefix with $ in display
         const CHARGE_FIELDS = new Set([
@@ -21394,6 +21500,20 @@
           'ReadDifference',
           'MeterMultiplier',
           'kWhConsumed',
+          'Meter1_StartRead',
+          'Meter1_EndRead',
+          'Meter1_ReadDiff',
+          'Meter1_Multiplier',
+          'Meter1_kWh',
+          'Meter1_KW',
+          'Meter1_RKVA',
+          'Meter2_StartRead',
+          'Meter2_EndRead',
+          'Meter2_ReadDiff',
+          'Meter2_Multiplier',
+          'Meter2_kWh',
+          'Meter2_KW',
+          'Meter2_RKVA',
         ]);
         // Fields that should NOT be number-formatted (show raw value from PDF)
         const ID_FIELDS = new Set([
@@ -21423,6 +21543,18 @@
           { type: 'pair', fields: ['StartRead', 'EndRead'] },
           { type: 'pair', fields: ['ReadDifference', 'MeterMultiplier'] },
           { type: 'pair', fields: ['kWhConsumed', 'ActualRKVA'] },
+          { section: 'Meter 1', condition: 'Meter1_ReadStart' },
+          { type: 'pair', fields: ['Meter1_ReadStart', 'Meter1_ReadEnd'], condition: 'Meter1_ReadStart' },
+          { type: 'pair', fields: ['Meter1_StartRead', 'Meter1_EndRead'], condition: 'Meter1_ReadStart' },
+          { type: 'pair', fields: ['Meter1_ReadDiff', 'Meter1_Multiplier'], condition: 'Meter1_ReadStart' },
+          { type: 'pair', fields: ['Meter1_kWh', 'Meter1_KW'], condition: 'Meter1_ReadStart' },
+          { type: 'wide', fields: ['Meter1_RKVA'], condition: 'Meter1_ReadStart' },
+          { section: 'Meter 2', condition: 'Meter2_ReadStart' },
+          { type: 'pair', fields: ['Meter2_ReadStart', 'Meter2_ReadEnd'], condition: 'Meter2_ReadStart' },
+          { type: 'pair', fields: ['Meter2_StartRead', 'Meter2_EndRead'], condition: 'Meter2_ReadStart' },
+          { type: 'pair', fields: ['Meter2_ReadDiff', 'Meter2_Multiplier'], condition: 'Meter2_ReadStart' },
+          { type: 'pair', fields: ['Meter2_kWh', 'Meter2_KW'], condition: 'Meter2_ReadStart' },
+          { type: 'wide', fields: ['Meter2_RKVA'], condition: 'Meter2_ReadStart' },
           { section: 'Charges' },
           {
             type: 'charge-line-with-kw',
@@ -21775,6 +21907,7 @@
 
         const totalVal = _pf(parsed.TotalCurrentCharges);
         const rows = FIELD_LAYOUT.map((row) => {
+          if (row.condition && !parsed[row.condition]) return '';
           if (row.section) return `<div class="ef-section">${row.section}</div>`;
 
           // ── charge-line-with-kw: charge row with a kW field in the first column ──
@@ -21814,14 +21947,15 @@
             // No rate data — still show editable qty & rate boxes so user can fill them in.
             // rateKey:null means this is a flat-dollar line (Tax Exempt / Bill Offset /
             // Franchise Fee / Gas / Water / etc.) — don't append a kW/kWh unit suffix
-            // since there's no per-unit rate to speak of.
+            // since there's no per-unit rate to speak of. Rate-bearing charges (RkVA,
+            // EER, etc.) that happen to lack _rates data still keep their unit label.
             if (!row.rateKey || !ri) {
               runningTotal += chargeVal;
               const rtFmt = runningTotal.toLocaleString('en-US', {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               });
-              const noRateLabel = base;
+              const noRateLabel = row.rateKey ? base + ' ' + unitLabel : base;
               const qtyHtml = row.qtyField
                 ? buildCell(row.qtyField)
                 : `<div class="ef-item" style="opacity:.5"><div class="ef-key">${noRateLabel}</div><input class="ef-input" value="" data-key="_qty_${row.chargeField}" placeholder="—"></div>`;
@@ -22653,6 +22787,24 @@
           renewableCharge: bill.RenewableCharge || '',
           franchiseFee: bill.FranchiseFee || '',
           solarCredit: bill.SolarCredit || '',
+          Meter1_ReadStart: bill.Meter1_ReadStart || '',
+          Meter1_ReadEnd: bill.Meter1_ReadEnd || '',
+          Meter1_StartRead: bill.Meter1_StartRead || '',
+          Meter1_EndRead: bill.Meter1_EndRead || '',
+          Meter1_ReadDiff: bill.Meter1_ReadDiff || '',
+          Meter1_Multiplier: bill.Meter1_Multiplier || '',
+          Meter1_kWh: bill.Meter1_kWh || '',
+          Meter1_KW: bill.Meter1_KW || '',
+          Meter1_RKVA: bill.Meter1_RKVA || '',
+          Meter2_ReadStart: bill.Meter2_ReadStart || '',
+          Meter2_ReadEnd: bill.Meter2_ReadEnd || '',
+          Meter2_StartRead: bill.Meter2_StartRead || '',
+          Meter2_EndRead: bill.Meter2_EndRead || '',
+          Meter2_ReadDiff: bill.Meter2_ReadDiff || '',
+          Meter2_Multiplier: bill.Meter2_Multiplier || '',
+          Meter2_kWh: bill.Meter2_kWh || '',
+          Meter2_KW: bill.Meter2_KW || '',
+          Meter2_RKVA: bill.Meter2_RKVA || '',
         };
         // Validation
         const componentSum = pf(bill.FacilitiesCharge) + pf(kwCost) + pf(kwhCost) + pf(otherCost) + pf(taxCost);
@@ -25635,6 +25787,16 @@
           const flags = billFlags[row.id] || [];
           if (flags.length) flagCount++;
           let rowHtml = renderBillRow(row, m, incl, bills, cols);
+          if (row.Meter1_ReadStart) {
+            rowHtml = rowHtml.replace(
+              '<tr>',
+              '<tr style="cursor:pointer" onclick="toggleMeterDetail(\'' + row.id + '\')">',
+            );
+            rowHtml = rowHtml.replace(
+              /(<td class="norm-mon-cell[^"]*"[^>]*>)/,
+              '$1<span title="Meter change — click to expand" style="font-size:10px;margin-right:3px;opacity:0.7">⚡</span>',
+            );
+          }
           // Add amber background and info icons for flagged rows
           if (flags.length) {
             rowHtml = rowHtml.replace(
@@ -25660,6 +25822,96 @@
             });
           }
           tblBody += rowHtml;
+          if (row.Meter1_ReadStart) {
+            const mtrId = 'meter-detail-' + row.id;
+            const fmtMtr = (v) => {
+              if (!v) return '—';
+              const n = parseFloat(String(v).replace(/,/g, ''));
+              return isNaN(n) ? v : n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+            };
+            const mtrDetail =
+              '<tr id="' +
+              mtrId +
+              '" style="display:none" class="meter-detail-row">' +
+              '<td colspan="' +
+              cols.length +
+              '" style="padding:6px 12px;background:var(--s2)">' +
+              '<table style="width:auto;border-collapse:collapse;font-size:12px;margin:2px 0">' +
+              '<tr style="color:var(--text2);font-weight:600">' +
+              '<td style="padding:2px 10px">Meter</td>' +
+              '<td style="padding:2px 10px">Read Start</td>' +
+              '<td style="padding:2px 10px">Read End</td>' +
+              '<td style="padding:2px 10px">Start Read</td>' +
+              '<td style="padding:2px 10px">End Read</td>' +
+              '<td style="padding:2px 10px">Difference</td>' +
+              '<td style="padding:2px 10px">Multiplier</td>' +
+              '<td style="padding:2px 10px">kWh Used</td>' +
+              '<td style="padding:2px 10px">KW Used</td>' +
+              '<td style="padding:2px 10px">RKVA Used</td>' +
+              '</tr>' +
+              '<tr>' +
+              '<td style="padding:2px 10px;font-weight:600">1</td>' +
+              '<td style="padding:2px 10px">' +
+              (row.Meter1_ReadStart || '—') +
+              '</td>' +
+              '<td style="padding:2px 10px">' +
+              (row.Meter1_ReadEnd || '—') +
+              '</td>' +
+              '<td style="padding:2px 10px">' +
+              fmtMtr(row.Meter1_StartRead) +
+              '</td>' +
+              '<td style="padding:2px 10px">' +
+              fmtMtr(row.Meter1_EndRead) +
+              '</td>' +
+              '<td style="padding:2px 10px">' +
+              fmtMtr(row.Meter1_ReadDiff) +
+              '</td>' +
+              '<td style="padding:2px 10px">' +
+              fmtMtr(row.Meter1_Multiplier) +
+              '</td>' +
+              '<td style="padding:2px 10px">' +
+              fmtMtr(row.Meter1_kWh) +
+              '</td>' +
+              '<td style="padding:2px 10px">' +
+              fmtMtr(row.Meter1_KW) +
+              '</td>' +
+              '<td style="padding:2px 10px">' +
+              fmtMtr(row.Meter1_RKVA) +
+              '</td>' +
+              '</tr>' +
+              '<tr>' +
+              '<td style="padding:2px 10px;font-weight:600">2</td>' +
+              '<td style="padding:2px 10px">' +
+              (row.Meter2_ReadStart || '—') +
+              '</td>' +
+              '<td style="padding:2px 10px">' +
+              (row.Meter2_ReadEnd || '—') +
+              '</td>' +
+              '<td style="padding:2px 10px">' +
+              fmtMtr(row.Meter2_StartRead) +
+              '</td>' +
+              '<td style="padding:2px 10px">' +
+              fmtMtr(row.Meter2_EndRead) +
+              '</td>' +
+              '<td style="padding:2px 10px">' +
+              fmtMtr(row.Meter2_ReadDiff) +
+              '</td>' +
+              '<td style="padding:2px 10px">' +
+              fmtMtr(row.Meter2_Multiplier) +
+              '</td>' +
+              '<td style="padding:2px 10px">' +
+              fmtMtr(row.Meter2_kWh) +
+              '</td>' +
+              '<td style="padding:2px 10px">' +
+              fmtMtr(row.Meter2_KW) +
+              '</td>' +
+              '<td style="padding:2px 10px">' +
+              fmtMtr(row.Meter2_RKVA) +
+              '</td>' +
+              '</tr>' +
+              '</table></td></tr>';
+            tblBody += mtrDetail;
+          }
         });
         // Empty terminator row with visible borders (Update 90) — gives the
         // table a clean bottom edge instead of blending into the scroll area.
@@ -32192,6 +32444,10 @@
         saveUtilityData();
         renderMeterWorkspace();
         showToast(count + ' billing period' + (count !== 1 ? 's' : '') + ' deleted');
+      }
+      function toggleMeterDetail(rowId) {
+        const el = document.getElementById('meter-detail-' + rowId);
+        if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
       }
       function deleteBillRow(mid, rowId) {
         const b = getUDBldg(udSelProjId, udSelBldgId);
