@@ -17272,70 +17272,141 @@
       }
 
       // Analyze saved meter bills for statistical outliers — returns {billId: [{msg,level},...]}
+      function _billNormMonth(b) {
+        if (!b.start || !b.end) return -1;
+        const s = new Date(b.start + 'T12:00:00');
+        const e = new Date(b.end + 'T12:00:00');
+        if (isNaN(s) || isNaN(e)) return -1;
+        const sm = s.getMonth(),
+          em = e.getMonth();
+        if (sm === em) return sm;
+        const lastOfStart = new Date(s.getFullYear(), sm + 1, 0).getDate();
+        const daysInStart = lastOfStart - s.getDate() + 1;
+        const daysInEnd = e.getDate();
+        return daysInStart >= daysInEnd ? sm : em;
+      }
+      function _monthToSeason(m) {
+        if (m === 11 || m === 0 || m === 1) return 'winter';
+        if (m >= 2 && m <= 4) return 'spring';
+        if (m >= 5 && m <= 7) return 'summer';
+        return 'fall';
+      }
+      const _MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
       function _analyzeMeterBills(bills, m) {
         const flags = {};
-        if (bills.length < 4) return flags; // not enough data for meaningful stats
+        if (bills.length < 4) return flags;
         const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
         const isElec = m.commodity === 'Electric';
         const isGas = m.commodity === 'Gas';
 
-        // Compute stats for key fields
         function stats(vals) {
           const clean = vals.filter((v) => v > 0);
-          if (clean.length < 3) return null;
+          if (clean.length < 2) return null;
           const mean = clean.reduce((a, b) => a + b, 0) / clean.length;
           const stddev = Math.sqrt(clean.reduce((a, b) => a + (b - mean) ** 2, 0) / clean.length);
           return { mean, stddev, count: clean.length };
         }
-
-        // Fields to check by commodity type
-        const checks = [];
-        if (isElec) {
-          checks.push({ field: 'kwh', label: 'kWh', fn: (b) => pf(b.kwh) });
-          checks.push({ field: 'totalCost', label: 'Total Cost', fn: (b) => pf(b.totalCost) });
-          checks.push({ field: 'demandKW', label: 'Demand kW', fn: (b) => pf(b.demandKW) });
-        } else if (isGas) {
-          checks.push({ field: 'therms', label: 'Therms', fn: (b) => pf(b.therms) });
-          checks.push({ field: 'thermCost', label: 'Cost', fn: (b) => pf(b.thermCost || b.totalCost) });
-        } else {
-          checks.push({ field: 'usage', label: 'Usage', fn: (b) => pf(b.usage || b.kwh) });
-          checks.push({ field: 'cost', label: 'Cost', fn: (b) => pf(b.cost || b.totalCost) });
+        function zThreshold(count) {
+          if (count >= 10) return 2.5;
+          if (count >= 5) return 3.0;
+          return 3.5;
         }
 
-        // Also check days
+        const checks = [];
+        if (isElec) {
+          checks.push({ field: 'kwh', label: 'kWh', fn: (b) => pf(b.kwh), seasonal: true });
+          checks.push({ field: 'totalCost', label: 'Total Cost', fn: (b) => pf(b.totalCost), seasonal: true });
+          checks.push({ field: 'demandKW', label: 'Demand kW', fn: (b) => pf(b.demandKW), seasonal: true });
+        } else if (isGas) {
+          checks.push({ field: 'therms', label: 'Therms', fn: (b) => pf(b.therms), seasonal: true });
+          checks.push({ field: 'thermCost', label: 'Cost', fn: (b) => pf(b.thermCost || b.totalCost), seasonal: true });
+        } else {
+          checks.push({ field: 'usage', label: 'Usage', fn: (b) => pf(b.usage || b.kwh), seasonal: true });
+          checks.push({ field: 'cost', label: 'Cost', fn: (b) => pf(b.cost || b.totalCost), seasonal: true });
+        }
         checks.push({
           field: 'days',
           label: 'Days',
+          seasonal: false,
           fn: (b) => {
             if (!b.start || !b.end) return 0;
             return Math.round((new Date(b.end + 'T12:00:00') - new Date(b.start + 'T12:00:00')) / 86400000) + 1;
           },
         });
 
-        // Check for missing values that are typically present
         const missingChecks = isElec
           ? ['kwh', 'totalCost', 'start', 'end']
           : isGas
             ? ['therms', 'start', 'end']
             : ['start', 'end'];
 
-        // Build stats from all bills
-        const fieldStats = {};
+        const normMonths = bills.map(_billNormMonth);
+        const seasons = normMonths.map((nm) => (nm >= 0 ? _monthToSeason(nm) : null));
+
+        const allStats = {};
+        const monthStats = {};
+        const seasonStats = {};
         for (const c of checks) {
-          fieldStats[c.field] = stats(bills.map(c.fn));
+          const vals = bills.map(c.fn);
+          allStats[c.field] = stats(vals);
+          if (!c.seasonal) continue;
+          const byMonth = {};
+          const bySeason = {};
+          for (let i = 0; i < bills.length; i++) {
+            const v = vals[i];
+            const nm = normMonths[i];
+            const sn = seasons[i];
+            if (nm >= 0) {
+              if (!byMonth[nm]) byMonth[nm] = [];
+              byMonth[nm].push(v);
+            }
+            if (sn) {
+              if (!bySeason[sn]) bySeason[sn] = [];
+              bySeason[sn].push(v);
+            }
+          }
+          monthStats[c.field] = {};
+          for (const k in byMonth) monthStats[c.field][k] = stats(byMonth[k]);
+          seasonStats[c.field] = {};
+          for (const k in bySeason) seasonStats[c.field][k] = stats(bySeason[k]);
         }
 
-        // Flag each bill
-        bills.forEach((b) => {
+        bills.forEach((b, idx) => {
           const rowFlags = [];
-          // Check for statistical outliers (z-score > 2.5)
+          const nm = normMonths[idx];
+          const sn = seasons[idx];
+
           for (const c of checks) {
-            const s = fieldStats[c.field];
-            if (!s || s.stddev === 0) continue;
             const val = c.fn(b);
             if (val <= 0) continue;
+
+            let s = null;
+            let compLabel = 'avg';
+
+            if (c.seasonal && nm >= 0) {
+              const ms = monthStats[c.field] && monthStats[c.field][nm];
+              if (ms && ms.stddev > 0 && ms.count >= 2) {
+                s = ms;
+                compLabel = _MONTH_LABELS[nm] + ' avg';
+              }
+            }
+            if (!s && c.seasonal && sn) {
+              const ss = seasonStats[c.field] && seasonStats[c.field][sn];
+              if (ss && ss.stddev > 0 && ss.count >= 3) {
+                s = ss;
+                compLabel = sn + ' avg';
+              }
+            }
+            if (!s) {
+              s = allStats[c.field];
+              compLabel = 'avg';
+            }
+
+            if (!s || s.stddev === 0) continue;
             const z = Math.abs(val - s.mean) / s.stddev;
-            if (z > 2.5) {
+            const thresh = c.seasonal ? zThreshold(s.count) : 2.5;
+            if (z > thresh) {
               rowFlags.push({
                 field: c.field,
                 msg:
@@ -17344,13 +17415,15 @@
                   val.toLocaleString(undefined, { maximumFractionDigits: 1 }) +
                   ') is ' +
                   z.toFixed(1) +
-                  'σ from avg ' +
+                  'σ from ' +
+                  compLabel +
+                  ' ' +
                   s.mean.toLocaleString(undefined, { maximumFractionDigits: 1 }),
                 level: 'warn',
               });
             }
           }
-          // Check for missing critical values
+
           for (const f of missingChecks) {
             const v = b[f];
             if (v === null || v === undefined || v === '' || v === 0) {
