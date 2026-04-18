@@ -12073,6 +12073,7 @@
               <div class="pd-cell"><div class="pd-cell-lbl">Target End</div><div class="pd-cell-val">${p.end ? new Date(p.end + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Contacts</div><div class="pd-cell-val">${p.contacts && p.contacts.length ? p.contacts.length + ' contact' + (p.contacts.length !== 1 ? 's' : '') : '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Open Tasks</div><div class="pd-cell-val" style="color:${openTasks > 0 ? 'var(--warn)' : 'inherit'}">${openTasks}</div></div>
+              <div class="pd-cell"><div class="pd-cell-lbl">Baseline Comparison</div><div class="pd-cell-val">${p.baselineComparison === 'normalized' ? 'Normalized' : 'Actual'}</div></div>
             </div>
           </div>
           <div class="pd-hero-compact" id="pd-hero-compact" style="display:flex">
