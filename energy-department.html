@@ -12410,6 +12410,7 @@
         if (!perfWrap) return;
         const bldgs = getUDBldgs(projId);
         const estSavings = parseFloat(p.savings) || 0;
+        const useNormalized = p.baselineComparison === 'normalized';
 
         // Render header bar (like HVAC Load Est)
         if (hdrWrap) {
@@ -12455,50 +12456,105 @@
             allKwh = 0,
             allTherms = 0;
           let hasBaseline = false;
-          meters.forEach((m) => {
-            const blBills = _dashGetBaselineBills(m);
-            if (blBills.length) hasBaseline = true;
-            blBills.forEach((bill) => {
-              blCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
+
+          if (useNormalized) {
+            // Normalized path: use same calculation as Performance panel
+            const bldgMoBase = {};
+            for (let i = 0; i < 12; i++) bldgMoBase[i] = 0;
+            let bldgSav = 0;
+            meters.forEach((m) => {
+              const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+              const incl = m.inclusive !== false;
+              const bl = m.baseline;
+              if (!bl || !bl.months || bl.months.length < 3) return;
+              hasBaseline = true;
+              // Baseline period label
+              const blBills = _dashGetBaselineBills(m);
+              if (blBills.length && !blPeriod) {
+                const first = blBills[0].start,
+                  last = blBills[blBills.length - 1].end || blBills[blBills.length - 1].start;
+                if (first)
+                  blPeriod =
+                    new Date(first + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) +
+                    ' – ' +
+                    new Date(last + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+              }
+              // Normalized baseline cost per calendar month
+              const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
+              const blRows = allRows.filter((r) => bl.months.includes(r.ym));
+              const { elecByMo: eM, gasByMo: gM } = buildMoMap(m, blRows, bills, incl);
+              for (let mo = 0; mo < 12; mo++) bldgMoBase[mo] += (eM[mo]?.totalCost || 0) + (gM[mo]?.cost || 0);
+              // Normalized actual savings per calendar month
+              const sav = getMeterPerfSavingsByCalMo(m, bills, incl);
+              Object.values(sav).forEach((v) => {
+                bldgSav += v;
+              });
+              // Usage for EUI
               if (m.commodity === 'Gas') {
-                blTherms += parseFloat(bill.therms) || 0;
+                blBills.forEach((bill) => {
+                  blTherms += parseFloat(bill.therms) || 0;
+                });
+                bills.slice(-12).forEach((bill) => {
+                  curTherms += parseFloat(bill.therms) || 0;
+                });
               } else {
-                blKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+                blBills.forEach((bill) => {
+                  blKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+                });
+                bills.slice(-12).forEach((bill) => {
+                  curKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+                });
               }
             });
-            const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
-            bills.slice(-12).forEach((bill) => {
-              curCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
-              if (m.commodity === 'Gas') {
-                curTherms += parseFloat(bill.therms) || 0;
-              } else {
-                curKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+            blCost = Object.values(bldgMoBase).reduce((s, v) => s + v, 0);
+            curCost = blCost - bldgSav;
+          } else {
+            // Actual path: existing raw totalCost comparison
+            meters.forEach((m) => {
+              const blBills = _dashGetBaselineBills(m);
+              if (blBills.length) hasBaseline = true;
+              blBills.forEach((bill) => {
+                blCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
+                if (m.commodity === 'Gas') {
+                  blTherms += parseFloat(bill.therms) || 0;
+                } else {
+                  blKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+                }
+              });
+              const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+              bills.slice(-12).forEach((bill) => {
+                curCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
+                if (m.commodity === 'Gas') {
+                  curTherms += parseFloat(bill.therms) || 0;
+                } else {
+                  curKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+                }
+              });
+              // Tally all bills as fallback when no baseline is set
+              (m.bills || []).forEach((bill) => {
+                allCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
+                if (m.commodity === 'Gas') {
+                  allTherms += parseFloat(bill.therms) || 0;
+                } else {
+                  allKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+                }
+              });
+              // Baseline period label
+              if (blBills.length) {
+                const first = blBills[0].start,
+                  last = blBills[blBills.length - 1].end || blBills[blBills.length - 1].start;
+                if (first && !blPeriod)
+                  blPeriod =
+                    new Date(first + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) +
+                    ' – ' +
+                    new Date(last + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
               }
             });
-            // Tally all bills as fallback when no baseline is set
-            (m.bills || []).forEach((bill) => {
-              allCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
-              if (m.commodity === 'Gas') {
-                allTherms += parseFloat(bill.therms) || 0;
-              } else {
-                allKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-              }
-            });
-            // Baseline period label
-            if (blBills.length) {
-              const first = blBills[0].start,
-                last = blBills[blBills.length - 1].end || blBills[blBills.length - 1].start;
-              if (first && !blPeriod)
-                blPeriod =
-                  new Date(first + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) +
-                  ' – ' +
-                  new Date(last + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-            }
-          });
-          // Fallback: if no baseline set, annualize allCost to match curCost's 12-month window
+          }
+          // Fallback: if no baseline set and actual mode, annualize allCost
           const totalBillCount = meters.reduce((s, m) => s + (m.bills || []).length, 0);
           const annualizedAllCost = totalBillCount > 12 ? (allCost / totalBillCount) * 12 : allCost;
-          const useCost = blCost > 0 ? blCost : annualizedAllCost;
+          const useCost = blCost > 0 ? blCost : useNormalized ? 0 : annualizedAllCost;
           const useKwh = blKwh > 0 ? blKwh : allKwh;
           const useTherms = blTherms > 0 ? blTherms : allTherms;
           const blLabel = hasBaseline ? 'Baseline' : 'Total Cost';
@@ -12537,7 +12593,7 @@
             savPct,
             blEUI,
             curEUI,
-            blPeriod: blPeriod || 'All Bills',
+            blPeriod: blPeriod || (useNormalized ? '—' : 'All Bills'),
             blLabel,
             status,
             statusColor,
@@ -12554,7 +12610,7 @@
               <div style="flex:1;min-width:160px">
                 <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Total Savings vs Baseline</div>
                 <div style="font-size:32px;font-weight:800;font-family:var(--mono);color:${totalSav >= 0 ? 'var(--green)' : 'var(--danger)'};margin:4px 0">${totalSav >= 0 ? '' : '-'}${$c(totalSav)}<span style="font-size:16px;font-weight:600;color:var(--text2)">/yr</span></div>
-                <div style="font-size:12px;color:var(--text2)">${totalPct >= 0 ? '+' : ''}${totalPct.toFixed(1)}% vs baseline · ${bldgs.length} building${bldgs.length !== 1 ? 's' : ''}</div>
+                <div style="font-size:12px;color:var(--text2)">${totalPct >= 0 ? '+' : ''}${totalPct.toFixed(1)}% vs baseline · ${bldgs.length} building${bldgs.length !== 1 ? 's' : ''} · <span style="color:var(--text3)">${useNormalized ? 'Normalized' : 'Actual'}</span></div>
               </div>
               <div style="display:flex;gap:16px">
                 <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Baseline</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(totalBl)}</div></div>
