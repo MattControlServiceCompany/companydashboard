@@ -24897,6 +24897,25 @@
         requestAnimationFrame(() => renderUDProjAggPanel(content));
       }
 
+      function aggBaseMoMapForBldgs(bldgs) {
+        const moBase = {};
+        for (let i = 0; i < 12; i++) moBase[i] = 0;
+        bldgs.forEach((b) => {
+          (b.meters || []).forEach((m) => {
+            const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+            const incl = m.inclusive !== false;
+            const bl = m.baseline;
+            if (!bl || !bl.months || bl.months.length < 3) return;
+            const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
+            const blRows = allRows.filter((r) => bl.months.includes(r.ym));
+            if (!blRows.length) return;
+            const { elecByMo: eM, gasByMo: gM } = buildMoMap(m, blRows, bills, incl);
+            for (let mo = 0; mo < 12; mo++) moBase[mo] += (eM[mo]?.totalCost || 0) + (gM[mo]?.cost || 0);
+          });
+        });
+        return moBase;
+      }
+
       function renderUDProjAggPanel(content) {
         const proj = utilityData[udSelProjId];
         const bldgs = proj?.buildings || [];
@@ -24933,20 +24952,9 @@
           });
         });
 
-        // Helper: aggregate baseline moBase across all meters
+        // Delegate to top-level helper
         function aggBaseMoMap() {
-          const moBase = {};
-          for (let i = 0; i < 12; i++) moBase[i] = 0;
-          allMeters.forEach(({ m, bills, incl, isElec, isGas }) => {
-            const bl = m.baseline;
-            if (!bl || !bl.months || bl.months.length < 3) return;
-            const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
-            const blRows = allRows.filter((r) => bl.months.includes(r.ym));
-            if (!blRows.length) return;
-            const { elecByMo: eM, gasByMo: gM } = buildMoMap(m, blRows, bills, incl);
-            for (let mo = 0; mo < 12; mo++) moBase[mo] += (eM[mo]?.totalCost || 0) + (gM[mo]?.cost || 0);
-          });
-          return moBase;
+          return aggBaseMoMapForBldgs(bldgs);
         }
 
         function avgSavPctAcrossBldgs(moBase) {
