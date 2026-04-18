@@ -10545,6 +10545,13 @@
                 <label class="fl">Estimated Savings $/yr</label
                 ><input class="fi" id="mp-savings" type="number" placeholder="18000" />
               </div>
+              <div class="fg">
+                <label class="fl">Baseline Comparison</label>
+                <select class="fi" id="mp-baselineComparison">
+                  <option value="actual">Actual</option>
+                  <option value="normalized">Normalized</option>
+                </select>
+              </div>
             </div>
             <div class="f2">
               <div class="fg"><label class="fl">Start Date</label><input class="fi" id="mp-start" type="date" /></div>
@@ -14006,6 +14013,7 @@
         document.getElementById('mp-heatEff').value = p.heatEff || '';
         document.getElementById('mp-heatEffUnit').value = p.heatEffUnit || 'AFUE';
         document.getElementById('mp-status').value = p.status || 'planning';
+        document.getElementById('mp-baselineComparison').value = p.baselineComparison || 'actual';
         document.getElementById('mp-phase').value = p.phase || '';
         document.getElementById('mp-priority').value = p.priority || 'normal';
         // Load contacts — support legacy single-contact projects too
@@ -14056,6 +14064,7 @@
           email: fc ? fc.email : '',
           contract: parseFloat(document.getElementById('mp-contract').value) || 0,
           savings: parseFloat(document.getElementById('mp-savings').value) || 0,
+          baselineComparison: document.getElementById('mp-baselineComparison').value || 'actual',
           start: document.getElementById('mp-start').value,
           end: document.getElementById('mp-end').value,
           progress: Math.max(0, Math.min(100, parseInt(document.getElementById('mp-progress').value) || 0)),
