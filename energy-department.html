@@ -35075,6 +35075,7 @@
         const p = projects.find((x) => x.id === projId);
         if (!p) return;
         const bldgs = getUDBldgs(projId);
+        const useNormalized = p.baselineComparison === 'normalized';
         if (!bldgs.length) {
           showToast('No buildings with utility data — add data in Utility Data tab first');
           return;
@@ -35140,20 +35141,61 @@
             blTherms = 0,
             curTherms = 0;
           const periodMonths = type === 'quarterly' ? 3 : 12;
-          meters.forEach((m) => {
-            const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
-            const blBills = _dashGetBaselineBills(m);
-            blBills.forEach((bill) => {
-              blCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || 0;
-              if (m.commodity === 'Gas') blTherms += parseFloat(bill.therms) || 0;
-              else blKwh += parseFloat(bill.kwh) || 0;
+
+          if (useNormalized) {
+            const bldgMoBase = {};
+            for (let i = 0; i < 12; i++) bldgMoBase[i] = 0;
+            let bldgSav = 0;
+            meters.forEach((m) => {
+              const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+              const incl = m.inclusive !== false;
+              const bl = m.baseline;
+              if (!bl || !bl.months || bl.months.length < 3) return;
+              const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
+              const blRows = allRows.filter((r) => bl.months.includes(r.ym));
+              const { elecByMo: eM, gasByMo: gM } = buildMoMap(m, blRows, bills, incl);
+              for (let mo = 0; mo < 12; mo++) bldgMoBase[mo] += (eM[mo]?.totalCost || 0) + (gM[mo]?.cost || 0);
+              const sav = getMeterPerfSavingsByCalMo(m, bills, incl);
+              Object.values(sav).forEach((v) => {
+                bldgSav += v;
+              });
+              // Usage for EUI
+              const blBills = _dashGetBaselineBills(m);
+              if (m.commodity === 'Gas') {
+                blBills.forEach((bill) => {
+                  blTherms += parseFloat(bill.therms) || 0;
+                });
+                bills.slice(-periodMonths).forEach((bill) => {
+                  curTherms += parseFloat(bill.therms) || 0;
+                });
+              } else {
+                blBills.forEach((bill) => {
+                  blKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+                });
+                bills.slice(-periodMonths).forEach((bill) => {
+                  curKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+                });
+              }
             });
-            bills.slice(-periodMonths).forEach((bill) => {
-              curCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || 0;
-              if (m.commodity === 'Gas') curTherms += parseFloat(bill.therms) || 0;
-              else curKwh += parseFloat(bill.kwh) || 0;
+            blCost = Object.values(bldgMoBase).reduce((s, v) => s + v, 0);
+            curCost = blCost - bldgSav;
+          } else {
+            meters.forEach((m) => {
+              const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+              const blBills = _dashGetBaselineBills(m);
+              blBills.forEach((bill) => {
+                blCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || 0;
+                if (m.commodity === 'Gas') blTherms += parseFloat(bill.therms) || 0;
+                else blKwh += parseFloat(bill.kwh) || 0;
+              });
+              bills.slice(-periodMonths).forEach((bill) => {
+                curCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || 0;
+                if (m.commodity === 'Gas') curTherms += parseFloat(bill.therms) || 0;
+                else curKwh += parseFloat(bill.kwh) || 0;
+              });
             });
-          });
+          }
+
           const blKBtu = blKwh * 3.412 + blTherms * 100;
           const curKBtu = curKwh * 3.412 + curTherms * 100;
           const sav = blCost - curCost;
@@ -35192,7 +35234,17 @@
           y,
         );
         y += 14;
-        doc.text('Savings: ' + (totalSav >= 0 ? '' : '-') + $c(totalSav) + ' (' + totalPct.toFixed(1) + '%)', ml, y);
+        doc.text(
+          'Savings: ' +
+            (totalSav >= 0 ? '' : '-') +
+            $c(totalSav) +
+            ' (' +
+            totalPct.toFixed(1) +
+            '%)' +
+            (useNormalized ? ' [Normalized]' : ''),
+          ml,
+          y,
+        );
         y += 14;
         if (totalSqft > 0) {
           doc.text('Baseline EUI: ' + (totalBlKBtu / totalSqft).toFixed(1) + ' kBtu/sf/yr', ml, y);
