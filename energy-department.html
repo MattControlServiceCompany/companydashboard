@@ -19419,7 +19419,31 @@
             }
             if (Object.keys(cp).length) billRow._chargeParts = cp;
           }
-          const billMatch = findMeterMatch(bill) || _autoAssignTarget;
+          let billMatch = findMeterMatch(bill) || _autoAssignTarget;
+          const _bComm = (bill.Commodity || '').toLowerCase();
+          const _mComm = (billMatch.meter.commodity || '').toLowerCase();
+          if (_bComm && _mComm && _bComm !== _mComm) {
+            const _existM = (billMatch.bldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === _bComm);
+            if (_existM) {
+              billMatch = { ...billMatch, meter: _existM, meterId: _existM.id };
+            } else {
+              const _newM = {
+                id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+                commodity: bill.Commodity,
+                provider: bill.UtilityCompany || billMatch.meter.provider || '',
+                account: bill.AccountNumber || billMatch.meter.account || '',
+                meter: '',
+                maddr: billMatch.meter.maddr || '',
+                inclusive: true,
+                bills: [],
+                billUnit: '',
+                displayUnit: '',
+              };
+              billMatch.bldg.meters = billMatch.bldg.meters || [];
+              billMatch.bldg.meters.push(_newM);
+              billMatch = { ...billMatch, meter: _newM, meterId: _newM.id };
+            }
+          }
           const targetMeter = billMatch.meter;
           targetMeter.bills = targetMeter.bills || [];
           const dup = targetMeter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
@@ -19505,6 +19529,30 @@
       // place.
       function _saveBillToMatchedMeter(extracted, match) {
         if (!extracted || !match || !match.proj || !match.bldg || !match.meter) return null;
+        const billComm = (extracted.Commodity || '').toLowerCase();
+        const meterComm = (match.meter.commodity || '').toLowerCase();
+        if (billComm && meterComm && billComm !== meterComm) {
+          const existingMeter = (match.bldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm);
+          if (existingMeter) {
+            match = { ...match, meter: existingMeter, meterId: existingMeter.id };
+          } else {
+            const newMeter = {
+              id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+              commodity: extracted.Commodity,
+              provider: extracted.UtilityCompany || match.meter.provider || '',
+              account: extracted.AccountNumber || match.meter.account || '',
+              meter: '',
+              maddr: match.meter.maddr || '',
+              inclusive: true,
+              bills: [],
+              billUnit: '',
+              displayUnit: '',
+            };
+            match.bldg.meters = match.bldg.meters || [];
+            match.bldg.meters.push(newMeter);
+            match = { ...match, meter: newMeter, meterId: newMeter.id };
+          }
+        }
         const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
         const toISO = (d) => {
           if (!d) return '';
