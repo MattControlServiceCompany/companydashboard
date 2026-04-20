@@ -2539,6 +2539,8 @@
       .ef-pill-btn {
         flex: 1 1 auto;
         min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       .ef-pair {
         display: grid;
@@ -16829,11 +16831,13 @@
               wpfLine = null;
             for (const ln of lines) {
               const trim = ln.trim();
-              if (/^GAS\b/i.test(trim) && !gasLine) gasLine = trim;
-              else if (/^STORM\s*WATER\b/i.test(trim) && !stormLine) stormLine = trim;
-              else if (/^SEWER\b/i.test(trim) && !sewerLine) sewerLine = trim;
-              else if (/^WATER\s*PROTECTION\s*FEE\b/i.test(trim) && !wpfLine) wpfLine = trim;
-              else if (/^WATER\b/i.test(trim) && !waterLine) waterLine = trim;
+              if (/^\d{3}\s*-\s*(water|gas|sewer|storm)/i.test(trim)) continue;
+              if (/Previous\s*Balance/i.test(trim)) continue;
+              if (/\bGAS\b/i.test(trim) && !/FUEL|ADJUSTMENT/i.test(trim) && !gasLine) gasLine = trim;
+              else if (/\bSTORM\s*WATER\b/i.test(trim) && !stormLine) stormLine = trim;
+              else if (/\bSEWER\b/i.test(trim) && !sewerLine) sewerLine = trim;
+              else if (/\bWATER\s*PROTECTION\s*FEE\b/i.test(trim) && !wpfLine) wpfLine = trim;
+              else if (/\bWATER\b/i.test(trim) && !/PROTECTION|STORM/i.test(trim) && !waterLine) waterLine = trim;
             }
 
             const parseLine = (line) => {
@@ -16887,14 +16891,17 @@
               RateSchedule: null,
               MeterNumber: null,
             };
+            const _LBG_GAS_BASE = 23.33;
             const bills = [];
             if (gas.charge != null && gas.charge !== 0) {
+              const gasVariable = Math.max(0, gas.charge - _LBG_GAS_BASE);
               const gasTotal = gas.charge.toFixed(2);
               bills.push({
                 ...shared,
                 Commodity: 'Gas',
                 NaturalGasTherms: gas.usage || null,
-                GasCharge: gas.charge,
+                CustomerCharge: _LBG_GAS_BASE,
+                GasCharge: gasVariable,
                 TotalCurrentCharges: gasTotal,
                 TotalAmountDue: gasTotal,
               });
@@ -17123,14 +17130,17 @@
               RateSchedule: null,
               MeterNumber: null,
             };
+            const _LBG_GAS_BASE = 23.33;
             const bills = [];
             if (gas.charge != null && gas.charge !== 0) {
+              const gasVariable = Math.max(0, gas.charge - _LBG_GAS_BASE);
               const gasTotal = (gas.charge + (signedFuelAdj || 0)).toFixed(2);
               bills.push({
                 ...shared,
                 Commodity: 'Gas',
                 NaturalGasTherms: gas.usage || null,
-                GasCharge: gas.charge,
+                CustomerCharge: _LBG_GAS_BASE,
+                GasCharge: gasVariable,
                 FuelAdjustment: signedFuelAdj,
                 TotalCurrentCharges: gasTotal,
                 TotalAmountDue: gasTotal,
@@ -19001,6 +19011,8 @@
         if (!extracted) return null;
         const acct = (extracted.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
         const meterNum = (extracted.MeterNumber || '').replace(/[\s\-]/g, '').toLowerCase();
+        const billComm = (extracted.Commodity || '').toLowerCase();
+        let bestMatch = null;
         for (const proj of projects) {
           const udProj = getUDProj(proj.id);
           for (const bldg of udProj.buildings || []) {
@@ -19008,29 +19020,36 @@
               const mAcct = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
               const mMeter = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
               if ((acct && mAcct && acct === mAcct) || (meterNum && mMeter && meterNum === mMeter)) {
-                return { proj, bldg, meter: m, projId: proj.id, bldgId: bldg.id, meterId: m.id };
+                const mComm = (m.commodity || '').toLowerCase();
+                const commMatch = billComm && mComm && billComm === mComm;
+                if (commMatch) return { proj, bldg, meter: m, projId: proj.id, bldgId: bldg.id, meterId: m.id };
+                if (!bestMatch) bestMatch = { proj, bldg, meter: m, projId: proj.id, bldgId: bldg.id, meterId: m.id };
               }
             }
           }
         }
-        return null;
+        return bestMatch;
       }
       function showAutoAssignBanner(match, extracted) {
         if (!match) return;
         _autoAssignTarget = match;
         const banner = document.getElementById('pdfAutoAssignBanner');
         const msg = document.getElementById('pdfAutoAssignMsg');
-        const periods = Array.isArray(window._pdfMultiBills) ? window._pdfMultiBills.length : 1;
+        const bills = Array.isArray(window._pdfMultiBills) ? window._pdfMultiBills : [];
+        const periods = bills.length || 1;
+        const commodities = [...new Set(bills.map((b) => b.Commodity).filter(Boolean))];
+        const commText = commodities.length > 1 ? ' (' + commodities.join(', ') + ')' : '';
         msg.textContent =
           'Account ' +
           (match.meter.account || match.meter.meter || '#') +
-          ' matches meter in ' +
+          ' found in ' +
           match.proj.name +
           ' → ' +
           match.bldg.name +
           '. Save ' +
           (periods > 1 ? 'all ' + periods + ' billing periods' : 'this bill') +
-          ' directly to that meter?';
+          commText +
+          ' to matched meters?';
         banner.style.display = 'block';
       }
       async function confirmAutoAssign() {
@@ -19165,22 +19184,22 @@
             }
             if (Object.keys(cp).length) billRow._chargeParts = cp;
           }
-          meter.bills = meter.bills || [];
-          const dup = meter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
+          const billMatch = findMeterMatch(bill) || _autoAssignTarget;
+          const targetMeter = billMatch.meter;
+          targetMeter.bills = targetMeter.bills || [];
+          const dup = targetMeter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
           if (dup) {
             Object.assign(dup, billRow);
           } else {
-            meter.bills.push(billRow);
-            meter.bills.sort((a, b) => new Date(a.start) - new Date(b.start));
+            targetMeter.bills.push(billRow);
+            targetMeter.bills.sort((a, b) => new Date(a.start) - new Date(b.start));
           }
           saved++;
         }
         saveUtilityData();
         document.getElementById('pdfAutoAssignBanner').style.display = 'none';
         _autoAssignTarget = null;
-        showToast(
-          saved + ' bill' + (saved !== 1 ? 's' : '') + ' saved to ' + meter.provider + ' → ' + proj.name + ' ✓',
-        );
+        showToast(saved + ' bill' + (saved !== 1 ? 's' : '') + ' saved to matched meters ✓');
       }
 
       // Store the current extraction's source PDF once per session and tag every bill
@@ -21211,16 +21230,14 @@
         const b = bills[idx];
         const warnings = window._pdfBillWarnings || [];
         // Short MM/DD/YY date format for the pill labels
-        // Update 100: standardize extracted date strings to MM/DD/YYYY with
-        // zero-padded month and day (previously stripped to MM/DD/YY).
         const _shortDt = (s) => {
           if (!s) return s;
           const m = String(s).match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
           if (!m) return s;
           const mm = m[1].padStart(2, '0');
           const dd = m[2].padStart(2, '0');
-          const yyyy = m[3].length === 2 ? '20' + m[3] : m[3];
-          return mm + '/' + dd + '/' + yyyy;
+          const yy = m[3].length === 4 ? m[3].slice(2) : m[3];
+          return mm + '/' + dd + '/' + yy;
         };
         // Majority-month label (e.g. "Mar 2024") for a bill's period. Uses majority-days
         // inline to avoid the MM/DD/YYYY ↔ YYYY-MM-DD format mismatch with normMonth.
@@ -21231,8 +21248,10 @@
         const _monthLabel = (bill) => {
           const parse = (str) => {
             if (!str) return null;
-            const m = String(str).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-            return m ? new Date(+m[3], +m[1] - 1, +m[2]) : null;
+            const m = String(str).match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+            if (!m) return null;
+            const yr = m[3].length === 2 ? 2000 + +m[3] : +m[3];
+            return new Date(yr, +m[1] - 1, +m[2]);
           };
           // Single-date delivery events (propane) use DeliveryDate directly.
           if (bill.DeliveryDate) {
@@ -21280,9 +21299,10 @@
             sortSource = bill.BillingPeriodStart || bill.BillDate || 0;
           }
           // Append a commodity suffix when multiple splits share the same date
-          // (Louisburg combined bills → "2/20/26 · Water", "2/20/26 · Gas", etc.)
+          // (Louisburg combined bills → "01/20/26 · Water", "01/20/26 · Gas", etc.)
           if (bill.Commodity && bill.Commodity !== 'Propane') {
-            lbl = lbl + ' · ' + bill.Commodity;
+            const _commAbbr = { Stormwater: 'Storm', Electric: 'Elec' };
+            lbl = lbl + ' · ' + (_commAbbr[bill.Commodity] || bill.Commodity);
           }
           const monthLbl = _monthLabel(bill);
           const sortDate = new Date(sortSource);
@@ -21371,11 +21391,26 @@
         </div>
       </div>`;
         }
-        // Move "Save All" button into the extraction method badge area
+        // Move "Save All" button + per-commodity buttons into the extraction method badge area
         const badgeEl = document.getElementById('extractMethodBadge');
         if (badgeEl) {
           badgeEl.style.display = 'inline-block';
-          badgeEl.innerHTML = `<button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="font-size:10px;padding:3px 12px">Save All ${bills.length} Periods</button>`;
+          const commodities = {};
+          bills.forEach((b, i) => {
+            const c = b.Commodity || 'Other';
+            commodities[c] = (commodities[c] || 0) + 1;
+          });
+          const commKeys = Object.keys(commodities);
+          let btns = `<button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="font-size:10px;padding:3px 12px">Save All ${bills.length} Periods</button>`;
+          if (commKeys.length > 1) {
+            btns += commKeys
+              .map(
+                (c) =>
+                  `<button onclick="savePDFAllBills('${c.replace(/'/g, "\\'")}')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px">Save ${c} (${commodities[c]})</button>`,
+              )
+              .join('');
+          }
+          badgeEl.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${btns}</div>`;
         }
         // The Month / Billing Periods header + duplicate banner are written to the frozen
         // #pdfPillsHdr (outside the scroll area) so they stay pinned at the top. The pills
@@ -21386,14 +21421,14 @@
         const pillsHdrEl = document.getElementById('pdfPillsHdr');
         if (pillsHdrEl) {
           pillsHdrEl.innerHTML = `${dupBannerHtml}<div style="display:flex;gap:10px">
-        <div style="flex:0 0 auto;min-width:220px;display:flex;gap:8px;align-items:flex-end">
+        <div style="flex:0 0 auto;min-width:260px;display:flex;gap:8px;align-items:flex-end">
           <div class="ef-pill-sticky-month">Month</div>
           <div class="ef-pill-sticky-label">Billing Periods</div>
         </div>
       </div>`;
         }
         box.innerHTML = `<div style="display:flex;gap:10px;align-items:flex-start">
-        <div class="ef-pill-col" style="flex:0 0 auto;min-width:220px">${nav}</div>
+        <div class="ef-pill-col" style="flex:0 0 auto;min-width:260px">${nav}</div>
         <pre style="flex:1;min-width:0;font-size:11px;color:var(--text);white-space:pre-wrap;word-break:break-word;margin:0">${JSON.stringify(b, null, 2)}</pre>
       </div>`;
       }
@@ -21432,20 +21467,21 @@
         const billWarnings = (window._pdfBillWarnings || [])[idx]?.warnings || [];
         renderPDFFields(b, billWarnings);
       }
-      async function savePDFAllBills() {
-        const bills = window._pdfMultiBills;
-        if (!bills || !bills.length) return;
-        // Project is ONLY required when at least one bill has no known destination —
-        // not a duplicate AND no global meter match. Duplicates and account-matched
-        // bills route themselves without needing a project picker.
+      async function savePDFAllBills(commodityFilter) {
+        const allBills = window._pdfMultiBills;
+        if (!allBills || !allBills.length) return;
+        const billIndices = [];
+        for (let i = 0; i < allBills.length; i++) {
+          if (commodityFilter && (allBills[i].Commodity || 'Other') !== commodityFilter) continue;
+          billIndices.push(i);
+        }
+        if (!billIndices.length) return;
+        const bills = allBills;
         const selectedPid = parseInt(document.getElementById('pdfProjSel').value) || null;
         const dupMap = window._pdfDupMap || {};
-        // Store the source PDF once for the whole batch and tag every bill with a
-        // shared key BEFORE any individual save runs (same rule as _dupBulkAction —
-        // without this the pdfKey / page-range wiring produces blank slices).
         await _ensureBatchPdfStored(bills);
         const unassignedIdx = [];
-        for (let i = 0; i < bills.length; i++) {
+        for (const i of billIndices) {
           if (dupMap[i] && dupMap[i].action === 'skip') continue;
           const r = _resolveBillDestination(bills[i], dupMap[i], selectedPid);
           if (r.method === 'unassigned') unassignedIdx.push(i);
@@ -21466,7 +21502,7 @@
           updated = 0,
           alreadyProcessed = 0,
           failed = 0;
-        for (let i = 0; i < bills.length; i++) {
+        for (const i of billIndices) {
           const dup = dupMap[i];
           const period = (bills[i].BillingPeriodStart || '?') + ' → ' + (bills[i].BillingPeriodEnd || '?');
           const resolved = _resolveBillDestination(bills[i], dup, selectedPid);
@@ -21533,7 +21569,8 @@
         if (alreadyProcessed) parts.push(alreadyProcessed + ' already processed');
         if (skipped) parts.push(skipped + ' skipped');
         if (failed) parts.push(failed + ' failed');
-        showToast(parts.join(', ') + ' (' + bills.length + ' total)');
+        const filterLabel = commodityFilter ? ' ' + commodityFilter : '';
+        showToast(parts.join(', ') + ' (' + billIndices.length + filterLabel + ' total)');
         _showSaveSummary(summaryEntries);
       }
 
@@ -22028,6 +22065,7 @@
           { type: 'pair', fields: ['BillDate'] },
           { section: 'Charges' },
           { type: 'pair', fields: ['NaturalGasTherms', 'NaturalGasCCF'] },
+          { type: 'charge-line', label: 'Base', chargeField: 'CustomerCharge', rateKey: null },
           { type: 'charge-line', label: 'Gas', chargeField: 'GasCharge', rateKey: null },
           { type: 'charge-line', label: 'Fuel Adjustment', chargeField: 'FuelAdjustment', rateKey: null },
           { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
@@ -33252,6 +33290,7 @@
           { section: 'Charges' },
           { key: 'naturalGasTherms', label: 'Natural Gas Therms', type: 'number', pdfKey: 'NaturalGasTherms' },
           { key: 'naturalGasCCF', label: 'Natural Gas (CCF)', type: 'number', pdfKey: 'NaturalGasCCF' },
+          { key: 'customerCharge', label: 'Base Charge', type: 'currency', pdfKey: 'CustomerCharge' },
           { key: 'gasCharge', label: 'Gas Charge', type: 'currency', pdfKey: 'GasCharge' },
           { key: 'fuelAdjustment', label: 'Fuel Adjustment', type: 'currency', pdfKey: 'FuelAdjustment' },
           { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
@@ -33472,6 +33511,7 @@
           { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
           { type: 'pair', fields: ['BillDate'] },
           { section: 'Charges' },
+          { type: 'charge-line', label: 'Base', chargeField: 'CustomerCharge' },
           { type: 'charge-line', label: 'Gas', chargeField: 'GasCharge', qtyField: 'NaturalGasCCF', unit: 'CCF' },
           { type: 'charge-line', label: 'Fuel Adjustment', chargeField: 'FuelAdjustment' },
           { type: 'total', chargeField: 'TotalCurrentCharges' },
