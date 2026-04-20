@@ -10653,7 +10653,14 @@
           <div class="modal-body">
             <div class="fg">
               <label class="fl">Commodity Type *</label>
-              <select class="fs" id="mm-commodity" onchange="updateMeterModalFields()">
+              <select
+                class="fs"
+                id="mm-commodity"
+                onchange="
+                  updateMeterModalFields();
+                  _updateMeterUnitDropdowns();
+                "
+              >
                 <option value="Electric">Electric</option>
                 <option value="Gas">Gas</option>
                 <option value="Water">Water</option>
@@ -10661,6 +10668,20 @@
                 <option value="Propane">Propane</option>
               </select>
             </div>
+            <div class="f2" id="mm-unit-row">
+              <div class="fg">
+                <label class="fl">Bill Unit</label>
+                <select class="fs" id="mm-billUnit" onchange="_updateUnitPreview()"></select>
+              </div>
+              <div class="fg">
+                <label class="fl">Display Unit</label>
+                <select class="fs" id="mm-displayUnit" onchange="_updateUnitPreview()"></select>
+              </div>
+            </div>
+            <div
+              id="mm-unit-preview"
+              style="font-size: 11px; color: var(--em); margin-top: -4px; margin-bottom: 8px; display: none"
+            ></div>
             <div class="f2">
               <div class="fg">
                 <label class="fl">Utility Provider</label
@@ -34116,6 +34137,38 @@
         document.getElementById('mm-excl-btn').classList.toggle('sel', !val);
         document.getElementById('mm-inclusive').value = String(val);
       }
+      function _updateMeterUnitDropdowns() {
+        const commodity = document.getElementById('mm-commodity').value;
+        const reg = UNIT_REGISTRY[commodity];
+        const billSel = document.getElementById('mm-billUnit');
+        const dispSel = document.getElementById('mm-displayUnit');
+        if (!reg || !billSel || !dispSel) return;
+        const units = reg.usage;
+        const prevBill = billSel.value;
+        const prevDisp = dispSel.value;
+        billSel.innerHTML = units.map((u) => '<option value="' + u + '">' + u + '</option>').join('');
+        dispSel.innerHTML = units.map((u) => '<option value="' + u + '">' + u + '</option>').join('');
+        billSel.value = units.includes(prevBill) ? prevBill : reg.defaultUsage;
+        dispSel.value = units.includes(prevDisp) ? prevDisp : reg.defaultUsage;
+        _updateUnitPreview();
+      }
+
+      function _updateUnitPreview() {
+        const billU = document.getElementById('mm-billUnit').value;
+        const dispU = document.getElementById('mm-displayUnit').value;
+        const commodity = document.getElementById('mm-commodity').value;
+        const preview = document.getElementById('mm-unit-preview');
+        if (!preview) return;
+        if (billU === dispU || !billU || !dispU) {
+          preview.style.display = 'none';
+          return;
+        }
+        const converted = convertUnit(1, billU, dispU, commodity);
+        preview.textContent =
+          '1 ' + billU + ' = ' + converted.toFixed(6).replace(/0+$/, '').replace(/\.$/, '') + ' ' + dispU;
+        preview.style.display = '';
+      }
+
       function openMeterModal(editId, projId, bldgId) {
         const _pid = projId || udSelProjId;
         const _bid = bldgId || udSelBldgId;
@@ -34136,6 +34189,10 @@
             document.getElementById('mm-meter').value = m.meter || '';
             document.getElementById('mm-maddr').value = m.maddr || '';
             _meterInclusive = m.inclusive !== false;
+            _updateMeterUnitDropdowns();
+            if (m.billUnit) document.getElementById('mm-billUnit').value = m.billUnit;
+            if (m.displayUnit) document.getElementById('mm-displayUnit').value = m.displayUnit;
+            _updateUnitPreview();
           }
           if (moveWrap) {
             const bldgs = getUDBldgs(_pid) || [];
@@ -34156,6 +34213,7 @@
             (id) => (document.getElementById(id).value = ''),
           );
           document.getElementById('mm-commodity').value = 'Electric';
+          _updateMeterUnitDropdowns();
         }
         document.getElementById('mm-incl-btn').classList.toggle('sel', _meterInclusive);
         document.getElementById('mm-excl-btn').classList.toggle('sel', !_meterInclusive);
@@ -34178,6 +34236,8 @@
           meter: document.getElementById('mm-meter').value,
           maddr: document.getElementById('mm-maddr').value,
           inclusive: incl,
+          billUnit: document.getElementById('mm-billUnit').value || '',
+          displayUnit: document.getElementById('mm-displayUnit').value || '',
         };
         const _targetProjId = document.getElementById('mm-target-proj').value || udSelProjId;
         const _targetBldgId = document.getElementById('mm-target-bldg').value || udSelBldgId;
