@@ -24376,13 +24376,23 @@
         }
 
         // Strategy 1: Parse "MONTH day(-day) - description" format (school calendar PDFs)
-        // Split text into sections by month headers (ALL CAPS month name on its own or at start of line)
+        // Multi-column PDFs (3-column layout) put events from different months on the
+        // same text line separated by 3+ spaces. Split each line into column segments
+        // first, then reassemble into single-column text for the month-header parser.
         const monthHeaderRe =
           /^(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\b/i;
-        // First, collect all text after the month grid area (skip lines with "SU M T W TH F SA")
-        const cleanLines = text
+        const rawLines = text
           .split(/\n/)
           .filter((l) => !/\bSU\s+M\s+T\s+W\b/i.test(l) && !/^\s*\d[\d\s]+$/.test(l.trim()));
+        const _colSegments = [];
+        rawLines.forEach((line) => {
+          const segments = line
+            .split(/\s{3,}/)
+            .map((s) => s.trim())
+            .filter(Boolean);
+          segments.forEach((s) => _colSegments.push(s));
+        });
+        const cleanLines = _colSegments;
         let currentMonth = null;
         let currentYear = startSchoolYear;
         const pendingText = [];
