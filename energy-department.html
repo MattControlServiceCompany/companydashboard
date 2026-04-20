@@ -24979,6 +24979,26 @@
         return convertUnit(value, getMeterBillUnit(m), getMeterDisplayUnit(m), m.commodity);
       }
 
+      // Bill schema keys that represent energy/usage quantities eligible for
+      // unit conversion (e.g. kWh→MWh, CCF→Therms). Demand, meter reads,
+      // multipliers, and currency fields are NOT converted here.
+      const _BILL_USAGE_KEYS = new Set([
+        'kwh',
+        'onPeakKwh',
+        'offPeakKwh', // Electric usage
+        'naturalGasTherms',
+        'naturalGasCCF', // Gas usage
+        'waterUsage', // Water usage
+        'sewerUsage', // Sewer usage
+        'gallonsDelivered', // Propane usage
+      ]);
+
+      // Returns true when conversion is active for this meter (display unit
+      // differs from the bill/storage unit).
+      function _isConversionActive(m) {
+        return getMeterBillUnit(m) !== getMeterDisplayUnit(m);
+      }
+
       /* ── COMMODITY HELPERS ── */
       function commodityPill(c) {
         const map = {
@@ -26423,6 +26443,24 @@
             rightSticky: e.key === 'totalCost',
           }));
         }
+        // When unit conversion is active, annotate usage column headers with
+        // a tooltip showing the original bill unit (Task 3).
+        if (_isConversionActive(m)) {
+          const billUnit = getMeterBillUnit(m);
+          const dispUnit = getMeterDisplayUnit(m);
+          const convTip = `Converted from ${billUnit} to ${dispUnit}`;
+          COL_FIELDS.forEach((c) => {
+            const isUsageCol = c.entry
+              ? _BILL_USAGE_KEYS.has(c.entry.key)
+              : c.category &&
+                c.category.type === 'number' &&
+                /kwh|ccf|therm|usage|gallon/i.test(c.category.label) &&
+                !/kw\b|rate|\$/i.test(c.category.label);
+            if (isUsageCol) {
+              c.h = `<span title="${convTip}">${c.h} ⇄</span>`;
+            }
+          });
+        }
         // Action/settings column: gear icon + "Table Settings" label, full
         // cell is clickable (resize handle is a sibling div so clicks on the
         // 5px right edge still resize without triggering the modal).
@@ -27367,7 +27405,7 @@
         const { byYm: weatherByYm } = getWeatherForBuilding();
         const rows = getNormRows(m, bills, incl, weatherByYm);
         const isElec = m.commodity === 'Electric';
-        const unit = isElec ? 'kWh' : m.commodity === 'Gas' ? 'Therms' : 'Usage';
+        const unit = getMeterDisplayUnit(m);
         const ddLabel = isElec ? 'CDD' : 'HDD';
         const reg = m._reg;
         const rawReg = isElec ? reg?.cdd : reg?.hdd;
@@ -28008,7 +28046,7 @@
               '<div class="ud-empty"><div class="ud-empty-ico">🌡️</div><div>Add bill data in the Bills tab first</div></div>';
             return;
           }
-          const unit = m.commodity === 'Electric' ? 'kWh' : m.commodity === 'Gas' ? 'Therms' : 'Usage';
+          const unit = getMeterDisplayUnit(m);
           const isElec = m.commodity === 'Electric',
             isGas = m.commodity === 'Gas';
           const { byYm: weatherByYm } = getWeatherForBuilding();
@@ -29007,7 +29045,7 @@
             '<div class="ud-empty"><div class="ud-empty-ico">📊</div><div>Add at least 3 months of bill data to set a baseline</div></div>';
           return;
         }
-        const unit = m.commodity === 'Electric' ? 'kWh' : m.commodity === 'Gas' ? 'Therms' : 'Usage';
+        const unit = getMeterDisplayUnit(m);
         const { byYm: weatherByYm } = getWeatherForBuilding();
         const rows = getNormRows(m, bills, incl, weatherByYm);
         const bl = m.baseline || null;
@@ -29458,7 +29496,7 @@
         if (!m) return;
         const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
         const incl = m.inclusive !== false;
-        const unit = m.commodity === 'Electric' ? 'kWh' : m.commodity === 'Gas' ? 'Therms' : 'Usage';
+        const unit = getMeterDisplayUnit(m);
         const { byYm: weatherByYm } = getWeatherForBuilding();
         const rows = getNormRows(m, bills, incl, weatherByYm);
         const bl = m.baseline;
@@ -29545,7 +29583,7 @@
             : null;
           const fmtRate = (v) => (v != null ? '$' + v.toFixed(4) : null);
           const fmtKw = (v) => (v != null ? '$' + v.toFixed(2) : null);
-          const unit2 = m.commodity === 'Electric' ? 'kWh' : m.commodity === 'Gas' ? 'Therms' : 'Usage';
+          const unit2 = getMeterDisplayUnit(m);
 
           const pills = [
             { v: blRows.length + ' mo', lbl: 'Period' },
@@ -30711,7 +30749,7 @@
               </div>
               <div>
                 <div style="font-size:10px;font-weight:700;color:#8ab0d0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Units</div>
-                <div style="font-size:11.5px;color:#8ab0d0">${isElec ? 'Electricity' : ''}${isGas ? 'Heating Fuel' : ''}${isWater ? 'Water' : ''} <span style="color:${isElec ? '#7dd8ff' : isGas ? '#ffb040' : '#40e8a0'};font-weight:800;margin-left:8px;font-size:12px">${isElec ? 'kWh' : isGas ? 'Therm' : 'kGal'}</span></div>
+                <div style="font-size:11.5px;color:#8ab0d0">${isElec ? 'Electricity' : ''}${isGas ? 'Heating Fuel' : ''}${isWater ? 'Water' : ''} <span style="color:${isElec ? '#7dd8ff' : isGas ? '#ffb040' : '#40e8a0'};font-weight:800;margin-left:8px;font-size:12px">${getMeterDisplayUnit(m)}</span></div>
               </div>
             </div>
 
@@ -31901,7 +31939,7 @@
             '<div class="ud-empty"><div class="ud-empty-ico">💡</div><div>Set a baseline in the Baseline tab first.<br><button class="btn btn-em btn-sm" style="margin-top:12px" onclick="maSetTab(\'baseline\')">Go to Baseline →</button></div></div>';
           return;
         }
-        const unit = m.commodity === 'Electric' ? 'kWh' : m.commodity === 'Gas' ? 'Therms' : 'Usage';
+        const unit = getMeterDisplayUnit(m);
         const isElec = m.commodity === 'Electric';
         const { byYm: weatherByYm } = getWeatherForBuilding();
         const allRows = getNormRows(m, bills, incl, weatherByYm); // sets m._reg, fills regrBaseline
@@ -33169,6 +33207,17 @@
             } else if (c.category.key) {
               val = _pfBills(row[c.category.key]);
             }
+            // Apply unit conversion for usage-quantity condensed columns (Task 3).
+            // Match labels like "Total kWh", "CCF", "Therms", "Water Usage" but
+            // NOT rate columns ("$/kWh"), demand ("kW"), or currency columns.
+            if (
+              c.category.type === 'number' &&
+              /kwh|ccf|therm|usage|gallon/i.test(c.category.label) &&
+              !/kw\b|rate|\$/i.test(c.category.label) &&
+              val !== 0
+            ) {
+              val = convertBillValue(val, m);
+            }
             const cls = c.category.type === 'currency' ? 'td-total' : c.a || '';
             let formatted;
             if (c.category.type === 'currency') {
@@ -33205,7 +33254,11 @@
             html += '<td>—</td>';
             continue;
           }
-          const raw = _billReadValue(row, c.entry);
+          let raw = _billReadValue(row, c.entry);
+          // Apply unit conversion for usage quantity fields (Task 3)
+          if (_BILL_USAGE_KEYS.has(c.entry.key) && raw !== undefined && raw !== null && raw !== '' && !isNaN(raw)) {
+            raw = convertBillValue(parseFloat(raw), m);
+          }
           const formatted = _billFormatValue(raw, c.entry);
           const cls = c.entry.key === 'totalCost' ? 'td-total' : c.a || '';
           const rightCls = c.rightSticky ? ' sticky-col-right' : '';
