@@ -16777,6 +16777,16 @@
                 b.BillingPeriodEnd = b.BillingPeriodEnd || byBillDate[b.BillDate].end;
                 b._periodFromNeighbor = true;
               }
+              if (!b.NumberOfDays && b.BillingPeriodStart && b.BillingPeriodEnd) {
+                const _ps = b.BillingPeriodStart.split('/');
+                const _pe = b.BillingPeriodEnd.split('/');
+                if (_ps.length === 3 && _pe.length === 3) {
+                  const _ds = new Date(+(_ps[2].length === 2 ? '20' + _ps[2] : _ps[2]), +_ps[0] - 1, +_ps[1]);
+                  const _de = new Date(+(_pe[2].length === 2 ? '20' + _pe[2] : _pe[2]), +_pe[0] - 1, +_pe[1]);
+                  const _diff = Math.round((_de - _ds) / 86400000);
+                  if (_diff > 0 && _diff < 120) b.NumberOfDays = String(_diff);
+                }
+              }
             }
             return bills;
           },
@@ -16862,20 +16872,31 @@
             }
 
             const parseLine = (line) => {
-              if (!line) return { usage: null, charge: null };
+              if (!line) return { usage: null, charge: null, prevRead: null, currRead: null };
               const nums = _lbg_tokens(line);
-              if (!nums.length) return { usage: null, charge: null };
+              if (!nums.length) return { usage: null, charge: null, prevRead: null, currRead: null };
               const rawTokens = [...line.matchAll(/-?[\d,]+(?:\.\d+|-\d{2})?/g)].map((m) => m[0]);
               const charge = _lbg_cleanCents(rawTokens[rawTokens.length - 1]);
-              let usage = 0;
+              let usage = 0,
+                prevRead = null,
+                currRead = null;
               if (nums.length >= 4) {
+                prevRead = nums[nums.length - 4] || nums[nums.length - 3];
+                currRead = nums[nums.length - 3];
                 const candidate = nums[nums.length - 2];
-                const prevRead = nums[nums.length - 3];
-                // Duplicate reads (CurrRead === PrevRead) mean no usage column.
-                if (candidate === prevRead) usage = 0;
-                else if (candidate < 1000000 && candidate < prevRead) usage = candidate;
+                if (candidate === currRead) {
+                  usage = 0;
+                } else if (candidate < 1000000 && candidate < prevRead) {
+                  usage = candidate;
+                  prevRead = nums[nums.length - 4];
+                  currRead = nums[nums.length - 3];
+                }
+              } else if (nums.length === 3) {
+                prevRead = nums[0];
+                currRead = nums[1];
+                usage = Math.abs(currRead - prevRead);
               }
-              return { usage, charge };
+              return { usage, charge, prevRead, currRead };
             };
 
             const gas = parseLine(gasLine);
@@ -16920,6 +16941,8 @@
               bills.push({
                 ...shared,
                 Commodity: 'Gas',
+                StartRead: gas.prevRead || null,
+                EndRead: gas.currRead || null,
                 NaturalGasTherms: gas.usage || null,
                 CustomerCharge: _LBG_GAS_BASE,
                 GasCharge: gasVariable,
@@ -16932,6 +16955,8 @@
               bills.push({
                 ...shared,
                 Commodity: 'Water',
+                StartRead: water.prevRead || null,
+                EndRead: water.currRead || null,
                 WaterUsage: water.usage || null,
                 WaterCharge: water.charge,
                 WaterProtectionFee: wpf.charge,
@@ -17159,6 +17184,8 @@
               bills.push({
                 ...shared,
                 Commodity: 'Gas',
+                StartRead: gas.prevRead || null,
+                EndRead: gas.currRead || null,
                 NaturalGasTherms: gas.usage || null,
                 CustomerCharge: _LBG_GAS_BASE,
                 GasCharge: gasVariable,
@@ -17172,6 +17199,8 @@
               bills.push({
                 ...shared,
                 Commodity: 'Water',
+                StartRead: water.prevRead || null,
+                EndRead: water.currRead || null,
                 WaterUsage: water.usage || null,
                 WaterCharge: water.charge,
                 WaterProtectionFee: wpf.charge,
@@ -17536,6 +17565,17 @@
             });
         }
 
+        // Gas: usage > 0 should have charge > 0
+        const gasUsage = pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF);
+        const gasCharge = pf(extracted.GasCharge);
+        if (gasUsage > 0 && gasCharge <= 0) {
+          warnings.push({
+            level: 'warn',
+            field: 'GasCharge',
+            message: 'Gas usage is ' + gasUsage + ' but Gas Charge is $0 — verify charge was extracted',
+          });
+        }
+
         return warnings;
       }
 
@@ -17857,6 +17897,20 @@
       function _postExtractionVerify(bills, utilityName, rawText) {
         if (!bills.length) return bills;
         const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+
+        // Calculate NumberOfDays from billing period dates when not extracted
+        for (const b of bills) {
+          if (!b.NumberOfDays && b.BillingPeriodStart && b.BillingPeriodEnd) {
+            const _ps = String(b.BillingPeriodStart).split('/');
+            const _pe = String(b.BillingPeriodEnd).split('/');
+            if (_ps.length === 3 && _pe.length === 3) {
+              const _ds = new Date(+(_ps[2].length === 2 ? '20' + _ps[2] : _ps[2]), +_ps[0] - 1, +_ps[1]);
+              const _de = new Date(+(_pe[2].length === 2 ? '20' + _pe[2] : _pe[2]), +_pe[0] - 1, +_pe[1]);
+              const _diff = Math.round((_de - _ds) / 86400000);
+              if (_diff > 0 && _diff < 120) b.NumberOfDays = String(_diff);
+            }
+          }
+        }
 
         // Gather historical bills for the same account
         function getHistorical(acct) {
@@ -18836,7 +18890,7 @@
         // ── NEIGHBOR-BILL FALLBACK ──
         // When a bill has null fields, borrow from adjacent bills in the same multi-bill PDF
         // that share the same AccountNumber (and MeterNumber when both have one).
-        const NEIGHBOR_FIELDS = ['UtilityCompany', 'CustomerName', 'ServiceAddress', 'RateSchedule', 'CustomerCharge'];
+        const NEIGHBOR_FIELDS = ['UtilityCompany', 'CustomerName', 'ServiceAddress', 'RateSchedule'];
         for (let i = 0; i < bills.length; i++) {
           const b = bills[i];
           if (!b.AccountNumber) continue;
@@ -22138,11 +22192,20 @@
           { type: 'pair', fields: ['AccountNumber', 'Commodity'] },
           { section: 'Billing Period' },
           { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
-          { type: 'pair', fields: ['BillDate'] },
-          { section: 'Charges' },
+          { type: 'pair', fields: ['BillDate', 'NumberOfDays'] },
+          { section: 'Meter Readings' },
+          { type: 'pair', fields: ['StartRead', 'EndRead'] },
           { type: 'pair', fields: ['NaturalGasTherms', 'NaturalGasCCF'] },
+          { section: 'Charges' },
           { type: 'charge-line', label: 'Base', chargeField: 'CustomerCharge', rateKey: null },
-          { type: 'charge-line', label: 'Gas', chargeField: 'GasCharge', rateKey: null },
+          {
+            type: 'charge-line',
+            label: 'Gas',
+            chargeField: 'GasCharge',
+            qtyField: 'NaturalGasTherms',
+            unit: 'Therms',
+            rateKey: null,
+          },
           { type: 'charge-line', label: 'Fuel Adjustment', chargeField: 'FuelAdjustment', rateKey: null },
           { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
         ];
