@@ -10693,6 +10693,18 @@
             <input type="hidden" id="mm-edit-id" />
             <input type="hidden" id="mm-target-bldg" />
             <input type="hidden" id="mm-target-proj" />
+            <div
+              id="mm-move-bldg-wrap"
+              style="display: none; margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px"
+            >
+              <label class="fl">Move to Different Building</label>
+              <select class="fs" id="mm-move-bldg" style="width: 100%">
+                <option value="">— Keep on current building —</option>
+              </select>
+              <div style="font-size: 11px; color: var(--text2); margin-top: 5px">
+                All bills will move with the meter.
+              </div>
+            </div>
           </div>
           <div class="modal-ftr">
             <button class="btn btn-ghost" onclick="closeMeterModal()">Cancel</button
@@ -13118,10 +13130,8 @@
       }
 
       function projUDOpenMeterModal(projId) {
-        // Set global context then open modal
-        udSelProjId = projId;
-        udSelBldgId = projUDSelBldg[projId];
-        openMeterModal();
+        const bldgId = projUDSelBldg[projId];
+        openMeterModal(null, projId, bldgId);
       }
 
       // ── Project Equipment Tab ──
@@ -25493,7 +25503,11 @@
         const meters = b.meters || [];
         if (!meters.length) {
           wrap.innerHTML =
-            '<div class="ud-empty"><div class="ud-empty-ico">⚡</div><div>No meters yet.<br><button class="btn btn-em btn-sm" style="margin-top:12px" onclick="openMeterModal()">+ Add Meter</button></div></div>';
+            '<div class="ud-empty"><div class="ud-empty-ico">⚡</div><div>No meters yet.<br><button class="btn btn-em btn-sm" style="margin-top:12px" onclick="openMeterModal(null,\'' +
+            udSelProjId +
+            "','" +
+            udSelBldgId +
+            '\')">+ Add Meter</button></div></div>';
           return;
         }
 
@@ -25537,7 +25551,11 @@
             .join('') +
           // Add Meter pill sits directly after the existing meter pills so users don't
           // have to hunt for the add button in the header bar.
-          '<button class="ma-meter-pill ma-add-meter-pill" onclick="openMeterModal()" title="Add a new meter to this building">' +
+          '<button class="ma-meter-pill ma-add-meter-pill" onclick="openMeterModal(null,\'' +
+          udSelProjId +
+          "','" +
+          udSelBldgId +
+          '\')" title="Add a new meter to this building">' +
           '<span style="font-size:14px;font-weight:700;color:var(--em)">+</span>' +
           '<span style="font-size:12px;font-weight:600;color:var(--em)">Add Meter</span>' +
           '</button>';
@@ -25551,6 +25569,10 @@
           '<button class="btn btn-ghost btn-sm" onclick="openAuditLogModal()" title="View change history">📋 History</button>' +
           '<button class="btn btn-ghost btn-sm" onclick="openMeterModal(\'' +
           udActiveMid +
+          "','" +
+          udSelProjId +
+          "','" +
+          udSelBldgId +
           '\')">✏️ Edit</button>' +
           '<button class="btn btn-ghost btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deleteAllBills(\'' +
           udActiveMid +
@@ -33936,13 +33958,17 @@
         document.getElementById('mm-excl-btn').classList.toggle('sel', !val);
         document.getElementById('mm-inclusive').value = String(val);
       }
-      function openMeterModal(editId) {
+      function openMeterModal(editId, projId, bldgId) {
+        const _pid = projId || udSelProjId;
+        const _bid = bldgId || udSelBldgId;
         document.getElementById('mm-edit-id').value = editId || '';
-        document.getElementById('mm-target-bldg').value = udSelBldgId || '';
-        document.getElementById('mm-target-proj').value = udSelProjId || '';
+        document.getElementById('mm-target-bldg').value = _bid || '';
+        document.getElementById('mm-target-proj').value = _pid || '';
         _meterInclusive = true;
+        const moveWrap = document.getElementById('mm-move-bldg-wrap');
+        if (moveWrap) moveWrap.style.display = 'none';
         if (editId) {
-          const b = getUDBldg(udSelProjId, udSelBldgId);
+          const b = getUDBldg(_pid, _bid);
           const m = b?.meters?.find((m) => m.id === editId);
           if (m) {
             document.getElementById('meterModalTitle').textContent = '✏️ Edit Meter';
@@ -33952,6 +33978,19 @@
             document.getElementById('mm-meter').value = m.meter || '';
             document.getElementById('mm-maddr').value = m.maddr || '';
             _meterInclusive = m.inclusive !== false;
+          }
+          if (moveWrap) {
+            const bldgs = getUDBldgs(_pid) || [];
+            if (bldgs.length > 1) {
+              const sel = document.getElementById('mm-move-bldg');
+              sel.innerHTML =
+                '<option value="">— Keep on current building —</option>' +
+                bldgs
+                  .filter((bb) => bb.id !== _bid)
+                  .map((bb) => '<option value="' + bb.id + '">' + (bb.name || 'Unnamed') + '</option>')
+                  .join('');
+              moveWrap.style.display = '';
+            }
           }
         } else {
           document.getElementById('meterModalTitle').textContent = '+ Add Meter';
@@ -33991,7 +34030,20 @@
           const m = b.meters.find((m) => m.id === editId);
           if (m) {
             Object.assign(m, data);
-            showToast('Meter updated ✓');
+            const moveToBldgId = document.getElementById('mm-move-bldg')?.value || '';
+            if (moveToBldgId && moveToBldgId !== _targetBldgId) {
+              const destBldg = getUDBldg(_targetProjId, moveToBldgId);
+              if (destBldg) {
+                b.meters = b.meters.filter((x) => x.id !== editId);
+                destBldg.meters = destBldg.meters || [];
+                destBldg.meters.push(m);
+                udSelBldgId = moveToBldgId;
+                udActiveMid = m.id;
+                showToast('Meter moved to ' + (destBldg.name || 'building') + ' ✓');
+              }
+            } else {
+              showToast('Meter updated ✓');
+            }
           }
         } else {
           const nm = { id: 'm' + Date.now(), bills: [], ...data };
