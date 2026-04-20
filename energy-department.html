@@ -16006,6 +16006,59 @@
         const n = parseFloat(s);
         return isNaN(n) ? null : n;
       }
+      const _LBG_GAS_RATES = [{ effectiveDate: '2000-01-01', rate: 0.798062, baseCharge: 23.33 }];
+      function _lbg_gasRate(billDate) {
+        let rate = _LBG_GAS_RATES[0];
+        if (billDate) {
+          const p = String(billDate).split('/');
+          const iso =
+            p.length === 3
+              ? (p[2].length === 2 ? '20' + p[2] : p[2]) + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0')
+              : '';
+          for (const r of _LBG_GAS_RATES) {
+            if (iso >= r.effectiveDate) rate = r;
+          }
+        }
+        return rate;
+      }
+      function _lbg_correctGasCharge(gasCharge, gasUsage, totalCharge, billDate) {
+        const r = _lbg_gasRate(billDate);
+        const expectedCharge = gasUsage * r.rate;
+        const chargeDiff = Math.abs(gasCharge - expectedCharge);
+        if (chargeDiff < 1.0) return { charge: gasCharge, total: totalCharge, corrected: false };
+        const fromTotal = totalCharge - r.baseCharge;
+        if (fromTotal > 0 && Math.abs(fromTotal - expectedCharge) < 1.0) {
+          return {
+            charge: fromTotal,
+            total: totalCharge,
+            corrected: true,
+            reason: 'Derived from Total ($' + totalCharge.toFixed(2) + ') - Base ($' + r.baseCharge.toFixed(2) + ')',
+          };
+        }
+        const reinterpretedCharge = parseFloat(
+          String(gasCharge).replace(/\./g, '').slice(0, -2) + '.' + String(gasCharge).replace(/\./g, '').slice(-2),
+        );
+        if (!isNaN(reinterpretedCharge) && Math.abs(reinterpretedCharge - expectedCharge) < 1.0) {
+          const corrTotal = reinterpretedCharge + r.baseCharge;
+          return {
+            charge: reinterpretedCharge,
+            total: corrTotal,
+            corrected: true,
+            reason:
+              'OCR decimal fix: ' + gasCharge + ' → ' + reinterpretedCharge.toFixed(2) + ' (matches rate × usage)',
+          };
+        }
+        if (expectedCharge > 0) {
+          const corrTotal = expectedCharge + r.baseCharge;
+          return {
+            charge: expectedCharge,
+            total: corrTotal,
+            corrected: true,
+            reason: 'Computed from ' + gasUsage + ' therms × $' + r.rate + '/therm = $' + expectedCharge.toFixed(2),
+          };
+        }
+        return { charge: gasCharge, total: totalCharge, corrected: false };
+      }
       function _lbg_tokens(line) {
         if (!line) return [];
         return [...line.matchAll(/-?[\d,]+\.\d+|-?[\d,]+-\d{2}|-?[\d,]+/g)]
@@ -16933,22 +16986,46 @@
               RateSchedule: null,
               MeterNumber: null,
             };
-            const _LBG_GAS_BASE = 23.33;
             const bills = [];
             if (gas.charge != null && gas.charge !== 0) {
-              const gasVariable = Math.max(0, gas.charge - _LBG_GAS_BASE);
-              const gasTotal = gas.charge.toFixed(2);
-              bills.push({
+              const r = _lbg_gasRate(BillingPeriodEnd || BillingPeriodStart || BillDate);
+              let gasTotal = gas.charge;
+              let gasVariable = Math.max(0, gasTotal - r.baseCharge);
+              const corrected =
+                gas.usage > 0
+                  ? _lbg_correctGasCharge(
+                      gasVariable,
+                      gas.usage,
+                      gasTotal,
+                      BillingPeriodEnd || BillingPeriodStart || BillDate,
+                    )
+                  : null;
+              if (corrected && corrected.corrected) {
+                gasVariable = corrected.charge;
+                gasTotal = corrected.total;
+              }
+              if (gasTotal < r.baseCharge && gas.usage > 0) {
+                gasVariable = gas.usage * r.rate;
+                gasTotal = gasVariable + r.baseCharge;
+              }
+              const gasBill = {
                 ...shared,
                 Commodity: 'Gas',
                 StartRead: gas.prevRead || null,
                 EndRead: gas.currRead || null,
                 NaturalGasTherms: gas.usage || null,
-                CustomerCharge: _LBG_GAS_BASE,
+                CustomerCharge: r.baseCharge,
                 GasCharge: gasVariable,
-                TotalCurrentCharges: gasTotal,
-                TotalAmountDue: gasTotal,
-              });
+                TotalCurrentCharges: gasTotal.toFixed(2),
+                TotalAmountDue: gasTotal.toFixed(2),
+              };
+              if (corrected && corrected.corrected)
+                gasBill._auto_corrected_GasCharge = {
+                  original: gas.charge,
+                  corrected: gasVariable,
+                  reason: corrected.reason,
+                };
+              bills.push(gasBill);
             }
             if (water.charge != null && water.charge !== 0) {
               const waterTotal = (water.charge + (wpf.charge || 0)).toFixed(2);
@@ -17176,23 +17253,48 @@
               RateSchedule: null,
               MeterNumber: null,
             };
-            const _LBG_GAS_BASE = 23.33;
             const bills = [];
             if (gas.charge != null && gas.charge !== 0) {
-              const gasVariable = Math.max(0, gas.charge - _LBG_GAS_BASE);
-              const gasTotal = (gas.charge + (signedFuelAdj || 0)).toFixed(2);
-              bills.push({
+              const r = _lbg_gasRate(BillingPeriodEnd || BillingPeriodStart || BillDate);
+              let gasTotal = gas.charge;
+              let gasVariable = Math.max(0, gasTotal - r.baseCharge);
+              const corrected =
+                gas.usage > 0
+                  ? _lbg_correctGasCharge(
+                      gasVariable,
+                      gas.usage,
+                      gasTotal,
+                      BillingPeriodEnd || BillingPeriodStart || BillDate,
+                    )
+                  : null;
+              if (corrected && corrected.corrected) {
+                gasVariable = corrected.charge;
+                gasTotal = corrected.total;
+              }
+              if (gasTotal < r.baseCharge && gas.usage > 0) {
+                gasVariable = gas.usage * r.rate;
+                gasTotal = gasVariable + r.baseCharge;
+              }
+              gasTotal = gasTotal + (signedFuelAdj || 0);
+              const gasBill = {
                 ...shared,
                 Commodity: 'Gas',
                 StartRead: gas.prevRead || null,
                 EndRead: gas.currRead || null,
                 NaturalGasTherms: gas.usage || null,
-                CustomerCharge: _LBG_GAS_BASE,
+                CustomerCharge: r.baseCharge,
                 GasCharge: gasVariable,
                 FuelAdjustment: signedFuelAdj,
-                TotalCurrentCharges: gasTotal,
-                TotalAmountDue: gasTotal,
-              });
+                TotalCurrentCharges: gasTotal.toFixed(2),
+                TotalAmountDue: gasTotal.toFixed(2),
+              };
+              if (corrected && corrected.corrected)
+                gasBill._auto_corrected_GasCharge = {
+                  original: gas.charge,
+                  corrected: gasVariable,
+                  reason: corrected.reason,
+                };
+              bills.push(gasBill);
             }
             if (water.charge != null && water.charge !== 0) {
               const waterTotal = (water.charge + (wpf.charge || 0)).toFixed(2);
