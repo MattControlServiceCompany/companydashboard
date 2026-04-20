@@ -17393,7 +17393,7 @@
         },
         'City of Louisburg': {
           critical: ['BillingPeriodStart', 'BillingPeriodEnd', 'TotalAmountDue'],
-          important: ['AccountNumber', 'NumberOfDays'],
+          important: ['AccountNumber'],
           chargeFields: [],
         },
         'Propane / Fuel Oil Delivery': {
@@ -21341,20 +21341,39 @@
             // Also check for running total mismatch directly from bill data
             const bill = bills[p.i];
             const _pf2 = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
-            const _chargeSum =
-              _pf2(bill.CustomerCharge) +
-              _pf2(bill.FacilitiesCharge) +
-              _pf2(bill.BilledKWCharge) +
-              _pf2(bill.EnergyOnPeakCharge) +
-              _pf2(bill.EnergyOffPeakCharge) +
-              _pf2(bill.ECACharge) +
-              _pf2(bill.EERCharge) +
-              _pf2(bill.PTSCharge) +
-              _pf2(bill.TDCCharge) +
-              _pf2(bill.RkVACharge) +
-              _pf2(bill.TaxExemptDelivery) +
-              _pf2(bill.BillOffset) +
-              _pf2(bill.FranchiseFee);
+            const _pillComm =
+              bill.Commodity ||
+              (bill.kWhConsumed
+                ? 'Electric'
+                : bill.NaturalGasTherms || bill.NaturalGasCCF || bill.GasCharge
+                  ? 'Gas'
+                  : 'Electric');
+            const _pillChargeKeys = {
+              Electric: [
+                'CustomerCharge',
+                'FacilitiesCharge',
+                'BilledKWCharge',
+                'EnergyOnPeakCharge',
+                'EnergyOffPeakCharge',
+                'ECACharge',
+                'EERCharge',
+                'PTSCharge',
+                'TDCCharge',
+                'RkVACharge',
+                'TaxExemptDelivery',
+                'BillOffset',
+                'FranchiseFee',
+              ],
+              Gas: ['CustomerCharge', 'GasCharge', 'FuelAdjustment'],
+              Water: ['WaterCharge', 'WaterProtectionFee'],
+              Sewer: ['SewerCharge'],
+              Stormwater: ['StormWaterCharge'],
+              Propane: ['Subtotal', 'Tax'],
+            };
+            const _chargeSum = (_pillChargeKeys[_pillComm] || _pillChargeKeys.Electric).reduce(
+              (s, f) => s + _pf2(bill[f]),
+              0,
+            );
             const _totalVal = _pf2(bill.TotalCurrentCharges);
             // Sum mismatch threshold matches the Data Analysis panel exactly (>= $0.02) so the
             // pill and banner are always consistent. Sum mismatch is high severity — we don't want
@@ -22526,21 +22545,37 @@
         // source of truth — the stored `_sum_mismatch` flag gets cleared by auto-correction
         // even when a small residual diff remains, but the pill and banner should reflect
         // what's actually in the data right now.
-        const _CHARGE_SUM_KEYS_RPF = [
-          'CustomerCharge',
-          'FacilitiesCharge',
-          'BilledKWCharge',
-          'EnergyOnPeakCharge',
-          'EnergyOffPeakCharge',
-          'ECACharge',
-          'EERCharge',
-          'PTSCharge',
-          'TDCCharge',
-          'RkVACharge',
-          'TaxExemptDelivery',
-          'BillOffset',
-          'FranchiseFee',
-        ];
+        const _CHARGE_SUM_KEYS_BY_COMMODITY = {
+          Electric: [
+            'CustomerCharge',
+            'FacilitiesCharge',
+            'BilledKWCharge',
+            'EnergyOnPeakCharge',
+            'EnergyOffPeakCharge',
+            'ECACharge',
+            'EERCharge',
+            'PTSCharge',
+            'TDCCharge',
+            'RkVACharge',
+            'TaxExemptDelivery',
+            'BillOffset',
+            'FranchiseFee',
+          ],
+          Gas: ['CustomerCharge', 'GasCharge', 'FuelAdjustment'],
+          Water: ['WaterCharge', 'WaterProtectionFee'],
+          Sewer: ['SewerCharge'],
+          Stormwater: ['StormWaterCharge'],
+          Propane: ['Subtotal', 'Tax'],
+        };
+        const _billCommodity =
+          parsed.Commodity ||
+          (parsed.kWhConsumed
+            ? 'Electric'
+            : parsed.NaturalGasTherms || parsed.NaturalGasCCF || parsed.GasCharge
+              ? 'Gas'
+              : 'Electric');
+        const _CHARGE_SUM_KEYS_RPF =
+          _CHARGE_SUM_KEYS_BY_COMMODITY[_billCommodity] || _CHARGE_SUM_KEYS_BY_COMMODITY.Electric;
         const _currentChargeSum = _CHARGE_SUM_KEYS_RPF.reduce((s, f) => s + _pf(parsed[f]), 0);
         // Identify which charge fields are blank — the sum mismatch is usually caused by
         // one of these not being extracted, so we surface them in the banner.
