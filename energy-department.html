@@ -17221,16 +17221,20 @@
             storm = storm || { usage: null, charge: null };
             wpf = wpf || { usage: null, charge: null };
 
-            // Fuel Adjustment — line item on gas bills. Typically negative
-            // ("-$385.93") when fuel costs dropped since the prior month.
-            // Regex uses `[^\d-]*` between the label and the number so the
-            // literal minus sign is captured into the signed group.
-            const fuelAdjMatch = page.match(/FUEL\s*ADJUSTMENT[^\d-]*(-?\$?-?[\d,]+\.\d{2})/i);
+            // Fuel Adjustment — line item on gas bills. Typically negative.
+            // Formats seen: "-$385.93", "-385.93", "30.15-" (trailing minus),
+            // "($385.93)" (parens). The regex captures the number; trailing
+            // minus is detected separately and flips the sign.
+            const fuelAdjMatch = page.match(/FUEL\s*ADJUSTMENT[^\d-]*(-?\$?-?[\d,]+\.\d{2})\s*-?/i);
             let signedFuelAdj = null;
             if (fuelAdjMatch) {
               signedFuelAdj = parseFloat(fuelAdjMatch[1].replace(/[\$,]/g, ''));
-              // Some bills print the negative as parens: "($385.93)". Detect
-              // and flip the sign in that case.
+              // Trailing minus: "30.15-" — negate if the number itself was positive
+              const trailingMinus = /FUEL\s*ADJUSTMENT[^\n]*[\d,]+\.\d{2}\s*-/i.test(page);
+              if (signedFuelAdj > 0 && trailingMinus) {
+                signedFuelAdj = -signedFuelAdj;
+              }
+              // Parens: "($385.93)" — negate if still positive
               if (signedFuelAdj > 0 && /FUEL\s*ADJUSTMENT[^\n]*\(\s*\$?[\d,]+\.\d{2}\s*\)/i.test(page)) {
                 signedFuelAdj = -signedFuelAdj;
               }
