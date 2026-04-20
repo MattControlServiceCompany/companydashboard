@@ -17594,6 +17594,29 @@
             });
           }
         }
+        // Louisburg gas rate cross-check: known rate is $0.798062/therm
+        const _lbgRate = 0.798062;
+        if (gasUsage > 0 && (extracted.UtilityCompany || '').includes('Louisburg')) {
+          const actualGasCharge = pf(extracted.GasCharge);
+          if (actualGasCharge > 0) {
+            const expectedCharge = gasUsage * _lbgRate;
+            const chargeDiff = Math.abs(actualGasCharge - expectedCharge);
+            if (chargeDiff > 1.0) {
+              const actualRate = actualGasCharge / gasUsage;
+              warnings.push({
+                level: 'info',
+                field: 'GasCharge',
+                message:
+                  'Rate check: $' +
+                  actualRate.toFixed(6) +
+                  '/therm (expected $' +
+                  _lbgRate.toFixed(6) +
+                  '/therm). Charge diff: $' +
+                  chargeDiff.toFixed(2),
+              });
+            }
+          }
+        }
 
         return warnings;
       }
