@@ -13035,13 +13035,24 @@
           .map((b) => {
             const meters = b.meters || [];
             const mCount = meters.length;
+            const mWithBl = meters.filter(
+              (m) => m.baseline && Array.isArray(m.baseline.months) && m.baseline.months.length,
+            ).length;
+            const blBadge =
+              mCount > 0
+                ? mWithBl === mCount
+                  ? `<span style="color:var(--green);font-size:10px" title="All meters have baselines">✓ ${mWithBl}/${mCount} BL</span>`
+                  : mWithBl > 0
+                    ? `<span style="color:var(--amber);font-size:10px" title="${mWithBl} of ${mCount} meters have baselines">⚠ ${mWithBl}/${mCount} BL</span>`
+                    : `<span style="color:var(--text3);font-size:10px" title="No baselines set">— 0/${mCount} BL</span>`
+                : '';
             const bCount = (b.bills || []).length + meters.reduce((s, m) => s + (m.bills || []).length, 0);
             const isActive = projUDSelBldg[projId] === b.id;
             return `<div class="ud-nav-bldg-item${isActive ? ' active' : ''}" onclick="projUDSelectBldg('${projId}','${b.id}')">
             <span style="font-size:14px">${getFacilityIcon?.(b.type) || '🏢'}</span>
             <div style="flex:1;min-width:0">
               <div class="ud-nav-bldg-name">${b.name || 'Building'}</div>
-              <div class="ud-nav-bldg-meta">${mCount} meter${mCount !== 1 ? 's' : ''}</div>
+              <div class="ud-nav-bldg-meta">${mCount} meter${mCount !== 1 ? 's' : ''} ${blBadge}</div>
             </div>
             <div class="ud-nav-bldg-actions">
               <button class="btn btn-ghost btn-sm" style="padding:1px 5px;font-size:11px" onclick="event.stopPropagation();openBldgModal('${b.id}')" title="Edit">✏️</button>
@@ -33835,8 +33846,13 @@
           { key: 'end', label: 'End Date', type: 'date', pdfKey: 'BillingPeriodEnd' },
           { key: 'billDate', label: 'Bill Date', type: 'text', pdfKey: 'BillDate' },
           { section: 'Charges' },
-          { key: 'naturalGasTherms', label: 'Natural Gas Therms', type: 'number', pdfKey: 'NaturalGasTherms' },
-          { key: 'naturalGasCCF', label: 'Natural Gas (CCF)', type: 'number', pdfKey: 'NaturalGasCCF' },
+          {
+            key: 'naturalGasTherms',
+            label: 'Gas Usage (Therms)',
+            type: 'number',
+            pdfKey: 'NaturalGasTherms',
+            isUsage: true,
+          },
           { key: 'customerCharge', label: 'Base Charge', type: 'currency', pdfKey: 'CustomerCharge' },
           { key: 'gasCharge', label: 'Gas Charge', type: 'currency', pdfKey: 'GasCharge' },
           { key: 'fuelAdjustment', label: 'Fuel Adjustment', type: 'currency', pdfKey: 'FuelAdjustment' },
