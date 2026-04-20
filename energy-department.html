@@ -13283,10 +13283,10 @@
         if (elecM)
           (elecM.bills || []).forEach((bill) => {
             const mo = new Date(bill.start).getMonth();
-            const kwh = bill.kwh || bill.usage || 0;
-            const kw = bill.kw || bill.demKW || bill.billedKw || 0;
-            const kwhCost = bill.kwhCost || bill.energyCost || 0;
-            const kwCost = bill.kwCost || bill.demandCost || 0;
+            const kwh = parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+            const kw = parseFloat(bill.demandKW) || parseFloat(bill.billedKW) || 0;
+            const kwhCost = parseFloat(bill.kwhCost) || 0;
+            const kwCost = parseFloat(bill.kwCost) || 0;
             if (SUMMER.includes(mo)) {
               sumKwhCost += kwhCost;
               sumKwh += kwh;
@@ -13305,8 +13305,8 @@
           });
         if (gasM)
           (gasM.bills || []).forEach((bill) => {
-            totalTherms += bill.therms || bill.usage || 0;
-            totalGasCost += bill.totalCost || bill.cost || 0;
+            totalTherms += parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
+            totalGasCost += parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0;
           });
         return {
           kwhSummer: sumKwh > 0 ? Math.round((sumKwhCost / sumKwh) * 10000) / 10000 : 0,
@@ -36486,12 +36486,12 @@
         if (elecM) {
           (elecM.bills || []).forEach((bill) => {
             const mo = new Date(bill.start).getMonth();
-            const kwh = bill.kwh || bill.usage || 0;
-            const kw = bill.kw || bill.demKW || bill.billedKw || 0;
+            const kwh = parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+            const kw = parseFloat(bill.demandKW) || parseFloat(bill.billedKW) || 0;
             actualKwh[mo] = kwh;
             actualKw[mo] = kw;
-            const kwhCost = bill.kwhCost || bill.energyCost || 0;
-            const kwCost = bill.kwCost || bill.demandCost || 0;
+            const kwhCost = parseFloat(bill.kwhCost) || 0;
+            const kwCost = parseFloat(bill.kwCost) || 0;
             avgKwhRate[mo] = kwh > 0 ? kwhCost / kwh : 0;
             avgKwRate[mo] = kw > 0 ? kwCost / kw : 0;
           });
@@ -36499,8 +36499,8 @@
         if (gasM) {
           (gasM.bills || []).forEach((bill) => {
             const mo = new Date(bill.start).getMonth();
-            const therms = bill.therms || bill.usage || 0;
-            const gCost = bill.totalCost || bill.cost || 0;
+            const therms = parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
+            const gCost = parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0;
             actualTherms[mo] = therms;
             avgThermRate[mo] = therms > 0 ? gCost / therms : 0;
           });
@@ -37243,10 +37243,10 @@
           (selBldg.meters || []).forEach((m) => {
             (m.bills || []).forEach((bill) => {
               if (m.commodity === 'Electric') {
-                totalKwh += bill.kwh || bill.usage || 0;
-                totalKw = Math.max(totalKw, bill.kw || bill.demKW || 0);
+                totalKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+                totalKw = Math.max(totalKw, parseFloat(bill.demandKW) || 0);
               } else if (m.commodity === 'Gas') {
-                totalGas += bill.therms || bill.usage || 0;
+                totalGas += parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
               }
             });
           });
@@ -37256,10 +37256,10 @@
             (b.meters || []).forEach((m) => {
               (m.bills || []).forEach((bill) => {
                 if (m.commodity === 'Electric') {
-                  totalKwh += bill.kwh || bill.usage || 0;
-                  totalKw = Math.max(totalKw, bill.kw || bill.demKW || 0);
+                  totalKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+                  totalKw = Math.max(totalKw, parseFloat(bill.demandKW) || 0);
                 } else if (m.commodity === 'Gas') {
-                  totalGas += bill.therms || bill.usage || 0;
+                  totalGas += parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
                 }
               });
             });
@@ -40275,15 +40275,15 @@
               if (isBaseline) {
                 // Baseline data
                 if (isElec) {
-                  blKwh[mi] += bill.kwh || bill.usage || 0;
-                  blKw[mi] = Math.max(blKw[mi], bill.kw || bill.demKW || 0);
+                  blKwh[mi] += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+                  blKw[mi] = Math.max(blKw[mi], parseFloat(bill.demandKW) || 0);
                   blCost[mi] +=
-                    (bill.total || bill.kwhCost || 0) +
-                    (bill.kwCost || 0) +
-                    (bill.otherCost || 0) +
-                    (bill.taxCost || 0);
+                    (parseFloat(bill.totalCost) || parseFloat(bill.kwhCost) || 0) +
+                    (parseFloat(bill.kwCost) || 0) +
+                    (parseFloat(bill.otherCost) || 0) +
+                    (parseFloat(bill.taxCost) || 0);
                 }
-                if (isGas) blGas[mi] += bill.therms || bill.usage || 0;
+                if (isGas) blGas[mi] += parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
                 if (yr && !blYear) blYear = yr;
               }
 
@@ -40297,15 +40297,15 @@
                     cost: new Array(12).fill(0),
                   };
                 if (isElec) {
-                  yearData[yr].kwh[mi] += bill.kwh || bill.usage || 0;
-                  yearData[yr].kw[mi] = Math.max(yearData[yr].kw[mi], bill.kw || bill.demKW || 0);
+                  yearData[yr].kwh[mi] += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+                  yearData[yr].kw[mi] = Math.max(yearData[yr].kw[mi], parseFloat(bill.demandKW) || 0);
                   yearData[yr].cost[mi] +=
-                    (bill.total || bill.kwhCost || 0) +
-                    (bill.kwCost || 0) +
-                    (bill.otherCost || 0) +
-                    (bill.taxCost || 0);
+                    (parseFloat(bill.totalCost) || parseFloat(bill.kwhCost) || 0) +
+                    (parseFloat(bill.kwCost) || 0) +
+                    (parseFloat(bill.otherCost) || 0) +
+                    (parseFloat(bill.taxCost) || 0);
                 }
-                if (isGas) yearData[yr].gas[mi] += bill.therms || bill.usage || 0;
+                if (isGas) yearData[yr].gas[mi] += parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
               }
             });
           });
