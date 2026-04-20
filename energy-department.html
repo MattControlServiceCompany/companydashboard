@@ -17565,15 +17565,34 @@
             });
         }
 
-        // Gas: usage > 0 should have charge > 0
+        // Gas: usage > 0 should have charge > 0 — attempt recovery from total
         const gasUsage = pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF);
         const gasCharge = pf(extracted.GasCharge);
         if (gasUsage > 0 && gasCharge <= 0) {
-          warnings.push({
-            level: 'warn',
-            field: 'GasCharge',
-            message: 'Gas usage is ' + gasUsage + ' but Gas Charge is $0 — verify charge was extracted',
-          });
+          const total = pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
+          const custCharge = pf(extracted.CustomerCharge);
+          const fuelAdj = pf(extracted.FuelAdjustment);
+          const recovered = total - custCharge - fuelAdj;
+          if (recovered > 0) {
+            extracted.GasCharge = recovered;
+            extracted['_auto_corrected_GasCharge'] = {
+              original: gasCharge || 0,
+              corrected: recovered,
+              reason:
+                'Derived from Total ($' +
+                total.toFixed(2) +
+                ') - Base ($' +
+                custCharge.toFixed(2) +
+                ')' +
+                (fuelAdj ? ' - Fuel Adj ($' + fuelAdj.toFixed(2) + ')' : ''),
+            };
+          } else {
+            warnings.push({
+              level: 'warn',
+              field: 'GasCharge',
+              message: 'Gas usage is ' + gasUsage + ' but Gas Charge is $0 — could not auto-recover',
+            });
+          }
         }
 
         return warnings;
