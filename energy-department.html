@@ -16034,10 +16034,10 @@
       }
       function _lbg_correctGasCharge(gasCharge, gasUsage, totalCharge, billDate) {
         const r = _lbg_gasRate(billDate);
-        const expectedCharge = gasUsage * r.rate;
+        const expectedCharge = Math.round(gasUsage * r.rate * 100) / 100;
         const chargeDiff = Math.abs(gasCharge - expectedCharge);
         if (chargeDiff < 1.0) return { charge: gasCharge, total: totalCharge, corrected: false };
-        const fromTotal = totalCharge - r.baseCharge;
+        const fromTotal = Math.round((totalCharge - r.baseCharge) * 100) / 100;
         if (fromTotal > 0 && Math.abs(fromTotal - expectedCharge) < 1.0) {
           return {
             charge: fromTotal,
@@ -19253,12 +19253,28 @@
 
       // ── Auto-assign: scan all meters across all projects/buildings for account or meter number match ──
       let _autoAssignTarget = null; // {projId, bldgId, meterId}
+      function _normalizeAddr(a) {
+        return (a || '')
+          .toLowerCase()
+          .replace(/\b(drive|dr\.?)\b/g, 'dr')
+          .replace(/\b(street|st\.?)\b/g, 'st')
+          .replace(/\b(avenue|ave\.?)\b/g, 'ave')
+          .replace(/\b(boulevard|blvd\.?)\b/g, 'blvd')
+          .replace(/\b(lane|ln\.?)\b/g, 'ln')
+          .replace(/\b(road|rd\.?)\b/g, 'rd')
+          .replace(/\b(court|ct\.?)\b/g, 'ct')
+          .replace(/\b(circle|cir\.?)\b/g, 'cir')
+          .replace(/\b(place|pl\.?)\b/g, 'pl')
+          .replace(/[^a-z0-9]/g, '');
+      }
       function findMeterMatch(extracted) {
         if (!extracted) return null;
         const acct = (extracted.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
         const meterNum = (extracted.MeterNumber || '').replace(/[\s\-]/g, '').toLowerCase();
         const billComm = (extracted.Commodity || '').toLowerCase();
+        const billAddr = _normalizeAddr(extracted.ServiceAddress);
         let bestMatch = null;
+        let addrMatch = null;
         for (const proj of projects) {
           const udProj = getUDProj(proj.id);
           for (const bldg of udProj.buildings || []) {
@@ -19272,9 +19288,25 @@
                 if (!bestMatch) bestMatch = { proj, bldg, meter: m, projId: proj.id, bldgId: bldg.id, meterId: m.id };
               }
             }
+            if (!bestMatch && billAddr && billAddr.length >= 5) {
+              const bldgAddr = _normalizeAddr(bldg.address);
+              if (bldgAddr && bldgAddr === billAddr) {
+                const firstMeter = (bldg.meters || [])[0];
+                if (firstMeter && !addrMatch) {
+                  addrMatch = {
+                    proj,
+                    bldg,
+                    meter: firstMeter,
+                    projId: proj.id,
+                    bldgId: bldg.id,
+                    meterId: firstMeter.id,
+                  };
+                }
+              }
+            }
           }
         }
-        return bestMatch;
+        return bestMatch || addrMatch;
       }
       function showAutoAssignBanner(match, extracted) {
         if (!match) return;
@@ -22671,7 +22703,8 @@
           const keyStyle = isEmpty && !fw.length ? 'color:var(--text3)' : '';
           const inputStyle = isEmpty ? 'border-color:var(--border2);color:var(--text3)' : '';
           const dupKeyStyle = isDupDiff ? 'color:var(--amber)' : keyStyle;
-          const dupInputStyle = isDupDiff ? inputStyle + ';color:var(--amber)' : inputStyle;
+          const acInputColor = autoCorrect || ocrConsensus ? ';color:#eab308' : '';
+          const dupInputStyle = isDupDiff ? inputStyle + ';color:var(--amber)' : inputStyle + acInputColor;
           const dupIcon = isDupDiff
             ? `<span title="Existing: ${(dupDiff.existVal || '(empty)').replace(/"/g, '&quot;')}" style="cursor:help;color:var(--amber);font-size:11px;margin-left:4px">&#9432;</span>`
             : '';
