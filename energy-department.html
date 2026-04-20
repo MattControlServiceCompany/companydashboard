@@ -24854,6 +24854,110 @@
         return b ? b.meters.find((m) => m.id === mid) : null;
       }
 
+      const UNIT_REGISTRY = {
+        Electric: {
+          usage: ['kWh', 'MWh', 'BTU', 'MMBtu'],
+          demand: ['kW', 'MW'],
+          defaultUsage: 'kWh',
+          defaultDemand: 'kW',
+        },
+        Gas: {
+          usage: ['Therms', 'CCF', 'MCF', 'DTh', 'BTU', 'MMBtu'],
+          demand: [],
+          defaultUsage: 'Therms',
+          defaultDemand: null,
+        },
+        Water: {
+          usage: ['Gallons', 'kGal', 'CCF'],
+          demand: [],
+          defaultUsage: 'Gallons',
+          defaultDemand: null,
+        },
+        Propane: {
+          usage: ['Gallons', 'Therms', 'BTU', 'MMBtu'],
+          demand: [],
+          defaultUsage: 'Gallons',
+          defaultDemand: null,
+        },
+        Steam: {
+          usage: ['Therms', 'MLbs', 'BTU', 'MMBtu'],
+          demand: [],
+          defaultUsage: 'Therms',
+          defaultDemand: null,
+        },
+      };
+
+      const UNIT_TO_BASE = {
+        Therms: { base: 'Therms', factor: 1 },
+        CCF: { base: 'Therms', factor: 1.037 },
+        MCF: { base: 'Therms', factor: 10.37 },
+        DTh: { base: 'Therms', factor: 10 },
+        MLbs: { base: 'Therms', factor: 10 },
+        kWh: { base: 'kWh', factor: 1 },
+        MWh: { base: 'kWh', factor: 1000 },
+        kW: { base: 'kW', factor: 1 },
+        MW: { base: 'kW', factor: 1000 },
+        Gallons: { base: 'Gallons', factor: 1 },
+        kGal: { base: 'Gallons', factor: 1000 },
+      };
+
+      const UNIT_TO_BASE_BY_COMMODITY = {
+        BTU: {
+          Gas: { base: 'Therms', factor: 0.00001 },
+          Electric: { base: 'kWh', factor: 0.000293071 },
+          Propane: { base: 'Therms', factor: 0.00001 },
+          Steam: { base: 'Therms', factor: 0.00001 },
+        },
+        MMBtu: {
+          Gas: { base: 'Therms', factor: 10 },
+          Electric: { base: 'kWh', factor: 293.071 },
+          Propane: { base: 'Therms', factor: 10 },
+          Steam: { base: 'Therms', factor: 10 },
+        },
+        CCF: { Water: { base: 'Gallons', factor: 748.05 } },
+        Gallons: { Propane: { base: 'Therms', factor: 0.9153 } },
+      };
+
+      function _unitInfo(unit, commodity) {
+        const byCom = UNIT_TO_BASE_BY_COMMODITY[unit];
+        if (byCom && commodity && byCom[commodity]) return byCom[commodity];
+        return UNIT_TO_BASE[unit] || null;
+      }
+
+      function convertUnit(value, fromUnit, toUnit, commodity) {
+        if (!fromUnit || !toUnit || fromUnit === toUnit) return value;
+        const v = parseFloat(value);
+        if (isNaN(v)) return value;
+        const from = _unitInfo(fromUnit, commodity);
+        const to = _unitInfo(toUnit, commodity);
+        if (!from || !to || from.base !== to.base) return value;
+        return (v * from.factor) / to.factor;
+      }
+
+      function getMeterBillUnit(m) {
+        if (m.billUnit) return m.billUnit;
+        const reg = UNIT_REGISTRY[m.commodity];
+        return reg ? reg.defaultUsage : 'kWh';
+      }
+
+      function getMeterDisplayUnit(m) {
+        if (m.displayUnit) return m.displayUnit;
+        return getMeterBillUnit(m);
+      }
+
+      function getMeterDemandDisplayUnit(m) {
+        if (!m.displayUnit && !m.billUnit) return UNIT_REGISTRY[m.commodity]?.defaultDemand || null;
+        const reg = UNIT_REGISTRY[m.commodity];
+        if (!reg || !reg.demand.length) return null;
+        const dispU = getMeterDisplayUnit(m);
+        if (dispU === 'MWh' || dispU === 'MW') return 'MW';
+        return reg.defaultDemand;
+      }
+
+      function convertBillValue(value, m) {
+        return convertUnit(value, getMeterBillUnit(m), getMeterDisplayUnit(m), m.commodity);
+      }
+
       /* ── COMMODITY HELPERS ── */
       function commodityPill(c) {
         const map = {
