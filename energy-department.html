@@ -17594,9 +17594,23 @@
             });
           }
         }
-        // Louisburg gas rate cross-check: known rate is $0.798062/therm
-        const _lbgRate = 0.798062;
+        // Louisburg gas rate cross-check with date-aware rate schedule
+        const _lbgGasRates = [{ effectiveDate: '2000-01-01', rate: 0.798062 }];
         if (gasUsage > 0 && (extracted.UtilityCompany || '').includes('Louisburg')) {
+          let billDate = extracted.BillingPeriodEnd || extracted.BillingPeriodStart || extracted.BillDate || '';
+          const _bdParts = billDate.split('/');
+          const billISO =
+            _bdParts.length === 3
+              ? (_bdParts[2].length === 2 ? '20' + _bdParts[2] : _bdParts[2]) +
+                '-' +
+                _bdParts[0].padStart(2, '0') +
+                '-' +
+                _bdParts[1].padStart(2, '0')
+              : '';
+          let _lbgRate = _lbgGasRates[0].rate;
+          for (const r of _lbgGasRates) {
+            if (billISO >= r.effectiveDate) _lbgRate = r.rate;
+          }
           const actualGasCharge = pf(extracted.GasCharge);
           if (actualGasCharge > 0) {
             const expectedCharge = gasUsage * _lbgRate;
@@ -17611,7 +17625,9 @@
                   actualRate.toFixed(6) +
                   '/therm (expected $' +
                   _lbgRate.toFixed(6) +
-                  '/therm). Charge diff: $' +
+                  '/therm as of ' +
+                  billISO +
+                  '). Charge diff: $' +
                   chargeDiff.toFixed(2),
               });
             }
