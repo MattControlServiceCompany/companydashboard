@@ -16893,7 +16893,7 @@
               bills.push({
                 ...shared,
                 Commodity: 'Gas',
-                NaturalGasCCF: gas.usage || null,
+                NaturalGasTherms: gas.usage || null,
                 GasCharge: gas.charge,
                 TotalCurrentCharges: gasTotal,
                 TotalAmountDue: gasTotal,
@@ -17129,7 +17129,7 @@
               bills.push({
                 ...shared,
                 Commodity: 'Gas',
-                NaturalGasCCF: gas.usage || null,
+                NaturalGasTherms: gas.usage || null,
                 GasCharge: gas.charge,
                 FuelAdjustment: signedFuelAdj,
                 TotalCurrentCharges: gasTotal,
@@ -19341,6 +19341,11 @@
           // empty string otherwise so the Edit modal's per-commodity layout renders cleanly.
           naturalGasCCF: extracted.NaturalGasCCF || '',
           naturalGasTherms: extracted.NaturalGasTherms || '',
+          therms: pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF) || '',
+          thermCost:
+            extracted.NaturalGasTherms || extracted.NaturalGasCCF
+              ? extracted.TotalCurrentCharges || extracted.TotalAmountDue || ''
+              : '',
           gasCharge: extracted.GasCharge || '',
           fuelAdjustment: extracted.FuelAdjustment || '',
           waterUsage: extracted.WaterUsage || '',
@@ -22022,7 +22027,7 @@
           { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
           { type: 'pair', fields: ['BillDate'] },
           { section: 'Charges' },
-          { type: 'pair', fields: ['NaturalGasCCF'] },
+          { type: 'pair', fields: ['NaturalGasTherms', 'NaturalGasCCF'] },
           { type: 'charge-line', label: 'Gas', chargeField: 'GasCharge', rateKey: null },
           { type: 'charge-line', label: 'Fuel Adjustment', chargeField: 'FuelAdjustment', rateKey: null },
           { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
@@ -23403,6 +23408,8 @@
           solarCredit: extracted.SolarCredit || '',
           naturalGasCCF: extracted.NaturalGasCCF || '',
           naturalGasTherms: extracted.NaturalGasTherms || '',
+          therms: isGas ? pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF) || '' : '',
+          thermCost: isGas ? extracted.TotalCurrentCharges || extracted.TotalAmountDue || '' : '',
           gasCharge: extracted.GasCharge || '',
           fuelAdjustment: extracted.FuelAdjustment || '',
           waterUsage: extracted.WaterUsage || '',
@@ -33243,6 +33250,7 @@
           { key: 'end', label: 'End Date', type: 'date', pdfKey: 'BillingPeriodEnd' },
           { key: 'billDate', label: 'Bill Date', type: 'text', pdfKey: 'BillDate' },
           { section: 'Charges' },
+          { key: 'naturalGasTherms', label: 'Natural Gas Therms', type: 'number', pdfKey: 'NaturalGasTherms' },
           { key: 'naturalGasCCF', label: 'Natural Gas (CCF)', type: 'number', pdfKey: 'NaturalGasCCF' },
           { key: 'gasCharge', label: 'Gas Charge', type: 'currency', pdfKey: 'GasCharge' },
           { key: 'fuelAdjustment', label: 'Fuel Adjustment', type: 'currency', pdfKey: 'FuelAdjustment' },
@@ -33606,7 +33614,13 @@
           ? '✏️ Edit Billing Period'
           : '+ Add Billing Period — ' + meterLabel(m);
         const commKey = (m.commodity || 'Electric').toLowerCase();
-        const layout = BILL_MODAL_LAYOUTS[commKey] || BILL_MODAL_LAYOUTS.electric;
+        let layout = BILL_MODAL_LAYOUTS[commKey] || BILL_MODAL_LAYOUTS.electric;
+        if (commKey === 'gas') {
+          const hasTherms = row && (row.naturalGasTherms || row.NaturalGasTherms);
+          layout = layout.map((r) =>
+            r.qtyField === 'NaturalGasCCF' && hasTherms ? { ...r, qtyField: 'NaturalGasTherms', unit: 'Therms' } : r,
+          );
+        }
         const schemaEntry = (pdfKey) => {
           const schema = _billSchemaFor(m.commodity);
           return (
