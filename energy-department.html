@@ -20479,16 +20479,17 @@
         //   "when there is a bill that the code recognizes belongs to an existing
         //    meter or project the user should not have to do anything other than
         //    click save."
-        const selectedPid = parseInt(document.getElementById('pdfProjSel').value) || null;
-        // Pre-resolve every bill's destination so we can tell if we even need the
-        // project picker. Any bill that resolves to 'unassigned' means we'd be saving
-        // it without a home and should prompt the user to pick one first.
+        let selectedPid = parseInt(document.getElementById('pdfProjSel').value) || null;
+        let inferredPid = selectedPid;
         const needsProjectIndices = [];
         for (let i = 0; i < bills.length; i++) {
-          const r = _resolveBillDestination(bills[i], dupMap[i], selectedPid);
+          const r = _resolveBillDestination(bills[i], dupMap[i], inferredPid);
+          if (r.method === 'match' && !inferredPid) {
+            inferredPid = r.match.projId;
+          }
           if (r.method === 'unassigned') needsProjectIndices.push(i);
         }
-        if (needsProjectIndices.length > 0 && !selectedPid) {
+        if (needsProjectIndices.length > 0 && !inferredPid) {
           showToast(
             needsProjectIndices.length +
               ' bill' +
@@ -20497,6 +20498,9 @@
           );
           console.log('[_dupBulkAction] unassigned bills without projId:', needsProjectIndices);
           return;
+        }
+        if (needsProjectIndices.length > 0 && inferredPid && !selectedPid) {
+          selectedPid = inferredPid;
         }
 
         const verb = action === 'overwrite' ? 'overwritten' : action === 'merge' ? 'merged' : 'skipped';
