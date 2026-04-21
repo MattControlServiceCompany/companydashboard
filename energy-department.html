@@ -24119,7 +24119,8 @@
       // ── Core parser: text → events ──
       function dcParseAndRender(text, sourceName) {
         dcHideProg();
-        const events = dcExtractEvents(text);
+        let events = dcExtractCalendarEvents(text);
+        if (events.length <= 3) events = dcExtractEvents(text);
         if (!events.length) {
           showToast('No dates found in ' + sourceName + '. Try pasting text instead.');
           document.getElementById('dcEmpty').style.display = 'block';
@@ -24730,16 +24731,13 @@
           return 'Other';
         }
 
-        // Detect school year from header (e.g. "2025-2026 School Calendar")
         const yearMatch = text.match(/(\d{4})\s*[-–]\s*(\d{4})\s+(?:School|District|Academic)/i);
         const startSchoolYear = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
         const endSchoolYear = yearMatch ? parseInt(yearMatch[2]) : startSchoolYear + 1;
-        // Map month numbers to the correct year (Aug-Dec = startYear, Jan-Jul = endYear)
         function yearForMonth(mo) {
           return mo >= 8 ? startSchoolYear : endSchoolYear;
         }
 
-        // Also detect month-year headers like "August-25" → month 8, year 2025
         const monthYearMap = {};
         const myRe =
           /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s*[-–]\s*(\d{2,4})\b/gi;
@@ -24751,57 +24749,120 @@
           if (mo) monthYearMap[mo] = yr;
         }
 
-        // Strategy 1: Parse "MONTH day(-day) - description" format (school calendar PDFs)
-        // Multi-column PDFs (3-column layout) put events from different months on the
-        // same text line separated by 3+ spaces. Split each line into column segments
-        // first, then reassemble into single-column text for the month-header parser.
-        const monthHeaderRe =
-          /^(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\b/i;
-        const rawLines = text
-          .split(/\n/)
-          .filter((l) => !/\bSU\s+M\s+T\s+W\b/i.test(l) && !/^\s*\d[\d\s]+$/.test(l.trim()));
-        const _colSegments = [];
-        rawLines.forEach((line) => {
-          const segments = line
-            .split(/\s{3,}/)
-            .map((s) => s.trim())
-            .filter(Boolean);
-          segments.forEach((s) => _colSegments.push(s));
-        });
-        const cleanLines = _colSegments;
-        let currentMonth = null;
-        let currentYear = startSchoolYear;
-        const pendingText = [];
+        const MONTH_NAMES_RE = 'JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER';
+        const monthHeaderRe = new RegExp('\\b(' + MONTH_NAMES_RE + ')\\b', 'gi');
+        const monthHeaderStartRe = new RegExp('^(' + MONTH_NAMES_RE + ')\\b', 'i');
 
-        cleanLines.forEach((line) => {
-          line = line.trim();
-          if (!line) return;
-          const headerM = line.match(monthHeaderRe);
-          if (headerM) {
-            // Process any pending text from previous month
-            if (currentMonth !== null && pendingText.length) {
-              _parseMonthEvents(pendingText.join(' '), currentMonth, currentYear, events, detectType);
-              pendingText.length = 0;
-            }
-            currentMonth = monthMap[headerM[1].toLowerCase()];
-            currentYear = monthYearMap[currentMonth] || yearForMonth(currentMonth);
-            // Rest of line after month name may have events
-            const rest = line.slice(headerM[0].length).trim();
-            if (rest) pendingText.push(rest);
-          } else if (currentMonth !== null) {
-            pendingText.push(line);
-          }
+        // Filter out calendar grid rows and month-year labels (e.g. "August-25")
+        const rawLines = text.split(/\n/).filter((l) => {
+          if (/\bSU\s+M\s+T\s+W\b/i.test(l)) return false;
+          if (/^\s*\d[\d\s]*$/.test(l.trim())) return false;
+          if (
+            /^\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s*[-–]\s*\d{2,4}\s*$/i.test(
+              l.trim(),
+            )
+          )
+            return false;
+          return true;
         });
-        // Process final month
-        if (currentMonth !== null && pendingText.length) {
-          _parseMonthEvents(pendingText.join(' '), currentMonth, currentYear, events, detectType);
+
+        // Detect events section: find the first line containing a month header
+        // that is NOT a month-year label. The events section has month names
+        // followed by "day - description" patterns on subsequent lines.
+        let eventsStartIdx = -1;
+        for (let i = 0; i < rawLines.length; i++) {
+          if (monthHeaderStartRe.test(rawLines[i].trim())) {
+            eventsStartIdx = i;
+            break;
+          }
+        }
+        if (eventsStartIdx < 0) return events;
+        const eventLines = rawLines.slice(eventsStartIdx);
+
+        // Detect multi-column layout: find a line with 2+ month headers.
+        // Use header character positions to determine column boundaries.
+        let colBounds = null;
+        for (const line of eventLines) {
+          const headers = [];
+          let hm;
+          const re = new RegExp(monthHeaderRe.source, 'gi');
+          while ((hm = re.exec(line)) !== null) {
+            headers.push({ name: hm[1], pos: hm.index });
+          }
+          if (headers.length >= 2) {
+            colBounds = [];
+            for (let c = 0; c < headers.length; c++) {
+              const start =
+                c === 0 ? 0 : Math.floor((headers[c - 1].pos + headers[c - 1].name.length + headers[c].pos) / 2);
+              colBounds.push(start);
+            }
+            break;
+          }
         }
 
-        // Strategy 2: Scan the whole text for date tokens and pair each with the
-        // text that follows it up to the next date token. Works when Strategy 1's
-        // month-header parse returned nothing OR only a single bogus event (common
-        // when OCR flattens the PDF into one line and no month headers are detected).
-        if (events.length <= 1) {
+        // Split each line into column segments, then process each column
+        // independently with its own month context.
+        const numCols = colBounds ? colBounds.length : 1;
+        const colStreams = Array.from({ length: numCols }, () => []);
+
+        eventLines.forEach((line) => {
+          if (!colBounds) {
+            colStreams[0].push(line.trim());
+            return;
+          }
+          for (let c = 0; c < numCols; c++) {
+            const start = colBounds[c];
+            const end = c < numCols - 1 ? colBounds[c + 1] : line.length;
+            const seg = (start < line.length ? line.substring(start, end) : '').trim();
+            if (seg) colStreams[c].push(seg);
+          }
+        });
+
+        // Process each column stream: track current month, parse events
+        colStreams.forEach((stream) => {
+          let curMonth = null;
+          let curYear = startSchoolYear;
+
+          stream.forEach((seg) => {
+            // Check for month header(s) in this segment
+            const hm = seg.match(monthHeaderStartRe);
+            if (hm) {
+              curMonth = monthMap[hm[1].toLowerCase()];
+              curYear = monthYearMap[curMonth] || yearForMonth(curMonth);
+              seg = seg.slice(hm[0].length).trim();
+              if (!seg) return;
+            }
+            if (curMonth === null) return;
+
+            // Check if segment contains an inline month header mid-text
+            // e.g. "1st Day for Preschool, 6th, 9th Grade DECEMBER"
+            // Split at inline headers and process each part
+            const inlineRe = new RegExp('\\s+(' + MONTH_NAMES_RE + ')\\b', 'gi');
+            let lastIdx = 0;
+            let imatch;
+            const parts = [];
+            while ((imatch = inlineRe.exec(seg)) !== null) {
+              if (imatch.index > lastIdx) {
+                parts.push({ text: seg.slice(lastIdx, imatch.index).trim(), month: curMonth, year: curYear });
+              }
+              curMonth = monthMap[imatch[1].toLowerCase()];
+              curYear = monthYearMap[curMonth] || yearForMonth(curMonth);
+              lastIdx = imatch.index + imatch[0].length;
+            }
+            if (lastIdx < seg.length) {
+              parts.push({ text: seg.slice(lastIdx).trim(), month: curMonth, year: curYear });
+            }
+
+            parts.forEach((part) => {
+              if (!part.text) return;
+              _parseMonthEvents(part.text, part.month, part.year, events, detectType);
+            });
+          });
+        });
+
+        // Fallback: if column-based parse found very few events, try a
+        // direct global scan for date tokens (Strategy 2).
+        if (events.length <= 3) {
           events.length = 0;
           const dateRe =
             /(\d{1,2})\/(\d{1,2})\/(\d{2,4})|(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+(\d{1,2})(?:\s*[-–]\s*(\d{1,2}))?,?\s*(\d{4})?/gi;
@@ -24810,7 +24871,6 @@
           while ((mm = dateRe.exec(text)) !== null) {
             let iso, dayEnd;
             if (mm[1]) {
-              // numeric form 12/25/2024
               let yr = mm[3];
               if (!yr) yr = startSchoolYear;
               if (String(yr).length === 2) yr = '20' + yr;
@@ -24834,12 +24894,10 @@
               .replace(/^[\s\-–—:,]+/, '')
               .replace(/[\s\-–—:,]+$/, '')
               .trim();
-            // Trim at obvious separators so one event doesn't swallow the next line
             const stop = name.search(/\s(?:•|·|\|)\s|\s{3,}/);
             if (stop > 2) name = name.slice(0, stop).trim();
             if (name.length < 2 || name.length > 80) continue;
             events.push({ date: h.iso, name, type: detectType(name) });
-            // Expand day ranges (e.g. "Dec 23-27 - Winter Break")
             if (h.dayEnd && /\d{4}-\d{2}-(\d{2})$/.test(h.iso)) {
               const startDay = parseInt(h.iso.slice(-2));
               for (let d = startDay + 1; d <= h.dayEnd; d++) {
@@ -24852,10 +24910,8 @@
         return events;
       }
 
-      // Parse "day(-day) - description" pairs within a month's event text
       function _parseMonthEvents(text, month, year, events, detectType) {
-        // Find all "number(-number) - text" boundaries by position, then slice descriptions between them
-        const re = /(\d{1,2})(?:-(\d{1,2}))?\s+[-–]\s+/g;
+        const re = /(\d{1,2})(?:-(\d{1,2}))?\s*[-–]\s+/g;
         let m;
         const positions = [];
         while ((m = re.exec(text)) !== null) {
