@@ -17046,7 +17046,8 @@
             }
             if (!CustomerName && AccountNumber) CustomerName = _lbg_facilityLookup(AccountNumber);
 
-            // Billing period — a line with exactly two MM/DD/YY dates.
+            // Billing period — a line with two MM/DD/YY dates. Tolerates OCR
+            // garbling the second date (e.g. "10/15/25  1 15128" for "11/15/25").
             let BillingPeriodStart = null;
             let BillingPeriodEnd = null;
             for (const raw of cleaned.split(/\r?\n/)) {
@@ -17057,6 +17058,26 @@
                 BillingPeriodEnd = m[2];
                 break;
               }
+              const m2 = ln.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s+/);
+              if (m2 && !BillingPeriodStart) {
+                BillingPeriodStart = m2[1];
+                const sp = m2[1].split('/');
+                const mo = parseInt(sp[0]);
+                const yr = sp[2];
+                const nextMo = mo >= 12 ? 1 : mo + 1;
+                const nextYr = mo >= 12 ? String(parseInt(yr) + 1) : yr;
+                BillingPeriodEnd = nextMo + '/15/' + nextYr;
+                BillingPeriodEnd = '_inferred';
+              }
+            }
+            if (BillingPeriodEnd === '_inferred' && BillingPeriodStart) {
+              const sp = BillingPeriodStart.split('/');
+              const mo = parseInt(sp[0]);
+              const day = parseInt(sp[1]);
+              const yr = sp[2];
+              const nextMo = mo >= 12 ? 1 : mo + 1;
+              const nextYr = mo >= 12 ? String(parseInt(yr) + 1) : yr;
+              BillingPeriodEnd = nextMo + '/' + day + '/' + nextYr;
             }
 
             // Scan each service line by label prefix. Multi-service pages
@@ -21396,7 +21417,16 @@
               if (rule) {
                 // Use extractAll if available (multi-bill PDF support)
                 let bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
-                let validBills = bills.filter((b) => b.BillingPeriodStart || b.kWhConsumed);
+                let validBills = bills.filter(
+                  (b) =>
+                    b.BillingPeriodStart ||
+                    b.kWhConsumed ||
+                    b.NaturalGasTherms ||
+                    b.NaturalGasCCF ||
+                    b.WaterUsage ||
+                    b.GasCharge ||
+                    b.TotalCurrentCharges,
+                );
 
                 // ── OCR RETRY: If critical fields are missing, retry with enhanced OCR ──
                 // Trigger threshold: only retry when the total missing-field count
