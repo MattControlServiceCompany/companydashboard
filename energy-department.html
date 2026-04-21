@@ -19470,6 +19470,71 @@
           }
         }
 
+        // ── BILLING PERIOD GAP DETECTION ──
+        // Flag gaps between consecutive bills of the same commodity.
+        // Groups by Commodity (or 'Electric' default), sorts by start date,
+        // checks for gaps > 5 days between one bill's end and the next's start.
+        if (bills.length > 1) {
+          const _commGroups = {};
+          for (const b of bills) {
+            const c = b.Commodity || 'Electric';
+            if (!_commGroups[c]) _commGroups[c] = [];
+            _commGroups[c].push(b);
+          }
+          for (const [comm, group] of Object.entries(_commGroups)) {
+            const sorted = group
+              .filter((b) => b.BillingPeriodStart && b.BillingPeriodEnd)
+              .sort((a, b) => {
+                const da = new Date(
+                  a.BillingPeriodStart.replace(
+                    /(\d+)\/(\d+)\/(\d+)/,
+                    (_, m, d, y) =>
+                      (y.length === 2 ? '20' + y : y) + '-' + m.padStart(2, '0') + '-' + d.padStart(2, '0'),
+                  ),
+                );
+                const db = new Date(
+                  b.BillingPeriodStart.replace(
+                    /(\d+)\/(\d+)\/(\d+)/,
+                    (_, m, d, y) =>
+                      (y.length === 2 ? '20' + y : y) + '-' + m.padStart(2, '0') + '-' + d.padStart(2, '0'),
+                  ),
+                );
+                return da - db;
+              });
+            for (let i = 1; i < sorted.length; i++) {
+              const prevEnd = sorted[i - 1].BillingPeriodEnd;
+              const curStart = sorted[i].BillingPeriodStart;
+              const toDate = (d) => {
+                const p = d.split('/');
+                return new Date(
+                  (p[2].length === 2 ? '20' + p[2] : p[2]) +
+                    '-' +
+                    p[0].padStart(2, '0') +
+                    '-' +
+                    p[1].padStart(2, '0') +
+                    'T12:00:00',
+                );
+              };
+              const gapDays = Math.round((toDate(curStart) - toDate(prevEnd)) / 86400000);
+              if (gapDays > 5) {
+                sorted[i]._billing_gap = {
+                  days: gapDays,
+                  afterPeriod: prevEnd,
+                  commodity: comm,
+                  reason:
+                    gapDays +
+                    '-day gap in ' +
+                    comm +
+                    ' billing: previous period ended ' +
+                    prevEnd +
+                    ', this period starts ' +
+                    curStart,
+                };
+              }
+            }
+          }
+        }
+
         return bills;
       }
 
@@ -20465,7 +20530,6 @@
       }
 
       async function _dupBulkAction(action) {
-        // eslint-disable-next-line no-console
         console.log('[_dupBulkAction] called with action =', action);
         const dupMap = window._pdfDupMap || {};
         const bills = window._pdfMultiBills;
@@ -20474,7 +20538,15 @@
           showToast('No bills to process');
           return;
         }
-        console.log('[_dupBulkAction] bills:', bills.length, 'dupMap keys:', Object.keys(dupMap).length);
+        const commFilter = window._pdfCommTab && window._pdfCommTab !== 'All' ? window._pdfCommTab : null;
+        console.log(
+          '[_dupBulkAction] bills:',
+          bills.length,
+          'dupMap keys:',
+          Object.keys(dupMap).length,
+          'commFilter:',
+          commFilter,
+        );
         closeDupModal();
         // Store the source PDF once per session and tag every bill with a shared key.
         // Must run BEFORE the save loop so per-bill save paths can read
@@ -20504,6 +20576,7 @@
         let inferredPid = selectedPid;
         const needsProjectIndices = [];
         for (let i = 0; i < bills.length; i++) {
+          if (commFilter && (bills[i].Commodity || 'Other') !== commFilter) continue;
           const r = _resolveBillDestination(bills[i], dupMap[i], inferredPid);
           if (r.method === 'match' && !inferredPid) {
             inferredPid = r.match.projId;
@@ -20535,6 +20608,7 @@
         let skipped = 0;
 
         for (let i = 0; i < bills.length; i++) {
+          if (commFilter && (bills[i].Commodity || 'Other') !== commFilter) continue;
           const dup = dupMap[i];
           const period = (bills[i].BillingPeriodStart || '?') + ' → ' + (bills[i].BillingPeriodEnd || '?');
           _bulkProgressUpdate(i + 1, bills.length, 'Bill ' + (i + 1) + ' of ' + bills.length + ' — ' + period);
@@ -23390,7 +23464,14 @@
         // flex-shrink:0, and the grid is in #pdfScrollBody which is the flex:1 overflow-y
         // scroll container — so everything above Account Info stays frozen exactly like
         // the Utility Data page, no position:sticky tricks required.
-        elHdr.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${sumMismatchHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}`;
+        const gapInfo = parsed._billing_gap;
+        const gapHtml = gapInfo
+          ? `<div style="padding:10px 14px;margin:8px 0;border-radius:8px;background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);color:var(--amber);font-size:13px;display:flex;align-items:center;gap:8px">
+            <span style="font-size:18px">&#9888;</span>
+            <span><strong>${gapInfo.days}-day gap</strong> in ${gapInfo.commodity} billing before this period (previous ended ${gapInfo.afterPeriod})</span>
+          </div>`
+          : '';
+        elHdr.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${sumMismatchHtml}${gapHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}`;
         el.innerHTML = `<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
 
         // ── Wire up change handlers: update data + recalculate total when user edits ──
@@ -24750,6 +24831,11 @@
       // ── District Calendar CRUD + Parse (new flow) ──
       const DIST_CAL_TYPES = ['Holiday', 'Break', 'Early Release', 'Teacher Day', 'First Day', 'Last Day', 'Other'];
 
+      window._distCalView = window._distCalView || {};
+      function distCalToggleView(projId) {
+        window._distCalView[projId] = window._distCalView[projId] === 'calendar' ? 'list' : 'calendar';
+        renderDistCalTable(projId);
+      }
       function renderDistCalTable(projId) {
         const p = projects.find((x) => x.id === projId);
         if (!p) return;
@@ -24762,8 +24848,74 @@
           return;
         }
         const rows = p.districtCalendar.sort((a, b) => new Date(a.date) - new Date(b.date));
-        const typeOpts = DIST_CAL_TYPES.map((t) => `<option>${t}</option>`).join('');
-        wrap.innerHTML = `<table class="dtbl" style="width:100%">
+        const viewMode = window._distCalView[projId] || 'list';
+        const toggleBtn = `<div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+          <button class="btn btn-ghost btn-sm" onclick="distCalToggleView(${projId})" style="font-size:11px">
+            ${viewMode === 'list' ? '📅 Calendar View' : '📋 List View'}
+          </button></div>`;
+
+        if (viewMode === 'calendar') {
+          const evByDate = {};
+          for (const ev of rows) {
+            if (!ev.date) continue;
+            if (!evByDate[ev.date]) evByDate[ev.date] = [];
+            evByDate[ev.date].push(ev);
+          }
+          const TYPE_COLORS = {
+            Holiday: '#ef4444',
+            Break: '#f59e0b',
+            'Early Release': '#8b5cf6',
+            'Teacher Day': '#3b82f6',
+            'First Day': '#22c55e',
+            'Last Day': '#f97316',
+            Conference: '#06b6d4',
+            'End of Quarter': '#ec4899',
+            Other: '#6b7280',
+          };
+          const firstEv = rows[0]?.date ? new Date(rows[0].date + 'T12:00:00') : new Date();
+          const lastEv = rows[rows.length - 1]?.date ? new Date(rows[rows.length - 1].date + 'T12:00:00') : new Date();
+          let startMo = new Date(firstEv.getFullYear(), firstEv.getMonth(), 1);
+          const endMo = new Date(lastEv.getFullYear(), lastEv.getMonth() + 1, 0);
+          let calHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">';
+          while (startMo <= endMo) {
+            const yr = startMo.getFullYear(),
+              mo = startMo.getMonth();
+            const moName = startMo.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            const firstDay = new Date(yr, mo, 1).getDay();
+            const daysInMo = new Date(yr, mo + 1, 0).getDate();
+            let grid = `<div style="border:1px solid var(--border);border-radius:8px;padding:10px">
+              <div style="font-weight:700;font-size:13px;margin-bottom:6px;color:var(--em)">${moName}</div>
+              <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;font-size:10px;text-align:center">
+              <div style="color:var(--text3);font-weight:600">Su</div><div style="color:var(--text3);font-weight:600">Mo</div><div style="color:var(--text3);font-weight:600">Tu</div><div style="color:var(--text3);font-weight:600">We</div><div style="color:var(--text3);font-weight:600">Th</div><div style="color:var(--text3);font-weight:600">Fr</div><div style="color:var(--text3);font-weight:600">Sa</div>`;
+            for (let e = 0; e < firstDay; e++) grid += '<div></div>';
+            for (let d = 1; d <= daysInMo; d++) {
+              const iso = yr + '-' + String(mo + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+              const dayEvs = evByDate[iso] || [];
+              const bg = dayEvs.length ? TYPE_COLORS[dayEvs[0].type] || '#6b7280' : 'transparent';
+              const title = dayEvs.map((e) => e.name + ' (' + e.type + ')').join('\n');
+              const opacity = dayEvs.length ? '0.25' : '0';
+              grid += `<div style="position:relative;padding:2px;border-radius:3px;min-height:22px" title="${title.replace(/"/g, '&quot;')}">
+                <div style="position:absolute;inset:0;background:${bg};opacity:${opacity};border-radius:3px"></div>
+                <span style="position:relative;${dayEvs.length ? 'font-weight:700;color:' + bg : 'color:var(--text2)'}">${d}</span></div>`;
+            }
+            grid += '</div></div>';
+            calHtml += grid;
+            startMo = new Date(yr, mo + 1, 1);
+          }
+          calHtml += '</div>';
+          const legend = Object.entries(TYPE_COLORS)
+            .map(
+              ([t, c]) =>
+                `<span style="display:inline-flex;align-items:center;gap:3px;margin-right:10px;font-size:10px"><span style="width:8px;height:8px;border-radius:50%;background:${c};display:inline-block"></span>${t}</span>`,
+            )
+            .join('');
+          wrap.innerHTML = toggleBtn + `<div style="margin-bottom:10px">${legend}</div>` + calHtml;
+          return;
+        }
+
+        wrap.innerHTML =
+          toggleBtn +
+          `<table class="dtbl" style="width:100%">
           <thead><tr><th style="width:140px">Date</th><th>Event Name</th><th style="width:140px">Type</th><th style="width:36px"></th></tr></thead>
           <tbody>${rows
             .map((ev, i) => {
