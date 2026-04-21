@@ -15860,6 +15860,44 @@
           }
         }
 
+        // ── On-Peak recovery from kWh identity: OnPeak + OffPeak ≈ kWhConsumed ──
+        if (
+          !result.EnergyOnPeakCharge &&
+          result.EnergyOffPeakCharge &&
+          result.kWhConsumed &&
+          _rates.EnergyOffPeakCharge
+        ) {
+          const totalKwh = _pf(result.kWhConsumed);
+          const offPkKwh = _rates.EnergyOffPeakCharge.qty || 0;
+          const offPkRate = _rates.EnergyOffPeakCharge.rate || 0;
+          const onPkKwh = totalKwh - offPkKwh;
+          if (onPkKwh > 0 && offPkRate > 0) {
+            const onPkRate = t.match(
+              /Energy[\s.]+(?:Ch[gaq9]|C\w{1,2}[gG9])[.:]?\s+On\s+P[kK][\s\S]{0,120}?\$([\d.]+)\s*p[eo]r/i,
+            );
+            const rate = onPkRate ? parseFloat(onPkRate[1]) : null;
+            if (rate && rate > 0) {
+              const charge = Math.round(onPkKwh * rate * 100) / 100;
+              result.EnergyOnPeakCharge = charge.toFixed(2);
+              result.OnPeakKWh = onPkKwh.toFixed(4);
+              result['_auto_recovered_EnergyOnPeakCharge'] = {
+                original: null,
+                corrected: charge.toFixed(2),
+                reason:
+                  'kWh identity: ' +
+                  totalKwh.toFixed(2) +
+                  ' total - ' +
+                  offPkKwh.toFixed(2) +
+                  ' off-peak = ' +
+                  onPkKwh.toFixed(2) +
+                  ' on-peak × $' +
+                  rate +
+                  '/kWh',
+              };
+            }
+          }
+        }
+
         // ── CHARGE RECONCILIATION: if sum doesn't match total, try to recover missing charges ──
         const _compSum =
           _pf(result.CustomerCharge) +
@@ -15910,12 +15948,51 @@
               if (!result.CustomerCharge && /cust|custo/i.test(lcLine)) result.CustomerCharge = uc.val.toFixed(2);
               else if (!result.FacilitiesCharge && /fac/i.test(lcLine)) result.FacilitiesCharge = uc.val.toFixed(2);
               else if (!result.RkVACharge && /rkva|rkv/i.test(lcLine)) result.RkVACharge = uc.val.toFixed(2);
-              // Also try to recover FacilitiesKW from the same line
+              else if (!result.EnergyOnPeakCharge && /energy.*on\s*p|on\s*peak/i.test(lcLine))
+                result.EnergyOnPeakCharge = uc.val.toFixed(2);
+              else if (!result.FranchiseFee && /franch/i.test(lcLine)) result.FranchiseFee = uc.val.toFixed(2);
+              else if (!result.TaxExemptDelivery && /tax.*exempt/i.test(lcLine))
+                result.TaxExemptDelivery = uc.val.toFixed(2);
+              else if (!result.BillOffset && /bill.*offset|offset/i.test(lcLine))
+                result.BillOffset = (-uc.val).toFixed(2);
               if (!result.FacilitiesKW && /fac/i.test(lcLine)) {
                 const kwM = uc.line.match(/([\d,.]+)\s*[kK][Ww]/);
                 if (kwM) result.FacilitiesKW = kwM[1].replace(/,/g, '');
               }
             }
+          }
+        }
+        // Single-missing-field gap inference: when exactly one charge field is
+        // null but expected (based on the energy format or historical data),
+        // and the sum gap matches, fill it from the difference.
+        const _chargeFields = [
+          'CustomerCharge',
+          'FacilitiesCharge',
+          'BilledKWCharge',
+          'EnergyOnPeakCharge',
+          'EnergyOffPeakCharge',
+          'ECACharge',
+          'EERCharge',
+          'PTSCharge',
+          'TDCCharge',
+          'RkVACharge',
+          'TaxExemptDelivery',
+          'BillOffset',
+          'FranchiseFee',
+        ];
+        const _recompSum = _chargeFields.reduce((s, f) => s + _pf(result[f]), 0);
+        const _recompTotal = _pf(result.TotalCurrentCharges);
+        const _recompGap = _recompTotal - _recompSum;
+        if (_recompTotal > 0 && Math.abs(_recompGap) > 0.5) {
+          const nullFields = _chargeFields.filter((f) => result[f] === null || result[f] === undefined);
+          if (nullFields.length === 1 && _recompGap > 0) {
+            result[nullFields[0]] = _recompGap.toFixed(2);
+            result['_auto_recovered_' + nullFields[0]] = {
+              original: null,
+              corrected: _recompGap.toFixed(2),
+              reason:
+                'Inferred from sum gap: total $' + _recompTotal.toFixed(2) + ' - charges $' + _recompSum.toFixed(2),
+            };
           }
         }
 
@@ -21922,13 +21999,17 @@
         const selectedPid = parseInt(document.getElementById('pdfProjSel').value) || null;
         const dupMap = window._pdfDupMap || {};
         await _ensureBatchPdfStored(bills);
+        let inferredPid = selectedPid;
         const unassignedIdx = [];
         for (const i of billIndices) {
           if (dupMap[i] && dupMap[i].action === 'skip') continue;
-          const r = _resolveBillDestination(bills[i], dupMap[i], selectedPid);
+          const r = _resolveBillDestination(bills[i], dupMap[i], inferredPid);
+          if (r.method === 'match' && !inferredPid) {
+            inferredPid = r.match.projId;
+          }
           if (r.method === 'unassigned') unassignedIdx.push(i);
         }
-        if (unassignedIdx.length > 0 && !selectedPid) {
+        if (unassignedIdx.length > 0 && !inferredPid) {
           showToast(
             unassignedIdx.length +
               ' bill' +
@@ -21936,6 +22017,9 @@
               " don't match an existing meter — select a project for those",
           );
           return;
+        }
+        if (unassignedIdx.length > 0 && inferredPid && !selectedPid) {
+          selectedPid = inferredPid;
         }
 
         const summaryEntries = [];
