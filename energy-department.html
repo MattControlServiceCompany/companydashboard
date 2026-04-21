@@ -24628,7 +24628,7 @@
       }
 
       // ── District Calendar CRUD + Parse (new flow) ──
-      const DIST_CAL_TYPES = ['Holiday', 'Break', 'Early Release', 'Teacher Day', 'First/Last Day', 'Other'];
+      const DIST_CAL_TYPES = ['Holiday', 'Break', 'Early Release', 'Teacher Day', 'First Day', 'Last Day', 'Other'];
 
       function renderDistCalTable(projId) {
         const p = projects.find((x) => x.id === projId);
@@ -24835,7 +24835,8 @@
           Break: /break|recess/i,
           'Early Release': /early release|early dismiss|early out|half day|early dismissal/i,
           'Teacher Day': /teacher|in-?service|professional dev|pd day|staff dev|workday|planning|staff pd|onboarding/i,
-          'First/Last Day': /first day|last day|1st day|school (begins|starts|ends|resumes)|commencement|graduation/i,
+          'First Day': /first day|1st day|school (begins|starts|resumes)/i,
+          'Last Day': /last day|last school|school ends|commencement|graduation/i,
           Conference: /conference|pt conference/i,
           'End of Quarter': /end of.*quarter|end of.*semester/i,
         };
@@ -24920,17 +24921,34 @@
         const numCols = colBounds ? colBounds.length : 1;
         const colStreams = Array.from({ length: numCols }, () => []);
 
+        const _isColStart = (s) =>
+          /^(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\b/i.test(s) ||
+          /^\d{1,2}(?:-\d{1,2})?\s*[-–]/.test(s);
+
         eventLines.forEach((line) => {
           if (!colBounds) {
             colStreams[0].push(line.trim());
             return;
           }
+          const segs = [];
           for (let c = 0; c < numCols; c++) {
             const start = colBounds[c];
             const end = c < numCols - 1 ? colBounds[c + 1] : line.length;
-            const seg = (start < line.length ? line.substring(start, end) : '').trim();
-            if (seg) colStreams[c].push(seg);
+            segs.push((start < line.length ? line.substring(start, end) : '').trim());
           }
+          for (let c = 0; c < numCols; c++) {
+            if (!segs[c]) continue;
+            if (c > 0 && !_isColStart(segs[c])) {
+              const prev = c - 1;
+              if (segs[prev] !== undefined) {
+                segs[prev] = (segs[prev] + ' ' + segs[c]).trim();
+                segs[c] = '';
+                continue;
+              }
+            }
+            colStreams[c].push(segs[c]);
+          }
+          if (segs[0] && !colStreams[0].includes(segs[0])) colStreams[0].push(segs[0]);
         });
 
         // Process each column stream: track current month, parse events
