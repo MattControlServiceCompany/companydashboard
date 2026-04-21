@@ -18417,51 +18417,40 @@
             } else {
               // Disagreement between ocrTotal and compSum. Run principled diagnosis.
 
-              // 3b. Strategy B — find rate×qty corrections that close the gap.
-              const targetDelta = compSum - ocrTotal; // positive ⇒ charges too high, negative ⇒ too low
+              // 3b. Strategy B — apply ALL rate×qty corrections where the direction
+              // matches the gap (charge too low when sum is too low, or too high when
+              // sum is too high). Multiple corrections may be needed to close the gap
+              // (e.g., ECA + PTS both under-extracted on a changeover bill).
+              let targetDelta = compSum - ocrTotal;
               if (b._rates && Math.abs(targetDelta) >= 0.02) {
-                const candidates = [];
                 for (const [field, ri] of Object.entries(b._rates)) {
                   const ocrVal = pf(b[field]);
                   if (!ocrVal || !ri.computed) continue;
-                  // Skip garbage extractions (chart numbers picked up as rates)
                   if (ri.computed > 1e6 || ri.rate > 10000) continue;
-                  const chargeDelta = ocrVal - ri.computed; // positive ⇒ OCR too high
-                  // Does swapping OCR → computed close the gap?
-                  if (Math.abs(chargeDelta) > 0.02 && Math.abs(targetDelta - chargeDelta) < 0.5) {
-                    candidates.push({
-                      field,
-                      ocrVal,
-                      computed: ri.computed,
-                      residual: Math.abs(targetDelta - chargeDelta),
+                  const chargeDelta = ocrVal - ri.computed;
+                  if (Math.abs(chargeDelta) < 0.02) continue;
+                  const sameDirection = (targetDelta < 0 && chargeDelta < 0) || (targetDelta > 0 && chargeDelta > 0);
+                  if (sameDirection) {
+                    b['_auto_corrected_' + field] = {
+                      original: b[field],
+                      corrected: ri.computed.toFixed(2),
                       rate: ri.rate,
                       qty: ri.qty,
                       unit: ri.unit,
-                    });
+                      reason:
+                        ri.qty.toFixed(4) +
+                        ' ' +
+                        ri.unit +
+                        ' × $' +
+                        ri.rate.toFixed(5) +
+                        ' = $' +
+                        ri.computed.toFixed(2),
+                    };
+                    b[field] = ri.computed.toFixed(2);
                   }
                 }
-                // Apply best correction (smallest residual to ocrTotal)
-                if (candidates.length > 0) {
-                  candidates.sort((a, c) => a.residual - c.residual);
-                  const best = candidates[0];
-                  b['_auto_corrected_' + best.field] = {
-                    original: b[best.field],
-                    corrected: best.computed.toFixed(2),
-                    rate: best.rate,
-                    qty: best.qty,
-                    unit: best.unit,
-                    reason:
-                      best.qty.toFixed(4) +
-                      ' ' +
-                      best.unit +
-                      ' × $' +
-                      best.rate.toFixed(5) +
-                      ' = $' +
-                      best.computed.toFixed(2),
-                  };
-                  b[best.field] = best.computed.toFixed(2);
-                  compSum = _sumCharges();
-                }
+                compSum = _sumCharges();
+                targetDelta = compSum - ocrTotal;
               }
 
               // 3c. Strategy C — subtraction inference for a lone unverified field.
