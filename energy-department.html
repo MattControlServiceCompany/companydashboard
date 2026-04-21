@@ -24084,7 +24084,6 @@
 
       // ── PDF text extraction via PDF.js ──
       async function dcExtractPDFText(arrayBuffer) {
-        // Load PDF.js from CDN if not already loaded
         if (!window.pdfjsLib) {
           await new Promise((res, rej) => {
             const s = document.createElement('script');
@@ -24101,7 +24100,39 @@
         for (let p = 1; p <= pdf.numPages; p++) {
           const page = await pdf.getPage(p);
           const content = await page.getTextContent();
-          fullText += content.items.map((i) => i.str).join(' ') + '\n';
+          const items = content.items.filter((i) => i.str.trim());
+          if (!items.length) continue;
+          // Reconstruct layout: group by Y position, sort by X within each line
+          const yTol = 3;
+          const lines = [];
+          items.forEach((item) => {
+            const x = item.transform[4];
+            const y = item.transform[5];
+            let line = lines.find((l) => Math.abs(l.y - y) < yTol);
+            if (!line) {
+              line = { y, items: [] };
+              lines.push(line);
+            }
+            line.items.push({ x, str: item.str, w: item.width || 0 });
+          });
+          lines.sort((a, b) => b.y - a.y);
+          lines.forEach((line) => {
+            line.items.sort((a, b) => a.x - b.x);
+            let out = '';
+            let cursor = 0;
+            line.items.forEach((it) => {
+              const col = Math.round(it.x / 4);
+              if (col > cursor + 1) {
+                out += ' '.repeat(Math.min(col - cursor, 40));
+              } else if (out.length > 0) {
+                out += ' ';
+              }
+              out += it.str;
+              cursor = col + Math.round(it.w / 4);
+            });
+            fullText += out + '\n';
+          });
+          fullText += '\n';
         }
         return fullText;
       }
