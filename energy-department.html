@@ -15869,30 +15869,39 @@
         ) {
           const totalKwh = _pf(result.kWhConsumed);
           const offPkKwh = _rates.EnergyOffPeakCharge.qty || 0;
-          const offPkRate = _rates.EnergyOffPeakCharge.rate || 0;
           const onPkKwh = totalKwh - offPkKwh;
-          if (onPkKwh > 0 && offPkRate > 0) {
-            const onPkRate = t.match(
-              /Energy[\s.]+(?:Ch[gaq9]|C\w{1,2}[gG9])[.:]?\s+On\s+P[kK][\s\S]{0,120}?\$([\d.]+)\s*p[eo]r/i,
-            );
-            const rate = onPkRate ? parseFloat(onPkRate[1]) : null;
-            if (rate && rate > 0) {
-              const charge = Math.round(onPkKwh * rate * 100) / 100;
-              result.EnergyOnPeakCharge = charge.toFixed(2);
+          if (onPkKwh > 0) {
+            const _coreSum =
+              _pf(result.CustomerCharge) +
+              _pf(result.FacilitiesCharge) +
+              _pf(result.BilledKWCharge) +
+              _pf(result.EnergyOffPeakCharge) +
+              _pf(result.ECACharge) +
+              _pf(result.EERCharge) +
+              _pf(result.PTSCharge) +
+              _pf(result.TDCCharge) +
+              _pf(result.RkVACharge) +
+              _pf(result.TaxExemptDelivery) +
+              _pf(result.BillOffset) +
+              _pf(result.FranchiseFee);
+            const _coreTotal = _pf(result.TotalCurrentCharges);
+            const _onPkCharge = Math.round((_coreTotal - _coreSum) * 100) / 100;
+            if (_onPkCharge > 0) {
+              result.EnergyOnPeakCharge = _onPkCharge.toFixed(2);
               result.OnPeakKWh = onPkKwh.toFixed(4);
               result['_auto_recovered_EnergyOnPeakCharge'] = {
                 original: null,
-                corrected: charge.toFixed(2),
+                corrected: _onPkCharge.toFixed(2),
                 reason:
-                  'kWh identity: ' +
+                  'Sum gap $' +
+                  _onPkCharge.toFixed(2) +
+                  '; kWh identity: ' +
                   totalKwh.toFixed(2) +
-                  ' total - ' +
+                  ' - ' +
                   offPkKwh.toFixed(2) +
                   ' off-peak = ' +
                   onPkKwh.toFixed(2) +
-                  ' on-peak × $' +
-                  rate +
-                  '/kWh',
+                  ' on-peak kWh',
               };
             }
           }
@@ -15962,10 +15971,10 @@
             }
           }
         }
-        // Single-missing-field gap inference: when exactly one charge field is
-        // null but expected (based on the energy format or historical data),
-        // and the sum gap matches, fill it from the difference.
-        const _chargeFields = [
+        // Gap inference: core charges are fields that appear on virtually every
+        // bill. Optional fields (RkVA, TaxExempt, BillOffset, FranchiseFee) are
+        // legitimately null on most bills and should not block gap recovery.
+        const _coreChargeFields = [
           'CustomerCharge',
           'FacilitiesCharge',
           'BilledKWCharge',
@@ -15975,19 +15984,23 @@
           'EERCharge',
           'PTSCharge',
           'TDCCharge',
+        ];
+        const _allChargeFields = [
+          ..._coreChargeFields,
           'RkVACharge',
           'TaxExemptDelivery',
           'BillOffset',
           'FranchiseFee',
         ];
-        const _recompSum = _chargeFields.reduce((s, f) => s + _pf(result[f]), 0);
+        const _recompSum = _allChargeFields.reduce((s, f) => s + _pf(result[f]), 0);
         const _recompTotal = _pf(result.TotalCurrentCharges);
         const _recompGap = _recompTotal - _recompSum;
-        if (_recompTotal > 0 && Math.abs(_recompGap) > 0.5) {
-          const nullFields = _chargeFields.filter((f) => result[f] === null || result[f] === undefined);
-          if (nullFields.length === 1 && _recompGap > 0) {
-            result[nullFields[0]] = _recompGap.toFixed(2);
-            result['_auto_recovered_' + nullFields[0]] = {
+        if (_recompTotal > 0 && _recompGap > 0.5) {
+          const nullCore = _coreChargeFields.filter((f) => result[f] === null || result[f] === undefined);
+          const target = nullCore.length === 1 ? nullCore[0] : null;
+          if (target) {
+            result[target] = _recompGap.toFixed(2);
+            result['_auto_recovered_' + target] = {
               original: null,
               corrected: _recompGap.toFixed(2),
               reason:
