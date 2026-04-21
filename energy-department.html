@@ -34855,6 +34855,26 @@
         }
         return m;
       })();
+      function _billStripCurrency(v) {
+        return String(v || '').replace(/[$,\s]/g, '');
+      }
+      function _billFmtCurrency(v) {
+        const n = parseFloat(_billStripCurrency(v));
+        if (isNaN(n) || n === 0) return '';
+        return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+      function _billFmtNumber(v) {
+        const n = parseFloat(_billStripCurrency(v));
+        if (isNaN(n) || n === 0) return '';
+        return n.toLocaleString('en-US', { maximumFractionDigits: 4 });
+      }
+      function _billModalFocus(el) {
+        el.value = _billStripCurrency(el.value);
+        el.select();
+      }
+      function _billModalBlur(el, isCurrency) {
+        el.value = isCurrency ? _billFmtCurrency(el.value) : _billFmtNumber(el.value);
+      }
       // Recompute one charge-line's rate from qty + charge, then refresh all
       // running totals + total-match indicator. Called on every input change.
       function _billRecalcRow(chargeKey) {
@@ -34865,8 +34885,8 @@
           const qtyInp = rowEl.querySelector('.bl-qty-input');
           const chargeInp = rowEl.querySelector('.bl-charge-input');
           const rateInp = rowEl.querySelector('.bl-rate-input');
-          const qty = qtyInp ? parseFloat(qtyInp.value) || 0 : 0;
-          const charge = chargeInp ? parseFloat(chargeInp.value) || 0 : 0;
+          const qty = qtyInp ? parseFloat(_billStripCurrency(qtyInp.value)) || 0 : 0;
+          const charge = chargeInp ? parseFloat(_billStripCurrency(chargeInp.value)) || 0 : 0;
           if (rateInp) {
             if (qty > 0 && charge !== 0) rateInp.value = '$' + (charge / qty).toFixed(dp) + (unit ? '/' + unit : '');
             else rateInp.value = '';
@@ -34881,7 +34901,7 @@
         rows.forEach((r) => {
           const ck = r.getAttribute('data-charge-key');
           const chargeInp = r.querySelector('.bl-charge-input');
-          const val = chargeInp ? parseFloat(chargeInp.value) || 0 : 0;
+          const val = chargeInp ? parseFloat(_billStripCurrency(chargeInp.value)) || 0 : 0;
           if (ck === 'TotalCurrentCharges') {
             enteredTotal = val;
             return;
@@ -34948,32 +34968,36 @@
         // Build a single labeled input cell (used by wide + pair rows)
         const inputCell = (pdfKey) => {
           const e = schemaEntry(pdfKey);
-          const val = escapeAttr(readVal(pdfKey));
+          const rawVal = readVal(pdfKey);
           const id = 'bl-' + e.key;
-          // Start/End dates are required (save path validates) but no visual
-          // marker — the save error toast surfaces the requirement when a
-          // user tries to save without them.
           const required = '';
           let inputType = 'text';
           let step = '';
           let ph = '';
+          let extraAttr = '';
+          let displayVal = escapeAttr(rawVal);
           if (e.type === 'date') inputType = 'date';
           else if (e.type === 'number') {
-            inputType = 'number';
+            inputType = 'text';
+            extraAttr = ' inputmode="decimal"';
             ph = '0';
-            if (/kwh|kw$|rkva/i.test(e.key)) step = ' step="0.0001"';
+            displayVal = escapeAttr(rawVal ? _billFmtNumber(rawVal) : '');
+            extraAttr += ` onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,false)"`;
           } else if (e.type === 'currency') {
-            inputType = 'number';
-            ph = '0.00';
-            step = ' step="0.01"';
+            inputType = 'text';
+            extraAttr = ' inputmode="decimal"';
+            ph = '$0.00';
+            displayVal = escapeAttr(rawVal ? _billFmtCurrency(rawVal) : '');
+            extraAttr += ` onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)"`;
           }
-          return `<div class="ef-item"><div class="ef-key">${e.label}${required}</div><input class="ef-input" id="${id}" type="${inputType}"${step} placeholder="${ph}" value="${val}"></div>`;
+          return `<div class="ef-item"><div class="ef-key">${e.label}${required}</div><input class="ef-input" id="${id}" type="${inputType}"${step} placeholder="${ph}" value="${displayVal}"${extraAttr}></div>`;
         };
         // Build a 3-column charge-line row: qty | rate | charge | running
         const buildChargeLine = (r) => {
           const chargeEntry = schemaEntry(r.chargeField);
           const chargeId = 'bl-' + chargeEntry.key;
-          const chargeVal = escapeAttr(readVal(r.chargeField));
+          const chargeRaw = readVal(r.chargeField);
+          const chargeVal = escapeAttr(chargeRaw ? _billFmtCurrency(chargeRaw) : '');
           const unit = r.unit || '';
           const dp = unit.toLowerCase() === 'kwh' ? 5 : 3;
           const recalc = `onchange="_billRecalcRow('${r.chargeField}')" oninput="_billRecalcRow('${r.chargeField}')"`;
@@ -34981,9 +35005,10 @@
           if (r.qtyField) {
             const qtyEntry = schemaEntry(r.qtyField);
             const qtyId = 'bl-' + qtyEntry.key;
-            const qtyVal = escapeAttr(readVal(r.qtyField));
+            const qtyRaw = readVal(r.qtyField);
+            const qtyVal = escapeAttr(qtyRaw ? _billFmtNumber(qtyRaw) : '');
             const qtyLabel = r.label + (unit ? ' ' + unit : '');
-            qtyHtml = `<div class="ef-item"><div class="ef-key">${qtyLabel}</div><input class="ef-input bl-qty-input" id="${qtyId}" type="number" step="0.0001" placeholder="0" value="${qtyVal}" ${recalc}></div>`;
+            qtyHtml = `<div class="ef-item"><div class="ef-key">${qtyLabel}</div><input class="ef-input bl-qty-input" id="${qtyId}" type="text" inputmode="decimal" placeholder="0" value="${qtyVal}" ${recalc} onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,false)"></div>`;
           } else {
             qtyHtml =
               '<div class="ef-item" style="opacity:.5"><div class="ef-key">—</div><input class="ef-input" disabled placeholder="—"></div>';
@@ -34991,35 +35016,38 @@
           const rateLabel = r.label + (unit ? ' ' + unit : '') + ' Rate';
           const rateHtml = `<div class="ef-item"><div class="ef-key">${rateLabel}</div><input class="ef-input bl-rate-input" readonly tabindex="-1" style="color:var(--text2);font-size:11px" value=""></div>`;
           const chargeLabel = r.label + ' Charge';
-          const chargeHtml = `<div class="ef-item center"><div class="ef-key">${chargeLabel}</div><input class="ef-input bl-charge-input" id="${chargeId}" type="number" step="0.01" placeholder="0.00" value="${chargeVal}" ${recalc}></div>`;
+          const chargeHtml = `<div class="ef-item center"><div class="ef-key">${chargeLabel}</div><input class="ef-input bl-charge-input" id="${chargeId}" type="text" inputmode="decimal" placeholder="$0.00" value="${chargeVal}" ${recalc} onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)"></div>`;
           return `<div class="ef-charge-row" data-charge-key="${r.chargeField}" data-unit="${unit}" data-rate-dp="${dp}">${qtyHtml}${rateHtml}${chargeHtml}<div class="ef-running">$0.00</div></div>`;
         };
         // Build charge-line-with-kw: kW cell | blank | charge | running
         const buildChargeLineWithKW = (r) => {
           const chargeEntry = schemaEntry(r.chargeField);
           const chargeId = 'bl-' + chargeEntry.key;
-          const chargeVal = escapeAttr(readVal(r.chargeField));
+          const chargeRaw = readVal(r.chargeField);
+          const chargeVal = escapeAttr(chargeRaw ? _billFmtCurrency(chargeRaw) : '');
           const recalc = `onchange="_billRecalcRow('${r.chargeField}')" oninput="_billRecalcRow('${r.chargeField}')"`;
           let kwHtml;
           if (r.kwField) {
             const kwEntry = schemaEntry(r.kwField);
             const kwId = 'bl-' + kwEntry.key;
-            const kwVal = escapeAttr(readVal(r.kwField));
-            kwHtml = `<div class="ef-item"><div class="ef-key">${kwEntry.label}</div><input class="ef-input" id="${kwId}" type="number" step="0.0001" placeholder="0" value="${kwVal}"></div>`;
+            const kwRaw = readVal(r.kwField);
+            const kwVal = escapeAttr(kwRaw ? _billFmtNumber(kwRaw) : '');
+            kwHtml = `<div class="ef-item"><div class="ef-key">${kwEntry.label}</div><input class="ef-input" id="${kwId}" type="text" inputmode="decimal" placeholder="0" value="${kwVal}" onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,false)"></div>`;
           } else {
             kwHtml = '<div></div>';
           }
           const chargeLabel = r.label + ' Charge';
-          const chargeHtml = `<div class="ef-item center"><div class="ef-key">${chargeLabel}</div><input class="ef-input bl-charge-input" id="${chargeId}" type="number" step="0.01" placeholder="0.00" value="${chargeVal}" ${recalc}></div>`;
+          const chargeHtml = `<div class="ef-item center"><div class="ef-key">${chargeLabel}</div><input class="ef-input bl-charge-input" id="${chargeId}" type="text" inputmode="decimal" placeholder="$0.00" value="${chargeVal}" ${recalc} onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)"></div>`;
           return `<div class="ef-charge-row" data-charge-key="${r.chargeField}"><div>${kwHtml}</div><div></div>${chargeHtml}<div class="ef-running">$0.00</div></div>`;
         };
         // Build total row
         const buildTotalRow = (r) => {
           const chargeEntry = schemaEntry(r.chargeField);
           const chargeId = 'bl-' + chargeEntry.key;
-          const chargeVal = escapeAttr(readVal(r.chargeField));
+          const chargeRaw = readVal(r.chargeField);
+          const chargeVal = escapeAttr(chargeRaw ? _billFmtCurrency(chargeRaw) : '');
           const recalc = `onchange="_billRecalcRow('${r.chargeField}')" oninput="_billRecalcRow('${r.chargeField}')"`;
-          return `<div style="border-top:2px solid var(--border);margin-top:4px;padding-top:4px"><div class="ef-charge-row" data-charge-key="${r.chargeField}"><div></div><div></div><div class="ef-item center"><div class="ef-key" style="font-weight:700">Total Current Charges</div><input class="ef-input bl-charge-input" id="${chargeId}" type="number" step="0.01" placeholder="0.00" value="${chargeVal}" ${recalc} style="font-weight:700;font-size:14px;text-align:center"></div><div class="ef-running" style="font-weight:700">$0.00</div></div></div>`;
+          return `<div style="border-top:2px solid var(--border);margin-top:4px;padding-top:4px"><div class="ef-charge-row" data-charge-key="${r.chargeField}"><div></div><div></div><div class="ef-item center"><div class="ef-key" style="font-weight:700">Total Current Charges</div><input class="ef-input bl-charge-input" id="${chargeId}" type="text" inputmode="decimal" placeholder="$0.00" value="${chargeVal}" ${recalc} style="font-weight:700;font-size:14px;text-align:center" onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)"></div><div class="ef-running" style="font-weight:700">$0.00</div></div></div>`;
         };
         // Assemble the body
         let body = '';
@@ -35101,12 +35129,12 @@
           const ck = r.getAttribute('data-charge-key');
           if (ck === 'TotalCurrentCharges') return;
           const chargeInp = r.querySelector('.bl-charge-input');
-          if (chargeInp) sum += parseFloat(chargeInp.value) || 0;
+          if (chargeInp) sum += parseFloat(_billStripCurrency(chargeInp.value)) || 0;
         });
         if (sum > 0) {
           const totalInp = document.getElementById('bl-totalCost');
           if (totalInp) {
-            totalInp.value = sum.toFixed(2);
+            totalInp.value = _billFmtCurrency(sum.toFixed(2));
             // Refresh the running-total match indicator so the ✓/✗ state updates
             _billRecalcRow('TotalCurrentCharges');
           }
@@ -35121,7 +35149,7 @@
         if (!m) return;
         m.bills = m.bills || [];
         const row = udBillEditId ? m.bills.find((r) => r.id === udBillEditId) : null;
-        const g = (id) => document.getElementById(id)?.value || '';
+        const g = (id) => _billStripCurrency(document.getElementById(id)?.value || '');
         // Update 82: schema-driven writer. Iterates BILL_SCHEMA[commodity] and
         // reads each field from `bl-<key>` input. Legacy aggregate fields
         // (kwCost, facKWCost, kwhCost, otherCost, taxCost, renewableCharge,
