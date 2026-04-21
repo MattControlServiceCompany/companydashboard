@@ -21998,7 +21998,7 @@
         }
         if (!billIndices.length) return;
         const bills = allBills;
-        const selectedPid = parseInt(document.getElementById('pdfProjSel').value) || null;
+        let selectedPid = parseInt(document.getElementById('pdfProjSel').value) || null;
         const dupMap = window._pdfDupMap || {};
         await _ensureBatchPdfStored(bills);
         let inferredPid = selectedPid;
@@ -27656,10 +27656,9 @@
         return dt.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
       }
       function fmtDate(d) {
-        if (!d) return '?';
+        if (!d || d === 'null' || d === 'undefined') return '?';
         const dt = new Date(d + 'T12:00:00');
-        // Update 100: zero-pad month and day so every date renders as
-        // MM/DD/YYYY (##/##/####) — consistent alignment across the app.
+        if (isNaN(dt)) return '?';
         const mm = String(dt.getMonth() + 1).padStart(2, '0');
         const dd = String(dt.getDate()).padStart(2, '0');
         return mm + '/' + dd + '/' + dt.getFullYear();
@@ -34231,10 +34230,10 @@
       function _billReadValue(row, entry) {
         if (!row) return '';
         const direct = row[entry.key];
-        if (direct !== undefined && direct !== null && direct !== '') return direct;
+        if (direct !== undefined && direct !== null && direct !== '' && direct !== 'null') return direct;
         if (entry.fallbackKey) {
           const legacy = row[entry.fallbackKey];
-          if (legacy !== undefined && legacy !== null && legacy !== '') return legacy;
+          if (legacy !== undefined && legacy !== null && legacy !== '' && legacy !== 'null') return legacy;
         }
         return '';
       }
