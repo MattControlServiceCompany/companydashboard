@@ -19666,7 +19666,9 @@
           function toISO(d) {
             if (!d) return '';
             const p = d.split('/');
-            return p.length === 3 ? p[2] + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0') : d;
+            if (p.length !== 3) return d;
+            const yr = p[2].length === 2 ? '20' + p[2] : p[2];
+            return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
           }
           // Save PDF file and create bill record
           const billId = 'pb' + Date.now() + '_' + saved;
@@ -19701,8 +19703,8 @@
           const taxCost = pf(bill.FranchiseFee).toFixed(2);
           const billRow = {
             id: 'r' + Date.now() + '_' + saved,
-            start: toISO(bill.BillingPeriodStart),
-            end: toISO(bill.BillingPeriodEnd),
+            start: toISO(bill.BillingPeriodStart || bill.DeliveryDate),
+            end: toISO(bill.BillingPeriodEnd || bill.DeliveryDate),
             kwh: bill.kWhConsumed || bill.NaturalGasCCF || bill.GallonsDelivered || '',
             demandKW: bill.ActualKW || '',
             billedKW: bill.BilledKW || '',
@@ -19910,7 +19912,9 @@
         const toISO = (d) => {
           if (!d) return '';
           const p = d.split('/');
-          return p.length === 3 ? p[2] + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0') : d;
+          if (p.length !== 3) return d;
+          const yr = p[2].length === 2 ? '20' + p[2] : p[2];
+          return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
         };
         const kwhCost = (
           pf(extracted.EnergyOnPeakCharge) +
@@ -19935,8 +19939,8 @@
           '';
         const billRow = {
           id: 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
-          start: toISO(extracted.BillingPeriodStart),
-          end: toISO(extracted.BillingPeriodEnd),
+          start: toISO(extracted.BillingPeriodStart || extracted.DeliveryDate),
+          end: toISO(extracted.BillingPeriodEnd || extracted.DeliveryDate),
           // Metadata (Update 84 — previously dropped on match-save path)
           utilityCompany: extracted.UtilityCompany || '',
           customerName: extracted.CustomerName || '',
@@ -20266,7 +20270,9 @@
         const toISO = (d) => {
           if (!d) return '';
           const p = d.split('/');
-          return p.length === 3 ? p[2] + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0') : d;
+          if (p.length !== 3) return d;
+          const yr = p[2].length === 2 ? '20' + p[2] : p[2];
+          return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
         };
         const normVal = (v) => {
           if (v === null || v === undefined || v === '') return '';
@@ -20388,7 +20394,9 @@
         const toISO = (d) => {
           if (!d) return '';
           const p = d.split('/');
-          return p.length === 3 ? p[2] + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0') : d;
+          if (p.length !== 3) return d;
+          const yr = p[2].length === 2 ? '20' + p[2] : p[2];
+          return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
         };
 
         for (let i = 0; i < bills.length; i++) {
@@ -20610,7 +20618,10 @@
         for (let i = 0; i < bills.length; i++) {
           if (commFilter && (bills[i].Commodity || 'Other') !== commFilter) continue;
           const dup = dupMap[i];
-          const period = (bills[i].BillingPeriodStart || '?') + ' → ' + (bills[i].BillingPeriodEnd || '?');
+          const period =
+            (bills[i].BillingPeriodStart || bills[i].DeliveryDate || '?') +
+            ' → ' +
+            (bills[i].BillingPeriodEnd || bills[i].DeliveryDate || '?');
           _bulkProgressUpdate(i + 1, bills.length, 'Bill ' + (i + 1) + ' of ' + bills.length + ' — ' + period);
 
           const resolved = _resolveBillDestination(bills[i], dup, selectedPid);
@@ -22224,7 +22235,10 @@
           failed = 0;
         for (const i of billIndices) {
           const dup = dupMap[i];
-          const period = (bills[i].BillingPeriodStart || '?') + ' → ' + (bills[i].BillingPeriodEnd || '?');
+          const period =
+            (bills[i].BillingPeriodStart || bills[i].DeliveryDate || '?') +
+            ' → ' +
+            (bills[i].BillingPeriodEnd || bills[i].DeliveryDate || '?');
           const resolved = _resolveBillDestination(bills[i], dup, selectedPid);
           let status = null;
           let destination = resolved.destination;
@@ -22298,7 +22312,9 @@
         const toISO = (d) => {
           if (!d) return '';
           const p = d.split('/');
-          return p.length === 3 ? p[2] + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0') : d;
+          if (p.length !== 3) return d;
+          const yr = p[2].length === 2 ? '20' + p[2] : p[2];
+          return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
         };
         const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
 
@@ -23726,7 +23742,9 @@
                 const toISO = (d) => {
                   if (!d) return '';
                   const p = d.split('/');
-                  return p.length === 3 ? p[2] + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0') : d;
+                  if (p.length !== 3) return d;
+                  const yr = p[2].length === 2 ? '20' + p[2] : p[2];
+                  return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
                 };
                 return toISO(eb.BillingPeriodStart) === meterRow.start && toISO(eb.BillingPeriodEnd) === meterRow.end;
               });
@@ -23963,12 +23981,14 @@
         function toISO(d) {
           if (!d) return '';
           const p = d.split('/');
-          return p.length === 3 ? p[2] + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0') : d;
+          if (p.length !== 3) return d;
+          const yr = p[2].length === 2 ? '20' + p[2] : p[2];
+          return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
         }
         const billRow = {
           id: 'r' + Date.now(),
-          start: toISO(bill.BillingPeriodStart),
-          end: toISO(bill.BillingPeriodEnd),
+          start: toISO(bill.BillingPeriodStart || bill.DeliveryDate),
+          end: toISO(bill.BillingPeriodEnd || bill.DeliveryDate),
           kwh: bill.kWhConsumed || '',
           demandKW: bill.ActualKW || '',
           billedKW: bill.BilledKW || '',
@@ -24110,7 +24130,9 @@
         function toISO(d) {
           if (!d) return '';
           const p = d.split('/');
-          return p.length === 3 ? p[2] + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0') : d;
+          if (p.length !== 3) return d;
+          const yr = p[2].length === 2 ? '20' + p[2] : p[2];
+          return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
         }
         // Detect bill commodity type for correct field mapping
         const isGas = !!(extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.GasCharge);
@@ -24147,8 +24169,8 @@
           '';
         const billRow = {
           id: 'r' + Date.now(),
-          start: toISO(extracted.BillingPeriodStart),
-          end: toISO(extracted.BillingPeriodEnd),
+          start: toISO(extracted.BillingPeriodStart || extracted.DeliveryDate),
+          end: toISO(extracted.BillingPeriodEnd || extracted.DeliveryDate),
           // Metadata (Update 84 — previously dropped on single-PDF save path)
           utilityCompany: extracted.UtilityCompany || '',
           customerName: extracted.CustomerName || '',
@@ -24220,41 +24242,83 @@
         };
         if (proj) {
           const udProj = getUDProj(proj.id);
+          const billComm = (extracted.Commodity || '').toLowerCase();
           // First try: match by account or meter number (most precise)
           const acctClean = (extracted.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
           const meterClean = (extracted.MeterNumber || '').replace(/[\s\-]/g, '').toLowerCase();
           let matched = false;
+          let targetMeter = null;
+          let targetBldg = null;
           if (acctClean || meterClean) {
             for (const b of udProj.buildings || []) {
               for (const m of b.meters || []) {
                 const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
                 const mm = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
                 if ((acctClean && ma && acctClean === ma) || (meterClean && mm && meterClean === mm)) {
-                  m.bills = m.bills || [];
-                  const dup = m.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
-                  if (dup) {
-                    Object.assign(dup, billRow);
-                  } else {
-                    m.bills.push(billRow);
-                    m.bills.sort((a, b) => new Date(a.start) - new Date(b.start));
+                  const mComm = (m.commodity || '').toLowerCase();
+                  if (billComm && mComm && billComm === mComm) {
+                    targetMeter = m;
+                    targetBldg = b;
+                    matched = true;
+                    break;
                   }
-                  matched = true;
-                  break;
+                  if (!targetMeter) {
+                    targetMeter = m;
+                    targetBldg = b;
+                  }
                 }
               }
               if (matched) break;
             }
+            if (targetMeter && !matched) {
+              const mComm = (targetMeter.commodity || '').toLowerCase();
+              if (billComm && mComm && billComm !== mComm) {
+                const existM = (targetBldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm);
+                if (existM) {
+                  targetMeter = existM;
+                } else {
+                  const newM = {
+                    id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+                    commodity: extracted.Commodity,
+                    provider: extracted.UtilityCompany || targetMeter.provider || '',
+                    account: extracted.AccountNumber || targetMeter.account || '',
+                    meter: '',
+                    maddr: targetMeter.maddr || '',
+                    inclusive: true,
+                    bills: [],
+                    billUnit: '',
+                    displayUnit: '',
+                  };
+                  targetBldg.meters = targetBldg.meters || [];
+                  targetBldg.meters.push(newM);
+                  targetMeter = newM;
+                }
+              }
+              matched = true;
+            }
+          }
+          if (matched && targetMeter) {
+            targetMeter.bills = targetMeter.bills || [];
+            const dup = targetMeter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
+            if (dup) {
+              Object.assign(dup, billRow);
+            } else {
+              targetMeter.bills.push(billRow);
+              targetMeter.bills.sort((a, b) => new Date(a.start) - new Date(b.start));
+            }
           }
           // Second try: single matching commodity meter
           if (!matched) {
-            const commodity = isGas ? 'Gas' : isPropane ? 'Propane' : 'Electric';
+            const commodity = extracted.Commodity || (isGas ? 'Gas' : isPropane ? 'Propane' : 'Electric');
+            const commLower = commodity.toLowerCase();
             const typeMeters = [];
             (udProj.buildings || []).forEach((b) =>
               (b.meters || []).forEach((m) => {
+                const mc = (m.commodity || '').toLowerCase();
                 if (
-                  m.commodity === commodity ||
-                  (isPropane && m.commodity === 'Propane') ||
-                  (isGas && (m.commodity === 'Gas' || m.commodity === 'Natural Gas'))
+                  mc === commLower ||
+                  (isGas && (mc === 'gas' || mc === 'natural gas')) ||
+                  (isPropane && mc === 'propane')
                 )
                   typeMeters.push({ b, m });
               }),
