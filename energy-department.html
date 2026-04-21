@@ -18230,6 +18230,68 @@
           }
         }
 
+        // ── CROSS-BILL CONSENSUS ──
+        // OCR misreads are random — the same field on 19 of 20 bills will be
+        // correct while 1 has a garbled digit. For every identity/metadata field
+        // that should be consistent across bills from the same account, find the
+        // most common value and correct outliers. Groups bills by normalized
+        // ServiceAddress to handle multi-building PDFs.
+        if (bills.length > 1) {
+          const _CONSENSUS_FIELDS = [
+            'AccountNumber',
+            'MeterNumber',
+            'ServiceAddress',
+            'CustomerName',
+            'UtilityCompany',
+            'RateSchedule',
+          ];
+          const _addrNorm = (s) => (s || 'unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const _addrGroups = {};
+          for (const b of bills) {
+            const addr = _addrNorm(b.ServiceAddress);
+            if (!_addrGroups[addr]) _addrGroups[addr] = [];
+            _addrGroups[addr].push(b);
+          }
+          // If address OCR is garbled, most bills cluster at the same normalized
+          // address. Merge tiny groups (≤2 bills) into the largest group — they're
+          // almost certainly the same building with a garbled address.
+          const groupKeys = Object.keys(_addrGroups);
+          if (groupKeys.length > 1) {
+            const largest = groupKeys.reduce((a, b) => (_addrGroups[a].length >= _addrGroups[b].length ? a : b));
+            for (const k of groupKeys) {
+              if (k !== largest && _addrGroups[k].length <= 2) {
+                _addrGroups[largest].push(..._addrGroups[k]);
+                delete _addrGroups[k];
+              }
+            }
+          }
+          for (const group of Object.values(_addrGroups)) {
+            if (group.length < 2) continue;
+            for (const field of _CONSENSUS_FIELDS) {
+              const counts = {};
+              for (const b of group) {
+                const v = b[field];
+                if (v === null || v === undefined || v === '') continue;
+                counts[v] = (counts[v] || 0) + 1;
+              }
+              const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+              if (sorted.length < 2) continue;
+              const winner = sorted[0][0];
+              const winCount = sorted[0][1];
+              for (const b of group) {
+                if (b[field] && b[field] !== winner) {
+                  b['_auto_corrected_' + field] = {
+                    original: b[field],
+                    corrected: winner,
+                    reason: 'Consensus: ' + winCount + '/' + group.length + ' bills use "' + winner + '"',
+                  };
+                  b[field] = winner;
+                }
+              }
+            }
+          }
+        }
+
         // Gather historical bills for the same account
         function getHistorical(acct) {
           const hist = [];
