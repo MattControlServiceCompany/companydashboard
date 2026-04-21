@@ -18237,6 +18237,7 @@
         // most common value and correct outliers. Groups bills by normalized
         // ServiceAddress to handle multi-building PDFs.
         if (bills.length > 1) {
+          console.log('[Consensus] Running on', bills.length, 'bills');
           const _CONSENSUS_FIELDS = [
             'AccountNumber',
             'MeterNumber',
@@ -18265,7 +18266,12 @@
               }
             }
           }
-          for (const group of Object.values(_addrGroups)) {
+          const _groupEntries = Object.entries(_addrGroups);
+          console.log(
+            '[Consensus] Address groups:',
+            _groupEntries.map(([k, v]) => k + '(' + v.length + ')').join(', '),
+          );
+          for (const [_gKey, group] of _groupEntries) {
             if (group.length < 2) continue;
             for (const field of _CONSENSUS_FIELDS) {
               const counts = {};
@@ -18278,6 +18284,7 @@
               if (sorted.length < 2) continue;
               const winner = sorted[0][0];
               const winCount = sorted[0][1];
+              let corrected = 0;
               for (const b of group) {
                 if (b[field] && b[field] !== winner) {
                   b['_auto_corrected_' + field] = {
@@ -18286,8 +18293,23 @@
                     reason: 'Consensus: ' + winCount + '/' + group.length + ' bills use "' + winner + '"',
                   };
                   b[field] = winner;
+                  corrected++;
                 }
               }
+              if (corrected)
+                console.log(
+                  '[Consensus] ' +
+                    field +
+                    ': corrected ' +
+                    corrected +
+                    ' → "' +
+                    winner +
+                    '" (' +
+                    winCount +
+                    '/' +
+                    group.length +
+                    ')',
+                );
             }
           }
         }
