@@ -10713,6 +10713,15 @@
               </div>
             </div>
             <input type="hidden" id="mm-inclusive" value="true" />
+            <div class="fg" style="margin-top: 8px">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer">
+                <input type="checkbox" id="mm-blInclude" checked />
+                <span class="fl" style="margin: 0">Include in Baseline &amp; Performance</span>
+              </label>
+              <div style="font-size: 11px; color: var(--text2); margin-top: 5px">
+                Uncheck to exclude this meter from building baseline, EUI, and performance calculations.
+              </div>
+            </div>
             <input type="hidden" id="mm-edit-id" />
             <input type="hidden" id="mm-target-bldg" />
             <input type="hidden" id="mm-target-proj" />
@@ -12388,6 +12397,7 @@
           totalTherms = 0;
         bldgs.forEach((b) =>
           (b.meters || []).forEach((m) => {
+            if (m.baselineInclude === false) return;
             const blBills = _dashGetBaselineBills(m);
             blBills.forEach((bill) => {
               blCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
@@ -12451,14 +12461,15 @@
         // Render header bar (like HVAC Load Est)
         if (hdrWrap) {
           const totalSqft = bldgs.reduce((s, b) => s + parseInt(b.sqft || 0), 0);
-          const meterCount = bldgs.reduce((s, b) => s + (b.meters || []).length, 0);
+          const _inclMeters = (b) => (b.meters || []).filter((m) => m.baselineInclude !== false);
+          const meterCount = bldgs.reduce((s, b) => s + _inclMeters(b).length, 0);
           const billCount = bldgs.reduce(
             (s, b) => s + (b.meters || []).reduce((s2, m) => s2 + (m.bills || []).length, 0),
             0,
           );
           const blMeterCount = bldgs.reduce(
             (s, b) =>
-              s + (b.meters || []).filter((m) => m.baseline && Object.keys(m.baseline.months || {}).length > 0).length,
+              s + _inclMeters(b).filter((m) => m.baseline && Object.keys(m.baseline.months || {}).length > 0).length,
             0,
           );
           hdrWrap.innerHTML = `<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-shrink:0">
@@ -12499,6 +12510,7 @@
             for (let i = 0; i < 12; i++) bldgMoBase[i] = 0;
             let bldgSav = 0;
             meters.forEach((m) => {
+              if (m.baselineInclude === false) return;
               const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
               const incl = m.inclusive !== false;
               const bl = m.baseline;
@@ -12547,6 +12559,7 @@
           } else {
             // Actual path: existing raw totalCost comparison
             meters.forEach((m) => {
+              if (m.baselineInclude === false) return;
               const blBills = _dashGetBaselineBills(m);
               if (blBills.length) hasBaseline = true;
               blBills.forEach((bill) => {
@@ -13033,7 +13046,7 @@
         }
         nav.innerHTML = bldgs
           .map((b) => {
-            const meters = b.meters || [];
+            const meters = (b.meters || []).filter((m) => m.baselineInclude !== false);
             const mCount = meters.length;
             const mWithBl = meters.filter(
               (m) => m.baseline && Array.isArray(m.baseline.months) && m.baseline.months.length,
@@ -13046,7 +13059,7 @@
                     ? `<span style="color:var(--amber);font-size:10px" title="${mWithBl} of ${mCount} meters have baselines">⚠ ${mWithBl}/${mCount} BL</span>`
                     : `<span style="color:var(--text3);font-size:10px" title="No baselines set">— 0/${mCount} BL</span>`
                 : '';
-            const bCount = (b.bills || []).length + meters.reduce((s, m) => s + (m.bills || []).length, 0);
+            const bCount = (b.bills || []).length + (b.meters || []).reduce((s, m) => s + (m.bills || []).length, 0);
             const isActive = projUDSelBldg[projId] === b.id;
             return `<div class="ud-nav-bldg-item${isActive ? ' active' : ''}" onclick="projUDSelectBldg('${projId}','${b.id}')">
             <span style="font-size:14px">${getFacilityIcon?.(b.type) || '🏢'}</span>
@@ -13338,7 +13351,10 @@
           msrNum: sd.measures.length + 1 + '',
           bldgId: firstBldg?.id || '',
           desc: '',
+          notes: '',
           sqft: firstBldg ? parseFloat(firstBldg.sqft) || 0 : 0,
+          implCost: 0,
+          incentive: 0,
           rates: firstBldg
             ? calcBldgDefaultRates(projId, firstBldg.id)
             : { kwhSummer: 0, kwhWinter: 0, kwSummer: 0, kwWinter: 0, thermRate: 0 },
@@ -13436,6 +13452,17 @@
                   <button class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:11px" onclick="svResetMsrRates('${m.id}')">Reset to Building Defaults</button>
                 </div>
                 <div>
+                  <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Financials</div>
+                  <div class="sv-rate-group">
+                    <div class="sv-rate-field"><label>Implementation Cost</label><input class="fi" type="number" step="1" value="${m.implCost || ''}" placeholder="$0" onchange="updateMsrField('${projId}','${m.id}','implCost',parseFloat(this.value)||0)"></div>
+                    <div class="sv-rate-field"><label>Incentive / Rebate</label><input class="fi" type="number" step="1" value="${m.incentive || ''}" placeholder="$0" onchange="updateMsrField('${projId}','${m.id}','incentive',parseFloat(this.value)||0)"></div>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+                    <div>Net Cost: <span class="sv-intensity" style="color:var(--text);font-weight:700">${(m.implCost || 0) - (m.incentive || 0) > 0 ? '$' + Math.round((m.implCost || 0) - (m.incentive || 0)).toLocaleString() : '—'}</span></div>
+                    <div>Simple Payback: <span class="sv-intensity" style="color:var(--accent);font-weight:700">${m.totalDollar > 0 && (m.implCost || 0) > 0 ? (((m.implCost || 0) - (m.incentive || 0)) / m.totalDollar).toFixed(1) + ' yrs' : '—'}</span></div>
+                  </div>
+                </div>
+                <div>
                   <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Intensity Metrics</div>
                   <div style="display:flex;flex-direction:column;gap:6px">
                     <div>Sq Ft: <span class="sv-intensity" style="color:var(--text)">${m.sqft ? Number(m.sqft).toLocaleString() : '—'}</span></div>
@@ -13443,6 +13470,10 @@
                     <div>$/sf saved: <span class="sv-intensity" style="color:var(--green)">${m.sqft > 0 && m.totalDollar > 0 ? '$' + (m.totalDollar / m.sqft).toFixed(2) : '—'}</span></div>
                   </div>
                 </div>
+              </div>
+              <div style="margin-top:10px">
+                <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Notes</div>
+                <textarea class="fi" style="width:100%;min-height:48px;resize:vertical;font-size:12px" placeholder="Measure notes..." onchange="updateMsrField('${projId}','${m.id}','notes',this.value)">${m.notes || ''}</textarea>
               </div>
             </td>
           </tr>`;
@@ -13488,6 +13519,11 @@
           el.innerHTML = '';
           return;
         }
+        const selMsrs = (sd.measures || []).filter((m) => m.selected);
+        const totImpl = selMsrs.reduce((s, m) => s + (parseFloat(m.implCost) || 0), 0);
+        const totIncent = selMsrs.reduce((s, m) => s + (parseFloat(m.incentive) || 0), 0);
+        const netCost = totImpl - totIncent;
+        const payback = grandTotal > 0 && netCost > 0 ? (netCost / grandTotal).toFixed(1) : null;
         el.innerHTML = `<div class="bl-result" style="margin-top:0">
           <div class="bl-title">💡 Selected Measures Summary (${selCount} measure${selCount !== 1 ? 's' : ''})</div>
           <div class="bl-grid">
@@ -13495,6 +13531,8 @@
             <div class="bl-item"><div class="bl-lbl">Avg kW Reduction</div><div class="bl-val" style="color:var(--amber)">${annKwAvg.toFixed(1)}<span class="bl-unit"> kW avg</span></div></div>
             <div class="bl-item"><div class="bl-lbl">Annual Gas Savings</div><div class="bl-val" style="color:var(--teal)">${Math.round(annGas).toLocaleString()}<span class="bl-unit"> Therms/yr</span></div></div>
             <div class="bl-item"><div class="bl-lbl">Total Est. $/Yr</div><div class="bl-val" style="color:var(--green)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</div></div>
+            ${totImpl > 0 ? `<div class="bl-item"><div class="bl-lbl">Total Impl. Cost</div><div class="bl-val" style="color:var(--text)">$${Math.round(netCost).toLocaleString()}<span class="bl-unit">${totIncent > 0 ? ' (net of $' + Math.round(totIncent).toLocaleString() + ' incentive)' : ''}</span></div></div>` : ''}
+            ${payback ? `<div class="bl-item"><div class="bl-lbl">Simple Payback</div><div class="bl-val" style="color:var(--accent)">${payback}<span class="bl-unit"> years</span></div></div>` : ''}
           </div>
         </div>`;
       }
@@ -13739,6 +13777,17 @@
                     <button class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:11px" onclick="svResetMsrRates('${mid}')">Reset to Building Defaults</button>
                   </div>
                   <div>
+                    <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Financials</div>
+                    <div class="sv-rate-group">
+                      <div class="sv-rate-field"><label>Implementation Cost</label><input class="fi" type="number" step="1" value="${m.implCost || ''}" placeholder="$0" onchange="svUpdateMsrField('${mid}','implCost',parseFloat(this.value)||0)"></div>
+                      <div class="sv-rate-field"><label>Incentive / Rebate</label><input class="fi" type="number" step="1" value="${m.incentive || ''}" placeholder="$0" onchange="svUpdateMsrField('${mid}','incentive',parseFloat(this.value)||0)"></div>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+                      <div>Net Cost: <span class="sv-intensity" style="color:var(--text);font-weight:700">${(m.implCost || 0) - (m.incentive || 0) > 0 ? '$' + Math.round((m.implCost || 0) - (m.incentive || 0)).toLocaleString() : '—'}</span></div>
+                      <div>Simple Payback: <span class="sv-intensity" style="color:var(--accent);font-weight:700">${m.totalDollar > 0 && (m.implCost || 0) > 0 ? (((m.implCost || 0) - (m.incentive || 0)) / m.totalDollar).toFixed(1) + ' yrs' : '—'}</span></div>
+                    </div>
+                  </div>
+                  <div>
                     <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Intensity Metrics</div>
                     <div style="display:flex;flex-direction:column;gap:6px">
                       <div>Sq Ft: <span class="sv-intensity" style="color:var(--text)">${m.sqft ? Number(m.sqft).toLocaleString() : '—'}</span></div>
@@ -13746,6 +13795,10 @@
                       <div>$/sf saved: <span class="sv-intensity" style="color:var(--green)">${m.sqft > 0 && m.totalDollar > 0 ? '$' + (m.totalDollar / m.sqft).toFixed(2) : '—'}</span></div>
                     </div>
                   </div>
+                </div>
+                <div style="margin-top:10px">
+                  <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Notes</div>
+                  <textarea class="fi" style="width:100%;min-height:48px;resize:vertical;font-size:12px" placeholder="Measure notes..." onchange="svUpdateMsrField('${mid}','notes',this.value)" onfocusout="svAutoSave()">${m.notes || ''}</textarea>
                 </div>
               </td>
             </tr>`;
@@ -25457,8 +25510,9 @@
                 <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:1px 6px" onclick="openBldgModal(null)">+ Add</button></div>`;
             } else {
               bldgs.forEach((b) => {
-                const mCount = (b.meters || []).length;
-                const mWithBl = (b.meters || []).filter(
+                const _blMeters = (b.meters || []).filter((m) => m.baselineInclude !== false);
+                const mCount = _blMeters.length;
+                const mWithBl = _blMeters.filter(
                   (m) => m.baseline && Array.isArray(m.baseline.months) && m.baseline.months.length,
                 ).length;
                 const blBadge =
@@ -25579,6 +25633,7 @@
         for (let i = 0; i < 12; i++) moBase[i] = 0;
         bldgs.forEach((b) => {
           (b.meters || []).forEach((m) => {
+            if (m.baselineInclude === false) return;
             const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
             const incl = m.inclusive !== false;
             const bl = m.baseline;
@@ -25617,6 +25672,7 @@
         bldgs.forEach((b) => {
           totalSqft += parseFloat(b.sqft || 0);
           (b.meters || []).forEach((m) => {
+            if (m.baselineInclude === false) return;
             const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
             allMeters.push({
               m,
@@ -26128,6 +26184,10 @@
               const bcount = (m.bills || []).length;
               const _pCls = m.commodity === 'Electric' ? ' elec-pill' : m.commodity === 'Gas' ? ' gas-pill' : '';
               const _pTxt = m.commodity === 'Electric' ? '#7dd8ff' : m.commodity === 'Gas' ? '#ffb040' : 'var(--text2)';
+              const _exclTag =
+                m.baselineInclude === false
+                  ? '<span style="font-size:9px;color:var(--text3);opacity:.7" title="Excluded from baseline &amp; performance">excl</span>'
+                  : '';
               return (
                 '<button class="ma-meter-pill' +
                 _pCls +
@@ -26146,6 +26206,7 @@
                 ' bill' +
                 (bcount !== 1 ? 's' : '') +
                 '</span>' +
+                _exclTag +
                 '</button>'
               );
             })
@@ -31403,6 +31464,7 @@
         // Sum Total Cost Savings from each meter's Performance tab (same values shown there)
         const actualSavingsByCalMo = {};
         (b.meters || []).forEach((m) => {
+          if (m.baselineInclude === false) return;
           if (!(m.baseline?.months?.length >= 3)) return;
           const mbills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
           const mincl = m.inclusive !== false;
@@ -34664,6 +34726,7 @@
             document.getElementById('mm-meter').value = m.meter || '';
             document.getElementById('mm-maddr').value = m.maddr || '';
             _meterInclusive = m.inclusive !== false;
+            document.getElementById('mm-blInclude').checked = m.baselineInclude !== false;
             _updateMeterUnitDropdowns();
             if (m.billUnit) document.getElementById('mm-billUnit').value = m.billUnit;
             if (m.displayUnit) document.getElementById('mm-displayUnit').value = m.displayUnit;
@@ -34688,6 +34751,7 @@
             (id) => (document.getElementById(id).value = ''),
           );
           document.getElementById('mm-commodity').value = 'Electric';
+          document.getElementById('mm-blInclude').checked = true;
           _updateMeterUnitDropdowns();
         }
         document.getElementById('mm-incl-btn').classList.toggle('sel', _meterInclusive);
@@ -34711,6 +34775,7 @@
           meter: document.getElementById('mm-meter').value,
           maddr: document.getElementById('mm-maddr').value,
           inclusive: incl,
+          baselineInclude: document.getElementById('mm-blInclude').checked,
           billUnit: document.getElementById('mm-billUnit').value || '',
           displayUnit: document.getElementById('mm-displayUnit').value || '',
         };
@@ -35918,6 +35983,7 @@
             for (let i = 0; i < 12; i++) bldgMoBase[i] = 0;
             let bldgSav = 0;
             meters.forEach((m) => {
+              if (m.baselineInclude === false) return;
               const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
               const incl = m.inclusive !== false;
               const bl = m.baseline;
@@ -35952,6 +36018,7 @@
             curCost = blCost - bldgSav;
           } else {
             meters.forEach((m) => {
+              if (m.baselineInclude === false) return;
               const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
               const blBills = _dashGetBaselineBills(m);
               blBills.forEach((bill) => {
@@ -40663,6 +40730,7 @@
 
         bldgs.forEach((b) => {
           (b.meters || []).forEach((m) => {
+            if (m.baselineInclude === false) return;
             const isElec = m.commodity === 'Electric';
             const isGas = m.commodity === 'Gas';
             const bl = m.baseline || {};
