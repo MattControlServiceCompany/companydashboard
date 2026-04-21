@@ -25775,6 +25775,38 @@
           const d = sget('en_utility_' + p.id, null);
           if (d) utilityData[p.id] = d;
         });
+        // One-time migration: fix 2-digit year ISO dates (e.g. "24-03-15" → "2024-03-15")
+        // produced by the old toISO function. Without this, date comparisons, sorting,
+        // normMonth, and duplicate detection all break.
+        const _migratedKey = 'en_utility_dates_migrated_v1';
+        if (!localStorage.getItem(_migratedKey)) {
+          let fixed = 0;
+          const _fixDate = (d) => {
+            if (!d || typeof d !== 'string') return d;
+            const m = d.match(/^(\d{2})-(\d{2})-(\d{2})$/);
+            if (m) {
+              fixed++;
+              return '20' + m[1] + '-' + m[2] + '-' + m[3];
+            }
+            return d;
+          };
+          for (const pid of Object.keys(utilityData)) {
+            const ud = utilityData[pid];
+            for (const b of ud.buildings || []) {
+              for (const mt of b.meters || []) {
+                for (const bill of mt.bills || []) {
+                  bill.start = _fixDate(bill.start);
+                  bill.end = _fixDate(bill.end);
+                }
+              }
+            }
+          }
+          if (fixed > 0) {
+            saveUtilityData();
+            console.log('[date migration] Fixed ' + fixed + ' 2-digit year dates');
+          }
+          localStorage.setItem(_migratedKey, '1');
+        }
       }
       function saveUtilityData() {
         // Write each project to its own localStorage key
