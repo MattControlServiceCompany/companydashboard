@@ -12007,7 +12007,7 @@
             const pt = tasks.filter((t) => t.projId === p.id && !t.done).length;
             const cv = p.contract ? '$' + Number(p.contract).toLocaleString() : '—';
             const sd = p.start
-              ? new Date(p.start + 'T12:00:00').toLocaleDateString('en-US', {
+              ? _parseISO(p.start).toLocaleDateString('en-US', {
                   month: 'short',
                   day: 'numeric',
                   year: '2-digit',
@@ -12113,8 +12113,8 @@
               <div class="pd-cell"><div class="pd-cell-lbl">Service Agreement #</div><div class="pd-cell-val mono">${p.sa || '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Contract Value</div><div class="pd-cell-val mono">${p.contract ? '$' + Number(p.contract).toLocaleString() : '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Est. Savings/yr</div><div class="pd-cell-val mono">${p.savings ? '$' + Number(p.savings).toLocaleString() : '—'}</div></div>
-              <div class="pd-cell"><div class="pd-cell-lbl">Start Date</div><div class="pd-cell-val">${p.start ? new Date(p.start + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div></div>
-              <div class="pd-cell"><div class="pd-cell-lbl">Target End</div><div class="pd-cell-val">${p.end ? new Date(p.end + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div></div>
+              <div class="pd-cell"><div class="pd-cell-lbl">Start Date</div><div class="pd-cell-val">${p.start ? _parseISO(p.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div></div>
+              <div class="pd-cell"><div class="pd-cell-lbl">Target End</div><div class="pd-cell-val">${p.end ? _parseISO(p.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Contacts</div><div class="pd-cell-val">${p.contacts && p.contacts.length ? p.contacts.length + ' contact' + (p.contacts.length !== 1 ? 's' : '') : '—'}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Open Tasks</div><div class="pd-cell-val" style="color:${openTasks > 0 ? 'var(--warn)' : 'inherit'}">${openTasks}</div></div>
               <div class="pd-cell"><div class="pd-cell-lbl">Baseline Comparison</div><div class="pd-cell-val">${p.baselineComparison === 'normalized' ? 'Normalized' : 'Actual'}</div></div>
@@ -12127,7 +12127,7 @@
             <span class="phc-sep">|</span>
             <span>Savings <span class="phc-val">${p.savings ? '$' + Number(p.savings).toLocaleString() + '/yr' : '—'}</span></span>
             <span class="phc-sep">|</span>
-            <span><span class="phc-val">${p.start ? new Date(p.start + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span> → <span class="phc-val">${p.end ? new Date(p.end + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span></span>
+            <span><span class="phc-val">${p.start ? _parseISO(p.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span> → <span class="phc-val">${p.end ? _parseISO(p.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span></span>
             <span class="phc-sep">|</span>
             <span id="phc-baseline-${p.id}">Baseline <span class="phc-val">—</span></span>
             <span class="phc-sep">|</span>
@@ -12437,7 +12437,7 @@
 
       function _dashGetBaselineBills(m) {
         // Return only bills selected as baseline for this meter
-        const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+        const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
         const bl = m.baseline || {};
         const blMonths = bl.months || [];
         if (!blMonths.length) return [];
@@ -12511,7 +12511,7 @@
             let bldgSav = 0;
             meters.forEach((m) => {
               if (m.baselineInclude === false) return;
-              const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+              const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
               const incl = m.inclusive !== false;
               const bl = m.baseline;
               if (!bl || !bl.months || bl.months.length < 3) return;
@@ -12570,7 +12570,7 @@
                   blKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
                 }
               });
-              const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+              const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
               bills.slice(-12).forEach((bill) => {
                 curCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
                 if (m.commodity === 'Gas') {
@@ -18070,8 +18070,8 @@
       // Analyze saved meter bills for statistical outliers — returns {billId: [{msg,level},...]}
       function _billNormMonth(b) {
         if (!b.start || !b.end) return -1;
-        const s = new Date(b.start + 'T12:00:00');
-        const e = new Date(b.end + 'T12:00:00');
+        const s = _parseISO(b.start);
+        const e = _parseISO(b.end);
         if (isNaN(s) || isNaN(e)) return -1;
         const sm = s.getMonth(),
           em = e.getMonth();
@@ -18127,7 +18127,7 @@
           seasonal: false,
           fn: (b) => {
             if (!b.start || !b.end) return 0;
-            return Math.round((new Date(b.end + 'T12:00:00') - new Date(b.start + 'T12:00:00')) / 86400000) + 1;
+            return Math.round((_parseISO(b.end) - _parseISO(b.start)) / 86400000) + 1;
           },
         });
 
@@ -19806,7 +19806,7 @@
             Object.assign(dup, billRow);
           } else {
             targetMeter.bills.push(billRow);
-            targetMeter.bills.sort((a, b) => new Date(a.start) - new Date(b.start));
+            targetMeter.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
           }
           saved++;
         }
@@ -20069,7 +20069,7 @@
           Object.assign(existing, billRow);
         } else {
           liveMeter.bills.push(billRow);
-          liveMeter.bills.sort((a, b) => new Date(a.start) - new Date(b.start));
+          liveMeter.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
         }
         saveUtilityData();
         return liveProj.name + ' → ' + liveBldg.name + ' → ' + (liveMeter.provider || liveMeter.meter || 'meter');
@@ -24173,7 +24173,7 @@
           }
         } else {
           meter.bills.push(billRow);
-          meter.bills.sort((a, b) => new Date(a.start) - new Date(b.start));
+          meter.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
         }
         // Remove from Saved Bills after assignment — it's now in Utility Data
         const updatedBills = bills.filter((b) => b.id !== _assignBillId);
@@ -24386,7 +24386,7 @@
               Object.assign(dup, billRow);
             } else {
               targetMeter.bills.push(billRow);
-              targetMeter.bills.sort((a, b) => new Date(a.start) - new Date(b.start));
+              targetMeter.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
             }
           }
           // Second try: single matching commodity meter
@@ -24413,7 +24413,7 @@
                 Object.assign(dup, billRow);
               } else {
                 m.bills.push(billRow);
-                m.bills.sort((a, b) => new Date(a.start) - new Date(b.start));
+                m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
               }
               matched = true;
             }
@@ -26111,10 +26111,21 @@
         const mtr = m.meter ? m.meter : '—';
         return `${m.commodity} · Acct ${acct} · Meter ${mtr}`;
       }
+      // Normalize ISO date strings: "24-03-15" → "2024-03-15".
+      // Any YYYY-MM-DD where the year part is only 2 digits is treated as 20XX.
+      function _fixISO(d) {
+        if (!d || typeof d !== 'string') return d;
+        const m = d.match(/^(\d{2})-(\d{2})-(\d{2})$/);
+        return m ? '20' + m[1] + '-' + m[2] + '-' + m[3] : d;
+      }
+      function _parseISO(d) {
+        return new Date(_fixISO(d) + 'T12:00:00');
+      }
+
       function calcDays(start, end, inclusive) {
         if (!start || !end) return '';
-        const s = new Date(start + 'T12:00:00'),
-          e = new Date(end + 'T12:00:00');
+        const s = _parseISO(start),
+          e = _parseISO(end);
         const diff = Math.round((e - s) / (1000 * 60 * 60 * 24));
         return inclusive ? diff + 1 : diff;
       }
@@ -26277,7 +26288,7 @@
         bldgs.forEach((b) => {
           (b.meters || []).forEach((m) => {
             if (m.baselineInclude === false) return;
-            const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+            const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
             const incl = m.inclusive !== false;
             const bl = m.baseline;
             if (!bl || !bl.months || bl.months.length < 3) return;
@@ -26316,7 +26327,7 @@
           totalSqft += parseFloat(b.sqft || 0);
           (b.meters || []).forEach((m) => {
             if (m.baselineInclude === false) return;
-            const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+            const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
             allMeters.push({
               m,
               bills,
@@ -26345,7 +26356,7 @@
             const savPct = (bspCfg.savingsPct ?? 11) / 100;
             let bldgBase = 0;
             (b.meters || []).forEach((m) => {
-              const bills2 = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+              const bills2 = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
               const incl2 = m.inclusive !== false;
               const bl = m.baseline;
               if (!bl || !bl.months || bl.months.length < 3) return;
@@ -27054,7 +27065,7 @@
         if (!b) return;
         const m = b.meters.find((m) => m.id === udActiveMid);
         if (!m) return;
-        const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+        const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
         const incl = m.inclusive !== false;
 
         const tabs = [
@@ -27156,28 +27167,28 @@
         }
 
         if (!allBills || allBills.length === 0) {
-          const s = new Date(startStr + 'T12:00:00'),
-            e = new Date(endStr + 'T12:00:00');
+          const s = _parseISO(startStr),
+            e = _parseISO(endStr);
           return majorityMonth(s, e);
         }
 
         const sorted = allBills
           .filter((b) => b.start && b.end)
           .slice()
-          .sort((a, b) => new Date(a.start) - new Date(b.start));
+          .sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
 
         const assignments = [];
         for (let i = 0; i < sorted.length; i++) {
           const bill = sorted[i];
-          const s = new Date(bill.start + 'T12:00:00'),
-            e = new Date(bill.end + 'T12:00:00');
+          const s = _parseISO(bill.start),
+            e = _parseISO(bill.end);
           let ym;
           if (i === 0) {
             // First bill: anchor on majority-days month
             ym = majorityMonth(s, e);
           } else {
             const prev = assignments[i - 1];
-            const gapDays = (s - new Date(prev.end + 'T12:00:00')) / (1000 * 60 * 60 * 24);
+            const gapDays = (s - _parseISO(prev.end)) / (1000 * 60 * 60 * 24);
             if (gapDays <= 3) {
               // Continuous: always just increment from previous month
               ym = nextMonth(prev.ym);
@@ -27193,8 +27204,8 @@
         if (match) return match.ym;
 
         // Fallback
-        const s = new Date(startStr + 'T12:00:00'),
-          e = new Date(endStr + 'T12:00:00');
+        const s = _parseISO(startStr),
+          e = _parseISO(endStr);
         return majorityMonth(s, e);
       }
 
@@ -27209,8 +27220,8 @@
       // Detect gap between two consecutive bills (>3 day gap between end of prev and start of next)
       function detectGap(prevEnd, nextStart) {
         if (!prevEnd || !nextStart) return false;
-        const e = new Date(prevEnd + 'T12:00:00'),
-          s = new Date(nextStart + 'T12:00:00');
+        const e = _parseISO(prevEnd),
+          s = _parseISO(nextStart);
         return (s - e) / (1000 * 60 * 60 * 24) > 3;
       }
 
@@ -27628,9 +27639,7 @@
         });
         bills.forEach((row, idx) => {
           if (idx > 0 && detectGap(bills[idx - 1].end, row.start)) {
-            const gapDays = Math.round(
-              (new Date(row.start + 'T12:00:00') - new Date(bills[idx - 1].end + 'T12:00:00')) / (1000 * 60 * 60 * 24),
-            );
+            const gapDays = Math.round((_parseISO(row.start) - _parseISO(bills[idx - 1].end)) / (1000 * 60 * 60 * 24));
             tblBody += `<tr class="ud-bill-gap-row"><td colspan="${cols.length}"><div class="ud-bill-gap-msg">⚠️ Gap in data — ${gapDays} day${gapDays !== 1 ? 's' : ''} missing between ${fmtDate(bills[idx - 1].end)} and ${fmtDate(row.start)}</div></td></tr>`;
           }
           const flags = billFlags[row.id] || [];
@@ -28093,7 +28102,7 @@
 
       function getDateRange(bills) {
         if (!bills.length) return '';
-        const sorted = bills.slice().sort((a, b) => new Date(a.start) - new Date(b.start));
+        const sorted = bills.slice().sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
         return (
           fmtMon(sorted[0].start) + ' – ' + fmtMon(sorted[sorted.length - 1].end || sorted[sorted.length - 1].start)
         );
@@ -28105,7 +28114,7 @@
       }
       function fmtDate(d) {
         if (!d || d === 'null' || d === 'undefined') return '?';
-        const dt = new Date(d + 'T12:00:00');
+        const dt = _parseISO(d);
         if (isNaN(dt)) return '?';
         const mm = String(dt.getMonth() + 1).padStart(2, '0');
         const dd = String(dt.getDate()).padStart(2, '0');
@@ -28198,8 +28207,8 @@
 
           // Count actual days per calendar month that this bill spans
           const monthDays = {};
-          const s = new Date(row.start + 'T12:00:00');
-          const e = new Date(row.end + 'T12:00:00');
+          const s = _parseISO(row.start);
+          const e = _parseISO(row.end);
           let cur = new Date(s);
           while (cur <= e) {
             const ym = cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0');
@@ -28520,7 +28529,7 @@
         if (!b) return;
         const m = b.meters.find((m) => m.id === mid);
         if (!m) return;
-        const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+        const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
         const incl = m.inclusive !== false;
         const { byYm: weatherByYm } = getWeatherForBuilding();
         const rows = getNormRows(m, bills, incl, weatherByYm);
@@ -30219,11 +30228,11 @@
           if (m.commodity === 'Electric') {
             const demandBills = blBillsForRate.filter((b) => (b.demandKW || 0) > 0 && (b.kwCost || 0) > 0);
             const sumDem = demandBills.filter((b) => {
-              const mo = new Date(b.start + 'T12:00:00').getMonth() + 1;
+              const mo = _parseISO(b.start).getMonth() + 1;
               return mo >= 6 && mo <= 9;
             });
             const winDem = demandBills.filter((b) => {
-              const mo = new Date(b.start + 'T12:00:00').getMonth() + 1;
+              const mo = _parseISO(b.start).getMonth() + 1;
               return mo === 12 || mo <= 3;
             });
             summerKwRate = sumDem.length ? sumDem.reduce((s, b) => s + b.kwCost / b.demandKW, 0) / sumDem.length : null;
@@ -30614,7 +30623,7 @@
         if (!b) return;
         const m = b.meters.find((m) => m.id === mid);
         if (!m) return;
-        const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+        const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
         const incl = m.inclusive !== false;
         const unit = getMeterDisplayUnit(m);
         const { byYm: weatherByYm } = getWeatherForBuilding();
@@ -30677,11 +30686,11 @@
           if (m.commodity === 'Electric') {
             const dBills = blBillsR.filter((b) => (b.demandKW || 0) > 0 && (b.kwCost || 0) > 0);
             const sumDem = dBills.filter((b) => {
-              const mo = new Date(b.start + 'T12:00:00').getMonth() + 1;
+              const mo = _parseISO(b.start).getMonth() + 1;
               return mo >= 6 && mo <= 9;
             });
             const winDem = dBills.filter((b) => {
-              const mo = new Date(b.start + 'T12:00:00').getMonth() + 1;
+              const mo = _parseISO(b.start).getMonth() + 1;
               return mo === 12 || mo <= 3;
             });
             summerKwRate = sumDem.length ? sumDem.reduce((s, b) => s + b.kwCost / b.demandKW, 0) / sumDem.length : null;
@@ -30798,7 +30807,7 @@
         const { byYm: weatherByYm } = getWeatherForBuilding();
         const allRows = getNormRows(
           m,
-          (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start)),
+          (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start)),
           m.inclusive !== false,
           weatherByYm,
         );
@@ -30827,7 +30836,7 @@
         const { byYm: weatherByYm } = getWeatherForBuilding();
         let count = 0;
         otherMeters.forEach((m) => {
-          const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+          const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
           const allRows = getNormRows(m, bills, m.inclusive !== false, weatherByYm);
           const validMonths = blMonths.filter((ym) => allRows.some((r) => r.ym === ym));
           if (validMonths.length < 3) return;
@@ -31039,7 +31048,7 @@
 
         // ── Pull baseline months for a meter ──
         function getBlRows(m) {
-          const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+          const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
           const incl = m.inclusive !== false;
           const allRows = bills.length ? getNormRows(m, bills, incl, weatherByYm) : [];
           const bl = m.baseline || null;
@@ -31625,7 +31634,7 @@
         const td = (v, cls = '') => `<td${cls ? ' class="' + cls + '"' : ''}>${v}</td>`;
 
         // ── Get baseline rows (same logic as renderBuildingStatsPane getBlRows) ──
-        const sortedBills = (bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+        const sortedBills = (bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
         const allRows = sortedBills.length ? getNormRows(m, sortedBills, incl, weatherByYm) : [];
         const bl = m.baseline || null;
         const blMonths = bl && bl.months ? bl.months : [];
@@ -32081,7 +32090,7 @@
         (b.meters || []).forEach((m) => {
           const bl = m.baseline;
           if (!bl || !(bl.months || []).length) return;
-          const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+          const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
           const incl = m.inclusive !== false;
           const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
           allRows
@@ -32108,7 +32117,7 @@
         (b.meters || []).forEach((m) => {
           if (m.baselineInclude === false) return;
           if (!(m.baseline?.months?.length >= 3)) return;
-          const mbills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+          const mbills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
           const mincl = m.inclusive !== false;
           const mSav = getMeterPerfSavingsByCalMo(m, mbills, mincl);
           Object.entries(mSav).forEach(([mo, v]) => {
@@ -32606,7 +32615,7 @@
         (b.meters || []).forEach((m) => {
           const bl = m.baseline;
           if (!bl || !(bl.months || []).length) return;
-          const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+          const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
           const incl = m.inclusive !== false;
           const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
           const blRows = allRows.filter((r) => bl.months.includes(r.ym));
@@ -33767,7 +33776,7 @@
         if (!b) return;
         const m = b.meters.find((m) => m.id === mid);
         if (!m) return;
-        const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+        const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
         const incl = m.inclusive !== false;
         const _aw2 = window._udActiveWrap || document.getElementById('udDetailWrap');
         const pane = (_aw2 ? _aw2.querySelector('#maPane') : null) || document.getElementById('maPane');
@@ -34105,7 +34114,7 @@
             if (newScore > exScore) byStart[key] = r;
           }
         });
-        _csvImportRows = Object.values(byStart).sort((a, b) => new Date(a.start) - new Date(b.start));
+        _csvImportRows = Object.values(byStart).sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
 
         // Show preview
         showBillCsvPreview(_csvImportRows, m, fname, warnings);
@@ -34177,7 +34186,7 @@
 
         const tbody = rows
           .map((r) => {
-            const days = Math.round((new Date(r.end + 'T12:00:00') - new Date(r.start + 'T12:00:00')) / 864e5) + 1;
+            const days = Math.round((_parseISO(r.end) - _parseISO(r.start)) / 864e5) + 1;
             let cells = '';
             if (isElec)
               cells = `<td>${(r.kwh || 0).toLocaleString()}</td><td>${r.demandKW || '—'}</td><td>${r.facKW || '—'}</td><td>${r.kwCost ? '$' + (r.kwCost || 0).toLocaleString() : '—'}</td><td>${r.facKWCost ? '$' + (r.facKWCost || 0).toLocaleString() : '—'}</td><td>${r.totalCost ? '$' + (r.totalCost || 0).toLocaleString() : '—'}</td>`;
@@ -34248,7 +34257,7 @@
           }
         });
 
-        m.bills.sort((a, b) => new Date(a.start) - new Date(b.start));
+        m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
         saveUtilityData();
         closeBillCsvModal();
         udActiveTab = 'bills';
@@ -34499,7 +34508,7 @@
             n +
             ' Billing Period' +
             (n !== 1 ? 's' : '') +
-            (n ? ' · ' + getDateRange(m.bills.slice().sort((a, c) => new Date(a.start) - new Date(c.start))) : '');
+            (n ? ' · ' + getDateRange(m.bills.slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start))) : '');
         }
         // Full re-render after animation (also handles edge cases like gap-row cleanup)
         setTimeout(() => renderMeterWorkspace(), 250);
@@ -35230,7 +35239,7 @@
             m.bills = m.bills.filter((r) => r.id !== row.id);
             _mvMeter.bills = _mvMeter.bills || [];
             _mvMeter.bills.push(row);
-            _mvMeter.bills.sort((a, c) => new Date(a.start) - new Date(c.start));
+            _mvMeter.bills.sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
             const _actx = _auditCtxFromIds(udSelProjId, udSelBldgId, udSelMeterId);
             logUtilityAudit({
               action: 'move',
@@ -35264,7 +35273,7 @@
           logUtilityAudit({ action: 'add', ..._actx, period: _auditPeriodLabel(_newRow), source: 'manual' });
           showToast('Period added ✓');
         }
-        m.bills.sort((a, b) => new Date(a.start) - new Date(b.start));
+        m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
         saveUtilityData();
         closeBillModal();
         renderMeterWorkspace();
@@ -36654,7 +36663,7 @@
             let bldgSav = 0;
             meters.forEach((m) => {
               if (m.baselineInclude === false) return;
-              const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+              const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
               const incl = m.inclusive !== false;
               const bl = m.baseline;
               if (!bl || !bl.months || bl.months.length < 3) return;
@@ -36689,7 +36698,7 @@
           } else {
             meters.forEach((m) => {
               if (m.baselineInclude === false) return;
-              const bills = (m.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+              const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
               const blBills = _dashGetBaselineBills(m);
               blBills.forEach((bill) => {
                 blCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || 0;
@@ -37390,10 +37399,10 @@
           const blBills = _dashGetBaselineBills(meter);
           const bills = blBills.length
             ? blBills
-            : (meter.bills || []).slice().sort((a, c) => new Date(a.start) - new Date(c.start));
+            : (meter.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
           const byMo = {};
           bills.forEach((bill) => {
-            const d = new Date(bill.start + 'T12:00:00');
+            const d = _parseISO(bill.start);
             const mo = d.getMonth();
             // Use latest bill for each calendar month
             byMo[mo] = bill;
