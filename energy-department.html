@@ -17066,6 +17066,10 @@
               /Amount\s*due\s*(?:on\s*or\s*before|Enclosed|after)/i.test(page);
             if (isNewFormat) return this._extractNew(page);
             if (isOldFormat) return this._extractOld(page);
+            if (/Billing\s*Detail/i.test(page) && /BILL\s+(?:GS|WT|SW|ST)/i.test(page))
+              return this._extractBillingDetail(page);
+            if (/Utility\s*Billing\s*Inquiry/i.test(page) && /\b(GS|WT|SW|ST)\b/.test(page))
+              return this._extractBillingInquiry(page);
             if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(page) && /\$?\d[\d,]*\.\d{2}/.test(page)) {
               const r = this._extractOld(page);
               if (r && (Array.isArray(r) ? r : [r]).some((b) => b.TotalAmountDue || b.TotalCurrentCharges)) return r;
@@ -17603,6 +17607,202 @@
             }
             return bills;
           },
+          _extractBillingDetail: function (page) {
+            const acct = page.match(/Account\s*Number\s*(\d{4,8})/i)?.[1] || null;
+            const fixDate = (d) => (d ? d.replace(/-/g, '/') : null);
+            const billDate = fixDate(page.match(/Bill\s*Date\s*([\d]+-[\d]+-[\d]+)/i)?.[1]);
+            const serviceFrom = fixDate(page.match(/Service\s*From\s*([\d]+-[\d]+-[\d]+)/i)?.[1]);
+            const serviceTo = fixDate(page.match(/Service\s*To\s*([\d]+-[\d]+-[\d]+)/i)?.[1]);
+            const custMatch = page.match(/USD\s*(\d{3,4})\s+([A-Z][A-Z0-9 .&\-]+?)(?:\n|BOX)/);
+            const CustomerName = custMatch ? 'USD ' + custMatch[1] + ' ' + custMatch[2].trim() : null;
+            const addrMatch = page.match(/Property\s*Address\s+([\dA-Z][A-Z0-9 .]+)/i);
+            const ServiceAddress = addrMatch ? addrMatch[1].trim() : null;
+            const amtDue =
+              page.match(/Amount\s*Due\s*(?:Before\s*Due\s*Date)?\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') || null;
+            const shared = {
+              UtilityCompany: 'City of Louisburg',
+              BillFormat: 'billing-detail',
+              CustomerName,
+              AccountNumber: acct,
+              ServiceAddress,
+              BillDate: billDate,
+              BillingPeriodStart: serviceFrom,
+              BillingPeriodEnd: serviceTo,
+              NumberOfDays: null,
+              RateSchedule: null,
+              MeterNumber: null,
+            };
+            const lines = page.split(/\r?\n/);
+            let gasAmt = null,
+              gasUsage = null,
+              fuelAdj = null,
+              stormAmt = null;
+            let sewerAmt = null,
+              sewerUsage = null,
+              wpfAmt = null,
+              waterAmt = null,
+              waterUsage = null;
+            for (const ln of lines) {
+              const m = ln.match(/BILL\s+(GS|FA|ST|SW|WP|WT)\s+(.*)/i);
+              if (!m) continue;
+              const code = m[1].toUpperCase();
+              const nums = [...m[2].matchAll(/-?[\d,]+(?:\.\d+)?/g)].map((x) => parseFloat(x[0].replace(/,/g, '')));
+              const amt = nums.length ? nums[nums.length - 1] : null;
+              if (code === 'GS') {
+                gasAmt = amt;
+                const c = nums.find((n, i) => i >= 2 && n < 100000 && n > 0);
+                if (c) gasUsage = c;
+              } else if (code === 'FA') {
+                fuelAdj = amt;
+              } else if (code === 'ST') {
+                stormAmt = amt;
+              } else if (code === 'SW') {
+                sewerAmt = amt;
+                const c = nums.find((n, i) => i >= 2 && n > 100);
+                if (c) sewerUsage = c;
+              } else if (code === 'WP') {
+                wpfAmt = amt;
+              } else if (code === 'WT') {
+                waterAmt = amt;
+                const c = nums.find((n, i) => i >= 2 && n > 100);
+                if (c) waterUsage = c;
+              }
+            }
+            if (sewerUsage && (!waterUsage || waterUsage < 10)) waterUsage = sewerUsage;
+            if (waterUsage && (!sewerUsage || sewerUsage < 10)) sewerUsage = waterUsage;
+            const bills = [];
+            if (gasAmt) {
+              const r = _lbg_gasRate(serviceTo || serviceFrom || billDate);
+              let gasTotal = gasAmt;
+              let gasVariable = Math.round(Math.max(0, gasTotal - r.baseCharge) * 100) / 100;
+              bills.push({
+                ...shared,
+                Commodity: 'Gas',
+                NaturalGasTherms: gasUsage,
+                CustomerCharge: r.baseCharge,
+                GasCharge: gasVariable,
+                FuelAdjustment: fuelAdj,
+                TotalCurrentCharges: (gasTotal + (fuelAdj || 0)).toFixed(2),
+                TotalAmountDue: (gasTotal + (fuelAdj || 0)).toFixed(2),
+              });
+            }
+            if (waterAmt) {
+              const t = (waterAmt + (wpfAmt || 0)).toFixed(2);
+              bills.push({
+                ...shared,
+                Commodity: 'Water',
+                WaterUsage: waterUsage,
+                WaterCharge: waterAmt,
+                WaterProtectionFee: wpfAmt,
+                TotalCurrentCharges: t,
+                TotalAmountDue: t,
+              });
+            }
+            if (sewerAmt) {
+              bills.push({
+                ...shared,
+                Commodity: 'Sewer',
+                SewerUsage: sewerUsage,
+                SewerCharge: sewerAmt,
+                TotalCurrentCharges: sewerAmt.toFixed(2),
+                TotalAmountDue: sewerAmt.toFixed(2),
+              });
+            }
+            if (stormAmt != null) {
+              bills.push({
+                ...shared,
+                Commodity: 'Stormwater',
+                StormWaterCharge: stormAmt,
+                TotalCurrentCharges: stormAmt.toFixed(2),
+                TotalAmountDue: stormAmt.toFixed(2),
+              });
+            }
+            return bills.length ? bills : null;
+          },
+          _extractBillingInquiry: function (page) {
+            const acct = page.match(/Account\s*#?\s*(\d{4,8})/i)?.[1] || null;
+            const fixDate = (d) => (d ? d.replace(/-/g, '/') : null);
+            const dueDate = fixDate(page.match(/Due\s*Date\s*([\d]+-[\d]+-[\d]+)/i)?.[1]);
+            const custMatch = page.match(/USD\s*(\d{3,4})\s+([A-Z][A-Z0-9 .&\-]+?)(?:\n|$)/m);
+            const CustomerName = custMatch ? 'USD ' + custMatch[1] + ' ' + custMatch[2].trim() : null;
+            const addrMatch = page.match(/\d+\s+[A-Z]+\s+(?:DRIVE|DR|STREET|ST|AVE|ROAD|RD|LN|CT|WAY)\b/i);
+            const ServiceAddress = addrMatch ? addrMatch[0].trim() : null;
+            let periodEnd = null,
+              periodStart = null;
+            if (dueDate) {
+              const d = new Date(dueDate);
+              if (!isNaN(d)) {
+                d.setDate(d.getDate() - 25);
+                periodEnd = d.getMonth() + 1 + '/' + d.getDate() + '/' + d.getFullYear();
+                const s = new Date(d);
+                s.setMonth(s.getMonth() - 1);
+                periodStart = s.getMonth() + 1 + '/' + s.getDate() + '/' + s.getFullYear();
+              }
+            }
+            const shared = {
+              UtilityCompany: 'City of Louisburg',
+              BillFormat: 'billing-inquiry',
+              CustomerName,
+              AccountNumber: acct,
+              ServiceAddress,
+              BillDate: dueDate,
+              BillingPeriodStart: periodStart,
+              BillingPeriodEnd: periodEnd,
+              NumberOfDays: null,
+              RateSchedule: null,
+              MeterNumber: null,
+            };
+            const lines = page.split(/\r?\n/);
+            const CODE_MAP = { GS: 'Gas', ST: 'Stormwater', SW: 'Sewer', WP: 'WaterProtection', WT: 'Water' };
+            const amounts = {};
+            for (const ln of lines) {
+              const m = ln.match(/^\s*(GS|ST|SW|WP|WT)\s+([\d,.]+)/);
+              if (m) amounts[m[1]] = parseFloat(m[2].replace(/,/g, ''));
+            }
+            const bills = [];
+            if (amounts.GS) {
+              const r = _lbg_gasRate(periodEnd || dueDate);
+              const gasVariable = Math.round(Math.max(0, amounts.GS - r.baseCharge) * 100) / 100;
+              bills.push({
+                ...shared,
+                Commodity: 'Gas',
+                CustomerCharge: r.baseCharge,
+                GasCharge: gasVariable,
+                TotalCurrentCharges: amounts.GS.toFixed(2),
+                TotalAmountDue: amounts.GS.toFixed(2),
+              });
+            }
+            if (amounts.WT) {
+              const t = (amounts.WT + (amounts.WP || 0)).toFixed(2);
+              bills.push({
+                ...shared,
+                Commodity: 'Water',
+                WaterCharge: amounts.WT,
+                WaterProtectionFee: amounts.WP || null,
+                TotalCurrentCharges: t,
+                TotalAmountDue: t,
+              });
+            }
+            if (amounts.SW) {
+              bills.push({
+                ...shared,
+                Commodity: 'Sewer',
+                SewerCharge: amounts.SW,
+                TotalCurrentCharges: amounts.SW.toFixed(2),
+                TotalAmountDue: amounts.SW.toFixed(2),
+              });
+            }
+            if (amounts.ST != null && amounts.ST > 0) {
+              bills.push({
+                ...shared,
+                Commodity: 'Stormwater',
+                StormWaterCharge: amounts.ST,
+                TotalCurrentCharges: amounts.ST.toFixed(2),
+                TotalAmountDue: amounts.ST.toFixed(2),
+              });
+            }
+            return bills.length ? bills : null;
+          },
         },
         {
           name: 'Propane / Fuel Oil Delivery',
@@ -17788,7 +17988,7 @@
         },
         'Propane / Fuel Oil Delivery': {
           critical: ['GallonsDelivered', 'TotalCurrentCharges'],
-          important: ['BillDate', 'UnitPrice'],
+          important: ['DeliveryDate', 'UnitPrice'],
           chargeFields: [],
         },
         _default: {
@@ -17879,9 +18079,10 @@
           }
         }
 
-        // Validate billing period days are reasonable (15-45 typical, warn outside 10-90)
+        const isPropaneBill =
+          (extracted.Commodity || '').toLowerCase() === 'propane' || (extracted.FuelType || '') !== '';
         const days = pf(extracted.NumberOfDays);
-        if (days > 0 && (days < 10 || days > 90)) {
+        if (days > 0 && (days < 10 || days > 90) && !isPropaneBill) {
           warnings.push({
             level: 'warn',
             field: 'NumberOfDays',
