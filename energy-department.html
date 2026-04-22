@@ -3660,6 +3660,16 @@
         color: var(--violet);
         border: 1px solid rgba(167, 139, 250, 0.2);
       }
+      .ud-meter-sewer {
+        background: rgba(139, 92, 246, 0.12);
+        color: #a78bfa;
+        border: 1px solid rgba(139, 92, 246, 0.2);
+      }
+      .ud-meter-storm {
+        background: rgba(156, 163, 175, 0.12);
+        color: #9ca3af;
+        border: 1px solid rgba(156, 163, 175, 0.2);
+      }
       .ud-meter-propane {
         background: var(--warn-dim);
         color: var(--orange);
@@ -4284,6 +4294,18 @@
       .ma-meter-pill.gas-pill {
         border-color: rgba(255, 176, 64, 0.5);
         background: rgba(255, 176, 64, 0.08);
+      }
+      .ma-meter-pill.water-pill {
+        border-color: rgba(56, 189, 248, 0.5);
+        background: rgba(56, 189, 248, 0.08);
+      }
+      .ma-meter-pill.sewer-pill {
+        border-color: rgba(139, 92, 246, 0.5);
+        background: rgba(139, 92, 246, 0.08);
+      }
+      .ma-meter-pill.storm-pill {
+        border-color: rgba(156, 163, 175, 0.5);
+        background: rgba(156, 163, 175, 0.08);
       }
       .ma-meter-pill.sel {
         border-color: var(--em2);
@@ -17132,9 +17154,12 @@
             const sewer = parseLine(sewerLine);
             const water = parseLine(waterLine);
             const wpf = parseLine(wpfLine);
-            // Water usage is shared with sewer on this bill; borrow when missing.
+            // Water and sewer share the same meter — usage should match.
             if ((!water.usage || water.usage === 0) && water.charge) {
               water.usage = sewer.usage || wpf.usage || 0;
+            }
+            if (sewer.charge && (!sewer.usage || sewer.usage < 10) && water.usage > 0) {
+              sewer.usage = water.usage;
             }
 
             const TotalAmountDue =
@@ -17384,6 +17409,9 @@
             sewer = sewer || { usage: null, charge: null };
             storm = storm || { usage: null, charge: null };
             wpf = wpf || { usage: null, charge: null };
+            if (sewer.charge && (!sewer.usage || sewer.usage < 10) && water.usage > 0) {
+              sewer.usage = water.usage;
+            }
 
             // Fuel Adjustment — line item on gas bills. Typically negative.
             // Formats seen: "-$385.93", "-385.93", "30.15-" (trailing minus),
@@ -18454,7 +18482,9 @@
               };
               const savedField = SAVED_MAP[field];
               if (!savedField) continue;
-              const histVals = hist.map((h) => parseFloat(h[savedField]) || 0).filter((v) => v > 0);
+              const bComm = (b.Commodity || '').toLowerCase();
+              const commHist = bComm ? hist.filter((h) => (h.commodity || '').toLowerCase() === bComm) : hist;
+              const histVals = commHist.map((h) => parseFloat(h[savedField]) || 0).filter((v) => v > 0);
               if (histVals.length < 3) continue;
               const mean = histVals.reduce((a, c) => a + c, 0) / histVals.length;
               if (mean <= 0) continue;
@@ -19776,7 +19806,11 @@
           }
           let billMatch = findMeterMatch(bill) || _autoAssignTarget;
           const _bComm = (bill.Commodity || '').toLowerCase();
-          const _mComm = (billMatch.meter.commodity || '').toLowerCase();
+          let _mComm = (billMatch.meter.commodity || '').toLowerCase();
+          if (_bComm && !_mComm) {
+            billMatch.meter.commodity = bill.Commodity;
+            _mComm = _bComm;
+          }
           if (_bComm && _mComm && _bComm !== _mComm) {
             const _existM = (billMatch.bldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === _bComm);
             if (_existM) {
@@ -19885,7 +19919,11 @@
       function _saveBillToMatchedMeter(extracted, match) {
         if (!extracted || !match || !match.proj || !match.bldg || !match.meter) return null;
         const billComm = (extracted.Commodity || '').toLowerCase();
-        const meterComm = (match.meter.commodity || '').toLowerCase();
+        let meterComm = (match.meter.commodity || '').toLowerCase();
+        if (billComm && !meterComm) {
+          match.meter.commodity = extracted.Commodity;
+          meterComm = billComm;
+        }
         if (billComm && meterComm && billComm !== meterComm) {
           const existingMeter = (match.bldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm);
           if (existingMeter) {
@@ -24353,7 +24391,11 @@
               if (matched) break;
             }
             if (targetMeter && !matched) {
-              const mComm = (targetMeter.commodity || '').toLowerCase();
+              let mComm = (targetMeter.commodity || '').toLowerCase();
+              if (billComm && !mComm) {
+                targetMeter.commodity = extracted.Commodity;
+                mComm = billComm;
+              }
               if (billComm && mComm && billComm !== mComm) {
                 const existM = (targetBldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm);
                 if (existM) {
@@ -26101,10 +26143,12 @@
           Electric: 'ud-meter-elec',
           Gas: 'ud-meter-gas',
           Water: 'ud-meter-water',
+          Sewer: 'ud-meter-sewer',
+          Stormwater: 'ud-meter-storm',
           Steam: 'ud-meter-steam',
           Propane: 'ud-meter-propane',
         };
-        return `<span class="ud-meter-pill ${map[c] || 'ud-meter-elec'}">${c}</span>`;
+        return `<span class="ud-meter-pill ${map[c] || 'ud-meter-elec'}">${c || '—'}</span>`;
       }
       function meterLabel(m) {
         const acct = m.account ? m.account : '—';
@@ -26836,8 +26880,22 @@
             .map((m) => {
               const active = m.id === _curMid;
               const bcount = (m.bills || []).length;
-              const _pCls = m.commodity === 'Electric' ? ' elec-pill' : m.commodity === 'Gas' ? ' gas-pill' : '';
-              const _pTxt = m.commodity === 'Electric' ? '#7dd8ff' : m.commodity === 'Gas' ? '#ffb040' : 'var(--text2)';
+              const _pClsMap = {
+                Electric: ' elec-pill',
+                Gas: ' gas-pill',
+                Water: ' water-pill',
+                Sewer: ' sewer-pill',
+                Stormwater: ' storm-pill',
+              };
+              const _pCls = _pClsMap[m.commodity] || '';
+              const _pTxtMap = {
+                Electric: '#7dd8ff',
+                Gas: '#ffb040',
+                Water: '#38bdf8',
+                Sewer: '#a78bfa',
+                Stormwater: '#9ca3af',
+              };
+              const _pTxt = _pTxtMap[m.commodity] || 'var(--text2)';
               const _exclTag =
                 m.baselineInclude === false
                   ? '<span style="font-size:9px;color:var(--text3);opacity:.7" title="Excluded from baseline &amp; performance">excl</span>'
@@ -26853,7 +26911,7 @@
                 '<span style="font-size:12px;font-weight:600;color:' +
                 (active ? 'var(--text)' : _pTxt) +
                 '">' +
-                (m.provider || m.commodity) +
+                (m.commodity || m.provider || '—') +
                 '</span>' +
                 '<span style="font-size:11px;color:var(--text3)">' +
                 bcount +
