@@ -17628,15 +17628,31 @@
             return bills;
           },
           _extractBillingDetail: function (page) {
-            const acct = page.match(/Account\s*Number\s*(\d{4,8})/i)?.[1] || null;
+            console.log('[BillingDetail] Raw text (600):', page.slice(0, 600));
+            const acct = page.match(/Account\s*(?:Number|#)\s*:?\s*(\d{4,8})/i)?.[1] || null;
+            const _dt = /(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/;
             const fixDate = (d) => (d ? d.replace(/-/g, '/') : null);
-            const billDate = fixDate(page.match(/Bill\s*Date\s*([\d]+-[\d]+-[\d]+)/i)?.[1]);
-            const serviceFrom = fixDate(page.match(/Service\s*From\s*([\d]+-[\d]+-[\d]+)/i)?.[1]);
-            const serviceTo = fixDate(page.match(/Service\s*To\s*([\d]+-[\d]+-[\d]+)/i)?.[1]);
-            const custMatch = page.match(/USD\s*(\d{3,4})\s+([A-Z][A-Z0-9 .&\-]+?)(?:\n|BOX)/);
+            const _findDate = (label) => {
+              const re = new RegExp(label + '[:\\s]*' + _dt.source, 'i');
+              const m = page.match(re);
+              if (m) return fixDate(m[1]);
+              const re2 = new RegExp(label + '[^\\d\\n]{0,20}\\n\\s*' + _dt.source, 'im');
+              const m2 = page.match(re2);
+              return m2 ? fixDate(m2[1]) : null;
+            };
+            const billDate = _findDate('Bill\\s*Date');
+            const serviceFrom = _findDate('Service\\s*From');
+            const serviceTo = _findDate('Service\\s*To');
+            console.log('[BillingDetail] Dates:', { billDate, serviceFrom, serviceTo, acct });
+            const custMatch = page.match(/USD\s*(\d{3,4})\s+([A-Z][A-Z0-9 .&\-]+?)(?:\n|BOX|\s{3,})/);
             const CustomerName = custMatch ? 'USD ' + custMatch[1] + ' ' + custMatch[2].trim() : null;
-            const addrMatch = page.match(/Property\s*Address\s+([\dA-Z][A-Z0-9 .]+)/i);
-            const ServiceAddress = addrMatch ? addrMatch[1].trim() : null;
+            const addrMatch = page.match(/(?:Property\s*Address|202)\s*([\dA-Z][A-Z0-9 .]+?)(?:\s{3,}|Due|Amount|\n)/i);
+            const ServiceAddress = addrMatch
+              ? addrMatch[0]
+                  .replace(/\s{3,}.*/, '')
+                  .replace(/Due.*|Amount.*/i, '')
+                  .trim()
+              : null;
             const amtDue =
               page.match(/Amount\s*Due\s*(?:Before\s*Due\s*Date)?\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') || null;
             const shared = {
