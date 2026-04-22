@@ -17631,11 +17631,23 @@
             console.log('[BillingDetail] Raw text (600):', page.slice(0, 600));
             const acct = page.match(/Account\s*(?:Number|#)\s*:?\s*(\d{4,8})/i)?.[1] || null;
             const _dt = /(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/;
+            const _dtMerged = /(\d{3,4})-(\d{4})/;
             const fixDate = (d) => (d ? d.replace(/-/g, '/') : null);
+            const _splitMerged = (s) => {
+              const m = s.match(/^(\d{3,4})-(\d{4})$/);
+              if (!m) return null;
+              const digits = m[1];
+              const yr = m[2];
+              if (digits.length === 3) return digits[0] + '/' + digits.slice(1) + '/' + yr;
+              return digits.slice(0, 2) + '/' + digits.slice(2) + '/' + yr;
+            };
             const _findDate = (label) => {
               const re = new RegExp(label + '[:\\s]*' + _dt.source, 'i');
               const m = page.match(re);
               if (m) return fixDate(m[1]);
+              const re3 = new RegExp(label + '[:\\s]*' + _dtMerged.source, 'i');
+              const m3 = page.match(re3);
+              if (m3) return _splitMerged(m3[1] + '-' + m3[2]);
               const re2 = new RegExp(label + '[^\\d\\n]{0,20}\\n\\s*' + _dt.source, 'im');
               const m2 = page.match(re2);
               return m2 ? fixDate(m2[1]) : null;
@@ -17757,11 +17769,11 @@
           },
           _extractBillingInquiry: function (page) {
             console.log('[BillingInquiry] Raw text (500):', page.slice(0, 500));
-            const acct = page.match(/Account\s*#?\s*(\d{4,8})/i)?.[1] || null;
+            const acct = page.match(/Account\s*[#8]?\s*[\[(\s]*(\d{4,8})/i)?.[1] || null;
             const fixDate = (d) => (d ? d.replace(/-/g, '/') : null);
             const dueDate = fixDate(
-              page.match(/Due\s*Date\s*([\d]+-[\d]+-[\d]+)/i)?.[1] ||
-                page.match(/Due\s*Date\s*:?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)?.[1],
+              page.match(/Due\s*Da[lt]e\s*:?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)?.[1] ||
+                page.match(/Due\s*Da[lt]e\s*:?\s*(\d{1,2}-\d{1,2}-\d{4})/i)?.[1],
             );
             const custMatch = page.match(/USD\s*(\d{3,4})\s+([A-Z][A-Z0-9 .&\-]+?)(?:\n|$)/m);
             const CustomerName = custMatch ? 'USD ' + custMatch[1] + ' ' + custMatch[2].trim() : null;
