@@ -3932,6 +3932,9 @@
         padding: 6px 10px;
         background: var(--s2);
         border-bottom: 1px solid var(--border);
+        position: sticky;
+        left: 0;
+        z-index: 5;
       }
       tr.bill-flagged td {
         background: var(--amber-dim) !important;
@@ -20085,6 +20088,43 @@
             Meter2_kWh: bill.Meter2_kWh || '',
             Meter2_KW: bill.Meter2_KW || '',
             Meter2_RKVA: bill.Meter2_RKVA || '',
+            utilityCompany: bill.UtilityCompany || '',
+            customerName: bill.CustomerName || '',
+            serviceAddress: bill.ServiceAddress || '',
+            accountNumber: bill.AccountNumber || '',
+            meterNumber: bill.MeterNumber || '',
+            numberOfDays: bill.NumberOfDays || '',
+            billDate: bill.BillDate || '',
+            commodity: bill.Commodity || '',
+            startRead: bill.StartRead || '',
+            endRead: bill.EndRead || '',
+            readDifference: bill.ReadDifference || '',
+            meterMultiplier: bill.MeterMultiplier || '',
+            actualRKVA: bill.ActualRKVA || '',
+            tdcKW: bill.TDCkW || '',
+            taxExemptDelivery: bill.TaxExemptDelivery || '',
+            billOffset: bill.BillOffset || '',
+            naturalGasCCF: bill.NaturalGasCCF || '',
+            naturalGasTherms: bill.NaturalGasTherms || '',
+            therms: pf(bill.NaturalGasTherms) || pf(bill.NaturalGasCCF) || '',
+            thermCost:
+              bill.NaturalGasTherms || bill.NaturalGasCCF ? bill.TotalCurrentCharges || bill.TotalAmountDue || '' : '',
+            gasCharge: bill.GasCharge || '',
+            fuelAdjustment: bill.FuelAdjustment || '',
+            waterUsage: bill.WaterUsage || '',
+            waterCharge: bill.WaterCharge || '',
+            waterProtectionFee: bill.WaterProtectionFee || '',
+            sewerUsage: bill.SewerUsage || '',
+            sewerCharge: bill.SewerCharge || '',
+            stormWaterCharge: bill.StormWaterCharge || '',
+            invoiceNumber: bill.InvoiceNumber || '',
+            saleNumber: bill.SaleNumber || '',
+            deliveryDate: bill.DeliveryDate || '',
+            fuelType: bill.FuelType || '',
+            gallonsDelivered: bill.GallonsDelivered || '',
+            unitPrice: bill.UnitPrice || '',
+            subtotal: bill.Subtotal || '',
+            tax: bill.Tax || '',
           };
           if (bill._rates) {
             const cp = {};
@@ -28034,8 +28074,9 @@
         cols.forEach((c, i) => {
           if (c.k) fieldColMap[c.k] = i;
         });
+        const isPropaneMeter = (m.commodity || '').toLowerCase() === 'propane';
         bills.forEach((row, idx) => {
-          if (idx > 0 && detectGap(bills[idx - 1].end, row.start)) {
+          if (idx > 0 && !isPropaneMeter && detectGap(bills[idx - 1].end, row.start)) {
             const gapDays = Math.round((_parseISO(row.start) - _parseISO(bills[idx - 1].end)) / (1000 * 60 * 60 * 24));
             tblBody += `<tr class="ud-bill-gap-row"><td colspan="${cols.length}"><div class="ud-bill-gap-msg">⚠️ Gap in data — ${gapDays} day${gapDays !== 1 ? 's' : ''} missing between ${fmtDate(bills[idx - 1].end)} and ${fmtDate(row.start)}</div></td></tr>`;
           }
