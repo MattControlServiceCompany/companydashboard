@@ -17069,9 +17069,17 @@
               /Amount\s*due\s*(?:on\s*or\s*before|Enclosed|after)/i.test(page);
             if (isNewFormat) return this._extractNew(page);
             if (isOldFormat) return this._extractOld(page);
-            if (/Billing\s*Detail/i.test(page) && /BILL\s+(?:GS|WT|SW|ST)/i.test(page))
+            if (
+              /Billing\s*Detail|Bill(?:ing)?\s*(?:Detail|Summary)/i.test(page) &&
+              /BILL\s+(?:GS|WT|SW|ST|FA|WP)/i.test(page)
+            )
               return this._extractBillingDetail(page);
-            if (/Utility\s*Billing\s*Inquiry/i.test(page) && /\b(GS|WT|SW|ST)\b/.test(page))
+            if (/BILL\s+GS\s+\d|BILL\s+WT\s+\d/i.test(page) && /Service\s*(?:From|To)/i.test(page))
+              return this._extractBillingDetail(page);
+            if (
+              /Utility\s*Billing\s*(?:Inquiry|History)/i.test(page) ||
+              (/Due\s*Date/i.test(page) && /^\s*GS\s+[\d,.]+/m.test(page))
+            )
               return this._extractBillingInquiry(page);
             if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(page) && /\$?\d[\d,]*\.\d{2}/.test(page)) {
               const r = this._extractOld(page);
@@ -17080,6 +17088,7 @@
               if (r2 && (Array.isArray(r2) ? r2 : [r2]).some((b) => b.TotalAmountDue || b.TotalCurrentCharges))
                 return r2;
             }
+            console.warn('[Louisburg] Unrecognized page format. First 500 chars:', page.slice(0, 500));
             return null;
           },
           _extractOld: function (page) {
@@ -17163,12 +17172,14 @@
               stormLine = null,
               sewerLine = null,
               waterLine = null,
-              wpfLine = null;
+              wpfLine = null,
+              fuelAdjLine = null;
             for (const ln of lines) {
               const trim = ln.trim();
               if (/^\d{3}\s*-\s*(water|gas|sewer|storm)/i.test(trim)) continue;
               if (/Previous\s*Balance/i.test(trim)) continue;
-              if (/\bGAS\b/i.test(trim) && !/FUEL|ADJUSTMENT/i.test(trim) && !gasLine) gasLine = trim;
+              if (/\bFUEL\b|\bADJUSTMENT\b/i.test(trim) && !fuelAdjLine) fuelAdjLine = trim;
+              else if (/\bGAS\b/i.test(trim) && !/FUEL|ADJUSTMENT/i.test(trim) && !gasLine) gasLine = trim;
               else if (/\bSTORM\s*WATER\b/i.test(trim) && !stormLine) stormLine = trim;
               else if (/\bSEWER\b/i.test(trim) && !sewerLine) sewerLine = trim;
               else if (/\bWATER\s*PROTECTION\s*FEE\b/i.test(trim) && !wpfLine) wpfLine = trim;
@@ -17208,6 +17219,10 @@
             const sewer = parseLine(sewerLine);
             const water = parseLine(waterLine);
             const wpf = parseLine(wpfLine);
+            const fuelAdj = parseLine(fuelAdjLine);
+            let signedFuelAdj = fuelAdj.charge;
+            if (signedFuelAdj != null && signedFuelAdj > 0 && fuelAdjLine && /-\s*$/.test(fuelAdjLine))
+              signedFuelAdj = -signedFuelAdj;
             // Water and sewer share the same meter — usage should match.
             if ((!water.usage || water.usage === 0) && water.charge) {
               water.usage = sewer.usage || wpf.usage || 0;
@@ -17262,6 +17277,7 @@
                 gasVariable = Math.round(gas.usage * r.rate * 100) / 100;
                 gasTotal = gasVariable + r.baseCharge;
               }
+              const gasWithFA = signedFuelAdj != null ? gasTotal + signedFuelAdj : gasTotal;
               const gasBill = {
                 ...shared,
                 Commodity: 'Gas',
@@ -17270,8 +17286,9 @@
                 NaturalGasTherms: gas.usage || null,
                 CustomerCharge: r.baseCharge,
                 GasCharge: gasVariable,
-                TotalCurrentCharges: gasTotal.toFixed(2),
-                TotalAmountDue: gasTotal.toFixed(2),
+                FuelAdjustment: signedFuelAdj,
+                TotalCurrentCharges: gasWithFA.toFixed(2),
+                TotalAmountDue: gasWithFA.toFixed(2),
               };
               if (corrected && corrected.corrected)
                 gasBill._auto_corrected_GasCharge = {
@@ -17723,9 +17740,13 @@
             return bills.length ? bills : null;
           },
           _extractBillingInquiry: function (page) {
+            console.log('[BillingInquiry] Raw text (500):', page.slice(0, 500));
             const acct = page.match(/Account\s*#?\s*(\d{4,8})/i)?.[1] || null;
             const fixDate = (d) => (d ? d.replace(/-/g, '/') : null);
-            const dueDate = fixDate(page.match(/Due\s*Date\s*([\d]+-[\d]+-[\d]+)/i)?.[1]);
+            const dueDate = fixDate(
+              page.match(/Due\s*Date\s*([\d]+-[\d]+-[\d]+)/i)?.[1] ||
+                page.match(/Due\s*Date\s*:?\s*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)?.[1],
+            );
             const custMatch = page.match(/USD\s*(\d{3,4})\s+([A-Z][A-Z0-9 .&\-]+?)(?:\n|$)/m);
             const CustomerName = custMatch ? 'USD ' + custMatch[1] + ' ' + custMatch[2].trim() : null;
             const addrMatch = page.match(/\d+\s+[A-Z]+\s+(?:DRIVE|DR|STREET|ST|AVE|ROAD|RD|LN|CT|WAY)\b/i);
@@ -18784,12 +18805,8 @@
                 reason: 'OCR decimal-drop: ' + original + ' → ' + corrected,
               };
               b.StormWaterCharge = corrected;
-              // Adjust totals by the difference
-              const diff = original - corrected;
-              if (typeof b.TotalCurrentCharges === 'number')
-                b.TotalCurrentCharges = Math.round((b.TotalCurrentCharges - diff) * 100) / 100;
-              if (typeof b.TotalAmountDue === 'number')
-                b.TotalAmountDue = Math.round((b.TotalAmountDue - diff) * 100) / 100;
+              b.TotalCurrentCharges = corrected.toFixed(2);
+              b.TotalAmountDue = corrected.toFixed(2);
               console.log('[PostVerify] Stormwater decimal-drop corrected: $' + original + ' → $' + corrected);
             }
           }
