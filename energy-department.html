@@ -22039,10 +22039,15 @@
         const _monthLabel = (bill) => {
           const parse = (str) => {
             if (!str) return null;
-            const m = String(str).match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-            if (!m) return null;
-            const yr = m[3].length === 2 ? 2000 + +m[3] : +m[3];
-            return new Date(yr, +m[1] - 1, +m[2]);
+            const s = String(str).trim();
+            const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+            if (m) {
+              const yr = m[3].length === 2 ? 2000 + +m[3] : +m[3];
+              return new Date(yr, +m[1] - 1, +m[2]);
+            }
+            const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (iso) return new Date(+iso[1], +iso[2] - 1, +iso[3]);
+            return null;
           };
           // Single-date delivery events (propane) use DeliveryDate directly.
           if (bill.DeliveryDate) {
@@ -22086,10 +22091,16 @@
         });
         const _parseDt = (str) => {
           if (!str) return null;
-          const m = String(str).match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-          if (!m) return null;
-          const yr = m[3].length === 2 ? 2000 + +m[3] : +m[3];
-          return new Date(yr, +m[1] - 1, +m[2]);
+          const s = String(str).trim();
+          // Accept both MM/DD/YYYY (Evergy) and YYYY-MM-DD (ISO from saved bills)
+          const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+          if (m) {
+            const yr = m[3].length === 2 ? 2000 + +m[3] : +m[3];
+            return new Date(yr, +m[1] - 1, +m[2]);
+          }
+          const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          if (iso) return new Date(+iso[1], +iso[2] - 1, +iso[3]);
+          return null;
         };
         const _majMonth = (s, e) => {
           if (!s || !e || s > e) return s ? s.getFullYear() + '-' + String(s.getMonth() + 1).padStart(2, '0') : null;
@@ -28308,9 +28319,11 @@
       function buildMoMap(m, blRows, bills, incl) {
         const isElec = m.commodity === 'Electric';
         const isGas = m.commodity === 'Gas';
+        const isPropane = m.commodity === 'Propane';
         const elecByMo = {},
           gasByMo = {},
-          waterByMo = {};
+          waterByMo = {},
+          propaneByMo = {};
         blRows
           .slice()
           .sort((a, c) => a.ym.localeCompare(c.ym))
@@ -28334,11 +28347,115 @@
               };
             } else if (isGas) {
               gasByMo[mo] = { therms: normUsage, cost: r.cost };
+            } else if (isPropane) {
+              propaneByMo[mo] = { gallons: normUsage, cost: r.cost };
             } else {
               waterByMo[mo] = { kgal: normUsage, cost: r.cost };
             }
           });
-        return { elecByMo, gasByMo, waterByMo };
+        return { elecByMo, gasByMo, waterByMo, propaneByMo };
+      }
+
+      // ── Propane Normalization ──────────────────────────────────────────────
+      // Propane is delivered in bulk (e.g. 500 gal on Jan 16, 800 gal on Apr 29).
+      // These deliveries don't match monthly billing periods. To get monthly usage,
+      // we spread each delivery's gallons across the months between the previous
+      // delivery and this one, weighted by Heating Degree Days (HDD).
+      //
+      // hddByMonth: {YYYY-MM: {hdd}} from ZIP weather cache (same as weatherByYm).
+      // Returns [{month: 'YYYY-MM', gallons: N, cost: N}, ...] sorted by month.
+      function normalizePropaneDeliveries(bills, hddByMonth) {
+        if (!bills || bills.length === 0) return [];
+        // Sort deliveries by date (start === end === DeliveryDate for propane)
+        const sorted = bills
+          .filter((b) => b.start)
+          .slice()
+          .sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+        if (sorted.length === 0) return [];
+
+        const result = {}; // {YYYY-MM: {gallons, cost}}
+
+        // Helper: enumerate months between two dates (inclusive of partial months)
+        // Returns [{ym, days}] — each entry is a calendar month with the number of
+        // days that fall within [startDate, endDate).
+        function monthSpans(startDate, endDate) {
+          const spans = [];
+          if (startDate >= endDate) return spans;
+          let cur = new Date(startDate);
+          while (cur < endDate) {
+            const ym = cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0');
+            // Count days in this month that fall within [startDate, endDate)
+            const moEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 1); // 1st of next month
+            const spanEnd = endDate < moEnd ? endDate : moEnd;
+            const days = Math.round((spanEnd - cur) / (1000 * 60 * 60 * 24));
+            if (days > 0) spans.push({ ym, days });
+            cur = moEnd;
+          }
+          return spans;
+        }
+
+        for (let i = 1; i < sorted.length; i++) {
+          const prevDelivery = sorted[i - 1];
+          const thisDelivery = sorted[i];
+          // The gallons from thisDelivery were consumed between prevDelivery date and thisDelivery date
+          const gallons = parseFloat(thisDelivery.gallonsDelivered || thisDelivery.kwh) || 0;
+          const cost = parseFloat(thisDelivery.totalCost) || 0;
+          if (gallons <= 0) continue;
+
+          const spanStart = _parseISO(prevDelivery.start);
+          const spanEnd = _parseISO(thisDelivery.start);
+          const spans = monthSpans(spanStart, spanEnd);
+          if (spans.length === 0) continue;
+
+          // Get HDD for each spanned month
+          let totalHDD = 0;
+          let totalDays = 0;
+          const spanHDD = spans.map((s) => {
+            const w = hddByMonth && hddByMonth[s.ym];
+            // Scale monthly HDD by fraction of month covered
+            const calDays = calDaysInMonth(s.ym);
+            const frac = calDays > 0 ? s.days / calDays : 0;
+            const hdd = w && w.hdd != null ? w.hdd * frac : 0;
+            totalHDD += hdd;
+            totalDays += s.days;
+            return { ym: s.ym, days: s.days, hdd };
+          });
+
+          // Allocate gallons and cost proportionally
+          spanHDD.forEach((s) => {
+            let share;
+            if (totalHDD > 0) {
+              // Weight by HDD
+              share = s.hdd / totalHDD;
+            } else {
+              // Summer / no HDD data: weight by days
+              share = totalDays > 0 ? s.days / totalDays : 0;
+            }
+            const mGal = gallons * share;
+            const mCost = cost * share;
+            if (!result[s.ym]) {
+              result[s.ym] = { gallons: 0, cost: 0 };
+            }
+            result[s.ym].gallons += mGal;
+            result[s.ym].cost += mCost;
+          });
+        }
+
+        // Also handle the first delivery: it has no prior delivery, so we can
+        // only assign it to its own month as a lump (no normalization possible).
+        if (sorted.length === 1) {
+          const d = sorted[0];
+          const gal = parseFloat(d.gallonsDelivered || d.kwh) || 0;
+          const cost = parseFloat(d.totalCost) || 0;
+          const ym = d.start.slice(0, 7);
+          if (gal > 0) {
+            result[ym] = { gallons: gal, cost: cost };
+          }
+        }
+
+        return Object.entries(result)
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([month, v]) => ({ month, gallons: v.gallons, cost: v.cost }));
       }
 
       function getNormRows(m, bills, incl, weatherByYm) {
@@ -28354,86 +28471,116 @@
 
         const byMonth = {};
         const isElec = m.commodity === 'Electric',
-          isGas = m.commodity === 'Gas';
+          isGas = m.commodity === 'Gas',
+          isPropane = m.commodity === 'Propane';
 
-        bills.forEach((row) => {
-          if (!row.start || !row.end) return;
-          const totalDays = Math.max(1, parseInt(calcDays(row.start, row.end, incl)) || 1);
-          const usage = isElec
-            ? parseFloat(row.kwh) || 0
-            : isGas
-              ? parseFloat(row.therms) || 0
-              : parseFloat(row.usage) || 0;
-          const cost = isElec
-            ? parseFloat(row.totalCost) || 0
-            : isGas
-              ? parseFloat(row.thermCost) || 0
-              : parseFloat(row.cost) || 0;
-          // Bill-level weather — only used as fallback if no ZIP weather cache
-          const hdd = parseFloat(row.hdd) || 0;
-          const cdd = parseFloat(row.cdd) || 0;
-          const avgTmp = parseFloat(row.avgTemp) || 0;
-
-          // Count actual days per calendar month that this bill spans
-          const monthDays = {};
-          const s = _parseISO(row.start);
-          const e = _parseISO(row.end);
-          let cur = new Date(s);
-          while (cur <= e) {
-            const ym = cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0');
-            monthDays[ym] = (monthDays[ym] || 0) + 1;
-            cur.setDate(cur.getDate() + 1);
-          }
-
-          // Prorate usage/cost/days into each spanned month
-          const spannedTotal = Object.values(monthDays).reduce((a, b) => a + b, 0) || 1;
-          Object.entries(monthDays).forEach(([ym, daysInMonth]) => {
-            const frac = daysInMonth / spannedTotal;
-            const pUsage = usage * frac;
-            const pCost = cost * frac;
-            const pDays = daysInMonth;
-
-            if (byMonth[ym]) {
-              byMonth[ym].usage += pUsage;
-              byMonth[ym].cost += pCost;
-              byMonth[ym].days += pDays;
-              // Only accumulate bill-level weather if no ZIP weather cache
-              if (!weatherByYm) {
-                if (hdd) {
-                  byMonth[ym].hddSum = (byMonth[ym].hddSum || 0) + hdd * frac;
-                  byMonth[ym].hasHdd = true;
-                }
-                if (cdd) {
-                  byMonth[ym].cddSum = (byMonth[ym].cddSum || 0) + cdd * frac;
-                  byMonth[ym].hasCdd = true;
-                }
-                if (avgTmp) {
-                  byMonth[ym].tmpSum = (byMonth[ym].tmpSum || 0) + avgTmp * frac;
-                  byMonth[ym].hasTmp = true;
-                }
-                byMonth[ym].wSum = (byMonth[ym].wSum || 0) + frac;
-              }
-              byMonth[ym]._ids.push(row.id);
-            } else {
-              byMonth[ym] = {
-                ym,
-                start: row.start,
-                end: row.end,
-                days: pDays,
-                usage: pUsage,
-                cost: pCost,
-                hddSum: !weatherByYm && hdd ? hdd * frac : 0,
-                cddSum: !weatherByYm && cdd ? cdd * frac : 0,
-                tmpSum: !weatherByYm && avgTmp ? avgTmp * frac : 0,
-                wSum: !weatherByYm ? frac : 0,
-                hasHdd: !weatherByYm && !!hdd,
-                hasCdd: !weatherByYm && !!cdd,
-                hasTmp: !weatherByYm && !!avgTmp,
-                _ids: [row.id],
-              };
-            }
+        // ── Propane: use HDD-weighted normalization instead of day-prorating ──
+        // Propane deliveries have start===end (DeliveryDate), so the normal
+        // day-prorating logic produces a single day per delivery. Instead, we
+        // spread each delivery's gallons across the months between deliveries,
+        // weighted by HDD (heating load).
+        if (isPropane) {
+          const normRows = normalizePropaneDeliveries(bills, weatherByYm);
+          normRows.forEach((nr) => {
+            const calDays = calDaysInMonth(nr.month);
+            byMonth[nr.month] = {
+              ym: nr.month,
+              start: nr.month + '-01',
+              end: nr.month + '-' + String(calDays).padStart(2, '0'),
+              days: calDays,
+              usage: nr.gallons,
+              cost: nr.cost,
+              hddSum: 0,
+              cddSum: 0,
+              tmpSum: 0,
+              wSum: 0,
+              hasHdd: false,
+              hasCdd: false,
+              hasTmp: false,
+              _ids: ['propane_norm'],
+            };
           });
-        });
+        } else {
+          // ── Standard commodity (Electric / Gas / Water): day-prorate across months ──
+          bills.forEach((row) => {
+            if (!row.start || !row.end) return;
+            const totalDays = Math.max(1, parseInt(calcDays(row.start, row.end, incl)) || 1);
+            const usage = isElec
+              ? parseFloat(row.kwh) || 0
+              : isGas
+                ? parseFloat(row.therms) || 0
+                : parseFloat(row.usage) || 0;
+            const cost = isElec
+              ? parseFloat(row.totalCost) || 0
+              : isGas
+                ? parseFloat(row.thermCost) || 0
+                : parseFloat(row.cost) || 0;
+            // Bill-level weather — only used as fallback if no ZIP weather cache
+            const hdd = parseFloat(row.hdd) || 0;
+            const cdd = parseFloat(row.cdd) || 0;
+            const avgTmp = parseFloat(row.avgTemp) || 0;
+
+            // Count actual days per calendar month that this bill spans
+            const monthDays = {};
+            const s = _parseISO(row.start);
+            const e = _parseISO(row.end);
+            let cur = new Date(s);
+            while (cur <= e) {
+              const ym = cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0');
+              monthDays[ym] = (monthDays[ym] || 0) + 1;
+              cur.setDate(cur.getDate() + 1);
+            }
+
+            // Prorate usage/cost/days into each spanned month
+            const spannedTotal = Object.values(monthDays).reduce((a, b) => a + b, 0) || 1;
+            Object.entries(monthDays).forEach(([ym, daysInMonth]) => {
+              const frac = daysInMonth / spannedTotal;
+              const pUsage = usage * frac;
+              const pCost = cost * frac;
+              const pDays = daysInMonth;
+
+              if (byMonth[ym]) {
+                byMonth[ym].usage += pUsage;
+                byMonth[ym].cost += pCost;
+                byMonth[ym].days += pDays;
+                // Only accumulate bill-level weather if no ZIP weather cache
+                if (!weatherByYm) {
+                  if (hdd) {
+                    byMonth[ym].hddSum = (byMonth[ym].hddSum || 0) + hdd * frac;
+                    byMonth[ym].hasHdd = true;
+                  }
+                  if (cdd) {
+                    byMonth[ym].cddSum = (byMonth[ym].cddSum || 0) + cdd * frac;
+                    byMonth[ym].hasCdd = true;
+                  }
+                  if (avgTmp) {
+                    byMonth[ym].tmpSum = (byMonth[ym].tmpSum || 0) + avgTmp * frac;
+                    byMonth[ym].hasTmp = true;
+                  }
+                  byMonth[ym].wSum = (byMonth[ym].wSum || 0) + frac;
+                }
+                byMonth[ym]._ids.push(row.id);
+              } else {
+                byMonth[ym] = {
+                  ym,
+                  start: row.start,
+                  end: row.end,
+                  days: pDays,
+                  usage: pUsage,
+                  cost: pCost,
+                  hddSum: !weatherByYm && hdd ? hdd * frac : 0,
+                  cddSum: !weatherByYm && cdd ? cdd * frac : 0,
+                  tmpSum: !weatherByYm && avgTmp ? avgTmp * frac : 0,
+                  wSum: !weatherByYm ? frac : 0,
+                  hasHdd: !weatherByYm && !!hdd,
+                  hasCdd: !weatherByYm && !!cdd,
+                  hasTmp: !weatherByYm && !!avgTmp,
+                  _ids: [row.id],
+                };
+              }
+            });
+          });
+        } // end non-propane branch
 
         // Build rows first pass — compute weather, usage, etc.
         const rawRows = Object.entries(byMonth)
@@ -33264,16 +33411,18 @@
         if (!bl || !bl.months || bl.months.length < 3) return result;
 
         const isElec = m.commodity === 'Electric';
+        const isPropane = m.commodity === 'Propane';
         const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
         const blRows = allRows.filter((r) => bl.months.includes(r.ym));
         const blEnd = bl.months.slice().sort().pop();
         const postRows = allRows.filter((r) => r.ym > blEnd);
         if (!postRows.length) return result;
 
-        const { elecByMo: eMo, gasByMo: gMo } = buildMoMap(m, blRows, bills, incl);
+        const { elecByMo: eMo, gasByMo: gMo, propaneByMo: pMo } = buildMoMap(m, blRows, bills, incl);
         const blKwhCostByCalMo = {};
         const blDemKWByCalMo = {};
         const blThermCostByCalMo = {};
+        const blPropaneCostByCalMo = {};
         Object.entries(eMo).forEach(([mo, v]) => {
           blKwhCostByCalMo[mo] = v.energyCost;
           blDemKWByCalMo[mo] = v.billedKW || v.demandKW || 0;
@@ -33281,20 +33430,34 @@
         Object.entries(gMo).forEach(([mo, v]) => {
           blThermCostByCalMo[mo] = v.cost;
         });
+        Object.entries(pMo || {}).forEach(([mo, v]) => {
+          blPropaneCostByCalMo[mo] = v.cost;
+        });
 
         const rawUsageByYm = {};
         if (!isElec) {
-          bills.forEach((b) => {
-            const ym = normMonth(b.start, b.end, incl, bills);
-            if (!ym) return;
-            rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + parseFloat(b.therms || b.usage || 0);
-          });
+          if (isPropane) {
+            // For propane, "raw usage" per norm-month comes from HDD-normalized
+            // deliveries already computed in getNormRows / normalizePropaneDeliveries.
+            // Use the allRows data which already has normalized gallons per month.
+            allRows.forEach((r) => {
+              rawUsageByYm[r.ym] = r.usage;
+            });
+          } else {
+            bills.forEach((b) => {
+              const ym = normMonth(b.start, b.end, incl, bills);
+              if (!ym) return;
+              rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + parseFloat(b.therms || b.usage || 0);
+            });
+          }
         }
 
         postRows.forEach((r) => {
           const calMo = parseInt(r.ym.split('-')[1]) - 1;
-          const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
-          if (!bfr.length) return;
+          // For propane, bills won't match via normMonth (start===end), so
+          // we use the normalized row data directly instead of raw bill lookup.
+          const bfr = isPropane ? [] : bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
+          if (!isPropane && !bfr.length) return;
 
           let totalCostSav = 0;
 
@@ -33313,6 +33476,14 @@
             const kwCostSav = blExpKW > 0 && moKwRate > 0 ? blExpKW * moKwRate - actKWCost : 0;
 
             totalCostSav = kwhCostSav + kwCostSav;
+          } else if (isPropane) {
+            // Propane cost savings: compare normalized baseline cost to actual normalized cost
+            const actGallons = r.usage;
+            const actCost = r.cost;
+            const galRate = actGallons > 0 && actCost > 0 ? actCost / actGallons : 0;
+            const actCostCalc = galRate > 0 ? actGallons * galRate : actCost;
+            const expCost = blPropaneCostByCalMo[calMo] || 0;
+            totalCostSav = expCost > 0 ? expCost - actCostCalc : 0;
           } else {
             const actTherms = rawUsageByYm[r.ym] ?? bfr.reduce((s, b) => s + parseFloat(b.therms || b.usage || 0), 0);
             const actThermCost = bfr.reduce((s, b) => s + parseFloat(b.thermCost || b.cost || 0), 0);
@@ -33359,14 +33530,20 @@
         const hasRegr_p = allRows.some((r) => r.regrBaseline != null);
 
         // Use shared buildMoMap — same authoritative source as Meter Data table
-        const { elecByMo: _eMo, gasByMo: _gMo, waterByMo: _wMo } = buildMoMap(m, blRows, bills, incl);
-        const _moMap = isElec ? _eMo : m.commodity === 'Gas' ? _gMo : _wMo;
+        const isPropane_p = m.commodity === 'Propane';
+        const {
+          elecByMo: _eMo,
+          gasByMo: _gMo,
+          waterByMo: _wMo,
+          propaneByMo: _pMo,
+        } = buildMoMap(m, blRows, bills, incl);
+        const _moMap = isElec ? _eMo : m.commodity === 'Gas' ? _gMo : isPropane_p ? _pMo : _wMo;
         const meterDataByMo = {};
         Object.entries(_moMap).forEach(([mo, v]) => {
           meterDataByMo[mo] = {
-            usage: isElec ? v.kwh : m.commodity === 'Gas' ? v.therms : v.kgal,
+            usage: isElec ? v.kwh : m.commodity === 'Gas' ? v.therms : isPropane_p ? v.gallons : v.kgal,
             energyCost: isElec ? v.energyCost : 0,
-            thermCost: m.commodity === 'Gas' ? v.cost : 0,
+            thermCost: m.commodity === 'Gas' || isPropane_p ? v.cost : 0,
             totalCost: v.totalCost ?? v.cost,
           };
         });
@@ -33400,12 +33577,20 @@
 
         // ── Raw bill usage by norm-month for all commodities ──
         const rawUsageByYm = {};
-        bills.forEach((b) => {
-          const ym = normMonth(b.start, b.end, incl, bills);
-          if (!ym) return;
-          const val = isElec ? parseFloat(b.kwh || 0) : parseFloat(b.therms || b.usage || b.kwh || 0);
-          rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + val;
-        });
+        if (isPropane_p) {
+          // For propane, "raw usage" per month is the HDD-normalized gallons
+          // already computed by getNormRows → normalizePropaneDeliveries.
+          allRows.forEach((r) => {
+            rawUsageByYm[r.ym] = r.usage;
+          });
+        } else {
+          bills.forEach((b) => {
+            const ym = normMonth(b.start, b.end, incl, bills);
+            if (!ym) return;
+            const val = isElec ? parseFloat(b.kwh || 0) : parseFloat(b.therms || b.usage || b.kwh || 0);
+            rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + val;
+          });
+        }
 
         // Stats — use raw bill totals for actual, regression for expected
         const postRawMos = filteredPostRows.map((r) => (rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage));
@@ -33598,22 +33783,36 @@
           });
         }
 
-        // Gas: per-month actual therms cost from raw bills — same pattern as perfDemByYm for electric
+        // Gas/Propane: per-month actual cost from raw bills (or normalized rows for propane)
         const gasCostByYm = {};
         if (!isElec) {
-          filteredPostRows.forEach((r) => {
-            const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
-            if (!bfr.length) return;
-            const actualTherms = bfr.reduce((s, b) => s + parseFloat(b.therms || b.usage || 0), 0);
-            const thermCostAmt = bfr.reduce((s, b) => s + parseFloat(b.thermCost || b.cost || 0), 0);
-            const totalGasCost = bfr.reduce((s, b) => s + (parseFloat(b.thermCost) || parseFloat(b.cost) || 0), 0);
-            if (actualTherms > 0)
-              gasCostByYm[r.ym] = {
-                thermCostAmt,
-                totalBillCost: totalGasCost,
-                thermRate: thermCostAmt > 0 ? thermCostAmt / actualTherms : 0,
-              };
-          });
+          if (isPropane_p) {
+            // Propane: cost data comes from HDD-normalized rows, not raw bill lookup
+            filteredPostRows.forEach((r) => {
+              const actGallons = r.usage;
+              const actCost = r.cost;
+              if (actGallons > 0)
+                gasCostByYm[r.ym] = {
+                  thermCostAmt: actCost,
+                  totalBillCost: actCost,
+                  thermRate: actCost > 0 ? actCost / actGallons : 0,
+                };
+            });
+          } else {
+            filteredPostRows.forEach((r) => {
+              const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
+              if (!bfr.length) return;
+              const actualTherms = bfr.reduce((s, b) => s + parseFloat(b.therms || b.usage || 0), 0);
+              const thermCostAmt = bfr.reduce((s, b) => s + parseFloat(b.thermCost || b.cost || 0), 0);
+              const totalGasCost = bfr.reduce((s, b) => s + (parseFloat(b.thermCost) || parseFloat(b.cost) || 0), 0);
+              if (actualTherms > 0)
+                gasCostByYm[r.ym] = {
+                  thermCostAmt,
+                  totalBillCost: totalGasCost,
+                  thermRate: thermCostAmt > 0 ? thermCostAmt / actualTherms : 0,
+                };
+            });
+          }
         }
 
         // ── Column visibility flags — computed ONCE, used by both headers and rows ──
@@ -33846,10 +34045,11 @@
         const actKwhCostHdr = hasKwhCostSav ? '<th class="num">Actual kWh Cost</th>' : '';
         const kwhCostSavHdr = hasKwhCostSav ? '<th class="num">kWh Cost Savings</th>' : '';
         const totalCostSavHdr = hasTotalCostSav ? '<th class="num">Total Cost Savings</th>' : '';
-        const thermRateHdr = hasGasCostSav ? '<th class="num">$ / Therm Rate</th>' : '';
-        const expThermCostHdr = hasGasCostSav ? '<th class="num">Expected Therm Cost</th>' : '';
-        const actThermCostHdr = hasGasCostSav ? '<th class="num">Actual Therm Cost</th>' : '';
-        const thermCostSavHdr = hasGasCostSav ? '<th class="num">Therm Cost Savings</th>' : '';
+        const _costUnitLabel = isPropane_p ? 'Gallon' : 'Therm';
+        const thermRateHdr = hasGasCostSav ? '<th class="num">$ / ' + _costUnitLabel + ' Rate</th>' : '';
+        const expThermCostHdr = hasGasCostSav ? '<th class="num">Expected ' + _costUnitLabel + ' Cost</th>' : '';
+        const actThermCostHdr = hasGasCostSav ? '<th class="num">Actual ' + _costUnitLabel + ' Cost</th>' : '';
+        const thermCostSavHdr = hasGasCostSav ? '<th class="num">' + _costUnitLabel + ' Cost Savings</th>' : '';
         const euiTblHdr = '';
 
         // ── kW demand map for all chartRows (electric only) ──
