@@ -17393,13 +17393,17 @@
               // line and the charge regex grabs it — producing a WaterCharge
               // that's actually the previous balance. Reject the section
               // headers outright.
-              if (/^\s*\d{3}\s*-\s*(water|gas|sewer|storm)/i.test(ln)) continue;
+              if (/^\s*\d{3}\s*-\s*(water|gas|sewer|storm)/i.test(ln)) {
+                const afterHeader = ln.replace(/^\s*\d{3}\s*-\s*\S+\s*/, '');
+                if (!/[\d,]+\.\d{2}/.test(afterHeader)) continue;
+              }
               // Also reject any line that contains "Previous Balance" — even
               // if a commodity label is on it, the after-text charge will be
               // the previous-balance dollar amount, not the current charge.
               if (/Previous\s*Balance/i.test(ln)) continue;
               if (!gas && /\bGAS\b/i.test(ln) && !/FUEL|ADJUSTMENT/i.test(ln)) gas = parseMetered(ln, /\bGAS\b/i);
-              if (!water && /\bWATER\b/i.test(ln) && !/PROTECTION/i.test(ln)) water = parseMetered(ln, /\bWATER\b/i);
+              if (!water && /\bM?WATER\b/i.test(ln) && !/PROTECTION/i.test(ln))
+                water = parseMetered(ln, /\bM?WATER\b/i);
               if (!wpf && /WATER\s*PROTECTION/i.test(ln)) wpf = parseMetered(ln, /WATER\s*PROTECTION/i);
               if (!sewer && /\bSEWER\b/i.test(ln)) sewer = parseMetered(ln, /\bSEWER\b/i);
               if (!storm && /STORM\s*WATER/i.test(ln)) storm = parseMetered(ln, /STORM\s*WATER/i);
@@ -20451,9 +20455,12 @@
             const existMeter = norm(ab.meter.meter);
             const acctMatch = extAcct && existAcct && extAcct === existAcct;
             const meterMatch = extMeter && existMeter && extMeter === existMeter;
+            const extComm = (ext.Commodity || '').toLowerCase();
+            const existComm = (ab.bill.commodity || ab.meter.commodity || '').toLowerCase();
+            const commMatch = !extComm || !existComm || extComm === existComm;
             const periodMatch = extStart && ab.bill.start === extStart && extEnd && ab.bill.end === extEnd;
             const fuzzyPeriod = !periodMatch && periodClose(extStart, extEnd, ab.bill.start, ab.bill.end);
-            if ((acctMatch || meterMatch) && (periodMatch || fuzzyPeriod)) {
+            if ((acctMatch || meterMatch) && (periodMatch || fuzzyPeriod) && commMatch) {
               // Build diff fields
               const diffFields = _buildDiffFields(ext, ab.bill);
               dupMap[i] = {
@@ -20482,9 +20489,11 @@
             const sbMeter = norm(sb.MeterNumber);
             const acctMatch = extAcct && sbAcct && extAcct === sbAcct;
             const meterMatch = extMeter && sbMeter && extMeter === sbMeter;
+            const sbComm = (sb.Commodity || sb.commodity || '').toLowerCase();
+            const commMatch = !extComm || !sbComm || extComm === sbComm;
             const periodMatch = extStart && sbStart === extStart && extEnd && sbEnd === extEnd;
             const fuzzyPeriod = !periodMatch && periodClose(extStart, extEnd, sbStart, sbEnd);
-            if ((acctMatch || meterMatch) && (periodMatch || fuzzyPeriod)) {
+            if ((acctMatch || meterMatch) && (periodMatch || fuzzyPeriod) && commMatch) {
               const diffFields = _buildDiffFields(ext, sb);
               dupMap[i] = {
                 existing: sb,
