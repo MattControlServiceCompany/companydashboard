@@ -20447,6 +20447,7 @@
           const extStart = toISO(ext.BillingPeriodStart);
           const extEnd = toISO(ext.BillingPeriodEnd);
           const extMeter = norm(ext.MeterNumber);
+          const extComm = (ext.Commodity || '').toLowerCase();
           if (!extAcct && !extStart) continue; // Can't match without identity
 
           // Search assigned bills
@@ -20455,7 +20456,6 @@
             const existMeter = norm(ab.meter.meter);
             const acctMatch = extAcct && existAcct && extAcct === existAcct;
             const meterMatch = extMeter && existMeter && extMeter === existMeter;
-            const extComm = (ext.Commodity || '').toLowerCase();
             const existComm = (ab.bill.commodity || ab.meter.commodity || '').toLowerCase();
             const commMatch = !extComm || !existComm || extComm === existComm;
             const periodMatch = extStart && ab.bill.start === extStart && extEnd && ab.bill.end === extEnd;
