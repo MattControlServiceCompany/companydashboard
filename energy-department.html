@@ -10578,6 +10578,13 @@
               </div>
             </div>
             <div class="f2">
+              <div class="fg">
+                <label class="fl">Utility Escalation %/yr</label
+                ><input class="fi" id="mp-escalation" type="number" min="0" max="20" step="0.1" placeholder="e.g. 3" />
+              </div>
+              <div class="fg"></div>
+            </div>
+            <div class="f2">
               <div class="fg"><label class="fl">Start Date</label><input class="fi" id="mp-start" type="date" /></div>
               <div class="fg">
                 <label class="fl">Target End Date</label><input class="fi" id="mp-end" type="date" />
@@ -14144,6 +14151,7 @@
           'mp-end',
           'mp-notes',
           'mp-tags',
+          'mp-escalation',
         ].forEach((id) => {
           const e = document.getElementById(id);
           if (e) e.value = '';
@@ -14176,6 +14184,7 @@
           progress: p.progress,
           notes: p.notes,
           tags: p.tags,
+          escalation: p.escalation,
         };
         Object.entries(fv).forEach(([k, v]) => {
           const e = document.getElementById('mp-' + k);
@@ -14241,6 +14250,7 @@
           contract: parseFloat(document.getElementById('mp-contract').value) || 0,
           savings: parseFloat(document.getElementById('mp-savings').value) || 0,
           baselineComparison: document.getElementById('mp-baselineComparison').value || 'actual',
+          escalation: parseFloat(document.getElementById('mp-escalation').value) || 0,
           start: document.getElementById('mp-start').value,
           end: document.getElementById('mp-end').value,
           progress: Math.max(0, Math.min(100, parseInt(document.getElementById('mp-progress').value) || 0)),
@@ -14259,6 +14269,31 @@
           showToast(name + ' created ✓');
         }
         sset('en_projects', projects);
+
+        // Propagate project-level escalation to buildings without a custom override
+        if (fields.escalation > 0) {
+          const projId = editId ? parseInt(editId) : projects[projects.length - 1].id;
+          const bldgs = (utilityData[projId] || {}).buildings || [];
+          bldgs.forEach((b) => {
+            const bpKey = 'bldgperf_cfg_' + (b.id || b.name);
+            const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
+            try {
+              const bpCfg = JSON.parse(localStorage.getItem(bpKey) || '{}');
+              if (!bpCfg._customEsc) {
+                bpCfg.escPct = fields.escalation;
+                localStorage.setItem(bpKey, JSON.stringify(bpCfg));
+              }
+            } catch (e) {}
+            try {
+              const bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
+              if (!bspCfg._customEsc) {
+                bspCfg.escPct = fields.escalation;
+                localStorage.setItem(bspKey, JSON.stringify(bspCfg));
+              }
+            } catch (e) {}
+          });
+        }
+
         closeProjModal();
         renderProjTable();
         renderSidebarFolders();
@@ -17029,8 +17064,16 @@
               !isNewFormat &&
               /ACCOUNT\s*SUMMARY/i.test(page) &&
               /Amount\s*due\s*(?:on\s*or\s*before|Enclosed|after)/i.test(page);
-            if (!isOldFormat && !isNewFormat) return null;
-            return isNewFormat ? this._extractNew(page) : this._extractOld(page);
+            if (isNewFormat) return this._extractNew(page);
+            if (isOldFormat) return this._extractOld(page);
+            if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(page) && /\$?\d[\d,]*\.\d{2}/.test(page)) {
+              const r = this._extractOld(page);
+              if (r && (Array.isArray(r) ? r : [r]).some((b) => b.TotalAmountDue || b.TotalCurrentCharges)) return r;
+              const r2 = this._extractNew(page);
+              if (r2 && (Array.isArray(r2) ? r2 : [r2]).some((b) => b.TotalAmountDue || b.TotalCurrentCharges))
+                return r2;
+            }
+            return null;
           },
           _extractOld: function (page) {
             // Pre-clean: repair dates split mid-year by OCR ("11/1 5/25" →
@@ -22220,7 +22263,13 @@
             // Each row contains the month label AND the pill button in the same flex row,
             // so they're guaranteed to line up vertically regardless of font or padding.
             const pillBtn = `<button class="ef-pill-btn" onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasAnyIssue ? '700' : '400'};text-align:left;white-space:nowrap">${p.lbl}${dupDot}</button>`;
-            return `<div class="ef-pill-row"><div class="ef-pill-month">${p.monthLbl || ''}</div>${pillBtn}</div>`;
+            const gapInfo = bill._billing_gap;
+            const gapRow = gapInfo
+              ? `<div style="padding:2px 8px;margin:2px 0;font-size:10px;color:var(--amber);text-align:center;font-weight:600">&#9888; ${gapInfo.days}-day gap</div>`
+              : '';
+            return (
+              gapRow + `<div class="ef-pill-row"><div class="ef-pill-month">${p.monthLbl || ''}</div>${pillBtn}</div>`
+            );
           })
           .join('');
         // Duplicate summary banner
@@ -30633,6 +30682,11 @@
           'font-size:11px" onclick="saveBaselineToAllMeters(\'' +
           m.id +
           '\')" title="Apply this baseline period to all other meters in this building">📋 Apply to All Meters</button>' +
+          '<button class="btn btn-ghost btn-sm" style="' +
+          (hasBl ? '' : 'display:none;') +
+          'font-size:11px;color:var(--accent)" onclick="saveBaselineToAllProjectMeters(\'' +
+          m.id +
+          '\')" title="Apply this baseline period to every meter across ALL buildings in this project">📋 Apply to All in Project</button>' +
           '</div>' +
           '</div>' +
           '</div>';
@@ -30976,6 +31030,86 @@
         }
         saveUtilityData();
         showToast('Baseline applied to ' + count + ' other meter' + (count !== 1 ? 's' : '') + ' ✓');
+      }
+
+      function saveBaselineToAllProjectMeters(sourceMid) {
+        const srcBldg = getUDBldg(udSelProjId, udSelBldgId);
+        if (!srcBldg) return;
+        const srcMeter = srcBldg.meters.find((m) => m.id === sourceMid);
+        if (!srcMeter || !srcMeter.baseline || !srcMeter.baseline.months || srcMeter.baseline.months.length < 3) {
+          showToast('Save a baseline on this meter first');
+          return;
+        }
+        const blMonths = srcMeter.baseline.months;
+        const allBldgs = getUDBldgs(udSelProjId);
+        if (!allBldgs || !allBldgs.length) {
+          showToast('No buildings in this project');
+          return;
+        }
+        let count = 0;
+        let skipped = 0;
+        allBldgs.forEach((b) => {
+          // Get weather data for this building's ZIP
+          const zip = b.zip || '';
+          let weatherByYm = null;
+          if (zip) {
+            const cache = wddLoadCache(zip);
+            if (cache.length) {
+              weatherByYm = {};
+              cache.forEach((r) => {
+                weatherByYm[r.ym] = r;
+              });
+            }
+          }
+          (b.meters || []).forEach((m) => {
+            if (m.id === sourceMid) return; // skip source meter
+            const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+            if (!bills.length) {
+              // No bills — still set baseline months so it's ready when data arrives
+              m.baseline = {
+                start: blMonths[0],
+                end: blMonths[blMonths.length - 1],
+                months: blMonths.slice(),
+                reg: null,
+              };
+              count++;
+              return;
+            }
+            const allRows = getNormRows(m, bills, m.inclusive !== false, weatherByYm);
+            const validMonths = blMonths.filter((ym) => allRows.some((r) => r.ym === ym));
+            if (validMonths.length < 3) {
+              // Not enough matching bill data — still set the baseline months
+              m.baseline = {
+                start: blMonths[0],
+                end: blMonths[blMonths.length - 1],
+                months: blMonths.slice(),
+                reg: null,
+              };
+              count++;
+              skipped++;
+              return;
+            }
+            const blOnlyRows = allRows.filter((r) => validMonths.includes(r.ym));
+            const frozenReg = computeMeterRegression(blOnlyRows);
+            m.baseline = {
+              start: validMonths[0],
+              end: validMonths[validMonths.length - 1],
+              months: validMonths,
+              reg: frozenReg,
+            };
+            count++;
+          });
+        });
+        if (count === 0) {
+          showToast('No other meters found in this project');
+          return;
+        }
+        saveUtilityData();
+        let msg = 'Baseline applied to ' + count + ' meter' + (count !== 1 ? 's' : '') + ' across all buildings ✓';
+        if (skipped > 0) {
+          msg += ' (' + skipped + ' without enough bill data)';
+        }
+        showToast(msg);
       }
 
       function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay, metric) {
@@ -32257,7 +32391,9 @@
         const defCscPct = cfg.cscPct ?? 7;
         const defCscFixed = cfg.cscFixed ?? 500;
         const defYears = cfg.years ?? 3;
-        const defEscPct = cfg.escPct ?? 0;
+        // Fall back to project-level escalation if building has no custom override
+        const projMeta = projects.find((p) => p.id === udSelProjId);
+        const defEscPct = cfg._customEsc ? cfg.escPct : projMeta?.escalation || cfg.escPct || 0;
         const defView = cfg.view ?? 'monthly';
 
         pane.innerHTML = `
@@ -32360,7 +32496,7 @@
         const escPct = parseFloat(document.getElementById('bp-escpct')?.value || 0);
         const bldgs = getUDBldgs(udSelProjId);
         if (!bldgs.length) return;
-        const settings = { cscMode, cscPct, cscFixed, years, escPct };
+        const settings = { cscMode, cscPct, cscFixed, years, escPct, _customEsc: true };
         let count = 0;
         bldgs.forEach((b) => {
           const key = 'bldgperf_cfg_' + (b.id || b.name);
@@ -32401,10 +32537,14 @@
         if (b) {
           const storeKey = 'bldgperf_cfg_' + (b.id || b.name);
           try {
-            localStorage.setItem(
-              storeKey,
-              JSON.stringify({ cscMode, cscPct: cscPct * 100, cscFixed, years, escPct: escPct * 100, view }),
-            );
+            const _prevCfg = JSON.parse(localStorage.getItem(storeKey) || '{}');
+            const _saveCfg = { cscMode, cscPct: cscPct * 100, cscFixed, years, escPct: escPct * 100, view };
+            // Mark custom escalation if user changed it from the project default
+            const _projM = projects.find((p) => p.id === udSelProjId);
+            if (_prevCfg._customEsc || escPct * 100 !== (_projM?.escalation || 0)) {
+              _saveCfg._customEsc = true;
+            }
+            localStorage.setItem(storeKey, JSON.stringify(_saveCfg));
           } catch (e) {}
         }
 
@@ -32756,7 +32896,9 @@
         const defClientPct = cfg.clientPct ?? 5;
         const defCscPct = cfg.cscPct ?? 7;
         const defYears = cfg.years ?? 3;
-        const defEscPct = cfg.escPct ?? 0;
+        // Fall back to project-level escalation if building has no custom override
+        const projMeta2 = projects.find((p) => p.id === udSelProjId);
+        const defEscPct = cfg._customEsc ? cfg.escPct : projMeta2?.escalation || cfg.escPct || 0;
         const defView = cfg.view ?? 'monthly';
 
         // Store for use by bspRecalc (called outside this function)
@@ -32848,17 +32990,21 @@
         if (b) {
           const storeKey = 'bldgsavproj_cfg_' + (b.id || b.name);
           try {
-            localStorage.setItem(
-              storeKey,
-              JSON.stringify({
-                savingsPct: savPct * 100,
-                clientPct: cliPct * 100,
-                cscPct: cscPct * 100,
-                years,
-                escPct: escPct * 100,
-                view,
-              }),
-            );
+            const _prevBspCfg = JSON.parse(localStorage.getItem(storeKey) || '{}');
+            const _saveBspCfg = {
+              savingsPct: savPct * 100,
+              clientPct: cliPct * 100,
+              cscPct: cscPct * 100,
+              years,
+              escPct: escPct * 100,
+              view,
+            };
+            // Mark custom escalation if user changed it from the project default
+            const _projM2 = projects.find((p) => p.id === udSelProjId);
+            if (_prevBspCfg._customEsc || escPct * 100 !== (_projM2?.escalation || 0)) {
+              _saveBspCfg._customEsc = true;
+            }
+            localStorage.setItem(storeKey, JSON.stringify(_saveBspCfg));
           } catch (e) {}
         }
 
@@ -33644,6 +33790,11 @@
                     : '&mdash;') +
                   '</td>'
                 : '') +
+              (hasKwCostSav
+                ? '<td class="mono num" style="color:var(--text2)">' +
+                  (expKwCost > 0 ? '$' + fmtC(expKwCost) : '&mdash;') +
+                  '</td>'
+                : '') +
               (hasKwCost
                 ? '<td class="mono num">' + (kwCostRow > 0 ? '$' + fmtC(kwCostRow) : '&mdash;') + '</td>'
                 : '') +
@@ -33687,6 +33838,7 @@
         const expKWHdr = hasExpKW ? '<th class="num">Expected kW</th>' : '';
         const demKWHdr = hasKwData ? '<th class="num">Actual kW</th>' : '';
         const bilKWHdr = hasBilKW ? '<th class="num">Billed kW</th>' : '';
+        const expKwCostHdr = hasKwCostSav ? '<th class="num">Exp kW Cost</th>' : '';
         const kwCostHdr = hasKwCost ? '<th class="num">Actual kW Cost</th>' : '';
         const kwCostSavHdr = hasKwCostSav ? '<th class="num">kW Cost Savings</th>' : '';
         const kwhRateHdr = hasKwhCostSav ? '<th class="num">$ / kWh Rate</th>' : '';
@@ -33764,6 +33916,7 @@
               expKWHdr +
               demKWHdr +
               bilKWHdr +
+              expKwCostHdr +
               kwCostHdr +
               kwCostSavHdr +
               totalCostSavHdr +
