@@ -18350,7 +18350,23 @@
             'UtilityCompany',
             'RateSchedule',
           ];
-          const _addrNorm = (s) => (s || 'unknown').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const _addrNorm = (s) => {
+            let n = (s || 'unknown')
+              .toLowerCase()
+              .replace(/[^a-z0-9 ]/g, '')
+              .trim();
+            n = n
+              .replace(/\b(drive|drv)\b/g, 'dr')
+              .replace(/\b(street|str)\b/g, 'st')
+              .replace(/\b(avenue|aven)\b/g, 'ave')
+              .replace(/\b(boulevard|blvd)\b/g, 'blvd')
+              .replace(/\b(road)\b/g, 'rd')
+              .replace(/\b(lane)\b/g, 'ln')
+              .replace(/\b(court)\b/g, 'ct')
+              .replace(/\b(circle|cir)\b/g, 'cir')
+              .replace(/\b(place)\b/g, 'pl');
+            return n.replace(/\s+/g, '');
+          };
           const _addrGroups = {};
           for (const b of bills) {
             const addr = _addrNorm(b.ServiceAddress);
