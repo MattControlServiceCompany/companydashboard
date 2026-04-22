@@ -17661,6 +17661,7 @@
               SaleNumber,
               ServiceAddress,
               DeliveryDate,
+              NumberOfDays: '1',
               RateSchedule: null,
               MeterNumber: null,
               FuelType: page.match(/(PROPANE|FUEL\s*OIL|HEATING\s*OIL|DIESEL|KEROSENE)/i)?.[1] || 'Propane',
@@ -18503,6 +18504,30 @@
               if (ratio >= 8 || ratio <= 0.12) {
                 b['_magnitude_flag_' + field] = { value: val, mean, ratio };
               }
+            }
+          }
+
+          // ── STORMWATER OCR DECIMAL-DROP FIX ──
+          // City of Louisburg stormwater is always ~$4. OCR sometimes drops the
+          // decimal, producing $400 instead of $4.00. Auto-correct when dividing
+          // by 100 lands in the plausible $2–$10 range.
+          if (b.Commodity === 'Stormwater' && typeof b.StormWaterCharge === 'number' && b.StormWaterCharge > 20) {
+            const corrected = b.StormWaterCharge / 100;
+            if (corrected >= 2 && corrected <= 10) {
+              const original = b.StormWaterCharge;
+              b._auto_corrected_StormWaterCharge = {
+                original: original,
+                corrected: corrected,
+                reason: 'OCR decimal-drop: ' + original + ' → ' + corrected,
+              };
+              b.StormWaterCharge = corrected;
+              // Adjust totals by the difference
+              const diff = original - corrected;
+              if (typeof b.TotalCurrentCharges === 'number')
+                b.TotalCurrentCharges = Math.round((b.TotalCurrentCharges - diff) * 100) / 100;
+              if (typeof b.TotalAmountDue === 'number')
+                b.TotalAmountDue = Math.round((b.TotalAmountDue - diff) * 100) / 100;
+              console.log('[PostVerify] Stormwater decimal-drop corrected: $' + original + ' → $' + corrected);
             }
           }
 
@@ -22754,10 +22779,10 @@
           NaturalGasCCF: 'Natural Gas (CCF)',
           GasCharge: 'Gas Charge',
           FuelAdjustment: 'Fuel Adjustment',
-          WaterUsage: 'Water Usage',
+          WaterUsage: 'Water Usage (gal)',
           WaterCharge: 'Water Charge',
           WaterProtectionFee: 'Water Protection Fee',
-          SewerUsage: 'Sewer Usage',
+          SewerUsage: 'Sewer Usage (gal)',
           SewerCharge: 'Sewer Charge',
           StormWaterCharge: 'Stormwater Charge',
           TotalAmountDue: 'Total Amount Due',
@@ -23172,7 +23197,7 @@
             : '';
           // Right-side icon strip is retired — all icons show inline next to the value.
           const iconsHtml = '';
-          let displayVal = Array.isArray(v) ? v.join(', ') : (v ?? '');
+          let displayVal = Array.isArray(v) ? v.join(', ') : String(v ?? '');
           if (ID_FIELDS.has(k)) {
             displayVal = String(displayVal);
           } else if (typeof displayVal === 'string' && displayVal !== '') {
@@ -34368,7 +34393,10 @@
       /* ── RENDER BILL ROW (used in Bills pane table) ── */
       function renderBillRow(row, m, incl, allBills, cols) {
         if (incl === undefined) incl = m.inclusive !== false;
-        const days = calcDays(row.start, row.end, incl);
+        let days = calcDays(row.start, row.end, incl);
+        // Propane deliveries use DeliveryDate as both start and end, so
+        // calcDays returns 0 when inclusive is false.  Show 1 instead.
+        if (days === 0 && row.start && row.start === row.end && m.commodity === 'Propane') days = 1;
         // Show the 📄 button whenever the row has ANY usable PDF reference —
         // either an old per-bill pdfBillId OR a shared pdfKey. Bills saved via the
         // batch shared-key path (_ensureBatchPdfStored) may legitimately have no
@@ -34503,7 +34531,8 @@
         if (!row) return;
         row[field] = val;
         if (field === 'start' || field === 'end') {
-          const days = calcDays(row.start, row.end, m.inclusive !== false);
+          let days = calcDays(row.start, row.end, m.inclusive !== false);
+          if (days === 0 && row.start && row.start === row.end && m.commodity === 'Propane') days = 1;
           const cells = document.querySelectorAll('.days-cell');
           const rows = m.bills;
           const idx = rows.findIndex((r) => r.id === rowId);
@@ -34714,7 +34743,7 @@
           { key: 'end', label: 'End Date', type: 'date', pdfKey: 'BillingPeriodEnd' },
           { key: 'billDate', label: 'Bill Date', type: 'text', pdfKey: 'BillDate' },
           { section: 'Charges' },
-          { key: 'waterUsage', label: 'Water Usage', type: 'number', pdfKey: 'WaterUsage' },
+          { key: 'waterUsage', label: 'Water Usage (gal)', type: 'number', pdfKey: 'WaterUsage' },
           { key: 'waterCharge', label: 'Water Charge', type: 'currency', pdfKey: 'WaterCharge' },
           {
             key: 'waterProtectionFee',
@@ -34735,7 +34764,7 @@
           { key: 'end', label: 'End Date', type: 'date', pdfKey: 'BillingPeriodEnd' },
           { key: 'billDate', label: 'Bill Date', type: 'text', pdfKey: 'BillDate' },
           { section: 'Charges' },
-          { key: 'sewerUsage', label: 'Sewer Usage', type: 'number', pdfKey: 'SewerUsage' },
+          { key: 'sewerUsage', label: 'Sewer Usage (gal)', type: 'number', pdfKey: 'SewerUsage' },
           { key: 'sewerCharge', label: 'Sewer Charge', type: 'currency', pdfKey: 'SewerCharge' },
           { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
         ],
