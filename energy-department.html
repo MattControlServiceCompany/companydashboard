@@ -16225,6 +16225,10 @@
           };
         }
         if (expectedCharge > 0) {
+          const ratio = gasCharge > 0 ? expectedCharge / gasCharge : Infinity;
+          if (ratio > 4 || ratio < 0.25) {
+            return { charge: gasCharge, total: totalCharge, corrected: false };
+          }
           const corrTotal = expectedCharge + r.baseCharge;
           return {
             charge: expectedCharge,
@@ -17957,7 +17961,7 @@
         const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
         const acct = (extracted.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
 
-        // Gather historical bills from all meters across all projects
+        const extComm = (extracted.Commodity || '').toLowerCase();
         const historicalBills = [];
         for (const proj of typeof projects !== 'undefined' ? projects : []) {
           const udProj = getUDProj(proj.id);
@@ -17965,19 +17969,22 @@
             for (const m of bldg.meters || []) {
               const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
               if (acct && ma && acct === ma) {
-                for (const b of m.bills || []) {
-                  historicalBills.push(b);
+                const mc = (m.commodity || '').toLowerCase();
+                if (!extComm || !mc || extComm === mc) {
+                  for (const b of m.bills || []) {
+                    historicalBills.push(b);
+                  }
                 }
               }
             }
           }
         }
 
-        // Also check en_pdf_bills for matching account
         const pdfBills = sget('en_pdf_bills', []) || [];
         for (const b of pdfBills) {
           const ba = (b.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
-          if (acct && ba && acct === ba) historicalBills.push(b);
+          const bc = (b.Commodity || b.commodity || '').toLowerCase();
+          if (acct && ba && acct === ba && (!extComm || !bc || extComm === bc)) historicalBills.push(b);
         }
 
         if (historicalBills.length < 3) return warnings; // Need at least 3 historical bills for meaningful stats
@@ -24466,6 +24473,27 @@
                 m.bills.push(billRow);
                 m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
               }
+              matched = true;
+            }
+          }
+          if (!matched) {
+            const commodity = extracted.Commodity || (isGas ? 'Gas' : isPropane ? 'Propane' : 'Electric');
+            const firstBldg = (udProj.buildings || [])[0];
+            if (firstBldg) {
+              const newM = {
+                id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+                commodity: commodity,
+                provider: extracted.UtilityCompany || '',
+                account: extracted.AccountNumber || '',
+                meter: extracted.MeterNumber || '',
+                maddr: '',
+                inclusive: true,
+                bills: [billRow],
+                billUnit: '',
+                displayUnit: '',
+              };
+              firstBldg.meters = firstBldg.meters || [];
+              firstBldg.meters.push(newM);
               matched = true;
             }
           }
