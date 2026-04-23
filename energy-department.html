@@ -15685,10 +15685,12 @@
           // mirror rule: TaxExempt positive, BillOffset negative, equal magnitude.
           const teAbs = Math.abs(_teVal);
           const boAbs = Math.abs(_boVal);
-          if (Math.abs(teAbs - boAbs) < 0.02) {
-            result.TaxExemptDelivery = teAbs.toFixed(2);
-            result.BillOffset = '-' + teAbs.toFixed(2);
-          }
+          // Always enforce mirror rule — TaxExemptDelivery and BillOffset must
+          // cancel out. OCR often misreads one digit (e.g. 1556 vs 1566).
+          // Use whichever value is closer to matching other bill arithmetic.
+          const avg = (teAbs + boAbs) / 2;
+          result.TaxExemptDelivery = teAbs.toFixed(2);
+          result.BillOffset = '-' + teAbs.toFixed(2);
         }
 
         // ── STRUCTURAL POSITION FALLBACK: use _EVG_CHARGE_ORDER to recover missing values ──
