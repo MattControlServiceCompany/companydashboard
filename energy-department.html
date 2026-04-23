@@ -29377,7 +29377,14 @@
         const proj = getUDProj(udSelProjId);
         const normBasis = proj?.normBasis || 'calendar';
         const reg = computeMeterRegression(rawRows); // full regression for non-baseline months
-        const frozenReg = m.baseline?.reg || null; // frozen regression from baseline-only rows
+        const _rawFrozenReg = m.baseline?.reg || null;
+        // A frozen regression with null coefficients means the baseline was saved
+        // before weather data was uploaded. Treat it as absent so the live
+        // regression (computed from current weather data) can take over.
+        const isElecMeter = m.commodity === 'Electric';
+        const frozenRegValid =
+          _rawFrozenReg && ((isElecMeter && _rawFrozenReg.cdd) || (!isElecMeter && _rawFrozenReg.hdd));
+        const frozenReg = frozenRegValid ? _rawFrozenReg : null;
 
         rawRows.forEach((row) => {
           if (frozenReg && row.isBaseline) {
@@ -29387,7 +29394,7 @@
             // Post-baseline months: apply frozen model to predict expected usage
             row.regrBaseline = regressionBaseline(row, frozenReg, m.commodity, normBasis);
           } else {
-            // No frozen regression yet (baseline not saved): use live regression
+            // No valid frozen regression: use live regression from current weather data
             row.regrBaseline = regressionBaseline(row, reg, m.commodity, normBasis);
           }
         });
