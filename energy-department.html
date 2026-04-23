@@ -11676,8 +11676,6 @@
       window.addEventListener('beforeunload', function (e) {
         if (window._pdfMultiBills && window._pdfMultiBills.length > 0) {
           _saveExtractionState();
-          e.preventDefault();
-          e.returnValue = '';
         }
       });
 
