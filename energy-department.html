@@ -15258,7 +15258,7 @@
         // whitespace or a period here. Must match at least one character so keywords
         // like "Customer Chg" vs "CustomerChg" don't collide (none of these legitimately
         // run together, but we want to fail closed on the unseparated case).
-        const SEP = '[\\s.]+';
+        const SEP = '[ \\t\\n\\r.]+';
         // Customer: "Customer Chg" or OCR garble like "CUSIOMET CNG", "Customar Chg", "CUSIOMER CNG"
         const custChg = xChg('C[ua][s5][t1iI][o0][mM][eao][r1tT]' + SEP + C, null, 'CustomerCharge');
         const facKW =
