@@ -16141,7 +16141,30 @@
           }
         }
 
-        // Off-Peak recovery from kWh identity: OnPeak + OffPeak = kWhConsumed
+        // Off-Peak kWh recovery from identity: OffPeakKWh = kWhConsumed - OnPeakKWh
+        // Run this whenever OffPeakKWh is missing but we have the data to derive it
+        if (!result.OffPeakKWh && result.kWhConsumed && _rates.EnergyOnPeakCharge && result.OnPeakKWh) {
+          const totalKwh = _pf(result.kWhConsumed);
+          const onPkKwh = _pf(result.OnPeakKWh);
+          const offPkKwh = totalKwh - onPkKwh;
+          if (offPkKwh > 0) {
+            result.OffPeakKWh = offPkKwh.toFixed(4);
+            result['_auto_recovered_OffPeakKWh'] = {
+              original: null,
+              corrected: offPkKwh.toFixed(4),
+              reason:
+                'kWh identity: ' +
+                totalKwh.toFixed(2) +
+                ' total - ' +
+                onPkKwh.toFixed(2) +
+                ' on-peak = ' +
+                offPkKwh.toFixed(2) +
+                ' off-peak',
+            };
+          }
+        }
+
+        // Off-Peak charge recovery from sum gap when charge is missing
         if (
           result.EnergyOnPeakCharge &&
           !result.EnergyOffPeakCharge &&
@@ -16169,7 +16192,7 @@
             const _offPkCharge = Math.round((_coreTotal - _coreSum) * 100) / 100;
             if (_offPkCharge > 0) {
               result.EnergyOffPeakCharge = _offPkCharge.toFixed(2);
-              result.OffPeakKWh = offPkKwh.toFixed(4);
+              if (!result.OffPeakKWh) result.OffPeakKWh = offPkKwh.toFixed(4);
               result['_auto_recovered_EnergyOffPeakCharge'] = {
                 original: null,
                 corrected: _offPkCharge.toFixed(2),
