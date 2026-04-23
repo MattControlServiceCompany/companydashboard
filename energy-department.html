@@ -14705,7 +14705,7 @@
             // is near a tall character above it, and before this fallback the regex
             // silently dropped the entire rate part (e.g. the second tier of a seasonal
             // ECA charge), leaving `_rates.ECACharge` missing half the total.
-            const QTY_RE = '([\\d,]+[.,:]\\d{2,})';
+            const QTY_RE = '([\\d,]+[.:]\\d{2,}|\\d{1,3}(?:,\\d{3})+,\\d{4,})';
             // Gap between qty and unit: allow up to ~40 chars of OCR garbage (stray letters,
             // chart Y-axis numbers, padded whitespace, line-break artifacts). Real data has
             // just whitespace, but degraded OCR injects characters like
