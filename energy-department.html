@@ -21668,13 +21668,17 @@
           }
         }
         output += '\n=== RAW OCR TEXT ===\n' + raw;
+        // Store in window for Playwright to retrieve
+        const safeName = srcFile.replace(/\.pdf$/i, '').replace(/[^a-zA-Z0-9_\-. ]/g, '_');
+        const debugFilename = 'ocr-debug_' + safeName + '.txt';
+        window._debugFileContent = output;
+        window._debugFileName = debugFilename;
         // Save to Downloads as a file
         const blob = new Blob([output], { type: 'text/plain' });
         const a = document.createElement('a');
         const blobUrl = URL.createObjectURL(blob);
         a.href = blobUrl;
-        const safeName = srcFile.replace(/\.pdf$/i, '').replace(/[^a-zA-Z0-9_\-. ]/g, '_');
-        a.download = 'ocr-debug_' + safeName + '.txt';
+        a.download = debugFilename;
         a.click();
         setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
         showToast('Debug file saved to Downloads');
