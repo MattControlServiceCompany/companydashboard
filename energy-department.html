@@ -14699,7 +14699,16 @@
             // stop the block so off-peak rate extraction can't bleed into it.
             const blockLines = [lines[i]];
             for (let bi = i + 1; bi < Math.min(i + 4, lines.length); bi++) {
-              if (NEXT_CHG_LINE.test(lines[bi])) break;
+              const chgMatch = lines[bi].match(NEXT_CHG_LINE);
+              if (chgMatch) {
+                // Line contains a new charge keyword. Include content BEFORE the keyword
+                // (e.g., "$3,547.44 RkVA Chg..." → keep "$3,547.44 " for previous charge)
+                const prefixEnd = lines[bi].indexOf(chgMatch[0]);
+                if (prefixEnd > 0) {
+                  blockLines.push(lines[bi].substring(0, prefixEnd));
+                }
+                break;
+              }
               blockLines.push(lines[bi]);
             }
             const block = blockLines.join(' ');
