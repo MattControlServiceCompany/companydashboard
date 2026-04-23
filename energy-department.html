@@ -21630,7 +21630,9 @@
       function savePDFDebug() {
         const raw = window._pdfRawText || '(no raw text)';
         const bills = window._pdfMultiBills || [];
-        let output = '=== EXTRACTION RESULTS (' + bills.length + ' bills) ===\n';
+        const srcFile = window._pdfSourceFileName || 'unknown';
+        let output = '=== SOURCE FILE: ' + srcFile + ' ===\n';
+        output += '=== EXTRACTION RESULTS (' + bills.length + ' bills) ===\n';
         for (let i = 0; i < bills.length; i++) {
           output +=
             '\n--- Bill ' +
@@ -21669,10 +21671,12 @@
         // Save to Downloads as a file
         const blob = new Blob([output], { type: 'text/plain' });
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'ocr-debug.txt';
+        const blobUrl = URL.createObjectURL(blob);
+        a.href = blobUrl;
+        const safeName = srcFile.replace(/\.pdf$/i, '').replace(/[^a-zA-Z0-9_\-. ]/g, '_');
+        a.download = 'ocr-debug_' + safeName + '.txt';
         a.click();
-        URL.revokeObjectURL(a.href);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
         showToast('Debug file saved to Downloads');
       }
       function togglePDFRawText() {
@@ -22125,6 +22129,7 @@
         const box = document.getElementById('pdfAIBox'),
           dz = document.getElementById('dz-title');
         document.getElementById('extractMethodBadge').style.display = 'none';
+        window._pdfSourceFileName = file.name;
         dz.textContent = '📄 ' + file.name + ' — reading...';
         box.innerHTML =
           '<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Reading PDF...</div>';
@@ -29958,7 +29963,7 @@
         setTimeout(function () {
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
-        }, 100);
+        }, 3000);
       }
 
       /* Derive a human-friendly base filename from the current selection.
@@ -42940,7 +42945,7 @@
           String(d.getDate()).padStart(2, '0') +
           '.json';
         a.click();
-        URL.revokeObjectURL(url);
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
         showToast('Layout exported');
       }
 
@@ -43220,8 +43225,10 @@
         a.download = 'companyhub-backup-' + new Date().toISOString().split('T')[0] + '.json';
         document.body.appendChild(a);
         a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 3000);
         if (typeof showToast === 'function') showToast('Backup downloaded ✓');
       }
       function siteRestore() {
