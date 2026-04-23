@@ -2036,16 +2036,15 @@
       .pd-back {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        font-size: 12px;
+        gap: 4px;
+        font-size: 11px;
         color: var(--text2);
         cursor: pointer;
-        padding: 5px 10px;
+        padding: 4px 8px;
         border-radius: 6px;
         border: 1px solid var(--border);
         background: var(--s3);
         transition: all 0.14s;
-        margin-bottom: 18px;
       }
       .pd-back:hover {
         border-color: var(--accent, var(--em));
@@ -5246,7 +5245,6 @@
             </div>
             <!-- Detail view -->
             <div id="projDetailView">
-              <button class="pd-back" onclick="backToList()">← Back to Projects</button>
               <div id="projDetailContent"></div>
             </div>
           </div>
@@ -12218,6 +12216,7 @@
             </div>
           </div>
           <div class="pd-hero-compact" id="pd-hero-compact" style="display:flex">
+            <button class="pd-back" onclick="backToList()" style="margin-bottom:0;margin-right:8px;flex-shrink:0">← Back</button>
             <span class="phc-name">${p.name}</span>
             <span class="phc-sep">|</span>
             <span>SA# <span class="phc-val">${p.sa || '—'}</span></span>
