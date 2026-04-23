@@ -1394,9 +1394,9 @@
         overflow-y: auto;
         animation: fadeUp 0.18s ease;
         box-shadow: 0 40px 80px rgba(0, 0, 0, 0.6);
-        resize: both;
-        overflow: auto;
         position: relative;
+        display: flex;
+        flex-direction: column;
       }
       .modal-hdr {
         display: flex;
@@ -1404,10 +1404,8 @@
         justify-content: space-between;
         padding: 16px 20px;
         border-bottom: 1px solid var(--border);
-        position: sticky;
-        top: 0;
         background: var(--s2);
-        z-index: 1;
+        flex-shrink: 0;
       }
       .modal-title {
         font-family: var(--head);
@@ -1435,6 +1433,8 @@
       }
       .modal-body {
         padding: 20px;
+        overflow-y: auto;
+        flex: 1 1 auto;
       }
       .modal-ftr {
         display: flex;
@@ -1442,6 +1442,7 @@
         gap: 8px;
         padding: 13px 20px;
         border-top: 1px solid var(--border);
+        flex-shrink: 0;
       }
       .modal-sect {
         font-size: 11px;
