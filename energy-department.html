@@ -1333,6 +1333,55 @@
         text-transform: uppercase;
         letter-spacing: 0.6px;
       }
+      .help-tip {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 15px;
+        height: 15px;
+        border-radius: 50%;
+        background: var(--accent);
+        color: #fff;
+        font-size: 10px;
+        font-weight: 700;
+        cursor: help;
+        margin-left: 5px;
+        vertical-align: middle;
+        opacity: 0.7;
+        transition: opacity 0.15s;
+        text-transform: none;
+        letter-spacing: 0;
+      }
+      .help-tip:hover {
+        opacity: 1;
+      }
+      .help-tip-box {
+        display: none;
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 800;
+        background: var(--s1);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 13px;
+        font-size: 12px;
+        font-weight: 400;
+        color: var(--text2);
+        min-width: 240px;
+        max-width: 300px;
+        line-height: 1.6;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+        white-space: normal;
+      }
+      .help-tip:hover .help-tip-box {
+        display: block;
+      }
+      .help-tip-box strong {
+        color: var(--text);
+      }
       .fi,
       .fs,
       .fta {
@@ -10574,7 +10623,16 @@
                 ><input class="fi" id="mp-savings" type="number" placeholder="18000" />
               </div>
               <div class="fg">
-                <label class="fl">Baseline Comparison</label>
+                <label class="fl"
+                  >Baseline Comparison<span class="help-tip"
+                    >?<span class="help-tip-box"
+                      ><strong>Actual</strong> — compares current bills against the baseline using raw costs and usage
+                      as they appear on the bill.<br /><br /><strong>Normalized</strong> — adjusts for weather using
+                      heating/cooling degree days (ASHRAE Guideline 14). Shows whether savings come from real efficiency
+                      improvements, not just milder weather.</span
+                    ></span
+                  ></label
+                >
                 <select class="fi" id="mp-baselineComparison">
                   <option value="actual">Actual</option>
                   <option value="normalized">Normalized</option>
