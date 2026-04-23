@@ -27249,7 +27249,7 @@
             if (v == null)
               return `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--text3);border:1px solid var(--border)">—</td>`;
             const c = color || (v >= 0 ? 'var(--em)' : 'var(--danger)');
-            return `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${c};border:1px solid var(--border);white-space:nowrap">${v >= 0 ? '+' : ''}${$f(v, 2)}</td>`;
+            return `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${c};border:1px solid var(--border);white-space:nowrap">${v >= 0 ? '+' : '-'}${$f(v, 2)}</td>`;
           };
           const rows = MN.map((mn, mo) => {
             const base = moBase[mo] || 0,
@@ -27269,8 +27269,8 @@
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
                 <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual Baseline</div><div style="font-size:15px;font-weight:800">${$f(annBase)}</div></div>
                 <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Savings</div><div style="font-size:15px;font-weight:800;color:var(--em)">${$f(annProjSav)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${(avgSavPct * 100).toFixed(1)}%</div></div>
-                ${hasActual ? `<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Actual Savings</div><div style="font-size:15px;font-weight:800;color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav >= 0 ? '+' : ''}${$f(annActSav)}</div>${actPct != null ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct >= 0 ? '+' : ''}${actPct.toFixed(1)}%</div>` : ''}</div>` : ''}
-                ${hasActual && annActSav != null ? `<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">vs Projected</div><div style="font-size:15px;font-weight:800;color:${annActSav >= annProjSav ? 'var(--em)' : 'var(--danger)'}">${annActSav >= 0 ? '+' : ''}${$f(annActSav - annProjSav)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${annActSav >= annProjSav ? '▲ Above' : '▼ Below'} target</div></div>` : ''}
+                ${hasActual ? `<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Actual Savings</div><div style="font-size:15px;font-weight:800;color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav >= 0 ? '+' : '-'}${$f(annActSav)}</div>${actPct != null ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct >= 0 ? '+' : ''}${actPct.toFixed(1)}%</div>` : ''}</div>` : ''}
+                ${hasActual && annActSav != null ? `<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">vs Projected</div><div style="font-size:15px;font-weight:800;color:${annActSav >= annProjSav ? 'var(--em)' : 'var(--danger)'}">${annActSav >= annProjSav ? '+' : '-'}${$f(annActSav - annProjSav)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${annActSav >= annProjSav ? '▲ Above' : '▼ Below'} target</div></div>` : ''}
               </div>
             </div>
             <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
@@ -33402,7 +33402,7 @@
                 ? `
             <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Actual Savings</div>
-              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav >= 0 ? '+' : ''}${$f(annActSav)}</div>
+              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav >= 0 ? '+' : '-'}${$f(annActSav)}</div>
               <div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct || ''} of baseline</div>
             </div>
             <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
