@@ -36414,6 +36414,10 @@
         closeBldgModal();
         renderUDProjList();
         renderUDDetail();
+        renderProjTable();
+        renderSidebarFolders();
+        const ap = projects.find((p) => p.id == udSelProjId);
+        if (ap && document.getElementById('projDetailView')?.style.display !== 'none') renderDetail(ap);
       }
       function deleteBuilding(bid) {
         if (!confirm('Delete this building and all its meters?')) return;
@@ -36423,6 +36427,10 @@
         saveUtilityData();
         renderUDProjList();
         renderUDDetail();
+        renderProjTable();
+        renderSidebarFolders();
+        const ap2 = projects.find((p) => p.id == udSelProjId);
+        if (ap2 && document.getElementById('projDetailView')?.style.display !== 'none') renderDetail(ap2);
         showToast('Building deleted');
       }
 
@@ -36572,6 +36580,10 @@
         closeMeterModal();
         renderUDProjList();
         renderUDDetail();
+        renderProjTable();
+        renderSidebarFolders();
+        const ap3 = projects.find((p) => p.id == udSelProjId);
+        if (ap3 && document.getElementById('projDetailView')?.style.display !== 'none') renderDetail(ap3);
       }
 
       /* ── LINK FROM PROJECT DETAIL UTILITY TAB ── */
