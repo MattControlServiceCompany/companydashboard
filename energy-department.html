@@ -15263,10 +15263,14 @@
         // Customer: "Customer Chg" or OCR garble like "CUSIOMET CNG", "Customar Chg", "CUSIOMER CNG"
         const custChg = xChg('C[ua][s5][t1iI][o0][mM][eao][r1tT]' + SEP + C, null, 'CustomerCharge');
         const facKW =
-          t.match(new RegExp('Fac\\S*' + SEP + C + '\\s+([\\d,.]+)\\s*[kK][Ww]', 'i'))?.[1]?.replace(/,/g, '') || null;
-        const facChg = xChg('Fac\\S*' + SEP + C);
+          t
+            .match(new RegExp('Fac[^ \\t\\n\\r]*' + SEP + C + '[ \\t\\n\\r]+([0-9,.]+)[ \\t\\n\\r]*[kK][Ww]', 'i'))?.[1]
+            ?.replace(/,/g, '') || null;
+        const facChg = xChg('Fac[^ \\t\\n\\r]*' + SEP + C);
         const demKW =
-          t.match(new RegExp('Demand' + SEP + C + '\\s+([\\d,.]+)\\s*[kK][Ww]', 'i'))?.[1]?.replace(/,/g, '') || null;
+          t
+            .match(new RegExp('Demand' + SEP + C + '[ \\t\\n\\r]+([0-9,.]+)[ \\t\\n\\r]*[kK][Ww]', 'i'))?.[1]
+            ?.replace(/,/g, '') || null;
         const demChg = xChg('Demand' + SEP + C);
         // ── Energy charges: date-aware On/Off Peak vs 3-tier ──
         // Kansas Evergy switched from 3-tier to On/Off Peak on 12/21/2023.
@@ -15274,8 +15278,8 @@
         // After: On Pk Sum/Win + Off Pk Sum/Win.
         // Always extract both formats — changeover bills (spanning 12/21/2023) have both.
         // tieredChg excludes On/Off Pk lines so there's no double-counting.
-        const onPkChg = xChg('Energy' + SEP + C + '\\s+On\\s+P[kK]');
-        const offPkChg = xChg('Energy' + SEP + C + '\\s+Off\\s+P[kK]');
+        const onPkChg = xChg('Energy' + SEP + C + '[ \\t\\n\\r]+On[ \\t\\n\\r]+P[kK]');
+        const offPkChg = xChg('Energy' + SEP + C + '[ \\t\\n\\r]+Off[ \\t\\n\\r]+P[kK]');
         const tieredChg = xChg('Energy' + SEP + C, /On\s+P[kK]|Off\s+P[kK]/i);
         // E[CG]A tolerates Tesseract's C↔G confusion — e.g. the second ECA
         // part on Louis Elementary's Oct 2025 bill prints as "EGA Chg", which
@@ -15290,7 +15294,9 @@
         // on the garbage characters between qty and the kW token.
         const tdcKW =
           t
-            .match(new RegExp('TD[CG]' + SEP + C + '[\\s\\S]{0,150}?for\\s+([\\d,]+\\.\\d{2,})', 'i'))?.[1]
+            .match(
+              new RegExp('TD[CG]' + SEP + C + '[\\x00-\\xFF]{0,150}?for[ \\t\\n\\r]+([0-9,]+\\.[0-9]{2,})', 'i'),
+            )?.[1]
             ?.replace(/,/g, '') || null;
         const tdcChg = xChg('TD[CG]' + SEP + C);
         // RkVA charge (reactive power)
@@ -15303,7 +15309,7 @@
         // delivery cost from bill" that Tesseract inserts on degraded scans.
         // `SEP_T` allows whitespace, straight/curly quotes/apostrophes, or
         // backticks between "Tax" and "exempt".
-        const SEP_T = "[\\s'`\\u2018\\u2019\\u201C\\u201D]+";
+        const SEP_T = "[ \\t\\n\\r'`\\u2018\\u2019\\u201C\\u201D]+";
         const _taxExemptParts = [];
         const taxExempt = (() => {
           const lines = t.split('\n');
@@ -15645,10 +15651,10 @@
 
         // ── Rate info for cross-validation (rate × qty vs OCR'd charge) ──
         const _rates = {};
-        const _rFac = xRate('Fac\\S*' + SEP + C);
+        const _rFac = xRate('Fac[^ \\t\\n\\r]*' + SEP + C);
         const _rDem = xRate('Demand' + SEP + C);
-        const _rOnPk = xRate('Energy' + SEP + C + '\\s+On\\s+P[kK]');
-        const _rOffPk = xRate('Energy' + SEP + C + '\\s+Off\\s+P[kK]');
+        const _rOnPk = xRate('Energy' + SEP + C + '[ \\t\\n\\r]+On[ \\t\\n\\r]+P[kK]');
+        const _rOffPk = xRate('Energy' + SEP + C + '[ \\t\\n\\r]+Off[ \\t\\n\\r]+P[kK]');
         const _rTiered = xRate('Energy' + SEP + C, /On\s+P[kK]|Off\s+P[kK]/i);
         const _rEca = xRate('E[CG]A' + SEP + C);
         const _rEer = xRate('EER' + SEP + C);
@@ -16831,7 +16837,9 @@
               // Fall back to the old split approach when no service-from dates
               // were found at all (truly unrecognizable OCR).
               const splitRe = new RegExp(
-                '(?=(?:' + _EVG_BILLING_DETAILS.source + '|Billing\\s+Details\\s*[-\\u2013\\-]\\s*service\\s+from))',
+                '(?=(?:' +
+                  _EVG_BILLING_DETAILS.source +
+                  '|Billing[ \\t\\n\\r]+Details[ \\t\\n\\r]*[-\\u2013\\-][ \\t\\n\\r]*service[ \\t\\n\\r]+from))',
                 'gi',
               );
               const raw = t.split(splitRe);
@@ -17017,7 +17025,9 @@
               // Find every Billing Details header position in the full text. Used as
               // fallback when billing-date anchoring can't establish a 1:1 mapping.
               const _bdFindRe = new RegExp(
-                '(?:' + _EVG_BILLING_DETAILS.source + '|Billing\\s+Details\\s*[-\\u2013\\-]\\s*service\\s+from)',
+                '(?:' +
+                  _EVG_BILLING_DETAILS.source +
+                  '|Billing[ \\t\\n\\r]+Details[ \\t\\n\\r]*[-\\u2013\\-][ \\t\\n\\r]*service[ \\t\\n\\r]+from)',
                 'gi',
               );
               const bdPositions = [];
@@ -17056,9 +17066,9 @@
                     continue;
                   }
                   const datePatt = new RegExp(
-                    'For\\s+service\\s+from\\s+' +
+                    'For[ \\t\\n\\r]+service[ \\t\\n\\r]+from[ \\t\\n\\r]+' +
                       r.BillingPeriodStart.replace(/[./\\]/g, '[./]') +
-                      '\\s+to\\s+' +
+                      '[ \\t\\n\\r]+to[ \\t\\n\\r]+' +
                       r.BillingPeriodEnd.replace(/[./\\]/g, '[./]'),
                     'gi',
                   );
@@ -17896,19 +17906,19 @@
               return digits.slice(0, 2) + '/' + digits.slice(2) + '/' + yr;
             };
             const _findDate = (label) => {
-              const re = new RegExp(label + '[:\\s]*' + _dt.source, 'i');
+              const re = new RegExp(label + '[:[ \\t\\n\\r]]*' + _dt.source, 'i');
               const m = page.match(re);
               if (m) return fixDate(m[1]);
-              const re3 = new RegExp(label + '[:\\s]*' + _dtMerged.source, 'i');
+              const re3 = new RegExp(label + '[:[ \\t\\n\\r]]*' + _dtMerged.source, 'i');
               const m3 = page.match(re3);
               if (m3) return _splitMerged(m3[1] + '-' + m3[2]);
-              const re2 = new RegExp(label + '[^\\d\\n]{0,20}\\n\\s*' + _dt.source, 'im');
+              const re2 = new RegExp(label + '[^0-9\\n]{0,20}\\n[ \\t\\n\\r]*' + _dt.source, 'im');
               const m2 = page.match(re2);
               return m2 ? fixDate(m2[1]) : null;
             };
-            const billDate = _findDate('Bill\\s*Date');
-            const serviceFrom = _findDate('Service\\s*From');
-            const serviceTo = _findDate('Service\\s*To');
+            const billDate = _findDate('Bill[ \\t\\n\\r]*Date');
+            const serviceFrom = _findDate('Service[ \\t\\n\\r]*From');
+            const serviceTo = _findDate('Service[ \\t\\n\\r]*To');
             console.log('[BillingDetail] Dates:', { billDate, serviceFrom, serviceTo, acct });
             const custMatch = page.match(/USD\s*(\d{3,4})\s+([A-Z][A-Z0-9 .&\-]+?)(?:\n|BOX|\s{3,})/);
             const CustomerName = custMatch ? 'USD ' + custMatch[1] + ' ' + custMatch[2].trim() : null;
@@ -21777,7 +21787,9 @@
           btn.textContent = '← Back';
           const text = window._pdfRawText || '(no raw text captured — try reloading the PDF)';
           const splitRe = new RegExp(
-            '(?=(?:' + _EVG_BILLING_DETAILS.source + '|Billing\\s+Details\\s*[-\\u2013\\-]\\s*service\\s+from))',
+            '(?=(?:' +
+              _EVG_BILLING_DETAILS.source +
+              '|Billing[ \\t\\n\\r]+Details[ \\t\\n\\r]*[-\\u2013\\-][ \\t\\n\\r]*service[ \\t\\n\\r]+from))',
             'gi',
           );
           const raw = text.split(splitRe);
@@ -25433,9 +25445,15 @@
           // MM/DD/YYYY or MM-DD-YYYY
           /\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/g,
           // Month DD, YYYY  or  Month DD YYYY
-          new RegExp(`\\b(${MONTHS_LONG}|${MONTHS_SHORT})\\.?\\s+(\\d{1,2}),?\\s+(\\d{4})\\b`, 'gi'),
+          new RegExp(
+            `\\b(${MONTHS_LONG}|${MONTHS_SHORT})\\.?[ \\t\\n\\r]+([0-9]{1,2}),?[ \\t\\n\\r]+([0-9]{4})\\b`,
+            'gi',
+          ),
           // Month DD (no year — will use guessed year)
-          new RegExp(`\\b(${MONTHS_LONG}|${MONTHS_SHORT})\\.?\\s+(\\d{1,2})\\b(?!\\s*,?\\s*\\d{4})`, 'gi'),
+          new RegExp(
+            `\\b(${MONTHS_LONG}|${MONTHS_SHORT})\\.?[ \\t\\n\\r]+([0-9]{1,2})\\b(?![ \\t\\n\\r]*,?[ \\t\\n\\r]*[0-9]{4})`,
+            'gi',
+          ),
           // YYYY-MM-DD
           /\b(\d{4})-(\d{2})-(\d{2})\b/g,
         ];
@@ -25516,7 +25534,10 @@
           }
 
           // Pattern 2: Month DD, YYYY
-          const p2 = new RegExp(`\\b(${MONTHS_LONG}|${MONTHS_SHORT})\\.?\\s+(\\d{1,2}),?\\s+(\\d{4})\\b`, 'gi');
+          const p2 = new RegExp(
+            `\\b(${MONTHS_LONG}|${MONTHS_SHORT})\\.?[ \\t\\n\\r]+([0-9]{1,2}),?[ \\t\\n\\r]+([0-9]{4})\\b`,
+            'gi',
+          );
           while ((m = p2.exec(line)) !== null) {
             const mo = MONTH_MAP[m[1].toLowerCase()];
             const d = parseInt(m[2]),
@@ -25529,7 +25550,7 @@
 
           // Pattern 3: Month DD (no year)
           if (!found) {
-            const p3 = new RegExp(`\\b(${MONTHS_LONG}|${MONTHS_SHORT})\\.?\\s+(\\d{1,2})\\b`, 'gi');
+            const p3 = new RegExp(`\\b(${MONTHS_LONG}|${MONTHS_SHORT})\\.?[ \\t\\n\\r]+([0-9]{1,2})\\b`, 'gi');
             while ((m = p3.exec(line)) !== null) {
               const mo = MONTH_MAP[m[1].toLowerCase()];
               const d = parseInt(m[2]);
@@ -26179,7 +26200,7 @@
             // Check if segment contains an inline month header mid-text
             // e.g. "1st Day for Preschool, 6th, 9th Grade DECEMBER"
             // Split at inline headers and process each part
-            const inlineRe = new RegExp('\\s+(' + MONTH_NAMES_RE + ')\\b', 'gi');
+            const inlineRe = new RegExp('[ \\t\\n\\r]+(' + MONTH_NAMES_RE + ')\\b', 'gi');
             let lastIdx = 0;
             let imatch;
             const parts = [];
