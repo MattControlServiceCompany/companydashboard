@@ -14624,8 +14624,13 @@
         // building without being fooled by continuation lines that merely contain "per kW".
         // The full CHG_STOP plus a "per kW" exemption previously let RkVA Chg lines be
         // absorbed into the preceding Energy Off Pk block, corrupting the rate match.
+        // NEXT_CHG_LINE detects when a line belongs to a DIFFERENT charge, so we stop
+        // building the block. OCR often prepends garbage (chart Y-axis numbers, stray
+        // letters) before the actual charge keyword, so we check if the charge keyword
+        // pattern appears ANYWHERE in the line, not just at the start.
+        // Pattern: ChargeKeyword + separator + "Chg" variant
         const NEXT_CHG_LINE =
-          /^\s*(?:[\d,]+\s+)*(?:Cust|Fac[\S]|Demand|Energy[\s.]+(?:Ch|CN|Gh)|\bECA|\bEER|\bPTS|\bTD[CG]|\bR[kK]VA|Subtotal|Current\s+Charges)/i;
+          /(?:Cust(?:omer)?|Fac(?:ilities)?|Demand|Energy|ECA|EER|PTS|TD[CG]|R[kK]VA|Subtotal|Current\s+Charges)[\s.]+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])/i;
         const getAmt = (line) => {
           const ms = [...line.matchAll(/\$([\d,]+\.\d{2})/g)];
           let best = null;
