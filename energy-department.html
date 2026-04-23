@@ -1382,58 +1382,6 @@
       .help-tip-box strong {
         color: var(--text);
       }
-      .desc-select {
-        position: relative;
-      }
-      .desc-select-trigger {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        cursor: pointer;
-      }
-      .desc-select-menu {
-        display: none;
-        position: absolute;
-        top: calc(100% + 4px);
-        right: 0;
-        z-index: 810;
-        background: var(--s1);
-        border: 1px solid var(--border2);
-        border-radius: 8px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-        overflow: hidden;
-        min-width: 100%;
-        width: max-content;
-        max-width: 500px;
-      }
-      .desc-select.open .desc-select-menu {
-        display: block;
-      }
-      .desc-select-opt {
-        padding: 10px 13px;
-        cursor: pointer;
-        transition: background 0.1s;
-      }
-      .desc-select-opt:hover {
-        background: rgba(255, 255, 255, 0.06);
-      }
-      .desc-select-opt.selected {
-        background: rgba(var(--accent-rgb, 80, 160, 255), 0.12);
-      }
-      .desc-select-opt-title {
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--text);
-      }
-      .desc-select-opt-desc {
-        font-size: 11px;
-        color: var(--text3);
-        line-height: 1.5;
-        margin-top: 3px;
-      }
-      .desc-select-opt + .desc-select-opt {
-        border-top: 1px solid var(--border);
-      }
       .fi,
       .fs,
       .fta {
@@ -10676,29 +10624,10 @@
               </div>
               <div class="fg">
                 <label class="fl">Baseline Comparison</label>
-                <div class="desc-select" id="mp-baselineComparison-wrap">
-                  <div class="desc-select-trigger fi" tabindex="0">
-                    <span class="desc-select-val">Normalized</span>
-                    <span style="opacity: 0.4">&#9662;</span>
-                  </div>
-                  <input type="hidden" id="mp-baselineComparison" value="normalized" />
-                  <div class="desc-select-menu">
-                    <div class="desc-select-opt" data-value="normalized">
-                      <div class="desc-select-opt-title">Normalized</div>
-                      <div class="desc-select-opt-desc">
-                        Adjusts for weather using heating/cooling degree days (ASHRAE Guideline 14). Shows whether
-                        savings come from real efficiency improvements, not just milder weather.
-                      </div>
-                    </div>
-                    <div class="desc-select-opt" data-value="actual">
-                      <div class="desc-select-opt-title">Actual</div>
-                      <div class="desc-select-opt-desc">
-                        Compares current bills against the baseline using raw costs and usage as they appear on the
-                        bill.
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <select class="fi" id="mp-baselineComparison" onchange="updateBaselineDesc()">
+                  <option value="normalized">Normalized</option>
+                  <option value="actual">Actual</option>
+                </select>
               </div>
             </div>
             <div class="f2">
@@ -10706,7 +10635,15 @@
                 <label class="fl">Utility Escalation %/yr</label
                 ><input class="fi" id="mp-escalation" type="number" min="0" max="20" step="0.1" placeholder="e.g. 3" />
               </div>
-              <div class="fg"></div>
+              <div class="fg">
+                <div
+                  id="mp-baselineDesc"
+                  style="font-size: 11px; color: var(--text3); line-height: 1.5; padding-top: 18px"
+                >
+                  Adjusts for weather using heating/cooling degree days (ASHRAE Guideline 14). Shows whether savings
+                  come from real efficiency improvements, not just milder weather.
+                </div>
+              </div>
             </div>
             <div class="f2">
               <div class="fg"><label class="fl">Start Date</label><input class="fi" id="mp-start" type="date" /></div>
@@ -14351,17 +14288,8 @@
         document.getElementById('mp-heatEff').value = p.heatEff || '';
         document.getElementById('mp-heatEffUnit').value = p.heatEffUnit || 'AFUE';
         document.getElementById('mp-status').value = p.status || 'planning';
-        const blVal = p.baselineComparison || 'normalized';
-        document.getElementById('mp-baselineComparison').value = blVal;
-        const blWrap = document.getElementById('mp-baselineComparison-wrap');
-        if (blWrap) {
-          const selOpt = blWrap.querySelector('.desc-select-opt[data-value="' + blVal + '"]');
-          if (selOpt) {
-            blWrap.querySelector('.desc-select-val').textContent =
-              selOpt.querySelector('.desc-select-opt-title').textContent;
-            blWrap.querySelectorAll('.desc-select-opt').forEach((o) => o.classList.toggle('selected', o === selOpt));
-          }
-        }
+        document.getElementById('mp-baselineComparison').value = p.baselineComparison || 'normalized';
+        updateBaselineDesc();
         document.getElementById('mp-phase').value = p.phase || '';
         document.getElementById('mp-priority').value = p.priority || 'normal';
         // Load contacts — support legacy single-contact projects too
@@ -14377,29 +14305,16 @@
         renderModalContacts();
         document.getElementById('projModal').classList.add('open');
       }
-      // Descriptive select dropdowns
-      document.addEventListener('click', function (e) {
-        const trigger = e.target.closest('.desc-select-trigger');
-        if (trigger) {
-          const wrap = trigger.closest('.desc-select');
-          document.querySelectorAll('.desc-select.open').forEach((el) => {
-            if (el !== wrap) el.classList.remove('open');
-          });
-          wrap.classList.toggle('open');
-          return;
-        }
-        const opt = e.target.closest('.desc-select-opt');
-        if (opt) {
-          const wrap = opt.closest('.desc-select');
-          const val = opt.dataset.value;
-          wrap.querySelector('input[type=hidden]').value = val;
-          wrap.querySelector('.desc-select-val').textContent = opt.querySelector('.desc-select-opt-title').textContent;
-          wrap.querySelectorAll('.desc-select-opt').forEach((o) => o.classList.toggle('selected', o === opt));
-          wrap.classList.remove('open');
-          return;
-        }
-        document.querySelectorAll('.desc-select.open').forEach((el) => el.classList.remove('open'));
-      });
+      const baselineDescs = {
+        normalized:
+          'Adjusts for weather using heating/cooling degree days (ASHRAE Guideline 14). Shows whether savings come from real efficiency improvements, not just milder weather.',
+        actual: 'Compares current bills against the baseline using raw costs and usage as they appear on the bill.',
+      };
+      function updateBaselineDesc() {
+        const val = document.getElementById('mp-baselineComparison').value;
+        const el = document.getElementById('mp-baselineDesc');
+        if (el) el.textContent = baselineDescs[val] || '';
+      }
 
       function closeProjModal() {
         document.getElementById('projModal').classList.remove('open');
