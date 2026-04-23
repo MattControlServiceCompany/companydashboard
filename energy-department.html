@@ -20242,11 +20242,12 @@
           const billId = 'pb' + Date.now() + '_' + saved;
           let hasPDF = false;
           // Store PDF once under a shared key (not per-bill) to avoid duplication
-          const pdfKey = 'en_pdf_shared_' + (bills[0]?._pdfSharedKey || Date.now());
+          const sharedId = bills[0]?._pdfSharedKey || Date.now();
+          const pdfKey = 'en_pdf_shared_' + String(sharedId).replace(/^en_pdf_shared_/, '');
           if (pdfB64 && saved === 0) {
             hasPDF = await pdfStore(pdfKey, pdfB64);
-            // Mark all bills with shared key
-            bills.forEach((b) => (b._pdfSharedKey = pdfKey));
+            // Mark all bills with shared key (store just the ID, not the full key)
+            bills.forEach((b) => (b._pdfSharedKey = String(sharedId).replace(/^en_pdf_shared_/, '')));
           } else if (pdfB64) {
             hasPDF = true; // Already stored on first bill
           }
@@ -23196,7 +23197,7 @@
             if (extracted._pageStart) existing.pdfPageStart = extracted._pageStart;
             if (extracted._pageEnd) existing.pdfPageEnd = extracted._pageEnd;
             if (extracted._pdfSharedKey) {
-              existing.pdfKey = extracted._pdfSharedKey;
+              existing.pdfKey = 'en_pdf_shared_' + String(extracted._pdfSharedKey).replace(/^en_pdf_shared_/, '');
               existing.hasPDF = true;
               // renderBillRow gates the 📄 button on (row.pdfBillId && row.hasPDF).
               // Some older bills were saved without a pdfBillId (either via a legacy
@@ -23280,7 +23281,7 @@
             if (!existing.pdfPageStart && extracted._pageStart) existing.pdfPageStart = extracted._pageStart;
             if (!existing.pdfPageEnd && extracted._pageEnd) existing.pdfPageEnd = extracted._pageEnd;
             if (!existing.pdfKey && extracted._pdfSharedKey) {
-              existing.pdfKey = extracted._pdfSharedKey;
+              existing.pdfKey = 'en_pdf_shared_' + String(extracted._pdfSharedKey).replace(/^en_pdf_shared_/, '');
               existing.hasPDF = true;
               if (!existing.pdfBillId) {
                 existing.pdfBillId = 'pb' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
@@ -23316,7 +23317,7 @@
             if (extracted._pageStart) sb.pdfPageStart = extracted._pageStart;
             if (extracted._pageEnd) sb.pdfPageEnd = extracted._pageEnd;
             if (extracted._pdfSharedKey) {
-              sb.pdfKey = extracted._pdfSharedKey;
+              sb.pdfKey = 'en_pdf_shared_' + String(extracted._pdfSharedKey).replace(/^en_pdf_shared_/, '');
               sb.hasPDF = true;
             }
           } else if (dup.action === 'merge') {
@@ -23330,7 +23331,7 @@
             if (!sb.pdfPageStart && extracted._pageStart) sb.pdfPageStart = extracted._pageStart;
             if (!sb.pdfPageEnd && extracted._pageEnd) sb.pdfPageEnd = extracted._pageEnd;
             if (!sb.pdfKey && extracted._pdfSharedKey) {
-              sb.pdfKey = extracted._pdfSharedKey;
+              sb.pdfKey = 'en_pdf_shared_' + String(extracted._pdfSharedKey).replace(/^en_pdf_shared_/, '');
               sb.hasPDF = true;
             }
           } else if (dup.action === 'field-select') {
