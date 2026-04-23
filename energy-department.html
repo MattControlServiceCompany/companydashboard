@@ -14729,10 +14729,12 @@
             if (rateM) {
               // Normalize `:` → `.` so `113,763:4729` parses as `113763.4729`.
               // Also fix OCR misread decimal-as-comma: `107,890,4880` → `107890.4880`
-              // (last separator has 4+ digits after it = decimal, not thousands comma)
+              // Only apply when there's NO real decimal point already in the string —
+              // if a period exists, all commas are thousands separators.
               let qtyStr = rateM[1].replace(':', '.');
+              const hasDot = qtyStr.includes('.');
               const lastSep = qtyStr.lastIndexOf(',');
-              if (lastSep >= 0 && qtyStr.length - lastSep - 1 >= 4) {
+              if (!hasDot && lastSep >= 0 && qtyStr.length - lastSep - 1 >= 4) {
                 qtyStr = qtyStr.slice(0, lastSep).replace(/,/g, '') + '.' + qtyStr.slice(lastSep + 1);
               } else {
                 qtyStr = qtyStr.replace(/,/g, '');
@@ -14756,7 +14758,22 @@
                 const fixedRate = parseFloat(fixed);
                 if (fixedRate > 0 && fixedRate < maxRate) adjRate = fixedRate;
               }
-              if (!isNaN(qty) && !isNaN(adjRate) && adjRate >= 0 && adjRate < maxRate && qty > 0 && qty < maxQty) {
+              // Sanity: qty × rate should be in the ballpark of the OCR charge.
+              // If computed is < 1% of the OCR charge, the qty was likely garbled
+              // (e.g. 15.06 instead of 15,060 — parsed comma as decimal).
+              const _ocrChargeM = block.match(/\$([\d,]+\.\d{2})\s*$/m);
+              const _ocrChargeVal = _ocrChargeM ? parseFloat(_ocrChargeM[1].replace(/,/g, '')) : 0;
+              const _computedCheck = qty * adjRate;
+              const _qtyChargeRatioOk = !_ocrChargeVal || _ocrChargeVal < 1 || _computedCheck / _ocrChargeVal > 0.1;
+              if (
+                !isNaN(qty) &&
+                !isNaN(adjRate) &&
+                adjRate >= 0 &&
+                adjRate < maxRate &&
+                qty > 0 &&
+                qty < maxQty &&
+                _qtyChargeRatioOk
+              ) {
                 // Detect proration: "(for N of Y days)" applies a fraction to the computed charge.
                 // Example: 304.2 kW × $11.683 × (29/31) = $3,324.68. Parens may be garbled by OCR.
                 // STRICTLY kW-only — same rationale as the date-range proration gate below.
