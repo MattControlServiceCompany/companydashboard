@@ -14663,7 +14663,7 @@
             // is near a tall character above it, and before this fallback the regex
             // silently dropped the entire rate part (e.g. the second tier of a seasonal
             // ECA charge), leaving `_rates.ECACharge` missing half the total.
-            const QTY_RE = '([\\d,]+[.:]\\d{2,})';
+            const QTY_RE = '([\\d,]+[.,:]\\d{2,})';
             // Gap between qty and unit: allow up to ~40 chars of OCR garbage (stray letters,
             // chart Y-axis numbers, padded whitespace, line-break artifacts). Real data has
             // just whitespace, but degraded OCR injects characters like
@@ -14687,7 +14687,16 @@
             }
             if (rateM) {
               // Normalize `:` → `.` so `113,763:4729` parses as `113763.4729`.
-              const qty = parseFloat(rateM[1].replace(/,/g, '').replace(':', '.'));
+              // Also fix OCR misread decimal-as-comma: `107,890,4880` → `107890.4880`
+              // (last separator has 4+ digits after it = decimal, not thousands comma)
+              let qtyStr = rateM[1].replace(':', '.');
+              const lastSep = qtyStr.lastIndexOf(',');
+              if (lastSep >= 0 && qtyStr.length - lastSep - 1 >= 4) {
+                qtyStr = qtyStr.slice(0, lastSep).replace(/,/g, '') + '.' + qtyStr.slice(lastSep + 1);
+              } else {
+                qtyStr = qtyStr.replace(/,/g, '');
+              }
+              const qty = parseFloat(qtyStr);
               const rate = parseFloat(rateM[3].replace(/,/g, ''));
               const unit = 'k' + rateM[2];
               // Sanity: Evergy rates are < $100/kW and < $1/kWh. Values like 70000 or 140000
