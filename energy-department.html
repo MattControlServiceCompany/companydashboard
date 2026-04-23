@@ -14725,7 +14725,7 @@
             // newline-as-space = 26 chars). 40 leaves headroom for worse cases without
             // risking a cross-charge match, since xRate's block is already bounded to 4 lines
             // and stops on NEXT_CHG_LINE.
-            const GAP = '[\\x00-\\xFF]{0,40}?';
+            const GAP = '[\\u0000-\\uFFFF]{0,40}?';
             // Pattern priority: try kWh patterns first to avoid cross-charge aliasing.
             // When Off-Peak kWh rate has junk between "at" and "$", the direct pattern
             // can match a kW rate from RkVA/TDC that got included in the block. By
@@ -14734,7 +14734,7 @@
             // 1. kWh with junk + "per kWh" confirmation (most reliable for Energy charges)
             rateM = block.match(
               new RegExp(
-                QTY_RE + GAP + 'k([Ww]h)[ \\t]+at[ \\t]+[\\x00-\\xFF]*?[$]([0-9,.]+)[ \\t]*p[eo]r[ \\t]+k[Ww]h',
+                QTY_RE + GAP + 'k([Ww]h)[ \\t]+at[ \\t]+[\\u0000-\\uFFFF]*?[$]([0-9,.]+)[ \\t]*p[eo]r[ \\t]+k[Ww]h',
                 'i',
               ),
             );
@@ -14746,7 +14746,7 @@
             if (!rateM) {
               rateM = block.match(
                 new RegExp(
-                  QTY_RE + GAP + 'k([Ww])[ \\t]+at[ \\t]+[\\x00-\\xFF]*?[$]([0-9,.]+)[ \\t]*p[eo]r[ \\t]+k[Ww]',
+                  QTY_RE + GAP + 'k([Ww])[ \\t]+at[ \\t]+[\\u0000-\\uFFFF]*?[$]([0-9,.]+)[ \\t]*p[eo]r[ \\t]+k[Ww]',
                   'i',
                 ),
               );
@@ -14757,7 +14757,7 @@
             }
             // 5. Last resort: any unit with junk (no "per" required)
             if (!rateM) {
-              rateM = block.match(new RegExp(QTY_RE + GAP + 'k([Ww]h?)[ \\t]+at[\\x00-\\xFF]*?[$]([0-9,.]+)', 'i'));
+              rateM = block.match(new RegExp(QTY_RE + GAP + 'k([Ww]h?)[ \\t]+at[\\u0000-\\uFFFF]*?[$]([0-9,.]+)', 'i'));
             }
             if (rateM) {
               // Normalize `:` → `.` so `113,763:4729` parses as `113763.4729`.
@@ -15326,7 +15326,7 @@
         const tdcKW =
           t
             .match(
-              new RegExp('TD[CG]' + SEP + C + '[\\x00-\\xFF]{0,150}?for[ \\t\\n\\r]+([0-9,]+\\.[0-9]{2,})', 'i'),
+              new RegExp('TD[CG]' + SEP + C + '[\\u0000-\\uFFFF]{0,150}?for[ \\t\\n\\r]+([0-9,]+\\.[0-9]{2,})', 'i'),
             )?.[1]
             ?.replace(/,/g, '') || null;
         const tdcChg = xChg('TD[CG]' + SEP + C);
