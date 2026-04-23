@@ -14711,19 +14711,22 @@
             // newline-as-space = 26 chars). 40 leaves headroom for worse cases without
             // risking a cross-charge match, since xRate's block is already bounded to 4 lines
             // and stops on NEXT_CHG_LINE.
-            const GAP = '[\\s\\S]{0,40}?';
+            const GAP = '[\\x00-\\xFF]{0,40}?';
             // Try the direct pattern first: qty kW/kWh at $rate
-            let rateM = block.match(new RegExp(QTY_RE + GAP + 'k([Ww]h?)\\s+at\\s+\\$([\\d,.]+)', 'i'));
+            let rateM = block.match(new RegExp(QTY_RE + GAP + 'k([Ww]h?)[ \\t]+at[ \\t]+[$]([0-9,.]+)', 'i'));
             if (!rateM) {
               // Fallback: allow junk (chart numbers, OCR garbage) between "at" and "$rate".
               // Accept "per" OR "por" (Tesseract often reads "per" as "por" on degraded scans).
               rateM = block.match(
-                new RegExp(QTY_RE + GAP + 'k([Ww]h?)\\s+at\\s+[\\s\\S]*?\\$([\\d,.]+)\\s*p[eo]r\\s+k[Ww]', 'i'),
+                new RegExp(
+                  QTY_RE + GAP + 'k([Ww]h?)[ \\t]+at[ \\t]+[\\x00-\\xFF]*?[$]([0-9,.]+)[ \\t]*p[eo]r[ \\t]+k[Ww]',
+                  'i',
+                ),
               );
             }
             if (!rateM) {
               // Last resort: qty kWh at [anything] $rate (no "per kW" required)
-              rateM = block.match(new RegExp(QTY_RE + GAP + 'k([Ww]h?)\\s+at[\\s\\S]*?\\$([\\d,.]+)', 'i'));
+              rateM = block.match(new RegExp(QTY_RE + GAP + 'k([Ww]h?)[ \\t]+at[\\x00-\\xFF]*?[$]([0-9,.]+)', 'i'));
             }
             if (rateM) {
               // Normalize `:` → `.` so `113,763:4729` parses as `113763.4729`.
