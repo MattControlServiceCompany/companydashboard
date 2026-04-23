@@ -11589,7 +11589,7 @@
         }
       }
 
-      window.addEventListener('beforeunload', function(e) {
+      window.addEventListener('beforeunload', function (e) {
         if (window._pdfMultiBills && window._pdfMultiBills.length > 0) {
           _saveExtractionState();
           e.preventDefault();
@@ -12604,7 +12604,10 @@
               if (blBills.length) hasBaseline = true;
               blBills.forEach((bill) => {
                 if (m.commodity === 'Electric') {
-                  blCost += (parseFloat(bill.kwhCost) || 0) + (parseFloat(bill.kwCost) || 0) + (parseFloat(bill.facKWCost) || 0);
+                  blCost +=
+                    (parseFloat(bill.kwhCost) || 0) +
+                    (parseFloat(bill.kwCost) || 0) +
+                    (parseFloat(bill.facKWCost) || 0);
                 } else {
                   blCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
                 }
@@ -12617,7 +12620,10 @@
               const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
               bills.slice(-12).forEach((bill) => {
                 if (m.commodity === 'Electric') {
-                  curCost += (parseFloat(bill.kwhCost) || 0) + (parseFloat(bill.kwCost) || 0) + (parseFloat(bill.facKWCost) || 0);
+                  curCost +=
+                    (parseFloat(bill.kwhCost) || 0) +
+                    (parseFloat(bill.kwCost) || 0) +
+                    (parseFloat(bill.facKWCost) || 0);
                 } else {
                   curCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
                 }
@@ -12630,7 +12636,10 @@
               // Tally all bills as fallback when no baseline is set
               (m.bills || []).forEach((bill) => {
                 if (m.commodity === 'Electric') {
-                  allCost += (parseFloat(bill.kwhCost) || 0) + (parseFloat(bill.kwCost) || 0) + (parseFloat(bill.facKWCost) || 0);
+                  allCost +=
+                    (parseFloat(bill.kwhCost) || 0) +
+                    (parseFloat(bill.kwCost) || 0) +
+                    (parseFloat(bill.facKWCost) || 0);
                 } else {
                   allCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
                 }
@@ -16019,9 +16028,16 @@
               result['_auto_recovered_EnergyOffPeakCharge'] = {
                 original: null,
                 corrected: _offPkCharge.toFixed(2),
-                reason: 'Sum gap $' + _offPkCharge.toFixed(2) + '; kWh identity: ' +
-                  totalKwh.toFixed(2) + ' total - ' + onPkKwh.toFixed(2) + ' on-peak = ' +
-                  offPkKwh.toFixed(2) + ' off-peak',
+                reason:
+                  'Sum gap $' +
+                  _offPkCharge.toFixed(2) +
+                  '; kWh identity: ' +
+                  totalKwh.toFixed(2) +
+                  ' total - ' +
+                  onPkKwh.toFixed(2) +
+                  ' on-peak = ' +
+                  offPkKwh.toFixed(2) +
+                  ' off-peak',
               };
             }
           }
@@ -20748,15 +20764,18 @@
       function _saveExtractionState() {
         if (!window._pdfMultiBills || !window._pdfMultiBills.length) return;
         try {
-          sessionStorage.setItem('ch_extraction_state', JSON.stringify({
-            bills: window._pdfMultiBills,
-            idx: window._pdfMultiIdx || 0,
-            dupMap: window._pdfDupMap || {},
-            warnings: window._pdfBillWarnings || [],
-            commTab: window._pdfCommTab || null,
-            passScores: window._pdfPassScores || [],
-            timestamp: Date.now(),
-          }));
+          sessionStorage.setItem(
+            'ch_extraction_state',
+            JSON.stringify({
+              bills: window._pdfMultiBills,
+              idx: window._pdfMultiIdx || 0,
+              dupMap: window._pdfDupMap || {},
+              warnings: window._pdfBillWarnings || [],
+              commTab: window._pdfCommTab || null,
+              passScores: window._pdfPassScores || [],
+              timestamp: Date.now(),
+            }),
+          );
         } catch (e) {
           console.warn('[Extraction] Could not save state to sessionStorage:', e.message);
         }
@@ -24641,7 +24660,12 @@
           pf(bill.PTSCharge)
         ).toFixed(2);
         const kwCost = (pf(bill.BilledKWCharge) + pf(bill.TDCCharge)).toFixed(2);
-        const otherCost = (pf(bill.CustomerCharge) + pf(bill.TaxExemptDelivery) + pf(bill.BillOffset) + pf(bill.RkVACharge)).toFixed(2);
+        const otherCost = (
+          pf(bill.CustomerCharge) +
+          pf(bill.TaxExemptDelivery) +
+          pf(bill.BillOffset) +
+          pf(bill.RkVACharge)
+        ).toFixed(2);
         const taxCost = pf(bill.FranchiseFee).toFixed(2);
         const totalCost = pf(bill.TotalCurrentCharges);
         function toISO(d) {
@@ -27898,7 +27922,8 @@
             label: 'kW Cost $',
             type: 'currency',
             w: 100,
-            compute: (r) => _pfBills(r.demandCharge) + _pfBills(r.tdcCharge) + _pfBills(r.facilitiesCharge || r.facKWCost),
+            compute: (r) =>
+              _pfBills(r.demandCharge) + _pfBills(r.tdcCharge) + _pfBills(r.facilitiesCharge || r.facKWCost),
           },
           {
             // Blended kW rate = sum of kW charges / billed kW
@@ -27906,7 +27931,8 @@
             type: 'rate',
             w: 110,
             compute: (r) => {
-              const cost = _pfBills(r.demandCharge) + _pfBills(r.tdcCharge) + _pfBills(r.facilitiesCharge || r.facKWCost);
+              const cost =
+                _pfBills(r.demandCharge) + _pfBills(r.tdcCharge) + _pfBills(r.facilitiesCharge || r.facKWCost);
               const kw = _pfBills(r.demandKW);
               return kw > 0 ? cost / kw : 0;
             },
@@ -33207,6 +33233,7 @@
         function getCscVal(col) {
           const act = getActSav(col);
           if (act == null) return null;
+          if (act <= 0) return 0;
           if (cscMode === 'pct') return act * cscPct;
           // fixed mode: fixed per month × number of months in col
           const nMos = col.isTotal ? (view === 'monthly' ? 12 : 12 * years) : col.mos ? col.mos.length : 1;
@@ -33297,6 +33324,17 @@
           makeRegRow('Baseline Utility Spend $', 'var(--text)', (col) => getBase(col), null) +
           makeRegRow('Projected Utility Spend $', 'var(--text)', (col) => getBase(col) * (1 - savPct), null) +
           makeRegRow('Projected Utility Savings $', 'var(--em)', (col) => getBase(col) * savPct, projPct) +
+          (hasActual
+            ? makeRegRow(
+                'Actual Utility Spend $',
+                'var(--text)',
+                (col) => {
+                  const sav = getActSav(col);
+                  return sav != null ? getBase(col) - sav : null;
+                },
+                null,
+              )
+            : '') +
           (hasActual
             ? makeRow(
                 'Actual Utility Savings $',
@@ -35215,8 +35253,16 @@
         if (onPk > 0 && offPk > 0 && total > 0) {
           const diff = Math.abs(onPk + offPk - total);
           if (diff > 1) {
-            warnings['kwh'] = 'On-Peak (' + onPk.toFixed(0) + ') + Off-Peak (' + offPk.toFixed(0) + ') = ' +
-              (onPk + offPk).toFixed(0) + ' but Total kWh = ' + total.toFixed(0);
+            const _fmtKwh = (v) => (v % 1 === 0 ? v.toFixed(0) : v.toFixed(2));
+            warnings['kwh'] =
+              'On-Peak (' +
+              _fmtKwh(onPk) +
+              ') + Off-Peak (' +
+              _fmtKwh(offPk) +
+              ') = ' +
+              _fmtKwh(onPk + offPk) +
+              ' but Total kWh = ' +
+              _fmtKwh(total);
           }
         }
         return warnings;
@@ -35352,7 +35398,9 @@
           const rightAttr = c.rightSticky ? ' data-sticky-right="' + i + '"' : '';
           const finalCls = (cls + rightCls).trim();
           const warn = _fieldWarningsEarly[c.entry.key];
-          const warnAttr = warn ? ' title="' + warn.replace(/"/g, '&quot;') + '" style="background:rgba(245,158,11,.12)"' : '';
+          const warnAttr = warn
+            ? ' title="' + warn.replace(/"/g, '&quot;') + '" style="background:rgba(245,158,11,.12)"'
+            : '';
           html += `<td${finalCls ? ' class="' + finalCls + '"' : ''}${rightAttr}${warnAttr}>${formatted}</td>`;
         }
         html += actionBtns + '</tr>';
