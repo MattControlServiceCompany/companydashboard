@@ -35608,7 +35608,8 @@
         m.bills = [];
         if (m.baseline) m.baseline = {};
         saveUtilityData();
-        renderMeterWorkspace();
+        renderUDProjList();
+        renderUDDetail();
         showToast(count + ' billing period' + (count !== 1 ? 's' : '') + ' deleted');
       }
       function toggleMeterDetail(rowId) {
@@ -35667,8 +35668,11 @@
             (n !== 1 ? 's' : '') +
             (n ? ' · ' + getDateRange(m.bills.slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start))) : '');
         }
-        // Full re-render after animation (also handles edge cases like gap-row cleanup)
-        setTimeout(() => renderMeterWorkspace(), 250);
+        // Full re-render after animation
+        setTimeout(() => {
+          renderUDProjList();
+          renderUDDetail();
+        }, 250);
         showToast('Bill period deleted');
       }
 
