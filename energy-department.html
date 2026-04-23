@@ -10628,6 +10628,13 @@
                   <option value="normalized">Normalized</option>
                   <option value="actual">Actual</option>
                 </select>
+                <div
+                  id="mp-baselineDesc"
+                  style="font-size: 11px; color: var(--text3); line-height: 1.5; margin-top: 6px"
+                >
+                  Adjusts for weather using heating/cooling degree days (ASHRAE Guideline 14). Shows whether savings
+                  come from real efficiency improvements, not just milder weather.
+                </div>
               </div>
             </div>
             <div class="f2">
@@ -10635,15 +10642,7 @@
                 <label class="fl">Utility Escalation %/yr</label
                 ><input class="fi" id="mp-escalation" type="number" min="0" max="20" step="0.1" placeholder="e.g. 3" />
               </div>
-              <div class="fg">
-                <div
-                  id="mp-baselineDesc"
-                  style="font-size: 11px; color: var(--text3); line-height: 1.5; padding-top: 18px"
-                >
-                  Adjusts for weather using heating/cooling degree days (ASHRAE Guideline 14). Shows whether savings
-                  come from real efficiency improvements, not just milder weather.
-                </div>
-              </div>
+              <div class="fg"></div>
             </div>
             <div class="f2">
               <div class="fg"><label class="fl">Start Date</label><input class="fi" id="mp-start" type="date" /></div>
