@@ -21670,7 +21670,16 @@
         output += '\n=== RAW OCR TEXT ===\n' + raw;
         // Store in window for Playwright to retrieve
         const safeName = srcFile.replace(/\.pdf$/i, '').replace(/[^a-zA-Z0-9_\-. ]/g, '_');
-        const debugFilename = 'ocr-debug_' + safeName + '.txt';
+        const now = new Date();
+        const ts =
+          now.getFullYear() +
+          String(now.getMonth() + 1).padStart(2, '0') +
+          String(now.getDate()).padStart(2, '0') +
+          '_' +
+          String(now.getHours()).padStart(2, '0') +
+          String(now.getMinutes()).padStart(2, '0') +
+          String(now.getSeconds()).padStart(2, '0');
+        const debugFilename = 'ocr-debug_' + safeName + '_' + ts + '.txt';
         window._debugFileContent = output;
         window._debugFileName = debugFilename;
         // Save to Downloads as a file
