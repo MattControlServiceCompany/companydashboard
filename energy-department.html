@@ -12302,7 +12302,7 @@
                       <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','baseline')">📊 Baseline Data</button>
                       <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','savproj')">📈 Savings Projection</button>
                       <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','perf')">💡 Performance</button>
-                      <button class="btn btn-ghost btn-sm" onclick="openBldgModal(projUDSelBldg['${p.id}'])">✏️ Edit Building</button>
+                      <button class="btn btn-ghost btn-sm" onclick="openBldgModalForProj(${p.id}, projUDSelBldg['${p.id}'])">✏️ Edit Building</button>
                       <button class="btn btn-ghost btn-sm" onclick="openExportModal('building','${p.id}')" title="Export utility bill data to JSON or CSV">📤 Export Data</button>
                       <button class="btn btn-em btn-sm" onclick="projUDOpenMeterModal('${p.id}')">+ Add Meter</button>
                     </div>
@@ -13185,7 +13185,7 @@
               <div class="ud-nav-bldg-meta">${mCount} meter${mCount !== 1 ? 's' : ''} ${blBadge}</div>
             </div>
             <div class="ud-nav-bldg-actions">
-              <button class="btn btn-ghost btn-sm" style="padding:1px 5px;font-size:11px" onclick="event.stopPropagation();openBldgModal('${b.id}')" title="Edit">✏️</button>
+              <button class="btn btn-ghost btn-sm" style="padding:1px 5px;font-size:11px" onclick="event.stopPropagation();openBldgModalForProj('${projId}','${b.id}')" title="Edit">✏️</button>
             </div>
           </div>`;
           })
