@@ -8417,100 +8417,100 @@
           <!-- /view-ems -->
 
           <script>
-                        /* ════════════════════════════════════════
+            /* ════════════════════════════════════════
                EMS LEADS — embedded in energy-department
                All functions prefixed ems* to avoid conflicts
                Selectors scoped to #view-ems / ems-specific IDs
             ════════════════════════════════════════ */
-                        (function () {
-                          const EMS_KEY = 'ems_leads_v1';
-                          const EMS_STAGES = ['Prospect', 'Qualifying', 'Proposal', 'Won', 'Lost'];
-                          const EMS_STAGE_COLORS = {
-                            Prospect: '#2a3450',
-                            Contacted: '#0ea5e9',
-                            Qualifying: '#f59e0b',
-                            Proposal: '#a78bfa',
-                            Negotiating: '#84cc16',
-                            Won: 'var(--teal)',
-                            Lost: 'var(--red)',
-                            'On Hold': '#2a3450',
-                          };
-                          const EMS_STAGE_CLS = {
-                            Prospect: 'sp-prospect',
-                            Contacted: 'sp-contacted',
-                            Qualifying: 'sp-qualifying',
-                            Proposal: 'sp-proposal',
-                            Negotiating: 'sp-negotiating',
-                            Won: 'sp-won',
-                            Lost: 'sp-lost',
-                            'On Hold': 'sp-on-hold',
-                          };
-                          const EMS_FIELDS_KEY = 'ems_field_defs';
-                          const EMS_BUILTIN_FIELDS = [
-                            { key: 'company', label: 'Company Name *', builtin: true },
-                            { key: 'address', label: 'Address', builtin: true },
-                            { key: 'city', label: 'City', builtin: true },
-                            { key: 'state', label: 'State', builtin: true },
-                            { key: 'zip', label: 'Zip', builtin: true },
-                            { key: 'clientType', label: 'Client Type', builtin: true },
-                            { key: 'contactName', label: 'Contact Name', builtin: true },
-                            { key: 'contactPhone', label: 'Contact Phone', builtin: true },
-                            { key: 'contactEmail', label: 'Contact Email', builtin: true },
-                            { key: 'contactTitle', label: 'Contact Title', builtin: true },
-                            { key: 'buildingType', label: 'Building Type', builtin: true },
-                            { key: 'buildingSqft', label: 'Building Sq Ft', builtin: true },
-                            { key: 'annualValue', label: 'Est. Annual Value', builtin: true },
-                            { key: 'cscContact', label: 'CSC Contact', builtin: true },
-                            { key: 'cscEngineer', label: 'Engineer', builtin: true },
-                            { key: 'saNum', label: 'SA #', builtin: true },
-                            { key: 'webctrlVersion', label: 'WebCTRL Version', builtin: true },
-                            { key: 'renewalDate', label: 'Renewal Date', builtin: true },
-                            { key: 'stage', label: 'Stage', builtin: true },
-                            { key: 'priority', label: 'Priority', builtin: true },
-                            { key: 'type', label: 'Project Type', builtin: true },
-                            { key: 'notes', label: 'Notes', builtin: true },
-                            { key: 'nextAction', label: 'Next Action', builtin: true },
-                            { key: 'nextActionDate', label: 'Next Action Date', builtin: true },
-                            { key: 'lastContact', label: 'Last Contact Date', builtin: true },
-                          ];
+            (function () {
+              const EMS_KEY = 'ems_leads_v1';
+              const EMS_STAGES = ['Prospect', 'Qualifying', 'Proposal', 'Won', 'Lost'];
+              const EMS_STAGE_COLORS = {
+                Prospect: '#2a3450',
+                Contacted: '#0ea5e9',
+                Qualifying: '#f59e0b',
+                Proposal: '#a78bfa',
+                Negotiating: '#84cc16',
+                Won: 'var(--teal)',
+                Lost: 'var(--red)',
+                'On Hold': '#2a3450',
+              };
+              const EMS_STAGE_CLS = {
+                Prospect: 'sp-prospect',
+                Contacted: 'sp-contacted',
+                Qualifying: 'sp-qualifying',
+                Proposal: 'sp-proposal',
+                Negotiating: 'sp-negotiating',
+                Won: 'sp-won',
+                Lost: 'sp-lost',
+                'On Hold': 'sp-on-hold',
+              };
+              const EMS_FIELDS_KEY = 'ems_field_defs';
+              const EMS_BUILTIN_FIELDS = [
+                { key: 'company', label: 'Company Name *', builtin: true },
+                { key: 'address', label: 'Address', builtin: true },
+                { key: 'city', label: 'City', builtin: true },
+                { key: 'state', label: 'State', builtin: true },
+                { key: 'zip', label: 'Zip', builtin: true },
+                { key: 'clientType', label: 'Client Type', builtin: true },
+                { key: 'contactName', label: 'Contact Name', builtin: true },
+                { key: 'contactPhone', label: 'Contact Phone', builtin: true },
+                { key: 'contactEmail', label: 'Contact Email', builtin: true },
+                { key: 'contactTitle', label: 'Contact Title', builtin: true },
+                { key: 'buildingType', label: 'Building Type', builtin: true },
+                { key: 'buildingSqft', label: 'Building Sq Ft', builtin: true },
+                { key: 'annualValue', label: 'Est. Annual Value', builtin: true },
+                { key: 'cscContact', label: 'CSC Contact', builtin: true },
+                { key: 'cscEngineer', label: 'Engineer', builtin: true },
+                { key: 'saNum', label: 'SA #', builtin: true },
+                { key: 'webctrlVersion', label: 'WebCTRL Version', builtin: true },
+                { key: 'renewalDate', label: 'Renewal Date', builtin: true },
+                { key: 'stage', label: 'Stage', builtin: true },
+                { key: 'priority', label: 'Priority', builtin: true },
+                { key: 'type', label: 'Project Type', builtin: true },
+                { key: 'notes', label: 'Notes', builtin: true },
+                { key: 'nextAction', label: 'Next Action', builtin: true },
+                { key: 'nextActionDate', label: 'Next Action Date', builtin: true },
+                { key: 'lastContact', label: 'Last Contact Date', builtin: true },
+              ];
 
-                          function emsLoadFields() {
-                            try {
-                              const saved = JSON.parse(localStorage.getItem(EMS_FIELDS_KEY) || '{}');
-                              // Merge: start with builtins (with any saved label overrides), then append custom fields
-                              const builtins = EMS_BUILTIN_FIELDS.map((f) => ({ ...f, label: saved.labels?.[f.key] ?? f.label }));
-                              const customs = saved.custom || [];
-                              return [...builtins, ...customs, { key: '', label: '— Skip —' }];
-                            } catch (e) {
-                              return [...EMS_BUILTIN_FIELDS, { key: '', label: '— Skip —' }];
-                            }
-                          }
-                          function emsSaveFields(fields) {
-                            const labels = {},
-                              custom = [];
-                            fields.forEach((f) => {
-                              if (!f.key) return; // skip the Skip entry
-                              if (f.builtin) {
-                                if (f.label !== EMS_BUILTIN_FIELDS.find((b) => b.key === f.key)?.label) labels[f.key] = f.label;
-                              } else custom.push({ key: f.key, label: f.label });
-                            });
-                            localStorage.setItem(EMS_FIELDS_KEY, JSON.stringify({ labels, custom }));
-                          }
-                          let EMS_LEAD_FIELDS = emsLoadFields();
+              function emsLoadFields() {
+                try {
+                  const saved = JSON.parse(localStorage.getItem(EMS_FIELDS_KEY) || '{}');
+                  // Merge: start with builtins (with any saved label overrides), then append custom fields
+                  const builtins = EMS_BUILTIN_FIELDS.map((f) => ({ ...f, label: saved.labels?.[f.key] ?? f.label }));
+                  const customs = saved.custom || [];
+                  return [...builtins, ...customs, { key: '', label: '— Skip —' }];
+                } catch (e) {
+                  return [...EMS_BUILTIN_FIELDS, { key: '', label: '— Skip —' }];
+                }
+              }
+              function emsSaveFields(fields) {
+                const labels = {},
+                  custom = [];
+                fields.forEach((f) => {
+                  if (!f.key) return; // skip the Skip entry
+                  if (f.builtin) {
+                    if (f.label !== EMS_BUILTIN_FIELDS.find((b) => b.key === f.key)?.label) labels[f.key] = f.label;
+                  } else custom.push({ key: f.key, label: f.label });
+                });
+                localStorage.setItem(EMS_FIELDS_KEY, JSON.stringify({ labels, custom }));
+              }
+              let EMS_LEAD_FIELDS = emsLoadFields();
 
-                          // Field editor UI
-                          window.emsToggleFieldEditor = function () {
-                            const ed = document.getElementById('emsFieldEditor');
-                            const open = ed.style.display === 'none' || !ed.style.display;
-                            ed.style.display = open ? 'block' : 'none';
-                            if (open) emsRenderFieldList();
-                          };
-                          function emsRenderFieldList() {
-                            const list = document.getElementById('emsFieldList');
-                            const fields = EMS_LEAD_FIELDS.filter((f) => f.key); // exclude the Skip entry
-                            list.innerHTML = fields
-                              .map(
-                                (f, i) => `
+              // Field editor UI
+              window.emsToggleFieldEditor = function () {
+                const ed = document.getElementById('emsFieldEditor');
+                const open = ed.style.display === 'none' || !ed.style.display;
+                ed.style.display = open ? 'block' : 'none';
+                if (open) emsRenderFieldList();
+              };
+              function emsRenderFieldList() {
+                const list = document.getElementById('emsFieldList');
+                const fields = EMS_LEAD_FIELDS.filter((f) => f.key); // exclude the Skip entry
+                list.innerHTML = fields
+                  .map(
+                    (f, i) => `
                 <div style="display:flex;align-items:center;gap:7px;padding:6px 8px;background:var(--s2);border:1px solid var(--border);border-radius:6px">
                   <code style="font-family:var(--mono);font-size:10px;color:var(--em2);width:130px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis" title="${emsEsc(f.key)}">${emsEsc(f.key)}</code>
                   <input class="fi" value="${emsEsc(f.label)}" data-idx="${i}" oninput="emsUpdateFieldLabel(this)" style="flex:1;font-size:12px;padding:5px 8px" ${f.builtin ? '' : ''}
@@ -8521,174 +8521,174 @@
                       : `<button onclick="emsRemoveField(${i})" style="background:transparent;border:1px solid rgba(240,80,80,.3);color:var(--red);border-radius:5px;cursor:pointer;padding:3px 8px;font-size:11px;font-family:var(--font)">✕</button>`
                   }
                 </div>`,
-                              )
-                              .join('');
-                          }
-                          window.emsUpdateFieldLabel = function (inp) {
-                            const i = parseInt(inp.dataset.idx);
-                            EMS_LEAD_FIELDS[i].label = inp.value;
-                            emsSaveFields(EMS_LEAD_FIELDS);
-                            emsParseCSVPreview(); // refresh dropdowns with new label
-                          };
-                          window.emsRemoveField = function (i) {
-                            EMS_LEAD_FIELDS.splice(i, 1);
-                            emsSaveFields(EMS_LEAD_FIELDS);
-                            emsRenderFieldList();
-                            emsParseCSVPreview();
-                          };
-                          window.emsAddCustomField = function () {
-                            let key = document
-                              .getElementById('emsNewFieldKey')
-                              .value.trim()
-                              .replace(/\s+/g, '_')
-                              .replace(/[^a-zA-Z0-9_]/g, '');
-                            const label = document.getElementById('emsNewFieldLabel').value.trim();
-                            if (!key || !label) {
-                              showToast('Enter both a field key and label ⚠');
-                              return;
-                            }
-                            if (EMS_LEAD_FIELDS.some((f) => f.key === key)) {
-                              showToast('Field key "' + key + '" already exists ⚠');
-                              return;
-                            }
-                            // Insert before the Skip entry
-                            const skipIdx = EMS_LEAD_FIELDS.findIndex((f) => f.key === '');
-                            EMS_LEAD_FIELDS.splice(skipIdx, 0, { key, label, builtin: false });
-                            emsSaveFields(EMS_LEAD_FIELDS);
-                            document.getElementById('emsNewFieldKey').value = '';
-                            document.getElementById('emsNewFieldLabel').value = '';
-                            emsRenderFieldList();
-                            emsParseCSVPreview();
-                            showToast('Field "' + label + '" added ✓');
-                          };
+                  )
+                  .join('');
+              }
+              window.emsUpdateFieldLabel = function (inp) {
+                const i = parseInt(inp.dataset.idx);
+                EMS_LEAD_FIELDS[i].label = inp.value;
+                emsSaveFields(EMS_LEAD_FIELDS);
+                emsParseCSVPreview(); // refresh dropdowns with new label
+              };
+              window.emsRemoveField = function (i) {
+                EMS_LEAD_FIELDS.splice(i, 1);
+                emsSaveFields(EMS_LEAD_FIELDS);
+                emsRenderFieldList();
+                emsParseCSVPreview();
+              };
+              window.emsAddCustomField = function () {
+                let key = document
+                  .getElementById('emsNewFieldKey')
+                  .value.trim()
+                  .replace(/\s+/g, '_')
+                  .replace(/[^a-zA-Z0-9_]/g, '');
+                const label = document.getElementById('emsNewFieldLabel').value.trim();
+                if (!key || !label) {
+                  showToast('Enter both a field key and label ⚠');
+                  return;
+                }
+                if (EMS_LEAD_FIELDS.some((f) => f.key === key)) {
+                  showToast('Field key "' + key + '" already exists ⚠');
+                  return;
+                }
+                // Insert before the Skip entry
+                const skipIdx = EMS_LEAD_FIELDS.findIndex((f) => f.key === '');
+                EMS_LEAD_FIELDS.splice(skipIdx, 0, { key, label, builtin: false });
+                emsSaveFields(EMS_LEAD_FIELDS);
+                document.getElementById('emsNewFieldKey').value = '';
+                document.getElementById('emsNewFieldLabel').value = '';
+                emsRenderFieldList();
+                emsParseCSVPreview();
+                showToast('Field "' + label + '" added ✓');
+              };
 
-                          let emsLeads = [],
-                            emsActiveId = null,
-                            emsSortCol = null,
-                            emsSortAsc = true;
-                          let emsStageFilter = '',
-                            emsPriFilter = '',
-                            emsCsvHeaders = [],
-                            emsCsvRows = [];
+              let emsLeads = [],
+                emsActiveId = null,
+                emsSortCol = null,
+                emsSortAsc = true;
+              let emsStageFilter = '',
+                emsPriFilter = '',
+                emsCsvHeaders = [],
+                emsCsvRows = [];
 
-                          function emsLoad() {
-                            try {
-                              emsLeads = JSON.parse(localStorage.getItem(EMS_KEY) || '[]');
-                            } catch (e) {
-                              emsLeads = [];
-                            }
-                            // Stamp original order index — used to restore default table order
-                            emsLeads.forEach((l, i) => {
-                              if (l._origIdx == null) l._origIdx = i;
-                            });
-                          }
-                          /* ── Data Migration: preview then confirm ── */
-                          const SA_PATTERNS = (k) => {
-                            const kl = k.toLowerCase().replace(/[\s#_\-\.]/g, '');
-                            return (
-                              kl === 'sa' ||
-                              kl === 'sanum' ||
-                              kl === 'sanumber' ||
-                              kl === 'serviceagreement' ||
-                              kl === 'serviceagreementnumber' ||
-                              kl === 'contractnumber' ||
-                              /^sa\d/.test(kl)
-                            );
-                          };
-                          const WC_PATTERNS = (k) => {
-                            const kl = k.toLowerCase().replace(/[\s_\-\.]/g, '');
-                            return (
-                              kl.startsWith('webctrl') || kl === 'wcversion' || kl === 'basversion' || kl === 'controlsversion'
-                            );
-                          };
-                          const RD_PATTERNS = (k) => {
-                            const kl = k.toLowerCase().replace(/[\s_\-\.]/g, '');
-                            return (
-                              kl.includes('renewal') || kl.includes('expir') || kl === 'contractend' || kl === 'contractenddate'
-                            );
-                          };
+              function emsLoad() {
+                try {
+                  emsLeads = JSON.parse(localStorage.getItem(EMS_KEY) || '[]');
+                } catch (e) {
+                  emsLeads = [];
+                }
+                // Stamp original order index — used to restore default table order
+                emsLeads.forEach((l, i) => {
+                  if (l._origIdx == null) l._origIdx = i;
+                });
+              }
+              /* ── Data Migration: preview then confirm ── */
+              const SA_PATTERNS = (k) => {
+                const kl = k.toLowerCase().replace(/[\s#_\-\.]/g, '');
+                return (
+                  kl === 'sa' ||
+                  kl === 'sanum' ||
+                  kl === 'sanumber' ||
+                  kl === 'serviceagreement' ||
+                  kl === 'serviceagreementnumber' ||
+                  kl === 'contractnumber' ||
+                  /^sa\d/.test(kl)
+                );
+              };
+              const WC_PATTERNS = (k) => {
+                const kl = k.toLowerCase().replace(/[\s_\-\.]/g, '');
+                return (
+                  kl.startsWith('webctrl') || kl === 'wcversion' || kl === 'basversion' || kl === 'controlsversion'
+                );
+              };
+              const RD_PATTERNS = (k) => {
+                const kl = k.toLowerCase().replace(/[\s_\-\.]/g, '');
+                return (
+                  kl.includes('renewal') || kl.includes('expir') || kl === 'contractend' || kl === 'contractenddate'
+                );
+              };
 
-                          function emsScanMigration() {
-                            const changes = [];
-                            emsLeads.forEach((lead) => {
-                              const checks = [
-                                { canon: 'saNum', label: 'SA #', patterns: SA_PATTERNS },
-                                { canon: 'webctrlVersion', label: 'WebCTRL Version', patterns: WC_PATTERNS },
-                                { canon: 'renewalDate', label: 'Renewal Date', patterns: RD_PATTERNS },
-                              ];
-                              checks.forEach(({ canon, label, patterns }) => {
-                                const oldKey = Object.keys(lead).find((k) => k !== canon && patterns(k));
-                                if (oldKey) {
-                                  changes.push({
-                                    leadId: lead.id,
-                                    company: lead.company || '(unnamed)',
-                                    oldKey,
-                                    oldVal: lead[oldKey],
-                                    canon,
-                                    canonLabel: label,
-                                    existingVal: lead[canon] || null,
-                                    action: lead[canon] ? 'delete_dup' : 'migrate',
-                                  });
-                                }
-                              });
-                              ['renewalDate', 'nextActionDate', 'lastContact'].forEach((f) => {
-                                if (lead[f]) {
-                                  const iso = emsToISODate(lead[f]);
-                                  if (iso && iso !== lead[f])
-                                    changes.push({
-                                      leadId: lead.id,
-                                      company: lead.company || '(unnamed)',
-                                      oldKey: f,
-                                      oldVal: lead[f],
-                                      canon: f,
-                                      canonLabel: f,
-                                      existingVal: null,
-                                      action: 'normalize_date',
-                                      newVal: iso,
-                                    });
-                                }
-                              });
-                            });
-                            return changes;
-                          }
+              function emsScanMigration() {
+                const changes = [];
+                emsLeads.forEach((lead) => {
+                  const checks = [
+                    { canon: 'saNum', label: 'SA #', patterns: SA_PATTERNS },
+                    { canon: 'webctrlVersion', label: 'WebCTRL Version', patterns: WC_PATTERNS },
+                    { canon: 'renewalDate', label: 'Renewal Date', patterns: RD_PATTERNS },
+                  ];
+                  checks.forEach(({ canon, label, patterns }) => {
+                    const oldKey = Object.keys(lead).find((k) => k !== canon && patterns(k));
+                    if (oldKey) {
+                      changes.push({
+                        leadId: lead.id,
+                        company: lead.company || '(unnamed)',
+                        oldKey,
+                        oldVal: lead[oldKey],
+                        canon,
+                        canonLabel: label,
+                        existingVal: lead[canon] || null,
+                        action: lead[canon] ? 'delete_dup' : 'migrate',
+                      });
+                    }
+                  });
+                  ['renewalDate', 'nextActionDate', 'lastContact'].forEach((f) => {
+                    if (lead[f]) {
+                      const iso = emsToISODate(lead[f]);
+                      if (iso && iso !== lead[f])
+                        changes.push({
+                          leadId: lead.id,
+                          company: lead.company || '(unnamed)',
+                          oldKey: f,
+                          oldVal: lead[f],
+                          canon: f,
+                          canonLabel: f,
+                          existingVal: null,
+                          action: 'normalize_date',
+                          newVal: iso,
+                        });
+                    }
+                  });
+                });
+                return changes;
+              }
 
-                          function emsMigrateLeads() {
-                            // Safe silent migration: only date normalization and state cleanup (no key deletion)
-                            let dirty = false;
-                            emsLeads.forEach((lead) => {
-                              ['renewalDate', 'nextActionDate', 'lastContact'].forEach((f) => {
-                                if (lead[f]) {
-                                  const iso = emsToISODate(lead[f]);
-                                  if (iso && iso !== lead[f]) {
-                                    lead[f] = iso;
-                                    dirty = true;
-                                  }
-                                }
-                              });
-                              (lead.buildings || []).forEach((b) => {
-                                if ((b.state || '').toLowerCase().includes('not connect')) {
-                                  b.state = '';
-                                  dirty = true;
-                                }
-                              });
-                            });
-                            if (dirty) emsSave();
-                            // Check if key-remapping is needed — show preview modal if so
-                            const changes = emsScanMigration().filter((c) => c.action === 'migrate' || c.action === 'delete_dup');
-                            if (changes.length) emsShowMigrationModal(changes);
-                          }
+              function emsMigrateLeads() {
+                // Safe silent migration: only date normalization and state cleanup (no key deletion)
+                let dirty = false;
+                emsLeads.forEach((lead) => {
+                  ['renewalDate', 'nextActionDate', 'lastContact'].forEach((f) => {
+                    if (lead[f]) {
+                      const iso = emsToISODate(lead[f]);
+                      if (iso && iso !== lead[f]) {
+                        lead[f] = iso;
+                        dirty = true;
+                      }
+                    }
+                  });
+                  (lead.buildings || []).forEach((b) => {
+                    if ((b.state || '').toLowerCase().includes('not connect')) {
+                      b.state = '';
+                      dirty = true;
+                    }
+                  });
+                });
+                if (dirty) emsSave();
+                // Check if key-remapping is needed — show preview modal if so
+                const changes = emsScanMigration().filter((c) => c.action === 'migrate' || c.action === 'delete_dup');
+                if (changes.length) emsShowMigrationModal(changes);
+              }
 
-                          function emsShowMigrationModal(changes) {
-                            const byCompany = {};
-                            changes.forEach((c) => {
-                              if (!byCompany[c.company]) byCompany[c.company] = [];
-                              byCompany[c.company].push(c);
-                            });
-                            const rows = Object.entries(byCompany)
-                              .map(([company, chs]) =>
-                                chs
-                                  .map(
-                                    (c, i) => `
+              function emsShowMigrationModal(changes) {
+                const byCompany = {};
+                changes.forEach((c) => {
+                  if (!byCompany[c.company]) byCompany[c.company] = [];
+                  byCompany[c.company].push(c);
+                });
+                const rows = Object.entries(byCompany)
+                  .map(([company, chs]) =>
+                    chs
+                      .map(
+                        (c, i) => `
                   <tr style="border-bottom:1px solid var(--border)">
                     ${i === 0 ? `<td rowspan="${chs.length}" style="padding:8px 12px;font-weight:600;font-family:var(--head);font-size:12px;vertical-align:top;border-right:1px solid var(--border);white-space:nowrap">${emsEsc(company)}</td>` : ''}
                     <td style="padding:6px 12px;font-family:var(--mono);font-size:11px;color:var(--warn)">${emsEsc(c.oldKey)}</td>
@@ -8697,18 +8697,18 @@
                     <td style="padding:6px 12px;font-family:var(--mono);font-size:11px;color:var(--text);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${emsEsc(String(c.oldVal || ''))}</td>
                     <td style="padding:6px 12px;font-size:10px;color:var(--text3)">${c.action === 'delete_dup' ? 'Remove duplicate' : 'Move value'}</td>
                   </tr>`,
-                                  )
-                                  .join(''),
-                              )
-                              .join('');
+                      )
+                      .join(''),
+                  )
+                  .join('');
 
-                            const existing = document.getElementById('emsMigrateModal');
-                            if (existing) existing.remove();
-                            const modal = document.createElement('div');
-                            modal.id = 'emsMigrateModal';
-                            modal.style.cssText =
-                              'position:fixed;inset:0;background:rgba(5,8,15,.9);backdrop-filter:blur(8px);z-index:9000;display:flex;align-items:center;justify-content:center';
-                            modal.innerHTML = `
+                const existing = document.getElementById('emsMigrateModal');
+                if (existing) existing.remove();
+                const modal = document.createElement('div');
+                modal.id = 'emsMigrateModal';
+                modal.style.cssText =
+                  'position:fixed;inset:0;background:rgba(5,8,15,.9);backdrop-filter:blur(8px);z-index:9000;display:flex;align-items:center;justify-content:center';
+                modal.innerHTML = `
                 <div style="background:var(--s2);border:1px solid var(--border2);border-radius:14px;width:820px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 40px 80px rgba(0,0,0,.7)">
                   <div style="padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0">
                     <div style="font-family:var(--head);font-size:15px;font-weight:700">🔄 Field Migration Preview</div>
@@ -8735,165 +8735,165 @@
                     <button onclick="emsApplyMigration()" style="font-family:var(--font);font-size:12px;font-weight:600;padding:8px 18px;border-radius:7px;border:none;background:var(--em);color:#05080f;cursor:pointer">✓ Apply Migration</button>
                   </div>
                 </div>`;
-                            document.body.appendChild(modal);
-                          }
+                document.body.appendChild(modal);
+              }
 
-                          window.emsApplyMigration = function () {
-                            const checks = [
-                              { canon: 'saNum', patterns: SA_PATTERNS },
-                              { canon: 'webctrlVersion', patterns: WC_PATTERNS },
-                              { canon: 'renewalDate', patterns: RD_PATTERNS },
-                            ];
-                            let dirty = false;
-                            emsLeads.forEach((lead) => {
-                              checks.forEach(({ canon, patterns }) => {
-                                const oldKey = Object.keys(lead).find((k) => k !== canon && patterns(k));
-                                if (oldKey) {
-                                  if (!lead[canon]) lead[canon] = lead[oldKey];
-                                  delete lead[oldKey];
-                                  dirty = true;
-                                }
-                              });
-                              const bldgKey = Object.keys(lead).find((k) => k.toLowerCase().trim() === 'building');
-                              if (bldgKey) {
-                                if (lead.buildings?.length && !lead.buildings[0].name) lead.buildings[0].name = lead[bldgKey];
-                                delete lead[bldgKey];
-                                dirty = true;
-                              }
-                            });
-                            if (dirty) emsSave();
-                            document.getElementById('emsMigrateModal')?.remove();
-                            emsRenderAll();
-                            showToast('Migration applied ✓ — fields remapped and duplicates removed');
-                          };
-                          function emsSave() {
-                            localStorage.setItem(EMS_KEY, JSON.stringify(emsLeads));
-                          }
-                          function emsGenId() {
-                            return Date.now().toString(36) + Math.random().toString(36).slice(2);
-                          }
-                          function emsEsc(s) {
-                            return (s || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                          }
-                          function emsFmtNum(n) {
-                            if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
-                            if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
-                            return n.toLocaleString();
-                          }
-                          function emsParseRawDate(d) {
-                            if (!d) return null;
-                            const s = String(d).trim();
-                            // Already ISO YYYY-MM-DD
-                            if (/^\d{4}-\d{2}-\d{2}/.test(s)) return new Date(s + 'T00:00:00');
-                            // MM/DD/YYYY or M/D/YYYY
-                            const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-                            if (mdy) return new Date(+mdy[3], +mdy[1] - 1, +mdy[2]);
-                            // YYYY/MM/DD
-                            const ymd = s.match(/^(\d{4})\/(\d{2})\/(\d{2})/);
-                            if (ymd) return new Date(+ymd[1], +ymd[2] - 1, +ymd[3]);
-                            // DD-MM-YYYY or MM-DD-YYYY — try JS default
-                            const fallback = new Date(s);
-                            return isNaN(fallback) ? null : fallback;
-                          }
-                          function emsFmtDate(d) {
-                            if (!d) return '';
-                            const dt = emsParseRawDate(d);
-                            if (!dt || isNaN(dt)) return '';
-                            try {
-                              return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                            } catch (e) {
-                              return '';
-                            }
-                          }
-                          function emsToISODate(d) {
-                            if (!d) return '';
-                            const dt = emsParseRawDate(d);
-                            if (!dt || isNaN(dt)) return '';
-                            return dt.toISOString().split('T')[0];
-                          }
-                          function emsOverdue(d) {
-                            if (!d) return false;
-                            const dt = emsParseRawDate(d);
-                            return dt && !isNaN(dt) && dt < new Date(new Date().toDateString());
-                          }
+              window.emsApplyMigration = function () {
+                const checks = [
+                  { canon: 'saNum', patterns: SA_PATTERNS },
+                  { canon: 'webctrlVersion', patterns: WC_PATTERNS },
+                  { canon: 'renewalDate', patterns: RD_PATTERNS },
+                ];
+                let dirty = false;
+                emsLeads.forEach((lead) => {
+                  checks.forEach(({ canon, patterns }) => {
+                    const oldKey = Object.keys(lead).find((k) => k !== canon && patterns(k));
+                    if (oldKey) {
+                      if (!lead[canon]) lead[canon] = lead[oldKey];
+                      delete lead[oldKey];
+                      dirty = true;
+                    }
+                  });
+                  const bldgKey = Object.keys(lead).find((k) => k.toLowerCase().trim() === 'building');
+                  if (bldgKey) {
+                    if (lead.buildings?.length && !lead.buildings[0].name) lead.buildings[0].name = lead[bldgKey];
+                    delete lead[bldgKey];
+                    dirty = true;
+                  }
+                });
+                if (dirty) emsSave();
+                document.getElementById('emsMigrateModal')?.remove();
+                emsRenderAll();
+                showToast('Migration applied ✓ — fields remapped and duplicates removed');
+              };
+              function emsSave() {
+                localStorage.setItem(EMS_KEY, JSON.stringify(emsLeads));
+              }
+              function emsGenId() {
+                return Date.now().toString(36) + Math.random().toString(36).slice(2);
+              }
+              function emsEsc(s) {
+                return (s || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              }
+              function emsFmtNum(n) {
+                if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+                if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
+                return n.toLocaleString();
+              }
+              function emsParseRawDate(d) {
+                if (!d) return null;
+                const s = String(d).trim();
+                // Already ISO YYYY-MM-DD
+                if (/^\d{4}-\d{2}-\d{2}/.test(s)) return new Date(s + 'T00:00:00');
+                // MM/DD/YYYY or M/D/YYYY
+                const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+                if (mdy) return new Date(+mdy[3], +mdy[1] - 1, +mdy[2]);
+                // YYYY/MM/DD
+                const ymd = s.match(/^(\d{4})\/(\d{2})\/(\d{2})/);
+                if (ymd) return new Date(+ymd[1], +ymd[2] - 1, +ymd[3]);
+                // DD-MM-YYYY or MM-DD-YYYY — try JS default
+                const fallback = new Date(s);
+                return isNaN(fallback) ? null : fallback;
+              }
+              function emsFmtDate(d) {
+                if (!d) return '';
+                const dt = emsParseRawDate(d);
+                if (!dt || isNaN(dt)) return '';
+                try {
+                  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                } catch (e) {
+                  return '';
+                }
+              }
+              function emsToISODate(d) {
+                if (!d) return '';
+                const dt = emsParseRawDate(d);
+                if (!dt || isNaN(dt)) return '';
+                return dt.toISOString().split('T')[0];
+              }
+              function emsOverdue(d) {
+                if (!d) return false;
+                const dt = emsParseRawDate(d);
+                return dt && !isNaN(dt) && dt < new Date(new Date().toDateString());
+              }
 
-                          function emsRenderAll() {
-                            emsUpdateCounts();
-                            emsRenderPipeline();
-                            emsRenderTable();
-                            emsRenderFollowups();
-                            emsRenderAnalytics();
-                            emsPopulateCSC();
-                            emsRefreshClientTypeDropdowns();
-                          }
+              function emsRenderAll() {
+                emsUpdateCounts();
+                emsRenderPipeline();
+                emsRenderTable();
+                emsRenderFollowups();
+                emsRenderAnalytics();
+                emsPopulateCSC();
+                emsRefreshClientTypeDropdowns();
+              }
 
-                          function emsUpdateCounts() {
-                            document.getElementById('esb-count-all').textContent = emsLeads.length;
-                            EMS_STAGES.forEach((s) => {
-                              const el = document.getElementById('esb-count-' + s.toLowerCase().replace(' ', '-'));
-                              if (el) el.textContent = emsLeads.filter((l) => l.stage === s).length;
-                            });
-                          }
-                          function emsPopulateCSC() {
-                            const cscs = [...new Set(emsLeads.map((l) => l.cscContact).filter(Boolean))].sort();
-                            ['epipeFilterCSC', 'etableCSC'].forEach((id) => {
-                              const sel = document.getElementById(id);
-                              if (!sel) return;
-                              const val = sel.value;
-                              sel.innerHTML =
-                                '<option value="">All CSC Contacts</option>' +
-                                cscs.map((c) => `<option${c === val ? ' selected' : ''}>${c}</option>`).join('');
-                            });
-                          }
+              function emsUpdateCounts() {
+                document.getElementById('esb-count-all').textContent = emsLeads.length;
+                EMS_STAGES.forEach((s) => {
+                  const el = document.getElementById('esb-count-' + s.toLowerCase().replace(' ', '-'));
+                  if (el) el.textContent = emsLeads.filter((l) => l.stage === s).length;
+                });
+              }
+              function emsPopulateCSC() {
+                const cscs = [...new Set(emsLeads.map((l) => l.cscContact).filter(Boolean))].sort();
+                ['epipeFilterCSC', 'etableCSC'].forEach((id) => {
+                  const sel = document.getElementById(id);
+                  if (!sel) return;
+                  const val = sel.value;
+                  sel.innerHTML =
+                    '<option value="">All CSC Contacts</option>' +
+                    cscs.map((c) => `<option${c === val ? ' selected' : ''}>${c}</option>`).join('');
+                });
+              }
 
-                          // Exposed globals
-                          window.emsSwitch = function (view, el) {
-                            document.querySelectorAll('#view-ems .ems-view').forEach((v) => v.classList.remove('active'));
-                            document.querySelectorAll('#view-ems .ems-ntab').forEach((t) => t.classList.remove('active'));
-                            document.getElementById('eview-' + view).classList.add('active');
-                            el.classList.add('active');
-                          };
-                          window.emsFilterStage = function (stage, el) {
-                            emsStageFilter = stage;
-                            emsPriFilter = '';
-                            document.querySelectorAll('#view-ems .ems-s-item').forEach((i) => i.classList.remove('active'));
-                            el.classList.add('active');
-                            emsRenderPipeline();
-                            emsRenderTable();
-                          };
-                          window.emsFilterPri = function (pri, el) {
-                            emsPriFilter = pri;
-                            emsStageFilter = '';
-                            document.querySelectorAll('#view-ems .ems-s-item').forEach((i) => i.classList.remove('active'));
-                            el.classList.add('active');
-                            emsRenderPipeline();
-                            emsRenderTable();
-                          };
+              // Exposed globals
+              window.emsSwitch = function (view, el) {
+                document.querySelectorAll('#view-ems .ems-view').forEach((v) => v.classList.remove('active'));
+                document.querySelectorAll('#view-ems .ems-ntab').forEach((t) => t.classList.remove('active'));
+                document.getElementById('eview-' + view).classList.add('active');
+                el.classList.add('active');
+              };
+              window.emsFilterStage = function (stage, el) {
+                emsStageFilter = stage;
+                emsPriFilter = '';
+                document.querySelectorAll('#view-ems .ems-s-item').forEach((i) => i.classList.remove('active'));
+                el.classList.add('active');
+                emsRenderPipeline();
+                emsRenderTable();
+              };
+              window.emsFilterPri = function (pri, el) {
+                emsPriFilter = pri;
+                emsStageFilter = '';
+                document.querySelectorAll('#view-ems .ems-s-item').forEach((i) => i.classList.remove('active'));
+                el.classList.add('active');
+                emsRenderPipeline();
+                emsRenderTable();
+              };
 
-                          function emsGetFiltered() {
-                            const search = (document.getElementById('epipeSearch') || {}).value?.toLowerCase() || '';
-                            const csc = (document.getElementById('epipeFilterCSC') || {}).value || '';
-                            return emsLeads.filter((l) => {
-                              if (emsStageFilter && l.stage !== emsStageFilter) return false;
-                              if (emsPriFilter && l.priority !== emsPriFilter) return false;
-                              if (csc && l.cscContact !== csc) return false;
-                              if (search) {
-                                const hay = (l.company + l.city + l.contactName + l.cscContact + l.type + l.notes).toLowerCase();
-                                if (!hay.includes(search)) return false;
-                              }
-                              return true;
-                            });
-                          }
+              function emsGetFiltered() {
+                const search = (document.getElementById('epipeSearch') || {}).value?.toLowerCase() || '';
+                const csc = (document.getElementById('epipeFilterCSC') || {}).value || '';
+                return emsLeads.filter((l) => {
+                  if (emsStageFilter && l.stage !== emsStageFilter) return false;
+                  if (emsPriFilter && l.priority !== emsPriFilter) return false;
+                  if (csc && l.cscContact !== csc) return false;
+                  if (search) {
+                    const hay = (l.company + l.city + l.contactName + l.cscContact + l.type + l.notes).toLowerCase();
+                    if (!hay.includes(search)) return false;
+                  }
+                  return true;
+                });
+              }
 
-                          window.emsRenderPipeline = function () {
-                            emsRenderStats();
-                            const filtered = emsGetFiltered();
-                            const stagesToShow = emsStageFilter ? [emsStageFilter] : EMS_STAGES;
-                            document.getElementById('emsPipeline').innerHTML = stagesToShow
-                              .map((stage) => {
-                                const sl = filtered.filter((l) => l.stage === stage);
-                                const sv2 = sl.reduce((s, l) => s + (+l.annualValue || 0), 0);
-                                return `<div class="stage-col">
+              window.emsRenderPipeline = function () {
+                emsRenderStats();
+                const filtered = emsGetFiltered();
+                const stagesToShow = emsStageFilter ? [emsStageFilter] : EMS_STAGES;
+                document.getElementById('emsPipeline').innerHTML = stagesToShow
+                  .map((stage) => {
+                    const sl = filtered.filter((l) => l.stage === stage);
+                    const sv2 = sl.reduce((s, l) => s + (+l.annualValue || 0), 0);
+                    return `<div class="stage-col">
                   <div class="stage-hdr">
                     <div class="stage-name"><div class="stage-dot" style="background:${EMS_STAGE_COLORS[stage]}"></div>${stage}</div>
                     <div class="stage-count">${sl.length}${sv2 > 0 ? ' · $' + emsFmtNum(sv2) : ''}</div>
@@ -8906,35 +8906,35 @@
                     ${sl.map((l) => emsCardHTML(l)).join('')}
                   </div>
                 </div>`;
-                              })
-                              .join('');
-                          };
+                  })
+                  .join('');
+              };
 
-                          function emsRenderStats() {
-                            const active = emsLeads.filter((l) => !['Lost', 'Won'].includes(l.stage));
-                            const totalVal = emsLeads
-                              .filter((l) => l.stage !== 'Lost')
-                              .reduce((s, l) => s + (+l.annualValue || 0), 0);
-                            const won = emsLeads.filter((l) => l.stage === 'Won');
-                            const wonVal = won.reduce((s, l) => s + (+l.annualValue || 0), 0);
-                            const overdue = emsLeads.filter(
-                              (l) =>
-                                l.nextActionDate && new Date(l.nextActionDate) < new Date() && !['Won', 'Lost'].includes(l.stage),
-                            );
-                            document.getElementById('emsStatsRow').innerHTML = `
+              function emsRenderStats() {
+                const active = emsLeads.filter((l) => !['Lost', 'Won'].includes(l.stage));
+                const totalVal = emsLeads
+                  .filter((l) => l.stage !== 'Lost')
+                  .reduce((s, l) => s + (+l.annualValue || 0), 0);
+                const won = emsLeads.filter((l) => l.stage === 'Won');
+                const wonVal = won.reduce((s, l) => s + (+l.annualValue || 0), 0);
+                const overdue = emsLeads.filter(
+                  (l) =>
+                    l.nextActionDate && new Date(l.nextActionDate) < new Date() && !['Won', 'Lost'].includes(l.stage),
+                );
+                document.getElementById('emsStatsRow').innerHTML = `
                 <div class="stat"><div class="stat-lbl">Total Leads</div><div class="stat-val c-em">${emsLeads.length}</div><div class="stat-meta">${active.length} active</div></div>
                 <div class="stat"><div class="stat-lbl">Pipeline Value</div><div class="stat-val c-em2">$${emsFmtNum(totalVal)}</div><div class="stat-meta">estimated annual</div></div>
                 <div class="stat"><div class="stat-lbl">Won Value</div><div class="stat-val c-lime">$${emsFmtNum(wonVal)}</div><div class="stat-meta">${won.length} contract${won.length !== 1 ? 's' : ''}</div></div>
                 <div class="stat"><div class="stat-lbl">In Proposal</div><div class="stat-val c-violet">${emsLeads.filter((l) => l.stage === 'Proposal').length}</div><div class="stat-meta">active proposals</div></div>
                 <div class="stat"><div class="stat-lbl">Follow-ups Due</div><div class="stat-val ${overdue.length > 0 ? 'c-danger' : 'c-em'}">${overdue.length}</div><div class="stat-meta">action needed</div></div>`;
-                          }
+              }
 
-                          function emsCardHTML(l) {
-                            const nad = l.nextActionDate ? new Date(l.nextActionDate) : null;
-                            const ov = nad && nad < new Date();
-                            const pc =
-                              l.priority === 'High' ? 'var(--danger)' : l.priority === 'Low' ? 'var(--text3)' : 'var(--warn)';
-                            return `<div class="lead-card" draggable="true"
+              function emsCardHTML(l) {
+                const nad = l.nextActionDate ? new Date(l.nextActionDate) : null;
+                const ov = nad && nad < new Date();
+                const pc =
+                  l.priority === 'High' ? 'var(--danger)' : l.priority === 'Low' ? 'var(--text3)' : 'var(--warn)';
+                return `<div class="lead-card" draggable="true"
                 ondragstart="emsDragStart('${l.id}',event)"
                 ondragend="event.target.classList.remove('dragging')"
                 onclick="emsOpenDrawer('${l.id}')">
@@ -8969,94 +8969,94 @@
                 </div>
                 ${l.nextAction ? `<div class="lc-action ${ov ? 'overdue-flag' : ''}">${ov ? '⚠' : '→'} ${emsEsc(l.nextAction)}${nad ? ' (' + emsFmtDate(l.nextActionDate) + ')' : ''}</div>` : ''}
               </div>`;
-                          }
+              }
 
-                          let emsDragId = null;
-                          window.emsDragStart = function (id, e) {
-                            emsDragId = id;
-                            e.target.classList.add('dragging');
-                          };
-                          window.emsDropStage = function (stage, e) {
-                            e.preventDefault();
-                            document.querySelectorAll('#view-ems .stage-body').forEach((b) => b.classList.remove('drag-over'));
-                            if (!emsDragId) return;
-                            const lead = emsLeads.find((l) => l.id === emsDragId);
-                            if (lead && lead.stage !== stage) {
-                              lead.stage = stage;
-                              lead.updatedAt = new Date().toISOString();
-                              emsSave();
-                              emsRenderAll();
-                              showToast('Moved to ' + stage + ' ✓');
-                            }
-                            emsDragId = null;
-                          };
+              let emsDragId = null;
+              window.emsDragStart = function (id, e) {
+                emsDragId = id;
+                e.target.classList.add('dragging');
+              };
+              window.emsDropStage = function (stage, e) {
+                e.preventDefault();
+                document.querySelectorAll('#view-ems .stage-body').forEach((b) => b.classList.remove('drag-over'));
+                if (!emsDragId) return;
+                const lead = emsLeads.find((l) => l.id === emsDragId);
+                if (lead && lead.stage !== stage) {
+                  lead.stage = stage;
+                  lead.updatedAt = new Date().toISOString();
+                  emsSave();
+                  emsRenderAll();
+                  showToast('Moved to ' + stage + ' ✓');
+                }
+                emsDragId = null;
+              };
 
-                          window.emsRenderTable = function () {
-                            const search = document.getElementById('etableSearch')?.value?.toLowerCase() || '';
-                            const stage = document.getElementById('etableStage')?.value || '';
-                            const pri = document.getElementById('etablePri')?.value || '';
-                            const csc = document.getElementById('etableCSC')?.value || '';
-                            const clientType = document.getElementById('etableClientType')?.value || '';
-                            let data = emsLeads.filter((l) => {
-                              if (emsStageFilter && l.stage !== emsStageFilter) return false;
-                              if (emsPriFilter && l.priority !== emsPriFilter) return false;
-                              if (stage && l.stage !== stage) return false;
-                              if (pri && l.priority !== pri) return false;
-                              if (csc && l.cscContact !== csc) return false;
-                              if (clientType && l.clientType !== clientType) return false;
-                              if (search) {
-                                const hay = (
-                                  l.company +
-                                  (l.clientType || '') +
-                                  (l.address || '') +
-                                  (l.saNum || '') +
-                                  (l.webctrlVersion || '') +
-                                  l.contactName +
-                                  l.cscContact +
-                                  l.type +
-                                  l.notes
-                                ).toLowerCase();
-                                if (!hay.includes(search)) return false;
-                              }
-                              return true;
-                            });
-                            // Sort: null = original import order, otherwise sort by column
-                            if (emsSortCol) {
-                              data.sort((a, b) => {
-                                let av = a[emsSortCol] || '',
-                                  bv = b[emsSortCol] || '';
-                                if (!isNaN(av) && !isNaN(bv)) return emsSortAsc ? +av - +bv : +bv - +av;
-                                return emsSortAsc
-                                  ? av.toString().localeCompare(bv.toString())
-                                  : bv.toString().localeCompare(av.toString());
-                              });
-                            } else {
-                              data.sort((a, b) => (a._origIdx ?? 0) - (b._origIdx ?? 0));
-                            }
-                            // Update column header indicators
-                            document.querySelectorAll('#eview-table thead th').forEach((th) => {
-                              const col = th.dataset.sortCol;
-                              if (!col) return;
-                              const base = th.dataset.label || th.textContent.replace(/[↕↑↓ ✕]/g, '').trim();
-                              th.dataset.label = base;
-                              if (col === emsSortCol) {
-                                th.innerHTML =
-                                  base +
-                                  ' ' +
-                                  (emsSortAsc ? '↑' : '↓') +
-                                  ` <span onclick="event.stopPropagation();emsClearSort()" title="Clear sort" style="cursor:pointer;color:var(--text3);font-size:10px;margin-left:2px">✕</span>`;
-                                th.style.color = 'var(--em)';
-                              } else {
-                                th.textContent = base + ' ↕';
-                                th.style.color = '';
-                              }
-                            });
-                            document.getElementById('emsTableBody').innerHTML =
-                              data.length === 0
-                                ? `<tr><td colspan="12" style="text-align:center;padding:40px;color:var(--text3)">No leads found</td></tr>`
-                                : data
-                                    .map(
-                                      (l) => `<tr onclick="emsOpenDrawer('${l.id}')">
+              window.emsRenderTable = function () {
+                const search = document.getElementById('etableSearch')?.value?.toLowerCase() || '';
+                const stage = document.getElementById('etableStage')?.value || '';
+                const pri = document.getElementById('etablePri')?.value || '';
+                const csc = document.getElementById('etableCSC')?.value || '';
+                const clientType = document.getElementById('etableClientType')?.value || '';
+                let data = emsLeads.filter((l) => {
+                  if (emsStageFilter && l.stage !== emsStageFilter) return false;
+                  if (emsPriFilter && l.priority !== emsPriFilter) return false;
+                  if (stage && l.stage !== stage) return false;
+                  if (pri && l.priority !== pri) return false;
+                  if (csc && l.cscContact !== csc) return false;
+                  if (clientType && l.clientType !== clientType) return false;
+                  if (search) {
+                    const hay = (
+                      l.company +
+                      (l.clientType || '') +
+                      (l.address || '') +
+                      (l.saNum || '') +
+                      (l.webctrlVersion || '') +
+                      l.contactName +
+                      l.cscContact +
+                      l.type +
+                      l.notes
+                    ).toLowerCase();
+                    if (!hay.includes(search)) return false;
+                  }
+                  return true;
+                });
+                // Sort: null = original import order, otherwise sort by column
+                if (emsSortCol) {
+                  data.sort((a, b) => {
+                    let av = a[emsSortCol] || '',
+                      bv = b[emsSortCol] || '';
+                    if (!isNaN(av) && !isNaN(bv)) return emsSortAsc ? +av - +bv : +bv - +av;
+                    return emsSortAsc
+                      ? av.toString().localeCompare(bv.toString())
+                      : bv.toString().localeCompare(av.toString());
+                  });
+                } else {
+                  data.sort((a, b) => (a._origIdx ?? 0) - (b._origIdx ?? 0));
+                }
+                // Update column header indicators
+                document.querySelectorAll('#eview-table thead th').forEach((th) => {
+                  const col = th.dataset.sortCol;
+                  if (!col) return;
+                  const base = th.dataset.label || th.textContent.replace(/[↕↑↓ ✕]/g, '').trim();
+                  th.dataset.label = base;
+                  if (col === emsSortCol) {
+                    th.innerHTML =
+                      base +
+                      ' ' +
+                      (emsSortAsc ? '↑' : '↓') +
+                      ` <span onclick="event.stopPropagation();emsClearSort()" title="Clear sort" style="cursor:pointer;color:var(--text3);font-size:10px;margin-left:2px">✕</span>`;
+                    th.style.color = 'var(--em)';
+                  } else {
+                    th.textContent = base + ' ↕';
+                    th.style.color = '';
+                  }
+                });
+                document.getElementById('emsTableBody').innerHTML =
+                  data.length === 0
+                    ? `<tr><td colspan="12" style="text-align:center;padding:40px;color:var(--text3)">No leads found</td></tr>`
+                    : data
+                        .map(
+                          (l) => `<tr onclick="emsOpenDrawer('${l.id}')">
                   <td class="td-company">${emsEsc(l.company || '—')}</td>
                   <td>${emsEsc(l.clientType || '—')}</td>
                   <td>${emsEsc(
@@ -9078,51 +9078,51 @@
                   <td style="${emsOverdue(l.nextActionDate) ? 'color:var(--danger)' : ''}">${emsFmtDate(l.nextActionDate) || '—'}</td>
                   <td>${emsFmtDate(l.lastContact) || '—'}</td>
                 </tr>`,
-                                    )
-                                    .join('');
-                          };
-                          window.emsSortTable = function (col) {
-                            if (emsSortCol === col) {
-                              if (emsSortAsc) {
-                                emsSortAsc = false;
-                              } // 2nd click: desc
-                              else {
-                                emsSortCol = null;
-                                emsSortAsc = true;
-                              } // 3rd click: clear
-                            } else {
-                              emsSortCol = col;
-                              emsSortAsc = true; // 1st click: asc
-                            }
-                            emsRenderTable();
-                          };
-                          window.emsClearSort = function () {
-                            emsSortCol = null;
-                            emsSortAsc = true;
-                            emsRenderTable();
-                          };
+                        )
+                        .join('');
+              };
+              window.emsSortTable = function (col) {
+                if (emsSortCol === col) {
+                  if (emsSortAsc) {
+                    emsSortAsc = false;
+                  } // 2nd click: desc
+                  else {
+                    emsSortCol = null;
+                    emsSortAsc = true;
+                  } // 3rd click: clear
+                } else {
+                  emsSortCol = col;
+                  emsSortAsc = true; // 1st click: asc
+                }
+                emsRenderTable();
+              };
+              window.emsClearSort = function () {
+                emsSortCol = null;
+                emsSortAsc = true;
+                emsRenderTable();
+              };
 
-                          function emsRenderFollowups() {
-                            const today = new Date();
-                            today.setHours(0, 0, 0, 0);
-                            const week = new Date(today);
-                            week.setDate(week.getDate() + 7);
-                            const overdue = emsLeads.filter(
-                              (l) => l.nextActionDate && new Date(l.nextActionDate) < today && !['Won', 'Lost'].includes(l.stage),
-                            );
-                            const thisWeek = emsLeads.filter((l) => {
-                              const d = new Date(l.nextActionDate);
-                              return l.nextActionDate && d >= today && d <= week && !['Won', 'Lost'].includes(l.stage);
-                            });
-                            const noDate = emsLeads.filter((l) => !l.nextActionDate && !['Won', 'Lost'].includes(l.stage));
-                            document.getElementById('emsFollowupStats').innerHTML = `
+              function emsRenderFollowups() {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const week = new Date(today);
+                week.setDate(week.getDate() + 7);
+                const overdue = emsLeads.filter(
+                  (l) => l.nextActionDate && new Date(l.nextActionDate) < today && !['Won', 'Lost'].includes(l.stage),
+                );
+                const thisWeek = emsLeads.filter((l) => {
+                  const d = new Date(l.nextActionDate);
+                  return l.nextActionDate && d >= today && d <= week && !['Won', 'Lost'].includes(l.stage);
+                });
+                const noDate = emsLeads.filter((l) => !l.nextActionDate && !['Won', 'Lost'].includes(l.stage));
+                document.getElementById('emsFollowupStats').innerHTML = `
                 <div class="stat"><div class="stat-lbl">Overdue</div><div class="stat-val c-danger">${overdue.length}</div><div class="stat-meta">Past due date</div></div>
                 <div class="stat"><div class="stat-lbl">This Week</div><div class="stat-val c-warn">${thisWeek.length}</div><div class="stat-meta">Next 7 days</div></div>
                 <div class="stat"><div class="stat-lbl">No Date Set</div><div class="stat-val c-em2">${noDate.length}</div><div class="stat-meta">Need scheduling</div></div>`;
-                            const sec = (title, items, color) =>
-                              items.length === 0
-                                ? ''
-                                : `
+                const sec = (title, items, color) =>
+                  items.length === 0
+                    ? ''
+                    : `
                 <div style="margin-bottom:20px">
                   <div style="font-family:var(--head);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:${color};margin-bottom:10px;padding-bottom:7px;border-bottom:1px solid var(--border)">${title} (${items.length})</div>
                   <div style="display:flex;flex-direction:column;gap:8px">
@@ -9144,41 +9144,41 @@
                       .join('')}
                   </div>
                 </div>`;
-                            document.getElementById('emsFollowupList').innerHTML =
-                              sec('⚠ Overdue', overdue, 'var(--danger)') +
-                                sec('📅 This Week', thisWeek, 'var(--warn)') +
-                                sec('📋 No Date Set', noDate, 'var(--em2)') ||
-                              `<div class="empty-state"><div class="ico">✅</div><h3>All caught up!</h3><p>No follow-ups overdue or due this week.</p></div>`;
-                          }
+                document.getElementById('emsFollowupList').innerHTML =
+                  sec('⚠ Overdue', overdue, 'var(--danger)') +
+                    sec('📅 This Week', thisWeek, 'var(--warn)') +
+                    sec('📋 No Date Set', noDate, 'var(--em2)') ||
+                  `<div class="empty-state"><div class="ico">✅</div><h3>All caught up!</h3><p>No follow-ups overdue or due this week.</p></div>`;
+              }
 
-                          function emsRenderAnalytics() {
-                            const total = emsLeads.length;
-                            if (total === 0) {
-                              document.getElementById('emsAnalyticsContent').innerHTML =
-                                `<div class="empty-state"><div class="ico">📈</div><h3>No data yet</h3><p>Add leads to see analytics.</p></div>`;
-                              return;
-                            }
-                            const stageData = EMS_STAGES.map((s) => ({
-                              stage: s,
-                              count: emsLeads.filter((l) => l.stage === s).length,
-                              val: emsLeads.filter((l) => l.stage === s).reduce((a, l) => a + (+l.annualValue || 0), 0),
-                            }));
-                            const byCSC = {},
-                              byType = {};
-                            emsLeads.forEach((l) => {
-                              const k = l.cscContact || 'Unassigned';
-                              byCSC[k] = (byCSC[k] || 0) + 1;
-                            });
-                            emsLeads.forEach((l) => {
-                              const k = l.type || 'Unspecified';
-                              byType[k] = (byType[k] || 0) + 1;
-                            });
-                            const totalVal = emsLeads.reduce((s, l) => s + (+l.annualValue || 0), 0);
-                            const wonVal = emsLeads.filter((l) => l.stage === 'Won').reduce((s, l) => s + (+l.annualValue || 0), 0);
-                            const closed = emsLeads.filter((l) => ['Won', 'Lost'].includes(l.stage)).length;
-                            const winRate =
-                              closed > 0 ? Math.round((emsLeads.filter((l) => l.stage === 'Won').length / closed) * 100) : 0;
-                            document.getElementById('emsAnalyticsContent').innerHTML = `
+              function emsRenderAnalytics() {
+                const total = emsLeads.length;
+                if (total === 0) {
+                  document.getElementById('emsAnalyticsContent').innerHTML =
+                    `<div class="empty-state"><div class="ico">📈</div><h3>No data yet</h3><p>Add leads to see analytics.</p></div>`;
+                  return;
+                }
+                const stageData = EMS_STAGES.map((s) => ({
+                  stage: s,
+                  count: emsLeads.filter((l) => l.stage === s).length,
+                  val: emsLeads.filter((l) => l.stage === s).reduce((a, l) => a + (+l.annualValue || 0), 0),
+                }));
+                const byCSC = {},
+                  byType = {};
+                emsLeads.forEach((l) => {
+                  const k = l.cscContact || 'Unassigned';
+                  byCSC[k] = (byCSC[k] || 0) + 1;
+                });
+                emsLeads.forEach((l) => {
+                  const k = l.type || 'Unspecified';
+                  byType[k] = (byType[k] || 0) + 1;
+                });
+                const totalVal = emsLeads.reduce((s, l) => s + (+l.annualValue || 0), 0);
+                const wonVal = emsLeads.filter((l) => l.stage === 'Won').reduce((s, l) => s + (+l.annualValue || 0), 0);
+                const closed = emsLeads.filter((l) => ['Won', 'Lost'].includes(l.stage)).length;
+                const winRate =
+                  closed > 0 ? Math.round((emsLeads.filter((l) => l.stage === 'Won').length / closed) * 100) : 0;
+                document.getElementById('emsAnalyticsContent').innerHTML = `
                 <div class="stats-row" style="margin-bottom:20px">
                   <div class="stat"><div class="stat-lbl">Total Pipeline</div><div class="stat-val c-em">$${emsFmtNum(totalVal)}</div><div class="stat-meta">all active stages</div></div>
                   <div class="stat"><div class="stat-lbl">Won Revenue</div><div class="stat-val c-lime">$${emsFmtNum(wonVal)}</div><div class="stat-meta">${emsLeads.filter((l) => l.stage === 'Won').length} contracts</div></div>
@@ -9228,296 +9228,296 @@
                       .join('')}
                   </div>
                 </div>`;
-                          }
+              }
 
-                          // Keys that have dedicated inputs in the drawer — everything else is "extra"
-                          const EMS_KNOWN_KEYS = new Set([
-                            'id',
-                            'company',
-                            'stage',
-                            'priority',
-                            'clientType',
-                            'cscContact',
-                            'cscEngineer',
-                            'saNum',
-                            'webctrlVersion',
-                            'renewalDate',
-                            'type',
-                            'annualValue',
-                            'contactName',
-                            'contactTitle',
-                            'contactPhone',
-                            'contactEmail',
-                            'address',
-                            'city',
-                            'state',
-                            'zip',
-                            'buildingType',
-                            'buildingSqft',
-                            'nextActionDate',
-                            'lastContact',
-                            'nextAction',
-                            'notes',
-                            'tags',
-                            'buildings',
-                            'activity',
-                            'createdAt',
-                            'updatedAt',
-                            '_origIdx',
-                            // Legacy CSV import keys — migrated on open, suppressed from Additional Fields
-                            'sa #',
-                            'sa#',
-                            'building',
-                            'location',
-                            'webctrl version',
-                            'webctrl',
-                            'renewal date',
-                          ]);
+              // Keys that have dedicated inputs in the drawer — everything else is "extra"
+              const EMS_KNOWN_KEYS = new Set([
+                'id',
+                'company',
+                'stage',
+                'priority',
+                'clientType',
+                'cscContact',
+                'cscEngineer',
+                'saNum',
+                'webctrlVersion',
+                'renewalDate',
+                'type',
+                'annualValue',
+                'contactName',
+                'contactTitle',
+                'contactPhone',
+                'contactEmail',
+                'address',
+                'city',
+                'state',
+                'zip',
+                'buildingType',
+                'buildingSqft',
+                'nextActionDate',
+                'lastContact',
+                'nextAction',
+                'notes',
+                'tags',
+                'buildings',
+                'activity',
+                'createdAt',
+                'updatedAt',
+                '_origIdx',
+                // Legacy CSV import keys — migrated on open, suppressed from Additional Fields
+                'sa #',
+                'sa#',
+                'building',
+                'location',
+                'webctrl version',
+                'webctrl',
+                'renewal date',
+              ]);
 
-                          window.emsOpenDrawer = function (id) {
-                            const lead = emsLeads.find((l) => l.id === id);
-                            if (!lead) return;
+              window.emsOpenDrawer = function (id) {
+                const lead = emsLeads.find((l) => l.id === id);
+                if (!lead) return;
 
-                            // ── Read legacy CSV keys for display (migration modal handles cleanup) ──
-                            if (!lead.saNum) {
-                              const k = Object.keys(lead).find((k) => k !== 'saNum' && SA_PATTERNS(k));
-                              if (k) lead.saNum = lead[k];
-                            }
-                            if (!lead.webctrlVersion) {
-                              const k = Object.keys(lead).find((k) => k !== 'webctrlVersion' && WC_PATTERNS(k));
-                              if (k) lead.webctrlVersion = lead[k];
-                            }
-                            if (!lead.renewalDate) {
-                              const k = Object.keys(lead).find((k) => k !== 'renewalDate' && RD_PATTERNS(k));
-                              if (k) lead.renewalDate = lead[k];
-                            }
-                            ['renewalDate', 'nextActionDate', 'lastContact'].forEach((f) => {
-                              if (lead[f]) {
-                                const iso = emsToISODate(lead[f]);
-                                if (iso) lead[f] = iso;
-                              }
-                            });
-                            if (lead.buildings)
-                              lead.buildings.forEach((b) => {
-                                if ((b.state || '').toLowerCase().includes('not connect')) b.state = '';
-                              });
+                // ── Read legacy CSV keys for display (migration modal handles cleanup) ──
+                if (!lead.saNum) {
+                  const k = Object.keys(lead).find((k) => k !== 'saNum' && SA_PATTERNS(k));
+                  if (k) lead.saNum = lead[k];
+                }
+                if (!lead.webctrlVersion) {
+                  const k = Object.keys(lead).find((k) => k !== 'webctrlVersion' && WC_PATTERNS(k));
+                  if (k) lead.webctrlVersion = lead[k];
+                }
+                if (!lead.renewalDate) {
+                  const k = Object.keys(lead).find((k) => k !== 'renewalDate' && RD_PATTERNS(k));
+                  if (k) lead.renewalDate = lead[k];
+                }
+                ['renewalDate', 'nextActionDate', 'lastContact'].forEach((f) => {
+                  if (lead[f]) {
+                    const iso = emsToISODate(lead[f]);
+                    if (iso) lead[f] = iso;
+                  }
+                });
+                if (lead.buildings)
+                  lead.buildings.forEach((b) => {
+                    if ((b.state || '').toLowerCase().includes('not connect')) b.state = '';
+                  });
 
-                            emsActiveId = id;
-                            document.getElementById('emsDrawerTitle').textContent = lead.company || 'Lead Detail';
-                            [
-                              'company',
-                              'stage',
-                              'priority',
-                              'clientType',
-                              'cscContact',
-                              'cscEngineer',
-                              'saNum',
-                              'webctrlVersion',
-                              'renewalDate',
-                              'type',
-                              'annualValue',
-                              'contactName',
-                              'contactTitle',
-                              'contactPhone',
-                              'contactEmail',
-                              'nextActionDate',
-                              'lastContact',
-                              'nextAction',
-                              'notes',
-                            ].forEach((f) => {
-                              const el = document.getElementById('ed-' + f);
-                              if (el) el.value = lead[f] || '';
-                            });
-                            document.getElementById('ed-tags').value = (lead.tags || []).join(', ');
-                            // Populate client type dropdown with current value selected
-                            const ctEl = document.getElementById('ed-clientType');
-                            if (ctEl) ctEl.innerHTML = emsClientTypeOptions(lead.clientType || '');
-                            // Render any extra fields (from CSV import) not covered by standard inputs
-                            emsRenderExtraFields(lead);
-                            emsRenderBuildings(lead);
-                            emsRenderActivity(lead);
-                            document.getElementById('emsDrawerOverlay').classList.add('open');
-                            document.getElementById('emsLeadDrawer').classList.add('open');
-                            emsDTab('dOv', document.querySelector('#view-ems .dtab'));
-                            document.getElementById('emsAIOutput').classList.remove('visible');
-                          };
-                          window.emsCloseDrawer = function () {
-                            document.getElementById('emsDrawerOverlay').classList.remove('open');
-                            document.getElementById('emsLeadDrawer').classList.remove('open');
-                            emsActiveId = null;
-                          };
-                          window.emsSaveDrawer = function () {
-                            const lead = emsLeads.find((l) => l.id === emsActiveId);
-                            if (!lead) return;
-                            [
-                              'company',
-                              'stage',
-                              'priority',
-                              'clientType',
-                              'cscContact',
-                              'cscEngineer',
-                              'saNum',
-                              'webctrlVersion',
-                              'renewalDate',
-                              'type',
-                              'annualValue',
-                              'contactName',
-                              'contactTitle',
-                              'contactPhone',
-                              'contactEmail',
-                              'nextActionDate',
-                              'lastContact',
-                              'nextAction',
-                              'notes',
-                            ].forEach((f) => {
-                              const el = document.getElementById('ed-' + f);
-                              if (el) lead[f] = el.value;
-                            });
-                            lead.tags = document
-                              .getElementById('ed-tags')
-                              .value.split(',')
-                              .map((t) => t.trim())
-                              .filter(Boolean);
-                            // Save extra fields from dynamically rendered inputs
-                            document.querySelectorAll('#emsExtraFields [data-extra-key]').forEach((inp) => {
-                              lead[inp.dataset.extraKey] = inp.value;
-                            });
-                            // Save buildings from DOM
-                            emsSaveBuildingsFromDOM(lead);
-                            lead.updatedAt = new Date().toISOString();
-                            document.getElementById('emsDrawerTitle').textContent = lead.company || 'Lead Detail';
-                            emsSave();
-                            emsRenderAll();
-                            showToast('Lead saved ✓');
-                          };
+                emsActiveId = id;
+                document.getElementById('emsDrawerTitle').textContent = lead.company || 'Lead Detail';
+                [
+                  'company',
+                  'stage',
+                  'priority',
+                  'clientType',
+                  'cscContact',
+                  'cscEngineer',
+                  'saNum',
+                  'webctrlVersion',
+                  'renewalDate',
+                  'type',
+                  'annualValue',
+                  'contactName',
+                  'contactTitle',
+                  'contactPhone',
+                  'contactEmail',
+                  'nextActionDate',
+                  'lastContact',
+                  'nextAction',
+                  'notes',
+                ].forEach((f) => {
+                  const el = document.getElementById('ed-' + f);
+                  if (el) el.value = lead[f] || '';
+                });
+                document.getElementById('ed-tags').value = (lead.tags || []).join(', ');
+                // Populate client type dropdown with current value selected
+                const ctEl = document.getElementById('ed-clientType');
+                if (ctEl) ctEl.innerHTML = emsClientTypeOptions(lead.clientType || '');
+                // Render any extra fields (from CSV import) not covered by standard inputs
+                emsRenderExtraFields(lead);
+                emsRenderBuildings(lead);
+                emsRenderActivity(lead);
+                document.getElementById('emsDrawerOverlay').classList.add('open');
+                document.getElementById('emsLeadDrawer').classList.add('open');
+                emsDTab('dOv', document.querySelector('#view-ems .dtab'));
+                document.getElementById('emsAIOutput').classList.remove('visible');
+              };
+              window.emsCloseDrawer = function () {
+                document.getElementById('emsDrawerOverlay').classList.remove('open');
+                document.getElementById('emsLeadDrawer').classList.remove('open');
+                emsActiveId = null;
+              };
+              window.emsSaveDrawer = function () {
+                const lead = emsLeads.find((l) => l.id === emsActiveId);
+                if (!lead) return;
+                [
+                  'company',
+                  'stage',
+                  'priority',
+                  'clientType',
+                  'cscContact',
+                  'cscEngineer',
+                  'saNum',
+                  'webctrlVersion',
+                  'renewalDate',
+                  'type',
+                  'annualValue',
+                  'contactName',
+                  'contactTitle',
+                  'contactPhone',
+                  'contactEmail',
+                  'nextActionDate',
+                  'lastContact',
+                  'nextAction',
+                  'notes',
+                ].forEach((f) => {
+                  const el = document.getElementById('ed-' + f);
+                  if (el) lead[f] = el.value;
+                });
+                lead.tags = document
+                  .getElementById('ed-tags')
+                  .value.split(',')
+                  .map((t) => t.trim())
+                  .filter(Boolean);
+                // Save extra fields from dynamically rendered inputs
+                document.querySelectorAll('#emsExtraFields [data-extra-key]').forEach((inp) => {
+                  lead[inp.dataset.extraKey] = inp.value;
+                });
+                // Save buildings from DOM
+                emsSaveBuildingsFromDOM(lead);
+                lead.updatedAt = new Date().toISOString();
+                document.getElementById('emsDrawerTitle').textContent = lead.company || 'Lead Detail';
+                emsSave();
+                emsRenderAll();
+                showToast('Lead saved ✓');
+              };
 
-                          function emsRenderExtraFields(lead) {
-                            const container = document.getElementById('emsExtraFields');
-                            if (!container) return;
-                            // Find keys on the lead that aren't in the standard set
-                            const extras = Object.entries(lead).filter(
-                              ([k, v]) =>
-                                !EMS_KNOWN_KEYS.has(k) && v !== null && v !== undefined && v !== '' && typeof v !== 'object',
-                            );
-                            if (!extras.length) {
-                              container.innerHTML = '';
-                              return;
-                            }
-                            // Use the EMS_LEAD_FIELDS labels if available, otherwise prettify the key
-                            const labelFor = (key) => {
-                              const f = EMS_LEAD_FIELDS.find((f) => f.key === key);
-                              if (f) return f.label;
-                              return key
-                                .replace(/_/g, ' ')
-                                .replace(/([A-Z])/g, ' $1')
-                                .trim()
-                                .replace(/\b\w/g, (c) => c.toUpperCase());
-                            };
-                            container.innerHTML =
-                              '<div class="section-lbl" style="margin-top:14px">Additional Fields</div>' +
-                              '<div class="detail-grid">' +
-                              extras
-                                .map(
-                                  ([k, v]) => `
+              function emsRenderExtraFields(lead) {
+                const container = document.getElementById('emsExtraFields');
+                if (!container) return;
+                // Find keys on the lead that aren't in the standard set
+                const extras = Object.entries(lead).filter(
+                  ([k, v]) =>
+                    !EMS_KNOWN_KEYS.has(k) && v !== null && v !== undefined && v !== '' && typeof v !== 'object',
+                );
+                if (!extras.length) {
+                  container.innerHTML = '';
+                  return;
+                }
+                // Use the EMS_LEAD_FIELDS labels if available, otherwise prettify the key
+                const labelFor = (key) => {
+                  const f = EMS_LEAD_FIELDS.find((f) => f.key === key);
+                  if (f) return f.label;
+                  return key
+                    .replace(/_/g, ' ')
+                    .replace(/([A-Z])/g, ' $1')
+                    .trim()
+                    .replace(/\b\w/g, (c) => c.toUpperCase());
+                };
+                container.innerHTML =
+                  '<div class="section-lbl" style="margin-top:14px">Additional Fields</div>' +
+                  '<div class="detail-grid">' +
+                  extras
+                    .map(
+                      ([k, v]) => `
                   <div class="detail-field">
                     <div class="df-label">${emsEsc(labelFor(k))}</div>
                     <input class="df-input" data-extra-key="${emsEsc(k)}" value="${emsEsc(String(v))}" type="text">
                   </div>`,
-                                )
-                                .join('') +
-                              '</div>';
-                          }
+                    )
+                    .join('') +
+                  '</div>';
+              }
 
-                          /* ── Building / Site Management ── */
-                          const EMS_BLDG_TYPES = [
-                            'Office',
-                            'School / K-12',
-                            'University',
-                            'Hospital',
-                            'Healthcare Clinic',
-                            'Retail',
-                            'Warehouse / Industrial',
-                            'Government / Municipal',
-                            'Hotel / Hospitality',
-                            'Multi-Family',
-                            'Mixed-Use',
-                            'Data Center',
-                            'Other',
-                          ];
+              /* ── Building / Site Management ── */
+              const EMS_BLDG_TYPES = [
+                'Office',
+                'School / K-12',
+                'University',
+                'Hospital',
+                'Healthcare Clinic',
+                'Retail',
+                'Warehouse / Industrial',
+                'Government / Municipal',
+                'Hotel / Hospitality',
+                'Multi-Family',
+                'Mixed-Use',
+                'Data Center',
+                'Other',
+              ];
 
-                          /* ── Client Types — editable list ── */
-                          const EMS_CLIENT_TYPES_KEY = 'ems_client_types';
-                          const EMS_CLIENT_TYPES_DEFAULT = [
-                            'School',
-                            'Municipality',
-                            'Apartments',
-                            'Commercial',
-                            'Retail',
-                            'Data Center',
-                            'Industrial',
-                            'Healthcare',
-                            'Other',
-                          ];
+              /* ── Client Types — editable list ── */
+              const EMS_CLIENT_TYPES_KEY = 'ems_client_types';
+              const EMS_CLIENT_TYPES_DEFAULT = [
+                'School',
+                'Municipality',
+                'Apartments',
+                'Commercial',
+                'Retail',
+                'Data Center',
+                'Industrial',
+                'Healthcare',
+                'Other',
+              ];
 
-                          function emsLoadClientTypes() {
-                            try {
-                              const saved = JSON.parse(localStorage.getItem(EMS_CLIENT_TYPES_KEY));
-                              return Array.isArray(saved) && saved.length ? saved : [...EMS_CLIENT_TYPES_DEFAULT];
-                            } catch (e) {
-                              return [...EMS_CLIENT_TYPES_DEFAULT];
-                            }
-                          }
-                          function emsSaveClientTypes(types) {
-                            localStorage.setItem(EMS_CLIENT_TYPES_KEY, JSON.stringify(types));
-                          }
-                          let emsClientTypes = emsLoadClientTypes();
+              function emsLoadClientTypes() {
+                try {
+                  const saved = JSON.parse(localStorage.getItem(EMS_CLIENT_TYPES_KEY));
+                  return Array.isArray(saved) && saved.length ? saved : [...EMS_CLIENT_TYPES_DEFAULT];
+                } catch (e) {
+                  return [...EMS_CLIENT_TYPES_DEFAULT];
+                }
+              }
+              function emsSaveClientTypes(types) {
+                localStorage.setItem(EMS_CLIENT_TYPES_KEY, JSON.stringify(types));
+              }
+              let emsClientTypes = emsLoadClientTypes();
 
-                          function emsClientTypeOptions(selectedVal) {
-                            return (
-                              '<option value="">— Select —</option>' +
-                              emsClientTypes
-                                .map((t) => `<option${t === selectedVal ? ' selected' : ''}>${emsEsc(t)}</option>`)
-                                .join('')
-                            );
-                          }
-                          function emsClientTypeFilterOptions() {
-                            return (
-                              '<option value="">All Client Types</option>' +
-                              emsClientTypes.map((t) => `<option>${emsEsc(t)}</option>`).join('')
-                            );
-                          }
+              function emsClientTypeOptions(selectedVal) {
+                return (
+                  '<option value="">— Select —</option>' +
+                  emsClientTypes
+                    .map((t) => `<option${t === selectedVal ? ' selected' : ''}>${emsEsc(t)}</option>`)
+                    .join('')
+                );
+              }
+              function emsClientTypeFilterOptions() {
+                return (
+                  '<option value="">All Client Types</option>' +
+                  emsClientTypes.map((t) => `<option>${emsEsc(t)}</option>`).join('')
+                );
+              }
 
-                          // Rebuild all client type dropdowns from the current list
-                          function emsRefreshClientTypeDropdowns() {
-                            const drawer = document.getElementById('ed-clientType');
-                            const newLead = document.getElementById('enl-clientType');
-                            const filter = document.getElementById('etableClientType');
-                            const curDrawer = drawer?.value || '';
-                            const curNew = newLead?.value || '';
-                            const curFilter = filter?.value || '';
-                            if (drawer) drawer.innerHTML = emsClientTypeOptions(curDrawer);
-                            if (newLead) newLead.innerHTML = emsClientTypeOptions(curNew);
-                            if (filter) {
-                              filter.innerHTML = emsClientTypeFilterOptions();
-                              // Restore the previously selected filter value
-                              if (curFilter) filter.value = curFilter;
-                            }
-                          }
+              // Rebuild all client type dropdowns from the current list
+              function emsRefreshClientTypeDropdowns() {
+                const drawer = document.getElementById('ed-clientType');
+                const newLead = document.getElementById('enl-clientType');
+                const filter = document.getElementById('etableClientType');
+                const curDrawer = drawer?.value || '';
+                const curNew = newLead?.value || '';
+                const curFilter = filter?.value || '';
+                if (drawer) drawer.innerHTML = emsClientTypeOptions(curDrawer);
+                if (newLead) newLead.innerHTML = emsClientTypeOptions(curNew);
+                if (filter) {
+                  filter.innerHTML = emsClientTypeFilterOptions();
+                  // Restore the previously selected filter value
+                  if (curFilter) filter.value = curFilter;
+                }
+              }
 
-                          // Open/close the inline client type editor panel
-                          window.emsToggleClientTypeEditor = function () {
-                            const panel = document.getElementById('emsClientTypeEditor');
-                            if (!panel) return;
-                            const open = panel.style.display === 'none' || !panel.style.display;
-                            panel.style.display = open ? 'block' : 'none';
-                            if (open) emsRenderClientTypeList();
-                          };
-                          function emsRenderClientTypeList() {
-                            const list = document.getElementById('emsClientTypeList');
-                            if (!list) return;
-                            list.innerHTML = emsClientTypes
-                              .map(
-                                (t, i) => `
+              // Open/close the inline client type editor panel
+              window.emsToggleClientTypeEditor = function () {
+                const panel = document.getElementById('emsClientTypeEditor');
+                if (!panel) return;
+                const open = panel.style.display === 'none' || !panel.style.display;
+                panel.style.display = open ? 'block' : 'none';
+                if (open) emsRenderClientTypeList();
+              };
+              function emsRenderClientTypeList() {
+                const list = document.getElementById('emsClientTypeList');
+                if (!list) return;
+                list.innerHTML = emsClientTypes
+                  .map(
+                    (t, i) => `
                 <div style="display:flex;align-items:center;gap:7px;padding:5px 8px;background:var(--s2);border:1px solid var(--border);border-radius:6px">
                   <input class="df-input" value="${emsEsc(t)}" data-ct-idx="${i}" oninput="emsUpdateClientType(this)"
                     style="flex:1;font-size:12px;padding:5px 8px">
@@ -9525,66 +9525,66 @@
                   <button onclick="emsMoveClientType(${i},1)" title="Move down" ${i === emsClientTypes.length - 1 ? 'disabled' : ''} style="font-family:var(--font);font-size:11px;padding:3px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer">▼</button>
                   <button onclick="emsDeleteClientType(${i})" title="Delete" style="font-family:var(--font);font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid rgba(240,80,80,.4);background:transparent;color:var(--red);cursor:pointer">✕</button>
                 </div>`,
-                              )
-                              .join('');
-                          }
-                          window.emsUpdateClientType = function (inp) {
-                            const i = parseInt(inp.dataset.ctIdx);
-                            emsClientTypes[i] = inp.value;
-                            emsSaveClientTypes(emsClientTypes);
-                            emsRefreshClientTypeDropdowns();
-                          };
-                          window.emsMoveClientType = function (i, dir) {
-                            const j = i + dir;
-                            if (j < 0 || j >= emsClientTypes.length) return;
-                            [emsClientTypes[i], emsClientTypes[j]] = [emsClientTypes[j], emsClientTypes[i]];
-                            emsSaveClientTypes(emsClientTypes);
-                            emsRenderClientTypeList();
-                            emsRefreshClientTypeDropdowns();
-                          };
-                          window.emsDeleteClientType = function (i) {
-                            if (emsClientTypes.length <= 1) {
-                              showToast('Must keep at least one client type');
-                              return;
-                            }
-                            emsClientTypes.splice(i, 1);
-                            emsSaveClientTypes(emsClientTypes);
-                            emsRenderClientTypeList();
-                            emsRefreshClientTypeDropdowns();
-                          };
-                          window.emsAddClientType = function () {
-                            const inp = document.getElementById('emsNewClientType');
-                            const val = inp?.value.trim();
-                            if (!val) {
-                              showToast('Enter a client type name ⚠');
-                              return;
-                            }
-                            if (emsClientTypes.some((t) => t.toLowerCase() === val.toLowerCase())) {
-                              showToast('"' + val + '" already exists ⚠');
-                              return;
-                            }
-                            emsClientTypes.push(val);
-                            emsSaveClientTypes(emsClientTypes);
-                            if (inp) inp.value = '';
-                            emsRenderClientTypeList();
-                            emsRefreshClientTypeDropdowns();
-                            showToast('"' + val + '" added ✓');
-                          };
+                  )
+                  .join('');
+              }
+              window.emsUpdateClientType = function (inp) {
+                const i = parseInt(inp.dataset.ctIdx);
+                emsClientTypes[i] = inp.value;
+                emsSaveClientTypes(emsClientTypes);
+                emsRefreshClientTypeDropdowns();
+              };
+              window.emsMoveClientType = function (i, dir) {
+                const j = i + dir;
+                if (j < 0 || j >= emsClientTypes.length) return;
+                [emsClientTypes[i], emsClientTypes[j]] = [emsClientTypes[j], emsClientTypes[i]];
+                emsSaveClientTypes(emsClientTypes);
+                emsRenderClientTypeList();
+                emsRefreshClientTypeDropdowns();
+              };
+              window.emsDeleteClientType = function (i) {
+                if (emsClientTypes.length <= 1) {
+                  showToast('Must keep at least one client type');
+                  return;
+                }
+                emsClientTypes.splice(i, 1);
+                emsSaveClientTypes(emsClientTypes);
+                emsRenderClientTypeList();
+                emsRefreshClientTypeDropdowns();
+              };
+              window.emsAddClientType = function () {
+                const inp = document.getElementById('emsNewClientType');
+                const val = inp?.value.trim();
+                if (!val) {
+                  showToast('Enter a client type name ⚠');
+                  return;
+                }
+                if (emsClientTypes.some((t) => t.toLowerCase() === val.toLowerCase())) {
+                  showToast('"' + val + '" already exists ⚠');
+                  return;
+                }
+                emsClientTypes.push(val);
+                emsSaveClientTypes(emsClientTypes);
+                if (inp) inp.value = '';
+                emsRenderClientTypeList();
+                emsRefreshClientTypeDropdowns();
+                showToast('"' + val + '" added ✓');
+              };
 
-                          function emsBldgId() {
-                            return 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-                          }
+              function emsBldgId() {
+                return 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+              }
 
-                          function emsRenderBuildings(lead) {
-                            const bldgs = lead.buildings || [];
-                            const container = document.getElementById('emsBuildingList');
-                            if (bldgs.length === 0) {
-                              container.innerHTML = `<div class="bldg-empty">No buildings added yet — click <strong style="color:var(--em)">＋ Add Building</strong> to get started.</div>`;
-                              return;
-                            }
-                            container.innerHTML = bldgs
-                              .map(
-                                (b, i) => `
+              function emsRenderBuildings(lead) {
+                const bldgs = lead.buildings || [];
+                const container = document.getElementById('emsBuildingList');
+                if (bldgs.length === 0) {
+                  container.innerHTML = `<div class="bldg-empty">No buildings added yet — click <strong style="color:var(--em)">＋ Add Building</strong> to get started.</div>`;
+                  return;
+                }
+                container.innerHTML = bldgs
+                  .map(
+                    (b, i) => `
                 <div class="bldg-card${i === 0 ? ' open' : ''}" id="ebldg-${b.id}">
                   <div class="bldg-card-hdr" onclick="emsToggleBuilding('${b.id}')">
                     <span class="bldg-card-ico">🏢</span>
@@ -9635,759 +9635,760 @@
                     </div>
                   </div>
                 </div>`,
-                              )
-                              .join('');
-                          }
+                  )
+                  .join('');
+              }
 
-                          // US state name → abbreviation map
-                          const EMS_STATE_MAP = {
-                            alabama: 'AL',
-                            alaska: 'AK',
-                            arizona: 'AZ',
-                            arkansas: 'AR',
-                            california: 'CA',
-                            colorado: 'CO',
-                            connecticut: 'CT',
-                            delaware: 'DE',
-                            florida: 'FL',
-                            georgia: 'GA',
-                            hawaii: 'HI',
-                            idaho: 'ID',
-                            illinois: 'IL',
-                            indiana: 'IN',
-                            iowa: 'IA',
-                            kansas: 'KS',
-                            kentucky: 'KY',
-                            louisiana: 'LA',
-                            maine: 'ME',
-                            maryland: 'MD',
-                            massachusetts: 'MA',
-                            michigan: 'MI',
-                            minnesota: 'MN',
-                            mississippi: 'MS',
-                            missouri: 'MO',
-                            montana: 'MT',
-                            nebraska: 'NE',
-                            nevada: 'NV',
-                            'new hampshire': 'NH',
-                            'new jersey': 'NJ',
-                            'new mexico': 'NM',
-                            'new york': 'NY',
-                            'north carolina': 'NC',
-                            'north dakota': 'ND',
-                            ohio: 'OH',
-                            oklahoma: 'OK',
-                            oregon: 'OR',
-                            pennsylvania: 'PA',
-                            'rhode island': 'RI',
-                            'south carolina': 'SC',
-                            'south dakota': 'SD',
-                            tennessee: 'TN',
-                            texas: 'TX',
-                            utah: 'UT',
-                            vermont: 'VT',
-                            virginia: 'VA',
-                            washington: 'WA',
-                            'west virginia': 'WV',
-                            wisconsin: 'WI',
-                            wyoming: 'WY',
-                            'district of columbia': 'DC',
-                            'washington dc': 'DC',
-                            'washington d.c.': 'DC',
-                          };
+              // US state name → abbreviation map
+              const EMS_STATE_MAP = {
+                alabama: 'AL',
+                alaska: 'AK',
+                arizona: 'AZ',
+                arkansas: 'AR',
+                california: 'CA',
+                colorado: 'CO',
+                connecticut: 'CT',
+                delaware: 'DE',
+                florida: 'FL',
+                georgia: 'GA',
+                hawaii: 'HI',
+                idaho: 'ID',
+                illinois: 'IL',
+                indiana: 'IN',
+                iowa: 'IA',
+                kansas: 'KS',
+                kentucky: 'KY',
+                louisiana: 'LA',
+                maine: 'ME',
+                maryland: 'MD',
+                massachusetts: 'MA',
+                michigan: 'MI',
+                minnesota: 'MN',
+                mississippi: 'MS',
+                missouri: 'MO',
+                montana: 'MT',
+                nebraska: 'NE',
+                nevada: 'NV',
+                'new hampshire': 'NH',
+                'new jersey': 'NJ',
+                'new mexico': 'NM',
+                'new york': 'NY',
+                'north carolina': 'NC',
+                'north dakota': 'ND',
+                ohio: 'OH',
+                oklahoma: 'OK',
+                oregon: 'OR',
+                pennsylvania: 'PA',
+                'rhode island': 'RI',
+                'south carolina': 'SC',
+                'south dakota': 'SD',
+                tennessee: 'TN',
+                texas: 'TX',
+                utah: 'UT',
+                vermont: 'VT',
+                virginia: 'VA',
+                washington: 'WA',
+                'west virginia': 'WV',
+                wisconsin: 'WI',
+                wyoming: 'WY',
+                'district of columbia': 'DC',
+                'washington dc': 'DC',
+                'washington d.c.': 'DC',
+              };
 
-                          window.emsParseAddress = function (inp) {
-                            const val = inp.value.trim();
-                            if (!val) return;
-                            const card = inp.closest('.bldg-card');
-                            if (!card) return;
-                            const bid = card.id.replace('ebldg-', '');
+              window.emsParseAddress = function (inp) {
+                const val = inp.value.trim();
+                if (!val) return;
+                const card = inp.closest('.bldg-card');
+                if (!card) return;
+                const bid = card.id.replace('ebldg-', '');
 
-                            const cityInp = card.querySelector('[data-field="city"]');
-                            const stateInp = card.querySelector('[data-field="state"]');
-                            const zipInp = card.querySelector('[data-field="zip"]');
+                const cityInp = card.querySelector('[data-field="city"]');
+                const stateInp = card.querySelector('[data-field="state"]');
+                const zipInp = card.querySelector('[data-field="zip"]');
 
-                            // Only auto-fill fields that are currently blank
-                            const cityBlank = !cityInp?.value.trim();
-                            const stateBlank = !stateInp?.value.trim();
-                            const zipBlank = !zipInp?.value.trim();
-                            if (!cityBlank && !stateBlank && !zipBlank) return;
+                // Only auto-fill fields that are currently blank
+                const cityBlank = !cityInp?.value.trim();
+                const stateBlank = !stateInp?.value.trim();
+                const zipBlank = !zipInp?.value.trim();
+                if (!cityBlank && !stateBlank && !zipBlank) return;
 
-                            // Extract ZIP: 5-digit (optionally +4)
-                            const zipMatch = val.match(/\b(\d{5})(?:-\d{4})?\b/);
-                            if (zipMatch && zipBlank && zipInp) zipInp.value = zipMatch[1];
+                // Extract ZIP: 5-digit (optionally +4)
+                const zipMatch = val.match(/\b(\d{5})(?:-\d{4})?\b/);
+                if (zipMatch && zipBlank && zipInp) zipInp.value = zipMatch[1];
 
-                            // Remove zip from working string
-                            let work = val
-                              .replace(/\b\d{5}(?:-\d{4})?\b/, '')
-                              .trim()
-                              .replace(/,\s*$/, '');
+                // Remove zip from working string
+                let work = val
+                  .replace(/\b\d{5}(?:-\d{4})?\b/, '')
+                  .trim()
+                  .replace(/,\s*$/, '');
 
-                            // Try "City, ST" or "City, State" at end
-                            // Pattern: anything, comma, (state abbr or full name)
-                            const stateAbbr = /,\s*([A-Z]{2})\s*$/.exec(work);
-                            const stateFull = /,\s*([A-Za-z\s\.]+)\s*$/.exec(work);
+                // Try "City, ST" or "City, State" at end
+                // Pattern: anything, comma, (state abbr or full name)
+                const stateAbbr = /,\s*([A-Z]{2})\s*$/.exec(work);
+                const stateFull = /,\s*([A-Za-z\s\.]+)\s*$/.exec(work);
 
-                            let detectedCity = '',
-                              detectedState = '';
+                let detectedCity = '',
+                  detectedState = '';
 
-                            if (stateAbbr) {
-                              detectedState = stateAbbr[1].toUpperCase();
-                              detectedCity = work
-                                .slice(0, stateAbbr.index)
-                                .replace(/.*,\s*/, '')
-                                .trim();
-                            } else if (stateFull) {
-                              const candidate = stateFull[1].trim().toLowerCase();
-                              const abbr = EMS_STATE_MAP[candidate] || (candidate.length === 2 ? candidate.toUpperCase() : '');
-                              if (abbr) {
-                                detectedState = abbr;
-                                detectedCity = work
-                                  .slice(0, stateFull.index)
-                                  .replace(/.*,\s*/, '')
-                                  .trim();
-                              }
-                            }
+                if (stateAbbr) {
+                  detectedState = stateAbbr[1].toUpperCase();
+                  detectedCity = work
+                    .slice(0, stateAbbr.index)
+                    .replace(/.*,\s*/, '')
+                    .trim();
+                } else if (stateFull) {
+                  const candidate = stateFull[1].trim().toLowerCase();
+                  const abbr = EMS_STATE_MAP[candidate] || (candidate.length === 2 ? candidate.toUpperCase() : '');
+                  if (abbr) {
+                    detectedState = abbr;
+                    detectedCity = work
+                      .slice(0, stateFull.index)
+                      .replace(/.*,\s*/, '')
+                      .trim();
+                  }
+                }
 
-                            // If still no city, check if entire value looks like "City, State" with no street
-                            // (common in imported CSVs — e.g. "Lexington, Missouri")
-                            if (!detectedCity && !detectedState) {
-                              const simple = /^([A-Za-z\s\.\-]+),\s*([A-Za-z\s\.]+)$/.exec(val);
-                              if (simple) {
-                                const maybeState = simple[2].trim().toLowerCase();
-                                const abbr = EMS_STATE_MAP[maybeState] || (maybeState.length === 2 ? maybeState.toUpperCase() : '');
-                                if (abbr) {
-                                  detectedCity = simple[1].trim();
-                                  detectedState = abbr;
-                                }
-                              }
-                            }
+                // If still no city, check if entire value looks like "City, State" with no street
+                // (common in imported CSVs — e.g. "Lexington, Missouri")
+                if (!detectedCity && !detectedState) {
+                  const simple = /^([A-Za-z\s\.\-]+),\s*([A-Za-z\s\.]+)$/.exec(val);
+                  if (simple) {
+                    const maybeState = simple[2].trim().toLowerCase();
+                    const abbr = EMS_STATE_MAP[maybeState] || (maybeState.length === 2 ? maybeState.toUpperCase() : '');
+                    if (abbr) {
+                      detectedCity = simple[1].trim();
+                      detectedState = abbr;
+                    }
+                  }
+                }
 
-                            if (detectedCity && cityBlank && cityInp) cityInp.value = detectedCity;
-                            if (detectedState && stateBlank && stateInp) stateInp.value = detectedState;
+                if (detectedCity && cityBlank && cityInp) cityInp.value = detectedCity;
+                if (detectedState && stateBlank && stateInp) stateInp.value = detectedState;
 
-                            // Visual pulse to show fields were filled
-                            [cityInp, stateInp, zipInp].forEach((el) => {
-                              if (el && el.value && el !== inp) {
-                                el.style.transition = 'background .3s';
-                                el.style.background = 'rgba(0,212,170,.15)';
-                                setTimeout(() => {
-                                  el.style.background = '';
-                                }, 1200);
-                              }
-                            });
-                          };
+                // Visual pulse to show fields were filled
+                [cityInp, stateInp, zipInp].forEach((el) => {
+                  if (el && el.value && el !== inp) {
+                    el.style.transition = 'background .3s';
+                    el.style.background = 'rgba(0,212,170,.15)';
+                    setTimeout(() => {
+                      el.style.background = '';
+                    }, 1200);
+                  }
+                });
+              };
 
-                          window.emsToggleBuilding = function (bid) {
-                            const card = document.getElementById('ebldg-' + bid);
-                            if (card) card.classList.toggle('open');
-                          };
+              window.emsToggleBuilding = function (bid) {
+                const card = document.getElementById('ebldg-' + bid);
+                if (card) card.classList.toggle('open');
+              };
 
-                          window.emsAddBuilding = function () {
-                            const lead = emsLeads.find((l) => l.id === emsActiveId);
-                            if (!lead) return;
-                            emsSaveBuildingsFromDOM(lead); // persist any edits first
-                            if (!lead.buildings) lead.buildings = [];
-                            lead.buildings.push({
-                              id: emsBldgId(),
-                              name: '',
-                              address: '',
-                              city: '',
-                              state: '',
-                              zip: '',
-                              sqft: '',
-                              buildingType: '',
-                              notes: '',
-                            });
-                            emsSave();
-                            emsRenderBuildings(lead);
-                            // Open the newly added card
-                            const cards = document.querySelectorAll('#emsBuildingList .bldg-card');
-                            if (cards.length) cards[cards.length - 1].classList.add('open');
-                          };
+              window.emsAddBuilding = function () {
+                const lead = emsLeads.find((l) => l.id === emsActiveId);
+                if (!lead) return;
+                emsSaveBuildingsFromDOM(lead); // persist any edits first
+                if (!lead.buildings) lead.buildings = [];
+                lead.buildings.push({
+                  id: emsBldgId(),
+                  name: '',
+                  address: '',
+                  city: '',
+                  state: '',
+                  zip: '',
+                  sqft: '',
+                  buildingType: '',
+                  notes: '',
+                });
+                emsSave();
+                emsRenderBuildings(lead);
+                // Open the newly added card
+                const cards = document.querySelectorAll('#emsBuildingList .bldg-card');
+                if (cards.length) cards[cards.length - 1].classList.add('open');
+              };
 
-                          window.emsRemoveBuilding = function (bid) {
-                            const lead = emsLeads.find((l) => l.id === emsActiveId);
-                            if (!lead) return;
-                            emsSaveBuildingsFromDOM(lead);
-                            lead.buildings = (lead.buildings || []).filter((b) => b.id !== bid);
-                            emsSave();
-                            emsRenderBuildings(lead);
-                          };
+              window.emsRemoveBuilding = function (bid) {
+                const lead = emsLeads.find((l) => l.id === emsActiveId);
+                if (!lead) return;
+                emsSaveBuildingsFromDOM(lead);
+                lead.buildings = (lead.buildings || []).filter((b) => b.id !== bid);
+                emsSave();
+                emsRenderBuildings(lead);
+              };
 
-                          async function emsSaveBuildingsFromDOM(lead) {
-                            const cards = document.querySelectorAll('#emsBuildingList .bldg-card');
-                            if (!cards.length) return;
-                            if (!lead.buildings) lead.buildings = [];
-                            cards.forEach((card) => {
-                              const bid = card.id.replace('ebldg-', '');
-                              const bldg = lead.buildings.find((b) => b.id === bid);
-                              if (!bldg) return;
-                              card.querySelectorAll('[data-bid][data-field]').forEach((inp) => {
-                                bldg[inp.dataset.field] = inp.value;
-                              });
-                            });
-                          }
-                          window.emsDeleteLead = function () {
-                            if (!emsActiveId) return;
-                            const lead = emsLeads.find((l) => l.id === emsActiveId);
-                            if (!(await confirmAsync('Delete "' + (lead?.company || 'this lead') + '"? This cannot be undone.'))) return;
-                            emsLeads = emsLeads.filter((l) => l.id !== emsActiveId);
-                            emsSave();
-                            emsCloseDrawer();
-                            emsRenderAll();
-                            showToast('Lead deleted');
-                          };
-                          window.emsDeleteAllLeads = function () {
-                            if (!emsLeads.length) {
-                              showToast('No leads to delete');
-                              return;
-                            }
-                            if (!(await confirmAsync('Delete ALL ' + emsLeads.length + ' leads? This cannot be undone.'))) return;
-                            emsLeads = [];
-                            emsSave();
-                            emsRenderAll();
-                            showToast('All leads deleted');
-                          };
-                          window.emsDTab = function (id, el) {
-                            document.querySelectorAll('#view-ems .dpanel').forEach((p) => p.classList.remove('active'));
-                            document.querySelectorAll('#view-ems .dtab').forEach((t) => t.classList.remove('active'));
-                            document.getElementById(id).classList.add('active');
-                            if (el) el.classList.add('active');
-                          };
+              async function emsSaveBuildingsFromDOM(lead) {
+                const cards = document.querySelectorAll('#emsBuildingList .bldg-card');
+                if (!cards.length) return;
+                if (!lead.buildings) lead.buildings = [];
+                cards.forEach((card) => {
+                  const bid = card.id.replace('ebldg-', '');
+                  const bldg = lead.buildings.find((b) => b.id === bid);
+                  if (!bldg) return;
+                  card.querySelectorAll('[data-bid][data-field]').forEach((inp) => {
+                    bldg[inp.dataset.field] = inp.value;
+                  });
+                });
+              }
+              window.emsDeleteLead = async function () {
+                if (!emsActiveId) return;
+                const lead = emsLeads.find((l) => l.id === emsActiveId);
+                if (!(await confirmAsync('Delete "' + (lead?.company || 'this lead') + '"? This cannot be undone.')))
+                  return;
+                emsLeads = emsLeads.filter((l) => l.id !== emsActiveId);
+                emsSave();
+                emsCloseDrawer();
+                emsRenderAll();
+                showToast('Lead deleted');
+              };
+              window.emsDeleteAllLeads = async function () {
+                if (!emsLeads.length) {
+                  showToast('No leads to delete');
+                  return;
+                }
+                if (!(await confirmAsync('Delete ALL ' + emsLeads.length + ' leads? This cannot be undone.'))) return;
+                emsLeads = [];
+                emsSave();
+                emsRenderAll();
+                showToast('All leads deleted');
+              };
+              window.emsDTab = function (id, el) {
+                document.querySelectorAll('#view-ems .dpanel').forEach((p) => p.classList.remove('active'));
+                document.querySelectorAll('#view-ems .dtab').forEach((t) => t.classList.remove('active'));
+                document.getElementById(id).classList.add('active');
+                if (el) el.classList.add('active');
+              };
 
-                          function emsRenderActivity(lead) {
-                            const list = lead.activity || [];
-                            document.getElementById('emsActivityList').innerHTML =
-                              list.length === 0
-                                ? `<div style="font-size:12px;color:var(--text3);padding:16px 0">No activity logged yet.</div>`
-                                : [...list]
-                                    .reverse()
-                                    .map(
-                                      (a) =>
-                                        `<div class="activity-item"><div class="act-dot" style="background:${a.color || 'var(--em)'}"></div><div class="act-body"><div class="act-text">${emsEsc(a.text)}</div><div class="act-time">${a.time} · ${a.user || 'You'}</div></div></div>`,
-                                    )
-                                    .join('');
-                          }
-                          window.emsAddActivity = function () {
-                            const inp = document.getElementById('emsActNote');
-                            const text = inp.value.trim();
-                            if (!text) return;
-                            const lead = emsLeads.find((l) => l.id === emsActiveId);
-                            if (!lead) return;
-                            if (!lead.activity) lead.activity = [];
-                            lead.activity.push({ text, time: new Date().toLocaleString(), color: 'var(--em)' });
-                            lead.lastContact = new Date().toISOString().split('T')[0];
-                            lead.updatedAt = new Date().toISOString();
-                            inp.value = '';
-                            emsSave();
-                            emsRenderActivity(lead);
-                            document.getElementById('ed-lastContact').value = lead.lastContact;
-                            showToast('Activity logged ✓');
-                          };
+              function emsRenderActivity(lead) {
+                const list = lead.activity || [];
+                document.getElementById('emsActivityList').innerHTML =
+                  list.length === 0
+                    ? `<div style="font-size:12px;color:var(--text3);padding:16px 0">No activity logged yet.</div>`
+                    : [...list]
+                        .reverse()
+                        .map(
+                          (a) =>
+                            `<div class="activity-item"><div class="act-dot" style="background:${a.color || 'var(--em)'}"></div><div class="act-body"><div class="act-text">${emsEsc(a.text)}</div><div class="act-time">${a.time} · ${a.user || 'You'}</div></div></div>`,
+                        )
+                        .join('');
+              }
+              window.emsAddActivity = function () {
+                const inp = document.getElementById('emsActNote');
+                const text = inp.value.trim();
+                if (!text) return;
+                const lead = emsLeads.find((l) => l.id === emsActiveId);
+                if (!lead) return;
+                if (!lead.activity) lead.activity = [];
+                lead.activity.push({ text, time: new Date().toLocaleString(), color: 'var(--em)' });
+                lead.lastContact = new Date().toISOString().split('T')[0];
+                lead.updatedAt = new Date().toISOString();
+                inp.value = '';
+                emsSave();
+                emsRenderActivity(lead);
+                document.getElementById('ed-lastContact').value = lead.lastContact;
+                showToast('Activity logged ✓');
+              };
 
-                          window.emsOpenNew = function () {
-                            document.getElementById('emsNewModal').classList.add('open');
-                            const ctEl = document.getElementById('enl-clientType');
-                            if (ctEl) ctEl.innerHTML = emsClientTypeOptions('');
-                          };
-                          window.emsCloseNew = function () {
-                            document.getElementById('emsNewModal').classList.remove('open');
-                          };
-                          window.emsSaveNew = function () {
-                            const company = document.getElementById('enl-company').value.trim();
-                            if (!company) {
-                              showToast('Company name required ⚠');
-                              return;
-                            }
-                            const lead = {
-                              id: emsGenId(),
-                              company,
-                              stage: document.getElementById('enl-stage').value,
-                              priority: document.getElementById('enl-priority').value,
-                              clientType: document.getElementById('enl-clientType').value,
-                              cscContact: document.getElementById('enl-cscContact').value,
-                              cscEngineer: document.getElementById('enl-cscEngineer').value,
-                              type: document.getElementById('enl-type').value,
-                              annualValue: document.getElementById('enl-value').value || '',
-                              contactName: document.getElementById('enl-contactName').value,
-                              contactPhone: document.getElementById('enl-contactPhone').value,
-                              contactEmail: document.getElementById('enl-contactEmail').value,
-                              address: document.getElementById('enl-address').value,
-                              city: document.getElementById('enl-city').value,
-                              state: document.getElementById('enl-state').value,
-                              zip: document.getElementById('enl-zip').value,
-                              buildingType: document.getElementById('enl-buildingType').value,
-                              buildingSqft: document.getElementById('enl-sqft').value || '',
-                              notes: document.getElementById('enl-notes').value,
-                              nextActionDate: document.getElementById('enl-nextDate').value,
-                              nextAction: document.getElementById('enl-nextAction').value,
-                              tags: [],
-                              activity: [],
-                              createdAt: new Date().toISOString(),
-                              updatedAt: new Date().toISOString(),
-                            };
-                            emsLeads.push(lead);
-                            emsSave();
-                            emsCloseNew();
-                            emsRenderAll();
-                            showToast(company + ' added ✓');
-                            [
-                              'enl-company',
-                              'enl-cscContact',
-                              'enl-cscEngineer',
-                              'enl-value',
-                              'enl-contactName',
-                              'enl-contactPhone',
-                              'enl-contactEmail',
-                              'enl-address',
-                              'enl-city',
-                              'enl-state',
-                              'enl-zip',
-                              'enl-sqft',
-                              'enl-notes',
-                              'enl-nextDate',
-                              'enl-nextAction',
-                            ].forEach((id) => {
-                              const el = document.getElementById(id);
-                              if (el) el.value = '';
-                            });
-                          };
+              window.emsOpenNew = function () {
+                document.getElementById('emsNewModal').classList.add('open');
+                const ctEl = document.getElementById('enl-clientType');
+                if (ctEl) ctEl.innerHTML = emsClientTypeOptions('');
+              };
+              window.emsCloseNew = function () {
+                document.getElementById('emsNewModal').classList.remove('open');
+              };
+              window.emsSaveNew = function () {
+                const company = document.getElementById('enl-company').value.trim();
+                if (!company) {
+                  showToast('Company name required ⚠');
+                  return;
+                }
+                const lead = {
+                  id: emsGenId(),
+                  company,
+                  stage: document.getElementById('enl-stage').value,
+                  priority: document.getElementById('enl-priority').value,
+                  clientType: document.getElementById('enl-clientType').value,
+                  cscContact: document.getElementById('enl-cscContact').value,
+                  cscEngineer: document.getElementById('enl-cscEngineer').value,
+                  type: document.getElementById('enl-type').value,
+                  annualValue: document.getElementById('enl-value').value || '',
+                  contactName: document.getElementById('enl-contactName').value,
+                  contactPhone: document.getElementById('enl-contactPhone').value,
+                  contactEmail: document.getElementById('enl-contactEmail').value,
+                  address: document.getElementById('enl-address').value,
+                  city: document.getElementById('enl-city').value,
+                  state: document.getElementById('enl-state').value,
+                  zip: document.getElementById('enl-zip').value,
+                  buildingType: document.getElementById('enl-buildingType').value,
+                  buildingSqft: document.getElementById('enl-sqft').value || '',
+                  notes: document.getElementById('enl-notes').value,
+                  nextActionDate: document.getElementById('enl-nextDate').value,
+                  nextAction: document.getElementById('enl-nextAction').value,
+                  tags: [],
+                  activity: [],
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                };
+                emsLeads.push(lead);
+                emsSave();
+                emsCloseNew();
+                emsRenderAll();
+                showToast(company + ' added ✓');
+                [
+                  'enl-company',
+                  'enl-cscContact',
+                  'enl-cscEngineer',
+                  'enl-value',
+                  'enl-contactName',
+                  'enl-contactPhone',
+                  'enl-contactEmail',
+                  'enl-address',
+                  'enl-city',
+                  'enl-state',
+                  'enl-zip',
+                  'enl-sqft',
+                  'enl-notes',
+                  'enl-nextDate',
+                  'enl-nextAction',
+                ].forEach((id) => {
+                  const el = document.getElementById(id);
+                  if (el) el.value = '';
+                });
+              };
 
-                          window.emsCloseRawTable = function () {
-                            document.getElementById('emsRawModal').classList.remove('open');
-                          };
-                          window.emsOpenImport = function () {
-                            document.getElementById('emsImportModal').classList.add('open');
-                          };
-                          window.emsCloseImport = function () {
-                            document.getElementById('emsImportModal').classList.remove('open');
-                            document.getElementById('emsDupPanel').style.display = 'none';
-                          };
-                          window.emsHandleCSV = function (e) {
-                            const f = e.target.files[0];
-                            if (f) {
-                              const r = new FileReader();
-                              r.onload = (ev) => {
-                                document.getElementById('emsCsvPaste').value = ev.target.result;
-                                emsParseCSVPreview();
-                              };
-                              r.readAsText(f);
-                            }
-                          };
+              window.emsCloseRawTable = function () {
+                document.getElementById('emsRawModal').classList.remove('open');
+              };
+              window.emsOpenImport = function () {
+                document.getElementById('emsImportModal').classList.add('open');
+              };
+              window.emsCloseImport = function () {
+                document.getElementById('emsImportModal').classList.remove('open');
+                document.getElementById('emsDupPanel').style.display = 'none';
+              };
+              window.emsHandleCSV = function (e) {
+                const f = e.target.files[0];
+                if (f) {
+                  const r = new FileReader();
+                  r.onload = (ev) => {
+                    document.getElementById('emsCsvPaste').value = ev.target.result;
+                    emsParseCSVPreview();
+                  };
+                  r.readAsText(f);
+                }
+              };
 
-                          function emsParseCsv(text) {
-                            return text
-                              .trim()
-                              .split('\n')
-                              .map((line) => {
-                                const cols = [];
-                                let cur = '',
-                                  inQ = false;
-                                for (let i = 0; i < line.length; i++) {
-                                  if (line[i] === '"' && !inQ) {
-                                    inQ = true;
-                                  } else if (line[i] === '"' && inQ && line[i + 1] === '"') {
-                                    cur += '"';
-                                    i++;
-                                  } else if (line[i] === '"' && inQ) {
-                                    inQ = false;
-                                  } else if (line[i] === ',' && !inQ) {
-                                    cols.push(cur.trim());
-                                    cur = '';
-                                  } else {
-                                    cur += line[i];
-                                  }
-                                }
-                                cols.push(cur.trim());
-                                return cols;
-                              });
-                          }
-                          window.emsParseCSVPreview = function () {
-                            const text = document.getElementById('emsCsvPaste').value.trim();
-                            if (!text) {
-                              document.getElementById('emsColMapper').style.display = 'none';
-                              document.getElementById('emsImportBtn').style.display = 'none';
-                              document.getElementById('emsDupPanel').style.display = 'none';
-                              return;
-                            }
-                            const parsed = emsParseCsv(text);
-                            if (parsed.length < 2) {
-                              document.getElementById('emsCsvStatus').innerHTML =
-                                '<div style="color:var(--danger);font-size:12px;margin-top:6px">Could not parse CSV.</div>';
-                              return;
-                            }
-                            emsCsvHeaders = parsed[0];
-                            emsCsvRows = parsed.slice(1).filter((r) => r.some((c) => c));
-                            document.getElementById('emsCsvStatus').innerHTML =
-                              `<div class="parse-ok">✓ Found ${emsCsvRows.length} rows and ${emsCsvHeaders.length} columns</div>`;
-                            const autoMap = {
-                              company: ['company', 'customer', 'name', 'account', 'prospect'],
-                              city: ['city', 'town'],
-                              state: ['state', 'st'],
-                              zip: ['zip', 'postal'],
-                              contactName: ['contact', 'contact name', 'primary contact'],
-                              contactPhone: ['phone', 'telephone'],
-                              contactEmail: ['email', 'e-mail'],
-                              annualValue: ['value', 'annual value', 'revenue'],
-                              cscContact: ['csc', 'csc contact', 'rep', 'owner', 'sales team member'],
-                              stage: ['status'],
-                              notes: ['notes', 'comments'],
-                              clientType: ['client type', 'customer type', 'sector', 'industry', 'type of client'],
-                              saNum: ['sa #', 'sa#', 'sa number', 'service agreement', 'contract number'],
-                              webctrlVersion: ['webctrl', 'webctrl version', 'bas version', 'controls version'],
-                              renewalDate: ['renewal', 'renewal date', 'contract renewal', 'expiration', 'expiry'],
-                            };
-                            const mapped = {};
-                            emsCsvHeaders.forEach((h, i) => {
-                              const hl = h.toLowerCase().trim();
-                              for (const [field, aliases] of Object.entries(autoMap)) {
-                                if (aliases.some((a) => hl.includes(a))) {
-                                  mapped[i] = field;
-                                  break;
-                                }
-                              }
-                            });
-                            const fieldOpts = EMS_LEAD_FIELDS.map((f) => `<option value="${f.key}">${f.label}</option>`).join('');
-                            document.getElementById('emsMapBody').innerHTML = emsCsvHeaders
-                              .map(
-                                (h, i) =>
-                                  `<tr><td style="font-family:var(--mono);font-size:11px;color:var(--em)">${h || '(blank)'}</td><td style="font-size:11px;color:var(--text2)">${emsCsvRows[0]?.[i] || ''}</td><td><select id="emap-${i}">${fieldOpts}</select></td></tr>`,
-                              )
-                              .join('');
-                            emsCsvHeaders.forEach((_, i) => {
-                              if (mapped[i]) {
-                                const s = document.getElementById('emap-' + i);
-                                if (s) s.value = mapped[i];
-                              }
-                            });
-                            document.getElementById('emsColMapper').style.display = 'block';
-                            document.getElementById('emsImportBtn').style.display = 'inline-flex';
-                            document.getElementById('emsCsvPreview').innerHTML =
-                              'PREVIEW (first 3 rows):\n' +
-                              parsed
-                                .slice(0, 4)
-                                .map((r) => r.join(' | '))
-                                .join('\n');
-                            // Show dup panel and calculate preview
-                            document.getElementById('emsDupPanel').style.display = 'block';
-                            emsUpdateDupPreview();
-                          };
-                          window.emsRunImport = function () {
-                            const mapping = {};
-                            emsCsvHeaders.forEach((_, i) => {
-                              const v = document.getElementById('emap-' + i)?.value;
-                              if (v) mapping[i] = v;
-                            });
-                            const dupMode = document.querySelector('input[name="emsDupMode"]:checked')?.value || 'merge';
+              function emsParseCsv(text) {
+                return text
+                  .trim()
+                  .split('\n')
+                  .map((line) => {
+                    const cols = [];
+                    let cur = '',
+                      inQ = false;
+                    for (let i = 0; i < line.length; i++) {
+                      if (line[i] === '"' && !inQ) {
+                        inQ = true;
+                      } else if (line[i] === '"' && inQ && line[i + 1] === '"') {
+                        cur += '"';
+                        i++;
+                      } else if (line[i] === '"' && inQ) {
+                        inQ = false;
+                      } else if (line[i] === ',' && !inQ) {
+                        cols.push(cur.trim());
+                        cur = '';
+                      } else {
+                        cur += line[i];
+                      }
+                    }
+                    cols.push(cur.trim());
+                    return cols;
+                  });
+              }
+              window.emsParseCSVPreview = function () {
+                const text = document.getElementById('emsCsvPaste').value.trim();
+                if (!text) {
+                  document.getElementById('emsColMapper').style.display = 'none';
+                  document.getElementById('emsImportBtn').style.display = 'none';
+                  document.getElementById('emsDupPanel').style.display = 'none';
+                  return;
+                }
+                const parsed = emsParseCsv(text);
+                if (parsed.length < 2) {
+                  document.getElementById('emsCsvStatus').innerHTML =
+                    '<div style="color:var(--danger);font-size:12px;margin-top:6px">Could not parse CSV.</div>';
+                  return;
+                }
+                emsCsvHeaders = parsed[0];
+                emsCsvRows = parsed.slice(1).filter((r) => r.some((c) => c));
+                document.getElementById('emsCsvStatus').innerHTML =
+                  `<div class="parse-ok">✓ Found ${emsCsvRows.length} rows and ${emsCsvHeaders.length} columns</div>`;
+                const autoMap = {
+                  company: ['company', 'customer', 'name', 'account', 'prospect'],
+                  city: ['city', 'town'],
+                  state: ['state', 'st'],
+                  zip: ['zip', 'postal'],
+                  contactName: ['contact', 'contact name', 'primary contact'],
+                  contactPhone: ['phone', 'telephone'],
+                  contactEmail: ['email', 'e-mail'],
+                  annualValue: ['value', 'annual value', 'revenue'],
+                  cscContact: ['csc', 'csc contact', 'rep', 'owner', 'sales team member'],
+                  stage: ['status'],
+                  notes: ['notes', 'comments'],
+                  clientType: ['client type', 'customer type', 'sector', 'industry', 'type of client'],
+                  saNum: ['sa #', 'sa#', 'sa number', 'service agreement', 'contract number'],
+                  webctrlVersion: ['webctrl', 'webctrl version', 'bas version', 'controls version'],
+                  renewalDate: ['renewal', 'renewal date', 'contract renewal', 'expiration', 'expiry'],
+                };
+                const mapped = {};
+                emsCsvHeaders.forEach((h, i) => {
+                  const hl = h.toLowerCase().trim();
+                  for (const [field, aliases] of Object.entries(autoMap)) {
+                    if (aliases.some((a) => hl.includes(a))) {
+                      mapped[i] = field;
+                      break;
+                    }
+                  }
+                });
+                const fieldOpts = EMS_LEAD_FIELDS.map((f) => `<option value="${f.key}">${f.label}</option>`).join('');
+                document.getElementById('emsMapBody').innerHTML = emsCsvHeaders
+                  .map(
+                    (h, i) =>
+                      `<tr><td style="font-family:var(--mono);font-size:11px;color:var(--em)">${h || '(blank)'}</td><td style="font-size:11px;color:var(--text2)">${emsCsvRows[0]?.[i] || ''}</td><td><select id="emap-${i}">${fieldOpts}</select></td></tr>`,
+                  )
+                  .join('');
+                emsCsvHeaders.forEach((_, i) => {
+                  if (mapped[i]) {
+                    const s = document.getElementById('emap-' + i);
+                    if (s) s.value = mapped[i];
+                  }
+                });
+                document.getElementById('emsColMapper').style.display = 'block';
+                document.getElementById('emsImportBtn').style.display = 'inline-flex';
+                document.getElementById('emsCsvPreview').innerHTML =
+                  'PREVIEW (first 3 rows):\n' +
+                  parsed
+                    .slice(0, 4)
+                    .map((r) => r.join(' | '))
+                    .join('\n');
+                // Show dup panel and calculate preview
+                document.getElementById('emsDupPanel').style.display = 'block';
+                emsUpdateDupPreview();
+              };
+              window.emsRunImport = function () {
+                const mapping = {};
+                emsCsvHeaders.forEach((_, i) => {
+                  const v = document.getElementById('emap-' + i)?.value;
+                  if (v) mapping[i] = v;
+                });
+                const dupMode = document.querySelector('input[name="emsDupMode"]:checked')?.value || 'merge';
 
-                            // Parse all rows into objects first
-                            const parsed = [];
-                            emsCsvRows.forEach((row) => {
-                              const obj = {
-                                id: emsGenId(),
-                                tags: [],
-                                activity: [],
-                                stage: 'Prospect',
-                                priority: 'Medium',
-                                buildings: [],
-                                createdAt: new Date().toISOString(),
-                                updatedAt: new Date().toISOString(),
-                              };
-                              Object.entries(mapping).forEach(([i, field]) => {
-                                if (field && row[i] !== undefined) obj[field] = row[+i].trim();
-                              });
-                              if (!obj.company) return;
-                              // Normalize CSC-style status strings to EMS pipeline stages
-                              const rawStage = (obj.stage || '').toLowerCase().trim();
-                              const cscStageMap = [
-                                { test: (s) => s.includes('closed won') || s === 'won', stage: 'Won' },
-                                { test: (s) => s.includes('closed lost') || s.includes('lost'), stage: 'Lost' },
-                                { test: (s) => s.includes('proposal'), stage: 'Proposal' },
-                                { test: (s) => s.includes('qualifying') || s.includes('qualify'), stage: 'Qualifying' },
-                                {
-                                  test: (s) => s.includes('prospect') || s.includes('lead') || s.includes('new'),
-                                  stage: 'Prospect',
-                                },
-                              ];
-                              const cscMatch = cscStageMap.find((m) => m.test(rawStage));
-                              if (cscMatch) obj.stage = cscMatch.stage;
-                              else {
-                                const s = EMS_STAGES.find((st) => st.toLowerCase() === rawStage);
-                                obj.stage = s || 'Prospect';
-                              }
-                              parsed.push(obj);
-                            });
+                // Parse all rows into objects first
+                const parsed = [];
+                emsCsvRows.forEach((row) => {
+                  const obj = {
+                    id: emsGenId(),
+                    tags: [],
+                    activity: [],
+                    stage: 'Prospect',
+                    priority: 'Medium',
+                    buildings: [],
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  };
+                  Object.entries(mapping).forEach(([i, field]) => {
+                    if (field && row[i] !== undefined) obj[field] = row[+i].trim();
+                  });
+                  if (!obj.company) return;
+                  // Normalize CSC-style status strings to EMS pipeline stages
+                  const rawStage = (obj.stage || '').toLowerCase().trim();
+                  const cscStageMap = [
+                    { test: (s) => s.includes('closed won') || s === 'won', stage: 'Won' },
+                    { test: (s) => s.includes('closed lost') || s.includes('lost'), stage: 'Lost' },
+                    { test: (s) => s.includes('proposal'), stage: 'Proposal' },
+                    { test: (s) => s.includes('qualifying') || s.includes('qualify'), stage: 'Qualifying' },
+                    {
+                      test: (s) => s.includes('prospect') || s.includes('lead') || s.includes('new'),
+                      stage: 'Prospect',
+                    },
+                  ];
+                  const cscMatch = cscStageMap.find((m) => m.test(rawStage));
+                  if (cscMatch) obj.stage = cscMatch.stage;
+                  else {
+                    const s = EMS_STAGES.find((st) => st.toLowerCase() === rawStage);
+                    obj.stage = s || 'Prospect';
+                  }
+                  parsed.push(obj);
+                });
 
-                            let added = 0,
-                              merged = 0,
-                              skipped = 0;
+                let added = 0,
+                  merged = 0,
+                  skipped = 0;
 
-                            if (dupMode === 'separate') {
-                              // Just push everything as individual leads
-                              parsed.forEach((obj) => {
-                                emsLeads.push(obj);
-                                added++;
-                              });
-                            } else if (dupMode === 'skip') {
-                              // Skip any row whose company already exists
-                              const existingNames = new Set(emsLeads.map((l) => (l.company || '').toLowerCase().trim()));
-                              parsed.forEach((obj) => {
-                                if (existingNames.has(obj.company.toLowerCase().trim())) {
-                                  skipped++;
-                                  return;
-                                }
-                                emsLeads.push(obj);
-                                added++;
-                                existingNames.add(obj.company.toLowerCase().trim());
-                              });
-                            } else {
-                              // MERGE mode (default)
-                              // Step 1: group parsed rows by normalised company name
-                              const groups = {};
-                              parsed.forEach((obj) => {
-                                const key = obj.company.toLowerCase().trim();
-                                if (!groups[key]) groups[key] = [];
-                                groups[key].push(obj);
-                              });
+                if (dupMode === 'separate') {
+                  // Just push everything as individual leads
+                  parsed.forEach((obj) => {
+                    emsLeads.push(obj);
+                    added++;
+                  });
+                } else if (dupMode === 'skip') {
+                  // Skip any row whose company already exists
+                  const existingNames = new Set(emsLeads.map((l) => (l.company || '').toLowerCase().trim()));
+                  parsed.forEach((obj) => {
+                    if (existingNames.has(obj.company.toLowerCase().trim())) {
+                      skipped++;
+                      return;
+                    }
+                    emsLeads.push(obj);
+                    added++;
+                    existingNames.add(obj.company.toLowerCase().trim());
+                  });
+                } else {
+                  // MERGE mode (default)
+                  // Step 1: group parsed rows by normalised company name
+                  const groups = {};
+                  parsed.forEach((obj) => {
+                    const key = obj.company.toLowerCase().trim();
+                    if (!groups[key]) groups[key] = [];
+                    groups[key].push(obj);
+                  });
 
-                              Object.entries(groups).forEach(([key, rows]) => {
-                                // Check if company already exists in emsLeads
-                                const existing = emsLeads.find((l) => (l.company || '').toLowerCase().trim() === key);
+                  Object.entries(groups).forEach(([key, rows]) => {
+                    // Check if company already exists in emsLeads
+                    const existing = emsLeads.find((l) => (l.company || '').toLowerCase().trim() === key);
 
-                                // Helper: extract a building object from a parsed row
-                                const toBldg = (obj, label) => ({
-                                  id: emsBldgId(),
-                                  name: label || '',
-                                  address: obj.address || '',
-                                  city: obj.city || '',
-                                  state: obj.state || '',
-                                  zip: obj.zip || '',
-                                  sqft: obj.buildingSqft || obj.sqft || '',
-                                  buildingType: obj.buildingType || '',
-                                  notes: obj.notes || '',
-                                });
+                    // Helper: extract a building object from a parsed row
+                    const toBldg = (obj, label) => ({
+                      id: emsBldgId(),
+                      name: label || '',
+                      address: obj.address || '',
+                      city: obj.city || '',
+                      state: obj.state || '',
+                      zip: obj.zip || '',
+                      sqft: obj.buildingSqft || obj.sqft || '',
+                      buildingType: obj.buildingType || '',
+                      notes: obj.notes || '',
+                    });
 
-                                if (existing) {
-                                  // Merge all rows as buildings onto the existing lead
-                                  if (!existing.buildings) existing.buildings = [];
-                                  rows.forEach((obj, i) => {
-                                    const bldg = toBldg(
-                                      obj,
-                                      obj.address ||
-                                        obj.city ||
-                                        (rows.length > 1 ? 'Location ' + (existing.buildings.length + 1) : ''),
-                                    );
-                                    // Only add if this building address isn't already present
-                                    const addrKey = (bldg.address + bldg.city + bldg.state).toLowerCase().trim();
-                                    const dup =
-                                      addrKey &&
-                                      existing.buildings.some(
-                                        (b) => (b.address + b.city + b.state).toLowerCase().trim() === addrKey,
-                                      );
-                                    if (!dup) {
-                                      existing.buildings.push(bldg);
-                                      merged++;
-                                    } else skipped++;
-                                  });
-                                  // Fill in any blank lead-level fields from first row
-                                  const first = rows[0];
-                                  [
-                                    'stage',
-                                    'priority',
-                                    'cscContact',
-                                    'cscEngineer',
-                                    'type',
-                                    'annualValue',
-                                    'contactName',
-                                    'contactTitle',
-                                    'contactPhone',
-                                    'contactEmail',
-                                    'nextAction',
-                                    'nextActionDate',
-                                    'lastContact',
-                                  ].forEach((f) => {
-                                    if (!existing[f] && first[f]) existing[f] = first[f];
-                                  });
-                                  existing.updatedAt = new Date().toISOString();
-                                } else {
-                                  // New company — create one lead, all rows become buildings
-                                  const lead = rows[0];
-                                  if (!lead.buildings) lead.buildings = [];
-                                  rows.forEach((obj, i) => {
-                                    const bldg = toBldg(
-                                      obj,
-                                      obj.address || obj.city || (rows.length > 1 ? 'Location ' + (i + 1) : ''),
-                                    );
-                                    lead.buildings.push(bldg);
-                                  });
-                                  emsLeads.push(lead);
-                                  added++;
-                                }
-                              });
-                            }
+                    if (existing) {
+                      // Merge all rows as buildings onto the existing lead
+                      if (!existing.buildings) existing.buildings = [];
+                      rows.forEach((obj, i) => {
+                        const bldg = toBldg(
+                          obj,
+                          obj.address ||
+                            obj.city ||
+                            (rows.length > 1 ? 'Location ' + (existing.buildings.length + 1) : ''),
+                        );
+                        // Only add if this building address isn't already present
+                        const addrKey = (bldg.address + bldg.city + bldg.state).toLowerCase().trim();
+                        const dup =
+                          addrKey &&
+                          existing.buildings.some(
+                            (b) => (b.address + b.city + b.state).toLowerCase().trim() === addrKey,
+                          );
+                        if (!dup) {
+                          existing.buildings.push(bldg);
+                          merged++;
+                        } else skipped++;
+                      });
+                      // Fill in any blank lead-level fields from first row
+                      const first = rows[0];
+                      [
+                        'stage',
+                        'priority',
+                        'cscContact',
+                        'cscEngineer',
+                        'type',
+                        'annualValue',
+                        'contactName',
+                        'contactTitle',
+                        'contactPhone',
+                        'contactEmail',
+                        'nextAction',
+                        'nextActionDate',
+                        'lastContact',
+                      ].forEach((f) => {
+                        if (!existing[f] && first[f]) existing[f] = first[f];
+                      });
+                      existing.updatedAt = new Date().toISOString();
+                    } else {
+                      // New company — create one lead, all rows become buildings
+                      const lead = rows[0];
+                      if (!lead.buildings) lead.buildings = [];
+                      rows.forEach((obj, i) => {
+                        const bldg = toBldg(
+                          obj,
+                          obj.address || obj.city || (rows.length > 1 ? 'Location ' + (i + 1) : ''),
+                        );
+                        lead.buildings.push(bldg);
+                      });
+                      emsLeads.push(lead);
+                      added++;
+                    }
+                  });
+                }
 
-                            // Re-stamp original order indices after import
-                            emsLeads.forEach((l, i) => {
-                              l._origIdx = i;
-                            });
-                            emsSave();
-                            emsCloseImport();
-                            emsRenderAll();
-                            const parts = [];
-                            if (added) parts.push(added + ' lead' + (added > 1 ? 's' : '') + ' added');
-                            if (merged) parts.push(merged + ' building' + (merged > 1 ? 's' : '') + ' merged into existing leads');
-                            if (skipped) parts.push(skipped + ' skipped');
-                            showToast((parts.join(' · ') || 'Nothing imported') + ' ✓');
-                            document.getElementById('emsCsvPaste').value = '';
-                            document.getElementById('emsColMapper').style.display = 'none';
-                            document.getElementById('emsImportBtn').style.display = 'none';
-                            document.getElementById('emsDupPanel').style.display = 'none';
-                            document.getElementById('emsCsvStatus').innerHTML = '';
-                          };
+                // Re-stamp original order indices after import
+                emsLeads.forEach((l, i) => {
+                  l._origIdx = i;
+                });
+                emsSave();
+                emsCloseImport();
+                emsRenderAll();
+                const parts = [];
+                if (added) parts.push(added + ' lead' + (added > 1 ? 's' : '') + ' added');
+                if (merged) parts.push(merged + ' building' + (merged > 1 ? 's' : '') + ' merged into existing leads');
+                if (skipped) parts.push(skipped + ' skipped');
+                showToast((parts.join(' · ') || 'Nothing imported') + ' ✓');
+                document.getElementById('emsCsvPaste').value = '';
+                document.getElementById('emsColMapper').style.display = 'none';
+                document.getElementById('emsImportBtn').style.display = 'none';
+                document.getElementById('emsDupPanel').style.display = 'none';
+                document.getElementById('emsCsvStatus').innerHTML = '';
+              };
 
-                          function emsUpdateDupPreview() {
-                            const panel = document.getElementById('emsDupPreview');
-                            if (!panel) return;
-                            // Build company name index from current CSV (requires mapping to be set, best-effort)
-                            const companyColIdx = emsCsvHeaders.findIndex((h) =>
-                              ['company', 'customer', 'name', 'account', 'prospect'].some((a) => h.toLowerCase().includes(a)),
-                            );
-                            if (companyColIdx < 0 || !emsCsvRows.length) {
-                              panel.innerHTML = '';
-                              return;
-                            }
-                            const names = emsCsvRows.map((r) => (r[companyColIdx] || '').toLowerCase().trim()).filter(Boolean);
-                            // Within-file duplicates
-                            const counts = {};
-                            names.forEach((n) => {
-                              counts[n] = (counts[n] || 0) + 1;
-                            });
-                            const inFileDups = Object.values(counts).filter((c) => c > 1).length;
-                            // Against existing leads
-                            const existingNames = new Set(emsLeads.map((l) => (l.company || '').toLowerCase().trim()));
-                            const crossDups = new Set(names.filter((n) => existingNames.has(n))).size;
-                            const parts = [];
-                            if (inFileDups)
-                              parts.push(
-                                `<span style="color:var(--warn)">${inFileDups} company name${inFileDups > 1 ? 's' : ''} appear multiple times in this file</span>`,
-                              );
-                            if (crossDups)
-                              parts.push(
-                                `<span style="color:var(--em2)">${crossDups} match${crossDups > 1 ? '' : 'es'} an existing lead</span>`,
-                              );
-                            panel.innerHTML = parts.length
-                              ? 'Detected: ' + parts.join(' · ')
-                              : '<span style="color:var(--em)">✓ No duplicates detected</span>';
-                          }
+              function emsUpdateDupPreview() {
+                const panel = document.getElementById('emsDupPreview');
+                if (!panel) return;
+                // Build company name index from current CSV (requires mapping to be set, best-effort)
+                const companyColIdx = emsCsvHeaders.findIndex((h) =>
+                  ['company', 'customer', 'name', 'account', 'prospect'].some((a) => h.toLowerCase().includes(a)),
+                );
+                if (companyColIdx < 0 || !emsCsvRows.length) {
+                  panel.innerHTML = '';
+                  return;
+                }
+                const names = emsCsvRows.map((r) => (r[companyColIdx] || '').toLowerCase().trim()).filter(Boolean);
+                // Within-file duplicates
+                const counts = {};
+                names.forEach((n) => {
+                  counts[n] = (counts[n] || 0) + 1;
+                });
+                const inFileDups = Object.values(counts).filter((c) => c > 1).length;
+                // Against existing leads
+                const existingNames = new Set(emsLeads.map((l) => (l.company || '').toLowerCase().trim()));
+                const crossDups = new Set(names.filter((n) => existingNames.has(n))).size;
+                const parts = [];
+                if (inFileDups)
+                  parts.push(
+                    `<span style="color:var(--warn)">${inFileDups} company name${inFileDups > 1 ? 's' : ''} appear multiple times in this file</span>`,
+                  );
+                if (crossDups)
+                  parts.push(
+                    `<span style="color:var(--em2)">${crossDups} match${crossDups > 1 ? '' : 'es'} an existing lead</span>`,
+                  );
+                panel.innerHTML = parts.length
+                  ? 'Detected: ' + parts.join(' · ')
+                  : '<span style="color:var(--em)">✓ No duplicates detected</span>';
+              }
 
-                          window.emsExportCSV = function () {
-                            const headers = [
-                              'Company',
-                              'Address',
-                              'City',
-                              'State',
-                              'Zip',
-                              'Contact Name',
-                              'Contact Phone',
-                              'Contact Email',
-                              'Building Type',
-                              'Sq Ft',
-                              'Annual Value',
-                              'CSC Contact',
-                              'Engineer',
-                              'Stage',
-                              'Priority',
-                              'Project Type',
-                              'Notes',
-                              'Next Action',
-                              'Next Action Date',
-                              'Last Contact',
-                              'Created',
-                            ];
-                            const rows = emsLeads.map((l) =>
-                              [
-                                l.company,
-                                l.address,
-                                l.city,
-                                l.state,
-                                l.zip,
-                                l.contactName,
-                                l.contactPhone,
-                                l.contactEmail,
-                                l.buildingType,
-                                l.buildingSqft,
-                                l.annualValue,
-                                l.cscContact,
-                                l.cscEngineer,
-                                l.stage,
-                                l.priority,
-                                l.type,
-                                l.notes,
-                                l.nextAction,
-                                l.nextActionDate,
-                                l.lastContact,
-                                l.createdAt?.split('T')[0],
-                              ].map((v) => `"${(v || '').toString().replace(/"/g, '""')}"`),
-                            );
-                            const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-                            const a = document.createElement('a');
-                            a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-                            a.download = 'EMS-Leads-' + new Date().toISOString().split('T')[0] + '.csv';
-                            a.click();
-                            showToast('Exported ✓');
-                          };
+              window.emsExportCSV = function () {
+                const headers = [
+                  'Company',
+                  'Address',
+                  'City',
+                  'State',
+                  'Zip',
+                  'Contact Name',
+                  'Contact Phone',
+                  'Contact Email',
+                  'Building Type',
+                  'Sq Ft',
+                  'Annual Value',
+                  'CSC Contact',
+                  'Engineer',
+                  'Stage',
+                  'Priority',
+                  'Project Type',
+                  'Notes',
+                  'Next Action',
+                  'Next Action Date',
+                  'Last Contact',
+                  'Created',
+                ];
+                const rows = emsLeads.map((l) =>
+                  [
+                    l.company,
+                    l.address,
+                    l.city,
+                    l.state,
+                    l.zip,
+                    l.contactName,
+                    l.contactPhone,
+                    l.contactEmail,
+                    l.buildingType,
+                    l.buildingSqft,
+                    l.annualValue,
+                    l.cscContact,
+                    l.cscEngineer,
+                    l.stage,
+                    l.priority,
+                    l.type,
+                    l.notes,
+                    l.nextAction,
+                    l.nextActionDate,
+                    l.lastContact,
+                    l.createdAt?.split('T')[0],
+                  ].map((v) => `"${(v || '').toString().replace(/"/g, '""')}"`),
+                );
+                const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+                const a = document.createElement('a');
+                a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+                a.download = 'EMS-Leads-' + new Date().toISOString().split('T')[0] + '.csv';
+                a.click();
+                showToast('Exported ✓');
+              };
 
-                          window.emsRunAI = async function (tool) {
-                            const lead = emsLeads.find((l) => l.id === emsActiveId);
-                            if (!lead) {
-                              showToast('Save lead first');
-                              return;
-                            }
-                            emsSaveDrawer();
-                            const out = document.getElementById('emsAIOutput');
-                            out.className = 'ai-output visible';
-                            out.innerHTML =
-                              '<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Generating...</div>';
-                            out.textContent = 'AI features are not available — this app has no backend API connection.';
-                          };
+              window.emsRunAI = async function (tool) {
+                const lead = emsLeads.find((l) => l.id === emsActiveId);
+                if (!lead) {
+                  showToast('Save lead first');
+                  return;
+                }
+                emsSaveDrawer();
+                const out = document.getElementById('emsAIOutput');
+                out.className = 'ai-output visible';
+                out.innerHTML =
+                  '<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Generating...</div>';
+                out.textContent = 'AI features are not available — this app has no backend API connection.';
+              };
 
-                          // Drag-drop on CSV drop zone (init after DOM ready)
-                          document.addEventListener('DOMContentLoaded', () => {
-                            const drop = document.getElementById('emsCsvDrop');
-                            if (drop) {
-                              drop.addEventListener('dragover', (e) => {
-                                e.preventDefault();
-                                drop.classList.add('over');
-                              });
-                              drop.addEventListener('dragleave', () => drop.classList.remove('over'));
-                              drop.addEventListener('drop', (e) => {
-                                e.preventDefault();
-                                drop.classList.remove('over');
-                                const f = e.dataTransfer.files[0];
-                                if (f) {
-                                  const r = new FileReader();
-                                  r.onload = (ev) => {
-                                    document.getElementById('emsCsvPaste').value = ev.target.result;
-                                    emsParseCSVPreview();
-                                  };
-                                  r.readAsText(f);
-                                }
-                              });
-                            }
-                          });
+              // Drag-drop on CSV drop zone (init after DOM ready)
+              document.addEventListener('DOMContentLoaded', () => {
+                const drop = document.getElementById('emsCsvDrop');
+                if (drop) {
+                  drop.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    drop.classList.add('over');
+                  });
+                  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+                  drop.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    drop.classList.remove('over');
+                    const f = e.dataTransfer.files[0];
+                    if (f) {
+                      const r = new FileReader();
+                      r.onload = (ev) => {
+                        document.getElementById('emsCsvPaste').value = ev.target.result;
+                        emsParseCSVPreview();
+                      };
+                      r.readAsText(f);
+                    }
+                  });
+                }
+              });
 
-                          // Init
-                          emsLoad();
-                          emsMigrateLeads(); // normalize legacy CSV data (dates, key names, bad state values)
-                          emsRenderAll(); // populate counts immediately on page load
-                          // Re-render when EMS view becomes active (handles lazy nav)
-                          const _svOrig = window.sv;
-                          window.sv = function (id, btn) {
-                            _svOrig(id, btn);
-                            if (id === 'ems') emsRenderAll();
-                          };
-                        })();
+              // Init
+              emsLoad();
+              emsMigrateLeads(); // normalize legacy CSV data (dates, key names, bad state values)
+              emsRenderAll(); // populate counts immediately on page load
+              // Re-render when EMS view becomes active (handles lazy nav)
+              const _svOrig = window.sv;
+              window.sv = function (id, btn) {
+                _svOrig(id, btn);
+                if (id === 'ems') emsRenderAll();
+              };
+            })();
           </script>
         </main>
       </div>
