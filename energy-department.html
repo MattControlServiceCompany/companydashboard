@@ -34251,6 +34251,42 @@
           });
         }
 
+        // kW regression: predict Expected kW from weather (CDD) instead of
+        // using raw baseline kW per calendar month. This normalizes demand
+        // for weather so the kW savings reflect efficiency, not temperature.
+        const _kwReg = (() => {
+          if (!isElec || !hasRegr_p) return null;
+          const pts = blRows
+            .map((r) => {
+              const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
+              const kw = bfr.length ? bfr.reduce((s, b) => s + (parseFloat(b.demandKW) || 0), 0) / bfr.length : 0;
+              return { x: r.cdd != null ? r.cdd : 0, y: kw };
+            })
+            .filter((p) => p.y > 0);
+          if (pts.length < 3) return null;
+          const n = pts.length;
+          const mx = pts.reduce((s, p) => s + p.x, 0) / n;
+          const my = pts.reduce((s, p) => s + p.y, 0) / n;
+          const ssxx = pts.reduce((s, p) => s + (p.x - mx) ** 2, 0);
+          const ssxy = pts.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0);
+          if (ssxx === 0) return null;
+          const slope = ssxy / ssxx;
+          const intercept = my - slope * mx;
+          const r2 = (() => {
+            const ssTot = pts.reduce((s, p) => s + (p.y - my) ** 2, 0);
+            const ssRes = pts.reduce((s, p) => s + (p.y - (intercept + slope * p.x)) ** 2, 0);
+            return ssTot > 0 ? Math.max(0, 1 - ssRes / ssTot) : 0;
+          })();
+          return { slope, intercept, r2, n };
+        })();
+        const _kwNormByYm = {};
+        if (_kwReg) {
+          allRows.forEach((r) => {
+            const cdd = r.cdd != null ? r.cdd : 0;
+            _kwNormByYm[r.ym] = Math.max(0, _kwReg.intercept + _kwReg.slope * cdd);
+          });
+        }
+
         // Year filter
         const maxYears = Math.max(1, Math.ceil(truePostRows.length / 12));
         const yearOptions = ['all', ...Array.from({ length: maxYears }, (_, i) => String(i + 1))];
@@ -34569,7 +34605,8 @@
             const kwhCostSav = hasKwhCostSav && kwhRate > 0 ? kwhSaved * kwhRate : 0;
 
             // kW Cost Savings: (Expected kW - Actual kW) × current $/kW rate
-            const blExpKW = blDemKWByCalMo[calMo] || 0;
+            // Use weather-normalized Expected kW when regression is available
+            const blExpKW = _kwReg && _kwNormByYm[r.ym] != null ? _kwNormByYm[r.ym] : blDemKWByCalMo[calMo] || 0;
             const moKwRate = hasKwCostSav && demKW > 0 ? kwCostRow / demKW : 0;
             const kwSaved = blExpKW - bilKW;
             const expKwCost = hasKwCostSav && moKwRate > 0 ? blExpKW * moKwRate : 0;
