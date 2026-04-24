@@ -26790,6 +26790,11 @@
           }
           localStorage.setItem(_migratedKey, '1');
         }
+        // Auto-inherit baselines: any meter with bills but no baseline gets
+        // the majority baseline from same-commodity meters in the same project
+        for (const pid of Object.keys(utilityData)) {
+          _inheritBaselinesForProject(pid);
+        }
       }
       function saveUtilityData() {
         // Write each project to its own localStorage key
