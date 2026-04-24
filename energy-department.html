@@ -34374,9 +34374,14 @@
         const totalSavings = totalExpected - totalActual;
         const savPct = totalExpected > 0 ? (totalSavings / totalExpected) * 100 : 0;
 
-        const blCost = blRows.reduce((s, r) => s + r.cost, 0);
-        const postCost = filteredPostRows.reduce((s, r) => s + r.cost, 0);
-        const savCost = blCost && postCost ? blCost - postCost : null;
+        // Sum per-month cost savings from getMeterPerfSavingsByCalMo instead of
+        // comparing raw period totals (which breaks when baseline and post-baseline
+        // have different month counts).
+        const _perfSavByMo = getMeterPerfSavingsByCalMo(m, bills, incl);
+        const _postYms = new Set(filteredPostRows.map((r) => parseInt(r.ym.split('-')[1]) - 1));
+        const savCost = Object.keys(_perfSavByMo).length
+          ? Object.entries(_perfSavByMo).reduce((s, [mo, v]) => s + v, 0)
+          : null;
 
         const last12post = truePostRows.slice(-12);
         const rolling12kWh = last12post.reduce(
