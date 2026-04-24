@@ -12484,6 +12484,19 @@
             (useCost > 0 ? '$' + Math.round(useCost).toLocaleString() : '—') +
             '</span>';
         if (euiEl) euiEl.innerHTML = 'EUI <span class="phc-val">' + eui + '</span>';
+        // Auto-update progress
+        const _p = projects.find((x) => x.id === projId);
+        if (_p) {
+          const auto = calcAutoProgress(projId);
+          if (auto !== (_p.progress || 0)) {
+            _p.progress = auto;
+            sset('en_projects', projects);
+            const f = document.getElementById('hpf');
+            if (f) f.style.width = auto + '%';
+            const inp = document.querySelector('.pd-prog-input');
+            if (inp) inp.value = auto;
+          }
+        }
       }
 
       function _dashGetBaselineBills(m) {
@@ -12935,13 +12948,47 @@
         </div>`;
       }
 
+      function calcAutoProgress(projId) {
+        const bldgs = getUDBldgs(projId);
+        if (!bldgs.length) return 0;
+        let score = 0,
+          max = 0;
+        // Has buildings (10%)
+        max += 10;
+        if (bldgs.length > 0) score += 10;
+        // Has meters (15%)
+        const meters = bldgs.flatMap((b) => b.meters || []);
+        max += 15;
+        if (meters.length > 0) score += 15;
+        // Has bills (25%) — at least 6 months of data
+        const totalBills = meters.reduce((s, m) => s + (m.bills || []).length, 0);
+        max += 25;
+        if (totalBills >= 6) score += 25;
+        else if (totalBills > 0) score += Math.round((25 * totalBills) / 6);
+        // All meters have baselines (25%)
+        const withBl = meters.filter((m) => m.baseline && m.baseline.months && m.baseline.months.length >= 3);
+        max += 25;
+        if (meters.length > 0) score += Math.round((25 * withBl.length) / meters.length);
+        // Has post-baseline data (25%)
+        max += 25;
+        const hasPost = meters.some((m) => {
+          if (!m.baseline || !m.baseline.months) return false;
+          const blEnd = m.baseline.months.slice().sort().pop();
+          return (m.bills || []).some((b) => b.start && b.start.substring(0, 7) > blEnd);
+        });
+        if (hasPost) score += 25;
+        return Math.round((score / max) * 100);
+      }
       function updateProg(id, val) {
         const p = projects.find((p) => p.id === id);
         if (!p) return;
-        const n = Math.max(0, Math.min(100, parseInt(val) || 0));
+        const auto = calcAutoProgress(id);
+        const n = Math.max(auto, Math.max(0, Math.min(100, parseInt(val) || 0)));
         p.progress = n;
         const f = document.getElementById('hpf');
         if (f) f.style.width = n + '%';
+        const inp = document.querySelector('.pd-prog-input');
+        if (inp && parseInt(inp.value) !== n) inp.value = n;
         sset('en_projects', projects);
         renderProjTable();
       }
@@ -20898,6 +20945,49 @@
         document.body.appendChild(modal);
       }
 
+      function addExtractedField() {
+        if (!window._pdfMultiBills || !window._pdfMultiBills.length) return;
+        const bill = window._pdfMultiBills[window._pdfMultiIdx || 0];
+        if (!bill) return;
+        const FIELDS = [
+          'CustomerCharge',
+          'FacilitiesCharge',
+          'BilledKWCharge',
+          'EnergyOnPeakCharge',
+          'EnergyOffPeakCharge',
+          'ECACharge',
+          'EERCharge',
+          'PTSCharge',
+          'TDCCharge',
+          'RkVACharge',
+          'TaxExemptDelivery',
+          'BillOffset',
+          'FranchiseFee',
+          'TotalCurrentCharges',
+          'kWhConsumed',
+          'ActualKW',
+          'OnPeakKWh',
+          'OffPeakKWh',
+          'GasCharge',
+          'FuelAdjustment',
+          'NaturalGasTherms',
+        ];
+        const existing = Object.keys(bill).filter((k) => bill[k] != null && bill[k] !== '');
+        const available = FIELDS.filter((f) => !existing.includes(f));
+        if (!available.length) {
+          showToast('All standard fields are populated');
+          return;
+        }
+        const sel = available[0];
+        const name = prompt('Field name to add:', sel);
+        if (!name) return;
+        const val = prompt('Value for ' + name + ':', '');
+        if (val == null) return;
+        bill[name] = val;
+        renderPDFFields(bill);
+        showToast(name + ' added ✓');
+      }
+
       function clearPDFOCR() {
         pdfB64 = null;
         window._pdfMultiBills = null;
@@ -24149,6 +24239,10 @@
             else rows.push(`<div class="ef-pair">${buildCell(extraKeys[i])}</div>`);
           }
         }
+        // Add Field button
+        rows.push(
+          `<div style="margin-top:8px;text-align:center"><button class="btn btn-ghost btn-sm" onclick="addExtractedField()" style="font-size:11px">+ Add Field</button></div>`,
+        );
         const fieldHtml = rows.filter(Boolean).join('');
         const missingHtml = '';
 
@@ -38359,6 +38453,31 @@
           }),
         );
       }
+
+      // Date paste support: normalize pasted dates into YYYY-MM-DD for type="date" inputs
+      document.addEventListener('paste', function (e) {
+        const el = e.target;
+        if (!el || el.type !== 'date') return;
+        const txt = (e.clipboardData || window.clipboardData).getData('text').trim();
+        const m =
+          txt.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/) ||
+          txt.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+        if (!m) return;
+        e.preventDefault();
+        let y, mo, d;
+        if (m[1].length === 4) {
+          y = m[1];
+          mo = m[2];
+          d = m[3];
+        } else {
+          mo = m[1];
+          d = m[2];
+          y = m[3];
+          if (y.length === 2) y = (parseInt(y) > 50 ? '19' : '20') + y;
+        }
+        el.value = y + '-' + mo.padStart(2, '0') + '-' + d.padStart(2, '0');
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      });
 
       function initUtilityTool() {
         loadUtilityData();
