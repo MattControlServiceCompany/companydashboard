@@ -23871,7 +23871,9 @@
           { section: 'Billing Period' },
           { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
           { type: 'pair', fields: ['BillDate', 'NumberOfDays'] },
+          { type: 'pair', fields: ['RateSchedule', 'BillFormat'] },
           { section: 'Meter Readings' },
+          { type: 'pair', fields: ['MeterNumber', 'ReadDifference'] },
           { type: 'pair', fields: ['StartRead', 'EndRead'] },
           { type: 'pair', fields: ['NaturalGasTherms', 'NaturalGasCCF'] },
           { section: 'Charges' },
@@ -23895,10 +23897,20 @@
           { type: 'pair', fields: ['AccountNumber', 'Commodity'] },
           { section: 'Billing Period' },
           { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
-          { type: 'pair', fields: ['BillDate'] },
+          { type: 'pair', fields: ['BillDate', 'NumberOfDays'] },
+          { section: 'Meter Readings' },
+          { type: 'pair', fields: ['MeterNumber', 'RateSchedule'] },
+          { type: 'pair', fields: ['StartRead', 'EndRead'] },
           { section: 'Charges' },
           { type: 'pair', fields: ['WaterUsage'] },
-          { type: 'charge-line', label: 'Water', chargeField: 'WaterCharge', rateKey: null },
+          {
+            type: 'charge-line',
+            label: 'Water',
+            chargeField: 'WaterCharge',
+            qtyField: 'WaterUsage',
+            unit: 'Gal',
+            rateKey: null,
+          },
           { type: 'charge-line', label: 'Water Protection Fee', chargeField: 'WaterProtectionFee', rateKey: null },
           { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
         ];
@@ -23910,10 +23922,17 @@
           { type: 'pair', fields: ['AccountNumber', 'Commodity'] },
           { section: 'Billing Period' },
           { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
-          { type: 'pair', fields: ['BillDate'] },
+          { type: 'pair', fields: ['BillDate', 'NumberOfDays'] },
           { section: 'Charges' },
           { type: 'pair', fields: ['SewerUsage'] },
-          { type: 'charge-line', label: 'Sewer', chargeField: 'SewerCharge', rateKey: null },
+          {
+            type: 'charge-line',
+            label: 'Sewer',
+            chargeField: 'SewerCharge',
+            qtyField: 'SewerUsage',
+            unit: 'Gal',
+            rateKey: null,
+          },
           { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
         ];
         const _LAYOUT_STORMWATER = [
@@ -23924,7 +23943,7 @@
           { type: 'pair', fields: ['AccountNumber', 'Commodity'] },
           { section: 'Billing Period' },
           { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
-          { type: 'pair', fields: ['BillDate'] },
+          { type: 'pair', fields: ['BillDate', 'NumberOfDays'] },
           { section: 'Charges' },
           { type: 'charge-line', label: 'Stormwater', chargeField: 'StormWaterCharge', rateKey: null },
           { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
@@ -24244,7 +24263,11 @@
               const qtyHtml = row.qtyField
                 ? buildCell(row.qtyField)
                 : `<div class="ef-item" style="opacity:.5"><div class="ef-key">${noRateLabel}</div><input class="ef-input" value="" data-key="_qty_${row.chargeField}" placeholder="—"></div>`;
-              const rateHtml = buildRateBox(noRateLabel + ' Rate', '');
+              const qtyVal = row.qtyField ? parseFloat(parsed[row.qtyField]) || 0 : 0;
+              const computedRate = qtyVal > 0 && chargeVal > 0 ? chargeVal / qtyVal : 0;
+              const rateUnit = row.unit || '';
+              const rateStr = computedRate > 0 ? '$' + computedRate.toFixed(5) + (rateUnit ? '/' + rateUnit : '') : '';
+              const rateHtml = buildRateBox(noRateLabel + ' Rate', rateStr);
               return `<div class="ef-charge-row">${qtyHtml}${rateHtml}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
             }
 
@@ -24318,7 +24341,7 @@
             // Compute total rates inline with Total Current Charges row
             let _kwhRateCell = '<div></div>',
               _kwRateCell = '<div></div>';
-            if (parsed._rates && parsed.Commodity !== 'Gas') {
+            if (parsed._rates) {
               const _gr = (k) => (parsed._rates[k] && parsed._rates[k].rate > 0 ? parsed._rates[k].rate : 0);
               const kwhRate =
                 _gr('EnergyOnPeakCharge') +
@@ -24331,6 +24354,22 @@
                 _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/kWh</div><input class="ef-input" value="$${kwhRate.toFixed(5)}/kWh" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
               if (kwRate > 0)
                 _kwRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/kW</div><input class="ef-input" value="$${kwRate.toFixed(3)}/kW" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
+            }
+            if (parsed.Commodity === 'Gas' || _detectCommodity(parsed) === 'gas') {
+              const therms = parseFloat(parsed.NaturalGasTherms) || 0;
+              const gasCharge = parseFloat(parsed.GasCharge) || 0;
+              if (therms > 0 && gasCharge > 0) {
+                const gasRate = gasCharge / therms;
+                _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/Therm</div><input class="ef-input" value="$${gasRate.toFixed(5)}/Therm" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
+              }
+            }
+            if (parsed.Commodity === 'Water' || _detectCommodity(parsed) === 'water') {
+              const usage = parseFloat(parsed.WaterUsage) || 0;
+              const waterCharge = parseFloat(parsed.WaterCharge) || 0;
+              if (usage > 0 && waterCharge > 0) {
+                const waterRate = waterCharge / usage;
+                _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/Gal</div><input class="ef-input" value="$${waterRate.toFixed(5)}/Gal" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
+              }
             }
             return `<div style="border-top:2px solid var(--border);margin-top:4px;padding-top:4px"><div class="ef-charge-row">${_kwhRateCell}${_kwRateCell}<div class="ef-item center" style="${itemStyle}"><div class="ef-key" style="color:${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges ?? '') !== '' ? '$' + totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px;text-align:center"></div><div class="ef-running ${cls}" style="font-weight:700;font-size:11px;flex-direction:column;align-items:flex-end"><span>$${rtFmt}${icon}</span>${diffLine}</div></div></div>`;
           }
@@ -28789,7 +28828,7 @@
           if (row.Meter1_ReadStart) {
             rowHtml = rowHtml.replace(
               '<tr>',
-              "<tr style=\"cursor:pointer\" onclick=\"if(event.target.closest('button')||event.target.closest('.btn-edit')||event.target.closest('.btn-del'))return;toggleMeterDetail('" +
+              "<tr style=\"cursor:pointer\" onclick=\"if(event.target.closest('button')||event.target.closest('.btn-edit')||event.target.closest('.btn-del')){event.stopPropagation();return;}toggleMeterDetail('" +
                 row.id +
                 '\')">',
             );
@@ -28800,7 +28839,7 @@
           } else if (row._chargeParts && Object.keys(row._chargeParts).length) {
             rowHtml = rowHtml.replace(
               '<tr>',
-              "<tr style=\"cursor:pointer\" onclick=\"if(event.target.closest('button')||event.target.closest('.btn-edit')||event.target.closest('.btn-del'))return;toggleChargeDetail('" +
+              "<tr style=\"cursor:pointer\" onclick=\"if(event.target.closest('button')||event.target.closest('.btn-edit')||event.target.closest('.btn-del')){event.stopPropagation();return;}toggleChargeDetail('" +
                 row.id +
                 '\')">',
             );
@@ -36093,8 +36132,21 @@
         if (pid) udSelProjId = pid;
         if (bid) udSelBldgId = bid;
         const b = getUDBldg(udSelProjId, udSelBldgId);
+        if (!b) {
+          showToast('Could not find building — try reselecting it', 'error');
+          console.error('deleteAllBills: building not found', { pid: udSelProjId, bid: udSelBldgId });
+          return;
+        }
         const m = b?.meters?.find((m) => m.id === mid);
-        if (!m || !m.bills || !m.bills.length) return;
+        if (!m) {
+          showToast('Could not find meter — try reselecting it', 'error');
+          console.error('deleteAllBills: meter not found', { mid, building: b.name });
+          return;
+        }
+        if (!m.bills || !m.bills.length) {
+          showToast('No bills to clear');
+          return;
+        }
         const count = m.bills.length;
         if (
           !(await confirmAsync(
@@ -36660,8 +36712,15 @@
         udSelMeterId = mid;
         udBillEditId = editRowId || null;
         const b = getUDBldg(udSelProjId, udSelBldgId);
+        if (!b) {
+          showToast('Could not find building — try reselecting it', 'error');
+          return;
+        }
         const m = b?.meters?.find((m) => m.id === mid);
-        if (!m) return;
+        if (!m) {
+          showToast('Could not find meter — try reselecting it', 'error');
+          return;
+        }
         const row = editRowId ? m.bills.find((r) => r.id === editRowId) : null;
         document.getElementById('billModalTitle').textContent = row
           ? '✏️ Edit Billing Period'
