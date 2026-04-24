@@ -23608,6 +23608,8 @@
           BillOffset: 'Bill Offset',
           FranchiseFee: 'Franchise Fee',
           TotalCurrentCharges: 'Total Current Charges',
+          TotalKWhRate: 'Total $/kWh Rate',
+          TotalKWRate: 'Total $/kW Rate',
           NaturalGasTherms: 'Natural Gas Therms',
           NaturalGasCCF: 'Natural Gas (CCF)',
           GasCharge: 'Gas Charge',
@@ -36156,6 +36158,9 @@
           { key: 'billOffset', label: 'Bill Offset', type: 'currency', pdfKey: 'BillOffset' },
           { key: 'franchiseFee', label: 'Franchise Fee', type: 'currency', pdfKey: 'FranchiseFee' },
           { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
+          { section: 'Rates' },
+          { key: 'totalKwhRate', label: 'Total $/kWh Rate', type: 'rate5', pdfKey: 'TotalKWhRate' },
+          { key: 'totalKwRate', label: 'Total $/kW Rate', type: 'rate3', pdfKey: 'TotalKWRate' },
         ],
         Gas: [
           { section: 'Account Info' },
@@ -36309,6 +36314,14 @@
           // Default numeric fields (e.g. numberOfDays) — integer display.
           return (+val).toLocaleString('en-US');
         }
+        if (entry.type === 'rate5') {
+          if (!hasVal || +val === 0) return '—';
+          return '$' + (+val).toFixed(5);
+        }
+        if (entry.type === 'rate3') {
+          if (!hasVal || +val === 0) return '—';
+          return '$' + (+val).toFixed(3);
+        }
         if (entry.type === 'date') return val ? fmtDate(val) : '—';
         return val || '—';
       }
@@ -36326,6 +36339,8 @@
           if (/kw$/i.test(entry.key) || /rkva/i.test(entry.key)) return 95;
           return 95;
         }
+        if (entry.type === 'rate5') return 100;
+        if (entry.type === 'rate3') return 85;
         return 95;
       }
 
@@ -36385,6 +36400,8 @@
           { type: 'charge-line', label: 'Bill Offset', chargeField: 'BillOffset' },
           { type: 'charge-line', label: 'Franchise Fee', chargeField: 'FranchiseFee' },
           { type: 'total', chargeField: 'TotalCurrentCharges' },
+          { section: 'Rates' },
+          { type: 'pair', fields: ['TotalKWhRate', 'TotalKWRate'] },
         ],
         gas: [
           { section: 'Account Info' },
