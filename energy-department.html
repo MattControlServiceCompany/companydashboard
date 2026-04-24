@@ -4000,9 +4000,10 @@
         text-overflow: clip;
       }
       .ud-bill-gap-row td {
-        padding: 6px 10px;
-        background: var(--s2);
-        border-bottom: 1px solid var(--border);
+        padding: 10px 14px;
+        background: rgba(239, 68, 68, 0.12);
+        border-top: 2px solid rgba(239, 68, 68, 0.5);
+        border-bottom: 2px solid rgba(239, 68, 68, 0.5);
         position: sticky;
         left: 0;
         z-index: 5;
@@ -4174,12 +4175,13 @@
         cursor: pointer;
       }
       .ud-bill-gap-msg {
-        font-size: 11px;
-        color: var(--warn);
-        font-weight: 600;
+        font-size: 13px;
+        color: #ef4444;
+        font-weight: 700;
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
+        letter-spacing: 0.01em;
       }
       .norm-info-btn {
         background: none;
@@ -28818,9 +28820,19 @@
         });
         const isPropaneMeter = (m.commodity || '').toLowerCase() === 'propane';
         bills.forEach((row, idx) => {
-          if (idx > 0 && !isPropaneMeter && detectGap(bills[idx - 1].end, row.start)) {
-            const gapDays = Math.round((_parseISO(row.start) - _parseISO(bills[idx - 1].end)) / (1000 * 60 * 60 * 24));
-            tblBody += `<tr class="ud-bill-gap-row"><td colspan="${cols.length}"><div class="ud-bill-gap-msg">⚠️ Gap in data — ${gapDays} day${gapDays !== 1 ? 's' : ''} missing between ${fmtDate(bills[idx - 1].end)} and ${fmtDate(row.start)}</div></td></tr>`;
+          if (idx > 0 && !isPropaneMeter) {
+            let prevEnd = bills[idx - 1].end;
+            let curStart = row.start;
+            if (!prevEnd || !curStart) {
+              let pi = idx - 1;
+              while (pi >= 0 && !bills[pi].end) pi--;
+              prevEnd = pi >= 0 ? bills[pi].end : null;
+            }
+            if (detectGap(prevEnd, curStart)) {
+              const gapDays = Math.round((_parseISO(curStart) - _parseISO(prevEnd)) / (1000 * 60 * 60 * 24));
+              const gapMonths = Math.round(gapDays / 30);
+              tblBody += `<tr class="ud-bill-gap-row"><td colspan="${cols.length}"><div class="ud-bill-gap-msg">⚠️ Gap in data — ${gapMonths > 1 ? '~' + gapMonths + ' months (' : ''}${gapDays} day${gapDays !== 1 ? 's' : ''}${gapMonths > 1 ? ')' : ''} missing between ${fmtDate(prevEnd)} and ${fmtDate(curStart)}</div></td></tr>`;
+            }
           }
           const flags = billFlags[row.id] || [];
           if (flags.length) flagCount++;
