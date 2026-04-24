@@ -12670,6 +12670,7 @@
                   new Date(last + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
               }
               // Normalized baseline cost per calendar month
+              const blBills = _dashGetBaselineBills(m);
               const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
               const blRows = allRows.filter((r) => bl.months.includes(r.ym));
               const { elecByMo: eM, gasByMo: gM } = buildMoMap(m, blRows, bills, incl);
