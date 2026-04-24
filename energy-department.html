@@ -37180,11 +37180,14 @@
         saveUtilityData();
         closeMeterModal();
         renderUDProjList();
-        renderUDDetail();
-        renderProjTable();
+        const isEmbed = window._udActiveWrap && window._udActiveWrap !== document.getElementById('udDetailWrap');
+        renderUDDetail(isEmbed ? window._udActiveWrap : undefined);
         renderSidebarFolders();
-        const ap3 = projects.find((p) => p.id == udSelProjId);
-        if (ap3 && document.getElementById('projDetailView')?.style.display !== 'none') renderDetail(ap3);
+        if (isEmbed) {
+          renderProjTable();
+          const ap3 = projects.find((p) => p.id == udSelProjId);
+          if (ap3 && document.getElementById('projDetailView')?.style.display !== 'none') renderDetail(ap3);
+        }
       }
 
       /* ── LINK FROM PROJECT DETAIL UTILITY TAB ── */
