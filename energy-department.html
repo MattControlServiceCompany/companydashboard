@@ -18012,8 +18012,8 @@
               return m2 ? fixDate(m2[1]) : null;
             };
             const billDate = _findDate('Bill[ \\t\\n\\r]*Date');
-            const serviceFrom = _findDate('Service[ \\t\\n\\r]*From');
-            const serviceTo = _findDate('Service[ \\t\\n\\r]*To');
+            let serviceFrom = _findDate('Service[ \\t\\n\\r]*From');
+            let serviceTo = _findDate('Service[ \\t\\n\\r]*To');
             console.log('[BillingDetail] Dates:', { billDate, serviceFrom, serviceTo, acct });
             const custMatch = page.match(/USD\s*(\d{3,4})\s+([A-Z][A-Z0-9 .&\-]+?)(?:\n|BOX|\s{3,})/);
             const CustomerName = custMatch ? 'USD ' + custMatch[1] + ' ' + custMatch[2].trim() : null;
