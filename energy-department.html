@@ -22244,7 +22244,11 @@
           dz = document.getElementById('dz-title');
         document.getElementById('extractMethodBadge').style.display = 'none';
         window._pdfSourceFileName = file.name;
-        dz.textContent = '📄 ' + file.name + ' — reading...';
+        window._pdfAbort = false;
+        dz.innerHTML =
+          '📄 ' +
+          file.name +
+          ' — reading... <button class="btn btn-ghost btn-sm" style="margin-left:8px;font-size:10px" onclick="event.stopPropagation();window._pdfAbort=true;clearPDFOCR();showToast(\'Extraction cancelled\')">✕ Cancel</button>';
         box.innerHTML =
           '<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Reading PDF...</div>';
         globalTaskShow('📄 Extracting ' + file.name + '...', 'pdf');
