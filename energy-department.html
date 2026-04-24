@@ -17436,6 +17436,10 @@
               (/Due\s*Date/i.test(page) && /^\s*GS\s+[\d,.]+/m.test(page))
             )
               return this._extractBillingInquiry(page);
+            if (/BILL\s+(?:GS|WT|SW|ST|FA|WP)/i.test(page)) return this._extractBillingDetail(page);
+            if (/Due\s*Date/i.test(page) && /\bGS\b/i.test(page)) return this._extractBillingInquiry(page);
+            if (/Account\s*(?:Number|#)/i.test(page) && /\b(?:GS|Gas|TOTAL)\b/i.test(page))
+              return this._extractBillingInquiry(page);
             if (/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(page) && /\$?\d[\d,]*\.\d{2}/.test(page)) {
               const r = this._extractOld(page);
               if (r && (Array.isArray(r) ? r : [r]).some((b) => b.TotalAmountDue || b.TotalCurrentCharges)) return r;
@@ -18045,8 +18049,19 @@
               wpfAmt = null,
               waterAmt = null,
               waterUsage = null;
+            if (!serviceFrom && !serviceTo) {
+              const datePat = /(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/g;
+              const allDates = [...page.matchAll(datePat)].map((x) => fixDate(x[1]));
+              const serviceDates = allDates.filter((d) => d && d !== billDate && !/^1[12]\/|^0?[789]\//.test(d));
+              if (serviceDates.length >= 2) {
+                serviceFrom = serviceFrom || serviceDates[0];
+                serviceTo = serviceTo || serviceDates[1];
+                shared.BillingPeriodStart = serviceFrom;
+                shared.BillingPeriodEnd = serviceTo;
+              }
+            }
             for (const ln of lines) {
-              const m = ln.match(/BILL\s+(GS|FA|ST|SW|WP|WT)\s+(.*)/i);
+              const m = ln.match(/(?:BILL\s+)?(GS|FA|ST|SW|WP|WT)\b\s+([\d].*)/i);
               if (!m) continue;
               const code = m[1].toUpperCase();
               const nums = [...m[2].matchAll(/-?[\d,]+(?:\.\d+)?/g)].map((x) => parseFloat(x[0].replace(/,/g, '')));
