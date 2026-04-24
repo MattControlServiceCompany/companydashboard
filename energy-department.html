@@ -24120,6 +24120,23 @@
           }
           return '';
         });
+        // Total $/kWh and $/kW rates (sum of individual charge rates)
+        if (parsed._rates && parsed.Commodity !== 'Gas') {
+          const _gr = (k) => (parsed._rates[k] && parsed._rates[k].rate > 0 ? parsed._rates[k].rate : 0);
+          const kwhRate =
+            _gr('EnergyOnPeakCharge') +
+            _gr('EnergyOffPeakCharge') +
+            _gr('ECACharge') +
+            _gr('EERCharge') +
+            _gr('PTSCharge');
+          const kwRate = _gr('FacilitiesCharge') + _gr('BilledKWCharge') + _gr('TDCCharge');
+          if (kwhRate > 0 || kwRate > 0) {
+            rows.push(`<div class="ef-pair" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
+              ${kwhRate > 0 ? `<div class="ef-item"><div class="ef-key" style="color:var(--em)">Total $/kWh Rate</div><input class="ef-input" value="$${kwhRate.toFixed(5)}/kWh" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent"></div>` : ''}
+              ${kwRate > 0 ? `<div class="ef-item"><div class="ef-key" style="color:var(--em)">Total $/kW Rate</div><input class="ef-input" value="$${kwRate.toFixed(5)}/kW" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent"></div>` : ''}
+            </div>`);
+          }
+        }
         // Append extra fields not in layout
         if (extraKeys.length) {
           for (let i = 0; i < extraKeys.length; i += 2) {
