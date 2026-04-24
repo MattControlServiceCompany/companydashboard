@@ -28735,7 +28735,9 @@
           if (row.Meter1_ReadStart) {
             rowHtml = rowHtml.replace(
               '<tr>',
-              '<tr style="cursor:pointer" onclick="toggleMeterDetail(\'' + row.id + '\')">',
+              "<tr style=\"cursor:pointer\" onclick=\"if(event.target.closest('button')||event.target.closest('.btn-edit')||event.target.closest('.btn-del'))return;toggleMeterDetail('" +
+                row.id +
+                '\')">',
             );
             rowHtml = rowHtml.replace(
               /(<td class="norm-mon-cell[^"]*"[^>]*>)/,
@@ -28744,7 +28746,9 @@
           } else if (row._chargeParts && Object.keys(row._chargeParts).length) {
             rowHtml = rowHtml.replace(
               '<tr>',
-              '<tr style="cursor:pointer" onclick="toggleChargeDetail(\'' + row.id + '\')">',
+              "<tr style=\"cursor:pointer\" onclick=\"if(event.target.closest('button')||event.target.closest('.btn-edit')||event.target.closest('.btn-del'))return;toggleChargeDetail('" +
+                row.id +
+                '\')">',
             );
             rowHtml = rowHtml.replace(
               /(<td class="norm-mon-cell[^"]*"[^>]*>)/,
