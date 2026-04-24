@@ -12657,16 +12657,17 @@
               const bl = m.baseline;
               if (!bl || !bl.months || bl.months.length < 3) return;
               hasBaseline = true;
-              // Baseline period label
-              const blBills = _dashGetBaselineBills(m);
-              if (blBills.length && !blPeriod) {
-                const first = blBills[0].start,
-                  last = blBills[blBills.length - 1].end || blBills[blBills.length - 1].start;
-                if (first)
-                  blPeriod =
-                    new Date(first + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) +
-                    ' – ' +
-                    new Date(last + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+              // Baseline period label — use baseline MONTHS, not raw bill dates,
+              // because bill start dates can fall in the prior month (e.g., a bill
+              // starting Dec 28 belongs to the Jan baseline month).
+              if (!blPeriod && bl.months.length) {
+                const sorted = bl.months.slice().sort();
+                const first = sorted[0] + '-01',
+                  last = sorted[sorted.length - 1] + '-01';
+                blPeriod =
+                  new Date(first + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) +
+                  ' – ' +
+                  new Date(last + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
               }
               // Normalized baseline cost per calendar month
               const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
@@ -12750,15 +12751,16 @@
                   allKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
                 }
               });
-              // Baseline period label
-              if (blBills.length) {
-                const first = blBills[0].start,
-                  last = blBills[blBills.length - 1].end || blBills[blBills.length - 1].start;
-                if (first && !blPeriod)
-                  blPeriod =
-                    new Date(first + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) +
-                    ' – ' +
-                    new Date(last + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+              // Baseline period label — use baseline months, not raw bill dates
+              const bl = m.baseline;
+              if (bl && bl.months && bl.months.length && !blPeriod) {
+                const sorted = bl.months.slice().sort();
+                const first = sorted[0] + '-01',
+                  last = sorted[sorted.length - 1] + '-01';
+                blPeriod =
+                  new Date(first + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) +
+                  ' – ' +
+                  new Date(last + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
               }
             });
           }
