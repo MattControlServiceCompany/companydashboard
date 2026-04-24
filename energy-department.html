@@ -34571,22 +34571,22 @@
           const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
 
           if (isElec) {
-            // kWh savings = (Expected - Actual) × current total $/kWh rate
+            // kWh savings = (Expected - Actual) × current blended $/kWh rate
+            // Always use actual costs/usage for rate — stored totalKwhRate sums
+            // on-peak + off-peak rates which double-counts (a kWh is one or the other)
             const n = bfr.length;
             const actKwh = actUsage;
-            const storedKwhRate = bfr.reduce((s, b) => s + (parseFloat(b.totalKwhRate) || 0), 0) / Math.max(1, n);
             const kwhCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwhCost || 0), 0);
-            const kwhRate = storedKwhRate > 0 ? storedKwhRate : actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0;
+            const kwhRate = actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0;
             const kwhSaved = expUsage - actKwh;
             const kwhCostSav = kwhRate > 0 ? kwhSaved * kwhRate : 0;
 
-            // kW savings = (Expected kW - Actual kW) × current total $/kW rate
+            // kW savings = (Expected kW - Actual kW) × current $/kW rate
             const blExpKW = blDemKWByCalMo[calMo] || 0;
             const actDemKW = bfr.reduce((s, b) => s + parseFloat(b.demandKW || 0), 0) / Math.max(1, n);
-            const storedKwRate = bfr.reduce((s, b) => s + (parseFloat(b.totalKwRate) || 0), 0) / Math.max(1, n);
             const kwCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwCost || 0), 0);
             const facKWCostAmt = bfr.reduce((s, b) => s + parseFloat(b.facKWCost || 0), 0);
-            const moKwRate = storedKwRate > 0 ? storedKwRate : actDemKW > 0 ? (kwCostAmt + facKWCostAmt) / actDemKW : 0;
+            const moKwRate = actDemKW > 0 ? (kwCostAmt + facKWCostAmt) / actDemKW : 0;
             const kwSaved = blExpKW - actDemKW;
             const kwCostSav = blExpKW > 0 && moKwRate > 0 ? kwSaved * moKwRate : 0;
 
@@ -34934,12 +34934,8 @@
               kwhCostAmt,
               energyCostAmt,
               totalBillCost,
-              kwhRate:
-                bfr.reduce((s, b) => s + (parseFloat(b.totalKwhRate) || 0), 0) / n ||
-                (actualKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actualKwh : 0),
-              kwRate:
-                bfr.reduce((s, b) => s + (parseFloat(b.totalKwRate) || 0), 0) / n ||
-                (bilKW > 0 && kwCostAmt + facKWCostAmt > 0 ? (kwCostAmt + facKWCostAmt) / bilKW : 0),
+              kwhRate: actualKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actualKwh : 0,
+              kwRate: bilKW > 0 && kwCostAmt + facKWCostAmt > 0 ? (kwCostAmt + facKWCostAmt) / bilKW : 0,
             };
           });
         }
