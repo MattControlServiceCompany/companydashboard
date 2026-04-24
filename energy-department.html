@@ -29121,15 +29121,62 @@
           });
         }
 
-        // Also handle the first delivery: it has no prior delivery, so we can
-        // only assign it to its own month as a lump (no normalization possible).
-        if (sorted.length === 1) {
+        // First delivery: estimate how far back consumption started using
+        // the gal/HDD rate from the next inter-delivery period, then distribute
+        // backwards via HDD weighting. If only 1 delivery exists, assign as lump.
+        if (sorted.length >= 1) {
           const d = sorted[0];
           const gal = parseFloat(d.gallonsDelivered || d.kwh) || 0;
           const cost = parseFloat(d.totalCost) || 0;
-          const ym = d.start.slice(0, 7);
           if (gal > 0) {
-            result[ym] = { gallons: gal, cost: cost };
+            if (sorted.length === 1) {
+              const ym = d.start.slice(0, 7);
+              result[ym] = { gallons: gal, cost: cost };
+            } else {
+              // Estimate consumption rate from the first measured period
+              const d2 = sorted[1];
+              const g2 = parseFloat(d2.gallonsDelivered || d2.kwh) || 0;
+              const s1 = _parseISO(d.start),
+                s2 = _parseISO(d2.start);
+              const period1Spans = monthSpans(s1, s2);
+              let period1HDD = 0;
+              period1Spans.forEach(function (s) {
+                const w = hddByMonth && hddByMonth[s.ym];
+                const calDays = calDaysInMonth(s.ym);
+                period1HDD += w && w.hdd ? w.hdd * (s.days / calDays) : 0;
+              });
+              const galPerHDD = period1HDD > 0 && g2 > 0 ? g2 / period1HDD : 0;
+              // Walk backwards from delivery date until accumulated HDD accounts
+              // for the first delivery's gallons (or max 6 months back)
+              const targetHDD = galPerHDD > 0 ? gal / galPerHDD : 0;
+              let accHDD = 0;
+              const backSpans = [];
+              const deliveryDate = _parseISO(d.start);
+              for (let mo = 0; mo < 6; mo++) {
+                const dt = new Date(deliveryDate);
+                dt.setMonth(dt.getMonth() - mo);
+                const ym = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
+                const w = hddByMonth && hddByMonth[ym];
+                const moHDD = w && w.hdd ? w.hdd : 0;
+                // First month: only count days up to delivery date
+                const calDays = calDaysInMonth(ym);
+                const frac = mo === 0 ? Math.max(1, deliveryDate.getDate()) / calDays : 1;
+                const hdd = moHDD * frac;
+                backSpans.unshift({ ym, hdd });
+                accHDD += hdd;
+                if (targetHDD > 0 && accHDD >= targetHDD) break;
+              }
+              // Distribute first delivery's gallons across back-spans by HDD
+              const totalBackHDD = backSpans.reduce(function (s, b) {
+                return s + b.hdd;
+              }, 0);
+              backSpans.forEach(function (s) {
+                const share = totalBackHDD > 0 ? s.hdd / totalBackHDD : 1 / backSpans.length;
+                if (!result[s.ym]) result[s.ym] = { gallons: 0, cost: 0 };
+                result[s.ym].gallons += gal * share;
+                result[s.ym].cost += cost * share;
+              });
+            }
           }
         }
 
