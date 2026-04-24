@@ -1401,6 +1401,10 @@
       .fta:focus {
         border-color: var(--accent, var(--em));
       }
+      .fi[type='date']::-webkit-calendar-picker-indicator {
+        filter: invert(0.7);
+        cursor: pointer;
+      }
       .fs option {
         background: var(--s2);
       }
@@ -10440,7 +10444,7 @@
             </div>
             <div class="f2">
               <div class="fg">
-                <label class="fl">Building Type</label>
+                <label class="fl">Project Type</label>
                 <select class="fs" id="mp-type">
                   <option>K-12 School</option>
                   <option>College / University</option>
@@ -10453,68 +10457,18 @@
                   <option>Other</option>
                 </select>
               </div>
-              <div class="fg">
-                <label class="fl">Square Footage</label
-                ><input class="fi" id="mp-sqft" type="number" placeholder="180000" />
-              </div>
+              <div class="fg"></div>
             </div>
-            <div class="modal-sect">HVAC Equipment</div>
-            <div class="f2">
-              <div class="fg">
-                <label class="fl">Cooling System</label>
-                <select class="fs" id="mp-coolType">
-                  <option value="">— Select —</option>
-                  <option>Chiller Plant</option>
-                  <option>DX Split System</option>
-                  <option>DX Packaged/RTU</option>
-                  <option>Heat Pump</option>
-                  <option>PTAC/PTHP</option>
-                  <option>VRF</option>
-                  <option>Evaporative</option>
-                  <option>None</option>
-                </select>
-              </div>
-              <div class="fg">
-                <label class="fl">Heating System</label>
-                <select class="fs" id="mp-heatType">
-                  <option value="">— Select —</option>
-                  <option>Gas Furnace</option>
-                  <option>Gas Boiler / Hot Water Plant</option>
-                  <option>Electric Furnace</option>
-                  <option>Electric Boiler</option>
-                  <option>Heat Pump</option>
-                  <option>VRF</option>
-                  <option>Steam</option>
-                  <option>Radiant</option>
-                  <option>None</option>
-                </select>
-              </div>
-            </div>
-            <div class="f2">
-              <div class="fg">
-                <label class="fl">Cooling Efficiency</label>
-                <div style="display: flex; gap: 6px">
-                  <input class="fi" id="mp-coolEff" type="number" step="0.01" placeholder="e.g. 0.86" />
-                  <select class="fs" id="mp-coolEffUnit" style="width: 100px">
-                    <option>kW/Ton</option>
-                    <option>EER</option>
-                    <option>SEER</option>
-                    <option>COP</option>
-                  </select>
-                </div>
-              </div>
-              <div class="fg">
-                <label class="fl">Heating Efficiency</label>
-                <div style="display: flex; gap: 6px">
-                  <input class="fi" id="mp-heatEff" type="number" step="0.01" placeholder="e.g. 0.80" />
-                  <select class="fs" id="mp-heatEffUnit" style="width: 100px">
-                    <option>AFUE</option>
-                    <option>COP</option>
-                    <option>HSPF</option>
-                  </select>
-                </div>
-              </div>
-            </div>
+            <!-- HVAC Equipment and SQFT moved to Building level -->
+            <input type="hidden" id="mp-sqft" />
+            <input type="hidden" id="mp-coolType" /><input type="hidden" id="mp-coolEff" /><input
+              type="hidden"
+              id="mp-coolEffUnit"
+            />
+            <input type="hidden" id="mp-heatType" /><input type="hidden" id="mp-heatEff" /><input
+              type="hidden"
+              id="mp-heatEffUnit"
+            />
             <div class="modal-sect">People &amp; Status</div>
             <div class="f2">
               <div class="fg">
@@ -10555,74 +10509,18 @@
               type="hidden"
               id="mp-email"
             />
-            <div class="modal-sect">Client Contacts</div>
-            <div id="mp-contacts-list" class="cc-list"></div>
-            <div class="cc-add-row" id="mp-cc-add-row">
-              <div class="fg cc-add-full" style="margin: 0">
-                <div
-                  style="
-                    font-size: 11px;
-                    font-weight: 700;
-                    color: var(--text2);
-                    text-transform: uppercase;
-                    letter-spacing: 0.5px;
-                    margin-bottom: 8px;
-                  "
-                  id="cc-add-label"
-                >
-                  Add Contact
-                </div>
-              </div>
-              <div class="fg" style="margin: 0">
-                <label class="fl" style="margin-bottom: 4px">Title</label>
-                <select class="fs" id="cc-title">
-                  <option value="">— Select Title —</option>
-                  <option>Owner</option>
-                  <option>Facilities Director</option>
-                  <option>Facilities Manager</option>
-                  <option>Energy Manager</option>
-                  <option>Project Manager</option>
-                  <option>Engineer</option>
-                  <option>Maintenance Supervisor</option>
-                  <option>Operations Manager</option>
-                  <option>Procurement Officer</option>
-                  <option>Financial Officer</option>
-                  <option>IT Director</option>
-                  <option>Executive Director</option>
-                  <option>Superintendent</option>
-                  <option>Other</option>
-                </select>
-              </div>
-              <div style="display: flex; gap: 6px">
-                <div class="fg" style="margin: 0; flex: 1">
-                  <label class="fl" style="margin-bottom: 4px">First Name</label
-                  ><input class="fi" id="cc-first" placeholder="First" />
-                </div>
-                <div class="fg" style="margin: 0; flex: 1">
-                  <label class="fl" style="margin-bottom: 4px">Last Name</label
-                  ><input class="fi" id="cc-last" placeholder="Last" />
-                </div>
-              </div>
-              <div class="fg" style="margin: 0">
-                <label class="fl" style="margin-bottom: 4px">Phone</label
-                ><input class="fi" id="cc-phone" placeholder="(XXX) XXX-XXXX" />
-              </div>
-              <div class="fg" style="margin: 0">
-                <label class="fl" style="margin-bottom: 4px">Email</label
-                ><input class="fi" id="cc-email" type="email" placeholder="name@example.com" />
-              </div>
-              <div class="cc-add-actions">
-                <button
-                  class="btn btn-ghost btn-sm"
-                  id="cc-cancel-edit-btn"
-                  style="display: none"
-                  onclick="cancelEditContact()"
-                >
-                  Cancel
-                </button>
-                <button class="btn btn-em btn-sm" id="cc-save-btn" onclick="saveContactRow()">+ Add Contact</button>
-              </div>
+            <!-- Client Contacts moved to building level; hidden inputs for data compat -->
+            <div id="mp-contacts-list" class="cc-list" style="display: none"></div>
+            <div class="cc-add-row" id="mp-cc-add-row" style="display: none">
+              <select class="fs" id="cc-title">
+                <option></option>
+              </select>
+              <input class="fi" id="cc-first" /><input class="fi" id="cc-last" />
+              <input class="fi" id="cc-phone" /><input class="fi" id="cc-email" type="email" />
               <input type="hidden" id="cc-edit-idx" value="" />
+              <div id="cc-add-label"></div>
+              <button id="cc-cancel-edit-btn" style="display: none"></button>
+              <button id="cc-save-btn" style="display: none"></button>
             </div>
             <div class="modal-sect">Financials &amp; Schedule</div>
             <div class="f2">
@@ -12618,7 +12516,7 @@
             <span style="font-size:11px;color:var(--text3)">
               ${bldgs.length} building${bldgs.length !== 1 ? 's' : ''}${totalSqft ? ' · ' + Number(totalSqft).toLocaleString() + ' sf' : ''} · ${meterCount} meter${meterCount !== 1 ? 's' : ''} · ${billCount} bill${billCount !== 1 ? 's' : ''}
             </span>
-            ${blMeterCount < meterCount ? '<span style="font-size:11px;color:var(--amber);font-weight:600">⚠ ' + blMeterCount + '/' + meterCount + ' meters have baselines set</span>' : '<span style="font-size:11px;color:var(--green)">✓ All meters have baselines</span>'}
+            ${meterCount === 0 ? '' : blMeterCount < meterCount ? '<span style="font-size:11px;color:var(--amber);font-weight:600">⚠ ' + blMeterCount + '/' + meterCount + ' meters have baselines set</span>' : '<span style="font-size:11px;color:var(--green)">✓ All meters have baselines</span>'}
           </div>`;
         }
 
