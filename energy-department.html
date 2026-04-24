@@ -32060,7 +32060,16 @@
 
         m.baseline = { start: checked[0], end: checked[checked.length - 1], months: checked, reg: frozenReg };
         saveUtilityData();
-        showToast('Baseline saved — ' + checked.length + ' months ✓');
+        const _blInherited = _inheritBaselinesForProject(udSelProjId);
+        showToast(
+          'Baseline saved — ' +
+            checked.length +
+            ' months' +
+            (_blInherited
+              ? ' · ' + _blInherited + ' other meter' + (_blInherited !== 1 ? 's' : '') + ' inherited'
+              : '') +
+            ' ✓',
+        );
       }
 
       function saveBaselineToAllMeters(sourceMid) {
