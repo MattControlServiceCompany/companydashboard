@@ -27865,9 +27865,17 @@
           '\')">✏️ Edit</button>' +
           '<button class="btn btn-ghost btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deleteAllBills(\'' +
           udActiveMid +
+          "','" +
+          udSelProjId +
+          "','" +
+          udSelBldgId +
           '\')" title="Delete all bills in this meter">🗑 Clear Bills</button>' +
           '<button class="btn-del" onclick="deleteMeter(\'' +
           udActiveMid +
+          "','" +
+          udSelProjId +
+          "','" +
+          udSelBldgId +
           '\')" title="Delete meter">✕</button>' +
           '</div>' +
           '</div>' +
@@ -35899,18 +35907,23 @@
         renderMeterWorkspace();
       }
 
-      async function deleteMeter(mid) {
+      async function deleteMeter(mid, pid, bid) {
+        if (pid) udSelProjId = pid;
+        if (bid) udSelBldgId = bid;
         if (!(await confirmAsync('Delete this meter and all its billing data?'))) return;
         const b = getUDBldg(udSelProjId, udSelBldgId);
         if (b) b.meters = b.meters.filter((m) => m.id !== mid);
         if (udActiveMid === mid) udActiveMid = null;
         saveUtilityData();
-        renderUDDetail();
+        const isEmbed = window._udActiveWrap && window._udActiveWrap !== document.getElementById('udDetailWrap');
+        renderUDDetail(isEmbed ? window._udActiveWrap : undefined);
         renderUDProjList();
         showToast('Meter deleted');
       }
 
-      async function deleteAllBills(mid) {
+      async function deleteAllBills(mid, pid, bid) {
+        if (pid) udSelProjId = pid;
+        if (bid) udSelBldgId = bid;
         const b = getUDBldg(udSelProjId, udSelBldgId);
         const m = b?.meters?.find((m) => m.id === mid);
         if (!m || !m.bills || !m.bills.length) return;
@@ -35931,7 +35944,8 @@
         if (m.baseline) m.baseline = {};
         saveUtilityData();
         renderUDProjList();
-        renderUDDetail();
+        const isEmbed = window._udActiveWrap && window._udActiveWrap !== document.getElementById('udDetailWrap');
+        renderUDDetail(isEmbed ? window._udActiveWrap : undefined);
         showToast(count + ' billing period' + (count !== 1 ? 's' : '') + ' deleted');
       }
       function toggleMeterDetail(rowId) {
