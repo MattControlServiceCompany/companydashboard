@@ -34108,6 +34108,25 @@
           }
         }
 
+        // Expected usage per calendar month (regression or baseline avg)
+        const blByCalMo = {};
+        blRows.forEach((r) => {
+          const mo = parseInt(r.ym.split('-')[1]) - 1;
+          blByCalMo[mo] = r.regrBaseline != null ? r.regrBaseline : r.usage;
+        });
+        const hasBlCalMap = Object.keys(blByCalMo).length >= 3;
+        const hasRegrP = allRows.some((r) => r.regrBaseline != null);
+        const blAvg = blRows.length ? blRows.reduce((s, r) => s + r.usage, 0) / blRows.length : 0;
+
+        // For electric: also need raw kWh by YM for actual usage
+        if (isElec) {
+          bills.forEach((b) => {
+            const ym = normMonth(b.start, b.end, incl, bills);
+            if (!ym) return;
+            rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + (parseFloat(b.kwh) || parseFloat(b.usage) || 0);
+          });
+        }
+
         postRows.forEach((r) => {
           const calMo = parseInt(r.ym.split('-')[1]) - 1;
           // For propane, bills won't match via normMonth (start===end), so
@@ -34117,36 +34136,48 @@
 
           let totalCostSav = 0;
 
+          // Expected usage for this calendar month (from regression or baseline average)
+          const expUsage =
+            hasBlCalMap && blByCalMo[calMo] != null
+              ? blByCalMo[calMo]
+              : hasRegrP && r.regrBaseline != null
+                ? r.regrBaseline
+                : blAvg;
+          const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
+
           if (isElec) {
+            // kWh savings = (Expected - Actual) × current $/kWh rate
             const kwhCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwhCost || 0), 0);
+            const actKwh = actUsage;
+            const kwhRate = actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0;
+            const kwhSaved = expUsage - actKwh;
+            const kwhCostSav = kwhRate > 0 ? kwhSaved * kwhRate : 0;
+
+            // kW savings = (Expected kW - Actual kW) × current $/kW rate
+            const blExpKW = blDemKWByCalMo[calMo] || 0;
             const kwCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwCost || 0), 0);
             const facKWCostAmt = bfr.reduce((s, b) => s + parseFloat(b.facKWCost || 0), 0);
-            const energyCostAmt = kwhCostAmt;
-            const expKwhCost = blKwhCostByCalMo[calMo] || 0;
-            const kwhCostSav = expKwhCost > 0 ? expKwhCost - energyCostAmt : 0;
-
-            const blExpKW = blDemKWByCalMo[calMo] || 0;
             const actKWCost = kwCostAmt + facKWCostAmt;
             const actDemKW = bfr.reduce((s, b) => s + parseFloat(b.demandKW || 0), 0) / Math.max(1, bfr.length);
             const moKwRate = actDemKW > 0 ? actKWCost / actDemKW : 0;
-            const kwCostSav = blExpKW > 0 && moKwRate > 0 ? blExpKW * moKwRate - actKWCost : 0;
+            const kwSaved = blExpKW - actDemKW;
+            const kwCostSav = blExpKW > 0 && moKwRate > 0 ? kwSaved * moKwRate : 0;
 
             totalCostSav = kwhCostSav + kwCostSav;
           } else if (isPropane) {
-            // Propane cost savings: compare normalized baseline cost to actual normalized cost
-            const actGallons = r.usage;
+            // Propane savings = (Expected gallons - Actual gallons) × current $/gallon rate
+            const actGallons = actUsage;
             const actCost = r.cost;
             const galRate = actGallons > 0 && actCost > 0 ? actCost / actGallons : 0;
-            const actCostCalc = galRate > 0 ? actGallons * galRate : actCost;
-            const expCost = blPropaneCostByCalMo[calMo] || 0;
-            totalCostSav = expCost > 0 ? expCost - actCostCalc : 0;
+            const galSaved = expUsage - actGallons;
+            totalCostSav = galRate > 0 ? galSaved * galRate : 0;
           } else {
-            const actTherms = rawUsageByYm[r.ym] ?? bfr.reduce((s, b) => s + parseFloat(b.therms || b.usage || 0), 0);
+            // Gas/therm savings = (Expected therms - Actual therms) × current $/therm rate
+            const actTherms = actUsage;
             const actThermCost = bfr.reduce((s, b) => s + parseFloat(b.thermCost || b.cost || 0), 0);
             const thermRate = actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0;
-            const actThermCostCalc = thermRate > 0 ? actTherms * thermRate : actThermCost;
-            const expThermCost = blThermCostByCalMo[calMo] || 0;
-            totalCostSav = expThermCost > 0 ? expThermCost - actThermCostCalc : 0;
+            const thermSaved = expUsage - actTherms;
+            totalCostSav = thermRate > 0 ? thermSaved * thermRate : 0;
           }
 
           result[calMo] = (result[calMo] || 0) + totalCostSav;
@@ -34530,27 +34561,29 @@
             const thermRate = gasMo ? gasMo.thermRate || 0 : 0;
             const thermCostActual = gasMo ? gasMo.thermCostAmt || 0 : 0;
 
-            // Exp kWh Cost = baseline calendar-month Energy Cost (matches Meter Data "Energy Cost" column)
-            // Actual kWh Cost = this month's actual Energy Cost (same definition: totalCost - kwCost)
-            const expKwhCost = hasKwhCostSav && blKwhCostByCalMo[calMo] > 0 ? blKwhCostByCalMo[calMo] : 0;
-            const actKwhCostCalc = kwhCostActual; // actual energyCostAmt from this month's bills
-            const kwhCostSav = hasKwhCostSav && expKwhCost > 0 ? expKwhCost - actKwhCostCalc : 0;
+            // kWh Cost Savings: (Expected kWh - Actual kWh) × current $/kWh rate
+            // Uses the CURRENT month's rate so savings reflect pure efficiency, not rate changes
+            const kwhSaved = isTotal_p ? sav : sav * r.normDays;
+            const expKwhCost = hasKwhCostSav && kwhRate > 0 ? expMo * kwhRate : 0;
+            const actKwhCostCalc = kwhCostActual;
+            const kwhCostSav = hasKwhCostSav && kwhRate > 0 ? kwhSaved * kwhRate : 0;
 
-            // kW Cost Savings: Baseline kW for this calendar month × current $/kW rate vs Actual kW Cost
+            // kW Cost Savings: (Expected kW - Actual kW) × current $/kW rate
             const blExpKW = blDemKWByCalMo[calMo] || 0;
             const moKwRate = hasKwCostSav && demKW > 0 ? kwCostRow / demKW : 0;
+            const kwSaved = blExpKW - bilKW;
             const expKwCost = hasKwCostSav && moKwRate > 0 ? blExpKW * moKwRate : 0;
-            const kwCostSav = hasKwCostSav && moKwRate > 0 ? expKwCost - kwCostRow : 0;
+            const kwCostSav = hasKwCostSav && moKwRate > 0 ? kwSaved * moKwRate : 0;
 
             const totalCostSav = kwhCostSav + kwCostSav;
 
-            // Exp Therm Cost = baseline calendar-month therm cost (from Meter Data, same as Normalized column)
-            const expThermCost = hasGasCostSav && blThermCostByCalMo[calMo] > 0 ? blThermCostByCalMo[calMo] : 0;
-            const actThermCostCalc =
-              hasGasCostSav && thermRate > 0
-                ? (rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage) * thermRate
-                : thermCostActual;
-            const thermCostSav = hasGasCostSav && expThermCost > 0 ? expThermCost - actThermCostCalc : 0;
+            // Therm/Gas Cost Savings: (Expected therms - Actual therms) × current $/therm rate
+            const rawThermUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
+            const expThermUsage = expMo;
+            const thermSaved = expThermUsage - rawThermUsage;
+            const expThermCost = hasGasCostSav && thermRate > 0 ? expThermUsage * thermRate : 0;
+            const actThermCostCalc = hasGasCostSav && thermRate > 0 ? rawThermUsage * thermRate : thermCostActual;
+            const thermCostSav = hasGasCostSav && thermRate > 0 ? thermSaved * thermRate : 0;
             const savColor = (v) => (v >= 0 ? 'var(--em)' : 'var(--danger)');
             const costSign = (v) => (v >= 0 ? '' : '\u2212');
             const savSign = (v) => (v >= 0 ? '\u2212' : '+');
