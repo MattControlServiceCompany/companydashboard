@@ -15689,6 +15689,25 @@
         if (Object.keys(_rates).length) result._rates = _rates;
         if (Object.keys(_xChgParts).length) result._xChgParts = _xChgParts;
 
+        // Extract individual per-unit rates and compute totals for bill storage
+        const _gr = (k) => (_rates[k] && _rates[k].rate > 0 ? _rates[k].rate : 0);
+        result.FacilitiesRate = _gr('FacilitiesCharge') || null;
+        result.DemandRate = _gr('BilledKWCharge') || null;
+        result.TDCRate = _gr('TDCCharge') || null;
+        result.RkVARate = _gr('RkVACharge') || null;
+        result.OnPeakRate = _gr('EnergyOnPeakCharge') || null;
+        result.OffPeakRate = _gr('EnergyOffPeakCharge') || null;
+        result.ECARate = _gr('ECACharge') || null;
+        result.EERRate = _gr('EERCharge') || null;
+        result.PTSRate = _gr('PTSCharge') || null;
+        result.TotalKWRate = _gr('FacilitiesCharge') + _gr('BilledKWCharge') + _gr('TDCCharge') || null;
+        result.TotalKWhRate =
+          _gr('EnergyOnPeakCharge') +
+            _gr('EnergyOffPeakCharge') +
+            _gr('ECACharge') +
+            _gr('EERCharge') +
+            _gr('PTSCharge') || null;
+
         // Evergy business rule: Bill Offset and Tax Exempt Delivery are always
         // mirror opposites — same absolute amount, opposite signs. If either
         // is present but the other is missing, derive the missing one.
@@ -23205,6 +23224,18 @@
             RenewableCharge: 'renewableCharge',
             SolarCredit: 'solarCredit',
             FranchiseFee: 'franchiseFee',
+            // Per-unit rates from charge lines
+            FacilitiesRate: 'facilitiesRate',
+            DemandRate: 'demandRate',
+            TDCRate: 'tdcRate',
+            RkVARate: 'rkvaRate',
+            OnPeakRate: 'onPeakRate',
+            OffPeakRate: 'offPeakRate',
+            ECARate: 'ecaRate',
+            EERRate: 'eerRate',
+            PTSRate: 'ptsRate',
+            TotalKWRate: 'totalKwRate',
+            TotalKWhRate: 'totalKwhRate',
             // Gas
             NaturalGasCCF: 'naturalGasCCF',
             NaturalGasTherms: 'naturalGasTherms',
@@ -34146,20 +34177,22 @@
           const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
 
           if (isElec) {
-            // kWh savings = (Expected - Actual) × current $/kWh rate
-            const kwhCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwhCost || 0), 0);
+            // kWh savings = (Expected - Actual) × current total $/kWh rate
+            const n = bfr.length;
             const actKwh = actUsage;
-            const kwhRate = actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0;
+            const storedKwhRate = bfr.reduce((s, b) => s + (parseFloat(b.totalKwhRate) || 0), 0) / Math.max(1, n);
+            const kwhCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwhCost || 0), 0);
+            const kwhRate = storedKwhRate > 0 ? storedKwhRate : actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0;
             const kwhSaved = expUsage - actKwh;
             const kwhCostSav = kwhRate > 0 ? kwhSaved * kwhRate : 0;
 
-            // kW savings = (Expected kW - Actual kW) × current $/kW rate
+            // kW savings = (Expected kW - Actual kW) × current total $/kW rate
             const blExpKW = blDemKWByCalMo[calMo] || 0;
+            const actDemKW = bfr.reduce((s, b) => s + parseFloat(b.demandKW || 0), 0) / Math.max(1, n);
+            const storedKwRate = bfr.reduce((s, b) => s + (parseFloat(b.totalKwRate) || 0), 0) / Math.max(1, n);
             const kwCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwCost || 0), 0);
             const facKWCostAmt = bfr.reduce((s, b) => s + parseFloat(b.facKWCost || 0), 0);
-            const actKWCost = kwCostAmt + facKWCostAmt;
-            const actDemKW = bfr.reduce((s, b) => s + parseFloat(b.demandKW || 0), 0) / Math.max(1, bfr.length);
-            const moKwRate = actDemKW > 0 ? actKWCost / actDemKW : 0;
+            const moKwRate = storedKwRate > 0 ? storedKwRate : actDemKW > 0 ? (kwCostAmt + facKWCostAmt) / actDemKW : 0;
             const kwSaved = blExpKW - actDemKW;
             const kwCostSav = blExpKW > 0 && moKwRate > 0 ? kwSaved * moKwRate : 0;
 
@@ -34498,15 +34531,21 @@
             // energyCost mirrors Meter Data "Energy Cost" = totalCost - kwCost
             const totalBillCost = bfr.reduce((s, b) => s + parseFloat(b.totalCost || 0), 0);
             const energyCostAmt = totalBillCost - kwCostAmt - facKWCostAmt;
+            const bilKW = bfr.reduce((s, b) => s + parseFloat(b.billedKW || b.demandKW || 0), 0) / n;
             perfDemByYm[r.ym] = {
               demKW: bfr.reduce((s, b) => s + parseFloat(b.demandKW || 0), 0) / n,
-              bilKW: bfr.reduce((s, b) => s + parseFloat(b.billedKW || b.demandKW || 0), 0) / n,
+              bilKW,
               kwCost: kwCostAmt,
               facKWCost: facKWCostAmt,
               kwhCostAmt,
               energyCostAmt,
               totalBillCost,
-              kwhRate: actualKwh > 0 && energyCostAmt > 0 ? energyCostAmt / actualKwh : 0,
+              kwhRate:
+                bfr.reduce((s, b) => s + (parseFloat(b.totalKwhRate) || 0), 0) / n ||
+                (actualKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actualKwh : 0),
+              kwRate:
+                bfr.reduce((s, b) => s + (parseFloat(b.totalKwRate) || 0), 0) / n ||
+                (bilKW > 0 && kwCostAmt + facKWCostAmt > 0 ? (kwCostAmt + facKWCostAmt) / bilKW : 0),
             };
           });
         }
