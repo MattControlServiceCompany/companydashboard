@@ -15796,7 +15796,9 @@
         for (const [chargeField, ri] of Object.entries(_rates)) {
           if (!ri || !ri.parts || ri.parts.length < 2) continue;
           const computedTotal = ri.parts.reduce((s, p) => s + (p.ocrCharge != null ? p.ocrCharge : p.computed), 0);
-          const currentVal = _pf(result[chargeField]);
+          const currentVal = result[chargeField]
+            ? parseFloat(String(result[chargeField]).replace(/[$,\s]/g, '')) || 0
+            : 0;
           if (computedTotal > currentVal + 0.01) {
             result[chargeField] = computedTotal.toFixed(2);
           }
