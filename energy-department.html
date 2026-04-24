@@ -20555,9 +20555,17 @@
           saved++;
         }
         saveUtilityData();
+        const _blInherited = _inheritBaselinesForProject(udSelProjId);
         document.getElementById('pdfAutoAssignBanner').style.display = 'none';
         _autoAssignTarget = null;
-        showToast(saved + ' bill' + (saved !== 1 ? 's' : '') + ' saved to matched meters ✓');
+        showToast(
+          saved +
+            ' bill' +
+            (saved !== 1 ? 's' : '') +
+            ' saved to matched meters' +
+            (_blInherited ? ' · ' + _blInherited + ' baseline' + (_blInherited !== 1 ? 's' : '') + ' inherited' : '') +
+            ' ✓',
+        );
       }
 
       // Store the current extraction's source PDF once per session and tag every bill
@@ -21573,7 +21581,11 @@
         if (skipped) parts.push(skipped + ' skipped');
         if (failed) parts.push(failed + ' failed');
         if (!parts.length) parts.push('nothing to do');
-        const summary = parts.join(', ') + ' (' + bills.length + ' total)';
+        const _blInherited3 = _inheritBaselinesForProject(selectedPid);
+        const blMsg3 = _blInherited3
+          ? ' · ' + _blInherited3 + ' baseline' + (_blInherited3 !== 1 ? 's' : '') + ' inherited'
+          : '';
+        const summary = parts.join(', ') + ' (' + bills.length + ' total)' + blMsg3;
         console.log('[_dupBulkAction] done —', summary);
         _bulkProgressDone(summary);
         showToast(summary);
@@ -23269,8 +23281,12 @@
         if (alreadyProcessed) parts.push(alreadyProcessed + ' already processed');
         if (skipped) parts.push(skipped + ' skipped');
         if (failed) parts.push(failed + ' failed');
+        const _blInherited2 = _inheritBaselinesForProject(selectedPid);
         const filterLabel = commodityFilter ? ' ' + commodityFilter : '';
-        showToast(parts.join(', ') + ' (' + billIndices.length + filterLabel + ' total)');
+        const blMsg = _blInherited2
+          ? ' · ' + _blInherited2 + ' baseline' + (_blInherited2 !== 1 ? 's' : '') + ' inherited'
+          : '';
+        showToast(parts.join(', ') + ' (' + billIndices.length + filterLabel + ' total)' + blMsg);
         _showSaveSummary(summaryEntries);
       }
 
@@ -26780,6 +26796,40 @@
         Object.keys(utilityData).forEach(function (pid) {
           sset('en_utility_' + pid, utilityData[pid]);
         });
+      }
+
+      function _inheritBaselinesForProject(projId) {
+        const bldgs = getUDBldgs(projId);
+        const allBaselines = [];
+        bldgs.forEach((b) =>
+          (b.meters || []).forEach((m) => {
+            if (m.baseline && m.baseline.months && m.baseline.months.length > 0)
+              allBaselines.push({ commodity: m.commodity, months: m.baseline.months });
+          }),
+        );
+        if (!allBaselines.length) return 0;
+        let count = 0;
+        bldgs.forEach((b) =>
+          (b.meters || []).forEach((m) => {
+            if (m.baseline && m.baseline.months && m.baseline.months.length > 0) return;
+            if (!m.bills || !m.bills.length) return;
+            const sameCommodity = allBaselines.filter((c) => c.commodity === m.commodity);
+            const pool = sameCommodity.length ? sameCommodity : allBaselines;
+            const counts = {};
+            pool.forEach((c) => {
+              const key = c.months.slice().sort().join(',');
+              counts[key] = counts[key] || { months: c.months, n: 0 };
+              counts[key].n++;
+            });
+            const best = Object.values(counts).sort((a, b) => b.n - a.n)[0];
+            if (best) {
+              m.baseline = { months: [...best.months], reg: null };
+              count++;
+            }
+          }),
+        );
+        if (count > 0) saveUtilityData();
+        return count;
       }
 
       /* ══════════════════════════════════════════════════════
@@ -37000,37 +37050,10 @@
           }
         } else {
           const nm = { id: 'm' + Date.now(), bills: [], ...data };
-          // Inherit baseline from existing meters: match commodity first, then
-          // use the most common baseline pattern (majority wins).
-          const _findBestBaseline = () => {
-            const allBldgs = getUDBldgs(_targetProjId);
-            const candidates = [];
-            allBldgs.forEach((ob) => {
-              (ob.meters || []).forEach((m) => {
-                if (m.baseline && m.baseline.months && m.baseline.months.length > 0) {
-                  candidates.push({ commodity: m.commodity, months: m.baseline.months });
-                }
-              });
-            });
-            if (!candidates.length) return null;
-            // Prefer same commodity
-            const sameCommodity = candidates.filter((c) => c.commodity === nm.commodity);
-            const pool = sameCommodity.length ? sameCommodity : candidates;
-            // Find most common baseline pattern (by month-set signature)
-            const counts = {};
-            pool.forEach((c) => {
-              const key = c.months.slice().sort().join(',');
-              counts[key] = counts[key] || { months: c.months, n: 0 };
-              counts[key].n++;
-            });
-            const best = Object.values(counts).sort((a, b) => b.n - a.n)[0];
-            return best ? [...best.months] : null;
-          };
-          const inheritedMonths = _findBestBaseline();
-          if (inheritedMonths) nm.baseline = { months: inheritedMonths, reg: null };
           b.meters.push(nm);
           udActiveMid = nm.id;
-          showToast('Meter added to ' + (b.name || 'building') + (nm.baseline ? ' · baseline inherited ✓' : ' ✓'));
+          const _blCount = _inheritBaselinesForProject(_targetProjId);
+          showToast('Meter added to ' + (b.name || 'building') + (_blCount ? ' · baseline inherited ✓' : ' ✓'));
         }
         saveUtilityData();
         closeMeterModal();
