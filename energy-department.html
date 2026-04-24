@@ -15747,6 +15747,25 @@
               computed: partAmounts.reduce((a, b) => a + b, 0),
               parts: partAmounts.map((v) => ({ qty: null, rate: null, unit: null, computed: v, ocrCharge: v })),
             };
+          } else if (partAmounts.length > (_rates[chargeKey].parts || []).length) {
+            const existingParts = _rates[chargeKey].parts || [];
+            const existingAmounts = existingParts.map((p) => p.ocrCharge ?? p.computed);
+            for (const amt of partAmounts) {
+              const matchIdx = existingAmounts.indexOf(amt);
+              if (matchIdx >= 0) {
+                existingAmounts.splice(matchIdx, 1);
+                continue;
+              }
+              existingParts.push({
+                qty: null,
+                rate: null,
+                unit: existingParts[0]?.unit || null,
+                computed: amt,
+                ocrCharge: amt,
+              });
+            }
+            _rates[chargeKey].parts = existingParts;
+            _rates[chargeKey].computed = existingParts.reduce((s, p) => s + (p.ocrCharge ?? p.computed), 0);
           }
         }
         if (Object.keys(_rates).length) result._rates = _rates;
@@ -15770,6 +15789,18 @@
             _gr('ECACharge') +
             _gr('EERCharge') +
             _gr('PTSCharge') || null;
+
+        // Reconcile xChg totals with xRate computed totals: when xRate found
+        // multi-part charges that xChg missed (e.g. EER Part 2 has no OCR dollar
+        // amount so xChg only captured Part 1's $0.00), use the xRate computed sum.
+        for (const [chargeField, ri] of Object.entries(_rates)) {
+          if (!ri || !ri.parts || ri.parts.length < 2) continue;
+          const computedTotal = ri.parts.reduce((s, p) => s + (p.ocrCharge != null ? p.ocrCharge : p.computed), 0);
+          const currentVal = _pf(result[chargeField]);
+          if (computedTotal > currentVal + 0.01) {
+            result[chargeField] = computedTotal.toFixed(2);
+          }
+        }
 
         // Evergy business rule: Bill Offset and Tax Exempt Delivery are always
         // mirror opposites — same absolute amount, opposite signs. If either
