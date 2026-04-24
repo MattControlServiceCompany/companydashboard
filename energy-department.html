@@ -36855,22 +36855,34 @@
           }
         } else {
           const nm = { id: 'm' + Date.now(), bills: [], ...data };
-          // Default baseline from existing meters in this building or project
-          const existingBl = b.meters.find((m) => m.baseline && m.baseline.months && m.baseline.months.length > 0);
-          if (existingBl) {
-            nm.baseline = { months: [...existingBl.baseline.months], reg: null };
-          } else {
+          // Inherit baseline from existing meters: match commodity first, then
+          // use the most common baseline pattern (majority wins).
+          const _findBestBaseline = () => {
             const allBldgs = getUDBldgs(_targetProjId);
-            for (const ob of allBldgs) {
-              const found = (ob.meters || []).find(
-                (m) => m.baseline && m.baseline.months && m.baseline.months.length > 0,
-              );
-              if (found) {
-                nm.baseline = { months: [...found.baseline.months], reg: null };
-                break;
-              }
-            }
-          }
+            const candidates = [];
+            allBldgs.forEach((ob) => {
+              (ob.meters || []).forEach((m) => {
+                if (m.baseline && m.baseline.months && m.baseline.months.length > 0) {
+                  candidates.push({ commodity: m.commodity, months: m.baseline.months });
+                }
+              });
+            });
+            if (!candidates.length) return null;
+            // Prefer same commodity
+            const sameCommodity = candidates.filter((c) => c.commodity === nm.commodity);
+            const pool = sameCommodity.length ? sameCommodity : candidates;
+            // Find most common baseline pattern (by month-set signature)
+            const counts = {};
+            pool.forEach((c) => {
+              const key = c.months.slice().sort().join(',');
+              counts[key] = counts[key] || { months: c.months, n: 0 };
+              counts[key].n++;
+            });
+            const best = Object.values(counts).sort((a, b) => b.n - a.n)[0];
+            return best ? [...best.months] : null;
+          };
+          const inheritedMonths = _findBestBaseline();
+          if (inheritedMonths) nm.baseline = { months: inheritedMonths, reg: null };
           b.meters.push(nm);
           udActiveMid = nm.id;
           showToast('Meter added to ' + (b.name || 'building') + (nm.baseline ? ' · baseline inherited ✓' : ' ✓'));
