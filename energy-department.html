@@ -36855,9 +36855,25 @@
           }
         } else {
           const nm = { id: 'm' + Date.now(), bills: [], ...data };
+          // Default baseline from existing meters in this building or project
+          const existingBl = b.meters.find((m) => m.baseline && m.baseline.months && m.baseline.months.length > 0);
+          if (existingBl) {
+            nm.baseline = { months: [...existingBl.baseline.months], reg: null };
+          } else {
+            const allBldgs = getUDBldgs(_targetProjId);
+            for (const ob of allBldgs) {
+              const found = (ob.meters || []).find(
+                (m) => m.baseline && m.baseline.months && m.baseline.months.length > 0,
+              );
+              if (found) {
+                nm.baseline = { months: [...found.baseline.months], reg: null };
+                break;
+              }
+            }
+          }
           b.meters.push(nm);
           udActiveMid = nm.id;
-          showToast('Meter added to ' + (b.name || 'building') + ' ✓');
+          showToast('Meter added to ' + (b.name || 'building') + (nm.baseline ? ' · baseline inherited ✓' : ' ✓'));
         }
         saveUtilityData();
         closeMeterModal();
