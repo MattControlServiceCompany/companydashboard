@@ -14286,6 +14286,10 @@
       }
 
       function closeProjModal() {
+        // Auto-save new projects on close if name is filled
+        const editId = document.getElementById('mp-edit-id').value;
+        const name = document.getElementById('mp-name').value.trim();
+        if (!editId && name) saveProject();
         document.getElementById('projModal').classList.remove('open');
       }
       function saveProject() {
@@ -27066,6 +27070,7 @@
         if (udSelBldgId !== bid) _openMeterIds.clear();
         udSelBldgId = bid;
         udActiveMid = null;
+        saveUDSession();
         // Close any open project panel
         if (_udProjPanel) {
           _udProjPanel = null;
