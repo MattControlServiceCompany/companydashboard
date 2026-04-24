@@ -18532,6 +18532,27 @@
             });
         }
 
+        // kWh identity check: On-Peak + Off-Peak should equal kWh Consumed
+        if (extracted._kwh_identity_mismatch) {
+          const m = extracted._kwh_identity_mismatch;
+          warnings.push({
+            level: 'warn',
+            field: 'kWhConsumed',
+            message:
+              'On-Peak (' +
+              m.onPeakKwh.toLocaleString() +
+              ') + Off-Peak (' +
+              m.offPeakKwh.toLocaleString() +
+              ') = ' +
+              (m.onPeakKwh + m.offPeakKwh).toLocaleString() +
+              ' but kWh Consumed = ' +
+              m.total.toLocaleString() +
+              ' (diff: ' +
+              m.diff.toFixed(1) +
+              ')',
+          });
+        }
+
         // Gas: usage > 0 should have charge > 0 — attempt recovery from total
         const gasUsage = pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF);
         const gasCharge = pf(extracted.GasCharge);
