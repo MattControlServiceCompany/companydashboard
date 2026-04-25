@@ -1077,39 +1077,7 @@
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
       }
 
-      /* ── DRAG-AND-DROP RESTORE OVERLAY ── */
-      .drop-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 99999;
-        background: rgba(0, 0, 0, 0.75);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.2s ease;
-      }
-      .drop-overlay.visible {
-        opacity: 1;
-        pointer-events: auto;
-      }
-      .drop-overlay-content {
-        border: 3px dashed var(--accent, #4ea4f6);
-        border-radius: 18px;
-        padding: 60px 80px;
-        text-align: center;
-        background: var(--s1, #0c0f1a);
-      }
-      .drop-overlay-icon {
-        font-size: 48px;
-        margin-bottom: 12px;
-      }
-      .drop-overlay-text {
-        font-size: 20px;
-        font-weight: 600;
-        color: var(--text, #e2e8f3);
-      }
+      /* drop-overlay styles removed — restore is button-only now */
     </style>
 
     <style>
@@ -21210,6 +21178,20 @@
         clearPDFOCR();
       }
 
+      function cancelQueue() {
+        window._pdfAbort = true;
+        const q = window._pdfQueue;
+        if (!q) return;
+        q.status = 'cancelled';
+        globalTaskDone();
+        if (q.results.length > 0 && q.results.some((r) => r.bills.length > 0)) {
+          renderQueueResults();
+        } else {
+          clearQueue();
+        }
+        showToast('Queue cancelled');
+      }
+
       function _escHtml(s) {
         const d = document.createElement('div');
         d.textContent = s;
@@ -21230,8 +21212,14 @@
 
         let html = '<div style="text-align:left;max-width:480px;margin:0 auto;width:100%">';
 
+        // Running bill count
+        let totalBillsFound = 0;
+        q.results.forEach((r) => {
+          if (r.status === 'ok') totalBillsFound += r.bills.length;
+        });
+
         // Header
-        html += '<div style="font-size:16px;font-weight:600;color:var(--em);margin-bottom:14px">';
+        html += '<div style="font-size:16px;font-weight:600;color:var(--em);margin-bottom:4px">';
         if (q.status === 'running') {
           html += 'Extracting ' + (q.currentIdx + 1) + ' of ' + q.files.length + ' PDFs...';
         } else if (q.status === 'done' || q.status === 'cancelled') {
@@ -21240,6 +21228,16 @@
           html += 'Preparing ' + q.files.length + ' PDFs...';
         }
         html += '</div>';
+        if (totalBillsFound > 0) {
+          html +=
+            '<div style="font-size:13px;color:var(--text2);margin-bottom:14px">' +
+            totalBillsFound +
+            ' bill' +
+            (totalBillsFound !== 1 ? 's' : '') +
+            ' found so far</div>';
+        } else {
+          html += '<div style="margin-bottom:14px"></div>';
+        }
 
         // Progress bar
         html += '<div style="background:var(--s1);border-radius:6px;height:8px;margin-bottom:20px;overflow:hidden">';
@@ -21301,7 +21299,7 @@
         // Cancel button
         html += '<div style="margin-top:18px;text-align:center">';
         html +=
-          '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();window._pdfAbort=true;showToast(\'Queue cancelled\')">Cancel Extraction</button>';
+          '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();cancelQueue()">Cancel Extraction</button>';
         html += '</div>';
 
         html += '</div>';
@@ -21349,9 +21347,13 @@
           renderQueueProgress();
         }
 
-        if (q.status === 'running') q.status = 'done';
-        q.currentIdx = q.files.length; // Show 100% on progress bar
-        // Flatten all bills across all files and run duplicate check
+        // If cancelQueue() already handled the UI, don't override it
+        if (!window._pdfQueue || q.status === 'cancelled') {
+          globalTaskDone();
+          return;
+        }
+        q.status = 'done';
+        q.currentIdx = q.files.length;
         const allBills = [];
         q.results.forEach((r) => {
           r.bills.forEach((b) => allBills.push(b));
@@ -21361,7 +21363,6 @@
         }
         globalTaskDone();
         renderQueueProgress();
-        // Brief pause so user sees "complete" state, then show results table
         setTimeout(() => renderQueueResults(), 600);
       }
 
@@ -21635,7 +21636,15 @@
         if (failCount > 0)
           html += (okCount + dupCount > 0 ? ' · ' : '') + '<span style="color:#c44">' + failCount + ' failed</span>';
         html += '</div>';
-        html += '<div style="display:flex;gap:8px">';
+        html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+        if (dupCount > 0) {
+          html +=
+            '<button class="btn btn-ghost btn-sm" onclick="resolveAllQueueDups(\'overwrite\')" style="font-size:11px">Overwrite All</button>';
+          html +=
+            '<button class="btn btn-ghost btn-sm" onclick="resolveAllQueueDups(\'merge\')" style="font-size:11px">Merge All</button>';
+          html +=
+            '<button class="btn btn-ghost btn-sm" onclick="resolveAllQueueDups(\'skip\')" style="font-size:11px">Skip All</button>';
+        }
         html += '<button class="btn btn-ghost" onclick="clearQueue()">Cancel</button>';
         html +=
           '<button class="btn btn-em" onclick="saveQueuedBills()"' +
@@ -21686,6 +21695,22 @@
           if (r.bill && !r._saved) r.checked = checked;
         });
         renderQueueResults();
+      }
+
+      function resolveAllQueueDups(action) {
+        if (!window._pdfDupMap || !window._pdfQueueRows) return;
+        const rows = window._pdfQueueRows;
+        let count = 0;
+        rows.forEach((row) => {
+          const dup = row.bill ? _getQueueDupInfo(row) : null;
+          if (dup) {
+            dup.action = action;
+            count++;
+          }
+        });
+        renderQueueResults();
+        const labels = { overwrite: 'Overwrite', merge: 'Merge', skip: 'Skip' };
+        showToast((labels[action] || action) + ' set for ' + count + ' duplicate' + (count !== 1 ? 's' : ''));
       }
 
       function updateQueueBatchProj(val) {
@@ -44729,38 +44754,7 @@
         };
         inp.click();
       }
-      function initDragDropRestore() {
-        var overlay = document.createElement('div');
-        overlay.className = 'drop-overlay';
-        overlay.innerHTML =
-          '<div class="drop-overlay-content"><div class="drop-overlay-icon">&#128230;</div><div class="drop-overlay-text">Drop backup file to restore</div></div>';
-        document.body.appendChild(overlay);
-        var dragCounter = 0;
-        window.addEventListener('dragenter', function (e) {
-          e.preventDefault();
-          dragCounter++;
-          if (dragCounter === 1) overlay.classList.add('visible');
-        });
-        window.addEventListener('dragleave', function (e) {
-          e.preventDefault();
-          dragCounter--;
-          if (dragCounter <= 0) {
-            dragCounter = 0;
-            overlay.classList.remove('visible');
-          }
-        });
-        window.addEventListener('dragover', function (e) {
-          e.preventDefault();
-        });
-        window.addEventListener('drop', function (e) {
-          e.preventDefault();
-          dragCounter = 0;
-          overlay.classList.remove('visible');
-          var file = e.dataTransfer && e.dataTransfer.files[0];
-          if (file) processRestoreFile(file);
-        });
-      }
-      document.addEventListener('DOMContentLoaded', initDragDropRestore);
+      // Drag-and-drop restore removed — restore is button-only now
       async function siteResetData() {
         if (!(await confirmAsync('Reset ALL data? This cannot be undone.'))) return;
         localStorage.clear();
