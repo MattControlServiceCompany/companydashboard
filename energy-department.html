@@ -21097,6 +21097,7 @@
         window._pdfRawText = null;
         window._pdfBillWarnings = null;
         window._pdfDupMap = null;
+        window._pdfQueue = null;
         _clearExtractionState();
         document.getElementById('dz-title').textContent = 'Drop PDF here or click to browse';
         document.getElementById('pdfInput').value = '';
@@ -21118,6 +21119,32 @@
         box._showingRaw = false;
         box.textContent = 'Upload a PDF and select document type.';
         showToast('Cleared ✓');
+      }
+
+      // ── Multi-PDF Queue Extraction ──
+      window._pdfQueue = null;
+
+      function startQueueExtraction(files) {
+        clearPDFOCR();
+        window._pdfQueue = {
+          files: files,
+          results: [],
+          currentIdx: 0,
+          batchProjId: parseInt(document.getElementById('pdfProjSel').value) || null,
+          status: 'idle',
+        };
+        refreshProjDropdowns();
+        document.getElementById('pdfSaveRow').style.display = 'none';
+        document.getElementById('pdfClearBtn').style.display = 'none';
+        document.getElementById('pdfTypeSection').style.display = 'none';
+        document.getElementById('dropZone').classList.add('collapsed');
+        renderQueueProgress();
+        runExtractionQueue();
+      }
+
+      function clearQueue() {
+        window._pdfQueue = null;
+        clearPDFOCR();
       }
 
       function _saveExtractionState() {
