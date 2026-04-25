@@ -145,35 +145,80 @@
     if (typeof showToast === 'function') showToast('Backup downloaded');
   }
 
+  function processRestoreFile(file) {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.json')) {
+      if (typeof showToast === 'function') showToast('Please drop a .json backup file');
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function (ev) {
+      try {
+        var data = JSON.parse(ev.target.result);
+        Object.keys(data).forEach(function (key) {
+          if (key.startsWith('__session__')) {
+            sessionStorage.setItem(key.replace('__session__', ''), data[key]);
+          } else {
+            localStorage.setItem(key, data[key]);
+          }
+        });
+        if (typeof showToast === 'function') showToast('Data restored — reloading...');
+        setTimeout(function () {
+          location.reload();
+        }, 1200);
+      } catch (err) {
+        if (typeof showToast === 'function') showToast('Invalid backup file');
+      }
+    };
+    reader.readAsText(file);
+  }
+
   function restoreData() {
     var input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json';
     input.onchange = function (e) {
-      var file = e.target.files[0];
-      if (!file) return;
-      var reader = new FileReader();
-      reader.onload = function (ev) {
-        try {
-          var data = JSON.parse(ev.target.result);
-          Object.keys(data).forEach(function (key) {
-            if (key.startsWith('__session__')) {
-              sessionStorage.setItem(key.replace('__session__', ''), data[key]);
-            } else {
-              localStorage.setItem(key, data[key]);
-            }
-          });
-          if (typeof showToast === 'function') showToast('Data restored — reloading...');
-          setTimeout(function () {
-            location.reload();
-          }, 1200);
-        } catch (err) {
-          if (typeof showToast === 'function') showToast('Invalid backup file');
-        }
-      };
-      reader.readAsText(file);
+      processRestoreFile(e.target.files[0]);
     };
     input.click();
+  }
+
+  /* ── DRAG-AND-DROP RESTORE ── */
+  function initDragDropRestore() {
+    var overlay = document.createElement('div');
+    overlay.className = 'drop-overlay';
+    overlay.innerHTML =
+      '<div class="drop-overlay-content"><div class="drop-overlay-icon">&#128230;</div><div class="drop-overlay-text">Drop backup file to restore</div></div>';
+    document.body.appendChild(overlay);
+
+    var dragCounter = 0;
+
+    window.addEventListener('dragenter', function (e) {
+      e.preventDefault();
+      dragCounter++;
+      if (dragCounter === 1) overlay.classList.add('visible');
+    });
+
+    window.addEventListener('dragleave', function (e) {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        overlay.classList.remove('visible');
+      }
+    });
+
+    window.addEventListener('dragover', function (e) {
+      e.preventDefault();
+    });
+
+    window.addEventListener('drop', function (e) {
+      e.preventDefault();
+      dragCounter = 0;
+      overlay.classList.remove('visible');
+      var file = e.dataTransfer && e.dataTransfer.files[0];
+      if (file) processRestoreFile(file);
+    });
   }
 
   /* ── RESET DATA ── */
@@ -677,6 +722,7 @@
     applyModalAccessibility();
     updateClock();
     setInterval(updateClock, 15000);
+    initDragDropRestore();
 
     // Dashboard auto-refresh: run once on load, then on every Store write
     DashboardController.refresh();

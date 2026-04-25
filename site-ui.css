@@ -1097,3 +1097,37 @@ a:focus-visible,
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* ── DRAG-AND-DROP RESTORE OVERLAY ── */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.drop-overlay.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.drop-overlay-content {
+  border: 3px dashed var(--accent, #4ea4f6);
+  border-radius: 18px;
+  padding: 60px 80px;
+  text-align: center;
+  background: var(--s1, #0c0f1a);
+}
+.drop-overlay-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+.drop-overlay-text {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text, #e2e8f3);
+}

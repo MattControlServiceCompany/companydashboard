@@ -1076,6 +1076,40 @@
       [data-theme='light'] .help-modal {
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
       }
+
+      /* ── DRAG-AND-DROP RESTORE OVERLAY ── */
+      .drop-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        background: rgba(0, 0, 0, 0.75);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+      }
+      .drop-overlay.visible {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .drop-overlay-content {
+        border: 3px dashed var(--accent, #4ea4f6);
+        border-radius: 18px;
+        padding: 60px 80px;
+        text-align: center;
+        background: var(--s1, #0c0f1a);
+      }
+      .drop-overlay-icon {
+        font-size: 48px;
+        margin-bottom: 12px;
+      }
+      .drop-overlay-text {
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--text, #e2e8f3);
+      }
     </style>
 
     <style>
@@ -44595,32 +44629,70 @@
         }, 3000);
         if (typeof showToast === 'function') showToast('Backup downloaded ✓');
       }
+      function processRestoreFile(file) {
+        if (!file) return;
+        if (!file.name.toLowerCase().endsWith('.json')) {
+          if (typeof showToast === 'function') showToast('Please drop a .json backup file');
+          return;
+        }
+        var fr = new FileReader();
+        fr.onload = function (ev) {
+          try {
+            var data = JSON.parse(ev.target.result);
+            Object.keys(data).forEach(function (k) {
+              localStorage.setItem(k, data[k]);
+            });
+            if (typeof showToast === 'function') showToast('Restored — reloading...');
+            setTimeout(function () {
+              location.reload();
+            }, 1200);
+          } catch (err) {
+            if (typeof showToast === 'function') showToast('Invalid backup file');
+          }
+        };
+        fr.readAsText(file);
+      }
       function siteRestore() {
         var inp = document.createElement('input');
         inp.type = 'file';
         inp.accept = '.json';
         inp.onchange = function (e) {
-          var file = e.target.files[0];
-          if (!file) return;
-          var fr = new FileReader();
-          fr.onload = function (ev) {
-            try {
-              var data = JSON.parse(ev.target.result);
-              Object.keys(data).forEach(function (k) {
-                localStorage.setItem(k, data[k]);
-              });
-              if (typeof showToast === 'function') showToast('Restored — reloading...');
-              setTimeout(function () {
-                location.reload();
-              }, 1200);
-            } catch (err) {
-              if (typeof showToast === 'function') showToast('Invalid backup file');
-            }
-          };
-          fr.readAsText(file);
+          processRestoreFile(e.target.files[0]);
         };
         inp.click();
       }
+      function initDragDropRestore() {
+        var overlay = document.createElement('div');
+        overlay.className = 'drop-overlay';
+        overlay.innerHTML =
+          '<div class="drop-overlay-content"><div class="drop-overlay-icon">&#128230;</div><div class="drop-overlay-text">Drop backup file to restore</div></div>';
+        document.body.appendChild(overlay);
+        var dragCounter = 0;
+        window.addEventListener('dragenter', function (e) {
+          e.preventDefault();
+          dragCounter++;
+          if (dragCounter === 1) overlay.classList.add('visible');
+        });
+        window.addEventListener('dragleave', function (e) {
+          e.preventDefault();
+          dragCounter--;
+          if (dragCounter <= 0) {
+            dragCounter = 0;
+            overlay.classList.remove('visible');
+          }
+        });
+        window.addEventListener('dragover', function (e) {
+          e.preventDefault();
+        });
+        window.addEventListener('drop', function (e) {
+          e.preventDefault();
+          dragCounter = 0;
+          overlay.classList.remove('visible');
+          var file = e.dataTransfer && e.dataTransfer.files[0];
+          if (file) processRestoreFile(file);
+        });
+      }
+      document.addEventListener('DOMContentLoaded', initDragDropRestore);
       async function siteResetData() {
         if (!(await confirmAsync('Reset ALL data? This cannot be undone.'))) return;
         localStorage.clear();

@@ -11,9 +11,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://alcdn.msauth.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com; worker-src 'self' blob:; frame-src 'self' https://login.microsoftonline.com; object-src 'none'; base-uri 'self'; form-action 'self';" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' https://alcdn.msauth.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com; worker-src 'self' blob:; frame-src 'self' https://login.microsoftonline.com; object-src 'none'; base-uri 'self'; form-action 'self';"
+    />
     <title>CompanyHub — Service Dashboard</title>
-    <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js" integrity="sha384-DnnpDkaYk2OV5ScEBmoj33ft46HZ1UPtY7XRTItAXrre+vedFx+VEkjtStC/AqSF" crossorigin="anonymous"></script>
+    <script
+      src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"
+      integrity="sha384-DnnpDkaYk2OV5ScEBmoj33ft46HZ1UPtY7XRTItAXrre+vedFx+VEkjtStC/AqSF"
+      crossorigin="anonymous"
+    ></script>
     <link
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
@@ -258,6 +265,13 @@
       [data-theme="light"] .theme-pill.active{color:#fff;}
       [data-theme="light"] .modal{box-shadow:0 20px 60px rgba(0,0,0,.18);}
       [data-theme="light"] .settings-modal,[data-theme="light"] .help-modal{box-shadow:0 20px 60px rgba(0,0,0,.18);}
+
+      /* ── DRAG-AND-DROP RESTORE OVERLAY ── */
+      .drop-overlay{position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s ease;}
+      .drop-overlay.visible{opacity:1;pointer-events:auto;}
+      .drop-overlay-content{border:3px dashed var(--accent,#4ea4f6);border-radius:18px;padding:60px 80px;text-align:center;background:var(--s1,#0c0f1a);}
+      .drop-overlay-icon{font-size:48px;margin-bottom:12px;}
+      .drop-overlay-text{font-size:20px;font-weight:600;color:var(--text,#e2e8f3);}
     </style>
 
     <style>
@@ -1557,711 +1571,710 @@
     <div class="toast" id="toast"><span class="t-ic">✓</span><span id="toastMsg">Done!</span></div>
 
     <script>
-            /* ═══════════════════════════════════
+      /* ═══════════════════════════════════
          M365 CONFIG — replace to enable live login
       ═══════════════════════════════════ */
-            const M365 = {
-              auth: {
-                clientId: 'YOUR_CLIENT_ID',
-                authority: 'https://login.microsoftonline.com/YOUR_TENANT_ID',
-                redirectUri: window.location.href,
-              },
-              cache: { cacheLocation: 'sessionStorage' },
-            };
-            const SCOPES = ['User.Read', 'Calendars.ReadWrite'];
-            let msalApp = null,
-              currentUser = null;
+      const M365 = {
+        auth: {
+          clientId: 'YOUR_CLIENT_ID',
+          authority: 'https://login.microsoftonline.com/YOUR_TENANT_ID',
+          redirectUri: window.location.href,
+        },
+        cache: { cacheLocation: 'sessionStorage' },
+      };
+      const SCOPES = ['User.Read', 'Calendars.ReadWrite'];
+      let msalApp = null,
+        currentUser = null;
 
-            function loginDemo() {
-              currentUser = { name: 'Demo User', email: 'demo@controlservice.com', initials: 'DU', isReal: false };
-              sessionStorage.setItem('ch_user', JSON.stringify(currentUser));
-              enterApp();
-            }
+      function loginDemo() {
+        currentUser = { name: 'Demo User', email: 'demo@controlservice.com', initials: 'DU', isReal: false };
+        sessionStorage.setItem('ch_user', JSON.stringify(currentUser));
+        enterApp();
+      }
 
-            async function loginWithMicrosoft() {
-              const btn = document.getElementById('msBtn');
-              btn.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">⟳</span> Connecting...';
-              btn.disabled = true;
-              try {
-                msalApp = new msal.PublicClientApplication(M365);
-                await msalApp.initialize();
-                const r = await msalApp.loginPopup({ scopes: SCOPES });
-                currentUser = {
-                  name: r.account.name || r.account.username,
-                  email: r.account.username,
-                  initials: (r.account.name || '?')
-                    .split(' ')
-                    .map((n) => n[0])
-                    .join('')
-                    .slice(0, 2)
-                    .toUpperCase(),
-                  isReal: true,
-                };
-                sessionStorage.setItem('ch_user', JSON.stringify(currentUser));
-                enterApp();
-              } catch (e) {
-                if (M365.auth.clientId === 'YOUR_CLIENT_ID') {
-                  showToast('Demo mode — replace YOUR_CLIENT_ID for real login');
-                  setTimeout(loginDemo, 700);
-                } else {
-                  btn.innerHTML = '⚠️ Login failed';
-                  btn.disabled = false;
-                }
-              }
-            }
+      async function loginWithMicrosoft() {
+        const btn = document.getElementById('msBtn');
+        btn.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">⟳</span> Connecting...';
+        btn.disabled = true;
+        try {
+          msalApp = new msal.PublicClientApplication(M365);
+          await msalApp.initialize();
+          const r = await msalApp.loginPopup({ scopes: SCOPES });
+          currentUser = {
+            name: r.account.name || r.account.username,
+            email: r.account.username,
+            initials: (r.account.name || '?')
+              .split(' ')
+              .map((n) => n[0])
+              .join('')
+              .slice(0, 2)
+              .toUpperCase(),
+            isReal: true,
+          };
+          sessionStorage.setItem('ch_user', JSON.stringify(currentUser));
+          enterApp();
+        } catch (e) {
+          if (M365.auth.clientId === 'YOUR_CLIENT_ID') {
+            showToast('Demo mode — replace YOUR_CLIENT_ID for real login');
+            setTimeout(loginDemo, 700);
+          } else {
+            btn.innerHTML = '⚠️ Login failed';
+            btn.disabled = false;
+          }
+        }
+      }
 
-            function enterApp() {
-              document.getElementById('loginScreen').style.display = 'none';
-              document.getElementById('app').classList.add('visible');
-              document.getElementById('topName').textContent = currentUser.name;
-              document.getElementById('topAv').textContent = currentUser.initials;
-              const td = new Date();
-              document.getElementById('schedSub').textContent =
-                'Personnel scheduling — ' +
-                td.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-              renderStaff();
-              renderSAList();
-              renderDispatch();
-              populateTechFilter();
-              buildCalendar('staff', staffCalYear, staffCalMonth, staffSelDay, 'staffCalCard');
-              buildCalendar('pm', pmCalYear, pmCalMonth, pmSelDay, 'pmCalCard');
-              updatePMStats();
-              updateStaffStats();
-            }
+      function enterApp() {
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('app').classList.add('visible');
+        document.getElementById('topName').textContent = currentUser.name;
+        document.getElementById('topAv').textContent = currentUser.initials;
+        const td = new Date();
+        document.getElementById('schedSub').textContent =
+          'Personnel scheduling — ' +
+          td.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        renderStaff();
+        renderSAList();
+        renderDispatch();
+        populateTechFilter();
+        buildCalendar('staff', staffCalYear, staffCalMonth, staffSelDay, 'staffCalCard');
+        buildCalendar('pm', pmCalYear, pmCalMonth, pmSelDay, 'pmCalCard');
+        updatePMStats();
+        updateStaffStats();
+      }
 
-            function signOut() {
-              sessionStorage.removeItem('ch_user');
-              if (msalApp && currentUser?.isReal) msalApp.logoutPopup().catch(() => {});
-              window.location.href = 'index.html';
-            }
+      function signOut() {
+        sessionStorage.removeItem('ch_user');
+        if (msalApp && currentUser?.isReal) msalApp.logoutPopup().catch(() => {});
+        window.location.href = 'index.html';
+      }
 
-            // Auto-login if session exists
-            (function () {
-              try {
-                const s = sessionStorage.getItem('ch_user');
-                if (s) {
-                  currentUser = JSON.parse(s);
-                  enterApp();
-                }
-              } catch (e) {}
-            })();
+      // Auto-login if session exists
+      (function () {
+        try {
+          const s = sessionStorage.getItem('ch_user');
+          if (s) {
+            currentUser = JSON.parse(s);
+            enterApp();
+          }
+        } catch (e) {}
+      })();
 
-            async function syncToOutlook() {
-              showToast('Syncing to Outlook Calendar...');
-              if (!msalApp || !currentUser?.isReal) {
-                setTimeout(() => showToast('Demo mode: sign in with M365 for live sync'), 1200);
-                return;
-              }
-              try {
-                const tr = await msalApp.acquireTokenSilent({ scopes: SCOPES, account: msalApp.getAllAccounts()[0] });
-                const token = tr.accessToken;
-                const today = new Date();
-                const upcoming = generateAllPMEvents()
-                  .filter((e) => {
-                    const d = e.date;
-                    return d >= today && d <= new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
-                  })
-                  .slice(0, 5);
-                let synced = 0;
-                for (const pm of upcoming) {
-                  const ds = pm.date.toISOString().split('T')[0];
-                  await fetch('https://graph.microsoft.com/v1.0/me/events', {
-                    method: 'POST',
-                    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      subject: '[PM] ' + pm.customer + ' — ' + pm.saNum + ' (' + pm.pmLabel + ')',
-                      start: { dateTime: ds + 'T08:00:00', timeZone: 'America/Chicago' },
-                      end: { dateTime: ds + 'T17:00:00', timeZone: 'America/Chicago' },
-                      body: {
-                        content: 'Tech: ' + pm.tech + '\nSite: ' + pm.addr + '\nAdmin: ' + pm.adminContact,
-                        contentType: 'text',
-                      },
-                    }),
-                  });
-                  synced++;
-                }
-                showToast('✓ ' + synced + ' PM events synced to Outlook');
-              } catch (e) {
-                console.error(e);
-                showToast('Sync error — check console');
-              }
-            }
+      async function syncToOutlook() {
+        showToast('Syncing to Outlook Calendar...');
+        if (!msalApp || !currentUser?.isReal) {
+          setTimeout(() => showToast('Demo mode: sign in with M365 for live sync'), 1200);
+          return;
+        }
+        try {
+          const tr = await msalApp.acquireTokenSilent({ scopes: SCOPES, account: msalApp.getAllAccounts()[0] });
+          const token = tr.accessToken;
+          const today = new Date();
+          const upcoming = generateAllPMEvents()
+            .filter((e) => {
+              const d = e.date;
+              return d >= today && d <= new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+            })
+            .slice(0, 5);
+          let synced = 0;
+          for (const pm of upcoming) {
+            const ds = pm.date.toISOString().split('T')[0];
+            await fetch('https://graph.microsoft.com/v1.0/me/events', {
+              method: 'POST',
+              headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                subject: '[PM] ' + pm.customer + ' — ' + pm.saNum + ' (' + pm.pmLabel + ')',
+                start: { dateTime: ds + 'T08:00:00', timeZone: 'America/Chicago' },
+                end: { dateTime: ds + 'T17:00:00', timeZone: 'America/Chicago' },
+                body: {
+                  content: 'Tech: ' + pm.tech + '\nSite: ' + pm.addr + '\nAdmin: ' + pm.adminContact,
+                  contentType: 'text',
+                },
+              }),
+            });
+            synced++;
+          }
+          showToast('✓ ' + synced + ' PM events synced to Outlook');
+        } catch (e) {
+          console.error(e);
+          showToast('Sync error — check console');
+        }
+      }
 
-            /* ═══════════════════════════════════
+      /* ═══════════════════════════════════
          TECH COLORS
       ═══════════════════════════════════ */
-            // Fixed color per technician — consistent across calendar, list, and detail
-            const TECH_COLOR_MAP = {
-              '[REDACTED]': '#3b82f6', // blue
-              '[REDACTED]': '#f43f5e', // red
-              '[REDACTED]': '#22c55e', // green
-              '[REDACTED]': '#f59e0b', // amber
-              '[REDACTED]': '#8b5cf6', // violet
-              '[REDACTED]': '#14b8a6', // teal
-              '[REDACTED]': '#fb923c', // orange
-              '[REDACTED]': '#38bdf8', // sky
-              '[REDACTED]': '#e879f9', // pink
-            };
-            const _OVERFLOW = ['#84cc16', '#06b6d4', '#a78bfa', '#fbbf24', '#f97316'];
-            let _ovIdx = 0;
-            function getTechColor(tech) {
-              if (!tech || tech === 'N/A' || tech === '') return '#6b7a9e';
-              // Handle "Mike/Jason" combined techs — use first name's color
-              const first = tech.split('/')[0].trim();
-              if (TECH_COLOR_MAP[first]) return TECH_COLOR_MAP[first];
-              if (TECH_COLOR_MAP[tech]) return TECH_COLOR_MAP[tech];
-              // Unknown tech — assign from overflow pool and remember it
-              if (!TECH_COLOR_MAP[tech]) {
-                TECH_COLOR_MAP[tech] = _OVERFLOW[_ovIdx % _OVERFLOW.length];
-                _ovIdx++;
-              }
-              return TECH_COLOR_MAP[tech];
-            }
-            function techInits(name) {
-              if (!name || name === 'N/A') return '?';
-              return name
-                .split(' ')
-                .map((n) => n[0])
-                .join('')
-                .slice(0, 2)
-                .toUpperCase();
-            }
+      // Fixed color per technician — consistent across calendar, list, and detail
+      const TECH_COLOR_MAP = {
+        '[REDACTED]': '#3b82f6', // blue
+        '[REDACTED]': '#f43f5e', // red
+        '[REDACTED]': '#22c55e', // green
+        '[REDACTED]': '#f59e0b', // amber
+        '[REDACTED]': '#8b5cf6', // violet
+        '[REDACTED]': '#14b8a6', // teal
+        '[REDACTED]': '#fb923c', // orange
+        '[REDACTED]': '#38bdf8', // sky
+        '[REDACTED]': '#e879f9', // pink
+      };
+      const _OVERFLOW = ['#84cc16', '#06b6d4', '#a78bfa', '#fbbf24', '#f97316'];
+      let _ovIdx = 0;
+      function getTechColor(tech) {
+        if (!tech || tech === 'N/A' || tech === '') return '#6b7a9e';
+        // Handle "Mike/Jason" combined techs — use first name's color
+        const first = tech.split('/')[0].trim();
+        if (TECH_COLOR_MAP[first]) return TECH_COLOR_MAP[first];
+        if (TECH_COLOR_MAP[tech]) return TECH_COLOR_MAP[tech];
+        // Unknown tech — assign from overflow pool and remember it
+        if (!TECH_COLOR_MAP[tech]) {
+          TECH_COLOR_MAP[tech] = _OVERFLOW[_ovIdx % _OVERFLOW.length];
+          _ovIdx++;
+        }
+        return TECH_COLOR_MAP[tech];
+      }
+      function techInits(name) {
+        if (!name || name === 'N/A') return '?';
+        return name
+          .split(' ')
+          .map((n) => n[0])
+          .join('')
+          .slice(0, 2)
+          .toUpperCase();
+      }
 
-            /* ═══════════════════════════════════
+      /* ═══════════════════════════════════
          PM DATE ENGINE
          Reads Col M patterns and generates
          actual calendar dates
       ═══════════════════════════════════ */
-            const DAYS_MAP = {
-              sun: 0,
-              mon: 1,
-              tue: 2,
-              wed: 3,
-              thu: 4,
-              fri: 5,
-              sat: 6,
-              sunday: 0,
-              monday: 1,
-              tuesday: 2,
-              wednesday: 3,
-              thursday: 4,
-              friday: 5,
-              saturday: 6,
-              thur: 4,
-              thurs: 4,
-              tues: 2,
-            };
-            const MONTH_MAP = {
-              jan: 0,
-              feb: 1,
-              mar: 2,
-              apr: 3,
-              may: 4,
-              jun: 5,
-              jul: 6,
-              aug: 7,
-              sep: 8,
-              oct: 9,
-              nov: 10,
-              dec: 11,
-              january: 0,
-              february: 1,
-              march: 2,
-              april: 3,
-              june: 5,
-              july: 6,
-              august: 7,
-              september: 8,
-              october: 9,
-              november: 10,
-              december: 11,
-            };
+      const DAYS_MAP = {
+        sun: 0,
+        mon: 1,
+        tue: 2,
+        wed: 3,
+        thu: 4,
+        fri: 5,
+        sat: 6,
+        sunday: 0,
+        monday: 1,
+        tuesday: 2,
+        wednesday: 3,
+        thursday: 4,
+        friday: 5,
+        saturday: 6,
+        thur: 4,
+        thurs: 4,
+        tues: 2,
+      };
+      const MONTH_MAP = {
+        jan: 0,
+        feb: 1,
+        mar: 2,
+        apr: 3,
+        may: 4,
+        jun: 5,
+        jul: 6,
+        aug: 7,
+        sep: 8,
+        oct: 9,
+        nov: 10,
+        dec: 11,
+        january: 0,
+        february: 1,
+        march: 2,
+        april: 3,
+        june: 5,
+        july: 6,
+        august: 7,
+        september: 8,
+        october: 9,
+        november: 10,
+        december: 11,
+      };
 
-            function getNthWeekday(year, month, weekday, n) {
-              const days = new Date(year, month + 1, 0).getDate();
-              let count = 0;
-              for (let d = 1; d <= days; d++) {
-                if (new Date(year, month, d).getDay() === weekday) {
-                  count++;
-                  if (count === n) return d;
-                }
-              }
-              return null;
+      function getNthWeekday(year, month, weekday, n) {
+        const days = new Date(year, month + 1, 0).getDate();
+        let count = 0;
+        for (let d = 1; d <= days; d++) {
+          if (new Date(year, month, d).getDay() === weekday) {
+            count++;
+            if (count === n) return d;
+          }
+        }
+        return null;
+      }
+      function parseOrd(s) {
+        const m = s.match(/(\d+)/);
+        return m ? parseInt(m[1]) : null;
+      }
+      function parseMonthList(s) {
+        return s
+          .split(/[\/,&\s]+/)
+          .map((m) => {
+            const k = m.trim().toLowerCase().replace('.', '');
+            return MONTH_MAP[k] ?? MONTH_MAP[k.slice(0, 3)];
+          })
+          .filter((m) => m !== undefined && m !== null);
+      }
+      function parseDayName(s) {
+        const k = s.trim().toLowerCase().replace('.', '');
+        return DAYS_MAP[k] ?? DAYS_MAP[k.slice(0, 3)];
+      }
+
+      function generateDatesForPattern(pattern, year) {
+        const dates = [];
+        const p = pattern.toLowerCase();
+        const add = (m, d) => {
+          if (d != null && d > 0) dates.push(new Date(year, m, d));
+        };
+
+        // Split multi-line patterns and process each line separately
+        const lines = pattern
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((l) => l.length > 5);
+        if (lines.length > 1) {
+          lines.forEach((line) => generateDatesForPattern(line, year).forEach((d) => dates.push(d)));
+          return dates;
+        }
+
+        // "Nth DAY - Month/Month/Month" — e.g. "2nd Thu - Feb/May/Aug/Nov"
+        const nthDayMonths = p.match(
+          /(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)[^a-z]*((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\/\w]*)/i,
+        );
+        if (nthDayMonths) {
+          const n = parseOrd(nthDayMonths[1]);
+          const wd = parseDayName(nthDayMonths[2]);
+          const months = parseMonthList(nthDayMonths[3]);
+          if (wd !== undefined && months.length) {
+            months.forEach((m) => add(m, getNthWeekday(year, m, wd, n)));
+            if (dates.length) return dates;
+          }
+        }
+
+        // "Nth DAY & Nth DAY" monthly — e.g. "1st & 3rd Fri"
+        const twoNth = p.match(
+          /(\d+(?:st|nd|rd|th))\s*&\s*(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)/i,
+        );
+        if (twoNth) {
+          const n1 = parseOrd(twoNth[1]),
+            n2 = parseOrd(twoNth[2]),
+            wd = parseDayName(twoNth[3]);
+          if (wd !== undefined) {
+            for (let m = 0; m < 12; m++) {
+              add(m, getNthWeekday(year, m, wd, n1));
+              add(m, getNthWeekday(year, m, wd, n2));
             }
-            function parseOrd(s) {
-              const m = s.match(/(\d+)/);
-              return m ? parseInt(m[1]) : null;
+            return dates;
+          }
+        }
+
+        // "Nth DAY & DAY" (two different days monthly) — e.g. "4th Tues & Wed"
+        const twoDays = p.match(
+          /(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)\s*&\s*(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)/i,
+        );
+        if (twoDays) {
+          const n = parseOrd(twoDays[1]),
+            wd1 = parseDayName(twoDays[2]),
+            wd2 = parseDayName(twoDays[3]);
+          if (wd1 !== undefined && wd2 !== undefined) {
+            for (let m = 0; m < 12; m++) {
+              add(m, getNthWeekday(year, m, wd1, n));
+              add(m, getNthWeekday(year, m, wd2, n));
             }
-            function parseMonthList(s) {
-              return s
-                .split(/[\/,&\s]+/)
-                .map((m) => {
-                  const k = m.trim().toLowerCase().replace('.', '');
-                  return MONTH_MAP[k] ?? MONTH_MAP[k.slice(0, 3)];
-                })
-                .filter((m) => m !== undefined && m !== null);
-            }
-            function parseDayName(s) {
-              const k = s.trim().toLowerCase().replace('.', '');
-              return DAYS_MAP[k] ?? DAYS_MAP[k.slice(0, 3)];
-            }
+            return dates;
+          }
+        }
 
-            function generateDatesForPattern(pattern, year) {
-              const dates = [];
-              const p = pattern.toLowerCase();
-              const add = (m, d) => {
-                if (d != null && d > 0) dates.push(new Date(year, m, d));
-              };
+        // "Monthly - Nth DAY"
+        const monthlyNth = p.match(
+          /monthly.*?(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)/i,
+        );
+        if (monthlyNth) {
+          const n = parseOrd(monthlyNth[1]),
+            wd = parseDayName(monthlyNth[2]);
+          if (wd !== undefined) {
+            for (let m = 0; m < 12; m++) add(m, getNthWeekday(year, m, wd, n));
+            return dates;
+          }
+        }
 
-              // Split multi-line patterns and process each line separately
-              const lines = pattern
-                .split('\n')
-                .map((l) => l.trim())
-                .filter((l) => l.length > 5);
-              if (lines.length > 1) {
-                lines.forEach((line) => generateDatesForPattern(line, year).forEach((d) => dates.push(d)));
-                return dates;
-              }
+        // "2x Monthly - Nth DAY"
+        const twoXMonthly = p.match(
+          /2x\s*monthly.*?(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)/i,
+        );
+        if (twoXMonthly) {
+          const n = parseOrd(twoXMonthly[1]),
+            wd = parseDayName(twoXMonthly[2]);
+          if (wd !== undefined) {
+            for (let m = 0; m < 12; m++) add(m, getNthWeekday(year, m, wd, n));
+            return dates;
+          }
+        }
 
-              // "Nth DAY - Month/Month/Month" — e.g. "2nd Thu - Feb/May/Aug/Nov"
-              const nthDayMonths = p.match(
-                /(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)[^a-z]*((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\/\w]*)/i,
-              );
-              if (nthDayMonths) {
-                const n = parseOrd(nthDayMonths[1]);
-                const wd = parseDayName(nthDayMonths[2]);
-                const months = parseMonthList(nthDayMonths[3]);
-                if (wd !== undefined && months.length) {
-                  months.forEach((m) => add(m, getNthWeekday(year, m, wd, n)));
-                  if (dates.length) return dates;
-                }
-              }
+        // "5X per Year - Nth DAY - Jan/Apr/Jul/Sep/Dec"
+        const nXYear = p.match(
+          /(\d+)x?\s*per\s*year.*?(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)[^a-z]*((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\/\w]*)/i,
+        );
+        if (nXYear) {
+          const n = parseOrd(nXYear[2]),
+            wd = parseDayName(nXYear[3]),
+            months = parseMonthList(nXYear[4]);
+          if (wd !== undefined && months.length) {
+            months.forEach((m) => add(m, getNthWeekday(year, m, wd, n)));
+            return dates;
+          }
+        }
 
-              // "Nth DAY & Nth DAY" monthly — e.g. "1st & 3rd Fri"
-              const twoNth = p.match(
-                /(\d+(?:st|nd|rd|th))\s*&\s*(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)/i,
-              );
-              if (twoNth) {
-                const n1 = parseOrd(twoNth[1]),
-                  n2 = parseOrd(twoNth[2]),
-                  wd = parseDayName(twoNth[3]);
-                if (wd !== undefined) {
-                  for (let m = 0; m < 12; m++) {
-                    add(m, getNthWeekday(year, m, wd, n1));
-                    add(m, getNthWeekday(year, m, wd, n2));
-                  }
-                  return dates;
-                }
-              }
+        // Bi-Monthly with month list — e.g. "4th Fri - Jan/Mar/May/Jul/Sep/Nov"
+        const biMonthlyList = p.match(
+          /(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)[^a-z]*((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\/\w]{5,})/i,
+        );
+        if (biMonthlyList) {
+          const n = parseOrd(biMonthlyList[1]),
+            wd = parseDayName(biMonthlyList[2]),
+            months = parseMonthList(biMonthlyList[3]);
+          if (wd !== undefined && months.length) {
+            months.forEach((m) => add(m, getNthWeekday(year, m, wd, n)));
+            return dates;
+          }
+        }
 
-              // "Nth DAY & DAY" (two different days monthly) — e.g. "4th Tues & Wed"
-              const twoDays = p.match(
-                /(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)\s*&\s*(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)/i,
-              );
-              if (twoDays) {
-                const n = parseOrd(twoDays[1]),
-                  wd1 = parseDayName(twoDays[2]),
-                  wd2 = parseDayName(twoDays[3]);
-                if (wd1 !== undefined && wd2 !== undefined) {
-                  for (let m = 0; m < 12; m++) {
-                    add(m, getNthWeekday(year, m, wd1, n));
-                    add(m, getNthWeekday(year, m, wd2, n));
-                  }
-                  return dates;
-                }
-              }
+        // Generic monthly (no specific day given)
+        if (/monthly|pm'?s monthly|pm monthly|per month/i.test(p) && !/quarterly|semi|annual|bi-month/i.test(p)) {
+          for (let m = 0; m < 12; m++) add(m, 1);
+          return dates;
+        }
 
-              // "Monthly - Nth DAY"
-              const monthlyNth = p.match(
-                /monthly.*?(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)/i,
-              );
-              if (monthlyNth) {
-                const n = parseOrd(monthlyNth[1]),
-                  wd = parseDayName(monthlyNth[2]);
-                if (wd !== undefined) {
-                  for (let m = 0; m < 12; m++) add(m, getNthWeekday(year, m, wd, n));
-                  return dates;
-                }
-              }
+        // Bi-Monthly generic
+        if (/bi-monthly|bimonthly|bi.monthly/i.test(p)) {
+          [0, 2, 4, 6, 8, 10].forEach((m) => add(m, 1));
+          return dates;
+        }
 
-              // "2x Monthly - Nth DAY"
-              const twoXMonthly = p.match(
-                /2x\s*monthly.*?(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)/i,
-              );
-              if (twoXMonthly) {
-                const n = parseOrd(twoXMonthly[1]),
-                  wd = parseDayName(twoXMonthly[2]);
-                if (wd !== undefined) {
-                  for (let m = 0; m < 12; m++) add(m, getNthWeekday(year, m, wd, n));
-                  return dates;
-                }
-              }
+        // Quarterly generic
+        if (/quarterly|qtrly/i.test(p)) {
+          [0, 3, 6, 9].forEach((m) => add(m, 1));
+          return dates;
+        }
 
-              // "5X per Year - Nth DAY - Jan/Apr/Jul/Sep/Dec"
-              const nXYear = p.match(
-                /(\d+)x?\s*per\s*year.*?(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)[^a-z]*((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\/\w]*)/i,
-              );
-              if (nXYear) {
-                const n = parseOrd(nXYear[2]),
-                  wd = parseDayName(nXYear[3]),
-                  months = parseMonthList(nXYear[4]);
-                if (wd !== undefined && months.length) {
-                  months.forEach((m) => add(m, getNthWeekday(year, m, wd, n)));
-                  return dates;
-                }
-              }
+        // Semi-Annual with months — e.g. "1st Wed - May/Nov"
+        const semiMonths = p.match(
+          /(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)[^a-z]*((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\/\w]*)/i,
+        );
+        if (semiMonths && /semi|bi.annual/i.test(p)) {
+          const n = parseOrd(semiMonths[1]),
+            wd = parseDayName(semiMonths[2]),
+            months = parseMonthList(semiMonths[3]);
+          if (wd !== undefined && months.length) {
+            months.forEach((m) => add(m, getNthWeekday(year, m, wd, n)));
+            return dates;
+          }
+        }
 
-              // Bi-Monthly with month list — e.g. "4th Fri - Jan/Mar/May/Jul/Sep/Nov"
-              const biMonthlyList = p.match(
-                /(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)[^a-z]*((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\/\w]{5,})/i,
-              );
-              if (biMonthlyList) {
-                const n = parseOrd(biMonthlyList[1]),
-                  wd = parseDayName(biMonthlyList[2]),
-                  months = parseMonthList(biMonthlyList[3]);
-                if (wd !== undefined && months.length) {
-                  months.forEach((m) => add(m, getNthWeekday(year, m, wd, n)));
-                  return dates;
-                }
-              }
+        // Semi-Annual generic
+        if (/semi.annual|semi.annually/i.test(p)) {
+          [0, 6].forEach((m) => add(m, 1));
+          return dates;
+        }
 
-              // Generic monthly (no specific day given)
-              if (/monthly|pm'?s monthly|pm monthly|per month/i.test(p) && !/quarterly|semi|annual|bi-month/i.test(p)) {
-                for (let m = 0; m < 12; m++) add(m, 1);
-                return dates;
-              }
+        // Annual with Nth day and month
+        const annualNth = p.match(
+          /annual.*?(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)[^a-z]*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i,
+        );
+        if (annualNth) {
+          const n = parseOrd(annualNth[1]),
+            wd = parseDayName(annualNth[2]);
+          const mo = MONTH_MAP[annualNth[3].toLowerCase()];
+          if (wd !== undefined && mo !== undefined) {
+            add(mo, getNthWeekday(year, mo, wd, n));
+            return dates;
+          }
+        }
 
-              // Bi-Monthly generic
-              if (/bi-monthly|bimonthly|bi.monthly/i.test(p)) {
-                [0, 2, 4, 6, 8, 10].forEach((m) => add(m, 1));
-                return dates;
-              }
+        // Annual generic
+        if (/annual/i.test(p) && !/semi/i.test(p)) {
+          add(0, 1);
+          return dates;
+        }
 
-              // Quarterly generic
-              if (/quarterly|qtrly/i.test(p)) {
-                [0, 3, 6, 9].forEach((m) => add(m, 1));
-                return dates;
-              }
+        return dates;
+      }
 
-              // Semi-Annual with months — e.g. "1st Wed - May/Nov"
-              const semiMonths = p.match(
-                /(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)[^a-z]*((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\/\w]*)/i,
-              );
-              if (semiMonths && /semi|bi.annual/i.test(p)) {
-                const n = parseOrd(semiMonths[1]),
-                  wd = parseDayName(semiMonths[2]),
-                  months = parseMonthList(semiMonths[3]);
-                if (wd !== undefined && months.length) {
-                  months.forEach((m) => add(m, getNthWeekday(year, m, wd, n)));
-                  return dates;
-                }
-              }
+      function parseContractDate(s) {
+        if (!s || !s.trim()) return null;
+        const m = s.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+        if (!m) return null;
+        let yr = parseInt(m[3]);
+        if (yr < 100) yr += 2000;
+        return new Date(yr, parseInt(m[1]) - 1, parseInt(m[2]));
+      }
 
-              // Semi-Annual generic
-              if (/semi.annual|semi.annually/i.test(p)) {
-                [0, 6].forEach((m) => add(m, 1));
-                return dates;
-              }
-
-              // Annual with Nth day and month
-              const annualNth = p.match(
-                /annual.*?(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)[^a-z]*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i,
-              );
-              if (annualNth) {
-                const n = parseOrd(annualNth[1]),
-                  wd = parseDayName(annualNth[2]);
-                const mo = MONTH_MAP[annualNth[3].toLowerCase()];
-                if (wd !== undefined && mo !== undefined) {
-                  add(mo, getNthWeekday(year, mo, wd, n));
-                  return dates;
-                }
-              }
-
-              // Annual generic
-              if (/annual/i.test(p) && !/semi/i.test(p)) {
-                add(0, 1);
-                return dates;
-              }
-
-              return dates;
-            }
-
-            function parseContractDate(s) {
-              if (!s || !s.trim()) return null;
-              const m = s.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-              if (!m) return null;
-              let yr = parseInt(m[3]);
-              if (yr < 100) yr += 2000;
-              return new Date(yr, parseInt(m[1]) - 1, parseInt(m[2]));
-            }
-
-            function generateAllPMEvents(calYear) {
-              const today = new Date();
-              today.setHours(0, 0, 0, 0); // strip time for clean date comparison
-              const events = [];
-              saData.forEach((sa) => {
-                const contractStart = parseContractDate(sa.contractStart);
-                const contractEnd = parseContractDate(sa.contractEnd);
-                const startYr = contractStart ? contractStart.getFullYear() : today.getFullYear();
-                const endYr = contractEnd ? contractEnd.getFullYear() : today.getFullYear();
-                const fromYr = calYear ? Math.max(startYr, calYear) : startYr;
-                const toYr = calYear ? Math.min(endYr, calYear) : endYr;
-                for (let yr = fromYr; yr <= toYr; yr++) {
-                  const dates = generateDatesForPattern(sa.pattern, yr);
-                  dates.forEach((date) => {
-                    if (!(date instanceof Date) || isNaN(date)) return;
-                    if (contractStart && date < contractStart) return;
-                    if (contractEnd && date > contractEnd) return;
-                    events.push({
-                      date,
-                      saNum: sa.saNum,
-                      customer: sa.customer,
-                      tech: sa.tech,
-                      pmLabel: sa.pmLabel,
-                      addr: sa.addr,
-                      adminContact: sa.adminContact,
-                      fieldContact: sa.fieldContact,
-                      color: getTechColor(sa.tech),
-                      id: sa.id,
-                    });
-                  });
-                }
+      function generateAllPMEvents(calYear) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); // strip time for clean date comparison
+        const events = [];
+        saData.forEach((sa) => {
+          const contractStart = parseContractDate(sa.contractStart);
+          const contractEnd = parseContractDate(sa.contractEnd);
+          const startYr = contractStart ? contractStart.getFullYear() : today.getFullYear();
+          const endYr = contractEnd ? contractEnd.getFullYear() : today.getFullYear();
+          const fromYr = calYear ? Math.max(startYr, calYear) : startYr;
+          const toYr = calYear ? Math.min(endYr, calYear) : endYr;
+          for (let yr = fromYr; yr <= toYr; yr++) {
+            const dates = generateDatesForPattern(sa.pattern, yr);
+            dates.forEach((date) => {
+              if (!(date instanceof Date) || isNaN(date)) return;
+              if (contractStart && date < contractStart) return;
+              if (contractEnd && date > contractEnd) return;
+              events.push({
+                date,
+                saNum: sa.saNum,
+                customer: sa.customer,
+                tech: sa.tech,
+                pmLabel: sa.pmLabel,
+                addr: sa.addr,
+                adminContact: sa.adminContact,
+                fieldContact: sa.fieldContact,
+                color: getTechColor(sa.tech),
+                id: sa.id,
               });
-              return events;
-            }
+            });
+          }
+        });
+        return events;
+      }
 
-            function getPMChipClass(lbl, pat) {
-              const t = (lbl + pat).toLowerCase();
-              if (/monthly|2x|per month/i.test(t) && !/quarterly|semi|annual/i.test(t)) return 'pm-monthly';
-              if (/bi-monthly|bimonthly/i.test(t)) return 'pm-biannual';
-              if (/quarterly|qtrly/i.test(t)) return 'pm-qtrly';
-              if (/semi.annual/i.test(t)) return 'pm-semi';
-              if (/annual/i.test(t)) return 'pm-annual';
-              return 'pm-qtrly';
-            }
-            function getPMChipLabel(lbl) {
-              if (!lbl || lbl === 'N/A') return 'PM';
-              return lbl.length > 22 ? lbl.slice(0, 20) + '…' : lbl;
-            }
+      function getPMChipClass(lbl, pat) {
+        const t = (lbl + pat).toLowerCase();
+        if (/monthly|2x|per month/i.test(t) && !/quarterly|semi|annual/i.test(t)) return 'pm-monthly';
+        if (/bi-monthly|bimonthly/i.test(t)) return 'pm-biannual';
+        if (/quarterly|qtrly/i.test(t)) return 'pm-qtrly';
+        if (/semi.annual/i.test(t)) return 'pm-semi';
+        if (/annual/i.test(t)) return 'pm-annual';
+        return 'pm-qtrly';
+      }
+      function getPMChipLabel(lbl) {
+        if (!lbl || lbl === 'N/A') return 'PM';
+        return lbl.length > 22 ? lbl.slice(0, 20) + '…' : lbl;
+      }
 
-            /* ═══════════════════════════════════
+      /* ═══════════════════════════════════
          SA DATA — 57 real records from CSV
       ═══════════════════════════════════ */
-            /* ── PERSISTENT STORAGE — delegates to window.Store so dataUpdated events fire ── */
-            function sset(k, v) {
-              if (window.Store) {
-                window.Store.set(k, v);
-                return;
-              }
-              try {
-                localStorage.setItem(k, JSON.stringify(v));
-              } catch (e) {
-                console.warn('sset:', e);
-              }
-            }
-            function sget(k, fb) {
-              try {
-                const r = localStorage.getItem(k);
-                return r !== null ? JSON.parse(r) : fb;
-              } catch (e) {
-                return fb;
-              }
-            }
+      /* ── PERSISTENT STORAGE — delegates to window.Store so dataUpdated events fire ── */
+      function sset(k, v) {
+        if (window.Store) {
+          window.Store.set(k, v);
+          return;
+        }
+        try {
+          localStorage.setItem(k, JSON.stringify(v));
+        } catch (e) {
+          console.warn('sset:', e);
+        }
+      }
+      function sget(k, fb) {
+        try {
+          const r = localStorage.getItem(k);
+          return r !== null ? JSON.parse(r) : fb;
+        } catch (e) {
+          return fb;
+        }
+      }
 
-            let saData = []; // Data lives in localStorage only — never hardcode real data in source
-            saData = sget('sv_saData', saData);
+      let saData = []; // Data lives in localStorage only — never hardcode real data in source
+      saData = sget('sv_saData', saData);
 
-
-            /* ═══════════════════════════════════
+      /* ═══════════════════════════════════
          STAFF DATA
       ═══════════════════════════════════ */
-            let staffData = []; // Data lives in localStorage only
-            staffData = sget('sv_staffData', staffData);
-            const AV_COLORS = [
-              ['#3b82f6', '#1d4ed8'],
-              ['#14b8a6', '#0f766e'],
-              ['#f59e0b', '#b45309'],
-              ['#8b5cf6', '#6d28d9'],
-              ['#f43f5e', '#be123c'],
-              ['#22c55e', '#15803d'],
-              ['#fb923c', '#c2410c'],
-              ['#38bdf8', '#0284c7'],
-              ['#e879f9', '#a21caf'],
-            ];
+      let staffData = []; // Data lives in localStorage only
+      staffData = sget('sv_staffData', staffData);
+      const AV_COLORS = [
+        ['#3b82f6', '#1d4ed8'],
+        ['#14b8a6', '#0f766e'],
+        ['#f59e0b', '#b45309'],
+        ['#8b5cf6', '#6d28d9'],
+        ['#f43f5e', '#be123c'],
+        ['#22c55e', '#15803d'],
+        ['#fb923c', '#c2410c'],
+        ['#38bdf8', '#0284c7'],
+        ['#e879f9', '#a21caf'],
+      ];
 
-            let staffFilter = 'all';
-            function renderStaff() {
-              let rows = staffData.filter((r) => staffFilter === 'all' || r.status === staffFilter);
-              const tb = document.getElementById('staffBody');
-              if (!rows.length) {
-                tb.innerHTML =
-                  '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:20px">No staff match</td></tr>';
-                return;
-              }
-              tb.innerHTML = rows
-                .map((p, i) => {
-                  const [c1, c2] = AV_COLORS[staffData.indexOf(p) % AV_COLORS.length];
-                  const init = p.name
-                    .split(' ')
-                    .map((n) => n[0])
-                    .join('');
-                  const sm = { on: ['sp-on', 'On Duty'], off: ['sp-off', 'Off'], leave: ['sp-leave', 'On Leave'] }[
-                    p.status
-                  ] || ['sp-off', '?'];
-                  return `<tr><td><div class="person-cell"><div class="av" style="background:linear-gradient(135deg,${c1},${c2})">${init}</div>
+      let staffFilter = 'all';
+      function renderStaff() {
+        let rows = staffData.filter((r) => staffFilter === 'all' || r.status === staffFilter);
+        const tb = document.getElementById('staffBody');
+        if (!rows.length) {
+          tb.innerHTML =
+            '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:20px">No staff match</td></tr>';
+          return;
+        }
+        tb.innerHTML = rows
+          .map((p, i) => {
+            const [c1, c2] = AV_COLORS[staffData.indexOf(p) % AV_COLORS.length];
+            const init = p.name
+              .split(' ')
+              .map((n) => n[0])
+              .join('');
+            const sm = { on: ['sp-on', 'On Duty'], off: ['sp-off', 'Off'], leave: ['sp-leave', 'On Leave'] }[
+              p.status
+            ] || ['sp-off', '?'];
+            return `<tr><td><div class="person-cell"><div class="av" style="background:linear-gradient(135deg,${c1},${c2})">${init}</div>
             <div><div class="p-name">${p.name}</div><div class="p-role">${p.role}</div></div></div></td>
             <td><span class="hrs-val">${p.hours}h/wk</span></td>
             <td><span class="sp ${sm[0]}"><span class="sp-dot"></span>${sm[1]}</span></td>
             <td><button class="btn-del" onclick="removeStaff(${p.id})">Remove</button></td></tr>`;
-                })
-                .join('');
-              updateStaffStats();
-              document.getElementById('sbStaff').textContent = staffData.length;
-            }
-            function filterStaff(f) {
-              staffFilter = f;
-              ['fa', 'fon', 'flv'].forEach((id) => {
-                const el = document.getElementById(id);
-                el.style.borderColor = '';
-                el.style.color = '';
-              });
-              const map = { all: 'fa', on: 'fon', leave: 'flv' };
-              const el = document.getElementById(map[f]);
-              if (el) {
-                el.style.borderColor = 'var(--blue)';
-                el.style.color = 'var(--blue)';
-              }
-              renderStaff();
-            }
-            function updateStaffStats() {
-              document.getElementById('s-on').textContent = staffData.filter((r) => r.status === 'on').length;
-              document.getElementById('s-lv').textContent = staffData.filter((r) => r.status === 'leave').length;
-              document.getElementById('s-off').textContent = staffData.filter((r) => r.status === 'off').length;
-              document.getElementById('s-tot').textContent = staffData.length;
-              document.getElementById('s-onm').textContent = 'of ' + staffData.length + ' total';
-            }
-            function removeStaff(id) {
-              const e = staffData.find((r) => r.id === id);
-              staffData = staffData.filter((r) => r.id !== id);
-              sset('sv_staffData', staffData);
-              renderStaff();
-              showToast('Removed ' + (e?.name || 'employee'));
-            }
+          })
+          .join('');
+        updateStaffStats();
+        document.getElementById('sbStaff').textContent = staffData.length;
+      }
+      function filterStaff(f) {
+        staffFilter = f;
+        ['fa', 'fon', 'flv'].forEach((id) => {
+          const el = document.getElementById(id);
+          el.style.borderColor = '';
+          el.style.color = '';
+        });
+        const map = { all: 'fa', on: 'fon', leave: 'flv' };
+        const el = document.getElementById(map[f]);
+        if (el) {
+          el.style.borderColor = 'var(--blue)';
+          el.style.color = 'var(--blue)';
+        }
+        renderStaff();
+      }
+      function updateStaffStats() {
+        document.getElementById('s-on').textContent = staffData.filter((r) => r.status === 'on').length;
+        document.getElementById('s-lv').textContent = staffData.filter((r) => r.status === 'leave').length;
+        document.getElementById('s-off').textContent = staffData.filter((r) => r.status === 'off').length;
+        document.getElementById('s-tot').textContent = staffData.length;
+        document.getElementById('s-onm').textContent = 'of ' + staffData.length + ' total';
+      }
+      function removeStaff(id) {
+        const e = staffData.find((r) => r.id === id);
+        staffData = staffData.filter((r) => r.id !== id);
+        sset('sv_staffData', staffData);
+        renderStaff();
+        showToast('Removed ' + (e?.name || 'employee'));
+      }
 
-            /* ═══════════════════════════════════
+      /* ═══════════════════════════════════
          SA LIST
       ═══════════════════════════════════ */
-            let selectedSA = null;
-            function populateTechFilter() {
-              const sel = document.getElementById('techFilter');
-              const techs = [...new Set(saData.map((s) => s.tech).filter((t) => t && t !== 'N/A'))].sort();
-              techs.forEach((t) => {
-                const o = document.createElement('option');
-                o.value = t;
-                o.textContent = t;
-                sel.appendChild(o);
-              });
-            }
-            function renderSAList() {
-              const q = (document.getElementById('saSearch')?.value || '').toLowerCase();
-              const techF = document.getElementById('techFilter')?.value || '';
-              const typeF = document.getElementById('pmTypeFilter')?.value || '';
-              let rows = saData.filter((r) => {
-                const matchQ =
-                  !q ||
-                  r.saNum.toLowerCase().includes(q) ||
-                  r.customer.toLowerCase().includes(q) ||
-                  (r.tech || '').toLowerCase().includes(q);
-                const matchT = !techF || r.tech === techF;
-                const matchTy = !typeF || (r.pmLabel + r.pattern).toLowerCase().includes(typeF.toLowerCase());
-                return matchQ && matchT && matchTy;
-              });
-              const tb = document.getElementById('saBody');
-              if (!rows.length) {
-                tb.innerHTML =
-                  '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:20px">No records match</td></tr>';
-                return;
-              }
-              tb.innerHTML = rows
-                .map((r) => {
-                  const c1 = getTechColor(r.tech);
-                  const init = techInits(r.tech);
-                  const chipCls = getPMChipClass(r.pmLabel, r.pattern);
-                  const chipLbl = getPMChipLabel(r.pmLabel);
-                  const isSel = selectedSA && selectedSA.id === r.id;
-                  return `<tr class="${isSel ? 'sel' : ''}" onclick="selectSA(${r.id})">
+      let selectedSA = null;
+      function populateTechFilter() {
+        const sel = document.getElementById('techFilter');
+        const techs = [...new Set(saData.map((s) => s.tech).filter((t) => t && t !== 'N/A'))].sort();
+        techs.forEach((t) => {
+          const o = document.createElement('option');
+          o.value = t;
+          o.textContent = t;
+          sel.appendChild(o);
+        });
+      }
+      function renderSAList() {
+        const q = (document.getElementById('saSearch')?.value || '').toLowerCase();
+        const techF = document.getElementById('techFilter')?.value || '';
+        const typeF = document.getElementById('pmTypeFilter')?.value || '';
+        let rows = saData.filter((r) => {
+          const matchQ =
+            !q ||
+            r.saNum.toLowerCase().includes(q) ||
+            r.customer.toLowerCase().includes(q) ||
+            (r.tech || '').toLowerCase().includes(q);
+          const matchT = !techF || r.tech === techF;
+          const matchTy = !typeF || (r.pmLabel + r.pattern).toLowerCase().includes(typeF.toLowerCase());
+          return matchQ && matchT && matchTy;
+        });
+        const tb = document.getElementById('saBody');
+        if (!rows.length) {
+          tb.innerHTML =
+            '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:20px">No records match</td></tr>';
+          return;
+        }
+        tb.innerHTML = rows
+          .map((r) => {
+            const c1 = getTechColor(r.tech);
+            const init = techInits(r.tech);
+            const chipCls = getPMChipClass(r.pmLabel, r.pattern);
+            const chipLbl = getPMChipLabel(r.pmLabel);
+            const isSel = selectedSA && selectedSA.id === r.id;
+            return `<tr class="${isSel ? 'sel' : ''}" onclick="selectSA(${r.id})">
             <td><span class="sa-num">${r.saNum}</span></td>
             <td><div class="cust-name">${r.customer}</div><div class="cust-addr">${r.addr}</div></td>
             <td><span class="pm-chip ${chipCls}">${chipLbl}</span></td>
             <td><div class="tech-pill"><div class="tech-av" style="background:${c1}">${init}</div>${r.tech || '—'}</div></td>
             <td><button class="btn-del" onclick="event.stopPropagation();removeSA(${r.id})">✕</button></td></tr>`;
-                })
-                .join('');
-              updatePMStats();
-              document.getElementById('sbPM').textContent = saData.length;
-            }
-            function selectSA(id) {
-              selectedSA = saData.find((r) => r.id === id);
-              renderSAList();
-              buildCalendar('pm', pmCalYear, pmCalMonth, pmSelDay, 'pmCalCard');
-              renderSADetail();
-            }
-            function renderSADetail() {
-              const panel = document.getElementById('saDetail');
-              if (!selectedSA) {
-                panel.style.display = 'none';
-                return;
-              }
-              // Generate across full contract span so detail panel shows all valid dates
-              const cs = parseContractDate(selectedSA.contractStart);
-              const ce = parseContractDate(selectedSA.contractEnd);
-              const today__ = new Date();
-              const fromYr = cs ? cs.getFullYear() : today__.getFullYear();
-              const toYr = ce ? ce.getFullYear() : today__.getFullYear();
-              let dates = [];
-              for (let yr = fromYr; yr <= toYr; yr++) {
-                generateDatesForPattern(selectedSA.pattern, yr).forEach((d) => {
-                  if (!(d instanceof Date) || isNaN(d)) return;
-                  if (cs && d < cs) return;
-                  if (ce && d > ce) return;
-                  dates.push(d);
-                });
-              }
-              const c1 = getTechColor(selectedSA.tech);
-              panel.style.display = 'block';
+          })
+          .join('');
+        updatePMStats();
+        document.getElementById('sbPM').textContent = saData.length;
+      }
+      function selectSA(id) {
+        selectedSA = saData.find((r) => r.id === id);
+        renderSAList();
+        buildCalendar('pm', pmCalYear, pmCalMonth, pmSelDay, 'pmCalCard');
+        renderSADetail();
+      }
+      function renderSADetail() {
+        const panel = document.getElementById('saDetail');
+        if (!selectedSA) {
+          panel.style.display = 'none';
+          return;
+        }
+        // Generate across full contract span so detail panel shows all valid dates
+        const cs = parseContractDate(selectedSA.contractStart);
+        const ce = parseContractDate(selectedSA.contractEnd);
+        const today__ = new Date();
+        const fromYr = cs ? cs.getFullYear() : today__.getFullYear();
+        const toYr = ce ? ce.getFullYear() : today__.getFullYear();
+        let dates = [];
+        for (let yr = fromYr; yr <= toYr; yr++) {
+          generateDatesForPattern(selectedSA.pattern, yr).forEach((d) => {
+            if (!(d instanceof Date) || isNaN(d)) return;
+            if (cs && d < cs) return;
+            if (ce && d > ce) return;
+            dates.push(d);
+          });
+        }
+        const c1 = getTechColor(selectedSA.tech);
+        panel.style.display = 'block';
 
-              // Filter to future dates only, find the next upcoming one
-              const now = new Date();
-              now.setHours(0, 0, 0, 0);
-              const futureDates = dates.filter((d) => d >= now);
-              const nextDate = futureDates.length ? futureDates.reduce((a, b) => (a < b ? a : b)) : null;
+        // Filter to future dates only, find the next upcoming one
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        const futureDates = dates.filter((d) => d >= now);
+        const nextDate = futureDates.length ? futureDates.reduce((a, b) => (a < b ? a : b)) : null;
 
-              // Build date chips — highlight the next upcoming one
-              let datesHTML = '';
-              if (!dates.length) {
-                datesHTML = '<span style="color:var(--text3);font-size:11px">No recognizable pattern in Col M</span>';
+        // Build date chips — highlight the next upcoming one
+        let datesHTML = '';
+        if (!dates.length) {
+          datesHTML = '<span style="color:var(--text3);font-size:11px">No recognizable pattern in Col M</span>';
+        } else {
+          const uniqueDates = [...new Map(dates.map((d) => [d.toDateString(), d])).values()].sort((a, b) => a - b);
+          datesHTML = uniqueDates
+            .map((d) => {
+              const isPast = d < now;
+              const isNext = nextDate && d.toDateString() === nextDate.toDateString();
+              const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+              if (isPast) {
+                // past — dimmed only, no strikethrough
+                return `<span style="font-size:10px;font-family:var(--mono);padding:3px 8px;border-radius:12px;background:var(--s4);color:var(--text3);margin:2px">${label}</span>`;
+              } else if (isNext) {
+                // next upcoming — blue highlight, same size as other chips
+                return `<span style="font-size:10px;font-family:var(--mono);padding:3px 8px;border-radius:12px;background:var(--blue);color:#fff;font-weight:700;box-shadow:0 2px 10px var(--blue-glow);margin:2px">${label}</span>`;
               } else {
-                const uniqueDates = [...new Map(dates.map((d) => [d.toDateString(), d])).values()].sort((a, b) => a - b);
-                datesHTML = uniqueDates
-                  .map((d) => {
-                    const isPast = d < now;
-                    const isNext = nextDate && d.toDateString() === nextDate.toDateString();
-                    const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                    if (isPast) {
-                      // past — dimmed only, no strikethrough
-                      return `<span style="font-size:10px;font-family:var(--mono);padding:3px 8px;border-radius:12px;background:var(--s4);color:var(--text3);margin:2px">${label}</span>`;
-                    } else if (isNext) {
-                      // next upcoming — blue highlight, same size as other chips
-                      return `<span style="font-size:10px;font-family:var(--mono);padding:3px 8px;border-radius:12px;background:var(--blue);color:#fff;font-weight:700;box-shadow:0 2px 10px var(--blue-glow);margin:2px">${label}</span>`;
-                    } else {
-                      // future — normal
-                      return `<span style="font-size:10px;font-family:var(--mono);padding:3px 8px;border-radius:12px;background:var(--s3);color:var(--text);border:1px solid var(--border);margin:2px">${label}</span>`;
-                    }
-                  })
-                  .join(' ');
+                // future — normal
+                return `<span style="font-size:10px;font-family:var(--mono);padding:3px 8px;border-radius:12px;background:var(--s3);color:var(--text);border:1px solid var(--border);margin:2px">${label}</span>`;
               }
+            })
+            .join(' ');
+        }
 
-              panel.innerHTML = `<div class="detail-panel">
+        panel.innerHTML = `<div class="detail-panel">
           <div class="dp-title">
             <div class="tech-av" style="background:${c1};width:26px;height:26px;border-radius:6px">${techInits(selectedSA.tech)}</div>
             ${selectedSA.saNum} — ${selectedSA.customer}
@@ -2282,100 +2295,100 @@
               <div style="margin-top:8px;line-height:2;display:flex;flex-wrap:wrap;gap:2px">${datesHTML}</div>
             </div>
           </div></div>`;
-            }
-            function removeSA(id) {
-              const r = saData.find((s) => s.id === id);
-              saData = saData.filter((s) => s.id !== id);
-              sset('sv_saData', saData);
-              if (selectedSA?.id === id) {
-                selectedSA = null;
-                document.getElementById('saDetail').style.display = 'none';
-              }
-              renderSAList();
-              buildCalendar('pm', pmCalYear, pmCalMonth, pmSelDay, 'pmCalCard');
-              showToast('Removed ' + (r?.saNum || 'record'));
-            }
-            function updatePMStats() {
-              document.getElementById('pm-total').textContent = saData.length;
-              const today = new Date();
-              const all = generateAllPMEvents();
-              const thisMonth = all.filter(
-                (e) => e.date.getFullYear() === today.getFullYear() && e.date.getMonth() === today.getMonth(),
-              ).length;
-              const next7 = all.filter((e) => {
-                const d = e.date;
-                return d >= today && d <= new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-              }).length;
-              const techs = new Set(saData.map((s) => s.tech).filter((t) => t && t !== 'N/A'));
-              document.getElementById('pm-month').textContent = thisMonth;
-              document.getElementById('pm-week').textContent = next7;
-              document.getElementById('pm-techs').textContent = techs.size;
-            }
+      }
+      function removeSA(id) {
+        const r = saData.find((s) => s.id === id);
+        saData = saData.filter((s) => s.id !== id);
+        sset('sv_saData', saData);
+        if (selectedSA?.id === id) {
+          selectedSA = null;
+          document.getElementById('saDetail').style.display = 'none';
+        }
+        renderSAList();
+        buildCalendar('pm', pmCalYear, pmCalMonth, pmSelDay, 'pmCalCard');
+        showToast('Removed ' + (r?.saNum || 'record'));
+      }
+      function updatePMStats() {
+        document.getElementById('pm-total').textContent = saData.length;
+        const today = new Date();
+        const all = generateAllPMEvents();
+        const thisMonth = all.filter(
+          (e) => e.date.getFullYear() === today.getFullYear() && e.date.getMonth() === today.getMonth(),
+        ).length;
+        const next7 = all.filter((e) => {
+          const d = e.date;
+          return d >= today && d <= new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+        }).length;
+        const techs = new Set(saData.map((s) => s.tech).filter((t) => t && t !== 'N/A'));
+        document.getElementById('pm-month').textContent = thisMonth;
+        document.getElementById('pm-week').textContent = next7;
+        document.getElementById('pm-techs').textContent = techs.size;
+      }
 
-            /* ═══════════════════════════════════
+      /* ═══════════════════════════════════
          DISPATCH DATA
       ═══════════════════════════════════ */
-            let dispatchData = [
-              {
-                id: 1,
-                saNum: 'SA054',
-                customer: 'Advent Health at Shawnee Mission',
-                site: 'Advent - Main Hospital',
-                start: '2/2/2026 8:00 AM',
-                end: '2/2/2026 5:00 PM',
-                tech: '[REDACTED]',
-                status: 'Not Assigned',
-              },
-              {
-                id: 2,
-                saNum: 'SA001',
-                customer: 'Oracle Data Centers',
-                site: 'KCDC',
-                start: '2/3/2026 8:00 AM',
-                end: '2/3/2026 3:00 PM',
-                tech: '[REDACTED]',
-                status: 'Assigned',
-              },
-              {
-                id: 3,
-                saNum: 'SA104',
-                customer: "Children's Mercy Hospitals",
-                site: 'CMH-KS',
-                start: '2/9/2026 8:00 AM',
-                end: '2/9/2026 5:00 PM',
-                tech: '[REDACTED]',
-                status: 'Not Assigned',
-              },
-              {
-                id: 4,
-                saNum: 'SA002',
-                customer: 'Evergy',
-                site: 'Charlotte',
-                start: '2/13/2026 8:00 AM',
-                end: '2/13/2026 5:00 PM',
-                tech: '[REDACTED]',
-                status: 'Not Assigned',
-              },
-              {
-                id: 5,
-                saNum: 'SA218',
-                customer: 'Center School District',
-                site: 'Center High School',
-                start: '2/6/2026 8:00 AM',
-                end: '2/6/2026 5:00 PM',
-                tech: '[REDACTED]',
-                status: 'Not Assigned',
-              },
-            ];
-            dispatchData = sget('sv_dispatchData', dispatchData);
-            function renderDispatch() {
-              const tb = document.getElementById('dispatchBody');
-              tb.innerHTML = dispatchData
-                .map((r) => {
-                  const c1 = getTechColor(r.tech);
-                  const init = techInits(r.tech);
-                  const assigned = r.status === 'Assigned';
-                  return `<tr>
+      let dispatchData = [
+        {
+          id: 1,
+          saNum: 'SA054',
+          customer: 'Advent Health at Shawnee Mission',
+          site: 'Advent - Main Hospital',
+          start: '2/2/2026 8:00 AM',
+          end: '2/2/2026 5:00 PM',
+          tech: '[REDACTED]',
+          status: 'Not Assigned',
+        },
+        {
+          id: 2,
+          saNum: 'SA001',
+          customer: 'Oracle Data Centers',
+          site: 'KCDC',
+          start: '2/3/2026 8:00 AM',
+          end: '2/3/2026 3:00 PM',
+          tech: '[REDACTED]',
+          status: 'Assigned',
+        },
+        {
+          id: 3,
+          saNum: 'SA104',
+          customer: "Children's Mercy Hospitals",
+          site: 'CMH-KS',
+          start: '2/9/2026 8:00 AM',
+          end: '2/9/2026 5:00 PM',
+          tech: '[REDACTED]',
+          status: 'Not Assigned',
+        },
+        {
+          id: 4,
+          saNum: 'SA002',
+          customer: 'Evergy',
+          site: 'Charlotte',
+          start: '2/13/2026 8:00 AM',
+          end: '2/13/2026 5:00 PM',
+          tech: '[REDACTED]',
+          status: 'Not Assigned',
+        },
+        {
+          id: 5,
+          saNum: 'SA218',
+          customer: 'Center School District',
+          site: 'Center High School',
+          start: '2/6/2026 8:00 AM',
+          end: '2/6/2026 5:00 PM',
+          tech: '[REDACTED]',
+          status: 'Not Assigned',
+        },
+      ];
+      dispatchData = sget('sv_dispatchData', dispatchData);
+      function renderDispatch() {
+        const tb = document.getElementById('dispatchBody');
+        tb.innerHTML = dispatchData
+          .map((r) => {
+            const c1 = getTechColor(r.tech);
+            const init = techInits(r.tech);
+            const assigned = r.status === 'Assigned';
+            return `<tr>
             <td><span class="sa-num">${r.saNum}</span></td>
             <td><div class="cust-name">${r.customer}</div></td>
             <td style="font-size:11px;color:var(--text2)">${r.site}</td>
@@ -2383,86 +2396,86 @@
             <td style="font-family:var(--mono);font-size:11px">${r.end}</td>
             <td><div class="tech-pill"><div class="tech-av" style="background:${c1};width:20px;height:20px;border-radius:5px;font-size:8px">${init}</div>${r.tech}</div></td>
             <td><span class="sp ${assigned ? 'sp-on' : 'sp-off'}" style="font-size:10px"><span class="sp-dot"></span>${r.status}</span></td></tr>`;
-                })
-                .join('');
-            }
+          })
+          .join('');
+      }
 
-            /* ═══════════════════════════════════
+      /* ═══════════════════════════════════
          CALENDAR ENGINE
       ═══════════════════════════════════ */
-            const MONTHS = [
-              'January',
-              'February',
-              'March',
-              'April',
-              'May',
-              'June',
-              'July',
-              'August',
-              'September',
-              'October',
-              'November',
-              'December',
-            ];
-            const today_ = new Date();
-            let staffCalYear = today_.getFullYear(),
-              staffCalMonth = today_.getMonth(),
-              staffSelDay = today_.getDate();
-            let pmCalYear = today_.getFullYear(),
-              pmCalMonth = today_.getMonth(),
-              pmSelDay = today_.getDate();
+      const MONTHS = [
+        'January',
+        'February',
+        'March',
+        'April',
+        'May',
+        'June',
+        'July',
+        'August',
+        'September',
+        'October',
+        'November',
+        'December',
+      ];
+      const today_ = new Date();
+      let staffCalYear = today_.getFullYear(),
+        staffCalMonth = today_.getMonth(),
+        staffSelDay = today_.getDate();
+      let pmCalYear = today_.getFullYear(),
+        pmCalMonth = today_.getMonth(),
+        pmSelDay = today_.getDate();
 
-            function buildCalendar(mode, year, month, selDay, containerId) {
-              const container = document.getElementById(containerId);
-              if (!container) return;
-              const eventsByDay = {};
-              if (mode === 'pm') {
-                generateAllPMEvents(year).forEach((e) => {
-                  if (e.date.getFullYear() === year && e.date.getMonth() === month) {
-                    const d = e.date.getDate();
-                    if (!eventsByDay[d]) eventsByDay[d] = [];
-                    eventsByDay[d].push(e);
-                  }
-                });
-              }
-              const firstDay = new Date(year, month, 1).getDay();
-              const daysInMonth = new Date(year, month + 1, 0).getDate();
-              const prevDays = new Date(year, month, 0).getDate();
-              const isCurMon = today_.getFullYear() === year && today_.getMonth() === month;
-              const todayD = today_.getDate();
-              let daysHTML = '';
-              for (let i = firstDay - 1; i >= 0; i--)
-                daysHTML += `<div class="cday is-other"><span class="cday-n">${prevDays - i}</span></div>`;
-              for (let d = 1; d <= daysInMonth; d++) {
-                const isT = isCurMon && d === todayD && d !== selDay;
-                const isSel = d === selDay && isCurMon;
-                const evs = eventsByDay[d] || [];
-                const dotColors = [...new Set(evs.map((e) => e.color))].slice(0, 4);
-                const cls = ['cday', isT ? 'is-today' : '', isSel ? 'is-sel' : ''].filter(Boolean).join(' ');
-                const dots = dotColors.map((c) => `<div class="cday-dot" style="background:${c}"></div>`).join('');
-                daysHTML += `<div class="${cls}" onclick="calClick('${mode}',${d})">
+      function buildCalendar(mode, year, month, selDay, containerId) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        const eventsByDay = {};
+        if (mode === 'pm') {
+          generateAllPMEvents(year).forEach((e) => {
+            if (e.date.getFullYear() === year && e.date.getMonth() === month) {
+              const d = e.date.getDate();
+              if (!eventsByDay[d]) eventsByDay[d] = [];
+              eventsByDay[d].push(e);
+            }
+          });
+        }
+        const firstDay = new Date(year, month, 1).getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const prevDays = new Date(year, month, 0).getDate();
+        const isCurMon = today_.getFullYear() === year && today_.getMonth() === month;
+        const todayD = today_.getDate();
+        let daysHTML = '';
+        for (let i = firstDay - 1; i >= 0; i--)
+          daysHTML += `<div class="cday is-other"><span class="cday-n">${prevDays - i}</span></div>`;
+        for (let d = 1; d <= daysInMonth; d++) {
+          const isT = isCurMon && d === todayD && d !== selDay;
+          const isSel = d === selDay && isCurMon;
+          const evs = eventsByDay[d] || [];
+          const dotColors = [...new Set(evs.map((e) => e.color))].slice(0, 4);
+          const cls = ['cday', isT ? 'is-today' : '', isSel ? 'is-sel' : ''].filter(Boolean).join(' ');
+          const dots = dotColors.map((c) => `<div class="cday-dot" style="background:${c}"></div>`).join('');
+          daysHTML += `<div class="${cls}" onclick="calClick('${mode}',${d})">
             <span class="cday-n">${d}</span>
             ${evs.length ? `<div class="cday-dots">${dots}</div>` : ''}
           </div>`;
-              }
-              const total = Math.ceil((firstDay + daysInMonth) / 7) * 7;
-              for (let n = 1, i = firstDay + daysInMonth; i < total; i++, n++)
-                daysHTML += `<div class="cday is-other"><span class="cday-n">${n}</span></div>`;
+        }
+        const total = Math.ceil((firstDay + daysInMonth) / 7) * 7;
+        for (let n = 1, i = firstDay + daysInMonth; i < total; i++, n++)
+          daysHTML += `<div class="cday is-other"><span class="cday-n">${n}</span></div>`;
 
-              // Count visits for the month and for the selected day
-              const monthVisits = Object.values(eventsByDay).reduce((a, b) => a + b.length, 0);
-              const dayVisits = (eventsByDay[selDay] || []).length;
+        // Count visits for the month and for the selected day
+        const monthVisits = Object.values(eventsByDay).reduce((a, b) => a + b.length, 0);
+        const dayVisits = (eventsByDay[selDay] || []).length;
 
-              // Events panel — show visits on selected day
-              let evHTML = '';
-              if (mode === 'pm') {
-                const selEvs = (eventsByDay[selDay] || []).sort((a, b) => a.customer.localeCompare(b.customer));
-                if (!selEvs.length) {
-                  evHTML = `<div class="no-evs">No PM visits on ${MONTHS[month].slice(0, 3)} ${selDay} — click a day with dots to see visits</div>`;
-                } else {
-                  evHTML = selEvs
-                    .map(
-                      (e) => `<div class="cal-ev" onclick="selectSA(${e.id})">
+        // Events panel — show visits on selected day
+        let evHTML = '';
+        if (mode === 'pm') {
+          const selEvs = (eventsByDay[selDay] || []).sort((a, b) => a.customer.localeCompare(b.customer));
+          if (!selEvs.length) {
+            evHTML = `<div class="no-evs">No PM visits on ${MONTHS[month].slice(0, 3)} ${selDay} — click a day with dots to see visits</div>`;
+          } else {
+            evHTML = selEvs
+              .map(
+                (e) => `<div class="cal-ev" onclick="selectSA(${e.id})">
               <div class="ev-stripe" style="background:${e.color}"></div>
               <div class="ev-body">
                 <div class="ev-title">${e.saNum} — ${e.customer}</div>
@@ -2472,25 +2485,25 @@
                   ${e.tech || '—'}
                 </div>
               </div></div>`,
-                    )
-                    .join('');
-                }
-              } else {
-                evHTML = '<div class="no-evs">Switch to PM Schedule for visit details</div>';
-              }
+              )
+              .join('');
+          }
+        } else {
+          evHTML = '<div class="no-evs">Switch to PM Schedule for visit details</div>';
+        }
 
-              const monthLabel =
-                mode === 'pm'
-                  ? `${monthVisits} visit${monthVisits !== 1 ? 's' : ''} in ${MONTHS[month].slice(0, 3)}`
-                  : 'Team calendar';
-              const dayLabel =
-                mode === 'pm' && dayVisits > 0
-                  ? `${dayVisits} visit${dayVisits !== 1 ? 's' : ''} on ${MONTHS[month].slice(0, 3)} ${selDay}`
-                  : mode === 'pm'
-                    ? `Select a day`
-                    : '';
+        const monthLabel =
+          mode === 'pm'
+            ? `${monthVisits} visit${monthVisits !== 1 ? 's' : ''} in ${MONTHS[month].slice(0, 3)}`
+            : 'Team calendar';
+        const dayLabel =
+          mode === 'pm' && dayVisits > 0
+            ? `${dayVisits} visit${dayVisits !== 1 ? 's' : ''} on ${MONTHS[month].slice(0, 3)} ${selDay}`
+            : mode === 'pm'
+              ? `Select a day`
+              : '';
 
-              container.innerHTML = `
+        container.innerHTML = `
           <div class="cal-hdr">
             <span class="card-title">📅 ${mode === 'pm' ? 'PM' : 'Team'} Calendar</span>
             <div class="cal-nav">
@@ -2512,218 +2525,218 @@
             </div>
             ${evHTML}
           </div>`;
-            }
-            function calClick(mode, day) {
-              if (mode === 'pm') {
-                pmSelDay = day;
-                buildCalendar('pm', pmCalYear, pmCalMonth, pmSelDay, 'pmCalCard');
-              } else {
-                staffSelDay = day;
-                buildCalendar('staff', staffCalYear, staffCalMonth, staffSelDay, 'staffCalCard');
-              }
-            }
-            function changeCalMonth(mode, dir) {
-              if (mode === 'pm') {
-                pmCalMonth += dir;
-                if (pmCalMonth < 0) {
-                  pmCalMonth = 11;
-                  pmCalYear--;
-                }
-                if (pmCalMonth > 11) {
-                  pmCalMonth = 0;
-                  pmCalYear++;
-                }
-                pmSelDay = 1;
-                buildCalendar('pm', pmCalYear, pmCalMonth, pmSelDay, 'pmCalCard');
-              } else {
-                staffCalMonth += dir;
-                if (staffCalMonth < 0) {
-                  staffCalMonth = 11;
-                  staffCalYear--;
-                }
-                if (staffCalMonth > 11) {
-                  staffCalMonth = 0;
-                  staffCalYear++;
-                }
-                staffSelDay = 1;
-                buildCalendar('staff', staffCalYear, staffCalMonth, staffSelDay, 'staffCalCard');
-              }
-            }
+      }
+      function calClick(mode, day) {
+        if (mode === 'pm') {
+          pmSelDay = day;
+          buildCalendar('pm', pmCalYear, pmCalMonth, pmSelDay, 'pmCalCard');
+        } else {
+          staffSelDay = day;
+          buildCalendar('staff', staffCalYear, staffCalMonth, staffSelDay, 'staffCalCard');
+        }
+      }
+      function changeCalMonth(mode, dir) {
+        if (mode === 'pm') {
+          pmCalMonth += dir;
+          if (pmCalMonth < 0) {
+            pmCalMonth = 11;
+            pmCalYear--;
+          }
+          if (pmCalMonth > 11) {
+            pmCalMonth = 0;
+            pmCalYear++;
+          }
+          pmSelDay = 1;
+          buildCalendar('pm', pmCalYear, pmCalMonth, pmSelDay, 'pmCalCard');
+        } else {
+          staffCalMonth += dir;
+          if (staffCalMonth < 0) {
+            staffCalMonth = 11;
+            staffCalYear--;
+          }
+          if (staffCalMonth > 11) {
+            staffCalMonth = 0;
+            staffCalYear++;
+          }
+          staffSelDay = 1;
+          buildCalendar('staff', staffCalYear, staffCalMonth, staffSelDay, 'staffCalCard');
+        }
+      }
 
-            /* ═══════════════════════════════════
+      /* ═══════════════════════════════════
          MODALS
       ═══════════════════════════════════ */
-            function openStaffModal() {
-              document.getElementById('staffModal').classList.add('open');
-            }
-            function closeStaffModal() {
-              document.getElementById('staffModal').classList.remove('open');
-            }
-            function addStaff() {
-              const name = document.getElementById('iName').value.trim();
-              if (!name) {
-                showToast('Enter a name ⚠️');
-                return;
-              }
-              staffData.push({
-                id: Date.now(),
-                name,
-                role: document.getElementById('iRole').value || 'Technician',
-                hours: parseInt(document.getElementById('iHours').value) || 40,
-                status: document.getElementById('iStatus').value,
-              });
-              sset('sv_staffData', staffData);
-              closeStaffModal();
-              renderStaff();
-              showToast(name + ' added ✓');
-              ['iName', 'iRole', 'iHours'].forEach((id) => (document.getElementById(id).value = ''));
-            }
-            function openPMModal() {
-              document.getElementById('pm-start').value = new Date().toISOString().split('T')[0];
-              document.getElementById('pmModal').classList.add('open');
-            }
-            function closePMModal() {
-              document.getElementById('pmModal').classList.remove('open');
-            }
-            function addPMRecord() {
-              const sa = document.getElementById('pm-sa').value.trim();
-              const cust = document.getElementById('pm-cust').value.trim();
-              if (!sa || !cust) {
-                showToast('SA# and Customer required ⚠️');
-                return;
-              }
-              saData.push({
-                id: Date.now(),
-                saNum: sa,
-                customer: cust,
-                addr: document.getElementById('pm-addr').value,
-                tech: document.getElementById('pm-tech').value,
-                pmLabel: document.getElementById('pm-label').value,
-                pattern: document.getElementById('pm-pattern').value,
-                adminContact: document.getElementById('pm-admin').value,
-                fieldContact: '',
-                contractStart: document.getElementById('pm-start').value,
-                contractEnd: document.getElementById('pm-end').value,
-              });
-              sset('sv_saData', saData);
-              closePMModal();
-              renderSAList();
-              populateTechFilter();
-              buildCalendar('pm', pmCalYear, pmCalMonth, pmSelDay, 'pmCalCard');
-              showToast(sa + ' added to PM schedule ✓');
-            }
-            function openDispatchModal() {
-              document.getElementById('dispatchModal').classList.add('open');
-            }
-            function closeDispatchModal() {
-              document.getElementById('dispatchModal').classList.remove('open');
-            }
-            function addWorkOrder() {
-              const sa = document.getElementById('d-sa').value.trim();
-              const cust = document.getElementById('d-cust').value.trim();
-              if (!sa || !cust) {
-                showToast('SA# and Customer required ⚠️');
-                return;
-              }
-              dispatchData.push({
-                id: Date.now(),
-                saNum: sa,
-                customer: cust,
-                site: document.getElementById('d-site').value,
-                start: document.getElementById('d-start').value,
-                end: document.getElementById('d-end').value,
-                tech: document.getElementById('d-tech').value || 'Unassigned',
-                status: 'Not Assigned',
-              });
-              sset('sv_dispatchData', dispatchData);
-              closeDispatchModal();
-              renderDispatch();
-              showToast('Work order added ✓');
-            }
+      function openStaffModal() {
+        document.getElementById('staffModal').classList.add('open');
+      }
+      function closeStaffModal() {
+        document.getElementById('staffModal').classList.remove('open');
+      }
+      function addStaff() {
+        const name = document.getElementById('iName').value.trim();
+        if (!name) {
+          showToast('Enter a name ⚠️');
+          return;
+        }
+        staffData.push({
+          id: Date.now(),
+          name,
+          role: document.getElementById('iRole').value || 'Technician',
+          hours: parseInt(document.getElementById('iHours').value) || 40,
+          status: document.getElementById('iStatus').value,
+        });
+        sset('sv_staffData', staffData);
+        closeStaffModal();
+        renderStaff();
+        showToast(name + ' added ✓');
+        ['iName', 'iRole', 'iHours'].forEach((id) => (document.getElementById(id).value = ''));
+      }
+      function openPMModal() {
+        document.getElementById('pm-start').value = new Date().toISOString().split('T')[0];
+        document.getElementById('pmModal').classList.add('open');
+      }
+      function closePMModal() {
+        document.getElementById('pmModal').classList.remove('open');
+      }
+      function addPMRecord() {
+        const sa = document.getElementById('pm-sa').value.trim();
+        const cust = document.getElementById('pm-cust').value.trim();
+        if (!sa || !cust) {
+          showToast('SA# and Customer required ⚠️');
+          return;
+        }
+        saData.push({
+          id: Date.now(),
+          saNum: sa,
+          customer: cust,
+          addr: document.getElementById('pm-addr').value,
+          tech: document.getElementById('pm-tech').value,
+          pmLabel: document.getElementById('pm-label').value,
+          pattern: document.getElementById('pm-pattern').value,
+          adminContact: document.getElementById('pm-admin').value,
+          fieldContact: '',
+          contractStart: document.getElementById('pm-start').value,
+          contractEnd: document.getElementById('pm-end').value,
+        });
+        sset('sv_saData', saData);
+        closePMModal();
+        renderSAList();
+        populateTechFilter();
+        buildCalendar('pm', pmCalYear, pmCalMonth, pmSelDay, 'pmCalCard');
+        showToast(sa + ' added to PM schedule ✓');
+      }
+      function openDispatchModal() {
+        document.getElementById('dispatchModal').classList.add('open');
+      }
+      function closeDispatchModal() {
+        document.getElementById('dispatchModal').classList.remove('open');
+      }
+      function addWorkOrder() {
+        const sa = document.getElementById('d-sa').value.trim();
+        const cust = document.getElementById('d-cust').value.trim();
+        if (!sa || !cust) {
+          showToast('SA# and Customer required ⚠️');
+          return;
+        }
+        dispatchData.push({
+          id: Date.now(),
+          saNum: sa,
+          customer: cust,
+          site: document.getElementById('d-site').value,
+          start: document.getElementById('d-start').value,
+          end: document.getElementById('d-end').value,
+          tech: document.getElementById('d-tech').value || 'Unassigned',
+          status: 'Not Assigned',
+        });
+        sset('sv_dispatchData', dispatchData);
+        closeDispatchModal();
+        renderDispatch();
+        showToast('Work order added ✓');
+      }
 
-            /* ═══════════════════════════════════
+      /* ═══════════════════════════════════
          VIEW SWITCHING
       ═══════════════════════════════════ */
-            function setView(view, sideEl) {
-              document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
-              document.querySelectorAll('.s-item').forEach((i) => i.classList.remove('active'));
-              const panel = document.getElementById('view-' + view);
-              if (panel) panel.classList.add('active');
-              if (sideEl) sideEl.classList.add('active');
-              if (view === 'pm') {
-                buildCalendar('pm', pmCalYear, pmCalMonth, pmSelDay, 'pmCalCard');
-                renderSADetail();
-              }
-              if (view === 'dispatch') renderDispatch();
-            }
+      function setView(view, sideEl) {
+        document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
+        document.querySelectorAll('.s-item').forEach((i) => i.classList.remove('active'));
+        const panel = document.getElementById('view-' + view);
+        if (panel) panel.classList.add('active');
+        if (sideEl) sideEl.classList.add('active');
+        if (view === 'pm') {
+          buildCalendar('pm', pmCalYear, pmCalMonth, pmSelDay, 'pmCalCard');
+          renderSADetail();
+        }
+        if (view === 'dispatch') renderDispatch();
+      }
 
-            /* ── TOAST ── */
-            let toastTimer;
-            function showToast(msg) {
-              const t = document.getElementById('toast');
-              document.getElementById('toastMsg').textContent = msg;
-              t.classList.add('show');
-              clearTimeout(toastTimer);
-              toastTimer = setTimeout(() => t.classList.remove('show'), 3400);
-            }
+      /* ── TOAST ── */
+      let toastTimer;
+      function showToast(msg) {
+        const t = document.getElementById('toast');
+        document.getElementById('toastMsg').textContent = msg;
+        t.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => t.classList.remove('show'), 3400);
+      }
 
-            /* ── NOTIFICATIONS ── */
-            let notifications = [];
-            function loadNotifs() {
-              try {
-                const r = localStorage.getItem('ch_notifs');
-                notifications = r ? JSON.parse(r) : [];
-              } catch (e) {
-                notifications = [];
-              }
-            }
-            function saveNotifs() {
-              try {
-                localStorage.setItem('ch_notifs', JSON.stringify(notifications));
-              } catch (e) {}
-            }
-            function addNotif(title, detail, icon) {
-              notifications.unshift({ id: Date.now(), title, detail, icon: icon || '🔔', time: new Date().toISOString() });
-              saveNotifs();
-              refreshNotifUI();
-            }
-            function clearNotif(id) {
-              notifications = notifications.filter((n) => n.id !== id);
-              saveNotifs();
-              refreshNotifUI();
-              renderNotifList();
-            }
-            function clearAllNotifs() {
-              notifications = [];
-              saveNotifs();
-              refreshNotifUI();
-              renderNotifList();
-            }
-            function refreshNotifUI() {
-              const b = document.getElementById('notifBadge');
-              const p = document.getElementById('notifPip');
-              if (!b) return;
-              if (notifications.length) {
-                b.style.display = 'inline-block';
-                b.textContent = notifications.length;
-                if (p) p.style.display = 'block';
-              } else {
-                b.style.display = 'none';
-                if (p) p.style.display = 'none';
-              }
-            }
-            function renderNotifList() {
-              const el = document.getElementById('notifList');
-              if (!el) return;
-              if (!notifications.length) {
-                el.innerHTML =
-                  '<div style="padding:20px;text-align:center;font-size:13px;color:var(--text2)">No notifications</div>';
-                return;
-              }
-              el.innerHTML = notifications
-                .map((n) => {
-                  const ago = getNotifTimeAgo(new Date(n.time));
-                  return `<div style="display:flex;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border);align-items:flex-start">
+      /* ── NOTIFICATIONS ── */
+      let notifications = [];
+      function loadNotifs() {
+        try {
+          const r = localStorage.getItem('ch_notifs');
+          notifications = r ? JSON.parse(r) : [];
+        } catch (e) {
+          notifications = [];
+        }
+      }
+      function saveNotifs() {
+        try {
+          localStorage.setItem('ch_notifs', JSON.stringify(notifications));
+        } catch (e) {}
+      }
+      function addNotif(title, detail, icon) {
+        notifications.unshift({ id: Date.now(), title, detail, icon: icon || '🔔', time: new Date().toISOString() });
+        saveNotifs();
+        refreshNotifUI();
+      }
+      function clearNotif(id) {
+        notifications = notifications.filter((n) => n.id !== id);
+        saveNotifs();
+        refreshNotifUI();
+        renderNotifList();
+      }
+      function clearAllNotifs() {
+        notifications = [];
+        saveNotifs();
+        refreshNotifUI();
+        renderNotifList();
+      }
+      function refreshNotifUI() {
+        const b = document.getElementById('notifBadge');
+        const p = document.getElementById('notifPip');
+        if (!b) return;
+        if (notifications.length) {
+          b.style.display = 'inline-block';
+          b.textContent = notifications.length;
+          if (p) p.style.display = 'block';
+        } else {
+          b.style.display = 'none';
+          if (p) p.style.display = 'none';
+        }
+      }
+      function renderNotifList() {
+        const el = document.getElementById('notifList');
+        if (!el) return;
+        if (!notifications.length) {
+          el.innerHTML =
+            '<div style="padding:20px;text-align:center;font-size:13px;color:var(--text2)">No notifications</div>';
+          return;
+        }
+        el.innerHTML = notifications
+          .map((n) => {
+            const ago = getNotifTimeAgo(new Date(n.time));
+            return `<div style="display:flex;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border);align-items:flex-start">
             <span style="font-size:16px;flex-shrink:0;margin-top:1px">${n.icon || '🔔'}</span>
             <div style="flex:1;min-width:0">
               <div style="font-size:13px;font-weight:600;margin-bottom:2px">${n.title}</div>
@@ -2732,55 +2745,55 @@
             </div>
             <button onclick="clearNotif(${n.id})" style="width:22px;height:22px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;font-size:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .13s" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">✕</button>
           </div>`;
-                })
-                .join('');
-            }
-            function getNotifTimeAgo(d) {
-              const s = Math.floor((Date.now() - d.getTime()) / 1000);
-              if (s < 60) return 'Just now';
-              if (s < 3600) return Math.floor(s / 60) + 'm ago';
-              if (s < 86400) return Math.floor(s / 3600) + 'h ago';
-              return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            }
-            function toggleNotifPanel() {
-              const p = document.getElementById('notifPanel');
-              if (!p) return;
-              const open = p.style.display === 'block';
-              p.style.display = open ? 'none' : 'block';
-              if (!open) renderNotifList();
-            }
-            document.addEventListener('click', (e) => {
-              const p = document.getElementById('notifPanel');
-              const b = document.getElementById('notifBtn');
-              if (p && p.style.display === 'block' && b && !p.contains(e.target) && !b.contains(e.target))
-                p.style.display = 'none';
-            });
+          })
+          .join('');
+      }
+      function getNotifTimeAgo(d) {
+        const s = Math.floor((Date.now() - d.getTime()) / 1000);
+        if (s < 60) return 'Just now';
+        if (s < 3600) return Math.floor(s / 60) + 'm ago';
+        if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      }
+      function toggleNotifPanel() {
+        const p = document.getElementById('notifPanel');
+        if (!p) return;
+        const open = p.style.display === 'block';
+        p.style.display = open ? 'none' : 'block';
+        if (!open) renderNotifList();
+      }
+      document.addEventListener('click', (e) => {
+        const p = document.getElementById('notifPanel');
+        const b = document.getElementById('notifBtn');
+        if (p && p.style.display === 'block' && b && !p.contains(e.target) && !b.contains(e.target))
+          p.style.display = 'none';
+      });
 
-            /* ── NOTIFICATIONS INIT ── */
-            document.addEventListener('DOMContentLoaded', function () {
-              loadNotifs();
-              if (!notifications.length) {
-                notifications = [
-                  {
-                    id: 1,
-                    title: 'PM Schedule Alert',
-                    detail:
-                      '57 service agreements are due for PM scheduling this quarter. Review the PM Schedule for assignments.',
-                    icon: '🔧',
-                    time: new Date(Date.now() - 3600000).toISOString(),
-                  },
-                  {
-                    id: 2,
-                    title: 'Dispatch Board Update',
-                    detail: '3 work orders are unassigned and pending technician assignment.',
-                    icon: '📋',
-                    time: new Date(Date.now() - 7200000).toISOString(),
-                  },
-                ];
-                saveNotifs();
-              }
-              refreshNotifUI();
-            });
+      /* ── NOTIFICATIONS INIT ── */
+      document.addEventListener('DOMContentLoaded', function () {
+        loadNotifs();
+        if (!notifications.length) {
+          notifications = [
+            {
+              id: 1,
+              title: 'PM Schedule Alert',
+              detail:
+                '57 service agreements are due for PM scheduling this quarter. Review the PM Schedule for assignments.',
+              icon: '🔧',
+              time: new Date(Date.now() - 3600000).toISOString(),
+            },
+            {
+              id: 2,
+              title: 'Dispatch Board Update',
+              detail: '3 work orders are unassigned and pending technician assignment.',
+              icon: '📋',
+              time: new Date(Date.now() - 7200000).toISOString(),
+            },
+          ];
+          saveNotifs();
+        }
+        refreshNotifUI();
+      });
     </script>
 
     <script id="site-fns">
@@ -2886,32 +2899,70 @@
         URL.revokeObjectURL(url);
         if (typeof showToast === 'function') showToast('Backup downloaded ✓');
       }
+      function processRestoreFile(file) {
+        if (!file) return;
+        if (!file.name.toLowerCase().endsWith('.json')) {
+          if (typeof showToast === 'function') showToast('Please drop a .json backup file');
+          return;
+        }
+        var fr = new FileReader();
+        fr.onload = function (ev) {
+          try {
+            var data = JSON.parse(ev.target.result);
+            Object.keys(data).forEach(function (k) {
+              localStorage.setItem(k, data[k]);
+            });
+            if (typeof showToast === 'function') showToast('Restored — reloading...');
+            setTimeout(function () {
+              location.reload();
+            }, 1200);
+          } catch (err) {
+            if (typeof showToast === 'function') showToast('Invalid backup file');
+          }
+        };
+        fr.readAsText(file);
+      }
       function siteRestore() {
         var inp = document.createElement('input');
         inp.type = 'file';
         inp.accept = '.json';
         inp.onchange = function (e) {
-          var file = e.target.files[0];
-          if (!file) return;
-          var fr = new FileReader();
-          fr.onload = function (ev) {
-            try {
-              var data = JSON.parse(ev.target.result);
-              Object.keys(data).forEach(function (k) {
-                localStorage.setItem(k, data[k]);
-              });
-              if (typeof showToast === 'function') showToast('Restored — reloading...');
-              setTimeout(function () {
-                location.reload();
-              }, 1200);
-            } catch (err) {
-              if (typeof showToast === 'function') showToast('Invalid backup file');
-            }
-          };
-          fr.readAsText(file);
+          processRestoreFile(e.target.files[0]);
         };
         inp.click();
       }
+      function initDragDropRestore() {
+        var overlay = document.createElement('div');
+        overlay.className = 'drop-overlay';
+        overlay.innerHTML =
+          '<div class="drop-overlay-content"><div class="drop-overlay-icon">&#128230;</div><div class="drop-overlay-text">Drop backup file to restore</div></div>';
+        document.body.appendChild(overlay);
+        var dragCounter = 0;
+        window.addEventListener('dragenter', function (e) {
+          e.preventDefault();
+          dragCounter++;
+          if (dragCounter === 1) overlay.classList.add('visible');
+        });
+        window.addEventListener('dragleave', function (e) {
+          e.preventDefault();
+          dragCounter--;
+          if (dragCounter <= 0) {
+            dragCounter = 0;
+            overlay.classList.remove('visible');
+          }
+        });
+        window.addEventListener('dragover', function (e) {
+          e.preventDefault();
+        });
+        window.addEventListener('drop', function (e) {
+          e.preventDefault();
+          dragCounter = 0;
+          overlay.classList.remove('visible');
+          var file = e.dataTransfer && e.dataTransfer.files[0];
+          if (file) processRestoreFile(file);
+        });
+      }
+      document.addEventListener('DOMContentLoaded', initDragDropRestore);
       function siteResetData() {
         if (!confirm('Reset ALL data? This cannot be undone.')) return;
         localStorage.clear();
