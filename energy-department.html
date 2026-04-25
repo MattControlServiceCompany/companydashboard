@@ -21488,6 +21488,7 @@
                 fileName: file.name,
                 bills: finalBills,
                 pdfB64: b64,
+                rawText: text,
                 status: 'ok',
                 error: null,
               });
@@ -21514,6 +21515,11 @@
         document.getElementById('pdfRightCol').style.display = '';
         document.getElementById('pdfTypeSection').style.display = 'none';
         document.getElementById('pdfSaveRow').style.display = 'none';
+        // Show debug buttons
+        const dbgBtn = document.getElementById('pdfDebugBtn');
+        if (dbgBtn) dbgBtn.style.display = '';
+        const saveDbgBtn = document.getElementById('pdfSaveDebugBtn');
+        if (saveDbgBtn) saveDbgBtn.style.display = '';
 
         if (q._activeFileIdx == null) q._activeFileIdx = 0;
 
@@ -21573,6 +21579,7 @@
         if (!tabsBar) {
           tabsBar = document.createElement('div');
           tabsBar.id = 'queueTabsBar';
+          tabsBar.style.cssText = 'position:sticky;top:0;z-index:12;background:var(--bg);padding-bottom:4px';
           const hdr = document.getElementById('extractedFieldsHdr');
           hdr.parentNode.insertBefore(tabsBar, hdr);
         }
@@ -21650,6 +21657,7 @@
         window._pdfMultiIdx = window._pdfMultiIdx || 0;
         if (window._pdfMultiIdx >= activeResult.bills.length) window._pdfMultiIdx = 0;
         window._pdfBillWarnings = activeResult.bills.map((b) => ({ warnings: b._warnings || [] }));
+        window._pdfRawText = activeResult.rawText || null;
 
         // Use the existing multi-bill UI (vertical pills in right column)
         if (activeResult.bills.length > 1) {
