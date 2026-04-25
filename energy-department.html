@@ -21221,11 +21221,11 @@
         // Header
         html += '<div style="font-size:16px;font-weight:600;color:var(--em);margin-bottom:4px">';
         if (q.status === 'running') {
-          html += 'Extracting ' + (q.currentIdx + 1) + ' of ' + q.files.length + ' PDFs...';
+          html += 'Extracting ' + (q.currentIdx + 1) + ' of ' + q.files.length + ' files...';
         } else if (q.status === 'done' || q.status === 'cancelled') {
           html += 'Extraction complete — ' + q.results.length + ' files processed';
         } else {
-          html += 'Preparing ' + q.files.length + ' PDFs...';
+          html += 'Preparing ' + q.files.length + ' files...';
         }
         html += '</div>';
         if (totalBillsFound > 0) {
@@ -21279,7 +21279,10 @@
             html +=
               '<span style="display:inline-block;width:14px;height:14px;border:2px solid var(--em);border-top-color:transparent;border-radius:50%;animation:qspin 1s linear infinite;flex-shrink:0"></span>';
             html += '<span>' + _escHtml(f.name) + '</span>';
-            html += '<span style="font-size:11px;margin-left:auto;color:var(--text3)">extracting...</span>';
+            html +=
+              '<span style="font-size:11px;margin-left:auto;color:var(--text3)">' +
+              (q._fileStatus || 'extracting...') +
+              '</span>';
             html += '</div>';
           } else {
             html +=
@@ -21328,6 +21331,7 @@
             break;
           }
           q.currentIdx = i;
+          q._fileStatus = null;
           renderQueueProgress();
           globalTaskUpdate('📄 Extracting ' + (i + 1) + '/' + q.files.length + ': ' + q.files[i].name);
 
@@ -21375,10 +21379,17 @@
               const b64 = ev.target.result.split(',')[1];
               const freshBytes = () => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 
-              let text = await extractPDFText(freshBytes(), () => {});
+              const statusCb = (msg) => {
+                const q = window._pdfQueue;
+                if (q) {
+                  q._fileStatus = msg;
+                  renderQueueProgress();
+                }
+              };
+              let text = await extractPDFText(freshBytes(), statusCb);
               if (!text || text.trim().length <= 100) {
                 // Retry once with fresh read
-                text = await extractPDFText(freshBytes(), () => {});
+                text = await extractPDFText(freshBytes(), statusCb);
                 if (!text || text.trim().length <= 100) {
                   reject(new Error('No readable text found'));
                   return;
