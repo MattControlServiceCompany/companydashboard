@@ -2395,6 +2395,15 @@
         border-color: var(--em);
         background: var(--em-dim);
       }
+      .drop-zone[data-queue] {
+        border-style: solid;
+        border-color: var(--border2);
+        cursor: default;
+      }
+      .drop-zone[data-queue]:hover {
+        border-color: var(--border2);
+        background: var(--s2);
+      }
       .drop-zone.collapsed {
         /* Update 99: raise padding + min-height so the Clear button pill
            fits comfortably inside the collapsed drop zone. Previous 8px
@@ -5498,7 +5507,10 @@
                 <div
                   class="drop-zone"
                   id="dropZone"
-                  onclick="document.getElementById('pdfInput').click()"
+                  onclick="
+                    if (this.getAttribute('data-queue')) return;
+                    document.getElementById('pdfInput').click();
+                  "
                   ondragover="
                     event.preventDefault();
                     this.classList.add('drag');
@@ -21171,13 +21183,30 @@
         document.getElementById('pdfSaveRow').style.display = 'none';
         document.getElementById('pdfClearBtn').style.display = 'none';
         document.getElementById('pdfTypeSection').style.display = 'none';
-        document.getElementById('dropZone').classList.add('collapsed');
+        document.getElementById('pdfRightCol').style.display = 'none';
+        const dz = document.getElementById('dropZone');
+        dz.classList.remove('collapsed');
+        dz.setAttribute('data-queue', 'true');
+        dz.style.cursor = 'default';
         renderQueueProgress();
         runExtractionQueue();
       }
 
       function clearQueue() {
         window._pdfQueue = null;
+        window._pdfQueueRows = null;
+        document.getElementById('pdfRightCol').style.display = '';
+        const dz = document.getElementById('dropZone');
+        dz.removeAttribute('data-queue');
+        dz.style.cursor = '';
+        const dzIco = dz.querySelector('.dz-ico');
+        const dzSub = dz.querySelector('.dz-sub');
+        if (dzIco) dzIco.style.display = '';
+        if (dzSub) dzSub.style.display = '';
+        document.getElementById('dz-title').style.cssText = '';
+        document.getElementById('extractedFieldsHdr').innerHTML = '';
+        document.getElementById('extractedFieldsGrid').innerHTML = '';
+        document.getElementById('pdfAIBox').textContent = 'Upload a PDF and select document type.';
         clearPDFOCR();
       }
 
@@ -21190,19 +21219,19 @@
       function renderQueueProgress() {
         const q = window._pdfQueue;
         if (!q) return;
-        const box = document.getElementById('pdfAIBox');
-        const dz = document.getElementById('dz-title');
-        const pct = q.files.length > 0 ? Math.round((q.currentIdx / q.files.length) * 100) : 0;
+        const dz = document.getElementById('dropZone');
+        const pct =
+          q.files.length > 0
+            ? Math.round(
+                ((q.status === 'done' || q.status === 'cancelled' ? q.files.length : q.currentIdx) / q.files.length) *
+                  100,
+              )
+            : 0;
 
-        dz.innerHTML =
-          '📄 Batch extraction — ' +
-          q.files.length +
-          ' PDFs queued' +
-          ' <button class="btn btn-ghost btn-sm" style="margin-left:8px;font-size:10px" ' +
-          'onclick="event.stopPropagation();window._pdfAbort=true;showToast(\'Queue cancelled\')">✕ Cancel</button>';
+        let html = '<div style="text-align:left;max-width:480px;margin:0 auto;width:100%">';
 
-        let html = '<div style="padding:4px 0">';
-        html += '<div style="font-weight:600;color:var(--em);margin-bottom:8px">';
+        // Header
+        html += '<div style="font-size:16px;font-weight:600;color:var(--em);margin-bottom:14px">';
         if (q.status === 'running') {
           html += 'Extracting ' + (q.currentIdx + 1) + ' of ' + q.files.length + ' PDFs...';
         } else if (q.status === 'done' || q.status === 'cancelled') {
@@ -21213,11 +21242,11 @@
         html += '</div>';
 
         // Progress bar
-        html += '<div style="background:var(--s2);border-radius:4px;height:6px;margin-bottom:12px">';
+        html += '<div style="background:var(--s1);border-radius:6px;height:8px;margin-bottom:20px;overflow:hidden">';
         html +=
-          '<div style="background:var(--em);border-radius:4px;height:6px;width:' +
+          '<div style="background:var(--em);border-radius:6px;height:8px;width:' +
           pct +
-          '%;transition:width 0.3s"></div>';
+          '%;transition:width 0.4s ease"></div>';
         html += '</div>';
 
         // File list
@@ -21227,41 +21256,65 @@
           const result = q.results.find((r) => r.fileIdx === i);
           if (result && result.status === 'ok') {
             const billCount = result.bills.length;
+            html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:#4aba4a">';
+            html += '<span style="width:18px;text-align:center">✓</span>';
+            html += '<span style="color:var(--text)">' + _escHtml(f.name) + '</span>';
             html +=
-              '<div style="color:#4a4;padding:2px 0;font-size:13px">✓ ' +
-              _escHtml(f.name) +
-              ' — ' +
+              '<span style="color:var(--text3);font-size:11px;margin-left:auto">' +
               billCount +
               ' bill' +
               (billCount !== 1 ? 's' : '') +
-              ' found</div>';
+              '</span>';
+            html += '</div>';
           } else if (result && result.status === 'failed') {
+            html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:#c44">';
+            html += '<span style="width:18px;text-align:center">✕</span>';
+            html += '<span>' + _escHtml(f.name) + '</span>';
             html +=
-              '<div style="color:#c44;padding:2px 0;font-size:13px">✕ ' +
-              _escHtml(f.name) +
-              ' — ' +
-              (result.error || 'extraction failed') +
-              '</div>';
+              '<span style="font-size:11px;margin-left:auto;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+              (result.error || 'failed') +
+              '</span>';
+            html += '</div>';
           } else if (i === q.currentIdx && q.status === 'running') {
             html +=
-              '<div style="color:var(--em);padding:2px 0;font-size:13px;display:flex;align-items:center;gap:6px">';
+              '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:var(--em)">';
             html +=
-              '<span style="display:inline-block;width:12px;height:12px;border:2px solid var(--em);border-top-color:transparent;border-radius:50%;animation:qspin 1s linear infinite"></span>';
-            html += _escHtml(f.name) + ' — extracting...</div>';
+              '<span style="display:inline-block;width:14px;height:14px;border:2px solid var(--em);border-top-color:transparent;border-radius:50%;animation:qspin 1s linear infinite;flex-shrink:0"></span>';
+            html += '<span>' + _escHtml(f.name) + '</span>';
+            html += '<span style="font-size:11px;margin-left:auto;color:var(--text3)">extracting...</span>';
+            html += '</div>';
           } else {
-            html += '<div style="color:var(--text3);padding:2px 0;font-size:13px">○ ' + _escHtml(f.name) + '</div>';
+            html +=
+              '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:var(--text3)">';
+            html += '<span style="width:18px;text-align:center">○</span>';
+            html += '<span>' + _escHtml(f.name) + '</span>';
+            html += '</div>';
           }
         });
         if (q.files.length > maxShow) {
           html +=
-            '<div style="color:var(--text3);font-size:11px;padding:2px 0">...and ' +
+            '<div style="color:var(--text3);font-size:11px;padding:4px 0 0 26px">...and ' +
             (q.files.length - maxShow) +
             ' more</div>';
         }
 
+        // Cancel button
+        html += '<div style="margin-top:18px;text-align:center">';
+        html +=
+          '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();window._pdfAbort=true;showToast(\'Queue cancelled\')">Cancel Extraction</button>';
+        html += '</div>';
+
         html += '</div>';
         html += '<style>@keyframes qspin{to{transform:rotate(360deg)}}</style>';
-        box.innerHTML = html;
+
+        // Render into drop zone (hide default content)
+        const dzIco = dz.querySelector('.dz-ico');
+        const dzTitle = document.getElementById('dz-title');
+        const dzSub = dz.querySelector('.dz-sub');
+        if (dzIco) dzIco.style.display = 'none';
+        if (dzSub) dzSub.style.display = 'none';
+        dzTitle.innerHTML = html;
+        dzTitle.style.cssText = 'margin:0;font-size:inherit;white-space:normal;overflow:visible;text-overflow:clip';
       }
 
       async function runExtractionQueue() {
@@ -21385,8 +21438,15 @@
       function renderQueueResults() {
         const q = window._pdfQueue;
         if (!q) return;
-        const box = document.getElementById('pdfAIBox');
-        const dz = document.getElementById('dz-title');
+        const grid = document.getElementById('extractedFieldsGrid');
+        const dz = document.getElementById('dropZone');
+        const dzTitle = document.getElementById('dz-title');
+
+        // Collapse drop zone to banner for results view
+        dz.classList.add('collapsed');
+        dz.querySelector('.dz-ico').style.display = 'none';
+        dz.querySelector('.dz-sub').style.display = 'none';
+        dzTitle.style.cssText = '';
 
         // Flatten bills into rows: each row = { resultIdx, billIdx, bill, result }
         const oldRows = window._pdfQueueRows || [];
@@ -21411,11 +21471,13 @@
 
         // Handle empty results
         if (rows.length === 0) {
-          box.innerHTML =
-            '<div style="text-align:center;padding:30px;color:var(--text3)">' +
-            '<div style="font-size:18px;margin-bottom:8px">No bills extracted</div>' +
+          const totalFiles = q.files.length;
+          dzTitle.innerHTML = '📄 Batch extraction — no bills found';
+          grid.innerHTML =
+            '<div style="text-align:center;padding:40px 20px;color:var(--text3)">' +
+            '<div style="font-size:16px;margin-bottom:8px">No bills extracted</div>' +
             '<div style="font-size:13px;margin-bottom:16px">None of the ' +
-            q.files.length +
+            totalFiles +
             ' PDFs produced extractable bills.</div>' +
             '<button class="btn btn-ghost" onclick="clearQueue()">Clear & Try Again</button></div>';
           return;
@@ -21428,7 +21490,7 @@
         const failCount = rows.filter((r) => !r.bill).length;
         const totalBills = rows.filter((r) => r.bill).length;
 
-        dz.innerHTML =
+        dzTitle.innerHTML =
           '📄 Batch results — ' +
           q.files.length +
           ' PDFs → ' +
@@ -21437,10 +21499,10 @@
           ' <button class="btn btn-ghost btn-sm" style="margin-left:8px;font-size:10px" ' +
           'onclick="event.stopPropagation();clearQueue()">✕ Clear All</button>';
 
-        let html = '<div style="padding:0">';
+        let html = '<div style="padding:8px 0 0">';
 
         // Batch project selector
-        html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:4px 0">';
+        html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:4px 0">';
         html += '<span style="font-size:12px;color:var(--text2)">Batch project:</span>';
         html +=
           '<select class="fs" id="queueBatchProj" style="flex:1;max-width:250px" onchange="updateQueueBatchProj(this.value)">';
@@ -21452,7 +21514,7 @@
         html += '</select></div>';
 
         // Table
-        html += '<div style="overflow-x:auto">';
+        html += '<div style="overflow-x:auto;border-radius:8px;border:1px solid var(--border)">';
         html += '<table style="width:100%;border-collapse:collapse;font-size:13px">';
 
         // Header
@@ -21565,7 +21627,7 @@
         // Bottom action bar
         const checkedCount = rows.filter((r) => r.checked && r.bill && !r._saved).length;
         html +=
-          '<div style="padding:10px 0;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);margin-top:4px">';
+          '<div style="padding:12px 0;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);margin-top:8px">';
         html += '<div style="font-size:13px;color:var(--text2)">';
         if (okCount > 0) html += '<span style="color:#4a4">' + okCount + ' ready</span>';
         if (dupCount > 0)
@@ -21586,7 +21648,7 @@
         html += '</div></div>';
 
         html += '</div>';
-        box.innerHTML = html;
+        grid.innerHTML = html;
       }
 
       function _fmtShortDate(dateStr) {
@@ -21636,9 +21698,13 @@
       function queueDrillIn(rowIdx) {
         const row = window._pdfQueueRows && window._pdfQueueRows[rowIdx];
         if (!row || !row.bill) return;
-        const box = document.getElementById('pdfAIBox');
+        const grid = document.getElementById('extractedFieldsGrid');
 
         window._pdfQueueDrillIdx = rowIdx;
+
+        // Show right column for drill-in detail view
+        document.getElementById('pdfRightCol').style.display = '';
+        const box = document.getElementById('pdfAIBox');
 
         const prevMultiBills = window._pdfMultiBills;
         const prevMultiIdx = window._pdfMultiIdx;
@@ -21647,8 +21713,9 @@
         window._pdfMultiIdx = 0;
         window._pdfBillWarnings = [{ warnings: row.bill._warnings || [] }];
 
-        const backBtn =
-          '<div style="margin-bottom:8px"><button class="btn btn-ghost btn-sm" ' +
+        // Back button in the left column
+        grid.innerHTML =
+          '<div style="padding:8px 0"><button class="btn btn-ghost btn-sm" ' +
           'onclick="exitQueueDrillIn()">← Back to results</button>' +
           ' <span style="font-size:12px;color:var(--text2)">' +
           _escHtml(row.result.fileName) +
@@ -21658,7 +21725,6 @@
         renderPDFFields(row.bill, row.bill._warnings || []);
 
         box.innerHTML =
-          backBtn +
           '<pre style="white-space:pre-wrap;font-size:12px;color:var(--text2)">' +
           JSON.stringify(row.bill, null, 2) +
           '</pre>';
@@ -21670,8 +21736,10 @@
 
       function exitQueueDrillIn() {
         window._pdfQueueDrillIdx = null;
+        document.getElementById('pdfRightCol').style.display = 'none';
         document.getElementById('extractedFieldsHdr').innerHTML = '';
         document.getElementById('extractedFieldsGrid').innerHTML = '';
+        document.getElementById('pdfAIBox').textContent = '';
         renderQueueResults();
       }
 
