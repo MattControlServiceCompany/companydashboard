@@ -21164,6 +21164,8 @@
         window._pdfQueue = null;
         window._pdfQueueRows = null;
         document.getElementById('pdfRightCol').style.display = '';
+        const tabsBar = document.getElementById('queueTabsBar');
+        if (tabsBar) tabsBar.remove();
         const dz = document.getElementById('dropZone');
         dz.removeAttribute('data-queue');
         dz.style.cursor = '';
@@ -21450,7 +21452,6 @@
       function renderQueueResults() {
         const q = window._pdfQueue;
         if (!q) return;
-        const grid = document.getElementById('extractedFieldsGrid');
         const dz = document.getElementById('dropZone');
         const dzTitle = document.getElementById('dz-title');
 
@@ -21459,6 +21460,10 @@
         dz.querySelector('.dz-ico').style.display = 'none';
         dz.querySelector('.dz-sub').style.display = 'none';
         dzTitle.style.cssText = '';
+        document.getElementById('pdfRightCol').style.display = '';
+
+        if (q._activeFileIdx == null) q._activeFileIdx = 0;
+        if (q._activeBillIdx == null) q._activeBillIdx = 0;
 
         // Flatten bills into rows: each row = { resultIdx, billIdx, bill, result }
         const oldRows = window._pdfQueueRows || [];
@@ -21483,14 +21488,14 @@
 
         // Handle empty results
         if (rows.length === 0) {
-          const totalFiles = q.files.length;
           dzTitle.innerHTML = '📄 Batch extraction — no bills found';
-          grid.innerHTML =
+          document.getElementById('pdfRightCol').style.display = 'none';
+          document.getElementById('extractedFieldsGrid').innerHTML =
             '<div style="text-align:center;padding:40px 20px;color:var(--text3)">' +
             '<div style="font-size:16px;margin-bottom:8px">No bills extracted</div>' +
             '<div style="font-size:13px;margin-bottom:16px">None of the ' +
-            totalFiles +
-            ' PDFs produced extractable bills.</div>' +
+            q.files.length +
+            ' files produced extractable bills.</div>' +
             '<button class="btn btn-ghost" onclick="clearQueue()">Clear & Try Again</button></div>';
           return;
         }
@@ -21501,174 +21506,163 @@
         const dupCount = rows.filter((r) => r.bill && _getQueueDupInfo(r)).length;
         const failCount = rows.filter((r) => !r.bill).length;
         const totalBills = rows.filter((r) => r.bill).length;
+        const savedCount = rows.filter((r) => r._saved).length;
+        const saveable = rows.filter((r) => r.bill && !r._saved).length;
 
         dzTitle.innerHTML =
           '📄 Batch results — ' +
           q.files.length +
-          ' PDFs → ' +
+          ' files → ' +
           totalBills +
           ' bills' +
-          ' <button class="btn btn-ghost btn-sm" style="margin-left:8px;font-size:10px" ' +
-          'onclick="event.stopPropagation();clearQueue()">✕ Clear All</button>';
+          ' <button class="btn btn-ghost btn-sm" style="margin-left:8px;font-size:10px" onclick="event.stopPropagation();clearQueue()">✕ Clear All</button>';
 
-        let html = '<div style="padding:8px 0 0">';
+        // Create or get tabs container (above extractedFieldsHdr)
+        let tabsBar = document.getElementById('queueTabsBar');
+        if (!tabsBar) {
+          tabsBar = document.createElement('div');
+          tabsBar.id = 'queueTabsBar';
+          const hdr = document.getElementById('extractedFieldsHdr');
+          hdr.parentNode.insertBefore(tabsBar, hdr);
+        }
 
-        // Batch project selector
-        html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:4px 0">';
-        html += '<span style="font-size:12px;color:var(--text2)">Batch project:</span>';
-        html +=
-          '<select class="fs" id="queueBatchProj" style="flex:1;max-width:250px" onchange="updateQueueBatchProj(this.value)">';
-        html += '<option value="">— General —</option>';
-        projects.forEach((p) => {
-          const sel = q.batchProjId === p.id ? ' selected' : '';
-          html += '<option value="' + p.id + '"' + sel + '>' + p.name + '</option>';
-        });
-        html += '</select></div>';
+        let html = '';
 
-        // Table
-        html += '<div style="overflow-x:auto;border-radius:8px;border:1px solid var(--border)">';
-        html += '<table style="width:100%;border-collapse:collapse;font-size:13px">';
-
-        // Header
-        html += '<thead><tr style="background:var(--s1);text-align:left">';
-        html +=
-          '<th style="padding:8px 10px;width:30px"><input type="checkbox" ' +
-          (rows.every((r) => r.checked || !r.bill) ? 'checked' : '') +
-          ' onchange="toggleAllQueueRows(this.checked)" style="accent-color:var(--em)"></th>';
-        html += '<th style="padding:8px 6px;color:var(--text3);font-weight:500">Status</th>';
-        html += '<th style="padding:8px 6px;color:var(--text3);font-weight:500">File</th>';
-        html += '<th style="padding:8px 6px;color:var(--text3);font-weight:500">Account</th>';
-        html += '<th style="padding:8px 6px;color:var(--text3);font-weight:500">Period</th>';
-        html += '<th style="padding:8px 6px;color:var(--text3);font-weight:500">Total</th>';
-        html += '<th style="padding:8px 6px;color:var(--text3);font-weight:500">Project</th>';
-        html += '<th style="padding:8px 6px;color:var(--text3);font-weight:500"></th>';
-        html += '</tr></thead>';
-
-        // Rows
-        html += '<tbody>';
-        rows.forEach((row, rowIdx) => {
-          const dup = row.bill ? _getQueueDupInfo(row) : null;
-          const isSaved = row._saved;
-          let rowBg = '';
-          if (isSaved) rowBg = 'opacity:0.5;';
-          else if (!row.bill) rowBg = 'background:rgba(200,50,50,0.04);';
-          else if (dup) rowBg = 'background:rgba(var(--em-rgb),0.04);';
-
-          html += '<tr style="border-bottom:1px solid var(--border);' + rowBg + '">';
-
-          // Checkbox
-          if (row.bill && !isSaved) {
-            html +=
-              '<td style="padding:6px 10px"><input type="checkbox" ' +
-              (row.checked ? 'checked' : '') +
-              ' onchange="toggleQueueRow(' +
-              rowIdx +
-              ',this.checked)" style="accent-color:var(--em)"></td>';
-          } else {
-            html += '<td style="padding:6px 10px"><input type="checkbox" disabled style="opacity:0.3"></td>';
-          }
-
-          // Status badge
-          if (isSaved) {
-            html +=
-              '<td style="padding:6px"><span style="color:var(--text3);font-size:11px;background:var(--s2);padding:2px 8px;border-radius:10px">SAVED</span></td>';
-          } else if (!row.bill) {
-            html +=
-              '<td style="padding:6px"><span style="color:#c44;font-size:11px;background:rgba(200,68,68,0.12);padding:2px 8px;border-radius:10px">FAIL</span></td>';
-          } else if (dup) {
-            const diffCount = dup.diffFields ? dup.diffFields.length : '?';
-            html +=
-              '<td style="padding:6px"><span style="color:var(--em);font-size:11px;background:rgba(var(--em-rgb),0.12);padding:2px 8px;border-radius:10px">DUP ' +
-              diffCount +
-              '</span></td>';
-          } else {
-            html +=
-              '<td style="padding:6px"><span style="color:#4a4;font-size:11px;background:rgba(68,170,68,0.12);padding:2px 8px;border-radius:10px">OK</span></td>';
-          }
-
-          // File
+        // File tabs
+        html += '<div style="display:flex;gap:4px;margin:10px 0 8px;flex-wrap:wrap">';
+        q.results.forEach((r, i) => {
+          const isActive = i === q._activeFileIdx;
+          const bg = isActive ? 'var(--em)' : 'var(--s2)';
+          const color = isActive ? '#fff' : 'var(--text2)';
+          const border = isActive ? 'var(--em)' : 'var(--border2)';
+          const ct = r.status === 'ok' ? r.bills.length : 0;
+          const lbl = _escHtml(r.fileName) + (r.status === 'failed' ? ' ✕' : ' (' + ct + ')');
           html +=
-            '<td style="padding:6px;color:' +
-            (row.bill ? 'var(--text)' : '#c44') +
-            '">' +
-            _escHtml(row.result.fileName) +
-            '</td>';
-
-          if (row.bill) {
-            // Account
-            html += '<td style="padding:6px;color:var(--text2)">' + (row.bill.AccountNumber || '—') + '</td>';
-            // Period
-            const ps = row.bill.BillingPeriodStart ? _fmtShortDate(row.bill.BillingPeriodStart) : '—';
-            const pe = row.bill.BillingPeriodEnd ? _fmtShortDate(row.bill.BillingPeriodEnd) : '—';
-            html += '<td style="padding:6px;color:var(--text2)">' + ps + ' – ' + pe + '</td>';
-            // Total
-            const total = row.bill.TotalCurrentCharges;
-            html +=
-              '<td style="padding:6px;color:var(--text)">$' + (total ? parseFloat(total).toFixed(2) : '—') + '</td>';
-            // Project
-            const projId = row.bill._projOverride || q.batchProjId;
-            const proj = projId ? projects.find((p) => p.id === projId) : null;
-            html += '<td style="padding:6px;color:var(--em)">' + (proj ? proj.name : 'General') + '</td>';
-            // Action
-            if (isSaved) {
-              html += '<td style="padding:6px;color:var(--text3);font-size:12px">—</td>';
-            } else if (dup) {
-              html +=
-                '<td style="padding:6px"><a style="color:var(--em);font-size:12px;cursor:pointer" onclick="queueDrillIn(' +
-                rowIdx +
-                ')">Resolve ›</a></td>';
-            } else {
-              html +=
-                '<td style="padding:6px"><a style="color:var(--text3);font-size:12px;cursor:pointer" onclick="queueDrillIn(' +
-                rowIdx +
-                ')">Details ›</a></td>';
-            }
-          } else {
-            // Failed row — empty cells
-            html += '<td style="padding:6px;color:var(--text3)">—</td>'.repeat(4);
-            html +=
-              '<td style="padding:6px"><a style="color:#c44;font-size:12px;cursor:pointer" onclick="retryQueueFile(' +
-              row.resultIdx +
-              ')">Retry ›</a></td>';
-          }
-
-          html += '</tr>';
+            '<button onclick="selectQueueFile(' +
+            i +
+            ')" style="padding:6px 14px;border-radius:6px;border:1px solid ' +
+            border +
+            ';background:' +
+            bg +
+            ';color:' +
+            color +
+            ';cursor:pointer;font-size:12px;font-family:var(--font)">' +
+            lbl +
+            '</button>';
         });
-        html += '</tbody></table></div>';
+        html += '</div>';
 
-        // Bottom action bar
-        const checkedCount = rows.filter((r) => r.checked && r.bill && !r._saved).length;
+        // Active file
+        const activeResult = q.results[q._activeFileIdx];
+        if (!activeResult || activeResult.status === 'failed') {
+          html += '<div style="padding:20px;color:#c44;font-size:13px">';
+          html +=
+            '<strong>' +
+            _escHtml(activeResult ? activeResult.fileName : '') +
+            '</strong> — ' +
+            (activeResult ? activeResult.error || 'extraction failed' : 'no data');
+          html +=
+            '<div style="margin-top:8px"><button class="btn btn-ghost btn-sm" onclick="retryQueueFile(' +
+            q._activeFileIdx +
+            ')">Retry</button></div></div>';
+          tabsBar.innerHTML = html;
+          document.getElementById('extractedFieldsHdr').innerHTML = '';
+          document.getElementById('extractedFieldsGrid').innerHTML = '';
+          document.getElementById('pdfAIBox').textContent = '';
+          return;
+        }
+
+        // Bill pills
+        if (activeResult.bills.length > 1) {
+          html += '<div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap;align-items:center">';
+          html +=
+            '<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-right:4px">Bills</span>';
+          activeResult.bills.forEach((bill, bi) => {
+            const isActive = bi === q._activeBillIdx;
+            const ps = bill.BillingPeriodStart ? _fmtShortDate(bill.BillingPeriodStart) : '';
+            const pe = bill.BillingPeriodEnd ? _fmtShortDate(bill.BillingPeriodEnd) : '';
+            const lbl = ps && pe ? ps + '–' + pe : bill.Commodity || 'Bill ' + (bi + 1);
+            const row = rows.find((r) => r.resultIdx === q._activeFileIdx && r.billIdx === bi);
+            const dup = row ? _getQueueDupInfo(row) : null;
+            const isSaved = row && row._saved;
+            const pillBg = isActive ? 'var(--accent-dim, rgba(var(--em-rgb),0.15))' : 'transparent';
+            const pillBorder = isActive ? 'var(--em)' : 'var(--border2)';
+            let pillColor = isActive ? 'var(--em)' : 'var(--text2)';
+            if (isSaved) pillColor = 'var(--text3)';
+            let dot = '';
+            if (dup) dot = ' <span style="color:var(--em)">●</span>';
+            else if (isSaved) dot = ' <span style="color:var(--text3)">✓</span>';
+            html +=
+              '<button onclick="selectQueueBill(' +
+              bi +
+              ')" style="font-size:11px;padding:4px 10px;border-radius:5px;border:1px solid ' +
+              pillBorder +
+              ';background:' +
+              pillBg +
+              ';color:' +
+              pillColor +
+              ';cursor:pointer;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap">' +
+              lbl +
+              dot +
+              '</button>';
+          });
+          html += '</div>';
+        }
+
+        // Action bar
         html +=
-          '<div style="padding:12px 0;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);margin-top:8px">';
-        html += '<div style="font-size:13px;color:var(--text2)">';
+          '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0 4px;border-bottom:1px solid var(--border);margin-bottom:4px;flex-wrap:wrap;gap:6px">';
+        html += '<div style="font-size:12px;color:var(--text2)">';
         if (okCount > 0) html += '<span style="color:#4a4">' + okCount + ' ready</span>';
         if (dupCount > 0)
-          html += (okCount > 0 ? ' · ' : '') + '<span style="color:var(--em)">' + dupCount + ' duplicate</span>';
+          html += (okCount > 0 ? ' · ' : '') + '<span style="color:var(--em)">' + dupCount + ' dup</span>';
         if (failCount > 0)
           html += (okCount + dupCount > 0 ? ' · ' : '') + '<span style="color:#c44">' + failCount + ' failed</span>';
+        if (savedCount > 0) html += ' · <span style="color:var(--text3)">' + savedCount + ' saved</span>';
         html += '</div>';
-        html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+        html += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
         if (dupCount > 0) {
           html +=
-            '<button class="btn btn-ghost btn-sm" onclick="resolveAllQueueDups(\'overwrite\')" style="font-size:11px">Overwrite All</button>';
+            '<button class="btn btn-ghost btn-sm" onclick="resolveAllQueueDups(\'overwrite\')" style="font-size:10px">Overwrite All</button>';
           html +=
-            '<button class="btn btn-ghost btn-sm" onclick="resolveAllQueueDups(\'merge\')" style="font-size:11px">Merge All</button>';
-          html +=
-            '<button class="btn btn-ghost btn-sm" onclick="resolveAllQueueDups(\'skip\')" style="font-size:11px">Skip All</button>';
+            '<button class="btn btn-ghost btn-sm" onclick="resolveAllQueueDups(\'skip\')" style="font-size:10px">Skip All</button>';
         }
-        html += '<button class="btn btn-ghost" onclick="clearQueue()">Cancel</button>';
         html +=
-          '<button class="btn btn-em" onclick="saveQueuedBills()"' +
-          (checkedCount === 0 ? ' disabled style="opacity:0.5"' : '') +
-          '>Save ' +
-          checkedCount +
-          ' Selected Bill' +
-          (checkedCount !== 1 ? 's' : '') +
-          '</button>';
+          '<button class="btn btn-em btn-sm" onclick="saveQueuedBills()" style="font-size:11px"' +
+          (saveable === 0 ? ' disabled' : '') +
+          '>Save All (' +
+          saveable +
+          ')</button>';
         html += '</div></div>';
 
-        html += '</div>';
-        grid.innerHTML = html;
+        tabsBar.innerHTML = html;
+
+        // Render selected bill
+        const billIdx = Math.min(q._activeBillIdx, activeResult.bills.length - 1);
+        q._activeBillIdx = billIdx;
+        const activeBill = activeResult.bills[billIdx];
+        if (activeBill) {
+          renderPDFFields(activeBill, activeBill._warnings || []);
+          document.getElementById('pdfAIBox').innerHTML =
+            '<pre style="white-space:pre-wrap;font-size:12px;color:var(--text2)">' +
+            JSON.stringify(activeBill, null, 2) +
+            '</pre>';
+        }
+      }
+
+      function selectQueueFile(idx) {
+        const q = window._pdfQueue;
+        if (!q) return;
+        q._activeFileIdx = idx;
+        q._activeBillIdx = 0;
+        renderQueueResults();
+      }
+
+      function selectQueueBill(idx) {
+        const q = window._pdfQueue;
+        if (!q) return;
+        q._activeBillIdx = idx;
+        renderQueueResults();
       }
 
       function _fmtShortDate(dateStr) {
