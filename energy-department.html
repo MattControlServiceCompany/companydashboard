@@ -16472,6 +16472,38 @@
         for (const k of ['FacilitiesKW', 'BilledKW', 'ActualKW', 'ActualRKVA', 'TDCkW']) {
           if (result[k]) result[k] = _pad4(result[k]);
         }
+        // ── OCR DECIMAL RECOVERY: kW fields should be ###.#### (~3 digits + 4 decimals) ──
+        // If OCR dropped the decimal, "475.5360" becomes "4755360.0000" (7-digit integer part).
+        // Fix: if integer part has 5+ digits, reinsert decimal 4 places from the right of the
+        // raw digit string to recover the original ###.#### format.
+        for (const k of ['FacilitiesKW', 'BilledKW', 'ActualKW', 'ActualRKVA', 'TDCkW']) {
+          if (!result[k]) continue;
+          const n = parseFloat(String(result[k]).replace(/,/g, ''));
+          if (isNaN(n) || n <= 10000) continue;
+          const raw = String(result[k]).replace(/,/g, '').replace(/\..*/, '');
+          if (raw.length >= 5) {
+            const fixed = parseFloat(raw.slice(0, raw.length - 4) + '.' + raw.slice(raw.length - 4));
+            if (fixed > 0 && fixed < 10000) {
+              result['_ocr_decimal_fix_' + k] = { original: result[k], corrected: fixed.toFixed(4) };
+              result[k] = fixed.toFixed(4);
+            }
+          }
+        }
+        // Same logic for kWh: should be ###,###.#### (~6 digits + 4 decimals).
+        // If integer part has 8+ digits, OCR likely dropped the decimal.
+        if (result.kWhConsumed) {
+          const kwhN = parseFloat(String(result.kWhConsumed).replace(/,/g, ''));
+          if (!isNaN(kwhN) && kwhN > 2000000) {
+            const raw = String(result.kWhConsumed).replace(/,/g, '').replace(/\..*/, '');
+            if (raw.length >= 8) {
+              const fixed = parseFloat(raw.slice(0, raw.length - 4) + '.' + raw.slice(raw.length - 4));
+              if (fixed > 0 && fixed < 2000000) {
+                result['_ocr_decimal_fix_kWhConsumed'] = { original: result.kWhConsumed, corrected: fixed.toFixed(4) };
+                result.kWhConsumed = fixed.toFixed(4);
+              }
+            }
+          }
+        }
         if (result.StartRead) result.StartRead = _pad4(result.StartRead);
         if (result.EndRead) result.EndRead = _pad4(result.EndRead);
         if (result.ReadDifference) result.ReadDifference = _pad4(result.ReadDifference);
