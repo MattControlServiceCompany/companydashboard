@@ -21452,18 +21452,20 @@
         if (!q) return;
         const dz = document.getElementById('dropZone');
         const dzTitle = document.getElementById('dz-title');
+        const box = document.getElementById('pdfAIBox');
 
-        // Collapse drop zone to banner for results view
+        // Show normal two-column layout
         dz.classList.add('collapsed');
         dz.querySelector('.dz-ico').style.display = 'none';
         dz.querySelector('.dz-sub').style.display = 'none';
         dzTitle.style.cssText = '';
         document.getElementById('pdfRightCol').style.display = '';
+        document.getElementById('pdfTypeSection').style.display = 'none';
+        document.getElementById('pdfSaveRow').style.display = 'none';
 
         if (q._activeFileIdx == null) q._activeFileIdx = 0;
-        if (q._activeBillIdx == null) q._activeBillIdx = 0;
 
-        // Flatten bills into rows: each row = { resultIdx, billIdx, bill, result }
+        // Build rows for save tracking
         const oldRows = window._pdfQueueRows || [];
         const rows = [];
         q.results.forEach((r, ri) => {
@@ -21475,7 +21477,6 @@
             rows.push({ resultIdx: ri, billIdx: -1, bill: null, result: r, checked: false });
           }
         });
-        // Preserve checked and _saved state from previous render
         rows.forEach((row) => {
           const old = oldRows.find((o) => o.resultIdx === row.resultIdx && o.billIdx === row.billIdx);
           if (old) {
@@ -21484,12 +21485,11 @@
           }
         });
 
-        // Handle empty results
         if (rows.length === 0) {
           dzTitle.innerHTML = '📄 Batch extraction — no bills found';
           document.getElementById('pdfRightCol').style.display = 'none';
           document.getElementById('extractedFieldsGrid').innerHTML =
-            '<div style="text-align:center;padding:40px 20px;color:var(--text3)">' +
+            '<div style="text-align:center;padding:40px 20px;color:var(--text)">' +
             '<div style="font-size:16px;margin-bottom:8px">No bills extracted</div>' +
             '<div style="font-size:13px;margin-bottom:16px">None of the ' +
             q.files.length +
@@ -21497,9 +21497,9 @@
             '<button class="btn btn-ghost" onclick="clearQueue()">Clear & Try Again</button></div>';
           return;
         }
-
         window._pdfQueueRows = rows;
 
+        // Stats
         const okCount = rows.filter((r) => r.bill && !_getQueueDupInfo(r)).length;
         const dupCount = rows.filter((r) => r.bill && _getQueueDupInfo(r)).length;
         const failCount = rows.filter((r) => !r.bill).length;
@@ -21507,6 +21507,7 @@
         const savedCount = rows.filter((r) => r._saved).length;
         const saveable = rows.filter((r) => r.bill && !r._saved).length;
 
+        // Banner
         dzTitle.innerHTML =
           '📄 Batch results — ' +
           q.files.length +
@@ -21524,14 +21525,13 @@
           hdr.parentNode.insertBefore(tabsBar, hdr);
         }
 
+        // File tabs + action bar
         let html = '';
-
-        // File tabs
         html += '<div style="display:flex;gap:4px;margin:10px 0 8px;flex-wrap:wrap">';
         q.results.forEach((r, i) => {
           const isActive = i === q._activeFileIdx;
           const bg = isActive ? 'var(--em)' : 'var(--s2)';
-          const color = isActive ? '#fff' : 'var(--text2)';
+          const color = isActive ? '#fff' : 'var(--text)';
           const border = isActive ? 'var(--em)' : 'var(--border2)';
           const ct = r.status === 'ok' ? r.bills.length : 0;
           const lbl = _escHtml(r.fileName) + (r.status === 'failed' ? ' ✕' : ' (' + ct + ')');
@@ -21550,67 +21550,10 @@
         });
         html += '</div>';
 
-        // Active file
-        const activeResult = q.results[q._activeFileIdx];
-        if (!activeResult || activeResult.status === 'failed') {
-          html += '<div style="padding:20px;color:#c44;font-size:13px">';
-          html +=
-            '<strong>' +
-            _escHtml(activeResult ? activeResult.fileName : '') +
-            '</strong> — ' +
-            (activeResult ? activeResult.error || 'extraction failed' : 'no data');
-          html +=
-            '<div style="margin-top:8px"><button class="btn btn-ghost btn-sm" onclick="retryQueueFile(' +
-            q._activeFileIdx +
-            ')">Retry</button></div></div>';
-          tabsBar.innerHTML = html;
-          document.getElementById('extractedFieldsHdr').innerHTML = '';
-          document.getElementById('extractedFieldsGrid').innerHTML = '';
-          document.getElementById('pdfAIBox').textContent = '';
-          return;
-        }
-
-        // Bill pills
-        if (activeResult.bills.length > 1) {
-          html += '<div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap;align-items:center">';
-          html +=
-            '<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-right:4px">Bills</span>';
-          activeResult.bills.forEach((bill, bi) => {
-            const isActive = bi === q._activeBillIdx;
-            const ps = bill.BillingPeriodStart ? _fmtShortDate(bill.BillingPeriodStart) : '';
-            const pe = bill.BillingPeriodEnd ? _fmtShortDate(bill.BillingPeriodEnd) : '';
-            const lbl = ps && pe ? ps + '–' + pe : bill.Commodity || 'Bill ' + (bi + 1);
-            const row = rows.find((r) => r.resultIdx === q._activeFileIdx && r.billIdx === bi);
-            const dup = row ? _getQueueDupInfo(row) : null;
-            const isSaved = row && row._saved;
-            const pillBg = isActive ? 'var(--accent-dim, rgba(var(--em-rgb),0.15))' : 'transparent';
-            const pillBorder = isActive ? 'var(--em)' : 'var(--border2)';
-            let pillColor = isActive ? 'var(--em)' : 'var(--text2)';
-            if (isSaved) pillColor = 'var(--text3)';
-            let dot = '';
-            if (dup) dot = ' <span style="color:var(--em)">●</span>';
-            else if (isSaved) dot = ' <span style="color:var(--text3)">✓</span>';
-            html +=
-              '<button onclick="selectQueueBill(' +
-              bi +
-              ')" style="font-size:11px;padding:4px 10px;border-radius:5px;border:1px solid ' +
-              pillBorder +
-              ';background:' +
-              pillBg +
-              ';color:' +
-              pillColor +
-              ';cursor:pointer;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap">' +
-              lbl +
-              dot +
-              '</button>';
-          });
-          html += '</div>';
-        }
-
         // Action bar
         html +=
           '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0 4px;border-bottom:1px solid var(--border);margin-bottom:4px;flex-wrap:wrap;gap:6px">';
-        html += '<div style="font-size:12px;color:var(--text2)">';
+        html += '<div style="font-size:12px;color:var(--text)">';
         if (okCount > 0) html += '<span style="color:#4a4">' + okCount + ' ready</span>';
         if (dupCount > 0)
           html += (okCount > 0 ? ' · ' : '') + '<span style="color:var(--em)">' + dupCount + ' dup</span>';
@@ -21632,19 +21575,44 @@
           saveable +
           ')</button>';
         html += '</div></div>';
-
         tabsBar.innerHTML = html;
 
-        // Render selected bill
-        const billIdx = Math.min(q._activeBillIdx, activeResult.bills.length - 1);
-        q._activeBillIdx = billIdx;
-        const activeBill = activeResult.bills[billIdx];
+        // Active file — use existing multi-bill pipeline
+        const activeResult = q.results[q._activeFileIdx];
+        if (!activeResult || activeResult.status === 'failed') {
+          document.getElementById('extractedFieldsHdr').innerHTML =
+            '<div style="padding:20px;color:#c44;font-size:13px"><strong>' +
+            _escHtml(activeResult ? activeResult.fileName : '') +
+            '</strong> — ' +
+            (activeResult ? activeResult.error || 'extraction failed' : 'no data') +
+            '<div style="margin-top:8px"><button class="btn btn-ghost btn-sm" onclick="retryQueueFile(' +
+            q._activeFileIdx +
+            ')">Retry</button></div></div>';
+          document.getElementById('extractedFieldsGrid').innerHTML = '';
+          box.textContent = '';
+          return;
+        }
+
+        // Set globals so the existing renderMultiBillUI + renderPDFFields work normally
+        window._pdfMultiBills = activeResult.bills;
+        window._pdfMultiIdx = window._pdfMultiIdx || 0;
+        if (window._pdfMultiIdx >= activeResult.bills.length) window._pdfMultiIdx = 0;
+        window._pdfBillWarnings = activeResult.bills.map((b) => ({ warnings: b._warnings || [] }));
+
+        // Use the existing multi-bill UI (vertical pills in right column)
+        if (activeResult.bills.length > 1) {
+          renderMultiBillUI(activeResult.bills, box);
+        } else {
+          box.innerHTML =
+            '<pre style="white-space:pre-wrap;font-size:12px;color:var(--text2)">' +
+            JSON.stringify(activeResult.bills[0], null, 2) +
+            '</pre>';
+        }
+
+        // Render extracted fields for the selected bill
+        const activeBill = activeResult.bills[window._pdfMultiIdx];
         if (activeBill) {
           renderPDFFields(activeBill, activeBill._warnings || []);
-          document.getElementById('pdfAIBox').innerHTML =
-            '<pre style="white-space:pre-wrap;font-size:12px;color:var(--text2)">' +
-            JSON.stringify(activeBill, null, 2) +
-            '</pre>';
         }
       }
 
@@ -21652,14 +21620,7 @@
         const q = window._pdfQueue;
         if (!q) return;
         q._activeFileIdx = idx;
-        q._activeBillIdx = 0;
-        renderQueueResults();
-      }
-
-      function selectQueueBill(idx) {
-        const q = window._pdfQueue;
-        if (!q) return;
-        q._activeBillIdx = idx;
+        window._pdfMultiIdx = 0;
         renderQueueResults();
       }
 
