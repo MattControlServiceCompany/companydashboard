@@ -21147,6 +21147,200 @@
         clearPDFOCR();
       }
 
+      function renderQueueProgress() {
+        const q = window._pdfQueue;
+        if (!q) return;
+        const box = document.getElementById('pdfAIBox');
+        const dz = document.getElementById('dz-title');
+        const pct = q.files.length > 0 ? Math.round((q.currentIdx / q.files.length) * 100) : 0;
+
+        dz.innerHTML =
+          '📄 Batch extraction — ' +
+          q.files.length +
+          ' PDFs queued' +
+          ' <button class="btn btn-ghost btn-sm" style="margin-left:8px;font-size:10px" ' +
+          'onclick="event.stopPropagation();window._pdfAbort=true;showToast(\'Queue cancelled\')">✕ Cancel</button>';
+
+        let html = '<div style="padding:4px 0">';
+        html += '<div style="font-weight:600;color:var(--em);margin-bottom:8px">';
+        if (q.status === 'running') {
+          html += 'Extracting ' + (q.currentIdx + 1) + ' of ' + q.files.length + ' PDFs...';
+        } else if (q.status === 'done' || q.status === 'cancelled') {
+          html += 'Extraction complete — ' + q.results.length + ' files processed';
+        } else {
+          html += 'Preparing ' + q.files.length + ' PDFs...';
+        }
+        html += '</div>';
+
+        // Progress bar
+        html += '<div style="background:var(--s2);border-radius:4px;height:6px;margin-bottom:12px">';
+        html +=
+          '<div style="background:var(--em);border-radius:4px;height:6px;width:' +
+          pct +
+          '%;transition:width 0.3s"></div>';
+        html += '</div>';
+
+        // File list
+        const maxShow = 10;
+        const showFiles = q.files.slice(0, maxShow);
+        showFiles.forEach((f, i) => {
+          const result = q.results.find((r) => r.fileIdx === i);
+          if (result && result.status === 'ok') {
+            const billCount = result.bills.length;
+            html +=
+              '<div style="color:#4a4;padding:2px 0;font-size:13px">✓ ' +
+              f.name +
+              ' — ' +
+              billCount +
+              ' bill' +
+              (billCount !== 1 ? 's' : '') +
+              ' found</div>';
+          } else if (result && result.status === 'failed') {
+            html +=
+              '<div style="color:#c44;padding:2px 0;font-size:13px">✕ ' +
+              f.name +
+              ' — ' +
+              (result.error || 'extraction failed') +
+              '</div>';
+          } else if (i === q.currentIdx && q.status === 'running') {
+            html +=
+              '<div style="color:var(--em);padding:2px 0;font-size:13px;display:flex;align-items:center;gap:6px">';
+            html +=
+              '<span style="display:inline-block;width:12px;height:12px;border:2px solid var(--em);border-top-color:transparent;border-radius:50%;animation:qspin 1s linear infinite"></span>';
+            html += f.name + ' — extracting...</div>';
+          } else {
+            html += '<div style="color:var(--text3);padding:2px 0;font-size:13px">○ ' + f.name + '</div>';
+          }
+        });
+        if (q.files.length > maxShow) {
+          html +=
+            '<div style="color:var(--text3);font-size:11px;padding:2px 0">...and ' +
+            (q.files.length - maxShow) +
+            ' more</div>';
+        }
+
+        html += '</div>';
+        html += '<style>@keyframes qspin{to{transform:rotate(360deg)}}</style>';
+        box.innerHTML = html;
+      }
+
+      async function runExtractionQueue() {
+        const q = window._pdfQueue;
+        if (!q) return;
+        q.status = 'running';
+        window._pdfAbort = false;
+        globalTaskShow('📄 Batch extracting ' + q.files.length + ' PDFs...', 'pdf');
+
+        for (let i = 0; i < q.files.length; i++) {
+          if (window._pdfAbort) {
+            q.status = 'cancelled';
+            break;
+          }
+          q.currentIdx = i;
+          renderQueueProgress();
+          globalTaskUpdate('📄 Extracting ' + (i + 1) + '/' + q.files.length + ': ' + q.files[i].name);
+
+          try {
+            const result = await _extractSingleFileForQueue(q.files[i], i);
+            q.results.push(result);
+          } catch (err) {
+            q.results.push({
+              fileIdx: i,
+              fileName: q.files[i].name,
+              bills: [],
+              pdfB64: null,
+              status: 'failed',
+              error: err.message || 'Unknown error',
+            });
+          }
+          renderQueueProgress();
+        }
+
+        if (q.status === 'running') q.status = 'done';
+        // Flatten all bills across all files and run duplicate check
+        const allBills = [];
+        q.results.forEach((r) => {
+          r.bills.forEach((b) => allBills.push(b));
+        });
+        if (allBills.length > 0) {
+          await _checkDuplicates(allBills);
+        }
+        globalTaskDone();
+        renderQueueProgress();
+        // Brief pause so user sees "complete" state, then show results table
+        setTimeout(() => renderQueueResults(), 600);
+      }
+
+      async function _extractSingleFileForQueue(file, fileIdx) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error('Could not read file'));
+          reader.onload = async (ev) => {
+            try {
+              const b64 = ev.target.result.split(',')[1];
+              const freshBytes = () => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+
+              let text = await extractPDFText(freshBytes(), () => {});
+              if (!text || text.trim().length <= 100) {
+                // Retry once with fresh read
+                text = await extractPDFText(freshBytes(), () => {});
+                if (!text || text.trim().length <= 100) {
+                  reject(new Error('No readable text found'));
+                  return;
+                }
+              }
+
+              const rule = UTILITY_RULES.find((r) => r.detect(text));
+              if (!rule) {
+                reject(new Error('Unrecognized utility format'));
+                return;
+              }
+
+              let bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
+              let validBills = bills.filter(
+                (b) =>
+                  b.BillingPeriodStart ||
+                  b.kWhConsumed ||
+                  b.NaturalGasTherms ||
+                  b.NaturalGasCCF ||
+                  b.WaterUsage ||
+                  b.GasCharge ||
+                  b.TotalCurrentCharges,
+              );
+
+              const finalBills = validBills.length > 0 ? validBills : bills;
+              if (
+                finalBills.length === 0 ||
+                (!finalBills[0].BillingPeriodStart && !finalBills[0].TotalCurrentCharges)
+              ) {
+                reject(new Error('No bills found'));
+                return;
+              }
+
+              // Run analysis for warnings (stored on each bill as _warnings)
+              const analysisResults = analyzeBillExtraction(finalBills, rule.name);
+              finalBills.forEach((b, bi) => {
+                b._warnings = analysisResults[bi]?.warnings || [];
+                b._sourceFile = file.name;
+                b._queueFileIdx = fileIdx;
+              });
+
+              resolve({
+                fileIdx: fileIdx,
+                fileName: file.name,
+                bills: finalBills,
+                pdfB64: b64,
+                status: 'ok',
+                error: null,
+              });
+            } catch (err) {
+              reject(err);
+            }
+          };
+          reader.readAsDataURL(file);
+        });
+      }
+
       function _saveExtractionState() {
         if (!window._pdfMultiBills || !window._pdfMultiBills.length) return;
         try {
