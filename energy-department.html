@@ -21147,6 +21147,12 @@
         clearPDFOCR();
       }
 
+      function _escHtml(s) {
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+      }
+
       function renderQueueProgress() {
         const q = window._pdfQueue;
         if (!q) return;
@@ -21189,7 +21195,7 @@
             const billCount = result.bills.length;
             html +=
               '<div style="color:#4a4;padding:2px 0;font-size:13px">✓ ' +
-              f.name +
+              _escHtml(f.name) +
               ' — ' +
               billCount +
               ' bill' +
@@ -21198,7 +21204,7 @@
           } else if (result && result.status === 'failed') {
             html +=
               '<div style="color:#c44;padding:2px 0;font-size:13px">✕ ' +
-              f.name +
+              _escHtml(f.name) +
               ' — ' +
               (result.error || 'extraction failed') +
               '</div>';
@@ -21207,9 +21213,9 @@
               '<div style="color:var(--em);padding:2px 0;font-size:13px;display:flex;align-items:center;gap:6px">';
             html +=
               '<span style="display:inline-block;width:12px;height:12px;border:2px solid var(--em);border-top-color:transparent;border-radius:50%;animation:qspin 1s linear infinite"></span>';
-            html += f.name + ' — extracting...</div>';
+            html += _escHtml(f.name) + ' — extracting...</div>';
           } else {
-            html += '<div style="color:var(--text3);padding:2px 0;font-size:13px">○ ' + f.name + '</div>';
+            html += '<div style="color:var(--text3);padding:2px 0;font-size:13px">○ ' + _escHtml(f.name) + '</div>';
           }
         });
         if (q.files.length > maxShow) {
@@ -21257,6 +21263,7 @@
         }
 
         if (q.status === 'running') q.status = 'done';
+        q.currentIdx = q.files.length; // Show 100% on progress bar
         // Flatten all bills across all files and run duplicate check
         const allBills = [];
         q.results.forEach((r) => {
@@ -21348,6 +21355,7 @@
         const dz = document.getElementById('dz-title');
 
         // Flatten bills into rows: each row = { resultIdx, billIdx, bill, result }
+        const oldRows = window._pdfQueueRows || [];
         const rows = [];
         q.results.forEach((r, ri) => {
           if (r.status === 'ok' && r.bills.length > 0) {
@@ -21356,6 +21364,14 @@
             });
           } else if (r.status === 'failed') {
             rows.push({ resultIdx: ri, billIdx: -1, bill: null, result: r, checked: false });
+          }
+        });
+        // Preserve checked and _saved state from previous render
+        rows.forEach((row) => {
+          const old = oldRows.find((o) => o.resultIdx === row.resultIdx && o.billIdx === row.billIdx);
+          if (old) {
+            row.checked = old.checked;
+            row._saved = old._saved || false;
           }
         });
 
@@ -21467,7 +21483,7 @@
             '<td style="padding:6px;color:' +
             (row.bill ? 'var(--text)' : '#c44') +
             '">' +
-            row.result.fileName +
+            _escHtml(row.result.fileName) +
             '</td>';
 
           if (row.bill) {
@@ -21601,7 +21617,7 @@
           '<div style="margin-bottom:8px"><button class="btn btn-ghost btn-sm" ' +
           'onclick="exitQueueDrillIn()">← Back to results</button>' +
           ' <span style="font-size:12px;color:var(--text2)">' +
-          row.result.fileName +
+          _escHtml(row.result.fileName) +
           (row.bill.BillingPeriodStart ? ' · ' + row.bill.BillingPeriodStart : '') +
           '</span></div>';
 
@@ -21705,18 +21721,25 @@
               continue;
             }
 
+            // Unresolved duplicate — skip to avoid creating a duplicate record
+            if (dup && !dup.action) {
+              skipped++;
+              continue;
+            }
+
             // Set up pdfB64 for _saveSinglePDFBill (it reads the global)
             const prevB64 = pdfB64;
-            pdfB64 = row.result.pdfB64;
-
-            const ok = await _saveSinglePDFBill(row.bill, projId);
-            pdfB64 = prevB64;
-
-            if (ok) {
-              saved++;
-              row._saved = true;
-            } else {
-              failed++;
+            try {
+              pdfB64 = row.result.pdfB64;
+              const ok = await _saveSinglePDFBill(row.bill, projId);
+              if (ok) {
+                saved++;
+                row._saved = true;
+              } else {
+                failed++;
+              }
+            } finally {
+              pdfB64 = prevB64;
             }
           } catch (err) {
             console.warn('[Queue Save] Error saving bill:', err);
