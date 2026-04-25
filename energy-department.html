@@ -21289,6 +21289,8 @@
               '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:var(--text)">';
             html += '<span style="width:18px;text-align:center">○</span>';
             html += '<span>' + _escHtml(f.name) + '</span>';
+            const pc = q._pageCounts && q._pageCounts[i];
+            if (pc) html += '<span style="font-size:11px;color:var(--text)"> — ' + pc + ' pages</span>';
             html += '</div>';
           }
         });
@@ -21323,7 +21325,21 @@
         if (!q) return;
         q.status = 'running';
         window._pdfAbort = false;
-        globalTaskShow('📄 Batch extracting ' + q.files.length + ' PDFs...', 'pdf');
+        q._pageCounts = {};
+        globalTaskShow('📄 Batch extracting ' + q.files.length + ' files...', 'pdf');
+
+        // Pre-scan: get page count for each PDF
+        for (let i = 0; i < q.files.length; i++) {
+          try {
+            const ab = await q.files[i].arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: ab, useWorkerFetch: false, isEvalSupported: false }).promise;
+            q._pageCounts[i] = pdf.numPages;
+            pdf.destroy();
+          } catch (e) {
+            q._pageCounts[i] = null;
+          }
+        }
+        renderQueueProgress();
 
         for (let i = 0; i < q.files.length; i++) {
           if (window._pdfAbort) {
