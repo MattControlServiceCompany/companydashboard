@@ -22717,6 +22717,23 @@
         window.open(url, '_blank');
       }
 
+      function dumpCurrentBill() {
+        const bill = window._pdfMultiBills && window._pdfMultiBills[window._pdfMultiIdx || 0];
+        if (!bill) {
+          showToast('No bill selected');
+          return;
+        }
+        const json = JSON.stringify(bill, null, 2);
+        localStorage.setItem('_claude_bill_dump', json);
+        localStorage.setItem('_claude_bill_dump_ts', new Date().toISOString());
+        showToast('Bill data dumped for Claude');
+      }
+      // Auto-dump: keep current bill in localStorage so Claude can read it
+      setInterval(() => {
+        const bill = window._pdfMultiBills && window._pdfMultiBills[window._pdfMultiIdx || 0];
+        if (bill) localStorage.setItem('_claude_bill_dump', JSON.stringify(bill));
+      }, 2000);
+
       function savePDFDebug() {
         const raw = window._pdfRawText || '(no raw text)';
         const bills = window._pdfMultiBills || [];
