@@ -5479,6 +5479,7 @@
                     type="file"
                     id="pdfInput"
                     accept=".pdf"
+                    multiple
                     style="display: none"
                     onchange="handlePDFUpload(event)"
                   />
@@ -22404,11 +22405,22 @@
       function handleDrop(e) {
         e.preventDefault();
         document.getElementById('dropZone').classList.remove('drag');
-        const f = e.dataTransfer.files[0];
-        if (f && f.type === 'application/pdf') processPDF(f);
+        const files = Array.from(e.dataTransfer.files).filter((f) => f.type === 'application/pdf');
+        if (files.length === 0) return;
+        if (files.length === 1) {
+          processPDF(files[0]);
+        } else {
+          startQueueExtraction(files);
+        }
       }
       function handlePDFUpload(e) {
-        if (e.target.files[0]) processPDF(e.target.files[0]);
+        const files = Array.from(e.target.files).filter((f) => f.type === 'application/pdf');
+        if (files.length === 0) return;
+        if (files.length === 1) {
+          processPDF(files[0]);
+        } else {
+          startQueueExtraction(files);
+        }
       }
       // ── Global background task indicator ──
       let _globalTaskView = null; // which view to navigate to when clicked
