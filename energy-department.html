@@ -21332,14 +21332,18 @@
         for (let i = 0; i < q.files.length; i++) {
           try {
             const ab = await q.files[i].arrayBuffer();
-            const pdf = await pdfjsLib.getDocument({ data: ab, useWorkerFetch: false, isEvalSupported: false }).promise;
+            const pdf = await pdfjsLib.getDocument({
+              data: new Uint8Array(ab),
+              useWorkerFetch: false,
+              isEvalSupported: false,
+            }).promise;
             q._pageCounts[i] = pdf.numPages;
             pdf.destroy();
+            renderQueueProgress();
           } catch (e) {
             q._pageCounts[i] = null;
           }
         }
-        renderQueueProgress();
 
         for (let i = 0; i < q.files.length; i++) {
           if (window._pdfAbort) {
