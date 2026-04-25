@@ -21341,6 +21341,406 @@
         });
       }
 
+      function renderQueueResults() {
+        const q = window._pdfQueue;
+        if (!q) return;
+        const box = document.getElementById('pdfAIBox');
+        const dz = document.getElementById('dz-title');
+
+        // Flatten bills into rows: each row = { resultIdx, billIdx, bill, result }
+        const rows = [];
+        q.results.forEach((r, ri) => {
+          if (r.status === 'ok' && r.bills.length > 0) {
+            r.bills.forEach((b, bi) => {
+              rows.push({ resultIdx: ri, billIdx: bi, bill: b, result: r, checked: true });
+            });
+          } else if (r.status === 'failed') {
+            rows.push({ resultIdx: ri, billIdx: -1, bill: null, result: r, checked: false });
+          }
+        });
+
+        // Handle empty results
+        if (rows.length === 0) {
+          box.innerHTML =
+            '<div style="text-align:center;padding:30px;color:var(--text3)">' +
+            '<div style="font-size:18px;margin-bottom:8px">No bills extracted</div>' +
+            '<div style="font-size:13px;margin-bottom:16px">None of the ' +
+            q.files.length +
+            ' PDFs produced extractable bills.</div>' +
+            '<button class="btn btn-ghost" onclick="clearQueue()">Clear & Try Again</button></div>';
+          return;
+        }
+
+        window._pdfQueueRows = rows;
+
+        const okCount = rows.filter((r) => r.bill && !_getQueueDupInfo(r)).length;
+        const dupCount = rows.filter((r) => r.bill && _getQueueDupInfo(r)).length;
+        const failCount = rows.filter((r) => !r.bill).length;
+        const totalBills = rows.filter((r) => r.bill).length;
+
+        dz.innerHTML =
+          '📄 Batch results — ' +
+          q.files.length +
+          ' PDFs → ' +
+          totalBills +
+          ' bills' +
+          ' <button class="btn btn-ghost btn-sm" style="margin-left:8px;font-size:10px" ' +
+          'onclick="event.stopPropagation();clearQueue()">✕ Clear All</button>';
+
+        let html = '<div style="padding:0">';
+
+        // Batch project selector
+        html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:4px 0">';
+        html += '<span style="font-size:12px;color:var(--text2)">Batch project:</span>';
+        html +=
+          '<select class="fs" id="queueBatchProj" style="flex:1;max-width:250px" onchange="updateQueueBatchProj(this.value)">';
+        html += '<option value="">— General —</option>';
+        projects.forEach((p) => {
+          const sel = q.batchProjId === p.id ? ' selected' : '';
+          html += '<option value="' + p.id + '"' + sel + '>' + p.name + '</option>';
+        });
+        html += '</select></div>';
+
+        // Table
+        html += '<div style="overflow-x:auto">';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+
+        // Header
+        html += '<thead><tr style="background:var(--s1);text-align:left">';
+        html +=
+          '<th style="padding:8px 10px;width:30px"><input type="checkbox" ' +
+          (rows.every((r) => r.checked || !r.bill) ? 'checked' : '') +
+          ' onchange="toggleAllQueueRows(this.checked)" style="accent-color:var(--em)"></th>';
+        html += '<th style="padding:8px 6px;color:var(--text3);font-weight:500">Status</th>';
+        html += '<th style="padding:8px 6px;color:var(--text3);font-weight:500">File</th>';
+        html += '<th style="padding:8px 6px;color:var(--text3);font-weight:500">Account</th>';
+        html += '<th style="padding:8px 6px;color:var(--text3);font-weight:500">Period</th>';
+        html += '<th style="padding:8px 6px;color:var(--text3);font-weight:500">Total</th>';
+        html += '<th style="padding:8px 6px;color:var(--text3);font-weight:500">Project</th>';
+        html += '<th style="padding:8px 6px;color:var(--text3);font-weight:500"></th>';
+        html += '</tr></thead>';
+
+        // Rows
+        html += '<tbody>';
+        rows.forEach((row, rowIdx) => {
+          const dup = row.bill ? _getQueueDupInfo(row) : null;
+          const isSaved = row._saved;
+          let rowBg = '';
+          if (isSaved) rowBg = 'opacity:0.5;';
+          else if (!row.bill) rowBg = 'background:rgba(200,50,50,0.04);';
+          else if (dup) rowBg = 'background:rgba(var(--em-rgb),0.04);';
+
+          html += '<tr style="border-bottom:1px solid var(--border);' + rowBg + '">';
+
+          // Checkbox
+          if (row.bill && !isSaved) {
+            html +=
+              '<td style="padding:6px 10px"><input type="checkbox" ' +
+              (row.checked ? 'checked' : '') +
+              ' onchange="toggleQueueRow(' +
+              rowIdx +
+              ',this.checked)" style="accent-color:var(--em)"></td>';
+          } else {
+            html += '<td style="padding:6px 10px"><input type="checkbox" disabled style="opacity:0.3"></td>';
+          }
+
+          // Status badge
+          if (isSaved) {
+            html +=
+              '<td style="padding:6px"><span style="color:var(--text3);font-size:11px;background:var(--s2);padding:2px 8px;border-radius:10px">SAVED</span></td>';
+          } else if (!row.bill) {
+            html +=
+              '<td style="padding:6px"><span style="color:#c44;font-size:11px;background:rgba(200,68,68,0.12);padding:2px 8px;border-radius:10px">FAIL</span></td>';
+          } else if (dup) {
+            const diffCount = dup.diffFields ? dup.diffFields.length : '?';
+            html +=
+              '<td style="padding:6px"><span style="color:var(--em);font-size:11px;background:rgba(var(--em-rgb),0.12);padding:2px 8px;border-radius:10px">DUP ' +
+              diffCount +
+              '</span></td>';
+          } else {
+            html +=
+              '<td style="padding:6px"><span style="color:#4a4;font-size:11px;background:rgba(68,170,68,0.12);padding:2px 8px;border-radius:10px">OK</span></td>';
+          }
+
+          // File
+          html +=
+            '<td style="padding:6px;color:' +
+            (row.bill ? 'var(--text)' : '#c44') +
+            '">' +
+            row.result.fileName +
+            '</td>';
+
+          if (row.bill) {
+            // Account
+            html += '<td style="padding:6px;color:var(--text2)">' + (row.bill.AccountNumber || '—') + '</td>';
+            // Period
+            const ps = row.bill.BillingPeriodStart ? _fmtShortDate(row.bill.BillingPeriodStart) : '—';
+            const pe = row.bill.BillingPeriodEnd ? _fmtShortDate(row.bill.BillingPeriodEnd) : '—';
+            html += '<td style="padding:6px;color:var(--text2)">' + ps + ' – ' + pe + '</td>';
+            // Total
+            const total = row.bill.TotalCurrentCharges;
+            html +=
+              '<td style="padding:6px;color:var(--text)">$' + (total ? parseFloat(total).toFixed(2) : '—') + '</td>';
+            // Project
+            const projId = row.bill._projOverride || q.batchProjId;
+            const proj = projId ? projects.find((p) => p.id === projId) : null;
+            html += '<td style="padding:6px;color:var(--em)">' + (proj ? proj.name : 'General') + '</td>';
+            // Action
+            if (isSaved) {
+              html += '<td style="padding:6px;color:var(--text3);font-size:12px">—</td>';
+            } else if (dup) {
+              html +=
+                '<td style="padding:6px"><a style="color:var(--em);font-size:12px;cursor:pointer" onclick="queueDrillIn(' +
+                rowIdx +
+                ')">Resolve ›</a></td>';
+            } else {
+              html +=
+                '<td style="padding:6px"><a style="color:var(--text3);font-size:12px;cursor:pointer" onclick="queueDrillIn(' +
+                rowIdx +
+                ')">Details ›</a></td>';
+            }
+          } else {
+            // Failed row — empty cells
+            html += '<td style="padding:6px;color:var(--text3)">—</td>'.repeat(4);
+            html +=
+              '<td style="padding:6px"><a style="color:#c44;font-size:12px;cursor:pointer" onclick="retryQueueFile(' +
+              row.resultIdx +
+              ')">Retry ›</a></td>';
+          }
+
+          html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+
+        // Bottom action bar
+        const checkedCount = rows.filter((r) => r.checked && r.bill && !r._saved).length;
+        html +=
+          '<div style="padding:10px 0;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);margin-top:4px">';
+        html += '<div style="font-size:13px;color:var(--text2)">';
+        if (okCount > 0) html += '<span style="color:#4a4">' + okCount + ' ready</span>';
+        if (dupCount > 0)
+          html += (okCount > 0 ? ' · ' : '') + '<span style="color:var(--em)">' + dupCount + ' duplicate</span>';
+        if (failCount > 0)
+          html += (okCount + dupCount > 0 ? ' · ' : '') + '<span style="color:#c44">' + failCount + ' failed</span>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:8px">';
+        html += '<button class="btn btn-ghost" onclick="clearQueue()">Cancel</button>';
+        html +=
+          '<button class="btn btn-em" onclick="saveQueuedBills()"' +
+          (checkedCount === 0 ? ' disabled style="opacity:0.5"' : '') +
+          '>Save ' +
+          checkedCount +
+          ' Selected Bill' +
+          (checkedCount !== 1 ? 's' : '') +
+          '</button>';
+        html += '</div></div>';
+
+        html += '</div>';
+        box.innerHTML = html;
+      }
+
+      function _fmtShortDate(dateStr) {
+        if (!dateStr) return '—';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return dateStr;
+        return d.getMonth() + 1 + '/' + d.getDate();
+      }
+
+      function _getQueueDupInfo(row) {
+        if (!window._pdfDupMap || !row.bill) return null;
+        const q = window._pdfQueue;
+        if (!q) return null;
+        let flatIdx = 0;
+        for (let ri = 0; ri < q.results.length; ri++) {
+          if (ri === row.resultIdx) {
+            flatIdx += row.billIdx;
+            break;
+          }
+          flatIdx += q.results[ri].bills.length;
+        }
+        return window._pdfDupMap[flatIdx] || null;
+      }
+
+      function toggleQueueRow(rowIdx, checked) {
+        if (window._pdfQueueRows && window._pdfQueueRows[rowIdx]) {
+          window._pdfQueueRows[rowIdx].checked = checked;
+          renderQueueResults();
+        }
+      }
+
+      function toggleAllQueueRows(checked) {
+        if (!window._pdfQueueRows) return;
+        window._pdfQueueRows.forEach((r) => {
+          if (r.bill && !r._saved) r.checked = checked;
+        });
+        renderQueueResults();
+      }
+
+      function updateQueueBatchProj(val) {
+        if (window._pdfQueue) {
+          window._pdfQueue.batchProjId = parseInt(val) || null;
+          renderQueueResults();
+        }
+      }
+
+      function queueDrillIn(rowIdx) {
+        const row = window._pdfQueueRows && window._pdfQueueRows[rowIdx];
+        if (!row || !row.bill) return;
+        const box = document.getElementById('pdfAIBox');
+
+        window._pdfQueueDrillIdx = rowIdx;
+
+        const prevMultiBills = window._pdfMultiBills;
+        const prevMultiIdx = window._pdfMultiIdx;
+        const prevWarnings = window._pdfBillWarnings;
+        window._pdfMultiBills = [row.bill];
+        window._pdfMultiIdx = 0;
+        window._pdfBillWarnings = [{ warnings: row.bill._warnings || [] }];
+
+        const backBtn =
+          '<div style="margin-bottom:8px"><button class="btn btn-ghost btn-sm" ' +
+          'onclick="exitQueueDrillIn()">← Back to results</button>' +
+          ' <span style="font-size:12px;color:var(--text2)">' +
+          row.result.fileName +
+          (row.bill.BillingPeriodStart ? ' · ' + row.bill.BillingPeriodStart : '') +
+          '</span></div>';
+
+        renderPDFFields(row.bill, row.bill._warnings || []);
+
+        box.innerHTML =
+          backBtn +
+          '<pre style="white-space:pre-wrap;font-size:12px;color:var(--text2)">' +
+          JSON.stringify(row.bill, null, 2) +
+          '</pre>';
+
+        window._pdfMultiBills = prevMultiBills;
+        window._pdfMultiIdx = prevMultiIdx;
+        window._pdfBillWarnings = prevWarnings;
+      }
+
+      function exitQueueDrillIn() {
+        window._pdfQueueDrillIdx = null;
+        document.getElementById('extractedFieldsHdr').innerHTML = '';
+        document.getElementById('extractedFieldsGrid').innerHTML = '';
+        renderQueueResults();
+      }
+
+      async function retryQueueFile(resultIdx) {
+        const q = window._pdfQueue;
+        if (!q) return;
+        const result = q.results[resultIdx];
+        if (!result) return;
+        const file = q.files[result.fileIdx];
+        if (!file) {
+          showToast('Original file no longer available');
+          return;
+        }
+
+        result.status = 'retrying';
+        renderQueueResults();
+        showToast('Retrying ' + file.name + '...');
+
+        try {
+          const newResult = await _extractSingleFileForQueue(file, result.fileIdx);
+          q.results[resultIdx] = newResult;
+          const allBills = [];
+          q.results.forEach((r) => r.bills.forEach((b) => allBills.push(b)));
+          if (allBills.length > 0) await _checkDuplicates(allBills);
+          showToast(file.name + ' — ' + newResult.bills.length + ' bill(s) found ✓');
+        } catch (err) {
+          q.results[resultIdx] = {
+            fileIdx: result.fileIdx,
+            fileName: file.name,
+            bills: [],
+            pdfB64: null,
+            status: 'failed',
+            error: err.message || 'Retry failed',
+          };
+          showToast(file.name + ' — retry failed: ' + (err.message || 'unknown error'));
+        }
+        renderQueueResults();
+      }
+
+      async function saveQueuedBills() {
+        const q = window._pdfQueue;
+        const rows = window._pdfQueueRows;
+        if (!q || !rows) return;
+
+        const toSave = rows.filter((r) => r.checked && r.bill && !r._saved);
+        if (toSave.length === 0) {
+          showToast('No bills selected');
+          return;
+        }
+
+        let saved = 0,
+          updated = 0,
+          skipped = 0,
+          failed = 0;
+
+        for (const row of toSave) {
+          try {
+            const projId = row.bill._projOverride || q.batchProjId;
+
+            let flatIdx = 0;
+            for (let ri = 0; ri < q.results.length; ri++) {
+              if (ri === row.resultIdx) {
+                flatIdx += row.billIdx;
+                break;
+              }
+              flatIdx += q.results[ri].bills.length;
+            }
+
+            const dup = window._pdfDupMap && window._pdfDupMap[flatIdx];
+
+            if (dup && dup.action === 'skip') {
+              skipped++;
+              row._saved = true;
+              continue;
+            }
+
+            if (dup && (dup.action === 'overwrite' || dup.action === 'merge')) {
+              await _applyDupUpdate(flatIdx, row.bill, dup);
+              updated++;
+              row._saved = true;
+              continue;
+            }
+
+            // Set up pdfB64 for _saveSinglePDFBill (it reads the global)
+            const prevB64 = pdfB64;
+            pdfB64 = row.result.pdfB64;
+
+            const ok = await _saveSinglePDFBill(row.bill, projId);
+            pdfB64 = prevB64;
+
+            if (ok) {
+              saved++;
+              row._saved = true;
+            } else {
+              failed++;
+            }
+          } catch (err) {
+            console.warn('[Queue Save] Error saving bill:', err);
+            failed++;
+          }
+        }
+
+        renderQueueResults();
+
+        const parts = [];
+        if (saved > 0) parts.push(saved + ' saved');
+        if (updated > 0) parts.push(updated + ' updated');
+        if (skipped > 0) parts.push(skipped + ' skipped');
+        if (failed > 0) parts.push(failed + ' failed');
+        showToast('Batch save: ' + parts.join(', ') + ' ✓');
+
+        if (
+          document.getElementById('savedBillsModal') &&
+          document.getElementById('savedBillsModal').classList.contains('open')
+        ) {
+          renderSavedBills();
+        }
+      }
+
       function _saveExtractionState() {
         if (!window._pdfMultiBills || !window._pdfMultiBills.length) return;
         try {
