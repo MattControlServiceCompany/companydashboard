@@ -15387,8 +15387,12 @@
         const franchise = (() => {
           const lines = t.split('\n');
           const franRe = /Franch[il1]?[is5]?[e3]?\s+F[e3]{1,2}/i;
+          let inAdjustments = false;
           for (let i = 0; i < lines.length; i++) {
+            if (/^\s*Adjustments\s*$/i.test(lines[i])) inAdjustments = true;
             if (!franRe.test(lines[i])) continue;
+            if (inAdjustments) continue;
+            if (/[-–]\s*\$/.test(lines[i])) continue;
             const sameLine = lines[i].match(/\$([\d,]+\.\d{2})/);
             if (sameLine) {
               _franchiseParts.push(parseFloat(sameLine[1].replace(/,/g, '')));
