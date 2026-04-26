@@ -21394,6 +21394,15 @@
           try {
             const result = await _extractSingleFileForQueue(q.files[i], i);
             q.results.push(result);
+            // Save debug file for each successfully extracted file
+            try {
+              window._pdfRawText = result.rawText;
+              window._pdfSourceFileName = result.fileName;
+              window._pdfMultiBills = result.bills;
+              savePDFDebug();
+            } catch (dbgErr) {
+              console.warn('Debug file save failed for', result.fileName, dbgErr);
+            }
           } catch (err) {
             q.results.push({
               fileIdx: i,
