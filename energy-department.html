@@ -21985,6 +21985,15 @@
                 return;
               }
 
+              // Convert _pageIndex to _pageStart/_pageEnd for extractors that
+              // set per-page indices (Louisburg) instead of page ranges (Evergy)
+              finalBills.forEach((b) => {
+                if (b._pageIndex && !b._pageStart) {
+                  b._pageStart = b._pageIndex;
+                  b._pageEnd = b._pageIndex;
+                }
+              });
+
               // Run analysis for warnings (stored on each bill as _warnings)
               const analysisResults = analyzeBillExtraction(finalBills, rule.name);
               finalBills.forEach((b, bi) => {
@@ -24287,6 +24296,15 @@
                   }
                 }
 
+                // Convert _pageIndex to _pageStart/_pageEnd for extractors that
+                // set per-page indices instead of page ranges
+                finalBills.forEach((b) => {
+                  if (b._pageIndex && !b._pageStart) {
+                    b._pageStart = b._pageIndex;
+                    b._pageEnd = b._pageIndex;
+                  }
+                });
+
                 const analysisResults = analyzeBillExtraction(finalBills, rule.name);
                 window._pdfBillWarnings = analysisResults;
 
@@ -24595,8 +24613,9 @@
           (a, b) => _commOrder.indexOf(a) - _commOrder.indexOf(b),
         );
         const _hasMultiComm = _uniqueComms.length > 1;
-        if (_hasMultiComm && !window._pdfCommTab) window._pdfCommTab = 'All';
-        const activeCommTab = _hasMultiComm ? window._pdfCommTab || 'All' : 'All';
+        if (_hasMultiComm && !window._pdfCommTab) window._pdfCommTab = _uniqueComms[0];
+        if (window._pdfCommTab === 'All') window._pdfCommTab = _uniqueComms[0];
+        const activeCommTab = _hasMultiComm ? window._pdfCommTab || _uniqueComms[0] : 'All';
         const filteredPeriods =
           activeCommTab === 'All'
             ? periods
@@ -24745,14 +24764,52 @@
         }
         let commTabsHtml = '';
         if (_hasMultiComm) {
-          const tabs = ['All', ..._uniqueComms];
+          const tabs = _uniqueComms;
+          const _pf3 = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+          const _pillChgKeys2 = {
+            Electric: [
+              'CustomerCharge',
+              'FacilitiesCharge',
+              'BilledKWCharge',
+              'EnergyOnPeakCharge',
+              'EnergyOffPeakCharge',
+              'ECACharge',
+              'EERCharge',
+              'PTSCharge',
+              'TDCCharge',
+              'RkVACharge',
+              'TaxExemptDelivery',
+              'BillOffset',
+              'FranchiseFee',
+            ],
+            Gas: ['CustomerCharge', 'GasCharge', 'FuelAdjustment'],
+            Water: ['WaterCharge', 'WaterProtectionFee'],
+            Sewer: ['SewerCharge'],
+            Stormwater: ['StormWaterCharge'],
+            Propane: ['Subtotal', 'Tax'],
+          };
           commTabsHtml =
             '<div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap">' +
             tabs
               .map((t) => {
-                const count = t === 'All' ? bills.length : bills.filter((b) => (b.Commodity || 'Other') === t).length;
+                const commBills = bills.filter((b) => (b.Commodity || 'Other') === t);
+                const count = commBills.length;
+                const chgKeys = _pillChgKeys2[t] || _pillChgKeys2.Electric;
+                let issueCount = 0;
+                commBills.forEach((b, ci) => {
+                  const bIdx = bills.indexOf(b);
+                  const bw = warnings[bIdx]?.warnings || [];
+                  const hasW = bw.some((w) => w.level === 'error' || w.level === 'warn');
+                  const cSum = chgKeys.reduce((s, f) => s + _pf3(b[f]), 0);
+                  const tVal = _pf3(b.TotalCurrentCharges);
+                  const hasMM = tVal > 0 && cSum > 0 && Math.abs(cSum - tVal) >= 0.02;
+                  const hasGap = !!b._billing_gap;
+                  if (hasW || hasMM || hasGap) issueCount++;
+                });
                 const sel = t === activeCommTab;
-                return `<button onclick="selectCommTab('${t}')" style="font-size:10px;padding:3px 10px;border-radius:4px;border:1px solid ${sel ? 'var(--accent)' : 'var(--border2)'};background:${sel ? 'var(--accent-dim)' : 'transparent'};color:${sel ? 'var(--accent)' : 'var(--text2)'};cursor:pointer;font-weight:${sel ? '700' : '400'}">${t === 'Stormwater' ? 'Storm' : t} (${count})</button>`;
+                const issueTag =
+                  issueCount > 0 ? ` <span style="color:var(--red);font-weight:700">${issueCount}!</span>` : '';
+                return `<button onclick="selectCommTab('${t}')" style="font-size:10px;padding:3px 10px;border-radius:4px;border:1px solid ${sel ? 'var(--accent)' : 'var(--border2)'};background:${sel ? 'var(--accent-dim)' : 'transparent'};color:${sel ? 'var(--accent)' : 'var(--text2)'};cursor:pointer;font-weight:${sel ? '700' : '400'}">${t === 'Stormwater' ? 'Storm' : t} (${count})${issueTag}</button>`;
               })
               .join('') +
             '</div>';
