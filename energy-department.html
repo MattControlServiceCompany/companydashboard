@@ -19330,6 +19330,29 @@
             } else {
               // Disagreement between ocrTotal and compSum. Run principled diagnosis.
 
+              // 3b-pre. TDC CHARGE VERIFICATION FALLBACK (#43)
+              // Strategy B can only verify charges that have _rates entries (from xRate).
+              // When OCR garbled the TDC rate line so xRate returned nothing, TDC is
+              // unverifiable and any OCR misread on its charge silently persists. Fallback:
+              // if _rates.TDCCharge is missing but we have both the charge amount and the
+              // kW quantity, derive rate = charge / qty and synthesize a _rates entry.
+              // This gives Strategy B a computed value to cross-check against.
+              if (b._rates && !b._rates.TDCCharge && pf(b.TDCCharge) > 0 && pf(b.TDCkW) > 0) {
+                const _tdcChg = pf(b.TDCCharge);
+                const _tdcQty = pf(b.TDCkW);
+                const _tdcRate = _tdcChg / _tdcQty;
+                // Sanity: Evergy TDC rates are typically $1-$5/kW. Accept $0.10-$50/kW range.
+                if (_tdcRate >= 0.10 && _tdcRate <= 50) {
+                  b._rates.TDCCharge = {
+                    qty: _tdcQty,
+                    rate: _tdcRate,
+                    unit: 'kW',
+                    computed: Math.round(_tdcQty * _tdcRate * 100) / 100,
+                    _derived: true,
+                  };
+                }
+              }
+
               // 3b. Strategy B — apply ALL rate×qty corrections where the direction
               // matches the gap (charge too low when sum is too low, or too high when
               // sum is too high). Multiple corrections may be needed to close the gap
