@@ -12777,7 +12777,7 @@
             <div class="card-hdr"><span class="card-title">Building Performance</span></div>
             <div style="overflow:auto;max-height:60vh">
               <table class="dtbl" style="width:100%;font-size:12px">
-                <thead><tr><th>Building</th><th style="text-align:right">Sq Ft</th><th style="text-align:right">Period</th><th style="text-align:right">${bldgRows.some((r) => r.blLabel === 'Baseline') ? 'Baseline' : 'Total Cost'} $/yr</th><th style="text-align:right">EUI</th><th style="text-align:right">Current $/yr</th><th style="text-align:right">Cur EUI</th><th style="text-align:right">Savings $</th><th style="text-align:right">%</th><th style="text-align:center">Status</th></tr></thead>
+                <thead><tr><th>Building</th><th style="text-align:right">Sq Ft</th><th style="text-align:right">Period</th><th style="text-align:right">${bldgRows.some((r) => r.blLabel === 'Baseline') ? 'Baseline' : 'Total Cost'} $/yr</th><th style="text-align:right">Projected EUI</th><th style="text-align:right">Projected Current Use</th><th style="text-align:right">Cur EUI</th><th style="text-align:right">Savings $</th><th style="text-align:right">%</th><th style="text-align:center">Status</th></tr></thead>
                 <tbody>${bldgRows
                   .map(
                     (r) => `<tr>
@@ -19036,7 +19036,6 @@
         // most common value and correct outliers. Groups bills by normalized
         // ServiceAddress to handle multi-building PDFs.
         if (bills.length > 1) {
-          console.log('[Consensus] Running on', bills.length, 'bills');
           const _CONSENSUS_FIELDS = [
             'AccountNumber',
             'MeterNumber',
@@ -19082,10 +19081,6 @@
             }
           }
           const _groupEntries = Object.entries(_addrGroups);
-          console.log(
-            '[Consensus] Address groups:',
-            _groupEntries.map(([k, v]) => k + '(' + v.length + ')').join(', '),
-          );
           for (const [_gKey, group] of _groupEntries) {
             if (group.length < 2) continue;
             for (const field of _CONSENSUS_FIELDS) {
@@ -19111,20 +19106,6 @@
                   corrected++;
                 }
               }
-              if (corrected)
-                console.log(
-                  '[Consensus] ' +
-                    field +
-                    ': corrected ' +
-                    corrected +
-                    ' → "' +
-                    winner +
-                    '" (' +
-                    winCount +
-                    '/' +
-                    group.length +
-                    ')',
-                );
             }
           }
         }
