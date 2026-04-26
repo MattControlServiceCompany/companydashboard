@@ -14570,7 +14570,7 @@
           while ((m = bdRe.exec(t)) !== null) bdMarkers.push(m.index);
           // Only scope if markers have DIFFERENT dates (different accounts).
           // Same-date markers are sections of the same bill (e.g. rate changeover months).
-          const _sf = /[s5]erv[il1]ce\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i;
+          const _sf = /[s5]erv[il1]ce\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i;
           const bdDates = bdMarkers.map((idx) => {
             const dm = t.slice(idx, idx + 200).match(_sf);
             return dm ? dm[1] + '|' + dm[2] : null;
@@ -14906,7 +14906,7 @@
 
         // ── Billing period (OCR-tolerant) ──
         const bpMatch =
-          t.match(_EVG_SERVICE_FROM) || t.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);
+          t.match(_EVG_SERVICE_FROM) || t.match(/service\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i);
         // Calculate days from billing dates (not from meter read table which may be a sub-period)
         let numDays = null;
         if (bpMatch) {
@@ -15863,7 +15863,7 @@
           for (let i = 0; i < lines.length; i++) {
             if (
               /Billing\s+Details|B[il1]{2}[il1]ng\s+D[ec]t[ao][il1]/i.test(lines[i]) &&
-              /service\s+from|serv[il1]ce\s+from/i.test(lines[i])
+              /service\s+from|serv[il1]ce\s+from[:\s]/i.test(lines[i])
             ) {
               // First charge line is Customer Charge — scan next few lines for first dollar amount
               for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
@@ -16591,7 +16591,7 @@
       // Common OCR misreads: g→q/9, l→1/I, D→O, a→o, s→5, i→l, e→c
       const _EVG_BILLING_DETAILS =
         /B[il1]{2}[il1]ng\s+D[ec]t[ao][il1]{1,2}[s5]?\s*[-\u2013\—]\s*[s5]erv[il1]ce\s+from/i;
-      const _EVG_SERVICE_FROM = /[s5]erv[il1]ce\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i;
+      const _EVG_SERVICE_FROM = /[s5]erv[il1]ce\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i;
       const _EVG_CHG = /Ch[gaq9][.:]?/i; // matches Chg, Cha, Chq, Ch9, Chg.
       const _EVG_ACCT = /[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s©®]\s*(\d[\d ]{4,18}\d)/m;
       const _EVG_ADDR =
@@ -16729,7 +16729,7 @@
             // Each bill mentions its date pair TWICE (cover + billing-details
             // header), so we dedupe by date pair and keep the LAST occurrence
             // (which is the billing-details section, where the charge lines live).
-            const sfRe = /service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/gi;
+            const sfRe = /service\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/gi;
             const sfMatches = [];
             let sfM;
             while ((sfM = sfRe.exec(t)) !== null) {
@@ -16988,7 +16988,7 @@
               const getDatePair = (s) => {
                 const m =
                   s.match(_EVG_SERVICE_FROM) ||
-                  s.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);
+                  s.match(/service\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i);
                 return m ? m[1] + '|' + m[2] : null;
               };
               const sections = [];
@@ -17006,7 +17006,7 @@
                 }
               }
               validSections = sections.filter(
-                (s) => _EVG_SERVICE_FROM.test(s) || /service\s+from\s+\d{2}\/\d{2}\/\d{4}/i.test(s),
+                (s) => _EVG_SERVICE_FROM.test(s) || /service\s+from[:\s]\s*\d{2}\/\d{2}\/\d{4}/i.test(s),
               );
               console.log('[Evergy extractAll] fell back to Billing-Details split, sections:', validSections.length);
             }
@@ -22816,7 +22816,7 @@
           const getDP = (s) => {
             const m =
               s.match(_EVG_SERVICE_FROM) ||
-              s.match(/service\s+from\s+(\d{2}\/\d{2}\/\d{4})\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);
+              s.match(/service\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i);
             return m ? m[1] + '|' + m[2] : null;
           };
           const sections = [];
@@ -22833,7 +22833,7 @@
             }
           }
           const validSections = sections.filter(
-            (s) => _EVG_SERVICE_FROM.test(s) || /service\s+from\s+\d{2}\/\d{2}\/\d{4}/i.test(s),
+            (s) => _EVG_SERVICE_FROM.test(s) || /service\s+from[:\s]\s*\d{2}\/\d{2}\/\d{4}/i.test(s),
           );
           // Show section matching currently selected bill index
           const idx = window._pdfMultiIdx || 0;
@@ -22937,7 +22937,7 @@
             }
             // Key patterns that should appear on a valid Evergy bill page
             const BILL_SIGNALS = [
-              /service\s+from\s+\d{2}\/\d{2}/i,
+              /service\s+from[:\s]\s*\d{2}\/\d{2}/i,
               /Current\s+Charges/i,
               /\$[\d,]+\.\d{2}/,
               /kWh/i,
@@ -23109,7 +23109,7 @@
               }
               // Run retry passes if primary results have issues (low score or missing key patterns)
               const needsRetry =
-                bestScore < 5 || !/service\s+from\s+\d/i.test(bestText) || !/\$[\d,]+\.\d{2}/g.test(bestText);
+                bestScore < 5 || !/service\s+from[:\s]\s*\d/i.test(bestText) || !/\$[\d,]+\.\d{2}/g.test(bestText);
               if (needsRetry) {
                 for (let pass = 0; pass < OCR_RETRY_PASSES.length; pass++) {
                   const cfg = OCR_RETRY_PASSES[pass];
