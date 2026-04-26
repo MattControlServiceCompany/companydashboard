@@ -1078,6 +1078,307 @@
       }
 
       /* drop-overlay styles removed — restore is button-only now */
+
+      /* ── TOOLTIP SYSTEM ── */
+      .ch-tip-anchor {
+        position: relative;
+        display: inline-block;
+      }
+      .ch-tip-bubble {
+        position: absolute;
+        z-index: 9000;
+        background: var(--s2);
+        border: 1px solid var(--accent);
+        border-radius: 10px;
+        padding: 11px 14px;
+        min-width: 220px;
+        max-width: 300px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+        font-family: var(--font);
+        font-size: 12px;
+        color: var(--text);
+        line-height: 1.5;
+        animation: fadeUp 0.17s ease;
+        pointer-events: auto;
+      }
+      .ch-tip-bubble::before {
+        content: '';
+        position: absolute;
+        top: -7px;
+        left: 18px;
+        width: 12px;
+        height: 12px;
+        background: var(--s2);
+        border-left: 1px solid var(--accent);
+        border-top: 1px solid var(--accent);
+        transform: rotate(45deg);
+      }
+      .ch-tip-bubble.tip-above::before {
+        top: auto;
+        bottom: -7px;
+        transform: rotate(225deg);
+      }
+      .ch-tip-bubble.tip-right::before {
+        left: auto;
+        right: 18px;
+      }
+      .ch-tip-hdr {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .ch-tip-icon {
+        font-size: 15px;
+        flex-shrink: 0;
+        margin-top: 1px;
+      }
+      .ch-tip-msg {
+        flex: 1;
+        color: var(--text);
+      }
+      .ch-tip-close {
+        flex-shrink: 0;
+        width: 18px;
+        height: 18px;
+        border: none;
+        background: transparent;
+        color: var(--text3);
+        cursor: pointer;
+        font-size: 13px;
+        line-height: 1;
+        padding: 0;
+        border-radius: 4px;
+        font-family: var(--font);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: color 0.12s;
+      }
+      .ch-tip-close:hover {
+        color: var(--red);
+      }
+      .ch-tip-footer {
+        margin-top: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .ch-tip-dsa {
+        font-size: 10px;
+        color: var(--text3);
+        cursor: pointer;
+        text-decoration: underline;
+        text-decoration-style: dotted;
+        background: none;
+        border: none;
+        font-family: var(--font);
+        padding: 0;
+      }
+      .ch-tip-dsa:hover {
+        color: var(--text2);
+      }
+
+      /* ── QUICK START GUIDE ── */
+      .qs-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(6, 8, 16, 0.88);
+        backdrop-filter: blur(10px);
+        z-index: 8500;
+        display: none;
+        align-items: center;
+        justify-content: center;
+      }
+      .qs-overlay.open {
+        display: flex;
+      }
+      .qs-modal {
+        background: var(--s2);
+        border: 1px solid var(--border2);
+        border-radius: 16px;
+        width: 520px;
+        max-width: 95vw;
+        max-height: 90vh;
+        overflow: hidden;
+        animation: fadeUp 0.18s ease;
+        box-shadow: 0 40px 80px rgba(0, 0, 0, 0.6);
+        display: flex;
+        flex-direction: column;
+      }
+      .qs-hdr {
+        padding: 18px 22px 14px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .qs-hdr-icon {
+        font-size: 22px;
+      }
+      .qs-hdr-text {
+        flex: 1;
+      }
+      .qs-hdr-title {
+        font-size: 16px;
+        font-weight: 700;
+      }
+      .qs-hdr-sub {
+        font-size: 11px;
+        color: var(--text2);
+        margin-top: 2px;
+      }
+      .qs-x {
+        width: 27px;
+        height: 27px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text2);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-family: var(--font);
+        transition: all 0.13s;
+      }
+      .qs-x:hover {
+        border-color: var(--red);
+        color: var(--red);
+      }
+      .qs-steps {
+        display: flex;
+        padding: 18px 22px 10px;
+        gap: 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .qs-step-dot {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex: 1;
+        position: relative;
+      }
+      .qs-step-dot::before {
+        content: '';
+        position: absolute;
+        top: 13px;
+        left: 50%;
+        right: -50%;
+        height: 2px;
+        background: var(--border);
+        z-index: 0;
+      }
+      .qs-step-dot:last-child::before {
+        display: none;
+      }
+      .qs-step-dot.done::before,
+      .qs-step-dot.active::before {
+        background: var(--accent);
+      }
+      .qs-dot-circle {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        border: 2px solid var(--border2);
+        background: var(--s3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--text3);
+        position: relative;
+        z-index: 1;
+        transition: all 0.18s;
+      }
+      .qs-step-dot.active .qs-dot-circle {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #fff;
+      }
+      .qs-step-dot.done .qs-dot-circle {
+        border-color: var(--green);
+        background: var(--green);
+        color: #fff;
+      }
+      .qs-step-label {
+        font-size: 9px;
+        color: var(--text3);
+        margin-top: 4px;
+        text-align: center;
+        max-width: 70px;
+        line-height: 1.2;
+      }
+      .qs-step-dot.active .qs-step-label {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .qs-body {
+        flex: 1;
+        padding: 22px;
+        overflow-y: auto;
+      }
+      .qs-step-content {
+        display: none;
+      }
+      .qs-step-content.active {
+        display: block;
+      }
+      .qs-step-icon {
+        font-size: 36px;
+        margin-bottom: 10px;
+      }
+      .qs-step-title {
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+      .qs-step-desc {
+        font-size: 13px;
+        color: var(--text2);
+        line-height: 1.65;
+        margin-bottom: 14px;
+      }
+      .qs-step-tips {
+        background: var(--s3);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 12px 14px;
+        font-size: 12px;
+        color: var(--text2);
+        line-height: 1.6;
+      }
+      .qs-step-tips strong {
+        color: var(--accent);
+      }
+      .qs-footer {
+        padding: 14px 22px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .qs-progress-bar {
+        flex: 1;
+        height: 4px;
+        background: var(--border);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      .qs-progress-fill {
+        height: 100%;
+        background: var(--accent);
+        border-radius: 2px;
+        transition: width 0.25s ease;
+      }
+
+      [data-theme='light'] .ch-tip-bubble {
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+      }
+      [data-theme='light'] .qs-modal {
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+      }
     </style>
 
     <style>
@@ -14932,7 +15233,8 @@
 
         // ── Billing period (OCR-tolerant) ──
         const bpMatch =
-          t.match(_EVG_SERVICE_FROM) || t.match(/service\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i);
+          t.match(_EVG_SERVICE_FROM) ||
+          t.match(/service\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i);
         // Calculate days from billing dates (not from meter read table which may be a sub-period)
         let numDays = null;
         if (bpMatch) {
@@ -16364,23 +16666,25 @@
         });
 
         // ── CHARGE RECONCILIATION: if sum doesn't match total, try to recover missing charges ──
-        const _compSum = Math.round((
-          _pf(result.CustomerCharge) +
-          _pf(result.FacilitiesCharge) +
-          _pf(result.BilledKWCharge) +
-          _pf(result.EnergyOnPeakCharge) +
-          _pf(result.EnergyOffPeakCharge) +
-          _pf(result.ECACharge) +
-          _pf(result.EERCharge) +
-          _pf(result.PTSCharge) +
-          _pf(result.TDCCharge) +
-          _pf(result.RkVACharge) +
-          _pf(result.TaxExemptDelivery) +
-          _pf(result.BillOffset) +
-          _pf(result.FranchiseFee) +
-          _pf(result.SolarCredit) +
-          _pf(result.RenewableCharge)
-        ) * 100) / 100;
+        const _compSum =
+          Math.round(
+            (_pf(result.CustomerCharge) +
+              _pf(result.FacilitiesCharge) +
+              _pf(result.BilledKWCharge) +
+              _pf(result.EnergyOnPeakCharge) +
+              _pf(result.EnergyOffPeakCharge) +
+              _pf(result.ECACharge) +
+              _pf(result.EERCharge) +
+              _pf(result.PTSCharge) +
+              _pf(result.TDCCharge) +
+              _pf(result.RkVACharge) +
+              _pf(result.TaxExemptDelivery) +
+              _pf(result.BillOffset) +
+              _pf(result.FranchiseFee) +
+              _pf(result.SolarCredit) +
+              _pf(result.RenewableCharge)) *
+              100,
+          ) / 100;
         const _total = _pf(result.TotalCurrentCharges);
         if (_total > 0 && Math.abs(_compSum - _total) > 1) {
           // Try to find missing charges by scanning ALL dollar amounts between "Billing Details" and "Subtotal"
@@ -18543,23 +18847,25 @@
         if (utilityName === 'Evergy') {
           const total = pf(extracted.TotalCurrentCharges);
           if (total > 0) {
-            const compSum = Math.round((
-              pf(extracted.CustomerCharge) +
-              pf(extracted.FacilitiesCharge) +
-              pf(extracted.BilledKWCharge) +
-              pf(extracted.EnergyOnPeakCharge) +
-              pf(extracted.EnergyOffPeakCharge) +
-              pf(extracted.ECACharge) +
-              pf(extracted.EERCharge) +
-              pf(extracted.PTSCharge) +
-              pf(extracted.TDCCharge) +
-              pf(extracted.RkVACharge) +
-              pf(extracted.TaxExemptDelivery) +
-              pf(extracted.BillOffset) +
-              pf(extracted.FranchiseFee) +
-              pf(extracted.SolarCredit) +
-              pf(extracted.RenewableCharge)
-            ) * 100) / 100;
+            const compSum =
+              Math.round(
+                (pf(extracted.CustomerCharge) +
+                  pf(extracted.FacilitiesCharge) +
+                  pf(extracted.BilledKWCharge) +
+                  pf(extracted.EnergyOnPeakCharge) +
+                  pf(extracted.EnergyOffPeakCharge) +
+                  pf(extracted.ECACharge) +
+                  pf(extracted.EERCharge) +
+                  pf(extracted.PTSCharge) +
+                  pf(extracted.TDCCharge) +
+                  pf(extracted.RkVACharge) +
+                  pf(extracted.TaxExemptDelivery) +
+                  pf(extracted.BillOffset) +
+                  pf(extracted.FranchiseFee) +
+                  pf(extracted.SolarCredit) +
+                  pf(extracted.RenewableCharge)) *
+                  100,
+              ) / 100;
             const diff = Math.abs(compSum - total);
             if (diff > 1.0) {
               warnings.push({
@@ -19337,8 +19643,7 @@
             ];
             // Round to cents to prevent floating-point accumulation errors
             // across 15 addends from producing phantom ±$0.01 mismatches.
-            const _sumCharges = () =>
-              Math.round(CHARGE_FIELDS.reduce((s, f) => s + pf(b[f]), 0) * 100) / 100;
+            const _sumCharges = () => Math.round(CHARGE_FIELDS.reduce((s, f) => s + pf(b[f]), 0) * 100) / 100;
 
             // 3a. Measure
             const ocrTotal = pf(b.TotalCurrentCharges);
@@ -19368,7 +19673,7 @@
                 const _tdcQty = pf(b.TDCkW);
                 const _tdcRate = _tdcChg / _tdcQty;
                 // Sanity: Evergy TDC rates are typically $1-$5/kW. Accept $0.10-$50/kW range.
-                if (_tdcRate >= 0.10 && _tdcRate <= 50) {
+                if (_tdcRate >= 0.1 && _tdcRate <= 50) {
                   b._rates.TDCCharge = {
                     qty: _tdcQty,
                     rate: _tdcRate,
@@ -20680,6 +20985,24 @@
             eerRate: bill.EERRate || '',
             ptsRate: bill.PTSRate || '',
             rkvaRate: bill.RkVARate || '',
+            // Non-electric commodity rates — computed from usage + charge at save time
+            totalGasRate: (() => {
+              const t = pf(bill.NaturalGasTherms) || pf(bill.NaturalGasCCF);
+              const c = pf(bill.GasCharge) || pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
+              return t > 0 && c > 0 ? (c / t).toFixed(5) : '';
+            })(),
+            totalWaterRate: (() => {
+              const u = pf(bill.WaterUsage);
+              const c = pf(bill.WaterCharge) || pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
+              return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
+            })(),
+            totalPropaneRate: (() => {
+              const g = pf(bill.GallonsDelivered);
+              const up = pf(bill.UnitPrice);
+              if (up > 0) return up.toFixed(5);
+              const c = pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
+              return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
+            })(),
           };
           if (bill._rates) {
             const cp = {};
@@ -20969,6 +21292,24 @@
           unitPrice: extracted.UnitPrice || '',
           subtotal: extracted.Subtotal || '',
           tax: extracted.Tax || '',
+          // Non-electric commodity rates — computed from usage + charge at save time
+          totalGasRate: (() => {
+            const t = pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF);
+            const c = pf(extracted.GasCharge) || pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
+            return t > 0 && c > 0 ? (c / t).toFixed(5) : '';
+          })(),
+          totalWaterRate: (() => {
+            const u = pf(extracted.WaterUsage);
+            const c = pf(extracted.WaterCharge) || pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
+            return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
+          })(),
+          totalPropaneRate: (() => {
+            const g = pf(extracted.GallonsDelivered);
+            const up = pf(extracted.UnitPrice);
+            if (up > 0) return up.toFixed(5);
+            const c = pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
+            return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
+          })(),
           Meter1_ReadStart: extracted.Meter1_ReadStart || '',
           Meter1_ReadEnd: extracted.Meter1_ReadEnd || '',
           Meter1_StartRead: extracted.Meter1_StartRead || '',
@@ -21230,6 +21571,7 @@
           currentIdx: 0,
           batchProjId: parseInt(document.getElementById('pdfProjSel').value) || null,
           status: 'idle',
+          _processedCount: 0,
         };
         refreshProjDropdowns();
         document.getElementById('pdfSaveRow').style.display = 'none';
@@ -21242,6 +21584,32 @@
         dz.style.cursor = 'default';
         renderQueueProgress();
         runExtractionQueue();
+      }
+
+      function appendToQueue(newFiles) {
+        const q = window._pdfQueue;
+        if (!q) {
+          startQueueExtraction(newFiles);
+          return;
+        }
+        const startIdx = q.files.length;
+        q.files = q.files.concat(newFiles);
+        showToast(newFiles.length + ' file' + (newFiles.length > 1 ? 's' : '') + ' added to queue');
+        if (q.status === 'done' || q.status === 'cancelled') {
+          q.status = 'running';
+          window._pdfAbort = false;
+          document.getElementById('pdfRightCol').style.display = 'none';
+          const dz = document.getElementById('dropZone');
+          dz.classList.remove('collapsed');
+          dz.setAttribute('data-queue', 'true');
+          dz.style.cursor = 'default';
+          const tabsBar = document.getElementById('queueTabsBar');
+          if (tabsBar) tabsBar.remove();
+          renderQueueProgress();
+          _runExtractionFrom(startIdx);
+        } else {
+          renderQueueProgress();
+        }
       }
 
       function clearQueue() {
@@ -21409,11 +21777,18 @@
         if (!q) return;
         q.status = 'running';
         window._pdfAbort = false;
-        q._pageCounts = {};
+        if (!q._pageCounts) q._pageCounts = {};
         globalTaskShow('📄 Batch extracting ' + q.files.length + ' files...', 'pdf');
+        await _runExtractionFrom(0);
+      }
 
-        // Pre-scan: get page count for each PDF
-        for (let i = 0; i < q.files.length; i++) {
+      async function _runExtractionFrom(startIdx) {
+        const q = window._pdfQueue;
+        if (!q) return;
+
+        // Pre-scan page counts for new files only
+        for (let i = startIdx; i < q.files.length; i++) {
+          if (q._pageCounts[i] != null) continue;
           try {
             const ab = await q.files[i].arrayBuffer();
             const pdf = await pdfjsLib.getDocument({
@@ -21429,20 +21804,36 @@
           }
         }
 
-        for (let i = 0; i < q.files.length; i++) {
+        globalTaskUpdate('📄 Batch extracting ' + q.files.length + ' files...');
+
+        for (let i = startIdx; i < q.files.length; i++) {
           if (window._pdfAbort) {
             q.status = 'cancelled';
             break;
           }
           q.currentIdx = i;
           q._fileStatus = null;
+          // Pre-scan page count if not yet known (file was appended mid-run)
+          if (q._pageCounts[i] == null) {
+            try {
+              const ab = await q.files[i].arrayBuffer();
+              const pdf = await pdfjsLib.getDocument({
+                data: new Uint8Array(ab),
+                useWorkerFetch: false,
+                isEvalSupported: false,
+              }).promise;
+              q._pageCounts[i] = pdf.numPages;
+              pdf.destroy();
+            } catch (e) {
+              q._pageCounts[i] = null;
+            }
+          }
           renderQueueProgress();
           globalTaskUpdate('📄 Extracting ' + (i + 1) + '/' + q.files.length + ': ' + q.files[i].name);
 
           try {
             const result = await _extractSingleFileForQueue(q.files[i], i);
             q.results.push(result);
-            // Save debug file for each successfully extracted file
             try {
               window._pdfRawText = result.rawText;
               window._pdfSourceFileName = result.fileName;
@@ -21471,6 +21862,7 @@
         }
         q.status = 'done';
         q.currentIdx = q.files.length;
+        q._processedCount = q.files.length;
         const allBills = [];
         q.results.forEach((r) => {
           r.bills.forEach((b) => allBills.push(b));
@@ -21633,7 +22025,8 @@
           ' files → ' +
           totalBills +
           ' bills' +
-          ' <button class="btn btn-ghost btn-sm" style="margin-left:8px;font-size:10px" onclick="event.stopPropagation();clearQueue()">✕ Clear All</button>';
+          ' <button class="btn btn-ghost btn-sm" style="margin-left:8px;font-size:10px" onclick="event.stopPropagation();document.getElementById(\'pdfInput\').click()">+ Add Files</button>' +
+          ' <button class="btn btn-ghost btn-sm" style="margin-left:4px;font-size:10px" onclick="event.stopPropagation();clearQueue()">✕ Clear All</button>';
 
         // Create or get tabs container (above extractedFieldsHdr)
         let tabsBar = document.getElementById('queueTabsBar');
@@ -21904,8 +22297,13 @@
           updated = 0,
           skipped = 0,
           failed = 0;
+        const summaryEntries = [];
 
         for (const row of toSave) {
+          const period =
+            (row.bill.BillingPeriodStart || row.bill.DeliveryDate || '?') +
+            ' → ' +
+            (row.bill.BillingPeriodEnd || row.bill.DeliveryDate || '?');
           try {
             const projId = row.bill._projOverride || q.batchProjId;
 
@@ -21923,6 +22321,12 @@
             if (dup && dup.action === 'skip') {
               skipped++;
               row._saved = true;
+              summaryEntries.push({
+                period,
+                status: 'skipped',
+                destination: dup.location || 'duplicate',
+                method: 'dup',
+              });
               continue;
             }
 
@@ -21930,16 +22334,38 @@
               await _applyDupUpdate(flatIdx, row.bill, dup);
               updated++;
               row._saved = true;
+              summaryEntries.push({
+                period,
+                status: 'updated',
+                destination: dup.location || 'duplicate',
+                method: 'dup',
+              });
               continue;
             }
 
-            // Unresolved duplicate — skip to avoid creating a duplicate record
             if (dup && !dup.action) {
               skipped++;
+              summaryEntries.push({ period, status: 'skipped', destination: 'unresolved duplicate', method: 'dup' });
               continue;
             }
 
-            // Set up pdfB64 for _saveSinglePDFBill (it reads the global)
+            // Try global meter match first (finds correct building by account number)
+            const meterMatch = findMeterMatch(row.bill);
+            if (meterMatch) {
+              try {
+                const dest = _saveBillToMatchedMeter(row.bill, meterMatch);
+                if (dest) {
+                  saved++;
+                  row._saved = true;
+                  summaryEntries.push({ period, status: 'saved', destination: dest, method: 'match' });
+                  continue;
+                }
+              } catch (matchErr) {
+                console.warn('[Queue Save] meter match save failed, trying fallback:', matchErr);
+              }
+            }
+
+            // Fallback to _saveSinglePDFBill (project-scoped match)
             const prevB64 = pdfB64;
             try {
               pdfB64 = row.result.pdfB64;
@@ -21947,8 +22373,10 @@
               if (ok) {
                 saved++;
                 row._saved = true;
+                summaryEntries.push({ period, status: 'saved', destination: 'project match', method: 'project' });
               } else {
                 failed++;
+                summaryEntries.push({ period, status: 'failed', destination: 'no match found', method: '' });
               }
             } finally {
               pdfB64 = prevB64;
@@ -21956,6 +22384,7 @@
           } catch (err) {
             console.warn('[Queue Save] Error saving bill:', err);
             failed++;
+            summaryEntries.push({ period, status: 'failed', destination: err.message || 'error', method: '' });
           }
         }
 
@@ -21967,6 +22396,7 @@
         if (skipped > 0) parts.push(skipped + ' skipped');
         if (failed > 0) parts.push(failed + ' failed');
         showToast('Batch save: ' + parts.join(', ') + ' ✓');
+        if (summaryEntries.length > 0) _showSaveSummary(summaryEntries);
 
         if (
           document.getElementById('savedBillsModal') &&
@@ -23280,7 +23710,9 @@
         document.getElementById('dropZone').classList.remove('drag');
         const files = Array.from(e.dataTransfer.files).filter((f) => f.type === 'application/pdf');
         if (files.length === 0) return;
-        if (files.length === 1) {
+        if (window._pdfQueue) {
+          appendToQueue(files);
+        } else if (files.length === 1) {
           processPDF(files[0]);
         } else {
           startQueueExtraction(files);
@@ -23289,7 +23721,9 @@
       function handlePDFUpload(e) {
         const files = Array.from(e.target.files).filter((f) => f.type === 'application/pdf');
         if (files.length === 0) return;
-        if (files.length === 1) {
+        if (window._pdfQueue) {
+          appendToQueue(files);
+        } else if (files.length === 1) {
           processPDF(files[0]);
         } else {
           startQueueExtraction(files);
@@ -26304,6 +26738,24 @@
           unitPrice: extracted.UnitPrice || '',
           subtotal: extracted.Subtotal || '',
           tax: extracted.Tax || '',
+          // Non-electric commodity rates — computed from usage + charge at save time
+          totalGasRate: (() => {
+            const t = pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF);
+            const c = pf(extracted.GasCharge) || pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
+            return t > 0 && c > 0 ? (c / t).toFixed(5) : '';
+          })(),
+          totalWaterRate: (() => {
+            const u = pf(extracted.WaterUsage);
+            const c = pf(extracted.WaterCharge) || pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
+            return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
+          })(),
+          totalPropaneRate: (() => {
+            const g = pf(extracted.GallonsDelivered);
+            const up = pf(extracted.UnitPrice);
+            if (up > 0) return up.toFixed(5);
+            const c = pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
+            return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
+          })(),
         };
         if (proj) {
           const udProj = getUDProj(proj.id);
@@ -26406,25 +26858,15 @@
             }
           }
           if (!matched) {
-            const commodity = extracted.Commodity || (isGas ? 'Gas' : isPropane ? 'Propane' : 'Electric');
-            const firstBldg = (udProj.buildings || [])[0];
-            if (firstBldg) {
-              const newM = {
-                id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
-                commodity: commodity,
-                provider: extracted.UtilityCompany || '',
-                account: extracted.AccountNumber || '',
-                meter: extracted.MeterNumber || '',
-                maddr: '',
-                inclusive: true,
-                bills: [billRow],
-                billUnit: '',
-                displayUnit: '',
-              };
-              firstBldg.meters = firstBldg.meters || [];
-              firstBldg.meters.push(newM);
-              matched = true;
-            }
+            // No meter match found — save to unassigned Saved Bills instead of
+            // silently creating a new meter on the first building. The user can
+            // assign it manually from the Saved Bills modal.
+            console.log(
+              '[_saveSinglePDFBill] no meter match for',
+              extracted.AccountNumber,
+              extracted.Commodity,
+              '— saving to unassigned',
+            );
           }
           if (matched) saveUtilityData();
         }
@@ -29732,7 +30174,10 @@
             let _gapSkippedEmptyRows = false;
             if (!prevEnd || !curStart) {
               let pi = idx - 1;
-              while (pi >= 0 && !bills[pi].end) { pi--; _gapSkippedEmptyRows = true; }
+              while (pi >= 0 && !bills[pi].end) {
+                pi--;
+                _gapSkippedEmptyRows = true;
+              }
               prevEnd = pi >= 0 ? bills[pi].end : null;
             }
             // Bug #26: Detect overlap (prevEnd > curStart by more than 3 days) before gap check.
@@ -32833,6 +33278,9 @@
           '</div>' +
           '</div>' +
           '</div>';
+
+        // Attach baseline save button tooltip (deferred so DOM is ready)
+        requestAnimationFrame(attachBaselineSaveTip);
 
         if (udBlChartVis) {
           requestAnimationFrame(() => {
@@ -37267,6 +37715,8 @@
           { key: 'gasCharge', label: 'Gas Charge', type: 'currency', pdfKey: 'GasCharge' },
           { key: 'fuelAdjustment', label: 'Fuel Adjustment', type: 'currency', pdfKey: 'FuelAdjustment' },
           { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
+          { section: 'Rates' },
+          { key: 'totalGasRate', label: 'Total $/Therm Rate', type: 'rate5' },
         ],
         Water: [
           { section: 'Account Info' },
@@ -45115,6 +45565,29 @@
           '</div>' +
           '</div>' +
           '<div class="settings-section">' +
+          '<div class="settings-section-title">Tooltips &amp; Help</div>' +
+          '<div class="settings-row">' +
+          '<div><div class="settings-row-label">Show Tooltips</div><div class="settings-row-sub">Show contextual help bubbles on key areas of the app</div></div>' +
+          '<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="siteTooltipsChk" ' +
+          (chGetSetting('showTooltips', true) ? 'checked' : '') +
+          ' onchange="chSetSetting(\'showTooltips\',this.checked)"> On</label>' +
+          '</div>' +
+          '<div class="settings-row">' +
+          '<div><div class="settings-row-label">Show Quick Start Guide</div><div class="settings-row-sub">Display the step-by-step guide automatically on first visit</div></div>' +
+          '<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="siteQsChk" ' +
+          (chGetSetting('showQuickStart', true) ? 'checked' : '') +
+          ' onchange="chSetSetting(\'showQuickStart\',this.checked)"> On</label>' +
+          '</div>' +
+          '<div class="settings-row">' +
+          '<div><div class="settings-row-label">Reset Dismissed Tips</div><div class="settings-row-sub">Show all tips again even if you clicked &ldquo;don&rsquo;t show again&rdquo;</div></div>' +
+          '<button class="btn btn-ghost btn-sm" onclick="chResetDismissedTips()">Reset Tips</button>' +
+          '</div>' +
+          '<div class="settings-row">' +
+          '<div><div class="settings-row-label">Open Quick Start Guide</div><div class="settings-row-sub">Step-by-step walkthrough of the Energy Department workflow</div></div>' +
+          '<button class="btn btn-em btn-sm" onclick="siteCloseSettings();openQuickStart()">Open Guide</button>' +
+          '</div>' +
+          '</div>' +
+          '<div class="settings-section">' +
           '<div class="settings-section-title">Layout Management</div>' +
           '<div class="settings-row">' +
           '<div><div class="settings-row-label">Export / Import</div><div class="settings-row-sub">Save your customizations to a file or load from a previous export</div></div>' +
@@ -45466,6 +45939,386 @@
           }
         });
       })();
+    </script>
+
+    <!-- ═══════════════════════════════════════════════════
+         QUICK START GUIDE OVERLAY
+    ═══════════════════════════════════════════════════ -->
+    <div class="qs-overlay" id="qsOverlay">
+      <div class="qs-modal" role="dialog" aria-modal="true" aria-label="Quick Start Guide">
+        <div class="qs-hdr">
+          <div class="qs-hdr-icon">🚀</div>
+          <div class="qs-hdr-text">
+            <div class="qs-hdr-title">Quick Start Guide</div>
+            <div class="qs-hdr-sub">5 steps to get your first project running</div>
+          </div>
+          <button class="qs-x" onclick="closeQuickStart()" title="Close">&#10005;</button>
+        </div>
+        <div class="qs-steps" id="qsStepDots"></div>
+        <div class="qs-body" id="qsBody"></div>
+        <div class="qs-footer">
+          <button class="btn btn-ghost btn-sm" id="qsPrevBtn" onclick="qsNav(-1)" style="display: none">
+            &#8592; Back
+          </button>
+          <div class="qs-progress-bar">
+            <div class="qs-progress-fill" id="qsProgressFill" style="width: 20%"></div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="closeQuickStart()">Skip</button>
+          <button class="btn btn-em btn-sm" id="qsNextBtn" onclick="qsNav(1)">Next &#8594;</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      /* ═══════════════════════════════════════════════════
+         TOOLTIP & HELP SYSTEM
+         Settings keys stored in ch_settings:
+           showTooltips    — boolean, default true
+           showQuickStart  — boolean, default true
+         Dismissed tips: ch_dismissed_tips (JSON array of tip IDs)
+         First-visit flag: ch_qs_seen
+      ═══════════════════════════════════════════════════ */
+
+      /* ── Settings helpers ── */
+      function chGetSetting(key, def) {
+        try {
+          var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
+          return key in s ? s[key] : def;
+        } catch (e) {
+          return def;
+        }
+      }
+      function chSetSetting(key, val) {
+        try {
+          var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
+          s[key] = val;
+          localStorage.setItem('ch_settings', JSON.stringify(s));
+        } catch (e) {}
+      }
+
+      /* ── Dismissed tips helpers ── */
+      function chGetDismissed() {
+        try {
+          return JSON.parse(localStorage.getItem('ch_dismissed_tips') || '[]');
+        } catch (e) {
+          return [];
+        }
+      }
+      function chDismissTip(tipId) {
+        var d = chGetDismissed();
+        if (d.indexOf(tipId) === -1) d.push(tipId);
+        try {
+          localStorage.setItem('ch_dismissed_tips', JSON.stringify(d));
+        } catch (e) {}
+      }
+      function chIsDismissed(tipId) {
+        return chGetDismissed().indexOf(tipId) !== -1;
+      }
+      function chResetDismissedTips() {
+        try {
+          localStorage.removeItem('ch_dismissed_tips');
+        } catch (e) {}
+        showToast('All tips reset — they will show again next time ✓');
+      }
+
+      /* ── Core tooltip function ──
+         element  — DOM element to anchor the tip near
+         message  — plain text message string
+         options  — {
+           id: string,        tip ID for "don't show again" (required for DSA feature)
+           icon: string,      emoji icon (default '💡')
+           position: string,  'below' (default) | 'above'
+           delay: number,     ms before showing (default 0)
+         }
+      */
+      function showTooltip(element, message, options) {
+        if (!chGetSetting('showTooltips', true)) return;
+        options = options || {};
+        var tipId = options.id || null;
+        if (tipId && chIsDismissed(tipId)) return;
+
+        // Remove existing tip on same element
+        if (element._chTipEl) {
+          element._chTipEl.remove();
+          delete element._chTipEl;
+        }
+
+        var icon = options.icon || '💡';
+        var position = options.position || 'below';
+        var delay = options.delay || 0;
+
+        function _show() {
+          var bubble = document.createElement('div');
+          bubble.className = 'ch-tip-bubble' + (position === 'above' ? ' tip-above' : '');
+
+          var dsaHtml = tipId
+            ? '<div class="ch-tip-footer"><button class="ch-tip-dsa" onclick="chDismissTip(\'' +
+              tipId +
+              "');this.closest('.ch-tip-bubble').remove()\">Don't show again</button></div>"
+            : '';
+
+          bubble.innerHTML =
+            '<div class="ch-tip-hdr">' +
+            '<span class="ch-tip-icon">' +
+            icon +
+            '</span>' +
+            '<span class="ch-tip-msg">' +
+            message +
+            '</span>' +
+            '<button class="ch-tip-close" onclick="this.closest(\'.ch-tip-bubble\').remove()" title="Dismiss">&#10005;</button>' +
+            '</div>' +
+            dsaHtml;
+
+          // Use fixed positioning relative to viewport
+          bubble.style.position = 'fixed';
+          bubble.style.zIndex = '9000';
+          bubble.style.visibility = 'hidden'; // hide until positioned
+          document.body.appendChild(bubble);
+
+          var rect = element.getBoundingClientRect();
+          var bh = bubble.offsetHeight;
+          var bw = bubble.offsetWidth;
+
+          if (position === 'above') {
+            bubble.style.top = rect.top - bh - 10 + 'px';
+          } else {
+            bubble.style.top = rect.bottom + 10 + 'px';
+          }
+          var left = rect.left;
+          if (left + bw > window.innerWidth - 12) left = window.innerWidth - bw - 12;
+          if (left < 8) left = 8;
+          bubble.style.left = left + 'px';
+          bubble.style.visibility = '';
+
+          element._chTipEl = bubble;
+
+          // Auto-dismiss after 12 seconds
+          setTimeout(function () {
+            if (bubble.parentNode) bubble.remove();
+          }, 12000);
+        }
+
+        if (delay > 0) {
+          setTimeout(_show, delay);
+        } else {
+          _show();
+        }
+      }
+
+      /* ── Dismiss all visible tips ── */
+      function dismissAllTooltips() {
+        document.querySelectorAll('.ch-tip-bubble').forEach(function (b) {
+          b.remove();
+        });
+      }
+
+      /* ═══════════════════════════════════════════════════
+         QUICK START GUIDE
+      ═══════════════════════════════════════════════════ */
+      var _qsStep = 0;
+      var _qsSteps = [
+        {
+          icon: '📁',
+          title: 'Step 1 — Create a Project',
+          desc: 'Every building or client site lives inside a <strong>Project</strong>. Click the <strong>+ New Project</strong> button in the sidebar. Give it a clear name — the building name or client name works well.',
+          tips: '<strong>Tip:</strong> You can create as many projects as needed. Each one tracks its own buildings, meters, and bills completely separately.',
+        },
+        {
+          icon: '🏢',
+          title: 'Step 2 — Add Buildings',
+          desc: 'Inside your project, click <strong>+ Add Building</strong>. Enter the building name and address. One project can hold multiple buildings — for example, a campus with several facilities.',
+          tips: '<strong>Tip:</strong> Square footage is optional but helps with energy intensity calculations like kWh per square foot.',
+        },
+        {
+          icon: '⚡',
+          title: 'Step 3 — Add Utility Meters',
+          desc: 'For each building, add the utility meters that serve it. Click <strong>+ Add Meter</strong> and choose the commodity: Electric, Gas, or Water. Enter the utility provider and account number.',
+          tips: '<strong>Tip:</strong> Each meter gets its own billing history. If a building has both electric and gas service, add one meter for each commodity.',
+        },
+        {
+          icon: '📄',
+          title: 'Step 4 — Upload Utility Bills',
+          desc: 'Go to the <strong>PDF / OCR</strong> tab. Drop a utility bill PDF onto the drop zone or click to browse. The app reads the bill and pulls out usage, demand, and cost automatically.',
+          tips: "<strong>Tip:</strong> After extraction, review the fields and correct anything that looks wrong. Then click <strong>Save to Project</strong> to add it to the meter's history.",
+        },
+        {
+          icon: '📊',
+          title: 'Step 5 — View Performance',
+          desc: "Once you have at least one year of bills saved, go to <strong>Utility Data</strong> and click <strong>Performance</strong>. Set a baseline period in the <strong>Baseline</strong> tab first — that's the reference point for all savings calculations.",
+          tips: '<strong>Tip:</strong> The Performance tab shows actual vs. baseline usage and cost side-by-side, month by month. Use it to demonstrate energy savings to clients.',
+        },
+      ];
+
+      function openQuickStart() {
+        var overlay = document.getElementById('qsOverlay');
+        if (!overlay) return;
+        _qsStep = 0;
+        _qsRender();
+        overlay.classList.add('open');
+        overlay.onclick = function (e) {
+          if (e.target === overlay) closeQuickStart();
+        };
+      }
+
+      function closeQuickStart() {
+        var overlay = document.getElementById('qsOverlay');
+        if (overlay) overlay.classList.remove('open');
+      }
+
+      function qsNav(dir) {
+        _qsStep = Math.max(0, Math.min(_qsSteps.length - 1, _qsStep + dir));
+        _qsRender();
+      }
+
+      function qsJump(idx) {
+        _qsStep = idx;
+        _qsRender();
+      }
+
+      function _qsRender() {
+        var dotsEl = document.getElementById('qsStepDots');
+        var bodyEl = document.getElementById('qsBody');
+        var prevBtn = document.getElementById('qsPrevBtn');
+        var nextBtn = document.getElementById('qsNextBtn');
+        var fill = document.getElementById('qsProgressFill');
+        if (!dotsEl || !bodyEl) return;
+
+        var total = _qsSteps.length;
+        var shortLabels = ['Project', 'Buildings', 'Meters', 'Upload Bills', 'Performance'];
+
+        // Build step dots
+        var dotsHtml = '';
+        for (var i = 0; i < total; i++) {
+          var cls = i < _qsStep ? 'done' : i === _qsStep ? 'active' : '';
+          var numOrCheck = i < _qsStep ? '&#10003;' : i + 1;
+          dotsHtml +=
+            '<div class="qs-step-dot ' +
+            cls +
+            '" onclick="qsJump(' +
+            i +
+            ')" style="cursor:pointer">' +
+            '<div class="qs-dot-circle">' +
+            numOrCheck +
+            '</div>' +
+            '<div class="qs-step-label">' +
+            shortLabels[i] +
+            '</div>' +
+            '</div>';
+        }
+        dotsEl.innerHTML = dotsHtml;
+
+        // Build step content
+        var step = _qsSteps[_qsStep];
+        bodyEl.innerHTML =
+          '<div class="qs-step-content active">' +
+          '<div class="qs-step-icon">' +
+          step.icon +
+          '</div>' +
+          '<div class="qs-step-title">' +
+          step.title +
+          '</div>' +
+          '<div class="qs-step-desc">' +
+          step.desc +
+          '</div>' +
+          '<div class="qs-step-tips">' +
+          step.tips +
+          '</div>' +
+          '</div>';
+
+        // Progress bar
+        if (fill) fill.style.width = ((_qsStep + 1) / total) * 100 + '%';
+
+        // Nav buttons
+        if (prevBtn) prevBtn.style.display = _qsStep > 0 ? '' : 'none';
+        if (nextBtn) {
+          if (_qsStep === total - 1) {
+            nextBtn.textContent = 'Done ✓';
+            nextBtn.onclick = closeQuickStart;
+          } else {
+            nextBtn.innerHTML = 'Next &#8594;';
+            nextBtn.onclick = function () {
+              qsNav(1);
+            };
+          }
+        }
+      }
+
+      /* ── Initial contextual tooltips + auto Quick Start ── */
+      document.addEventListener('DOMContentLoaded', function () {
+        // Auto-show quick start on first visit
+        var seen = localStorage.getItem('ch_qs_seen');
+        if (!seen && chGetSetting('showQuickStart', true)) {
+          setTimeout(function () {
+            openQuickStart();
+            localStorage.setItem('ch_qs_seen', '1');
+          }, 1200);
+        }
+
+        // Attach contextual tooltips after DOM is settled
+        setTimeout(function () {
+          if (!chGetSetting('showTooltips', true)) return;
+
+          // 1. PDF drop zone
+          var dropZone = document.getElementById('dropZone');
+          if (dropZone) {
+            showTooltip(
+              dropZone,
+              'Drop a utility bill PDF here, or click to browse. The app reads electric, gas, and water bills automatically.',
+              { id: 'tip_dropzone', icon: '📄', position: 'below', delay: 1000 },
+            );
+          }
+
+          // 2. Performance tab button (project level)
+          var perfBtn = document.getElementById('ud-proj-perf-btn');
+          if (perfBtn) {
+            showTooltip(
+              perfBtn,
+              'Click to see usage and cost vs. your baseline period. Requires a saved baseline first.',
+              {
+                id: 'tip_perf_tab',
+                icon: '📊',
+                position: 'above',
+                delay: 3000,
+              },
+            );
+          }
+
+          // 3. Baseline tab button (project level)
+          var blBtn = document.getElementById('ud-proj-baseline-btn');
+          if (blBtn) {
+            showTooltip(
+              blBtn,
+              'Select your pre-project billing months and save a baseline — the reference point for all savings calculations.',
+              { id: 'tip_baseline_btn', icon: '📈', position: 'above', delay: 5500 },
+            );
+          }
+
+          // 4. Projected Savings button
+          var savProjBtn = document.getElementById('ud-proj-savproj-btn');
+          if (savProjBtn) {
+            showTooltip(savProjBtn, 'Model future savings based on a proposed % reduction in usage or cost.', {
+              id: 'tip_savproj_btn',
+              icon: '💰',
+              position: 'above',
+              delay: 8000,
+            });
+          }
+        }, 700);
+      });
+
+      /* ── Baseline save button tip — call this after blSaveBtn is rendered ──
+         The baseline tab renders dynamically, so attach the tip after render. */
+      function attachBaselineSaveTip() {
+        var btn = document.getElementById('blSaveBtn');
+        if (!btn) return;
+        if (btn._chTipAttached) return;
+        btn._chTipAttached = true;
+        showTooltip(
+          btn,
+          'Locks the selected months as your baseline. This freezes the regression so Performance can calculate savings.',
+          { id: 'tip_baseline_save', icon: '✅', position: 'above', delay: 400 },
+        );
+      }
     </script>
   </body>
 </html>
