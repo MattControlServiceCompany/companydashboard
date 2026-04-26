@@ -4194,6 +4194,32 @@
         gap: 8px;
         letter-spacing: 0.01em;
       }
+      /* Bug #17: Bill rows with no start/end dates — amber left-border + subtle tint */
+      tr.ud-bill-missing-dates td {
+        background: rgba(245, 158, 11, 0.06) !important;
+      }
+      tr.ud-bill-missing-dates td:first-child {
+        box-shadow: inset 3px 0 0 var(--amber);
+      }
+      /* Bug #26: Overlap warning row — amber/orange to distinguish from gap (red) */
+      .ud-bill-overlap-row td {
+        padding: 10px 14px;
+        background: rgba(245, 158, 11, 0.12);
+        border-top: 2px solid rgba(245, 158, 11, 0.5);
+        border-bottom: 2px solid rgba(245, 158, 11, 0.5);
+        position: sticky;
+        left: 0;
+        z-index: 5;
+      }
+      .ud-bill-overlap-msg {
+        font-size: 13px;
+        color: #d97706;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        letter-spacing: 0.01em;
+      }
       .norm-info-btn {
         background: none;
         border: none;
@@ -19801,6 +19827,13 @@
               b['_likely_missing_MeterMultiplier'] = true;
               b.MeterMultiplier = null;
             }
+            // Bug #18: ReadDifference must always be positive (current read - previous read).
+            // Negative values occur when OCR reverses the subtraction order or the sign is
+            // included in the extracted text. Abs() here before any downstream identity checks.
+            if (b.ReadDifference) {
+              const _rdRaw = parseFloat(String(b.ReadDifference).replace(/,/g, ''));
+              if (!isNaN(_rdRaw) && _rdRaw < 0) b.ReadDifference = Math.abs(_rdRaw).toFixed(4);
+            }
             // Recompute ReadDifference via the two identities when the current value is suspect.
             const endR = pf(b.EndRead);
             const startR = pf(b.StartRead);
@@ -29694,15 +29727,35 @@
           if (idx > 0 && !isPropaneMeter) {
             let prevEnd = bills[idx - 1].end;
             let curStart = row.start;
+            // Bug #17: Track whether we walked past empty-date rows to find a valid end date.
+            // When true, the gap message will note that a row with missing dates was found.
+            let _gapSkippedEmptyRows = false;
             if (!prevEnd || !curStart) {
               let pi = idx - 1;
-              while (pi >= 0 && !bills[pi].end) pi--;
+              while (pi >= 0 && !bills[pi].end) { pi--; _gapSkippedEmptyRows = true; }
               prevEnd = pi >= 0 ? bills[pi].end : null;
             }
-            if (detectGap(prevEnd, curStart)) {
-              const gapDays = Math.round((_parseISO(curStart) - _parseISO(prevEnd)) / (1000 * 60 * 60 * 24));
+            // Bug #26: Detect overlap (prevEnd > curStart by more than 3 days) before gap check.
+            // Overlap and gap are mutually exclusive — if periods overlap, the "days" column
+            // may flag as out-of-norm but that doesn't tell the user WHY. Show a specific
+            // overlap warning in amber (distinct from the red gap warning) so the issue is clear.
+            if (prevEnd && curStart && (_parseISO(prevEnd) - _parseISO(curStart)) / (1000 * 60 * 60 * 24) > 3) {
+              const overlapDays = Math.round((_parseISO(prevEnd) - _parseISO(curStart)) / (1000 * 60 * 60 * 24));
+              tblBody += `<tr class="ud-bill-overlap-row"><td colspan="${cols.length}"><div class="ud-bill-overlap-msg">⚠ Overlapping billing periods — ${overlapDays} day${overlapDays !== 1 ? 's' : ''} of overlap between ${fmtDate(curStart)} and ${fmtDate(prevEnd)} (check for duplicate or incorrect dates)</div></td></tr>`;
+            } else if (detectGap(prevEnd, curStart)) {
+              // Bug #14: Always report the gap in chronological order (earlier date → later date)
+              // regardless of whether the bills array is ascending or descending. The label
+              // direction must match whichever date is actually earlier.
+              const gapEarlier = _parseISO(prevEnd) <= _parseISO(curStart) ? prevEnd : curStart;
+              const gapLater = _parseISO(prevEnd) <= _parseISO(curStart) ? curStart : prevEnd;
+              const gapDays = Math.round(Math.abs(_parseISO(gapLater) - _parseISO(gapEarlier)) / (1000 * 60 * 60 * 24));
               const gapMonths = Math.round(gapDays / 30);
-              tblBody += `<tr class="ud-bill-gap-row"><td colspan="${cols.length}"><div class="ud-bill-gap-msg">⚠️ Gap in data — ${gapMonths > 1 ? '~' + gapMonths + ' months (' : ''}${gapDays} day${gapDays !== 1 ? 's' : ''}${gapMonths > 1 ? ')' : ''} missing between ${fmtDate(prevEnd)} and ${fmtDate(curStart)}</div></td></tr>`;
+              // Bug #17: If we skipped over empty-date rows to find the valid end date, add a note
+              // so the user knows there's a row with missing dates adjacent to this gap.
+              const _emptyRowNote = _gapSkippedEmptyRows
+                ? ' · ⚠ A row above has missing dates — delete it and re-extract the source PDF'
+                : '';
+              tblBody += `<tr class="ud-bill-gap-row"><td colspan="${cols.length}"><div class="ud-bill-gap-msg">⚠️ Gap in data — ${gapMonths > 1 ? '~' + gapMonths + ' months (' : ''}${gapDays} day${gapDays !== 1 ? 's' : ''}${gapMonths > 1 ? ')' : ''} missing between ${fmtDate(gapEarlier)} and ${fmtDate(gapLater)}${_emptyRowNote}</div></td></tr>`;
             }
           }
           const flags = billFlags[row.id] || [];
@@ -36881,9 +36934,15 @@
         // NOT sticky — it's the first column that scrolls with the body.
         const _fieldWarningsEarly = _billFieldWarnings(row, m.commodity);
         const _hasRowWarning = Object.keys(_fieldWarningsEarly).length > 0;
+        // Bug #17: rows with missing start/end dates get a special class so they're
+        // visually distinct from normal rows and easy to identify for deletion/re-extraction.
+        const _missingDates = !row.start || !row.end;
+        const _warnTip = _missingDates
+          ? 'Missing start/end dates — delete this row and re-extract'
+          : 'This bill has missing or inconsistent data fields';
         let html =
-          '<tr>' +
-          `<td class="norm-mon-cell sticky-col" data-sticky="0">${normMonthLabel(row.start, row.end, incl, allBills || m.bills || [])}${_hasRowWarning ? ' <span title="This bill has missing or inconsistent data fields" style="color:var(--amber);cursor:help">⚠</span>' : ''}</td>` +
+          `<tr${_missingDates ? ' class="ud-bill-missing-dates"' : ''}>` +
+          `<td class="norm-mon-cell sticky-col" data-sticky="0">${normMonthLabel(row.start, row.end, incl, allBills || m.bills || [])}${_hasRowWarning || _missingDates ? ` <span title="${_warnTip}" style="color:var(--amber);cursor:help">⚠</span>` : ''}</td>` +
           `<td class="lbl sticky-col" data-sticky="1">${fmtD(row.start)}</td>` +
           `<td class="lbl sticky-col" data-sticky="2">${fmtD(row.end)}</td>` +
           `<td class="td-days">${days}</td>`;
@@ -37333,7 +37392,9 @@
             /read$|multiplier|difference/i.test(entry.key)
           ) {
             if (+val === 0) return '—';
-            return (+val).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+            // Bug #18: Read Difference must always display positive (current - previous read)
+            const dispVal = /difference/i.test(entry.key) ? Math.abs(+val) : +val;
+            return dispVal.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
           }
           // Default numeric fields (e.g. numberOfDays) — integer display.
           return (+val).toLocaleString('en-US');
