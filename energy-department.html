@@ -16338,7 +16338,7 @@
         });
 
         // ── CHARGE RECONCILIATION: if sum doesn't match total, try to recover missing charges ──
-        const _compSum =
+        const _compSum = Math.round((
           _pf(result.CustomerCharge) +
           _pf(result.FacilitiesCharge) +
           _pf(result.BilledKWCharge) +
@@ -16351,7 +16351,10 @@
           _pf(result.RkVACharge) +
           _pf(result.TaxExemptDelivery) +
           _pf(result.BillOffset) +
-          _pf(result.FranchiseFee);
+          _pf(result.FranchiseFee) +
+          _pf(result.SolarCredit) +
+          _pf(result.RenewableCharge)
+        ) * 100) / 100;
         const _total = _pf(result.TotalCurrentCharges);
         if (_total > 0 && Math.abs(_compSum - _total) > 1) {
           // Try to find missing charges by scanning ALL dollar amounts between "Billing Details" and "Subtotal"
@@ -18514,7 +18517,7 @@
         if (utilityName === 'Evergy') {
           const total = pf(extracted.TotalCurrentCharges);
           if (total > 0) {
-            const compSum =
+            const compSum = Math.round((
               pf(extracted.CustomerCharge) +
               pf(extracted.FacilitiesCharge) +
               pf(extracted.BilledKWCharge) +
@@ -18527,7 +18530,10 @@
               pf(extracted.RkVACharge) +
               pf(extracted.TaxExemptDelivery) +
               pf(extracted.BillOffset) +
-              pf(extracted.FranchiseFee);
+              pf(extracted.FranchiseFee) +
+              pf(extracted.SolarCredit) +
+              pf(extracted.RenewableCharge)
+            ) * 100) / 100;
             const diff = Math.abs(compSum - total);
             if (diff > 1.0) {
               warnings.push({
@@ -19300,8 +19306,13 @@
               'TaxExemptDelivery',
               'BillOffset',
               'FranchiseFee',
+              'SolarCredit',
+              'RenewableCharge',
             ];
-            const _sumCharges = () => CHARGE_FIELDS.reduce((s, f) => s + pf(b[f]), 0);
+            // Round to cents to prevent floating-point accumulation errors
+            // across 15 addends from producing phantom ±$0.01 mismatches.
+            const _sumCharges = () =>
+              Math.round(CHARGE_FIELDS.reduce((s, f) => s + pf(b[f]), 0) * 100) / 100;
 
             // 3a. Measure
             const ocrTotal = pf(b.TotalCurrentCharges);
@@ -25246,6 +25257,8 @@
             'TaxExemptDelivery',
             'BillOffset',
             'FranchiseFee',
+            'SolarCredit',
+            'RenewableCharge',
           ],
           Gas: ['CustomerCharge', 'GasCharge', 'FuelAdjustment'],
           Water: ['WaterCharge', 'WaterProtectionFee'],
@@ -25262,7 +25275,7 @@
               : 'Electric');
         const _CHARGE_SUM_KEYS_RPF =
           _CHARGE_SUM_KEYS_BY_COMMODITY[_billCommodity] || _CHARGE_SUM_KEYS_BY_COMMODITY.Electric;
-        const _currentChargeSum = _CHARGE_SUM_KEYS_RPF.reduce((s, f) => s + _pf(parsed[f]), 0);
+        const _currentChargeSum = Math.round(_CHARGE_SUM_KEYS_RPF.reduce((s, f) => s + _pf(parsed[f]), 0) * 100) / 100;
         // Identify which charge fields are blank — the sum mismatch is usually caused by
         // one of these not being extracted, so we surface them in the banner.
         const _missingChargeFields = _CHARGE_SUM_KEYS_RPF.filter((f) => {
