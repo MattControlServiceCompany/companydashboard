@@ -12770,6 +12770,25 @@
               </div>
               <div style="font-size:13px;color:var(--text2)">No documents yet. Use the PDF/OCR tool to save documents to this project.</div>
             </div>
+            <div id="ptab-settings" class="ptab" style="padding:16px;overflow-y:auto">
+              <div class="card" style="max-width:480px">
+                <div class="card-hdr"><span class="card-title">⚡ Active Commodity Types</span></div>
+                <div style="padding:14px">
+                  <div style="font-size:12px;color:var(--text2);margin-bottom:14px">
+                    Choose which commodity types are tracked for this project. Unchecked types will be hidden from meter lists and performance calculations.
+                  </div>
+                  <div id="ptab-settings-commodities-${p.id}" style="display:flex;flex-direction:column;gap:10px">
+                    ${ALL_COMMODITIES.map((c) => {
+                      const checked = !Array.isArray(p.activeCommodities) || p.activeCommodities.includes(c);
+                      return `<label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+                        <input type="checkbox" ${checked ? 'checked' : ''} value="${c}" onchange="toggleProjCommodity(${p.id},'${c}',this.checked)" style="width:16px;height:16px;cursor:pointer">
+                        <span>${c}</span>
+                      </label>`;
+                    }).join('')}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>`;
         // Populate tabs after DOM is ready
         requestAnimationFrame(() => {
@@ -12793,6 +12812,7 @@
         bldgs.forEach((b) =>
           (b.meters || []).forEach((m) => {
             if (m.baselineInclude === false) return;
+            if (!isActiveCommodity(projId, m.commodity)) return;
             const blBills = _dashGetBaselineBills(m);
             blBills.forEach((bill) => {
               blCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
@@ -12919,6 +12939,7 @@
             let bldgSav = 0;
             meters.forEach((m) => {
               if (m.baselineInclude === false) return;
+              if (!isActiveCommodity(projId, m.commodity)) return;
               const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
               const incl = m.inclusive !== false;
               const bl = m.baseline;
@@ -12970,6 +12991,7 @@
             // Actual path: existing raw totalCost comparison
             meters.forEach((m) => {
               if (m.baselineInclude === false) return;
+              if (!isActiveCommodity(projId, m.commodity)) return;
               const blBills = _dashGetBaselineBills(m);
               if (blBills.length) hasBaseline = true;
               blBills.forEach((bill) => {
@@ -13336,6 +13358,19 @@
         sset('en_projects', projects);
         renderProjTable();
       }
+      /* ── COMMODITY TYPES ── */
+      const ALL_COMMODITIES = ['Electric', 'Gas', 'Water', 'Steam', 'Sewer', 'Stormwater', 'Propane'];
+
+      /**
+       * Returns true if the given commodity is active for the project.
+       * Defaults to true for all commodities if activeCommodities is not set (backward compatible).
+       */
+      function isActiveCommodity(projectId, commodity) {
+        const p = projects.find((x) => x.id === projectId);
+        if (!p || !Array.isArray(p.activeCommodities)) return true;
+        return p.activeCommodities.includes(commodity);
+      }
+
       /* ── PROJECT TAB ORDER (draggable) ── */
       const PROJ_TABS_DEFAULT = [
         { id: 'dashboard', label: '📊 Dashboard' },
@@ -13351,6 +13386,7 @@
         { id: 'contracts', label: '📋 Contracts' },
         { id: 'meetings', label: '📋 Meetings' },
         { id: 'docs', label: '📁 Documents' },
+        { id: 'settings', label: '⚙️ Settings' },
       ];
       function _getProjTabOrder() {
         try {
@@ -13474,6 +13510,26 @@
         if (tab === 'district') renderDistCalTable(p.id);
         window._activeProjTab = tab;
         saveProjSession();
+      }
+
+      /**
+       * Toggle an individual commodity on/off for a project.
+       * Called by the checkboxes in the Settings tab.
+       */
+      function toggleProjCommodity(projId, commodity, checked) {
+        const p = projects.find((x) => x.id === projId);
+        if (!p) return;
+        // If activeCommodities hasn't been set yet, default to all active
+        if (!Array.isArray(p.activeCommodities)) {
+          p.activeCommodities = [...ALL_COMMODITIES];
+        }
+        if (checked) {
+          if (!p.activeCommodities.includes(commodity)) p.activeCommodities.push(commodity);
+        } else {
+          p.activeCommodities = p.activeCommodities.filter((c) => c !== commodity);
+        }
+        sset('en_projects', projects);
+        showToast(commodity + (checked ? ' enabled' : ' disabled') + ' ✓');
       }
 
       // ── Embedded Project Utility Data tab ──
@@ -22088,6 +22144,145 @@
           saveable +
           ')</button>';
         html += '</div></div>';
+
+        // ── Per-bill queue rows table (Update 122/#35 + #36) ──
+        // Compact table below the action bar: one row per bill across all files.
+        // Columns: checkbox, file name, period, status badge, project dropdown (per-bill override),
+        // and a Resolve button for duplicate bills that opens the dup comparison modal.
+        // Build project options for per-bill dropdowns. Each call to _queueProjOpts(override)
+        // returns option tags with the correct value selected.
+        const _queueProjOpts = (overrideId) => {
+          const cur = overrideId ? String(overrideId) : '';
+          return (
+            '<option value=""' +
+            (cur === '' ? ' selected' : '') +
+            '>— Batch proj —</option>' +
+            (projects || [])
+              .map(
+                (p) =>
+                  '<option value="' +
+                  p.id +
+                  '"' +
+                  (String(p.id) === cur ? ' selected' : '') +
+                  '>' +
+                  _escHtml(p.name) +
+                  '</option>',
+              )
+              .join('')
+          );
+        };
+
+        let billRowsHtml = '<div style="max-height:220px;overflow-y:auto;margin-top:4px">';
+        billRowsHtml += '<table style="width:100%;border-collapse:collapse;font-size:11px;font-family:var(--font)">';
+        billRowsHtml +=
+          '<thead><tr style="color:var(--text2);border-bottom:1px solid var(--border)">' +
+          '<th style="padding:3px 5px;text-align:center;width:22px">' +
+          '<input type="checkbox" onchange="toggleAllQueueRows(this.checked)" checked></th>' +
+          '<th style="padding:3px 6px;text-align:left">File</th>' +
+          '<th style="padding:3px 6px;text-align:left">Period</th>' +
+          '<th style="padding:3px 6px;text-align:left">Status</th>' +
+          '<th style="padding:3px 6px;text-align:left">Project</th>' +
+          '<th style="padding:3px 6px;text-align:left"></th>' +
+          '</tr></thead><tbody>';
+
+        rows.forEach((row, rowIdx) => {
+          // Compute flat index into _pdfDupMap for this row
+          let flatIdx = 0;
+          for (let ri = 0; ri < q.results.length; ri++) {
+            if (ri === row.resultIdx) {
+              flatIdx += row.billIdx >= 0 ? row.billIdx : 0;
+              break;
+            }
+            flatIdx += q.results[ri].bills.length;
+          }
+
+          const dup = row.bill ? _getQueueDupInfo(row) : null;
+          const bgColor = row._saved ? 'rgba(100,180,100,.08)' : dup ? 'rgba(245,158,11,.07)' : 'transparent';
+
+          // Status badge
+          let statusHtml;
+          if (!row.bill) {
+            statusHtml = '<span style="color:#c44;font-weight:600;font-size:10px">FAILED</span>';
+          } else if (row._saved) {
+            statusHtml = '<span style="color:var(--text3);font-size:10px">SAVED</span>';
+          } else if (dup) {
+            const dupAct = dup.action;
+            const actLabel =
+              dupAct === 'overwrite' ? ' · OW' : dupAct === 'merge' ? ' · MG' : dupAct === 'skip' ? ' · SK' : '';
+            statusHtml =
+              '<span style="color:var(--amber);font-weight:700;font-size:10px">DUP' + _escHtml(actLabel) + '</span>';
+          } else {
+            statusHtml = '<span style="color:#4a4;font-size:10px">READY</span>';
+          }
+
+          // Period label
+          let periodHtml = '—';
+          if (row.bill) {
+            const b = row.bill;
+            if (b.DeliveryDate) {
+              periodHtml = _escHtml(b.DeliveryDate);
+            } else if (b.BillingPeriodStart || b.BillingPeriodEnd) {
+              periodHtml = _escHtml((b.BillingPeriodStart || '?') + ' – ' + (b.BillingPeriodEnd || '?'));
+            }
+          }
+
+          // Project dropdown — shows per-bill override; falls back to blank (uses batch proj)
+          const projDropdown =
+            row.bill && !row._saved
+              ? '<select style="font-size:10px;padding:1px 3px;max-width:130px;background:var(--s2);border:1px solid var(--border2);border-radius:3px;color:var(--text)" onchange="setQueueRowProject(' +
+                rowIdx +
+                ',this.value)">' +
+                _queueProjOpts(row.bill._projOverride) +
+                '</select>'
+              : '<span style="color:var(--text3);font-size:10px">—</span>';
+
+          // Actions: Resolve button for dups (opens dup comparison modal)
+          let actionsHtml = '';
+          if (dup && !row._saved) {
+            actionsHtml =
+              '<button onclick="openQueueDupModal(' +
+              rowIdx +
+              ',' +
+              flatIdx +
+              ')" ' +
+              'style="font-size:10px;padding:2px 7px;border-radius:3px;border:1px solid rgba(245,158,11,.5);background:transparent;color:var(--amber);cursor:pointer;font-weight:600">Resolve</button>';
+          }
+
+          const fileName = row.result ? _escHtml(row.result.fileName) : '—';
+          const isChecked = row.bill && !row._saved ? (row.checked !== false ? ' checked' : '') : '';
+          const canCheck = row.bill && !row._saved;
+
+          billRowsHtml +=
+            '<tr style="background:' +
+            bgColor +
+            ';border-bottom:1px solid var(--border)">' +
+            '<td style="padding:3px 5px;text-align:center">' +
+            (canCheck
+              ? '<input type="checkbox" onchange="toggleQueueRow(' + rowIdx + ',this.checked)"' + isChecked + '>'
+              : '') +
+            '</td>' +
+            '<td style="padding:3px 6px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px" title="' +
+            fileName +
+            '">' +
+            fileName +
+            '</td>' +
+            '<td style="padding:3px 6px;white-space:nowrap;color:var(--text)">' +
+            periodHtml +
+            '</td>' +
+            '<td style="padding:3px 6px">' +
+            statusHtml +
+            '</td>' +
+            '<td style="padding:3px 6px">' +
+            projDropdown +
+            '</td>' +
+            '<td style="padding:3px 6px">' +
+            actionsHtml +
+            '</td>' +
+            '</tr>';
+        });
+
+        billRowsHtml += '</tbody></table></div>';
+        html += billRowsHtml;
         tabsBar.innerHTML = html;
 
         // Active file — use existing multi-bill pipeline
@@ -22196,6 +22391,36 @@
           window._pdfQueue.batchProjId = parseInt(val) || null;
           renderQueueResults();
         }
+      }
+
+      // (#35) Per-bill project override — set bill._projOverride from the row dropdown.
+      // Does not re-render the full UI (avoids dropdown flicker); just mutates the bill object.
+      function setQueueRowProject(rowIdx, val) {
+        const rows = window._pdfQueueRows;
+        if (!rows || !rows[rowIdx] || !rows[rowIdx].bill) return;
+        const projId = parseInt(val) || null;
+        rows[rowIdx].bill._projOverride = projId;
+      }
+
+      // (#36) Open the existing dup comparison modal for a specific queue bill row.
+      // Sets up window._pdfMultiBills so _renderDupModal can find the bill + dup info.
+      function openQueueDupModal(rowIdx, flatIdx) {
+        const rows = window._pdfQueueRows;
+        if (!rows || !rows[rowIdx] || !rows[rowIdx].bill) return;
+        const row = rows[rowIdx];
+        const q = window._pdfQueue;
+        if (!q) return;
+
+        // Point _pdfMultiBills at the result file's bill array so openDupModal/overwriteDupBill
+        // etc. can find the bill at flatIdx within the file. Build a flat array of all bills
+        // across results so flatIdx (into _pdfDupMap) maps correctly.
+        const allBills = [];
+        q.results.forEach((r) => r.bills.forEach((b) => allBills.push(b)));
+        window._pdfMultiBills = allBills;
+        window._pdfMultiIdx = flatIdx;
+        window._pdfBillWarnings = allBills.map((b) => ({ warnings: b._warnings || [] }));
+
+        openDupModal(flatIdx);
       }
 
       function queueDrillIn(rowIdx) {
@@ -29312,7 +29537,7 @@
           hdrSub.innerHTML = parts.join('');
         }
 
-        const meters = b.meters || [];
+        const meters = (b.meters || []).filter((m) => isActiveCommodity(udSelProjId, m.commodity));
         if (!meters.length) {
           wrap.innerHTML =
             '<div class="ud-empty"><div class="ud-empty-ico">⚡</div><div>No meters yet.<br><button class="btn btn-em btn-sm" style="margin-top:12px" onclick="openMeterModal(null,\'' +
@@ -29879,6 +30104,7 @@
               return {
                 mode: s.mode === 'condensed' ? 'condensed' : 'detailed',
                 hidden: Array.isArray(s.hidden) ? s.hidden : [],
+                sortAsc: s.sortAsc !== false, // default ascending
               };
             }
           }
@@ -29890,10 +30116,17 @@
             return {
               mode: d.mode === 'condensed' ? 'condensed' : 'detailed',
               hidden: Array.isArray(d.hidden) ? d.hidden : [],
+              sortAsc: true,
             };
           }
         } catch (e) {}
-        return { mode: 'detailed', hidden: [] };
+        return { mode: 'detailed', hidden: [], sortAsc: true };
+      }
+      function toggleBillsTableSort(mid) {
+        const state = _billsTableViewState(mid);
+        state.sortAsc = !state.sortAsc;
+        _saveBillsTableViewState(mid, state);
+        if (typeof renderMeterWorkspace === 'function') renderMeterWorkspace();
       }
       function _saveBillsTableViewState(mid, state) {
         try {
@@ -30039,6 +30272,18 @@
           </div>
         </span>`;
 
+        // ── Sort direction (Update 122) ──
+        // Read from viewState (bills_view_state_<mid>). Default ascending (oldest first).
+        // toggleBillsTableSort() flips and re-renders.
+        const viewState = _billsTableViewState(m.id);
+        const sortAsc = viewState.sortAsc !== false;
+        // bills arrives pre-sorted ascending from renderMeterWorkspace; reverse if descending.
+        if (!sortAsc) bills = bills.slice().reverse();
+        const sortArrow = sortAsc ? ' ↑' : ' ↓';
+        const sortTitle = sortAsc
+          ? 'Sorted oldest first — click to sort newest first'
+          : 'Sorted newest first — click to sort oldest first';
+
         // ── Column definitions (Update 82, revised in Update 90) ──
         // Base columns (Norm. Month, Start, End, Days) come first and are
         // sticky-frozen to the left edge so they stay visible during horizontal
@@ -30046,7 +30291,15 @@
         // see Update 90 view mode). Action column last, with a gear button
         // that opens the per-meter table settings modal.
         const COL_BASE = [
-          { h: 'Norm. Month ' + normInfoTip, a: 'lbl', w: 110, minW: 100, sticky: true },
+          {
+            h:
+              `<span style="cursor:pointer;user-select:none" onclick="toggleBillsTableSort('${m.id}')" title="${sortTitle}">Norm. Month${sortArrow}</span> ` +
+              normInfoTip,
+            a: 'lbl',
+            w: 110,
+            minW: 100,
+            sticky: true,
+          },
           // Start/End widths must fit "12/31/2026" (10 chars) at the tabular
           // font — 105px minimum so saved resize widths can't clip dates.
           { h: 'Start', a: 'lbl', w: 105, minW: 105, sticky: true },
@@ -30069,7 +30322,6 @@
           'accountNumber',
           'meterNumber',
         ]);
-        const viewState = _billsTableViewState(m.id);
         const hiddenSet = new Set(viewState.hidden || []);
         // Condensed view: use CONDENSED_CATEGORIES[commodity] (falls back to
         // the detailed schema if no category map exists). Hidden toggles still
@@ -30167,12 +30419,17 @@
         const isPropaneMeter = (m.commodity || '').toLowerCase() === 'propane';
         bills.forEach((row, idx) => {
           if (idx > 0 && !isPropaneMeter) {
-            let prevEnd = bills[idx - 1].end;
-            let curStart = row.start;
+            // When sorted descending, the "previous" row in the display is chronologically later.
+            // Swap prevEnd/curStart so gap detection always sees the earlier bill's end and
+            // the later bill's start — same logic as ascending, just from the other direction.
+            let prevEnd = sortAsc ? bills[idx - 1].end : row.end;
+            let curStart = sortAsc ? row.start : bills[idx - 1].start;
             // Bug #17: Track whether we walked past empty-date rows to find a valid end date.
             // When true, the gap message will note that a row with missing dates was found.
+            // Only walk backward in ascending mode — in descending mode prevEnd/curStart were
+            // already swapped to chronological order, so the iteration direction differs.
             let _gapSkippedEmptyRows = false;
-            if (!prevEnd || !curStart) {
+            if (sortAsc && (!prevEnd || !curStart)) {
               let pi = idx - 1;
               while (pi >= 0 && !bills[pi].end) {
                 pi--;
