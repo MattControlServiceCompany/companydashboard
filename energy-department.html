@@ -18633,6 +18633,30 @@
                 if (consumption && consumption > 0 && consumption < 10000000) waterUsage = consumption;
               }
             }
+            // BillingDetail OCR sanity: positional extraction picks wrong
+            // numbers when OCR garbles the line. Cross-validate and recover.
+            // Gas: therms > 50k is impossible for a building. If usage looks
+            // like a dollar amount (> 10k), swap usage and amt.
+            if (gasUsage > 50000 && gasAmt != null && gasAmt < 100) {
+              const swapped = gasUsage;
+              gasUsage = null;
+              gasAmt = swapped > 100 ? swapped / 100 : swapped;
+            }
+            // Water/Sewer: if charge < $1 for usage > 1000, OCR likely
+            // mangled the charge. Null it so downstream doesn't save garbage.
+            if (sewerAmt != null && sewerAmt < 1 && sewerUsage > 1000) sewerAmt = null;
+            if (waterAmt != null && waterAmt < 1 && waterUsage > 1000) waterAmt = null;
+            // Sewer charge sanity: typical sewer rate is $0.005-$0.05/gallon.
+            // If charge/usage < $0.001 (e.g. $75 / 72687 = $0.001), the charge
+            // is likely garbled. Derive from water rate if available.
+            if (sewerAmt != null && sewerUsage > 0 && waterAmt > 0 && waterUsage > 0) {
+              const sewerRate = sewerAmt / sewerUsage;
+              const waterRate = waterAmt / waterUsage;
+              if (sewerRate < waterRate * 0.1) {
+                console.warn('[BillingDetail] Sewer charge $' + sewerAmt + ' implausibly low vs water rate — nulling');
+                sewerAmt = null;
+              }
+            }
             if (sewerUsage && (!waterUsage || waterUsage < 10)) waterUsage = sewerUsage;
             if (waterUsage && (!sewerUsage || sewerUsage < 10)) sewerUsage = waterUsage;
             const bills = [];
