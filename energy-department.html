@@ -23220,9 +23220,19 @@
           EERCharge: 'eerCharge',
           PTSCharge: 'ptsCharge',
           TDCCharge: 'tdcCharge',
+          TDCkW: 'tdcKW',
+          RkVACharge: 'rkvaCharge',
           FranchiseFee: 'franchiseFee',
           TaxExemptDelivery: 'taxExemptDelivery',
           BillOffset: 'billOffset',
+          TotalKWhRate: 'totalKwhRate',
+          TotalKWRate: 'totalKwRate',
+          OnPeakRate: 'onPeakRate',
+          OffPeakRate: 'offPeakRate',
+          OnPeakKWh: 'onPeakKwh',
+          OffPeakKWh: 'offPeakKwh',
+          ReadDifference: 'readDifference',
+          MeterMultiplier: 'meterMultiplier',
         };
         // For saved (unassigned) bills, fields map 1:1 (same raw keys)
         const isSaved = !existing.start && existing.BillingPeriodStart !== undefined;
@@ -23271,6 +23281,16 @@
           'FranchiseFee',
           'TotalCurrentCharges',
           'NumberOfDays',
+          'TotalKWhRate',
+          'TotalKWRate',
+          'OnPeakRate',
+          'OffPeakRate',
+          'OnPeakKWh',
+          'OffPeakKWh',
+          'ReadDifference',
+          'MeterMultiplier',
+          'TDCkW',
+          'RkVACharge',
         ];
 
         for (const key of COMPARE_KEYS) {
@@ -23293,6 +23313,10 @@
               continue;
             }
           }
+          // Numeric comparison: treat 445.0560 and 445.056 as equal
+          const newNum = parseFloat(String(newVal).replace(/[$,\s]/g, ''));
+          const exNum = parseFloat(String(existVal).replace(/[$,\s]/g, ''));
+          if (!isNaN(newNum) && !isNaN(exNum) && newNum === exNum) continue;
           if (normVal(newVal) !== normVal(existVal)) {
             diffs.push({ key, newVal: String(newVal), existVal: String(existVal) });
           }
