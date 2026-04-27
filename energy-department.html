@@ -37969,6 +37969,7 @@
         renderUDProjList();
         const isEmbed = window._udActiveWrap && window._udActiveWrap !== document.getElementById('udDetailWrap');
         renderUDDetail(isEmbed ? window._udActiveWrap : undefined);
+        renderMeterWorkspace();
         showToast(count + ' billing period' + (count !== 1 ? 's' : '') + ' deleted');
       }
       function toggleMeterDetail(rowId) {
