@@ -20420,47 +20420,102 @@
               const _rdRaw = parseFloat(String(b.ReadDifference).replace(/,/g, ''));
               if (!isNaN(_rdRaw) && _rdRaw < 0) b.ReadDifference = Math.abs(_rdRaw).toFixed(4);
             }
-            // Recompute ReadDifference via the two identities when the current value is suspect.
+            // ── DETERMINISTIC VALIDATION CHAIN (Update 139 / #127) ──
+            // Meter reads are the most trustworthy OCR values (5-7 digit numbers
+            // are hard to garble significantly). ReadDifference is derived and OCR
+            // frequently misreads a single digit (e.g. 41.8176 vs 41.6176).
+            // ALWAYS compute ReadDifference from reads when both are available,
+            // then cascade corrections through kWhConsumed → On-Peak kWh.
             const endR = pf(b.EndRead);
             const startR = pf(b.StartRead);
             const multNow = pf(b.MeterMultiplier);
-            const kwhNow = pf(b.kWhConsumed);
             const curDiff = pf(b.ReadDifference);
-            // Sanity check: ReadDifference must not exceed EndRead (unless rollover).
-            const diffExceedsEnd = curDiff > 0 && endR > 0 && startR > 0 && endR >= startR && curDiff > endR;
-            // Cross-check against EndRead - StartRead
-            const subtractionDiff = endR > startR && startR > 0 ? endR - startR : null;
-            const diffOffSubtraction =
-              subtractionDiff !== null &&
-              curDiff > 0 &&
-              Math.abs(curDiff - subtractionDiff) / Math.max(subtractionDiff, 1) > 0.02;
-            // Cross-check against kWhConsumed / MeterMultiplier
-            const kwhDerivedDiff = kwhNow > 0 && multNow > 0 ? kwhNow / multNow : null;
-            const diffOffKwh =
-              kwhDerivedDiff !== null &&
-              curDiff > 0 &&
-              Math.abs(curDiff - kwhDerivedDiff) / Math.max(kwhDerivedDiff, 1) > 0.02;
-            if (diffExceedsEnd || diffOffSubtraction || diffOffKwh || !curDiff) {
-              // Prefer subtraction (most direct) when we have both reads; otherwise use kWh/multiplier
-              let recovered = null;
-              let reason = '';
-              if (subtractionDiff !== null && subtractionDiff > 0 && subtractionDiff < 1000000) {
-                recovered = subtractionDiff;
-                reason = 'EndRead − StartRead = ' + subtractionDiff.toFixed(4);
-              } else if (kwhDerivedDiff !== null && kwhDerivedDiff > 0 && kwhDerivedDiff < 1000000) {
-                recovered = kwhDerivedDiff;
-                reason = 'kWhConsumed ÷ MeterMultiplier = ' + kwhDerivedDiff.toFixed(4);
+
+            // Step 1: ReadDifference = EndRead - StartRead (authoritative)
+            if (endR > 0 && startR > 0 && endR > startR) {
+              const computedDiff = endR - startR;
+              if (computedDiff > 0 && computedDiff < 1000000) {
+                if (!curDiff || Math.abs(curDiff - computedDiff) > 0.005) {
+                  b['_auto_corrected_ReadDifference'] = {
+                    original: b.ReadDifference,
+                    corrected: computedDiff.toFixed(4),
+                    reason: 'EndRead (' + endR + ') − StartRead (' + startR + ') = ' + computedDiff.toFixed(4),
+                  };
+                  b.ReadDifference = computedDiff.toFixed(4);
+                }
               }
-              if (recovered !== null && recovered > 0) {
-                b['_auto_corrected_ReadDifference'] = {
-                  original: b.ReadDifference,
-                  corrected: recovered.toFixed(4),
-                  reason,
+            } else if (!curDiff) {
+              // No reads available — try kWh / multiplier fallback
+              const kwhNow = pf(b.kWhConsumed);
+              const kwhDerivedDiff = kwhNow > 0 && multNow > 0 ? kwhNow / multNow : null;
+              if (kwhDerivedDiff !== null && kwhDerivedDiff > 0 && kwhDerivedDiff < 1000000) {
+                b.ReadDifference = kwhDerivedDiff.toFixed(4);
+                b['_auto_recovered_ReadDifference'] = {
+                  original: null,
+                  corrected: b.ReadDifference,
+                  reason: 'kWhConsumed ÷ MeterMultiplier = ' + kwhDerivedDiff.toFixed(4),
                 };
-                b.ReadDifference = recovered.toFixed(4);
-              } else if (diffExceedsEnd) {
-                b['_likely_missing_ReadDifference'] = true;
-                b.ReadDifference = null;
+              }
+            }
+            // Sanity: ReadDifference must not exceed EndRead (unless rollover)
+            const newDiff = pf(b.ReadDifference);
+            if (newDiff > 0 && endR > 0 && startR > 0 && endR >= startR && newDiff > endR) {
+              b['_likely_missing_ReadDifference'] = true;
+              b.ReadDifference = null;
+            }
+
+            // Step 2: kWhConsumed = ReadDifference × MeterMultiplier (cascade)
+            const cascadeDiff = pf(b.ReadDifference);
+            if (cascadeDiff > 0 && multNow > 0) {
+              const expectedKwh = cascadeDiff * multNow;
+              const curKwhForChain = pf(b.kWhConsumed);
+              if (!curKwhForChain || Math.abs(curKwhForChain - expectedKwh) > 1) {
+                b['_auto_corrected_kWhConsumed'] = {
+                  original: b.kWhConsumed,
+                  corrected: expectedKwh.toFixed(4),
+                  reason:
+                    'Cascaded: ReadDifference (' +
+                    cascadeDiff.toFixed(4) +
+                    ') × MeterMultiplier (' +
+                    multNow.toFixed(4) +
+                    ') = ' +
+                    expectedKwh.toFixed(4),
+                };
+                b.kWhConsumed = expectedKwh.toFixed(4);
+              }
+            }
+
+            // Step 3: On-Peak kWh = kWhConsumed - Off-Peak kWh (cascade)
+            const chainKwh = pf(b.kWhConsumed);
+            const chainOffPk = pf(b.OffPeakKWh);
+            const chainOnPk = pf(b.OnPeakKWh);
+            if (chainKwh > 0 && chainOffPk > 0 && chainOnPk > 0) {
+              const expectedOnPk = chainKwh - chainOffPk;
+              if (expectedOnPk > 0 && Math.abs(chainOnPk - expectedOnPk) > 0.5) {
+                // Cross-check: does On-Peak charge / On-Peak rate agree?
+                const onRi = b._rates && b._rates.EnergyOnPeakCharge;
+                const onCharge = pf(b.EnergyOnPeakCharge);
+                let useExpected = true;
+                if (onRi && onRi.rate > 0 && onCharge > 0) {
+                  const rateImplied = onCharge / onRi.rate;
+                  if (Math.abs(rateImplied - chainOnPk) < Math.abs(rateImplied - expectedOnPk)) {
+                    useExpected = false; // rate×qty agrees with current On-Peak, not the subtraction
+                  }
+                }
+                if (useExpected) {
+                  b['_auto_corrected_OnPeakKWh'] = {
+                    original: b.OnPeakKWh,
+                    corrected: expectedOnPk.toFixed(4),
+                    reason:
+                      'Cascaded: kWhConsumed (' +
+                      chainKwh.toFixed(4) +
+                      ') − OffPeakKWh (' +
+                      chainOffPk.toFixed(4) +
+                      ') = ' +
+                      expectedOnPk.toFixed(4),
+                  };
+                  b.OnPeakKWh = expectedOnPk.toFixed(4);
+                }
               }
             }
             // Final sanity strip: if ActualKW/BilledKW/FacilitiesKW are still in the insane range, null them
