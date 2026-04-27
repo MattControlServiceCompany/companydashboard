@@ -24689,10 +24689,10 @@
             const pillBtn = `<button class="ef-pill-btn" onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasAnyIssue ? '700' : '400'};text-align:left;white-space:nowrap">${p.lbl}${dupDot}</button>`;
             const gapInfo = bill._billing_gap;
             const gapRow = gapInfo
-              ? `<div style="padding:2px 8px;margin:2px 0;font-size:10px;color:var(--amber);text-align:center;font-weight:600">&#9888; ${gapInfo.days}-day gap</div>`
+              ? `<div style="padding:2px 8px;margin:2px 0;font-size:10px;color:var(--amber);text-align:center;font-weight:600">&#9888; ${gapInfo.days}-day gap (after ${gapInfo.afterPeriod || ''})</div>`
               : '';
             return (
-              gapRow + `<div class="ef-pill-row"><div class="ef-pill-month">${p.monthLbl || ''}</div>${pillBtn}</div>`
+              `<div class="ef-pill-row"><div class="ef-pill-month">${p.monthLbl || ''}</div>${pillBtn}</div>` + gapRow
             );
           })
           .join('');
