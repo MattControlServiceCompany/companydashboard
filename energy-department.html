@@ -26071,9 +26071,9 @@
             else rows.push(`<div class="ef-pair">${buildCell(extraKeys[i])}</div>`);
           }
         }
-        // Add Field button
+        // Add Field + Export buttons
         rows.push(
-          `<div style="margin-top:8px;text-align:center"><button class="btn btn-ghost btn-sm" onclick="addExtractedField()" style="font-size:11px">+ Add Field</button></div>`,
+          `<div style="margin-top:8px;text-align:center;display:flex;gap:8px;justify-content:center"><button class="btn btn-ghost btn-sm" onclick="addExtractedField()" style="font-size:11px">+ Add Field</button><button class="btn btn-ghost btn-sm" onclick="exportCurrentBillJSON()" style="font-size:11px">Export JSON</button></div>`,
         );
         const fieldHtml = rows.filter(Boolean).join('');
         const missingHtml = '';
@@ -46331,6 +46331,63 @@
       };
 
       /* ── ESC KEY — closes any open modal-bg ── */
+      function _downloadJSON(data, filename) {
+        const json = JSON.stringify(data, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const a = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        a.href = url;
+        a.download = filename;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
+      }
+      function exportCurrentBillJSON() {
+        if (!window._pdfMultiBills || !window._pdfMultiBills.length) {
+          showToast('No extraction data to export', 'error');
+          return;
+        }
+        const idx = window._pdfMultiIdx || 0;
+        const bill = window._pdfMultiBills[idx];
+        if (!bill) {
+          showToast('No bill selected', 'error');
+          return;
+        }
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        _downloadJSON(bill, 'bill-extraction-' + ts + '.json');
+        showToast('Exported current bill to Downloads');
+      }
+      function exportMeterBillsJSON() {
+        if (!udActiveMid) {
+          showToast('No meter selected', 'error');
+          return;
+        }
+        const b = getUDBldg(udSelProjId, udSelBldgId);
+        if (!b) {
+          showToast('Building not found', 'error');
+          return;
+        }
+        const m = b.meters?.find((mm) => mm.id === udActiveMid);
+        if (!m || !m.bills || !m.bills.length) {
+          showToast('No bills to export', 'error');
+          return;
+        }
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const name = (m.provider || m.commodity || 'meter').replace(/[^a-zA-Z0-9]/g, '_');
+        _downloadJSON(m.bills, name + '-bills-' + ts + '.json');
+        showToast('Exported ' + m.bills.length + ' bills to Downloads');
+      }
+      document.addEventListener('keydown', function (e) {
+        if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+          e.preventDefault();
+          exportCurrentBillJSON();
+          return;
+        }
+        if (e.ctrlKey && e.shiftKey && e.key === 'E') {
+          e.preventDefault();
+          exportMeterBillsJSON();
+          return;
+        }
+      });
       document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape') return;
         var closers = {
