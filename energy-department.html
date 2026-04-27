@@ -22064,7 +22064,7 @@
 
         if (rows.length === 0) {
           dzTitle.innerHTML = '📄 Batch extraction — no bills found';
-          document.getElementById('pdfRightCol').style.display = 'none';
+          document.getElementById('pdfRightCol').style.display = '';
           document.getElementById('extractedFieldsGrid').innerHTML =
             '<div style="text-align:center;padding:40px 20px;color:var(--text)">' +
             '<div style="font-size:16px;margin-bottom:8px">No bills extracted</div>' +
@@ -22474,7 +22474,6 @@
 
       function exitQueueDrillIn() {
         window._pdfQueueDrillIdx = null;
-        document.getElementById('pdfRightCol').style.display = 'none';
         document.getElementById('extractedFieldsHdr').innerHTML = '';
         document.getElementById('extractedFieldsGrid').innerHTML = '';
         document.getElementById('pdfAIBox').textContent = '';
@@ -30316,6 +30315,10 @@
       }
 
       function renderBillsPane(pane, m, bills, incl) {
+        // Restore right column in case batch extraction left it hidden
+        const _rc = document.getElementById('pdfRightCol');
+        if (_rc && !window._pdfQueue) _rc.style.display = '';
+
         const isElec = m.commodity === 'Electric';
         const isGas = m.commodity === 'Gas';
 
