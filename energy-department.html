@@ -5774,31 +5774,9 @@
                  goes from the top of the body area to the bottom and manages its own vertical
                  scrolling. No shared frozen header across columns — that caused the visual gap
                  between the "Extraction Output" label and the JSON box in previous layouts. -->
-            <div
-              id="pdfBody"
-              style="
-                flex: 1;
-                display: flex;
-                align-items: stretch;
-                gap: 16px;
-                padding: 0 18px 16px;
-                min-height: 0;
-                overflow-y: auto;
-              "
-            >
-              <!-- LEFT COLUMN: drop zone → doc type → extracted fields. Scrolls as a unit. -->
-              <div
-                id="pdfLeftCol"
-                style="
-                  flex: 3 1 0;
-                  min-width: 0;
-                  min-height: 0;
-                  overflow-y: auto;
-                  padding-right: 4px;
-                  display: flex;
-                  flex-direction: column;
-                "
-              >
+            <div id="pdfBody" style="display: flex; gap: 16px; padding: 0 18px 16px; min-height: 600px">
+              <!-- LEFT COLUMN: drop zone → doc type → extracted fields -->
+              <div id="pdfLeftCol" style="flex: 3 1 0; min-width: 0; padding-right: 4px">
                 <div
                   class="drop-zone"
                   id="dropZone"
@@ -5888,17 +5866,7 @@
               </div>
               <!-- RIGHT COLUMN: Extraction Output label + buttons + pills stay pinned at top,
                    JSON box (pdfAIBox) fills the remainder and scrolls on its own. -->
-              <div
-                id="pdfRightCol"
-                style="
-                  flex: 2 1 0;
-                  min-width: 340px;
-                  min-height: 0;
-                  display: flex;
-                  flex-direction: column;
-                  overflow: hidden;
-                "
-              >
+              <div id="pdfRightCol" style="flex: 2 1 0; min-width: 340px">
                 <div
                   style="
                     display: flex;
