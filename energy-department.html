@@ -18384,26 +18384,36 @@
                 gasVariable = Math.round(gas.usage * r.rate * 100) / 100;
                 gasTotal = gasVariable + r.baseCharge;
               }
-              gasTotal = gasTotal + (signedFuelAdj || 0);
-              const gasBill = {
-                ...shared,
-                Commodity: 'Gas',
-                StartRead: gas.prevRead || null,
-                EndRead: gas.currRead || null,
-                NaturalGasTherms: gas.usage || null,
-                CustomerCharge: r.baseCharge,
-                GasCharge: gasVariable,
-                FuelAdjustment: signedFuelAdj,
-                TotalCurrentCharges: gasTotal.toFixed(2),
-                TotalAmountDue: gasTotal.toFixed(2),
-              };
-              if (corrected && corrected.corrected)
-                gasBill._auto_corrected_GasCharge = {
-                  original: gas.charge,
-                  corrected: gasVariable,
-                  reason: corrected.reason,
+              if (gasTotal < r.baseCharge && (!gas.usage || gas.usage === 0)) {
+                console.warn(
+                  '[Louisburg] Skipping suspicious gas bill: charge $' +
+                    gasTotal.toFixed(2) +
+                    ' < base $' +
+                    r.baseCharge +
+                    ' with 0 usage',
+                );
+              } else {
+                gasTotal = gasTotal + (signedFuelAdj || 0);
+                const gasBill = {
+                  ...shared,
+                  Commodity: 'Gas',
+                  StartRead: gas.prevRead || null,
+                  EndRead: gas.currRead || null,
+                  NaturalGasTherms: gas.usage || null,
+                  CustomerCharge: r.baseCharge,
+                  GasCharge: gasVariable,
+                  FuelAdjustment: signedFuelAdj,
+                  TotalCurrentCharges: gasTotal.toFixed(2),
+                  TotalAmountDue: gasTotal.toFixed(2),
                 };
-              bills.push(gasBill);
+                if (corrected && corrected.corrected)
+                  gasBill._auto_corrected_GasCharge = {
+                    original: gas.charge,
+                    corrected: gasVariable,
+                    reason: corrected.reason,
+                  };
+                bills.push(gasBill);
+              }
             }
             if (water.charge != null && water.charge !== 0) {
               const waterTotal = (water.charge + (wpf.charge || 0)).toFixed(2);
@@ -18534,24 +18544,25 @@
               const code = m[1].toUpperCase();
               const nums = [...m[2].matchAll(/-?[\d,]+(?:\.\d+)?/g)].map((x) => parseFloat(x[0].replace(/,/g, '')));
               const amt = nums.length ? nums[nums.length - 1] : null;
+              // Consumption is the second-to-last number (columns: Present,
+              // Previous, Multiplier, Consumption, Amount). The heuristic
+              // find() was picking up the Multiplier (e.g. 1.05100) as usage.
+              const consumption = nums.length >= 4 ? nums[nums.length - 2] : null;
               if (code === 'GS') {
                 gasAmt = amt;
-                const c = nums.find((n, i) => i >= 2 && n < 100000 && n > 0);
-                if (c) gasUsage = c;
+                if (consumption && consumption > 0 && consumption < 1000000) gasUsage = consumption;
               } else if (code === 'FA') {
                 fuelAdj = amt;
               } else if (code === 'ST') {
                 stormAmt = amt;
               } else if (code === 'SW') {
                 sewerAmt = amt;
-                const c = nums.find((n, i) => i >= 2 && n > 100);
-                if (c) sewerUsage = c;
+                if (consumption && consumption > 0 && consumption < 10000000) sewerUsage = consumption;
               } else if (code === 'WP') {
                 wpfAmt = amt;
               } else if (code === 'WT') {
                 waterAmt = amt;
-                const c = nums.find((n, i) => i >= 2 && n > 100);
-                if (c) waterUsage = c;
+                if (consumption && consumption > 0 && consumption < 10000000) waterUsage = consumption;
               }
             }
             if (sewerUsage && (!waterUsage || waterUsage < 10)) waterUsage = sewerUsage;
@@ -18561,16 +18572,46 @@
               const r = _lbg_gasRate(serviceTo || serviceFrom || billDate);
               let gasTotal = gasAmt;
               let gasVariable = Math.round(Math.max(0, gasTotal - r.baseCharge) * 100) / 100;
-              bills.push({
-                ...shared,
-                Commodity: 'Gas',
-                NaturalGasTherms: gasUsage,
-                CustomerCharge: r.baseCharge,
-                GasCharge: gasVariable,
-                FuelAdjustment: fuelAdj,
-                TotalCurrentCharges: (gasTotal + (fuelAdj || 0)).toFixed(2),
-                TotalAmountDue: (gasTotal + (fuelAdj || 0)).toFixed(2),
-              });
+              const corrected =
+                gasUsage > 0
+                  ? _lbg_correctGasCharge(gasVariable, gasUsage, gasTotal, serviceTo || serviceFrom || billDate)
+                  : null;
+              if (corrected && corrected.corrected) {
+                gasVariable = corrected.charge;
+                gasTotal = corrected.total;
+              }
+              if (gasTotal < r.baseCharge && gasUsage > 0) {
+                gasVariable = Math.round(gasUsage * r.rate * 100) / 100;
+                gasTotal = gasVariable + r.baseCharge;
+              }
+              if (gasTotal < r.baseCharge && (!gasUsage || gasUsage === 0)) {
+                console.warn(
+                  '[Louisburg BillingDetail] Skipping suspicious gas bill: charge $' +
+                    gasTotal.toFixed(2) +
+                    ' < base $' +
+                    r.baseCharge +
+                    ' with 0 usage',
+                );
+              } else {
+                const gasWithFA = gasTotal + (fuelAdj || 0);
+                const gasBill = {
+                  ...shared,
+                  Commodity: 'Gas',
+                  NaturalGasTherms: gasUsage,
+                  CustomerCharge: r.baseCharge,
+                  GasCharge: gasVariable,
+                  FuelAdjustment: fuelAdj,
+                  TotalCurrentCharges: gasWithFA.toFixed(2),
+                  TotalAmountDue: gasWithFA.toFixed(2),
+                };
+                if (corrected && corrected.corrected)
+                  gasBill._auto_corrected_GasCharge = {
+                    original: gasAmt,
+                    corrected: gasVariable,
+                    reason: corrected.reason,
+                  };
+                bills.push(gasBill);
+              }
             }
             if (waterAmt) {
               const t = (waterAmt + (wpfAmt || 0)).toFixed(2);
@@ -20793,6 +20834,97 @@
                 };
               }
             }
+          }
+        }
+
+        // ── GENERAL VALIDATION: line item exceeds total (all utilities) ──
+        // A bill where any single charge field is greater than TotalCurrentCharges
+        // is physically impossible and indicates a parse/OCR error. Recalculate
+        // the total from charge components when possible; only warn when data is
+        // genuinely missing and can't be computed.
+        const COMMODITY_CHARGE_FIELDS = {
+          Gas: ['CustomerCharge', 'GasCharge', 'FuelAdjustment'],
+          Water: ['WaterCharge', 'WaterProtectionFee'],
+          Sewer: ['SewerCharge'],
+          Stormwater: ['StormWaterCharge'],
+          Propane: ['PropaneCharge'],
+          Electric: [
+            'CustomerCharge',
+            'FacilitiesCharge',
+            'BilledKWCharge',
+            'EnergyOnPeakCharge',
+            'EnergyOffPeakCharge',
+            'ECACharge',
+            'EERCharge',
+            'PTSCharge',
+            'TDCCharge',
+            'RkVACharge',
+            'TaxExemptDelivery',
+            'BillOffset',
+            'FranchiseFee',
+            'SolarCredit',
+            'RenewableCharge',
+          ],
+        };
+        const ALL_CHARGE_FIELDS = [...new Set(Object.values(COMMODITY_CHARGE_FIELDS).flat())];
+        for (const b of bills) {
+          const total = pf(b.TotalCurrentCharges);
+          if (total <= 0) continue;
+          const violations = [];
+          for (const f of ALL_CHARGE_FIELDS) {
+            const v = pf(b[f]);
+            if (v > 0 && v > total + 0.1) {
+              violations.push({ field: f, value: v });
+            }
+          }
+          if (violations.length === 0) continue;
+          const comm = (b.Commodity || '').replace(/\s/g, '');
+          const chargeFields = COMMODITY_CHARGE_FIELDS[comm] || ALL_CHARGE_FIELDS;
+          const compSum =
+            Math.round(
+              chargeFields.reduce(function (s, f) {
+                return s + pf(b[f]);
+              }, 0) * 100,
+            ) / 100;
+          if (compSum > total + 0.1) {
+            const origTotal = b.TotalCurrentCharges;
+            b.TotalCurrentCharges = compSum.toFixed(2);
+            b.TotalAmountDue = compSum.toFixed(2);
+            b._auto_corrected_TotalCurrentCharges = {
+              original: origTotal,
+              corrected: compSum.toFixed(2),
+              reason:
+                violations
+                  .map(function (vi) {
+                    return (
+                      vi.field + ' ($' + vi.value.toFixed(2) + ') exceeded total ($' + pf(origTotal).toFixed(2) + ')'
+                    );
+                  })
+                  .join('; ') +
+                ' — recalculated from charge components: $' +
+                compSum.toFixed(2),
+            };
+            console.log(
+              '[PostVerify] Total corrected for ' +
+                comm +
+                ': $' +
+                pf(origTotal).toFixed(2) +
+                ' → $' +
+                compSum.toFixed(2),
+            );
+          } else {
+            b._charge_exceeds_total = {
+              total: total,
+              violations: violations,
+              reason:
+                violations
+                  .map(function (vi) {
+                    return (
+                      vi.field + ' ($' + vi.value.toFixed(2) + ') > TotalCurrentCharges ($' + total.toFixed(2) + ')'
+                    );
+                  })
+                  .join('; ') + ' — could not auto-correct, verify against PDF',
+            };
           }
         }
 
@@ -26144,6 +26276,18 @@
       </div>`
           : '';
 
+        // Banner for charge-exceeds-total validation
+        const _cet = parsed['_charge_exceeds_total'];
+        const chargeExceedsTotalHtml = _cet
+          ? `<div style="padding:14px 18px;margin:10px 0;border-radius:10px;background:rgba(239,68,68,.22);border:2px solid #ef4444;color:#fecaca;font-size:14px;line-height:1.5;display:flex;align-items:flex-start;gap:12px;box-shadow:0 0 0 3px rgba(239,68,68,.08)">
+        <span style="font-size:26px;line-height:1">&#9940;</span>
+        <div style="flex:1">
+          <div style="font-size:16px;font-weight:800;color:var(--red);letter-spacing:.2px">LINE ITEM EXCEEDS TOTAL</div>
+          <div style="font-size:12px;font-weight:500;color:#fca5a5;margin-top:4px">${_cet.reason}. This bill has impossible charges — verify against the source PDF.</div>
+        </div>
+      </div>`
+          : '';
+
         // Show auto-correction banner if any fields were corrected (rate×qty or OCR consensus)
         const correctedFields = Object.keys(parsed)
           .filter((k) => k.startsWith('_auto_corrected_'))
@@ -26323,7 +26467,7 @@
             <span><strong>${gapInfo.days}-day gap</strong> in ${gapInfo.commodity} billing before this period (previous ended ${gapInfo.afterPeriod})</span>
           </div>`
           : '';
-        elHdr.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${sumMismatchHtml}${gapHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}`;
+        elHdr.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${sumMismatchHtml}${chargeExceedsTotalHtml}${gapHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}`;
         el.innerHTML = `<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
 
         // ── Wire up change handlers: update data + recalculate total when user edits ──
