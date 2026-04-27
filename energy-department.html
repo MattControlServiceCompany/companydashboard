@@ -12648,8 +12648,8 @@
                       <div style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
                     </div>
                     <div class="card" style="background:var(--s1);padding:14px;text-align:center">
-                      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Current EUI</div>
-                      <div id="egfx-curEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--em);margin:6px 0" data-calc-formula="Current EUI = total current-year kBtu / building sqft">—</div>
+                      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Projected EUI</div>
+                      <div id="egfx-curEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--em);margin:6px 0" data-calc-formula="Projected EUI = actual months + baseline for remaining months, divided by sqft">—</div>
                       <div style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
                     </div>
                     <div class="card" style="background:var(--s1);padding:14px;text-align:center">
@@ -12658,8 +12658,8 @@
                       <div style="font-size:11px;color:var(--text2)">kBtu/ft² (${p.type || 'K-12 School'})</div>
                     </div>
                     <div class="card" style="background:var(--s1);padding:14px;text-align:center">
-                      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Cost Savings</div>
-                      <div id="egfx-costSav-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--green);margin:6px 0" data-calc-formula="Baseline annual cost minus current annual cost across all building meters">—</div>
+                      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Projected Savings</div>
+                      <div id="egfx-costSav-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--green);margin:6px 0" data-calc-formula="Baseline annual cost minus projected annual cost (actual months + baseline for remaining)">—</div>
                       <div id="egfx-costSavSub-${p.id}" style="font-size:11px;color:var(--text2)">vs baseline</div>
                     </div>
                   </div>
@@ -45275,7 +45275,7 @@
         let blCost = new Array(12).fill(0);
         // Year-over-year: collect by year
         let yearData = {}; // {year: {kwh:[12], kw:[12], gas:[12], cost:[12]}}
-        let blYear = null;
+        let blYears = new Set();
 
         const _pfe = (v) => parseFloat(v) || 0;
         const _elecCommodityCost = (bill) => _pfe(bill.kwhCost) + _pfe(bill.kwCost) + _pfe(bill.facKWCost);
@@ -45324,7 +45324,7 @@
                 }
                 if (isGas) blGas[mi] += parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
                 if (isGas) blCost[mi] += _gasCommodityCost(bill);
-                if (yr && !blYear) blYear = yr;
+                if (yr) blYears.add(yr);
               }
 
               // Collect year-over-year
@@ -45354,15 +45354,19 @@
         const blEui = sqft > 0 ? blKbtu / sqft : 0;
         const cbecsEui = CBECS_EUI[p.type] || 48.5;
 
-        // Find the most recent complete year for "current"
+        // Find the most recent year for "current" and project using baseline
+        // for months without actual data (rolling baseline approach)
         const sortedYears = Object.keys(yearData).map(Number).sort();
         const latestYear = sortedYears.length > 0 ? sortedYears[sortedYears.length - 1] : null;
         let curKwh = 0,
           curGas = 0,
           curEui = 0;
         if (latestYear && yearData[latestYear]) {
-          curKwh = yearData[latestYear].kwh.reduce((a, b) => a + b, 0);
-          curGas = yearData[latestYear].gas.reduce((a, b) => a + b, 0);
+          const yd = yearData[latestYear];
+          for (let mi = 0; mi < 12; mi++) {
+            curKwh += yd.kwh[mi] > 0 ? yd.kwh[mi] : blKwh[mi];
+            curGas += yd.gas[mi] > 0 ? yd.gas[mi] : blGas[mi];
+          }
           const curKbtu = curKwh * 3.412 + curGas * 100;
           curEui = sqft > 0 ? curKbtu / sqft : 0;
         }
@@ -45380,7 +45384,10 @@
         const totalBlCost = blCost.reduce((a, b) => a + b, 0);
         let totalCurCost = 0;
         if (latestYear && yearData[latestYear]) {
-          totalCurCost = yearData[latestYear].cost.reduce((a, b) => a + b, 0);
+          const yd = yearData[latestYear];
+          for (let mi = 0; mi < 12; mi++) {
+            totalCurCost += yd.cost[mi] > 0 ? yd.cost[mi] : blCost[mi];
+          }
         }
         if (costSavEl) {
           if (totalBlCost > 0 && totalCurCost > 0) {
@@ -45467,24 +45474,40 @@
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📊 Annual Summary by Year</div>
             <div style="overflow-x:auto">
               <table class="dtbl" style="min-width:500px">
-                <thead><tr><th>Year</th><th style="text-align:right">kWh</th><th style="text-align:right">Peak kW</th><th style="text-align:right">Gas Therms</th><th style="text-align:right">EUI kBtu/ft²</th><th style="text-align:right">vs Baseline</th></tr></thead>
+                <thead><tr><th>Year</th><th style="text-align:right">kWh</th><th style="text-align:right">Peak kW</th><th style="text-align:right">Gas Therms</th><th style="text-align:right">EUI kBtu/ft²</th><th style="text-align:right">Baseline EUI</th><th style="text-align:right">vs Baseline</th></tr></thead>
                 <tbody>
                   ${yrsToShow
                     .map((y) => {
                       const yd = yearData[y];
-                      const ykwh = yd.kwh.reduce((a, b) => a + b, 0);
-                      const ygas = yd.gas.reduce((a, b) => a + b, 0);
+                      const isLatest = y === latestYear;
+                      const moWithData = yd.kwh.filter((v) => v > 0).length + yd.gas.filter((v) => v > 0).length;
+                      const isPartial = isLatest && moWithData < 24;
+                      let ykwh = 0,
+                        ygas = 0;
+                      if (isPartial) {
+                        for (let mi = 0; mi < 12; mi++) {
+                          ykwh += yd.kwh[mi] > 0 ? yd.kwh[mi] : blKwh[mi];
+                          ygas += yd.gas[mi] > 0 ? yd.gas[mi] : blGas[mi];
+                        }
+                      } else {
+                        ykwh = yd.kwh.reduce((a, b) => a + b, 0);
+                        ygas = yd.gas.reduce((a, b) => a + b, 0);
+                      }
                       const ykw = Math.max(...yd.kw);
                       const ykbtu = ykwh * 3.412 + ygas * 100;
                       const yeui = sqft > 0 ? ykbtu / sqft : 0;
                       const diff = blEui > 0 ? ((yeui - blEui) / blEui) * 100 : 0;
-                      const isBl = blYear && y <= blYear;
+                      const isBl = blYears.has(y);
+                      const projLabel = isPartial
+                        ? ' <span style="font-size:9px;color:var(--text3)">(proj)</span>'
+                        : '';
                       return `<tr${isBl ? ' style="background:rgba(59,130,246,0.05)"' : ''}>
-                      <td style="font-weight:600">${y}${isBl ? ' <span style="font-size:10px;color:var(--accent)">(BL)</span>' : ''}</td>
+                      <td style="font-weight:600">${y}${isBl ? ' <span style="font-size:10px;color:var(--accent)">(BL)</span>' : ''}${projLabel}</td>
                       <td style="text-align:right;font-family:var(--mono)">${Math.round(ykwh).toLocaleString()}</td>
                       <td style="text-align:right;font-family:var(--mono)">${ykw.toFixed(1)}</td>
                       <td style="text-align:right;font-family:var(--mono)">${Math.round(ygas).toLocaleString()}</td>
                       <td style="text-align:right;font-family:var(--mono)">${yeui.toFixed(1)}</td>
+                      <td style="text-align:right;font-family:var(--mono);color:var(--accent)">${blEui > 0 ? blEui.toFixed(1) : '—'}</td>
                       <td style="text-align:right;font-family:var(--mono);color:${diff < 0 ? 'var(--green)' : diff > 0 ? 'var(--red)' : 'var(--text2)'}">${isBl ? '—' : (diff > 0 ? '+' : '') + diff.toFixed(1) + '%'}</td>
                     </tr>`;
                     })
