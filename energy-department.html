@@ -21674,6 +21674,10 @@
             (_blInherited ? ' · ' + _blInherited + ' baseline' + (_blInherited !== 1 ? 's' : '') + ' inherited' : '') +
             ' ✓',
         );
+        if (udSelProjId && udSelBldgId) {
+          renderUDDetail();
+          renderUDProjList();
+        }
       }
 
       // Store the current extraction's source PDF once per session and tag every bill
@@ -23795,6 +23799,10 @@
         // where every bill in the batch ended up — no digging through meter bill lists
         // to reconstruct what happened.
         _showSaveSummary(summaryEntries);
+        if (udSelProjId && udSelBldgId) {
+          renderUDDetail();
+          renderUDProjList();
+        }
       }
 
       function openDupModal(billIdx) {
@@ -35553,7 +35561,8 @@
       function renderMeterDataPane(pane, m, bills, incl) {
         const isElec = m.commodity === 'Electric';
         const isGas = m.commodity === 'Gas';
-        const isWater = !isElec && !isGas;
+        const isPropane = m.commodity === 'Propane';
+        const isWater = !isElec && !isGas && !isPropane;
         const { byYm: weatherByYm } = getWeatherForBuilding();
         const bldg = getUDBldg(udSelProjId, udSelBldgId);
         const sqft = parseInt(bldg?.sqft) || 0;
@@ -35611,10 +35620,15 @@
         }
 
         // ── Build month-keyed maps (shared helper — same result as Meter Data table) ──
-        const { elecByMo, gasByMo, waterByMo } = buildMoMap(m, blRows, sortedBills, incl);
+        const { elecByMo, gasByMo, waterByMo, propaneByMo } = buildMoMap(m, blRows, sortedBills, incl);
 
         const allMoKeys = Array.from(
-          new Set([...Object.keys(elecByMo), ...Object.keys(gasByMo), ...Object.keys(waterByMo)]),
+          new Set([
+            ...Object.keys(elecByMo),
+            ...Object.keys(gasByMo),
+            ...Object.keys(waterByMo),
+            ...Object.keys(propaneByMo),
+          ]),
         )
           .map(Number)
           .sort((a, c) => a - c);
@@ -35683,7 +35697,13 @@
         };
         const totW_costPerKgal = totW.kgal > 0 ? totW.cost / totW.kgal : null;
 
-        const totCost = totE.totalCost + totG.cost + totW.cost;
+        const totP = {
+          gallons: moList.reduce((s, mo) => s + (propaneByMo[mo]?.gallons || 0), 0),
+          cost: moList.reduce((s, mo) => s + (propaneByMo[mo]?.cost || 0), 0),
+        };
+        const totP_costPerGal = totP.gallons > 0 ? totP.cost / totP.gallons : null;
+
+        const totCost = totE.totalCost + totG.cost + totW.cost + totP.cost;
 
         // ── Summary bar computations ──
         const kwhPerSf = isElec && sqft > 0 ? totE.kwh / sqft : null;
@@ -37696,8 +37716,12 @@
         const totalCostSavHdr = hasTotalCostSav ? '<th class="num">Total Savings ($)</th>' : '';
         const _costUnitLabel = isPropane_p ? 'Gallon' : 'Therm';
         const thermRateHdr = hasGasCostSav ? '<th class="num">Actual $/' + _costUnitLabel + '</th>' : '';
-        const expThermCostHdr = hasGasCostSav ? '<th class="num">Exp ' + _costUnitLabel + ' × Rate</th>' : '';
-        const actThermCostHdr = hasGasCostSav ? '<th class="num">Act ' + _costUnitLabel + ' × Rate</th>' : '';
+        const expThermCostHdr = hasGasCostSav
+          ? '<th class="num">' + (isPropane_p ? 'Expected Propane Cost' : 'Exp ' + _costUnitLabel + ' × Rate') + '</th>'
+          : '';
+        const actThermCostHdr = hasGasCostSav
+          ? '<th class="num">' + (isPropane_p ? 'Actual Propane Cost' : 'Act ' + _costUnitLabel + ' × Rate') + '</th>'
+          : '';
         const thermCostSavHdr = hasGasCostSav ? '<th class="num">' + _costUnitLabel + ' Savings ($)</th>' : '';
         const euiTblHdr = '';
 
@@ -38919,7 +38943,7 @@
           { key: 'deliveryDate', label: 'Delivery Date', type: 'date', pdfKey: 'DeliveryDate' },
           { key: 'fuelType', label: 'Fuel Type', type: 'text', pdfKey: 'FuelType' },
           { key: 'gallonsDelivered', label: 'Gallons Delivered', type: 'number', pdfKey: 'GallonsDelivered' },
-          { key: 'unitPrice', label: 'Unit Price', type: 'currency', pdfKey: 'UnitPrice' },
+          { key: 'unitPrice', label: 'Unit Price ($/gal)', type: 'rate5', pdfKey: 'UnitPrice' },
           { section: 'Charges' },
           { key: 'subtotal', label: 'Subtotal', type: 'currency', pdfKey: 'Subtotal' },
           { key: 'tax', label: 'Tax', type: 'currency', pdfKey: 'Tax' },
