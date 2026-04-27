@@ -26015,6 +26015,32 @@
                 _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/Gal</div><input class="ef-input" value="$${waterRate.toFixed(5)}/Gal" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
               }
             }
+            if (parsed.Commodity === 'Propane' || _detectCommodity(parsed) === 'propane') {
+              const gallons = parseFloat(parsed.GallonsDelivered) || 0;
+              const unitPrice = parseFloat(parsed.UnitPrice) || 0;
+              const totalCharge = parseFloat(parsed.TotalCurrentCharges) || parseFloat(parsed.TotalAmountDue) || 0;
+              const propaneRate =
+                unitPrice > 0 ? unitPrice : gallons > 0 && totalCharge > 0 ? totalCharge / gallons : 0;
+              if (propaneRate > 0) {
+                _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/Gal</div><input class="ef-input" value="$${propaneRate.toFixed(5)}/Gal" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
+              }
+            }
+            if (parsed.Commodity === 'Sewer' || _detectCommodity(parsed) === 'sewer') {
+              const sewerUsage = parseFloat(parsed.SewerUsage) || 0;
+              const sewerCharge = parseFloat(parsed.SewerCharge) || 0;
+              if (sewerUsage > 0 && sewerCharge > 0) {
+                const sewerRate = sewerCharge / sewerUsage;
+                _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/Gal</div><input class="ef-input" value="$${sewerRate.toFixed(5)}/Gal" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
+              } else if (sewerCharge > 0) {
+                _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Sewer Charge</div><input class="ef-input" value="$${sewerCharge.toFixed(2)}" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
+              }
+            }
+            if (parsed.Commodity === 'Stormwater' || _detectCommodity(parsed) === 'stormwater') {
+              const swCharge = parseFloat(parsed.StormWaterCharge) || parseFloat(parsed.TotalCurrentCharges) || 0;
+              if (swCharge > 0) {
+                _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Stormwater Charge</div><input class="ef-input" value="$${swCharge.toFixed(2)}" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
+              }
+            }
             return `<div style="border-top:2px solid var(--border);margin-top:4px;padding-top:4px"><div class="ef-charge-row">${_kwhRateCell}${_kwRateCell}<div class="ef-item center" style="${itemStyle}"><div class="ef-key" style="color:${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges ?? '') !== '' ? '$' + totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px;text-align:center"></div><div class="ef-running ${cls}" style="font-weight:700;font-size:11px;flex-direction:column;align-items:flex-end"><span>$${rtFmt}${icon}</span>${diffLine}</div></div></div>`;
           }
           return '';
