@@ -19396,7 +19396,7 @@
           for (const f of missingChecks) {
             const v = b[f];
             if (v === null || v === undefined || v === '' || v === 0) {
-              rowFlags.push({ msg: 'Missing ' + f + ' — this field is typically present', level: 'warn' });
+              rowFlags.push({ field: f, msg: 'Missing ' + f + ' — this field is typically present', level: 'warn' });
             }
           }
           if (rowFlags.length) flags[b.id] = rowFlags;
@@ -30560,11 +30560,34 @@
             flags.forEach((f) => {
               if (f.field == null || fieldColMap[f.field] == null) return;
               const colIdx = fieldColMap[f.field];
+              const _warnColLabel =
+                {
+                  kwh: 'kWh',
+                  kwhCost: 'kWh Cost',
+                  demandKW: 'Demand kW',
+                  billedKW: 'Billed kW',
+                  kwCost: 'kW Cost',
+                  totalCost: 'Total Cost',
+                  days: 'Billing Days',
+                  therms: 'Therms',
+                  thermCost: 'Gas Charge',
+                  usage: 'Usage',
+                  cost: 'Cost',
+                  waterUsage: 'Water Usage',
+                  waterCharge: 'Water Charge',
+                  sewerCharge: 'Sewer Charge',
+                  stormWaterCharge: 'Stormwater Charge',
+                  gallonsDelivered: 'Gallons',
+                  readDifference: 'Read Difference',
+                }[f.field] ||
+                f.field ||
+                '';
+              const _warnTip = (_warnColLabel ? _warnColLabel + ': ' : '') + f.msg;
               let tdCount = 0;
               rowHtml = rowHtml.replace(/<td([^>]*)>/g, (match, attrs) => {
                 tdCount++;
                 if (tdCount === colIdx + 1) {
-                  return `<td${attrs}><span title="${f.msg.replace(/"/g, '&quot;')}" style="cursor:help;color:var(--amber);font-size:10px;margin-right:3px;opacity:0.8">ⓘ</span>`;
+                  return `<td${attrs}><span title="${_warnTip.replace(/"/g, '&quot;')}" style="cursor:help;color:var(--amber);font-size:10px;margin-right:3px;opacity:0.8">ⓘ</span>`;
                 }
                 return match;
               });
