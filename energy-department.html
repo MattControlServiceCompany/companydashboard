@@ -45276,12 +45276,15 @@
         // Year-over-year: collect by year
         let yearData = {}; // {year: {kwh:[12], kw:[12], gas:[12], cost:[12]}}
         let blYears = new Set();
+        let bldgYearData = {}; // {bldgName: {year: {kwh:[12], kw:[12], gas:[12], cost:[12]}}}
 
         const _pfe = (v) => parseFloat(v) || 0;
         const _elecCommodityCost = (bill) => _pfe(bill.kwhCost) + _pfe(bill.kwCost) + _pfe(bill.facKWCost);
         const _gasCommodityCost = (bill) => _pfe(bill.totalCost) || _pfe(bill.thermCost) || _pfe(bill.cost) || 0;
 
         bldgs.forEach((b) => {
+          const bName = b.name || 'Unknown';
+          if (!bldgYearData[bName]) bldgYearData[bName] = {};
           (b.meters || []).forEach((m) => {
             if (m.baselineInclude === false) return;
             const isElec = m.commodity === 'Electric';
@@ -45327,7 +45330,7 @@
                 if (yr) blYears.add(yr);
               }
 
-              // Collect year-over-year
+              // Collect year-over-year (project-level and per-building)
               if (yr) {
                 if (!yearData[yr])
                   yearData[yr] = {
@@ -45336,13 +45339,33 @@
                     gas: new Array(12).fill(0),
                     cost: new Array(12).fill(0),
                   };
+                if (!bldgYearData[bName][yr])
+                  bldgYearData[bName][yr] = {
+                    kwh: new Array(12).fill(0),
+                    kw: new Array(12).fill(0),
+                    gas: new Array(12).fill(0),
+                    cost: new Array(12).fill(0),
+                  };
+                const byd = bldgYearData[bName][yr];
                 if (isElec) {
-                  yearData[yr].kwh[mi] += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-                  yearData[yr].kw[mi] = Math.max(yearData[yr].kw[mi], parseFloat(bill.demandKW) || 0);
-                  yearData[yr].cost[mi] += _elecCommodityCost(bill);
+                  const kwhVal = parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+                  const kwVal = parseFloat(bill.demandKW) || 0;
+                  const costVal = _elecCommodityCost(bill);
+                  yearData[yr].kwh[mi] += kwhVal;
+                  yearData[yr].kw[mi] = Math.max(yearData[yr].kw[mi], kwVal);
+                  yearData[yr].cost[mi] += costVal;
+                  byd.kwh[mi] += kwhVal;
+                  byd.kw[mi] = Math.max(byd.kw[mi], kwVal);
+                  byd.cost[mi] += costVal;
                 }
-                if (isGas) yearData[yr].gas[mi] += parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
-                if (isGas) yearData[yr].cost[mi] += _gasCommodityCost(bill);
+                if (isGas) {
+                  const gasVal = parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
+                  const gasCostVal = _gasCommodityCost(bill);
+                  yearData[yr].gas[mi] += gasVal;
+                  yearData[yr].cost[mi] += gasCostVal;
+                  byd.gas[mi] += gasVal;
+                  byd.cost[mi] += gasCostVal;
+                }
               }
             });
           });
@@ -45515,7 +45538,119 @@
                 </tbody>
               </table>
             </div>
-          </div>`;
+          </div>
+          ${
+            bldgs.length > 1
+              ? `
+          <div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
+            <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">🏢 Annual Summary by Building</div>
+            <div style="overflow-x:auto">
+              <table class="dtbl" style="min-width:500px">
+                <thead><tr><th>Building</th><th>Year</th><th style="text-align:right">kWh</th><th style="text-align:right">Peak kW</th><th style="text-align:right">Gas Therms</th><th style="text-align:right">EUI kBtu/ft²</th></tr></thead>
+                <tbody>
+                  ${Object.entries(bldgYearData)
+                    .map(([bName, byrs]) => {
+                      const bObj = bldgs.find((bb) => bb.name === bName);
+                      const bSqft = (bObj && bObj.sqft) || sqft / bldgs.length || 1;
+                      return yrsToShow
+                        .map((y) => {
+                          const bd = byrs[y];
+                          if (!bd) return '';
+                          const bkwh = bd.kwh.reduce((a, b2) => a + b2, 0);
+                          const bgas = bd.gas.reduce((a, b2) => a + b2, 0);
+                          const bkw = Math.max(...bd.kw);
+                          const bkbtu = bkwh * 3.412 + bgas * 100;
+                          const beui = bSqft > 0 ? bkbtu / bSqft : 0;
+                          if (bkwh === 0 && bgas === 0) return '';
+                          return (
+                            '<tr>' +
+                            '<td style="font-weight:500">' +
+                            bName +
+                            '</td>' +
+                            '<td>' +
+                            y +
+                            '</td>' +
+                            '<td style="text-align:right;font-family:var(--mono)">' +
+                            Math.round(bkwh).toLocaleString() +
+                            '</td>' +
+                            '<td style="text-align:right;font-family:var(--mono)">' +
+                            bkw.toFixed(1) +
+                            '</td>' +
+                            '<td style="text-align:right;font-family:var(--mono)">' +
+                            Math.round(bgas).toLocaleString() +
+                            '</td>' +
+                            '<td style="text-align:right;font-family:var(--mono)">' +
+                            beui.toFixed(1) +
+                            '</td></tr>'
+                          );
+                        })
+                        .join('');
+                    })
+                    .join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>`
+              : ''
+          }
+          ${(() => {
+            const postBlYears = yrsToShow.filter((y) => !blYears.has(y));
+            if (postBlYears.length === 0 || blEui === 0) return '';
+            const qNames = ['Q1 (Jan-Mar)', 'Q2 (Apr-Jun)', 'Q3 (Jul-Sep)', 'Q4 (Oct-Dec)'];
+            const qMonths = [
+              [0, 1, 2],
+              [3, 4, 5],
+              [6, 7, 8],
+              [9, 10, 11],
+            ];
+            let qHtml = '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">';
+            qHtml +=
+              '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📅 Quarterly Savings vs Baseline</div>';
+            qHtml += '<div style="overflow-x:auto"><table class="dtbl" style="min-width:500px">';
+            qHtml +=
+              '<thead><tr><th>Year</th><th>Quarter</th><th style="text-align:right">Baseline kBtu</th><th style="text-align:right">Actual kBtu</th><th style="text-align:right">Savings kBtu</th><th style="text-align:right">Savings %</th></tr></thead><tbody>';
+            for (const y of postBlYears) {
+              const yd = yearData[y];
+              if (!yd) continue;
+              for (let qi = 0; qi < 4; qi++) {
+                let qBlKbtu = 0,
+                  qActKbtu = 0;
+                for (const mi of qMonths[qi]) {
+                  qBlKbtu += blKwh[mi] * 3.412 + blGas[mi] * 100;
+                  qActKbtu += yd.kwh[mi] * 3.412 + yd.gas[mi] * 100;
+                }
+                if (qBlKbtu === 0 && qActKbtu === 0) continue;
+                const qSav = qBlKbtu - qActKbtu;
+                const qPct = qBlKbtu > 0 ? (qSav / qBlKbtu) * 100 : 0;
+                const savColor = qSav >= 0 ? 'var(--green)' : 'var(--red)';
+                qHtml +=
+                  '<tr><td>' +
+                  y +
+                  '</td><td>' +
+                  qNames[qi] +
+                  '</td>' +
+                  '<td style="text-align:right;font-family:var(--mono)">' +
+                  Math.round(qBlKbtu).toLocaleString() +
+                  '</td>' +
+                  '<td style="text-align:right;font-family:var(--mono)">' +
+                  Math.round(qActKbtu).toLocaleString() +
+                  '</td>' +
+                  '<td style="text-align:right;font-family:var(--mono);color:' +
+                  savColor +
+                  '">' +
+                  Math.round(qSav).toLocaleString() +
+                  '</td>' +
+                  '<td style="text-align:right;font-family:var(--mono);color:' +
+                  savColor +
+                  '">' +
+                  (qSav >= 0 ? '+' : '') +
+                  qPct.toFixed(1) +
+                  '%</td></tr>';
+              }
+            }
+            qHtml += '</tbody></table></div></div>';
+            return qHtml;
+          })()}`;
       }
       function egfxExport(projId) {
         showToast('Export coming soon');
