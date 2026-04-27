@@ -21149,6 +21149,16 @@
           if (total <= 0) continue;
           const comm = (b.Commodity || '').replace(/\s/g, '');
           const chargeFields = COMMODITY_CHARGE_FIELDS[comm] || ALL_CHARGE_FIELDS;
+          const compSum =
+            Math.round(
+              chargeFields.reduce(function (s, f) {
+                return s + pf(b[f]);
+              }, 0) * 100,
+            ) / 100;
+          // If sum of all components (including negatives like Fuel Adjustment)
+          // matches total within tolerance, no violation — individual items can
+          // legitimately exceed total when credits/adjustments bring it down.
+          if (Math.abs(compSum - total) < 0.5) continue;
           const violations = [];
           for (const f of chargeFields) {
             const v = pf(b[f]);
@@ -21157,12 +21167,6 @@
             }
           }
           if (violations.length === 0) continue;
-          const compSum =
-            Math.round(
-              chargeFields.reduce(function (s, f) {
-                return s + pf(b[f]);
-              }, 0) * 100,
-            ) / 100;
           if (compSum > total + 0.1) {
             const origTotal = b.TotalCurrentCharges;
             b.TotalCurrentCharges = compSum.toFixed(2);
@@ -30266,11 +30270,6 @@
                 m.id +
                 '\',this)">' +
                 commodityPill(m.commodity) +
-                '<span style="font-size:12px;font-weight:600;color:' +
-                (active ? 'var(--text)' : _pTxt) +
-                '">' +
-                (m.commodity || '—') +
-                '</span>' +
                 (m.provider
                   ? '<span style="font-size:9px;color:var(--text3);max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
                     m.provider.replace(/City of /i, '').replace(/ Company$/i, '') +
