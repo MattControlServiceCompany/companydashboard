@@ -29715,6 +29715,10 @@
                 m.baselineInclude === false
                   ? '<span style="font-size:9px;color:var(--text3);opacity:.7" title="Excluded from baseline &amp; performance">excl</span>'
                   : '';
+              const _blTag =
+                m.baseline && m.baseline.months && m.baseline.months.length > 0
+                  ? '<span style="font-size:8px;font-weight:700;color:#22c55e;background:rgba(34,197,94,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Baseline set">BL</span>'
+                  : '';
               return (
                 '<button class="ma-meter-pill' +
                 _pCls +
@@ -29734,6 +29738,7 @@
                 (bcount !== 1 ? 's' : '') +
                 '</span>' +
                 _exclTag +
+                _blTag +
                 '</button>'
               );
             })
