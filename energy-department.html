@@ -23913,40 +23913,60 @@
           box._showingRaw = true;
           btn.textContent = '← Back';
           const text = window._pdfRawText || '(no raw text captured — try reloading the PDF)';
-          const splitRe = new RegExp(
-            '(?=(?:' +
-              _EVG_BILLING_DETAILS.source +
-              '|Billing[ \\t\\n\\r]+Details[ \\t\\n\\r]*[-\\u2013\\-][ \\t\\n\\r]*service[ \\t\\n\\r]+from))',
-            'gi',
-          );
-          const raw = text.split(splitRe);
-          // Match sections to bills the same way extractAll does
-          const getDP = (s) => {
-            const m =
-              s.match(_EVG_SERVICE_FROM) ||
-              s.match(/service\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i);
-            return m ? m[1] + '|' + m[2] : null;
-          };
-          const sections = [];
-          for (const frag of raw) {
-            const dates = getDP(frag);
-            const isHdr = _EVG_BILLING_DETAILS.test(frag.trim()) || /^Billing\s+Details/i.test(frag.trim());
-            if (!isHdr || !dates) {
-              if (sections.length) sections[sections.length - 1] += frag;
-              else sections.push(frag);
-            } else if (sections.length && getDP(sections[sections.length - 1]) === dates) {
-              sections[sections.length - 1] += frag;
-            } else {
-              sections.push(frag);
-            }
-          }
-          const validSections = sections.filter(
-            (s) => _EVG_SERVICE_FROM.test(s) || /service\s+from[:\s]\s*\d{2}\/\d{2}\/\d{4}/i.test(s),
-          );
-          // Show section matching currently selected bill index
           const idx = window._pdfMultiIdx || 0;
-          const section = validSections[idx] || validSections[0] || text;
-          const label = 'Section ' + (idx + 1) + ' of ' + validSections.length;
+          let validSections;
+          // Non-Evergy PDFs use %%PAGE_N%% markers — split by those instead
+          const hasPageMarkers = /%%PAGE_\d+%%/.test(text);
+          if (hasPageMarkers) {
+            const pageMarkers = [...text.matchAll(/%%PAGE_(\d+)%%/g)];
+            const pages = [];
+            for (let pi = 0; pi < pageMarkers.length; pi++) {
+              const s = pageMarkers[pi].index;
+              const e = pi + 1 < pageMarkers.length ? pageMarkers[pi + 1].index : text.length;
+              pages.push(text.slice(s, e));
+            }
+            validSections = pages;
+            // Multi-commodity pages produce multiple bills from one page.
+            // Use _pageIndex from the extracted bills to find the right page.
+            const bills = window._pdfMultiBills || [];
+            const currentBill = bills[idx];
+            var pageIdx = currentBill && currentBill._pageIndex ? currentBill._pageIndex - 1 : idx;
+            if (pageIdx >= validSections.length) pageIdx = Math.min(idx, validSections.length - 1);
+            var section = validSections[pageIdx] || validSections[0] || text;
+            var label = 'Page ' + (pageIdx + 1) + ' of ' + validSections.length;
+          } else {
+            const splitRe = new RegExp(
+              '(?=(?:' +
+                _EVG_BILLING_DETAILS.source +
+                '|Billing[ \\t\\n\\r]+Details[ \\t\\n\\r]*[-\\u2013\\-][ \\t\\n\\r]*service[ \\t\\n\\r]+from))',
+              'gi',
+            );
+            const raw = text.split(splitRe);
+            const getDP = (s) => {
+              const m =
+                s.match(_EVG_SERVICE_FROM) ||
+                s.match(/service\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i);
+              return m ? m[1] + '|' + m[2] : null;
+            };
+            const sections = [];
+            for (const frag of raw) {
+              const dates = getDP(frag);
+              const isHdr = _EVG_BILLING_DETAILS.test(frag.trim()) || /^Billing\s+Details/i.test(frag.trim());
+              if (!isHdr || !dates) {
+                if (sections.length) sections[sections.length - 1] += frag;
+                else sections.push(frag);
+              } else if (sections.length && getDP(sections[sections.length - 1]) === dates) {
+                sections[sections.length - 1] += frag;
+              } else {
+                sections.push(frag);
+              }
+            }
+            validSections = sections.filter(
+              (s) => _EVG_SERVICE_FROM.test(s) || /service\s+from[:\s]\s*\d{2}\/\d{2}\/\d{4}/i.test(s),
+            );
+            var section = validSections[idx] || validSections[0] || text;
+            var label = 'Section ' + (idx + 1) + ' of ' + validSections.length;
+          }
           box.innerHTML =
             '<div style="font-size:11px;color:var(--accent);margin-bottom:8px;font-weight:600">' +
             label +
