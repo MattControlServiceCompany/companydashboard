@@ -21084,6 +21084,15 @@
               const c = pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
               return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
             })(),
+            totalSewerRate: (() => {
+              const u = pf(bill.SewerUsage);
+              const c = pf(bill.SewerCharge);
+              return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
+            })(),
+            totalStormwaterRate: (() => {
+              const c = pf(bill.StormWaterCharge);
+              return c > 0 ? c.toFixed(2) : '';
+            })(),
           };
           if (bill._rates) {
             const cp = {};
@@ -21390,6 +21399,15 @@
             if (up > 0) return up.toFixed(5);
             const c = pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
             return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
+          })(),
+          totalSewerRate: (() => {
+            const u = pf(extracted.SewerUsage);
+            const c = pf(extracted.SewerCharge);
+            return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
+          })(),
+          totalStormwaterRate: (() => {
+            const c = pf(extracted.StormWaterCharge);
+            return c > 0 ? c.toFixed(2) : '';
           })(),
           Meter1_ReadStart: extracted.Meter1_ReadStart || '',
           Meter1_ReadEnd: extracted.Meter1_ReadEnd || '',
@@ -27086,6 +27104,15 @@
             if (up > 0) return up.toFixed(5);
             const c = pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
             return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
+          })(),
+          totalSewerRate: (() => {
+            const u = pf(extracted.SewerUsage);
+            const c = pf(extracted.SewerCharge);
+            return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
+          })(),
+          totalStormwaterRate: (() => {
+            const c = pf(extracted.StormWaterCharge);
+            return c > 0 ? c.toFixed(2) : '';
           })(),
         };
         if (proj) {
@@ -38128,6 +38155,8 @@
             pdfKey: 'WaterProtectionFee',
           },
           { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
+          { section: 'Rates' },
+          { key: 'totalWaterRate', label: 'Total $/Gal Rate', type: 'rate5' },
         ],
         Sewer: [
           { section: 'Account Info' },
@@ -38143,6 +38172,8 @@
           { key: 'sewerUsage', label: 'Sewer Usage (gal)', type: 'number', pdfKey: 'SewerUsage' },
           { key: 'sewerCharge', label: 'Sewer Charge', type: 'currency', pdfKey: 'SewerCharge' },
           { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
+          { section: 'Rates' },
+          { key: 'totalSewerRate', label: 'Total $/Gal Rate', type: 'rate5' },
         ],
         Stormwater: [
           { section: 'Account Info' },
@@ -38157,6 +38188,8 @@
           { section: 'Charges' },
           { key: 'stormWaterCharge', label: 'Stormwater Charge', type: 'currency', pdfKey: 'StormWaterCharge' },
           { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
+          { section: 'Rates' },
+          { key: 'totalStormwaterRate', label: 'Stormwater Charge', type: 'currency' },
         ],
         Propane: [
           { section: 'Account Info' },
@@ -38175,6 +38208,8 @@
           { key: 'subtotal', label: 'Subtotal', type: 'currency', pdfKey: 'Subtotal' },
           { key: 'tax', label: 'Tax', type: 'currency', pdfKey: 'Tax' },
           { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
+          { section: 'Rates' },
+          { key: 'totalPropaneRate', label: 'Total $/Gal Rate', type: 'rate5' },
         ],
       };
       // Pick a schema for a meter's commodity. Falls back to a minimal
