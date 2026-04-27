@@ -5793,7 +5793,6 @@
                   flex: 3 1 0;
                   min-width: 0;
                   min-height: 0;
-                  height: 100%;
                   overflow-y: auto;
                   padding-right: 4px;
                   display: flex;
@@ -21125,6 +21124,26 @@
                   })
                   .join('; ') + ' — could not auto-correct, verify against PDF',
             };
+          }
+        }
+
+        // ── RECALCULATE RATES after all corrections ──
+        // TotalKWhRate and TotalKWRate are computed during extraction but charge
+        // values may have been corrected by Strategy B, subtraction inference, or
+        // other post-extraction fixes. Recalculate from final charge values.
+        if (utilityName === 'Evergy') {
+          for (const b of bills) {
+            const kwhChargeSum =
+              pf(b.EnergyOnPeakCharge) +
+              pf(b.EnergyOffPeakCharge) +
+              pf(b.ECACharge) +
+              pf(b.EERCharge) +
+              pf(b.PTSCharge);
+            const totalKwh = pf(b.kWhConsumed);
+            b.TotalKWhRate = totalKwh > 0 && kwhChargeSum > 0 ? kwhChargeSum / totalKwh : null;
+            const kwChargeSum = pf(b.FacilitiesCharge) + pf(b.BilledKWCharge) + pf(b.TDCCharge);
+            const totalKw = pf(b.BilledKW) || pf(b.ActualKW) || pf(b.FacilitiesKW);
+            b.TotalKWRate = totalKw > 0 && kwChargeSum > 0 ? kwChargeSum / totalKw : null;
           }
         }
 
