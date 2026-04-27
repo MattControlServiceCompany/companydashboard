@@ -14946,6 +14946,7 @@
       ];
       // Evergy per-section extractor
       function _extractEvergy(t, acctOverride, addrOverride) {
+        const _pf = (v) => (v ? parseFloat(String(v).replace(/[$,\s]/g, '')) || 0 : 0);
         // ── OCR digit cleanup: replace 'o'/'O' with '0' in numeric contexts ──
         t = t.replace(/(\d)o/gi, '$10').replace(/o(\d)/gi, '0$1');
 
@@ -16379,7 +16380,6 @@
 
         // 5. THREE-WAY VERIFICATION: qty × rate = charge
         // For each charge line, if we have any 2 of {qty, rate, charge}, compute and verify the 3rd.
-        const _pf = (v) => (v ? parseFloat(String(v).replace(/[$,\s]/g, '')) || 0 : 0);
         // Also recover missing kW/kWh values from charge/rate, and missing charges from qty×rate.
         if (result._rates) {
           // Map charge fields to their quantity fields
