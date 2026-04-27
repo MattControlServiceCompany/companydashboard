@@ -17992,6 +17992,9 @@
               if (!nums.length) return { usage: null, charge: null, prevRead: null, currRead: null };
               const rawTokens = [...line.matchAll(/-?[\d,]+(?:\.\d+|-\d{2})?/g)].map((m) => m[0]);
               const charge = _lbg_cleanCents(rawTokens[rawTokens.length - 1]);
+              if (charge != null && charge > 0 && charge < 1 && rawTokens.length > 1) {
+                console.warn('[Louisburg parseLine] Very low charge $' + charge + ' from line:', line);
+              }
               let usage = 0,
                 prevRead = null,
                 currRead = null;
@@ -18077,26 +18080,38 @@
                 gasVariable = Math.round(gas.usage * r.rate * 100) / 100;
                 gasTotal = gasVariable + r.baseCharge;
               }
-              const gasWithFA = signedFuelAdj != null ? gasTotal + signedFuelAdj : gasTotal;
-              const gasBill = {
-                ...shared,
-                Commodity: 'Gas',
-                StartRead: gas.prevRead || null,
-                EndRead: gas.currRead || null,
-                NaturalGasTherms: gas.usage || null,
-                CustomerCharge: r.baseCharge,
-                GasCharge: gasVariable,
-                FuelAdjustment: signedFuelAdj,
-                TotalCurrentCharges: gasWithFA.toFixed(2),
-                TotalAmountDue: gasWithFA.toFixed(2),
-              };
-              if (corrected && corrected.corrected)
-                gasBill._auto_corrected_GasCharge = {
-                  original: gas.charge,
-                  corrected: gasVariable,
-                  reason: corrected.reason,
+              if (gasTotal < r.baseCharge && (!gas.usage || gas.usage === 0)) {
+                console.warn(
+                  '[Louisburg] Skipping suspicious gas bill: charge $' +
+                    gasTotal.toFixed(2) +
+                    ' < base $' +
+                    r.baseCharge +
+                    ' with 0 usage on page',
+                  pageIdx,
+                );
+                // Don't create this gas bill — the matched line is likely not a gas service line
+              } else {
+                const gasWithFA = signedFuelAdj != null ? gasTotal + signedFuelAdj : gasTotal;
+                const gasBill = {
+                  ...shared,
+                  Commodity: 'Gas',
+                  StartRead: gas.prevRead || null,
+                  EndRead: gas.currRead || null,
+                  NaturalGasTherms: gas.usage || null,
+                  CustomerCharge: r.baseCharge,
+                  GasCharge: gasVariable,
+                  FuelAdjustment: signedFuelAdj,
+                  TotalCurrentCharges: gasWithFA.toFixed(2),
+                  TotalAmountDue: gasWithFA.toFixed(2),
                 };
-              bills.push(gasBill);
+                if (corrected && corrected.corrected)
+                  gasBill._auto_corrected_GasCharge = {
+                    original: gas.charge,
+                    corrected: gasVariable,
+                    reason: corrected.reason,
+                  };
+                bills.push(gasBill);
+              }
             }
             if (water.charge != null && water.charge !== 0) {
               const waterTotal = (water.charge + (wpf.charge || 0)).toFixed(2);
