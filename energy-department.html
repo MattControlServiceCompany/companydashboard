@@ -20477,6 +20477,27 @@
                 }
               }
             }
+            // ── FINAL ActualKW consensus: BilledKW == TDCkW → ActualKW must match ──
+            // Runs after all other kW corrections. If BilledKW and TDCkW agree
+            // (within 0.01) and ActualKW differs by any amount, correct it.
+            const _fAct = pf(b.ActualKW),
+              _fBil = pf(b.BilledKW),
+              _fTdc = pf(b.TDCkW);
+            if (
+              _fAct > 0 &&
+              _fBil > 0 &&
+              _fTdc > 0 &&
+              Math.abs(_fBil - _fTdc) < 0.01 &&
+              _fBil % 1 !== 0 &&
+              Math.abs(_fAct - _fBil) > 0.001
+            ) {
+              b['_auto_corrected_ActualKW'] = {
+                original: b.ActualKW,
+                corrected: _fBil.toFixed(4),
+                reason: 'BilledKW (' + _fBil.toFixed(4) + ') == TDCkW (' + _fTdc.toFixed(4) + ') — ActualKW aligned',
+              };
+              b.ActualKW = _fBil.toFixed(4);
+            }
           }
         }
 
