@@ -17943,6 +17943,15 @@
                 BillingPeriodEnd = m[2];
                 break;
               }
+              // Fallback: dates with surrounding text (e.g., "Service Period 01/15/25 to 02/14/25")
+              if (!BillingPeriodStart) {
+                const m3 = ln.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(?:to|through|-)?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+                if (m3) {
+                  BillingPeriodStart = m3[1];
+                  BillingPeriodEnd = m3[2];
+                  break;
+                }
+              }
               const m2 = ln.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s+/);
               if (m2 && !BillingPeriodStart) {
                 BillingPeriodStart = m2[1];
