@@ -5962,7 +5962,7 @@
                 <div
                   class="ai-box"
                   id="pdfAIBox"
-                  style="flex: 1 1 auto; min-height: 200px; overflow-y: auto; margin-top: 4px"
+                  style="flex: 1 1 0; min-height: 200px; overflow-y: auto; margin-top: 4px"
                 >
                   Upload a PDF and select document type.
                 </div>
@@ -16686,19 +16686,92 @@
           }
         }
 
-        // Invariant check: OnPeakKWh + OffPeakKWh should equal kWhConsumed
+        // Invariant check + auto-correct: OnPeakKWh + OffPeakKWh should equal kWhConsumed
         if (result.OnPeakKWh && result.OffPeakKWh && result.kWhConsumed) {
           const onPk = _pf(result.OnPeakKWh);
           const offPk = _pf(result.OffPeakKWh);
           const total = _pf(result.kWhConsumed);
           const diff = Math.abs(onPk + offPk - total);
           if (diff > 1) {
-            result['_kwh_identity_mismatch'] = {
-              onPeakKwh: onPk,
-              offPeakKwh: offPk,
-              total: total,
-              diff: diff,
-            };
+            let corrected = false;
+            const onRi = _rates.EnergyOnPeakCharge;
+            const offRi = _rates.EnergyOffPeakCharge;
+            if (onRi && onRi.rate > 0 && _pf(result.EnergyOnPeakCharge) > 0) {
+              const derivedOn = _pf(result.EnergyOnPeakCharge) / onRi.rate;
+              if (derivedOn > 0 && Math.abs(derivedOn + offPk - total) < 1) {
+                result['_auto_corrected_OnPeakKWh'] = {
+                  original: result.OnPeakKWh,
+                  corrected: derivedOn.toFixed(4),
+                  reason:
+                    'Derived from charge ($' +
+                    _pf(result.EnergyOnPeakCharge).toFixed(2) +
+                    ') / rate ($' +
+                    onRi.rate.toFixed(5) +
+                    ') = ' +
+                    derivedOn.toFixed(4) +
+                    ' kWh. Fixes identity: ' +
+                    derivedOn.toFixed(2) +
+                    ' + ' +
+                    offPk.toFixed(2) +
+                    ' = ' +
+                    total.toFixed(2),
+                };
+                result.OnPeakKWh = derivedOn.toFixed(4);
+                if (onRi.qty) onRi.qty = derivedOn;
+                corrected = true;
+              }
+            }
+            if (!corrected && offRi && offRi.rate > 0 && _pf(result.EnergyOffPeakCharge) > 0) {
+              const derivedOff = _pf(result.EnergyOffPeakCharge) / offRi.rate;
+              if (derivedOff > 0 && Math.abs(onPk + derivedOff - total) < 1) {
+                result['_auto_corrected_OffPeakKWh'] = {
+                  original: result.OffPeakKWh,
+                  corrected: derivedOff.toFixed(4),
+                  reason:
+                    'Derived from charge ($' +
+                    _pf(result.EnergyOffPeakCharge).toFixed(2) +
+                    ') / rate ($' +
+                    offRi.rate.toFixed(5) +
+                    ') = ' +
+                    derivedOff.toFixed(4) +
+                    ' kWh. Fixes identity: ' +
+                    onPk.toFixed(2) +
+                    ' + ' +
+                    derivedOff.toFixed(2) +
+                    ' = ' +
+                    total.toFixed(2),
+                };
+                result.OffPeakKWh = derivedOff.toFixed(4);
+                if (offRi.qty) offRi.qty = derivedOff;
+                corrected = true;
+              }
+            }
+            if (!corrected) {
+              const derivedOn = total - offPk;
+              if (derivedOn > 0) {
+                result['_auto_corrected_OnPeakKWh'] = {
+                  original: result.OnPeakKWh,
+                  corrected: derivedOn.toFixed(4),
+                  reason:
+                    'kWhConsumed (' +
+                    total.toFixed(2) +
+                    ') - OffPeakKWh (' +
+                    offPk.toFixed(2) +
+                    ') = ' +
+                    derivedOn.toFixed(4),
+                };
+                result.OnPeakKWh = derivedOn.toFixed(4);
+                corrected = true;
+              }
+            }
+            if (!corrected) {
+              result['_kwh_identity_mismatch'] = {
+                onPeakKwh: onPk,
+                offPeakKwh: offPk,
+                total: total,
+                diff: diff,
+              };
+            }
           }
         }
 
@@ -20478,6 +20551,17 @@
                   corrected: b.kWhConsumed,
                   reason: `ReadDifference (${dR}) × MeterMultiplier (${mM}) = ${v.toFixed(4)}.`,
                 };
+              } else if (dR > 0 && mM > 0 && kC > 0) {
+                const expected = dR * mM;
+                const mismatch = Math.abs(kC - expected);
+                if (mismatch > 1 && mismatch / expected > 0.001) {
+                  b['_auto_corrected_kWhConsumed'] = {
+                    original: b.kWhConsumed,
+                    corrected: expected.toFixed(4),
+                    reason: `ReadDifference (${dR}) × MeterMultiplier (${mM}) = ${expected.toFixed(4)}. OCR value ${kC.toFixed(4)} differs by ${mismatch.toFixed(4)}.`,
+                  };
+                  b.kWhConsumed = expected.toFixed(4);
+                }
               } else if (kC > 0 && mM > 0 && !dR) {
                 const v = kC / mM;
                 b.ReadDifference = v.toFixed(4);
