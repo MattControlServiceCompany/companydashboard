@@ -21141,6 +21141,20 @@
               pf(b.PTSCharge);
             const totalKwh = pf(b.kWhConsumed);
             b.TotalKWhRate = totalKwh > 0 && kwhChargeSum > 0 ? kwhChargeSum / totalKwh : null;
+            console.log(
+              '[RateRecalc]',
+              b.BillingPeriodStart,
+              '→',
+              b.BillingPeriodEnd,
+              'OnPk=$' + pf(b.EnergyOnPeakCharge).toFixed(2),
+              'OffPk=$' + pf(b.EnergyOffPeakCharge).toFixed(2),
+              'ECA=$' + pf(b.ECACharge).toFixed(2),
+              'EER=$' + pf(b.EERCharge).toFixed(2),
+              'PTS=$' + pf(b.PTSCharge).toFixed(2),
+              'Sum=$' + kwhChargeSum.toFixed(2),
+              'kWh=' + totalKwh.toFixed(4),
+              'Rate=$' + (b.TotalKWhRate ? b.TotalKWhRate.toFixed(5) : 'null'),
+            );
             const kwChargeSum = pf(b.FacilitiesCharge) + pf(b.BilledKWCharge) + pf(b.TDCCharge);
             const totalKw = pf(b.BilledKW) || pf(b.ActualKW) || pf(b.FacilitiesKW);
             b.TotalKWRate = totalKw > 0 && kwChargeSum > 0 ? kwChargeSum / totalKw : null;
