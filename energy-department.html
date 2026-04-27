@@ -17926,6 +17926,65 @@
                 }
               }
             }
+            // ── Align billing periods across commodities from the same account ──
+            // Different page formats (old, new, billing-inquiry) can extract
+            // slightly different date ranges for the same billing cycle. Group
+            // bills by account + approximate period, then align outliers to the
+            // majority period so all commodities normalize to the same month.
+            const _parseD = (s) => {
+              if (!s) return null;
+              const p = String(s).split('/');
+              if (p.length !== 3) return null;
+              return new Date(+(p[2].length === 2 ? '20' + p[2] : p[2]), +p[0] - 1, +p[1]);
+            };
+            const _fmtD = (d) => d.getMonth() + 1 + '/' + d.getDate() + '/' + d.getFullYear();
+            const _midpoint = (b) => {
+              const s = _parseD(b.BillingPeriodStart),
+                e = _parseD(b.BillingPeriodEnd);
+              return s && e ? new Date((s.getTime() + e.getTime()) / 2) : null;
+            };
+            const acctGroups = {};
+            for (const b of bills) {
+              const acct = b.AccountNumber || 'unknown';
+              if (!acctGroups[acct]) acctGroups[acct] = [];
+              acctGroups[acct].push(b);
+            }
+            for (const acctBills of Object.values(acctGroups)) {
+              const withDates = acctBills.filter((b) => b.BillingPeriodStart && b.BillingPeriodEnd);
+              if (withDates.length < 2) continue;
+              // Cluster bills whose midpoints are within 20 days of each other
+              const clusters = [];
+              for (const b of withDates) {
+                const mid = _midpoint(b);
+                if (!mid) continue;
+                const cluster = clusters.find((c) => Math.abs(c.mid - mid) < 20 * 86400000);
+                if (cluster) cluster.bills.push(b);
+                else clusters.push({ mid: mid.getTime(), bills: [b] });
+              }
+              for (const cl of clusters) {
+                if (cl.bills.length < 2) continue;
+                // Find the most common start/end pair
+                const periodCounts = {};
+                for (const b of cl.bills) {
+                  const key = b.BillingPeriodStart + '|' + b.BillingPeriodEnd;
+                  periodCounts[key] = (periodCounts[key] || 0) + 1;
+                }
+                const winner = Object.entries(periodCounts).sort((a, b) => b[1] - a[1])[0];
+                const [winStart, winEnd] = winner[0].split('|');
+                for (const b of cl.bills) {
+                  if (b.BillingPeriodStart !== winStart || b.BillingPeriodEnd !== winEnd) {
+                    b._periodAligned = {
+                      originalStart: b.BillingPeriodStart,
+                      originalEnd: b.BillingPeriodEnd,
+                      alignedTo: winStart + ' – ' + winEnd,
+                    };
+                    b.BillingPeriodStart = winStart;
+                    b.BillingPeriodEnd = winEnd;
+                  }
+                }
+              }
+            }
+
             return bills;
           },
           extract: function (page) {
