@@ -25572,6 +25572,8 @@
           RkVACharge: 'RkVA Charge',
           BilledKW: 'Billed kW',
           BilledKWCharge: 'Billed kW Charge',
+          OnPeakKWh: 'On-Peak kWh',
+          OffPeakKWh: 'Off-Peak kWh',
           EnergyOnPeakCharge: 'Energy On-Peak Charge',
           EnergyOffPeakCharge: 'Energy Off-Peak Charge',
           ECACharge: 'ECA Charge',
@@ -25585,6 +25587,15 @@
           TotalCurrentCharges: 'Total Current Charges',
           TotalKWhRate: 'Total $/kWh Rate',
           TotalKWRate: 'Total $/kW Rate',
+          OnPeakRate: 'On-Peak Rate',
+          OffPeakRate: 'Off-Peak Rate',
+          FacilitiesRate: 'Facilities Rate',
+          DemandRate: 'Demand Rate',
+          TDCRate: 'TDC Rate',
+          RkVARate: 'RkVA Rate',
+          ECARate: 'ECA Rate',
+          EERRate: 'EER Rate',
+          PTSRate: 'PTS Rate',
           NaturalGasTherms: 'Natural Gas Therms',
           NaturalGasCCF: 'Natural Gas (CCF)',
           GasCharge: 'Gas Charge',
@@ -29983,8 +29994,13 @@
                 '<span style="font-size:12px;font-weight:600;color:' +
                 (active ? 'var(--text)' : _pTxt) +
                 '">' +
-                (m.provider || m.commodity || '—') +
+                (m.commodity || '—') +
                 '</span>' +
+                (m.provider
+                  ? '<span style="font-size:9px;color:var(--text3);max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+                    m.provider.replace(/City of /i, '').replace(/ Company$/i, '') +
+                    '</span>'
+                  : '') +
                 '<span style="font-size:11px;color:var(--text3)">' +
                 bcount +
                 ' bill' +
@@ -47265,16 +47281,6 @@
         // Attach contextual tooltips after DOM is settled
         setTimeout(function () {
           if (!chGetSetting('showTooltips', true)) return;
-
-          // 1. PDF drop zone
-          var dropZone = document.getElementById('dropZone');
-          if (dropZone) {
-            showTooltip(
-              dropZone,
-              'Drop a utility bill PDF here, or click to browse. The app reads electric, gas, and water bills automatically.',
-              { id: 'tip_dropzone', icon: '📄', position: 'below', delay: 1000 },
-            );
-          }
 
           // 2. Performance tab button (project level)
           var perfBtn = document.getElementById('ud-proj-perf-btn');
