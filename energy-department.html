@@ -37080,19 +37080,19 @@
         const expKWHdr = hasExpKW ? '<th class="num">Expected kW</th>' : '';
         const demKWHdr = hasKwData ? '<th class="num">Actual kW</th>' : '';
         const bilKWHdr = hasBilKW ? '<th class="num">Billed kW</th>' : '';
-        const expKwCostHdr = hasKwCostSav ? '<th class="num">Exp kW Cost</th>' : '';
-        const kwCostHdr = hasKwCost ? '<th class="num">Actual kW Cost</th>' : '';
-        const kwCostSavHdr = hasKwCostSav ? '<th class="num">kW Cost Savings</th>' : '';
-        const kwhRateHdr = hasKwhCostSav ? '<th class="num">$ / kWh Rate</th>' : '';
-        const expKwhCostHdr = hasKwhCostSav ? '<th class="num">Expected kWh Cost</th>' : '';
-        const actKwhCostHdr = hasKwhCostSav ? '<th class="num">Actual kWh Cost</th>' : '';
-        const kwhCostSavHdr = hasKwhCostSav ? '<th class="num">kWh Cost Savings</th>' : '';
-        const totalCostSavHdr = hasTotalCostSav ? '<th class="num">Total Cost Savings</th>' : '';
+        const expKwCostHdr = hasKwCostSav ? '<th class="num">Exp kW × Rate</th>' : '';
+        const kwCostHdr = hasKwCost ? '<th class="num">Act kW × Rate</th>' : '';
+        const kwCostSavHdr = hasKwCostSav ? '<th class="num">kW Savings ($)</th>' : '';
+        const kwhRateHdr = hasKwhCostSav ? '<th class="num">Actual $/kWh</th>' : '';
+        const expKwhCostHdr = hasKwhCostSav ? '<th class="num">Exp kWh × Rate</th>' : '';
+        const actKwhCostHdr = hasKwhCostSav ? '<th class="num">Act kWh × Rate</th>' : '';
+        const kwhCostSavHdr = hasKwhCostSav ? '<th class="num">kWh Savings ($)</th>' : '';
+        const totalCostSavHdr = hasTotalCostSav ? '<th class="num">Total Savings ($)</th>' : '';
         const _costUnitLabel = isPropane_p ? 'Gallon' : 'Therm';
-        const thermRateHdr = hasGasCostSav ? '<th class="num">$ / ' + _costUnitLabel + ' Rate</th>' : '';
-        const expThermCostHdr = hasGasCostSav ? '<th class="num">Expected ' + _costUnitLabel + ' Cost</th>' : '';
-        const actThermCostHdr = hasGasCostSav ? '<th class="num">Actual ' + _costUnitLabel + ' Cost</th>' : '';
-        const thermCostSavHdr = hasGasCostSav ? '<th class="num">' + _costUnitLabel + ' Cost Savings</th>' : '';
+        const thermRateHdr = hasGasCostSav ? '<th class="num">Actual $/' + _costUnitLabel + '</th>' : '';
+        const expThermCostHdr = hasGasCostSav ? '<th class="num">Exp ' + _costUnitLabel + ' × Rate</th>' : '';
+        const actThermCostHdr = hasGasCostSav ? '<th class="num">Act ' + _costUnitLabel + ' × Rate</th>' : '';
+        const thermCostSavHdr = hasGasCostSav ? '<th class="num">' + _costUnitLabel + ' Savings ($)</th>' : '';
         const euiTblHdr = '';
 
         // ── kW demand map for all chartRows (electric only) ──
