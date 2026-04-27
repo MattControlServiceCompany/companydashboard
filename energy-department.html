@@ -26388,15 +26388,19 @@
             // Compute total rates inline with Total Current Charges row
             let _kwhRateCell = '<div></div>',
               _kwRateCell = '<div></div>';
-            if (parsed._rates) {
-              const _gr = (k) => (parsed._rates[k] && parsed._rates[k].rate > 0 ? parsed._rates[k].rate : 0);
-              const kwhRate =
-                _gr('EnergyOnPeakCharge') +
-                _gr('EnergyOffPeakCharge') +
-                _gr('ECACharge') +
-                _gr('EERCharge') +
-                _gr('PTSCharge');
-              const kwRate = _gr('FacilitiesCharge') + _gr('BilledKWCharge') + _gr('TDCCharge');
+            if (parsed._rates || parsed.kWhConsumed) {
+              const _gc = (k) => _pf(parsed[k]);
+              const kwhCharges =
+                _gc('EnergyOnPeakCharge') +
+                _gc('EnergyOffPeakCharge') +
+                _gc('ECACharge') +
+                _gc('EERCharge') +
+                _gc('PTSCharge');
+              const totalKwh = _pf(parsed.kWhConsumed);
+              const kwhRate = totalKwh > 0 && kwhCharges > 0 ? kwhCharges / totalKwh : 0;
+              const kwCharges = _gc('FacilitiesCharge') + _gc('BilledKWCharge') + _gc('TDCCharge');
+              const totalKw = _pf(parsed.BilledKW) || _pf(parsed.ActualKW) || _pf(parsed.FacilitiesKW);
+              const kwRate = totalKw > 0 && kwCharges > 0 ? kwCharges / totalKw : 0;
               if (kwhRate > 0)
                 _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/kWh</div><input class="ef-input" value="$${kwhRate.toFixed(5)}/kWh" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
               if (kwRate > 0)
