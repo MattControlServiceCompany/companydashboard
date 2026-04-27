@@ -692,7 +692,7 @@
         padding: 0;
         flex: 1;
         min-height: 0;
-        overflow-y: auto;
+        overflow: hidden;
       }
       .tab-panel {
         display: none;
@@ -5774,9 +5774,15 @@
                  goes from the top of the body area to the bottom and manages its own vertical
                  scrolling. No shared frozen header across columns — that caused the visual gap
                  between the "Extraction Output" label and the JSON box in previous layouts. -->
-            <div id="pdfBody" style="display: flex; gap: 16px; padding: 0 18px 16px; min-height: 600px">
-              <!-- LEFT COLUMN: drop zone → doc type → extracted fields -->
-              <div id="pdfLeftCol" style="flex: 3 1 0; min-width: 0; padding-right: 4px">
+            <div
+              id="pdfBody"
+              style="flex: 1; display: flex; gap: 16px; padding: 0 18px 16px; min-height: 0; overflow: hidden"
+            >
+              <!-- LEFT COLUMN: scrolls independently -->
+              <div
+                id="pdfLeftCol"
+                style="flex: 3 1 0; min-width: 0; min-height: 0; overflow-y: auto; padding-right: 4px"
+              >
                 <div
                   class="drop-zone"
                   id="dropZone"
@@ -5866,7 +5872,7 @@
               </div>
               <!-- RIGHT COLUMN: Extraction Output label + buttons + pills stay pinned at top,
                    JSON box (pdfAIBox) fills the remainder and scrolls on its own. -->
-              <div id="pdfRightCol" style="flex: 2 1 0; min-width: 340px">
+              <div id="pdfRightCol" style="flex: 2 1 0; min-width: 340px; min-height: 0; overflow-y: auto">
                 <div
                   style="
                     display: flex;
@@ -38742,6 +38748,16 @@
       // legacy rows that were saved before the field was renamed.
       function _billReadValue(row, entry) {
         if (!row) return '';
+        if (entry.key === 'totalKwhRate') {
+          const kwh = parseFloat(row.kwh) || 0;
+          const chg = parseFloat(row.kwhCost) || 0;
+          if (kwh > 0 && chg > 0) return (chg / kwh).toFixed(5);
+        }
+        if (entry.key === 'totalKwRate') {
+          const kw = parseFloat(row.billedKW) || parseFloat(row.demandKW) || parseFloat(row.facKW) || 0;
+          const chg = parseFloat(row.kwCost) || 0;
+          if (kw > 0 && chg > 0) return (chg / kw).toFixed(5);
+        }
         const direct = row[entry.key];
         if (direct !== undefined && direct !== null && direct !== '' && direct !== 'null') return direct;
         if (entry.fallbackKey) {
