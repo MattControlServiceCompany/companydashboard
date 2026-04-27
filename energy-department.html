@@ -20100,7 +20100,7 @@
             })();
             // Decide whether current kWhConsumed is suspect
             const curKwh = pf(b.kWhConsumed);
-            const kwhOutOfRange = curKwh > 0 && (curKwh > 1000000 || curKwh < 1);
+            const kwhOutOfRange = curKwh > 0 && (curKwh > 500000 || curKwh < 1);
             const kwhOffFromConsensus =
               consensusKwh && curKwh > 0 && Math.abs(curKwh - consensusKwh) / consensusKwh > 0.05;
             if (consensusKwh && (kwhOutOfRange || kwhOffFromConsensus || !curKwh)) {
@@ -20408,6 +20408,17 @@
               if (v > 10000) {
                 b['_likely_missing_' + kwField] = true;
                 b[kwField] = null;
+              }
+            }
+            // kW can never exceed kWh — if it does, the kW value is garbage
+            const _finalKwh = pf(b.kWhConsumed);
+            if (_finalKwh > 0) {
+              for (const kwField of ['ActualKW', 'BilledKW', 'FacilitiesKW', 'TDCkW']) {
+                const v = pf(b[kwField]);
+                if (v > 0 && v > _finalKwh) {
+                  b['_likely_missing_' + kwField] = true;
+                  b[kwField] = null;
+                }
               }
             }
           }
@@ -20943,6 +20954,89 @@
           }
         }
 
+        // ── RE-VALIDATE: OnPeakKWh + OffPeakKWh = kWhConsumed ──
+        // The extractor corrects On-Peak kWh early, but _postExtractionVerify may
+        // later change kWhConsumed (via charge-line consensus or meter-table identity).
+        // Re-check the identity and re-correct On-Peak/Off-Peak to match the final kWhConsumed.
+        if (utilityName === 'Evergy') {
+          for (const b of bills) {
+            const onPk = pf(b.OnPeakKWh);
+            const offPk = pf(b.OffPeakKWh);
+            const total = pf(b.kWhConsumed);
+            if (onPk > 0 && offPk > 0 && total > 0 && Math.abs(onPk + offPk - total) > 1) {
+              const onRi = b._rates && b._rates.EnergyOnPeakCharge;
+              const offRi = b._rates && b._rates.EnergyOffPeakCharge;
+              let fixed = false;
+              if (onRi && onRi.rate > 0 && pf(b.EnergyOnPeakCharge) > 0) {
+                const derivedOn = pf(b.EnergyOnPeakCharge) / onRi.rate;
+                if (derivedOn > 0 && Math.abs(derivedOn + offPk - total) < 1) {
+                  b['_auto_corrected_OnPeakKWh'] = {
+                    original: b.OnPeakKWh,
+                    corrected: derivedOn.toFixed(4),
+                    reason: 'Re-validated after kWhConsumed correction: charge / rate = ' + derivedOn.toFixed(4),
+                  };
+                  b.OnPeakKWh = derivedOn.toFixed(4);
+                  fixed = true;
+                }
+              }
+              if (!fixed && offRi && offRi.rate > 0 && pf(b.EnergyOffPeakCharge) > 0) {
+                const derivedOff = pf(b.EnergyOffPeakCharge) / offRi.rate;
+                if (derivedOff > 0 && Math.abs(onPk + derivedOff - total) < 1) {
+                  b['_auto_corrected_OffPeakKWh'] = {
+                    original: b.OffPeakKWh,
+                    corrected: derivedOff.toFixed(4),
+                    reason: 'Re-validated after kWhConsumed correction: charge / rate = ' + derivedOff.toFixed(4),
+                  };
+                  b.OffPeakKWh = derivedOff.toFixed(4);
+                  fixed = true;
+                }
+              }
+              if (!fixed) {
+                const derivedOn = total - offPk;
+                if (derivedOn > 0) {
+                  b['_auto_corrected_OnPeakKWh'] = {
+                    original: b.OnPeakKWh,
+                    corrected: derivedOn.toFixed(4),
+                    reason:
+                      'Re-validated: kWhConsumed (' +
+                      total.toFixed(2) +
+                      ') - OffPeakKWh (' +
+                      offPk.toFixed(2) +
+                      ') = ' +
+                      derivedOn.toFixed(4),
+                  };
+                  b.OnPeakKWh = derivedOn.toFixed(4);
+                }
+              }
+            }
+          }
+        }
+
+        // ── FINAL SANITY PASS: catch impossible values set by late-stage corrections ──
+        // Sequential-read arithmetic and meter-table identity can produce garbage
+        // kWhConsumed (e.g. garbled ReadDifference × MeterMultiplier = 999,539).
+        // This runs AFTER all correction stages so nothing slips through.
+        for (const b of bills) {
+          const comm = (b.Commodity || '').toLowerCase();
+          if (comm && comm !== 'electric') continue;
+          const _kwhVal = pf(b.kWhConsumed);
+          if (_kwhVal > 500000) {
+            b['_likely_missing_kWhConsumed'] = true;
+            b.kWhConsumed = null;
+          }
+          const _kwhNow = pf(b.kWhConsumed);
+          for (const kwField of ['ActualKW', 'BilledKW', 'FacilitiesKW', 'TDCkW']) {
+            const v = pf(b[kwField]);
+            if (v > 10000) {
+              b['_likely_missing_' + kwField] = true;
+              b[kwField] = null;
+            } else if (_kwhNow > 0 && v > _kwhNow) {
+              b['_likely_missing_' + kwField] = true;
+              b[kwField] = null;
+            }
+          }
+        }
+
         // ── GENERAL VALIDATION: line item exceeds total (all utilities) ──
         // A bill where any single charge field is greater than TotalCurrentCharges
         // is physically impossible and indicates a parse/OCR error. Recalculate
@@ -20976,16 +21070,16 @@
         for (const b of bills) {
           const total = pf(b.TotalCurrentCharges);
           if (total <= 0) continue;
+          const comm = (b.Commodity || '').replace(/\s/g, '');
+          const chargeFields = COMMODITY_CHARGE_FIELDS[comm] || ALL_CHARGE_FIELDS;
           const violations = [];
-          for (const f of ALL_CHARGE_FIELDS) {
+          for (const f of chargeFields) {
             const v = pf(b[f]);
             if (v > 0 && v > total + 0.1) {
               violations.push({ field: f, value: v });
             }
           }
           if (violations.length === 0) continue;
-          const comm = (b.Commodity || '').replace(/\s/g, '');
-          const chargeFields = COMMODITY_CHARGE_FIELDS[comm] || ALL_CHARGE_FIELDS;
           const compSum =
             Math.round(
               chargeFields.reduce(function (s, f) {
