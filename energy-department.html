@@ -71,9 +71,9 @@
         --em2-dim: rgba(56, 189, 248, 0.1);
         --em2-rgb: 56, 189, 248;
         --em-rgb: 0, 212, 170;
-        --text: #f0f4ff;
-        --text2: #9ab0d0;
-        --text3: #6880a8;
+        --text: #f4f7ff;
+        --text2: #b4cceb;
+        --text3: #8ba2c8;
         --font: 'Outfit', sans-serif;
         --mono: 'Outfit', sans-serif;
         --r: 10px;
@@ -5880,6 +5880,11 @@
                     justify-content: space-between;
                     margin-bottom: 7px;
                     flex-shrink: 0;
+                    position: sticky;
+                    top: 0;
+                    z-index: 5;
+                    background: var(--bg);
+                    padding-bottom: 4px;
                   "
                 >
                   <div class="ai-label" style="margin: 0">📄 Extraction Output</div>
@@ -26181,8 +26186,6 @@
         // pair row) — exclude them from the "extras" tail so they don't render
         // as stray fields below the Total Current Charges row.
         const IMPLICITLY_RENDERED = new Set([
-          'OnPeakKWh',
-          'OffPeakKWh',
           'EnergyOnPeakKWh',
           'EnergyOffPeakKWh',
           'TotalAmountDue',
