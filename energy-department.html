@@ -1731,7 +1731,7 @@
         inset: 0;
         background: rgba(5, 8, 15, 0.88);
         backdrop-filter: blur(10px);
-        z-index: 700;
+        z-index: 1000;
         display: none;
         align-items: center;
         justify-content: center;
@@ -26353,7 +26353,6 @@
                 ${b.ServiceAddress ? `<span>📍 ${b.ServiceAddress}</span>` : ''}
                 ${total ? `<span style="color:var(--text)">💵 ${total}</span>` : ''}
                 <span>Saved ${date}</span>
-                ${assigned}
               </div>
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0">
