@@ -16208,16 +16208,18 @@
         result.ECARate = _wavg('ECACharge') || null;
         result.EERRate = _wavg('EERCharge') || null;
         result.PTSRate = _wavg('PTSCharge') || null;
-        // kW total: sum of component rates (each applies to the same kW value)
-        result.TotalKWRate = _wavg('FacilitiesCharge') + _wavg('BilledKWCharge') + _wavg('TDCCharge') || null;
-        // kWh total: weighted average of On/Off Peak + sum of per-kWh adders (ECA, EER, PTS)
-        const _onQ = _getQty('EnergyOnPeakCharge');
-        const _offQ = _getQty('EnergyOffPeakCharge');
-        const _onR = _wavg('EnergyOnPeakCharge');
-        const _offR = _wavg('EnergyOffPeakCharge');
-        const _peakTotal = _onQ + _offQ;
-        const _avgPeakRate = _peakTotal > 0 ? (_onQ * _onR + _offQ * _offR) / _peakTotal : _onR || _offR;
-        result.TotalKWhRate = _avgPeakRate + _wavg('ECACharge') + _wavg('EERCharge') + _wavg('PTSCharge') || null;
+        // Total rates: total charges / total quantity (effective rate)
+        const _kwhChargeSum =
+          _pf(result.EnergyOnPeakCharge) +
+          _pf(result.EnergyOffPeakCharge) +
+          _pf(result.ECACharge) +
+          _pf(result.EERCharge) +
+          _pf(result.PTSCharge);
+        const _totalKwh = _pf(result.kWhConsumed);
+        result.TotalKWhRate = _totalKwh > 0 && _kwhChargeSum > 0 ? _kwhChargeSum / _totalKwh : null;
+        const _kwChargeSum = _pf(result.FacilitiesCharge) + _pf(result.BilledKWCharge) + _pf(result.TDCCharge);
+        const _totalKw = _pf(result.BilledKW) || _pf(result.ActualKW) || _pf(result.FacilitiesKW);
+        result.TotalKWRate = _totalKw > 0 && _kwChargeSum > 0 ? _kwChargeSum / _totalKw : null;
 
         // Reconcile xChg totals with xRate computed totals: when xRate found
         // multi-part charges that xChg missed (e.g. EER Part 2 has no OCR dollar
