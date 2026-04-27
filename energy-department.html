@@ -12890,8 +12890,9 @@
         // Render header bar (like HVAC Load Est)
         if (hdrWrap) {
           const totalSqft = bldgs.reduce((s, b) => s + parseInt(b.sqft || 0), 0);
+          const _totalMeterCount = bldgs.reduce((s, b) => s + (b.meters || []).length, 0);
           const _inclMeters = (b) => (b.meters || []).filter((m) => m.baselineInclude !== false);
-          const meterCount = bldgs.reduce((s, b) => s + _inclMeters(b).length, 0);
+          const _blInclCount = bldgs.reduce((s, b) => s + _inclMeters(b).length, 0);
           const billCount = bldgs.reduce(
             (s, b) => s + (b.meters || []).reduce((s2, m) => s2 + (m.bills || []).length, 0),
             0,
@@ -12904,9 +12905,9 @@
           hdrWrap.innerHTML = `<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-shrink:0">
             <span style="font-size:13px;font-weight:700;color:var(--text)">📊 Project Dashboard</span>
             <span style="font-size:11px;color:var(--text3)">
-              ${bldgs.length} building${bldgs.length !== 1 ? 's' : ''}${totalSqft ? ' · ' + Number(totalSqft).toLocaleString() + ' sf' : ''} · ${meterCount} meter${meterCount !== 1 ? 's' : ''} · ${billCount} bill${billCount !== 1 ? 's' : ''}
+              ${bldgs.length} building${bldgs.length !== 1 ? 's' : ''}${totalSqft ? ' · ' + Number(totalSqft).toLocaleString() + ' sf' : ''} · ${_totalMeterCount} meter${_totalMeterCount !== 1 ? 's' : ''} · ${billCount} bill${billCount !== 1 ? 's' : ''}
             </span>
-            ${meterCount === 0 ? '' : blMeterCount < meterCount ? '<span style="font-size:11px;color:var(--amber);font-weight:600">⚠ ' + blMeterCount + '/' + meterCount + ' meters have baselines set</span>' : '<span style="font-size:11px;color:var(--green)">✓ All meters have baselines</span>'}
+            ${_blInclCount === 0 ? '' : blMeterCount < _blInclCount ? '<span style="font-size:11px;color:var(--amber);font-weight:600">⚠ ' + blMeterCount + '/' + _blInclCount + ' baseline meters have baselines set</span>' : '<span style="font-size:11px;color:var(--green)">✓ All baseline meters have baselines</span>'}
           </div>`;
         }
 
@@ -13569,26 +13570,28 @@
         }
         nav.innerHTML = bldgs
           .map((b) => {
-            const meters = (b.meters || []).filter((m) => m.baselineInclude !== false);
-            const mCount = meters.length;
-            const mWithBl = meters.filter(
+            const allMeters = b.meters || [];
+            const totalMCount = allMeters.length;
+            const blMeters = allMeters.filter((m) => m.baselineInclude !== false);
+            const blMCount = blMeters.length;
+            const mWithBl = blMeters.filter(
               (m) => m.baseline && Array.isArray(m.baseline.months) && m.baseline.months.length,
             ).length;
             const blBadge =
-              mCount > 0
-                ? mWithBl === mCount
-                  ? `<span style="color:var(--green);font-size:10px" title="All meters have baselines">✓ ${mWithBl}/${mCount} BL</span>`
+              blMCount > 0
+                ? mWithBl === blMCount
+                  ? `<span style="color:var(--green);font-size:10px" title="All baseline meters have baselines set">✓ ${mWithBl}/${blMCount} BL</span>`
                   : mWithBl > 0
-                    ? `<span style="color:var(--amber);font-size:10px" title="${mWithBl} of ${mCount} meters have baselines">⚠ ${mWithBl}/${mCount} BL</span>`
-                    : `<span style="color:var(--text3);font-size:10px" title="No baselines set">— 0/${mCount} BL</span>`
+                    ? `<span style="color:var(--amber);font-size:10px" title="${mWithBl} of ${blMCount} baseline meters have baselines set">⚠ ${mWithBl}/${blMCount} BL</span>`
+                    : `<span style="color:var(--text3);font-size:10px" title="No baselines set">— 0/${blMCount} BL</span>`
                 : '';
-            const bCount = (b.bills || []).length + (b.meters || []).reduce((s, m) => s + (m.bills || []).length, 0);
+            const bCount = (b.bills || []).length + allMeters.reduce((s, m) => s + (m.bills || []).length, 0);
             const isActive = projUDSelBldg[projId] === b.id;
             return `<div class="ud-nav-bldg-item${isActive ? ' active' : ''}" onclick="projUDSelectBldg('${projId}','${b.id}')">
             <span style="font-size:14px">${getFacilityIcon?.(b.type) || '🏢'}</span>
             <div style="flex:1;min-width:0">
               <div class="ud-nav-bldg-name">${b.name || 'Building'}</div>
-              <div class="ud-nav-bldg-meta">${mCount} meter${mCount !== 1 ? 's' : ''} ${blBadge}</div>
+              <div class="ud-nav-bldg-meta">${totalMCount} meter${totalMCount !== 1 ? 's' : ''} ${blBadge}</div>
             </div>
             <div class="ud-nav-bldg-actions">
               <button class="btn btn-ghost btn-sm" style="padding:1px 5px;font-size:11px" onclick="event.stopPropagation();openBldgModalForProj('${projId}','${b.id}')" title="Edit">✏️</button>
@@ -29022,7 +29025,9 @@
                 <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:1px 6px" onclick="openBldgModal(null)">+ Add</button></div>`;
             } else {
               bldgs.forEach((b) => {
-                const _blMeters = (b.meters || []).filter((m) => m.baselineInclude !== false);
+                const _allMeters = b.meters || [];
+                const _totalMCount = _allMeters.length;
+                const _blMeters = _allMeters.filter((m) => m.baselineInclude !== false);
                 const mCount = _blMeters.length;
                 const mWithBl = _blMeters.filter(
                   (m) => m.baseline && Array.isArray(m.baseline.months) && m.baseline.months.length,
@@ -29030,16 +29035,16 @@
                 const blBadge =
                   mCount > 0
                     ? mWithBl === mCount
-                      ? `<span style="color:var(--green);font-size:10px" title="All meters have baselines">✓ ${mWithBl}/${mCount} BL</span>`
+                      ? `<span style="color:var(--green);font-size:10px" title="All baseline meters have baselines set">✓ ${mWithBl}/${mCount} BL</span>`
                       : mWithBl > 0
-                        ? `<span style="color:var(--amber);font-size:10px" title="${mWithBl} of ${mCount} meters have baselines">⚠ ${mWithBl}/${mCount} BL</span>`
+                        ? `<span style="color:var(--amber);font-size:10px" title="${mWithBl} of ${mCount} baseline meters have baselines set">⚠ ${mWithBl}/${mCount} BL</span>`
                         : `<span style="color:var(--text3);font-size:10px" title="No baselines set">— 0/${mCount} BL</span>`
                     : '';
                 const bldgActive = b.id === udSelBldgId ? ' active' : '';
                 html += `<div class="ud-nav-bldg-item${bldgActive}" onclick="udSelectBldg('${b.id}')">
                   <div style="flex:1;min-width:0">
                     <div class="ud-nav-bldg-name" title="${b.name}">${b.name}</div>
-                    <div class="ud-nav-bldg-meta">${b.sqft ? Number(b.sqft).toLocaleString() + ' sf · ' : ''}${mCount} meter${mCount !== 1 ? 's' : ''} ${blBadge}</div>
+                    <div class="ud-nav-bldg-meta">${b.sqft ? Number(b.sqft).toLocaleString() + ' sf · ' : ''}${_totalMCount} meter${_totalMCount !== 1 ? 's' : ''} ${blBadge}</div>
                   </div>
                   <div class="ud-nav-bldg-actions">
                     <button class="btn btn-ghost btn-sm" style="padding:1px 5px;font-size:11px" onclick="event.stopPropagation();openBldgModal('${b.id}')" title="Edit">✏️</button>
@@ -37069,27 +37074,27 @@
         // ── Headers (must match row cell order exactly) ──
         const perfTableLabel =
           _perfMetric === 'total'
-            ? '<th class="num">Expected ' +
+            ? '<th class="num">Baseline ' +
               unit +
               (hasRegr_p ? ' &#x1F52C;' : ' ~avg') +
               '</th><th class="num">Actual ' +
               unit +
               '</th>'
-            : '<th class="num">Expected ' +
+            : '<th class="num">Baseline ' +
               unit +
               '/Day' +
               (hasRegr_p ? ' &#x1F52C;' : ' ~avg') +
               '</th><th class="num">Actual ' +
               unit +
               '/Day</th>';
-        const expKWHdr = hasExpKW ? '<th class="num">Expected kW</th>' : '';
+        const expKWHdr = hasExpKW ? '<th class="num">Baseline kW</th>' : '';
         const demKWHdr = hasKwData ? '<th class="num">Actual kW</th>' : '';
         const bilKWHdr = hasBilKW ? '<th class="num">Billed kW</th>' : '';
-        const expKwCostHdr = hasKwCostSav ? '<th class="num">Exp kW × Rate</th>' : '';
+        const expKwCostHdr = hasKwCostSav ? '<th class="num">Baseline kW Cost</th>' : '';
         const kwCostHdr = hasKwCost ? '<th class="num">Act kW × Rate</th>' : '';
         const kwCostSavHdr = hasKwCostSav ? '<th class="num">kW Savings ($)</th>' : '';
         const kwhRateHdr = hasKwhCostSav ? '<th class="num">Actual $/kWh</th>' : '';
-        const expKwhCostHdr = hasKwhCostSav ? '<th class="num">Exp kWh × Rate</th>' : '';
+        const expKwhCostHdr = hasKwhCostSav ? '<th class="num">Projected Savings</th>' : '';
         const actKwhCostHdr = hasKwhCostSav ? '<th class="num">Act kWh × Rate</th>' : '';
         const kwhCostSavHdr = hasKwhCostSav ? '<th class="num">kWh Savings ($)</th>' : '';
         const totalCostSavHdr = hasTotalCostSav ? '<th class="num">Total Savings ($)</th>' : '';
@@ -37124,8 +37129,9 @@
             '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(0,212,170,0.8);border-radius:2px;display:inline-block"></span>Baseline</span>' +
             '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(100,160,255,0.75);border-radius:2px;display:inline-block"></span>Post-Baseline</span>' +
             (hasRegr_p
-              ? '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:rgba(139,92,246,0.9);border-radius:1px;display:inline-block"></span>Normalized Baseline</span>'
+              ? '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:rgba(139,92,246,0.9);border-radius:1px;display:inline-block"></span>Baseline (Normalized)</span>'
               : '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:var(--warn);border-radius:1px;display:inline-block"></span>Baseline Avg</span>') +
+            '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:rgba(251,146,60,0.9);border-radius:1px;display:inline-block"></span>Actual</span>' +
             '</div>' +
             (isElec && hasPerfKwData
               ? '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:16px 0 8px">Actual kW Demand — All Periods</div>' +
@@ -37139,11 +37145,11 @@
           basisNote_p +
           yearPills +
           '<div style="margin-bottom:14px">' +
-          '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:4px">Post-Baseline Monthly vs Expected</div>' +
+          '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:4px">Post-Baseline Monthly vs Baseline</div>' +
           '<div style="font-size:11px;color:var(--text3);margin-bottom:8px">' +
           (hasRegr_p
-            ? 'Expected = baseline calendar month normalized value · <span style="color:var(--violet)">🔬 R</span> = regression-derived'
-            : 'Expected = baseline calendar month normalized value (simple avg)') +
+            ? 'Baseline = weather-normalized calendar month value · <span style="color:var(--violet)">🔬 R</span> = regression-derived'
+            : 'Baseline = calendar month normalized value (simple avg)') +
           '</div>' +
           (filteredPostRows.length
             ? '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto">' +
@@ -37245,7 +37251,7 @@
               }
               if (_kwReg && Object.keys(_kwNormByYm).length > 0) {
                 kwDatasets.push({
-                  label: 'Expected kW',
+                  label: 'Baseline kW',
                   type: 'line',
                   data: chartRows.map((r) => {
                     const v = _kwNormByYm[r.ym];
@@ -37350,7 +37356,7 @@
                   : +(r.regrBaseline / r.normDays).toFixed(2),
             )
           : mainData;
-        const barLabel = hasRegr ? 'Normalized Baseline' : yLabel;
+        const barLabel = hasRegr ? 'Baseline ' + unit : yLabel;
 
         const datasets = [
           {
@@ -37394,7 +37400,7 @@
             if (!billByYm[ym] || usage > 0) billByYm[ym] = { usage, days };
           });
           datasets.push({
-            label: yLabel + ' (Raw Bills)',
+            label: 'Actual ' + unit,
             data: rows.map((r) => {
               const bd = billByYm[r.ym];
               return bd ? (isTotal ? +bd.usage.toFixed(0) : +(bd.usage / bd.days).toFixed(2)) : null;
@@ -37417,6 +37423,7 @@
           options: {
             responsive: true,
             maintainAspectRatio: true,
+            interaction: { mode: 'index', intersect: false },
             plugins: {
               legend: {
                 display: true,
@@ -37426,18 +37433,22 @@
                 callbacks: {
                   label: (ctx) => {
                     const v = ctx.parsed.y;
-                    if (ctx.dataset.label === 'Normalized Baseline')
+                    if (v == null) return null;
+                    if (ctx.dataset.label === 'Baseline Avg')
+                      return ' Baseline avg: ' + (isTotal ? v.toFixed(0) : v.toFixed(2)) + ' ' + yLabel;
+                    if (ctx.dataset.label.startsWith('Baseline ') || ctx.dataset.label.startsWith('Actual '))
                       return (
-                        'Normalized Baseline: ' +
+                        ' ' +
+                        ctx.dataset.label +
+                        ': ' +
                         (isTotal ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : v.toFixed(2)) +
                         ' ' +
                         yLabel
                       );
-                    if (ctx.dataset.label === 'Baseline Avg')
-                      return 'Baseline avg: ' + (isTotal ? v.toFixed(0) : v.toFixed(2)) + ' ' + yLabel;
                     const era = rows[ctx.dataIndex]?.era;
                     const tag = era === 'pre' ? 'Pre-Baseline' : era === 'baseline' ? 'Baseline' : 'Post-Baseline';
                     return (
+                      ' ' +
                       (era ? tag : ctx.dataset.label) +
                       ': ' +
                       (isTotal ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : v.toFixed(2)) +
