@@ -37928,6 +37928,8 @@
         const isEmbed = window._udActiveWrap && window._udActiveWrap !== document.getElementById('udDetailWrap');
         renderUDDetail(isEmbed ? window._udActiveWrap : undefined);
         renderUDProjList();
+        renderMeterWorkspace();
+        setTimeout(renderSidebarFolders, 100);
         showToast('Meter deleted');
       }
 
@@ -39059,7 +39061,7 @@
         renderUDProjList();
         const isEmbed = window._udActiveWrap && window._udActiveWrap !== document.getElementById('udDetailWrap');
         renderUDDetail(isEmbed ? window._udActiveWrap : undefined);
-        renderSidebarFolders();
+        setTimeout(renderSidebarFolders, 100);
         if (isEmbed) {
           renderProjTable();
           const ap3 = projects.find((p) => p.id == udSelProjId);
