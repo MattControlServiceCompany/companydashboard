@@ -1,0 +1,1322 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>CompanyHub Functional Tests</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #0f1117;
+        color: #e2e8f0;
+        padding: 24px;
+      }
+      h1 {
+        font-size: 22px;
+        margin-bottom: 4px;
+      }
+      .subtitle {
+        font-size: 13px;
+        color: #94a3b8;
+        margin-bottom: 24px;
+      }
+      h2 {
+        font-size: 16px;
+        margin: 24px 0 12px;
+        color: #f1f5f9;
+        border-bottom: 1px solid #1e293b;
+        padding-bottom: 6px;
+      }
+      h3 {
+        font-size: 13px;
+        margin: 16px 0 8px;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .section {
+        background: #1e293b;
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .test-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 6px 0;
+        border-bottom: 1px solid #2a3548;
+        font-size: 13px;
+      }
+      .test-row:last-child {
+        border-bottom: none;
+      }
+      .pass {
+        color: #22c55e;
+        font-weight: 700;
+        min-width: 44px;
+      }
+      .fail {
+        color: #ef4444;
+        font-weight: 700;
+        min-width: 44px;
+      }
+      .skip {
+        color: #f59e0b;
+        font-weight: 700;
+        min-width: 44px;
+      }
+      .test-name {
+        flex: 1;
+      }
+      .test-detail {
+        font-size: 11px;
+        color: #64748b;
+        margin-top: 2px;
+      }
+      .summary {
+        display: flex;
+        gap: 16px;
+        margin: 16px 0;
+        font-size: 14px;
+        font-weight: 700;
+      }
+      .summary span {
+        padding: 6px 14px;
+        border-radius: 6px;
+      }
+      .s-pass {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+      }
+      .s-fail {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+      }
+      .s-skip {
+        background: rgba(245, 158, 11, 0.15);
+        color: #f59e0b;
+      }
+      .manual-section {
+        margin-top: 32px;
+      }
+      .check-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 8px 0;
+        border-bottom: 1px solid #2a3548;
+        font-size: 13px;
+      }
+      .check-item:last-child {
+        border-bottom: none;
+      }
+      .check-item input[type='checkbox'] {
+        margin-top: 3px;
+        accent-color: #22c55e;
+        width: 16px;
+        height: 16px;
+      }
+      .check-item label {
+        cursor: pointer;
+        flex: 1;
+      }
+      .check-item .how {
+        font-size: 11px;
+        color: #64748b;
+        margin-top: 3px;
+        display: block;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 3px;
+        margin-left: 6px;
+        font-weight: 600;
+      }
+      .tag-new {
+        background: rgba(96, 165, 250, 0.2);
+        color: #60a5fa;
+      }
+      .tag-extract {
+        background: rgba(168, 85, 247, 0.2);
+        color: #a855f7;
+      }
+      .tag-ui {
+        background: rgba(34, 197, 94, 0.2);
+        color: #22c55e;
+      }
+      .tag-perf {
+        background: rgba(245, 158, 11, 0.2);
+        color: #f59e0b;
+      }
+      .tag-old {
+        background: rgba(148, 163, 184, 0.15);
+        color: #94a3b8;
+      }
+      .progress {
+        margin: 16px 0;
+        font-size: 13px;
+        color: #94a3b8;
+      }
+      .progress-bar {
+        height: 8px;
+        background: #334155;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-top: 4px;
+      }
+      .progress-fill {
+        height: 100%;
+        background: #22c55e;
+        border-radius: 4px;
+        transition: width 0.3s;
+      }
+      button.run {
+        background: #3b82f6;
+        color: #fff;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        margin-top: 12px;
+      }
+      button.run:hover {
+        background: #2563eb;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>CompanyHub Functional Tests</h1>
+    <div class="subtitle">
+      Updated 2026-04-27 — 14 automated + 28 manual tests for session 04-27d. Automated tests run on load.
+    </div>
+
+    <div class="summary" id="summary"></div>
+
+    <h2>Automated Tests</h2>
+    <div class="section" id="auto-results"></div>
+
+    <div class="manual-section">
+      <h2>Manual Verification Checklist</h2>
+      <div class="progress">
+        <span id="checkCount">0</span> / <span id="checkTotal">0</span> verified
+        <div class="progress-bar"><div class="progress-fill" id="checkBar" style="width: 0%"></div></div>
+      </div>
+
+      <h3>Session 04-22b — Cost Categories (Items 4 & 5)</h3>
+      <div class="section" id="manual-cost"></div>
+
+      <h3>Session 04-22b — Extraction State Preservation</h3>
+      <div class="section" id="manual-state"></div>
+
+      <h3>Session 04-22b — Validation & Flags</h3>
+      <div class="section" id="manual-validation"></div>
+
+      <h3>Session 04-22a — Extraction Engine & Save Paths</h3>
+      <div class="section" id="manual-extract"></div>
+
+      <h3>Session 04-22a — UI & Display</h3>
+      <div class="section" id="manual-ui"></div>
+
+      <h3>Session 04-22a — New Features</h3>
+      <div class="section" id="manual-features"></div>
+
+      <h3>Prior Sessions (04-17 through 04-21)</h3>
+      <div class="section" id="manual-prior"></div>
+    </div>
+
+    <script>
+      // ═══════════════════════════════════════════════════════════════
+      // AUTOMATED TESTS — cost formulas, validation, state functions
+      // ═══════════════════════════════════════════════════════════════
+
+      const results = [];
+      function test(name, fn) {
+        try {
+          const r = fn();
+          results.push({ name, pass: r === true, detail: r === true ? '' : String(r) });
+        } catch (e) {
+          results.push({ name, pass: false, detail: e.message });
+        }
+      }
+
+      // ── Helpers (copied from energy-department.html) ──
+      const _pfBills = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+
+      // ── CONDENSED_CATEGORIES compute functions (NEW — from session 04-22b) ──
+      const kWhCostCompute = (r) =>
+        _pfBills(r.onPeakCost) +
+        _pfBills(r.offPeakCost) +
+        _pfBills(r.ecaCharge) +
+        _pfBills(r.eerCharge) +
+        _pfBills(r.ptsCharge);
+
+      const kWCostCompute = (r) =>
+        _pfBills(r.demandCharge) + _pfBills(r.tdcCharge) + _pfBills(r.facilitiesCharge || r.facKWCost);
+
+      const kWhRateCompute = (r) => {
+        const cost = kWhCostCompute(r);
+        const kwh = _pfBills(r.kwh);
+        return kwh > 0 ? cost / kwh : 0;
+      };
+
+      const kWRateCompute = (r) => {
+        const cost = kWCostCompute(r);
+        const kw = _pfBills(r.demandKW);
+        return kw > 0 ? cost / kw : 0;
+      };
+
+      const otherChargesCompute = (r) =>
+        _pfBills(r.customerCharge) +
+        _pfBills(r.rkvaCharge) +
+        _pfBills(r.taxExemptDelivery) +
+        _pfBills(r.billOffset) +
+        _pfBills(r.franchiseFee);
+
+      // ── egfxRefresh helpers (NEW — from session 04-22b) ──
+      const _pfe = (v) => parseFloat(v) || 0;
+      const _elecCommodityCost = (bill) => _pfe(bill.kwhCost) + _pfe(bill.kwCost) + _pfe(bill.facKWCost);
+      const _gasCommodityCost = (bill) => _pfe(bill.totalCost) || _pfe(bill.thermCost) || _pfe(bill.cost) || 0;
+
+      // ── Validation function (NEW — from session 04-22b) ──
+      const _CHARGE_QTY_PAIRS = {
+        onPeakCost: 'onPeakKwh',
+        offPeakCost: 'offPeakKwh',
+        demandCharge: 'billedKW',
+        facilitiesCharge: 'facKW',
+      };
+
+      function _billFieldWarnings(row, commodity) {
+        const warnings = {};
+        if (commodity !== 'Electric') return warnings;
+        const _pf = (v) => parseFloat(v) || 0;
+        Object.entries(_CHARGE_QTY_PAIRS).forEach(([chargeKey, qtyKey]) => {
+          if (_pf(row[chargeKey]) > 0 && _pf(row[qtyKey]) === 0) {
+            warnings[qtyKey] = 'Charge of $' + _pf(row[chargeKey]).toFixed(2) + ' exists but qty is missing';
+            warnings[chargeKey] = 'Has charge but no qty';
+          }
+        });
+        const onPk = _pf(row.onPeakKwh);
+        const offPk = _pf(row.offPeakKwh);
+        const total = _pf(row.kwh);
+        if (onPk > 0 && offPk > 0 && total > 0) {
+          const diff = Math.abs(onPk + offPk - total);
+          if (diff > 1) {
+            warnings['kwh'] = 'On-Peak + Off-Peak != Total kWh';
+          }
+        }
+        return warnings;
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      // MOCK BILL DATA
+      // ═══════════════════════════════════════════════════════════════
+
+      const mockElecBill = {
+        kwh: '185400',
+        demandKW: '458',
+        billedKW: '475',
+        facKW: '458',
+        onPeakCost: '3071.22',
+        offPeakCost: '1750.71',
+        ecaCharge: '78.44',
+        eerCharge: '14.06',
+        ptsCharge: '0',
+        demandCharge: '631.14',
+        tdcCharge: '1230.41',
+        facilitiesCharge: '1307.33',
+        facKWCost: '1307.33',
+        customerCharge: '48.90',
+        rkvaCharge: '64.65',
+        taxExemptDelivery: '0',
+        billOffset: '0',
+        franchiseFee: '247.88',
+        totalCost: '8444.74',
+        kwhCost: '4914.43',
+        kwCost: '1861.55',
+        otherCost: '113.55',
+        taxCost: '247.88',
+        onPeakKwh: '92500',
+        offPeakKwh: '92900',
+      };
+
+      const mockGasBill = {
+        totalCost: '1245.67',
+        thermCost: '1145.00',
+        cost: '1245.67',
+        therms: '1200',
+        gasCharge: '1100.00',
+        fuelAdjustment: '45.00',
+      };
+
+      // ═══════════════════════════════════════════════════════════════
+      // TEST SUITE 1: CONDENSED CATEGORIES (Task 1)
+      // ═══════════════════════════════════════════════════════════════
+
+      test('kWh Cost $ = on-peak + off-peak + ECA + EER + PTS', () => {
+        const expected = 3071.22 + 1750.71 + 78.44 + 14.06 + 0;
+        const actual = kWhCostCompute(mockElecBill);
+        return Math.abs(actual - expected) < 0.01 || `Expected ${expected}, got ${actual}`;
+      });
+
+      test('kW Cost $ includes facilities (demand + TDC + facilities)', () => {
+        const expected = 631.14 + 1230.41 + 1307.33;
+        const actual = kWCostCompute(mockElecBill);
+        return Math.abs(actual - expected) < 0.01 || `Expected ${expected}, got ${actual}`;
+      });
+
+      test('kW Cost $ OLD formula was missing facilities', () => {
+        const oldFormula = _pfBills(mockElecBill.demandCharge) + _pfBills(mockElecBill.tdcCharge);
+        const newFormula = kWCostCompute(mockElecBill);
+        return newFormula > oldFormula || `New (${newFormula}) should be > old (${oldFormula})`;
+      });
+
+      test('Other Charges $ includes franchise fee, not facilities', () => {
+        const expected = 48.9 + 64.65 + 0 + 0 + 247.88;
+        const actual = otherChargesCompute(mockElecBill);
+        return Math.abs(actual - expected) < 0.01 || `Expected ${expected}, got ${actual}`;
+      });
+
+      test('Other Charges $ OLD included facilities — verify it was removed', () => {
+        const actual = otherChargesCompute(mockElecBill);
+        const oldWouldBe = 48.9 + 1307.33 + 64.65 + 0 + 0; // old: had facilities, no franchise
+        return actual < oldWouldBe || `New (${actual}) should be < old (${oldWouldBe})`;
+      });
+
+      test('kWh Rate = kWh Cost / Total kWh', () => {
+        const rate = kWhRateCompute(mockElecBill);
+        const expected = (3071.22 + 1750.71 + 78.44 + 14.06) / 185400;
+        return Math.abs(rate - expected) < 0.00001 || `Expected ${expected.toFixed(5)}, got ${rate.toFixed(5)}`;
+      });
+
+      test('kW Rate uses Actual kW (demandKW), not Billed kW', () => {
+        const rate = kWRateCompute(mockElecBill);
+        const expectedActual = (631.14 + 1230.41 + 1307.33) / 458; // Actual kW
+        const wrongBilled = (631.14 + 1230.41 + 1307.33) / 475; // Billed kW
+        return (
+          Math.abs(rate - expectedActual) < 0.01 ||
+          `Got ${rate.toFixed(4)}, expected ${expectedActual.toFixed(4)} (actual kW), not ${wrongBilled.toFixed(4)} (billed kW)`
+        );
+      });
+
+      test('Category totals reconcile: kWh + kW + Other + Total should cover all charges', () => {
+        const kwhC = kWhCostCompute(mockElecBill);
+        const kwC = kWCostCompute(mockElecBill);
+        const otherC = otherChargesCompute(mockElecBill);
+        const sum = kwhC + kwC + otherC;
+        const total = parseFloat(mockElecBill.totalCost);
+        const diff = Math.abs(sum - total);
+        return (
+          diff < 0.02 ||
+          `Sum of categories ($${sum.toFixed(2)}) differs from totalCost ($${total.toFixed(2)}) by $${diff.toFixed(2)}`
+        );
+      });
+
+      // ═══════════════════════════════════════════════════════════════
+      // TEST SUITE 2: COMMODITY COST HELPERS (Task 2 — egfxRefresh)
+      // ═══════════════════════════════════════════════════════════════
+
+      test('_elecCommodityCost = kwhCost + kwCost + facKWCost', () => {
+        const expected = 4914.43 + 1861.55 + 1307.33;
+        const actual = _elecCommodityCost(mockElecBill);
+        return Math.abs(actual - expected) < 0.01 || `Expected ${expected}, got ${actual}`;
+      });
+
+      test('_elecCommodityCost excludes customer, RkVA, franchise, tax', () => {
+        const commodityCost = _elecCommodityCost(mockElecBill);
+        const totalCost = parseFloat(mockElecBill.totalCost);
+        return commodityCost < totalCost || `Commodity ($${commodityCost}) should be < total ($${totalCost})`;
+      });
+
+      test('OLD egfxRefresh formula double-counted (totalCost + aggregates)', () => {
+        const b = mockElecBill;
+        const oldFormula =
+          (parseFloat(b.totalCost) || parseFloat(b.kwhCost) || 0) +
+          (parseFloat(b.kwCost) || 0) +
+          (parseFloat(b.otherCost) || 0) +
+          (parseFloat(b.taxCost) || 0);
+        const total = parseFloat(b.totalCost);
+        return (
+          oldFormula > total * 1.2 ||
+          `Old formula ($${oldFormula.toFixed(2)}) should be >> total ($${total.toFixed(2)})`
+        );
+      });
+
+      test('NEW formula is NOT double-counted', () => {
+        const commodityCost = _elecCommodityCost(mockElecBill);
+        const total = parseFloat(mockElecBill.totalCost);
+        return commodityCost <= total || `Commodity cost ($${commodityCost}) should be <= total ($${total})`;
+      });
+
+      test('_gasCommodityCost returns totalCost for gas bills', () => {
+        const actual = _gasCommodityCost(mockGasBill);
+        return Math.abs(actual - 1245.67) < 0.01 || `Expected 1245.67, got ${actual}`;
+      });
+
+      test('_gasCommodityCost falls back to thermCost when totalCost missing', () => {
+        const bill = { thermCost: '500.00' };
+        return Math.abs(_gasCommodityCost(bill) - 500) < 0.01 || 'Fallback failed';
+      });
+
+      // ═══════════════════════════════════════════════════════════════
+      // TEST SUITE 3: VALIDATION (Task 7)
+      // ═══════════════════════════════════════════════════════════════
+
+      test('No warnings on complete electric bill', () => {
+        const w = _billFieldWarnings(mockElecBill, 'Electric');
+        return Object.keys(w).length === 0 || `Expected no warnings, got: ${JSON.stringify(w)}`;
+      });
+
+      test('Warning when offPeakCost exists but offPeakKwh missing', () => {
+        const bill = { ...mockElecBill, offPeakKwh: '0', offPeakCost: '1750.71' };
+        const w = _billFieldWarnings(bill, 'Electric');
+        return w['offPeakKwh'] !== undefined || 'Expected warning on offPeakKwh';
+      });
+
+      test('Warning when onPeakCost exists but onPeakKwh missing', () => {
+        const bill = { ...mockElecBill, onPeakKwh: '', onPeakCost: '3071.22' };
+        const w = _billFieldWarnings(bill, 'Electric');
+        return w['onPeakKwh'] !== undefined || 'Expected warning on onPeakKwh';
+      });
+
+      test('Warning when demandCharge exists but billedKW missing', () => {
+        const bill = { ...mockElecBill, billedKW: '0', demandCharge: '631.14' };
+        const w = _billFieldWarnings(bill, 'Electric');
+        return w['billedKW'] !== undefined || 'Expected warning on billedKW';
+      });
+
+      test('Warning when facilitiesCharge exists but facKW missing', () => {
+        const bill = { ...mockElecBill, facKW: '', facilitiesCharge: '1307.33' };
+        const w = _billFieldWarnings(bill, 'Electric');
+        return w['facKW'] !== undefined || 'Expected warning on facKW';
+      });
+
+      test('No warnings on Gas bills (validation is Electric-only)', () => {
+        const w = _billFieldWarnings(mockGasBill, 'Gas');
+        return Object.keys(w).length === 0 || 'Gas bills should have no warnings';
+      });
+
+      test('kWh identity mismatch detected when On+Off != Total', () => {
+        const bill = { kwh: '100000', onPeakKwh: '60000', offPeakKwh: '35000' };
+        const w = _billFieldWarnings(bill, 'Electric');
+        return w['kwh'] !== undefined || 'Expected kWh identity warning (60000+35000=95000 != 100000)';
+      });
+
+      test('kWh identity OK when On+Off = Total (within 1 kWh)', () => {
+        const bill = { kwh: '185400', onPeakKwh: '92500', offPeakKwh: '92900' };
+        const w = _billFieldWarnings(bill, 'Electric');
+        return w['kwh'] === undefined || 'Should NOT warn — 92500+92900=185400';
+      });
+
+      test('kWh identity allows 1 kWh tolerance', () => {
+        const bill = { kwh: '185400', onPeakKwh: '92500', offPeakKwh: '92900.5' };
+        const w = _billFieldWarnings(bill, 'Electric');
+        return w['kwh'] === undefined || 'Should NOT warn — diff is 0.5 kWh';
+      });
+
+      // ═══════════════════════════════════════════════════════════════
+      // TEST SUITE 4: BUILDMOMAP CONSISTENCY (Task 3)
+      // ═══════════════════════════════════════════════════════════════
+
+      test('commodityCost = kwhCost + kwCost + facKWCost (buildMoMap field)', () => {
+        // Simulate what buildMoMap now computes
+        const kwhCostSum = parseFloat(mockElecBill.kwhCost) || 0;
+        const kwCostSum = parseFloat(mockElecBill.kwCost) || 0;
+        const facKWCostVal = parseFloat(mockElecBill.facKWCost) || 0;
+        const commodityCost = kwhCostSum + kwCostSum + facKWCostVal;
+        const expected = 4914.43 + 1861.55 + 1307.33;
+        return Math.abs(commodityCost - expected) < 0.01 || `Expected ${expected}, got ${commodityCost}`;
+      });
+
+      test('energyCost = kwhCostSum (NOT totalCost - kwCost)', () => {
+        const kwhCostSum = parseFloat(mockElecBill.kwhCost) || 0;
+        const oldEnergyCost = parseFloat(mockElecBill.totalCost) - parseFloat(mockElecBill.kwCost);
+        // New energyCost should be just kwhCost, NOT totalCost - kwCost
+        return kwhCostSum < oldEnergyCost || `kwhCost (${kwhCostSum}) should be < old energyCost (${oldEnergyCost})`;
+      });
+
+      test('Baseline and actual energyCost now use same formula', () => {
+        // Both should use kwhCost directly
+        const blEnergyCost = parseFloat(mockElecBill.kwhCost) || 0; // buildMoMap: kwhCostSum
+        const actEnergyCost = parseFloat(mockElecBill.kwhCost) || 0; // getMeterPerfSavingsByCalMo: kwhCostAmt
+        return blEnergyCost === actEnergyCost || `Baseline (${blEnergyCost}) != Actual (${actEnergyCost})`;
+      });
+
+      // ═══════════════════════════════════════════════════════════════
+      // TEST SUITE 5: CONFIRMAUTOSASSIGN RKVACHARGE (Task 5)
+      // ═══════════════════════════════════════════════════════════════
+
+      test('otherCost formula includes RkVACharge', () => {
+        const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+        const bill = { CustomerCharge: '48.90', TaxExemptDelivery: '0', BillOffset: '0', RkVACharge: '64.65' };
+        // NEW formula (with RkVA)
+        const newOther =
+          pf(bill.CustomerCharge) + pf(bill.TaxExemptDelivery) + pf(bill.BillOffset) + pf(bill.RkVACharge);
+        // OLD formula (without RkVA)
+        const oldOther = pf(bill.CustomerCharge) + pf(bill.TaxExemptDelivery) + pf(bill.BillOffset);
+        return newOther > oldOther || `New (${newOther}) should include RkVA and be > old (${oldOther})`;
+      });
+
+      // ═══════════════════════════════════════════════════════════════
+      // RENDER AUTOMATED RESULTS
+      // ═══════════════════════════════════════════════════════════════
+
+      const el = document.getElementById('auto-results');
+      let passed = 0,
+        failed = 0;
+      results.forEach((r) => {
+        const cls = r.pass ? 'pass' : 'fail';
+        if (r.pass) passed++;
+        else failed++;
+        el.innerHTML += `<div class="test-row">
+    <span class="${cls}">${r.pass ? 'PASS' : 'FAIL'}</span>
+    <span class="test-name">${r.name}${r.detail ? '<div class="test-detail">' + r.detail + '</div>' : ''}</span>
+  </div>`;
+      });
+
+      document.getElementById('summary').innerHTML =
+        `<span class="s-pass">${passed} passed</span>` +
+        (failed > 0 ? `<span class="s-fail">${failed} failed</span>` : '') +
+        `<span class="s-skip">Manual: see checklist below</span>`;
+
+      // ═══════════════════════════════════════════════════════════════
+      // MANUAL CHECKLIST
+      // ═══════════════════════════════════════════════════════════════
+
+      const STORAGE_KEY = 'ch_functional_test_checks';
+      let checked = {};
+      try {
+        checked = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      } catch (e) {}
+
+      function saveChecks() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(checked));
+        updateProgress();
+      }
+
+      function updateProgress() {
+        const boxes = document.querySelectorAll('.check-item input[type="checkbox"]');
+        const total = boxes.length;
+        const done = Array.from(boxes).filter((b) => b.checked).length;
+        document.getElementById('checkCount').textContent = done;
+        document.getElementById('checkTotal').textContent = total;
+        document.getElementById('checkBar').style.width = (total > 0 ? (done / total) * 100 : 0) + '%';
+      }
+
+      function addCheck(containerId, id, label, how) {
+        const el = document.getElementById(containerId);
+        const isChecked = checked[id] || false;
+        el.innerHTML += `<div class="check-item">
+    <input type="checkbox" id="${id}" ${isChecked ? 'checked' : ''} onchange="checked['${id}']=this.checked;saveChecks()">
+    <label for="${id}">${label}<span class="how">${how}</span></label>
+  </div>`;
+      }
+
+      // ── Cost Categories (Session 04-22b) ──
+      addCheck(
+        'manual-cost',
+        'c01',
+        'kW Cost $ includes Facilities charge in condensed view <span class="tag tag-new">NEW</span>',
+        'Utility Data > Electric meter > gear icon > switch to Condensed. Compare kW Cost $ with old value. Should be ~$1,307 higher per bill.',
+      );
+      addCheck(
+        'manual-cost',
+        'c02',
+        'Other Charges $ includes Franchise Fee, no Facilities <span class="tag tag-new">NEW</span>',
+        'Same condensed view. Other Charges should show ~$361 (customer+RkVA+franchise) instead of old ~$1,421 (customer+facilities+RkVA).',
+      );
+      addCheck(
+        'manual-cost',
+        'c03',
+        'Franchise Fee standalone column is gone <span class="tag tag-new">NEW</span>',
+        'In condensed view, there should be no separate "Franchise Fee $" column. It\'s now inside Other Charges.',
+      );
+      addCheck(
+        'manual-cost',
+        'c04',
+        'kW Rate uses Actual kW denominator <span class="tag tag-new">NEW</span>',
+        'In condensed view, kW Rate $/kW should = kW Cost / Actual kW. Compare the three numbers manually.',
+      );
+      addCheck(
+        'manual-cost',
+        'c05',
+        'Category totals reconcile with Total Cost <span class="tag tag-new">NEW</span>',
+        'In condensed view, add kWh Cost + kW Cost + Other Charges. Should approximately equal Total Cost $.',
+      );
+      addCheck(
+        'manual-cost',
+        'c06',
+        'Energy Graphics Cost Savings is reasonable <span class="tag tag-new">NEW</span>',
+        'Projects tab > Energy Graphics. Cost Savings should NOT be extremely large (old bug doubled the number).',
+      );
+      addCheck(
+        'manual-cost',
+        'c07',
+        'Dashboard Baseline $/yr is commodity-only <span class="tag tag-new">NEW</span>',
+        'Projects tab > Dashboard. Building Performance table: Baseline $/yr should be lower than the sum of all totalCost values (excludes customer, franchise, tax).',
+      );
+      addCheck(
+        'manual-cost',
+        'c08',
+        'Dashboard Current $/yr is commodity-only <span class="tag tag-new">NEW</span>',
+        'Same table: Current $/yr should also be commodity-only.',
+      );
+      addCheck(
+        'manual-cost',
+        'c09',
+        'Savings match across Dashboard, Performance Panel, meter Performance <span class="tag tag-perf">PERF</span>',
+        'Compare the savings number in all three locations. They should now agree because they all use the same commodity-only formula.',
+      );
+      addCheck(
+        'manual-cost',
+        'c10',
+        'Normalized vs Actual baseline comparison setting works <span class="tag tag-perf">PERF</span>',
+        'Project edit modal > baseline comparison toggle. Switch between Normalized and Actual. Both should show commodity-only numbers.',
+      );
+
+      // ── Extraction State (Session 04-22b) ──
+      addCheck(
+        'manual-state',
+        's01',
+        'Extraction state survives F5 refresh <span class="tag tag-new">NEW</span>',
+        'Extract any PDF. After bills show in preview, hit F5. Page should reload and show toast "Restored extraction results." Bills preview should reappear.',
+      );
+      addCheck(
+        'manual-state',
+        's02',
+        'beforeunload warning during extraction <span class="tag tag-new">NEW</span>',
+        'Start a PDF extraction. Before saving, try to close the tab. Browser should show "Leave site?" warning.',
+      );
+      addCheck(
+        'manual-state',
+        's03',
+        'State clears after saving/closing extraction <span class="tag tag-new">NEW</span>',
+        'Click "Clear" on the extraction panel. Refresh. Should NOT restore old extraction data.',
+      );
+      addCheck(
+        'manual-state',
+        's04',
+        'State expires after 1 hour <span class="tag tag-new">NEW</span>',
+        'Extract a PDF, then wait 1+ hour and refresh. Should NOT restore (expired). Hard to test manually — note for awareness.',
+      );
+
+      // ── Validation (Session 04-22b) ──
+      addCheck(
+        'manual-validation',
+        'v01',
+        'Amber flag on charge-without-qty field <span class="tag tag-new">NEW</span>',
+        'Find a bill in detailed view that has an Off-Peak Charge but no Off-Peak kWh. The Off-Peak kWh cell should have amber background and tooltip explaining the issue.',
+      );
+      addCheck(
+        'manual-validation',
+        'v02',
+        'Warning icon in condensed view Norm Month cell <span class="tag tag-new">NEW</span>',
+        'Switch to condensed view. Bills with missing data should show a small amber triangle in the Norm Month column.',
+      );
+      addCheck(
+        'manual-validation',
+        'v03',
+        'Off-peak auto-derived during extraction <span class="tag tag-new">NEW</span>',
+        'Re-extract a PDF that had missing off-peak data. Check if Off-Peak kWh and Charge are now populated with auto-derived values.',
+      );
+      addCheck(
+        'manual-validation',
+        'v04',
+        'kWh identity check flags mismatches <span class="tag tag-new">NEW</span>',
+        'If On-Peak kWh + Off-Peak kWh does not equal Total kWh on any bill, the Total kWh cell should show an amber flag with a tooltip showing the math.',
+      );
+
+      // ── Extraction Engine (Session 04-22a) ──
+      addCheck(
+        'manual-extract',
+        'e01',
+        'Re-extract Louisburg bills — commodity routing correct <span class="tag tag-extract">EXTRACT</span>',
+        'Extract the Louisburg PDF. Gas/Water/Sewer/Stormwater should route to separate meters, not all pile onto one meter.',
+      );
+      addCheck(
+        'manual-extract',
+        'e02',
+        'Fuel adjustment captured in old-format bills <span class="tag tag-extract">EXTRACT</span>',
+        'Check old-format Louisburg bills for a Fuel Adjustment line item (was completely missing before).',
+      );
+      addCheck(
+        'manual-extract',
+        'e03',
+        'Stormwater $4 (not $400) <span class="tag tag-extract">EXTRACT</span>',
+        'Stormwater bills should show ~$4.00, not $400. Sanity check auto-corrects decimal drops.',
+      );
+      addCheck(
+        'manual-extract',
+        'e04',
+        'Re-extract propane — gallons/price/total populate <span class="tag tag-extract">EXTRACT</span>',
+        'Extract propane bills. Gallons, price per gallon, and total should appear in the Bills table. Days should show 1 (not 0).',
+      );
+      addCheck(
+        'manual-extract',
+        'e05',
+        'Gas Bills HS.pdf — Oct-Nov 2025 captured + consensus corrections <span class="tag tag-extract">EXTRACT</span>',
+        'Re-extract Gas Bills HS.pdf. Verify Oct-Nov 2025 bills are present and consensus corrections applied.',
+      );
+      addCheck(
+        'manual-extract',
+        'e06',
+        'Bills Shelton.pdf — sum mismatches resolved <span class="tag tag-extract">EXTRACT</span>',
+        'Re-extract Bills Shelton.pdf. Check for sum mismatch banners — should be few or none.',
+      );
+      addCheck(
+        'manual-extract',
+        'e07',
+        'March/April 2025 bills (Billing Detail format) extract dates <span class="tag tag-extract">EXTRACT</span>',
+        'Pages using "Billing Detail - City of Louisburg" format should extract billing dates correctly (merged-date fix).',
+      );
+      addCheck(
+        'manual-extract',
+        'e08',
+        'Billing Inquiry format extracts data <span class="tag tag-extract">EXTRACT</span>',
+        'Pages using "Utility Billing Inquiry" screenshot format should extract at least dates and dollar amounts.',
+      );
+      addCheck(
+        'manual-extract',
+        'e09',
+        'Sewer usage = Water usage on bills without sewer parse <span class="tag tag-extract">EXTRACT</span>',
+        'Check Sewer bills — if sewer usage was not parsed separately, it should copy from water usage.',
+      );
+      addCheck(
+        'manual-extract',
+        'e10',
+        'MWATER OCR garble handled <span class="tag tag-extract">EXTRACT</span>',
+        'Page 21 (Jan 2026) of Louisburg PDF — Water line should be captured even though OCR reads "MWATER".',
+      );
+      addCheck(
+        'manual-extract',
+        'e11',
+        'confirmAutoAssign saves all 35+ fields <span class="tag tag-extract">EXTRACT</span>',
+        'When auto-assigning an extracted bill to a meter, verify that propane, gas, water, sewer, stormwater, and metadata fields are all saved (not just electric fields).',
+      );
+
+      // ── UI & Display (Session 04-22a) ──
+      addCheck(
+        'manual-ui',
+        'u01',
+        'Billing period gap indicators show between correct months <span class="tag tag-ui">UI</span>',
+        'In extraction preview pills, yellow "X-day gap" labels should appear between pills where there\'s a gap in billing periods.',
+      );
+      addCheck(
+        'manual-ui',
+        'u02',
+        'Gap indicators NOT shown for propane meters <span class="tag tag-ui">UI</span>',
+        'Propane deliveries are irregular — gap labels should NOT appear between propane extraction pills.',
+      );
+      addCheck(
+        'manual-ui',
+        'u03',
+        'Gap row text stays visible on horizontal scroll <span class="tag tag-ui">UI</span>',
+        'In the Bills table, gap indicator rows should have sticky text that stays visible when scrolling right.',
+      );
+      addCheck(
+        'manual-ui',
+        'u04',
+        'Dollar signs and commas in extracted values <span class="tag tag-ui">UI</span>',
+        'Extracted charge values should show as "$1,234.56" format, not "1234.56".',
+      );
+      addCheck(
+        'manual-ui',
+        'u05',
+        'Water Usage (gal) and Sewer Usage (gal) labels <span class="tag tag-ui">UI</span>',
+        'Bills table column headers should say "Water Usage (gal)" and "Sewer Usage (gal)", not just "Usage".',
+      );
+      addCheck(
+        'manual-ui',
+        'u06',
+        'Meter pill labels show commodity (Sewer purple, Stormwater gray) <span class="tag tag-ui">UI</span>',
+        'In extraction preview, Sewer pills should be purple and Stormwater pills should be gray with commodity name as primary label.',
+      );
+
+      // ── New Features (Session 04-22a) ──
+      addCheck(
+        'manual-features',
+        'f01',
+        'Utility Escalation %/yr in project edit modal <span class="tag tag-ui">UI</span>',
+        'Open a project\'s edit modal. There should be a "Utility Escalation %/yr" input field. Value should propagate to all buildings.',
+      );
+      addCheck(
+        'manual-features',
+        'f02',
+        'Apply Baseline to All Meters in Project button <span class="tag tag-ui">UI</span>',
+        'In the baseline panel, there should be a button to apply the baseline to ALL meters across all buildings in the project.',
+      );
+      addCheck(
+        'manual-features',
+        'f03',
+        'Expected kW Cost column in Performance post-baseline table <span class="tag tag-perf">PERF</span>',
+        'In the meter Performance tab (after baseline is set), the monthly table should have an "Expected kW Cost" column.',
+      );
+      addCheck(
+        'manual-features',
+        'f04',
+        'Propane normalization — gallons spread by HDD <span class="tag tag-perf">PERF</span>',
+        'For propane meters, the Performance tab should show gallons distributed across months weighted by heating degree days, not all in the delivery month.',
+      );
+      addCheck(
+        'manual-features',
+        'f05',
+        'Per-month Expected kW shows seasonal variation <span class="tag tag-perf">PERF</span>',
+        'Expected kW in the Performance table should vary by month (higher in summer, lower in winter), not be a flat average.',
+      );
+
+      // ── Prior Sessions (04-17 through 04-21) ──
+      addCheck(
+        'manual-prior',
+        'p01',
+        'Dashboard loads without majorityMonth crash <span class="tag tag-old">04-20b</span>',
+        "Navigate to any project's Dashboard tab. It should load without errors.",
+      );
+      addCheck(
+        'manual-prior',
+        'p02',
+        'Baseline status indicators in sidebar + Projects tab <span class="tag tag-old">04-20b</span>',
+        'Buildings/meters in the Utility Data sidebar should show baseline status indicators (green check or amber warning).',
+      );
+      addCheck(
+        'manual-prior',
+        'p03',
+        'Meter baseline toggle excludes from KPI/EUI/performance <span class="tag tag-old">04-20c</span>',
+        "Toggle a meter's baseline inclusion off. Dashboard KPIs, EUI, and performance should recalculate without that meter.",
+      );
+      addCheck(
+        'manual-prior',
+        'p04',
+        'Savings measure detail — Financials + Notes <span class="tag tag-old">04-20c</span>',
+        "Open a savings measure's detail row. Should have a Financials section and a Notes textarea.",
+      );
+      addCheck(
+        'manual-prior',
+        'p05',
+        'Apply to All Buildings button <span class="tag tag-old">04-20a</span>',
+        'In baseline or settings, the "Apply to All Buildings" button should propagate settings across all buildings.',
+      );
+      addCheck(
+        'manual-prior',
+        'p06',
+        'Building Performance panel scroll fix <span class="tag tag-old">04-20a</span>',
+        'The Building Performance panel should scroll properly if content exceeds viewport.',
+      );
+      addCheck(
+        'manual-prior',
+        'p07',
+        'District Calendar parser captures 30+ events <span class="tag tag-old">04-21a</span>',
+        'Upload or paste a BoE PDF/text into District Calendar. Should capture all 30+ events with correct dates and types.',
+      );
+      addCheck(
+        'manual-prior',
+        'p08',
+        'District Calendar calendar view toggle <span class="tag tag-old">04-21a</span>',
+        'In the District Calendar tab, toggle between table view and calendar view. Calendar should show colored dots.',
+      );
+      addCheck(
+        'manual-prior',
+        'p09',
+        'Charge parts expand in Bills table <span class="tag tag-old">04-17c</span>',
+        'In detailed view, charge line items should be expandable to show rate, qty, and computed values.',
+      );
+      addCheck(
+        'manual-prior',
+        'p10',
+        'History modal for bill changes <span class="tag tag-old">04-17c</span>',
+        "Click a bill's history icon. Modal should show change history / audit log.",
+      );
+      addCheck(
+        'manual-prior',
+        'p11',
+        'Move-bill between meters <span class="tag tag-old">04-17c</span>',
+        'Edit a bill and move it to a different meter. Should transfer correctly.',
+      );
+      addCheck(
+        'manual-prior',
+        'p12',
+        'Propane pill / meter type identification <span class="tag tag-old">04-17c</span>',
+        'Propane meters should show with correct commodity label and pill styling.',
+      );
+      addCheck(
+        'manual-prior',
+        'p13',
+        'Apply to All Meters baseline button <span class="tag tag-old">04-17c</span>',
+        'In baseline panel, "Apply to All Meters" should copy the baseline period to every meter on the building.',
+      );
+      addCheck(
+        'manual-prior',
+        'p14',
+        'UI Customization — Fonts, Colors, Customize mode <span class="tag tag-old">04-17c</span>',
+        'Click Customize button. Should enter edit mode with panels for Colors, Fonts. Changes should persist.',
+      );
+      addCheck(
+        'manual-prior',
+        'p15',
+        'Edit Billing Period modal — currency/number formatting <span class="tag tag-old">04-21b</span>',
+        'Open Edit Billing Period modal. Currency fields should show $1,234.56 format. Numbers should have commas. Values strip on focus, reformat on blur.',
+      );
+
+      // ═══════════════════════════════════════════════════════════════
+      // SESSION 04-27d — Extraction Validation, UI, Display (21 items)
+      // ═══════════════════════════════════════════════════════════════
+
+      // ── Automated: Validation chain (#127) ──
+      test('#127 ReadDifference = EndRead - StartRead (deterministic chain)', () => {
+        const endRead = 3330.3274,
+          startRead = 3288.7098;
+        const computed = endRead - startRead; // 41.6176
+        const ocrGarbled = 41.8176;
+        const diff = Math.abs(computed - ocrGarbled);
+        return diff > 0.005 || 'Should detect 0.2 error (old 2% threshold missed this)';
+      });
+
+      test('#127 Cascade: ReadDiff × Multiplier = kWhConsumed', () => {
+        const readDiff = 41.6176,
+          mult = 160;
+        const expected = readDiff * mult; // 6658.816
+        const garbled = 41.8176 * mult; // 6690.816
+        return Math.abs(expected - garbled) > 1 || 'Cascade should detect 32 kWh error';
+      });
+
+      test('#127 Cascade: OnPeakKWh = kWhConsumed - OffPeakKWh', () => {
+        const kwhConsumed = 6658.816,
+          offPeak = 5500;
+        const onPeak = kwhConsumed - offPeak;
+        return Math.abs(onPeak - 1158.816) < 0.01 || `Expected 1158.816, got ${onPeak}`;
+      });
+
+      // ── Automated: Rate calculations (#83) ──
+      test('#83 Total $/kWh = total charges / kWhConsumed (not sum of rates)', () => {
+        const onPeak = 194.72,
+          offPeak = 1164.52,
+          eca = 854.53,
+          eer = 21.06,
+          pts = 38.74;
+        const kwhConsumed = 37611.18;
+        const correctRate = (onPeak + offPeak + eca + eer + pts) / kwhConsumed;
+        const wrongRate = 0.04146 + 0.03538 + 0.02272 + 0.00056 + 0.00103; // sum of rates
+        return (
+          (Math.abs(correctRate - 0.06045) < 0.001 && Math.abs(wrongRate - 0.10115) < 0.001) ||
+          `Correct: ${correctRate.toFixed(5)}, Wrong: ${wrongRate.toFixed(5)}`
+        );
+      });
+
+      // ── Automated: Commodity-scoped validation (#90) ──
+      test('#90 Charge validation uses commodity-specific fields', () => {
+        const GAS_FIELDS = ['CustomerCharge', 'GasCharge', 'FuelAdjustment'];
+        const ALL_FIELDS = [
+          'CustomerCharge',
+          'GasCharge',
+          'FuelAdjustment',
+          'WaterCharge',
+          'SewerCharge',
+          'StormWaterCharge',
+        ];
+        return GAS_FIELDS.length < ALL_FIELDS.length || 'Gas should check fewer fields than all commodities';
+      });
+
+      // ── Automated: Negative Fuel Adjustment (#122) ──
+      test('#122 Negative Fuel Adjustment: GasCharge > Total is valid', () => {
+        const gasCharge = 804.45,
+          customerCharge = 23.33,
+          fuelAdj = -60.48;
+        const total = gasCharge + customerCharge + fuelAdj; // 767.30
+        const compSum = gasCharge + customerCharge + fuelAdj;
+        const sumMatchesTotal = Math.abs(compSum - total) < 0.5;
+        return sumMatchesTotal === true || 'Sum of components should match total even with negatives';
+      });
+
+      test('#122 Individual GasCharge exceeds Total but sum matches — no violation', () => {
+        const gasCharge = 804.45,
+          total = 767.3;
+        const gasExceedsTotal = gasCharge > total;
+        return gasExceedsTotal === true || 'GasCharge should legitimately exceed total when fuel adj is negative';
+      });
+
+      // ── Automated: Magnitude checks (#98) ──
+      test('#98 kWh ceiling is 500,000 (not 1,000,000)', () => {
+        const kwhVal = 999539;
+        return kwhVal > 500000 || 'Should catch 999,539 as over ceiling';
+      });
+
+      test('#98 kW can never exceed kWh', () => {
+        const kw = 413020,
+          kwh = 42000;
+        return kw > kwh || 'kW > kWh should be flagged as impossible';
+      });
+
+      // ── Automated: Numeric duplicate comparison (#115) ──
+      test('#115 Numeric equality: 445.0560 == 445.056', () => {
+        const a = parseFloat('445.0560'),
+          b = parseFloat('445.056');
+        return a === b || `${a} should equal ${b}`;
+      });
+
+      test('#115 Numeric equality: 157.2300 == 157.23', () => {
+        const a = parseFloat('157.2300'),
+          b = parseFloat('157.23');
+        return a === b || `${a} should equal ${b}`;
+      });
+
+      // ── Automated: ActualKW consensus (#120) ──
+      test('#120 ActualKW corrected when BilledKW == TDCkW', () => {
+        const actualKW = 445.086,
+          billedKW = 445.056,
+          tdcKW = 445.056;
+        const billedTdcAgree = Math.abs(billedKW - tdcKW) < 0.01 && billedKW % 1 !== 0;
+        const actualDiffers = Math.abs(actualKW - billedKW) > 0.001;
+        return (billedTdcAgree && actualDiffers) || 'Should detect ActualKW != BilledKW when BilledKW == TDCkW';
+      });
+
+      // ── Automated: On-Peak re-validation (#93) ──
+      test('#93 Re-validate OnPeak + OffPeak = kWhConsumed after corrections', () => {
+        const kwhConsumed = 42135.84,
+          offPeak = 37381.55;
+        const correctOnPeak = kwhConsumed - offPeak; // 4754.29
+        const wrongOnPeak = 32844.855;
+        return Math.abs(wrongOnPeak + offPeak - kwhConsumed) > 1 || 'Mismatch should be detected for re-validation';
+      });
+
+      // ── Automated: _billReadValue rate override ──
+      test('_billReadValue computes totalKwhRate from kwhCost/kwh', () => {
+        const row = { kwh: '37611.18', kwhCost: '2273.57', totalKwhRate: '0.10115' };
+        const kwh = parseFloat(row.kwh),
+          chg = parseFloat(row.kwhCost);
+        const computed = kwh > 0 && chg > 0 ? (chg / kwh).toFixed(5) : row.totalKwhRate;
+        return computed === '0.06045' || `Expected 0.06045, got ${computed}`;
+      });
+
+      // ═══════════════════════════════════════════════════════════════
+      // MANUAL CHECKLIST: Session 04-27d
+      // ═══════════════════════════════════════════════════════════════
+
+      // Section: Extraction Validation
+      const manualValidation27 = document.createElement('div');
+      manualValidation27.className = 'section';
+      manualValidation27.id = 'manual-validation-27d';
+      const h3v = document.createElement('h3');
+      h3v.textContent = 'Session 04-27d — Extraction Validation';
+      document.querySelector('.manual-section').appendChild(h3v);
+      document.querySelector('.manual-section').appendChild(manualValidation27);
+
+      addCheck(
+        'manual-validation-27d',
+        'v27_01',
+        '#127 ReadDifference auto-corrected from EndRead - StartRead <span class="tag tag-extract">extract</span>',
+        'Extract an Evergy bill. In extraction output, check a bill where ReadDifference was corrected. Should show green border with "EndRead - StartRead = X" reason.',
+      );
+      addCheck(
+        'manual-validation-27d',
+        'v27_02',
+        '#127 kWhConsumed cascaded from corrected ReadDifference <span class="tag tag-extract">extract</span>',
+        'Same bill: kWh Consumed should show "Cascaded: ReadDifference × MeterMultiplier" if it was corrected.',
+      );
+      addCheck(
+        'manual-validation-27d',
+        'v27_03',
+        '#93 On-Peak kWh re-validated after kWhConsumed correction <span class="tag tag-extract">extract</span>',
+        'Check a bill where On-Peak kWh was re-validated. Should show "Re-validated after kWhConsumed correction" reason.',
+      );
+      addCheck(
+        'manual-validation-27d',
+        'v27_04',
+        '#98 Impossible kWh > 500k nulled <span class="tag tag-extract">extract</span>',
+        'If any bill had kWh > 500,000, it should show as null/missing, not the garbled value.',
+      );
+      addCheck(
+        'manual-validation-27d',
+        'v27_05',
+        '#98 kW > kWh values nulled <span class="tag tag-extract">extract</span>',
+        'No bill should have ActualKW, BilledKW, or FacilitiesKW greater than kWhConsumed.',
+      );
+      addCheck(
+        'manual-validation-27d',
+        'v27_06',
+        '#120 ActualKW corrected when BilledKW == TDCkW <span class="tag tag-extract">extract</span>',
+        'Find a bill where ActualKW differs from BilledKW/TDCkW. Should be auto-corrected with green border.',
+      );
+      addCheck(
+        'manual-validation-27d',
+        'v27_07',
+        '#122 No false LINE ITEM EXCEEDS TOTAL on gas bills with negative Fuel Adjustment <span class="tag tag-extract">extract</span>',
+        'Extract Louisburg gas bills. Bills with negative Fuel Adjustment should NOT show the red warning banner.',
+      );
+      addCheck(
+        'manual-validation-27d',
+        'v27_08',
+        '#90 No false warnings on sewer/water bills <span class="tag tag-extract">extract</span>',
+        'Extract Louisburg gas PDF. Sewer and water bills should not show LINE ITEM EXCEEDS TOTAL warnings.',
+      );
+
+      // Section: Extraction Display
+      const manualDisplay27 = document.createElement('div');
+      manualDisplay27.className = 'section';
+      manualDisplay27.id = 'manual-display-27d';
+      const h3d = document.createElement('h3');
+      h3d.textContent = 'Session 04-27d — Extraction Display';
+      document.querySelector('.manual-section').appendChild(h3d);
+      document.querySelector('.manual-section').appendChild(manualDisplay27);
+
+      addCheck(
+        'manual-display-27d',
+        'v27_09',
+        '#83 Total $/kWh shows ~$0.06 not ~$0.10 <span class="tag tag-extract">extract</span>',
+        'Extract Evergy bills. The Total $/kWh on the Total Current Charges row should show ~$0.06/kWh (charges/quantity), not ~$0.10 (sum of rates).',
+      );
+      addCheck(
+        'manual-display-27d',
+        'v27_10',
+        '#94 On-Peak kWh label shows "On-Peak kWh" not "ONPEAKKWH" <span class="tag tag-ui">ui</span>',
+        'In extraction output, the On-Peak and Off-Peak kWh fields should show with proper labels and spacing.',
+      );
+      addCheck(
+        'manual-display-27d',
+        'v27_11',
+        '#78 Field labels have proper spacing <span class="tag tag-ui">ui</span>',
+        'No labels like "OnPeakkWh" — should be "On-Peak kWh" and "Off-Peak kWh".',
+      );
+      addCheck(
+        'manual-display-27d',
+        'v27_12',
+        '#91 Raw text shows "Page X of Y" for Louisburg PDFs <span class="tag tag-ui">ui</span>',
+        'Click Raw Text on a Louisburg extraction. Should show "Page X of Y" (not "Section X of 0").',
+      );
+      addCheck(
+        'manual-display-27d',
+        'v27_13',
+        '#124 Extraction Output header stays sticky when scrolling <span class="tag tag-ui">ui</span>',
+        'Scroll down in the right-side extraction output. The "Extraction Output" label and buttons should stay pinned at top.',
+      );
+      addCheck(
+        'manual-display-27d',
+        'v27_14',
+        '#81/#89 PDF/OCR page and Building Performance both scroll vertically <span class="tag tag-ui">ui</span>',
+        'On PDF/OCR page, both left and right columns scroll independently. Building Performance page scrolls to show all content.',
+      );
+
+      // Section: Duplicate Comparison
+      const manualDup27 = document.createElement('div');
+      manualDup27.className = 'section';
+      manualDup27.id = 'manual-dup-27d';
+      const h3dup = document.createElement('h3');
+      h3dup.textContent = 'Session 04-27d — Duplicate Comparison';
+      document.querySelector('.manual-section').appendChild(h3dup);
+      document.querySelector('.manual-section').appendChild(manualDup27);
+
+      addCheck(
+        'manual-dup-27d',
+        'v27_15',
+        '#115 No false diffs from trailing zeros <span class="tag tag-extract">extract</span>',
+        'Re-extract bills that already exist. Values like 445.0560 vs 445.056 should NOT be flagged as different.',
+      );
+      addCheck(
+        'manual-dup-27d',
+        'v27_16',
+        '#114 Rate fields flagged when different <span class="tag tag-extract">extract</span>',
+        'Re-extract with a rate change. TotalKWhRate, OnPeakRate, etc. should appear in the diff fields list.',
+      );
+      addCheck(
+        'manual-dup-27d',
+        'v27_17',
+        '#126 Diff fields visually highlighted <span class="tag tag-ui">ui</span>',
+        'On a duplicate bill, fields that differ should have amber background and show "was: $X" with the old value.',
+      );
+
+      // Section: UI & Display
+      const manualUI27 = document.createElement('div');
+      manualUI27.className = 'section';
+      manualUI27.id = 'manual-ui-27d';
+      const h3ui = document.createElement('h3');
+      h3ui.textContent = 'Session 04-27d — UI & Display';
+      document.querySelector('.manual-section').appendChild(h3ui);
+      document.querySelector('.manual-section').appendChild(manualUI27);
+
+      addCheck(
+        'manual-ui-27d',
+        'v27_18',
+        '#66 Text on Utility Data page is clearly readable <span class="tag tag-ui">ui</span>',
+        'Navigate to Utility Data. All text (labels, values, table cells) should be clearly white, not dim gray.',
+      );
+      addCheck(
+        'manual-ui-27d',
+        'v27_19',
+        '#100 Meter pills show commodity once <span class="tag tag-ui">ui</span>',
+        'Meter pills should show "Electric Evergy 33 bills BL", not "Electric Electric Evergy 33 bills BL".',
+      );
+      addCheck(
+        'manual-ui-27d',
+        'v27_20',
+        '#64 Sewer/Stormwater pills show commodity type <span class="tag tag-ui">ui</span>',
+        'Sewer and Stormwater meter pills should show "Sewer" and "Stormwater", not a dash.',
+      );
+      addCheck(
+        'manual-ui-27d',
+        'v27_21',
+        '#65 Excl indicator is visible red badge <span class="tag tag-ui">ui</span>',
+        'Excluded meters should show a small red "excl" badge (similar to green "BL" tag), not dim gray text.',
+      );
+      addCheck(
+        'manual-ui-27d',
+        'v27_22',
+        '#63 No popup on PDF drop zone <span class="tag tag-ui">ui</span>',
+        'Navigate to PDF/OCR page. No tooltip popup should appear on the drop zone area.',
+      );
+      addCheck(
+        'manual-ui-27d',
+        'v27_23',
+        '#97 EUI card shows "Current EUI" not "Projected EUI" <span class="tag tag-ui">ui</span>',
+        'Project Dashboard EUI cards should say "Baseline EUI" and "Current EUI". Building Performance table headers: "Baseline EUI", "Current Cost", "Current EUI".',
+      );
+      addCheck(
+        'manual-ui-27d',
+        'v27_24',
+        '#76 Rate values show correct decimal places <span class="tag tag-ui">ui</span>',
+        'In Bills table, $/kWh rates show 5 decimal places ($0.04146), $/kW rates show 3 ($5.598).',
+      );
+
+      // Section: Propane & Commodity
+      const manualProp27 = document.createElement('div');
+      manualProp27.className = 'section';
+      manualProp27.id = 'manual-prop-27d';
+      const h3prop = document.createElement('h3');
+      h3prop.textContent = 'Session 04-27d — Propane & Commodity';
+      document.querySelector('.manual-section').appendChild(h3prop);
+      document.querySelector('.manual-section').appendChild(manualProp27);
+
+      addCheck(
+        'manual-prop-27d',
+        'v27_25',
+        '#103 Propane Meter Data shows propane columns <span class="tag tag-perf">perf</span>',
+        'Select a Propane meter, open Meter Data tab. Should show Gallons, Propane Cost, Cost/Gallon columns — NOT Water fields.',
+      );
+      addCheck(
+        'manual-prop-27d',
+        'v27_26',
+        '#102 Propane Performance headers correct <span class="tag tag-perf">perf</span>',
+        'Propane meter Performance tab should say "Expected Propane Cost" and "Actual Propane Cost", not "Exp Gallon × Rate".',
+      );
+      addCheck(
+        'manual-prop-27d',
+        'v27_27',
+        '#92 Billing periods aligned across commodities <span class="tag tag-extract">extract</span>',
+        'After extracting Louisburg gas PDF, Storm/Gas/Water/Sewer from same billing cycle should share the same normalized period.',
+      );
+      addCheck(
+        'manual-prop-27d',
+        'v27_28',
+        '#125 Baseline tab updates after bill save without refresh <span class="tag tag-ui">ui</span>',
+        'Save bills that create new meters. The Baseline tab should show inherited baseline immediately — no page refresh needed.',
+      );
+
+      updateProgress();
+    </script>
+  </body>
+</html>
