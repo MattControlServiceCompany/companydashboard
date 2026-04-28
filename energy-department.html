@@ -18690,7 +18690,6 @@
                 if (fuelAdj != null && fuelAdj > 0) {
                   if (/-\s*$/.test(ln)) fuelAdj = -fuelAdj;
                   else if (/\(\s*\$?[\d,]+\.\d{2}\s*\)/.test(ln)) fuelAdj = -fuelAdj;
-                  else fuelAdj = -Math.abs(fuelAdj);
                 }
               } else if (code === 'ST') {
                 stormAmt = amt;
