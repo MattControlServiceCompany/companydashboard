@@ -12896,7 +12896,8 @@
         }
 
         let totalBl = 0,
-          totalCur = 0;
+          totalCur = 0,
+          totalDirectSav = 0;
         const bldgRows = bldgs.map((b) => {
           const meters = b.meters || [];
           const sqft = parseInt(b.sqft || 0);
@@ -12911,12 +12912,12 @@
             allKwh = 0,
             allTherms = 0;
           let hasBaseline = false;
+          let bldgSav = 0;
 
           if (useNormalized) {
             // Normalized path: use same calculation as Performance panel
             const bldgMoBase = {};
             for (let i = 0; i < 12; i++) bldgMoBase[i] = 0;
-            let bldgSav = 0;
             meters.forEach((m) => {
               if (m.baselineInclude === false) return;
               if (!isActiveCommodity(projId, m.commodity)) return;
@@ -13043,7 +13044,10 @@
           const blLabel = hasBaseline ? 'Baseline' : 'Total Cost';
           totalBl += useCost;
           totalCur += curCost;
-          const sav = useCost - curCost;
+          // For normalized mode, use bldgSav directly (same source as Project Performance page).
+          // For actual mode, derive savings from baseline minus current cost as before.
+          const sav = useNormalized ? bldgSav : useCost - curCost;
+          totalDirectSav += sav;
           const savPct = useCost > 0 ? (sav / useCost) * 100 : 0;
           // EUI: kBtu/sf/yr (1 kWh = 3.412 kBtu, 1 therm = 100 kBtu)
           const blKBtu = useKwh * 3.412 + useTherms * 100;
@@ -13083,7 +13087,8 @@
           };
         });
 
-        const totalSav = totalBl - totalCur;
+        // Use the directly-accumulated per-building savings (same source as Project Performance page).
+        const totalSav = totalDirectSav;
         const totalPct = totalBl > 0 ? (totalSav / totalBl) * 100 : 0;
         const $c = (n) => '$' + Math.round(Math.abs(n)).toLocaleString();
 
