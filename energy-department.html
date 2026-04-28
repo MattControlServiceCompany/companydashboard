@@ -18685,6 +18685,11 @@
                 if (consumption && consumption > 0 && consumption < 1000000) gasUsage = consumption;
               } else if (code === 'FA') {
                 fuelAdj = amt;
+                if (fuelAdj != null && fuelAdj > 0) {
+                  if (/-\s*$/.test(ln)) fuelAdj = -fuelAdj;
+                  else if (/\(\s*\$?[\d,]+\.\d{2}\s*\)/.test(ln)) fuelAdj = -fuelAdj;
+                  else fuelAdj = -Math.abs(fuelAdj);
+                }
               } else if (code === 'ST') {
                 stormAmt = amt;
               } else if (code === 'SW') {
@@ -29244,6 +29249,7 @@
         Object.keys(utilityData).forEach(function (pid) {
           sset('en_utility_' + pid, utilityData[pid]);
         });
+        _refreshBldgPerfIfVisible();
       }
 
       function _inheritBaselinesForProject(projId) {
@@ -31917,6 +31923,60 @@
                 result[s.ym].cost += cost * share;
               });
             }
+          }
+        }
+
+        // Last delivery forward: estimate ongoing consumption from last delivery
+        // to today using gal/HDD rate from the most recent measured period.
+        if (sorted.length >= 2) {
+          const lastD = sorted[sorted.length - 1];
+          const prevD = sorted[sorted.length - 2];
+          const lastGal = parseFloat(lastD.gallonsDelivered || lastD.kwh) || 0;
+          const lastCost = parseFloat(lastD.totalCost) || 0;
+          const pricePerGal = lastGal > 0 ? lastCost / lastGal : 0;
+          const pStart = _parseISO(prevD.start);
+          const pEnd = _parseISO(lastD.start);
+          const pSpans = monthSpans(pStart, pEnd);
+          let pHDD = 0;
+          pSpans.forEach(function (s) {
+            const w = hddByMonth && hddByMonth[s.ym];
+            const calDays = calDaysInMonth(s.ym);
+            pHDD += w && w.hdd ? w.hdd * (s.days / calDays) : 0;
+          });
+          const galPerHDD = pHDD > 0 && lastGal > 0 ? lastGal / pHDD : 0;
+          if (galPerHDD > 0) {
+            const fwdStart = _parseISO(lastD.start);
+            const now = new Date();
+            const fwdEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+            const fwdSpans = monthSpans(fwdStart, fwdEnd);
+            let fwdTotalHDD = 0;
+            const fwdHDD = fwdSpans.map(function (s) {
+              const w = hddByMonth && hddByMonth[s.ym];
+              const calDays = calDaysInMonth(s.ym);
+              const frac = calDays > 0 ? s.days / calDays : 0;
+              const hdd = w && w.hdd != null ? w.hdd * frac : 0;
+              fwdTotalHDD += hdd;
+              return { ym: s.ym, days: s.days, hdd: hdd };
+            });
+            fwdHDD.forEach(function (s) {
+              const share =
+                fwdTotalHDD > 0
+                  ? s.hdd / fwdTotalHDD
+                  : s.days /
+                    Math.max(
+                      1,
+                      fwdSpans.reduce(function (t, x) {
+                        return t + x.days;
+                      }, 0),
+                    );
+              const estGal = fwdTotalHDD > 0 ? fwdTotalHDD * galPerHDD * share : 0;
+              const estCost = estGal * pricePerGal;
+              if (estGal > 0) {
+                if (!result[s.ym]) result[s.ym] = { gallons: 0, cost: 0 };
+                result[s.ym].gallons += estGal;
+                result[s.ym].cost += estCost;
+              }
+            });
           }
         }
 
@@ -36202,7 +36262,6 @@
                   style="font-family:var(--font);font-size:11px;font-weight:600;padding:5px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;background:${defView === 'quarterly' ? 'var(--em)' : 'transparent'};color:${defView === 'quarterly' ? '#05080f' : 'var(--text2)'}">Quarterly</button>
               </div>
             </div>
-            <button onclick="bpRecalc()" style="font-family:var(--font);font-size:12px;font-weight:700;padding:7px 16px;border-radius:7px;border:none;cursor:pointer;background:var(--em);color:#05080f;align-self:flex-end">⚡ Recalculate</button>
             <button onclick="bpApplyToAllBuildings()" style="font-family:var(--font);font-size:11px;font-weight:600;padding:7px 12px;border-radius:7px;border:1px solid var(--border);cursor:pointer;background:var(--s3);color:var(--text2);align-self:flex-end" title="Apply these settings to all buildings in this project">📋 Apply to All Buildings</button>
           </div>
 
@@ -39786,6 +39845,14 @@
       function updateMeterModalFields() {
         /* commodity fields are shared across types — no field changes needed */
       }
+      function _refreshBldgPerfIfVisible() {
+        const pane = document.getElementById('bldgPerfPaneInner');
+        if (pane && pane.offsetParent !== null) {
+          const b = getUDBldg(udSelProjId, udSelBldgId);
+          if (b) renderBldgPerfPane(pane, b);
+        }
+      }
+
       function saveMeter() {
         const editId = document.getElementById('mm-edit-id').value;
         const incl = document.getElementById('mm-inclusive').value === 'true';
@@ -39836,6 +39903,7 @@
         renderUDProjList();
         const isEmbed = window._udActiveWrap && window._udActiveWrap !== document.getElementById('udDetailWrap');
         renderUDDetail(isEmbed ? window._udActiveWrap : undefined);
+        _refreshBldgPerfIfVisible();
         setTimeout(renderSidebarFolders, 100);
         if (isEmbed) {
           renderProjTable();
@@ -41781,14 +41849,14 @@
         function getBillsByMonth(meter) {
           if (!meter) return {};
           const blBills = _dashGetBaselineBills(meter);
-          const bills = blBills.length
-            ? blBills
-            : (meter.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+          const allBills = (meter.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+          const bills = blBills.length ? blBills : allBills;
+          const incl = meter.inclusive !== false;
           const byMo = {};
           bills.forEach((bill) => {
-            const d = _parseISO(bill.start);
-            const mo = d.getMonth();
-            // Use latest bill for each calendar month
+            const ym = normMonth(bill.start, bill.end, incl, allBills);
+            if (!ym) return;
+            const mo = parseInt(ym.split('-')[1]) - 1;
             byMo[mo] = bill;
           });
           return byMo;
@@ -42787,35 +42855,38 @@
           return;
         }
 
-        // Get total utility data from selected building
+        // Get total utility data from baseline bills only (matches Baseline Data table)
         let totalKwh = 0,
           totalKw = 0,
           totalGas = 0;
-        if (selBldg) {
-          (selBldg.meters || []).forEach((m) => {
-            (m.bills || []).forEach((bill) => {
+        const _hvlElecByMo = {};
+        const _hvlGasByMo = {};
+        const _gatherBldg = (b) => {
+          (b.meters || []).forEach((m) => {
+            const blBills = _dashGetBaselineBills(m);
+            const allBills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+            const bills = blBills.length ? blBills : allBills;
+            const incl = m.inclusive !== false;
+            bills.forEach((bill) => {
+              const ym = normMonth(bill.start, bill.end, incl, allBills);
+              const mo = ym ? parseInt(ym.split('-')[1]) - 1 : _parseISO(bill.start).getMonth();
               if (m.commodity === 'Electric') {
-                totalKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+                const kwh = parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+                totalKwh += kwh;
                 totalKw = Math.max(totalKw, parseFloat(bill.demandKW) || 0);
+                _hvlElecByMo[mo] = (_hvlElecByMo[mo] || 0) + kwh;
               } else if (m.commodity === 'Gas') {
-                totalGas += parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
+                const therms = parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
+                totalGas += therms;
+                _hvlGasByMo[mo] = (_hvlGasByMo[mo] || 0) + therms;
               }
             });
           });
+        };
+        if (selBldg) {
+          _gatherBldg(selBldg);
         } else {
-          const bldgs = getUDBldgs(projId);
-          bldgs.forEach((b) => {
-            (b.meters || []).forEach((m) => {
-              (m.bills || []).forEach((bill) => {
-                if (m.commodity === 'Electric') {
-                  totalKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-                  totalKw = Math.max(totalKw, parseFloat(bill.demandKW) || 0);
-                } else if (m.commodity === 'Gas') {
-                  totalGas += parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
-                }
-              });
-            });
-          });
+          getUDBldgs(projId).forEach(_gatherBldg);
         }
 
         let hvacKwhPct, hvacKwPct, hvacGasPct;
@@ -42920,13 +42991,48 @@
         const pct = (n) => n.toFixed(1) + '%';
 
         // Save to project — include monthly breakdowns so savings calcs can use them
-        const monthlyCoolKwh = coolDist.map((d) => coolKwhTotal * d);
-        const monthlyHeatKwh = heatDist.map((d) => heatKwhTotal * d);
-        const monthlyNonHvacKwh = flatDist.map((d) => nonHvacKwh * d);
+        // Scale KC shapes so each month's component total = actual baseline kWh
+        const _rawCool = coolDist.map((d) => coolKwhTotal * d);
+        const _rawHeat = heatDist.map((d) => heatKwhTotal * d);
+        const _rawNonH = flatDist.map((d) => nonHvacKwh * d);
+        const monthlyCoolKwh = _rawCool.slice();
+        const monthlyHeatKwh = _rawHeat.slice();
+        const monthlyNonHvacKwh = _rawNonH.slice();
+        const hasBaselineKwh = Object.keys(_hvlElecByMo).length >= 3;
+        if (hasBaselineKwh) {
+          for (let i = 0; i < 12; i++) {
+            const actual = _hvlElecByMo[i] || 0;
+            const shaped = _rawCool[i] + _rawHeat[i] + _rawNonH[i];
+            if (shaped > 0 && actual > 0) {
+              const scale = actual / shaped;
+              monthlyCoolKwh[i] = _rawCool[i] * scale;
+              monthlyHeatKwh[i] = _rawHeat[i] * scale;
+              monthlyNonHvacKwh[i] = _rawNonH[i] * scale;
+            } else if (actual > 0) {
+              monthlyNonHvacKwh[i] = actual;
+            }
+          }
+        }
         const monthlyHvacKwh = months.map((_, i) => monthlyCoolKwh[i] + monthlyHeatKwh[i]);
-        const monthlyHvacGas = heatDist.map((d) => hvacGasT * d);
-        const monthlyNonHvacGas = flatDist.map((d) => nonHvacGas * d);
-        const monthlyHvacKw = coolDist.map((d) => hvacKw * (d / Math.max(...coolDist))); // kW follows cooling peak shape
+        const _rawGasHvac = heatDist.map((d) => hvacGasT * d);
+        const _rawGasNon = flatDist.map((d) => nonHvacGas * d);
+        const monthlyHvacGas = _rawGasHvac.slice();
+        const monthlyNonHvacGas = _rawGasNon.slice();
+        const hasBaselineGas = Object.keys(_hvlGasByMo).length >= 3;
+        if (hasBaselineGas) {
+          for (let i = 0; i < 12; i++) {
+            const actual = _hvlGasByMo[i] || 0;
+            const shaped = _rawGasHvac[i] + _rawGasNon[i];
+            if (shaped > 0 && actual > 0) {
+              const scale = actual / shaped;
+              monthlyHvacGas[i] = _rawGasHvac[i] * scale;
+              monthlyNonHvacGas[i] = _rawGasNon[i] * scale;
+            } else if (actual > 0) {
+              monthlyNonHvacGas[i] = actual;
+            }
+          }
+        }
+        const monthlyHvacKw = coolDist.map((d) => hvacKw * (d / Math.max(...coolDist)));
 
         p.hvacLoadEst = {
           method,
@@ -43003,14 +43109,14 @@
                     <tr><th>Category</th>${months.map((m) => `<th style="text-align:center;width:58px">${m}</th>`).join('')}<th style="text-align:right">Annual</th></tr>
                   </thead>
                   <tbody>
-                    <tr style="background:rgba(59,130,246,0.05)"><td style="font-weight:600">Cooling kWh</td>${coolDist.map((d) => `<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(coolKwhTotal * d)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(coolKwhTotal)}</td></tr>
-                    <tr style="background:rgba(244,63,94,0.05)"><td style="font-weight:600">Heating kWh</td>${heatDist.map((d) => `<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(heatKwhTotal * d)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(heatKwhTotal)}</td></tr>
-                    <tr><td style="font-weight:600;color:var(--teal)">Non-HVAC kWh</td>${flatDist.map((d) => `<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(nonHvacKwh * d)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(nonHvacKwh)}</td></tr>
-                    <tr style="border-top:2px solid var(--border2)"><td style="font-weight:800">Total kWh</td>${months.map((_, i) => `<td style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:700">${fmt(coolKwhTotal * coolDist[i] + heatKwhTotal * heatDist[i] + nonHvacKwh * flatDist[i])}</td>`).join('')}<td style="text-align:right;font-weight:800;font-family:var(--mono);color:var(--em)">${fmt(estimatedTotalKwh)}</td></tr>
+                    <tr style="background:rgba(59,130,246,0.05)"><td style="font-weight:600">Cooling kWh</td>${monthlyCoolKwh.map((v) => `<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(v)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(monthlyCoolKwh.reduce((s, v) => s + v, 0))}</td></tr>
+                    <tr style="background:rgba(244,63,94,0.05)"><td style="font-weight:600">Heating kWh</td>${monthlyHeatKwh.map((v) => `<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(v)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(monthlyHeatKwh.reduce((s, v) => s + v, 0))}</td></tr>
+                    <tr><td style="font-weight:600;color:var(--teal)">Non-HVAC kWh</td>${monthlyNonHvacKwh.map((v) => `<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(v)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(monthlyNonHvacKwh.reduce((s, v) => s + v, 0))}</td></tr>
+                    <tr style="border-top:2px solid var(--border2)"><td style="font-weight:800">Total kWh</td>${months.map((_, i) => `<td style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:700">${fmt(monthlyCoolKwh[i] + monthlyHeatKwh[i] + monthlyNonHvacKwh[i])}</td>`).join('')}<td style="text-align:right;font-weight:800;font-family:var(--mono);color:var(--em)">${fmt(estimatedTotalKwh)}</td></tr>
                     <tr><td colspan="${months.length + 2}" style="height:8px;border:none"></td></tr>
-                    <tr style="background:rgba(244,63,94,0.05)"><td style="font-weight:600">HVAC Gas Therms</td>${heatDist.map((d) => `<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(hvacGasT * d)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(hvacGasT)}</td></tr>
-                    <tr><td style="font-weight:600;color:var(--teal)">Non-HVAC Gas Therms</td>${flatDist.map((d) => `<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(nonHvacGas * d)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(nonHvacGas)}</td></tr>
-                    <tr style="border-top:2px solid var(--border2)"><td style="font-weight:800">Total Gas Therms</td>${months.map((_, i) => `<td style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:700">${fmt(hvacGasT * heatDist[i] + nonHvacGas * flatDist[i])}</td>`).join('')}<td style="text-align:right;font-weight:800;font-family:var(--mono);color:var(--em)">${fmt(estimatedTotalGas)}</td></tr>
+                    <tr style="background:rgba(244,63,94,0.05)"><td style="font-weight:600">HVAC Gas Therms</td>${monthlyHvacGas.map((v) => `<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(v)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(monthlyHvacGas.reduce((s, v) => s + v, 0))}</td></tr>
+                    <tr><td style="font-weight:600;color:var(--teal)">Non-HVAC Gas Therms</td>${monthlyNonHvacGas.map((v) => `<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(v)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(monthlyNonHvacGas.reduce((s, v) => s + v, 0))}</td></tr>
+                    <tr style="border-top:2px solid var(--border2)"><td style="font-weight:800">Total Gas Therms</td>${months.map((_, i) => `<td style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:700">${fmt(monthlyHvacGas[i] + monthlyNonHvacGas[i])}</td>`).join('')}<td style="text-align:right;font-weight:800;font-family:var(--mono);color:var(--em)">${fmt(estimatedTotalGas)}</td></tr>
                   </tbody>
                 </table>
               </div>
