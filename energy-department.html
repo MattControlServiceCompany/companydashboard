@@ -18672,7 +18672,7 @@
               }
             }
             for (const ln of lines) {
-              const m = ln.match(/(?:BILL\s+)?(GS|FA|ST|SW|WP|WT)\b\s+([\d].*)/i);
+              const m = ln.match(/(?:BILL\s+)?(GS|FA|ST|SW|WP|WT)\b\s+([-\d$].*)/i);
               if (!m) continue;
               const code = m[1].toUpperCase();
               const nums = [...m[2].matchAll(/-?[\d,]+(?:\.\d+)?/g)].map((x) => parseFloat(x[0].replace(/,/g, '')));
@@ -18699,6 +18699,16 @@
               } else if (code === 'WT') {
                 waterAmt = amt;
                 if (consumption && consumption > 0 && consumption < 10000000) waterUsage = consumption;
+              }
+            }
+            // Bug #137: Fallback FA detection when code-based loop didn't match
+            // (e.g. negative amounts or OCR spacing variants that foil the regex).
+            if (fuelAdj == null) {
+              const _faRe = /(?:FUEL\s*ADJUST|[FE][UO][EL][LA]\s*ADJ)[^\d\n-]*(-?\$?-?[\d,]+\.\d{2})\s*-?/i;
+              const faMatch = page.match(_faRe);
+              if (faMatch) {
+                fuelAdj = parseFloat(faMatch[1].replace(/[\$,]/g, ''));
+                if (fuelAdj > 0) fuelAdj = -Math.abs(fuelAdj);
               }
             }
             // BillingDetail OCR sanity: positional extraction picks wrong
@@ -25630,10 +25640,10 @@
               status = 'failed';
             }
           } else if (dup) {
-            // Duplicate with no user-chosen action yet — default to overwrite (the
-            // user clicked Save All, they clearly want every bill persisted, and a
-            // dup with no action is the only ambiguous case).
-            dup.action = 'overwrite';
+            // Duplicate with no user-chosen action yet — default to merge (Bug #135:
+            // overwrite was clobbering user-corrected data; merge only fills empty
+            // fields so manual edits are preserved).
+            dup.action = 'merge';
             const ok = await _applyDupUpdate(i, bills[i], dup);
             if (ok) {
               dup.action = 'processed';
@@ -25876,7 +25886,11 @@
           } else if (dup.action === 'merge') {
             // Fill only empty fields
             for (const [extKey, billKey] of Object.entries(FIELD_MAP)) {
-              if ((!existing[billKey] || existing[billKey] === '') && extracted[extKey]) {
+              if (
+                (existing[billKey] == null || existing[billKey] === '') &&
+                extracted[extKey] != null &&
+                extracted[extKey] !== ''
+              ) {
                 existing[billKey] = extracted[extKey];
               }
             }
@@ -25926,7 +25940,7 @@
           } else if (dup.action === 'merge') {
             const COMPARE_KEYS = Object.keys(extracted).filter((k) => !k.startsWith('_'));
             for (const key of COMPARE_KEYS) {
-              if ((!sb[key] || sb[key] === '') && extracted[key]) {
+              if ((sb[key] == null || sb[key] === '') && extracted[key] != null && extracted[key] !== '') {
                 sb[key] = extracted[key];
               }
             }
@@ -33629,7 +33643,7 @@
               ? unit + '/' + weatherDDLabel + ' — Weather Normalized'
               : metric === 'total'
                 ? hasRegr
-                  ? 'Normalized kWh vs Actual kWh'
+                  ? `Normalized ${unit} vs Actual ${unit}`
                   : unit + '/Month'
                 : unit + '/Day';
 
@@ -37517,10 +37531,10 @@
         const perfChartLabel =
           (_perfMetric === 'total'
             ? hasRegr_p
-              ? 'Normalized kWh vs Actual kWh'
+              ? `Normalized ${unit} vs Actual ${unit}`
               : unit + '/Month vs Baseline'
             : hasRegr_p
-              ? 'Normalized kWh/Day vs Actual'
+              ? `Normalized ${unit}/Day vs Actual`
               : unit + '/Day vs Baseline') + (_perfOverlay ? ' + Raw Bills' : '');
         const perfControlBar =
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:10px">' +
