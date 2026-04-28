@@ -18122,8 +18122,8 @@
               const trim = ln.trim();
               if (/^\d{3}\s*-\s*(water|gas|sewer|storm)/i.test(trim)) continue;
               if (/Previous\s*Balance/i.test(trim)) continue;
-              if (/FUEL\s*ADJUST|FUELADJUST/i.test(trim) && !fuelAdjLine) fuelAdjLine = trim;
-              else if (/\bGAS\b/i.test(trim) && !/FUEL|ADJUST/i.test(trim) && !gasLine) gasLine = trim;
+              if (/[FE][UO][EL][LA]\s*ADJ|FUELADJ|FUEL\s*ADJ/i.test(trim) && !fuelAdjLine) fuelAdjLine = trim;
+              else if (/\bGAS\b/i.test(trim) && !/[FE][UO][EL]|ADJ/i.test(trim) && !gasLine) gasLine = trim;
               else if (/\bSTORM\s*WATER\b/i.test(trim) && !stormLine) stormLine = trim;
               else if (/\bSEWER\b/i.test(trim) && !sewerLine) sewerLine = trim;
               else if (/\bWATER\s*PROTECTION\s*FEE\b/i.test(trim) && !wpfLine) wpfLine = trim;
@@ -18451,17 +18451,19 @@
             // Formats seen: "-$385.93", "-385.93", "30.15-" (trailing minus),
             // "($385.93)" (parens). The regex captures the number; trailing
             // minus is detected separately and flips the sign.
-            const fuelAdjMatch = page.match(/FUEL\s*ADJUSTMENT[^\d-]*(-?\$?-?[\d,]+\.\d{2})\s*-?/i);
+            const _faRe = /(?:FUEL\s*ADJUST|[FE][UO][EL][LA]\s*ADJ)[^\d\n-]*(-?\$?-?[\d,]+\.\d{2})\s*-?/i;
+            const fuelAdjMatch = page.match(_faRe);
             let signedFuelAdj = null;
             if (fuelAdjMatch) {
               signedFuelAdj = parseFloat(fuelAdjMatch[1].replace(/[\$,]/g, ''));
-              // Trailing minus: "30.15-" — negate if the number itself was positive
-              const trailingMinus = /FUEL\s*ADJUSTMENT[^\n]*[\d,]+\.\d{2}\s*-/i.test(page);
+              const trailingMinus = /(?:FUEL\s*ADJUST|[FE][UO][EL][LA]\s*ADJ)[^\n]*[\d,]+\.\d{2}\s*-/i.test(page);
               if (signedFuelAdj > 0 && trailingMinus) {
                 signedFuelAdj = -signedFuelAdj;
               }
-              // Parens: "($385.93)" — negate if still positive
-              if (signedFuelAdj > 0 && /FUEL\s*ADJUSTMENT[^\n]*\(\s*\$?[\d,]+\.\d{2}\s*\)/i.test(page)) {
+              if (
+                signedFuelAdj > 0 &&
+                /(?:FUEL\s*ADJUST|[FE][UO][EL][LA]\s*ADJ)[^\n]*\(\s*\$?[\d,]+\.\d{2}\s*\)/i.test(page)
+              ) {
                 signedFuelAdj = -signedFuelAdj;
               }
             }
@@ -21163,8 +21165,32 @@
           if (comm && comm !== 'electric') continue;
           const _kwhVal = pf(b.kWhConsumed);
           if (_kwhVal > 500000) {
-            b['_likely_missing_kWhConsumed'] = true;
-            b.kWhConsumed = null;
+            const _eR = pf(b.EndRead),
+              _sR = pf(b.StartRead),
+              _mM = pf(b.MeterMultiplier);
+            const _recomputed = _eR > 0 && _sR > 0 && _eR > _sR && _mM > 0 ? (_eR - _sR) * _mM : 0;
+            const _crossCheck = b._kwhCrossCheck ? b._kwhCrossCheck.calculated : 0;
+            const _recovery =
+              _recomputed > 0 && _recomputed < 500000
+                ? _recomputed
+                : _crossCheck > 0 && _crossCheck < 500000
+                  ? _crossCheck
+                  : 0;
+            if (_recovery > 0) {
+              b['_auto_corrected_kWhConsumed'] = {
+                original: b.kWhConsumed,
+                corrected: _recovery.toFixed(4),
+                reason:
+                  'Value ' +
+                  _kwhVal +
+                  ' exceeded 500k ceiling; recovered from ' +
+                  (_recomputed > 0 ? 'EndRead-StartRead×Mult' : 'charge-line cross-check'),
+              };
+              b.kWhConsumed = _recovery.toFixed(4);
+            } else {
+              b['_likely_missing_kWhConsumed'] = true;
+              b.kWhConsumed = null;
+            }
           }
           const _kwhNow = pf(b.kWhConsumed);
           for (const kwField of ['ActualKW', 'BilledKW', 'FacilitiesKW', 'TDCkW']) {
@@ -21175,6 +21201,53 @@
             } else if (_kwhNow > 0 && v > _kwhNow) {
               b['_likely_missing_' + kwField] = true;
               b[kwField] = null;
+            }
+          }
+        }
+
+        // ── GAS SANITY PASS: catch impossible therms, charges, and fuel adjustments ──
+        for (const b of bills) {
+          const comm = (b.Commodity || '').toLowerCase();
+          if (comm !== 'gas') continue;
+          const therms = pf(b.NaturalGasTherms);
+          const gasChg = pf(b.GasCharge);
+          const custChg = pf(b.CustomerCharge);
+          const fa = pf(b.FuelAdjustment);
+          if (therms > 10000) {
+            b['_likely_garbled_NaturalGasTherms'] = {
+              original: b.NaturalGasTherms,
+              reason: 'Therms > 10,000 ceiling for monthly bill',
+            };
+            b.NaturalGasTherms = null;
+          }
+          if (therms > 0 && gasChg > 0) {
+            const rate = gasChg / therms;
+            if (rate > 2.0) {
+              b['_likely_garbled_GasCharge'] = {
+                original: b.GasCharge,
+                rate: rate.toFixed(4),
+                reason: 'Rate $' + rate.toFixed(2) + '/therm exceeds $2.00 ceiling',
+              };
+              b.GasCharge = null;
+            }
+          }
+          if (fa !== 0 && gasChg > 0 && Math.abs(fa) > gasChg * 0.5) {
+            b['_likely_garbled_FuelAdjustment'] = {
+              original: b.FuelAdjustment,
+              reason: '|FA| exceeds 50% of GasCharge ($' + gasChg.toFixed(2) + ')',
+            };
+            b.FuelAdjustment = null;
+          }
+          const total = pf(b.TotalCurrentCharges);
+          if (total > 0 && gasChg > 0 && custChg > 0) {
+            const expectedTotal = gasChg + custChg + (pf(b.FuelAdjustment) || 0);
+            if (Math.abs(expectedTotal - total) > total * 0.15 && Math.abs(expectedTotal - total) > 5) {
+              b._warnings = b._warnings || [];
+              b._warnings.push({
+                level: 'warn',
+                field: 'TotalCurrentCharges',
+                message: 'Gas total $' + total.toFixed(2) + ' differs from components sum $' + expectedTotal.toFixed(2),
+              });
             }
           }
         }
