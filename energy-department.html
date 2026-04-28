@@ -18122,8 +18122,8 @@
               const trim = ln.trim();
               if (/^\d{3}\s*-\s*(water|gas|sewer|storm)/i.test(trim)) continue;
               if (/Previous\s*Balance/i.test(trim)) continue;
-              if (/\bFUEL\b|\bADJUSTMENT\b/i.test(trim) && !fuelAdjLine) fuelAdjLine = trim;
-              else if (/\bGAS\b/i.test(trim) && !/FUEL|ADJUSTMENT/i.test(trim) && !gasLine) gasLine = trim;
+              if (/FUEL\s*ADJUST|FUELADJUST/i.test(trim) && !fuelAdjLine) fuelAdjLine = trim;
+              else if (/\bGAS\b/i.test(trim) && !/FUEL|ADJUST/i.test(trim) && !gasLine) gasLine = trim;
               else if (/\bSTORM\s*WATER\b/i.test(trim) && !stormLine) stormLine = trim;
               else if (/\bSEWER\b/i.test(trim) && !sewerLine) sewerLine = trim;
               else if (/\bWATER\s*PROTECTION\s*FEE\b/i.test(trim) && !wpfLine) wpfLine = trim;
