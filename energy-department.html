@@ -26300,7 +26300,9 @@
           const isDupDiff = _dupDiffSet.has(k);
           const dupDiff = _dupDiffMap[k];
           let borderStyle = '';
-          if (isDupDiff) borderStyle = 'border-left:3px solid #f59e0b;padding-left:8px';
+          if (isDupDiff)
+            borderStyle =
+              'border-left:3px solid #f59e0b;padding-left:8px;background:rgba(245,158,11,.08);border-radius:4px';
           else if (autoCorrect || ocrConsensus) borderStyle = 'border-left:3px solid #22c55e;padding-left:8px';
           else if (fw.length) borderStyle = 'border-left:3px solid ' + wColor[fw[0].level] + ';padding-left:8px';
           else if (magFlag) borderStyle = 'border-left:3px solid #fb923c;padding-left:8px';
@@ -26408,7 +26410,7 @@
           const acInputColor = autoCorrect || ocrConsensus ? ';color:#eab308' : '';
           const dupInputStyle = isDupDiff ? inputStyle + ';color:var(--amber)' : inputStyle + acInputColor;
           const dupIcon = isDupDiff
-            ? `<span title="Existing: ${(dupDiff.existVal || '(empty)').replace(/"/g, '&quot;')}" style="cursor:help;color:var(--amber);font-size:11px;margin-left:4px">&#9432;</span>`
+            ? `<span title="Existing value: ${(dupDiff.existVal || '(empty)').replace(/"/g, '&quot;')}" style="cursor:help;color:var(--amber);font-size:9px;font-weight:700;margin-left:4px;background:rgba(245,158,11,.18);padding:1px 4px;border-radius:3px;letter-spacing:.3px">&#9432; was: ${((dupDiff.existVal || '(empty)').length > 18 ? (dupDiff.existVal || '').slice(0, 15) + '...' : dupDiff.existVal || '(empty)').replace(/</g, '&lt;')}</span>`
             : '';
           // If there's any signal to show (correction, warning, mag flag, likely missing),
           // size the input to its value so the icon sits right next to the value instead
@@ -30322,7 +30324,7 @@
               const _pTxt = _pTxtMap[m.commodity] || 'var(--text2)';
               const _exclTag =
                 m.baselineInclude === false
-                  ? '<span style="font-size:9px;color:var(--text3);opacity:.7" title="Excluded from baseline &amp; performance">excl</span>'
+                  ? '<span style="font-size:8px;font-weight:700;color:var(--danger,#ef4444);background:rgba(239,68,68,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Excluded from baseline &amp; performance">excl</span>'
                   : '';
               const _blTag =
                 m.baseline && m.baseline.months && m.baseline.months.length > 0
@@ -35787,6 +35789,11 @@
           const wCost = isTotal ? totW.cost : w.cost != null ? w.cost : null;
           const cPerKgal = kgal != null && kgal > 0 && wCost != null ? wCost / kgal : null;
 
+          const p = propaneByMo[mo] || {};
+          const gallons = isTotal ? totP.gallons : p.gallons != null ? p.gallons : null;
+          const pCost = isTotal ? totP.cost : p.cost != null ? p.cost : null;
+          const cPerGal = gallons != null && gallons > 0 && pCost != null ? pCost / gallons : null;
+
           return `<tr${isTotal ? ' class="total-row"' : ''}>
             ${td(moLabel, 'mo')}
             ${
@@ -35801,6 +35808,7 @@
             }
             ${isGas ? `${td(n1(therms))} ${td(nc(gCost))} ${td(r4(cPerTherm))}` : ''}
             ${isWater ? `${td(n1(kgal))} ${td(nc(wCost))} ${td(r4(cPerKgal))}` : ''}
+            ${isPropane ? `${td(n1(gallons))} ${td(nc(pCost))} ${td(r4(cPerGal))}` : ''}
           </tr>`;
         }
         const moRows = moList.map((mo) => moRow(mo, false)).join('');
@@ -35839,7 +35847,7 @@
             .bbd-tbl tr.total-row td{border-top:2px solid rgba(255,255,255,0.18);font-weight:800;background:#0d1830;color:#ffffff;font-size:11.5px}
             .bbd-tbl tr.total-row td.mo{color:#ffffff;background:#0d1830}
           </style>
-          <div class="bbd-wrap" style="--mdd-lbl-color:${isElec ? '#6ab0e8' : isGas ? '#d08030' : '#40c8a0'}">
+          <div class="bbd-wrap" style="--mdd-lbl-color:${isElec ? '#6ab0e8' : isGas ? '#d08030' : isPropane ? '#d08030' : '#40c8a0'}">
             <div class="bbd-title">Meter Data</div>
 
             <!-- Meta row -->
@@ -35847,17 +35855,17 @@
               <div>
                 <div style="font-size:10px;font-weight:700;color:#8ab0d0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Data Baseline Years</div>
                 <table class="bbd-bl-tbl">
-                  <tr><th>${isElec ? 'Electricity' : isGas ? 'Heating Fuel' : 'Water'}</th></tr>
+                  <tr><th>${isElec ? 'Electricity' : isGas ? 'Heating Fuel' : isPropane ? 'Propane' : 'Water'}</th></tr>
                   <tr><td class="bl-green">${blSpan(blRows)}</td></tr>
                 </table>
               </div>
               <div>
                 <div style="font-size:10px;font-weight:700;color:#8ab0d0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Provider</div>
-                <div style="font-size:11.5px;color:#8ab0d0">${isElec ? 'Electric' : isGas ? 'Heating Fuel' : 'Water'} Company <span style="color:#e8f4ff;font-weight:700">${m.provider || m.name || '—'}</span></div>
+                <div style="font-size:11.5px;color:#8ab0d0">${isElec ? 'Electric' : isGas ? 'Heating Fuel' : isPropane ? 'Propane' : 'Water'} Company <span style="color:#e8f4ff;font-weight:700">${m.provider || m.name || '—'}</span></div>
               </div>
               <div>
                 <div style="font-size:10px;font-weight:700;color:#8ab0d0;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Units</div>
-                <div style="font-size:11.5px;color:#8ab0d0">${isElec ? 'Electricity' : ''}${isGas ? 'Heating Fuel' : ''}${isWater ? 'Water' : ''} <span style="color:${isElec ? '#7dd8ff' : isGas ? '#ffb040' : '#40e8a0'};font-weight:800;margin-left:8px;font-size:12px">${getMeterDisplayUnit(m)}</span></div>
+                <div style="font-size:11.5px;color:#8ab0d0">${isElec ? 'Electricity' : ''}${isGas ? 'Heating Fuel' : ''}${isPropane ? 'Propane' : ''}${isWater ? 'Water' : ''} <span style="color:${isElec ? '#7dd8ff' : isGas ? '#ffb040' : isPropane ? '#ffb040' : '#40e8a0'};font-weight:800;margin-left:8px;font-size:12px">${getMeterDisplayUnit(m)}</span></div>
               </div>
             </div>
 
@@ -35865,7 +35873,7 @@
             <div class="bbd-summary">
               ${sqft > 0 ? `<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Square Feet</div><div class="bbd-sum-val">${sqft.toLocaleString()}</div></div>` : ''}
               ${kwhPerSf != null ? `<div class="bbd-sum-cell"><div class="bbd-sum-lbl">kWh / sf</div><div class="bbd-sum-val c-blue">${kwhPerSf.toFixed(2)}</div></div>` : ''}
-              ${costPerSf != null ? `<div class="bbd-sum-cell"><div class="bbd-sum-lbl">${isElec ? 'Electric Energy' : isGas ? 'Gas' : 'Utility'} Cost / sf</div><div class="bbd-sum-val c-green">${$c(costPerSf)}</div></div>` : ''}
+              ${costPerSf != null ? `<div class="bbd-sum-cell"><div class="bbd-sum-lbl">${isElec ? 'Electric Energy' : isGas ? 'Gas' : isPropane ? 'Propane' : 'Utility'} Cost / sf</div><div class="bbd-sum-val c-green">${$c(costPerSf)}</div></div>` : ''}
               ${hoursOperated != null ? `<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Hours Operated</div><div class="bbd-sum-val">${hoursOperated.toLocaleString()}</div></div>` : ''}
               ${avgWattsPerSf != null ? `<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Avg Watts / sf</div><div class="bbd-sum-val c-blue">${avgWattsPerSf.toFixed(2)}</div></div>` : ''}
               ${elecDolPerSf != null ? `<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Electric $ / sf</div><div class="bbd-sum-val c-orange">${$c(elecDolPerSf)}</div></div>` : ''}
@@ -35890,8 +35898,9 @@
               }
               ${thermPerSf != null ? `<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Therm / sf</div><div class="bbd-sum-val c-orange">${thermPerSf.toFixed(3)}</div></div>` : ''}
               ${gasPerTherm != null ? `<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Gas $ / Therm</div><div class="bbd-sum-val c-orange">${$c(gasPerTherm)}</div></div>` : ''}
+              ${isPropane && totP_costPerGal != null ? `<div class="bbd-sum-cell"><div class="bbd-sum-lbl">Propane $ / Gal</div><div class="bbd-sum-val c-orange">${$c(totP_costPerGal)}</div></div>` : ''}
               ${kbtuPerSf != null && (isElec || isGas) ? `<div class="bbd-sum-cell"><div class="bbd-sum-lbl">kBtu / sf</div><div class="bbd-sum-val c-violet">${kbtuPerSf.toFixed(2)}</div></div>` : ''}
-              <div class="bbd-sum-cell"><div class="bbd-sum-lbl">${isElec ? 'Electric' : isGas ? 'Gas' : 'Utility'} Costs / Year</div><div class="bbd-sum-val c-green">${$c(totCost, 0)}</div></div>
+              <div class="bbd-sum-cell"><div class="bbd-sum-lbl">${isElec ? 'Electric' : isGas ? 'Gas' : isPropane ? 'Propane' : 'Utility'} Costs / Year</div><div class="bbd-sum-val c-green">${$c(totCost, 0)}</div></div>
             </div>
 
             <!-- Main data table -->
@@ -35903,6 +35912,7 @@
                     ${isElec ? `<th colspan="15" class="e-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">ELECTRICITY</th>` : ''}
                     ${isGas ? `<th colspan="3" class="g-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">HEATING FUEL</th>` : ''}
                     ${isWater ? `<th colspan="3" class="w-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">WATER</th>` : ''}
+                    ${isPropane ? `<th colspan="3" class="g-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">PROPANE</th>` : ''}
                   </tr>
                   <tr>
                     ${
@@ -35931,6 +35941,14 @@
                         ? `
                       <th class="w-hdr" title="Normalized Baseline kGal">Normalized kGal</th>
                       <th class="w-hdr">Water<br>Cost</th><th class="w-hdr">Cost/<br>kGal</th>
+                    `
+                        : ''
+                    }
+                    ${
+                      isPropane
+                        ? `
+                      <th class="g-hdr" title="Normalized Baseline Gallons">Normalized Gallons</th>
+                      <th class="g-hdr">Propane<br>Cost</th><th class="g-hdr">Cost/<br>Gallon</th>
                     `
                         : ''
                     }
@@ -35996,6 +36014,16 @@
               data: moList.map((mo) => +(waterByMo[mo]?.cost || 0).toFixed(2)),
               backgroundColor: 'rgba(50,220,140,0.8)',
               borderColor: 'rgba(50,220,140,1)',
+              borderWidth: 0,
+              stack: 'cost',
+            });
+          }
+          if (isPropane) {
+            datasets.push({
+              label: 'Propane Cost',
+              data: moList.map((mo) => +(propaneByMo[mo]?.cost || 0).toFixed(2)),
+              backgroundColor: 'rgba(245,130,30,0.9)',
+              borderColor: 'rgba(245,130,30,1)',
               borderWidth: 0,
               stack: 'cost',
             });
