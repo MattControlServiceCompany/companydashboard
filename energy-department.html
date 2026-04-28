@@ -24459,12 +24459,14 @@
             // Store all OCR pass texts for consensus re-extraction on mismatched values
             const allPassTexts = {};
             for (let idx = 0; idx < ocrNeeded.length; idx++) {
+              if (window._pdfAbort) break; // Bug #134: honour cancel inside OCR page loop
               const pgNum = ocrNeeded[idx];
               let bestText = '',
                 bestScore = 0;
               allPassTexts[pgNum] = [];
 
               for (let pass = 0; pass < OCR_PASSES.length; pass++) {
+                if (window._pdfAbort) break; // Bug #134: honour cancel inside OCR pass loop
                 const cfg = OCR_PASSES[pass];
                 if (statusCb)
                   statusCb(
@@ -24534,6 +24536,7 @@
                 bestScore < 5 || !/service\s+from[:\s]\s*\d/i.test(bestText) || !/\$[\d,]+\.\d{2}/g.test(bestText);
               if (needsRetry) {
                 for (let pass = 0; pass < OCR_RETRY_PASSES.length; pass++) {
+                  if (window._pdfAbort) break; // Bug #134: honour cancel inside retry pass loop
                   const cfg = OCR_RETRY_PASSES[pass];
                   if (statusCb)
                     statusCb(
@@ -24709,6 +24712,10 @@
               globalTaskUpdate('📄 ' + msg);
             };
             let text = await extractPDFText(freshBytes(), statusMsg);
+            if (window._pdfAbort) {
+              globalTaskDone();
+              return;
+            } // Bug #134: honour cancel after extraction
             if (text && text.trim().length > 100) {
               window._pdfRawText = text;
               document.getElementById('pdfDebugBtn').style.display = 'inline-block';
@@ -38116,6 +38123,7 @@
         }
         const isElecB = unit === 'kWh';
         const isGasB = unit === 'Therms';
+        const isPropaneB = unit === 'Gallons'; // Bug #139: propane detection
         const labels = rows.map((r) => r.label);
         const isTotal = metric === 'total';
         const mainData = isTotal ? rows.map((r) => +r.usage.toFixed(0)) : rows.map((r) => +r.usagePerDay.toFixed(2));
@@ -38172,7 +38180,9 @@
               ? parseFloat(b.kwh) || 0
               : isGasB
                 ? parseFloat(b.therms) || 0
-                : parseFloat(b.usage) || 0;
+                : isPropaneB
+                  ? parseFloat(b.gallonsDelivered) || parseFloat(b.kwh) || 0 // Bug #139: propane uses gallonsDelivered
+                  : parseFloat(b.usage) || 0;
             const days = Math.max(1, parseInt(calcDays(b.start, b.end, incl)) || 1);
             if (!billByYm[ym] || usage > 0) billByYm[ym] = { usage, days };
           });
@@ -39685,6 +39695,10 @@
         for (const k of LEGACY_PASSTHROUGH) {
           const v = g('bl-' + k);
           if (v !== '') data[k] = v;
+        }
+        // Bug #133: sync naturalGasTherms → therms so the rest of the dashboard can read it
+        if (data.naturalGasTherms != null && data.naturalGasTherms !== '') {
+          data.therms = data.naturalGasTherms;
         }
         const start = data.start;
         const end = data.end;
