@@ -41946,11 +41946,11 @@
         MO_SHORT.forEach((_, i) => {
           const eb = eByMo[i];
           if (eb) {
-            totKwh += eb.kwh || eb.usage || 0;
-            maxKw = Math.max(maxKw, eb.kw || eb.demKW || eb.billedKw || 0);
-            totKwCost += eb.kwCost || eb.demandCost || 0;
-            totKwhCost += eb.kwhCost || eb.energyCost || 0;
-            totElecCost += eb.totalCost || eb.cost || 0;
+            totKwh += parseFloat(eb.kwh) || parseFloat(eb.usage) || 0;
+            maxKw = Math.max(maxKw, parseFloat(eb.demandKW) || parseFloat(eb.billedKW) || 0);
+            totKwCost += parseFloat(eb.kwCost) || parseFloat(eb.demandCost) || 0;
+            totKwhCost += parseFloat(eb.kwhCost) || parseFloat(eb.energyCost) || 0;
+            totElecCost += parseFloat(eb.totalCost) || parseFloat(eb.cost) || 0;
           }
           const gb = gByMo[i];
           if (gb) {
@@ -41990,11 +41990,11 @@
                 ${MO_SHORT.map((mo, i) => {
                   const eb = eByMo[i] || {};
                   const gb = gByMo[i] || {};
-                  const kwh = eb.kwh || eb.usage || 0;
-                  const kw = eb.kw || eb.demKW || eb.billedKw || 0;
-                  const kwCost = eb.kwCost || eb.demandCost || 0;
-                  const kwhCost = eb.kwhCost || eb.energyCost || 0;
-                  const eCost = eb.totalCost || eb.cost || 0;
+                  const kwh = parseFloat(eb.kwh) || parseFloat(eb.usage) || 0;
+                  const kw = parseFloat(eb.demandKW) || parseFloat(eb.billedKW) || 0;
+                  const kwCost = parseFloat(eb.kwCost) || parseFloat(eb.demandCost) || 0;
+                  const kwhCost = parseFloat(eb.kwhCost) || parseFloat(eb.energyCost) || 0;
+                  const eCost = parseFloat(eb.totalCost) || parseFloat(eb.cost) || 0;
                   const avgKwh = kwh > 0 && kwhCost > 0 ? kwhCost / kwh : 0;
                   const avgKw = kw > 0 && kwCost > 0 ? kwCost / kw : 0;
                   const days = eb.days || 30;
@@ -42174,8 +42174,14 @@
           avgKwRate = Array(12).fill(0),
           avgThermRate = Array(12).fill(0);
         if (elecM) {
-          (elecM.bills || []).forEach((bill) => {
-            const mo = new Date(bill.start).getMonth();
+          const allElecBills = (elecM.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+          const blElecBills = _dashGetBaselineBills(elecM);
+          const elecBills = blElecBills.length ? blElecBills : allElecBills;
+          const inclElec = elecM.inclusive !== false;
+          elecBills.forEach((bill) => {
+            const ym = normMonth(bill.start, bill.end, inclElec, allElecBills);
+            if (!ym) return;
+            const mo = parseInt(ym.split('-')[1]) - 1;
             const kwh = parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
             const kw = parseFloat(bill.demandKW) || parseFloat(bill.billedKW) || 0;
             actualKwh[mo] = kwh;
@@ -42187,8 +42193,14 @@
           });
         }
         if (gasM) {
-          (gasM.bills || []).forEach((bill) => {
-            const mo = new Date(bill.start).getMonth();
+          const allGasBills = (gasM.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+          const blGasBills = _dashGetBaselineBills(gasM);
+          const gasBills = blGasBills.length ? blGasBills : allGasBills;
+          const inclGas = gasM.inclusive !== false;
+          gasBills.forEach((bill) => {
+            const ym = normMonth(bill.start, bill.end, inclGas, allGasBills);
+            if (!ym) return;
+            const mo = parseInt(ym.split('-')[1]) - 1;
             const therms = parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
             const gCost = parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0;
             actualTherms[mo] = therms;
