@@ -18168,8 +18168,7 @@
             const wpf = parseLine(wpfLine);
             const fuelAdj = parseLine(fuelAdjLine);
             let signedFuelAdj = fuelAdj.charge;
-            if (signedFuelAdj != null && signedFuelAdj > 0 && fuelAdjLine && /-\s*$/.test(fuelAdjLine))
-              signedFuelAdj = -signedFuelAdj;
+            if (signedFuelAdj != null && signedFuelAdj > 0) signedFuelAdj = -Math.abs(signedFuelAdj);
             // Water and sewer share the same meter — usage should match.
             if ((!water.usage || water.usage === 0) && water.charge) {
               water.usage = sewer.usage || wpf.usage || 0;
@@ -18688,8 +18687,7 @@
               } else if (code === 'FA') {
                 fuelAdj = amt;
                 if (fuelAdj != null && fuelAdj > 0) {
-                  if (/-\s*$/.test(ln)) fuelAdj = -fuelAdj;
-                  else if (/\(\s*\$?[\d,]+\.\d{2}\s*\)/.test(ln)) fuelAdj = -fuelAdj;
+                  fuelAdj = -Math.abs(fuelAdj);
                 }
               } else if (code === 'ST') {
                 stormAmt = amt;
