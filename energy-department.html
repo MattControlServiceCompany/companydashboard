@@ -17995,6 +17995,84 @@
               }
             }
 
+            // ── SEQUENTIAL DATE INFERENCE (second backfill pass) ──
+            // After the BillDate-based backfill and period alignment, some bills
+            // may still have null dates (e.g. when BillDate is also null on the
+            // page). Infer dates from surrounding bills in the same account by
+            // looking at the date sequence. Louisburg bills are monthly (~15th
+            // to ~15th), so consecutive bills share period boundaries.
+            const _parseDt = (s) => {
+              if (!s) return null;
+              const p = String(s).split('/');
+              if (p.length !== 3) return null;
+              return new Date(+(p[2].length === 2 ? '20' + p[2] : p[2]), +p[0] - 1, +p[1]);
+            };
+            const _fmtDt = (d) => d.getMonth() + 1 + '/' + d.getDate() + '/' + d.getFullYear();
+            for (let i = 0; i < bills.length; i++) {
+              if (bills[i].BillingPeriodStart && bills[i].BillingPeriodEnd) continue;
+              // Find the nearest prior bill (same account) with dates
+              const acct = bills[i].AccountNumber || '';
+              let prevEnd = null;
+              for (let j = i - 1; j >= 0; j--) {
+                if ((bills[j].AccountNumber || '') === acct && bills[j].BillingPeriodEnd) {
+                  prevEnd = _parseDt(bills[j].BillingPeriodEnd);
+                  break;
+                }
+              }
+              // Find the nearest next bill (same account) with dates
+              let nextStart = null;
+              for (let j = i + 1; j < bills.length; j++) {
+                if ((bills[j].AccountNumber || '') === acct && bills[j].BillingPeriodStart) {
+                  nextStart = _parseDt(bills[j].BillingPeriodStart);
+                  break;
+                }
+              }
+              // Count how many consecutive null-date bills share this gap (same account)
+              let gapCount = 1;
+              for (let j = i + 1; j < bills.length; j++) {
+                if ((bills[j].AccountNumber || '') !== acct) continue;
+                if (bills[j].BillingPeriodStart && bills[j].BillingPeriodEnd) break;
+                gapCount++;
+              }
+              // If we have at least one anchor, infer the period
+              if (prevEnd) {
+                // Use prevEnd as this bill's start; estimate end as start + ~30 days
+                // or use nextStart if available and gap is 1
+                const inferStart = prevEnd;
+                let inferEnd = null;
+                if (nextStart && gapCount === 1) {
+                  inferEnd = nextStart;
+                } else {
+                  // Add ~30 days
+                  inferEnd = new Date(prevEnd.getTime());
+                  inferEnd.setMonth(inferEnd.getMonth() + 1);
+                }
+                bills[i].BillingPeriodStart = _fmtDt(inferStart);
+                bills[i].BillingPeriodEnd = _fmtDt(inferEnd);
+                bills[i]._periodInferred = {
+                  reason: 'Sequential date inference from neighbor bills',
+                  prevEnd: _fmtDt(prevEnd),
+                  nextStart: nextStart ? _fmtDt(nextStart) : null,
+                };
+                // Calculate NumberOfDays
+                const dayDiff = Math.round((_parseDt(bills[i].BillingPeriodEnd) - inferStart) / 86400000);
+                if (dayDiff > 0 && dayDiff < 120) bills[i].NumberOfDays = String(dayDiff);
+              } else if (nextStart) {
+                // No prior bill, but have a next bill — estimate backwards
+                let inferEnd = nextStart;
+                let inferStart = new Date(nextStart.getTime());
+                inferStart.setMonth(inferStart.getMonth() - 1);
+                bills[i].BillingPeriodStart = _fmtDt(inferStart);
+                bills[i].BillingPeriodEnd = _fmtDt(inferEnd);
+                bills[i]._periodInferred = {
+                  reason: 'Sequential date inference (backward) from next bill',
+                  nextStart: _fmtDt(nextStart),
+                };
+                const dayDiff = Math.round((inferEnd - inferStart) / 86400000);
+                if (dayDiff > 0 && dayDiff < 120) bills[i].NumberOfDays = String(dayDiff);
+              }
+            }
+
             return bills;
           },
           extract: function (page) {
@@ -19900,6 +19978,46 @@
             }
           }
 
+          // ── GAS CHARGE OCR DECIMAL-DROP FIX ──
+          // City of Louisburg gas charges for a monthly building bill should
+          // never exceed ~$5,000. OCR sometimes drops the decimal, producing
+          // e.g. $16,693.06 instead of $166.93. Auto-correct when dividing by
+          // 100 yields a value consistent with therms × rate. Same pattern as
+          // stormwater decimal-drop above.
+          if (b.Commodity === 'Gas') {
+            const _gc = pf(b.GasCharge);
+            const _th = pf(b.NaturalGasTherms);
+            if (_gc > 5000) {
+              const corrGC = Math.round(_gc) / 100;
+              // Validate: if therms also look garbled (>10k), try correcting both
+              const corrTh = _th > 10000 ? Math.round(_th) / 100 : _th;
+              b._auto_corrected_GasCharge = {
+                original: _gc,
+                corrected: corrGC,
+                reason: 'OCR decimal-drop: ' + _gc + ' → ' + corrGC,
+              };
+              b.GasCharge = corrGC;
+              console.log('[PostVerify] Gas charge decimal-drop corrected: $' + _gc + ' → $' + corrGC);
+              if (_th > 10000) {
+                b._auto_corrected_NaturalGasTherms = {
+                  original: _th,
+                  corrected: corrTh,
+                  reason: 'OCR decimal-drop: ' + _th + ' → ' + corrTh,
+                };
+                b.NaturalGasTherms = corrTh;
+                console.log('[PostVerify] Gas therms decimal-drop corrected: ' + _th + ' → ' + corrTh);
+              }
+              // Recompute total from corrected components
+              const _cust = pf(b.CustomerCharge);
+              const _fa = pf(b.FuelAdjustment);
+              if (corrGC > 0 && _cust > 0) {
+                const newTotal = corrGC + _cust + _fa;
+                b.TotalCurrentCharges = newTotal.toFixed(2);
+                b.TotalAmountDue = newTotal.toFixed(2);
+              }
+            }
+          }
+
           // ──────────────────────────────────────────────────────────────
           // Stage 3: Total validation + coherent per-charge reconciliation (Update 86)
           // ──────────────────────────────────────────────────────────────
@@ -21243,12 +21361,25 @@
               b.GasCharge = null;
             }
           }
-          if (fa !== 0 && gasChg > 0 && Math.abs(fa) > gasChg * 0.5) {
-            b['_likely_garbled_FuelAdjustment'] = {
-              original: b.FuelAdjustment,
-              reason: '|FA| exceeds 50% of GasCharge ($' + gasChg.toFixed(2) + ')',
-            };
-            b.FuelAdjustment = null;
+          // FA ratio check: in summer months with very low gas usage the
+          // GasCharge can be just a few dollars (e.g. $2.39) while the FA is a
+          // flat credit (e.g. -$12). The 50% ratio test false-positives on those
+          // bills. Only apply the ratio check when GasCharge > $25 (roughly the
+          // base charge); for small charges, only flag when |FA| > 2× GasCharge
+          // to catch truly garbled values while keeping legitimate small-bill FAs.
+          if (fa !== 0 && gasChg > 0) {
+            const faAbs = Math.abs(fa);
+            const isGarbledFA = gasChg > 25 ? faAbs > gasChg * 0.5 : faAbs > gasChg * 2;
+            if (isGarbledFA) {
+              b['_likely_garbled_FuelAdjustment'] = {
+                original: b.FuelAdjustment,
+                reason:
+                  gasChg > 25
+                    ? '|FA| exceeds 50% of GasCharge ($' + gasChg.toFixed(2) + ')'
+                    : '|FA| exceeds 2× GasCharge ($' + gasChg.toFixed(2) + ') [small-charge threshold]',
+              };
+              b.FuelAdjustment = null;
+            }
           }
           const total = pf(b.TotalCurrentCharges);
           if (total > 0 && gasChg > 0 && custChg > 0) {
