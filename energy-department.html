@@ -36295,18 +36295,21 @@
           return { allRows, blRows: allRows.filter((r) => blMonths.includes(r.ym)), blMonths, bills, incl };
         }
 
-        // ── Find primary electric & gas meters ──
+        // ── Find primary electric, gas, water & propane meters ──
         const elecM = meters.find((m) => m.commodity === 'Electric');
         const gasM = meters.find((m) => m.commodity === 'Gas');
         const waterM = meters.find((m) => m.commodity === 'Water');
+        const propaneM = meters.find((m) => m.commodity === 'Propane');
 
         const elec = elecM ? getBlRows(elecM) : null;
         const gas = gasM ? getBlRows(gasM) : null;
         const water = waterM ? getBlRows(waterM) : null;
+        const propane = propaneM ? getBlRows(propaneM) : null;
 
         const eBlRows = elec ? (elec.blRows.length >= 3 ? elec.blRows : elec.allRows.slice(-12)) : [];
         const gBlRows = gas ? (gas.blRows.length >= 3 ? gas.blRows : gas.allRows.slice(-12)) : [];
         const wBlRows = water ? (water.blRows.length >= 3 ? water.blRows : water.allRows.slice(-12)) : [];
+        const pBlRows = propane ? (propane.blRows.length >= 3 ? propane.blRows : propane.allRows.slice(-12)) : [];
 
         // Baseline span label
         function blSpan(rows) {
@@ -36319,10 +36322,17 @@
         const { gasByMo } = gasM && gBlRows.length ? buildMoMap(gasM, gBlRows, gas.bills, gas.incl) : { gasByMo: {} };
         const { waterByMo } =
           waterM && wBlRows.length ? buildMoMap(waterM, wBlRows, water.bills, water.incl) : { waterByMo: {} };
+        const { propaneByMo } =
+          propaneM && pBlRows.length ? buildMoMap(propaneM, pBlRows, propane.bills, propane.incl) : { propaneByMo: {} };
 
         // ── All 12 months present in baseline (use sorted unique months across all commodities) ──
         const allMoKeys = Array.from(
-          new Set([...Object.keys(elecByMo), ...Object.keys(gasByMo), ...Object.keys(waterByMo)]),
+          new Set([
+            ...Object.keys(elecByMo),
+            ...Object.keys(gasByMo),
+            ...Object.keys(waterByMo),
+            ...Object.keys(propaneByMo),
+          ]),
         )
           .map(Number)
           .sort((a, c) => a - c);
@@ -36392,7 +36402,13 @@
           cost: moList.reduce((s, mo) => s + (waterByMo[mo]?.cost || 0), 0),
         };
 
-        const totUtility = totE.totalCost + totG.cost + totW.cost;
+        const totP = {
+          gallons: moList.reduce((s, mo) => s + (propaneByMo[mo]?.gallons || 0), 0),
+          cost: moList.reduce((s, mo) => s + (propaneByMo[mo]?.cost || 0), 0),
+        };
+        totP.costPerGal = totP.gallons > 0 ? totP.cost / totP.gallons : 0;
+
+        const totUtility = totE.totalCost + totG.cost + totW.cost + totP.cost;
 
         // ── Summary bar computations ──
         const kwhPerSf = sqft > 0 ? totE.kwh / sqft : null;
@@ -36400,7 +36416,7 @@
         const avgWattsPerSf = sqft > 0 && totE.avgDemandKW > 0 ? (totE.avgDemandKW * 1000) / sqft : null;
         const elecDolPerSf = sqft > 0 && totE.energyCost > 0 ? totE.energyCost / sqft : null;
         const thermPerSf = sqft > 0 && totG.therms > 0 ? totG.therms / sqft : null;
-        const totalKbtuPerSf = sqft > 0 ? (totE.kwh * 3.412 + totG.therms * 100) / sqft : null;
+        const totalKbtuPerSf = sqft > 0 ? (totE.kwh * 3.412 + totG.therms * 100 + totP.gallons * 91.5) / sqft : null;
         const utilityCostPerYear = totUtility;
 
         // Seasonal rates
@@ -36563,7 +36579,12 @@
           const wCost = isTotal ? totW.cost : w.cost != null ? w.cost : null;
           const cPerKgal = kgal != null && kgal > 0 && wCost != null ? wCost / kgal : null;
 
-          const totalUtil = (eCost || 0) + (gCost || 0) + (wCost || 0);
+          const pp = propaneByMo[mo] || {};
+          const pGal = isTotal ? totP.gallons : pp.gallons != null ? pp.gallons : null;
+          const pCost = isTotal ? totP.cost : pp.cost != null ? pp.cost : null;
+          const cPerGal = pGal != null && pGal > 0 && pCost != null ? pCost / pGal : null;
+
+          const totalUtil = (eCost || 0) + (gCost || 0) + (wCost || 0) + (pCost || 0);
 
           return `<tr${isTotal ? ' class="total-row"' : ''}>
             ${td(moLabel, 'mo')}
@@ -36579,12 +36600,13 @@
             }
             ${gasM ? `${td(n1(therms))} ${td(nc(gCost))} ${td(r4(cPerTherm))}` : ''}
             ${waterM ? `${td(n1(kgal))} ${td(nc(wCost))} ${td(r4(cPerKgal))}` : ''}
+            ${propaneM ? `${td(n1(pGal))} ${td(nc(pCost))} ${td(r4(cPerGal))}` : ''}
             ${td(nc(totalUtil), 'total-util')}</tr>`;
         }
         const moRows = moList.map((mo) => moRow(mo, false)).join('');
 
         // ── No data state ──
-        if (!elecM && !gasM && !waterM) {
+        if (!elecM && !gasM && !waterM && !propaneM) {
           pane.innerHTML =
             '<div class="ud-empty"><div class="ud-empty-ico">📊</div><div>No meter data yet.<br>Add bills to meters to see baseline data.</div></div>';
           return;
@@ -36665,6 +36687,7 @@
                     ${elecM ? `<th colspan="15" class="e-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">ELECTRICITY</th>` : ''}
                     ${gasM ? `<th colspan="3" class="g-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">HEATING FUEL</th>` : ''}
                     ${waterM ? `<th colspan="3" class="w-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px">WATER</th>` : ''}
+                    ${propaneM ? `<th colspan="3" class="g-hdr" style="font-size:12px;padding:7px 8px;letter-spacing:.8px;background:#2a1508">PROPANE</th>` : ''}
                     <th rowspan="2" class="u-hdr" style="vertical-align:middle;min-width:96px;font-size:10px;line-height:1.5;padding:6px 8px">Total<br>Utility<br>Costs</th>
                   </tr>
                   <tr>
@@ -36704,6 +36727,15 @@
                       <th class="w-hdr" title="Normalized Baseline kGal — regression-predicted usage for this calendar month">Normalized kGal</th>
                       <th class="w-hdr">Water<br>Cost</th>
                       <th class="w-hdr">Cost/<br>kGal</th>
+                    `
+                        : ''
+                    }
+                    ${
+                      propaneM
+                        ? `
+                      <th class="g-hdr" style="background:#2a1508" title="Normalized Baseline Gallons">Gallons</th>
+                      <th class="g-hdr" style="background:#2a1508">Propane<br>Cost</th>
+                      <th class="g-hdr" style="background:#2a1508">Cost/<br>Gal</th>
                     `
                         : ''
                     }
@@ -37736,8 +37768,10 @@
           return `<tr><td style="padding:7px 12px;font-size:12px;font-weight:600;color:var(--text2);white-space:nowrap;border:1px solid var(--border);background:var(--s1)">Actual Utility Savings $ %</td>${cells}<td style="border:1px solid var(--border)"></td></tr>`;
         }
 
-        // #129: Only show Actual Cost and Actual Savings — baseline/projected rows removed
         const tableRows =
+          makeRegRow('Baseline Utility Spend $', 'var(--text)', (col) => getBase(col), null) +
+          makeRegRow('Projected Utility Spend $', 'var(--sky)', (col) => getBase(col) * (1 - savPct), null) +
+          makeRegRow('Projected Utility Savings $', 'var(--em)', (col) => getBase(col) * savPct, projPct) +
           (hasActual
             ? makeRegRow(
                 'Actual Utility Spend $',
