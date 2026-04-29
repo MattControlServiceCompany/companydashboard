@@ -13887,24 +13887,24 @@
             const firstBldgId = buildings[0]?.id || '';
             const meterOpts = getMeterOptions(firstBldgId);
 
-            return `<tr style="font-size:12px">
-            <td style="padding:6px 8px">${commodity}</td>
-            <td style="padding:6px 8px;color:var(--text2)">${provider}</td>
-            <td style="padding:6px 8px;font-family:var(--mono);font-size:11px">${acct || '—'}</td>
-            <td style="padding:6px 8px;font-family:var(--mono);font-size:11px">${start ? start + ' → ' + end : '—'}</td>
-            <td style="padding:6px 8px;font-family:var(--mono)">${total ? '$' + parseFloat(String(total).replace(/,/g, '')).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
-            <td style="padding:6px 8px;color:var(--text3)">${saved}</td>
-            <td style="padding:6px 8px">
+            return `<tr style="font-size:11px">
+            <td style="padding:3px 6px">${commodity}</td>
+            <td style="padding:3px 6px;color:var(--text2)">${provider}</td>
+            <td style="padding:3px 6px;font-family:var(--mono);font-size:10px">${acct || '—'}</td>
+            <td style="padding:3px 6px;font-family:var(--mono);font-size:10px">${start ? start + ' → ' + end : '—'}</td>
+            <td style="padding:3px 6px;font-family:var(--mono)">${total ? '$' + parseFloat(String(total).replace(/,/g, '')).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+            <td style="padding:3px 6px;color:var(--text3)">${saved}</td>
+            <td style="padding:3px 6px">
               ${
                 isAssigned
-                  ? `<span style="color:var(--green);font-size:11px">✓ Assigned</span>`
+                  ? `<span style="color:var(--green);font-size:10px">✓ Assigned</span>`
                   : buildings.length === 0
-                    ? `<span style="color:var(--text3);font-size:11px">No buildings in project</span>`
-                    : `<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
-                      <select class="fi" id="sb-bldg-${b.id}" style="padding:2px 4px;font-size:11px;height:26px"
+                    ? `<span style="color:var(--text3);font-size:10px">No buildings</span>`
+                    : `<div style="display:flex;gap:3px;align-items:center;flex-wrap:nowrap">
+                      <select class="fi" id="sb-bldg-${b.id}" style="padding:1px 3px;font-size:10px;height:22px"
                         onchange="(function(s){var mo=document.getElementById('sb-meter-${b.id}');if(mo){var pid=${JSON.stringify(projId)};var bid=s.value;var ud=utilityData[pid];var bld=(ud?.buildings||[]).find(function(x){return x.id===bid});mo.innerHTML=(bld?.meters||[]).map(function(m){return '<option value=\"'+m.id+'\">'+(m.provider||m.commodity||'Meter')+(m.account?' · '+m.account:'')+'</option>'}).join('')}})(this)">${bldgOptions}</select>
-                      <select class="fi" id="sb-meter-${b.id}" style="padding:2px 4px;font-size:11px;height:26px">${meterOpts}</select>
-                      <button class="btn btn-em btn-sm" style="font-size:11px;padding:2px 8px" onclick="assignSavedBillFromProj('${b.id}',${JSON.stringify(projId)})">Assign</button>
+                      <select class="fi" id="sb-meter-${b.id}" style="padding:1px 3px;font-size:10px;height:22px">${meterOpts}</select>
+                      <button class="btn btn-em btn-sm" style="font-size:10px;padding:1px 6px" onclick="assignSavedBillFromProj('${b.id}',${JSON.stringify(projId)})">Assign</button>
                     </div>`
               }
             </td>
