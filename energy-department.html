@@ -13523,6 +13523,16 @@
         document.querySelectorAll('.pdt').forEach((b) => b.classList.remove('active'));
         document.getElementById('ptab-' + tab).classList.add('active');
         el?.classList.add('active');
+        // Close any open project-level or building-level panels when switching tabs
+        if (window._activeProjId) {
+          if (_pdProjPanel[window._activeProjId])
+            toggleProjDetailPanel(window._activeProjId, _pdProjPanel[window._activeProjId]);
+          if (projUDSelPanel[window._activeProjId]) {
+            projUDSelPanel[window._activeProjId] = null;
+            const bldgId = projUDSelBldg[window._activeProjId];
+            if (bldgId) renderProjUDBody(window._activeProjId, bldgId);
+          }
+        }
         // Always use compact header — full hero is hidden on all tabs
         const hero = document.querySelector('.pd-hero');
         const compact = document.getElementById('pd-hero-compact');
@@ -36988,7 +36998,8 @@
           <!-- Results -->
           <div id="bp-results"></div>`;
 
-        bpRecalc();
+        // Defer recalc until after caller appends pane to DOM
+        setTimeout(() => bpRecalc(), 0);
       }
 
       let _bpView = 'monthly';
