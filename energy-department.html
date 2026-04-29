@@ -5489,7 +5489,7 @@
                 letter-spacing: 0.5px;
               "
             >
-              v2026.04.29.2
+              v2026.04.29.3
             </div>
           </div>
         </aside>
@@ -11551,6 +11551,13 @@
         <div class="modal" style="width: 820px; max-width: 96vw">
           <div class="modal-hdr">
             <span class="modal-title">🗄️ Saved Bill Records</span>
+            <button
+              class="btn btn-ghost btn-sm"
+              style="color: var(--red); border-color: var(--red); margin-left: auto; margin-right: 8px"
+              onclick="deleteAllSavedBills()"
+            >
+              🗑 Delete All
+            </button>
             <button class="modal-x" onclick="closeSavedBillsModal()">✕</button>
           </div>
           <div class="modal-body" style="padding: 0">
@@ -13785,6 +13792,47 @@
       }
 
       // ── #131: Saved Bills tab per project ──
+      // Sort state for #142: {projId: {col, dir}} where dir is 'asc'|'desc'
+      const _sbSortState = {};
+
+      function _sbSortBills(bills, col, dir) {
+        const cmp = (a, b) => {
+          let av, bv;
+          if (col === 'period') {
+            av = a.BillingPeriodStart || a.start || '';
+            bv = b.BillingPeriodStart || b.start || '';
+          } else if (col === 'commodity') {
+            av = (a.Commodity || a.commodity || '').toLowerCase();
+            bv = (b.Commodity || b.commodity || '').toLowerCase();
+          } else if (col === 'provider') {
+            av = (a.UtilityCompany || a.utilityCompany || '').toLowerCase();
+            bv = (b.UtilityCompany || b.utilityCompany || '').toLowerCase();
+          } else if (col === 'account') {
+            av = (a.AccountNumber || a.accountNumber || '').toLowerCase();
+            bv = (b.AccountNumber || b.accountNumber || '').toLowerCase();
+          } else if (col === 'meter') {
+            av = a.projId ? '1' : '0';
+            bv = b.projId ? '1' : '0';
+          } else {
+            return 0;
+          }
+          if (av < bv) return dir === 'asc' ? -1 : 1;
+          if (av > bv) return dir === 'asc' ? 1 : -1;
+          return 0;
+        };
+        return [...bills].sort(cmp);
+      }
+
+      function _sbSortClick(projId, col) {
+        const cur = _sbSortState[projId] || { col: null, dir: 'asc' };
+        if (cur.col === col) {
+          _sbSortState[projId] = { col, dir: cur.dir === 'asc' ? 'desc' : 'asc' };
+        } else {
+          _sbSortState[projId] = { col, dir: 'asc' };
+        }
+        renderProjSavedBills(projId);
+      }
+
       function renderProjSavedBills(projId) {
         const el = document.getElementById('ptab-savedbills-body-' + projId);
         if (!el) return;
@@ -13794,13 +13842,17 @@
         // Load all saved (unassigned) bills from en_pdf_bills
         const allBills = sget('en_pdf_bills', []) || [];
         // Show bills that are either unassigned OR already associated with this project
-        const bills = allBills.filter((b) => !b.projId || b.projId === projId);
+        let bills = allBills.filter((b) => !b.projId || b.projId === projId);
 
         if (!bills.length) {
           el.innerHTML =
             '<div style="font-size:13px;color:var(--text2);padding:20px 0">No saved PDF bills found. Extract bills using the PDF/OCR page and save them first.</div>';
           return;
         }
+
+        // Apply sort (#142)
+        const sortSt = _sbSortState[projId] || { col: 'period', dir: 'desc' };
+        bills = _sbSortBills(bills, sortSt.col, sortSt.dir);
 
         // Build building + meter options for the assign dropdowns
         const projUD = utilityData[projId];
@@ -13817,6 +13869,8 @@
             )
             .join('');
         };
+
+        const unassignedCount = bills.filter((b) => !b.projId).length;
 
         const rows = bills
           .map((b) => {
@@ -13858,22 +13912,102 @@
           })
           .join('');
 
+        // Sort arrow helper
+        const arrow = (col) => {
+          if (sortSt.col !== col) return '<span style="opacity:.3;font-size:9px">⇅</span>';
+          return sortSt.dir === 'asc' ? '<span style="font-size:9px">▲</span>' : '<span style="font-size:9px">▼</span>';
+        };
+        const thStyle = 'cursor:pointer;user-select:none;white-space:nowrap';
+
         el.innerHTML = `
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
             <div style="font-size:13px;font-weight:600">${bills.length} saved bill${bills.length !== 1 ? 's' : ''}</div>
-            <button class="btn btn-ghost btn-sm" onclick="sv('view-pdf');showToast('Go to PDF/OCR page to extract new bills')">+ Extract PDF Bill</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              ${unassignedCount > 0 ? `<button class="btn btn-ghost btn-sm" onclick="autoAssignAllSavedBills(${JSON.stringify(projId)})">⚡ Auto-Assign All (${unassignedCount})</button>` : ''}
+              <button class="btn btn-ghost btn-sm" onclick="sv('view-pdf');showToast('Go to PDF/OCR page to extract new bills')">+ Extract PDF Bill</button>
+            </div>
           </div>
           <div class="card" style="overflow-x:auto">
             <table class="dtbl" style="min-width:700px">
               <thead>
                 <tr>
-                  <th>Commodity</th><th>Provider</th><th>Account</th>
-                  <th>Period</th><th>Total</th><th>Saved</th><th>Assign to Meter</th>
+                  <th style="${thStyle}" onclick="_sbSortClick(${JSON.stringify(projId)},'commodity')">Commodity ${arrow('commodity')}</th>
+                  <th style="${thStyle}" onclick="_sbSortClick(${JSON.stringify(projId)},'provider')">Provider ${arrow('provider')}</th>
+                  <th style="${thStyle}" onclick="_sbSortClick(${JSON.stringify(projId)},'account')">Account ${arrow('account')}</th>
+                  <th style="${thStyle}" onclick="_sbSortClick(${JSON.stringify(projId)},'period')">Period ${arrow('period')}</th>
+                  <th>Total</th>
+                  <th>Saved</th>
+                  <th style="${thStyle}" onclick="_sbSortClick(${JSON.stringify(projId)},'meter')">Assign to Meter ${arrow('meter')}</th>
                 </tr>
               </thead>
               <tbody>${rows}</tbody>
             </table>
           </div>`;
+      }
+
+      // #141: Auto-assign all unassigned saved bills using findMeterMatch
+      async function autoAssignAllSavedBills(projId) {
+        const allBills = sget('en_pdf_bills', []) || [];
+        const unassigned = allBills.filter((b) => !b.projId);
+        if (!unassigned.length) {
+          showToast('No unassigned bills to auto-assign');
+          return;
+        }
+        let assigned = 0,
+          skipped = 0;
+        for (const sb of unassigned) {
+          const match = findMeterMatch(sb);
+          if (!match) {
+            skipped++;
+            continue;
+          }
+          // Build bill record (same shape as assignSavedBillFromProj)
+          const bill = {
+            id: 'b' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+            start: sb.BillingPeriodStart || sb.start || '',
+            end: sb.BillingPeriodEnd || sb.end || '',
+            utilityCompany: sb.UtilityCompany || sb.utilityCompany || '',
+            customerName: sb.CustomerName || sb.customerName || '',
+            accountNumber: sb.AccountNumber || sb.accountNumber || '',
+            kwh: sb.kWhConsumed || sb.kwh || '',
+            demandKW: sb.ActualKW || sb.demandKW || '',
+            billedKW: sb.BilledKW || sb.billedKW || '',
+            totalCost: sb.TotalCurrentCharges || sb.totalCost || '',
+            kwhCost: sb.kwhCost || '',
+            kwCost: sb.kwCost || '',
+            otherCost: sb.otherCost || '',
+            taxCost: sb.taxCost || '',
+            naturalGasTherms: sb.NaturalGasTherms || sb.naturalGasTherms || '',
+            gasCharge: sb.GasCharge || sb.gasCharge || '',
+            gallonsDelivered: sb.GallonsDelivered || sb.gallonsDelivered || '',
+            pdfBillId: sb.id,
+            hasPDF: !!sb.hasPDF,
+            pdfKey: sb.pdfKey || '',
+            pdfPageStart: sb.pdfPageStart || '',
+            pdfPageEnd: sb.pdfPageEnd || '',
+          };
+          const udProj = getUDProj(match.projId);
+          const bldg = (udProj?.buildings || []).find((x) => x.id === match.bldgId);
+          const meter = (bldg?.meters || []).find((x) => x.id === match.meterId);
+          if (!meter) {
+            skipped++;
+            continue;
+          }
+          if (!meter.bills) meter.bills = [];
+          meter.bills.push(bill);
+          sb.projId = match.projId;
+          sb.bldgId = match.bldgId;
+          sb.meterId = match.meterId;
+          assigned++;
+        }
+        if (assigned > 0) {
+          saveUtilityData();
+          await sset('en_pdf_bills', allBills);
+        }
+        showToast(
+          assigned + ' bill(s) auto-assigned' + (skipped ? ', ' + skipped + ' skipped (no meter match)' : '') + ' ✓',
+        );
+        renderProjSavedBills(projId);
       }
 
       // Assign a saved (unassigned) bill to a building+meter in a project
@@ -27639,6 +27773,30 @@
           updateBillCountBadge();
         }
         showToast('Record deleted');
+      }
+
+      async function deleteAllSavedBills() {
+        const bills = sget('en_pdf_bills', []) || [];
+        const unassigned = bills.filter((b) => !b.projId);
+        if (!unassigned.length) {
+          showToast('No saved bills to delete');
+          return;
+        }
+        if (!(await confirmAsync('Delete all ' + unassigned.length + ' saved bill record(s)? This cannot be undone.')))
+          return;
+        // Delete all associated PDF files from IndexedDB + localStorage
+        for (const b of unassigned) {
+          pdfDelete('en_pdf_file_' + b.id);
+          try {
+            localStorage.removeItem('en_pdf_file_' + b.id);
+          } catch (e) {}
+        }
+        // Keep only assigned bills (those with a projId)
+        const remaining = bills.filter((b) => !!b.projId);
+        sset('en_pdf_bills', remaining);
+        renderSavedBills();
+        updateBillCountBadge();
+        showToast('All ' + unassigned.length + ' saved bill(s) deleted');
       }
 
       // Scan all meters across all projects for a bill row matching id/pdfBillId.
@@ -42646,6 +42804,10 @@
         _hvlRenderBaselineSummary(projId, selBldg);
         // Render method content
         _hvlRenderMethod(projId, selBid, method);
+        // Re-render saved load estimate results if a prior calculation exists
+        if (p.hvacLoadEst) {
+          requestAnimationFrame(() => hvacLoadCalc(projId));
+        }
       }
 
       function _hvlSelectBldg(projId, bldgId) {
@@ -42700,8 +42862,8 @@
           }
           const gb = gByMo[i];
           if (gb) {
-            totTherms += gb.therms || gb.usage || 0;
-            totGasCost += gb.totalCost || gb.cost || 0;
+            totTherms += parseFloat(gb.therms) || parseFloat(gb.usage) || 0;
+            totGasCost += parseFloat(gb.totalCost) || parseFloat(gb.cost) || 0;
           }
         });
 
@@ -42745,8 +42907,8 @@
                   const avgKw = kw > 0 && kwCost > 0 ? kwCost / kw : 0;
                   const days = eb.days || 30;
                   const lf = kw > 0 && kwh > 0 ? kwh / (kw * 24 * days) : 0;
-                  const therms = gb.therms || gb.usage || 0;
-                  const gCost = gb.totalCost || gb.cost || 0;
+                  const therms = parseFloat(gb.therms) || parseFloat(gb.usage) || 0;
+                  const gCost = parseFloat(gb.totalCost) || parseFloat(gb.cost) || 0;
                   const avgTherm = therms > 0 && gCost > 0 ? gCost / therms : 0;
                   return `<tr>
                     <td style="font-weight:600">${mo}</td>
@@ -42785,10 +42947,10 @@
           ${
             sqft > 0 && totKwh > 0
               ? `<div style="padding:8px 16px;display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--text2)">
-            <span>kWh/sf: <strong style="color:var(--accent)">${(totKwh / sqft).toFixed(1)}</strong></span>
-            <span>kBtu/sf: <strong style="color:var(--em)">${((totKwh * 3.412 + totTherms * 100) / sqft).toFixed(1)}</strong></span>
-            <span>$/sf: <strong style="color:var(--green)">${((totElecCost + totGasCost) / sqft).toFixed(2)}</strong></span>
-            ${totTherms > 0 ? `<span>Therms/sf: <strong style="color:var(--teal)">${(totTherms / sqft).toFixed(2)}</strong></span>` : ''}
+            <span>kWh/sf: <strong style="color:var(--accent)">${sqft > 0 ? (totKwh / sqft).toFixed(1) : '—'}</strong></span>
+            <span>kBtu/sf: <strong style="color:var(--em)">${sqft > 0 ? ((totKwh * 3.412 + totTherms * 100) / sqft).toFixed(1) : '—'}</strong></span>
+            <span>$/sf: <strong style="color:var(--green)">${sqft > 0 && totElecCost + totGasCost > 0 ? ((totElecCost + totGasCost) / sqft).toFixed(2) : '—'}</strong></span>
+            ${totTherms > 0 ? `<span>Therms/sf: <strong style="color:var(--teal)">${sqft > 0 ? (totTherms / sqft).toFixed(2) : '—'}</strong></span>` : ''}
           </div>`
               : ''
           }
