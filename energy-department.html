@@ -118,6 +118,22 @@
         background: var(--border2);
         border-radius: 3px;
       }
+      /* #108: Bills data table horizontal scrollbar — larger and more visible */
+      .bills-scroll-body::-webkit-scrollbar {
+        height: 12px;
+      }
+      .bills-scroll-body::-webkit-scrollbar-track {
+        background: var(--s2);
+        border-radius: 6px;
+      }
+      .bills-scroll-body::-webkit-scrollbar-thumb {
+        background: var(--text3);
+        border-radius: 6px;
+        min-width: 40px;
+      }
+      .bills-scroll-body::-webkit-scrollbar-thumb:hover {
+        background: var(--text2);
+      }
 
       /* ── ANIMATIONS ── */
       @keyframes fadeUp {
@@ -1706,6 +1722,11 @@
       }
       .fi[type='date']::-webkit-calendar-picker-indicator {
         filter: invert(0.7);
+        cursor: pointer;
+      }
+      /* #75: Bill modal date inputs use .ef-input — add explicit calendar icon visibility */
+      .ef-input[type='date']::-webkit-calendar-picker-indicator {
+        filter: invert(1) opacity(0.85);
         cursor: pointer;
       }
       .fs option {
@@ -24387,7 +24408,26 @@
             var pageIdx = currentBill && currentBill._pageIndex ? currentBill._pageIndex - 1 : idx;
             if (pageIdx >= validSections.length) pageIdx = Math.min(idx, validSections.length - 1);
             var section = validSections[pageIdx] || validSections[0] || text;
-            var label = 'Page ' + (pageIdx + 1) + ' of ' + validSections.length;
+            // #113: If bill has _pageStart/_pageEnd (multi-page range), show "Pages X-Y"
+            // instead of "Page X of Y" for more accurate display (e.g. Louisburg multi-building PDFs)
+            var label;
+            if (currentBill && currentBill._pageStart != null && currentBill._pageEnd != null) {
+              if (currentBill._pageStart === currentBill._pageEnd) {
+                label = 'Page ' + currentBill._pageStart + ' of ' + validSections.length;
+              } else {
+                label =
+                  'Pages ' +
+                  currentBill._pageStart +
+                  '–' +
+                  currentBill._pageEnd +
+                  ' (PDF) · section ' +
+                  (pageIdx + 1) +
+                  ' of ' +
+                  validSections.length;
+              }
+            } else {
+              label = 'Page ' + (pageIdx + 1) + ' of ' + validSections.length;
+            }
           } else {
             const splitRe = new RegExp(
               '(?=(?:' +
@@ -30340,13 +30380,10 @@
             return `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${c};border:1px solid var(--border);white-space:nowrap">${v >= 0 ? '−' : '+'}${$f(v, 2)}</td>`;
           };
           const rows = MN.map((mn, mo) => {
-            const base = moBase[mo] || 0,
-              proj = base * avgSavPct;
+            const base = moBase[mo] || 0;
             const act = actSavByMo[mo] != null ? actSavByMo[mo] : null;
             const pct = act != null && base > 0 ? (act / base) * 100 : null;
             return `<tr><td style="padding:6px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s1)">${mn}</td>
-              <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border)">${$f(base, 2)}</td>
-              <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--em);border:1px solid var(--border)">${$f(proj, 2)}</td>
               ${tdV(act)}
               <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${pct == null ? 'var(--text3)' : pct >= 0 ? 'var(--em)' : 'var(--danger)'};border:1px solid var(--border)">${pct != null ? (pct >= 0 ? '−' : '+') + Math.abs(pct).toFixed(1) + '%' : '—'}</td>
             </tr>`;
@@ -30363,13 +30400,10 @@
             </div>
             <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
               <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Month</th>
-                <th style="${thS}">Baseline $</th><th style="${thS}">Projected Savings $</th>
                 <th style="${thS}">Actual Savings $</th><th style="${thS}">% of Baseline</th></tr></thead>
               <tbody>${rows}</tbody>
               <tfoot><tr style="background:var(--s1)">
                 <td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)">Annual</td>
-                <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;font-weight:700;border:1px solid var(--border)">${$f(annBase, 2)}</td>
-                <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--em);font-weight:700;border:1px solid var(--border)">${$f(annProjSav, 2)}</td>
                 ${tdV(hasActual ? annActSav : null)}
                 <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${actPct != null && actPct >= 0 ? 'var(--em)' : 'var(--danger)'};font-weight:700;border:1px solid var(--border)">${actPct != null ? (actPct >= 0 ? '−' : '+') + Math.abs(actPct).toFixed(1) + '%' : '—'}</td>
               </tr></tfoot>
@@ -34468,6 +34502,29 @@
               ? { v: fmtKw(summerKwRate) + '/kW', lbl: '☀️ Summer $/kW', color: 'var(--warn)' }
               : null,
             winterKwRate != null ? { v: fmtKw(winterKwRate) + '/kW', lbl: '❄️ Winter $/kW', color: 'var(--em)' } : null,
+            // #101: Regression model type indicator
+            (() => {
+              const _blReg = bl && bl.reg ? bl.reg : m._reg;
+              if (!_blReg) return null;
+              let _modelLabel, _modelColor;
+              if (_blReg.dual) {
+                _modelLabel = 'Dual (HDD+CDD)';
+                _modelColor = 'var(--violet)';
+              } else if (_blReg.cdd && _blReg.hdd) {
+                _modelLabel = 'CDD + HDD';
+                _modelColor = 'var(--violet)';
+              } else if (_blReg.cdd) {
+                _modelLabel = 'CDD only';
+                _modelColor = 'var(--warn)';
+              } else if (_blReg.hdd) {
+                _modelLabel = 'HDD only';
+                _modelColor = 'var(--em2)';
+              } else {
+                return null;
+              }
+              const _frozenNote = bl && bl.reg ? ' ❄' : '';
+              return { v: _modelLabel + _frozenNote, lbl: '🔬 Regression Model', color: _modelColor };
+            })(),
           ].filter(Boolean);
 
           blStatsInner =
@@ -36759,10 +36816,8 @@
           return `<tr><td style="padding:7px 12px;font-size:12px;font-weight:600;color:var(--text2);white-space:nowrap;border:1px solid var(--border);background:var(--s1)">Actual Utility Savings $ %</td>${cells}<td style="border:1px solid var(--border)"></td></tr>`;
         }
 
+        // #129: Only show Actual Cost and Actual Savings — baseline/projected rows removed
         const tableRows =
-          makeRegRow('Baseline Utility Spend $', 'var(--text)', (col) => getBase(col), null) +
-          makeRegRow('Projected Utility Spend $', 'var(--text)', (col) => getBase(col) * (1 - savPct), null) +
-          makeRegRow('Projected Utility Savings $', 'var(--em)', (col) => getBase(col) * savPct, projPct) +
           (hasActual
             ? makeRegRow(
                 'Actual Utility Spend $',
