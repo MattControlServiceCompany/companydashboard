@@ -10913,7 +10913,18 @@
                 <label class="fl">Utility Escalation %/yr</label
                 ><input class="fi" id="mp-escalation" type="number" min="0" max="20" step="0.1" placeholder="e.g. 3" />
               </div>
-              <div class="fg"></div>
+              <div class="fg">
+                <label class="fl">CSC Compensation %</label
+                ><input
+                  class="fi"
+                  id="mp-cscCompensation"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  placeholder="e.g. 7"
+                />
+              </div>
             </div>
             <div class="f2">
               <div class="fg"><label class="fl">Start Date</label><input class="fi" id="mp-start" type="date" /></div>
@@ -13648,39 +13659,10 @@
           return;
         }
 
-        // If a panel is toggled open, show it above the meters
+        // If a panel is toggled open, show it INSTEAD of the meters (hide utility data below)
         const panel = projUDSelPanel[projId];
-        let panelHTML = '';
         if (panel) {
-          panelHTML = `<div id="proj-ud-panel-${projId}" style="border-bottom:1px solid var(--border)"></div>`;
-        }
-
-        // Render meters list (same style as udDetailWrap)
-        const meters = b.meters || [];
-        if (!meters.length) {
-          body.innerHTML =
-            panelHTML +
-            '<div class="ud-empty"><div class="ud-empty-ico">⚡</div><div>No meters yet.<br><button class="btn btn-em btn-sm" style="margin-top:10px" onclick="projUDOpenMeterModal(\'' +
-            projId +
-            '\')">+ Add Meter</button></div></div>';
-        } else {
-          // Reuse renderUDDetail logic: temporarily set global selection
-          const prevProj = udSelProjId,
-            prevBldg = udSelBldgId;
-          udSelProjId = projId;
-          udSelBldgId = bldgId;
-          const tempDiv = document.createElement('div');
-          renderUDDetail(tempDiv);
-          udSelProjId = prevProj;
-          udSelBldgId = prevBldg;
-          body.innerHTML = panelHTML;
-          // Move rendered content into the proj-ud-body so meter clicks resolve to this container
-          while (tempDiv.firstChild) body.appendChild(tempDiv.firstChild);
-          // _udActiveWrap will be re-resolved by _resolveEmbedContext on each meter/tab click
-        }
-
-        // Render panel content after DOM update
-        if (panel) {
+          body.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px 16px 0;flex-shrink:0"><button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${projId}','${panel}')">← Back to Meters</button></div><div id="proj-ud-panel-${projId}" style="flex:1;overflow-y:auto"></div>`;
           requestAnimationFrame(() => {
             const pEl = document.getElementById('proj-ud-panel-' + projId);
             if (!pEl) return;
@@ -13697,6 +13679,30 @@
             udSelBldgId = prevBldg;
             pEl.appendChild(pane);
           });
+          return;
+        }
+
+        // Render meters list (same style as udDetailWrap)
+        const meters = b.meters || [];
+        if (!meters.length) {
+          body.innerHTML =
+            '<div class="ud-empty"><div class="ud-empty-ico">⚡</div><div>No meters yet.<br><button class="btn btn-em btn-sm" style="margin-top:10px" onclick="projUDOpenMeterModal(\'' +
+            projId +
+            '\')">+ Add Meter</button></div></div>';
+        } else {
+          // Reuse renderUDDetail logic: temporarily set global selection
+          const prevProj = udSelProjId,
+            prevBldg = udSelBldgId;
+          udSelProjId = projId;
+          udSelBldgId = bldgId;
+          const tempDiv = document.createElement('div');
+          renderUDDetail(tempDiv);
+          udSelProjId = prevProj;
+          udSelBldgId = prevBldg;
+          body.innerHTML = '';
+          // Move rendered content into the proj-ud-body so meter clicks resolve to this container
+          while (tempDiv.firstChild) body.appendChild(tempDiv.firstChild);
+          // _udActiveWrap will be re-resolved by _resolveEmbedContext on each meter/tab click
         }
       }
 
@@ -14653,6 +14659,7 @@
           'mp-notes',
           'mp-tags',
           'mp-escalation',
+          'mp-cscCompensation',
         ].forEach((id) => {
           const e = document.getElementById(id);
           if (e) e.value = '';
@@ -14686,6 +14693,7 @@
           notes: p.notes,
           tags: p.tags,
           escalation: p.escalation,
+          cscCompensation: p.cscCompensation,
         };
         Object.entries(fv).forEach(([k, v]) => {
           const e = document.getElementById('mp-' + k);
@@ -14781,6 +14789,7 @@
           savings: parseFloat(document.getElementById('mp-savings').value) || 0,
           baselineComparison: document.getElementById('mp-baselineComparison').value || 'normalized',
           escalation: parseFloat(document.getElementById('mp-escalation').value) || 0,
+          cscCompensation: parseFloat(document.getElementById('mp-cscCompensation').value) || 0,
           start: document.getElementById('mp-start').value,
           end: document.getElementById('mp-end').value,
           progress: Math.max(0, Math.min(100, parseInt(document.getElementById('mp-progress').value) || 0)),
@@ -14818,6 +14827,30 @@
               const bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
               if (!bspCfg._customEsc) {
                 bspCfg.escPct = fields.escalation;
+                localStorage.setItem(bspKey, JSON.stringify(bspCfg));
+              }
+            } catch (e) {}
+          });
+        }
+
+        // Propagate project-level CSC compensation to buildings without a custom override
+        if (fields.cscCompensation > 0) {
+          const projId = editId ? parseInt(editId) : projects[projects.length - 1].id;
+          const bldgs = (utilityData[projId] || {}).buildings || [];
+          bldgs.forEach((b) => {
+            const bpKey = 'bldgperf_cfg_' + (b.id || b.name);
+            const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
+            try {
+              const bpCfg = JSON.parse(localStorage.getItem(bpKey) || '{}');
+              if (!bpCfg._customCsc) {
+                bpCfg.cscPct = fields.cscCompensation;
+                localStorage.setItem(bpKey, JSON.stringify(bpCfg));
+              }
+            } catch (e) {}
+            try {
+              const bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
+              if (!bspCfg._customCsc) {
+                bspCfg.cscPct = fields.cscCompensation;
                 localStorage.setItem(bspKey, JSON.stringify(bspCfg));
               }
             } catch (e) {}
@@ -36505,11 +36538,12 @@
           cfg = JSON.parse(localStorage.getItem(storeKey) || '{}');
         } catch (e) {}
         const defCscMode = cfg.cscMode ?? 'pct'; // 'pct' or 'fixed'
-        const defCscPct = cfg.cscPct ?? 7;
+        // Fall back to project-level cscCompensation if building has no custom override
+        const projMeta = projects.find((p) => p.id === udSelProjId);
+        const defCscPct = cfg._customCsc ? cfg.cscPct : projMeta?.cscCompensation || cfg.cscPct || 7;
         const defCscFixed = cfg.cscFixed ?? 500;
         const defYears = cfg.years ?? 3;
         // Fall back to project-level escalation if building has no custom override
-        const projMeta = projects.find((p) => p.id === udSelProjId);
         const defEscPct = cfg._customEsc ? cfg.escPct : projMeta?.escalation || cfg.escPct || 0;
         const defView = cfg.view ?? 'monthly';
 
@@ -36659,6 +36693,10 @@
             const _projM = projects.find((p) => p.id === udSelProjId);
             if (_prevCfg._customEsc || escPct * 100 !== (_projM?.escalation || 0)) {
               _saveCfg._customEsc = true;
+            }
+            // Mark custom CSC if user changed it from the project default
+            if (_prevCfg._customCsc || cscPct * 100 !== (_projM?.cscCompensation || 0)) {
+              _saveCfg._customCsc = true;
             }
             localStorage.setItem(storeKey, JSON.stringify(_saveCfg));
           } catch (e) {}
@@ -36908,8 +36946,34 @@
             }
           </div>
 
+          ${
+            annBase === 0
+              ? `
+          <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:16px 20px;margin-bottom:18px">
+            <div style="font-size:13px;font-weight:700;color:var(--em);margin-bottom:6px">No baseline data yet</div>
+            <div style="font-size:12px;color:var(--text2);line-height:1.6">
+              To see performance results, you need to:<br>
+              1. Add utility bills to at least one meter (Utility Data tab)<br>
+              2. Set baseline months on each meter (click a meter, then the Baseline tab)<br>
+              3. Add post-baseline bills so actual savings can be calculated
+            </div>
+          </div>`
+              : !hasActual
+                ? `
+          <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:16px 20px;margin-bottom:18px">
+            <div style="font-size:13px;font-weight:700;color:var(--em);margin-bottom:6px">Baseline set — waiting for post-baseline bills</div>
+            <div style="font-size:12px;color:var(--text2);line-height:1.6">
+              The annual baseline is ${$f(annBase)}. Once you add utility bills for months after the baseline period,
+              actual savings will appear here automatically.
+            </div>
+          </div>`
+                : ''
+          }
+
           <!-- Data table -->
-          <div style="overflow-x:auto;margin-bottom:20px;border:1px solid var(--border);border-radius:8px">
+          ${
+            hasActual
+              ? `<div style="overflow-x:auto;margin-bottom:20px;border:1px solid var(--border);border-radius:8px">
             <table style="border-collapse:collapse;width:100%;font-size:12px">
               <thead>
                 ${yearHdr}
@@ -36921,12 +36985,18 @@
               </thead>
               <tbody>${tableRows}</tbody>
             </table>
-          </div>
+          </div>`
+              : ''
+          }
 
           <!-- Chart -->
-          <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:16px">
+          ${
+            hasActual
+              ? `<div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:16px">
             <canvas id="bpChart" height="90"></canvas>
-          </div>`;
+          </div>`
+              : ''
+          }`;
 
         requestAnimationFrame(() => {
           const ctx = document.getElementById('bpChart');
@@ -37020,10 +37090,11 @@
         } catch (e) {}
         const defSavingsPct = cfg.savingsPct ?? 11;
         const defClientPct = cfg.clientPct ?? 5;
-        const defCscPct = cfg.cscPct ?? 7;
+        // Fall back to project-level cscCompensation if building has no custom override
+        const projMeta2 = projects.find((p) => p.id === udSelProjId);
+        const defCscPct = cfg._customCsc ? cfg.cscPct : projMeta2?.cscCompensation || cfg.cscPct || 7;
         const defYears = cfg.years ?? 3;
         // Fall back to project-level escalation if building has no custom override
-        const projMeta2 = projects.find((p) => p.id === udSelProjId);
         const defEscPct = cfg._customEsc ? cfg.escPct : projMeta2?.escalation || cfg.escPct || 0;
         const defView = cfg.view ?? 'monthly';
 
@@ -37129,6 +37200,10 @@
             const _projM2 = projects.find((p) => p.id === udSelProjId);
             if (_prevBspCfg._customEsc || escPct * 100 !== (_projM2?.escalation || 0)) {
               _saveBspCfg._customEsc = true;
+            }
+            // Mark custom CSC if user changed it from the project default
+            if (_prevBspCfg._customCsc || cscPct * 100 !== (_projM2?.cscCompensation || 0)) {
+              _saveBspCfg._customCsc = true;
             }
             localStorage.setItem(storeKey, JSON.stringify(_saveBspCfg));
           } catch (e) {}
