@@ -10922,7 +10922,7 @@
                   min="0"
                   max="100"
                   step="0.1"
-                  placeholder="e.g. 7"
+                  placeholder="default 0"
                 />
               </div>
             </div>
@@ -12553,7 +12553,7 @@
           </div>
           <!-- Project-level panel content (shown when project-level buttons clicked) -->
           <div id="pd-proj-panel-content-${p.id}" style="display:none;border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;overflow-y:auto;max-height:500px"></div>
-          <div class="card">
+          <div class="card" id="pd-tabs-card-${p.id}">
             <div class="pd-tabs" id="pdTabBar" style="overflow-x:auto;flex-wrap:nowrap;white-space:nowrap">
               ${_getProjTabHTML()}
             </div>
@@ -13492,13 +13492,19 @@
           }
         });
         const content = document.getElementById('pd-proj-panel-content-' + projId);
+        const tabsCard = document.getElementById('pd-tabs-card-' + projId);
         if (!content) return;
         if (!_pdProjPanel[projId]) {
           content.style.display = 'none';
           content.innerHTML = '';
+          // Restore tab content visibility when panel closes
+          if (tabsCard) tabsCard.style.display = '';
           return;
         }
+        // Hide tab content when project panel is open
+        if (tabsCard) tabsCard.style.display = 'none';
         content.style.display = 'block';
+        content.style.maxHeight = 'none';
         content.innerHTML =
           '<div style="padding:20px;font-size:12px;color:var(--text2)">Aggregating project data...</div>';
         // Reuse the same rendering logic as Utility Data page project panels
@@ -13683,9 +13689,13 @@
             if (panel === 'baseline') renderBuildingStatsPane(pane, b);
             if (panel === 'savproj') renderBldgSavProjPane(pane, b);
             if (panel === 'perf') renderBldgPerfPane(pane, b);
+            // Append to DOM first so recalc can find elements via getElementById
+            pEl.appendChild(pane);
+            // Re-trigger calculation now that elements are in the document
+            if (panel === 'perf') bpRecalc();
+            if (panel === 'savproj') bspRecalc();
             udSelProjId = prevProj;
             udSelBldgId = prevBldg;
-            pEl.appendChild(pane);
           });
           return;
         }
@@ -14988,7 +14998,7 @@
         sset('en_projects', projects);
 
         // Propagate project-level escalation to buildings without a custom override
-        if (fields.escalation > 0) {
+        if (fields.escalation != null) {
           const projId = editId ? parseInt(editId) : projects[projects.length - 1].id;
           const bldgs = (utilityData[projId] || {}).buildings || [];
           bldgs.forEach((b) => {
@@ -15012,7 +15022,7 @@
         }
 
         // Propagate project-level CSC compensation to buildings without a custom override
-        if (fields.cscCompensation > 0) {
+        if (fields.cscCompensation != null) {
           const projId = editId ? parseInt(editId) : projects[projects.length - 1].id;
           const bldgs = (utilityData[projId] || {}).buildings || [];
           bldgs.forEach((b) => {
@@ -36908,12 +36918,16 @@
         const defCscMode = cfg.cscMode ?? 'pct'; // 'pct' or 'fixed'
         // Fall back to project-level cscCompensation if building has no custom override
         const projMeta = projects.find((p) => p.id === udSelProjId);
-        const defCscPct = cfg._customCsc ? cfg.cscPct : projMeta?.cscCompensation || cfg.cscPct || 7;
+        const defCscPct = cfg._customCsc ? cfg.cscPct : (projMeta?.cscCompensation ?? cfg.cscPct ?? 0);
         const defCscFixed = cfg.cscFixed ?? 500;
         const defYears = cfg.years ?? 3;
         // Fall back to project-level escalation if building has no custom override
-        const defEscPct = cfg._customEsc ? cfg.escPct : projMeta?.escalation || cfg.escPct || 0;
+        const defEscPct = cfg._customEsc ? cfg.escPct : (projMeta?.escalation ?? cfg.escPct ?? 3);
         const defView = cfg.view ?? 'monthly';
+
+        // Sync global view/mode state from saved config so bpRecalc uses correct values
+        _bpView = defView;
+        _bpMode = defCscMode;
 
         pane.innerHTML = `
           <div style="margin-bottom:14px">
@@ -37057,13 +37071,15 @@
           try {
             const _prevCfg = JSON.parse(localStorage.getItem(storeKey) || '{}');
             const _saveCfg = { cscMode, cscPct: cscPct * 100, cscFixed, years, escPct: escPct * 100, view };
-            // Mark custom escalation if user changed it from the project default
+            // Mark custom escalation if value differs from the project default
             const _projM = projects.find((p) => p.id === udSelProjId);
-            if (_prevCfg._customEsc || escPct * 100 !== (_projM?.escalation || 0)) {
+            const _projEsc = _projM?.escalation ?? 3;
+            const _projCsc = _projM?.cscCompensation ?? 0;
+            if (escPct * 100 !== _projEsc) {
               _saveCfg._customEsc = true;
             }
-            // Mark custom CSC if user changed it from the project default
-            if (_prevCfg._customCsc || cscPct * 100 !== (_projM?.cscCompensation || 0)) {
+            // Mark custom CSC if value differs from the project default
+            if (cscPct * 100 !== _projCsc) {
               _saveCfg._customCsc = true;
             }
             localStorage.setItem(storeKey, JSON.stringify(_saveCfg));
@@ -37460,11 +37476,14 @@
         const defClientPct = cfg.clientPct ?? 5;
         // Fall back to project-level cscCompensation if building has no custom override
         const projMeta2 = projects.find((p) => p.id === udSelProjId);
-        const defCscPct = cfg._customCsc ? cfg.cscPct : projMeta2?.cscCompensation || cfg.cscPct || 7;
+        const defCscPct = cfg._customCsc ? cfg.cscPct : (projMeta2?.cscCompensation ?? cfg.cscPct ?? 0);
         const defYears = cfg.years ?? 3;
         // Fall back to project-level escalation if building has no custom override
-        const defEscPct = cfg._customEsc ? cfg.escPct : projMeta2?.escalation || cfg.escPct || 0;
+        const defEscPct = cfg._customEsc ? cfg.escPct : (projMeta2?.escalation ?? cfg.escPct ?? 3);
         const defView = cfg.view ?? 'monthly';
+
+        // Sync global view state from saved config so bspRecalc uses correct values
+        _bspView = defView;
 
         // Store for use by bspRecalc (called outside this function)
         _bspBaselineByCalMo = Array.from({ length: 12 }, (_, i) => baselineByCalMo[i] || 0);
@@ -37564,13 +37583,15 @@
               escPct: escPct * 100,
               view,
             };
-            // Mark custom escalation if user changed it from the project default
+            // Mark custom escalation if value differs from the project default
             const _projM2 = projects.find((p) => p.id === udSelProjId);
-            if (_prevBspCfg._customEsc || escPct * 100 !== (_projM2?.escalation || 0)) {
+            const _projEsc2 = _projM2?.escalation ?? 3;
+            const _projCsc2 = _projM2?.cscCompensation ?? 0;
+            if (escPct * 100 !== _projEsc2) {
               _saveBspCfg._customEsc = true;
             }
-            // Mark custom CSC if user changed it from the project default
-            if (_prevBspCfg._customCsc || cscPct * 100 !== (_projM2?.cscCompensation || 0)) {
+            // Mark custom CSC if value differs from the project default
+            if (cscPct * 100 !== _projCsc2) {
               _saveBspCfg._customCsc = true;
             }
             localStorage.setItem(storeKey, JSON.stringify(_saveBspCfg));
