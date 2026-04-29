@@ -12559,7 +12559,7 @@
             </span>
           </div>
           <!-- Project-level panel content (shown when project-level buttons clicked) -->
-          <div id="pd-proj-panel-content-${p.id}" style="display:none;border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;overflow-y:auto;max-height:500px"></div>
+          <div id="pd-proj-panel-content-${p.id}" style="display:none;border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;overflow-y:auto"></div>
           <div class="card" id="pd-tabs-card-${p.id}">
             <div class="pd-tabs" id="pdTabBar" style="overflow-x:auto;flex-wrap:nowrap;white-space:nowrap">
               ${_getProjTabHTML()}
@@ -19161,10 +19161,10 @@
             console.log('[BillingDetail] Raw text (600):', page.slice(0, 600));
             const acct = page.match(/Account\s*(?:Number|#)\s*:?\s*(\d{4,8})/i)?.[1] || null;
             const _dt = /(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/;
-            const _dtMerged = /(\d{3,4})-(\d{4})/;
+            const _dtMerged = /(\d{3,4})\s*-\s*(\d{4})/;
             const fixDate = (d) => (d ? d.replace(/-/g, '/') : null);
             const _splitMerged = (s) => {
-              const m = s.match(/^(\d{3,4})-(\d{4})$/);
+              const m = s.match(/^(\d{3,4})\s*-\s*(\d{4})$/);
               if (!m) return null;
               const digits = m[1];
               const yr = m[2];
@@ -19175,12 +19175,19 @@
               const re = new RegExp(label + '[:[ \\t\\n\\r]]*' + _dt.source, 'i');
               const m = page.match(re);
               if (m) return fixDate(m[1]);
+              // Try merged format (OCR drops slash: 501-2025 instead of 5/01/2025)
               const re3 = new RegExp(label + '[:[ \\t\\n\\r]]*' + _dtMerged.source, 'i');
               const m3 = page.match(re3);
               if (m3) return _splitMerged(m3[1] + '-' + m3[2]);
+              // Try multi-line: label on one line, date on next
               const re2 = new RegExp(label + '[^0-9\\n]{0,20}\\n[ \\t\\n\\r]*' + _dt.source, 'im');
               const m2 = page.match(re2);
-              return m2 ? fixDate(m2[1]) : null;
+              if (m2) return fixDate(m2[1]);
+              // Try multi-line with merged format
+              const re4 = new RegExp(label + '[^0-9\\n]{0,20}\\n[ \\t\\n\\r]*' + _dtMerged.source, 'im');
+              const m4 = page.match(re4);
+              if (m4) return _splitMerged(m4[1] + '-' + m4[2]);
+              return null;
             };
             const billDate = _findDate('Bill[ \\t\\n\\r]*Date');
             let serviceFrom = _findDate('Service[ \\t\\n\\r]*From');
@@ -24392,8 +24399,8 @@
         for (let i = 0; i < bills.length; i++) {
           const ext = bills[i];
           const extAcct = norm(ext.AccountNumber);
-          const extStart = toISO(ext.BillingPeriodStart);
-          const extEnd = toISO(ext.BillingPeriodEnd);
+          const extStart = toISO(ext.BillingPeriodStart || ext.DeliveryDate);
+          const extEnd = toISO(ext.BillingPeriodEnd || ext.DeliveryDate);
           const extMeter = norm(ext.MeterNumber);
           const extComm = (ext.Commodity || '').toLowerCase();
           if (!extAcct && !extStart) continue; // Can't match without identity
@@ -24404,11 +24411,14 @@
             const existMeter = norm(ab.meter.meter);
             const acctMatch = extAcct && existAcct && extAcct === existAcct;
             const meterMatch = extMeter && existMeter && extMeter === existMeter;
+            const extInv = norm(ext.InvoiceNumber || ext.SaleNumber);
+            const existInv = norm(ab.bill.invoiceNumber || ab.bill.saleNumber);
+            const invoiceMatch = extInv && existInv && extInv === existInv;
             const existComm = (ab.bill.commodity || ab.meter.commodity || '').toLowerCase();
             const commMatch = !extComm || !existComm || extComm === existComm;
             const periodMatch = extStart && ab.bill.start === extStart && extEnd && ab.bill.end === extEnd;
             const fuzzyPeriod = !periodMatch && periodClose(extStart, extEnd, ab.bill.start, ab.bill.end);
-            if ((acctMatch || meterMatch) && (periodMatch || fuzzyPeriod) && commMatch) {
+            if ((acctMatch || meterMatch || invoiceMatch) && (periodMatch || fuzzyPeriod) && commMatch) {
               // Build diff fields
               const diffFields = _buildDiffFields(ext, ab.bill);
               dupMap[i] = {
@@ -31267,7 +31277,7 @@
             if (v == null)
               return `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--text3);border:1px solid var(--border)">—</td>`;
             const c = color || (v >= 0 ? 'var(--em)' : 'var(--danger)');
-            return `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${c};border:1px solid var(--border);white-space:nowrap">${v >= 0 ? '−' : '+'}${$f(v, 2)}</td>`;
+            return `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${c};border:1px solid var(--border);white-space:nowrap">${v < 0 ? '−' : ''}${$f(v, 2)}</td>`;
           };
           const rows = MN.map((mn, mo) => {
             const base = moBase[mo] || 0;
@@ -31275,7 +31285,7 @@
             const pct = act != null && base > 0 ? (act / base) * 100 : null;
             return `<tr><td style="padding:6px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s1)">${mn}</td>
               ${tdV(act)}
-              <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${pct == null ? 'var(--text3)' : pct >= 0 ? 'var(--em)' : 'var(--danger)'};border:1px solid var(--border)">${pct != null ? (pct >= 0 ? '−' : '+') + Math.abs(pct).toFixed(1) + '%' : '—'}</td>
+              <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${pct == null ? 'var(--text3)' : pct >= 0 ? 'var(--em)' : 'var(--danger)'};border:1px solid var(--border)">${pct != null ? (pct < 0 ? '−' : '') + Math.abs(pct).toFixed(1) + '%' : '—'}</td>
             </tr>`;
           }).join('');
           content.innerHTML = `
@@ -31284,7 +31294,7 @@
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
                 <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual Baseline</div><div style="font-size:15px;font-weight:800">${$f(annBase)}</div></div>
                 <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Savings</div><div style="font-size:15px;font-weight:800;color:var(--em)">${$f(annProjSav)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${(avgSavPct * 100).toFixed(1)}%</div></div>
-                ${hasActual ? `<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Actual Savings</div><div style="font-size:15px;font-weight:800;color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav >= 0 ? '−' : '+'}${$f(annActSav)}</div>${actPct != null ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct >= 0 ? '−' : '+'}${Math.abs(actPct).toFixed(1)}%</div>` : ''}</div>` : ''}
+                ${hasActual ? `<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Actual Savings</div><div style="font-size:15px;font-weight:800;color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav < 0 ? '−' : ''}${$f(annActSav)}</div>${actPct != null ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct < 0 ? '−' : ''}${Math.abs(actPct).toFixed(1)}%</div>` : ''}</div>` : ''}
                 ${hasActual && annActSav != null ? `<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">vs Projected</div><div style="font-size:15px;font-weight:800;color:${annActSav >= annProjSav ? 'var(--em)' : 'var(--danger)'}">${annActSav >= annProjSav ? '+' : '-'}${$f(annActSav - annProjSav)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${annActSav >= annProjSav ? '▲ Above' : '▼ Below'} target</div></div>` : ''}
               </div>
             </div>
@@ -31295,7 +31305,7 @@
               <tfoot><tr style="background:var(--s1)">
                 <td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)">Annual</td>
                 ${tdV(hasActual ? annActSav : null)}
-                <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${actPct != null && actPct >= 0 ? 'var(--em)' : 'var(--danger)'};font-weight:700;border:1px solid var(--border)">${actPct != null ? (actPct >= 0 ? '−' : '+') + Math.abs(actPct).toFixed(1) + '%' : '—'}</td>
+                <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${actPct != null && actPct >= 0 ? 'var(--em)' : 'var(--danger)'};font-weight:700;border:1px solid var(--border)">${actPct != null ? (actPct < 0 ? '−' : '') + Math.abs(actPct).toFixed(1) + '%' : '—'}</td>
               </tr></tfoot>
             </table></div>
             <div style="padding:16px 18px 10px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Monthly Savings: Projected vs Actual</div>
@@ -32936,7 +32946,7 @@
                 normDays: r.normDays,
               };
             } else if (isGas) {
-              gasByMo[mo] = { therms: normUsage, cost: r.cost };
+              gasByMo[mo] = { therms: normUsage, cost: normUsage > 0 ? r.cost : 0 };
             } else if (isPropane) {
               propaneByMo[mo] = { gallons: normUsage, cost: r.cost };
             } else {
@@ -34816,9 +34826,9 @@
             tableSection;
 
           if (udNormChartVis) {
-            requestAnimationFrame(() => {
+            setTimeout(() => {
               drawNormChart('normChart', rows, unit, metric, weatherDDLabel, bills, incl);
-            });
+            }, 120);
           }
         } catch (e) {
           pane.innerHTML =
@@ -37463,7 +37473,7 @@
           <div id="bp-results"></div>`;
 
         // Defer recalc until after caller appends pane to DOM
-        setTimeout(() => bpRecalc(), 0);
+        setTimeout(() => bpRecalc(), 100);
       }
 
       let _bpView = 'monthly';
@@ -37586,7 +37596,7 @@
           if (v == null && !force) return '<span style="color:var(--text3)">—</span>';
           if (v == null) v = 0;
           const c = v >= 0 ? 'var(--em)' : 'var(--danger)';
-          return `<span style="color:${c}">${v >= 0 ? '−' : '+'}${$f(v)}</span>`;
+          return `<span style="color:${c}">${v < 0 ? '−' : ''}${$f(v)}</span>`;
         };
 
         // Build columns
@@ -37708,7 +37718,7 @@
               const disp =
                 pct == null
                   ? '<span style="color:var(--text3)">—</span>'
-                  : `<span style="color:${pct >= 0 ? 'var(--em)' : 'var(--danger)'}">${pct >= 0 ? '−' : '+'}${Math.abs(pct).toFixed(1)}%</span>`;
+                  : `<span style="color:${pct >= 0 ? 'var(--em)' : 'var(--danger)'}">${pct < 0 ? '−' : ''}${Math.abs(pct).toFixed(1)}%</span>`;
               return `<td style="padding:7px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border);background:${isLast ? 'var(--s1)' : 'transparent'};white-space:nowrap">${disp}</td>`;
             })
             .join('');
@@ -37792,7 +37802,7 @@
                 ? `
             <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Actual Savings</div>
-              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav >= 0 ? '−' : '+'}${$f(annActSav)}</div>
+              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav < 0 ? '−' : ''}${$f(annActSav)}</div>
               <div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct || ''} of baseline</div>
             </div>
             <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
@@ -38643,13 +38653,13 @@
             : '') +
           blPill(postAvgMo.toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' ' + unit + '/mo', 'Post-BL Avg') +
           blPill(
-            (savPct >= 0 ? '−' : '+') + Math.abs(savPct).toFixed(1) + '%',
+            (savPct < 0 ? '+' : '−') + Math.abs(savPct).toFixed(1) + '%',
             savPct >= 0 ? 'Reduction' : 'Increase',
             savPct >= 0 ? 'var(--em)' : 'var(--danger)',
           ) +
           (savCost !== null
             ? blPill(
-                (savCost >= 0 ? '−' : '+') +
+                (savCost < 0 ? '+' : '−') +
                   ' $' +
                   Math.abs(savCost).toLocaleString(undefined, { maximumFractionDigits: 0 }),
                 'Cost Delta',
