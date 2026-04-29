@@ -12629,6 +12629,11 @@
                 </div>
               </div>
             </div>
+            <div id="ptab-savedbills" class="ptab" style="padding:16px;overflow-y:auto">
+              <div id="ptab-savedbills-body-${p.id}">
+                <div style="text-align:center;color:var(--text3);padding:40px">Loading saved bills…</div>
+              </div>
+            </div>
             <div id="ptab-equipment" class="ptab" style="padding:16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap">
                 <input class="fi" id="equipQ-proj-${p.id}" placeholder="Search tag, type..." style="width:200px" oninput="renderProjEquip(${p.id})">
@@ -13396,6 +13401,7 @@
         { id: 'tasks', label: '✅ Tasks' },
         { id: 'contacts', label: '👥 Contacts' },
         { id: 'utility', label: '⚡ Utility Data' },
+        { id: 'savedbills', label: '🗄️ Saved Bills' },
         { id: 'equipment', label: '⚙️ Equipment' },
         { id: 'hvacload', label: '🌡️ HVAC Load Est' },
         { id: 'energygfx', label: '📈 Energy Graphics' },
@@ -13520,6 +13526,7 @@
         if (!p) return;
         if (tab === 'dashboard') initDashboardTab(p.id);
         if (tab === 'utility') initProjUDTab(p.id);
+        if (tab === 'savedbills') renderProjSavedBills(p.id);
         if (tab === 'equipment') renderProjEquip(p.id);
         if (tab === 'savings') initSavingsTab(p.id);
         if (tab === 'hvacload') requestAnimationFrame(() => initHvacLoadTab(p.id));
@@ -13755,6 +13762,176 @@
               .join('')}</tbody>
           </table>
         </div></div>`;
+      }
+
+      // ── #131: Saved Bills tab per project ──
+      function renderProjSavedBills(projId) {
+        const el = document.getElementById('ptab-savedbills-body-' + projId);
+        if (!el) return;
+        const proj = projects.find((x) => x.id === projId);
+        if (!proj) return;
+
+        // Load all saved (unassigned) bills from en_pdf_bills
+        const allBills = sget('en_pdf_bills', []) || [];
+        // Show bills that are either unassigned OR already associated with this project
+        const bills = allBills.filter((b) => !b.projId || b.projId === projId);
+
+        if (!bills.length) {
+          el.innerHTML =
+            '<div style="font-size:13px;color:var(--text2);padding:20px 0">No saved PDF bills found. Extract bills using the PDF/OCR page and save them first.</div>';
+          return;
+        }
+
+        // Build building + meter options for the assign dropdowns
+        const projUD = utilityData[projId];
+        const buildings = projUD?.buildings || [];
+        const bldgOptions = buildings.map((b) => `<option value="${b.id}">${b.name || 'Building'}</option>`).join('');
+
+        const getMeterOptions = (bldgId) => {
+          const b = buildings.find((x) => x.id === bldgId);
+          if (!b) return '';
+          return (b.meters || [])
+            .map(
+              (m) =>
+                `<option value="${m.id}">${m.provider || m.commodity || 'Meter'} ${m.account ? '· ' + m.account : ''}</option>`,
+            )
+            .join('');
+        };
+
+        const rows = bills
+          .map((b) => {
+            const commodity = b.Commodity || b.commodity || '—';
+            const provider = b.UtilityCompany || b.utilityCompany || '—';
+            const acct = b.AccountNumber || b.accountNumber || '';
+            const start = b.BillingPeriodStart || b.start || '';
+            const end = b.BillingPeriodEnd || b.end || '';
+            const total = b.TotalCurrentCharges || b.totalCost || '';
+            const saved = b.savedAt ? new Date(b.savedAt).toLocaleDateString() : '';
+            const isAssigned = !!b.projId;
+
+            // Build meter select that depends on building select
+            const firstBldgId = buildings[0]?.id || '';
+            const meterOpts = getMeterOptions(firstBldgId);
+
+            return `<tr style="font-size:12px">
+            <td style="padding:6px 8px">${commodity}</td>
+            <td style="padding:6px 8px;color:var(--text2)">${provider}</td>
+            <td style="padding:6px 8px;font-family:var(--mono);font-size:11px">${acct || '—'}</td>
+            <td style="padding:6px 8px;font-family:var(--mono);font-size:11px">${start ? start + ' → ' + end : '—'}</td>
+            <td style="padding:6px 8px;font-family:var(--mono)">${total ? '$' + parseFloat(String(total).replace(/,/g, '')).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+            <td style="padding:6px 8px;color:var(--text3)">${saved}</td>
+            <td style="padding:6px 8px">
+              ${
+                isAssigned
+                  ? `<span style="color:var(--green);font-size:11px">✓ Assigned</span>`
+                  : buildings.length === 0
+                    ? `<span style="color:var(--text3);font-size:11px">No buildings in project</span>`
+                    : `<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+                      <select class="fi" id="sb-bldg-${b.id}" style="padding:2px 4px;font-size:11px;height:26px"
+                        onchange="(function(s){var mo=document.getElementById('sb-meter-${b.id}');if(mo){var pid=${JSON.stringify(projId)};var bid=s.value;var ud=utilityData[pid];var bld=(ud?.buildings||[]).find(function(x){return x.id===bid});mo.innerHTML=(bld?.meters||[]).map(function(m){return '<option value=\"'+m.id+'\">'+(m.provider||m.commodity||'Meter')+(m.account?' · '+m.account:'')+'</option>'}).join('')}})(this)">${bldgOptions}</select>
+                      <select class="fi" id="sb-meter-${b.id}" style="padding:2px 4px;font-size:11px;height:26px">${meterOpts}</select>
+                      <button class="btn btn-em btn-sm" style="font-size:11px;padding:2px 8px" onclick="assignSavedBillFromProj('${b.id}',${JSON.stringify(projId)})">Assign</button>
+                    </div>`
+              }
+            </td>
+          </tr>`;
+          })
+          .join('');
+
+        el.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+            <div style="font-size:13px;font-weight:600">${bills.length} saved bill${bills.length !== 1 ? 's' : ''}</div>
+            <button class="btn btn-ghost btn-sm" onclick="sv('view-pdf');showToast('Go to PDF/OCR page to extract new bills')">+ Extract PDF Bill</button>
+          </div>
+          <div class="card" style="overflow-x:auto">
+            <table class="dtbl" style="min-width:700px">
+              <thead>
+                <tr>
+                  <th>Commodity</th><th>Provider</th><th>Account</th>
+                  <th>Period</th><th>Total</th><th>Saved</th><th>Assign to Meter</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>`;
+      }
+
+      // Assign a saved (unassigned) bill to a building+meter in a project
+      async function assignSavedBillFromProj(billId, projId) {
+        const bldgSel = document.getElementById('sb-bldg-' + billId);
+        const meterSel = document.getElementById('sb-meter-' + billId);
+        if (!bldgSel || !meterSel) {
+          showToast('Could not find selectors');
+          return;
+        }
+        const bldgId = bldgSel.value;
+        const meterId = meterSel.value;
+        if (!bldgId || !meterId) {
+          showToast('Select a building and meter first');
+          return;
+        }
+
+        const proj = utilityData[projId];
+        if (!proj) {
+          showToast('Project not found');
+          return;
+        }
+        const b = (proj.buildings || []).find((x) => x.id === bldgId);
+        if (!b) {
+          showToast('Building not found');
+          return;
+        }
+        const m = (b.meters || []).find((x) => x.id === meterId);
+        if (!m) {
+          showToast('Meter not found');
+          return;
+        }
+
+        const allBills = sget('en_pdf_bills', []) || [];
+        const sb = allBills.find((x) => x.id === billId);
+        if (!sb) {
+          showToast('Bill not found in Saved Bills');
+          return;
+        }
+
+        // Build bill record from saved bill fields
+        const bill = {
+          id: 'b' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+          start: sb.BillingPeriodStart || sb.start || '',
+          end: sb.BillingPeriodEnd || sb.end || '',
+          utilityCompany: sb.UtilityCompany || sb.utilityCompany || '',
+          customerName: sb.CustomerName || sb.customerName || '',
+          accountNumber: sb.AccountNumber || sb.accountNumber || '',
+          kwh: sb.kWhConsumed || sb.kwh || '',
+          demandKW: sb.ActualKW || sb.demandKW || '',
+          billedKW: sb.BilledKW || sb.billedKW || '',
+          totalCost: sb.TotalCurrentCharges || sb.totalCost || '',
+          kwhCost: sb.kwhCost || '',
+          kwCost: sb.kwCost || '',
+          otherCost: sb.otherCost || '',
+          taxCost: sb.taxCost || '',
+          naturalGasTherms: sb.NaturalGasTherms || sb.naturalGasTherms || '',
+          gasCharge: sb.GasCharge || sb.gasCharge || '',
+          gallonsDelivered: sb.GallonsDelivered || sb.gallonsDelivered || '',
+          pdfBillId: sb.id,
+          hasPDF: !!sb.hasPDF,
+          pdfKey: sb.pdfKey || '',
+          pdfPageStart: sb.pdfPageStart || '',
+          pdfPageEnd: sb.pdfPageEnd || '',
+        };
+
+        if (!m.bills) m.bills = [];
+        m.bills.push(bill);
+        saveUtilityData();
+
+        // Mark saved bill as assigned so it won't appear as unassigned elsewhere
+        sb.projId = projId;
+        sb.bldgId = bldgId;
+        sb.meterId = meterId;
+        await sset('en_pdf_bills', allBills);
+
+        showToast('Bill assigned to ' + (m.provider || m.commodity || 'meter') + ' ✓');
+        renderProjSavedBills(projId);
       }
 
       // ── District Calendar per project ──
@@ -26155,11 +26332,15 @@
             }
             _recalcAggregates();
           } else if (dup.action === 'field-select') {
-            // Apply per-field selections
+            // Apply per-field selections — #118: never write null/undefined over an existing value
             for (const d of dup.diffFields) {
               const useNew = dup.fieldSelections[d.key] !== false;
               if (useNew && FIELD_MAP[d.key]) {
-                existing[FIELD_MAP[d.key]] = extracted[d.key];
+                const newVal = extracted[d.key];
+                if (newVal != null && newVal !== '') {
+                  existing[FIELD_MAP[d.key]] = newVal;
+                }
+                // If extracted is null/undefined, preserve the existing value unchanged
               }
             }
             _copyPageRange();
@@ -26201,9 +26382,12 @@
               sb.hasPDF = true;
             }
           } else if (dup.action === 'field-select') {
+            // #118: never write null/undefined over an existing value
             for (const d of dup.diffFields) {
               const useNew = dup.fieldSelections[d.key] !== false;
-              if (useNew) sb[d.key] = extracted[d.key];
+              if (useNew && extracted[d.key] != null && extracted[d.key] !== '') {
+                sb[d.key] = extracted[d.key];
+              }
             }
             if (extracted._pageStart) sb.pdfPageStart = extracted._pageStart;
             if (extracted._pageEnd) sb.pdfPageEnd = extracted._pageEnd;
@@ -29142,21 +29326,33 @@
           return 'Other';
         }
 
-        const yearMatch = text.match(/(\d{4})\s*[-–]\s*(\d{4})\s+(?:School|District|Academic)/i);
-        const startSchoolYear = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
-        const endSchoolYear = yearMatch ? parseInt(yearMatch[2]) : startSchoolYear + 1;
+        // Match "2025-2026 School Year" or plain "2025-2026" or "2025–26"
+        const yearMatch =
+          text.match(/(\d{4})\s*[-–]\s*(\d{4})\s+(?:School|District|Academic)/i) ||
+          text.match(/\b(20\d{2})\s*[-–]\s*(20\d{2})\b/) ||
+          text.match(/\b(20\d{2})\s*[-–]\s*(\d{2})\b/);
+        let startSchoolYear = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
+        let endSchoolYear = yearMatch
+          ? yearMatch[2].length === 2
+            ? startSchoolYear - (startSchoolYear % 100) + parseInt(yearMatch[2])
+            : parseInt(yearMatch[2])
+          : startSchoolYear + 1;
+        // Sanity: endSchoolYear should be startSchoolYear+1 for a school year
+        if (endSchoolYear <= startSchoolYear) endSchoolYear = startSchoolYear + 1;
         function yearForMonth(mo) {
           return mo >= 8 ? startSchoolYear : endSchoolYear;
         }
 
         const monthYearMap = {};
+        // Match "August - 2025", "August – 25", "August 2025", "August-25"
         const myRe =
-          /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s*[-–]\s*(\d{2,4})\b/gi;
+          /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s*[-–]?\s*(\d{2,4})\b/gi;
         let myM;
         while ((myM = myRe.exec(text)) !== null) {
           const mo = monthMap[myM[1].toLowerCase()];
           let yr = parseInt(myM[2]);
           if (yr < 100) yr += 2000;
+          if (yr < 2000 || yr > 2099) continue; // skip bad years
           if (mo) monthYearMap[mo] = yr;
         }
 
@@ -29220,6 +29416,31 @@
           /^(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\b/i.test(s) ||
           /^\d{1,2}(?:-\d{1,2})?\s*[-–]/.test(s);
 
+        // Also build a per-column month-header map by scanning all lines that have
+        // month headers, so each column's month context can be set from the header row
+        // rather than relying solely on in-stream detection (fixes off-by-month errors).
+        const colMonthMap = Array.from({ length: numCols }, () => ({})); // col -> {pos: {mo,yr}}
+        if (colBounds) {
+          for (const line of eventLines) {
+            const re = new RegExp(monthHeaderRe.source, 'gi');
+            let hm2;
+            while ((hm2 = re.exec(line)) !== null) {
+              const mo = monthMap[hm2[1].toLowerCase()];
+              if (!mo) continue;
+              // Determine which column this header falls in
+              let col = 0;
+              for (let c = numCols - 1; c >= 0; c--) {
+                if (hm2.index >= colBounds[c]) {
+                  col = c;
+                  break;
+                }
+              }
+              const yr = monthYearMap[mo] || yearForMonth(mo);
+              colMonthMap[col][mo] = yr;
+            }
+          }
+        }
+
         eventLines.forEach((line) => {
           if (!colBounds) {
             colStreams[0].push(line.trim());
@@ -29231,19 +29452,28 @@
             const end = c < numCols - 1 ? colBounds[c + 1] : line.length;
             segs.push((start < line.length ? line.substring(start, end) : '').trim());
           }
+          // Route each segment to its correct column stream.
+          // A segment belongs to column c if it starts with a month header or a day-event
+          // pattern (e.g. "15 – No School"). Segments that are clearly continuations of a
+          // multi-word name from the previous column get merged back into that column.
+          const pushed = new Array(numCols).fill(false);
           for (let c = 0; c < numCols; c++) {
             if (!segs[c]) continue;
             if (c > 0 && !_isColStart(segs[c])) {
-              const prev = c - 1;
-              if (segs[prev] !== undefined) {
-                segs[prev] = (segs[prev] + ' ' + segs[c]).trim();
-                segs[c] = '';
-                continue;
+              // Continuation of previous column — append, do not push separately
+              if (!pushed[c - 1] && segs[c - 1]) {
+                segs[c - 1] = (segs[c - 1] + ' ' + segs[c]).trim();
+              } else {
+                // Previous already pushed; append directly to the last entry of that stream
+                const prev = colStreams[c - 1];
+                if (prev.length) prev[prev.length - 1] = (prev[prev.length - 1] + ' ' + segs[c]).trim();
               }
+              segs[c] = '';
+              continue;
             }
             colStreams[c].push(segs[c]);
+            pushed[c] = true;
           }
-          if (segs[0] && !colStreams[0].includes(segs[0])) colStreams[0].push(segs[0]);
         });
 
         // Process each column stream: track current month, parse events
@@ -29339,14 +29569,21 @@
       }
 
       function _parseMonthEvents(text, month, year, events, detectType) {
-        const re = /(\d{1,2})(?:-(\d{1,2}))?\s*[-–]\s+/g;
+        // Match: "15 – Description" or "15-17 – Description" or "15- Description"
+        // Allow any whitespace (including none) after the separating dash/en-dash.
+        const re = /(\d{1,2})(?:\s*[-–]\s*(\d{1,2}))?\s*[-–]\s*/g;
         let m;
         const positions = [];
         while ((m = re.exec(text)) !== null) {
+          const d1 = parseInt(m[1]);
+          // Reject: looks like a year (e.g. 2025) or clearly out-of-range day
+          if (d1 < 1 || d1 > 31) continue;
+          // Reject if the character right before is a digit (mid-number match)
+          if (m.index > 0 && /\d/.test(text[m.index - 1])) continue;
           positions.push({
             idx: m.index,
-            dayStart: parseInt(m[1]),
-            dayEnd: m[2] ? parseInt(m[2]) : parseInt(m[1]),
+            dayStart: d1,
+            dayEnd: m[2] ? parseInt(m[2]) : d1,
             descStart: m.index + m[0].length,
           });
         }
@@ -29359,6 +29596,7 @@
           if (!desc || desc.length < 2) continue;
           const type = detectType(desc);
           for (let d = positions[i].dayStart; d <= positions[i].dayEnd; d++) {
+            if (d < 1 || d > 31) continue;
             const dateStr = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
             events.push({ date: dateStr, name: desc, type });
           }
@@ -31902,9 +32140,11 @@
           pane.innerHTML =
             '<div class="ma-csv-drop" onclick="openCsvImportForMeter(\'' +
             m.id +
+            '\')" ondragover="event.preventDefault();this.classList.add(\'drag\')" ondragleave="this.classList.remove(\'drag\')" ondrop="udMeterDropHandler(event,\'' +
+            m.id +
             '\')">' +
-            '<div class="ma-csv-drop-title">📥 Drop CSV or click to import bill data</div>' +
-            '<div class="ma-csv-drop-sub">One row per billing period · Electric, Gas, Water, Steam</div>' +
+            '<div class="ma-csv-drop-title">📥 Drop CSV or PDF or click to import bill data</div>' +
+            '<div class="ma-csv-drop-sub">CSV: one row per billing period · PDF: routes to PDF extraction</div>' +
             '</div>';
           return;
         }
@@ -34651,10 +34891,11 @@
             avgRatePerUnit != null
               ? { v: fmtRate(avgRatePerUnit) + '/' + unit, lbl: 'Blended Rate', color: 'var(--em2)' }
               : null,
-            summerRate != null
+            // #96: Propane has no seasonal pricing — skip summer/winter rate pills
+            summerRate != null && m.commodity !== 'Propane'
               ? { v: fmtRate(summerRate) + '/' + unit, lbl: '☀️ Summer Rate', color: 'var(--warn)' }
               : null,
-            winterRate != null
+            winterRate != null && m.commodity !== 'Propane'
               ? { v: fmtRate(winterRate) + '/' + unit, lbl: '❄️ Winter Rate', color: 'var(--em)' }
               : null,
             summerKwRate != null
@@ -35136,10 +35377,11 @@
             avgRatePerUnit != null
               ? { v: fmtRate(avgRatePerUnit) + '/' + unit2, lbl: 'Blended Rate', color: 'var(--em2)' }
               : null,
-            summerRate != null
+            // #96: Propane has no seasonal pricing — skip summer/winter rate pills
+            summerRate != null && m.commodity !== 'Propane'
               ? { v: fmtRate(summerRate) + '/' + unit2, lbl: '☀️ Summer Rate', color: 'var(--warn)' }
               : null,
-            winterRate != null
+            winterRate != null && m.commodity !== 'Propane'
               ? { v: fmtRate(winterRate) + '/' + unit2, lbl: '❄️ Winter Rate', color: 'var(--em)' }
               : null,
             summerKwRate != null
@@ -38689,6 +38931,34 @@
       ══════════════════════════════════════════ */
       let _csvImportMid = null;
       let _csvImportRows = [];
+
+      // #86: Drop handler for the Utility Data empty-meter drop zone.
+      // Routes PDF files to the PDF/OCR extraction pipeline; CSV files to the CSV import modal.
+      function udMeterDropHandler(e, mid) {
+        e.preventDefault();
+        e.currentTarget.classList.remove('drag');
+        const files = Array.from(e.dataTransfer.files);
+        if (!files.length) return;
+        const file = files[0];
+        if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+          // Navigate to PDF/OCR page and process the file there
+          sv('view-pdf');
+          // Small delay to let the view render before we trigger the extraction
+          setTimeout(() => {
+            if (window._pdfQueue) {
+              appendToQueue([file]);
+            } else {
+              processPDF(file);
+            }
+          }, 150);
+          showToast('Sending to PDF extractor…');
+        } else {
+          // CSV — open the normal import modal
+          openCsvImportForMeter(mid);
+          // Then process the file directly
+          processBillCsvFile(file);
+        }
+      }
 
       function openCsvImportForMeter(mid) {
         _csvImportMid = mid;
