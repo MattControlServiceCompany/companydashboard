@@ -5691,7 +5691,7 @@
                       📈 Projected Savings
                     </button>
                     <button class="btn btn-ghost btn-sm" id="ud-proj-perf-btn" onclick="toggleUDProjPanel('perf')">
-                      💡 Performance
+                      💡 Project Performance
                     </button>
                   </div>
                 </div>
@@ -12552,10 +12552,10 @@
             <span class="phc-sep">|</span>
             <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px;flex-shrink:0" id="pd-proj-baseline-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'baseline')">📊 Project Baseline</button>
             <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px;flex-shrink:0" id="pd-proj-savproj-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'savproj')">📈 Projected Savings</button>
-            <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px;flex-shrink:0" id="pd-proj-perf-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'perf')">💡 Performance</button>
+            <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px;flex-shrink:0" id="pd-proj-perf-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'perf')">💡 Project Performance</button>
             <span class="phc-sep">|</span>
             <span style="display:flex;gap:4px;flex-shrink:0">
-              <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px" onclick="openProjModal();editProj(${p.id})">✏️ Edit</button>
+              <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px" onclick="openProjModal();editProj(${p.id})">✏️ Edit Project</button>
             </span>
           </div>
           <!-- Project-level panel content (shown when project-level buttons clicked) -->
@@ -12618,7 +12618,7 @@
                     <div style="display:flex;gap:6px;flex-wrap:wrap">
                       <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','baseline')">📊 Baseline Data</button>
                       <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','savproj')">📈 Savings Projection</button>
-                      <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','perf')">💡 Performance</button>
+                      <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','perf')">💡 Building Performance</button>
                       <button class="btn btn-ghost btn-sm" onclick="openBldgModalForProj(${p.id}, projUDSelBldg['${p.id}'])">✏️ Edit Building</button>
                       <button class="btn btn-ghost btn-sm" onclick="openExportModal('building','${p.id}')" title="Export utility bill data to JSON or CSV">📤 Export Data</button>
                       <button class="btn btn-em btn-sm" onclick="projUDOpenMeterModal('${p.id}')">+ Add Meter</button>
@@ -13417,7 +13417,7 @@
         { id: 'contracts', label: '📋 Contracts' },
         { id: 'meetings', label: '📋 Meetings' },
         { id: 'docs', label: '📁 Documents' },
-        { id: 'settings', label: '⚙️ Settings' },
+        { id: 'settings', label: '⚙️ Project Settings' },
       ];
       function _getProjTabOrder() {
         try {
@@ -31751,7 +31751,7 @@
           { id: 'norm', label: '🌡️ Normalized' },
           { id: 'baseline', label: '📊 Baseline' },
           { id: 'stats', label: '📈 Meter Data' },
-          { id: 'perf', label: '💡 Performance' },
+          { id: 'perf', label: '💡 Building Performance' },
         ];
 
         ws.innerHTML =
