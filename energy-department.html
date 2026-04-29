@@ -34674,7 +34674,18 @@
             '">' +
             '<span>📈 Normalized Baseline Model — Regression Coefficients' +
             (hasRegr
-              ? " · <span style='color:var(--em);font-size:11px'>✓ Active</span>"
+              ? " · <span style='color:var(--em);font-size:11px'>✓ Active</span>" +
+                (reg.dual
+                  ? " · <span style='color:var(--violet);font-size:11px'>Model: HDD + CDD</span>"
+                  : reg.hdd && reg.cdd
+                    ? " · <span style='color:var(--violet);font-size:11px'>Model: " +
+                      (isElec ? 'CDD primary / HDD fallback' : 'HDD primary / CDD fallback') +
+                      '</span>'
+                    : reg.hdd
+                      ? " · <span style='color:var(--violet);font-size:11px'>Model: HDD only</span>"
+                      : reg.cdd
+                        ? " · <span style='color:var(--violet);font-size:11px'>Model: CDD only</span>"
+                        : '')
               : " · <span style='color:var(--text3);font-size:11px'>Upload weather to enable</span>") +
             '</span>' +
             '<span style="font-size:11px;color:var(--text3)">' +
