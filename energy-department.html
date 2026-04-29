@@ -21620,6 +21620,8 @@
             accountNumber: bill.AccountNumber || '',
             meterNumber: bill.MeterNumber || '',
             numberOfDays: bill.NumberOfDays || '',
+            meterReadStart: bill.MeterReadStart || '',
+            meterReadEnd: bill.MeterReadEnd || '',
             billDate: bill.BillDate || '',
             commodity: bill.Commodity || '',
             startRead: bill.StartRead || '',
@@ -21726,7 +21728,13 @@
             } else {
               const _newM = {
                 id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
-                commodity: bill.Commodity,
+                commodity:
+                  bill.Commodity ||
+                  (bill.NaturalGasTherms || bill.NaturalGasCCF || bill.GasCharge
+                    ? 'Gas'
+                    : bill.GallonsDelivered || bill.FuelType
+                      ? 'Propane'
+                      : 'Electric'),
                 provider: bill.UtilityCompany || billMatch.meter.provider || '',
                 account: bill.AccountNumber || billMatch.meter.account || '',
                 meter: '',
@@ -21851,7 +21859,13 @@
           } else {
             const newMeter = {
               id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
-              commodity: extracted.Commodity,
+              commodity:
+                extracted.Commodity ||
+                (extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.GasCharge
+                  ? 'Gas'
+                  : extracted.GallonsDelivered || extracted.FuelType
+                    ? 'Propane'
+                    : 'Electric'),
               provider: extracted.UtilityCompany || match.meter.provider || '',
               account: extracted.AccountNumber || match.meter.account || '',
               meter: '',
@@ -27868,7 +27882,13 @@
                 } else {
                   const newM = {
                     id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
-                    commodity: extracted.Commodity,
+                    commodity:
+                      extracted.Commodity ||
+                      (extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.GasCharge
+                        ? 'Gas'
+                        : extracted.GallonsDelivered || extracted.FuelType
+                          ? 'Propane'
+                          : 'Electric'),
                     provider: extracted.UtilityCompany || targetMeter.provider || '',
                     account: extracted.AccountNumber || targetMeter.account || '',
                     meter: '',
@@ -33693,7 +33713,7 @@
             <td class="mono" style="color:var(--text2)">${fmtTemp(r.avgTemp)}</td>
             <td class="mono" style="color:var(--em2)">${r.weatherNorm != null ? r.weatherNorm.toFixed(3) : '—'}</td>
             ${regrCell}${euiCell}
-            <td class="mono">${r.cost ? '$' + r.cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+            <td class="mono">${r.cost != null && r.cost !== '' ? '$' + r.cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
             ${r.isBaseline ? '<td><span style="font-size:10px;background:var(--em-dim);color:var(--em);border:1px solid rgba(0,212,170,.2);border-radius:4px;padding:1px 6px">BL</span></td>' : '<td></td>'}
           </tr>`;
             })
@@ -39481,9 +39501,11 @@
         const commKey = (m.commodity || 'Electric').toLowerCase();
         let layout = BILL_MODAL_LAYOUTS[commKey] || BILL_MODAL_LAYOUTS.electric;
         if (commKey === 'gas') {
-          const hasTherms = row && (row.naturalGasTherms || row.NaturalGasTherms);
+          const meterUnit = getMeterBillUnit(m);
+          const useTherms =
+            meterUnit === 'Therms' || (meterUnit !== 'CCF' && row && (row.naturalGasTherms || row.NaturalGasTherms));
           layout = layout.map((r) =>
-            r.qtyField === 'NaturalGasCCF' && hasTherms ? { ...r, qtyField: 'NaturalGasTherms', unit: 'Therms' } : r,
+            r.qtyField === 'NaturalGasCCF' && useTherms ? { ...r, qtyField: 'NaturalGasTherms', unit: 'Therms' } : r,
           );
         }
         const schemaEntry = (pdfKey) => {
