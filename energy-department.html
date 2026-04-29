@@ -17536,6 +17536,68 @@
         }
         return { charge: gasCharge, total: totalCharge, corrected: false };
       }
+
+      // ── RATE GUARDRAILS — validates implied rate (charge ÷ usage) for all commodity types ──
+      const KNOWN_RATES = {
+        Electric: {
+          kWh: { typical: 0.1, unit: '$/kWh', min: 0.01, max: 1.0 },
+          kW: { typical: 10.0, unit: '$/kW', min: 1.0, max: 100.0 },
+        },
+        Gas: {
+          therm: { typical: 0.798, unit: '$/Therm', min: 0.08, max: 8.0 },
+        },
+        Propane: {
+          gallon: { typical: 2.5, unit: '$/Gal', min: 0.25, max: 25.0 },
+        },
+        Water: {
+          unit: { typical: 5.0, unit: '$/1000gal', min: 0.5, max: 50.0 },
+        },
+        Sewer: {
+          unit: { typical: 8.0, unit: '$/1000gal', min: 0.8, max: 80.0 },
+        },
+      };
+
+      function validateImpliedRate(commodity, usage, charge, utilityName) {
+        if (!usage || !charge || usage === 0) return null;
+        const implied = Math.abs(charge / usage);
+        const commRates =
+          KNOWN_RATES[(commodity || '').charAt(0).toUpperCase() + (commodity || '').slice(1).toLowerCase()];
+        if (!commRates) return null;
+        const rateKey = Object.keys(commRates)[0];
+        const expected = commRates[rateKey];
+        if (!expected) return null;
+
+        // Use utility-specific override if available (e.g. Louisburg gas)
+        let expMin = expected.min,
+          expMax = expected.max,
+          expTypical = expected.typical;
+        if ((commodity || '').toLowerCase() === 'gas' && utilityName && /louisburg/i.test(utilityName)) {
+          const lbgRate = _LBG_GAS_RATES[0].rate;
+          expTypical = lbgRate;
+          expMin = lbgRate / 10;
+          expMax = lbgRate * 10;
+        }
+
+        let severity = null;
+        if (implied < expMin || implied > expMax) {
+          severity = 'error';
+        } else if (implied < expTypical / 3 || implied > expTypical * 3) {
+          severity = 'warn';
+        } else if (implied < expTypical / 1.5 || implied > expTypical * 1.5) {
+          severity = 'info';
+        }
+
+        return {
+          valid: severity === null,
+          implied: implied,
+          typical: expTypical,
+          min: expMin,
+          max: expMax,
+          unit: expected.unit,
+          severity: severity,
+        };
+      }
+
       function _lbg_tokens(line) {
         if (!line) return [];
         return [...line.matchAll(/-?[\d,]+\.\d+|-?[\d,]+-\d{2}|-?[\d,]+/g)]
@@ -18235,8 +18297,29 @@
           },
           extract: function (t) {
             const company = this._detectCompany(t);
+            // Gas charge line items
+            const _gasChargeM = t.match(
+              /(?:gas\s*(?:charge|service|cost|supply)|distribution\s*charge|commodity\s*charge)[\s:$]*(\-?[0-9,]+\.[0-9]{2})/i,
+            );
+            const _custChargeM = t.match(
+              /(?:customer\s*charge|basic\s*service|service\s*charge|base\s*charge|minimum\s*charge|facility\s*charge)[\s:$]*(\-?[0-9,]+\.[0-9]{2})/i,
+            );
+            const _fuelAdjM = t.match(
+              /(?:fuel\s*adj|gas\s*adj|purchased\s*gas\s*adj|pga|weather\s*norm|gas\s*cost\s*adj)[\w\s]*[\s:$]*(\-?[0-9,]+\.[0-9]{2})/i,
+            );
+            // Meter readings
+            const _prevReadM = t.match(/(?:previous|prior|last)\s*(?:meter\s*)?read(?:ing)?[\s:]*([0-9,]+)/i);
+            const _currReadM = t.match(/(?:current|present|new)\s*(?:meter\s*)?read(?:ing)?[\s:]*([0-9,]+)/i);
+            const _readDiffM = t.match(
+              /(?:difference|usage|consumption|used)[\s:]*([0-9,]+)(?:\s*(?:ccf|therms?|mcf))?/i,
+            );
+            // Therms conversion factor
+            const _thermFactorM = t.match(
+              /(?:therm\s*factor|conversion\s*factor|btu\s*factor|multiplier)[\s:]*([0-9.]+)/i,
+            );
             return {
               UtilityCompany: company,
+              Commodity: 'Gas',
               CustomerName:
                 t
                   .match(
@@ -18261,14 +18344,22 @@
                 null,
               NaturalGasCCF:
                 t.match(/([0-9,]+\.?\d*)\s*(?:ccf|hundred\s*cubic\s*feet)/i)?.[1]?.replace(/,/g, '') || null,
+              GasCharge: _gasChargeM?.[1]?.replace(/,/g, '') || null,
+              CustomerCharge: _custChargeM?.[1]?.replace(/,/g, '') || null,
+              FuelAdjustment: _fuelAdjM?.[1]?.replace(/,/g, '') || null,
+              MeterReadPrevious: _prevReadM?.[1]?.replace(/,/g, '') || null,
+              MeterReadCurrent: _currReadM?.[1]?.replace(/,/g, '') || null,
+              MeterReadDifference: _readDiffM?.[1]?.replace(/,/g, '') || null,
+              ThermFactor: _thermFactorM?.[1] || null,
               TotalAmountDue:
                 t
-                  .match(/(?:amount\s*due|total\s*(?:current\s*)?(?:charges?|bill))[\s:$]*([0-9,]+\.[0-9]{2})/i)?.[1]
+                  .match(/(?:amount\s*due|total\s*(?:current\s*)?(?:charges?|bill))[\s:$]*(\-?[0-9,]+\.[0-9]{2})/i)?.[1]
                   ?.replace(/,/g, '') || null,
               TotalCurrentCharges:
-                t.match(/total\s*current\s*charges[\s:$]*([0-9,]+\.[0-9]{2})/i)?.[1]?.replace(/,/g, '') || null,
+                t.match(/total\s*current\s*charges[\s:$]*(\-?[0-9,]+\.[0-9]{2})/i)?.[1]?.replace(/,/g, '') || null,
               RateSchedule: t.match(/rate[\s:]*(?:schedule|code)?[\s:]*([A-Z0-9\-]{2,12})/i)?.[1] || null,
               MeterNumber: t.match(/meter[\s#:]*([A-Z0-9\-]{4,20})/i)?.[1] || null,
+              _utilityName: company,
             };
           },
         },
@@ -19608,6 +19699,20 @@
 
         // Validate charge math: component charges should sum to ~total
         const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+
+        // Negative total check — no utility bill should ever have a negative total
+        const _totalForSign = pf(extracted.TotalCurrentCharges);
+        if (_totalForSign < 0) {
+          warnings.push({
+            level: 'error',
+            field: 'TotalCurrentCharges',
+            message:
+              'Total Current Charges is negative ($' +
+              _totalForSign.toFixed(2) +
+              ') — utility bills cannot have negative totals',
+          });
+        }
+
         if (utilityName === 'Evergy') {
           const total = pf(extracted.TotalCurrentCharges);
           if (total > 0) {
@@ -19650,6 +19755,102 @@
           for (const f of spec.chargeFields) {
             if (extracted[f] !== null && extracted[f] !== undefined && extracted[f] !== '' && pf(extracted[f]) === 0) {
               warnings.push({ level: 'info', field: f, message: 'Value is $0.00 — verify this is correct' });
+            }
+          }
+        }
+
+        // Gas charge sum validation
+        const _extComm = (extracted.Commodity || '').toLowerCase();
+        if (_extComm === 'gas') {
+          const gasTotal = pf(extracted.TotalCurrentCharges);
+          if (gasTotal !== 0) {
+            const gasCompSum =
+              Math.round(
+                (pf(extracted.CustomerCharge) + pf(extracted.GasCharge) + pf(extracted.FuelAdjustment)) * 100,
+              ) / 100;
+            if (gasCompSum > 0) {
+              const gasDiff = Math.abs(gasCompSum - gasTotal);
+              if (gasDiff > 1.0) {
+                warnings.push({
+                  level: 'warn',
+                  field: 'TotalCurrentCharges',
+                  message:
+                    'Gas charges sum to $' +
+                    gasCompSum.toFixed(2) +
+                    ' but total is $' +
+                    gasTotal.toFixed(2) +
+                    ' (diff $' +
+                    gasDiff.toFixed(2) +
+                    ')',
+                });
+              }
+            }
+          }
+        }
+
+        // Implied rate guardrail — flags rates outside expected range for any commodity
+        const _vComm = (extracted.Commodity || '').toLowerCase();
+        const _vUtilName = extracted._utilityName || extracted.UtilityCompany || utilityName || '';
+        if (_vComm === 'gas') {
+          const _vUsage = pf(extracted.NaturalGasTherms);
+          const _vCharge = pf(extracted.GasCharge);
+          if (_vUsage > 0 && _vCharge > 0) {
+            const rr = validateImpliedRate('Gas', _vUsage, _vCharge, _vUtilName);
+            if (rr && rr.severity) {
+              warnings.push({
+                level: rr.severity,
+                field: 'GasCharge',
+                message:
+                  'Implied gas rate $' +
+                  rr.implied.toFixed(4) +
+                  '/Therm — expected $' +
+                  rr.min.toFixed(2) +
+                  '–$' +
+                  rr.max.toFixed(2) +
+                  '/Therm (typical $' +
+                  rr.typical.toFixed(4) +
+                  ')',
+              });
+            }
+          }
+        } else if (_vComm === 'propane') {
+          const _vUsage = pf(extracted.PropaneGallons || extracted.Quantity);
+          const _vCharge = pf(extracted.Subtotal || extracted.PropaneCharge);
+          if (_vUsage > 0 && _vCharge > 0) {
+            const rr = validateImpliedRate('Propane', _vUsage, _vCharge, _vUtilName);
+            if (rr && rr.severity) {
+              warnings.push({
+                level: rr.severity,
+                field: 'PropaneGallons',
+                message:
+                  'Implied propane rate $' +
+                  rr.implied.toFixed(4) +
+                  '/Gal — expected $' +
+                  rr.min.toFixed(2) +
+                  '–$' +
+                  rr.max.toFixed(2) +
+                  '/Gal',
+              });
+            }
+          }
+        } else if (_vComm === 'electric' || _vComm === '') {
+          const _vKwh = pf(extracted.kWhConsumed);
+          const _vKwhCharge = pf(extracted.EnergyOnPeakCharge) + pf(extracted.EnergyOffPeakCharge);
+          if (_vKwh > 0 && _vKwhCharge > 0) {
+            const rr = validateImpliedRate('Electric', _vKwh, _vKwhCharge, _vUtilName);
+            if (rr && rr.severity) {
+              warnings.push({
+                level: rr.severity,
+                field: 'kWhConsumed',
+                message:
+                  'Implied electric rate $' +
+                  rr.implied.toFixed(4) +
+                  '/kWh — expected $' +
+                  rr.min.toFixed(2) +
+                  '–$' +
+                  rr.max.toFixed(2) +
+                  '/kWh',
+              });
             }
           }
         }
@@ -19941,6 +20142,73 @@
                   ' kW',
               });
             }
+          }
+        }
+
+        // Implied rate check — works with 0 historical bills using KNOWN_RATES
+        const _rateChecks = [];
+        const _comm = (extracted.Commodity || '').toLowerCase();
+        if (_comm === 'gas') {
+          const gasUsage = pf(extracted.NaturalGasTherms);
+          const gasCharge = pf(extracted.GasCharge);
+          if (gasUsage > 0 && gasCharge > 0) {
+            const utilName = extracted._utilityName || extracted.UtilityCompany || '';
+            _rateChecks.push({
+              field: 'GasCharge',
+              usage: gasUsage,
+              charge: gasCharge,
+              label: '$/Therm',
+              comm: 'Gas',
+              utilName,
+            });
+          }
+        } else if (_comm === 'electric' || _comm === '') {
+          const kwhUsage = pf(extracted.kWhConsumed);
+          const kwhCharge = pf(extracted.EnergyOnPeakCharge) + pf(extracted.EnergyOffPeakCharge);
+          if (kwhUsage > 0 && kwhCharge > 0) {
+            _rateChecks.push({
+              field: 'kWhConsumed',
+              usage: kwhUsage,
+              charge: kwhCharge,
+              label: '$/kWh',
+              comm: 'Electric',
+              utilName: '',
+            });
+          }
+        } else if (_comm === 'propane') {
+          const propUsage = pf(extracted.PropaneGallons || extracted.Quantity);
+          const propCharge = pf(extracted.Subtotal || extracted.PropaneCharge);
+          if (propUsage > 0 && propCharge > 0) {
+            _rateChecks.push({
+              field: 'PropaneGallons',
+              usage: propUsage,
+              charge: propCharge,
+              label: '$/Gal',
+              comm: 'Propane',
+              utilName: '',
+            });
+          }
+        }
+        for (const rc of _rateChecks) {
+          const rateResult = validateImpliedRate(rc.comm, rc.usage, rc.charge, rc.utilName);
+          if (rateResult && rateResult.severity) {
+            warnings.push({
+              level: rateResult.severity,
+              field: rc.field,
+              message:
+                'Implied rate $' +
+                rateResult.implied.toFixed(4) +
+                rc.label +
+                ' is outside expected range ($' +
+                rateResult.min.toFixed(2) +
+                '–$' +
+                rateResult.max.toFixed(2) +
+                rc.label +
+                ', typical $' +
+                rateResult.typical.toFixed(4) +
+                rc.label +
+                ')',
+            });
           }
         }
 
@@ -20364,42 +20632,89 @@
             }
           }
 
-          // ── GAS CHARGE OCR DECIMAL-DROP FIX ──
-          // City of Louisburg gas charges for a monthly building bill should
-          // never exceed ~$5,000. OCR sometimes drops the decimal, producing
-          // e.g. $16,693.06 instead of $166.93. Auto-correct when dividing by
-          // 100 yields a value consistent with therms × rate. Same pattern as
-          // stormwater decimal-drop above.
+          // ── GAS CHARGE OCR DECIMAL-DROP FIX (rate-validated) ──
+          // Only apply decimal corrections when the corrected values produce
+          // an implied rate closer to the known rate. Never blindly divide by
+          // 100 based on magnitude alone — large buildings legitimately have
+          // charges > $5k and usage > 10k therms.
           if (b.Commodity === 'Gas') {
             const _gc = pf(b.GasCharge);
             const _th = pf(b.NaturalGasTherms);
-            if (_gc > 5000) {
-              const corrGC = Math.round(_gc) / 100;
-              // Validate: if therms also look garbled (>10k), try correcting both
-              const corrTh = _th > 10000 ? Math.round(_th) / 100 : _th;
-              b._auto_corrected_GasCharge = {
-                original: _gc,
-                corrected: corrGC,
-                reason: 'OCR decimal-drop: ' + _gc + ' → ' + corrGC,
-              };
-              b.GasCharge = corrGC;
-              console.log('[PostVerify] Gas charge decimal-drop corrected: $' + _gc + ' → $' + corrGC);
-              if (_th > 10000) {
-                b._auto_corrected_NaturalGasTherms = {
-                  original: _th,
-                  corrected: corrTh,
-                  reason: 'OCR decimal-drop: ' + _th + ' → ' + corrTh,
-                };
-                b.NaturalGasTherms = corrTh;
-                console.log('[PostVerify] Gas therms decimal-drop corrected: ' + _th + ' → ' + corrTh);
-              }
-              // Recompute total from corrected components
-              const _cust = pf(b.CustomerCharge);
-              const _fa = pf(b.FuelAdjustment);
-              if (corrGC > 0 && _cust > 0) {
-                const newTotal = corrGC + _cust + _fa;
-                b.TotalCurrentCharges = newTotal.toFixed(2);
-                b.TotalAmountDue = newTotal.toFixed(2);
+            const _utilName = b._utilityName || b.UtilityCompany || '';
+            if (_gc > 0 && _th > 0) {
+              const origRate = validateImpliedRate('Gas', _th, _gc, _utilName);
+              if (origRate && origRate.severity === 'error') {
+                // Rate is way off — try decimal correction candidates
+                const candidates = [];
+                // Candidate 1: correct charge only
+                if (_gc > 500) {
+                  const cGC = Math.round(_gc) / 100;
+                  const r1 = validateImpliedRate('Gas', _th, cGC, _utilName);
+                  if (r1) candidates.push({ gc: cGC, th: _th, rate: r1, label: 'charge' });
+                }
+                // Candidate 2: correct therms only
+                if (_th > 1000) {
+                  const cTh = Math.round(_th) / 100;
+                  const r2 = validateImpliedRate('Gas', cTh, _gc, _utilName);
+                  if (r2) candidates.push({ gc: _gc, th: cTh, rate: r2, label: 'therms' });
+                }
+                // Candidate 3: correct both
+                if (_gc > 500 && _th > 1000) {
+                  const cGC = Math.round(_gc) / 100;
+                  const cTh = Math.round(_th) / 100;
+                  const r3 = validateImpliedRate('Gas', cTh, cGC, _utilName);
+                  if (r3) candidates.push({ gc: cGC, th: cTh, rate: r3, label: 'both' });
+                }
+                // Pick the candidate closest to the typical rate
+                const best = candidates
+                  .filter((c) => !c.rate.severity || c.rate.severity === 'info')
+                  .sort(
+                    (a, b) => Math.abs(a.rate.implied - a.rate.typical) - Math.abs(b.rate.implied - b.rate.typical),
+                  )[0];
+                if (best) {
+                  if (best.gc !== _gc) {
+                    b._auto_corrected_GasCharge = {
+                      original: _gc,
+                      corrected: best.gc,
+                      reason:
+                        'OCR decimal-drop: $' +
+                        _gc +
+                        ' → $' +
+                        best.gc +
+                        ' (implied rate $' +
+                        best.rate.implied.toFixed(4) +
+                        best.rate.unit +
+                        ' matches expected)',
+                    };
+                    b.GasCharge = best.gc;
+                    console.log('[PostVerify] Gas charge rate-validated correction: $' + _gc + ' → $' + best.gc);
+                  }
+                  if (best.th !== _th) {
+                    b._auto_corrected_NaturalGasTherms = {
+                      original: _th,
+                      corrected: best.th,
+                      reason:
+                        'OCR decimal-drop: ' +
+                        _th +
+                        ' → ' +
+                        best.th +
+                        ' (implied rate $' +
+                        best.rate.implied.toFixed(4) +
+                        best.rate.unit +
+                        ' matches expected)',
+                    };
+                    b.NaturalGasTherms = best.th;
+                    console.log('[PostVerify] Gas therms rate-validated correction: ' + _th + ' → ' + best.th);
+                  }
+                  // Recompute total from corrected components
+                  const _cust = pf(b.CustomerCharge);
+                  const _fa = pf(b.FuelAdjustment);
+                  if (best.gc > 0 && _cust > 0) {
+                    const newTotal = best.gc + _cust + _fa;
+                    b.TotalCurrentCharges = newTotal.toFixed(2);
+                    b.TotalAmountDue = newTotal.toFixed(2);
+                  }
+                }
               }
             }
           }
@@ -27394,7 +27709,7 @@
           const v = parsed[f];
           return v === null || v === undefined || v === '' || _pf(v) === 0;
         });
-        const _currentSumDiff = totalVal > 0 && _currentChargeSum > 0 ? _currentChargeSum - totalVal : 0;
+        const _currentSumDiff = totalVal !== 0 && _currentChargeSum > 0 ? _currentChargeSum - totalVal : 0;
         const hasCurrentSumMismatch = Math.abs(_currentSumDiff) >= 0.02;
         const sumMismatch = parsed['_sum_mismatch'];
         // Big, loud banner for sum mismatch — this is a high-severity issue that must never be
@@ -31359,15 +31674,6 @@
             '<button class="btn btn-ghost btn-sm" onclick="toggleBldgPerfPanel()">← Back to Meters</button>' +
             '</div>' +
             '<div id="bldgPerfPaneInner" style="padding:0 16px 16px;overflow-y:auto;flex:1;min-height:0"></div>';
-          const _b2 = getUDBldg(udSelProjId, udSelBldgId);
-          if (_b2) {
-            try {
-              const _k = 'bldgperf_cfg_' + (_b2.id || _b2.name);
-              const _c = JSON.parse(localStorage.getItem(_k) || '{}');
-              delete _c.moBase;
-              localStorage.setItem(_k, JSON.stringify(_c));
-            } catch (e) {}
-          }
           renderBldgPerfPane(document.getElementById('bldgPerfPaneInner'), b);
         } else {
           renderUDDetail();
@@ -32898,8 +33204,8 @@
             const cost = isElec
               ? parseFloat(row.totalCost) || 0
               : isGas
-                ? parseFloat(row.thermCost) || 0
-                : parseFloat(row.cost) || 0;
+                ? parseFloat(row.thermCost) || parseFloat(row.totalCost) || parseFloat(row.cost) || 0
+                : parseFloat(row.cost) || parseFloat(row.totalCost) || 0;
             // Bill-level weather — only used as fallback if no ZIP weather cache
             const hdd = parseFloat(row.hdd) || 0;
             const cdd = parseFloat(row.cdd) || 0;
@@ -37239,18 +37545,20 @@
           const storeKey = 'bldgperf_cfg_' + (b.id || b.name);
           try {
             const _prevCfg = JSON.parse(localStorage.getItem(storeKey) || '{}');
-            const _saveCfg = { cscMode, cscPct: cscPct * 100, cscFixed, years, escPct: escPct * 100, view };
-            // Mark custom escalation if value differs from the project default
             const _projM = projects.find((p) => p.id === udSelProjId);
             const _projEsc = _projM?.escalation ?? 3;
             const _projCsc = _projM?.cscCompensation ?? 0;
-            if (escPct * 100 !== _projEsc) {
-              _saveCfg._customEsc = true;
-            }
-            // Mark custom CSC if value differs from the project default
-            if (cscPct * 100 !== _projCsc) {
-              _saveCfg._customCsc = true;
-            }
+            const _saveCfg = Object.assign({}, _prevCfg, {
+              cscMode,
+              cscPct: cscPct * 100,
+              cscFixed,
+              years,
+              escPct: escPct * 100,
+              view,
+            });
+            delete _saveCfg.moBase;
+            _saveCfg._customEsc = escPct * 100 !== _projEsc ? true : undefined;
+            _saveCfg._customCsc = cscPct * 100 !== _projCsc ? true : undefined;
             localStorage.setItem(storeKey, JSON.stringify(_saveCfg));
           } catch (e) {}
         }
