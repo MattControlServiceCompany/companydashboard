@@ -12686,6 +12686,7 @@
                     <span class="card-title">🗓️ District Calendar</span>
                     <div style="display:flex;gap:8px">
                       <button class="btn btn-ghost btn-sm" onclick="distCalAddRow(${p.id})">+ Add Event</button>
+                      <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:rgba(244,63,94,.35)" onclick="distCalDeleteAll(${p.id})">🗑 Delete All</button>
                       <button class="btn btn-em btn-sm" onclick="distCalShowImport(${p.id})">📥 Import Calendar</button>
                     </div>
                   </div>
@@ -22999,10 +23000,13 @@
         html += '</div>';
         html += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
         if (dupCount > 0) {
+          // #119: Two clearly-labelled save options for duplicates
           html +=
-            '<button class="btn btn-ghost btn-sm" onclick="resolveAllQueueDups(\'overwrite\')" style="font-size:10px">Overwrite All</button>';
+            '<button class="btn btn-ghost btn-sm" onclick="resolveAllQueueDups(\'overwrite\')" style="font-size:10px" title="Save All (Overwrite): Replaces everything on the existing record including blank fields">Save All (Overwrite)</button>';
           html +=
-            '<button class="btn btn-ghost btn-sm" onclick="resolveAllQueueDups(\'skip\')" style="font-size:10px">Skip All</button>';
+            '<button class="btn btn-ghost btn-sm" onclick="resolveAllQueueDups(\'merge\')" style="font-size:10px" title="Save Only Non-Empty Fields (Merge): Fills empty fields only — keeps existing non-empty values intact. $0.00 counts as a real value.">Save Non-Empty (Merge)</button>';
+          html +=
+            '<button class="btn btn-ghost btn-sm" onclick="resolveAllQueueDups(\'skip\')" style="font-size:10px">Skip All Dups</button>';
         }
         html +=
           '<button class="btn btn-em btn-sm" onclick="saveQueuedBills()" style="font-size:11px"' +
@@ -25647,13 +25651,35 @@
             Object.entries(locs).forEach(([loc, cnt]) => parts.push(cnt + ' assigned to ' + loc));
           }
           if (savedCount) parts.push(savedCount + ' in Saved Bills');
-          dupBannerHtml = `<div style="padding:5px 12px;margin:0 0 8px;border-radius:6px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);font-size:12px;color:var(--amber);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <span style="flex:1;min-width:0"><strong>&#9888; ${dupIndices.length} of ${bills.length} bills already exist</strong> &mdash; ${parts.join(', ')}</span>
-        <div style="display:flex;gap:6px;flex-shrink:0">
-          <button onclick="_dupBulkAction('skip')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:var(--amber);cursor:pointer">Skip All</button>
-          <button onclick="_dupBulkAction('overwrite')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:var(--amber);cursor:pointer">Overwrite All</button>
-          <button onclick="_dupBulkAction('merge')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:var(--amber);cursor:pointer">Merge All</button>
+          // #117: Count by diff status for the legend
+          const identicalCount = dupIndices.filter((i) => (dupMap[i].diffFields || []).length === 0).length;
+          const diffCount117 = dupIndices.filter(
+            (i) => (dupMap[i].diffFields || []).length > 0 && (dupMap[i].diffFields || []).length < 5,
+          ).length;
+          const conflictCount = dupIndices.filter((i) => (dupMap[i].diffFields || []).length >= 5).length;
+          const legendParts = [];
+          if (identicalCount)
+            legendParts.push(
+              `<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:#22c55e;display:inline-block"></span><span style="color:var(--text2)">Identical (safe to skip): ${identicalCount}</span></span>`,
+            );
+          if (diffCount117)
+            legendParts.push(
+              `<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:#f59e0b;display:inline-block"></span><span style="color:var(--text2)">Fields differ (review): ${diffCount117}</span></span>`,
+            );
+          if (conflictCount)
+            legendParts.push(
+              `<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:#f43f5e;display:inline-block"></span><span style="color:var(--text2)">Conflict (manual resolution): ${conflictCount}</span></span>`,
+            );
+          dupBannerHtml = `<div style="padding:8px 12px;margin:0 0 8px;border-radius:6px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);font-size:12px;color:var(--amber)">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:${legendParts.length ? '6px' : '0'}">
+          <span style="flex:1;min-width:0"><strong>&#9888; Duplicate Bills Found &mdash; ${dupIndices.length} of ${bills.length} already exist</strong> &mdash; ${parts.join(', ')}</span>
+          <div style="display:flex;gap:6px;flex-shrink:0">
+            <button onclick="_dupBulkAction('skip')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:var(--amber);cursor:pointer">Skip All</button>
+            <button onclick="_dupBulkAction('overwrite')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:var(--amber);cursor:pointer" title="Replace existing records with newly extracted values, including blanks">Overwrite All</button>
+            <button onclick="_dupBulkAction('merge')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(245,158,11,.4);background:transparent;color:var(--amber);cursor:pointer" title="Fill only empty fields — keeps existing non-empty values intact">Merge All</button>
+          </div>
         </div>
+        ${legendParts.length ? `<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:10px;padding-top:4px;border-top:1px solid rgba(245,158,11,.2)">${legendParts.join('')}</div>` : ''}
       </div>`;
         }
         // Move "Save All" button + per-commodity buttons into the extraction method badge area
@@ -28856,6 +28882,28 @@
         renderDistCalTable(projId);
       }
 
+      function distCalDeleteAll(projId) {
+        const p = projects.find((x) => x.id === projId);
+        if (!p) return;
+        const count = (p.districtCalendar || []).length;
+        if (count === 0) {
+          showToast('No calendar events to delete');
+          return;
+        }
+        if (
+          !confirm(
+            'Are you sure you want to delete all ' +
+              count +
+              ' calendar events for this project? This cannot be undone.',
+          )
+        )
+          return;
+        p.districtCalendar = [];
+        sset('en_projects', projects);
+        renderDistCalTable(projId);
+        showToast('All calendar events deleted');
+      }
+
       function distCalShowImport(projId) {
         document.getElementById('distcal-import-' + projId).style.display = '';
       }
@@ -28918,6 +28966,9 @@
         const text = await dcExtractPDFText(buf);
         distCalProcessText(projId, text);
       }
+      // #74: Store pending import events keyed by projId for the preview/approval flow
+      window._distCalPendingImport = window._distCalPendingImport || {};
+
       function distCalProcessText(projId, text) {
         const events = dcExtractCalendarEvents(text);
         const status = document.getElementById('distcal-import-status-' + projId);
@@ -28926,20 +28977,9 @@
           showToast('No events found');
           return;
         }
-        const p = projects.find((x) => x.id === projId);
-        if (!p) return;
-        p.districtCalendar = p.districtCalendar || [];
-        let added = 0;
-        events.forEach((ev) => {
-          if (!p.districtCalendar.some((e) => e.date === ev.date && e.name === ev.name)) {
-            p.districtCalendar.push({ id: Date.now() + Math.random(), ...ev });
-            added++;
-          }
-        });
-        sset('en_projects', projects);
-        document.getElementById('distcal-import-' + projId).style.display = 'none';
-        renderDistCalTable(projId);
-        showToast(added + ' events imported ✓');
+        // #74: Show preview instead of saving immediately
+        if (status) status.style.display = 'none';
+        distCalShowPreview(projId, events);
       }
 
       function distCalParse(projId) {
@@ -28957,18 +28997,104 @@
           showToast('No events found — try different text');
           return;
         }
+        // #74: Show preview instead of saving immediately
+        distCalShowPreview(projId, events);
+      }
+
+      // #74: Render an editable preview table of extracted events before saving
+      function distCalShowPreview(projId, events) {
+        // Store pending events so rows can be edited/deleted before confirm
+        window._distCalPendingImport[projId] = events.map((ev, i) => ({ ...ev, _previewIdx: i, _deleted: false }));
+        _distCalRenderPreview(projId);
+      }
+
+      function _distCalRenderPreview(projId) {
+        const pending = window._distCalPendingImport[projId] || [];
+        const active = pending.filter((r) => !r._deleted);
+        // Build preview table HTML; inject into a dedicated preview div inside the card
+        let previewEl = document.getElementById('distcal-preview-' + projId);
+        if (!previewEl) {
+          // Create the preview container right before the table div
+          const tableDiv = document.getElementById('distcal-table-' + projId);
+          if (!tableDiv) return;
+          previewEl = document.createElement('div');
+          previewEl.id = 'distcal-preview-' + projId;
+          tableDiv.parentNode.insertBefore(previewEl, tableDiv);
+        }
+        if (active.length === 0) {
+          previewEl.innerHTML =
+            '<div style="padding:10px;color:var(--text3);font-size:13px">All events removed from preview.</div>';
+          return;
+        }
+        const opts = DIST_CAL_TYPES.map((t) => `<option>${t}</option>`).join('');
+        let rows = '';
+        pending.forEach((ev, i) => {
+          if (ev._deleted) return;
+          const selOpts = DIST_CAL_TYPES.map(
+            (t) => `<option${t === (ev.type || 'Other') ? ' selected' : ''}>${t}</option>`,
+          ).join('');
+          rows += `<tr>
+            <td style="padding:3px 5px"><input class="fi" type="date" value="${ev.date || ''}" onchange="window._distCalPendingImport[${projId}][${i}].date=this.value" style="font-family:var(--mono)"></td>
+            <td style="padding:3px 5px"><input class="fi" value="${esc(ev.name || '')}" onchange="window._distCalPendingImport[${projId}][${i}].name=this.value" style="width:100%"></td>
+            <td style="padding:3px 5px"><select class="fs" onchange="window._distCalPendingImport[${projId}][${i}].type=this.value">${selOpts}</select></td>
+            <td style="padding:3px 5px"><button class="btn-del" onclick="window._distCalPendingImport[${projId}][${i}]._deleted=true;_distCalRenderPreview(${projId})">✕</button></td>
+          </tr>`;
+        });
+        previewEl.innerHTML = `
+          <div style="border:1px solid var(--border2);border-radius:8px;padding:12px;margin-bottom:12px;background:var(--s2)">
+            <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:var(--em)">Preview — ${active.length} event${active.length !== 1 ? 's' : ''} extracted</div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Review the events below. Edit dates or names, delete unwanted rows, then click <strong>Approve &amp; Save</strong> to add them to your calendar. Nothing is saved until you confirm.</div>
+            <div style="max-height:240px;overflow-y:auto;margin-bottom:10px">
+              <table class="dtbl" style="width:100%">
+                <thead><tr><th style="width:140px">Date</th><th>Event Name</th><th style="width:140px">Type</th><th style="width:36px"></th></tr></thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+              <button class="btn btn-ghost btn-sm" onclick="_distCalCancelPreview(${projId})">Cancel</button>
+              <button class="btn btn-em btn-sm" onclick="_distCalApproveImport(${projId})">Approve &amp; Save (${active.length})</button>
+            </div>
+          </div>`;
+        // Hide the import panel while preview is shown
+        const importEl = document.getElementById('distcal-import-' + projId);
+        if (importEl) importEl.style.display = 'none';
+      }
+
+      function _distCalCancelPreview(projId) {
+        delete window._distCalPendingImport[projId];
+        const previewEl = document.getElementById('distcal-preview-' + projId);
+        if (previewEl) previewEl.innerHTML = '';
+        showToast('Import cancelled');
+      }
+
+      function _distCalApproveImport(projId) {
+        const pending = window._distCalPendingImport[projId] || [];
+        const active = pending.filter((r) => !r._deleted);
+        if (!active.length) {
+          showToast('No events to import');
+          return;
+        }
         const p = projects.find((x) => x.id === projId);
         if (!p) return;
         p.districtCalendar = p.districtCalendar || [];
-        events.forEach((ev) => {
+        let added = 0;
+        active.forEach((ev) => {
           if (!p.districtCalendar.some((e) => e.date === ev.date && e.name === ev.name)) {
-            p.districtCalendar.push({ id: Date.now() + Math.random(), ...ev });
+            p.districtCalendar.push({
+              id: Date.now() + Math.random(),
+              date: ev.date,
+              name: ev.name,
+              type: ev.type || 'Other',
+            });
+            added++;
           }
         });
         sset('en_projects', projects);
-        document.getElementById('distcal-parse-' + projId).style.display = 'none';
+        delete window._distCalPendingImport[projId];
+        const previewEl = document.getElementById('distcal-preview-' + projId);
+        if (previewEl) previewEl.innerHTML = '';
         renderDistCalTable(projId);
-        showToast(events.length + ' events extracted ✓');
+        showToast(added + ' events imported ✓');
       }
 
       function dcExtractCalendarEvents(text) {
