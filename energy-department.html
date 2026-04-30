@@ -13951,7 +13951,11 @@
             const start = b.BillingPeriodStart || b.start || '';
             const end = b.BillingPeriodEnd || b.end || '';
             const total = b.TotalCurrentCharges || b.totalCost || '';
-            const saved = b.savedAt ? new Date(b.savedAt).toLocaleDateString() : '';
+            const saved = b.savedAt
+              ? new Date(b.savedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+                ' ' +
+                new Date(b.savedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+              : '';
             const isAssigned = !!b.projId;
 
             // Build meter select that depends on building select
@@ -13979,6 +13983,7 @@
                     </div>`
               }
             </td>
+            <td style="padding:3px 4px;text-align:center">${!isAssigned ? `<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:1px 4px;color:var(--red);border-color:var(--red)" onclick="deleteSavedBillFromProj('${b.id}',${JSON.stringify(projId)})" title="Delete this bill">✕</button>` : ''}</td>
           </tr>`;
           })
           .join('');
@@ -13996,6 +14001,7 @@
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               ${unassignedCount > 0 ? `<button class="btn btn-ghost btn-sm" onclick="autoAssignAllSavedBills(${JSON.stringify(projId)})">⚡ Auto-Assign All (${unassignedCount})</button>` : ''}
               <button class="btn btn-ghost btn-sm" onclick="sv('view-pdf');showToast('Go to PDF/OCR page to extract new bills')">+ Extract PDF Bill</button>
+              ${unassignedCount > 0 ? `<button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red)" onclick="deleteAllSavedBills(${JSON.stringify(projId)})">🗑️ Delete All (${unassignedCount})</button>` : ''}
             </div>
           </div>
           <div class="card" style="overflow-x:auto">
@@ -14009,11 +14015,36 @@
                   <th>Total</th>
                   <th>Saved</th>
                   <th style="${thStyle}" onclick="_sbSortClick(${JSON.stringify(projId)},'meter')">Assign to Meter ${arrow('meter')}</th>
+                  <th style="width:30px"></th>
                 </tr>
               </thead>
               <tbody>${rows}</tbody>
             </table>
           </div>`;
+      }
+
+      function deleteSavedBillFromProj(billId, projId) {
+        if (!confirm('Delete this saved bill? This cannot be undone.')) return;
+        let bills = sget('en_pdf_bills', []) || [];
+        bills = bills.filter((b) => b.id !== billId);
+        sset('en_pdf_bills', bills);
+        showToast('Bill deleted ✓');
+        renderProjSavedBills(projId);
+      }
+
+      function deleteAllSavedBills(projId) {
+        let bills = sget('en_pdf_bills', []) || [];
+        const unassigned = bills.filter((b) => !b.projId);
+        if (!unassigned.length) {
+          showToast('No unassigned bills to delete');
+          return;
+        }
+        if (!confirm('Delete all ' + unassigned.length + ' unassigned saved bills? This cannot be undone.')) return;
+        const unassignedIds = new Set(unassigned.map((b) => b.id));
+        bills = bills.filter((b) => !unassignedIds.has(b.id));
+        sset('en_pdf_bills', bills);
+        showToast(unassigned.length + ' bills deleted ✓');
+        renderProjSavedBills(projId);
       }
 
       // #141: Auto-assign all unassigned saved bills using findMeterMatch
@@ -18754,11 +18785,11 @@
               if (/^\d{3}\s*-\s*(water|gas|sewer|storm)/i.test(trim)) continue;
               if (/Previous\s*Balance/i.test(trim)) continue;
               if (/[FE][UO][EL][LA]\s*ADJ|FUELADJ|FUEL\s*ADJ/i.test(trim) && !fuelAdjLine) fuelAdjLine = trim;
-              else if (/\bGAS\b/i.test(trim) && !/[FE][UO][EL]|ADJ/i.test(trim) && !gasLine) gasLine = trim;
-              else if (/\bSTORM\s*WATER\b/i.test(trim) && !stormLine) stormLine = trim;
-              else if (/\bSEWER\b/i.test(trim) && !sewerLine) sewerLine = trim;
-              else if (/\bWATER\s*PROTECTION\s*FEE\b/i.test(trim) && !wpfLine) wpfLine = trim;
-              else if (/\bWATER\b/i.test(trim) && !/PROTECTION|STORM/i.test(trim) && !waterLine) waterLine = trim;
+              else if (/\bG[A4]S\b/i.test(trim) && !/[FE][UO][EL]|ADJ/i.test(trim) && !gasLine) gasLine = trim;
+              else if (/\bSTORM\s*W[A4]TER\b/i.test(trim) && !stormLine) stormLine = trim;
+              else if (/\bS[E3]W[E3]R\b/i.test(trim) && !sewerLine) sewerLine = trim;
+              else if (/\bW[A4]TER\s*PROT[E3]CTION\s*F[E3][E3]\b/i.test(trim) && !wpfLine) wpfLine = trim;
+              else if (/\bW[A4]TER\b/i.test(trim) && !/PROTECTION|STORM/i.test(trim) && !waterLine) waterLine = trim;
             }
 
             const parseLine = (line) => {
@@ -19061,12 +19092,12 @@
               // if a commodity label is on it, the after-text charge will be
               // the previous-balance dollar amount, not the current charge.
               if (/Previous\s*Balance/i.test(ln)) continue;
-              if (!gas && /\bGAS\b/i.test(ln) && !/FUEL|ADJUSTMENT/i.test(ln)) gas = parseMetered(ln, /\bGAS\b/i);
-              if (!water && /\bM?WATER\b/i.test(ln) && !/PROTECTION/i.test(ln))
-                water = parseMetered(ln, /\bM?WATER\b/i);
-              if (!wpf && /WATER\s*PROTECTION/i.test(ln)) wpf = parseMetered(ln, /WATER\s*PROTECTION/i);
-              if (!sewer && /\bSEWER\b/i.test(ln)) sewer = parseMetered(ln, /\bSEWER\b/i);
-              if (!storm && /STORM\s*WATER/i.test(ln)) storm = parseMetered(ln, /STORM\s*WATER/i);
+              if (!gas && /\bG[A4]S\b/i.test(ln) && !/FUEL|ADJUSTMENT/i.test(ln)) gas = parseMetered(ln, /\bG[A4]S\b/i);
+              if (!water && /\bM?W[A4]TER\b/i.test(ln) && !/PROTECTION/i.test(ln))
+                water = parseMetered(ln, /\bM?W[A4]TER\b/i);
+              if (!wpf && /W[A4]TER\s*PROT[E3]CTION/i.test(ln)) wpf = parseMetered(ln, /W[A4]TER\s*PROT[E3]CTION/i);
+              if (!sewer && /\bS[E3]W[E3]R\b/i.test(ln)) sewer = parseMetered(ln, /\bS[E3]W[E3]R\b/i);
+              if (!storm && /STORM\s*W[A4]TER/i.test(ln)) storm = parseMetered(ln, /STORM\s*W[A4]TER/i);
             }
             gas = gas || { usage: null, charge: null };
             water = water || { usage: null, charge: null };
