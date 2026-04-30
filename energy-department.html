@@ -5522,7 +5522,7 @@
                 letter-spacing: 0.5px;
               "
             >
-              v2026.04.30.1
+              v2026.04.30.2
             </div>
           </div>
         </aside>
@@ -10805,13 +10805,7 @@
       </div>
 
       <!-- PROJECT MODAL -->
-      <div
-        class="modal-bg"
-        id="projModal"
-        role="presentation"
-        aria-label="Project dialog"
-        onclick="if (event.target === this) closeProjModal();"
-      >
+      <div class="modal-bg" id="projModal" role="presentation" aria-label="Project dialog">
         <div class="modal" role="dialog" aria-modal="true">
           <div class="modal-hdr">
             <span class="modal-title" id="projModalTitle">+ New Energy Project</span
@@ -11030,13 +11024,7 @@
       </div>
 
       <!-- BUILDING MODAL -->
-      <div
-        class="modal-bg"
-        id="bldgModal"
-        role="presentation"
-        aria-label="Building dialog"
-        onclick="if (event.target === this) closeBldgModal();"
-      >
+      <div class="modal-bg" id="bldgModal" role="presentation" aria-label="Building dialog">
         <div class="modal" role="dialog" aria-modal="true" style="width: 480px">
           <div class="modal-hdr">
             <span class="modal-title" id="bldgModalTitle">+ Add Building</span
@@ -11070,13 +11058,7 @@
       </div>
 
       <!-- METER MODAL -->
-      <div
-        class="modal-bg"
-        id="meterModal"
-        role="presentation"
-        aria-label="Meter dialog"
-        onclick="if (event.target === this) closeMeterModal();"
-      >
+      <div class="modal-bg" id="meterModal" role="presentation" aria-label="Meter dialog">
         <div class="modal" role="dialog" aria-modal="true" style="width: 520px">
           <div class="modal-hdr">
             <span class="modal-title" id="meterModalTitle">+ Add Meter</span
@@ -11178,13 +11160,7 @@
       </div>
 
       <!-- BILL ROW MODAL -->
-      <div
-        class="modal-bg"
-        id="billModal"
-        role="presentation"
-        aria-label="Bill dialog"
-        onclick="if (event.target === this) closeBillModal();"
-      >
+      <div class="modal-bg" id="billModal" role="presentation" aria-label="Bill dialog">
         <div class="modal" role="dialog" aria-modal="true" style="width: 560px">
           <div class="modal-hdr">
             <span class="modal-title" id="billModalTitle">+ Add Billing Period</span
@@ -11199,7 +11175,7 @@
       </div>
 
       <!-- AUDIT LOG MODAL -->
-      <div class="modal-bg" id="auditLogModal" onclick="if (event.target === this) closeAuditLogModal();">
+      <div class="modal-bg" id="auditLogModal">
         <div class="modal" style="width: 800px; max-width: 96vw; max-height: 90vh">
           <div class="modal-hdr">
             <span class="modal-title">📋 Utility Data History</span
@@ -11214,7 +11190,7 @@
       </div>
 
       <!-- WEATHER DATA CSV MODAL -->
-      <div class="modal-bg" id="wddModal" onclick="if (event.target === this) closeWddModal();">
+      <div class="modal-bg" id="wddModal">
         <div class="modal" style="width: 520px; max-width: 96vw">
           <div class="modal-hdr">
             <span class="modal-title">🌡️ Import Weather Data — CSV</span>
@@ -11306,7 +11282,7 @@
       </div>
 
       <!-- BILL CSV IMPORT MODAL -->
-      <div class="modal-bg" id="billCsvModal" onclick="if (event.target === this) closeBillCsvModal();">
+      <div class="modal-bg" id="billCsvModal">
         <div class="modal" style="width: 700px; max-width: 96vw">
           <div class="modal-hdr">
             <span class="modal-title" id="billCsvModalTitle">📥 Import Bill Periods — CSV</span>
@@ -11580,7 +11556,7 @@
       </div>
 
       <!-- Saved Bills Modal -->
-      <div class="modal-bg" id="savedBillsModal" onclick="if (event.target === this) closeSavedBillsModal();">
+      <div class="modal-bg" id="savedBillsModal">
         <div class="modal" style="width: 820px; max-width: 96vw">
           <div class="modal-hdr">
             <span class="modal-title">🗄️ Saved Bill Records</span>
@@ -11600,7 +11576,7 @@
       </div>
 
       <!-- Duplicate Bill Comparison Modal -->
-      <div class="modal-bg" id="dupCompareModal" onclick="if (event.target === this) closeDupModal();">
+      <div class="modal-bg" id="dupCompareModal">
         <div class="modal" style="width: 760px; max-width: 96vw">
           <div class="modal-hdr">
             <span class="modal-title" id="dupModalTitle">&#9888; Duplicate Bill</span>
@@ -11732,7 +11708,7 @@
       </div>
 
       <!-- Assign Bill Modal -->
-      <div class="modal-bg" id="assignBillModal" onclick="if (event.target === this) closeAssignModal();">
+      <div class="modal-bg" id="assignBillModal">
         <div class="modal" style="width: 480px">
           <div class="modal-hdr">
             <span class="modal-title">Assign Bill to Project / Building</span
@@ -11775,7 +11751,7 @@
       </div>
 
       <!-- Meeting Editor Modal -->
-      <div class="modal-bg" id="meetingModal" onclick="if (event.target === this) closeMeetingModal();">
+      <div class="modal-bg" id="meetingModal">
         <div class="modal" style="width: min(1200px, 92vw); max-height: 92vh; display: flex; flex-direction: column">
           <div class="modal-hdr">
             <span class="modal-title" id="meetingModalTitle">New Meeting Agenda</span>
@@ -11828,7 +11804,7 @@
       </div>
 
       <!-- Recurring Meeting Modal -->
-      <div class="modal-bg" id="recurringModal" onclick="if (event.target === this) closeRecurringModal();">
+      <div class="modal-bg" id="recurringModal">
         <div class="modal" style="width: 560px">
           <div class="modal-hdr">
             <span class="modal-title">Recurring Meeting Schedule</span>
@@ -18919,6 +18895,15 @@
                 currRead = nums[1];
                 usage = Math.abs(currRead - prevRead);
               }
+              // Ensure prevRead <= currRead so StartRead = lower/previous
+              // reading and EndRead = higher/current reading. The old format
+              // column order can be Present then Previous (current first),
+              // which would otherwise swap the reads.
+              if (prevRead != null && currRead != null && prevRead > currRead) {
+                const tmp = prevRead;
+                prevRead = currRead;
+                currRead = tmp;
+              }
               return { usage, charge, prevRead, currRead };
             };
 
@@ -19167,7 +19152,27 @@
                   usage = Math.abs(reads[1] - reads[0]);
                 }
               }
-              return { usage, charge };
+              // Extract meter reads: the two integer tokens before the usage
+              // column are Previous and Current readings. Format on the bill
+              // is "prev curr [usage] LABEL charge". Ensure prevRead <= currRead
+              // so StartRead is always the lower/previous reading.
+              let prevRead = null,
+                currRead = null;
+              if (integerTokens.length >= 2) {
+                let r1, r2;
+                if (integerTokens.length >= 3 && usage > 0 && usage === integerTokens[integerTokens.length - 1]) {
+                  // 3+ tokens with last = usage → reads are at [-3] and [-2]
+                  r1 = integerTokens[integerTokens.length - 3];
+                  r2 = integerTokens[integerTokens.length - 2];
+                } else {
+                  // 2 tokens → both are reads
+                  r1 = integerTokens[integerTokens.length - 2];
+                  r2 = integerTokens[integerTokens.length - 1];
+                }
+                prevRead = Math.min(r1, r2);
+                currRead = Math.max(r1, r2);
+              }
+              return { usage, charge, prevRead, currRead };
             };
 
             let gas = null,
