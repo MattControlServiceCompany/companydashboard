@@ -5489,7 +5489,7 @@
                 letter-spacing: 0.5px;
               "
             >
-              v2026.04.29.3
+              v2026.04.29.4
             </div>
           </div>
         </aside>
@@ -13987,9 +13987,46 @@
               : '';
             const isAssigned = !!b.projId;
 
-            // Build meter select that depends on building select
-            const firstBldgId = buildings[0]?.id || '';
-            const meterOpts = getMeterOptions(firstBldgId);
+            // Smart-match: find the best building+meter for this bill by commodity+account
+            const billComm = (commodity || '').toLowerCase();
+            const billAcct = (acct || '').replace(/[\s\-]/g, '').toLowerCase();
+            let bestBldgId = buildings[0]?.id || '';
+            let bestMeterId = '';
+            for (const bld of buildings) {
+              for (const mt of bld.meters || []) {
+                const mc = (mt.commodity || '').toLowerCase();
+                const ma = (mt.account || '').replace(/[\s\-]/g, '').toLowerCase();
+                if (billAcct && ma && billAcct === ma) {
+                  bestBldgId = bld.id;
+                  bestMeterId = mt.id;
+                  break;
+                }
+                if (billComm && mc && billComm === mc && !bestMeterId) {
+                  bestBldgId = bld.id;
+                  bestMeterId = mt.id;
+                }
+              }
+              if (
+                bestMeterId &&
+                billAcct &&
+                (buildings.find((x) => x.id === bestBldgId)?.meters || []).some(
+                  (m) => (m.account || '').replace(/[\s\-]/g, '').toLowerCase() === billAcct,
+                )
+              )
+                break;
+            }
+            const bldgOpts = buildings
+              .map(
+                (bl) =>
+                  `<option value="${bl.id}"${bl.id === bestBldgId ? ' selected' : ''}>${bl.name || 'Building'}</option>`,
+              )
+              .join('');
+            const meterOpts = (buildings.find((x) => x.id === bestBldgId)?.meters || [])
+              .map(
+                (m) =>
+                  `<option value="${m.id}"${m.id === bestMeterId ? ' selected' : ''}>${m.provider || m.commodity || 'Meter'} ${m.account ? '· ' + m.account : ''}</option>`,
+              )
+              .join('');
 
             return `<tr style="font-size:11px">
             <td style="padding:3px 6px">${commodity}</td>
@@ -14006,7 +14043,7 @@
                     ? `<span style="color:var(--text3);font-size:10px">No buildings</span>`
                     : `<div style="display:flex;gap:3px;align-items:center;flex-wrap:nowrap">
                       <select class="fi" id="sb-bldg-${b.id}" style="padding:1px 3px;font-size:10px;height:22px"
-                        onchange="(function(s){var mo=document.getElementById('sb-meter-${b.id}');if(mo){var pid=${JSON.stringify(projId)};var bid=s.value;var ud=utilityData[pid];var bld=(ud?.buildings||[]).find(function(x){return x.id===bid});mo.innerHTML=(bld?.meters||[]).map(function(m){return '<option value=\"'+m.id+'\">'+(m.provider||m.commodity||'Meter')+(m.account?' · '+m.account:'')+'</option>'}).join('')}})(this)">${bldgOptions}</select>
+                        onchange="(function(s){var mo=document.getElementById('sb-meter-${b.id}');if(mo){var pid=${JSON.stringify(projId)};var bid=s.value;var ud=utilityData[pid];var bld=(ud?.buildings||[]).find(function(x){return x.id===bid});mo.innerHTML=(bld?.meters||[]).map(function(m){return '<option value=\"'+m.id+'\">'+(m.provider||m.commodity||'Meter')+(m.account?' · '+m.account:'')+'</option>'}).join('')}})(this)">${bldgOpts}</select>
                       <select class="fi" id="sb-meter-${b.id}" style="padding:1px 3px;font-size:10px;height:22px">${meterOpts}</select>
                       <button class="btn btn-em btn-sm" style="font-size:10px;padding:1px 6px" onclick="assignSavedBillFromProj('${b.id}',${JSON.stringify(projId)})">Assign</button>
                     </div>`
