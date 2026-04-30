@@ -671,10 +671,55 @@
   }
 
   /* ── INIT ── */
+  function applyCrossPageFonts() {
+    try {
+      var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
+      var uc = s.uiCustom;
+      if (!uc || !uc.fonts) return;
+      var r = document.documentElement.style;
+      if (uc.fonts.baseSize) r.setProperty('--base-sz', uc.fonts.baseSize + 'px');
+      if (uc.fonts.sidebarSize) r.setProperty('--sidebar-font-sz', uc.fonts.sidebarSize + 'px');
+      var safeFonts = ['Outfit', 'Inter', 'DM Sans', 'Roboto', 'IBM Plex Sans'];
+      if (uc.fonts.bodyFont && safeFonts.indexOf(uc.fonts.bodyFont) !== -1) {
+        r.setProperty('--font', "'" + uc.fonts.bodyFont + "', sans-serif");
+        if (uc.fonts.bodyFont !== 'Outfit') {
+          var id = 'ui-font-' + uc.fonts.bodyFont.replace(/\s/g, '-');
+          if (!document.getElementById(id)) {
+            var link = document.createElement('link');
+            link.id = id;
+            link.rel = 'stylesheet';
+            link.href =
+              'https://fonts.googleapis.com/css2?family=' +
+              encodeURIComponent(uc.fonts.bodyFont) +
+              ':wght@300;400;500;600;700;800&display=swap';
+            document.head.appendChild(link);
+          }
+        }
+      }
+      if (uc.fonts.headFont && safeFonts.indexOf(uc.fonts.headFont) !== -1) {
+        r.setProperty('--head', "'" + uc.fonts.headFont + "', sans-serif");
+        if (uc.fonts.headFont !== 'Outfit') {
+          var id2 = 'ui-font-' + uc.fonts.headFont.replace(/\s/g, '-');
+          if (!document.getElementById(id2)) {
+            var link2 = document.createElement('link');
+            link2.id = id2;
+            link2.rel = 'stylesheet';
+            link2.href =
+              'https://fonts.googleapis.com/css2?family=' +
+              encodeURIComponent(uc.fonts.headFont) +
+              ':wght@300;400;500;600;700;800&display=swap';
+            document.head.appendChild(link2);
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
   function initSiteUI() {
     var settings = loadSettings();
     applyAccentColor(settings.accentColor);
     applyTheme(settings.theme || 'dark');
+    applyCrossPageFonts();
     buildSidebarBottom();
     buildHelpButton();
     buildSettingsModal();
