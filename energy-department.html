@@ -12837,6 +12837,35 @@
                   </div>
                 </div>
               </div>
+              <div class="card" style="max-width:480px;flex:1;min-width:280px">
+                <div class="card-hdr"><span class="card-title">📐 Default Display Units</span></div>
+                <div style="padding:14px">
+                  <div style="font-size:12px;color:var(--text2);margin-bottom:14px">
+                    Default output units for all meters in this project. Meters can still override individually.
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:12px">
+                    ${['Electric', 'Gas', 'Water', 'Propane']
+                      .map((comm) => {
+                        const reg = {
+                          Electric: { usage: ['kWh', 'MWh'], demand: ['kW', 'MW'] },
+                          Gas: { usage: ['Therms', 'CCF', 'MCF', 'DTh'] },
+                          Water: { usage: ['Gallons', 'kGal', 'CCF'] },
+                          Propane: { usage: ['Gallons', 'Therms'] },
+                        }[comm];
+                        if (!reg) return '';
+                        const cur = (p.defaultDisplayUnits || {})[comm] || '';
+                        return `<label style="display:flex;flex-direction:column;gap:4px">
+                        <span style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">${comm} Usage Unit</span>
+                        <select class="fi" style="width:140px;font-family:var(--mono)" onchange="updateProjPerfSetting(${p.id},'defaultDisplayUnits',Object.assign({},(projects.find(x=>x.id===${p.id})||{}).defaultDisplayUnits||{},{${comm}:this.value}))">
+                          <option value=""${!cur ? ' selected' : ''}>Default</option>
+                          ${reg.usage.map((u) => `<option value="${u}"${cur === u ? ' selected' : ''}>${u}</option>`).join('')}
+                        </select>
+                      </label>`;
+                      })
+                      .join('')}
+                  </div>
+                </div>
+              </div>
               </div>
             </div>
           </div>`;
@@ -23571,7 +23600,11 @@
                 }
               }
 
-              const rule = UTILITY_RULES.find((r) => r.detect(text));
+              // Check specific local utilities first — their bills often appear in
+              // multi-utility PDFs alongside Evergy, and Evergy's broader detection
+              // would otherwise claim the entire file.
+              let rule = UTILITY_RULES.find((r) => r.name && /Louisburg/i.test(r.name) && r.detect(text));
+              if (!rule) rule = UTILITY_RULES.find((r) => r.detect(text));
               if (!rule) {
                 reject(new Error('Unrecognized utility format'));
                 return;
@@ -25715,7 +25748,8 @@
               window._pdfRawText = text;
               document.getElementById('pdfDebugBtn').style.display = 'inline-block';
               document.getElementById('pdfSaveDebugBtn').style.display = 'inline-block';
-              const rule = UTILITY_RULES.find((r) => r.detect(text));
+              let rule = UTILITY_RULES.find((r) => r.name && /Louisburg/i.test(r.name) && r.detect(text));
+              if (!rule) rule = UTILITY_RULES.find((r) => r.detect(text));
               if (rule) {
                 // Use extractAll if available (multi-bill PDF support)
                 let bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
@@ -30819,6 +30853,11 @@
 
       function getMeterDisplayUnit(m) {
         if (m.displayUnit) return m.displayUnit;
+        // Check project-level default display unit
+        if (m.commodity && udSelProjId) {
+          const proj = projects.find((p) => p.id === udSelProjId);
+          if (proj?.defaultDisplayUnits?.[m.commodity]) return proj.defaultDisplayUnits[m.commodity];
+        }
         return getMeterBillUnit(m);
       }
 
