@@ -3107,6 +3107,26 @@
           if (el && el.style.display !== 'none' && closers[id]) closers[id]();
         });
       });
+
+      /* ── Unsaved work warning — beforeunload ── */
+      window.addEventListener('beforeunload', function (e) {
+        // Warn if any modal with form inputs is currently open and has data
+        var modals = ['staffModal', 'pmModal', 'dispatchModal'];
+        for (var i = 0; i < modals.length; i++) {
+          var el = document.getElementById(modals[i]);
+          if (el && el.classList.contains('open')) {
+            var inputs = el.querySelectorAll('input, select, textarea');
+            for (var j = 0; j < inputs.length; j++) {
+              if (inputs[j].type === 'hidden') continue;
+              if (inputs[j].value && inputs[j].value.trim() !== '') {
+                e.preventDefault();
+                e.returnValue = '';
+                return;
+              }
+            }
+          }
+        }
+      });
     </script>
   </body>
 </html>
