@@ -37971,31 +37971,31 @@
         const res = document.getElementById('bp-results');
         if (!res) return;
         res.innerHTML = `
-          <!-- Summary stats -->
+          <!-- Summary stats (click any card to see formula) -->
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px">
-            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
-              <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Annual Baseline</div>
+            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;cursor:pointer" onclick="showFormula(_fml('Annual Baseline','Sum of all meter baseline costs across 12 calendar months','${$f(annBase)}','<div style=\\'font-size:11px;color:var(--text2)\\'>Source: Meter Data → Normalized tab → regression-predicted costs for each baseline month</div>'),event)">
+              <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Annual Baseline <span style="font-size:9px;color:var(--em)">ℹ️</span></div>
               <div style="font-size:18px;font-weight:800;font-family:var(--head)">${$f(annBase)}</div>
             </div>
-            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
-              <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Projected Savings</div>
+            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;cursor:pointer" onclick="showFormula(_fml('Projected Savings','Annual Baseline × Savings %','${$f(annBase)} × ${(savPct * 100).toFixed(1)}% = ${$f(annProjSav)}','<div style=\\'font-size:11px;color:var(--text2)\\'>Savings %: from Building Savings Projection settings</div>'),event)">
+              <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Projected Savings <span style="font-size:9px;color:var(--em)">ℹ️</span></div>
               <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--em)">${$f(annProjSav)}</div>
               <div style="font-size:11px;color:var(--text2);margin-top:2px">${projPct || ''} of baseline</div>
             </div>
             ${
               hasActual
                 ? `
-            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
-              <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Actual Savings</div>
+            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;cursor:pointer" onclick="showFormula(_fml('Actual Savings','Sum of (Baseline − Actual) × Rate for each meter per month','${$f(annActSav)}','<div style=\\'font-size:11px;color:var(--text2)\\'>Source: each meter\\'s Performance tab calculates monthly savings from regression baseline vs actual bills</div>'),event)">
+              <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Actual Savings <span style="font-size:9px;color:var(--em)">ℹ️</span></div>
               <div style="font-size:18px;font-weight:800;font-family:var(--head);color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav < 0 ? '−' : ''}${$f(annActSav)}</div>
               <div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct || ''} of baseline</div>
             </div>
-            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
-              <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">CSC Compensation</div>
+            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;cursor:pointer" onclick="showFormula(_fml('CSC Compensation','${cscMode === 'pct' ? 'Actual Savings × CSC %' : 'Fixed Monthly × 12'}','${cscMode === 'pct' ? $f(annActSav) + ' × ' + (cscPct * 100).toFixed(1) + '% = ' + $f(annCsc) : '$' + cscFixed.toFixed(2) + '/mo × 12 = ' + $f(annCsc)}','<div style=\\'font-size:11px;color:var(--text2)\\'>Mode: ${cscMode === 'pct' ? 'Percentage of Actual Savings' : 'Fixed Monthly Cost'}</div>'),event)">
+              <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">CSC Compensation <span style="font-size:9px;color:var(--em)">ℹ️</span></div>
               <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--em2)">${$f(annCsc)}</div>
             </div>
-            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
-              <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Client Savings</div>
+            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;cursor:pointer" onclick="showFormula(_fml('Client Savings','Actual Savings − CSC Compensation','${$f(annActSav)} − ${$f(annCsc)} = ${$f(annCli)}','<div style=\\'font-size:11px;color:var(--text2)\\'>This is what the client keeps after CSC compensation</div>'),event)">
+              <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Client Savings <span style="font-size:9px;color:var(--em)">ℹ️</span></div>
               <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--green)">${$f(annCli)}</div>
             </div>`
                 : ''
@@ -43069,6 +43069,58 @@
         t.classList.add('show');
         clearTimeout(toastTmr);
         toastTmr = setTimeout(() => t.classList.remove('show'), 3000);
+      }
+
+      // ── Formula Audit Popover ──
+      let _formulaPopover = null;
+      function showFormula(html, evt) {
+        if (evt) evt.stopPropagation();
+        closeFormula();
+        const pop = document.createElement('div');
+        pop.id = '_formulaPop';
+        pop.style.cssText =
+          'position:fixed;z-index:9999;background:#0d1525;border:2px solid var(--em);border-radius:10px;padding:14px 18px;max-width:420px;min-width:240px;font-size:12px;color:#e0e8ff;box-shadow:0 8px 32px rgba(0,0,0,.6);line-height:1.6;';
+        pop.innerHTML =
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--em)">Formula Breakdown</span><button onclick="closeFormula()" style="background:none;border:none;color:var(--text3);font-size:16px;cursor:pointer;padding:0 4px">✕</button></div>' +
+          html;
+        document.body.appendChild(pop);
+        if (evt && evt.target) {
+          const r = evt.target.getBoundingClientRect();
+          pop.style.top = Math.min(r.bottom + 6, window.innerHeight - pop.offsetHeight - 10) + 'px';
+          pop.style.left = Math.min(r.left, window.innerWidth - pop.offsetWidth - 10) + 'px';
+        } else {
+          pop.style.top = '50%';
+          pop.style.left = '50%';
+          pop.style.transform = 'translate(-50%,-50%)';
+        }
+        _formulaPopover = pop;
+        setTimeout(() => document.addEventListener('click', closeFormula, { once: true }), 100);
+      }
+      function closeFormula() {
+        if (_formulaPopover) {
+          _formulaPopover.remove();
+          _formulaPopover = null;
+        }
+      }
+      function _fml(label, formula, result, sources) {
+        let h = '<div style="font-weight:600;color:#c8d8f0;margin-bottom:4px">' + label + '</div>';
+        h +=
+          '<div style="font-family:var(--mono);color:var(--violet);font-size:13px;margin-bottom:4px">' +
+          formula +
+          '</div>';
+        if (result != null)
+          h +=
+            '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--em);margin-bottom:6px">= ' +
+            result +
+            '</div>';
+        if (sources) {
+          h += '<div style="border-top:1px solid rgba(255,255,255,.1);padding-top:6px;margin-top:4px">';
+          h +=
+            '<div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Data Sources</div>';
+          h += sources;
+          h += '</div>';
+        }
+        return h;
       }
 
       /* ── NOTIFICATIONS ── */
