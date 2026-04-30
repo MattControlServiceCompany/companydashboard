@@ -5522,7 +5522,7 @@
                 letter-spacing: 0.5px;
               "
             >
-              v2026.04.30.6
+              v2026.04.30.7
             </div>
           </div>
         </aside>
@@ -13220,7 +13220,7 @@
             <div class="card-hdr"><span class="card-title">Building Performance</span></div>
             <div style="overflow:auto;max-height:60vh">
               <table class="dtbl" style="width:100%;font-size:12px">
-                <thead><tr><th>Building</th><th style="text-align:right">Sq Ft</th><th style="text-align:right">Period</th><th style="text-align:right">${bldgRows.some((r) => r.blLabel === 'Baseline') ? 'Baseline' : 'Total Cost'} $/yr</th><th style="text-align:right">Baseline EUI</th><th style="text-align:right">Current Cost</th><th style="text-align:right">Current EUI</th><th style="text-align:right">Savings $</th><th style="text-align:right">%</th><th style="text-align:center">Status</th></tr></thead>
+                <thead><tr><th>Building</th><th style="text-align:right">Sq Ft</th><th style="text-align:right">Baseline Period</th><th style="text-align:right">${bldgRows.some((r) => r.blLabel === 'Baseline') ? 'Baseline' : 'Total Cost'} $/yr</th><th style="text-align:right">Baseline EUI</th><th style="text-align:right">Current Cost</th><th style="text-align:right">Current EUI</th><th style="text-align:right">Savings $</th><th style="text-align:right">%</th><th style="text-align:center">Status</th></tr></thead>
                 <tbody>${bldgRows
                   .map(
                     (r) => `<tr>
@@ -19151,7 +19151,7 @@
                 const currIdx = allBefore.lastIndexOf(curr);
                 const trailing = allBefore.slice(currIdx + 1);
                 const decimalUsage = trailing.find(
-                  (n) => !Number.isInteger(n) && n >= 100 && (!computed || Math.abs(n - computed) < computed * 0.3),
+                  (n) => !Number.isInteger(n) && n >= 100 && (!computed || Math.abs(n - computed) < computed * 1.0),
                 );
                 if (decimalUsage != null) usage = decimalUsage;
                 else usage = computed;
@@ -20613,6 +20613,43 @@
               rowFlags.push({ field: f, msg: 'Missing ' + f + ' — this field is typically present', level: 'warn' });
             }
           }
+
+          // ── Charge-without-usage detection ──
+          // Flag rows where a commodity charge exists but the corresponding usage quantity is missing.
+          if (isGas) {
+            const _gc = pf(b.gasCharge) + pf(b.fuelAdjustment);
+            const _gu = pf(b.naturalGasTherms) + pf(b.naturalGasCCF) + pf(b.therms);
+            if (_gc > 0 && _gu === 0) {
+              rowFlags.push({
+                field: 'therms',
+                msg: 'Gas charge ($' + _gc.toFixed(2) + ') but no gas usage — check for missing Therms/CCF',
+                level: 'warn',
+              });
+            }
+          } else if (isElec) {
+            const _ec = pf(b.kwhCost) + pf(b.onPeakCost) + pf(b.offPeakCost);
+            const _eu = pf(b.kwh);
+            if (_ec > 0 && _eu === 0) {
+              rowFlags.push({
+                field: 'kwh',
+                msg: 'Electric charge ($' + _ec.toFixed(2) + ') but no kWh usage — check for missing consumption',
+                level: 'warn',
+              });
+            }
+          }
+          const isWater = (m.commodity || '').toLowerCase() === 'water';
+          if (isWater) {
+            const _wc = pf(b.waterCharge);
+            const _wu = pf(b.waterUsage);
+            if (_wc > 0 && _wu === 0) {
+              rowFlags.push({
+                field: 'waterUsage',
+                msg: 'Water charge ($' + _wc.toFixed(2) + ') but no water usage — check for missing gallons',
+                level: 'warn',
+              });
+            }
+          }
+
           if (rowFlags.length) flags[b.id] = rowFlags;
         });
         return flags;
@@ -22841,6 +22878,7 @@
           saved++;
         }
         saveUtilityData();
+        window._pdfBillsSaved = true;
         const _blInherited = _inheritBaselinesForProject(udSelProjId);
         document.getElementById('pdfAutoAssignBanner').style.display = 'none';
         _autoAssignTarget = null;
@@ -23346,6 +23384,8 @@
         window._pdfBillWarnings = null;
         window._pdfDupMap = null;
         window._pdfQueue = null;
+        window._pdfBillsSaved = false;
+        window._pdfQueueRows = null;
         _clearExtractionState();
         document.getElementById('dz-title').textContent = 'Drop PDF here or click to browse';
         document.getElementById('pdfInput').value = '';
@@ -24993,6 +25033,7 @@
         // where every bill in the batch ended up — no digging through meter bill lists
         // to reconstruct what happened.
         _showSaveSummary(summaryEntries);
+        window._pdfBillsSaved = true;
         if (udSelProjId && udSelBldgId) {
           renderUDDetail();
           renderUDProjList();
@@ -26841,6 +26882,7 @@
           : '';
         showToast(parts.join(', ') + ' (' + billIndices.length + filterLabel + ' total)' + blMsg);
         _showSaveSummary(summaryEntries);
+        window._pdfBillsSaved = true;
       }
 
       async function _applyDupUpdate(billIdx, extracted, dup) {
@@ -29146,6 +29188,7 @@
         _saveSinglePDFBill(extracted, projId).then((ok) => {
           const proj = projId ? projects.find((p) => p.id === projId) : null;
           if (ok) {
+            window._pdfBillsSaved = true;
             showToast(proj ? 'Saved to ' + proj.name + ' ✓' : 'Saved to general database ✓');
             if (document.getElementById('savedBillsModal').classList.contains('open')) renderSavedBills();
           }
@@ -41098,6 +41141,31 @@
           return;
         }
         const row = editRowId ? m.bills.find((r) => r.id === editRowId) : null;
+        // When adding a new bill (row is null), pre-populate Account Info fields
+        // from the meter's existing bills using consensus (most common value).
+        const _acctDefaults = {};
+        if (!row && m.bills && m.bills.length > 0) {
+          const ACCT_KEYS = ['utilityCompany', 'customerName', 'serviceAddress', 'accountNumber', 'commodity'];
+          for (const key of ACCT_KEYS) {
+            const counts = {};
+            for (const bill of m.bills) {
+              const val = bill[key] || '';
+              if (val) {
+                counts[val] = (counts[val] || 0) + 1;
+              }
+            }
+            // Pick the value with the highest count
+            let best = '',
+              bestCount = 0;
+            for (const [val, count] of Object.entries(counts)) {
+              if (count > bestCount) {
+                best = val;
+                bestCount = count;
+              }
+            }
+            if (best) _acctDefaults[key] = best;
+          }
+        }
         document.getElementById('billModalTitle').textContent = row
           ? '✏️ Edit Billing Period'
           : '+ Add Billing Period — ' + meterLabel(m);
@@ -41122,7 +41190,13 @@
           );
         };
         const escapeAttr = (v) => (v === undefined || v === null ? '' : String(v).replace(/"/g, '&quot;'));
-        const readVal = (pdfKey) => _billReadValue(row, schemaEntry(pdfKey));
+        const readVal = (pdfKey) => {
+          const entry = schemaEntry(pdfKey);
+          const val = _billReadValue(row, entry);
+          // If no row (new bill) and field is empty, check account defaults
+          if (!row && !val && _acctDefaults[entry.key]) return _acctDefaults[entry.key];
+          return val;
+        };
         // Build a single labeled input cell (used by wide + pair rows)
         const inputCell = (pdfKey) => {
           const e = schemaEntry(pdfKey);
@@ -41204,8 +41278,12 @@
           const chargeId = 'bl-' + chargeEntry.key;
           const chargeRaw = readVal(r.chargeField);
           const chargeVal = escapeAttr(chargeRaw ? _billFmtCurrency(chargeRaw) : '');
-          const recalc = `onchange="_billRecalcRow('${r.chargeField}')" oninput="_billRecalcRow('${r.chargeField}')"`;
-          return `<div style="border-top:2px solid var(--border);margin-top:4px;padding-top:4px"><div class="ef-charge-row" data-charge-key="${r.chargeField}"><div></div><div></div><div class="ef-item center"><div class="ef-key" style="font-weight:700">Total Current Charges</div><input class="ef-input bl-charge-input" id="${chargeId}" type="text" inputmode="decimal" placeholder="$0.00" value="${chargeVal}" ${recalc} style="font-weight:700;font-size:14px;text-align:center" onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)"></div><div class="ef-running" style="font-weight:700">$0.00</div></div></div>`;
+          // When the user types in the Total field directly, mark it as manually edited
+          // so auto-calculation stops overriding their value.
+          const recalc = `onchange="_billRecalcRow('${r.chargeField}')" oninput="_billTotalManualEdit(this);_billRecalcRow('${r.chargeField}')"`;
+          // If there's already a value loaded (editing existing bill), mark as manual so we don't overwrite
+          const manualAttr = chargeRaw ? ' data-manual-total="1"' : '';
+          return `<div style="border-top:2px solid var(--border);margin-top:4px;padding-top:4px"><div class="ef-charge-row" data-charge-key="${r.chargeField}"${manualAttr}><div></div><div></div><div class="ef-item center"><div class="ef-key" style="font-weight:700">Total Current Charges</div><input class="ef-input bl-charge-input" id="${chargeId}" type="text" inputmode="decimal" placeholder="$0.00" value="${chargeVal}" ${recalc} style="font-weight:700;font-size:14px;text-align:center" onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)"></div><div class="ef-running" style="font-weight:700">$0.00</div></div></div>`;
         };
         // Assemble the body
         let body = '';
@@ -41264,6 +41342,19 @@
           body += `<input type="hidden" id="bl-${k}" value="${v}">`;
         }
         document.getElementById('billModalBody').innerHTML = body;
+        // Auto-populate End Date when Start Date changes (only if End Date is empty)
+        const _blStartInp = document.getElementById('bl-start');
+        const _blEndInp = document.getElementById('bl-end');
+        if (_blStartInp && _blEndInp) {
+          _blStartInp.addEventListener('change', function () {
+            if (_blEndInp.value) return; // don't overwrite user-set value
+            if (!_blStartInp.value) return;
+            const d = new Date(_blStartInp.value + 'T00:00:00');
+            if (isNaN(d.getTime())) return;
+            d.setDate(d.getDate() + 30);
+            _blEndInp.value = d.toISOString().slice(0, 10);
+          });
+        }
         // Initial pass: compute rates + running totals from loaded values
         for (const r of layout) {
           if (r.chargeField) _billRecalcRow(r.chargeField);
@@ -49709,6 +49800,41 @@
           { id: 'tip_baseline_save', icon: '✅', position: 'above', delay: 400 },
         );
       }
+
+      /* ══════════════════════════════════════
+         UNSAVED WORK WARNING — beforeunload
+         Prevents accidental loss of extraction
+         results, open edits, or queue data when
+         navigating away from the page.
+      ══════════════════════════════════════ */
+      window._hasUnsavedWork = false;
+      window._pdfBillsSaved = false;
+
+      function _checkUnsavedWork() {
+        // 1. Unsaved extraction results (single-file or multi-bill, not yet saved)
+        if (window._pdfMultiBills && window._pdfMultiBills.length > 0 && !window._pdfBillsSaved) return true;
+        // 2. Unsaved queue results (batch extraction with unsaved rows)
+        if (
+          window._pdfQueueRows &&
+          window._pdfQueueRows.some(function (r) {
+            return r.bill && !r._saved;
+          })
+        )
+          return true;
+        // 3. Bill edit modal is open
+        var billModal = document.getElementById('billModal');
+        if (billModal && billModal.classList.contains('open')) return true;
+        // 4. Manual flag (set by specific flows like EMS editing)
+        if (window._hasUnsavedWork) return true;
+        return false;
+      }
+
+      window.addEventListener('beforeunload', function (e) {
+        if (_checkUnsavedWork()) {
+          e.preventDefault();
+          e.returnValue = '';
+        }
+      });
     </script>
   </body>
 </html>
