@@ -98,6 +98,9 @@
       input[type='number'] {
         -moz-appearance: textfield;
       }
+      html {
+        height: 100%;
+      }
       body {
         font-family: var(--font);
         font-size: var(--base-sz);
@@ -312,18 +315,13 @@
         display: flex;
         flex-direction: column;
         height: 100%;
-      }
-      #app.visible {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
+        overflow: hidden;
         animation: fadeUp 0.4s ease;
       }
 
       /* ── TOPBAR ── */
       .topbar {
-        position: sticky;
-        top: 0;
+        flex-shrink: 0;
         z-index: 200;
         display: flex;
         align-items: center;
@@ -500,6 +498,7 @@
 
       /* ── DEPT TABS ── */
       .dept-nav {
+        flex-shrink: 0;
         background: var(--s1);
         border-bottom: 1px solid var(--border);
         padding: 0 24px;
@@ -537,6 +536,7 @@
       .app-wrap {
         display: flex;
         flex: 1;
+        min-height: 0;
         overflow: hidden;
       }
       .sidebar {
@@ -5522,7 +5522,7 @@
                 letter-spacing: 0.5px;
               "
             >
-              v2026.04.30.3
+              v2026.04.30.6
             </div>
           </div>
         </aside>
@@ -20100,12 +20100,22 @@
           try {
             const s = new Date(extracted.BillingPeriodStart),
               e = new Date(extracted.BillingPeriodEnd);
-            if (e <= s)
+            if (e < s) {
+              const tmp = extracted.BillingPeriodStart;
+              extracted.BillingPeriodStart = extracted.BillingPeriodEnd;
+              extracted.BillingPeriodEnd = tmp;
+              warnings.push({
+                level: 'info',
+                field: 'BillingPeriodEnd',
+                message: 'Dates were reversed — swapped start/end',
+              });
+            } else if (+e === +s) {
               warnings.push({
                 level: 'error',
                 field: 'BillingPeriodEnd',
-                message: 'End date is before or equal to start date',
+                message: 'End date equals start date',
               });
+            }
             if (e > new Date(Date.now() + 86400000 * 60))
               warnings.push({
                 level: 'warn',
@@ -22309,9 +22319,18 @@
                     : '|FA| exceeds 2× GasCharge ($' + gasChg.toFixed(2) + ') [small-charge threshold]',
               };
               b.FuelAdjustment = null;
+              const fixedTotal = gasChg + custChg;
+              b.TotalCurrentCharges = fixedTotal.toFixed(2);
+              b.TotalAmountDue = fixedTotal.toFixed(2);
             }
           }
-          const total = pf(b.TotalCurrentCharges);
+          let total = pf(b.TotalCurrentCharges);
+          if (total < 0 && gasChg > 0 && custChg > 0) {
+            const fixedTotal = gasChg + custChg + (pf(b.FuelAdjustment) || 0);
+            b.TotalCurrentCharges = fixedTotal.toFixed(2);
+            b.TotalAmountDue = fixedTotal.toFixed(2);
+            total = fixedTotal;
+          }
           if (total > 0 && gasChg > 0 && custChg > 0) {
             const expectedTotal = gasChg + custChg + (pf(b.FuelAdjustment) || 0);
             if (Math.abs(expectedTotal - total) > total * 0.15 && Math.abs(expectedTotal - total) > 5) {
@@ -32674,15 +32693,17 @@
           }
           // Add amber background and info icons for flagged rows
           if (flags.length) {
-            rowHtml = rowHtml.replace(
-              '<tr>',
-              '<tr class="bill-flagged" title="' +
-                flags
-                  .map((f) => f.msg)
-                  .join('; ')
-                  .replace(/"/g, '&quot;') +
-                '">',
-            );
+            const _flagTitle = flags
+              .map((f) => f.msg)
+              .join('; ')
+              .replace(/"/g, '&quot;');
+            // If the <tr> already has a class attribute, append to it; otherwise insert a new one
+            if (/(<tr[^>]*)\sclass="/.test(rowHtml)) {
+              rowHtml = rowHtml.replace(/(<tr[^>]*\sclass=")/, '$1bill-flagged ');
+              rowHtml = rowHtml.replace(/(<tr)(\s)/, '$1 title="' + _flagTitle + '"$2');
+            } else {
+              rowHtml = rowHtml.replace(/(<tr)([ >])/, '$1 class="bill-flagged" title="' + _flagTitle + '"$2');
+            }
             flags.forEach((f) => {
               if (f.field == null || fieldColMap[f.field] == null) return;
               const colIdx = fieldColMap[f.field];
@@ -33465,7 +33486,7 @@
               ? parseFloat(row.kwh) || 0
               : isGas
                 ? parseFloat(row.therms) || 0
-                : parseFloat(row.usage) || 0;
+                : parseFloat(row.waterUsage) || 0;
             const cost = isElec
               ? parseFloat(row.totalCost) || 0
               : isGas
@@ -40643,6 +40664,11 @@
           const kw = parseFloat(row.billedKW) || parseFloat(row.demandKW) || parseFloat(row.facKW) || 0;
           const chg = parseFloat(row.kwCost) || 0;
           if (kw > 0 && chg > 0) return (chg / kw).toFixed(5);
+        }
+        if (entry.key === 'totalGasRate') {
+          const therms = parseFloat(row.naturalGasTherms) || parseFloat(row.naturalGasCCF) || 0;
+          const chg = parseFloat(row.gasCharge) || 0;
+          if (therms > 0 && chg > 0) return (chg / therms).toFixed(5);
         }
         const direct = row[entry.key];
         if (direct !== undefined && direct !== null && direct !== '' && direct !== 'null') return direct;
