@@ -12795,7 +12795,8 @@
               <div style="font-size:13px;color:var(--text2)">No documents yet. Use the PDF/OCR tool to save documents to this project.</div>
             </div>
             <div id="ptab-settings" class="ptab" style="padding:16px;overflow-y:auto">
-              <div class="card" style="max-width:480px">
+              <div style="display:flex;flex-wrap:wrap;gap:16px">
+              <div class="card" style="max-width:480px;flex:1;min-width:280px">
                 <div class="card-hdr"><span class="card-title">⚡ Active Commodity Types</span></div>
                 <div style="padding:14px">
                   <div style="font-size:12px;color:var(--text2);margin-bottom:14px">
@@ -12811,6 +12812,31 @@
                     }).join('')}
                   </div>
                 </div>
+              </div>
+              <div class="card" style="max-width:480px;flex:1;min-width:280px">
+                <div class="card-hdr"><span class="card-title">💡 Performance Settings</span></div>
+                <div style="padding:14px">
+                  <div style="font-size:12px;color:var(--text2);margin-bottom:14px">
+                    Default values applied to all buildings in this project. Buildings can override individually.
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:12px">
+                    <label style="display:flex;flex-direction:column;gap:4px">
+                      <span style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">CSC Compensation %</span>
+                      <input class="fi" type="number" min="0" max="100" step="0.1" value="${p.cscCompensation || 0}" onchange="updateProjPerfSetting(${p.id},'cscCompensation',parseFloat(this.value)||0)" style="width:120px;font-family:var(--mono)">
+                    </label>
+                    <label style="display:flex;flex-direction:column;gap:4px">
+                      <span style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Contract Years</span>
+                      <select class="fi" onchange="updateProjPerfSetting(${p.id},'contractYears',parseInt(this.value)||3)" style="width:120px;font-family:var(--mono)">
+                        ${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((y) => `<option value="${y}"${(p.contractYears || 3) === y ? ' selected' : ''}>${y} Year${y > 1 ? 's' : ''}</option>`).join('')}
+                      </select>
+                    </label>
+                    <label style="display:flex;flex-direction:column;gap:4px">
+                      <span style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Utility Escalation %/Yr</span>
+                      <input class="fi" type="number" min="0" max="20" step="0.1" value="${p.escalation || 0}" onchange="updateProjPerfSetting(${p.id},'escalation',parseFloat(this.value)||0)" style="width:120px;font-family:var(--mono)">
+                    </label>
+                  </div>
+                </div>
+              </div>
               </div>
             </div>
           </div>`;
@@ -13578,6 +13604,51 @@
         }
         sset('en_projects', projects);
         showToast(commodity + (checked ? ' enabled' : ' disabled') + ' ✓');
+      }
+
+      function updateProjPerfSetting(projId, field, value) {
+        const p = projects.find((x) => x.id === projId);
+        if (!p) return;
+        p[field] = value;
+        sset('en_projects', projects);
+        if (field === 'escalation' || field === 'cscCompensation') {
+          const ud = utilityData[projId];
+          if (ud) {
+            for (const b of ud.buildings || []) {
+              const bpKey = 'bldgperf_cfg_' + (b.id || b.name);
+              const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
+              try {
+                const bpCfg = JSON.parse(localStorage.getItem(bpKey) || '{}');
+                if (!bpCfg._customEsc && field === 'escalation') {
+                  bpCfg.escPct = value;
+                  localStorage.setItem(bpKey, JSON.stringify(bpCfg));
+                }
+                if (!bpCfg._customCsc && field === 'cscCompensation') {
+                  bpCfg.cscPct = value;
+                  localStorage.setItem(bpKey, JSON.stringify(bpCfg));
+                }
+              } catch (e) {}
+              try {
+                const bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
+                if (!bspCfg._customEsc && field === 'escalation') {
+                  bspCfg.escPct = value;
+                  localStorage.setItem(bspKey, JSON.stringify(bspCfg));
+                }
+                if (!bspCfg._customCsc && field === 'cscCompensation') {
+                  bspCfg.cscPct = value;
+                  localStorage.setItem(bspKey, JSON.stringify(bspCfg));
+                }
+              } catch (e) {}
+            }
+          }
+        }
+        showToast(
+          field === 'cscCompensation'
+            ? 'CSC Compensation'
+            : field === 'escalation'
+              ? 'Utility Escalation'
+              : 'Contract Years' + ' updated ✓',
+        );
       }
 
       // ── Embedded Project Utility Data tab ──
@@ -32248,10 +32319,9 @@
           'utilityCompany',
           'customerName',
           'serviceAddress',
-          // accountNumber / meterNumber already display in the meter header above
-          // the bills data table — don't repeat them per-row.
           'accountNumber',
           'meterNumber',
+          'deliveryDate',
         ]);
         const hiddenSet = new Set(viewState.hidden || []);
         // Condensed view: use CONDENSED_CATEGORIES[commodity] (falls back to
