@@ -5522,7 +5522,7 @@
                 letter-spacing: 0.5px;
               "
             >
-              v2026.04.30.2
+              v2026.04.30.3
             </div>
           </div>
         </aside>
@@ -18859,7 +18859,8 @@
               const trim = ln.trim();
               if (/^\d{3}\s*-\s*(water|gas|sewer|storm)/i.test(trim)) continue;
               if (/Previous\s*Balance/i.test(trim)) continue;
-              if (/[FE][UO][EL][LA]\s*ADJ|FUELADJ|FUEL\s*ADJ/i.test(trim) && !fuelAdjLine) fuelAdjLine = trim;
+              if (/[FE][UO][EL][LA]\s*ADJ|FUELADJ|FUEL\s*ADJ|FUEL\s*ADJUSTMENT/i.test(trim) && !fuelAdjLine)
+                fuelAdjLine = trim;
               else if (/\bG[A4]S\b/i.test(trim) && !/[FE][UO][EL]|ADJ/i.test(trim) && !gasLine) gasLine = trim;
               else if (/\bSTORM\s*W[A4]TER\b/i.test(trim) && !stormLine) stormLine = trim;
               else if (/\bS[E3]W[E3]R\b/i.test(trim) && !sewerLine) sewerLine = trim;
@@ -18914,6 +18915,15 @@
             const wpf = parseLine(wpfLine);
             const fuelAdj = parseLine(fuelAdjLine);
             let signedFuelAdj = fuelAdj.charge;
+            if (signedFuelAdj == null) {
+              const _faRe = /(?:FUEL\s*ADJUST|[FE][UO][EL][LA]\s*ADJ)[^\d\n-]*(-?\$?-?[\d,]+\.\d{2})\s*-?/i;
+              const faMatch = cleaned.match(_faRe);
+              if (faMatch) {
+                signedFuelAdj = parseFloat(faMatch[1].replace(/[\$,]/g, ''));
+                if (signedFuelAdj > 0 && /[\d,]+\.\d{2}\s*-/i.test(faMatch[0])) signedFuelAdj = -signedFuelAdj;
+                if (signedFuelAdj > 0 && /\(\s*\$?[\d,]+\.\d{2}\s*\)/.test(faMatch[0])) signedFuelAdj = -signedFuelAdj;
+              }
+            }
             if (signedFuelAdj != null && signedFuelAdj > 0) signedFuelAdj = -Math.abs(signedFuelAdj);
             // Water and sewer share the same meter — usage should match.
             if ((!water.usage || water.usage === 0) && water.charge) {
@@ -18952,6 +18962,10 @@
               const r = _lbg_gasRate(BillingPeriodEnd || BillingPeriodStart || BillDate);
               let gasTotal = gas.charge;
               let gasVariable = Math.round(Math.max(0, gasTotal - r.baseCharge) * 100) / 100;
+              // Derive usage from known rate when parseLine failed to extract it
+              if ((!gas.usage || gas.usage === 0) && gasVariable > 0 && r.rate > 0) {
+                gas.usage = Math.round(gasVariable / r.rate);
+              }
               const corrected =
                 gas.usage > 0
                   ? _lbg_correctGasCharge(
@@ -18978,7 +18992,6 @@
                     ' with 0 usage on page',
                   pageIdx,
                 );
-                // Don't create this gas bill — the matched line is likely not a gas service line
               } else {
                 const gasWithFA = signedFuelAdj != null ? gasTotal + signedFuelAdj : gasTotal;
                 const gasBill = {
@@ -19266,6 +19279,9 @@
               const r = _lbg_gasRate(BillingPeriodEnd || BillingPeriodStart || BillDate);
               let gasTotal = gas.charge;
               let gasVariable = Math.round(Math.max(0, gasTotal - r.baseCharge) * 100) / 100;
+              if ((!gas.usage || gas.usage === 0) && gasVariable > 0 && r.rate > 0) {
+                gas.usage = Math.round(gasVariable / r.rate);
+              }
               const corrected =
                 gas.usage > 0
                   ? _lbg_correctGasCharge(
