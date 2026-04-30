@@ -43,12 +43,15 @@
   margin: 0;
   padding: 0;
 }
+html {
+  height: 100%;
+}
 body {
   font-family: var(--font);
   background: var(--bg);
   color: var(--text);
-  min-height: 100vh;
-  overflow-x: hidden;
+  height: 100%;
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
 ::-webkit-scrollbar {
@@ -239,13 +242,13 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
+  overflow: hidden;
   animation: fadeUp 0.4s ease;
 }
 
 /* ── TOPBAR ── */
 .topbar {
-  position: sticky;
-  top: 0;
+  flex-shrink: 0;
   z-index: 200;
   display: flex;
   align-items: center;
@@ -422,6 +425,7 @@ body {
 
 /* ── DEPT TABS ── */
 .dept-nav {
+  flex-shrink: 0;
   background: var(--s1);
   border-bottom: 1px solid var(--border);
   padding: 0 24px;
@@ -459,6 +463,7 @@ body {
 .app-wrap {
   display: flex;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 .sidebar {
@@ -605,6 +610,7 @@ body {
 /* ── CONTENT ── */
 .content {
   flex: 1;
+  min-height: 0;
   padding: 24px 26px;
   overflow-y: auto;
 }
