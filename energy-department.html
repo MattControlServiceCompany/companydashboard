@@ -5489,7 +5489,7 @@
                 letter-spacing: 0.5px;
               "
             >
-              v2026.04.29.4
+              v2026.04.29.5
             </div>
           </div>
         </aside>
@@ -40138,7 +40138,7 @@
           ? 'Missing start/end dates — delete this row and re-extract'
           : 'This bill has missing or inconsistent data fields';
         let html =
-          `<tr${_missingDates ? ' class="ud-bill-missing-dates"' : ''}>` +
+          `<tr style="cursor:pointer" onclick="showBillSplitPanel('${m.id}','${row.id}',event)"${_missingDates ? ' class="ud-bill-missing-dates"' : ''}>` +
           `<td class="norm-mon-cell sticky-col" data-sticky="0">${normMonthLabel(row.start, row.end, incl, allBills || m.bills || [])}${_hasRowWarning || _missingDates ? ` <span title="${_warnTip}" style="color:var(--amber);cursor:help">⚠</span>` : ''}</td>` +
           `<td class="lbl sticky-col" data-sticky="1">${fmtD(row.start)}</td>` +
           `<td class="lbl sticky-col" data-sticky="2">${fmtD(row.end)}</td>` +
@@ -40870,6 +40870,116 @@
                sections, wide/pair rows, 3-column charge-line rows (qty | rate | charge),
                running totals, total-match check. Rate auto-computes on qty/charge edit.
             */
+      function showBillSplitPanel(mid, billId, evt) {
+        if (evt && (evt.target.closest('button') || evt.target.closest('select') || evt.target.closest('input')))
+          return;
+        const b = getUDBldg(udSelProjId, udSelBldgId);
+        if (!b) return;
+        const m = b.meters?.find((mt) => mt.id === mid);
+        if (!m) return;
+        const row = m.bills?.find((r) => r.id === billId);
+        if (!row) return;
+        const schema = _billSchemaFor(m.commodity).filter((e) => !e.section);
+        const pane = document.getElementById('udMeterWorkspace');
+        if (!pane) return;
+
+        const pdfAvail = (row.hasPDF || row.pdfKey) && (row.pdfBillId || row.pdfKey);
+        const pdfLookupId = row.pdfBillId || row.id || '';
+        const period = (row.start ? fmtDate(row.start) : '?') + ' → ' + (row.end ? fmtDate(row.end) : '?');
+
+        let formHtml = '<div style="display:flex;flex-direction:column;gap:8px">';
+        let curSection = '';
+        for (const e of _billSchemaFor(m.commodity)) {
+          if (e.section) {
+            if (curSection) formHtml += '</div>';
+            formHtml += `<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin-top:8px;border-bottom:1px solid var(--border);padding-bottom:4px">${e.section}</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px">`;
+            curSection = e.section;
+            continue;
+          }
+          const rawVal = _billReadValue(row, e);
+          const dispVal = rawVal != null && rawVal !== '' ? String(rawVal) : '';
+          const inputId = 'bsp-' + e.key;
+          formHtml += `<label style="display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:10px;color:var(--text2)">${e.label}</span>
+            <input class="fi" id="${inputId}" type="text" value="${dispVal.replace(/"/g, '&quot;')}" style="font-size:12px;padding:4px 6px;font-family:var(--mono)">
+          </label>`;
+        }
+        if (curSection) formHtml += '</div>';
+        formHtml += '</div>';
+
+        const splitHtml = `
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);margin-bottom:10px">
+            <button class="btn btn-ghost btn-sm" onclick="renderMeterWorkspace()">← Back to Bills</button>
+            <span style="font-size:13px;font-weight:700">${m.commodity || 'Meter'} · ${period}</span>
+          </div>
+          <div style="display:flex;gap:16px;min-height:500px">
+            <div style="flex:1;overflow-y:auto;padding-right:12px;border-right:1px solid var(--border)">
+              <div style="font-size:12px;font-weight:700;color:var(--em);margin-bottom:8px">Bill Data</div>
+              ${formHtml}
+              <div style="display:flex;gap:8px;margin-top:14px;padding-top:10px;border-top:1px solid var(--border)">
+                <button class="btn btn-em btn-sm" onclick="saveBillSplitPanel('${mid}','${billId}')">Save Changes</button>
+                <button class="btn btn-ghost btn-sm" onclick="renderMeterWorkspace()">Cancel</button>
+                <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--red);border-color:var(--red)" onclick="if(confirm('Delete this billing period?')){deleteBillRow('${mid}','${billId}')}">Delete</button>
+              </div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+              <div style="font-size:12px;font-weight:700;color:var(--em);margin-bottom:8px">Source PDF</div>
+              ${
+                pdfAvail
+                  ? `<div id="bsp-pdf-frame" style="flex:1;border:1px solid var(--border);border-radius:6px;overflow:hidden;background:#111;min-height:400px"><div style="padding:20px;color:var(--text3);text-align:center">Loading PDF...</div></div>`
+                  : `<div style="flex:1;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:6px;background:var(--s2);color:var(--text3);font-size:13px">No source PDF available for this bill</div>`
+              }
+            </div>
+          </div>`;
+        pane.innerHTML = splitHtml;
+
+        if (pdfAvail) {
+          setTimeout(() => {
+            const frame = document.getElementById('bsp-pdf-frame');
+            if (!frame) return;
+            _loadPdfIntoFrame(frame, pdfLookupId, row.pdfPageStart, row.pdfPageEnd, row.pdfKey);
+          }, 100);
+        }
+      }
+
+      function saveBillSplitPanel(mid, billId) {
+        const b = getUDBldg(udSelProjId, udSelBldgId);
+        if (!b) return;
+        const m = b.meters?.find((mt) => mt.id === mid);
+        if (!m) return;
+        const row = m.bills?.find((r) => r.id === billId);
+        if (!row) return;
+        const schema = _billSchemaFor(m.commodity).filter((e) => !e.section);
+        for (const e of schema) {
+          const el = document.getElementById('bsp-' + e.key);
+          if (!el) continue;
+          const val = el.value.trim();
+          row[e.key] = val;
+        }
+        saveUtilityData();
+        showToast('Bill saved ✓');
+        renderMeterWorkspace();
+      }
+
+      function _loadPdfIntoFrame(frame, pdfId, pageStart, pageEnd, pdfKey) {
+        const key = pdfKey || 'en_pdf_file_' + pdfId;
+        pdfLoad(key)
+          .then((data) => {
+            if (!data) {
+              frame.innerHTML =
+                '<div style="padding:20px;color:var(--text3);text-align:center">PDF data not found in storage</div>';
+              return;
+            }
+            const blob = new Blob([Uint8Array.from(atob(data), (c) => c.charCodeAt(0))], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            const pageParam = pageStart ? '#page=' + pageStart : '';
+            frame.innerHTML = `<iframe src="${url}${pageParam}" style="width:100%;height:100%;border:none"></iframe>`;
+          })
+          .catch(() => {
+            frame.innerHTML = '<div style="padding:20px;color:var(--text3);text-align:center">Could not load PDF</div>';
+          });
+      }
+
       function openBillModal(mid, editRowId) {
         udSelMeterId = mid;
         udBillEditId = editRowId || null;
