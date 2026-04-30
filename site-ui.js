@@ -6,6 +6,8 @@
 (function () {
   'use strict';
 
+  var CH_VERSION = 'v2026.04.30.9';
+
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
     { name: 'Blue', hex: '#3b82f6' },
@@ -215,7 +217,10 @@
       '<button class="sb-btn" onclick="window.__siteUI.backupData()" title="Backup all data">Backup</button>' +
       '<button class="sb-btn" onclick="window.__siteUI.restoreData()" title="Restore from backup">Restore</button>' +
       '</div>' +
-      '<button class="sb-btn danger" style="width:100%" onclick="window.__siteUI.resetData()">Reset Data</button>';
+      '<button class="sb-btn danger" style="width:100%" onclick="window.__siteUI.resetData()">Reset Data</button>' +
+      '<div class="sb-version" style="text-align:center;font-size:10px;color:var(--text3);margin-top:8px;font-family:var(--mono);letter-spacing:0.5px">' +
+      CH_VERSION +
+      '</div>';
     sidebar.appendChild(bottom);
   }
 
