@@ -600,6 +600,16 @@
         font-weight: 500;
         text-decoration: none;
       }
+      .sb-drag-over {
+        border-top: 2px solid var(--em) !important;
+        background: rgba(0, 212, 170, 0.08) !important;
+      }
+      .ui-edit-mode [data-sidebar-id] {
+        cursor: grab !important;
+      }
+      .ui-edit-mode [data-sidebar-id]:active {
+        cursor: grabbing !important;
+      }
       .s-ico {
         font-size: 14px;
         width: 18px;
@@ -5454,21 +5464,41 @@
                 </button>
               </div>
               <div class="s-proj-section" id="sidebarProjFolders"></div>
-              <button class="s-item" onclick="sv('pdf', this)"><span class="s-ico">📄</span>PDF / OCR</button>
-              <button class="s-item" onclick="sv('utility', this)"><span class="s-ico">⚡</span>Utility Data</button>
-              <button class="s-item" onclick="sv('savings', this)"><span class="s-ico">💡</span>Energy Savings</button>
-              <button class="s-item" onclick="sv('district', this)">
-                <span class="s-ico">🗓️</span>District Calendar
-              </button>
-              <button class="s-item" onclick="sv('equipment', this)"><span class="s-ico">⚙️</span>Equipment</button>
-              <button class="s-item" onclick="sv('drawings', this)"><span class="s-ico">📐</span>Drawings</button>
-              <button class="s-item" onclick="sv('specs', this)"><span class="s-ico">✍️</span>Spec Writer</button>
-              <button class="s-item" onclick="sv('contracts', this)"><span class="s-ico">📋</span>Contracts</button>
-              <button class="s-item" onclick="sv('webctrl', this)"><span class="s-ico">🔌</span>WebCTRL</button>
-              <button class="s-item" onclick="sv('ems', this)"><span class="s-ico">📊</span>EMS Leads</button>
-              <button class="s-item" onclick="window.open('bas-calc.html', '_blank')">
-                <span class="s-ico">🔬</span>BAS Savings Calc
-              </button>
+              <div id="sidebarSortable">
+                <button class="s-item" data-sidebar-id="pdf" onclick="sv('pdf', this)">
+                  <span class="s-ico">📄</span>PDF / OCR
+                </button>
+                <button class="s-item" data-sidebar-id="utility" onclick="sv('utility', this)">
+                  <span class="s-ico">⚡</span>Utility Data
+                </button>
+                <button class="s-item" data-sidebar-id="savings" onclick="sv('savings', this)">
+                  <span class="s-ico">💡</span>Energy Savings
+                </button>
+                <button class="s-item" data-sidebar-id="district" onclick="sv('district', this)">
+                  <span class="s-ico">🗓️</span>District Calendar
+                </button>
+                <button class="s-item" data-sidebar-id="equipment" onclick="sv('equipment', this)">
+                  <span class="s-ico">⚙️</span>Equipment
+                </button>
+                <button class="s-item" data-sidebar-id="drawings" onclick="sv('drawings', this)">
+                  <span class="s-ico">📐</span>Drawings
+                </button>
+                <button class="s-item" data-sidebar-id="specs" onclick="sv('specs', this)">
+                  <span class="s-ico">✍️</span>Spec Writer
+                </button>
+                <button class="s-item" data-sidebar-id="contracts" onclick="sv('contracts', this)">
+                  <span class="s-ico">📋</span>Contracts
+                </button>
+                <button class="s-item" data-sidebar-id="webctrl" onclick="sv('webctrl', this)">
+                  <span class="s-ico">🔌</span>WebCTRL
+                </button>
+                <button class="s-item" data-sidebar-id="ems" onclick="sv('ems', this)">
+                  <span class="s-ico">📊</span>EMS Leads
+                </button>
+                <button class="s-item" data-sidebar-id="bas-calc" onclick="window.open('bas-calc.html', '_blank')">
+                  <span class="s-ico">🔬</span>BAS Savings Calc
+                </button>
+              </div>
             </div>
           </div>
           <div class="sidebar-bottom">
@@ -5492,7 +5522,7 @@
                 letter-spacing: 0.5px;
               "
             >
-              v2026.04.29.6
+              v2026.04.29.7
             </div>
           </div>
         </aside>
@@ -48227,6 +48257,84 @@
       }
 
       /* ── UI Edit Mode ── */
+      // ── Sidebar drag-to-reorder ──
+      function _getSidebarOrder() {
+        try {
+          return JSON.parse(localStorage.getItem('ch_sidebarOrder'));
+        } catch (e) {
+          return null;
+        }
+      }
+      function _saveSidebarOrder(order) {
+        localStorage.setItem('ch_sidebarOrder', JSON.stringify(order));
+      }
+      function _applySidebarOrder() {
+        const order = _getSidebarOrder();
+        if (!order || !order.length) return;
+        const container = document.getElementById('sidebarSortable');
+        if (!container) return;
+        const items = [...container.querySelectorAll('[data-sidebar-id]')];
+        const map = {};
+        items.forEach((el) => {
+          map[el.getAttribute('data-sidebar-id')] = el;
+        });
+        order.forEach((id) => {
+          if (map[id]) container.appendChild(map[id]);
+        });
+      }
+      function _initSidebarDrag() {
+        const container = document.getElementById('sidebarSortable');
+        if (!container) return;
+        const items = container.querySelectorAll('[data-sidebar-id]');
+        let dragEl = null;
+        items.forEach((el) => {
+          el.setAttribute('draggable', 'true');
+          el.style.cursor = 'grab';
+          el.addEventListener('dragstart', function (e) {
+            dragEl = this;
+            this.style.opacity = '0.4';
+            e.dataTransfer.effectAllowed = 'move';
+          });
+          el.addEventListener('dragend', function () {
+            this.style.opacity = '1';
+            container.querySelectorAll('[data-sidebar-id]').forEach((x) => x.classList.remove('sb-drag-over'));
+            dragEl = null;
+          });
+          el.addEventListener('dragover', function (e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            container.querySelectorAll('[data-sidebar-id]').forEach((x) => x.classList.remove('sb-drag-over'));
+            if (this !== dragEl) this.classList.add('sb-drag-over');
+          });
+          el.addEventListener('drop', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!dragEl || dragEl === this) return;
+            const all = [...container.querySelectorAll('[data-sidebar-id]')];
+            const fromIdx = all.indexOf(dragEl);
+            const toIdx = all.indexOf(this);
+            if (fromIdx < toIdx) this.after(dragEl);
+            else this.before(dragEl);
+            const newOrder = [...container.querySelectorAll('[data-sidebar-id]')].map((x) =>
+              x.getAttribute('data-sidebar-id'),
+            );
+            _saveSidebarOrder(newOrder);
+            showToast('Sidebar order saved ✓');
+          });
+        });
+      }
+      function _teardownSidebarDrag() {
+        const container = document.getElementById('sidebarSortable');
+        if (!container) return;
+        container.querySelectorAll('[data-sidebar-id]').forEach((el) => {
+          el.removeAttribute('draggable');
+          el.style.cursor = '';
+          el.classList.remove('sb-drag-over');
+        });
+      }
+      // Apply saved order on load
+      requestAnimationFrame(() => _applySidebarOrder());
+
       let _uiEditMode = false;
       let _uiEditTab = 'colors';
       let _uiSelectedEl = null;
@@ -48239,9 +48347,11 @@
         if (btn) btn.textContent = _uiEditMode ? '✕ Exit Customize' : '✎ Customize';
         if (!_uiEditMode) {
           _uiEditCleanup();
+          _teardownSidebarDrag();
           document.getElementById('uiInspector')?.classList.remove('open');
         } else {
           _uiEditAttachHovers();
+          _initSidebarDrag();
         }
       }
 
