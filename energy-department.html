@@ -5522,7 +5522,7 @@
                 letter-spacing: 0.5px;
               "
             >
-              v2026.04.29.7
+              v2026.04.30.1
             </div>
           </div>
         </aside>
@@ -29346,6 +29346,7 @@
         const lines = text.split(/\n/);
 
         function addEvent(dateStr, name, type) {
+          if (!_isValidDate(dateStr)) return;
           const key = dateStr + '|' + name;
           if (seen.has(key)) return;
           seen.add(key);
@@ -29369,6 +29370,13 @@
         if (syMatch) guessYear = parseInt(syMatch[1]);
         const yearInText = text.match(/\b(20\d\d)\b/);
         if (!syMatch && yearInText) guessYear = parseInt(yearInText[1]);
+        const _endYear = syMatch ? parseInt(syMatch[2]) : guessYear + 1;
+        const _earliest = new Date(guessYear, 6, 1);
+        const _latest = new Date(_endYear, 6, 31);
+        function _isValidDate(isoStr) {
+          const d = new Date(isoStr + 'T12:00:00');
+          return !isNaN(d) && d >= _earliest && d <= _latest;
+        }
 
         // Process each line
         lines.forEach((line) => {
@@ -29383,8 +29391,9 @@
           const p1 = new RegExp(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/, 'g');
           while ((m = p1.exec(line)) !== null) {
             const mo = parseInt(m[1]) - 1,
-              d = parseInt(m[2]),
-              y = parseInt(m[3]);
+              d = parseInt(m[2]);
+            let y = parseInt(m[3]);
+            if (y < guessYear - 1 || y > _endYear + 1) y = mo >= 7 ? guessYear : _endYear;
             if (mo >= 0 && mo < 12 && d >= 1 && d <= 31) {
               addEvent(toISO(y, mo, d), kw.label, kw.type);
               found = true;
@@ -29398,8 +29407,9 @@
           );
           while ((m = p2.exec(line)) !== null) {
             const mo = MONTH_MAP[m[1].toLowerCase()];
-            const d = parseInt(m[2]),
-              y = parseInt(m[3]);
+            const d = parseInt(m[2]);
+            let y = parseInt(m[3]);
+            if (y < guessYear - 1 || y > _endYear + 1) y = mo >= 7 ? guessYear : _endYear;
             if (mo !== undefined && d >= 1 && d <= 31) {
               addEvent(toISO(y, mo, d), kw.label, kw.type);
               found = true;
@@ -29423,9 +29433,10 @@
           // Pattern 4: YYYY-MM-DD
           const p4 = /\b(\d{4})-(\d{2})-(\d{2})\b/g;
           while ((m = p4.exec(line)) !== null) {
-            const y = parseInt(m[1]),
-              mo = parseInt(m[2]) - 1,
+            let y = parseInt(m[1]);
+            const mo = parseInt(m[2]) - 1,
               d = parseInt(m[3]);
+            if (y < guessYear - 1 || y > _endYear + 1) y = mo >= 7 ? guessYear : _endYear;
             if (mo >= 0 && mo < 12 && d >= 1 && d <= 31) {
               addEvent(toISO(y, mo, d), kw.label, kw.type);
               found = true;
@@ -30051,6 +30062,13 @@
         function yearForMonth(mo) {
           return mo >= 8 ? startSchoolYear : endSchoolYear;
         }
+        // Reject dates outside the school year range (July start year – July end year)
+        const _syEarliest = new Date(startSchoolYear, 6, 1);
+        const _syLatest = new Date(endSchoolYear, 6, 31);
+        function isValidSchoolDate(dateStr) {
+          const d = new Date(dateStr + 'T12:00:00');
+          return !isNaN(d) && d >= _syEarliest && d <= _syLatest;
+        }
 
         const monthYearMap = {};
         // Match "August - 2025", "August – 25", "August 2025", "August-25"
@@ -30222,7 +30240,7 @@
 
             parts.forEach((part) => {
               if (!part.text) return;
-              _parseMonthEvents(part.text, part.month, part.year, events, detectType);
+              _parseMonthEvents(part.text, part.month, part.year, events, detectType, isValidSchoolDate);
             });
           });
         });
@@ -30238,9 +30256,13 @@
           while ((mm = dateRe.exec(text)) !== null) {
             let iso, dayEnd;
             if (mm[1]) {
-              let yr = mm[3];
-              if (!yr) yr = startSchoolYear;
-              if (String(yr).length === 2) yr = '20' + yr;
+              let yr = parseInt(mm[3]) || startSchoolYear;
+              if (String(mm[3]).length === 2) yr = 2000 + yr;
+              // Override impossible years with school-year-aware guess
+              if (yr < startSchoolYear - 1 || yr > endSchoolYear + 1) {
+                const mo = parseInt(mm[1]);
+                yr = mo >= 8 ? startSchoolYear : endSchoolYear;
+              }
               iso = yr + '-' + String(mm[1]).padStart(2, '0') + '-' + String(mm[2]).padStart(2, '0');
               dayEnd = parseInt(mm[2]);
             } else {
@@ -30250,6 +30272,7 @@
               iso = yr + '-' + String(mo).padStart(2, '0') + '-' + String(mm[5]).padStart(2, '0');
               dayEnd = mm[6] ? parseInt(mm[6]) : parseInt(mm[5]);
             }
+            if (!isValidSchoolDate(iso)) continue;
             hits.push({ idx: mm.index, end: mm.index + mm[0].length, iso, dayEnd, match: mm[0] });
           }
           for (let i = 0; i < hits.length; i++) {
@@ -30277,7 +30300,7 @@
         return events;
       }
 
-      function _parseMonthEvents(text, month, year, events, detectType) {
+      function _parseMonthEvents(text, month, year, events, detectType, dateValidator) {
         // Match: "15 – Description" or "15-17 – Description" or "15- Description"
         // Allow any whitespace (including none) after the separating dash/en-dash.
         const re = /(\d{1,2})(?:\s*[-–]\s*(\d{1,2}))?\s*[-–]\s*/g;
@@ -30307,6 +30330,7 @@
           for (let d = positions[i].dayStart; d <= positions[i].dayEnd; d++) {
             if (d < 1 || d > 31) continue;
             const dateStr = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+            if (dateValidator && !dateValidator(dateStr)) continue;
             events.push({ date: dateStr, name: desc, type });
           }
         }
