@@ -5522,7 +5522,7 @@
                 letter-spacing: 0.5px;
               "
             >
-              v2026.04.30.7
+              v2026.04.30.8
             </div>
           </div>
         </aside>
@@ -11972,10 +11972,8 @@
         }
       }
 
-      window.addEventListener('beforeunload', function (e) {
-        if (window._pdfMultiBills && window._pdfMultiBills.length > 0) {
-          _saveExtractionState();
-        }
+      window.addEventListener('pagehide', function () {
+        _saveExtractionState();
       });
 
       /* ── STATE ── */
@@ -23721,7 +23719,10 @@
         }
         globalTaskDone();
         renderQueueProgress();
-        setTimeout(() => renderQueueResults(), 600);
+        setTimeout(() => {
+          renderQueueResults();
+          _saveExtractionState();
+        }, 600);
       }
 
       async function _extractSingleFileForQueue(file, fileIdx) {
@@ -24440,22 +24441,53 @@
       }
 
       function _saveExtractionState() {
-        if (!window._pdfMultiBills || !window._pdfMultiBills.length) return;
-        try {
-          sessionStorage.setItem(
-            'ch_extraction_state',
-            JSON.stringify({
-              bills: window._pdfMultiBills,
-              idx: window._pdfMultiIdx || 0,
-              dupMap: window._pdfDupMap || {},
-              warnings: window._pdfBillWarnings || [],
-              commTab: window._pdfCommTab || null,
-              passScores: window._pdfPassScores || [],
-              timestamp: Date.now(),
-            }),
-          );
-        } catch (e) {
-          console.warn('[Extraction] Could not save state to sessionStorage:', e.message);
+        // Save single-file extraction state
+        if (window._pdfMultiBills && window._pdfMultiBills.length) {
+          try {
+            sessionStorage.setItem(
+              'ch_extraction_state',
+              JSON.stringify({
+                bills: window._pdfMultiBills,
+                idx: window._pdfMultiIdx || 0,
+                dupMap: window._pdfDupMap || {},
+                warnings: window._pdfBillWarnings || [],
+                commTab: window._pdfCommTab || null,
+                passScores: window._pdfPassScores || [],
+                billsSaved: window._pdfBillsSaved || false,
+                timestamp: Date.now(),
+              }),
+            );
+          } catch (e) {
+            console.warn('[Extraction] Could not save state to sessionStorage:', e.message);
+          }
+        }
+        // Save queue extraction state (multi-file batch results)
+        if (window._pdfQueue && window._pdfQueue.results && window._pdfQueue.results.length > 0) {
+          try {
+            // Strip pdfB64 and rawText from results to stay within sessionStorage limits
+            const slimResults = window._pdfQueue.results.map(function (r) {
+              return {
+                fileIdx: r.fileIdx,
+                fileName: r.fileName,
+                bills: r.bills,
+                status: r.status,
+                error: r.error || null,
+              };
+            });
+            sessionStorage.setItem(
+              'ch_queue_state',
+              JSON.stringify({
+                results: slimResults,
+                status: window._pdfQueue.status,
+                batchProjId: window._pdfQueue.batchProjId,
+                _activeFileIdx: window._pdfQueue._activeFileIdx,
+                queueRows: window._pdfQueueRows || null,
+                timestamp: Date.now(),
+              }),
+            );
+          } catch (e) {
+            console.warn('[Queue] Could not save queue state to sessionStorage:', e.message);
+          }
         }
       }
 
@@ -24474,6 +24506,37 @@
           window._pdfBillWarnings = state.warnings;
           window._pdfCommTab = state.commTab;
           window._pdfPassScores = state.passScores;
+          window._pdfBillsSaved = state.billsSaved || false;
+          sessionStorage.removeItem('ch_extraction_state');
+          return true;
+        } catch (e) {
+          return false;
+        }
+      }
+
+      function _restoreQueueState() {
+        try {
+          const raw = sessionStorage.getItem('ch_queue_state');
+          if (!raw) return false;
+          const state = JSON.parse(raw);
+          if (Date.now() - state.timestamp > 3600000) {
+            sessionStorage.removeItem('ch_queue_state');
+            return false;
+          }
+          // Rebuild a minimal _pdfQueue with the saved results
+          window._pdfQueue = {
+            files: state.results.map(function (r) {
+              return { name: r.fileName };
+            }),
+            results: state.results,
+            currentIdx: state.results.length,
+            batchProjId: state.batchProjId || null,
+            status: 'done',
+            _processedCount: state.results.length,
+            _activeFileIdx: state._activeFileIdx || 0,
+          };
+          window._pdfQueueRows = state.queueRows || null;
+          sessionStorage.removeItem('ch_queue_state');
           return true;
         } catch (e) {
           return false;
@@ -43220,6 +43283,13 @@
               showToast('Restored extraction results from previous session');
             }
           }, 500);
+        } else if (_restoreQueueState()) {
+          setTimeout(() => {
+            if (window._pdfQueue && window._pdfQueue.results.length > 0) {
+              renderQueueResults();
+              showToast('Restored batch extraction results from previous session');
+            }
+          }, 500);
         }
         renderUDProjList();
         renderUDDetail();
@@ -49802,39 +49872,12 @@
       }
 
       /* ══════════════════════════════════════
-         UNSAVED WORK WARNING — beforeunload
-         Prevents accidental loss of extraction
-         results, open edits, or queue data when
-         navigating away from the page.
+         STATE PERSISTENCE — pagehide
+         Saves extraction state automatically when
+         navigating away so it survives page changes.
       ══════════════════════════════════════ */
       window._hasUnsavedWork = false;
       window._pdfBillsSaved = false;
-
-      function _checkUnsavedWork() {
-        // 1. Unsaved extraction results (single-file or multi-bill, not yet saved)
-        if (window._pdfMultiBills && window._pdfMultiBills.length > 0 && !window._pdfBillsSaved) return true;
-        // 2. Unsaved queue results (batch extraction with unsaved rows)
-        if (
-          window._pdfQueueRows &&
-          window._pdfQueueRows.some(function (r) {
-            return r.bill && !r._saved;
-          })
-        )
-          return true;
-        // 3. Bill edit modal is open
-        var billModal = document.getElementById('billModal');
-        if (billModal && billModal.classList.contains('open')) return true;
-        // 4. Manual flag (set by specific flows like EMS editing)
-        if (window._hasUnsavedWork) return true;
-        return false;
-      }
-
-      window.addEventListener('beforeunload', function (e) {
-        if (_checkUnsavedWork()) {
-          e.preventDefault();
-          e.returnValue = '';
-        }
-      });
     </script>
   </body>
 </html>
