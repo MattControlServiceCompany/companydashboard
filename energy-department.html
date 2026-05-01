@@ -18446,9 +18446,18 @@
             // Try to split multi-bill gas PDFs on page markers or repeating "Service from" headers.
             const splitRe = /(?=Service\s+(?:from|period)[\s:]+\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i;
             const raw = t.split(splitRe);
-            const sections = raw.filter((s) => /\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(s));
+            const sections = [];
+            const _unmatchedSections = [];
+            for (const s of raw) {
+              if (/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(s)) {
+                sections.push(s);
+              } else if (s.trim().length > 50) {
+                const pageNums = [...s.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => parseInt(m[1]));
+                _unmatchedSections.push({ pageNums, preview: s.trim().slice(0, 200) });
+              }
+            }
             if (sections.length <= 1) return [this.extract(t)];
-            return sections.map((s) => {
+            const result = sections.map((s) => {
               const r = this.extract(s);
               const pageMarkers = [...s.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => parseInt(m[1]));
               if (pageMarkers.length) {
@@ -18457,6 +18466,8 @@
               }
               return r;
             });
+            if (_unmatchedSections.length) result._unmatchedPages = _unmatchedSections;
+            return result;
           },
           extract: function (t) {
             const company = this._detectCompany(t);
@@ -18543,13 +18554,24 @@
             // extract() now returns an array of per-commodity bills per page
             // (Update 81). flatMap flattens, and _pageIndex stamps the same
             // index on every commodity split from the same page.
+            const _unmatchedPages = [];
             const bills = pages.flatMap((p, i) => {
               const r = this.extract(p);
-              if (!r) return [];
+              if (!r) {
+                if (p.trim().length > 50) {
+                  const pageNums = [...p.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => parseInt(m[1]));
+                  _unmatchedPages.push({
+                    pageNums: pageNums.length ? pageNums : [i + 1],
+                    preview: p.trim().slice(0, 200),
+                  });
+                }
+                return [];
+              }
               const arr = Array.isArray(r) ? r : [r];
               for (const b of arr) b._pageIndex = i + 1;
               return arr;
             });
+            if (_unmatchedPages.length) bills._unmatchedPages = _unmatchedPages;
             // Backfill missing billing periods from neighbor bills sharing the
             // same BillDate — all bills printed on the same day cover the same
             // service period, so it's safe to copy across accounts.
@@ -19692,7 +19714,22 @@
           extractAll: function (t) {
             const hasPages = /%%PAGE_\d+%%/.test(t);
             const pages = hasPages ? _lbg_splitPages(t) : t.split(/(?=SALE\s+\d+\s+DATE)/i);
-            return pages.map((p) => this.extract(p)).filter((r) => r !== null);
+            const _unmatchedPages = [];
+            const results = [];
+            pages.forEach((p, i) => {
+              const r = this.extract(p);
+              if (r !== null) {
+                results.push(r);
+              } else if (p.trim().length > 50) {
+                const pageNums = [...p.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => parseInt(m[1]));
+                _unmatchedPages.push({
+                  pageNums: pageNums.length ? pageNums : [i + 1],
+                  preview: p.trim().slice(0, 200),
+                });
+              }
+            });
+            if (_unmatchedPages.length) results._unmatchedPages = _unmatchedPages;
+            return results;
           },
           extract: function (page) {
             // Be lenient — this rule also catches non-MFA propane bills routed
@@ -25955,6 +25992,7 @@
               if (rule) {
                 // Use extractAll if available (multi-bill PDF support)
                 let bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
+                const _extractUnmatchedPages = bills._unmatchedPages || [];
                 let validBills = bills.filter(
                   (b) =>
                     b.BillingPeriodStart ||
@@ -26235,6 +26273,15 @@
 
                 const analysisResults = analyzeBillExtraction(finalBills, rule.name);
                 window._pdfBillWarnings = analysisResults;
+                window._pdfUnmatchedPages = _extractUnmatchedPages;
+                if (_extractUnmatchedPages.length > 0) {
+                  const pgNums = _extractUnmatchedPages.flatMap((u) => u.pageNums).filter(Boolean);
+                  showToast(
+                    _extractUnmatchedPages.length +
+                      ' page(s) could not be parsed into billing periods' +
+                      (pgNums.length ? ' (page ' + pgNums.join(', ') + ')' : ''),
+                  );
+                }
 
                 if (finalBills.length > 1) {
                   // Multi-bill: store all, start on newest bill
@@ -27210,7 +27257,19 @@
             if (extracted._pageStart) sb.pdfPageStart = extracted._pageStart;
             if (extracted._pageEnd) sb.pdfPageEnd = extracted._pageEnd;
           }
-          sb.savedAt = new Date().toISOString(); // Update timestamp
+          sb.savedAt = new Date().toISOString();
+          // Promote from Saved Bills to meter if a match exists
+          if (sb.pdfPageStart && !sb._pageStart) sb._pageStart = sb.pdfPageStart;
+          if (sb.pdfPageEnd && !sb._pageEnd) sb._pageEnd = sb.pdfPageEnd;
+          if (sb.pdfKey && !sb._pdfSharedKey) sb._pdfSharedKey = sb.pdfKey;
+          const meterMatch = findMeterMatch(sb);
+          if (meterMatch) {
+            const dest = _saveBillToMatchedMeter(sb, meterMatch);
+            if (dest) {
+              const removeIdx = pdfBills.indexOf(sb);
+              if (removeIdx !== -1) pdfBills.splice(removeIdx, 1);
+            }
+          }
           await sset('en_pdf_bills', pdfBills);
           return true;
         }
@@ -43265,9 +43324,16 @@
         } catch (e) {}
         if (_restoreExtractionState()) {
           setTimeout(() => {
-            const box = document.getElementById('pdfExtractResult');
-            if (box && window._pdfMultiBills) {
+            const box = document.getElementById('pdfAIBox');
+            if (box && window._pdfMultiBills && window._pdfMultiBills.length) {
+              const idx = window._pdfMultiIdx || 0;
               renderMultiBillUI(window._pdfMultiBills, box);
+              renderPDFFields(window._pdfMultiBills[idx], (window._pdfBillWarnings || [])[idx]?.warnings || []);
+              document.getElementById('pdfSaveRow').style.display = 'block';
+              document.getElementById('pdfClearBtn').style.display = 'block';
+              document.getElementById('dropZone').classList.add('collapsed');
+              document.getElementById('pdfTypeSection').style.display = 'none';
+              sv('pdf');
               showToast('Restored extraction results from previous session');
             }
           }, 500);
@@ -49866,6 +49932,12 @@
       ══════════════════════════════════════ */
       window._hasUnsavedWork = false;
       window._pdfBillsSaved = false;
+      window.addEventListener('beforeunload', function (e) {
+        if (window._pdfMultiBills && window._pdfMultiBills.length && !window._pdfBillsSaved) {
+          e.preventDefault();
+          return (e.returnValue = '');
+        }
+      });
     </script>
   </body>
 </html>
