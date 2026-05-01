@@ -5512,6 +5512,18 @@
               <button class="sb-btn" onclick="siteRestore()">Restore</button>
             </div>
             <button class="sb-btn danger" style="width: 100%" onclick="siteResetData()">Reset Data</button>
+            <div
+              class="sb-version"
+              id="en-sb-version"
+              style="
+                text-align: center;
+                font-size: 10px;
+                color: var(--text3);
+                margin-top: 8px;
+                font-family: var(--mono);
+                letter-spacing: 0.5px;
+              "
+            ></div>
           </div>
         </aside>
 
@@ -29283,12 +29295,9 @@
       }
 
       function savePDFData() {
-        // ── Get current extracted data from the output box ──
-        const box = document.getElementById('pdfAIBox');
-        let extracted = null;
-        try {
-          extracted = JSON.parse(box.textContent);
-        } catch (e) {}
+        const bills = window._pdfMultiBills;
+        const idx = window._pdfMultiIdx || 0;
+        const extracted = bills && bills[idx];
         if (!extracted || !extracted.UtilityCompany) {
           showToast('No extracted data to save');
           return;
@@ -43347,6 +43356,13 @@
         }
         renderUDProjList();
         renderUDDetail();
+        fetch('site-ui.js')
+          .then((r) => r.text())
+          .then((t) => {
+            const m = t.match(/CH_VERSION\s*=\s*'([^']+)'/);
+            if (m) document.getElementById('en-sb-version').textContent = m[1];
+          })
+          .catch(() => {});
       }
 
       /* Open building modal pre-selected to a specific project (from Projects tool) */
