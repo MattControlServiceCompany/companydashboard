@@ -32490,6 +32490,17 @@
         const state = _billsTableViewState(mid);
         state.sortAsc = !state.sortAsc;
         _saveBillsTableViewState(mid, state);
+        const b = getUDBldg(udSelProjId, udSelBldgId);
+        const m = b?.meters?.find((mt) => mt.id === mid);
+        if (m) {
+          const _wrap = window._udActiveWrap || document.getElementById('udDetailWrap');
+          const pane = _wrap ? _wrap.querySelector('#maPane') : document.getElementById('maPane');
+          if (pane) {
+            const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+            renderBillsPane(pane, m, bills, m.inclusive !== false);
+            return;
+          }
+        }
         if (typeof renderMeterWorkspace === 'function') renderMeterWorkspace();
       }
       function _saveBillsTableViewState(mid, state) {
@@ -41468,10 +41479,16 @@
           _blStartInp.addEventListener('change', function () {
             if (_blEndInp.value) return; // don't overwrite user-set value
             if (!_blStartInp.value) return;
-            const d = new Date(_blStartInp.value + 'T00:00:00');
+            const parts = _blStartInp.value.split('-');
+            if (parts.length !== 3) return;
+            const d = new Date(+parts[0], +parts[1] - 1, +parts[2] + 30);
             if (isNaN(d.getTime())) return;
-            d.setDate(d.getDate() + 30);
-            _blEndInp.value = d.toISOString().slice(0, 10);
+            _blEndInp.value =
+              d.getFullYear().toString().padStart(4, '0') +
+              '-' +
+              (d.getMonth() + 1).toString().padStart(2, '0') +
+              '-' +
+              d.getDate().toString().padStart(2, '0');
           });
         }
         // Initial pass: compute rates + running totals from loaded values
