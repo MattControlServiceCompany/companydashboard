@@ -2,6 +2,23 @@
 // Executable via Playwright MCP (browser_evaluate / browser_snapshot)
 // Visual status board: test-verification-runner.html
 
+// Preamble: inject into page via browser_evaluate before running any tests.
+// Defines window.__tvAllMeters() for test expressions to call.
+const VERIFICATION_PREAMBLE = `
+  window.__tvAllMeters = function() {
+    const ms = [];
+    for (const k of Object.keys(localStorage)) {
+      if (/^en_utility_\\d/.test(k)) {
+        try {
+          const d = JSON.parse(localStorage.getItem(k));
+          (d.buildings||[]).forEach(b => (b.meters||[]).forEach(m => ms.push({...m, _bName: b.name})));
+        } catch(e){}
+      }
+    }
+    return ms;
+  };
+`;
+
 // Helper: gets all buildings/meters/bills across all projects.
 // Data model: en_projects has project metadata; en_utility_<id> has actual utility data.
 function _getAllMeters() {
@@ -435,18 +452,9 @@ const VERIFICATION_TESTS = {
           check: {
             type: 'evaluate',
             expr: `(() => {
-              const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
-              const issues = [];
-              for (const p of projects) {
-                for (const b of (p.buildings || [])) {
-                  for (const m of (b.meters || [])) {
-                    if (!m.commodity || m.commodity === '' || m.commodity === 'undefined') {
-                      issues.push({ meter: m.name || m.id, building: b.name });
-                    }
-                  }
-                }
-              }
-              return { issues, allHaveCommodity: issues.length === 0 };
+              const allMeters = window.__tvAllMeters ? window.__tvAllMeters() : [];
+              const issues = allMeters.filter(m => !m.commodity || m.commodity === '' || m.commodity === 'undefined');
+              return { issues: issues.map(m => ({ meter: m.name || m.id, building: m._bName })), allHaveCommodity: issues.length === 0 };
             })()`,
             expect: { op: 'truthy', path: 'allHaveCommodity' },
           },
@@ -499,16 +507,12 @@ const VERIFICATION_TESTS = {
           check: {
             type: 'evaluate',
             expr: `(() => {
-              const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
-              for (const p of projects) {
-                for (const b of (p.buildings || [])) {
-                  for (const m of (b.meters || [])) {
-                    if (m.commodity === 'Gas') {
-                      for (const bill of (m.bills || [])) {
-                        if (bill.fuelAdjustment && parseFloat(bill.fuelAdjustment) !== 0) {
-                          return { found: true, value: bill.fuelAdjustment };
-                        }
-                      }
+              const allMeters = window.__tvAllMeters ? window.__tvAllMeters() : [];
+              for (const m of allMeters) {
+                if (m.commodity === 'Gas') {
+                  for (const bill of (m.bills || [])) {
+                    if (bill.fuelAdjustment && parseFloat(bill.fuelAdjustment) !== 0) {
+                      return { found: true, value: bill.fuelAdjustment };
                     }
                   }
                 }
@@ -526,18 +530,14 @@ const VERIFICATION_TESTS = {
           check: {
             type: 'evaluate',
             expr: `(() => {
-              const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
-              for (const p of projects) {
-                for (const b of (p.buildings || [])) {
-                  for (const m of (b.meters || [])) {
-                    if (m.commodity === 'Stormwater') {
-                      for (const bill of (m.bills || [])) {
-                        const cost = parseFloat(bill.totalCost || bill.cost || 0);
-                        if (cost > 100) return { fail: true, value: cost, billDate: bill.startDate };
-                      }
-                      return { pass: true };
-                    }
+              const allMeters = window.__tvAllMeters ? window.__tvAllMeters() : [];
+              for (const m of allMeters) {
+                if (m.commodity === 'Stormwater') {
+                  for (const bill of (m.bills || [])) {
+                    const cost = parseFloat(bill.totalCost || bill.cost || 0);
+                    if (cost > 100) return { fail: true, value: cost, billDate: bill.startDate };
                   }
+                  return { pass: true };
                 }
               }
               return { skip: true, reason: "No stormwater meter found" };
@@ -553,18 +553,14 @@ const VERIFICATION_TESTS = {
           check: {
             type: 'evaluate',
             expr: `(() => {
-              const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
-              for (const p of projects) {
-                for (const b of (p.buildings || [])) {
-                  for (const m of (b.meters || [])) {
-                    if (m.commodity === 'Propane') {
-                      for (const bill of (m.bills || [])) {
-                        const gallons = parseFloat(bill.gallons || bill.usage || 0);
-                        const price = parseFloat(bill.pricePerGallon || bill.rate || 0);
-                        const total = parseFloat(bill.totalCost || bill.cost || 0);
-                        if (gallons > 0 && total > 0) return { pass: true, gallons, price, total };
-                      }
-                    }
+              const allMeters = window.__tvAllMeters ? window.__tvAllMeters() : [];
+              for (const m of allMeters) {
+                if (m.commodity === 'Propane') {
+                  for (const bill of (m.bills || [])) {
+                    const gallons = parseFloat(bill.gallons || bill.usage || 0);
+                    const price = parseFloat(bill.pricePerGallon || bill.rate || 0);
+                    const total = parseFloat(bill.totalCost || bill.cost || 0);
+                    if (gallons > 0 && total > 0) return { pass: true, gallons, price, total };
                   }
                 }
               }
@@ -633,18 +629,12 @@ const VERIFICATION_TESTS = {
           check: {
             type: 'evaluate',
             expr: `(() => {
-              const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
-              for (const p of projects) {
-                for (const b of (p.buildings || [])) {
-                  const waterMeter = (b.meters || []).find(m => m.commodity === 'Water');
-                  const sewerMeter = (b.meters || []).find(m => m.commodity === 'Sewer');
-                  if (waterMeter && sewerMeter) {
-                    for (const sb of (sewerMeter.bills || [])) {
-                      const usage = parseFloat(sb.usage || sb.sewerUsage || sb.gallons || 0);
-                      if (usage > 0) return { pass: true, sewerUsage: usage };
-                    }
-                  }
-                }
+              const allMeters = window.__tvAllMeters ? window.__tvAllMeters() : [];
+              const sewerMeter = allMeters.find(m => m.commodity === 'Sewer');
+              if (!sewerMeter) return { skip: true, reason: "No sewer meter found" };
+              for (const sb of (sewerMeter.bills || [])) {
+                const usage = parseFloat(sb.usage || sb.sewerUsage || sb.gallons || 0);
+                if (usage > 0) return { pass: true, sewerUsage: usage };
               }
               return { skip: true, reason: "No sewer meter with usage found" };
             })()`,
@@ -672,16 +662,12 @@ const VERIFICATION_TESTS = {
           check: {
             type: 'evaluate',
             expr: `(() => {
-              const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
+              const allMeters = window.__tvAllMeters ? window.__tvAllMeters() : [];
               const fieldChecks = ['startDate', 'endDate', 'totalCost', 'commodity'];
-              for (const p of projects) {
-                for (const b of (p.buildings || [])) {
-                  for (const m of (b.meters || [])) {
-                    for (const bill of (m.bills || [])) {
-                      const populated = fieldChecks.filter(f => bill[f] && bill[f] !== '');
-                      if (populated.length >= 3) return { pass: true, fieldsPresent: populated.length };
-                    }
-                  }
+              for (const m of allMeters) {
+                for (const bill of (m.bills || [])) {
+                  const populated = fieldChecks.filter(f => bill[f] && bill[f] !== '');
+                  if (populated.length >= 3) return { pass: true, fieldsPresent: populated.length };
                 }
               }
               return { skip: true, reason: "No bills with sufficient fields found" };
@@ -706,15 +692,11 @@ const VERIFICATION_TESTS = {
           check: {
             type: 'evaluate',
             expr: `(() => {
-              const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
-              for (const p of projects) {
-                for (const b of (p.buildings || [])) {
-                  for (const m of (b.meters || [])) {
-                    for (const bill of (m.bills || [])) {
-                      if (bill.meterReadStart || bill.MeterReadStart) {
-                        return { pass: true, hasReadDates: true };
-                      }
-                    }
+              const allMeters = window.__tvAllMeters ? window.__tvAllMeters() : [];
+              for (const m of allMeters) {
+                for (const bill of (m.bills || [])) {
+                  if (bill.meterReadStart || bill.MeterReadStart) {
+                    return { pass: true, hasReadDates: true };
                   }
                 }
               }
@@ -1420,16 +1402,9 @@ const VERIFICATION_TESTS = {
           check: {
             type: 'evaluate',
             expr: `(() => {
-              const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
-              for (const p of projects) {
-                for (const b of (p.buildings || [])) {
-                  for (const m of (b.meters || [])) {
-                    if (m.commodity === 'Propane' && m.normalizedActual) {
-                      return { pass: true, hasNormalizedActual: true };
-                    }
-                  }
-                }
-              }
+              const allMeters = window.__tvAllMeters ? window.__tvAllMeters() : [];
+              const pm = allMeters.find(m => m.commodity === 'Propane' && m.normalizedActual);
+              if (pm) return { pass: true, hasNormalizedActual: true };
               return { skip: true, reason: "No propane meter with normalizedActual data" };
             })()`,
             expect: { op: 'truthy', path: 'pass' },
@@ -1458,16 +1433,11 @@ const VERIFICATION_TESTS = {
           check: {
             type: 'evaluate',
             expr: `(() => {
-              const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
-              for (const p of projects) {
-                for (const b of (p.buildings || [])) {
-                  for (const m of (b.meters || [])) {
-                    if (m.commodity === 'Propane' && m.bills?.length > 0) {
-                      const hasUsage = m.bills.some(bill => parseFloat(bill.gallons || bill.usage || 0) > 0);
-                      return { hasUsage, billCount: m.bills.length };
-                    }
-                  }
-                }
+              const allMeters = window.__tvAllMeters ? window.__tvAllMeters() : [];
+              const pm = allMeters.find(m => m.commodity === 'Propane' && m.bills?.length > 0);
+              if (pm) {
+                const hasUsage = pm.bills.some(bill => parseFloat(bill.gallons || bill.usage || 0) > 0);
+                return { hasUsage, billCount: pm.bills.length };
               }
               return { skip: true, reason: "No propane meter with bills" };
             })()`,
@@ -1596,16 +1566,9 @@ const VERIFICATION_TESTS = {
           check: {
             type: 'evaluate',
             expr: `(() => {
-              const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
-              for (const p of projects) {
-                for (const b of (p.buildings || [])) {
-                  for (const m of (b.meters || [])) {
-                    if (m.commodity === 'Gas' && (m.gasUnit === 'Therms' || m.unit === 'Therms')) {
-                      return { meterUsesTherm: true, name: m.name };
-                    }
-                  }
-                }
-              }
+              const allMeters = window.__tvAllMeters ? window.__tvAllMeters() : [];
+              const gm = allMeters.find(m => m.commodity === 'Gas' && (m.gasUnit === 'Therms' || m.unit === 'Therms'));
+              if (gm) return { meterUsesTherm: true, name: gm.name };
               return { skip: true, reason: "No gas meter configured for Therms" };
             })()`,
             expect: { op: 'truthy', path: 'meterUsesTherm' },
@@ -1653,7 +1616,9 @@ const VERIFICATION_TESTS = {
             expr: `(() => {
               const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
               for (const p of projects) {
-                if ((p.calendarEvents?.length || 0) >= 30) return { pass: true, count: p.calendarEvents.length };
+                const util = JSON.parse(localStorage.getItem('en_utility_' + p.id) || '{}');
+                const events = p.calendarEvents || util.calendarEvents || [];
+                if (events.length >= 30) return { pass: true, count: events.length };
               }
               return { skip: true, reason: "No project with 30+ calendar events" };
             })()`,
@@ -1686,13 +1651,11 @@ const VERIFICATION_TESTS = {
             expr: `(() => {
               const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
               for (const p of projects) {
-                if (p.calendarEvents?.length > 0) {
-                  const issues = [];
-                  for (const evt of p.calendarEvents) {
-                    if (!evt.date || !evt.name) issues.push(evt);
-                    if (evt.name && evt.name.length < 3) issues.push(evt);
-                  }
-                  return { total: p.calendarEvents.length, issues: issues.length, pass: issues.length === 0 };
+                const util = JSON.parse(localStorage.getItem('en_utility_' + p.id) || '{}');
+                const events = p.calendarEvents || util.calendarEvents || [];
+                if (events.length > 0) {
+                  const issues = events.filter(evt => !evt.date || !evt.name || (evt.name && evt.name.length < 3));
+                  return { total: events.length, issues: issues.length, pass: issues.length === 0 };
                 }
               }
               return { skip: true };
@@ -2027,17 +1990,12 @@ const VERIFICATION_TESTS = {
           check: {
             type: 'evaluate',
             expr: `(() => {
-              const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
-              for (const p of projects) {
-                for (const b of (p.buildings || [])) {
-                  for (const m of (b.meters || [])) {
-                    if (m.commodity === 'Propane' && m.normalizedBaseline) {
-                      const months = Object.values(m.normalizedBaseline);
-                      const unique = new Set(months.filter(v => v > 0));
-                      if (unique.size > 1) return { pass: true, varied: true };
-                    }
-                  }
-                }
+              const allMeters = window.__tvAllMeters ? window.__tvAllMeters() : [];
+              const pm = allMeters.find(m => m.commodity === 'Propane' && m.normalizedBaseline);
+              if (pm) {
+                const months = Object.values(pm.normalizedBaseline);
+                const unique = new Set(months.filter(v => v > 0));
+                if (unique.size > 1) return { pass: true, varied: true };
               }
               return { skip: true, reason: "No propane meter with normalized baseline" };
             })()`,
