@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.03.2';
+  var CH_VERSION = 'v2026.05.03.3';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -122,33 +122,46 @@
   }
 
   /* ── BACKUP / RESTORE ── */
-  function backupData() {
+  async function backupData() {
     var data = {};
     for (var i = 0; i < localStorage.length; i++) {
       var key = localStorage.key(i);
       data[key] = localStorage.getItem(key);
     }
-    // Also grab sessionStorage (except user session)
     for (var j = 0; j < sessionStorage.length; j++) {
       var skey = sessionStorage.key(j);
       if (skey !== 'ch_user') {
         data['__session__' + skey] = sessionStorage.getItem(skey);
       }
     }
-    var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
     var d = new Date();
     var ds = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
-    a.download = 'CompanyHub-localdatafile-' + ds + '.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(function () {
-      URL.revokeObjectURL(url);
-    }, 1500);
-    if (typeof showToast === 'function') showToast('Backup downloaded');
+    var filename = 'CompanyHub-localdatafile-' + ds + '.json';
+    var content = JSON.stringify(data, null, 2);
+    try {
+      var handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{ description: 'JSON File', accept: { 'application/json': ['.json'] } }],
+      });
+      var writable = await handle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      if (typeof showToast === 'function') showToast('Backup saved');
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+      var blob = new Blob([content], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 1500);
+      if (typeof showToast === 'function') showToast('Backup downloaded');
+    }
   }
 
   function processRestoreFile(file) {
