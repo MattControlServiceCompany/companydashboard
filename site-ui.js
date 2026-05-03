@@ -145,7 +145,9 @@
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTimeout(function () {
+      URL.revokeObjectURL(url);
+    }, 1500);
     if (typeof showToast === 'function') showToast('Backup downloaded');
   }
 
