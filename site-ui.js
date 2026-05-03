@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.03.3';
+  var CH_VERSION = 'v2026.05.03.4';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -122,7 +122,7 @@
   }
 
   /* ── BACKUP / RESTORE ── */
-  async function backupData() {
+  function backupData() {
     var data = {};
     for (var i = 0; i < localStorage.length; i++) {
       var key = localStorage.key(i);
@@ -138,30 +138,18 @@
     var ds = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
     var filename = 'CompanyHub-localdatafile-' + ds + '.json';
     var content = JSON.stringify(data, null, 2);
-    try {
-      var handle = await window.showSaveFilePicker({
-        suggestedName: filename,
-        types: [{ description: 'JSON File', accept: { 'application/json': ['.json'] } }],
-      });
-      var writable = await handle.createWritable();
-      await writable.write(content);
-      await writable.close();
-      if (typeof showToast === 'function') showToast('Backup saved');
-    } catch (e) {
-      if (e.name === 'AbortError') return;
-      var blob = new Blob([content], { type: 'application/json' });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(function () {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 1500);
-      if (typeof showToast === 'function') showToast('Backup downloaded');
-    }
+    var blob = new Blob([content], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 1500);
+    if (typeof showToast === 'function') showToast('Backup downloaded');
   }
 
   function processRestoreFile(file) {
