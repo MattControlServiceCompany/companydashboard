@@ -2140,7 +2140,9 @@
         var url = URL.createObjectURL(blob);
         var a = document.createElement('a');
         a.href = url;
-        a.download = 'companyhub-backup-' + new Date().toISOString().split('T')[0] + '.json';
+        var d = new Date();
+        var ds = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+        a.download = 'CompanyHub-localdatafile-' + ds + '.json';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
