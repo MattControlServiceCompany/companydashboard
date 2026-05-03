@@ -2,95 +2,74 @@
 // Executable via Playwright MCP (browser_evaluate / browser_snapshot)
 // Visual status board: test-verification-runner.html
 
+// Helper: gets all buildings/meters/bills across all projects.
+// Data model: en_projects has project metadata; en_utility_<id> has actual utility data.
+function _getAllMeters() {
+  const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
+  const meters = [];
+  for (const p of projects) {
+    const utilData = JSON.parse(localStorage.getItem('en_utility_' + p.id) || '{}');
+    for (const b of utilData.buildings || p.buildings || []) {
+      for (const m of b.meters || []) {
+        meters.push({ ...m, buildingName: b.name, projectName: p.name, projectId: p.id });
+      }
+    }
+  }
+  return meters;
+}
+
+function _getProjects() {
+  return JSON.parse(localStorage.getItem('en_projects') || '[]');
+}
+
+function _getUtilData(projectId) {
+  return JSON.parse(localStorage.getItem('en_utility_' + projectId) || '{}');
+}
+
 const PREREQ_CHECKS = {
   'electric-meter-with-bills': () => {
-    const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
-    for (const p of projects) {
-      for (const b of p.buildings || []) {
-        for (const m of b.meters || []) {
-          if (m.commodity === 'Electric' && (m.bills?.length || 0) >= 3) return true;
-        }
-      }
-    }
-    return false;
+    return _getAllMeters().some((m) => m.commodity === 'Electric' && (m.bills?.length || 0) >= 3);
   },
   'gas-meter-with-bills': () => {
-    const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
-    for (const p of projects) {
-      for (const b of p.buildings || []) {
-        for (const m of b.meters || []) {
-          if (m.commodity === 'Gas' && (m.bills?.length || 0) >= 3) return true;
-        }
-      }
-    }
-    return false;
+    return _getAllMeters().some((m) => m.commodity === 'Gas' && (m.bills?.length || 0) >= 3);
   },
   'project-with-baseline': () => {
-    const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
-    for (const p of projects) {
-      for (const b of p.buildings || []) {
-        for (const m of b.meters || []) {
-          if (m.baselineStart && m.baselineEnd) return true;
-        }
-      }
-    }
-    return false;
+    return _getAllMeters().some((m) => m.baselineStart && m.baselineEnd);
   },
   'project-with-calendar': () => {
-    const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
+    const projects = _getProjects();
     return projects.some((p) => (p.calendarEvents?.length || 0) > 0);
   },
   'propane-meter': () => {
-    const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
-    for (const p of projects) {
-      for (const b of p.buildings || []) {
-        for (const m of b.meters || []) {
-          if (m.commodity === 'Propane' && (m.bills?.length || 0) >= 1) return true;
-        }
-      }
-    }
-    return false;
+    return _getAllMeters().some((m) => m.commodity === 'Propane' && (m.bills?.length || 0) >= 1);
   },
   'water-meter-with-bills': () => {
-    const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
-    for (const p of projects) {
-      for (const b of p.buildings || []) {
-        for (const m of b.meters || []) {
-          if (m.commodity === 'Water' && (m.bills?.length || 0) >= 3) return true;
-        }
-      }
-    }
-    return false;
+    return _getAllMeters().some((m) => m.commodity === 'Water' && (m.bills?.length || 0) >= 3);
   },
   'sewer-meter': () => {
-    const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
-    for (const p of projects) {
-      for (const b of p.buildings || []) {
-        for (const m of b.meters || []) {
-          if (m.commodity === 'Sewer' && (m.bills?.length || 0) >= 1) return true;
-        }
-      }
-    }
-    return false;
+    return _getAllMeters().some((m) => m.commodity === 'Sewer' && (m.bills?.length || 0) >= 1);
   },
   'project-with-savings-measures': () => {
-    const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
+    const projects = _getProjects();
     return projects.some((p) => (p.savingsMeasures?.length || 0) > 0);
   },
   'project-with-buildings': () => {
-    const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
-    return projects.some((p) => (p.buildings?.length || 0) >= 2);
+    const projects = _getProjects();
+    return projects.some((p) => {
+      const util = _getUtilData(p.id);
+      return (util.buildings?.length || 0) >= 2;
+    });
   },
   'service-agreements': () => {
     const data = JSON.parse(localStorage.getItem('sv_saData') || '[]');
     return data.length > 0;
   },
   'saved-pdf-bills': () => {
-    const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
+    const projects = _getProjects();
     return projects.some((p) => (p.savedBills?.length || 0) > 0);
   },
   'project-with-settings': () => {
-    const projects = JSON.parse(localStorage.getItem('en_projects') || '[]');
+    const projects = _getProjects();
     return projects.some((p) => p.escalation || p.cscCompensation || p.contractYears);
   },
 };
