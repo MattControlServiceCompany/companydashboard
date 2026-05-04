@@ -48281,6 +48281,21 @@
           if (bSqft <= 0) return;
           const byrs = bldgYearData[b.name];
           if (!byrs) return;
+          // Build per-building baseline reference for each calendar month
+          const bBlKbtu = new Array(12).fill(0);
+          const bBlCount = new Array(12).fill(0);
+          const maxBlYr = Math.max(...blYears);
+          for (const blY of blYears) {
+            const bd = byrs[blY];
+            if (!bd) continue;
+            for (let mi = 0; mi < 12; mi++) {
+              if (bd.kwh[mi] > 0 || bd.gas[mi] > 0) {
+                bBlKbtu[mi] += bd.kwh[mi] * 3.412 + bd.gas[mi] * 100;
+                bBlCount[mi]++;
+              }
+            }
+          }
+          const bBlAvg = bBlKbtu.map((v, mi) => (bBlCount[mi] > 0 ? v / bBlCount[mi] : 0));
           const bYms = [];
           for (const y of sortedYears) {
             const bd = byrs[y];
@@ -48288,8 +48303,7 @@
             for (let mi = 0; mi < 12; mi++) {
               if (bd.kwh[mi] > 0 || bd.gas[mi] > 0) {
                 const moKbtu = bd.kwh[mi] * 3.412 + bd.gas[mi] * 100;
-                const blRef = blKbtuPerMo[mi];
-                if (blRef > 0 && moKbtu < blRef * 0.25) continue;
+                if (bBlAvg[mi] > 0 && moKbtu < bBlAvg[mi] * 0.25) continue;
                 bYms.push({ kwh: bd.kwh[mi], gas: bd.gas[mi], cost: bd.cost[mi] });
               }
             }
@@ -48438,10 +48452,7 @@
                             const bkbtu = bkwh * 3.412 + bgas * 100;
                             let moCount = 0;
                             for (let mi = 0; mi < 12; mi++) {
-                              if (bd.kwh[mi] > 0 || bd.gas[mi] > 0) {
-                                const mk = bd.kwh[mi] * 3.412 + bd.gas[mi] * 100;
-                                if (blKbtuPerMo[mi] <= 0 || mk >= blKbtuPerMo[mi] * 0.25) moCount++;
-                              }
+                              if (bd.kwh[mi] > 0 || bd.gas[mi] > 0) moCount++;
                             }
                             const beui = bSqft > 0 && moCount > 0 ? ((bkbtu / moCount) * 12) / bSqft : 0;
                             return { y, bkwh, bkw, bgas, bcost, beui, moCount };
