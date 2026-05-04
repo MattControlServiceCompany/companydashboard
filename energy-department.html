@@ -11381,13 +11381,7 @@
       </div>
 
       <!-- TASK MODAL -->
-      <div
-        class="modal-bg"
-        id="taskModal"
-        role="presentation"
-        aria-label="Task dialog"
-        onclick="if (event.target === this) closeTaskModal();"
-      >
+      <div class="modal-bg" id="taskModal" role="presentation" aria-label="Task dialog">
         <div class="modal" role="dialog" aria-modal="true" style="width: 420px">
           <div class="modal-hdr">
             <span class="modal-title" id="taskModalTitle">+ Add Task</span
@@ -11425,13 +11419,7 @@
       </div>
 
       <!-- EQUIPMENT MODAL -->
-      <div
-        class="modal-bg"
-        id="equipModal"
-        role="presentation"
-        aria-label="Equipment dialog"
-        onclick="if (event.target === this) closeEquipModal();"
-      >
+      <div class="modal-bg" id="equipModal" role="presentation" aria-label="Equipment dialog">
         <div class="modal" role="dialog" aria-modal="true" style="width: 480px">
           <div class="modal-hdr">
             <span class="modal-title">+ Add Equipment</span
@@ -32428,7 +32416,7 @@
           { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
         ],
         Water: [
-          { label: 'Usage', type: 'number', w: 100, compute: (r) => _pfBills(r.waterUsage) },
+          { label: 'Usage (gal)', type: 'number', w: 100, compute: (r) => _pfBills(r.waterUsage) },
           {
             label: 'Water Cost $',
             type: 'currency',
@@ -32438,7 +32426,7 @@
           { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
         ],
         Sewer: [
-          { label: 'Usage', type: 'number', w: 100, compute: (r) => _pfBills(r.sewerUsage) },
+          { label: 'Usage (gal)', type: 'number', w: 100, compute: (r) => _pfBills(r.sewerUsage) },
           { label: 'Sewer Cost $', type: 'currency', w: 110, compute: (r) => _pfBills(r.sewerCharge) },
           { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
         ],
@@ -35240,7 +35228,7 @@
           // ── Chart section ──
           const chartSection = udNormChartVis
             ? '<div style="margin-bottom:16px">' +
-              '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">' +
+              '<div class="chart-title" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">' +
               chartLabel +
               '</div>' +
               '<div class="ma-chart-wrap" style="padding:12px"><canvas id="normChart"></canvas></div>' +
@@ -37964,8 +37952,7 @@
           <!-- Results -->
           <div id="bp-results"></div>`;
 
-        // Defer recalc until after caller appends pane to DOM
-        setTimeout(() => bpRecalc(), 100);
+        // Caller (line 13819) handles bpRecalc() after DOM append
       }
 
       let _bpView = 'monthly';
@@ -39546,7 +39533,7 @@
         const kwCostHdr = hasKwCost ? '<th class="num">Act kW × Rate</th>' : '';
         const kwCostSavHdr = hasKwCostSav ? '<th class="num">kW Savings ($)</th>' : '';
         const kwhRateHdr = hasKwhCostSav ? '<th class="num">Actual $/kWh</th>' : '';
-        const expKwhCostHdr = hasKwhCostSav ? '<th class="num">Projected Savings</th>' : '';
+        const expKwhCostHdr = hasKwhCostSav ? '<th class="num">Expected kWh Cost</th>' : '';
         const actKwhCostHdr = hasKwhCostSav ? '<th class="num">Act kWh × Rate</th>' : '';
         const kwhCostSavHdr = hasKwhCostSav ? '<th class="num">kWh Savings ($)</th>' : '';
         const totalCostSavHdr = hasTotalCostSav ? '<th class="num">Total Savings ($)</th>' : '';
@@ -41157,7 +41144,10 @@
         const row = m.bills?.find((r) => r.id === billId);
         if (!row) return;
         const schema = _billSchemaFor(m.commodity).filter((e) => !e.section);
-        const pane = document.getElementById('udMeterWorkspace');
+        const _wrap = window._udActiveWrap || document.getElementById('udDetailWrap');
+        const pane = _wrap
+          ? _wrap.querySelector('#udMeterWorkspace, #maMeterWorkspace, [id*="MeterWorkspace"]')
+          : document.getElementById('udMeterWorkspace');
         if (!pane) return;
 
         const pdfAvail = (row.hasPDF || row.pdfKey) && (row.pdfBillId || row.pdfKey);

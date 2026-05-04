@@ -1175,7 +1175,7 @@ const VERIFICATION_TESTS = {
               const lastRow = rows[rows.length - 1];
               if (!lastRow) return { skip: true };
               const cells = lastRow.querySelectorAll('td');
-              const isTotal = lastRow.textContent.includes('Total') || lastRow.classList.contains('total-row');
+              const isTotal = lastRow.textContent.toLowerCase().includes('total') || lastRow.classList.contains('total-row');
               const hasValues = Array.from(cells).slice(1).some(c => parseFloat(c.textContent.replace(/,/g,'')) > 0);
               return { isTotal, hasValues, pass: isTotal && hasValues };
             })()`,
