@@ -48125,12 +48125,20 @@
         const sortedYears = Object.keys(yearData).map(Number).sort();
         const latestYear = sortedYears.length > 0 ? sortedYears[sortedYears.length - 1] : null;
 
-        // Build a flat list of all year-months with actual data, sorted newest first
+        // Build baseline kBtu per calendar month for completeness checks
+        const blKbtuPerMo = blKwhAvg.map((v, mi) => v * 3.412 + blGasAvg[mi] * 100);
+
+        // Build a flat list of year-months with complete data, sorted chronologically.
+        // A month is "complete" if its kBtu is at least 25% of the baseline average
+        // for that calendar month — filters out straddling bills that barely touch a month.
         const allYms = [];
         for (const y of sortedYears) {
           const yd = yearData[y];
           for (let mi = 0; mi < 12; mi++) {
             if (yd.kwh[mi] > 0 || yd.gas[mi] > 0) {
+              const moKbtu = yd.kwh[mi] * 3.412 + yd.gas[mi] * 100;
+              const blRef = blKbtuPerMo[mi];
+              if (blRef > 0 && moKbtu < blRef * 0.25) continue;
               allYms.push({ y, mi, kwh: yd.kwh[mi], gas: yd.gas[mi], cost: yd.cost[mi] });
             }
           }
@@ -48163,7 +48171,11 @@
           const yd = yearData[y];
           for (let qi = 3; qi >= 0; qi--) {
             const ms = qMonthRanges[qi];
-            const hasAll = ms.every((mi) => yd.kwh[mi] > 0 || yd.gas[mi] > 0);
+            const hasAll = ms.every((mi) => {
+              if (yd.kwh[mi] <= 0 && yd.gas[mi] <= 0) return false;
+              const moKbtu = yd.kwh[mi] * 3.412 + yd.gas[mi] * 100;
+              return blKbtuPerMo[mi] <= 0 || moKbtu >= blKbtuPerMo[mi] * 0.25;
+            });
             if (hasAll) {
               let qKbtu = 0;
               ms.forEach((mi) => {
@@ -48693,6 +48705,8 @@
                   const actKbtu = yd.kwh[mi] * 3.412 + yd.gas[mi] * 100;
                   qActKbtu += actKbtu;
                   if (yd.kwh[mi] > 0 || yd.gas[mi] > 0) {
+                    const blRef = blKbtuPerMo[mi];
+                    if (blRef > 0 && actKbtu < blRef * 0.25) continue;
                     hasActualData = true;
                     moWithData++;
                   }
