@@ -12003,6 +12003,13 @@
         projects.forEach((p) => {
           if (!p.meetings) p.meetings = [];
           if (!p.recurringMeetings) p.recurringMeetings = [];
+          // Migrate activeCommodities → shownCommodities + calcCommodities
+          if (Array.isArray(p.activeCommodities) && !p.calcCommodities) {
+            p.shownCommodities = [...ALL_COMMODITIES];
+            p.calcCommodities = [...p.activeCommodities];
+            delete p.activeCommodities;
+            sset('en_projects', projects);
+          }
         });
         checkRecurringMeetings();
         buildWeekStrip();
@@ -12791,20 +12798,26 @@
             </div>
             <div id="ptab-settings" class="ptab" style="padding:16px;overflow-y:auto">
               <div style="display:flex;flex-wrap:wrap;gap:16px">
-              <div class="card" style="max-width:480px;flex:1;min-width:280px">
-                <div class="card-hdr"><span class="card-title">⚡ Active Commodity Types</span></div>
+              <div class="card" style="max-width:560px;flex:1;min-width:280px">
+                <div class="card-hdr"><span class="card-title">⚡ Commodity Types</span></div>
                 <div style="padding:14px">
                   <div style="font-size:12px;color:var(--text2);margin-bottom:14px">
-                    Choose which commodity types are tracked for this project. Unchecked types will be hidden from meter lists and performance calculations.
+                    <strong>Show</strong> — whether meters appear in Utility Data and Baseline tables.<br>
+                    <strong>Include in Calculations</strong> — whether the commodity is used in baseline, savings, and performance math.
                   </div>
-                  <div id="ptab-settings-commodities-${p.id}" style="display:flex;flex-direction:column;gap:10px">
-                    ${ALL_COMMODITIES.map((c) => {
-                      const checked = !Array.isArray(p.activeCommodities) || p.activeCommodities.includes(c);
-                      return `<label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
-                        <input type="checkbox" ${checked ? 'checked' : ''} value="${c}" onchange="toggleProjCommodity(${p.id},'${c}',this.checked)" style="width:16px;height:16px;cursor:pointer">
-                        <span>${c}</span>
-                      </label>`;
-                    }).join('')}
+                  <div id="ptab-settings-commodities-${p.id}">
+                    <div style="display:grid;grid-template-columns:1fr auto auto;gap:6px 16px;align-items:center;font-size:13px">
+                      <div style="font-weight:600;font-size:11px;color:var(--text3);text-transform:uppercase">Commodity</div>
+                      <div style="font-weight:600;font-size:11px;color:var(--text3);text-transform:uppercase;text-align:center">Show</div>
+                      <div style="font-weight:600;font-size:11px;color:var(--text3);text-transform:uppercase;text-align:center">Calculations</div>
+                      ${ALL_COMMODITIES.map((c) => {
+                        const shown = !Array.isArray(p.shownCommodities) || p.shownCommodities.includes(c);
+                        const calc = !Array.isArray(p.calcCommodities) || p.calcCommodities.includes(c);
+                        return `<div>${c}</div>
+                          <div style="text-align:center"><input type="checkbox" ${shown ? 'checked' : ''} onchange="toggleProjCommodityShown(${p.id},'${c}',this.checked)" style="width:16px;height:16px;cursor:pointer"></div>
+                          <div style="text-align:center"><input type="checkbox" ${calc ? 'checked' : ''} onchange="toggleProjCommodityCalc(${p.id},'${c}',this.checked)" style="width:16px;height:16px;cursor:pointer"></div>`;
+                      }).join('')}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -12886,7 +12899,7 @@
         bldgs.forEach((b) =>
           (b.meters || []).forEach((m) => {
             if (m.baselineInclude === false) return;
-            if (!isActiveCommodity(projId, m.commodity)) return;
+            if (!isCalcCommodity(projId, m.commodity)) return;
             const blBills = _dashGetBaselineBills(m);
             blBills.forEach((bill) => {
               blCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
@@ -13025,7 +13038,7 @@
             for (let i = 0; i < 12; i++) bldgMoBase[i] = 0;
             meters.forEach((m) => {
               if (m.baselineInclude === false) return;
-              if (!isActiveCommodity(projId, m.commodity)) return;
+              if (!isCalcCommodity(projId, m.commodity)) return;
               const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
               const incl = m.inclusive !== false;
               const bl = m.baseline;
@@ -13077,7 +13090,7 @@
             // Actual path: existing raw totalCost comparison
             meters.forEach((m) => {
               if (m.baselineInclude === false) return;
-              if (!isActiveCommodity(projId, m.commodity)) return;
+              if (!isCalcCommodity(projId, m.commodity)) return;
               const blBills = _dashGetBaselineBills(m);
               if (blBills.length) hasBaseline = true;
               blBills.forEach((bill) => {
@@ -13470,14 +13483,16 @@
       /* ── COMMODITY TYPES ── */
       const ALL_COMMODITIES = ['Electric', 'Gas', 'Water', 'Steam', 'Sewer', 'Stormwater', 'Propane'];
 
-      /**
-       * Returns true if the given commodity is active for the project.
-       * Defaults to true for all commodities if activeCommodities is not set (backward compatible).
-       */
-      function isActiveCommodity(projectId, commodity) {
+      function isShownCommodity(projectId, commodity) {
         const p = projects.find((x) => x.id === projectId);
-        if (!p || !Array.isArray(p.activeCommodities)) return true;
-        return p.activeCommodities.includes(commodity);
+        if (!p || !Array.isArray(p.shownCommodities)) return true;
+        return p.shownCommodities.includes(commodity);
+      }
+
+      function isCalcCommodity(projectId, commodity) {
+        const p = projects.find((x) => x.id === projectId);
+        if (!p || !Array.isArray(p.calcCommodities)) return true;
+        return p.calcCommodities.includes(commodity);
       }
 
       /* ── PROJECT TAB ORDER (draggable) ── */
@@ -13639,24 +13654,30 @@
         saveProjSession();
       }
 
-      /**
-       * Toggle an individual commodity on/off for a project.
-       * Called by the checkboxes in the Settings tab.
-       */
-      function toggleProjCommodity(projId, commodity, checked) {
+      function toggleProjCommodityShown(projId, commodity, checked) {
         const p = projects.find((x) => x.id === projId);
         if (!p) return;
-        // If activeCommodities hasn't been set yet, default to all active
-        if (!Array.isArray(p.activeCommodities)) {
-          p.activeCommodities = [...ALL_COMMODITIES];
-        }
+        if (!Array.isArray(p.shownCommodities)) p.shownCommodities = [...ALL_COMMODITIES];
         if (checked) {
-          if (!p.activeCommodities.includes(commodity)) p.activeCommodities.push(commodity);
+          if (!p.shownCommodities.includes(commodity)) p.shownCommodities.push(commodity);
         } else {
-          p.activeCommodities = p.activeCommodities.filter((c) => c !== commodity);
+          p.shownCommodities = p.shownCommodities.filter((c) => c !== commodity);
         }
         sset('en_projects', projects);
-        showToast(commodity + (checked ? ' enabled' : ' disabled') + ' ✓');
+        showToast(commodity + ' visibility ' + (checked ? 'on' : 'off') + ' ✓');
+      }
+
+      function toggleProjCommodityCalc(projId, commodity, checked) {
+        const p = projects.find((x) => x.id === projId);
+        if (!p) return;
+        if (!Array.isArray(p.calcCommodities)) p.calcCommodities = [...ALL_COMMODITIES];
+        if (checked) {
+          if (!p.calcCommodities.includes(commodity)) p.calcCommodities.push(commodity);
+        } else {
+          p.calcCommodities = p.calcCommodities.filter((c) => c !== commodity);
+        }
+        sset('en_projects', projects);
+        showToast(commodity + ' calculations ' + (checked ? 'included' : 'excluded') + ' ✓');
       }
 
       function updateProjPerfSetting(projId, field, value) {
@@ -31922,7 +31943,7 @@
           hdrSub.innerHTML = parts.join('');
         }
 
-        const meters = (b.meters || []).filter((m) => isActiveCommodity(udSelProjId, m.commodity));
+        const meters = (b.meters || []).filter((m) => isShownCommodity(udSelProjId, m.commodity));
         if (!meters.length) {
           wrap.innerHTML =
             '<div class="ud-empty"><div class="ud-empty-ico">⚡</div><div>No meters yet.<br><button class="btn btn-em btn-sm" style="margin-top:12px" onclick="openMeterModal(null,\'' +
@@ -36734,7 +36755,7 @@
           return;
         }
 
-        const meters = b.meters || [];
+        const meters = (b.meters || []).filter((m) => isShownCommodity(udSelProjId, m.commodity));
         const { byYm: weatherByYm } = getWeatherForBuilding();
         const sqft = parseInt(b.sqft) || 0;
         const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -48005,6 +48026,7 @@
           if (!bldgYearData[bName]) bldgYearData[bName] = {};
           (b.meters || []).forEach((m) => {
             if (m.baselineInclude === false) return;
+            if (!isCalcCommodity(projId, m.commodity)) return;
             const isElec = m.commodity === 'Electric';
             const isGas = m.commodity === 'Gas';
             const bl = m.baseline || {};
