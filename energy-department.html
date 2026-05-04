@@ -49571,81 +49571,102 @@
         const yrsToShow = p.showPreBaselineYears
           ? sortedYears.slice(-4)
           : sortedYears.filter((y) => y >= maxBlYear2).slice(-4);
-        const maxKwh = Math.max(...yrsToShow.flatMap((y) => yearData[y]?.kwh || [0]), 1);
-        const maxGas = Math.max(...yrsToShow.flatMap((y) => yearData[y]?.gas || [0]), 1);
-        const maxPropane = Math.max(...yrsToShow.flatMap((y) => yearData[y]?.propane || [0]), 1);
-        const barW = yrsToShow.length > 0 ? Math.max(6, Math.floor(60 / yrsToShow.length)) : 30;
-        const _fmtK = (v) =>
-          v >= 1000000
-            ? (v / 1000000).toFixed(1) + 'M'
-            : v >= 1000
-              ? Math.round(v / 1000) + 'K'
-              : Math.round(v).toString();
-
-        function _buildYoyChart(title, icon, unit, field, maxVal, blAvgArr) {
-          const legendHtml = yrsToShow
-            .map((y, i) => {
-              const isBl = blYears.has(y);
-              const swatch = isBl
-                ? `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:repeating-linear-gradient(45deg,${yrColors[i % yrColors.length]},${yrColors[i % yrColors.length]} 2px,transparent 2px,transparent 4px);border:1px solid ${yrColors[i % yrColors.length]};margin-right:3px"></span>`
-                : `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${yrColors[i % yrColors.length]};margin-right:3px"></span>`;
-              return `<span>${swatch}${y}${isBl ? ' (BL)' : ''}</span>`;
-            })
-            .join('');
-
-          const barsHtml = months
-            .map((m, mi) => {
-              const blVal = blAvgArr ? blAvgArr[mi] : 0;
-              let tipLines = blVal > 0 ? 'Baseline: ' + Math.round(blVal).toLocaleString() + ' ' + unit + '\n' : '';
-              tipLines += yrsToShow
-                .map((y) => {
-                  const v = yearData[y]?.[field]?.[mi] || 0;
-                  return y + ': ' + Math.round(v).toLocaleString() + ' ' + unit;
-                })
-                .join('\n');
-              const barsInner = yrsToShow
-                .map((y, yi) => {
-                  const v = yearData[y]?.[field]?.[mi] || 0;
-                  const h = maxVal > 0 ? (v / maxVal) * 110 : 0;
-                  const isBl = blYears.has(y);
-                  const bg = isBl
-                    ? `repeating-linear-gradient(45deg,${yrColors[yi % yrColors.length]},${yrColors[yi % yrColors.length]} 3px,rgba(255,255,255,0.15) 3px,rgba(255,255,255,0.15) 6px)`
-                    : yrColors[yi % yrColors.length];
-                  const label =
-                    v > 0
-                      ? `<div style="font-size:7px;color:var(--text3);text-align:center;white-space:nowrap;margin-bottom:1px">${_fmtK(v)}</div>`
-                      : '';
-                  return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;width:${barW}%">${label}<div style="width:100%;background:${bg};border-radius:2px 2px 0 0;height:${h}px;min-height:${v > 0 ? 2 : 0}px;opacity:${isBl ? '0.65' : '0.85'}"></div></div>`;
-                })
-                .join('');
-              const blLineH = blVal > 0 && maxVal > 0 ? (blVal / maxVal) * 110 : 0;
-              const blLine =
-                blLineH > 0
-                  ? `<div style="position:absolute;bottom:0;left:0;right:0;height:${blLineH}px;border-top:2px dashed var(--amber);pointer-events:none;opacity:0.7"></div>`
-                  : '';
-              return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px" title="${m}\n${tipLines}">
-              <div style="display:flex;align-items:flex-end;gap:1px;flex:1;width:100%;justify-content:center;position:relative">${barsInner}${blLine}</div>
-              <div style="font-size:9px;color:var(--text3)">${m}</div>
-            </div>`;
-            })
-            .join('');
-
+        const _yoyChartsToDraw = [];
+        let _yoyChartCount = 0;
+        function _yoyHtml(title, icon, unit, field, blAvgArr) {
+          const cid = `egfx-yoy-${projId}-${_yoyChartCount++}`;
+          _yoyChartsToDraw.push({ cid, field, unit, blAvgArr });
           return `<div class="card" style="background:var(--s1);padding:14px;margin-bottom:12px">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-              <div style="font-size:12px;font-weight:700;color:var(--text2)">${icon} Monthly ${title} — Year over Year</div>
-              <div style="display:flex;gap:10px;font-size:10px">${legendHtml}${blAvgArr ? '<span><span style="display:inline-block;width:12px;border-top:2px dashed var(--amber);margin-right:3px;vertical-align:middle"></span>Baseline</span>' : ''}</div>
-            </div>
-            <div style="display:flex;align-items:flex-end;gap:2px;height:150px">${barsHtml}</div>
+            <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">${icon} Monthly ${title} — Year over Year</div>
+            <div style="position:relative"><canvas id="${cid}"></canvas></div>
           </div>`;
+        }
+
+        function _drawYoyChart(canvasId, field, unit, blAvgArr) {
+          const canvas = document.getElementById(canvasId);
+          if (!canvas) return;
+          if (_maCharts[canvasId]) _maCharts[canvasId].destroy();
+
+          const datasets = [];
+          yrsToShow.forEach((y, i) => {
+            const isBl = blYears.has(y);
+            const color = yrColors[i % yrColors.length];
+            datasets.push({
+              label: y + (isBl ? ' (BL)' : ''),
+              data: months.map((_, mi) => yearData[y]?.[field]?.[mi] || 0),
+              backgroundColor: color + (isBl ? 'A6' : 'D9'),
+              borderColor: color,
+              borderWidth: 1,
+              borderRadius: 3,
+              order: 2,
+            });
+          });
+
+          if (blAvgArr) {
+            datasets.push({
+              label: 'Baseline Avg',
+              data: blAvgArr.map((v) => (v > 0 ? v : null)),
+              type: 'line',
+              borderColor: 'rgba(245,158,11,0.85)',
+              borderWidth: 2,
+              borderDash: [6, 3],
+              pointRadius: 0,
+              fill: false,
+              order: 1,
+            });
+          }
+
+          _maCharts[canvasId] = new Chart(canvas, {
+            type: 'bar',
+            data: { labels: months, datasets },
+            options: {
+              responsive: true,
+              maintainAspectRatio: true,
+              interaction: { mode: 'index', intersect: false },
+              plugins: {
+                legend: {
+                  display: true,
+                  labels: {
+                    color: 'rgba(200,210,230,0.85)',
+                    font: { size: 10 },
+                    boxWidth: 12,
+                    padding: 10,
+                  },
+                },
+                tooltip: {
+                  mode: 'index',
+                  intersect: false,
+                  callbacks: {
+                    label: (ctx) => {
+                      const v = ctx.parsed.y;
+                      if (v == null) return null;
+                      return ctx.dataset.label + ': ' + Math.round(v).toLocaleString() + ' ' + unit;
+                    },
+                  },
+                },
+              },
+              scales: {
+                x: {
+                  ticks: { font: { size: 10 }, maxRotation: 45 },
+                  grid: { color: 'rgba(255,255,255,0.10)' },
+                },
+                y: {
+                  ticks: { font: { size: 10 } },
+                  grid: { color: 'rgba(255,255,255,0.06)' },
+                  title: { display: true, text: unit, font: { size: 10 } },
+                },
+              },
+            },
+          });
         }
 
         const hasGas = totalBlGas > 0 || sortedYears.some((y) => yearData[y].gas.some((g) => g > 0));
         const hasPropane = totalBlPropane > 0 || sortedYears.some((y) => yearData[y].propane.some((g) => g > 0));
 
         chartsEl.innerHTML = `
-          ${_buildYoyChart('Electric kWh', '⚡', 'kWh', 'kwh', maxKwh, blKwhAvg)}
-          ${hasGas ? _buildYoyChart('Gas Therms', '🔥', 'therms', 'gas', maxGas, blGasAvg) : ''}
-          ${hasPropane ? _buildYoyChart('Propane Gallons', '🛢️', 'gal', 'propane', maxPropane, blPropaneAvg) : ''}
+          ${_yoyHtml('Electric kWh', '⚡', 'kWh', 'kwh', blKwhAvg)}
+          ${hasGas ? _yoyHtml('Gas Therms', '🔥', 'therms', 'gas', blGasAvg) : ''}
+          ${hasPropane ? _yoyHtml('Propane Gallons', '🛢️', 'gal', 'propane', blPropaneAvg) : ''}
           <div class="card" style="background:var(--s1);padding:14px">
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📊 Annual Summary by Year</div>
             <div style="overflow-x:auto">
@@ -50091,7 +50112,183 @@
             }
             qHtml += '</tbody></table></div></div>';
             return qHtml;
+          })()}
+          ${(() => {
+            if (blEui === 0) return '';
+            const blYearList = [...blYears].sort();
+            const blPeriod =
+              blYearList.length === 1 ? String(blYearList[0]) : blYearList[0] + '–' + blYearList[blYearList.length - 1];
+            const hasPropaneBL = totalBlPropane > 0;
+            const blCostAvg2 = blCost.map((v, mi) => v / (blYmPerMo[mi].size || 1));
+            let tbl = '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">';
+            tbl +=
+              '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📋 Baseline Monthly Data — Project Level</div>';
+            tbl +=
+              '<div style="font-size:10px;color:var(--text3);margin-bottom:10px">Averaged monthly values for baseline period: ' +
+              blPeriod +
+              '</div>';
+            tbl += '<div style="overflow-x:auto"><table class="dtbl" style="min-width:500px">';
+            tbl += '<thead><tr><th>Month</th>';
+            if (totalBlKwh > 0) tbl += '<th style="text-align:right">kWh</th>';
+            tbl += '<th style="text-align:right">Peak kW</th>';
+            if (totalBlGas > 0) tbl += '<th style="text-align:right">Therms</th>';
+            if (hasPropaneBL) tbl += '<th style="text-align:right">Propane Gal</th>';
+            tbl += '<th style="text-align:right">kBtu</th><th style="text-align:right">Cost</th></tr></thead><tbody>';
+            let totKwh = 0,
+              totKw = 0,
+              totGas = 0,
+              totProp = 0,
+              totKbtu = 0,
+              totCost = 0;
+            for (let mi = 0; mi < 12; mi++) {
+              const mkbtu = blKwhAvg[mi] * 3.412 + blGasAvg[mi] * 100 + blPropaneAvg[mi] * 91.5;
+              const mcost = blCostAvg2[mi];
+              const mkw = blKw[mi];
+              totKwh += blKwhAvg[mi];
+              totKw = Math.max(totKw, mkw);
+              totGas += blGasAvg[mi];
+              totProp += blPropaneAvg[mi];
+              totKbtu += mkbtu;
+              totCost += mcost;
+              tbl += '<tr><td>' + months[mi] + '</td>';
+              if (totalBlKwh > 0)
+                tbl +=
+                  '<td style="text-align:right;font-family:var(--mono)">' +
+                  Math.round(blKwhAvg[mi]).toLocaleString() +
+                  '</td>';
+              tbl += '<td style="text-align:right;font-family:var(--mono)">' + mkw.toFixed(1) + '</td>';
+              if (totalBlGas > 0)
+                tbl +=
+                  '<td style="text-align:right;font-family:var(--mono)">' +
+                  Math.round(blGasAvg[mi]).toLocaleString() +
+                  '</td>';
+              if (hasPropaneBL)
+                tbl +=
+                  '<td style="text-align:right;font-family:var(--mono)">' +
+                  Math.round(blPropaneAvg[mi]).toLocaleString() +
+                  '</td>';
+              tbl +=
+                '<td style="text-align:right;font-family:var(--mono)">' + Math.round(mkbtu).toLocaleString() + '</td>';
+              tbl +=
+                '<td style="text-align:right;font-family:var(--mono)">$' +
+                Math.round(mcost).toLocaleString() +
+                '</td></tr>';
+            }
+            tbl += '<tr style="font-weight:700;border-top:2px solid var(--border2)"><td>Total</td>';
+            if (totalBlKwh > 0)
+              tbl +=
+                '<td style="text-align:right;font-family:var(--mono)">' + Math.round(totKwh).toLocaleString() + '</td>';
+            tbl += '<td style="text-align:right;font-family:var(--mono)">' + totKw.toFixed(1) + '</td>';
+            if (totalBlGas > 0)
+              tbl +=
+                '<td style="text-align:right;font-family:var(--mono)">' + Math.round(totGas).toLocaleString() + '</td>';
+            if (hasPropaneBL)
+              tbl +=
+                '<td style="text-align:right;font-family:var(--mono)">' +
+                Math.round(totProp).toLocaleString() +
+                '</td>';
+            tbl +=
+              '<td style="text-align:right;font-family:var(--mono)">' + Math.round(totKbtu).toLocaleString() + '</td>';
+            tbl +=
+              '<td style="text-align:right;font-family:var(--mono)">$' +
+              Math.round(totCost).toLocaleString() +
+              '</td></tr>';
+            tbl += '</tbody></table></div></div>';
+            return tbl;
+          })()}
+          ${(() => {
+            if (blEui === 0 || bldgs.length <= 1) return '';
+            const blYearList = [...blYears].sort();
+            const blPeriod =
+              blYearList.length === 1 ? String(blYearList[0]) : blYearList[0] + '–' + blYearList[blYearList.length - 1];
+            let out = '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">';
+            out +=
+              '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📋 Baseline Monthly Data — Per Building</div>';
+            out +=
+              '<div style="font-size:10px;color:var(--text3);margin-bottom:12px">Averaged monthly values for baseline period: ' +
+              blPeriod +
+              '</div>';
+            bldgs.forEach((b) => {
+              const bName = b.name || 'Unknown';
+              const byrs = bldgYearData[bName];
+              if (!byrs) return;
+              const bBlKwh2 = new Array(12).fill(0),
+                bBlGas2 = new Array(12).fill(0),
+                bBlPropane2 = new Array(12).fill(0),
+                bBlCost2 = new Array(12).fill(0),
+                bBlKw2 = new Array(12).fill(0),
+                bBlCount2 = new Array(12).fill(0);
+              for (const blY of blYears) {
+                const bd = byrs[blY];
+                if (!bd) continue;
+                for (let mi = 0; mi < 12; mi++) {
+                  if (bd.kwh[mi] > 0 || bd.gas[mi] > 0 || bd.propane[mi] > 0) {
+                    bBlKwh2[mi] += bd.kwh[mi];
+                    bBlGas2[mi] += bd.gas[mi];
+                    bBlPropane2[mi] += bd.propane[mi];
+                    bBlCost2[mi] += bd.cost[mi];
+                    bBlKw2[mi] = Math.max(bBlKw2[mi], bd.kw[mi] || 0);
+                    bBlCount2[mi]++;
+                  }
+                }
+              }
+              const avgKwh = bBlKwh2.map((v, i) => (bBlCount2[i] > 0 ? v / bBlCount2[i] : 0));
+              const avgGas = bBlGas2.map((v, i) => (bBlCount2[i] > 0 ? v / bBlCount2[i] : 0));
+              const avgPropane = bBlPropane2.map((v, i) => (bBlCount2[i] > 0 ? v / bBlCount2[i] : 0));
+              const avgCost = bBlCost2.map((v, i) => (bBlCount2[i] > 0 ? v / bBlCount2[i] : 0));
+              const hasKwh = avgKwh.some((v) => v > 0);
+              const hasGasB = avgGas.some((v) => v > 0);
+              const hasPropB = avgPropane.some((v) => v > 0);
+              if (!hasKwh && !hasGasB && !hasPropB) return;
+              const bSqft = parseInt(b.sqft || 0);
+              out += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border2)">';
+              out += '<div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:6px">' + bName;
+              if (bSqft > 0)
+                out +=
+                  ' <span style="font-size:9px;color:var(--text3);font-weight:400">' +
+                  bSqft.toLocaleString() +
+                  ' ft²</span>';
+              out += '</div>';
+              out += '<div style="overflow-x:auto"><table class="dtbl" style="min-width:400px;font-size:11px">';
+              out += '<thead><tr><th>Month</th>';
+              if (hasKwh) out += '<th style="text-align:right">kWh</th>';
+              if (hasGasB) out += '<th style="text-align:right">Therms</th>';
+              if (hasPropB) out += '<th style="text-align:right">Propane Gal</th>';
+              out += '<th style="text-align:right">Cost</th></tr></thead><tbody>';
+              for (let mi = 0; mi < 12; mi++) {
+                if (avgKwh[mi] === 0 && avgGas[mi] === 0 && avgPropane[mi] === 0) continue;
+                out += '<tr><td>' + months[mi] + '</td>';
+                if (hasKwh)
+                  out +=
+                    '<td style="text-align:right;font-family:var(--mono)">' +
+                    Math.round(avgKwh[mi]).toLocaleString() +
+                    '</td>';
+                if (hasGasB)
+                  out +=
+                    '<td style="text-align:right;font-family:var(--mono)">' +
+                    Math.round(avgGas[mi]).toLocaleString() +
+                    '</td>';
+                if (hasPropB)
+                  out +=
+                    '<td style="text-align:right;font-family:var(--mono)">' +
+                    Math.round(avgPropane[mi]).toLocaleString() +
+                    '</td>';
+                out +=
+                  '<td style="text-align:right;font-family:var(--mono)">$' +
+                  Math.round(avgCost[mi]).toLocaleString() +
+                  '</td></tr>';
+              }
+              out += '</tbody></table></div></div>';
+            });
+            out += '</div>';
+            return out;
           })()}`;
+
+        setTimeout(() => {
+          _yoyChartsToDraw.forEach(({ cid, field, unit, blAvgArr }) => {
+            _drawYoyChart(cid, field, unit, blAvgArr);
+          });
+        }, 120);
       }
       function egfxExport(projId) {
         showToast('Export coming soon');
