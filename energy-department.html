@@ -48353,7 +48353,7 @@
               ? Math.round(v / 1000) + 'K'
               : Math.round(v).toString();
 
-        function _buildYoyChart(title, icon, unit, field, maxVal) {
+        function _buildYoyChart(title, icon, unit, field, maxVal, blAvgArr) {
           const legendHtml = yrsToShow
             .map((y, i) => {
               const isBl = blYears.has(y);
@@ -48366,7 +48366,9 @@
 
           const barsHtml = months
             .map((m, mi) => {
-              const tipLines = yrsToShow
+              const blVal = blAvgArr ? blAvgArr[mi] : 0;
+              let tipLines = blVal > 0 ? 'Baseline: ' + Math.round(blVal).toLocaleString() + ' ' + unit + '\n' : '';
+              tipLines += yrsToShow
                 .map((y) => {
                   const v = yearData[y]?.[field]?.[mi] || 0;
                   return y + ': ' + Math.round(v).toLocaleString() + ' ' + unit;
@@ -48387,8 +48389,13 @@
                   return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;width:${barW}%">${label}<div style="width:100%;background:${bg};border-radius:2px 2px 0 0;height:${h}px;min-height:${v > 0 ? 2 : 0}px;opacity:${isBl ? '0.65' : '0.85'}"></div></div>`;
                 })
                 .join('');
+              const blLineH = blVal > 0 && maxVal > 0 ? (blVal / maxVal) * 110 : 0;
+              const blLine =
+                blLineH > 0
+                  ? `<div style="position:absolute;bottom:0;left:0;right:0;height:${blLineH}px;border-top:2px dashed var(--amber);pointer-events:none;opacity:0.7"></div>`
+                  : '';
               return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px" title="${m}\n${tipLines}">
-              <div style="display:flex;align-items:flex-end;gap:1px;flex:1;width:100%;justify-content:center">${barsInner}</div>
+              <div style="display:flex;align-items:flex-end;gap:1px;flex:1;width:100%;justify-content:center;position:relative">${barsInner}${blLine}</div>
               <div style="font-size:9px;color:var(--text3)">${m}</div>
             </div>`;
             })
@@ -48397,7 +48404,7 @@
           return `<div class="card" style="background:var(--s1);padding:14px;margin-bottom:12px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
               <div style="font-size:12px;font-weight:700;color:var(--text2)">${icon} Monthly ${title} — Year over Year</div>
-              <div style="display:flex;gap:10px;font-size:10px">${legendHtml}</div>
+              <div style="display:flex;gap:10px;font-size:10px">${legendHtml}${blAvgArr ? '<span><span style="display:inline-block;width:12px;border-top:2px dashed var(--amber);margin-right:3px;vertical-align:middle"></span>Baseline</span>' : ''}</div>
             </div>
             <div style="display:flex;align-items:flex-end;gap:2px;height:150px">${barsHtml}</div>
           </div>`;
@@ -48406,8 +48413,8 @@
         const hasGas = totalBlGas > 0 || sortedYears.some((y) => yearData[y].gas.some((g) => g > 0));
 
         chartsEl.innerHTML = `
-          ${_buildYoyChart('Electric kWh', '⚡', 'kWh', 'kwh', maxKwh)}
-          ${hasGas ? _buildYoyChart('Gas Therms', '🔥', 'therms', 'gas', maxGas) : ''}
+          ${_buildYoyChart('Electric kWh', '⚡', 'kWh', 'kwh', maxKwh, blKwhAvg)}
+          ${hasGas ? _buildYoyChart('Gas Therms', '🔥', 'therms', 'gas', maxGas, blGasAvg) : ''}
           <div class="card" style="background:var(--s1);padding:14px">
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📊 Annual Summary by Year</div>
             <div style="overflow-x:auto">
@@ -48625,19 +48632,21 @@
                 if (!bR12 || bR12.eui <= 0) return null;
                 const latestEui = bR12.eui;
                 const latestCostSqft = bR12.costSqft;
-                // Compute per-year EUI for trend (use only complete years)
-                const euiByYr = {};
-                for (const y of yrsToShow) {
-                  if (y == latestYear) continue;
-                  const bd = bldgYearData[b.name]?.[y];
+                // Compute baseline EUI for this building (for trend comparison)
+                let bBlEui = 0;
+                for (const blY of blYears) {
+                  const bd = bldgYearData[b.name]?.[blY];
                   if (!bd) continue;
                   const bkwh = bd.kwh.reduce((a, v) => a + v, 0);
                   const bgas = bd.gas.reduce((a, v) => a + v, 0);
-                  if (bkwh === 0 && bgas === 0) continue;
-                  const bkbtu = bkwh * 3.412 + bgas * 100;
-                  euiByYr[y] = bkbtu / bSqft;
+                  if (bkwh > 0 || bgas > 0) {
+                    let moCount = 0;
+                    for (let mi = 0; mi < 12; mi++) {
+                      if (bd.kwh[mi] > 0 || bd.gas[mi] > 0) moCount++;
+                    }
+                    bBlEui = moCount > 0 ? (((bkwh * 3.412 + bgas * 100) / moCount) * 12) / bSqft : 0;
+                  }
                 }
-                euiByYr[latestYear] = latestEui;
                 // Percentile estimate: where does the building fall?
                 let pctileLabel = '';
                 if (pctiles) {
@@ -48648,18 +48657,15 @@
                 }
                 const estarStatus = estar ? (latestEui <= estar ? '✓ Eligible' : '✗ Above') : '—';
                 const estarColor = estar ? (latestEui <= estar ? 'var(--green)' : 'var(--text3)') : 'var(--text3)';
-                // Trend arrow
-                const yrs = Object.keys(euiByYr).map(Number).sort();
+                // Trend: rolling 12-month EUI vs baseline EUI for this building
                 let trend = '';
-                if (yrs.length >= 2) {
-                  const first = euiByYr[yrs[0]],
-                    last = euiByYr[yrs[yrs.length - 1]];
-                  const chg = first > 0 ? ((last - first) / first) * 100 : 0;
+                if (bBlEui > 0) {
+                  const chg = ((latestEui - bBlEui) / bBlEui) * 100;
                   trend =
                     chg <= -2
-                      ? '<span style="color:var(--green)">↓ ' + Math.abs(chg).toFixed(0) + '%</span>'
+                      ? '<span style="color:var(--green)">↓ ' + Math.abs(chg).toFixed(1) + '%</span>'
                       : chg >= 2
-                        ? '<span style="color:var(--danger)">↑ ' + chg.toFixed(0) + '%</span>'
+                        ? '<span style="color:var(--danger)">↑ ' + chg.toFixed(1) + '%</span>'
                         : '<span style="color:var(--text3)">→ flat</span>';
                 }
                 return {
@@ -48735,7 +48741,7 @@
                 EUI = kBtu/ft²/yr · CBECS = DOE Commercial Buildings Energy Consumption Survey national median ·
                 EnergyStar = Score 75 threshold (minimum for certification) ·
                 Percentile = estimated position in CBECS distribution ·
-                $/ft² = annual energy cost per square foot · Trend = EUI change across available years
+                $/ft² = annual energy cost per square foot · Trend = rolling 12-month EUI vs baseline EUI
               </div>`
                   : ''
               }
@@ -48753,60 +48759,83 @@
               [9, 10, 11],
             ];
 
+            const hasElec = totalBlKwh > 0 || sortedYears.some((y) => yearData[y].kwh.some((v) => v > 0));
+            const hasGasQ = totalBlGas > 0 || sortedYears.some((y) => yearData[y].gas.some((v) => v > 0));
             let qHtml = '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">';
             qHtml +=
               '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📅 Quarterly Savings vs Baseline</div>';
             qHtml += '<div style="overflow-x:auto"><table class="dtbl" style="min-width:500px">';
+            qHtml += '<thead><tr><th>Year</th><th>Quarter</th>';
+            if (hasElec)
+              qHtml += '<th style="text-align:right">BL kWh</th><th style="text-align:right">Actual kWh</th>';
+            if (hasGasQ)
+              qHtml += '<th style="text-align:right">BL Therms</th><th style="text-align:right">Actual Therms</th>';
             qHtml +=
-              '<thead><tr><th>Year</th><th>Quarter</th><th style="text-align:right">Baseline kBtu</th><th style="text-align:right">Actual kBtu</th><th style="text-align:right">Savings kBtu</th><th style="text-align:right">Savings %</th></tr></thead><tbody>';
+              '<th style="text-align:right">BL Cost</th><th style="text-align:right">Actual Cost</th><th style="text-align:right">Savings</th><th style="text-align:right">Savings %</th></tr></thead><tbody>';
             for (const y of postBlYears) {
               const yd = yearData[y];
               if (!yd) continue;
               for (let qi = 0; qi < 4; qi++) {
-                let qBlKbtu = 0,
-                  qActKbtu = 0;
+                let qBlKwh = 0,
+                  qActKwh = 0,
+                  qBlGas = 0,
+                  qActGas = 0,
+                  qBlCost = 0,
+                  qActCost = 0;
                 let hasActualData = false;
                 let moWithData = 0;
                 for (const mi of qMonths[qi]) {
                   const nYrs = blYmPerMo[mi].size || 1;
-                  qBlKbtu += (blKwh[mi] / nYrs) * 3.412 + (blGas[mi] / nYrs) * 100;
-                  const actKbtu = yd.kwh[mi] * 3.412 + yd.gas[mi] * 100;
-                  qActKbtu += actKbtu;
+                  qBlKwh += blKwhAvg[mi];
+                  qBlGas += blGasAvg[mi];
+                  qBlCost += blCostAvg[mi];
+                  qActKwh += yd.kwh[mi];
+                  qActGas += yd.gas[mi];
+                  qActCost += yd.cost[mi];
                   if (yd.kwh[mi] > 0 || yd.gas[mi] > 0) {
+                    const actKbtu = yd.kwh[mi] * 3.412 + yd.gas[mi] * 100;
                     const blRef = blKbtuPerMo[mi];
                     if (blRef > 0 && actKbtu < blRef * 0.25) continue;
                     hasActualData = true;
                     moWithData++;
                   }
                 }
-                if (qBlKbtu === 0 && qActKbtu === 0) continue;
                 if (!hasActualData) continue;
                 if (moWithData < 3) continue;
-                const qSav = qBlKbtu - qActKbtu;
-                const qPct = qBlKbtu > 0 ? (qSav / qBlKbtu) * 100 : 0;
-                const savColor = qSav >= 0 ? 'var(--green)' : 'var(--red)';
+                const costSav = qBlCost - qActCost;
+                const costPct = qBlCost > 0 ? (costSav / qBlCost) * 100 : 0;
+                const savColor = costSav >= 0 ? 'var(--green)' : 'var(--red)';
+                const $f = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
+                qHtml += '<tr><td>' + y + '</td><td>' + qNames[qi] + '</td>';
+                if (hasElec)
+                  qHtml +=
+                    '<td style="text-align:right;font-family:var(--mono)">' +
+                    Math.round(qBlKwh).toLocaleString() +
+                    '</td><td style="text-align:right;font-family:var(--mono)">' +
+                    Math.round(qActKwh).toLocaleString() +
+                    '</td>';
+                if (hasGasQ)
+                  qHtml +=
+                    '<td style="text-align:right;font-family:var(--mono)">' +
+                    Math.round(qBlGas).toLocaleString() +
+                    '</td><td style="text-align:right;font-family:var(--mono)">' +
+                    Math.round(qActGas).toLocaleString() +
+                    '</td>';
+                qHtml += '<td style="text-align:right;font-family:var(--mono)">' + $f(qBlCost) + '</td>';
+                qHtml += '<td style="text-align:right;font-family:var(--mono)">' + $f(qActCost) + '</td>';
                 qHtml +=
-                  '<tr><td>' +
-                  y +
-                  '</td><td>' +
-                  qNames[qi] +
-                  '</td>' +
-                  '<td style="text-align:right;font-family:var(--mono)">' +
-                  Math.round(qBlKbtu).toLocaleString() +
-                  '</td>' +
-                  '<td style="text-align:right;font-family:var(--mono)">' +
-                  Math.round(qActKbtu).toLocaleString() +
-                  '</td>' +
                   '<td style="text-align:right;font-family:var(--mono);color:' +
                   savColor +
                   '">' +
-                  Math.round(qSav).toLocaleString() +
-                  '</td>' +
+                  (costSav >= 0 ? '' : '-') +
+                  $f(costSav) +
+                  '</td>';
+                qHtml +=
                   '<td style="text-align:right;font-family:var(--mono);color:' +
                   savColor +
                   '">' +
-                  (qSav >= 0 ? '+' : '') +
-                  qPct.toFixed(1) +
+                  (costSav >= 0 ? '+' : '') +
+                  costPct.toFixed(1) +
                   '%</td></tr>';
               }
             }
