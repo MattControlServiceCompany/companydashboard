@@ -48578,7 +48578,8 @@
             </div>`;
           })()}
           ${(() => {
-            const postBlYears = yrsToShow.filter((y) => !blYears.has(y));
+            const maxBlYear = Math.max(...blYears);
+            const postBlYears = sortedYears.filter((y) => y > maxBlYear);
             if (postBlYears.length === 0 || blEui === 0) return '';
             const qNames = ['Q1 (Jan-Mar)', 'Q2 (Apr-Jun)', 'Q3 (Jul-Sep)', 'Q4 (Oct-Dec)'];
             const qMonths = [
@@ -48587,6 +48588,9 @@
               [6, 7, 8],
               [9, 10, 11],
             ];
+            const nowDate = new Date();
+            const nowYr = nowDate.getFullYear();
+            const nowMo = nowDate.getMonth();
             let qHtml = '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">';
             qHtml +=
               '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📅 Quarterly Savings vs Baseline</div>';
@@ -48600,24 +48604,35 @@
                 let qBlKbtu = 0,
                   qActKbtu = 0;
                 let hasActualData = false;
+                let moWithData = 0;
                 for (const mi of qMonths[qi]) {
-                  // Average baseline across years if multi-year baseline
                   const nYrs = blYmPerMo[mi].size || 1;
                   qBlKbtu += (blKwh[mi] / nYrs) * 3.412 + (blGas[mi] / nYrs) * 100;
                   const actKbtu = yd.kwh[mi] * 3.412 + yd.gas[mi] * 100;
                   qActKbtu += actKbtu;
-                  if (yd.kwh[mi] > 0 || yd.gas[mi] > 0) hasActualData = true;
+                  if (yd.kwh[mi] > 0 || yd.gas[mi] > 0) {
+                    hasActualData = true;
+                    moWithData++;
+                  }
                 }
                 if (qBlKbtu === 0 && qActKbtu === 0) continue;
                 if (!hasActualData) continue;
+                const isPartial = moWithData < 3 && y === nowYr && qMonths[qi].includes(nowMo);
+                if (isPartial) {
+                  qBlKbtu = (qBlKbtu * moWithData) / 3;
+                }
                 const qSav = qBlKbtu - qActKbtu;
                 const qPct = qBlKbtu > 0 ? (qSav / qBlKbtu) * 100 : 0;
                 const savColor = qSav >= 0 ? 'var(--green)' : 'var(--red)';
+                const partialTag = isPartial
+                  ? ' <span style="font-size:9px;color:var(--amber)">(partial — ' + moWithData + '/3 mo)</span>'
+                  : '';
                 qHtml +=
                   '<tr><td>' +
                   y +
                   '</td><td>' +
                   qNames[qi] +
+                  partialTag +
                   '</td>' +
                   '<td style="text-align:right;font-family:var(--mono)">' +
                   Math.round(qBlKbtu).toLocaleString() +
