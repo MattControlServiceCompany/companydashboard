@@ -43265,53 +43265,92 @@
         const bldgData = bldgs.map((b) => {
           const sqft = parseInt(b.sqft || 0);
           const bType = b.type || p.type || 'Other';
-          let qBlCost = 0,
-            qCurCost = 0;
+          let cumSavings = 0,
+            qtrSavings = 0;
           let annBlKBtu = 0,
             annCurKBtu = 0;
-          let cumSavings = 0;
           const meterDetails = [];
-          const qtrSavByYM = {};
+          const savByYM = {};
           const yearUsage = {};
+          const yearMonthCount = {};
 
           const bMeters = allBldgMeters.filter((x) => x.b === b);
           bMeters.forEach(({ m, bills, incl, allRows, bl, blEnd, postRows }) => {
             const blRows = allRows.filter((r) => bl.months.includes(r.ym));
             const { elecByMo: eM, gasByMo: gM, propaneByMo: pM } = buildMoMap(m, blRows, bills, incl);
 
-            // Quarterly baseline expected cost for report period calendar months
-            reportYMs.forEach((ym) => {
-              const calMo = parseInt(ym.split('-')[1]) - 1;
-              const moCost = (eM[calMo]?.totalCost || 0) + (gM[calMo]?.cost || 0) + ((pM || {})[calMo]?.cost || 0);
-              qBlCost += moCost;
+            // Use the same savings methodology as the dashboard (getMeterPerfSavingsByCalMo)
+            // but track per year-month so we can filter to the reporting period
+            const isElec = m.commodity === 'Electric';
+            const isPropane = m.commodity === 'Propane';
+            const blByCalMo = {};
+            blRows.forEach((r) => {
+              const mo = parseInt(r.ym.split('-')[1]) - 1;
+              blByCalMo[mo] = r.regrBaseline != null ? r.regrBaseline : r.usage;
             });
-
-            // Quarterly actual cost from bills in reporting period
-            reportYMs.forEach((ym) => {
-              const matchBills = bills.filter((bill) => normMonth(bill.start, bill.end, incl, bills) === ym);
-              matchBills.forEach((bill) => {
-                qCurCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || 0;
+            const hasBlCalMap = Object.keys(blByCalMo).length >= 3;
+            const blAvg = blRows.length ? blRows.reduce((s, r) => s + r.usage, 0) / blRows.length : 0;
+            const blDemKWByCalMo = {};
+            Object.entries(eM).forEach(([mo, v]) => {
+              blDemKWByCalMo[mo] = v.billedKW || v.demandKW || 0;
+            });
+            const rawUsageByYm = {};
+            if (isElec) {
+              bills.forEach((b2) => {
+                const ym = normMonth(b2.start, b2.end, incl, bills);
+                if (ym) rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + (parseFloat(b2.kwh) || parseFloat(b2.usage) || 0);
               });
-            });
+            } else if (!isPropane) {
+              bills.forEach((b2) => {
+                const ym = normMonth(b2.start, b2.end, incl, bills);
+                if (ym) rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + parseFloat(b2.therms || b2.usage || 0);
+              });
+            } else {
+              allRows.forEach((r) => {
+                rawUsageByYm[r.ym] = r.usage;
+              });
+            }
 
-            // Cumulative savings (all post-baseline months)
-            const sav = getMeterPerfSavingsByCalMo(m, bills, incl);
-            Object.values(sav).forEach((v) => {
-              cumSavings += v;
-            });
-
-            // Per-quarter savings for trend chart
             postRows.forEach((r) => {
               const calMo = parseInt(r.ym.split('-')[1]) - 1;
-              const bfr = bills.filter((bill) => normMonth(bill.start, bill.end, incl, bills) === r.ym);
-              if (!bfr.length) return;
-              let actCost = 0;
-              bfr.forEach((bill) => {
-                actCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || 0;
-              });
-              const expCost = (eM[calMo]?.totalCost || 0) + (gM[calMo]?.cost || 0) + ((pM || {})[calMo]?.cost || 0);
-              if (!qtrSavByYM[r.ym]) qtrSavByYM[r.ym] = 0;
-              qtrSavByYM[r.ym] += expCost - actCost;
+              const bfr = isPropane ? [] : bills.filter((b2) => normMonth(b2.start, b2.end, incl, bills) === r.ym);
+              if (!isPropane && !bfr.length) return;
+
+              const expUsage =
+                hasBlCalMap && blByCalMo[calMo] != null
+                  ? blByCalMo[calMo]
+                  : r.regrBaseline != null
+                    ? r.regrBaseline
+                    : blAvg;
+              const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
+
+              let totalCostSav = 0;
+              if (isElec) {
+                const actKwh = actUsage;
+                const kwhCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.kwhCost || 0), 0);
+                const kwhRate = actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0;
+                const kwhCostSav = kwhRate > 0 ? (expUsage - actKwh) * kwhRate : 0;
+                const blExpKW = blDemKWByCalMo[calMo] || 0;
+                const n = Math.max(1, bfr.length);
+                const actDemKW = bfr.reduce((s, b2) => s + parseFloat(b2.demandKW || 0), 0) / n;
+                const kwCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.kwCost || 0), 0);
+                const facKWCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.facKWCost || 0), 0);
+                const moKwRate = actDemKW > 0 ? (kwCostAmt + facKWCostAmt) / actDemKW : 0;
+                const kwCostSav = blExpKW > 0 && moKwRate > 0 ? (blExpKW - actDemKW) * moKwRate : 0;
+                totalCostSav = kwhCostSav + kwCostSav;
+              } else if (isPropane) {
+                const galRate = actUsage > 0 && r.cost > 0 ? r.cost / actUsage : 0;
+                totalCostSav = galRate > 0 ? (expUsage - actUsage) * galRate : 0;
+              } else {
+                const actTherms = actUsage;
+                const actThermCost = bfr.reduce((s, b2) => s + parseFloat(b2.thermCost || b2.cost || 0), 0);
+                const thermRate = actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0;
+                totalCostSav = thermRate > 0 ? (expUsage - actTherms) * thermRate : 0;
+              }
+              if (!savByYM[r.ym]) savByYM[r.ym] = 0;
+              savByYM[r.ym] += totalCostSav;
+              cumSavings += totalCostSav;
+              if (reportYMs.includes(r.ym)) qtrSavings += totalCostSav;
             });
 
             // Annual EUI - rolling 12 months and per-year
@@ -43333,6 +43372,8 @@
                 const yr = ym.split('-')[0];
                 if (!yearUsage[yr]) yearUsage[yr] = { kwh: 0, therms: 0 };
                 yearUsage[yr].therms += parseFloat(bill.therms) || 0;
+                if (!yearMonthCount[yr]) yearMonthCount[yr] = new Set();
+                yearMonthCount[yr].add(ym);
               });
             } else {
               blBills.forEach((bill) => {
@@ -43351,6 +43392,8 @@
                 const yr = ym.split('-')[0];
                 if (!yearUsage[yr]) yearUsage[yr] = { kwh: 0, therms: 0 };
                 yearUsage[yr].kwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+                if (!yearMonthCount[yr]) yearMonthCount[yr] = new Set();
+                yearMonthCount[yr].add(ym);
               });
             }
 
@@ -43442,8 +43485,6 @@
             });
           });
 
-          const qSav = qBlCost - qCurCost;
-          const qSavPct = qBlCost > 0 ? (qSav / qBlCost) * 100 : 0;
           const blEUI = sqft > 0 ? annBlKBtu / sqft : 0;
           const curEUI = sqft > 0 ? annCurKBtu / sqft : 0;
           const cbecsEUI = CBECS_EUI[bType] || CBECS_EUI['Other'] || 52.4;
@@ -43452,14 +43493,16 @@
           let pctileLabel = '';
           if (curEUI > 0) {
             if (curEUI <= pctiles[0]) pctileLabel = 'Top 25%';
-            else if (curEUI <= pctiles[1]) pctileLabel = '25th–50th';
-            else if (curEUI <= pctiles[2]) pctileLabel = '50th–75th';
+            else if (curEUI <= pctiles[1]) pctileLabel = '25th-50th';
+            else if (curEUI <= pctiles[2]) pctileLabel = '50th-75th';
             else pctileLabel = 'Bottom 25%';
           }
 
-          // Per-year EUI
+          // Per-year EUI — only include years with >= 10 months of data
           const euiByYear = {};
           Object.entries(yearUsage).forEach(([yr, u]) => {
+            const moCount = yearMonthCount[yr] ? yearMonthCount[yr].size : 0;
+            if (moCount < 10) return;
             const kbtu = (u.kwh || 0) * 3.412 + (u.therms || 0) * 100;
             if (sqft > 0 && kbtu > 0) euiByYear[yr] = kbtu / sqft;
           });
@@ -43468,44 +43511,37 @@
             name: b.name,
             sqft,
             bType,
-            qBlCost,
-            qCurCost,
-            qSav,
-            qSavPct,
+            qtrSavings,
+            cumSavings,
             blEUI,
             curEUI,
             cbecsEUI,
             pctiles,
             estarEUI,
             pctileLabel,
-            cumSavings,
-            qtrSavByYM,
+            savByYM,
             meterDetails,
             euiByYear,
           };
         });
 
         // Aggregate totals
-        let totalQBlCost = 0,
-          totalQCurCost = 0,
+        let totalQtrSav = 0,
           totalCumSav = 0;
         let totalAnnBlKBtu = 0,
           totalAnnCurKBtu = 0;
         bldgData.forEach((d) => {
-          totalQBlCost += d.qBlCost;
-          totalQCurCost += d.qCurCost;
+          totalQtrSav += d.qtrSavings;
           totalCumSav += d.cumSavings;
           totalAnnBlKBtu += d.blEUI * d.sqft;
           totalAnnCurKBtu += d.curEUI * d.sqft;
         });
-        const totalQSav = totalQBlCost - totalQCurCost;
-        const totalQPct = totalQBlCost > 0 ? (totalQSav / totalQBlCost) * 100 : 0;
+        const annualizedSavings = totalQtrSav * (12 / periodMonths);
         const guaranteedSav = parseFloat(p.savings) || 0;
         const contractYears = parseInt(p.contractYears) || 3;
         const escalation = parseFloat(p.escalation) || 0;
         const cscComp = parseFloat(p.cscCompensation) || 0;
         const contractStart = p.start ? new Date(p.start) : null;
-        const annualizedSavRate = totalQBlCost > 0 ? totalQSav / totalQBlCost : 0;
 
         // Contract year calculation
         let contractYearNum = 1;
@@ -43515,7 +43551,7 @@
         }
 
         // On-track status
-        const annualizedActual = totalQSav * (12 / periodMonths);
+        const annualizedActual = annualizedSavings;
         let statusLabel = 'On Track',
           statusColor = [34, 139, 34];
         if (guaranteedSav > 0) {
@@ -43535,7 +43571,7 @@
         // Aggregate quarterly savings for trend chart
         const aggQtrSav = {};
         bldgData.forEach((d) => {
-          Object.entries(d.qtrSavByYM).forEach(([ym, v]) => {
+          Object.entries(d.savByYM).forEach(([ym, v]) => {
             aggQtrSav[ym] = (aggQtrSav[ym] || 0) + v;
           });
         });
@@ -43629,8 +43665,8 @@
         const boxes = [
           {
             label: type === 'quarterly' ? 'Quarterly Savings' : 'Annual Savings',
-            value: (totalQSav >= 0 ? '' : '-') + $c(totalQSav),
-            sub: totalQPct.toFixed(1) + '% vs baseline',
+            value: (totalQtrSav >= 0 ? '' : '-') + $c(totalQtrSav),
+            sub: 'Annualized: ' + (annualizedSavings >= 0 ? '' : '-') + $c(annualizedSavings) + '/yr',
           },
           {
             label: 'Cumulative Savings',
@@ -43694,22 +43730,15 @@
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9.5);
         const summaryLines = [
-          'Baseline Cost (' + periodLabel + '): ' + $c(totalQBlCost),
-          'Actual Cost (' + periodLabel + '): ' + $c(totalQCurCost),
-          'Net Savings: ' +
-            (totalQSav >= 0 ? '' : '-') +
-            $c(totalQSav) +
-            ' (' +
-            totalQPct.toFixed(1) +
-            '%)' +
+          (type === 'quarterly' ? 'Quarterly' : 'Annual') +
+            ' Savings (' +
+            periodLabel +
+            '): ' +
+            (totalQtrSav >= 0 ? '' : '-') +
+            $c(totalQtrSav) +
             (useNormalized ? '  [Weather-Normalized]' : ''),
-          totalSqft > 0
-            ? 'District EUI: Baseline ' +
-              (totalAnnBlKBtu / totalSqft).toFixed(1) +
-              ' to Current ' +
-              (totalAnnCurKBtu / totalSqft).toFixed(1) +
-              ' kBtu/sf/yr'
-            : '',
+          'Cumulative Savings to Date: ' + (totalCumSav >= 0 ? '' : '-') + $c(totalCumSav),
+          guaranteedSav > 0 ? 'Projected Savings Target: ' + $c(guaranteedSav) + '/yr' : '',
         ].filter(Boolean);
         summaryLines.forEach((line) => {
           doc.text(line, ml + 4, y);
@@ -43739,16 +43768,8 @@
 
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(7.5);
-        const tCols = ['Building', 'Sq Ft', 'Expected Cost', 'Actual Cost', 'Savings', '%', 'Status'];
-        const tW = [
-          contentW * 0.26,
-          contentW * 0.1,
-          contentW * 0.14,
-          contentW * 0.14,
-          contentW * 0.14,
-          contentW * 0.09,
-          contentW * 0.13,
-        ];
+        const tCols = ['Building', 'Sq Ft', 'Quarterly Savings', 'Status'];
+        const tW = [contentW * 0.36, contentW * 0.14, contentW * 0.26, contentW * 0.24];
         let cx = ml;
         tCols.forEach((c, i) => {
           doc.text(c, cx, y);
@@ -43769,21 +43790,15 @@
           }
           cx = ml;
           doc.setTextColor(0, 0, 0);
-          doc.text((r.name || '—').substring(0, 28), cx, y);
+          doc.text((r.name || '-').substring(0, 32), cx, y);
           cx += tW[0];
-          doc.text(r.sqft ? r.sqft.toLocaleString() : '—', cx, y);
+          doc.text(r.sqft ? r.sqft.toLocaleString() : '-', cx, y);
           cx += tW[1];
-          doc.text($c(r.qBlCost), cx, y);
-          cx += tW[2];
-          doc.text($c(r.qCurCost), cx, y);
-          cx += tW[3];
-          doc.text((r.qSav >= 0 ? '' : '-') + $c(r.qSav), cx, y);
-          cx += tW[4];
-          doc.text(r.qBlCost > 0 ? r.qSavPct.toFixed(1) + '%' : '—', cx, y);
-          cx += tW[5];
-          if (r.qSav >= 0) doc.setTextColor(34, 139, 34);
+          if (r.qtrSavings >= 0) doc.setTextColor(34, 139, 34);
           else doc.setTextColor(200, 30, 30);
-          doc.text(r.qSav >= 0 ? 'On Track' : 'Below Target', cx, y);
+          doc.text((r.qtrSavings >= 0 ? '' : '-') + $c(r.qtrSavings), cx, y);
+          cx += tW[2];
+          doc.text(r.qtrSavings >= 0 ? 'On Track' : 'Below Target', cx, y);
           doc.setTextColor(0, 0, 0);
           y += 13;
         });
@@ -43797,13 +43812,7 @@
         cx += tW[0];
         doc.text(totalSqft.toLocaleString(), cx, y);
         cx += tW[1];
-        doc.text($c(totalQBlCost), cx, y);
-        cx += tW[2];
-        doc.text($c(totalQCurCost), cx, y);
-        cx += tW[3];
-        doc.text((totalQSav >= 0 ? '' : '-') + $c(totalQSav), cx, y);
-        cx += tW[4];
-        doc.text(totalQPct.toFixed(1) + '%', cx, y);
+        doc.text((totalQtrSav >= 0 ? '' : '-') + $c(totalQtrSav), cx, y);
         y += 20;
 
         // Savings trend chart
@@ -44138,7 +44147,7 @@
         doc.text('Projected Savings Over Contract Term', ml, y);
         y += 16;
 
-        const annualBaseline = totalQBlCost * (12 / periodMonths);
+        const annualBaseline = annualizedSavings;
 
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(7.5);
@@ -44162,7 +44171,7 @@
           checkPage(16);
           const escFactor = Math.pow(1 + escalation / 100, yr - 1);
           const escBaseline = annualBaseline * escFactor;
-          const projSav = escBaseline * annualizedSavRate;
+          const projSav = annualizedSavings * escFactor;
           const cscShare = projSav * (cscComp / 100);
           const clientNet = projSav - cscShare;
           totalProjSav += projSav;
@@ -44207,9 +44216,10 @@
         doc.setFontSize(8);
         doc.setTextColor(120, 120, 120);
         doc.text(
-          'Projections based on current savings rate of ' +
-            (annualizedSavRate * 100).toFixed(1) +
-            '% with ' +
+          'Projections based on current annualized savings of ' +
+            (annualizedSavings >= 0 ? '' : '-') +
+            $c(annualizedSavings) +
+            '/yr with ' +
             escalation +
             '% annual utility escalation.',
           ml,
@@ -44267,46 +44277,41 @@
         } else {
           obs.push(
             'Overall Performance: The project ' +
-              (totalQSav >= 0
-                ? 'saved ' + $c(totalQSav) + ' (' + totalQPct.toFixed(1) + '% below baseline)'
-                : 'exceeded baseline costs by ' + $c(totalQSav) + ' (' + Math.abs(totalQPct).toFixed(1) + '%)') +
-              ' during this reporting period.',
+              (totalQtrSav >= 0
+                ? 'saved ' + $c(totalQtrSav) + ' this quarter'
+                : 'exceeded baseline costs by ' + $c(Math.abs(totalQtrSav)) + ' this quarter') +
+              '. Cumulative savings to date: ' +
+              (totalCumSav >= 0 ? '' : '-') +
+              $c(totalCumSav) +
+              '.',
           );
         }
 
-        const best = bldgData.reduce((a, b) => (b.qSavPct > a.qSavPct ? b : a), bldgData[0]);
-        if (best && best.qSavPct > 0 && bldgData.length > 1) {
+        const best = bldgData.reduce((a, b) => (b.qtrSavings > a.qtrSavings ? b : a), bldgData[0]);
+        if (best && best.qtrSavings > 0 && bldgData.length > 1) {
           obs.push(
-            'Top Performer: ' +
-              best.name +
-              ' led the project with ' +
-              best.qSavPct.toFixed(1) +
-              '% savings (' +
-              $c(best.qSav) +
-              '), outperforming the project average of ' +
-              totalQPct.toFixed(1) +
-              '%.',
+            'Top Performer: ' + best.name + ' led the project with ' + $c(best.qtrSavings) + ' in quarterly savings.',
           );
         }
 
-        const worst = bldgData.reduce((a, b) => (b.qSavPct < a.qSavPct ? b : a), bldgData[0]);
-        if (worst && worst.qSavPct < 0 && bldgData.length > 1) {
+        const worst = bldgData.reduce((a, b) => (b.qtrSavings < a.qtrSavings ? b : a), bldgData[0]);
+        if (worst && worst.qtrSavings < 0 && bldgData.length > 1) {
           obs.push(
             'Needs Attention: ' +
               worst.name +
-              ' showed a ' +
-              Math.abs(worst.qSavPct).toFixed(1) +
-              '% cost increase vs baseline. A focused review of equipment schedules and building operations is recommended.',
+              ' exceeded baseline costs by ' +
+              $c(Math.abs(worst.qtrSavings)) +
+              ' this quarter. A focused review of equipment schedules and building operations is recommended.',
           );
-        } else if (worst && worst.qSavPct < totalQPct * 0.5 && bldgData.length > 1 && worst !== best) {
+        } else if (worst && worst.qtrSavings < totalQtrSav * 0.3 && bldgData.length > 1 && worst !== best) {
           obs.push(
             'Below Average: ' +
               worst.name +
-              ' saved ' +
-              worst.qSavPct.toFixed(1) +
-              '% vs the project average of ' +
-              totalQPct.toFixed(1) +
-              '%. Consider reviewing setpoints and occupancy schedules.',
+              ' saved only ' +
+              $c(worst.qtrSavings) +
+              ' vs the project total of ' +
+              $c(totalQtrSav) +
+              '. Consider reviewing setpoints and occupancy schedules.',
           );
         }
 
