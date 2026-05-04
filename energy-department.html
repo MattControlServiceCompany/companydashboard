@@ -48274,6 +48274,41 @@
           return;
         }
 
+        // Per-building rolling 12-month EUI (used by benchmark chart + table)
+        const _bldgR12 = {};
+        bldgs.forEach((b) => {
+          const bSqft = parseInt(b.sqft || 0);
+          if (bSqft <= 0) return;
+          const byrs = bldgYearData[b.name];
+          if (!byrs) return;
+          const bYms = [];
+          for (const y of sortedYears) {
+            const bd = byrs[y];
+            if (!bd) continue;
+            for (let mi = 0; mi < 12; mi++) {
+              if (bd.kwh[mi] > 0 || bd.gas[mi] > 0) {
+                const moKbtu = bd.kwh[mi] * 3.412 + bd.gas[mi] * 100;
+                const blRef = blKbtuPerMo[mi];
+                if (blRef > 0 && moKbtu < blRef * 0.25) continue;
+                bYms.push({ kwh: bd.kwh[mi], gas: bd.gas[mi], cost: bd.cost[mi] });
+              }
+            }
+          }
+          const last12 = bYms.slice(-12);
+          if (last12.length === 0) return;
+          let kbtu = 0,
+            cost = 0;
+          last12.forEach((m) => {
+            kbtu += m.kwh * 3.412 + m.gas * 100;
+            cost += m.cost;
+          });
+          _bldgR12[b.name] = {
+            eui: ((kbtu / last12.length) * 12) / bSqft,
+            costSqft: ((cost / last12.length) * 12) / bSqft,
+            months: last12.length,
+          };
+        });
+
         // Year-over-year bar chart colors — explicit hex to stay distinct across themes
         const yrColors = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
 
@@ -48343,27 +48378,23 @@
                   ${yrsToShow
                     .map((y) => {
                       const yd = yearData[y];
-                      const isLatest = y === latestYear;
-                      const moWithData = yd.kwh.filter((v) => v > 0).length + yd.gas.filter((v) => v > 0).length;
-                      const isPartial = isLatest && moWithData < 24;
-                      let ykwh = 0,
-                        ygas = 0;
-                      if (isPartial) {
-                        for (let mi = 0; mi < 12; mi++) {
-                          ykwh += yd.kwh[mi] > 0 ? yd.kwh[mi] : blKwhAvg[mi];
-                          ygas += yd.gas[mi] > 0 ? yd.gas[mi] : blGasAvg[mi];
-                        }
-                      } else {
-                        ykwh = yd.kwh.reduce((a, b) => a + b, 0);
-                        ygas = yd.gas.reduce((a, b) => a + b, 0);
-                      }
+                      const ykwh = yd.kwh.reduce((a, b) => a + b, 0);
+                      const ygas = yd.gas.reduce((a, b) => a + b, 0);
                       const ykw = Math.max(...yd.kw);
                       const ykbtu = ykwh * 3.412 + ygas * 100;
-                      const yeui = sqft > 0 ? ykbtu / sqft : 0;
+                      let moCount = 0;
+                      for (let mi = 0; mi < 12; mi++) {
+                        if (yd.kwh[mi] > 0 || yd.gas[mi] > 0) {
+                          const mk = yd.kwh[mi] * 3.412 + yd.gas[mi] * 100;
+                          if (blKbtuPerMo[mi] <= 0 || mk >= blKbtuPerMo[mi] * 0.25) moCount++;
+                        }
+                      }
+                      const yeui = sqft > 0 && moCount > 0 ? ((ykbtu / moCount) * 12) / sqft : 0;
+                      const isPartial = moCount > 0 && moCount < 12;
                       const diff = blEui > 0 ? ((yeui - blEui) / blEui) * 100 : 0;
                       const isBl = blYears.has(y);
                       const projLabel = isPartial
-                        ? ' <span style="font-size:9px;color:var(--text3)">(proj)</span>'
+                        ? ' <span style="font-size:9px;color:var(--text3)">(' + moCount + ' mo)</span>'
                         : '';
                       return `<tr${isBl ? ' style="background:rgba(59,130,246,0.05)"' : ''}>
                       <td style="font-weight:600">${y}${isBl ? ' <span style="font-size:10px;color:var(--accent)">(BL)</span>' : ''}${projLabel}</td>
@@ -48405,8 +48436,15 @@
                             const bkw = Math.max(...bd.kw);
                             const bcost = bd.cost.reduce((a, v) => a + v, 0);
                             const bkbtu = bkwh * 3.412 + bgas * 100;
-                            const beui = bSqft > 0 ? bkbtu / bSqft : 0;
-                            return { y, bkwh, bkw, bgas, bcost, beui };
+                            let moCount = 0;
+                            for (let mi = 0; mi < 12; mi++) {
+                              if (bd.kwh[mi] > 0 || bd.gas[mi] > 0) {
+                                const mk = bd.kwh[mi] * 3.412 + bd.gas[mi] * 100;
+                                if (blKbtuPerMo[mi] <= 0 || mk >= blKbtuPerMo[mi] * 0.25) moCount++;
+                              }
+                            }
+                            const beui = bSqft > 0 && moCount > 0 ? ((bkbtu / moCount) * 12) / bSqft : 0;
+                            return { y, bkwh, bkw, bgas, bcost, beui, moCount };
                           })
                           .filter(Boolean);
                         if (!rows.length) return '';
@@ -48484,13 +48522,9 @@
               .map((b) => {
                 const bSqft = parseInt(b.sqft || 0);
                 if (bSqft <= 0) return null;
-                const bd = bldgYearData[b.name]?.[latestYear];
-                if (!bd) return null;
-                const bkwh = bd.kwh.reduce((a, v) => a + v, 0);
-                const bgas = bd.gas.reduce((a, v) => a + v, 0);
-                if (bkwh === 0 && bgas === 0) return null;
-                const bkbtu = bkwh * 3.412 + bgas * 100;
-                const beui = bkbtu / bSqft;
+                const bR12 = _bldgR12[b.name];
+                if (!bR12 || bR12.eui <= 0) return null;
+                const beui = bR12.eui;
                 const bType = b.type || p.type || 'K-12 School';
                 const cbVal = CBECS_EUI[bType] || CBECS_EUI['Other'] || 52.4;
                 return { name: b.name, eui: beui, cbecs: cbVal, type: bType };
@@ -48500,7 +48534,7 @@
             const maxBar = Math.max(...benchRows.flatMap((r) => [r.eui, r.cbecs]), 1);
             return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
               <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📊 EUI Benchmark — Your Buildings vs CBECS National Median</div>
-              <div style="font-size:10px;color:var(--text3);margin-bottom:12px">kBtu/ft²/yr · ${latestYear} data · buildings without sqft are excluded</div>
+              <div style="font-size:10px;color:var(--text3);margin-bottom:12px">kBtu/ft²/yr · rolling 12-month data · buildings without sqft are excluded</div>
               <div style="display:flex;flex-direction:column;gap:10px">
                 ${benchRows
                   .map((r) => {
@@ -48551,11 +48585,14 @@
                 const cbecs = CBECS_EUI[bType] || CBECS_EUI['Other'] || 52.4;
                 const estar = ESTAR_EUI[bType] || null;
                 const pctiles = CBECS_PERCENTILES[bType] || CBECS_PERCENTILES['Other'];
-                // Compute EUI per year for trend
+                const bR12 = _bldgR12[b.name];
+                if (!bR12 || bR12.eui <= 0) return null;
+                const latestEui = bR12.eui;
+                const latestCostSqft = bR12.costSqft;
+                // Compute per-year EUI for trend (use only complete years)
                 const euiByYr = {};
-                let latestEui = 0,
-                  latestCostSqft = 0;
                 for (const y of yrsToShow) {
+                  if (y == latestYear) continue;
                   const bd = bldgYearData[b.name]?.[y];
                   if (!bd) continue;
                   const bkwh = bd.kwh.reduce((a, v) => a + v, 0);
@@ -48563,13 +48600,8 @@
                   if (bkwh === 0 && bgas === 0) continue;
                   const bkbtu = bkwh * 3.412 + bgas * 100;
                   euiByYr[y] = bkbtu / bSqft;
-                  const bcost = bd.cost.reduce((a, v) => a + v, 0);
-                  if (y == latestYear) {
-                    latestEui = bkbtu / bSqft;
-                    latestCostSqft = bcost / bSqft;
-                  }
                 }
-                if (latestEui === 0) return null;
+                euiByYr[latestYear] = latestEui;
                 // Percentile estimate: where does the building fall?
                 let pctileLabel = '';
                 if (pctiles) {
@@ -48615,7 +48647,7 @@
             bRows.sort((a, b) => b.eui - a.eui);
             return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
               <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">🏆 Building Performance Benchmarking</div>
-              <div style="font-size:10px;color:var(--text3);margin-bottom:12px">Ranked by EUI (highest = most opportunity) · ${latestYear} data · CBECS percentiles + EnergyStar score-75 threshold</div>
+              <div style="font-size:10px;color:var(--text3);margin-bottom:12px">Ranked by EUI (highest = most opportunity) · rolling 12-month data · CBECS percentiles + EnergyStar score-75 threshold</div>
               <div style="overflow-x:auto">
                 <table class="dtbl" style="min-width:700px">
                   <thead><tr>
