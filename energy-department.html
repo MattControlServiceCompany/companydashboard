@@ -13008,6 +13008,16 @@
             allTherms = 0;
           let hasBaseline = false;
           let bldgSav = 0;
+          let meterIncl = 0,
+            meterExcl = 0,
+            meterTotal = meters.length;
+          const meterDetails = meters.map((m) => {
+            const incl = m.baselineInclude !== false;
+            const hasBl = m.baseline && m.baseline.months && m.baseline.months.length >= 3;
+            if (incl && hasBl) meterIncl++;
+            else if (!incl) meterExcl++;
+            return { name: m.name || m.commodity || '?', commodity: m.commodity, included: incl, hasBaseline: hasBl };
+          });
 
           if (useNormalized) {
             // Normalized path: use same calculation as Performance panel
@@ -13179,6 +13189,10 @@
             blLabel,
             status,
             statusColor,
+            meterIncl,
+            meterExcl,
+            meterTotal,
+            meterDetails,
           };
         });
 
@@ -13206,12 +13220,27 @@
             <div class="card-hdr"><span class="card-title">Building Performance</span></div>
             <div style="overflow:auto;max-height:60vh">
               <table class="dtbl" style="width:100%;font-size:12px">
-                <thead><tr><th>Building</th><th style="text-align:right">Sq Ft</th><th style="text-align:right">Baseline Period</th><th style="text-align:right">${bldgRows.some((r) => r.blLabel === 'Baseline') ? 'Baseline' : 'Total Cost'} $/yr</th><th style="text-align:right">Baseline EUI</th><th style="text-align:right">Current Cost</th><th style="text-align:right">Current EUI</th><th style="text-align:right">Savings $</th><th style="text-align:right">%</th><th style="text-align:center">Status</th></tr></thead>
+                <thead><tr><th style="width:30px">#</th><th>Building</th><th style="text-align:right">Sq Ft</th><th style="text-align:center">Baseline</th><th style="text-align:right">Baseline Period</th><th style="text-align:right">${bldgRows.some((r) => r.blLabel === 'Baseline') ? 'Baseline' : 'Total Cost'} $/yr</th><th style="text-align:right">Baseline EUI</th><th style="text-align:right">Current Cost</th><th style="text-align:right">Current EUI</th><th style="text-align:right">Savings $</th><th style="text-align:right">%</th><th style="text-align:center">Status</th></tr></thead>
                 <tbody>${bldgRows
-                  .map(
-                    (r) => `<tr>
+                  .map((r, _ri) => {
+                    const blIcon = r.meterIncl > 0 ? (r.meterExcl > 0 ? '◐' : '●') : '○';
+                    const blColor =
+                      r.meterIncl > 0 ? (r.meterExcl > 0 ? 'var(--amber)' : 'var(--green)') : 'var(--text3)';
+                    const blTip = r.meterDetails
+                      .map(
+                        (d) =>
+                          d.name +
+                          ' (' +
+                          d.commodity +
+                          '): ' +
+                          (d.included ? (d.hasBaseline ? '✓ included' : '… no baseline') : '✗ excluded'),
+                      )
+                      .join('&#10;');
+                    return `<tr>
+                  <td style="font-family:var(--mono);font-size:10px;color:var(--text3);text-align:center">${_ri + 1}</td>
                   <td style="font-weight:600">${r.name || '—'}</td>
                   <td style="text-align:right;font-size:11px;color:var(--text2)">${r.sqft ? Number(r.sqft).toLocaleString() : '—'}</td>
+                  <td style="text-align:center;cursor:help" title="${blTip}"><span style="color:${blColor};font-size:13px">${blIcon}</span> <span style="font-size:10px;color:var(--text2)">${r.meterIncl}/${r.meterTotal}</span></td>
                   <td style="text-align:right;font-size:11px;color:var(--text2)">${r.blPeriod || '—'}</td>
                   <td style="text-align:right;font-family:var(--mono)">${r.blCost > 0 ? $c(r.blCost) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--text2)">${r.blEUI > 0 ? r.blEUI.toFixed(1) : '—'}</td>
@@ -13220,8 +13249,8 @@
                   <td style="text-align:right;font-family:var(--mono);color:${r.sav >= 0 ? 'var(--green)' : 'var(--danger)'}">${r.blCost > 0 ? (r.sav >= 0 ? '' : '-') + $c(r.sav) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono)">${r.blCost > 0 ? r.savPct.toFixed(1) + '%' : '—'}</td>
                   <td style="text-align:center;font-weight:600;color:${r.statusColor}">${r.status}</td>
-                </tr>`,
-                  )
+                </tr>`;
+                  })
                   .join('')}</tbody>
               </table>
             </div>
@@ -38110,7 +38139,12 @@
         }
         function getActSav(col) {
           if (!hasActual) return null;
-          if (col.isTotal) return Object.values(actByMo).reduce((s, v) => s + v, 0);
+          // In quarterly view, actual data only exists for Year 1 (yr===0)
+          if (view === 'quarterly' && col.yr > 0) return null;
+          if (col.isTotal) {
+            // In quarterly view, total reflects only Year 1 actuals
+            return Object.values(actByMo).reduce((s, v) => s + v, 0);
+          }
           if (col.mos) return col.mos.reduce((s, mo) => s + (actByMo[mo] || 0), 0);
           return actByMo[col.mo] ?? null;
         }
@@ -44828,7 +44862,7 @@
         'Data Center': { default: { kwhPct: 38, kwPct: 40, gasPct: 15 }, '4A': { kwhPct: 38, kwPct: 40, gasPct: 15 } },
       };
 
-      // CBECS National Median EUI by building type
+      // CBECS National Median EUI by building type (kBtu/ft²/yr)
       const CBECS_EUI = {
         'K-12 School': 48.5,
         'College / University': 84.3,
@@ -44842,6 +44876,35 @@
         'Elementary School': 42,
         'Middle School': 52.6,
         'High School': 44,
+      };
+      // CBECS percentile ranges: [p25, median, p75] kBtu/ft²/yr
+      const CBECS_PERCENTILES = {
+        'K-12 School': [28, 48.5, 72],
+        'College / University': [52, 84.3, 125],
+        'Hospital / Healthcare': [98, 148.1, 210],
+        'Office Building': [30, 52.9, 82],
+        'Warehouse / Industrial': [12, 26.5, 48],
+        Retail: [24, 44.3, 68],
+        'Municipal / Government': [32, 56.1, 85],
+        'Data Center': [180, 350, 550],
+        Other: [28, 52.4, 80],
+        'Elementary School': [25, 42, 62],
+        'Middle School': [32, 52.6, 76],
+        'High School': [28, 44, 65],
+      };
+      // EnergyStar target EUI (score 75 threshold) by building type
+      const ESTAR_EUI = {
+        'K-12 School': 38,
+        'College / University': 65,
+        'Hospital / Healthcare': 120,
+        'Office Building': 46,
+        'Warehouse / Industrial': 22,
+        Retail: 36,
+        'Municipal / Government': 44,
+        Other: 40,
+        'Elementary School': 34,
+        'Middle School': 42,
+        'High School': 36,
       };
 
       function hvacLoadBenchFill(projId) {
@@ -47917,8 +47980,8 @@
       function egfxRefresh(projId) {
         const p = projects.find((x) => x.id === projId);
         if (!p) return;
-        const sqft = p.sqft || 1;
         const bldgs = getUDBldgs(projId);
+        const sqft = bldgs.reduce((s, b) => s + parseInt(b.sqft || 0), 0) || 1;
         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const moNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
@@ -47927,6 +47990,7 @@
           blKw = new Array(12).fill(0),
           blGas = new Array(12).fill(0);
         let blCost = new Array(12).fill(0);
+        let blYmPerMo = Array.from({ length: 12 }, () => new Set());
         // Year-over-year: collect by year
         let yearData = {}; // {year: {kwh:[12], kw:[12], gas:[12], cost:[12]}}
         let blYears = new Set();
@@ -47982,6 +48046,7 @@
                 if (isGas) blGas[mi] += parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
                 if (isGas) blCost[mi] += _gasCommodityCost(bill);
                 if (yr) blYears.add(yr);
+                if (ym) blYmPerMo[mi].add(ym);
               }
 
               // Collect year-over-year (project-level and per-building)
@@ -48025,8 +48090,11 @@
           });
         });
 
-        const totalBlKwh = blKwh.reduce((a, b) => a + b, 0);
-        const totalBlGas = blGas.reduce((a, b) => a + b, 0);
+        // Average baseline per calendar month if baseline spans multiple years
+        const blKwhAvg = blKwh.map((v, mi) => v / (blYmPerMo[mi].size || 1));
+        const blGasAvg = blGas.map((v, mi) => v / (blYmPerMo[mi].size || 1));
+        const totalBlKwh = blKwhAvg.reduce((a, b) => a + b, 0);
+        const totalBlGas = blGasAvg.reduce((a, b) => a + b, 0);
         const blKbtu = totalBlKwh * 3.412 + totalBlGas * 100;
         const blEui = sqft > 0 ? blKbtu / sqft : 0;
         const cbecsEui = CBECS_EUI[p.type] || 48.5;
@@ -48041,8 +48109,8 @@
         if (latestYear && yearData[latestYear]) {
           const yd = yearData[latestYear];
           for (let mi = 0; mi < 12; mi++) {
-            curKwh += yd.kwh[mi] > 0 ? yd.kwh[mi] : blKwh[mi];
-            curGas += yd.gas[mi] > 0 ? yd.gas[mi] : blGas[mi];
+            curKwh += yd.kwh[mi] > 0 ? yd.kwh[mi] : blKwhAvg[mi];
+            curGas += yd.gas[mi] > 0 ? yd.gas[mi] : blGasAvg[mi];
           }
           const curKbtu = curKwh * 3.412 + curGas * 100;
           curEui = sqft > 0 ? curKbtu / sqft : 0;
@@ -48058,12 +48126,13 @@
         if (cbEl) cbEl.textContent = cbecsEui.toFixed(1);
         const costSavEl = document.getElementById(`egfx-costSav-${projId}`);
         const costSavSubEl = document.getElementById(`egfx-costSavSub-${projId}`);
-        const totalBlCost = blCost.reduce((a, b) => a + b, 0);
+        const blCostAvg = blCost.map((v, mi) => v / (blYmPerMo[mi].size || 1));
+        const totalBlCost = blCostAvg.reduce((a, b) => a + b, 0);
         let totalCurCost = 0;
         if (latestYear && yearData[latestYear]) {
           const yd = yearData[latestYear];
           for (let mi = 0; mi < 12; mi++) {
-            totalCurCost += yd.cost[mi] > 0 ? yd.cost[mi] : blCost[mi];
+            totalCurCost += yd.cost[mi] > 0 ? yd.cost[mi] : blCostAvg[mi];
           }
         }
         if (costSavEl) {
@@ -48087,8 +48156,8 @@
           return;
         }
 
-        // Year-over-year bar chart colors
-        const yrColors = ['var(--accent)', 'var(--em)', 'var(--teal)', 'var(--amber)', 'var(--violet)'];
+        // Year-over-year bar chart colors — explicit hex to stay distinct across themes
+        const yrColors = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
 
         // Build year-over-year kWh chart
         const maxKwh = Math.max(...sortedYears.flatMap((y) => yearData[y].kwh), ...blKwh, 1);
@@ -48163,8 +48232,8 @@
                         ygas = 0;
                       if (isPartial) {
                         for (let mi = 0; mi < 12; mi++) {
-                          ykwh += yd.kwh[mi] > 0 ? yd.kwh[mi] : blKwh[mi];
-                          ygas += yd.gas[mi] > 0 ? yd.gas[mi] : blGas[mi];
+                          ykwh += yd.kwh[mi] > 0 ? yd.kwh[mi] : blKwhAvg[mi];
+                          ygas += yd.gas[mi] > 0 ? yd.gas[mi] : blGasAvg[mi];
                         }
                       } else {
                         ykwh = yd.kwh.reduce((a, b) => a + b, 0);
@@ -48199,54 +48268,293 @@
           <div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">🏢 Annual Summary by Building</div>
             <div style="overflow-x:auto">
-              <table class="dtbl" style="min-width:500px">
-                <thead><tr><th>Building</th><th>Year</th><th style="text-align:right">kWh</th><th style="text-align:right">Peak kW</th><th style="text-align:right">Gas Therms</th><th style="text-align:right">EUI kBtu/ft²</th></tr></thead>
+              <table class="dtbl" style="min-width:600px;border-collapse:collapse">
+                <thead><tr style="background:var(--s2)"><th style="text-align:left;padding:8px 10px">Building</th><th style="padding:8px 6px">Year</th><th style="text-align:right;padding:8px 10px">kWh</th><th style="text-align:right;padding:8px 10px">Peak kW</th><th style="text-align:right;padding:8px 10px">Gas Therms</th><th style="text-align:right;padding:8px 10px">Cost</th><th style="text-align:right;padding:8px 10px">EUI</th></tr></thead>
                 <tbody>
-                  ${Object.entries(bldgYearData)
-                    .map(([bName, byrs]) => {
-                      const bObj = bldgs.find((bb) => bb.name === bName);
-                      const bSqft = (bObj && bObj.sqft) || sqft / bldgs.length || 1;
-                      return yrsToShow
-                        .map((y) => {
-                          const bd = byrs[y];
-                          if (!bd) return '';
-                          const bkwh = bd.kwh.reduce((a, b2) => a + b2, 0);
-                          const bgas = bd.gas.reduce((a, b2) => a + b2, 0);
-                          const bkw = Math.max(...bd.kw);
-                          const bkbtu = bkwh * 3.412 + bgas * 100;
-                          const beui = bSqft > 0 ? bkbtu / bSqft : 0;
-                          if (bkwh === 0 && bgas === 0) return '';
-                          return (
-                            '<tr>' +
-                            '<td style="font-weight:500">' +
-                            bName +
-                            '</td>' +
-                            '<td>' +
-                            y +
-                            '</td>' +
-                            '<td style="text-align:right;font-family:var(--mono)">' +
-                            Math.round(bkwh).toLocaleString() +
-                            '</td>' +
-                            '<td style="text-align:right;font-family:var(--mono)">' +
-                            bkw.toFixed(1) +
-                            '</td>' +
-                            '<td style="text-align:right;font-family:var(--mono)">' +
-                            Math.round(bgas).toLocaleString() +
-                            '</td>' +
-                            '<td style="text-align:right;font-family:var(--mono)">' +
-                            beui.toFixed(1) +
-                            '</td></tr>'
-                          );
-                        })
-                        .join('');
-                    })
-                    .join('')}
+                  ${(() => {
+                    let rowIdx = 0;
+                    return Object.entries(bldgYearData)
+                      .map(([bName, byrs]) => {
+                        const bObj = bldgs.find((bb) => bb.name === bName);
+                        const bSqft = (bObj && parseInt(bObj.sqft)) || 0;
+                        const rows = yrsToShow
+                          .map((y) => {
+                            const bd = byrs[y];
+                            if (!bd) return null;
+                            const bkwh = bd.kwh.reduce((a, v) => a + v, 0);
+                            const bgas = bd.gas.reduce((a, v) => a + v, 0);
+                            if (bkwh === 0 && bgas === 0) return null;
+                            const bkw = Math.max(...bd.kw);
+                            const bcost = bd.cost.reduce((a, v) => a + v, 0);
+                            const bkbtu = bkwh * 3.412 + bgas * 100;
+                            const beui = bSqft > 0 ? bkbtu / bSqft : 0;
+                            return { y, bkwh, bkw, bgas, bcost, beui };
+                          })
+                          .filter(Boolean);
+                        if (!rows.length) return '';
+                        return rows
+                          .map((r, i) => {
+                            const isFirst = i === 0;
+                            const bg = rowIdx++ % 2 === 0 ? 'transparent' : 'var(--s2)';
+                            const borderTop = isFirst ? 'border-top:2px solid var(--border2)' : '';
+                            const tdS =
+                              'padding:6px 10px;font-family:var(--mono);font-size:11px;text-align:right;' + borderTop;
+                            return (
+                              '<tr style="background:' +
+                              bg +
+                              '">' +
+                              (isFirst
+                                ? '<td rowspan="' +
+                                  rows.length +
+                                  '" style="font-weight:600;padding:6px 10px;vertical-align:top;' +
+                                  borderTop +
+                                  '">' +
+                                  bName +
+                                  (bSqft > 0
+                                    ? '<div style="font-size:9px;color:var(--text3);font-weight:400">' +
+                                      bSqft.toLocaleString() +
+                                      ' ft²</div>'
+                                    : '') +
+                                  '</td>'
+                                : '') +
+                              '<td style="padding:6px 6px;font-size:11px;' +
+                              borderTop +
+                              '">' +
+                              r.y +
+                              '</td>' +
+                              '<td style="' +
+                              tdS +
+                              '">' +
+                              Math.round(r.bkwh).toLocaleString() +
+                              '</td>' +
+                              '<td style="' +
+                              tdS +
+                              '">' +
+                              r.bkw.toFixed(1) +
+                              '</td>' +
+                              '<td style="' +
+                              tdS +
+                              '">' +
+                              Math.round(r.bgas).toLocaleString() +
+                              '</td>' +
+                              '<td style="' +
+                              tdS +
+                              '">$' +
+                              Math.round(r.bcost).toLocaleString() +
+                              '</td>' +
+                              '<td style="' +
+                              tdS +
+                              '">' +
+                              (r.beui > 0 ? r.beui.toFixed(1) : '—') +
+                              '</td></tr>'
+                            );
+                          })
+                          .join('');
+                      })
+                      .join('');
+                  })()}
                 </tbody>
               </table>
             </div>
           </div>`
               : ''
           }
+          ${(() => {
+            // CBECS Benchmark Comparison Chart — horizontal bars per building
+            if (bldgs.length === 0 || !latestYear) return '';
+            const benchRows = bldgs
+              .map((b) => {
+                const bSqft = parseInt(b.sqft || 0);
+                if (bSqft <= 0) return null;
+                const bd = bldgYearData[b.name]?.[latestYear];
+                if (!bd) return null;
+                const bkwh = bd.kwh.reduce((a, v) => a + v, 0);
+                const bgas = bd.gas.reduce((a, v) => a + v, 0);
+                if (bkwh === 0 && bgas === 0) return null;
+                const bkbtu = bkwh * 3.412 + bgas * 100;
+                const beui = bkbtu / bSqft;
+                const bType = b.type || p.type || 'K-12 School';
+                const cbVal = CBECS_EUI[bType] || CBECS_EUI['Other'] || 52.4;
+                return { name: b.name, eui: beui, cbecs: cbVal, type: bType };
+              })
+              .filter(Boolean);
+            if (benchRows.length === 0) return '';
+            const maxBar = Math.max(...benchRows.flatMap((r) => [r.eui, r.cbecs]), 1);
+            return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
+              <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📊 EUI Benchmark — Your Buildings vs CBECS National Median</div>
+              <div style="font-size:10px;color:var(--text3);margin-bottom:12px">kBtu/ft²/yr · ${latestYear} data · buildings without sqft are excluded</div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                ${benchRows
+                  .map((r) => {
+                    const euiW = Math.max(2, (r.eui / maxBar) * 100);
+                    const cbW = Math.max(2, (r.cbecs / maxBar) * 100);
+                    const overUnder = r.eui <= r.cbecs ? 'var(--green)' : 'var(--danger)';
+                    const pctDiff = r.cbecs > 0 ? (((r.eui - r.cbecs) / r.cbecs) * 100).toFixed(0) : '—';
+                    const pctLabel = r.eui <= r.cbecs ? pctDiff + '% below' : '+' + pctDiff + '% above';
+                    return `<div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+                      <div style="font-size:11px;font-weight:600;color:var(--text);min-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.name}</div>
+                      <div style="font-size:9px;color:var(--text3)">${r.type}</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+                      <div style="font-size:9px;color:var(--text3);width:50px;text-align:right">Actual</div>
+                      <div style="flex:1;background:var(--s2);border-radius:3px;height:14px;position:relative">
+                        <div style="width:${euiW}%;background:${overUnder};border-radius:3px;height:100%;min-width:2px"></div>
+                      </div>
+                      <div style="font-size:10px;font-family:var(--mono);font-weight:600;color:${overUnder};min-width:55px;text-align:right">${r.eui.toFixed(1)}</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px">
+                      <div style="font-size:9px;color:var(--text3);width:50px;text-align:right">CBECS</div>
+                      <div style="flex:1;background:var(--s2);border-radius:3px;height:14px;position:relative">
+                        <div style="width:${cbW}%;background:var(--amber);border-radius:3px;height:100%;min-width:2px;opacity:0.7"></div>
+                      </div>
+                      <div style="font-size:10px;font-family:var(--mono);color:var(--amber);min-width:55px;text-align:right">${r.cbecs.toFixed(1)}</div>
+                    </div>
+                    <div style="font-size:9px;color:${overUnder};margin-top:1px;margin-left:58px;font-weight:600">${pctLabel} benchmark</div>
+                  </div>`;
+                  })
+                  .join('')}
+              </div>
+              <div style="display:flex;gap:14px;margin-top:10px;font-size:9px;color:var(--text3)">
+                <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--green);margin-right:3px"></span>Below benchmark</span>
+                <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--danger);margin-right:3px"></span>Above benchmark</span>
+                <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--amber);opacity:0.7;margin-right:3px"></span>CBECS National Median</span>
+              </div>
+            </div>`;
+          })()}
+          ${(() => {
+            // Building Performance Benchmarking — comprehensive comparison table
+            if (bldgs.length === 0 || !latestYear) return '';
+            const bRows = bldgs
+              .map((b) => {
+                const bSqft = parseInt(b.sqft || 0);
+                if (bSqft <= 0) return null;
+                const bType = b.type || p.type || 'K-12 School';
+                const cbecs = CBECS_EUI[bType] || CBECS_EUI['Other'] || 52.4;
+                const estar = ESTAR_EUI[bType] || null;
+                const pctiles = CBECS_PERCENTILES[bType] || CBECS_PERCENTILES['Other'];
+                // Compute EUI per year for trend
+                const euiByYr = {};
+                let latestEui = 0,
+                  latestCostSqft = 0;
+                for (const y of yrsToShow) {
+                  const bd = bldgYearData[b.name]?.[y];
+                  if (!bd) continue;
+                  const bkwh = bd.kwh.reduce((a, v) => a + v, 0);
+                  const bgas = bd.gas.reduce((a, v) => a + v, 0);
+                  if (bkwh === 0 && bgas === 0) continue;
+                  const bkbtu = bkwh * 3.412 + bgas * 100;
+                  euiByYr[y] = bkbtu / bSqft;
+                  const bcost = bd.cost.reduce((a, v) => a + v, 0);
+                  if (y == latestYear) {
+                    latestEui = bkbtu / bSqft;
+                    latestCostSqft = bcost / bSqft;
+                  }
+                }
+                if (latestEui === 0) return null;
+                // Percentile estimate: where does the building fall?
+                let pctileLabel = '';
+                if (pctiles) {
+                  if (latestEui <= pctiles[0]) pctileLabel = 'Top 25%';
+                  else if (latestEui <= pctiles[1]) pctileLabel = '25th–50th';
+                  else if (latestEui <= pctiles[2]) pctileLabel = '50th–75th';
+                  else pctileLabel = 'Bottom 25%';
+                }
+                const estarStatus = estar ? (latestEui <= estar ? '✓ Eligible' : '✗ Above') : '—';
+                const estarColor = estar ? (latestEui <= estar ? 'var(--green)' : 'var(--text3)') : 'var(--text3)';
+                // Trend arrow
+                const yrs = Object.keys(euiByYr).map(Number).sort();
+                let trend = '';
+                if (yrs.length >= 2) {
+                  const first = euiByYr[yrs[0]],
+                    last = euiByYr[yrs[yrs.length - 1]];
+                  const chg = first > 0 ? ((last - first) / first) * 100 : 0;
+                  trend =
+                    chg <= -2
+                      ? '<span style="color:var(--green)">↓ ' + Math.abs(chg).toFixed(0) + '%</span>'
+                      : chg >= 2
+                        ? '<span style="color:var(--danger)">↑ ' + chg.toFixed(0) + '%</span>'
+                        : '<span style="color:var(--text3)">→ flat</span>';
+                }
+                return {
+                  name: b.name,
+                  type: bType,
+                  sqft: bSqft,
+                  eui: latestEui,
+                  costSqft: latestCostSqft,
+                  cbecs,
+                  estar,
+                  estarStatus,
+                  estarColor,
+                  pctileLabel,
+                  trend,
+                  euiByYr,
+                };
+              })
+              .filter(Boolean);
+            if (bRows.length === 0) return '';
+            // Sort by EUI descending (worst performers first)
+            bRows.sort((a, b) => b.eui - a.eui);
+            return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
+              <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">🏆 Building Performance Benchmarking</div>
+              <div style="font-size:10px;color:var(--text3);margin-bottom:12px">Ranked by EUI (highest = most opportunity) · ${latestYear} data · CBECS percentiles + EnergyStar score-75 threshold</div>
+              <div style="overflow-x:auto">
+                <table class="dtbl" style="min-width:700px">
+                  <thead><tr>
+                    <th style="text-align:left">#</th>
+                    <th style="text-align:left">Building</th>
+                    <th style="text-align:left">Type</th>
+                    <th style="text-align:right">Sqft</th>
+                    <th style="text-align:right">EUI</th>
+                    <th style="text-align:right">CBECS Median</th>
+                    <th style="text-align:right">vs CBECS</th>
+                    <th style="text-align:center">Percentile</th>
+                    <th style="text-align:center">EnergyStar</th>
+                    <th style="text-align:right">$/ft²</th>
+                    <th style="text-align:center">Trend</th>
+                  </tr></thead>
+                  <tbody>
+                    ${bRows
+                      .map((r, i) => {
+                        const vsCbecs = r.cbecs > 0 ? ((r.eui - r.cbecs) / r.cbecs) * 100 : 0;
+                        const vsColor = vsCbecs <= 0 ? 'var(--green)' : 'var(--danger)';
+                        const pctBg =
+                          r.pctileLabel === 'Top 25%'
+                            ? 'rgba(34,197,94,0.15)'
+                            : r.pctileLabel === 'Bottom 25%'
+                              ? 'rgba(239,68,68,0.15)'
+                              : 'transparent';
+                        return `<tr>
+                        <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${i + 1}</td>
+                        <td style="font-weight:600;white-space:nowrap">${r.name}</td>
+                        <td style="font-size:11px;color:var(--text2)">${r.type}</td>
+                        <td style="text-align:right;font-family:var(--mono)">${r.sqft.toLocaleString()}</td>
+                        <td style="text-align:right;font-family:var(--mono);font-weight:700">${r.eui.toFixed(1)}</td>
+                        <td style="text-align:right;font-family:var(--mono);color:var(--amber)">${r.cbecs.toFixed(1)}</td>
+                        <td style="text-align:right;font-family:var(--mono);color:${vsColor};font-weight:600">${vsCbecs > 0 ? '+' : ''}${vsCbecs.toFixed(0)}%</td>
+                        <td style="text-align:center;font-size:10px;font-weight:600;background:${pctBg};border-radius:4px">${r.pctileLabel}</td>
+                        <td style="text-align:center;font-size:10px;color:${r.estarColor};font-weight:600">${r.estarStatus}</td>
+                        <td style="text-align:right;font-family:var(--mono)">$${r.costSqft.toFixed(2)}</td>
+                        <td style="text-align:center;font-size:11px">${r.trend || '—'}</td>
+                      </tr>`;
+                      })
+                      .join('')}
+                  </tbody>
+                </table>
+              </div>
+              ${
+                bRows.length > 1
+                  ? `<div style="margin-top:12px;font-size:10px;color:var(--text3)">
+                <strong style="color:var(--text2)">Key:</strong>
+                EUI = kBtu/ft²/yr · CBECS = DOE Commercial Buildings Energy Consumption Survey national median ·
+                EnergyStar = Score 75 threshold (minimum for certification) ·
+                Percentile = estimated position in CBECS distribution ·
+                $/ft² = annual energy cost per square foot · Trend = EUI change across available years
+              </div>`
+                  : ''
+              }
+            </div>`;
+          })()}
           ${(() => {
             const postBlYears = yrsToShow.filter((y) => !blYears.has(y));
             if (postBlYears.length === 0 || blEui === 0) return '';
@@ -48269,11 +48577,17 @@
               for (let qi = 0; qi < 4; qi++) {
                 let qBlKbtu = 0,
                   qActKbtu = 0;
+                let hasActualData = false;
                 for (const mi of qMonths[qi]) {
-                  qBlKbtu += blKwh[mi] * 3.412 + blGas[mi] * 100;
-                  qActKbtu += yd.kwh[mi] * 3.412 + yd.gas[mi] * 100;
+                  // Average baseline across years if multi-year baseline
+                  const nYrs = blYmPerMo[mi].size || 1;
+                  qBlKbtu += (blKwh[mi] / nYrs) * 3.412 + (blGas[mi] / nYrs) * 100;
+                  const actKbtu = yd.kwh[mi] * 3.412 + yd.gas[mi] * 100;
+                  qActKbtu += actKbtu;
+                  if (yd.kwh[mi] > 0 || yd.gas[mi] > 0) hasActualData = true;
                 }
                 if (qBlKbtu === 0 && qActKbtu === 0) continue;
+                if (!hasActualData) continue;
                 const qSav = qBlKbtu - qActKbtu;
                 const qPct = qBlKbtu > 0 ? (qSav / qBlKbtu) * 100 : 0;
                 const savColor = qSav >= 0 ? 'var(--green)' : 'var(--red)';
