@@ -11848,6 +11848,54 @@
           </div>
         </div>
       </div>
+      <!-- REPORT BUILDING SELECTION MODAL -->
+      <div
+        class="modal-bg"
+        id="reportBldgModal"
+        onclick="if (event.target === this) document.getElementById('reportBldgModal').classList.remove('open');"
+      >
+        <div class="modal" style="width: 480px">
+          <div class="modal-hdr">
+            <span class="modal-title">Generate Report</span>
+            <button class="modal-x" onclick="document.getElementById('reportBldgModal').classList.remove('open')">
+              ✕
+            </button>
+          </div>
+          <div class="modal-body">
+            <div style="margin-bottom: 12px; font-size: 12px; color: var(--text2)">
+              Select buildings to include in the report:
+            </div>
+            <div
+              id="reportBldgList"
+              style="display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto"
+            ></div>
+            <div style="margin-top: 10px; display: flex; gap: 8px">
+              <button
+                class="btn btn-ghost btn-sm"
+                onclick="
+                  document.querySelectorAll('#reportBldgList input[type=checkbox]').forEach((c) => (c.checked = true))
+                "
+              >
+                Select All
+              </button>
+              <button
+                class="btn btn-ghost btn-sm"
+                onclick="
+                  document.querySelectorAll('#reportBldgList input[type=checkbox]').forEach((c) => (c.checked = false))
+                "
+              >
+                Deselect All
+              </button>
+            </div>
+          </div>
+          <div class="modal-ftr">
+            <button class="btn btn-ghost" onclick="document.getElementById('reportBldgModal').classList.remove('open')">
+              Cancel
+            </button>
+            <button class="btn btn-em" id="reportBldgGenBtn" onclick="launchReport()">Generate PDF</button>
+          </div>
+        </div>
+      </div>
     </div>
     <!-- /app -->
 
@@ -12783,8 +12831,8 @@
                   </div>
                 </div>
                 <div style="display:flex;gap:6px">
-                  <button class="btn btn-ghost btn-sm" onclick="generatePerformanceReport(${p.id},'quarterly')">📊 Quarterly Report</button>
-                  <button class="btn btn-ghost btn-sm" onclick="generatePerformanceReport(${p.id},'annual')">📈 Annual Report</button>
+                  <button class="btn btn-ghost btn-sm" onclick="openReportModal(${p.id},'quarterly')">📊 Quarterly Report</button>
+                  <button class="btn btn-ghost btn-sm" onclick="openReportModal(${p.id},'annual')">📈 Annual Report</button>
                   <button class="btn btn-em btn-sm" onclick="openMeetingEditor(${p.id})">+ New Agenda</button>
                 </div>
               </div>
@@ -43017,294 +43065,1265 @@
       }
 
       /* ── QUARTERLY / ANNUAL PERFORMANCE REPORTS ── */
-      function generatePerformanceReport(projId, type) {
-        const p = projects.find((x) => x.id === projId);
-        if (!p) return;
-        const bldgs = getUDBldgs(projId);
-        const useNormalized = p.baselineComparison === 'normalized';
-        if (!bldgs.length) {
-          showToast('No buildings with utility data — add data in Utility Data tab first');
-          return;
-        }
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF({ unit: 'pt', format: 'letter' });
-        const pw = 612,
-          ph = 792,
-          ml = 54,
-          mr = 40;
-        const contentW = pw - ml - mr;
-        let y = 36;
 
-        // Header
-        try {
-          doc.addImage(CSC_HEADER_B64, 'JPEG', 0, 0, pw, 145);
-        } catch (e) {}
-        y = 155;
+let _reportProjId = null,
+  _reportType = null;
 
-        // Title
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(14);
-        doc.setTextColor(0, 0, 0);
-        const now = new Date();
-        const reportTitle =
-          type === 'quarterly' ? 'Quarterly Savings Performance Report' : 'Annual Savings Performance Report';
-        doc.text(reportTitle, pw / 2, y, { align: 'center' });
-        y += 18;
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(11);
-        doc.text(p.client || p.name || '', pw / 2, y, { align: 'center' });
-        y += 14;
-        const monthNames = [
-          'January',
-          'February',
-          'March',
-          'April',
-          'May',
-          'June',
-          'July',
-          'August',
-          'September',
-          'October',
-          'November',
-          'December',
-        ];
-        doc.text(monthNames[now.getMonth()] + ' ' + now.getFullYear(), pw / 2, y, { align: 'center' });
-        y += 24;
+function openReportModal(projId, type) {
+  _reportProjId = projId;
+  _reportType = type;
+  const bldgs = getUDBldgs(projId);
+  const list = document.getElementById('reportBldgList');
+  if (!bldgs.length) {
+    showToast('No buildings with utility data');
+    return;
+  }
+  list.innerHTML = bldgs
+    .map(
+      (
+        b,
+      ) => `<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:var(--s1);cursor:pointer">
+          <input type="checkbox" checked data-bid="${b.id}" style="accent-color:var(--em);width:16px;height:16px">
+          <span style="font-size:13px;color:var(--text)">${b.name || 'Unnamed'}</span>
+          <span style="font-size:11px;color:var(--text3);margin-left:auto">${b.sqft ? parseInt(b.sqft).toLocaleString() + ' sf' : ''}</span>
+        </label>`,
+    )
+    .join('');
+  document.querySelector('#reportBldgModal .modal-title').textContent =
+    type === 'quarterly' ? 'Generate Quarterly Report' : 'Generate Annual Report';
+  document.getElementById('reportBldgModal').classList.add('open');
+}
 
-        // Summary section
-        let totalBlCost = 0,
-          totalCurCost = 0,
-          totalBlKBtu = 0,
-          totalCurKBtu = 0;
-        const totalSqft = bldgs.reduce((s, b) => s + parseInt(b.sqft || 0), 0);
-        const bldgData = bldgs.map((b) => {
-          const meters = b.meters || [];
-          const sqft = parseInt(b.sqft || 0);
-          let blCost = 0,
-            curCost = 0,
-            blKwh = 0,
-            curKwh = 0,
-            blTherms = 0,
-            curTherms = 0;
-          const periodMonths = type === 'quarterly' ? 3 : 12;
+function launchReport() {
+  const checks = document.querySelectorAll('#reportBldgList input[type=checkbox]:checked');
+  const ids = Array.from(checks).map((c) => c.dataset.bid);
+  if (!ids.length) {
+    showToast('Select at least one building');
+    return;
+  }
+  document.getElementById('reportBldgModal').classList.remove('open');
+  generatePerformanceReport(_reportProjId, _reportType, ids);
+}
 
-          if (useNormalized) {
-            const bldgMoBase = {};
-            for (let i = 0; i < 12; i++) bldgMoBase[i] = 0;
-            let bldgSav = 0;
-            meters.forEach((m) => {
-              if (m.baselineInclude === false) return;
-              const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
-              const incl = m.inclusive !== false;
-              const bl = m.baseline;
-              if (!bl || !bl.months || bl.months.length < 3) return;
-              const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
-              const blRows = allRows.filter((r) => bl.months.includes(r.ym));
-              const { elecByMo: eM, gasByMo: gM } = buildMoMap(m, blRows, bills, incl);
-              for (let mo = 0; mo < 12; mo++) bldgMoBase[mo] += (eM[mo]?.totalCost || 0) + (gM[mo]?.cost || 0);
-              const sav = getMeterPerfSavingsByCalMo(m, bills, incl);
-              Object.values(sav).forEach((v) => {
-                bldgSav += v;
-              });
-              // Usage for EUI
-              const blBills = _dashGetBaselineBills(m);
-              if (m.commodity === 'Gas') {
-                blBills.forEach((bill) => {
-                  blTherms += parseFloat(bill.therms) || 0;
-                });
-                bills.slice(-periodMonths).forEach((bill) => {
-                  curTherms += parseFloat(bill.therms) || 0;
-                });
-              } else {
-                blBills.forEach((bill) => {
-                  blKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-                });
-                bills.slice(-periodMonths).forEach((bill) => {
-                  curKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-                });
-              }
-            });
-            blCost = Object.values(bldgMoBase).reduce((s, v) => s + v, 0);
-            curCost = blCost - bldgSav;
-          } else {
-            meters.forEach((m) => {
-              if (m.baselineInclude === false) return;
-              const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
-              const blBills = _dashGetBaselineBills(m);
-              blBills.forEach((bill) => {
-                blCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || 0;
-                if (m.commodity === 'Gas') blTherms += parseFloat(bill.therms) || 0;
-                else blKwh += parseFloat(bill.kwh) || 0;
-              });
-              bills.slice(-periodMonths).forEach((bill) => {
-                curCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || 0;
-                if (m.commodity === 'Gas') curTherms += parseFloat(bill.therms) || 0;
-                else curKwh += parseFloat(bill.kwh) || 0;
-              });
-            });
-          }
+function generatePerformanceReport(projId, type, buildingIds) {
+  const p = projects.find((x) => x.id === projId);
+  if (!p) return;
+  let bldgs = getUDBldgs(projId);
+  if (buildingIds && buildingIds.length) bldgs = bldgs.filter((b) => buildingIds.includes(String(b.id)));
+  const useNormalized = p.baselineComparison === 'normalized';
+  if (!bldgs.length) {
+    showToast('No buildings with utility data');
+    return;
+  }
 
-          const blKBtu = blKwh * 3.412 + blTherms * 100;
-          const curKBtu = curKwh * 3.412 + curTherms * 100;
-          const sav = blCost - curCost;
-          const savPct = blCost > 0 ? (sav / blCost) * 100 : 0;
-          totalBlCost += blCost;
-          totalCurCost += curCost;
-          totalBlKBtu += blKBtu;
-          totalCurKBtu += curKBtu;
-          return {
-            name: b.name,
-            sqft,
-            blCost,
-            curCost,
-            sav,
-            savPct,
-            blEUI: sqft > 0 ? blKBtu / sqft : 0,
-            curEUI: sqft > 0 ? curKBtu / sqft : 0,
-          };
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  const pw = 612,
+    ph = 792,
+    ml = 54,
+    mr = 40;
+  const contentW = pw - ml - mr;
+  const now = new Date();
+  const monthNames = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  const $c = (n) => '$' + Math.round(Math.abs(n)).toLocaleString();
+  const periodMonths = type === 'quarterly' ? 3 : 12;
+  let y = 36;
+  let pageNum = 1;
+
+  function addFooter() {
+    try {
+      doc.addImage(CSC_FOOTER_B64, 'JPEG', 0, ph - 55, pw, 55);
+    } catch (e) {}
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(150, 150, 150);
+    doc.text('Page ' + pageNum, pw / 2, ph - 8, { align: 'center' });
+    doc.setTextColor(0, 0, 0);
+  }
+  function newPage() {
+    addFooter();
+    doc.addPage();
+    pageNum++;
+    y = 40;
+  }
+  function checkPage(needed) {
+    if (y + needed > ph - 70) newPage();
+  }
+
+  // ═══════════════════════════════════════════
+  // GATHER ALL DATA UP FRONT
+  // ═══════════════════════════════════════════
+
+  let allPostYMs = [];
+  const allBldgMeters = [];
+  bldgs.forEach((b) => {
+    (b.meters || []).forEach((m) => {
+      if (m.baselineInclude === false) return;
+      const bl = m.baseline;
+      if (!bl || !bl.months || bl.months.length < 3) return;
+      const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+      const incl = m.inclusive !== false;
+      const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
+      const blEnd = bl.months.slice().sort().pop();
+      const postRows = allRows.filter((r) => r.ym > blEnd);
+      postRows.forEach((r) => {
+        if (!allPostYMs.includes(r.ym)) allPostYMs.push(r.ym);
+      });
+      allBldgMeters.push({ b, m, bills, incl, allRows, bl, blEnd, postRows });
+    });
+  });
+  allPostYMs.sort();
+
+  // Reporting period = most recent N months with data
+  const reportYMs = allPostYMs.slice(-periodMonths);
+  const reportStart = reportYMs[0] || '';
+  const reportEnd = reportYMs[reportYMs.length - 1] || '';
+  const rpStartMonth = reportStart ? monthNames[parseInt(reportStart.split('-')[1]) - 1] : '';
+  const rpStartYear = reportStart ? reportStart.split('-')[0] : '';
+  const rpEndMonth = reportEnd ? monthNames[parseInt(reportEnd.split('-')[1]) - 1] : '';
+  const rpEndYear = reportEnd ? reportEnd.split('-')[0] : '';
+  const periodLabel =
+    rpStartYear === rpEndYear
+      ? rpStartMonth + ' – ' + rpEndMonth + ' ' + rpEndYear
+      : rpStartMonth + ' ' + rpStartYear + ' – ' + rpEndMonth + ' ' + rpEndYear;
+
+  // Compute per-building data
+  const totalSqft = bldgs.reduce((s, b) => s + parseInt(b.sqft || 0), 0);
+
+  const bldgData = bldgs.map((b) => {
+    const sqft = parseInt(b.sqft || 0);
+    const bType = b.type || p.type || 'Other';
+    let qBlCost = 0,
+      qCurCost = 0;
+    let annBlKBtu = 0,
+      annCurKBtu = 0;
+    let cumSavings = 0;
+    const meterDetails = [];
+    const qtrSavByYM = {};
+    const yearUsage = {};
+
+    const bMeters = allBldgMeters.filter((x) => x.b === b);
+    bMeters.forEach(({ m, bills, incl, allRows, bl, blEnd, postRows }) => {
+      const blRows = allRows.filter((r) => bl.months.includes(r.ym));
+      const { elecByMo: eM, gasByMo: gM, propaneByMo: pM } = buildMoMap(m, blRows, bills, incl);
+
+      // Quarterly baseline expected cost for report period calendar months
+      reportYMs.forEach((ym) => {
+        const calMo = parseInt(ym.split('-')[1]) - 1;
+        const moCost = (eM[calMo]?.totalCost || 0) + (gM[calMo]?.cost || 0) + ((pM || {})[calMo]?.cost || 0);
+        qBlCost += moCost;
+      });
+
+      // Quarterly actual cost from bills in reporting period
+      reportYMs.forEach((ym) => {
+        const matchBills = bills.filter((bill) => normMonth(bill.start, bill.end, incl, bills) === ym);
+        matchBills.forEach((bill) => {
+          qCurCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || 0;
         });
+      });
 
-        // Summary box
-        const totalSav = totalBlCost - totalCurCost;
-        const totalPct = totalBlCost > 0 ? (totalSav / totalBlCost) * 100 : 0;
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(11);
-        doc.text('Executive Summary', ml, y);
-        y += 16;
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(10);
-        const $c = (n) => '$' + Math.round(Math.abs(n)).toLocaleString();
-        doc.text('Baseline Cost: ' + $c(totalBlCost) + '/yr', ml, y);
-        y += 14;
-        doc.text(
-          'Current Cost (' + (type === 'quarterly' ? 'Last 3 Months' : 'Last 12 Months') + '): ' + $c(totalCurCost),
-          ml,
-          y,
-        );
-        y += 14;
-        doc.text(
-          'Savings: ' +
-            (totalSav >= 0 ? '' : '-') +
-            $c(totalSav) +
-            ' (' +
-            totalPct.toFixed(1) +
-            '%)' +
-            (useNormalized ? ' [Normalized]' : ''),
-          ml,
-          y,
-        );
-        y += 14;
-        if (totalSqft > 0) {
-          doc.text('Baseline EUI: ' + (totalBlKBtu / totalSqft).toFixed(1) + ' kBtu/sf/yr', ml, y);
-          y += 14;
-          doc.text('Current EUI: ' + (totalCurKBtu / totalSqft).toFixed(1) + ' kBtu/sf/yr', ml, y);
-          y += 14;
-        }
-        y += 10;
+      // Cumulative savings (all post-baseline months)
+      const sav = getMeterPerfSavingsByCalMo(m, bills, incl);
+      Object.values(sav).forEach((v) => {
+        cumSavings += v;
+      });
 
-        // Building table
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(11);
-        doc.text('Building Performance', ml, y);
-        y += 16;
-        // Table header
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8);
-        const cols = ['Building', 'Sq Ft', 'Baseline $/yr', 'Current $/yr', 'Savings', '%', 'BL EUI', 'Cur EUI'];
-        const colWidths = [
-          contentW * 0.22,
-          contentW * 0.1,
-          contentW * 0.13,
-          contentW * 0.13,
-          contentW * 0.12,
-          contentW * 0.08,
-          contentW * 0.11,
-          contentW * 0.11,
-        ];
-        let cx = ml;
-        cols.forEach((c, i) => {
-          doc.text(c, cx, y);
-          cx += colWidths[i];
+      // Per-quarter savings for trend chart
+      postRows.forEach((r) => {
+        const calMo = parseInt(r.ym.split('-')[1]) - 1;
+        const bfr = bills.filter((bill) => normMonth(bill.start, bill.end, incl, bills) === r.ym);
+        if (!bfr.length) return;
+        let actCost = 0;
+        bfr.forEach((bill) => {
+          actCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || 0;
         });
-        y += 2;
-        doc.line(ml, y, ml + contentW, y);
-        y += 10;
-        // Table rows
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        bldgData.forEach((r) => {
-          if (y > ph - 80) {
-            doc.addPage();
-            y = 40;
-          }
-          cx = ml;
-          doc.text(r.name || '—', cx, y);
-          cx += colWidths[0];
-          doc.text(r.sqft ? r.sqft.toLocaleString() : '—', cx, y);
-          cx += colWidths[1];
-          doc.text($c(r.blCost), cx, y);
-          cx += colWidths[2];
-          doc.text($c(r.curCost), cx, y);
-          cx += colWidths[3];
-          doc.text((r.sav >= 0 ? '' : '-') + $c(r.sav), cx, y);
-          cx += colWidths[4];
-          doc.text(r.blCost > 0 ? r.savPct.toFixed(1) + '%' : '—', cx, y);
-          cx += colWidths[5];
-          doc.text(r.blEUI > 0 ? r.blEUI.toFixed(1) : '—', cx, y);
-          cx += colWidths[6];
-          doc.text(r.curEUI > 0 ? r.curEUI.toFixed(1) : '—', cx, y);
-          y += 13;
+        const expCost = (eM[calMo]?.totalCost || 0) + (gM[calMo]?.cost || 0) + ((pM || {})[calMo]?.cost || 0);
+        if (!qtrSavByYM[r.ym]) qtrSavByYM[r.ym] = 0;
+        qtrSavByYM[r.ym] += expCost - actCost;
+      });
+
+      // Annual EUI - rolling 12 months and per-year
+      const blBills = _dashGetBaselineBills(m);
+      if (m.commodity === 'Gas') {
+        blBills.forEach((bill) => {
+          annBlKBtu += (parseFloat(bill.therms) || 0) * 100;
         });
-        y += 10;
-
-        // Recommendations section
-        if (y > ph - 120) {
-          doc.addPage();
-          y = 40;
-        }
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(11);
-        doc.text('Observations & Recommendations', ml, y);
-        y += 16;
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(10);
-        if (totalSav > 0) {
-          doc.text(
-            '• Overall savings are positive at ' + totalPct.toFixed(1) + '% reduction from baseline.',
-            ml + 10,
-            y,
-          );
-          y += 14;
-        } else {
-          doc.text(
-            '• Costs have increased ' + Math.abs(totalPct).toFixed(1) + '% vs baseline — review usage patterns.',
-            ml + 10,
-            y,
-          );
-          y += 14;
-        }
-        doc.text('• Continue monitoring monthly utility bills for trends.', ml + 10, y);
-        y += 14;
-        doc.text('• Review BAS schedules and setpoints for optimization opportunities.', ml + 10, y);
-        y += 14;
-
-        // Footer
-        try {
-          doc.addImage(CSC_FOOTER_B64, 'JPEG', 0, ph - 55, pw, 55);
-        } catch (e) {}
-
-        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '.');
-        const filename =
-          (p.client || p.name || 'Project') +
-          ' - ' +
-          (type === 'quarterly' ? 'Quarterly' : 'Annual') +
-          ' Savings Report ' +
-          dateStr +
-          '.pdf';
-        doc.save(filename);
-        showToast(type === 'quarterly' ? 'Quarterly report generated ✓' : 'Annual report generated ✓');
+        const last12 = bills.filter((bill) => {
+          const ym = normMonth(bill.start, bill.end, incl, bills);
+          return ym && allPostYMs.includes(ym) && allPostYMs.indexOf(ym) >= allPostYMs.length - 12;
+        });
+        last12.forEach((bill) => {
+          annCurKBtu += (parseFloat(bill.therms) || 0) * 100;
+        });
+        bills.forEach((bill) => {
+          const ym = normMonth(bill.start, bill.end, incl, bills);
+          if (!ym) return;
+          const yr = ym.split('-')[0];
+          if (!yearUsage[yr]) yearUsage[yr] = { kwh: 0, therms: 0 };
+          yearUsage[yr].therms += parseFloat(bill.therms) || 0;
+        });
+      } else {
+        blBills.forEach((bill) => {
+          annBlKBtu += (parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 3.412;
+        });
+        const last12 = bills.filter((bill) => {
+          const ym = normMonth(bill.start, bill.end, incl, bills);
+          return ym && allPostYMs.includes(ym) && allPostYMs.indexOf(ym) >= allPostYMs.length - 12;
+        });
+        last12.forEach((bill) => {
+          annCurKBtu += (parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 3.412;
+        });
+        bills.forEach((bill) => {
+          const ym = normMonth(bill.start, bill.end, incl, bills);
+          if (!ym) return;
+          const yr = ym.split('-')[0];
+          if (!yearUsage[yr]) yearUsage[yr] = { kwh: 0, therms: 0 };
+          yearUsage[yr].kwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
+        });
       }
 
+      // Baseline methodology details for appendix
+      const regObj = bl.reg || m._reg || {};
+      const hasHDD = !!(regObj.hdd && regObj.hdd.r2 != null);
+      const hasCDD = !!(regObj.cdd && regObj.cdd.r2 != null);
+      const hasDual = !!(regObj.dual && regObj.dual.r2 != null);
+      let regrType = 'Simple Average';
+      let r2 = null;
+      if (hasDual && regObj.dual.r2 > (hasHDD ? regObj.hdd.r2 : 0) && regObj.dual.r2 > (hasCDD ? regObj.cdd.r2 : 0)) {
+        regrType = 'Dual (HDD + CDD)';
+        r2 = regObj.dual.r2;
+      } else if (m.commodity === 'Gas' && hasHDD) {
+        regrType = 'HDD Regression';
+        r2 = regObj.hdd.r2;
+      } else if (m.commodity === 'Electric' && hasCDD) {
+        regrType = 'CDD Regression';
+        r2 = regObj.cdd.r2;
+      } else if (hasHDD) {
+        regrType = 'HDD Regression';
+        r2 = regObj.hdd.r2;
+      } else if (hasCDD) {
+        regrType = 'CDD Regression';
+        r2 = regObj.cdd.r2;
+      }
+      const blSorted = bl.months.slice().sort();
+      let blHDD = 0,
+        blCDD = 0,
+        blAnnCost = 0;
+      const blRowsForMeter = allRows.filter((r) => bl.months.includes(r.ym));
+      blRowsForMeter.forEach((r) => {
+        blHDD += r.hdd || 0;
+        blCDD += r.cdd || 0;
+        blAnnCost += r.cost || 0;
+      });
+      meterDetails.push({
+        meterName: m.name || m.commodity + ' Meter',
+        commodity: m.commodity,
+        blPeriod: blSorted.length ? blSorted[0] + ' to ' + blSorted[blSorted.length - 1] : '—',
+        method: useNormalized ? 'Weather-Normalized' : 'Actual Comparison',
+        regrType,
+        r2,
+        blHDD,
+        blCDD,
+        blAnnCost,
+        blMonthCount: bl.months.length,
+      });
+    });
+
+    const qSav = qBlCost - qCurCost;
+    const qSavPct = qBlCost > 0 ? (qSav / qBlCost) * 100 : 0;
+    const blEUI = sqft > 0 ? annBlKBtu / sqft : 0;
+    const curEUI = sqft > 0 ? annCurKBtu / sqft : 0;
+    const cbecsEUI = CBECS_EUI[bType] || CBECS_EUI['Other'] || 52.4;
+    const pctiles = CBECS_PERCENTILES[bType] || CBECS_PERCENTILES['Other'] || [28, 52.4, 80];
+    const estarEUI = typeof ESTAR_EUI !== 'undefined' ? ESTAR_EUI[bType] || ESTAR_EUI['Other'] || 40 : 40;
+    let pctileLabel = '';
+    if (curEUI > 0) {
+      if (curEUI <= pctiles[0]) pctileLabel = 'Top 25%';
+      else if (curEUI <= pctiles[1]) pctileLabel = '25th–50th';
+      else if (curEUI <= pctiles[2]) pctileLabel = '50th–75th';
+      else pctileLabel = 'Bottom 25%';
+    }
+
+    // Per-year EUI
+    const euiByYear = {};
+    Object.entries(yearUsage).forEach(([yr, u]) => {
+      const kbtu = (u.kwh || 0) * 3.412 + (u.therms || 0) * 100;
+      if (sqft > 0 && kbtu > 0) euiByYear[yr] = kbtu / sqft;
+    });
+
+    return {
+      name: b.name,
+      sqft,
+      bType,
+      qBlCost,
+      qCurCost,
+      qSav,
+      qSavPct,
+      blEUI,
+      curEUI,
+      cbecsEUI,
+      pctiles,
+      estarEUI,
+      pctileLabel,
+      cumSavings,
+      qtrSavByYM,
+      meterDetails,
+      euiByYear,
+    };
+  });
+
+  // Aggregate totals
+  let totalQBlCost = 0,
+    totalQCurCost = 0,
+    totalCumSav = 0;
+  let totalAnnBlKBtu = 0,
+    totalAnnCurKBtu = 0;
+  bldgData.forEach((d) => {
+    totalQBlCost += d.qBlCost;
+    totalQCurCost += d.qCurCost;
+    totalCumSav += d.cumSavings;
+    totalAnnBlKBtu += d.blEUI * d.sqft;
+    totalAnnCurKBtu += d.curEUI * d.sqft;
+  });
+  const totalQSav = totalQBlCost - totalQCurCost;
+  const totalQPct = totalQBlCost > 0 ? (totalQSav / totalQBlCost) * 100 : 0;
+  const guaranteedSav = parseFloat(p.savings) || 0;
+  const contractYears = parseInt(p.contractYears) || 3;
+  const escalation = parseFloat(p.escalation) || 0;
+  const cscComp = parseFloat(p.cscCompensation) || 0;
+  const contractStart = p.start ? new Date(p.start) : null;
+  const annualizedSavRate = totalQBlCost > 0 ? totalQSav / totalQBlCost : 0;
+
+  // Contract year calculation
+  let contractYearNum = 1;
+  if (contractStart) {
+    const msElapsed = now - contractStart;
+    contractYearNum = Math.max(1, Math.min(contractYears, Math.ceil(msElapsed / (365.25 * 86400000))));
+  }
+
+  // On-track status
+  const annualizedActual = totalQSav * (12 / periodMonths);
+  let statusLabel = 'On Track',
+    statusColor = [34, 139, 34];
+  if (guaranteedSav > 0) {
+    const pctOfGuarantee = annualizedActual / guaranteedSav;
+    if (pctOfGuarantee < 0) {
+      statusLabel = 'Over Budget';
+      statusColor = [200, 30, 30];
+    } else if (pctOfGuarantee < 0.8) {
+      statusLabel = 'Below Target';
+      statusColor = [210, 140, 0];
+    }
+  } else if (annualizedActual < 0) {
+    statusLabel = 'Over Budget';
+    statusColor = [200, 30, 30];
+  }
+
+  // Aggregate quarterly savings for trend chart
+  const aggQtrSav = {};
+  bldgData.forEach((d) => {
+    Object.entries(d.qtrSavByYM).forEach(([ym, v]) => {
+      aggQtrSav[ym] = (aggQtrSav[ym] || 0) + v;
+    });
+  });
+  const sortedQtrYMs = Object.keys(aggQtrSav).sort();
+  const quarters = {};
+  sortedQtrYMs.forEach((ym) => {
+    const [yr, mo] = ym.split('-');
+    const q = 'Q' + Math.ceil(parseInt(mo) / 3) + ' ' + yr;
+    quarters[q] = (quarters[q] || 0) + aggQtrSav[ym];
+  });
+
+  // Weather data for observations
+  let rpHDD = 0,
+    rpCDD = 0,
+    blAvgHDD = 0,
+    blAvgCDD = 0,
+    blMonthsCount = 0;
+  allBldgMeters.forEach(({ allRows, bl }) => {
+    const blRows = allRows.filter((r) => bl.months.includes(r.ym));
+    blRows.forEach((r) => {
+      blAvgHDD += r.hdd || 0;
+      blAvgCDD += r.cdd || 0;
+    });
+    blMonthsCount += blRows.length;
+    const rpRows = allRows.filter((r) => reportYMs.includes(r.ym));
+    rpRows.forEach((r) => {
+      rpHDD += r.hdd || 0;
+      rpCDD += r.cdd || 0;
+    });
+  });
+  const blAvgHDDperMo = blMonthsCount > 0 ? blAvgHDD / blMonthsCount : 0;
+  const blAvgCDDperMo = blMonthsCount > 0 ? blAvgCDD / blMonthsCount : 0;
+  const rpMeterMonths = allBldgMeters.reduce((s, x) => s + x.allRows.filter((r) => reportYMs.includes(r.ym)).length, 0);
+  const expHDD = blAvgHDDperMo * rpMeterMonths;
+  const expCDD = blAvgCDDperMo * rpMeterMonths;
+
+  // ═══════════════════════════════════════════
+  // PAGE 1: COVER + EXECUTIVE SUMMARY
+  // ═══════════════════════════════════════════
+
+  try {
+    doc.addImage(CSC_HEADER_B64, 'JPEG', 0, 0, pw, 145);
+  } catch (e) {}
+  y = 155;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.setTextColor(0, 0, 0);
+  const reportTitle =
+    type === 'quarterly' ? 'Quarterly Savings Performance Report' : 'Annual Savings Performance Report';
+  doc.text(reportTitle, pw / 2, y, { align: 'center' });
+  y += 20;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(12);
+  doc.text(p.client || p.name || '', pw / 2, y, { align: 'center' });
+  y += 16;
+  doc.setFontSize(11);
+  doc.setTextColor(80, 80, 80);
+  doc.text('Reporting Period: ' + periodLabel, pw / 2, y, { align: 'center' });
+  y += 14;
+  doc.setFontSize(9);
+  doc.text(
+    'Report Generated: ' + monthNames[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear(),
+    pw / 2,
+    y,
+    { align: 'center' },
+  );
+  doc.setTextColor(0, 0, 0);
+  y += 28;
+
+  // Performance at a Glance
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.text('Performance at a Glance', ml, y);
+  y += 4;
+
+  const boxW = (contentW - 12) / 3;
+  const boxH = 58;
+  const boxGap = 6;
+  const boxes = [
+    {
+      label: type === 'quarterly' ? 'Quarterly Savings' : 'Annual Savings',
+      value: (totalQSav >= 0 ? '' : '-') + $c(totalQSav),
+      sub: totalQPct.toFixed(1) + '% vs baseline',
+    },
+    {
+      label: 'Cumulative Savings',
+      value: (totalCumSav >= 0 ? '' : '-') + $c(totalCumSav),
+      sub: 'Since contract start',
+    },
+    {
+      label: 'Guaranteed Savings',
+      value: guaranteedSav > 0 ? $c(guaranteedSav) + '/yr' : 'Not set',
+      sub:
+        guaranteedSav > 0
+          ? (annualizedActual >= 0 ? Math.round((annualizedActual / guaranteedSav) * 100) : 0) +
+            '% achieved (annualized)'
+          : '',
+    },
+    { label: 'Status', value: statusLabel, sub: '', color: statusColor },
+    {
+      label: 'Contract Progress',
+      value: 'Year ' + contractYearNum + ' of ' + contractYears,
+      sub: contractStart ? 'Started ' + monthNames[contractStart.getMonth()] + ' ' + contractStart.getFullYear() : '',
+    },
+    {
+      label: 'Comparison Method',
+      value: useNormalized ? 'Weather-Normalized' : 'Actual',
+      sub: useNormalized ? 'Adjusted for degree days' : 'Direct bill comparison',
+    },
+  ];
+
+  boxes.forEach((box, i) => {
+    const col = i % 3;
+    const row = Math.floor(i / 3);
+    const bx = ml + col * (boxW + boxGap);
+    const by = y + row * (boxH + boxGap);
+    doc.setFillColor(245, 245, 248);
+    doc.roundedRect(bx, by, boxW, boxH, 4, 4, 'F');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(120, 120, 120);
+    doc.text(box.label.toUpperCase(), bx + 8, by + 14);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    if (box.color) doc.setTextColor(box.color[0], box.color[1], box.color[2]);
+    else doc.setTextColor(0, 0, 0);
+    doc.text(String(box.value), bx + 8, by + 32);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    doc.text(box.sub || '', bx + 8, by + 46);
+    doc.setTextColor(0, 0, 0);
+  });
+  y += 2 * (boxH + boxGap) + 16;
+
+  // Executive summary text
+  checkPage(60);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('Executive Summary', ml, y);
+  y += 14;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9.5);
+  const summaryLines = [
+    'Baseline Cost (' + periodLabel + '): ' + $c(totalQBlCost),
+    'Actual Cost (' + periodLabel + '): ' + $c(totalQCurCost),
+    'Net Savings: ' +
+      (totalQSav >= 0 ? '' : '-') +
+      $c(totalQSav) +
+      ' (' +
+      totalQPct.toFixed(1) +
+      '%)' +
+      (useNormalized ? '  [Weather-Normalized]' : ''),
+    totalSqft > 0
+      ? 'District EUI: Baseline ' +
+        (totalAnnBlKBtu / totalSqft).toFixed(1) +
+        ' → Current ' +
+        (totalAnnCurKBtu / totalSqft).toFixed(1) +
+        ' kBtu/sf/yr'
+      : '',
+  ].filter(Boolean);
+  summaryLines.forEach((line) => {
+    doc.text(line, ml + 4, y);
+    y += 13;
+  });
+
+  addFooter();
+
+  // ═══════════════════════════════════════════
+  // PAGE 2: BUILDING PERFORMANCE TABLE + TREND
+  // ═══════════════════════════════════════════
+
+  doc.addPage();
+  pageNum++;
+  y = 40;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.text('Building Performance Summary', ml, y);
+  y += 4;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Reporting Period: ' + periodLabel, ml, y + 10);
+  y += 18;
+  doc.setTextColor(0, 0, 0);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  const tCols = ['Building', 'Sq Ft', 'Expected Cost', 'Actual Cost', 'Savings', '%', 'Status'];
+  const tW = [
+    contentW * 0.26,
+    contentW * 0.1,
+    contentW * 0.14,
+    contentW * 0.14,
+    contentW * 0.14,
+    contentW * 0.09,
+    contentW * 0.13,
+  ];
+  let cx = ml;
+  tCols.forEach((c, i) => {
+    doc.text(c, cx, y);
+    cx += tW[i];
+  });
+  y += 2;
+  doc.setDrawColor(180, 180, 180);
+  doc.line(ml, y, ml + contentW, y);
+  y += 10;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  bldgData.forEach((r, idx) => {
+    checkPage(16);
+    if (idx % 2 === 0) {
+      doc.setFillColor(248, 248, 250);
+      doc.rect(ml - 2, y - 9, contentW + 4, 13, 'F');
+    }
+    cx = ml;
+    doc.setTextColor(0, 0, 0);
+    doc.text((r.name || '—').substring(0, 28), cx, y);
+    cx += tW[0];
+    doc.text(r.sqft ? r.sqft.toLocaleString() : '—', cx, y);
+    cx += tW[1];
+    doc.text($c(r.qBlCost), cx, y);
+    cx += tW[2];
+    doc.text($c(r.qCurCost), cx, y);
+    cx += tW[3];
+    doc.text((r.qSav >= 0 ? '' : '-') + $c(r.qSav), cx, y);
+    cx += tW[4];
+    doc.text(r.qBlCost > 0 ? r.qSavPct.toFixed(1) + '%' : '—', cx, y);
+    cx += tW[5];
+    if (r.qSav >= 0) doc.setTextColor(34, 139, 34);
+    else doc.setTextColor(200, 30, 30);
+    doc.text(r.qSav >= 0 ? 'On Track' : 'Below Target', cx, y);
+    doc.setTextColor(0, 0, 0);
+    y += 13;
+  });
+  y += 2;
+  doc.setDrawColor(180, 180, 180);
+  doc.line(ml, y - 8, ml + contentW, y - 8);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  cx = ml;
+  doc.text('TOTAL', cx, y);
+  cx += tW[0];
+  doc.text(totalSqft.toLocaleString(), cx, y);
+  cx += tW[1];
+  doc.text($c(totalQBlCost), cx, y);
+  cx += tW[2];
+  doc.text($c(totalQCurCost), cx, y);
+  cx += tW[3];
+  doc.text((totalQSav >= 0 ? '' : '-') + $c(totalQSav), cx, y);
+  cx += tW[4];
+  doc.text(totalQPct.toFixed(1) + '%', cx, y);
+  y += 20;
+
+  // Savings trend chart
+  const qKeys = Object.keys(quarters);
+  if (qKeys.length >= 2) {
+    checkPage(200);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text('Savings Trend Over Time', ml, y);
+    y += 14;
+
+    const chartW = contentW;
+    const chartH = 150;
+    const canvas = document.createElement('canvas');
+    canvas.width = chartW * 2;
+    canvas.height = chartH * 2;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(2, 2);
+
+    const vals = qKeys.map((k) => quarters[k]);
+    const maxVal = Math.max(...vals.map(Math.abs), guaranteedSav / 4 || 1);
+    const barW = Math.min(40, (chartW - 60) / qKeys.length - 4);
+    const padL = 50,
+      padB = 30,
+      padT = 10;
+    const plotH = chartH - padB - padT;
+    const zeroY = padT + plotH * (maxVal / (maxVal * 2));
+
+    ctx.strokeStyle = '#e0e0e0';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 4; i++) {
+      const gy = padT + (plotH / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(padL, gy);
+      ctx.lineTo(chartW, gy);
+      ctx.stroke();
+    }
+
+    qKeys.forEach((q, i) => {
+      const v = quarters[q];
+      const x = padL + ((chartW - padL) / qKeys.length) * i + (chartW - padL) / qKeys.length / 2 - barW / 2;
+      const barH = (Math.abs(v) / maxVal) * (plotH / 2);
+      const topY = v >= 0 ? zeroY - barH : zeroY;
+      ctx.fillStyle = v >= 0 ? '#22a355' : '#d63031';
+      ctx.beginPath();
+      ctx.roundRect(x, topY, barW, barH, 3);
+      ctx.fill();
+      ctx.fillStyle = '#333';
+      ctx.font = '8px Helvetica';
+      ctx.textAlign = 'center';
+      ctx.fillText(q, x + barW / 2, chartH - 6);
+      ctx.font = 'bold 8px Helvetica';
+      ctx.fillText((v >= 0 ? '' : '-') + '$' + Math.round(Math.abs(v)).toLocaleString(), x + barW / 2, topY - 4);
+    });
+
+    if (guaranteedSav > 0) {
+      const gLine = guaranteedSav / (12 / periodMonths);
+      const gY = zeroY - (gLine / maxVal) * (plotH / 2);
+      ctx.setLineDash([4, 3]);
+      ctx.strokeStyle = '#e67e22';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(padL, gY);
+      ctx.lineTo(chartW - 5, gY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#e67e22';
+      ctx.font = '8px Helvetica';
+      ctx.textAlign = 'left';
+      ctx.fillText(
+        'Target: $' + Math.round(gLine).toLocaleString() + '/' + (type === 'quarterly' ? 'qtr' : 'yr'),
+        padL + 2,
+        gY - 4,
+      );
+    }
+
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(padL, zeroY);
+    ctx.lineTo(chartW, zeroY);
+    ctx.stroke();
+
+    ctx.fillStyle = '#666';
+    ctx.font = '8px Helvetica';
+    ctx.textAlign = 'right';
+    ctx.fillText('$' + Math.round(maxVal).toLocaleString(), padL - 4, padT + 6);
+    ctx.fillText('$0', padL - 4, zeroY + 4);
+    ctx.fillText('-$' + Math.round(maxVal).toLocaleString(), padL - 4, padT + plotH + 4);
+
+    const imgData = canvas.toDataURL('image/png');
+    doc.addImage(imgData, 'PNG', ml, y, chartW, chartH);
+    y += chartH + 10;
+  }
+
+  addFooter();
+
+  // ═══════════════════════════════════════════
+  // PAGE 3: EUI BENCHMARKING
+  // ═══════════════════════════════════════════
+
+  doc.addPage();
+  pageNum++;
+  y = 40;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.text('Energy Use Intensity — Building Comparison', ml, y);
+  y += 14;
+
+  const euiBldgs = bldgData.filter((d) => d.curEUI > 0 && d.sqft > 0);
+  if (euiBldgs.length > 0) {
+    const euiChartH = Math.max(120, euiBldgs.length * 44 + 50);
+    const euiChartW = contentW;
+    const canvas2 = document.createElement('canvas');
+    canvas2.width = euiChartW * 2;
+    canvas2.height = euiChartH * 2;
+    const ctx2 = canvas2.getContext('2d');
+    ctx2.scale(2, 2);
+
+    const maxEUI = Math.max(...euiBldgs.map((d) => Math.max(d.curEUI, d.cbecsEUI))) * 1.2;
+    const leftPad = 140,
+      rightPad = 80,
+      topPad = 20;
+    const barAreaW = euiChartW - leftPad - rightPad;
+    const rowH = 40;
+
+    euiBldgs.forEach((d, i) => {
+      const by = topPad + i * rowH;
+      const barH = 14;
+      ctx2.fillStyle = '#333';
+      ctx2.font = '9px Helvetica';
+      ctx2.textAlign = 'right';
+      ctx2.fillText((d.name || '').substring(0, 22), leftPad - 8, by + barH);
+
+      const barLen = (d.curEUI / maxEUI) * barAreaW;
+      ctx2.fillStyle = d.curEUI <= d.cbecsEUI ? '#22a355' : '#d63031';
+      ctx2.beginPath();
+      ctx2.roundRect(leftPad, by + 2, barLen, barH, 3);
+      ctx2.fill();
+
+      const cbecsX = leftPad + (d.cbecsEUI / maxEUI) * barAreaW;
+      ctx2.strokeStyle = '#e67e22';
+      ctx2.lineWidth = 2;
+      ctx2.beginPath();
+      ctx2.moveTo(cbecsX, by);
+      ctx2.lineTo(cbecsX, by + barH + 4);
+      ctx2.stroke();
+
+      const estarX = leftPad + (d.estarEUI / maxEUI) * barAreaW;
+      ctx2.setLineDash([3, 2]);
+      ctx2.strokeStyle = '#3498db';
+      ctx2.lineWidth = 1;
+      ctx2.beginPath();
+      ctx2.moveTo(estarX, by);
+      ctx2.lineTo(estarX, by + barH + 4);
+      ctx2.stroke();
+      ctx2.setLineDash([]);
+
+      ctx2.fillStyle = '#333';
+      ctx2.font = 'bold 9px Helvetica';
+      ctx2.textAlign = 'left';
+      ctx2.fillText(d.curEUI.toFixed(1), leftPad + barLen + 4, by + barH - 1);
+      ctx2.font = '8px Helvetica';
+      ctx2.fillStyle = '#888';
+      ctx2.fillText(d.pctileLabel, leftPad + barLen + 4, by + barH + 9);
+    });
+
+    const legY = topPad + euiBldgs.length * rowH + 8;
+    ctx2.font = '8px Helvetica';
+    ctx2.textAlign = 'left';
+    ctx2.fillStyle = '#22a355';
+    ctx2.fillRect(leftPad, legY, 12, 8);
+    ctx2.fillStyle = '#666';
+    ctx2.fillText('Below CBECS Median (good)', leftPad + 16, legY + 7);
+    ctx2.fillStyle = '#d63031';
+    ctx2.fillRect(leftPad + 160, legY, 12, 8);
+    ctx2.fillStyle = '#666';
+    ctx2.fillText('Above CBECS Median', leftPad + 176, legY + 7);
+    ctx2.strokeStyle = '#e67e22';
+    ctx2.lineWidth = 2;
+    ctx2.beginPath();
+    ctx2.moveTo(leftPad, legY + 18);
+    ctx2.lineTo(leftPad + 12, legY + 18);
+    ctx2.stroke();
+    ctx2.fillStyle = '#666';
+    ctx2.fillText('CBECS National Median', leftPad + 16, legY + 22);
+    ctx2.setLineDash([3, 2]);
+    ctx2.strokeStyle = '#3498db';
+    ctx2.lineWidth = 1;
+    ctx2.beginPath();
+    ctx2.moveTo(leftPad + 160, legY + 18);
+    ctx2.lineTo(leftPad + 172, legY + 18);
+    ctx2.stroke();
+    ctx2.setLineDash([]);
+    ctx2.fillStyle = '#666';
+    ctx2.fillText('EnergyStar Target (Score 75)', leftPad + 176, legY + 22);
+
+    ctx2.fillStyle = '#999';
+    ctx2.font = '8px Helvetica';
+    ctx2.textAlign = 'center';
+    ctx2.fillText('kBtu/sf/yr', leftPad + barAreaW / 2, legY + 38);
+
+    const imgData2 = canvas2.toDataURL('image/png');
+    doc.addImage(imgData2, 'PNG', ml, y, euiChartW, euiChartH);
+    y += euiChartH + 10;
+  }
+
+  // EUI Year-over-Year table
+  checkPage(80);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('EUI Year-over-Year', ml, y);
+  y += 14;
+
+  const allYears = [];
+  bldgData.forEach((d) =>
+    Object.keys(d.euiByYear).forEach((yr) => {
+      if (!allYears.includes(yr)) allYears.push(yr);
+    }),
+  );
+  allYears.sort();
+
+  if (allYears.length > 0) {
+    const nameColW = contentW * 0.28;
+    const yrColW = Math.min(60, (contentW - nameColW - 50) / allYears.length);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    cx = ml;
+    doc.text('Building', cx, y);
+    cx += nameColW;
+    allYears.forEach((yr) => {
+      doc.text(yr, cx, y);
+      cx += yrColW;
+    });
+    doc.text('Trend', cx, y);
+    y += 2;
+    doc.line(ml, y, ml + contentW, y);
+    y += 10;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    bldgData.forEach((d) => {
+      checkPage(14);
+      cx = ml;
+      doc.text((d.name || '').substring(0, 24), cx, y);
+      cx += nameColW;
+      const dYears = allYears.map((yr) => d.euiByYear[yr] || null);
+      dYears.forEach((v) => {
+        doc.text(v != null ? v.toFixed(1) : '—', cx, y);
+        cx += yrColW;
+      });
+      const validYears = dYears.filter((v) => v != null);
+      let trend = '—';
+      if (validYears.length >= 2) {
+        const diff = validYears[validYears.length - 1] - validYears[validYears.length - 2];
+        if (diff < -2) {
+          trend = '↓ Improving';
+          doc.setTextColor(34, 139, 34);
+        } else if (diff > 2) {
+          trend = '↑ Increasing';
+          doc.setTextColor(200, 30, 30);
+        } else {
+          trend = '→ Stable';
+          doc.setTextColor(100, 100, 100);
+        }
+      }
+      doc.text(trend, cx, y);
+      doc.setTextColor(0, 0, 0);
+      y += 12;
+    });
+  }
+
+  addFooter();
+
+  // ═══════════════════════════════════════════
+  // PAGE 4: PROJECTED SAVINGS
+  // ═══════════════════════════════════════════
+
+  doc.addPage();
+  pageNum++;
+  y = 40;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.text('Projected Savings Over Contract Term', ml, y);
+  y += 16;
+
+  const annualBaseline = totalQBlCost * (12 / periodMonths);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  const pCols = ['Year', 'Baseline (Escalated)', 'Projected Savings', 'CSC Share', 'Client Net Savings'];
+  const pW = [contentW * 0.1, contentW * 0.22, contentW * 0.22, contentW * 0.22, contentW * 0.24];
+  cx = ml;
+  pCols.forEach((c, i) => {
+    doc.text(c, cx, y);
+    cx += pW[i];
+  });
+  y += 2;
+  doc.setDrawColor(180, 180, 180);
+  doc.line(ml, y, ml + contentW, y);
+  y += 10;
+
+  let totalProjSav = 0,
+    totalClientNet = 0;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  for (let yr = 1; yr <= contractYears; yr++) {
+    checkPage(16);
+    const escFactor = Math.pow(1 + escalation / 100, yr - 1);
+    const escBaseline = annualBaseline * escFactor;
+    const projSav = escBaseline * annualizedSavRate;
+    const cscShare = projSav * (cscComp / 100);
+    const clientNet = projSav - cscShare;
+    totalProjSav += projSav;
+    totalClientNet += clientNet;
+
+    if (yr === contractYearNum) {
+      doc.setFillColor(255, 248, 230);
+      doc.rect(ml - 2, y - 9, contentW + 4, 13, 'F');
+    }
+    cx = ml;
+    doc.setFont('helvetica', yr === contractYearNum ? 'bold' : 'normal');
+    doc.text('Year ' + yr + (yr === contractYearNum ? ' ◀' : ''), cx, y);
+    cx += pW[0];
+    doc.text($c(escBaseline), cx, y);
+    cx += pW[1];
+    doc.text((projSav >= 0 ? '' : '-') + $c(projSav), cx, y);
+    cx += pW[2];
+    doc.text(cscComp > 0 ? $c(cscShare) + ' (' + cscComp + '%)' : '—', cx, y);
+    cx += pW[3];
+    doc.text((clientNet >= 0 ? '' : '-') + $c(clientNet), cx, y);
+    y += 13;
+  }
+  y += 2;
+  doc.setDrawColor(180, 180, 180);
+  doc.line(ml, y - 8, ml + contentW, y - 8);
+  doc.setFont('helvetica', 'bold');
+  cx = ml;
+  doc.text('TOTAL', cx, y);
+  cx += pW[0];
+  doc.text('', cx, y);
+  cx += pW[1];
+  doc.text((totalProjSav >= 0 ? '' : '-') + $c(totalProjSav), cx, y);
+  cx += pW[2];
+  doc.text('', cx, y);
+  cx += pW[3];
+  doc.text((totalClientNet >= 0 ? '' : '-') + $c(totalClientNet), cx, y);
+  y += 20;
+
+  // Contract progress bar
+  checkPage(50);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('Contract Progress', ml, y);
+  y += 14;
+  const progBarW = contentW * 0.7;
+  const progBarH = 18;
+  const progPct = Math.min(1, contractYearNum / contractYears);
+  doc.setFillColor(230, 230, 235);
+  doc.roundedRect(ml, y, progBarW, progBarH, 4, 4, 'F');
+  doc.setFillColor(34, 139, 34);
+  if (progPct > 0) doc.roundedRect(ml, y, progBarW * progPct, progBarH, 4, 4, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(255, 255, 255);
+  doc.text(Math.round(progPct * 100) + '%', ml + (progBarW * progPct) / 2, y + 13, { align: 'center' });
+  doc.setTextColor(0, 0, 0);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text(
+    'Year ' + contractYearNum + ' of ' + contractYears + ' — ' + Math.round(progPct * 100) + '% complete',
+    ml + progBarW + 8,
+    y + 12,
+  );
+  y += 40;
+
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(8);
+  doc.setTextColor(120, 120, 120);
+  doc.text(
+    'Projections based on current savings rate of ' +
+      (annualizedSavRate * 100).toFixed(1) +
+      '% with ' +
+      escalation +
+      '% annual utility escalation.',
+    ml,
+    y,
+  );
+  if (cscComp > 0) {
+    y += 11;
+    doc.text('CSC compensation: ' + cscComp + '% of savings.', ml, y);
+  }
+  doc.setTextColor(0, 0, 0);
+
+  addFooter();
+
+  // ═══════════════════════════════════════════
+  // PAGE 5: OBSERVATIONS & RECOMMENDATIONS
+  // ═══════════════════════════════════════════
+
+  doc.addPage();
+  pageNum++;
+  y = 40;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.text('Observations & Recommendations', ml, y);
+  y += 18;
+
+  const obs = [];
+
+  if (guaranteedSav > 0) {
+    const pctAchieved = Math.round((annualizedActual / guaranteedSav) * 100);
+    if (pctAchieved >= 100)
+      obs.push(
+        'Overall Performance: The project exceeded its guaranteed savings target this period, achieving ' +
+          pctAchieved +
+          '% of the ' +
+          $c(guaranteedSav) +
+          '/yr guarantee.',
+      );
+    else if (pctAchieved >= 80)
+      obs.push(
+        'Overall Performance: The project achieved ' +
+          pctAchieved +
+          '% of the ' +
+          $c(guaranteedSav) +
+          '/yr guaranteed savings target this period. Performance is within an acceptable range.',
+      );
+    else
+      obs.push(
+        'Overall Performance: The project achieved only ' +
+          pctAchieved +
+          '% of the ' +
+          $c(guaranteedSav) +
+          '/yr guaranteed savings target. A review of BAS schedules and setpoints is recommended.',
+      );
+  } else {
+    obs.push(
+      'Overall Performance: The project ' +
+        (totalQSav >= 0
+          ? 'saved ' + $c(totalQSav) + ' (' + totalQPct.toFixed(1) + '% below baseline)'
+          : 'exceeded baseline costs by ' + $c(totalQSav) + ' (' + Math.abs(totalQPct).toFixed(1) + '%)') +
+        ' during this reporting period.',
+    );
+  }
+
+  const best = bldgData.reduce((a, b) => (b.qSavPct > a.qSavPct ? b : a), bldgData[0]);
+  if (best && best.qSavPct > 0 && bldgData.length > 1) {
+    obs.push(
+      'Top Performer: ' +
+        best.name +
+        ' led the project with ' +
+        best.qSavPct.toFixed(1) +
+        '% savings (' +
+        $c(best.qSav) +
+        '), outperforming the project average of ' +
+        totalQPct.toFixed(1) +
+        '%.',
+    );
+  }
+
+  const worst = bldgData.reduce((a, b) => (b.qSavPct < a.qSavPct ? b : a), bldgData[0]);
+  if (worst && worst.qSavPct < 0 && bldgData.length > 1) {
+    obs.push(
+      'Needs Attention: ' +
+        worst.name +
+        ' showed a ' +
+        Math.abs(worst.qSavPct).toFixed(1) +
+        '% cost increase vs baseline. A focused review of equipment schedules and building operations is recommended.',
+    );
+  } else if (worst && worst.qSavPct < totalQPct * 0.5 && bldgData.length > 1 && worst !== best) {
+    obs.push(
+      'Below Average: ' +
+        worst.name +
+        ' saved ' +
+        worst.qSavPct.toFixed(1) +
+        '% vs the project average of ' +
+        totalQPct.toFixed(1) +
+        '%. Consider reviewing setpoints and occupancy schedules.',
+    );
+  }
+
+  if (expHDD > 0 && rpHDD > 0) {
+    const hddDiff = ((rpHDD - expHDD) / expHDD) * 100;
+    if (Math.abs(hddDiff) > 10) {
+      obs.push(
+        'Weather Impact: This period had ' +
+          Math.abs(hddDiff).toFixed(0) +
+          '% ' +
+          (hddDiff > 0 ? 'more' : 'fewer') +
+          ' heating degree days than the baseline average. ' +
+          (useNormalized
+            ? 'The weather-normalized calculation accounts for this variation.'
+            : 'Consider weather-normalizing for a more accurate comparison.'),
+      );
+    }
+  }
+  if (expCDD > 0 && rpCDD > 0) {
+    const cddDiff = ((rpCDD - expCDD) / expCDD) * 100;
+    if (Math.abs(cddDiff) > 10) {
+      obs.push(
+        'Cooling Season: This period had ' +
+          Math.abs(cddDiff).toFixed(0) +
+          '% ' +
+          (cddDiff > 0 ? 'more' : 'fewer') +
+          ' cooling degree days than the baseline average. ' +
+          (useNormalized ? 'Weather normalization accounts for this.' : 'Actual comparison does not adjust for this.'),
+      );
+    }
+  }
+
+  const bottomQuartile = bldgData.filter((d) => d.curEUI > 0 && d.pctileLabel === 'Bottom 25%');
+  if (bottomQuartile.length > 0) {
+    const names = bottomQuartile.map((d) => d.name).join(', ');
+    obs.push(
+      'EUI Benchmark Alert: ' +
+        names +
+        (bottomQuartile.length > 1 ? ' have' : ' has') +
+        ' EUI values in the bottom 25% nationally. A targeted operations review may identify optimization opportunities.',
+    );
+  }
+
+  const qVals = Object.values(quarters);
+  if (qVals.length >= 3) {
+    const recent3 = qVals.slice(-3);
+    if (recent3[2] < recent3[1] && recent3[1] < recent3[0] && recent3[0] > 0) {
+      obs.push(
+        'Declining Trend: Savings have decreased for three consecutive quarters. A mid-cycle BAS tune-up is recommended.',
+      );
+    }
+  }
+
+  if (obs.length < 3) {
+    obs.push(
+      'Recommendation: Continue monitoring monthly utility bills and review BAS schedules seasonally to maintain optimal performance.',
+    );
+  }
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9.5);
+  obs.forEach((o, i) => {
+    checkPage(50);
+    const fullLines = doc.splitTextToSize(i + 1 + '. ' + o, contentW - 8);
+    fullLines.forEach((line, li) => {
+      doc.text(line, ml + 4, y);
+      y += 13;
+    });
+    y += 6;
+  });
+
+  addFooter();
+
+  // ═══════════════════════════════════════════
+  // PAGE 6: BASELINE METHODOLOGY APPENDIX
+  // ═══════════════════════════════════════════
+
+  doc.addPage();
+  pageNum++;
+  y = 40;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.text('Appendix: Baseline Methodology', ml, y);
+  y += 6;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Technical details of the baseline period and regression analysis for each meter.', ml, y + 10);
+  y += 22;
+  doc.setTextColor(0, 0, 0);
+
+  bldgData.forEach((bd) => {
+    if (!bd.meterDetails.length) return;
+    checkPage(50);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setFillColor(240, 240, 245);
+    doc.rect(ml - 2, y - 10, contentW + 4, 14, 'F');
+    doc.text(bd.name + (bd.sqft ? '  (' + bd.sqft.toLocaleString() + ' sf)' : ''), ml, y);
+    y += 10;
+
+    bd.meterDetails.forEach((md) => {
+      checkPage(65);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text(md.meterName + ' — ' + md.commodity, ml + 8, y);
+      y += 11;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      const details = [
+        ['Baseline Period', md.blPeriod + ' (' + md.blMonthCount + ' months)'],
+        ['Comparison Method', md.method],
+        ['Regression Type', md.regrType],
+        [
+          'R² (Goodness of Fit)',
+          md.r2 != null ? md.r2.toFixed(4) + (md.r2 >= 0.75 ? ' (Good)' : md.r2 >= 0.5 ? ' (Fair)' : ' (Weak)') : 'N/A',
+        ],
+        ['Baseline HDD / CDD', Math.round(md.blHDD).toLocaleString() + ' / ' + Math.round(md.blCDD).toLocaleString()],
+        ['Annual Baseline Cost', $c(md.blAnnCost)],
+      ];
+      details.forEach(([lbl, val]) => {
+        doc.setTextColor(100, 100, 100);
+        doc.text(lbl + ':', ml + 16, y);
+        doc.setTextColor(0, 0, 0);
+        doc.text(val, ml + 140, y);
+        y += 11;
+      });
+      y += 6;
+    });
+    y += 4;
+  });
+
+  addFooter();
+
+  // ═══════════════════════════════════════════
+  // SAVE PDF
+  // ═══════════════════════════════════════════
+
+  const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '.');
+  const filename =
+    (p.client || p.name || 'Project') +
+    ' - ' +
+    (type === 'quarterly' ? 'Quarterly' : 'Annual') +
+    ' Savings Report ' +
+    dateStr +
+    '.pdf';
+  doc.save(filename);
+  showToast(type === 'quarterly' ? 'Quarterly report generated ✓' : 'Annual report generated ✓');
+}
       /* ── SESSION PERSISTENCE ── */
 
       // ── Projects page ──
@@ -48680,7 +49699,6 @@
                   estarColor,
                   pctileLabel,
                   trend,
-                  euiByYr,
                 };
               })
               .filter(Boolean);
