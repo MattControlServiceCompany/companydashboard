@@ -12672,9 +12672,9 @@
                       <div style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
                     </div>
                     <div class="card" style="background:var(--s1);padding:14px;text-align:center">
-                      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Current EUI</div>
-                      <div id="egfx-curEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--em);margin:6px 0" data-calc-formula="Current EUI = actual months + baseline for remaining months, divided by sqft">—</div>
-                      <div style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
+                      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Rolling 12-Mo EUI</div>
+                      <div id="egfx-curEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--em);margin:6px 0">—</div>
+                      <div id="egfx-curEuiSub-${p.id}" style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
                     </div>
                     <div class="card" style="background:var(--s1);padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">CBECS Benchmark</div>
@@ -12687,6 +12687,7 @@
                       <div id="egfx-costSavSub-${p.id}" style="font-size:11px;color:var(--text2)">vs baseline</div>
                     </div>
                   </div>
+                  <div id="egfx-eui-detail-${p.id}" style="display:flex;gap:16px;margin-bottom:16px;font-size:11px;color:var(--text2)"></div>
                   <div id="egfx-charts-${p.id}">
                     <div style="font-size:13px;color:var(--text3);text-align:center;padding:40px">Add utility data to buildings to see energy graphics. Baseline and year-over-year kWh, kW, and gas consumption will appear here.</div>
                   </div>
@@ -48121,42 +48122,86 @@
         const blEui = sqft > 0 ? blKbtu / sqft : 0;
         const cbecsEui = CBECS_EUI[p.type] || 48.5;
 
-        // Find the most recent year for "current" and project using baseline
-        // for months without actual data (rolling baseline approach)
         const sortedYears = Object.keys(yearData).map(Number).sort();
         const latestYear = sortedYears.length > 0 ? sortedYears[sortedYears.length - 1] : null;
-        let curKwh = 0,
-          curGas = 0,
-          curEui = 0;
-        if (latestYear && yearData[latestYear]) {
-          const yd = yearData[latestYear];
+
+        // Build a flat list of all year-months with actual data, sorted newest first
+        const allYms = [];
+        for (const y of sortedYears) {
+          const yd = yearData[y];
           for (let mi = 0; mi < 12; mi++) {
-            curKwh += yd.kwh[mi] > 0 ? yd.kwh[mi] : blKwhAvg[mi];
-            curGas += yd.gas[mi] > 0 ? yd.gas[mi] : blGasAvg[mi];
+            if (yd.kwh[mi] > 0 || yd.gas[mi] > 0) {
+              allYms.push({ y, mi, kwh: yd.kwh[mi], gas: yd.gas[mi], cost: yd.cost[mi] });
+            }
           }
-          const curKbtu = curKwh * 3.412 + curGas * 100;
-          curEui = sqft > 0 ? curKbtu / sqft : 0;
+        }
+        allYms.sort((a, b) => a.y * 12 + a.mi - (b.y * 12 + b.mi));
+
+        // Rolling 12-month EUI: last 12 complete months with actual data
+        const r12 = allYms.slice(-12);
+        let r12Kbtu = 0,
+          r12Cost = 0;
+        r12.forEach((m) => {
+          r12Kbtu += m.kwh * 3.412 + m.gas * 100;
+          r12Cost += m.cost;
+        });
+        const r12Eui = sqft > 0 && r12.length > 0 ? ((r12Kbtu / r12.length) * 12) / sqft : 0;
+        const r12Label = r12.length + ' months';
+
+        // Quarterly EUI: most recent complete quarter (3 consecutive months)
+        let qEui = 0,
+          qLabel = '';
+        const qNames = ['Q1', 'Q2', 'Q3', 'Q4'];
+        const qMonthRanges = [
+          [0, 1, 2],
+          [3, 4, 5],
+          [6, 7, 8],
+          [9, 10, 11],
+        ];
+        for (let yi = sortedYears.length - 1; yi >= 0 && qEui === 0; yi--) {
+          const y = sortedYears[yi];
+          const yd = yearData[y];
+          for (let qi = 3; qi >= 0; qi--) {
+            const ms = qMonthRanges[qi];
+            const hasAll = ms.every((mi) => yd.kwh[mi] > 0 || yd.gas[mi] > 0);
+            if (hasAll) {
+              let qKbtu = 0;
+              ms.forEach((mi) => {
+                qKbtu += yd.kwh[mi] * 3.412 + yd.gas[mi] * 100;
+              });
+              qEui = sqft > 0 ? ((qKbtu / 3) * 12) / sqft : 0;
+              qLabel = qNames[qi] + ' ' + y;
+              break;
+            }
+          }
+        }
+
+        // Monthly EUI: most recent single month with actual data
+        const latestMo = allYms.length > 0 ? allYms[allYms.length - 1] : null;
+        let moEui = 0,
+          moLabel = '';
+        if (latestMo) {
+          const moKbtu = latestMo.kwh * 3.412 + latestMo.gas * 100;
+          moEui = sqft > 0 ? (moKbtu * 12) / sqft : 0;
+          const moNamesFull = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          moLabel = moNamesFull[latestMo.mi] + ' ' + latestMo.y;
         }
 
         // Update EUI cards
         const blEl = document.getElementById(`egfx-blEui-${projId}`);
         const curEl = document.getElementById(`egfx-curEui-${projId}`);
+        const curSubEl = document.getElementById(`egfx-curEuiSub-${projId}`);
         const cbEl = document.getElementById(`egfx-cbecs-${projId}`);
         if (blEl) blEl.textContent = blEui > 0 ? blEui.toFixed(1) : 'No baseline data';
         if (blEl && blEui === 0) blEl.style.fontSize = '14px';
-        if (curEl) curEl.textContent = curEui > 0 ? curEui.toFixed(1) : '—';
+        if (curEl) curEl.textContent = r12Eui > 0 ? r12Eui.toFixed(1) : '—';
+        if (curSubEl) curSubEl.textContent = r12Eui > 0 ? 'kBtu/ft² · ' + r12Label : 'kBtu/ft²';
         if (cbEl) cbEl.textContent = cbecsEui.toFixed(1);
         const costSavEl = document.getElementById(`egfx-costSav-${projId}`);
         const costSavSubEl = document.getElementById(`egfx-costSavSub-${projId}`);
         const blCostAvg = blCost.map((v, mi) => v / (blYmPerMo[mi].size || 1));
         const totalBlCost = blCostAvg.reduce((a, b) => a + b, 0);
-        let totalCurCost = 0;
-        if (latestYear && yearData[latestYear]) {
-          const yd = yearData[latestYear];
-          for (let mi = 0; mi < 12; mi++) {
-            totalCurCost += yd.cost[mi] > 0 ? yd.cost[mi] : blCostAvg[mi];
-          }
-        }
+        const totalCurCost = r12.length > 0 ? (r12Cost / r12.length) * 12 : 0;
         if (costSavEl) {
           if (totalBlCost > 0 && totalCurCost > 0) {
             const savings = totalBlCost - totalCurCost;
@@ -48168,6 +48213,45 @@
             costSavEl.textContent = 'No baseline data';
             costSavEl.style.fontSize = '14px';
           }
+        }
+
+        // Populate monthly/quarterly EUI detail row
+        const euiDetailEl = document.getElementById(`egfx-eui-detail-${projId}`);
+        if (euiDetailEl) {
+          const items = [];
+          if (moEui > 0)
+            items.push(
+              '<span style="font-family:var(--mono);color:var(--text)"><strong>Monthly:</strong> ' +
+                moEui.toFixed(1) +
+                ' kBtu/ft² <span style="color:var(--text3)">(' +
+                moLabel +
+                ')</span></span>',
+            );
+          if (qEui > 0)
+            items.push(
+              '<span style="font-family:var(--mono);color:var(--text)"><strong>Quarterly:</strong> ' +
+                qEui.toFixed(1) +
+                ' kBtu/ft² <span style="color:var(--text3)">(' +
+                qLabel +
+                ')</span></span>',
+            );
+          if (r12Eui > 0 && r12.length >= 12)
+            items.push(
+              '<span style="font-family:var(--mono);color:var(--text)"><strong>12-Month:</strong> ' +
+                r12Eui.toFixed(1) +
+                ' kBtu/ft² <span style="color:var(--text3)">(' +
+                r12Label +
+                ')</span></span>',
+            );
+          else if (r12Eui > 0)
+            items.push(
+              '<span style="font-family:var(--mono);color:var(--text)"><strong>12-Month:</strong> ' +
+                r12Eui.toFixed(1) +
+                '* kBtu/ft² <span style="color:var(--text3)">(' +
+                r12Label +
+                ', annualized)</span></span>',
+            );
+          euiDetailEl.innerHTML = items.join('<span style="color:var(--text3)">|</span>');
         }
 
         const chartsEl = document.getElementById(`egfx-charts-${projId}`);
@@ -48588,9 +48672,7 @@
               [6, 7, 8],
               [9, 10, 11],
             ];
-            const nowDate = new Date();
-            const nowYr = nowDate.getFullYear();
-            const nowMo = nowDate.getMonth();
+
             let qHtml = '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">';
             qHtml +=
               '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📅 Quarterly Savings vs Baseline</div>';
@@ -48617,22 +48699,15 @@
                 }
                 if (qBlKbtu === 0 && qActKbtu === 0) continue;
                 if (!hasActualData) continue;
-                const isPartial = moWithData < 3 && y === nowYr && qMonths[qi].includes(nowMo);
-                if (isPartial) {
-                  qBlKbtu = (qBlKbtu * moWithData) / 3;
-                }
+                if (moWithData < 3) continue;
                 const qSav = qBlKbtu - qActKbtu;
                 const qPct = qBlKbtu > 0 ? (qSav / qBlKbtu) * 100 : 0;
                 const savColor = qSav >= 0 ? 'var(--green)' : 'var(--red)';
-                const partialTag = isPartial
-                  ? ' <span style="font-size:9px;color:var(--amber)">(partial — ' + moWithData + '/3 mo)</span>'
-                  : '';
                 qHtml +=
                   '<tr><td>' +
                   y +
                   '</td><td>' +
                   qNames[qi] +
-                  partialTag +
                   '</td>' +
                   '<td style="text-align:right;font-family:var(--mono)">' +
                   Math.round(qBlKbtu).toLocaleString() +
