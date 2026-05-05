@@ -2802,11 +2802,22 @@
         border-color: var(--em);
         color: var(--em);
       }
+      /* Issue b2f5ee0b: condensed extracted-fields panel — 2-column grid so more
+         values are visible at once without scrolling. */
       .ef-grid {
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-        margin-top: 6px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2px;
+        margin-top: 4px;
+      }
+      /* Sections, pairs, charge-rows, and the add/export button row span both columns */
+      .ef-grid .ef-section,
+      .ef-grid .ef-pair,
+      .ef-grid .ef-charge-row,
+      .ef-grid > div[style*='margin-top:8px'],
+      .ef-grid > div[style*='border-top'],
+      .ef-grid > div[style*='margin-bottom'] {
+        grid-column: 1 / -1;
       }
       .ef-row {
         display: flex;
@@ -2992,8 +3003,8 @@
       .ef-item {
         background: var(--s3);
         border: 1px solid var(--border);
-        border-radius: 5px;
-        padding: 4px 8px;
+        border-radius: 4px;
+        padding: 3px 6px;
         position: relative;
       }
       .ef-item.wide {
@@ -3008,11 +3019,11 @@
         text-transform: uppercase;
         letter-spacing: 0.6px;
         font-weight: 700;
-        margin-bottom: 1px;
+        margin-bottom: 0;
       }
       .ef-input {
         font-family: var(--mono);
-        font-size: 11px;
+        font-size: 10.5px;
         color: var(--em);
         background: transparent;
         border: none;
@@ -3048,8 +3059,8 @@
         text-transform: uppercase;
         letter-spacing: 0.7px;
         color: var(--accent);
-        margin: 6px 0 2px;
-        padding-bottom: 3px;
+        margin: 3px 0 1px;
+        padding-bottom: 2px;
         border-bottom: 1px solid rgba(var(--accent-rgb, 108, 99, 255), 0.2);
       }
       .ai-label {
@@ -32841,8 +32852,17 @@
             'accountNumber',
             'meterNumber',
           ]);
+          // For Gas meters in detailed mode, only list the usage column matching the
+          // meter's bill unit so the settings modal doesn't show a toggle for a column
+          // that won't appear in the table.
+          const _detailSettingsBillUnit = meter.commodity === 'Gas' ? getMeterBillUnit(meter) : null;
           items = _billSchemaFor(meter.commodity)
-            .filter((e) => !e.section && !SKIP.has(e.key))
+            .filter((e) => {
+              if (e.section || SKIP.has(e.key)) return false;
+              if (_detailSettingsBillUnit && e.gasUnit === 'CCF' && _detailSettingsBillUnit !== 'CCF') return false;
+              if (_detailSettingsBillUnit && e.gasUnit === 'Therms' && _detailSettingsBillUnit === 'CCF') return false;
+              return true;
+            })
             .map((e) => ({ key: e.key, label: e.label }));
         }
         const hiddenSet = new Set(state.hidden || []);
@@ -33018,9 +33038,18 @@
               rightSticky: c.key === 'totalCost',
             }));
         } else {
-          const schemaForTable = _billSchemaFor(m.commodity).filter(
-            (e) => !e.section && !TABLE_SKIP_KEYS.has(e.key) && !hiddenSet.has(e.key),
-          );
+          // For Gas meters in detailed view, only show the usage column that matches
+          // the meter's bill unit (Therms or CCF) — both exist in BILL_SCHEMA.Gas so
+          // we filter out the one that doesn't apply.
+          const _detailBillUnit = isGas ? getMeterBillUnit(m) : null;
+          const schemaForTable = _billSchemaFor(m.commodity).filter((e) => {
+            if (e.section) return false;
+            if (TABLE_SKIP_KEYS.has(e.key)) return false;
+            if (hiddenSet.has(e.key)) return false;
+            if (isGas && e.gasUnit === 'CCF' && _detailBillUnit !== 'CCF') return false;
+            if (isGas && e.gasUnit === 'Therms' && _detailBillUnit === 'CCF') return false;
+            return true;
+          });
           COL_FIELDS = schemaForTable.map((e) => ({
             h: e.label + (e.type === 'currency' ? ' $' : ''),
             a: e.type === 'text' || e.type === 'date' ? 'lbl' : '',
@@ -41208,6 +41237,15 @@
             type: 'number',
             pdfKey: 'NaturalGasTherms',
             isUsage: true,
+            gasUnit: 'Therms',
+          },
+          {
+            key: 'naturalGasCCF',
+            label: 'Gas Usage (CCF)',
+            type: 'number',
+            pdfKey: 'NaturalGasCCF',
+            isUsage: true,
+            gasUnit: 'CCF',
           },
           { key: 'customerCharge', label: 'Base Charge', type: 'currency', pdfKey: 'CustomerCharge' },
           { key: 'gasCharge', label: 'Gas Charge', type: 'currency', pdfKey: 'GasCharge' },
@@ -41226,6 +41264,9 @@
           { key: 'start', label: 'Start Date', type: 'date', pdfKey: 'BillingPeriodStart' },
           { key: 'end', label: 'End Date', type: 'date', pdfKey: 'BillingPeriodEnd' },
           { key: 'billDate', label: 'Bill Date', type: 'text', pdfKey: 'BillDate' },
+          { key: 'prevRead', label: 'Previous Read', type: 'number', pdfKey: 'PrevRead' },
+          { key: 'curRead', label: 'Current Read', type: 'number', pdfKey: 'CurRead' },
+          { key: 'readDiff', label: 'Read Difference', type: 'number', pdfKey: 'ReadDiff' },
           { section: 'Charges' },
           { key: 'waterUsage', label: 'Water Usage (gal)', type: 'number', pdfKey: 'WaterUsage' },
           { key: 'waterCharge', label: 'Water Charge', type: 'currency', pdfKey: 'WaterCharge' },
@@ -41249,6 +41290,9 @@
           { key: 'start', label: 'Start Date', type: 'date', pdfKey: 'BillingPeriodStart' },
           { key: 'end', label: 'End Date', type: 'date', pdfKey: 'BillingPeriodEnd' },
           { key: 'billDate', label: 'Bill Date', type: 'text', pdfKey: 'BillDate' },
+          { key: 'prevRead', label: 'Previous Read', type: 'number', pdfKey: 'PrevRead' },
+          { key: 'curRead', label: 'Current Read', type: 'number', pdfKey: 'CurRead' },
+          { key: 'readDiff', label: 'Read Difference', type: 'number', pdfKey: 'ReadDiff' },
           { section: 'Charges' },
           { key: 'sewerUsage', label: 'Sewer Usage (gal)', type: 'number', pdfKey: 'SewerUsage' },
           { key: 'sewerCharge', label: 'Sewer Charge', type: 'currency', pdfKey: 'SewerCharge' },
@@ -41485,6 +41529,8 @@
           { section: 'Billing Period' },
           { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
           { type: 'pair', fields: ['BillDate'] },
+          { type: 'pair', fields: ['PrevRead', 'CurRead'] },
+          { type: 'pair', fields: ['ReadDiff'] },
           { section: 'Charges' },
           { type: 'charge-line', label: 'Water', chargeField: 'WaterCharge', qtyField: 'WaterUsage', unit: 'gal' },
           { type: 'charge-line', label: 'Water Protection Fee', chargeField: 'WaterProtectionFee' },
@@ -41499,6 +41545,8 @@
           { section: 'Billing Period' },
           { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
           { type: 'pair', fields: ['BillDate'] },
+          { type: 'pair', fields: ['PrevRead', 'CurRead'] },
+          { type: 'pair', fields: ['ReadDiff'] },
           { section: 'Charges' },
           { type: 'charge-line', label: 'Sewer', chargeField: 'SewerCharge', qtyField: 'SewerUsage', unit: 'gal' },
           { type: 'total', chargeField: 'TotalCurrentCharges' },
@@ -42031,6 +42079,28 @@
             _blGasInp.addEventListener('blur', _gasSubtractHint);
           }
         }
+        // Read field auto-calc: when Previous Read and Current Read are both filled,
+        // auto-compute Read Difference = Current Read - Previous Read (issue 77876060).
+        // Works for Gas (startRead/endRead/readDifference) and Water/Sewer (prevRead/curRead/readDiff).
+        (function _wireReadAutocalc() {
+          // Gas uses startRead/endRead/readDifference; Water/Sewer use prevRead/curRead/readDiff
+          const _prevInp = document.getElementById('bl-startRead') || document.getElementById('bl-prevRead');
+          const _curInp = document.getElementById('bl-endRead') || document.getElementById('bl-curRead');
+          const _diffInp = document.getElementById('bl-readDifference') || document.getElementById('bl-readDiff');
+          if (!_prevInp || !_curInp || !_diffInp) return;
+          function _autoCalcReadDiff() {
+            const prev = parseFloat(_billStripCurrency(_prevInp.value));
+            const cur = parseFloat(_billStripCurrency(_curInp.value));
+            if (!isNaN(prev) && !isNaN(cur)) {
+              const diff = cur - prev;
+              _diffInp.value = _billFmtNumber(diff.toString());
+            }
+          }
+          _prevInp.addEventListener('change', _autoCalcReadDiff);
+          _prevInp.addEventListener('blur', _autoCalcReadDiff);
+          _curInp.addEventListener('change', _autoCalcReadDiff);
+          _curInp.addEventListener('blur', _autoCalcReadDiff);
+        })();
         // Initial pass: compute rates + running totals from loaded values
         for (const r of layout) {
           if (r.chargeField) _billRecalcRow(r.chargeField);
@@ -45319,9 +45389,75 @@
           .then((r) => r.text())
           .then((t) => {
             const m = t.match(/CH_VERSION\s*=\s*'([^']+)'/);
-            if (m) document.getElementById('en-sb-version').textContent = m[1];
+            if (!m) return;
+            const fetchedVer = m[1];
+            const el = document.getElementById('en-sb-version');
+            if (el) el.textContent = fetchedVer;
+            // Issue 066423b5: compare to last-seen version; if changed, save page state
+            // so in-progress work survives any subsequent reload.
+            const _CH_VER_KEY = 'ch_last_seen_version';
+            const storedVer = localStorage.getItem(_CH_VER_KEY);
+            if (storedVer && storedVer !== fetchedVer) {
+              _savePageStateForVersionUpdate();
+              showToast('Site updated to ' + fetchedVer + ' — your in-progress work has been preserved');
+            }
+            localStorage.setItem(_CH_VER_KEY, fetchedVer);
           })
           .catch(() => {});
+        // Restore any state saved before a version-triggered page reload (issue 066423b5)
+        _restorePageStateAfterVersionUpdate();
+      }
+
+      /* Save current page state to sessionStorage before a version-triggered reload.
+         Issue 066423b5: ensures in-progress form values survive a forced page refresh. */
+      function _savePageStateForVersionUpdate() {
+        try {
+          const state = {};
+          const activeView = document.querySelector('.view.active');
+          if (activeView) state.activeViewId = activeView.id;
+          const billModal = document.getElementById('billModal');
+          if (billModal && billModal.classList.contains('open')) {
+            state.billModalOpen = true;
+            state.billModalValues = {};
+            billModal.querySelectorAll('input[id^="bl-"]').forEach(function (inp) {
+              if (inp.id) state.billModalValues[inp.id] = inp.value;
+            });
+            state.savedMeterId = udSelMeterId;
+            state.savedBillEditId = udBillEditId;
+          }
+          state.udSelProjId = udSelProjId;
+          state.udSelBldgId = udSelBldgId;
+          sessionStorage.setItem('ch_page_state_ver_update', JSON.stringify(state));
+        } catch (e) {}
+      }
+
+      /* Restore page state saved by _savePageStateForVersionUpdate.
+         Called at the end of initEnergy() after all views render. Issue 066423b5. */
+      function _restorePageStateAfterVersionUpdate() {
+        try {
+          const raw = sessionStorage.getItem('ch_page_state_ver_update');
+          if (!raw) return;
+          sessionStorage.removeItem('ch_page_state_ver_update');
+          const state = JSON.parse(raw);
+          if (state.udSelProjId) udSelProjId = state.udSelProjId;
+          if (state.udSelBldgId) udSelBldgId = state.udSelBldgId;
+          if (state.activeViewId) {
+            const viewName = state.activeViewId.replace(/^view-/, '');
+            if (typeof sv === 'function') sv(viewName);
+          }
+          if (state.billModalOpen && state.billModalValues && state.savedMeterId) {
+            showToast('Your in-progress form has been restored after the site update');
+            setTimeout(function () {
+              openBillModal(state.savedMeterId, state.savedBillEditId || null);
+              setTimeout(function () {
+                Object.keys(state.billModalValues).forEach(function (id) {
+                  var el = document.getElementById(id);
+                  if (el) el.value = state.billModalValues[id];
+                });
+              }, 200);
+            }, 600);
+          }
+        } catch (e) {}
       }
 
       /* Open building modal pre-selected to a specific project (from Projects tool) */
@@ -50460,8 +50596,22 @@
           };
         });
 
-        // Year-over-year bar chart colors — explicit hex to stay distinct across themes
-        const yrColors = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
+        // Commodity-consistent chart colors (Bug 987fa314):
+        // Each commodity always uses its designated hue. Within a chart, years are
+        // distinguished by opacity / lightness shifts so the commodity color stays dominant.
+        // Electric = Blue, Gas = Orange, Propane = Amber/Yellow, Water/Sewer = Green.
+        const _commodityBaseColor = {
+          kwh: '#3b82f6', // Electric — Blue
+          kw: '#3b82f6', // Electric demand — Blue
+          gas: '#f97316', // Gas — Orange
+          propane: '#f59e0b', // Propane — Amber/Yellow
+          water: '#22c55e', // Water — Green
+          cost: '#8b5cf6', // Cost fallback — Purple
+        };
+        // Per-year opacity steps so bars are distinguishable within one commodity.
+        // Up to 4 years shown; older years are slightly more transparent.
+        const _yrOpacityFill = ['CC', 'B0', '90', '70']; // hex alpha, newest → oldest
+        const _yrOpacityBorder = ['FF', 'E0', 'C0', 'A0'];
 
         // Build year-over-year charts
         const maxBlYear2 = blYears.size > 0 ? Math.max(...blYears) : 0;
@@ -50484,15 +50634,18 @@
           if (!canvas) return;
           if (_maCharts[canvasId]) _maCharts[canvasId].destroy();
 
+          const baseColor = _commodityBaseColor[field] || '#3b82f6';
           const datasets = [];
           yrsToShow.forEach((y, i) => {
             const isBl = blYears.has(y);
-            const color = yrColors[i % yrColors.length];
+            // Newest year gets the most opaque fill; older years fade slightly.
+            const alphaFill = _yrOpacityFill[i] || '60';
+            const alphaBorder = _yrOpacityBorder[i] || '80';
             datasets.push({
               label: y + (isBl ? ' (BL)' : ''),
               data: months.map((_, mi) => yearData[y]?.[field]?.[mi] || 0),
-              backgroundColor: color + (isBl ? 'A6' : 'D9'),
-              borderColor: color,
+              backgroundColor: baseColor + alphaFill,
+              borderColor: baseColor + alphaBorder,
               borderWidth: 1,
               borderRadius: 3,
               order: 2,
@@ -50504,7 +50657,7 @@
               label: 'Baseline Avg',
               data: blAvgArr.map((v) => (v > 0 ? v : null)),
               type: 'line',
-              borderColor: 'rgba(245,158,11,0.85)',
+              borderColor: baseColor + 'CC',
               borderWidth: 2,
               borderDash: [6, 3],
               pointRadius: 0,
