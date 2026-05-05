@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.05.36';
+  var CH_VERSION = 'v2026.05.05.37';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
