@@ -22959,8 +22959,14 @@
             naturalGasCCF: bill.NaturalGasCCF || '',
             naturalGasTherms: bill.NaturalGasTherms || '',
             therms: pf(bill.NaturalGasTherms) || pf(bill.NaturalGasCCF) || '',
+            // Bug d4c78f06: thermCost must be the gas commodity cost (GasCharge),
+            // not TotalCurrentCharges (which includes base/customer/tax charges).
+            // The $/therm rate in Meter Data + Baseline Data tables divides by this field.
+            // Fall back to TotalCurrentCharges only when GasCharge is unavailable.
             thermCost:
-              bill.NaturalGasTherms || bill.NaturalGasCCF ? bill.TotalCurrentCharges || bill.TotalAmountDue || '' : '',
+              bill.NaturalGasTherms || bill.NaturalGasCCF
+                ? bill.GasCharge || bill.TotalCurrentCharges || bill.TotalAmountDue || ''
+                : '',
             gasCharge: bill.GasCharge || '',
             fuelAdjustment: bill.FuelAdjustment || '',
             waterUsage: bill.WaterUsage || '',
@@ -23317,9 +23323,11 @@
           naturalGasCCF: extracted.NaturalGasCCF || '',
           naturalGasTherms: extracted.NaturalGasTherms || '',
           therms: pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF) || '',
+          // Bug d4c78f06: use GasCharge (commodity cost) for thermCost so $/therm rate
+          // in tables uses energy-only cost, not total bill cost.
           thermCost:
             extracted.NaturalGasTherms || extracted.NaturalGasCCF
-              ? extracted.TotalCurrentCharges || extracted.TotalAmountDue || ''
+              ? extracted.GasCharge || extracted.TotalCurrentCharges || extracted.TotalAmountDue || ''
               : '',
           gasCharge: extracted.GasCharge || '',
           fuelAdjustment: extracted.FuelAdjustment || '',
@@ -24245,8 +24253,19 @@
             const dupAct = dup.action;
             const actLabel =
               dupAct === 'overwrite' ? ' · OW' : dupAct === 'merge' ? ' · MG' : dupAct === 'skip' ? ' · SK' : '';
+            // Bug 60431cd3: distinguish Saved Bills dup from meter bill dup so user
+            // understands that an empty meter can still show DUP (matching Saved Bills).
+            const dupLocLabel = dup.locationType === 'saved' ? ' (Saved)' : ' (Meter)';
+            const dupTitle =
+              dup.locationType === 'saved'
+                ? 'Duplicate found in Saved Bills — not yet on any meter'
+                : 'Duplicate found in meter bill data: ' + (dup.location || '');
             statusHtml =
-              '<span style="color:var(--amber);font-weight:700;font-size:10px">DUP' + _escHtml(actLabel) + '</span>';
+              '<span style="color:var(--amber);font-weight:700;font-size:10px" title="' +
+              _escHtml(dupTitle) +
+              '">DUP' +
+              _escHtml(dupLocLabel + actLabel) +
+              '</span>';
           } else {
             statusHtml = '<span style="color:#4a4;font-size:10px">READY</span>';
           }
@@ -28357,7 +28376,12 @@
           const v = parsed[f];
           return v === null || v === undefined || v === '' || _pf(v) === 0;
         });
-        const _currentSumDiff = totalVal !== 0 && _currentChargeSum > 0 ? _currentChargeSum - totalVal : 0;
+        // Bug 2f41298c: remove the _currentChargeSum > 0 guard so the banner fires when
+        // charge fields are all blank but TotalCurrentCharges is populated — that IS a
+        // mismatch (0 vs $50 for example) and the user must see an explanation for the
+        // red pill. Previously, _currentChargeSum === 0 made _currentSumDiff = 0 so
+        // hasCurrentSumMismatch was false even though the pill was already red.
+        const _currentSumDiff = totalVal !== 0 ? _currentChargeSum - totalVal : 0;
         const hasCurrentSumMismatch = Math.abs(_currentSumDiff) >= 0.02;
         const sumMismatch = parsed['_sum_mismatch'];
         // Big, loud banner for sum mismatch — this is a high-severity issue that must never be
@@ -29373,7 +29397,11 @@
           naturalGasCCF: extracted.NaturalGasCCF || '',
           naturalGasTherms: extracted.NaturalGasTherms || '',
           therms: isGas ? pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF) || '' : '',
-          thermCost: isGas ? extracted.TotalCurrentCharges || extracted.TotalAmountDue || '' : '',
+          // Bug d4c78f06: use GasCharge (commodity cost) for thermCost so $/therm rate
+          // in tables uses energy-only cost, not total bill cost.
+          thermCost: isGas
+            ? extracted.GasCharge || extracted.TotalCurrentCharges || extracted.TotalAmountDue || ''
+            : '',
           gasCharge: extracted.GasCharge || '',
           fuelAdjustment: extracted.FuelAdjustment || '',
           waterUsage: extracted.WaterUsage || '',
@@ -33933,7 +33961,15 @@
             const cost = isElec
               ? parseFloat(row.totalCost) || 0
               : isGas
-                ? parseFloat(row.thermCost) || parseFloat(row.totalCost) || parseFloat(row.cost) || 0
+                ? // Bug d4c78f06: prefer gasCharge (commodity cost) for the $/therm rate
+                  // calculation. thermCost was historically set to TotalCurrentCharges (total
+                  // bill cost), so gasCharge gives a more accurate energy-only rate.
+                  // Fall back: gasCharge → thermCost → totalCost → cost.
+                  parseFloat(row.gasCharge) ||
+                  parseFloat(row.thermCost) ||
+                  parseFloat(row.totalCost) ||
+                  parseFloat(row.cost) ||
+                  0
                 : parseFloat(row.cost) || parseFloat(row.totalCost) || 0;
             // Bill-level weather — only used as fallback if no ZIP weather cache
             const hdd = parseFloat(row.hdd) || 0;
