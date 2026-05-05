@@ -31946,14 +31946,14 @@
               <div style="font-size:14px;font-weight:800;font-family:var(--head);color:var(--em);margin-bottom:10px">💡 ${projName} — Performance</div>
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
                 <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual Baseline</div><div style="font-size:15px;font-weight:800">${$f(annBase)}</div></div>
-                <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Savings</div><div style="font-size:15px;font-weight:800;color:var(--em)">${$f(annProjSav)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${(avgSavPct * 100).toFixed(1)}%</div></div>
-                ${hasActual ? `<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Actual Savings</div><div style="font-size:15px;font-weight:800;color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav < 0 ? '−' : ''}${$f(annActSav)}</div>${actPct != null ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct < 0 ? '−' : ''}${Math.abs(actPct).toFixed(1)}%</div>` : ''}</div>` : ''}
+                ${hasActual ? `<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Current Savings</div><div style="font-size:15px;font-weight:800;color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav < 0 ? '−' : ''}${$f(annActSav)}</div>${actPct != null ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct < 0 ? '−' : ''}${Math.abs(actPct).toFixed(1)}%</div>` : ''}</div>` : ''}
+                <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Savings</div><div style="font-size:13px;font-weight:600;color:var(--text2)">${$f(annProjSav)}</div><div style="font-size:10px;color:var(--text3);margin-top:2px">${(avgSavPct * 100).toFixed(1)}%</div></div>
                 ${hasActual && annActSav != null ? `<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">vs Projected</div><div style="font-size:15px;font-weight:800;color:${annActSav >= annProjSav ? 'var(--em)' : 'var(--danger)'}">${annActSav >= annProjSav ? '+' : '-'}${$f(annActSav - annProjSav)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${annActSav >= annProjSav ? '▲ Above' : '▼ Below'} target</div></div>` : ''}
               </div>
             </div>
             <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
               <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Month</th>
-                <th style="${thS}">Actual Savings $</th><th style="${thS}">% of Baseline</th></tr></thead>
+                <th style="${thS}">Current Savings $</th><th style="${thS}">% of Baseline</th></tr></thead>
               <tbody>${rows}</tbody>
               <tfoot><tr style="background:var(--s1)">
                 <td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)">Annual</td>
@@ -31961,7 +31961,7 @@
                 <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${actPct != null && actPct >= 0 ? 'var(--em)' : 'var(--danger)'};font-weight:700;border:1px solid var(--border)">${actPct != null ? (actPct < 0 ? '−' : '') + Math.abs(actPct).toFixed(1) + '%' : '—'}</td>
               </tr></tfoot>
             </table></div>
-            <div style="padding:16px 18px 10px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Monthly Savings: Projected vs Actual</div>
+            <div style="padding:16px 18px 10px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Monthly Savings: Projected vs Current</div>
             <div style="padding:0 18px 20px;height:280px;position:relative"><canvas id="projPerfChart"></canvas></div>`;
           requestAnimationFrame(() => {
             const projVals = MN.map((_, mo) => (moBase[mo] || 0) * avgSavPct);
@@ -31982,7 +31982,7 @@
                     borderWidth: 1,
                   },
                   {
-                    label: 'Actual Savings $',
+                    label: 'Current Savings $',
                     data: actVals,
                     backgroundColor: actVals.map((v) =>
                       v == null ? 'transparent' : v >= 0 ? 'rgba(0,212,170,.75)' : 'rgba(244,63,94,.75)',
@@ -38170,7 +38170,7 @@
               <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">CSC Compensation Mode</label>
               <div style="display:flex;gap:4px">
                 <button id="bp-mode-pct" onclick="bpSetMode('pct')"
-                  style="font-family:var(--font);font-size:11px;font-weight:600;padding:5px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;background:${defCscMode === 'pct' ? 'var(--em)' : 'transparent'};color:${defCscMode === 'pct' ? '#05080f' : 'var(--text2)'}">% of Actual Savings</button>
+                  style="font-family:var(--font);font-size:11px;font-weight:600;padding:5px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;background:${defCscMode === 'pct' ? 'var(--em)' : 'transparent'};color:${defCscMode === 'pct' ? '#05080f' : 'var(--text2)'}">% of Current Savings</button>
                 <button id="bp-mode-fixed" onclick="bpSetMode('fixed')"
                   style="font-family:var(--font);font-size:11px;font-weight:600;padding:5px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;background:${defCscMode === 'fixed' ? 'var(--em)' : 'transparent'};color:${defCscMode === 'fixed' ? '#05080f' : 'var(--text2)'}">Fixed Monthly Cost</button>
               </div>
@@ -38557,16 +38557,16 @@
             ${
               hasActual
                 ? `
-            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;cursor:pointer" onclick="showFormula(_fml('Actual Savings','Sum of (Baseline − Actual) × Rate for each meter per month','${$f(annActSav)}','<div style=\\'font-size:11px;color:var(--text2)\\'>Source: each meter\\'s Performance tab calculates monthly savings from regression baseline vs actual bills</div>'),event)">
-              <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Actual Savings <span style="font-size:9px;color:var(--em)">ℹ️</span></div>
+            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;cursor:pointer" onclick="showFormula(_fml('Current Savings','Sum of (Baseline − Actual) × Rate for each meter per month','${$f(annActSav)}','<div style=\\'font-size:11px;color:var(--text2)\\'>Source: each meter\\'s Performance tab calculates monthly savings from regression baseline vs actual bills</div>'),event)">
+              <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Current Savings <span style="font-size:9px;color:var(--em)">ℹ️</span></div>
               <div style="font-size:18px;font-weight:800;font-family:var(--head);color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav < 0 ? '−' : ''}${$f(annActSav)}</div>
               <div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct || ''} of baseline</div>
             </div>
-            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;cursor:pointer" onclick="showFormula(_fml('CSC Compensation','${cscMode === 'pct' ? 'Actual Savings × CSC %' : 'Fixed Monthly × 12'}','${cscMode === 'pct' ? $f(annActSav) + ' × ' + (cscPct * 100).toFixed(1) + '% = ' + $f(annCsc) : '$' + cscFixed.toFixed(2) + '/mo × 12 = ' + $f(annCsc)}','<div style=\\'font-size:11px;color:var(--text2)\\'>Mode: ${cscMode === 'pct' ? 'Percentage of Actual Savings' : 'Fixed Monthly Cost'}</div>'),event)">
+            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;cursor:pointer" onclick="showFormula(_fml('CSC Compensation','${cscMode === 'pct' ? 'Current Savings × CSC %' : 'Fixed Monthly × 12'}','${cscMode === 'pct' ? $f(annActSav) + ' × ' + (cscPct * 100).toFixed(1) + '% = ' + $f(annCsc) : '$' + cscFixed.toFixed(2) + '/mo × 12 = ' + $f(annCsc)}','<div style=\\'font-size:11px;color:var(--text2)\\'>Mode: ${cscMode === 'pct' ? 'Percentage of Current Savings' : 'Fixed Monthly Cost'}</div>'),event)">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">CSC Compensation <span style="font-size:9px;color:var(--em)">ℹ️</span></div>
               <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--em2)">${$f(annCsc)}</div>
             </div>
-            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;cursor:pointer" onclick="showFormula(_fml('Client Savings','Actual Savings − CSC Compensation','${$f(annActSav)} − ${$f(annCsc)} = ${$f(annCli)}','<div style=\\'font-size:11px;color:var(--text2)\\'>This is what the client keeps after CSC compensation</div>'),event)">
+            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;cursor:pointer" onclick="showFormula(_fml('Client Savings','Current Savings − CSC Compensation','${$f(annActSav)} − ${$f(annCsc)} = ${$f(annCli)}','<div style=\\'font-size:11px;color:var(--text2)\\'>This is what the client keeps after CSC compensation</div>'),event)">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Client Savings <span style="font-size:9px;color:var(--em)">ℹ️</span></div>
               <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--green)">${$f(annCli)}</div>
             </div>`
@@ -49531,6 +49531,9 @@
                     gas: new Array(12).fill(0),
                     propane: new Array(12).fill(0),
                     cost: new Array(12).fill(0),
+                    elecCost: new Array(12).fill(0),
+                    gasCost: new Array(12).fill(0),
+                    propaneCost: new Array(12).fill(0),
                   };
                 if (!bldgYearData[bName][yr])
                   bldgYearData[bName][yr] = {
@@ -49539,6 +49542,9 @@
                     gas: new Array(12).fill(0),
                     propane: new Array(12).fill(0),
                     cost: new Array(12).fill(0),
+                    elecCost: new Array(12).fill(0),
+                    gasCost: new Array(12).fill(0),
+                    propaneCost: new Array(12).fill(0),
                   };
                 const byd = bldgYearData[bName][yr];
                 if (isElec) {
@@ -49548,17 +49554,21 @@
                   yearData[yr].kwh[mi] += kwhVal;
                   yearData[yr].kw[mi] = Math.max(yearData[yr].kw[mi], kwVal);
                   yearData[yr].cost[mi] += costVal;
+                  yearData[yr].elecCost[mi] += costVal;
                   byd.kwh[mi] += kwhVal;
                   byd.kw[mi] = Math.max(byd.kw[mi], kwVal);
                   byd.cost[mi] += costVal;
+                  byd.elecCost[mi] += costVal;
                 }
                 if (isGas) {
                   const gasVal = parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
                   const gasCostVal = _gasCommodityCost(bill);
                   yearData[yr].gas[mi] += gasVal;
                   yearData[yr].cost[mi] += gasCostVal;
+                  yearData[yr].gasCost[mi] += gasCostVal;
                   byd.gas[mi] += gasVal;
                   byd.cost[mi] += gasCostVal;
+                  byd.gasCost[mi] += gasCostVal;
                 }
                 if (isPropane) {
                   const propVal =
@@ -49566,8 +49576,10 @@
                   const propCostVal = _propaneCommodityCost(bill);
                   yearData[yr].propane[mi] += propVal;
                   yearData[yr].cost[mi] += propCostVal;
+                  yearData[yr].propaneCost[mi] += propCostVal;
                   byd.propane[mi] += propVal;
                   byd.cost[mi] += propCostVal;
+                  byd.propaneCost[mi] += propCostVal;
                 }
               }
             });
@@ -49621,6 +49633,7 @@
 
         // Quarterly EUI: most recent complete quarter (3 consecutive months)
         let qEui = 0,
+          qBlEui = 0,
           qLabel = '';
         const qNames = ['Q1', 'Q2', 'Q3', 'Q4'];
         const qMonthRanges = [
@@ -49640,11 +49653,14 @@
               return blKbtuPerMo[mi] <= 0 || moKbtu >= blKbtuPerMo[mi] * 0.25;
             });
             if (hasAll) {
-              let qKbtu = 0;
+              let qKbtu = 0,
+                qBlKbtu = 0;
               ms.forEach((mi) => {
                 qKbtu += yd.kwh[mi] * 3.412 + yd.gas[mi] * 100 + yd.propane[mi] * 91.5;
+                qBlKbtu += blKbtuPerMo[mi];
               });
               qEui = sqft > 0 ? ((qKbtu / 3) * 12) / sqft : 0;
+              qBlEui = sqft > 0 && qBlKbtu > 0 ? ((qBlKbtu / 3) * 12) / sqft : 0;
               qLabel = qNames[qi] + ' ' + y;
               break;
             }
@@ -49654,10 +49670,12 @@
         // Monthly EUI: most recent single month with actual data
         const latestMo = allYms.length > 0 ? allYms[allYms.length - 1] : null;
         let moEui = 0,
+          moBlEui = 0,
           moLabel = '';
         if (latestMo) {
           const moKbtu = latestMo.kwh * 3.412 + latestMo.gas * 100 + (latestMo.propane || 0) * 91.5;
           moEui = sqft > 0 ? (moKbtu * 12) / sqft : 0;
+          moBlEui = sqft > 0 && blKbtuPerMo[latestMo.mi] > 0 ? (blKbtuPerMo[latestMo.mi] * 12) / sqft : 0;
           const moNamesFull = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
           moLabel = moNamesFull[latestMo.mi] + ' ' + latestMo.y;
         }
@@ -49676,13 +49694,29 @@
         const costSavSubEl = document.getElementById(`egfx-costSavSub-${projId}`);
         const blCostAvg = blCost.map((v, mi) => v / (blYmPerMo[mi].size || 1));
         const totalBlCost = blCostAvg.reduce((a, b) => a + b, 0);
-        const totalCurCost = r12.length > 0 ? (r12Cost / r12.length) * 12 : 0;
+        const egfxSavByMo = {};
+        bldgs.forEach((b) => {
+          (b.meters || []).forEach((m) => {
+            if (m.baselineInclude === false) return;
+            if (!isCalcCommodity(projId, m.commodity)) return;
+            const bl = m.baseline;
+            if (!bl || !bl.months || bl.months.length < 3) return;
+            const mBills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+            const mIncl = m.inclusive !== false;
+            const sav = getMeterPerfSavingsByCalMo(m, mBills, mIncl);
+            Object.entries(sav).forEach(([mo, v]) => {
+              egfxSavByMo[mo] = (egfxSavByMo[mo] || 0) + v;
+            });
+          });
+        });
+        const hasEgfxSav = Object.keys(egfxSavByMo).length > 0;
+        const totalEgfxSav = hasEgfxSav ? Object.values(egfxSavByMo).reduce((s, v) => s + v, 0) : 0;
         if (costSavEl) {
-          if (totalBlCost > 0 && totalCurCost > 0) {
-            const savings = totalBlCost - totalCurCost;
-            const pct = (savings / totalBlCost) * 100;
-            costSavEl.textContent = (savings >= 0 ? '' : '−') + '$' + Math.abs(Math.round(savings)).toLocaleString();
-            costSavEl.style.color = savings >= 0 ? 'var(--green)' : 'var(--danger)';
+          if (totalBlCost > 0 && hasEgfxSav) {
+            const pct = (totalEgfxSav / totalBlCost) * 100;
+            costSavEl.textContent =
+              (totalEgfxSav >= 0 ? '' : '−') + '$' + Math.abs(Math.round(totalEgfxSav)).toLocaleString();
+            costSavEl.style.color = totalEgfxSav >= 0 ? 'var(--green)' : 'var(--danger)';
             if (costSavSubEl) costSavSubEl.textContent = pct.toFixed(1) + '% vs baseline';
           } else {
             costSavEl.textContent = 'No baseline data';
@@ -49691,6 +49725,22 @@
         }
 
         // Populate monthly/quarterly EUI detail row
+        const _euiDelta = (cur, bl) => {
+          if (!bl || bl <= 0) return '';
+          const pct = ((cur - bl) / bl) * 100;
+          const arrow = pct <= 0 ? '▼' : '▲';
+          const color = pct <= 0 ? 'var(--green)' : 'var(--danger)';
+          return (
+            ' <span style="color:' +
+            color +
+            ';font-size:10px">' +
+            arrow +
+            Math.abs(pct).toFixed(1) +
+            '% vs BL ' +
+            bl.toFixed(1) +
+            '</span>'
+          );
+        };
         const euiDetailEl = document.getElementById(`egfx-eui-detail-${projId}`);
         if (euiDetailEl) {
           const items = [];
@@ -49698,7 +49748,9 @@
             items.push(
               '<span style="font-family:var(--mono);color:var(--text)"><strong>Monthly:</strong> ' +
                 moEui.toFixed(1) +
-                ' kBtu/ft² <span style="color:var(--text3)">(' +
+                ' kBtu/ft²' +
+                _euiDelta(moEui, moBlEui) +
+                ' <span style="color:var(--text3)">(' +
                 moLabel +
                 ')</span></span>',
             );
@@ -49706,7 +49758,9 @@
             items.push(
               '<span style="font-family:var(--mono);color:var(--text)"><strong>Quarterly:</strong> ' +
                 qEui.toFixed(1) +
-                ' kBtu/ft² <span style="color:var(--text3)">(' +
+                ' kBtu/ft²' +
+                _euiDelta(qEui, qBlEui) +
+                ' <span style="color:var(--text3)">(' +
                 qLabel +
                 ')</span></span>',
             );
@@ -49714,7 +49768,9 @@
             items.push(
               '<span style="font-family:var(--mono);color:var(--text)"><strong>12-Month:</strong> ' +
                 r12Eui.toFixed(1) +
-                ' kBtu/ft² <span style="color:var(--text3)">(' +
+                ' kBtu/ft²' +
+                _euiDelta(r12Eui, blEui) +
+                ' <span style="color:var(--text3)">(' +
                 r12Label +
                 ')</span></span>',
             );
@@ -49722,7 +49778,9 @@
             items.push(
               '<span style="font-family:var(--mono);color:var(--text)"><strong>12-Month:</strong> ' +
                 r12Eui.toFixed(1) +
-                '* kBtu/ft² <span style="color:var(--text3)">(' +
+                '* kBtu/ft²' +
+                _euiDelta(r12Eui, blEui) +
+                ' <span style="color:var(--text3)">(' +
                 r12Label +
                 ', annualized)</span></span>',
             );
@@ -50266,7 +50324,10 @@
                   qBlPropane = 0,
                   qActPropane = 0,
                   qBlCost = 0,
-                  qActCost = 0;
+                  qActCost = 0,
+                  qActElecCost = 0,
+                  qActGasCost = 0,
+                  qActPropaneCost = 0;
                 let hasActualData = false;
                 let moWithData = 0;
                 for (const mi of qMonths[qi]) {
@@ -50279,6 +50340,9 @@
                   qActGas += yd.gas[mi];
                   qActPropane += yd.propane[mi];
                   qActCost += yd.cost[mi];
+                  qActElecCost += yd.elecCost[mi];
+                  qActGasCost += yd.gasCost[mi];
+                  qActPropaneCost += yd.propaneCost[mi];
                   if (yd.kwh[mi] > 0 || yd.gas[mi] > 0 || yd.propane[mi] > 0) {
                     const actKbtu = yd.kwh[mi] * 3.412 + yd.gas[mi] * 100 + yd.propane[mi] * 91.5;
                     const blRef = blKbtuPerMo[mi];
@@ -50289,8 +50353,13 @@
                 }
                 if (!hasActualData) continue;
                 if (moWithData < 3) continue;
-                const costSav = qBlCost - qActCost;
-                const costPct = qBlCost > 0 ? (costSav / qBlCost) * 100 : 0;
+                const kwhRate = qActKwh > 0 ? qActElecCost / qActKwh : 0;
+                const thermRate = qActGas > 0 ? qActGasCost / qActGas : 0;
+                const galRate = qActPropane > 0 ? qActPropaneCost / qActPropane : 0;
+                const costSav =
+                  (qBlKwh - qActKwh) * kwhRate + (qBlGas - qActGas) * thermRate + (qBlPropane - qActPropane) * galRate;
+                const blAtCurRate = qBlKwh * kwhRate + qBlGas * thermRate + qBlPropane * galRate;
+                const costPct = blAtCurRate > 0 ? (costSav / blAtCurRate) * 100 : 0;
                 const savColor = costSav >= 0 ? 'var(--green)' : 'var(--red)';
                 const $f = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
                 qHtml += '<tr><td>' + y + '</td><td>' + qNames[qi] + '</td>';
@@ -50428,42 +50497,50 @@
             out +=
               '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📋 Baseline Monthly Data — Per Building</div>';
             out +=
-              '<div style="font-size:10px;color:var(--text3);margin-bottom:12px">Averaged monthly values for baseline period: ' +
+              '<div style="font-size:10px;color:var(--text3);margin-bottom:12px">Baseline period: ' +
               blPeriod +
               '</div>';
+            const _$c2 = (n) =>
+              n > 0 ? '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
             bldgs.forEach((b) => {
               const bName = b.name || 'Unknown';
-              const byrs = bldgYearData[bName];
-              if (!byrs) return;
-              const bBlKwh2 = new Array(12).fill(0),
-                bBlGas2 = new Array(12).fill(0),
-                bBlPropane2 = new Array(12).fill(0),
-                bBlCost2 = new Array(12).fill(0),
-                bBlKw2 = new Array(12).fill(0),
-                bBlCount2 = new Array(12).fill(0);
-              for (const blY of blYears) {
-                const bd = byrs[blY];
-                if (!bd) continue;
-                for (let mi = 0; mi < 12; mi++) {
-                  if (bd.kwh[mi] > 0 || bd.gas[mi] > 0 || bd.propane[mi] > 0) {
-                    bBlKwh2[mi] += bd.kwh[mi];
-                    bBlGas2[mi] += bd.gas[mi];
-                    bBlPropane2[mi] += bd.propane[mi];
-                    bBlCost2[mi] += bd.cost[mi];
-                    bBlKw2[mi] = Math.max(bBlKw2[mi], bd.kw[mi] || 0);
-                    bBlCount2[mi]++;
-                  }
-                }
+              const bMeters = b.meters || [];
+              const elecM = bMeters.find((m) => m.commodity === 'Electric' && m.baselineInclude !== false);
+              const gasM = bMeters.find((m) => m.commodity === 'Gas' && m.baselineInclude !== false);
+              const propM = bMeters.find((m) => m.commodity === 'Propane' && m.baselineInclude !== false);
+              if (!elecM && !gasM && !propM) return;
+              function _getBillsByMo(meter) {
+                if (!meter) return {};
+                const blBills = _dashGetBaselineBills(meter);
+                const allBills = (meter.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+                const mBills = blBills.length ? blBills : allBills;
+                const incl = meter.inclusive !== false;
+                const byMo = {};
+                mBills.forEach((bill) => {
+                  const ym = normMonth(bill.start, bill.end, incl, allBills);
+                  if (!ym) return;
+                  const mo = parseInt(ym.split('-')[1]) - 1;
+                  byMo[mo] = bill;
+                });
+                return byMo;
               }
-              const avgKwh = bBlKwh2.map((v, i) => (bBlCount2[i] > 0 ? v / bBlCount2[i] : 0));
-              const avgGas = bBlGas2.map((v, i) => (bBlCount2[i] > 0 ? v / bBlCount2[i] : 0));
-              const avgPropane = bBlPropane2.map((v, i) => (bBlCount2[i] > 0 ? v / bBlCount2[i] : 0));
-              const avgCost = bBlCost2.map((v, i) => (bBlCount2[i] > 0 ? v / bBlCount2[i] : 0));
-              const hasKwh = avgKwh.some((v) => v > 0);
-              const hasGasB = avgGas.some((v) => v > 0);
-              const hasPropB = avgPropane.some((v) => v > 0);
-              if (!hasKwh && !hasGasB && !hasPropB) return;
+              const eByMo = _getBillsByMo(elecM);
+              const gByMo = _getBillsByMo(gasM);
+              const pByMo = _getBillsByMo(propM);
+              const hasE = Object.keys(eByMo).length > 0;
+              const hasG = Object.keys(gByMo).length > 0;
+              const hasP = Object.keys(pByMo).length > 0;
+              if (!hasE && !hasG && !hasP) return;
               const bSqft = parseInt(b.sqft || 0);
+              let tKwh = 0,
+                maxKw = 0,
+                tKwCost = 0,
+                tKwhCost = 0,
+                tElecCost = 0,
+                tTherms = 0,
+                tGasCost = 0,
+                tPropGal = 0,
+                tPropCost = 0;
               out += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border2)">';
               out += '<div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:6px">' + bName;
               if (bSqft > 0)
@@ -50472,35 +50549,167 @@
                   bSqft.toLocaleString() +
                   ' ft²</span>';
               out += '</div>';
-              out += '<div style="overflow-x:auto"><table class="dtbl" style="min-width:400px;font-size:11px">';
-              out += '<thead><tr><th>Month</th>';
-              if (hasKwh) out += '<th style="text-align:right">kWh</th>';
-              if (hasGasB) out += '<th style="text-align:right">Therms</th>';
-              if (hasPropB) out += '<th style="text-align:right">Propane Gal</th>';
-              out += '<th style="text-align:right">Cost</th></tr></thead><tbody>';
-              for (let mi = 0; mi < 12; mi++) {
-                if (avgKwh[mi] === 0 && avgGas[mi] === 0 && avgPropane[mi] === 0) continue;
-                out += '<tr><td>' + months[mi] + '</td>';
-                if (hasKwh)
-                  out +=
-                    '<td style="text-align:right;font-family:var(--mono)">' +
-                    Math.round(avgKwh[mi]).toLocaleString() +
-                    '</td>';
-                if (hasGasB)
-                  out +=
-                    '<td style="text-align:right;font-family:var(--mono)">' +
-                    Math.round(avgGas[mi]).toLocaleString() +
-                    '</td>';
-                if (hasPropB)
-                  out +=
-                    '<td style="text-align:right;font-family:var(--mono)">' +
-                    Math.round(avgPropane[mi]).toLocaleString() +
-                    '</td>';
+              out += '<div style="overflow-x:auto"><table class="dtbl" style="min-width:900px;font-size:11px">';
+              out += '<thead><tr><th style="width:55px">Month</th>';
+              if (hasE)
                 out +=
-                  '<td style="text-align:right;font-family:var(--mono)">$' +
-                  Math.round(avgCost[mi]).toLocaleString() +
+                  '<th style="text-align:right">kWh</th><th style="text-align:right">kW</th><th style="text-align:right">kW Cost</th><th style="text-align:right">kWh Cost</th><th style="text-align:right">Elec Cost</th><th style="text-align:right">$/kWh</th><th style="text-align:right">$/kW</th><th style="text-align:right">LF</th>';
+              if (hasG)
+                out +=
+                  '<th style="text-align:right' +
+                  (hasE ? ';border-left:2px solid var(--border2)' : '') +
+                  '">Therms</th><th style="text-align:right">$/Therm</th><th style="text-align:right">Gas Cost</th>';
+              if (hasP)
+                out +=
+                  '<th style="text-align:right' +
+                  (hasE || hasG ? ';border-left:2px solid var(--border2)' : '') +
+                  '">Propane Gal</th><th style="text-align:right">Prop Cost</th>';
+              out += '<th style="text-align:right;border-left:2px solid var(--border2)">Total</th></tr></thead><tbody>';
+              for (let mi = 0; mi < 12; mi++) {
+                const eb = eByMo[mi] || {};
+                const gb = gByMo[mi] || {};
+                const pb = pByMo[mi] || {};
+                const kwh = parseFloat(eb.kwh) || parseFloat(eb.usage) || 0;
+                const kw = parseFloat(eb.demandKW) || parseFloat(eb.billedKW) || 0;
+                const kwCost = parseFloat(eb.kwCost) || parseFloat(eb.demandCost) || 0;
+                const kwhCost = parseFloat(eb.kwhCost) || parseFloat(eb.energyCost) || 0;
+                const eCost = parseFloat(eb.totalCost) || parseFloat(eb.cost) || 0;
+                const avgKwhR = kwh > 0 && kwhCost > 0 ? kwhCost / kwh : 0;
+                const avgKwR = kw > 0 && kwCost > 0 ? kwCost / kw : 0;
+                const days = eb.days || 30;
+                const lf = kw > 0 && kwh > 0 ? kwh / (kw * 24 * days) : 0;
+                const therms = parseFloat(gb.therms) || parseFloat(gb.usage) || 0;
+                const gCost = parseFloat(gb.totalCost) || parseFloat(gb.cost) || 0;
+                const avgThR = therms > 0 && gCost > 0 ? gCost / therms : 0;
+                const propGal = parseFloat(pb.gallonsDelivered) || parseFloat(pb.kwh) || parseFloat(pb.usage) || 0;
+                const pCost = parseFloat(pb.totalCost) || parseFloat(pb.cost) || 0;
+                if (!kwh && !kw && !therms && !propGal) continue;
+                tKwh += kwh;
+                maxKw = Math.max(maxKw, kw);
+                tKwCost += kwCost;
+                tKwhCost += kwhCost;
+                tElecCost += eCost;
+                tTherms += therms;
+                tGasCost += gCost;
+                tPropGal += propGal;
+                tPropCost += pCost;
+                const moTotal = eCost + gCost + pCost;
+                out += '<tr><td style="font-weight:600">' + months[mi] + '</td>';
+                if (hasE) {
+                  out +=
+                    '<td style="text-align:right;font-family:var(--mono)">' +
+                    (kwh ? Math.round(kwh).toLocaleString() : '—') +
+                    '</td>';
+                  out += '<td style="text-align:right;font-family:var(--mono)">' + (kw ? kw.toFixed(1) : '—') + '</td>';
+                  out +=
+                    '<td style="text-align:right;font-family:var(--mono)">' + (kwCost ? _$c2(kwCost) : '—') + '</td>';
+                  out +=
+                    '<td style="text-align:right;font-family:var(--mono)">' + (kwhCost ? _$c2(kwhCost) : '—') + '</td>';
+                  out +=
+                    '<td style="text-align:right;font-family:var(--mono);font-weight:600">' +
+                    (eCost ? _$c2(eCost) : '—') +
+                    '</td>';
+                  out +=
+                    '<td style="text-align:right;font-family:var(--mono);font-size:10px">' +
+                    (avgKwhR ? '$' + avgKwhR.toFixed(4) : '—') +
+                    '</td>';
+                  out +=
+                    '<td style="text-align:right;font-family:var(--mono);font-size:10px">' +
+                    (avgKwR ? '$' + avgKwR.toFixed(2) : '—') +
+                    '</td>';
+                  out +=
+                    '<td style="text-align:right;font-family:var(--mono);font-size:10px">' +
+                    (lf ? (lf * 100).toFixed(1) + '%' : '—') +
+                    '</td>';
+                }
+                if (hasG) {
+                  out +=
+                    '<td style="text-align:right;font-family:var(--mono)' +
+                    (hasE ? ';border-left:2px solid var(--border2)' : '') +
+                    '">' +
+                    (therms ? Math.round(therms).toLocaleString() : '—') +
+                    '</td>';
+                  out +=
+                    '<td style="text-align:right;font-family:var(--mono);font-size:10px">' +
+                    (avgThR ? '$' + avgThR.toFixed(3) : '—') +
+                    '</td>';
+                  out +=
+                    '<td style="text-align:right;font-family:var(--mono);font-weight:600">' +
+                    (gCost ? _$c2(gCost) : '—') +
+                    '</td>';
+                }
+                if (hasP) {
+                  out +=
+                    '<td style="text-align:right;font-family:var(--mono)' +
+                    (hasE || hasG ? ';border-left:2px solid var(--border2)' : '') +
+                    '">' +
+                    (propGal ? Math.round(propGal).toLocaleString() : '—') +
+                    '</td>';
+                  out +=
+                    '<td style="text-align:right;font-family:var(--mono);font-weight:600">' +
+                    (pCost ? _$c2(pCost) : '—') +
+                    '</td>';
+                }
+                out +=
+                  '<td style="text-align:right;font-family:var(--mono);font-weight:700;border-left:2px solid var(--border2)">' +
+                  (moTotal > 0 ? _$c2(moTotal) : '—') +
                   '</td></tr>';
               }
+              const grandTotal = tElecCost + tGasCost + tPropCost;
+              out += '<tr style="border-top:2px solid var(--border2);font-weight:800"><td>TOTAL</td>';
+              if (hasE) {
+                out +=
+                  '<td style="text-align:right;font-family:var(--mono)">' +
+                  (tKwh ? Math.round(tKwh).toLocaleString() : '—') +
+                  '</td>';
+                out +=
+                  '<td style="text-align:right;font-family:var(--mono)">' + (maxKw ? maxKw.toFixed(1) : '—') + '</td>';
+                out +=
+                  '<td style="text-align:right;font-family:var(--mono)">' + (tKwCost ? _$c2(tKwCost) : '—') + '</td>';
+                out +=
+                  '<td style="text-align:right;font-family:var(--mono)">' + (tKwhCost ? _$c2(tKwhCost) : '—') + '</td>';
+                out +=
+                  '<td style="text-align:right;font-family:var(--mono);color:var(--em)">' +
+                  (tElecCost ? _$c2(tElecCost) : '—') +
+                  '</td>';
+                out +=
+                  '<td style="text-align:right;font-family:var(--mono);font-size:10px">' +
+                  (tKwh > 0 && tKwhCost > 0 ? '$' + (tKwhCost / tKwh).toFixed(4) : '—') +
+                  '</td>';
+                out += '<td></td><td></td>';
+              }
+              if (hasG) {
+                out +=
+                  '<td style="text-align:right;font-family:var(--mono)' +
+                  (hasE ? ';border-left:2px solid var(--border2)' : '') +
+                  '">' +
+                  (tTherms ? Math.round(tTherms).toLocaleString() : '—') +
+                  '</td>';
+                out +=
+                  '<td style="text-align:right;font-family:var(--mono);font-size:10px">' +
+                  (tTherms > 0 && tGasCost > 0 ? '$' + (tGasCost / tTherms).toFixed(3) : '—') +
+                  '</td>';
+                out +=
+                  '<td style="text-align:right;font-family:var(--mono);color:var(--em)">' +
+                  (tGasCost ? _$c2(tGasCost) : '—') +
+                  '</td>';
+              }
+              if (hasP) {
+                out +=
+                  '<td style="text-align:right;font-family:var(--mono)' +
+                  (hasE || hasG ? ';border-left:2px solid var(--border2)' : '') +
+                  '">' +
+                  (tPropGal ? Math.round(tPropGal).toLocaleString() : '—') +
+                  '</td>';
+                out +=
+                  '<td style="text-align:right;font-family:var(--mono);color:var(--em)">' +
+                  (tPropCost ? _$c2(tPropCost) : '—') +
+                  '</td>';
+              }
+              out +=
+                '<td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--em);border-left:2px solid var(--border2)">' +
+                (grandTotal > 0 ? _$c2(grandTotal) : '—') +
+                '</td></tr>';
               out += '</tbody></table></div></div>';
             });
             out += '</div>';
