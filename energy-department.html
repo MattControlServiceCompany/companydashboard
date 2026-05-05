@@ -38170,6 +38170,7 @@
         // ── Actual savings per calendar month ──
         // Sum Total Cost Savings from each meter's Performance tab (same values shown there)
         const actualSavingsByCalMo = {};
+        const actualSavingsByYM = {}; // keyed by YYYY-MM for quarterly view (avoids cross-year collisions)
         (b.meters || []).forEach((m) => {
           if (m.baselineInclude === false) return;
           if (!(m.baseline?.months?.length >= 3)) return;
@@ -38179,9 +38180,17 @@
           Object.entries(mSav).forEach(([mo, v]) => {
             actualSavingsByCalMo[mo] = (actualSavingsByCalMo[mo] || 0) + v;
           });
+          const mSavYM = getMeterPerfSavingsByYM(m, mbills, mincl);
+          Object.entries(mSavYM).forEach(([ym, v]) => {
+            actualSavingsByYM[ym] = (actualSavingsByYM[ym] || 0) + v;
+          });
         });
         const hasActual = Object.keys(actualSavingsByCalMo).length > 0;
         _bpActualSavingsByCalMo = actualSavingsByCalMo;
+        _bpActualSavingsByYM = actualSavingsByYM;
+        // Determine the earliest post-baseline YYYY-MM for quarterly Year 1 anchoring
+        const _ymKeys = Object.keys(actualSavingsByYM).sort();
+        _bpPostBaselineStartYM = _ymKeys.length > 0 ? _ymKeys[0] : null;
 
         // ── Saved settings ──
         const storeKey = 'bldgperf_cfg_' + (b.id || b.name);
@@ -38394,9 +38403,30 @@
           for (let mo = 0; mo < 12; mo++) cols.push({ label: MONTH_NAMES[mo], mo });
           cols.push({ label: 'Total', isTotal: true });
         } else {
+          // For quarterly view, anchor quarters to actual post-baseline billing months so
+          // Year 2 Q1 refers to a different set of YYYY-MM strings than Year 1 Q1.
+          // This prevents values from repeating across years and prevents future quarters
+          // from showing data from earlier years that happen to share the same calendar month.
+          const actByYM = _bpActualSavingsByYM || {};
+          const postStartYM = _bpPostBaselineStartYM; // earliest post-baseline YYYY-MM
+          // Helper: add N months to a YYYY-MM string, returns YYYY-MM
+          const addMonths = (ym, n) => {
+            if (!ym) return null;
+            let yr2 = parseInt(ym.slice(0, 4));
+            let mo2 = parseInt(ym.slice(5, 7)) - 1 + n;
+            yr2 += Math.floor(mo2 / 12);
+            mo2 = ((mo2 % 12) + 12) % 12;
+            return yr2 + '-' + String(mo2 + 1).padStart(2, '0');
+          };
           for (let yr = 0; yr < years; yr++) {
             for (let q = 0; q < 4; q++) {
-              cols.push({ label: `Y${yr + 1} Q${q + 1}`, mos: [q * 3, q * 3 + 1, q * 3 + 2], yr });
+              const calMos = [q * 3, q * 3 + 1, q * 3 + 2]; // calendar month indices (for baseline)
+              const offset = yr * 12 + q * 3;
+              // Compute the actual YYYY-MM strings this quarter represents
+              const yms = postStartYM
+                ? [addMonths(postStartYM, offset), addMonths(postStartYM, offset + 1), addMonths(postStartYM, offset + 2)]
+                : null;
+              cols.push({ label: `Y${yr + 1} Q${q + 1}`, mos: calMos, yms, yr });
             }
           }
           cols.push({ label: 'Total', isTotal: true });
@@ -38420,18 +38450,25 @@
         }
         function getActSav(col) {
           if (!hasActual) return null;
-          // In quarterly view, actual data only exists for Year 1 (yr===0)
-          if (view === 'quarterly' && col.yr > 0) return null;
           if (col.isTotal) {
-            // In quarterly view, total reflects only Year 1 actuals
-            return Object.values(actByMo).reduce((s, v) => s + v, 0);
+            // Sum all actual YM savings we have data for
+            return view === 'quarterly'
+              ? Object.values(_bpActualSavingsByYM || {}).reduce((s, v) => s + v, 0)
+              : Object.values(actByMo).reduce((s, v) => s + v, 0);
+          }
+          if (col.yms) {
+            // Quarterly view: use YYYY-MM keyed data so Year 2 Q1 != Year 1 Q1
+            const actByYM2 = _bpActualSavingsByYM || {};
+            const ymsWithData = col.yms.filter((ym) => ym && ym in actByYM2);
+            if (ymsWithData.length === 0) return null;
+            if (ymsWithData.length < col.yms.length) return null; // partial or future quarter
+            return col.yms.reduce((s, ym) => s + actByYM2[ym], 0);
           }
           if (col.mos) {
-            // Only show data for quarters where ALL 3 months have actual data.
-            // Partial quarters (in-progress) and future quarters return null so they display blank.
+            // Fallback for monthly-style quarters (no YM anchor available)
             const monthsWithData = col.mos.filter((mo) => mo in actByMo);
             if (monthsWithData.length === 0) return null;
-            if (monthsWithData.length < col.mos.length) return null; // partial quarter — wait until complete
+            if (monthsWithData.length < col.mos.length) return null;
             return col.mos.reduce((s, mo) => s + actByMo[mo], 0);
           }
           return actByMo[col.mo] ?? null;
@@ -39262,6 +39299,112 @@
           }
 
           result[calMo] = (result[calMo] || 0) + totalCostSav;
+        });
+
+        return result;
+      }
+
+      /* ─────────────────────────────────────────────────────────────
+         getMeterPerfSavingsByYM
+         Returns {YYYY-MM: totalCostSavings}.
+         Same logic as getMeterPerfSavingsByCalMo but keyed by full
+         year-month string instead of calendar month index (0-11).
+         Used by the quarterly building performance view so Year 2
+         quarters are not confused with Year 1 calendar months.
+      ───────────────────────────────────────────────────────────── */
+      function getMeterPerfSavingsByYM(m, bills, incl) {
+        const result = {};
+        const bl = m.baseline;
+        if (!bl || !bl.months || bl.months.length < 3) return result;
+
+        const isElec = m.commodity === 'Electric';
+        const isPropane = m.commodity === 'Propane';
+        const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
+        const blRows = allRows.filter((r) => bl.months.includes(r.ym));
+        const blEnd = bl.months.slice().sort().pop();
+        const postRows = allRows.filter((r) => r.ym > blEnd);
+        if (!postRows.length) return result;
+
+        const { elecByMo: eMo, gasByMo: gMo, propaneByMo: pMo } = buildMoMap(m, blRows, bills, incl);
+        const blKwhCostByCalMo = {};
+        const blDemKWByCalMo = {};
+        Object.entries(eMo).forEach(([mo, v]) => {
+          blKwhCostByCalMo[mo] = v.energyCost;
+          blDemKWByCalMo[mo] = v.billedKW || v.demandKW || 0;
+        });
+
+        const rawUsageByYm = {};
+        if (!isElec) {
+          if (isPropane) {
+            allRows.forEach((r) => { rawUsageByYm[r.ym] = r.usage; });
+          } else {
+            bills.forEach((b) => {
+              const ym = normMonth(b.start, b.end, incl, bills);
+              if (!ym) return;
+              rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + parseFloat(b.therms || b.usage || 0);
+            });
+          }
+        }
+        if (isElec) {
+          bills.forEach((b) => {
+            const ym = normMonth(b.start, b.end, incl, bills);
+            if (!ym) return;
+            rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + (parseFloat(b.kwh) || parseFloat(b.usage) || 0);
+          });
+        }
+
+        const blByCalMo = {};
+        blRows.forEach((r) => {
+          const mo = parseInt(r.ym.split('-')[1]) - 1;
+          blByCalMo[mo] = r.regrBaseline != null ? r.regrBaseline : r.usage;
+        });
+        const hasBlCalMap = Object.keys(blByCalMo).length >= 3;
+        const hasRegrP = allRows.some((r) => r.regrBaseline != null);
+        const blAvg = blRows.length ? blRows.reduce((s, r) => s + r.usage, 0) / blRows.length : 0;
+
+        postRows.forEach((r) => {
+          const calMo = parseInt(r.ym.split('-')[1]) - 1;
+          const bfr = isPropane ? [] : bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
+          if (!isPropane && !bfr.length) return;
+
+          let totalCostSav = 0;
+          const expUsage =
+            hasBlCalMap && blByCalMo[calMo] != null
+              ? blByCalMo[calMo]
+              : hasRegrP && r.regrBaseline != null
+                ? r.regrBaseline
+                : blAvg;
+          const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
+
+          if (isElec) {
+            const n = bfr.length;
+            const actKwh = actUsage;
+            const kwhCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwhCost || 0), 0);
+            const kwhRate = actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0;
+            const kwhSaved = expUsage - actKwh;
+            const kwhCostSav = kwhRate > 0 ? kwhSaved * kwhRate : 0;
+            const blExpKW = blDemKWByCalMo[calMo] || 0;
+            const actDemKW = bfr.reduce((s, b) => s + parseFloat(b.demandKW || 0), 0) / Math.max(1, n);
+            const kwCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwCost || 0), 0);
+            const facKWCostAmt = bfr.reduce((s, b) => s + parseFloat(b.facKWCost || 0), 0);
+            const moKwRate = actDemKW > 0 ? (kwCostAmt + facKWCostAmt) / actDemKW : 0;
+            const kwSaved = blExpKW - actDemKW;
+            const kwCostSav = blExpKW > 0 && moKwRate > 0 ? kwSaved * moKwRate : 0;
+            totalCostSav = kwhCostSav + kwCostSav;
+          } else if (isPropane) {
+            const actGallons = actUsage;
+            const actCost = r.cost;
+            const galRate = actGallons > 0 && actCost > 0 ? actCost / actGallons : 0;
+            totalCostSav = galRate > 0 ? (expUsage - actGallons) * galRate : 0;
+          } else {
+            const actTherms = actUsage;
+            const actThermCost = bfr.reduce((s, b) => s + parseFloat(b.thermCost || b.cost || 0), 0);
+            const thermRate = actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0;
+            totalCostSav = thermRate > 0 ? (expUsage - actTherms) * thermRate : 0;
+          }
+
+          // Key by YYYY-MM (not calendar month) so each specific month is tracked independently
+          result[r.ym] = (result[r.ym] || 0) + totalCostSav;
         });
 
         return result;
