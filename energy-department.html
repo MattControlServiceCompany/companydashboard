@@ -109,6 +109,7 @@
         height: 100%;
         overflow: hidden;
         -webkit-font-smoothing: antialiased;
+        font-variant-numeric: tabular-nums;
       }
       ::-webkit-scrollbar {
         width: 5px;
@@ -32293,7 +32294,7 @@
           { id: 'norm', label: '🌡️ Normalized' },
           { id: 'baseline', label: '📊 Baseline' },
           { id: 'stats', label: '📈 Meter Data' },
-          { id: 'perf', label: '💡 Building Performance' },
+          { id: 'perf', label: '💡 Meter Performance' },
         ];
 
         ws.innerHTML =
@@ -41473,7 +41474,7 @@
           const chargeRaw = readVal(r.chargeField);
           const chargeVal = escapeAttr(chargeRaw ? _billFmtCurrency(chargeRaw) : '');
           const unit = r.unit || '';
-          const dp = unit.toLowerCase() === 'kwh' ? 5 : 3;
+          const dp = /kwh|therms/i.test(unit) ? 5 : 3;
           const recalc = `onchange="_billRecalcRow('${r.chargeField}')" oninput="_billRecalcRow('${r.chargeField}')"`;
           let qtyHtml;
           if (r.qtyField) {
