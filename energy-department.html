@@ -28247,12 +28247,31 @@
           .slice(0, 6)
           .map((f) => LABELS[f] || f)
           .join(', ');
+        // Build per-field math breakdown for the sum mismatch banner so the user
+        // can see exactly which values were added and where the gap comes from.
+        const _sumMathParts = _CHARGE_SUM_KEYS_RPF
+          .filter((f) => _pf(parsed[f]) !== 0 || !_missingChargeFields.includes(f))
+          .map((f) => {
+            const v = _pf(parsed[f]);
+            const label = LABELS[f] || f;
+            const style = v === 0 ? 'color:#f87171;font-style:italic' : 'color:#fecaca';
+            return `<span style="${style}">${label}: $${v.toFixed(2)}</span>`;
+          });
+        const _sumMathLine = _sumMathParts.length
+          ? `<div style="font-size:11px;font-family:var(--mono);margin-top:6px;line-height:1.8;color:#fca5a5">`
+            + _sumMathParts.join(`<span style="color:#f87171;padding:0 4px">+</span>`)
+            + `<span style="color:#f87171;padding:0 6px">=</span><strong style="color:#ef4444">$${_currentChargeSum.toFixed(2)}</strong>`
+            + `<span style="color:#f87171;padding:0 6px">vs expected</span><strong style="color:#fecaca">$${totalVal.toFixed(2)}</strong>`
+            + `<span style="color:#f87171;padding:0 6px">(off by $${Math.abs(_currentSumDiff).toFixed(2)})</span>`
+            + `</div>`
+          : '';
         const sumMismatchHtml = hasCurrentSumMismatch
           ? `<div style="padding:14px 18px;margin:10px 0;border-radius:10px;background:rgba(239,68,68,.22);border:2px solid #ef4444;color:#fecaca;font-size:14px;line-height:1.5;display:flex;align-items:flex-start;gap:12px;box-shadow:0 0 0 3px rgba(239,68,68,.08)">
         <span style="font-size:26px;line-height:1">&#9940;</span>
         <div style="flex:1">
           <div style="font-size:16px;font-weight:800;color:var(--red);letter-spacing:.2px">SUM MISMATCH &mdash; $${Math.abs(_currentSumDiff).toFixed(2)} ${_currentSumDiff > 0 ? 'OVER' : 'UNDER'} Total Current Charges</div>
           <div style="font-size:12px;font-weight:500;color:#fca5a5;margin-top:4px">Charge sum is $${_currentChargeSum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} but the bill total is $${totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.${_labelsMissing ? ' Blank charges: <strong>' + _labelsMissing + '</strong>.' : ''} Check every field below against the source PDF.</div>
+          ${_sumMathLine}
         </div>
       </div>`
           : '';
@@ -41693,7 +41712,7 @@
                 '<button type="button" class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px" ' +
                 'onclick="_gasApplySubtract()">Subtract $' +
                 custVal.toFixed(2) +
-                ' â†’ $' +
+                ' -> $' +
                 net.toFixed(2) +
                 '</button>';
               const gasRow = document.querySelector('.ef-charge-row[data-charge-key="GasCharge"]');
