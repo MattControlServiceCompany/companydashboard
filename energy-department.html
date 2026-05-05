@@ -15401,7 +15401,10 @@
           contract: parseFloat(document.getElementById('mp-contract').value) || 0,
           savings: parseFloat(document.getElementById('mp-savings').value) || 0,
           baselineComparison: document.getElementById('mp-baselineComparison').value || 'normalized',
-          escalation: parseFloat(document.getElementById('mp-escalation').value) || 0,
+          escalation:
+            document.getElementById('mp-escalation').value.trim() === ''
+              ? null
+              : parseFloat(document.getElementById('mp-escalation').value) || 0,
           cscCompensation: parseFloat(document.getElementById('mp-cscCompensation').value) || 0,
           start: document.getElementById('mp-start').value,
           end: document.getElementById('mp-end').value,
@@ -38270,7 +38273,14 @@
             // In quarterly view, total reflects only Year 1 actuals
             return Object.values(actByMo).reduce((s, v) => s + v, 0);
           }
-          if (col.mos) return col.mos.reduce((s, mo) => s + (actByMo[mo] || 0), 0);
+          if (col.mos) {
+            // Only show data for quarters where ALL 3 months have actual data.
+            // Partial quarters (in-progress) and future quarters return null so they display blank.
+            const monthsWithData = col.mos.filter((mo) => mo in actByMo);
+            if (monthsWithData.length === 0) return null;
+            if (monthsWithData.length < col.mos.length) return null; // partial quarter — wait until complete
+            return col.mos.reduce((s, mo) => s + actByMo[mo], 0);
+          }
           return actByMo[col.mo] ?? null;
         }
         function getCscVal(col) {
@@ -38751,7 +38761,7 @@
         // Compute per-column values
         function colBase(col) {
           if (col.isTotal) return cols.filter((c) => !c.isTotal).reduce((s, c) => s + colBase(c), 0);
-          if (col.mos) return col.mos.reduce((s, mo) => s + moBase[mo], 0) * years; // each year same baseline
+          if (col.mos) return col.mos.reduce((s, mo) => s + moBase[mo], 0) * Math.pow(1 + escPct, col.yr || 0); // escalate per year
           if (col.mo !== undefined) return moBase[col.mo];
           return 0;
         }
