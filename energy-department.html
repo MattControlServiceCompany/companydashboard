@@ -45347,16 +45347,13 @@
         initHvacLoadTab(projId);
       }
 
-      function _hvlRenderBaselineSummary(projId, b) {
-        const wrap = document.getElementById('hvl-baseline-summary-' + projId);
-        if (!wrap || !b) return;
+      function _buildBaselineDataHtml(b) {
+        if (!b) return '';
         const sqft = parseInt(b.sqft) || 0;
         const meters = b.meters || [];
         const elecM = meters.find((m) => m.commodity === 'Electric');
         const gasM = meters.find((m) => m.commodity === 'Gas');
-
-        // Gather baseline-selected bills (falls back to all bills if no baseline set)
-        function getBillsByMonth(meter) {
+        function _blBillsByMo(meter) {
           if (!meter) return {};
           const blBills = _dashGetBaselineBills(meter);
           const allBills = (meter.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
@@ -45371,11 +45368,8 @@
           });
           return byMo;
         }
-
-        const eByMo = getBillsByMonth(elecM);
-        const gByMo = getBillsByMonth(gasM);
-
-        // Calculate totals
+        const eByMo = _blBillsByMo(elecM);
+        const gByMo = _blBillsByMo(gasM);
         let totKwh = 0,
           maxKw = 0,
           totKwCost = 0,
@@ -45398,12 +45392,10 @@
             totGasCost += parseFloat(gb.totalCost) || parseFloat(gb.cost) || 0;
           }
         });
-
-        const fmt = (n) => (n >= 1000 ? Math.round(n).toLocaleString() : n > 0 ? n.toFixed(1) : '—');
+        if (totKwh === 0 && totTherms === 0) return '';
         const $c = (n) =>
           n > 0 ? '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
-
-        wrap.innerHTML = `<div class="card">
+        return `<div class="card">
           <div class="card-hdr"><span class="card-title">📊 Baseline Data — ${b.name || 'Building'}</span>
             <span style="font-size:11px;color:var(--text3);margin-left:auto">${sqft ? Number(sqft).toLocaleString() + ' sq ft' : 'No sq ft set'}</span>
           </div>
@@ -45442,21 +45434,49 @@
                   const therms = parseFloat(gb.therms) || parseFloat(gb.usage) || 0;
                   const gCost = parseFloat(gb.totalCost) || parseFloat(gb.cost) || 0;
                   const avgTherm = therms > 0 && gCost > 0 ? gCost / therms : 0;
-                  return `<tr>
-                    <td style="font-weight:600">${mo}</td>
-                    <td style="text-align:right;font-family:var(--mono)">${kwh ? Math.round(kwh).toLocaleString() : '—'}</td>
-                    <td style="text-align:right;font-family:var(--mono)">${kw ? kw.toFixed(1) : '—'}</td>
-                    <td style="text-align:right;font-family:var(--mono)">${kwCost ? $c(kwCost) : '—'}</td>
-                    <td style="text-align:right;font-family:var(--mono)">${kwhCost ? $c(kwhCost) : '—'}</td>
-                    <td style="text-align:right;font-family:var(--mono);font-weight:600">${eCost ? $c(eCost) : '—'}</td>
-                    <td style="text-align:right;font-family:var(--mono);font-size:11px">${avgKwh ? '$' + avgKwh.toFixed(4) : '—'}</td>
-                    <td style="text-align:right;font-family:var(--mono);font-size:11px">${avgKw ? '$' + avgKw.toFixed(2) : '—'}</td>
-                    <td style="text-align:right;font-family:var(--mono);font-size:11px">${lf ? (lf * 100).toFixed(1) + '%' : '—'}</td>
-                    <td style="border-left:2px solid var(--border2);text-align:right;font-family:var(--mono)">${therms ? Math.round(therms).toLocaleString() : '—'}</td>
-                    <td style="text-align:right;font-family:var(--mono);font-size:11px">${avgTherm ? '$' + avgTherm.toFixed(3) : '—'}</td>
-                    <td style="text-align:right;font-family:var(--mono);font-weight:600">${gCost ? $c(gCost) : '—'}</td>
-                    <td style="text-align:right;font-family:var(--mono);font-weight:700;border-left:2px solid var(--border2)">${eCost + gCost > 0 ? $c(eCost + gCost) : '—'}</td>
-                  </tr>`;
+                  return (
+                    '<tr>' +
+                    '<td style="font-weight:600">' +
+                    mo +
+                    '</td>' +
+                    '<td style="text-align:right;font-family:var(--mono)">' +
+                    (kwh ? Math.round(kwh).toLocaleString() : '—') +
+                    '</td>' +
+                    '<td style="text-align:right;font-family:var(--mono)">' +
+                    (kw ? kw.toFixed(1) : '—') +
+                    '</td>' +
+                    '<td style="text-align:right;font-family:var(--mono)">' +
+                    (kwCost ? $c(kwCost) : '—') +
+                    '</td>' +
+                    '<td style="text-align:right;font-family:var(--mono)">' +
+                    (kwhCost ? $c(kwhCost) : '—') +
+                    '</td>' +
+                    '<td style="text-align:right;font-family:var(--mono);font-weight:600">' +
+                    (eCost ? $c(eCost) : '—') +
+                    '</td>' +
+                    '<td style="text-align:right;font-family:var(--mono);font-size:11px">' +
+                    (avgKwh ? '$' + avgKwh.toFixed(4) : '—') +
+                    '</td>' +
+                    '<td style="text-align:right;font-family:var(--mono);font-size:11px">' +
+                    (avgKw ? '$' + avgKw.toFixed(2) : '—') +
+                    '</td>' +
+                    '<td style="text-align:right;font-family:var(--mono);font-size:11px">' +
+                    (lf ? (lf * 100).toFixed(1) + '%' : '—') +
+                    '</td>' +
+                    '<td style="border-left:2px solid var(--border2);text-align:right;font-family:var(--mono)">' +
+                    (therms ? Math.round(therms).toLocaleString() : '—') +
+                    '</td>' +
+                    '<td style="text-align:right;font-family:var(--mono);font-size:11px">' +
+                    (avgTherm ? '$' + avgTherm.toFixed(3) : '—') +
+                    '</td>' +
+                    '<td style="text-align:right;font-family:var(--mono);font-weight:600">' +
+                    (gCost ? $c(gCost) : '—') +
+                    '</td>' +
+                    '<td style="text-align:right;font-family:var(--mono);font-weight:700;border-left:2px solid var(--border2)">' +
+                    (eCost + gCost > 0 ? $c(eCost + gCost) : '—') +
+                    '</td>' +
+                    '</tr>'
+                  );
                 }).join('')}
                 <tr style="border-top:2px solid var(--border2);font-weight:800">
                   <td>TOTAL</td>
@@ -45478,15 +45498,31 @@
           </div>
           ${
             sqft > 0 && totKwh > 0
-              ? `<div style="padding:8px 16px;display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--text2)">
-            <span>kWh/sf: <strong style="color:var(--accent)">${sqft > 0 ? (totKwh / sqft).toFixed(1) : '—'}</strong></span>
-            <span>kBtu/sf: <strong style="color:var(--em)">${sqft > 0 ? ((totKwh * 3.412 + totTherms * 100) / sqft).toFixed(1) : '—'}</strong></span>
-            <span>$/sf: <strong style="color:var(--green)">${sqft > 0 && totElecCost + totGasCost > 0 ? ((totElecCost + totGasCost) / sqft).toFixed(2) : '—'}</strong></span>
-            ${totTherms > 0 ? `<span>Therms/sf: <strong style="color:var(--teal)">${sqft > 0 ? (totTherms / sqft).toFixed(2) : '—'}</strong></span>` : ''}
-          </div>`
+              ? '<div style="padding:8px 16px;display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--text2)">' +
+                '<span>kWh/sf: <strong style="color:var(--accent)">' +
+                (totKwh / sqft).toFixed(1) +
+                '</strong></span>' +
+                '<span>kBtu/sf: <strong style="color:var(--em)">' +
+                ((totKwh * 3.412 + totTherms * 100) / sqft).toFixed(1) +
+                '</strong></span>' +
+                '<span>$/sf: <strong style="color:var(--green)">' +
+                (totElecCost + totGasCost > 0 ? ((totElecCost + totGasCost) / sqft).toFixed(2) : '—') +
+                '</strong></span>' +
+                (totTherms > 0
+                  ? '<span>Therms/sf: <strong style="color:var(--teal)">' +
+                    (totTherms / sqft).toFixed(2) +
+                    '</strong></span>'
+                  : '') +
+                '</div>'
               : ''
           }
         </div>`;
+      }
+
+      function _hvlRenderBaselineSummary(projId, b) {
+        const wrap = document.getElementById('hvl-baseline-summary-' + projId);
+        if (!wrap || !b) return;
+        wrap.innerHTML = _buildBaselineDataHtml(b);
       }
 
       function _hvlRenderMethod(projId, bldgId, method) {
@@ -49944,10 +49980,37 @@
         const hasGas = totalBlGas > 0 || sortedYears.some((y) => yearData[y].gas.some((g) => g > 0));
         const hasPropane = totalBlPropane > 0 || sortedYears.some((y) => yearData[y].propane.some((g) => g > 0));
 
+        // Compute normalized propane baseline (HDD-weighted monthly consumption, not raw deliveries)
+        const blPropaneNorm = new Array(12).fill(0);
+        if (hasPropane) {
+          bldgs.forEach((b) => {
+            (b.meters || []).forEach((m) => {
+              if (m.commodity !== 'Propane' || m.baselineInclude === false) return;
+              const bl = m.baseline;
+              if (!bl || !bl.months || bl.months.length < 3) return;
+              const mBills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+              const mIncl = m.inclusive !== false;
+              const allRows = mBills.length ? getNormRows(m, mBills, mIncl, null) : [];
+              const blRows = allRows.filter((r) => bl.months.includes(r.ym));
+              const countByMo = {};
+              blRows.forEach((r) => {
+                const mo = parseInt(r.ym.split('-')[1]) - 1;
+                blPropaneNorm[mo] += r.usage;
+                countByMo[mo] = (countByMo[mo] || 0) + 1;
+              });
+              Object.entries(countByMo).forEach(([mo, cnt]) => {
+                if (cnt > 1) blPropaneNorm[mo] /= cnt;
+              });
+            });
+          });
+        }
+        const blPropaneBl = blPropaneNorm.some((v) => v > 0) ? blPropaneNorm : blPropaneAvg;
+
         chartsEl.innerHTML = `
           ${_yoyHtml('Electric kWh', '⚡', 'kWh', 'kwh', blKwhAvg)}
+          ${totalBlKwh > 0 ? _yoyHtml('Electric Peak kW', '⚡', 'kW', 'kw', blKw) : ''}
           ${hasGas ? _yoyHtml('Gas Therms', '🔥', 'therms', 'gas', blGasAvg) : ''}
-          ${hasPropane ? _yoyHtml('Propane Gallons', '🛢️', 'gal', 'propane', blPropaneAvg) : ''}
+          ${hasPropane ? _yoyHtml('Propane Gallons', '🛢️', 'gal', 'propane', blPropaneBl) : ''}
           <div class="card" style="background:var(--s1);padding:14px">
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📊 Annual Summary by Year</div>
             <div style="overflow-x:auto">
@@ -49957,11 +50020,10 @@
                   ${yrsToShow
                     .map((y) => {
                       const yd = yearData[y];
-                      const ykwh = yd.kwh.reduce((a, b) => a + b, 0);
-                      const ygas = yd.gas.reduce((a, b) => a + b, 0);
-                      const ypropane = yd.propane.reduce((a, b) => a + b, 0);
+                      const ykwhRaw = yd.kwh.reduce((a, b) => a + b, 0);
+                      const ygasRaw = yd.gas.reduce((a, b) => a + b, 0);
+                      const ypropaneRaw = yd.propane.reduce((a, b) => a + b, 0);
                       const ykw = Math.max(...yd.kw);
-                      const ykbtu = ykwh * 3.412 + ygas * 100 + ypropane * 91.5;
                       let moCount = 0;
                       for (let mi = 0; mi < 12; mi++) {
                         if (yd.kwh[mi] > 0 || yd.gas[mi] > 0 || yd.propane[mi] > 0) {
@@ -49969,20 +50031,25 @@
                           if (blKbtuPerMo[mi] <= 0 || mk >= blKbtuPerMo[mi] * 0.25) moCount++;
                         }
                       }
-                      const yeui = sqft > 0 && moCount > 0 ? ((ykbtu / moCount) * 12) / sqft : 0;
                       const isPartial = moCount > 0 && moCount < 12;
+                      const annF = isPartial ? 12 / moCount : 1;
+                      const ykwh = ykwhRaw * annF;
+                      const ygas = ygasRaw * annF;
+                      const ypropane = ypropaneRaw * annF;
+                      const ykbtu = ykwh * 3.412 + ygas * 100 + ypropane * 91.5;
+                      const yeui = sqft > 0 && moCount > 0 ? ykbtu / sqft : 0;
                       const diff = blEui > 0 ? ((yeui - blEui) / blEui) * 100 : 0;
                       const isBl = blYears.has(y);
                       const projLabel = isPartial
-                        ? ' <span style="font-size:9px;color:var(--text3)">(' + moCount + ' mo)</span>'
+                        ? ' <span style="font-size:9px;color:var(--text3)">(' + moCount + ' mo, annualized)</span>'
                         : '';
                       return `<tr${isBl ? ' style="background:rgba(59,130,246,0.05)"' : ''}>
                       <td style="font-weight:600">${y}${isBl ? ' <span style="font-size:10px;color:var(--accent)">(BL)</span>' : ''}${projLabel}</td>
-                      <td style="text-align:right;font-family:var(--mono)">${Math.round(ykwh).toLocaleString()}</td>
+                      <td style="text-align:right;font-family:var(--mono)">${Math.round(ykwh).toLocaleString()}${isPartial ? '*' : ''}</td>
                       <td style="text-align:right;font-family:var(--mono)">${ykw.toFixed(1)}</td>
-                      <td style="text-align:right;font-family:var(--mono)">${Math.round(ygas).toLocaleString()}</td>
-                      ${hasPropane ? '<td style="text-align:right;font-family:var(--mono)">' + Math.round(ypropane).toLocaleString() + '</td>' : ''}
-                      <td style="text-align:right;font-family:var(--mono)">${yeui.toFixed(1)}</td>
+                      <td style="text-align:right;font-family:var(--mono)">${Math.round(ygas).toLocaleString()}${isPartial ? '*' : ''}</td>
+                      ${hasPropane ? '<td style="text-align:right;font-family:var(--mono)">' + Math.round(ypropane).toLocaleString() + (isPartial ? '*' : '') + '</td>' : ''}
+                      <td style="text-align:right;font-family:var(--mono)">${yeui.toFixed(1)}${isPartial ? '*' : ''}</td>
                       <td style="text-align:right;font-family:var(--mono);color:var(--accent)">${blEui > 0 ? blEui.toFixed(1) : '—'}</td>
                       <td style="text-align:right;font-family:var(--mono);color:${diff < 0 ? 'var(--green)' : diff > 0 ? 'var(--red)' : 'var(--text2)'}">${isBl ? '—' : (diff > 0 ? '+' : '') + diff.toFixed(1) + '%'}</td>
                     </tr>`;
@@ -50011,19 +50078,25 @@
                           .map((y) => {
                             const bd = byrs[y];
                             if (!bd) return null;
-                            const bkwh = bd.kwh.reduce((a, v) => a + v, 0);
-                            const bgas = bd.gas.reduce((a, v) => a + v, 0);
-                            const bpropane = bd.propane.reduce((a, v) => a + v, 0);
-                            if (bkwh === 0 && bgas === 0 && bpropane === 0) return null;
+                            const bkwhRaw = bd.kwh.reduce((a, v) => a + v, 0);
+                            const bgasRaw = bd.gas.reduce((a, v) => a + v, 0);
+                            const bpropaneRaw = bd.propane.reduce((a, v) => a + v, 0);
+                            if (bkwhRaw === 0 && bgasRaw === 0 && bpropaneRaw === 0) return null;
                             const bkw = Math.max(...bd.kw);
-                            const bcost = bd.cost.reduce((a, v) => a + v, 0);
-                            const bkbtu = bkwh * 3.412 + bgas * 100 + bpropane * 91.5;
+                            const bcostRaw = bd.cost.reduce((a, v) => a + v, 0);
                             let moCount = 0;
                             for (let mi = 0; mi < 12; mi++) {
                               if (bd.kwh[mi] > 0 || bd.gas[mi] > 0 || bd.propane[mi] > 0) moCount++;
                             }
-                            const beui = bSqft > 0 && moCount > 0 ? ((bkbtu / moCount) * 12) / bSqft : 0;
-                            return { y, bkwh, bkw, bgas, bpropane, bcost, beui, moCount };
+                            const bPartial = moCount > 0 && moCount < 12;
+                            const bAnnF = bPartial ? 12 / moCount : 1;
+                            const bkwh = bkwhRaw * bAnnF;
+                            const bgas = bgasRaw * bAnnF;
+                            const bpropane = bpropaneRaw * bAnnF;
+                            const bcost = bcostRaw * bAnnF;
+                            const bkbtu = bkwh * 3.412 + bgas * 100 + bpropane * 91.5;
+                            const beui = bSqft > 0 && moCount > 0 ? bkbtu / bSqft : 0;
+                            return { y, bkwh, bkw, bgas, bpropane, bcost, beui, moCount, bPartial };
                           })
                           .filter(Boolean);
                         if (!rows.length) return '';
@@ -50056,11 +50129,15 @@
                               borderTop +
                               '">' +
                               r.y +
+                              (r.bPartial
+                                ? ' <span style="font-size:8px;color:var(--text3)">(' + r.moCount + 'mo)</span>'
+                                : '') +
                               '</td>' +
                               '<td style="' +
                               tdS +
                               '">' +
                               Math.round(r.bkwh).toLocaleString() +
+                              (r.bPartial ? '*' : '') +
                               '</td>' +
                               '<td style="' +
                               tdS +
@@ -50071,19 +50148,26 @@
                               tdS +
                               '">' +
                               Math.round(r.bgas).toLocaleString() +
+                              (r.bPartial ? '*' : '') +
                               '</td>' +
                               (hasPropane
-                                ? '<td style="' + tdS + '">' + Math.round(r.bpropane).toLocaleString() + '</td>'
+                                ? '<td style="' +
+                                  tdS +
+                                  '">' +
+                                  Math.round(r.bpropane).toLocaleString() +
+                                  (r.bPartial ? '*' : '') +
+                                  '</td>'
                                 : '') +
                               '<td style="' +
                               tdS +
                               '">$' +
                               Math.round(r.bcost).toLocaleString() +
+                              (r.bPartial ? '*' : '') +
                               '</td>' +
                               '<td style="' +
                               tdS +
                               '">' +
-                              (r.beui > 0 ? r.beui.toFixed(1) : '—') +
+                              (r.beui > 0 ? r.beui.toFixed(1) + (r.bPartial ? '*' : '') : '—') +
                               '</td></tr>'
                             );
                           })
@@ -50113,46 +50197,53 @@
               })
               .filter(Boolean);
             if (benchRows.length === 0) return '';
-            const maxBar = Math.max(...benchRows.flatMap((r) => [r.eui, r.cbecs]), 1);
+            const cbecsVal = benchRows[0].cbecs;
+            const maxBar = Math.max(...benchRows.map((r) => r.eui), cbecsVal, 1);
+            const cbLinePos = Math.max(2, (cbecsVal / maxBar) * 100);
             return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
               <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📊 EUI Benchmark — Your Buildings vs CBECS National Median</div>
               <div style="font-size:10px;color:var(--text3);margin-bottom:12px">kBtu/ft²/yr · rolling 12-month data · buildings without sqft are excluded</div>
-              <div style="display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;flex-direction:column;gap:8px">
                 ${benchRows
                   .map((r) => {
                     const euiW = Math.max(2, (r.eui / maxBar) * 100);
-                    const cbW = Math.max(2, (r.cbecs / maxBar) * 100);
                     const overUnder = r.eui <= r.cbecs ? 'var(--green)' : 'var(--danger)';
                     const pctDiff = r.cbecs > 0 ? (((r.eui - r.cbecs) / r.cbecs) * 100).toFixed(0) : '—';
                     const pctLabel = r.eui <= r.cbecs ? pctDiff + '% below' : '+' + pctDiff + '% above';
-                    return `<div>
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
-                      <div style="font-size:11px;font-weight:600;color:var(--text);min-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.name}</div>
-                      <div style="font-size:9px;color:var(--text3)">${r.type}</div>
-                    </div>
-                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
-                      <div style="font-size:9px;color:var(--text3);width:50px;text-align:right">Actual</div>
-                      <div style="flex:1;background:var(--s2);border-radius:3px;height:14px;position:relative">
-                        <div style="width:${euiW}%;background:${overUnder};border-radius:3px;height:100%;min-width:2px"></div>
-                      </div>
-                      <div style="font-size:10px;font-family:var(--mono);font-weight:600;color:${overUnder};min-width:55px;text-align:right">${r.eui.toFixed(1)}</div>
-                    </div>
-                    <div style="display:flex;align-items:center;gap:6px">
-                      <div style="font-size:9px;color:var(--text3);width:50px;text-align:right">CBECS</div>
-                      <div style="flex:1;background:var(--s2);border-radius:3px;height:14px;position:relative">
-                        <div style="width:${cbW}%;background:var(--amber);border-radius:3px;height:100%;min-width:2px;opacity:0.7"></div>
-                      </div>
-                      <div style="font-size:10px;font-family:var(--mono);color:var(--amber);min-width:55px;text-align:right">${r.cbecs.toFixed(1)}</div>
-                    </div>
-                    <div style="font-size:9px;color:${overUnder};margin-top:1px;margin-left:58px;font-weight:600">${pctLabel} benchmark</div>
-                  </div>`;
+                    return (
+                      '<div style="display:flex;align-items:center;gap:6px">' +
+                      '<div style="font-size:10px;font-weight:600;color:var(--text);min-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' +
+                      r.name +
+                      '</div>' +
+                      '<div style="flex:1;background:var(--s2);border-radius:3px;height:18px;position:relative">' +
+                      '<div style="width:' +
+                      euiW +
+                      '%;background:' +
+                      overUnder +
+                      ';border-radius:3px;height:100%;min-width:2px"></div>' +
+                      '<div style="position:absolute;left:' +
+                      cbLinePos +
+                      '%;top:-2px;bottom:-2px;width:2px;background:var(--amber);border-radius:1px"></div>' +
+                      '</div>' +
+                      '<div style="font-size:10px;font-family:var(--mono);font-weight:600;color:' +
+                      overUnder +
+                      ';min-width:50px;text-align:right">' +
+                      r.eui.toFixed(1) +
+                      '</div>' +
+                      '<div style="font-size:9px;color:' +
+                      overUnder +
+                      ';min-width:70px;font-weight:600">' +
+                      pctLabel +
+                      '</div>' +
+                      '</div>'
+                    );
                   })
                   .join('')}
               </div>
-              <div style="display:flex;gap:14px;margin-top:10px;font-size:9px;color:var(--text3)">
-                <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--green);margin-right:3px"></span>Below benchmark</span>
-                <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--danger);margin-right:3px"></span>Above benchmark</span>
-                <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--amber);opacity:0.7;margin-right:3px"></span>CBECS National Median</span>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:8px;font-size:9px;color:var(--text3)">
+                <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--green);margin-right:3px"></span>Below</span>
+                <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--danger);margin-right:3px"></span>Above</span>
+                <span><span style="display:inline-block;width:2px;height:12px;background:var(--amber);margin-right:3px;border-radius:1px"></span>CBECS Median: ${cbecsVal.toFixed(1)} kBtu/ft²</span>
               </div>
             </div>`;
           })()}
@@ -50300,7 +50391,14 @@
             const hasElec = totalBlKwh > 0 || sortedYears.some((y) => yearData[y].kwh.some((v) => v > 0));
             const hasGasQ = totalBlGas > 0 || sortedYears.some((y) => yearData[y].gas.some((v) => v > 0));
             const hasPropaneQ = totalBlPropane > 0 || sortedYears.some((y) => yearData[y].propane.some((v) => v > 0));
-            let qHtml = '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">';
+            let qHtml =
+              '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">' +
+              '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">💰 Monthly Savings: Projected vs Current</div>' +
+              '<div style="height:260px;position:relative;margin-bottom:14px"><canvas id="egfx-savChart-' +
+              projId +
+              '"></canvas></div>' +
+              '</div>';
+            qHtml += '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">';
             qHtml +=
               '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📅 Quarterly Savings vs Baseline</div>';
             qHtml += '<div style="overflow-x:auto"><table class="dtbl" style="min-width:500px">';
@@ -50490,236 +50588,104 @@
           })()}
           ${(() => {
             if (blEui === 0 || bldgs.length <= 1) return '';
-            const blYearList = [...blYears].sort();
-            const blPeriod =
-              blYearList.length === 1 ? String(blYearList[0]) : blYearList[0] + '–' + blYearList[blYearList.length - 1];
-            let out = '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">';
-            out +=
-              '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📋 Baseline Monthly Data — Per Building</div>';
-            out +=
-              '<div style="font-size:10px;color:var(--text3);margin-bottom:12px">Baseline period: ' +
-              blPeriod +
-              '</div>';
-            const _$c2 = (n) =>
-              n > 0 ? '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
-            bldgs.forEach((b) => {
-              const bName = b.name || 'Unknown';
-              const bMeters = b.meters || [];
-              const elecM = bMeters.find((m) => m.commodity === 'Electric' && m.baselineInclude !== false);
-              const gasM = bMeters.find((m) => m.commodity === 'Gas' && m.baselineInclude !== false);
-              const propM = bMeters.find((m) => m.commodity === 'Propane' && m.baselineInclude !== false);
-              if (!elecM && !gasM && !propM) return;
-              function _getBillsByMo(meter) {
-                if (!meter) return {};
-                const blBills = _dashGetBaselineBills(meter);
-                const allBills = (meter.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
-                const mBills = blBills.length ? blBills : allBills;
-                const incl = meter.inclusive !== false;
-                const byMo = {};
-                mBills.forEach((bill) => {
-                  const ym = normMonth(bill.start, bill.end, incl, allBills);
-                  if (!ym) return;
-                  const mo = parseInt(ym.split('-')[1]) - 1;
-                  byMo[mo] = bill;
-                });
-                return byMo;
-              }
-              const eByMo = _getBillsByMo(elecM);
-              const gByMo = _getBillsByMo(gasM);
-              const pByMo = _getBillsByMo(propM);
-              const hasE = Object.keys(eByMo).length > 0;
-              const hasG = Object.keys(gByMo).length > 0;
-              const hasP = Object.keys(pByMo).length > 0;
-              if (!hasE && !hasG && !hasP) return;
-              const bSqft = parseInt(b.sqft || 0);
-              let tKwh = 0,
-                maxKw = 0,
-                tKwCost = 0,
-                tKwhCost = 0,
-                tElecCost = 0,
-                tTherms = 0,
-                tGasCost = 0,
-                tPropGal = 0,
-                tPropCost = 0;
-              out += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border2)">';
-              out += '<div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:6px">' + bName;
-              if (bSqft > 0)
-                out +=
-                  ' <span style="font-size:9px;color:var(--text3);font-weight:400">' +
-                  bSqft.toLocaleString() +
-                  ' ft²</span>';
-              out += '</div>';
-              out += '<div style="overflow-x:auto"><table class="dtbl" style="min-width:900px;font-size:11px">';
-              out += '<thead><tr><th style="width:55px">Month</th>';
-              if (hasE)
-                out +=
-                  '<th style="text-align:right">kWh</th><th style="text-align:right">kW</th><th style="text-align:right">kW Cost</th><th style="text-align:right">kWh Cost</th><th style="text-align:right">Elec Cost</th><th style="text-align:right">$/kWh</th><th style="text-align:right">$/kW</th><th style="text-align:right">LF</th>';
-              if (hasG)
-                out +=
-                  '<th style="text-align:right' +
-                  (hasE ? ';border-left:2px solid var(--border2)' : '') +
-                  '">Therms</th><th style="text-align:right">$/Therm</th><th style="text-align:right">Gas Cost</th>';
-              if (hasP)
-                out +=
-                  '<th style="text-align:right' +
-                  (hasE || hasG ? ';border-left:2px solid var(--border2)' : '') +
-                  '">Propane Gal</th><th style="text-align:right">Prop Cost</th>';
-              out += '<th style="text-align:right;border-left:2px solid var(--border2)">Total</th></tr></thead><tbody>';
-              for (let mi = 0; mi < 12; mi++) {
-                const eb = eByMo[mi] || {};
-                const gb = gByMo[mi] || {};
-                const pb = pByMo[mi] || {};
-                const kwh = parseFloat(eb.kwh) || parseFloat(eb.usage) || 0;
-                const kw = parseFloat(eb.demandKW) || parseFloat(eb.billedKW) || 0;
-                const kwCost = parseFloat(eb.kwCost) || parseFloat(eb.demandCost) || 0;
-                const kwhCost = parseFloat(eb.kwhCost) || parseFloat(eb.energyCost) || 0;
-                const eCost = parseFloat(eb.totalCost) || parseFloat(eb.cost) || 0;
-                const avgKwhR = kwh > 0 && kwhCost > 0 ? kwhCost / kwh : 0;
-                const avgKwR = kw > 0 && kwCost > 0 ? kwCost / kw : 0;
-                const days = eb.days || 30;
-                const lf = kw > 0 && kwh > 0 ? kwh / (kw * 24 * days) : 0;
-                const therms = parseFloat(gb.therms) || parseFloat(gb.usage) || 0;
-                const gCost = parseFloat(gb.totalCost) || parseFloat(gb.cost) || 0;
-                const avgThR = therms > 0 && gCost > 0 ? gCost / therms : 0;
-                const propGal = parseFloat(pb.gallonsDelivered) || parseFloat(pb.kwh) || parseFloat(pb.usage) || 0;
-                const pCost = parseFloat(pb.totalCost) || parseFloat(pb.cost) || 0;
-                if (!kwh && !kw && !therms && !propGal) continue;
-                tKwh += kwh;
-                maxKw = Math.max(maxKw, kw);
-                tKwCost += kwCost;
-                tKwhCost += kwhCost;
-                tElecCost += eCost;
-                tTherms += therms;
-                tGasCost += gCost;
-                tPropGal += propGal;
-                tPropCost += pCost;
-                const moTotal = eCost + gCost + pCost;
-                out += '<tr><td style="font-weight:600">' + months[mi] + '</td>';
-                if (hasE) {
-                  out +=
-                    '<td style="text-align:right;font-family:var(--mono)">' +
-                    (kwh ? Math.round(kwh).toLocaleString() : '—') +
-                    '</td>';
-                  out += '<td style="text-align:right;font-family:var(--mono)">' + (kw ? kw.toFixed(1) : '—') + '</td>';
-                  out +=
-                    '<td style="text-align:right;font-family:var(--mono)">' + (kwCost ? _$c2(kwCost) : '—') + '</td>';
-                  out +=
-                    '<td style="text-align:right;font-family:var(--mono)">' + (kwhCost ? _$c2(kwhCost) : '—') + '</td>';
-                  out +=
-                    '<td style="text-align:right;font-family:var(--mono);font-weight:600">' +
-                    (eCost ? _$c2(eCost) : '—') +
-                    '</td>';
-                  out +=
-                    '<td style="text-align:right;font-family:var(--mono);font-size:10px">' +
-                    (avgKwhR ? '$' + avgKwhR.toFixed(4) : '—') +
-                    '</td>';
-                  out +=
-                    '<td style="text-align:right;font-family:var(--mono);font-size:10px">' +
-                    (avgKwR ? '$' + avgKwR.toFixed(2) : '—') +
-                    '</td>';
-                  out +=
-                    '<td style="text-align:right;font-family:var(--mono);font-size:10px">' +
-                    (lf ? (lf * 100).toFixed(1) + '%' : '—') +
-                    '</td>';
-                }
-                if (hasG) {
-                  out +=
-                    '<td style="text-align:right;font-family:var(--mono)' +
-                    (hasE ? ';border-left:2px solid var(--border2)' : '') +
-                    '">' +
-                    (therms ? Math.round(therms).toLocaleString() : '—') +
-                    '</td>';
-                  out +=
-                    '<td style="text-align:right;font-family:var(--mono);font-size:10px">' +
-                    (avgThR ? '$' + avgThR.toFixed(3) : '—') +
-                    '</td>';
-                  out +=
-                    '<td style="text-align:right;font-family:var(--mono);font-weight:600">' +
-                    (gCost ? _$c2(gCost) : '—') +
-                    '</td>';
-                }
-                if (hasP) {
-                  out +=
-                    '<td style="text-align:right;font-family:var(--mono)' +
-                    (hasE || hasG ? ';border-left:2px solid var(--border2)' : '') +
-                    '">' +
-                    (propGal ? Math.round(propGal).toLocaleString() : '—') +
-                    '</td>';
-                  out +=
-                    '<td style="text-align:right;font-family:var(--mono);font-weight:600">' +
-                    (pCost ? _$c2(pCost) : '—') +
-                    '</td>';
-                }
-                out +=
-                  '<td style="text-align:right;font-family:var(--mono);font-weight:700;border-left:2px solid var(--border2)">' +
-                  (moTotal > 0 ? _$c2(moTotal) : '—') +
-                  '</td></tr>';
-              }
-              const grandTotal = tElecCost + tGasCost + tPropCost;
-              out += '<tr style="border-top:2px solid var(--border2);font-weight:800"><td>TOTAL</td>';
-              if (hasE) {
-                out +=
-                  '<td style="text-align:right;font-family:var(--mono)">' +
-                  (tKwh ? Math.round(tKwh).toLocaleString() : '—') +
-                  '</td>';
-                out +=
-                  '<td style="text-align:right;font-family:var(--mono)">' + (maxKw ? maxKw.toFixed(1) : '—') + '</td>';
-                out +=
-                  '<td style="text-align:right;font-family:var(--mono)">' + (tKwCost ? _$c2(tKwCost) : '—') + '</td>';
-                out +=
-                  '<td style="text-align:right;font-family:var(--mono)">' + (tKwhCost ? _$c2(tKwhCost) : '—') + '</td>';
-                out +=
-                  '<td style="text-align:right;font-family:var(--mono);color:var(--em)">' +
-                  (tElecCost ? _$c2(tElecCost) : '—') +
-                  '</td>';
-                out +=
-                  '<td style="text-align:right;font-family:var(--mono);font-size:10px">' +
-                  (tKwh > 0 && tKwhCost > 0 ? '$' + (tKwhCost / tKwh).toFixed(4) : '—') +
-                  '</td>';
-                out += '<td></td><td></td>';
-              }
-              if (hasG) {
-                out +=
-                  '<td style="text-align:right;font-family:var(--mono)' +
-                  (hasE ? ';border-left:2px solid var(--border2)' : '') +
-                  '">' +
-                  (tTherms ? Math.round(tTherms).toLocaleString() : '—') +
-                  '</td>';
-                out +=
-                  '<td style="text-align:right;font-family:var(--mono);font-size:10px">' +
-                  (tTherms > 0 && tGasCost > 0 ? '$' + (tGasCost / tTherms).toFixed(3) : '—') +
-                  '</td>';
-                out +=
-                  '<td style="text-align:right;font-family:var(--mono);color:var(--em)">' +
-                  (tGasCost ? _$c2(tGasCost) : '—') +
-                  '</td>';
-              }
-              if (hasP) {
-                out +=
-                  '<td style="text-align:right;font-family:var(--mono)' +
-                  (hasE || hasG ? ';border-left:2px solid var(--border2)' : '') +
-                  '">' +
-                  (tPropGal ? Math.round(tPropGal).toLocaleString() : '—') +
-                  '</td>';
-                out +=
-                  '<td style="text-align:right;font-family:var(--mono);color:var(--em)">' +
-                  (tPropCost ? _$c2(tPropCost) : '—') +
-                  '</td>';
-              }
-              out +=
-                '<td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--em);border-left:2px solid var(--border2)">' +
-                (grandTotal > 0 ? _$c2(grandTotal) : '—') +
-                '</td></tr>';
-              out += '</tbody></table></div></div>';
-            });
-            out += '</div>';
-            return out;
+            return (
+              '<div style="margin-top:12px">' +
+              bldgs
+                .map((b) => _buildBaselineDataHtml(b))
+                .filter(Boolean)
+                .join('') +
+              '</div>'
+            );
           })()}`;
 
         setTimeout(() => {
           _yoyChartsToDraw.forEach(({ cid, field, unit, blAvgArr }) => {
             _drawYoyChart(cid, field, unit, blAvgArr);
           });
+          // Savings chart
+          const savChartCv = document.getElementById('egfx-savChart-' + projId);
+          if (savChartCv && hasEgfxSav) {
+            const savChartId = 'egfx-savChart-' + projId;
+            if (_maCharts[savChartId]) _maCharts[savChartId].destroy();
+            const egfxMoBase = aggBaseMoMapForBldgs(bldgs);
+            let egfxWtSav = 0,
+              egfxWtBase = 0;
+            bldgs.forEach((b) => {
+              const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
+              let bspCfg = {};
+              try {
+                bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
+              } catch (e) {}
+              const savPct = (bspCfg.savingsPct ?? 11) / 100;
+              let bBase = 0;
+              (b.meters || []).forEach((m) => {
+                const mBills2 = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+                const incl2 = m.inclusive !== false;
+                const bl = m.baseline;
+                if (!bl || !bl.months || bl.months.length < 3) return;
+                const allR = mBills2.length ? getNormRows(m, mBills2, incl2, null) : [];
+                const blR = allR.filter((r) => bl.months.includes(r.ym));
+                const { elecByMo: eM, gasByMo: gM } = buildMoMap(m, blR, mBills2, incl2);
+                for (let mo = 0; mo < 12; mo++) bBase += (eM[mo]?.totalCost || 0) + (gM[mo]?.cost || 0);
+              });
+              egfxWtSav += savPct * bBase;
+              egfxWtBase += bBase;
+            });
+            const egfxSavPct = egfxWtBase > 0 ? egfxWtSav / egfxWtBase : 0.11;
+            const projVals = months.map((_, mo) => (egfxMoBase[mo] || 0) * egfxSavPct);
+            const actVals = months.map((_, mo) => (egfxSavByMo[mo] != null ? egfxSavByMo[mo] : null));
+            _maCharts[savChartId] = new Chart(savChartCv, {
+              type: 'bar',
+              data: {
+                labels: months,
+                datasets: [
+                  {
+                    label: 'Projected Savings $',
+                    data: projVals,
+                    backgroundColor: 'rgba(0,212,170,.35)',
+                    borderColor: 'rgba(0,212,170,.8)',
+                    borderWidth: 1,
+                  },
+                  {
+                    label: 'Current Savings $',
+                    data: actVals,
+                    backgroundColor: actVals.map((v) =>
+                      v == null ? 'transparent' : v >= 0 ? 'rgba(0,212,170,.75)' : 'rgba(244,63,94,.75)',
+                    ),
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                  legend: {
+                    display: true,
+                    position: 'top',
+                    labels: { color: 'rgba(200,220,240,.9)', font: { size: 10 }, boxWidth: 12, padding: 10 },
+                  },
+                  tooltip: {
+                    callbacks: {
+                      label: (ctx) =>
+                        ctx.dataset.label + ': $' + (ctx.raw != null ? Math.round(ctx.raw).toLocaleString() : '—'),
+                    },
+                  },
+                },
+                scales: {
+                  x: { ticks: { color: 'rgba(180,200,220,.8)', font: { size: 10 } }, grid: { display: false } },
+                  y: {
+                    ticks: {
+                      color: 'rgba(180,200,220,.8)',
+                      font: { size: 10 },
+                      callback: (v) => '$' + v.toLocaleString(),
+                    },
+                    grid: { color: 'rgba(255,255,255,.08)' },
+                  },
+                },
+              },
+            });
+          }
         }, 120);
       }
       function egfxExport(projId) {
