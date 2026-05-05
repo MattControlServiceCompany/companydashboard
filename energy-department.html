@@ -32592,15 +32592,34 @@
         } catch (e) {}
         return { mode: 'detailed', hidden: [], sortAsc: true };
       }
-      function toggleBillsTableSort(mid) {
+      function toggleBillsTableSort(mid, evt) {
         const state = _billsTableViewState(mid);
         state.sortAsc = !state.sortAsc;
         _saveBillsTableViewState(mid, state);
-        const b = getUDBldg(udSelProjId, udSelBldgId);
-        const m = b?.meters?.find((mt) => mt.id === mid);
+        // Find meter by searching all projects/buildings so this works in
+        // embedded project views where udSelProjId/udSelBldgId may be stale.
+        let m = null;
+        for (const p of projects || []) {
+          const ud = utilityData && utilityData[p.id];
+          if (!ud) continue;
+          for (const bl of ud.buildings || []) {
+            for (const mm of bl.meters || []) {
+              if (mm.id === mid) {
+                m = mm;
+                break;
+              }
+            }
+            if (m) break;
+          }
+          if (m) break;
+        }
         if (m) {
-          const _wrap = window._udActiveWrap || document.getElementById('udDetailWrap');
-          const pane = _wrap ? _wrap.querySelector('#maPane') : document.getElementById('maPane');
+          // Walk up from the clicked element to find the exact #maPane that
+          // contains this bills table — avoids stale _udActiveWrap references.
+          const pane =
+            (evt && evt.target && evt.target.closest('#maPane')) ||
+            (window._udActiveWrap ? window._udActiveWrap.querySelector('#maPane') : null) ||
+            document.getElementById('maPane');
           if (pane) {
             const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
             renderBillsPane(pane, m, bills, m.inclusive !== false);
@@ -32778,7 +32797,7 @@
         const COL_BASE = [
           {
             h:
-              `<span style="cursor:pointer;user-select:none" onclick="toggleBillsTableSort('${m.id}')" title="${sortTitle}">Norm. Month${sortArrow}</span> ` +
+              `<span style="cursor:pointer;user-select:none" onclick="toggleBillsTableSort('${m.id}',event)" title="${sortTitle}">Norm. Month${sortArrow}</span> ` +
               normInfoTip,
             a: 'lbl',
             w: 110,
@@ -41594,8 +41613,16 @@
             if (!_blStartInp.value) return;
             const parts = _blStartInp.value.split('-');
             if (parts.length !== 3) return;
-            const d = new Date(+parts[0], +parts[1] - 1, +parts[2] + 30);
+            const yr = +parts[0],
+              mo = +parts[1],
+              da = +parts[2];
+            // Sanity-check the year: browser date pickers can produce year values
+            // like "0002" if the user types a small number, which causes new Date()
+            // to create a year-2 or year-1902 date and the output to show 0002 or 1902.
+            if (!yr || yr < 2000 || yr > 2100 || !mo || !da) return;
+            const d = new Date(yr, mo - 1, da); // local date — no UTC shift
             if (isNaN(d.getTime())) return;
+            d.setDate(d.getDate() + 30); // add 30 days via setDate (handles month rollover correctly)
             _blEndInp.value =
               d.getFullYear().toString().padStart(4, '0') +
               '-' +
