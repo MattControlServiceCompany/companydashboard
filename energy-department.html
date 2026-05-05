@@ -23935,6 +23935,7 @@
               }
 
               let bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
+              const _queueUnmatchedPages = bills._unmatchedPages || [];
               let validBills = bills.filter(
                 (b) =>
                   b.BillingPeriodStart ||
@@ -23946,10 +23947,23 @@
                   b.TotalCurrentCharges,
               );
 
-              const finalBills = validBills.length > 0 ? validBills : bills;
+              let finalBills = validBills.length > 0 ? validBills : bills;
+
+              // ── Inject unmatched pages as "Manual Review" entries ──
+              // If some pages couldn't be parsed, surface them so the user can see
+              // them instead of silently dropping them. If ALL pages were unmatched
+              // (no valid bills at all), the synthetics become the result so the
+              // queue shows "Manual Review" rows instead of a generic FAILED row.
+              const _queueSynthetics = _unmatchedToSyntheticBills(_queueUnmatchedPages);
+              if (_queueSynthetics.length) {
+                finalBills = finalBills.concat(_queueSynthetics);
+              }
+
               if (
                 finalBills.length === 0 ||
-                (!finalBills[0].BillingPeriodStart && !finalBills[0].TotalCurrentCharges)
+                (!finalBills[0].BillingPeriodStart &&
+                  !finalBills[0].TotalCurrentCharges &&
+                  !finalBills[0]._manualReview)
               ) {
                 reject(new Error('No bills found'));
                 return;
@@ -24186,6 +24200,9 @@
           let statusHtml;
           if (!row.bill) {
             statusHtml = '<span style="color:#c44;font-weight:600;font-size:10px">FAILED</span>';
+          } else if (row.bill._manualReview) {
+            statusHtml =
+              '<span style="color:#c88;font-weight:600;font-size:10px" title="Could not parse billing period — assign manually">REVIEW</span>';
           } else if (row._saved) {
             statusHtml = '<span style="color:var(--text3);font-size:10px">SAVED</span>';
           } else if (dup) {
@@ -24202,7 +24219,12 @@
           let periodHtml = '—';
           if (row.bill) {
             const b = row.bill;
-            if (b.DeliveryDate) {
+            if (b._manualReview) {
+              periodHtml =
+                '<span style="color:#c88;font-style:italic">' +
+                _escHtml(b._manualReviewLabel || 'Manual Review') +
+                '</span>';
+            } else if (b.DeliveryDate) {
               periodHtml = _escHtml(b.DeliveryDate);
             } else if (b.BillingPeriodStart || b.BillingPeriodEnd) {
               periodHtml = _escHtml((b.BillingPeriodStart || '?') + ' – ' + (b.BillingPeriodEnd || '?'));
@@ -26443,6 +26465,13 @@
                   }
                 });
 
+                // ── Inject unmatched pages as "Manual Review" entries so they are visible ──
+                // Without this, pages that couldn't be parsed are silently dropped.
+                const _syntheticReviewBills = _unmatchedToSyntheticBills(_extractUnmatchedPages);
+                if (_syntheticReviewBills.length) {
+                  finalBills = finalBills.concat(_syntheticReviewBills);
+                }
+
                 const analysisResults = analyzeBillExtraction(finalBills, rule.name);
                 window._pdfBillWarnings = analysisResults;
                 window._pdfUnmatchedPages = _extractUnmatchedPages;
@@ -26450,7 +26479,7 @@
                   const pgNums = _extractUnmatchedPages.flatMap((u) => u.pageNums).filter(Boolean);
                   showToast(
                     _extractUnmatchedPages.length +
-                      ' page(s) could not be parsed into billing periods' +
+                      ' page(s) could not be parsed — shown as "Manual Review" entries' +
                       (pgNums.length ? ' (page ' + pgNums.join(', ') + ')' : ''),
                   );
                 }
@@ -26732,7 +26761,10 @@
         const periods = bills.map((bill, i) => {
           let lbl;
           let sortSource;
-          if (bill.DeliveryDate) {
+          if (bill._manualReview) {
+            lbl = bill._manualReviewLabel || 'Manual Review';
+            sortSource = 0; // sort to the end (oldest)
+          } else if (bill.DeliveryDate) {
             lbl = _shortDt(bill.DeliveryDate);
             sortSource = bill.DeliveryDate;
           } else if (bill.BillingPeriodStart && bill.BillingPeriodEnd) {
