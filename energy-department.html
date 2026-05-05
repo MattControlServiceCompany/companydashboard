@@ -2803,8 +2803,8 @@
       .ef-grid {
         display: flex;
         flex-direction: column;
-        gap: 6px;
-        margin-top: 12px;
+        gap: 3px;
+        margin-top: 6px;
       }
       .ef-row {
         display: flex;
@@ -2990,8 +2990,8 @@
       .ef-item {
         background: var(--s3);
         border: 1px solid var(--border);
-        border-radius: 7px;
-        padding: 7px 10px;
+        border-radius: 5px;
+        padding: 4px 8px;
         position: relative;
       }
       .ef-item.wide {
@@ -3006,11 +3006,11 @@
         text-transform: uppercase;
         letter-spacing: 0.6px;
         font-weight: 700;
-        margin-bottom: 2px;
+        margin-bottom: 1px;
       }
       .ef-input {
         font-family: var(--mono);
-        font-size: 12px;
+        font-size: 11px;
         color: var(--em);
         background: transparent;
         border: none;
@@ -3046,8 +3046,8 @@
         text-transform: uppercase;
         letter-spacing: 0.7px;
         color: var(--accent);
-        margin: 12px 0 4px;
-        padding-bottom: 4px;
+        margin: 6px 0 2px;
+        padding-bottom: 3px;
         border-bottom: 1px solid rgba(var(--accent-rgb, 108, 99, 255), 0.2);
       }
       .ai-label {
@@ -46512,6 +46512,10 @@
                     <tr><td style="font-weight:600;color:var(--teal)">Non-HVAC kWh</td>${monthlyNonHvacKwh.map((v) => `<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(v)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(monthlyNonHvacKwh.reduce((s, v) => s + v, 0))}</td></tr>
                     <tr style="border-top:2px solid var(--border2)"><td style="font-weight:800">Total kWh</td>${months.map((_, i) => `<td style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:700">${fmt(monthlyCoolKwh[i] + monthlyHeatKwh[i] + monthlyNonHvacKwh[i])}</td>`).join('')}<td style="text-align:right;font-weight:800;font-family:var(--mono);color:var(--em)">${fmt(estimatedTotalKwh)}</td></tr>
                     <tr><td colspan="${months.length + 2}" style="height:8px;border:none"></td></tr>
+                    <tr style="background:rgba(59,130,246,0.05)"><td style="font-weight:600">HVAC Peak kW</td>${monthlyHvacKw.map((v) => `<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(v)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(hvacKw)}</td></tr>
+                    <tr><td style="font-weight:600;color:var(--teal)">Non-HVAC Peak kW</td>${monthlyHvacKw.map((v) => `<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(estimatedTotalKw - v)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(nonHvacKw)}</td></tr>
+                    <tr style="border-top:2px solid var(--border2)"><td style="font-weight:800">Total Peak kW</td>${monthlyHvacKw.map((v) => `<td style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:700">${fmt(estimatedTotalKw)}</td>`).join('')}<td style="text-align:right;font-weight:800;font-family:var(--mono);color:var(--em)">${fmt(estimatedTotalKw)}</td></tr>
+                    <tr><td colspan="${months.length + 2}" style="height:8px;border:none"></td></tr>
                     <tr style="background:rgba(244,63,94,0.05)"><td style="font-weight:600">HVAC Gas Therms</td>${monthlyHvacGas.map((v) => `<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(v)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(monthlyHvacGas.reduce((s, v) => s + v, 0))}</td></tr>
                     <tr><td style="font-weight:600;color:var(--teal)">Non-HVAC Gas Therms</td>${monthlyNonHvacGas.map((v) => `<td style="text-align:right;font-family:var(--mono);font-size:11px">${fmt(v)}</td>`).join('')}<td style="text-align:right;font-weight:700;font-family:var(--mono)">${fmt(monthlyNonHvacGas.reduce((s, v) => s + v, 0))}</td></tr>
                     <tr style="border-top:2px solid var(--border2)"><td style="font-weight:800">Total Gas Therms</td>${months.map((_, i) => `<td style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:700">${fmt(monthlyHvacGas[i] + monthlyNonHvacGas[i])}</td>`).join('')}<td style="text-align:right;font-weight:800;font-family:var(--mono);color:var(--em)">${fmt(estimatedTotalGas)}</td></tr>
@@ -46560,7 +46564,6 @@
               </div>
             </div>
           </div>`;
-        showToast('HVAC load estimate calculated ✓');
       }
 
       function hvacLoadSave(projId) {
