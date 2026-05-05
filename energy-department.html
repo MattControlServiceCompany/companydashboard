@@ -32661,10 +32661,19 @@
         // Togglable columns depend on mode.
         let items;
         if (state.mode === 'condensed' && CONDENSED_CATEGORIES[meter.commodity]) {
-          items = CONDENSED_CATEGORIES[meter.commodity].map((c) => ({
-            key: c.label,
-            label: c.label,
-          }));
+          // For Gas meters, only list the usage column that matches the meter's bill unit
+          // so the settings modal doesn't offer a toggle for a column that won't appear.
+          const _settingsBillUnit = meter.commodity === 'Gas' ? getMeterBillUnit(meter) : null;
+          items = CONDENSED_CATEGORIES[meter.commodity]
+            .filter((c) => {
+              if (_settingsBillUnit === 'CCF' && c.label === 'Therms') return false;
+              if (_settingsBillUnit !== 'CCF' && _settingsBillUnit && c.label === 'CCF') return false;
+              return true;
+            })
+            .map((c) => ({
+              key: c.label,
+              label: c.label,
+            }));
         } else {
           const SKIP = new Set([
             'start',
@@ -32834,8 +32843,16 @@
         // right edge alongside the Actions column.
         let COL_FIELDS;
         if (viewState.mode === 'condensed' && CONDENSED_CATEGORIES[m.commodity]) {
+          // For Gas meters, only show the usage column that matches the meter's bill unit.
+          // Bills store usage in either naturalGasCCF or naturalGasTherms depending on
+          // what the utility actually bills in — show only the relevant column, not both.
+          const billUnit = isGas ? getMeterBillUnit(m) : null;
           COL_FIELDS = CONDENSED_CATEGORIES[m.commodity]
-            .filter((c) => !hiddenSet.has(c.label))
+            .filter((c) => {
+              if (isGas && c.label === 'CCF' && billUnit !== 'CCF') return false;
+              if (isGas && c.label === 'Therms' && billUnit === 'CCF') return false;
+              return !hiddenSet.has(c.label);
+            })
             .map((c) => ({
               h: c.label,
               a: c.type === 'text' || c.type === 'date' ? 'lbl' : '',
@@ -40856,6 +40873,9 @@
           { key: 'start', label: 'Start Date', type: 'date', pdfKey: 'BillingPeriodStart' },
           { key: 'end', label: 'End Date', type: 'date', pdfKey: 'BillingPeriodEnd' },
           { key: 'billDate', label: 'Bill Date', type: 'text', pdfKey: 'BillDate' },
+          { key: 'startRead', label: 'Previous Read', type: 'number', pdfKey: 'StartRead' },
+          { key: 'endRead', label: 'Current Read', type: 'number', pdfKey: 'EndRead' },
+          { key: 'readDifference', label: 'Read Difference', type: 'number', pdfKey: 'ReadDifference' },
           { section: 'Charges' },
           {
             key: 'naturalGasTherms',
@@ -41123,6 +41143,8 @@
           { section: 'Billing Period' },
           { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
           { type: 'pair', fields: ['BillDate'] },
+          { type: 'pair', fields: ['StartRead', 'EndRead'] },
+          { type: 'pair', fields: ['ReadDifference'] },
           { section: 'Charges' },
           { type: 'charge-line', label: 'Base', chargeField: 'CustomerCharge' },
           { type: 'charge-line', label: 'Gas', chargeField: 'GasCharge', qtyField: 'NaturalGasCCF', unit: 'CCF' },
