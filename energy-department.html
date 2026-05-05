@@ -1863,12 +1863,14 @@
         position: sticky;
         top: 0;
         z-index: 2;
+        font-variant-numeric: tabular-nums;
       }
       .dtbl td {
         padding: 10px 13px;
         font-size: 13px;
         border-bottom: 1px solid var(--border);
         vertical-align: middle;
+        font-variant-numeric: tabular-nums;
       }
       .dtbl tr:last-child td {
         border-bottom: none;
@@ -38127,6 +38129,8 @@
       ══════════════════════════════════════════════ */
       let _bpBaselineByCalMo = null;
       let _bpActualSavingsByCalMo = null;
+      let _bpActualSavingsByYM = null; // {YYYY-MM: savings} used for quarterly view to avoid cross-year key collisions
+      let _bpPostBaselineStartYM = null; // earliest post-baseline YYYY-MM across all meters
       let _bspBaselineByCalMo = null;
 
       function renderBldgPerfPane(pane, b) {
@@ -50302,7 +50306,7 @@
           _yoyChartsToDraw.push({ cid, field, unit, blAvgArr });
           return `<div class="card" style="background:var(--s1);padding:14px;margin-bottom:12px">
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">${icon} Monthly ${title} — Year over Year</div>
-            <div style="position:relative"><canvas id="${cid}"></canvas></div>
+            <div style="position:relative;height:200px"><canvas id="${cid}"></canvas></div>
           </div>`;
         }
 
@@ -50345,7 +50349,7 @@
             data: { labels: months, datasets },
             options: {
               responsive: true,
-              maintainAspectRatio: true,
+              maintainAspectRatio: false,
               interaction: { mode: 'index', intersect: false },
               plugins: {
                 legend: {
@@ -50809,7 +50813,7 @@
             let qHtml =
               '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">' +
               '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">💰 Monthly Savings: Projected vs Current</div>' +
-              '<div style="height:260px;position:relative;margin-bottom:14px"><canvas id="egfx-savChart-' +
+              '<div style="height:173px;position:relative;margin-bottom:14px"><canvas id="egfx-savChart-' +
               projId +
               '"></canvas></div>' +
               '</div>';
