@@ -82,6 +82,7 @@
         height: 100%;
         overflow: hidden;
         -webkit-font-smoothing: antialiased;
+        font-variant-numeric: tabular-nums;
       }
       ::-webkit-scrollbar {
         width: 5px;
@@ -1512,6 +1513,18 @@
               <button class="sb-btn" onclick="siteRestore()">Restore</button>
             </div>
             <button class="sb-btn danger" style="width: 100%" onclick="siteResetData()">Reset Data</button>
+            <div
+              class="sb-version"
+              id="sb-version"
+              style="
+                text-align: center;
+                font-size: 10px;
+                color: var(--text3);
+                margin-top: 8px;
+                font-family: var(--mono);
+                letter-spacing: 0.5px;
+              "
+            ></div>
           </div>
         </aside>
 
@@ -2354,6 +2367,19 @@
         checkDefaultLogin: siteCheckDefaultLogin,
         applyAccentColor: siteApplyAccent,
       };
+
+      fetch('site-ui.js')
+        .then(function (r) {
+          return r.text();
+        })
+        .then(function (t) {
+          var m = t.match(/CH_VERSION\s*=\s*'([^']+)'/);
+          if (m) {
+            var el = document.getElementById('sb-version');
+            if (el) el.textContent = m[1];
+          }
+        })
+        .catch(function () {});
 
       /* ── CALENDAR WIDGET ── */
       var calYear, calMonth;

@@ -49,7 +49,7 @@
 
       /* ── RESET ── */
       *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-      body{font-family:var(--font);background:var(--bg);color:var(--text);height:100%;overflow:hidden;-webkit-font-smoothing:antialiased;}
+      body{font-family:var(--font);background:var(--bg);color:var(--text);height:100%;overflow:hidden;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;}
       ::-webkit-scrollbar{width:5px;height:5px;}
       ::-webkit-scrollbar-track{background:var(--s1);}
       ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
@@ -1175,6 +1175,18 @@
               <button class="sb-btn" onclick="siteRestore()">Restore</button>
             </div>
             <button class="sb-btn danger" style="width: 100%" onclick="siteResetData()">Reset Data</button>
+            <div
+              class="sb-version"
+              id="sb-version"
+              style="
+                text-align: center;
+                font-size: 10px;
+                color: var(--text3);
+                margin-top: 8px;
+                font-family: var(--mono);
+                letter-spacing: 0.5px;
+              "
+            ></div>
           </div>
         </aside>
 
@@ -3099,6 +3111,19 @@
         checkDefaultLogin: siteCheckDefaultLogin,
         applyAccentColor: siteApplyAccent,
       };
+
+      fetch('site-ui.js')
+        .then(function (r) {
+          return r.text();
+        })
+        .then(function (t) {
+          var m = t.match(/CH_VERSION\s*=\s*'([^']+)'/);
+          if (m) {
+            var el = document.getElementById('sb-version');
+            if (el) el.textContent = m[1];
+          }
+        })
+        .catch(function () {});
 
       /* ── ESC KEY — closes any open modal-bg ── */
       document.addEventListener('keydown', function (e) {
