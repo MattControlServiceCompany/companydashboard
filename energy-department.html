@@ -32750,36 +32750,10 @@
         const state = _billsTableViewState(mid);
         state.sortAsc = !state.sortAsc;
         _saveBillsTableViewState(mid, state);
-        // Find meter by searching all projects/buildings so this works in
-        // embedded project views where udSelProjId/udSelBldgId may be stale.
-        let m = null;
-        for (const p of projects || []) {
-          const ud = utilityData && utilityData[p.id];
-          if (!ud) continue;
-          for (const bl of ud.buildings || []) {
-            for (const mm of bl.meters || []) {
-              if (mm.id === mid) {
-                m = mm;
-                break;
-              }
-            }
-            if (m) break;
-          }
-          if (m) break;
-        }
-        if (m) {
-          // Walk up from the clicked element to find the exact #maPane that
-          // contains this bills table — avoids stale _udActiveWrap references.
-          const pane =
-            (evt && evt.target && evt.target.closest('#maPane')) ||
-            (window._udActiveWrap ? window._udActiveWrap.querySelector('#maPane') : null) ||
-            document.getElementById('maPane');
-          if (pane) {
-            const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
-            renderBillsPane(pane, m, bills, m.inclusive !== false);
-            return;
-          }
-        }
+        // Resolve the correct _udActiveWrap from the clicked element so embedded
+        // project views find the right workspace (fixes stale tempDiv reference).
+        if (evt && evt.target) _resolveEmbedContext(evt.target);
+        udActiveMid = mid;
         if (typeof renderMeterWorkspace === 'function') renderMeterWorkspace();
       }
       function _saveBillsTableViewState(mid, state) {
@@ -38424,7 +38398,11 @@
               const offset = yr * 12 + q * 3;
               // Compute the actual YYYY-MM strings this quarter represents
               const yms = postStartYM
-                ? [addMonths(postStartYM, offset), addMonths(postStartYM, offset + 1), addMonths(postStartYM, offset + 2)]
+                ? [
+                    addMonths(postStartYM, offset),
+                    addMonths(postStartYM, offset + 1),
+                    addMonths(postStartYM, offset + 2),
+                  ]
                 : null;
               cols.push({ label: `Y${yr + 1} Q${q + 1}`, mos: calMos, yms, yr });
             }
@@ -39336,7 +39314,9 @@
         const rawUsageByYm = {};
         if (!isElec) {
           if (isPropane) {
-            allRows.forEach((r) => { rawUsageByYm[r.ym] = r.usage; });
+            allRows.forEach((r) => {
+              rawUsageByYm[r.ym] = r.usage;
+            });
           } else {
             bills.forEach((b) => {
               const ym = normMonth(b.start, b.end, incl, bills);
@@ -40049,6 +40029,9 @@
           : '<div></div>';
 
         pane.innerHTML =
+          '<div style="margin-bottom:14px"><div style="font-size:16px;font-weight:800;font-family:var(--head);letter-spacing:-.01em">⚡ ' +
+          (m.name || 'Meter') +
+          ' — Meter Performance</div></div>' +
           statsHTML +
           basisNote_p +
           yearPills +
@@ -41821,7 +41804,7 @@
           const chargeRaw = readVal(r.chargeField);
           const chargeVal = escapeAttr(chargeRaw ? _billFmtCurrency(chargeRaw) : '');
           const unit = r.unit || '';
-          const dp = /kwh|therms/i.test(unit) ? 5 : 3;
+          const dp = /kwh|therms|ccf/i.test(unit) ? 5 : 3;
           const recalc = `onchange="_billRecalcRow('${r.chargeField}')" oninput="_billRecalcRow('${r.chargeField}')"`;
           let qtyHtml;
           if (r.qtyField) {
@@ -41937,7 +41920,14 @@
         const _blEndInp = document.getElementById('bl-end');
         if (_blStartInp && _blEndInp) {
           _blStartInp.addEventListener('change', function () {
-            if (_blEndInp.value) return; // don't overwrite user-set value
+            // Don't overwrite a user-set value, but DO overwrite a bad auto-filled
+            // value (e.g. year 0002 produced by partial keyboard entry on date inputs).
+            if (_blEndInp.value) {
+              const endParts = _blEndInp.value.split('-');
+              const endYr = endParts.length === 3 ? +endParts[0] : 0;
+              if (endYr >= 2000 && endYr <= 2100) return; // valid year — treat as user-set
+              // Bad year (e.g. 0002) — fall through and overwrite with correct value
+            }
             if (!_blStartInp.value) return;
             const parts = _blStartInp.value.split('-');
             if (parts.length !== 3) return;
