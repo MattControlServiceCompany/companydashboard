@@ -22692,6 +22692,21 @@
           .replace(/\b(place|pl\.?)\b/g, 'pl')
           .replace(/[^a-z0-9]/g, '');
       }
+      // Flexible account/meter number comparison that survives utility format changes.
+      // Strips dashes, spaces, and leading zeros before comparing, then falls back
+      // to substring containment so e.g. "123456" matches "0123456-00" after stripping.
+      function _acctFuzzyMatch(a, b) {
+        if (!a || !b) return false;
+        const norm = (s) =>
+          s
+            .replace(/[\s\-]/g, '')
+            .replace(/^0+/, '')
+            .toLowerCase();
+        const na = norm(a);
+        const nb = norm(b);
+        if (!na || !nb) return false;
+        return na === nb || na.includes(nb) || nb.includes(na);
+      }
       function findMeterMatch(extracted) {
         if (!extracted) return null;
         const acct = (extracted.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
@@ -22706,7 +22721,7 @@
             for (const m of bldg.meters || []) {
               const mAcct = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
               const mMeter = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
-              if ((acct && mAcct && acct === mAcct) || (meterNum && mMeter && meterNum === mMeter)) {
+              if (_acctFuzzyMatch(acct, mAcct) || (meterNum && mMeter && meterNum === mMeter)) {
                 const mComm = (m.commodity || '').toLowerCase();
                 const commMatch = billComm && mComm && billComm === mComm;
                 if (commMatch) return { proj, bldg, meter: m, projId: proj.id, bldgId: bldg.id, meterId: m.id };
@@ -24903,7 +24918,7 @@
           for (const ab of assignedBills) {
             const existAcct = norm(ab.meter.account);
             const existMeter = norm(ab.meter.meter);
-            const acctMatch = extAcct && existAcct && extAcct === existAcct;
+            const acctMatch = _acctFuzzyMatch(extAcct, existAcct);
             const meterMatch = extMeter && existMeter && extMeter === existMeter;
             const extInv = norm(ext.InvoiceNumber || ext.SaleNumber);
             const existInv = norm(ab.bill.invoiceNumber || ab.bill.saleNumber);
@@ -24939,7 +24954,7 @@
             const sbStart = toISO(sb.BillingPeriodStart);
             const sbEnd = toISO(sb.BillingPeriodEnd);
             const sbMeter = norm(sb.MeterNumber);
-            const acctMatch = extAcct && sbAcct && extAcct === sbAcct;
+            const acctMatch = _acctFuzzyMatch(extAcct, sbAcct);
             const meterMatch = extMeter && sbMeter && extMeter === sbMeter;
             const sbComm = (sb.Commodity || sb.commodity || '').toLowerCase();
             const commMatch = !extComm || !sbComm || extComm === sbComm;
@@ -28258,12 +28273,12 @@
             return `<span style="${style}">${label}: $${v.toFixed(2)}</span>`;
           });
         const _sumMathLine = _sumMathParts.length
-          ? `<div style="font-size:11px;font-family:var(--mono);margin-top:6px;line-height:1.8;color:#fca5a5">`
-            + _sumMathParts.join(`<span style="color:#f87171;padding:0 4px">+</span>`)
-            + `<span style="color:#f87171;padding:0 6px">=</span><strong style="color:#ef4444">$${_currentChargeSum.toFixed(2)}</strong>`
-            + `<span style="color:#f87171;padding:0 6px">vs expected</span><strong style="color:#fecaca">$${totalVal.toFixed(2)}</strong>`
-            + `<span style="color:#f87171;padding:0 6px">(off by $${Math.abs(_currentSumDiff).toFixed(2)})</span>`
-            + `</div>`
+          ? `<div style="font-size:11px;font-family:var(--mono);margin-top:6px;line-height:1.8;color:#fca5a5">` +
+            _sumMathParts.join(`<span style="color:#f87171;padding:0 4px">+</span>`) +
+            `<span style="color:#f87171;padding:0 6px">=</span><strong style="color:#ef4444">$${_currentChargeSum.toFixed(2)}</strong>` +
+            `<span style="color:#f87171;padding:0 6px">vs expected</span><strong style="color:#fecaca">$${totalVal.toFixed(2)}</strong>` +
+            `<span style="color:#f87171;padding:0 6px">(off by $${Math.abs(_currentSumDiff).toFixed(2)})</span>` +
+            `</div>`
           : '';
         const sumMismatchHtml = hasCurrentSumMismatch
           ? `<div style="padding:14px 18px;margin:10px 0;border-radius:10px;background:rgba(239,68,68,.22);border:2px solid #ef4444;color:#fecaca;font-size:14px;line-height:1.5;display:flex;align-items:flex-start;gap:12px;box-shadow:0 0 0 3px rgba(239,68,68,.08)">
@@ -29313,7 +29328,7 @@
               for (const m of b.meters || []) {
                 const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
                 const mm = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
-                if ((acctClean && ma && acctClean === ma) || (meterClean && mm && meterClean === mm)) {
+                if (_acctFuzzyMatch(acctClean, ma) || (meterClean && mm && meterClean === mm)) {
                   const mComm = (m.commodity || '').toLowerCase();
                   if (billComm && mComm && billComm === mComm) {
                     targetMeter = m;
@@ -46347,6 +46362,13 @@
                 const therms = parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
                 totalGas += therms;
                 _hvlGasByMo[mo] = (_hvlGasByMo[mo] || 0) + therms;
+              } else if (m.commodity === 'Propane') {
+                // Convert gallons to therms (0.9153 therms/gal) so propane
+                // rolls up into the same gas total used by HVAC Load Est.
+                const gal = parseFloat(bill.gallonsDelivered) || parseFloat(bill.usage) || 0;
+                const thermsEq = gal * 0.9153;
+                totalGas += thermsEq;
+                _hvlGasByMo[mo] = (_hvlGasByMo[mo] || 0) + thermsEq;
               }
             });
           });
@@ -52077,7 +52099,11 @@
       window._hasUnsavedWork = false;
       window._pdfBillsSaved = false;
       window.addEventListener('beforeunload', function (e) {
-        if (window._pdfMultiBills && window._pdfMultiBills.length && !window._pdfBillsSaved) {
+        // Warn if extracted bills haven't been saved yet
+        var hasUnsavedBills = window._pdfMultiBills && window._pdfMultiBills.length && !window._pdfBillsSaved;
+        // Warn if a batch extraction is actively running (reloading would abort it)
+        var extractionRunning = window._pdfQueue && window._pdfQueue.status === 'running';
+        if (hasUnsavedBills || extractionRunning) {
           e.preventDefault();
           return (e.returnValue = '');
         }
