@@ -13687,35 +13687,15 @@
       }
 
       function calcAutoProgress(projId) {
-        const bldgs = getUDBldgs(projId);
-        if (!bldgs.length) return 0;
-        let score = 0,
-          max = 0;
-        // Has buildings (10%)
-        max += 10;
-        if (bldgs.length > 0) score += 10;
-        // Has meters (15%)
-        const meters = bldgs.flatMap((b) => b.meters || []);
-        max += 15;
-        if (meters.length > 0) score += 15;
-        // Has bills (25%) — at least 6 months of data
-        const totalBills = meters.reduce((s, m) => s + (m.bills || []).length, 0);
-        max += 25;
-        if (totalBills >= 6) score += 25;
-        else if (totalBills > 0) score += Math.round((25 * totalBills) / 6);
-        // All meters have baselines (25%)
-        const withBl = meters.filter((m) => m.baseline && m.baseline.months && m.baseline.months.length >= 3);
-        max += 25;
-        if (meters.length > 0) score += Math.round((25 * withBl.length) / meters.length);
-        // Has post-baseline data (25%)
-        max += 25;
-        const hasPost = meters.some((m) => {
-          if (!m.baseline || !m.baseline.months) return false;
-          const blEnd = m.baseline.months.slice().sort().pop();
-          return (m.bills || []).some((b) => b.start && b.start.substring(0, 7) > blEnd);
-        });
-        if (hasPost) score += 25;
-        return Math.round((score / max) * 100);
+        const p = projects.find((x) => x.id === projId);
+        if (!p || !p.start || !p.end) return 0;
+        const start = new Date(p.start + 'T00:00:00');
+        const end = new Date(p.end + 'T00:00:00');
+        const now = new Date();
+        if (isNaN(start) || isNaN(end) || end <= start) return 0;
+        if (now >= end) return 100;
+        if (now <= start) return 0;
+        return Math.round(((now - start) / (end - start)) * 100);
       }
       function updateProg(id, val) {
         const p = projects.find((p) => p.id === id);
@@ -27269,33 +27249,60 @@
             if (!b || !b.ServiceAddress) return acct;
             const addr = b.ServiceAddress;
             const afterComma = addr.includes(',') ? addr.split(',').slice(1).join(',').trim() : addr;
-            return afterComma.replace(/\s+(LOUISBURG|KS)\s*/gi, '').trim() || acct;
+            return (
+              afterComma
+                .replace(/\b(LOUISBURG|KANSAS CITY|OLATHE|LENEXA|OVERLAND PARK|SHAWNEE|KS|MO)\b/gi, '')
+                .trim() || acct
+            );
           };
           const _hasMultiCommsAcross = new Set(bills.map((b) => b.Commodity || 'Electric')).size > 1;
           if (!window._pdfBuildingTab || !_acctKeys.includes(window._pdfBuildingTab)) {
             window._pdfBuildingTab = bills[idx]?.AccountNumber || _acctKeys[0];
           }
-          const bldgTabs = _acctKeys
-            .map((acct) => {
-              const isActive = acct === window._pdfBuildingTab;
-              const bg = isActive ? 'var(--em)' : 'var(--s2)';
-              const color = isActive ? '#fff' : 'var(--text)';
-              const border = isActive ? 'var(--em)' : 'var(--border2)';
-              let lbl = _bldgName(acct);
-              if (_hasMultiCommsAcross) {
-                const comm = bills.find((x) => x.AccountNumber === acct)?.Commodity || 'Electric';
-                lbl += ' · ' + comm;
-              }
-              const ct = filteredPeriods.filter((p) => (bills[p.i].AccountNumber || '_unknown') === acct).length;
-              return `<button onclick="window._pdfBuildingTab='${acct}';renderMultiBillUI(window._pdfMultiBills,document.getElementById('pdfAIBox'))" style="padding:6px 14px;border-radius:6px;border:1px solid ${border};background:${bg};color:${color};cursor:pointer;font-size:12px;font-family:var(--font)">${lbl} (${ct})</button>`;
-            })
-            .join('');
-          const bldgBar = `<div style="display:flex;gap:4px;margin:0 0 8px;flex-wrap:wrap">${bldgTabs}</div>`;
+          let _bldgTabsHtml = '<div style="display:flex;gap:4px;margin:10px 0 8px;flex-wrap:wrap">';
+          for (const acct of _acctKeys) {
+            const isActive = acct === window._pdfBuildingTab;
+            const bg = isActive ? 'var(--em)' : 'var(--s2)';
+            const color = isActive ? '#fff' : 'var(--text)';
+            const border = isActive ? 'var(--em)' : 'var(--border2)';
+            let lbl = _bldgName(acct);
+            if (_hasMultiCommsAcross) {
+              const comm = bills.find((x) => x.AccountNumber === acct)?.Commodity || 'Electric';
+              lbl += ' · ' + comm;
+            }
+            const ct = filteredPeriods.filter((p) => (bills[p.i].AccountNumber || '_unknown') === acct).length;
+            _bldgTabsHtml +=
+              '<button onclick="window._pdfBuildingTab=\'' +
+              acct +
+              "';renderMultiBillUI(window._pdfMultiBills,document.getElementById('pdfAIBox'))\" style=\"padding:6px 14px;border-radius:6px;border:1px solid " +
+              border +
+              ';background:' +
+              bg +
+              ';color:' +
+              color +
+              ';cursor:pointer;font-size:12px;font-family:var(--font)">' +
+              lbl +
+              ' (' +
+              ct +
+              ')</button>';
+          }
+          _bldgTabsHtml += '</div>';
+          let bldgBar = document.getElementById('pdfBldgTabsBar');
+          if (!bldgBar) {
+            bldgBar = document.createElement('div');
+            bldgBar.id = 'pdfBldgTabsBar';
+            bldgBar.style.cssText = 'position:sticky;top:0;z-index:12;background:var(--bg);padding-bottom:4px';
+            const hdr = document.getElementById('extractedFieldsHdr');
+            if (hdr) hdr.parentNode.insertBefore(bldgBar, hdr);
+          }
+          if (bldgBar) bldgBar.innerHTML = _bldgTabsHtml;
           const bldgPeriods = filteredPeriods.filter(
             (p) => (bills[p.i].AccountNumber || '_unknown') === window._pdfBuildingTab,
           );
-          nav = bldgBar + bldgPeriods.map(_buildPill).join('');
+          nav = bldgPeriods.map(_buildPill).join('');
         } else {
+          const bldgBar = document.getElementById('pdfBldgTabsBar');
+          if (bldgBar) bldgBar.innerHTML = '';
           nav = filteredPeriods.map(_buildPill).join('');
         }
         // Duplicate summary banner
