@@ -18120,11 +18120,26 @@
             while ((sfM = sfRe.exec(t)) !== null) {
               sfMatches.push({ idx: sfM.index, start: sfM[1], end: sfM[2], length: sfM[0].length });
             }
-            // Dedupe by date pair — keep the LAST occurrence so section boundaries
-            // line up with the billing-details page, not the cover.
+            // For each service-from match, find the nearest account number by
+            // searching backwards (up to 2000 chars) from the match position.
+            // Multi-account PDFs with identical service dates (e.g. two buildings
+            // billed on the same cycle) need the account number to stay separate.
+            const _acctForIdx = (idx) => {
+              const lookback = t.slice(Math.max(0, idx - 2000), idx);
+              const acctMatches = [...lookback.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s©®]\s*(\d[\d ]{4,18}\d)/gm)];
+              if (acctMatches.length === 0) return null;
+              return acctMatches[acctMatches.length - 1][1].replace(/\s/g, '');
+            };
+            for (const m of sfMatches) {
+              m._acct = _acctForIdx(m.idx);
+            }
+            // Dedupe by account+date pair — keep the LAST occurrence so section
+            // boundaries line up with the billing-details page, not the cover.
+            // Account number prevents merging different accounts that share dates.
             const byPair = new Map();
             for (const m of sfMatches) {
-              byPair.set(m.start + '|' + m.end, m);
+              const acctKey = m._acct || '_';
+              byPair.set(acctKey + '|' + m.start + '|' + m.end, m);
             }
             let uniqueBills = Array.from(byPair.values()).sort((a, b) => a.idx - b.idx);
 
@@ -18164,7 +18179,8 @@
             let _fuzzyMerges = 0;
             for (const m of uniqueBills) {
               const prev = _merged.length ? _merged[_merged.length - 1] : null;
-              if (prev && prev.end === m.end && _dayDelta(prev.start, m.start) <= 2) {
+              const _sameAcct = !prev || !prev._acct || !m._acct || prev._acct === m._acct;
+              if (prev && _sameAcct && prev.end === m.end && _dayDelta(prev.start, m.start) <= 2) {
                 _fuzzyMerges++;
                 const prevIsBd = _hasBdBefore(prev);
                 const curIsBd = _hasBdBefore(m);
