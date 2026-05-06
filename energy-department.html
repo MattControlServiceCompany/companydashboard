@@ -22006,11 +22006,17 @@
             }
 
             // Step 2: kWhConsumed = ReadDifference × MeterMultiplier (cascade)
+            // Guard: don't cascade if the result is outside commercial range (0–2M kWh)
+            // or if the current value is reasonable and the cascade would change it by 10x+.
+            // Garbled multi-meter OCR can produce huge ReadDifference × Multiplier values
+            // that destroy correct charge-line-derived kWhConsumed.
             const cascadeDiff = pf(b.ReadDifference);
             if (cascadeDiff > 0 && multNow > 0) {
               const expectedKwh = cascadeDiff * multNow;
               const curKwhForChain = pf(b.kWhConsumed);
-              if (!curKwhForChain || Math.abs(curKwhForChain - expectedKwh) > 1) {
+              const _kwhSane = expectedKwh > 0 && expectedKwh < 2000000;
+              const _wouldClobber = curKwhForChain > 0 && expectedKwh / curKwhForChain > 10;
+              if (_kwhSane && !_wouldClobber && (!curKwhForChain || Math.abs(curKwhForChain - expectedKwh) > 1)) {
                 b['_auto_corrected_kWhConsumed'] = {
                   original: b.kWhConsumed,
                   corrected: expectedKwh.toFixed(4),
