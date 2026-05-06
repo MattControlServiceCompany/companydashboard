@@ -27058,7 +27058,7 @@
         const _monthLabelMap = {};
         const _commGroups = {};
         bills.forEach((b, i) => {
-          const c = b.Commodity || 'Other';
+          const c = (b.Commodity || 'Other') + '|' + (b.AccountNumber || '_');
           if (!_commGroups[c]) _commGroups[c] = [];
           _commGroups[c].push(i);
         });
@@ -27142,6 +27142,8 @@
         // Build period labels with sort indices for descending order.
         // Pill label is MM/DD/YY-MM/DD/YY for billing periods, MM/DD/YY for
         // single-date delivery events (propane). Month column shows "Mon YYYY".
+        const _uniqueAccts = new Set(bills.map((b) => b.AccountNumber).filter(Boolean));
+        const _multiAcct = _uniqueAccts.size > 1;
         const periods = bills.map((bill, i) => {
           let lbl;
           let sortSource;
@@ -27164,9 +27166,15 @@
             const _commAbbr = { Stormwater: 'Storm', Electric: 'Elec' };
             lbl = lbl + ' · ' + (_commAbbr[bill.Commodity] || bill.Commodity);
           }
+          let acctLbl = '';
+          if (_multiAcct && bill.AccountNumber) {
+            const addr = bill.ServiceAddress || '';
+            const shortAddr = addr.replace(/,?\s*(LOUISBURG|KS)\s*/gi, '').trim();
+            acctLbl = '  Acct ' + bill.AccountNumber + (shortAddr ? ' — ' + shortAddr : '');
+          }
           const monthLbl = _monthLabelMap[i] || _monthLabel(bill);
           const sortDate = new Date(sortSource);
-          return { i, lbl, monthLbl, sortDate };
+          return { i, lbl, monthLbl, sortDate, acctLbl };
         });
         // Sort descending by date (newest first)
         periods.sort((a, b) => b.sortDate - a.sortDate);
@@ -27250,7 +27258,10 @@
               : '';
             // Each row contains the month label AND the pill button in the same flex row,
             // so they're guaranteed to line up vertically regardless of font or padding.
-            const pillBtn = `<button class="ef-pill-btn" onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasAnyIssue ? '700' : '400'};text-align:left;white-space:nowrap">${p.lbl}${dupDot}</button>`;
+            const _acctLine = p.acctLbl
+              ? `<div style="font-size:9px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">${p.acctLbl}</div>`
+              : '';
+            const pillBtn = `<button class="ef-pill-btn" onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasAnyIssue ? '700' : '400'};text-align:left;white-space:nowrap">${p.lbl}${dupDot}${_acctLine}</button>`;
             const gapInfo = bill._billing_gap;
             const gapRow = gapInfo
               ? `<div style="padding:2px 8px;margin:2px 0;font-size:10px;color:var(--amber);text-align:center;font-weight:600">&#9888; ${gapInfo.days}-day gap (after ${gapInfo.afterPeriod || ''})</div>`
