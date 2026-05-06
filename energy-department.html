@@ -27263,21 +27263,38 @@
         };
         let nav;
         if (_multiAcct) {
-          const _acctGroups = {};
-          for (const p of filteredPeriods) {
-            const acct = bills[p.i].AccountNumber || '_unknown';
-            if (!_acctGroups[acct]) _acctGroups[acct] = [];
-            _acctGroups[acct].push(p);
+          const _acctKeys = [...new Set(bills.map((b) => b.AccountNumber || '_unknown'))];
+          const _bldgName = (acct) => {
+            const b = bills.find((x) => x.AccountNumber === acct);
+            if (!b || !b.ServiceAddress) return acct;
+            const addr = b.ServiceAddress;
+            const afterComma = addr.includes(',') ? addr.split(',').slice(1).join(',').trim() : addr;
+            return afterComma.replace(/\s+(LOUISBURG|KS)\s*/gi, '').trim() || acct;
+          };
+          const _hasMultiCommsAcross = new Set(bills.map((b) => b.Commodity || 'Electric')).size > 1;
+          if (!window._pdfBuildingTab || !_acctKeys.includes(window._pdfBuildingTab)) {
+            window._pdfBuildingTab = bills[idx]?.AccountNumber || _acctKeys[0];
           }
-          nav = Object.entries(_acctGroups)
-            .map(([acct, pList]) => {
-              const addr = bills[pList[0].i].ServiceAddress || '';
-              const rate = bills[pList[0].i].RateSchedule || '';
-              const shortAddr = addr.replace(/,?\s*(LOUISBURG|KS)\s*/gi, '').trim();
-              const hdr = `<div style="margin:8px 0 4px;padding:6px 10px;border-left:3px solid var(--accent);background:var(--s2);border-radius:0 4px 4px 0"><div style="font-size:12px;font-weight:600;color:var(--text)">${shortAddr || 'Unknown Address'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px">Acct ${acct}${rate ? ' · ' + rate : ''}</div></div>`;
-              return hdr + pList.map(_buildPill).join('');
+          const bldgTabs = _acctKeys
+            .map((acct) => {
+              const isActive = acct === window._pdfBuildingTab;
+              const bg = isActive ? 'var(--em)' : 'var(--s2)';
+              const color = isActive ? '#fff' : 'var(--text)';
+              const border = isActive ? 'var(--em)' : 'var(--border2)';
+              let lbl = _bldgName(acct);
+              if (_hasMultiCommsAcross) {
+                const comm = bills.find((x) => x.AccountNumber === acct)?.Commodity || 'Electric';
+                lbl += ' · ' + comm;
+              }
+              const ct = filteredPeriods.filter((p) => (bills[p.i].AccountNumber || '_unknown') === acct).length;
+              return `<button onclick="window._pdfBuildingTab='${acct}';renderMultiBillUI(window._pdfMultiBills,document.getElementById('pdfAIBox'))" style="padding:6px 14px;border-radius:6px;border:1px solid ${border};background:${bg};color:${color};cursor:pointer;font-size:12px;font-family:var(--font)">${lbl} (${ct})</button>`;
             })
             .join('');
+          const bldgBar = `<div style="display:flex;gap:4px;margin:0 0 8px;flex-wrap:wrap">${bldgTabs}</div>`;
+          const bldgPeriods = filteredPeriods.filter(
+            (p) => (bills[p.i].AccountNumber || '_unknown') === window._pdfBuildingTab,
+          );
+          nav = bldgBar + bldgPeriods.map(_buildPill).join('');
         } else {
           nav = filteredPeriods.map(_buildPill).join('');
         }
