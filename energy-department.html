@@ -16432,15 +16432,14 @@
 
         // Pick best source: prefer meter read calc, then adj lines, then tier sum
         const adjKwh = (() => {
-          // If meter read gives a value, cross-validate against adj lines
           if (meterKwh && adjKwhVal) {
             const ratio = meterKwh / adjKwhVal;
-            // They should be very close (within 1%)
             if (ratio > 0.99 && ratio < 1.01) return String(meterKwh);
-            // If they disagree, trust meter read (it's from digital meter data, not OCR'd charge text)
-            return String(meterKwh);
+            if (ratio > 0.5 && ratio < 2.0) return String(meterKwh);
+            // Wildly different (>2x) — meter regex likely garbled, trust charge lines
+            return String(adjKwhVal);
           }
-          if (meterKwh) return String(meterKwh);
+          if (meterKwh && _validKwh(meterKwh)) return String(meterKwh);
           if (adjKwhVal) return String(adjKwhVal);
           if (tierKwh && _validKwh(tierKwh)) return String(tierKwh);
           // Last resort
@@ -22242,16 +22241,20 @@
               // ReadDifference × MeterMultiplier = kWhConsumed
               if (dR > 0 && mM > 0 && !kC) {
                 const v = dR * mM;
-                b.kWhConsumed = v.toFixed(4);
-                b._auto_recovered_kWhConsumed = {
-                  original: null,
-                  corrected: b.kWhConsumed,
-                  reason: `ReadDifference (${dR}) × MeterMultiplier (${mM}) = ${v.toFixed(4)}.`,
-                };
+                if (v > 0 && v < 2000000) {
+                  b.kWhConsumed = v.toFixed(4);
+                  b._auto_recovered_kWhConsumed = {
+                    original: null,
+                    corrected: b.kWhConsumed,
+                    reason: `ReadDifference (${dR}) × MeterMultiplier (${mM}) = ${v.toFixed(4)}.`,
+                  };
+                }
               } else if (dR > 0 && mM > 0 && kC > 0) {
                 const expected = dR * mM;
                 const mismatch = Math.abs(kC - expected);
-                if (mismatch > 1 && mismatch / expected > 0.001) {
+                const _expectedSane = expected > 0 && expected < 2000000;
+                const _wouldClobber2 = kC > 0 && expected / kC > 10;
+                if (_expectedSane && !_wouldClobber2 && mismatch > 1 && mismatch / expected > 0.001) {
                   b['_auto_corrected_kWhConsumed'] = {
                     original: b.kWhConsumed,
                     corrected: expected.toFixed(4),
