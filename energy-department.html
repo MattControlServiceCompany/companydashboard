@@ -16811,7 +16811,7 @@
             acctOverride ||
             t.match(/Account\s+(?:Number\s*)?[:\s©®]\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g, '') ||
             null,
-          ServiceAddress: addrOverride || null,
+          ServiceAddress: addrOverride || t.match(_EVG_ADDR)?.[1]?.trim() || null,
           RateSchedule: rateMatch?.[1] || null,
           BillingPeriodStart: bpMatch?.[1] || null,
           BillingPeriodEnd: bpMatch?.[2] || null,
@@ -18126,7 +18126,7 @@
             // service dates. The regex tolerates OCR artifacts like ( or [ before
             // digits (e.g. "(0669287870" seen in scanned bills).
             const _pageBreakIdxs = [...t.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => m.index);
-            const _acctForIdx = (idx) => {
+            const _pageTextForIdx = (idx) => {
               let pageStart = 0;
               let pageEnd = t.length;
               for (let i = 0; i < _pageBreakIdxs.length; i++) {
@@ -18135,15 +18135,24 @@
                   pageEnd = i + 1 < _pageBreakIdxs.length ? _pageBreakIdxs[i + 1] : t.length;
                 } else break;
               }
-              const pageText = t.slice(pageStart, pageEnd);
+              return t.slice(pageStart, pageEnd);
+            };
+            const _acctForIdx = (idx) => {
+              const pageText = _pageTextForIdx(idx);
               const acctMatches = [
                 ...pageText.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s©®]\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
               ];
               if (acctMatches.length === 0) return null;
               return acctMatches[0][1].replace(/\s/g, '');
             };
+            const _addrForIdx = (idx) => {
+              const pageText = _pageTextForIdx(idx);
+              const addrMatch = pageText.match(_EVG_ADDR);
+              return addrMatch ? addrMatch[1].trim() : null;
+            };
             for (const m of sfMatches) {
               m._acct = _acctForIdx(m.idx);
+              m._addr = _addrForIdx(m.idx);
             }
             // Dedupe by account+date pair — keep the LAST occurrence so section
             // boundaries line up with the billing-details page, not the cover.
@@ -18203,6 +18212,9 @@
                 // Preserve merge-group idxs on the winner for boundary calc.
                 const groupIdxs = (prev._groupIdxs || [prev.idx]).concat(m._groupIdxs || [m.idx]);
                 winner._groupIdxs = groupIdxs;
+                const loser = winner === m ? prev : m;
+                if (!winner._acct) winner._acct = loser._acct;
+                if (!winner._addr) winner._addr = loser._addr;
                 _merged[_merged.length - 1] = winner;
                 continue;
               }
@@ -18437,7 +18449,9 @@
               t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i)?.[1] ||
               null;
             const results = validSections.map((s, i) => {
-              const r = _extractEvergy(s, acct, addrM?.[1]?.trim() || null);
+              const billAcct = (uniqueBills[i] && uniqueBills[i]._acct) || acct;
+              const billAddr = (uniqueBills[i] && uniqueBills[i]._addr) || addrM?.[1]?.trim() || null;
+              const r = _extractEvergy(s, billAcct, billAddr);
               if (!r.CustomerName && fullCustName) r.CustomerName = fullCustName;
               if (!r.RateSchedule && fullRate) r.RateSchedule = fullRate;
               // Override BillingPeriodStart/End with the winning uniqueBills
