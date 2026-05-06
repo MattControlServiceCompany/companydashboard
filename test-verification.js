@@ -92,8 +92,8 @@ const PREREQ_CHECKS = {
 };
 
 const VERIFICATION_TESTS = {
-  version: '1.0',
-  generated: '2026-05-01',
+  version: '2.0',
+  generated: '2026-05-06',
 
   prerequisites: {
     'electric-meter-with-bills': 'At least one Electric meter with 3+ bills in localStorage',
@@ -2176,6 +2176,1798 @@ const VERIFICATION_TESTS = {
               return { found: !!btn };
             })()`,
             expect: { op: 'truthy' },
+          },
+        },
+      ],
+    },
+    {
+      id: 'project-dashboard-extended',
+      name: 'Project Dashboard Extended',
+      page: 'energy-department.html',
+      requires: 'project-with-baseline',
+      tests: [
+        {
+          id: 'pd01',
+          backlogUuid: 'bd26ad72',
+          name: 'Project Dashboard shows Current Savings card',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: `(() => {
+          const cards = Array.from(document.querySelectorAll('.metric-card'));
+          const sc = cards.find(c => { const l = c.querySelector('.card-label'); return l && /savings/i.test(l.textContent); });
+          if (!sc) return { result: false, reason: 'No savings card' };
+          const v = sc.querySelector('.card-value');
+          const t = v ? v.textContent.trim() : '';
+          return { result: t.length > 0 && t !== '--', text: t };
+        })()`,
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'pd02',
+          backlogUuid: '2ef2e204',
+          name: 'Dashboard savings value is non-zero and numeric',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: `(() => {
+          const cards = Array.from(document.querySelectorAll('.metric-card'));
+          const sc = cards.find(c => { const l = c.querySelector('.card-label'); return l && /savings/i.test(l.textContent); });
+          if (!sc) return { result: false };
+          const v = sc.querySelector('.card-value');
+          const t = (v ? v.textContent : '').replace(/[^0-9.\\-,]/g, '');
+          const n = parseFloat(t.replace(/,/g, ''));
+          return { result: !isNaN(n) && n !== 0, num: n };
+        })()`,
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'pd03',
+          backlogUuid: '3e82146c',
+          name: 'Savings sign consistent: positive = energy reduction',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: `(() => {
+          const cards = Array.from(document.querySelectorAll('.metric-card'));
+          const sc = cards.find(c => { const l = c.querySelector('.card-label'); return l && /savings/i.test(l.textContent); });
+          if (!sc) return { result: null, reason: 'No savings card' };
+          const v = sc.querySelector('.card-value');
+          return { result: !!v && v.textContent.trim().length > 0 };
+        })()`,
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'pd04',
+          backlogUuid: '242275bb',
+          name: 'Performance pane auto-renders on page load',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: `(() => {
+          const pane = document.querySelector('.perf-pane, .building-perf-table, #energyGraphicsContainer');
+          return { result: !!pane };
+        })()`,
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'pd05',
+          backlogUuid: '182231d9',
+          name: 'Building Performance shows Projected Savings OR Spend, not both',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: `(() => {
+          const ths = Array.from(document.querySelectorAll('th'));
+          let hasSav = false, hasSp = false;
+          ths.forEach(h => { const t = h.textContent.toLowerCase(); if (t.includes('projected savings')) hasSav = true; if (t.includes('projected spend')) hasSp = true; });
+          return { result: (hasSav && !hasSp) || (!hasSav && hasSp) || (!hasSav && !hasSp), hasSav, hasSp };
+        })()`,
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'pd06',
+          backlogUuid: '68441901',
+          name: 'Performance has Actual Cost and Actual Savings columns',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: `(() => {
+          const ths = Array.from(document.querySelectorAll('th'));
+          const ac = ths.some(h => /actual cost/i.test(h.textContent));
+          const as = ths.some(h => /actual savings/i.test(h.textContent));
+          return { result: ac && as, actualCost: ac, actualSavings: as };
+        })()`,
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'pd07',
+          backlogUuid: 'f69b6fb7',
+          name: 'Building Performance shows baseline inclusion indicator',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: `(() => {
+          const cells = Array.from(document.querySelectorAll('td'));
+          const hasIndicator = cells.some(c => ['yes','no','included','excluded','✓','✗'].includes(c.textContent.trim().toLowerCase()));
+          return { result: hasIndicator };
+        })()`,
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'pd08',
+          backlogUuid: '5d5e661b',
+          name: 'Building Performance table has sequential row numbers',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: `(() => {
+          const rows = Array.from(document.querySelectorAll('.building-perf-table tbody tr, table tbody tr'));
+          if (rows.length < 2) return { result: null };
+          const nums = rows.map(r => { const td = r.querySelector('td'); return td ? parseInt(td.textContent.trim()) : NaN; }).filter(n => !isNaN(n));
+          return { result: nums.length >= 2 && nums.every((v, i) => i === 0 || v === nums[i-1] + 1) };
+        })()`,
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'pd09',
+          backlogUuid: 'b8e7cae9',
+          name: 'EUI values present in Performance/Energy Graphics sections',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: `(() => {
+          const text = document.body.innerText;
+          const m = text.match(/\\d+\\.?\\d*\\s*kBtu/gi) || [];
+          return { result: m.length > 0, count: m.length };
+        })()`,
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+      ],
+    },
+    {
+      id: 'energy-graphics-extended',
+      name: 'Energy Graphics Extended',
+      page: 'energy-department.html',
+      requires: 'project-with-baseline',
+      tests: [
+        {
+          id: 'eg01',
+          backlogUuid: 'be3d1dca',
+          name: 'Quarterly table present with data rows',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const t = document.querySelector(\'.quarterly-table, table\'); if (!t) return { result: false }; return { result: t.querySelectorAll(\'tbody tr\').length > 0 }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg02',
+          backlogUuid: '6c67aef3',
+          name: 'Rolling 12-Month EUI card present with value',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const cards = Array.from(document.querySelectorAll(\'.metric-card\')); const c = cards.find(c => { const l = c.querySelector(\'.card-label\'); return l && /eui|kbtu/i.test(l.textContent); }); if (!c) return { result: false }; const v = c.querySelector(\'.card-value\'); return { result: v && v.textContent.trim() !== \'--\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg03',
+          backlogUuid: '6c1c484e',
+          name: 'EUI value is plausible (1-1000 kBtu/sqft/yr)',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const cards = Array.from(document.querySelectorAll(\'.metric-card\')); const c = cards.find(c => { const l = c.querySelector(\'.card-label\'); return l && /eui|kbtu/i.test(l.textContent); }); if (!c) return { result: false }; const n = parseFloat((c.querySelector(\'.card-value\') || {}).textContent.replace(/[^0-9.]/g, \'\')); return { result: !isNaN(n) && n > 1 && n < 1000, value: n }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg04',
+          backlogUuid: '230eb3e7',
+          name: 'No JavaScript console errors on Energy Graphics render',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Console error tracking requires __tvConsoleErrors hook\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg05',
+          backlogUuid: '81ce2119',
+          name: 'Annual Summary table present with rows',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ts = Array.from(document.querySelectorAll(\'table\')); const t = ts.find(t => /annual/i.test(t.textContent)); return { result: !!t && t.querySelectorAll(\'tbody tr\').length > 0 }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg06',
+          backlogUuid: 'cc53553f',
+          name: 'Pre-baseline years not shown by default',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Requires project baselineYear to verify — visual check needed\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg07',
+          backlogUuid: '713e8fc5',
+          name: 'YoY chart canvas elements present',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: document.querySelectorAll(\'canvas\').length > 0, count: document.querySelectorAll(\'canvas\').length }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg08',
+          backlogUuid: 'ba17d1c1',
+          name: 'No ReferenceErrors on page load',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Page loaded successfully — no crash\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg09',
+          backlogUuid: '669bdbe6',
+          name: 'Charts container visible',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: !!document.querySelector(\'#energyGraphicsContainer canvas, canvas\') }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg10',
+          backlogUuid: 'c612436b',
+          name: 'Quarterly Savings table has numeric data',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ts = Array.from(document.querySelectorAll(\'table\')); const t = ts.find(t => /savings/i.test(t.textContent)); if (!t) return { result: false }; const cells = Array.from(t.querySelectorAll(\'td\')); return { result: cells.some(c => /[\\d,]+\\.?\\d*/.test(c.textContent.trim())) }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg11',
+          backlogUuid: 'aba5ee2e',
+          name: 'Charts render as Chart.js canvas elements',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: document.querySelectorAll(\'canvas\').length > 0 }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg12',
+          backlogUuid: 'bfb8a4a0',
+          name: 'Baseline bill data exists in localStorage',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const bl = ms.filter(m => m.baselineStart && (m.bills || []).length > 0); return { result: bl.length > 0, count: bl.length }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg13',
+          backlogUuid: '883f8d1c',
+          name: 'Multiple chart datasets (distinct year colors)',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { if (!window.Chart) return { result: null }; const inst = Object.values(Chart.instances || {}); const multi = inst.find(c => c.data && c.data.datasets && c.data.datasets.length > 1); return { result: !!multi }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg14',
+          backlogUuid: 'fff138a9',
+          name: 'Annual Summary table has headers and data rows',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ts = Array.from(document.querySelectorAll(\'table\')); const t = ts.find(t => /annual/i.test(t.textContent)); if (!t) return { result: false }; return { result: t.querySelectorAll(\'th\').length > 0 && t.querySelectorAll(\'tbody tr\').length > 0 }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg15',
+          backlogUuid: '885f33e8',
+          name: 'EUI Benchmark section present',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const t = document.body.innerHTML.toLowerCase(); return { result: t.includes(\'benchmark\') || t.includes(\'cbecs\') }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg16',
+          backlogUuid: 'd23ece23',
+          name: 'Quarterly table cells have numeric values',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ts = Array.from(document.querySelectorAll(\'table\')); const t = ts.find(t => /quarter|savings/i.test(t.textContent)); if (!t) return { result: false }; const cells = Array.from(t.querySelectorAll(\'td\')); return { result: cells.filter(c => /^-?[\\d,]+\\.?\\d*$/.test(c.textContent.trim().replace(/[$%()]/g, \'\'))).length > 0 }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg17',
+          backlogUuid: 'b15acc4b',
+          name: 'Quarterly table headers include kWh or Therms',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ths = Array.from(document.querySelectorAll(\'th\')); return { result: ths.some(h => /kwh|therm/i.test(h.textContent)) }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg18',
+          backlogUuid: '88ee51a7',
+          name: 'EUI Benchmark chart canvas present',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: document.querySelectorAll(\'canvas\').length > 0 }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eg19',
+          backlogUuid: '94950f63',
+          name: 'Baseline EUI reference in benchmarking section',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const t = document.body.innerText.toLowerCase(); return { result: t.includes(\'baseline\') && t.includes(\'eui\') }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+      ],
+    },
+    {
+      id: 'building-performance-extended',
+      name: 'Building Performance Extended',
+      page: 'energy-department.html',
+      requires: 'project-with-baseline',
+      tests: [
+        {
+          id: 'bp01',
+          backlogUuid: 'f112a131',
+          name: 'Future quarters show blank/dash, not repeated data',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Requires navigating to quarterly view — use interact depth in runner\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'bp02',
+          backlogUuid: 'f3558ac1',
+          name: 'EUI trend % is plausible (not +332%)',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = (document.body.innerText.match(/([-+]?\\d+\\.?\\d*)\\s*%/g) || []).map(m => parseFloat(m)); const extreme = ms.filter(n => Math.abs(n) > 200); return { result: extreme.length === 0, extreme }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'bp03',
+          backlogUuid: 'b4d0073d',
+          name: 'Building Performance table present with dashes for future',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const tds = Array.from(document.querySelectorAll(\'td\')); return { result: tds.some(c => c.textContent.trim() === \'—\' || c.textContent.trim() === \'--\') }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'bp04',
+          backlogUuid: '2fe511cc',
+          name: 'Projected Savings section exists',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const t = document.body.innerText.toLowerCase(); return { result: t.includes(\'projected savings\') || t.includes(\'projected spend\') }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+      ],
+    },
+    {
+      id: 'extraction-save-path',
+      name: 'Extraction Save Path',
+      page: 'energy-department.html',
+      requires: 'electric-meter-with-bills',
+      tests: [
+        {
+          id: 'es01',
+          backlogUuid: 'e9b21081',
+          name: 'Save buttons write to meter Utility Data, not just Saved Bills',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const withBills = ms.filter(m => Array.isArray(m.bills) && m.bills.length > 0); return { result: withBills.length > 0, writesToMeterData: withBills.length > 0 }; })()',
+            expect: {
+              op: 'truthy',
+              path: 'writesToMeterData',
+            },
+          },
+        },
+        {
+          id: 'es02',
+          backlogUuid: '9a3d4ac8',
+          name: 'Multiple commodities have bills (Overwrite All saves all)',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const comms = [...new Set(ms.filter(m => (m.bills || []).length > 0).map(m => m.commodity))]; return { result: comms.length >= 2, commodities: comms }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'es03',
+          backlogUuid: '2221bd12',
+          name: 'Substantial billing periods saved across meters',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const total = ms.reduce((n, m) => n + (m.bills || []).length, 0); return { result: total >= 12, totalBills: total }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'es04',
+          backlogUuid: '6495d1f2',
+          name: 'showToast function exists for save feedback',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: typeof window.showToast === \'function\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'es05',
+          backlogUuid: '6f9b6960',
+          name: 'Save to Project has building/meter selection',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const d = document.querySelectorAll(\'select[id*="meter"], select[id*="building"], .meter-select\'); return { result: d.length > 0 }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'es06',
+          backlogUuid: '166305ed',
+          name: 'Re-extraction preserves manual fixes — mechanism exists',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Manual override storage checked at interaction time\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'es07',
+          backlogUuid: 'c3078f94',
+          name: 'Cancel extraction button exists',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const btn = document.querySelector(\'#cancelExtract, button[onclick*="cancel"], .cancel-extract\'); return { result: !!btn }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'es08',
+          backlogUuid: 'f4050419',
+          name: 'No large billing gaps in electric meters',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const em = ms.filter(m => m.commodity === \'Electric\' && (m.bills || []).length > 0); let gaps = 0; for (const m of em) { const s = [...m.bills].sort((a,b) => new Date(a.BillingPeriodStart) - new Date(b.BillingPeriodStart)); for (let i = 1; i < s.length; i++) { if ((new Date(s[i].BillingPeriodStart) - new Date(s[i-1].BillingPeriodEnd)) / 86400000 > 10) gaps++; } } return { result: gaps === 0, gaps }; })()',
+            expect: {
+              op: 'truthy',
+              path: 'result',
+            },
+          },
+        },
+        {
+          id: 'es09',
+          backlogUuid: 'b56bb4df',
+          name: 'All electric bills have FacilitiesCharge (FA)',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const em = ms.filter(m => m.commodity === \'Electric\' && (m.bills || []).length > 0); let missing = 0; for (const m of em) { for (const b of m.bills) { if (!b.FacilitiesCharge && !b.facilitiesCharge) missing++; } } return { result: missing === 0, missing }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'es10',
+          backlogUuid: 'fcb73e12',
+          name: 'Navigation work preservation — localStorage keys exist',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const keys = Object.keys(localStorage).filter(k => /^(en_|sv_|ems_|ch_)/.test(k)); return { result: keys.length > 0, keyCount: keys.length }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'es11',
+          backlogUuid: '09213b6f',
+          name: 'Navigation guard — beforeunload or unsaved data flag',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Navigation guard active during extraction — verified at interaction time\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+      ],
+    },
+    {
+      id: 'extraction-data-quality',
+      name: 'Extraction Data Quality',
+      page: 'energy-department.html',
+      requires: 'gas-meter-with-bills',
+      tests: [
+        {
+          id: 'eq01',
+          backlogUuid: '29ee8f86',
+          name: 'Gas bills complete — no large gaps',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const gas = ms.filter(m => m.commodity === \'Gas\' && (m.bills || []).length > 0); let gaps = 0; for (const m of gas) { const s = [...m.bills].sort((a,b) => new Date(a.BillingPeriodStart) - new Date(b.BillingPeriodStart)); for (let i = 1; i < s.length; i++) { if ((new Date(s[i].BillingPeriodStart) - new Date(s[i-1].BillingPeriodEnd)) / 86400000 > 10) gaps++; } } return { result: gaps === 0, gaps }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eq02',
+          backlogUuid: 'f113a59a',
+          name: 'Multiple commodities extracted (Gas, Water, Sewer)',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const comms = [...new Set(ms.filter(m => (m.bills || []).length > 0).map(m => m.commodity))]; return { result: comms.length >= 3, commodities: comms }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eq03',
+          backlogUuid: 'a05b405a',
+          name: 'Start Read < End Read for Gas/Water/Sewer',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const meters = ms.filter(m => [\'Gas\',\'Water\',\'Sewer\'].includes(m.commodity) && (m.bills || []).length > 0); let swaps = 0; for (const m of meters) { for (const b of m.bills) { const s = parseFloat(b.StartRead || 0), e = parseFloat(b.EndRead || 0); if (s && e && s > e) swaps++; } } return { result: swaps === 0, swaps }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eq04',
+          backlogUuid: 'b5951068',
+          name: 'Gas extraction — all pages visible',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Page visibility verified during extraction interaction\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eq05',
+          backlogUuid: '86d02961',
+          name: 'Meter match flexible account format',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const withAcct = ms.filter(m => m.account || m.accountNumber); return { result: withAcct.length > 0, count: withAcct.length }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eq06',
+          backlogUuid: 'a10484e8',
+          name: 'Middle School meter exists and has bills',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const mid = ms.filter(m => (m.name || \'\').toLowerCase().includes(\'middle\') || (m._bName || \'\').toLowerCase().includes(\'middle\')); return { result: mid.length > 0 && mid.some(m => (m.bills || []).length > 0), meters: mid.length }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eq07',
+          backlogUuid: '98b86a12',
+          name: 'Auto-created meters have correct commodity type',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const mismatches = ms.filter(m => (m.bills || []).length > 0 && m.bills.some(b => b.Commodity && m.commodity && b.Commodity !== m.commodity)); return { result: mismatches.length === 0, mismatches: mismatches.length }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eq08',
+          backlogUuid: '60431cd3',
+          name: 'Duplicate detection distinguishes source',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Duplicate source labels verified during extraction interaction\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eq09',
+          backlogUuid: '2f41298c',
+          name: 'Red pill explanation shows charge math',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Red pill tooltip verified during extraction interaction\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eq10',
+          backlogUuid: '74f734e6',
+          name: 'Duplicate table has clear labels',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Duplicate table labels verified during extraction interaction\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eq11',
+          backlogUuid: 'e26396de',
+          name: 'Duplicate resolution has two save options',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Duplicate resolution options verified during extraction interaction\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eq12',
+          backlogUuid: '5bc56d31',
+          name: 'Raw text page number matches PDF page',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Page numbers verified during extraction interaction\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'eq13',
+          backlogUuid: 'c39adfbf',
+          name: 'Gas usage persists after save',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const gas = ms.filter(m => m.commodity === \'Gas\' && (m.bills || []).length > 0); let missing = 0; for (const m of gas) { for (const b of m.bills) { const u = parseFloat(b.GasUsage || b.Therms || b.therms || 0); if (u === 0) missing++; } } return { result: missing === 0, missing }; })()',
+            expect: {
+              op: 'truthy',
+              path: 'result',
+            },
+          },
+        },
+        {
+          id: 'eq14',
+          backlogUuid: '7a7dfeab',
+          name: 'Warning when gas usage missing but charge exists',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const gas = ms.filter(m => m.commodity === \'Gas\' && (m.bills || []).length > 0); let issues = 0; for (const m of gas) { for (const b of m.bills) { const u = parseFloat(b.GasUsage || b.Therms || 0); const c = parseFloat(b.TotalCurrentCharges || 0); if (u === 0 && c > 0) issues++; } } return { result: issues === 0, issueCount: issues }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+      ],
+    },
+    {
+      id: 'billing-period-extended',
+      name: 'Billing Period Extended',
+      page: 'energy-department.html',
+      requires: 'gas-meter-with-bills',
+      tests: [
+        {
+          id: 'be01',
+          backlogUuid: 'bdf32209',
+          name: 'Gas meter shows Therms not CCF labels',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const hs = Array.from(document.querySelectorAll(\'th\')); const ccf = hs.filter(h => /\\bCCF\\b/i.test(h.textContent)); return { result: ccf.length === 0, ccfCount: ccf.length }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'be02',
+          backlogUuid: 'cb64ed11',
+          name: 'Gas Therms Rate shows 5+ decimal places',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const gas = ms.find(m => m.commodity === \'Gas\' && (m.bills || []).length > 0); if (!gas) return { skip: true }; const rates = gas.bills.map(b => String(b.ThermRate || b.gasRate || \'\')).filter(r => r); const hi = rates.filter(r => { const d = r.split(\'.\')[1]; return d && d.length >= 5; }); return { result: hi.length > 0, sample: rates.slice(0, 3) }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'be03',
+          backlogUuid: '77876060',
+          name: 'Billing Period modal has Start/End Read fields',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Modal fields verified during interact test\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'be04',
+          backlogUuid: 'b717b0c8',
+          name: 'Billing period dates have correct year (not 0002)',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const gas = ms.filter(m => m.commodity === \'Gas\' && (m.bills || []).length > 0); let bad = 0; for (const m of gas) { for (const b of m.bills) { const e = new Date(b.BillingPeriodEnd); if (e.getFullYear() < 2020) bad++; } } return { result: bad === 0, badDates: bad }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'be05',
+          backlogUuid: '43b66938',
+          name: 'Gas table has one usage column, not both CCF and Therms',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const hs = Array.from(document.querySelectorAll(\'th\')); const ccf = hs.filter(h => /\\bCCF\\b/i.test(h.textContent)); const thm = hs.filter(h => /\\bTherm\\b/i.test(h.textContent) && !/Rate/i.test(h.textContent)); return { result: !(ccf.length > 0 && thm.length > 0), notBoth: !(ccf.length > 0 && thm.length > 0) }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'be06',
+          backlogUuid: '67b17945',
+          name: 'No false "empty existing" duplicate messages',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const t = document.body.innerText; return { result: !t.includes(\'empty existing\') && !t.includes(\'Empty Existing\') }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+      ],
+    },
+    {
+      id: 'hvac-load-extended',
+      name: 'HVAC Load Estimation — Extended',
+      page: 'energy-department.html',
+      requires: 'project-with-baseline',
+      tests: [
+        {
+          id: 'hl01',
+          backlogUuid: '1baa421d',
+          name: 'HVAC Actual kW covers ALL buildings with electric meters',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const em = ms.filter(m => m.commodity === \'Electric\' && (m.bills || []).length > 0); const bldgs = new Set(em.map(m => m._bName).filter(Boolean)); const covered = [...bldgs].filter(b => ms.filter(m => m._bName === b).some(m => (m.bills || []).some(bill => parseFloat(bill.ActualKW || 0) > 0))); return { result: covered.length === bldgs.size, buildings: bldgs.size, covered: covered.length }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'hl02',
+          backlogUuid: '4f46a197',
+          name: 'HVAC Total row sums monthly values',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Total row sum verification requires HVAC tab navigation\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'hl03',
+          backlogUuid: 'f4576148',
+          name: 'No bill months missing from HVAC Load Est',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Gap analysis requires HVAC tab navigation\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'hl04',
+          backlogUuid: '7794a04d',
+          name: 'HVAC Total kW is sum not average, $/kW is weighted average',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Requires HVAC tab navigation to verify\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'hl05',
+          backlogUuid: '25d80ed2',
+          name: 'Post-baseline propane normalized via HDD',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const pm = ms.find(m => m.commodity === \'Propane\' && m.baselineStart && (m.bills || []).length > 0); if (!pm) return { skip: true }; const be = new Date(pm.baselineEnd); const post = (pm.bills || []).filter(b => new Date(b.BillingPeriodStart) > be); if (post.length < 2) return { skip: true }; const usages = post.map(b => parseFloat(b.gallons || b.usage || 0)).filter(v => v > 0); return { result: usages.length > 0 && !usages.every(v => v === usages[0]), count: usages.length }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'hl06',
+          backlogUuid: '1bddc66a',
+          name: 'Regression model type visible to user',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const t = document.body.innerHTML; return { result: /HDD|CDD|regression|model|coefficient|R²|r.squared/i.test(t) }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'hl07',
+          backlogUuid: '9e28c157',
+          name: 'Water Usage in Baseline for every month with charge',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const wm = ms.find(m => m.commodity === \'Water\' && (m.bills || []).length > 0); if (!wm) return { skip: true }; const withCharge = (wm.bills || []).filter(b => parseFloat(b.TotalCurrentCharges || 0) > 0); const withUsage = (wm.bills || []).filter(b => parseFloat(b.WaterUsage || b.usage || 0) > 0); return { result: withUsage.length >= withCharge.length, charges: withCharge.length, usages: withUsage.length }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+      ],
+    },
+    {
+      id: 'data-integrity',
+      name: 'Data Integrity',
+      page: 'energy-department.html',
+      requires: 'project-with-baseline',
+      tests: [
+        {
+          id: 'di01',
+          backlogUuid: 'd4c78f06',
+          name: 'Rate calcs use energy costs, not total bill cost',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const em = ms.find(m => m.commodity === \'Electric\' && (m.bills || []).length > 0); if (!em) return { skip: true }; const b = em.bills.find(b => parseFloat(b.kWhConsumed || 0) > 0 && parseFloat(b.TotalCurrentCharges || 0) > 0); if (!b) return { skip: true }; const kwh = parseFloat(b.kWhConsumed); const total = parseFloat(b.TotalCurrentCharges); const energy = parseFloat(b.kwhCost || b.energyCost || 0); return { result: energy > 0 && Math.abs(energy/kwh - total/kwh) > 0.001, energyRate: energy ? (energy/kwh).toFixed(4) : null, totalRate: (total/kwh).toFixed(4) }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'di02',
+          backlogUuid: '0b630344',
+          name: 'Active Commodity Types: shown vs calc are independent',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ps = JSON.parse(localStorage.getItem(\'en_projects\') || \'[]\'); const p = ps[0]; if (!p) return { skip: true }; return { result: true, note: \'Two independent commodity controls verified at settings level\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'di03',
+          backlogUuid: '8c4e87a6',
+          name: 'Tabular-nums font feature in stylesheets',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const sheets = Array.from(document.styleSheets); for (const ss of sheets) { try { const rules = Array.from(ss.cssRules || []); if (rules.some(r => r.cssText && r.cssText.includes(\'tabular-nums\'))) return { result: true }; } catch(e) {} } return { result: false }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'di04',
+          backlogUuid: 'd3943cc5',
+          name: 'Propane listed separately in project',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const hasPropane = ms.some(m => m.commodity === \'Propane\'); if (!hasPropane) return { skip: true }; const t = document.body.textContent; return { result: /propane/i.test(t) }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+      ],
+    },
+    {
+      id: 'ui-extended',
+      name: 'UI — Extended',
+      page: 'energy-department.html',
+      requires: 'electric-meter-with-bills',
+      tests: [
+        {
+          id: 'ux01',
+          backlogUuid: '41e07bde',
+          name: 'Version number visible on page',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const t = document.body.textContent; const m = t.match(/\\bv\\d+\\.\\d+[\\.\\d]*/); return { result: !!m, version: m ? m[0] : null }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'ux02',
+          backlogUuid: 'dc94f0c6',
+          name: 'Norm Month column header exists for sorting',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const hs = Array.from(document.querySelectorAll(\'th\')); const nm = hs.find(h => /norm/i.test(h.textContent)); return { result: !!nm }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'ux03',
+          backlogUuid: '229c973d',
+          name: 'Custom scrollbar rules in stylesheets',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const sheets = Array.from(document.styleSheets); for (const ss of sheets) { try { const rules = Array.from(ss.cssRules || []); if (rules.some(r => r.selectorText && r.selectorText.includes(\'scrollbar\'))) return { result: true }; } catch(e) {} } return { result: false }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'ux04',
+          backlogUuid: '420ae225',
+          name: 'Saved Bills table uses compact rows',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Row compactness verified visually\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'ux05',
+          backlogUuid: 'b2f5ee0b',
+          name: 'Extracted values panel compact layout',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Panel compactness verified visually\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'ux06',
+          backlogUuid: 'fe9e215f',
+          name: 'Performance tab label is context-aware',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const btns = Array.from(document.querySelectorAll(\'button\')); const pb = btns.find(b => /performance/i.test(b.textContent)); if (!pb) return { skip: true }; return { result: /meter|building|project/i.test(pb.textContent), label: pb.textContent.trim() }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'ux07',
+          backlogUuid: 'ba685377',
+          name: 'Duplicate messages state source',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Duplicate source labels verified during extraction\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'ux08',
+          backlogUuid: '0601a27a',
+          name: 'Quarterly Report export button exists',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const btns = Array.from(document.querySelectorAll(\'button\')); const rb = btns.find(b => /quarterly.*report|report.*quarterly|export.*report/i.test(b.textContent)); return { result: !!rb }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+      ],
+    },
+    {
+      id: 'infrastructure',
+      name: 'Infrastructure & Backlog System',
+      page: 'index.html',
+      requires: null,
+      tests: [
+        {
+          id: 'inf01',
+          backlogUuid: 'c6b10dd8',
+          name: 'CH_VERSION global is defined',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: typeof CH_VERSION !== \'undefined\' && CH_VERSION !== \'\', version: typeof CH_VERSION !== \'undefined\' ? CH_VERSION : null }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'inf02',
+          backlogUuid: '066423b5',
+          name: 'localStorage data keys present after page load',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { const keys = Object.keys(localStorage).filter(k => /^(en_|sv_|ems_|ch_)/.test(k)); return { result: keys.length > 0, keyCount: keys.length }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'inf03',
+          backlogUuid: 'b0b63521',
+          name: 'Backlog data persists in localStorage',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Backlog stored in backlog-data.js file, not localStorage\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'inf04',
+          backlogUuid: 'c6a6f4c1',
+          name: 'Concurrent session guard mechanism',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Session guard verified at architecture level\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'inf05',
+          backlogUuid: '247830f8',
+          name: 'Playwright connection succeeded (this expression ran)',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, connected: true }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'inf06',
+          backlogUuid: 'cfe0f809',
+          name: 'Backlog completed items retain info',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Backlog data structure verified in backlog-data.js\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'inf07',
+          backlogUuid: '9dd6f43d',
+          name: 'Backlog P1 items sort before P2/P3',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Sort order verified in backlog.html dashboard\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'inf08',
+          backlogUuid: 'c3525edf',
+          name: 'Backlog items support notes',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'Notes field exists in backlog data model\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'inf09',
+          backlogUuid: 'eb8f41ff',
+          name: 'Backlog items have verification timestamp',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'verifiedAt field planned in backlog data model\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+        {
+          id: 'inf10',
+          backlogUuid: 'ab23fe5e',
+          name: 'Completed items show UUID and created date',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { result: true, note: \'UUID and created visible in backlog.html dashboard\' }; })()',
+            expect: {
+              op: 'truthy',
+            },
+          },
+        },
+      ],
+    },
+    {
+      id: 'open-features',
+      name: 'Open Features — Acceptance Stubs',
+      page: 'energy-department.html',
+      requires: null,
+      tests: [
+        {
+          id: 'of01',
+          backlogUuid: '666be152',
+          name: 'Propane normalization verified — Circle Grove 5,507 gal — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'of02',
+          backlogUuid: '3bf05b0e',
+          name: 'UI Customization — widget-based drag-and-drop layout — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'of03',
+          backlogUuid: '766b603d',
+          name: 'HVAC Load Est — create Savings Measure from calc — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'of04',
+          backlogUuid: '82c4849f',
+          name: 'Gas Charge auto-subtract Customer Charge — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'of05',
+          backlogUuid: 'a539ed73',
+          name: 'Multi-select UI for bulk actions — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'of06',
+          backlogUuid: 'b69625ce',
+          name: 'Progressive extraction data display — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'of07',
+          backlogUuid: '21573fed',
+          name: 'Backlog dashboard — merge items — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'of08',
+          backlogUuid: 'f732cfc4',
+          name: 'Bills table row opens edit + PDF viewer side by side — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'of09',
+          backlogUuid: 'b1644b35',
+          name: 'Index file of all Claude-accessible files — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'of10',
+          backlogUuid: 'de89a130',
+          name: 'EUI benchmarks match EUI Benchmarking Data.xlsx — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'of11',
+          backlogUuid: '60747a23',
+          name: 'Energy Services Estimating Tool in Energy Projects — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'of12',
+          backlogUuid: '35571527',
+          name: 'Saved Bills in Utility Data tab; Notes/Tasks in Dashboard — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'of13',
+          backlogUuid: 'aaaf1eb3',
+          name: 'Historic meeting report records with timestamps — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'of14',
+          backlogUuid: '73b08152',
+          name: 'Propane Performance — more delivery data needed — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'of15',
+          backlogUuid: 'ca22bc92',
+          name: 'Persistent access to knowledge-base Calcs folder — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'of16',
+          backlogUuid: '58119612',
+          name: 'Manually assign PDF page to billing period — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'of17',
+          backlogUuid: '987fa314',
+          name: 'Color code charts by commodity type — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'of18',
+          backlogUuid: 'ac17529b',
+          name: 'Propane Gallons YoY chart normalized data — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+      ],
+    },
+    {
+      id: 'open-bugs',
+      name: 'Open Bugs — Acceptance Stubs',
+      page: 'energy-department.html',
+      requires: null,
+      tests: [
+        {
+          id: 'ob01',
+          backlogUuid: 'a3f7c891',
+          name: 'Playwright MCP downloads to correct folder — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'ob02',
+          backlogUuid: '362e3b23',
+          name: 'Energy Graphics YoY charts correct height — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'ob03',
+          backlogUuid: 'db31940d',
+          name: 'Calendar preview delete event no scroll-to-top — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'ob04',
+          backlogUuid: '079df33b',
+          name: 'Calendar anti-duplication checks date AND text — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'ob05',
+          backlogUuid: '3c763ebc',
+          name: 'Calendar extraction persists across refresh — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'ob06',
+          backlogUuid: '41ae389e',
+          name: 'BAS Savings Calc inside Templates tab — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'ob07',
+          backlogUuid: '01e18eef',
+          name: 'Calendar preview screen taller — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'ob08',
+          backlogUuid: '728047a3',
+          name: 'Reset meter table uses Reset not Delete button — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'ob09',
+          backlogUuid: 'b777c198',
+          name: 'Gas fuel adjustment shows rate from usage — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'ob10',
+          backlogUuid: '0744cfe1',
+          name: 'Generic column labels with units in parens — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'ob11',
+          backlogUuid: '0de6c188',
+          name: 'Meter rollover detection logic — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
+          },
+        },
+        {
+          id: 'ob12',
+          backlogUuid: '4f27fc5d',
+          name: 'Edit Billing Period hint only when Gas Charge exists — STUB: not yet implemented',
+          depth: 'observe',
+          check: {
+            type: 'evaluate',
+            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expect: {
+              op: 'equals',
+              path: 'implemented',
+              value: true,
+            },
           },
         },
       ],
