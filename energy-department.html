@@ -18120,15 +18120,27 @@
             while ((sfM = sfRe.exec(t)) !== null) {
               sfMatches.push({ idx: sfM.index, start: sfM[1], end: sfM[2], length: sfM[0].length });
             }
-            // For each service-from match, find the nearest account number by
-            // searching backwards (up to 2000 chars) from the match position.
-            // Multi-account PDFs with identical service dates (e.g. two buildings
-            // billed on the same cycle) need the account number to stay separate.
+            // For each service-from match, find the account number on the SAME
+            // PAGE only (bounded by %%PAGE_N%% markers). Crossing page boundaries
+            // picks up the wrong account when a multi-account PDF has identical
+            // service dates. The regex tolerates OCR artifacts like ( or [ before
+            // digits (e.g. "(0669287870" seen in scanned bills).
+            const _pageBreakIdxs = [...t.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => m.index);
             const _acctForIdx = (idx) => {
-              const lookback = t.slice(Math.max(0, idx - 2000), idx);
-              const acctMatches = [...lookback.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s©®]\s*(\d[\d ]{4,18}\d)/gm)];
+              let pageStart = 0;
+              let pageEnd = t.length;
+              for (let i = 0; i < _pageBreakIdxs.length; i++) {
+                if (_pageBreakIdxs[i] <= idx) {
+                  pageStart = _pageBreakIdxs[i];
+                  pageEnd = i + 1 < _pageBreakIdxs.length ? _pageBreakIdxs[i + 1] : t.length;
+                } else break;
+              }
+              const pageText = t.slice(pageStart, pageEnd);
+              const acctMatches = [
+                ...pageText.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[:\s©®]\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
+              ];
               if (acctMatches.length === 0) return null;
-              return acctMatches[acctMatches.length - 1][1].replace(/\s/g, '');
+              return acctMatches[0][1].replace(/\s/g, '');
             };
             for (const m of sfMatches) {
               m._acct = _acctForIdx(m.idx);
