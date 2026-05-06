@@ -21094,11 +21094,22 @@
           // If address OCR is garbled, most bills cluster at the same normalized
           // address. Merge tiny groups (≤2 bills) into the largest group — they're
           // almost certainly the same building with a garbled address.
+          // Exception: don't merge groups whose bills have a different AccountNumber
+          // — that means genuinely different accounts sharing a PDF, not OCR garble.
           const groupKeys = Object.keys(_addrGroups);
           if (groupKeys.length > 1) {
             const largest = groupKeys.reduce((a, b) => (_addrGroups[a].length >= _addrGroups[b].length ? a : b));
+            const _largestAccts = new Set(
+              _addrGroups[largest].map((b) => (b.AccountNumber || '').replace(/[\s\-]/g, '')).filter(Boolean),
+            );
             for (const k of groupKeys) {
               if (k !== largest && _addrGroups[k].length <= 2) {
+                const _smallAccts = _addrGroups[k]
+                  .map((b) => (b.AccountNumber || '').replace(/[\s\-]/g, ''))
+                  .filter(Boolean);
+                const _acctConflict =
+                  _smallAccts.length > 0 && _largestAccts.size > 0 && _smallAccts.some((a) => !_largestAccts.has(a));
+                if (_acctConflict) continue;
                 _addrGroups[largest].push(..._addrGroups[k]);
                 delete _addrGroups[k];
               }
