@@ -27199,84 +27199,88 @@
             : periods.filter((p) => (bills[p.i].Commodity || 'Other') === activeCommTab);
         // Duplicate map must be declared before the nav closure below reads it (TDZ)
         const dupMap = window._pdfDupMap || {};
-        const nav = filteredPeriods
-          .map((p) => {
-            const active = p.i === idx;
-            const bw = warnings[p.i]?.warnings || [];
-            const hasIssues = bw.some((w) => w.level === 'error' || w.level === 'warn');
-            // Also check for running total mismatch directly from bill data
-            const bill = bills[p.i];
-            const _pf2 = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
-            const _pillComm =
-              bill.Commodity ||
-              (bill.kWhConsumed
-                ? 'Electric'
-                : bill.NaturalGasTherms || bill.NaturalGasCCF || bill.GasCharge
-                  ? 'Gas'
-                  : 'Electric');
-            const _pillChargeKeys = {
-              Electric: [
-                'CustomerCharge',
-                'FacilitiesCharge',
-                'BilledKWCharge',
-                'EnergyOnPeakCharge',
-                'EnergyOffPeakCharge',
-                'ECACharge',
-                'EERCharge',
-                'PTSCharge',
-                'TDCCharge',
-                'RkVACharge',
-                'TaxExemptDelivery',
-                'BillOffset',
-                'FranchiseFee',
-              ],
-              Gas: ['CustomerCharge', 'GasCharge', 'FuelAdjustment'],
-              Water: ['WaterCharge', 'WaterProtectionFee'],
-              Sewer: ['SewerCharge'],
-              Stormwater: ['StormWaterCharge'],
-              Propane: ['Subtotal', 'Tax'],
-            };
-            const _chargeSum = (_pillChargeKeys[_pillComm] || _pillChargeKeys.Electric).reduce(
-              (s, f) => s + _pf2(bill[f]),
-              0,
-            );
-            const _totalVal = _pf2(bill.TotalCurrentCharges);
-            // Sum mismatch threshold matches the Data Analysis panel exactly (>= $0.02) so the
-            // pill and banner are always consistent. Sum mismatch is high severity — we don't want
-            // a pill showing "all good" while the panel says "sum mismatch".
-            const hasSumMismatch =
-              bw.some((w) => w.field === 'TotalCurrentCharges' && w.level === 'warn' && /sum/i.test(w.message)) ||
-              (_totalVal > 0 && _chargeSum > 0 && Math.abs(_chargeSum - _totalVal) >= 0.02);
-            const hasAnyIssue = hasIssues || hasSumMismatch;
-            const issueColor = hasSumMismatch ? '--red' : '--amber';
-            // Issue color wins for border+text so warnings stay visible even when the pill is selected;
-            // active state still shows through the background color (accent-dim vs issue-dim).
-            const pillColor = hasAnyIssue ? 'var(' + issueColor + ')' : active ? 'var(--accent)' : 'var(--text2)';
-            const pillBorder = hasAnyIssue ? 'var(' + issueColor + ')' : active ? 'var(--accent)' : 'var(--border2)';
-            const pillBg = active ? 'var(--accent-dim)' : hasAnyIssue ? 'var(' + issueColor + '-dim)' : 'transparent';
-            const isDup = !!dupMap[p.i];
-            // Update 84: show the diff-field COUNT in amber instead of a dot, so
-            // the user can see at a glance how many fields differ between the
-            // existing saved bill and the freshly extracted one.
-            const diffCount = isDup ? (dupMap[p.i].diffFields || []).length : 0;
-            const dupDot = isDup
-              ? `<span style="display:inline-block;margin-left:6px;vertical-align:middle;color:var(--amber);font-weight:700;font-size:11px;font-family:var(--mono)" title="Duplicate bill — ${diffCount} differing field${diffCount === 1 ? '' : 's'} — found in ${dupMap[p.i].locationType === 'saved' ? 'Saved Bills' : dupMap[p.i].location}">${diffCount}</span>`
-              : '';
-            // Each row contains the month label AND the pill button in the same flex row,
-            // so they're guaranteed to line up vertically regardless of font or padding.
-            const _acctLine = p.acctLbl
-              ? `<div style="font-size:9px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">${p.acctLbl}</div>`
-              : '';
-            const pillBtn = `<button class="ef-pill-btn" onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasAnyIssue ? '700' : '400'};text-align:left;white-space:nowrap">${p.lbl}${dupDot}${_acctLine}</button>`;
-            const gapInfo = bill._billing_gap;
-            const gapRow = gapInfo
-              ? `<div style="padding:2px 8px;margin:2px 0;font-size:10px;color:var(--amber);text-align:center;font-weight:600">&#9888; ${gapInfo.days}-day gap (after ${gapInfo.afterPeriod || ''})</div>`
-              : '';
-            return (
-              `<div class="ef-pill-row"><div class="ef-pill-month">${p.monthLbl || ''}</div>${pillBtn}</div>` + gapRow
-            );
-          })
-          .join('');
+        const _buildPill = (p) => {
+          const active = p.i === idx;
+          const bw = warnings[p.i]?.warnings || [];
+          const hasIssues = bw.some((w) => w.level === 'error' || w.level === 'warn');
+          const bill = bills[p.i];
+          const _pf2 = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+          const _pillComm =
+            bill.Commodity ||
+            (bill.kWhConsumed
+              ? 'Electric'
+              : bill.NaturalGasTherms || bill.NaturalGasCCF || bill.GasCharge
+                ? 'Gas'
+                : 'Electric');
+          const _pillChargeKeys = {
+            Electric: [
+              'CustomerCharge',
+              'FacilitiesCharge',
+              'BilledKWCharge',
+              'EnergyOnPeakCharge',
+              'EnergyOffPeakCharge',
+              'ECACharge',
+              'EERCharge',
+              'PTSCharge',
+              'TDCCharge',
+              'RkVACharge',
+              'TaxExemptDelivery',
+              'BillOffset',
+              'FranchiseFee',
+            ],
+            Gas: ['CustomerCharge', 'GasCharge', 'FuelAdjustment'],
+            Water: ['WaterCharge', 'WaterProtectionFee'],
+            Sewer: ['SewerCharge'],
+            Stormwater: ['StormWaterCharge'],
+            Propane: ['Subtotal', 'Tax'],
+          };
+          const _chargeSum = (_pillChargeKeys[_pillComm] || _pillChargeKeys.Electric).reduce(
+            (s, f) => s + _pf2(bill[f]),
+            0,
+          );
+          const _totalVal = _pf2(bill.TotalCurrentCharges);
+          const hasSumMismatch =
+            bw.some((w) => w.field === 'TotalCurrentCharges' && w.level === 'warn' && /sum/i.test(w.message)) ||
+            (_totalVal > 0 && _chargeSum > 0 && Math.abs(_chargeSum - _totalVal) >= 0.02);
+          const hasAnyIssue = hasIssues || hasSumMismatch;
+          const issueColor = hasSumMismatch ? '--red' : '--amber';
+          const pillColor = hasAnyIssue ? 'var(' + issueColor + ')' : active ? 'var(--accent)' : 'var(--text2)';
+          const pillBorder = hasAnyIssue ? 'var(' + issueColor + ')' : active ? 'var(--accent)' : 'var(--border2)';
+          const pillBg = active ? 'var(--accent-dim)' : hasAnyIssue ? 'var(' + issueColor + '-dim)' : 'transparent';
+          const isDup = !!dupMap[p.i];
+          const diffCount = isDup ? (dupMap[p.i].diffFields || []).length : 0;
+          const dupDot = isDup
+            ? `<span style="display:inline-block;margin-left:6px;vertical-align:middle;color:var(--amber);font-weight:700;font-size:11px;font-family:var(--mono)" title="Duplicate bill — ${diffCount} differing field${diffCount === 1 ? '' : 's'} — found in ${dupMap[p.i].locationType === 'saved' ? 'Saved Bills' : dupMap[p.i].location}">${diffCount}</span>`
+            : '';
+          const pillBtn = `<button class="ef-pill-btn" onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasAnyIssue ? '700' : '400'};text-align:left;white-space:nowrap">${p.lbl}${dupDot}</button>`;
+          const gapInfo = bill._billing_gap;
+          const gapRow = gapInfo
+            ? `<div style="padding:2px 8px;margin:2px 0;font-size:10px;color:var(--amber);text-align:center;font-weight:600">&#9888; ${gapInfo.days}-day gap (after ${gapInfo.afterPeriod || ''})</div>`
+            : '';
+          return (
+            `<div class="ef-pill-row"><div class="ef-pill-month">${p.monthLbl || ''}</div>${pillBtn}</div>` + gapRow
+          );
+        };
+        let nav;
+        if (_multiAcct) {
+          const _acctGroups = {};
+          for (const p of filteredPeriods) {
+            const acct = bills[p.i].AccountNumber || '_unknown';
+            if (!_acctGroups[acct]) _acctGroups[acct] = [];
+            _acctGroups[acct].push(p);
+          }
+          nav = Object.entries(_acctGroups)
+            .map(([acct, pList]) => {
+              const addr = bills[pList[0].i].ServiceAddress || '';
+              const rate = bills[pList[0].i].RateSchedule || '';
+              const shortAddr = addr.replace(/,?\s*(LOUISBURG|KS)\s*/gi, '').trim();
+              const hdr = `<div style="margin:8px 0 4px;padding:6px 10px;border-left:3px solid var(--accent);background:var(--s2);border-radius:0 4px 4px 0"><div style="font-size:12px;font-weight:600;color:var(--text)">${shortAddr || 'Unknown Address'}</div><div style="font-size:10px;color:var(--text3);margin-top:2px">Acct ${acct}${rate ? ' · ' + rate : ''}</div></div>`;
+              return hdr + pList.map(_buildPill).join('');
+            })
+            .join('');
+        } else {
+          nav = filteredPeriods.map(_buildPill).join('');
+        }
         // Duplicate summary banner
         const dupIndices = Object.keys(dupMap).map(Number);
         let dupBannerHtml = '';
