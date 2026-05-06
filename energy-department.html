@@ -2973,12 +2973,12 @@
       .ef-pair {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 3px;
+        gap: 2px;
       }
       .ef-charge-row {
         display: grid;
         grid-template-columns: 1fr 1fr 1fr auto;
-        gap: 3px;
+        gap: 2px;
         align-items: stretch;
       }
       .ef-running {
@@ -28236,7 +28236,8 @@
           const fields = (row.fields || []).filter((k) => k in parsed || warnings.some((w) => w.field === k));
           if (!fields.length && row.type !== 'total') return '';
           if (row.type === 'wide') {
-            return buildCell(fields[0]);
+            // Issue b2f5ee0b: add 'wide' class so the cell spans both grid columns
+            return buildCell(fields[0]).replace('class="ef-item"', 'class="ef-item wide"');
           }
           if (row.type === 'pair') {
             if (fields.length === 1) return `<div class="ef-pair">${buildCell(fields[0])}</div>`;
