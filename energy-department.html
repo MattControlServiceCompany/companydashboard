@@ -21094,32 +21094,33 @@
           // If address OCR is garbled, most bills cluster at the same normalized
           // address. Merge tiny groups (≤2 bills) into the largest group — they're
           // almost certainly the same building with a garbled address.
-          // Exception: don't merge when any identity field differs between groups
-          // (AccountNumber, RateSchedule, MeterNumber) — that means genuinely
-          // different accounts/meters sharing a PDF, not OCR garble.
+          // Exception: don't merge when account numbers differ OR raw addresses
+          // are clearly different buildings. Rate codes and meter numbers are NOT
+          // checked because they legitimately change over time for the same account.
           const groupKeys = Object.keys(_addrGroups);
           if (groupKeys.length > 1) {
             const largest = groupKeys.reduce((a, b) => (_addrGroups[a].length >= _addrGroups[b].length ? a : b));
             const _idNorm = (v) => (v || '').replace(/[\s\-]/g, '').toLowerCase();
-            const _IDENTITY_FIELDS = ['AccountNumber', 'RateSchedule', 'MeterNumber'];
-            const _largestIdSets = {};
-            for (const f of _IDENTITY_FIELDS) {
-              _largestIdSets[f] = new Set(_addrGroups[largest].map((b) => _idNorm(b[f])).filter(Boolean));
-            }
+            const _largestAccts = new Set(_addrGroups[largest].map((b) => _idNorm(b.AccountNumber)).filter(Boolean));
+            const _addrWords = (v) =>
+              (v || '')
+                .toLowerCase()
+                .replace(/[^a-z0-9 ]/g, '')
+                .split(/\s+/)
+                .filter(Boolean);
+            const _largestAddrWords = new Set(_addrGroups[largest].flatMap((b) => _addrWords(b.ServiceAddress)));
             for (const k of groupKeys) {
               if (k !== largest && _addrGroups[k].length <= 2) {
-                let _hasConflict = false;
-                for (const f of _IDENTITY_FIELDS) {
-                  const largeSet = _largestIdSets[f];
-                  if (largeSet.size === 0) continue;
-                  const smallVals = _addrGroups[k].map((b) => _idNorm(b[f])).filter(Boolean);
-                  if (smallVals.length === 0) continue;
-                  if (smallVals.some((v) => !largeSet.has(v))) {
-                    _hasConflict = true;
-                    break;
-                  }
-                }
-                if (_hasConflict) continue;
+                const _smallAccts = _addrGroups[k].map((b) => _idNorm(b.AccountNumber)).filter(Boolean);
+                const _acctConflict =
+                  _smallAccts.length > 0 && _largestAccts.size > 0 && _smallAccts.some((a) => !_largestAccts.has(a));
+                if (_acctConflict) continue;
+                const _smallAddrWords = _addrGroups[k].flatMap((b) => _addrWords(b.ServiceAddress));
+                const _addrOverlap =
+                  _smallAddrWords.length > 0 && _largestAddrWords.size > 0
+                    ? _smallAddrWords.filter((w) => _largestAddrWords.has(w)).length / _smallAddrWords.length
+                    : 1;
+                if (_addrOverlap < 0.5) continue;
                 _addrGroups[largest].push(..._addrGroups[k]);
                 delete _addrGroups[k];
               }
