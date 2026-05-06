@@ -26521,6 +26521,22 @@
               if (rule) {
                 // Use extractAll if available (multi-bill PDF support)
                 let bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
+                const _traceAccts = (label) =>
+                  console.log(
+                    '[ACCT TRACE ' + label + ']',
+                    bills
+                      .map(
+                        (b, i) =>
+                          'bill' +
+                          i +
+                          ':' +
+                          (b.AccountNumber || 'null') +
+                          ' addr:' +
+                          (b.ServiceAddress || 'null').substring(0, 30),
+                      )
+                      .join(' | '),
+                  );
+                _traceAccts('1-after-extractAll');
                 const _extractUnmatchedPages = bills._unmatchedPages || [];
                 // Bug b5951068: Flag bills that fail the key-field filter instead of
                 // silently dropping them. Unparseable billing periods surface as
@@ -26707,11 +26723,29 @@
 
                 // ── POST-EXTRACTION VERIFICATION: use historical data + logic to fix issues ──
                 // Bug b5951068: append parse-error rows (flagged above) so they're never lost.
+                _traceAccts('2-after-retry');
                 let finalBills = (validBills.length ? validBills : bills.length ? bills : []).concat(
                   _singleDroppedBills || [],
                 );
+                _traceAccts('3-pre-verify');
                 statusMsg('Verifying extraction against historical data...');
                 finalBills = _postExtractionVerify(finalBills, rule.name, text);
+                const _traceF = (label) =>
+                  console.log(
+                    '[ACCT TRACE ' + label + ']',
+                    finalBills
+                      .map(
+                        (b, i) =>
+                          'bill' +
+                          i +
+                          ':' +
+                          (b.AccountNumber || 'null') +
+                          ' addr:' +
+                          (b.ServiceAddress || 'null').substring(0, 30),
+                      )
+                      .join(' | '),
+                  );
+                _traceF('4-after-verify');
 
                 // ── MULTI-PASS OCR CONSENSUS: re-extract from alternate passes for mismatched values ──
                 const passTexts = window._pdfOcrPasses || {};
@@ -26833,6 +26867,7 @@
                   );
                 }
 
+                _traceF('5-final');
                 if (finalBills.length > 1) {
                   // Multi-bill: store all, start on newest bill
                   window._pdfMultiBills = finalBills;
