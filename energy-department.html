@@ -21094,33 +21094,60 @@
           // If address OCR is garbled, most bills cluster at the same normalized
           // address. Merge tiny groups (≤2 bills) into the largest group — they're
           // almost certainly the same building with a garbled address.
-          // Exception: don't merge when account numbers differ OR raw addresses
-          // are clearly different buildings. Rate codes and meter numbers are NOT
-          // checked because they legitimately change over time for the same account.
+          //
+          // Two-tier identity check to prevent merging different accounts:
+          //   PRIMARY (stable fields): AccountNumber, ServiceAddress
+          //   SECONDARY (can change over time): RateSchedule, MeterNumber
+          //
+          // Primary determines the decision. Secondary verifies:
+          //   - Account number conflict → always block (definitive)
+          //   - Address conflict → block UNLESS secondary data says same (false positive)
+          //   - No primary conflict but both secondaries conflict → block (false negative)
           const groupKeys = Object.keys(_addrGroups);
           if (groupKeys.length > 1) {
             const largest = groupKeys.reduce((a, b) => (_addrGroups[a].length >= _addrGroups[b].length ? a : b));
             const _idNorm = (v) => (v || '').replace(/[\s\-]/g, '').toLowerCase();
-            const _largestAccts = new Set(_addrGroups[largest].map((b) => _idNorm(b.AccountNumber)).filter(Boolean));
             const _addrWords = (v) =>
               (v || '')
                 .toLowerCase()
                 .replace(/[^a-z0-9 ]/g, '')
                 .split(/\s+/)
                 .filter(Boolean);
-            const _largestAddrWords = new Set(_addrGroups[largest].flatMap((b) => _addrWords(b.ServiceAddress)));
+            const _valsFor = (group, field) => group.map((b) => _idNorm(b[field])).filter(Boolean);
+            const _setsConflict = (smallVals, largeVals) => {
+              if (smallVals.length === 0 || largeVals.length === 0) return false;
+              const largeSet = new Set(largeVals);
+              return smallVals.some((v) => !largeSet.has(v));
+            };
+            const _lgAccts = _valsFor(_addrGroups[largest], 'AccountNumber');
+            const _lgAddrW = new Set(_addrGroups[largest].flatMap((b) => _addrWords(b.ServiceAddress)));
+            const _lgRates = _valsFor(_addrGroups[largest], 'RateSchedule');
+            const _lgMeters = _valsFor(_addrGroups[largest], 'MeterNumber');
             for (const k of groupKeys) {
               if (k !== largest && _addrGroups[k].length <= 2) {
-                const _smallAccts = _addrGroups[k].map((b) => _idNorm(b.AccountNumber)).filter(Boolean);
-                const _acctConflict =
-                  _smallAccts.length > 0 && _largestAccts.size > 0 && _smallAccts.some((a) => !_largestAccts.has(a));
-                if (_acctConflict) continue;
-                const _smallAddrWords = _addrGroups[k].flatMap((b) => _addrWords(b.ServiceAddress));
+                const sm = _addrGroups[k];
+                const _acctConflict = _setsConflict(_valsFor(sm, 'AccountNumber'), _lgAccts);
+                const _smAddrW = sm.flatMap((b) => _addrWords(b.ServiceAddress));
                 const _addrOverlap =
-                  _smallAddrWords.length > 0 && _largestAddrWords.size > 0
-                    ? _smallAddrWords.filter((w) => _largestAddrWords.has(w)).length / _smallAddrWords.length
+                  _smAddrW.length > 0 && _lgAddrW.size > 0
+                    ? _smAddrW.filter((w) => _lgAddrW.has(w)).length / _smAddrW.length
                     : 1;
-                if (_addrOverlap < 0.5) continue;
+                const _addrConflict = _addrOverlap < 0.5;
+                const _rateConflict = _setsConflict(_valsFor(sm, 'RateSchedule'), _lgRates);
+                const _meterConflict = _setsConflict(_valsFor(sm, 'MeterNumber'), _lgMeters);
+                if (_acctConflict) {
+                  continue;
+                }
+                if (_addrConflict) {
+                  const _hasSecondary = _lgRates.length > 0 || _lgMeters.length > 0;
+                  const _secondarySame = _hasSecondary && !_rateConflict && !_meterConflict;
+                  if (!_secondarySame) {
+                    continue;
+                  }
+                }
+                if (_rateConflict && _meterConflict) {
+                  continue;
+                }
                 _addrGroups[largest].push(..._addrGroups[k]);
                 delete _addrGroups[k];
               }
