@@ -11752,6 +11752,98 @@
         </div>
       </div>
 
+      <!-- Manual Assign Modal (bug 58119612) -->
+      <!-- Opens from the PDF extraction results panel when a bill has errors or
+           is an unmatched/manual-review page. Lets user assign the extracted data
+           to an existing billing period or create a new one. -->
+      <div class="modal-bg" id="manualAssignModal" onclick="if (event.target === this) closeManualAssignModal();">
+        <div class="modal" style="width: 520px">
+          <div class="modal-hdr">
+            <span class="modal-title">Manual Assign — PDF Page to Billing Period</span>
+            <button class="modal-x" onclick="closeManualAssignModal()">✕</button>
+          </div>
+          <div class="modal-body">
+            <div style="font-size: 12px; color: var(--text2); margin-bottom: 12px; line-height: 1.5">
+              The extractor could not automatically assign this page. Select a meter and either choose an existing
+              billing period to overwrite, or enter new start/end dates to create a new period.
+            </div>
+            <!-- Project / Building / Meter selectors -->
+            <div class="fg">
+              <label class="fl">Project</label>
+              <select class="fs" id="mam-proj" onchange="mam_populateBuildings()"></select>
+            </div>
+            <div class="fg">
+              <label class="fl">Building</label>
+              <select class="fs" id="mam-bldg" onchange="mam_populateMeters()"></select>
+            </div>
+            <div class="fg">
+              <label class="fl">Meter</label>
+              <select class="fs" id="mam-meter" onchange="mam_populatePeriods()"></select>
+            </div>
+            <!-- Existing period vs new period toggle -->
+            <div style="display: flex; gap: 8px; margin: 10px 0">
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px">
+                <input
+                  type="radio"
+                  name="mam-mode"
+                  value="existing"
+                  id="mam-mode-existing"
+                  onchange="mam_toggleMode()"
+                  checked
+                />
+                Assign to existing billing period
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px">
+                <input type="radio" name="mam-mode" value="new" id="mam-mode-new" onchange="mam_toggleMode()" />
+                Create new billing period
+              </label>
+            </div>
+            <!-- Existing period picker -->
+            <div id="mam-existing-section">
+              <div class="fg">
+                <label class="fl">Existing Billing Period</label>
+                <select class="fs" id="mam-period">
+                  <option value="">— Select a billing period —</option>
+                </select>
+              </div>
+              <div style="font-size: 11px; color: var(--text3); margin-top: 4px">
+                The extracted data from this page will overwrite the selected period's values.
+              </div>
+            </div>
+            <!-- New period date inputs -->
+            <div id="mam-new-section" style="display: none">
+              <div style="display: flex; gap: 8px">
+                <div class="fg" style="flex: 1">
+                  <label class="fl">Start Date</label>
+                  <input class="fs" type="date" id="mam-start" />
+                </div>
+                <div class="fg" style="flex: 1">
+                  <label class="fl">End Date</label>
+                  <input class="fs" type="date" id="mam-end" />
+                </div>
+              </div>
+            </div>
+            <div
+              id="mam-validation"
+              style="
+                display: none;
+                margin-top: 8px;
+                padding: 8px 12px;
+                border-radius: 6px;
+                font-size: 12px;
+                background: rgba(245, 158, 11, 0.1);
+                border: 1px solid rgba(245, 158, 11, 0.3);
+                color: var(--warn);
+              "
+            ></div>
+          </div>
+          <div class="modal-ftr">
+            <button class="btn btn-ghost" onclick="closeManualAssignModal()">Cancel</button>
+            <button class="btn btn-em" onclick="confirmManualAssign()">Assign to Meter</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Meeting Editor Modal -->
       <div class="modal-bg" id="meetingModal">
         <div class="modal" style="width: min(1200px, 92vw); max-height: 92vh; display: flex; flex-direction: column">
@@ -12136,17 +12228,48 @@
 
       /* ── VIEW SWITCH ── */
       function sv(id, btn) {
-        // Guard: warn before leaving the PDF view when there is unsaved extraction work
+        // Auto-save extraction state when navigating away from PDF view so the
+        // user never loses in-progress work (bug fcb73e12). The old confirm()
+        // dialog was removed — state is silently persisted and restored on return.
         var _curView = sessionStorage.getItem('ch_activeView');
         if (id !== 'pdf' && _curView === 'pdf') {
           var _singleUnsaved = window._pdfMultiBills && window._pdfMultiBills.length > 0 && !window._pdfBillsSaved;
           var _queueRunning = window._pdfQueue && window._pdfQueue.status === 'running';
-          if (_singleUnsaved || _queueRunning) {
-            var _navMsg = _queueRunning
-              ? 'A batch extraction is still running. Navigating away will cancel it. Continue?'
-              : 'You have unsaved extraction results. Navigating away will lose them. Continue?';
-            if (!confirm(_navMsg)) return;
+          if (_singleUnsaved) {
+            // Save state silently — user will get it back when they return to PDF
+            _saveExtractionState();
+            showToast('Extraction saved — return to PDF / OCR to resume');
+          } else if (_queueRunning) {
+            // Batch extraction still running: just navigate, it continues in background
+            showToast('Batch extraction continuing in background');
           }
+        }
+        // When returning to the PDF view, restore in-memory OR sessionStorage state
+        if (id === 'pdf' && _curView !== 'pdf') {
+          setTimeout(function () {
+            var inMemory = window._pdfMultiBills && window._pdfMultiBills.length > 0;
+            var inStorage = !!sessionStorage.getItem('ch_extraction_state');
+            var didRestore = false;
+            if (inMemory) {
+              // Bills still in memory (user just switched views) — re-render the UI
+              didRestore = true;
+            } else if (inStorage) {
+              didRestore = _restoreExtractionState();
+            }
+            if (didRestore && window._pdfMultiBills && window._pdfMultiBills.length) {
+              var box = document.getElementById('pdfAIBox');
+              if (box) {
+                var ridx = window._pdfMultiIdx || 0;
+                renderMultiBillUI(window._pdfMultiBills, box);
+                renderPDFFields(window._pdfMultiBills[ridx], (window._pdfBillWarnings || [])[ridx]?.warnings || []);
+                document.getElementById('pdfSaveRow').style.display = 'block';
+                document.getElementById('pdfClearBtn').style.display = 'block';
+                document.getElementById('dropZone').classList.add('collapsed');
+                document.getElementById('pdfTypeSection').style.display = 'none';
+                if (!inMemory) showToast('Extraction results restored');
+              }
+            }
+          }, 100);
         }
         document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
         document.querySelectorAll('.sidebar .s-item').forEach((t) => t.classList.remove('active'));
@@ -22787,18 +22910,25 @@
                 if (!bestMatch) bestMatch = { proj, bldg, meter: m, projId: proj.id, bldgId: bldg.id, meterId: m.id };
               }
             }
-            if (!bestMatch && billAddr && billAddr.length >= 5) {
+            // Bug 86d02961: address fallback runs even when bestMatch exists so that
+            // a commodity-matched address hit can override a commodity-mismatched
+            // account hit. Also picks the commodity-matching meter within the
+            // building rather than always defaulting to the first meter.
+            if (billAddr && billAddr.length >= 5) {
               const bldgAddr = _normalizeAddr(bldg.address);
               if (bldgAddr && bldgAddr === billAddr) {
-                const firstMeter = (bldg.meters || [])[0];
-                if (firstMeter && !addrMatch) {
+                const commMeter = billComm
+                  ? (bldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm)
+                  : null;
+                const candidateMeter = commMeter || (bldg.meters || [])[0];
+                if (candidateMeter && !addrMatch) {
                   addrMatch = {
                     proj,
                     bldg,
-                    meter: firstMeter,
+                    meter: candidateMeter,
                     projId: proj.id,
                     bldgId: bldg.id,
-                    meterId: firstMeter.id,
+                    meterId: candidateMeter.id,
                   };
                 }
               }
@@ -23091,6 +23221,28 @@
             }
           }
           const targetMeter = billMatch.meter;
+          // Bug 86d02961: update stored account number when a fuzzy match found a
+          // format change (new bill format has longer/different account number).
+          if (bill.AccountNumber && targetMeter.account) {
+            const _extN = bill.AccountNumber.replace(/[\s\-]/g, '')
+              .replace(/^0+/, '')
+              .toLowerCase();
+            const _stoN = targetMeter.account
+              .replace(/[\s\-]/g, '')
+              .replace(/^0+/, '')
+              .toLowerCase();
+            if (_extN !== _stoN && (_extN.includes(_stoN) || _stoN.includes(_extN))) {
+              if (bill.AccountNumber.length > targetMeter.account.length) {
+                console.log(
+                  '[_saveBillToMatchedMeter] updating meter account',
+                  targetMeter.account,
+                  '→',
+                  bill.AccountNumber,
+                );
+                targetMeter.account = bill.AccountNumber;
+              }
+            }
+          }
           targetMeter.bills = targetMeter.bills || [];
           const dup = targetMeter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
           if (dup) {
@@ -23991,18 +24143,29 @@
 
               let bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
               const _queueUnmatchedPages = bills._unmatchedPages || [];
-              let validBills = bills.filter(
-                (b) =>
-                  b.BillingPeriodStart ||
-                  b.kWhConsumed ||
-                  b.NaturalGasTherms ||
-                  b.NaturalGasCCF ||
-                  b.WaterUsage ||
-                  b.GasCharge ||
-                  b.TotalCurrentCharges,
-              );
+              // Bug b5951068: Instead of silently dropping bills that fail the key-field
+              // filter, flag them with parseError:true so the user sees every billing
+              // period from the PDF — even ones the parser couldn't understand.
+              const _hasKeyField = (b) =>
+                b.BillingPeriodStart ||
+                b.kWhConsumed ||
+                b.NaturalGasTherms ||
+                b.NaturalGasCCF ||
+                b.WaterUsage ||
+                b.GasCharge ||
+                b.TotalCurrentCharges;
+              let validBills = bills.filter((b) => _hasKeyField(b));
+              const _droppedBills = bills.filter((b) => !_hasKeyField(b) && !b._manualReview);
+              _droppedBills.forEach((b) => {
+                b.parseError = true;
+                b._manualReview = true;
+                const _pg = b._pageStart != null ? b._pageStart : b._pageIndex != null ? b._pageIndex : null;
+                const _pageLabel = _pg != null ? 'p.' + _pg : '?';
+                b._manualReviewLabel = 'Parse error — billing period unreadable (' + _pageLabel + ')';
+                b.UtilityCompany = b.UtilityCompany || (rule && rule.name) || 'Unknown';
+              });
 
-              let finalBills = validBills.length > 0 ? validBills : bills;
+              let finalBills = validBills.length > 0 ? validBills.concat(_droppedBills) : bills;
 
               // ── Inject unmatched pages as "Manual Review" entries ──
               // If some pages couldn't be parsed, surface them so the user can see
@@ -24255,6 +24418,11 @@
           let statusHtml;
           if (!row.bill) {
             statusHtml = '<span style="color:#c44;font-weight:600;font-size:10px">FAILED</span>';
+          } else if (row.bill.parseError) {
+            statusHtml =
+              '<span style="color:#e55;font-weight:600;font-size:10px" title="' +
+              _escHtml(row.bill._manualReviewLabel || 'Billing period could not be parsed — assign manually') +
+              '">PARSE ERR</span>';
           } else if (row.bill._manualReview) {
             statusHtml =
               '<span style="color:#c88;font-weight:600;font-size:10px" title="Could not parse billing period — assign manually">REVIEW</span>';
@@ -26253,16 +26421,27 @@
                 // Use extractAll if available (multi-bill PDF support)
                 let bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
                 const _extractUnmatchedPages = bills._unmatchedPages || [];
-                let validBills = bills.filter(
-                  (b) =>
-                    b.BillingPeriodStart ||
-                    b.kWhConsumed ||
-                    b.NaturalGasTherms ||
-                    b.NaturalGasCCF ||
-                    b.WaterUsage ||
-                    b.GasCharge ||
-                    b.TotalCurrentCharges,
-                );
+                // Bug b5951068: Flag bills that fail the key-field filter instead of
+                // silently dropping them. Unparseable billing periods surface as
+                // parseError:true rows so the user can see and manually assign them.
+                const _singleHasKeyField = (b) =>
+                  b.BillingPeriodStart ||
+                  b.kWhConsumed ||
+                  b.NaturalGasTherms ||
+                  b.NaturalGasCCF ||
+                  b.WaterUsage ||
+                  b.GasCharge ||
+                  b.TotalCurrentCharges;
+                let validBills = bills.filter((b) => _singleHasKeyField(b));
+                const _singleDroppedBills = bills.filter((b) => !_singleHasKeyField(b) && !b._manualReview);
+                _singleDroppedBills.forEach((b) => {
+                  b.parseError = true;
+                  b._manualReview = true;
+                  const _pg = b._pageStart != null ? b._pageStart : b._pageIndex != null ? b._pageIndex : null;
+                  const _pageLabel = _pg != null ? 'p.' + _pg : '?';
+                  b._manualReviewLabel = 'Parse error — billing period unreadable (' + _pageLabel + ')';
+                  b.UtilityCompany = b.UtilityCompany || (rule && rule.name) || 'Unknown';
+                });
 
                 // ── OCR RETRY: If critical fields are missing, retry with enhanced OCR ──
                 // Trigger threshold: only retry when the total missing-field count
@@ -26426,7 +26605,10 @@
                 }
 
                 // ── POST-EXTRACTION VERIFICATION: use historical data + logic to fix issues ──
-                let finalBills = validBills.length ? validBills : bills.length ? bills : [];
+                // Bug b5951068: append parse-error rows (flagged above) so they're never lost.
+                let finalBills = (validBills.length ? validBills : bills.length ? bills : []).concat(
+                  _singleDroppedBills || [],
+                );
                 statusMsg('Verifying extraction against historical data...');
                 finalBills = _postExtractionVerify(finalBills, rule.name, text);
 
@@ -28627,7 +28809,19 @@
             <span><strong>${gapInfo.days}-day gap</strong> in ${gapInfo.commodity} billing before this period (previous ended ${gapInfo.afterPeriod})</span>
           </div>`
           : '';
-        elHdr.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${sumMismatchHtml}${chargeExceedsTotalHtml}${gapHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}`;
+        // Manual Assign button — shown when the bill has errors, a sum mismatch,
+        // or is a _manualReview synthetic (unmatched page from extraction).
+        // Bug 58119612: give users a recovery path when auto-parsing fails.
+        const _showManualAssign = parsed._manualReview || hasCurrentSumMismatch || errorCount > 0;
+        const _maBtnIdx = _dupIdx; // freeze current index
+        const manualAssignHtml = _showManualAssign
+          ? `<div style="margin:6px 0 4px;text-align:right">
+              <button onclick="openManualAssignModal(${_maBtnIdx})" style="font-size:11px;padding:4px 12px;border-radius:5px;border:1px solid rgba(99,102,241,.5);background:rgba(99,102,241,.12);color:var(--accent);cursor:pointer;font-weight:700">
+                &#128196; Manual Assign
+              </button>
+            </div>`
+          : '';
+        elHdr.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${sumMismatchHtml}${chargeExceedsTotalHtml}${gapHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}${manualAssignHtml}`;
         el.innerHTML = `<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
 
         // ── Wire up change handlers: update data + recalculate total when user edits ──
@@ -29275,6 +29469,321 @@
         );
       }
 
+      /* ─────────────────────────────────────────────────────────────────
+         MANUAL ASSIGN MODAL  (bug 58119612)
+         Lets user assign an extracted PDF page to a specific meter and
+         billing period when auto-parsing failed or produced errors.
+      ───────────────────────────────────────────────────────────────── */
+      let _mamBillIdx = null; // which bill index in _pdfMultiBills we're assigning
+
+      function openManualAssignModal(billIdx) {
+        _mamBillIdx = billIdx != null ? billIdx : window._pdfMultiIdx || 0;
+        const valEl = document.getElementById('mam-validation');
+        if (valEl) valEl.style.display = 'none';
+
+        // Populate project dropdown
+        const projSel = document.getElementById('mam-proj');
+        projSel.innerHTML =
+          '<option value="">— Select Project —</option>' +
+          projects.map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
+
+        // Pre-select the currently chosen project in pdfProjSel if one is set
+        const curPid = document.getElementById('pdfProjSel')?.value;
+        if (curPid) projSel.value = curPid;
+
+        // Reset mode to "existing"
+        const existingRadio = document.getElementById('mam-mode-existing');
+        if (existingRadio) existingRadio.checked = true;
+        mam_toggleMode();
+        mam_populateBuildings();
+        document.getElementById('manualAssignModal').classList.add('open');
+      }
+
+      function closeManualAssignModal() {
+        document.getElementById('manualAssignModal').classList.remove('open');
+        _mamBillIdx = null;
+      }
+
+      function mam_toggleMode() {
+        const isNew = document.getElementById('mam-mode-new')?.checked;
+        document.getElementById('mam-existing-section').style.display = isNew ? 'none' : 'block';
+        document.getElementById('mam-new-section').style.display = isNew ? 'block' : 'none';
+      }
+
+      function mam_populateBuildings() {
+        const pid = document.getElementById('mam-proj').value;
+        const bldgSel = document.getElementById('mam-bldg');
+        if (!pid) {
+          bldgSel.innerHTML = '<option value="">— Select project first —</option>';
+          mam_populateMeters();
+          return;
+        }
+        const bldgs = getUDProj(parseInt(pid)).buildings || [];
+        bldgSel.innerHTML =
+          '<option value="">— Select Building —</option>' +
+          bldgs.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
+        if (bldgs.length === 1) bldgSel.value = bldgs[0].id;
+        mam_populateMeters();
+      }
+
+      function mam_populateMeters() {
+        const pid = document.getElementById('mam-proj').value;
+        const bid = document.getElementById('mam-bldg').value;
+        const meterSel = document.getElementById('mam-meter');
+        if (!pid || !bid) {
+          meterSel.innerHTML = '<option value="">— Select building first —</option>';
+          mam_populatePeriods();
+          return;
+        }
+        const bldg = getUDBldg(parseInt(pid), bid);
+        const meters = bldg?.meters || [];
+        if (!meters.length) {
+          meterSel.innerHTML = '<option value="">No meters in this building</option>';
+          mam_populatePeriods();
+          return;
+        }
+        meterSel.innerHTML =
+          '<option value="">— Select Meter —</option>' +
+          meters
+            .map((m) => {
+              const lbl = [m.commodity, m.provider, m.account ? '#' + m.account : '', m.maddr]
+                .filter(Boolean)
+                .join(' ');
+              return `<option value="${m.id}">${lbl}</option>`;
+            })
+            .join('');
+        if (meters.length === 1) meterSel.value = meters[0].id;
+        mam_populatePeriods();
+      }
+
+      function mam_populatePeriods() {
+        const pid = document.getElementById('mam-proj').value;
+        const bid = document.getElementById('mam-bldg').value;
+        const mid = document.getElementById('mam-meter').value;
+        const periodSel = document.getElementById('mam-period');
+        if (!pid || !bid || !mid) {
+          periodSel.innerHTML = '<option value="">— Select a billing period —</option>';
+          return;
+        }
+        const meter = getUDMeter(parseInt(pid), bid, mid);
+        const bills = (meter?.bills || []).slice().sort((a, b) => _parseISO(b.start) - _parseISO(a.start));
+        if (!bills.length) {
+          periodSel.innerHTML = '<option value="">No existing periods — use "Create new"</option>';
+          // Auto-switch to "new" mode if no periods exist
+          const newRadio = document.getElementById('mam-mode-new');
+          if (newRadio) {
+            newRadio.checked = true;
+            mam_toggleMode();
+          }
+          return;
+        }
+        periodSel.innerHTML =
+          '<option value="">— Select a billing period —</option>' +
+          bills
+            .map((b) => {
+              const range = b.start && b.end ? b.start + ' → ' + b.end : b.start || '(no dates)';
+              const total = b.totalCost
+                ? ' — $' + parseFloat(b.totalCost).toLocaleString('en-US', { minimumFractionDigits: 2 })
+                : '';
+              return `<option value="${b.id}">${range}${total}</option>`;
+            })
+            .join('');
+      }
+
+      function confirmManualAssign() {
+        const pid = parseInt(document.getElementById('mam-proj').value);
+        const bid = document.getElementById('mam-bldg').value;
+        const mid = document.getElementById('mam-meter').value;
+        const isNew = document.getElementById('mam-mode-new')?.checked;
+        const valEl = document.getElementById('mam-validation');
+        valEl.style.display = 'none';
+
+        if (!pid || !bid || !mid) {
+          valEl.style.display = 'block';
+          valEl.textContent = 'Please select a project, building, and meter.';
+          return;
+        }
+
+        const proj = projects.find((p) => p.id === pid);
+        const meter = getUDMeter(pid, bid, mid);
+        if (!proj || !meter) {
+          valEl.style.display = 'block';
+          valEl.textContent = 'Could not find the selected meter. Please try again.';
+          return;
+        }
+
+        // Get the extracted bill data from the current extraction results
+        const bills = window._pdfMultiBills;
+        const billIdx = _mamBillIdx != null ? _mamBillIdx : window._pdfMultiIdx || 0;
+        const extracted = bills && bills[billIdx] ? bills[billIdx] : null;
+        if (!extracted) {
+          valEl.style.display = 'block';
+          valEl.textContent = 'No extracted bill data found for this page.';
+          return;
+        }
+
+        const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+        function toISO(d) {
+          if (!d) return '';
+          const parts = String(d).split('/');
+          if (parts.length !== 3) return d;
+          const yr = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+          return yr + '-' + parts[0].padStart(2, '0') + '-' + parts[1].padStart(2, '0');
+        }
+
+        // Build billing row from extracted data (same field mapping as savePDFData)
+        const kwhCost = (
+          pf(extracted.EnergyOnPeakCharge) +
+          pf(extracted.EnergyOffPeakCharge) +
+          pf(extracted.ECACharge) +
+          pf(extracted.EERCharge) +
+          pf(extracted.PTSCharge)
+        ).toFixed(2);
+        const kwCost = (pf(extracted.BilledKWCharge) + pf(extracted.TDCCharge)).toFixed(2);
+        const otherCost = (
+          pf(extracted.CustomerCharge) +
+          pf(extracted.TaxExemptDelivery) +
+          pf(extracted.BillOffset) +
+          pf(extracted.RkVACharge)
+        ).toFixed(2);
+        const taxCost = pf(extracted.FranchiseFee).toFixed(2);
+
+        // Determine dates — prefer user-entered dates if "new" mode, else use extracted
+        let startDate, endDate;
+        if (isNew) {
+          startDate = document.getElementById('mam-start').value; // already YYYY-MM-DD
+          endDate = document.getElementById('mam-end').value;
+          if (!startDate || !endDate) {
+            valEl.style.display = 'block';
+            valEl.textContent = 'Please enter both start and end dates for the new billing period.';
+            return;
+          }
+        } else {
+          startDate = toISO(extracted.BillingPeriodStart || extracted.DeliveryDate);
+          endDate = toISO(extracted.BillingPeriodEnd || extracted.DeliveryDate);
+        }
+
+        const usageQty =
+          extracted.kWhConsumed ||
+          extracted.NaturalGasTherms ||
+          extracted.NaturalGasCCF ||
+          extracted.GallonsDelivered ||
+          '';
+
+        const newBillRow = {
+          id: 'r' + Date.now(),
+          start: startDate,
+          end: endDate,
+          utilityCompany: extracted.UtilityCompany || '',
+          customerName: extracted.CustomerName || '',
+          serviceAddress: extracted.ServiceAddress || '',
+          accountNumber: extracted.AccountNumber || '',
+          meterNumber: extracted.MeterNumber || '',
+          numberOfDays: extracted.NumberOfDays || '',
+          meterReadStart: extracted.MeterReadStart || '',
+          meterReadEnd: extracted.MeterReadEnd || '',
+          startRead: extracted.StartRead || '',
+          endRead: extracted.EndRead || '',
+          readDifference: extracted.ReadDifference || '',
+          meterMultiplier: extracted.MeterMultiplier || '',
+          billDate: extracted.BillDate || '',
+          commodity: extracted.Commodity || '',
+          kwh: usageQty,
+          demandKW: extracted.ActualKW || '',
+          billedKW: extracted.BilledKW || '',
+          facKW: extracted.FacilitiesKW || '',
+          facKWCost: extracted.FacilitiesCharge || '',
+          tdcKW: extracted.TDCkW || '',
+          kwCost,
+          kwhCost,
+          otherCost,
+          taxCost,
+          totalCost: extracted.TotalCurrentCharges || extracted.TotalAmountDue || '',
+          rateSchedule: extracted.RateSchedule || '',
+          onPeakKwh: extracted.OnPeakKWh || '',
+          offPeakKwh: extracted.OffPeakKWh || '',
+          onPeakCost: extracted.EnergyOnPeakCharge || '',
+          offPeakCost: extracted.EnergyOffPeakCharge || '',
+          customerCharge: extracted.CustomerCharge || '',
+          demandCharge: extracted.BilledKWCharge || '',
+          ecaCharge: extracted.ECACharge || '',
+          eerCharge: extracted.EERCharge || '',
+          ptsCharge: extracted.PTSCharge || '',
+          tdcCharge: extracted.TDCCharge || '',
+          franchiseFee: extracted.FranchiseFee || '',
+          fromPDF: true,
+          _manuallyAssigned: true,
+          // Gas fields
+          therms: extracted.NaturalGasTherms || '',
+          ccf: extracted.NaturalGasCCF || '',
+          gasCost: extracted.GasCharge || '',
+          fuelAdj: extracted.FuelAdjustment || '',
+          // Water/sewer fields
+          waterUsage: extracted.WaterUsage || '',
+          waterCost: extracted.WaterCharge || '',
+          sewerUsage: extracted.SewerUsage || '',
+          sewerCost: extracted.SewerCharge || '',
+          stormCost: extracted.StormWaterCharge || '',
+          // Propane
+          gallons: extracted.GallonsDelivered || '',
+          propaneCost: extracted.Subtotal || '',
+        };
+
+        meter.bills = meter.bills || [];
+
+        if (!isNew) {
+          // Overwrite an existing billing period
+          const periodId = document.getElementById('mam-period').value;
+          if (!periodId) {
+            valEl.style.display = 'block';
+            valEl.textContent = 'Please select a billing period to overwrite, or switch to "Create new".';
+            return;
+          }
+          const existingIdx = meter.bills.findIndex((b) => b.id === periodId);
+          if (existingIdx >= 0) {
+            // Preserve the existing row's ID and merge in new values
+            newBillRow.id = periodId;
+            meter.bills[existingIdx] = Object.assign({}, meter.bills[existingIdx], newBillRow);
+          } else {
+            meter.bills.push(newBillRow);
+          }
+        } else {
+          // Check if a period with the same start/end already exists
+          const dup = meter.bills.find((b) => b.start === startDate && b.end === endDate);
+          if (dup) {
+            // Merge instead of creating a duplicate
+            Object.assign(dup, newBillRow);
+            newBillRow.id = dup.id;
+          } else {
+            meter.bills.push(newBillRow);
+          }
+          meter.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+        }
+
+        saveUtilityData();
+        closeManualAssignModal();
+
+        // Mark this bill index as saved so it's no longer highlighted as needing action
+        if (bills && bills[billIdx]) {
+          bills[billIdx]._manuallyAssigned = true;
+          bills[billIdx]._manualReview = false;
+        }
+
+        // Re-render to reflect the change
+        const box = document.getElementById('pdfAIBox');
+        if (box) renderMultiBillUI(bills, box);
+        const updatedBill = bills && bills[billIdx] ? bills[billIdx] : null;
+        if (updatedBill) {
+          const bw = (window._pdfBillWarnings || [])[billIdx]?.warnings || [];
+          renderPDFFields(updatedBill, bw);
+        }
+
+        const mLbl = [meter.commodity, meter.provider, meter.account ? '#' + meter.account : '', meter.maddr]
+          .filter(Boolean)
+          .join(' ');
+        showToast('Assigned to ' + proj.name + ' → ' + mLbl + ' ✓');
+      }
+
       async function _saveSinglePDFBill(extracted, projId) {
         if (!extracted || !extracted.UtilityCompany) return false;
         const proj = projId ? projects.find((p) => p.id === projId) : null;
@@ -29523,6 +30032,30 @@
                 }
               }
               matched = true;
+            }
+          }
+          // Bug 86d02961: If a fuzzy account match was used and the extracted account
+          // number is longer/different from the stored one (new bill format), update
+          // the meter's stored account so future extractions match directly.
+          if (matched && targetMeter && extracted.AccountNumber && targetMeter.account) {
+            const _extAcctN = extracted.AccountNumber.replace(/[\s\-]/g, '')
+              .replace(/^0+/, '')
+              .toLowerCase();
+            const _storedAcctN = targetMeter.account
+              .replace(/[\s\-]/g, '')
+              .replace(/^0+/, '')
+              .toLowerCase();
+            if (_extAcctN !== _storedAcctN && (_extAcctN.includes(_storedAcctN) || _storedAcctN.includes(_extAcctN))) {
+              // Prefer the longer/more-specific format (new format typically has prefix+suffix)
+              if (extracted.AccountNumber.length > targetMeter.account.length) {
+                console.log(
+                  '[_saveSinglePDFBill] updating meter account',
+                  targetMeter.account,
+                  '→',
+                  extracted.AccountNumber,
+                );
+                targetMeter.account = extracted.AccountNumber;
+              }
             }
           }
           if (matched && targetMeter) {
@@ -47078,9 +47611,8 @@
         // Determine which method is active
         const method = selBid ? _hvlMethod[_hvlKey(projId, selBid)] || 'thumb' : 'thumb';
 
-        // If reverse analysis method, the calc is already done inline — just show toast
+        // If reverse analysis method, the calc is already done inline
         if (method === 'reverse') {
-          showToast('Reverse utility analysis data is calculated inline ✓');
           return;
         }
 
@@ -47317,16 +47849,16 @@
                   <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Total kWh/yr</div>
                   <div style="font-size:22px;font-weight:800;font-family:var(--mono);color:var(--text);margin:4px 0">${fmt(estimatedTotalKwh)}</div>
                   <div style="display:flex;justify-content:center;gap:12px;margin-top:6px">
-                    <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--accent);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">HVAC ${pct(hvacKwhPct)}</span></div>
-                    <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--teal);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">Other ${pct(100 - hvacKwhPct)}</span></div>
+                    <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--accent);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">HVAC ${pct(hvacKwhPct)} (${fmt(hvacKwh)} kWh)</span></div>
+                    <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--teal);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">Other ${pct(100 - hvacKwhPct)} (${fmt(nonHvacKwh)} kWh)</span></div>
                   </div>
                 </div>
                 <div class="card" style="background:var(--s1);padding:14px;text-align:center">
-                  <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Peak kW</div>
+                  <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Peak kW (Demand)</div>
                   <div style="font-size:22px;font-weight:800;font-family:var(--mono);color:var(--text);margin:4px 0">${fmt(estimatedTotalKw)}</div>
                   <div style="display:flex;justify-content:center;gap:12px;margin-top:6px">
-                    <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--accent);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">HVAC ${pct(hvacKwPct)}</span></div>
-                    <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--teal);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">Other ${pct(100 - hvacKwPct)}</span></div>
+                    <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--accent);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">HVAC ${pct(hvacKwPct)} (${fmt(hvacKw)} kW)</span></div>
+                    <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--teal);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">Other ${pct(100 - hvacKwPct)} (${fmt(nonHvacKw)} kW)</span></div>
                   </div>
                 </div>
                 <div class="card" style="background:var(--s1);padding:14px;text-align:center">
