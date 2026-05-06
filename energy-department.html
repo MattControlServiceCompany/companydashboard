@@ -18246,6 +18246,16 @@
               '· fuzzy-merged:',
               _fuzzyMerges,
             );
+            for (let _di = 0; _di < uniqueBills.length; _di++) {
+              console.log(
+                '[Evergy extractAll] bill',
+                _di,
+                '_acct:',
+                uniqueBills[_di]._acct,
+                '_addr:',
+                uniqueBills[_di]._addr,
+              );
+            }
 
             // ── PAGE-FIRST SECTION RESOLUTION (Update 80b) ──
             // Resolve each bill's page range BEFORE section building by anchoring
