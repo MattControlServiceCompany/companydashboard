@@ -26651,7 +26651,7 @@
                           retryTexts.push('');
                         }
                       }
-                      const retryFull = retryTexts.join('\n');
+                      const retryFull = retryTexts.map((rt, ri) => '%%PAGE_' + (ri + 1) + '%%\n' + rt).join('\n');
                       if (retryFull.trim().length > 100) {
                         const retryRule = UTILITY_RULES.find((r) => r.detect(retryFull));
                         if (retryRule) {
