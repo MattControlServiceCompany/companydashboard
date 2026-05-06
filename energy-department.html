@@ -27246,7 +27246,10 @@
           const _acctKeys = [...new Set(bills.map((b) => b.AccountNumber || '_unknown'))];
           const _bldgName = (acct) => {
             const b = bills.find((x) => x.AccountNumber === acct);
-            if (!b || !b.ServiceAddress) return acct;
+            if (!b) return acct;
+            const match = typeof findMeterMatch === 'function' ? findMeterMatch(b) : null;
+            if (match && match.bldg && match.bldg.name) return match.bldg.name;
+            if (!b.ServiceAddress) return acct;
             const addr = b.ServiceAddress;
             const afterComma = addr.includes(',') ? addr.split(',').slice(1).join(',').trim() : addr;
             return (
@@ -27270,11 +27273,15 @@
               const comm = bills.find((x) => x.AccountNumber === acct)?.Commodity || 'Electric';
               lbl += ' · ' + comm;
             }
-            const ct = filteredPeriods.filter((p) => (bills[p.i].AccountNumber || '_unknown') === acct).length;
+            const acctPeriods = filteredPeriods.filter((p) => (bills[p.i].AccountNumber || '_unknown') === acct);
+            const ct = acctPeriods.length;
+            const firstIdx = acctPeriods.length ? acctPeriods[0].i : 0;
             _bldgTabsHtml +=
               '<button onclick="window._pdfBuildingTab=\'' +
               acct +
-              "';renderMultiBillUI(window._pdfMultiBills,document.getElementById('pdfAIBox'))\" style=\"padding:6px 14px;border-radius:6px;border:1px solid " +
+              "';selectMultiBill(" +
+              firstIdx +
+              ')" style="padding:6px 14px;border-radius:6px;border:1px solid ' +
               border +
               ';background:' +
               bg +
