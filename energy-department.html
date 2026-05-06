@@ -21094,22 +21094,32 @@
           // If address OCR is garbled, most bills cluster at the same normalized
           // address. Merge tiny groups (≤2 bills) into the largest group — they're
           // almost certainly the same building with a garbled address.
-          // Exception: don't merge groups whose bills have a different AccountNumber
-          // — that means genuinely different accounts sharing a PDF, not OCR garble.
+          // Exception: don't merge when any identity field differs between groups
+          // (AccountNumber, RateSchedule, MeterNumber) — that means genuinely
+          // different accounts/meters sharing a PDF, not OCR garble.
           const groupKeys = Object.keys(_addrGroups);
           if (groupKeys.length > 1) {
             const largest = groupKeys.reduce((a, b) => (_addrGroups[a].length >= _addrGroups[b].length ? a : b));
-            const _largestAccts = new Set(
-              _addrGroups[largest].map((b) => (b.AccountNumber || '').replace(/[\s\-]/g, '')).filter(Boolean),
-            );
+            const _idNorm = (v) => (v || '').replace(/[\s\-]/g, '').toLowerCase();
+            const _IDENTITY_FIELDS = ['AccountNumber', 'RateSchedule', 'MeterNumber'];
+            const _largestIdSets = {};
+            for (const f of _IDENTITY_FIELDS) {
+              _largestIdSets[f] = new Set(_addrGroups[largest].map((b) => _idNorm(b[f])).filter(Boolean));
+            }
             for (const k of groupKeys) {
               if (k !== largest && _addrGroups[k].length <= 2) {
-                const _smallAccts = _addrGroups[k]
-                  .map((b) => (b.AccountNumber || '').replace(/[\s\-]/g, ''))
-                  .filter(Boolean);
-                const _acctConflict =
-                  _smallAccts.length > 0 && _largestAccts.size > 0 && _smallAccts.some((a) => !_largestAccts.has(a));
-                if (_acctConflict) continue;
+                let _hasConflict = false;
+                for (const f of _IDENTITY_FIELDS) {
+                  const largeSet = _largestIdSets[f];
+                  if (largeSet.size === 0) continue;
+                  const smallVals = _addrGroups[k].map((b) => _idNorm(b[f])).filter(Boolean);
+                  if (smallVals.length === 0) continue;
+                  if (smallVals.some((v) => !largeSet.has(v))) {
+                    _hasConflict = true;
+                    break;
+                  }
+                }
+                if (_hasConflict) continue;
                 _addrGroups[largest].push(..._addrGroups[k]);
                 delete _addrGroups[k];
               }
