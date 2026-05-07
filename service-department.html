@@ -1065,6 +1065,7 @@
         background: var(--s3);
       }
     </style>
+    <link rel="stylesheet" href="feedback-widget.css" />
   </head>
   <body>
     <!-- LOGIN -->
@@ -1150,7 +1151,7 @@
       </nav>
 
       <div class="app-wrap">
-        <aside class="sidebar">
+        <aside class="sidebar" data-fb="service.sidebar">
           <div class="sidebar-top">
             <div class="s-sect">
               <div class="s-lbl">Service</div>
@@ -1201,7 +1202,7 @@
 
         <main class="content">
           <!-- PERSONNEL SCHEDULE -->
-          <div id="view-schedule" class="tab-panel active">
+          <div id="view-schedule" class="tab-panel active" data-fb="service.staff">
             <div class="pg-hdr">
               <div>
                 <h1 class="pg-title">Service <em>Department</em></h1>
@@ -1212,7 +1213,7 @@
                 <button class="btn btn-primary" onclick="openStaffModal()">+ Add Employee</button>
               </div>
             </div>
-            <div class="stats-row">
+            <div class="stats-row" data-fb="service.stats">
               <div class="stat-card">
                 <div class="stat-lbl">On Duty Today</div>
                 <div class="stat-val c-blue" id="s-on">—</div>
@@ -1265,12 +1266,12 @@
                   </table>
                 </div>
               </div>
-              <div class="card" id="staffCalCard"></div>
+              <div class="card" id="staffCalCard" data-fb="service.staff-calendar"></div>
             </div>
           </div>
 
           <!-- PM SCHEDULE -->
-          <div id="view-pm" class="tab-panel">
+          <div id="view-pm" class="tab-panel" data-fb="service.pm-schedule">
             <div class="pg-hdr">
               <div>
                 <h1 class="pg-title">Preventative <em>Maintenance</em></h1>
@@ -1326,7 +1327,7 @@
               </div>
             </div>
             <div class="two-col">
-              <div class="card">
+              <div class="card" data-fb="service.agreements">
                 <div class="card-hdr">
                   <span class="card-title">📋 Service Agreements</span>
                   <select class="filter-select" id="techFilter" onchange="renderSAList()">
@@ -1366,14 +1367,14 @@
                 </div>
               </div>
               <div>
-                <div class="card" id="pmCalCard"></div>
+                <div class="card" id="pmCalCard" data-fb="service.pm-calendar"></div>
                 <div id="saDetail" style="display: none"></div>
               </div>
             </div>
           </div>
 
           <!-- DISPATCH -->
-          <div id="view-dispatch" class="tab-panel">
+          <div id="view-dispatch" class="tab-panel" data-fb="service.dispatch">
             <div class="pg-hdr">
               <div>
                 <h1 class="pg-title">Technician <em>Dispatch Board</em></h1>
@@ -3150,5 +3151,6 @@
 
       /* ── beforeunload warning removed — state persistence approach ── */
     </script>
+    <script src="feedback-widget.js"></script>
   </body>
 </html>

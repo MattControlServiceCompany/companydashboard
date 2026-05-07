@@ -1339,6 +1339,7 @@
         }
       }
     </style>
+    <link rel="stylesheet" href="feedback-widget.css" />
   </head>
   <body>
     <!-- TOPBAR -->
@@ -1370,7 +1371,7 @@
     <!-- APP -->
     <div class="app-wrap">
       <!-- SIDEBAR -->
-      <div class="sidebar">
+      <div class="sidebar" data-fb="ems.sidebar">
         <div class="s-sect">
           <div class="s-lbl">Pipeline</div>
           <div class="s-item active" id="sb-all" onclick="filterByStage('', this)">
@@ -1455,7 +1456,7 @@
       <!-- MAIN -->
       <div class="main">
         <!-- PIPELINE VIEW -->
-        <div class="view active" id="view-pipeline">
+        <div class="view active" id="view-pipeline" data-fb="ems.pipeline">
           <div class="pg-hdr">
             <div>
               <div class="pg-title">EMS <em>Lead Pipeline</em></div>
@@ -1475,16 +1476,16 @@
           </div>
 
           <!-- Stats -->
-          <div class="stats-row" id="statsRow"></div>
+          <div class="stats-row" id="statsRow" data-fb="ems.stats"></div>
 
           <!-- Kanban -->
-          <div class="pipeline-wrap">
+          <div class="pipeline-wrap" data-fb="ems.kanban">
             <div class="pipeline" id="pipeline"></div>
           </div>
         </div>
 
         <!-- TABLE VIEW -->
-        <div class="view" id="view-table">
+        <div class="view" id="view-table" data-fb="ems.table">
           <div class="pg-hdr">
             <div>
               <div class="pg-title">All <em>Leads</em></div>
@@ -1546,7 +1547,7 @@
         </div>
 
         <!-- FOLLOW-UPS VIEW -->
-        <div class="view" id="view-followups">
+        <div class="view" id="view-followups" data-fb="ems.followups">
           <div class="pg-hdr">
             <div>
               <div class="pg-title"><em>Follow-ups</em> Due</div>
@@ -1558,7 +1559,7 @@
         </div>
 
         <!-- ANALYTICS VIEW -->
-        <div class="view" id="view-analytics">
+        <div class="view" id="view-analytics" data-fb="ems.analytics">
           <div class="pg-hdr">
             <div>
               <div class="pg-title">Pipeline <em>Analytics</em></div>
@@ -1909,7 +1910,7 @@
     </div>
 
     <!-- IMPORT MODAL -->
-    <div class="modal-bg" id="importModal">
+    <div class="modal-bg" id="importModal" data-fb="ems.import">
       <div class="modal modal-lg">
         <div class="modal-hdr">
           <div class="modal-title">⬆ Import from CSV / Excel</div>
@@ -2945,5 +2946,6 @@
         toastTmr = setTimeout(() => t.classList.remove('show'), 3200);
       }
     </script>
+    <script src="feedback-widget.js"></script>
   </body>
 </html>

@@ -1432,6 +1432,7 @@
         line-height: 1.7;
       }
     </style>
+    <link rel="stylesheet" href="feedback-widget.css" />
   </head>
   <body>
     <!-- LOGIN -->
@@ -1516,7 +1517,7 @@
 
       <div class="app-wrap">
         <!-- SIDEBAR -->
-        <aside class="sidebar">
+        <aside class="sidebar" data-fb="index.sidebar">
           <div class="sidebar-top">
             <div class="s-sect">
               <div class="s-lbl">Dashboard</div>
@@ -1577,7 +1578,7 @@
               </div>
             </div>
 
-            <div class="stats-row">
+            <div class="stats-row" data-fb="index.stats">
               <div class="stat-card">
                 <div class="stat-lbl">Departments</div>
                 <div class="stat-val c-blue">2</div>
@@ -1601,7 +1602,7 @@
             </div>
 
             <div class="sec-lbl">Departments</div>
-            <div class="dept-grid">
+            <div class="dept-grid" data-fb="index.dept-cards">
               <a class="dept-card blue" href="service-department.html">
                 <div class="dc-banner blue"></div>
                 <div class="dc-body">
@@ -1657,7 +1658,7 @@
             </div>
 
             <div class="sec-lbl">Quick Access</div>
-            <div class="quick-grid">
+            <div class="quick-grid" data-fb="index.quick-access">
               <a class="quick-card" href="service-department.html"
                 ><div class="qc-ico">👥</div>
                 <div>
@@ -1716,7 +1717,7 @@
               >
             </div>
 
-            <div class="cal-widget">
+            <div class="cal-widget" data-fb="index.calendar">
               <div class="sec-lbl">Calendar</div>
               <div class="cal-container">
                 <div class="cal-card">
@@ -1809,6 +1810,7 @@
     <!-- NOTIFICATION PANEL -->
     <div
       id="notifPanel"
+      data-fb="index.notifications"
       style="
         display: none;
         position: fixed;
@@ -2633,5 +2635,6 @@
         renderCalendar();
       });
     </script>
+    <script src="feedback-widget.js"></script>
   </body>
 </html>
