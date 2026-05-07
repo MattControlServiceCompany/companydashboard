@@ -12895,6 +12895,18 @@
                       <div id="egfx-co2Sub-${p.id}" style="font-size:11px;color:var(--text2)">metric tons/yr</div>
                     </div>
                   </div>
+                  <!-- Pollution Credit Calculator collapsible section -->
+                  <div id="egfx-pollcalc-wrap-${p.id}" style="margin-bottom:16px">
+                    <div onclick="egfxTogglePollCalc(${p.id})" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--s1);border-radius:8px;cursor:pointer;border:1px solid var(--border1)">
+                      <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2)">Pollution Credit Calculator</span>
+                      <span id="egfx-pollcalc-chev-${p.id}" style="font-size:10px;color:var(--text3)">▶</span>
+                    </div>
+                    <div id="egfx-pollcalc-body-${p.id}" style="display:none;padding:20px 16px 16px 16px;background:var(--s1);border:1px solid var(--border1);border-top:none;border-radius:0 0 8px 8px">
+                      <div id="egfx-pollcalc-content-${p.id}" style="font-size:13px;line-height:2;text-align:center;color:var(--text)">
+                        <span style="color:var(--text3)">Refresh energy graphics to calculate pollution credits.</span>
+                      </div>
+                    </div>
+                  </div>
                   <div id="egfx-eui-detail-${p.id}" style="display:flex;gap:16px;margin-bottom:16px;font-size:11px;color:var(--text2)"></div>
                   <div id="egfx-charts-${p.id}">
                     <div style="font-size:13px;color:var(--text3);text-align:center;padding:40px">Add utility data to buildings to see energy graphics. Baseline and year-over-year kWh, kW, and gas consumption will appear here.</div>
@@ -52886,6 +52898,15 @@
       /* ══════════════════════════════════════════════════════
          ENERGY GRAPHICS — per project
       ══════════════════════════════════════════════════════ */
+      function egfxTogglePollCalc(projId) {
+        const body = document.getElementById(`egfx-pollcalc-body-${projId}`);
+        const chev = document.getElementById(`egfx-pollcalc-chev-${projId}`);
+        if (!body) return;
+        const open = body.style.display === 'block';
+        body.style.display = open ? 'none' : 'block';
+        if (chev) chev.textContent = open ? '▶' : '▼';
+      }
+
       function egfxRefresh(projId) {
         const p = projects.find((x) => x.id === projId);
         if (!p) return;
@@ -53241,6 +53262,100 @@
           } else {
             co2El.textContent = '—';
             co2El.style.fontSize = '14px';
+          }
+
+          // Pollution Credit Calculator — reuse same savings values as CO₂ card
+          const _pcEl = document.getElementById(`egfx-pollcalc-content-${projId}`);
+          if (_pcEl) {
+            if (totalBlKwh > 0 || totalBlGas > 0 || totalBlPropane > 0) {
+              // Extract 2-letter state code from project address (e.g. "Kansas City, KS 66101" → "KS")
+              const _addrStr = p.addr || '';
+              const _stateMatch = _addrStr.match(/\b([A-Z]{2})\b(?=\s*\d{5}|\s*$|,|\s*$)/);
+              const _stateCode = (_stateMatch ? _stateMatch[1] : null) || 'KS';
+              const _pc = calculatePollutionCredits(kwhSaved, gasSaved, propSaved, _stateCode);
+              const _pol = _pc.pollutants;
+              const _eq = _pc.equivalents;
+              const _fmt = (n) => Math.round(Math.abs(n)).toLocaleString();
+              _pcEl.innerHTML =
+                '<div style="font-weight:800;font-size:14px;letter-spacing:.8px;margin-bottom:12px;color:var(--text)">DETAILED POLLUTION CREDIT CALCULATIONS</div>' +
+                '<div style="margin-bottom:14px;color:var(--text2)">The emission reductions produced from implementing this project are equivalent to saving:</div>' +
+                '<div style="margin-bottom:4px"><strong>' +
+                _fmt(_pol.co2) +
+                '</strong> total pounds of CO2 reduction (carbon dioxide)</div>' +
+                '<div style="margin-bottom:4px"><strong>' +
+                _fmt(_pol.ch4) +
+                '</strong> total pounds of CH4 reduction (methane)</div>' +
+                '<div style="margin-bottom:4px"><strong>' +
+                _fmt(_pol.n2o) +
+                '</strong> total pounds of N2O reduction (nitrous oxide)</div>' +
+                '<div style="margin-bottom:4px"><strong>' +
+                _fmt(_pol.so2) +
+                '</strong> total pounds of SO2 reduction (sulfur dioxide)</div>' +
+                '<div style="margin-bottom:4px"><strong>' +
+                _fmt(_pol.nox) +
+                '</strong> total pounds of NOX reduction (nitrogen oxide)</div>' +
+                '<div style="margin-bottom:4px"><strong>' +
+                _fmt(_pol.hg_oz) +
+                '</strong> total ounces of HG reduction (mercury)</div>' +
+                '<div style="margin-bottom:4px"><strong>' +
+                _fmt(_pol.pm10_oz) +
+                '</strong> total ounces of PM10 reduction (particles of 10 micrometers or less)</div>' +
+                '<div style="margin-bottom:4px"><strong>' +
+                _fmt(_pol.voc_oz) +
+                '</strong> total ounces of VOC reduction (volatile organic compounds)</div>' +
+                '<div style="margin-bottom:18px"><strong>' +
+                _fmt(_pol.co_oz) +
+                '</strong> total ounces of CO reduction (carbon monoxide)</div>' +
+                '<div style="margin-bottom:14px;color:var(--text2)">This is equivalent to:</div>' +
+                '<div style="margin-bottom:4px">Removing <strong>' +
+                _fmt(_eq.carsRemoved) +
+                '</strong> cars from the road each year</div>' +
+                '<div style="margin-bottom:4px">Conserving <strong>' +
+                _fmt(_eq.gallonsGasoline) +
+                '</strong> gallons of gasoline each year</div>' +
+                '<div style="margin-bottom:4px">Conserving <strong>' +
+                _fmt(_eq.tankerTrucks) +
+                '</strong> tanker trucks of gasoline each year</div>' +
+                '<div style="margin-bottom:4px">Conserving <strong>' +
+                _fmt(_eq.barrelsOil) +
+                '</strong> barrels of oil each year</div>' +
+                '<div style="margin-bottom:4px">Conserving <strong>' +
+                _fmt(_eq.households) +
+                '</strong> households worth of electricity each year</div>' +
+                '<div style="margin-bottom:4px"><strong>' +
+                _fmt(_eq.treeSeedlings) +
+                '</strong> tree seedlings allowed to grow for 10 years each year</div>' +
+                '<div style="margin-bottom:4px"><strong>' +
+                _fmt(_eq.acresForest) +
+                '</strong> acres of forest preserved from deforestation</div>' +
+                '<div style="margin-bottom:4px">Conserving <strong>' +
+                _fmt(_eq.railcarsCoal) +
+                '</strong> railcars of coal each year</div>' +
+                '<div style="margin-bottom:4px">Recycling <strong>' +
+                _fmt(_eq.tonsRecycled) +
+                '</strong> tons of waste rather than landfilling each year</div>' +
+                '<div style="margin-bottom:4px">Conserving <strong>' +
+                _fmt(_eq.propaneCylinders) +
+                '</strong> propane cylinders used for home barbeques each year</div>' +
+                '<div style="margin-bottom:18px"><strong>' +
+                _fmt(_eq.coalPlants) +
+                '</strong> coal-fired power plant emissions each year</div>' +
+                '<div style="font-size:11px;color:var(--text3);line-height:1.6">' +
+                'Data from eGRID (First edition with year 2023 data (eGRID2023 Version 1.0 Rev 1) https://www.epa.gov/egrid)<br>' +
+                'State: <strong>' +
+                _stateCode +
+                '</strong> • Inputs: <strong>' +
+                Math.round(Math.abs(kwhSaved)).toLocaleString() +
+                '</strong> kWh + <strong>' +
+                Math.round(Math.abs(gasSaved)).toLocaleString() +
+                '</strong> Therms + <strong>' +
+                Math.round(Math.abs(propSaved)).toLocaleString() +
+                '</strong> Gal Propane' +
+                '</div>';
+            } else {
+              _pcEl.innerHTML =
+                '<span style="color:var(--text3)">Add utility data and set a baseline to calculate pollution credits.</span>';
+            }
           }
         }
 
