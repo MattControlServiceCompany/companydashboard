@@ -18062,6 +18062,25 @@
         };
       }
 
+      function formatRateWarning(rr, label, unitLabel) {
+        const rateStr = '$' + rr.implied.toFixed(4) + unitLabel;
+        if (rr.severity === 'error') {
+          return (
+            label +
+            ' ' +
+            rateStr +
+            ' — outside expected range ($' +
+            rr.min.toFixed(2) +
+            '–$' +
+            rr.max.toFixed(2) +
+            unitLabel +
+            ')'
+          );
+        }
+        const direction = rr.implied < rr.typical ? 'lower' : 'higher';
+        return label + ' ' + rateStr + ' — ' + direction + ' than typical ($' + rr.typical.toFixed(4) + unitLabel + ')';
+      }
+
       function _lbg_tokens(line) {
         if (!line) return [];
         return [...line.matchAll(/-?[\d,]+\.\d+|-?[\d,]+-\d{2}|-?[\d,]+/g)]
@@ -20405,16 +20424,7 @@
               warnings.push({
                 level: rr.severity,
                 field: 'GasCharge',
-                message:
-                  'Implied gas rate $' +
-                  rr.implied.toFixed(4) +
-                  '/Therm — expected $' +
-                  rr.min.toFixed(2) +
-                  '–$' +
-                  rr.max.toFixed(2) +
-                  '/Therm (typical $' +
-                  rr.typical.toFixed(4) +
-                  ')',
+                message: formatRateWarning(rr, 'Implied gas rate', '/Therm'),
               });
             }
           }
@@ -20427,34 +20437,25 @@
               warnings.push({
                 level: rr.severity,
                 field: 'PropaneGallons',
-                message:
-                  'Implied propane rate $' +
-                  rr.implied.toFixed(4) +
-                  '/Gal — expected $' +
-                  rr.min.toFixed(2) +
-                  '–$' +
-                  rr.max.toFixed(2) +
-                  '/Gal',
+                message: formatRateWarning(rr, 'Implied propane rate', '/Gal'),
               });
             }
           }
         } else if (_vComm === 'electric' || _vComm === '') {
           const _vKwh = pf(extracted.kWhConsumed);
-          const _vKwhCharge = pf(extracted.EnergyOnPeakCharge) + pf(extracted.EnergyOffPeakCharge);
+          const _vKwhCharge =
+            pf(extracted.EnergyOnPeakCharge) +
+            pf(extracted.EnergyOffPeakCharge) +
+            pf(extracted.ECACharge) +
+            pf(extracted.EERCharge) +
+            pf(extracted.PTSCharge);
           if (_vKwh > 0 && _vKwhCharge > 0) {
             const rr = validateImpliedRate('Electric', _vKwh, _vKwhCharge, _vUtilName);
             if (rr && rr.severity) {
               warnings.push({
                 level: rr.severity,
                 field: 'kWhConsumed',
-                message:
-                  'Implied electric rate $' +
-                  rr.implied.toFixed(4) +
-                  '/kWh — expected $' +
-                  rr.min.toFixed(2) +
-                  '–$' +
-                  rr.max.toFixed(2) +
-                  '/kWh',
+                message: formatRateWarning(rr, 'Implied electric rate', '/kWh'),
               });
             }
           }
@@ -20810,19 +20811,7 @@
             warnings.push({
               level: rateResult.severity,
               field: rc.field,
-              message:
-                'Implied rate $' +
-                rateResult.implied.toFixed(4) +
-                rc.label +
-                ' is outside expected range ($' +
-                rateResult.min.toFixed(2) +
-                '–$' +
-                rateResult.max.toFixed(2) +
-                rc.label +
-                ', typical $' +
-                rateResult.typical.toFixed(4) +
-                rc.label +
-                ')',
+              message: formatRateWarning(rateResult, 'Implied rate', rc.label),
             });
           }
         }
