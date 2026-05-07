@@ -168,13 +168,13 @@
   }
 
   function onInspectClick(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-
     var el = e.target;
     if (el === state.btn || state.btn.contains(el)) return;
     if (el.closest('.fb-popup')) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
 
     clearHighlight();
 
