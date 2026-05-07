@@ -1406,6 +1406,42 @@
       [data-theme='light'] .qs-modal {
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
       }
+      /* ── Feedback Mode Toggle ── */
+      .settings-toggle {
+        position: relative;
+        width: 44px;
+        height: 24px;
+        flex-shrink: 0;
+      }
+      .settings-toggle input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .settings-toggle .toggle-track {
+        position: absolute;
+        inset: 0;
+        background: var(--s2);
+        border-radius: 12px;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .settings-toggle input:checked + .toggle-track {
+        background: var(--accent);
+      }
+      .settings-toggle .toggle-knob {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 20px;
+        height: 20px;
+        background: #fff;
+        border-radius: 50%;
+        transition: transform 0.2s;
+      }
+      .settings-toggle input:checked ~ .toggle-knob {
+        transform: translateX(20px);
+      }
     </style>
 
     <!-- ═══════════════════════════════════════════════════
@@ -1591,7 +1627,10 @@
       }
       .rpt-table td {
         padding: 4px 6px;
-        border-bottom: 1px solid #e8e8e8;
+        border: 1px solid #d0d0d0;
+      }
+      .rpt-table th {
+        border: 1px solid #144a6a;
       }
       .rpt-table tr:nth-child(even) td {
         background: #f8fafb;
@@ -45972,7 +46011,7 @@
           '. ' +
           'This is ' +
           contractYrLabel +
-          ' of the guaranteed savings contract. ' +
+          ' of the projected savings contract. ' +
           'Across all ' +
           d.buildings.length +
           ' buildings, the portfolio is ' +
@@ -49747,35 +49786,13 @@
           const pageW = 612,
             pageH = 792; // Letter size in points
 
-          // Content margins (leave room for letterhead header/footer)
-          const margin = { top: 55, bottom: 35, left: 30, right: 30 };
+          const margin = { top: 10, bottom: 10, left: 10, right: 10 };
           const contentW = pageW - margin.left - margin.right;
           const contentH = pageH - margin.top - margin.bottom;
 
           for (let i = 0; i < pages.length; i++) {
             if (i > 0) doc.addPage();
 
-            // Add letterhead header image (skip on cover/hero page 1)
-            if (i > 0) {
-              try {
-                if (typeof CSC_HEADER_B64 !== 'undefined' && CSC_HEADER_B64) {
-                  doc.addImage(CSC_HEADER_B64, 'JPEG', 0, 0, pageW, 50);
-                }
-              } catch (e) {
-                console.warn('Header image failed on page ' + (i + 1), e);
-              }
-            }
-
-            // Always add letterhead footer image
-            try {
-              if (typeof CSC_FOOTER_B64 !== 'undefined' && CSC_FOOTER_B64) {
-                doc.addImage(CSC_FOOTER_B64, 'JPEG', 0, pageH - 30, pageW, 30);
-              }
-            } catch (e) {
-              console.warn('Footer image failed on page ' + (i + 1), e);
-            }
-
-            // Capture page as high-res image
             try {
               const canvas = await html2canvas(pages[i], {
                 scale: 2,
@@ -49786,10 +49803,7 @@
                 height: 1056,
               });
               const imgData = canvas.toDataURL('image/jpeg', 0.92);
-              // On cover page (page 1), use full page area since no header
-              const imgTop = i === 0 ? 0 : margin.top;
-              const imgH = i === 0 ? pageH - margin.bottom : contentH;
-              doc.addImage(imgData, 'JPEG', margin.left, imgTop, contentW, imgH);
+              doc.addImage(imgData, 'JPEG', margin.left, margin.top, contentW, contentH);
             } catch (e) {
               console.error('Failed to render page ' + (i + 1), e);
               doc.setFontSize(12);

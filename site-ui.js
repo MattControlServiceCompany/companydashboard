@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.07.80';
+  var CH_VERSION = 'v2026.05.07.81';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -24,6 +24,7 @@
     accentColor: '#3b82f6',
     defaultLoginScreen: 'index',
     theme: 'dark',
+    feedbackMode: false,
   };
 
   /* ── LOAD / SAVE SETTINGS ── */
@@ -328,6 +329,22 @@
       '</select>' +
       '</div>' +
       '</div>' +
+      '<div class="settings-section">' +
+      '<div class="settings-section-title">Developer Tools</div>' +
+      '<div class="settings-row">' +
+      '<div>' +
+      '<div class="settings-row-label">Feedback Mode</div>' +
+      '<div class="settings-row-sub">Show feedback button to report UI issues</div>' +
+      '</div>' +
+      '<label class="settings-toggle">' +
+      '<input type="checkbox" id="feedbackModeToggle"' +
+      (settings.feedbackMode ? ' checked' : '') +
+      '>' +
+      '<span class="toggle-track"></span>' +
+      '<span class="toggle-knob"></span>' +
+      '</label>' +
+      '</div>' +
+      '</div>' +
       '</div>' +
       '</div>';
 
@@ -391,6 +408,17 @@
       s.defaultLoginScreen = loginSelect.value;
       saveSettings(s);
     };
+
+    // Feedback mode toggle
+    var fbToggle = document.getElementById('feedbackModeToggle');
+    if (fbToggle) {
+      fbToggle.onchange = function () {
+        var s = loadSettings();
+        s.feedbackMode = fbToggle.checked;
+        saveSettings(s);
+        document.dispatchEvent(new CustomEvent('feedbackModeChanged', { detail: { enabled: fbToggle.checked } }));
+      };
+    }
   }
 
   function openSettings() {

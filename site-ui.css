@@ -1138,3 +1138,40 @@ a:focus-visible,
   font-weight: 600;
   color: var(--text, #e2e8f3);
 }
+
+/* ── Feedback Mode Toggle ── */
+.settings-toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.settings-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.settings-toggle .toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--s2);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.settings-toggle input:checked + .toggle-track {
+  background: var(--accent);
+}
+.settings-toggle .toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+.settings-toggle input:checked ~ .toggle-knob {
+  transform: translateX(20px);
+}
