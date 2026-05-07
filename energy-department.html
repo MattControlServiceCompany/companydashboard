@@ -47041,20 +47041,288 @@
         return rptPage(n, 'EUI Benchmarking', bodyHTML, { data: d, label: 'Page ' + n + ' — EUI Benchmarking' });
       }
       function rptPageEnvironmentalImpact(n, d) {
-        return rptPage(
-          n,
-          'Environmental Impact',
-          '<p style="padding:20px;color:#888">Environmental Impact — coming soon</p>',
-          { data: d, label: 'Page ' + n + ' — Environmental Impact' },
-        );
+        const pol = d.pollution && d.pollution.pollutants ? d.pollution.pollutants : {};
+        const eq = d.pollution && d.pollution.equivalents ? d.pollution.equivalents : {};
+        const inp = d.pollution && d.pollution.inputs ? d.pollution.inputs : {};
+        const st = d.pollution && d.pollution.stateCode ? d.pollution.stateCode : '—';
+        const $n = function (v) {
+          return Math.round(Math.abs(v || 0)).toLocaleString();
+        };
+
+        function polLine(val, unit, label) {
+          return (
+            '<div style="font-size:11px;color:#333;padding:2px 0;line-height:1.5">' +
+            '<strong style="color:#1a5276;font-size:13px">' +
+            $n(val) +
+            '</strong>' +
+            ' total ' +
+            unit +
+            ' of ' +
+            label +
+            '</div>'
+          );
+        }
+
+        function eqLine(prefix, val, suffix) {
+          return (
+            '<div style="font-size:11px;color:#333;padding:2px 0;line-height:1.5">' +
+            (prefix ? prefix + ' ' : '') +
+            '<strong style="color:#1e8449;font-size:13px">' +
+            $n(val) +
+            '</strong>' +
+            ' ' +
+            suffix +
+            '</div>'
+          );
+        }
+
+        const bodyHTML =
+          '<div style="text-align:center" contenteditable="true">' +
+          '<div style="font-size:14px;font-weight:700;color:#1a5276;margin:12px 0 8px;text-transform:uppercase;letter-spacing:0.5px">DETAILED POLLUTION CREDIT CALCULATIONS</div>' +
+          '<div style="font-size:12px;color:#333;margin-bottom:12px">The emission reductions produced from implementing this project are equivalent to saving:</div>' +
+          polLine(pol.co2, 'pounds', 'CO2 reduction (carbon dioxide)') +
+          polLine(pol.ch4, 'pounds', 'CH4 reduction (methane)') +
+          polLine(pol.n2o, 'pounds', 'N2O reduction (nitrous oxide)') +
+          polLine(pol.so2, 'pounds', 'SO2 reduction (sulfur dioxide)') +
+          polLine(pol.nox, 'pounds', 'NOX reduction (nitrogen oxide)') +
+          polLine(pol.hg_oz, 'ounces', 'HG reduction (mercury)') +
+          polLine(pol.pm10_oz, 'ounces', 'PM10 reduction (particles of 10 micrometers or less)') +
+          polLine(pol.voc_oz, 'ounces', 'VOC reduction (volatile organic compounds)') +
+          polLine(pol.co_oz, 'ounces', 'CO reduction (carbon monoxide)') +
+          '<div style="font-size:13px;font-weight:600;color:#333;margin:10px 0 4px">This is equivalent to:</div>' +
+          eqLine('Removing', eq.carsRemoved, 'cars from the road each year') +
+          eqLine('Conserving', eq.gallonsGasoline, 'gallons of gasoline each year') +
+          eqLine('Conserving', eq.tankerTrucks, 'tanker trucks of gasoline each year') +
+          eqLine('Conserving', eq.barrelsOil, 'barrels of oil each year') +
+          eqLine('Conserving', eq.households, 'households worth of electricity each year') +
+          eqLine('', eq.treeSeedlings, 'tree seedlings allowed to grow for 10 years each year') +
+          eqLine('', eq.acresForest, 'acres of forest preserved from deforestation') +
+          eqLine('Conserving', eq.railcarsCoal, 'railcars of coal each year') +
+          eqLine('Recycling', eq.tonsRecycled, 'tons of waste rather than landfilling each year') +
+          eqLine('Conserving', eq.propaneCylinders, 'propane cylinders used for home barbeques each year') +
+          eqLine('', eq.coalPlants, 'coal-fired power plant emissions each year') +
+          '<div style="margin-top:20px;font-size:8px;color:#888;border-top:1px solid #ddd;padding-top:5px">' +
+          'Data from eGRID (First edition with year 2023 data (eGRID2023 Version 1.0 Rev 1) https://www.epa.gov/egrid)<br>' +
+          'State: ' +
+          st +
+          ' • Inputs: ' +
+          $n(inp.kwhSaved) +
+          ' kWh + ' +
+          $n(inp.thermsSaved) +
+          ' Therms + ' +
+          $n(inp.propaneGalSaved) +
+          ' Gal Propane' +
+          '</div>' +
+          '</div>';
+
+        return rptPage(n, 'Environmental Impact', bodyHTML, {
+          data: d,
+          label: 'Page ' + n + ' — Environmental Impact',
+        });
       }
       function rptPageObservations(n, d) {
-        return rptPage(
-          n,
-          'Observations & Recommendations',
-          '<p style="padding:20px;color:#888">Observations & Recommendations — coming soon</p>',
-          { data: d, label: 'Page ' + n + ' — Observations' },
-        );
+        const $c = function (v) {
+          return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+        };
+        const $p = function (v) {
+          return (v || 0).toFixed(1) + '%';
+        };
+
+        // ── Overall summary ──
+        const totalSav = d.totals ? d.totals.savings : 0;
+        const target = d.contract
+          ? d.period && d.period.quarter
+            ? d.contract.quarterlyTargets[d.period.quarter - 1] || d.contract.annualTarget
+            : d.contract.annualTarget
+          : 0;
+        const pctOfTarget = target > 0 ? Math.round((totalSav / target) * 100) : 0;
+        const onTrackCount = d.buildings
+          ? d.buildings.filter(function (b) {
+              return b.status === 'on_track';
+            }).length
+          : 0;
+        const totalBldgs = d.buildings ? d.buildings.length : 0;
+        const periodLabel = d.period ? d.period.label : '';
+        const clientName = d.project ? d.project.client : '';
+        const perfWord = pctOfTarget >= 100 ? 'exceeding' : pctOfTarget >= 80 ? 'approaching' : 'below';
+
+        const summaryPara =
+          '<p contenteditable="true">' +
+          'During ' +
+          periodLabel +
+          ', ' +
+          clientName +
+          ' achieved ' +
+          $c(totalSav) +
+          ' in verified energy cost savings, representing ' +
+          pctOfTarget +
+          '% of the period target — ' +
+          perfWord +
+          ' the contracted performance benchmark. ' +
+          onTrackCount +
+          ' of ' +
+          totalBldgs +
+          ' building' +
+          (totalBldgs !== 1 ? 's are' : ' is') +
+          ' on track or ahead of target for the period.' +
+          '</p>';
+
+        // ── Per-building narrative ──
+        const bldgSections = (d.buildings || [])
+          .map(function (b) {
+            const statusColor =
+              b.status === 'on_track' ? '#27ae60' : b.status === 'near_target' ? '#e67e22' : '#c0392b';
+            const arrow = b.status === 'below_target' ? '►' : '▲';
+            const statusLabel =
+              b.status === 'on_track' ? 'On Track' : b.status === 'near_target' ? 'Approaching Target' : 'Below Target';
+
+            // Determine the strongest commodity by savings
+            const comSavings = [
+              { name: 'Electric', sav: (b.electric && b.electric.costSaved) || 0 },
+              { name: 'Gas', sav: (b.gas && b.gas.costSaved) || 0 },
+              { name: 'Propane', sav: (b.propane && b.propane.costSaved) || 0 },
+            ].filter(function (c) {
+              return b.commodities && b.commodities.includes(c.name);
+            });
+            comSavings.sort(function (a, c) {
+              return c.sav - a.sav;
+            });
+            const topCom = comSavings.length ? comSavings[0] : null;
+            const weakCom = comSavings.length ? comSavings[comSavings.length - 1] : null;
+
+            // Build subtitle and narrative based on status
+            var subtitle, narrative, rec;
+            if (b.status === 'on_track') {
+              subtitle =
+                'On Track' +
+                (comSavings.length && comSavings[0].sav > 0 ? ' — ' + comSavings[0].name + ' Leading' : '');
+              narrative =
+                b.name +
+                ' is performing at ' +
+                $p(b.savingsPct) +
+                ' savings against a baseline of ' +
+                $c(b.blCost) +
+                '. ' +
+                (topCom && topCom.sav > 0
+                  ? topCom.name + ' savings are the primary driver at ' + $c(topCom.sav) + ' for the period. '
+                  : '') +
+                (b.eui && b.eui.energyStar
+                  ? 'This building currently qualifies for ENERGY STAR recognition based on current EUI performance. '
+                  : '') +
+                'BAS scheduling and setpoint controls are operating within design parameters.';
+              rec = 'Continue current operating strategy. Monitor for seasonal load shifts entering the next quarter.';
+            } else if (b.status === 'near_target') {
+              subtitle = 'Approaching Target';
+              narrative =
+                b.name +
+                ' is tracking at ' +
+                $p(b.savingsPct) +
+                ' savings — close to target but not yet meeting the contracted threshold. ' +
+                (topCom && topCom.sav > 0 ? topCom.name + ' performance is solid at ' + $c(topCom.sav) + '. ' : '') +
+                'Minor weather variance or occupancy changes may be contributing to the gap. ' +
+                (b.eui && b.eui.energyStar ? 'EUI is within ENERGY STAR eligible range. ' : '') +
+                'Performance is expected to improve as operating strategies are refined.';
+              rec =
+                'Review scheduling and setpoints for optimization opportunities. Confirm occupancy schedules are aligned with current use patterns.';
+            } else {
+              subtitle = 'Below Target';
+              narrative =
+                b.name +
+                ' is currently below the performance target at ' +
+                $p(b.savingsPct) +
+                ' savings against a baseline of ' +
+                $c(b.blCost) +
+                '. ' +
+                (weakCom && weakCom.sav <= 0
+                  ? weakCom.name + ' is the weakest performer and warrants further investigation. '
+                  : '') +
+                'A site visit or operational audit is recommended to identify potential issues with controls, occupancy, or equipment performance.';
+              rec =
+                'Schedule a site audit. Review ' +
+                (weakCom ? weakCom.name.toLowerCase() : 'utility') +
+                ' meter data and trend logs for anomalies. Confirm BAS setpoints are active and not in override.';
+            }
+
+            return (
+              '<h3 contenteditable="true" style="font-size:12px;font-weight:700;color:' +
+              statusColor +
+              ';margin:10px 0 2px">' +
+              arrow +
+              ' ' +
+              (b.name || 'Building') +
+              ' — ' +
+              subtitle +
+              '</h3>' +
+              '<p contenteditable="true">' +
+              narrative +
+              '</p>' +
+              '<p contenteditable="true" style="font-size:10px;color:#555;margin-top:2px"><strong>Rec:</strong> ' +
+              rec +
+              '</p>'
+            );
+          })
+          .join('');
+
+        // ── Weather section ──
+        const wt = d.weather && d.weather.totals ? d.weather.totals : { hddBl: 0, hddCur: 0, cddBl: 0, cddCur: 0 };
+        const hddDiff = wt.hddCur - wt.hddBl;
+        const cddDiff = wt.cddCur - wt.cddBl;
+        const hddPct = wt.hddBl > 0 ? Math.abs((hddDiff / wt.hddBl) * 100).toFixed(0) : 0;
+        const cddPct = wt.cddBl > 0 ? Math.abs((cddDiff / wt.cddBl) * 100).toFixed(0) : 0;
+        const hddNote =
+          hddDiff > wt.hddBl * 0.1
+            ? ' The period was notably colder than the baseline, which likely increased heating loads and reduced apparent savings on a raw-consumption basis.'
+            : '';
+        const weatherPara =
+          '<p contenteditable="true">' +
+          'Heating degree days (HDD) for the period were ' +
+          Math.round(wt.hddCur) +
+          ' vs. a baseline average of ' +
+          Math.round(wt.hddBl) +
+          ' (' +
+          (hddDiff >= 0 ? '+' : '−') +
+          hddPct +
+          '%). ' +
+          'Cooling degree days (CDD) were ' +
+          Math.round(wt.cddCur) +
+          ' vs. a baseline of ' +
+          Math.round(wt.cddBl) +
+          ' (' +
+          (cddDiff >= 0 ? '+' : '−') +
+          cddPct +
+          '%). ' +
+          hddNote +
+          'Normalized savings figures account for weather variance using regression-based baseline adjustment.' +
+          '</p>';
+
+        // ── Next Quarter section ──
+        const qNum = d.period ? d.period.quarter : null;
+        const isHeatingSeason = qNum === 1 || qNum === 4;
+        const seasonNote = isHeatingSeason
+          ? 'As we move toward the cooling season, expect electric demand to increase. Monitor peak demand events and ensure economizer and scheduling programs are ready for summer operation.'
+          : 'As we transition toward the heating season, verify heating setpoints and boiler/furnace scheduling are properly programmed. Confirm warm-weather setbacks are not lingering into fall.';
+        const nextQPara =
+          '<p contenteditable="true">' +
+          seasonNote +
+          ' The next quarterly review meeting will cover period performance in detail, review any approved change orders, and confirm setpoint schedules for the upcoming season. ' +
+          'Monthly monitoring calls will continue on schedule. Please contact your CSC project manager with any operational questions between reports.' +
+          '</p>';
+
+        const bodyHTML =
+          '<div class="rpt-body ob">' +
+          summaryPara +
+          '<h2 contenteditable="true">Building Performance</h2>' +
+          bldgSections +
+          '<h2 contenteditable="true">Weather</h2>' +
+          weatherPara +
+          '<h2 contenteditable="true">Next Quarter</h2>' +
+          nextQPara +
+          '</div>';
+
+        return rptPage(n, 'Observations & Recommendations', bodyHTML, {
+          data: d,
+          label: 'Page ' + n + ' — Observations',
+        });
       }
       function rptPageApprovedChanges(n, d) {
         return rptPage(n, 'Approved Changes', '<p style="padding:20px;color:#888">Approved Changes — coming soon</p>', {
