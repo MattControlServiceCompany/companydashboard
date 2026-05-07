@@ -161,10 +161,8 @@
 
     clearHighlight();
 
-    var fbEl = findFbAncestor(el);
-    var target = fbEl || el;
-    target.classList.add('fb-highlight');
-    state.highlightedEl = target;
+    el.classList.add('fb-highlight');
+    state.highlightedEl = el;
   }
 
   function onInspectClick(e) {
@@ -178,13 +176,11 @@
 
     clearHighlight();
 
-    var fbEl = findFbAncestor(el);
     state.selectedEl = el;
-    var target = fbEl || el;
-    target.classList.add('fb-highlight');
-    state.highlightedEl = target;
+    el.classList.add('fb-highlight');
+    state.highlightedEl = el;
 
-    showPopup(el, target);
+    showPopup(el, el);
   }
 
   function onInspectKey(e) {
@@ -228,15 +224,11 @@
       '<option value="P3" selected>P3 — This Week</option>' +
       '<option value="P4">P4 — Backlog</option>' +
       '</select>' +
-      '<div class="fb-screenshot-group" style="position:relative">' +
-      '<button class="fb-screenshot-btn" id="fbScreenBtn" title="Quick Capture">&#128247; Capture</button>' +
-      '<button class="fb-screenshot-drop" id="fbScreenDrop" title="More options">&#9660;</button>' +
-      '<div class="fb-screenshot-menu" id="fbScreenMenu" style="display:none">' +
-      '<button data-method="quick">&#128247; Quick Capture (html2canvas)</button>' +
-      '<button data-method="screen">&#128187; Screen Capture (pixel-perfect)</button>' +
-      '</div>' +
-      '</div>' +
       '<button class="fb-popup-submit" id="fbSubmitBtn">Submit</button>' +
+      '</div>' +
+      '<div class="fb-screenshot-stack">' +
+      '<button class="fb-screenshot-btn" id="fbQuickCapBtn">&#128247; Quick Capture</button>' +
+      '<button class="fb-screenshot-btn" id="fbScreenCapBtn">&#128187; Screen Capture</button>' +
       '</div>';
 
     var rect = targetEl.getBoundingClientRect();
@@ -262,37 +254,16 @@
       exitInspection();
     };
 
-    var screenBtn = popup.querySelector('#fbScreenBtn');
-    var screenDrop = popup.querySelector('#fbScreenDrop');
-    var screenMenu = popup.querySelector('#fbScreenMenu');
+    var quickCapBtn = popup.querySelector('#fbQuickCapBtn');
+    var screenCapBtn = popup.querySelector('#fbScreenCapBtn');
 
-    screenBtn.onclick = function () {
-      doQuickCapture(targetEl, screenBtn);
+    quickCapBtn.onclick = function () {
+      doQuickCapture(clickedEl, quickCapBtn);
     };
 
-    screenDrop.onclick = function (e) {
-      e.stopPropagation();
-      screenMenu.style.display = screenMenu.style.display === 'none' ? 'block' : 'none';
+    screenCapBtn.onclick = function () {
+      doScreenCapture(clickedEl, screenCapBtn);
     };
-
-    screenMenu.querySelectorAll('button').forEach(function (btn) {
-      btn.onclick = function () {
-        screenMenu.style.display = 'none';
-        var method = btn.getAttribute('data-method');
-        if (method === 'quick') {
-          doQuickCapture(targetEl, screenBtn);
-        } else {
-          doScreenCapture(targetEl, screenBtn);
-        }
-      };
-    });
-
-    document.addEventListener('click', function closeMenu(e) {
-      if (!screenDrop.contains(e.target) && !screenMenu.contains(e.target)) {
-        screenMenu.style.display = 'none';
-        document.removeEventListener('click', closeMenu);
-      }
-    });
 
     popup.querySelector('#fbSubmitBtn').onclick = function () {
       var textarea = popup.querySelector('.fb-popup-textarea');
@@ -348,21 +319,31 @@
       backgroundColor: null,
       scale: 2,
       logging: false,
+      useCORS: true,
+      allowTaint: true,
     })
       .then(function (canvas) {
         el.classList.add('fb-highlight');
         canvas.toBlob(function (blob) {
-          state.screenshotBlob = blob;
-          state.screenshotMethod = 'quick';
-          btn.classList.add('captured');
-          btn.innerHTML = '&#10003; Captured';
+          if (blob) {
+            state.screenshotBlob = blob;
+            state.screenshotMethod = 'quick';
+            btn.classList.add('captured');
+            btn.innerHTML = '&#10003; Captured';
+          } else {
+            btn.textContent = 'Failed';
+            setTimeout(function () {
+              btn.innerHTML = '&#128247; Quick Capture';
+            }, 2000);
+          }
         }, 'image/png');
       })
-      .catch(function () {
+      .catch(function (err) {
         el.classList.add('fb-highlight');
+        console.error('Feedback widget screenshot failed:', err);
         btn.textContent = 'Failed';
         setTimeout(function () {
-          btn.innerHTML = '&#128247; Capture';
+          btn.innerHTML = '&#128247; Quick Capture';
         }, 2000);
       });
   }

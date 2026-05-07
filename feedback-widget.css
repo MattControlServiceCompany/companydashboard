@@ -130,69 +130,32 @@
   cursor: pointer;
 }
 
-/* ── Screenshot Button (split) ── */
-.fb-screenshot-group {
+/* ── Screenshot Buttons (stacked) ── */
+.fb-screenshot-stack {
   display: flex;
-  align-items: center;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid var(--s3, #30363d);
+  gap: 6px;
+  margin-top: 8px;
 }
 .fb-screenshot-btn {
   background: var(--s2, #30363d);
-  border: none;
-  padding: 5px 8px;
+  border: 1px solid var(--s3, #30363d);
+  border-radius: 6px;
+  padding: 5px 10px;
   color: var(--text, #c9d1d9);
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 4px;
+  flex: 1;
+  justify-content: center;
 }
 .fb-screenshot-btn:hover {
   background: var(--s3, #484f58);
 }
 .fb-screenshot-btn.captured {
   color: #3fb950;
-}
-.fb-screenshot-drop {
-  background: var(--s2, #30363d);
-  border: none;
-  border-left: 1px solid var(--s3, #30363d);
-  padding: 5px 6px;
-  color: var(--text2, #7d8590);
-  font-size: 10px;
-  cursor: pointer;
-}
-.fb-screenshot-drop:hover {
-  background: var(--s3, #484f58);
-}
-.fb-screenshot-menu {
-  position: absolute;
-  bottom: 100%;
-  right: 0;
-  margin-bottom: 4px;
-  background: var(--s1, #1c2128);
-  border: 1px solid var(--s3, #30363d);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  min-width: 160px;
-  padding: 4px 0;
-  z-index: 1;
-}
-.fb-screenshot-menu button {
-  display: block;
-  width: 100%;
-  text-align: left;
-  background: none;
-  border: none;
-  padding: 8px 12px;
-  color: var(--text, #c9d1d9);
-  font-size: 12px;
-  cursor: pointer;
-}
-.fb-screenshot-menu button:hover {
-  background: var(--s2, #30363d);
+  border-color: #238636;
 }
 
 .fb-popup-submit {
