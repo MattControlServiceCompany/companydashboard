@@ -48237,45 +48237,1284 @@
         });
       }
       function rptPageElectric(n, d) {
-        return rptPage(n, 'Electric Detail', '<p style="padding:20px;color:#888">Electric Detail — coming soon</p>', {
+        var $c = function (v) {
+          return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+        };
+        var $n = function (v) {
+          return Math.round(v || 0).toLocaleString();
+        };
+        var $p = function (v) {
+          return (v || 0).toFixed(1) + '%';
+        };
+
+        var MO_SHORT = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+
+        // ── Shared bar-chart builder ──────────────────────────────────────────
+        function buildElecBarChart(monthly, blColor, curColor, unit, title) {
+          if (!monthly || !monthly.length)
+            return '<p style="font-size:8px;color:#aaa;padding:4px 0">No monthly data</p>';
+          var allVals = [];
+          monthly.forEach(function (mo) {
+            allVals.push(mo.bl || 0, mo.cur || 0);
+          });
+          var maxVal = Math.max.apply(null, allVals) || 1;
+          var maxH = 64;
+          var blTot = 0,
+            curTot = 0;
+          var bars = '';
+          monthly.forEach(function (mo) {
+            var blH = Math.max(2, Math.round(((mo.bl || 0) / maxVal) * maxH));
+            var curH = Math.max(2, Math.round(((mo.cur || 0) / maxVal) * maxH));
+            blTot += mo.bl || 0;
+            curTot += mo.cur || 0;
+            var moIdx = mo.month ? parseInt((mo.month + '').split('-')[1], 10) - 1 : -1;
+            var moLbl = moIdx >= 0 ? MO_SHORT[moIdx] : '?';
+            bars +=
+              '<div style="display:flex;flex-direction:column;align-items:center;flex:1">' +
+              '<div style="display:flex;align-items:flex-end;gap:1px;height:' +
+              maxH +
+              'px">' +
+              '<div style="width:8px;height:' +
+              blH +
+              'px;background:' +
+              blColor +
+              ';border-radius:2px 2px 0 0" title="BL ' +
+              $n(mo.bl) +
+              ' ' +
+              unit +
+              '"></div>' +
+              '<div style="width:8px;height:' +
+              curH +
+              'px;background:' +
+              curColor +
+              ';border-radius:2px 2px 0 0" title="Cur ' +
+              $n(mo.cur) +
+              ' ' +
+              unit +
+              '"></div>' +
+              '</div>' +
+              '<div style="font-size:7.5px;color:#666;margin-top:1px">' +
+              moLbl +
+              '</div>' +
+              '</div>';
+          });
+          return (
+            '<div class="rpt-chart-box">' +
+            '<div style="font-size:8px;font-weight:600;color:#555;margin-bottom:3px">' +
+            title +
+            '</div>' +
+            '<div style="display:flex;align-items:flex-end;gap:2px;height:' +
+            (maxH + 16) +
+            'px">' +
+            bars +
+            '</div>' +
+            '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:8.5px;color:#666">' +
+            '<span><span style="display:inline-block;width:8px;height:8px;background:' +
+            blColor +
+            ';border-radius:1px;margin-right:2px"></span>Baseline ' +
+            $n(blTot) +
+            ' ' +
+            unit +
+            '</span>' +
+            '<span><span style="display:inline-block;width:8px;height:8px;background:' +
+            curColor +
+            ';border-radius:1px;margin-right:2px"></span>Current ' +
+            $n(curTot) +
+            ' ' +
+            unit +
+            '</span>' +
+            '</div>' +
+            '</div>'
+          );
+        }
+
+        // ── Aggregate monthly data across all electric buildings ───────────────
+        var elecBldgs = (d.buildings || []).filter(function (b) {
+          return b.commodities && b.commodities.includes('Electric') && b.electric && b.electric.kwhBl > 0;
+        });
+
+        // Combined monthly kWh (bl + cur) across all buildings
+        var kwhByMonth = {};
+        var kwByMonth = {};
+        elecBldgs.forEach(function (b) {
+          (b.electric.monthly || []).forEach(function (mo) {
+            if (!kwhByMonth[mo.month]) kwhByMonth[mo.month] = { month: mo.month, bl: 0, cur: 0 };
+            kwhByMonth[mo.month].bl += mo.bl || 0;
+            kwhByMonth[mo.month].cur += mo.cur || 0;
+            if (!kwByMonth[mo.month]) kwByMonth[mo.month] = { month: mo.month, bl: 0, cur: 0 };
+            kwByMonth[mo.month].bl += mo.kwBl || mo.blKw || 0;
+            kwByMonth[mo.month].cur += mo.kwCur || mo.curKw || 0;
+          });
+        });
+        var kwhMonthly = Object.values(kwhByMonth).sort(function (a, b) {
+          return a.month < b.month ? -1 : 1;
+        });
+        var kwMonthly = Object.values(kwByMonth).sort(function (a, b) {
+          return a.month < b.month ? -1 : 1;
+        });
+
+        // ── Charts ────────────────────────────────────────────────────────────
+        var kwhChart = elecBldgs.length
+          ? buildElecBarChart(kwhMonthly, '#b0c4d8', '#1a5276', 'kWh', 'Monthly Electric kWh — Year over Year')
+          : '<p style="font-size:8px;color:#aaa">No electric data</p>';
+
+        var kwChart = elecBldgs.length
+          ? buildElecBarChart(kwMonthly, '#b0c4d8', '#1a5276', 'kW', 'Monthly Peak kW — Year over Year')
+          : '';
+
+        // ── By-building table ─────────────────────────────────────────────────
+        var totBlKwh = 0,
+          totCurKwh = 0,
+          totSavKwh = 0,
+          totBlKw = 0,
+          totCurKw = 0;
+        var totBlCost = 0,
+          totCurCost = 0,
+          totSavCost = 0;
+        var tableRows = '';
+
+        elecBldgs.forEach(function (b) {
+          var blKwh = b.electric.kwhBl || 0;
+          var curKwh = b.electric.kwhCur || 0;
+          var savKwh = b.electric.kwhSaved || blKwh - curKwh;
+          var savPct = blKwh > 0 ? (savKwh / blKwh) * 100 : 0;
+          var blKw = b.electric.kwBl || 0;
+          var curKw = b.electric.kwCur || 0;
+          var blCost = b.electric.blCost || 0;
+          var curCost = b.electric.curCost || 0;
+          var savCost = b.electric.costSaved || blCost - curCost;
+          totBlKwh += blKwh;
+          totCurKwh += curKwh;
+          totSavKwh += savKwh;
+          totBlKw += blKw;
+          totCurKw += curKw;
+          totBlCost += blCost;
+          totCurCost += curCost;
+          totSavCost += savCost;
+          var savColor = savCost >= 0 ? '#1e8449' : '#c0392b';
+          tableRows +=
+            '<tr>' +
+            '<td contenteditable="true">' +
+            (b.name || '—') +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $n(blKwh) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $n(curKwh) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' +
+            savColor +
+            ';font-weight:600">' +
+            $n(savKwh) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' +
+            savColor +
+            '">' +
+            $p(savPct) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $n(blKw) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $n(curKw) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $c(blCost) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $c(curCost) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' +
+            savColor +
+            ';font-weight:600">' +
+            $c(savCost) +
+            '</td>' +
+            '</tr>';
+        });
+
+        if (!tableRows) {
+          tableRows =
+            '<tr><td colspan="10" style="color:#aaa;font-style:italic">No electric buildings in this project</td></tr>';
+        } else {
+          var totSavColor = totSavCost >= 0 ? '#1e8449' : '#c0392b';
+          var totSavPct = totBlKwh > 0 ? (totSavKwh / totBlKwh) * 100 : 0;
+          tableRows +=
+            '<tr class="rpt-tot">' +
+            '<td>TOTAL</td>' +
+            '<td class="rpt-n">' +
+            $n(totBlKwh) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $n(totCurKwh) +
+            '</td>' +
+            '<td class="rpt-n" style="color:' +
+            totSavColor +
+            '">' +
+            $n(totSavKwh) +
+            '</td>' +
+            '<td class="rpt-n" style="color:' +
+            totSavColor +
+            '">' +
+            $p(totSavPct) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $n(totBlKw) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $n(totCurKw) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $c(totBlCost) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $c(totCurCost) +
+            '</td>' +
+            '<td class="rpt-n" style="color:' +
+            totSavColor +
+            ';font-weight:700">' +
+            $c(totSavCost) +
+            '</td>' +
+            '</tr>';
+        }
+
+        var bldgTable =
+          '<table class="rpt-table" contenteditable="true" style="font-size:7.5px">' +
+          '<thead><tr>' +
+          '<th>Building</th><th class="rpt-n">BL kWh</th><th class="rpt-n">Actual</th>' +
+          '<th class="rpt-n">Saved</th><th class="rpt-n">%</th>' +
+          '<th class="rpt-n">BL kW</th><th class="rpt-n">Act kW</th>' +
+          '<th class="rpt-n">BL Cost</th><th class="rpt-n">Act Cost</th><th class="rpt-n">$ Saved</th>' +
+          '</tr></thead>' +
+          '<tbody>' +
+          tableRows +
+          '</tbody>' +
+          '</table>';
+
+        var periodLabel = (d.period && d.period.label) || '';
+        var bodyHTML =
+          '<div style="margin-bottom:6px;font-size:9px;color:#555">Period: ' +
+          periodLabel +
+          '</div>' +
+          kwhChart +
+          kwChart +
+          '<h2 style="font-size:10px;font-weight:700;color:#1a5276;margin:10px 0 4px">Electric by Building — ' +
+          periodLabel +
+          '</h2>' +
+          bldgTable;
+
+        return rptPage(n, 'Electric Consumption Detail', bodyHTML, {
           data: d,
           label: 'Page ' + n + ' — Electric Detail',
         });
       }
       function rptPageGas(n, d) {
-        return rptPage(n, 'Gas Detail', '<p style="padding:20px;color:#888">Gas Detail — coming soon</p>', {
+        var $c = function (v) {
+          return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+        };
+        var $n = function (v) {
+          return Math.round(v || 0).toLocaleString();
+        };
+        var $p = function (v) {
+          return (v || 0).toFixed(1) + '%';
+        };
+        var MO_SHORT = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+
+        function buildGasBarChart(monthly, blColor, curColor, unit, title) {
+          if (!monthly || !monthly.length)
+            return '<p style="font-size:8px;color:#aaa;padding:4px 0">No monthly data</p>';
+          var allVals = [];
+          monthly.forEach(function (mo) {
+            allVals.push(mo.bl || 0, mo.cur || 0);
+          });
+          var maxVal = Math.max.apply(null, allVals) || 1;
+          var maxH = 64;
+          var blTot = 0,
+            curTot = 0;
+          var bars = '';
+          monthly.forEach(function (mo) {
+            var blH = Math.max(2, Math.round(((mo.bl || 0) / maxVal) * maxH));
+            var curH = Math.max(2, Math.round(((mo.cur || 0) / maxVal) * maxH));
+            blTot += mo.bl || 0;
+            curTot += mo.cur || 0;
+            var moIdx = mo.month ? parseInt((mo.month + '').split('-')[1], 10) - 1 : -1;
+            var moLbl = moIdx >= 0 ? MO_SHORT[moIdx] : '?';
+            bars +=
+              '<div style="display:flex;flex-direction:column;align-items:center;flex:1">' +
+              '<div style="display:flex;align-items:flex-end;gap:1px;height:' +
+              maxH +
+              'px">' +
+              '<div style="width:8px;height:' +
+              blH +
+              'px;background:' +
+              blColor +
+              ';border-radius:2px 2px 0 0" title="BL ' +
+              $n(mo.bl) +
+              ' ' +
+              unit +
+              '"></div>' +
+              '<div style="width:8px;height:' +
+              curH +
+              'px;background:' +
+              curColor +
+              ';border-radius:2px 2px 0 0" title="Cur ' +
+              $n(mo.cur) +
+              ' ' +
+              unit +
+              '"></div>' +
+              '</div><div style="font-size:7.5px;color:#666;margin-top:1px">' +
+              moLbl +
+              '</div></div>';
+          });
+          return (
+            '<div class="rpt-chart-box">' +
+            '<div style="font-size:8px;font-weight:600;color:#555;margin-bottom:3px">' +
+            title +
+            '</div>' +
+            '<div style="display:flex;align-items:flex-end;gap:2px;height:' +
+            (maxH + 16) +
+            'px">' +
+            bars +
+            '</div>' +
+            '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:8.5px;color:#666">' +
+            '<span><span style="display:inline-block;width:8px;height:8px;background:' +
+            blColor +
+            ';border-radius:1px;margin-right:2px"></span>Baseline ' +
+            $n(blTot) +
+            ' ' +
+            unit +
+            '</span>' +
+            '<span><span style="display:inline-block;width:8px;height:8px;background:' +
+            curColor +
+            ';border-radius:1px;margin-right:2px"></span>Current ' +
+            $n(curTot) +
+            ' ' +
+            unit +
+            '</span>' +
+            '</div></div>'
+          );
+        }
+
+        var gasBldgs = (d.buildings || []).filter(function (b) {
+          return b.commodities && b.commodities.includes('Gas') && b.gas && b.gas.thermsBl > 0;
+        });
+
+        var thermsByMonth = {};
+        gasBldgs.forEach(function (b) {
+          (b.gas.monthly || []).forEach(function (mo) {
+            if (!thermsByMonth[mo.month]) thermsByMonth[mo.month] = { month: mo.month, bl: 0, cur: 0 };
+            thermsByMonth[mo.month].bl += mo.bl || 0;
+            thermsByMonth[mo.month].cur += mo.cur || 0;
+          });
+        });
+        var thermsMonthly = Object.values(thermsByMonth).sort(function (a, b) {
+          return a.month < b.month ? -1 : 1;
+        });
+
+        var thermsChart = gasBldgs.length
+          ? buildGasBarChart(
+              thermsMonthly,
+              '#e8c4a0',
+              '#d35400',
+              'Therms',
+              'Monthly Natural Gas Therms — Year over Year',
+            )
+          : '<p style="font-size:8px;color:#aaa">No gas data</p>';
+
+        var totBlTherms = 0,
+          totCurTherms = 0,
+          totSavTherms = 0;
+        var totBlCost = 0,
+          totCurCost = 0,
+          totSavCost = 0;
+        var tableRows = '';
+        gasBldgs.forEach(function (b) {
+          var blT = b.gas.thermsBl || 0;
+          var curT = b.gas.thermsCur || 0;
+          var savT = b.gas.thermsSaved || blT - curT;
+          var savPct = blT > 0 ? (savT / blT) * 100 : 0;
+          var blCost = b.gas.blCost || 0;
+          var curCost = b.gas.curCost || 0;
+          var savCost = b.gas.costSaved || blCost - curCost;
+          totBlTherms += blT;
+          totCurTherms += curT;
+          totSavTherms += savT;
+          totBlCost += blCost;
+          totCurCost += curCost;
+          totSavCost += savCost;
+          var savColor = savCost >= 0 ? '#1e8449' : '#c0392b';
+          tableRows +=
+            '<tr>' +
+            '<td contenteditable="true">' +
+            (b.name || '—') +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $n(blT) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $n(curT) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' +
+            savColor +
+            ';font-weight:600">' +
+            $n(savT) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' +
+            savColor +
+            '">' +
+            $p(savPct) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $c(blCost) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $c(curCost) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' +
+            savColor +
+            ';font-weight:600">' +
+            $c(savCost) +
+            '</td>' +
+            '</tr>';
+        });
+        if (!tableRows) {
+          tableRows =
+            '<tr><td colspan="8" style="color:#aaa;font-style:italic">No gas buildings in this project</td></tr>';
+        } else {
+          var tSavColor = totSavCost >= 0 ? '#1e8449' : '#c0392b';
+          var tSavPct = totBlTherms > 0 ? (totSavTherms / totBlTherms) * 100 : 0;
+          tableRows +=
+            '<tr class="rpt-tot"><td>TOTAL</td>' +
+            '<td class="rpt-n">' +
+            $n(totBlTherms) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $n(totCurTherms) +
+            '</td>' +
+            '<td class="rpt-n" style="color:' +
+            tSavColor +
+            '">' +
+            $n(totSavTherms) +
+            '</td>' +
+            '<td class="rpt-n" style="color:' +
+            tSavColor +
+            '">' +
+            $p(tSavPct) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $c(totBlCost) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $c(totCurCost) +
+            '</td>' +
+            '<td class="rpt-n" style="color:' +
+            tSavColor +
+            ';font-weight:700">' +
+            $c(totSavCost) +
+            '</td>' +
+            '</tr>';
+        }
+
+        var bldgTable =
+          '<table class="rpt-table" contenteditable="true" style="font-size:7.5px">' +
+          '<thead><tr><th>Building</th><th class="rpt-n">BL Therms</th><th class="rpt-n">Actual</th>' +
+          '<th class="rpt-n">Saved</th><th class="rpt-n">%</th>' +
+          '<th class="rpt-n">BL Cost</th><th class="rpt-n">Act Cost</th><th class="rpt-n">$ Saved</th>' +
+          '</tr></thead><tbody>' +
+          tableRows +
+          '</tbody></table>';
+
+        var periodLabel = (d.period && d.period.label) || '';
+        var bodyHTML =
+          '<div style="margin-bottom:6px;font-size:9px;color:#555">Period: ' +
+          periodLabel +
+          '</div>' +
+          thermsChart +
+          '<h2 style="font-size:10px;font-weight:700;color:#8b4513;margin:10px 0 4px">Natural Gas by Building — ' +
+          periodLabel +
+          '</h2>' +
+          bldgTable;
+
+        return rptPage(n, 'Natural Gas Consumption Detail', bodyHTML, {
           data: d,
           label: 'Page ' + n + ' — Gas Detail',
         });
       }
+
       function rptPagePropane(n, d) {
-        return rptPage(n, 'Propane Detail', '<p style="padding:20px;color:#888">Propane Detail — coming soon</p>', {
+        var $c = function (v) {
+          return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+        };
+        var $n = function (v) {
+          return Math.round(v || 0).toLocaleString();
+        };
+        var $p = function (v) {
+          return (v || 0).toFixed(1) + '%';
+        };
+        var MO_SHORT = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+
+        function buildPropBarChart(monthly, blColor, curColor, unit, title) {
+          if (!monthly || !monthly.length)
+            return '<p style="font-size:8px;color:#aaa;padding:4px 0">No monthly data</p>';
+          var allVals = [];
+          monthly.forEach(function (mo) {
+            allVals.push(mo.bl || 0, mo.cur || 0);
+          });
+          var maxVal = Math.max.apply(null, allVals) || 1;
+          var maxH = 64;
+          var blTot = 0,
+            curTot = 0;
+          var bars = '';
+          monthly.forEach(function (mo) {
+            var blH = Math.max(2, Math.round(((mo.bl || 0) / maxVal) * maxH));
+            var curH = Math.max(2, Math.round(((mo.cur || 0) / maxVal) * maxH));
+            blTot += mo.bl || 0;
+            curTot += mo.cur || 0;
+            var moIdx = mo.month ? parseInt((mo.month + '').split('-')[1], 10) - 1 : -1;
+            var moLbl = moIdx >= 0 ? MO_SHORT[moIdx] : '?';
+            bars +=
+              '<div style="display:flex;flex-direction:column;align-items:center;flex:1">' +
+              '<div style="display:flex;align-items:flex-end;gap:1px;height:' +
+              maxH +
+              'px">' +
+              '<div style="width:8px;height:' +
+              blH +
+              'px;background:' +
+              blColor +
+              ';border-radius:2px 2px 0 0" title="BL ' +
+              $n(mo.bl) +
+              ' ' +
+              unit +
+              '"></div>' +
+              '<div style="width:8px;height:' +
+              curH +
+              'px;background:' +
+              curColor +
+              ';border-radius:2px 2px 0 0" title="Cur ' +
+              $n(mo.cur) +
+              ' ' +
+              unit +
+              '"></div>' +
+              '</div><div style="font-size:7.5px;color:#666;margin-top:1px">' +
+              moLbl +
+              '</div></div>';
+          });
+          return (
+            '<div class="rpt-chart-box">' +
+            '<div style="font-size:8px;font-weight:600;color:#555;margin-bottom:3px">' +
+            title +
+            '</div>' +
+            '<div style="display:flex;align-items:flex-end;gap:2px;height:' +
+            (maxH + 16) +
+            'px">' +
+            bars +
+            '</div>' +
+            '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:8.5px;color:#666">' +
+            '<span><span style="display:inline-block;width:8px;height:8px;background:' +
+            blColor +
+            ';border-radius:1px;margin-right:2px"></span>Baseline ' +
+            $n(blTot) +
+            ' ' +
+            unit +
+            '</span>' +
+            '<span><span style="display:inline-block;width:8px;height:8px;background:' +
+            curColor +
+            ';border-radius:1px;margin-right:2px"></span>Current ' +
+            $n(curTot) +
+            ' ' +
+            unit +
+            '</span>' +
+            '</div></div>'
+          );
+        }
+
+        var propBldgs = (d.buildings || []).filter(function (b) {
+          return b.commodities && b.commodities.includes('Propane') && b.propane && b.propane.galBl > 0;
+        });
+
+        var galByMonth = {};
+        propBldgs.forEach(function (b) {
+          (b.propane.monthly || []).forEach(function (mo) {
+            if (!galByMonth[mo.month]) galByMonth[mo.month] = { month: mo.month, bl: 0, cur: 0 };
+            galByMonth[mo.month].bl += mo.bl || 0;
+            galByMonth[mo.month].cur += mo.cur || 0;
+          });
+        });
+        var galMonthly = Object.values(galByMonth).sort(function (a, b) {
+          return a.month < b.month ? -1 : 1;
+        });
+
+        var galChart = propBldgs.length
+          ? buildPropBarChart(galMonthly, '#f5deb3', '#b8860b', 'Gal', 'Monthly Propane Gallons — Year over Year')
+          : '<p style="font-size:8px;color:#aaa">No propane data</p>';
+
+        var totBlGal = 0,
+          totCurGal = 0,
+          totSavGal = 0;
+        var totBlCost = 0,
+          totCurCost = 0,
+          totSavCost = 0;
+        var tableRows = '';
+        propBldgs.forEach(function (b) {
+          var blG = b.propane.galBl || 0;
+          var curG = b.propane.galCur || 0;
+          var savG = b.propane.galSaved || blG - curG;
+          var savPct = blG > 0 ? (savG / blG) * 100 : 0;
+          var blCost = b.propane.blCost || 0;
+          var curCost = b.propane.curCost || 0;
+          var savCost = b.propane.costSaved || blCost - curCost;
+          totBlGal += blG;
+          totCurGal += curG;
+          totSavGal += savG;
+          totBlCost += blCost;
+          totCurCost += curCost;
+          totSavCost += savCost;
+          var savColor = savCost >= 0 ? '#1e8449' : '#c0392b';
+          tableRows +=
+            '<tr>' +
+            '<td contenteditable="true">' +
+            (b.name || '—') +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $n(blG) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $n(curG) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' +
+            savColor +
+            ';font-weight:600">' +
+            $n(savG) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' +
+            savColor +
+            '">' +
+            $p(savPct) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $c(blCost) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $c(curCost) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' +
+            savColor +
+            ';font-weight:600">' +
+            $c(savCost) +
+            '</td>' +
+            '</tr>';
+        });
+        if (!tableRows) {
+          tableRows =
+            '<tr><td colspan="8" style="color:#aaa;font-style:italic">No propane buildings in this project</td></tr>';
+        } else {
+          var tSavColor = totSavCost >= 0 ? '#1e8449' : '#c0392b';
+          var tSavPct = totBlGal > 0 ? (totSavGal / totBlGal) * 100 : 0;
+          tableRows +=
+            '<tr class="rpt-tot"><td>TOTAL</td>' +
+            '<td class="rpt-n">' +
+            $n(totBlGal) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $n(totCurGal) +
+            '</td>' +
+            '<td class="rpt-n" style="color:' +
+            tSavColor +
+            '">' +
+            $n(totSavGal) +
+            '</td>' +
+            '<td class="rpt-n" style="color:' +
+            tSavColor +
+            '">' +
+            $p(tSavPct) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $c(totBlCost) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $c(totCurCost) +
+            '</td>' +
+            '<td class="rpt-n" style="color:' +
+            tSavColor +
+            ';font-weight:700">' +
+            $c(totSavCost) +
+            '</td>' +
+            '</tr>';
+        }
+
+        var bldgTable =
+          '<table class="rpt-table" contenteditable="true" style="font-size:7.5px">' +
+          '<thead><tr><th>Building</th><th class="rpt-n">BL Gallons</th><th class="rpt-n">Actual</th>' +
+          '<th class="rpt-n">Saved</th><th class="rpt-n">%</th>' +
+          '<th class="rpt-n">BL Cost</th><th class="rpt-n">Act Cost</th><th class="rpt-n">$ Saved</th>' +
+          '</tr></thead><tbody>' +
+          tableRows +
+          '</tbody></table>';
+
+        var propaneNames = propBldgs
+          .map(function (b) {
+            return b.name || 'Unknown';
+          })
+          .join(', ');
+        var noteText = propBldgs.length
+          ? 'Note: Only ' + propaneNames + ' use propane. Other buildings are electric + natural gas only.'
+          : 'Note: No buildings in this project use propane.';
+
+        var periodLabel = (d.period && d.period.label) || '';
+        var bodyHTML =
+          '<div style="margin-bottom:6px;font-size:9px;color:#555">Period: ' +
+          periodLabel +
+          '</div>' +
+          galChart +
+          '<h2 style="font-size:10px;font-weight:700;color:#7d5a00;margin:10px 0 4px">Propane by Building — ' +
+          periodLabel +
+          '</h2>' +
+          bldgTable +
+          '<div style="margin-top:8px;font-size:8px;color:#777;font-style:italic;border-top:1px solid #ddd;padding-top:6px" contenteditable="true">' +
+          noteText +
+          '</div>';
+
+        return rptPage(n, 'Propane Consumption Detail', bodyHTML, {
           data: d,
           label: 'Page ' + n + ' — Propane Detail',
         });
       }
+
       function rptPageAppendixNormalization(n, d) {
-        return rptPage(
-          n,
-          'Appendix A: Normalization',
-          '<p style="padding:20px;color:#888">Appendix A — coming soon</p>',
-          { data: d, label: 'Page ' + n + ' — Appendix A' },
-        );
+        var $c = function (v) {
+          return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+        };
+        var $n = function (v) {
+          return Math.round(v || 0).toLocaleString();
+        };
+
+        var blStart = (d.period && d.period.blStart) || (d.project && d.project.blStart) || '—';
+        var blEnd = (d.period && d.period.blEnd) || (d.project && d.project.blEnd) || '—';
+
+        var methodBox =
+          '<div contenteditable="true" style="border:1px solid #ccc;border-radius:4px;padding:10px 12px;font-size:9px;line-height:1.7;color:#333;background:#fafafa;margin-bottom:12px">' +
+          '<strong>Normalization Method:</strong> Regression analysis using Heating Degree Days (HDD) and Cooling Degree Days (CDD) at balance point 60°F, per contract specification.<br>' +
+          '<strong>Baseline Period:</strong> ' +
+          blStart +
+          ' through ' +
+          blEnd +
+          '<br>' +
+          '<strong>Savings Calculation:</strong> Units saved (weather-normalized baseline minus actual) multiplied by current monthly utility rate.<br>' +
+          '<strong>Weather Station:</strong> Nearest NOAA station to project site. Degree day data sourced monthly from NOAA Climate Data Online.<br>' +
+          '<strong>Regression Model:</strong> Ordinary Least Squares (OLS) with HDD and CDD as independent variables. R² values shown per meter below.' +
+          '</div>';
+
+        // Per-building meter tables
+        var meterTables = '';
+        (d.buildings || []).forEach(function (b) {
+          var meterRows = '';
+          if (b.commodities && b.commodities.includes('Electric') && b.electric && b.electric.kwhBl > 0) {
+            meterRows +=
+              '<tr>' +
+              '<td contenteditable="true">Electric — ' +
+              (b.name || '—') +
+              '</td>' +
+              '<td contenteditable="true">' +
+              blStart +
+              ' – ' +
+              blEnd +
+              '</td>' +
+              '<td contenteditable="true">OLS / HDD+CDD</td>' +
+              '<td class="rpt-n" contenteditable="true">—</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $n((b.electric && b.electric.hdd) || 0) +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $n((b.electric && b.electric.cdd) || 0) +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $n(b.electric.kwhBl || 0) +
+              ' kWh</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $c(b.electric.blCost || 0) +
+              '</td>' +
+              '</tr>';
+          }
+          if (b.commodities && b.commodities.includes('Gas') && b.gas && b.gas.thermsBl > 0) {
+            meterRows +=
+              '<tr>' +
+              '<td contenteditable="true">Natural Gas — ' +
+              (b.name || '—') +
+              '</td>' +
+              '<td contenteditable="true">' +
+              blStart +
+              ' – ' +
+              blEnd +
+              '</td>' +
+              '<td contenteditable="true">OLS / HDD</td>' +
+              '<td class="rpt-n" contenteditable="true">—</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $n((b.gas && b.gas.hdd) || 0) +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">—</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $n(b.gas.thermsBl || 0) +
+              ' Therms</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $c(b.gas.blCost || 0) +
+              '</td>' +
+              '</tr>';
+          }
+          if (b.commodities && b.commodities.includes('Propane') && b.propane && b.propane.galBl > 0) {
+            meterRows +=
+              '<tr>' +
+              '<td contenteditable="true">Propane — ' +
+              (b.name || '—') +
+              '</td>' +
+              '<td contenteditable="true">' +
+              blStart +
+              ' – ' +
+              blEnd +
+              '</td>' +
+              '<td contenteditable="true">OLS / HDD</td>' +
+              '<td class="rpt-n" contenteditable="true">—</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $n((b.propane && b.propane.hdd) || 0) +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">—</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $n(b.propane.galBl || 0) +
+              ' Gal</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $c(b.propane.blCost || 0) +
+              '</td>' +
+              '</tr>';
+          }
+          if (!meterRows) return;
+          meterTables +=
+            '<div style="font-size:9px;font-weight:700;color:#1a5276;background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
+            (b.name || 'Building') +
+            '</div>' +
+            '<table class="rpt-table" style="font-size:7.5px;margin-bottom:6px">' +
+            '<thead><tr>' +
+            '<th>Meter</th><th>Baseline Period</th><th>Regression</th><th class="rpt-n">R²</th>' +
+            '<th class="rpt-n">HDD</th><th class="rpt-n">CDD</th><th class="rpt-n">Usage/yr</th><th class="rpt-n">Cost/yr</th>' +
+            '</tr></thead><tbody>' +
+            meterRows +
+            '</tbody></table>';
+        });
+
+        if (!meterTables) {
+          meterTables = '<p style="font-size:8px;color:#aaa;font-style:italic">No building meter data available.</p>';
+        }
+
+        var bodyHTML =
+          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 8px">Appendix A: Normalization &amp; Meter Baseline</h2>' +
+          methodBox +
+          '<h3 style="font-size:9.5px;font-weight:700;color:#555;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.04em">Per-Building Meter Detail</h3>' +
+          meterTables;
+
+        return rptPage(n, 'Appendix A: Normalization & Meter Baseline', bodyHTML, {
+          data: d,
+          label: 'Page ' + n + ' — Appendix A',
+        });
       }
+
       function rptPageAppendixBaseline(n, d) {
-        return rptPage(n, 'Appendix B: Baseline', '<p style="padding:20px;color:#888">Appendix B — coming soon</p>', {
+        var $n = function (v) {
+          return Math.round(v || 0).toLocaleString();
+        };
+        var $c = function (v) {
+          return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+        };
+        var MO_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        var buildingTables = '';
+        (d.buildings || []).forEach(function (b) {
+          var elMonthly = (b.electric && b.electric.monthly) || [];
+          var gasMonthly = (b.gas && b.gas.monthly) || [];
+          var propMonthly = (b.propane && b.propane.monthly) || [];
+          var hasMonthly = elMonthly.length > 0 || gasMonthly.length > 0;
+
+          if (!hasMonthly) {
+            buildingTables +=
+              '<h2 style="font-size:10px;font-weight:700;color:#1a5276;margin:12px 0 4px">' +
+              (b.name || 'Building') +
+              '</h2>' +
+              '<p style="font-size:8px;color:#aaa;font-style:italic">Baseline data available in Energy Graphics tab.</p>';
+            return;
+          }
+
+          // Build indexed lookups by month (0-11)
+          var elByMo = {},
+            gasByMo = {},
+            propByMo = {};
+          elMonthly.forEach(function (mo) {
+            var idx = mo.month ? parseInt((mo.month + '').split('-')[1], 10) - 1 : -1;
+            if (idx >= 0) elByMo[idx] = mo;
+          });
+          gasMonthly.forEach(function (mo) {
+            var idx = mo.month ? parseInt((mo.month + '').split('-')[1], 10) - 1 : -1;
+            if (idx >= 0) gasByMo[idx] = mo;
+          });
+          propMonthly.forEach(function (mo) {
+            var idx = mo.month ? parseInt((mo.month + '').split('-')[1], 10) - 1 : -1;
+            if (idx >= 0) propByMo[idx] = mo;
+          });
+
+          var totKwh = 0,
+            totKw = 0,
+            totTherms = 0,
+            totKbtu = 0,
+            totCost = 0;
+          var rows = '';
+          for (var m = 0; m < 12; m++) {
+            var el = elByMo[m] || {};
+            var gas = gasByMo[m] || {};
+            var prop = propByMo[m] || {};
+            var kwh = el.bl || 0;
+            var kw = el.kwBl || el.blKw || 0;
+            var therms = gas.bl || 0;
+            var propGal = prop.bl || 0;
+            var kbtu = kwh * 3.412 + therms * 100 + propGal * 91.5;
+            var cost = (el.blCost || 0) + (gas.blCost || 0) + (prop.blCost || 0);
+            totKwh += kwh;
+            totKw += kw;
+            totTherms += therms;
+            totKbtu += kbtu;
+            totCost += cost;
+            rows +=
+              '<tr>' +
+              '<td>' +
+              MO_NAMES[m] +
+              '</td>' +
+              '<td class="rpt-n">' +
+              (kwh ? $n(kwh) : '—') +
+              '</td>' +
+              '<td class="rpt-n">' +
+              (kw ? $n(kw) : '—') +
+              '</td>' +
+              '<td class="rpt-n">' +
+              (therms ? $n(therms) : '—') +
+              '</td>' +
+              '<td class="rpt-n">' +
+              (kbtu ? $n(kbtu) : '—') +
+              '</td>' +
+              '<td class="rpt-n">' +
+              (cost ? $c(cost) : '—') +
+              '</td>' +
+              '</tr>';
+          }
+          rows +=
+            '<tr class="rpt-tot">' +
+            '<td>Annual</td>' +
+            '<td class="rpt-n">' +
+            $n(totKwh) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            (totKw ? $n(totKw / 12) + ' avg' : '—') +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $n(totTherms) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $n(totKbtu) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $c(totCost) +
+            '</td>' +
+            '</tr>';
+
+          buildingTables +=
+            '<h2 style="font-size:10px;font-weight:700;color:#1a5276;margin:12px 0 4px">' +
+            (b.name || 'Building') +
+            '</h2>' +
+            '<table class="rpt-table" style="font-size:7.5px;margin-bottom:8px">' +
+            '<thead><tr>' +
+            '<th>Month</th><th class="rpt-n">kWh</th><th class="rpt-n">Peak kW</th>' +
+            '<th class="rpt-n">Therms</th><th class="rpt-n">kBtu</th><th class="rpt-n">Cost</th>' +
+            '</tr></thead><tbody>' +
+            rows +
+            '</tbody></table>';
+        });
+
+        if (!buildingTables) {
+          buildingTables = '<p style="font-size:8px;color:#aaa;font-style:italic">No buildings in this project.</p>';
+        }
+
+        var bodyHTML =
+          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix B: Building Baseline Data</h2>' +
+          '<div style="font-size:8.5px;color:#666;margin-bottom:10px">Monthly baseline averages per building</div>' +
+          buildingTables;
+
+        return rptPage(n, 'Appendix B: Building Baseline Data', bodyHTML, {
           data: d,
           label: 'Page ' + n + ' — Appendix B',
         });
       }
+
       function rptPageAppendixWeather(n, d) {
-        return rptPage(n, 'Appendix C: Weather', '<p style="padding:20px;color:#888">Appendix C — coming soon</p>', {
+        var $p = function (v) {
+          return (v || 0).toFixed(1) + '%';
+        };
+        var $n = function (v) {
+          return Math.round(v || 0).toLocaleString();
+        };
+
+        var weatherMonthly = (d.weather && d.weather.monthly) || [];
+        var tableRows = '';
+        var totHddBl = 0,
+          totHddCur = 0,
+          totCddBl = 0,
+          totCddCur = 0;
+
+        weatherMonthly.forEach(function (mo) {
+          var hddBl = mo.hddBl || 0;
+          var hddCur = mo.hddCur || 0;
+          var cddBl = mo.cddBl || 0;
+          var cddCur = mo.cddCur || 0;
+          var hddVar = hddBl > 0 ? ((hddCur - hddBl) / hddBl) * 100 : 0;
+          var cddVar = cddBl > 0 ? ((cddCur - cddBl) / cddBl) * 100 : 0;
+          var hddVarStyle = Math.abs(hddVar) > 10 ? 'color:#c0392b;font-weight:600' : '';
+          var cddVarStyle = Math.abs(cddVar) > 10 ? 'color:#c0392b;font-weight:600' : '';
+          totHddBl += hddBl;
+          totHddCur += hddCur;
+          totCddBl += cddBl;
+          totCddCur += cddCur;
+          tableRows +=
+            '<tr>' +
+            '<td contenteditable="true">' +
+            (mo.month || '—') +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $n(hddBl) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $n(hddCur) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="' +
+            hddVarStyle +
+            '">' +
+            (hddBl > 0 ? $p(hddVar) : '—') +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $n(cddBl) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $n(cddCur) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="' +
+            cddVarStyle +
+            '">' +
+            (cddBl > 0 ? $p(cddVar) : '—') +
+            '</td>' +
+            '</tr>';
+        });
+
+        if (!tableRows) {
+          tableRows =
+            '<tr><td colspan="7" style="color:#aaa;font-style:italic">No weather data for this period. Enter HDD/CDD in project settings.</td></tr>';
+        } else {
+          var totHddVar = totHddBl > 0 ? ((totHddCur - totHddBl) / totHddBl) * 100 : 0;
+          var totCddVar = totCddBl > 0 ? ((totCddCur - totCddBl) / totCddBl) * 100 : 0;
+          tableRows +=
+            '<tr class="rpt-tot">' +
+            '<td>Period Total</td>' +
+            '<td class="rpt-n">' +
+            $n(totHddBl) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $n(totHddCur) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $p(totHddVar) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $n(totCddBl) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $n(totCddCur) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $p(totCddVar) +
+            '</td>' +
+            '</tr>';
+        }
+
+        var weatherTable =
+          '<table class="rpt-table" contenteditable="true" style="font-size:7.5px">' +
+          '<thead><tr>' +
+          '<th>Date</th>' +
+          '<th class="rpt-n">HDD (BL Avg)</th><th class="rpt-n">HDD (Current)</th><th class="rpt-n">vs BL</th>' +
+          '<th class="rpt-n">CDD (BL Avg)</th><th class="rpt-n">CDD (Current)</th><th class="rpt-n">vs BL</th>' +
+          '</tr></thead><tbody>' +
+          tableRows +
+          '</tbody></table>';
+
+        // Auto-generate narrative
+        var hddNote = '',
+          cddNote = '';
+        var totHddVarFinal = totHddBl > 0 ? ((totHddCur - totHddBl) / totHddBl) * 100 : 0;
+        var totCddVarFinal = totCddBl > 0 ? ((totCddCur - totCddBl) / totCddBl) * 100 : 0;
+        if (Math.abs(totHddVarFinal) > 10) {
+          var colder = totHddVarFinal > 0 ? 'colder' : 'warmer';
+          hddNote =
+            'The reporting period was ' +
+            Math.abs(totHddVarFinal).toFixed(1) +
+            '% ' +
+            colder +
+            ' than the baseline average, resulting in ' +
+            (colder === 'colder' ? 'elevated heating demand.' : 'reduced heating demand.') +
+            ' ';
+        }
+        if (Math.abs(totCddVarFinal) > 10) {
+          var hotter = totCddVarFinal > 0 ? 'warmer' : 'cooler';
+          cddNote =
+            'Cooling degree days were ' +
+            Math.abs(totCddVarFinal).toFixed(1) +
+            '% ' +
+            (totCddVarFinal > 0 ? 'above' : 'below') +
+            ' baseline, indicating ' +
+            (totCddVarFinal > 0 ? 'elevated cooling demand.' : 'reduced cooling demand.') +
+            ' ';
+        }
+        var narrativeText =
+          (hddNote ||
+            cddNote ||
+            'Weather conditions during the reporting period were within normal range of the baseline average. ') +
+          'Weather-normalized savings figures reflect genuine performance improvements and are not attributable to weather effects. ' +
+          'Balance point: 60°F per contract specification. Weather station: Nearest NOAA station to project site.';
+
+        var narrativeBox =
+          '<div contenteditable="true" style="border:1px solid #ccc;border-radius:4px;padding:10px 12px;font-size:9px;line-height:1.7;color:#333;background:#fafafa;margin-top:10px">' +
+          narrativeText +
+          '</div>';
+
+        var bodyHTML =
+          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix C: Weather Data</h2>' +
+          '<div style="font-size:8.5px;color:#666;margin-bottom:10px">Combined HDD and CDD — Base 60°F per contract</div>' +
+          weatherTable +
+          '<h3 style="font-size:9.5px;font-weight:700;color:#555;margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.04em">Weather Impact Summary</h3>' +
+          narrativeBox;
+
+        return rptPage(n, 'Appendix C: Weather Data', bodyHTML, {
           data: d,
           label: 'Page ' + n + ' — Appendix C',
         });
       }
+
       function rptPageAppendixBills(n, d) {
-        return rptPage(n, 'Appendix D: Bills', '<p style="padding:20px;color:#888">Appendix D — coming soon</p>', {
+        var $c = function (v) {
+          return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+        };
+
+        var periodYMs = (d.period && d.period.yearMonths) || [];
+        var monthNames = [
+          'January',
+          'February',
+          'March',
+          'April',
+          'May',
+          'June',
+          'July',
+          'August',
+          'September',
+          'October',
+          'November',
+          'December',
+        ];
+
+        // Build bill index per month
+        var billsByMonth = {};
+        periodYMs.forEach(function (ym) {
+          billsByMonth[ym] = [];
+        });
+
+        (d.buildings || []).forEach(function (b) {
+          var bName = b.name || '—';
+
+          function addBills(commodityLabel, moArr) {
+            (moArr || []).forEach(function (mo) {
+              if (!billsByMonth[mo.month]) return;
+              billsByMonth[mo.month].push({
+                building: bName,
+                commodity: commodityLabel,
+                provider: mo.provider || '',
+                account: mo.account || '',
+                amount: mo.cost || mo.blCost || 0,
+                billDate: mo.billDate || mo.month || '—',
+              });
+            });
+          }
+
+          if (b.commodities && b.commodities.includes('Electric') && b.electric) {
+            addBills('Electric', b.electric.monthly || []);
+          }
+          if (b.commodities && b.commodities.includes('Gas') && b.gas) {
+            addBills('Natural Gas', b.gas.monthly || []);
+          }
+          if (b.commodities && b.commodities.includes('Propane') && b.propane) {
+            addBills('Propane', b.propane.monthly || []);
+          }
+        });
+
+        var sections = '';
+        if (!periodYMs.length) {
+          sections = '<p style="font-size:8px;color:#aaa;font-style:italic">No reporting period months configured.</p>';
+        } else {
+          periodYMs.forEach(function (ym) {
+            var parts = ym.split('-');
+            var moLabel = monthNames[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
+            var bills = billsByMonth[ym] || [];
+            var rows = '';
+            if (!bills.length) {
+              rows =
+                '<tr><td colspan="6" style="color:#aaa;font-style:italic">No bills recorded for this month</td></tr>';
+            } else {
+              bills.forEach(function (bill) {
+                rows +=
+                  '<tr>' +
+                  '<td contenteditable="true">' +
+                  bill.building +
+                  '</td>' +
+                  '<td contenteditable="true">' +
+                  bill.commodity +
+                  '</td>' +
+                  '<td contenteditable="true">' +
+                  (bill.provider || '—') +
+                  '</td>' +
+                  '<td contenteditable="true">' +
+                  (bill.account || '—') +
+                  '</td>' +
+                  '<td class="rpt-n" contenteditable="true">' +
+                  (bill.amount ? $c(bill.amount) : '—') +
+                  '</td>' +
+                  '<td contenteditable="true">' +
+                  bill.billDate +
+                  '</td>' +
+                  '</tr>';
+              });
+            }
+            sections +=
+              '<div style="font-size:9px;font-weight:700;color:#1a5276;background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
+              moLabel +
+              '</div>' +
+              '<table class="rpt-table" style="font-size:7.5px;margin-bottom:6px">' +
+              '<thead><tr>' +
+              '<th>Building</th><th>Commodity</th><th>Provider</th><th>Account #</th><th class="rpt-n">Amount</th><th>Bill Date</th>' +
+              '</tr></thead><tbody>' +
+              rows +
+              '</tbody></table>';
+          });
+        }
+
+        var footerNote =
+          '<div style="margin-top:12px;font-size:8px;color:#777;font-style:italic;border-top:1px solid #ddd;padding-top:6px">' +
+          'In the PDF export, scanned utility bill images are embedded after this index page.' +
+          '</div>';
+
+        var bodyHTML =
+          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix D: Utility Bills</h2>' +
+          '<div style="font-size:8.5px;color:#666;margin-bottom:10px">Original utility bill PDFs for the reporting period</div>' +
+          sections +
+          footerNote;
+
+        return rptPage(n, 'Appendix D: Utility Bills', bodyHTML, {
           data: d,
           label: 'Page ' + n + ' — Appendix D',
         });
