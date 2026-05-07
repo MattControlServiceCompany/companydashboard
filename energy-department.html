@@ -12824,6 +12824,10 @@
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js" crossorigin="anonymous"></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"
+      crossorigin="anonymous"
+    ></script>
     <script>
       /* ── AI API (disabled — no backend) ── */
       async function claude(prompt, sys) {
@@ -49587,8 +49591,105 @@
       function saveReportToHistory() {
         showToast('Report history — coming soon', 'info');
       }
-      function exportReportToPDF() {
-        showToast('PDF export — coming soon', 'info');
+      async function exportReportToPDF() {
+        const data = window._currentReportData;
+        if (!data) {
+          showToast('No report data available');
+          return;
+        }
+
+        const pages = document.querySelectorAll('#reportPages .rpt-page');
+        if (!pages.length) {
+          showToast('No report pages to export');
+          return;
+        }
+
+        // Show loading state on button
+        const toolbar = document.querySelector('.report-toolbar');
+        const exportBtn = toolbar ? toolbar.querySelector('[onclick*="exportReportToPDF"]') : null;
+        const originalBtnText = exportBtn ? exportBtn.textContent : '';
+        if (exportBtn) {
+          exportBtn.disabled = true;
+          exportBtn.textContent = '⏳ Generating...';
+        }
+
+        showToast('Generating PDF... this may take a moment');
+
+        try {
+          const { jsPDF } = window.jspdf;
+          const doc = new jsPDF({ unit: 'pt', format: 'letter', compress: true });
+          const pageW = 612,
+            pageH = 792; // Letter size in points
+
+          // Content margins (leave room for letterhead header/footer)
+          const margin = { top: 55, bottom: 35, left: 30, right: 30 };
+          const contentW = pageW - margin.left - margin.right;
+          const contentH = pageH - margin.top - margin.bottom;
+
+          for (let i = 0; i < pages.length; i++) {
+            if (i > 0) doc.addPage();
+
+            // Add letterhead header image (skip on cover/hero page 1)
+            if (i > 0) {
+              try {
+                if (typeof CSC_HEADER_B64 !== 'undefined' && CSC_HEADER_B64) {
+                  doc.addImage(CSC_HEADER_B64, 'JPEG', 0, 0, pageW, 50);
+                }
+              } catch (e) {
+                console.warn('Header image failed on page ' + (i + 1), e);
+              }
+            }
+
+            // Always add letterhead footer image
+            try {
+              if (typeof CSC_FOOTER_B64 !== 'undefined' && CSC_FOOTER_B64) {
+                doc.addImage(CSC_FOOTER_B64, 'JPEG', 0, pageH - 30, pageW, 30);
+              }
+            } catch (e) {
+              console.warn('Footer image failed on page ' + (i + 1), e);
+            }
+
+            // Capture page as high-res image
+            try {
+              const canvas = await html2canvas(pages[i], {
+                scale: 2,
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                logging: false,
+                width: 816,
+                height: 1056,
+              });
+              const imgData = canvas.toDataURL('image/jpeg', 0.92);
+              // On cover page (page 1), use full page area since no header
+              const imgTop = i === 0 ? 0 : margin.top;
+              const imgH = i === 0 ? pageH - margin.bottom : contentH;
+              doc.addImage(imgData, 'JPEG', margin.left, imgTop, contentW, imgH);
+            } catch (e) {
+              console.error('Failed to render page ' + (i + 1), e);
+              doc.setFontSize(12);
+              doc.text('Page ' + (i + 1) + ' failed to render', margin.left, margin.top + 20);
+            }
+          }
+
+          // Generate filename
+          const client = data.project.client || data.project.name || 'Report';
+          const period = data.period.label || '';
+          const typeLabel = data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
+          const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
+          const filename = client + ' - ' + typeLabel + ' Savings Report ' + dateStr + '.pdf';
+
+          doc.save(filename);
+          showToast('Report exported to PDF ✓');
+        } catch (err) {
+          console.error('PDF export failed:', err);
+          showToast('PDF export failed: ' + (err.message || 'Unknown error'), 'error');
+        } finally {
+          // Restore button state
+          if (exportBtn) {
+            exportBtn.disabled = false;
+            exportBtn.textContent = originalBtnText || '📄 Export to PDF';
+          }
+        }
       }
 
       /* ── QUARTERLY / ANNUAL PERFORMANCE REPORTS ── */
