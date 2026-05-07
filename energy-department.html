@@ -46575,18 +46575,470 @@
         return rptPage(n, 'Financial Summary', bodyHTML, { data: d, label: 'Page ' + n + ' — Financial Summary' });
       }
       function rptPageSavingsPerformance(n, d) {
-        return rptPage(
-          n,
-          'Savings Performance',
-          '<p style="padding:20px;color:#888">Savings Performance — coming soon</p>',
-          { data: d, label: 'Page ' + n + ' — Savings Performance' },
-        );
+        const $c = function (v) {
+          return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+        };
+        const $n = function (v) {
+          return Math.round(v || 0).toLocaleString();
+        };
+        const $p = function (v) {
+          return (v || 0).toFixed(1) + '%';
+        };
+
+        // ── Monthly Savings: Projected vs Actual chart ──
+        // Use captured chart image if available, otherwise render inline HTML bars
+        let chartSection = '';
+        if (d.chartImages && d.chartImages['projSavProjChart']) {
+          chartSection =
+            '<div class="rpt-chart-box">' +
+            '<div class="rpt-chart-title">Monthly Projected Savings — Projected vs Actual</div>' +
+            '<img src="' +
+            d.chartImages['projSavProjChart'] +
+            '" style="width:100%;height:auto;display:block"/>' +
+            '</div>';
+        } else {
+          // Inline HTML bars: projected (orange) vs actual (green) per month in period
+          const periodYMs = d.period.yearMonths || [];
+          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          // Gather per-month projected (baseline kWh cost) and actual cost from buildings
+          const moProj = {};
+          const moActual = {};
+          periodYMs.forEach(function (ym) {
+            moProj[ym] = 0;
+            moActual[ym] = 0;
+          });
+          d.buildings.forEach(function (b) {
+            (b.electric.monthly || []).forEach(function (mo) {
+              if (!moProj[mo.month] && !moActual[mo.month]) return;
+              // proxy: bl kWh → projected baseline, cur kWh → actual; scale by avg rate
+              moProj[mo.month] = (moProj[mo.month] || 0) + (mo.bl || 0);
+              moActual[mo.month] = (moActual[mo.month] || 0) + (mo.cur || 0);
+            });
+          });
+          const maxVal = Math.max(
+            1,
+            Math.max.apply(
+              null,
+              periodYMs.map(function (ym) {
+                return Math.max(moProj[ym] || 0, moActual[ym] || 0);
+              }),
+            ),
+          );
+          const bars = periodYMs
+            .map(function (ym) {
+              const moIdx = parseInt(ym.split('-')[1]) - 1;
+              const moLabel = monthNames[moIdx] + ' ' + ym.split('-')[0].slice(2);
+              const projPct = Math.min(100, ((moProj[ym] || 0) / maxVal) * 100).toFixed(1);
+              const actPct = Math.min(100, ((moActual[ym] || 0) / maxVal) * 100).toFixed(1);
+              return (
+                '<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">' +
+                '<div style="width:40px;text-align:right;font-size:7px;color:#555">' +
+                moLabel +
+                '</div>' +
+                '<div style="flex:1">' +
+                '<div style="display:flex;gap:2px;align-items:center">' +
+                '<div style="width:' +
+                projPct +
+                '%;height:7px;background:#f39c12;border-radius:2px;min-width:1px"></div>' +
+                '<span style="font-size:6px;color:#888">' +
+                $n(moProj[ym]) +
+                '</span>' +
+                '</div>' +
+                '<div style="display:flex;gap:2px;align-items:center;margin-top:1px">' +
+                '<div style="width:' +
+                actPct +
+                '%;height:7px;background:#27ae60;border-radius:2px;min-width:1px"></div>' +
+                '<span style="font-size:6px;color:#888">' +
+                $n(moActual[ym]) +
+                '</span>' +
+                '</div>' +
+                '</div>' +
+                '</div>'
+              );
+            })
+            .join('');
+          chartSection =
+            '<div class="rpt-chart-box">' +
+            '<div class="rpt-chart-title">Monthly Savings — Projected (orange) vs Actual (green) — kWh</div>' +
+            '<div style="display:flex;gap:12px;margin-bottom:4px;font-size:7px">' +
+            '<span><span style="display:inline-block;width:10px;height:7px;background:#f39c12;border-radius:2px;vertical-align:middle"></span> Projected Baseline</span>' +
+            '<span><span style="display:inline-block;width:10px;height:7px;background:#27ae60;border-radius:2px;vertical-align:middle"></span> Actual</span>' +
+            '</div>' +
+            bars +
+            '</div>';
+        }
+
+        // ── Annual Summary by Year table ──
+        // We have baseline totals and current period; build rows accordingly
+        const blRow =
+          '<tr>' +
+          '<td contenteditable="true">Baseline</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $n(d.totals.kwhBl) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $n(d.totals.peakKwBl) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $n(d.totals.thermsBl) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $n(d.totals.propaneBl) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $c(d.totals.blCost) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          (d.totals.euiBaseline > 0 ? d.totals.euiBaseline.toFixed(1) : '—') +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">—</td>' +
+          '</tr>';
+
+        const savPct = d.totals.blCost > 0 ? ((d.totals.blCost - d.totals.curCost) / d.totals.blCost) * 100 : 0;
+        const curYrLabel = d.period.year
+          ? String(d.period.year) + (d.period.type === 'quarterly' ? ' YTD' : '')
+          : 'Current';
+        const curRow =
+          '<tr style="background:#fffde7;">' +
+          '<td contenteditable="true">' +
+          curYrLabel +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $n(d.totals.kwhCur) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $n(d.totals.peakKwCur) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $n(d.totals.thermsCur) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $n(d.totals.propaneCur) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $c(d.totals.curCost) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          (d.totals.euiCurrent > 0 ? d.totals.euiCurrent.toFixed(1) : '—') +
+          '</td>' +
+          '<td class="rpt-n ' +
+          (savPct >= 0 ? 'rpt-g' : 'rpt-r') +
+          '" contenteditable="true">' +
+          $p(savPct) +
+          '</td>' +
+          '</tr>';
+
+        const annTable =
+          '<table class="rpt-table" contenteditable="true">' +
+          '<thead><tr>' +
+          '<th>Year</th>' +
+          '<th class="rpt-n">kWh</th>' +
+          '<th class="rpt-n">Peak kW</th>' +
+          '<th class="rpt-n">Therms</th>' +
+          '<th class="rpt-n">LPG Gal</th>' +
+          '<th class="rpt-n">Cost</th>' +
+          '<th class="rpt-n">EUI</th>' +
+          '<th class="rpt-n">vs BL</th>' +
+          '</tr></thead>' +
+          '<tbody>' +
+          blRow +
+          curRow +
+          '</tbody>' +
+          '</table>';
+
+        // ── Annual Summary by Building table (2 rows per building: BL + current) ──
+        const bldgRows = d.buildings
+          .map(function (b) {
+            const bSavPct = b.blCost > 0 ? ((b.blCost - b.curCost) / b.blCost) * 100 : 0;
+            const blEUI = b.eui.baseline > 0 ? b.eui.baseline.toFixed(1) : '—';
+            const curEUI = b.eui.current > 0 ? b.eui.current.toFixed(1) : '—';
+            return (
+              '<tr>' +
+              '<td rowspan="2" style="font-weight:600;vertical-align:middle;font-size:7px" contenteditable="true">' +
+              (b.name || '—') +
+              '</td>' +
+              '<td contenteditable="true" style="color:#888">BL</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $n(b.electric.kwhBl) +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $n(b.electric.kwBl) +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $n(b.gas.thermsBl) +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $n(b.propane.galBl) +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $c(b.blCost) +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              blEUI +
+              '</td>' +
+              '</tr>' +
+              '<tr style="background:#fffde7;">' +
+              '<td contenteditable="true" style="color:#1a5276;font-weight:600">' +
+              curYrLabel +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $n(b.electric.kwhCur) +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $n(b.electric.kwCur) +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $n(b.gas.thermsCur) +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $n(b.propane.galCur) +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $c(b.curCost) +
+              '</td>' +
+              '<td class="rpt-n ' +
+              (bSavPct >= 0 ? 'rpt-g' : 'rpt-r') +
+              '" contenteditable="true">' +
+              curEUI +
+              ' (' +
+              $p(bSavPct) +
+              ')</td>' +
+              '</tr>'
+            );
+          })
+          .join('');
+
+        const bldgTable =
+          '<table class="rpt-table" contenteditable="true" style="font-size:8px">' +
+          '<thead><tr>' +
+          '<th>Building</th>' +
+          '<th>Year</th>' +
+          '<th class="rpt-n">kWh</th>' +
+          '<th class="rpt-n">kW</th>' +
+          '<th class="rpt-n">Therms</th>' +
+          '<th class="rpt-n">LPG Gal</th>' +
+          '<th class="rpt-n">Cost</th>' +
+          '<th class="rpt-n">EUI</th>' +
+          '</tr></thead>' +
+          '<tbody>' +
+          bldgRows +
+          '</tbody>' +
+          '</table>';
+
+        const bodyHTML =
+          '<h2>Monthly Savings: Projected vs Actual</h2>' +
+          chartSection +
+          '<h2>Annual Summary by Year</h2>' +
+          annTable +
+          '<h2>Annual Summary by Building</h2>' +
+          bldgTable;
+
+        return rptPage(n, 'Savings Performance', bodyHTML, { data: d, label: 'Page ' + n + ' — Savings Performance' });
       }
       function rptPageEUI(n, d) {
-        return rptPage(n, 'EUI Benchmarking', '<p style="padding:20px;color:#888">EUI Benchmarking — coming soon</p>', {
-          data: d,
-          label: 'Page ' + n + ' — EUI Benchmarking',
+        const $c = function (v) {
+          return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+        };
+        const $n = function (v) {
+          return Math.round(v || 0).toLocaleString();
+        };
+        const $p = function (v) {
+          return (v || 0).toFixed(1) + '%';
+        };
+
+        // ── Building Performance Rankings table ──
+        // Sort buildings by current EUI ascending (best first)
+        const sorted = d.buildings.slice().sort(function (a, b) {
+          return (a.eui.current || 0) - (b.eui.current || 0);
         });
+
+        const rankRows = sorted
+          .map(function (b, i) {
+            const cbecs = b.eui.cbecs || 0;
+            const cur = b.eui.current || 0;
+            const bl = b.eui.baseline || 0;
+            const vsCbecs = cbecs > 0 ? ((cur - cbecs) / cbecs) * 100 : 0;
+            const vsCbecsClass = vsCbecs <= 0 ? 'rpt-g' : 'rpt-r';
+            const eStarCell = b.eui.energyStar ? '<span style="color:#27ae60;font-weight:700">Yes</span>' : '—';
+            const cpSqft = b.sqft > 0 ? b.curCost / b.sqft : 0;
+            const trendCell =
+              cur > 0 && bl > 0 && cur < bl
+                ? '<span style="color:#27ae60">&#9650;</span>'
+                : '<span style="color:#888">—</span>';
+            return (
+              '<tr>' +
+              '<td contenteditable="true">' +
+              (i + 1) +
+              '</td>' +
+              '<td contenteditable="true">' +
+              (b.name || '—') +
+              '</td>' +
+              '<td contenteditable="true">' +
+              (b.type || '—') +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $n(b.sqft) +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              (bl > 0 ? bl.toFixed(1) : '—') +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              (cur > 0 ? cur.toFixed(1) : '—') +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              (cbecs > 0 ? cbecs.toFixed(1) : '—') +
+              '</td>' +
+              '<td class="rpt-n ' +
+              vsCbecsClass +
+              '" contenteditable="true">' +
+              $p(vsCbecs) +
+              '</td>' +
+              '<td contenteditable="true">' +
+              (b.eui.percentile || '—') +
+              '</td>' +
+              '<td contenteditable="true">' +
+              eStarCell +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              (cpSqft > 0 ? '$' + cpSqft.toFixed(2) : '—') +
+              '</td>' +
+              '<td contenteditable="true">' +
+              trendCell +
+              '</td>' +
+              '</tr>'
+            );
+          })
+          .join('');
+
+        const rankTable =
+          '<table class="rpt-table" contenteditable="true" style="font-size:8px">' +
+          '<thead><tr>' +
+          '<th>#</th>' +
+          '<th>Building</th>' +
+          '<th>Type</th>' +
+          '<th class="rpt-n">Sq Ft</th>' +
+          '<th class="rpt-n">BL EUI</th>' +
+          '<th class="rpt-n">Curr EUI</th>' +
+          '<th class="rpt-n">CBECS</th>' +
+          '<th class="rpt-n">vs CBECS %</th>' +
+          '<th>Percentile</th>' +
+          '<th>E&#9733;</th>' +
+          '<th class="rpt-n">$/ft²</th>' +
+          '<th>Trend</th>' +
+          '</tr></thead>' +
+          '<tbody>' +
+          rankRows +
+          '</tbody>' +
+          '</table>';
+
+        // ── EUI vs CBECS horizontal bar chart ──
+        // Find max EUI across buildings and CBECS values for scaling
+        const allEuis = d.buildings.map(function (b) {
+          return Math.max(b.eui.current || 0, b.eui.cbecs || 0, b.eui.baseline || 0);
+        });
+        const maxEUI = Math.max(1, Math.max.apply(null, allEuis) * 1.1);
+
+        const euiBars = sorted
+          .map(function (b) {
+            const cur = b.eui.current || 0;
+            const cbecs = b.eui.cbecs || 0;
+            const barPct = Math.min(100, (cur / maxEUI) * 100).toFixed(1);
+            const cbecsLinePct = Math.min(100, (cbecs / maxEUI) * 100).toFixed(1);
+            const barColor = cur <= cbecs ? '#27ae60' : '#f39c12';
+            return (
+              '<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">' +
+              '<div style="width:80px;text-align:right;font-size:7px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+              (b.name || '—') +
+              '</div>' +
+              '<div style="flex:1;height:18px;background:#f0f0f0;border-radius:3px;position:relative">' +
+              '<div style="width:' +
+              barPct +
+              '%;height:100%;background:' +
+              barColor +
+              ';border-radius:3px;display:flex;align-items:center;padding-left:3px;box-sizing:border-box;font-size:6px;color:#fff;font-weight:600;white-space:nowrap;overflow:hidden">' +
+              (cur > 0 ? cur.toFixed(1) : '') +
+              '</div>' +
+              '<div style="position:absolute;left:' +
+              cbecsLinePct +
+              '%;top:0;bottom:0;width:2px;background:#c0392b;z-index:1"></div>' +
+              '</div>' +
+              '</div>'
+            );
+          })
+          .join('');
+
+        const euiChart =
+          '<div class="rpt-chart-box">' +
+          '<div class="rpt-chart-title">Current EUI by Building — red line = CBECS Median</div>' +
+          '<div style="display:flex;gap:12px;margin-bottom:4px;font-size:7px">' +
+          '<span><span style="display:inline-block;width:10px;height:7px;background:#27ae60;border-radius:2px;vertical-align:middle"></span> Below CBECS</span>' +
+          '<span><span style="display:inline-block;width:10px;height:7px;background:#f39c12;border-radius:2px;vertical-align:middle"></span> Above CBECS</span>' +
+          '<span><span style="display:inline-block;width:2px;height:10px;background:#c0392b;vertical-align:middle"></span> CBECS Median</span>' +
+          '</div>' +
+          euiBars +
+          '</div>';
+
+        // ── EUI Trend table ──
+        const curYrLabel = d.period.year ? String(d.period.year) : 'Current';
+        const trendRows = d.buildings
+          .map(function (b) {
+            const bl = b.eui.baseline || 0;
+            const cur = b.eui.current || 0;
+            const reduction = bl > 0 ? ((bl - cur) / bl) * 100 : 0;
+            const redClass = reduction >= 0 ? 'rpt-g' : 'rpt-r';
+            const trendIcon =
+              cur > 0 && bl > 0 && cur < bl
+                ? '<span style="color:#27ae60">&#9650;</span>'
+                : '<span style="color:#888">—</span>';
+            return (
+              '<tr>' +
+              '<td contenteditable="true">' +
+              (b.name || '—') +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              (bl > 0 ? bl.toFixed(1) : '—') +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              (cur > 0 ? cur.toFixed(1) : '—') +
+              '</td>' +
+              '<td class="rpt-n ' +
+              redClass +
+              '" contenteditable="true">' +
+              $p(reduction) +
+              '</td>' +
+              '<td contenteditable="true">' +
+              trendIcon +
+              '</td>' +
+              '</tr>'
+            );
+          })
+          .join('');
+
+        const trendTable =
+          '<table class="rpt-table" contenteditable="true">' +
+          '<thead><tr>' +
+          '<th>Building</th>' +
+          '<th class="rpt-n">Baseline EUI</th>' +
+          '<th class="rpt-n">' +
+          curYrLabel +
+          ' EUI</th>' +
+          '<th class="rpt-n">Reduction</th>' +
+          '<th>Trend</th>' +
+          '</tr></thead>' +
+          '<tbody>' +
+          trendRows +
+          '</tbody>' +
+          '</table>';
+
+        const bodyHTML =
+          '<h2>Building Performance Rankings</h2>' +
+          rankTable +
+          '<h2>EUI vs CBECS Benchmark</h2>' +
+          euiChart +
+          '<h2>EUI Trend</h2>' +
+          trendTable;
+
+        return rptPage(n, 'EUI Benchmarking', bodyHTML, { data: d, label: 'Page ' + n + ' — EUI Benchmarking' });
       }
       function rptPageEnvironmentalImpact(n, d) {
         return rptPage(
