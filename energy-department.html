@@ -60621,8 +60621,23 @@
         return s;
       }
 
+      function _basParseFileDate(fileName) {
+        if (!fileName) return null;
+        var m = fileName.match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
+        if (m) return m[1] + '-' + m[2] + '-' + m[3] + 'T' + m[4] + ':' + m[5] + ':' + m[6];
+        var m2 = fileName.match(/(\d{4})(\d{2})(\d{2})/);
+        if (m2) return m2[1] + '-' + m2[2] + '-' + m2[3];
+        return null;
+      }
+
+      function _basFormatDate(isoStr) {
+        if (!isoStr) return '';
+        var d = new Date(isoStr);
+        if (isNaN(d.getTime())) return isoStr;
+        return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+      }
+
       function spParseBASSnapshot(lines, headers, splitRow, projId, fileName) {
-        // Map all column indices from the Niagara export
         function findCol(candidates) {
           for (var ci = 0; ci < candidates.length; ci++) {
             var idx = headers.findIndex(function (h) {
@@ -60748,16 +60763,37 @@
           return String(x.id) === String(projId);
         });
         if (p) {
-          p.basSnapshot = {
+          var snapshotDate = _basParseFileDate(fileName);
+          var newSnap = {
+            id: Date.now().toString(36),
+            snapshotDate: snapshotDate,
             importedAt: new Date().toISOString(),
             fileName: fileName || 'unknown.csv',
             rows: rows,
             buildings: analysis,
           };
+          // Migrate old single basSnapshot to array
+          if (p.basSnapshot && !p.basSnapshots) {
+            p.basSnapshots = [p.basSnapshot];
+            if (!p.basSnapshots[0].id) p.basSnapshots[0].id = 'legacy';
+            delete p.basSnapshot;
+          }
+          if (!p.basSnapshots) p.basSnapshots = [];
+          // Prevent duplicate imports of the same file
+          var dup = p.basSnapshots.find(function (s) {
+            return s.fileName === newSnap.fileName;
+          });
+          if (dup) {
+            Object.assign(dup, newSnap);
+            showToast('BAS Snapshot updated: ' + rows.length + ' zones across ' + analysis.length + ' buildings');
+          } else {
+            p.basSnapshots.push(newSnap);
+            showToast('BAS Snapshot added: ' + rows.length + ' zones (' + _basFormatDate(snapshotDate) + ')');
+          }
+          window._basActiveSnap = window._basActiveSnap || {};
+          window._basActiveSnap[projId] = newSnap.id;
           sset('en_projects', projects);
         }
-
-        showToast('BAS Snapshot imported: ' + rows.length + ' zones across ' + analysis.length + ' buildings');
         renderSetpointsTab(projId);
       }
 
@@ -60835,16 +60871,66 @@
         return result;
       }
 
+      function _basGetSnapshots(p) {
+        // Migrate old single basSnapshot to array
+        if (p.basSnapshot && !p.basSnapshots) {
+          p.basSnapshots = [p.basSnapshot];
+          if (!p.basSnapshots[0].id) p.basSnapshots[0].id = 'legacy';
+          delete p.basSnapshot;
+        }
+        return p.basSnapshots || [];
+      }
+
+      function _basGetActiveSnap(projId, snaps) {
+        if (!snaps.length) return null;
+        if (!window._basActiveSnap) window._basActiveSnap = {};
+        var activeId = window._basActiveSnap[projId];
+        var found = snaps.find(function (s) {
+          return s.id === activeId;
+        });
+        return found || snaps[snaps.length - 1];
+      }
+
       function spRenderBASSnapshot(projId) {
         var p = projects.find(function (x) {
           return String(x.id) === String(projId);
         });
-        if (!p || !p.basSnapshot) return '';
-        var snap = p.basSnapshot;
+        if (!p) return '';
+        var snaps = _basGetSnapshots(p);
+        if (!snaps.length) return '';
+        var snap = _basGetActiveSnap(projId, snaps);
+        if (!snap) return '';
         var rows = snap.rows || [];
         var buildings = snap.buildings || [];
 
-        // Build building filter options
+        // Snapshot selector (if multiple)
+        var snapSelector = '';
+        if (snaps.length > 1) {
+          var snapOpts = snaps
+            .map(function (s) {
+              var label = _basFormatDate(s.snapshotDate) || _basFormatDate(s.importedAt) || s.fileName;
+              var sel = s.id === snap.id ? ' selected' : '';
+              return (
+                '<option value="' +
+                s.id +
+                '"' +
+                sel +
+                '>' +
+                _escHtml(label) +
+                ' (' +
+                (s.rows || []).length +
+                ' zones)</option>'
+              );
+            })
+            .join('');
+          snapSelector =
+            '<select class="fi" style="font-size:12px;padding:4px 8px" onchange="spBASSelectSnap(\'' +
+            projId +
+            '\',this.value)">' +
+            snapOpts +
+            '</select>';
+        }
+
         var bldgList = [];
         rows.forEach(function (r) {
           if (r.building && bldgList.indexOf(r.building) < 0) bldgList.push(r.building);
@@ -60863,21 +60949,23 @@
             })
             .join('');
 
-        var importDate = snap.importedAt ? new Date(snap.importedAt).toLocaleDateString() : '';
+        var snapDate = snap.snapshotDate ? _basFormatDate(snap.snapshotDate) : '';
+        var dateLabel = snapDate ? 'Snapshot: ' + snapDate : _escHtml(snap.fileName || '');
 
         return (
           '<div class="card" style="margin-top:16px">' +
           '<div class="card-hdr" style="justify-content:space-between">' +
           '<span class="card-title">📊 BAS Equipment Snapshot</span>' +
           '<div style="display:flex;gap:8px;align-items:center;font-size:11px;color:var(--text3)">' +
+          snapSelector +
           '<span>' +
-          _escHtml(snap.fileName || '') +
-          ' — ' +
-          importDate +
+          dateLabel +
           '</span>' +
           '<button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:rgba(244,63,94,.3)" onclick="spClearBASSnapshot(\'' +
           projId +
-          '\')">Clear</button>' +
+          "','" +
+          snap.id +
+          '\')">Remove</button>' +
           '</div>' +
           '</div>' +
           '<div style="padding:12px">' +
@@ -61061,8 +61149,11 @@
         var p = projects.find(function (x) {
           return String(x.id) === String(projId);
         });
-        if (!p || !p.basSnapshot) return;
-        var rows = p.basSnapshot.rows || [];
+        if (!p) return;
+        var snaps = _basGetSnapshots(p);
+        var snap = _basGetActiveSnap(projId, snaps);
+        if (!snap) return;
+        var rows = snap.rows || [];
         if (building)
           rows = rows.filter(function (r) {
             return r.building === building;
@@ -61071,14 +61162,24 @@
         if (wrap) wrap.innerHTML = _basRenderTable(rows);
       }
 
-      function spClearBASSnapshot(projId) {
+      function spBASSelectSnap(projId, snapId) {
+        if (!window._basActiveSnap) window._basActiveSnap = {};
+        window._basActiveSnap[projId] = snapId;
+        renderSetpointsTab(projId);
+      }
+
+      function spClearBASSnapshot(projId, snapId) {
         var p = projects.find(function (x) {
           return String(x.id) === String(projId);
         });
         if (!p) return;
-        delete p.basSnapshot;
+        var snaps = _basGetSnapshots(p);
+        p.basSnapshots = snaps.filter(function (s) {
+          return s.id !== snapId;
+        });
+        if (!p.basSnapshots.length) delete p.basSnapshots;
         sset('en_projects', projects);
-        showToast('BAS snapshot cleared');
+        showToast('BAS snapshot removed');
         renderSetpointsTab(projId);
       }
 
