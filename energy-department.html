@@ -13017,6 +13017,11 @@
               </div>
               <div style="font-size:13px;color:var(--text2)">No documents yet. Use the PDF/OCR tool to save documents to this project.</div>
             </div>
+            <div id="ptab-setpoints" class="ptab" style="padding:16px;overflow-y:auto">
+              <div id="ptab-setpoints-body-${p.id}">
+                <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading set points…</div>
+              </div>
+            </div>
             <div id="ptab-settings" class="ptab" style="padding:16px;overflow-y:auto">
               <div style="display:flex;flex-wrap:wrap;gap:16px">
               <div class="card" style="max-width:560px;flex:1;min-width:280px">
@@ -13753,6 +13758,7 @@
         { id: 'contracts', label: '📋 Contracts' },
         { id: 'meetings', label: '📋 Meetings' },
         { id: 'docs', label: '📁 Documents' },
+        { id: 'setpoints', label: '🌡️ Set Points' },
         { id: 'settings', label: '⚙️ Project Settings' },
       ];
       function _getProjTabOrder() {
@@ -13892,6 +13898,7 @@
         if (tab === 'energygfx') egfxRefresh(p.id);
         if (tab === 'meetings') renderMeetingsList(p.id);
         if (tab === 'district') renderDistCalTable(p.id);
+        if (tab === 'setpoints') renderSetpointsTab(p.id);
         window._activeProjTab = tab;
         saveProjSession();
       }
@@ -54314,6 +54321,320 @@
       }
       function egfxExport(projId) {
         showToast('Export coming soon');
+      }
+
+      /* ══════════════════════════════════════════════════════
+         SET POINTS & SCHEDULES TAB
+      ══════════════════════════════════════════════════════ */
+
+      /* Data model stored on project in en_projects:
+         project.setpoints = [
+           { buildingId: 'xxx', zones: [
+             { name: 'Classrooms', occHeat: 70, occCool: 74,
+               unoccHeat: 60, unoccCool: 85, schedule: 'M-F 6:00a-4:30p' }
+           ]}
+         ]
+      */
+
+      function renderSetpointsTab(projId) {
+        const container = document.getElementById('ptab-setpoints-body-' + projId);
+        if (!container) return;
+        const p = projects.find((x) => String(x.id) === String(projId));
+        if (!p) {
+          container.innerHTML = '<div style="color:var(--text3);padding:20px">Project not found.</div>';
+          return;
+        }
+
+        const bldgs = getUDBldgs(projId);
+        if (!bldgs.length) {
+          container.innerHTML =
+            '<div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">No buildings found. Add buildings in the Utility Data tab first.</div>';
+          return;
+        }
+
+        // Determine active building — preserve last selection per project
+        if (!window._spActiveBldg) window._spActiveBldg = {};
+        const savedBldgId = window._spActiveBldg[projId];
+        const activeBldgId = (bldgs.find((b) => b.id === savedBldgId) ? savedBldgId : null) || bldgs[0].id;
+        window._spActiveBldg[projId] = activeBldgId;
+
+        const spRecord = (p.setpoints || []).find((r) => r.buildingId === activeBldgId);
+        const zones = spRecord ? spRecord.zones : [];
+
+        const bldgOptions = bldgs
+          .map(
+            (b) =>
+              `<option value="${b.id}"${b.id === activeBldgId ? ' selected' : ''}>${_escHtml(b.name || 'Building')}</option>`,
+          )
+          .join('');
+
+        const tableRows = zones.map((z, i) => _spZoneRow(projId, activeBldgId, z, i)).join('');
+
+        container.innerHTML = `
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-hdr" style="justify-content:space-between">
+              <span class="card-title">🌡️ BAS Set Points &amp; Schedules</span>
+              <div style="display:flex;gap:8px;align-items:center">
+                <select id="sp-bldg-sel-${projId}" class="fi" style="font-size:12px;padding:4px 8px"
+                  onchange="window._spActiveBldg['${projId}']=this.value;renderSetpointsTab('${projId}')">
+                  ${bldgOptions}
+                </select>
+                <button class="btn btn-ghost btn-sm" onclick="spAddZoneRow('${projId}','${activeBldgId}')">+ Add Zone</button>
+                <button class="btn btn-em btn-sm" onclick="spSave('${projId}','${activeBldgId}')">💾 Save</button>
+              </div>
+            </div>
+            <div style="padding:16px">
+              <!-- CSV Upload Area -->
+              <div id="sp-upload-${projId}" style="border:2px dashed var(--border2);border-radius:8px;padding:16px;text-align:center;margin-bottom:16px;cursor:pointer;transition:border-color .2s"
+                   onclick="document.getElementById('sp-file-${projId}').click()"
+                   ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+                   ondragleave="this.style.borderColor='var(--border2)'"
+                   ondrop="spHandleDrop(event,'${projId}','${activeBldgId}')">
+                <div style="font-size:22px;margin-bottom:4px">📂</div>
+                <div style="font-size:12px;font-weight:600;color:var(--text)">Drop BAS export CSV here or click to browse</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:4px">Expected columns: Zone/System · Occ Heat · Occ Cool · Unocc Heat · Unocc Cool · Schedule</div>
+                <input type="file" id="sp-file-${projId}" accept=".csv,.txt" style="display:none"
+                       onchange="spHandleFileInput(event,'${projId}','${activeBldgId}')">
+              </div>
+              <!-- Zone Table -->
+              <div style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:12px" id="sp-table-${projId}">
+                  <thead>
+                    <tr style="border-bottom:1px solid var(--border);text-align:left">
+                      <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);min-width:150px">Zone / System</th>
+                      <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Occ Heat °F</th>
+                      <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Occ Cool °F</th>
+                      <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Unocc Heat °F</th>
+                      <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Unocc Cool °F</th>
+                      <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);min-width:160px">Schedule</th>
+                      <th style="padding:6px 4px;width:32px"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="sp-tbody-${projId}">
+                    ${tableRows || `<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--text3);font-style:italic">No zones yet — add one above or import a CSV.</td></tr>`}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>`;
+      }
+
+      function _spZoneRow(projId, bldgId, z, idx) {
+        const v = (val) => (val !== undefined && val !== null ? val : '');
+        return `<tr style="border-bottom:1px solid var(--border1)" data-sp-idx="${idx}">
+          <td style="padding:4px 6px"><input class="fi" style="width:100%;font-size:12px" type="text"
+            value="${_escHtml(z.name || '')}" placeholder="Zone or system name"
+            oninput="spUpdateField('${projId}','${bldgId}',${idx},'name',this.value)"></td>
+          <td style="padding:4px 6px"><input class="fi" style="width:70px;font-size:12px;font-family:var(--mono);text-align:center" type="number" min="50" max="90" step="1"
+            value="${v(z.occHeat)}" placeholder="70"
+            oninput="spUpdateField('${projId}','${bldgId}',${idx},'occHeat',parseFloat(this.value)||null)"></td>
+          <td style="padding:4px 6px"><input class="fi" style="width:70px;font-size:12px;font-family:var(--mono);text-align:center" type="number" min="60" max="95" step="1"
+            value="${v(z.occCool)}" placeholder="74"
+            oninput="spUpdateField('${projId}','${bldgId}',${idx},'occCool',parseFloat(this.value)||null)"></td>
+          <td style="padding:4px 6px"><input class="fi" style="width:70px;font-size:12px;font-family:var(--mono);text-align:center" type="number" min="45" max="80" step="1"
+            value="${v(z.unoccHeat)}" placeholder="60"
+            oninput="spUpdateField('${projId}','${bldgId}',${idx},'unoccHeat',parseFloat(this.value)||null)"></td>
+          <td style="padding:4px 6px"><input class="fi" style="width:70px;font-size:12px;font-family:var(--mono);text-align:center" type="number" min="70" max="100" step="1"
+            value="${v(z.unoccCool)}" placeholder="85"
+            oninput="spUpdateField('${projId}','${bldgId}',${idx},'unoccCool',parseFloat(this.value)||null)"></td>
+          <td style="padding:4px 6px"><input class="fi" style="width:100%;font-size:12px" type="text"
+            value="${_escHtml(z.schedule || '')}" placeholder="e.g. M-F 6:00a-4:30p"
+            oninput="spUpdateField('${projId}','${bldgId}',${idx},'schedule',this.value)"></td>
+          <td style="padding:4px 6px;text-align:center">
+            <button class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--red);border-color:rgba(244,63,94,.3);font-size:11px"
+              onclick="spDeleteZone('${projId}','${bldgId}',${idx})">✕</button>
+          </td>
+        </tr>`;
+      }
+
+      // In-memory scratch pad for unsaved edits
+      if (!window._spDraft) window._spDraft = {};
+
+      function _spGetDraft(projId, bldgId) {
+        const key = projId + ':' + bldgId;
+        if (!window._spDraft[key]) {
+          const p = projects.find((x) => String(x.id) === String(projId));
+          const rec = p && (p.setpoints || []).find((r) => r.buildingId === bldgId);
+          window._spDraft[key] = JSON.parse(JSON.stringify(rec ? rec.zones : []));
+        }
+        return window._spDraft[key];
+      }
+
+      function _spClearDraft(projId, bldgId) {
+        delete window._spDraft[projId + ':' + bldgId];
+      }
+
+      function spUpdateField(projId, bldgId, idx, field, value) {
+        const zones = _spGetDraft(projId, bldgId);
+        if (!zones[idx]) return;
+        zones[idx][field] = value;
+        // Sync into table DOM without full re-render
+      }
+
+      function spAddZoneRow(projId, bldgId) {
+        const zones = _spGetDraft(projId, bldgId);
+        zones.push({ name: '', occHeat: null, occCool: null, unoccHeat: null, unoccCool: null, schedule: '' });
+        const tbody = document.getElementById('sp-tbody-' + projId);
+        if (!tbody) return;
+        // If the empty-state placeholder row is showing, remove it
+        const placeholder = tbody.querySelector('td[colspan="7"]');
+        if (placeholder) tbody.innerHTML = '';
+        const idx = zones.length - 1;
+        const row = document.createElement('tr');
+        row.style.borderBottom = '1px solid var(--border1)';
+        row.setAttribute('data-sp-idx', idx);
+        row.innerHTML = _spZoneRow(projId, bldgId, zones[idx], idx)
+          .replace(/^<tr[^>]*>/, '')
+          .replace(/<\/tr>$/, '');
+        tbody.appendChild(row);
+      }
+
+      function spDeleteZone(projId, bldgId, idx) {
+        const zones = _spGetDraft(projId, bldgId);
+        zones.splice(idx, 1);
+        // Re-render the full tab to refresh indices
+        _spClearDraft(projId, bldgId);
+        // Repopulate draft with updated zones
+        const p = projects.find((x) => String(x.id) === String(projId));
+        if (p) {
+          if (!p.setpoints) p.setpoints = [];
+          const rec = p.setpoints.find((r) => r.buildingId === bldgId);
+          if (rec) rec.zones = zones;
+        }
+        renderSetpointsTab(projId);
+      }
+
+      function spSave(projId, bldgId) {
+        const p = projects.find((x) => String(x.id) === String(projId));
+        if (!p) return;
+        if (!p.setpoints) p.setpoints = [];
+        // Read current values directly from the input fields in the table
+        const tbody = document.getElementById('sp-tbody-' + projId);
+        const draft = _spGetDraft(projId, bldgId);
+        if (tbody) {
+          const rows = tbody.querySelectorAll('tr[data-sp-idx]');
+          rows.forEach((row) => {
+            const idx = parseInt(row.getAttribute('data-sp-idx'));
+            if (!draft[idx]) return;
+            const inputs = row.querySelectorAll('input');
+            if (inputs[0]) draft[idx].name = inputs[0].value;
+            if (inputs[1]) draft[idx].occHeat = parseFloat(inputs[1].value) || null;
+            if (inputs[2]) draft[idx].occCool = parseFloat(inputs[2].value) || null;
+            if (inputs[3]) draft[idx].unoccHeat = parseFloat(inputs[3].value) || null;
+            if (inputs[4]) draft[idx].unoccCool = parseFloat(inputs[4].value) || null;
+            if (inputs[5]) draft[idx].schedule = inputs[5].value;
+          });
+        }
+        const existing = p.setpoints.find((r) => r.buildingId === bldgId);
+        if (existing) {
+          existing.zones = JSON.parse(JSON.stringify(draft));
+        } else {
+          p.setpoints.push({ buildingId: bldgId, zones: JSON.parse(JSON.stringify(draft)) });
+        }
+        _spClearDraft(projId, bldgId);
+        sset('en_projects', projects);
+        showToast('Set points saved ✓ (' + draft.length + ' zone' + (draft.length !== 1 ? 's' : '') + ')');
+        renderSetpointsTab(projId);
+      }
+
+      function spHandleFileInput(evt, projId, bldgId) {
+        const file = evt.target.files && evt.target.files[0];
+        if (!file) return;
+        evt.target.value = '';
+        const reader = new FileReader();
+        reader.onload = (e) => spParseCSV(e.target.result, projId, bldgId);
+        reader.readAsText(file);
+      }
+
+      function spHandleDrop(evt, projId, bldgId) {
+        evt.preventDefault();
+        const upload = document.getElementById('sp-upload-' + projId);
+        if (upload) upload.style.borderColor = 'var(--border2)';
+        const file = evt.dataTransfer.files && evt.dataTransfer.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => spParseCSV(e.target.result, projId, bldgId);
+        reader.readAsText(file);
+      }
+
+      function spParseCSV(text, projId, bldgId) {
+        const lines = text.split(/\r?\n/).filter((l) => l.trim());
+        if (!lines.length) {
+          showToast('CSV appears empty ⚠');
+          return;
+        }
+
+        // Auto-detect delimiter: comma or tab
+        const delim = lines[0].split('\t').length > lines[0].split(',').length ? '\t' : ',';
+
+        function splitRow(row) {
+          // Handle quoted values
+          const result = [];
+          let cur = '',
+            inQ = false;
+          for (let i = 0; i < row.length; i++) {
+            const c = row[i];
+            if (c === '"') {
+              inQ = !inQ;
+              continue;
+            }
+            if (c === delim && !inQ) {
+              result.push(cur.trim());
+              cur = '';
+              continue;
+            }
+            cur += c;
+          }
+          result.push(cur.trim());
+          return result;
+        }
+
+        const headers = splitRow(lines[0]).map((h) => h.toLowerCase().trim());
+
+        // Map header names to field keys (case-insensitive, flexible naming)
+        function findCol(candidates) {
+          for (const c of candidates) {
+            const idx = headers.findIndex((h) => h.includes(c));
+            if (idx >= 0) return idx;
+          }
+          return -1;
+        }
+        const colMap = {
+          name: findCol(['zone', 'system', 'ahu', 'unit', 'name']),
+          occHeat: findCol(['occ heat', 'occupied heat', 'occ h', 'occ_heat', 'occupied_heat']),
+          occCool: findCol(['occ cool', 'occupied cool', 'occ c', 'occ_cool', 'occupied_cool']),
+          unoccHeat: findCol(['unocc heat', 'unoccupied heat', 'unocc h', 'unocc_heat', 'unoccupied_heat']),
+          unoccCool: findCol(['unocc cool', 'unoccupied cool', 'unocc c', 'unocc_cool', 'unoccupied_cool']),
+          schedule: findCol(['schedule', 'sched', 'occupancy', 'hours']),
+        };
+
+        const imported = [];
+        for (let i = 1; i < lines.length; i++) {
+          const cols = splitRow(lines[i]);
+          if (cols.every((c) => !c)) continue; // skip blank rows
+          const zone = {};
+          if (colMap.name >= 0) zone.name = cols[colMap.name] || '';
+          if (colMap.occHeat >= 0) zone.occHeat = parseFloat(cols[colMap.occHeat]) || null;
+          if (colMap.occCool >= 0) zone.occCool = parseFloat(cols[colMap.occCool]) || null;
+          if (colMap.unoccHeat >= 0) zone.unoccHeat = parseFloat(cols[colMap.unoccHeat]) || null;
+          if (colMap.unoccCool >= 0) zone.unoccCool = parseFloat(cols[colMap.unoccCool]) || null;
+          if (colMap.schedule >= 0) zone.schedule = cols[colMap.schedule] || '';
+          if (!zone.name && colMap.name < 0) zone.name = 'Zone ' + i;
+          imported.push(zone);
+        }
+
+        if (!imported.length) {
+          showToast('No data rows found in CSV ⚠');
+          return;
+        }
+
+        // Merge into draft (replace all zones for this building)
+        const key = projId + ':' + bldgId;
+        window._spDraft[key] = imported;
+        showToast(
+          'Imported ' + imported.length + ' zone' + (imported.length !== 1 ? 's' : '') + ' — click Save to keep',
+        );
+        renderSetpointsTab(projId);
       }
 
       /* ══════════════════════════════════════════════════════
