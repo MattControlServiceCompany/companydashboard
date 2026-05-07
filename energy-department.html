@@ -47325,26 +47325,531 @@
         });
       }
       function rptPageApprovedChanges(n, d) {
-        return rptPage(n, 'Approved Changes', '<p style="padding:20px;color:#888">Approved Changes — coming soon</p>', {
+        const $c = function (v) {
+          return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+        };
+        const $n = function (v) {
+          return Math.round(v || 0).toLocaleString();
+        };
+
+        // ── Changes Implemented table ──
+        const meetings = (d && d.meetings) || [];
+        let changesRows = '';
+        if (meetings.length > 0) {
+          meetings.forEach(function (m) {
+            changesRows +=
+              '<tr>' +
+              '<td contenteditable="true">' +
+              (m.date || '') +
+              '</td>' +
+              '<td contenteditable="true">' +
+              (m.building || '') +
+              '</td>' +
+              '<td contenteditable="true">' +
+              (m.change || m.description || '') +
+              '</td>' +
+              '<td contenteditable="true">' +
+              (m.approvedBy || '') +
+              '</td>' +
+              '<td contenteditable="true">' +
+              (m.source || 'Meeting Minutes') +
+              '</td>' +
+              '</tr>';
+          });
+        } else {
+          // 3 empty editable template rows
+          for (var ri = 0; ri < 3; ri++) {
+            changesRows +=
+              '<tr>' +
+              '<td contenteditable="true"></td>' +
+              '<td contenteditable="true"></td>' +
+              '<td contenteditable="true"></td>' +
+              '<td contenteditable="true"></td>' +
+              '<td contenteditable="true"></td>' +
+              '</tr>';
+          }
+        }
+        const changesTable =
+          '<table class="rpt-table" contenteditable="true">' +
+          '<thead><tr>' +
+          '<th>Date</th><th>Building</th><th>Change Description</th><th>Approved By</th><th>Source</th>' +
+          '</tr></thead>' +
+          '<tbody>' +
+          changesRows +
+          '</tbody>' +
+          '</table>';
+
+        // ── Net Impact narrative box ──
+        const narrativeBox =
+          '<div class="rpt-narrative" contenteditable="true">' +
+          '<strong>Positive impacts:</strong> [describe schedule/setpoint optimizations and estimated savings]<br>' +
+          '<strong>Negative impacts:</strong> [describe any changes that increased energy use]<br>' +
+          '<strong>Net Q' +
+          ((d && d.period && d.period.quarter) || '?') +
+          ' effect:</strong> [net impact summary]' +
+          '</div>';
+
+        // ── Upcoming Scheduled Changes table (3 empty rows) ──
+        let upcomingRows = '';
+        for (var ui = 0; ui < 3; ui++) {
+          upcomingRows +=
+            '<tr>' +
+            '<td contenteditable="true"></td>' +
+            '<td contenteditable="true"></td>' +
+            '<td contenteditable="true"></td>' +
+            '<td contenteditable="true"></td>' +
+            '</tr>';
+        }
+        const upcomingTable =
+          '<table class="rpt-table" contenteditable="true">' +
+          '<thead><tr>' +
+          '<th>Planned Date</th><th>Building</th><th>Planned Change</th><th>Status</th>' +
+          '</tr></thead>' +
+          '<tbody>' +
+          upcomingRows +
+          '</tbody>' +
+          '</table>';
+
+        const bodyHTML =
+          '<div class="rpt-body">' +
+          '<p style="font-size:10px;color:#666;margin:0 0 8px">Schedule and setpoint changes implemented this quarter — sourced from meeting minutes</p>' +
+          '<h2 contenteditable="true">Changes Implemented</h2>' +
+          changesTable +
+          '<h2 contenteditable="true">Net Impact Analysis</h2>' +
+          narrativeBox +
+          '<h2 contenteditable="true">Upcoming Scheduled Changes</h2>' +
+          upcomingTable +
+          '<p style="font-size:9px;color:#888;margin-top:10px">Monthly reviews: 2nd Monday of each month. Onsite tech: up to 8 labor hours/quarter per contract.</p>' +
+          '</div>';
+
+        return rptPage(n, 'Approved Changes', bodyHTML, {
           data: d,
           label: 'Page ' + n + ' — Approved Changes',
         });
       }
       function rptPageContractProjection(n, d) {
-        return rptPage(
-          n,
-          'Contract Projection',
-          '<p style="padding:20px;color:#888">Contract Projection — coming soon</p>',
-          { data: d, label: 'Page ' + n + ' — Contract Projection' },
-        );
+        const $c = function (v) {
+          return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+        };
+        const $n = function (v) {
+          return Math.round(v || 0).toLocaleString();
+        };
+
+        const contract = (d && d.contract) || {};
+        const qTargets = contract.quarterlyTargets || [0, 0, 0, 0];
+        const annualTarget =
+          contract.annualTarget ||
+          qTargets.reduce(function (s, v) {
+            return s + (v || 0);
+          }, 0);
+        const cscPct = contract.cscPct || 0;
+        const clientPct = contract.clientPct || 0;
+        const escalation = contract.escalation || 0;
+        const contractYears = contract.years || 5;
+        const currentYear = contract.currentYear || 1;
+        const actualSavings = (d && d.totals && d.totals.savings) || 0;
+        const q = (d && d.period && d.period.quarter) || 1;
+
+        // ── Quarterly Targets table ──
+        const qTarget = qTargets[q - 1] || 0;
+        const annualSum = qTargets.reduce(function (s, v) {
+          return s + (v || 0);
+        }, 0);
+        const qtRows =
+          '<tr>' +
+          '<td><strong>Projected Savings</strong></td>' +
+          qTargets
+            .map(function (v) {
+              return '<td class="rpt-n">' + $c(v) + '</td>';
+            })
+            .join('') +
+          '<td class="rpt-n"><strong>' +
+          $c(annualSum) +
+          '</strong></td>' +
+          '</tr>' +
+          '<tr>' +
+          '<td>Client (' +
+          clientPct +
+          '%)</td>' +
+          qTargets
+            .map(function (v) {
+              return '<td class="rpt-n">' + $c((v * clientPct) / 100) + '</td>';
+            })
+            .join('') +
+          '<td class="rpt-n">' +
+          $c((annualSum * clientPct) / 100) +
+          '</td>' +
+          '</tr>' +
+          '<tr>' +
+          '<td>CSC (' +
+          cscPct +
+          '%)</td>' +
+          qTargets
+            .map(function (v) {
+              return '<td class="rpt-n">' + $c((v * cscPct) / 100) + '</td>';
+            })
+            .join('') +
+          '<td class="rpt-n">' +
+          $c((annualSum * cscPct) / 100) +
+          '</td>' +
+          '</tr>';
+        const qtTable =
+          '<table class="rpt-table">' +
+          '<thead><tr>' +
+          '<th></th><th class="rpt-n">Q1</th><th class="rpt-n">Q2</th><th class="rpt-n">Q3</th><th class="rpt-n">Q4</th><th class="rpt-n">Annual</th>' +
+          '</tr></thead>' +
+          '<tbody>' +
+          qtRows +
+          '</tbody>' +
+          '</table>';
+
+        // ── Target vs Actual comparison box ──
+        const ahead = actualSavings >= qTarget;
+        const pctOfTarget = qTarget > 0 ? Math.round((actualSavings / qTarget) * 100) : 0;
+        const vsBox =
+          '<div class="rpt-vs-box">' +
+          '<div class="rpt-vs-side">' +
+          '<div class="rpt-vs-val" style="color:#888">' +
+          $c(qTarget) +
+          '</div>' +
+          '<div class="rpt-vs-lbl">Q' +
+          q +
+          ' Target</div>' +
+          '</div>' +
+          '<div class="rpt-vs-mid" style="font-size:28px">' +
+          (ahead ? '✓' : '✗') +
+          '</div>' +
+          '<div class="rpt-vs-side">' +
+          '<div class="rpt-vs-val" style="color:' +
+          (ahead ? '#1e8449' : '#c0392b') +
+          '">' +
+          $c(actualSavings) +
+          '</div>' +
+          '<div class="rpt-vs-lbl" style="color:' +
+          (ahead ? '#1e8449' : '#c0392b') +
+          '">' +
+          pctOfTarget +
+          '% of target</div>' +
+          '</div>' +
+          '</div>';
+
+        // ── 5-Year Projection table ──
+        let fiveYrRows = '';
+        let totalProj = 0,
+          totalCsc = 0,
+          totalClient = 0,
+          totalActual = 0;
+        for (var yr = 1; yr <= contractYears; yr++) {
+          const yearProj = annualTarget * Math.pow(1 + escalation / 100, yr - 1);
+          const yearCsc = (yearProj * cscPct) / 100;
+          const yearClient = (yearProj * clientPct) / 100;
+          const isCurrentYr = yr === currentYear;
+          const pace = isCurrentYr && annualTarget > 0 ? Math.round((actualSavings / annualTarget) * 100) : null;
+          totalProj += yearProj;
+          totalCsc += yearCsc;
+          totalClient += yearClient;
+          if (isCurrentYr) totalActual += actualSavings;
+          fiveYrRows +=
+            '<tr' +
+            (isCurrentYr ? ' style="background:#fffde7;"' : '') +
+            '>' +
+            '<td>' +
+            yr +
+            '</td>' +
+            '<td>Year ' +
+            yr +
+            (yr === 1 ? ' (current)' : '') +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $c(yearProj) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $c(yearCsc) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $c(yearClient) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            (isCurrentYr ? $c(actualSavings) : '—') +
+            '</td>' +
+            '<td class="rpt-n">' +
+            (isCurrentYr && pace !== null
+              ? '<span style="color:' + (pace >= 100 ? '#1e8449' : '#e67e22') + '">' + pace + '% pace</span>'
+              : '—') +
+            '</td>' +
+            '</tr>';
+        }
+        fiveYrRows +=
+          '<tr class="rpt-tot">' +
+          '<td colspan="2">Total</td>' +
+          '<td class="rpt-n">' +
+          $c(totalProj) +
+          '</td>' +
+          '<td class="rpt-n">' +
+          $c(totalCsc) +
+          '</td>' +
+          '<td class="rpt-n">' +
+          $c(totalClient) +
+          '</td>' +
+          '<td class="rpt-n">' +
+          $c(totalActual) +
+          '</td>' +
+          '<td></td>' +
+          '</tr>';
+        const fiveYrTable =
+          '<table class="rpt-table">' +
+          '<thead><tr>' +
+          '<th>Year</th><th>Period</th><th class="rpt-n">Projected</th>' +
+          '<th class="rpt-n">CSC (' +
+          cscPct +
+          '%)</th>' +
+          '<th class="rpt-n">Client (' +
+          clientPct +
+          '%)</th>' +
+          '<th class="rpt-n">Actual</th>' +
+          '<th class="rpt-n">vs Proj</th>' +
+          '</tr></thead>' +
+          '<tbody>' +
+          fiveYrRows +
+          '</tbody>' +
+          '</table>';
+
+        // ── Cumulative vs Projected SVG chart ──
+        // Build cumulative projected line across 5 years
+        const svgW = 400,
+          svgH = 120;
+        const maxCumProj = totalProj;
+        const maxY = Math.max(maxCumProj, 1);
+        // Y-axis scale: round up to nearest $100K
+        const yMax = Math.ceil(maxCumProj / 100000) * 100000 || 300000;
+        // Points: x evenly spaced, y = cumulative projected
+        const pts = [];
+        let cumProj = 0;
+        for (var si = 1; si <= contractYears; si++) {
+          cumProj += annualTarget * Math.pow(1 + escalation / 100, si - 1);
+          const px = Math.round(40 + ((si - 1) / (contractYears - 1 || 1)) * (svgW - 60));
+          const py = Math.round(svgH - 20 - (cumProj / yMax) * (svgH - 30));
+          pts.push({ x: px, y: py, cumProj: cumProj });
+        }
+        // Actual cumulative dot (Year currentYear)
+        const actCumIdx = Math.min(currentYear - 1, pts.length - 1);
+        const actCumY = Math.round(svgH - 20 - (actualSavings / yMax) * (svgH - 30));
+        const actPt = pts[actCumIdx] || pts[0];
+
+        // Build dashed line polyline
+        const projLine = pts
+          .map(function (p) {
+            return p.x + ',' + p.y;
+          })
+          .join(' ');
+
+        // Y-axis labels
+        const yLabels = [0, 1, 2, 3]
+          .map(function (i) {
+            const val = Math.round(((yMax / 3) * i) / 1000);
+            const yPos = Math.round(svgH - 20 - (i / 3) * (svgH - 30));
+            return (
+              '<text x="36" y="' +
+              yPos +
+              '" text-anchor="end" font-size="7" fill="#888">$' +
+              val +
+              'K</text>' +
+              '<line x1="40" y1="' +
+              yPos +
+              '" x2="' +
+              (svgW - 20) +
+              '" y2="' +
+              yPos +
+              '" stroke="#eee" stroke-width="0.5"/>'
+            );
+          })
+          .join('');
+
+        // X-axis labels
+        const xLabels = pts
+          .map(function (p, i) {
+            return (
+              '<text x="' +
+              p.x +
+              '" y="' +
+              (svgH - 6) +
+              '" text-anchor="middle" font-size="7" fill="#888">Y' +
+              (i + 1) +
+              '</text>'
+            );
+          })
+          .join('');
+
+        const svgChart =
+          '<div style="margin:8px 0">' +
+          '<div style="font-size:9px;color:#555;margin-bottom:3px">Cumulative Savings — Projected vs Actual</div>' +
+          '<svg width="100%" viewBox="0 0 ' +
+          svgW +
+          ' ' +
+          svgH +
+          '" xmlns="http://www.w3.org/2000/svg">' +
+          yLabels +
+          xLabels +
+          '<polyline points="' +
+          projLine +
+          '" fill="none" stroke="#aaa" stroke-width="1.5" stroke-dasharray="4,3"/>' +
+          '<circle cx="' +
+          actPt.x +
+          '" cy="' +
+          actCumY +
+          '" r="4" fill="#27ae60"/>' +
+          '<line x1="' +
+          actPt.x +
+          '" y1="' +
+          (svgH - 20) +
+          '" x2="' +
+          actPt.x +
+          '" y2="' +
+          actCumY +
+          '" stroke="#27ae60" stroke-width="1.5"/>' +
+          '<text x="' +
+          (actPt.x + 5) +
+          '" y="' +
+          (actCumY - 4) +
+          '" font-size="7" fill="#1e8449">' +
+          $c(actualSavings) +
+          '</text>' +
+          '<text x="' +
+          (svgW - 20) +
+          '" y="' +
+          (pts[pts.length - 1].y - 4) +
+          '" font-size="7" fill="#aaa" text-anchor="end">Projected</text>' +
+          '</svg>' +
+          '<div style="font-size:7.5px;color:#888;margin-top:2px">' +
+          '<span style="display:inline-block;width:16px;height:2px;background:#aaa;border-bottom:2px dashed #aaa;vertical-align:middle;margin-right:4px"></span>5-yr projected&nbsp;&nbsp;' +
+          '<span style="display:inline-block;width:8px;height:8px;background:#27ae60;border-radius:50%;vertical-align:middle;margin-right:4px"></span>Actual position' +
+          '</div>' +
+          '</div>';
+
+        const bodyHTML =
+          '<div class="rpt-body">' +
+          '<h2 contenteditable="true">Quarterly Targets</h2>' +
+          qtTable +
+          '<h2 contenteditable="true">Target vs Actual — Q' +
+          q +
+          '</h2>' +
+          vsBox +
+          '<h2 contenteditable="true">5-Year Projection</h2>' +
+          fiveYrTable +
+          '<h2 contenteditable="true">Cumulative vs Projected</h2>' +
+          svgChart +
+          '<p style="font-size:9px;color:#888;margin-top:8px">' +
+          escalation +
+          '% annual utility rate escalation applied per contract terms.</p>' +
+          '</div>';
+
+        return rptPage(n, 'Contract Projection', bodyHTML, {
+          data: d,
+          label: 'Page ' + n + ' — Contract Projection',
+        });
       }
       function rptPageSetPoints(n, d) {
-        return rptPage(
-          n,
-          'BAS Set Points & Schedules',
-          '<p style="padding:20px;color:#888">Set Points & Schedules — coming soon</p>',
-          { data: d, label: 'Page ' + n + ' — Set Points' },
-        );
+        const $c = function (v) {
+          return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+        };
+        const $n = function (v) {
+          return Math.round(v || 0).toLocaleString();
+        };
+
+        const setpoints = (d && d.setpoints) || [];
+        const buildings = (d && d.buildings) || [];
+
+        // Helper to look up building name
+        function getBldgName(id) {
+          var found = buildings.filter(function (b) {
+            return b.id === id || b.buildingId === id;
+          })[0];
+          return (found && found.name) || id || 'Building';
+        }
+
+        // Helper: flag extended schedule (evening past 6pm or weekends)
+        function scheduleLabel(sched) {
+          if (!sched) return '—';
+          var s = sched.toLowerCase();
+          var extended =
+            /\b(sat|sun|weekend)/i.test(s) || /\b(1[7-9]|2[0-3])[:h]/i.test(s) || /\b(7|8|9|10|11)\s*pm/i.test(s);
+          if (extended) {
+            return sched + ' <span style="color:#e67e22">(extended)</span>';
+          }
+          return sched;
+        }
+
+        let bodyContent = '';
+
+        if (!setpoints || setpoints.length === 0) {
+          bodyContent =
+            '<p style="padding:16px;color:#888;font-style:italic">No BAS data uploaded — add data in Set Points &amp; Schedules tab.</p>';
+        } else {
+          setpoints.forEach(function (sp) {
+            const bldgName = getBldgName(sp.buildingId);
+            const zones = sp.zones || [];
+            let zoneRows = '';
+            zones.forEach(function (z) {
+              const occHeat = z.occHeat != null ? z.occHeat + '°F' : '—';
+              const occCool = z.occCool != null ? z.occCool + '°F' : '—';
+              const unoccHeat = z.unoccHeat != null ? z.unoccHeat + '°F' : '—';
+              const unoccCool = z.unoccCool != null ? z.unoccCool + '°F' : '—';
+              zoneRows +=
+                '<tr>' +
+                '<td contenteditable="true">' +
+                (z.name || '—') +
+                '</td>' +
+                '<td class="rpt-n" contenteditable="true">' +
+                occHeat +
+                '</td>' +
+                '<td class="rpt-n" contenteditable="true">' +
+                occCool +
+                '</td>' +
+                '<td class="rpt-n" contenteditable="true">' +
+                unoccHeat +
+                '</td>' +
+                '<td class="rpt-n" contenteditable="true">' +
+                unoccCool +
+                '</td>' +
+                '<td contenteditable="true">' +
+                scheduleLabel(z.schedule) +
+                '</td>' +
+                '</tr>';
+            });
+            if (zoneRows === '') {
+              zoneRows = '<tr><td colspan="6" style="color:#aaa;font-style:italic">No zones recorded</td></tr>';
+            }
+            bodyContent +=
+              '<h2 contenteditable="true">' +
+              bldgName +
+              '</h2>' +
+              '<table class="rpt-table" contenteditable="true">' +
+              '<thead><tr>' +
+              '<th>Zone / System</th>' +
+              '<th class="rpt-n">Occ Heat</th>' +
+              '<th class="rpt-n">Occ Cool</th>' +
+              '<th class="rpt-n">Unocc Heat</th>' +
+              '<th class="rpt-n">Unocc Cool</th>' +
+              '<th>Schedule</th>' +
+              '</tr></thead>' +
+              '<tbody>' +
+              zoneRows +
+              '</tbody>' +
+              '</table>';
+          });
+        }
+
+        const bodyHTML =
+          '<div class="rpt-body">' +
+          '<p style="font-size:10px;color:#666;margin:0 0 8px">Current average setpoints and operating schedules per building — from uploaded BAS exports</p>' +
+          bodyContent +
+          '<p style="font-size:9px;color:#888;margin-top:12px">Source: BAS export uploaded to Set Points &amp; Schedules tab. Values are zone averages.</p>' +
+          '</div>';
+
+        return rptPage(n, 'BAS Set Points & Schedules', bodyHTML, {
+          data: d,
+          label: 'Page ' + n + ' — Set Points',
+        });
       }
       function rptPageBuildingSummary(n, d, b) {
         return rptPage(
