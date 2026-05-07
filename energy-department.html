@@ -12681,7 +12681,7 @@
         id="reportBldgModal"
         onclick="if (event.target === this) document.getElementById('reportBldgModal').classList.remove('open');"
       >
-        <div class="modal" style="width: 480px">
+        <div class="modal" style="width: 520px">
           <div class="modal-hdr">
             <span class="modal-title">Generate Report</span>
             <button class="modal-x" onclick="document.getElementById('reportBldgModal').classList.remove('open')">
@@ -12689,43 +12689,106 @@
             </button>
           </div>
           <div class="modal-body">
-            <div style="margin-bottom: 12px; font-size: 12px; color: var(--text2)">
-              Select buildings to include in the report:
+            <!-- Section 1: Report Settings -->
+            <div style="margin-bottom: 16px">
+              <div style="font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 8px">
+                Report Settings
+              </div>
+              <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap">
+                <label
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    color: var(--text);
+                  "
+                >
+                  <input type="radio" name="reportType" value="quarterly" checked /> Quarterly
+                </label>
+                <label
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    color: var(--text);
+                  "
+                >
+                  <input type="radio" name="reportType" value="annual" /> Annual
+                </label>
+                <input
+                  type="date"
+                  id="reportDateInput"
+                  style="
+                    padding: 6px 10px;
+                    border: 1px solid var(--s3);
+                    border-radius: 6px;
+                    background: var(--s1);
+                    color: var(--text);
+                    font-size: 13px;
+                  "
+                />
+              </div>
             </div>
-            <div
-              id="reportBldgList"
-              style="display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto"
-            ></div>
-            <div style="margin-top: 12px">
-              <label style="font-size: 12px; color: var(--text2); display: block; margin-bottom: 4px"
-                >Report Date (meeting date):</label
-              >
-              <input type="date" id="reportDateInput" class="fi" style="width: 180px" />
+
+            <!-- Section 2: Building Selection -->
+            <div style="margin-bottom: 16px">
+              <div style="font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 8px">Buildings</div>
+              <div
+                id="reportBldgList"
+                style="display: flex; flex-direction: column; gap: 4px; max-height: 150px; overflow-y: auto"
+              ></div>
             </div>
-            <div style="margin-top: 10px; display: flex; gap: 8px">
-              <button
-                class="btn btn-ghost btn-sm"
-                onclick="
-                  document.querySelectorAll('#reportBldgList input[type=checkbox]').forEach((c) => (c.checked = true))
-                "
-              >
-                Select All
-              </button>
-              <button
-                class="btn btn-ghost btn-sm"
-                onclick="
-                  document.querySelectorAll('#reportBldgList input[type=checkbox]').forEach((c) => (c.checked = false))
-                "
-              >
-                Deselect All
-              </button>
+
+            <!-- Section 3: Content Picker -->
+            <div style="margin-bottom: 16px">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px">
+                <span style="font-size: 13px; font-weight: 600; color: var(--text)">Report Sections</span>
+                <div style="display: flex; gap: 8px">
+                  <button
+                    onclick="rptSelectAll(true)"
+                    style="
+                      font-size: 11px;
+                      padding: 3px 8px;
+                      border: 1px solid var(--s3);
+                      border-radius: 4px;
+                      background: var(--s1);
+                      color: var(--text);
+                      cursor: pointer;
+                    "
+                  >
+                    Select All
+                  </button>
+                  <button
+                    onclick="rptSelectAll(false)"
+                    style="
+                      font-size: 11px;
+                      padding: 3px 8px;
+                      border: 1px solid var(--s3);
+                      border-radius: 4px;
+                      background: var(--s1);
+                      color: var(--text);
+                      cursor: pointer;
+                    "
+                  >
+                    Deselect All
+                  </button>
+                </div>
+              </div>
+              <div
+                id="reportSectionList"
+                style="display: flex; flex-direction: column; gap: 3px; max-height: 300px; overflow-y: auto"
+              ></div>
             </div>
           </div>
           <div class="modal-ftr">
             <button class="btn btn-ghost" onclick="document.getElementById('reportBldgModal').classList.remove('open')">
               Cancel
             </button>
-            <button class="btn btn-em" id="reportBldgGenBtn" onclick="launchReport()">Generate PDF</button>
+            <button class="btn btn-em" onclick="launchNewReport()">Generate Report</button>
           </div>
         </div>
       </div>
@@ -49533,6 +49596,26 @@
       let _reportProjId = null,
         _reportType = null;
 
+      const REPORT_SECTIONS = [
+        { key: 'cover', label: 'Cover Page', group: 'Main' },
+        { key: 'financial', label: 'Financial Summary', group: 'Main' },
+        { key: 'savingsPerformance', label: 'Savings Performance', group: 'Main' },
+        { key: 'euiBenchmarking', label: 'EUI Benchmarking', group: 'Main' },
+        { key: 'environmentalImpact', label: 'Environmental Impact', group: 'Main' },
+        { key: 'observations', label: 'Observations & Recommendations', group: 'Main' },
+        { key: 'approvedChanges', label: 'Approved Changes', group: 'Main' },
+        { key: 'contractProjection', label: 'Contract Projection', group: 'Main' },
+        { key: 'setpoints', label: 'BAS Set Points & Schedules', group: 'Main' },
+        { key: 'buildingSummaries', label: 'Per-Building Summaries (all)', group: 'Buildings' },
+        { key: 'electricDetail', label: 'Electric Consumption Detail', group: 'Commodity' },
+        { key: 'gasDetail', label: 'Gas Consumption Detail', group: 'Commodity' },
+        { key: 'propaneDetail', label: 'Propane Consumption Detail', group: 'Commodity' },
+        { key: 'appendixA', label: 'Appendix A: Normalization & Baseline', group: 'Appendices' },
+        { key: 'appendixB', label: 'Appendix B: Building Baseline Data', group: 'Appendices' },
+        { key: 'appendixC', label: 'Appendix C: Weather Data', group: 'Appendices' },
+        { key: 'appendixD', label: 'Appendix D: Utility Bills', group: 'Appendices' },
+      ];
+
       function openReportModal(projId, type) {
         _reportProjId = projId;
         _reportType = type;
@@ -49542,6 +49625,8 @@
           showToast('No buildings with utility data');
           return;
         }
+
+        // Populate building checkboxes
         list.innerHTML = bldgs
           .map(
             (
@@ -49553,12 +49638,92 @@
         </label>`,
           )
           .join('');
+
+        // Populate section checkboxes with group headers
+        const p = projects.find((x) => x.id === projId);
+        const savedSections = p && p.reportDefaults && p.reportDefaults.sections ? p.reportDefaults.sections : {};
+        const sectionList = document.getElementById('reportSectionList');
+        let lastGroup = null;
+        let sectionHTML = '';
+        REPORT_SECTIONS.forEach((sec) => {
+          if (sec.group !== lastGroup) {
+            sectionHTML += `<div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;padding:6px 8px 2px">${sec.group}</div>`;
+            lastGroup = sec.group;
+          }
+          const isChecked = savedSections[sec.key] === false ? '' : 'checked';
+          sectionHTML += `<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;background:var(--s1);cursor:pointer">
+            <input type="checkbox" ${isChecked} data-section="${sec.key}" style="accent-color:var(--em);width:14px;height:14px">
+            <span style="font-size:12px;color:var(--text)">${sec.label}</span>
+          </label>`;
+        });
+        sectionList.innerHTML = sectionHTML;
+
+        // Set modal title and defaults
         document.querySelector('#reportBldgModal .modal-title').textContent =
           type === 'quarterly' ? 'Generate Quarterly Report' : 'Generate Annual Report';
+
+        // Set report type radio
+        const radioVal = type === 'annual' ? 'annual' : 'quarterly';
+        const radio = document.querySelector(`input[name="reportType"][value="${radioVal}"]`);
+        if (radio) radio.checked = true;
+
         // Default report date to today
         const today = new Date();
         document.getElementById('reportDateInput').value = today.toISOString().slice(0, 10);
+
         document.getElementById('reportBldgModal').classList.add('open');
+      }
+
+      function rptSelectAll(checked) {
+        document.querySelectorAll('#reportSectionList input[type=checkbox]').forEach((cb) => (cb.checked = checked));
+      }
+
+      function launchNewReport() {
+        // Get report type
+        const typeRadio = document.querySelector('input[name="reportType"]:checked');
+        const type = typeRadio ? typeRadio.value : 'quarterly';
+
+        // Get selected buildings
+        const bldgChecks = document.querySelectorAll('#reportBldgList input[type=checkbox]:checked');
+        const buildingIds = Array.from(bldgChecks).map((c) => c.dataset.bid);
+        if (!buildingIds.length) {
+          showToast('Select at least one building');
+          return;
+        }
+
+        // Get selected sections
+        const selectedSections = {};
+        document.querySelectorAll('#reportSectionList input[type=checkbox]').forEach((cb) => {
+          selectedSections[cb.dataset.section] = cb.checked;
+        });
+
+        // Save section preferences to project
+        const p = projects.find((x) => x.id === _reportProjId);
+        if (p) {
+          p.reportDefaults = { sections: selectedSections };
+          sset('en_projects', projects);
+        }
+
+        // Get report date
+        const reportDate = document.getElementById('reportDateInput').value || null;
+
+        // Close modal
+        document.getElementById('reportBldgModal').classList.remove('open');
+
+        // Collect data and generate report
+        const data = collectReportData(_reportProjId, buildingIds, reportDate, type);
+        if (!data) {
+          showToast('Could not collect report data');
+          return;
+        }
+
+        // Store for PDF export
+        window._currentReportData = data;
+
+        // Generate and show
+        const html = generateReportHTML(data, selectedSections);
+        const title = `${data.project.client} — ${data.period.label} ${type === 'quarterly' ? 'Quarterly' : 'Annual'} Report`;
+        showReportOverlay(html, title);
       }
 
       function launchReport() {
