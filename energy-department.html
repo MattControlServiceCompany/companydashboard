@@ -45829,20 +45829,750 @@
 
       // ── Stub page template functions (replaced by Tasks 6–17) ──
       function rptPageCover(n, d) {
-        return rptPage(
-          n,
-          'Cover',
-          '<p style="padding:40px;color:#888;text-align:center">Cover page — coming soon</p>',
-          { data: d, hero: true, label: 'Page ' + n + ' — Cover' },
-        );
+        const $c = function (v) {
+          return '$' + Math.abs(Math.round(v)).toLocaleString();
+        };
+        const $p = function (v) {
+          return v.toFixed(1) + '%';
+        };
+        const $n = function (v) {
+          return Math.round(v).toLocaleString();
+        };
+
+        const q = d.period.quarter || 1;
+        const target = d.contract.quarterlyTargets[q - 1] || d.contract.annualTarget;
+        const pctOfTarget = target > 0 ? Math.round((d.totals.savings / target) * 100) : 0;
+        const periodTitle =
+          d.period.type === 'quarterly' ? 'Q' + q + ' ' + (d.period.year || '') : (d.period.year || '') + ' Annual';
+        const ahead = d.totals.savings - target;
+        const aheadLabel =
+          ahead >= 0
+            ? $c(ahead) + ' ahead of quarterly projection'
+            : $c(Math.abs(ahead)) + ' behind quarterly projection';
+
+        // Building status counts
+        const onTrack = d.buildings.filter(function (b) {
+          return b.status === 'on_track';
+        }).length;
+        const exceedLabel = onTrack + ' of ' + d.buildings.length + ' buildings exceeding expectations';
+
+        // Narrative paragraph
+        const contractYrLabel = 'Year ' + d.contract.currentYear + ' of ' + d.contract.years;
+        const perfWord = pctOfTarget >= 100 ? 'exceeding' : pctOfTarget >= 80 ? 'approaching' : 'below';
+        const narrative =
+          'Control Service Company is proud to report on energy performance for <strong>' +
+          d.project.client +
+          '</strong> covering ' +
+          d.period.label +
+          '. ' +
+          'This is ' +
+          contractYrLabel +
+          ' of the guaranteed savings contract. ' +
+          'Across all ' +
+          d.buildings.length +
+          ' buildings, the portfolio is ' +
+          perfWord +
+          ' the quarterly savings target of <strong>' +
+          $c(target) +
+          '</strong>, ' +
+          'having achieved <strong>' +
+          $c(d.totals.savings) +
+          '</strong> in verified cost avoidance ' +
+          '(' +
+          $p(d.totals.savingsPct) +
+          ' of baseline spend). ' +
+          'Energy reductions have been driven by operational improvements, setpoint optimization, and weather-normalized performance tracking.';
+
+        // Key findings
+        const findings = [];
+        // Top performer
+        const sorted = d.buildings.slice().sort(function (a, b) {
+          return b.savingsPct - a.savingsPct;
+        });
+        if (sorted.length) {
+          const top = sorted[0];
+          findings.push({
+            icon: 'rpt-fi-up',
+            text:
+              '<strong>' +
+              top.name +
+              '</strong> is the top performer at ' +
+              $p(top.savingsPct) +
+              ' savings this period (' +
+              $c(top.savings) +
+              ').',
+          });
+        }
+        // Notable total savings
+        if (d.totals.kwhSaved > 0) {
+          findings.push({
+            icon: 'rpt-fi-up',
+            text:
+              '<strong>' +
+              $n(d.totals.kwhSaved) +
+              ' kWh</strong> of electricity avoided' +
+              (d.totals.thermsSaved > 0
+                ? ' plus <strong>' + $n(d.totals.thermsSaved) + ' therms</strong> of gas reduced'
+                : '') +
+              ' across the portfolio.',
+          });
+        }
+        // Underperformers
+        const below = d.buildings.filter(function (b) {
+          return b.status === 'below_target';
+        });
+        if (below.length) {
+          findings.push({
+            icon: 'rpt-fi-warn',
+            text:
+              below.length +
+              ' building' +
+              (below.length > 1 ? 's are' : ' is') +
+              ' currently below target: <strong>' +
+              below
+                .map(function (b) {
+                  return b.name;
+                })
+                .join(', ') +
+              '</strong>. Review recommended.',
+          });
+        }
+        // ENERGY STAR eligibility
+        const esStar = d.buildings.filter(function (b) {
+          return b.eui && b.eui.energyStar;
+        });
+        if (esStar.length) {
+          findings.push({
+            icon: 'rpt-fi-star',
+            text:
+              esStar.length +
+              ' building' +
+              (esStar.length > 1 ? 's are' : ' is') +
+              ' in the top EUI quartile for their building type — <strong>ENERGY STAR eligible</strong>: ' +
+              esStar
+                .map(function (b) {
+                  return b.name;
+                })
+                .join(', ') +
+              '.',
+          });
+        }
+        if (findings.length < 3) {
+          findings.push({
+            icon: 'rpt-fi-up',
+            text:
+              'Contract is ' +
+              contractYrLabel +
+              ' with a cumulative annual target of <strong>' +
+              $c(d.contract.annualTarget) +
+              '</strong>.',
+          });
+        }
+
+        // Progress bar width (cap at 110%)
+        const barPct = Math.min(110, pctOfTarget);
+        const barClass = pctOfTarget >= 100 ? 'rpt-ahead' : 'rpt-behind';
+
+        // Gauge circle CSS conic-gradient helper
+        function gaugeStyle(pct, color) {
+          var deg = Math.round(Math.min(100, Math.max(0, pct)) * 3.6);
+          return (
+            'background: conic-gradient(' + color + ' 0deg ' + deg + 'deg, #e0e0e0 ' + deg + 'deg); border-radius: 50%;'
+          );
+        }
+
+        // EUI improvement %
+        const euiImpPct =
+          d.totals.euiBaseline > 0
+            ? Math.round(((d.totals.euiBaseline - d.totals.euiCurrent) / d.totals.euiBaseline) * 100)
+            : 0;
+        // Contract completion %
+        const contractDonePct = Math.round((d.contract.currentYear / d.contract.years) * 100);
+        // Energy reduction %
+        const energyRedPct =
+          d.totals.kwhBl > 0 ? Math.round(((d.totals.kwhBl - d.totals.kwhCur) / d.totals.kwhBl) * 100) : 0;
+
+        // Building status grid cards (max 6)
+        const gridBldgs = d.buildings.slice(0, 6);
+        const statusCards = gridBldgs
+          .map(function (b) {
+            const cardClass = b.status === 'on_track' ? 'rpt-ok' : b.status === 'near_target' ? 'rpt-warn' : '';
+            const statusIcon =
+              b.status === 'on_track'
+                ? '&#9650; On Track'
+                : b.status === 'near_target'
+                  ? '&#9658; Near Target'
+                  : '&#9658; Below Target';
+            const cardStyle = b.status === 'below_target' ? 'background:#fdf0f0;border-color:#f5a9a9;' : '';
+            const valColor = b.status === 'on_track' ? '#1e8449' : b.status === 'near_target' ? '#e67e22' : '#c0392b';
+            const labelColor = b.status === 'on_track' ? '#27ae60' : b.status === 'near_target' ? '#e67e22' : '#c0392b';
+            return (
+              '<div class="rpt-status-card ' +
+              cardClass +
+              '" style="' +
+              cardStyle +
+              '">' +
+              '<div class="rpt-sc-name" contenteditable="true">' +
+              b.name +
+              '</div>' +
+              '<div class="rpt-sc-val" style="color:' +
+              valColor +
+              '" contenteditable="true">' +
+              $p(b.savingsPct) +
+              '</div>' +
+              '<div class="rpt-sc-label" style="color:' +
+              labelColor +
+              '" contenteditable="true">' +
+              statusIcon +
+              '</div>' +
+              '</div>'
+            );
+          })
+          .join('');
+        // Pad to 6 if fewer buildings
+        var padCards = '';
+        for (var pi = gridBldgs.length; pi < 6; pi++) {
+          padCards += '<div class="rpt-status-card" style="background:#f8f8f8;border-color:#e0e0e0;opacity:0.4"></div>';
+        }
+
+        // Findings HTML
+        const findingsHTML = findings
+          .map(function (f) {
+            return (
+              '<div class="rpt-finding">' +
+              '<div class="rpt-finding-icon ' +
+              f.icon +
+              '">&#9679;</div>' +
+              '<div contenteditable="true">' +
+              f.text +
+              '</div>' +
+              '</div>'
+            );
+          })
+          .join('');
+
+        // Hero section (gradient background)
+        const heroHTML =
+          '<div class="rpt-hero">' +
+          '<div class="rpt-hero-top">' +
+          '<div class="rpt-hero-logo">CONTROL SERVICE <span>COMPANY</span></div>' +
+          '<div class="rpt-hero-type">Quarterly Performance Report</div>' +
+          '</div>' +
+          '<div class="rpt-hero-main">' +
+          '<div class="rpt-hero-client" contenteditable="true">' +
+          d.project.client +
+          '</div>' +
+          '<h1 contenteditable="true">' +
+          periodTitle +
+          ' Results</h1>' +
+          '<div class="rpt-hero-period" contenteditable="true">' +
+          contractYrLabel +
+          ' &nbsp;•&nbsp; ' +
+          d.period.label +
+          '</div>' +
+          '</div>' +
+          '<div class="rpt-big-number">' +
+          '<div class="rpt-bn-amount" contenteditable="true">' +
+          $c(d.totals.savings) +
+          '</div>' +
+          '<div class="rpt-bn-label" contenteditable="true">saved this ' +
+          (d.period.type === 'quarterly' ? 'quarter' : 'year') +
+          '</div>' +
+          '<div class="rpt-bn-badge" contenteditable="true">' +
+          pctOfTarget +
+          '% of target</div>' +
+          '</div>' +
+          '<div class="rpt-hero-sub" contenteditable="true">' +
+          aheadLabel +
+          ' &nbsp;•&nbsp; ' +
+          exceedLabel +
+          '</div>' +
+          '</div>';
+
+        // Body section (white background below hero)
+        const bodyHTML =
+          '<div style="padding:16px 50px 60px;">' +
+          // Narrative
+          '<div class="rpt-narrative" contenteditable="true">' +
+          narrative +
+          '</div>' +
+          // Target vs Actual + progress bar
+          '<div class="rpt-vs-box">' +
+          '<div class="rpt-vs-side">' +
+          '<div class="rpt-vs-val" style="color:#1a5276" contenteditable="true">' +
+          $c(target) +
+          '</div>' +
+          '<div class="rpt-vs-lbl">Q' +
+          q +
+          ' Target</div>' +
+          '</div>' +
+          '<div class="rpt-vs-mid">vs</div>' +
+          '<div class="rpt-vs-side">' +
+          '<div class="rpt-vs-val" style="color:' +
+          (d.totals.savings >= target ? '#1e8449' : '#e67e22') +
+          '" contenteditable="true">' +
+          $c(d.totals.savings) +
+          '</div>' +
+          '<div class="rpt-vs-lbl">Actual Savings</div>' +
+          '</div>' +
+          '</div>' +
+          '<div class="rpt-progress-bar">' +
+          '<div class="rpt-progress-fill ' +
+          barClass +
+          '" style="width:' +
+          Math.min(barPct, 100) +
+          '%">' +
+          '<span contenteditable="true">' +
+          pctOfTarget +
+          '%</span>' +
+          '</div>' +
+          (pctOfTarget < 100 ? '<div class="rpt-target-marker" style="left:100%"></div>' : '') +
+          '</div>' +
+          // Two-column row: building status grid + gauges
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px;">' +
+          '<div>' +
+          '<div style="font-size:10px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Building Status</div>' +
+          '<div class="rpt-status-grid">' +
+          statusCards +
+          padCards +
+          '</div>' +
+          '</div>' +
+          '<div>' +
+          '<div style="font-size:10px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Portfolio Metrics</div>' +
+          '<div class="rpt-gauge-row">' +
+          '<div class="rpt-gauge">' +
+          '<div class="rpt-gauge-circle" style="' +
+          gaugeStyle(pctOfTarget, '#27ae60') +
+          '">' +
+          '<div class="rpt-gauge-val" contenteditable="true">' +
+          pctOfTarget +
+          '%</div>' +
+          '</div>' +
+          '<div class="rpt-gauge-label">vs Target</div>' +
+          '</div>' +
+          '<div class="rpt-gauge">' +
+          '<div class="rpt-gauge-circle" style="' +
+          gaugeStyle(energyRedPct, '#2e86c1') +
+          '">' +
+          '<div class="rpt-gauge-val" contenteditable="true">' +
+          energyRedPct +
+          '%</div>' +
+          '</div>' +
+          '<div class="rpt-gauge-label">Energy Reduced</div>' +
+          '</div>' +
+          '<div class="rpt-gauge">' +
+          '<div class="rpt-gauge-circle" style="' +
+          gaugeStyle(Math.max(0, euiImpPct), '#1e8449') +
+          '">' +
+          '<div class="rpt-gauge-val" contenteditable="true">' +
+          euiImpPct +
+          '%</div>' +
+          '</div>' +
+          '<div class="rpt-gauge-label">EUI Improved</div>' +
+          '</div>' +
+          '<div class="rpt-gauge">' +
+          '<div class="rpt-gauge-circle" style="' +
+          gaugeStyle(contractDonePct, '#8e44ad') +
+          '">' +
+          '<div class="rpt-gauge-val" contenteditable="true">' +
+          contractDonePct +
+          '%</div>' +
+          '</div>' +
+          '<div class="rpt-gauge-label">Contract Done</div>' +
+          '</div>' +
+          '</div>' +
+          '</div>' +
+          '</div>' +
+          // Key Findings
+          '<div style="margin-top:12px;">' +
+          '<div style="font-size:10px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Key Findings</div>' +
+          findingsHTML +
+          '</div>' +
+          '</div>';
+
+        return rptPage(n, 'Cover', heroHTML + bodyHTML, { hero: true, data: d, label: 'Page ' + n + ' — Cover' });
       }
+
       function rptPageFinancial(n, d) {
-        return rptPage(
-          n,
-          'Financial Summary',
-          '<p style="padding:20px;color:#888">Financial Summary — coming soon</p>',
-          { data: d, label: 'Page ' + n + ' — Financial Summary' },
-        );
+        const $c = function (v) {
+          return '$' + Math.abs(Math.round(v)).toLocaleString();
+        };
+        const $n = function (v) {
+          return Math.round(v).toLocaleString();
+        };
+        const $p = function (v) {
+          return v.toFixed(1) + '%';
+        };
+
+        const q = d.period.quarter || 1;
+        const qLabel = d.period.type === 'quarterly' ? 'Q' + q + ' ' + (d.period.year || '') : d.period.year || '';
+        const annFactor = d.period.type === 'quarterly' ? 4 : 1;
+        const annSavings = d.totals.savings * annFactor;
+        const yr5Savings = annSavings * 5;
+        const cscAmt = d.totals.savings * (d.contract.cscPct / 100);
+        const clientAmt = d.totals.savings - cscAmt;
+
+        // ── Building Performance table ──
+        const bRows = d.buildings
+          .map(function (b) {
+            const saveClass = b.savings >= 0 ? 'rpt-g' : 'rpt-r';
+            const statusIcon = b.status === 'on_track' ? '&#9650;' : b.status === 'near_target' ? '&#9658;' : '&#9660;';
+            const statusClass = b.status === 'on_track' ? 'rpt-g' : b.status === 'near_target' ? 'rpt-o' : 'rpt-r';
+            return (
+              '<tr>' +
+              '<td contenteditable="true">' +
+              b.name +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $n(b.sqft) +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $c(b.blCost) +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $c(b.curCost) +
+              '</td>' +
+              '<td class="rpt-n ' +
+              saveClass +
+              '" contenteditable="true">' +
+              $c(b.savings) +
+              '</td>' +
+              '<td class="rpt-n ' +
+              saveClass +
+              '" contenteditable="true">' +
+              $p(b.savingsPct) +
+              '</td>' +
+              '<td class="' +
+              statusClass +
+              '" contenteditable="true">' +
+              statusIcon +
+              ' ' +
+              (b.status === 'on_track' ? 'On Track' : b.status === 'near_target' ? 'Near Target' : 'Below Target') +
+              '</td>' +
+              '</tr>'
+            );
+          })
+          .join('');
+
+        const totSaveClass = d.totals.savings >= 0 ? 'rpt-g' : 'rpt-r';
+        const bTotRow =
+          '<tr class="rpt-tot">' +
+          '<td contenteditable="true">Total Portfolio</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $n(d.project.sqft) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $c(d.totals.blCost) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $c(d.totals.curCost) +
+          '</td>' +
+          '<td class="rpt-n ' +
+          totSaveClass +
+          '" contenteditable="true">' +
+          $c(d.totals.savings) +
+          '</td>' +
+          '<td class="rpt-n ' +
+          totSaveClass +
+          '" contenteditable="true">' +
+          $p(d.totals.savingsPct) +
+          '</td>' +
+          '<td></td>' +
+          '</tr>';
+
+        const bldgTable =
+          '<table class="rpt-table" contenteditable="false">' +
+          '<thead><tr>' +
+          '<th>Building</th>' +
+          '<th class="rpt-n">Sq Ft</th>' +
+          '<th class="rpt-n">BL Cost/Qtr</th>' +
+          '<th class="rpt-n">Curr Cost/Qtr</th>' +
+          '<th class="rpt-n">Savings</th>' +
+          '<th class="rpt-n">%</th>' +
+          '<th>Status</th>' +
+          '</tr></thead>' +
+          '<tbody>' +
+          bRows +
+          bTotRow +
+          '</tbody>' +
+          '</table>';
+
+        // ── CSC Compensation table ──
+        const cscTable =
+          '<table class="rpt-table" contenteditable="false">' +
+          '<thead><tr>' +
+          '<th></th>' +
+          '<th class="rpt-n">Quarter</th>' +
+          '<th class="rpt-n">Annualized</th>' +
+          '<th class="rpt-n">5-Yr Total</th>' +
+          '</tr></thead>' +
+          '<tbody>' +
+          '<tr>' +
+          '<td contenteditable="true">Total Savings</td>' +
+          '<td class="rpt-n rpt-g" contenteditable="true">' +
+          $c(d.totals.savings) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $c(annSavings) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $c(yr5Savings) +
+          '</td>' +
+          '</tr>' +
+          '<tr>' +
+          '<td contenteditable="true">CSC (' +
+          d.contract.cscPct +
+          '%)</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $c(cscAmt) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $c(cscAmt * annFactor) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $c(cscAmt * annFactor * 5) +
+          '</td>' +
+          '</tr>' +
+          '<tr class="rpt-tot">' +
+          '<td contenteditable="true">Client Net (' +
+          d.contract.clientPct +
+          '%)</td>' +
+          '<td class="rpt-n rpt-g" contenteditable="true">' +
+          $c(clientAmt) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $c(clientAmt * annFactor) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $c(clientAmt * annFactor * 5) +
+          '</td>' +
+          '</tr>' +
+          '</tbody>' +
+          '</table>';
+
+        // ── Quarterly Savings vs Baseline table ──
+        const qBlCost = d.totals.blCost;
+        const qCurCost = d.totals.curCost;
+        const qtrRow =
+          '<tr style="background:#fffde7;">' +
+          '<td contenteditable="true">' +
+          qLabel +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $n(d.totals.kwhBl) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $n(d.totals.kwhCur) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $n(d.totals.thermsBl) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $n(d.totals.thermsCur) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $n(d.totals.propaneBl) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $n(d.totals.propaneCur) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $c(qBlCost) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $c(qCurCost) +
+          '</td>' +
+          '<td class="rpt-n rpt-g" contenteditable="true">' +
+          $c(d.totals.savings) +
+          '</td>' +
+          '</tr>';
+        const qtrTable =
+          '<table class="rpt-table" contenteditable="false">' +
+          '<thead><tr>' +
+          '<th>Qtr</th>' +
+          '<th class="rpt-n">BL kWh</th>' +
+          '<th class="rpt-n">Act kWh</th>' +
+          '<th class="rpt-n">BL Therms</th>' +
+          '<th class="rpt-n">Act Therms</th>' +
+          '<th class="rpt-n">BL Gal</th>' +
+          '<th class="rpt-n">Act Gal</th>' +
+          '<th class="rpt-n">BL Cost</th>' +
+          '<th class="rpt-n">Act Cost</th>' +
+          '<th class="rpt-n">Saved</th>' +
+          '</tr></thead>' +
+          '<tbody>' +
+          qtrRow +
+          '</tbody>' +
+          '</table>';
+
+        // ── Cumulative vs Projection SVG chart ──
+        // Build a simple inline SVG showing projected savings line + current actual
+        const svgW = 700,
+          svgH = 110;
+        const yrs = d.contract.years || 5;
+        const annTarget = d.contract.annualTarget || 1;
+        const cumPoints = [];
+        for (var yi = 1; yi <= yrs; yi++) {
+          cumPoints.push({ yr: yi, proj: annTarget * yi });
+        }
+        const maxY = annTarget * yrs * 1.1;
+        const padL = 60,
+          padR = 20,
+          padT = 10,
+          padB = 30;
+        const cW = svgW - padL - padR;
+        const cH = svgH - padT - padB;
+        const xScale = function (yr) {
+          return padL + ((yr - 1) / Math.max(1, yrs - 1)) * cW;
+        };
+        const yScale = function (v) {
+          return padT + cH - (v / maxY) * cH;
+        };
+
+        // Projected dashed line
+        const projPath = cumPoints
+          .map(function (pt, i) {
+            return (i === 0 ? 'M' : 'L') + xScale(pt.yr).toFixed(1) + ',' + yScale(pt.proj).toFixed(1);
+          })
+          .join(' ');
+
+        // Current actual point (approximate: current year, proportional through year)
+        const actCumVal = annSavings * (d.contract.currentYear - 1 + 0.5);
+        const actX = xScale(d.contract.currentYear - 0.5);
+        const actY = yScale(Math.min(actCumVal, maxY));
+
+        // Y-axis labels
+        const yAxisLabels = [0, 0.25, 0.5, 0.75, 1.0]
+          .map(function (f) {
+            const val = f * annTarget * yrs;
+            const y = yScale(val);
+            return (
+              '<text x="' +
+              (padL - 4) +
+              '" y="' +
+              y.toFixed(1) +
+              '" text-anchor="end" font-size="8" fill="#888" dominant-baseline="middle">$' +
+              Math.round(val / 1000) +
+              'k</text>'
+            );
+          })
+          .join('');
+
+        // X-axis labels
+        const xAxisLabels = cumPoints
+          .map(function (pt) {
+            return (
+              '<text x="' +
+              xScale(pt.yr).toFixed(1) +
+              '" y="' +
+              (svgH - 8) +
+              '" text-anchor="middle" font-size="8" fill="#888">Yr ' +
+              pt.yr +
+              '</text>'
+            );
+          })
+          .join('');
+
+        const cumulativeSVG =
+          '<svg width="' +
+          svgW +
+          '" height="' +
+          svgH +
+          '" xmlns="http://www.w3.org/2000/svg">' +
+          // Axes
+          '<line x1="' +
+          padL +
+          '" y1="' +
+          padT +
+          '" x2="' +
+          padL +
+          '" y2="' +
+          (padT + cH) +
+          '" stroke="#ccc" stroke-width="1"/>' +
+          '<line x1="' +
+          padL +
+          '" y1="' +
+          (padT + cH) +
+          '" x2="' +
+          (padL + cW) +
+          '" y2="' +
+          (padT + cH) +
+          '" stroke="#ccc" stroke-width="1"/>' +
+          // Grid lines
+          [0.25, 0.5, 0.75]
+            .map(function (f) {
+              var y = yScale(f * annTarget * yrs);
+              return (
+                '<line x1="' +
+                padL +
+                '" y1="' +
+                y.toFixed(1) +
+                '" x2="' +
+                (padL + cW) +
+                '" y2="' +
+                y.toFixed(1) +
+                '" stroke="#eee" stroke-width="1"/>'
+              );
+            })
+            .join('') +
+          // Projected savings dashed line
+          '<path d="' +
+          projPath +
+          '" fill="none" stroke="#2e86c1" stroke-width="2" stroke-dasharray="6,3"/>' +
+          // Y-axis labels
+          yAxisLabels +
+          // X-axis labels
+          xAxisLabels +
+          // Actual point marker
+          '<circle cx="' +
+          actX.toFixed(1) +
+          '" cy="' +
+          actY.toFixed(1) +
+          '" r="5" fill="#27ae60" stroke="#fff" stroke-width="2"/>' +
+          '<text x="' +
+          (actX + 8).toFixed(1) +
+          '" y="' +
+          (actY - 6).toFixed(1) +
+          '" font-size="9" fill="#1e8449" font-weight="bold">Actual: ' +
+          $c(actCumVal) +
+          '</text>' +
+          // Legend
+          '<line x1="' +
+          (padL + cW - 120) +
+          '" y1="12" x2="' +
+          (padL + cW - 106) +
+          '" y2="12" stroke="#2e86c1" stroke-width="2" stroke-dasharray="6,3"/>' +
+          '<text x="' +
+          (padL + cW - 102) +
+          '" y="16" font-size="8" fill="#555">Projected</text>' +
+          '<circle cx="' +
+          (padL + cW - 60) +
+          '" cy="12" r="4" fill="#27ae60"/>' +
+          '<text x="' +
+          (padL + cW - 52) +
+          '" y="16" font-size="8" fill="#555">Actual</text>' +
+          '</svg>';
+
+        const bodyHTML =
+          '<h2>Building Performance</h2>' +
+          bldgTable +
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px;">' +
+          '<div>' +
+          '<h2>CSC Compensation</h2>' +
+          cscTable +
+          '</div>' +
+          '<div>' +
+          '<h2>Quarterly Savings vs Baseline</h2>' +
+          qtrTable +
+          '</div>' +
+          '</div>' +
+          '<h2>Cumulative Savings vs Projection</h2>' +
+          '<div class="rpt-chart-box">' +
+          '<div class="rpt-chart-title">5-Year Projected Savings (dashed) vs Actual (dot) — $000s</div>' +
+          cumulativeSVG +
+          '</div>';
+
+        return rptPage(n, 'Financial Summary', bodyHTML, { data: d, label: 'Page ' + n + ' — Financial Summary' });
       }
       function rptPageSavingsPerformance(n, d) {
         return rptPage(
