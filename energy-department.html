@@ -47852,12 +47852,389 @@
         });
       }
       function rptPageBuildingSummary(n, d, b) {
-        return rptPage(
-          n,
-          (b.name || 'Building') + ' Summary',
-          '<p style="padding:20px;color:#888">' + (b.name || 'Building') + ' Summary — coming soon</p>',
-          { data: d, label: 'Page ' + n + ' — ' + (b.name || 'Building') },
-        );
+        const $c = function (v) {
+          return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+        };
+        const $n = function (v) {
+          return Math.round(v || 0).toLocaleString();
+        };
+        const $p = function (v) {
+          return (v || 0).toFixed(1) + '%';
+        };
+
+        // ── Helpers ──────────────────────────────────────────────────────────
+        const hasElec = b.commodities && b.commodities.includes('Electric') && b.electric && b.electric.kwhBl > 0;
+        const hasGas = b.commodities && b.commodities.includes('Gas') && b.gas && b.gas.thermsBl > 0;
+        const hasPropane = b.commodities && b.commodities.includes('Propane') && b.propane && b.propane.galBl > 0;
+
+        // ── Target % (same logic as collectReportData targetPct) ──────────
+        const annualTarget = (d && d.contract && d.contract.annualTarget) || 0;
+        const blCost = b.blCost || 0;
+        const targetPct = annualTarget > 0 && blCost > 0 ? (annualTarget / blCost) * 100 : 10;
+        const savingsPct = b.savingsPct || 0;
+
+        // ── Month label helper (YYYY-MM → "Jan") ─────────────────────────
+        const MO_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        function moLabel(ym) {
+          if (!ym) return '';
+          var parts = ym.split('-');
+          return MO_ABBR[parseInt(parts[1], 10) - 1] || ym;
+        }
+
+        // ── Bar chart builder ─────────────────────────────────────────────
+        // blColor / curColor: CSS color strings
+        // unit: string appended to tooltip / footer labels
+        function buildBarChart(monthly, blColor, curColor, unit) {
+          if (!monthly || !monthly.length) return '';
+          var allVals = [];
+          monthly.forEach(function (mo) {
+            allVals.push(mo.bl || 0, mo.cur || 0);
+          });
+          var maxVal = Math.max.apply(null, allVals) || 1;
+          var maxH = 56; // px — maximum bar height
+
+          var blTot = 0,
+            curTot = 0;
+          var bars = '';
+          monthly.forEach(function (mo) {
+            var blH = Math.max(2, Math.round((mo.bl / maxVal) * maxH));
+            var curH = Math.max(2, Math.round((mo.cur / maxVal) * maxH));
+            blTot += mo.bl || 0;
+            curTot += mo.cur || 0;
+            bars +=
+              '<div style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:18px">' +
+              '<div style="display:flex;align-items:flex-end;gap:1px;height:' +
+              maxH +
+              'px">' +
+              '<div style="width:7px;height:' +
+              blH +
+              'px;background:' +
+              blColor +
+              ';border-radius:1px 1px 0 0" title="Baseline ' +
+              $n(mo.bl) +
+              ' ' +
+              unit +
+              '"></div>' +
+              '<div style="width:7px;height:' +
+              curH +
+              'px;background:' +
+              curColor +
+              ';border-radius:1px 1px 0 0" title="Current ' +
+              $n(mo.cur) +
+              ' ' +
+              unit +
+              '"></div>' +
+              '</div>' +
+              '<div style="font-size:7px;color:#999;margin-top:1px">' +
+              moLabel(mo.month) +
+              '</div>' +
+              '</div>';
+          });
+
+          var legend =
+            '<div style="display:flex;gap:10px;margin-top:4px;font-size:8px;color:#666">' +
+            '<span><span style="display:inline-block;width:8px;height:8px;background:' +
+            blColor +
+            ';border-radius:1px;margin-right:3px"></span>Baseline ' +
+            $n(blTot) +
+            ' ' +
+            unit +
+            '</span>' +
+            '<span><span style="display:inline-block;width:8px;height:8px;background:' +
+            curColor +
+            ';border-radius:1px;margin-right:3px"></span>Current ' +
+            $n(curTot) +
+            ' ' +
+            unit +
+            '</span>' +
+            '</div>';
+
+          return (
+            '<div style="display:flex;flex-wrap:wrap;gap:2px;align-items:flex-end;padding:4px 0">' +
+            bars +
+            '</div>' +
+            legend
+          );
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // LEFT COLUMN
+        // ═══════════════════════════════════════════════════════════════════
+
+        // Building name
+        var leftHTML =
+          '<div contenteditable="true" style="font-size:15px;font-weight:700;color:#1a5276;line-height:1.2;margin-bottom:4px">' +
+          (b.name || 'Building') +
+          '</div>';
+
+        // Address + sqft
+        var addr = b.address || (d && d.project && d.project.addr) || '';
+        var sqftStr = b.sqft ? b.sqft.toLocaleString() + ' sq ft' : '';
+        leftHTML +=
+          '<div contenteditable="true" style="font-size:9px;color:#666;margin-bottom:10px;line-height:1.5">' +
+          (addr ? addr + '<br>' : '') +
+          (sqftStr ? sqftStr : '') +
+          '</div>';
+
+        // EUI comparison bars
+        var euiBl = (b.eui && b.eui.baseline) || 0;
+        var euiCur = (b.eui && b.eui.current) || 0;
+        var euiMax = Math.max(euiBl, euiCur, 1);
+        var euiBarMaxH = 60; // px
+        var euiBlH = Math.max(4, Math.round((euiBl / euiMax) * euiBarMaxH));
+        var euiCurH = Math.max(4, Math.round((euiCur / euiMax) * euiBarMaxH));
+
+        leftHTML +=
+          '<div style="font-size:9.5px;font-weight:600;color:#333;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.03em">EUI (kBtu/sq ft/yr)</div>' +
+          '<div style="display:flex;gap:16px;align-items:flex-end;margin-bottom:12px">' +
+          // Baseline bar
+          '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">' +
+          '<div style="width:32px;height:' +
+          euiBarMaxH +
+          'px;display:flex;align-items:flex-end">' +
+          '<div style="width:32px;height:' +
+          euiBlH +
+          'px;background:#e67e22;border-radius:2px 2px 0 0"></div>' +
+          '</div>' +
+          '<div style="font-size:11px;font-weight:700;color:#e67e22">' +
+          euiBl.toFixed(1) +
+          '</div>' +
+          '<div style="font-size:8px;color:#888">Baseline</div>' +
+          '</div>' +
+          // Current bar
+          '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">' +
+          '<div style="width:32px;height:' +
+          euiBarMaxH +
+          'px;display:flex;align-items:flex-end">' +
+          '<div style="width:32px;height:' +
+          euiCurH +
+          'px;background:#1a8a4e;border-radius:2px 2px 0 0"></div>' +
+          '</div>' +
+          '<div style="font-size:11px;font-weight:700;color:#1a8a4e">' +
+          euiCur.toFixed(1) +
+          '</div>' +
+          '<div style="font-size:8px;color:#888">Current</div>' +
+          '</div>' +
+          '</div>';
+
+        // Notes
+        leftHTML +=
+          '<div style="font-size:9px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
+          '<div contenteditable="true" style="min-height:60px;font-size:9px;color:#444;border:1px dashed #ccc;border-radius:3px;padding:6px;line-height:1.5;background:#fafafa">' +
+          'Add building-specific notes here...' +
+          '</div>';
+
+        // ═══════════════════════════════════════════════════════════════════
+        // RIGHT COLUMN
+        // ═══════════════════════════════════════════════════════════════════
+
+        // Goals and Progression header
+        var rightHTML =
+          '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">' +
+          '<div style="font-size:12px;font-weight:700;color:#1a5276">Goals and Progression</div>' +
+          '<div style="font-size:8.5px;color:#888">Period: ' +
+          ((d && d.period && d.period.label) || '') +
+          '</div>' +
+          '</div>';
+
+        // Icon savings row
+        var iconItems = '';
+        if (hasElec) {
+          var kwhSaved = b.electric.kwhSaved || 0;
+          var kwReduced = (b.electric.kwBl || 0) - (b.electric.kwCur || 0);
+          iconItems +=
+            '<div style="flex:1;min-width:60px;text-align:center;background:#eaf4ff;border-radius:4px;padding:5px 4px">' +
+            '<div style="font-size:13px;margin-bottom:1px">⚡</div>' +
+            '<div style="font-size:12px;font-weight:700;color:#1a5276">' +
+            $n(kwhSaved) +
+            '</div>' +
+            '<div style="font-size:7.5px;color:#555">kWh Saved</div>' +
+            '</div>' +
+            '<div style="flex:1;min-width:60px;text-align:center;background:#eaf4ff;border-radius:4px;padding:5px 4px">' +
+            '<div style="font-size:13px;margin-bottom:1px">⚡</div>' +
+            '<div style="font-size:12px;font-weight:700;color:#1a5276">' +
+            $n(kwReduced) +
+            '</div>' +
+            '<div style="font-size:7.5px;color:#555">kW Reduced</div>' +
+            '</div>';
+        }
+        if (hasGas) {
+          iconItems +=
+            '<div style="flex:1;min-width:60px;text-align:center;background:#fff4e6;border-radius:4px;padding:5px 4px">' +
+            '<div style="font-size:13px;margin-bottom:1px">🔥</div>' +
+            '<div style="font-size:12px;font-weight:700;color:#c0392b">' +
+            $n(b.gas.thermsSaved || 0) +
+            '</div>' +
+            '<div style="font-size:7.5px;color:#555">Therms Saved</div>' +
+            '</div>';
+        }
+        if (hasPropane) {
+          iconItems +=
+            '<div style="flex:1;min-width:60px;text-align:center;background:#fdf6e3;border-radius:4px;padding:5px 4px">' +
+            '<div style="font-size:13px;margin-bottom:1px">💧</div>' +
+            '<div style="font-size:12px;font-weight:700;color:#b7770d">' +
+            $n(b.propane.galSaved || 0) +
+            '</div>' +
+            '<div style="font-size:7.5px;color:#555">Gal Saved</div>' +
+            '</div>';
+        }
+        // Always show $ savings
+        iconItems +=
+          '<div style="flex:1;min-width:60px;text-align:center;background:#e9f7ef;border-radius:4px;padding:5px 4px">' +
+          '<div style="font-size:13px;margin-bottom:1px">💰</div>' +
+          '<div style="font-size:12px;font-weight:700;color:#1e8449">' +
+          $c(b.savings || 0) +
+          '</div>' +
+          '<div style="font-size:7.5px;color:#555">Total Saved</div>' +
+          '</div>';
+
+        rightHTML += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">' + iconItems + '</div>';
+
+        // Summary table
+        var tableRows = '';
+        if (hasElec) {
+          var elSavPct = b.electric.kwhBl > 0 ? (b.electric.kwhSaved / b.electric.kwhBl) * 100 : 0;
+          var elColor = elSavPct >= targetPct ? '#1e8449' : elSavPct >= targetPct * 0.8 ? '#e67e22' : '#c0392b';
+          tableRows +=
+            '<tr>' +
+            '<td contenteditable="true">Electric</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            ((d && d.period && d.period.end) || '—') +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $p(targetPct) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' +
+            elColor +
+            ';font-weight:600">' +
+            $p(elSavPct) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $c(b.electric.costSaved || 0) +
+            '</td>' +
+            '</tr>';
+        }
+        if (hasGas) {
+          var gasSavPct = b.gas.thermsBl > 0 ? (b.gas.thermsSaved / b.gas.thermsBl) * 100 : 0;
+          var gasColor = gasSavPct >= targetPct ? '#1e8449' : gasSavPct >= targetPct * 0.8 ? '#e67e22' : '#c0392b';
+          tableRows +=
+            '<tr>' +
+            '<td contenteditable="true">Natural Gas</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            ((d && d.period && d.period.end) || '—') +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $p(targetPct) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' +
+            gasColor +
+            ';font-weight:600">' +
+            $p(gasSavPct) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $c(b.gas.costSaved || 0) +
+            '</td>' +
+            '</tr>';
+        }
+        if (hasPropane) {
+          var propSavPct = b.propane.galBl > 0 ? (b.propane.galSaved / b.propane.galBl) * 100 : 0;
+          var propColor = propSavPct >= targetPct ? '#1e8449' : propSavPct >= targetPct * 0.8 ? '#e67e22' : '#c0392b';
+          tableRows +=
+            '<tr>' +
+            '<td contenteditable="true">Propane</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            ((d && d.period && d.period.end) || '—') +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $p(targetPct) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' +
+            propColor +
+            ';font-weight:600">' +
+            $p(propSavPct) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $c(b.propane.costSaved || 0) +
+            '</td>' +
+            '</tr>';
+        }
+        if (!tableRows) {
+          tableRows =
+            '<tr><td colspan="5" style="color:#aaa;font-style:italic">No commodity data for this building</td></tr>';
+        }
+
+        rightHTML +=
+          '<table class="rpt-table" style="margin-bottom:10px">' +
+          '<thead><tr>' +
+          '<th>Commodity</th>' +
+          '<th class="rpt-n">Period End</th>' +
+          '<th class="rpt-n">Goal %</th>' +
+          '<th class="rpt-n">Achieved %</th>' +
+          '<th class="rpt-n">Achieved $</th>' +
+          '</tr></thead>' +
+          '<tbody>' +
+          tableRows +
+          '</tbody>' +
+          '</table>';
+
+        // Electricity Consumption chart
+        if (hasElec) {
+          var elChart = buildBarChart(b.electric.monthly, '#aed6f1', '#1a5276', 'kWh');
+          rightHTML +=
+            '<div style="font-size:9.5px;font-weight:600;color:#1a5276;margin:6px 0 2px">' +
+            'Electricity Consumption' +
+            '<span style="font-size:8px;font-weight:400;color:#999;margin-left:6px">' +
+            ((d && d.period && d.period.label) || '') +
+            '</span>' +
+            '</div>' +
+            elChart;
+        }
+
+        // Natural Gas Consumption chart
+        if (hasGas) {
+          var gasChart = buildBarChart(b.gas.monthly, '#f0b27a', '#e67e22', 'Therms');
+          rightHTML +=
+            '<div style="font-size:9.5px;font-weight:600;color:#8b4513;margin:6px 0 2px">' +
+            'Natural Gas Consumption' +
+            '<span style="font-size:8px;font-weight:400;color:#999;margin-left:6px">' +
+            ((d && d.period && d.period.label) || '') +
+            '</span>' +
+            '</div>' +
+            gasChart;
+        }
+
+        // Propane Consumption chart
+        if (hasPropane) {
+          var propChart = buildBarChart(b.propane.monthly, '#f9e4b7', '#b7770d', 'Gal');
+          rightHTML +=
+            '<div style="font-size:9.5px;font-weight:600;color:#7d5a00;margin:6px 0 2px">' +
+            'Propane Consumption' +
+            '<span style="font-size:8px;font-weight:400;color:#999;margin-left:6px">' +
+            ((d && d.period && d.period.label) || '') +
+            '</span>' +
+            '</div>' +
+            propChart;
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // Assemble two-column layout
+        // ═══════════════════════════════════════════════════════════════════
+        var bodyHTML =
+          '<div style="display:flex;gap:16px;align-items:flex-start;height:100%">' +
+          // Left column ~38%
+          '<div style="flex:0 0 38%;max-width:38%;padding-right:12px;border-right:1px solid #d4e4f0">' +
+          leftHTML +
+          '</div>' +
+          // Right column ~62%
+          '<div style="flex:1;min-width:0">' +
+          rightHTML +
+          '</div>' +
+          '</div>';
+
+        return rptPage(n, (b.name || 'Building') + ' — Building Summary', bodyHTML, {
+          data: d,
+          label: 'Page ' + n + ' — ' + (b.name || 'Building'),
+        });
       }
       function rptPageElectric(n, d) {
         return rptPage(n, 'Electric Detail', '<p style="padding:20px;color:#888">Electric Detail — coming soon</p>', {
