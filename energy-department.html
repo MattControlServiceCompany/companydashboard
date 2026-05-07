@@ -60314,7 +60314,7 @@
                    ondrop="spHandleDrop(event,'${projId}','${activeBldgId}')">
                 <div style="font-size:22px;margin-bottom:4px">📂</div>
                 <div style="font-size:12px;font-weight:600;color:var(--text)">Drop BAS export CSV here or click to browse</div>
-                <div style="font-size:11px;color:var(--text3);margin-top:4px">Expected columns: Zone/System · Occ Heat · Occ Cool · Unocc Heat · Unocc Cool · Schedule</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:4px">Zone CSV (Zone/System · Occ/Unocc Heat/Cool · Schedule) or Niagara equipment snapshot</div>
                 <input type="file" id="sp-file-${projId}" accept=".csv,.txt" style="display:none"
                        onchange="spHandleFileInput(event,'${projId}','${activeBldgId}')">
               </div>
@@ -60338,7 +60338,8 @@
                 </table>
               </div>
             </div>
-          </div>`;
+          </div>
+          ${spRenderBASSnapshot(projId)}`;
       }
 
       function _spZoneRow(projId, bldgId, z, idx) {
@@ -60566,6 +60567,518 @@
         showToast(
           'Imported ' + imported.length + ' zone' + (imported.length !== 1 ? 's' : '') + ' — click Save to keep',
         );
+        renderSetpointsTab(projId);
+      }
+
+      /* ══════════════════════════════════════════════════════
+         BAS EQUIPMENT SNAPSHOT ANALYZER
+      ══════════════════════════════════════════════════════ */
+
+      function _basIsError(v) {
+        if (v === undefined || v === null || v === '') return true;
+        var s = String(v).trim();
+        return s.startsWith('(Error)') || s.startsWith('"(Error)') || s.startsWith('(?)') || s.startsWith('"(?)');
+      }
+
+      function _basNum(v) {
+        if (_basIsError(v)) return null;
+        var n = parseFloat(String(v).replace(/,/g, ''));
+        return isNaN(n) ? null : n;
+      }
+
+      function _basStr(v) {
+        if (_basIsError(v)) return '';
+        return String(v)
+          .replace(/^"+|"+$/g, '')
+          .trim();
+      }
+
+      function _basExtractBuilding(paths) {
+        // paths = array of path column values (up to 5), representing geographic hierarchy
+        // The building is typically the level just below the district/org level
+        // Pattern: Area > Building > District — building is the second-to-last non-empty path
+        var clean = paths
+          .map(function (p) {
+            return _basStr(p);
+          })
+          .filter(function (p) {
+            return p && p !== '';
+          });
+        if (clean.length === 0) return '';
+        // The district/org is usually the last non-empty path value
+        // Building is the one before it
+        if (clean.length >= 2) return clean[clean.length - 2];
+        return clean[0];
+      }
+
+      function _basExtractProgram(fullPath) {
+        var s = _basStr(fullPath);
+        if (!s) return '';
+        // Strip /defs/equipment/ prefix
+        var prefix = '/defs/equipment/';
+        var idx = s.indexOf(prefix);
+        if (idx >= 0) return s.substring(idx + prefix.length);
+        return s;
+      }
+
+      function spParseBASSnapshot(lines, headers, splitRow, projId, fileName) {
+        // Map all column indices from the Niagara export
+        function findCol(candidates) {
+          for (var ci = 0; ci < candidates.length; ci++) {
+            var idx = headers.findIndex(function (h) {
+              return h.includes(candidates[ci]);
+            });
+            if (idx >= 0) return idx;
+          }
+          return -1;
+        }
+        function findAllCols(candidate) {
+          var result = [];
+          for (var i = 0; i < headers.length; i++) {
+            if (headers[i] === candidate || headers[i].includes(candidate)) result.push(i);
+          }
+          return result;
+        }
+
+        var col = {
+          location: findCol(['location']),
+          zoneTemp: findCol(['zone temp (zone)']),
+          zoneTempSpt: findCol(['zone temp (spt)']),
+          zoneTempZT: findCol(['zone temp (zone_temp)']),
+          zoneTempZoneTemp: findCol(['zone temp (zonetemperature)']),
+          heatSP: findCol(['heating sp']),
+          coolSP: findCol(['cooling sp']),
+          spAdj: findCol(['set point adj']),
+          zoneCO2: findCol(['zone co2']),
+          raCO2: findCol(['ra co2']),
+          zoneHum: findCol(['zone hum (zone_humidity)']),
+          zoneHumZ: findCol(['zone hum (zhum)']),
+          zoneHumSph: findCol(['zone hum (sph)']),
+          raHum: findCol(['ra hum']),
+          zoneState: findCol(['zone state']),
+          flowSP: findCol(['flow sp']),
+          heatPct: findCol(['heat%']),
+          coolPct: findCol(['cool%']),
+          sat: findCol(['sat']),
+          satSP: findCol(['satsp']),
+          pumpSts: findCol(['pump status']),
+          pumpSpd: findCol(['pump speed']),
+          hwSP: findCol(['hot water set point']),
+          poolSP: findCol(['pool water set point']),
+          ctrlProg: findCol(['control program name']),
+        };
+        var pathCols = findAllCols('path');
+
+        var rows = [];
+        for (var i = 1; i < lines.length; i++) {
+          var vals = splitRow(lines[i]);
+          if (
+            vals.every(function (c) {
+              return !c;
+            })
+          )
+            continue;
+
+          var zoneTemp = _basNum(vals[col.zoneTemp]);
+          if (zoneTemp === null) zoneTemp = _basNum(vals[col.zoneTempSpt]);
+          if (zoneTemp === null) zoneTemp = _basNum(vals[col.zoneTempZT]);
+          if (zoneTemp === null) zoneTemp = _basNum(vals[col.zoneTempZoneTemp]);
+
+          var heatSP = _basNum(vals[col.heatSP]);
+          var coolSP = _basNum(vals[col.coolSP]);
+          var spAdj = _basNum(vals[col.spAdj]);
+
+          var defHeat = null;
+          var defCool = null;
+          if (heatSP !== null && spAdj !== null) {
+            var dh = heatSP - spAdj;
+            defHeat = dh === 0 ? null : dh;
+          }
+          if (coolSP !== null && spAdj !== null) {
+            var dc = coolSP - spAdj;
+            defCool = dc === 0 ? null : dc;
+          }
+
+          var zoneCO2 = _basNum(vals[col.zoneCO2]);
+          var raCO2 = _basNum(vals[col.raCO2]);
+          var zoneHum = _basNum(vals[col.zoneHum]);
+          if (zoneHum === null) zoneHum = _basNum(vals[col.zoneHumZ]);
+          if (zoneHum === null) zoneHum = _basNum(vals[col.zoneHumSph]);
+          var raHum = _basNum(vals[col.raHum]);
+
+          var pathVals = pathCols.map(function (ci) {
+            return vals[ci];
+          });
+          var building = _basExtractBuilding(pathVals);
+          var program = _basExtractProgram(vals[col.ctrlProg]);
+
+          var zoneState = _basStr(vals[col.zoneState]);
+
+          rows.push({
+            location: _basStr(vals[col.location]),
+            zoneTemp: zoneTemp,
+            heatSP: heatSP,
+            coolSP: coolSP,
+            defHeatSP: defHeat,
+            defCoolSP: defCool,
+            spAdj: spAdj,
+            zoneCO2: zoneCO2,
+            raCO2: raCO2,
+            zoneHum: zoneHum,
+            raHum: raHum,
+            zoneState: zoneState,
+            flowSP: _basNum(vals[col.flowSP]),
+            heatPct: _basNum(vals[col.heatPct]),
+            coolPct: _basNum(vals[col.coolPct]),
+            sat: _basNum(vals[col.sat]),
+            satSP: _basNum(vals[col.satSP]),
+            building: building,
+            controlProgram: program,
+          });
+        }
+
+        if (!rows.length) {
+          showToast('No data rows found in BAS snapshot');
+          return;
+        }
+
+        var analysis = spComputeBASAnalysis(rows);
+
+        var p = projects.find(function (x) {
+          return String(x.id) === String(projId);
+        });
+        if (p) {
+          p.basSnapshot = {
+            importedAt: new Date().toISOString(),
+            fileName: fileName || 'unknown.csv',
+            rows: rows,
+            buildings: analysis,
+          };
+          sset('en_projects', projects);
+        }
+
+        showToast('BAS Snapshot imported: ' + rows.length + ' zones across ' + analysis.length + ' buildings');
+        renderSetpointsTab(projId);
+      }
+
+      function spComputeBASAnalysis(rows) {
+        var bldgMap = {};
+        rows.forEach(function (r) {
+          var b = r.building || '(Unknown)';
+          if (!bldgMap[b]) bldgMap[b] = [];
+          bldgMap[b].push(r);
+        });
+
+        function avg(arr, key) {
+          var vals = arr
+            .map(function (r) {
+              return r[key];
+            })
+            .filter(function (v) {
+              return v !== null && v !== undefined;
+            });
+          if (!vals.length) return null;
+          return (
+            Math.round(
+              (vals.reduce(function (a, b) {
+                return a + b;
+              }, 0) /
+                vals.length) *
+                10,
+            ) / 10
+          );
+        }
+
+        var result = [];
+        var bldgNames = Object.keys(bldgMap).sort();
+        bldgNames.forEach(function (name) {
+          var bRows = bldgMap[name];
+          var progs = bRows
+            .map(function (r) {
+              return r.controlProgram;
+            })
+            .filter(function (p) {
+              return p;
+            });
+          var uniqueProgs = [];
+          progs.forEach(function (p) {
+            if (uniqueProgs.indexOf(p) < 0) uniqueProgs.push(p);
+          });
+
+          var baselineCount = 2;
+          var minsPerProg = 1.5;
+          var hrsPerUnique = 0.375;
+          var changed = Math.max(uniqueProgs.length - baselineCount, 0);
+          var auditMins = progs.length * minsPerProg;
+          var auditHrs = Math.ceil(auditMins / 60);
+          var implHrs = Math.ceil(changed * hrsPerUnique);
+
+          result.push({
+            building: name,
+            count: bRows.length,
+            avgHeatSP: avg(bRows, 'heatSP'),
+            avgCoolSP: avg(bRows, 'coolSP'),
+            avgDefHeatSP: avg(bRows, 'defHeatSP'),
+            avgDefCoolSP: avg(bRows, 'defCoolSP'),
+            avgZoneTemp: avg(bRows, 'zoneTemp'),
+            avgSPAdj: avg(bRows, 'spAdj'),
+            avgCO2: avg(bRows, 'zoneCO2'),
+            avgRACO2: avg(bRows, 'raCO2'),
+            avgHum: avg(bRows, 'zoneHum'),
+            totalProgs: progs.length,
+            uniqueProgs: uniqueProgs.length,
+            changedProgs: changed,
+            auditHrs: auditHrs,
+            implHrs: implHrs,
+          });
+        });
+        return result;
+      }
+
+      function spRenderBASSnapshot(projId) {
+        var p = projects.find(function (x) {
+          return String(x.id) === String(projId);
+        });
+        if (!p || !p.basSnapshot) return '';
+        var snap = p.basSnapshot;
+        var rows = snap.rows || [];
+        var buildings = snap.buildings || [];
+
+        // Build building filter options
+        var bldgList = [];
+        rows.forEach(function (r) {
+          if (r.building && bldgList.indexOf(r.building) < 0) bldgList.push(r.building);
+        });
+        bldgList.sort();
+        var bldgOpts =
+          '<option value="">All Buildings (' +
+          rows.length +
+          ')</option>' +
+          bldgList
+            .map(function (b) {
+              var ct = rows.filter(function (r) {
+                return r.building === b;
+              }).length;
+              return '<option value="' + _escHtml(b) + '">' + _escHtml(b) + ' (' + ct + ')</option>';
+            })
+            .join('');
+
+        var importDate = snap.importedAt ? new Date(snap.importedAt).toLocaleDateString() : '';
+
+        return (
+          '<div class="card" style="margin-top:16px">' +
+          '<div class="card-hdr" style="justify-content:space-between">' +
+          '<span class="card-title">📊 BAS Equipment Snapshot</span>' +
+          '<div style="display:flex;gap:8px;align-items:center;font-size:11px;color:var(--text3)">' +
+          '<span>' +
+          _escHtml(snap.fileName || '') +
+          ' — ' +
+          importDate +
+          '</span>' +
+          '<button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:rgba(244,63,94,.3)" onclick="spClearBASSnapshot(\'' +
+          projId +
+          '\')">Clear</button>' +
+          '</div>' +
+          '</div>' +
+          '<div style="padding:12px">' +
+          '<div class="bas-tabs">' +
+          '<button class="bas-tab active" onclick="spBASTab(\'' +
+          projId +
+          "','data',this)\">Data (" +
+          rows.length +
+          ' rows)</button>' +
+          '<button class="bas-tab" onclick="spBASTab(\'' +
+          projId +
+          "','analysis',this)\">Building Analysis (" +
+          buildings.length +
+          ')</button>' +
+          '</div>' +
+          '<div id="bas-panel-data-' +
+          projId +
+          '">' +
+          '<div style="margin-bottom:8px;display:flex;gap:8px;align-items:center">' +
+          '<select class="fi" style="font-size:12px;padding:4px 8px;max-width:240px" onchange="spBASFilter(\'' +
+          projId +
+          '\',this.value)">' +
+          bldgOpts +
+          '</select>' +
+          '</div>' +
+          '<div id="bas-table-wrap-' +
+          projId +
+          '">' +
+          _basRenderTable(rows) +
+          '</div>' +
+          '</div>' +
+          '<div id="bas-panel-analysis-' +
+          projId +
+          '" style="display:none">' +
+          _basRenderAnalysis(buildings) +
+          '</div>' +
+          '</div>' +
+          '</div>'
+        );
+      }
+
+      function _basRenderTable(rows) {
+        function cell(v) {
+          if (v === null || v === undefined || v === '') return '<td class="bas-blank num">—</td>';
+          return '<td class="num">' + v + '</td>';
+        }
+        function cellStr(v) {
+          if (!v) return '<td class="bas-blank">—</td>';
+          return '<td>' + _escHtml(v) + '</td>';
+        }
+
+        var thead =
+          '<tr>' +
+          '<th>Location</th><th class="num">Zone Temp</th><th class="num">Heat SP</th><th class="num">Cool SP</th>' +
+          '<th class="num">Def Heat SP</th><th class="num">Def Cool SP</th><th class="num">SP Adj</th>' +
+          '<th class="num">Zone CO2</th><th class="num">RA CO2</th><th class="num">Zone Hum</th>' +
+          '<th>Zone State</th><th class="num">Flow SP</th><th class="num">Heat%</th><th class="num">Cool%</th>' +
+          '<th class="num">SAT</th><th>Building</th><th>Control Program</th></tr>';
+
+        var tbody = '';
+        rows.forEach(function (r) {
+          var cls = '';
+          if (r.zoneState && r.zoneState !== 'Good') {
+            cls = r.zoneState === 'Out of Range' ? ' class="bas-err"' : ' class="bas-warn"';
+          }
+          tbody +=
+            '<tr' +
+            cls +
+            '>' +
+            '<td>' +
+            _escHtml(r.location) +
+            '</td>' +
+            cell(r.zoneTemp) +
+            cell(r.heatSP) +
+            cell(r.coolSP) +
+            cell(r.defHeatSP) +
+            cell(r.defCoolSP) +
+            cell(r.spAdj) +
+            cell(r.zoneCO2) +
+            cell(r.raCO2) +
+            cell(r.zoneHum) +
+            cellStr(r.zoneState) +
+            cell(r.flowSP) +
+            cell(r.heatPct) +
+            cell(r.coolPct) +
+            cell(r.sat) +
+            cellStr(r.building) +
+            cellStr(r.controlProgram) +
+            '</tr>';
+        });
+
+        return (
+          '<div class="bas-wrap"><table class="bas-tbl"><thead>' +
+          thead +
+          '</thead><tbody>' +
+          tbody +
+          '</tbody></table></div>'
+        );
+      }
+
+      function _basRenderAnalysis(buildings) {
+        if (!buildings.length)
+          return '<div style="color:var(--text3);padding:20px;text-align:center">No building data.</div>';
+
+        function row(label, val, unit) {
+          var display = val !== null && val !== undefined ? val + (unit || '') : '—';
+          return (
+            '<div class="bas-sum-row"><span class="lbl">' +
+            label +
+            '</span><span class="val">' +
+            display +
+            '</span></div>'
+          );
+        }
+
+        var totalProgs = 0,
+          totalUnique = 0,
+          totalAudit = 0,
+          totalImpl = 0,
+          totalZones = 0;
+
+        var cards = buildings
+          .map(function (b) {
+            totalProgs += b.totalProgs;
+            totalUnique += b.uniqueProgs;
+            totalAudit += b.auditHrs;
+            totalImpl += b.implHrs;
+            totalZones += b.count;
+            return (
+              '<div class="bas-sum-card">' +
+              '<h4>' +
+              _escHtml(b.building) +
+              ' <span style="font-weight:400;font-size:11px;color:var(--text3)">(' +
+              b.count +
+              ' zones)</span></h4>' +
+              row('Avg Heating SP', b.avgHeatSP, '°F') +
+              row('Avg Cooling SP', b.avgCoolSP, '°F') +
+              row('Avg Default Heat SP', b.avgDefHeatSP, '°F') +
+              row('Avg Default Cool SP', b.avgDefCoolSP, '°F') +
+              row('Avg Zone Temp', b.avgZoneTemp, '°F') +
+              row('Avg SP Adjustment', b.avgSPAdj) +
+              row('Avg Zone CO2', b.avgCO2, ' ppm') +
+              row('Avg RA CO2', b.avgRACO2, ' ppm') +
+              row('Avg Zone Humidity', b.avgHum, '%') +
+              row('Control Programs', b.totalProgs) +
+              row('Unique Programs', b.uniqueProgs) +
+              row('Programs to Change', b.changedProgs) +
+              row('Audit Time', b.auditHrs, ' hrs') +
+              row('Implementation Time', b.implHrs, ' hrs') +
+              '</div>'
+            );
+          })
+          .join('');
+
+        var totals =
+          '<div class="bas-sum-card" style="border-color:var(--em);background:var(--s3)">' +
+          '<h4>Totals</h4>' +
+          row('Total Zones', totalZones) +
+          row('Total Control Programs', totalProgs) +
+          row('Total Unique Programs', totalUnique) +
+          row('Total Audit Time', totalAudit, ' hrs') +
+          row('Total Implementation Time', totalImpl, ' hrs') +
+          '</div>';
+
+        return '<div class="bas-summary-grid">' + totals + cards + '</div>';
+      }
+
+      function spBASTab(projId, tab, btn) {
+        var tabs = btn.parentElement.querySelectorAll('.bas-tab');
+        tabs.forEach(function (t) {
+          t.classList.remove('active');
+        });
+        btn.classList.add('active');
+        var dataPanel = document.getElementById('bas-panel-data-' + projId);
+        var analysisPanel = document.getElementById('bas-panel-analysis-' + projId);
+        if (dataPanel) dataPanel.style.display = tab === 'data' ? '' : 'none';
+        if (analysisPanel) analysisPanel.style.display = tab === 'analysis' ? '' : 'none';
+      }
+
+      function spBASFilter(projId, building) {
+        var p = projects.find(function (x) {
+          return String(x.id) === String(projId);
+        });
+        if (!p || !p.basSnapshot) return;
+        var rows = p.basSnapshot.rows || [];
+        if (building)
+          rows = rows.filter(function (r) {
+            return r.building === building;
+          });
+        var wrap = document.getElementById('bas-table-wrap-' + projId);
+        if (wrap) wrap.innerHTML = _basRenderTable(rows);
+      }
+
+      function spClearBASSnapshot(projId) {
+        var p = projects.find(function (x) {
+          return String(x.id) === String(projId);
+        });
+        if (!p) return;
+        delete p.basSnapshot;
+        sset('en_projects', projects);
+        showToast('BAS snapshot cleared');
         renderSetpointsTab(projId);
       }
 

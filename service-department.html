@@ -1210,26 +1210,28 @@
               </div>
               <div class="hdr-btns">
                 <button class="btn btn-ghost" onclick="syncToOutlook()">🔄 Sync to Outlook</button>
-                <button class="btn btn-primary" onclick="openStaffModal()">+ Add Employee</button>
+                <button class="btn btn-primary" data-fb="service.add-employee-btn" onclick="openStaffModal()">
+                  + Add Employee
+                </button>
               </div>
             </div>
             <div class="stats-row" data-fb="service.stats">
-              <div class="stat-card">
+              <div class="stat-card" data-fb="service.stat-card.on-duty">
                 <div class="stat-lbl">On Duty Today</div>
                 <div class="stat-val c-blue" id="s-on">—</div>
                 <div class="stat-meta" id="s-onm">of 0 staff</div>
               </div>
-              <div class="stat-card">
+              <div class="stat-card" data-fb="service.stat-card.leave">
                 <div class="stat-lbl">On Leave</div>
                 <div class="stat-val c-amber" id="s-lv">—</div>
                 <div class="stat-meta">approved</div>
               </div>
-              <div class="stat-card">
+              <div class="stat-card" data-fb="service.stat-card.off">
                 <div class="stat-lbl">Off Today</div>
                 <div class="stat-val c-red" id="s-off">—</div>
                 <div class="stat-meta">not scheduled</div>
               </div>
-              <div class="stat-card">
+              <div class="stat-card" data-fb="service.stat-card.total">
                 <div class="stat-lbl">Total Staff</div>
                 <div class="stat-val c-teal" id="s-tot">—</div>
                 <div class="stat-meta">service employees</div>
@@ -1243,17 +1245,32 @@
                     <button
                       class="btn btn-ghost btn-sm"
                       id="fa"
+                      data-fb="service.filter.all"
                       onclick="filterStaff('all')"
                       style="border-color: var(--blue); color: var(--blue)"
                     >
                       All
                     </button>
-                    <button class="btn btn-ghost btn-sm" id="fon" onclick="filterStaff('on')">On Duty</button>
-                    <button class="btn btn-ghost btn-sm" id="flv" onclick="filterStaff('leave')">Leave</button>
+                    <button
+                      class="btn btn-ghost btn-sm"
+                      id="fon"
+                      data-fb="service.filter.on-duty"
+                      onclick="filterStaff('on')"
+                    >
+                      On Duty
+                    </button>
+                    <button
+                      class="btn btn-ghost btn-sm"
+                      id="flv"
+                      data-fb="service.filter.leave"
+                      onclick="filterStaff('leave')"
+                    >
+                      Leave
+                    </button>
                   </div>
                 </div>
                 <div class="sched-wrap">
-                  <table class="sched-tbl">
+                  <table class="sched-tbl" data-fb="service.personnel-table">
                     <thead>
                       <tr>
                         <th>Employee</th>
@@ -1279,32 +1296,34 @@
               </div>
               <div class="hdr-btns">
                 <button class="btn btn-ghost" onclick="syncToOutlook()">🔄 Sync to Outlook</button>
-                <button class="btn btn-primary" onclick="openPMModal()">+ Add SA Record</button>
+                <button class="btn btn-primary" data-fb="service.add-sa-btn" onclick="openPMModal()">
+                  + Add SA Record
+                </button>
               </div>
             </div>
-            <div class="stats-row">
-              <div class="stat-card">
+            <div class="stats-row" data-fb="service.pm-stats">
+              <div class="stat-card" data-fb="service.stat-card.sa-records">
                 <div class="stat-lbl">SA Records</div>
                 <div class="stat-val c-blue" id="pm-total">57</div>
                 <div class="stat-meta">with PM patterns</div>
               </div>
-              <div class="stat-card">
+              <div class="stat-card" data-fb="service.stat-card.this-month">
                 <div class="stat-lbl">This Month</div>
                 <div class="stat-val c-teal" id="pm-month">—</div>
                 <div class="stat-meta">PM visits due</div>
               </div>
-              <div class="stat-card">
+              <div class="stat-card" data-fb="service.stat-card.next-7">
                 <div class="stat-lbl">Next 7 Days</div>
                 <div class="stat-val c-amber" id="pm-week">—</div>
                 <div class="stat-meta">upcoming visits</div>
               </div>
-              <div class="stat-card">
+              <div class="stat-card" data-fb="service.stat-card.active-techs">
                 <div class="stat-lbl">Active Techs</div>
                 <div class="stat-val c-violet" id="pm-techs">—</div>
                 <div class="stat-meta">assigned</div>
               </div>
             </div>
-            <div class="pm-legend">
+            <div class="pm-legend" data-fb="service.pm-legend">
               <div class="leg-item">
                 <div class="leg-dot" style="background: var(--amber)"></div>
                 Monthly / 2x Monthly
@@ -1330,7 +1349,12 @@
               <div class="card" data-fb="service.agreements">
                 <div class="card-hdr">
                   <span class="card-title">📋 Service Agreements</span>
-                  <select class="filter-select" id="techFilter" onchange="renderSAList()">
+                  <select
+                    class="filter-select"
+                    id="techFilter"
+                    data-fb="service.agreement-filter.tech"
+                    onchange="renderSAList()"
+                  >
                     <option value="">All Technicians</option>
                   </select>
                 </div>
@@ -1338,11 +1362,17 @@
                   <input
                     class="search-input"
                     id="saSearch"
+                    data-fb="service.agreement-search"
                     type="text"
                     placeholder="Search customer, SA#, or tech..."
                     oninput="renderSAList()"
                   />
-                  <select class="filter-select" id="pmTypeFilter" onchange="renderSAList()">
+                  <select
+                    class="filter-select"
+                    id="pmTypeFilter"
+                    data-fb="service.agreement-filter.type"
+                    onchange="renderSAList()"
+                  >
                     <option value="">All PM Types</option>
                     <option value="monthly">Monthly</option>
                     <option value="quarterly">Quarterly</option>
@@ -1352,7 +1382,7 @@
                   </select>
                 </div>
                 <div class="sa-wrap">
-                  <table class="sa-tbl">
+                  <table class="sa-tbl" data-fb="service.agreement-table">
                     <thead>
                       <tr>
                         <th>SA #</th>
@@ -1382,13 +1412,15 @@
               </div>
               <div class="hdr-btns">
                 <button class="btn btn-ghost" onclick="syncToOutlook()">🔄 Sync to Outlook</button>
-                <button class="btn btn-primary" onclick="openDispatchModal()">+ New Work Order</button>
+                <button class="btn btn-primary" data-fb="service.dispatch-new-btn" onclick="openDispatchModal()">
+                  + New Work Order
+                </button>
               </div>
             </div>
             <div class="card">
               <div class="card-hdr"><span class="card-title">📡 Active Work Orders</span></div>
               <div class="dispatch-wrap">
-                <table class="dispatch-tbl">
+                <table class="dispatch-tbl" data-fb="service.dispatch-table">
                   <thead>
                     <tr>
                       <th>SA #</th>
@@ -1410,7 +1442,7 @@
     </div>
 
     <!-- STAFF MODAL -->
-    <div class="modal-bg" id="staffModal">
+    <div class="modal-bg" id="staffModal" data-fb="service.modal.staff">
       <div class="modal-box" role="dialog" aria-modal="true">
         <div class="modal-hdr">
           <span class="modal-title">+ Add Employee</span><button class="modal-x" onclick="closeStaffModal()">✕</button>
@@ -1444,7 +1476,7 @@
     </div>
 
     <!-- PM MODAL -->
-    <div class="modal-bg" id="pmModal">
+    <div class="modal-bg" id="pmModal" data-fb="service.modal.pm">
       <div class="modal-box" role="dialog" aria-modal="true">
         <div class="modal-hdr">
           <span class="modal-title">+ Add SA Record</span><button class="modal-x" onclick="closePMModal()">✕</button>
@@ -1491,7 +1523,7 @@
     </div>
 
     <!-- DISPATCH MODAL -->
-    <div class="modal-bg" id="dispatchModal">
+    <div class="modal-bg" id="dispatchModal" data-fb="service.modal.dispatch">
       <div class="modal-box" role="dialog" aria-modal="true">
         <div class="modal-hdr">
           <span class="modal-title">+ New Work Order</span

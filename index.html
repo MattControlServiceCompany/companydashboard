@@ -1509,7 +1509,7 @@
         </div>
       </header>
 
-      <nav class="dept-nav">
+      <nav class="dept-nav" data-fb="index.dept-nav">
         <button class="dept-tab active" onclick="setDept('hub', this)">🏠 Dashboard</button>
         <a class="dept-tab" href="service-department.html">🔧 Service Department</a>
         <a class="dept-tab" href="energy-department.html">⚡ Energy Department</a>
@@ -1579,22 +1579,22 @@
             </div>
 
             <div class="stats-row" data-fb="index.stats">
-              <div class="stat-card">
+              <div class="stat-card" data-fb="index.stat-card.departments">
                 <div class="stat-lbl">Departments</div>
                 <div class="stat-val c-blue">2</div>
                 <div class="stat-meta">active portals</div>
               </div>
-              <div class="stat-card">
+              <div class="stat-card" data-fb="index.stat-card.staff">
                 <div class="stat-lbl">Service Staff</div>
                 <div class="stat-val c-teal" id="dash-stat-staff">9</div>
                 <div class="stat-meta">technicians</div>
               </div>
-              <div class="stat-card">
+              <div class="stat-card" data-fb="index.stat-card.sa">
                 <div class="stat-lbl">SA Records</div>
                 <div class="stat-val c-amber" id="dash-stat-sa">57</div>
                 <div class="stat-meta">PM agreements</div>
               </div>
-              <div class="stat-card">
+              <div class="stat-card" data-fb="index.stat-card.projects">
                 <div class="stat-lbl">Energy Projects</div>
                 <div class="stat-val c-violet" id="dash-stat-projects">0</div>
                 <div class="stat-meta">in progress</div>
@@ -1603,7 +1603,7 @@
 
             <div class="sec-lbl">Departments</div>
             <div class="dept-grid" data-fb="index.dept-cards">
-              <a class="dept-card blue" href="service-department.html">
+              <a class="dept-card blue" href="service-department.html" data-fb="index.dept-card.service">
                 <div class="dc-banner blue"></div>
                 <div class="dc-body">
                   <div class="dc-icon blue">🔧</div>
@@ -1629,7 +1629,7 @@
                   <div class="dc-footer"><span class="dc-link">Open Service Department →</span></div>
                 </div>
               </a>
-              <a class="dept-card teal" href="energy-department.html">
+              <a class="dept-card teal" href="energy-department.html" data-fb="index.dept-card.energy">
                 <div class="dc-banner teal"></div>
                 <div class="dc-body">
                   <div class="dc-icon teal">⚡</div>
@@ -1659,56 +1659,56 @@
 
             <div class="sec-lbl">Quick Access</div>
             <div class="quick-grid" data-fb="index.quick-access">
-              <a class="quick-card" href="service-department.html"
+              <a class="quick-card" href="service-department.html" data-fb="index.quick-card.personnel"
                 ><div class="qc-ico">👥</div>
                 <div>
                   <div class="qc-name">Personnel</div>
                   <div class="qc-sub">Staff schedule</div>
                 </div></a
               >
-              <a class="quick-card" href="service-department.html"
+              <a class="quick-card" href="service-department.html" data-fb="index.quick-card.pm-schedule"
                 ><div class="qc-ico">🗓️</div>
                 <div>
                   <div class="qc-name">PM Schedule</div>
                   <div class="qc-sub"><span id="qa-pm">57</span> service agreements</div>
                 </div></a
               >
-              <a class="quick-card" href="service-department.html"
+              <a class="quick-card" href="service-department.html" data-fb="index.quick-card.dispatch"
                 ><div class="qc-ico">📡</div>
                 <div>
                   <div class="qc-name">Dispatch Board</div>
                   <div class="qc-sub">Active work orders</div>
                 </div></a
               >
-              <a class="quick-card" href="energy-department.html"
+              <a class="quick-card" href="energy-department.html" data-fb="index.quick-card.pdf"
                 ><div class="qc-ico">📄</div>
                 <div>
                   <div class="qc-name">PDF / OCR</div>
                   <div class="qc-sub">AI document extraction</div>
                 </div></a
               >
-              <a class="quick-card" href="energy-department.html"
+              <a class="quick-card" href="energy-department.html" data-fb="index.quick-card.weather"
                 ><div class="qc-ico">🌡️</div>
                 <div>
                   <div class="qc-name">Weather Normalize</div>
                   <div class="qc-sub">HDD / CDD adjustment</div>
                 </div></a
               >
-              <a class="quick-card" href="energy-department.html"
+              <a class="quick-card" href="energy-department.html" data-fb="index.quick-card.baseline"
                 ><div class="qc-ico">📊</div>
                 <div>
                   <div class="qc-name">Energy Baseline</div>
                   <div class="qc-sub">ASHRAE Guideline 14</div>
                 </div></a
               >
-              <a class="quick-card" href="energy-department.html"
+              <a class="quick-card" href="energy-department.html" data-fb="index.quick-card.spec-writer"
                 ><div class="qc-ico">✍️</div>
                 <div>
                   <div class="qc-name">Spec Writer</div>
                   <div class="qc-sub">Controls specs</div>
                 </div></a
               >
-              <a class="quick-card" href="energy-department.html"
+              <a class="quick-card" href="energy-department.html" data-fb="index.quick-card.webctrl"
                 ><div class="qc-ico">🔌</div>
                 <div>
                   <div class="qc-name">WebCTRL</div>

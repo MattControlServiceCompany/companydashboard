@@ -1355,17 +1355,19 @@
         </div>
       </div>
       <div class="t-right">
-        <button class="btn btn-ghost btn-sm" onclick="openImportModal()">⬆ Import CSV</button>
-        <button class="btn btn-em" onclick="openNewLeadModal()">+ New Lead</button>
+        <button class="btn btn-ghost btn-sm" data-fb="ems.import-csv-btn" onclick="openImportModal()">
+          ⬆ Import CSV
+        </button>
+        <button class="btn btn-em" data-fb="ems.new-lead-btn" onclick="openNewLeadModal()">+ New Lead</button>
       </div>
     </div>
 
     <!-- NAV -->
     <div class="nav-bar">
-      <button class="ntab active" onclick="switchView('pipeline', this)">📋 Pipeline</button>
-      <button class="ntab" onclick="switchView('table', this)">📊 All Leads</button>
-      <button class="ntab" onclick="switchView('followups', this)">🔔 Follow-ups</button>
-      <button class="ntab" onclick="switchView('analytics', this)">📈 Analytics</button>
+      <button class="ntab active" data-fb="ems.tab.pipeline" onclick="switchView('pipeline', this)">📋 Pipeline</button>
+      <button class="ntab" data-fb="ems.tab.table" onclick="switchView('table', this)">📊 All Leads</button>
+      <button class="ntab" data-fb="ems.tab.followups" onclick="switchView('followups', this)">🔔 Follow-ups</button>
+      <button class="ntab" data-fb="ems.tab.analytics" onclick="switchView('analytics', this)">📈 Analytics</button>
     </div>
 
     <!-- APP -->
@@ -1374,10 +1376,10 @@
       <div class="sidebar" data-fb="ems.sidebar">
         <div class="s-sect">
           <div class="s-lbl">Pipeline</div>
-          <div class="s-item active" id="sb-all" onclick="filterByStage('', this)">
+          <div class="s-item active" id="sb-all" data-fb="ems.sidebar.all-leads" onclick="filterByStage('', this)">
             <span class="s-ico">🌐</span>All Leads<span class="s-badge" id="sb-count-all">0</span>
           </div>
-          <div class="s-item" id="sb-prospect" onclick="filterByStage('Prospect', this)">
+          <div class="s-item" id="sb-prospect" data-fb="ems.sidebar.prospect" onclick="filterByStage('Prospect', this)">
             <span class="s-ico">👁</span>Prospect<span
               class="s-badge"
               id="sb-count-prospect"
@@ -1385,7 +1387,12 @@
               >0</span
             >
           </div>
-          <div class="s-item" id="sb-contacted" onclick="filterByStage('Contacted', this)">
+          <div
+            class="s-item"
+            id="sb-contacted"
+            data-fb="ems.sidebar.contacted"
+            onclick="filterByStage('Contacted', this)"
+          >
             <span class="s-ico">📞</span>Contacted<span
               class="s-badge"
               id="sb-count-contacted"
@@ -1393,7 +1400,12 @@
               >0</span
             >
           </div>
-          <div class="s-item" id="sb-qualifying" onclick="filterByStage('Qualifying', this)">
+          <div
+            class="s-item"
+            id="sb-qualifying"
+            data-fb="ems.sidebar.qualifying"
+            onclick="filterByStage('Qualifying', this)"
+          >
             <span class="s-ico">🔍</span>Qualifying<span
               class="s-badge"
               id="sb-count-qualifying"
@@ -1401,7 +1413,7 @@
               >0</span
             >
           </div>
-          <div class="s-item" id="sb-proposal" onclick="filterByStage('Proposal', this)">
+          <div class="s-item" id="sb-proposal" data-fb="ems.sidebar.proposal" onclick="filterByStage('Proposal', this)">
             <span class="s-ico">📄</span>Proposal<span
               class="s-badge"
               id="sb-count-proposal"
@@ -1409,7 +1421,12 @@
               >0</span
             >
           </div>
-          <div class="s-item" id="sb-negotiating" onclick="filterByStage('Negotiating', this)">
+          <div
+            class="s-item"
+            id="sb-negotiating"
+            data-fb="ems.sidebar.negotiating"
+            onclick="filterByStage('Negotiating', this)"
+          >
             <span class="s-ico">🤝</span>Negotiating<span
               class="s-badge"
               id="sb-count-negotiating"
@@ -1417,7 +1434,7 @@
               >0</span
             >
           </div>
-          <div class="s-item" id="sb-won" onclick="filterByStage('Won', this)">
+          <div class="s-item" id="sb-won" data-fb="ems.sidebar.won" onclick="filterByStage('Won', this)">
             <span class="s-ico">✅</span>Won<span
               class="s-badge"
               id="sb-count-won"
@@ -1425,7 +1442,7 @@
               >0</span
             >
           </div>
-          <div class="s-item" id="sb-lost" onclick="filterByStage('Lost', this)">
+          <div class="s-item" id="sb-lost" data-fb="ems.sidebar.lost" onclick="filterByStage('Lost', this)">
             <span class="s-ico">❌</span>Lost<span
               class="s-badge"
               id="sb-count-lost"
@@ -1436,20 +1453,24 @@
         </div>
         <div class="s-sect">
           <div class="s-lbl">Priority</div>
-          <div class="s-item" onclick="filterByPriority('High', this)">
+          <div class="s-item" data-fb="ems.sidebar.priority-high" onclick="filterByPriority('High', this)">
             <span class="s-ico" style="color: var(--danger)">●</span>High
           </div>
-          <div class="s-item" onclick="filterByPriority('Medium', this)">
+          <div class="s-item" data-fb="ems.sidebar.priority-medium" onclick="filterByPriority('Medium', this)">
             <span class="s-ico" style="color: var(--warn)">●</span>Medium
           </div>
-          <div class="s-item" onclick="filterByPriority('Low', this)">
+          <div class="s-item" data-fb="ems.sidebar.priority-low" onclick="filterByPriority('Low', this)">
             <span class="s-ico" style="color: var(--text2)">●</span>Low
           </div>
         </div>
         <div class="s-sect">
           <div class="s-lbl">Actions</div>
-          <div class="s-item" onclick="openImportModal()"><span class="s-ico">⬆</span>Import CSV</div>
-          <div class="s-item" onclick="exportCSV()"><span class="s-ico">⬇</span>Export CSV</div>
+          <div class="s-item" data-fb="ems.sidebar.import" onclick="openImportModal()">
+            <span class="s-ico">⬆</span>Import CSV
+          </div>
+          <div class="s-item" data-fb="ems.sidebar.export" onclick="exportCSV()">
+            <span class="s-ico">⬇</span>Export CSV
+          </div>
         </div>
       </div>
 
@@ -1466,9 +1487,20 @@
               <div class="filter-bar" style="margin: 0">
                 <div class="search-box">
                   <span style="color: var(--text2); font-size: 13px">🔍</span
-                  ><input type="text" id="pipeSearch" placeholder="Search leads..." oninput="renderPipeline()" />
+                  ><input
+                    type="text"
+                    id="pipeSearch"
+                    data-fb="ems.pipeline-search"
+                    placeholder="Search leads..."
+                    oninput="renderPipeline()"
+                  />
                 </div>
-                <select class="filter-sel" id="pipeFilterCSC" onchange="renderPipeline()">
+                <select
+                  class="filter-sel"
+                  id="pipeFilterCSC"
+                  data-fb="ems.pipeline-filter.csc"
+                  onchange="renderPipeline()"
+                >
                   <option value="">All CSC Contacts</option>
                 </select>
               </div>
@@ -1502,11 +1534,12 @@
               ><input
                 type="text"
                 id="tableSearch"
+                data-fb="ems.table-search"
                 placeholder="Search by company, contact, city..."
                 oninput="renderTable()"
               />
             </div>
-            <select class="filter-sel" id="tableStage" onchange="renderTable()">
+            <select class="filter-sel" id="tableStage" data-fb="ems.table-filter.stage" onchange="renderTable()">
               <option value="">All Stages</option>
               <option>Prospect</option>
               <option>Contacted</option>
@@ -1517,13 +1550,13 @@
               <option>Lost</option>
               <option>On Hold</option>
             </select>
-            <select class="filter-sel" id="tablePri" onchange="renderTable()">
+            <select class="filter-sel" id="tablePri" data-fb="ems.table-filter.priority" onchange="renderTable()">
               <option value="">All Priority</option>
               <option>High</option>
               <option>Medium</option>
               <option>Low</option>
             </select>
-            <select class="filter-sel" id="tableCSC" onchange="renderTable()">
+            <select class="filter-sel" id="tableCSC" data-fb="ems.table-filter.csc" onchange="renderTable()">
               <option value="">All CSC</option>
             </select>
           </div>
@@ -1541,7 +1574,7 @@
                   <th onclick="sortTable('lastContact')">Last Contact ↕</th>
                 </tr>
               </thead>
-              <tbody id="tableBody"></tbody>
+              <tbody id="tableBody" data-fb="ems.table-body"></tbody>
             </table>
           </div>
         </div>
@@ -1554,8 +1587,8 @@
               <div class="pg-sub">Leads with upcoming or overdue action dates</div>
             </div>
           </div>
-          <div class="stats-row" id="followupStats"></div>
-          <div id="followupList"></div>
+          <div class="stats-row" id="followupStats" data-fb="ems.followup-stats"></div>
+          <div id="followupList" data-fb="ems.followup-list"></div>
         </div>
 
         <!-- ANALYTICS VIEW -->
@@ -1566,7 +1599,7 @@
               <div class="pg-sub">Summary metrics and conversion insights</div>
             </div>
           </div>
-          <div id="analyticsContent"></div>
+          <div id="analyticsContent" data-fb="ems.analytics-content"></div>
         </div>
       </div>
       <!-- /main -->
@@ -1575,7 +1608,7 @@
 
     <!-- LEAD DETAIL DRAWER -->
     <div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
-    <div class="drawer" id="leadDrawer">
+    <div class="drawer" id="leadDrawer" data-fb="ems.drawer">
       <div class="drawer-hdr">
         <div class="drawer-title" id="drawerTitle">Lead Detail</div>
         <div class="drawer-hdr-actions">
@@ -1791,7 +1824,7 @@
     </div>
 
     <!-- NEW LEAD MODAL -->
-    <div class="modal-bg" id="newLeadModal">
+    <div class="modal-bg" id="newLeadModal" data-fb="ems.modal.new-lead">
       <div class="modal">
         <div class="modal-hdr">
           <div class="modal-title">➕ Add New Lead</div>
@@ -1910,7 +1943,7 @@
     </div>
 
     <!-- IMPORT MODAL -->
-    <div class="modal-bg" id="importModal" data-fb="ems.import">
+    <div class="modal-bg" id="importModal" data-fb="ems.modal.import">
       <div class="modal modal-lg">
         <div class="modal-hdr">
           <div class="modal-title">⬆ Import from CSV / Excel</div>
