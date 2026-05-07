@@ -49962,10 +49962,11 @@
         }
         const reportDate = document.getElementById('reportDateInput').value || null;
         document.getElementById('reportBldgModal').classList.remove('open');
-        generatePerformanceReport(_reportProjId, _reportType, ids, reportDate);
+        _legacyGeneratePerformanceReport(_reportProjId, _reportType, ids, reportDate);
       }
 
-      function generatePerformanceReport(projId, type, buildingIds, reportDateStr) {
+      // Legacy report generator — kept as fallback, replaced by new template-engine system (Tasks 1-21)
+      function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateStr) {
         const p = projects.find((x) => x.id === projId);
         if (!p) return;
         let bldgs = getUDBldgs(projId);
