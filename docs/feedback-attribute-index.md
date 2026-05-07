@@ -4,7 +4,7 @@ Reference for all `data-fb` attributes used by the feedback widget. When a feedb
 
 **Format:** `data-fb="page.section.element"`
 
-**Last updated:** 2026-05-07
+**Last updated:** 2026-05-07 (energy-department.html added)
 
 ---
 
@@ -193,9 +193,153 @@ Reference for all `data-fb` attributes used by the feedback widget. When a feedb
 
 ---
 
-## energy-department.html (pending)
+## energy-department.html (94 attributes)
 
-Not yet tagged — will be added when the file is available. Expected attributes will follow the `energy.section.element` pattern, mapping to the existing `data-ui-id` attributes already in the page.
+### Topbar & Navigation
+| data-fb | Element | Description |
+|---------|---------|-------------|
+| `energy.topbar` | `<header class="topbar">` | Top header bar |
+| `energy.topbar.sync-btn` | `<button class="sync-btn">` | Sync to Outlook button |
+| `energy.topbar.notif-btn` | `<button>` | Notification bell button |
+| `energy.topbar.signout-btn` | `<button class="signout">` | Sign Out button |
+| `energy.dept-nav` | `<nav class="dept-nav">` | Department tab navigation bar |
+| `energy.dept-nav.dashboard` | `<a class="dept-tab">` | Dashboard tab link |
+| `energy.dept-nav.service` | `<a class="dept-tab">` | Service Department tab link |
+| `energy.dept-nav.energy` | `<button class="dept-tab active">` | Energy Department tab (current) |
+
+### Sidebar
+| data-fb | Element | Description |
+|---------|---------|-------------|
+| `energy.sidebar` | `<aside class="sidebar">` | Left sidebar container |
+| `energy.sidebar.home` | `<button class="s-item">` | Home nav item |
+| `energy.sidebar.pdf` | `<button class="s-item">` | PDF / OCR nav item |
+| `energy.sidebar.utility` | `<button class="s-item">` | Utility Data nav item |
+| `energy.sidebar.savings` | `<button class="s-item">` | Savings Calc nav item |
+| `energy.sidebar.district` | `<button class="s-item">` | District Energy nav item |
+| `energy.sidebar.equipment` | `<button class="s-item">` | Equipment nav item |
+| `energy.sidebar.drawings` | `<button class="s-item">` | Drawings nav item |
+| `energy.sidebar.specs` | `<button class="s-item">` | Spec Writer nav item |
+| `energy.sidebar.contracts` | `<button class="s-item">` | Contracts nav item |
+| `energy.sidebar.webctrl` | `<button class="s-item">` | WebCTRL nav item |
+| `energy.sidebar.ems` | `<button class="s-item">` | EMS Leads nav item |
+
+### Home View
+| data-fb | Element | Description |
+|---------|---------|-------------|
+| `energy.home` | `<div id="view-home">` | Home view container |
+| `energy.home.add-task-btn` | `<button class="btn btn-ghost">` | + Task button |
+| `energy.home.add-project-btn` | `<button class="btn btn-em">` | + New Project button |
+| `energy.home.stats` | `<div class="stats-row">` | Stat cards container |
+| `energy.home.stat-card.projects` | `<div class="stat">` | Projects count card |
+| `energy.home.stat-card.tasks` | `<div class="stat">` | Tasks count card |
+| `energy.home.stat-card.equipment` | `<div class="stat">` | Equipment count card |
+| `energy.home.stat-card.baselines` | `<div class="stat">` | Baselines count card |
+| `energy.home.week-card` | `<div class="card">` | This Week card |
+| `energy.home.grid` | `<div class="g-6040">` | Main grid layout |
+| `energy.home.calendar` | `<div class="cal-outer">` | Calendar widget |
+| `energy.home.tasks-card` | `<div class="card">` | Tasks card |
+
+### Projects View
+| data-fb | Element | Description |
+|---------|---------|-------------|
+| `energy.projects` | `<div id="view-projects">` | Projects view container |
+| `energy.projects.search` | `<input>` | Project search input |
+| `energy.projects.add-project-btn` | `<button class="btn btn-em">` | + New Project button |
+| `energy.projects.table` | `<table class="dtbl">` | Projects data table |
+| `energy.projects.detail` | `<div id="projDetailView">` | Project detail view |
+
+### Utility Data View
+| data-fb | Element | Description |
+|---------|---------|-------------|
+| `energy.utility` | `<div id="view-utility">` | Utility Data view container |
+| `energy.utility.nav` | `<div class="ud-nav">` | Utility nav/toolbar |
+| `energy.utility.baseline-btn` | `<button>` | Baseline button |
+| `energy.utility.savings-proj-btn` | `<button>` | Savings Projection button |
+| `energy.utility.performance-btn` | `<button>` | Performance button |
+| `energy.utility.edit-building-btn` | `<button>` | Edit Building button |
+| `energy.utility.add-meter-btn` | `<button>` | Add Meter button |
+| `energy.utility.export-btn` | `<button>` | Export button |
+| `energy.utility.view-project-btn` | `<button>` | View Project button |
+
+### PDF / OCR View
+| data-fb | Element | Description |
+|---------|---------|-------------|
+| `energy.pdf` | `<div id="view-pdf">` | PDF/OCR view container |
+| `energy.pdf.saved-bills-btn` | `<button>` | Saved Bills button |
+| `energy.pdf.upload-area` | `<div>` | PDF upload drop zone |
+| `energy.pdf.type-selector` | `<div id="pdfTypeSection">` | Utility type selector |
+| `energy.pdf.extracted-fields-hdr` | `<div id="extractedFieldsHdr">` | Extracted fields header |
+| `energy.pdf.extracted-fields` | `<div id="extractedFieldsGrid">` | Extracted fields grid |
+| `energy.pdf.save-row` | `<div id="pdfSaveRow">` | Save row (project select + save) |
+| `energy.pdf.project-select` | `<select id="pdfProjSel">` | Project dropdown |
+| `energy.pdf.save-btn` | `<button class="btn btn-em">` | Save extracted data button |
+| `energy.pdf.output-panel` | `<div>` | OCR output panel |
+| `energy.pdf.output-box` | `<div>` | OCR raw text output box |
+
+### Savings Calc View
+| data-fb | Element | Description |
+|---------|---------|-------------|
+| `energy.savings` | `<div id="view-savings">` | Savings Calc view container |
+| `energy.savings.nav` | `<div>` | Savings nav/toolbar |
+| `energy.savings.calc-templates-btn` | `<button>` | Calc Templates button |
+| `energy.savings.save-rates-btn` | `<button>` | Save Rates button |
+| `energy.savings.add-measure-btn` | `<button>` | Add Measure button |
+| `energy.savings.recalc-btn` | `<button class="btn btn-em btn-sm">` | Recalculate button |
+
+### District Energy View
+| data-fb | Element | Description |
+|---------|---------|-------------|
+| `energy.district` | `<div id="view-district">` | District Energy view container |
+| `energy.district.clear-btn` | `<button class="btn btn-ghost btn-sm">` | Clear button |
+| `energy.district.export-btn` | `<button class="btn btn-em btn-sm">` | Export button |
+| `energy.district.input-tabs` | `<div class="dc-input-tabs">` | Input method tabs container |
+| `energy.district.tab.url` | `<button>` | URL input tab |
+| `energy.district.tab.pdf` | `<button>` | PDF input tab |
+| `energy.district.tab.text` | `<button>` | Text input tab |
+| `energy.district.stats` | `<div id="dcStatsRow">` | District stats row |
+| `energy.district.event-list` | `<div id="dcEventCard">` | Event list card |
+| `energy.district.search` | `<input>` | Event search input |
+| `energy.district.bas-schedule` | `<div id="dcBasCard">` | BAS schedule card |
+
+### Equipment View
+| data-fb | Element | Description |
+|---------|---------|-------------|
+| `energy.equipment` | `<div id="view-equipment">` | Equipment view container |
+| `energy.equipment.search` | `<input>` | Equipment search input |
+| `energy.equipment.add-btn` | `<button class="btn btn-em">` | Add Equipment button |
+| `energy.equipment.table` | `<table class="dtbl">` | Equipment data table |
+
+### Drawings View
+| data-fb | Element | Description |
+|---------|---------|-------------|
+| `energy.drawings` | `<div id="view-drawings">` | Drawings view container |
+| `energy.drawings.upload-area` | `<div>` | Drawing upload drop zone |
+| `energy.drawings.output-box` | `<div class="ai-box" id="dwgBox">` | AI drawing analysis output |
+
+### Spec Writer View
+| data-fb | Element | Description |
+|---------|---------|-------------|
+| `energy.specs` | `<div id="view-specs">` | Spec Writer view container |
+| `energy.specs.system-chips` | `<div class="sys-chips">` | System selection chips |
+| `energy.specs.generate-btn` | `<button>` | Generate Spec button |
+| `energy.specs.output` | `<div class="spec-out" id="specOut">` | Spec output area |
+
+### Contracts View
+| data-fb | Element | Description |
+|---------|---------|-------------|
+| `energy.contracts` | `<div id="view-contracts">` | Contracts view container |
+| `energy.contracts.upload-btn` | `<button>` | Upload contract button |
+| `energy.contracts.generate-btn` | `<button>` | Generate analysis button |
+| `energy.contracts.output` | `<div>` | Contract analysis output |
+
+### WebCTRL View
+| data-fb | Element | Description |
+|---------|---------|-------------|
+| `energy.webctrl` | `<div id="view-webctrl">` | WebCTRL view container |
+| `energy.webctrl.modes` | `<div class="wc-modes">` | Mode selector container |
+| `energy.webctrl.mode.guide` | `<div class="wcm">` | Guide mode button |
+| `energy.webctrl.mode.diagnose` | `<div class="wcm">` | Diagnose mode button |
+| `energy.webctrl.mode.write` | `<div class="wcm">` | Write mode button |
 
 ---
 

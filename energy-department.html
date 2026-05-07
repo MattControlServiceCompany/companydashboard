@@ -6224,6 +6224,7 @@
         border-bottom: 1px solid var(--s3);
       }
     </style>
+    <link rel="stylesheet" href="feedback-widget.css" />
   </head>
   <script
     src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"
@@ -6243,7 +6244,7 @@
     </div>
 
     <div id="app">
-      <header class="topbar">
+      <header class="topbar" data-fb="energy.topbar">
         <div class="t-brand">
           <div class="brand-mark">C</div>
           <span class="brand-name">CompanyHub</span>
@@ -6256,11 +6257,17 @@
               <div class="u-dept">Energy Dept</div>
             </div>
           </div>
-          <button class="sync-btn" onclick="showToast('Syncing to Outlook...')">
+          <button class="sync-btn" data-fb="energy.topbar.sync-btn" onclick="showToast('Syncing to Outlook...')">
             <div class="ms-sq"><span></span><span></span><span></span><span></span></div>
             Sync to Outlook
           </button>
-          <button class="icon-btn" id="notifBtn" onclick="toggleNotifPanel()" title="Notifications">
+          <button
+            class="icon-btn"
+            id="notifBtn"
+            data-fb="energy.topbar.notif-btn"
+            onclick="toggleNotifPanel()"
+            title="Notifications"
+          >
             🔔<span class="npip" id="notifPip" style="display: none"></span>
             <span
               id="notifBadge"
@@ -6315,23 +6322,25 @@
             </div>
             <span id="globalTaskLabel">Processing...</span>
           </div>
-          <button class="signout" onclick="signOut()">Sign Out</button>
+          <button class="signout" data-fb="energy.topbar.signout-btn" onclick="signOut()">Sign Out</button>
         </div>
       </header>
 
-      <nav class="dept-nav">
-        <a class="dept-tab" href="index.html">🏠 Dashboard</a>
-        <a class="dept-tab" href="service-department.html">🔧 Service Department</a>
-        <button class="dept-tab active">⚡ Energy Department</button>
+      <nav class="dept-nav" data-fb="energy.dept-nav">
+        <a class="dept-tab" data-fb="energy.dept-nav.dashboard" href="index.html">🏠 Dashboard</a>
+        <a class="dept-tab" data-fb="energy.dept-nav.service" href="service-department.html">🔧 Service Department</a>
+        <button class="dept-tab active" data-fb="energy.dept-nav.energy">⚡ Energy Department</button>
       </nav>
 
       <div class="app-wrap">
-        <aside class="sidebar" data-ui-id="en-sidebar">
+        <aside class="sidebar" data-ui-id="en-sidebar" data-fb="energy.sidebar">
           <div class="resize-handle" id="sidebarResizeHandle"></div>
           <div class="sidebar-top">
             <div class="s-sect">
               <div class="s-lbl">Energy</div>
-              <button class="s-item active" onclick="sv('home', this)"><span class="s-ico">🏠</span>Home</button>
+              <button class="s-item active" data-fb="energy.sidebar.home" onclick="sv('home', this)">
+                <span class="s-ico">🏠</span>Home
+              </button>
               <div class="s-proj-header" id="sb-proj-btn">
                 <button class="s-item s-proj-toggle" onclick="sv('projects', document.getElementById('sb-proj-btn'))">
                   <span class="s-ico">📁</span>Projects
@@ -6347,34 +6356,74 @@
               </div>
               <div class="s-proj-section" id="sidebarProjFolders"></div>
               <div id="sidebarSortable">
-                <button class="s-item" data-sidebar-id="pdf" onclick="sv('pdf', this)">
+                <button class="s-item" data-sidebar-id="pdf" data-fb="energy.sidebar.pdf" onclick="sv('pdf', this)">
                   <span class="s-ico">📄</span>PDF / OCR
                 </button>
-                <button class="s-item" data-sidebar-id="utility" onclick="sv('utility', this)">
+                <button
+                  class="s-item"
+                  data-sidebar-id="utility"
+                  data-fb="energy.sidebar.utility"
+                  onclick="sv('utility', this)"
+                >
                   <span class="s-ico">⚡</span>Utility Data
                 </button>
-                <button class="s-item" data-sidebar-id="savings" onclick="sv('savings', this)">
+                <button
+                  class="s-item"
+                  data-sidebar-id="savings"
+                  data-fb="energy.sidebar.savings"
+                  onclick="sv('savings', this)"
+                >
                   <span class="s-ico">💡</span>Energy Savings
                 </button>
-                <button class="s-item" data-sidebar-id="district" onclick="sv('district', this)">
+                <button
+                  class="s-item"
+                  data-sidebar-id="district"
+                  data-fb="energy.sidebar.district"
+                  onclick="sv('district', this)"
+                >
                   <span class="s-ico">🗓️</span>District Calendar
                 </button>
-                <button class="s-item" data-sidebar-id="equipment" onclick="sv('equipment', this)">
+                <button
+                  class="s-item"
+                  data-sidebar-id="equipment"
+                  data-fb="energy.sidebar.equipment"
+                  onclick="sv('equipment', this)"
+                >
                   <span class="s-ico">⚙️</span>Equipment
                 </button>
-                <button class="s-item" data-sidebar-id="drawings" onclick="sv('drawings', this)">
+                <button
+                  class="s-item"
+                  data-sidebar-id="drawings"
+                  data-fb="energy.sidebar.drawings"
+                  onclick="sv('drawings', this)"
+                >
                   <span class="s-ico">📐</span>Drawings
                 </button>
-                <button class="s-item" data-sidebar-id="specs" onclick="sv('specs', this)">
+                <button
+                  class="s-item"
+                  data-sidebar-id="specs"
+                  data-fb="energy.sidebar.specs"
+                  onclick="sv('specs', this)"
+                >
                   <span class="s-ico">✍️</span>Spec Writer
                 </button>
-                <button class="s-item" data-sidebar-id="contracts" onclick="sv('contracts', this)">
+                <button
+                  class="s-item"
+                  data-sidebar-id="contracts"
+                  data-fb="energy.sidebar.contracts"
+                  onclick="sv('contracts', this)"
+                >
                   <span class="s-ico">📋</span>Contracts
                 </button>
-                <button class="s-item" data-sidebar-id="webctrl" onclick="sv('webctrl', this)">
+                <button
+                  class="s-item"
+                  data-sidebar-id="webctrl"
+                  data-fb="energy.sidebar.webctrl"
+                  onclick="sv('webctrl', this)"
+                >
                   <span class="s-ico">🔌</span>WebCTRL
                 </button>
-                <button class="s-item" data-sidebar-id="ems" onclick="sv('ems', this)">
+                <button class="s-item" data-sidebar-id="ems" data-fb="energy.sidebar.ems" onclick="sv('ems', this)">
                   <span class="s-ico">📊</span>EMS Leads
                 </button>
                 <button class="s-item" data-sidebar-id="bas-calc" onclick="window.open('bas-calc.html', '_blank')">
@@ -6412,21 +6461,22 @@
         <main class="content">
           <!-- HOME -->
           <!-- Pipeline test: verified 2026-04-26 -->
-          <div id="view-home" class="view active" data-ui-id="en-home">
+          <div id="view-home" class="view active" data-ui-id="en-home" data-fb="energy.home">
             <div style="display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0; margin-bottom: 14px">
-              <button class="btn btn-ghost" onclick="openTaskModal()">+ Task</button>
+              <button class="btn btn-ghost" onclick="openTaskModal()" data-fb="energy.home.add-task-btn">+ Task</button>
               <button
                 class="btn btn-em"
                 onclick="
                   sv('projects', document.getElementById('sb-proj-btn'));
                   openProjModal();
                 "
+                data-fb="energy.home.add-project-btn"
               >
                 + New Project
               </button>
             </div>
-            <div class="stats-row" data-ui-id="en-home-stats">
-              <div class="stat">
+            <div class="stats-row" data-ui-id="en-home-stats" data-fb="energy.home.stats">
+              <div class="stat" data-fb="energy.home.stat-card.projects">
                 <div class="stat-lbl">Active Projects</div>
                 <div
                   class="stat-val c-em"
@@ -6437,7 +6487,7 @@
                 </div>
                 <div class="stat-meta">in progress</div>
               </div>
-              <div class="stat">
+              <div class="stat" data-fb="energy.home.stat-card.tasks">
                 <div class="stat-lbl">Tasks This Week</div>
                 <div
                   class="stat-val c-warn"
@@ -6448,7 +6498,7 @@
                 </div>
                 <div class="stat-meta">due by Friday</div>
               </div>
-              <div class="stat">
+              <div class="stat" data-fb="energy.home.stat-card.equipment">
                 <div class="stat-lbl">Equipment Records</div>
                 <div
                   class="stat-val c-em2"
@@ -6459,7 +6509,7 @@
                 </div>
                 <div class="stat-meta">in repository</div>
               </div>
-              <div class="stat">
+              <div class="stat" data-fb="energy.home.stat-card.baselines">
                 <div class="stat-lbl">Baselines Set</div>
                 <div
                   class="stat-val c-violet"
@@ -6471,15 +6521,20 @@
                 <div class="stat-meta">projects</div>
               </div>
             </div>
-            <div class="card" style="margin-bottom: 18px" data-ui-id="en-home-week-card">
+            <div
+              class="card"
+              style="margin-bottom: 18px"
+              data-ui-id="en-home-week-card"
+              data-fb="energy.home.week-card"
+            >
               <div class="card-hdr">
                 <span class="card-title">📅 Current Week</span
                 ><span style="font-size: 12px; color: var(--text2)" id="week-range-lbl"></span>
               </div>
               <div style="padding: 13px 15px"><div class="week-strip" id="weekStrip"></div></div>
             </div>
-            <div class="g-6040" data-ui-id="en-home-grid">
-              <div class="cal-outer" data-ui-id="en-home-calendar">
+            <div class="g-6040" data-ui-id="en-home-grid" data-fb="energy.home.grid">
+              <div class="cal-outer" data-ui-id="en-home-calendar" data-fb="energy.home.calendar">
                 <div class="cal-top">
                   <span style="font-family: var(--head); font-size: 14px; font-weight: 700">📅 Monthly Calendar</span>
                   <div class="cal-nav">
@@ -6505,6 +6560,7 @@
                 class="card"
                 style="display: flex; flex-direction: column; min-height: 0"
                 data-ui-id="en-home-tasks-card"
+                data-fb="energy.home.tasks-card"
               >
                 <div class="card-hdr">
                   <span class="card-title">✅ Upcoming Tasks</span
@@ -6516,7 +6572,7 @@
           </div>
 
           <!-- PROJECTS -->
-          <div id="view-projects" class="view" data-ui-id="en-projects">
+          <div id="view-projects" class="view" data-ui-id="en-projects" data-fb="energy.projects">
             <!-- List view -->
             <div id="projListView" style="display: flex; flex-direction: column; flex: 1; min-height: 0">
               <div
@@ -6529,12 +6585,20 @@
                   margin-bottom: 14px;
                 "
               >
-                <input class="proj-search" id="projSearchQ" placeholder="🔍 Search..." oninput="renderProjTable()" />
-                <button class="btn btn-em" onclick="openProjModal()">+ New Project</button>
+                <input
+                  class="proj-search"
+                  id="projSearchQ"
+                  placeholder="🔍 Search..."
+                  oninput="renderProjTable()"
+                  data-fb="energy.projects.search"
+                />
+                <button class="btn btn-em" onclick="openProjModal()" data-fb="energy.projects.add-project-btn">
+                  + New Project
+                </button>
               </div>
               <div class="card" style="display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden">
                 <div style="overflow: auto; flex: 1; min-height: 0">
-                  <table class="dtbl" style="min-width: 900px">
+                  <table class="dtbl" style="min-width: 900px" data-fb="energy.projects.table">
                     <thead>
                       <tr>
                         <th>Project Name</th>
@@ -6555,16 +6619,16 @@
               </div>
             </div>
             <!-- Detail view -->
-            <div id="projDetailView">
+            <div id="projDetailView" data-fb="energy.projects.detail">
               <div id="projDetailContent"></div>
             </div>
           </div>
 
           <!-- UTILITY DATA -->
-          <div id="view-utility" class="view view-flex" data-ui-id="en-utility">
+          <div id="view-utility" class="view view-flex" data-ui-id="en-utility" data-fb="energy.utility">
             <div class="ud-layout" id="udLayout">
               <!-- Left nav: Projects + Buildings drill-down -->
-              <div class="ud-nav">
+              <div class="ud-nav" data-fb="energy.utility.nav">
                 <div class="resize-handle" id="udNavResizeHandle"></div>
                 <div class="ud-nav-sect">
                   <div class="ud-nav-sect-hdr">
@@ -6621,19 +6685,35 @@
                     <div class="ud-detail-hdr-sub" id="udDetailHdrSub"></div>
                   </div>
                   <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center">
-                    <button class="btn btn-ghost btn-sm" id="ud-bldg-stats-btn" onclick="toggleBldgStatsPanel()">
+                    <button
+                      class="btn btn-ghost btn-sm"
+                      id="ud-bldg-stats-btn"
+                      onclick="toggleBldgStatsPanel()"
+                      data-fb="energy.utility.baseline-btn"
+                    >
                       📊 Baseline Data
                     </button>
-                    <button class="btn btn-ghost btn-sm" id="ud-bldg-savproj-btn" onclick="toggleBldgSavProjPanel()">
+                    <button
+                      class="btn btn-ghost btn-sm"
+                      id="ud-bldg-savproj-btn"
+                      onclick="toggleBldgSavProjPanel()"
+                      data-fb="energy.utility.savings-proj-btn"
+                    >
                       📈 Building Savings Projection
                     </button>
-                    <button class="btn btn-ghost btn-sm" id="ud-bldg-perf-btn" onclick="toggleBldgPerfPanel()">
+                    <button
+                      class="btn btn-ghost btn-sm"
+                      id="ud-bldg-perf-btn"
+                      onclick="toggleBldgPerfPanel()"
+                      data-fb="energy.utility.performance-btn"
+                    >
                       💡 Building Performance
                     </button>
                     <button
                       class="btn btn-ghost btn-sm"
                       id="ud-edit-bldg-btn"
                       onclick="openBldgModal(window._udSelBldgId)"
+                      data-fb="energy.utility.edit-building-btn"
                     >
                       ✏️ Edit Building
                     </button>
@@ -6644,6 +6724,7 @@
                       id="ud-add-meter-btn"
                       onclick="openMeterModal()"
                       style="display: none"
+                      data-fb="energy.utility.add-meter-btn"
                     >
                       + Add Meter
                     </button>
@@ -6652,6 +6733,7 @@
                       id="ud-export-data-btn"
                       onclick="openExportModal('building')"
                       title="Export utility bill data to JSON or CSV"
+                      data-fb="energy.utility.export-btn"
                     >
                       📤 Export Data
                     </button>
@@ -6660,6 +6742,7 @@
                       id="ud-view-proj-btn"
                       onclick="viewProjectFromUtility()"
                       title="View in Projects page"
+                      data-fb="energy.utility.view-project-btn"
                     >
                       📁 View Project
                     </button>
@@ -6676,7 +6759,7 @@
           </div>
 
           <!-- PDF OCR -->
-          <div id="view-pdf" class="view view-flex" data-ui-id="en-pdf">
+          <div id="view-pdf" class="view view-flex" data-ui-id="en-pdf" data-fb="energy.pdf">
             <!-- Page title bar — stays frozen at top, spans full width -->
             <div id="pdfPageHdr" style="flex-shrink: 0; padding: 16px 18px 10px; background: var(--bg)">
               <div class="pg-hdr">
@@ -6687,7 +6770,12 @@
                   </p>
                 </div>
                 <div class="hdr-actions">
-                  <button class="btn btn-ghost" onclick="openSavedBillsModal()" id="savedBillsBtn">
+                  <button
+                    class="btn btn-ghost"
+                    onclick="openSavedBillsModal()"
+                    id="savedBillsBtn"
+                    data-fb="energy.pdf.saved-bills-btn"
+                  >
                     🗄️ Saved Bills
                     <span
                       id="pdfBillCount"
@@ -6722,6 +6810,7 @@
                 <div
                   class="drop-zone"
                   id="dropZone"
+                  data-fb="energy.pdf.upload-area"
                   onclick="
                     if (this.getAttribute('data-queue')) return;
                     document.getElementById('pdfInput').click();
@@ -6756,7 +6845,7 @@
                     </button>
                   </div>
                 </div>
-                <div id="pdfTypeSection" style="margin-top: 12px">
+                <div id="pdfTypeSection" style="margin-top: 12px" data-fb="energy.pdf.type-selector">
                   <div class="fl" style="margin-bottom: 6px">Document Type</div>
                   <div class="pdf-type-pills">
                     <button class="ptpill sel" onclick="setPDFType('utility', this)">🔌 Utility Bill</button>
@@ -6765,8 +6854,8 @@
                     <button class="ptpill" onclick="setPDFType('contract', this)">📋 Contract</button>
                   </div>
                 </div>
-                <div id="extractedFieldsHdr"></div>
-                <div id="extractedFieldsGrid"></div>
+                <div id="extractedFieldsHdr" data-fb="energy.pdf.extracted-fields-hdr"></div>
+                <div id="extractedFieldsGrid" data-fb="energy.pdf.extracted-fields"></div>
                 <!-- Auto-assign banner: shown when extracted AccountNumber matches a known meter -->
                 <div
                   id="pdfAutoAssignBanner"
@@ -6795,11 +6884,11 @@
                     </button>
                   </div>
                 </div>
-                <div id="pdfSaveRow" style="display: none; margin-top: 12px">
+                <div id="pdfSaveRow" style="display: none; margin-top: 12px" data-fb="energy.pdf.save-row">
                   <div class="fl" style="margin-bottom: 5px">Save to project</div>
                   <div style="display: flex; gap: 8px">
-                    <select class="fs" id="pdfProjSel" style="flex: 1"></select
-                    ><button class="btn btn-em" onclick="savePDFData()">Save</button
+                    <select class="fs" id="pdfProjSel" style="flex: 1" data-fb="energy.pdf.project-select"></select
+                    ><button class="btn btn-em" onclick="savePDFData()" data-fb="energy.pdf.save-btn">Save</button
                     ><button class="btn btn-ghost" onclick="clearPDFOCR()" title="Clear extracted data and reset">
                       ✕ Clear
                     </button>
@@ -6808,7 +6897,11 @@
               </div>
               <!-- RIGHT COLUMN: Extraction Output label + buttons + pills stay pinned at top,
                    JSON box (pdfAIBox) fills the remainder and scrolls on its own. -->
-              <div id="pdfRightCol" style="flex: 2 1 0; min-width: 340px; min-height: 0; overflow-y: auto">
+              <div
+                id="pdfRightCol"
+                style="flex: 2 1 0; min-width: 340px; min-height: 0; overflow-y: auto"
+                data-fb="energy.pdf.output-panel"
+              >
                 <div
                   style="
                     display: flex;
@@ -6876,6 +6969,7 @@
                 <div
                   class="ai-box"
                   id="pdfAIBox"
+                  data-fb="energy.pdf.output-box"
                   style="flex: 1 1 0; min-height: 200px; overflow-y: auto; margin-top: 4px"
                 >
                   Upload a PDF and select document type.
@@ -6888,9 +6982,14 @@
           <!-- Weather & Normalize and Baseline are integrated into Utility Data meter workspace tabs -->
 
           <!-- ENERGY SAVINGS -->
-          <div id="view-savings" class="view view-flex" data-ui-id="en-savings">
+          <div id="view-savings" class="view view-flex" data-ui-id="en-savings" data-fb="energy.savings">
             <div class="ud-layout">
-              <div class="ud-nav" id="svProjNav" style="min-width: 200px; max-width: 240px">
+              <div
+                class="ud-nav"
+                id="svProjNav"
+                style="min-width: 200px; max-width: 240px"
+                data-fb="energy.savings.nav"
+              >
                 <div class="ud-nav-sect">
                   <div class="ud-nav-sect-hdr"><span class="ud-nav-sect-title">Projects</span></div>
                 </div>
@@ -6919,12 +7018,27 @@
                     <button
                       class="btn btn-ghost btn-sm"
                       onclick="if (svSelProjId) openCalcTemplates(svSelProjId, 'sv');"
+                      data-fb="energy.savings.calc-templates-btn"
                     >
                       📐 Calc Templates
                     </button>
-                    <button class="btn btn-ghost btn-sm" onclick="svSaveProjBaselineRates()">💾 Save Rates</button>
-                    <button class="btn btn-ghost btn-sm" onclick="svAddMeasure()">+ Add Measure</button>
-                    <button class="btn btn-em btn-sm" onclick="svRecalc()">⚡ Recalc $ Savings</button>
+                    <button
+                      class="btn btn-ghost btn-sm"
+                      onclick="svSaveProjBaselineRates()"
+                      data-fb="energy.savings.save-rates-btn"
+                    >
+                      💾 Save Rates
+                    </button>
+                    <button
+                      class="btn btn-ghost btn-sm"
+                      onclick="svAddMeasure()"
+                      data-fb="energy.savings.add-measure-btn"
+                    >
+                      + Add Measure
+                    </button>
+                    <button class="btn btn-em btn-sm" onclick="svRecalc()" data-fb="energy.savings.recalc-btn">
+                      ⚡ Recalc $ Savings
+                    </button>
                   </div>
                 </div>
                 <div class="ud-detail-body" id="svDetailWrap">
@@ -6938,7 +7052,7 @@
           </div>
 
           <!-- DISTRICT CALENDAR -->
-          <div id="view-district" class="view" data-ui-id="en-district">
+          <div id="view-district" class="view" data-ui-id="en-district" data-fb="energy.district">
             <div class="pg-hdr">
               <div>
                 <h1 class="pg-title">District <em>Calendar</em></h1>
@@ -6948,8 +7062,12 @@
                 </p>
               </div>
               <div class="hdr-actions">
-                <button class="btn btn-ghost btn-sm" onclick="dcClear()">✕ Clear</button>
-                <button class="btn btn-em btn-sm" onclick="dcExport()">⬇ Export Schedule</button>
+                <button class="btn btn-ghost btn-sm" onclick="dcClear()" data-fb="energy.district.clear-btn">
+                  ✕ Clear
+                </button>
+                <button class="btn btn-em btn-sm" onclick="dcExport()" data-fb="energy.district.export-btn">
+                  ⬇ Export Schedule
+                </button>
               </div>
             </div>
 
@@ -6957,10 +7075,31 @@
               <!-- LEFT col: input + calendar -->
               <div>
                 <!-- Input mode tabs -->
-                <div class="dc-input-tabs">
-                  <button class="dc-itab active" id="dc-tab-url" onclick="dcTab('url', this)">🔗 Paste URL</button>
-                  <button class="dc-itab" id="dc-tab-pdf" onclick="dcTab('pdf', this)">📄 Upload PDF</button>
-                  <button class="dc-itab" id="dc-tab-text" onclick="dcTab('text', this)">📋 Paste Text</button>
+                <div class="dc-input-tabs" data-fb="energy.district.input-tabs">
+                  <button
+                    class="dc-itab active"
+                    id="dc-tab-url"
+                    onclick="dcTab('url', this)"
+                    data-fb="energy.district.tab.url"
+                  >
+                    🔗 Paste URL
+                  </button>
+                  <button
+                    class="dc-itab"
+                    id="dc-tab-pdf"
+                    onclick="dcTab('pdf', this)"
+                    data-fb="energy.district.tab.pdf"
+                  >
+                    📄 Upload PDF
+                  </button>
+                  <button
+                    class="dc-itab"
+                    id="dc-tab-text"
+                    onclick="dcTab('text', this)"
+                    data-fb="energy.district.tab.text"
+                  >
+                    📋 Paste Text
+                  </button>
                 </div>
 
                 <!-- URL panel -->
@@ -7108,7 +7247,7 @@
 
               <!-- RIGHT col: stats + event list + BAS schedule -->
               <div>
-                <div id="dcStatsRow" style="display: none" class="dc-stat-row">
+                <div id="dcStatsRow" style="display: none" class="dc-stat-row" data-fb="energy.district.stats">
                   <div class="dc-stat">
                     <div class="dc-stat-val c-warn" id="dc-s-hol">—</div>
                     <div class="dc-stat-lbl">Holidays</div>
@@ -7127,12 +7266,13 @@
                   </div>
                 </div>
 
-                <div id="dcEventCard" style="display: none" class="card" style="margin-bottom: 12px">
+                <div id="dcEventCard" style="display: none" class="card" data-fb="energy.district.event-list">
                   <div class="card-hdr">
                     <span class="card-title">📋 All Events</span>
                     <input
                       class="fi"
                       id="dcSearch"
+                      data-fb="energy.district.search"
                       placeholder="Filter..."
                       style="width: 110px; padding: 4px 8px; font-size: 11px"
                       oninput="dcFilterEvents()"
@@ -7141,7 +7281,7 @@
                   <div style="max-height: 320px; overflow-y: auto; padding: 9px" id="dcEventList"></div>
                 </div>
 
-                <div id="dcBasCard" style="display: none" class="card">
+                <div id="dcBasCard" style="display: none" class="card" data-fb="energy.district.bas-schedule">
                   <div class="card-hdr">
                     <span class="card-title">🔌 WebCTRL Exception Schedule</span>
                     <button
@@ -7189,7 +7329,7 @@
           </div>
 
           <!-- EQUIPMENT -->
-          <div id="view-equipment" class="view" data-ui-id="en-equipment">
+          <div id="view-equipment" class="view" data-ui-id="en-equipment" data-fb="energy.equipment">
             <div
               style="
                 display: flex;
@@ -7200,12 +7340,21 @@
                 margin-bottom: 14px;
               "
             >
-              <input class="fi" id="equipQ" placeholder="Search..." style="width: 200px" oninput="renderEquip()" />
-              <button class="btn btn-em" onclick="openEquipModal()">+ Add Equipment</button>
+              <input
+                class="fi"
+                id="equipQ"
+                placeholder="Search..."
+                style="width: 200px"
+                oninput="renderEquip()"
+                data-fb="energy.equipment.search"
+              />
+              <button class="btn btn-em" onclick="openEquipModal()" data-fb="energy.equipment.add-btn">
+                + Add Equipment
+              </button>
             </div>
             <div class="card">
               <div style="overflow-x: auto">
-                <table class="dtbl" style="min-width: 860px">
+                <table class="dtbl" style="min-width: 860px" data-fb="energy.equipment.table">
                   <thead>
                     <tr>
                       <th>Tag</th>
@@ -7225,10 +7374,14 @@
           </div>
 
           <!-- DRAWINGS -->
-          <div id="view-drawings" class="view">
+          <div id="view-drawings" class="view" data-fb="energy.drawings">
             <div class="g2">
               <div>
-                <div class="drop-zone" onclick="document.getElementById('dwgInput').click()">
+                <div
+                  class="drop-zone"
+                  onclick="document.getElementById('dwgInput').click()"
+                  data-fb="energy.drawings.upload-area"
+                >
                   <span class="dz-ico">📐</span>
                   <div class="dz-title">Upload Construction Drawing PDF</div>
                   <div class="dz-sub">Mechanical plans · Equipment schedules · Controls drawings</div>
@@ -7244,17 +7397,19 @@
               </div>
               <div>
                 <div class="ai-label">📐 Drawing Analysis</div>
-                <div class="ai-box" id="dwgBox" style="min-height: 320px">Upload a drawing PDF to analyze.</div>
+                <div class="ai-box" id="dwgBox" style="min-height: 320px" data-fb="energy.drawings.output-box">
+                  Upload a drawing PDF to analyze.
+                </div>
               </div>
             </div>
           </div>
 
           <!-- SPEC WRITER -->
-          <div id="view-specs" class="view">
+          <div id="view-specs" class="view" data-fb="energy.specs">
             <div class="g-4060">
               <div>
                 <div class="fl" style="margin-bottom: 8px; display: block">System Types</div>
-                <div class="sys-chips">
+                <div class="sys-chips" data-fb="energy.specs.system-chips">
                   <button class="schip sel" data-sys="AHU/RTU" onclick="this.classList.toggle('sel')">AHU / RTU</button>
                   <button class="schip" data-sys="Boiler" onclick="this.classList.toggle('sel')">Boilers</button>
                   <button class="schip" data-sys="Chiller" onclick="this.classList.toggle('sel')">Chillers</button>
@@ -7301,7 +7456,12 @@
                         placeholder="Integration requirements, district standards..."
                       ></textarea>
                     </div>
-                    <button class="btn btn-em" style="width: 100%; margin-top: 4px" onclick="writeSpec()">
+                    <button
+                      class="btn btn-em"
+                      style="width: 100%; margin-top: 4px"
+                      onclick="writeSpec()"
+                      data-fb="energy.specs.generate-btn"
+                    >
                       ✍️ Generate Specification
                     </button>
                   </div>
@@ -7325,7 +7485,7 @@
                     </button>
                   </div>
                 </div>
-                <div class="spec-out" id="specOut">
+                <div class="spec-out" id="specOut" data-fb="energy.specs.output">
                   Select system types and fill in project details, then click Generate Specification.
                 </div>
               </div>
@@ -7333,9 +7493,13 @@
           </div>
 
           <!-- CONTRACTS -->
-          <div id="view-contracts" class="view">
+          <div id="view-contracts" class="view" data-fb="energy.contracts">
             <div style="display: flex; justify-content: flex-end; flex-shrink: 0; margin-bottom: 14px">
-              <button class="btn btn-ghost" onclick="document.getElementById('tmplInput').click()">
+              <button
+                class="btn btn-ghost"
+                onclick="document.getElementById('tmplInput').click()"
+                data-fb="energy.contracts.upload-btn"
+              >
                 📤 Upload Template
               </button>
               <input
@@ -7363,7 +7527,12 @@
                   <div class="card-hdr"><span class="card-title">✏️ Contract Variables</span></div>
                   <div style="padding: 14px" id="contractVars"></div>
                   <div style="padding: 0 14px 14px">
-                    <button class="btn btn-em" style="width: 100%" onclick="generateContract()">
+                    <button
+                      class="btn btn-em"
+                      style="width: 100%"
+                      onclick="generateContract()"
+                      data-fb="energy.contracts.generate-btn"
+                    >
                       📋 Generate Contract
                     </button>
                   </div>
@@ -7390,7 +7559,12 @@
                     </button>
                   </div>
                 </div>
-                <div class="ai-box" id="contractOut" style="min-height: 400px; max-height: 560px; overflow-y: auto">
+                <div
+                  class="ai-box"
+                  id="contractOut"
+                  style="min-height: 400px; max-height: 560px; overflow-y: auto"
+                  data-fb="energy.contracts.output"
+                >
                   Upload your template or click "Use Generic Template" to get started.
                 </div>
               </div>
@@ -7398,19 +7572,29 @@
           </div>
 
           <!-- WEBCTRL -->
-          <div id="view-webctrl" class="view">
-            <div class="wc-modes">
-              <div class="wcm active" id="wcm-guide" onclick="setWCMode('guide', this)">
+          <div id="view-webctrl" class="view" data-fb="energy.webctrl">
+            <div class="wc-modes" data-fb="energy.webctrl.modes">
+              <div
+                class="wcm active"
+                id="wcm-guide"
+                onclick="setWCMode('guide', this)"
+                data-fb="energy.webctrl.mode.guide"
+              >
                 <div class="wcm-ico">🗺️</div>
                 <div class="wcm-name">Guided Walkthrough</div>
                 <div class="wcm-desc">Step-by-step explanations of WebCTRL logic concepts</div>
               </div>
-              <div class="wcm" id="wcm-diagnose" onclick="setWCMode('diagnose', this)">
+              <div
+                class="wcm"
+                id="wcm-diagnose"
+                onclick="setWCMode('diagnose', this)"
+                data-fb="energy.webctrl.mode.diagnose"
+              >
                 <div class="wcm-ico">🔍</div>
                 <div class="wcm-name">Diagnose Logic</div>
                 <div class="wcm-desc">Paste in existing logic — get plain-English explanation and fixes</div>
               </div>
-              <div class="wcm" id="wcm-write" onclick="setWCMode('write', this)">
+              <div class="wcm" id="wcm-write" onclick="setWCMode('write', this)" data-fb="energy.webctrl.mode.write">
                 <div class="wcm-ico">✍️</div>
                 <div class="wcm-name">Write Logic</div>
                 <div class="wcm-desc">Describe what you need — get complete WebCTRL-compatible logic</div>
@@ -45497,7 +45681,6 @@
         }
 
         // ─── Contract info ───
-        let projectedSav = parseFloat(String(p.savings).replace(/[$,]/g, '')) || 0;
         const contractYears = parseInt(p.contractYears) || 3;
         const escalation = parseFloat(p.escalation) || 0;
         const cscComp = parseFloat(p.cscCompensation) || 0;
@@ -45510,8 +45693,8 @@
           contractYearNum = Math.max(1, Math.min(contractYears, Math.ceil(msElapsed / (365.25 * 86400000))));
         }
 
-        // Quarterly targets — deferred until after actual savings are computed
-        const qDistribution = [0.166, 0.21, 0.481, 0.143]; // Q1, Q2, Q3, Q4
+        // ─── Baseline costs from single source of truth ───
+        const baselineMoMap = aggBaseMoMapForBldgs(bldgs);
 
         // ─── Per-building data ───
         const totalSqft = bldgs.reduce((s, b) => s + parseInt(b.sqft || 0), 0);
@@ -45563,6 +45746,15 @@
           const propaneMonthly = {};
 
           const bMeters = allBldgMeters.filter((x) => x.b === b);
+
+          // Per-building savings % from Building Savings Projection config
+          const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
+          let bspCfg = {};
+          try {
+            bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
+          } catch (e) {}
+          const bldgSavPct = (bspCfg.savingsPct ?? 11) / 100;
+
           bMeters.forEach(({ m, bills, incl, allRows, bl, blEnd, postRows }) => {
             commoditySet.add(m.commodity);
             const blRows = allRows.filter((r) => bl.months.includes(r.ym));
@@ -45604,16 +45796,7 @@
               });
             }
 
-            // Raw cost by year-month (for total cost tracking)
-            const rawCostByYm = {};
-            bills.forEach((b2) => {
-              const ym = normMonth(b2.start, b2.end, incl, bills);
-              if (!ym) return;
-              const cost = parseFloat(b2.totalCost) || parseFloat(b2.cost) || parseFloat(b2.thermCost) || 0;
-              rawCostByYm[ym] = (rawCostByYm[ym] || 0) + cost;
-            });
-
-            // Baseline cost by calendar month
+            // Baseline cost by calendar month (per-meter, from buildMoMap)
             const blCostByCalMo = {};
             if (isElec) {
               Object.entries(eM).forEach(([mo, v]) => {
@@ -45628,6 +45811,9 @@
                 blCostByCalMo[mo] = v.cost || 0;
               });
             }
+
+            // Actual cost savings from single source of truth
+            const meterSavByYM = getMeterPerfSavingsByYM(m, bills, incl);
 
             // Process post-baseline rows within the reporting period
             postRows.forEach((r) => {
@@ -45644,21 +45830,16 @@
               const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
               const inPeriod = reportYMs.includes(r.ym);
 
-              let totalCostSav = 0;
+              const totalCostSav = meterSavByYM[r.ym] || 0;
 
               if (isElec) {
                 const actKwh = actUsage;
-                const kwhCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.kwhCost || 0), 0);
-                const kwhRate = actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0;
-                const kwhCostSav = kwhRate > 0 ? (expUsage - actKwh) * kwhRate : 0;
                 const blExpKW = blDemKWByCalMo[calMo] || 0;
                 const n = Math.max(1, bfr.length);
                 const actDemKW = bfr.reduce((s, b2) => s + parseFloat(b2.demandKW || 0), 0) / n;
+                const kwhCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.kwhCost || 0), 0);
                 const kwCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.kwCost || 0), 0);
                 const facKWCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.facKWCost || 0), 0);
-                const moKwRate = actDemKW > 0 ? (kwCostAmt + facKWCostAmt) / actDemKW : 0;
-                const kwCostSav = blExpKW > 0 && moKwRate > 0 ? (blExpKW - actDemKW) * moKwRate : 0;
-                totalCostSav = kwhCostSav + kwCostSav;
 
                 if (inPeriod) {
                   elec.kwhBl += expUsage;
@@ -45674,9 +45855,6 @@
                   elecMonthly[r.ym].cur += actKwh;
                 }
               } else if (isPropane) {
-                const galRate = actUsage > 0 && r.cost > 0 ? r.cost / actUsage : 0;
-                totalCostSav = galRate > 0 ? (expUsage - actUsage) * galRate : 0;
-
                 if (inPeriod) {
                   propane.galBl += expUsage;
                   propane.galCur += actUsage;
@@ -45689,11 +45867,8 @@
                   propaneMonthly[r.ym].cur += actUsage;
                 }
               } else {
-                // Gas
                 const actTherms = actUsage;
                 const actThermCost = bfr.reduce((s, b2) => s + parseFloat(b2.thermCost || b2.cost || 0), 0);
-                const thermRate = actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0;
-                totalCostSav = thermRate > 0 ? (expUsage - actTherms) * thermRate : 0;
 
                 if (inPeriod) {
                   gas.thermsBl += expUsage;
@@ -45812,7 +45987,7 @@
           const bldgBlCost = totalBldgBlCost;
           const bldgCurCost = totalBldgCurCost;
           const bldgSavingsPct = bldgBlCost > 0 ? (bldgSavings / bldgBlCost) * 100 : 0;
-          const targetPct = projectedSav > 0 && bldgBlCost > 0 ? (projectedSav / bldgBlCost) * 100 : 10;
+          const targetPct = bldgSavPct * 100;
           let bldgStatus = 'on_track';
           if (bldgSavingsPct < targetPct * 0.8) bldgStatus = 'below_target';
           else if (bldgSavingsPct < targetPct) bldgStatus = 'near_target';
@@ -45867,13 +46042,38 @@
         const euiBaseline = totalSqft > 0 ? totAnnBlKBtu / totalSqft : 0;
         const euiCurrent = totalSqft > 0 ? totAnnCurKBtu / totalSqft : 0;
 
-        // Fallback: if projected savings not set, annualize actual savings
-        if (projectedSav <= 0 && totSavings > 0) {
-          const annFactor = reportType === 'quarterly' ? 4 : 1;
-          projectedSav = totSavings * annFactor;
-        }
-        const annualTarget = projectedSav > 0 ? projectedSav : 0;
-        const quarterlyTargets = qDistribution.map((pct) => annualTarget * pct);
+        // Quarterly targets from baseline × per-building savings %
+        const annualBaseline = Object.values(baselineMoMap).reduce((s, v) => s + v, 0);
+        let wtSavPct = 0,
+          wtBase = 0;
+        bldgs.forEach((b) => {
+          const _bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
+          let _bspCfg = {};
+          try {
+            _bspCfg = JSON.parse(localStorage.getItem(_bspKey) || '{}');
+          } catch (e) {}
+          const _savPct = (_bspCfg.savingsPct ?? 11) / 100;
+          let bBase = 0;
+          (b.meters || []).forEach((m) => {
+            const mBills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+            const mIncl = m.inclusive !== false;
+            const bl = m.baseline;
+            if (!bl || !bl.months || bl.months.length < 3) return;
+            const allR = mBills.length ? getNormRows(m, mBills, mIncl, null) : [];
+            const blR = allR.filter((r) => bl.months.includes(r.ym));
+            const { elecByMo: eM, gasByMo: gM } = buildMoMap(m, blR, mBills, mIncl);
+            for (let mo = 0; mo < 12; mo++) bBase += (eM[mo]?.totalCost || 0) + (gM[mo]?.cost || 0);
+          });
+          wtSavPct += _savPct * bBase;
+          wtBase += bBase;
+        });
+        const avgSavPct = wtBase > 0 ? wtSavPct / wtBase : 0;
+        const annualTarget = annualBaseline * avgSavPct;
+        const quarterlyTargets = [0, 1, 2, 3].map((qi) => {
+          let qBase = 0;
+          for (let mo = qi * 3; mo < qi * 3 + 3; mo++) qBase += baselineMoMap[mo] || 0;
+          return qBase * avgSavPct;
+        });
 
         // ─── Chart images ───
         const chartImages = {};
@@ -46011,7 +46211,7 @@
             start: p.start || null,
             years: contractYears,
             currentYear: contractYearNum,
-            annualTarget: projectedSav,
+            annualTarget: annualTarget,
             cscPct: cscComp,
             clientPct: clientPct,
             escalation: escalation,
@@ -50191,12 +50391,12 @@
           if (sec.key === 'approvedChanges') {
             const hasMeetings = p && p.meetings && p.meetings.length > 0;
             if (!hasMeetings)
-              emptyWarn = '<span style="font-size:10px;color:#e67e22;font-weight:600;margin-left:auto">⚠ Empty</span>';
+              emptyWarn = `<span style="display:flex;align-items:center;gap:6px;margin-left:auto"><span style="font-size:10px;color:var(--warn);font-weight:600">⚠ Empty</span><button type="button" onclick="event.preventDefault();event.stopPropagation();_rptGoEdit(${projId},'meetings')" style="font-size:10px;padding:1px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--em);cursor:pointer;font-weight:600;line-height:1.4">Edit ↗</button></span>`;
           }
           if (sec.key === 'setpoints') {
             const hasSetpoints = p && p.setpoints && p.setpoints.length > 0;
             if (!hasSetpoints)
-              emptyWarn = '<span style="font-size:10px;color:#e67e22;font-weight:600;margin-left:auto">⚠ Empty</span>';
+              emptyWarn = `<span style="display:flex;align-items:center;gap:6px;margin-left:auto"><span style="font-size:10px;color:var(--warn);font-weight:600">⚠ Empty</span><button type="button" onclick="event.preventDefault();event.stopPropagation();_rptGoEdit(${projId},'setpoints')" style="font-size:10px;padding:1px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--em);cursor:pointer;font-weight:600;line-height:1.4">Edit ↗</button></span>`;
           }
           sectionHTML += `<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;background:var(--s1);cursor:pointer">
             <input type="checkbox" ${isChecked} data-section="${sec.key}" style="accent-color:var(--em);width:14px;height:14px">
@@ -50220,6 +50420,17 @@
         document.getElementById('reportDateInput').value = today.toISOString().slice(0, 10);
 
         document.getElementById('reportBldgModal').classList.add('open');
+      }
+
+      function _rptGoEdit(projId, tab) {
+        document.getElementById('reportBldgModal').classList.remove('open');
+        openDetail(projId);
+        requestAnimationFrame(function () {
+          const btn = document.querySelector('.pdt[data-tab="' + tab + '"]');
+          sPTab(tab, btn || null);
+          const labels = { meetings: 'Approved Changes (Meetings tab)', setpoints: 'Set Points & Schedules tab' };
+          showToast('Add data in the ' + (labels[tab] || tab) + ', then reopen Generate Report');
+        });
       }
 
       function rptSelectAll(checked) {
@@ -62861,5 +63072,6 @@
         }
       });
     </script>
+    <script src="feedback-widget.js"></script>
   </body>
 </html>
