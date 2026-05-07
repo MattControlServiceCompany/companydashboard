@@ -60848,6 +60848,56 @@
         return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
       }
 
+      function _basPopulateSetpoints(p, projId, rows) {
+        var bldgs = getUDBldgs(projId);
+        if (!bldgs.length) return;
+        if (!p.setpoints) p.setpoints = [];
+
+        // Group snapshot rows by building name
+        var bldgMap = {};
+        rows.forEach(function (r) {
+          if (!r.building) return;
+          if (!bldgMap[r.building]) bldgMap[r.building] = [];
+          bldgMap[r.building].push(r);
+        });
+
+        var populated = 0;
+        bldgs.forEach(function (b) {
+          // Match by building name (case-insensitive, trimmed)
+          var bName = (b.name || '').trim().toLowerCase();
+          var matchKey = Object.keys(bldgMap).find(function (k) {
+            return k.trim().toLowerCase() === bName;
+          });
+          if (!matchKey) return;
+
+          var snapRows = bldgMap[matchKey];
+          var zones = snapRows.map(function (r) {
+            return {
+              name: r.location || '',
+              occHeat: r.heatSP,
+              occCool: r.coolSP,
+              unoccHeat: null,
+              unoccCool: null,
+              schedule: '',
+            };
+          });
+
+          var existing = p.setpoints.find(function (s) {
+            return s.buildingId === b.id;
+          });
+          if (existing) {
+            existing.zones = zones;
+          } else {
+            p.setpoints.push({ buildingId: b.id, zones: zones });
+          }
+          populated += zones.length;
+        });
+
+        if (populated > 0) {
+          _spClearDraft(projId, bldgs[0].id);
+        }
+      }
+
       function spParseBASSnapshot(lines, headers, splitRow, projId, fileName) {
         function findCol(candidates) {
           for (var ci = 0; ci < candidates.length; ci++) {
@@ -61003,6 +61053,10 @@
           }
           window._basActiveSnap = window._basActiveSnap || {};
           window._basActiveSnap[projId] = newSnap.id;
+
+          // Auto-populate Set Points from snapshot data
+          _basPopulateSetpoints(p, projId, rows);
+
           sset('en_projects', projects);
         }
         renderSetpointsTab(projId);
