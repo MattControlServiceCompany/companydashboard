@@ -1408,6 +1408,727 @@
       }
     </style>
 
+    <!-- ═══════════════════════════════════════════════════
+         REPORT TEMPLATE STYLES
+         Print-preview overlay for quarterly/annual reports
+    ═══════════════════════════════════════════════════ -->
+    <style id="report-styles">
+      /* ── Overlay & Toolbar ── */
+      .report-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        display: flex;
+        flex-direction: column;
+        background: #1e1e2e;
+      }
+      .report-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 20px;
+        background: #12121e;
+        border-bottom: 1px solid #2a2a3e;
+        flex-shrink: 0;
+      }
+      .rpt-toolbar-btn {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        color: #ccc;
+        padding: 6px 14px;
+        border-radius: 6px;
+        font-size: 13px;
+        cursor: pointer;
+        transition:
+          background 0.15s,
+          color 0.15s;
+      }
+      .rpt-toolbar-btn:hover {
+        background: rgba(255, 255, 255, 0.15);
+        color: #fff;
+      }
+      .rpt-toolbar-primary {
+        background: #2e86c1;
+        border-color: #2e86c1;
+        color: #fff;
+      }
+      .rpt-toolbar-primary:hover {
+        background: #3498db;
+      }
+      .report-pages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 50px;
+      }
+
+      /* ── Page Label ── */
+      .rpt-pl {
+        color: #555;
+        font-size: 10px;
+        margin-bottom: 4px;
+        text-align: center;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+      }
+
+      /* ── Individual Page ── */
+      .rpt-page {
+        width: 816px;
+        min-height: 1056px;
+        background: #fff;
+        box-shadow: 0 8px 40px rgba(0, 0, 0, 0.7);
+        position: relative;
+        overflow: hidden;
+        color: #333;
+        font-family: 'Segoe UI', Arial, sans-serif;
+        font-size: 11px;
+        line-height: 1.5;
+      }
+      .rpt-page::after {
+        content: attr(data-page);
+        position: absolute;
+        bottom: 10px;
+        right: 20px;
+        font-size: 8px;
+        color: #999;
+      }
+
+      /* ── Page Footer ── */
+      .rpt-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        font-size: 7px;
+        color: #999;
+        padding: 8px 50px;
+        display: flex;
+        justify-content: space-between;
+        border-top: 1px solid #eee;
+        background: #fff;
+      }
+
+      /* ── Interior Page Header (navy gradient) ── */
+      .rpt-int-hdr {
+        background: linear-gradient(135deg, #0c2d48, #1a5276);
+        padding: 14px 50px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: #fff;
+      }
+      .rpt-logo {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        opacity: 0.9;
+      }
+      .rpt-logo span {
+        font-weight: 400;
+        opacity: 0.7;
+      }
+      .rpt-pg-title {
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+      }
+      .rpt-info {
+        font-size: 8px;
+        opacity: 0.6;
+        text-align: right;
+      }
+
+      /* ── Page Body ── */
+      .rpt-body {
+        padding: 12px 50px 60px;
+      }
+
+      /* ── Section Headings ── */
+      .rpt-body h2 {
+        font-size: 13px;
+        color: #1a5276;
+        margin: 10px 0 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .rpt-body h2::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: #d4e4f0;
+      }
+      .rpt-body h3 {
+        font-size: 11px;
+        color: #333;
+        margin: 6px 0 2px;
+      }
+      .rpt-su {
+        font-size: 10px;
+        color: #888;
+        margin-bottom: 4px;
+      }
+
+      /* ── Tables ── */
+      .rpt-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 10.5px;
+        margin: 4px 0;
+      }
+      .rpt-table th {
+        background: #1a5276;
+        color: #fff;
+        padding: 4px 6px;
+        text-align: left;
+        font-weight: 600;
+        font-size: 9.5px;
+        text-transform: uppercase;
+      }
+      .rpt-table td {
+        padding: 4px 6px;
+        border-bottom: 1px solid #e8e8e8;
+      }
+      .rpt-table tr:nth-child(even) td {
+        background: #f8fafb;
+      }
+      .rpt-table tr.rpt-tot td {
+        font-weight: 700;
+        border-top: 2px solid #1a5276;
+        background: #eef4f8;
+      }
+      .rpt-table .rpt-n {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .rpt-g {
+        color: #1e8449;
+        font-weight: 600;
+      }
+      .rpt-r {
+        color: #c0392b;
+        font-weight: 600;
+      }
+      .rpt-o {
+        color: #e67e22;
+        font-weight: 600;
+      }
+
+      /* ── KPI Cards ── */
+      .rpt-kpi-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+        margin: 6px 0;
+      }
+      .rpt-kpi {
+        background: linear-gradient(135deg, #f4f8fb, #e8f0f8);
+        border: 1px solid #d4e4f0;
+        border-radius: 8px;
+        padding: 8px;
+        text-align: center;
+      }
+      .rpt-kpi .rpt-kpi-val {
+        font-size: 22px;
+        font-weight: 700;
+        color: #1a5276;
+      }
+      .rpt-kpi .rpt-kpi-val.rpt-kpi-green {
+        color: #1e8449;
+      }
+      .rpt-kpi .rpt-kpi-label {
+        font-size: 8.5px;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        margin-top: 1px;
+      }
+      .rpt-kpi .rpt-kpi-desc {
+        font-size: 9px;
+        color: #888;
+      }
+
+      /* ── Comparison Box (target vs actual) ── */
+      .rpt-vs-box {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 6px;
+        align-items: center;
+        padding: 8px 12px;
+        background: #f4f8fb;
+        border-radius: 8px;
+        border: 1px solid #d4e4f0;
+        margin: 6px 0;
+      }
+      .rpt-vs-side {
+        text-align: center;
+      }
+      .rpt-vs-side .rpt-vs-val {
+        font-size: 20px;
+        font-weight: 700;
+      }
+      .rpt-vs-side .rpt-vs-lbl {
+        font-size: 9px;
+        color: #666;
+        margin-top: 1px;
+      }
+      .rpt-vs-mid {
+        font-size: 18px;
+        color: #2e86c1;
+        font-weight: 700;
+      }
+
+      /* ── Progress Bar ── */
+      .rpt-progress-bar {
+        height: 22px;
+        background: #e8e8e8;
+        border-radius: 11px;
+        overflow: visible;
+        margin: 4px 0;
+        position: relative;
+      }
+      .rpt-progress-fill {
+        height: 100%;
+        border-radius: 11px;
+        display: flex;
+        align-items: center;
+        padding: 0 10px;
+        color: #fff;
+        font-weight: 600;
+        font-size: 11px;
+      }
+      .rpt-progress-fill.rpt-ahead {
+        background: linear-gradient(90deg, #27ae60, #2ecc71);
+      }
+      .rpt-progress-fill.rpt-behind {
+        background: linear-gradient(90deg, #e67e22, #f39c12);
+      }
+      .rpt-target-marker {
+        position: absolute;
+        top: -3px;
+        bottom: -3px;
+        width: 3px;
+        background: #c0392b;
+        border-radius: 2px;
+      }
+
+      /* ── Circular Gauges ── */
+      .rpt-gauge-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+        margin: 6px 0;
+      }
+      .rpt-gauge {
+        text-align: center;
+        padding: 4px;
+      }
+      .rpt-gauge-circle {
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        margin: 0 auto 3px;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .rpt-gauge-circle::before {
+        content: '';
+        position: absolute;
+        inset: 3px;
+        border-radius: 50%;
+        background: #fff;
+      }
+      .rpt-gauge-val {
+        position: relative;
+        z-index: 1;
+        font-size: 14px;
+        font-weight: 700;
+        color: #1a5276;
+      }
+      .rpt-gauge-label {
+        font-size: 8.5px;
+        color: #666;
+        text-transform: uppercase;
+      }
+
+      /* ── Status Cards (building ok/warn) ── */
+      .rpt-status-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+        margin: 6px 0;
+      }
+      .rpt-status-card {
+        border-radius: 6px;
+        padding: 8px;
+        text-align: center;
+        border: 1px solid;
+      }
+      .rpt-status-card.rpt-ok {
+        background: #f0faf4;
+        border-color: #a3e4bc;
+      }
+      .rpt-status-card.rpt-warn {
+        background: #fef7f0;
+        border-color: #f5d0a9;
+      }
+      .rpt-status-card .rpt-sc-name {
+        font-size: 9px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 1px;
+      }
+      .rpt-status-card .rpt-sc-val {
+        font-size: 22px;
+        font-weight: 700;
+      }
+      .rpt-status-card.rpt-ok .rpt-sc-val {
+        color: #1e8449;
+      }
+      .rpt-status-card.rpt-warn .rpt-sc-val {
+        color: #e67e22;
+      }
+      .rpt-status-card .rpt-sc-label {
+        font-size: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+      }
+      .rpt-status-card.rpt-ok .rpt-sc-label {
+        color: #27ae60;
+      }
+      .rpt-status-card.rpt-warn .rpt-sc-label {
+        color: #e67e22;
+      }
+
+      /* ── Narrative Block ── */
+      .rpt-narrative {
+        background: linear-gradient(135deg, #f8fafb, #eef4f8);
+        border: 1px solid #d4e4f0;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin: 6px 0;
+        font-size: 11px;
+        line-height: 1.6;
+        color: #333;
+      }
+      .rpt-narrative strong {
+        color: #1a5276;
+      }
+
+      /* ── Key Finding ── */
+      .rpt-finding {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        margin: 4px 0;
+        font-size: 10.5px;
+        line-height: 1.4;
+        color: #444;
+      }
+      .rpt-finding-icon {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 9px;
+        flex-shrink: 0;
+      }
+      .rpt-finding-icon.rpt-fi-up {
+        background: #e8f8ef;
+        color: #27ae60;
+      }
+      .rpt-finding-icon.rpt-fi-warn {
+        background: #fef5e7;
+        color: #e67e22;
+      }
+      .rpt-finding-icon.rpt-fi-star {
+        background: #eef0fb;
+        color: #2e86c1;
+      }
+      .rpt-finding-list {
+        background: #f0f7eb;
+        border-left: 3px solid #27ae60;
+        padding: 8px 12px;
+        margin: 6px 0;
+        font-size: 10.5px;
+        line-height: 1.5;
+        border-radius: 0 4px 4px 0;
+      }
+      .rpt-finding-list li {
+        margin: 2px 0;
+      }
+
+      /* ── Chart Container ── */
+      .rpt-chart-box {
+        background: #f8fafb;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        padding: 8px;
+        margin: 4px 0;
+        position: relative;
+      }
+      .rpt-chart-title {
+        font-size: 8px;
+        font-weight: 600;
+        color: #555;
+        margin-bottom: 3px;
+      }
+
+      /* ── Environmental Equivalency Cards ── */
+      .rpt-env-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 5px;
+        margin: 6px 0;
+      }
+      .rpt-env-card {
+        background: #f0f7eb;
+        border: 1px solid #c8e6c0;
+        border-radius: 6px;
+        padding: 6px;
+        text-align: center;
+      }
+      .rpt-env-card .rpt-env-icon {
+        font-size: 16px;
+      }
+      .rpt-env-card .rpt-env-val {
+        font-size: 14px;
+        font-weight: 700;
+        color: #1e8449;
+        margin: 1px 0;
+      }
+      .rpt-env-card .rpt-env-label {
+        font-size: 6.5px;
+        color: #555;
+      }
+
+      /* ── Hero / Cover Page ── */
+      .rpt-hero {
+        background: linear-gradient(135deg, #0c2d48 0%, #1a5276 40%, #2e86c1 100%);
+        padding: 32px 50px 24px;
+        color: #fff;
+        position: relative;
+        overflow: hidden;
+      }
+      .rpt-hero::before {
+        content: '';
+        position: absolute;
+        top: -60px;
+        right: -60px;
+        width: 280px;
+        height: 280px;
+        background: radial-gradient(circle, rgba(46, 134, 193, 0.3), transparent);
+        border-radius: 50%;
+      }
+      .rpt-hero::after {
+        content: '';
+        position: absolute;
+        bottom: -40px;
+        left: 20%;
+        width: 180px;
+        height: 180px;
+        background: radial-gradient(circle, rgba(74, 222, 128, 0.15), transparent);
+        border-radius: 50%;
+      }
+      .rpt-hero-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 10px;
+        position: relative;
+        z-index: 1;
+      }
+      .rpt-hero-logo {
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        opacity: 0.9;
+      }
+      .rpt-hero-logo span {
+        font-weight: 400;
+        opacity: 0.7;
+      }
+      .rpt-hero-type {
+        font-size: 8px;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        opacity: 0.6;
+        background: rgba(255, 255, 255, 0.1);
+        padding: 3px 10px;
+        border-radius: 10px;
+      }
+      .rpt-hero-main {
+        position: relative;
+        z-index: 1;
+        text-align: center;
+        margin: 8px 0;
+      }
+      .rpt-hero-main h1 {
+        font-size: 38px;
+        font-weight: 800;
+        letter-spacing: -1px;
+        color: #fff;
+        text-shadow: 0 2px 20px rgba(0, 0, 0, 0.3);
+      }
+      .rpt-hero-main .rpt-hero-client {
+        font-size: 16px;
+        opacity: 0.85;
+        font-weight: 400;
+        margin-bottom: 2px;
+      }
+      .rpt-hero-main .rpt-hero-period {
+        font-size: 10px;
+        opacity: 0.6;
+        letter-spacing: 1px;
+      }
+      .rpt-big-number {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        justify-content: center;
+        align-items: baseline;
+        gap: 6px;
+        margin: 12px 0 6px;
+      }
+      .rpt-big-number .rpt-bn-amount {
+        font-size: 56px;
+        font-weight: 800;
+        color: #4ade80;
+        text-shadow: 0 0 30px rgba(74, 222, 128, 0.4);
+        letter-spacing: -2px;
+      }
+      .rpt-big-number .rpt-bn-label {
+        font-size: 12px;
+        color: #a0d8b8;
+      }
+      .rpt-big-number .rpt-bn-badge {
+        background: #4ade80;
+        color: #0c2d48;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 3px 10px;
+        border-radius: 10px;
+        margin-left: 6px;
+      }
+      .rpt-hero-sub {
+        position: relative;
+        z-index: 1;
+        text-align: center;
+        font-size: 10px;
+        opacity: 0.7;
+      }
+
+      /* ── Observations ── */
+      .rpt-ob h3 {
+        font-size: 11px;
+        color: #1a5276;
+        margin: 6px 0 3px;
+      }
+      .rpt-ob p {
+        font-size: 10.5px;
+        color: #444;
+        line-height: 1.5;
+        margin-bottom: 3px;
+      }
+
+      /* ── Building heading row in tables ── */
+      .rpt-table tr.rpt-bh td {
+        background: #e8eef3 !important;
+        font-weight: 700;
+        font-size: 8.5px;
+        color: #1a5276;
+      }
+      .rpt-table tr.rpt-mr td {
+        padding-left: 14px;
+        font-size: 8px;
+      }
+
+      /* ── Contenteditable highlights ── */
+      .rpt-page [contenteditable] {
+        outline: none;
+        border-radius: 3px;
+        transition: background 0.15s;
+      }
+      .rpt-page [contenteditable]:hover {
+        background: rgba(100, 130, 200, 0.08);
+      }
+      .rpt-page [contenteditable]:focus {
+        background: rgba(100, 130, 200, 0.12);
+        box-shadow: 0 0 0 2px rgba(100, 130, 200, 0.25);
+      }
+
+      /* ── Chart bar rows (savings bars, etc.) ── */
+      .rpt-bar-row {
+        display: flex;
+        align-items: flex-end;
+        gap: 2px;
+        height: 80px;
+      }
+      .rpt-bar-group {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex: 1;
+      }
+      .rpt-bar-group .rpt-bars {
+        display: flex;
+        align-items: flex-end;
+        gap: 1px;
+        height: 64px;
+      }
+      .rpt-bar {
+        width: 8px;
+        border-radius: 2px 2px 0 0;
+      }
+      .rpt-bar-group .rpt-bar-ml {
+        font-size: 7.5px;
+        color: #666;
+        margin-top: 1px;
+      }
+      .rpt-legend {
+        display: flex;
+        gap: 8px;
+        margin-top: 3px;
+        justify-content: center;
+        font-size: 8.5px;
+        color: #666;
+      }
+      .rpt-legend span {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+      }
+      .rpt-legend .rpt-sw {
+        width: 6px;
+        height: 6px;
+        border-radius: 1px;
+        display: inline-block;
+      }
+
+      /* ── Dashed threshold line for charts ── */
+      .rpt-dash-line {
+        position: absolute;
+        left: 8px;
+        right: 8px;
+        border-top: 2px dashed #e74c3c;
+      }
+      .rpt-dash-label {
+        position: absolute;
+        right: 10px;
+        font-size: 8px;
+        color: #e74c3c;
+        font-weight: 600;
+      }
+    </style>
+
     <style>
       html,
       body {
@@ -12010,6 +12731,23 @@
       </div>
     </div>
     <!-- /app -->
+
+    <!-- ═══════════════════════════════════════════════════
+         REPORT OVERLAY — fullscreen print-preview container
+    ═══════════════════════════════════════════════════ -->
+    <div id="reportOverlay" class="report-overlay" style="display: none">
+      <div class="report-toolbar">
+        <div style="display: flex; align-items: center; gap: 12px">
+          <button onclick="closeReportOverlay()" class="rpt-toolbar-btn">✕ Close</button>
+          <span id="reportOverlayTitle" style="font-size: 16px; font-weight: 600; color: #fff">Report Preview</span>
+        </div>
+        <div style="display: flex; gap: 8px">
+          <button onclick="saveReportToHistory()" class="rpt-toolbar-btn">💾 Save</button>
+          <button onclick="exportReportToPDF()" class="rpt-toolbar-btn rpt-toolbar-primary">📄 Export to PDF</button>
+        </div>
+      </div>
+      <div id="reportPages" class="report-pages"></div>
+    </div>
 
     <script
       src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
@@ -44956,6 +45694,267 @@
           setpoints,
           meetings,
         };
+      }
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // REPORT TEMPLATE INFRASTRUCTURE
+      // Page wrapper, master assembly, overlay display/close, and stub
+      // functions for all 17 page templates. Built by Task 5.
+      // ═══════════════════════════════════════════════════════════════════════
+
+      /**
+       * rptPage — wraps a single report page with header, body, and footer.
+       * @param {number} pageNum - Page number for the data-page attribute
+       * @param {string} title - Title shown in the interior page header
+       * @param {string} bodyHTML - Inner HTML content for the page body
+       * @param {object} options - { data, hero, label }
+       */
+      function rptPage(pageNum, title, bodyHTML, options = {}) {
+        const data = options.data;
+        const isHero = options.hero === true;
+        const pageLabel = options.label || 'Page ' + pageNum;
+
+        const footer =
+          '<div class="rpt-footer">' +
+          '<span>Control Service Company' +
+          (isHero ? ' • Confidential' : '') +
+          '</span>' +
+          '<span>' +
+          (data ? data.project.client + ' — ' + data.period.label : '') +
+          '</span>' +
+          '</div>';
+
+        if (isHero) {
+          return (
+            '<div class="rpt-pl">' +
+            pageLabel +
+            '</div>' +
+            '<div class="rpt-page" data-page="' +
+            pageNum +
+            '">' +
+            bodyHTML +
+            footer +
+            '</div>'
+          );
+        }
+
+        return (
+          '<div class="rpt-pl">' +
+          pageLabel +
+          '</div>' +
+          '<div class="rpt-page" data-page="' +
+          pageNum +
+          '">' +
+          '<div class="rpt-int-hdr">' +
+          '<div class="rpt-logo">CONTROL SERVICE <span>COMPANY</span></div>' +
+          '<div class="rpt-pg-title">' +
+          title +
+          '</div>' +
+          '<div class="rpt-info">' +
+          (data ? data.project.client : '') +
+          '<br>' +
+          (data ? data.period.label : '') +
+          '</div>' +
+          '</div>' +
+          '<div class="rpt-body">' +
+          bodyHTML +
+          '</div>' +
+          footer +
+          '</div>'
+        );
+      }
+
+      /**
+       * generateReportHTML — assembles all selected report pages into HTML.
+       * @param {object} data - Output from collectReportData()
+       * @param {object} selectedSections - Which sections to include (all default true)
+       * @returns {string} Combined HTML for all pages
+       */
+      function generateReportHTML(data, selectedSections) {
+        const pages = [];
+        let pageNum = 1;
+        const s = selectedSections || {};
+
+        // Main pages
+        if (s.cover !== false) pages.push(rptPageCover(pageNum++, data));
+        if (s.financial !== false) pages.push(rptPageFinancial(pageNum++, data));
+        if (s.savingsPerformance !== false) pages.push(rptPageSavingsPerformance(pageNum++, data));
+        if (s.euiBenchmarking !== false) pages.push(rptPageEUI(pageNum++, data));
+        if (s.environmentalImpact !== false) pages.push(rptPageEnvironmentalImpact(pageNum++, data));
+        if (s.observations !== false) pages.push(rptPageObservations(pageNum++, data));
+        if (s.approvedChanges !== false) pages.push(rptPageApprovedChanges(pageNum++, data));
+        if (s.contractProjection !== false) pages.push(rptPageContractProjection(pageNum++, data));
+        if (s.setpoints !== false) pages.push(rptPageSetPoints(pageNum++, data));
+
+        // Per-building summaries
+        if (s.buildingSummaries !== false) {
+          data.buildings.forEach(function (b) {
+            pages.push(rptPageBuildingSummary(pageNum++, data, b));
+          });
+        }
+
+        // Commodity detail pages
+        if (s.electricDetail !== false) pages.push(rptPageElectric(pageNum++, data));
+        if (s.gasDetail !== false) pages.push(rptPageGas(pageNum++, data));
+        if (s.propaneDetail !== false) pages.push(rptPagePropane(pageNum++, data));
+
+        // Appendices
+        if (s.appendixA !== false) pages.push(rptPageAppendixNormalization(pageNum++, data));
+        if (s.appendixB !== false) pages.push(rptPageAppendixBaseline(pageNum++, data));
+        if (s.appendixC !== false) pages.push(rptPageAppendixWeather(pageNum++, data));
+        if (s.appendixD !== false) pages.push(rptPageAppendixBills(pageNum++, data));
+
+        return pages.join('\n');
+      }
+
+      /**
+       * showReportOverlay — displays the report preview overlay with generated HTML.
+       */
+      function showReportOverlay(html, title) {
+        document.getElementById('reportPages').innerHTML = html;
+        document.getElementById('reportOverlayTitle').textContent = title || 'Report Preview';
+        document.getElementById('reportOverlay').style.display = 'flex';
+        document._currentReportHTML = html;
+        document.body.style.overflow = 'hidden';
+      }
+
+      /**
+       * closeReportOverlay — hides the report preview overlay and cleans up.
+       */
+      function closeReportOverlay() {
+        document.getElementById('reportOverlay').style.display = 'none';
+        document.getElementById('reportPages').innerHTML = '';
+        document.body.style.overflow = '';
+      }
+
+      // ── Stub page template functions (replaced by Tasks 6–17) ──
+      function rptPageCover(n, d) {
+        return rptPage(
+          n,
+          'Cover',
+          '<p style="padding:40px;color:#888;text-align:center">Cover page — coming soon</p>',
+          { data: d, hero: true, label: 'Page ' + n + ' — Cover' },
+        );
+      }
+      function rptPageFinancial(n, d) {
+        return rptPage(
+          n,
+          'Financial Summary',
+          '<p style="padding:20px;color:#888">Financial Summary — coming soon</p>',
+          { data: d, label: 'Page ' + n + ' — Financial Summary' },
+        );
+      }
+      function rptPageSavingsPerformance(n, d) {
+        return rptPage(
+          n,
+          'Savings Performance',
+          '<p style="padding:20px;color:#888">Savings Performance — coming soon</p>',
+          { data: d, label: 'Page ' + n + ' — Savings Performance' },
+        );
+      }
+      function rptPageEUI(n, d) {
+        return rptPage(n, 'EUI Benchmarking', '<p style="padding:20px;color:#888">EUI Benchmarking — coming soon</p>', {
+          data: d,
+          label: 'Page ' + n + ' — EUI Benchmarking',
+        });
+      }
+      function rptPageEnvironmentalImpact(n, d) {
+        return rptPage(
+          n,
+          'Environmental Impact',
+          '<p style="padding:20px;color:#888">Environmental Impact — coming soon</p>',
+          { data: d, label: 'Page ' + n + ' — Environmental Impact' },
+        );
+      }
+      function rptPageObservations(n, d) {
+        return rptPage(
+          n,
+          'Observations & Recommendations',
+          '<p style="padding:20px;color:#888">Observations & Recommendations — coming soon</p>',
+          { data: d, label: 'Page ' + n + ' — Observations' },
+        );
+      }
+      function rptPageApprovedChanges(n, d) {
+        return rptPage(n, 'Approved Changes', '<p style="padding:20px;color:#888">Approved Changes — coming soon</p>', {
+          data: d,
+          label: 'Page ' + n + ' — Approved Changes',
+        });
+      }
+      function rptPageContractProjection(n, d) {
+        return rptPage(
+          n,
+          'Contract Projection',
+          '<p style="padding:20px;color:#888">Contract Projection — coming soon</p>',
+          { data: d, label: 'Page ' + n + ' — Contract Projection' },
+        );
+      }
+      function rptPageSetPoints(n, d) {
+        return rptPage(
+          n,
+          'BAS Set Points & Schedules',
+          '<p style="padding:20px;color:#888">Set Points & Schedules — coming soon</p>',
+          { data: d, label: 'Page ' + n + ' — Set Points' },
+        );
+      }
+      function rptPageBuildingSummary(n, d, b) {
+        return rptPage(
+          n,
+          (b.name || 'Building') + ' Summary',
+          '<p style="padding:20px;color:#888">' + (b.name || 'Building') + ' Summary — coming soon</p>',
+          { data: d, label: 'Page ' + n + ' — ' + (b.name || 'Building') },
+        );
+      }
+      function rptPageElectric(n, d) {
+        return rptPage(n, 'Electric Detail', '<p style="padding:20px;color:#888">Electric Detail — coming soon</p>', {
+          data: d,
+          label: 'Page ' + n + ' — Electric Detail',
+        });
+      }
+      function rptPageGas(n, d) {
+        return rptPage(n, 'Gas Detail', '<p style="padding:20px;color:#888">Gas Detail — coming soon</p>', {
+          data: d,
+          label: 'Page ' + n + ' — Gas Detail',
+        });
+      }
+      function rptPagePropane(n, d) {
+        return rptPage(n, 'Propane Detail', '<p style="padding:20px;color:#888">Propane Detail — coming soon</p>', {
+          data: d,
+          label: 'Page ' + n + ' — Propane Detail',
+        });
+      }
+      function rptPageAppendixNormalization(n, d) {
+        return rptPage(
+          n,
+          'Appendix A: Normalization',
+          '<p style="padding:20px;color:#888">Appendix A — coming soon</p>',
+          { data: d, label: 'Page ' + n + ' — Appendix A' },
+        );
+      }
+      function rptPageAppendixBaseline(n, d) {
+        return rptPage(n, 'Appendix B: Baseline', '<p style="padding:20px;color:#888">Appendix B — coming soon</p>', {
+          data: d,
+          label: 'Page ' + n + ' — Appendix B',
+        });
+      }
+      function rptPageAppendixWeather(n, d) {
+        return rptPage(n, 'Appendix C: Weather', '<p style="padding:20px;color:#888">Appendix C — coming soon</p>', {
+          data: d,
+          label: 'Page ' + n + ' — Appendix C',
+        });
+      }
+      function rptPageAppendixBills(n, d) {
+        return rptPage(n, 'Appendix D: Bills', '<p style="padding:20px;color:#888">Appendix D — coming soon</p>', {
+          data: d,
+          label: 'Page ' + n + ' — Appendix D',
+        });
+      }
+
+      // Placeholder stubs for toolbar buttons (implemented in later tasks)
+      function saveReportToHistory() {
+        showToast('Report history — coming soon', 'info');
+      }
+      function exportReportToPDF() {
+        showToast('PDF export — coming soon', 'info');
       }
 
       /* ── QUARTERLY / ANNUAL PERFORMANCE REPORTS ── */
