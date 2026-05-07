@@ -44320,6 +44320,644 @@
         showToast('PDF generated ✓');
       }
 
+      /* ── REPORT DATA COLLECTOR ── */
+      // Extracts a 2-letter US state code from a free-text address string.
+      // Looks for a 2-letter uppercase code before a ZIP code or at end of string.
+      // Falls back to 'KS' (Kansas) if no match — most CSC projects are in the KC metro.
+      function extractStateFromAddress(addr) {
+        if (!addr) return 'KS';
+        const m = addr.match(/\b([A-Z]{2})\b(?=\s*\d{5}|\s*$|,|\s*$)/);
+        return m ? m[1] : 'KS';
+      }
+
+      // Collects monthly HDD/CDD weather data from normalized rows, grouped by
+      // baseline vs reporting-period months. Returns {monthly, totals}.
+      function collectWeatherData(allBldgMeters, reportYMs) {
+        const byYm = {};
+        allBldgMeters.forEach(({ allRows, bl }) => {
+          const blRows = allRows.filter((r) => bl.months.includes(r.ym));
+          // Accumulate baseline weather per calendar month (averaged later)
+          blRows.forEach((r) => {
+            const mo = parseInt(r.ym.split('-')[1]) - 1;
+            if (!byYm['bl_' + mo]) byYm['bl_' + mo] = { hdd: 0, cdd: 0, count: 0 };
+            byYm['bl_' + mo].hdd += r.hdd || 0;
+            byYm['bl_' + mo].cdd += r.cdd || 0;
+            byYm['bl_' + mo].count++;
+          });
+          // Reporting period weather by YYYY-MM
+          const rpRows = allRows.filter((r) => reportYMs.includes(r.ym));
+          rpRows.forEach((r) => {
+            if (!byYm[r.ym]) byYm[r.ym] = { hdd: 0, cdd: 0, count: 0 };
+            byYm[r.ym].hdd += r.hdd || 0;
+            byYm[r.ym].cdd += r.cdd || 0;
+            byYm[r.ym].count++;
+          });
+        });
+        const monthly = [];
+        let totHddBl = 0,
+          totCddBl = 0,
+          totHddCur = 0,
+          totCddCur = 0;
+        reportYMs.forEach((ym) => {
+          const mo = parseInt(ym.split('-')[1]) - 1;
+          const blData = byYm['bl_' + mo];
+          const curData = byYm[ym];
+          const hddBl = blData ? blData.hdd / blData.count : 0;
+          const cddBl = blData ? blData.cdd / blData.count : 0;
+          const hddCur = curData ? curData.hdd / curData.count : 0;
+          const cddCur = curData ? curData.cdd / curData.count : 0;
+          monthly.push({ month: ym, hddBl, hddCur, cddBl, cddCur });
+          totHddBl += hddBl;
+          totCddBl += cddBl;
+          totHddCur += hddCur;
+          totCddCur += cddCur;
+        });
+        return {
+          monthly,
+          totals: { hddBl: totHddBl, hddCur: totHddCur, cddBl: totCddBl, cddCur: totCddCur },
+        };
+      }
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // collectReportData(projId, buildingIds, reportDateStr, reportType)
+      //
+      // Gathers ALL data needed for report generation into a single structured
+      // object. Every report page template reads from this object — no page
+      // template should access localStorage or compute savings directly.
+      //
+      // Adapted from the data-gathering portion of generatePerformanceReport().
+      // ═══════════════════════════════════════════════════════════════════════
+      function collectReportData(projId, buildingIds, reportDateStr, reportType) {
+        const p = projects.find((x) => x.id === projId);
+        if (!p) return null;
+
+        let bldgs = getUDBldgs(projId);
+        if (buildingIds && buildingIds.length) bldgs = bldgs.filter((b) => buildingIds.includes(String(b.id)));
+        const useNormalized = p.baselineComparison === 'normalized';
+        if (!bldgs.length) return null;
+
+        const now = new Date();
+        const monthNames = [
+          'January',
+          'February',
+          'March',
+          'April',
+          'May',
+          'June',
+          'July',
+          'August',
+          'September',
+          'October',
+          'November',
+          'December',
+        ];
+        const periodMonths = reportType === 'quarterly' ? 3 : 12;
+
+        // ─── Gather all post-baseline year-months and meter data ───
+        let allPostYMs = [];
+        const allBldgMeters = [];
+        bldgs.forEach((b) => {
+          (b.meters || []).forEach((m) => {
+            if (m.baselineInclude === false) return;
+            const energyCommodities = ['Electric', 'Gas', 'Propane'];
+            if (!energyCommodities.includes(m.commodity)) return;
+            const bl = m.baseline;
+            if (!bl || !bl.months || bl.months.length < 3) return;
+            const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+            const incl = m.inclusive !== false;
+            const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
+            const blEnd = bl.months.slice().sort().pop();
+            const postRows = allRows.filter((r) => r.ym > blEnd);
+            postRows.forEach((r) => {
+              if (!allPostYMs.includes(r.ym)) allPostYMs.push(r.ym);
+            });
+            allBldgMeters.push({ b, m, bills, incl, allRows, bl, blEnd, postRows });
+          });
+        });
+        allPostYMs.sort();
+
+        // ─── Determine reporting period year-months ───
+        let reportYMs = [];
+        if (reportType === 'quarterly') {
+          const curQ = Math.ceil((now.getMonth() + 1) / 3);
+          const curYr = now.getFullYear();
+          for (let attempt = 0; attempt < 8; attempt++) {
+            let qNum = curQ - attempt;
+            let yr = curYr;
+            while (qNum <= 0) {
+              qNum += 4;
+              yr--;
+            }
+            const startMo = (qNum - 1) * 3 + 1;
+            const qYMs = [
+              yr + '-' + String(startMo).padStart(2, '0'),
+              yr + '-' + String(startMo + 1).padStart(2, '0'),
+              yr + '-' + String(startMo + 2).padStart(2, '0'),
+            ];
+            const hasData = qYMs.some((ym) => allPostYMs.includes(ym));
+            const isCurrent = yr === curYr && qNum === curQ;
+            if (hasData && !isCurrent) {
+              reportYMs = qYMs.filter((ym) => allPostYMs.includes(ym));
+              if (reportYMs.length === 0) continue;
+              reportYMs._qLabel = 'Q' + qNum + ' ' + yr;
+              reportYMs._qStartMo = startMo;
+              reportYMs._qYear = yr;
+              reportYMs._qNum = qNum;
+              break;
+            }
+          }
+          if (!reportYMs.length) reportYMs = allPostYMs.slice(-3);
+        } else {
+          reportYMs = allPostYMs.slice(-12);
+        }
+        const reportStart = reportYMs[0] || '';
+        const reportEnd = reportYMs[reportYMs.length - 1] || '';
+
+        // Build period label
+        let periodLabel = '';
+        let periodQuarter = null;
+        let periodYear = null;
+        if (reportType === 'quarterly' && reportYMs._qStartMo) {
+          const qStart = monthNames[reportYMs._qStartMo - 1];
+          const qEnd = monthNames[reportYMs._qStartMo + 1];
+          periodLabel = qStart + ' - ' + qEnd + ' ' + reportYMs._qYear;
+          periodQuarter = reportYMs._qNum;
+          periodYear = reportYMs._qYear;
+        } else {
+          const rpStartMonth = reportStart ? monthNames[parseInt(reportStart.split('-')[1]) - 1] : '';
+          const rpStartYear = reportStart ? reportStart.split('-')[0] : '';
+          const rpEndMonth = reportEnd ? monthNames[parseInt(reportEnd.split('-')[1]) - 1] : '';
+          const rpEndYear = reportEnd ? reportEnd.split('-')[0] : '';
+          periodLabel =
+            rpStartYear === rpEndYear
+              ? rpStartMonth + ' - ' + rpEndMonth + ' ' + rpEndYear
+              : rpStartMonth + ' ' + rpStartYear + ' - ' + rpEndMonth + ' ' + rpEndYear;
+          periodYear = parseInt(rpEndYear) || now.getFullYear();
+        }
+
+        // ─── Contract info ───
+        const guaranteedSav = parseFloat(p.savings) || 0;
+        const contractYears = parseInt(p.contractYears) || 3;
+        const escalation = parseFloat(p.escalation) || 0;
+        const cscComp = parseFloat(p.cscCompensation) || 0;
+        const clientPct = 100 - cscComp;
+        const contractStart = p.start ? new Date(p.start + 'T00:00:00') : null;
+
+        let contractYearNum = 1;
+        if (contractStart) {
+          const msElapsed = now - contractStart;
+          contractYearNum = Math.max(1, Math.min(contractYears, Math.ceil(msElapsed / (365.25 * 86400000))));
+        }
+
+        // Quarterly targets using seasonal load distribution
+        const qDistribution = [0.166, 0.21, 0.481, 0.143]; // Q1, Q2, Q3, Q4
+        const annualTarget = guaranteedSav > 0 ? guaranteedSav : 0;
+        const quarterlyTargets = qDistribution.map((pct) => annualTarget * pct);
+
+        // ─── Per-building data ───
+        const totalSqft = bldgs.reduce((s, b) => s + parseInt(b.sqft || 0), 0);
+        // Accumulators for project-wide totals
+        let totKwhSaved = 0,
+          totKwhBl = 0,
+          totKwhCur = 0;
+        let totThermsSaved = 0,
+          totThermsBl = 0,
+          totThermsCur = 0;
+        let totPropaneSaved = 0,
+          totPropaneBl = 0,
+          totPropaneCur = 0;
+        let totPeakKwBl = 0,
+          totPeakKwCur = 0;
+        let totBlCost = 0,
+          totCurCost = 0,
+          totSavings = 0;
+        let totAnnBlKBtu = 0,
+          totAnnCurKBtu = 0;
+
+        const buildingsData = bldgs.map((b) => {
+          const sqft = parseInt(b.sqft || 0);
+          const bType = b.type || p.type || 'Other';
+          let cumSavings = 0,
+            periodSavings = 0;
+          let annBlKBtu = 0,
+            annCurKBtu = 0;
+          const commoditySet = new Set();
+
+          // Per-commodity accumulators for this building
+          const elec = {
+            kwhBl: 0,
+            kwhCur: 0,
+            kwhSaved: 0,
+            kwBl: 0,
+            kwCur: 0,
+            costBl: 0,
+            costCur: 0,
+            costSaved: 0,
+            monthly: [],
+          };
+          const gas = { thermsBl: 0, thermsCur: 0, thermsSaved: 0, costBl: 0, costCur: 0, costSaved: 0, monthly: [] };
+          const propane = { galBl: 0, galCur: 0, galSaved: 0, costBl: 0, costCur: 0, costSaved: 0, monthly: [] };
+
+          // Monthly commodity data maps (keyed by YYYY-MM)
+          const elecMonthly = {};
+          const gasMonthly = {};
+          const propaneMonthly = {};
+
+          const bMeters = allBldgMeters.filter((x) => x.b === b);
+          bMeters.forEach(({ m, bills, incl, allRows, bl, blEnd, postRows }) => {
+            commoditySet.add(m.commodity);
+            const blRows = allRows.filter((r) => bl.months.includes(r.ym));
+            const { elecByMo: eM, gasByMo: gM, propaneByMo: pM } = buildMoMap(m, blRows, bills, incl);
+
+            const isElec = m.commodity === 'Electric';
+            const isPropane = m.commodity === 'Propane';
+
+            // Expected usage by calendar month (from baseline)
+            const blByCalMo = {};
+            blRows.forEach((r) => {
+              const mo = parseInt(r.ym.split('-')[1]) - 1;
+              blByCalMo[mo] = r.regrBaseline != null ? r.regrBaseline : r.usage;
+            });
+            const hasBlCalMap = Object.keys(blByCalMo).length >= 3;
+            const blAvg = blRows.length ? blRows.reduce((s, r) => s + r.usage, 0) / blRows.length : 0;
+
+            // Baseline demand kW by calendar month (electric only)
+            const blDemKWByCalMo = {};
+            Object.entries(eM).forEach(([mo, v]) => {
+              blDemKWByCalMo[mo] = v.billedKW || v.demandKW || 0;
+            });
+
+            // Raw usage by year-month
+            const rawUsageByYm = {};
+            if (isElec) {
+              bills.forEach((b2) => {
+                const ym = normMonth(b2.start, b2.end, incl, bills);
+                if (ym) rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + (parseFloat(b2.kwh) || parseFloat(b2.usage) || 0);
+              });
+            } else if (!isPropane) {
+              bills.forEach((b2) => {
+                const ym = normMonth(b2.start, b2.end, incl, bills);
+                if (ym) rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + parseFloat(b2.therms || b2.usage || 0);
+              });
+            } else {
+              allRows.forEach((r) => {
+                rawUsageByYm[r.ym] = r.usage;
+              });
+            }
+
+            // Raw cost by year-month (for total cost tracking)
+            const rawCostByYm = {};
+            bills.forEach((b2) => {
+              const ym = normMonth(b2.start, b2.end, incl, bills);
+              if (!ym) return;
+              const cost = parseFloat(b2.totalCost) || parseFloat(b2.cost) || parseFloat(b2.thermCost) || 0;
+              rawCostByYm[ym] = (rawCostByYm[ym] || 0) + cost;
+            });
+
+            // Baseline cost by calendar month
+            const blCostByCalMo = {};
+            if (isElec) {
+              Object.entries(eM).forEach(([mo, v]) => {
+                blCostByCalMo[mo] = v.commodityCost || v.totalCost || 0;
+              });
+            } else if (isPropane) {
+              Object.entries(pM).forEach(([mo, v]) => {
+                blCostByCalMo[mo] = v.cost || 0;
+              });
+            } else {
+              Object.entries(gM).forEach(([mo, v]) => {
+                blCostByCalMo[mo] = v.cost || 0;
+              });
+            }
+
+            // Process post-baseline rows within the reporting period
+            postRows.forEach((r) => {
+              const calMo = parseInt(r.ym.split('-')[1]) - 1;
+              const bfr = isPropane ? [] : bills.filter((b2) => normMonth(b2.start, b2.end, incl, bills) === r.ym);
+              if (!isPropane && !bfr.length) return;
+
+              const expUsage =
+                hasBlCalMap && blByCalMo[calMo] != null
+                  ? blByCalMo[calMo]
+                  : r.regrBaseline != null
+                    ? r.regrBaseline
+                    : blAvg;
+              const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
+              const inPeriod = reportYMs.includes(r.ym);
+
+              let totalCostSav = 0;
+
+              if (isElec) {
+                const actKwh = actUsage;
+                const kwhCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.kwhCost || 0), 0);
+                const kwhRate = actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0;
+                const kwhCostSav = kwhRate > 0 ? (expUsage - actKwh) * kwhRate : 0;
+                const blExpKW = blDemKWByCalMo[calMo] || 0;
+                const n = Math.max(1, bfr.length);
+                const actDemKW = bfr.reduce((s, b2) => s + parseFloat(b2.demandKW || 0), 0) / n;
+                const kwCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.kwCost || 0), 0);
+                const facKWCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.facKWCost || 0), 0);
+                const moKwRate = actDemKW > 0 ? (kwCostAmt + facKWCostAmt) / actDemKW : 0;
+                const kwCostSav = blExpKW > 0 && moKwRate > 0 ? (blExpKW - actDemKW) * moKwRate : 0;
+                totalCostSav = kwhCostSav + kwCostSav;
+
+                if (inPeriod) {
+                  elec.kwhBl += expUsage;
+                  elec.kwhCur += actKwh;
+                  elec.kwhSaved += expUsage - actKwh;
+                  elec.kwBl += blExpKW;
+                  elec.kwCur += actDemKW;
+                  elec.costBl += blCostByCalMo[calMo] || 0;
+                  elec.costCur += kwhCostAmt + kwCostAmt + facKWCostAmt;
+                  elec.costSaved += totalCostSav;
+                  if (!elecMonthly[r.ym]) elecMonthly[r.ym] = { bl: 0, cur: 0 };
+                  elecMonthly[r.ym].bl += expUsage;
+                  elecMonthly[r.ym].cur += actKwh;
+                }
+              } else if (isPropane) {
+                const galRate = actUsage > 0 && r.cost > 0 ? r.cost / actUsage : 0;
+                totalCostSav = galRate > 0 ? (expUsage - actUsage) * galRate : 0;
+
+                if (inPeriod) {
+                  propane.galBl += expUsage;
+                  propane.galCur += actUsage;
+                  propane.galSaved += expUsage - actUsage;
+                  propane.costBl += blCostByCalMo[calMo] || 0;
+                  propane.costCur += r.cost || 0;
+                  propane.costSaved += totalCostSav;
+                  if (!propaneMonthly[r.ym]) propaneMonthly[r.ym] = { bl: 0, cur: 0 };
+                  propaneMonthly[r.ym].bl += expUsage;
+                  propaneMonthly[r.ym].cur += actUsage;
+                }
+              } else {
+                // Gas
+                const actTherms = actUsage;
+                const actThermCost = bfr.reduce((s, b2) => s + parseFloat(b2.thermCost || b2.cost || 0), 0);
+                const thermRate = actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0;
+                totalCostSav = thermRate > 0 ? (expUsage - actTherms) * thermRate : 0;
+
+                if (inPeriod) {
+                  gas.thermsBl += expUsage;
+                  gas.thermsCur += actTherms;
+                  gas.thermsSaved += expUsage - actTherms;
+                  gas.costBl += blCostByCalMo[calMo] || 0;
+                  gas.costCur += actThermCost;
+                  gas.costSaved += totalCostSav;
+                  if (!gasMonthly[r.ym]) gasMonthly[r.ym] = { bl: 0, cur: 0 };
+                  gasMonthly[r.ym].bl += expUsage;
+                  gasMonthly[r.ym].cur += actTherms;
+                }
+              }
+
+              cumSavings += totalCostSav;
+              if (inPeriod) periodSavings += totalCostSav;
+            });
+
+            // Annual EUI — baseline and current (rolling 12 months)
+            const blBills = _dashGetBaselineBills(m);
+            if (m.commodity === 'Gas') {
+              blBills.forEach((bill) => {
+                annBlKBtu += (parseFloat(bill.therms) || 0) * 100;
+              });
+              const last12 = bills.filter((bill) => {
+                const ym = normMonth(bill.start, bill.end, incl, bills);
+                return ym && allPostYMs.includes(ym) && allPostYMs.indexOf(ym) >= allPostYMs.length - 12;
+              });
+              last12.forEach((bill) => {
+                annCurKBtu += (parseFloat(bill.therms) || 0) * 100;
+              });
+            } else if (m.commodity === 'Propane') {
+              blBills.forEach((bill) => {
+                annBlKBtu +=
+                  (parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 91.5;
+              });
+              const last12 = bills.filter((bill) => {
+                const ym = normMonth(bill.start, bill.end, incl, bills);
+                return ym && allPostYMs.includes(ym) && allPostYMs.indexOf(ym) >= allPostYMs.length - 12;
+              });
+              last12.forEach((bill) => {
+                annCurKBtu +=
+                  (parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 91.5;
+              });
+            } else {
+              // Electric
+              blBills.forEach((bill) => {
+                annBlKBtu += (parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 3.412;
+              });
+              const last12 = bills.filter((bill) => {
+                const ym = normMonth(bill.start, bill.end, incl, bills);
+                return ym && allPostYMs.includes(ym) && allPostYMs.indexOf(ym) >= allPostYMs.length - 12;
+              });
+              last12.forEach((bill) => {
+                annCurKBtu += (parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 3.412;
+              });
+            }
+          });
+
+          // Build monthly arrays from maps
+          elec.monthly = reportYMs.map((ym) => ({
+            month: ym,
+            bl: (elecMonthly[ym] || {}).bl || 0,
+            cur: (elecMonthly[ym] || {}).cur || 0,
+          }));
+          gas.monthly = reportYMs.map((ym) => ({
+            month: ym,
+            bl: (gasMonthly[ym] || {}).bl || 0,
+            cur: (gasMonthly[ym] || {}).cur || 0,
+          }));
+          propane.monthly = reportYMs.map((ym) => ({
+            month: ym,
+            bl: (propaneMonthly[ym] || {}).bl || 0,
+            cur: (propaneMonthly[ym] || {}).cur || 0,
+          }));
+
+          // EUI calculations
+          const blEUI = sqft > 0 ? annBlKBtu / sqft : 0;
+          const curEUI = sqft > 0 ? annCurKBtu / sqft : 0;
+          const cbecsEUI = CBECS_EUI[bType] || CBECS_EUI['Other'] || 52.4;
+          const pctiles = CBECS_PERCENTILES[bType] || CBECS_PERCENTILES['Other'] || [28, 52.4, 80];
+          let pctileLabel = '';
+          if (curEUI > 0) {
+            if (curEUI <= pctiles[0]) pctileLabel = 'Top 25%';
+            else if (curEUI <= pctiles[1]) pctileLabel = '25-50th';
+            else if (curEUI <= pctiles[2]) pctileLabel = '50-75th';
+            else pctileLabel = 'Bottom 25%';
+          }
+          const energyStarEligible = curEUI > 0 && curEUI < pctiles[0];
+
+          // EUI trend (cost per sqft)
+          const totalBldgBlCost = elec.costBl + gas.costBl + propane.costBl;
+          const totalBldgCurCost = elec.costCur + gas.costCur + propane.costCur;
+          const costPerSqft = sqft > 0 ? totalBldgCurCost / sqft : 0;
+
+          // Building savings percentage and status
+          const bldgSavings = periodSavings;
+          const bldgBlCost = totalBldgBlCost;
+          const bldgCurCost = totalBldgCurCost;
+          const bldgSavingsPct = bldgBlCost > 0 ? (bldgSavings / bldgBlCost) * 100 : 0;
+          const targetPct = guaranteedSav > 0 && bldgBlCost > 0 ? (guaranteedSav / bldgBlCost) * 100 : 10;
+          let bldgStatus = 'on_track';
+          if (bldgSavingsPct < targetPct * 0.8) bldgStatus = 'below_target';
+          else if (bldgSavingsPct < targetPct) bldgStatus = 'near_target';
+
+          // Accumulate project totals
+          totKwhBl += elec.kwhBl;
+          totKwhCur += elec.kwhCur;
+          totKwhSaved += elec.kwhSaved;
+          totThermsBl += gas.thermsBl;
+          totThermsCur += gas.thermsCur;
+          totThermsSaved += gas.thermsSaved;
+          totPropaneBl += propane.galBl;
+          totPropaneCur += propane.galCur;
+          totPropaneSaved += propane.galSaved;
+          totPeakKwBl += elec.kwBl;
+          totPeakKwCur += elec.kwCur;
+          totBlCost += bldgBlCost;
+          totCurCost += bldgCurCost;
+          totSavings += bldgSavings;
+          totAnnBlKBtu += annBlKBtu;
+          totAnnCurKBtu += annCurKBtu;
+
+          return {
+            id: b.id,
+            name: b.name,
+            sqft,
+            type: bType,
+            address: b.address || '',
+            commodities: Array.from(commoditySet),
+            electric: elec,
+            gas,
+            propane,
+            savings: bldgSavings,
+            blCost: bldgBlCost,
+            curCost: bldgCurCost,
+            savingsPct: bldgSavingsPct,
+            status: bldgStatus,
+            eui: {
+              baseline: blEUI,
+              current: curEUI,
+              cbecs: cbecsEUI,
+              percentile: pctileLabel,
+              energyStar: energyStarEligible,
+              costPerSqft,
+              trend: blEUI > 0 ? ((curEUI - blEUI) / blEUI) * 100 : 0,
+            },
+          };
+        });
+
+        // ─── Project totals ───
+        const totSavingsPct = totBlCost > 0 ? (totSavings / totBlCost) * 100 : 0;
+        const euiBaseline = totalSqft > 0 ? totAnnBlKBtu / totalSqft : 0;
+        const euiCurrent = totalSqft > 0 ? totAnnCurKBtu / totalSqft : 0;
+
+        // ─── Chart images ───
+        const chartImages = {};
+        if (typeof _maCharts === 'object' && _maCharts) {
+          Object.entries(_maCharts).forEach(([key, chart]) => {
+            try {
+              if (chart && typeof chart.toBase64Image === 'function') {
+                chartImages[key] = chart.toBase64Image();
+              }
+            } catch (e) {
+              /* chart may not be rendered */
+            }
+          });
+        }
+
+        // ─── Pollution credits ───
+        const stateCode = extractStateFromAddress(p.addr);
+        let pollution = {
+          pollutants: {},
+          equivalents: {},
+          stateCode,
+          inputs: { kwhSaved: 0, thermsSaved: 0, propaneGalSaved: 0 },
+        };
+        try {
+          pollution = calculatePollutionCredits(totKwhSaved, totThermsSaved, totPropaneSaved, stateCode);
+        } catch (e) {
+          /* pollution calc not critical */
+        }
+
+        // ─── Weather data ───
+        const weather = collectWeatherData(allBldgMeters, reportYMs);
+
+        // ─── Setpoints ───
+        const setpoints = (p.setpoints || []).map((sp) => {
+          const bldg = bldgs.find((b) => String(b.id) === String(sp.buildingId));
+          return {
+            buildingId: sp.buildingId,
+            buildingName: bldg ? bldg.name : 'Unknown',
+            zones: sp.zones || [],
+          };
+        });
+
+        // ─── Meetings (for observations/recommendations context) ───
+        const meetings = (p.meetings || []).map((m) => ({
+          id: m.id,
+          date: m.date,
+          type: m.type,
+          sectionHeading: m.sectionHeading,
+          items: m.items || [],
+        }));
+
+        // ─── Assemble final object ───
+        return {
+          project: {
+            id: p.id,
+            name: p.name,
+            client: p.client || p.name || '',
+            type: p.type || 'Other',
+            addr: p.addr || '',
+            sqft: totalSqft,
+          },
+          contract: {
+            start: p.start || null,
+            years: contractYears,
+            currentYear: contractYearNum,
+            annualTarget: guaranteedSav,
+            cscPct: cscComp,
+            clientPct: clientPct,
+            escalation: escalation,
+            quarterlyTargets: quarterlyTargets,
+          },
+          period: {
+            type: reportType,
+            start: reportStart,
+            end: reportEnd,
+            months: periodMonths,
+            quarter: periodQuarter,
+            year: periodYear,
+            label: periodLabel,
+            yearMonths: reportYMs.slice(), // plain array copy without custom properties
+          },
+          buildings: buildingsData,
+          totals: {
+            savings: totSavings,
+            blCost: totBlCost,
+            curCost: totCurCost,
+            savingsPct: totSavingsPct,
+            kwhSaved: totKwhSaved,
+            kwhBl: totKwhBl,
+            kwhCur: totKwhCur,
+            thermsSaved: totThermsSaved,
+            thermsBl: totThermsBl,
+            thermsCur: totThermsCur,
+            propaneSaved: totPropaneSaved,
+            propaneBl: totPropaneBl,
+            propaneCur: totPropaneCur,
+            peakKwBl: totPeakKwBl,
+            peakKwCur: totPeakKwCur,
+            euiBaseline: euiBaseline,
+            euiCurrent: euiCurrent,
+          },
+          chartImages,
+          pollution,
+          weather,
+          setpoints,
+          meetings,
+        };
+      }
+
       /* ── QUARTERLY / ANNUAL PERFORMANCE REPORTS ── */
 
       let _reportProjId = null,
