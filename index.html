@@ -2293,6 +2293,7 @@
         var accent = s.accentColor || '#3b82f6';
         var theme = s.theme || localStorage.getItem('ch_theme') || 'dark';
         var defPage = s.defaultLoginScreen || 'index';
+        var fbEnabled = !!s.feedbackMode;
 
         var swatches = COLOR_PRESETS.map(function (c) {
           return (
@@ -2369,9 +2370,33 @@
           '</select>' +
           '</div>' +
           '</div>' +
+          '<div class="settings-section">' +
+          '<div class="settings-section-title">Developer Tools</div>' +
+          '<div class="settings-row">' +
+          '<div><div class="settings-row-label">Feedback Mode</div><div class="settings-row-sub">Show feedback button to report UI issues</div></div>' +
+          '<label class="settings-toggle">' +
+          '<input type="checkbox" id="feedbackModeToggle"' +
+          (fbEnabled ? ' checked' : '') +
+          '>' +
+          '<span class="toggle-track"></span>' +
+          '<span class="toggle-knob"></span>' +
+          '</label>' +
+          '</div>' +
+          '</div>' +
           '</div>' +
           '</div>';
         document.body.appendChild(el);
+        var fbToggle = document.getElementById('feedbackModeToggle');
+        if (fbToggle) {
+          fbToggle.onchange = function () {
+            try {
+              var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
+              s.feedbackMode = fbToggle.checked;
+              localStorage.setItem('ch_settings', JSON.stringify(s));
+              document.dispatchEvent(new CustomEvent('feedbackModeChanged', { detail: { enabled: fbToggle.checked } }));
+            } catch (e) {}
+          };
+        }
       }
       function siteSwatchClick(el) {
         document.querySelectorAll('#siteColorSwatches .color-swatch').forEach(function (s) {
