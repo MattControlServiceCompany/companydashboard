@@ -6115,6 +6115,114 @@
         cursor: pointer;
         background: transparent;
       }
+
+      /* ── BAS Snapshot Table ── */
+      .bas-wrap {
+        overflow-x: auto;
+        max-height: 60vh;
+        overflow-y: auto;
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+      }
+      .bas-tbl {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .bas-tbl th {
+        position: sticky;
+        top: 0;
+        background: var(--s2);
+        padding: 5px 8px;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text3);
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+        z-index: 1;
+      }
+      .bas-tbl th.num,
+      .bas-tbl td.num {
+        text-align: right;
+      }
+      .bas-tbl td {
+        padding: 4px 8px;
+        border-bottom: 1px solid var(--border);
+        color: var(--text2);
+      }
+      .bas-tbl tr:hover td {
+        background: var(--s2);
+      }
+      .bas-tbl tr.bas-warn td {
+        color: var(--amber);
+      }
+      .bas-tbl tr.bas-err td {
+        color: var(--red);
+      }
+      .bas-tbl td.bas-blank {
+        color: var(--text3);
+        opacity: 0.4;
+      }
+      .bas-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+        gap: 12px;
+      }
+      .bas-sum-card {
+        background: var(--s2);
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        padding: 14px;
+      }
+      .bas-sum-card h4 {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--em);
+        margin-bottom: 10px;
+      }
+      .bas-sum-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        padding: 3px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .bas-sum-row:last-child {
+        border-bottom: none;
+      }
+      .bas-sum-row .lbl {
+        color: var(--text3);
+      }
+      .bas-sum-row .val {
+        color: var(--text);
+        font-family: var(--mono);
+        font-weight: 600;
+      }
+      .bas-tabs {
+        display: flex;
+        gap: 2px;
+        margin-bottom: 12px;
+      }
+      .bas-tab {
+        padding: 6px 14px;
+        font-size: 12px;
+        font-weight: 600;
+        background: var(--s2);
+        border: 1px solid var(--border);
+        border-radius: 6px 6px 0 0;
+        color: var(--text3);
+        cursor: pointer;
+        border-bottom: none;
+      }
+      .bas-tab.active {
+        background: var(--s3);
+        color: var(--em);
+        border-color: var(--em);
+        border-bottom: 1px solid var(--s3);
+      }
     </style>
   </head>
   <script
@@ -44170,7 +44278,7 @@
               subItems: [
                 'Utility bill trends vs baseline (kWh, kW, therms, $).',
                 'Weather-normalized usage for the most recent month(s).',
-                'Year-to-date savings vs guarantee / target.',
+                'Year-to-date savings vs projected target.',
                 'Any anomalies, spikes, or regressions to investigate.',
               ],
             },
@@ -45299,6 +45407,17 @@
         let allPostYMs = [];
         const allBldgMeters = [];
         bldgs.forEach((b) => {
+          const bZip = b.zip || '';
+          let bWeatherByYm = null;
+          if (bZip) {
+            const wCache = wddLoadCache(bZip);
+            if (wCache.length) {
+              bWeatherByYm = {};
+              wCache.forEach((r) => {
+                bWeatherByYm[r.ym] = r;
+              });
+            }
+          }
           (b.meters || []).forEach((m) => {
             if (m.baselineInclude === false) return;
             const energyCommodities = ['Electric', 'Gas', 'Propane'];
@@ -45307,7 +45426,7 @@
             if (!bl || !bl.months || bl.months.length < 3) return;
             const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
             const incl = m.inclusive !== false;
-            const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
+            const allRows = bills.length ? getNormRows(m, bills, incl, bWeatherByYm) : [];
             const blEnd = bl.months.slice().sort().pop();
             const postRows = allRows.filter((r) => r.ym > blEnd);
             postRows.forEach((r) => {
@@ -45378,7 +45497,7 @@
         }
 
         // ─── Contract info ───
-        const guaranteedSav = parseFloat(p.savings) || 0;
+        let projectedSav = parseFloat(String(p.savings).replace(/[$,]/g, '')) || 0;
         const contractYears = parseInt(p.contractYears) || 3;
         const escalation = parseFloat(p.escalation) || 0;
         const cscComp = parseFloat(p.cscCompensation) || 0;
@@ -45391,10 +45510,8 @@
           contractYearNum = Math.max(1, Math.min(contractYears, Math.ceil(msElapsed / (365.25 * 86400000))));
         }
 
-        // Quarterly targets using seasonal load distribution
+        // Quarterly targets — deferred until after actual savings are computed
         const qDistribution = [0.166, 0.21, 0.481, 0.143]; // Q1, Q2, Q3, Q4
-        const annualTarget = guaranteedSav > 0 ? guaranteedSav : 0;
-        const quarterlyTargets = qDistribution.map((pct) => annualTarget * pct);
 
         // ─── Per-building data ───
         const totalSqft = bldgs.reduce((s, b) => s + parseInt(b.sqft || 0), 0);
@@ -45653,9 +45770,27 @@
             cur: (propaneMonthly[ym] || {}).cur || 0,
           }));
 
-          // EUI calculations
-          const blEUI = sqft > 0 ? annBlKBtu / sqft : 0;
-          const curEUI = sqft > 0 ? annCurKBtu / sqft : 0;
+          // EUI calculations — annualize based on actual months of data
+          const blMoSet = new Set();
+          const curMoSet = new Set();
+          bMeters.forEach(({ m: mt, bills: mtBills, bl: mtBl, incl: mtIncl }) => {
+            const mtBlBills = _dashGetBaselineBills(mt);
+            mtBlBills.forEach((bill) => {
+              const ym = normMonth(bill.start, bill.end, mtIncl, mtBills);
+              if (ym) blMoSet.add(ym);
+            });
+            mtBills
+              .filter((bill) => {
+                const ym = normMonth(bill.start, bill.end, mtIncl, mtBills);
+                return ym && allPostYMs.includes(ym) && allPostYMs.indexOf(ym) >= allPostYMs.length - 12;
+              })
+              .forEach((bill) => {
+                const ym = normMonth(bill.start, bill.end, mtIncl, mtBills);
+                if (ym) curMoSet.add(ym);
+              });
+          });
+          const blEUI = sqft > 0 && blMoSet.size > 0 ? ((annBlKBtu / blMoSet.size) * 12) / sqft : 0;
+          const curEUI = sqft > 0 && curMoSet.size > 0 ? ((annCurKBtu / curMoSet.size) * 12) / sqft : 0;
           const cbecsEUI = CBECS_EUI[bType] || CBECS_EUI['Other'] || 52.4;
           const pctiles = CBECS_PERCENTILES[bType] || CBECS_PERCENTILES['Other'] || [28, 52.4, 80];
           let pctileLabel = '';
@@ -45677,7 +45812,7 @@
           const bldgBlCost = totalBldgBlCost;
           const bldgCurCost = totalBldgCurCost;
           const bldgSavingsPct = bldgBlCost > 0 ? (bldgSavings / bldgBlCost) * 100 : 0;
-          const targetPct = guaranteedSav > 0 && bldgBlCost > 0 ? (guaranteedSav / bldgBlCost) * 100 : 10;
+          const targetPct = projectedSav > 0 && bldgBlCost > 0 ? (projectedSav / bldgBlCost) * 100 : 10;
           let bldgStatus = 'on_track';
           if (bldgSavingsPct < targetPct * 0.8) bldgStatus = 'below_target';
           else if (bldgSavingsPct < targetPct) bldgStatus = 'near_target';
@@ -45732,6 +45867,14 @@
         const euiBaseline = totalSqft > 0 ? totAnnBlKBtu / totalSqft : 0;
         const euiCurrent = totalSqft > 0 ? totAnnCurKBtu / totalSqft : 0;
 
+        // Fallback: if projected savings not set, annualize actual savings
+        if (projectedSav <= 0 && totSavings > 0) {
+          const annFactor = reportType === 'quarterly' ? 4 : 1;
+          projectedSav = totSavings * annFactor;
+        }
+        const annualTarget = projectedSav > 0 ? projectedSav : 0;
+        const quarterlyTargets = qDistribution.map((pct) => annualTarget * pct);
+
         // ─── Chart images ───
         const chartImages = {};
         if (typeof _maCharts === 'object' && _maCharts) {
@@ -45755,7 +45898,13 @@
           inputs: { kwhSaved: 0, thermsSaved: 0, propaneGalSaved: 0 },
         };
         try {
-          pollution = calculatePollutionCredits(totKwhSaved, totThermsSaved, totPropaneSaved, stateCode);
+          const annFactor = reportType === 'quarterly' ? 4 : 1;
+          pollution = calculatePollutionCredits(
+            totKwhSaved * annFactor,
+            totThermsSaved * annFactor,
+            totPropaneSaved * annFactor,
+            stateCode,
+          );
         } catch (e) {
           /* pollution calc not critical */
         }
@@ -45782,6 +45931,70 @@
           items: m.items || [],
         }));
 
+        // ─── Baseline period dates ───
+        let blPeriodStart = null,
+          blPeriodEnd = null;
+        allBldgMeters.forEach(({ bl }) => {
+          if (bl && bl.months && bl.months.length) {
+            const sorted = bl.months.slice().sort();
+            const first = sorted[0];
+            const last = sorted[sorted.length - 1];
+            if (!blPeriodStart || first < blPeriodStart) blPeriodStart = first;
+            if (!blPeriodEnd || last > blPeriodEnd) blPeriodEnd = last;
+          }
+        });
+        const blStartLabel = blPeriodStart
+          ? monthNames[parseInt(blPeriodStart.split('-')[1]) - 1] + ' ' + blPeriodStart.split('-')[0]
+          : '—';
+        const blEndLabel = blPeriodEnd
+          ? monthNames[parseInt(blPeriodEnd.split('-')[1]) - 1] + ' ' + blPeriodEnd.split('-')[0]
+          : '—';
+
+        // ─── Per-building meter regression data for appendices ───
+        buildingsData.forEach((bd) => {
+          const bMeters = allBldgMeters.filter((x) => x.b.id === bd.id || x.b.name === bd.name);
+          bd.meterDetails = [];
+          bMeters.forEach(({ m, bl, allRows }) => {
+            const reg = m._reg || null;
+            const blMonths = bl ? bl.months.slice().sort() : [];
+            const blStart = blMonths[0] || '';
+            const blEnd = blMonths[blMonths.length - 1] || '';
+            const annUsage = allRows.filter((r) => bl.months.includes(r.ym)).reduce((s, r) => s + (r.usage || 0), 0);
+            const annCost = allRows.filter((r) => bl.months.includes(r.ym)).reduce((s, r) => s + (r.cost || 0), 0);
+            const blYears = blMonths.length / 12 || 1;
+            bd.meterDetails.push({
+              commodity: m.commodity,
+              account: m.account || '',
+              blStart,
+              blEnd,
+              regrType: reg ? (m.commodity === 'Electric' ? 'OLS / HDD+CDD' : 'OLS / HDD') : '—',
+              r2: reg && reg.r2 != null ? reg.r2.toFixed(3) : '—',
+              hdd: reg && reg.hdd != null ? Math.round(reg.hdd) : 0,
+              cdd: reg && reg.cdd != null ? Math.round(reg.cdd) : 0,
+              usagePerYear: Math.round(annUsage / blYears),
+              costPerYear: Math.round(annCost / blYears),
+            });
+          });
+        });
+
+        // ─── Raw utility bills for Appendix D ───
+        const rawBills = [];
+        allBldgMeters.forEach(({ b, m, bills }) => {
+          (bills || []).forEach((bill) => {
+            if (!reportYMs.includes(bill.start ? bill.start.substring(0, 7) : '')) return;
+            rawBills.push({
+              building: b.name || '—',
+              commodity: m.commodity,
+              provider: m.provider || bill.provider || '—',
+              account: m.account || bill.account || '—',
+              start: bill.start || '',
+              end: bill.end || '',
+              amount: parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0,
+              billDate: bill.billDate || bill.end || '',
+            });
+          });
+        });
+
         // ─── Assemble final object ───
         return {
           project: {
@@ -45791,12 +46004,14 @@
             type: p.type || 'Other',
             addr: p.addr || '',
             sqft: totalSqft,
+            blStart: blStartLabel,
+            blEnd: blEndLabel,
           },
           contract: {
             start: p.start || null,
             years: contractYears,
             currentYear: contractYearNum,
-            annualTarget: guaranteedSav,
+            annualTarget: projectedSav,
             cscPct: cscComp,
             clientPct: clientPct,
             escalation: escalation,
@@ -45837,6 +46052,7 @@
           weather,
           setpoints,
           meetings,
+          rawBills,
         };
       }
 
@@ -46352,16 +46568,21 @@
         const qLabel = d.period.type === 'quarterly' ? 'Q' + q + ' ' + (d.period.year || '') : d.period.year || '';
         const annFactor = d.period.type === 'quarterly' ? 4 : 1;
         const annSavings = d.totals.savings * annFactor;
-        const yr5Savings = annSavings * 5;
+        const contractYrs = d.contract.years || 3;
+        const yrTotalSavings = annSavings * contractYrs;
         const cscAmt = d.totals.savings * (d.contract.cscPct / 100);
         const clientAmt = d.totals.savings - cscAmt;
 
         // ── Building Performance table ──
+        const qTarget = d.contract.quarterlyTargets[q - 1] || 0;
+        const totBlCostForPct = d.totals.blCost || 1;
         const bRows = d.buildings
           .map(function (b) {
             const saveClass = b.savings >= 0 ? 'rpt-g' : 'rpt-r';
             const statusIcon = b.status === 'on_track' ? '&#9650;' : b.status === 'near_target' ? '&#9658;' : '&#9660;';
             const statusClass = b.status === 'on_track' ? 'rpt-g' : b.status === 'near_target' ? 'rpt-o' : 'rpt-r';
+            const bldgProjSav = qTarget > 0 ? qTarget * (b.blCost / totBlCostForPct) : 0;
+            const bldgProjCost = b.blCost - bldgProjSav;
             return (
               '<tr>' +
               '<td contenteditable="true">' +
@@ -46372,6 +46593,9 @@
               '</td>' +
               '<td class="rpt-n" contenteditable="true">' +
               $c(b.blCost) +
+              '</td>' +
+              '<td class="rpt-n" contenteditable="true">' +
+              $c(bldgProjCost) +
               '</td>' +
               '<td class="rpt-n" contenteditable="true">' +
               $c(b.curCost) +
@@ -46399,6 +46623,7 @@
           .join('');
 
         const totSaveClass = d.totals.savings >= 0 ? 'rpt-g' : 'rpt-r';
+        const totProjCost = d.totals.blCost - qTarget;
         const bTotRow =
           '<tr class="rpt-tot">' +
           '<td contenteditable="true">Total Portfolio</td>' +
@@ -46407,6 +46632,9 @@
           '</td>' +
           '<td class="rpt-n" contenteditable="true">' +
           $c(d.totals.blCost) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $c(totProjCost) +
           '</td>' +
           '<td class="rpt-n" contenteditable="true">' +
           $c(d.totals.curCost) +
@@ -46428,9 +46656,10 @@
           '<table class="rpt-table" contenteditable="false">' +
           '<thead><tr>' +
           '<th>Building</th>' +
-          '<th class="rpt-n">Sq Ft</th>' +
-          '<th class="rpt-n">BL Cost/Qtr</th>' +
-          '<th class="rpt-n">Curr Cost/Qtr</th>' +
+          '<th class="rpt-n">Square Feet</th>' +
+          '<th class="rpt-n">Baseline Cost/Quarter</th>' +
+          '<th class="rpt-n">Projected Cost/Quarter</th>' +
+          '<th class="rpt-n">Current Cost/Quarter</th>' +
           '<th class="rpt-n">Savings</th>' +
           '<th class="rpt-n">%</th>' +
           '<th>Status</th>' +
@@ -46448,7 +46677,9 @@
           '<th></th>' +
           '<th class="rpt-n">Quarter</th>' +
           '<th class="rpt-n">Annualized</th>' +
-          '<th class="rpt-n">5-Yr Total</th>' +
+          '<th class="rpt-n">' +
+          contractYrs +
+          '-Year Total</th>' +
           '</tr></thead>' +
           '<tbody>' +
           '<tr>' +
@@ -46460,7 +46691,7 @@
           $c(annSavings) +
           '</td>' +
           '<td class="rpt-n" contenteditable="true">' +
-          $c(yr5Savings) +
+          $c(yrTotalSavings) +
           '</td>' +
           '</tr>' +
           '<tr>' +
@@ -46474,7 +46705,7 @@
           $c(cscAmt * annFactor) +
           '</td>' +
           '<td class="rpt-n" contenteditable="true">' +
-          $c(cscAmt * annFactor * 5) +
+          $c(cscAmt * annFactor * contractYrs) +
           '</td>' +
           '</tr>' +
           '<tr class="rpt-tot">' +
@@ -46488,7 +46719,7 @@
           $c(clientAmt * annFactor) +
           '</td>' +
           '<td class="rpt-n" contenteditable="true">' +
-          $c(clientAmt * annFactor * 5) +
+          $c(clientAmt * annFactor * contractYrs) +
           '</td>' +
           '</tr>' +
           '</tbody>' +
@@ -46498,7 +46729,7 @@
         const qBlCost = d.totals.blCost;
         const qCurCost = d.totals.curCost;
         const qtrRow =
-          '<tr style="background:#fffde7;">' +
+          '<tr>' +
           '<td contenteditable="true">' +
           qLabel +
           '</td>' +
@@ -46533,15 +46764,15 @@
         const qtrTable =
           '<table class="rpt-table" contenteditable="false">' +
           '<thead><tr>' +
-          '<th>Qtr</th>' +
-          '<th class="rpt-n">BL kWh</th>' +
-          '<th class="rpt-n">Act kWh</th>' +
-          '<th class="rpt-n">BL Therms</th>' +
-          '<th class="rpt-n">Act Therms</th>' +
-          '<th class="rpt-n">BL Gal</th>' +
-          '<th class="rpt-n">Act Gal</th>' +
-          '<th class="rpt-n">BL Cost</th>' +
-          '<th class="rpt-n">Act Cost</th>' +
+          '<th>Quarter</th>' +
+          '<th class="rpt-n">Baseline kWh</th>' +
+          '<th class="rpt-n">Actual kWh</th>' +
+          '<th class="rpt-n">Baseline Therms</th>' +
+          '<th class="rpt-n">Actual Therms</th>' +
+          '<th class="rpt-n">Baseline Gallons</th>' +
+          '<th class="rpt-n">Actual Gallons</th>' +
+          '<th class="rpt-n">Baseline Cost</th>' +
+          '<th class="rpt-n">Actual Cost</th>' +
           '<th class="rpt-n">Saved</th>' +
           '</tr></thead>' +
           '<tbody>' +
@@ -46698,6 +46929,7 @@
           '</svg>';
 
         const bodyHTML =
+          '<p contenteditable="true" style="font-size:10px;color:#555;line-height:1.6;margin:0 0 8px">This page summarizes the financial performance of each building in the portfolio for the reporting period. Baseline costs represent the expected energy spend based on historical consumption adjusted for weather. Projected costs reflect the target spend based on the contracted savings percentage. Current costs are the actual utility charges during the period. The difference between baseline and current represents verified cost avoidance.</p>' +
           '<h2>Building Performance</h2>' +
           bldgTable +
           '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px;">' +
@@ -46712,7 +46944,9 @@
           '</div>' +
           '<h2>Cumulative Savings vs Projection</h2>' +
           '<div class="rpt-chart-box">' +
-          '<div class="rpt-chart-title">5-Year Projected Savings (dashed) vs Actual (dot) — $000s</div>' +
+          '<div class="rpt-chart-title">' +
+          yrs +
+          '-Year Projected Savings (dashed) vs Actual (dot) — $000s</div>' +
           cumulativeSVG +
           '</div>';
 
@@ -46839,11 +47073,9 @@
           '</tr>';
 
         const savPct = d.totals.blCost > 0 ? ((d.totals.blCost - d.totals.curCost) / d.totals.blCost) * 100 : 0;
-        const curYrLabel = d.period.year
-          ? String(d.period.year) + (d.period.type === 'quarterly' ? ' YTD' : '')
-          : 'Current';
+        const curYrLabel = d.period.year ? 'Projected ' + String(d.period.year) + ' Annual' : 'Current';
         const curRow =
-          '<tr style="background:#fffde7;">' +
+          '<tr>' +
           '<td contenteditable="true">' +
           curYrLabel +
           '</td>' +
@@ -46879,10 +47111,10 @@
           '<th class="rpt-n">kWh</th>' +
           '<th class="rpt-n">Peak kW</th>' +
           '<th class="rpt-n">Therms</th>' +
-          '<th class="rpt-n">LPG Gal</th>' +
+          '<th class="rpt-n">Propane Gallons</th>' +
           '<th class="rpt-n">Cost</th>' +
           '<th class="rpt-n">EUI</th>' +
-          '<th class="rpt-n">vs BL</th>' +
+          '<th class="rpt-n">versus Baseline</th>' +
           '</tr></thead>' +
           '<tbody>' +
           blRow +
@@ -46901,7 +47133,7 @@
               '<td rowspan="2" style="font-weight:600;vertical-align:middle;font-size:7px" contenteditable="true">' +
               (b.name || '—') +
               '</td>' +
-              '<td contenteditable="true" style="color:#888">BL</td>' +
+              '<td contenteditable="true" style="color:#888">Baseline</td>' +
               '<td class="rpt-n" contenteditable="true">' +
               $n(b.electric.kwhBl) +
               '</td>' +
@@ -46921,7 +47153,7 @@
               blEUI +
               '</td>' +
               '</tr>' +
-              '<tr style="background:#fffde7;">' +
+              '<tr>' +
               '<td contenteditable="true" style="color:#1a5276;font-weight:600">' +
               curYrLabel +
               '</td>' +
@@ -46960,7 +47192,7 @@
           '<th class="rpt-n">kWh</th>' +
           '<th class="rpt-n">kW</th>' +
           '<th class="rpt-n">Therms</th>' +
-          '<th class="rpt-n">LPG Gal</th>' +
+          '<th class="rpt-n">Propane Gallons</th>' +
           '<th class="rpt-n">Cost</th>' +
           '<th class="rpt-n">EUI</th>' +
           '</tr></thead>' +
@@ -46970,6 +47202,7 @@
           '</table>';
 
         const bodyHTML =
+          '<p contenteditable="true" style="font-size:10px;color:#555;line-height:1.6;margin:0 0 8px">This page compares projected energy savings against actual performance. The monthly chart shows weather-normalized baseline consumption (projected) versus actual consumption by month. The annual summary tables aggregate consumption, demand, and cost data across all commodities to show the portfolio\'s year-over-year performance trend.</p>' +
           '<h2>Monthly Savings: Projected vs Actual</h2>' +
           chartSection +
           '<h2>Annual Summary by Year</h2>' +
@@ -47060,13 +47293,13 @@
           '<th>#</th>' +
           '<th>Building</th>' +
           '<th>Type</th>' +
-          '<th class="rpt-n">Sq Ft</th>' +
-          '<th class="rpt-n">BL EUI</th>' +
-          '<th class="rpt-n">Curr EUI</th>' +
+          '<th class="rpt-n">Square Feet</th>' +
+          '<th class="rpt-n">Baseline EUI</th>' +
+          '<th class="rpt-n">Current EUI</th>' +
           '<th class="rpt-n">CBECS</th>' +
-          '<th class="rpt-n">vs CBECS %</th>' +
+          '<th class="rpt-n">versus CBECS %</th>' +
           '<th>Percentile</th>' +
-          '<th>E&#9733;</th>' +
+          '<th>Energy Star</th>' +
           '<th class="rpt-n">$/ft²</th>' +
           '<th>Trend</th>' +
           '</tr></thead>' +
@@ -47090,8 +47323,8 @@
             const cbecsLinePct = Math.min(100, (cbecs / maxEUI) * 100).toFixed(1);
             const barColor = cur <= cbecs ? '#27ae60' : '#f39c12';
             return (
-              '<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">' +
-              '<div style="width:80px;text-align:right;font-size:7px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+              '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
+              '<div style="width:140px;text-align:right;font-size:8px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">' +
               (b.name || '—') +
               '</div>' +
               '<div style="flex:1;height:18px;background:#f0f0f0;border-radius:3px;position:relative">' +
@@ -47099,12 +47332,13 @@
               barPct +
               '%;height:100%;background:' +
               barColor +
-              ';border-radius:3px;display:flex;align-items:center;padding-left:3px;box-sizing:border-box;font-size:6px;color:#fff;font-weight:600;white-space:nowrap;overflow:hidden">' +
-              (cur > 0 ? cur.toFixed(1) : '') +
-              '</div>' +
+              ';border-radius:3px"></div>' +
               '<div style="position:absolute;left:' +
               cbecsLinePct +
               '%;top:0;bottom:0;width:2px;background:#c0392b;z-index:1"></div>' +
+              '</div>' +
+              '<div style="width:35px;font-size:7px;font-weight:600;color:#333;flex-shrink:0">' +
+              (cur > 0 ? cur.toFixed(1) : '—') +
               '</div>' +
               '</div>'
             );
@@ -47175,6 +47409,7 @@
           '</table>';
 
         const bodyHTML =
+          '<p contenteditable="true" style="font-size:10px;color:#555;line-height:1.6;margin:0 0 8px">Energy Use Intensity (EUI) measures total energy consumption per square foot per year in kBtu/ft². Lower EUI values indicate more efficient buildings. Buildings are benchmarked against national CBECS (Commercial Buildings Energy Consumption Survey) median values for their building type. Buildings performing below the CBECS median are more efficient than the national average. The rolling 12-month EUI accounts for seasonal variation and provides a stable year-round performance indicator.</p>' +
           '<h2>Building Performance Rankings</h2>' +
           rankTable +
           '<h2>EUI vs CBECS Benchmark</h2>' +
@@ -47344,8 +47579,12 @@
                 b.name +
                 ' is performing at ' +
                 $p(b.savingsPct) +
-                ' savings against a baseline of ' +
+                ' savings (' +
+                $c(b.savings) +
+                ' saved) against a baseline cost of ' +
                 $c(b.blCost) +
+                ', with current costs at ' +
+                $c(b.curCost) +
                 '. ' +
                 (topCom && topCom.sav > 0
                   ? topCom.name + ' savings are the primary driver at ' + $c(topCom.sav) + ' for the period. '
@@ -47361,7 +47600,13 @@
                 b.name +
                 ' is tracking at ' +
                 $p(b.savingsPct) +
-                ' savings — close to target but not yet meeting the contracted threshold. ' +
+                ' savings (' +
+                $c(b.savings) +
+                ' saved) against a baseline cost of ' +
+                $c(b.blCost) +
+                ', with current costs at ' +
+                $c(b.curCost) +
+                ' — close to target but not yet meeting the projected threshold. ' +
                 (topCom && topCom.sav > 0 ? topCom.name + ' performance is solid at ' + $c(topCom.sav) + '. ' : '') +
                 'Minor weather variance or occupancy changes may be contributing to the gap. ' +
                 (b.eui && b.eui.energyStar ? 'EUI is within ENERGY STAR eligible range. ' : '') +
@@ -47374,15 +47619,19 @@
                 b.name +
                 ' is currently below the performance target at ' +
                 $p(b.savingsPct) +
-                ' savings against a baseline of ' +
+                ' savings (' +
+                $c(b.savings) +
+                ' saved) against a baseline cost of ' +
                 $c(b.blCost) +
+                ', with current costs at ' +
+                $c(b.curCost) +
                 '. ' +
                 (weakCom && weakCom.sav <= 0
                   ? weakCom.name + ' is the weakest performer and warrants further investigation. '
                   : '') +
-                'A site visit or operational audit is recommended to identify potential issues with controls, occupancy, or equipment performance.';
+                'Further investigation is needed to identify potential issues with controls, occupancy, or equipment performance.';
               rec =
-                'Schedule a site audit. Review ' +
+                'Review ' +
                 (weakCom ? weakCom.name.toLowerCase() : 'utility') +
                 ' meter data and trend logs for anomalies. Confirm BAS setpoints are active and not in override.';
             }
@@ -47400,7 +47649,7 @@
               '<p contenteditable="true">' +
               narrative +
               '</p>' +
-              '<p contenteditable="true" style="font-size:10px;color:#555;margin-top:2px"><strong>Rec:</strong> ' +
+              '<p contenteditable="true" style="font-size:10px;color:#555;margin-top:2px"><strong>Recommendation:</strong> ' +
               rec +
               '</p>'
             );
@@ -47449,13 +47698,15 @@
           '<p contenteditable="true">' +
           seasonNote +
           ' The next quarterly review meeting will cover period performance in detail, review any approved change orders, and confirm setpoint schedules for the upcoming season. ' +
-          'Monthly monitoring calls will continue on schedule. Please contact your CSC project manager with any operational questions between reports.' +
+          'Monthly monitoring calls will continue on schedule.' +
           '</p>';
 
         const bodyHTML =
           '<div class="rpt-body ob">' +
-          summaryPara +
           '<h2 contenteditable="true">Building Performance</h2>' +
+          '<div style="font-size:12px;line-height:1.6;margin-bottom:8px" contenteditable="true">' +
+          summaryPara +
+          '</div>' +
           bldgSections +
           '<h2 contenteditable="true">Weather</h2>' +
           weatherPara +
@@ -47695,7 +47946,7 @@
           if (isCurrentYr) totalActual += actualSavings;
           fiveYrRows +=
             '<tr' +
-            (isCurrentYr ? ' style="background:#fffde7;"' : '') +
+            (isCurrentYr ? ' style="font-weight:600"' : '') +
             '>' +
             '<td>' +
             yr +
@@ -48017,13 +48268,32 @@
         const targetPct = annualTarget > 0 && blCost > 0 ? (annualTarget / blCost) * 100 : 10;
         const savingsPct = b.savingsPct || 0;
 
-        // ── Month label helper (YYYY-MM → "Jan") ─────────────────────────
-        const MO_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        // ── Month label helpers ─────────────────────────
+        const MO_ABBR = [
+          'January',
+          'February',
+          'March',
+          'April',
+          'May',
+          'June',
+          'July',
+          'August',
+          'September',
+          'October',
+          'November',
+          'December',
+        ];
         function moLabel(ym) {
           if (!ym) return '';
           var parts = ym.split('-');
           return MO_ABBR[parseInt(parts[1], 10) - 1] || ym;
         }
+        function moFullLabel(ym) {
+          if (!ym) return '—';
+          var parts = ym.split('-');
+          return MO_ABBR[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
+        }
+        var periodEndLabel = moFullLabel(d && d.period && d.period.end);
 
         // ── Bar chart builder ─────────────────────────────────────────────
         // blColor / curColor: CSS color strings
@@ -48161,12 +48431,15 @@
           '</div>' +
           '</div>';
 
-        // Notes
-        leftHTML +=
-          '<div style="font-size:9px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
-          '<div contenteditable="true" style="min-height:60px;font-size:9px;color:#444;border:1px dashed #ccc;border-radius:3px;padding:6px;line-height:1.5;background:#fafafa">' +
-          'Add building-specific notes here...' +
-          '</div>';
+        // Notes — only show if building has notes stored
+        var bldgNotes = b.notes || '';
+        if (bldgNotes) {
+          leftHTML +=
+            '<div style="font-size:9px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
+            '<div contenteditable="true" style="min-height:40px;font-size:9px;color:#444;border:1px solid #ddd;border-radius:3px;padding:6px;line-height:1.5;background:#fafafa">' +
+            bldgNotes +
+            '</div>';
+        }
 
         // ═══════════════════════════════════════════════════════════════════
         // RIGHT COLUMN
@@ -48243,7 +48516,7 @@
             '<tr>' +
             '<td contenteditable="true">Electric</td>' +
             '<td class="rpt-n" contenteditable="true">' +
-            ((d && d.period && d.period.end) || '—') +
+            periodEndLabel +
             '</td>' +
             '<td class="rpt-n" contenteditable="true">' +
             $p(targetPct) +
@@ -48265,7 +48538,7 @@
             '<tr>' +
             '<td contenteditable="true">Natural Gas</td>' +
             '<td class="rpt-n" contenteditable="true">' +
-            ((d && d.period && d.period.end) || '—') +
+            periodEndLabel +
             '</td>' +
             '<td class="rpt-n" contenteditable="true">' +
             $p(targetPct) +
@@ -48287,7 +48560,7 @@
             '<tr>' +
             '<td contenteditable="true">Propane</td>' +
             '<td class="rpt-n" contenteditable="true">' +
-            ((d && d.period && d.period.end) || '—') +
+            periodEndLabel +
             '</td>' +
             '<td class="rpt-n" contenteditable="true">' +
             $p(targetPct) +
@@ -48310,7 +48583,7 @@
         rightHTML +=
           '<table class="rpt-table" style="margin-bottom:10px">' +
           '<thead><tr>' +
-          '<th>Commodity</th>' +
+          '<th>Commodity End</th>' +
           '<th class="rpt-n">Period End</th>' +
           '<th class="rpt-n">Goal %</th>' +
           '<th class="rpt-n">Achieved %</th>' +
@@ -48391,7 +48664,20 @@
           return (v || 0).toFixed(1) + '%';
         };
 
-        var MO_SHORT = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+        var MO_SHORT = [
+          'January',
+          'February',
+          'March',
+          'April',
+          'May',
+          'June',
+          'July',
+          'August',
+          'September',
+          'October',
+          'November',
+          'December',
+        ];
 
         // ── Shared bar-chart builder ──────────────────────────────────────────
         function buildElecBarChart(monthly, blColor, curColor, unit, title) {
@@ -48524,8 +48810,8 @@
           var savPct = blKwh > 0 ? (savKwh / blKwh) * 100 : 0;
           var blKw = b.electric.kwBl || 0;
           var curKw = b.electric.kwCur || 0;
-          var blCost = b.electric.blCost || 0;
-          var curCost = b.electric.curCost || 0;
+          var blCost = b.electric.costBl || 0;
+          var curCost = b.electric.costCur || 0;
           var savCost = b.electric.costSaved || blCost - curCost;
           totBlKwh += blKwh;
           totCurKwh += curKwh;
@@ -48625,10 +48911,10 @@
         var bldgTable =
           '<table class="rpt-table" contenteditable="true" style="font-size:7.5px">' +
           '<thead><tr>' +
-          '<th>Building</th><th class="rpt-n">BL kWh</th><th class="rpt-n">Actual</th>' +
+          '<th>Building</th><th class="rpt-n">Baseline kWh</th><th class="rpt-n">Actual kWh</th>' +
           '<th class="rpt-n">Saved</th><th class="rpt-n">%</th>' +
-          '<th class="rpt-n">BL kW</th><th class="rpt-n">Act kW</th>' +
-          '<th class="rpt-n">BL Cost</th><th class="rpt-n">Act Cost</th><th class="rpt-n">$ Saved</th>' +
+          '<th class="rpt-n">Baseline kW</th><th class="rpt-n">Actual kW</th>' +
+          '<th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">$ Saved</th>' +
           '</tr></thead>' +
           '<tbody>' +
           tableRows +
@@ -48637,6 +48923,7 @@
 
         var periodLabel = (d.period && d.period.label) || '';
         var bodyHTML =
+          '<p contenteditable="true" style="font-size:10px;color:#555;line-height:1.6;margin:0 0 8px">This page details electricity consumption across all buildings for the reporting period. The charts compare weather-normalized baseline usage against actual consumption by month. The table below breaks down kilowatt-hour (kWh) usage, peak demand (kW), and costs by building to identify where the greatest savings and opportunities exist.</p>' +
           '<div style="margin-bottom:6px;font-size:9px;color:#555">Period: ' +
           periodLabel +
           '</div>' +
@@ -48662,7 +48949,20 @@
         var $p = function (v) {
           return (v || 0).toFixed(1) + '%';
         };
-        var MO_SHORT = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+        var MO_SHORT = [
+          'January',
+          'February',
+          'March',
+          'April',
+          'May',
+          'June',
+          'July',
+          'August',
+          'September',
+          'October',
+          'November',
+          'December',
+        ];
 
         function buildGasBarChart(monthly, blColor, curColor, unit, title) {
           if (!monthly || !monthly.length)
@@ -48777,8 +49077,8 @@
           var curT = b.gas.thermsCur || 0;
           var savT = b.gas.thermsSaved || blT - curT;
           var savPct = blT > 0 ? (savT / blT) * 100 : 0;
-          var blCost = b.gas.blCost || 0;
-          var curCost = b.gas.curCost || 0;
+          var blCost = b.gas.costBl || 0;
+          var curCost = b.gas.costCur || 0;
           var savCost = b.gas.costSaved || blCost - curCost;
           totBlTherms += blT;
           totCurTherms += curT;
@@ -48861,15 +49161,16 @@
 
         var bldgTable =
           '<table class="rpt-table" contenteditable="true" style="font-size:7.5px">' +
-          '<thead><tr><th>Building</th><th class="rpt-n">BL Therms</th><th class="rpt-n">Actual</th>' +
+          '<thead><tr><th>Building</th><th class="rpt-n">Baseline Therms</th><th class="rpt-n">Actual Therms</th>' +
           '<th class="rpt-n">Saved</th><th class="rpt-n">%</th>' +
-          '<th class="rpt-n">BL Cost</th><th class="rpt-n">Act Cost</th><th class="rpt-n">$ Saved</th>' +
+          '<th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">$ Saved</th>' +
           '</tr></thead><tbody>' +
           tableRows +
           '</tbody></table>';
 
         var periodLabel = (d.period && d.period.label) || '';
         var bodyHTML =
+          '<p contenteditable="true" style="font-size:10px;color:#555;line-height:1.6;margin:0 0 8px">This page details natural gas consumption across all buildings for the reporting period. Gas usage is measured in therms and is primarily driven by heating loads. The chart compares baseline consumption against actual usage by month, while the per-building table identifies where gas savings or overages are occurring.</p>' +
           '<div style="margin-bottom:6px;font-size:9px;color:#555">Period: ' +
           periodLabel +
           '</div>' +
@@ -48895,7 +49196,20 @@
         var $p = function (v) {
           return (v || 0).toFixed(1) + '%';
         };
-        var MO_SHORT = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+        var MO_SHORT = [
+          'January',
+          'February',
+          'March',
+          'April',
+          'May',
+          'June',
+          'July',
+          'August',
+          'September',
+          'October',
+          'November',
+          'December',
+        ];
 
         function buildPropBarChart(monthly, blColor, curColor, unit, title) {
           if (!monthly || !monthly.length)
@@ -49004,8 +49318,8 @@
           var curG = b.propane.galCur || 0;
           var savG = b.propane.galSaved || blG - curG;
           var savPct = blG > 0 ? (savG / blG) * 100 : 0;
-          var blCost = b.propane.blCost || 0;
-          var curCost = b.propane.curCost || 0;
+          var blCost = b.propane.costBl || 0;
+          var curCost = b.propane.costCur || 0;
           var savCost = b.propane.costSaved || blCost - curCost;
           totBlGal += blG;
           totCurGal += curG;
@@ -49088,9 +49402,9 @@
 
         var bldgTable =
           '<table class="rpt-table" contenteditable="true" style="font-size:7.5px">' +
-          '<thead><tr><th>Building</th><th class="rpt-n">BL Gallons</th><th class="rpt-n">Actual</th>' +
+          '<thead><tr><th>Building</th><th class="rpt-n">Baseline Gallons</th><th class="rpt-n">Actual Gallons</th>' +
           '<th class="rpt-n">Saved</th><th class="rpt-n">%</th>' +
-          '<th class="rpt-n">BL Cost</th><th class="rpt-n">Act Cost</th><th class="rpt-n">$ Saved</th>' +
+          '<th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">$ Saved</th>' +
           '</tr></thead><tbody>' +
           tableRows +
           '</tbody></table>';
@@ -49132,8 +49446,8 @@
           return Math.round(v || 0).toLocaleString();
         };
 
-        var blStart = (d.period && d.period.blStart) || (d.project && d.project.blStart) || '—';
-        var blEnd = (d.period && d.period.blEnd) || (d.project && d.project.blEnd) || '—';
+        var blStart = (d.project && d.project.blStart) || '—';
+        var blEnd = (d.project && d.project.blEnd) || '—';
 
         var methodBox =
           '<div contenteditable="true" style="border:1px solid #ccc;border-radius:4px;padding:10px 12px;font-size:9px;line-height:1.7;color:#333;background:#fafafa;margin-bottom:12px">' +
@@ -49148,88 +49462,67 @@
           '<strong>Regression Model:</strong> Ordinary Least Squares (OLS) with HDD and CDD as independent variables. R² values shown per meter below.' +
           '</div>';
 
-        // Per-building meter tables
+        // Per-building meter tables using meterDetails from collectReportData
         var meterTables = '';
+        var monthNames = [
+          'January',
+          'February',
+          'March',
+          'April',
+          'May',
+          'June',
+          'July',
+          'August',
+          'September',
+          'October',
+          'November',
+          'December',
+        ];
         (d.buildings || []).forEach(function (b) {
-          var meterRows = '';
-          if (b.commodities && b.commodities.includes('Electric') && b.electric && b.electric.kwhBl > 0) {
-            meterRows +=
-              '<tr>' +
-              '<td contenteditable="true">Electric — ' +
-              (b.name || '—') +
-              '</td>' +
-              '<td contenteditable="true">' +
-              blStart +
-              ' – ' +
-              blEnd +
-              '</td>' +
-              '<td contenteditable="true">OLS / HDD+CDD</td>' +
-              '<td class="rpt-n" contenteditable="true">—</td>' +
-              '<td class="rpt-n" contenteditable="true">' +
-              $n((b.electric && b.electric.hdd) || 0) +
-              '</td>' +
-              '<td class="rpt-n" contenteditable="true">' +
-              $n((b.electric && b.electric.cdd) || 0) +
-              '</td>' +
-              '<td class="rpt-n" contenteditable="true">' +
-              $n(b.electric.kwhBl || 0) +
-              ' kWh</td>' +
-              '<td class="rpt-n" contenteditable="true">' +
-              $c(b.electric.blCost || 0) +
-              '</td>' +
-              '</tr>';
-          }
-          if (b.commodities && b.commodities.includes('Gas') && b.gas && b.gas.thermsBl > 0) {
-            meterRows +=
-              '<tr>' +
-              '<td contenteditable="true">Natural Gas — ' +
-              (b.name || '—') +
-              '</td>' +
-              '<td contenteditable="true">' +
-              blStart +
-              ' – ' +
-              blEnd +
-              '</td>' +
-              '<td contenteditable="true">OLS / HDD</td>' +
-              '<td class="rpt-n" contenteditable="true">—</td>' +
-              '<td class="rpt-n" contenteditable="true">' +
-              $n((b.gas && b.gas.hdd) || 0) +
-              '</td>' +
-              '<td class="rpt-n" contenteditable="true">—</td>' +
-              '<td class="rpt-n" contenteditable="true">' +
-              $n(b.gas.thermsBl || 0) +
-              ' Therms</td>' +
-              '<td class="rpt-n" contenteditable="true">' +
-              $c(b.gas.blCost || 0) +
-              '</td>' +
-              '</tr>';
-          }
-          if (b.commodities && b.commodities.includes('Propane') && b.propane && b.propane.galBl > 0) {
-            meterRows +=
-              '<tr>' +
-              '<td contenteditable="true">Propane — ' +
-              (b.name || '—') +
-              '</td>' +
-              '<td contenteditable="true">' +
-              blStart +
-              ' – ' +
-              blEnd +
-              '</td>' +
-              '<td contenteditable="true">OLS / HDD</td>' +
-              '<td class="rpt-n" contenteditable="true">—</td>' +
-              '<td class="rpt-n" contenteditable="true">' +
-              $n((b.propane && b.propane.hdd) || 0) +
-              '</td>' +
-              '<td class="rpt-n" contenteditable="true">—</td>' +
-              '<td class="rpt-n" contenteditable="true">' +
-              $n(b.propane.galBl || 0) +
-              ' Gal</td>' +
-              '<td class="rpt-n" contenteditable="true">' +
-              $c(b.propane.blCost || 0) +
-              '</td>' +
-              '</tr>';
-          }
-          if (!meterRows) return;
+          var details = b.meterDetails || [];
+          if (!details.length) return;
+          var meterRows = details
+            .map(function (md) {
+              var blPeriod = '—';
+              if (md.blStart && md.blEnd) {
+                var s = md.blStart.split('-');
+                var e = md.blEnd.split('-');
+                blPeriod =
+                  monthNames[parseInt(s[1]) - 1] + ' ' + s[0] + ' – ' + monthNames[parseInt(e[1]) - 1] + ' ' + e[0];
+              }
+              var unitLabel = md.commodity === 'Electric' ? ' kWh' : md.commodity === 'Gas' ? ' Therms' : ' Gallons';
+              return (
+                '<tr>' +
+                '<td contenteditable="true">' +
+                md.commodity +
+                (md.account ? ' · ' + md.account : '') +
+                '</td>' +
+                '<td contenteditable="true">' +
+                blPeriod +
+                '</td>' +
+                '<td contenteditable="true">' +
+                md.regrType +
+                '</td>' +
+                '<td class="rpt-n" contenteditable="true">' +
+                md.r2 +
+                '</td>' +
+                '<td class="rpt-n" contenteditable="true">' +
+                $n(md.hdd) +
+                '</td>' +
+                '<td class="rpt-n" contenteditable="true">' +
+                (md.commodity === 'Electric' ? $n(md.cdd) : '—') +
+                '</td>' +
+                '<td class="rpt-n" contenteditable="true">' +
+                $n(md.usagePerYear) +
+                unitLabel +
+                '</td>' +
+                '<td class="rpt-n" contenteditable="true">' +
+                $c(md.costPerYear) +
+                '</td>' +
+                '</tr>'
+              );
+            })
+            .join('');
           meterTables +=
             '<div style="font-size:9px;font-weight:700;color:#1a5276;background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
             (b.name || 'Building') +
@@ -49237,7 +49530,7 @@
             '<table class="rpt-table" style="font-size:7.5px;margin-bottom:6px">' +
             '<thead><tr>' +
             '<th>Meter</th><th>Baseline Period</th><th>Regression</th><th class="rpt-n">R²</th>' +
-            '<th class="rpt-n">HDD</th><th class="rpt-n">CDD</th><th class="rpt-n">Usage/yr</th><th class="rpt-n">Cost/yr</th>' +
+            '<th class="rpt-n">HDD</th><th class="rpt-n">CDD</th><th class="rpt-n">Usage/Year</th><th class="rpt-n">Cost/Year</th>' +
             '</tr></thead><tbody>' +
             meterRows +
             '</tbody></table>';
@@ -49381,12 +49674,36 @@
           buildingTables = '<p style="font-size:8px;color:#aaa;font-style:italic">No buildings in this project.</p>';
         }
 
+        var regressionExplainer =
+          '<div contenteditable="true" style="border:1px solid #ccc;border-radius:4px;padding:12px 14px;font-size:9.5px;line-height:1.8;color:#333;background:#fafafa;margin-bottom:12px">' +
+          '<strong style="font-size:11px;color:#1a5276">How the Regression Model Works</strong><br><br>' +
+          "Weather-normalized savings are calculated using an Ordinary Least Squares (OLS) regression model that establishes the mathematical relationship between a building's energy consumption and outdoor weather conditions during the baseline period.<br><br>" +
+          '<strong>Step 1 — Baseline Period Data Collection:</strong> Monthly utility consumption (kWh for electric, Therms for gas) is collected alongside monthly Heating Degree Days (HDD) and Cooling Degree Days (CDD) from NOAA weather stations. The balance point temperature is 60°F per contract specification.<br><br>' +
+          '<strong>Step 2 — Regression Analysis:</strong> The model fits the equation:<br>' +
+          '<div style="text-align:center;font-family:monospace;font-size:10px;margin:4px 0;padding:6px;background:#fff;border:1px solid #ddd;border-radius:3px">' +
+          'Usage = β₀ + β₁ × HDD + β₂ × CDD' +
+          '</div>' +
+          'Where β₀ is the base load (weather-independent consumption), β₁ is the heating coefficient (usage per HDD), and β₂ is the cooling coefficient (usage per CDD). For gas meters, CDD is excluded (β₂ = 0) since gas is not used for cooling.<br><br>' +
+          '<strong>Step 3 — Baseline Prediction:</strong> For each month in the reporting period, the model predicts what consumption <em>would have been</em> under current weather if the building were still operating at baseline efficiency:<br>' +
+          '<div style="text-align:center;font-family:monospace;font-size:10px;margin:4px 0;padding:6px;background:#fff;border:1px solid #ddd;border-radius:3px">' +
+          'Expected Usage = β₀ + β₁ × Current HDD + β₂ × Current CDD' +
+          '</div>' +
+          '<strong>Step 4 — Savings Calculation:</strong> The difference between the weather-normalized baseline prediction and actual consumption is the verified savings:<br>' +
+          '<div style="text-align:center;font-family:monospace;font-size:10px;margin:4px 0;padding:6px;background:#fff;border:1px solid #ddd;border-radius:3px">' +
+          'Units Saved = Expected Usage − Actual Usage<br>' +
+          'Cost Savings = Units Saved × Current Utility Rate ($/unit)' +
+          '</div>' +
+          '<strong>Model Quality:</strong> The R² value (coefficient of determination) measures how well the model fits the baseline data. Values above 0.75 indicate a strong fit. R² values are shown per meter in Appendix A.<br><br>' +
+          '<strong>Why Weather Normalization Matters:</strong> Without weather normalization, a mild winter could falsely appear as energy savings, or a harsh summer could mask real improvements. The regression model isolates genuine performance changes from weather effects.' +
+          '</div>';
+
         var bodyHTML =
-          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix B: Building Baseline Data</h2>' +
-          '<div style="font-size:8.5px;color:#666;margin-bottom:10px">Monthly baseline averages per building</div>' +
+          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix B: Regression Model Methodology</h2>' +
+          '<div style="font-size:8.5px;color:#666;margin-bottom:10px">How weather-normalized savings are calculated</div>' +
+          regressionExplainer +
           buildingTables;
 
-        return rptPage(n, 'Appendix B: Building Baseline Data', bodyHTML, {
+        return rptPage(n, 'Appendix B: Regression Model Methodology', bodyHTML, {
           data: d,
           label: 'Page ' + n + ' — Appendix B',
         });
@@ -49563,37 +49880,15 @@
           'December',
         ];
 
-        // Build bill index per month
+        // Build bill index per month from rawBills collected in collectReportData
         var billsByMonth = {};
         periodYMs.forEach(function (ym) {
           billsByMonth[ym] = [];
         });
-
-        (d.buildings || []).forEach(function (b) {
-          var bName = b.name || '—';
-
-          function addBills(commodityLabel, moArr) {
-            (moArr || []).forEach(function (mo) {
-              if (!billsByMonth[mo.month]) return;
-              billsByMonth[mo.month].push({
-                building: bName,
-                commodity: commodityLabel,
-                provider: mo.provider || '',
-                account: mo.account || '',
-                amount: mo.cost || mo.blCost || 0,
-                billDate: mo.billDate || mo.month || '—',
-              });
-            });
-          }
-
-          if (b.commodities && b.commodities.includes('Electric') && b.electric) {
-            addBills('Electric', b.electric.monthly || []);
-          }
-          if (b.commodities && b.commodities.includes('Gas') && b.gas) {
-            addBills('Natural Gas', b.gas.monthly || []);
-          }
-          if (b.commodities && b.commodities.includes('Propane') && b.propane) {
-            addBills('Propane', b.propane.monthly || []);
+        (d.rawBills || []).forEach(function (bill) {
+          var ym = bill.start ? bill.start.substring(0, 7) : '';
+          if (billsByMonth[ym]) {
+            billsByMonth[ym].push(bill);
           }
         });
 
@@ -49649,7 +49944,7 @@
 
         var footerNote =
           '<div style="margin-top:12px;font-size:8px;color:#777;font-style:italic;border-top:1px solid #ddd;padding-top:6px">' +
-          'In the PDF export, scanned utility bill images are embedded after this index page.' +
+          'Scanned utility bill images are not currently embedded in the PDF export. To include original bill images, attach them separately to the report package.' +
           '</div>';
 
         var bodyHTML =
@@ -49852,7 +50147,7 @@
         { key: 'gasDetail', label: 'Gas Consumption Detail', group: 'Commodity' },
         { key: 'propaneDetail', label: 'Propane Consumption Detail', group: 'Commodity' },
         { key: 'appendixA', label: 'Appendix A: Normalization & Baseline', group: 'Appendices' },
-        { key: 'appendixB', label: 'Appendix B: Building Baseline Data', group: 'Appendices' },
+        { key: 'appendixB', label: 'Appendix B: Regression Model Methodology', group: 'Appendices' },
         { key: 'appendixC', label: 'Appendix C: Weather Data', group: 'Appendices' },
         { key: 'appendixD', label: 'Appendix D: Utility Bills', group: 'Appendices' },
       ];
@@ -49892,9 +50187,21 @@
             lastGroup = sec.group;
           }
           const isChecked = savedSections[sec.key] === false ? '' : 'checked';
+          let emptyWarn = '';
+          if (sec.key === 'approvedChanges') {
+            const hasMeetings = p && p.meetings && p.meetings.length > 0;
+            if (!hasMeetings)
+              emptyWarn = '<span style="font-size:10px;color:#e67e22;font-weight:600;margin-left:auto">⚠ Empty</span>';
+          }
+          if (sec.key === 'setpoints') {
+            const hasSetpoints = p && p.setpoints && p.setpoints.length > 0;
+            if (!hasSetpoints)
+              emptyWarn = '<span style="font-size:10px;color:#e67e22;font-weight:600;margin-left:auto">⚠ Empty</span>';
+          }
           sectionHTML += `<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;background:var(--s1);cursor:pointer">
             <input type="checkbox" ${isChecked} data-section="${sec.key}" style="accent-color:var(--em);width:14px;height:14px">
             <span style="font-size:12px;color:var(--text)">${sec.label}</span>
+            ${emptyWarn}
           </label>`;
         });
         sectionList.innerHTML = sectionHTML;
@@ -50425,8 +50732,8 @@
           totalAnnCurKBtu += d.curEUI * d.sqft;
         });
         const annualizedSavings = totalQtrSav * (12 / periodMonths);
-        const guaranteedSav = parseFloat(p.savings) || 0;
-        // Compute projected savings from per-building savings % for use when guarantee not set
+        const projectedSav = parseFloat(p.savings) || 0;
+        // Compute projected savings from per-building savings % for use when projected savings not set
         const _rptMoBase = {};
         for (let i = 0; i < 12; i++) _rptMoBase[i] = 0;
         allBldgMeters.forEach(({ m, bills, incl, allRows, bl }) => {
@@ -50438,7 +50745,7 @@
         const _rptAnnBase = Object.values(_rptMoBase).reduce((s, v) => s + v, 0);
         const _rptAvgSavPct = typeof avgSavPctAcrossBldgs === 'function' ? avgSavPctAcrossBldgs(_rptMoBase) : 0.11;
         const calcProjSav = _rptAnnBase * _rptAvgSavPct;
-        const displayProjSav = guaranteedSav > 0 ? guaranteedSav : calcProjSav;
+        const displayProjSav = projectedSav > 0 ? projectedSav : calcProjSav;
         const contractYears = parseInt(p.contractYears) || 3;
         const escalation = parseFloat(p.escalation) || 0;
         const cscComp = parseFloat(p.cscCompensation) || 0;
@@ -50455,12 +50762,12 @@
         const annualizedActual = annualizedSavings;
         let statusLabel = 'On Track',
           statusColor = [34, 139, 34];
-        if (guaranteedSav > 0) {
-          const pctOfGuarantee = annualizedActual / guaranteedSav;
-          if (pctOfGuarantee < 0) {
+        if (projectedSav > 0) {
+          const pctOfProjected = annualizedActual / projectedSav;
+          if (pctOfProjected < 0) {
             statusLabel = 'Over Budget';
             statusColor = [200, 30, 30];
-          } else if (pctOfGuarantee < 0.8) {
+          } else if (pctOfProjected < 0.8) {
             statusLabel = 'Below Target';
             statusColor = [210, 140, 0];
           }
@@ -50581,7 +50888,7 @@
               displayProjSav > 0
                 ? (annualizedActual >= 0 ? Math.round((annualizedActual / displayProjSav) * 100) : 0) +
                   '% achieved (annualized)' +
-                  (guaranteedSav <= 0 ? ' [est]' : '')
+                  (projectedSav <= 0 ? ' [est]' : '')
                 : '',
           },
           { label: 'Status', value: statusLabel, sub: '', color: statusColor },
@@ -50640,7 +50947,7 @@
             $c(totalQtrSav) +
             (useNormalized ? '  [Weather-Normalized]' : ''),
           'Cumulative Savings to Date: ' + (totalCumSav >= 0 ? '' : '-') + $c(totalCumSav),
-          guaranteedSav > 0 ? 'Projected Savings Target: ' + $c(guaranteedSav) + '/yr' : '',
+          projectedSav > 0 ? 'Projected Savings Target: ' + $c(projectedSav) + '/yr' : '',
         ].filter(Boolean);
         summaryLines.forEach((line) => {
           doc.text(line, ml + 4, y);
@@ -50735,7 +51042,7 @@
           ctx.scale(2, 2);
 
           const vals = qKeys.map((k) => quarters[k]);
-          const maxVal = Math.max(...vals.map(Math.abs), guaranteedSav / 4 || 1);
+          const maxVal = Math.max(...vals.map(Math.abs), projectedSav / 4 || 1);
           const barW = Math.min(40, (chartW - 60) / qKeys.length - 4);
           const padL = 50,
             padB = 30,
@@ -50770,8 +51077,8 @@
             ctx.fillText((v >= 0 ? '' : '-') + '$' + Math.round(Math.abs(v)).toLocaleString(), x + barW / 2, topY - 4);
           });
 
-          if (guaranteedSav > 0) {
-            const gLine = guaranteedSav / (12 / periodMonths);
+          if (projectedSav > 0) {
+            const gLine = projectedSav / (12 / periodMonths);
             const gY = zeroY - (gLine / maxVal) * (plotH / 2);
             ctx.setLineDash([4, 3]);
             ctx.strokeStyle = '#e67e22';
@@ -51372,14 +51679,14 @@
 
         const obs = [];
 
-        if (guaranteedSav > 0) {
-          const pctAchieved = Math.round((annualizedActual / guaranteedSav) * 100);
+        if (projectedSav > 0) {
+          const pctAchieved = Math.round((annualizedActual / projectedSav) * 100);
           if (pctAchieved >= 100)
             obs.push(
               'Overall Performance: The project exceeded its projected savings target this period, achieving ' +
                 pctAchieved +
                 '% of the ' +
-                $c(guaranteedSav) +
+                $c(projectedSav) +
                 '/yr projection.',
             );
           else if (pctAchieved >= 80)
@@ -51387,7 +51694,7 @@
               'Overall Performance: The project achieved ' +
                 pctAchieved +
                 '% of the ' +
-                $c(guaranteedSav) +
+                $c(projectedSav) +
                 '/yr projected savings target this period. Performance is within an acceptable range.',
             );
           else
@@ -51395,7 +51702,7 @@
               'Overall Performance: The project achieved only ' +
                 pctAchieved +
                 '% of the ' +
-                $c(guaranteedSav) +
+                $c(projectedSav) +
                 '/yr projected savings target. A review of BAS schedules and setpoints is recommended.',
             );
         } else {
@@ -60155,9 +60462,10 @@
       function spHandleFileInput(evt, projId, bldgId) {
         const file = evt.target.files && evt.target.files[0];
         if (!file) return;
+        const fname = file.name;
         evt.target.value = '';
         const reader = new FileReader();
-        reader.onload = (e) => spParseCSV(e.target.result, projId, bldgId);
+        reader.onload = (e) => spParseCSV(e.target.result, projId, bldgId, fname);
         reader.readAsText(file);
       }
 
@@ -60167,12 +60475,13 @@
         if (upload) upload.style.borderColor = 'var(--border2)';
         const file = evt.dataTransfer.files && evt.dataTransfer.files[0];
         if (!file) return;
+        const fname = file.name;
         const reader = new FileReader();
-        reader.onload = (e) => spParseCSV(e.target.result, projId, bldgId);
+        reader.onload = (e) => spParseCSV(e.target.result, projId, bldgId, fname);
         reader.readAsText(file);
       }
 
-      function spParseCSV(text, projId, bldgId) {
+      function spParseCSV(text, projId, bldgId, fileName) {
         const lines = text.split(/\r?\n/).filter((l) => l.trim());
         if (!lines.length) {
           showToast('CSV appears empty ⚠');
@@ -60183,7 +60492,6 @@
         const delim = lines[0].split('\t').length > lines[0].split(',').length ? '\t' : ',';
 
         function splitRow(row) {
-          // Handle quoted values
           const result = [];
           let cur = '',
             inQ = false;
@@ -60206,7 +60514,16 @@
 
         const headers = splitRow(lines[0]).map((h) => h.toLowerCase().trim());
 
-        // Map header names to field keys (case-insensitive, flexible naming)
+        // Detect BAS equipment snapshot (Niagara/Tridium export)
+        const isBAS =
+          headers.some((h) => h.includes('heating sp')) &&
+          headers.some((h) => h.includes('cooling sp')) &&
+          headers.some((h) => h.includes('control program'));
+        if (isBAS) {
+          spParseBASSnapshot(lines, headers, splitRow, projId, fileName);
+          return;
+        }
+
         function findCol(candidates) {
           for (const c of candidates) {
             const idx = headers.findIndex((h) => h.includes(c));
