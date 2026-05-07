@@ -196,7 +196,8 @@
   <body>
     <h1>CompanyHub Functional Tests</h1>
     <div class="subtitle">
-      Updated 2026-04-28 — 47 automated + 28 manual tests (sessions 04-22b, 04-27d, 04-28). Automated tests run on load.
+      Updated 2026-05-06 — 78 automated + 83 manual tests (sessions 04-22a/b, 04-27d, 04-28). Automated tests run on
+      load.
     </div>
 
     <div class="summary" id="summary"></div>
@@ -566,26 +567,28 @@
       });
 
       // ═══════════════════════════════════════════════════════════════
-      // RENDER AUTOMATED RESULTS
+      // RENDER AUTOMATED RESULTS (deferred to end — see renderAutoResults())
       // ═══════════════════════════════════════════════════════════════
 
-      const el = document.getElementById('auto-results');
-      let passed = 0,
-        failed = 0;
-      results.forEach((r) => {
-        const cls = r.pass ? 'pass' : 'fail';
-        if (r.pass) passed++;
-        else failed++;
-        el.innerHTML += `<div class="test-row">
+      function renderAutoResults() {
+        const el = document.getElementById('auto-results');
+        let passed = 0,
+          failed = 0;
+        results.forEach((r) => {
+          const cls = r.pass ? 'pass' : 'fail';
+          if (r.pass) passed++;
+          else failed++;
+          el.innerHTML += `<div class="test-row">
     <span class="${cls}">${r.pass ? 'PASS' : 'FAIL'}</span>
     <span class="test-name">${r.name}${r.detail ? '<div class="test-detail">' + r.detail + '</div>' : ''}</span>
   </div>`;
-      });
+        });
 
-      document.getElementById('summary').innerHTML =
-        `<span class="s-pass">${passed} passed</span>` +
-        (failed > 0 ? `<span class="s-fail">${failed} failed</span>` : '') +
-        `<span class="s-skip">Manual: see checklist below</span>`;
+        document.getElementById('summary').innerHTML =
+          `<span class="s-pass">${passed} passed</span>` +
+          (failed > 0 ? `<span class="s-fail">${failed} failed</span>` : '') +
+          `<span class="s-skip">Manual: see checklist below</span>`;
+      }
 
       // ═══════════════════════════════════════════════════════════════
       // MANUAL CHECKLIST
@@ -1790,6 +1793,7 @@
         return commodityFallbackTest(bill) === 'Propane' || `Expected Propane, got ${commodityFallbackTest(bill)}`;
       });
 
+      renderAutoResults();
       updateProgress();
     </script>
   </body>
