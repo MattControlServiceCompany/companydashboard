@@ -60533,13 +60533,25 @@
         window._spActiveBldg[projId] = activeBldgId;
 
         const spRecord = (p.setpoints || []).find((r) => r.buildingId === activeBldgId);
-        const zones = spRecord ? spRecord.zones : [];
 
         // View mode: 'individual' (default) or 'average'
         if (!window._spViewMode) window._spViewMode = {};
         const viewMode = window._spViewMode[projId] || (spRecord && spRecord.viewMode) || 'individual';
         window._spViewMode[projId] = viewMode;
         const isAvg = viewMode === 'average';
+
+        // Snapshot tracking: null = current (editable), string = snapshot id (read-only)
+        if (!window._spActiveSnapshot) window._spActiveSnapshot = {};
+        const activeSnapId = window._spActiveSnapshot[projId] || null;
+        const snapshots = p.setpointSnapshots || [];
+        const activeSnapData = activeSnapId ? snapshots.find((s) => s.id === activeSnapId) : null;
+        const isViewingSnapshot = !!activeSnapData;
+        const dataSource = isViewingSnapshot ? activeSnapData.data : p.setpoints || [];
+
+        const displayRecord = dataSource.find((r) => r.buildingId === activeBldgId);
+        const zones = displayRecord ? displayRecord.zones : [];
+
+        const snapPills = _spBuildSnapshotPills(projId, activeSnapId, snapshots);
 
         const bldgPills = bldgs
           .map(
@@ -60554,7 +60566,7 @@
           // Show averages for ALL buildings at once
           const avgRows = bldgs
             .map((b) => {
-              const rec = (p.setpoints || []).find((r) => r.buildingId === b.id);
+              const rec = dataSource.find((r) => r.buildingId === b.id);
               const bZones = rec ? rec.zones : [];
               return _spComputeAvgRow(bZones, b);
             })
@@ -60562,6 +60574,11 @@
           tableContent = avgRows.length
             ? avgRows.map((r) => _spAvgRow(r)).join('')
             : `<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text3);font-style:italic">No zones to average.</td></tr>`;
+        } else if (isViewingSnapshot) {
+          const tableRows = zones.map((z) => _spReadOnlyZoneRow(z)).join('');
+          tableContent =
+            tableRows ||
+            `<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text3);font-style:italic">No zones in this snapshot.</td></tr>`;
         } else {
           const tableRows = zones.map((z, i) => _spZoneRow(projId, activeBldgId, z, i)).join('');
           tableContent =
@@ -60575,9 +60592,12 @@
               <span class="card-title">🌡️ BAS Set Points &amp; Schedules</span>
               <div style="display:flex;gap:8px;align-items:center">
                 ${
-                  !isAvg
+                  !isAvg && !isViewingSnapshot
                     ? `<button class="btn btn-ghost btn-sm" onclick="spAddZoneRow('${projId}','${activeBldgId}')">+ Add Zone</button>
-                <button class="btn btn-em btn-sm" onclick="spSave('${projId}','${activeBldgId}')">💾 Save</button>`
+                <button class="btn btn-em btn-sm" onclick="spSave('${projId}','${activeBldgId}')">💾 Save</button>
+                <div style="position:relative;display:inline-block">
+                  <button class="btn btn-ghost btn-sm" onclick="spShowSaveAsMenu(event,'${projId}','${activeBldgId}')">Save As…</button>
+                </div>`
                     : ''
                 }
               </div>
@@ -60590,6 +60610,11 @@
                 <button style="padding:6px 14px;font-size:12px;font-weight:600;border:none;border-left:1px solid var(--border2);cursor:pointer;transition:all .15s;${isAvg ? 'background:var(--accent);color:#fff' : 'background:var(--s1);color:var(--text2)'}"
                   onclick="spSetViewMode('${projId}','average')">Building Average</button>
               </div>
+              <!-- Snapshot Version Pills -->
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+                <span style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-right:2px">Version:</span>
+                ${snapPills}
+              </div>
               ${
                 !isAvg && bldgs.length > 1
                   ? `<!-- Building Pills -->
@@ -60599,7 +60624,7 @@
                   : ''
               }
               ${
-                !isAvg
+                !isAvg && !isViewingSnapshot
                   ? `<!-- CSV Upload Area -->
               <div id="sp-upload-${projId}" style="border:2px dashed var(--border2);border-radius:8px;padding:16px;text-align:center;margin-bottom:16px;cursor:pointer;transition:border-color .2s"
                    onclick="document.getElementById('sp-file-${projId}').click()"
@@ -60614,6 +60639,7 @@
               </div>`
                   : ''
               }
+              ${isViewingSnapshot ? `<div style="margin-bottom:12px;padding:8px 12px;background:var(--s2);border:1px solid var(--border2);border-radius:6px;font-size:11px;color:var(--text2)">Viewing saved snapshot: <strong style="color:var(--text)">${_escHtml(activeSnapData.label)}</strong> — switch to <a href="#" style="color:var(--accent);text-decoration:none" onclick="event.preventDefault();spViewSnapshot('${projId}',null)">Current</a> to edit</div>` : ''}
               <!-- Zone Table -->
               <div style="overflow-x:auto">
                 <table style="width:100%;border-collapse:collapse;font-size:12px" id="sp-table-${projId}">
@@ -60625,7 +60651,7 @@
                       <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Unocc Heat °F</th>
                       <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Unocc Cool °F</th>
                       <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);min-width:160px">Schedule</th>
-                      ${!isAvg ? '<th style="padding:6px 4px;width:32px"></th>' : ''}
+                      ${!isAvg && !isViewingSnapshot ? '<th style="padding:6px 4px;width:32px"></th>' : ''}
                     </tr>
                   </thead>
                   <tbody id="sp-tbody-${projId}">
@@ -60703,6 +60729,158 @@
           <td style="padding:6px 8px;font-size:12px;font-family:var(--mono);text-align:center;color:var(--text2)">${v(z.unoccCool)}</td>
           <td style="padding:6px 8px;font-size:12px;color:var(--text2)">${_escHtml(z.schedule || '—')}</td>
         </tr>`;
+      }
+
+      function _spReadOnlyZoneRow(z) {
+        const v = (val) => (val !== null && val !== undefined ? val : '—');
+        return `<tr style="border-bottom:1px solid var(--border1)">
+          <td style="padding:6px 8px;font-size:12px;font-weight:600;color:var(--text)">${_escHtml(z.name || '')}</td>
+          <td style="padding:6px 8px;font-size:12px;font-family:var(--mono);text-align:center;color:var(--text2)">${v(z.occHeat)}</td>
+          <td style="padding:6px 8px;font-size:12px;font-family:var(--mono);text-align:center;color:var(--text2)">${v(z.occCool)}</td>
+          <td style="padding:6px 8px;font-size:12px;font-family:var(--mono);text-align:center;color:var(--text2)">${v(z.unoccHeat)}</td>
+          <td style="padding:6px 8px;font-size:12px;font-family:var(--mono);text-align:center;color:var(--text2)">${v(z.unoccCool)}</td>
+          <td style="padding:6px 8px;font-size:12px;color:var(--text2)">${_escHtml(z.schedule || '—')}</td>
+        </tr>`;
+      }
+
+      function _spBuildSnapshotPills(projId, activeSnapId, snapshots) {
+        var isCurrentActive = !activeSnapId;
+        var pills =
+          '<button style="padding:4px 12px;font-size:11px;font-weight:600;border:none;border-radius:20px;cursor:pointer;transition:all .15s;' +
+          (isCurrentActive
+            ? 'background:var(--accent);color:#fff'
+            : 'background:var(--s2);color:var(--text2);border:1px solid var(--border2)') +
+          '"' +
+          ' onclick="spViewSnapshot(\'' +
+          projId +
+          '\',null)">Current</button>';
+        snapshots.forEach(function (s) {
+          var isActive = activeSnapId === s.id;
+          pills +=
+            '<button style="padding:4px 12px;font-size:11px;font-weight:600;border:none;border-radius:20px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px;' +
+            (isActive
+              ? 'background:var(--accent);color:#fff'
+              : 'background:var(--s2);color:var(--text2);border:1px solid var(--border2)') +
+            '"' +
+            ' onclick="spViewSnapshot(\'' +
+            projId +
+            "','" +
+            s.id +
+            '\')">' +
+            _escHtml(s.label) +
+            ' <span onclick="event.stopPropagation();spDeleteSnapshot(\'' +
+            projId +
+            "','" +
+            s.id +
+            '\')" style="font-size:10px;opacity:.6;cursor:pointer;margin-left:2px" title="Delete snapshot">✕</span>' +
+            '</button>';
+        });
+        return pills;
+      }
+
+      function spViewSnapshot(projId, snapId) {
+        if (!window._spActiveSnapshot) window._spActiveSnapshot = {};
+        window._spActiveSnapshot[projId] = snapId || null;
+        renderSetpointsTab(projId);
+      }
+
+      function spDeleteSnapshot(projId, snapId) {
+        var p = projects.find(function (x) {
+          return String(x.id) === String(projId);
+        });
+        if (!p || !p.setpointSnapshots) return;
+        p.setpointSnapshots = p.setpointSnapshots.filter(function (s) {
+          return s.id !== snapId;
+        });
+        sset('en_projects', projects);
+        if (window._spActiveSnapshot && window._spActiveSnapshot[projId] === snapId) {
+          window._spActiveSnapshot[projId] = null;
+        }
+        showToast('Snapshot deleted');
+        renderSetpointsTab(projId);
+      }
+
+      function spShowSaveAsMenu(evt, projId, bldgId) {
+        var old = document.getElementById('sp-save-menu');
+        if (old) {
+          old.remove();
+          return;
+        }
+        var today = new Date().toISOString().slice(0, 10);
+        var menu = document.createElement('div');
+        menu.id = 'sp-save-menu';
+        menu.style.cssText =
+          'position:absolute;top:100%;right:0;margin-top:4px;background:var(--s2);border:1px solid var(--border2);border-radius:8px;padding:8px 0;min-width:240px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4)';
+        menu.innerHTML =
+          '<button style="display:block;width:100%;text-align:left;padding:8px 16px;font-size:12px;font-weight:600;background:none;border:none;color:var(--text);cursor:pointer"' +
+          ' onmouseover="this.style.background=\'var(--s3)\'" onmouseout="this.style.background=\'none\'"' +
+          ' onclick="spSaveSnapshot(\'' +
+          projId +
+          "','Baseline');document.getElementById('sp-save-menu').remove()\">" +
+          'Save as Baseline</button>' +
+          '<button style="display:block;width:100%;text-align:left;padding:8px 16px;font-size:12px;font-weight:600;background:none;border:none;color:var(--text);cursor:pointer"' +
+          ' onmouseover="this.style.background=\'var(--s3)\'" onmouseout="this.style.background=\'none\'"' +
+          ' onclick="spSaveSnapshot(\'' +
+          projId +
+          "','" +
+          today +
+          "');document.getElementById('sp-save-menu').remove()\">" +
+          'Save as Today (' +
+          today +
+          ')</button>' +
+          '<div style="padding:8px 16px;display:flex;gap:6px;align-items:center;border-top:1px solid var(--border)">' +
+          '<input type="date" id="sp-save-date-' +
+          projId +
+          '" style="font-size:12px;padding:4px 6px;background:var(--s3);border:1px solid var(--border2);border-radius:4px;color:var(--text);font-family:var(--mono)">' +
+          '<button style="font-size:11px;padding:4px 10px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;white-space:nowrap"' +
+          ' onclick="var d=document.getElementById(\'sp-save-date-' +
+          projId +
+          "').value;if(d){spSaveSnapshot('" +
+          projId +
+          "',d);document.getElementById('sp-save-menu').remove();}else{showToast('Pick a date first')}\">" +
+          'Save</button></div>';
+        var wrap = evt.currentTarget.parentElement;
+        wrap.style.position = 'relative';
+        wrap.appendChild(menu);
+        setTimeout(function () {
+          document.addEventListener('click', function closeMenu(e) {
+            if (!menu.contains(e.target) && e.target !== evt.currentTarget) {
+              menu.remove();
+              document.removeEventListener('click', closeMenu);
+            }
+          });
+        }, 0);
+      }
+
+      function spSaveSnapshot(projId, label) {
+        var p = projects.find(function (x) {
+          return String(x.id) === String(projId);
+        });
+        if (!p) return;
+        // Save current building edits first
+        var bldgId = window._spActiveBldg && window._spActiveBldg[projId];
+        if (bldgId) spSave(projId, bldgId);
+        if (!p.setpointSnapshots) p.setpointSnapshots = [];
+        var id = label === 'Baseline' ? 'baseline' : 'date_' + label;
+        var existing = p.setpointSnapshots.find(function (s) {
+          return s.id === id;
+        });
+        var snapData = JSON.parse(JSON.stringify(p.setpoints || []));
+        if (existing) {
+          existing.data = snapData;
+          existing.savedAt = new Date().toISOString();
+          existing.label = label;
+        } else {
+          p.setpointSnapshots.push({
+            id: id,
+            label: label,
+            savedAt: new Date().toISOString(),
+            data: snapData,
+          });
+        }
+        sset('en_projects', projects);
+        showToast('Saved as ' + label + ' ✓');
+        renderSetpointsTab(projId);
       }
 
       function spSetViewMode(projId, mode) {
