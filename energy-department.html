@@ -15838,12 +15838,21 @@
             totalTherms += parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
             totalGasCost += parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0;
           });
+        const propaneM = meters.find((m) => m.commodity === 'Propane');
+        let totalGallons = 0,
+          totalPropaneCost = 0;
+        if (propaneM)
+          (propaneM.bills || []).forEach((bill) => {
+            totalGallons += parseFloat(bill.gallonsDelivered) || parseFloat(bill.usage) || 0;
+            totalPropaneCost += parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0;
+          });
         return {
           kwhSummer: sumKwh > 0 ? Math.round((sumKwhCost / sumKwh) * 10000) / 10000 : 0,
           kwhWinter: winKwh > 0 ? Math.round((winKwhCost / winKwh) * 10000) / 10000 : 0,
           kwSummer: sumKwCount > 0 ? Math.round((sumKwCost / sumKwCount) * 100) / 100 : 0,
           kwWinter: winKwCount > 0 ? Math.round((winKwCost / winKwCount) * 100) / 100 : 0,
           thermRate: totalTherms > 0 ? Math.round((totalGasCost / totalTherms) * 1000) / 1000 : 0,
+          gallonRate: totalGallons > 0 ? Math.round((totalPropaneCost / totalGallons) * 1000) / 1000 : 0,
         };
       }
 
@@ -15863,10 +15872,11 @@
           incentive: 0,
           rates: firstBldg
             ? calcBldgDefaultRates(projId, firstBldg.id)
-            : { kwhSummer: 0, kwhWinter: 0, kwSummer: 0, kwWinter: 0, thermRate: 0 },
+            : { kwhSummer: 0, kwhWinter: 0, kwSummer: 0, kwWinter: 0, thermRate: 0, gallonRate: 0 },
           kwh: Array(12).fill(0),
           kw: Array(12).fill(0),
           gas: Array(12).fill(0),
+          propane: Array(12).fill(0),
           totalDollar: 0,
         });
         sset('en_projects', projects);
@@ -16086,8 +16096,9 @@
         sd.measures.forEach((m) => {
           const row = document.getElementById('sv-msr-row-' + projId + '-' + m.id);
           if (!row) return;
-          ['kwh-col', 'kw-col', 'gas-col'].forEach((cls, ti) => {
-            const type = ['kwh', 'kw', 'gas'][ti];
+          ['kwh-col', 'kw-col', 'gas-col', 'propane-col'].forEach((cls, ti) => {
+            const type = ['kwh', 'kw', 'gas', 'propane'][ti];
+            if (!m[type]) m[type] = Array(12).fill(0);
             row.querySelectorAll('input.' + cls).forEach((inp, i) => {
               m[type][i] = parseFloat(inp.value) || 0;
             });
@@ -16102,6 +16113,7 @@
             total += (m.kwh[mo] || 0) * (isSummer ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
             total += (m.kw[mo] || 0) * (isSummer ? rates.kwSummer || 0 : rates.kwWinter || 0);
             total += (m.gas[mo] || 0) * (rates.thermRate || 0);
+            total += ((m.propane || [])[mo] || 0) * (rates.gallonRate || 0);
           }
           m.totalDollar = total;
           const cell = document.getElementById('sv-msr-total-' + projId + '-' + m.id);
@@ -16501,8 +16513,9 @@
         sd.measures.forEach((m) => {
           const row = document.getElementById('sv-pg-msr-row-' + m.id);
           if (!row) return;
-          ['kwh-col', 'kw-col', 'gas-col'].forEach((cls, ti) => {
-            const type = ['kwh', 'kw', 'gas'][ti];
+          ['kwh-col', 'kw-col', 'gas-col', 'propane-col'].forEach((cls, ti) => {
+            const type = ['kwh', 'kw', 'gas', 'propane'][ti];
+            if (!m[type]) m[type] = Array(12).fill(0);
             row.querySelectorAll('input.' + cls).forEach((inp, i) => {
               m[type][i] = parseFloat(inp.value) || 0;
             });
@@ -16517,6 +16530,7 @@
             total += (m.kwh[mo] || 0) * (s ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
             total += (m.kw[mo] || 0) * (s ? rates.kwSummer || 0 : rates.kwWinter || 0);
             total += (m.gas[mo] || 0) * (rates.thermRate || 0);
+            total += ((m.propane || [])[mo] || 0) * (rates.gallonRate || 0);
           }
           m.totalDollar = total;
         });
