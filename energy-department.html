@@ -33915,12 +33915,7 @@
           let wtSav = 0,
             wtBase = 0;
           bldgs.forEach((b) => {
-            const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-            let bspCfg = {};
-            try {
-              bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
-            } catch (e) {}
-            const savPct = (bspCfg.savingsPct ?? 11) / 100;
+            const msrSav = getBldgMeasureSavingsByMo(udSelProjId, b.id);
             let bldgBase = 0;
             (b.meters || []).forEach((m) => {
               const bills2 = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
@@ -33932,7 +33927,17 @@
               const { elecByMo: eM, gasByMo: gM } = buildMoMap(m, blRows, bills2, incl2);
               for (let mo = 0; mo < 12; mo++) bldgBase += (eM[mo]?.totalCost || 0) + (gM[mo]?.cost || 0);
             });
-            wtSav += savPct * bldgBase;
+            if (msrSav) {
+              wtSav += msrSav.reduce((s, v) => s + v, 0);
+            } else {
+              const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
+              let bspCfg = {};
+              try {
+                bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
+              } catch (e) {}
+              const savPct = (bspCfg.savingsPct ?? 11) / 100;
+              wtSav += savPct * bldgBase;
+            }
             wtBase += bldgBase;
           });
           return wtBase > 0 ? wtSav / wtBase : 0.11;
@@ -40346,7 +40351,9 @@
       let _bpActualSavingsByCalMo = null;
       let _bpActualSavingsByYM = null; // {YYYY-MM: savings} used for quarterly view to avoid cross-year key collisions
       let _bpPostBaselineStartYM = null; // earliest post-baseline YYYY-MM across all meters
+      let _bpMsrSavByMo = null; // measure-based monthly savings for Building Performance (null = use savPct fallback)
       let _bspBaselineByCalMo = null;
+      let _bspMsrSavByMo = null; // measure-based monthly savings for Building Savings Projection (null = use savPct fallback)
 
       function renderBldgPerfPane(pane, b) {
         if (!b) {
@@ -40381,6 +40388,7 @@
           bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
         } catch (e) {}
         const savPct = (bspCfg.savingsPct ?? 11) / 100;
+        _bpMsrSavByMo = getBldgMeasureSavingsByMo(udSelProjId, b.id);
 
         // ── Actual savings per calendar month ──
         // Sum Total Cost Savings from each meter's Performance tab (same values shown there)
@@ -40427,10 +40435,24 @@
         _bpView = defView;
         _bpMode = defCscMode;
 
+        const _bpMsrCount = _bpMsrSavByMo
+          ? (projects.find((x) => x.id === udSelProjId)?.savingsData?.measures || []).filter(
+              (m) => m.bldgId === b.id && m.selected !== false,
+            ).length
+          : 0;
+        const _bpSourceLabel = _bpMsrSavByMo
+          ? '<div style="font-size:10px;color:var(--accent);margin-top:2px">\u{1F4CA} Source: Energy Savings Measures (' +
+            _bpMsrCount +
+            ' measure' +
+            (_bpMsrCount !== 1 ? 's' : '') +
+            ')</div>'
+          : '<div style="font-size:10px;color:var(--text3);margin-top:2px">\u{1F4CA} Source: Savings %</div>';
+
         pane.innerHTML = `
           <div style="margin-bottom:14px">
             <div style="font-size:16px;font-weight:800;font-family:var(--head);letter-spacing:-.01em">💡 ${b.name} — Building Performance</div>
             <div style="font-size:12px;color:var(--text2);margin-top:3px">Baseline from Meter Data · projected values from Building Savings Projection settings</div>
+            ${_bpSourceLabel}
           </div>
 
           <!-- Controls -->
@@ -40593,6 +40615,8 @@
           if (bspKey) bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
         } catch (e) {}
         const savPct = (bspCfg.savingsPct ?? 11) / 100;
+        const _msrSavByMo = _bpMsrSavByMo;
+        const _useMeasures = !!_msrSavByMo;
 
         // Actual savings per calendar month (re-computed from stored data if available, or from b)
         // We re-use _bpActualSavingsByCalMo if set, else re-derive
@@ -40667,6 +40691,15 @@
           if (view === 'monthly') return col.isTotal ? annBase : moBase[col.mo] || 0;
           return colBaseQ(col);
         }
+        const getProjSav = (col) => {
+          if (_useMeasures) {
+            if (col.isTotal) return _msrSavByMo.reduce((s, v) => s + v, 0);
+            if (col.mo !== undefined) return _msrSavByMo[col.mo] || 0;
+            if (col.mos) return col.mos.reduce((s, mo) => s + (_msrSavByMo[mo] || 0), 0);
+            return 0;
+          }
+          return getBase(col) * savPct;
+        };
         function getActSav(col) {
           if (!hasActual) return null;
           if (col.isTotal) {
@@ -40710,7 +40743,7 @@
 
         // Row definitions
         const annActSav = hasActual ? Object.values(actByMo).reduce((s, v) => s + v, 0) : null;
-        const annProjSav = annBase * savPct;
+        const annProjSav = _useMeasures ? _msrSavByMo.reduce((s, v) => s + v, 0) : annBase * savPct;
         const projPct = annBase > 0 ? ((annProjSav / annBase) * 100).toFixed(0) + '%' : null;
         const actPct = hasActual && annBase > 0 ? ((annActSav / annBase) * 100).toFixed(1) + '%' : null;
 
@@ -40784,8 +40817,8 @@
 
         const tableRows =
           makeRegRow('Baseline Utility Spend $', 'var(--text)', (col) => getBase(col), null) +
-          makeRegRow('Projected Utility Spend $', 'var(--sky)', (col) => getBase(col) * (1 - savPct), null) +
-          makeRegRow('Projected Utility Savings $', 'var(--em)', (col) => getBase(col) * savPct, projPct) +
+          makeRegRow('Projected Utility Spend $', 'var(--sky)', (col) => getBase(col) - getProjSav(col), null) +
+          makeRegRow('Projected Utility Savings $', 'var(--em)', (col) => getProjSav(col), projPct) +
           (hasActual
             ? makeRegRow(
                 'Actual Utility Spend $',
@@ -40826,7 +40859,7 @@
         // Chart data — use projected spend, client savings, csc compensation
         const chartCols = cols.filter((c) => !c.isTotal);
         const chartLabels = JSON.stringify(chartCols.map((c) => c.label));
-        const projSpendVals = JSON.stringify(chartCols.map((col) => getBase(col) * (1 - savPct)));
+        const projSpendVals = JSON.stringify(chartCols.map((col) => getBase(col) - getProjSav(col)));
         const cliVals = JSON.stringify(chartCols.map((col) => (hasActual ? Math.max(0, getCliVal(col) || 0) : 0)));
         const cscVals = JSON.stringify(chartCols.map((col) => (hasActual ? Math.max(0, getCscVal(col) || 0) : 0)));
         // CSC cumulative
@@ -40851,7 +40884,7 @@
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Annual Baseline <span style="font-size:9px;color:var(--em)">ℹ️</span></div>
               <div style="font-size:18px;font-weight:800;font-family:var(--head)">${$f(annBase)}</div>
             </div>
-            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;cursor:pointer" onclick="showFormula(_fml('Projected Savings','Annual Baseline × Savings %','${$f(annBase)} × ${(savPct * 100).toFixed(1)}% = ${$f(annProjSav)}','<div style=\\'font-size:11px;color:var(--text2)\\'>Savings %: from Building Savings Projection settings</div>'),event)">
+            <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;cursor:pointer" onclick="showFormula(_fml('Projected Savings','${_useMeasures ? 'Sum of Energy Savings Measures' : 'Annual Baseline × Savings %'}','${_useMeasures ? $f(annProjSav) : $f(annBase) + ' × ' + (savPct * 100).toFixed(1) + '% = ' + $f(annProjSav)}','<div style=\\'font-size:11px;color:var(--text2)\\'>${_useMeasures ? 'Source: Energy Savings Measures' : 'Savings %: from Building Savings Projection settings'}</div>'),event)">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Projected Savings <span style="font-size:9px;color:var(--em)">ℹ️</span></div>
               <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--em)">${$f(annProjSav)}</div>
               <div style="font-size:11px;color:var(--text2);margin-top:2px">${projPct || ''} of baseline</div>
@@ -41033,7 +41066,22 @@
 
         // Store for use by bspRecalc (called outside this function)
         _bspBaselineByCalMo = Array.from({ length: 12 }, (_, i) => baselineByCalMo[i] || 0);
+        _bspMsrSavByMo = getBldgMeasureSavingsByMo(udSelProjId, b.id);
         const moBase = _bspBaselineByCalMo;
+
+        // ── Source indicator ──
+        const _bspMsrCount = _bspMsrSavByMo
+          ? (projects.find((x) => x.id === udSelProjId)?.savingsData?.measures || []).filter(
+              (m) => m.bldgId === b.id && m.selected !== false,
+            ).length
+          : 0;
+        const _bspSourceLabel = _bspMsrSavByMo
+          ? '<div style="font-size:10px;color:var(--accent);margin-top:2px">\u{1F4CA} Source: Energy Savings Measures (' +
+            _bspMsrCount +
+            ' measure' +
+            (_bspMsrCount !== 1 ? 's' : '') +
+            ')</div>'
+          : '<div style="font-size:10px;color:var(--text3);margin-top:2px">\u{1F4CA} Source: Savings %</div>';
 
         // ── Render UI ──
         pane.innerHTML = `
@@ -41041,6 +41089,7 @@
             <div>
               <div style="font-size:16px;font-weight:800;font-family:var(--head);letter-spacing:-.01em">📈 ${b.name} — Building Savings Projection</div>
               <div style="font-size:12px;color:var(--text2);margin-top:3px">Baseline from Meter Data · adjust percentages and years below</div>
+              ${_bspSourceLabel}
             </div>
           </div>
 
@@ -41188,16 +41237,31 @@
           return (moBase[col.mo] || 0) * Math.pow(1 + escPct, col.yr || 0);
         }
 
+        // Measure-based savings (if available)
+        const _msrSav = _bspMsrSavByMo;
+        const _useM = !!_msrSav;
+        function bspGetProjSav(col) {
+          if (_useM) {
+            if (col.isTotal) return _msrSav.reduce((s, v) => s + v, 0);
+            if (col.mo !== undefined) return _msrSav[col.mo] || 0;
+            if (col.mos) return col.mos.reduce((s, mo) => s + (_msrSav[mo] || 0), 0);
+            return 0;
+          }
+          const base = view === 'monthly' ? (col.isTotal ? annBase : moBase[col.mo]) : colBaseQ(col);
+          return base * savPct;
+        }
+
         const rows = ['baseline', 'projected', 'savings', 'client', 'csc'].map((key) => {
           const vals = cols.map((col) => {
             const base = view === 'monthly' ? (col.isTotal ? annBase : moBase[col.mo]) : colBaseQ(col);
+            const projSav = bspGetProjSav(col);
             switch (key) {
               case 'baseline':
                 return base;
               case 'projected':
-                return base * (1 - savPct);
+                return base - projSav;
               case 'savings':
-                return base * savPct;
+                return projSav;
               case 'client':
                 return base * cliPct;
               case 'csc':
@@ -41296,7 +41360,7 @@
             </div>
             <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Annual Projected Spend</div>
-              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--text)">${$f(annBase * (1 - savPct))}</div>
+              <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--text)">${$f(annBase - (_useM ? _msrSav.reduce((s, v) => s + v, 0) : annBase * savPct))}</div>
             </div>
             <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Total Projected Savings</div>
