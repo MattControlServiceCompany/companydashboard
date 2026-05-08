@@ -46067,12 +46067,7 @@
           try {
             bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
           } catch (e) {}
-          const _perfMsrSav = getBldgMeasureSavingsByMo(p.id, b.id);
-          const bldgSavPct = _perfMsrSav
-            ? bldgBlCost > 0
-              ? _perfMsrSav.reduce((s, v) => s + v, 0) / bldgBlCost
-              : 0
-            : (bspCfg.savingsPct ?? 11) / 100;
+          const bldgSavPct = (bspCfg.savingsPct ?? 11) / 100;
 
           bMeters.forEach(({ m, bills, incl, allRows, bl, blEnd, postRows }) => {
             commoditySet.add(m.commodity);
