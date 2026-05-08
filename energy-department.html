@@ -60863,10 +60863,11 @@
 
         var populated = 0;
         bldgs.forEach(function (b) {
-          // Match by building name (case-insensitive, trimmed)
+          // Match by building name — fuzzy: either side can be a substring of the other
           var bName = (b.name || '').trim().toLowerCase();
           var matchKey = Object.keys(bldgMap).find(function (k) {
-            return k.trim().toLowerCase() === bName;
+            var sName = k.trim().toLowerCase();
+            return sName === bName || bName.includes(sName) || sName.includes(bName);
           });
           if (!matchKey) return;
 
