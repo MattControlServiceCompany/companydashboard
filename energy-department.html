@@ -45888,8 +45888,16 @@
       // baseline vs reporting-period months. Returns {monthly, totals}.
       function collectWeatherData(allBldgMeters, reportYMs) {
         const byYm = {};
+        var blStart = null,
+          blEnd = null;
         allBldgMeters.forEach(({ allRows, bl }) => {
           const blRows = allRows.filter((r) => bl.months.includes(r.ym));
+          // Track baseline period boundaries
+          if (bl && bl.months && bl.months.length) {
+            var sorted = bl.months.slice().sort();
+            if (!blStart || sorted[0] < blStart) blStart = sorted[0];
+            if (!blEnd || sorted[sorted.length - 1] > blEnd) blEnd = sorted[sorted.length - 1];
+          }
           // Accumulate baseline weather per calendar month (averaged later)
           blRows.forEach((r) => {
             const mo = parseInt(r.ym.split('-')[1]) - 1;
@@ -45898,26 +45906,35 @@
             byYm['bl_' + mo].cdd += r.cdd || 0;
             byYm['bl_' + mo].count++;
           });
-          // Reporting period weather by YYYY-MM
-          const rpRows = allRows.filter((r) => reportYMs.includes(r.ym));
-          rpRows.forEach((r) => {
-            if (!byYm[r.ym]) byYm[r.ym] = { hdd: 0, cdd: 0, count: 0 };
-            byYm[r.ym].hdd += r.hdd || 0;
-            byYm[r.ym].cdd += r.cdd || 0;
-            byYm[r.ym].count++;
+          // ALL post-baseline weather by YYYY-MM (not just reporting period)
+          allRows.forEach((r) => {
+            if (r.ym > (blEnd || '')) {
+              if (!byYm[r.ym]) byYm[r.ym] = { hdd: 0, cdd: 0, count: 0 };
+              byYm[r.ym].hdd += r.hdd || 0;
+              byYm[r.ym].cdd += r.cdd || 0;
+              byYm[r.ym].count++;
+            }
           });
         });
-        const monthly = [];
+        // Generate chronological months from baseline start through report end
+        var rpSet = new Set(reportYMs);
+        var startYm = blStart || (reportYMs.length ? reportYMs[0] : null) || String(new Date().getFullYear()) + '-01';
+        var endYm = reportYMs.length ? reportYMs[reportYMs.length - 1] : String(new Date().getFullYear()) + '-12';
+        var monthly = [];
         let totHddBl = 0,
           totCddBl = 0,
           totHddCur = 0,
           totCddCur = 0;
-        // Show all 12 calendar months with baseline averages + current period data
-        var rpSet = new Set(reportYMs);
-        var curYear = reportYMs.length ? reportYMs[0].split('-')[0] : String(new Date().getFullYear());
-        for (var _mi = 0; _mi < 12; _mi++) {
-          var _ym = curYear + '-' + String(_mi + 1).padStart(2, '0');
-          var blData = byYm['bl_' + _mi];
+        var startParts = startYm.split('-');
+        var endParts = endYm.split('-');
+        var curYr = parseInt(startParts[0]);
+        var curMo = parseInt(startParts[1]);
+        var endYr = parseInt(endParts[0]);
+        var endMo = parseInt(endParts[1]);
+        while (curYr < endYr || (curYr === endYr && curMo <= endMo)) {
+          var _ym = curYr + '-' + String(curMo).padStart(2, '0');
+          var calMo = curMo - 1;
+          var blData = byYm['bl_' + calMo];
           var curData = byYm[_ym];
           var hddBl = blData ? blData.hdd / blData.count : 0;
           var cddBl = blData ? blData.cdd / blData.count : 0;
@@ -45926,10 +45943,15 @@
           var inPeriod = rpSet.has(_ym);
           monthly.push({ month: _ym, hddBl: hddBl, hddCur: hddCur, cddBl: cddBl, cddCur: cddCur, inPeriod: inPeriod });
           totHddBl += hddBl;
-          totCddBl += cddBl;
           if (inPeriod) {
             totHddCur += hddCur;
+            totCddBl += cddBl;
             totCddCur += cddCur;
+          }
+          curMo++;
+          if (curMo > 12) {
+            curMo = 1;
+            curYr++;
           }
         }
         return {
@@ -49225,6 +49247,30 @@
         }
         var periodEndLabel = moFullLabel(d && d.period && d.period.end);
 
+        // ── Full-year monthly builder: 12 calendar months with baseline + current ──
+        var _bm = b.baselineMaps || { elecByMo: {}, gasByMo: {}, propaneByMo: {}, waterByMo: {} };
+        var _chartYear = d && d.period && d.period.end ? d.period.end.split('-')[0] : '2026';
+        function buildFullYear(monthlyArr, blMap, blField) {
+          var curByCalMo = {};
+          (monthlyArr || []).forEach(function (mo) {
+            var cm = parseInt(mo.month.split('-')[1]) - 1;
+            curByCalMo[cm] = mo;
+          });
+          var result = [];
+          for (var i = 0; i < 12; i++) {
+            var ym = _chartYear + '-' + String(i + 1).padStart(2, '0');
+            var blVal = 0;
+            if (blMap && blMap[i]) blVal = blMap[i][blField] || 0;
+            var curVal = 0;
+            if (curByCalMo[i]) {
+              curVal = curByCalMo[i].cur || 0;
+              if (curByCalMo[i].bl) blVal = curByCalMo[i].bl;
+            }
+            result.push({ month: ym, bl: blVal, cur: curVal });
+          }
+          return result;
+        }
+
         // ── Bar chart builder ─────────────────────────────────────────────
         // blColor / curColor: CSS color strings
         // unit: string appended to tooltip / footer labels
@@ -49316,8 +49362,8 @@
         var sqftStr = b.sqft ? b.sqft.toLocaleString() + ' sq ft' : '';
         leftHTML +=
           '<div contenteditable="true" style="font-size:9px;color:#666;margin-bottom:10px;line-height:1.5">' +
-          (addr ? addr + '<br>' : '') +
-          (sqftStr ? sqftStr : '') +
+          (sqftStr ? sqftStr + '<br>' : '') +
+          (addr ? addr : '') +
           '</div>';
 
         // EUI comparison bars
@@ -49361,29 +49407,18 @@
           '</div>' +
           '</div>';
 
-        // Monthly EUI mini-chart (kBtu/sqft per month)
+        // Monthly EUI mini-chart (kBtu/sqft per month) — full 12 months
         if (b.sqft > 0) {
           var euiMonthly = [];
-          var _allMo = {};
-          ((b.electric && b.electric.monthly) || []).forEach(function (mo) {
-            if (!_allMo[mo.month]) _allMo[mo.month] = { bl: 0, cur: 0 };
-            _allMo[mo.month].bl += (mo.bl || 0) * 3.412;
-            _allMo[mo.month].cur += (mo.cur || 0) * 3.412;
-          });
-          ((b.gas && b.gas.monthly) || []).forEach(function (mo) {
-            if (!_allMo[mo.month]) _allMo[mo.month] = { bl: 0, cur: 0 };
-            _allMo[mo.month].bl += (mo.bl || 0) * 100;
-            _allMo[mo.month].cur += (mo.cur || 0) * 100;
-          });
-          ((b.propane && b.propane.monthly) || []).forEach(function (mo) {
-            if (!_allMo[mo.month]) _allMo[mo.month] = { bl: 0, cur: 0 };
-            _allMo[mo.month].bl += (mo.bl || 0) * 91.5;
-            _allMo[mo.month].cur += (mo.cur || 0) * 91.5;
-          });
-          var sortedEuiMo = Object.keys(_allMo).sort();
-          sortedEuiMo.forEach(function (ym) {
-            euiMonthly.push({ month: ym, bl: _allMo[ym].bl / b.sqft, cur: _allMo[ym].cur / b.sqft });
-          });
+          var _elFull = buildFullYear(b.electric && b.electric.monthly, _bm.elecByMo, 'kwh');
+          var _gaFull = buildFullYear(b.gas && b.gas.monthly, _bm.gasByMo, 'therms');
+          var _prFull = buildFullYear(b.propane && b.propane.monthly, _bm.propaneByMo, 'gallons');
+          for (var _ei = 0; _ei < 12; _ei++) {
+            var _blKBtu = (_elFull[_ei].bl || 0) * 3.412 + (_gaFull[_ei].bl || 0) * 100 + (_prFull[_ei].bl || 0) * 91.5;
+            var _curKBtu =
+              (_elFull[_ei].cur || 0) * 3.412 + (_gaFull[_ei].cur || 0) * 100 + (_prFull[_ei].cur || 0) * 91.5;
+            euiMonthly.push({ month: _elFull[_ei].month, bl: _blKBtu / b.sqft, cur: _curKBtu / b.sqft });
+          }
           if (euiMonthly.length > 1) {
             var euiMax =
               Math.max.apply(
@@ -49645,40 +49680,46 @@
           '</tbody>' +
           '</table>';
 
-        // Electricity Consumption chart
+        // Electricity Consumption chart — full 12 months
         if (hasElec) {
-          var elChart = buildBarChart(b.electric.monthly, '#aed6f1', '#1a5276', 'kWh');
+          var elFullYear = buildFullYear(b.electric.monthly, _bm.elecByMo, 'kwh');
+          var elChart = buildBarChart(elFullYear, '#aed6f1', '#1a5276', 'kWh');
           rightHTML +=
             '<div style="font-size:9.5px;font-weight:600;color:#1a5276;margin:6px 0 2px">' +
             'Electricity Consumption' +
             '<span style="font-size:8px;font-weight:400;color:#999;margin-left:6px">' +
-            ((d && d.period && d.period.label) || '') +
+            _chartYear +
+            ' Full Year' +
             '</span>' +
             '</div>' +
             elChart;
         }
 
-        // Natural Gas Consumption chart
+        // Natural Gas Consumption chart — full 12 months
         if (hasGas) {
-          var gasChart = buildBarChart(b.gas.monthly, '#f0b27a', '#e67e22', 'Therms');
+          var gasFullYear = buildFullYear(b.gas.monthly, _bm.gasByMo, 'therms');
+          var gasChart = buildBarChart(gasFullYear, '#f0b27a', '#e67e22', 'Therms');
           rightHTML +=
             '<div style="font-size:9.5px;font-weight:600;color:#8b4513;margin:6px 0 2px">' +
             'Natural Gas Consumption' +
             '<span style="font-size:8px;font-weight:400;color:#999;margin-left:6px">' +
-            ((d && d.period && d.period.label) || '') +
+            _chartYear +
+            ' Full Year' +
             '</span>' +
             '</div>' +
             gasChart;
         }
 
-        // Propane Consumption chart
+        // Propane Consumption chart — full 12 months
         if (hasPropane) {
-          var propChart = buildBarChart(b.propane.monthly, '#f9e4b7', '#b7770d', 'Gal');
+          var propFullYear = buildFullYear(b.propane.monthly, _bm.propaneByMo, 'gallons');
+          var propChart = buildBarChart(propFullYear, '#f9e4b7', '#b7770d', 'Gal');
           rightHTML +=
             '<div style="font-size:9.5px;font-weight:600;color:#7d5a00;margin:6px 0 2px">' +
             'Propane Consumption' +
             '<span style="font-size:8px;font-weight:400;color:#999;margin-left:6px">' +
-            ((d && d.period && d.period.label) || '') +
+            _chartYear +
+            ' Full Year' +
             '</span>' +
             '</div>' +
             propChart;
@@ -49687,7 +49728,6 @@
         // ═══════════════════════════════════════════════════════════════════
         // Building Baseline Data table (full columns matching Energy Department)
         // ═══════════════════════════════════════════════════════════════════
-        var _bm = b.baselineMaps || { elecByMo: {}, gasByMo: {}, propaneByMo: {}, waterByMo: {} };
         var _opts = (d.reportOptions && d.reportOptions.blCommodities) || {
           electric: true,
           gas: true,
@@ -49878,9 +49918,9 @@
           blHdr += '<th class="rpt-n">kGal</th><th class="rpt-n">Water Cost</th><th class="rpt-n">$/kGal</th>';
         blHdr += '<th class="rpt-n">Total Cost</th>';
         var blDataTable = blDataRows
-          ? '<div style="margin-top:10px">' +
-            '<div style="font-size:9.5px;font-weight:600;color:#1a5276;margin-bottom:3px">Building Baseline Data</div>' +
-            '<table class="rpt-table" style="font-size:6.5px">' +
+          ? '<div style="margin-top:14px;text-align:center;width:100%;overflow-x:auto">' +
+            '<div style="font-size:9.5px;font-weight:600;color:#1a5276;margin-bottom:3px;text-align:left">Building Baseline Data</div>' +
+            '<table class="rpt-table" style="font-size:6.5px;margin:0 auto;width:100%">' +
             '<thead><tr>' +
             blHdr +
             '</tr></thead><tbody>' +
@@ -50010,10 +50050,10 @@
           '</div>' +
           '<div style="flex:1;min-width:0">' +
           rightHTML +
-          blDataTable +
-          meterPerfHTML +
           '</div>' +
-          '</div>';
+          '</div>' +
+          blDataTable +
+          meterPerfHTML;
 
         return rptPage(n, (b.name || 'Building') + ' — Building Summary', bodyHTML, {
           data: d,
@@ -51585,6 +51625,7 @@
         });
 
         var sections = '';
+        var allBillImages = '';
         if (!periodYMs.length) {
           sections = '<p style="font-size:8px;color:#aaa;font-style:italic">No reporting period months configured.</p>';
         } else {
@@ -51634,16 +51675,17 @@
                   '</tr>';
               });
             }
-            var billImages = '';
             bills.forEach(function (bill) {
               if (bill.pdfImage) {
-                billImages +=
+                allBillImages +=
                   '<div style="display:inline-block;margin:4px 6px 4px 0;border:1px solid #ccc;border-radius:3px;overflow:hidden"><img src="' +
                   bill.pdfImage +
                   '" style="height:120px;width:auto;display:block"><div style="font-size:6.5px;color:#666;padding:2px 4px;background:#f8f8f8;text-align:center">' +
                   bill.building +
                   ' · ' +
                   bill.commodity +
+                  ' · ' +
+                  moLabel +
                   '</div></div>';
               }
             });
@@ -51656,14 +51698,19 @@
               '<th>Building</th><th>Commodity</th><th>Provider</th><th class="rpt-n">kWh</th><th class="rpt-n">kW</th><th class="rpt-n">Therms</th><th class="rpt-n">Gallons</th><th class="rpt-n">Cost</th><th>Bill Date</th>' +
               '</tr></thead><tbody>' +
               rows +
-              '</tbody></table>' +
-              (billImages ? '<div style="margin-bottom:8px">' + billImages + '</div>' : '');
+              '</tbody></table>';
           });
         }
 
-        var _hasBillImages = (d.rawBills || []).some(function (b) {
-          return b.pdfImage;
-        });
+        var billImagesSection = allBillImages
+          ? '<div style="margin-top:16px;border-top:1px solid #ddd;padding-top:10px">' +
+            '<div style="font-size:9.5px;font-weight:700;color:#1a5276;margin-bottom:6px">Scanned Bill Images</div>' +
+            '<div style="display:flex;flex-wrap:wrap">' +
+            allBillImages +
+            '</div></div>'
+          : '';
+
+        var _hasBillImages = allBillImages.length > 0;
         var footerNote =
           '<div style="margin-top:12px;font-size:8px;color:#777;font-style:italic;border-top:1px solid #ddd;padding-top:6px">' +
           (_hasBillImages
@@ -51675,6 +51722,7 @@
           '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix D: Utility Bills</h2>' +
           '<div style="font-size:8.5px;color:#666;margin-bottom:10px">Original utility bill PDFs for the reporting period</div>' +
           sections +
+          billImagesSection +
           footerNote;
 
         return rptPage(n, 'Appendix D: Utility Bills', bodyHTML, {
