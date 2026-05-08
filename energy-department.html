@@ -48181,10 +48181,15 @@
 
             // Build subtitle and narrative based on status
             var subtitle, narrative, rec;
+            var strongWeak = '';
+            if (topCom && weakCom && topCom.name !== weakCom.name) {
+              strongWeak = topCom.name + ' is the strongest performer. ' + weakCom.name + ' is the weakest performer.';
+            } else if (topCom) {
+              strongWeak = topCom.name + ' is the primary commodity.';
+            }
+
             if (b.status === 'on_track') {
-              subtitle =
-                'On Track' +
-                (comSavings.length && comSavings[0].sav > 0 ? ' — ' + comSavings[0].name + ' Leading' : '');
+              subtitle = 'On Track';
               narrative =
                 b.name +
                 ' is performing at ' +
@@ -48196,13 +48201,7 @@
                 ', with current costs at ' +
                 $c(b.curCost) +
                 '. ' +
-                (topCom && topCom.sav > 0
-                  ? topCom.name + ' savings are the primary driver at ' + $c(topCom.sav) + ' for the period. '
-                  : '') +
-                (b.eui && b.eui.energyStar
-                  ? 'This building currently qualifies for ENERGY STAR recognition based on current EUI performance. '
-                  : '') +
-                'BAS scheduling and setpoint controls are operating within design parameters.';
+                strongWeak;
               rec = 'Continue current operating strategy. Monitor for seasonal load shifts entering the next quarter.';
             } else if (b.status === 'near_target') {
               subtitle = 'Approaching Target';
@@ -48216,11 +48215,8 @@
                 $c(b.blCost) +
                 ', with current costs at ' +
                 $c(b.curCost) +
-                ' — close to target but not yet meeting the projected threshold. ' +
-                (topCom && topCom.sav > 0 ? topCom.name + ' performance is solid at ' + $c(topCom.sav) + '. ' : '') +
-                'Minor weather variance or occupancy changes may be contributing to the gap. ' +
-                (b.eui && b.eui.energyStar ? 'EUI is within ENERGY STAR eligible range. ' : '') +
-                'Performance is expected to improve as operating strategies are refined.';
+                '. ' +
+                strongWeak;
               rec =
                 'Review scheduling and setpoints for optimization opportunities. Confirm occupancy schedules are aligned with current use patterns.';
             } else {
@@ -48236,10 +48232,7 @@
                 ', with current costs at ' +
                 $c(b.curCost) +
                 '. ' +
-                (weakCom && weakCom.sav <= 0
-                  ? weakCom.name + ' is the weakest performer and warrants further investigation. '
-                  : '') +
-                'Further investigation is needed to identify potential issues with controls, occupancy, or equipment performance.';
+                strongWeak;
               rec =
                 'Review ' +
                 (weakCom ? weakCom.name.toLowerCase() : 'utility') +
