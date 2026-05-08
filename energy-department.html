@@ -1629,6 +1629,7 @@
       .rpt-table td {
         padding: 4px 6px;
         border: 1px solid #d0d0d0;
+        white-space: nowrap;
       }
       .rpt-table th {
         border: 1px solid #144a6a;
@@ -46531,11 +46532,21 @@
         const barClass = pctOfTarget >= 100 ? 'rpt-ahead' : 'rpt-behind';
 
         // Gauge circle CSS conic-gradient helper
-        function gaugeStyle(pct, color) {
-          var deg = Math.round(Math.min(100, Math.max(0, pct)) * 3.6);
-          return (
-            'background: conic-gradient(' + color + ' 0deg ' + deg + 'deg, #e0e0e0 ' + deg + 'deg); border-radius: 50%;'
-          );
+        function gaugeSVG(pct, color, label, valText) {
+          var clamp = Math.min(100, Math.max(0, pct));
+          var r = 22, cx = 26, cy = 26, sw = 5;
+          var circ = 2 * Math.PI * r;
+          var offset = circ - (clamp / 100) * circ;
+          return '<div style="text-align:center;padding:4px">' +
+            '<svg width="52" height="52" viewBox="0 0 52 52">' +
+            '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="#e0e0e0" stroke-width="' + sw + '"/>' +
+            '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="' + sw + '" ' +
+            'stroke-dasharray="' + circ.toFixed(1) + '" stroke-dashoffset="' + offset.toFixed(1) + '" ' +
+            'stroke-linecap="round" transform="rotate(-90 ' + cx + ' ' + cy + ')"/>' +
+            '<text x="' + cx + '" y="' + (cy + 5) + '" text-anchor="middle" font-size="14" font-weight="700" fill="#1a5276">' + valText + '</text>' +
+            '</svg>' +
+            '<div style="font-size:8.5px;color:#666;text-transform:uppercase">' + label + '</div>' +
+            '</div>';
         }
 
         // EUI improvement %
@@ -46697,46 +46708,10 @@
           '<div>' +
           '<div style="font-size:10px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Portfolio Metrics</div>' +
           '<div class="rpt-gauge-row">' +
-          '<div class="rpt-gauge">' +
-          '<div class="rpt-gauge-circle" style="' +
-          gaugeStyle(pctOfTarget, '#27ae60') +
-          '">' +
-          '<div class="rpt-gauge-val" contenteditable="true">' +
-          pctOfTarget +
-          '%</div>' +
-          '</div>' +
-          '<div class="rpt-gauge-label">vs Target</div>' +
-          '</div>' +
-          '<div class="rpt-gauge">' +
-          '<div class="rpt-gauge-circle" style="' +
-          gaugeStyle(energyRedPct, '#2e86c1') +
-          '">' +
-          '<div class="rpt-gauge-val" contenteditable="true">' +
-          energyRedPct +
-          '%</div>' +
-          '</div>' +
-          '<div class="rpt-gauge-label">Energy Reduced</div>' +
-          '</div>' +
-          '<div class="rpt-gauge">' +
-          '<div class="rpt-gauge-circle" style="' +
-          gaugeStyle(Math.max(0, euiImpPct), '#1e8449') +
-          '">' +
-          '<div class="rpt-gauge-val" contenteditable="true">' +
-          euiImpPct +
-          '%</div>' +
-          '</div>' +
-          '<div class="rpt-gauge-label">EUI Improved</div>' +
-          '</div>' +
-          '<div class="rpt-gauge">' +
-          '<div class="rpt-gauge-circle" style="' +
-          gaugeStyle(contractDonePct, '#8e44ad') +
-          '">' +
-          '<div class="rpt-gauge-val" contenteditable="true">' +
-          contractDonePct +
-          '%</div>' +
-          '</div>' +
-          '<div class="rpt-gauge-label">Contract Done</div>' +
-          '</div>' +
+          gaugeSVG(pctOfTarget, '#27ae60', 'vs Target', pctOfTarget + '%') +
+          gaugeSVG(energyRedPct, '#2e86c1', 'Energy Reduced', energyRedPct + '%') +
+          gaugeSVG(Math.max(0, euiImpPct), '#1e8449', 'EUI Improved', euiImpPct + '%') +
+          gaugeSVG(contractDonePct, '#8e44ad', 'Contract Done', contractDonePct + '%') +
           '</div>' +
           '</div>' +
           '</div>' +
@@ -46850,13 +46825,13 @@
           '</tr>';
 
         const bldgTable =
-          '<table class="rpt-table" contenteditable="false">' +
+          '<table class="rpt-table" contenteditable="false" style="font-size:8px">' +
           '<thead><tr>' +
           '<th>Building</th>' +
-          '<th class="rpt-n">Square Feet</th>' +
-          '<th class="rpt-n">Baseline Cost/Quarter</th>' +
-          '<th class="rpt-n">Projected Cost/Quarter</th>' +
-          '<th class="rpt-n">Current Cost/Quarter</th>' +
+          '<th class="rpt-n">Sq Ft</th>' +
+          '<th class="rpt-n">Baseline Cost</th>' +
+          '<th class="rpt-n">Projected Cost</th>' +
+          '<th class="rpt-n">Actual Cost</th>' +
           '<th class="rpt-n">Savings</th>' +
           '<th class="rpt-n">%</th>' +
           '<th>Status</th>' +
@@ -46959,17 +46934,17 @@
           '</td>' +
           '</tr>';
         const qtrTable =
-          '<table class="rpt-table" contenteditable="false">' +
+          '<table class="rpt-table" contenteditable="false" style="font-size:7.5px">' +
           '<thead><tr>' +
           '<th>Quarter</th>' +
-          '<th class="rpt-n">Baseline kWh</th>' +
-          '<th class="rpt-n">Actual kWh</th>' +
-          '<th class="rpt-n">Baseline Therms</th>' +
-          '<th class="rpt-n">Actual Therms</th>' +
-          '<th class="rpt-n">Baseline Gallons</th>' +
-          '<th class="rpt-n">Actual Gallons</th>' +
-          '<th class="rpt-n">Baseline Cost</th>' +
-          '<th class="rpt-n">Actual Cost</th>' +
+          '<th class="rpt-n">BL kWh</th>' +
+          '<th class="rpt-n">Act kWh</th>' +
+          '<th class="rpt-n">BL Therms</th>' +
+          '<th class="rpt-n">Act Therms</th>' +
+          '<th class="rpt-n">BL Gal</th>' +
+          '<th class="rpt-n">Act Gal</th>' +
+          '<th class="rpt-n">BL Cost</th>' +
+          '<th class="rpt-n">Act Cost</th>' +
           '<th class="rpt-n">Saved</th>' +
           '</tr></thead>' +
           '<tbody>' +
@@ -46977,15 +46952,16 @@
           '</tbody>' +
           '</table>';
 
-        // ── Cumulative vs Projection SVG chart ──
-        // Build a simple inline SVG showing projected savings line + current actual
+        // ── Cumulative vs Projection SVG chart (quarterly) ──
         const svgW = 700,
           svgH = 110;
         const yrs = d.contract.years || 5;
         const annTarget = d.contract.annualTarget || 1;
+        const totalQtrs = yrs * 4;
+        const qPerTarget = annTarget / 4;
         const cumPoints = [];
-        for (var yi = 1; yi <= yrs; yi++) {
-          cumPoints.push({ yr: yi, proj: annTarget * yi });
+        for (var qi = 1; qi <= totalQtrs; qi++) {
+          cumPoints.push({ q: qi, proj: qPerTarget * qi });
         }
         const maxY = annTarget * yrs * 1.1;
         const padL = 60,
@@ -46994,8 +46970,8 @@
           padB = 30;
         const cW = svgW - padL - padR;
         const cH = svgH - padT - padB;
-        const xScale = function (yr) {
-          return padL + ((yr - 1) / Math.max(1, yrs - 1)) * cW;
+        const xScale = function (q) {
+          return padL + ((q - 1) / Math.max(1, totalQtrs - 1)) * cW;
         };
         const yScale = function (v) {
           return padT + cH - (v / maxY) * cH;
@@ -47004,14 +46980,15 @@
         // Projected dashed line
         const projPath = cumPoints
           .map(function (pt, i) {
-            return (i === 0 ? 'M' : 'L') + xScale(pt.yr).toFixed(1) + ',' + yScale(pt.proj).toFixed(1);
+            return (i === 0 ? 'M' : 'L') + xScale(pt.q).toFixed(1) + ',' + yScale(pt.proj).toFixed(1);
           })
           .join(' ');
 
-        // Current actual point (approximate: current year, proportional through year)
-        const actCumVal = annSavings * (d.contract.currentYear - 1 + 0.5);
-        const actX = xScale(d.contract.currentYear - 0.5);
-        const actY = yScale(Math.min(actCumVal, maxY));
+        // Current actual point
+        const curQtr = ((d.contract.currentYear || 1) - 1) * 4 + (d.period.quarter || 1);
+        const actCumVal = d.totals.savings || 0;
+        const actX = xScale(curQtr);
+        const actY = yScale(Math.min(Math.abs(actCumVal), maxY));
 
         // Y-axis labels
         const yAxisLabels = [0, 0.25, 0.5, 0.75, 1.0]
@@ -47030,16 +47007,17 @@
           })
           .join('');
 
-        // X-axis labels
+        // X-axis labels — show only at year boundaries (every 4th quarter)
         const xAxisLabels = cumPoints
+          .filter(function (pt) { return pt.q % 4 === 0; })
           .map(function (pt) {
             return (
               '<text x="' +
-              xScale(pt.yr).toFixed(1) +
+              xScale(pt.q).toFixed(1) +
               '" y="' +
               (svgH - 8) +
               '" text-anchor="middle" font-size="8" fill="#888">Yr ' +
-              pt.yr +
+              (pt.q / 4) +
               '</text>'
             );
           })
@@ -47184,8 +47162,12 @@
           });
           d.buildings.forEach(function (b) {
             (b.electric.monthly || []).forEach(function (mo) {
-              if (!moProj[mo.month] && !moActual[mo.month]) return;
-              // proxy: bl kWh → projected baseline, cur kWh → actual; scale by avg rate
+              if (moProj[mo.month] === undefined && moActual[mo.month] === undefined) return;
+              moProj[mo.month] = (moProj[mo.month] || 0) + (mo.bl || 0);
+              moActual[mo.month] = (moActual[mo.month] || 0) + (mo.cur || 0);
+            });
+            (b.gas.monthly || []).forEach(function (mo) {
+              if (moProj[mo.month] === undefined && moActual[mo.month] === undefined) return;
               moProj[mo.month] = (moProj[mo.month] || 0) + (mo.bl || 0);
               moActual[mo.month] = (moActual[mo.month] || 0) + (mo.cur || 0);
             });
@@ -47270,7 +47252,7 @@
           '</tr>';
 
         const savPct = d.totals.blCost > 0 ? ((d.totals.blCost - d.totals.curCost) / d.totals.blCost) * 100 : 0;
-        const curYrLabel = d.period.year ? 'Projected ' + String(d.period.year) + ' Annual' : 'Current';
+        const curYrLabel = d.period.year ? String(d.period.year) + ' Q' + (d.period.quarter || 1) : 'Current';
         const curRow =
           '<tr>' +
           '<td contenteditable="true">' +
@@ -47321,13 +47303,14 @@
 
         // ── Annual Summary by Building table (2 rows per building: BL + current) ──
         const bldgRows = d.buildings
-          .map(function (b) {
+          .map(function (b, bIdx) {
             const bSavPct = b.blCost > 0 ? ((b.blCost - b.curCost) / b.blCost) * 100 : 0;
             const blEUI = b.eui.baseline > 0 ? b.eui.baseline.toFixed(1) : '—';
             const curEUI = b.eui.current > 0 ? b.eui.current.toFixed(1) : '—';
+            var rowBg = bIdx % 2 === 1 ? 'background:#f4f8fb;' : '';
             return (
-              '<tr>' +
-              '<td rowspan="2" style="font-weight:600;vertical-align:middle;font-size:7px" contenteditable="true">' +
+              '<tr style="' + rowBg + '">' +
+              '<td rowspan="2" style="font-weight:600;vertical-align:middle;font-size:7px;' + rowBg + '" contenteditable="true">' +
               (b.name || '—') +
               '</td>' +
               '<td contenteditable="true" style="color:#888">Baseline</td>' +
@@ -47350,7 +47333,7 @@
               blEUI +
               '</td>' +
               '</tr>' +
-              '<tr>' +
+              '<tr style="' + rowBg + '">' +
               '<td contenteditable="true" style="color:#1a5276;font-weight:600">' +
               curYrLabel +
               '</td>' +
@@ -48947,17 +48930,68 @@
         }
 
         // ═══════════════════════════════════════════════════════════════════
+        // Building Baseline Data table
+        // ═══════════════════════════════════════════════════════════════════
+        var blDataRows = '';
+        var blMoNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        var blTotKwh = 0, blTotKw = 0, blTotTherms = 0, blTotGal = 0, blTotCost = 0;
+        var elMo = (b.electric && b.electric.monthly) || [];
+        var gaMo = (b.gas && b.gas.monthly) || [];
+        var prMo = (b.propane && b.propane.monthly) || [];
+        for (var mi = 0; mi < 12; mi++) {
+          var eM = elMo.find(function(m) { return m.month && parseInt(m.month.split('-')[1]) - 1 === mi; }) || {};
+          var gM = gaMo.find(function(m) { return m.month && parseInt(m.month.split('-')[1]) - 1 === mi; }) || {};
+          var pM = prMo.find(function(m) { return m.month && parseInt(m.month.split('-')[1]) - 1 === mi; }) || {};
+          var mKwh = eM.bl || 0, mKw = eM.kwBl || eM.blKw || 0, mTherms = gM.bl || 0, mGal = pM.bl || 0;
+          var mCost = (eM.blCost || 0) + (gM.blCost || 0) + (pM.blCost || 0);
+          blTotKwh += mKwh; blTotKw += mKw; blTotTherms += mTherms; blTotGal += mGal; blTotCost += mCost;
+          if (mKwh || mKw || mTherms || mGal || mCost) {
+            blDataRows += '<tr>' +
+              '<td>' + blMoNames[mi] + '</td>' +
+              '<td class="rpt-n">' + (mKwh ? $n(mKwh) : '—') + '</td>' +
+              '<td class="rpt-n">' + (mKw ? $n(mKw) : '—') + '</td>' +
+              '<td class="rpt-n">' + (mTherms ? $n(mTherms) : '—') + '</td>' +
+              (hasPropane ? '<td class="rpt-n">' + (mGal ? $n(mGal) : '—') + '</td>' : '') +
+              '<td class="rpt-n">' + (mCost ? $c(mCost) : '—') + '</td>' +
+              '</tr>';
+          }
+        }
+        if (blDataRows) {
+          blDataRows += '<tr class="rpt-tot"><td>Annual</td>' +
+            '<td class="rpt-n">' + $n(blTotKwh) + '</td>' +
+            '<td class="rpt-n">' + (blTotKw ? $n(Math.round(blTotKw / 12)) + ' avg' : '—') + '</td>' +
+            '<td class="rpt-n">' + $n(blTotTherms) + '</td>' +
+            (hasPropane ? '<td class="rpt-n">' + $n(blTotGal) + '</td>' : '') +
+            '<td class="rpt-n">' + $c(blTotCost) + '</td></tr>';
+        }
+        var blDataTable = blDataRows ?
+          '<div style="margin-top:10px">' +
+          '<div style="font-size:9.5px;font-weight:600;color:#1a5276;margin-bottom:3px">Building Baseline Data</div>' +
+          '<table class="rpt-table" style="font-size:8px">' +
+          '<thead><tr><th>Month</th><th class="rpt-n">kWh</th><th class="rpt-n">Peak kW</th><th class="rpt-n">Therms</th>' +
+          (hasPropane ? '<th class="rpt-n">Gallons</th>' : '') +
+          '<th class="rpt-n">Total Cost</th></tr></thead><tbody>' +
+          blDataRows + '</tbody></table></div>' : '';
+
+        // Notes
+        leftHTML += '<div style="margin-top:10px;font-size:8px;color:#666;line-height:1.5">' +
+          '<div style="font-weight:600;color:#555;text-transform:uppercase;font-size:7px;letter-spacing:.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
+          '<div>1. Achieved (%) for each energy type represents the percent of energy units saved for the months included in this report.</div>' +
+          '<div>2. Achieved ($) represents the utility cost savings for this time period calculated by subtracting the baseline energy usage from the current energy usage multiplied by the higher of current or baseline utility rates.</div>' +
+          '<div>3. The Baseline EUIs are normalized for weather and square footage when applicable.</div>' +
+          '</div>';
+
+        // ═══════════════════════════════════════════════════════════════════
         // Assemble two-column layout
         // ═══════════════════════════════════════════════════════════════════
         var bodyHTML =
-          '<div style="display:flex;gap:16px;align-items:flex-start;height:100%">' +
-          // Left column ~38%
+          '<div style="display:flex;gap:16px;align-items:flex-start">' +
           '<div style="flex:0 0 38%;max-width:38%;padding-right:12px;border-right:1px solid #d4e4f0">' +
           leftHTML +
           '</div>' +
-          // Right column ~62%
           '<div style="flex:1;min-width:0">' +
           rightHTML +
+          blDataTable +
           '</div>' +
           '</div>';
 
