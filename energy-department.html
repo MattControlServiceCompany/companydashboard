@@ -48383,34 +48383,69 @@
           setpoints.forEach(function (sp) {
             const bldgName = getBldgName(sp.buildingId);
             const zones = sp.zones || [];
+            const useAvg = sp.viewMode === 'average';
             let zoneRows = '';
-            zones.forEach(function (z) {
-              const occHeat = z.occHeat != null ? z.occHeat + '°F' : '—';
-              const occCool = z.occCool != null ? z.occCool + '°F' : '—';
-              const unoccHeat = z.unoccHeat != null ? z.unoccHeat + '°F' : '—';
-              const unoccCool = z.unoccCool != null ? z.unoccCool + '°F' : '—';
-              zoneRows +=
-                '<tr>' +
-                '<td contenteditable="true">' +
-                (z.name || '—') +
-                '</td>' +
-                '<td class="rpt-n" contenteditable="true">' +
-                occHeat +
-                '</td>' +
-                '<td class="rpt-n" contenteditable="true">' +
-                occCool +
-                '</td>' +
-                '<td class="rpt-n" contenteditable="true">' +
-                unoccHeat +
-                '</td>' +
-                '<td class="rpt-n" contenteditable="true">' +
-                unoccCool +
-                '</td>' +
-                '<td contenteditable="true">' +
-                scheduleLabel(z.schedule) +
-                '</td>' +
-                '</tr>';
-            });
+            if (useAvg && zones.length) {
+              var bldgObj = buildings.filter(function (b) {
+                return b.id === sp.buildingId || b.buildingId === sp.buildingId;
+              })[0];
+              var avg = _spComputeAvgRow(zones, bldgObj);
+              if (avg) {
+                var oh = avg.occHeat != null ? avg.occHeat + '°F' : '—';
+                var oc = avg.occCool != null ? avg.occCool + '°F' : '—';
+                var uh = avg.unoccHeat != null ? avg.unoccHeat + '°F' : '—';
+                var uc = avg.unoccCool != null ? avg.unoccCool + '°F' : '—';
+                zoneRows =
+                  '<tr>' +
+                  '<td contenteditable="true">' +
+                  avg.name +
+                  '</td>' +
+                  '<td class="rpt-n" contenteditable="true">' +
+                  oh +
+                  '</td>' +
+                  '<td class="rpt-n" contenteditable="true">' +
+                  oc +
+                  '</td>' +
+                  '<td class="rpt-n" contenteditable="true">' +
+                  uh +
+                  '</td>' +
+                  '<td class="rpt-n" contenteditable="true">' +
+                  uc +
+                  '</td>' +
+                  '<td contenteditable="true">' +
+                  scheduleLabel(avg.schedule) +
+                  '</td>' +
+                  '</tr>';
+              }
+            } else {
+              zones.forEach(function (z) {
+                const occHeat = z.occHeat != null ? z.occHeat + '°F' : '—';
+                const occCool = z.occCool != null ? z.occCool + '°F' : '—';
+                const unoccHeat = z.unoccHeat != null ? z.unoccHeat + '°F' : '—';
+                const unoccCool = z.unoccCool != null ? z.unoccCool + '°F' : '—';
+                zoneRows +=
+                  '<tr>' +
+                  '<td contenteditable="true">' +
+                  (z.name || '—') +
+                  '</td>' +
+                  '<td class="rpt-n" contenteditable="true">' +
+                  occHeat +
+                  '</td>' +
+                  '<td class="rpt-n" contenteditable="true">' +
+                  occCool +
+                  '</td>' +
+                  '<td class="rpt-n" contenteditable="true">' +
+                  unoccHeat +
+                  '</td>' +
+                  '<td class="rpt-n" contenteditable="true">' +
+                  unoccCool +
+                  '</td>' +
+                  '<td contenteditable="true">' +
+                  scheduleLabel(z.schedule) +
+                  '</td>' +
+                  '</tr>';
+              });
+            }
             if (zoneRows === '') {
               zoneRows = '<tr><td colspan="6" style="color:#aaa;font-style:italic">No zones recorded</td></tr>';
             }
@@ -48420,7 +48455,9 @@
               '</h2>' +
               '<table class="rpt-table" contenteditable="true">' +
               '<thead><tr>' +
-              '<th>Zone / System</th>' +
+              '<th>' +
+              (useAvg ? 'Building' : 'Zone / System') +
+              '</th>' +
               '<th class="rpt-n">Occ Heat</th>' +
               '<th class="rpt-n">Occ Cool</th>' +
               '<th class="rpt-n">Unocc Heat</th>' +
@@ -48434,11 +48471,15 @@
           });
         }
 
+        const rptViewMode =
+          setpoints.length && setpoints[0].viewMode === 'average' ? 'building averages' : 'individual zones';
         const bodyHTML =
           '<div class="rpt-body">' +
-          '<p style="font-size:10px;color:#666;margin:0 0 8px">Current average setpoints and operating schedules per building — from uploaded BAS exports</p>' +
+          '<p style="font-size:10px;color:#666;margin:0 0 8px">Current setpoints and operating schedules per building — from uploaded BAS exports (' +
+          rptViewMode +
+          ')</p>' +
           bodyContent +
-          '<p style="font-size:9px;color:#888;margin-top:12px">Source: BAS export uploaded to Set Points &amp; Schedules tab. Values are zone averages.</p>' +
+          '<p style="font-size:9px;color:#888;margin-top:12px">Source: BAS export uploaded to Set Points &amp; Schedules tab.</p>' +
           '</div>';
 
         return rptPage(n, 'BAS Set Points & Schedules', bodyHTML, {
@@ -60494,6 +60535,12 @@
         const spRecord = (p.setpoints || []).find((r) => r.buildingId === activeBldgId);
         const zones = spRecord ? spRecord.zones : [];
 
+        // View mode: 'individual' (default) or 'average'
+        if (!window._spViewMode) window._spViewMode = {};
+        const viewMode = window._spViewMode[projId] || (spRecord && spRecord.viewMode) || 'individual';
+        window._spViewMode[projId] = viewMode;
+        const isAvg = viewMode === 'average';
+
         const bldgOptions = bldgs
           .map(
             (b) =>
@@ -60501,7 +60548,21 @@
           )
           .join('');
 
-        const tableRows = zones.map((z, i) => _spZoneRow(projId, activeBldgId, z, i)).join('');
+        let tableContent = '';
+        if (isAvg) {
+          const avgRow = _spComputeAvgRow(
+            zones,
+            bldgs.find((b) => b.id === activeBldgId),
+          );
+          tableContent = avgRow
+            ? _spAvgRow(avgRow)
+            : `<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text3);font-style:italic">No zones to average.</td></tr>`;
+        } else {
+          const tableRows = zones.map((z, i) => _spZoneRow(projId, activeBldgId, z, i)).join('');
+          tableContent =
+            tableRows ||
+            `<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--text3);font-style:italic">No zones yet — add one above or import a CSV.</td></tr>`;
+        }
 
         container.innerHTML = `
           <div class="card" style="margin-bottom:16px">
@@ -60512,12 +60573,25 @@
                   onchange="window._spActiveBldg['${projId}']=this.value;renderSetpointsTab('${projId}')">
                   ${bldgOptions}
                 </select>
-                <button class="btn btn-ghost btn-sm" onclick="spAddZoneRow('${projId}','${activeBldgId}')">+ Add Zone</button>
-                <button class="btn btn-em btn-sm" onclick="spSave('${projId}','${activeBldgId}')">💾 Save</button>
+                ${
+                  !isAvg
+                    ? `<button class="btn btn-ghost btn-sm" onclick="spAddZoneRow('${projId}','${activeBldgId}')">+ Add Zone</button>
+                <button class="btn btn-em btn-sm" onclick="spSave('${projId}','${activeBldgId}')">💾 Save</button>`
+                    : ''
+                }
               </div>
             </div>
             <div style="padding:16px">
-              <!-- CSV Upload Area -->
+              <!-- View Mode Toggle -->
+              <div style="display:flex;gap:0;margin-bottom:16px;border:1px solid var(--border2);border-radius:6px;overflow:hidden;width:fit-content">
+                <button style="padding:6px 14px;font-size:12px;font-weight:600;border:none;cursor:pointer;transition:all .15s;${!isAvg ? 'background:var(--accent);color:#fff' : 'background:var(--s1);color:var(--text2)'}"
+                  onclick="spSetViewMode('${projId}','individual')">Individual Zones</button>
+                <button style="padding:6px 14px;font-size:12px;font-weight:600;border:none;border-left:1px solid var(--border2);cursor:pointer;transition:all .15s;${isAvg ? 'background:var(--accent);color:#fff' : 'background:var(--s1);color:var(--text2)'}"
+                  onclick="spSetViewMode('${projId}','average')">Building Average</button>
+              </div>
+              ${
+                !isAvg
+                  ? `<!-- CSV Upload Area -->
               <div id="sp-upload-${projId}" style="border:2px dashed var(--border2);border-radius:8px;padding:16px;text-align:center;margin-bottom:16px;cursor:pointer;transition:border-color .2s"
                    onclick="document.getElementById('sp-file-${projId}').click()"
                    ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
@@ -60528,23 +60602,25 @@
                 <div style="font-size:11px;color:var(--text3);margin-top:4px">Zone CSV (Zone/System · Occ/Unocc Heat/Cool · Schedule) or Niagara equipment snapshot</div>
                 <input type="file" id="sp-file-${projId}" accept=".csv,.txt" style="display:none"
                        onchange="spHandleFileInput(event,'${projId}','${activeBldgId}')">
-              </div>
+              </div>`
+                  : ''
+              }
               <!-- Zone Table -->
               <div style="overflow-x:auto">
                 <table style="width:100%;border-collapse:collapse;font-size:12px" id="sp-table-${projId}">
                   <thead>
                     <tr style="border-bottom:1px solid var(--border);text-align:left">
-                      <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);min-width:150px">Zone / System</th>
+                      <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);min-width:150px">${isAvg ? 'Building' : 'Zone / System'}</th>
                       <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Occ Heat °F</th>
                       <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Occ Cool °F</th>
                       <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Unocc Heat °F</th>
                       <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Unocc Cool °F</th>
                       <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);min-width:160px">Schedule</th>
-                      <th style="padding:6px 4px;width:32px"></th>
+                      ${!isAvg ? '<th style="padding:6px 4px;width:32px"></th>' : ''}
                     </tr>
                   </thead>
                   <tbody id="sp-tbody-${projId}">
-                    ${tableRows || `<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--text3);font-style:italic">No zones yet — add one above or import a CSV.</td></tr>`}
+                    ${tableContent}
                   </tbody>
                 </table>
               </div>
@@ -60579,6 +60655,58 @@
               onclick="spDeleteZone('${projId}','${bldgId}',${idx})">✕</button>
           </td>
         </tr>`;
+      }
+
+      function _spComputeAvgRow(zones, bldg) {
+        if (!zones || !zones.length) return null;
+        function avg(arr, key) {
+          var vals = arr.map((z) => z[key]).filter((v) => v !== null && v !== undefined && !isNaN(v));
+          if (!vals.length) return null;
+          return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+        }
+        var schedules = zones.map((z) => (z.schedule || '').trim()).filter((s) => s);
+        var sched = '';
+        if (schedules.length) {
+          var counts = {};
+          schedules.forEach((s) => {
+            counts[s] = (counts[s] || 0) + 1;
+          });
+          var sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+          sched = sorted.length > 1 && sorted[0][1] === sorted[1][1] ? 'Varies' : sorted[0][0];
+        }
+        return {
+          name: (bldg && bldg.name) || 'Building',
+          occHeat: avg(zones, 'occHeat'),
+          occCool: avg(zones, 'occCool'),
+          unoccHeat: avg(zones, 'unoccHeat'),
+          unoccCool: avg(zones, 'unoccCool'),
+          schedule: sched,
+        };
+      }
+
+      function _spAvgRow(z) {
+        const v = (val) => (val !== null && val !== undefined ? val : '—');
+        return `<tr style="border-bottom:1px solid var(--border1)">
+          <td style="padding:6px 8px;font-size:12px;font-weight:600;color:var(--text)">${_escHtml(z.name)}</td>
+          <td style="padding:6px 8px;font-size:12px;font-family:var(--mono);text-align:center;color:var(--text2)">${v(z.occHeat)}</td>
+          <td style="padding:6px 8px;font-size:12px;font-family:var(--mono);text-align:center;color:var(--text2)">${v(z.occCool)}</td>
+          <td style="padding:6px 8px;font-size:12px;font-family:var(--mono);text-align:center;color:var(--text2)">${v(z.unoccHeat)}</td>
+          <td style="padding:6px 8px;font-size:12px;font-family:var(--mono);text-align:center;color:var(--text2)">${v(z.unoccCool)}</td>
+          <td style="padding:6px 8px;font-size:12px;color:var(--text2)">${_escHtml(z.schedule || '—')}</td>
+        </tr>`;
+      }
+
+      function spSetViewMode(projId, mode) {
+        window._spViewMode[projId] = mode;
+        var p = projects.find((x) => String(x.id) === String(projId));
+        if (p) {
+          if (!p.setpoints) p.setpoints = [];
+          p.setpoints.forEach((sp) => {
+            sp.viewMode = mode;
+          });
+          sset('en_projects', projects);
+        }
+        renderSetpointsTab(projId);
       }
 
       // In-memory scratch pad for unsaved edits
