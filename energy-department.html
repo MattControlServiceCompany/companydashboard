@@ -15898,7 +15898,7 @@
         if (!tbody) return;
         const bldgOpts = bldgs.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
         if (!sd.measures.length) {
-          tbody.innerHTML = `<tr><td colspan="44" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
+          tbody.innerHTML = `<tr><td colspan="200" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
             No measures yet — click "+ Add Measure" to start building your savings projection.
           </td></tr>`;
           renderSavingsFooter(projId, sd);
@@ -15919,29 +15919,68 @@
           }
         });
         if (_msrDataChanged) sset('en_projects', projects);
+
+        // ── Rate functions for cost calc ──
+        const _kwhRateFn = (r) => (mo) => (SUMMER_MOS.includes(mo) ? r.kwhSummer || 0 : r.kwhWinter || 0);
+        const _kwRateFn = (r) => (mo) => (SUMMER_MOS.includes(mo) ? r.kwSummer || 0 : r.kwWinter || 0);
+        const _gasRateFn = (r) => () => r.thermRate || 0;
+        const _propRateFn = (r) => () => r.gallonRate || 0;
+
+        // ── Usage cells helper (12 monthly inputs + total) ──
+        const _usageCells = (arr, cls, grp, bgColor, pId, mId) => {
+          const isOpen = !!_svColGroupState[grp];
+          const vals = arr || Array(12).fill(0);
+          const total = vals.reduce((a, b) => a + (parseFloat(b) || 0), 0);
+          const moCells = vals
+            .map(
+              (v, i) =>
+                `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:${bgColor}"><input class="sv-num-inp ${cls}" type="number" step="any" value="${v || ''}" placeholder="0" style="width:54px" onchange="updateMsrVal('${pId}','${mId}','${cls.replace('-col', '')}',${i},this.value)" onfocusout="autoSaveMsr('${pId}')"></td>`,
+            )
+            .join('');
+          return (
+            moCells +
+            `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;text-align:right;padding:4px 4px;white-space:nowrap">${total ? Math.round(total).toLocaleString() : ''}</td>`
+          );
+        };
+
+        // ── Cost cells helper (12 monthly read-only + total) ──
+        const _costCells = (arr, grp, bgColor, rateFn) => {
+          const isOpen = !!_svColGroupState[grp];
+          const vals = arr || Array(12).fill(0);
+          let total = 0;
+          const moCells = vals
+            .map((v, i) => {
+              const cost = (parseFloat(v) || 0) * rateFn(i);
+              total += cost;
+              return `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:${bgColor};font-family:var(--mono);font-size:10px;text-align:right;color:var(--text2)">${cost ? '$' + Math.round(cost).toLocaleString() : ''}</td>`;
+            })
+            .join('');
+          return (
+            moCells +
+            `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;text-align:right;padding:4px 4px;white-space:nowrap">${total ? '$' + Math.round(total).toLocaleString() : ''}</td>`
+          );
+        };
+
+        // ── Rate cell helper ──
+        const _rateCell = (mId, field, step, r) =>
+          `<td><input class="sv-num-inp sv-rate-inp" type="number" step="${step}" value="${r[field] || ''}" placeholder="0" style="width:52px;font-size:10px" onchange="svUpdateMsrRate('${mId}','${field}',parseFloat(this.value)||0)" onfocusout="autoSaveMsr('${projId}')"></td>`;
+
         tbody.innerHTML = sd.measures
           .map((m) => {
             const r = m.rates || {};
+            if (!m.propane) m.propane = Array(12).fill(0);
             const annMsrKwh = m.kwh.reduce((a, b) => a + (parseFloat(b) || 0), 0);
-            const kwhCells = m.kwh
-              .map(
-                (v, i) =>
-                  `<td style="border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:rgba(59,130,246,0.03)"><input class="sv-num-inp kwh-col" type="number" step="any" value="${v || ''}" placeholder="0" style="width:54px" onchange="updateMsrVal('${projId}','${m.id}','kwh',${i},this.value)" onfocusout="autoSaveMsr('${projId}')"></td>`,
-              )
-              .join('');
-            const kwCells = m.kw
-              .map(
-                (v, i) =>
-                  `<td style="border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:rgba(245,158,11,0.03)"><input class="sv-num-inp kw-col" type="number" step="any" value="${v || ''}" placeholder="0" style="width:54px" onchange="updateMsrVal('${projId}','${m.id}','kw',${i},this.value)" onfocusout="autoSaveMsr('${projId}')"></td>`,
-              )
-              .join('');
-            const gasCells = m.gas
-              .map(
-                (v, i) =>
-                  `<td style="border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:rgba(20,184,166,0.03)"><input class="sv-num-inp gas-col" type="number" step="any" value="${v || ''}" placeholder="0" style="width:54px" onchange="updateMsrVal('${projId}','${m.id}','gas',${i},this.value)" onfocusout="autoSaveMsr('${projId}')"></td>`,
-              )
-              .join('');
-            const dollarStr = m.totalDollar > 0 ? '$' + Math.round(m.totalDollar).toLocaleString() : '—';
+
+            // Compute projected savings $ for this measure
+            let projSavings = 0;
+            for (let mo = 0; mo < 12; mo++) {
+              projSavings += (parseFloat(m.kwh[mo]) || 0) * _kwhRateFn(r)(mo);
+              projSavings += (parseFloat(m.kw[mo]) || 0) * _kwRateFn(r)(mo);
+              projSavings += (parseFloat(m.gas[mo]) || 0) * _gasRateFn(r)();
+              projSavings += (parseFloat(m.propane[mo]) || 0) * _propRateFn(r)();
+            }
+
+            const dollarStr = projSavings > 0 ? '$' + Math.round(projSavings).toLocaleString() : '—';
             return `<tr id="sv-msr-row-${projId}-${m.id}">
             <td style="text-align:center;vertical-align:top;padding-top:6px"><span class="sv-detail-toggle" id="sv-dtog-${m.id}" onclick="svToggleDetail('${m.id}')">▶</span></td>
             <td style="text-align:center"><input type="checkbox" class="sv-sel-cb" ${m.selected ? 'checked' : ''} onchange="updateMsrSel('${projId}','${m.id}',this.checked)"></td>
@@ -15949,12 +15988,22 @@
             <td><select class="sv-msr-sel" onchange="updateMsrField('${projId}','${m.id}','bldgId',this.value)">${bldgOpts.replace(`value="${m.bldgId}"`, `value="${m.bldgId}" selected`)}</select></td>
             <td><input class="sv-num-inp sv-sqft-inp" type="number" style="width:68px" placeholder="0" value="${m.sqft || ''}" onchange="updateMsrField('${projId}','${m.id}','sqft',parseFloat(this.value)||0)"></td>
             <td><input class="sv-msr-txt" style="width:100%;min-width:160px" placeholder="e.g. BAS Setpoint Optimization 74/70°F" value="${m.desc || ''}" onchange="updateMsrField('${projId}','${m.id}','desc',this.value)"></td>
-            ${kwhCells}${kwCells}${gasCells}
+            ${_rateCell(m.id, 'kwhSummer', '0.0001', r)}${_rateCell(m.id, 'kwhWinter', '0.0001', r)}
+            ${_rateCell(m.id, 'kwSummer', '0.01', r)}${_rateCell(m.id, 'kwWinter', '0.01', r)}
+            ${_rateCell(m.id, 'thermRate', '0.001', r)}${_rateCell(m.id, 'gallonRate', '0.001', r)}
+            ${_usageCells(m.kwh, 'kwh-col', 'kwh', 'rgba(59,130,246,0.03)', projId, m.id)}
+            ${_usageCells(m.kw, 'kw-col', 'kw', 'rgba(245,158,11,0.03)', projId, m.id)}
+            ${_usageCells(m.gas, 'gas-col', 'gas', 'rgba(20,184,166,0.03)', projId, m.id)}
+            ${_usageCells(m.propane, 'propane-col', 'propane', 'rgba(168,85,247,0.03)', projId, m.id)}
+            ${_costCells(m.kwh, 'kwhCost', 'rgba(59,130,246,0.02)', _kwhRateFn(r))}
+            ${_costCells(m.kw, 'kwCost', 'rgba(245,158,11,0.02)', _kwRateFn(r))}
+            ${_costCells(m.gas, 'gasCost', 'rgba(20,184,166,0.02)', _gasRateFn(r))}
+            ${_costCells(m.propane, 'propaneCost', 'rgba(168,85,247,0.02)', _propRateFn(r))}
             <td class="sv-total-cell" style="border-left:2px solid var(--border2)" id="sv-msr-total-${projId}-${m.id}">${dollarStr}</td>
             <td style="text-align:center"><button class="btn-del" onclick="removeSavingsMeasure('${projId}','${m.id}')">✕</button></td>
           </tr>
           <tr id="sv-detail-${m.id}" class="sv-detail-row" style="display:none">
-            <td colspan="44" style="padding:12px 16px">
+            <td colspan="200" style="padding:12px 16px">
               <div class="sv-detail-grid">
                 <div>
                   <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Utility Rates</div>
@@ -15964,6 +16013,7 @@
                     <div class="sv-rate-field"><label>kW $/Summer</label><input class="fi" type="number" step="0.01" value="${r.kwSummer || ''}" onchange="svUpdateMsrRate('${m.id}','kwSummer',parseFloat(this.value)||0)"></div>
                     <div class="sv-rate-field"><label>kW $/Winter</label><input class="fi" type="number" step="0.01" value="${r.kwWinter || ''}" onchange="svUpdateMsrRate('${m.id}','kwWinter',parseFloat(this.value)||0)"></div>
                     <div class="sv-rate-field"><label>Gas $/Therm</label><input class="fi" type="number" step="0.001" value="${r.thermRate || ''}" onchange="svUpdateMsrRate('${m.id}','thermRate',parseFloat(this.value)||0)"></div>
+                    <div class="sv-rate-field"><label>Propane $/Gallon</label><input class="fi" type="number" step="0.001" value="${r.gallonRate || ''}" onchange="svUpdateMsrRate('${m.id}','gallonRate',parseFloat(this.value)||0)"></div>
                   </div>
                   <button class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:11px" onclick="svResetMsrRates('${m.id}')">Reset to Building Defaults</button>
                 </div>
@@ -16004,32 +16054,63 @@
         const selMsrs = sd.measures.filter((m) => m.selected);
         const totKwh = Array(12).fill(0),
           totKw = Array(12).fill(0),
-          totGas = Array(12).fill(0);
+          totGas = Array(12).fill(0),
+          totPropane = Array(12).fill(0);
         let grandTotal = 0;
         selMsrs.forEach((m) => {
           m.kwh.forEach((v, i) => (totKwh[i] += parseFloat(v) || 0));
           m.kw.forEach((v, i) => (totKw[i] += parseFloat(v) || 0));
           m.gas.forEach((v, i) => (totGas[i] += parseFloat(v) || 0));
+          (m.propane || []).forEach((v, i) => (totPropane[i] += parseFloat(v) || 0));
           grandTotal += parseFloat(m.totalDollar) || 0;
         });
         const fmtN = (v) => (v ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '');
+        // Footer usage cells (collapsible months + total)
+        const _footUsage = (totArr, grp, color) => {
+          const isOpen = !!_svColGroupState[grp];
+          const annTotal = totArr.reduce((a, b) => a + b, 0);
+          return (
+            totArr
+              .map(
+                (v, i) =>
+                  `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});font-family:var(--mono);font-size:11px;font-weight:700;color:${color};text-align:right;padding:5px 3px">${fmtN(v)}</td>`,
+              )
+              .join('') +
+            `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;color:${color};text-align:right;padding:5px 3px">${fmtN(annTotal)}</td>`
+          );
+        };
+        const _footCost = (grp) => {
+          const isOpen = !!_svColGroupState[grp];
+          return (
+            Array(12)
+              .fill(0)
+              .map(
+                (_, i) =>
+                  `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:5px 3px"></td>`,
+              )
+              .join('') + '<td style="border-left:1px solid var(--border);padding:5px 3px"></td>'
+          );
+        };
         tfoot.innerHTML = `<tr class="sv-foot-row">
-          <td colspan="6" style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
-          ${totKwh.map((v, i) => `<td style="border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
-          ${totKw.map((v, i) => `<td style="border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--amber);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
-          ${totGas.map((v, i) => `<td style="border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--teal);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
+          <td colspan="12" style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
+          ${_footUsage(totKwh, 'kwh', 'var(--accent)')}
+          ${_footUsage(totKw, 'kw', 'var(--amber)')}
+          ${_footUsage(totGas, 'gas', 'var(--teal)')}
+          ${_footUsage(totPropane, 'propane', 'var(--purple,#a855f7)')}
+          ${_footCost('kwhCost')}${_footCost('kwCost')}${_footCost('gasCost')}${_footCost('propaneCost')}
           <td class="sv-total-cell sv-foot-total" style="border-left:2px solid var(--border2)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</td>
           <td></td>
         </tr>`;
-        renderSavingsSummary(projId, sd, totKwh, totKw, totGas, grandTotal);
+        renderSavingsSummary(projId, sd, totKwh, totKw, totGas, totPropane, grandTotal);
       }
 
-      function renderSavingsSummary(projId, sd, totKwh, totKw, totGas, grandTotal) {
+      function renderSavingsSummary(projId, sd, totKwh, totKw, totGas, totPropane, grandTotal) {
         const el = document.getElementById('sv-summary-' + projId);
         if (!el) return;
         const annKwh = totKwh.reduce((a, b) => a + b, 0);
         const annKwAvg = totKw.reduce((a, b) => a + b, 0) / 12;
         const annGas = totGas.reduce((a, b) => a + b, 0);
+        const annPropane = (totPropane || []).reduce((a, b) => a + b, 0);
         const selCount = (sd.measures || []).filter((m) => m.selected).length;
         if (!selCount) {
           el.innerHTML = '';
@@ -16046,7 +16127,8 @@
             <div class="bl-item"><div class="bl-lbl">Annual kWh Savings</div><div class="bl-val" style="color:var(--accent)">${Math.round(annKwh).toLocaleString()}<span class="bl-unit"> kWh/yr</span></div></div>
             <div class="bl-item"><div class="bl-lbl">Avg kW Reduction</div><div class="bl-val" style="color:var(--amber)">${annKwAvg.toFixed(1)}<span class="bl-unit"> kW avg</span></div></div>
             <div class="bl-item"><div class="bl-lbl">Annual Gas Savings</div><div class="bl-val" style="color:var(--teal)">${Math.round(annGas).toLocaleString()}<span class="bl-unit"> Therms/yr</span></div></div>
-            <div class="bl-item"><div class="bl-lbl">Total Est. $/Yr</div><div class="bl-val" style="color:var(--green)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</div></div>
+            <div class="bl-item"><div class="bl-lbl">Annual Propane Savings</div><div class="bl-val" style="color:var(--purple,#a855f7)">${Math.round(annPropane).toLocaleString()}<span class="bl-unit"> Gal/yr</span></div></div>
+            <div class="bl-item"><div class="bl-lbl">Projected Savings $</div><div class="bl-val" style="color:var(--green)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</div></div>
             ${totImpl > 0 ? `<div class="bl-item"><div class="bl-lbl">Total Impl. Cost</div><div class="bl-val" style="color:var(--text)">$${Math.round(netCost).toLocaleString()}<span class="bl-unit">${totIncent > 0 ? ' (net of $' + Math.round(totIncent).toLocaleString() + ' incentive)' : ''}</span></div></div>` : ''}
             ${payback ? `<div class="bl-item"><div class="bl-lbl">Simple Payback</div><div class="bl-val" style="color:var(--accent)">${payback}<span class="bl-unit"> years</span></div></div>` : ''}
           </div>
@@ -16057,6 +16139,7 @@
         const sd = getProjSavingsData(projId);
         const m = sd.measures.find((x) => x.id === msrId);
         if (!m) return;
+        if (!m[type]) m[type] = Array(12).fill(0);
         m[type][moIdx] = parseFloat(val) || 0;
       }
       function updateMsrField(projId, msrId, field, val) {
@@ -16092,9 +16175,11 @@
 
       function calcProjSavingsMatrix(projId) {
         const sd = getProjSavingsData(projId);
-        // Read live DOM values back into data
+        // Read live DOM values back into data (check both project-tab and sidebar row IDs)
         sd.measures.forEach((m) => {
-          const row = document.getElementById('sv-msr-row-' + projId + '-' + m.id);
+          const row =
+            document.getElementById('sv-msr-row-' + projId + '-' + m.id) ||
+            document.getElementById('sv-pg-msr-row-' + m.id);
           if (!row) return;
           ['kwh-col', 'kw-col', 'gas-col', 'propane-col'].forEach((cls, ti) => {
             const type = ['kwh', 'kw', 'gas', 'propane'][ti];
@@ -16116,7 +16201,9 @@
             total += ((m.propane || [])[mo] || 0) * (rates.gallonRate || 0);
           }
           m.totalDollar = total;
-          const cell = document.getElementById('sv-msr-total-' + projId + '-' + m.id);
+          const cell =
+            document.getElementById('sv-msr-total-' + projId + '-' + m.id) ||
+            document.getElementById('sv-pg-total-' + m.id);
           if (cell) cell.textContent = total > 0 ? '$' + Math.round(total).toLocaleString() : '—';
         });
         sset('en_projects', projects);
@@ -16204,6 +16291,27 @@
         _renderSavingsContent(wrap, svSelProjId);
       }
 
+      /* ── Collapsible column group state ── */
+      const _svColGroupState = {};
+      function svToggleColGroup(grp) {
+        _svColGroupState[grp] = !_svColGroupState[grp];
+        document.querySelectorAll('.sv-cg-' + grp).forEach((el) => {
+          el.style.display = _svColGroupState[grp] ? '' : 'none';
+        });
+        const tog = document.getElementById('sv-cg-tog-' + grp);
+        if (tog) tog.textContent = _svColGroupState[grp] ? '▾' : '▸';
+      }
+      function svToggleAllColGroups(expand) {
+        ['kwh', 'kw', 'gas', 'propane', 'kwhCost', 'kwCost', 'gasCost', 'propaneCost'].forEach((grp) => {
+          _svColGroupState[grp] = expand;
+          document.querySelectorAll('.sv-cg-' + grp).forEach((el) => {
+            el.style.display = expand ? '' : 'none';
+          });
+          const tog = document.getElementById('sv-cg-tog-' + grp);
+          if (tog) tog.textContent = expand ? '▾' : '▸';
+        });
+      }
+
       /* ── Shared savings renderer — used by BOTH sidebar Energy Savings page AND project tab ── */
       function _renderSavingsContent(wrap, projId) {
         const p = projects.find((x) => x.id === projId);
@@ -16225,18 +16333,74 @@
         if (_migrated) sset('en_projects', projects);
         const MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-        // ── Month header helper ──
-        const moHdrs = () =>
-          MO.map(
-            (m, i) =>
-              `<th style="border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});font-size:10px;padding:4px 2px;width:58px;text-align:center">${m}</th>`,
-          ).join('');
+        // ── Collapsible month header helper ──
+        const moHdrs = (grp) => {
+          const isOpen = !!_svColGroupState[grp];
+          return (
+            MO.map(
+              (m, i) =>
+                `<th class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});font-size:10px;padding:4px 2px;width:58px;text-align:center">${m}</th>`,
+            ).join('') +
+            '<th style="border-left:1px solid var(--border);font-size:10px;padding:4px 2px;text-align:center;min-width:70px">Total</th>'
+          );
+        };
+
+        // ── Group header builder ──
+        const grpHdr = (grp, label, colspan, bg) => {
+          const isOpen = !!_svColGroupState[grp];
+          return `<th colspan="${colspan}" style="text-align:center;border-left:2px solid var(--border2);background:${bg};cursor:pointer;user-select:none" onclick="svToggleColGroup('${grp}')"><span id="sv-cg-tog-${grp}" style="font-size:10px;margin-right:3px">${isOpen ? '▾' : '▸'}</span>${label}</th>`;
+        };
+
+        // ── Rate functions for cost calc ──
+        const kwhRateFn = (r) => (mo) => (SUMMER_MOS.includes(mo) ? r.kwhSummer || 0 : r.kwhWinter || 0);
+        const kwRateFn = (r) => (mo) => (SUMMER_MOS.includes(mo) ? r.kwSummer || 0 : r.kwWinter || 0);
+        const gasRateFn = (r) => () => r.thermRate || 0;
+        const propRateFn = (r) => () => r.gallonRate || 0;
+
+        // ── Usage cells helper (12 monthly inputs + total) ──
+        const usageCells = (arr, cls, grp, bgColor, mid) => {
+          const isOpen = !!_svColGroupState[grp];
+          const vals = arr || Array(12).fill(0);
+          const total = vals.reduce((a, b) => a + (parseFloat(b) || 0), 0);
+          const moCells = vals
+            .map(
+              (v, i) =>
+                `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:${bgColor}"><input class="sv-num-inp ${cls}" type="number" step="any" value="${v || ''}" placeholder="0" style="width:54px" onchange="svUpdateMsrVal('${mid}','${cls.replace('-col', '')}',${i},this.value)" onfocusout="svAutoSave()"></td>`,
+            )
+            .join('');
+          return (
+            moCells +
+            `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;text-align:right;padding:4px 4px;white-space:nowrap">${total ? Math.round(total).toLocaleString() : ''}</td>`
+          );
+        };
+
+        // ── Cost cells helper (12 monthly read-only + total) ──
+        const costCells = (arr, grp, bgColor, rateFn) => {
+          const isOpen = !!_svColGroupState[grp];
+          const vals = arr || Array(12).fill(0);
+          let total = 0;
+          const moCells = vals
+            .map((v, i) => {
+              const cost = (parseFloat(v) || 0) * rateFn(i);
+              total += cost;
+              return `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:${bgColor};font-family:var(--mono);font-size:10px;text-align:right;color:var(--text2)">${cost ? '$' + Math.round(cost).toLocaleString() : ''}</td>`;
+            })
+            .join('');
+          return (
+            moCells +
+            `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;text-align:right;padding:4px 4px;white-space:nowrap">${total ? '$' + Math.round(total).toLocaleString() : ''}</td>`
+          );
+        };
+
+        // ── Rate cell helper ──
+        const rateCell = (mid, field, step, r) =>
+          `<td><input class="sv-num-inp sv-rate-inp" type="number" step="${step}" value="${r[field] || ''}" placeholder="0" style="width:52px;font-size:10px" onchange="svUpdateMsrRate('${mid}','${field}',parseFloat(this.value)||0)" onfocusout="svAutoSave()"></td>`;
 
         // ── Measure rows ──
         const bldgOpts = bldgs.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
         let msrRows;
         if (!sd.measures.length) {
-          msrRows = `<tr><td colspan="44" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
+          msrRows = `<tr><td colspan="200" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
             No measures yet — click "+ Add Measure" in the header to begin.
           </td></tr>`;
         } else {
@@ -16245,26 +16409,19 @@
               const pid = projId,
                 mid = m.id;
               const r = m.rates || {};
+              if (!m.propane) m.propane = Array(12).fill(0);
               const annMsrKwh = m.kwh.reduce((a, b) => a + (parseFloat(b) || 0), 0);
-              const kwhCells = m.kwh
-                .map(
-                  (v, i) =>
-                    `<td style="border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:rgba(59,130,246,0.03)"><input class="sv-num-inp kwh-col" type="number" step="any" value="${v || ''}" placeholder="0" style="width:54px" onchange="svUpdateMsrVal('${mid}','kwh',${i},this.value)" onfocusout="svAutoSave()"></td>`,
-                )
-                .join('');
-              const kwCells = m.kw
-                .map(
-                  (v, i) =>
-                    `<td style="border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:rgba(245,158,11,0.03)"><input class="sv-num-inp kw-col" type="number" step="any" value="${v || ''}" placeholder="0" style="width:54px" onchange="svUpdateMsrVal('${mid}','kw',${i},this.value)" onfocusout="svAutoSave()"></td>`,
-                )
-                .join('');
-              const gasCells = m.gas
-                .map(
-                  (v, i) =>
-                    `<td style="border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:rgba(20,184,166,0.03)"><input class="sv-num-inp gas-col" type="number" step="any" value="${v || ''}" placeholder="0" style="width:54px" onchange="svUpdateMsrVal('${mid}','gas',${i},this.value)" onfocusout="svAutoSave()"></td>`,
-                )
-                .join('');
-              const dollar = m.totalDollar > 0 ? '$' + Math.round(m.totalDollar).toLocaleString() : '—';
+
+              // Compute projected savings $ for this measure
+              let projSavings = 0;
+              for (let mo = 0; mo < 12; mo++) {
+                projSavings += (parseFloat(m.kwh[mo]) || 0) * kwhRateFn(r)(mo);
+                projSavings += (parseFloat(m.kw[mo]) || 0) * kwRateFn(r)(mo);
+                projSavings += (parseFloat(m.gas[mo]) || 0) * gasRateFn(r)();
+                projSavings += (parseFloat(m.propane[mo]) || 0) * propRateFn(r)();
+              }
+
+              const dollar = projSavings > 0 ? '$' + Math.round(projSavings).toLocaleString() : '—';
               const selOpts = bldgOpts.replace(`value="${m.bldgId}"`, `value="${m.bldgId}" selected`);
               const srcBadge = m.source
                 ? `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--accent-dim);color:var(--accent);font-weight:600;white-space:nowrap">${m.source === 'solar' ? '☀️ Solar' : m.source}</span>`
@@ -16276,12 +16433,22 @@
               <td><select class="sv-msr-sel" onchange="svUpdateMsrField('${mid}','bldgId',this.value)">${selOpts}</select></td>
               <td><input class="sv-num-inp sv-sqft-inp" type="number" style="width:68px" placeholder="0" value="${m.sqft || ''}" onchange="svUpdateMsrField('${mid}','sqft',parseFloat(this.value)||0)" onfocusout="svAutoSave()"></td>
               <td><div style="display:flex;align-items:center;gap:4px"><input class="sv-msr-txt" style="flex:1;min-width:130px" placeholder="e.g. BAS Setpoint Optimization 74/70°F" value="${m.desc || ''}" onchange="svUpdateMsrField('${mid}','desc',this.value)" onfocusout="svAutoSave()"><button class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px;flex-shrink:0" onclick="openCalcForMeasure(${pid},'${mid}','${wrap.id === 'ptab-savings' ? 'ptab' : 'sv'}')" title="Open calc template for this measure">📐</button>${srcBadge}</div></td>
-              ${kwhCells}${kwCells}${gasCells}
+              ${rateCell(mid, 'kwhSummer', '0.0001', r)}${rateCell(mid, 'kwhWinter', '0.0001', r)}
+              ${rateCell(mid, 'kwSummer', '0.01', r)}${rateCell(mid, 'kwWinter', '0.01', r)}
+              ${rateCell(mid, 'thermRate', '0.001', r)}${rateCell(mid, 'gallonRate', '0.001', r)}
+              ${usageCells(m.kwh, 'kwh-col', 'kwh', 'rgba(59,130,246,0.03)', mid)}
+              ${usageCells(m.kw, 'kw-col', 'kw', 'rgba(245,158,11,0.03)', mid)}
+              ${usageCells(m.gas, 'gas-col', 'gas', 'rgba(20,184,166,0.03)', mid)}
+              ${usageCells(m.propane, 'propane-col', 'propane', 'rgba(168,85,247,0.03)', mid)}
+              ${costCells(m.kwh, 'kwhCost', 'rgba(59,130,246,0.02)', kwhRateFn(r))}
+              ${costCells(m.kw, 'kwCost', 'rgba(245,158,11,0.02)', kwRateFn(r))}
+              ${costCells(m.gas, 'gasCost', 'rgba(20,184,166,0.02)', gasRateFn(r))}
+              ${costCells(m.propane, 'propaneCost', 'rgba(168,85,247,0.02)', propRateFn(r))}
               <td class="sv-total-cell" style="border-left:2px solid var(--border2)" id="sv-pg-total-${mid}">${dollar}</td>
               <td style="text-align:center"><button class="btn-del" onclick="svRemoveMeasure('${mid}')">✕</button></td>
             </tr>
             <tr id="sv-detail-${mid}" class="sv-detail-row" style="display:none">
-              <td colspan="44" style="padding:12px 16px">
+              <td colspan="200" style="padding:12px 16px">
                 <div class="sv-detail-grid">
                   <div>
                     <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Utility Rates</div>
@@ -16291,6 +16458,7 @@
                       <div class="sv-rate-field"><label>kW $/Summer</label><input class="fi" type="number" step="0.01" value="${r.kwSummer || ''}" onchange="svUpdateMsrRate('${mid}','kwSummer',parseFloat(this.value)||0)"></div>
                       <div class="sv-rate-field"><label>kW $/Winter</label><input class="fi" type="number" step="0.01" value="${r.kwWinter || ''}" onchange="svUpdateMsrRate('${mid}','kwWinter',parseFloat(this.value)||0)"></div>
                       <div class="sv-rate-field"><label>Gas $/Therm</label><input class="fi" type="number" step="0.001" value="${r.thermRate || ''}" onchange="svUpdateMsrRate('${mid}','thermRate',parseFloat(this.value)||0)"></div>
+                      <div class="sv-rate-field"><label>Propane $/Gallon</label><input class="fi" type="number" step="0.001" value="${r.gallonRate || ''}" onchange="svUpdateMsrRate('${mid}','gallonRate',parseFloat(this.value)||0)"></div>
                     </div>
                     <button class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:11px" onclick="svResetMsrRates('${mid}')">Reset to Building Defaults</button>
                   </div>
@@ -16328,20 +16496,53 @@
         const selMsrs = sd.measures.filter((m) => m.selected);
         const totKwh = Array(12).fill(0),
           totKw = Array(12).fill(0),
-          totGas = Array(12).fill(0);
+          totGas = Array(12).fill(0),
+          totPropane = Array(12).fill(0);
         let grandTotal = 0;
         selMsrs.forEach((m) => {
           m.kwh.forEach((v, i) => (totKwh[i] += parseFloat(v) || 0));
           m.kw.forEach((v, i) => (totKw[i] += parseFloat(v) || 0));
           m.gas.forEach((v, i) => (totGas[i] += parseFloat(v) || 0));
+          (m.propane || []).forEach((v, i) => (totPropane[i] += parseFloat(v) || 0));
           grandTotal += parseFloat(m.totalDollar) || 0;
         });
         const fmtN = (v) => (v ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '');
+
+        // Footer usage cells (collapsible months + total)
+        const footUsage = (totArr, grp, color) => {
+          const isOpen = !!_svColGroupState[grp];
+          const annTotal = totArr.reduce((a, b) => a + b, 0);
+          return (
+            totArr
+              .map(
+                (v, i) =>
+                  `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});font-family:var(--mono);font-size:11px;font-weight:700;color:${color};text-align:right;padding:5px 3px">${fmtN(v)}</td>`,
+              )
+              .join('') +
+            `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;color:${color};text-align:right;padding:5px 3px">${fmtN(annTotal)}</td>`
+          );
+        };
+        // Footer cost cells (collapsible months empty + total empty — rates differ per measure)
+        const footCost = (grp) => {
+          const isOpen = !!_svColGroupState[grp];
+          return (
+            Array(12)
+              .fill(0)
+              .map(
+                (_, i) =>
+                  `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:5px 3px"></td>`,
+              )
+              .join('') + '<td style="border-left:1px solid var(--border);padding:5px 3px"></td>'
+          );
+        };
+
         const footRow = `<tr class="sv-foot-row">
-          <td colspan="6" style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
-          ${totKwh.map((v, i) => `<td style="border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
-          ${totKw.map((v, i) => `<td style="border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--amber);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
-          ${totGas.map((v, i) => `<td style="border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});font-family:var(--mono);font-size:11px;font-weight:700;color:var(--teal);text-align:right;padding:5px 3px">${fmtN(v)}</td>`).join('')}
+          <td colspan="12" style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
+          ${footUsage(totKwh, 'kwh', 'var(--accent)')}
+          ${footUsage(totKw, 'kw', 'var(--amber)')}
+          ${footUsage(totGas, 'gas', 'var(--teal)')}
+          ${footUsage(totPropane, 'propane', 'var(--purple,#a855f7)')}
+          ${footCost('kwhCost')}${footCost('kwCost')}${footCost('gasCost')}${footCost('propaneCost')}
           <td class="sv-total-cell sv-foot-total" style="border-left:2px solid var(--border2)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</td>
           <td></td>
         </tr>`;
@@ -16350,6 +16551,7 @@
         const annKwh = totKwh.reduce((a, b) => a + b, 0);
         const annKwAvg = totKw.reduce((a, b) => a + b, 0) / 12;
         const annGas = totGas.reduce((a, b) => a + b, 0);
+        const annPropane = totPropane.reduce((a, b) => a + b, 0);
         const sc = selMsrs.length;
         const summaryHtml = sc
           ? `<div class="bl-result">
@@ -16358,7 +16560,8 @@
             <div class="bl-item"><div class="bl-lbl">Annual kWh Savings</div><div class="bl-val" style="color:var(--accent)">${Math.round(annKwh).toLocaleString()}<span class="bl-unit"> kWh/yr</span></div></div>
             <div class="bl-item"><div class="bl-lbl">Avg kW Reduction</div><div class="bl-val" style="color:var(--amber)">${annKwAvg.toFixed(1)}<span class="bl-unit"> kW avg</span></div></div>
             <div class="bl-item"><div class="bl-lbl">Annual Gas Savings</div><div class="bl-val" style="color:var(--teal)">${Math.round(annGas).toLocaleString()}<span class="bl-unit"> Therms/yr</span></div></div>
-            <div class="bl-item"><div class="bl-lbl">Total Est. $/Yr</div><div class="bl-val" style="color:var(--green)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</div></div>
+            <div class="bl-item"><div class="bl-lbl">Annual Propane Savings</div><div class="bl-val" style="color:var(--purple,#a855f7)">${Math.round(annPropane).toLocaleString()}<span class="bl-unit"> Gal/yr</span></div></div>
+            <div class="bl-item"><div class="bl-lbl">Projected Savings $</div><div class="bl-val" style="color:var(--green)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</div></div>
           </div>
         </div>`
           : '';
@@ -16369,26 +16572,38 @@
             <div class="card-hdr" style="flex-wrap:wrap;gap:8px">
               <span class="card-title">💡 Energy Savings Measures</span>
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-left:auto">
+                <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="svToggleAllColGroups(true)">Expand All</button>
+                <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="svToggleAllColGroups(false)">Collapse All</button>
                 <button class="btn btn-ghost btn-sm" onclick="openCalcTemplates(${projId},'${wrap.id === 'ptab-savings' ? 'ptab' : 'sv'}')">📐 Calc Templates</button>
                 <button class="btn btn-ghost btn-sm" onclick="_svAddMeasureFrom(${projId})">+ Add Measure</button>
                 <button class="btn btn-em btn-sm" onclick="_svRecalcFrom(${projId})">⚡ Recalc $ Savings</button>
               </div>
             </div>
             <div style="overflow-x:auto">
-              <table class="dtbl sv-matrix-tbl" style="min-width:2400px">
+              <table class="dtbl sv-matrix-tbl" style="min-width:5200px">
                 <thead>
                   <tr>
                     <th style="width:20px"></th><th style="width:28px">✓</th><th style="width:44px">Msr #</th>
                     <th style="min-width:130px">Building</th><th style="width:74px">Sq Ft</th><th style="min-width:190px">Measure Description</th>
-                    <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(59,130,246,0.07)">⚡ Electric kWh Savings / Month</th>
-                    <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(245,158,11,0.07)">⚡ Electric kW Savings / Month</th>
-                    <th colspan="12" style="text-align:center;border-left:2px solid var(--border2);background:rgba(20,184,166,0.07)">🔥 Gas Therms Savings / Month</th>
-                    <th style="border-left:2px solid var(--border2);text-align:center;background:rgba(34,197,94,0.07);min-width:110px">💰 Est. $/Yr</th>
+                    <th style="width:54px;font-size:9px;text-align:center">kWh $/S</th><th style="width:54px;font-size:9px;text-align:center">kWh $/W</th>
+                    <th style="width:54px;font-size:9px;text-align:center">kW $/S</th><th style="width:54px;font-size:9px;text-align:center">kW $/W</th>
+                    <th style="width:54px;font-size:9px;text-align:center">$/Therm</th><th style="width:54px;font-size:9px;text-align:center">$/Gallon</th>
+                    ${grpHdr('kwh', '⚡ kWh Savings', 13, 'rgba(59,130,246,0.07)')}
+                    ${grpHdr('kw', '⚡ kW Savings', 13, 'rgba(245,158,11,0.07)')}
+                    ${grpHdr('gas', '🔥 Gas Therms', 13, 'rgba(20,184,166,0.07)')}
+                    ${grpHdr('propane', '🛢️ Propane Gal', 13, 'rgba(168,85,247,0.07)')}
+                    ${grpHdr('kwhCost', '💲 kWh $', 13, 'rgba(59,130,246,0.04)')}
+                    ${grpHdr('kwCost', '💲 kW $', 13, 'rgba(245,158,11,0.04)')}
+                    ${grpHdr('gasCost', '💲 Gas $', 13, 'rgba(20,184,166,0.04)')}
+                    ${grpHdr('propaneCost', '💲 Propane $', 13, 'rgba(168,85,247,0.04)')}
+                    <th style="border-left:2px solid var(--border2);text-align:center;background:rgba(34,197,94,0.07);min-width:110px">💰 Projected $</th>
                     <th style="width:28px"></th>
                   </tr>
                   <tr>
                     <th></th><th></th><th></th><th></th><th></th><th></th>
-                    ${moHdrs()}${moHdrs()}${moHdrs()}
+                    <th></th><th></th><th></th><th></th><th></th><th></th>
+                    ${moHdrs('kwh')}${moHdrs('kw')}${moHdrs('gas')}${moHdrs('propane')}
+                    ${moHdrs('kwhCost')}${moHdrs('kwCost')}${moHdrs('gasCost')}${moHdrs('propaneCost')}
                     <th style="border-left:2px solid var(--border2)"></th><th></th>
                   </tr>
                 </thead>
