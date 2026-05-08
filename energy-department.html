@@ -1620,10 +1620,11 @@
         background: #1a5276;
         color: #fff;
         padding: 4px 6px;
-        text-align: left;
+        text-align: center;
         font-weight: 600;
         font-size: 9.5px;
         text-transform: uppercase;
+        white-space: nowrap;
       }
       .rpt-table td {
         padding: 4px 6px;
@@ -1667,7 +1668,7 @@
       .rpt-kpi {
         background: linear-gradient(135deg, #f4f8fb, #e8f0f8);
         border: 1px solid #d4e4f0;
-        border-radius: 8px;
+        border-radius: 2px;
         padding: 8px;
         text-align: center;
       }
@@ -1699,7 +1700,7 @@
         align-items: center;
         padding: 8px 12px;
         background: #f4f8fb;
-        border-radius: 8px;
+        border-radius: 2px;
         border: 1px solid #d4e4f0;
         margin: 6px 0;
       }
@@ -1725,14 +1726,14 @@
       .rpt-progress-bar {
         height: 22px;
         background: #e8e8e8;
-        border-radius: 11px;
+        border-radius: 2px;
         overflow: visible;
         margin: 4px 0;
         position: relative;
       }
       .rpt-progress-fill {
         height: 100%;
-        border-radius: 11px;
+        border-radius: 2px;
         display: flex;
         align-items: center;
         padding: 0 10px;
@@ -1804,7 +1805,7 @@
         margin: 6px 0;
       }
       .rpt-status-card {
-        border-radius: 6px;
+        border-radius: 2px;
         padding: 8px;
         text-align: center;
         border: 1px solid;
@@ -1849,7 +1850,7 @@
       .rpt-narrative {
         background: linear-gradient(135deg, #f8fafb, #eef4f8);
         border: 1px solid #d4e4f0;
-        border-radius: 8px;
+        border-radius: 2px;
         padding: 10px 14px;
         margin: 6px 0;
         font-size: 11px;
@@ -1899,7 +1900,7 @@
         margin: 6px 0;
         font-size: 10.5px;
         line-height: 1.5;
-        border-radius: 0 4px 4px 0;
+        border-radius: 0 2px 2px 0;
       }
       .rpt-finding-list li {
         margin: 2px 0;
@@ -1909,7 +1910,7 @@
       .rpt-chart-box {
         background: #f8fafb;
         border: 1px solid #ddd;
-        border-radius: 6px;
+        border-radius: 2px;
         padding: 8px;
         margin: 4px 0;
         position: relative;
@@ -1931,7 +1932,7 @@
       .rpt-env-card {
         background: #f0f7eb;
         border: 1px solid #c8e6c0;
-        border-radius: 6px;
+        border-radius: 2px;
         padding: 6px;
         text-align: center;
       }
@@ -46024,6 +46025,7 @@
             blCost: bldgBlCost,
             curCost: bldgCurCost,
             savingsPct: bldgSavingsPct,
+            targetPct: targetPct,
             status: bldgStatus,
             eui: {
               baseline: blEUI,
@@ -46098,13 +46100,7 @@
           inputs: { kwhSaved: 0, thermsSaved: 0, propaneGalSaved: 0 },
         };
         try {
-          const annFactor = reportType === 'quarterly' ? 4 : 1;
-          pollution = calculatePollutionCredits(
-            totKwhSaved * annFactor,
-            totThermsSaved * annFactor,
-            totPropaneSaved * annFactor,
-            stateCode,
-          );
+          pollution = calculatePollutionCredits(totKwhSaved, totThermsSaved, totPropaneSaved, stateCode);
         } catch (e) {
           /* pollution calc not critical */
         }
@@ -46119,6 +46115,7 @@
             buildingId: sp.buildingId,
             buildingName: bldg ? bldg.name : 'Unknown',
             zones: sp.zones || [],
+            viewMode: sp.viewMode || 'individual',
           };
         });
 
@@ -47439,8 +47436,12 @@
             const eStarCell = b.eui.energyStar ? '<span style="color:#27ae60;font-weight:700">Yes</span>' : '—';
             const cpSqft = b.sqft > 0 ? b.curCost / b.sqft : 0;
             const trendCell =
-              cur > 0 && bl > 0 && cur < bl
-                ? '<span style="color:#27ae60">&#9650;</span>'
+              cur > 0 && bl > 0
+                ? cur < bl
+                  ? '<span style="color:#27ae60">&#9660;</span>'
+                  : cur > bl
+                    ? '<span style="color:#c0392b">&#9650;</span>'
+                    : '<span style="color:#888">&#9654;</span>'
                 : '<span style="color:#888">—</span>';
             return (
               '<tr>' +
@@ -47565,8 +47566,12 @@
             const reduction = bl > 0 ? ((bl - cur) / bl) * 100 : 0;
             const redClass = reduction >= 0 ? 'rpt-g' : 'rpt-r';
             const trendIcon =
-              cur > 0 && bl > 0 && cur < bl
-                ? '<span style="color:#27ae60">&#9650;</span>'
+              cur > 0 && bl > 0
+                ? cur < bl
+                  ? '<span style="color:#27ae60">&#9660;</span>'
+                  : cur > bl
+                    ? '<span style="color:#c0392b">&#9650;</span>'
+                    : '<span style="color:#888">&#9654;</span>'
                 : '<span style="color:#888">—</span>';
             return (
               '<tr>' +
@@ -47629,6 +47634,7 @@
         };
 
         function polLine(val, unit, label) {
+          if (!val || Math.round(Math.abs(val)) === 0) return '';
           return (
             '<div style="font-size:11px;color:#333;padding:2px 0;line-height:1.5">' +
             '<strong style="color:#1a5276;font-size:13px">' +
@@ -47643,6 +47649,7 @@
         }
 
         function eqLine(prefix, val, suffix) {
+          if (!val || Math.round(Math.abs(val)) === 0) return '';
           return (
             '<div style="font-size:11px;color:#333;padding:2px 0;line-height:1.5">' +
             (prefix ? prefix + ' ' : '') +
@@ -48128,7 +48135,7 @@
           '</div>' +
           '</div>';
 
-        // ── 5-Year Projection table ──
+        // ── Multi-Year Projection table ──
         let fiveYrRows = '';
         let totalProj = 0,
           totalCsc = 0,
@@ -48139,7 +48146,7 @@
           const yearCsc = (yearProj * cscPct) / 100;
           const yearClient = (yearProj * clientPct) / 100;
           const isCurrentYr = yr === currentYear;
-          const pace = isCurrentYr && annualTarget > 0 ? Math.round((actualSavings / annualTarget) * 100) : null;
+          const pace = isCurrentYr && qTarget > 0 ? Math.round((actualSavings / qTarget) * 100) : null;
           totalProj += yearProj;
           totalCsc += yearCsc;
           totalClient += yearClient;
@@ -48153,7 +48160,7 @@
             '</td>' +
             '<td>Year ' +
             yr +
-            (yr === 1 ? ' (current)' : '') +
+            (isCurrentYr ? ' (current)' : '') +
             '</td>' +
             '<td class="rpt-n">' +
             $c(yearProj) +
@@ -48316,7 +48323,9 @@
           '" font-size="7" fill="#aaa" text-anchor="end">Projected</text>' +
           '</svg>' +
           '<div style="font-size:7.5px;color:#888;margin-top:2px">' +
-          '<span style="display:inline-block;width:16px;height:2px;background:#aaa;border-bottom:2px dashed #aaa;vertical-align:middle;margin-right:4px"></span>5-yr projected&nbsp;&nbsp;' +
+          '<span style="display:inline-block;width:16px;height:2px;background:#aaa;border-bottom:2px dashed #aaa;vertical-align:middle;margin-right:4px"></span>' +
+          contractYears +
+          '-yr projected&nbsp;&nbsp;' +
           '<span style="display:inline-block;width:8px;height:8px;background:#27ae60;border-radius:50%;vertical-align:middle;margin-right:4px"></span>Actual position' +
           '</div>' +
           '</div>';
@@ -48329,7 +48338,9 @@
           q +
           '</h2>' +
           vsBox +
-          '<h2 contenteditable="true">5-Year Projection</h2>' +
+          '<h2 contenteditable="true">' +
+          contractYears +
+          '-Year Projection</h2>' +
           fiveYrTable +
           '<h2 contenteditable="true">Cumulative vs Projected</h2>' +
           svgChart +
@@ -48489,7 +48500,8 @@
       }
       function rptPageBuildingSummary(n, d, b) {
         const $c = function (v) {
-          return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+          var val = Math.round(v || 0);
+          return (val < 0 ? '-' : '') + '$' + Math.abs(val).toLocaleString();
         };
         const $n = function (v) {
           return Math.round(v || 0).toLocaleString();
@@ -48503,10 +48515,8 @@
         const hasGas = b.commodities && b.commodities.includes('Gas') && b.gas && b.gas.thermsBl > 0;
         const hasPropane = b.commodities && b.commodities.includes('Propane') && b.propane && b.propane.galBl > 0;
 
-        // ── Target % (same logic as collectReportData targetPct) ──────────
-        const annualTarget = (d && d.contract && d.contract.annualTarget) || 0;
-        const blCost = b.blCost || 0;
-        const targetPct = annualTarget > 0 && blCost > 0 ? (annualTarget / blCost) * 100 : 10;
+        // ── Target % from per-building savings projection config ──────────
+        const targetPct = b.targetPct || 10;
         const savingsPct = b.savingsPct || 0;
 
         // ── Month label helpers ─────────────────────────
@@ -48695,53 +48705,84 @@
           '</div>' +
           '</div>';
 
-        // Icon savings row
+        // Icon savings row — green for positive savings, red for negative
         var iconItems = '';
+        function _savColor(v) {
+          return v >= 0 ? '#1e8449' : '#c0392b';
+        }
+        function _savBg(v) {
+          return v >= 0 ? '#e9f7ef' : '#fde8e8';
+        }
         if (hasElec) {
           var kwhSaved = b.electric.kwhSaved || 0;
           var kwReduced = (b.electric.kwBl || 0) - (b.electric.kwCur || 0);
           iconItems +=
-            '<div style="flex:1;min-width:60px;text-align:center;background:#eaf4ff;border-radius:4px;padding:5px 4px">' +
+            '<div style="flex:1;min-width:60px;text-align:center;background:' +
+            _savBg(kwhSaved) +
+            ';border-radius:2px;padding:5px 4px">' +
             '<div style="font-size:13px;margin-bottom:1px">⚡</div>' +
-            '<div style="font-size:12px;font-weight:700;color:#1a5276">' +
+            '<div style="font-size:12px;font-weight:700;color:' +
+            _savColor(kwhSaved) +
+            '">' +
             $n(kwhSaved) +
             '</div>' +
             '<div style="font-size:7.5px;color:#555">kWh Saved</div>' +
             '</div>' +
-            '<div style="flex:1;min-width:60px;text-align:center;background:#eaf4ff;border-radius:4px;padding:5px 4px">' +
+            '<div style="flex:1;min-width:60px;text-align:center;background:' +
+            _savBg(kwReduced) +
+            ';border-radius:2px;padding:5px 4px">' +
             '<div style="font-size:13px;margin-bottom:1px">⚡</div>' +
-            '<div style="font-size:12px;font-weight:700;color:#1a5276">' +
+            '<div style="font-size:12px;font-weight:700;color:' +
+            _savColor(kwReduced) +
+            '">' +
             $n(kwReduced) +
             '</div>' +
             '<div style="font-size:7.5px;color:#555">kW Reduced</div>' +
             '</div>';
         }
         if (hasGas) {
+          var thermsSaved = b.gas.thermsSaved || 0;
           iconItems +=
-            '<div style="flex:1;min-width:60px;text-align:center;background:#fff4e6;border-radius:4px;padding:5px 4px">' +
+            '<div style="flex:1;min-width:60px;text-align:center;background:' +
+            _savBg(thermsSaved) +
+            ';border-radius:2px;padding:5px 4px">' +
             '<div style="font-size:13px;margin-bottom:1px">🔥</div>' +
-            '<div style="font-size:12px;font-weight:700;color:#c0392b">' +
-            $n(b.gas.thermsSaved || 0) +
+            '<div style="font-size:12px;font-weight:700;color:' +
+            _savColor(thermsSaved) +
+            '">' +
+            $n(thermsSaved) +
             '</div>' +
             '<div style="font-size:7.5px;color:#555">Therms Saved</div>' +
             '</div>';
         }
         if (hasPropane) {
+          var galSaved = b.propane.galSaved || 0;
           iconItems +=
-            '<div style="flex:1;min-width:60px;text-align:center;background:#fdf6e3;border-radius:4px;padding:5px 4px">' +
+            '<div style="flex:1;min-width:60px;text-align:center;background:' +
+            _savBg(galSaved) +
+            ';border-radius:2px;padding:5px 4px">' +
             '<div style="font-size:13px;margin-bottom:1px">💧</div>' +
-            '<div style="font-size:12px;font-weight:700;color:#b7770d">' +
-            $n(b.propane.galSaved || 0) +
+            '<div style="font-size:12px;font-weight:700;color:' +
+            _savColor(galSaved) +
+            '">' +
+            $n(galSaved) +
             '</div>' +
             '<div style="font-size:7.5px;color:#555">Gal Saved</div>' +
             '</div>';
         }
         // Always show $ savings
+        var totalSaved = b.savings || 0;
         iconItems +=
-          '<div style="flex:1;min-width:60px;text-align:center;background:#e9f7ef;border-radius:4px;padding:5px 4px">' +
+          '<div style="flex:1;min-width:60px;text-align:center;background:' +
+          _savBg(totalSaved) +
+          ';border-radius:2px;padding:5px 4px">' +
           '<div style="font-size:13px;margin-bottom:1px">💰</div>' +
-          '<div style="font-size:12px;font-weight:700;color:#1e8449">' +
-          $c(b.savings || 0) +
+          '<div style="font-size:12px;font-weight:700;color:' +
+          _savColor(totalSaved) +
+          '">' +
+          (totalSaved >= 0 ? '' : '-') +
+          '$' +
+          Math.abs(Math.round(totalSaved)).toLocaleString() +
           '</div>' +
           '<div style="font-size:7.5px;color:#555">Total Saved</div>' +
           '</div>';
@@ -48749,13 +48790,16 @@
         rightHTML += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">' + iconItems + '</div>';
 
         // Summary table
+        function _pctColor(v) {
+          return v >= 0 ? '#1e8449' : '#c0392b';
+        }
         var tableRows = '';
         if (hasElec) {
           var elSavPct = b.electric.kwhBl > 0 ? (b.electric.kwhSaved / b.electric.kwhBl) * 100 : 0;
-          var elColor = elSavPct >= targetPct ? '#1e8449' : elSavPct >= targetPct * 0.8 ? '#e67e22' : '#c0392b';
+          var elCostSaved = b.electric.costSaved || 0;
           tableRows +=
             '<tr>' +
-            '<td contenteditable="true">Electric</td>' +
+            '<td contenteditable="true">Electric Energy</td>' +
             '<td class="rpt-n" contenteditable="true">' +
             periodEndLabel +
             '</td>' +
@@ -48763,21 +48807,45 @@
             $p(targetPct) +
             '</td>' +
             '<td class="rpt-n" contenteditable="true" style="color:' +
-            elColor +
+            _pctColor(elSavPct) +
             ';font-weight:600">' +
             $p(elSavPct) +
             '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' +
+            _pctColor(elCostSaved) +
+            ';font-weight:600">' +
+            $c(elCostSaved) +
+            '</td>' +
+            '</tr>';
+          var elDemSavPct = b.electric.kwBl > 0 ? ((b.electric.kwBl - b.electric.kwCur) / b.electric.kwBl) * 100 : 0;
+          var elDemCostSaved = (b.electric.kwCostBl || 0) - (b.electric.kwCostCur || 0);
+          tableRows +=
+            '<tr>' +
+            '<td contenteditable="true">Electric Demand</td>' +
             '<td class="rpt-n" contenteditable="true">' +
-            $c(b.electric.costSaved || 0) +
+            periodEndLabel +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $p(targetPct) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' +
+            _pctColor(elDemSavPct) +
+            ';font-weight:600">' +
+            $p(elDemSavPct) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' +
+            _pctColor(elDemCostSaved) +
+            ';font-weight:600">' +
+            $c(elDemCostSaved) +
             '</td>' +
             '</tr>';
         }
         if (hasGas) {
           var gasSavPct = b.gas.thermsBl > 0 ? (b.gas.thermsSaved / b.gas.thermsBl) * 100 : 0;
-          var gasColor = gasSavPct >= targetPct ? '#1e8449' : gasSavPct >= targetPct * 0.8 ? '#e67e22' : '#c0392b';
+          var gasCostSaved = b.gas.costSaved || 0;
           tableRows +=
             '<tr>' +
-            '<td contenteditable="true">Natural Gas</td>' +
+            '<td contenteditable="true">Gas</td>' +
             '<td class="rpt-n" contenteditable="true">' +
             periodEndLabel +
             '</td>' +
@@ -48785,18 +48853,20 @@
             $p(targetPct) +
             '</td>' +
             '<td class="rpt-n" contenteditable="true" style="color:' +
-            gasColor +
+            _pctColor(gasSavPct) +
             ';font-weight:600">' +
             $p(gasSavPct) +
             '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            $c(b.gas.costSaved || 0) +
+            '<td class="rpt-n" contenteditable="true" style="color:' +
+            _pctColor(gasCostSaved) +
+            ';font-weight:600">' +
+            $c(gasCostSaved) +
             '</td>' +
             '</tr>';
         }
         if (hasPropane) {
           var propSavPct = b.propane.galBl > 0 ? (b.propane.galSaved / b.propane.galBl) * 100 : 0;
-          var propColor = propSavPct >= targetPct ? '#1e8449' : propSavPct >= targetPct * 0.8 ? '#e67e22' : '#c0392b';
+          var propCostSaved = b.propane.costSaved || 0;
           tableRows +=
             '<tr>' +
             '<td contenteditable="true">Propane</td>' +
@@ -48807,12 +48877,14 @@
             $p(targetPct) +
             '</td>' +
             '<td class="rpt-n" contenteditable="true" style="color:' +
-            propColor +
+            _pctColor(propSavPct) +
             ';font-weight:600">' +
             $p(propSavPct) +
             '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            $c(b.propane.costSaved || 0) +
+            '<td class="rpt-n" contenteditable="true" style="color:' +
+            _pctColor(propCostSaved) +
+            ';font-weight:600">' +
+            $c(propCostSaved) +
             '</td>' +
             '</tr>';
         }
@@ -48824,7 +48896,7 @@
         rightHTML +=
           '<table class="rpt-table" style="margin-bottom:10px">' +
           '<thead><tr>' +
-          '<th>Commodity End</th>' +
+          '<th>Commodity Type</th>' +
           '<th class="rpt-n">Period End</th>' +
           '<th class="rpt-n">Goal %</th>' +
           '<th class="rpt-n">Achieved %</th>' +
@@ -48896,7 +48968,8 @@
       }
       function rptPageElectric(n, d) {
         var $c = function (v) {
-          return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+          var val = Math.round(v || 0);
+          return (val < 0 ? '-' : '') + '$' + Math.abs(val).toLocaleString();
         };
         var $n = function (v) {
           return Math.round(v || 0).toLocaleString();
@@ -48904,6 +48977,9 @@
         var $p = function (v) {
           return (v || 0).toFixed(1) + '%';
         };
+        function _sc(v) {
+          return v >= 0 ? '#1e8449' : '#c0392b';
+        }
 
         var MO_SHORT = [
           'January',
@@ -49062,7 +49138,6 @@
           totBlCost += blCost;
           totCurCost += curCost;
           totSavCost += savCost;
-          var savColor = savCost >= 0 ? '#1e8449' : '#c0392b';
           tableRows +=
             '<tr>' +
             '<td contenteditable="true">' +
@@ -49075,12 +49150,12 @@
             $n(curKwh) +
             '</td>' +
             '<td class="rpt-n" contenteditable="true" style="color:' +
-            savColor +
+            _sc(savKwh) +
             ';font-weight:600">' +
             $n(savKwh) +
             '</td>' +
             '<td class="rpt-n" contenteditable="true" style="color:' +
-            savColor +
+            _sc(savPct) +
             '">' +
             $p(savPct) +
             '</td>' +
@@ -49097,7 +49172,7 @@
             $c(curCost) +
             '</td>' +
             '<td class="rpt-n" contenteditable="true" style="color:' +
-            savColor +
+            _sc(savCost) +
             ';font-weight:600">' +
             $c(savCost) +
             '</td>' +
@@ -49108,7 +49183,6 @@
           tableRows =
             '<tr><td colspan="10" style="color:#aaa;font-style:italic">No electric buildings in this project</td></tr>';
         } else {
-          var totSavColor = totSavCost >= 0 ? '#1e8449' : '#c0392b';
           var totSavPct = totBlKwh > 0 ? (totSavKwh / totBlKwh) * 100 : 0;
           tableRows +=
             '<tr class="rpt-tot">' +
@@ -49120,12 +49194,12 @@
             $n(totCurKwh) +
             '</td>' +
             '<td class="rpt-n" style="color:' +
-            totSavColor +
+            _sc(totSavKwh) +
             '">' +
             $n(totSavKwh) +
             '</td>' +
             '<td class="rpt-n" style="color:' +
-            totSavColor +
+            _sc(totSavPct) +
             '">' +
             $p(totSavPct) +
             '</td>' +
@@ -49142,7 +49216,7 @@
             $c(totCurCost) +
             '</td>' +
             '<td class="rpt-n" style="color:' +
-            totSavColor +
+            _sc(totSavCost) +
             ';font-weight:700">' +
             $c(totSavCost) +
             '</td>' +
@@ -49182,13 +49256,16 @@
       }
       function rptPageGas(n, d) {
         var $c = function (v) {
-          return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+          var val = Math.round(v || 0);
+          return (val < 0 ? '-' : '') + '$' + Math.abs(val).toLocaleString();
         };
         var $n = function (v) {
           return Math.round(v || 0).toLocaleString();
         };
         var $p = function (v) {
           return (v || 0).toFixed(1) + '%';
+        };
+        function _sc(v) { return v >= 0 ? '#1e8449' : '#c0392b'; }
         };
         var MO_SHORT = [
           'January',
@@ -49327,76 +49404,32 @@
           totBlCost += blCost;
           totCurCost += curCost;
           totSavCost += savCost;
-          var savColor = savCost >= 0 ? '#1e8449' : '#c0392b';
           tableRows +=
             '<tr>' +
-            '<td contenteditable="true">' +
-            (b.name || '—') +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            $n(blT) +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            $n(curT) +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true" style="color:' +
-            savColor +
-            ';font-weight:600">' +
-            $n(savT) +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true" style="color:' +
-            savColor +
-            '">' +
-            $p(savPct) +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            $c(blCost) +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            $c(curCost) +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true" style="color:' +
-            savColor +
-            ';font-weight:600">' +
-            $c(savCost) +
-            '</td>' +
+            '<td contenteditable="true">' + (b.name || '—') + '</td>' +
+            '<td class="rpt-n" contenteditable="true">' + $n(blT) + '</td>' +
+            '<td class="rpt-n" contenteditable="true">' + $n(curT) + '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' + _sc(savT) + ';font-weight:600">' + $n(savT) + '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' + _sc(savPct) + '">' + $p(savPct) + '</td>' +
+            '<td class="rpt-n" contenteditable="true">' + $c(blCost) + '</td>' +
+            '<td class="rpt-n" contenteditable="true">' + $c(curCost) + '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' + _sc(savCost) + ';font-weight:600">' + $c(savCost) + '</td>' +
             '</tr>';
         });
         if (!tableRows) {
           tableRows =
             '<tr><td colspan="8" style="color:#aaa;font-style:italic">No gas buildings in this project</td></tr>';
         } else {
-          var tSavColor = totSavCost >= 0 ? '#1e8449' : '#c0392b';
           var tSavPct = totBlTherms > 0 ? (totSavTherms / totBlTherms) * 100 : 0;
           tableRows +=
             '<tr class="rpt-tot"><td>TOTAL</td>' +
-            '<td class="rpt-n">' +
-            $n(totBlTherms) +
-            '</td>' +
-            '<td class="rpt-n">' +
-            $n(totCurTherms) +
-            '</td>' +
-            '<td class="rpt-n" style="color:' +
-            tSavColor +
-            '">' +
-            $n(totSavTherms) +
-            '</td>' +
-            '<td class="rpt-n" style="color:' +
-            tSavColor +
-            '">' +
-            $p(tSavPct) +
-            '</td>' +
-            '<td class="rpt-n">' +
-            $c(totBlCost) +
-            '</td>' +
-            '<td class="rpt-n">' +
-            $c(totCurCost) +
-            '</td>' +
-            '<td class="rpt-n" style="color:' +
-            tSavColor +
-            ';font-weight:700">' +
-            $c(totSavCost) +
-            '</td>' +
+            '<td class="rpt-n">' + $n(totBlTherms) + '</td>' +
+            '<td class="rpt-n">' + $n(totCurTherms) + '</td>' +
+            '<td class="rpt-n" style="color:' + _sc(totSavTherms) + '">' + $n(totSavTherms) + '</td>' +
+            '<td class="rpt-n" style="color:' + _sc(tSavPct) + '">' + $p(tSavPct) + '</td>' +
+            '<td class="rpt-n">' + $c(totBlCost) + '</td>' +
+            '<td class="rpt-n">' + $c(totCurCost) + '</td>' +
+            '<td class="rpt-n" style="color:' + _sc(totSavCost) + ';font-weight:700">' + $c(totSavCost) + '</td>' +
             '</tr>';
         }
 
@@ -49429,7 +49462,8 @@
 
       function rptPagePropane(n, d) {
         var $c = function (v) {
-          return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
+          var val = Math.round(v || 0);
+          return (val < 0 ? '-' : '') + '$' + Math.abs(val).toLocaleString();
         };
         var $n = function (v) {
           return Math.round(v || 0).toLocaleString();
@@ -49437,6 +49471,7 @@
         var $p = function (v) {
           return (v || 0).toFixed(1) + '%';
         };
+        function _sc(v) { return v >= 0 ? '#1e8449' : '#c0392b'; }
         var MO_SHORT = [
           'January',
           'February',
@@ -49568,76 +49603,32 @@
           totBlCost += blCost;
           totCurCost += curCost;
           totSavCost += savCost;
-          var savColor = savCost >= 0 ? '#1e8449' : '#c0392b';
           tableRows +=
             '<tr>' +
-            '<td contenteditable="true">' +
-            (b.name || '—') +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            $n(blG) +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            $n(curG) +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true" style="color:' +
-            savColor +
-            ';font-weight:600">' +
-            $n(savG) +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true" style="color:' +
-            savColor +
-            '">' +
-            $p(savPct) +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            $c(blCost) +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            $c(curCost) +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true" style="color:' +
-            savColor +
-            ';font-weight:600">' +
-            $c(savCost) +
-            '</td>' +
+            '<td contenteditable="true">' + (b.name || '—') + '</td>' +
+            '<td class="rpt-n" contenteditable="true">' + $n(blG) + '</td>' +
+            '<td class="rpt-n" contenteditable="true">' + $n(curG) + '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' + _sc(savG) + ';font-weight:600">' + $n(savG) + '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' + _sc(savPct) + '">' + $p(savPct) + '</td>' +
+            '<td class="rpt-n" contenteditable="true">' + $c(blCost) + '</td>' +
+            '<td class="rpt-n" contenteditable="true">' + $c(curCost) + '</td>' +
+            '<td class="rpt-n" contenteditable="true" style="color:' + _sc(savCost) + ';font-weight:600">' + $c(savCost) + '</td>' +
             '</tr>';
         });
         if (!tableRows) {
           tableRows =
             '<tr><td colspan="8" style="color:#aaa;font-style:italic">No propane buildings in this project</td></tr>';
         } else {
-          var tSavColor = totSavCost >= 0 ? '#1e8449' : '#c0392b';
           var tSavPct = totBlGal > 0 ? (totSavGal / totBlGal) * 100 : 0;
           tableRows +=
             '<tr class="rpt-tot"><td>TOTAL</td>' +
-            '<td class="rpt-n">' +
-            $n(totBlGal) +
-            '</td>' +
-            '<td class="rpt-n">' +
-            $n(totCurGal) +
-            '</td>' +
-            '<td class="rpt-n" style="color:' +
-            tSavColor +
-            '">' +
-            $n(totSavGal) +
-            '</td>' +
-            '<td class="rpt-n" style="color:' +
-            tSavColor +
-            '">' +
-            $p(tSavPct) +
-            '</td>' +
-            '<td class="rpt-n">' +
-            $c(totBlCost) +
-            '</td>' +
-            '<td class="rpt-n">' +
-            $c(totCurCost) +
-            '</td>' +
-            '<td class="rpt-n" style="color:' +
-            tSavColor +
-            ';font-weight:700">' +
-            $c(totSavCost) +
-            '</td>' +
+            '<td class="rpt-n">' + $n(totBlGal) + '</td>' +
+            '<td class="rpt-n">' + $n(totCurGal) + '</td>' +
+            '<td class="rpt-n" style="color:' + _sc(totSavGal) + '">' + $n(totSavGal) + '</td>' +
+            '<td class="rpt-n" style="color:' + _sc(tSavPct) + '">' + $p(tSavPct) + '</td>' +
+            '<td class="rpt-n">' + $c(totBlCost) + '</td>' +
+            '<td class="rpt-n">' + $c(totCurCost) + '</td>' +
+            '<td class="rpt-n" style="color:' + _sc(totSavCost) + ';font-weight:700">' + $c(totSavCost) + '</td>' +
             '</tr>';
         }
 
@@ -49919,7 +49910,7 @@
           '<div contenteditable="true" style="border:1px solid #ccc;border-radius:4px;padding:12px 14px;font-size:9.5px;line-height:1.8;color:#333;background:#fafafa;margin-bottom:12px">' +
           '<strong style="font-size:11px;color:#1a5276">How the Regression Model Works</strong><br><br>' +
           "Weather-normalized savings are calculated using an Ordinary Least Squares (OLS) regression model that establishes the mathematical relationship between a building's energy consumption and outdoor weather conditions during the baseline period.<br><br>" +
-          '<strong>Step 1 — Baseline Period Data Collection:</strong> Monthly utility consumption (kWh for electric, Therms for gas) is collected alongside monthly Heating Degree Days (HDD) and Cooling Degree Days (CDD) from NOAA weather stations. The balance point temperature is 60°F per contract specification.<br><br>' +
+          '<strong>Step 1 — Baseline Period Data Collection:</strong> Monthly utility consumption (kWh for electric, Therms for gas) is collected alongside monthly Heating Degree Days (HDD) and Cooling Degree Days (CDD). The balance point temperature is 60°F per contract specification.<br><br>' +
           '<strong>Step 2 — Regression Analysis:</strong> The model fits the equation:<br>' +
           '<div style="text-align:center;font-family:monospace;font-size:10px;margin:4px 0;padding:6px;background:#fff;border:1px solid #ddd;border-radius:3px">' +
           'Usage = β₀ + β₁ × HDD + β₂ × CDD' +
@@ -49927,11 +49918,11 @@
           'Where β₀ is the base load (weather-independent consumption), β₁ is the heating coefficient (usage per HDD), and β₂ is the cooling coefficient (usage per CDD). For gas meters, CDD is excluded (β₂ = 0) since gas is not used for cooling.<br><br>' +
           '<strong>Step 3 — Baseline Prediction:</strong> For each month in the reporting period, the model predicts what consumption <em>would have been</em> under current weather if the building were still operating at baseline efficiency:<br>' +
           '<div style="text-align:center;font-family:monospace;font-size:10px;margin:4px 0;padding:6px;background:#fff;border:1px solid #ddd;border-radius:3px">' +
-          'Expected Usage = β₀ + β₁ × Current HDD + β₂ × Current CDD' +
+          'Normalized Usage = β₀ + β₁ × Current HDD + β₂ × Current CDD' +
           '</div>' +
           '<strong>Step 4 — Savings Calculation:</strong> The difference between the weather-normalized baseline prediction and actual consumption is the verified savings:<br>' +
           '<div style="text-align:center;font-family:monospace;font-size:10px;margin:4px 0;padding:6px;background:#fff;border:1px solid #ddd;border-radius:3px">' +
-          'Units Saved = Expected Usage − Actual Usage<br>' +
+          'Units Saved = Normalized Usage − Actual Usage<br>' +
           'Cost Savings = Units Saved × Current Utility Rate ($/unit)' +
           '</div>' +
           '<strong>Model Quality:</strong> The R² value (coefficient of determination) measures how well the model fits the baseline data. Values above 0.75 indicate a strong fit. R² values are shown per meter in Appendix A.<br><br>' +
@@ -49941,8 +49932,7 @@
         var bodyHTML =
           '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix B: Regression Model Methodology</h2>' +
           '<div style="font-size:8.5px;color:#666;margin-bottom:10px">How weather-normalized savings are calculated</div>' +
-          regressionExplainer +
-          buildingTables;
+          regressionExplainer;
 
         return rptPage(n, 'Appendix B: Regression Model Methodology', bodyHTML, {
           data: d,
@@ -49964,6 +49954,26 @@
           totHddCur = 0,
           totCddBl = 0,
           totCddCur = 0;
+        var _wMoNames = [
+          'January',
+          'February',
+          'March',
+          'April',
+          'May',
+          'June',
+          'July',
+          'August',
+          'September',
+          'October',
+          'November',
+          'December',
+        ];
+        function _wFmtDate(ym) {
+          if (!ym) return '—';
+          var parts = ym.split('-');
+          var mi = parseInt(parts[1], 10) - 1;
+          return (_wMoNames[mi] || ym) + ' ' + parts[0];
+        }
 
         weatherMonthly.forEach(function (mo) {
           var hddBl = mo.hddBl || 0;
@@ -49981,7 +49991,7 @@
           tableRows +=
             '<tr>' +
             '<td contenteditable="true">' +
-            (mo.month || '—') +
+            _wFmtDate(mo.month) +
             '</td>' +
             '<td class="rpt-n" contenteditable="true">' +
             $n(hddBl) +
@@ -50039,11 +50049,11 @@
         }
 
         var weatherTable =
-          '<table class="rpt-table" contenteditable="true" style="font-size:7.5px">' +
+          '<table class="rpt-table" contenteditable="true" style="font-size:10px">' +
           '<thead><tr>' +
-          '<th>Date</th>' +
-          '<th class="rpt-n">HDD (BL Avg)</th><th class="rpt-n">HDD (Current)</th><th class="rpt-n">vs BL</th>' +
-          '<th class="rpt-n">CDD (BL Avg)</th><th class="rpt-n">CDD (Current)</th><th class="rpt-n">vs BL</th>' +
+          '<th>Month</th>' +
+          '<th class="rpt-n">HDD (Baseline Avg)</th><th class="rpt-n">HDD (Current)</th><th class="rpt-n">Variance</th>' +
+          '<th class="rpt-n">CDD (Baseline Avg)</th><th class="rpt-n">CDD (Current)</th><th class="rpt-n">Variance</th>' +
           '</tr></thead><tbody>' +
           tableRows +
           '</tbody></table>';
@@ -50080,7 +50090,7 @@
             cddNote ||
             'Weather conditions during the reporting period were within normal range of the baseline average. ') +
           'Weather-normalized savings figures reflect genuine performance improvements and are not attributable to weather effects. ' +
-          'Balance point: 60°F per contract specification. Weather station: Nearest NOAA station to project site.';
+          'Balance point: 60°F per contract specification.';
 
         var narrativeBox =
           '<div contenteditable="true" style="border:1px solid #ccc;border-radius:4px;padding:10px 12px;font-size:9px;line-height:1.7;color:#333;background:#fafafa;margin-top:10px">' +
@@ -50121,6 +50131,13 @@
           'December',
         ];
 
+        function _fmtBillDate(dateStr) {
+          if (!dateStr) return '—';
+          var d2 = new Date(dateStr + 'T00:00:00');
+          if (isNaN(d2)) return dateStr;
+          return d2.getMonth() + 1 + '/' + d2.getDate() + '/' + d2.getFullYear();
+        }
+
         // Build bill index per month from rawBills collected in collectReportData
         var billsByMonth = {};
         periodYMs.forEach(function (ym) {
@@ -50144,9 +50161,13 @@
             var rows = '';
             if (!bills.length) {
               rows =
-                '<tr><td colspan="6" style="color:#aaa;font-style:italic">No bills recorded for this month</td></tr>';
+                '<tr><td colspan="9" style="color:#aaa;font-style:italic">No bills recorded for this month</td></tr>';
             } else {
               bills.forEach(function (bill) {
+                var _kwh = bill.kwh || bill.kwhUsage || 0;
+                var _kw = bill.kw || bill.kwDemand || 0;
+                var _therms = bill.therms || 0;
+                var _gal = bill.gallons || bill.propaneGal || 0;
                 rows +=
                   '<tr>' +
                   '<td contenteditable="true">' +
@@ -50158,14 +50179,23 @@
                   '<td contenteditable="true">' +
                   (bill.provider || '—') +
                   '</td>' +
-                  '<td contenteditable="true">' +
-                  (bill.account || '—') +
+                  '<td class="rpt-n" contenteditable="true">' +
+                  (_kwh ? Math.round(_kwh).toLocaleString() : '—') +
+                  '</td>' +
+                  '<td class="rpt-n" contenteditable="true">' +
+                  (_kw ? Math.round(_kw).toLocaleString() : '—') +
+                  '</td>' +
+                  '<td class="rpt-n" contenteditable="true">' +
+                  (_therms ? Math.round(_therms).toLocaleString() : '—') +
+                  '</td>' +
+                  '<td class="rpt-n" contenteditable="true">' +
+                  (_gal ? Math.round(_gal).toLocaleString() : '—') +
                   '</td>' +
                   '<td class="rpt-n" contenteditable="true">' +
                   (bill.amount ? $c(bill.amount) : '—') +
                   '</td>' +
                   '<td contenteditable="true">' +
-                  bill.billDate +
+                  _fmtBillDate(bill.billDate || bill.start) +
                   '</td>' +
                   '</tr>';
               });
@@ -50176,7 +50206,7 @@
               '</div>' +
               '<table class="rpt-table" style="font-size:7.5px;margin-bottom:6px">' +
               '<thead><tr>' +
-              '<th>Building</th><th>Commodity</th><th>Provider</th><th>Account #</th><th class="rpt-n">Amount</th><th>Bill Date</th>' +
+              '<th>Building</th><th>Commodity</th><th>Provider</th><th class="rpt-n">kWh</th><th class="rpt-n">kW</th><th class="rpt-n">Therms</th><th class="rpt-n">Gallons</th><th class="rpt-n">Cost</th><th>Bill Date</th>' +
               '</tr></thead><tbody>' +
               rows +
               '</tbody></table>';
