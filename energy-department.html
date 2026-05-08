@@ -15856,6 +15856,25 @@
         };
       }
 
+      function getBldgMeasureSavingsByMo(projId, bldgId) {
+        const p = projects.find((x) => x.id === projId);
+        if (!p || !p.savingsData) return null;
+        const measures = (p.savingsData.measures || []).filter((m) => m.bldgId === bldgId && m.selected !== false);
+        if (!measures.length) return null;
+        const monthlySavings = Array(12).fill(0);
+        measures.forEach((m) => {
+          const r = m.rates || (p.savingsData.blRates || {})[bldgId] || {};
+          for (let mo = 0; mo < 12; mo++) {
+            const s = SUMMER_MOS.includes(mo);
+            monthlySavings[mo] += ((m.kwh || [])[mo] || 0) * (s ? r.kwhSummer || 0 : r.kwhWinter || 0);
+            monthlySavings[mo] += ((m.kw || [])[mo] || 0) * (s ? r.kwSummer || 0 : r.kwWinter || 0);
+            monthlySavings[mo] += ((m.gas || [])[mo] || 0) * (r.thermRate || 0);
+            monthlySavings[mo] += ((m.propane || [])[mo] || 0) * (r.gallonRate || 0);
+          }
+        });
+        return monthlySavings;
+      }
+
       function addSavingsMeasure(projId) {
         const sd = getProjSavingsData(projId);
         const bldgs = getUDBldgs(projId);
