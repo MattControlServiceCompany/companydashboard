@@ -60541,21 +60541,26 @@
         window._spViewMode[projId] = viewMode;
         const isAvg = viewMode === 'average';
 
-        const bldgOptions = bldgs
+        const bldgPills = bldgs
           .map(
             (b) =>
-              `<option value="${b.id}"${b.id === activeBldgId ? ' selected' : ''}>${_escHtml(b.name || 'Building')}</option>`,
+              `<button style="padding:4px 12px;font-size:12px;font-weight:600;border:none;border-radius:20px;cursor:pointer;transition:all .15s;${b.id === activeBldgId ? 'background:var(--accent);color:#fff' : 'background:var(--s2);color:var(--text2);border:1px solid var(--border2)'}"
+                onclick="window._spActiveBldg['${projId}']='${b.id}';renderSetpointsTab('${projId}')">${_escHtml(b.name || 'Building')}</button>`,
           )
           .join('');
 
         let tableContent = '';
         if (isAvg) {
-          const avgRow = _spComputeAvgRow(
-            zones,
-            bldgs.find((b) => b.id === activeBldgId),
-          );
-          tableContent = avgRow
-            ? _spAvgRow(avgRow)
+          // Show averages for ALL buildings at once
+          const avgRows = bldgs
+            .map((b) => {
+              const rec = (p.setpoints || []).find((r) => r.buildingId === b.id);
+              const bZones = rec ? rec.zones : [];
+              return _spComputeAvgRow(bZones, b);
+            })
+            .filter(Boolean);
+          tableContent = avgRows.length
+            ? avgRows.map((r) => _spAvgRow(r)).join('')
             : `<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text3);font-style:italic">No zones to average.</td></tr>`;
         } else {
           const tableRows = zones.map((z, i) => _spZoneRow(projId, activeBldgId, z, i)).join('');
@@ -60569,10 +60574,6 @@
             <div class="card-hdr" style="justify-content:space-between">
               <span class="card-title">🌡️ BAS Set Points &amp; Schedules</span>
               <div style="display:flex;gap:8px;align-items:center">
-                <select id="sp-bldg-sel-${projId}" class="fi" style="font-size:12px;padding:4px 8px"
-                  onchange="window._spActiveBldg['${projId}']=this.value;renderSetpointsTab('${projId}')">
-                  ${bldgOptions}
-                </select>
                 ${
                   !isAvg
                     ? `<button class="btn btn-ghost btn-sm" onclick="spAddZoneRow('${projId}','${activeBldgId}')">+ Add Zone</button>
@@ -60589,6 +60590,14 @@
                 <button style="padding:6px 14px;font-size:12px;font-weight:600;border:none;border-left:1px solid var(--border2);cursor:pointer;transition:all .15s;${isAvg ? 'background:var(--accent);color:#fff' : 'background:var(--s1);color:var(--text2)'}"
                   onclick="spSetViewMode('${projId}','average')">Building Average</button>
               </div>
+              ${
+                !isAvg && bldgs.length > 1
+                  ? `<!-- Building Pills -->
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
+                ${bldgPills}
+              </div>`
+                  : ''
+              }
               ${
                 !isAvg
                   ? `<!-- CSV Upload Area -->
