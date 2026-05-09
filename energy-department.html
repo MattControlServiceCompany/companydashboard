@@ -27886,17 +27886,25 @@
       }
       function showExtractionBadge(method, detail) {
         const b = document.getElementById('extractMethodBadge');
-        b.style.display = 'inline-block';
+        b.style.display = 'inline-flex';
+        b.style.alignItems = 'center';
+        b.style.gap = '6px';
+        let lbl = b.querySelector('.eb-label');
+        if (!lbl) {
+          lbl = document.createElement('span');
+          lbl.className = 'eb-label';
+          b.prepend(lbl);
+        }
         if (method === 'rules') {
           b.style.background = 'rgba(var(--em-rgb),.12)';
           b.style.color = 'var(--em)';
           b.style.border = '1px solid rgba(var(--em-rgb),.25)';
-          b.textContent = '⚡ Rule-Based' + (detail ? ' · ' + detail : '');
+          lbl.textContent = '⚡ Rule-Based' + (detail ? ' · ' + detail : '');
         } else {
           b.style.background = 'rgba(139,92,246,.12)';
           b.style.color = '#a78bfa';
           b.style.border = '1px solid rgba(139,92,246,.25)';
-          b.textContent = '📄 Text Extraction';
+          lbl.textContent = '📄 Text Extraction';
         }
       }
       let pdfType = 'utility',
@@ -31810,6 +31818,7 @@
               extracted.Commodity,
               '— saving to unassigned',
             );
+            showToast('No meter match found — saved to Saved Bills. Assign from Saved Bills tab.');
           }
           if (matched) saveUtilityData();
         }
