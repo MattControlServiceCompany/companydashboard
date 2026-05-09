@@ -49548,37 +49548,36 @@
           bodyContent =
             '<p style="padding:16px;color:#888;font-style:italic">No BAS data uploaded — add data in Set Points &amp; Schedules tab.</p>';
         } else {
+          let allRows = '';
           setpoints.forEach(function (sp) {
             const bldgName = getBldgName(sp.buildingId);
             const zones = sp.zones || [];
             const useAvg = sp.viewMode === 'average';
-            let zoneRows = '';
             if (useAvg && zones.length) {
               var bldgObj = buildings.filter(function (b) {
                 return b.id === sp.buildingId || b.buildingId === sp.buildingId;
               })[0];
               var avg = _spComputeAvgRow(zones, bldgObj);
               if (avg) {
-                var oh = avg.occHeat != null ? avg.occHeat + '°F' : '—';
-                var oc = avg.occCool != null ? avg.occCool + '°F' : '—';
-                var uh = avg.unoccHeat != null ? avg.unoccHeat + '°F' : '—';
-                var uc = avg.unoccCool != null ? avg.unoccCool + '°F' : '—';
-                zoneRows =
+                allRows +=
                   '<tr>' +
                   '<td contenteditable="true">' +
-                  avg.name +
+                  bldgName +
+                  '</td>' +
+                  '<td contenteditable="true">' +
+                  (avg.name || 'Average') +
                   '</td>' +
                   '<td class="rpt-n" contenteditable="true">' +
-                  oh +
+                  (avg.occHeat != null ? avg.occHeat + '°F' : '—') +
                   '</td>' +
                   '<td class="rpt-n" contenteditable="true">' +
-                  oc +
+                  (avg.occCool != null ? avg.occCool + '°F' : '—') +
                   '</td>' +
                   '<td class="rpt-n" contenteditable="true">' +
-                  uh +
+                  (avg.unoccHeat != null ? avg.unoccHeat + '°F' : '—') +
                   '</td>' +
                   '<td class="rpt-n" contenteditable="true">' +
-                  uc +
+                  (avg.unoccCool != null ? avg.unoccCool + '°F' : '—') +
                   '</td>' +
                   '<td contenteditable="true">' +
                   scheduleLabel(avg.schedule) +
@@ -49587,26 +49586,25 @@
               }
             } else {
               zones.forEach(function (z) {
-                const occHeat = z.occHeat != null ? z.occHeat + '°F' : '—';
-                const occCool = z.occCool != null ? z.occCool + '°F' : '—';
-                const unoccHeat = z.unoccHeat != null ? z.unoccHeat + '°F' : '—';
-                const unoccCool = z.unoccCool != null ? z.unoccCool + '°F' : '—';
-                zoneRows +=
+                allRows +=
                   '<tr>' +
+                  '<td contenteditable="true">' +
+                  bldgName +
+                  '</td>' +
                   '<td contenteditable="true">' +
                   (z.name || '—') +
                   '</td>' +
                   '<td class="rpt-n" contenteditable="true">' +
-                  occHeat +
+                  (z.occHeat != null ? z.occHeat + '°F' : '—') +
                   '</td>' +
                   '<td class="rpt-n" contenteditable="true">' +
-                  occCool +
+                  (z.occCool != null ? z.occCool + '°F' : '—') +
                   '</td>' +
                   '<td class="rpt-n" contenteditable="true">' +
-                  unoccHeat +
+                  (z.unoccHeat != null ? z.unoccHeat + '°F' : '—') +
                   '</td>' +
                   '<td class="rpt-n" contenteditable="true">' +
-                  unoccCool +
+                  (z.unoccCool != null ? z.unoccCool + '°F' : '—') +
                   '</td>' +
                   '<td contenteditable="true">' +
                   scheduleLabel(z.schedule) +
@@ -49614,29 +49612,25 @@
                   '</tr>';
               });
             }
-            if (zoneRows === '') {
-              zoneRows = '<tr><td colspan="6" style="color:#aaa;font-style:italic">No zones recorded</td></tr>';
-            }
-            bodyContent +=
-              '<h2 contenteditable="true">' +
-              bldgName +
-              '</h2>' +
-              '<table class="rpt-table" contenteditable="true">' +
-              '<thead><tr>' +
-              '<th>' +
-              (useAvg ? 'Building' : 'Zone / System') +
-              '</th>' +
-              '<th class="rpt-n">Occ Heat</th>' +
-              '<th class="rpt-n">Occ Cool</th>' +
-              '<th class="rpt-n">Unocc Heat</th>' +
-              '<th class="rpt-n">Unocc Cool</th>' +
-              '<th>Schedule</th>' +
-              '</tr></thead>' +
-              '<tbody>' +
-              zoneRows +
-              '</tbody>' +
-              '</table>';
           });
+          if (!allRows) {
+            allRows = '<tr><td colspan="7" style="color:#aaa;font-style:italic">No zones recorded</td></tr>';
+          }
+          bodyContent =
+            '<table class="rpt-table" contenteditable="true">' +
+            '<thead><tr>' +
+            '<th>Building</th>' +
+            '<th>Zone / System</th>' +
+            '<th class="rpt-n">Occ Heat</th>' +
+            '<th class="rpt-n">Occ Cool</th>' +
+            '<th class="rpt-n">Unocc Heat</th>' +
+            '<th class="rpt-n">Unocc Cool</th>' +
+            '<th>Schedule</th>' +
+            '</tr></thead>' +
+            '<tbody>' +
+            allRows +
+            '</tbody>' +
+            '</table>';
         }
 
         const rptViewMode =
@@ -51506,14 +51500,7 @@
         var periodLabel = (d.period && d.period.label) || '';
         var bodyHTML =
           '<p contenteditable="true" style="font-size:9px;color:#555;line-height:1.5;margin:0 0 6px">This page details natural gas and propane consumption across all buildings for the reporting period.</p>' +
-          '<div style="display:flex;gap:8px">' +
-          '<div style="flex:1">' +
           _barChart(thermsMonthly, '#e8c4a0', '#d35400', 'Therms', 'Natural Gas Therms') +
-          '</div>' +
-          '<div style="flex:1">' +
-          _barChart(galMonthly, '#f5deb3', '#b8860b', 'Gal', 'Propane Gallons') +
-          '</div>' +
-          '</div>' +
           '<h2 style="font-size:9px;font-weight:700;color:#8b4513;margin:8px 0 3px">Natural Gas by Building</h2>' +
           _table(
             gasBldgs,
@@ -51529,6 +51516,7 @@
             },
             'Therms',
           ) +
+          _barChart(galMonthly, '#f5deb3', '#b8860b', 'Gal', 'Propane Gallons') +
           '<h2 style="font-size:9px;font-weight:700;color:#7d5a00;margin:8px 0 3px">Propane by Building</h2>' +
           _table(
             propBldgs,
@@ -52377,7 +52365,7 @@
         { key: 'appendixA', label: 'Appendix A: Normalization & Baseline', group: 'Appendices' },
         { key: 'appendixB', label: 'Appendix B: Regression Model Methodology', group: 'Appendices' },
         { key: 'appendixC', label: 'Appendix C: Weather Data', group: 'Appendices' },
-        { key: 'appendixD', label: 'Appendix D: Utility Bills', group: 'Appendices' },
+        { key: 'appendixD', label: 'Appendix D: Utility Bills', group: 'Appendices', defaultOff: true },
       ];
 
       function openReportModal(projId, type) {
@@ -52414,7 +52402,14 @@
             sectionHTML += `<div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;padding:6px 8px 2px">${sec.group}</div>`;
             lastGroup = sec.group;
           }
-          const isChecked = savedSections[sec.key] === false ? '' : 'checked';
+          const isChecked =
+            sec.key in savedSections
+              ? savedSections[sec.key] === false
+                ? ''
+                : 'checked'
+              : sec.defaultOff
+                ? ''
+                : 'checked';
           let emptyWarn = '';
           if (sec.key === 'approvedChanges') {
             const hasChanges = p && p.approvedChanges && p.approvedChanges.length > 0;
