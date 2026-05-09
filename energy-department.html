@@ -45086,6 +45086,213 @@
         showToast('Row added');
       }
 
+      function _acImportFile(projId) {
+        const inp = document.createElement('input');
+        inp.type = 'file';
+        inp.accept = '.xlsx,.xls,.csv';
+        inp.onchange = function (e) {
+          const file = e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = function (ev) {
+            try {
+              const data = new Uint8Array(ev.target.result);
+              const wb = XLSX.read(data, { type: 'array' });
+              const ws = wb.Sheets[wb.SheetNames[0]];
+              const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+              _acProcessImport(projId, rows, file.name);
+            } catch (err) {
+              showToast('Could not read file: ' + err.message);
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        };
+        inp.click();
+      }
+
+      function _acProcessImport(projId, rows, filename) {
+        if (!rows || rows.length < 2) {
+          showToast('No data found in file');
+          return;
+        }
+
+        const matchers = [
+          { field: 'building', re: /building/i },
+          { field: 'equipment', re: /equipment/i },
+          { field: 'proposedChange', re: /proposed\s*change|^change$/i },
+          { field: 'existingState', re: /existing\s*(state)?/i },
+          { field: 'approvalStatus', re: /approv|status/i },
+          { field: 'completedDate', re: /completed|date/i },
+        ];
+
+        let headerIdx = -1;
+        const colMap = {};
+        for (let r = 0; r < Math.min(rows.length, 10); r++) {
+          const row = rows[r];
+          if (!Array.isArray(row)) continue;
+          let matches = 0;
+          const tempMap = {};
+          for (let c = 0; c < row.length; c++) {
+            const val = String(row[c] || '').trim();
+            if (!val) continue;
+            for (const m of matchers) {
+              if (m.re.test(val) && !tempMap[m.field]) {
+                tempMap[m.field] = c;
+                matches++;
+                break;
+              }
+            }
+          }
+          if (matches >= 2) {
+            headerIdx = r;
+            Object.assign(colMap, tempMap);
+            break;
+          }
+        }
+        if (headerIdx < 0) {
+          showToast('Could not find column headers in the spreadsheet');
+          return;
+        }
+
+        const approverMatch = filename.match(/approved\s+by\s+(\w+)/i);
+        const approvedBy = approverMatch ? approverMatch[1] : '';
+
+        const parsed = [];
+        for (let r = headerIdx + 1; r < rows.length; r++) {
+          const row = rows[r];
+          if (!Array.isArray(row)) continue;
+          const get = (field) => (colMap[field] != null ? String(row[colMap[field]] || '').trim() : '');
+          const building = get('building');
+          const equipment = get('equipment');
+          const proposedChange = get('proposedChange');
+          if (!building && !equipment && !proposedChange) continue;
+
+          let completedDate = get('completedDate');
+          if (completedDate) {
+            const d = new Date(completedDate);
+            if (!isNaN(d)) completedDate = d.toISOString().slice(0, 10);
+          }
+
+          parsed.push({
+            building,
+            equipment,
+            proposedChange,
+            existingState: get('existingState'),
+            approvalStatus: get('approvalStatus') || 'Pending',
+            completedDate,
+          });
+        }
+        if (!parsed.length) {
+          showToast('No data rows found below headers');
+          return;
+        }
+
+        _acShowImportPreview(projId, parsed, approvedBy, filename);
+      }
+
+      function _acShowImportPreview(projId, parsed, approvedBy, filename) {
+        let existing = document.getElementById('acImportModal');
+        if (existing) existing.remove();
+
+        const previewRows = parsed
+          .map((r, i) => {
+            const statusColor =
+              (r.approvalStatus || '').toLowerCase() === 'ok'
+                ? 'color:var(--lime)'
+                : (r.approvalStatus || '').toLowerCase() === 'no'
+                  ? 'color:var(--warn)'
+                  : 'color:var(--amber)';
+            return `<tr>
+            <td style="padding:4px 6px"><input type="checkbox" class="ac-imp-cb" data-idx="${i}" checked></td>
+            <td style="padding:4px 6px;font-size:11px">${r.building}</td>
+            <td style="padding:4px 6px;font-size:11px">${r.equipment}</td>
+            <td style="padding:4px 6px;font-size:11px">${r.proposedChange}</td>
+            <td style="padding:4px 6px;font-size:11px">${r.existingState}</td>
+            <td style="padding:4px 6px;font-size:11px;font-weight:600;${statusColor}">${r.approvalStatus}</td>
+            <td style="padding:4px 6px;font-size:11px">${r.completedDate}</td>
+          </tr>`;
+          })
+          .join('');
+
+        const modal = document.createElement('div');
+        modal.id = 'acImportModal';
+        modal.className = 'modal-bg open';
+        modal.innerHTML = `
+          <div class="modal" style="max-width:900px;max-height:80vh;display:flex;flex-direction:column">
+            <div class="modal-hdr">
+              <span class="modal-title">Import Approved Changes</span>
+              <button class="modal-x" onclick="document.getElementById('acImportModal').remove()">&times;</button>
+            </div>
+            <div style="padding:14px;overflow-y:auto;flex:1">
+              <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
+                <label style="font-size:12px;font-weight:600;color:var(--text2)">Approved By:</label>
+                <input id="acImpApprovedBy" value="${approvedBy}" style="flex:1;padding:4px 8px;border:1px solid var(--s3);border-radius:4px;background:var(--s1);color:var(--text);font-size:13px">
+              </div>
+              <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Source: ${filename} · ${parsed.length} rows found</div>
+              <div style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse">
+                  <thead><tr style="background:var(--s2);font-size:10px;text-transform:uppercase;color:var(--text3)">
+                    <th style="padding:4px 6px;width:30px"></th>
+                    <th style="padding:4px 6px;text-align:left">Building</th>
+                    <th style="padding:4px 6px;text-align:left">Equipment</th>
+                    <th style="padding:4px 6px;text-align:left">Proposed Change</th>
+                    <th style="padding:4px 6px;text-align:left">Existing State</th>
+                    <th style="padding:4px 6px;text-align:left">Status</th>
+                    <th style="padding:4px 6px;text-align:left">Completed</th>
+                  </tr></thead>
+                  <tbody>${previewRows}</tbody>
+                </table>
+              </div>
+            </div>
+            <div style="padding:14px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px">
+              <button class="btn btn-ghost" onclick="document.getElementById('acImportModal').remove()">Cancel</button>
+              <button class="btn btn-em" onclick="_acDoImport(${projId})">Import Selected</button>
+            </div>
+          </div>`;
+
+        window._acImportParsed = parsed;
+        window._acImportFilename = filename;
+        document.body.appendChild(modal);
+      }
+
+      function _acDoImport(projId) {
+        const p = projects.find((x) => x.id === projId);
+        if (!p) return;
+        p.approvedChanges = p.approvedChanges || [];
+
+        const approvedBy = (document.getElementById('acImpApprovedBy')?.value || '').trim();
+        const checks = document.querySelectorAll('.ac-imp-cb:checked');
+        const indices = Array.from(checks).map((cb) => parseInt(cb.dataset.idx));
+        const parsed = window._acImportParsed || [];
+        const filename = window._acImportFilename || '';
+
+        let added = 0;
+        indices.forEach((i) => {
+          const r = parsed[i];
+          if (!r) return;
+          p.approvedChanges.push({
+            id: Date.now() + added,
+            building: r.building,
+            equipment: r.equipment,
+            proposedChange: r.proposedChange,
+            existingState: r.existingState,
+            approvalStatus: r.approvalStatus || 'Pending',
+            completedDate: r.completedDate || '',
+            approvedBy: approvedBy,
+            source: filename,
+            importedAt: new Date().toISOString(),
+          });
+          added++;
+        });
+
+        sset('en_projects', projects);
+        document.getElementById('acImportModal').remove();
+        delete window._acImportParsed;
+        delete window._acImportFilename;
+        _renderDocsApproved(document.getElementById('ptab-docs-body-' + projId), projId);
+        showToast(added + ' change' + (added !== 1 ? 's' : '') + ' imported');
+      }
+
       function renderMeetingsList(projId) {
         const p = projects.find((x) => x.id === projId);
         if (!p) return;
