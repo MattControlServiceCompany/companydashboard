@@ -19759,24 +19759,6 @@
                 _c.start = _p.end;
               }
             }
-            console.log(
-              '[Evergy extractAll] raw service-from matches:',
-              sfMatches.length,
-              'unique bills:',
-              uniqueBills.length,
-              '· fuzzy-merged:',
-              _fuzzyMerges,
-            );
-            for (let _di = 0; _di < uniqueBills.length; _di++) {
-              console.log(
-                '[Evergy extractAll] bill',
-                _di,
-                '_acct:',
-                uniqueBills[_di]._acct,
-                '_addr:',
-                uniqueBills[_di]._addr,
-              );
-            }
 
             // ── PAGE-FIRST SECTION RESOLUTION (Update 80b) ──
             // Resolve each bill's page range BEFORE section building by anchoring
@@ -19964,7 +19946,6 @@
               validSections = sections.filter(
                 (s) => _EVG_SERVICE_FROM.test(s) || /service\s+from[:\s]\s*\d{2}\/\d{2}\/\d{4}/i.test(s),
               );
-              console.log('[Evergy extractAll] fell back to Billing-Details split, sections:', validSections.length);
             }
             if (!validSections.length) return [_extractEvergy(t, acct, addrM?.[1]?.trim() || null)];
             // Extract CustomerName and RateSchedule from full text — per-section extraction
@@ -28030,22 +28011,6 @@
               if (rule) {
                 // Use extractAll if available (multi-bill PDF support)
                 let bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
-                const _traceAccts = (label) =>
-                  console.log(
-                    '[ACCT TRACE ' + label + ']',
-                    bills
-                      .map(
-                        (b, i) =>
-                          'bill' +
-                          i +
-                          ':' +
-                          (b.AccountNumber || 'null') +
-                          ' addr:' +
-                          (b.ServiceAddress || 'null').substring(0, 30),
-                      )
-                      .join(' | '),
-                  );
-                _traceAccts('1-after-extractAll');
                 const _extractUnmatchedPages = bills._unmatchedPages || [];
                 // Bug b5951068: Flag bills that fail the key-field filter instead of
                 // silently dropping them. Unparseable billing periods surface as
@@ -28232,29 +28197,11 @@
 
                 // ── POST-EXTRACTION VERIFICATION: use historical data + logic to fix issues ──
                 // Bug b5951068: append parse-error rows (flagged above) so they're never lost.
-                _traceAccts('2-after-retry');
                 let finalBills = (validBills.length ? validBills : bills.length ? bills : []).concat(
                   _singleDroppedBills || [],
                 );
-                _traceAccts('3-pre-verify');
                 statusMsg('Verifying extraction against historical data...');
                 finalBills = _postExtractionVerify(finalBills, rule.name, text);
-                const _traceF = (label) =>
-                  console.log(
-                    '[ACCT TRACE ' + label + ']',
-                    finalBills
-                      .map(
-                        (b, i) =>
-                          'bill' +
-                          i +
-                          ':' +
-                          (b.AccountNumber || 'null') +
-                          ' addr:' +
-                          (b.ServiceAddress || 'null').substring(0, 30),
-                      )
-                      .join(' | '),
-                  );
-                _traceF('4-after-verify');
 
                 // ── MULTI-PASS OCR CONSENSUS: re-extract from alternate passes for mismatched values ──
                 const passTexts = window._pdfOcrPasses || {};
@@ -28376,7 +28323,6 @@
                   );
                 }
 
-                _traceF('5-final');
                 if (finalBills.length > 1) {
                   // Multi-bill: store all, start on newest bill
                   window._pdfMultiBills = finalBills;
@@ -49453,9 +49399,10 @@
         }
         var actX = _qx(curQtr),
           actY = _qy(actCumVal);
+        var actLine = _qx(1).toFixed(1) + ',' + _qy(0).toFixed(1) + ' ' + actX.toFixed(1) + ',' + actY.toFixed(1);
         var svgChart =
           '<div style="margin:8px 0">' +
-          '<div style="font-size:9px;color:#555;margin-bottom:3px">Cumulative Savings — Projected vs Actual (Quarterly)</div>' +
+          '<div style="font-size:9px;color:#555;margin-bottom:3px">Total Cumulative Savings — Projected vs Actual</div>' +
           '<svg width="100%" viewBox="0 0 ' +
           svgW +
           ' ' +
@@ -49466,20 +49413,14 @@
           '<polyline points="' +
           projLine +
           '" fill="none" stroke="#aaa" stroke-width="1.5" stroke-dasharray="4,3"/>' +
+          '<polyline points="' +
+          actLine +
+          '" fill="none" stroke="#27ae60" stroke-width="2"/>' +
           '<circle cx="' +
           actX.toFixed(1) +
           '" cy="' +
           actY.toFixed(1) +
           '" r="4" fill="#27ae60"/>' +
-          '<line x1="' +
-          actX.toFixed(1) +
-          '" y1="' +
-          _qy(0).toFixed(1) +
-          '" x2="' +
-          actX.toFixed(1) +
-          '" y2="' +
-          actY.toFixed(1) +
-          '" stroke="#27ae60" stroke-width="1.5"/>' +
           '<text x="' +
           (actX + 5).toFixed(1) +
           '" y="' +
@@ -49497,7 +49438,7 @@
           '<span style="display:inline-block;width:16px;height:2px;background:#aaa;border-bottom:2px dashed #aaa;vertical-align:middle;margin-right:4px"></span>' +
           contractYears +
           '-yr projected&nbsp;&nbsp;' +
-          '<span style="display:inline-block;width:8px;height:8px;background:#27ae60;border-radius:50%;vertical-align:middle;margin-right:4px"></span>Actual (Q' +
+          '<span style="display:inline-block;width:16px;height:2px;background:#27ae60;vertical-align:middle;margin-right:4px"></span>Actual cumulative (Q' +
           q +
           ' Y' +
           currentYear +
