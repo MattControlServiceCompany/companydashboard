@@ -16397,11 +16397,14 @@
       const _svColGroupState = {};
       function svToggleColGroup(grp) {
         _svColGroupState[grp] = !_svColGroupState[grp];
+        const isOpen = _svColGroupState[grp];
         document.querySelectorAll('.sv-cg-' + grp).forEach((el) => {
-          el.style.display = _svColGroupState[grp] ? '' : 'none';
+          el.style.display = isOpen ? '' : 'none';
         });
         const tog = document.getElementById('sv-cg-tog-' + grp);
-        if (tog) tog.textContent = _svColGroupState[grp] ? '▾' : '▸';
+        if (tog) tog.textContent = isOpen ? '▾' : '▸';
+        const hdr = document.getElementById('sv-cg-hdr-' + grp);
+        if (hdr) hdr.colSpan = isOpen ? 13 : 1;
       }
       function svToggleAllColGroups(expand) {
         ['kwh', 'kw', 'gas', 'propane', 'kwhCost', 'kwCost', 'gasCost', 'propaneCost'].forEach((grp) => {
@@ -16411,6 +16414,8 @@
           });
           const tog = document.getElementById('sv-cg-tog-' + grp);
           if (tog) tog.textContent = expand ? '▾' : '▸';
+          const hdr = document.getElementById('sv-cg-hdr-' + grp);
+          if (hdr) hdr.colSpan = expand ? 13 : 1;
         });
       }
 
@@ -16450,7 +16455,7 @@
         // ── Group header builder ──
         const grpHdr = (grp, label, colspan, bg) => {
           const isOpen = !!_svColGroupState[grp];
-          return `<th colspan="${colspan}" style="text-align:center;border-left:2px solid var(--border2);background:${bg};cursor:pointer;user-select:none" onclick="svToggleColGroup('${grp}')"><span id="sv-cg-tog-${grp}" style="font-size:10px;margin-right:3px">${isOpen ? '▾' : '▸'}</span>${label}</th>`;
+          return `<th id="sv-cg-hdr-${grp}" colspan="${isOpen ? colspan : 1}" style="text-align:center;border-left:2px solid var(--border2);background:${bg};cursor:pointer;user-select:none" onclick="svToggleColGroup('${grp}')"><span id="sv-cg-tog-${grp}" style="font-size:10px;margin-right:3px">${isOpen ? '▾' : '▸'}</span>${label}</th>`;
         };
 
         // ── Rate functions for cost calc ──
@@ -16682,7 +16687,7 @@
               </div>
             </div>
             <div style="overflow-x:auto">
-              <table class="dtbl sv-matrix-tbl" style="min-width:5200px">
+              <table class="dtbl sv-matrix-tbl">
                 <thead>
                   <tr>
                     <th style="width:20px"></th><th style="width:28px">✓</th><th style="width:44px">Msr #</th>
