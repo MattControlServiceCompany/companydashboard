@@ -47055,7 +47055,7 @@
             else if (m.commodity === 'Water') Object.assign(bd.baselineMaps.waterByMo, maps.waterByMo);
           });
           bMeters.forEach(({ m, bl, allRows }) => {
-            const reg = m._reg || null;
+            const reg = m._reg || (bl && bl.reg) || null;
             const blMonths = bl ? bl.months.slice().sort() : [];
             const blStart = blMonths[0] || '';
             const blEnd = blMonths[blMonths.length - 1] || '';
@@ -48649,8 +48649,10 @@
           .map(function (b) {
             const cur = b.eui.current || 0;
             const cbecs = b.eui.cbecs || 0;
+            const bl = b.eui.baseline || 0;
             const barPct = Math.min(100, (cur / maxEUI) * 100).toFixed(1);
             const cbecsLinePct = Math.min(100, (cbecs / maxEUI) * 100).toFixed(1);
+            const blLinePct = bl > 0 ? Math.min(100, (bl / maxEUI) * 100).toFixed(1) : 0;
             const barColor = cur <= cbecs ? '#27ae60' : '#f39c12';
             return (
               '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
@@ -48666,6 +48668,11 @@
               '<div style="position:absolute;left:' +
               cbecsLinePct +
               '%;top:0;bottom:0;width:2px;background:#c0392b;z-index:1"></div>' +
+              (bl > 0
+                ? '<div style="position:absolute;left:' +
+                  blLinePct +
+                  '%;top:0;bottom:0;width:2px;background:#8e44ad;z-index:1"></div>'
+                : '') +
               '</div>' +
               '<div style="width:35px;font-size:7px;font-weight:600;color:#333;flex-shrink:0">' +
               (cur > 0 ? cur.toFixed(1) : '—') +
@@ -48677,11 +48684,12 @@
 
         const euiChart =
           '<div class="rpt-chart-box">' +
-          '<div class="rpt-chart-title">Current EUI by Building — red line = CBECS Median</div>' +
+          '<div class="rpt-chart-title">Current EUI by Building</div>' +
           '<div style="display:flex;gap:12px;margin-bottom:4px;font-size:7px">' +
           '<span><span style="display:inline-block;width:10px;height:7px;background:#27ae60;border-radius:2px;vertical-align:middle"></span> Below CBECS</span>' +
           '<span><span style="display:inline-block;width:10px;height:7px;background:#f39c12;border-radius:2px;vertical-align:middle"></span> Above CBECS</span>' +
           '<span><span style="display:inline-block;width:2px;height:10px;background:#c0392b;vertical-align:middle"></span> CBECS Median</span>' +
+          '<span><span style="display:inline-block;width:2px;height:10px;background:#8e44ad;vertical-align:middle"></span> Baseline EUI</span>' +
           '</div>' +
           euiBars +
           '</div>';
@@ -51558,7 +51566,6 @@
           blEnd +
           '<br>' +
           '<strong>Savings Calculation:</strong> Units saved (weather-normalized baseline minus actual) multiplied by current monthly utility rate.<br>' +
-          '<strong>Weather Station:</strong> Nearest NOAA station to project site. Degree day data sourced monthly from NOAA Climate Data Online.<br>' +
           '<strong>Regression Model:</strong> Ordinary Least Squares (OLS) with HDD and CDD as independent variables. R² values shown per meter below.' +
           '</div>';
 
@@ -51913,9 +51920,7 @@
             '</td>' +
             '<td class="rpt-n" contenteditable="true">' +
             $n(hddBl) +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            (ip ? $n(hddCur) : '—') +
+            (ip ? ' / ' + $n(hddCur) : '') +
             '</td>' +
             '<td class="rpt-n" contenteditable="true" style="' +
             hddVarStyle +
@@ -51924,9 +51929,7 @@
             '</td>' +
             '<td class="rpt-n" contenteditable="true">' +
             $n(cddBl) +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            (ip ? $n(cddCur) : '—') +
+            (ip ? ' / ' + $n(cddCur) : '') +
             '</td>' +
             '<td class="rpt-n" contenteditable="true" style="' +
             cddVarStyle +
@@ -51938,7 +51941,7 @@
 
         if (!tableRows) {
           tableRows =
-            '<tr><td colspan="7" style="color:#aaa;font-style:italic">No weather data for this period. Enter HDD/CDD in project settings.</td></tr>';
+            '<tr><td colspan="5" style="color:#aaa;font-style:italic">No weather data for this period. Enter HDD/CDD in project settings.</td></tr>';
         } else {
           var totHddVar = totHddBl > 0 ? ((totHddCur - totHddBl) / totHddBl) * 100 : 0;
           var totCddVar = totCddBl > 0 ? ((totCddCur - totCddBl) / totCddBl) * 100 : 0;
@@ -51947,8 +51950,7 @@
             '<td>Period Total</td>' +
             '<td class="rpt-n">' +
             $n(totHddBl) +
-            '</td>' +
-            '<td class="rpt-n">' +
+            ' / ' +
             $n(totHddCur) +
             '</td>' +
             '<td class="rpt-n">' +
@@ -51956,8 +51958,7 @@
             '</td>' +
             '<td class="rpt-n">' +
             $n(totCddBl) +
-            '</td>' +
-            '<td class="rpt-n">' +
+            ' / ' +
             $n(totCddCur) +
             '</td>' +
             '<td class="rpt-n">' +
@@ -51970,8 +51971,8 @@
           '<table class="rpt-table" contenteditable="true" style="font-size:10px">' +
           '<thead><tr>' +
           '<th>Month</th>' +
-          '<th class="rpt-n">HDD (Baseline Avg)</th><th class="rpt-n">HDD (Current)</th><th class="rpt-n">Variance</th>' +
-          '<th class="rpt-n">CDD (Baseline Avg)</th><th class="rpt-n">CDD (Current)</th><th class="rpt-n">Variance</th>' +
+          '<th class="rpt-n">HDD (BL / Current)</th><th class="rpt-n">HDD Var</th>' +
+          '<th class="rpt-n">CDD (BL / Current)</th><th class="rpt-n">CDD Var</th>' +
           '</tr></thead><tbody>' +
           tableRows +
           '</tbody></table>';
