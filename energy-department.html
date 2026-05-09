@@ -12105,10 +12105,10 @@
             </button>
             <button
               class="btn"
-              style="background: var(--red); color: #fff; border: none"
+              style="background: var(--em); color: #fff; border: none"
               onclick="window._confirmResolve && window._confirmResolve(true)"
             >
-              Delete
+              Confirm
             </button>
           </div>
         </div>
@@ -25358,7 +25358,9 @@
         document.getElementById('pdfClearBtn').style.display = 'none';
         document.getElementById('dropZone').classList.remove('collapsed');
         document.getElementById('pdfTypeSection').style.display = '';
-        document.getElementById('extractMethodBadge').style.display = 'none';
+        const _badge = document.getElementById('extractMethodBadge');
+        _badge.style.display = 'none';
+        _badge.innerHTML = '';
         document.getElementById('pdfAutoAssignBanner').style.display = 'none';
         const dbg = document.getElementById('pdfDebugBtn');
         if (dbg) {
