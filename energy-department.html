@@ -45040,6 +45040,7 @@
             </div>
             <div style="display:flex;gap:6px">
               <button class="btn btn-ghost btn-sm" onclick="_acImportFile(${projId})">📤 Import from File</button>
+              <button class="btn btn-ghost btn-sm" onclick="_acImportFromSaved(${projId})">📄 From Saved Docs</button>
               <button class="btn btn-em btn-sm" onclick="_acAddRow(${projId})">+ Add Row</button>
             </div>
           </div>
@@ -45291,6 +45292,63 @@
         delete window._acImportFilename;
         _renderDocsApproved(document.getElementById('ptab-docs-body-' + projId), projId);
         showToast(added + ' change' + (added !== 1 ? 's' : '') + ' imported');
+      }
+
+      function _acImportFromSaved(projId) {
+        const allBills = sget('en_pdf_bills', []) || [];
+        const projBills = allBills.filter((b) => b.projId === projId || !b.projId);
+        const spreadsheets = projBills.filter((b) => {
+          const name = (b.fileName || b.name || '').toLowerCase();
+          return name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.csv');
+        });
+        if (!spreadsheets.length) {
+          showToast('No spreadsheet files saved to this project. Use "Import from File" to upload directly.');
+          return;
+        }
+        let existing = document.getElementById('acSavedDocsModal');
+        if (existing) existing.remove();
+        const modal = document.createElement('div');
+        modal.id = 'acSavedDocsModal';
+        modal.className = 'modal-bg open';
+        const listHTML = spreadsheets
+          .map((b) => {
+            const name = b.fileName || b.name || 'Unknown';
+            return `<div style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--s2);font-size:13px" onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background=''" onclick="_acLoadSavedDoc(${projId},${b.id})">${name}</div>`;
+          })
+          .join('');
+        modal.innerHTML = `
+          <div class="modal" style="max-width:400px">
+            <div class="modal-hdr">
+              <span class="modal-title">Select Document</span>
+              <button class="modal-x" onclick="document.getElementById('acSavedDocsModal').remove()">&times;</button>
+            </div>
+            <div style="padding:14px">
+              <div style="font-size:12px;color:var(--text3);margin-bottom:8px">${spreadsheets.length} spreadsheet(s) found</div>
+              ${listHTML}
+            </div>
+          </div>`;
+        document.body.appendChild(modal);
+      }
+
+      function _acLoadSavedDoc(projId, billId) {
+        document.getElementById('acSavedDocsModal')?.remove();
+        const allBills = sget('en_pdf_bills', []) || [];
+        const bill = allBills.find((b) => b.id === billId);
+        if (!bill || !bill.pdfData) {
+          showToast('Could not load document data');
+          return;
+        }
+        try {
+          const binary = atob(bill.pdfData.split(',').pop());
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const wb = XLSX.read(bytes, { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+          _acProcessImport(projId, rows, bill.fileName || bill.name || 'Saved Document');
+        } catch (err) {
+          showToast('Could not parse document: ' + err.message);
+        }
       }
 
       function renderMeetingsList(projId) {
