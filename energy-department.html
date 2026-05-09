@@ -13466,7 +13466,7 @@
           });
         initUtilityTool();
         // Restore last active view from session
-        const lastView = sessionStorage.getItem('ch_activeView');
+        const lastView = localStorage.getItem('ch_activeView') || sessionStorage.getItem('ch_activeView');
         // Read project session NOW before sv('projects') → showList() overwrites it
         const savedProjSession = sessionStorage.getItem('ch_proj');
         if (lastView && document.getElementById('view-' + lastView)) sv(lastView);
@@ -13555,6 +13555,7 @@
         const target = btn?.classList.contains('s-item') ? btn : btn?.querySelector('.s-item') || btn;
         (target || document.querySelector(`.sidebar .s-item[onclick*="'${id}'"]`))?.classList.add('active');
         sessionStorage.setItem('ch_activeView', id);
+        localStorage.setItem('ch_activeView', id);
         if (id === 'pdf') {
           setTimeout(updateBillCountBadge, 50);
         }
@@ -32600,6 +32601,8 @@
       function _distCalRenderPreview(projId) {
         const pending = window._distCalPendingImport[projId] || [];
         const active = pending.filter((r) => !r._deleted);
+        const _scrollContainer = document.querySelector('#distcal-preview-' + projId + ' [style*="overflow-y"]');
+        const _savedScroll = _scrollContainer ? _scrollContainer.scrollTop : 0;
         // Build preview table HTML; inject into a dedicated preview div inside the card
         let previewEl = document.getElementById('distcal-preview-' + projId);
         if (!previewEl) {
@@ -32644,6 +32647,11 @@
               <button class="btn btn-em btn-sm" onclick="_distCalApproveImport(${projId})">Approve &amp; Save (${active.length})</button>
             </div>
           </div>`;
+        // Restore scroll position after re-render
+        if (_savedScroll > 0) {
+          const _newScroll = previewEl.querySelector('[style*="overflow-y"]');
+          if (_newScroll) _newScroll.scrollTop = _savedScroll;
+        }
         // Hide the import panel while preview is shown
         const importEl = document.getElementById('distcal-import-' + projId);
         if (importEl) importEl.style.display = 'none';
@@ -61778,7 +61786,7 @@
           _yoyChartsToDraw.push({ cid, field, unit, blAvgArr });
           return `<div class="card" style="background:var(--s1);padding:14px;margin-bottom:12px">
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">${icon} Monthly ${title} — Year over Year</div>
-            <div style="position:relative;height:200px"><canvas id="${cid}"></canvas></div>
+            <div style="position:relative;height:160px"><canvas id="${cid}"></canvas></div>
           </div>`;
         }
 
