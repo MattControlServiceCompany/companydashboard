@@ -34136,20 +34136,55 @@
         } else if (_udProjPanel === 'savproj') {
           const moBase = aggBaseMoMap();
           const annBase = Object.values(moBase).reduce((s, v) => s + v, 0);
-          const avgSavPct = avgSavPctAcrossBldgs(moBase);
-          const annProjSav = annBase * avgSavPct;
+
+          // Compute actual monthly projected savings from measures (with % fallback)
+          const projSavByMo = Array(12).fill(0);
+          let _msrBldgCount = 0;
+          bldgs.forEach((b) => {
+            const msrSav = getBldgMeasureSavingsByMo(udSelProjId, b.id);
+            if (msrSav) {
+              _msrBldgCount++;
+              msrSav.forEach((v, mo) => {
+                projSavByMo[mo] += v;
+              });
+            } else {
+              const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
+              let bspCfg = {};
+              try {
+                bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
+              } catch (e) {}
+              const savPct = (bspCfg.savingsPct ?? 11) / 100;
+              const bMoBase = aggBaseMoMapForBldgs([b]);
+              for (let mo = 0; mo < 12; mo++) projSavByMo[mo] += (bMoBase[mo] || 0) * savPct;
+            }
+          });
+          const annProjSav = projSavByMo.reduce((s, v) => s + v, 0);
+          const avgSavPct = annBase > 0 ? annProjSav / annBase : 0;
+          const _pctBldgCount = bldgs.length - _msrBldgCount;
+          const _srcLabel =
+            _msrBldgCount > 0
+              ? '<div style="font-size:10px;color:var(--accent);margin-top:2px">\u{1F4CA} Source: Energy Savings Measures (' +
+                _msrBldgCount +
+                ' building' +
+                (_msrBldgCount !== 1 ? 's' : '') +
+                (_pctBldgCount > 0 ? ' + ' + _pctBldgCount + ' at default %' : '') +
+                ')</div>'
+              : '<div style="font-size:10px;color:var(--text3);margin-top:2px">\u{1F4CA} Source: Savings %</div>';
+
           const tdN = (v, color = 'var(--text)') =>
             `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${color};border:1px solid var(--border);white-space:nowrap">${$f(v, 2)}</td>`;
           const rows = MN.map((mn, mo) => {
             const base = moBase[mo] || 0;
-            return `<tr><td style="padding:6px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s1)">${mn}</td>${tdN(base)}${tdN(base * (1 - avgSavPct))}${tdN(base * avgSavPct, 'var(--em)')}</tr>`;
+            const sav = projSavByMo[mo];
+            return `<tr><td style="padding:6px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s1)">${mn}</td>${tdN(base)}${tdN(base - sav)}${tdN(sav, 'var(--em)')}</tr>`;
           }).join('');
           content.innerHTML = `
             <div style="padding:14px 18px;background:var(--s1);border-bottom:1px solid var(--border)">
-              <div style="font-size:14px;font-weight:800;font-family:var(--head);color:var(--em);margin-bottom:10px">📈 ${projName} — Projected Savings</div>
-              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
+              <div style="font-size:14px;font-weight:800;font-family:var(--head);color:var(--em);margin-bottom:4px">📈 ${projName} — Projected Savings</div>
+              ${_srcLabel}
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:8px">
                 <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual Baseline</div><div style="font-size:15px;font-weight:800">${$f(annBase)}</div></div>
-                <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Savings</div><div style="font-size:15px;font-weight:800;color:var(--em)">${$f(annProjSav)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${(avgSavPct * 100).toFixed(1)}% avg</div></div>
+                <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Savings</div><div style="font-size:15px;font-weight:800;color:var(--em)">${$f(annProjSav)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${(avgSavPct * 100).toFixed(1)}% of baseline</div></div>
                 <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Spend</div><div style="font-size:15px;font-weight:800;color:var(--em2)">${$f(annBase - annProjSav)}</div></div>
                 <div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Buildings</div><div style="font-size:15px;font-weight:800">${bldgs.length}</div></div>
               </div>
@@ -34166,8 +34201,8 @@
             <div style="padding:16px 18px 10px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Monthly Projected Savings</div>
             <div style="padding:0 18px 20px;height:280px;position:relative"><canvas id="projSavProjChart"></canvas></div>`;
           requestAnimationFrame(() => {
-            const spendVals = MN.map((_, mo) => (moBase[mo] || 0) * (1 - avgSavPct));
-            const savVals = MN.map((_, mo) => (moBase[mo] || 0) * avgSavPct);
+            const savVals = MN.map((_, mo) => projSavByMo[mo]);
+            const spendVals = MN.map((_, mo) => (moBase[mo] || 0) - projSavByMo[mo]);
             const cv = document.getElementById('projSavProjChart');
             if (!cv) return;
             if (_maCharts['projSavProjChart']) _maCharts['projSavProjChart'].destroy();
@@ -34223,8 +34258,28 @@
         } else if (_udProjPanel === 'perf') {
           const moBase = aggBaseMoMap();
           const annBase = Object.values(moBase).reduce((s, v) => s + v, 0);
-          const avgSavPct = avgSavPctAcrossBldgs(moBase);
-          const annProjSav = annBase * avgSavPct;
+
+          // Compute actual monthly projected savings from measures (with % fallback)
+          const _perfProjSavByMo = Array(12).fill(0);
+          bldgs.forEach((b) => {
+            const msrSav = getBldgMeasureSavingsByMo(udSelProjId, b.id);
+            if (msrSav) {
+              msrSav.forEach((v, mo) => {
+                _perfProjSavByMo[mo] += v;
+              });
+            } else {
+              const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
+              let bspCfg = {};
+              try {
+                bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
+              } catch (e) {}
+              const savPct = (bspCfg.savingsPct ?? 11) / 100;
+              const bMoBase = aggBaseMoMapForBldgs([b]);
+              for (let mo = 0; mo < 12; mo++) _perfProjSavByMo[mo] += (bMoBase[mo] || 0) * savPct;
+            }
+          });
+          const annProjSav = _perfProjSavByMo.reduce((s, v) => s + v, 0);
+          const avgSavPct = annBase > 0 ? annProjSav / annBase : 0;
           const actSavByMo = {};
           allMeters.forEach(({ m, bills, incl }) => {
             const bl = m.baseline;
@@ -34239,7 +34294,7 @@
           const actPct = annBase > 0 && annActSav != null ? (annActSav / annBase) * 100 : null;
           // Compare actual vs projected for only the months that have actual data (YTD)
           const actMonths = Object.keys(actSavByMo).map(Number);
-          const ytdProjSav = actMonths.reduce((s, mo) => s + (moBase[mo] || 0) * avgSavPct, 0);
+          const ytdProjSav = actMonths.reduce((s, mo) => s + _perfProjSavByMo[mo], 0);
           const ytdDiff = annActSav != null ? annActSav - ytdProjSav : null;
           const tdV = (v, color) => {
             if (v == null)
@@ -34279,7 +34334,7 @@
             <div style="padding:16px 18px 10px;font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Monthly Savings: Projected vs Current</div>
             <div style="padding:0 18px 20px;height:280px;position:relative"><canvas id="projPerfChart"></canvas></div>`;
           requestAnimationFrame(() => {
-            const projVals = MN.map((_, mo) => (moBase[mo] || 0) * avgSavPct);
+            const projVals = MN.map((_, mo) => _perfProjSavByMo[mo]);
             const actVals = MN.map((_, mo) => (actSavByMo[mo] != null ? actSavByMo[mo] : null));
             const cv = document.getElementById('projPerfChart');
             if (!cv) return;
