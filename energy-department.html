@@ -3564,6 +3564,29 @@
         border-color: var(--em);
         color: var(--em);
       }
+      .ac-inp {
+        width: 100%;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--text);
+        font-size: 12px;
+        padding: 4px 6px;
+        border-radius: 4px;
+        font-family: inherit;
+      }
+      .ac-inp:focus {
+        border-color: var(--accent);
+        background: var(--s2);
+        outline: none;
+      }
+      table tr[data-acid] td {
+        padding: 4px 6px;
+        border-bottom: 1px solid var(--s2);
+        vertical-align: middle;
+      }
+      table tr[data-acid]:hover td {
+        background: var(--s2);
+      }
       /* Issue b2f5ee0b: condensed extracted-fields panel — 2-column grid so more
          values are visible at once without scrolling. */
       .ef-grid {
@@ -44947,6 +44970,120 @@
             <button class="btn btn-em btn-sm" onclick="sv('pdf',null);showToast('Upload a PDF and save it to this project')">📄 Upload Document</button>
           </div>
           <div style="font-size:13px;color:var(--text2)">No documents yet. Use the PDF/OCR tool to save documents to this project.</div>`;
+      }
+
+      function _renderDocsApproved(body, projId) {
+        const p = projects.find((x) => x.id === projId);
+        if (!p) return;
+        p.approvedChanges = p.approvedChanges || [];
+        const count = p.approvedChanges.length;
+        const badge =
+          count > 0
+            ? `<span style="background:var(--s3);color:var(--text2);font-size:10px;padding:1px 6px;border-radius:8px;margin-left:6px">${count}</span>`
+            : '';
+
+        let tableHTML = '';
+        if (count === 0) {
+          tableHTML =
+            '<div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">No approved changes yet. Import from a change order spreadsheet or add rows manually.</div>';
+        } else {
+          const rows = p.approvedChanges
+            .map((c, i) => {
+              const statusColor =
+                (c.approvalStatus || '').toLowerCase() === 'ok'
+                  ? 'var(--lime)'
+                  : (c.approvalStatus || '').toLowerCase() === 'no'
+                    ? 'var(--warn)'
+                    : 'var(--amber)';
+              const statusBg =
+                (c.approvalStatus || '').toLowerCase() === 'ok'
+                  ? 'rgba(132,204,22,0.12)'
+                  : (c.approvalStatus || '').toLowerCase() === 'no'
+                    ? 'rgba(239,68,68,0.12)'
+                    : 'rgba(245,158,11,0.12)';
+              return `<tr data-acid="${c.id}">
+              <td><input class="ac-inp" data-field="building" value="${(c.building || '').replace(/"/g, '&quot;')}" onblur="_acSave(${projId},${c.id},this)"></td>
+              <td><input class="ac-inp" data-field="equipment" value="${(c.equipment || '').replace(/"/g, '&quot;')}" onblur="_acSave(${projId},${c.id},this)"></td>
+              <td><input class="ac-inp" data-field="proposedChange" value="${(c.proposedChange || '').replace(/"/g, '&quot;')}" onblur="_acSave(${projId},${c.id},this)"></td>
+              <td><input class="ac-inp" data-field="existingState" value="${(c.existingState || '').replace(/"/g, '&quot;')}" onblur="_acSave(${projId},${c.id},this)"></td>
+              <td><select class="ac-inp" data-field="approvalStatus" onchange="_acSave(${projId},${c.id},this)" style="background:${statusBg};color:${statusColor};font-weight:600;border-radius:4px;text-align:center">
+                <option value="Pending"${c.approvalStatus === 'Pending' ? ' selected' : ''}>Pending</option>
+                <option value="Ok"${c.approvalStatus === 'Ok' ? ' selected' : ''}>Ok</option>
+                <option value="No"${c.approvalStatus === 'No' ? ' selected' : ''}>No</option>
+              </select></td>
+              <td><input class="ac-inp" type="date" data-field="completedDate" value="${(c.completedDate || '').slice(0, 10)}" onblur="_acSave(${projId},${c.id},this)"></td>
+              <td style="text-align:center"><button class="btn btn-ghost btn-sm" onclick="_acDelete(${projId},${c.id})" title="Delete" style="color:var(--warn);padding:2px 6px">🗑️</button></td>
+            </tr>`;
+            })
+            .join('');
+
+          tableHTML = `<div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead><tr style="background:var(--s2);font-size:11px;text-transform:uppercase;color:var(--text3);letter-spacing:0.03em">
+                <th style="padding:6px 8px;text-align:left;font-weight:600">Building</th>
+                <th style="padding:6px 8px;text-align:left;font-weight:600">Equipment</th>
+                <th style="padding:6px 8px;text-align:left;font-weight:600">Proposed Change</th>
+                <th style="padding:6px 8px;text-align:left;font-weight:600">Existing State</th>
+                <th style="padding:6px 8px;text-align:center;font-weight:600;width:90px">Status</th>
+                <th style="padding:6px 8px;text-align:left;font-weight:600;width:120px">Completed</th>
+                <th style="width:40px"></th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>`;
+        }
+
+        body.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div style="display:flex;align-items:center">
+              <span style="font-size:14px;font-weight:600">Approved Changes</span>${badge}
+            </div>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-ghost btn-sm" onclick="_acImportFile(${projId})">📤 Import from File</button>
+              <button class="btn btn-em btn-sm" onclick="_acAddRow(${projId})">+ Add Row</button>
+            </div>
+          </div>
+          ${tableHTML}`;
+      }
+
+      function _acSave(projId, acId, el) {
+        const p = projects.find((x) => x.id === projId);
+        if (!p) return;
+        const item = (p.approvedChanges || []).find((c) => c.id === acId);
+        if (!item) return;
+        const field = el.dataset.field;
+        item[field] = el.value;
+        sset('en_projects', projects);
+      }
+
+      function _acDelete(projId, acId) {
+        const p = projects.find((x) => x.id === projId);
+        if (!p) return;
+        p.approvedChanges = (p.approvedChanges || []).filter((c) => c.id !== acId);
+        sset('en_projects', projects);
+        _renderDocsApproved(document.getElementById('ptab-docs-body-' + projId), projId);
+        showToast('Row deleted');
+      }
+
+      function _acAddRow(projId) {
+        const p = projects.find((x) => x.id === projId);
+        if (!p) return;
+        p.approvedChanges = p.approvedChanges || [];
+        p.approvedChanges.push({
+          id: Date.now(),
+          building: '',
+          equipment: '',
+          proposedChange: '',
+          existingState: '',
+          approvalStatus: 'Pending',
+          completedDate: '',
+          approvedBy: '',
+          source: 'Manual',
+          importedAt: new Date().toISOString(),
+        });
+        sset('en_projects', projects);
+        _renderDocsApproved(document.getElementById('ptab-docs-body-' + projId), projId);
+        showToast('Row added');
       }
 
       function renderMeetingsList(projId) {
