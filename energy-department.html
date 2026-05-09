@@ -50645,6 +50645,15 @@
             kwByMonth[mo.month].cur += mo.kwCur || mo.curKw || 0;
           });
         });
+        // Pad to include full prior year + current year months for complete chart
+        var _rptYear = d.period && d.period.year ? d.period.year : new Date().getFullYear();
+        for (var _padYr = _rptYear - 1; _padYr <= _rptYear; _padYr++) {
+          for (var _padMo = 1; _padMo <= 12; _padMo++) {
+            var _padYm = _padYr + '-' + String(_padMo).padStart(2, '0');
+            if (!kwhByMonth[_padYm]) kwhByMonth[_padYm] = { month: _padYm, bl: 0, cur: 0 };
+            if (!kwByMonth[_padYm]) kwByMonth[_padYm] = { month: _padYm, bl: 0, cur: 0 };
+          }
+        }
         var kwhMonthly = Object.values(kwhByMonth).sort(function (a, b) {
           return a.month < b.month ? -1 : 1;
         });
