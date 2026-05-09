@@ -47176,6 +47176,9 @@
           weather,
           setpoints,
           meetings,
+          approvedChanges: (p.approvedChanges || []).filter(
+            (c) => c.approvalStatus && c.approvalStatus.toLowerCase() === 'ok',
+          ),
           rawBills,
         };
       }
@@ -49070,26 +49073,26 @@
         };
 
         // ── Changes Implemented table ──
-        const meetings = (d && d.meetings) || [];
+        const changes = (d && d.approvedChanges) || [];
         let changesRows = '';
-        if (meetings.length > 0) {
-          meetings.forEach(function (m) {
+        if (changes.length > 0) {
+          changes.forEach(function (c) {
             changesRows +=
               '<tr>' +
               '<td contenteditable="true">' +
-              (m.date || '') +
+              (c.completedDate || '').slice(0, 10) +
               '</td>' +
               '<td contenteditable="true">' +
-              (m.building || '') +
+              (c.building || '') +
               '</td>' +
               '<td contenteditable="true">' +
-              (m.change || m.description || '') +
+              (c.proposedChange || '') +
               '</td>' +
               '<td contenteditable="true">' +
-              (m.approvedBy || '') +
+              (c.approvedBy || '') +
               '</td>' +
               '<td contenteditable="true">' +
-              (m.source || 'Meeting Minutes') +
+              (c.source || 'Change Order') +
               '</td>' +
               '</tr>';
           });
@@ -52414,9 +52417,9 @@
           const isChecked = savedSections[sec.key] === false ? '' : 'checked';
           let emptyWarn = '';
           if (sec.key === 'approvedChanges') {
-            const hasMeetings = p && p.meetings && p.meetings.length > 0;
-            if (!hasMeetings)
-              emptyWarn = `<span style="display:flex;align-items:center;gap:6px;margin-left:auto"><span style="font-size:10px;color:var(--warn);font-weight:600">⚠ Empty</span><button type="button" onclick="event.preventDefault();event.stopPropagation();_rptGoEdit(${projId},'meetings')" style="font-size:10px;padding:1px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--em);cursor:pointer;font-weight:600;line-height:1.4">Edit ↗</button></span>`;
+            const hasChanges = p && p.approvedChanges && p.approvedChanges.length > 0;
+            if (!hasChanges)
+              emptyWarn = `<span style="display:flex;align-items:center;gap:6px;margin-left:auto"><span style="font-size:10px;color:var(--warn);font-weight:600">⚠ Empty</span><button type="button" onclick="event.preventDefault();event.stopPropagation();_rptGoEdit(${projId},'docs')" style="font-size:10px;padding:1px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--em);cursor:pointer;font-weight:600;line-height:1.4">Edit ↗</button></span>`;
           }
           if (sec.key === 'setpoints') {
             const hasSetpoints = p && p.setpoints && p.setpoints.length > 0;
@@ -52451,9 +52454,14 @@
         document.getElementById('reportBldgModal').classList.remove('open');
         openDetail(projId);
         requestAnimationFrame(function () {
-          const btn = document.querySelector('.pdt[data-tab="' + tab + '"]');
-          sPTab(tab, btn || null);
-          const labels = { meetings: 'Approved Changes (Meetings tab)', setpoints: 'Set Points & Schedules tab' };
+          const actualTab = tab === 'docs' ? 'docs' : tab;
+          const btn = document.querySelector('.pdt[data-tab="' + actualTab + '"]');
+          sPTab(actualTab, btn || null);
+          if (tab === 'docs') {
+            window._docsSubTab = 'approved';
+            renderDocsSubTab('approved', projId);
+          }
+          const labels = { docs: 'Approved Changes (Documents tab)', setpoints: 'Set Points & Schedules tab' };
           showToast('Add data in the ' + (labels[tab] || tab) + ', then reopen Generate Report');
         });
       }
