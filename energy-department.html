@@ -13264,6 +13264,7 @@
       src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"
       crossorigin="anonymous"
     ></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
     <script>
       /* ── AI API (disabled — no backend) ── */
       async function claude(prompt, sys) {
@@ -13400,10 +13401,11 @@
           /* seed data removed — real PII was here */
         }
         // Tasks and equipment load from localStorage only — no hardcoded seed data
-        // Migrate: add meetings arrays to existing projects
+        // Migrate: add meetings + approvedChanges arrays to existing projects
         projects.forEach((p) => {
           if (!p.meetings) p.meetings = [];
           if (!p.recurringMeetings) p.recurringMeetings = [];
+          if (!p.approvedChanges) p.approvedChanges = [];
           // Migrate activeCommodities → shownCommodities + calcCommodities
           if (Array.isArray(p.activeCommodities) && !p.calcCommodities) {
             p.shownCommodities = [...ALL_COMMODITIES];
@@ -13412,6 +13414,16 @@
             sset('en_projects', projects);
           }
         });
+        // Migrate: remove deprecated tabs from saved tab order
+        try {
+          const _savedTabOrder = JSON.parse(localStorage.getItem('ch_projTabOrder'));
+          if (Array.isArray(_savedTabOrder)) {
+            const _cleanedOrder = _savedTabOrder.filter((id) => id !== 'contracts' && id !== 'meetings');
+            if (_cleanedOrder.length !== _savedTabOrder.length) {
+              localStorage.setItem('ch_projTabOrder', JSON.stringify(_cleanedOrder));
+            }
+          }
+        } catch (e) {}
         checkRecurringMeetings();
         buildWeekStrip();
         buildHomeCal();
