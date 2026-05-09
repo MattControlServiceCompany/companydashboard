@@ -1642,6 +1642,27 @@
         border-top: 2px solid #1a5276;
         background: #eef4f8;
       }
+      .rpt-table-dark {
+        background: #0a1628;
+        color: #c8ddf0;
+      }
+      .rpt-table-dark th {
+        background: #122a45;
+        color: #8ab0d0;
+        border-color: #1a3a5c;
+      }
+      .rpt-table-dark td {
+        border-color: #1a3a5c;
+        color: #c8ddf0;
+      }
+      .rpt-table-dark tr:nth-child(even) td {
+        background: #0d1a30;
+      }
+      .rpt-table-dark tr.rpt-tot td {
+        background: #122a45;
+        border-top-color: #2980b9;
+        color: #e8f4ff;
+      }
       .rpt-table .rpt-n {
         text-align: right;
         font-variant-numeric: tabular-nums;
@@ -47044,6 +47065,21 @@
             }
             var totalHDD = blR.reduce((s, r) => s + (r.hdd || 0), 0);
             var totalCDD = blR.reduce((s, r) => s + (r.cdd || 0), 0);
+            var regrCoeffs = null;
+            if (reg) {
+              if (reg.dual && reg.dual.r2 != null) {
+                regrCoeffs = {
+                  type: 'dual',
+                  intercept: reg.dual.intercept,
+                  slopeHDD: reg.dual.slopeHDD,
+                  slopeCDD: reg.dual.slopeCDD,
+                };
+              } else if (m.commodity === 'Electric' && reg.cdd && reg.cdd.r2 != null) {
+                regrCoeffs = { type: 'cdd', intercept: reg.cdd.intercept, slope: reg.cdd.slope };
+              } else if (reg.hdd && reg.hdd.r2 != null) {
+                regrCoeffs = { type: 'hdd', intercept: reg.hdd.intercept, slope: reg.hdd.slope };
+              }
+            }
             bd.meterDetails.push({
               commodity: m.commodity,
               account: m.account || '',
@@ -47055,6 +47091,7 @@
               cdd: Math.round(totalCDD / blYears),
               usagePerYear: Math.round(annUsage / blYears),
               costPerYear: Math.round(annCost / blYears),
+              regrCoeffs: regrCoeffs,
             });
           });
         });
@@ -50098,53 +50135,57 @@
           '</tbody>' +
           '</table>';
 
-        // Electricity Consumption chart — full 12 months
+        // Filter to only months with data (baseline or current > 0)
+        function filterToDataMonths(fullYear) {
+          return fullYear.filter(function (mo) {
+            return (mo.bl || 0) > 0 || (mo.cur || 0) > 0;
+          });
+        }
+
+        // Electricity Consumption chart — reporting period only
         if (hasElec) {
           var elFullYear = buildFullYear(b.electric.monthly, _bm.elecByMo, 'kwh');
-          var elChart = buildBarChart(elFullYear, '#aed6f1', '#1a5276', 'kWh');
+          var elDataMonths = filterToDataMonths(elFullYear);
+          var elChart = buildBarChart(elDataMonths, '#aed6f1', '#1a5276', 'kWh');
           rightHTML +=
-            '<div style="font-size:9.5px;font-weight:600;color:#1a5276;margin:6px 0 2px">' +
+            '<div style="text-align:center;font-size:9.5px;font-weight:600;color:#1a5276;margin:6px 0 2px">' +
             'Electricity Consumption' +
-            '<span style="font-size:8px;font-weight:400;color:#999;margin-left:6px">' +
-            _chartYear +
-            ' Full Year' +
-            '</span>' +
             '</div>' +
-            elChart;
+            '<div style="display:flex;justify-content:center">' +
+            elChart +
+            '</div>';
         }
 
-        // Natural Gas Consumption chart — full 12 months
+        // Natural Gas Consumption chart — reporting period only
         if (hasGas) {
           var gasFullYear = buildFullYear(b.gas.monthly, _bm.gasByMo, 'therms');
-          var gasChart = buildBarChart(gasFullYear, '#f0b27a', '#e67e22', 'Therms');
+          var gasDataMonths = filterToDataMonths(gasFullYear);
+          var gasChart = buildBarChart(gasDataMonths, '#f0b27a', '#e67e22', 'Therms');
           rightHTML +=
-            '<div style="font-size:9.5px;font-weight:600;color:#8b4513;margin:6px 0 2px">' +
+            '<div style="text-align:center;font-size:9.5px;font-weight:600;color:#8b4513;margin:6px 0 2px">' +
             'Natural Gas Consumption' +
-            '<span style="font-size:8px;font-weight:400;color:#999;margin-left:6px">' +
-            _chartYear +
-            ' Full Year' +
-            '</span>' +
             '</div>' +
-            gasChart;
+            '<div style="display:flex;justify-content:center">' +
+            gasChart +
+            '</div>';
         }
 
-        // Propane Consumption chart — full 12 months
+        // Propane Consumption chart — reporting period only
         if (hasPropane) {
           var propFullYear = buildFullYear(b.propane.monthly, _bm.propaneByMo, 'gallons');
-          var propChart = buildBarChart(propFullYear, '#f9e4b7', '#b7770d', 'Gal');
+          var propDataMonths = filterToDataMonths(propFullYear);
+          var propChart = buildBarChart(propDataMonths, '#f9e4b7', '#b7770d', 'Gal');
           rightHTML +=
-            '<div style="font-size:9.5px;font-weight:600;color:#7d5a00;margin:6px 0 2px">' +
+            '<div style="text-align:center;font-size:9.5px;font-weight:600;color:#7d5a00;margin:6px 0 2px">' +
             'Propane Consumption' +
-            '<span style="font-size:8px;font-weight:400;color:#999;margin-left:6px">' +
-            _chartYear +
-            ' Full Year' +
-            '</span>' +
             '</div>' +
-            propChart;
+            '<div style="display:flex;justify-content:center">' +
+            propChart +
+            '</div>';
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // Building Baseline Data table (full columns matching Energy Department)
+        // Building Baseline Data table (Energy Dept styling, merged kW Cost, no Load %)
         // ═══════════════════════════════════════════════════════════════════
         var _opts = (d.reportOptions && d.reportOptions.blCommodities) || {
           electric: true,
@@ -50156,14 +50197,11 @@
         var _showGas = hasGas && _opts.gas;
         var _showProp = hasPropane && _opts.propane;
         var _showWater = _opts.water && Object.keys(_bm.waterByMo).length > 0;
-        var blMoNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         var blDataRows = '';
         var _tKwh = 0,
           _tKw = 0,
           _tBkw = 0,
-          _tFkw = 0,
           _tKwCost = 0,
-          _tFkwCost = 0,
           _tEnCost = 0,
           _tElecCost = 0;
         var _tTherms = 0,
@@ -50180,10 +50218,8 @@
           var wM = _bm.waterByMo[mi] || {};
           var kwh = eM.kwh || 0,
             demKw = eM.demandKW || 0,
-            bKw = eM.billedKW || 0,
-            fKw = eM.facKW || 0;
-          var kwCost = eM.kwCost || 0,
-            fKwCost = eM.facKWCost || 0,
+            bKw = eM.billedKW || 0;
+          var kwCostTotal = (eM.kwCost || 0) + (eM.facKWCost || 0),
             enCost = eM.energyCost || 0;
           var elecCost = eM.commodityCost || eM.totalCost || 0;
           var therms = gM.therms || 0,
@@ -50196,9 +50232,7 @@
           _tKwh += kwh;
           _tKw += demKw;
           _tBkw += bKw;
-          _tFkw += fKw;
-          _tKwCost += kwCost;
-          _tFkwCost += fKwCost;
+          _tKwCost += kwCostTotal;
           _tEnCost += enCost;
           _tElecCost += elecCost;
           _tTherms += therms;
@@ -50211,8 +50245,7 @@
           var hasData = kwh || therms || gal || water || totalCost;
           if (!hasData) continue;
           var costPerKwh = kwh > 0 ? elecCost / kwh : 0;
-          var loadFactor = bKw > 0 && eM.normDays > 0 ? (kwh / (bKw * eM.normDays * 24)) * 100 : 0;
-          blDataRows += '<tr><td>' + blMoNames[mi] + '</td>';
+          blDataRows += '<tr><td>' + MO_ABBR[mi] + '</td>';
           if (_showElec) {
             blDataRows +=
               '<td class="rpt-n">' +
@@ -50225,10 +50258,7 @@
               (bKw ? bKw.toFixed(1) : '—') +
               '</td>' +
               '<td class="rpt-n">' +
-              (kwCost ? $c(kwCost) : '—') +
-              '</td>' +
-              '<td class="rpt-n">' +
-              (fKwCost ? $c(fKwCost) : '—') +
+              (kwCostTotal ? $c(kwCostTotal) : '—') +
               '</td>' +
               '<td class="rpt-n">' +
               (enCost ? $c(enCost) : '—') +
@@ -50238,9 +50268,6 @@
               '</td>' +
               '<td class="rpt-n">' +
               (costPerKwh ? '$' + costPerKwh.toFixed(4) : '—') +
-              '</td>' +
-              '<td class="rpt-n">' +
-              (loadFactor ? loadFactor.toFixed(1) + '%' : '—') +
               '</td>';
           }
           if (_showGas)
@@ -50286,14 +50313,12 @@
               '</td><td class="rpt-n">' +
               $c(_tKwCost) +
               '</td><td class="rpt-n">' +
-              $c(_tFkwCost) +
-              '</td><td class="rpt-n">' +
               $c(_tEnCost) +
               '</td><td class="rpt-n">' +
               $c(_tElecCost) +
               '</td><td class="rpt-n">' +
               (_avgCpk ? '$' + _avgCpk.toFixed(4) : '—') +
-              '</td><td class="rpt-n">—</td>';
+              '</td>';
           }
           if (_showGas)
             blDataRows +=
@@ -50324,22 +50349,85 @@
               '</td>';
           blDataRows += '<td class="rpt-n">' + $c(_tTotalCost) + '</td></tr>';
         }
-        var blHdr = '<th>Month</th>';
+        var blHdr = '<th style="white-space:nowrap">Month</th>';
         if (_showElec)
           blHdr +=
-            '<th class="rpt-n">kWh</th><th class="rpt-n">Actual kW</th><th class="rpt-n">Billed kW</th><th class="rpt-n">kW Cost</th><th class="rpt-n">Fac kW Cost</th><th class="rpt-n">Energy Cost</th><th class="rpt-n">Electric Cost</th><th class="rpt-n">$/kWh</th><th class="rpt-n">Load %</th>';
+            '<th class="rpt-n">kWh</th>' +
+            '<th class="rpt-n" style="white-space:normal;line-height:1.2">Actual<br>kW</th>' +
+            '<th class="rpt-n" style="white-space:normal;line-height:1.2">Billed<br>kW</th>' +
+            '<th class="rpt-n" style="white-space:normal;line-height:1.2">kW<br>Cost</th>' +
+            '<th class="rpt-n" style="white-space:normal;line-height:1.2">Energy<br>Cost</th>' +
+            '<th class="rpt-n" style="white-space:normal;line-height:1.2">Electric<br>Cost</th>' +
+            '<th class="rpt-n">$/kWh</th>';
         if (_showGas)
-          blHdr += '<th class="rpt-n">Therms</th><th class="rpt-n">Gas Cost</th><th class="rpt-n">$/Therm</th>';
+          blHdr +=
+            '<th class="rpt-n">Therms</th><th class="rpt-n" style="white-space:normal;line-height:1.2">Gas<br>Cost</th><th class="rpt-n">$/Therm</th>';
         if (_showProp)
-          blHdr += '<th class="rpt-n">Gallons</th><th class="rpt-n">Prop Cost</th><th class="rpt-n">$/Gal</th>';
+          blHdr +=
+            '<th class="rpt-n">Gallons</th><th class="rpt-n" style="white-space:normal;line-height:1.2">Prop<br>Cost</th><th class="rpt-n">$/Gal</th>';
         if (_showWater)
-          blHdr += '<th class="rpt-n">kGal</th><th class="rpt-n">Water Cost</th><th class="rpt-n">$/kGal</th>';
-        blHdr += '<th class="rpt-n">Total Cost</th>';
+          blHdr +=
+            '<th class="rpt-n">kGal</th><th class="rpt-n" style="white-space:normal;line-height:1.2">Water<br>Cost</th><th class="rpt-n">$/kGal</th>';
+        blHdr += '<th class="rpt-n" style="white-space:normal;line-height:1.2">Total<br>Cost</th>';
+
+        // Statistics summary (matching Energy Department)
+        var blStats = '';
+        if (blDataRows) {
+          var _statItems = [];
+          if (b.sqft > 0)
+            _statItems.push(
+              '<div style="text-align:center"><div style="font-size:7px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.4px">Square Feet</div><div style="font-size:10px;font-weight:700;color:#e8f4ff">' +
+                b.sqft.toLocaleString() +
+                '</div></div>',
+            );
+          if (b.sqft > 0 && _tKwh > 0)
+            _statItems.push(
+              '<div style="text-align:center"><div style="font-size:7px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.4px">kWh / sf</div><div style="font-size:10px;font-weight:700;color:#7dd8ff">' +
+                (_tKwh / b.sqft).toFixed(2) +
+                '</div></div>',
+            );
+          if (b.sqft > 0 && _tTotalCost > 0)
+            _statItems.push(
+              '<div style="text-align:center"><div style="font-size:7px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.4px">Utility Cost / sf</div><div style="font-size:10px;font-weight:700;color:#40e8a0">' +
+                $c(Math.round(_tTotalCost / b.sqft)) +
+                '</div></div>',
+            );
+          if (_tKwh > 0 && _tElecCost > 0)
+            _statItems.push(
+              '<div style="text-align:center"><div style="font-size:7px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.4px">Avg $/kWh</div><div style="font-size:10px;font-weight:700;color:#7dd8ff">$' +
+                (_tElecCost / _tKwh).toFixed(4) +
+                '</div></div>',
+            );
+          if (_tTherms > 0 && _tGasCost > 0)
+            _statItems.push(
+              '<div style="text-align:center"><div style="font-size:7px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.4px">Avg $/Therm</div><div style="font-size:10px;font-weight:700;color:#ffb040">$' +
+                (_tGasCost / _tTherms).toFixed(4) +
+                '</div></div>',
+            );
+          var _totalKbtu = _tKwh * 3.412 + _tTherms * 100 + _tGal * 91.5;
+          if (b.sqft > 0 && _totalKbtu > 0)
+            _statItems.push(
+              '<div style="text-align:center"><div style="font-size:7px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.4px">kBtu / sf</div><div style="font-size:10px;font-weight:700;color:#c39bff">' +
+                (_totalKbtu / b.sqft).toFixed(2) +
+                '</div></div>',
+            );
+          _statItems.push(
+            '<div style="text-align:center"><div style="font-size:7px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.4px">Utility Costs / Year</div><div style="font-size:10px;font-weight:700;color:#40e8a0">' +
+              $c(_tTotalCost) +
+              '</div></div>',
+          );
+          blStats =
+            '<div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;padding:8px 12px;background:#0d1525;border-radius:6px;margin-bottom:6px">' +
+            _statItems.join('') +
+            '</div>';
+        }
+
         var blDataTable = blDataRows
-          ? '<div style="margin-top:14px;text-align:center;width:100%;overflow-x:auto">' +
-            '<div style="font-size:9.5px;font-weight:600;color:#1a5276;margin-bottom:3px;text-align:left">Building Baseline Data</div>' +
-            '<table class="rpt-table" style="font-size:6.5px;margin:0 auto;width:100%">' +
-            '<thead><tr>' +
+          ? '<div style="margin-top:14px;width:100%;overflow-x:auto">' +
+            '<div style="font-size:9.5px;font-weight:600;color:#e8f4ff;margin-bottom:4px;padding:6px 10px;background:#1a5276;border-radius:4px 4px 0 0">Building Baseline Data</div>' +
+            blStats +
+            '<table class="rpt-table rpt-table-dark" style="font-size:6.5px;width:100%">' +
+            '<thead><tr style="background:#122a45;color:#8ab0d0;font-size:7px">' +
             blHdr +
             '</tr></thead><tbody>' +
             blDataRows +
@@ -50442,7 +50530,7 @@
         }
         if (meterPerfHTML) {
           meterPerfHTML =
-            '<div style="margin-top:8px"><div style="font-size:9.5px;font-weight:600;color:#1a5276;margin-bottom:3px">Meter Performance — ' +
+            '<div style="margin-top:8px;page-break-before:always;break-before:page"><div style="font-size:9.5px;font-weight:600;color:#1a5276;margin-bottom:3px">Meter Performance — ' +
             ((d && d.period && d.period.label) || '') +
             '</div>' +
             meterPerfHTML +
@@ -51635,191 +51723,215 @@
         var $c = function (v) {
           return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
         };
-        var MO_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-        var buildingTables = '';
-        (d.buildings || []).forEach(function (b) {
-          var elMonthly = (b.electric && b.electric.monthly) || [];
-          var gasMonthly = (b.gas && b.gas.monthly) || [];
-          var propMonthly = (b.propane && b.propane.monthly) || [];
-          var hasMonthly = elMonthly.length > 0 || gasMonthly.length > 0;
-
-          if (!hasMonthly) {
-            buildingTables +=
-              '<h2 style="font-size:10px;font-weight:700;color:#1a5276;margin:12px 0 4px">' +
-              (b.name || 'Building') +
-              '</h2>' +
-              '<p style="font-size:8px;color:#aaa;font-style:italic">Baseline data available in Energy Graphics tab.</p>';
-            return;
-          }
-
-          // Build indexed lookups by month (0-11)
-          var elByMo = {},
-            gasByMo = {},
-            propByMo = {};
-          elMonthly.forEach(function (mo) {
-            var idx = mo.month ? parseInt((mo.month + '').split('-')[1], 10) - 1 : -1;
-            if (idx >= 0) elByMo[idx] = mo;
-          });
-          gasMonthly.forEach(function (mo) {
-            var idx = mo.month ? parseInt((mo.month + '').split('-')[1], 10) - 1 : -1;
-            if (idx >= 0) gasByMo[idx] = mo;
-          });
-          propMonthly.forEach(function (mo) {
-            var idx = mo.month ? parseInt((mo.month + '').split('-')[1], 10) - 1 : -1;
-            if (idx >= 0) propByMo[idx] = mo;
-          });
-
-          var totKwh = 0,
-            totKw = 0,
-            totTherms = 0,
-            totKbtu = 0,
-            totCost = 0;
-          var rows = '';
-          for (var m = 0; m < 12; m++) {
-            var el = elByMo[m] || {};
-            var gas = gasByMo[m] || {};
-            var prop = propByMo[m] || {};
-            var kwh = el.bl || 0;
-            var kw = el.kwBl || el.blKw || 0;
-            var therms = gas.bl || 0;
-            var propGal = prop.bl || 0;
-            var kbtu = kwh * 3.412 + therms * 100 + propGal * 91.5;
-            var cost = (el.blCost || 0) + (gas.blCost || 0) + (prop.blCost || 0);
-            totKwh += kwh;
-            totKw += kw;
-            totTherms += therms;
-            totKbtu += kbtu;
-            totCost += cost;
-            rows +=
-              '<tr>' +
-              '<td>' +
-              MO_NAMES[m] +
-              '</td>' +
-              '<td class="rpt-n">' +
-              (kwh ? $n(kwh) : '—') +
-              '</td>' +
-              '<td class="rpt-n">' +
-              (kw ? $n(kw) : '—') +
-              '</td>' +
-              '<td class="rpt-n">' +
-              (therms ? $n(therms) : '—') +
-              '</td>' +
-              '<td class="rpt-n">' +
-              (kbtu ? $n(kbtu) : '—') +
-              '</td>' +
-              '<td class="rpt-n">' +
-              (cost ? $c(cost) : '—') +
-              '</td>' +
-              '</tr>';
-          }
-          rows +=
-            '<tr class="rpt-tot">' +
-            '<td>Annual</td>' +
-            '<td class="rpt-n">' +
-            $n(totKwh) +
-            '</td>' +
-            '<td class="rpt-n">' +
-            (totKw ? $n(totKw / 12) + ' avg' : '—') +
-            '</td>' +
-            '<td class="rpt-n">' +
-            $n(totTherms) +
-            '</td>' +
-            '<td class="rpt-n">' +
-            $n(totKbtu) +
-            '</td>' +
-            '<td class="rpt-n">' +
-            $c(totCost) +
-            '</td>' +
-            '</tr>';
-
-          buildingTables +=
-            '<h2 style="font-size:10px;font-weight:700;color:#1a5276;margin:12px 0 4px">' +
-            (b.name || 'Building') +
-            '</h2>' +
-            '<table class="rpt-table" style="font-size:7.5px;margin-bottom:8px">' +
-            '<thead><tr>' +
-            '<th>Month</th><th class="rpt-n">kWh</th><th class="rpt-n">Peak kW</th>' +
-            '<th class="rpt-n">Therms</th><th class="rpt-n">kBtu</th><th class="rpt-n">Cost</th>' +
-            '</tr></thead><tbody>' +
-            rows +
-            '</tbody></table>';
-        });
-
-        if (!buildingTables) {
-          buildingTables = '<p style="font-size:8px;color:#aaa;font-style:italic">No buildings in this project.</p>';
+        var MO_FULL = [
+          'January',
+          'February',
+          'March',
+          'April',
+          'May',
+          'June',
+          'July',
+          'August',
+          'September',
+          'October',
+          'November',
+          'December',
+        ];
+        function _daysInMonth(ym) {
+          var p = ym.split('-');
+          return new Date(parseInt(p[0]), parseInt(p[1]), 0).getDate();
         }
 
         var regressionExplainer =
-          '<div contenteditable="true" style="border:1px solid #ccc;border-radius:4px;padding:12px 14px;font-size:9.5px;line-height:1.8;color:#333;background:#fafafa;margin-bottom:12px">' +
-          '<strong style="font-size:11px;color:#1a5276">How the Regression Model Works</strong><br><br>' +
-          "Weather-normalized savings are calculated using an Ordinary Least Squares (OLS) regression model that establishes the mathematical relationship between a building's energy consumption and outdoor weather conditions during the baseline period.<br><br>" +
-          '<strong>Step 1 — Baseline Period Data Collection:</strong> Monthly utility consumption (kWh for electric, Therms for gas) is collected alongside monthly Heating Degree Days (HDD) and Cooling Degree Days (CDD). The balance point temperature is 60°F per contract specification.<br><br>' +
-          '<strong>Step 2 — Regression Analysis:</strong> The model fits the equation:<br>' +
-          '<div style="text-align:center;font-family:monospace;font-size:10px;margin:4px 0;padding:6px;background:#fff;border:1px solid #ddd;border-radius:3px">' +
-          'Usage = β₀ + β₁ × HDD + β₂ × CDD' +
-          '</div>' +
-          'Where β₀ is the base load (weather-independent consumption), β₁ is the heating coefficient (usage per HDD), and β₂ is the cooling coefficient (usage per CDD). For gas meters, CDD is excluded (β₂ = 0) since gas is not used for cooling.<br><br>' +
-          '<strong>Step 3 — Baseline Prediction:</strong> For each month in the reporting period, the model predicts what consumption <em>would have been</em> under current weather if the building were still operating at baseline efficiency:<br>' +
-          '<div style="text-align:center;font-family:monospace;font-size:10px;margin:4px 0;padding:6px;background:#fff;border:1px solid #ddd;border-radius:3px">' +
-          'Normalized Usage = β₀ + β₁ × Current HDD + β₂ × Current CDD' +
-          '</div>' +
-          '<strong>Step 4 — Savings Calculation:</strong> The difference between the weather-normalized baseline prediction and actual consumption is the verified savings:<br>' +
-          '<div style="text-align:center;font-family:monospace;font-size:10px;margin:4px 0;padding:6px;background:#fff;border:1px solid #ddd;border-radius:3px">' +
-          'Units Saved = Normalized Usage − Actual Usage<br>' +
-          'Cost Savings = Units Saved × Current Utility Rate ($/unit)' +
-          '</div>' +
-          '<strong>Model Quality:</strong> The R² value (coefficient of determination) measures how well the model fits the baseline data. Values above 0.75 indicate a strong fit. R² values are shown per meter in Appendix A.<br><br>' +
-          '<strong>Why Weather Normalization Matters:</strong> Without weather normalization, a mild winter could falsely appear as energy savings, or a harsh summer could mask real improvements. The regression model isolates genuine performance changes from weather effects.' +
+          '<div contenteditable="true" style="border:1px solid #ccc;border-radius:4px;padding:10px 14px;font-size:9px;line-height:1.7;color:#333;background:#fafafa;margin-bottom:12px">' +
+          '<strong style="font-size:10px;color:#1a5276">Regression Model Overview</strong><br>' +
+          'Weather-normalized savings use an OLS regression model: <span style="font-family:monospace;background:#fff;border:1px solid #ddd;padding:1px 4px;border-radius:2px">Usage = β₀ × Days + β₁ × HDD + β₂ × CDD</span><br>' +
+          'Where β₀ = base load per day, β₁ = heating coefficient, β₂ = cooling coefficient. ' +
+          'The model is fit to baseline period data and applied to current weather to predict what consumption <em>would have been</em> without efficiency improvements. ' +
+          'R² values above 0.75 indicate a strong fit. Full regression details are in Appendix A.' +
           '</div>';
 
-        // Build example calculation from first meter with regression data
-        var exampleHTML = '';
-        var firstMeter = null;
-        (d.buildings || []).some(function (b) {
-          return (b.meterDetails || []).some(function (md) {
-            if (md.r2 && md.r2 !== '—' && md.usagePerYear > 0) {
-              firstMeter = { bldg: b.name, md: md };
-              return true;
+        // Build weather lookup by YYYY-MM
+        var wxByYm = {};
+        ((d.weather && d.weather.monthly) || []).forEach(function (w) {
+          wxByYm[w.month] = w;
+        });
+
+        // Build full calculation tables per building per commodity
+        var calcHTML = '';
+        (d.buildings || []).forEach(function (b) {
+          var meters = b.meterDetails || [];
+          var metersWithCoeffs = meters.filter(function (md) {
+            return md.regrCoeffs && md.r2 && md.r2 !== '—';
+          });
+          if (!metersWithCoeffs.length) return;
+
+          calcHTML +=
+            '<div style="font-size:10px;font-weight:700;color:#1a5276;background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
+            (b.name || 'Building') +
+            '</div>';
+
+          metersWithCoeffs.forEach(function (md) {
+            var rc = md.regrCoeffs;
+            var unit = md.commodity === 'Electric' ? 'kWh' : md.commodity === 'Gas' ? 'Therms' : 'Gal';
+
+            // Regression equation display
+            var eqn = 'Usage = ' + rc.intercept.toFixed(4) + ' × Days';
+            if (rc.type === 'dual') {
+              eqn += ' + ' + rc.slopeHDD.toFixed(4) + ' × HDD + ' + rc.slopeCDD.toFixed(4) + ' × CDD';
+            } else if (rc.type === 'hdd') {
+              eqn += ' + ' + rc.slope.toFixed(4) + ' × HDD';
+            } else {
+              eqn += ' + ' + rc.slope.toFixed(4) + ' × CDD';
             }
-            return false;
+
+            calcHTML +=
+              '<div style="margin:6px 0 4px">' +
+              '<div style="font-size:8.5px;font-weight:600;color:#555">' +
+              md.commodity +
+              ' — ' +
+              md.regrType +
+              ' (R² = ' +
+              md.r2 +
+              ')</div>' +
+              '<div style="font-family:monospace;font-size:8px;background:#f0f4f8;border:1px solid #d0dce8;border-radius:3px;padding:4px 8px;margin:2px 0 6px;color:#1a5276">' +
+              eqn +
+              '</div>' +
+              '</div>';
+
+            // Get monthly data for this commodity
+            var monthly = [];
+            if (md.commodity === 'Electric') monthly = (b.electric && b.electric.monthly) || [];
+            else if (md.commodity === 'Gas') monthly = (b.gas && b.gas.monthly) || [];
+            else if (md.commodity === 'Propane') monthly = (b.propane && b.propane.monthly) || [];
+
+            if (!monthly.length) return;
+
+            var rows = '';
+            var totBl = 0,
+              totCur = 0,
+              totSav = 0;
+            monthly.forEach(function (mo) {
+              var ym = mo.month || '';
+              var moIdx = ym ? parseInt(ym.split('-')[1], 10) - 1 : -1;
+              var moName = moIdx >= 0 ? MO_FULL[moIdx] : ym;
+              var days = ym ? _daysInMonth(ym) : 30;
+              var wx = wxByYm[ym] || {};
+              var hdd = wx.hddCur || 0;
+              var cdd = wx.cddCur || 0;
+
+              // Compute predicted baseline from regression
+              var predicted = rc.intercept * days;
+              if (rc.type === 'dual') {
+                predicted += rc.slopeHDD * hdd + rc.slopeCDD * cdd;
+              } else if (rc.type === 'hdd') {
+                predicted += rc.slope * hdd;
+              } else {
+                predicted += rc.slope * cdd;
+              }
+              predicted = Math.max(0, predicted);
+
+              var actual = mo.cur || 0;
+              var saved = predicted - actual;
+              totBl += predicted;
+              totCur += actual;
+              totSav += saved;
+
+              // Show formula breakdown
+              var formulaParts = rc.intercept.toFixed(2) + '×' + days;
+              if (rc.type === 'dual') {
+                formulaParts +=
+                  ' + ' +
+                  rc.slopeHDD.toFixed(2) +
+                  '×' +
+                  Math.round(hdd) +
+                  ' + ' +
+                  rc.slopeCDD.toFixed(2) +
+                  '×' +
+                  Math.round(cdd);
+              } else if (rc.type === 'hdd') {
+                formulaParts += ' + ' + rc.slope.toFixed(2) + '×' + Math.round(hdd);
+              } else {
+                formulaParts += ' + ' + rc.slope.toFixed(2) + '×' + Math.round(cdd);
+              }
+
+              rows +=
+                '<tr>' +
+                '<td>' +
+                moName +
+                '</td>' +
+                '<td class="rpt-n">' +
+                days +
+                '</td>' +
+                '<td class="rpt-n">' +
+                Math.round(hdd).toLocaleString() +
+                '</td>' +
+                '<td class="rpt-n">' +
+                Math.round(cdd).toLocaleString() +
+                '</td>' +
+                '<td style="font-family:monospace;font-size:6.5px;color:#555;white-space:nowrap">' +
+                formulaParts +
+                '</td>' +
+                '<td class="rpt-n" style="font-weight:600">' +
+                $n(predicted) +
+                '</td>' +
+                '<td class="rpt-n">' +
+                $n(actual) +
+                '</td>' +
+                '<td class="rpt-n" style="color:' +
+                (saved >= 0 ? '#1e8449' : '#c0392b') +
+                ';font-weight:600">' +
+                $n(saved) +
+                '</td>' +
+                '</tr>';
+            });
+
+            rows +=
+              '<tr class="rpt-tot">' +
+              '<td>Total</td><td></td><td></td><td></td><td></td>' +
+              '<td class="rpt-n">' +
+              $n(totBl) +
+              '</td>' +
+              '<td class="rpt-n">' +
+              $n(totCur) +
+              '</td>' +
+              '<td class="rpt-n" style="color:' +
+              (totSav >= 0 ? '#1e8449' : '#c0392b') +
+              '">' +
+              $n(totSav) +
+              '</td>' +
+              '</tr>';
+
+            calcHTML +=
+              '<table class="rpt-table" style="font-size:7px;margin-bottom:10px">' +
+              '<thead><tr>' +
+              '<th>Month</th><th class="rpt-n">Days</th><th class="rpt-n">HDD</th><th class="rpt-n">CDD</th>' +
+              '<th>Calculation</th>' +
+              '<th class="rpt-n">Predicted<br>BL ' +
+              unit +
+              '</th><th class="rpt-n">Actual<br>' +
+              unit +
+              '</th>' +
+              '<th class="rpt-n">' +
+              unit +
+              '<br>Saved</th>' +
+              '</tr></thead><tbody>' +
+              rows +
+              '</tbody></table>';
           });
         });
-        if (firstMeter) {
-          var fm = firstMeter.md;
-          exampleHTML =
-            '<div style="margin-top:12px;border:1px solid #ccc;border-radius:4px;padding:12px 14px;font-size:9px;line-height:1.8;color:#333;background:#f8fbff">' +
-            '<strong style="font-size:10px;color:#1a5276">Example Calculation — ' +
-            firstMeter.bldg +
-            ' (' +
-            fm.commodity +
-            ')</strong><br><br>' +
-            '<strong>Regression Type:</strong> ' +
-            fm.regrType +
-            ' &nbsp;|&nbsp; <strong>R²:</strong> ' +
-            fm.r2 +
-            '<br>' +
-            '<strong>Baseline HDD/yr:</strong> ' +
-            Math.round(fm.hdd).toLocaleString() +
-            ' &nbsp;|&nbsp; <strong>Baseline CDD/yr:</strong> ' +
-            Math.round(fm.cdd).toLocaleString() +
-            '<br>' +
-            '<strong>Baseline Usage/yr:</strong> ' +
-            Math.round(fm.usagePerYear).toLocaleString() +
-            (fm.commodity === 'Electric' ? ' kWh' : fm.commodity === 'Gas' ? ' Therms' : ' Gal') +
-            '<br>' +
-            '<strong>Baseline Cost/yr:</strong> $' +
-            Math.round(fm.costPerYear).toLocaleString() +
-            '<br><br>' +
-            "<em>For each reporting month, the model predicts what this meter's consumption would have been under current weather if the building were still operating at baseline efficiency. The difference between this prediction and actual consumption is the verified savings.</em>" +
-            '</div>';
+
+        if (!calcHTML) {
+          calcHTML =
+            '<p style="font-size:8px;color:#aaa;font-style:italic">No regression data available for calculation display.</p>';
         }
 
         var bodyHTML =
           '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix B: Regression Model Methodology</h2>' +
-          '<div style="font-size:8.5px;color:#666;margin-bottom:10px">How weather-normalized savings are calculated</div>' +
+          '<div style="font-size:8.5px;color:#666;margin-bottom:8px">Weather-normalized baseline calculations per building and commodity</div>' +
           regressionExplainer +
-          exampleHTML;
+          '<h3 style="font-size:9.5px;font-weight:700;color:#555;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.04em">Monthly Baseline Calculations</h3>' +
+          calcHTML;
 
         return rptPage(n, 'Appendix B: Regression Model Methodology', bodyHTML, {
           data: d,
@@ -62731,9 +62843,9 @@
                    ondragleave="this.style.borderColor='var(--border2)'"
                    ondrop="spHandleDrop(event,'${projId}','${activeBldgId}')">
                 <div style="font-size:22px;margin-bottom:4px">📂</div>
-                <div style="font-size:12px;font-weight:600;color:var(--text)">Drop BAS export CSV here or click to browse</div>
-                <div style="font-size:11px;color:var(--text3);margin-top:4px">Zone CSV (Zone/System · Occ/Unocc Heat/Cool · Schedule) or Niagara equipment snapshot</div>
-                <input type="file" id="sp-file-${projId}" accept=".csv,.txt" style="display:none"
+                <div style="font-size:12px;font-weight:600;color:var(--text)">Drop BAS export here or click to browse</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:4px">CSV, XLSX, or Niagara equipment snapshot (Zone/System · Occ/Unocc Heat/Cool · Schedule)</div>
+                <input type="file" id="sp-file-${projId}" accept=".csv,.txt,.xlsx,.xls" style="display:none"
                        onchange="spHandleFileInput(event,'${projId}','${activeBldgId}')">
               </div>`
                   : ''
@@ -63085,14 +63197,34 @@
         renderSetpointsTab(projId);
       }
 
+      function _spIsXlsx(fname) {
+        return /\.xlsx?$/i.test(fname || '');
+      }
+
+      function _spReadXlsx(data, projId, bldgId, fname) {
+        if (typeof XLSX === 'undefined') {
+          showToast('SheetJS library not loaded ⚠');
+          return;
+        }
+        var wb = XLSX.read(data, { type: 'array' });
+        var ws = wb.Sheets[wb.SheetNames[0]];
+        var csv = XLSX.utils.sheet_to_csv(ws);
+        spParseCSV(csv, projId, bldgId, fname);
+      }
+
       function spHandleFileInput(evt, projId, bldgId) {
         const file = evt.target.files && evt.target.files[0];
         if (!file) return;
         const fname = file.name;
         evt.target.value = '';
         const reader = new FileReader();
-        reader.onload = (e) => spParseCSV(e.target.result, projId, bldgId, fname);
-        reader.readAsText(file);
+        if (_spIsXlsx(fname)) {
+          reader.onload = (e) => _spReadXlsx(new Uint8Array(e.target.result), projId, bldgId, fname);
+          reader.readAsArrayBuffer(file);
+        } else {
+          reader.onload = (e) => spParseCSV(e.target.result, projId, bldgId, fname);
+          reader.readAsText(file);
+        }
       }
 
       function spHandleDrop(evt, projId, bldgId) {
@@ -63103,8 +63235,13 @@
         if (!file) return;
         const fname = file.name;
         const reader = new FileReader();
-        reader.onload = (e) => spParseCSV(e.target.result, projId, bldgId, fname);
-        reader.readAsText(file);
+        if (_spIsXlsx(fname)) {
+          reader.onload = (e) => _spReadXlsx(new Uint8Array(e.target.result), projId, bldgId, fname);
+          reader.readAsArrayBuffer(file);
+        } else {
+          reader.onload = (e) => spParseCSV(e.target.result, projId, bldgId, fname);
+          reader.readAsText(file);
+        }
       }
 
       function spParseCSV(text, projId, bldgId, fileName) {
@@ -63158,12 +63295,26 @@
           return -1;
         }
         const colMap = {
-          name: findCol(['zone', 'system', 'ahu', 'unit', 'name']),
-          occHeat: findCol(['occ heat', 'occupied heat', 'occ h', 'occ_heat', 'occupied_heat']),
-          occCool: findCol(['occ cool', 'occupied cool', 'occ c', 'occ_cool', 'occupied_cool']),
-          unoccHeat: findCol(['unocc heat', 'unoccupied heat', 'unocc h', 'unocc_heat', 'unoccupied_heat']),
-          unoccCool: findCol(['unocc cool', 'unoccupied cool', 'unocc c', 'unocc_cool', 'unoccupied_cool']),
-          schedule: findCol(['schedule', 'sched', 'occupancy', 'hours']),
+          name: findCol(['zone', 'system', 'ahu', 'unit', 'name', 'location', 'equipment affected']),
+          occHeat: findCol(['occ heat', 'occupied heat', 'occupied heating', 'occ h', 'occ_heat', 'occupied_heat']),
+          occCool: findCol(['occ cool', 'occupied cool', 'occupied cooling', 'occ c', 'occ_cool', 'occupied_cool']),
+          unoccHeat: findCol([
+            'unocc heat',
+            'unoccupied heat',
+            'unoccupied heating',
+            'unocc h',
+            'unocc_heat',
+            'unoccupied_heat',
+          ]),
+          unoccCool: findCol([
+            'unocc cool',
+            'unoccupied cool',
+            'unoccupied cooling',
+            'unocc c',
+            'unocc_cool',
+            'unoccupied_cool',
+          ]),
+          schedule: findCol(['schedule', 'sched', 'occupancy', 'hours', 'occupied time', 'occupied start']),
         };
 
         const imported = [];
