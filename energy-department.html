@@ -15110,7 +15110,7 @@
         if (tab === 'savings') initSavingsTab(p.id);
         if (tab === 'hvacload') requestAnimationFrame(() => initHvacLoadTab(p.id));
         if (tab === 'energygfx') egfxRefresh(p.id);
-        if (tab === 'meetings') renderMeetingsList(p.id);
+        if (tab === 'docs') renderDocsSubTab(window._docsSubTab || 'meetings', p.id);
         if (tab === 'district') renderDistCalTable(p.id);
         if (tab === 'setpoints') renderSetpointsTab(p.id);
         window._activeProjTab = tab;
@@ -44876,6 +44876,77 @@
         pills?.forEach((p) => p.classList.remove('sel'));
         el?.classList.add('sel');
         renderMeetingsList(projId);
+      }
+
+      /* ── DOCUMENTS SUB-TAB SYSTEM ── */
+      function renderDocsSubTab(subTab, projId) {
+        window._docsSubTab = subTab;
+        const pills = document.querySelectorAll('#docsSubTabs .ptpill');
+        pills.forEach((p) => p.classList.toggle('sel', p.dataset.dsub === subTab));
+        const body = document.getElementById('ptab-docs-body-' + projId);
+        if (!body) return;
+        if (subTab === 'contracts') _renderDocsContracts(body, projId);
+        else if (subTab === 'meetings') _renderDocsMeetings(body, projId);
+        else if (subTab === 'approved') _renderDocsApproved(body, projId);
+        else if (subTab === 'files') _renderDocsFiles(body, projId);
+      }
+
+      function _renderDocsContracts(body, projId) {
+        body.innerHTML = `
+          <div class="g2">
+            <div>
+              <div class="card" style="margin-bottom:14px">
+                <div class="card-hdr"><span class="card-title">📋 Template</span></div>
+                <div style="padding:14px" id="tmplStatus-${projId}">
+                  <div style="font-size:13px;color:var(--text2);line-height:1.6">No template loaded.</div>
+                  <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="loadDefaultTemplatForProj(${projId})">Use Generic Template</button>
+                </div>
+              </div>
+              <div class="card" id="contractVarsCard-${projId}" style="display:none">
+                <div class="card-hdr"><span class="card-title">✏️ Contract Variables</span></div>
+                <div style="padding:14px" id="contractVars-${projId}"></div>
+                <div style="padding:0 14px 14px"><button class="btn btn-em" style="width:100%" onclick="generateProjContract(${projId})">📋 Generate Contract</button></div>
+              </div>
+            </div>
+            <div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
+                <div class="ai-label" style="margin:0">📋 Generated Contract</div>
+                <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('contractOut-${projId}')?.textContent||'');showToast('Copied ✓')">📋 Copy</button>
+              </div>
+              <div class="ai-box" id="contractOut-${projId}" style="min-height:400px;max-height:560px;overflow-y:auto">Click "Use Generic Template" to get started.</div>
+            </div>
+          </div>`;
+      }
+
+      function _renderDocsMeetings(body, projId) {
+        body.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:14px;font-weight:600">Meetings</span>
+              <div style="display:flex;gap:4px">
+                <button class="ptpill sel" onclick="mtgFilterSet('all',${projId},this)">All</button>
+                <button class="ptpill" onclick="mtgFilterSet('agenda',${projId},this)">Agendas</button>
+                <button class="ptpill" onclick="mtgFilterSet('minutes',${projId},this)">Minutes</button>
+              </div>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-ghost btn-sm" onclick="openReportModal(${projId},'quarterly')">📊 Quarterly Report</button>
+              <button class="btn btn-ghost btn-sm" onclick="openReportModal(${projId},'annual')">📈 Annual Report</button>
+              <button class="btn btn-ghost btn-sm" onclick="openReportHistory('${projId}')">📋 Report History</button>
+              <button class="btn btn-em btn-sm" onclick="openMeetingEditor(${projId})">+ New Agenda</button>
+            </div>
+          </div>
+          <div id="mtg-recur-info-${projId}" style="margin-bottom:10px"></div>
+          <div id="mtg-list-${projId}"></div>`;
+        renderMeetingsList(projId);
+      }
+
+      function _renderDocsFiles(body, projId) {
+        body.innerHTML = `
+          <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+            <button class="btn btn-em btn-sm" onclick="sv('pdf',null);showToast('Upload a PDF and save it to this project')">📄 Upload Document</button>
+          </div>
+          <div style="font-size:13px;color:var(--text2)">No documents yet. Use the PDF/OCR tool to save documents to this project.</div>`;
       }
 
       function renderMeetingsList(projId) {
