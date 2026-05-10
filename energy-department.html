@@ -48431,18 +48431,18 @@
           '</tr>';
 
         const bldgTable =
-          '<table class="rpt-table" contenteditable="false" style="font-size:8px">' +
-          '<thead><tr>' +
-          '<th>Building</th>' +
-          '<th class="rpt-n">Sq Ft</th>' +
-          '<th class="rpt-n">Baseline Cost</th>' +
-          '<th class="rpt-n">Projected Cost</th>' +
-          '<th class="rpt-n">Actual Cost</th>' +
-          '<th class="rpt-n">' +
+          '<table class="rpt-table" contenteditable="false" style="font-size:8px;width:100%;table-layout:fixed">' +
+          '<thead><tr style="text-align:center;white-space:normal;word-wrap:break-word;line-height:1.2">' +
+          '<th style="width:18%">Building</th>' +
+          '<th class="rpt-n" style="width:10%">Sq Ft</th>' +
+          '<th class="rpt-n" style="width:12%">Baseline<br>Cost</th>' +
+          '<th class="rpt-n" style="width:12%">Projected<br>Cost</th>' +
+          '<th class="rpt-n" style="width:12%">Actual<br>Cost</th>' +
+          '<th class="rpt-n" style="width:13%">' +
           qLabel +
-          ' Actual Savings</th>' +
-          '<th class="rpt-n">%</th>' +
-          '<th>Status</th>' +
+          '<br>Actual Savings</th>' +
+          '<th class="rpt-n" style="width:8%">%</th>' +
+          '<th style="width:15%">Status</th>' +
           '</tr></thead>' +
           '<tbody>' +
           bRows +
@@ -48544,20 +48544,20 @@
           '</td>' +
           '</tr>';
         const qtrTable =
-          '<table class="rpt-table" contenteditable="false" style="font-size:7.5px">' +
-          '<thead><tr>' +
-          '<th>Quarter</th>' +
-          '<th class="rpt-n">Baseline kWh</th>' +
-          '<th class="rpt-n">Actual kWh</th>' +
-          '<th class="rpt-n">Baseline Therms</th>' +
-          '<th class="rpt-n">Actual Therms</th>' +
-          '<th class="rpt-n">Baseline Gal</th>' +
-          '<th class="rpt-n">Actual Gal</th>' +
-          '<th class="rpt-n">Baseline Cost</th>' +
-          '<th class="rpt-n">Actual Cost</th>' +
-          '<th class="rpt-n">' +
+          '<table class="rpt-table" contenteditable="false" style="font-size:7.5px;width:100%;table-layout:fixed">' +
+          '<thead><tr style="text-align:center;white-space:normal;word-wrap:break-word;line-height:1.2">' +
+          '<th style="width:8%">Quarter</th>' +
+          '<th class="rpt-n" style="width:10%">Baseline<br>kWh</th>' +
+          '<th class="rpt-n" style="width:10%">Actual<br>kWh</th>' +
+          '<th class="rpt-n" style="width:10%">Baseline<br>Therms</th>' +
+          '<th class="rpt-n" style="width:10%">Actual<br>Therms</th>' +
+          '<th class="rpt-n" style="width:10%">Baseline<br>Gal</th>' +
+          '<th class="rpt-n" style="width:10%">Actual<br>Gal</th>' +
+          '<th class="rpt-n" style="width:10%">Baseline<br>Cost</th>' +
+          '<th class="rpt-n" style="width:10%">Actual<br>Cost</th>' +
+          '<th class="rpt-n" style="width:12%">' +
           qLabel +
-          ' Actual Savings</th>' +
+          '<br>Actual Savings</th>' +
           '</tr></thead>' +
           '<tbody>' +
           qtrRow +
@@ -48593,18 +48593,18 @@
           return padT + cH - (v / maxY) * cH;
         };
 
-        // Projected dashed line
-        const projPath = cumPoints
-          .map(function (pt, i) {
-            return (i === 0 ? 'M' : 'L') + xScale(pt.q).toFixed(1) + ',' + yScale(pt.proj).toFixed(1);
-          })
-          .join(' ');
+        // Per-quarter projected savings (not cumulative) for bars
+        const qtrProjVals = [];
+        for (var qi2 = 1; qi2 <= totalQtrs; qi2++) {
+          var _yrIdx2 = Math.ceil(qi2 / 4);
+          var _escF2 = Math.pow(1 + _esc / 100, _yrIdx2 - 1);
+          qtrProjVals.push((annTarget / 4) * _escF2);
+        }
+        const maxBarVal = Math.max.apply(null, qtrProjVals) * 1.3 || 1;
 
         // Current actual point
         const curQtr = ((d.contract.currentYear || 1) - 1) * 4 + (d.period.quarter || 1);
         const actCumVal = d.totals.savings || 0;
-        const actX = xScale(curQtr);
-        const actY = yScale(Math.min(Math.abs(actCumVal), maxY));
 
         // Y-axis labels
         const yAxisLabels = [0, 0.25, 0.5, 0.75, 1.0]
@@ -48641,13 +48641,84 @@
           })
           .join('');
 
+        // Bar width and spacing
+        const barGap = 2;
+        const barW = Math.max(4, cW / totalQtrs - barGap);
+        const barYScale = function (v) {
+          return padT + cH - (v / maxBarVal) * cH;
+        };
+
+        // Projected quarterly bars
+        const projBars = qtrProjVals
+          .map(function (val, i) {
+            var x = padL + (i / totalQtrs) * cW + barGap / 2;
+            var h = (val / maxBarVal) * cH;
+            var y = padT + cH - h;
+            var isFuture = i + 1 > curQtr;
+            return (
+              '<rect x="' +
+              x.toFixed(1) +
+              '" y="' +
+              y.toFixed(1) +
+              '" width="' +
+              barW.toFixed(1) +
+              '" height="' +
+              h.toFixed(1) +
+              '" fill="' +
+              (isFuture ? '#d5e8f0' : '#2e86c1') +
+              '" opacity="0.6" rx="1"/>'
+            );
+          })
+          .join('');
+
+        // Actual cumulative line + green fill
+        var actLinePts = [];
+        if (curQtr >= 1) {
+          actLinePts.push({ q: 0, v: 0 });
+          actLinePts.push({ q: curQtr, v: Math.abs(actCumVal) });
+        }
+        var actLinePath = actLinePts
+          .map(function (pt, i) {
+            var x = padL + (pt.q / totalQtrs) * cW;
+            var y = barYScale(Math.min(pt.v, maxBarVal));
+            return (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1);
+          })
+          .join(' ');
+        var actFillPath =
+          actLinePath +
+          ' L' +
+          (padL + (curQtr / totalQtrs) * cW).toFixed(1) +
+          ',' +
+          (padT + cH) +
+          ' L' +
+          padL +
+          ',' +
+          (padT + cH) +
+          ' Z';
+
+        // Y-axis for bar chart
+        const barYLabels = [0, 0.25, 0.5, 0.75, 1.0]
+          .map(function (f) {
+            var val = f * maxBarVal;
+            var y = barYScale(val);
+            return (
+              '<text x="' +
+              (padL - 4) +
+              '" y="' +
+              y.toFixed(1) +
+              '" text-anchor="end" font-size="8" fill="#888" dominant-baseline="middle">$' +
+              Math.round(val / 1000) +
+              'k</text>'
+            );
+          })
+          .join('');
+
         const cumulativeSVG =
           '<svg width="' +
           svgW +
           '" height="' +
           svgH +
           '" xmlns="http://www.w3.org/2000/svg">' +
-          // Axes
           '<line x1="' +
           padL +
           '" y1="' +
@@ -48666,10 +48737,9 @@
           '" y2="' +
           (padT + cH) +
           '" stroke="#ccc" stroke-width="1"/>' +
-          // Grid lines
           [0.25, 0.5, 0.75]
             .map(function (f) {
-              var y = yScale(f * annTarget * yrs);
+              var y = barYScale(f * maxBarVal);
               return (
                 '<line x1="' +
                 padL +
@@ -48683,42 +48753,43 @@
               );
             })
             .join('') +
-          // Projected savings dashed line
-          '<path d="' +
-          projPath +
-          '" fill="none" stroke="#2e86c1" stroke-width="2" stroke-dasharray="6,3"/>' +
-          // Y-axis labels
-          yAxisLabels +
-          // X-axis labels
+          projBars +
+          (actLinePts.length > 1 ? '<path d="' + actFillPath + '" fill="rgba(39,174,96,0.2)"/>' : '') +
+          (actLinePts.length > 1
+            ? '<path d="' + actLinePath + '" fill="none" stroke="#27ae60" stroke-width="2.5"/>'
+            : '') +
+          (actLinePts.length > 1
+            ? '<circle cx="' +
+              (padL + (curQtr / totalQtrs) * cW).toFixed(1) +
+              '" cy="' +
+              barYScale(Math.min(Math.abs(actCumVal), maxBarVal)).toFixed(1) +
+              '" r="4" fill="#27ae60" stroke="#fff" stroke-width="1.5"/>'
+            : '') +
+          (actLinePts.length > 1
+            ? '<text x="' +
+              (padL + (curQtr / totalQtrs) * cW + 8).toFixed(1) +
+              '" y="' +
+              (barYScale(Math.min(Math.abs(actCumVal), maxBarVal)) - 5).toFixed(1) +
+              '" font-size="9" fill="#1e8449" font-weight="bold">' +
+              $c(actCumVal) +
+              '</text>'
+            : '') +
+          barYLabels +
           xAxisLabels +
-          // Actual point marker
-          '<circle cx="' +
-          actX.toFixed(1) +
-          '" cy="' +
-          actY.toFixed(1) +
-          '" r="5" fill="#27ae60" stroke="#fff" stroke-width="2"/>' +
+          '<rect x="' +
+          (padL + cW - 140) +
+          '" y="6" width="10" height="8" fill="#2e86c1" opacity="0.6" rx="1"/>' +
           '<text x="' +
-          (actX + 8).toFixed(1) +
-          '" y="' +
-          (actY - 6).toFixed(1) +
-          '" font-size="9" fill="#1e8449" font-weight="bold">Actual: ' +
-          $c(actCumVal) +
-          '</text>' +
-          // Legend
+          (padL + cW - 126) +
+          '" y="14" font-size="8" fill="#555">Projected/Qtr</text>' +
           '<line x1="' +
-          (padL + cW - 120) +
-          '" y1="12" x2="' +
-          (padL + cW - 106) +
-          '" y2="12" stroke="#2e86c1" stroke-width="2" stroke-dasharray="6,3"/>' +
-          '<text x="' +
-          (padL + cW - 102) +
-          '" y="16" font-size="8" fill="#555">Projected</text>' +
-          '<circle cx="' +
           (padL + cW - 60) +
-          '" cy="12" r="4" fill="#27ae60"/>' +
+          '" y1="10" x2="' +
+          (padL + cW - 46) +
+          '" y2="10" stroke="#27ae60" stroke-width="2.5"/>' +
           '<text x="' +
-          (padL + cW - 52) +
-          '" y="16" font-size="8" fill="#555">Actual</text>' +
+          (padL + cW - 42) +
+          '" y="14" font-size="8" fill="#555">Actual</text>' +
           '</svg>';
 
         const bodyHTML =
@@ -50206,6 +50277,11 @@
             }
           });
 
+          // Check if ALL setpoints use average mode — if so, hide Zone/System column
+          var allAvgMode = setpoints.every(function (sp) {
+            return sp.viewMode === 'average';
+          });
+
           let allRows = '';
           setpoints.forEach(function (sp) {
             const bldgName = getBldgName(sp.buildingId);
@@ -50222,9 +50298,7 @@
                   '<td contenteditable="true">' +
                   bldgName +
                   '</td>' +
-                  '<td contenteditable="true">' +
-                  (avg.name || 'Average') +
-                  '</td>' +
+                  (allAvgMode ? '' : '<td contenteditable="true">' + (avg.name || 'Average') + '</td>') +
                   '<td class="rpt-n" contenteditable="true">' +
                   (avg.occHeat != null ? avg.occHeat + '°F' : '—') +
                   '</td>' +
@@ -50251,9 +50325,7 @@
                   '<td contenteditable="true">' +
                   bldgName +
                   '</td>' +
-                  '<td contenteditable="true">' +
-                  (z.name || '—') +
-                  '</td>' +
+                  (allAvgMode ? '' : '<td contenteditable="true">' + (z.name || '—') + '</td>') +
                   '<td class="rpt-n" contenteditable="true">' +
                   (z.occHeat != null ? z.occHeat + '°F' : '—') +
                   '</td>' +
@@ -50275,7 +50347,7 @@
               });
             }
           });
-          var colCount = 4 + (hasUnoccHeat ? 1 : 0) + (hasUnoccCool ? 1 : 0) + (hasSchedule ? 1 : 0);
+          var colCount = (allAvgMode ? 3 : 4) + (hasUnoccHeat ? 1 : 0) + (hasUnoccCool ? 1 : 0) + (hasSchedule ? 1 : 0);
           if (!allRows) {
             allRows =
               '<tr><td colspan="' + colCount + '" style="color:#aaa;font-style:italic">No zones recorded</td></tr>';
@@ -50284,7 +50356,7 @@
             '<table class="rpt-table" contenteditable="true">' +
             '<thead><tr>' +
             '<th>Building</th>' +
-            '<th>Zone / System</th>' +
+            (allAvgMode ? '' : '<th>Zone / System</th>') +
             '<th class="rpt-n">Occ Heat</th>' +
             '<th class="rpt-n">Occ Cool</th>' +
             (hasUnoccHeat ? '<th class="rpt-n">Unocc Heat</th>' : '') +
@@ -61936,15 +62008,21 @@
         });
         if (!postRows.length)
           return '<div style="font-size:11px;color:var(--text3);padding:8px">No post-baseline data yet.</div>';
-        var blByCalMo = {};
-        blRows.forEach(function (r) {
-          var mo = parseInt(r.ym.split('-')[1]) - 1;
-          blByCalMo[mo] = (blByCalMo[mo] || 0) + r.cost;
+        var { elecByMo: _eMo, gasByMo: _gMo, propaneByMo: _pMo } = buildMoMap(m, blRows, bills, incl);
+        var _blMoMap = isElec ? _eMo : m.commodity === 'Gas' ? _gMo : isPropane ? _pMo : {};
+        var blUsageByCalMo = {};
+        Object.entries(_blMoMap).forEach(function (entry) {
+          var mo = entry[0],
+            v = entry[1];
+          blUsageByCalMo[mo] = isElec ? v.kwh : m.commodity === 'Gas' ? v.therms : isPropane ? v.gallons : 0;
         });
-        var blAvg =
+        var hasRegrP = allRows.some(function (r) {
+          return r.regrBaseline != null;
+        });
+        var blAvgUsage =
           blRows.length > 0
             ? blRows.reduce(function (s, r) {
-                return s + r.cost;
+                return s + r.usage;
               }, 0) / blRows.length
             : 0;
         var savByCalMo = getMeterPerfSavingsByCalMo(m, bills, incl);
@@ -61954,40 +62032,86 @@
         var fmtC = function (v) {
           return Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         };
+        var fmtU = function (v) {
+          return Math.round(Math.abs(v)).toLocaleString();
+        };
         var savColor = function (v) {
           return v >= 0 ? 'var(--em)' : 'var(--danger)';
         };
         var costSign = function (v) {
           return v >= 0 ? '' : '−';
         };
+        var _td =
+          'padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border)';
         var rows = postRows
           .map(function (r) {
             var calMo = parseInt(r.ym.split('-')[1]) - 1;
-            var expCost = blByCalMo[calMo] != null ? blByCalMo[calMo] : blAvg;
+            var blUsage =
+              blUsageByCalMo[calMo] != null
+                ? blUsageByCalMo[calMo]
+                : hasRegrP && r.regrBaseline != null
+                  ? r.regrBaseline
+                  : blAvgUsage;
+            var actUsage = r.usage;
+            var bfr = isPropane
+              ? []
+              : bills.filter(function (b) {
+                  return normMonth(b.start, b.end, incl, bills) === r.ym;
+                });
+            var actRate = 0;
+            if (isElec) {
+              var kwhCost = bfr.reduce(function (s, b) {
+                return s + (parseFloat(b.kwhCost) || 0);
+              }, 0);
+              actRate = actUsage > 0 && kwhCost > 0 ? kwhCost / actUsage : 0;
+            } else if (isPropane) {
+              actRate = actUsage > 0 && r.cost > 0 ? r.cost / actUsage : 0;
+            } else {
+              var thermCost = bfr.reduce(function (s, b) {
+                return s + (parseFloat(b.gasCharge) || parseFloat(b.thermCost) || parseFloat(b.cost) || 0);
+              }, 0);
+              actRate = actUsage > 0 && thermCost > 0 ? thermCost / actUsage : 0;
+            }
             var costSav = savByCalMo[calMo] != null ? savByCalMo[calMo] : 0;
-            var pct = expCost > 0 ? (costSav / expCost) * 100 : 0;
+            var usageSaved = blUsage - actUsage;
+            var pct = blUsage > 0 ? (usageSaved / blUsage) * 100 : 0;
             return (
               '<tr>' +
               '<td style="padding:6px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s1)">' +
               r.label +
               '</td>' +
-              '<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border)">' +
+              '<td style="' +
+              _td +
+              '">' +
               r.normDays +
               '</td>' +
-              '<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border)">$' +
-              fmtC(expCost) +
+              '<td style="' +
+              _td +
+              '">' +
+              fmtU(blUsage) +
               '</td>' +
-              '<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border)">$' +
-              fmtC(r.cost) +
+              '<td style="' +
+              _td +
+              '">' +
+              fmtU(actUsage) +
               '</td>' +
-              '<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border);color:' +
+              '<td style="' +
+              _td +
+              '">' +
+              (actRate > 0 ? '$' + actRate.toFixed(4) : '—') +
+              '</td>' +
+              '<td style="' +
+              _td +
+              ';color:' +
               savColor(costSav) +
               ';font-weight:600">' +
               costSign(costSav) +
               '$' +
               fmtC(costSav) +
               '</td>' +
-              '<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border);color:' +
+              '<td style="' +
+              _td +
+              ';color:' +
               savColor(pct) +
               '">' +
               (pct >= 0 ? '' : '−') +
@@ -62008,15 +62132,20 @@
           '<table style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr style="background:var(--s1)">' +
           '<th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Month</th>' +
           '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Days</th>' +
-          '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Expected Cost</th>' +
-          '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Actual Cost</th>' +
-          '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Cost Saved</th>' +
+          '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Norm Baseline ' +
+          unit +
+          '</th>' +
+          '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Actual ' +
+          unit +
+          '</th>' +
+          '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Actual Rate</th>' +
+          '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Savings ($)</th>' +
           '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">%</th>' +
           '</tr></thead><tbody>' +
           rows +
           '</tbody>' +
           '<tfoot><tr style="background:var(--s1);font-weight:700">' +
-          '<td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)" colspan="4">Total</td>' +
+          '<td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)" colspan="5">Total</td>' +
           '<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border);color:' +
           savColor(totalSav) +
           ';font-weight:700">' +

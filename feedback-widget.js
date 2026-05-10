@@ -419,6 +419,40 @@
       data.screenshot = 'feedback-' + uuid + '.png';
     }
 
+    /* ── localStorage fallback ── */
+    try {
+      var existing = localStorage.getItem('fb_issues');
+      var issues = existing ? JSON.parse(existing) : [];
+      var entry = JSON.parse(JSON.stringify(data)); // clone
+      issues.push(entry);
+      localStorage.setItem('fb_issues', JSON.stringify(issues));
+
+      // Async: if there's a screenshot blob, convert to base64 and update the entry
+      if (state.screenshotBlob) {
+        (function (blob, entryUuid) {
+          var reader = new FileReader();
+          reader.onload = function () {
+            try {
+              var stored = localStorage.getItem('fb_issues');
+              var arr = stored ? JSON.parse(stored) : [];
+              for (var i = 0; i < arr.length; i++) {
+                if (arr[i].uuid === entryUuid) {
+                  arr[i].screenshotDataUrl = reader.result;
+                  break;
+                }
+              }
+              localStorage.setItem('fb_issues', JSON.stringify(arr));
+            } catch (e2) {
+              /* ignore */
+            }
+          };
+          reader.readAsDataURL(blob);
+        })(state.screenshotBlob, uuid);
+      }
+    } catch (e) {
+      /* localStorage failure must not break submit */
+    }
+
     var jsonBlob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     downloadBlob(jsonBlob, 'feedback-' + uuid + '.json');
 
