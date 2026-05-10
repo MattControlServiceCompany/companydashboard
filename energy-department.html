@@ -46982,37 +46982,32 @@
         const euiBaseline = _euiSqftSum > 0 ? _euiBlWt / _euiSqftSum : 0;
         const euiCurrent = _euiSqftSum > 0 ? _euiCurWt / _euiSqftSum : 0;
 
-        // Quarterly targets from baseline × per-building savings %
+        // Quarterly targets from measures (with % fallback per building)
         const annualBaseline = Object.values(baselineMoMap).reduce((s, v) => s + v, 0);
-        let wtSavPct = 0,
-          wtBase = 0;
+        const _rptProjSavByMo = Array(12).fill(0);
         bldgs.forEach((b) => {
-          const _bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-          let _bspCfg = {};
-          try {
-            _bspCfg = JSON.parse(localStorage.getItem(_bspKey) || '{}');
-          } catch (e) {}
-          const _savPct = (_bspCfg.savingsPct ?? 11) / 100;
-          let bBase = 0;
-          (b.meters || []).forEach((m) => {
-            const mBills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
-            const mIncl = m.inclusive !== false;
-            const bl = m.baseline;
-            if (!bl || !bl.months || bl.months.length < 3) return;
-            const allR = mBills.length ? getNormRows(m, mBills, mIncl, null) : [];
-            const blR = allR.filter((r) => bl.months.includes(r.ym));
-            const { elecByMo: eM, gasByMo: gM } = buildMoMap(m, blR, mBills, mIncl);
-            for (let mo = 0; mo < 12; mo++) bBase += (eM[mo]?.totalCost || 0) + (gM[mo]?.cost || 0);
-          });
-          wtSavPct += _savPct * bBase;
-          wtBase += bBase;
+          const msrSav = getBldgMeasureSavingsByMo(projId, b.id);
+          if (msrSav) {
+            msrSav.forEach((v, mo) => {
+              _rptProjSavByMo[mo] += v;
+            });
+          } else {
+            const _bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
+            let _bspCfg = {};
+            try {
+              _bspCfg = JSON.parse(localStorage.getItem(_bspKey) || '{}');
+            } catch (e) {}
+            const _savPct = (_bspCfg.savingsPct ?? 11) / 100;
+            const bMoBase = aggBaseMoMapForBldgs([b]);
+            for (let mo = 0; mo < 12; mo++) _rptProjSavByMo[mo] += (bMoBase[mo] || 0) * _savPct;
+          }
         });
-        const avgSavPct = wtBase > 0 ? wtSavPct / wtBase : 0;
-        const annualTarget = annualBaseline * avgSavPct;
+        const annualTarget = _rptProjSavByMo.reduce((s, v) => s + v, 0);
+        const avgSavPct = annualBaseline > 0 ? annualTarget / annualBaseline : 0;
         const quarterlyTargets = [0, 1, 2, 3].map((qi) => {
-          let qBase = 0;
-          for (let mo = qi * 3; mo < qi * 3 + 3; mo++) qBase += baselineMoMap[mo] || 0;
-          return qBase * avgSavPct;
+          let qSav = 0;
+          for (let mo = qi * 3; mo < qi * 3 + 3; mo++) qSav += _rptProjSavByMo[mo];
+          return qSav;
         });
 
         // ─── Chart images ───
@@ -61603,28 +61598,32 @@
             totalBlPropane - (latestYd.propane ? latestYd.propane.reduce((a, b) => a + b, 0) : 0);
         }
 
-        // Projected Savings card — from Building Savings Projection configs
+        // Projected Savings card — from measures (with % fallback)
         const projSavEl = document.getElementById(`egfx-projSav-${projId}`);
         const projSavSubEl = document.getElementById(`egfx-projSavSub-${projId}`);
         if (projSavEl) {
           let annProjSav = 0;
-          let avgSavPct = 0;
-          let bldgCount = 0;
+          let _egfxHasSrc = false;
           bldgs.forEach((b) => {
-            const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-            let bspCfg = {};
-            try {
-              bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
-            } catch (e) {}
-            const savPct = (bspCfg.savingsPct ?? 0) / 100;
-            if (savPct > 0) {
-              avgSavPct += savPct;
-              bldgCount++;
+            const msrSav = getBldgMeasureSavingsByMo(projId, b.id);
+            if (msrSav) {
+              _egfxHasSrc = true;
+              annProjSav += msrSav.reduce((s, v) => s + v, 0);
+            } else {
+              const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
+              let bspCfg = {};
+              try {
+                bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
+              } catch (e) {}
+              const savPct = (bspCfg.savingsPct ?? 0) / 100;
+              if (savPct > 0) {
+                _egfxHasSrc = true;
+                annProjSav += totalBlCost > 0 ? (totalBlCost * savPct) / bldgs.length : 0;
+              }
             }
           });
-          if (bldgCount > 0 && totalBlCost > 0) {
-            avgSavPct = avgSavPct / bldgCount;
-            annProjSav = totalBlCost * avgSavPct;
+          if (_egfxHasSrc && annProjSav > 0) {
+            const avgSavPct = totalBlCost > 0 ? annProjSav / totalBlCost : 0;
             projSavEl.textContent = '$' + Math.round(annProjSav).toLocaleString();
             projSavEl.style.color = 'var(--accent)';
             if (projSavSubEl) projSavSubEl.textContent = (avgSavPct * 100).toFixed(1) + '% projected';
