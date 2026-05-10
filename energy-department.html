@@ -14556,6 +14556,7 @@
         let projectedAnnual = 0;
         const actualByQtr = [0, 0, 0, 0];
         let latestBillEnd = null;
+        let latestSavMonth = -1; // 0-11 index of last month with savings data
         const curQtr = Math.floor(new Date().getMonth() / 3);
         const bldgRows = bldgs.map((b) => {
           const meters = b.meters || [];
@@ -14625,8 +14626,10 @@
               const sav = getMeterPerfSavingsByCalMo(m, bills, incl);
               Object.entries(sav).forEach(([mo, v]) => {
                 bldgSav += v;
-                const qi = Math.floor(parseInt(mo) / 3);
+                const moIdx = parseInt(mo);
+                const qi = Math.floor(moIdx / 3);
                 actualByQtr[qi] += v;
+                if (v !== 0 && moIdx > latestSavMonth) latestSavMonth = moIdx;
               });
               // Usage for EUI
               if (m.commodity === 'Gas') {
@@ -14750,9 +14753,8 @@
           const blLabel = hasBaseline ? 'Baseline' : 'Total Cost';
           totalBl += useCost;
           totalCur += curCost;
-          // For normalized mode, use bldgSav directly (same source as Project Performance page).
-          // For actual mode, derive savings from baseline minus current cost as before.
-          const sav = useNormalized ? bldgSav : useCost - curCost;
+          // Always use bldgSav from getMeterPerfSavingsByCalMo — single source of truth
+          const sav = bldgSav;
           totalDirectSav += sav;
           const savPct = useCost > 0 ? (sav / useCost) * 100 : 0;
           // EUI: kBtu/sf/yr — annualized (1 kWh = 3.412 kBtu, 1 therm = 100 kBtu, 1 gal propane = 91.5 kBtu)
@@ -14820,13 +14822,13 @@
         const curQtrActual = actualByQtr[curQtr];
         const curQtrProjected = projectedByQtr[curQtr];
         const curQtrPct = curQtrProjected > 0 ? ((curQtrActual / curQtrProjected) * 100).toFixed(1) : null;
-        const throughDate = latestBillEnd
-          ? new Date(latestBillEnd + 'T12:00:00').toLocaleDateString('en-US', {
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric',
-            })
-          : null;
+        const throughDate =
+          latestSavMonth >= 0
+            ? new Date(new Date().getFullYear(), latestSavMonth, 1).toLocaleDateString('en-US', {
+                month: 'long',
+                year: 'numeric',
+              })
+            : null;
 
         perfWrap.innerHTML = `
           <div class="card" style="margin-bottom:16px">
@@ -48640,13 +48642,13 @@
           d.buildings.forEach(function (b) {
             (b.electric.monthly || []).forEach(function (mo) {
               if (moProj[mo.month] === undefined && moActual[mo.month] === undefined) return;
-              moProj[mo.month] = (moProj[mo.month] || 0) + (mo.bl || 0);
-              moActual[mo.month] = (moActual[mo.month] || 0) + (mo.cur || 0);
+              moProj[mo.month] = (moProj[mo.month] || 0) + (mo.blCost || 0);
+              moActual[mo.month] = (moActual[mo.month] || 0) + (mo.curCost || 0);
             });
             (b.gas.monthly || []).forEach(function (mo) {
               if (moProj[mo.month] === undefined && moActual[mo.month] === undefined) return;
-              moProj[mo.month] = (moProj[mo.month] || 0) + (mo.bl || 0);
-              moActual[mo.month] = (moActual[mo.month] || 0) + (mo.cur || 0);
+              moProj[mo.month] = (moProj[mo.month] || 0) + (mo.blCost || 0);
+              moActual[mo.month] = (moActual[mo.month] || 0) + (mo.curCost || 0);
             });
           });
           const maxVal = Math.max(
@@ -48675,7 +48677,7 @@
                 projPct +
                 '%;height:7px;background:#f39c12;border-radius:2px;min-width:1px"></div>' +
                 '<span style="font-size:6px;color:#888">' +
-                $n(moProj[ym]) +
+                $c(moProj[ym]) +
                 '</span>' +
                 '</div>' +
                 '<div style="display:flex;gap:2px;align-items:center;margin-top:1px">' +
@@ -48683,7 +48685,7 @@
                 actPct +
                 '%;height:7px;background:#27ae60;border-radius:2px;min-width:1px"></div>' +
                 '<span style="font-size:6px;color:#888">' +
-                $n(moActual[ym]) +
+                $c(moActual[ym]) +
                 '</span>' +
                 '</div>' +
                 '</div>' +
@@ -48693,7 +48695,7 @@
             .join('');
           chartSection =
             '<div class="rpt-chart-box">' +
-            '<div class="rpt-chart-title">Monthly Savings — Projected (orange) vs Actual (green) — kWh</div>' +
+            '<div class="rpt-chart-title">Monthly Savings — Projected (orange) vs Actual (green) — Dollar Cost</div>' +
             '<div style="display:flex;gap:12px;margin-bottom:4px;font-size:7px">' +
             '<span><span style="display:inline-block;width:10px;height:7px;background:#f39c12;border-radius:2px;vertical-align:middle"></span> Projected Baseline</span>' +
             '<span><span style="display:inline-block;width:10px;height:7px;background:#27ae60;border-radius:2px;vertical-align:middle"></span> Actual</span>' +
@@ -49481,15 +49483,16 @@
         });
       }
       function rptPageApprovedChanges(n, d) {
+        // Skip this page entirely if there are no approved changes
+        const changes = (d && d.approvedChanges) || [];
+        if (!changes.length) return '';
+
         const $c = function (v) {
           return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
         };
         const $n = function (v) {
           return Math.round(v || 0).toLocaleString();
         };
-
-        // ── Changes Implemented table ──
-        const changes = (d && d.approvedChanges) || [];
         let changesRows = '';
         if (changes.length > 0) {
           changes.forEach(function (c) {
@@ -49970,6 +49973,32 @@
           bodyContent =
             '<p style="padding:16px;color:#888;font-style:italic">No BAS data uploaded — add data in Set Points &amp; Schedules tab.</p>';
         } else {
+          // Scan all zones to determine which optional columns have at least one real value
+          var hasUnoccHeat = false;
+          var hasUnoccCool = false;
+          var hasSchedule = false;
+          setpoints.forEach(function (sp) {
+            const zones = sp.zones || [];
+            const useAvg = sp.viewMode === 'average';
+            if (useAvg && zones.length) {
+              var bldgObj = buildings.filter(function (b) {
+                return b.id === sp.buildingId || b.buildingId === sp.buildingId;
+              })[0];
+              var avg = _spComputeAvgRow(zones, bldgObj);
+              if (avg) {
+                if (avg.unoccHeat != null) hasUnoccHeat = true;
+                if (avg.unoccCool != null) hasUnoccCool = true;
+                if (avg.schedule) hasSchedule = true;
+              }
+            } else {
+              zones.forEach(function (z) {
+                if (z.unoccHeat != null) hasUnoccHeat = true;
+                if (z.unoccCool != null) hasUnoccCool = true;
+                if (z.schedule) hasSchedule = true;
+              });
+            }
+          });
+
           let allRows = '';
           setpoints.forEach(function (sp) {
             const bldgName = getBldgName(sp.buildingId);
@@ -49995,15 +50024,17 @@
                   '<td class="rpt-n" contenteditable="true">' +
                   (avg.occCool != null ? avg.occCool + '°F' : '—') +
                   '</td>' +
-                  '<td class="rpt-n" contenteditable="true">' +
-                  (avg.unoccHeat != null ? avg.unoccHeat + '°F' : '—') +
-                  '</td>' +
-                  '<td class="rpt-n" contenteditable="true">' +
-                  (avg.unoccCool != null ? avg.unoccCool + '°F' : '—') +
-                  '</td>' +
-                  '<td contenteditable="true">' +
-                  scheduleLabel(avg.schedule) +
-                  '</td>' +
+                  (hasUnoccHeat
+                    ? '<td class="rpt-n" contenteditable="true">' +
+                      (avg.unoccHeat != null ? avg.unoccHeat + '°F' : '—') +
+                      '</td>'
+                    : '') +
+                  (hasUnoccCool
+                    ? '<td class="rpt-n" contenteditable="true">' +
+                      (avg.unoccCool != null ? avg.unoccCool + '°F' : '—') +
+                      '</td>'
+                    : '') +
+                  (hasSchedule ? '<td contenteditable="true">' + scheduleLabel(avg.schedule) + '</td>' : '') +
                   '</tr>';
               }
             } else {
@@ -50022,21 +50053,25 @@
                   '<td class="rpt-n" contenteditable="true">' +
                   (z.occCool != null ? z.occCool + '°F' : '—') +
                   '</td>' +
-                  '<td class="rpt-n" contenteditable="true">' +
-                  (z.unoccHeat != null ? z.unoccHeat + '°F' : '—') +
-                  '</td>' +
-                  '<td class="rpt-n" contenteditable="true">' +
-                  (z.unoccCool != null ? z.unoccCool + '°F' : '—') +
-                  '</td>' +
-                  '<td contenteditable="true">' +
-                  scheduleLabel(z.schedule) +
-                  '</td>' +
+                  (hasUnoccHeat
+                    ? '<td class="rpt-n" contenteditable="true">' +
+                      (z.unoccHeat != null ? z.unoccHeat + '°F' : '—') +
+                      '</td>'
+                    : '') +
+                  (hasUnoccCool
+                    ? '<td class="rpt-n" contenteditable="true">' +
+                      (z.unoccCool != null ? z.unoccCool + '°F' : '—') +
+                      '</td>'
+                    : '') +
+                  (hasSchedule ? '<td contenteditable="true">' + scheduleLabel(z.schedule) + '</td>' : '') +
                   '</tr>';
               });
             }
           });
+          var colCount = 4 + (hasUnoccHeat ? 1 : 0) + (hasUnoccCool ? 1 : 0) + (hasSchedule ? 1 : 0);
           if (!allRows) {
-            allRows = '<tr><td colspan="7" style="color:#aaa;font-style:italic">No zones recorded</td></tr>';
+            allRows =
+              '<tr><td colspan="' + colCount + '" style="color:#aaa;font-style:italic">No zones recorded</td></tr>';
           }
           bodyContent =
             '<table class="rpt-table" contenteditable="true">' +
@@ -50045,9 +50080,9 @@
             '<th>Zone / System</th>' +
             '<th class="rpt-n">Occ Heat</th>' +
             '<th class="rpt-n">Occ Cool</th>' +
-            '<th class="rpt-n">Unocc Heat</th>' +
-            '<th class="rpt-n">Unocc Cool</th>' +
-            '<th>Schedule</th>' +
+            (hasUnoccHeat ? '<th class="rpt-n">Unocc Heat</th>' : '') +
+            (hasUnoccCool ? '<th class="rpt-n">Unocc Cool</th>' : '') +
+            (hasSchedule ? '<th>Schedule</th>' : '') +
             '</tr></thead>' +
             '<tbody>' +
             allRows +
@@ -51098,28 +51133,42 @@
           return b.commodities && b.commodities.includes('Electric') && b.electric && b.electric.kwhBl > 0;
         });
 
-        // Combined monthly kWh (bl + cur) across all buildings
+        // Combined monthly kWh (bl + cur) across all buildings — full 12-month year using baselineMaps
+        var _rptYear = d.period && d.period.year ? d.period.year : new Date().getFullYear();
         var kwhByMonth = {};
         var kwByMonth = {};
-        elecBldgs.forEach(function (b) {
-          (b.electric.monthly || []).forEach(function (mo) {
-            if (!kwhByMonth[mo.month]) kwhByMonth[mo.month] = { month: mo.month, bl: 0, cur: 0 };
-            kwhByMonth[mo.month].bl += mo.bl || 0;
-            kwhByMonth[mo.month].cur += mo.cur || 0;
-            if (!kwByMonth[mo.month]) kwByMonth[mo.month] = { month: mo.month, bl: 0, cur: 0 };
-            kwByMonth[mo.month].bl += mo.kwBl || mo.blKw || 0;
-            kwByMonth[mo.month].cur += mo.kwCur || mo.curKw || 0;
-          });
-        });
-        // Pad to include full prior year + current year months for complete chart
-        var _rptYear = d.period && d.period.year ? d.period.year : new Date().getFullYear();
-        for (var _padYr = _rptYear - 1; _padYr <= _rptYear; _padYr++) {
-          for (var _padMo = 1; _padMo <= 12; _padMo++) {
-            var _padYm = _padYr + '-' + String(_padMo).padStart(2, '0');
-            if (!kwhByMonth[_padYm]) kwhByMonth[_padYm] = { month: _padYm, bl: 0, cur: 0 };
-            if (!kwByMonth[_padYm]) kwByMonth[_padYm] = { month: _padYm, bl: 0, cur: 0 };
-          }
+        // Initialise all 12 slots
+        for (var _ei = 0; _ei < 12; _ei++) {
+          var _eym = _rptYear + '-' + String(_ei + 1).padStart(2, '0');
+          kwhByMonth[_eym] = { month: _eym, bl: 0, cur: 0 };
+          kwByMonth[_eym] = { month: _eym, bl: 0, cur: 0 };
         }
+        // For each building build a full-year array (mirrors buildFullYear in rptPageBuildingSummary)
+        elecBldgs.forEach(function (b) {
+          var blMap = (b.baselineMaps && b.baselineMaps.elecByMo) || {};
+          var curByMo = {};
+          (b.electric.monthly || []).forEach(function (mo) {
+            var idx = parseInt(mo.month.split('-')[1], 10) - 1;
+            curByMo[idx] = mo;
+          });
+          for (var _mi = 0; _mi < 12; _mi++) {
+            var _ym = _rptYear + '-' + String(_mi + 1).padStart(2, '0');
+            var blKwh = (blMap[_mi] && blMap[_mi].kwh) || 0;
+            var blKw = (blMap[_mi] && (blMap[_mi].kw || blMap[_mi].kwPeak)) || 0;
+            var curMo = curByMo[_mi];
+            if (curMo) {
+              // Reporting-period month: prefer the stored bl from the monthly entry
+              blKwh = curMo.bl || blKwh;
+              blKw = curMo.kwBl || curMo.blKw || blKw;
+            }
+            var curKwh = curMo ? curMo.cur || 0 : 0;
+            var curKw = curMo ? curMo.kwCur || curMo.curKw || 0 : 0;
+            kwhByMonth[_ym].bl += blKwh;
+            kwhByMonth[_ym].cur += curKwh;
+            kwByMonth[_ym].bl += blKw;
+            kwByMonth[_ym].cur += curKw;
+          }
+        });
         var kwhMonthly = Object.values(kwhByMonth).sort(function (a, b) {
           return a.month < b.month ? -1 : 1;
         });
