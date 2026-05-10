@@ -15827,7 +15827,7 @@
       // ══════════════════════════════════════════════════════
       //  ENERGY SAVINGS MATRIX — per-project measure table
       // ══════════════════════════════════════════════════════
-      const SUMMER_MOS = [4, 5, 6, 7, 8, 9]; // May–Oct (0-indexed)
+      const SUMMER_MOS = [5, 6, 7, 8]; // Jun–Sep (0-indexed)
 
       // Set ud-layout height by measuring fixed chrome above it
       function _setUDLayoutHeight(viewId) {
@@ -61085,7 +61085,7 @@
         const cityName = BAS_CITIES.find((c) => c.id === (p.basCalc?.city || 4))?.name || 'Unknown';
         if (!m.desc || m.desc.trim() === '') m.desc = 'BAS HVAC Optimization — ' + cityName;
         const rates = sd.blRates[m.bldgId] || {};
-        const SUMMER_MOS = [4, 5, 6, 7, 8, 9];
+        const SUMMER_MOS = [5, 6, 7, 8]; // Jun–Sep (0-indexed)
         let total = 0;
         for (let mo = 0; mo < 12; mo++) {
           const isSummer = SUMMER_MOS.includes(mo);
