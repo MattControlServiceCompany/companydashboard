@@ -17936,6 +17936,13 @@
             mult = pn(row[7]),
             kwhUsed = pn(row[8]);
           if (endR <= 0 || startR <= 0 || diff <= 0 || mult <= 0) continue;
+          // Skip OCR correction for rollover rows — when endR < startR and near a boundary,
+          // the "wrong" diff sign is expected; do not attempt digit substitution on these.
+          if (endR < startR) {
+            const _rvBoundaries = [99999, 999999, 9999999];
+            const _isRolloverRow = _rvBoundaries.some((b) => startR > b * 0.9 && endR < b * 0.1);
+            if (_isRolloverRow) continue;
+          }
           const calcDiff = parseFloat((endR - startR).toFixed(4));
           const diffError = Math.abs(calcDiff - diff);
           // If EndRead - StartRead matches Difference, reads are good
@@ -19540,6 +19547,57 @@
         if (result.MeterMultiplier) result.MeterMultiplier = _pad4(result.MeterMultiplier);
         if (result.kWhConsumed) result.kWhConsumed = _pad4(result.kWhConsumed);
 
+        // ── METER ROLLOVER DETECTION (Feature 0de6c188) ──
+        // When EndRead < StartRead it may be a legitimate odometer rollover rather than
+        // an OCR error. Check if StartRead was near a rollover boundary (5-, 6-, or 7-digit
+        // maximum) AND EndRead is relatively small (< 10% of the boundary). If so, compute
+        // the correct usage as: boundary + 1 - StartRead + EndRead and flag the result.
+        const _detectRollover = (endR, startR) => {
+          if (endR <= 0 || startR <= 0 || endR >= startR) return null; // only applies when endR < startR
+          const boundaries = [99999, 999999, 9999999]; // 5-, 6-, 7-digit odometer limits
+          for (const boundary of boundaries) {
+            const threshold = boundary * 0.9; // "near boundary" = last 10% of range
+            const maxSmall = boundary * 0.1; // "small" endR = first 10% of new cycle
+            if (startR > threshold && endR < maxSmall) {
+              const rolloverUsage = boundary + 1 - startR + endR;
+              return { boundary, rolloverUsage };
+            }
+          }
+          return null;
+        };
+        if (result.EndRead && result.StartRead) {
+          const _erR = parseFloat(String(result.EndRead).replace(/,/g, ''));
+          const _srR = parseFloat(String(result.StartRead).replace(/,/g, ''));
+          if (_erR > 0 && _srR > 0 && _erR < _srR) {
+            const rv = _detectRollover(_erR, _srR);
+            if (rv) {
+              result._meterRollover = {
+                boundary: rv.boundary,
+                startRead: _srR,
+                endRead: _erR,
+                rolloverUsage: rv.rolloverUsage,
+                reason:
+                  'Meter rollover detected: StartRead ' +
+                  _srR +
+                  ' near boundary ' +
+                  rv.boundary +
+                  ', EndRead ' +
+                  _erR +
+                  ' is start of new cycle. Usage = ' +
+                  rv.boundary +
+                  '+1−' +
+                  _srR +
+                  '+' +
+                  _erR +
+                  ' = ' +
+                  rv.rolloverUsage,
+              };
+              // Rollover ReadDifference is the wrap-around usage, not a simple subtraction
+              result.ReadDifference = rv.rolloverUsage.toFixed(4);
+            }
+          }
+        }
+
         // ── SANITY CHECK: EndRead and StartRead should be similar magnitude ──
         // OCR garble like "512252699" (should be "51,225.2699") — missing decimal/comma.
         // Check 1: If one value has a decimal and the other doesn't, the one without is likely garbled.
@@ -19551,18 +19609,20 @@
           const er = parseFloat(erStr),
             sr = parseFloat(srStr);
           if (er > 0 && sr > 0) {
+            // Skip sanity checks for confirmed rollovers — the small EndRead is legitimate
+            const _isRollover = !!result._meterRollover;
             // Check for missing decimal (one has it, the other doesn't)
             const erDec = erStr.includes('.'),
               srDec = srStr.includes('.');
-            if (erDec !== srDec && Math.max(er, sr) / Math.min(er, sr) > 100) {
+            if (!_isRollover && erDec !== srDec && Math.max(er, sr) / Math.min(er, sr) > 100) {
               if (!erDec) result.EndRead = null;
               else result.StartRead = null;
             }
             // Absolute magnitude check — reads over 10M are almost certainly garbled
             if (result.EndRead && er > 10000000) result.EndRead = null;
             if (result.StartRead && sr > 10000000) result.StartRead = null;
-            // Ratio check
-            if (result.EndRead && result.StartRead) {
+            // Ratio check — skip for confirmed rollovers (ratio will be very small but valid)
+            if (!_isRollover && result.EndRead && result.StartRead) {
               const ratio = parseFloat(result.EndRead) / parseFloat(result.StartRead);
               if (ratio > 10) result.EndRead = null;
               else if (ratio < 0.1) result.StartRead = null;
@@ -19590,7 +19650,14 @@
             const er = pn(result.EndRead),
               sr = pn(result.StartRead),
               mm = pn(result.MeterMultiplier);
-            if (er > 0 && sr > 0 && mm > 0) return parseFloat(((er - sr) * mm).toFixed(4));
+            if (er > 0 && sr > 0 && mm > 0) {
+              // For rollover bills, use the pre-computed rolloverUsage instead of er - sr
+              if (result._meterRollover) {
+                const rolloverDiff = result._meterRollover.rolloverUsage;
+                return parseFloat((rolloverDiff * mm).toFixed(4));
+              }
+              return parseFloat(((er - sr) * mm).toFixed(4));
+            }
           }
           return null;
         })();
@@ -23646,7 +23713,41 @@
             const curDiff = pf(b.ReadDifference);
 
             // Step 1: ReadDifference = EndRead - StartRead (authoritative)
-            if (endR > 0 && startR > 0 && endR > startR) {
+            // For meter rollovers (endR < startR but near a boundary), compute the
+            // wrap-around usage: boundary + 1 - startR + endR (Feature 0de6c188).
+            if (endR > 0 && startR > 0 && endR < startR) {
+              const _rvBounds = [99999, 999999, 9999999];
+              for (const _rvB of _rvBounds) {
+                if (startR > _rvB * 0.9 && endR < _rvB * 0.1) {
+                  const rolloverDiff = _rvB + 1 - startR + endR;
+                  if (rolloverDiff > 0 && rolloverDiff < _rvB) {
+                    if (!curDiff || Math.abs(curDiff - rolloverDiff) > 0.005) {
+                      b['_auto_corrected_ReadDifference'] = {
+                        original: b.ReadDifference,
+                        corrected: rolloverDiff.toFixed(4),
+                        reason:
+                          'Meter rollover: boundary ' +
+                          _rvB +
+                          '+1 − StartRead(' +
+                          startR +
+                          ') + EndRead(' +
+                          endR +
+                          ') = ' +
+                          rolloverDiff.toFixed(4),
+                      };
+                      b.ReadDifference = rolloverDiff.toFixed(4);
+                      b._meterRollover = {
+                        boundary: _rvB,
+                        startRead: startR,
+                        endRead: endR,
+                        rolloverUsage: rolloverDiff,
+                      };
+                    }
+                  }
+                  break;
+                }
+              }
+            } else if (endR > 0 && startR > 0 && endR > startR) {
               const computedDiff = endR - startR;
               if (computedDiff > 0 && computedDiff < 1000000) {
                 if (!curDiff || Math.abs(curDiff - computedDiff) > 0.005) {
@@ -44624,7 +44725,26 @@
             const prev = parseFloat(_billStripCurrency(_prevInp.value));
             const cur = parseFloat(_billStripCurrency(_curInp.value));
             if (!isNaN(prev) && !isNaN(cur)) {
-              const diff = cur - prev;
+              let diff = cur - prev;
+              // Meter rollover detection (Feature 0de6c188): when cur < prev and prev is
+              // near an odometer boundary, compute the wrap-around usage instead of a
+              // negative difference. Show a toast so the user knows what happened.
+              if (diff < 0 && prev > 0 && cur >= 0) {
+                const _rvBounds = [99999, 999999, 9999999];
+                for (const _rvB of _rvBounds) {
+                  if (prev > _rvB * 0.9 && cur < _rvB * 0.1) {
+                    diff = _rvB + 1 - prev + cur;
+                    showToast(
+                      'Meter rollover detected — Read Difference = ' +
+                        diff.toFixed(4) +
+                        ' (wrap-around at ' +
+                        _rvB.toLocaleString() +
+                        ')',
+                    );
+                    break;
+                  }
+                }
+              }
               _diffInp.value = _billFmtNumber(diff.toString());
             }
           }
