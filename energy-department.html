@@ -13204,24 +13204,47 @@
                 Report Generation Settings
               </div>
               <div style="display: flex; flex-direction: column; gap: 6px">
+                <div style="font-size: 11px; color: var(--text2); padding: 4px 8px; font-weight: 600">
+                  Pollution Credits:
+                </div>
                 <label
                   style="
                     display: flex;
                     align-items: center;
                     gap: 8px;
-                    padding: 4px 8px;
+                    padding: 4px 8px 4px 20px;
                     border-radius: 4px;
-                    background: var(--s1);
                     cursor: pointer;
                   "
                 >
                   <input
-                    type="checkbox"
+                    type="radio"
+                    name="rptPollutionMode"
+                    id="rptOptPollutionPeriod"
+                    checked
+                    style="accent-color: var(--em); width: 14px; height: 14px"
+                  />
+                  <span style="font-size: 12px; color: var(--text)">Period-only</span>
+                  <span style="font-size: 10px; color: var(--text3); margin-left: 4px">(default)</span>
+                </label>
+                <label
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 4px 8px 4px 20px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                  "
+                >
+                  <input
+                    type="radio"
+                    name="rptPollutionMode"
                     id="rptOptAnnualizePollution"
                     style="accent-color: var(--em); width: 14px; height: 14px"
                   />
-                  <span style="font-size: 12px; color: var(--text)">Annualize pollution credits</span>
-                  <span style="font-size: 10px; color: var(--text3); margin-left: 4px">(default: period-only)</span>
+                  <span style="font-size: 12px; color: var(--text)">Annualized</span>
+                  <span style="font-size: 10px; color: var(--text3); margin-left: 4px">(×4 from quarterly)</span>
                 </label>
                 <div style="font-size: 11px; color: var(--text2); padding: 4px 8px; font-weight: 600">
                   Baseline Data Table Commodities:
@@ -18928,6 +18951,35 @@
             const badParts = partDetails.filter((p) => !p.valid);
             if (badParts.length > 0) {
               result['_part_mismatches_' + chargeField] = badParts;
+            }
+
+            // ── SINGLE-PART RATE AUTO-CORRECTION (Bug aa94a957) ──
+            // When OCR reads a rate that doesn't match charge ÷ qty (e.g. $0.08266 instead
+            // of $0.03266), derive the correct rate as charge / qty and replace it in _rates.
+            // Only applies when: exactly one part, charge is known (>0), qty is known (>0),
+            // and the mismatch exceeds 5% of the charge. This avoids touching valid small
+            // rounding errors while catching OCR digit-substitution errors like the above.
+            if (parts.length === 1 && chargeVal > 0 && parts[0].qty > 0 && badParts.length > 0) {
+              const _ocr_rate = parts[0].rate;
+              const _derived_rate = chargeVal / parts[0].qty;
+              const _pctDiff = Math.abs(_ocr_rate - _derived_rate) / chargeVal;
+              if (_pctDiff > 0.05) {
+                // Replace the stale rate in _rates so downstream consumers use the correct value
+                result._rates[chargeField] = Object.assign({}, ri, {
+                  rate: _derived_rate,
+                  parts: [Object.assign({}, parts[0], { rate: _derived_rate, computed: chargeVal })],
+                });
+                result['_auto_corrected_rate_' + chargeField] = {
+                  ocrRate: _ocr_rate,
+                  derivedRate: _derived_rate,
+                  charge: chargeVal,
+                  qty: parts[0].qty,
+                  reason: 'charge_div_qty',
+                };
+                // Clear the mismatch flags — the correction resolves them
+                delete result['_rate_mismatch_' + chargeField];
+                delete result['_part_mismatches_' + chargeField];
+              }
             }
 
             // For kW charges with a qty field: validate the extracted kW against the parts
@@ -25662,10 +25714,8 @@
           '%;transition:width 0.4s ease"></div>';
         html += '</div>';
 
-        // File list
-        const maxShow = 10;
-        const showFiles = q.files.slice(0, maxShow);
-        showFiles.forEach((f, i) => {
+        // File list — show ALL files (no truncation)
+        q.files.forEach((f, i) => {
           const result = q.results.find((r) => r.fileIdx === i);
           if (result && result.status === 'ok') {
             const billCount = result.bills.length;
@@ -25707,12 +25757,7 @@
             html += '</div>';
           }
         });
-        if (q.files.length > maxShow) {
-          html +=
-            '<div style="color:var(--text);font-size:11px;padding:4px 0 0 26px">...and ' +
-            (q.files.length - maxShow) +
-            ' more</div>';
-        }
+        // (all files shown — no truncation)
 
         // Cancel button
         html += '<div style="margin-top:20px;text-align:center">';
@@ -44591,6 +44636,46 @@
         // Initial pass: compute rates + running totals from loaded values
         for (const r of layout) {
           if (r.chargeField) _billRecalcRow(r.chargeField);
+        }
+        // Bug b777c198: Gas — compute Fuel Adjustment Rate = FuelAdjustment / Gas Usage (CCF or Therms).
+        // The FuelAdjustment row has no qtyField so _billRecalcRow leaves its rate blank.
+        // Derive the rate here using the gas usage qty from the GasCharge row.
+        if (commKey === 'gas') {
+          (function _calcFuelAdjRate() {
+            const faRow = document.querySelector('.ef-charge-row[data-charge-key="FuelAdjustment"]');
+            if (!faRow) return;
+            const faChargeInp = faRow.querySelector('.bl-charge-input');
+            const faRateInp = faRow.querySelector('.bl-rate-input');
+            if (!faRateInp) return;
+            const faCharge = faChargeInp ? Math.abs(parseFloat(_billStripCurrency(faChargeInp.value)) || 0) : 0;
+            // Gas usage qty comes from GasCharge row (CCF or Therms)
+            const gasRow = document.querySelector('.ef-charge-row[data-charge-key="GasCharge"]');
+            const gasUnit = gasRow ? gasRow.getAttribute('data-unit') || 'CCF' : 'CCF';
+            const gasQtyInp = gasRow ? gasRow.querySelector('.bl-qty-input') : null;
+            const gasQty = gasQtyInp ? parseFloat(_billStripCurrency(gasQtyInp.value)) || 0 : 0;
+            if (faCharge > 0 && gasQty > 0) {
+              const rate = faCharge / gasQty;
+              faRateInp.value = '$' + rate.toFixed(5) + '/' + gasUnit;
+            }
+            // Re-calc whenever gas qty or fuel adj charge changes
+            function _updateFuelAdjRate() {
+              const _faCharge = faChargeInp ? Math.abs(parseFloat(_billStripCurrency(faChargeInp.value)) || 0) : 0;
+              const _gasQty = gasQtyInp ? parseFloat(_billStripCurrency(gasQtyInp.value)) || 0 : 0;
+              if (_faCharge > 0 && _gasQty > 0) {
+                faRateInp.value = '$' + (_faCharge / _gasQty).toFixed(5) + '/' + gasUnit;
+              } else {
+                faRateInp.value = '';
+              }
+            }
+            if (faChargeInp) {
+              faChargeInp.addEventListener('change', _updateFuelAdjRate);
+              faChargeInp.addEventListener('input', _updateFuelAdjRate);
+            }
+            if (gasQtyInp) {
+              gasQtyInp.addEventListener('change', _updateFuelAdjRate);
+              gasQtyInp.addEventListener('input', _updateFuelAdjRate);
+            }
+          })();
         }
         document.getElementById('billModal').classList.add('open');
       }
