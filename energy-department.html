@@ -47110,7 +47110,7 @@
         const euiBaseline = _euiSqftSum > 0 ? _euiBlWt / _euiSqftSum : 0;
         const euiCurrent = _euiSqftSum > 0 ? _euiCurWt / _euiSqftSum : 0;
 
-        // Quarterly targets from measures (with % fallback per building)
+        // Quarterly targets from measures only — no percentage fallback
         const annualBaseline = Object.values(baselineMoMap).reduce((s, v) => s + v, 0);
         const _rptProjSavByMo = Array(12).fill(0);
         bldgs.forEach((b) => {
@@ -47119,15 +47119,6 @@
             msrSav.forEach((v, mo) => {
               _rptProjSavByMo[mo] += v;
             });
-          } else {
-            const _bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-            let _bspCfg = {};
-            try {
-              _bspCfg = JSON.parse(localStorage.getItem(_bspKey) || '{}');
-            } catch (e) {}
-            const _savPct = (_bspCfg.savingsPct ?? 11) / 100;
-            const bMoBase = aggBaseMoMapForBldgs([b]);
-            for (let mo = 0; mo < 12; mo++) _rptProjSavByMo[mo] += (bMoBase[mo] || 0) * _savPct;
           }
         });
         const annualTarget = _rptProjSavByMo.reduce((s, v) => s + v, 0);
@@ -47844,9 +47835,9 @@
           '<div class="rpt-bn-amount" contenteditable="true">' +
           $c(d.totals.savings) +
           '</div>' +
-          '<div class="rpt-bn-label" contenteditable="true">saved this ' +
-          (d.period.type === 'quarterly' ? 'quarter' : 'year') +
-          '</div>' +
+          '<div class="rpt-bn-label" contenteditable="true">' +
+          periodTitle +
+          ' Actual Savings</div>' +
           '<div class="rpt-bn-badge" contenteditable="true">' +
           pctOfTarget +
           '% of target</div>' +
@@ -48032,7 +48023,9 @@
           '<th class="rpt-n">Baseline Cost</th>' +
           '<th class="rpt-n">Projected Cost</th>' +
           '<th class="rpt-n">Actual Cost</th>' +
-          '<th class="rpt-n">Savings</th>' +
+          '<th class="rpt-n">' +
+          qLabel +
+          ' Actual Savings</th>' +
           '<th class="rpt-n">%</th>' +
           '<th>Status</th>' +
           '</tr></thead>' +
@@ -48055,7 +48048,9 @@
           '</tr></thead>' +
           '<tbody>' +
           '<tr>' +
-          '<td contenteditable="true">Total Savings</td>' +
+          '<td contenteditable="true">' +
+          qLabel +
+          ' Actual Savings</td>' +
           '<td class="rpt-n rpt-g" contenteditable="true">' +
           $c(d.totals.savings) +
           '</td>' +
@@ -48145,7 +48140,9 @@
           '<th class="rpt-n">Actual Gal</th>' +
           '<th class="rpt-n">Baseline Cost</th>' +
           '<th class="rpt-n">Actual Cost</th>' +
-          '<th class="rpt-n">Saved</th>' +
+          '<th class="rpt-n">' +
+          qLabel +
+          ' Actual Savings</th>' +
           '</tr></thead>' +
           '<tbody>' +
           qtrRow +
@@ -53080,7 +53077,10 @@
                 totalCostSav = galRate > 0 ? (expUsage - actUsage) * galRate : 0;
               } else {
                 const actTherms = actUsage;
-                const actThermCost = bfr.reduce((s, b2) => s + parseFloat(b2.thermCost || b2.cost || 0), 0);
+                const actThermCost = bfr.reduce(
+                  (s, b2) => s + (parseFloat(b2.gasCharge) || parseFloat(b2.thermCost) || parseFloat(b2.cost) || 0),
+                  0,
+                );
                 const thermRate = actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0;
                 totalCostSav = thermRate > 0 ? (expUsage - actTherms) * thermRate : 0;
               }
