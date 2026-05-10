@@ -32788,7 +32788,7 @@
           <div style="border:1px solid var(--border2);border-radius:8px;padding:12px;margin-bottom:12px;background:var(--s2)">
             <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:var(--em)">Preview — ${active.length} event${active.length !== 1 ? 's' : ''} extracted</div>
             <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Review the events below. Edit dates or names, delete unwanted rows, then click <strong>Approve &amp; Save</strong> to add them to your calendar. Nothing is saved until you confirm.</div>
-            <div style="max-height:240px;overflow-y:auto;margin-bottom:10px">
+            <div style="max-height:480px;overflow-y:auto;margin-bottom:10px">
               <table class="dtbl" style="width:100%">
                 <thead><tr><th style="width:140px">Date</th><th>Event Name</th><th style="width:140px">Type</th><th style="width:36px"></th></tr></thead>
                 <tbody>${rows}</tbody>
@@ -32848,6 +32848,10 @@
 
       function dcExtractCalendarEvents(text) {
         const events = [];
+        // Bug 079df33b: dedup set keyed on "date|name" so same event text on
+        // different dates is NOT a duplicate, and different events on the same
+        // date are NOT a duplicate. Only identical date+name pairs are dupes.
+        const _dcSeen = new Set();
         const monthMap = {
           january: 1,
           february: 2,
@@ -33085,7 +33089,7 @@
 
             parts.forEach((part) => {
               if (!part.text) return;
-              _parseMonthEvents(part.text, part.month, part.year, events, detectType, isValidSchoolDate);
+              _parseMonthEvents(part.text, part.month, part.year, events, detectType, isValidSchoolDate, _dcSeen);
             });
           });
         });
@@ -33132,12 +33136,21 @@
             const stop = name.search(/\s(?:•|·|\|)\s|\s{3,}/);
             if (stop > 2) name = name.slice(0, stop).trim();
             if (name.length < 2 || name.length > 80) continue;
-            events.push({ date: h.iso, name, type: detectType(name) });
+            // Bug 079df33b: dedup by date+name, not date or name alone
+            const _fbKey = h.iso + '|' + name;
+            if (!_dcSeen.has(_fbKey)) {
+              _dcSeen.add(_fbKey);
+              events.push({ date: h.iso, name, type: detectType(name) });
+            }
             if (h.dayEnd && /\d{4}-\d{2}-(\d{2})$/.test(h.iso)) {
               const startDay = parseInt(h.iso.slice(-2));
               for (let d = startDay + 1; d <= h.dayEnd; d++) {
                 const isoD = h.iso.slice(0, 8) + String(d).padStart(2, '0');
-                events.push({ date: isoD, name, type: detectType(name) });
+                const _fbKeyD = isoD + '|' + name;
+                if (!_dcSeen.has(_fbKeyD)) {
+                  _dcSeen.add(_fbKeyD);
+                  events.push({ date: isoD, name, type: detectType(name) });
+                }
               }
             }
           }
@@ -33145,7 +33158,9 @@
         return events;
       }
 
-      function _parseMonthEvents(text, month, year, events, detectType, dateValidator) {
+      function _parseMonthEvents(text, month, year, events, detectType, dateValidator, seen) {
+        // Bug 079df33b: seen is a Set used for dedup keyed on "date|name".
+        // Two events are only duplicates when BOTH date AND name match.
         // Match: "15 – Description" or "15-17 – Description" or "15- Description"
         // Allow any whitespace (including none) after the separating dash/en-dash.
         const re = /(\d{1,2})(?:\s*[-–]\s*(\d{1,2}))?\s*[-–]\s*/g;
@@ -33176,6 +33191,9 @@
             if (d < 1 || d > 31) continue;
             const dateStr = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
             if (dateValidator && !dateValidator(dateStr)) continue;
+            const dedupKey = dateStr + '|' + desc;
+            if (seen && seen.has(dedupKey)) continue;
+            if (seen) seen.add(dedupKey);
             events.push({ date: dateStr, name: desc, type });
           }
         }
@@ -44526,22 +44544,12 @@
               if (existing) existing.remove();
               const gasVal = parseFloat(_billStripCurrency(_blGasInp.value)) || 0;
               const custVal = _blCustInp ? parseFloat(_billStripCurrency(_blCustInp.value)) || 0 : 0;
-              if (custVal <= 0 || gasVal <= custVal) return;
-              const net = gasVal - custVal;
-              const hint = document.createElement('div');
-              hint.id = 'bl-gasCharge-hint';
-              hint.style.cssText =
-                'margin-top:4px;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2)';
-              hint.innerHTML =
-                '<span>Includes Base Charge?</span>' +
-                '<button type="button" class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px" ' +
-                'onclick="_gasApplySubtract()">Subtract $' +
-                custVal.toFixed(2) +
-                ' -> $' +
-                net.toFixed(2) +
-                '</button>';
-              const gasRow = document.querySelector('.ef-charge-row[data-charge-key="GasCharge"]');
-              if (gasRow && gasRow.parentNode) gasRow.parentNode.insertBefore(hint, gasRow.nextSibling);
+              // Bug 4f27fc5d: hide hint when Base Charge field already has a value.
+              // The hint should only appear when Gas Charge exists AND Base Charge is
+              // empty/zero — i.e. suggesting the base charge may be bundled into the gas
+              // total. When Base Charge is already filled, the fields are correctly
+              // separated and the hint is misleading.
+              if (custVal > 0 || gasVal <= 0) return;
             }
             window._gasApplySubtract = function () {
               const gasVal = parseFloat(_billStripCurrency(_blGasInp.value)) || 0;
@@ -45261,8 +45269,10 @@
         const inp = document.createElement('input');
         inp.type = 'file';
         inp.accept = '.xlsx,.xls,.csv';
+        inp.style.display = 'none';
         inp.onchange = function (e) {
           const file = e.target.files[0];
+          document.body.removeChild(inp);
           if (!file) return;
           const reader = new FileReader();
           reader.onload = function (ev) {
@@ -45278,6 +45288,9 @@
           };
           reader.readAsArrayBuffer(file);
         };
+        // Bug fdf197fe: must attach input to DOM before clicking or the file
+        // picker silently fails in some browsers (Chrome/Edge security policy).
+        document.body.appendChild(inp);
         inp.click();
       }
 
