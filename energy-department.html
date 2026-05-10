@@ -45213,12 +45213,11 @@
                 <button class="ptpill sel" onclick="mtgFilterSet('all',${projId},this)">All</button>
                 <button class="ptpill" onclick="mtgFilterSet('agenda',${projId},this)">Agendas</button>
                 <button class="ptpill" onclick="mtgFilterSet('minutes',${projId},this)">Minutes</button>
+                <button class="ptpill" onclick="mtgFilterSet('report',${projId},this)">Reports</button>
               </div>
             </div>
             <div style="display:flex;gap:6px">
-              <button class="btn btn-ghost btn-sm" onclick="openReportModal(${projId},'quarterly')">📊 Quarterly Report</button>
-              <button class="btn btn-ghost btn-sm" onclick="openReportModal(${projId},'annual')">📈 Annual Report</button>
-              <button class="btn btn-ghost btn-sm" onclick="openReportHistory('${projId}')">📋 Report History</button>
+              <button class="btn btn-ghost btn-sm" onclick="openReportModal(${projId},'quarterly')">📊 Generate Report</button>
               <button class="btn btn-em btn-sm" onclick="openMeetingEditor(${projId})">+ New Agenda</button>
             </div>
           </div>
@@ -64113,7 +64112,23 @@
           return result;
         }
 
-        const headers = splitRow(lines[0]).map((h) => h.toLowerCase().trim());
+        // Skip leading empty rows so real header row is found even if row 0 is blank
+        var headerIdx = 0;
+        while (headerIdx < lines.length) {
+          var testCols = splitRow(lines[headerIdx]);
+          if (
+            testCols.some(function (c) {
+              return c.trim() !== '';
+            })
+          )
+            break;
+          headerIdx++;
+        }
+        if (headerIdx >= lines.length) {
+          showToast('No header row found ⚠');
+          return;
+        }
+        const headers = splitRow(lines[headerIdx]).map((h) => h.toLowerCase().trim());
 
         // Detect BAS equipment snapshot (Niagara/Tridium export)
         const isBAS =
@@ -64122,6 +64137,20 @@
           headers.some((h) => h.includes('control program'));
         if (isBAS) {
           spParseBASSnapshot(lines, headers, splitRow, projId, fileName);
+          return;
+        }
+
+        // Detect multi-building set points spreadsheet (e.g., "Louisburg Set Points.xlsx")
+        var colBldgDetect = headers.findIndex(function (h) {
+          return h === 'building name';
+        });
+        if (
+          colBldgDetect >= 0 &&
+          headers.some(function (h) {
+            return h.includes('occupied heating');
+          })
+        ) {
+          _spParseMultiBldgSetpoints(lines, headers, splitRow, projId, colBldgDetect, headerIdx);
           return;
         }
 
@@ -64156,7 +64185,7 @@
         };
 
         const imported = [];
-        for (let i = 1; i < lines.length; i++) {
+        for (let i = headerIdx + 1; i < lines.length; i++) {
           const cols = splitRow(lines[i]);
           if (cols.every((c) => !c)) continue; // skip blank rows
           const zone = {};
@@ -64181,6 +64210,120 @@
         showToast(
           'Imported ' + imported.length + ' zone' + (imported.length !== 1 ? 's' : '') + ' — click Save to keep',
         );
+        renderSetpointsTab(projId);
+      }
+
+      function _spParseMultiBldgSetpoints(lines, headers, splitRow, projId, colBldgName, headerIdx) {
+        var p = projects.find(function (x) {
+          return String(x.id) === String(projId);
+        });
+        if (!p) return;
+        var bldgs = getUDBldgs(projId);
+        if (!bldgs.length) {
+          showToast('No buildings in project — add buildings in Utility Data tab first ⚠');
+          return;
+        }
+
+        // Column detection — prefer "Existing" columns for baseline data
+        function fc(candidates) {
+          for (var ci = 0; ci < candidates.length; ci++) {
+            var idx = headers.findIndex(function (h) {
+              return h.includes(candidates[ci]);
+            });
+            if (idx >= 0) return idx;
+          }
+          return -1;
+        }
+
+        var colZone = fc(['equipment affected', 'location or equipment']);
+        var colEquip = fc(['type of equipment']);
+        var colOH = fc(['existing occupied heating']);
+        var colOC = fc(['existing occupied cooling']);
+        var colUH = fc(['existing unoccupied heating']);
+        var colUC = fc(['existing unoccupied cooling']);
+        var colSched = fc(['existing occupied time']);
+        var colWknd = fc(['existing occupied sat']);
+
+        // Group rows by building name
+        var byBldg = {};
+        for (var i = headerIdx + 1; i < lines.length; i++) {
+          var cols = splitRow(lines[i]);
+          if (
+            cols.every(function (c) {
+              return !c;
+            })
+          )
+            continue;
+          var bName = (cols[colBldgName] || '').trim();
+          if (!bName) continue;
+          if (!byBldg[bName]) byBldg[bName] = [];
+
+          var schedText = colSched >= 0 ? cols[colSched] || '' : '';
+          if (schedText) schedText = 'M-F ' + schedText;
+          var wknd = colWknd >= 0 ? cols[colWknd] || '' : '';
+          if (wknd && wknd.toLowerCase() !== 'none') {
+            schedText += (schedText ? ' / ' : '') + 'Sat-Sun ' + wknd;
+          }
+
+          var zone = {
+            name: colZone >= 0 ? cols[colZone] || 'Zone ' + i : 'Zone ' + i,
+            occHeat: colOH >= 0 ? parseFloat(cols[colOH]) || null : null,
+            occCool: colOC >= 0 ? parseFloat(cols[colOC]) || null : null,
+            unoccHeat: colUH >= 0 ? parseFloat(cols[colUH]) || null : null,
+            unoccCool: colUC >= 0 ? parseFloat(cols[colUC]) || null : null,
+            schedule: schedText,
+          };
+          if (colEquip >= 0 && cols[colEquip]) zone.equipmentType = cols[colEquip];
+          byBldg[bName].push(zone);
+        }
+
+        // Match Excel building names to project buildings (fuzzy)
+        if (!p.setpoints) p.setpoints = [];
+        var totalZones = 0;
+        var matched = 0;
+        var unmatchedNames = [];
+        var matchLog = [];
+
+        var bldgNames = Object.keys(byBldg);
+        for (var bi = 0; bi < bldgNames.length; bi++) {
+          var xlName = bldgNames[bi];
+          var zones = byBldg[xlName];
+          var match = null;
+
+          // Try exact match first, then case-insensitive contains in either direction
+          for (var mi = 0; mi < bldgs.length; mi++) {
+            var bn = (bldgs[mi].name || '').toLowerCase();
+            var xn = xlName.toLowerCase();
+            if (bn === xn || bn.includes(xn) || xn.includes(bn)) {
+              match = bldgs[mi];
+              break;
+            }
+          }
+
+          if (match) {
+            var rec = p.setpoints.find(function (r) {
+              return r.buildingId === match.id;
+            });
+            if (rec) {
+              rec.zones = zones;
+            } else {
+              p.setpoints.push({ buildingId: match.id, zones: zones });
+            }
+            totalZones += zones.length;
+            matched++;
+            matchLog.push(xlName + ' → ' + match.name + ' (' + zones.length + ')');
+          } else {
+            unmatchedNames.push(xlName + ' (' + zones.length + ')');
+          }
+        }
+
+        sset('en_projects', projects);
+
+        var msg =
+          'Imported ' + totalZones + ' zones across ' + matched + ' building' + (matched !== 1 ? 's' : '') + ' ✓';
+        if (unmatchedNames.length) msg += '\nUnmatched: ' + unmatchedNames.join(', ');
+        showToast(msg);
+        console.log('[Set Points Import] Matched:', matchLog, 'Unmatched:', unmatchedNames);
         renderSetpointsTab(projId);
       }
 
