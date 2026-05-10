@@ -41868,7 +41868,8 @@
 
         const isElec = m.commodity === 'Electric';
         const isPropane = m.commodity === 'Propane';
-        const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
+        const { byYm: weatherByYm } = getWeatherForBuilding();
+        const allRows = bills.length ? getNormRows(m, bills, incl, weatherByYm) : [];
         const blRows = allRows.filter((r) => bl.months.includes(r.ym));
         const blEnd = bl.months.slice().sort().pop();
         const postRows = allRows.filter((r) => r.ym > blEnd);
@@ -41890,12 +41891,39 @@
           blPropaneCostByCalMo[mo] = v.cost;
         });
 
+        // kW weather normalization via CDD regression (matches renderPerfPane)
+        const _kwNormByYm = {};
+        if (isElec) {
+          const _hasRegrP = allRows.some((r) => r.regrBaseline != null);
+          if (_hasRegrP) {
+            const pts = blRows
+              .map((r) => {
+                const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
+                const kw = bfr.length ? bfr.reduce((s, b) => s + (parseFloat(b.demandKW) || 0), 0) / bfr.length : 0;
+                return { x: r.cdd != null ? r.cdd : 0, y: kw };
+              })
+              .filter((p) => p.y > 0);
+            if (pts.length >= 3) {
+              const n = pts.length;
+              const mx = pts.reduce((s, p) => s + p.x, 0) / n;
+              const my = pts.reduce((s, p) => s + p.y, 0) / n;
+              const ssxx = pts.reduce((s, p) => s + (p.x - mx) ** 2, 0);
+              const ssxy = pts.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0);
+              if (ssxx > 0) {
+                const slope = ssxy / ssxx;
+                const intercept = my - slope * mx;
+                allRows.forEach((r) => {
+                  const cdd = r.cdd != null ? r.cdd : 0;
+                  _kwNormByYm[r.ym] = Math.max(0, intercept + slope * cdd);
+                });
+              }
+            }
+          }
+        }
+
         const rawUsageByYm = {};
         if (!isElec) {
           if (isPropane) {
-            // For propane, "raw usage" per norm-month comes from HDD-normalized
-            // deliveries already computed in getNormRows / normalizePropaneDeliveries.
-            // Use the allRows data which already has normalized gallons per month.
             allRows.forEach((r) => {
               rawUsageByYm[r.ym] = r.usage;
             });
@@ -41908,7 +41936,6 @@
           }
         }
 
-        // Expected usage per calendar month — use buildMoMap (same source as Meter Performance table)
         const _calMoMap = isElec ? eMo : m.commodity === 'Gas' ? gMo : isPropane ? pMo || {} : {};
         const blByCalMo = {};
         Object.entries(_calMoMap).forEach(([mo, v]) => {
@@ -41918,7 +41945,6 @@
         const hasRegrP = allRows.some((r) => r.regrBaseline != null);
         const blAvg = blRows.length ? blRows.reduce((s, r) => s + r.usage, 0) / blRows.length : 0;
 
-        // For electric: also need raw kWh by YM for actual usage
         if (isElec) {
           bills.forEach((b) => {
             const ym = normMonth(b.start, b.end, incl, bills);
@@ -41929,14 +41955,11 @@
 
         postRows.forEach((r) => {
           const calMo = parseInt(r.ym.split('-')[1]) - 1;
-          // For propane, bills won't match via normMonth (start===end), so
-          // we use the normalized row data directly instead of raw bill lookup.
           const bfr = isPropane ? [] : bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
           if (!isPropane && !bfr.length) return;
 
           let totalCostSav = 0;
 
-          // Expected usage for this calendar month (from regression or baseline average)
           const expUsage =
             hasBlCalMap && blByCalMo[calMo] != null
               ? blByCalMo[calMo]
@@ -41946,18 +41969,14 @@
           const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
 
           if (isElec) {
-            // kWh savings = (Expected - Actual) × current blended $/kWh rate
-            // Always use actual costs/usage for rate — stored totalKwhRate sums
-            // on-peak + off-peak rates which double-counts (a kWh is one or the other)
             const actKwh = actUsage;
             const kwhCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwhCost || 0), 0);
             const kwhRate = actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0;
             const kwhSaved = expUsage - actKwh;
             const kwhCostSav = kwhRate > 0 ? kwhSaved * kwhRate : 0;
 
-            // kW savings = (Expected kW - Actual billed kW) × current $/kW rate
-            // Use billed kW (max across bills) to match the table row calculation
-            const blExpKW = blDemKWByCalMo[calMo] || 0;
+            // Use weather-normalized baseline kW when available (matches renderPerfPane)
+            const blExpKW = _kwNormByYm[r.ym] != null ? _kwNormByYm[r.ym] : blDemKWByCalMo[calMo] || 0;
             const actBilKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.billedKW || b.demandKW || 0))) : 0;
             const actDemKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.demandKW || 0))) : 0;
             const kwCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwCost || 0), 0);
@@ -42001,19 +42020,27 @@
          quarters are not confused with Year 1 calendar months.
       ───────────────────────────────────────────────────────────── */
       function getMeterPerfSavingsByYM(m, bills, incl) {
-        const result = {};
         const bl = m.baseline;
-        if (!bl || !bl.months || bl.months.length < 3) return result;
+        if (!bl || !bl.months || bl.months.length < 3) return {};
 
+        // Cache: return stored result if bills haven't changed
+        const cacheKey = bills.length + '_' + (bills[0]?.start || '') + '_' + (bills[bills.length - 1]?.end || '');
+        if (m._savingsByYM && m._savingsCacheKey === cacheKey) return m._savingsByYM;
+
+        const result = {};
         const isElec = m.commodity === 'Electric';
         const isPropane = m.commodity === 'Propane';
-        const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
+        const { byYm: weatherByYm } = getWeatherForBuilding();
+        const allRows = bills.length ? getNormRows(m, bills, incl, weatherByYm) : [];
         const blRows = allRows.filter((r) => bl.months.includes(r.ym));
         const blEnd = bl.months.slice().sort().pop();
         const postRows = allRows.filter((r) => r.ym > blEnd);
-        if (!postRows.length) return result;
+        if (!postRows.length) {
+          m._savingsByYM = result;
+          m._savingsCacheKey = cacheKey;
+          return result;
+        }
 
-        // Use buildMoMap for baseline — same authoritative source as the Meter Performance table
         const { elecByMo: eMo, gasByMo: gMo, propaneByMo: pMo } = buildMoMap(m, blRows, bills, incl);
         const _moMap = isElec ? eMo : m.commodity === 'Gas' ? gMo : isPropane ? pMo : {};
         const blByCalMo = {};
@@ -42025,6 +42052,33 @@
         const hasBlCalMap = Object.keys(blByCalMo).length > 0;
         const hasRegrP = allRows.some((r) => r.regrBaseline != null);
         const blAvg = blRows.length ? blRows.reduce((s, r) => s + r.usage, 0) / blRows.length : 0;
+
+        // kW weather normalization via CDD regression (matches renderPerfPane)
+        const _kwNormByYm = {};
+        if (isElec && hasRegrP) {
+          const pts = blRows
+            .map((r) => {
+              const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
+              const kw = bfr.length ? bfr.reduce((s, b) => s + (parseFloat(b.demandKW) || 0), 0) / bfr.length : 0;
+              return { x: r.cdd != null ? r.cdd : 0, y: kw };
+            })
+            .filter((p) => p.y > 0);
+          if (pts.length >= 3) {
+            const n = pts.length;
+            const mx = pts.reduce((s, p) => s + p.x, 0) / n;
+            const my = pts.reduce((s, p) => s + p.y, 0) / n;
+            const ssxx = pts.reduce((s, p) => s + (p.x - mx) ** 2, 0);
+            const ssxy = pts.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0);
+            if (ssxx > 0) {
+              const slope = ssxy / ssxx;
+              const intercept = my - slope * mx;
+              allRows.forEach((r) => {
+                const cdd = r.cdd != null ? r.cdd : 0;
+                _kwNormByYm[r.ym] = Math.max(0, intercept + slope * cdd);
+              });
+            }
+          }
+        }
 
         const rawUsageByYm = {};
         if (!isElec) {
@@ -42068,7 +42122,8 @@
             const kwhRate = actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0;
             const kwhSaved = expUsage - actKwh;
             const kwhCostSav = kwhRate > 0 ? kwhSaved * kwhRate : 0;
-            const blExpKW = blDemKWByCalMo[calMo] || 0;
+            // Use weather-normalized baseline kW when available (matches renderPerfPane)
+            const blExpKW = _kwNormByYm[r.ym] != null ? _kwNormByYm[r.ym] : blDemKWByCalMo[calMo] || 0;
             const actBilKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.billedKW || b.demandKW || 0))) : 0;
             const actDemKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.demandKW || 0))) : 0;
             const kwCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwCost || 0), 0);
@@ -42092,10 +42147,41 @@
             totalCostSav = thermRate > 0 ? (expUsage - actTherms) * thermRate : 0;
           }
 
-          // Key by YYYY-MM (not calendar month) so each specific month is tracked independently
           result[r.ym] = (result[r.ym] || 0) + totalCostSav;
         });
 
+        m._savingsByYM = result;
+        m._savingsCacheKey = cacheKey;
+        return result;
+      }
+
+      // Rollup: sum meter savings for a building
+      function getBuildingSavingsByYM(bldg, projId) {
+        const proj = getUDProj(projId);
+        if (!proj || !bldg || !bldg.meters) return {};
+        const incl = proj.inclMonths || {};
+        const result = {};
+        bldg.meters.forEach((m) => {
+          const bills = (m.bills || []).slice().sort((a, c) => (a.start || '').localeCompare(c.start || ''));
+          const mSav = getMeterPerfSavingsByYM(m, bills, incl);
+          Object.entries(mSav).forEach(([ym, v]) => {
+            result[ym] = (result[ym] || 0) + v;
+          });
+        });
+        return result;
+      }
+
+      // Rollup: sum building savings for a project
+      function getProjectSavingsByYM(projId) {
+        const proj = getUDProj(projId);
+        if (!proj || !proj.buildings) return {};
+        const result = {};
+        proj.buildings.forEach((b) => {
+          const bSav = getBuildingSavingsByYM(b, projId);
+          Object.entries(bSav).forEach(([ym, v]) => {
+            result[ym] = (result[ym] || 0) + v;
+          });
+        });
         return result;
       }
 
