@@ -42490,21 +42490,32 @@
         // Cost Delta = exact sum of the Total Savings ($) column values
         const savCost = _perfRowSavings.length ? _perfRowSavings.reduce((s, d) => s + d.savings, 0) : null;
 
-        // Quarterly savings: current quarter's Total Savings and projected full-quarter
+        // Quarterly savings: current quarter first, fall back to most recent quarter with data
         const _qtrSavings = (() => {
+          if (!_perfRowSavings.length) return { total: null, projected: null, monthsWithData: 0, label: '' };
+          const _qtrMonths = (y, q) => [0, 1, 2].map((i) => y + '-' + String(q * 3 + i + 1).padStart(2, '0'));
+          const _qtrLabel = (q) => ['Q1', 'Q2', 'Q3', 'Q4'][q];
           const now = new Date();
           const curY = now.getFullYear();
-          const curQ = Math.floor(now.getMonth() / 3); // 0-3
-          const qStartMo = curQ * 3; // 0,3,6,9
-          const qMonths = [0, 1, 2].map((i) => {
-            const mo = qStartMo + i + 1; // 1-12
-            return curY + '-' + String(mo).padStart(2, '0');
-          });
-          const qtrRows = _perfRowSavings.filter((d) => qMonths.includes(d.ym));
+          const curQ = Math.floor(now.getMonth() / 3);
+          // Try current quarter first
+          let qMonths = _qtrMonths(curY, curQ);
+          let qtrRows = _perfRowSavings.filter((d) => qMonths.includes(d.ym));
+          let label = _qtrLabel(curQ) + ' ' + curY;
+          // If no data in current quarter, find most recent quarter with data
+          if (!qtrRows.length) {
+            const sortedYms = _perfRowSavings.map((d) => d.ym).sort();
+            const lastYm = sortedYms[sortedYms.length - 1];
+            const [ly, lm] = lastYm.split('-').map(Number);
+            const lastQ = Math.floor((lm - 1) / 3);
+            qMonths = _qtrMonths(ly, lastQ);
+            qtrRows = _perfRowSavings.filter((d) => qMonths.includes(d.ym));
+            label = _qtrLabel(lastQ) + ' ' + ly;
+          }
           const qtrTotal = qtrRows.reduce((s, d) => s + d.savings, 0);
           const monthsWithData = qtrRows.length;
-          const projected = monthsWithData > 0 ? (qtrTotal / monthsWithData) * 3 : null;
-          return { total: monthsWithData > 0 ? qtrTotal : null, projected, monthsWithData };
+          const projected = monthsWithData > 0 && monthsWithData < 3 ? (qtrTotal / monthsWithData) * 3 : null;
+          return { total: monthsWithData > 0 ? qtrTotal : null, projected, monthsWithData, label };
         })();
 
         // ── Stats pills (built AFTER savings pre-computation) ──
@@ -42532,12 +42543,12 @@
           (_qtrSavings.total !== null
             ? blPill(
                 _savFmtPill(_qtrSavings.total),
-                'Qtr Savings (' + _qtrSavings.monthsWithData + '/3 mo)',
+                _qtrSavings.label + ' Savings (' + _qtrSavings.monthsWithData + '/3 mo)',
                 _qtrSavings.total >= 0 ? 'var(--em)' : 'var(--danger)',
               )
             : '') +
           (_qtrSavings.projected !== null && _qtrSavings.monthsWithData < 3
-            ? blPill(_savFmtPill(_qtrSavings.projected), 'Projected Qtr Savings', 'var(--warn)')
+            ? blPill(_savFmtPill(_qtrSavings.projected), 'Projected ' + _qtrSavings.label + ' Savings', 'var(--warn)')
             : '') +
           (blEUI != null ? blPill(blEUI.toFixed(1) + ' kBtu/sf/yr', 'Baseline EUI') : '') +
           (rolling12EUI != null ? blPill(rolling12EUI.toFixed(1) + ' kBtu/sf/yr', '12-Mo EUI', 'var(--warn)') : '') +
