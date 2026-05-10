@@ -49813,12 +49813,27 @@
           var displayClient = yearClient;
           var periodNote = '';
           if (isCurrentYr && isQuarterly) {
-            displayProj = qTarget;
-            displayCsc = (qTarget * cscPct) / 100;
-            displayClient = (qTarget * clientPct) / 100;
-            periodNote = ' (Q' + q + ')';
+            // Blend actual savings for completed quarters with projected for remaining
+            // q = reported (last completed) quarter (1-based)
+            // Quarters 1..q are completed → use actualSavings for their total
+            // Quarters (q+1)..4 are future → sum their projected targets
+            var remainingProj = 0;
+            for (var qi = q; qi < 4; qi++) {
+              remainingProj += qTargets[qi] || 0;
+            }
+            displayProj = actualSavings + remainingProj;
+            displayCsc = (displayProj * cscPct) / 100;
+            displayClient = (displayProj * clientPct) / 100;
+            periodNote = ' (thru Q' + q + ')';
           }
-          const pace = isCurrentYr && displayProj > 0 ? Math.round((actualSavings / displayProj) * 100) : null;
+          // Pace: compare actual-to-date against projected-to-date (sum of targets for completed quarters)
+          var projToDate =
+            isCurrentYr && isQuarterly
+              ? qTargets.slice(0, q).reduce(function (s, v) {
+                  return s + (v || 0);
+                }, 0)
+              : displayProj;
+          const pace = isCurrentYr && projToDate > 0 ? Math.round((actualSavings / projToDate) * 100) : null;
           totalProj += yearProj;
           totalCsc += yearCsc;
           totalClient += yearClient;
@@ -49846,7 +49861,9 @@
             $c(isCurrentYr && isQuarterly ? displayClient : yearClient) +
             '</td>' +
             '<td class="rpt-n">' +
-            (isCurrentYr ? $c(actualSavings) : '—') +
+            (isCurrentYr
+              ? $c(actualSavings) + (isQuarterly ? '<div style="font-size:6px;color:#888">thru Q' + q + '</div>' : '')
+              : '—') +
             '</td>' +
             '<td class="rpt-n">' +
             (isCurrentYr && pace !== null
