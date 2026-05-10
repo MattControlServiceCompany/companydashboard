@@ -48274,21 +48274,23 @@
           // Target vs Actual + progress bar
           '<div class="rpt-vs-box">' +
           '<div class="rpt-vs-side">' +
+          '<div class="rpt-vs-val" style="color:' +
+          (d.totals.savings >= target ? '#1e8449' : '#e67e22') +
+          '" contenteditable="true">' +
+          $c(d.totals.savings) +
+          '</div>' +
+          '<div class="rpt-vs-lbl">Actual Q' +
+          q +
+          ' Savings</div>' +
+          '</div>' +
+          '<div class="rpt-vs-mid">vs</div>' +
+          '<div class="rpt-vs-side">' +
           '<div class="rpt-vs-val" style="color:#1a5276" contenteditable="true">' +
           $c(target) +
           '</div>' +
           '<div class="rpt-vs-lbl">Q' +
           q +
           ' Target</div>' +
-          '</div>' +
-          '<div class="rpt-vs-mid">vs</div>' +
-          '<div class="rpt-vs-side">' +
-          '<div class="rpt-vs-val" style="color:' +
-          (d.totals.savings >= target ? '#1e8449' : '#e67e22') +
-          '" contenteditable="true">' +
-          $c(d.totals.savings) +
-          '</div>' +
-          '<div class="rpt-vs-lbl">Actual Savings</div>' +
           '</div>' +
           '</div>' +
           '<div class="rpt-progress-bar">' +
