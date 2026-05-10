@@ -50482,10 +50482,11 @@
           'November',
           'December',
         ];
+        var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         function moLabel(ym) {
           if (!ym) return '';
           var parts = ym.split('-');
-          return MO_ABBR[parseInt(parts[1], 10) - 1] || ym;
+          return MO_SHORT[parseInt(parts[1], 10) - 1] || ym;
         }
         function moFullLabel(ym) {
           if (!ym) return '—';
@@ -50587,7 +50588,7 @@
             '</div>';
 
           return (
-            '<div style="display:flex;flex-wrap:wrap;gap:2px;align-items:flex-end;padding:4px 0">' +
+            '<div style="display:flex;flex-wrap:nowrap;gap:2px;align-items:flex-end;padding:4px 0;overflow:hidden">' +
             bars +
             '</div>' +
             legend
