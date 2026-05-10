@@ -16174,7 +16174,7 @@
       function renderSavingsFooter(projId, sd) {
         const tfoot = document.getElementById('sv-matrix-foot-' + projId);
         if (!tfoot) return;
-        const selMsrs = sd.measures.filter((m) => m.selected);
+        const selMsrs = sd.measures.filter((m) => m.selected !== false);
         const totKwh = Array(12).fill(0),
           totKw = Array(12).fill(0),
           totGas = Array(12).fill(0),
@@ -16185,7 +16185,14 @@
           m.kw.forEach((v, i) => (totKw[i] += parseFloat(v) || 0));
           m.gas.forEach((v, i) => (totGas[i] += parseFloat(v) || 0));
           (m.propane || []).forEach((v, i) => (totPropane[i] += parseFloat(v) || 0));
-          grandTotal += parseFloat(m.totalDollar) || 0;
+          const rates = m.rates || (sd.blRates || {})[m.bldgId] || {};
+          for (let mo = 0; mo < 12; mo++) {
+            const s = SUMMER_MOS.includes(mo);
+            grandTotal += (parseFloat(m.kwh[mo]) || 0) * (s ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
+            grandTotal += (parseFloat(m.kw[mo]) || 0) * (s ? rates.kwSummer || 0 : rates.kwWinter || 0);
+            grandTotal += (parseFloat(m.gas[mo]) || 0) * (rates.thermRate || 0);
+            grandTotal += (parseFloat((m.propane || [])[mo]) || 0) * (rates.gallonRate || 0);
+          }
         });
         const fmtN = (v) => (v ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '');
         // Footer usage cells (collapsible months + total)
@@ -16234,12 +16241,12 @@
         const annKwAvg = totKw.reduce((a, b) => a + b, 0) / 12;
         const annGas = totGas.reduce((a, b) => a + b, 0);
         const annPropane = (totPropane || []).reduce((a, b) => a + b, 0);
-        const selCount = (sd.measures || []).filter((m) => m.selected).length;
+        const selCount = (sd.measures || []).filter((m) => m.selected !== false).length;
         if (!selCount) {
           el.innerHTML = '';
           return;
         }
-        const selMsrs = (sd.measures || []).filter((m) => m.selected);
+        const selMsrs = (sd.measures || []).filter((m) => m.selected !== false);
         const totImpl = selMsrs.reduce((s, m) => s + (parseFloat(m.implCost) || 0), 0);
         const totIncent = selMsrs.reduce((s, m) => s + (parseFloat(m.incentive) || 0), 0);
         const netCost = totImpl - totIncent;
@@ -16621,7 +16628,7 @@
         }
 
         // ── Footer totals ──
-        const selMsrs = sd.measures.filter((m) => m.selected);
+        const selMsrs = sd.measures.filter((m) => m.selected !== false);
         const totKwh = Array(12).fill(0),
           totKw = Array(12).fill(0),
           totGas = Array(12).fill(0),
@@ -16632,7 +16639,14 @@
           m.kw.forEach((v, i) => (totKw[i] += parseFloat(v) || 0));
           m.gas.forEach((v, i) => (totGas[i] += parseFloat(v) || 0));
           (m.propane || []).forEach((v, i) => (totPropane[i] += parseFloat(v) || 0));
-          grandTotal += parseFloat(m.totalDollar) || 0;
+          const rates = m.rates || (sd.blRates || {})[m.bldgId] || {};
+          for (let mo = 0; mo < 12; mo++) {
+            const s = SUMMER_MOS.includes(mo);
+            grandTotal += (parseFloat(m.kwh[mo]) || 0) * (s ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
+            grandTotal += (parseFloat(m.kw[mo]) || 0) * (s ? rates.kwSummer || 0 : rates.kwWinter || 0);
+            grandTotal += (parseFloat(m.gas[mo]) || 0) * (rates.thermRate || 0);
+            grandTotal += (parseFloat((m.propane || [])[mo]) || 0) * (rates.gallonRate || 0);
+          }
         });
         const fmtN = (v) => (v ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '');
 
@@ -53234,7 +53248,14 @@
           if (selMsrs.length) {
             _hasMeasures = true;
             selMsrs.forEach((m) => {
-              measureBasedProjSav += m.totalDollar || 0;
+              const rates = m.rates || (p.savingsData.blRates || {})[m.bldgId] || {};
+              for (let mo = 0; mo < 12; mo++) {
+                const s = SUMMER_MOS.includes(mo);
+                measureBasedProjSav += (parseFloat(m.kwh[mo]) || 0) * (s ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
+                measureBasedProjSav += (parseFloat(m.kw[mo]) || 0) * (s ? rates.kwSummer || 0 : rates.kwWinter || 0);
+                measureBasedProjSav += (parseFloat(m.gas[mo]) || 0) * (rates.thermRate || 0);
+                measureBasedProjSav += (parseFloat((m.propane || [])[mo]) || 0) * (rates.gallonRate || 0);
+              }
             });
           }
         }
