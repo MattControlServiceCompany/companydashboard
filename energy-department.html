@@ -34432,39 +34432,30 @@
           const moBase = aggBaseMoMap();
           const annBase = Object.values(moBase).reduce((s, v) => s + v, 0);
 
-          // Compute actual monthly projected savings from measures (with % fallback)
+          // Compute actual monthly projected savings from measures only (skip excluded buildings)
           const projSavByMo = Array(12).fill(0);
           let _msrBldgCount = 0;
           bldgs.forEach((b) => {
+            const _bMeters = b.meters || [];
+            if (_bMeters.length > 0 && _bMeters.every((m) => m.baselineInclude === false)) return;
             const msrSav = getBldgMeasureSavingsByMo(udSelProjId, b.id);
             if (msrSav) {
               _msrBldgCount++;
               msrSav.forEach((v, mo) => {
                 projSavByMo[mo] += v;
               });
-            } else {
-              const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-              let bspCfg = {};
-              try {
-                bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
-              } catch (e) {}
-              const savPct = (bspCfg.savingsPct ?? 11) / 100;
-              const bMoBase = aggBaseMoMapForBldgs([b]);
-              for (let mo = 0; mo < 12; mo++) projSavByMo[mo] += (bMoBase[mo] || 0) * savPct;
             }
           });
           const annProjSav = projSavByMo.reduce((s, v) => s + v, 0);
           const avgSavPct = annBase > 0 ? annProjSav / annBase : 0;
-          const _pctBldgCount = bldgs.length - _msrBldgCount;
           const _srcLabel =
             _msrBldgCount > 0
               ? '<div style="font-size:10px;color:var(--accent);margin-top:2px">\u{1F4CA} Source: Energy Savings Measures (' +
                 _msrBldgCount +
                 ' building' +
                 (_msrBldgCount !== 1 ? 's' : '') +
-                (_pctBldgCount > 0 ? ' + ' + _pctBldgCount + ' at default %' : '') +
                 ')</div>'
-              : '<div style="font-size:10px;color:var(--text3);margin-top:2px">\u{1F4CA} Source: Savings %</div>';
+              : '<div style="font-size:10px;color:var(--text3);margin-top:2px">\u{1F4CA} No measures configured</div>';
 
           const tdN = (v, color = 'var(--text)') =>
             `<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${color};border:1px solid var(--border);white-space:nowrap">${$f(v, 2)}</td>`;
@@ -47203,13 +47194,14 @@
             const isElec = m.commodity === 'Electric';
             const isPropane = m.commodity === 'Propane';
 
-            // Expected usage by calendar month (from baseline)
+            // Expected usage by calendar month — use buildMoMap (matches canonical savings function)
+            const _moMapR = isElec ? eM : m.commodity === 'Gas' ? gM : isPropane ? pM : {};
             const blByCalMo = {};
-            blRows.forEach((r) => {
-              const mo = parseInt(r.ym.split('-')[1]) - 1;
-              blByCalMo[mo] = r.regrBaseline != null ? r.regrBaseline : r.usage;
+            Object.entries(_moMapR).forEach(([mo, v]) => {
+              blByCalMo[mo] = isElec ? v.kwh : m.commodity === 'Gas' ? v.therms : isPropane ? v.gallons : v.kgal;
             });
             const hasBlCalMap = Object.keys(blByCalMo).length >= 3;
+            const hasRegrP = allRows.some((r) => r.regrBaseline != null);
             const blAvg = blRows.length ? blRows.reduce((s, r) => s + r.usage, 0) / blRows.length : 0;
 
             // Baseline demand kW by calendar month (electric only)
@@ -62884,28 +62876,19 @@
           egfxUnitsSaved.gallons = totalBlPropane - r12Propane * r12Scale;
         }
 
-        // Projected Savings card — from measures (with % fallback)
+        // Projected Savings card — from measures only (buildings with all meters excluded are skipped)
         const projSavEl = document.getElementById(`egfx-projSav-${projId}`);
         const projSavSubEl = document.getElementById(`egfx-projSavSub-${projId}`);
         if (projSavEl) {
           let annProjSav = 0;
           let _egfxHasSrc = false;
           bldgs.forEach((b) => {
+            const _bMeters = b.meters || [];
+            if (_bMeters.length > 0 && _bMeters.every((m) => m.baselineInclude === false)) return;
             const msrSav = getBldgMeasureSavingsByMo(projId, b.id);
             if (msrSav) {
               _egfxHasSrc = true;
               annProjSav += msrSav.reduce((s, v) => s + v, 0);
-            } else {
-              const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-              let bspCfg = {};
-              try {
-                bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
-              } catch (e) {}
-              const savPct = (bspCfg.savingsPct ?? 0) / 100;
-              if (savPct > 0) {
-                _egfxHasSrc = true;
-                annProjSav += totalBlCost > 0 ? (totalBlCost * savPct) / bldgs.length : 0;
-              }
             }
           });
           if (_egfxHasSrc && annProjSav > 0) {
