@@ -41783,20 +41783,21 @@
             // kWh savings = (Expected - Actual) × current blended $/kWh rate
             // Always use actual costs/usage for rate — stored totalKwhRate sums
             // on-peak + off-peak rates which double-counts (a kWh is one or the other)
-            const n = bfr.length;
             const actKwh = actUsage;
             const kwhCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwhCost || 0), 0);
             const kwhRate = actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0;
             const kwhSaved = expUsage - actKwh;
             const kwhCostSav = kwhRate > 0 ? kwhSaved * kwhRate : 0;
 
-            // kW savings = (Expected kW - Actual kW) × current $/kW rate
+            // kW savings = (Expected kW - Actual billed kW) × current $/kW rate
+            // Use billed kW (max across bills) to match the table row calculation
             const blExpKW = blDemKWByCalMo[calMo] || 0;
-            const actDemKW = bfr.reduce((s, b) => s + parseFloat(b.demandKW || 0), 0) / Math.max(1, n);
+            const actBilKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.billedKW || b.demandKW || 0))) : 0;
+            const actDemKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.demandKW || 0))) : 0;
             const kwCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwCost || 0), 0);
             const facKWCostAmt = bfr.reduce((s, b) => s + parseFloat(b.facKWCost || 0), 0);
             const moKwRate = actDemKW > 0 ? (kwCostAmt + facKWCostAmt) / actDemKW : 0;
-            const kwSaved = blExpKW - actDemKW;
+            const kwSaved = blExpKW - actBilKW;
             const kwCostSav = blExpKW > 0 && moKwRate > 0 ? kwSaved * moKwRate : 0;
 
             totalCostSav = kwhCostSav + kwCostSav;
@@ -41900,18 +41901,19 @@
           const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
 
           if (isElec) {
-            const n = bfr.length;
             const actKwh = actUsage;
             const kwhCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwhCost || 0), 0);
             const kwhRate = actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0;
             const kwhSaved = expUsage - actKwh;
             const kwhCostSav = kwhRate > 0 ? kwhSaved * kwhRate : 0;
             const blExpKW = blDemKWByCalMo[calMo] || 0;
-            const actDemKW = bfr.reduce((s, b) => s + parseFloat(b.demandKW || 0), 0) / Math.max(1, n);
+            // Use billed kW (max across bills) to match the table row calculation
+            const actBilKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.billedKW || b.demandKW || 0))) : 0;
+            const actDemKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.demandKW || 0))) : 0;
             const kwCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwCost || 0), 0);
             const facKWCostAmt = bfr.reduce((s, b) => s + parseFloat(b.facKWCost || 0), 0);
             const moKwRate = actDemKW > 0 ? (kwCostAmt + facKWCostAmt) / actDemKW : 0;
-            const kwSaved = blExpKW - actDemKW;
+            const kwSaved = blExpKW - actBilKW;
             const kwCostSav = blExpKW > 0 && moKwRate > 0 ? kwSaved * moKwRate : 0;
             totalCostSav = kwhCostSav + kwCostSav;
           } else if (isPropane) {
@@ -42090,13 +42092,16 @@
         const totalSavings = totalExpected - totalActual;
         const savPct = totalExpected > 0 ? (totalSavings / totalExpected) * 100 : 0;
 
-        // Sum per-month cost savings from getMeterPerfSavingsByCalMo instead of
-        // comparing raw period totals (which breaks when baseline and post-baseline
-        // have different month counts).
-        const _perfSavByMo = getMeterPerfSavingsByCalMo(m, bills, incl);
-        const _postYms = new Set(filteredPostRows.map((r) => parseInt(r.ym.split('-')[1]) - 1));
-        const savCost = Object.keys(_perfSavByMo).length
-          ? Object.entries(_perfSavByMo).reduce((s, [mo, v]) => s + v, 0)
+        // Sum per-month cost savings keyed by full YYYY-MM so multi-year data
+        // doesn't double-count the same calendar month index.
+        // Filter to only filteredPostRows months so Cost Delta matches the table total.
+        const _perfSavByYM = getMeterPerfSavingsByYM(m, bills, incl);
+        const _postYmSet = new Set(filteredPostRows.map((r) => r.ym));
+        const savCost = Object.keys(_perfSavByYM).length
+          ? (() => {
+              const filtered = Object.entries(_perfSavByYM).filter(([ym]) => _postYmSet.has(ym));
+              return filtered.length ? filtered.reduce((s, [, v]) => s + v, 0) : null;
+            })()
           : null;
 
         const last12post = truePostRows.slice(-12);
@@ -42565,13 +42570,12 @@
             '</div>' +
             '<div class="ma-chart-wrap"><canvas id="perfChart"></canvas></div>' +
             '<div style="display:flex;gap:10px;margin-top:8px;font-size:11px;color:var(--text2);flex-wrap:wrap">' +
-            '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(120,130,160,0.45);border-radius:2px;display:inline-block"></span>Pre-Baseline</span>' +
-            '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(0,212,170,0.8);border-radius:2px;display:inline-block"></span>Baseline</span>' +
-            '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(100,160,255,0.75);border-radius:2px;display:inline-block"></span>Post-Baseline</span>' +
+            '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(120,130,160,0.45);border-radius:2px;display:inline-block"></span>Pre-Baseline (Actual)</span>' +
+            '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(0,212,170,0.8);border-radius:2px;display:inline-block"></span>Baseline (Actual)</span>' +
+            '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:rgba(100,160,255,0.75);border-radius:2px;display:inline-block"></span>Post-Baseline (Actual)</span>' +
             (hasRegr_p
-              ? '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:rgba(139,92,246,0.9);border-radius:1px;display:inline-block"></span>Baseline (Normalized)</span>'
+              ? '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:rgba(142,68,173,0.9);border-radius:1px;display:inline-block"></span>Baseline (Normalized)</span>'
               : '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:var(--warn);border-radius:1px;display:inline-block"></span>Baseline Avg</span>') +
-            '<span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:3px;background:rgba(251,146,60,0.9);border-radius:1px;display:inline-block"></span>Actual</span>' +
             '</div>' +
             (isElec && hasPerfKwData
               ? '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:16px 0 8px">Actual kW Demand — All Periods</div>' +
@@ -42790,8 +42794,8 @@
         const yLabel = isTotal ? unit + '/Month' : unit + '/Day';
         const hasRegr = rows.some((r) => r.regrBaseline != null);
 
-        // Bars = Normalized Baseline when regression active; fallback to prorated usage
-        const barData = hasRegr
+        // Bars = Actual usage; Baseline shown as a line (purple when regression active)
+        const blLineData = hasRegr
           ? rows.map((r) =>
               r.regrBaseline == null
                 ? null
@@ -42799,39 +42803,11 @@
                   ? +r.regrBaseline.toFixed(0)
                   : +(r.regrBaseline / r.normDays).toFixed(2),
             )
-          : mainData;
-        const barLabel = hasRegr ? 'Baseline ' + unit : yLabel;
+          : rows.map(() => blRef);
 
-        const datasets = [
-          {
-            label: barLabel,
-            data: barData,
-            backgroundColor: colors,
-            borderColor: colors.map((c) => c.replace(/[\d.]+\)$/, '1)')),
-            borderWidth: 1,
-            borderRadius: 3,
-            order: 3,
-          },
-        ];
-
-        // Flat baseline average dashed line (fallback when no regression)
-        if (!hasRegr) {
-          datasets.push({
-            label: 'Baseline Avg',
-            data: rows.map(() => blRef),
-            type: 'line',
-            borderColor: 'rgba(245,158,11,0.9)',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            borderDash: [5, 4],
-            pointRadius: 0,
-            order: 1,
-          });
-        }
-
-        // Raw bill overlay (orange) — always shown on Performance chart
+        // Build actual usage by norm-month from raw bills
+        const billByYmMain = {};
         if (bills && bills.length) {
-          const billByYm = {};
           bills.forEach((b) => {
             if (!b.start || !b.end) return;
             const ym = normMonth(b.start, b.end, incl, bills);
@@ -42843,25 +42819,41 @@
                   ? parseFloat(b.gallonsDelivered) || parseFloat(b.kwh) || 0 // Bug #139: propane uses gallonsDelivered
                   : parseFloat(b.usage) || 0;
             const days = Math.max(1, parseInt(calcDays(b.start, b.end, incl)) || 1);
-            if (!billByYm[ym] || usage > 0) billByYm[ym] = { usage, days };
-          });
-          datasets.push({
-            label: 'Actual ' + unit,
-            data: rows.map((r) => {
-              const bd = billByYm[r.ym];
-              return bd ? (isTotal ? +bd.usage.toFixed(0) : +(bd.usage / bd.days).toFixed(2)) : null;
-            }),
-            type: 'line',
-            borderColor: 'rgba(251,146,60,0.9)',
-            backgroundColor: 'rgba(251,146,60,0.12)',
-            borderWidth: 2,
-            pointRadius: 3,
-            pointBackgroundColor: 'rgba(251,146,60,1)',
-            tension: 0.3,
-            fill: false,
-            order: 0,
+            if (!billByYmMain[ym] || usage > 0) billByYmMain[ym] = { usage, days };
           });
         }
+
+        // Actual kWh bars (era-colored)
+        const datasets = [
+          {
+            label: 'Actual ' + unit,
+            data: rows.map((r) => {
+              const bd = billByYmMain[r.ym];
+              return bd ? (isTotal ? +bd.usage.toFixed(0) : +(bd.usage / bd.days).toFixed(2)) : null;
+            }),
+            backgroundColor: colors,
+            borderColor: colors.map((c) => c.replace(/[\d.]+\)$/, '1)')),
+            borderWidth: 1,
+            borderRadius: 3,
+            order: 3,
+          },
+        ];
+
+        // Baseline line — purple when regression active, amber dashed when fallback avg
+        datasets.push({
+          label: hasRegr ? 'Baseline ' + unit : 'Baseline Avg',
+          data: blLineData,
+          type: 'line',
+          borderColor: hasRegr ? 'rgba(142,68,173,0.9)' : 'rgba(245,158,11,0.9)',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          borderDash: [5, 4],
+          pointRadius: hasRegr ? 3 : 0,
+          pointBackgroundColor: hasRegr ? 'rgba(142,68,173,1)' : undefined,
+          tension: 0.3,
+          fill: false,
+          order: 1,
+        });
 
         _maCharts[canvasId] = new Chart(canvas, {
           type: 'bar',
