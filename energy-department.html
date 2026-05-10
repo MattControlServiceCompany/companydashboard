@@ -48578,7 +48578,8 @@
         for (var qi = 1; qi <= totalQtrs; qi++) {
           var _yrIdx = Math.ceil(qi / 4);
           var _escFactor = Math.pow(1 + _esc / 100, _yrIdx - 1);
-          _cumP += (annTarget / 4) * _escFactor;
+          var _qIdx = (qi - 1) % 4;
+          _cumP += (qTargets[_qIdx] || 0) * _escFactor;
           cumPoints.push({ q: qi, proj: _cumP });
         }
         const maxY = (_cumP || annTarget * yrs) * 1.1;
@@ -48595,12 +48596,13 @@
           return padT + cH - (v / maxY) * cH;
         };
 
-        // Per-quarter projected savings (not cumulative) for bars
+        // Per-quarter projected savings using actual quarterly targets
         const qtrProjVals = [];
         for (var qi2 = 1; qi2 <= totalQtrs; qi2++) {
           var _yrIdx2 = Math.ceil(qi2 / 4);
           var _escF2 = Math.pow(1 + _esc / 100, _yrIdx2 - 1);
-          qtrProjVals.push((annTarget / 4) * _escF2);
+          var _qIdx2 = (qi2 - 1) % 4;
+          qtrProjVals.push((qTargets[_qIdx2] || 0) * _escF2);
         }
         const maxBarVal = Math.max.apply(null, qtrProjVals) * 1.3 || 1;
 
@@ -48625,19 +48627,21 @@
           })
           .join('');
 
-        // X-axis labels — show only at year boundaries (every 4th quarter)
+        // X-axis labels — Q1-Q4 for each year
         const xAxisLabels = cumPoints
-          .filter(function (pt) {
-            return pt.q % 4 === 0;
-          })
           .map(function (pt) {
+            var qNum = ((pt.q - 1) % 4) + 1;
+            var yrNum = Math.ceil(pt.q / 4);
+            var label = qNum === 1 ? 'Y' + yrNum + ' Q1' : 'Q' + qNum;
             return (
               '<text x="' +
-              xScale(pt.q).toFixed(1) +
+              (padL + ((pt.q - 0.5) / totalQtrs) * cW).toFixed(1) +
               '" y="' +
               (svgH - 8) +
-              '" text-anchor="middle" font-size="8" fill="#888">Yr ' +
-              pt.q / 4 +
+              '" text-anchor="middle" font-size="' +
+              (totalQtrs > 12 ? '6' : '7') +
+              '" fill="#888">' +
+              label +
               '</text>'
             );
           })
@@ -48839,14 +48843,6 @@
                 $c(bl) +
                 '</td><td class="rpt-n">' +
                 $c(cur) +
-                '</td><td class="rpt-n" style="color:' +
-                (sav >= 0 ? '#1e8449' : '#c0392b') +
-                '">' +
-                $c(sav) +
-                '</td><td class="rpt-n" style="color:' +
-                (sav >= 0 ? '#1e8449' : '#c0392b') +
-                '">' +
-                pct +
                 '</td></tr>';
             });
             var _tPct = _tBl > 0 ? ((_tSav / _tBl) * 100).toFixed(1) + '%' : '—';
@@ -48855,15 +48851,9 @@
               $c(_tBl) +
               '</td><td class="rpt-n">' +
               $c(_tCur) +
-              '</td><td class="rpt-n" style="color:' +
-              (_tSav >= 0 ? '#1e8449' : '#c0392b') +
-              '">' +
-              $c(_tSav) +
-              '</td><td class="rpt-n">' +
-              _tPct +
               '</td></tr>';
             return (
-              '<h2>Monthly Savings Breakdown</h2><table class="rpt-table" style="font-size:8px"><thead><tr><th>Month</th><th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">Savings</th><th class="rpt-n">%</th></tr></thead><tbody>' +
+              '<h2>Monthly Cost Breakdown</h2><table class="rpt-table" style="font-size:8px"><thead><tr><th>Month</th><th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th></tr></thead><tbody>' +
               _rows +
               '</tbody></table>'
             );
@@ -49089,16 +49079,16 @@
         var annTableBody = blRow + (_yoyRows || curRow);
 
         const annTable =
-          '<table class="rpt-table" contenteditable="true">' +
-          '<thead><tr>' +
-          '<th>Year</th>' +
-          '<th class="rpt-n">kWh</th>' +
-          '<th class="rpt-n">Peak kW</th>' +
-          '<th class="rpt-n">Therms</th>' +
-          '<th class="rpt-n">Propane Gallons</th>' +
-          '<th class="rpt-n">Cost</th>' +
-          '<th class="rpt-n">EUI</th>' +
-          '<th class="rpt-n">versus Baseline</th>' +
+          '<table class="rpt-table" contenteditable="true" style="width:100%;table-layout:fixed">' +
+          '<thead><tr style="text-align:center;white-space:normal;word-wrap:break-word;line-height:1.2">' +
+          '<th style="width:12%">Year</th>' +
+          '<th class="rpt-n" style="width:14%">kWh</th>' +
+          '<th class="rpt-n" style="width:10%">Peak kW</th>' +
+          '<th class="rpt-n" style="width:12%">Therms</th>' +
+          '<th class="rpt-n" style="width:12%">Propane<br>Gal</th>' +
+          '<th class="rpt-n" style="width:14%">Cost</th>' +
+          '<th class="rpt-n" style="width:8%">EUI</th>' +
+          '<th class="rpt-n" style="width:12%">vs<br>Baseline</th>' +
           '</tr></thead>' +
           '<tbody>' +
           annTableBody +
