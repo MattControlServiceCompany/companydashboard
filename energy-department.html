@@ -49036,9 +49036,12 @@
               strongWeak = topCom.name + ' is the primary commodity.';
             }
 
-            // Use blCost - curCost for narrative so the math is always consistent
-            var rawSav = (b.blCost || 0) - (b.curCost || 0);
-            var rawSavPct = b.blCost > 0 ? (rawSav / b.blCost) * 100 : 0;
+            var rawSav =
+              ((b.electric && b.electric.costSaved) || 0) +
+              ((b.gas && b.gas.costSaved) || 0) +
+              ((b.propane && b.propane.costSaved) || 0);
+            var blAtCurRate = b.blCost || 0;
+            var rawSavPct = blAtCurRate > 0 ? (rawSav / blAtCurRate) * 100 : 0;
 
             if (b.status === 'on_track') {
               subtitle = 'On Track';
@@ -50564,7 +50567,8 @@
               sav = bl - cur;
             var blC = mo.blCost || 0,
               curC = mo.curCost || 0,
-              savC = blC - curC;
+              curRate = cur > 0 ? curC / cur : 0,
+              savC = sav * curRate;
             tBl += bl;
             tCur += cur;
             tSav += sav;
@@ -50853,7 +50857,7 @@
           var curKw = b.electric.kwCur || 0;
           var blCost = b.electric.costBl || 0;
           var curCost = b.electric.costCur || 0;
-          var savCost = b.electric.costSaved || blCost - curCost;
+          var savCost = b.electric.costSaved || 0;
           totBlKwh += blKwh;
           totCurKwh += curKwh;
           totSavKwh += savKwh;
@@ -51122,7 +51126,7 @@
           var savPct = blT > 0 ? (savT / blT) * 100 : 0;
           var blCost = b.gas.costBl || 0;
           var curCost = b.gas.costCur || 0;
-          var savCost = b.gas.costSaved || blCost - curCost;
+          var savCost = b.gas.costSaved || 0;
           totBlTherms += blT;
           totCurTherms += curT;
           totSavTherms += savT;
@@ -51365,7 +51369,7 @@
           var savPct = blG > 0 ? (savG / blG) * 100 : 0;
           var blCost = b.propane.costBl || 0;
           var curCost = b.propane.costCur || 0;
-          var savCost = b.propane.costSaved || blCost - curCost;
+          var savCost = b.propane.costSaved || 0;
           totBlGal += blG;
           totCurGal += curG;
           totSavGal += savG;
@@ -51580,7 +51584,7 @@
             var savPct = bl > 0 ? (sav / bl) * 100 : 0;
             var blC = c.costBl || 0;
             var curC = c.costCur || 0;
-            var savC = c.costSaved || blC - curC;
+            var savC = c.costSaved || 0;
             totBl += bl;
             totCur += cur;
             totSav += sav;
@@ -62069,6 +62073,7 @@
         const blCostAvg = blCost.map((v, mi) => v / (blYmPerMo[mi].size || 1));
         const totalBlCost = blCostAvg.reduce((a, b) => a + b, 0);
         const egfxSavByMo = {};
+        const egfxSavByYm = {};
         const egfxSavByCommodity = { Electric: 0, Gas: 0, Propane: 0 };
         const egfxUnitsSaved = { kwh: 0, kw: 0, therms: 0, gallons: 0 };
         const egfxCostSavedByCommodity = { Electric: 0, Gas: 0, Propane: 0 };
@@ -62081,10 +62086,14 @@
             const mBills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
             const mIncl = m.inclusive !== false;
             const sav = getMeterPerfSavingsByCalMo(m, mBills, mIncl);
+            const savYM = getMeterPerfSavingsByYM(m, mBills, mIncl);
             let meterCostSav = 0;
             Object.entries(sav).forEach(([mo, v]) => {
               egfxSavByMo[mo] = (egfxSavByMo[mo] || 0) + v;
               meterCostSav += v;
+            });
+            Object.entries(savYM).forEach(([ym, v]) => {
+              egfxSavByYm[ym] = (egfxSavByYm[ym] || 0) + v;
             });
             if (egfxCostSavedByCommodity[m.commodity] !== undefined) {
               egfxCostSavedByCommodity[m.commodity] += meterCostSav;
@@ -63005,10 +63014,7 @@
                   qBlPropane = 0,
                   qActPropane = 0,
                   qBlCost = 0,
-                  qActCost = 0,
-                  qActElecCost = 0,
-                  qActGasCost = 0,
-                  qActPropaneCost = 0;
+                  qActCost = 0;
                 let hasActualData = false;
                 let moWithData = 0;
                 for (const mi of qMonths[qi]) {
@@ -63021,9 +63027,6 @@
                   qActGas += yd.gas[mi];
                   qActPropane += yd.propane[mi];
                   qActCost += yd.cost[mi];
-                  qActElecCost += yd.elecCost[mi];
-                  qActGasCost += yd.gasCost[mi];
-                  qActPropaneCost += yd.propaneCost[mi];
                   if (yd.kwh[mi] > 0 || yd.gas[mi] > 0 || yd.propane[mi] > 0) {
                     const actKbtu = yd.kwh[mi] * 3.412 + yd.gas[mi] * 100 + yd.propane[mi] * 91.5;
                     const blRef = blKbtuPerMo[mi];
@@ -63034,7 +63037,11 @@
                 }
                 if (!hasActualData) continue;
                 if (moWithData < 3) continue;
-                const costSav = qBlCost - qActCost;
+                let costSav = 0;
+                for (const mi of qMonths[qi]) {
+                  const ym = y + '-' + String(mi + 1).padStart(2, '0');
+                  costSav += egfxSavByYm[ym] || 0;
+                }
                 const costPct = qBlCost > 0 ? (costSav / qBlCost) * 100 : 0;
                 const savColor = costSav >= 0 ? 'var(--green)' : 'var(--red)';
                 const $f = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
