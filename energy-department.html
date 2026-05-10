@@ -42693,14 +42693,6 @@
                   '</td>'
                 : '') +
               (hasKwCostSav
-                ? '<td class="mono num" style="color:var(--text2)">' +
-                  (expKwCost > 0 ? '$' + fmtC(expKwCost) : '&mdash;') +
-                  '</td>'
-                : '') +
-              (hasKwCost
-                ? '<td class="mono num">' + (kwCostRow > 0 ? '$' + fmtC(kwCostRow) : '&mdash;') + '</td>'
-                : '') +
-              (hasKwCostSav
                 ? '<td class="mono num" style="color:' +
                   savColor(kwCostSav) +
                   ';font-weight:600">' +
@@ -42737,8 +42729,7 @@
           (hasExpKW ? 1 : 0) +
           (hasKwData ? 1 : 0) +
           (hasBilKW ? 1 : 0) +
-          (hasKwCostSav ? 1 : 0) + // Baseline kW Cost
-          (hasKwCost ? 1 : 0); // Act kW × Rate
+          0; // "Baseline kW Cost" and "Act kW × Rate" columns removed
         const perfSumRow =
           '<tr style="border-top:2px solid var(--border2);background:var(--s2);font-weight:700">' +
           '<td class="lbl" colspan="6" style="text-align:right;font-weight:800;text-transform:uppercase;font-size:10px;letter-spacing:.5px">Total</td>' +
@@ -42765,8 +42756,6 @@
           (hasExpKW ? '<td class="mono num"></td>' : '') +
           (hasKwData ? '<td class="mono num"></td>' : '') +
           (hasBilKW ? '<td class="mono num"></td>' : '') +
-          (hasKwCostSav ? '<td class="mono num"></td>' : '') +
-          (hasKwCost ? '<td class="mono num"></td>' : '') +
           (hasKwCostSav
             ? '<td class="mono num" style="color:' +
               _sumSavColor(_sumKwSav) +
@@ -42806,8 +42795,9 @@
         const expKWHdr = hasExpKW ? '<th class="num">Baseline kW</th>' : '';
         const demKWHdr = hasKwData ? '<th class="num">Actual kW</th>' : '';
         const bilKWHdr = hasBilKW ? '<th class="num">Billed kW</th>' : '';
-        const expKwCostHdr = hasKwCostSav ? '<th class="num">Baseline kW Cost</th>' : '';
-        const kwCostHdr = hasKwCost ? '<th class="num">Act kW × Rate</th>' : '';
+        // "Baseline kW Cost" and "Act kW × Rate" columns removed — redundant with kW Savings ($)
+        const expKwCostHdr = '';
+        const kwCostHdr = '';
         const kwCostSavHdr = hasKwCostSav ? '<th class="num">kW Savings ($)</th>' : '';
         const kwhRateHdr = hasKwhCostSav ? '<th class="num">Actual $/kWh</th>' : '';
         // "Expected kWh Cost" and "Act kWh × Rate" columns removed — redundant with kWh Savings ($)
