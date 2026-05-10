@@ -14201,6 +14201,18 @@
                       </div>
                     </div>
                   </div>
+                  <!-- Performance Verification collapsible section -->
+                  <div id="egfx-perfverify-wrap-${p.id}" style="margin-bottom:16px">
+                    <div onclick="egfxTogglePerfVerify(${p.id})" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--s1);border-radius:8px;cursor:pointer;border:1px solid var(--border1)">
+                      <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2)">Performance Verification</span>
+                      <span id="egfx-perfverify-chev-${p.id}" style="font-size:10px;color:var(--text3)">&#9654;</span>
+                    </div>
+                    <div id="egfx-perfverify-body-${p.id}" style="display:none;padding:20px 16px 16px;background:var(--s1);border:1px solid var(--border1);border-top:none;border-radius:0 0 8px 8px">
+                      <div id="egfx-perfverify-content-${p.id}" style="font-size:13px;color:var(--text)">
+                        <span style="color:var(--text3)">Expand to load performance verification data.</span>
+                      </div>
+                    </div>
+                  </div>
                   <div id="egfx-eui-detail-${p.id}" style="display:flex;gap:16px;margin-bottom:16px;font-size:11px;color:var(--text2)"></div>
                   <div id="egfx-charts-${p.id}">
                     <div style="font-size:13px;color:var(--text3);text-align:center;padding:40px">Add utility data to buildings to see energy graphics. Baseline and year-over-year kWh, kW, and gas consumption will appear here.</div>
@@ -49582,6 +49594,17 @@
         const setpoints = (d && d.setpoints) || [];
         const buildings = (d && d.buildings) || [];
 
+        // Version metadata for header
+        const vTypeRaw = setpoints.length > 0 ? setpoints[0].versionType || '' : '';
+        const vDateRaw = setpoints.length > 0 ? setpoints[0].versionDate || '' : '';
+        let vLabel = '';
+        if (vTypeRaw) {
+          vLabel = ' — ' + vTypeRaw.charAt(0).toUpperCase() + vTypeRaw.slice(1);
+        }
+        if (vDateRaw) {
+          vLabel += ' (' + _basFormatDate(vDateRaw) + ')';
+        }
+
         // Helper to look up building name
         function getBldgName(id) {
           var found = buildings.filter(function (b) {
@@ -49704,7 +49727,7 @@
           '<p style="font-size:9px;color:#888;margin-top:12px">Source: BAS export uploaded to Set Points &amp; Schedules tab.</p>' +
           '</div>';
 
-        return rptPage(n, 'BAS Set Points & Schedules', bodyHTML, {
+        return rptPage(n, 'BAS Set Points & Schedules' + vLabel, bodyHTML, {
           data: d,
           label: 'Page ' + n + ' — Set Points',
         });
@@ -61265,6 +61288,451 @@
         if (chev) chev.textContent = open ? '▶' : '▼';
       }
 
+      function egfxTogglePerfVerify(projId) {
+        var body = document.getElementById('egfx-perfverify-body-' + projId);
+        var chev = document.getElementById('egfx-perfverify-chev-' + projId);
+        if (!body) return;
+        var open = body.style.display === 'block';
+        body.style.display = open ? 'none' : 'block';
+        if (chev) chev.textContent = open ? '▶' : '▼';
+        if (!open) egfxRenderPerfVerify(projId);
+      }
+
+      function _pvToggleBldg(projId, bldgId) {
+        var body = document.getElementById('pv-bldg-body-' + projId + '-' + bldgId);
+        var chev = document.getElementById('pv-bldg-chev-' + projId + '-' + bldgId);
+        if (!body) return;
+        var open = body.style.display === 'block';
+        body.style.display = open ? 'none' : 'block';
+        if (chev) chev.textContent = open ? '▼' : '▶';
+      }
+
+      function _pvRenderMeterPerf(m, bills, incl) {
+        var bl = m.baseline;
+        if (!bl || !bl.months || bl.months.length < 3) return '';
+        var isElec = m.commodity === 'Electric';
+        var isPropane = m.commodity === 'Propane';
+        var unit = isElec ? 'kWh' : isPropane ? 'Gallons' : 'Therms';
+        var allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
+        var blRows = allRows.filter(function (r) {
+          return bl.months.includes(r.ym);
+        });
+        var blEnd = bl.months.slice().sort().pop();
+        var postRows = allRows.filter(function (r) {
+          return r.ym > blEnd;
+        });
+        if (!postRows.length)
+          return '<div style="font-size:11px;color:var(--text3);padding:8px">No post-baseline data yet.</div>';
+        var blByCalMo = {};
+        blRows.forEach(function (r) {
+          var mo = parseInt(r.ym.split('-')[1]) - 1;
+          blByCalMo[mo] = (blByCalMo[mo] || 0) + r.cost;
+        });
+        var blAvg =
+          blRows.length > 0
+            ? blRows.reduce(function (s, r) {
+                return s + r.cost;
+              }, 0) / blRows.length
+            : 0;
+        var savByCalMo = getMeterPerfSavingsByCalMo(m, bills, incl);
+        var totalSav = Object.values(savByCalMo).reduce(function (s, v) {
+          return s + v;
+        }, 0);
+        var fmtC = function (v) {
+          return Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        };
+        var savColor = function (v) {
+          return v >= 0 ? 'var(--em)' : 'var(--danger)';
+        };
+        var costSign = function (v) {
+          return v >= 0 ? '' : '−';
+        };
+        var rows = postRows
+          .map(function (r) {
+            var calMo = parseInt(r.ym.split('-')[1]) - 1;
+            var expCost = blByCalMo[calMo] != null ? blByCalMo[calMo] : blAvg;
+            var costSav = savByCalMo[calMo] != null ? savByCalMo[calMo] : 0;
+            var pct = expCost > 0 ? (costSav / expCost) * 100 : 0;
+            return (
+              '<tr>' +
+              '<td style="padding:6px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s1)">' +
+              r.label +
+              '</td>' +
+              '<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border)">' +
+              r.normDays +
+              '</td>' +
+              '<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border)">$' +
+              fmtC(expCost) +
+              '</td>' +
+              '<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border)">$' +
+              fmtC(r.cost) +
+              '</td>' +
+              '<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border);color:' +
+              savColor(costSav) +
+              ';font-weight:600">' +
+              costSign(costSav) +
+              '$' +
+              fmtC(costSav) +
+              '</td>' +
+              '<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border);color:' +
+              savColor(pct) +
+              '">' +
+              (pct >= 0 ? '' : '−') +
+              Math.abs(pct).toFixed(1) +
+              '%</td>' +
+              '</tr>'
+            );
+          })
+          .join('');
+        return (
+          '<div style="margin-bottom:12px">' +
+          '<div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:4px">' +
+          _escHtml(m.name || 'Meter') +
+          ' (' +
+          m.commodity +
+          ') — Meter Performance</div>' +
+          '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px">' +
+          '<table style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr style="background:var(--s1)">' +
+          '<th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Month</th>' +
+          '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Days</th>' +
+          '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Expected Cost</th>' +
+          '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Actual Cost</th>' +
+          '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Cost Saved</th>' +
+          '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">%</th>' +
+          '</tr></thead><tbody>' +
+          rows +
+          '</tbody>' +
+          '<tfoot><tr style="background:var(--s1);font-weight:700">' +
+          '<td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)" colspan="4">Total</td>' +
+          '<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border);color:' +
+          savColor(totalSav) +
+          ';font-weight:700">' +
+          costSign(totalSav) +
+          '$' +
+          fmtC(totalSav) +
+          '</td>' +
+          '<td style="border:1px solid var(--border)"></td>' +
+          '</tr></tfoot></table></div></div>'
+        );
+      }
+
+      function _pvRenderBldgPerf(b, projId) {
+        if (!b) return '';
+        var MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        var baselineByCalMo = {};
+        (b.meters || []).forEach(function (m) {
+          var bl = m.baseline;
+          if (!bl || !(bl.months || []).length) return;
+          var bills = (m.bills || []).slice().sort(function (a, c) {
+            return _parseISO(a.start) - _parseISO(c.start);
+          });
+          var incl = m.inclusive !== false;
+          var allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
+          allRows
+            .filter(function (r) {
+              return bl.months.includes(r.ym);
+            })
+            .forEach(function (r) {
+              var mo = parseInt(r.ym.split('-')[1]) - 1;
+              baselineByCalMo[mo] = (baselineByCalMo[mo] || 0) + r.cost;
+            });
+        });
+        var moBase = [];
+        for (var i = 0; i < 12; i++) moBase.push(baselineByCalMo[i] || 0);
+        var annBase = moBase.reduce(function (s, v) {
+          return s + v;
+        }, 0);
+        if (annBase === 0) return '';
+        var actualSavByCalMo = {};
+        (b.meters || []).forEach(function (m) {
+          if (m.baselineInclude === false) return;
+          if (!(m.baseline && m.baseline.months && m.baseline.months.length >= 3)) return;
+          var mbills = (m.bills || []).slice().sort(function (a, c) {
+            return _parseISO(a.start) - _parseISO(c.start);
+          });
+          var mincl = m.inclusive !== false;
+          var mSav = getMeterPerfSavingsByCalMo(m, mbills, mincl);
+          Object.keys(mSav).forEach(function (mo) {
+            actualSavByCalMo[mo] = (actualSavByCalMo[mo] || 0) + mSav[mo];
+          });
+        });
+        var hasActual = Object.keys(actualSavByCalMo).length > 0;
+        var msrSav = getBldgMeasureSavingsByMo(projId, b.id);
+        var bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
+        var bspCfg = {};
+        try {
+          bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
+        } catch (e) {}
+        var savPct = (bspCfg.savingsPct || 11) / 100;
+        var $f = function (v) {
+          return '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        };
+        var savColor = function (v) {
+          return v >= 0 ? 'var(--em)' : 'var(--danger)';
+        };
+        var thS =
+          'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
+        var tdS = function (c) {
+          return (
+            'padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:' +
+            (c || 'var(--text)') +
+            ';border:1px solid var(--border);white-space:nowrap'
+          );
+        };
+        var annAct = 0;
+        var rows = MN.map(function (mn, mo) {
+          var base = moBase[mo];
+          var projSav = msrSav ? msrSav[mo] || 0 : base * savPct;
+          var act = actualSavByCalMo[mo] != null ? actualSavByCalMo[mo] : null;
+          if (act != null) annAct += act;
+          var pct = act != null && base > 0 ? (act / base) * 100 : null;
+          return (
+            '<tr>' +
+            '<td style="padding:6px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s1)">' +
+            mn +
+            '</td>' +
+            '<td style="' +
+            tdS() +
+            '">' +
+            $f(base) +
+            '</td>' +
+            '<td style="' +
+            tdS() +
+            '">' +
+            $f(projSav) +
+            '</td>' +
+            '<td style="' +
+            tdS(act != null ? savColor(act) : 'var(--text3)') +
+            '">' +
+            (act != null ? (act < 0 ? '−' : '') + $f(act) : '—') +
+            '</td>' +
+            '<td style="' +
+            tdS(pct != null ? savColor(pct) : 'var(--text3)') +
+            '">' +
+            (pct != null ? (pct < 0 ? '−' : '') + Math.abs(pct).toFixed(1) + '%' : '—') +
+            '</td>' +
+            '</tr>'
+          );
+        }).join('');
+        var annPct = annBase > 0 && hasActual ? (annAct / annBase) * 100 : null;
+        return (
+          '<div style="margin-top:8px;margin-bottom:4px">' +
+          '<div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:4px">' +
+          _escHtml(b.name) +
+          ' — Building Performance</div>' +
+          '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px">' +
+          '<table style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr style="background:var(--s1)">' +
+          '<th style="' +
+          thS +
+          ';text-align:left">Month</th><th style="' +
+          thS +
+          '">Baseline Cost</th><th style="' +
+          thS +
+          '">Projected Savings</th><th style="' +
+          thS +
+          '">Actual Savings</th><th style="' +
+          thS +
+          '">%</th>' +
+          '</tr></thead><tbody>' +
+          rows +
+          '</tbody>' +
+          '<tfoot><tr style="background:var(--s1);font-weight:700">' +
+          '<td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)">Annual</td>' +
+          '<td style="' +
+          tdS() +
+          '">' +
+          $f(annBase) +
+          '</td>' +
+          '<td style="' +
+          tdS() +
+          '">' +
+          $f(
+            msrSav
+              ? msrSav.reduce(function (s, v) {
+                  return s + v;
+                }, 0)
+              : annBase * savPct,
+          ) +
+          '</td>' +
+          '<td style="' +
+          tdS(hasActual ? savColor(annAct) : 'var(--text3)') +
+          '">' +
+          (hasActual ? (annAct < 0 ? '−' : '') + $f(annAct) : '—') +
+          '</td>' +
+          '<td style="' +
+          tdS(annPct != null ? savColor(annPct) : 'var(--text3)') +
+          '">' +
+          (annPct != null ? (annPct < 0 ? '−' : '') + Math.abs(annPct).toFixed(1) + '%' : '—') +
+          '</td>' +
+          '</tr></tfoot></table></div></div>'
+        );
+      }
+
+      function _pvRenderProjPerf(bldgs, projId) {
+        if (!bldgs || !bldgs.length) return '';
+        var MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        var moBase = aggBaseMoMapForBldgs(bldgs);
+        var annBase = 0;
+        for (var i = 0; i < 12; i++) annBase += moBase[i] || 0;
+        if (annBase === 0) return '';
+        var actSavByMo = {};
+        bldgs.forEach(function (b) {
+          (b.meters || []).forEach(function (m) {
+            if (m.baselineInclude === false) return;
+            var bl = m.baseline;
+            if (!bl || !bl.months || bl.months.length < 3) return;
+            var bills = (m.bills || []).slice().sort(function (a, c) {
+              return _parseISO(a.start) - _parseISO(c.start);
+            });
+            var incl = m.inclusive !== false;
+            var sav = getMeterPerfSavingsByCalMo(m, bills, incl);
+            Object.keys(sav).forEach(function (mo) {
+              actSavByMo[mo] = (actSavByMo[mo] || 0) + sav[mo];
+            });
+          });
+        });
+        var hasActual = Object.keys(actSavByMo).length > 0;
+        var $f = function (v) {
+          return '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        };
+        var savColor = function (v) {
+          return v >= 0 ? 'var(--em)' : 'var(--danger)';
+        };
+        var thS =
+          'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
+        var tdS = function (c) {
+          return (
+            'padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:' +
+            (c || 'var(--text)') +
+            ';border:1px solid var(--border);white-space:nowrap'
+          );
+        };
+        var annAct = 0;
+        var rows = MN.map(function (mn, mo) {
+          var base = moBase[mo] || 0;
+          var act = actSavByMo[mo] != null ? actSavByMo[mo] : null;
+          if (act != null) annAct += act;
+          var pct = act != null && base > 0 ? (act / base) * 100 : null;
+          return (
+            '<tr>' +
+            '<td style="padding:6px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s1)">' +
+            mn +
+            '</td>' +
+            '<td style="' +
+            tdS() +
+            '">' +
+            $f(base) +
+            '</td>' +
+            '<td style="' +
+            tdS(act != null ? savColor(act) : 'var(--text3)') +
+            '">' +
+            (act != null ? (act < 0 ? '−' : '') + $f(act) : '—') +
+            '</td>' +
+            '<td style="' +
+            tdS(pct != null ? savColor(pct) : 'var(--text3)') +
+            '">' +
+            (pct != null ? (pct < 0 ? '−' : '') + Math.abs(pct).toFixed(1) + '%' : '—') +
+            '</td>' +
+            '</tr>'
+          );
+        }).join('');
+        var annPct = annBase > 0 && hasActual ? (annAct / annBase) * 100 : null;
+        var projMeta = projects.find(function (p) {
+          return p.id === projId;
+        });
+        var projName = (projMeta && projMeta.name) || 'Project';
+        return (
+          '<div style="margin-top:16px;padding-top:12px;border-top:2px solid var(--border)">' +
+          '<div style="font-size:13px;font-weight:800;font-family:var(--head);color:var(--em);margin-bottom:6px">💡 ' +
+          _escHtml(projName) +
+          ' — Project Performance Total</div>' +
+          '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px">' +
+          '<table style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr style="background:var(--s1)">' +
+          '<th style="' +
+          thS +
+          ';text-align:left">Month</th><th style="' +
+          thS +
+          '">Baseline Cost</th><th style="' +
+          thS +
+          '">Total Savings</th><th style="' +
+          thS +
+          '">%</th>' +
+          '</tr></thead><tbody>' +
+          rows +
+          '</tbody>' +
+          '<tfoot><tr style="background:var(--s1);font-weight:700">' +
+          '<td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)">Annual</td>' +
+          '<td style="' +
+          tdS() +
+          '">' +
+          $f(annBase) +
+          '</td>' +
+          '<td style="' +
+          tdS(hasActual ? savColor(annAct) : 'var(--text3)') +
+          '">' +
+          (hasActual ? (annAct < 0 ? '−' : '') + $f(annAct) : '—') +
+          '</td>' +
+          '<td style="' +
+          tdS(annPct != null ? savColor(annPct) : 'var(--text3)') +
+          '">' +
+          (annPct != null ? (annPct < 0 ? '−' : '') + Math.abs(annPct).toFixed(1) + '%' : '—') +
+          '</td>' +
+          '</tr></tfoot></table></div></div>'
+        );
+      }
+
+      function egfxRenderPerfVerify(projId) {
+        var content = document.getElementById('egfx-perfverify-content-' + projId);
+        if (!content) return;
+        var bldgs = getUDBldgs(projId);
+        if (!bldgs.length) {
+          content.innerHTML = '<div style="color:var(--text3);font-size:12px">No buildings in this project.</div>';
+          return;
+        }
+        var html = '';
+        bldgs.forEach(function (b) {
+          var meterHtml = '';
+          (b.meters || []).forEach(function (m) {
+            if (m.baselineInclude === false) return;
+            var bl = m.baseline;
+            if (!bl || !bl.months || bl.months.length < 3) return;
+            var bills = (m.bills || []).slice().sort(function (a, c) {
+              return _parseISO(a.start) - _parseISO(c.start);
+            });
+            var incl = m.inclusive !== false;
+            meterHtml += _pvRenderMeterPerf(m, bills, incl);
+          });
+          var bldgPerfHtml = _pvRenderBldgPerf(b, projId);
+          if (!meterHtml && !bldgPerfHtml) return;
+          html +=
+            '<div style="margin-bottom:12px">' +
+            '<div onclick="_pvToggleBldg(\'' +
+            projId +
+            "','" +
+            b.id +
+            '\')" style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--s2);border-radius:6px;cursor:pointer;border:1px solid var(--border)">' +
+            '<span id="pv-bldg-chev-' +
+            projId +
+            '-' +
+            b.id +
+            '" style="font-size:10px;color:var(--text3)">▶</span>' +
+            '<span style="font-size:12px;font-weight:700;color:var(--text)">' +
+            _escHtml(b.name || 'Building') +
+            '</span>' +
+            '</div>' +
+            '<div id="pv-bldg-body-' +
+            projId +
+            '-' +
+            b.id +
+            '" style="display:none;padding:12px 8px 8px">' +
+            meterHtml +
+            bldgPerfHtml +
+            '</div></div>';
+        });
+        html += _pvRenderProjPerf(bldgs, projId);
+        content.innerHTML = html || '<div style="color:var(--text3);font-size:12px">No baseline data available.</div>';
+      }
+
       function egfxRefresh(projId) {
         const p = projects.find((x) => x.id === projId);
         if (!p) return;
@@ -62762,6 +63230,12 @@
             });
           }
         }, 120);
+
+        // Re-render performance verification if panel is open
+        var pvBody = document.getElementById('egfx-perfverify-body-' + projId);
+        if (pvBody && pvBody.style.display === 'block') {
+          egfxRenderPerfVerify(projId);
+        }
       }
       function egfxExport(projId) {
         showToast('Export coming soon');
@@ -62810,6 +63284,10 @@
         window._spViewMode[projId] = viewMode;
         const isAvg = viewMode === 'average';
 
+        // Version metadata (shared across all setpoint records in this project)
+        const versionType = (spRecord && spRecord.versionType) || 'current';
+        const versionDate = (spRecord && spRecord.versionDate) || null;
+
         // Snapshot tracking: null = current (editable), string = snapshot id (read-only)
         if (!window._spActiveSnapshot) window._spActiveSnapshot = {};
         const activeSnapId = window._spActiveSnapshot[projId] || null;
@@ -62822,6 +63300,29 @@
         const zones = displayRecord ? displayRecord.zones : [];
 
         const snapPills = _spBuildSnapshotPills(projId, activeSnapId, snapshots);
+
+        // Version info bar (type pills + date editor)
+        let versionInfoBar = '';
+        if (!isViewingSnapshot) {
+          const vtPill = (t, label, radius) =>
+            `<button style="padding:6px 14px;font-size:12px;font-weight:600;border:none;cursor:pointer;transition:all .15s;${versionType === t ? 'background:var(--accent);color:#fff' : 'background:var(--s1);color:var(--text2)'}${radius}" onclick="spSetVersionType('${projId}','${t}')">${label}</button>`;
+          const dateDisplay = versionDate
+            ? `<span style="font-size:12px;color:var(--text)">${_basFormatDate(versionDate)}</span> <span onclick="document.getElementById('sp-vdate-edit-${projId}').style.display='inline-flex';this.parentElement.querySelector('.sp-vdate-show').style.display='none'" style="cursor:pointer;font-size:11px;color:var(--text3);border-bottom:1px dashed var(--text3)" title="Change date">edit</span>`
+            : `<span style="font-size:12px;color:var(--text3);cursor:pointer" onclick="document.getElementById('sp-vdate-edit-${projId}').style.display='inline-flex';this.style.display='none'">No date — click to set</span>`;
+          const dateEditor = `<span id="sp-vdate-edit-${projId}" style="display:none;align-items:center;gap:4px"><input type="date" id="sp-vdate-input-${projId}"${versionDate ? ` value="${versionDate}"` : ''} style="font-size:12px;padding:3px 6px;background:var(--s3);border:1px solid var(--border2);border-radius:4px;color:var(--text);font-family:var(--mono)"><button onclick="spSetVersionDate('${projId}',document.getElementById('sp-vdate-input-${projId}').value)" style="font-size:11px;padding:3px 8px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600">Save</button><button onclick="document.getElementById('sp-vdate-edit-${projId}').style.display='none';renderSetpointsTab('${projId}')" style="font-size:11px;padding:3px 6px;background:none;border:1px solid var(--border2);border-radius:4px;cursor:pointer;color:var(--text3)">Cancel</button></span>`;
+          versionInfoBar = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+            <div style="display:flex;gap:0;border:1px solid var(--border2);border-radius:6px;overflow:hidden;width:fit-content">
+              ${vtPill('current', 'Current', ';border-radius:6px 0 0 6px')}${vtPill('baseline', 'Baseline', ';border-left:1px solid var(--border2)')}${vtPill('historic', 'Historic', ';border-radius:0 6px 6px 0;border-left:1px solid var(--border2)')}
+            </div>
+            <div style="display:flex;align-items:center;gap:6px" class="sp-vdate-show">${dateDisplay}${dateEditor}</div>
+          </div>`;
+        } else {
+          const snapLabel = activeSnapData ? activeSnapData.label : '';
+          const snapDateStr = activeSnapData && activeSnapData.savedAt ? _basFormatDate(activeSnapData.savedAt) : '';
+          if (snapLabel || snapDateStr) {
+            versionInfoBar = `<div style="margin-bottom:12px;font-size:12px;color:var(--text2)"><span style="font-weight:600">${_escHtml(snapLabel)}</span>${snapDateStr ? ` <span style="color:var(--text3)">(${snapDateStr})</span>` : ''}</div>`;
+          }
+        }
 
         const bldgPills = bldgs
           .map(
@@ -62880,6 +63381,7 @@
                 <button style="padding:6px 14px;font-size:12px;font-weight:600;border:none;border-left:1px solid var(--border2);cursor:pointer;transition:all .15s;${isAvg ? 'background:var(--accent);color:#fff' : 'background:var(--s1);color:var(--text2)'}"
                   onclick="spSetViewMode('${projId}','average')">Building Average</button>
               </div>
+              ${versionInfoBar}
               <!-- Snapshot Version Pills -->
               <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
                 <span style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-right:2px">Version:</span>
@@ -63051,6 +63553,32 @@
       function spViewSnapshot(projId, snapId) {
         if (!window._spActiveSnapshot) window._spActiveSnapshot = {};
         window._spActiveSnapshot[projId] = snapId || null;
+        renderSetpointsTab(projId);
+      }
+
+      function spSetVersionType(projId, type) {
+        var p = projects.find(function (x) {
+          return String(x.id) === String(projId);
+        });
+        if (!p || !p.setpoints) return;
+        p.setpoints.forEach(function (sp) {
+          sp.versionType = type;
+        });
+        sset('en_projects', projects);
+        showToast('Version type set to ' + type.charAt(0).toUpperCase() + type.slice(1));
+        renderSetpointsTab(projId);
+      }
+
+      function spSetVersionDate(projId, date) {
+        var p = projects.find(function (x) {
+          return String(x.id) === String(projId);
+        });
+        if (!p || !p.setpoints) return;
+        p.setpoints.forEach(function (sp) {
+          sp.versionDate = date || null;
+        });
+        sset('en_projects', projects);
+        showToast(date ? 'Version date set to ' + _basFormatDate(date) : 'Version date cleared');
         renderSetpointsTab(projId);
       }
 
@@ -63520,6 +64048,18 @@
 
         if (populated > 0) {
           _spClearDraft(projId, bldgs[0].id);
+          // Propagate BAS snapshot date to setpoint versionDate
+          var activeSnapId = (window._basActiveSnap && window._basActiveSnap[projId]) || null;
+          var activeSnap = activeSnapId
+            ? (p.basSnapshots || []).find(function (s) {
+                return s.id === activeSnapId;
+              })
+            : null;
+          if (activeSnap && activeSnap.snapshotDate) {
+            (p.setpoints || []).forEach(function (sp) {
+              sp.versionDate = activeSnap.snapshotDate;
+            });
+          }
         }
       }
 
