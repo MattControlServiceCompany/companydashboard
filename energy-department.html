@@ -43380,7 +43380,13 @@
                 '</td><td>' +
                 (r.thermCost ? '$' + (r.thermCost || 0) : '—') +
                 '</td>';
-            else cells = '<td>' + (r.usage || 0) + '</td><td>' + (r.cost ? '$' + r.cost : '—') + '</td>';
+            else
+              cells =
+                '<td>' +
+                (r.usage || 0) +
+                '</td><td>' +
+                (r.cost != null && r.cost !== '' ? '$' + r.cost : '—') +
+                '</td>';
             return (
               '<tr><td>' +
               fmtDate(r.start) +
@@ -62466,15 +62472,24 @@
         const totalEgfxSav = hasEgfxSav ? Object.values(egfxSavByMo).reduce((s, v) => s + v, 0) : 0;
 
         // Per-commodity unit savings: baseline annual - rolling 12 actual
-        const latestYd = latestYear ? yearData[latestYear] : null;
-        if (latestYd) {
-          egfxUnitsSaved.kwh = totalBlKwh - (latestYd.kwh ? latestYd.kwh.reduce((a, b) => a + b, 0) : 0);
-          const latestMaxKw = latestYd.kw ? Math.max(...latestYd.kw) : 0;
+        if (r12.length > 0) {
+          let r12Kwh = 0,
+            r12Gas = 0,
+            r12Propane = 0,
+            r12MaxKw = 0;
+          r12.forEach((m) => {
+            r12Kwh += m.kwh;
+            r12Gas += m.gas;
+            r12Propane += m.propane || 0;
+          });
+          const latestYd = latestYear ? yearData[latestYear] : null;
+          if (latestYd && latestYd.kw) r12MaxKw = Math.max(...latestYd.kw);
           const blMaxKw = Math.max(...blKw.map((v, mi) => v / (blYmPerMo[mi].size || 1)));
-          egfxUnitsSaved.kw = blMaxKw - latestMaxKw;
-          egfxUnitsSaved.therms = totalBlGas - (latestYd.gas ? latestYd.gas.reduce((a, b) => a + b, 0) : 0);
-          egfxUnitsSaved.gallons =
-            totalBlPropane - (latestYd.propane ? latestYd.propane.reduce((a, b) => a + b, 0) : 0);
+          const r12Scale = 12 / r12.length;
+          egfxUnitsSaved.kwh = totalBlKwh - r12Kwh * r12Scale;
+          egfxUnitsSaved.kw = blMaxKw - r12MaxKw;
+          egfxUnitsSaved.therms = totalBlGas - r12Gas * r12Scale;
+          egfxUnitsSaved.gallons = totalBlPropane - r12Propane * r12Scale;
         }
 
         // Projected Savings card — from measures (with % fallback)
@@ -63231,8 +63246,10 @@
                 if (!bR12 || bR12.eui <= 0) return null;
                 const latestEui = bR12.eui;
                 const latestCostSqft = bR12.costSqft;
-                // Compute baseline EUI for this building (for trend comparison)
+                // Compute baseline EUI for this building (average across all baseline years)
                 let bBlEui = 0;
+                let totalBlKbtu = 0,
+                  totalBlMoCount = 0;
                 for (const blY of blYears) {
                   const bd = bldgYearData[b.name]?.[blY];
                   if (!bd) continue;
@@ -63240,13 +63257,13 @@
                   const bgas = bd.gas.reduce((a, v) => a + v, 0);
                   const bprop = bd.propane ? bd.propane.reduce((a, v) => a + v, 0) : 0;
                   if (bkwh > 0 || bgas > 0 || bprop > 0) {
-                    let moCount = 0;
+                    totalBlKbtu += bkwh * 3.412 + bgas * 100 + bprop * 91.5;
                     for (let mi = 0; mi < 12; mi++) {
-                      if (bd.kwh[mi] > 0 || bd.gas[mi] > 0 || (bd.propane && bd.propane[mi] > 0)) moCount++;
+                      if (bd.kwh[mi] > 0 || bd.gas[mi] > 0 || (bd.propane && bd.propane[mi] > 0)) totalBlMoCount++;
                     }
-                    bBlEui = moCount > 0 ? (((bkwh * 3.412 + bgas * 100 + bprop * 91.5) / moCount) * 12) / bSqft : 0;
                   }
                 }
+                if (totalBlMoCount > 0) bBlEui = ((totalBlKbtu / totalBlMoCount) * 12) / bSqft;
                 // Percentile estimate: where does the building fall?
                 let pctileLabel = '';
                 if (pctiles) {
