@@ -14529,6 +14529,11 @@
         let totalBl = 0,
           totalCur = 0,
           totalDirectSav = 0;
+        const projectedByQtr = [0, 0, 0, 0];
+        let projectedAnnual = 0;
+        const actualByQtr = [0, 0, 0, 0];
+        let latestBillEnd = null;
+        const curQtr = Math.floor(new Date().getMonth() / 3);
         const bldgRows = bldgs.map((b) => {
           const meters = b.meters || [];
           const sqft = parseInt(b.sqft || 0);
@@ -14567,6 +14572,10 @@
               if (!isCalcCommodity(projId, m.commodity)) return;
               const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
               const incl = m.inclusive !== false;
+              if (bills.length) {
+                const lastEnd = bills[bills.length - 1].end;
+                if (lastEnd && (!latestBillEnd || lastEnd > latestBillEnd)) latestBillEnd = lastEnd;
+              }
               const bl = m.baseline;
               if (!bl || !bl.months || bl.months.length < 3) return;
               hasBaseline = true;
@@ -14591,8 +14600,10 @@
                 bldgMoBase[mo] += (eM[mo]?.commodityCost || 0) + (gM[mo]?.cost || 0) + (pM[mo]?.cost || 0);
               // Normalized actual savings per calendar month
               const sav = getMeterPerfSavingsByCalMo(m, bills, incl);
-              Object.values(sav).forEach((v) => {
+              Object.entries(sav).forEach(([mo, v]) => {
                 bldgSav += v;
+                const qi = Math.floor(parseInt(mo) / 3);
+                actualByQtr[qi] += v;
               });
               // Usage for EUI
               if (m.commodity === 'Gas') {
@@ -14646,6 +14657,10 @@
                 }
               });
               const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+              if (bills.length) {
+                const lastEnd = bills[bills.length - 1].end;
+                if (lastEnd && (!latestBillEnd || lastEnd > latestBillEnd)) latestBillEnd = lastEnd;
+              }
               bills.slice(-12).forEach((bill) => {
                 if (m.commodity === 'Electric') {
                   curCost +=
@@ -14694,6 +14709,12 @@
                   ' – ' +
                   new Date(last + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
               }
+              const _actIncl = m.inclusive !== false;
+              const _actSav = getMeterPerfSavingsByCalMo(m, bills, _actIncl);
+              Object.entries(_actSav).forEach(([mo, v]) => {
+                const qi = Math.floor(parseInt(mo) / 3);
+                actualByQtr[qi] += v;
+              });
             });
           }
           // Fallback: if no baseline set and actual mode, annualize allCost
@@ -14738,6 +14759,14 @@
               statusColor = 'var(--text3)';
             }
           }
+          const msrSav = getBldgMeasureSavingsByMo(projId, b.id);
+          if (msrSav) {
+            for (let mo = 0; mo < 12; mo++) {
+              const qi = Math.floor(mo / 3);
+              projectedByQtr[qi] += msrSav[mo] || 0;
+              projectedAnnual += msrSav[mo] || 0;
+            }
+          }
           return {
             name: b.name,
             sqft,
@@ -14762,16 +14791,56 @@
         const totalSav = totalDirectSav;
         const totalPct = totalBl > 0 ? (totalSav / totalBl) * 100 : 0;
         const $c = (n) => '$' + Math.round(Math.abs(n)).toLocaleString();
+        const $c2 = (n) =>
+          '$' + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const curQtrLabel = 'Q' + (curQtr + 1);
+        const curQtrActual = actualByQtr[curQtr];
+        const curQtrProjected = projectedByQtr[curQtr];
+        const curQtrPct = curQtrProjected > 0 ? ((curQtrActual / curQtrProjected) * 100).toFixed(1) : null;
+        const throughDate = latestBillEnd
+          ? new Date(latestBillEnd + 'T12:00:00').toLocaleDateString('en-US', {
+              month: 'long',
+              day: 'numeric',
+              year: 'numeric',
+            })
+          : null;
 
         perfWrap.innerHTML = `
           <div class="card" style="margin-bottom:16px">
-            <div style="padding:20px;display:flex;gap:20px;align-items:center;flex-wrap:wrap">
-              <div style="flex:1;min-width:160px">
-                <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Total Savings vs Baseline</div>
-                <div style="font-size:32px;font-weight:800;font-family:var(--mono);color:${totalSav >= 0 ? 'var(--green)' : 'var(--danger)'};margin:4px 0">${totalSav >= 0 ? '' : '-'}${$c(totalSav)}<span style="font-size:16px;font-weight:600;color:var(--text2)">/yr</span></div>
-                <div style="font-size:12px;color:var(--text2)">${totalPct >= 0 ? '+' : ''}${totalPct.toFixed(1)}% vs baseline · ${bldgs.length} building${bldgs.length !== 1 ? 's' : ''} · <span style="color:var(--text3)">${useNormalized ? 'Normalized' : 'Actual'}</span></div>
+            <div style="padding:20px;display:flex;gap:24px;align-items:stretch;flex-wrap:wrap">
+              <div style="flex:0 0 320px;background:rgba(147,51,234,0.15);border:1px solid rgba(147,51,234,0.3);border-radius:8px;padding:16px">
+                <div style="font-size:10px;color:#a78bfa;text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px;font-weight:600">Projected Savings</div>
+                <div style="display:flex;gap:10px;margin-bottom:14px">
+                  ${projectedByQtr
+                    .map(
+                      (
+                        v,
+                        i,
+                      ) => `<div style="flex:1;text-align:center;background:rgba(147,51,234,0.12);border-radius:6px;padding:8px 4px">
+                    <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Q${i + 1}</div>
+                    <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:#c084fc">${$c2(v)}</div>
+                  </div>`,
+                    )
+                    .join('')}
+                </div>
+                <div style="border-top:1px solid rgba(147,51,234,0.25);padding-top:10px">
+                  <div style="font-size:10px;color:var(--text3);text-transform:uppercase">Annual Projected Savings</div>
+                  <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:#c084fc">${$c2(projectedAnnual)}<span style="font-size:12px;color:#a78bfa">/yr</span></div>
+                </div>
               </div>
-              <div style="display:flex;gap:16px">
+              <div style="flex:1;min-width:200px;display:flex;flex-direction:column;justify-content:center;gap:16px">
+                <div>
+                  <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">${curQtrLabel} Total Savings</div>
+                  <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:${curQtrActual >= 0 ? 'var(--green)' : 'var(--danger)'};margin:4px 0">${curQtrActual >= 0 ? '' : '-'}${$c(curQtrActual)}</div>
+                  <div style="font-size:12px;color:var(--text2)">${curQtrPct !== null ? '<span style="color:' + (curQtrActual >= 0 ? 'var(--green)' : 'var(--danger)') + ';font-weight:600">' + curQtrPct + '%</span> of ' + curQtrLabel + ' projected (' + $c2(curQtrProjected) + ')' : bldgs.length + ' building' + (bldgs.length !== 1 ? 's' : '') + ' · <span style="color:var(--text3)">' + (useNormalized ? 'Normalized' : 'Actual') + '</span>'}</div>
+                </div>
+                <div style="border-top:1px solid var(--border);padding-top:12px">
+                  <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Total Cumulative Savings</div>
+                  <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:${totalSav >= 0 ? 'var(--green)' : 'var(--danger)'};margin:4px 0">${totalSav >= 0 ? '' : '-'}${$c(totalSav)}</div>
+                  <div style="font-size:12px;color:var(--text2)">${throughDate ? 'through ' + throughDate : bldgs.length + ' building' + (bldgs.length !== 1 ? 's' : '')} · <span style="color:var(--text3)">${useNormalized ? 'Normalized' : 'Actual'}</span></div>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:12px;justify-content:center">
                 <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Baseline</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(totalBl)}</div></div>
                 <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Current</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(totalCur)}</div></div>
                 ${estSavings > 0 ? '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Target</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">$' + Number(estSavings).toLocaleString() + '</div></div>' : ''}
