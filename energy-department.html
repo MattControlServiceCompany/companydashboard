@@ -49921,27 +49921,27 @@
         const vsBox =
           '<div class="rpt-vs-box">' +
           '<div class="rpt-vs-side">' +
-          '<div class="rpt-vs-val" style="color:#888">' +
-          $c(qTarget) +
-          '</div>' +
-          '<div class="rpt-vs-lbl">Q' +
-          q +
-          ' Target</div>' +
-          '</div>' +
-          '<div class="rpt-vs-mid" style="font-size:28px">' +
-          (ahead ? '✓' : '✗') +
-          '</div>' +
-          '<div class="rpt-vs-side">' +
           '<div class="rpt-vs-val" style="color:' +
           (ahead ? '#1e8449' : '#c0392b') +
           '">' +
           $c(actualSavings) +
           '</div>' +
-          '<div class="rpt-vs-lbl" style="color:' +
-          (ahead ? '#1e8449' : '#c0392b') +
-          '">' +
+          '<div class="rpt-vs-lbl">Actual Q' +
+          q +
+          ' Savings</div>' +
+          '</div>' +
+          '<div class="rpt-vs-mid" style="font-size:28px">' +
+          (ahead ? '✓' : '✗') +
+          '</div>' +
+          '<div class="rpt-vs-side">' +
+          '<div class="rpt-vs-val" style="color:#888">' +
+          $c(qTarget) +
+          '</div>' +
+          '<div class="rpt-vs-lbl">Q' +
+          q +
+          ' Target (' +
           pctOfTarget +
-          '% of target</div>' +
+          '%)</div>' +
           '</div>' +
           '</div>';
 
@@ -50056,120 +50056,189 @@
           '</tbody>' +
           '</table>';
 
-        // ── Cumulative vs Projected SVG chart (quarterly x-axis) ──
+        // ── Cumulative vs Projected SVG chart (bars + green fill line) ──
         const svgW = 400,
           svgH = 120;
         const totalQtrs = contractYears * 4;
-        const qPerTarget = annualTarget / 4;
-        const pts = [];
-        let cumProj = 0;
-        for (var qi = 1; qi <= totalQtrs; qi++) {
-          var yrIdx = Math.ceil(qi / 4);
-          var escFactor = Math.pow(1 + escalation / 100, yrIdx - 1);
-          cumProj += qPerTarget * escFactor;
-          pts.push({ q: qi, cumProj: cumProj });
-        }
-        var yMax = Math.ceil(cumProj / 100000) * 100000 || 300000;
         var padL = 40,
           padR = 20,
           padT = 10,
           padB = 20;
         var cW = svgW - padL - padR,
           cH = svgH - padT - padB;
-        function _qx(qi) {
-          return padL + ((qi - 1) / Math.max(1, totalQtrs - 1)) * cW;
-        }
-        function _qy(v) {
-          return padT + cH - (Math.min(v, yMax) / yMax) * cH;
-        }
 
-        var projLine = pts
-          .map(function (p) {
-            return _qx(p.q).toFixed(1) + ',' + _qy(p.cumProj).toFixed(1);
-          })
-          .join(' ');
+        // Per-quarter projected values using actual quarterly targets
+        var _qtrVals = [];
+        for (var qi = 1; qi <= totalQtrs; qi++) {
+          var yrIdx = Math.ceil(qi / 4);
+          var escFactor = Math.pow(1 + escalation / 100, yrIdx - 1);
+          var _qIdx = (qi - 1) % 4;
+          _qtrVals.push((qTargets[_qIdx] || 0) * escFactor);
+        }
+        var _maxBarVal = Math.max.apply(null, _qtrVals) * 1.3 || 1;
         var curQtr = (currentYear - 1) * 4 + q;
         var actCumVal = Math.abs(actualSavings);
-        var yLabelsHTML = [0, 1, 2, 3]
-          .map(function (i) {
-            var val = Math.round(((yMax / 3) * i) / 1000);
-            var yPos = _qy((yMax / 3) * i);
+        function _barY(v) {
+          return padT + cH - (Math.min(v, _maxBarVal) / _maxBarVal) * cH;
+        }
+
+        // Projected bars
+        var _barGap = 2;
+        var _barW = Math.max(3, cW / totalQtrs - _barGap);
+        var _barsHTML = _qtrVals
+          .map(function (val, i) {
+            var x = padL + (i / totalQtrs) * cW + _barGap / 2;
+            var h = (val / _maxBarVal) * cH;
+            var y = padT + cH - h;
+            var isFuture = i + 1 > curQtr;
             return (
-              '<text x="36" y="' +
-              yPos.toFixed(0) +
-              '" text-anchor="end" font-size="7" fill="#888">$' +
-              val +
-              'K</text><line x1="' +
-              padL +
-              '" y1="' +
-              yPos.toFixed(0) +
-              '" x2="' +
-              (svgW - padR) +
-              '" y2="' +
-              yPos.toFixed(0) +
-              '" stroke="#eee" stroke-width="0.5"/>'
+              '<rect x="' +
+              x.toFixed(1) +
+              '" y="' +
+              y.toFixed(1) +
+              '" width="' +
+              _barW.toFixed(1) +
+              '" height="' +
+              h.toFixed(1) +
+              '" fill="' +
+              (isFuture ? '#d5e8f0' : '#2e86c1') +
+              '" opacity="0.6" rx="1"/>'
             );
           })
           .join('');
-        var xLabelsHTML = '';
-        for (var yi = 1; yi <= contractYears; yi++) {
-          var midQ = (yi - 1) * 4 + 2.5;
-          xLabelsHTML +=
+
+        // Actual cumulative line + green fill
+        var _actFill = '',
+          _actPath = '',
+          _actDot = '',
+          _actLabel = '';
+        if (curQtr >= 1) {
+          var x0 = padL,
+            y0 = padT + cH;
+          var x1 = padL + (curQtr / totalQtrs) * cW;
+          var y1 = _barY(actCumVal);
+          _actFill =
+            '<path d="M' +
+            x0 +
+            ',' +
+            y0 +
+            ' L' +
+            x1.toFixed(1) +
+            ',' +
+            y1.toFixed(1) +
+            ' L' +
+            x1.toFixed(1) +
+            ',' +
+            (padT + cH) +
+            ' Z" fill="rgba(39,174,96,0.2)"/>';
+          _actPath =
+            '<line x1="' +
+            x0 +
+            '" y1="' +
+            y0 +
+            '" x2="' +
+            x1.toFixed(1) +
+            '" y2="' +
+            y1.toFixed(1) +
+            '" stroke="#27ae60" stroke-width="2.5"/>';
+          _actDot =
+            '<circle cx="' +
+            x1.toFixed(1) +
+            '" cy="' +
+            y1.toFixed(1) +
+            '" r="4" fill="#27ae60" stroke="#fff" stroke-width="1.5"/>';
+          _actLabel =
             '<text x="' +
-            _qx(midQ).toFixed(0) +
+            (x1 + 5).toFixed(1) +
             '" y="' +
-            (svgH - 4) +
-            '" text-anchor="middle" font-size="7" fill="#888">Y' +
-            yi +
+            (y1 - 4).toFixed(1) +
+            '" font-size="7" fill="#1e8449" font-weight="bold">' +
+            $c(actualSavings) +
             '</text>';
         }
-        var actX = _qx(curQtr),
-          actY = _qy(actCumVal);
-        var actLine = _qx(1).toFixed(1) + ',' + _qy(0).toFixed(1) + ' ' + actX.toFixed(1) + ',' + actY.toFixed(1);
+
+        // Y-axis labels
+        var _yLabels = [0, 0.25, 0.5, 0.75, 1.0]
+          .map(function (f) {
+            var val = f * _maxBarVal;
+            var y = _barY(val);
+            return (
+              '<text x="36" y="' +
+              y.toFixed(0) +
+              '" text-anchor="end" font-size="7" fill="#888">$' +
+              Math.round(val / 1000) +
+              'K</text>'
+            );
+          })
+          .join('');
+
+        // X-axis labels — Q1-Q4
+        var xLabelsHTML = '';
+        for (var qi3 = 1; qi3 <= totalQtrs; qi3++) {
+          var _qn = ((qi3 - 1) % 4) + 1;
+          var _yn = Math.ceil(qi3 / 4);
+          var _lbl = _qn === 1 ? 'Y' + _yn + 'Q1' : 'Q' + _qn;
+          var _xp = padL + ((qi3 - 0.5) / totalQtrs) * cW;
+          xLabelsHTML +=
+            '<text x="' +
+            _xp.toFixed(1) +
+            '" y="' +
+            (svgH - 4) +
+            '" text-anchor="middle" font-size="' +
+            (totalQtrs > 12 ? '5' : '6') +
+            '" fill="#888">' +
+            _lbl +
+            '</text>';
+        }
+
         var svgChart =
           '<div style="margin:8px 0">' +
-          '<div style="font-size:9px;color:#555;margin-bottom:3px">Total Cumulative Savings — Projected vs Actual</div>' +
+          '<div style="font-size:9px;color:#555;margin-bottom:3px">Projected Quarterly Savings (bars) vs Actual Cumulative (green line)</div>' +
           '<svg width="100%" viewBox="0 0 ' +
           svgW +
           ' ' +
           svgH +
           '" xmlns="http://www.w3.org/2000/svg">' +
-          yLabelsHTML +
+          '<line x1="' +
+          padL +
+          '" y1="' +
+          padT +
+          '" x2="' +
+          padL +
+          '" y2="' +
+          (padT + cH) +
+          '" stroke="#ccc" stroke-width="1"/>' +
+          '<line x1="' +
+          padL +
+          '" y1="' +
+          (padT + cH) +
+          '" x2="' +
+          (padL + cW) +
+          '" y2="' +
+          (padT + cH) +
+          '" stroke="#ccc" stroke-width="1"/>' +
+          _barsHTML +
+          _actFill +
+          _actPath +
+          _actDot +
+          _actLabel +
+          _yLabels +
           xLabelsHTML +
-          '<polyline points="' +
-          projLine +
-          '" fill="none" stroke="#aaa" stroke-width="1.5" stroke-dasharray="4,3"/>' +
-          '<polyline points="' +
-          actLine +
-          '" fill="none" stroke="#27ae60" stroke-width="2"/>' +
-          '<circle cx="' +
-          actX.toFixed(1) +
-          '" cy="' +
-          actY.toFixed(1) +
-          '" r="4" fill="#27ae60"/>' +
+          '<rect x="' +
+          (padL + cW - 120) +
+          '" y="4" width="8" height="6" fill="#2e86c1" opacity="0.6" rx="1"/>' +
           '<text x="' +
-          (actX + 5).toFixed(1) +
-          '" y="' +
-          (actY - 4).toFixed(1) +
-          '" font-size="7" fill="#1e8449">' +
-          $c(actualSavings) +
-          '</text>' +
+          (padL + cW - 108) +
+          '" y="10" font-size="6" fill="#555">Projected/Qtr</text>' +
+          '<line x1="' +
+          (padL + cW - 50) +
+          '" y1="7" x2="' +
+          (padL + cW - 38) +
+          '" y2="7" stroke="#27ae60" stroke-width="2.5"/>' +
           '<text x="' +
-          (svgW - padR) +
-          '" y="' +
-          (_qy(cumProj) - 4).toFixed(1) +
-          '" font-size="7" fill="#aaa" text-anchor="end">Projected</text>' +
-          '</svg>' +
-          '<div style="font-size:7.5px;color:#888;margin-top:2px">' +
-          '<span style="display:inline-block;width:16px;height:2px;background:#aaa;border-bottom:2px dashed #aaa;vertical-align:middle;margin-right:4px"></span>' +
-          contractYears +
-          '-yr projected&nbsp;&nbsp;' +
-          '<span style="display:inline-block;width:16px;height:2px;background:#27ae60;vertical-align:middle;margin-right:4px"></span>Actual cumulative (Q' +
-          q +
-          ' Y' +
-          currentYear +
-          ')' +
-          '</div></div>';
+          (padL + cW - 34) +
+          '" y="10" font-size="6" fill="#555">Actual</text>' +
+          '</svg></div>';
 
         const bodyHTML =
           '<div class="rpt-body">' +
