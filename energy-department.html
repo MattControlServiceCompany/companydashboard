@@ -14808,24 +14808,42 @@
         perfWrap.innerHTML = `
           <div class="card" style="margin-bottom:16px">
             <div style="padding:20px;display:flex;gap:24px;align-items:stretch;flex-wrap:wrap">
-              <div style="flex:0 0 320px;background:rgba(147,51,234,0.15);border:1px solid rgba(147,51,234,0.3);border-radius:8px;padding:16px">
-                <div style="font-size:10px;color:#a78bfa;text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px;font-weight:600">Projected Savings</div>
-                <div style="display:flex;gap:10px;margin-bottom:14px">
-                  ${projectedByQtr
-                    .map(
-                      (
-                        v,
-                        i,
-                      ) => `<div style="flex:1;text-align:center;background:rgba(147,51,234,0.12);border-radius:6px;padding:8px 4px">
-                    <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Q${i + 1}</div>
-                    <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:#c084fc">${$c2(v)}</div>
-                  </div>`,
-                    )
-                    .join('')}
-                </div>
-                <div style="border-top:1px solid rgba(147,51,234,0.25);padding-top:10px">
-                  <div style="font-size:10px;color:var(--text3);text-transform:uppercase">Annual Projected Savings</div>
-                  <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:#c084fc">${$c2(projectedAnnual)}<span style="font-size:12px;color:#a78bfa">/yr</span></div>
+              <div style="flex:1;min-width:320px;background:rgba(147,51,234,0.15);border:1px solid rgba(147,51,234,0.3);border-radius:8px;padding:16px">
+                <div style="display:flex;align-items:flex-start;gap:16px">
+                  <div style="flex:1">
+                    <div style="font-size:10px;color:#a78bfa;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;font-weight:600">Projected Savings</div>
+                    <div style="display:flex;gap:8px;margin-bottom:10px">
+                      ${projectedByQtr
+                        .map(
+                          (
+                            v,
+                            i,
+                          ) => `<div style="flex:1;text-align:center;background:rgba(147,51,234,0.12);border-radius:6px;padding:6px 4px">
+                        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Q${i + 1}</div>
+                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:#c084fc">${$c2(v)}</div>
+                      </div>`,
+                        )
+                        .join('')}
+                    </div>
+                    <div style="font-size:10px;color:var(--green);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;font-weight:600">Actual Savings</div>
+                    <div style="display:flex;gap:8px">
+                      ${actualByQtr
+                        .map(
+                          (
+                            v,
+                            i,
+                          ) => `<div style="flex:1;text-align:center;background:rgba(34,197,94,0.10);border-radius:6px;padding:6px 4px">
+                        <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Q${i + 1}</div>
+                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:${v >= 0 ? 'var(--green)' : 'var(--danger)'}">${v !== 0 ? (v >= 0 ? '' : '-') + $c2(v) : '—'}</div>
+                      </div>`,
+                        )
+                        .join('')}
+                    </div>
+                  </div>
+                  <div style="border-left:1px solid rgba(147,51,234,0.25);padding-left:16px;display:flex;flex-direction:column;justify-content:center;min-width:120px">
+                    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-bottom:4px">Annual Projected</div>
+                    <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:#c084fc">${$c2(projectedAnnual)}<span style="font-size:12px;color:#a78bfa">/yr</span></div>
+                  </div>
                 </div>
               </div>
               <div style="flex:1;min-width:200px;display:flex;flex-direction:column;justify-content:center;gap:16px">
