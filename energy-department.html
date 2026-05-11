@@ -47844,6 +47844,7 @@
               account: m.account || '',
               blStart,
               blEnd,
+              blMonths: blMonths.slice(),
               regrType: regrType,
               r2: bestR2,
               hdd: Math.round(totalHDD / blYears),
@@ -52787,26 +52788,49 @@
               '</div>' +
               '</div>';
 
-            // Get monthly data for this commodity
+            // Get monthly data for this commodity (reporting-period months)
             var monthly = [];
             if (md.commodity === 'Electric') monthly = (b.electric && b.electric.monthly) || [];
             else if (md.commodity === 'Gas') monthly = (b.gas && b.gas.monthly) || [];
             else if (md.commodity === 'Propane') monthly = (b.propane && b.propane.monthly) || [];
 
-            if (!monthly.length) return;
+            // Build combined list: baseline months first, then reporting-period months
+            var blMonthsForMeter = md.blMonths || [];
+            var reportMonthYMs = monthly.map(function (mo) {
+              return mo.month;
+            });
+
+            // Build combined entries: {ym, isBaseline, moData (may be null for BL rows)}
+            var combined = [];
+            blMonthsForMeter.forEach(function (ym) {
+              combined.push({ ym: ym, isBaseline: true, moData: null });
+            });
+            monthly.forEach(function (mo) {
+              combined.push({ ym: mo.month, isBaseline: false, moData: mo });
+            });
+
+            if (!combined.length) return;
 
             var rows = '';
             var totBl = 0,
               totCur = 0,
               totSav = 0;
-            monthly.forEach(function (mo) {
-              var ym = mo.month || '';
+            combined.forEach(function (entry) {
+              var ym = entry.ym || '';
               var moIdx = ym ? parseInt(ym.split('-')[1], 10) - 1 : -1;
               var moName = moIdx >= 0 ? MO_FULL[moIdx] : ym;
               var days = ym ? _daysInMonth(ym) : 30;
               var wx = wxByYm[ym] || {};
-              var hdd = wx.hddCur || 0;
-              var cdd = wx.cddCur || 0;
+
+              var hdd, cdd;
+              if (entry.isBaseline) {
+                // For baseline months, use the baseline weather values
+                hdd = wx.hddBl || 0;
+                cdd = wx.cddBl || 0;
+              } else {
+                hdd = wx.hddCur || 0;
+                cdd = wx.cddCur || 0;
+              }
 
               // Compute predicted baseline from regression
               var predicted = rc.intercept * days;
@@ -52818,12 +52842,6 @@
                 predicted += rc.slope * cdd;
               }
               predicted = Math.max(0, predicted);
-
-              var actual = mo.cur || 0;
-              var saved = predicted - actual;
-              totBl += predicted;
-              totCur += actual;
-              totSav += saved;
 
               // Show formula breakdown
               var formulaParts = rc.intercept.toFixed(2) + '×' + days;
@@ -52843,35 +52861,69 @@
                 formulaParts += ' + ' + rc.slope.toFixed(2) + '×' + Math.round(cdd);
               }
 
-              rows +=
-                '<tr>' +
-                '<td>' +
-                moName +
-                '</td>' +
-                '<td class="rpt-n">' +
-                days +
-                '</td>' +
-                '<td class="rpt-n">' +
-                Math.round(hdd).toLocaleString() +
-                '</td>' +
-                '<td class="rpt-n">' +
-                Math.round(cdd).toLocaleString() +
-                '</td>' +
-                '<td style="font-family:monospace;font-size:6.5px;color:#555;white-space:nowrap">' +
-                formulaParts +
-                '</td>' +
-                '<td class="rpt-n" style="font-weight:600">' +
-                $n(predicted) +
-                '</td>' +
-                '<td class="rpt-n">' +
-                $n(actual) +
-                '</td>' +
-                '<td class="rpt-n" style="color:' +
-                (saved >= 0 ? '#1e8449' : '#c0392b') +
-                ';font-weight:600">' +
-                $n(saved) +
-                '</td>' +
-                '</tr>';
+              if (entry.isBaseline) {
+                // Baseline reference row — show predicted only, mark Actual/Saved as BL reference
+                totBl += predicted;
+                rows +=
+                  '<tr style="background:#f5f5f5;color:#999">' +
+                  '<td>' +
+                  moName +
+                  ' <span style="font-size:6px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span>' +
+                  '</td>' +
+                  '<td class="rpt-n" style="color:#bbb">' +
+                  days +
+                  '</td>' +
+                  '<td class="rpt-n" style="color:#bbb">' +
+                  Math.round(hdd).toLocaleString() +
+                  '</td>' +
+                  '<td class="rpt-n" style="color:#bbb">' +
+                  Math.round(cdd).toLocaleString() +
+                  '</td>' +
+                  '<td style="font-family:monospace;font-size:6.5px;color:#bbb;white-space:nowrap">' +
+                  formulaParts +
+                  '</td>' +
+                  '<td class="rpt-n" style="color:#aaa">' +
+                  $n(predicted) +
+                  '</td>' +
+                  '<td class="rpt-n" style="color:#bbb">—</td>' +
+                  '<td class="rpt-n" style="color:#bbb">—</td>' +
+                  '</tr>';
+              } else {
+                var actual = (entry.moData && entry.moData.cur) || 0;
+                var saved = predicted - actual;
+                totCur += actual;
+                totSav += saved;
+
+                rows +=
+                  '<tr>' +
+                  '<td>' +
+                  moName +
+                  '</td>' +
+                  '<td class="rpt-n">' +
+                  days +
+                  '</td>' +
+                  '<td class="rpt-n">' +
+                  Math.round(hdd).toLocaleString() +
+                  '</td>' +
+                  '<td class="rpt-n">' +
+                  Math.round(cdd).toLocaleString() +
+                  '</td>' +
+                  '<td style="font-family:monospace;font-size:6.5px;color:#555;white-space:nowrap">' +
+                  formulaParts +
+                  '</td>' +
+                  '<td class="rpt-n" style="font-weight:600">' +
+                  $n(predicted) +
+                  '</td>' +
+                  '<td class="rpt-n">' +
+                  $n(actual) +
+                  '</td>' +
+                  '<td class="rpt-n" style="color:' +
+                  (saved >= 0 ? '#1e8449' : '#c0392b') +
+                  ';font-weight:600">' +
+                  $n(saved) +
+                  '</td>' +
+                  '</tr>';
+              }
             });
 
             rows +=
@@ -52988,8 +53040,7 @@
             (ip ? '' : ' *') +
             '</td>' +
             '<td class="rpt-n" contenteditable="true">' +
-            $n(hddBl) +
-            (ip ? ' / ' + $n(hddCur) : '') +
+            (ip ? $n(hddCur) : $n(hddBl)) +
             '</td>' +
             '<td class="rpt-n" contenteditable="true" style="' +
             hddVarStyle +
@@ -52997,8 +53048,7 @@
             (ip && hddBl > 0 ? $p(hddVar) : '—') +
             '</td>' +
             '<td class="rpt-n" contenteditable="true">' +
-            $n(cddBl) +
-            (ip ? ' / ' + $n(cddCur) : '') +
+            (ip ? $n(cddCur) : $n(cddBl)) +
             '</td>' +
             '<td class="rpt-n" contenteditable="true" style="' +
             cddVarStyle +
@@ -53016,18 +53066,14 @@
           var totCddVar = totCddBl > 0 ? ((totCddCur - totCddBl) / totCddBl) * 100 : 0;
           tableRows +=
             '<tr class="rpt-tot">' +
-            '<td>Period Total</td>' +
+            '<td>Reporting Period Total</td>' +
             '<td class="rpt-n">' +
-            $n(totHddBl) +
-            ' / ' +
             $n(totHddCur) +
             '</td>' +
             '<td class="rpt-n">' +
             $p(totHddVar) +
             '</td>' +
             '<td class="rpt-n">' +
-            $n(totCddBl) +
-            ' / ' +
             $n(totCddCur) +
             '</td>' +
             '<td class="rpt-n">' +
@@ -53040,8 +53086,8 @@
           '<table class="rpt-table" contenteditable="true" style="font-size:10px">' +
           '<thead><tr>' +
           '<th>Month</th>' +
-          '<th class="rpt-n">HDD (BL / Current)</th><th class="rpt-n">HDD Var</th>' +
-          '<th class="rpt-n">CDD (BL / Current)</th><th class="rpt-n">CDD Var</th>' +
+          '<th class="rpt-n">HDD</th><th class="rpt-n">HDD Var</th>' +
+          '<th class="rpt-n">CDD</th><th class="rpt-n">CDD Var</th>' +
           '</tr></thead><tbody>' +
           tableRows +
           '</tbody></table>';
