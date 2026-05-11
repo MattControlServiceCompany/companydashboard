@@ -24982,6 +24982,15 @@
           commText +
           ' to matched meters?';
         banner.style.display = 'block';
+        // Sync the manual override dropdowns with the auto-detected match
+        const bldgSel = document.getElementById('pdfBldgSel');
+        const meterSel = document.getElementById('pdfMeterSel');
+        if (bldgSel && match.bldgId) {
+          pdfUpdateBldgMeterOpts();
+          bldgSel.value = match.bldgId;
+          pdfUpdateMeterOpts();
+          if (meterSel && match.meterId) meterSel.value = match.meterId;
+        }
       }
       async function confirmAutoAssign() {
         if (!_autoAssignTarget || !window._pdfMultiBills) return;
@@ -32222,7 +32231,7 @@
         meterSel.innerHTML = '<option value="">Auto-detect meter</option>';
         if (!projId) return;
         const ud = getUDProj(projId);
-        (ud.buildings || []).forEach(b => {
+        (ud.buildings || []).forEach((b) => {
           bldgSel.innerHTML += '<option value="' + b.id + '">' + (b.name || b.id) + '</option>';
         });
       }
@@ -32235,7 +32244,7 @@
         if (!projId || !bldgId) return;
         const bldg = getUDBldg(projId, bldgId);
         if (!bldg) return;
-        (bldg.meters || []).forEach(m => {
+        (bldg.meters || []).forEach((m) => {
           const lbl = (m.commodity || 'Meter') + (m.account ? ' (' + m.account + ')' : '');
           meterSel.innerHTML += '<option value="' + m.id + '">' + lbl + '</option>';
         });
@@ -32255,12 +32264,15 @@
         const manualMeterId = document.getElementById('pdfMeterSel')?.value || null;
         if (projId && manualBldgId && manualMeterId) {
           const bldg = getUDBldg(projId, manualBldgId);
-          const meter = bldg ? (bldg.meters || []).find(m => m.id === manualMeterId) : null;
+          const meter = bldg ? (bldg.meters || []).find((m) => m.id === manualMeterId) : null;
           if (bldg && meter) {
             _autoAssignTarget = {
-              proj: projects.find(p => p.id === projId),
-              bldg, meter,
-              projId, bldgId: manualBldgId, meterId: manualMeterId
+              proj: projects.find((p) => p.id === projId),
+              bldg,
+              meter,
+              projId,
+              bldgId: manualBldgId,
+              meterId: manualMeterId,
             };
           }
         }
