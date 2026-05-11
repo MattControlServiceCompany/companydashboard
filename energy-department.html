@@ -42123,12 +42123,14 @@
           });
         }
 
+        m._unitSavByCalMo = {};
         postRows.forEach((r) => {
           const calMo = parseInt(r.ym.split('-')[1]) - 1;
           const bfr = isPropane ? [] : bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
           if (!isPropane && !bfr.length) return;
 
           let totalCostSav = 0;
+          if (!m._unitSavByCalMo[calMo]) m._unitSavByCalMo[calMo] = { kwh: 0, kw: 0, therms: 0, gallons: 0 };
 
           const expUsage =
             hasBlCalMap && blByCalMo[calMo] != null
@@ -42156,6 +42158,8 @@
             const kwCostSav = blExpKW > 0 && moKwRate > 0 ? kwSaved * moKwRate : 0;
 
             totalCostSav = kwhCostSav + kwCostSav;
+            m._unitSavByCalMo[calMo].kwh += kwhSaved;
+            m._unitSavByCalMo[calMo].kw += kwSaved;
           } else if (isPropane) {
             // Propane savings = (Expected gallons - Actual gallons) × current $/gallon rate
             const actGallons = actUsage;
@@ -42163,6 +42167,7 @@
             const galRate = actGallons > 0 && actCost > 0 ? actCost / actGallons : 0;
             const galSaved = expUsage - actGallons;
             totalCostSav = galRate > 0 ? galSaved * galRate : 0;
+            m._unitSavByCalMo[calMo].gallons += galSaved;
           } else {
             // Gas/therm savings = (Expected therms - Actual therms) × current $/therm rate
             const actTherms = actUsage;
@@ -42173,6 +42178,7 @@
             const thermRate = actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0;
             const thermSaved = expUsage - actTherms;
             totalCostSav = thermRate > 0 ? thermSaved * thermRate : 0;
+            m._unitSavByCalMo[calMo].therms += thermSaved;
           }
 
           result[calMo] = (result[calMo] || 0) + totalCostSav;
@@ -48742,6 +48748,7 @@
           svgH = 110;
         const yrs = d.contract.years || 5;
         const annTarget = d.contract.annualTarget || 1;
+        const qTargets = d.contract.quarterlyTargets || [0, 0, 0, 0];
         const totalQtrs = yrs * 4;
         const _esc = d.contract.escalation || 0;
         const cumPoints = [];
@@ -63029,31 +63036,21 @@
             if (egfxCostSavedByCommodity[m.commodity] !== undefined) {
               egfxCostSavedByCommodity[m.commodity] += meterCostSav;
             }
+            if (m._unitSavByCalMo) {
+              Object.values(m._unitSavByCalMo).forEach((u) => {
+                egfxUnitsSaved.kwh += u.kwh || 0;
+                egfxUnitsSaved.kw += u.kw || 0;
+                egfxUnitsSaved.therms += u.therms || 0;
+                egfxUnitsSaved.gallons += u.gallons || 0;
+              });
+            }
           });
         });
         const hasEgfxSav = Object.keys(egfxSavByMo).length > 0;
         const totalEgfxSav = hasEgfxSav ? Object.values(egfxSavByMo).reduce((s, v) => s + v, 0) : 0;
 
-        // Per-commodity unit savings: baseline annual - rolling 12 actual
-        if (r12.length > 0) {
-          let r12Kwh = 0,
-            r12Gas = 0,
-            r12Propane = 0,
-            r12MaxKw = 0;
-          r12.forEach((m) => {
-            r12Kwh += m.kwh;
-            r12Gas += m.gas;
-            r12Propane += m.propane || 0;
-          });
-          const latestYd = latestYear ? yearData[latestYear] : null;
-          if (latestYd && latestYd.kw) r12MaxKw = Math.max(...latestYd.kw);
-          const blMaxKw = Math.max(...blKw.map((v, mi) => v / (blYmPerMo[mi].size || 1)));
-          const r12Scale = 12 / r12.length;
-          egfxUnitsSaved.kwh = totalBlKwh - r12Kwh * r12Scale;
-          egfxUnitsSaved.kw = blMaxKw - r12MaxKw;
-          egfxUnitsSaved.therms = totalBlGas - r12Gas * r12Scale;
-          egfxUnitsSaved.gallons = totalBlPropane - r12Propane * r12Scale;
-        }
+        // Unit savings (kwh, therms, gallons) are now accumulated from getMeterPerfSavingsByCalMo
+        // via m._unitSavByCalMo in the meter loop above — weather-normalized, not rolling-12
 
         // Projected Savings card — from measures only (buildings with all meters excluded are skipped)
         const projSavEl = document.getElementById(`egfx-projSav-${projId}`);
