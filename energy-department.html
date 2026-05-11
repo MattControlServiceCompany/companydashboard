@@ -48449,11 +48449,12 @@
 
         // Appendices
         var _appLtr = 'A';
-        function _nextAppLtr() { var l = _appLtr; _appLtr = String.fromCharCode(_appLtr.charCodeAt(0) + 1); return l; }
-        if (s.appendixA !== false) pages.push(rptPageAppendixNormalization(pageNum++, data, _nextAppLtr()));
-        if (s.appendixB !== false) pages.push(rptPageAppendixBaseline(pageNum++, data, _nextAppLtr()));
-        if (s.appendixC !== false) pages.push(rptPageAppendixWeather(pageNum++, data, _nextAppLtr()));
-        if (s.appendixD !== false) pages.push(rptPageAppendixBills(pageNum++, data, _nextAppLtr()));
+        var _appMap = {};
+        function _nextAppLtr(key) { var l = _appLtr; _appMap[key] = l; _appLtr = String.fromCharCode(l.charCodeAt(0) + 1); return l; }
+        if (s.appendixA !== false) pages.push(rptPageAppendixNormalization(pageNum++, data, _nextAppLtr('norm')));
+        if (s.appendixB !== false) pages.push(rptPageAppendixBaseline(pageNum++, data, _nextAppLtr('regr'), _appMap));
+        if (s.appendixC !== false) pages.push(rptPageAppendixWeather(pageNum++, data, _nextAppLtr('weather')));
+        if (s.appendixD !== false) pages.push(rptPageAppendixBills(pageNum++, data, _nextAppLtr('bills')));
 
         return pages.join('\n');
       }
@@ -53131,8 +53132,9 @@
         });
       }
 
-      function rptPageAppendixBaseline(n, d, appLetter) {
+      function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         appLetter = appLetter || 'B';
+        appMap = appMap || {};
         var $n = function (v) {
           return Math.round(v || 0).toLocaleString();
         };
@@ -53164,7 +53166,7 @@
           'Weather-normalized savings use an OLS regression model: <span style="font-family:monospace;background:#fff;border:1px solid #ddd;padding:1px 4px;border-radius:2px">Usage = β₀ × Days + β₁ × HDD + β₂ × CDD</span><br>' +
           'Where β₀ = base load per day, β₁ = heating coefficient, β₂ = cooling coefficient. ' +
           'The model is fit to baseline period data and applied to current weather to predict what consumption <em>would have been</em> without efficiency improvements. ' +
-          'R² values above 0.75 indicate a strong fit. Full regression details are in the Normalization appendix.' +
+          'R² values above 0.75 indicate a strong fit.' + (appMap.norm ? ' Full regression details are in Appendix ' + appMap.norm + '.' : '') + '' +
           '</div>';
 
         // Build weather lookup by YYYY-MM
