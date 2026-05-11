@@ -42059,21 +42059,6 @@
           }
         }
 
-        const rawUsageByYm = {};
-        if (!isElec) {
-          if (isPropane) {
-            allRows.forEach((r) => {
-              rawUsageByYm[r.ym] = r.usage;
-            });
-          } else {
-            bills.forEach((b) => {
-              const ym = normMonth(b.start, b.end, incl, bills);
-              if (!ym) return;
-              rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + parseFloat(b.therms || b.usage || 0);
-            });
-          }
-        }
-
         const _calMoMap = isElec ? eMo : m.commodity === 'Gas' ? gMo : isPropane ? pMo || {} : {};
         const blByCalMo = {};
         Object.entries(_calMoMap).forEach(([mo, v]) => {
@@ -42082,14 +42067,6 @@
         const hasBlCalMap = Object.keys(blByCalMo).length > 0;
         const hasRegrP = allRows.some((r) => r.regrBaseline != null);
         const blAvg = blRows.length ? blRows.reduce((s, r) => s + r.usage, 0) / blRows.length : 0;
-
-        if (isElec) {
-          bills.forEach((b) => {
-            const ym = normMonth(b.start, b.end, incl, bills);
-            if (!ym) return;
-            rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + (parseFloat(b.kwh) || parseFloat(b.usage) || 0);
-          });
-        }
 
         m._unitSavByCalMo = {};
         postRows.forEach((r) => {
@@ -42106,7 +42083,7 @@
               : hasRegrP && r.regrBaseline != null
                 ? r.regrBaseline
                 : blAvg;
-          const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
+          const actUsage = r.usage;
 
           if (isElec) {
             const actKwh = actUsage;
@@ -42224,28 +42201,6 @@
           }
         }
 
-        const rawUsageByYm = {};
-        if (!isElec) {
-          if (isPropane) {
-            allRows.forEach((r) => {
-              rawUsageByYm[r.ym] = r.usage;
-            });
-          } else {
-            bills.forEach((b) => {
-              const ym = normMonth(b.start, b.end, incl, bills);
-              if (!ym) return;
-              rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + parseFloat(b.therms || b.usage || 0);
-            });
-          }
-        }
-        if (isElec) {
-          bills.forEach((b) => {
-            const ym = normMonth(b.start, b.end, incl, bills);
-            if (!ym) return;
-            rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + (parseFloat(b.kwh) || parseFloat(b.usage) || 0);
-          });
-        }
-
         postRows.forEach((r) => {
           const calMo = parseInt(r.ym.split('-')[1]) - 1;
           const bfr = isPropane ? [] : bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
@@ -42258,7 +42213,7 @@
               : hasRegrP && r.regrBaseline != null
                 ? r.regrBaseline
                 : blAvg;
-          const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
+          const actUsage = r.usage;
 
           if (isElec) {
             const actKwh = actUsage;
@@ -47388,24 +47343,6 @@
               blDemKWByCalMo[mo] = v.billedKW || v.demandKW || 0;
             });
 
-            // Raw usage by year-month
-            const rawUsageByYm = {};
-            if (isElec) {
-              bills.forEach((b2) => {
-                const ym = normMonth(b2.start, b2.end, incl, bills);
-                if (ym) rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + (parseFloat(b2.kwh) || parseFloat(b2.usage) || 0);
-              });
-            } else if (!isPropane) {
-              bills.forEach((b2) => {
-                const ym = normMonth(b2.start, b2.end, incl, bills);
-                if (ym) rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + parseFloat(b2.therms || b2.usage || 0);
-              });
-            } else {
-              allRows.forEach((r) => {
-                rawUsageByYm[r.ym] = r.usage;
-              });
-            }
-
             // Baseline cost by calendar month (per-meter, from buildMoMap)
             const blCostByCalMo = {};
             if (isElec) {
@@ -47437,7 +47374,7 @@
                   : r.regrBaseline != null
                     ? r.regrBaseline
                     : blAvg;
-              const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
+              const actUsage = r.usage;
               const inPeriod = reportYMs.includes(r.ym);
 
               const totalCostSav = meterSavByYM[r.ym] || 0;
@@ -53822,23 +53759,6 @@
             Object.entries(eM).forEach(([mo, v]) => {
               blDemKWByCalMo[mo] = v.billedKW || v.demandKW || 0;
             });
-            const rawUsageByYm = {};
-            if (isElec) {
-              bills.forEach((b2) => {
-                const ym = normMonth(b2.start, b2.end, incl, bills);
-                if (ym) rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + (parseFloat(b2.kwh) || parseFloat(b2.usage) || 0);
-              });
-            } else if (!isPropane) {
-              bills.forEach((b2) => {
-                const ym = normMonth(b2.start, b2.end, incl, bills);
-                if (ym) rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + parseFloat(b2.therms || b2.usage || 0);
-              });
-            } else {
-              allRows.forEach((r) => {
-                rawUsageByYm[r.ym] = r.usage;
-              });
-            }
-
             postRows.forEach((r) => {
               const calMo = parseInt(r.ym.split('-')[1]) - 1;
               const bfr = isPropane ? [] : bills.filter((b2) => normMonth(b2.start, b2.end, incl, bills) === r.ym);
@@ -53850,7 +53770,7 @@
                   : r.regrBaseline != null
                     ? r.regrBaseline
                     : blAvg;
-              const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
+              const actUsage = r.usage;
 
               let totalCostSav = 0;
               if (isElec) {
@@ -54861,28 +54781,12 @@
             blByCalMo[mo] = r.regrBaseline != null ? r.regrBaseline : r.usage;
           });
           const blAvg = blRows.length ? blRows.reduce((s, r) => s + r.usage, 0) / blRows.length : 0;
-          const rawUsageByYm = {};
-          if (isElec) {
-            bills.forEach((b2) => {
-              const ym = normMonth(b2.start, b2.end, incl, bills);
-              if (ym) rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + (parseFloat(b2.kwh) || parseFloat(b2.usage) || 0);
-            });
-          } else if (isPropane) {
-            allRows.forEach((r) => {
-              rawUsageByYm[r.ym] = r.usage;
-            });
-          } else {
-            bills.forEach((b2) => {
-              const ym = normMonth(b2.start, b2.end, incl, bills);
-              if (ym) rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + parseFloat(b2.therms || b2.usage || 0);
-            });
-          }
           postRows.forEach((r) => {
             if (!reportYMs.includes(r.ym)) return;
             const calMo = parseInt(r.ym.split('-')[1]) - 1;
             const expUsage =
               blByCalMo[calMo] != null ? blByCalMo[calMo] : r.regrBaseline != null ? r.regrBaseline : blAvg;
-            const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
+            const actUsage = r.usage;
             const usageSaved = expUsage - actUsage;
             if (isElec) savKwh += usageSaved;
             else if (isPropane) savPropaneGal += usageSaved;
