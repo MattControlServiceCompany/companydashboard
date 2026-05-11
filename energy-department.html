@@ -37474,12 +37474,14 @@
         const ddLabel = isElec ? 'CDD' : 'HDD';
         const reg = m._reg;
         const rawReg = isElec ? reg?.cdd : reg?.hdd;
+        const proj = getUDProj(udSelProjId);
+        const normBasis = proj?.normBasis || 'calendar';
 
         const pts = rows.filter((r) => !r.partial && (isElec ? r.cdd != null : r.hdd != null) && r.normDays > 0);
         const lines = [
           [
             'Month',
-            'Cal Days',
+            'Norm Days',
             unit,
             ddLabel,
             unit + '/Day',
@@ -37493,13 +37495,14 @@
           ].join(','),
           ...pts.map((r) => {
             const dd = isElec ? r.cdd : r.hdd;
-            const kwhDay = r.usage / r.normDays;
-            const ddDay = dd / r.normDays;
-            const fitRaw = rawReg ? rawReg.interceptRaw * r.normDays + rawReg.slope * dd : '';
-            const fitAdj = rawReg ? rawReg.intercept * r.normDays + rawReg.slope * dd : '';
+            const nDays = normBasis === 'calendar' ? r.normDays : r.days;
+            const kwhDay = r.usage / nDays;
+            const ddDay = dd / nDays;
+            const fitRaw = rawReg ? rawReg.interceptRaw * nDays + rawReg.slope * dd : '';
+            const fitAdj = rawReg ? rawReg.intercept * nDays + rawReg.slope * dd : '';
             return [
               r.label,
-              r.normDays,
+              nDays,
               r.usage.toFixed(2),
               dd.toFixed(2),
               kwhDay.toFixed(6),
@@ -37515,7 +37518,7 @@
           // Summary row
           [
             'TOTALS',
-            pts.reduce((s, r) => s + r.normDays, 0),
+            pts.reduce((s, r) => s + (normBasis === 'calendar' ? r.normDays : r.days), 0),
             pts.reduce((s, r) => s + r.usage, 0).toFixed(2),
             pts.reduce((s, r) => s + (isElec ? r.cdd : r.hdd), 0).toFixed(2),
             '',
@@ -38277,13 +38280,15 @@
                 else if (dd == null) excludeReason = 'no ' + ddLabel2 + ' data';
                 else excludeReason = 'excluded';
               }
-              const kwhPerDay = r.usage / r.normDays;
-              const ddPerDay = dd != null ? dd / r.normDays : null;
-              const fitLine = included && rawReg ? rawReg.interceptRaw * r.normDays + rawReg.slope * dd : null;
-              const adjFit = included && rawReg ? rawReg.intercept * r.normDays + rawReg.slope * dd : null;
+              const nDays = normBasis === 'calendar' ? r.normDays : r.days;
+              const kwhPerDay = r.usage / nDays;
+              const ddPerDay = dd != null ? dd / nDays : null;
+              const fitLine = included && rawReg ? rawReg.interceptRaw * nDays + rawReg.slope * dd : null;
+              const adjFit = included && rawReg ? rawReg.intercept * nDays + rawReg.slope * dd : null;
               return {
                 label: r.label,
-                normDays: r.normDays,
+                normDays: nDays,
+                calDays: r.normDays,
                 usage: r.usage,
                 days: r.days,
                 dd,
@@ -38316,8 +38321,8 @@
                   '</td>' +
                   '<td class="mono">' +
                   r.normDays +
-                  ' <span style="color:var(--text3);font-size:10px">(bill:' +
-                  r.days +
+                  ' <span style="color:var(--text3);font-size:10px">(' +
+                  (normBasis === 'calendar' ? 'bill:' + r.days : 'cal:' + r.calDays) +
                   ')</span></td>' +
                   '<td class="mono">' +
                   r.usage.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 }) +
@@ -47917,9 +47922,11 @@
           }));
 
           // EUI calculations — period-matched comparison (same months for baseline and current)
-          const reportCalMonths = reportYMs.map(ym => parseInt(ym.split('-')[1]));
-          let periodBlKBtu = 0, periodCurKBtu = 0;
-          let periodBlMoCt = 0, periodCurMoCt = 0;
+          const reportCalMonths = reportYMs.map((ym) => parseInt(ym.split('-')[1]));
+          let periodBlKBtu = 0,
+            periodCurKBtu = 0;
+          let periodBlMoCt = 0,
+            periodCurMoCt = 0;
           const blMoSet = new Set();
           const curMoSet = new Set();
           bMeters.forEach(({ m: mt, bills: mtBills, bl: mtBl, incl: mtIncl }) => {
@@ -47930,9 +47937,13 @@
               blMoSet.add(ym);
               const calMo = parseInt(ym.split('-')[1]);
               if (reportCalMonths.includes(calMo)) {
-                const kbtu = mt.commodity === 'Gas' ? (parseFloat(bill.therms) || 0) * 100
-                  : mt.commodity === 'Propane' ? (parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 91.5
-                  : (parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 3.412;
+                const kbtu =
+                  mt.commodity === 'Gas'
+                    ? (parseFloat(bill.therms) || 0) * 100
+                    : mt.commodity === 'Propane'
+                      ? (parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) *
+                        91.5
+                      : (parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 3.412;
                 periodBlKBtu += kbtu;
                 periodBlMoCt++;
               }
@@ -47946,9 +47957,13 @@
                 const ym = normMonth(bill.start, bill.end, mtIncl, mtBills);
                 if (!ym) return;
                 curMoSet.add(ym);
-                const kbtu = mt.commodity === 'Gas' ? (parseFloat(bill.therms) || 0) * 100
-                  : mt.commodity === 'Propane' ? (parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 91.5
-                  : (parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 3.412;
+                const kbtu =
+                  mt.commodity === 'Gas'
+                    ? (parseFloat(bill.therms) || 0) * 100
+                    : mt.commodity === 'Propane'
+                      ? (parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) *
+                        91.5
+                      : (parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 3.412;
                 periodCurKBtu += kbtu;
                 periodCurMoCt++;
               });
@@ -48087,7 +48102,12 @@
           inputs: { kwhSaved: 0, thermsSaved: 0, propaneGalSaved: 0 },
         };
         try {
-          pollution = calculatePollutionCredits(Math.max(0, totKwhSaved), Math.max(0, totThermsSaved), Math.max(0, totPropaneSaved), stateCode);
+          pollution = calculatePollutionCredits(
+            Math.max(0, totKwhSaved),
+            Math.max(0, totThermsSaved),
+            Math.max(0, totPropaneSaved),
+            stateCode,
+          );
         } catch (e) {
           /* pollution calc not critical */
         }
@@ -48342,9 +48362,18 @@
           (data ? data.project.client + (_fmtRptDate ? ' — ' + _fmtRptDate : ' — ' + data.period.label) : '') +
           '</span>' +
           '</div>';
-        const footerLabelHtml = data && data.period
-          ? '<div style="text-align:center;font-size:8px;color:#888;padding:4px 0 2px;position:absolute;bottom:' + (footerImgHtml ? '45px' : '8px') + ';left:0;right:0">' + (data.period.year || '') + ' Q' + (data.period.quarter || 1) + ' ' + (data.period.type === 'quarterly' ? 'Quarterly' : 'Annual') + ' Report</div>'
-          : '';
+        const footerLabelHtml =
+          data && data.period
+            ? '<div style="text-align:center;font-size:8px;color:#888;padding:4px 0 2px;position:absolute;bottom:' +
+              (footerImgHtml ? '45px' : '8px') +
+              ';left:0;right:0">' +
+              (data.period.year || '') +
+              ' Q' +
+              (data.period.quarter || 1) +
+              ' ' +
+              (data.period.type === 'quarterly' ? 'Quarterly' : 'Annual') +
+              ' Report</div>'
+            : '';
 
         if (isHero) {
           return (
@@ -48427,17 +48456,23 @@
           data.buildings.forEach(function (b) {
             var bResult = rptPageBuildingSummary(0, data, b);
             if (bResult.meterPerfHTML) {
-              _mpBlocks.push('<div style="page-break-inside:avoid;break-inside:avoid;margin-bottom:10px">' +
-                '<div style="font-size:10px;font-weight:700;color:#1a5276;margin-bottom:3px;border-bottom:1px solid #d4e4f0;padding-bottom:2px">' + (b.name || 'Building') + '</div>' +
-                bResult.meterPerfHTML +
-                '</div>');
+              _mpBlocks.push(
+                '<div style="page-break-inside:avoid;break-inside:avoid;margin-bottom:10px">' +
+                  '<div style="font-size:10px;font-weight:700;color:#1a5276;margin-bottom:3px;border-bottom:1px solid #d4e4f0;padding-bottom:2px">' +
+                  (b.name || 'Building') +
+                  '</div>' +
+                  bResult.meterPerfHTML +
+                  '</div>',
+              );
             }
           });
           // Split into pages of 3 buildings each
           for (var _mpI = 0; _mpI < _mpBlocks.length; _mpI += 3) {
             var _mpChunk = _mpBlocks.slice(_mpI, _mpI + 3).join('');
             var _mpTitle = _mpI === 0 ? 'Meter Performance — All Buildings' : 'Meter Performance (continued)';
-            pages.push(rptPage(pageNum++, _mpTitle, _mpChunk, { data: data, label: 'Page ' + pageNum + ' — Meter Performance' }));
+            pages.push(
+              rptPage(pageNum++, _mpTitle, _mpChunk, { data: data, label: 'Page ' + pageNum + ' — Meter Performance' }),
+            );
           }
         }
 
@@ -48459,7 +48494,12 @@
         // Appendices
         var _appLtr = 'A';
         var _appMap = {};
-        function _nextAppLtr(key) { var l = _appLtr; _appMap[key] = l; _appLtr = String.fromCharCode(l.charCodeAt(0) + 1); return l; }
+        function _nextAppLtr(key) {
+          var l = _appLtr;
+          _appMap[key] = l;
+          _appLtr = String.fromCharCode(l.charCodeAt(0) + 1);
+          return l;
+        }
         if (s.appendixA !== false) pages.push(rptPageAppendixNormalization(pageNum++, data, _nextAppLtr('norm')));
         if (s.appendixB !== false) pages.push(rptPageAppendixBaseline(pageNum++, data, _nextAppLtr('regr'), _appMap));
         if (s.appendixC !== false) pages.push(rptPageAppendixWeather(pageNum++, data, _nextAppLtr('weather')));
@@ -49697,7 +49737,9 @@
               '<tr style="' +
               rowBg +
               '">' +
-              '<td style="font-weight:600;vertical-align:middle;font-size:7px;' + rowBg + '" contenteditable="true">' +
+              '<td style="font-weight:600;vertical-align:middle;font-size:7px;' +
+              rowBg +
+              '" contenteditable="true">' +
               (b.name || '\u2014') +
               '</td>' +
               '<td contenteditable="true" style="color:#1a5276;font-weight:600">' +
@@ -50058,9 +50100,11 @@
           eqLine('Offsetting', eq.coalPlants, 'coal-fired power plant emissions per year');
 
         if (!polLines)
-          polLines = '<div style="font-size:10px;color:#aaa;font-style:italic;text-align:center">No pollutant data available.</div>';
+          polLines =
+            '<div style="font-size:10px;color:#aaa;font-style:italic;text-align:center">No pollutant data available.</div>';
         if (!eqLines)
-          eqLines = '<div style="font-size:10px;color:#aaa;font-style:italic;text-align:center">No equivalents data available.</div>';
+          eqLines =
+            '<div style="font-size:10px;color:#aaa;font-style:italic;text-align:center">No equivalents data available.</div>';
 
         const bodyHTML =
           '<div contenteditable="true">' +
@@ -53133,7 +53177,9 @@
         }
 
         var bodyHTML =
-          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 8px">Appendix ' + appLetter + ': Normalization &amp; Meter Baseline</h2>' +
+          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 8px">Appendix ' +
+          appLetter +
+          ': Normalization &amp; Meter Baseline</h2>' +
           methodBox +
           '<h3 style="font-size:9.5px;font-weight:700;color:#555;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.04em">Per-Building Meter Detail</h3>' +
           meterTables;
@@ -53178,7 +53224,9 @@
           'Weather-normalized savings use an OLS regression model: <span style="font-family:monospace;background:#fff;border:1px solid #ddd;padding:1px 4px;border-radius:2px">Usage = β₀ × Days + β₁ × HDD + β₂ × CDD</span><br>' +
           'Where β₀ = base load per day, β₁ = heating coefficient, β₂ = cooling coefficient. ' +
           'The model is fit to baseline period data and applied to current weather to predict what consumption <em>would have been</em> without efficiency improvements. ' +
-          'R² values above 0.75 indicate a strong fit.' + (appMap.norm ? ' Full regression details are in Appendix ' + appMap.norm + '.' : '') + '' +
+          'R² values above 0.75 indicate a strong fit.' +
+          (appMap.norm ? ' Full regression details are in Appendix ' + appMap.norm + '.' : '') +
+          '' +
           '</div>';
 
         // Build weather lookup by YYYY-MM
@@ -53472,7 +53520,9 @@
         }
 
         var bodyHTML =
-          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' + appLetter + ': Regression Model Methodology</h2>' +
+          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' +
+          appLetter +
+          ': Regression Model Methodology</h2>' +
           '<div style="font-size:8.5px;color:#666;margin-bottom:8px">Weather-normalized baseline calculations per building and commodity</div>' +
           regressionExplainer +
           '<h3 style="font-size:9.5px;font-weight:700;color:#555;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.04em">Monthly Baseline Calculations</h3>' +
@@ -53535,12 +53585,23 @@
           var rowStyle = ip ? '' : 'color:#999;background:#f8f8f8';
           var hddVal = ip ? hddCur : hddBl;
           var cddVal = ip ? cddCur : cddBl;
-          var badge = ip ? '' : ' <span style="font-size:6px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span>';
+          var badge = ip
+            ? ''
+            : ' <span style="font-size:6px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span>';
           tableRows +=
-            '<tr style="' + rowStyle + '">' +
-            '<td contenteditable="true">' + _wFmtDate(mo.month) + badge + '</td>' +
-            '<td class="rpt-n" contenteditable="true">' + $n(hddVal) + '</td>' +
-            '<td class="rpt-n" contenteditable="true">' + $n(cddVal) + '</td>' +
+            '<tr style="' +
+            rowStyle +
+            '">' +
+            '<td contenteditable="true">' +
+            _wFmtDate(mo.month) +
+            badge +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $n(hddVal) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            $n(cddVal) +
+            '</td>' +
             '</tr>';
         });
 
@@ -53553,18 +53614,34 @@
           tableRows +=
             '<tr class="rpt-tot">' +
             '<td>Baseline Period Avg</td>' +
-            '<td class="rpt-n">' + $n(totHddBl) + '</td>' +
-            '<td class="rpt-n">' + $n(totCddBl) + '</td>' +
+            '<td class="rpt-n">' +
+            $n(totHddBl) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $n(totCddBl) +
+            '</td>' +
             '</tr>' +
             '<tr class="rpt-tot">' +
             '<td>Reporting Period Total</td>' +
-            '<td class="rpt-n">' + $n(totHddCur) + '</td>' +
-            '<td class="rpt-n">' + $n(totCddCur) + '</td>' +
+            '<td class="rpt-n">' +
+            $n(totHddCur) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $n(totCddCur) +
+            '</td>' +
             '</tr>' +
             '<tr class="rpt-tot">' +
             '<td>Variance</td>' +
-            '<td class="rpt-n" style="' + (Math.abs(totHddVar) > 10 ? 'color:#c0392b;font-weight:600' : '') + '">' + $p(totHddVar) + '</td>' +
-            '<td class="rpt-n" style="' + (Math.abs(totCddVar) > 10 ? 'color:#c0392b;font-weight:600' : '') + '">' + $p(totCddVar) + '</td>' +
+            '<td class="rpt-n" style="' +
+            (Math.abs(totHddVar) > 10 ? 'color:#c0392b;font-weight:600' : '') +
+            '">' +
+            $p(totHddVar) +
+            '</td>' +
+            '<td class="rpt-n" style="' +
+            (Math.abs(totCddVar) > 10 ? 'color:#c0392b;font-weight:600' : '') +
+            '">' +
+            $p(totCddVar) +
+            '</td>' +
             '</tr>';
         }
 
@@ -53619,20 +53696,51 @@
 
         var hddCddParagraph = '';
         if (d.weather) {
-          var pHDD = d.weather.totals && d.weather.totals.hddCur ? Math.round(d.weather.totals.hddCur).toLocaleString() : '\u2014';
-          var bHDD = d.weather.totals && d.weather.totals.hddBl ? Math.round(d.weather.totals.hddBl).toLocaleString() : '\u2014';
-          var hddPctChg = d.weather.totals && d.weather.totals.hddBl > 0 ? Math.round(((d.weather.totals.hddCur - d.weather.totals.hddBl) / d.weather.totals.hddBl) * 100) : 0;
-          var pCDD = d.weather.totals && d.weather.totals.cddCur ? Math.round(d.weather.totals.cddCur).toLocaleString() : '\u2014';
-          var bCDD = d.weather.totals && d.weather.totals.cddBl ? Math.round(d.weather.totals.cddBl).toLocaleString() : '\u2014';
-          var cddPctChg = d.weather.totals && d.weather.totals.cddBl > 0 ? Math.round(((d.weather.totals.cddCur - d.weather.totals.cddBl) / d.weather.totals.cddBl) * 100) : 0;
-          hddCddParagraph = '<div contenteditable="true" style="margin-top:10px;font-size:9px;color:#444;line-height:1.7">' +
-            'Heating degree days (HDD) for the period were ' + pHDD + ' vs. a baseline average of ' + bHDD + ' (' + (hddPctChg >= 0 ? '+' : '') + hddPctChg + '%). ' +
-            'Cooling degree days (CDD) were ' + pCDD + ' vs. a baseline of ' + bCDD + ' (' + (cddPctChg >= 0 ? '+' : '') + cddPctChg + '%). ' +
+          var pHDD =
+            d.weather.totals && d.weather.totals.hddCur
+              ? Math.round(d.weather.totals.hddCur).toLocaleString()
+              : '\u2014';
+          var bHDD =
+            d.weather.totals && d.weather.totals.hddBl ? Math.round(d.weather.totals.hddBl).toLocaleString() : '\u2014';
+          var hddPctChg =
+            d.weather.totals && d.weather.totals.hddBl > 0
+              ? Math.round(((d.weather.totals.hddCur - d.weather.totals.hddBl) / d.weather.totals.hddBl) * 100)
+              : 0;
+          var pCDD =
+            d.weather.totals && d.weather.totals.cddCur
+              ? Math.round(d.weather.totals.cddCur).toLocaleString()
+              : '\u2014';
+          var bCDD =
+            d.weather.totals && d.weather.totals.cddBl ? Math.round(d.weather.totals.cddBl).toLocaleString() : '\u2014';
+          var cddPctChg =
+            d.weather.totals && d.weather.totals.cddBl > 0
+              ? Math.round(((d.weather.totals.cddCur - d.weather.totals.cddBl) / d.weather.totals.cddBl) * 100)
+              : 0;
+          hddCddParagraph =
+            '<div contenteditable="true" style="margin-top:10px;font-size:9px;color:#444;line-height:1.7">' +
+            'Heating degree days (HDD) for the period were ' +
+            pHDD +
+            ' vs. a baseline average of ' +
+            bHDD +
+            ' (' +
+            (hddPctChg >= 0 ? '+' : '') +
+            hddPctChg +
+            '%). ' +
+            'Cooling degree days (CDD) were ' +
+            pCDD +
+            ' vs. a baseline of ' +
+            bCDD +
+            ' (' +
+            (cddPctChg >= 0 ? '+' : '') +
+            cddPctChg +
+            '%). ' +
             'Normalized savings figures account for weather variance using regression-based baseline adjustment.' +
             '</div>';
         }
         var bodyHTML =
-          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' + appLetter + ': Weather Data</h2>' +
+          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' +
+          appLetter +
+          ': Weather Data</h2>' +
           '<div style="font-size:8.5px;color:#666;margin-bottom:10px">Combined HDD and CDD — Base 60°F per contract</div>' +
           weatherTable +
           '<h3 style="font-size:9.5px;font-weight:700;color:#555;margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.04em">Weather Impact Summary</h3>' +
@@ -53781,7 +53889,9 @@
           '</div>';
 
         var bodyHTML =
-          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' + appLetter + ': Utility Bills</h2>' +
+          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' +
+          appLetter +
+          ': Utility Bills</h2>' +
           '<div style="font-size:8.5px;color:#666;margin-bottom:10px">Original utility bill PDFs for the reporting period</div>' +
           sections +
           billImagesSection +
