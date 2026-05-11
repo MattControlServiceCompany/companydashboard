@@ -1989,34 +1989,34 @@
         z-index: 1;
       }
       .rpt-hero-type {
-        font-size: 8px;
+        font-size: 10px;
+        font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 2px;
-        opacity: 0.6;
-        background: rgba(255, 255, 255, 0.1);
-        padding: 3px 10px;
-        border-radius: 10px;
+        color: #1a5276;
+        padding: 2px 0;
       }
       .rpt-hero-main {
         position: relative;
         z-index: 1;
         text-align: center;
-        margin: 4px 0;
+        margin: 2px 0;
       }
       .rpt-hero-main h1 {
-        font-size: 32px;
+        font-size: 28px;
         font-weight: 800;
         letter-spacing: -1px;
         color: #1a5276;
+        margin: 0;
       }
       .rpt-hero-main .rpt-hero-client {
         font-size: 16px;
         color: #333;
-        font-weight: 400;
-        margin-bottom: 2px;
+        font-weight: 700;
+        margin-bottom: 1px;
       }
       .rpt-hero-main .rpt-hero-period {
-        font-size: 10px;
+        font-size: 9px;
         color: #666;
         letter-spacing: 1px;
       }
@@ -2027,10 +2027,10 @@
         justify-content: center;
         align-items: baseline;
         gap: 6px;
-        margin: 6px 0 3px;
+        margin: 2px 0 2px;
       }
       .rpt-big-number .rpt-bn-amount {
-        font-size: 56px;
+        font-size: 44px;
         font-weight: 800;
         color: #1e8449;
         letter-spacing: -2px;
@@ -2052,8 +2052,9 @@
         position: relative;
         z-index: 1;
         text-align: center;
-        font-size: 10px;
+        font-size: 9px;
         color: #666;
+        margin-bottom: 0;
       }
 
       /* ── Observations ── */
@@ -48808,7 +48809,7 @@
 
         // Body section (white background below hero)
         const bodyHTML =
-          '<div style="padding:16px 50px 60px;">' +
+          '<div style="padding:10px 50px 10px;">' +
           // Narrative
           '<div class="rpt-narrative" contenteditable="true">' +
           narrative +
@@ -48848,8 +48849,8 @@
           '' +
           '</div>' +
           // Portfolio Metrics (full width, on top)
-          '<div style="margin-top:12px">' +
-          '<div style="font-size:10px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Portfolio Metrics</div>' +
+          '<div style="margin-top:6px">' +
+          '<div style="font-size:9px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Portfolio Metrics</div>' +
           '<div class="rpt-gauge-row">' +
           gaugeSVG(pctOfTarget, '#27ae60', 'vs Target', pctOfTarget + '%') +
           gaugeSVG(energyRedPct, '#2e86c1', 'Energy Reduced', energyRedPct + '%') +
@@ -48858,16 +48859,16 @@
           '</div>' +
           '</div>' +
           // Building Status (full width, below — cards side by side)
-          '<div style="margin-top:12px">' +
-          '<div style="font-size:10px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Building Status</div>' +
+          '<div style="margin-top:6px">' +
+          '<div style="font-size:9px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Building Status</div>' +
           '<div style="display:flex;flex-wrap:wrap;gap:6px">' +
           statusCards +
           padCards +
           '</div>' +
           '</div>' +
           // Key Findings
-          '<div style="margin-top:12px;">' +
-          '<div style="font-size:10px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Key Findings</div>' +
+          '<div style="margin-top:6px;">' +
+          '<div style="font-size:9px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Key Findings</div>' +
           findingsHTML +
           '</div>' +
           '</div>';
@@ -49994,7 +49995,7 @@
         function polLine(val, unit, label) {
           if (!val || Math.round(Math.abs(val)) === 0) return '';
           return (
-            '<div style="font-size:11px;color:#333;padding:2px 0;line-height:1.5">' +
+            '<div style="font-size:11px;color:#333;padding:2px 0;line-height:1.5;text-align:center">' +
             '<strong style="color:#1a5276;font-size:13px">' +
             $n(val) +
             '</strong>' +
@@ -50009,7 +50010,7 @@
         function eqLine(prefix, val, suffix) {
           if (!val || Math.round(Math.abs(val)) === 0) return '';
           return (
-            '<div style="font-size:11px;color:#333;padding:2px 0;line-height:1.5">' +
+            '<div style="font-size:11px;color:#333;padding:2px 0;line-height:1.5;text-align:center">' +
             (prefix ? prefix + ' ' : '') +
             '<strong style="color:#1e8449;font-size:13px">' +
             $n(val) +
@@ -50046,9 +50047,9 @@
           eqLine('Offsetting', eq.coalPlants, 'coal-fired power plant emissions per year');
 
         if (!polLines)
-          polLines = '<div style="font-size:10px;color:#aaa;font-style:italic">No pollutant data available.</div>';
+          polLines = '<div style="font-size:10px;color:#aaa;font-style:italic;text-align:center">No pollutant data available.</div>';
         if (!eqLines)
-          eqLines = '<div style="font-size:10px;color:#aaa;font-style:italic">No equivalents data available.</div>';
+          eqLines = '<div style="font-size:10px;color:#aaa;font-style:italic;text-align:center">No equivalents data available.</div>';
 
         const bodyHTML =
           '<div contenteditable="true">' +
@@ -50057,16 +50058,16 @@
           (_annualize ? ' (values annualized ×4 from quarterly data)' : '') +
           '</div>' +
           '<div style="display:flex;flex-direction:column;gap:10px">' +
-          '<div style="background:#f0f4f9;border:1px solid #d0dce8;border-radius:6px;padding:10px 14px">' +
-          '<div style="font-size:10px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;border-bottom:1px solid #c5d5e8;padding-bottom:4px">Pollutants Avoided</div>' +
+          '<div style="padding:4px 0;text-align:center">' +
+          '<div style="font-size:11px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;border-bottom:1px solid #d4e4f0;padding-bottom:4px">Pollutants Avoided</div>' +
           polLines +
           '</div>' +
-          '<div style="background:#f0f9f4;border:1px solid #b7dfc7;border-radius:6px;padding:10px 14px">' +
-          '<div style="font-size:10px;font-weight:700;color:#1e6b3a;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;border-bottom:1px solid #9dd4b3;padding-bottom:4px">Real-World Equivalents</div>' +
+          '<div style="padding:4px 0;text-align:center">' +
+          '<div style="font-size:11px;font-weight:700;color:#1e6b3a;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;border-bottom:1px solid #b7dfc7;padding-bottom:4px">Real-World Equivalents</div>' +
           eqLines +
           '</div>' +
           '</div>' +
-          '<div style="margin-top:10px;font-size:7.5px;color:#999;border-top:1px solid #eee;padding-top:6px">' +
+          '<div style="margin-top:10px;font-size:7.5px;color:#999;border-top:1px solid #eee;padding-top:6px;text-align:center">' +
           'Source: EPA eGRID2023 Version 1.0 Rev 1 — https://www.epa.gov/egrid | State: ' +
           st +
           ' | Inputs: ' +
