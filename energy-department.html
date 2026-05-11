@@ -47909,6 +47909,7 @@
               kwCur: mo.kwCur || 0,
               blCost: mo.blCost || 0,
               curCost: mo.curCost || 0,
+              savings: mo.savings || 0,
             };
           });
           gas.monthly = allGasYMs.map((ym) => ({
@@ -47917,6 +47918,7 @@
             cur: (gasMonthly[ym] || {}).cur || 0,
             blCost: (gasMonthly[ym] || {}).blCost || 0,
             curCost: (gasMonthly[ym] || {}).curCost || 0,
+            savings: (gasMonthly[ym] || {}).savings || 0,
           }));
           propane.monthly = allPropYMs.map((ym) => ({
             month: ym,
@@ -47924,6 +47926,7 @@
             cur: (propaneMonthly[ym] || {}).cur || 0,
             blCost: (propaneMonthly[ym] || {}).blCost || 0,
             curCost: (propaneMonthly[ym] || {}).curCost || 0,
+            savings: (propaneMonthly[ym] || {}).savings || 0,
           }));
 
           // EUI calculations — period-matched comparison (same months for baseline and current)
@@ -51891,8 +51894,7 @@
               sav = bl - cur;
             var blC = mo.blCost || 0,
               curC = mo.curCost || 0,
-              curRate = cur > 0 ? curC / cur : 0,
-              savC = sav * curRate;
+              savC = mo.savings != null ? mo.savings : blC - curC;
             tBl += bl;
             tCur += cur;
             tSav += sav;
