@@ -47469,8 +47469,8 @@
           var cddCur = curData ? curData.cdd / curData.count : 0;
           var inPeriod = rpSet.has(_ym);
           monthly.push({ month: _ym, hddBl: hddBl, hddCur: hddCur, cddBl: cddBl, cddCur: cddCur, inPeriod: inPeriod });
-          totHddBl += hddBl;
           if (inPeriod) {
+            totHddBl += hddBl;
             totHddCur += hddCur;
             totCddBl += cddBl;
             totCddCur += cddCur;
@@ -48416,15 +48416,21 @@
           });
         }
 
-        // Per-building meter performance (independent section)
+        // Per-building meter performance (independent section — continuous, condensed)
         if (s.meterPerformance !== false) {
+          var _allMpHtml = '';
           data.buildings.forEach(function (b) {
             var bResult = rptPageBuildingSummary(0, data, b);
             if (bResult.meterPerfHTML) {
-              var mpContent = '<div style="font-size:10px;font-weight:700;color:#1a5276;margin-bottom:4px;border-bottom:1px solid #d4e4f0;padding-bottom:2px">' + (b.name || 'Building') + '</div>' + bResult.meterPerfHTML;
-              pages.push(rptPage(pageNum++, (b.name || 'Building') + ' — Meter Performance', mpContent, { data: data, label: 'Page ' + pageNum + ' — ' + (b.name || 'Building') + ' Meters' }));
+              _allMpHtml += '<div style="page-break-inside:avoid;break-inside:avoid;margin-bottom:10px">' +
+                '<div style="font-size:10px;font-weight:700;color:#1a5276;margin-bottom:3px;border-bottom:1px solid #d4e4f0;padding-bottom:2px">' + (b.name || 'Building') + '</div>' +
+                bResult.meterPerfHTML +
+                '</div>';
             }
           });
+          if (_allMpHtml) {
+            pages.push(rptPage(pageNum++, 'Meter Performance — All Buildings', _allMpHtml, { data: data, label: 'Page ' + pageNum + ' — Meter Performance' }));
+          }
         }
 
         // Commodity detail pages
@@ -53638,12 +53644,12 @@
 
         var hddCddParagraph = '';
         if (d.weather) {
-          var pHDD = d.weather.periodHDD ? Math.round(d.weather.periodHDD).toLocaleString() : '\u2014';
-          var bHDD = d.weather.baselineHDD ? Math.round(d.weather.baselineHDD).toLocaleString() : '\u2014';
-          var hddPctChg = d.weather.baselineHDD > 0 ? Math.round(((d.weather.periodHDD - d.weather.baselineHDD) / d.weather.baselineHDD) * 100) : 0;
-          var pCDD = d.weather.periodCDD ? Math.round(d.weather.periodCDD).toLocaleString() : '\u2014';
-          var bCDD = d.weather.baselineCDD ? Math.round(d.weather.baselineCDD).toLocaleString() : '\u2014';
-          var cddPctChg = d.weather.baselineCDD > 0 ? Math.round(((d.weather.periodCDD - d.weather.baselineCDD) / d.weather.baselineCDD) * 100) : 0;
+          var pHDD = d.weather.totals && d.weather.totals.hddCur ? Math.round(d.weather.totals.hddCur).toLocaleString() : '\u2014';
+          var bHDD = d.weather.totals && d.weather.totals.hddBl ? Math.round(d.weather.totals.hddBl).toLocaleString() : '\u2014';
+          var hddPctChg = d.weather.totals && d.weather.totals.hddBl > 0 ? Math.round(((d.weather.totals.hddCur - d.weather.totals.hddBl) / d.weather.totals.hddBl) * 100) : 0;
+          var pCDD = d.weather.totals && d.weather.totals.cddCur ? Math.round(d.weather.totals.cddCur).toLocaleString() : '\u2014';
+          var bCDD = d.weather.totals && d.weather.totals.cddBl ? Math.round(d.weather.totals.cddBl).toLocaleString() : '\u2014';
+          var cddPctChg = d.weather.totals && d.weather.totals.cddBl > 0 ? Math.round(((d.weather.totals.cddCur - d.weather.totals.cddBl) / d.weather.totals.cddBl) * 100) : 0;
           hddCddParagraph = '<div contenteditable="true" style="margin-top:10px;font-size:9px;color:#444;line-height:1.7">' +
             'Heating degree days (HDD) for the period were ' + pHDD + ' vs. a baseline average of ' + bHDD + ' (' + (hddPctChg >= 0 ? '+' : '') + hddPctChg + '%). ' +
             'Cooling degree days (CDD) were ' + pCDD + ' vs. a baseline of ' + bCDD + ' (' + (cddPctChg >= 0 ? '+' : '') + cddPctChg + '%). ' +
