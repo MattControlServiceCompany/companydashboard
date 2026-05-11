@@ -20872,6 +20872,10 @@
               /Amount\s*due\s*(?:on\s*or\s*before|Enclosed|after)/i.test(page);
             if (isNewFormat) return this._extractNew(page);
             if (isOldFormat) return this._extractOld(page);
+            // LGS (Large Gas Service) billing detail — gas-only page with
+            // rate schedule like "LGS Primary Voltage - 2LGSF"
+            if (/\bLGS\b/i.test(page) && /Billing\s*Detail/i.test(page) && /service\s*from/i.test(page))
+              return this._extractLGSDetail(page);
             if (
               /Billing\s*Detail|Bill(?:ing)?\s*(?:Detail|Summary)/i.test(page) &&
               /BILL\s+(?:GS|WT|SW|ST|FA|WP)/i.test(page)
@@ -21194,7 +21198,12 @@
             // New account number shape: "NN-NNNNNN-NN". Tolerate OCR "(" or
             // "O" in place of leading zero.
             const acctRaw = page.match(/([\d(O]{2}-\d{6}-\d{2})/)?.[1] || null;
-            const AccountNumber = acctRaw ? acctRaw.replace(/[(O]/g, '0') : null;
+            let AccountNumber = acctRaw ? acctRaw.replace(/[(O]/g, '0') : null;
+            // Fallback: 7-10 digit account after "Account Number:" label (LGS bills)
+            if (!AccountNumber) {
+              const altAcct = page.match(/Account\s*(?:Number|#)\s*:?\s*(\d{7,10})/i)?.[1] || null;
+              if (altAcct) AccountNumber = altAcct;
+            }
 
             // Customer info row: "USD <NNN> <FACILITY> <SERVICE ADDRESS> <acct>"
             // District number is captured generically — no hardcoded IDs.
@@ -21596,7 +21605,7 @@
               }
             }
             for (const ln of lines) {
-              const m = ln.match(/(?:BILL\s+)?(GS|FA|ST|SW|WP|WT)\b\s+([-\d$].*)/i);
+              const m = ln.match(/(?:BILL\s+)?(GS|LGS|FA|ST|SW|WP|WT)\b\s+([-\d$].*)/i);
               if (!m) continue;
               const code = m[1].toUpperCase();
               const nums = [...m[2].matchAll(/-?[\d,]+(?:\.\d+)?/g)].map((x) => parseFloat(x[0].replace(/,/g, '')));
@@ -21605,7 +21614,7 @@
               // Previous, Multiplier, Consumption, Amount). The heuristic
               // find() was picking up the Multiplier (e.g. 1.05100) as usage.
               const consumption = nums.length >= 4 ? nums[nums.length - 2] : null;
-              if (code === 'GS') {
+              if (code === 'GS' || code === 'LGS') {
                 gasAmt = amt;
                 if (consumption && consumption > 0 && consumption < 1000000) gasUsage = consumption;
               } else if (code === 'FA') {
@@ -21739,6 +21748,117 @@
               });
             }
             return bills.length ? bills : null;
+          },
+          _extractLGSDetail: function (page) {
+            // Account number: 7-10 digit number after "Account Number"
+            const acct = page.match(/Account\s*(?:Number|#)\s*:?\s*(\d{7,10})/i)?.[1] || null;
+
+            // Customer name
+            const custMatch = page.match(/Customer\s*Name\s*:?\s*(.*?)(?:\n|Account)/i);
+            const CustomerName = custMatch ? custMatch[1].trim() : null;
+
+            // Service address: line with a street number before city/state
+            const addrMatch = page.match(/(\d{2,6}\s+[A-Z][A-Z0-9 ]+?),?\s*(?:NEW\s+)?(?:HS|MS|ES|ELEM)?\s*LOUISBURG/i);
+            const ServiceAddress = addrMatch ? addrMatch[0].trim() : null;
+
+            // Billing date
+            const billDateMatch = page.match(/Billing\s*Date\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+            const BillDate = billDateMatch ? billDateMatch[1] : null;
+
+            // Service period from the "service from MM/DD/YYYY to MM/DD/YYYY" phrase
+            const periodMatch = page.match(
+              /service\s*from\s*(\d{1,2}\/\d{1,2}\/\d{4})\s*to\s*(\d{1,2}\/\d{1,2}\/\d{4})/i,
+            );
+            const BillingPeriodStart = periodMatch ? periodMatch[1] : null;
+            const BillingPeriodEnd = periodMatch ? periodMatch[2] : null;
+
+            // Rate schedule
+            const rateMatch = page.match(/(LGS\s+[A-Za-z ]+?)\s*-\s*(\w+)/i);
+            const RateSchedule = rateMatch ? rateMatch[0].trim() : 'LGS';
+
+            // Parse charge lines: look for dollar amounts after charge labels
+            // OCR may garble labels, so also try loose dollar extraction
+            const lines = page.split(/\r?\n/);
+            let customerChg = null,
+              commodityChg = null,
+              fuelAdj = null,
+              totalAmt = null;
+            for (const ln of lines) {
+              if (/Customer\s*Ch/i.test(ln)) {
+                const m = ln.match(/\$\s*([\d,]+\.\d{2})/);
+                if (m) customerChg = parseFloat(m[1].replace(/,/g, ''));
+              }
+              if (/Commodity\s*Ch|Energy\s*Ch/i.test(ln)) {
+                const m = ln.match(/\$\s*([\d,]+\.\d{2})/);
+                if (m) commodityChg = parseFloat(m[1].replace(/,/g, ''));
+              }
+              if (/Fuel\s*(?:Adj|Cost)/i.test(ln)) {
+                const m = ln.match(/-?\$?\s*([\d,]+\.\d{2})/);
+                if (m) {
+                  fuelAdj = parseFloat(m[1].replace(/,/g, ''));
+                  if (/[-()]/.test(ln) || /credit/i.test(ln)) fuelAdj = -Math.abs(fuelAdj);
+                }
+              }
+              if (/Total\s*(?:Current|Amount|Due)/i.test(ln)) {
+                const m = ln.match(/\$?\s*([\d,]+\.\d{2})/);
+                if (m) totalAmt = parseFloat(m[1].replace(/,/g, ''));
+              }
+            }
+
+            // If we couldn't find structured charges, try to find any dollar amounts
+            if (!totalAmt) {
+              const allDollars = [...page.matchAll(/\$\s*([\d,]+\.\d{2})/g)].map((m) =>
+                parseFloat(m[1].replace(/,/g, '')),
+              );
+              if (allDollars.length) totalAmt = Math.max(...allDollars);
+            }
+
+            if (!totalAmt && !commodityChg && !customerChg) return null;
+
+            const gasTotal = totalAmt || (customerChg || 0) + (commodityChg || 0) + (fuelAdj || 0);
+            const gasCharge = commodityChg || gasTotal - (customerChg || 0) - (fuelAdj || 0);
+
+            // Compute therms from gas charge and known rate if possible
+            const r = _lbg_gasRate(BillingPeriodEnd || BillingPeriodStart || BillDate);
+            let therms = null;
+            if (gasCharge > 0 && r.rate > 0) {
+              therms = Math.round((gasCharge - (fuelAdj && fuelAdj > 0 ? fuelAdj : 0)) / r.rate);
+            }
+
+            // Meter reads — look for numeric patterns near "Read" or "Meter"
+            let startRead = null,
+              endRead = null;
+            for (const ln of lines) {
+              const reads = [...ln.matchAll(/\b(\d{4,8})\b/g)].map((m) => parseInt(m[1]));
+              if (reads.length >= 2 && reads[1] > reads[0] && reads[1] - reads[0] < 100000) {
+                startRead = reads[0];
+                endRead = reads[1];
+                break;
+              }
+            }
+
+            return {
+              UtilityCompany: 'City of Louisburg',
+              BillFormat: 'lgs-detail',
+              Commodity: 'Gas',
+              CustomerName,
+              AccountNumber: acct,
+              ServiceAddress,
+              BillDate,
+              BillingPeriodStart,
+              BillingPeriodEnd,
+              NumberOfDays: null,
+              RateSchedule,
+              MeterNumber: null,
+              StartRead: startRead,
+              EndRead: endRead,
+              NaturalGasTherms: therms,
+              CustomerCharge: customerChg,
+              GasCharge: gasCharge,
+              FuelAdjustment: fuelAdj,
+              TotalCurrentCharges: gasTotal.toFixed(2),
+              TotalAmountDue: gasTotal.toFixed(2),
+            };
           },
           _extractBillingInquiry: function (page) {
             console.log('[BillingInquiry] Raw text (500):', page.slice(0, 500));
