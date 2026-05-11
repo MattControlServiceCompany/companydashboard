@@ -37191,15 +37191,15 @@
           _rawFrozenReg && ((isElecMeter && _rawFrozenReg.cdd) || (!isElecMeter && _rawFrozenReg.hdd));
         const frozenReg = frozenRegValid ? _rawFrozenReg : null;
 
+        const blOverrides = m.baseline?.overrides || {};
         rawRows.forEach((row) => {
-          if (frozenReg && row.isBaseline) {
-            // Baseline months: always use frozen regression so they never change
+          if (blOverrides[row.ym] != null) {
+            row.regrBaseline = blOverrides[row.ym];
+          } else if (frozenReg && row.isBaseline) {
             row.regrBaseline = regressionBaseline(row, frozenReg, m.commodity, normBasis);
           } else if (frozenReg) {
-            // Post-baseline months: apply frozen model to predict expected usage
             row.regrBaseline = regressionBaseline(row, frozenReg, m.commodity, normBasis);
           } else {
-            // No valid frozen regression: use live regression from current weather data
             row.regrBaseline = regressionBaseline(row, reg, m.commodity, normBasis);
           }
         });
@@ -53882,10 +53882,10 @@
           '<div style="margin-top:16px;padding:10px 12px;background:#f8f9fa;border:1px solid #e0e0e0;border-radius:4px;font-size:8.5px;color:#444;line-height:1.5">' +
           '<div style="font-weight:700;font-size:9px;color:#333;margin-bottom:6px">What is a degree day?</div>' +
           '<div style="margin-bottom:6px">A degree day is a measure of relative heating and cooling energy required by buildings. It&#39;s calculated as the difference between the average daily temperature and the balance point temperature (60 degrees). When the average daily temperature is above the balance point, the result is cooling degree days; when below, the result is heating degree days.</div>' +
-          '<div style="margin-bottom:6px"><strong>Example 1:</strong> Average daily temperature = 80. Balance point = 60. Cooling degree days = 20 CDD. (80–60=20)</div>' +
-          '<div style="margin-bottom:6px"><strong>Example 2:</strong> Average daily temperature = 45. Balance point = 60. Heating degree days = 15 HDD. (60–45=15)</div>' +
+          '<div style="margin-bottom:6px"><strong>Example 1:</strong> Average daily temperature = 80. Balance point = 60. Cooling degree days = 20 CDD. (80-60=20)</div>' +
+          '<div style="margin-bottom:6px"><strong>Example 2:</strong> Average daily temperature = 45. Balance point = 60. Heating degree days = 15 HDD. (60-45=15)</div>' +
           '<div style="margin-bottom:6px"><strong>Example 3:</strong> Average daily temperature = 60. Balance point = 60. No degree days.</div>' +
-          '<div>You may ask, “Why not use average temperature instead of degree days?” The problem with average temperature is that highs and lows cancel each other out. A warm day (80 average temp) combined with a cold day (40 average temp) averages 60. So do two mild days of 59 and 61. But in the first case there are 20 CDD and 20 HDD while in the second there are 1 CDD and 1 HDD. The further the average temperature deviates from the balance point, the greater the energy needed to keep the building in a comfortable temperature range.</div>' +
+          '<div>You may ask, &quot;Why not use average temperature instead of degree days?&quot; The problem with average temperature is that highs and lows cancel each other out. A warm day (80 average temp) combined with a cold day (40 average temp) averages 60. So do two mild days of 59 and 61. But in the first case there are 20 CDD and 20 HDD while in the second there are 1 CDD and 1 HDD. The further the average temperature deviates from the balance point, the greater the energy needed to keep the building in a comfortable temperature range.</div>' +
           '</div>';
 
         return rptPage(n, 'Appendix ' + appLetter + ': Weather Data', bodyHTML, {
