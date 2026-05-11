@@ -38396,6 +38396,124 @@
               (!reg.hdd && !reg.cdd
                 ? '<div style="font-size:11px;color:var(--warn);padding:6px 0">⚠️ No regression computed — upload weather data with at least 3 months of non-zero degree days.</div>'
                 : '') +
+              // Frozen vs Live comparison (temporary diagnostic)
+              (() => {
+                if (!_isFrozenReg) return '';
+                const frozenR = m.baseline.reg;
+                const liveR = computeMeterRegression(rows);
+                const ddKey = isElec ? 'cdd' : 'hdd';
+                const fr = frozenR[ddKey];
+                const lr = liveR[ddKey];
+                if (!fr || !lr) return '';
+                const blMonths = m.baseline.months || [];
+                const compRows = rows.filter((r) => !r.partial && r[ddKey] != null && r.normDays > 0);
+                if (!compRows.length) return '';
+                let tableRows = '';
+                let totalFrozen = 0,
+                  totalLive = 0;
+                compRows.forEach((r) => {
+                  const nDays = normBasis === 'calendar' ? r.normDays : r.days;
+                  const dd = r[ddKey];
+                  const frozenVal = fr.intercept * nDays + fr.slope * dd;
+                  const liveVal = lr.intercept * nDays + lr.slope * dd;
+                  const diff = frozenVal - liveVal;
+                  const pct = liveVal !== 0 ? (diff / liveVal) * 100 : 0;
+                  const isBl = blMonths.includes(r.ym);
+                  totalFrozen += frozenVal;
+                  totalLive += liveVal;
+                  const diffColor =
+                    Math.abs(pct) < 1 ? 'var(--text3)' : Math.abs(pct) < 5 ? 'var(--warn)' : 'var(--danger)';
+                  tableRows +=
+                    '<tr' +
+                    (isBl ? '' : ' style="opacity:0.6"') +
+                    '>' +
+                    '<td class="mono">' +
+                    r.label +
+                    (isBl ? ' <span style="color:var(--violet);font-size:9px">BL</span>' : '') +
+                    '</td>' +
+                    '<td class="mono">' +
+                    frozenVal.toFixed(1) +
+                    '</td>' +
+                    '<td class="mono">' +
+                    liveVal.toFixed(1) +
+                    '</td>' +
+                    '<td class="mono" style="color:' +
+                    diffColor +
+                    '">' +
+                    (diff >= 0 ? '+' : '') +
+                    diff.toFixed(1) +
+                    '</td>' +
+                    '<td class="mono" style="color:' +
+                    diffColor +
+                    '">' +
+                    (pct >= 0 ? '+' : '') +
+                    pct.toFixed(2) +
+                    '%</td>' +
+                    '</tr>';
+                });
+                const totalDiff = totalFrozen - totalLive;
+                const totalPct = totalLive !== 0 ? (totalDiff / totalLive) * 100 : 0;
+                const totalColor =
+                  Math.abs(totalPct) < 1 ? 'var(--text3)' : Math.abs(totalPct) < 5 ? 'var(--warn)' : 'var(--danger)';
+                return (
+                  '<div style="margin-top:12px;background:var(--s3);border:1px solid var(--violet);border-radius:8px;padding:14px 16px">' +
+                  '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--violet);margin-bottom:4px">🔍 Frozen vs Live Regression Comparison</div>' +
+                  '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">' +
+                  '<strong>Frozen</strong> = regression from baseline months only (' +
+                  blMonths.length +
+                  ' months) &nbsp;·&nbsp; ' +
+                  '<strong>Live</strong> = regression from all months (' +
+                  compRows.length +
+                  ' months)<br>' +
+                  'Frozen intercept: <strong>' +
+                  fr.intercept.toFixed(6) +
+                  '</strong> slope: <strong>' +
+                  fr.slope.toFixed(6) +
+                  '</strong> R²: <strong>' +
+                  fr.r2.toFixed(4) +
+                  '</strong> &nbsp;·&nbsp; ' +
+                  'Live intercept: <strong>' +
+                  lr.intercept.toFixed(6) +
+                  '</strong> slope: <strong>' +
+                  lr.slope.toFixed(6) +
+                  '</strong> R²: <strong>' +
+                  lr.r2.toFixed(4) +
+                  '</strong>' +
+                  '</div>' +
+                  '<div style="overflow-x:auto;max-height:300px;overflow-y:auto">' +
+                  '<table class="ma-tbl">' +
+                  '<thead><tr><th>Month</th><th style="color:var(--violet)">Frozen ' +
+                  unit +
+                  '</th><th style="color:var(--em2)">Live ' +
+                  unit +
+                  '</th><th>Diff</th><th>Diff %</th></tr></thead>' +
+                  '<tbody>' +
+                  tableRows +
+                  '<tr style="font-weight:700;border-top:2px solid var(--border)">' +
+                  '<td>TOTAL</td>' +
+                  '<td class="mono">' +
+                  totalFrozen.toFixed(1) +
+                  '</td>' +
+                  '<td class="mono">' +
+                  totalLive.toFixed(1) +
+                  '</td>' +
+                  '<td class="mono" style="color:' +
+                  totalColor +
+                  '">' +
+                  (totalDiff >= 0 ? '+' : '') +
+                  totalDiff.toFixed(1) +
+                  '</td>' +
+                  '<td class="mono" style="color:' +
+                  totalColor +
+                  '">' +
+                  (totalPct >= 0 ? '+' : '') +
+                  totalPct.toFixed(2) +
+                  '%</td>' +
+                  '</tr></tbody></table></div>' +
+                  '<div style="font-size:10px;color:var(--text3);margin-top:8px;font-style:italic">BL = baseline month · Faded rows = post-baseline · This panel is temporary for auditing the backfill.</div>' +
+                  '</div>'
+                );
+              })() +
               // Regression input data table
               '<div style="margin-top:12px">' +
               '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
@@ -53763,7 +53881,7 @@
           hddCddParagraph +
           '<div style="margin-top:16px;padding:10px 12px;background:#f8f9fa;border:1px solid #e0e0e0;border-radius:4px;font-size:8.5px;color:#444;line-height:1.5">' +
           '<div style="font-weight:700;font-size:9px;color:#333;margin-bottom:6px">What is a degree day?</div>' +
-          '<div style="margin-bottom:6px">A degree day is a measure of relative heating and cooling energy required by buildings. It’s calculated as the difference between the average daily temperature and the balance point temperature (60 degrees). When the average daily temperature is above the balance point, the result is cooling degree days; when below, the result is heating degree days.</div>' +
+          '<div style="margin-bottom:6px">A degree day is a measure of relative heating and cooling energy required by buildings. It&#39;s calculated as the difference between the average daily temperature and the balance point temperature (60 degrees). When the average daily temperature is above the balance point, the result is cooling degree days; when below, the result is heating degree days.</div>' +
           '<div style="margin-bottom:6px"><strong>Example 1:</strong> Average daily temperature = 80. Balance point = 60. Cooling degree days = 20 CDD. (80–60=20)</div>' +
           '<div style="margin-bottom:6px"><strong>Example 2:</strong> Average daily temperature = 45. Balance point = 60. Heating degree days = 15 HDD. (60–45=15)</div>' +
           '<div style="margin-bottom:6px"><strong>Example 3:</strong> Average daily temperature = 60. Balance point = 60. No degree days.</div>' +
