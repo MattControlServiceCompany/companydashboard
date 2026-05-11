@@ -42627,7 +42627,8 @@
             totalCostSav = thermRate > 0 ? (expUsage - actTherms) * thermRate : 0;
           }
 
-          result[r.ym] = (result[r.ym] || 0) + totalCostSav;
+          const _costOvr = m.baseline?.costSavOverrides?.[r.ym];
+          result[r.ym] = (result[r.ym] || 0) + (_costOvr != null ? _costOvr : totalCostSav);
         });
 
         m._savingsByYM = result;
@@ -43049,7 +43050,8 @@
           const rawThermUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
           const thermSaved = expMo - rawThermUsage;
           const thermCostSav = hasGasCostSav && thermRate > 0 ? thermSaved * thermRate : 0;
-          const rowSav = isElec ? totalCostSav : thermCostSav;
+          const _costOvr = m.baseline?.costSavOverrides?.[r.ym];
+          const rowSav = _costOvr != null ? _costOvr : isElec ? totalCostSav : thermCostSav;
           return { ym: r.ym, savings: rowSav, kwhSaved, kwhCostSav, kwCostSav, thermCostSav };
         });
 
@@ -43164,7 +43166,7 @@
             const expKwCost = hasKwCostSav && moKwRate > 0 ? blExpKW * moKwRate : 0;
             const kwCostSav = hasKwCostSav && moKwRate > 0 ? kwSaved * moKwRate : 0;
 
-            const totalCostSav = kwhCostSav + kwCostSav;
+            const _calcTotalCostSav = kwhCostSav + kwCostSav;
 
             // Therm/Gas Cost Savings: (Expected therms - Actual therms) × current $/therm rate
             const rawThermUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
@@ -43172,7 +43174,10 @@
             const thermSaved = expThermUsage - rawThermUsage;
             const expThermCost = hasGasCostSav && thermRate > 0 ? expThermUsage * thermRate : 0;
             const actThermCostCalc = hasGasCostSav && thermRate > 0 ? rawThermUsage * thermRate : thermCostActual;
-            const thermCostSav = hasGasCostSav && thermRate > 0 ? thermSaved * thermRate : 0;
+            const _calcThermCostSav = hasGasCostSav && thermRate > 0 ? thermSaved * thermRate : 0;
+            const _rowCostOvr = m.baseline?.costSavOverrides?.[r.ym];
+            const totalCostSav = _rowCostOvr != null && isElec ? _rowCostOvr : _calcTotalCostSav;
+            const thermCostSav = _rowCostOvr != null && !isElec ? _rowCostOvr : _calcThermCostSav;
             const savColor = (v) => (v >= 0 ? 'var(--em)' : 'var(--danger)');
             const costSign = (v) => (v >= 0 ? '' : '\u2212');
             const savSign = (v) => (v >= 0 ? '+' : '\u2212');
@@ -43234,7 +43239,9 @@
                 ? '<td class="mono num" style="color:' +
                   savColor(thermCostSav) +
                   ';font-weight:600">' +
-                  (thermRate > 0 ? costSign(thermCostSav) + '$' + fmtC(thermCostSav) : '&mdash;') +
+                  (thermRate > 0 || _rowCostOvr != null
+                    ? costSign(thermCostSav) + '$' + fmtC(thermCostSav)
+                    : '&mdash;') +
                   '</td>'
                 : '') +
               (hasExpKW
