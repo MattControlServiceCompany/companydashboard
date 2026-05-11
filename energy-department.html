@@ -48407,22 +48407,23 @@
         if (s.contractProjection !== false) pages.push(rptPageContractProjection(pageNum++, data));
         if (s.setpoints !== false) pages.push(rptPageSetPoints(pageNum++, data));
 
-        // Per-building summaries first, then per-building meter performance pages
+        // Per-building summaries
         if (s.buildingSummaries !== false) {
-          // Phase 1: All building summary pages
-          var _meterPerfResults = [];
           data.buildings.forEach(function (b) {
             var bResult = rptPageBuildingSummary(pageNum, data, b);
             pages.push(bResult.html);
             pageNum += bResult.summaryPageCount;
-            if (bResult.meterPerfHTML) {
-              _meterPerfResults.push({ name: b.name || 'Building', html: bResult.meterPerfHTML });
-            }
           });
-          // Phase 2: Separate meter performance page per building
-          _meterPerfResults.forEach(function (mp) {
-            var mpContent = '<div style="font-size:10px;font-weight:700;color:#1a5276;margin-bottom:4px;border-bottom:1px solid #d4e4f0;padding-bottom:2px">' + mp.name + '</div>' + mp.html;
-            pages.push(rptPage(pageNum++, mp.name + ' — Meter Performance', mpContent, { data: data, label: 'Page ' + pageNum + ' — ' + mp.name + ' Meters' }));
+        }
+
+        // Per-building meter performance (independent section)
+        if (s.meterPerformance !== false) {
+          data.buildings.forEach(function (b) {
+            var bResult = rptPageBuildingSummary(0, data, b);
+            if (bResult.meterPerfHTML) {
+              var mpContent = '<div style="font-size:10px;font-weight:700;color:#1a5276;margin-bottom:4px;border-bottom:1px solid #d4e4f0;padding-bottom:2px">' + (b.name || 'Building') + '</div>' + bResult.meterPerfHTML;
+              pages.push(rptPage(pageNum++, (b.name || 'Building') + ' — Meter Performance', mpContent, { data: data, label: 'Page ' + pageNum + ' — ' + (b.name || 'Building') + ' Meters' }));
+            }
           });
         }
 
@@ -54010,6 +54011,7 @@
         { key: 'contractProjection', label: 'Contract Projection', group: 'Main' },
         { key: 'setpoints', label: 'BAS Set Points & Schedules', group: 'Main' },
         { key: 'buildingSummaries', label: 'Per-Building Summaries (all)', group: 'Buildings' },
+        { key: 'meterPerformance', label: 'Per-Building Meter Performance', group: 'Buildings' },
         { key: 'electricDetail', label: 'Electric Consumption Detail', group: 'Commodity' },
         { key: 'gasDetail', label: 'Gas Consumption Detail', group: 'Commodity' },
         { key: 'propaneDetail', label: 'Propane Consumption Detail', group: 'Commodity' },
