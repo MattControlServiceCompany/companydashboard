@@ -6440,8 +6440,24 @@
                 <button class="s-item" data-sidebar-id="ems" data-fb="energy.sidebar.ems" onclick="sv('ems', this)">
                   <span class="s-ico">📊</span>EMS Leads
                 </button>
-                <button class="s-item" data-sidebar-id="bas-calc" onclick="window.open('bas-calc.html', '_blank')">
+                <button
+                  class="s-item"
+                  data-sidebar-id="bas-calc"
+                  onclick="window.open('bas-calc.html', '_blank')"
+                  title="Standalone BAS savings estimator — opens separately from the project-linked Calc Templates"
+                >
                   <span class="s-ico">🔬</span>BAS Savings Calc
+                  <span
+                    style="
+                      display: block;
+                      font-size: 9px;
+                      color: var(--text3);
+                      font-weight: 400;
+                      margin-top: 1px;
+                      line-height: 1.3;
+                    "
+                    >Standalone tool (opens new tab)</span
+                  >
                 </button>
               </div>
             </div>
@@ -6886,9 +6902,47 @@
                 >
                   <div style="font-weight: 600; color: var(--em); margin-bottom: 4px">⚡ Meter Match Found</div>
                   <div id="pdfAutoAssignMsg" style="color: var(--text2); margin-bottom: 8px"></div>
-                  <div style="display: flex; gap: 7px">
+                  <!-- Override row: collapsible, lets user pick a different destination -->
+                  <div
+                    id="pdfBannerOverrideRow"
+                    style="
+                      display: none;
+                      margin-bottom: 8px;
+                      padding: 8px 10px;
+                      background: rgba(255, 255, 255, 0.04);
+                      border-radius: 6px;
+                      border: 1px solid var(--border);
+                    "
+                  >
+                    <div class="fl" style="font-size: 11px; margin-bottom: 6px; color: var(--text2)">
+                      Override destination
+                    </div>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                      <select
+                        class="fs"
+                        id="pdfBannerProjSel"
+                        style="flex: 1; min-width: 120px; font-size: 11px"
+                        onchange="pdfBannerUpdateBldgOpts()"
+                      ></select>
+                      <select
+                        class="fs"
+                        id="pdfBannerBldgSel"
+                        style="flex: 1; min-width: 120px; font-size: 11px"
+                        onchange="pdfBannerUpdateMeterOpts()"
+                      >
+                        <option value="">— Building —</option>
+                      </select>
+                      <select class="fs" id="pdfBannerMeterSel" style="flex: 1; min-width: 120px; font-size: 11px">
+                        <option value="">— Meter —</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div style="display: flex; gap: 7px; flex-wrap: wrap; align-items: center">
                     <button class="btn btn-em btn-sm" onclick="confirmAutoAssign()">
                       ✓ Confirm & Save to This Meter
+                    </button>
+                    <button class="btn btn-ghost btn-sm" id="pdfBannerOverrideBtn" onclick="pdfBannerToggleOverride()">
+                      Change Destination
                     </button>
                     <button
                       class="btn btn-ghost btn-sm"
@@ -14888,9 +14942,39 @@
           <div class="card">
             <div class="card-hdr"><span class="card-title">Building Performance</span></div>
             <div style="overflow:auto;max-height:60vh">
-              <table class="dtbl" style="width:100%;font-size:12px">
-                <thead><tr><th style="width:30px">#</th><th>Building</th><th style="text-align:right">Sq Ft</th><th style="text-align:center">Baseline</th><th style="text-align:right">Baseline Period</th><th style="text-align:right">${bldgRows.some((r) => r.blLabel === 'Baseline') ? 'Baseline' : 'Total Cost'} $/yr</th><th style="text-align:right">Baseline EUI</th><th style="text-align:right">Current Cost</th><th style="text-align:right">Current EUI</th><th style="text-align:right">Savings $</th><th style="text-align:right">%</th><th style="text-align:center">Status</th></tr></thead>
-                <tbody>${bldgRows
+              ${(function () {
+                // Sort state: default sqft descending (bug 839bea5c)
+                if (!window._bpSort) window._bpSort = {};
+                if (!window._bpSort[projId]) window._bpSort[projId] = { col: 'sqft', asc: false };
+                const _srt = window._bpSort[projId];
+                const _sortVal = (r, col) => {
+                  if (col === 'name') return (r.name || '').toLowerCase();
+                  if (col === 'sqft') return r.sqft || 0;
+                  if (col === 'blCost') return r.blCost || 0;
+                  if (col === 'blEUI') return r.blEUI || 0;
+                  if (col === 'curCost') return r.curCost || 0;
+                  if (col === 'curEUI') return r.curEUI || 0;
+                  if (col === 'sav') return r.sav || 0;
+                  if (col === 'savPct') return r.savPct || 0;
+                  return 0;
+                };
+                const sortedRows = bldgRows.slice().sort((a, b) => {
+                  const va = _sortVal(a, _srt.col),
+                    vb = _sortVal(b, _srt.col);
+                  if (va < vb) return _srt.asc ? -1 : 1;
+                  if (va > vb) return _srt.asc ? 1 : -1;
+                  return 0;
+                });
+                const _thSort = (col, label, align) => {
+                  const active = _srt.col === col;
+                  const arrow = active ? (_srt.asc ? ' ↑' : ' ↓') : ' ↕';
+                  const style = `text-align:${align || 'right'};cursor:pointer;user-select:none;white-space:nowrap${active ? ';color:var(--em)' : ''}`;
+                  return `<th style="${style}" onclick="if(!window._bpSort)window._bpSort={};if(!window._bpSort['${projId}'])window._bpSort['${projId}']={col:'sqft',asc:false};var s=window._bpSort['${projId}'];if(s.col==='${col}'){s.asc=!s.asc;}else{s.col='${col}';s.asc=true;}initDashboardTab(${projId})" title="Sort by ${label}">${label}${arrow}</th>`;
+                };
+                const _blLabel = bldgRows.some((r) => r.blLabel === 'Baseline') ? 'Baseline' : 'Total Cost';
+                return `<table class="dtbl" style="width:100%;font-size:12px">
+                <thead><tr><th style="width:30px">#</th>${_thSort('name', 'Building', 'left')}<th style="text-align:right;cursor:pointer;user-select:none;white-space:nowrap${_srt.col === 'sqft' ? ';color:var(--em)' : ''}" onclick="if(!window._bpSort)window._bpSort={};if(!window._bpSort['${projId}'])window._bpSort['${projId}']={col:'sqft',asc:false};var s=window._bpSort['${projId}'];if(s.col==='sqft'){s.asc=!s.asc;}else{s.col='sqft';s.asc=true;}initDashboardTab(${projId})" title="Sort by Sq Ft">Sq Ft${_srt.col === 'sqft' ? (_srt.asc ? ' ↑' : ' ↓') : ' ↕'}</th><th style="text-align:center">Baseline</th><th style="text-align:right">Baseline Period</th>${_thSort('blCost', _blLabel + ' $/yr', 'right')}${_thSort('blEUI', 'Baseline EUI', 'right')}${_thSort('curCost', 'Current Cost', 'right')}${_thSort('curEUI', 'Current EUI', 'right')}${_thSort('sav', 'Savings $', 'right')}${_thSort('savPct', '%', 'right')}<th style="text-align:center">Status</th></tr></thead>
+                <tbody>${sortedRows
                   .map((r, _ri) => {
                     const blIcon = r.meterIncl > 0 ? (r.meterExcl > 0 ? '◐' : '●') : '○';
                     const blColor =
@@ -14921,7 +15005,8 @@
                 </tr>`;
                   })
                   .join('')}</tbody>
-              </table>
+              </table>`;
+              })()}
             </div>
           </div>`;
 
@@ -24976,6 +25061,33 @@
       }
       async function confirmAutoAssign() {
         if (!_autoAssignTarget || !window._pdfMultiBills) return;
+        // If the override panel is open and fully filled in, apply the manual selection.
+        const overrideRow = document.getElementById('pdfBannerOverrideRow');
+        if (overrideRow && overrideRow.style.display !== 'none') {
+          const overrideProjId = parseInt(document.getElementById('pdfBannerProjSel')?.value) || null;
+          const overrideBldgId = document.getElementById('pdfBannerBldgSel')?.value || null;
+          const overrideMeterId = document.getElementById('pdfBannerMeterSel')?.value || null;
+          if (overrideProjId && overrideBldgId && overrideMeterId) {
+            const overrideBldg = getUDBldg(overrideProjId, overrideBldgId);
+            const overrideMeter = overrideBldg
+              ? (overrideBldg.meters || []).find((m) => m.id === overrideMeterId)
+              : null;
+            const overrideProj = (window.projects || []).find((p) => p.id === overrideProjId);
+            if (overrideBldg && overrideMeter && overrideProj) {
+              _autoAssignTarget = {
+                proj: overrideProj,
+                bldg: overrideBldg,
+                meter: overrideMeter,
+                projId: overrideProjId,
+                bldgId: overrideBldgId,
+                meterId: overrideMeterId,
+              };
+            }
+          } else {
+            showToast('Select a project, building, and meter to override the destination');
+            return;
+          }
+        }
         const { proj, bldg, meter, projId } = _autoAssignTarget;
         const bills = window._pdfMultiBills;
         const dupMap = window._pdfDupMap || {};
@@ -28327,7 +28439,10 @@
         document.getElementById('dropZone').classList.remove('drag');
         const files = Array.from(e.dataTransfer.files).filter((f) => f.type === 'application/pdf');
         if (files.length === 0) return;
-        if (window._pdfQueue) {
+        // Only append to a queue that is actively running; done/cancelled queues
+        // start fresh so previous results are not mixed with the new batch.
+        const _dq = window._pdfQueue;
+        if (_dq && _dq.status === 'running') {
           appendToQueue(files);
         } else if (files.length === 1) {
           processPDF(files[0]);
@@ -28338,7 +28453,10 @@
       function handlePDFUpload(e) {
         const files = Array.from(e.target.files).filter((f) => f.type === 'application/pdf');
         if (files.length === 0) return;
-        if (window._pdfQueue) {
+        // Only append to a queue that is actively running; done/cancelled queues
+        // start fresh so previous results are not mixed with the new batch.
+        const _uq = window._pdfQueue;
+        if (_uq && _uq.status === 'running') {
           appendToQueue(files);
         } else if (files.length === 1) {
           processPDF(files[0]);
@@ -32232,6 +32350,71 @@
         });
       }
 
+      // Banner override helpers — populate project/building/meter selectors inside
+      // the auto-assign banner so the user can redirect the save to a different meter.
+      function pdfBannerToggleOverride() {
+        const row = document.getElementById('pdfBannerOverrideRow');
+        const btn = document.getElementById('pdfBannerOverrideBtn');
+        if (!row) return;
+        const open = row.style.display !== 'none';
+        row.style.display = open ? 'none' : 'block';
+        if (btn) btn.textContent = open ? 'Change Destination' : 'Cancel Override';
+        if (!open) {
+          // Populate project list and pre-select auto-matched values
+          const projSel = document.getElementById('pdfBannerProjSel');
+          if (projSel) {
+            projSel.innerHTML = (window.projects || [])
+              .map((p) => '<option value="' + p.id + '">' + (p.name || p.id) + '</option>')
+              .join('');
+            if (_autoAssignTarget && _autoAssignTarget.projId) {
+              projSel.value = String(_autoAssignTarget.projId);
+            }
+            pdfBannerUpdateBldgOpts();
+          }
+        }
+      }
+
+      function pdfBannerUpdateBldgOpts() {
+        const projId = parseInt(document.getElementById('pdfBannerProjSel')?.value) || null;
+        const bldgSel = document.getElementById('pdfBannerBldgSel');
+        const meterSel = document.getElementById('pdfBannerMeterSel');
+        if (!bldgSel || !meterSel) return;
+        bldgSel.innerHTML = '<option value="">— Building —</option>';
+        meterSel.innerHTML = '<option value="">— Meter —</option>';
+        if (!projId) return;
+        const ud = getUDProj(projId);
+        (ud.buildings || []).forEach((b) => {
+          bldgSel.innerHTML += '<option value="' + b.id + '">' + (b.name || b.id) + '</option>';
+        });
+        if (_autoAssignTarget && _autoAssignTarget.projId === projId && _autoAssignTarget.bldgId) {
+          bldgSel.value = String(_autoAssignTarget.bldgId);
+          pdfBannerUpdateMeterOpts();
+        }
+      }
+
+      function pdfBannerUpdateMeterOpts() {
+        const projId = parseInt(document.getElementById('pdfBannerProjSel')?.value) || null;
+        const bldgId = document.getElementById('pdfBannerBldgSel')?.value || null;
+        const meterSel = document.getElementById('pdfBannerMeterSel');
+        if (!meterSel) return;
+        meterSel.innerHTML = '<option value="">— Meter —</option>';
+        if (!projId || !bldgId) return;
+        const bldg = getUDBldg(projId, bldgId);
+        if (!bldg) return;
+        (bldg.meters || []).forEach((m) => {
+          const lbl = (m.commodity || 'Meter') + (m.account ? ' (' + m.account + ')' : '');
+          meterSel.innerHTML += '<option value="' + m.id + '">' + lbl + '</option>';
+        });
+        if (
+          _autoAssignTarget &&
+          _autoAssignTarget.projId === projId &&
+          _autoAssignTarget.bldgId === bldgId &&
+          _autoAssignTarget.meterId
+        ) {
+          meterSel.value = String(_autoAssignTarget.meterId);
+        }
+      }
+
       function savePDFData() {
         const bills = window._pdfMultiBills;
         const idx = window._pdfMultiIdx || 0;
@@ -33483,6 +33666,82 @@
         // Two events are only duplicates when BOTH date AND name match.
         // Match: "15 – Description" or "15-17 – Description" or "15- Description"
         // Allow any whitespace (including none) after the separating dash/en-dash.
+        //
+        // Cross-month range support (bug 772d1832): detect patterns like
+        // "22-January 2 – Winter Recess" where the range end is in the next month.
+        // The month name map (1-indexed) for cross-month detection:
+        const _xMonthMap = {
+          january: 1,
+          february: 2,
+          march: 3,
+          april: 4,
+          may: 5,
+          june: 6,
+          july: 7,
+          august: 8,
+          september: 9,
+          october: 10,
+          november: 11,
+          december: 12,
+          jan: 1,
+          feb: 2,
+          mar: 3,
+          apr: 4,
+          jun: 6,
+          jul: 7,
+          aug: 8,
+          sep: 9,
+          oct: 10,
+          nov: 11,
+          dec: 12,
+        };
+        const _MNRE =
+          'January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec';
+        // Cross-month range: "D1-MonthName D2" or "D1 – MonthName D2" preceding a description
+        const xRangeRe = new RegExp('(?:^|\\b)(\\d{1,2})\\s*[-–]\\s*(' + _MNRE + ')\\s+(\\d{1,2})\\s*[-–]\\s*', 'gi');
+        let xm;
+        const xRangeHandled = [];
+        while ((xm = xRangeRe.exec(text)) !== null) {
+          const d1 = parseInt(xm[1]);
+          const mo2 = _xMonthMap[xm[2].toLowerCase()];
+          const d2 = parseInt(xm[3]);
+          if (!mo2 || d1 < 1 || d1 > 31 || d2 < 1 || d2 > 31) continue;
+          // Description follows the full match
+          const descRaw = text
+            .slice(xm.index + xm[0].length)
+            .replace(/[\s;,]+$/, '')
+            .split(/\n/)[0]
+            .trim();
+          const descClean = descRaw.replace(/[\s;,]+$/, '');
+          if (!descClean || descClean.length < 2) continue;
+          const type = detectType(descClean);
+          // Emit days from d1 to end-of-month in current month
+          for (let d = d1; d <= 31; d++) {
+            const dateStr = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+            if (!dateValidator || dateValidator(dateStr)) {
+              const dk = dateStr + '|' + descClean;
+              if (!seen || !seen.has(dk)) {
+                if (seen) seen.add(dk);
+                events.push({ date: dateStr, name: descClean, type });
+              }
+            }
+          }
+          // Emit days from start-of-next-month to d2
+          // Next month year: if current month is December (12), next month is January of endYear
+          const mo2year = mo2 === 1 && month === 12 ? year + 1 : mo2 >= 8 ? year : year + 1;
+          for (let d = 1; d <= d2; d++) {
+            const dateStr = mo2year + '-' + String(mo2).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+            if (!dateValidator || dateValidator(dateStr)) {
+              const dk = dateStr + '|' + descClean;
+              if (!seen || !seen.has(dk)) {
+                if (seen) seen.add(dk);
+                events.push({ date: dateStr, name: descClean, type });
+              }
+            }
+          }
+          xRangeHandled.push({ start: xm.index, end: xm.index + xm[0].length + descClean.length });
+        }
+
         const re = /(\d{1,2})(?:\s*[-–]\s*(\d{1,2}))?\s*[-–]\s*/g;
         let m;
         const positions = [];
@@ -33492,6 +33751,8 @@
           if (d1 < 1 || d1 > 31) continue;
           // Reject if the character right before is a digit (mid-number match)
           if (m.index > 0 && /\d/.test(text[m.index - 1])) continue;
+          // Skip if this position was already handled by the cross-month range parser
+          if (xRangeHandled.some((r) => m.index >= r.start && m.index < r.end)) continue;
           positions.push({
             idx: m.index,
             dayStart: d1,
@@ -33501,10 +33762,15 @@
         }
         for (let i = 0; i < positions.length; i++) {
           const descEnd = i < positions.length - 1 ? positions[i + 1].idx : text.length;
-          const desc = text
+          let desc = text
             .slice(positions[i].descStart, descEnd)
             .trim()
             .replace(/[\s;,]+$/, '');
+          // Strip leading cross-month suffix like "January 2 –" from description
+          // so it doesn't appear as event name (e.g. "January 2 – Winter Recess" → "Winter Recess")
+          const xSuffixRe = new RegExp('^(?:' + _MNRE + ')\\s+\\d{1,2}\\s*[-–]\\s*', 'i');
+          const xSuffix = desc.match(xSuffixRe);
+          if (xSuffix) desc = desc.slice(xSuffix[0].length).trim();
           if (!desc || desc.length < 2) continue;
           const type = detectType(desc);
           for (let d = positions[i].dayStart; d <= positions[i].dayEnd; d++) {
@@ -35398,7 +35664,7 @@
       const _pfBills = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
       const CONDENSED_CATEGORIES = {
         Electric: [
-          { label: 'Total kWh', type: 'number', w: 110, compute: (r) => _pfBills(r.kwh) },
+          { label: 'Usage (kWh)', type: 'number', w: 110, compute: (r) => _pfBills(r.kwh) },
           {
             label: 'kWh Cost $',
             type: 'currency',
@@ -35462,8 +35728,8 @@
           { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
         ],
         Gas: [
-          { label: 'CCF', type: 'number', w: 90, compute: (r) => _pfBills(r.naturalGasCCF) },
-          { label: 'Therms', type: 'number', w: 90, compute: (r) => _pfBills(r.naturalGasTherms) },
+          { label: 'Usage (CCF)', type: 'number', w: 100, compute: (r) => _pfBills(r.naturalGasCCF) },
+          { label: 'Usage (Therms)', type: 'number', w: 110, compute: (r) => _pfBills(r.naturalGasTherms) },
           {
             label: 'Gas Cost $',
             type: 'currency',
@@ -35492,7 +35758,7 @@
           { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
         ],
         Propane: [
-          { label: 'Gallons', type: 'number', w: 100, compute: (r) => _pfBills(r.gallonsDelivered) },
+          { label: 'Usage (Gal)', type: 'number', w: 100, compute: (r) => _pfBills(r.gallonsDelivered) },
           { label: 'Unit Price $', type: 'currency', w: 100, compute: (r) => _pfBills(r.unitPrice) },
           {
             label: 'Subtotal $',
@@ -35579,8 +35845,8 @@
           const _settingsBillUnit = meter.commodity === 'Gas' ? getMeterBillUnit(meter) : null;
           items = CONDENSED_CATEGORIES[meter.commodity]
             .filter((c) => {
-              if (_settingsBillUnit === 'CCF' && c.label === 'Therms') return false;
-              if (_settingsBillUnit !== 'CCF' && _settingsBillUnit && c.label === 'CCF') return false;
+              if (_settingsBillUnit === 'CCF' && c.label === 'Usage (Therms)') return false;
+              if (_settingsBillUnit !== 'CCF' && _settingsBillUnit && c.label === 'Usage (CCF)') return false;
               return true;
             })
             .map((c) => ({
@@ -35771,8 +36037,8 @@
           const billUnit = isGas ? getMeterBillUnit(m) : null;
           COL_FIELDS = CONDENSED_CATEGORIES[m.commodity]
             .filter((c) => {
-              if (isGas && c.label === 'CCF' && billUnit !== 'CCF') return false;
-              if (isGas && c.label === 'Therms' && billUnit === 'CCF') return false;
+              if (isGas && c.label === 'Usage (CCF)' && billUnit !== 'CCF') return false;
+              if (isGas && c.label === 'Usage (Therms)' && billUnit === 'CCF') return false;
               return !hiddenSet.has(c.label);
             })
             .map((c) => ({
@@ -48026,7 +48292,7 @@
             CSC_HEADER_B64 +
             '" alt="CSC Letterhead" style="width:100%;display:block">' +
             bodyHTML +
-            footerTextHtml +
+            footerImgHtml +
             '</div>'
           );
         }
@@ -48078,13 +48344,30 @@
         if (s.contractProjection !== false) pages.push(rptPageContractProjection(pageNum++, data));
         if (s.setpoints !== false) pages.push(rptPageSetPoints(pageNum++, data));
 
-        // Per-building summaries (summary page + separate meter performance page)
+        // Per-building summaries, then all meter performance on continuous pages
+        var allMeterPerfHTML = '';
         if (s.buildingSummaries !== false) {
           data.buildings.forEach(function (b) {
             var bResult = rptPageBuildingSummary(pageNum, data, b);
             pages.push(bResult.html);
-            pageNum += bResult.pageCount;
+            pageNum += bResult.summaryPageCount;
+            if (bResult.meterPerfHTML) {
+              allMeterPerfHTML +=
+                '<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:#1a5276;margin-bottom:4px;border-bottom:1px solid #d4e4f0;padding-bottom:2px">' +
+                (b.name || 'Building') +
+                '</div>' +
+                bResult.meterPerfHTML +
+                '</div>';
+            }
           });
+          if (allMeterPerfHTML) {
+            pages.push(
+              rptPage(pageNum++, 'Meter Performance — All Buildings', allMeterPerfHTML, {
+                data: data,
+                label: 'Meter Performance',
+              }),
+            );
+          }
         }
 
         // Commodity detail pages
@@ -50921,7 +51204,7 @@
               '<div style="display:flex;align-items:flex-end;gap:1px">' +
               euiBars +
               '</div>' +
-              '<div style="font-size:6.5px;color:#888;margin-top:2px"><span style="display:inline-block;width:6px;height:6px;background:#e67e22;border-radius:1px;margin-right:2px"></span>BL <span style="display:inline-block;width:6px;height:6px;background:#1a8a4e;border-radius:1px;margin-left:4px;margin-right:2px"></span>Cur</div>';
+              '<div style="font-size:6.5px;color:#888;margin-top:2px"><span style="display:inline-block;width:6px;height:6px;background:#e67e22;border-radius:1px;margin-right:2px"></span>Baseline <span style="display:inline-block;width:6px;height:6px;background:#1a8a4e;border-radius:1px;margin-left:4px;margin-right:2px"></span>Cur</div>';
           }
         }
 
@@ -51504,10 +51787,6 @@
               $n(sav) +
               '</td><td class="rpt-n">' +
               savPct +
-              '</td><td class="rpt-n">' +
-              $c(blC) +
-              '</td><td class="rpt-n">' +
-              $c(curC) +
               '</td><td class="rpt-n" style="color:' +
               (savC >= 0 ? '#1e8449' : '#c0392b') +
               '">' +
@@ -51526,19 +51805,15 @@
             $n(tSav) +
             '</td><td class="rpt-n">' +
             tSavPct +
-            '</td><td class="rpt-n">' +
-            $c(tBlC) +
-            '</td><td class="rpt-n">' +
-            $c(tCurC) +
             '</td><td class="rpt-n" style="color:' +
             (tSavC >= 0 ? '#1e8449' : '#c0392b') +
             '">' +
             $c(tSavC) +
             '</td></tr>';
           return (
-            '<table class="rpt-table" style="font-size:7px"><thead><tr><th>Month</th><th class="rpt-n">BL ' +
+            '<table class="rpt-table" style="font-size:7px"><thead><tr><th>Month</th><th class="rpt-n">Baseline ' +
             unitLabel +
-            '</th><th class="rpt-n">Actual</th><th class="rpt-n">Saved</th><th class="rpt-n">%</th><th class="rpt-n">BL Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">Cost Saved</th></tr></thead><tbody>' +
+            '</th><th class="rpt-n">Actual</th><th class="rpt-n">Saved</th><th class="rpt-n">%</th><th class="rpt-n">Cost Saved</th></tr></thead><tbody>' +
             rows +
             '</tbody></table>'
           );
@@ -51560,7 +51835,7 @@
         }
         if (meterPerfHTML) {
           meterPerfHTML =
-            '<div style="margin-top:8px;page-break-before:always;break-before:page"><div style="font-size:9.5px;font-weight:600;color:#1a5276;margin-bottom:3px">Meter Performance — ' +
+            '<div style="margin-top:8px"><div style="font-size:9.5px;font-weight:600;color:#1a5276;margin-bottom:3px">Meter Performance — ' +
             ((d && d.period && d.period.label) || '') +
             '</div>' +
             meterPerfHTML +
@@ -51595,16 +51870,7 @@
           label: 'Page ' + n + ' — ' + (b.name || 'Building'),
         });
 
-        if (meterPerfHTML) {
-          result += rptPage(n + 1, (b.name || 'Building') + ' — Meter Performance', meterPerfHTML, {
-            data: d,
-            label: 'Page ' + (n + 1) + ' — ' + (b.name || 'Building') + ' Meters',
-          });
-          result = { html: result, pageCount: 2 };
-        } else {
-          result = { html: result, pageCount: 1 };
-        }
-        return result;
+        return { html: result, summaryPageCount: 1, meterPerfHTML: meterPerfHTML || '' };
       }
       function rptPageElectric(n, d) {
         var $c = function (v) {
@@ -51665,7 +51931,7 @@
               blH +
               'px;background:' +
               blColor +
-              ';border-radius:2px 2px 0 0" title="BL ' +
+              ';border-radius:2px 2px 0 0" title="Baseline ' +
               $n(mo.bl) +
               ' ' +
               unit +
@@ -51978,7 +52244,7 @@
               blH +
               'px;background:' +
               blColor +
-              ';border-radius:2px 2px 0 0" title="BL ' +
+              ';border-radius:2px 2px 0 0" title="Baseline ' +
               $n(mo.bl) +
               ' ' +
               unit +
@@ -52242,7 +52508,7 @@
               blH +
               'px;background:' +
               blColor +
-              ';border-radius:2px 2px 0 0" title="BL ' +
+              ';border-radius:2px 2px 0 0" title="Baseline ' +
               $n(mo.bl) +
               ' ' +
               unit +
@@ -52611,9 +52877,9 @@
               '</td></tr>';
           }
           return (
-            '<table class="rpt-table" contenteditable="true" style="font-size:7px"><thead><tr><th>Building</th><th class="rpt-n">BL ' +
+            '<table class="rpt-table" contenteditable="true" style="font-size:7px"><thead><tr><th>Building</th><th class="rpt-n">Baseline ' +
             unitLabel +
-            '</th><th class="rpt-n">Actual</th><th class="rpt-n">Saved</th><th class="rpt-n">%</th><th class="rpt-n">BL Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">$ Saved</th></tr></thead><tbody>' +
+            '</th><th class="rpt-n">Actual</th><th class="rpt-n">Saved</th><th class="rpt-n">%</th><th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">$ Saved</th></tr></thead><tbody>' +
             rows +
             '</tbody></table>'
           );
@@ -53047,7 +53313,7 @@
               '<thead><tr>' +
               '<th>Month</th><th class="rpt-n">Days</th><th class="rpt-n">HDD</th><th class="rpt-n">CDD</th>' +
               '<th>Calculation</th>' +
-              '<th class="rpt-n">Predicted<br>BL ' +
+              '<th class="rpt-n">Predicted<br>Baseline ' +
               unit +
               '</th><th class="rpt-n">Actual<br>' +
               unit +
@@ -53105,7 +53371,7 @@
               '<thead><tr>' +
               '<th>Month</th><th class="rpt-n">Days</th><th class="rpt-n">HDD</th><th class="rpt-n">CDD</th>' +
               '<th>Calculation</th>' +
-              '<th class="rpt-n">Predicted<br>BL ' +
+              '<th class="rpt-n">Predicted<br>Baseline ' +
               unit +
               '</th>' +
               '<th class="rpt-n">Actual<br>' +
@@ -53261,8 +53527,8 @@
           '<table class="rpt-table" contenteditable="true" style="font-size:10px">' +
           '<thead><tr>' +
           '<th>Month</th>' +
-          '<th class="rpt-n">BL HDD</th><th class="rpt-n">Cur HDD</th><th class="rpt-n">HDD Var</th>' +
-          '<th class="rpt-n">BL CDD</th><th class="rpt-n">Cur CDD</th><th class="rpt-n">CDD Var</th>' +
+          '<th class="rpt-n">Baseline HDD</th><th class="rpt-n">Current HDD</th><th class="rpt-n">HDD Var</th>' +
+          '<th class="rpt-n">Baseline CDD</th><th class="rpt-n">Current CDD</th><th class="rpt-n">CDD Var</th>' +
           '</tr></thead><tbody>' +
           tableRows +
           '</tbody></table>';
@@ -55673,7 +55939,16 @@
             if (!m) return;
             const fetchedVer = m[1];
             const el = document.getElementById('en-sb-version');
-            if (el) el.textContent = fetchedVer;
+            if (el) {
+              // Bug f5b133dc: detect CDP/Playwright-opened tab and show indicator
+              const _isCDP = !!(
+                navigator.webdriver ||
+                window.__playwright ||
+                window.__pwInitScripts ||
+                window._playwrightChannel
+              );
+              el.textContent = fetchedVer + (_isCDP ? ' [CDP]' : '');
+            }
             // Issue 066423b5: compare to last-seen version; if changed, save page state
             // so in-progress work survives any subsequent reload.
             const _CH_VER_KEY = 'ch_last_seen_version';
@@ -64178,13 +64453,14 @@
             qHtml += '<div style="overflow-x:auto"><table class="dtbl" style="min-width:500px">';
             qHtml += '<thead><tr><th>Year</th><th>Quarter</th>';
             if (hasElec)
-              qHtml += '<th style="text-align:right">BL kWh</th><th style="text-align:right">Actual kWh</th>';
+              qHtml += '<th style="text-align:right">Baseline kWh</th><th style="text-align:right">Actual kWh</th>';
             if (hasGasQ)
-              qHtml += '<th style="text-align:right">BL Therms</th><th style="text-align:right">Actual Therms</th>';
+              qHtml +=
+                '<th style="text-align:right">Baseline Therms</th><th style="text-align:right">Actual Therms</th>';
             if (hasPropaneQ)
-              qHtml += '<th style="text-align:right">BL Gal</th><th style="text-align:right">Actual Gal</th>';
+              qHtml += '<th style="text-align:right">Baseline Gal</th><th style="text-align:right">Actual Gal</th>';
             qHtml +=
-              '<th style="text-align:right">BL Cost</th><th style="text-align:right">Actual Cost</th><th style="text-align:right">Savings</th><th style="text-align:right">Savings %</th></tr></thead><tbody>';
+              '<th style="text-align:right">Baseline Cost</th><th style="text-align:right">Actual Cost</th><th style="text-align:right">Savings</th><th style="text-align:right">Savings %</th></tr></thead><tbody>';
             for (const y of postBlYears) {
               const yd = yearData[y];
               if (!yd) continue;

@@ -321,6 +321,9 @@
       logging: false,
       useCORS: true,
       allowTaint: true,
+      // Disable foreignObject rendering to avoid CORS/CSS failures (backdrop-filter,
+      // cross-origin fonts like Google Fonts) that cause silent blank captures.
+      foreignObjectRendering: false,
     })
       .then(function (canvas) {
         el.classList.add('fb-highlight');
@@ -331,21 +334,43 @@
             btn.classList.add('captured');
             btn.innerHTML = '&#10003; Captured';
           } else {
-            btn.textContent = 'Failed';
-            setTimeout(function () {
-              btn.innerHTML = '&#128247; Quick Capture';
-            }, 2000);
+            console.warn('[feedback-widget] html2canvas returned null blob — falling back to text description');
+            el.classList.add('fb-highlight');
+            _applyTextFallback(el, btn);
           }
         }, 'image/png');
       })
       .catch(function (err) {
         el.classList.add('fb-highlight');
-        console.error('Feedback widget screenshot failed:', err);
-        btn.textContent = 'Failed';
-        setTimeout(function () {
-          btn.innerHTML = '&#128247; Quick Capture';
-        }, 2000);
+        console.error('[feedback-widget] html2canvas failed:', err && (err.message || err));
+        _applyTextFallback(el, btn);
       });
+  }
+
+  // Text-description fallback used when screenshot capture fails.
+  // Stores a plain-text description of the element as the "screenshot" so the
+  // feedback submission still includes useful context even without an image.
+  function _applyTextFallback(el, btn) {
+    var info = getElementInfo(el);
+    var desc =
+      '[Screenshot unavailable — html2canvas error]\n' +
+      'Element: ' +
+      (info.dataFb || info.selector || 'unknown') +
+      '\n' +
+      'Text: ' +
+      (info.textContent || '(none)') +
+      '\n' +
+      'Page: ' +
+      getPageName() +
+      '\n' +
+      'URL: ' +
+      window.location.href;
+    var fallbackBlob = new Blob([desc], { type: 'text/plain' });
+    state.screenshotBlob = fallbackBlob;
+    state.screenshotMethod = 'text-fallback';
+    btn.classList.add('captured');
+    btn.innerHTML = '&#10003; Text Fallback';
+    btn.title = 'Screenshot failed — element description will be attached instead';
   }
 
   function doScreenCapture(targetEl, btn) {
