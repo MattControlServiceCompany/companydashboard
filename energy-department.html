@@ -35861,27 +35861,16 @@
           const flags = billFlags[row.id] || [];
           if (flags.length) flagCount++;
           let rowHtml = renderBillRow(row, m, incl, bills, cols);
+          // Meter change and charge part indicators (icons only — onclick stays as showBillSplitPanel from renderBillRow)
           if (row.Meter1_ReadStart) {
             rowHtml = rowHtml.replace(
-              '<tr>',
-              "<tr style=\"cursor:pointer\" onclick=\"if(event.target.closest('button')||event.target.closest('.btn-edit')||event.target.closest('.btn-del')){event.stopPropagation();return;}toggleMeterDetail('" +
-                row.id +
-                '\')">',
-            );
-            rowHtml = rowHtml.replace(
               /(<td class="norm-mon-cell[^"]*"[^>]*>)/,
-              '$1<span title="Meter change — click to expand" style="font-size:10px;margin-right:3px;opacity:0.7">⚡</span>',
+              '$1<span title="Meter change" style="font-size:10px;margin-right:3px;opacity:0.7">⚡</span>',
             );
           } else if (row._chargeParts && Object.keys(row._chargeParts).length) {
             rowHtml = rowHtml.replace(
-              '<tr>',
-              "<tr style=\"cursor:pointer\" onclick=\"if(event.target.closest('button')||event.target.closest('.btn-edit')||event.target.closest('.btn-del')){event.stopPropagation();return;}toggleChargeDetail('" +
-                row.id +
-                '\')">',
-            );
-            rowHtml = rowHtml.replace(
               /(<td class="norm-mon-cell[^"]*"[^>]*>)/,
-              '$1<span title="Charge line items — click to expand" style="font-size:10px;margin-right:3px;opacity:0.7">💲</span>',
+              '$1<span title="Charge line items" style="font-size:10px;margin-right:3px;opacity:0.7">💲</span>',
             );
           }
           // Add amber background and info icons for flagged rows
