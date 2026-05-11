@@ -37172,7 +37172,17 @@
         const proj = getUDProj(udSelProjId);
         const normBasis = proj?.normBasis || 'calendar';
         const reg = computeMeterRegression(rawRows); // full regression for non-baseline months
-        const _rawFrozenReg = m.baseline?.reg || null;
+        let _rawFrozenReg = m.baseline?.reg || null;
+        // Backfill: baselines saved before regression-freezing was added have no .reg.
+        // Compute and persist it now so the frozen model is locked to baseline months.
+        if (m.baseline && m.baseline.months && !_rawFrozenReg) {
+          const blOnlyRows = rawRows.filter((r) => m.baseline.months.includes(r.ym));
+          if (blOnlyRows.length >= 3) {
+            _rawFrozenReg = computeMeterRegression(blOnlyRows);
+            m.baseline.reg = _rawFrozenReg;
+            saveUtilityData();
+          }
+        }
         // A frozen regression with null coefficients means the baseline was saved
         // before weather data was uploaded. Treat it as absent so the live
         // regression (computed from current weather data) can take over.
@@ -38216,6 +38226,7 @@
 
           // ── Regression panel ──
           const reg = m._reg || {};
+          const _isFrozenReg = !!(m.baseline && m.baseline.reg);
           let regrPanel = '';
           if (_regressionPanelVis) {
             const fmtQual = (r) => {
@@ -38357,7 +38368,11 @@
               '<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:12px">' +
               '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">📈 Regression Model — ' +
               unit +
-              '/Day ~ DD/Day</div>' +
+              '/Day ~ DD/Day' +
+              (_isFrozenReg
+                ? ' &nbsp;<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:var(--violet);color:#fff;letter-spacing:0">🔒 FROZEN</span>'
+                : ' &nbsp;<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:var(--em2);color:#fff;letter-spacing:0">⚡ LIVE</span>') +
+              '</div>' +
               '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">' +
               'OLS fit: <strong>usage/day = intercept + slope × (DD/day)</strong> — using calendar days per month as denominator.<br>' +
               'Bias correction: <strong>(ΣfitLine − ΣactualKwh) / ΣcalendarDays</strong> subtracted from intercept, forcing total predicted kWh = total actual kWh over training months.<br>' +
@@ -39262,8 +39277,8 @@
               } else {
                 return null;
               }
-              const _frozenNote = bl && bl.reg ? ' ❄' : '';
-              return { v: _modelLabel + _frozenNote, lbl: '🔬 Regression Model', color: _modelColor };
+              const _isFrozen = !!(bl && bl.reg);
+              return { v: _modelLabel, lbl: _isFrozen ? '🔒 Frozen Model' : '⚡ Live Model', color: _modelColor };
             })(),
           ].filter(Boolean);
 
@@ -53745,7 +53760,15 @@
           weatherTable +
           '<h3 style="font-size:9.5px;font-weight:700;color:#555;margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.04em">Weather Impact Summary</h3>' +
           narrativeBox +
-          hddCddParagraph;
+          hddCddParagraph +
+          '<div style="margin-top:16px;padding:10px 12px;background:#f8f9fa;border:1px solid #e0e0e0;border-radius:4px;font-size:8.5px;color:#444;line-height:1.5">' +
+          '<div style="font-weight:700;font-size:9px;color:#333;margin-bottom:6px">What is a degree day?</div>' +
+          '<div style="margin-bottom:6px">A degree day is a measure of relative heating and cooling energy required by buildings. It’s calculated as the difference between the average daily temperature and the balance point temperature (60 degrees). When the average daily temperature is above the balance point, the result is cooling degree days; when below, the result is heating degree days.</div>' +
+          '<div style="margin-bottom:6px"><strong>Example 1:</strong> Average daily temperature = 80. Balance point = 60. Cooling degree days = 20 CDD. (80–60=20)</div>' +
+          '<div style="margin-bottom:6px"><strong>Example 2:</strong> Average daily temperature = 45. Balance point = 60. Heating degree days = 15 HDD. (60–45=15)</div>' +
+          '<div style="margin-bottom:6px"><strong>Example 3:</strong> Average daily temperature = 60. Balance point = 60. No degree days.</div>' +
+          '<div>You may ask, “Why not use average temperature instead of degree days?” The problem with average temperature is that highs and lows cancel each other out. A warm day (80 average temp) combined with a cold day (40 average temp) averages 60. So do two mild days of 59 and 61. But in the first case there are 20 CDD and 20 HDD while in the second there are 1 CDD and 1 HDD. The further the average temperature deviates from the balance point, the greater the energy needed to keep the building in a comfortable temperature range.</div>' +
+          '</div>';
 
         return rptPage(n, 'Appendix ' + appLetter + ': Weather Data', bodyHTML, {
           data: d,
