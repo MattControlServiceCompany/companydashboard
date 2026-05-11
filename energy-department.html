@@ -42446,40 +42446,40 @@
 
           if (isElec) {
             const actKwh = actUsage;
+            const n = bfr.length || 1;
+            const _sKwhR = bfr.reduce((s, b) => s + (parseFloat(b.totalKwhRate) || 0), 0) / n;
+            const _sKwR = bfr.reduce((s, b) => s + (parseFloat(b.totalKwRate) || 0), 0) / n;
             const kwhCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwhCost || 0), 0);
-            const kwhRate = actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0;
+            const kwhRate = _sKwhR || (actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0);
             const kwhSaved = expUsage - actKwh;
             const kwhCostSav = kwhRate > 0 ? kwhSaved * kwhRate : 0;
-
-            // Use weather-normalized baseline kW when available (matches renderPerfPane)
             const blExpKW = _kwNormByYm[r.ym] != null ? _kwNormByYm[r.ym] : blDemKWByCalMo[calMo] || 0;
             const actBilKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.billedKW || b.demandKW || 0))) : 0;
             const actDemKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.demandKW || 0))) : 0;
             const kwCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwCost || 0), 0);
             const facKWCostAmt = bfr.reduce((s, b) => s + parseFloat(b.facKWCost || 0), 0);
-            const moKwRate = actDemKW > 0 ? (kwCostAmt + facKWCostAmt) / actDemKW : 0;
+            const moKwRate = _sKwR || (actDemKW > 0 ? (kwCostAmt + facKWCostAmt) / actDemKW : 0);
             const kwSaved = blExpKW - actBilKW;
             const kwCostSav = blExpKW > 0 && moKwRate > 0 ? kwSaved * moKwRate : 0;
-
             totalCostSav = kwhCostSav + kwCostSav;
             m._unitSavByCalMo[calMo].kwh += kwhSaved;
             m._unitSavByCalMo[calMo].kw += kwSaved;
           } else if (isPropane) {
-            // Propane savings = (Expected gallons - Actual gallons) × current $/gallon rate
             const actGallons = actUsage;
             const actCost = r.cost;
-            const galRate = actGallons > 0 && actCost > 0 ? actCost / actGallons : 0;
+            const _sPropR = bfr.length ? parseFloat(bfr[0].totalPropaneRate) || 0 : 0;
+            const galRate = _sPropR || (actGallons > 0 && actCost > 0 ? actCost / actGallons : 0);
             const galSaved = expUsage - actGallons;
             totalCostSav = galRate > 0 ? galSaved * galRate : 0;
             m._unitSavByCalMo[calMo].gallons += galSaved;
           } else {
-            // Gas/therm savings = (Expected therms - Actual therms) × current $/therm rate
             const actTherms = actUsage;
             const actThermCost = bfr.reduce(
               (s, b) => s + (parseFloat(b.gasCharge) || parseFloat(b.thermCost) || parseFloat(b.cost) || 0),
               0,
             );
-            const thermRate = actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0;
+            const _sGasR = bfr.length ? bfr.reduce((s, b) => s + (parseFloat(b.totalGasRate) || 0), 0) / bfr.length : 0;
+            const thermRate = _sGasR || (actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0);
             const thermSaved = expUsage - actTherms;
             totalCostSav = thermRate > 0 ? thermSaved * thermRate : 0;
             m._unitSavByCalMo[calMo].therms += thermSaved;
@@ -54509,80 +54509,12 @@
             const blRows = allRows.filter((r) => bl.months.includes(r.ym));
             const { elecByMo: eM, gasByMo: gM, propaneByMo: pM } = buildMoMap(m, blRows, bills, incl);
 
-            // Use the same savings methodology as the dashboard (getMeterPerfSavingsByCalMo)
-            // but track per year-month so we can filter to the reporting period
-            const isElec = m.commodity === 'Electric';
-            const isPropane = m.commodity === 'Propane';
-            const blByCalMo = {};
-            blRows.forEach((r) => {
-              const mo = parseInt(r.ym.split('-')[1]) - 1;
-              blByCalMo[mo] = r.regrBaseline != null ? r.regrBaseline : r.usage;
-            });
-            const hasBlCalMap = Object.keys(blByCalMo).length >= 3;
-            const blAvg = blRows.length ? blRows.reduce((s, r) => s + r.usage, 0) / blRows.length : 0;
-            const blDemKWByCalMo = {};
-            Object.entries(eM).forEach(([mo, v]) => {
-              blDemKWByCalMo[mo] = v.billedKW || v.demandKW || 0;
-            });
-            const rawUsageByYm = {};
-            if (isElec) {
-              bills.forEach((b2) => {
-                const ym = normMonth(b2.start, b2.end, incl, bills);
-                if (ym) rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + (parseFloat(b2.kwh) || parseFloat(b2.usage) || 0);
-              });
-            } else if (!isPropane) {
-              bills.forEach((b2) => {
-                const ym = normMonth(b2.start, b2.end, incl, bills);
-                if (ym) rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + parseFloat(b2.therms || b2.usage || 0);
-              });
-            } else {
-              allRows.forEach((r) => {
-                rawUsageByYm[r.ym] = r.usage;
-              });
-            }
-
-            postRows.forEach((r) => {
-              const calMo = parseInt(r.ym.split('-')[1]) - 1;
-              const bfr = isPropane ? [] : bills.filter((b2) => normMonth(b2.start, b2.end, incl, bills) === r.ym);
-              if (!isPropane && !bfr.length) return;
-
-              const expUsage =
-                hasBlCalMap && blByCalMo[calMo] != null
-                  ? blByCalMo[calMo]
-                  : r.regrBaseline != null
-                    ? r.regrBaseline
-                    : blAvg;
-              const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
-
-              let totalCostSav = 0;
-              if (isElec) {
-                const actKwh = actUsage;
-                const kwhCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.kwhCost || 0), 0);
-                const kwhRate = actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0;
-                const kwhCostSav = kwhRate > 0 ? (expUsage - actKwh) * kwhRate : 0;
-                const blExpKW = blDemKWByCalMo[calMo] || 0;
-                const actDemKW = bfr.length ? Math.max(...bfr.map((b2) => parseFloat(b2.demandKW || 0))) : 0;
-                const kwCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.kwCost || 0), 0);
-                const facKWCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.facKWCost || 0), 0);
-                const moKwRate = actDemKW > 0 ? (kwCostAmt + facKWCostAmt) / actDemKW : 0;
-                const kwCostSav = blExpKW > 0 && moKwRate > 0 ? (blExpKW - actDemKW) * moKwRate : 0;
-                totalCostSav = kwhCostSav + kwCostSav;
-              } else if (isPropane) {
-                const galRate = actUsage > 0 && r.cost > 0 ? r.cost / actUsage : 0;
-                totalCostSav = galRate > 0 ? (expUsage - actUsage) * galRate : 0;
-              } else {
-                const actTherms = actUsage;
-                const actThermCost = bfr.reduce(
-                  (s, b2) => s + (parseFloat(b2.gasCharge) || parseFloat(b2.thermCost) || parseFloat(b2.cost) || 0),
-                  0,
-                );
-                const thermRate = actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0;
-                totalCostSav = thermRate > 0 ? (expUsage - actTherms) * thermRate : 0;
-              }
-              if (!savByYM[r.ym]) savByYM[r.ym] = 0;
-              savByYM[r.ym] += totalCostSav;
-              cumSavings += totalCostSav;
-              if (reportYMs.includes(r.ym)) qtrSavings += totalCostSav;
+            const mSavByYM = getMeterPerfSavingsByYM(m, bills, incl);
+            Object.entries(mSavByYM).forEach(([ym, v]) => {
+              if (!savByYM[ym]) savByYM[ym] = 0;
+              savByYM[ym] += v;
+              cumSavings += v;
+              if (reportYMs.includes(ym)) qtrSavings += v;
             });
 
             // Annual EUI - rolling 12 months and per-year
