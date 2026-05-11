@@ -38256,7 +38256,7 @@
                   '</tr>'
                 : '<tr><td class="mono">' +
                   label +
-                  '</td><td colspan="7" style="color:var(--text3);font-size:11px">— insufficient data (need ≥3 months with non-zero ' +
+                  '</td><td colspan="3" style="color:var(--text3);font-size:11px">— insufficient data (need ≥3 months with non-zero ' +
                   ddLabel +
                   ')</td></tr>';
             const ddUsed = isElec ? 'CDD (primary) / HDD (fallback)' : 'HDD (primary) / CDD (fallback)';
@@ -48342,6 +48342,9 @@
           (data ? data.project.client + (_fmtRptDate ? ' — ' + _fmtRptDate : ' — ' + data.period.label) : '') +
           '</span>' +
           '</div>';
+        const footerLabelHtml = data && data.period
+          ? '<div style="text-align:center;font-size:8px;color:#888;padding:4px 0 2px;position:absolute;bottom:' + (footerImgHtml ? '45px' : '8px') + ';left:0;right:0">' + (data.period.year || '') + ' Q' + (data.period.quarter || 1) + ' ' + (data.period.type === 'quarterly' ? 'Quarterly' : 'Annual') + ' Report</div>'
+          : '';
 
         if (isHero) {
           return (
@@ -48355,6 +48358,7 @@
             CSC_HEADER_B64 +
             '" alt="CSC Letterhead" style="width:100%;display:block">' +
             bodyHTML +
+            footerLabelHtml +
             footerImgHtml +
             '</div>'
           );
@@ -48380,6 +48384,7 @@
           '<div class="rpt-body">' +
           bodyHTML +
           '</div>' +
+          footerLabelHtml +
           footerImgHtml +
           '</div>'
         );
@@ -48416,20 +48421,23 @@
           });
         }
 
-        // Per-building meter performance (independent section — continuous, condensed)
+        // Per-building meter performance (independent section — split across pages)
         if (s.meterPerformance !== false) {
-          var _allMpHtml = '';
+          var _mpBlocks = [];
           data.buildings.forEach(function (b) {
             var bResult = rptPageBuildingSummary(0, data, b);
             if (bResult.meterPerfHTML) {
-              _allMpHtml += '<div style="page-break-inside:avoid;break-inside:avoid;margin-bottom:10px">' +
+              _mpBlocks.push('<div style="page-break-inside:avoid;break-inside:avoid;margin-bottom:10px">' +
                 '<div style="font-size:10px;font-weight:700;color:#1a5276;margin-bottom:3px;border-bottom:1px solid #d4e4f0;padding-bottom:2px">' + (b.name || 'Building') + '</div>' +
                 bResult.meterPerfHTML +
-                '</div>';
+                '</div>');
             }
           });
-          if (_allMpHtml) {
-            pages.push(rptPage(pageNum++, 'Meter Performance — All Buildings', _allMpHtml, { data: data, label: 'Page ' + pageNum + ' — Meter Performance' }));
+          // Split into pages of 3 buildings each
+          for (var _mpI = 0; _mpI < _mpBlocks.length; _mpI += 3) {
+            var _mpChunk = _mpBlocks.slice(_mpI, _mpI + 3).join('');
+            var _mpTitle = _mpI === 0 ? 'Meter Performance — All Buildings' : 'Meter Performance (continued)';
+            pages.push(rptPage(pageNum++, _mpTitle, _mpChunk, { data: data, label: 'Page ' + pageNum + ' — Meter Performance' }));
           }
         }
 
@@ -53515,10 +53523,6 @@
           var cddBl = mo.cddBl || 0;
           var cddCur = mo.cddCur || 0;
           var ip = mo.inPeriod;
-          var hddVar = ip && hddBl > 0 ? ((hddCur - hddBl) / hddBl) * 100 : 0;
-          var cddVar = ip && cddBl > 0 ? ((cddCur - cddBl) / cddBl) * 100 : 0;
-          var hddVarStyle = ip && Math.abs(hddVar) > 10 ? 'color:#c0392b;font-weight:600' : '';
-          var cddVarStyle = ip && Math.abs(cddVar) > 10 ? 'color:#c0392b;font-weight:600' : '';
           totHddBl += hddBl;
           if (ip) {
             totHddCur += hddCur;
@@ -53526,40 +53530,14 @@
             totCddCur += cddCur;
           }
           var rowStyle = ip ? '' : 'color:#999;background:#f8f8f8';
-          // Baseline-period rows: show BL HDD/CDD, leave Current columns blank
-          // Reporting-period rows: show both BL and Current HDD/CDD with variance
+          var hddVal = ip ? hddCur : hddBl;
+          var cddVal = ip ? cddCur : cddBl;
+          var badge = ip ? '' : ' <span style="font-size:6px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span>';
           tableRows +=
-            '<tr style="' +
-            rowStyle +
-            '">' +
-            '<td contenteditable="true">' +
-            _wFmtDate(mo.month) +
-            (ip
-              ? ''
-              : ' <span style="font-size:6px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span>') +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            $n(hddBl) +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            (ip ? $n(hddCur) : '—') +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true" style="' +
-            hddVarStyle +
-            '">' +
-            (ip && hddBl > 0 ? $p(hddVar) : '—') +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            $n(cddBl) +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true">' +
-            (ip ? $n(cddCur) : '—') +
-            '</td>' +
-            '<td class="rpt-n" contenteditable="true" style="' +
-            cddVarStyle +
-            '">' +
-            (ip && cddBl > 0 ? $p(cddVar) : '—') +
-            '</td>' +
+            '<tr style="' + rowStyle + '">' +
+            '<td contenteditable="true">' + _wFmtDate(mo.month) + badge + '</td>' +
+            '<td class="rpt-n" contenteditable="true">' + $n(hddVal) + '</td>' +
+            '<td class="rpt-n" contenteditable="true">' + $n(cddVal) + '</td>' +
             '</tr>';
         });
 
@@ -53571,25 +53549,19 @@
           var totCddVar = totCddBl > 0 ? ((totCddCur - totCddBl) / totCddBl) * 100 : 0;
           tableRows +=
             '<tr class="rpt-tot">' +
+            '<td>Baseline Period Avg</td>' +
+            '<td class="rpt-n">' + $n(totHddBl) + '</td>' +
+            '<td class="rpt-n">' + $n(totCddBl) + '</td>' +
+            '</tr>' +
+            '<tr class="rpt-tot">' +
             '<td>Reporting Period Total</td>' +
-            '<td class="rpt-n">' +
-            $n(totHddBl) +
-            '</td>' +
-            '<td class="rpt-n">' +
-            $n(totHddCur) +
-            '</td>' +
-            '<td class="rpt-n">' +
-            $p(totHddVar) +
-            '</td>' +
-            '<td class="rpt-n">' +
-            $n(totCddBl) +
-            '</td>' +
-            '<td class="rpt-n">' +
-            $n(totCddCur) +
-            '</td>' +
-            '<td class="rpt-n">' +
-            $p(totCddVar) +
-            '</td>' +
+            '<td class="rpt-n">' + $n(totHddCur) + '</td>' +
+            '<td class="rpt-n">' + $n(totCddCur) + '</td>' +
+            '</tr>' +
+            '<tr class="rpt-tot">' +
+            '<td>Variance</td>' +
+            '<td class="rpt-n" style="' + (Math.abs(totHddVar) > 10 ? 'color:#c0392b;font-weight:600' : '') + '">' + $p(totHddVar) + '</td>' +
+            '<td class="rpt-n" style="' + (Math.abs(totCddVar) > 10 ? 'color:#c0392b;font-weight:600' : '') + '">' + $p(totCddVar) + '</td>' +
             '</tr>';
         }
 
@@ -53597,8 +53569,8 @@
           '<table class="rpt-table" contenteditable="true" style="font-size:10px">' +
           '<thead><tr>' +
           '<th>Month</th>' +
-          '<th class="rpt-n">Baseline HDD</th><th class="rpt-n">Current HDD</th><th class="rpt-n">HDD Var</th>' +
-          '<th class="rpt-n">Baseline CDD</th><th class="rpt-n">Current CDD</th><th class="rpt-n">CDD Var</th>' +
+          '<th class="rpt-n">HDD</th>' +
+          '<th class="rpt-n">CDD</th>' +
           '</tr></thead><tbody>' +
           tableRows +
           '</tbody></table>';
