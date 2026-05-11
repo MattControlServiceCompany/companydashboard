@@ -46098,18 +46098,43 @@
               .join('');
           } else recurEl.innerHTML = '';
         }
-        if (!mtgs.length) {
+        // Saved reports from en_report_history
+        let reportRows = '';
+        if (_mtgFilter === 'all' || _mtgFilter === 'report') {
+          const rptHistory = JSON.parse(localStorage.getItem('en_report_history') || '[]');
+          const projReports = rptHistory.filter((h) => String(h.projectId) === String(projId));
+          reportRows = projReports
+            .map((r) => {
+              const d = new Date(r.savedAt);
+              const ds = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+              const ts = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+              return `<div class="mtg-row" onclick="reopenReport('${r.id}')">
+            <span class="mtg-date">${ds}</span>
+            <span class="mtg-badge" style="background:rgba(59,130,246,0.15);color:#3b82f6">Report</span>
+            <span class="mtg-title">${r.period || ''} ${r.type === 'quarterly' ? 'Quarterly' : 'Annual'} Report · ${ts}</span>
+            <div class="mtg-actions" onclick="event.stopPropagation()">
+              <button class="btn btn-ghost btn-sm" onclick="reopenReport('${r.id}')" title="Open">📊</button>
+              <button class="btn btn-ghost btn-sm" onclick="reexportReport('${r.id}')" title="Export PDF">📄</button>
+              <button class="btn btn-ghost btn-sm" onclick="deleteReport('${r.id}');renderMeetingsList(${projId})" title="Delete" style="color:var(--warn)">🗑️</button>
+            </div>
+          </div>`;
+            })
+            .join('');
+        }
+
+        if (!mtgs.length && !reportRows) {
           el.innerHTML =
             '<div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">No meetings yet. Click "+ New Agenda" to create one.</div>';
           return;
         }
-        el.innerHTML = mtgs
-          .map((m) => {
-            const d = new Date(m.date);
-            const ds = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-            const badge = m.type === 'agenda' ? 'mtg-badge-agenda' : 'mtg-badge-minutes';
-            const label = m.type === 'agenda' ? 'Agenda' : 'Minutes';
-            return `<div class="mtg-row" onclick="openMeetingEditor(${projId},${m.id})">
+        el.innerHTML =
+          mtgs
+            .map((m) => {
+              const d = new Date(m.date);
+              const ds = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+              const badge = m.type === 'agenda' ? 'mtg-badge-agenda' : 'mtg-badge-minutes';
+              const label = m.type === 'agenda' ? 'Agenda' : 'Minutes';
+              return `<div class="mtg-row" onclick="openMeetingEditor(${projId},${m.id})">
             <span class="mtg-date">${ds}</span>
             <span class="mtg-badge ${badge}">${label}</span>
             <span class="mtg-title">${m.projectNickname || ''} — ${m.sectionHeading || ''}</span>
@@ -46119,8 +46144,8 @@
               <button class="btn btn-ghost btn-sm" onclick="deleteMeeting(${projId},${m.id})" title="Delete" style="color:var(--warn)">🗑️</button>
             </div>
           </div>`;
-          })
-          .join('');
+            })
+            .join('') + reportRows;
       }
 
       function openMeetingEditor(projId, meetingId) {
@@ -48030,10 +48055,12 @@
         if (s.contractProjection !== false) pages.push(rptPageContractProjection(pageNum++, data));
         if (s.setpoints !== false) pages.push(rptPageSetPoints(pageNum++, data));
 
-        // Per-building summaries
+        // Per-building summaries (summary page + separate meter performance page)
         if (s.buildingSummaries !== false) {
           data.buildings.forEach(function (b) {
-            pages.push(rptPageBuildingSummary(pageNum++, data, b));
+            var bResult = rptPageBuildingSummary(pageNum, data, b);
+            pages.push(bResult.html);
+            pageNum += bResult.pageCount;
           });
         }
 
@@ -51495,13 +51522,23 @@
           rightHTML +
           '</div>' +
           '</div>' +
-          blDataTable +
-          meterPerfHTML;
+          blDataTable;
 
-        return rptPage(n, (b.name || 'Building') + ' — Building Summary', bodyHTML, {
+        var result = rptPage(n, (b.name || 'Building') + ' — Building Summary', bodyHTML, {
           data: d,
           label: 'Page ' + n + ' — ' + (b.name || 'Building'),
         });
+
+        if (meterPerfHTML) {
+          result += rptPage(n + 1, (b.name || 'Building') + ' — Meter Performance', meterPerfHTML, {
+            data: d,
+            label: 'Page ' + (n + 1) + ' — ' + (b.name || 'Building') + ' Meters',
+          });
+          result = { html: result, pageCount: 2 };
+        } else {
+          result = { html: result, pageCount: 1 };
+        }
+        return result;
       }
       function rptPageElectric(n, d) {
         var $c = function (v) {
