@@ -1982,7 +1982,7 @@
       }
       .rpt-hero-top {
         display: flex;
-        justify-content: flex-end;
+        justify-content: center;
         align-items: flex-start;
         margin-bottom: 10px;
         position: relative;
@@ -14751,7 +14751,17 @@
           });
           const _bldgBlMoCt = _bldgBlMonths.size || 12;
           const blEUI = sqft > 0 && blKBtu > 0 ? ((blKBtu / _bldgBlMoCt) * 12) / sqft : 0;
-          const curEUI = sqft > 0 && curKBtu > 0 ? ((curKBtu / 12) * 12) / sqft : 0;
+          const _curMoSet = new Set();
+          meters.forEach((m) => {
+            const incl2 = m.inclusive !== false;
+            (m.bills || []).forEach((bill) => {
+              const ym = normMonth(bill.start, bill.end, incl2, m.bills || []);
+              if (ym && ym > (m.baseline && m.baseline.months ? m.baseline.months.slice().sort().pop() : ''))
+                _curMoSet.add(ym);
+            });
+          });
+          const _curMoCt = _curMoSet.size || 12;
+          const curEUI = sqft > 0 && curKBtu > 0 ? ((curKBtu / _curMoCt) * 12) / sqft : 0;
           let status = 'No Data',
             statusColor = 'var(--text3)';
           if (useCost > 0 && curCost > 0) {
@@ -16007,8 +16017,10 @@
           winKwh = 0;
         let sumKwCost = 0,
           sumKwCount = 0,
+          sumKwDemand = 0,
           winKwCost = 0,
-          winKwCount = 0;
+          winKwCount = 0,
+          winKwDemand = 0;
         let totalTherms = 0,
           totalGasCost = 0;
         if (elecM)
@@ -16024,6 +16036,7 @@
               if (kw > 0) {
                 sumKwCost += kwCost;
                 sumKwCount++;
+                sumKwDemand += kw;
               }
             } else {
               winKwhCost += kwhCost;
@@ -16031,6 +16044,7 @@
               if (kw > 0) {
                 winKwCost += kwCost;
                 winKwCount++;
+                winKwDemand += kw;
               }
             }
           });
@@ -16050,8 +16064,8 @@
         return {
           kwhSummer: sumKwh > 0 ? Math.round((sumKwhCost / sumKwh) * 10000) / 10000 : 0,
           kwhWinter: winKwh > 0 ? Math.round((winKwhCost / winKwh) * 10000) / 10000 : 0,
-          kwSummer: sumKwCount > 0 ? Math.round((sumKwCost / sumKwCount) * 100) / 100 : 0,
-          kwWinter: winKwCount > 0 ? Math.round((winKwCost / winKwCount) * 100) / 100 : 0,
+          kwSummer: sumKwDemand > 0 ? Math.round((sumKwCost / sumKwDemand) * 100) / 100 : 0,
+          kwWinter: winKwDemand > 0 ? Math.round((winKwCost / winKwDemand) * 100) / 100 : 0,
           thermRate: totalTherms > 0 ? Math.round((totalGasCost / totalTherms) * 1000) / 1000 : 0,
           gallonRate: totalGallons > 0 ? Math.round((totalPropaneCost / totalGallons) * 1000) / 1000 : 0,
         };
@@ -34362,8 +34376,9 @@
             const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
             const blRows = allRows.filter((r) => bl.months.includes(r.ym));
             if (!blRows.length) return;
-            const { elecByMo: eM, gasByMo: gM } = buildMoMap(m, blRows, bills, incl);
-            for (let mo = 0; mo < 12; mo++) moBase[mo] += (eM[mo]?.totalCost || 0) + (gM[mo]?.cost || 0);
+            const { elecByMo: eM, gasByMo: gM, propaneByMo: pM, waterByMo: wM } = buildMoMap(m, blRows, bills, incl);
+            for (let mo = 0; mo < 12; mo++)
+              moBase[mo] += (eM[mo]?.totalCost || 0) + (gM[mo]?.cost || 0) + (pM[mo]?.cost || 0) + (wM[mo]?.cost || 0);
           });
         });
         return moBase;
@@ -34435,7 +34450,7 @@
               try {
                 bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
               } catch (e) {}
-              const savPct = (bspCfg.savingsPct ?? 11) / 100;
+              const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
               wtSav += savPct * bldgBase;
             }
             wtBase += bldgBase;
@@ -34717,7 +34732,7 @@
               try {
                 bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
               } catch (e) {}
-              const savPct = (bspCfg.savingsPct ?? 11) / 100;
+              const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
               const bMoBase = aggBaseMoMapForBldgs([b]);
               for (let mo = 0; mo < 12; mo++) _perfProjSavByMo[mo] += (bMoBase[mo] || 0) * savPct;
             }
@@ -40520,7 +40535,7 @@
         const avgWattsPerSf = isElec && sqft > 0 && totE.avgDemandKW > 0 ? (totE.avgDemandKW * 1000) / sqft : null;
         const elecDolPerSf = isElec && sqft > 0 ? totE.energyCost / sqft : null;
         const thermPerSf = isGas && sqft > 0 && totG.therms > 0 ? totG.therms / sqft : null;
-        const kbtuPerSf = sqft > 0 ? (totE.kwh * 3.412 + totG.therms * 100 + totW.kgal * 0) / sqft : null;
+        const kbtuPerSf = sqft > 0 ? (totE.kwh * 3.412 + totG.therms * 100 + totP.gallons * 91.5) / sqft : null;
         const hoursOperated = parseInt(bldg?.hoursOperated) || null;
 
         // Seasonal rates — electric only
@@ -40926,7 +40941,7 @@
         try {
           bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
         } catch (e) {}
-        const savPct = (bspCfg.savingsPct ?? 11) / 100;
+        const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
         _bpMsrSavByMo = getBldgMeasureSavingsByMo(udSelProjId, b.id);
 
         // ── Actual savings per calendar month ──
@@ -41153,7 +41168,7 @@
         try {
           if (bspKey) bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
         } catch (e) {}
-        const savPct = (bspCfg.savingsPct ?? 11) / 100;
+        const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
         const _msrSavByMo = _bpMsrSavByMo;
         const _useMeasures = !!_msrSavByMo;
 
@@ -47321,7 +47336,8 @@
           totPeakKwCur = 0;
         let totBlCost = 0,
           totCurCost = 0,
-          totSavings = 0;
+          totSavings = 0,
+          totCumSavings = 0;
         let totAnnBlKBtu = 0,
           totAnnCurKBtu = 0;
 
@@ -47362,7 +47378,7 @@
           try {
             bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
           } catch (e) {}
-          const bldgSavPct = (bspCfg.savingsPct ?? 11) / 100;
+          const bldgSavPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
 
           bMeters.forEach(({ m, bills, incl, allRows, bl, blEnd, postRows }) => {
             commoditySet.add(m.commodity);
@@ -47451,13 +47467,15 @@
                 const facKWCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.facKWCost || 0), 0);
 
                 // Always populate monthly map (full year for charts)
-                if (!elecMonthly[r.ym]) elecMonthly[r.ym] = { bl: 0, cur: 0, kwBl: 0, kwCur: 0, blCost: 0, curCost: 0 };
+                if (!elecMonthly[r.ym])
+                  elecMonthly[r.ym] = { bl: 0, cur: 0, kwBl: 0, kwCur: 0, blCost: 0, curCost: 0, savings: 0 };
                 elecMonthly[r.ym].bl += expUsage;
                 elecMonthly[r.ym].cur += actKwh;
                 elecMonthly[r.ym].kwBl += blExpKW;
                 elecMonthly[r.ym].kwCur += actDemKW;
                 elecMonthly[r.ym].blCost += blCostByCalMo[calMo] || 0;
                 elecMonthly[r.ym].curCost += kwhCostAmt + kwCostAmt + facKWCostAmt;
+                elecMonthly[r.ym].savings += totalCostSav;
 
                 if (inPeriod) {
                   elec.kwhBl += expUsage;
@@ -47471,11 +47489,12 @@
                 }
               } else if (isPropane) {
                 // Always populate monthly map (full year for charts)
-                if (!propaneMonthly[r.ym]) propaneMonthly[r.ym] = { bl: 0, cur: 0, blCost: 0, curCost: 0 };
+                if (!propaneMonthly[r.ym]) propaneMonthly[r.ym] = { bl: 0, cur: 0, blCost: 0, curCost: 0, savings: 0 };
                 propaneMonthly[r.ym].bl += expUsage;
                 propaneMonthly[r.ym].cur += actUsage;
                 propaneMonthly[r.ym].blCost += blCostByCalMo[calMo] || 0;
                 propaneMonthly[r.ym].curCost += r.cost || 0;
+                propaneMonthly[r.ym].savings += totalCostSav;
 
                 if (inPeriod) {
                   propane.galBl += expUsage;
@@ -47493,11 +47512,12 @@
                 );
 
                 // Always populate monthly map (full year for charts)
-                if (!gasMonthly[r.ym]) gasMonthly[r.ym] = { bl: 0, cur: 0, blCost: 0, curCost: 0 };
+                if (!gasMonthly[r.ym]) gasMonthly[r.ym] = { bl: 0, cur: 0, blCost: 0, curCost: 0, savings: 0 };
                 gasMonthly[r.ym].bl += expUsage;
                 gasMonthly[r.ym].cur += actTherms;
                 gasMonthly[r.ym].blCost += blCostByCalMo[calMo] || 0;
                 gasMonthly[r.ym].curCost += actThermCost;
+                gasMonthly[r.ym].savings += totalCostSav;
 
                 if (inPeriod) {
                   gas.thermsBl += expUsage;
@@ -47647,6 +47667,7 @@
           totBlCost += bldgBlCost;
           totCurCost += bldgCurCost;
           totSavings += bldgSavings;
+          totCumSavings += cumSavings;
           totAnnBlKBtu += annBlKBtu;
           totAnnCurKBtu += annCurKBtu;
 
@@ -47916,6 +47937,7 @@
           buildings: buildingsData,
           totals: {
             savings: totSavings,
+            cumulativeSavings: totCumSavings,
             blCost: totBlCost,
             curCost: totCurCost,
             savingsPct: totSavingsPct,
@@ -48779,9 +48801,9 @@
         }
         const maxBarVal = Math.max.apply(null, qtrProjVals) * 1.3 || 1;
 
-        // Current actual point
+        // Current actual point — use cumulative savings across all completed quarters, not just this period
         const curQtr = ((d.contract.currentYear || 1) - 1) * 4 + (d.period.quarter || 1);
-        const actCumVal = d.totals.savings || 0;
+        const actCumVal = d.totals.cumulativeSavings != null ? d.totals.cumulativeSavings : d.totals.savings || 0;
 
         // Y-axis labels
         const yAxisLabels = [0, 0.25, 0.5, 0.75, 1.0]
@@ -48986,9 +49008,11 @@
               ['electric', 'gas', 'propane'].forEach(function (com) {
                 var mo = (b[com] && b[com].monthly) || [];
                 mo.forEach(function (m) {
-                  if (!_moData[m.month]) _moData[m.month] = { bl: 0, cur: 0 };
+                  if (!_moData[m.month]) _moData[m.month] = { bl: 0, cur: 0, sav: 0 };
                   _moData[m.month].bl += m.blCost || 0;
                   _moData[m.month].cur += m.curCost || 0;
+                  // Use canonical savings (Baseline Usage - Actual Usage) × Current Rate; fall back to dollar delta
+                  _moData[m.month].sav += m.savings != null ? m.savings : (m.blCost || 0) - (m.curCost || 0);
                 });
               });
             });
@@ -49002,7 +49026,7 @@
               var mi = parseInt(ym.split('-')[1]) - 1;
               var bl = _moData[ym].bl,
                 cur = _moData[ym].cur,
-                sav = bl - cur;
+                sav = _moData[ym].sav;
               var pct = bl > 0 ? ((sav / bl) * 100).toFixed(1) + '%' : '—';
               _tBl += bl;
               _tCur += cur;
@@ -49072,6 +49096,11 @@
               moActual[mo.month] = (moActual[mo.month] || 0) + (mo.curCost || 0);
             });
             (b.gas.monthly || []).forEach(function (mo) {
+              if (moProj[mo.month] === undefined && moActual[mo.month] === undefined) return;
+              moProj[mo.month] = (moProj[mo.month] || 0) + (mo.blCost || 0);
+              moActual[mo.month] = (moActual[mo.month] || 0) + (mo.curCost || 0);
+            });
+            (b.propane && b.propane.monthly ? b.propane.monthly : []).forEach(function (mo) {
               if (moProj[mo.month] === undefined && moActual[mo.month] === undefined) return;
               moProj[mo.month] = (moProj[mo.month] || 0) + (mo.blCost || 0);
               moActual[mo.month] = (moActual[mo.month] || 0) + (mo.curCost || 0);
@@ -49643,43 +49672,62 @@
           );
         }
 
+        // Build only the non-zero lines so blank space is eliminated
+        var polLines =
+          polLine(pol.co2, 'pounds', 'CO₂ (carbon dioxide)') +
+          polLine(pol.ch4, 'pounds', 'CH₄ (methane)') +
+          polLine(pol.n2o, 'pounds', 'N₂O (nitrous oxide)') +
+          polLine(pol.so2, 'pounds', 'SO₂ (sulfur dioxide)') +
+          polLine(pol.nox, 'pounds', 'NOX (nitrogen oxide)') +
+          polLine(pol.hg_oz, 'ounces', 'HG (mercury)') +
+          polLine(pol.pm10_oz, 'ounces', 'PM10 (fine particles)') +
+          polLine(pol.voc_oz, 'ounces', 'VOC (volatile organic compounds)') +
+          polLine(pol.co_oz, 'ounces', 'CO (carbon monoxide)');
+
+        var eqLines =
+          eqLine('Removing', eq.carsRemoved, 'cars from the road per year') +
+          eqLine('Conserving', eq.gallonsGasoline, 'gallons of gasoline per year') +
+          eqLine('Conserving', eq.tankerTrucks, 'tanker trucks of gasoline per year') +
+          eqLine('Conserving', eq.barrelsOil, 'barrels of oil per year') +
+          eqLine('Powering', eq.households, 'households for one year') +
+          eqLine('Growing', eq.treeSeedlings, 'tree seedlings for 10 years') +
+          eqLine('Preserving', eq.acresForest, 'acres of forest from deforestation') +
+          eqLine('Displacing', eq.railcarsCoal, 'railcars of coal per year') +
+          eqLine('Recycling', eq.tonsRecycled, 'tons of waste instead of landfilling') +
+          eqLine('Replacing', eq.propaneCylinders, 'propane cylinders per year') +
+          eqLine('Offsetting', eq.coalPlants, 'coal-fired power plant emissions per year');
+
+        if (!polLines)
+          polLines = '<div style="font-size:10px;color:#aaa;font-style:italic">No pollutant data available.</div>';
+        if (!eqLines)
+          eqLines = '<div style="font-size:10px;color:#aaa;font-style:italic">No equivalents data available.</div>';
+
         const bodyHTML =
-          '<div style="text-align:center" contenteditable="true">' +
-          '<div style="font-size:14px;font-weight:700;color:#1a5276;margin:12px 0 8px;text-transform:uppercase;letter-spacing:0.5px">DETAILED POLLUTION CREDIT CALCULATIONS</div>' +
-          '<div style="font-size:12px;color:#333;margin-bottom:12px">The emission reductions produced from implementing this project are equivalent to saving:</div>' +
-          polLine(pol.co2, 'pounds', 'CO2 reduction (carbon dioxide)') +
-          polLine(pol.ch4, 'pounds', 'CH4 reduction (methane)') +
-          polLine(pol.n2o, 'pounds', 'N2O reduction (nitrous oxide)') +
-          polLine(pol.so2, 'pounds', 'SO2 reduction (sulfur dioxide)') +
-          polLine(pol.nox, 'pounds', 'NOX reduction (nitrogen oxide)') +
-          polLine(pol.hg_oz, 'ounces', 'HG reduction (mercury)') +
-          polLine(pol.pm10_oz, 'ounces', 'PM10 reduction (particles of 10 micrometers or less)') +
-          polLine(pol.voc_oz, 'ounces', 'VOC reduction (volatile organic compounds)') +
-          polLine(pol.co_oz, 'ounces', 'CO reduction (carbon monoxide)') +
-          '<div style="font-size:13px;font-weight:600;color:#333;margin:10px 0 4px">This is equivalent to:</div>' +
-          eqLine('Removing', eq.carsRemoved, 'cars from the road each year') +
-          eqLine('Conserving', eq.gallonsGasoline, 'gallons of gasoline each year') +
-          eqLine('Conserving', eq.tankerTrucks, 'tanker trucks of gasoline each year') +
-          eqLine('Conserving', eq.barrelsOil, 'barrels of oil each year') +
-          eqLine('Conserving', eq.households, 'households worth of electricity each year') +
-          eqLine('', eq.treeSeedlings, 'tree seedlings allowed to grow for 10 years each year') +
-          eqLine('', eq.acresForest, 'acres of forest preserved from deforestation') +
-          eqLine('Conserving', eq.railcarsCoal, 'railcars of coal each year') +
-          eqLine('Recycling', eq.tonsRecycled, 'tons of waste rather than landfilling each year') +
-          eqLine('Conserving', eq.propaneCylinders, 'propane cylinders used for home barbeques each year') +
-          eqLine('', eq.coalPlants, 'coal-fired power plant emissions each year') +
-          '<div style="margin-top:20px;font-size:8px;color:#888;border-top:1px solid #ddd;padding-top:5px">' +
-          'Data from eGRID (First edition with year 2023 data (eGRID2023 Version 1.0 Rev 1) https://www.epa.gov/egrid)<br>' +
-          'State: ' +
+          '<div contenteditable="true">' +
+          '<div style="font-size:13px;font-weight:700;color:#1a5276;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.5px;text-align:center">Environmental Impact — Pollution Reduction Credits</div>' +
+          '<div style="font-size:10px;color:#555;margin-bottom:10px;text-align:center">Emission reductions resulting from energy savings achieved during the reporting period' +
+          (_annualize ? ' (values annualized ×4 from quarterly data)' : '') +
+          '</div>' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">' +
+          '<div style="background:#f0f4f9;border:1px solid #d0dce8;border-radius:6px;padding:10px 14px">' +
+          '<div style="font-size:10px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;border-bottom:1px solid #c5d5e8;padding-bottom:4px">Pollutants Avoided</div>' +
+          polLines +
+          '</div>' +
+          '<div style="background:#f0f9f4;border:1px solid #b7dfc7;border-radius:6px;padding:10px 14px">' +
+          '<div style="font-size:10px;font-weight:700;color:#1e6b3a;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;border-bottom:1px solid #9dd4b3;padding-bottom:4px">Real-World Equivalents</div>' +
+          eqLines +
+          '</div>' +
+          '</div>' +
+          '<div style="margin-top:10px;font-size:7.5px;color:#999;border-top:1px solid #eee;padding-top:6px">' +
+          'Source: EPA eGRID2023 Version 1.0 Rev 1 — https://www.epa.gov/egrid | State: ' +
           st +
-          ' • Inputs: ' +
+          ' | Inputs: ' +
           $n(inp.kwhSaved) +
           ' kWh + ' +
           $n(inp.thermsSaved) +
           ' Therms + ' +
           $n(inp.propaneGalSaved) +
           ' Gal Propane' +
-          (_annualize ? '<br><strong>Values annualized (×4) from quarterly period data.</strong>' : '') +
           '</div>' +
           '</div>';
 
@@ -50030,7 +50078,10 @@
         const escalation = contract.escalation || 0;
         const contractYears = contract.years || 5;
         const currentYear = contract.currentYear || 1;
+        // Use cumulative savings across all completed quarters for the chart (not just current period)
         const actualSavings = (d && d.totals && d.totals.savings) || 0;
+        const actCumSavings =
+          d && d.totals && d.totals.cumulativeSavings != null ? d.totals.cumulativeSavings : actualSavings;
         const q = (d && d.period && d.period.quarter) || 1;
 
         // ── Quarterly Targets table ──
@@ -50248,7 +50299,7 @@
         }
         var _maxBarVal = Math.max.apply(null, _qtrVals) * 1.3 || 1;
         var curQtr = (currentYear - 1) * 4 + q;
-        var actCumVal = Math.abs(actualSavings);
+        var actCumVal = Math.abs(actCumSavings);
         function _barY(v) {
           return padT + cH - (Math.min(v, _maxBarVal) / _maxBarVal) * cH;
         }
@@ -50324,7 +50375,7 @@
             '" y="' +
             (y1 - 4).toFixed(1) +
             '" font-size="7" fill="#1e8449" font-weight="bold">' +
-            $c(actualSavings) +
+            $c(actCumSavings) +
             '</text>';
         }
 
@@ -51010,7 +51061,21 @@
             '</td>' +
             '</tr>';
           var elDemSavPct = b.electric.kwBl > 0 ? ((b.electric.kwBl - b.electric.kwCur) / b.electric.kwBl) * 100 : 0;
-          var elDemCostSaved = (b.electric.kwCostBl || 0) - (b.electric.kwCostCur || 0);
+          // Derive demand cost saved from monthly data: sum (kwBl - kwCur) * avg kW rate per month
+          var _elDemCostSaved = 0;
+          (b.electric.monthly || []).forEach(function (mo) {
+            var kwSav = (mo.kwBl || 0) - (mo.kwCur || 0);
+            var blCostMo = mo.blCost || 0;
+            var curCostMo = mo.curCost || 0;
+            var blUsage = mo.bl || 0;
+            var curUsage = mo.cur || 0;
+            // kW rate = (blCost - kWhCost portion) / kwBl — approximate using cost ratio
+            // Simpler: proportional split of cost delta attributable to kW
+            var totalKwSav = kwSav;
+            var kwRate = blCostMo > 0 && (mo.kwBl || 0) > 0 ? blCostMo / (mo.kwBl || 1) : 0;
+            _elDemCostSaved += totalKwSav > 0 ? totalKwSav * kwRate : 0;
+          });
+          var elDemCostSaved = _elDemCostSaved;
           tableRows +=
             '<tr>' +
             '<td contenteditable="true">Electric Demand</td>' +
@@ -51964,13 +52029,28 @@
           return b.commodities && b.commodities.includes('Gas') && b.gas && b.gas.thermsBl > 0;
         });
 
+        // Use full-year aggregation: fill baseline-only months using baselineMaps so chart shows all 12 months
+        var _gasRptYear = d.period && d.period.year ? d.period.year : new Date().getFullYear();
         var thermsByMonth = {};
+        for (var _gi = 0; _gi < 12; _gi++) {
+          var _gym = _gasRptYear + '-' + String(_gi + 1).padStart(2, '0');
+          thermsByMonth[_gym] = { month: _gym, bl: 0, cur: 0 };
+        }
         gasBldgs.forEach(function (b) {
+          var blMap = (b.baselineMaps && b.baselineMaps.gasByMo) || {};
+          var curByMo = {};
           (b.gas.monthly || []).forEach(function (mo) {
-            if (!thermsByMonth[mo.month]) thermsByMonth[mo.month] = { month: mo.month, bl: 0, cur: 0 };
-            thermsByMonth[mo.month].bl += mo.bl || 0;
-            thermsByMonth[mo.month].cur += mo.cur || 0;
+            var idx = parseInt(mo.month.split('-')[1], 10) - 1;
+            curByMo[idx] = mo;
           });
+          for (var _mi = 0; _mi < 12; _mi++) {
+            var _ym = _gasRptYear + '-' + String(_mi + 1).padStart(2, '0');
+            var blTherms = (blMap[_mi] && (blMap[_mi].therms || blMap[_mi].usage)) || 0;
+            var curMo = curByMo[_mi];
+            if (curMo) blTherms = curMo.bl || blTherms;
+            thermsByMonth[_ym].bl += blTherms;
+            thermsByMonth[_ym].cur += curMo ? curMo.cur || 0 : 0;
+          }
         });
         var thermsMonthly = Object.values(thermsByMonth).sort(function (a, b) {
           return a.month < b.month ? -1 : 1;
@@ -52213,13 +52293,28 @@
           return b.commodities && b.commodities.includes('Propane') && b.propane && b.propane.galBl > 0;
         });
 
+        // Use full-year aggregation: fill baseline-only months using baselineMaps
+        var _propRptYear = d.period && d.period.year ? d.period.year : new Date().getFullYear();
         var galByMonth = {};
+        for (var _pi = 0; _pi < 12; _pi++) {
+          var _pym = _propRptYear + '-' + String(_pi + 1).padStart(2, '0');
+          galByMonth[_pym] = { month: _pym, bl: 0, cur: 0 };
+        }
         propBldgs.forEach(function (b) {
+          var blMap = (b.baselineMaps && b.baselineMaps.propaneByMo) || {};
+          var curByMo = {};
           (b.propane.monthly || []).forEach(function (mo) {
-            if (!galByMonth[mo.month]) galByMonth[mo.month] = { month: mo.month, bl: 0, cur: 0 };
-            galByMonth[mo.month].bl += mo.bl || 0;
-            galByMonth[mo.month].cur += mo.cur || 0;
+            var idx = parseInt(mo.month.split('-')[1], 10) - 1;
+            curByMo[idx] = mo;
           });
+          for (var _pmi = 0; _pmi < 12; _pmi++) {
+            var _pym2 = _propRptYear + '-' + String(_pmi + 1).padStart(2, '0');
+            var blGal = (blMap[_pmi] && (blMap[_pmi].gallons || blMap[_pmi].usage)) || 0;
+            var curMo = curByMo[_pmi];
+            if (curMo) blGal = curMo.bl || blGal;
+            galByMonth[_pym2].bl += blGal;
+            galByMonth[_pym2].cur += curMo ? curMo.cur || 0 : 0;
+          }
         });
         var galMonthly = Object.values(galByMonth).sort(function (a, b) {
           return a.month < b.month ? -1 : 1;
@@ -52753,7 +52848,12 @@
           var metersWithCoeffs = meters.filter(function (md) {
             return md.regrCoeffs && md.r2 && md.r2 !== '—';
           });
-          if (!metersWithCoeffs.length) return;
+          // Also include meters that have baseline months but no regression (show baseline data only)
+          var metersWithBlOnly = meters.filter(function (md) {
+            return (!md.regrCoeffs || !md.r2 || md.r2 === '—') && md.blMonths && md.blMonths.length;
+          });
+          // Skip buildings with no regression data AND no baseline months at all
+          if (!metersWithCoeffs.length && !metersWithBlOnly.length) return;
 
           calcHTML +=
             '<div style="font-size:10px;font-weight:700;color:#1a5276;background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
@@ -52959,6 +53059,65 @@
               rows +
               '</tbody></table>';
           });
+
+          // Render baseline-only meters (have blMonths but no regression coefficients)
+          metersWithBlOnly.forEach(function (md) {
+            var unit = md.commodity === 'Electric' ? 'kWh' : md.commodity === 'Gas' ? 'Therms' : 'Gal';
+            var blMonthsForMeter = md.blMonths || [];
+            if (!blMonthsForMeter.length) return;
+
+            calcHTML +=
+              '<div style="margin:6px 0 4px">' +
+              '<div style="font-size:8.5px;font-weight:600;color:#555">' +
+              md.commodity +
+              ' — Baseline Data (no regression model)</div>' +
+              '</div>';
+
+            var rows = '';
+            blMonthsForMeter.forEach(function (ym) {
+              var moIdx = ym ? parseInt(ym.split('-')[1], 10) - 1 : -1;
+              var moName = moIdx >= 0 ? MO_FULL[moIdx] : ym;
+              var days = ym ? _daysInMonth(ym) : 30;
+              var wx = wxByYm[ym] || {};
+              rows +=
+                '<tr style="background:#f5f5f5;color:#999">' +
+                '<td>' +
+                moName +
+                ' <span style="font-size:6px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span></td>' +
+                '<td class="rpt-n" style="color:#bbb">' +
+                days +
+                '</td>' +
+                '<td class="rpt-n" style="color:#bbb">' +
+                Math.round(wx.hddBl || 0).toLocaleString() +
+                '</td>' +
+                '<td class="rpt-n" style="color:#bbb">' +
+                Math.round(wx.cddBl || 0).toLocaleString() +
+                '</td>' +
+                '<td style="font-size:7px;color:#bbb">—</td>' +
+                '<td class="rpt-n" style="color:#bbb">—</td>' +
+                '<td class="rpt-n" style="color:#bbb">—</td>' +
+                '<td class="rpt-n" style="color:#bbb">—</td>' +
+                '</tr>';
+            });
+
+            calcHTML +=
+              '<table class="rpt-table" style="font-size:7px;margin-bottom:10px">' +
+              '<thead><tr>' +
+              '<th>Month</th><th class="rpt-n">Days</th><th class="rpt-n">HDD</th><th class="rpt-n">CDD</th>' +
+              '<th>Calculation</th>' +
+              '<th class="rpt-n">Predicted<br>BL ' +
+              unit +
+              '</th>' +
+              '<th class="rpt-n">Actual<br>' +
+              unit +
+              '</th>' +
+              '<th class="rpt-n">' +
+              unit +
+              '<br>Saved</th>' +
+              '</tr></thead><tbody>' +
+              rows +
+              '</tbody></table>';
+          });
         });
 
         if (!calcHTML) {
@@ -53030,17 +53189,24 @@
             totCddBl += cddBl;
             totCddCur += cddCur;
           }
-          var rowStyle = ip ? '' : 'color:#999';
+          var rowStyle = ip ? '' : 'color:#999;background:#f8f8f8';
+          // Baseline-period rows: show BL HDD/CDD, leave Current columns blank
+          // Reporting-period rows: show both BL and Current HDD/CDD with variance
           tableRows +=
             '<tr style="' +
             rowStyle +
             '">' +
             '<td contenteditable="true">' +
             _wFmtDate(mo.month) +
-            (ip ? '' : ' *') +
+            (ip
+              ? ''
+              : ' <span style="font-size:6px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span>') +
             '</td>' +
             '<td class="rpt-n" contenteditable="true">' +
-            (ip ? $n(hddCur) : $n(hddBl)) +
+            $n(hddBl) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            (ip ? $n(hddCur) : '—') +
             '</td>' +
             '<td class="rpt-n" contenteditable="true" style="' +
             hddVarStyle +
@@ -53048,7 +53214,10 @@
             (ip && hddBl > 0 ? $p(hddVar) : '—') +
             '</td>' +
             '<td class="rpt-n" contenteditable="true">' +
-            (ip ? $n(cddCur) : $n(cddBl)) +
+            $n(cddBl) +
+            '</td>' +
+            '<td class="rpt-n" contenteditable="true">' +
+            (ip ? $n(cddCur) : '—') +
             '</td>' +
             '<td class="rpt-n" contenteditable="true" style="' +
             cddVarStyle +
@@ -53060,7 +53229,7 @@
 
         if (!tableRows) {
           tableRows =
-            '<tr><td colspan="5" style="color:#aaa;font-style:italic">No weather data for this period. Enter HDD/CDD in project settings.</td></tr>';
+            '<tr><td colspan="7" style="color:#aaa;font-style:italic">No weather data for this period. Enter HDD/CDD in project settings.</td></tr>';
         } else {
           var totHddVar = totHddBl > 0 ? ((totHddCur - totHddBl) / totHddBl) * 100 : 0;
           var totCddVar = totCddBl > 0 ? ((totCddCur - totCddBl) / totCddBl) * 100 : 0;
@@ -53068,10 +53237,16 @@
             '<tr class="rpt-tot">' +
             '<td>Reporting Period Total</td>' +
             '<td class="rpt-n">' +
+            $n(totHddBl) +
+            '</td>' +
+            '<td class="rpt-n">' +
             $n(totHddCur) +
             '</td>' +
             '<td class="rpt-n">' +
             $p(totHddVar) +
+            '</td>' +
+            '<td class="rpt-n">' +
+            $n(totCddBl) +
             '</td>' +
             '<td class="rpt-n">' +
             $n(totCddCur) +
@@ -53086,8 +53261,8 @@
           '<table class="rpt-table" contenteditable="true" style="font-size:10px">' +
           '<thead><tr>' +
           '<th>Month</th>' +
-          '<th class="rpt-n">HDD</th><th class="rpt-n">HDD Var</th>' +
-          '<th class="rpt-n">CDD</th><th class="rpt-n">CDD Var</th>' +
+          '<th class="rpt-n">BL HDD</th><th class="rpt-n">Cur HDD</th><th class="rpt-n">HDD Var</th>' +
+          '<th class="rpt-n">BL CDD</th><th class="rpt-n">Cur CDD</th><th class="rpt-n">CDD Var</th>' +
           '</tr></thead><tbody>' +
           tableRows +
           '</tbody></table>';
@@ -53311,11 +53486,21 @@
           html: cleanHTML,
         };
         history.unshift(entry);
-        if (history.length > 20) history.length = 20;
+        // Cap to 3 reports to avoid localStorage size limit (~6.7 MB at 5 reports)
+        while (history.length > 3) history.pop();
         try {
           localStorage.setItem('en_report_history', JSON.stringify(history));
           showToast('Report saved to history ✓');
         } catch (e) {
+          // If still too large, remove oldest until it fits
+          while (history.length > 1) {
+            history.pop();
+            try {
+              localStorage.setItem('en_report_history', JSON.stringify(history));
+              showToast('Report saved (older reports removed to free storage) ✓');
+              return;
+            } catch (e2) {}
+          }
           showToast('Save failed — storage full. Delete older reports first.');
         }
       }
@@ -64204,7 +64389,7 @@
                 try {
                   bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
                 } catch (e) {}
-                const savPct = (bspCfg.savingsPct ?? 11) / 100;
+                const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
                 const bMoBase = aggBaseMoMapForBldgs([b]);
                 for (let mo = 0; mo < 12; mo++) _egfxProjSavByMo[mo] += (bMoBase[mo] || 0) * savPct;
               }
