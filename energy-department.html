@@ -6932,10 +6932,27 @@
                 </div>
                 <div id="pdfSaveRow" style="display: none; margin-top: 12px" data-fb="energy.pdf.save-row">
                   <div class="fl" style="margin-bottom: 5px">Save to project</div>
-                  <div style="display: flex; gap: 8px">
-                    <select class="fs" id="pdfProjSel" style="flex: 1" data-fb="energy.pdf.project-select"></select
-                    ><button class="btn btn-em" onclick="savePDFData()" data-fb="energy.pdf.save-btn">Save</button
-                    ><button class="btn btn-ghost" onclick="clearPDFOCR()" title="Clear extracted data and reset">
+                  <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                    <select
+                      class="fs"
+                      id="pdfProjSel"
+                      style="flex: 1; min-width: 140px"
+                      onchange="pdfUpdateBldgMeterOpts()"
+                      data-fb="energy.pdf.project-select"
+                    ></select>
+                    <select
+                      class="fs"
+                      id="pdfBldgSel"
+                      style="flex: 1; min-width: 140px"
+                      onchange="pdfUpdateMeterOpts()"
+                    >
+                      <option value="">Auto-detect building</option>
+                    </select>
+                    <select class="fs" id="pdfMeterSel" style="flex: 1; min-width: 140px">
+                      <option value="">Auto-detect meter</option>
+                    </select>
+                    <button class="btn btn-em" onclick="savePDFData()" data-fb="energy.pdf.save-btn">Save</button>
+                    <button class="btn btn-ghost" onclick="clearPDFOCR()" title="Clear extracted data and reset">
                       ✕ Clear
                     </button>
                   </div>
@@ -32196,6 +32213,34 @@
         return true;
       }
 
+      function pdfUpdateBldgMeterOpts() {
+        const projId = parseInt(document.getElementById('pdfProjSel').value) || null;
+        const bldgSel = document.getElementById('pdfBldgSel');
+        const meterSel = document.getElementById('pdfMeterSel');
+        if (!bldgSel || !meterSel) return;
+        bldgSel.innerHTML = '<option value="">Auto-detect building</option>';
+        meterSel.innerHTML = '<option value="">Auto-detect meter</option>';
+        if (!projId) return;
+        const ud = getUDProj(projId);
+        (ud.buildings || []).forEach(b => {
+          bldgSel.innerHTML += '<option value="' + b.id + '">' + (b.name || b.id) + '</option>';
+        });
+      }
+      function pdfUpdateMeterOpts() {
+        const projId = parseInt(document.getElementById('pdfProjSel').value) || null;
+        const bldgId = document.getElementById('pdfBldgSel').value || null;
+        const meterSel = document.getElementById('pdfMeterSel');
+        if (!meterSel) return;
+        meterSel.innerHTML = '<option value="">Auto-detect meter</option>';
+        if (!projId || !bldgId) return;
+        const bldg = getUDBldg(projId, bldgId);
+        if (!bldg) return;
+        (bldg.meters || []).forEach(m => {
+          const lbl = (m.commodity || 'Meter') + (m.account ? ' (' + m.account + ')' : '');
+          meterSel.innerHTML += '<option value="' + m.id + '">' + lbl + '</option>';
+        });
+      }
+
       function savePDFData() {
         const bills = window._pdfMultiBills;
         const idx = window._pdfMultiIdx || 0;
@@ -32204,8 +32249,21 @@
           showToast('No extracted data to save');
           return;
         }
-
         const projId = parseInt(document.getElementById('pdfProjSel').value) || null;
+        // Manual building/meter override
+        const manualBldgId = document.getElementById('pdfBldgSel')?.value || null;
+        const manualMeterId = document.getElementById('pdfMeterSel')?.value || null;
+        if (projId && manualBldgId && manualMeterId) {
+          const bldg = getUDBldg(projId, manualBldgId);
+          const meter = bldg ? (bldg.meters || []).find(m => m.id === manualMeterId) : null;
+          if (bldg && meter) {
+            _autoAssignTarget = {
+              proj: projects.find(p => p.id === projId),
+              bldg, meter,
+              projId, bldgId: manualBldgId, meterId: manualMeterId
+            };
+          }
+        }
         _saveSinglePDFBill(extracted, projId).then((ok) => {
           const proj = projId ? projects.find((p) => p.id === projId) : null;
           if (ok) {
