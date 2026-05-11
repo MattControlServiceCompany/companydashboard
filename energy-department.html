@@ -48448,10 +48448,12 @@
         }
 
         // Appendices
-        if (s.appendixA !== false) pages.push(rptPageAppendixNormalization(pageNum++, data));
-        if (s.appendixB !== false) pages.push(rptPageAppendixBaseline(pageNum++, data));
-        if (s.appendixC !== false) pages.push(rptPageAppendixWeather(pageNum++, data));
-        if (s.appendixD !== false) pages.push(rptPageAppendixBills(pageNum++, data));
+        var _appLtr = 'A';
+        function _nextAppLtr() { var l = _appLtr; _appLtr = String.fromCharCode(_appLtr.charCodeAt(0) + 1); return l; }
+        if (s.appendixA !== false) pages.push(rptPageAppendixNormalization(pageNum++, data, _nextAppLtr()));
+        if (s.appendixB !== false) pages.push(rptPageAppendixBaseline(pageNum++, data, _nextAppLtr()));
+        if (s.appendixC !== false) pages.push(rptPageAppendixWeather(pageNum++, data, _nextAppLtr()));
+        if (s.appendixD !== false) pages.push(rptPageAppendixBills(pageNum++, data, _nextAppLtr()));
 
         return pages.join('\n');
       }
@@ -53015,7 +53017,8 @@
         });
       }
 
-      function rptPageAppendixNormalization(n, d) {
+      function rptPageAppendixNormalization(n, d, appLetter) {
+        appLetter = appLetter || 'A';
         var $c = function (v) {
           return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
         };
@@ -53117,18 +53120,19 @@
         }
 
         var bodyHTML =
-          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 8px">Appendix A: Normalization &amp; Meter Baseline</h2>' +
+          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 8px">Appendix ' + appLetter + ': Normalization &amp; Meter Baseline</h2>' +
           methodBox +
           '<h3 style="font-size:9.5px;font-weight:700;color:#555;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.04em">Per-Building Meter Detail</h3>' +
           meterTables;
 
-        return rptPage(n, 'Appendix A: Normalization & Meter Baseline', bodyHTML, {
+        return rptPage(n, 'Appendix ' + appLetter + ': Normalization & Meter Baseline', bodyHTML, {
           data: d,
-          label: 'Page ' + n + ' — Appendix A',
+          label: 'Page ' + n + ' — Appendix ' + appLetter,
         });
       }
 
-      function rptPageAppendixBaseline(n, d) {
+      function rptPageAppendixBaseline(n, d, appLetter) {
+        appLetter = appLetter || 'B';
         var $n = function (v) {
           return Math.round(v || 0).toLocaleString();
         };
@@ -53160,7 +53164,7 @@
           'Weather-normalized savings use an OLS regression model: <span style="font-family:monospace;background:#fff;border:1px solid #ddd;padding:1px 4px;border-radius:2px">Usage = β₀ × Days + β₁ × HDD + β₂ × CDD</span><br>' +
           'Where β₀ = base load per day, β₁ = heating coefficient, β₂ = cooling coefficient. ' +
           'The model is fit to baseline period data and applied to current weather to predict what consumption <em>would have been</em> without efficiency improvements. ' +
-          'R² values above 0.75 indicate a strong fit. Full regression details are in Appendix A.' +
+          'R² values above 0.75 indicate a strong fit. Full regression details are in the Normalization appendix.' +
           '</div>';
 
         // Build weather lookup by YYYY-MM
@@ -53454,19 +53458,20 @@
         }
 
         var bodyHTML =
-          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix B: Regression Model Methodology</h2>' +
+          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' + appLetter + ': Regression Model Methodology</h2>' +
           '<div style="font-size:8.5px;color:#666;margin-bottom:8px">Weather-normalized baseline calculations per building and commodity</div>' +
           regressionExplainer +
           '<h3 style="font-size:9.5px;font-weight:700;color:#555;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.04em">Monthly Baseline Calculations</h3>' +
           calcHTML;
 
-        return rptPage(n, 'Appendix B: Regression Model Methodology', bodyHTML, {
+        return rptPage(n, 'Appendix ' + appLetter + ': Regression Model Methodology', bodyHTML, {
           data: d,
-          label: 'Page ' + n + ' — Appendix B',
+          label: 'Page ' + n + ' — Appendix ' + appLetter,
         });
       }
 
-      function rptPageAppendixWeather(n, d) {
+      function rptPageAppendixWeather(n, d, appLetter) {
+        appLetter = appLetter || 'C';
         var $p = function (v) {
           return (v || 0).toFixed(1) + '%';
         };
@@ -53635,19 +53640,20 @@
           '</div>';
 
         var bodyHTML =
-          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix C: Weather Data</h2>' +
+          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' + appLetter + ': Weather Data</h2>' +
           '<div style="font-size:8.5px;color:#666;margin-bottom:10px">Combined HDD and CDD — Base 60°F per contract</div>' +
           weatherTable +
           '<h3 style="font-size:9.5px;font-weight:700;color:#555;margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.04em">Weather Impact Summary</h3>' +
           narrativeBox;
 
-        return rptPage(n, 'Appendix C: Weather Data', bodyHTML, {
+        return rptPage(n, 'Appendix ' + appLetter + ': Weather Data', bodyHTML, {
           data: d,
-          label: 'Page ' + n + ' — Appendix C',
+          label: 'Page ' + n + ' — Appendix ' + appLetter,
         });
       }
 
-      function rptPageAppendixBills(n, d) {
+      function rptPageAppendixBills(n, d, appLetter) {
+        appLetter = appLetter || 'D';
         var $c = function (v) {
           return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
         };
@@ -53782,15 +53788,15 @@
           '</div>';
 
         var bodyHTML =
-          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix D: Utility Bills</h2>' +
+          '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' + appLetter + ': Utility Bills</h2>' +
           '<div style="font-size:8.5px;color:#666;margin-bottom:10px">Original utility bill PDFs for the reporting period</div>' +
           sections +
           billImagesSection +
           footerNote;
 
-        return rptPage(n, 'Appendix D: Utility Bills', bodyHTML, {
+        return rptPage(n, 'Appendix ' + appLetter + ': Utility Bills', bodyHTML, {
           data: d,
-          label: 'Page ' + n + ' — Appendix D',
+          label: 'Page ' + n + ' — Appendix ' + appLetter,
         });
       }
 
