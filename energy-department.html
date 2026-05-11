@@ -14145,6 +14145,22 @@
                   <div id="dash-perf-${p.id}"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
                   <div id="dash-cal-${p.id}"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
                 </div>
+                <!-- Fix 35571527: Notes and Tasks merged into Dashboard tab -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+                  <div class="card">
+                    <div class="card-hdr"><span class="card-title">📝 Notes</span></div>
+                    <div style="padding:12px">
+                      <textarea class="fta" style="min-height:120px;width:100%" id="proj-notes-ta-dash-${p.id}" oninput="autoSaveNotes(${p.id},this.value)">${p.notes || ''}</textarea>
+                    </div>
+                  </div>
+                  <div class="card">
+                    <div class="card-hdr" style="justify-content:space-between">
+                      <span class="card-title">✅ Tasks</span>
+                      <button class="btn btn-em btn-sm" onclick="document.getElementById('mt-proj').value=${p.id};openTaskModal()">+ Add Task</button>
+                    </div>
+                    <div id="dash-tasks-list-${p.id}" style="padding:12px">${tasksHTML}</div>
+                  </div>
+                </div>
               </div>
             </div>
             <div id="ptab-notes" class="ptab" style="padding:16px">
@@ -14209,11 +14225,19 @@
                   </div>
                 </div>
               </div>
+              <!-- Fix 35571527: Saved Bills merged into Utility Data tab -->
+              <div style="padding:16px;border-top:1px solid var(--border)">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                  <span style="font-size:13px;font-weight:700;color:var(--text)">🗄️ Saved Bills</span>
+                </div>
+                <div id="ptab-savedbills-body-${p.id}">
+                  <div style="text-align:center;color:var(--text3);padding:40px">Loading saved bills…</div>
+                </div>
+              </div>
             </div>
             <div id="ptab-savedbills" class="ptab" style="padding:16px;overflow-y:auto">
-              <div id="ptab-savedbills-body-${p.id}">
-                <div style="text-align:center;color:var(--text3);padding:40px">Loading saved bills…</div>
-              </div>
+              <!-- Merged into Utility Data tab (fix 35571527) — kept for backward compat -->
+              <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Saved Bills have moved to the ⚡ Utility Data tab.</div>
             </div>
             <div id="ptab-equipment" class="ptab" style="padding:16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap">
@@ -15217,6 +15241,10 @@
       }
 
       /* ── PROJECT TAB ORDER (draggable) ── */
+      // Fix 35571527: notes, tasks merged into Dashboard; savedbills merged into Utility Data.
+      // These IDs are retained in PROJ_TABS_DEFAULT for backward compat (stored tab orders)
+      // but hidden from the visible bar — their content now appears in the merged tabs.
+      const PROJ_TABS_HIDDEN = new Set(['notes', 'tasks', 'savedbills']);
       const PROJ_TABS_DEFAULT = [
         { id: 'dashboard', label: '📊 Dashboard' },
         { id: 'notes', label: '📝 Notes' },
@@ -15252,6 +15280,8 @@
         const activeTab = window._activeProjTab || 'dashboard';
         return order
           .map((id) => {
+            // Fix 35571527: hide merged tabs from the tab bar
+            if (PROJ_TABS_HIDDEN.has(id)) return '';
             const t = PROJ_TABS_DEFAULT.find((x) => x.id === id);
             if (!t) return '';
             return `<button class="pdt${id === activeTab ? ' active' : ''}" draggable="true" data-tab="${id}" onclick="sPTab('${id}',this)">${t.label}</button>`;
@@ -15469,6 +15499,8 @@
               projId +
               ')">+ Add Building</button></div></div>';
         }
+        // Fix 35571527: render saved bills in the merged Utility Data sub-section
+        renderProjSavedBills(projId);
       }
 
       function renderProjUDBldgNav(projId) {
@@ -17159,10 +17191,22 @@
         window._activeProjTab = tab;
         saveProjSession();
       }
-      function autoSaveNotes(id) {
+      function autoSaveNotes(id, valOverride) {
         const p = projects.find((p) => p.id === id);
         if (p) {
-          p.notes = document.getElementById('proj-notes-ta').value;
+          // valOverride is passed from the merged-dashboard textarea (fix 35571527).
+          // Fall back to the standalone notes tab textarea if present.
+          if (valOverride !== undefined) {
+            p.notes = valOverride;
+          } else {
+            const el = document.getElementById('proj-notes-ta');
+            if (el) p.notes = el.value;
+          }
+          // Sync both textareas so they stay in agreement
+          const ta1 = document.getElementById('proj-notes-ta');
+          const ta2 = document.getElementById('proj-notes-ta-dash-' + id);
+          if (ta1) ta1.value = p.notes;
+          if (ta2) ta2.value = p.notes;
           sset('en_projects', projects);
         }
       }
