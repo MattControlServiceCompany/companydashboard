@@ -49881,9 +49881,7 @@
         });
       }
       function rptPageApprovedChanges(n, d) {
-        // Skip this page entirely if there are no approved changes
         const changes = (d && d.approvedChanges) || [];
-        if (!changes.length) return '';
 
         const $c = function (v) {
           return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
