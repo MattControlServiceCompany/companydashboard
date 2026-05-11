@@ -1984,7 +1984,7 @@
         display: flex;
         justify-content: center;
         align-items: flex-start;
-        margin-bottom: 10px;
+        margin-bottom: 4px;
         position: relative;
         z-index: 1;
       }
@@ -2001,10 +2001,10 @@
         position: relative;
         z-index: 1;
         text-align: center;
-        margin: 8px 0;
+        margin: 4px 0;
       }
       .rpt-hero-main h1 {
-        font-size: 38px;
+        font-size: 32px;
         font-weight: 800;
         letter-spacing: -1px;
         color: #1a5276;
@@ -2027,7 +2027,7 @@
         justify-content: center;
         align-items: baseline;
         gap: 6px;
-        margin: 12px 0 6px;
+        margin: 6px 0 3px;
       }
       .rpt-big-number .rpt-bn-amount {
         font-size: 56px;
@@ -47915,27 +47915,45 @@
             curCost: (propaneMonthly[ym] || {}).curCost || 0,
           }));
 
-          // EUI calculations — annualize based on actual months of data
+          // EUI calculations — period-matched comparison (same months for baseline and current)
+          const reportCalMonths = reportYMs.map(ym => parseInt(ym.split('-')[1]));
+          let periodBlKBtu = 0, periodCurKBtu = 0;
+          let periodBlMoCt = 0, periodCurMoCt = 0;
           const blMoSet = new Set();
           const curMoSet = new Set();
           bMeters.forEach(({ m: mt, bills: mtBills, bl: mtBl, incl: mtIncl }) => {
             const mtBlBills = _dashGetBaselineBills(mt);
             mtBlBills.forEach((bill) => {
               const ym = normMonth(bill.start, bill.end, mtIncl, mtBills);
-              if (ym) blMoSet.add(ym);
+              if (!ym) return;
+              blMoSet.add(ym);
+              const calMo = parseInt(ym.split('-')[1]);
+              if (reportCalMonths.includes(calMo)) {
+                const kbtu = mt.commodity === 'Gas' ? (parseFloat(bill.therms) || 0) * 100
+                  : mt.commodity === 'Propane' ? (parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 91.5
+                  : (parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 3.412;
+                periodBlKBtu += kbtu;
+                periodBlMoCt++;
+              }
             });
             mtBills
               .filter((bill) => {
                 const ym = normMonth(bill.start, bill.end, mtIncl, mtBills);
-                return ym && allPostYMs.includes(ym) && allPostYMs.indexOf(ym) >= allPostYMs.length - 12;
+                return ym && reportYMs.includes(ym);
               })
               .forEach((bill) => {
                 const ym = normMonth(bill.start, bill.end, mtIncl, mtBills);
-                if (ym) curMoSet.add(ym);
+                if (!ym) return;
+                curMoSet.add(ym);
+                const kbtu = mt.commodity === 'Gas' ? (parseFloat(bill.therms) || 0) * 100
+                  : mt.commodity === 'Propane' ? (parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 91.5
+                  : (parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 3.412;
+                periodCurKBtu += kbtu;
+                periodCurMoCt++;
               });
           });
-          const blEUI = sqft > 0 && blMoSet.size > 0 ? ((annBlKBtu / blMoSet.size) * 12) / sqft : 0;
-          const curEUI = sqft > 0 && curMoSet.size > 0 ? ((annCurKBtu / curMoSet.size) * 12) / sqft : 0;
+          const blEUI = sqft > 0 && periodBlMoCt > 0 ? ((periodBlKBtu / periodBlMoCt) * 12) / sqft : 0;
+          const curEUI = sqft > 0 && periodCurMoCt > 0 ? ((periodCurKBtu / periodCurMoCt) * 12) / sqft : 0;
           const cbecsEUI = CBECS_EUI[bType] || CBECS_EUI['Other'] || 52.4;
           const pctiles = CBECS_PERCENTILES[bType] || CBECS_PERCENTILES['Other'] || [28, 52.4, 80];
           let pctileLabel = '';
@@ -48068,7 +48086,7 @@
           inputs: { kwhSaved: 0, thermsSaved: 0, propaneGalSaved: 0 },
         };
         try {
-          pollution = calculatePollutionCredits(totKwhSaved, totThermsSaved, totPropaneSaved, stateCode);
+          pollution = calculatePollutionCredits(Math.max(0, totKwhSaved), Math.max(0, totThermsSaved), Math.max(0, totPropaneSaved), stateCode);
         } catch (e) {
           /* pollution calc not critical */
         }
@@ -50035,7 +50053,7 @@
           '<div style="font-size:10px;color:#555;margin-bottom:10px;text-align:center">Emission reductions resulting from energy savings achieved during the reporting period' +
           (_annualize ? ' (values annualized ×4 from quarterly data)' : '') +
           '</div>' +
-          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">' +
+          '<div style="display:flex;flex-direction:column;gap:10px">' +
           '<div style="background:#f0f4f9;border:1px solid #d0dce8;border-radius:6px;padding:10px 14px">' +
           '<div style="font-size:10px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;border-bottom:1px solid #c5d5e8;padding-bottom:4px">Pollutants Avoided</div>' +
           polLines +
