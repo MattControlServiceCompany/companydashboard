@@ -1539,33 +1539,27 @@
         bottom: 0;
         left: 0;
         width: 100%;
+        text-align: center;
+      }
+      .rpt-footer img {
+        width: 100%;
+        display: block;
+      }
+      .rpt-footer-text {
         font-size: 7px;
         color: #999;
-        padding: 8px 50px;
+        padding: 4px 50px;
         display: flex;
         justify-content: space-between;
-        border-top: 1px solid #eee;
-        background: #fff;
       }
 
-      /* ── Interior Page Header (navy gradient) ── */
+      /* ── Interior Page Header ── */
       .rpt-int-hdr {
-        background: linear-gradient(135deg, #0c2d48, #1a5276);
-        padding: 14px 50px;
+        padding: 10px 50px 8px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        color: #fff;
-      }
-      .rpt-logo {
-        font-size: 12px;
-        font-weight: 700;
-        letter-spacing: 0.3px;
-        opacity: 0.9;
-      }
-      .rpt-logo span {
-        font-weight: 400;
-        opacity: 0.7;
+        border-bottom: 1px solid #ddd;
       }
       .rpt-pg-title {
         font-size: 16px;
@@ -1974,49 +1968,25 @@
 
       /* ── Hero / Cover Page ── */
       .rpt-hero {
-        background: linear-gradient(135deg, #0c2d48 0%, #1a5276 40%, #2e86c1 100%);
-        padding: 32px 50px 24px;
-        color: #fff;
+        background: #fff;
+        padding: 20px 50px 16px;
+        color: #1a5276;
         position: relative;
         overflow: hidden;
       }
       .rpt-hero::before {
-        content: '';
-        position: absolute;
-        top: -60px;
-        right: -60px;
-        width: 280px;
-        height: 280px;
-        background: radial-gradient(circle, rgba(46, 134, 193, 0.3), transparent);
-        border-radius: 50%;
+        display: none;
       }
       .rpt-hero::after {
-        content: '';
-        position: absolute;
-        bottom: -40px;
-        left: 20%;
-        width: 180px;
-        height: 180px;
-        background: radial-gradient(circle, rgba(74, 222, 128, 0.15), transparent);
-        border-radius: 50%;
+        display: none;
       }
       .rpt-hero-top {
         display: flex;
-        justify-content: space-between;
+        justify-content: flex-end;
         align-items: flex-start;
         margin-bottom: 10px;
         position: relative;
         z-index: 1;
-      }
-      .rpt-hero-logo {
-        font-size: 13px;
-        font-weight: 700;
-        letter-spacing: 0.3px;
-        opacity: 0.9;
-      }
-      .rpt-hero-logo span {
-        font-weight: 400;
-        opacity: 0.7;
       }
       .rpt-hero-type {
         font-size: 8px;
@@ -2037,18 +2007,17 @@
         font-size: 38px;
         font-weight: 800;
         letter-spacing: -1px;
-        color: #fff;
-        text-shadow: 0 2px 20px rgba(0, 0, 0, 0.3);
+        color: #1a5276;
       }
       .rpt-hero-main .rpt-hero-client {
         font-size: 16px;
-        opacity: 0.85;
+        color: #333;
         font-weight: 400;
         margin-bottom: 2px;
       }
       .rpt-hero-main .rpt-hero-period {
         font-size: 10px;
-        opacity: 0.6;
+        color: #666;
         letter-spacing: 1px;
       }
       .rpt-big-number {
@@ -2063,17 +2032,16 @@
       .rpt-big-number .rpt-bn-amount {
         font-size: 56px;
         font-weight: 800;
-        color: #4ade80;
-        text-shadow: 0 0 30px rgba(74, 222, 128, 0.4);
+        color: #1e8449;
         letter-spacing: -2px;
       }
       .rpt-big-number .rpt-bn-label {
         font-size: 12px;
-        color: #a0d8b8;
+        color: #555;
       }
       .rpt-big-number .rpt-bn-badge {
-        background: #4ade80;
-        color: #0c2d48;
+        background: #1e8449;
+        color: #fff;
         font-size: 10px;
         font-weight: 700;
         padding: 3px 10px;
@@ -2085,7 +2053,7 @@
         z-index: 1;
         text-align: center;
         font-size: 10px;
-        opacity: 0.7;
+        color: #666;
       }
 
       /* ── Observations ── */
@@ -47990,11 +47958,9 @@
             _fmtRptDate = _rdMo[_rd.getMonth()] + ' ' + _rd.getDate() + ', ' + _rd.getFullYear();
           }
         }
-        const footer =
-          '<div class="rpt-footer">' +
-          '<span>Control Service Company' +
-          (isHero ? ' • Confidential' : '') +
-          '</span>' +
+        const footerImgHtml = '<div class="rpt-footer"><img src="' + CSC_FOOTER_B64 + '" alt="CSC Footer"></div>';
+        const footerTextHtml =
+          '<div class="rpt-footer-text">' +
           '<span>' +
           (data ? data.project.client + (_fmtRptDate ? ' — ' + _fmtRptDate : ' — ' + data.period.label) : '') +
           '</span>' +
@@ -48008,8 +47974,11 @@
             '<div class="rpt-page" data-page="' +
             pageNum +
             '">' +
+            '<img src="' +
+            CSC_HEADER_B64 +
+            '" alt="CSC Letterhead" style="width:100%;display:block">' +
             bodyHTML +
-            footer +
+            footerTextHtml +
             '</div>'
           );
         }
@@ -48022,7 +47991,6 @@
           pageNum +
           '">' +
           '<div class="rpt-int-hdr">' +
-          '<div class="rpt-logo">CONTROL SERVICE <span>COMPANY</span></div>' +
           '<div class="rpt-pg-title">' +
           title +
           '</div>' +
@@ -48035,7 +48003,7 @@
           '<div class="rpt-body">' +
           bodyHTML +
           '</div>' +
-          footer +
+          footerImgHtml +
           '</div>'
         );
       }
@@ -48146,7 +48114,7 @@
         const contractYrLabel = 'Year ' + d.contract.currentYear + ' of ' + d.contract.years;
         const perfWord = pctOfTarget >= 100 ? 'exceeding' : pctOfTarget >= 80 ? 'approaching' : 'below';
         const narrative =
-          'Control Service Company is proud to report on energy performance for <strong>' +
+          'This report covers energy performance for <strong>' +
           d.project.client +
           '</strong> covering ' +
           d.period.label +
@@ -48403,11 +48371,10 @@
           })
           .join('');
 
-        // Hero section (gradient background)
+        // Hero section (below letterhead — no gradient, no logo text)
         const heroHTML =
           '<div class="rpt-hero">' +
           '<div class="rpt-hero-top">' +
-          '<div class="rpt-hero-logo">CONTROL SERVICE <span>COMPANY</span></div>' +
           '<div class="rpt-hero-type">Quarterly Performance Report</div>' +
           '</div>' +
           '<div class="rpt-hero-main">' +
