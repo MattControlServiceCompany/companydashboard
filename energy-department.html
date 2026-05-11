@@ -48407,30 +48407,23 @@
         if (s.contractProjection !== false) pages.push(rptPageContractProjection(pageNum++, data));
         if (s.setpoints !== false) pages.push(rptPageSetPoints(pageNum++, data));
 
-        // Per-building summaries, then all meter performance on continuous pages
-        var allMeterPerfHTML = '';
+        // Per-building summaries first, then per-building meter performance pages
         if (s.buildingSummaries !== false) {
+          // Phase 1: All building summary pages
+          var _meterPerfResults = [];
           data.buildings.forEach(function (b) {
             var bResult = rptPageBuildingSummary(pageNum, data, b);
             pages.push(bResult.html);
             pageNum += bResult.summaryPageCount;
             if (bResult.meterPerfHTML) {
-              allMeterPerfHTML +=
-                '<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:#1a5276;margin-bottom:4px;border-bottom:1px solid #d4e4f0;padding-bottom:2px">' +
-                (b.name || 'Building') +
-                '</div>' +
-                bResult.meterPerfHTML +
-                '</div>';
+              _meterPerfResults.push({ name: b.name || 'Building', html: bResult.meterPerfHTML });
             }
           });
-          if (allMeterPerfHTML) {
-            pages.push(
-              rptPage(pageNum++, 'Meter Performance — All Buildings', allMeterPerfHTML, {
-                data: data,
-                label: 'Meter Performance',
-              }),
-            );
-          }
+          // Phase 2: Separate meter performance page per building
+          _meterPerfResults.forEach(function (mp) {
+            var mpContent = '<div style="font-size:10px;font-weight:700;color:#1a5276;margin-bottom:4px;border-bottom:1px solid #d4e4f0;padding-bottom:2px">' + mp.name + '</div>' + mp.html;
+            pages.push(rptPage(pageNum++, mp.name + ' — Meter Performance', mpContent, { data: data, label: 'Page ' + pageNum + ' — ' + mp.name + ' Meters' }));
+          });
         }
 
         // Commodity detail pages
@@ -49581,7 +49574,7 @@
               if (!_yoyByYear[yr]) _yoyByYear[yr] = { kwh: 0, kw: 0, therms: 0, gal: 0, cost: 0, kbtu: 0 };
               if (com === 'electric') {
                 _yoyByYear[yr].kwh += mo.cur || 0;
-                _yoyByYear[yr].kw = Math.max(_yoyByYear[yr].kw, mo.kwCur || 0);
+                _yoyByYear[yr].kw += mo.kwCur || 0;
                 _yoyByYear[yr].cost += mo.curCost || 0;
                 _yoyByYear[yr].kbtu += (mo.cur || 0) * 3.412;
               } else if (com === 'gas') {
@@ -53642,12 +53635,27 @@
           narrativeText +
           '</div>';
 
+        var hddCddParagraph = '';
+        if (d.weather) {
+          var pHDD = d.weather.periodHDD ? Math.round(d.weather.periodHDD).toLocaleString() : '\u2014';
+          var bHDD = d.weather.baselineHDD ? Math.round(d.weather.baselineHDD).toLocaleString() : '\u2014';
+          var hddPctChg = d.weather.baselineHDD > 0 ? Math.round(((d.weather.periodHDD - d.weather.baselineHDD) / d.weather.baselineHDD) * 100) : 0;
+          var pCDD = d.weather.periodCDD ? Math.round(d.weather.periodCDD).toLocaleString() : '\u2014';
+          var bCDD = d.weather.baselineCDD ? Math.round(d.weather.baselineCDD).toLocaleString() : '\u2014';
+          var cddPctChg = d.weather.baselineCDD > 0 ? Math.round(((d.weather.periodCDD - d.weather.baselineCDD) / d.weather.baselineCDD) * 100) : 0;
+          hddCddParagraph = '<div contenteditable="true" style="margin-top:10px;font-size:9px;color:#444;line-height:1.7">' +
+            'Heating degree days (HDD) for the period were ' + pHDD + ' vs. a baseline average of ' + bHDD + ' (' + (hddPctChg >= 0 ? '+' : '') + hddPctChg + '%). ' +
+            'Cooling degree days (CDD) were ' + pCDD + ' vs. a baseline of ' + bCDD + ' (' + (cddPctChg >= 0 ? '+' : '') + cddPctChg + '%). ' +
+            'Normalized savings figures account for weather variance using regression-based baseline adjustment.' +
+            '</div>';
+        }
         var bodyHTML =
           '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' + appLetter + ': Weather Data</h2>' +
           '<div style="font-size:8.5px;color:#666;margin-bottom:10px">Combined HDD and CDD — Base 60°F per contract</div>' +
           weatherTable +
           '<h3 style="font-size:9.5px;font-weight:700;color:#555;margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.04em">Weather Impact Summary</h3>' +
-          narrativeBox;
+          narrativeBox +
+          hddCddParagraph;
 
         return rptPage(n, 'Appendix ' + appLetter + ': Weather Data', bodyHTML, {
           data: d,
