@@ -35695,14 +35695,6 @@
         return majorityMonth(s, e);
       }
 
-      function normMonthLabel(startStr, endStr, incl, allBills) {
-        const ym = normMonth(startStr, endStr, incl, allBills);
-        if (!ym) return '—';
-        const [y, mo] = ym.split('-');
-        const dt = new Date(parseInt(y), parseInt(mo) - 1, 1);
-        return dt.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-      }
-
       // Detect gap between two consecutive bills (>3 day gap between end of prev and start of next)
       function detectGap(prevEnd, nextStart) {
         if (!prevEnd || !nextStart) return false;
@@ -37302,11 +37294,6 @@
       }
 
       // ── Calendar days in a YYYY-MM month ─────────────────────────────────────────
-      function calDaysInMonth(ym) {
-        const [yr, mo] = ym.split('-').map(Number);
-        return new Date(yr, mo, 0).getDate(); // day 0 of next month = last day of this month
-      }
-
       // ── Compute regression coefficients for a meter from its normalized rows ─────
       // Uses usage/day ~ DD/day to keep units consistent regardless of month length.
       // After OLS fit, applies bias correction: mean_residual is added to the intercept
@@ -44041,12 +44028,6 @@
         // YYYY-MM
         if (/^\d{4}-\d{2}$/.test(s)) return s + '-01';
         return null;
-      }
-
-      function lastDayOfMonth(dateStr) {
-        const d = new Date(dateStr + 'T12:00:00');
-        const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-        return last.toISOString().split('T')[0];
       }
 
       function showBillCsvPreview(rows, m, fname, warnings) {
