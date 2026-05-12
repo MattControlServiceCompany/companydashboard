@@ -1428,7 +1428,7 @@ function egfxRefresh(projId) {
               : ''
           }
           ${(() => {
-            // CBECS Benchmark Comparison Chart — horizontal bars per building
+            // CBECS Benchmark Comparison Chart — canvas via SharedCharts
             if (bldgs.length === 0 || !latestYear) return '';
             const benchRows = bldgs
               .map((b) => {
@@ -1439,72 +1439,35 @@ function egfxRefresh(projId) {
                 const beui = bR12.eui;
                 const bType = b.type || p.type || 'K-12 School';
                 const cbVal = CBECS_EUI[bType] || CBECS_EUI['Other'] || 52.4;
-                return { name: b.name, eui: beui, cbecs: cbVal, type: bType };
+                // Compute baseline EUI for this building
+                let bBlEui = 0;
+                let totalBlKbtu = 0,
+                  totalBlMoCount = 0;
+                for (const blY of blYears) {
+                  const bd = bldgYearData[b.name]?.[blY];
+                  if (!bd) continue;
+                  const bkwh = bd.kwh.reduce((a, v) => a + v, 0);
+                  const bgas = bd.gas.reduce((a, v) => a + v, 0);
+                  const bprop = bd.propane ? bd.propane.reduce((a, v) => a + v, 0) : 0;
+                  if (bkwh > 0 || bgas > 0 || bprop > 0) {
+                    totalBlKbtu += toKBtu(bkwh, bgas, bprop);
+                    for (let mi = 0; mi < 12; mi++) {
+                      if (bd.kwh[mi] > 0 || bd.gas[mi] > 0 || (bd.propane && bd.propane[mi] > 0)) totalBlMoCount++;
+                    }
+                  }
+                }
+                if (totalBlMoCount > 0) bBlEui = ((totalBlKbtu / totalBlMoCount) * 12) / bSqft;
+                return { name: b.name, eui: beui, blEui: bBlEui, cbecs: cbVal, type: bType };
               })
               .filter(Boolean);
             if (benchRows.length === 0) return '';
-            const maxBar = Math.max(...benchRows.map((r) => Math.max(r.eui, r.cbecs)), 1);
-            const allSameType = benchRows.every((r) => r.cbecs === benchRows[0].cbecs);
+            const benchCanvasId = 'egfx-euiBench-' + projId;
+            _yoyChartsToDraw.push({ cid: benchCanvasId, _benchRows: benchRows });
+            const chartH = Math.max(120, benchRows.length * 40 + 40);
             return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
               <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📊 EUI Benchmark — Your Buildings vs CBECS National Median</div>
-              <div style="font-size:10px;color:var(--text3);margin-bottom:12px">kBtu/ft²/yr · rolling 12-month data · buildings without sqft are excluded</div>
-              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:9px;color:var(--text3)">
-                <div style="width:120px;flex-shrink:0"></div>
-                <div style="flex:1;text-align:left">← 0 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ${Math.round(maxBar)} kBtu/ft² →</div>
-                <div style="width:50px;flex-shrink:0;text-align:right">EUI</div>
-                <div style="width:28px;flex-shrink:0;text-align:right">Med</div>
-                <div style="width:70px;flex-shrink:0">vs CBECS</div>
-              </div>
-              <div style="display:flex;flex-direction:column;gap:8px">
-                ${benchRows
-                  .map((r) => {
-                    const euiW = Math.max(2, (r.eui / maxBar) * 100);
-                    const cbLine = Math.max(2, (r.cbecs / maxBar) * 100);
-                    const overUnder = r.eui <= r.cbecs ? 'var(--green)' : 'var(--danger)';
-                    const pctDiff = r.cbecs > 0 ? (((r.eui - r.cbecs) / r.cbecs) * 100).toFixed(0) : '—';
-                    const pctLabel = r.eui <= r.cbecs ? pctDiff + '% below' : '+' + pctDiff + '% above';
-                    return (
-                      '<div style="display:flex;align-items:center;gap:6px">' +
-                      '<div style="font-size:10px;font-weight:600;color:var(--text);width:120px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' +
-                      r.name +
-                      '</div>' +
-                      '<div style="flex:1;background:var(--s2);border-radius:3px;height:18px;position:relative;overflow:hidden">' +
-                      '<div style="width:' +
-                      euiW +
-                      '%;background:' +
-                      overUnder +
-                      ';border-radius:3px;height:100%;min-width:2px"></div>' +
-                      '<div style="position:absolute;left:' +
-                      cbLine +
-                      '%;top:-2px;bottom:-2px;width:2px;background:var(--amber);border-radius:1px;z-index:1" title="CBECS ' +
-                      r.type +
-                      ': ' +
-                      r.cbecs.toFixed(1) +
-                      ' kBtu/ft²"></div>' +
-                      '</div>' +
-                      '<div style="font-size:10px;font-family:var(--mono);font-weight:600;color:' +
-                      overUnder +
-                      ';width:50px;flex-shrink:0;text-align:right">' +
-                      r.eui.toFixed(1) +
-                      '</div>' +
-                      '<div style="font-size:9px;color:var(--text3);width:28px;flex-shrink:0;text-align:right">' +
-                      r.cbecs.toFixed(0) +
-                      '</div>' +
-                      '<div style="font-size:9px;color:' +
-                      overUnder +
-                      ';width:70px;flex-shrink:0;font-weight:600">' +
-                      pctLabel +
-                      '</div>' +
-                      '</div>'
-                    );
-                  })
-                  .join('')}
-              </div>
-              <div style="display:flex;align-items:center;gap:10px;margin-top:8px;font-size:9px;color:var(--text3)">
-                <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--green);margin-right:3px"></span>Below</span>
-                <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--danger);margin-right:3px"></span>Above</span>
-                <span><span style="display:inline-block;width:2px;height:12px;background:var(--amber);margin-right:3px;border-radius:1px"></span>CBECS Median${allSameType ? ': ' + benchRows[0].cbecs.toFixed(1) + ' kBtu/ft²' : ' (per building type)'}</span>
-              </div>
+              <div style="font-size:10px;color:var(--text3);margin-bottom:8px">kBtu/ft²/yr · rolling 12-month data · buildings without sqft are excluded</div>
+              <div style="position:relative;height:${chartH}px"><canvas id="${benchCanvasId}"></canvas></div>
             </div>`;
           })()}
           ${(() => {
@@ -1859,8 +1822,18 @@ function egfxRefresh(projId) {
           })()}`;
 
   setTimeout(() => {
-    _yoyChartsToDraw.forEach(({ cid, field, unit, blAvgArr }) => {
-      _drawYoyChart(cid, field, unit, blAvgArr);
+    _yoyChartsToDraw.forEach((entry) => {
+      if (entry._benchRows) {
+        SharedCharts.renderEUIBenchmarkChart(
+          entry.cid,
+          {
+            buildings: entry._benchRows,
+          },
+          { interactive: true, showBaseline: blYears.size > 0 },
+        );
+      } else {
+        _drawYoyChart(entry.cid, entry.field, entry.unit, entry.blAvgArr);
+      }
     });
     // Savings chart
     const savChartCv = document.getElementById('egfx-savChart-' + projId);
