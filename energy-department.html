@@ -19919,67 +19919,6 @@
         return { charge: gasCharge, total: totalCharge, corrected: false };
       }
 
-      // ── RATE GUARDRAILS — validates implied rate (charge ÷ usage) for all commodity types ──
-      const KNOWN_RATES = {
-        Electric: {
-          kWh: { typical: 0.1, unit: '$/kWh', min: 0.01, max: 1.0 },
-          kW: { typical: 10.0, unit: '$/kW', min: 1.0, max: 100.0 },
-        },
-        Gas: {
-          therm: { typical: 0.798, unit: '$/Therm', min: 0.08, max: 8.0 },
-        },
-        Propane: {
-          gallon: { typical: 2.5, unit: '$/Gal', min: 0.25, max: 25.0 },
-        },
-        Water: {
-          unit: { typical: 5.0, unit: '$/1000gal', min: 0.5, max: 50.0 },
-        },
-        Sewer: {
-          unit: { typical: 8.0, unit: '$/1000gal', min: 0.8, max: 80.0 },
-        },
-      };
-
-      function validateImpliedRate(commodity, usage, charge, utilityName) {
-        if (!usage || !charge || usage === 0) return null;
-        const implied = Math.abs(charge / usage);
-        const commRates =
-          KNOWN_RATES[(commodity || '').charAt(0).toUpperCase() + (commodity || '').slice(1).toLowerCase()];
-        if (!commRates) return null;
-        const rateKey = Object.keys(commRates)[0];
-        const expected = commRates[rateKey];
-        if (!expected) return null;
-
-        // Use utility-specific override if available (e.g. Louisburg gas)
-        let expMin = expected.min,
-          expMax = expected.max,
-          expTypical = expected.typical;
-        if ((commodity || '').toLowerCase() === 'gas' && utilityName && /louisburg/i.test(utilityName)) {
-          const lbgRate = _LBG_GAS_RATES[0].rate;
-          expTypical = lbgRate;
-          expMin = lbgRate / 10;
-          expMax = lbgRate * 10;
-        }
-
-        let severity = null;
-        if (implied < expMin || implied > expMax) {
-          severity = 'error';
-        } else if (implied < expTypical / 3 || implied > expTypical * 3) {
-          severity = 'warn';
-        } else if (implied < expTypical / 1.5 || implied > expTypical * 1.5) {
-          severity = 'info';
-        }
-
-        return {
-          valid: severity === null,
-          implied: implied,
-          typical: expTypical,
-          min: expMin,
-          max: expMax,
-          unit: expected.unit,
-          severity: severity,
-        };
-      }
-
       function formatRateWarning(rr, label, unitLabel) {
         const rateStr = '$' + rr.implied.toFixed(4) + unitLabel;
         if (rr.severity === 'error') {
