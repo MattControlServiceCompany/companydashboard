@@ -3157,7 +3157,6 @@ function rptPageContractProjection(n, d) {
     '<th class="rpt-n">Client (' +
     clientPct +
     '%)</th>' +
-    '
     '</tr></thead>' +
     '<tbody>' +
     fiveYrRows +
