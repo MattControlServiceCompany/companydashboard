@@ -875,7 +875,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     '</div>';
   const footerLabelHtml =
     data && data.period
-      ? '<div style="text-align:center;font-size:8px;color:#888;padding:4px 0 2px;position:absolute;bottom:' +
+      ? '<div style="text-align:center;font-size:8px;color:#000;padding:4px 0 2px;position:absolute;bottom:' +
         (footerImgHtml ? '45px' : '8px') +
         ';left:0;right:0">' +
         (data.period.year || '') +
@@ -1235,7 +1235,7 @@ function rptPageCover(n, d) {
       valText +
       '</text>' +
       '</svg>' +
-      '<div style="font-size:8.5px;color:#666;text-transform:uppercase">' +
+      '<div style="font-size:8.5px;color:#000;text-transform:uppercase">' +
       label +
       '</div>' +
       '</div>'
@@ -1332,7 +1332,9 @@ function rptPageCover(n, d) {
   const heroHTML =
     '<div class="rpt-hero">' +
     '<div class="rpt-hero-top">' +
-    '<div class="rpt-hero-type">Quarterly Performance Report</div>' +
+    '<div class="rpt-hero-type">' +
+    (d.period.type === 'annual' ? 'Annual' : 'Quarterly') +
+    ' Energy Management Services Report</div>' +
     '</div>' +
     '<div class="rpt-hero-main">' +
     '<div class="rpt-hero-client" contenteditable="true">' +
@@ -1900,7 +1902,7 @@ function rptPageFinancial(n, d) {
     '</svg>';
 
   const bodyHTML =
-    '<p contenteditable="true" style="font-size:10px;color:#555;line-height:1.6;margin:0 0 8px">This page summarizes the financial performance of each building in the portfolio for the reporting period. Baseline costs represent the expected energy spend based on historical consumption adjusted for weather. Projected costs reflect the target spend based on the contracted savings percentage. Current costs are the actual utility charges during the period. The difference between baseline and current represents verified cost avoidance.</p>' +
+    '<p contenteditable="true" style="font-size:10px;color:#000;line-height:1.6;margin:0 0 8px">This page summarizes the financial performance of each building in the portfolio for the reporting period. Baseline costs represent the expected energy spend based on historical consumption adjusted for weather. Projected costs reflect the target spend based on the contracted savings percentage. Current costs are the actual utility charges during the period. The difference between baseline and current represents verified cost avoidance.</p>' +
     '<h2>Building Performance</h2>' +
     bldgTable +
     '<h2>Quarterly Savings vs Baseline</h2>' +
@@ -1961,13 +1963,7 @@ function rptPageFinancial(n, d) {
         '</tbody></table>'
       );
     })() +
-    '<h2>Cumulative Savings vs Projection</h2>' +
-    '<div class="rpt-chart-box">' +
-    '<div class="rpt-chart-title">' +
-    yrs +
-    '-Year Projected Savings (dashed) vs Actual (dot) — $000s</div>' +
-    cumulativeSVG +
-    '</div>';
+    '';
 
   return rptPage(n, 'Financial Summary', bodyHTML, { data: d, label: 'Page ' + n + ' — Financial Summary' });
 }
@@ -2029,7 +2025,7 @@ function rptPageSavingsPerformance(n, d) {
         const actPct = Math.min(100, ((moActual[ym] || 0) / maxVal) * 100).toFixed(1);
         return (
           '<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">' +
-          '<div style="width:40px;text-align:right;font-size:7px;color:#555">' +
+          '<div style="width:40px;text-align:right;font-size:7px;color:#000">' +
           moLabel +
           '</div>' +
           '<div style="flex:1">' +
@@ -2037,7 +2033,7 @@ function rptPageSavingsPerformance(n, d) {
           '<div style="width:' +
           projPct +
           '%;height:7px;background:#f39c12;border-radius:2px;min-width:1px"></div>' +
-          '<span style="font-size:6px;color:#888">' +
+          '<span style="font-size:6px;color:#000">' +
           $c(moProj[ym]) +
           '</span>' +
           '</div>' +
@@ -2045,7 +2041,7 @@ function rptPageSavingsPerformance(n, d) {
           '<div style="width:' +
           actPct +
           '%;height:7px;background:#27ae60;border-radius:2px;min-width:1px"></div>' +
-          '<span style="font-size:6px;color:#888">' +
+          '<span style="font-size:6px;color:#000">' +
           $c(moActual[ym]) +
           '</span>' +
           '</div>' +
@@ -2221,7 +2217,7 @@ function rptPageSavingsPerformance(n, d) {
         '" contenteditable="true">' +
         (b.name || '—') +
         '</td>' +
-        '<td contenteditable="true" style="color:#888">' +
+        '<td contenteditable="true" style="color:#000">' +
         blYearLabel +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
@@ -2300,7 +2296,7 @@ function rptPageSavingsPerformance(n, d) {
     '</table>';
 
   const bodyHTML =
-    '<p contenteditable="true" style="font-size:10px;color:#555;line-height:1.6;margin:0 0 8px">This page compares projected energy savings against actual performance. The monthly chart shows weather-normalized baseline consumption (projected) versus actual consumption by month. The annual summary tables aggregate consumption, demand, and cost data across all commodities to show the portfolio\'s year-over-year performance trend.</p>' +
+    '<p contenteditable="true" style="font-size:10px;color:#000;line-height:1.6;margin:0 0 8px">This page compares projected energy savings against actual performance. The monthly chart shows weather-normalized baseline consumption (projected) versus actual consumption by month. The annual summary tables aggregate consumption, demand, and cost data across all commodities to show the portfolio\'s year-over-year performance trend.</p>' +
     '<h2>Monthly Savings: Projected vs Actual</h2>' +
     chartSection +
     '<h2>Annual Summary by Year</h2>' +
@@ -2345,8 +2341,8 @@ function rptPageEUI(n, d) {
             ? '<span style="color:#27ae60">&#9660;</span>'
             : cur > bl
               ? '<span style="color:#c0392b">&#9650;</span>'
-              : '<span style="color:#888">&#9654;</span>'
-          : '<span style="color:#888">—</span>';
+              : '<span style="color:#000">&#9654;</span>'
+          : '<span style="color:#000">—</span>';
       return (
         '<tr>' +
         '<td contenteditable="true">' +
@@ -2378,12 +2374,8 @@ function rptPageEUI(n, d) {
         '<td contenteditable="true">' +
         (b.eui.percentile || '—') +
         '</td>' +
-        (hasEnergyStar ? '<td contenteditable="true">' + eStarCell + '</td>' : '') +
         '<td class="rpt-n" contenteditable="true">' +
         (cpSqft > 0 ? '$' + cpSqft.toFixed(2) : '—') +
-        '</td>' +
-        '<td contenteditable="true">' +
-        trendCell +
         '</td>' +
         '</tr>'
       );
@@ -2402,9 +2394,7 @@ function rptPageEUI(n, d) {
     '<th class="rpt-n">CBECS</th>' +
     '<th class="rpt-n">versus CBECS %</th>' +
     '<th>Percentile</th>' +
-    (hasEnergyStar ? '<th>Energy Star</th>' : '') +
     '<th class="rpt-n">$/ft²</th>' +
-    '<th>Trend</th>' +
     '</tr></thead>' +
     '<tbody>' +
     rankRows +
@@ -2429,7 +2419,7 @@ function rptPageEUI(n, d) {
       const barColor = cur <= cbecs ? '#27ae60' : '#f39c12';
       return (
         '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
-        '<div style="width:140px;text-align:right;font-size:8px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">' +
+        '<div style="width:140px;text-align:right;font-size:8px;color:#000;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">' +
         (b.name || '—') +
         '</div>' +
         '<div style="flex:1;height:18px;background:#f0f0f0;border-radius:3px;position:relative">' +
@@ -2481,8 +2471,8 @@ function rptPageEUI(n, d) {
             ? '<span style="color:#27ae60">&#9660;</span>'
             : cur > bl
               ? '<span style="color:#c0392b">&#9650;</span>'
-              : '<span style="color:#888">&#9654;</span>'
-          : '<span style="color:#888">—</span>';
+              : '<span style="color:#000">&#9654;</span>'
+          : '<span style="color:#000">—</span>';
       return (
         '<tr>' +
         '<td contenteditable="true">' +
@@ -2524,7 +2514,7 @@ function rptPageEUI(n, d) {
     '</table>';
 
   const bodyHTML =
-    '<p contenteditable="true" style="font-size:10px;color:#555;line-height:1.6;margin:0 0 8px">Energy Use Intensity (EUI) measures total energy consumption per square foot per year in kBtu/ft². Lower EUI values indicate more efficient buildings. Buildings are benchmarked against national CBECS (Commercial Buildings Energy Consumption Survey) median values for their building type. Buildings performing below the CBECS median are more efficient than the national average. The rolling 12-month EUI accounts for seasonal variation and provides a stable year-round performance indicator.</p>' +
+    '<p contenteditable="true" style="font-size:10px;color:#000;line-height:1.6;margin:0 0 8px">Energy Use Intensity (EUI) measures total energy consumption per square foot per year in kBtu/ft². Lower EUI values indicate more efficient buildings. Buildings are benchmarked against national CBECS (Commercial Buildings Energy Consumption Survey) median values for their building type. Buildings performing below the CBECS median are more efficient than the national average. The rolling 12-month EUI accounts for seasonal variation and provides a stable year-round performance indicator.</p>' +
     '<h2>Building Performance Rankings</h2>' +
     rankTable +
     '<h2>EUI vs CBECS Benchmark</h2>' +
@@ -2617,7 +2607,7 @@ function rptPageEnvironmentalImpact(n, d) {
   const bodyHTML =
     '<div contenteditable="true">' +
     '<div style="font-size:13px;font-weight:700;color:#1a5276;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.5px;text-align:center">Environmental Impact — Pollution Reduction Credits</div>' +
-    '<div style="font-size:10px;color:#555;margin-bottom:10px;text-align:center">Emission reductions resulting from energy savings achieved during the reporting period' +
+    '<div style="font-size:10px;color:#000;margin-bottom:10px;text-align:center">Emission reductions resulting from energy savings achieved during the reporting period' +
     (_annualize ? ' (values annualized ×4 from quarterly data)' : '') +
     '</div>' +
     '<div style="display:flex;flex-direction:column;gap:10px">' +
@@ -2630,7 +2620,7 @@ function rptPageEnvironmentalImpact(n, d) {
     eqLines +
     '</div>' +
     '</div>' +
-    '<div style="margin-top:10px;font-size:7.5px;color:#999;border-top:1px solid #eee;padding-top:6px;text-align:center">' +
+    '<div style="margin-top:10px;font-size:7.5px;color:#000;border-top:1px solid #eee;padding-top:6px;text-align:center">' +
     'Source: EPA eGRID2023 Version 1.0 Rev 1 — https://www.epa.gov/egrid | State: ' +
     st +
     ' | Inputs: ' +
@@ -2797,7 +2787,7 @@ function rptPageObservations(n, d) {
         '<p contenteditable="true">' +
         narrative +
         '</p>' +
-        '<p contenteditable="true" style="font-size:10px;color:#555;margin-top:2px"><strong>Recommendation:</strong> ' +
+        '<p contenteditable="true" style="font-size:10px;color:#000;margin-top:2px"><strong>Recommendation:</strong> ' +
         rec +
         '</p>'
       );
@@ -2954,14 +2944,14 @@ function rptPageApprovedChanges(n, d) {
 
   const bodyHTML =
     '<div class="rpt-body">' +
-    '<p style="font-size:10px;color:#666;margin:0 0 8px">Schedule and setpoint changes implemented this quarter — sourced from meeting minutes</p>' +
+    '<p style="font-size:10px;color:#000;margin:0 0 8px">Schedule and setpoint changes implemented this quarter — sourced from meeting minutes</p>' +
     '<h2 contenteditable="true">Changes Implemented</h2>' +
     changesTable +
     '<h2 contenteditable="true">Net Impact Analysis</h2>' +
     narrativeBox +
     '<h2 contenteditable="true">Upcoming Scheduled Changes</h2>' +
     upcomingTable +
-    '<p style="font-size:9px;color:#888;margin-top:10px">Monthly reviews: 2nd Monday of each month. Onsite tech: up to 8 labor hours/quarter per contract.</p>' +
+    '<p style="font-size:9px;color:#000;margin-top:10px">Monthly reviews: 2nd Monday of each month. Onsite tech: up to 8 labor hours/quarter per contract.</p>' +
     '</div>';
 
   return rptPage(n, 'Approved Changes', bodyHTML, {
@@ -3067,7 +3057,7 @@ function rptPageContractProjection(n, d) {
     (ahead ? '✓' : '✗') +
     '</div>' +
     '<div class="rpt-vs-side">' +
-    '<div class="rpt-vs-val" style="color:#888">' +
+    '<div class="rpt-vs-val" style="color:#000">' +
     $c(qTarget) +
     '</div>' +
     '<div class="rpt-vs-lbl">Q' +
@@ -3133,7 +3123,7 @@ function rptPageContractProjection(n, d) {
       '</td>' +
       '<td class="rpt-n">' +
       (isCurrentYr && isQuarterly
-        ? $c(displayProj) + '<div style="font-size:6px;color:#888">Annual: ' + $c(yearProj) + '</div>'
+        ? $c(displayProj) + '<div style="font-size:6px;color:#000">Annual: ' + $c(yearProj) + '</div>'
         : $c(yearProj)) +
       '</td>' +
       '<td class="rpt-n">' +
@@ -3141,16 +3131,6 @@ function rptPageContractProjection(n, d) {
       '</td>' +
       '<td class="rpt-n">' +
       $c(isCurrentYr && isQuarterly ? displayClient : yearClient) +
-      '</td>' +
-      '<td class="rpt-n">' +
-      (isCurrentYr
-        ? $c(actualSavings) + (isQuarterly ? '<div style="font-size:6px;color:#888">thru Q' + q + '</div>' : '')
-        : '—') +
-      '</td>' +
-      '<td class="rpt-n">' +
-      (isCurrentYr && pace !== null
-        ? '<span style="color:' + (pace >= 100 ? '#1e8449' : '#e67e22') + '">' + pace + '% pace</span>'
-        : '—') +
       '</td>' +
       '</tr>';
   }
@@ -3166,10 +3146,6 @@ function rptPageContractProjection(n, d) {
     '<td class="rpt-n">' +
     $c(totalClient) +
     '</td>' +
-    '<td class="rpt-n">' +
-    $c(totalActual) +
-    '</td>' +
-    '<td></td>' +
     '</tr>';
   const fiveYrTable =
     '<table class="rpt-table">' +
@@ -3181,8 +3157,7 @@ function rptPageContractProjection(n, d) {
     '<th class="rpt-n">Client (' +
     clientPct +
     '%)</th>' +
-    '<th class="rpt-n">Actual</th>' +
-    '<th class="rpt-n">vs Proj</th>' +
+    '
     '</tr></thead>' +
     '<tbody>' +
     fiveYrRows +
@@ -3326,7 +3301,7 @@ function rptPageContractProjection(n, d) {
 
   var svgChart =
     '<div style="margin:8px 0">' +
-    '<div style="font-size:9px;color:#555;margin-bottom:3px">Projected Quarterly Savings (bars) vs Actual Cumulative (green line)</div>' +
+    '<div style="font-size:9px;color:#000;margin-bottom:3px">Projected Quarterly Savings (bars) vs Actual Cumulative (green line)</div>' +
     '<svg width="100%" viewBox="0 0 ' +
     svgW +
     ' ' +
@@ -3387,7 +3362,7 @@ function rptPageContractProjection(n, d) {
     fiveYrTable +
     '<h2 contenteditable="true">Cumulative vs Projected</h2>' +
     svgChart +
-    '<p style="font-size:9px;color:#888;margin-top:8px">' +
+    '<p style="font-size:9px;color:#000;margin-top:8px">' +
     escalation +
     '% annual utility rate escalation applied per contract terms.</p>' +
     '</div>';
@@ -3443,7 +3418,7 @@ function rptPageSetPoints(n, d) {
 
   if (!setpoints || setpoints.length === 0) {
     bodyContent =
-      '<p style="padding:16px;color:#888;font-style:italic">No BAS data uploaded — add data in Set Points &amp; Schedules tab.</p>';
+      '<p style="padding:16px;color:#000;font-style:italic">No BAS data uploaded — add data in Set Points &amp; Schedules tab.</p>';
   } else {
     // Scan all zones to determine which optional columns have at least one real value
     var hasUnoccHeat = false;
@@ -3562,11 +3537,11 @@ function rptPageSetPoints(n, d) {
     setpoints.length && setpoints[0].viewMode === 'average' ? 'building averages' : 'individual zones';
   const bodyHTML =
     '<div class="rpt-body">' +
-    '<p style="font-size:10px;color:#666;margin:0 0 8px">Baseline setpoints and operating schedules per building — from uploaded BAS exports (' +
+    '<p style="font-size:10px;color:#000;margin:0 0 8px">Baseline setpoints and operating schedules per building — from uploaded BAS exports (' +
     rptViewMode +
     ')</p>' +
     bodyContent +
-    '<p style="font-size:9px;color:#888;margin-top:12px">Source: BAS export uploaded to Set Points &amp; Schedules tab.</p>' +
+    '<p style="font-size:9px;color:#000;margin-top:12px">Source: BAS export uploaded to Set Points &amp; Schedules tab.</p>' +
     '</div>';
 
   return rptPage(n, 'BAS Set Points & Schedules' + vLabel, bodyHTML, {
@@ -3691,14 +3666,14 @@ function rptPageBuildingSummary(n, d, b) {
         unit +
         '"></div>' +
         '</div>' +
-        '<div style="font-size:7px;color:#999;margin-top:1px">' +
+        '<div style="font-size:7px;color:#000;margin-top:1px">' +
         moLabel(mo.month) +
         '</div>' +
         '</div>';
     });
 
     var legend =
-      '<div style="display:flex;gap:10px;margin-top:4px;font-size:8px;color:#666">' +
+      '<div style="display:flex;gap:10px;margin-top:4px;font-size:8px;color:#000">' +
       '<span><span style="display:inline-block;width:8px;height:8px;background:' +
       blColor +
       ';border-radius:1px;margin-right:3px"></span>Baseline ' +
@@ -3737,7 +3712,7 @@ function rptPageBuildingSummary(n, d, b) {
   var addr = b.address || (d && d.project && d.project.addr) || '';
   var sqftStr = b.sqft ? b.sqft.toLocaleString() + ' sq ft' : '';
   leftHTML +=
-    '<div contenteditable="true" style="font-size:9px;color:#666;margin-bottom:10px;line-height:1.5">' +
+    '<div contenteditable="true" style="font-size:9px;color:#000;margin-bottom:10px;line-height:1.5">' +
     (sqftStr ? sqftStr + '<br>' : '') +
     (addr ? addr : '') +
     '</div>';
@@ -3765,7 +3740,7 @@ function rptPageBuildingSummary(n, d, b) {
     '<div style="font-size:11px;font-weight:700;color:#e67e22">' +
     euiBl.toFixed(1) +
     '</div>' +
-    '<div style="font-size:8px;color:#888">Baseline</div>' +
+    '<div style="font-size:8px;color:#000">Baseline</div>' +
     '</div>' +
     // Current bar
     '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">' +
@@ -3779,7 +3754,7 @@ function rptPageBuildingSummary(n, d, b) {
     '<div style="font-size:11px;font-weight:700;color:#1a8a4e">' +
     euiCur.toFixed(1) +
     '</div>' +
-    '<div style="font-size:8px;color:#888">Current</div>' +
+    '<div style="font-size:8px;color:#000">Current</div>' +
     '</div>' +
     '</div>';
 
@@ -3815,18 +3790,18 @@ function rptPageBuildingSummary(n, d, b) {
             blH +
             'px;background:#e67e22;border-radius:1px 1px 0 0"></div><div style="width:5px;height:' +
             curH +
-            'px;background:#1a8a4e;border-radius:1px 1px 0 0"></div></div><div style="font-size:5.5px;color:#999">' +
+            'px;background:#1a8a4e;border-radius:1px 1px 0 0"></div></div><div style="font-size:5.5px;color:#000">' +
             moLbl +
             '</div></div>'
           );
         })
         .join('');
       leftHTML +=
-        '<div style="font-size:8px;font-weight:600;color:#555;margin:8px 0 3px">Monthly EUI (kBtu/ft²)</div>' +
+        '<div style="font-size:8px;font-weight:600;color:#000;margin:8px 0 3px">Monthly EUI (kBtu/ft²)</div>' +
         '<div style="display:flex;align-items:flex-end;gap:1px">' +
         euiBars +
         '</div>' +
-        '<div style="font-size:6.5px;color:#888;margin-top:2px"><span style="display:inline-block;width:6px;height:6px;background:#e67e22;border-radius:1px;margin-right:2px"></span>Baseline <span style="display:inline-block;width:6px;height:6px;background:#1a8a4e;border-radius:1px;margin-left:4px;margin-right:2px"></span>Cur</div>';
+        '<div style="font-size:6.5px;color:#000;margin-top:2px"><span style="display:inline-block;width:6px;height:6px;background:#e67e22;border-radius:1px;margin-right:2px"></span>Baseline <span style="display:inline-block;width:6px;height:6px;background:#1a8a4e;border-radius:1px;margin-left:4px;margin-right:2px"></span>Cur</div>';
     }
   }
 
@@ -3834,7 +3809,7 @@ function rptPageBuildingSummary(n, d, b) {
   var bldgNotes = b.notes || '';
   if (bldgNotes) {
     leftHTML +=
-      '<div style="font-size:9px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
+      '<div style="font-size:9px;font-weight:600;color:#000;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
       '<div contenteditable="true" style="min-height:40px;font-size:9px;color:#444;border:1px solid #ddd;border-radius:3px;padding:6px;line-height:1.5;background:#fafafa">' +
       bldgNotes +
       '</div>';
@@ -3848,7 +3823,7 @@ function rptPageBuildingSummary(n, d, b) {
   var rightHTML =
     '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">' +
     '<div style="font-size:12px;font-weight:700;color:#1a5276">Goals and Progression</div>' +
-    '<div style="font-size:8.5px;color:#888">Period: ' +
+    '<div style="font-size:8.5px;color:#000">Period: ' +
     ((d && d.period && d.period.label) || '') +
     '</div>' +
     '</div>';
@@ -3874,7 +3849,7 @@ function rptPageBuildingSummary(n, d, b) {
       '">' +
       $n(kwhSaved) +
       '</div>' +
-      '<div style="font-size:7.5px;color:#555">kWh Saved</div>' +
+      '<div style="font-size:7.5px;color:#000">kWh Saved</div>' +
       '</div>' +
       '<div style="flex:1;min-width:60px;text-align:center;background:' +
       _savBg(kwReduced) +
@@ -3885,7 +3860,7 @@ function rptPageBuildingSummary(n, d, b) {
       '">' +
       $n(kwReduced) +
       '</div>' +
-      '<div style="font-size:7.5px;color:#555">kW Reduced</div>' +
+      '<div style="font-size:7.5px;color:#000">kW Reduced</div>' +
       '</div>';
   }
   if (hasGas) {
@@ -3900,7 +3875,7 @@ function rptPageBuildingSummary(n, d, b) {
       '">' +
       $n(thermsSaved) +
       '</div>' +
-      '<div style="font-size:7.5px;color:#555">Therms Saved</div>' +
+      '<div style="font-size:7.5px;color:#000">Therms Saved</div>' +
       '</div>';
   }
   if (hasPropane) {
@@ -3915,7 +3890,7 @@ function rptPageBuildingSummary(n, d, b) {
       '">' +
       $n(galSaved) +
       '</div>' +
-      '<div style="font-size:7.5px;color:#555">Gal Saved</div>' +
+      '<div style="font-size:7.5px;color:#000">Gal Saved</div>' +
       '</div>';
   }
   // Always show $ savings
@@ -3932,7 +3907,7 @@ function rptPageBuildingSummary(n, d, b) {
     '$' +
     Math.abs(Math.round(totalSaved)).toLocaleString() +
     '</div>' +
-    '<div style="font-size:7.5px;color:#555">Total Saved</div>' +
+    '<div style="font-size:7.5px;color:#000">Total Saved</div>' +
     '</div>';
 
   rightHTML += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">' + iconItems + '</div>';
@@ -4417,8 +4392,8 @@ function rptPageBuildingSummary(n, d, b) {
 
   // Notes
   leftHTML +=
-    '<div style="margin-top:10px;font-size:8px;color:#666;line-height:1.5">' +
-    '<div style="font-weight:600;color:#555;text-transform:uppercase;font-size:7px;letter-spacing:.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
+    '<div style="margin-top:10px;font-size:8px;color:#000;line-height:1.5">' +
+    '<div style="font-weight:600;color:#000;text-transform:uppercase;font-size:7px;letter-spacing:.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
     '<div>1. Achieved (%) for each energy type represents the percent of energy units saved for the months included in this report.</div>' +
     '<div>2. Achieved ($) represents the utility cost savings for this time period calculated by subtracting the baseline energy usage from the current energy usage multiplied by the higher of current or baseline utility rates.</div>' +
     '<div>3. The Baseline EUIs are normalized for weather and square footage when applicable.</div>' +
@@ -4518,14 +4493,14 @@ function rptPageElectric(n, d) {
         unit +
         '"></div>' +
         '</div>' +
-        '<div style="font-size:7.5px;color:#666;margin-top:1px">' +
+        '<div style="font-size:7.5px;color:#000;margin-top:1px">' +
         moLbl +
         '</div>' +
         '</div>';
     });
     return (
       '<div class="rpt-chart-box">' +
-      '<div style="font-size:8px;font-weight:600;color:#555;margin-bottom:3px">' +
+      '<div style="font-size:8px;font-weight:600;color:#000;margin-bottom:3px">' +
       title +
       '</div>' +
       '<div style="display:flex;align-items:flex-end;gap:2px;height:' +
@@ -4533,7 +4508,7 @@ function rptPageElectric(n, d) {
       'px">' +
       bars +
       '</div>' +
-      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:8.5px;color:#666">' +
+      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:8.5px;color:#000">' +
       '<span><span style="display:inline-block;width:8px;height:8px;background:' +
       blColor +
       ';border-radius:1px;margin-right:2px"></span>Baseline ' +
@@ -4743,8 +4718,8 @@ function rptPageElectric(n, d) {
 
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<p contenteditable="true" style="font-size:10px;color:#555;line-height:1.6;margin:0 0 8px">This page details electricity consumption across all buildings for the reporting period. The charts compare weather-normalized baseline usage against actual consumption by month. The table below breaks down kilowatt-hour (kWh) usage, peak demand (kW), and costs by building to identify where the greatest savings and opportunities exist.</p>' +
-    '<div style="margin-bottom:6px;font-size:9px;color:#555">Period: ' +
+    '<p contenteditable="true" style="font-size:10px;color:#000;line-height:1.6;margin:0 0 8px">This page details electricity consumption across all buildings for the reporting period. The charts compare weather-normalized baseline usage against actual consumption by month. The table below breaks down kilowatt-hour (kWh) usage, peak demand (kW), and costs by building to identify where the greatest savings and opportunities exist.</p>' +
+    '<div style="margin-bottom:6px;font-size:9px;color:#000">Period: ' +
     periodLabel +
     '</div>' +
     kwhChart +
@@ -4829,13 +4804,13 @@ function rptPageGas(n, d) {
         ' ' +
         unit +
         '"></div>' +
-        '</div><div style="font-size:7.5px;color:#666;margin-top:1px">' +
+        '</div><div style="font-size:7.5px;color:#000;margin-top:1px">' +
         moLbl +
         '</div></div>';
     });
     return (
       '<div class="rpt-chart-box">' +
-      '<div style="font-size:8px;font-weight:600;color:#555;margin-bottom:3px">' +
+      '<div style="font-size:8px;font-weight:600;color:#000;margin-bottom:3px">' +
       title +
       '</div>' +
       '<div style="display:flex;align-items:flex-end;gap:2px;height:' +
@@ -4843,7 +4818,7 @@ function rptPageGas(n, d) {
       'px">' +
       bars +
       '</div>' +
-      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:8.5px;color:#666">' +
+      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:8.5px;color:#000">' +
       '<span><span style="display:inline-block;width:8px;height:8px;background:' +
       blColor +
       ';border-radius:1px;margin-right:2px"></span>Baseline ' +
@@ -4999,8 +4974,8 @@ function rptPageGas(n, d) {
 
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<p contenteditable="true" style="font-size:10px;color:#555;line-height:1.6;margin:0 0 8px">This page details natural gas consumption across all buildings for the reporting period. Gas usage is measured in therms and is primarily driven by heating loads. The chart compares baseline consumption against actual usage by month, while the per-building table identifies where gas savings or overages are occurring.</p>' +
-    '<div style="margin-bottom:6px;font-size:9px;color:#555">Period: ' +
+    '<p contenteditable="true" style="font-size:10px;color:#000;line-height:1.6;margin:0 0 8px">This page details natural gas consumption across all buildings for the reporting period. Gas usage is measured in therms and is primarily driven by heating loads. The chart compares baseline consumption against actual usage by month, while the per-building table identifies where gas savings or overages are occurring.</p>' +
+    '<div style="margin-bottom:6px;font-size:9px;color:#000">Period: ' +
     periodLabel +
     '</div>' +
     thermsChart +
@@ -5085,13 +5060,13 @@ function rptPagePropane(n, d) {
         ' ' +
         unit +
         '"></div>' +
-        '</div><div style="font-size:7.5px;color:#666;margin-top:1px">' +
+        '</div><div style="font-size:7.5px;color:#000;margin-top:1px">' +
         moLbl +
         '</div></div>';
     });
     return (
       '<div class="rpt-chart-box">' +
-      '<div style="font-size:8px;font-weight:600;color:#555;margin-bottom:3px">' +
+      '<div style="font-size:8px;font-weight:600;color:#000;margin-bottom:3px">' +
       title +
       '</div>' +
       '<div style="display:flex;align-items:flex-end;gap:2px;height:' +
@@ -5099,7 +5074,7 @@ function rptPagePropane(n, d) {
       'px">' +
       bars +
       '</div>' +
-      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:8.5px;color:#666">' +
+      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:8.5px;color:#000">' +
       '<span><span style="display:inline-block;width:8px;height:8px;background:' +
       blColor +
       ';border-radius:1px;margin-right:2px"></span>Baseline ' +
@@ -5265,7 +5240,7 @@ function rptPagePropane(n, d) {
 
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<div style="margin-bottom:6px;font-size:9px;color:#555">Period: ' +
+    '<div style="margin-bottom:6px;font-size:9px;color:#000">Period: ' +
     periodLabel +
     '</div>' +
     galChart +
@@ -5339,18 +5314,18 @@ function rptPageGasPropane(n, d) {
         curH +
         'px;background:' +
         curColor +
-        ';border-radius:2px 2px 0 0"></div></div><div style="font-size:6.5px;color:#666;margin-top:1px">' +
+        ';border-radius:2px 2px 0 0"></div></div><div style="font-size:6.5px;color:#000;margin-top:1px">' +
         (moIdx >= 0 ? MO_SHORT[moIdx].slice(0, 3) : '?') +
         '</div></div>';
     });
     return (
-      '<div class="rpt-chart-box" style="margin-bottom:6px"><div style="font-size:8px;font-weight:600;color:#555;margin-bottom:3px">' +
+      '<div class="rpt-chart-box" style="margin-bottom:6px"><div style="font-size:8px;font-weight:600;color:#000;margin-bottom:3px">' +
       title +
       '</div><div style="display:flex;align-items:flex-end;gap:2px;height:' +
       (maxH + 14) +
       'px">' +
       bars +
-      '</div><div style="display:flex;gap:8px;margin-top:2px;justify-content:center;font-size:7.5px;color:#666"><span><span style="display:inline-block;width:7px;height:7px;background:' +
+      '</div><div style="display:flex;gap:8px;margin-top:2px;justify-content:center;font-size:7.5px;color:#000"><span><span style="display:inline-block;width:7px;height:7px;background:' +
       blColor +
       ';border-radius:1px;margin-right:2px"></span>BL ' +
       $n(blTot) +
@@ -5476,7 +5451,7 @@ function rptPageGasPropane(n, d) {
   });
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<p contenteditable="true" style="font-size:9px;color:#555;line-height:1.5;margin:0 0 6px">This page details natural gas and propane consumption across all buildings for the reporting period.</p>' +
+    '<p contenteditable="true" style="font-size:9px;color:#000;line-height:1.5;margin:0 0 6px">This page details natural gas and propane consumption across all buildings for the reporting period.</p>' +
     _barChart(thermsMonthly, '#e8c4a0', '#d35400', 'Therms', 'Natural Gas Therms') +
     '<h2 style="font-size:9px;font-weight:700;color:#8b4513;margin:8px 0 3px">Natural Gas by Building</h2>' +
     _table(
@@ -5621,7 +5596,7 @@ function rptPageAppendixNormalization(n, d, appLetter) {
     appLetter +
     ': Normalization &amp; Meter Baseline</h2>' +
     methodBox +
-    '<h3 style="font-size:9.5px;font-weight:700;color:#555;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.04em">Per-Building Meter Detail</h3>' +
+    '<h3 style="font-size:9.5px;font-weight:700;color:#000;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.04em">Per-Building Meter Detail</h3>' +
     meterTables;
 
   return rptPage(n, 'Appendix ' + appLetter + ': Normalization & Meter Baseline', bodyHTML, {
@@ -5710,7 +5685,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
 
       calcHTML +=
         '<div style="margin:6px 0 4px">' +
-        '<div style="font-size:8.5px;font-weight:600;color:#555">' +
+        '<div style="font-size:8.5px;font-weight:600;color:#000">' +
         md.commodity +
         ' — ' +
         md.regrType +
@@ -5799,7 +5774,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
           // Baseline reference row — show predicted only, mark Actual/Saved as BL reference
           totBl += predicted;
           rows +=
-            '<tr style="background:#f5f5f5;color:#999">' +
+            '<tr style="background:#f5f5f5;color:#000">' +
             '<td>' +
             moName +
             ' <span style="font-size:6px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span>' +
@@ -5842,7 +5817,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
             '<td class="rpt-n">' +
             Math.round(cdd).toLocaleString() +
             '</td>' +
-            '<td style="font-family:monospace;font-size:6.5px;color:#555;white-space:nowrap">' +
+            '<td style="font-family:monospace;font-size:6.5px;color:#000;white-space:nowrap">' +
             formulaParts +
             '</td>' +
             '<td class="rpt-n" style="font-weight:600">' +
@@ -5902,7 +5877,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
 
       calcHTML +=
         '<div style="margin:6px 0 4px">' +
-        '<div style="font-size:8.5px;font-weight:600;color:#555">' +
+        '<div style="font-size:8.5px;font-weight:600;color:#000">' +
         md.commodity +
         ' — Baseline Data (no regression model)</div>' +
         '</div>';
@@ -5914,7 +5889,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         var days = ym ? _daysInMonth(ym) : 30;
         var wx = wxByYm[ym] || {};
         rows +=
-          '<tr style="background:#f5f5f5;color:#999">' +
+          '<tr style="background:#f5f5f5;color:#000">' +
           '<td>' +
           moName +
           ' <span style="font-size:6px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span></td>' +
@@ -5963,9 +5938,9 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
     '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' +
     appLetter +
     ': Regression Model Methodology</h2>' +
-    '<div style="font-size:8.5px;color:#666;margin-bottom:8px">Weather-normalized baseline calculations per building and commodity</div>' +
+    '<div style="font-size:8.5px;color:#000;margin-bottom:8px">Weather-normalized baseline calculations per building and commodity</div>' +
     regressionExplainer +
-    '<h3 style="font-size:9.5px;font-weight:700;color:#555;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.04em">Monthly Baseline Calculations</h3>' +
+    '<h3 style="font-size:9.5px;font-weight:700;color:#000;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.04em">Monthly Baseline Calculations</h3>' +
     calcHTML;
 
   return rptPage(n, 'Appendix ' + appLetter + ': Regression Model Methodology', bodyHTML, {
@@ -6022,7 +5997,7 @@ function rptPageAppendixWeather(n, d, appLetter) {
       totCddBl += cddBl;
       totCddCur += cddCur;
     }
-    var rowStyle = ip ? '' : 'color:#999;background:#f8f8f8';
+    var rowStyle = ip ? '' : 'color:#000;background:#f8f8f8';
     var hddVal = ip ? hddCur : hddBl;
     var cddVal = ip ? cddCur : cddBl;
     var badge = ip
@@ -6177,9 +6152,9 @@ function rptPageAppendixWeather(n, d, appLetter) {
     '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' +
     appLetter +
     ': Weather Data</h2>' +
-    '<div style="font-size:8.5px;color:#666;margin-bottom:10px">Combined HDD and CDD — Base 60°F per contract</div>' +
+    '<div style="font-size:8.5px;color:#000;margin-bottom:10px">Combined HDD and CDD — Base 60°F per contract</div>' +
     weatherTable +
-    '<h3 style="font-size:9.5px;font-weight:700;color:#555;margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.04em">Weather Impact Summary</h3>' +
+    '<h3 style="font-size:9.5px;font-weight:700;color:#000;margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.04em">Weather Impact Summary</h3>' +
     narrativeBox +
     hddCddParagraph +
     '<div style="margin-top:16px;padding:10px 12px;background:#f8f9fa;border:1px solid #e0e0e0;border-radius:4px;font-size:8.5px;color:#444;line-height:1.5">' +
@@ -6293,7 +6268,7 @@ function rptPageAppendixBills(n, d, appLetter) {
           allBillImages +=
             '<div style="display:inline-block;margin:4px 6px 4px 0;border:1px solid #ccc;border-radius:3px;overflow:hidden"><img src="' +
             bill.pdfImage +
-            '" style="height:120px;width:auto;display:block"><div style="font-size:6.5px;color:#666;padding:2px 4px;background:#f8f8f8;text-align:center">' +
+            '" style="height:120px;width:auto;display:block"><div style="font-size:6.5px;color:#000;padding:2px 4px;background:#f8f8f8;text-align:center">' +
             bill.building +
             ' · ' +
             bill.commodity +
@@ -6335,7 +6310,7 @@ function rptPageAppendixBills(n, d, appLetter) {
     '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' +
     appLetter +
     ': Utility Bills</h2>' +
-    '<div style="font-size:8.5px;color:#666;margin-bottom:10px">Original utility bill PDFs for the reporting period</div>' +
+    '<div style="font-size:8.5px;color:#000;margin-bottom:10px">Original utility bill PDFs for the reporting period</div>' +
     sections +
     billImagesSection +
     footerNote;
@@ -7533,7 +7508,7 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
   doc.setFontSize(15);
   doc.setTextColor(0, 0, 0);
   const reportTitle =
-    type === 'quarterly' ? 'Quarterly Savings Performance Report' : 'Annual Savings Performance Report';
+    type === 'quarterly' ? 'Quarterly Energy Management Services Report' : 'Annual Energy Management Services Report';
   doc.text(reportTitle, pw / 2, y, { align: 'center' });
   y += 20;
   doc.setFont('helvetica', 'normal');
