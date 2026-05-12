@@ -48603,8 +48603,9 @@
         const annSavings = d.totals.savings * annFactor;
         const contractYrs = d.contract.years || 3;
         const yrTotalSavings = annSavings * contractYrs;
-        const cscAmt = d.totals.savings * (d.contract.cscPct / 100);
-        const clientAmt = d.totals.savings - cscAmt;
+        var _split = computeCscSplit(d.totals.savings, d.contract.cscPct, 'pct');
+        var cscAmt = _split.csc;
+        var clientAmt = _split.client;
 
         // ── Building Performance table ──
         const qTarget = d.contract.quarterlyTargets[q - 1] || 0;
