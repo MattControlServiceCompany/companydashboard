@@ -13352,7 +13352,84 @@
     <!-- /app -->
 
     <!-- ═══════════════════════════════════════════════════
-         REPORT OVERLAY — fullscreen print-preview container
+         NEW REPORT GENERATION MODAL (v2) — launched from Energy Graphics
+    ═══════════════════════════════════════════════════ -->
+    <div class="modal-overlay" id="reportGenModal" onclick="if (event.target === this) this.classList.remove('open');">
+      <div class="modal" style="width: 540px; max-height: 85vh; overflow-y: auto">
+        <div class="modal-hdr">
+          <span class="modal-title">Generate Report</span>
+          <button class="modal-x" onclick="document.getElementById('reportGenModal').classList.remove('open')">
+            ✕
+          </button>
+        </div>
+        <div class="modal-body" id="reportGenModalBody">
+          <!-- Populated dynamically by openReportModalV2() -->
+        </div>
+        <div class="modal-ftr">
+          <button class="btn btn-ghost" onclick="document.getElementById('reportGenModal').classList.remove('open')">
+            Cancel
+          </button>
+          <button class="btn btn-em" onclick="generateReportPreview()">Generate Preview</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════
+         REPORT PREVIEW CONTAINER — fullscreen preview/editor
+    ═══════════════════════════════════════════════════ -->
+    <div
+      id="reportPreviewContainer"
+      style="display: none; position: fixed; inset: 0; z-index: 200; background: var(--bg); overflow: hidden"
+    >
+      <div
+        id="rptPreviewToolbar"
+        style="
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          background: var(--s1);
+          padding: 8px 16px;
+          border-bottom: 1px solid var(--s3);
+        "
+      >
+        <div style="display: flex; align-items: center; gap: 12px">
+          <button class="btn btn-ghost btn-sm" onclick="closeReportPreview()">← Back to Energy Graphics</button>
+          <span id="rptPreviewTitle" style="font-size: 14px; font-weight: 600; color: var(--text)"></span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px">
+          <button class="btn btn-ghost btn-sm" onclick="saveReportTemplate()">Save Template</button>
+          <button class="btn btn-em btn-sm" onclick="downloadReportPDF()">Download PDF</button>
+        </div>
+      </div>
+      <div style="display: flex; height: calc(100vh - 44px)">
+        <div
+          id="rptPreviewSidebar"
+          style="
+            width: 220px;
+            background: var(--s1);
+            border-right: 1px solid var(--s3);
+            overflow-y: auto;
+            padding: 8px 0;
+          "
+        ></div>
+        <div
+          id="rptPreviewPages"
+          style="
+            flex: 1;
+            background: var(--s3);
+            overflow-y: auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+          "
+        ></div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════
+         REPORT OVERLAY — fullscreen print-preview container (legacy)
     ═══════════════════════════════════════════════════ -->
     <div id="reportOverlay" class="report-overlay" style="display: none">
       <div class="report-toolbar">
