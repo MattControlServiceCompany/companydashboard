@@ -185,3 +185,54 @@ function validateImpliedRate(commodity, usage, charge, utilityName) {
     severity: severity,
   };
 }
+
+function toKBtu(kwh, therms, gallons) {
+  return (parseFloat(kwh) || 0) * 3.412 + (parseFloat(therms) || 0) * 100 + (parseFloat(gallons) || 0) * 91.5;
+}
+
+function getExtractedRate(parsed, type) {
+  var pf = function (v) {
+    return parseFloat(v) || 0;
+  };
+  switch (type) {
+    case 'kwh': {
+      var cost =
+        pf(parsed.EnergyOnPeakCharge) +
+        pf(parsed.EnergyOffPeakCharge) +
+        pf(parsed.ECACharge) +
+        pf(parsed.EERCharge) +
+        pf(parsed.PTSCharge);
+      var usage = pf(parsed.kWhConsumed);
+      return usage > 0 && cost > 0 ? cost / usage : 0;
+    }
+    case 'kw': {
+      var cost = pf(parsed.FacilitiesCharge) + pf(parsed.BilledKWCharge) + pf(parsed.TDCCharge);
+      var usage = pf(parsed.BilledKW) || pf(parsed.ActualKW) || pf(parsed.FacilitiesKW);
+      return usage > 0 && cost > 0 ? cost / usage : 0;
+    }
+    case 'gas': {
+      var usage = pf(parsed.NaturalGasTherms);
+      var cost = pf(parsed.GasCharge);
+      return usage > 0 && cost > 0 ? cost / usage : 0;
+    }
+    case 'propane': {
+      var up = pf(parsed.UnitPrice);
+      if (up > 0) return up;
+      var gal = pf(parsed.GallonsDelivered);
+      var cost = pf(parsed.TotalCurrentCharges) || pf(parsed.TotalAmountDue);
+      return gal > 0 && cost > 0 ? cost / gal : 0;
+    }
+    case 'water': {
+      var usage = pf(parsed.WaterUsage);
+      var cost = pf(parsed.WaterCharge);
+      return usage > 0 && cost > 0 ? cost / usage : 0;
+    }
+    case 'sewer': {
+      var usage = pf(parsed.SewerUsage);
+      var cost = pf(parsed.SewerCharge);
+      return usage > 0 && cost > 0 ? cost / usage : 0;
+    }
+    default:
+      return 0;
+  }
+}
