@@ -237,7 +237,7 @@ function regressionBaseline(row, reg, commodity, normBasis) {
 }
 
 // ── Consolidated kW CDD regression ────────────────────────────────────────────
-// Was duplicated in getMeterPerfSavingsByCalMo and getMeterPerfSavingsByYM.
+// Was duplicated in the old savings functions; now unified in getMeterSavings.
 // Fits a simple linear regression of demand kW ~ CDD from baseline rows,
 // then predicts kW for all months.
 // blRows: baseline normalized rows (must have .ym and .cdd)
