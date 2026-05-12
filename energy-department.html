@@ -13384,6 +13384,7 @@
     <script src="computations/pollution.js"></script>
     <script src="computations/csc.js"></script>
     <script src="computations/savings.js"></script>
+    <script src="lib/perf-table.js"></script>
     <script src="computations/report-data.js"></script>
     <script src="extraction/bill-validation.js"></script>
     <script src="extraction/pdf-engine.js"></script>
@@ -51140,90 +51141,42 @@
           : '';
 
         // ═══════════════════════════════════════════════════════════════════
-        // Meter Performance table (reporting period, per-commodity monthly)
+        // Meter Performance table — uses shared buildMeterPerfTableHTML
+        // (same rendering as Meter Performance tab — single source of truth)
         // ═══════════════════════════════════════════════════════════════════
         var meterPerfHTML = '';
-        function _buildMeterPerfTable(monthly, unitLabel, blColor) {
-          if (!monthly || !monthly.length) return '';
-          var rows = '',
-            tBl = 0,
-            tCur = 0,
-            tSav = 0,
-            tBlC = 0,
-            tCurC = 0,
-            tSavC = 0;
-          monthly.forEach(function (mo) {
-            var bl = mo.bl || 0,
-              cur = mo.cur || 0,
-              sav = bl - cur;
-            var blC = mo.blCost || 0,
-              curC = mo.curCost || 0,
-              savC = mo.savings != null ? mo.savings : blC - curC;
-            tBl += bl;
-            tCur += cur;
-            tSav += sav;
-            tBlC += blC;
-            tCurC += curC;
-            tSavC += savC;
-            var savPct = bl > 0 ? ((sav / bl) * 100).toFixed(1) + '%' : '—';
-            rows +=
-              '<tr><td>' +
-              moLabel(mo.month) +
-              '</td><td class="rpt-n">' +
-              $n(bl) +
-              '</td><td class="rpt-n">' +
-              $n(cur) +
-              '</td><td class="rpt-n" style="color:' +
-              (sav >= 0 ? '#1e8449' : '#c0392b') +
-              '">' +
-              $n(sav) +
-              '</td><td class="rpt-n">' +
-              savPct +
-              '</td><td class="rpt-n" style="color:' +
-              (savC >= 0 ? '#1e8449' : '#c0392b') +
-              '">' +
-              $c(savC) +
-              '</td></tr>';
+        var _rptBldg = getUDBldg(d.project.id, b.id);
+        var _rptFilterYMs = d.period.yearMonths || null;
+        if (_rptBldg && _rptBldg.meters) {
+          var _rptProj = getUDProj(d.project.id);
+          var _rptIncl = (_rptProj && _rptProj.inclMonths) || {};
+          _rptBldg.meters.forEach(function (meter) {
+            if (!meter.baseline || !meter.baseline.months || meter.baseline.months.length < 3) return;
+            var mBills = (meter.bills || []).slice().sort(function (a, c) {
+              return (a.start || '').localeCompare(c.start || '');
+            });
+            var mIncl = meter.inclusive !== false;
+            var result = buildMeterPerfTableHTML(meter, mBills, mIncl, { mode: 'report', filterYMs: _rptFilterYMs });
+            if (result.html) {
+              var commLabel =
+                meter.commodity === 'Electric'
+                  ? 'Electric'
+                  : meter.commodity === 'Gas'
+                    ? 'Gas'
+                    : meter.commodity === 'Propane'
+                      ? 'Propane'
+                      : meter.commodity;
+              var commColor =
+                meter.commodity === 'Electric' ? '#1a5276' : meter.commodity === 'Gas' ? '#8b4513' : '#7d5a00';
+              meterPerfHTML +=
+                '<div style="font-size:8px;font-weight:600;color:' +
+                commColor +
+                ';margin:6px 0 2px">' +
+                commLabel +
+                ' Performance</div>' +
+                result.html;
+            }
           });
-          var tSavPct = tBl > 0 ? ((tSav / tBl) * 100).toFixed(1) + '%' : '—';
-          rows +=
-            '<tr class="rpt-tot"><td>Total</td><td class="rpt-n">' +
-            $n(tBl) +
-            '</td><td class="rpt-n">' +
-            $n(tCur) +
-            '</td><td class="rpt-n" style="color:' +
-            (tSav >= 0 ? '#1e8449' : '#c0392b') +
-            '">' +
-            $n(tSav) +
-            '</td><td class="rpt-n">' +
-            tSavPct +
-            '</td><td class="rpt-n" style="color:' +
-            (tSavC >= 0 ? '#1e8449' : '#c0392b') +
-            '">' +
-            $c(tSavC) +
-            '</td></tr>';
-          return (
-            '<table class="rpt-table" style="font-size:7px"><thead><tr><th>Month</th><th class="rpt-n">Baseline ' +
-            unitLabel +
-            '</th><th class="rpt-n">Actual</th><th class="rpt-n">Saved</th><th class="rpt-n">%</th><th class="rpt-n">Cost Saved</th></tr></thead><tbody>' +
-            rows +
-            '</tbody></table>'
-          );
-        }
-        if (hasElec && b.electric.monthly && b.electric.monthly.length) {
-          meterPerfHTML +=
-            '<div style="font-size:8px;font-weight:600;color:#1a5276;margin:6px 0 2px">Electric Performance</div>' +
-            _buildMeterPerfTable(b.electric.monthly, 'kWh', '#1a5276');
-        }
-        if (hasGas && b.gas.monthly && b.gas.monthly.length) {
-          meterPerfHTML +=
-            '<div style="font-size:8px;font-weight:600;color:#8b4513;margin:6px 0 2px">Gas Performance</div>' +
-            _buildMeterPerfTable(b.gas.monthly, 'Therms', '#d35400');
-        }
-        if (hasPropane && b.propane.monthly && b.propane.monthly.length) {
-          meterPerfHTML +=
-            '<div style="font-size:8px;font-weight:600;color:#7d5a00;margin:6px 0 2px">Propane Performance</div>' +
-            _buildMeterPerfTable(b.propane.monthly, 'Gal', '#b8860b');
         }
         if (meterPerfHTML) {
           meterPerfHTML =
