@@ -42519,6 +42519,11 @@
                   '</td>'
                 : '') +
               (hasKwCostSav
+                ? '<td class="mono num" style="color:var(--text2)">' +
+                  (moKwRate > 0 ? '$' + moKwRate.toFixed(2) : '&mdash;') +
+                  '</td>'
+                : '') +
+              (hasKwCostSav
                 ? '<td class="mono num" style="color:' +
                   savColor(kwCostSav) +
                   ';font-weight:600">' +
@@ -42555,7 +42560,8 @@
           (hasExpKW ? 1 : 0) +
           (hasKwData ? 1 : 0) +
           (hasBilKW ? 1 : 0) +
-          0; // "Baseline kW Cost" and "Act kW × Rate" columns removed
+          (hasKwCostSav ? 1 : 0) + // Actual $/kW
+          0;
         const perfSumRow =
           '<tr style="border-top:2px solid var(--border2);background:var(--s2);font-weight:700">' +
           '<td class="lbl" colspan="6" style="text-align:right;font-weight:800;text-transform:uppercase;font-size:10px;letter-spacing:.5px">Total</td>' +
@@ -42582,6 +42588,7 @@
           (hasExpKW ? '<td class="mono num"></td>' : '') +
           (hasKwData ? '<td class="mono num"></td>' : '') +
           (hasBilKW ? '<td class="mono num"></td>' : '') +
+          (hasKwCostSav ? '<td class="mono num"></td>' : '') +
           (hasKwCostSav
             ? '<td class="mono num" style="color:' +
               _sumSavColor(_sumKwSav) +
@@ -42624,6 +42631,7 @@
         // "Baseline kW Cost" and "Act kW × Rate" columns removed — redundant with kW Savings ($)
         const expKwCostHdr = '';
         const kwCostHdr = '';
+        const kwRateHdr = hasKwCostSav ? '<th class="num">Actual $/kW</th>' : '';
         const kwCostSavHdr = hasKwCostSav ? '<th class="num">kW Savings ($)</th>' : '';
         const kwhRateHdr = hasKwhCostSav ? '<th class="num">Actual $/kWh</th>' : '';
         // "Expected kWh Cost" and "Act kWh × Rate" columns removed — redundant with kWh Savings ($)
@@ -42706,6 +42714,7 @@
               expKWHdr +
               demKWHdr +
               bilKWHdr +
+              kwRateHdr +
               expKwCostHdr +
               kwCostHdr +
               kwCostSavHdr +
