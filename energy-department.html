@@ -1661,6 +1661,19 @@
         text-align: right;
         font-variant-numeric: tabular-nums;
       }
+      .rpt-table-compact {
+        table-layout: fixed;
+      }
+      .rpt-table-compact th {
+        font-size: 6px;
+        padding: 2px 2px;
+        white-space: normal;
+        word-break: break-word;
+      }
+      .rpt-table-compact td {
+        font-size: 6.5px;
+        padding: 2px 2px;
+      }
       .rpt-g {
         color: #1e8449;
         font-weight: 600;
@@ -47759,12 +47772,14 @@
               );
             }
           });
-          // Split into pages of 3 buildings each
-          for (var _mpI = 0; _mpI < _mpBlocks.length; _mpI += 3) {
-            var _mpChunk = _mpBlocks.slice(_mpI, _mpI + 3).join('');
+          // One building per page to prevent table overflow
+          for (var _mpI = 0; _mpI < _mpBlocks.length; _mpI++) {
             var _mpTitle = _mpI === 0 ? 'Meter Performance — All Buildings' : 'Meter Performance (continued)';
             pages.push(
-              rptPage(pageNum++, _mpTitle, _mpChunk, { data: data, label: 'Page ' + pageNum + ' — Meter Performance' }),
+              rptPage(pageNum++, _mpTitle, _mpBlocks[_mpI], {
+                data: data,
+                label: 'Page ' + pageNum + ' — Meter Performance',
+              }),
             );
           }
         }
@@ -51172,6 +51187,7 @@
           var _rptProj = getUDProj(d.project.id);
           var _rptIncl = (_rptProj && _rptProj.inclMonths) || {};
           _rptBldg.meters.forEach(function (meter) {
+            if (!isCalcCommodity(d.project.id, meter.commodity)) return;
             if (!meter.baseline || !meter.baseline.months || meter.baseline.months.length < 3) return;
             var mBills = (meter.bills || []).slice().sort(function (a, c) {
               return (a.start || '').localeCompare(c.start || '');
