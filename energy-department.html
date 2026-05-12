@@ -60600,22 +60600,24 @@
             // treating every bill as baseline so graphics still render against stored data.
             const blSet = Array.isArray(bl.months) && bl.months.length ? new Set(bl.months) : null;
 
-            (m.bills || []).forEach((bill) => {
-              // Prefer bill.end/start ISO dates so month + year are consistent with baseline YMs
-              const ymSrc = bill.end || bill.start || '';
+            const _mIncl = m.inclusive !== false;
+            const _mBills = m.bills || [];
+            _mBills.forEach((bill) => {
+              // Use normMonth for consistent month assignment across all views
+              let ym = normMonth(bill.start, bill.end, _mIncl, _mBills);
               let yr = null,
-                mi = -1,
-                ym = null;
-              if (ymSrc && /^\d{4}-\d{2}/.test(ymSrc)) {
-                yr = parseInt(ymSrc.slice(0, 4));
-                mi = parseInt(ymSrc.slice(5, 7)) - 1;
-                ym = ymSrc.slice(0, 7);
+                mi = -1;
+              if (ym && /^\d{4}-\d{2}/.test(ym)) {
+                yr = parseInt(ym.slice(0, 4));
+                mi = parseInt(ym.slice(5, 7)) - 1;
               } else {
-                if (bill.normMonth) mi = moNames.indexOf(bill.normMonth.toLowerCase().slice(0, 3));
-                else if (bill.month) mi = moNames.indexOf(bill.month.toLowerCase().slice(0, 3));
-                if (bill.end) yr = new Date(bill.end).getFullYear();
-                else if (bill.start) yr = new Date(bill.start).getFullYear();
-                if (yr && mi >= 0) ym = yr + '-' + String(mi + 1).padStart(2, '0');
+                // Fallback for bills without valid dates
+                const ymSrc = bill.end || bill.start || '';
+                if (ymSrc && /^\d{4}-\d{2}/.test(ymSrc)) {
+                  yr = parseInt(ymSrc.slice(0, 4));
+                  mi = parseInt(ymSrc.slice(5, 7)) - 1;
+                  ym = ymSrc.slice(0, 7);
+                }
               }
               if (mi < 0) return;
 
