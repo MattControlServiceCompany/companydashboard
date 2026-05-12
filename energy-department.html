@@ -14548,7 +14548,7 @@
         const useTherms = blTherms > 0 ? blTherms : totalTherms;
         const usePropane = blPropane > 0 ? blPropane : totalPropane;
         const label = blCost > 0 ? 'Baseline' : 'Total Cost';
-        const kBtu = useKwh * 3.412 + useTherms * 100 + usePropane * 91.5;
+        const kBtu = computeKBtu(useKwh, useTherms, usePropane);
         const _blMonthCount = _blMonthSet.size || 12;
         const eui = sqft > 0 && kBtu > 0 ? (((kBtu / _blMonthCount) * 12) / sqft).toFixed(1) : '—';
         const blEl = document.getElementById('phc-baseline-' + projId);
@@ -14836,15 +14836,15 @@
           const sav = bldgSav;
           totalDirectSav += sav;
           const savPct = useCost > 0 ? (sav / useCost) * 100 : 0;
-          // EUI: kBtu/sf/yr — annualized (1 kWh = 3.412 kBtu, 1 therm = 100 kBtu, 1 gal propane = 91.5 kBtu)
-          const blKBtu = useKwh * 3.412 + useTherms * 100 + usePropane * 91.5;
-          const curKBtu = curKwh * 3.412 + curTherms * 100 + curPropane * 91.5;
+          // EUI: kBtu/sf/yr — annualized (see computations/eui.js for KBTU_FACTORS)
+          const blKBtu = computeKBtu(useKwh, useTherms, usePropane);
+          const curKBtu = computeKBtu(curKwh, curTherms, curPropane);
           const _bldgBlMonths = new Set();
           meters.forEach((m) => {
             if (m.baseline && m.baseline.months) m.baseline.months.forEach((ym) => _bldgBlMonths.add(ym));
           });
           const _bldgBlMoCt = _bldgBlMonths.size || 12;
-          const blEUI = sqft > 0 && blKBtu > 0 ? ((blKBtu / _bldgBlMoCt) * 12) / sqft : 0;
+          const blEUI = computeBaselineEUI(blKBtu, _bldgBlMoCt, sqft);
           const _curMoSet = new Set();
           meters.forEach((m) => {
             const incl2 = m.inclusive !== false;
@@ -14855,7 +14855,7 @@
             });
           });
           const _curMoCt = _curMoSet.size || 12;
-          const curEUI = sqft > 0 && curKBtu > 0 ? ((curKBtu / _curMoCt) * 12) / sqft : 0;
+          const curEUI = computePeriodEUI(curKBtu, _curMoCt, sqft);
           let status = 'No Data',
             statusColor = 'var(--text3)';
           if (useCost > 0 && curCost > 0) {
