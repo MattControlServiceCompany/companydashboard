@@ -69,6 +69,83 @@ function getStoredRate(bill, type) {
   }
 }
 
+// Populate missing derived rate fields on a bill from its usage + cost data.
+// Returns true if any field was added/updated, false if bill was already complete.
+function ensureBillRates(bill) {
+  var changed = false;
+  var pf = function (v) {
+    return parseFloat(v) || 0;
+  };
+
+  // Electric: totalKwhRate
+  if (!pf(bill.totalKwhRate)) {
+    var kwh = pf(bill.kWhConsumed) || pf(bill.totalKwh) || pf(bill.kwh);
+    var kwhCost = pf(bill.kwhCost);
+    if (kwh > 0 && kwhCost > 0) {
+      bill.totalKwhRate = (kwhCost / kwh).toFixed(5);
+      changed = true;
+    }
+  }
+
+  // Electric: totalKwRate
+  if (!pf(bill.totalKwRate)) {
+    var kw = pf(bill.BilledKW) || pf(bill.billedKW) || pf(bill.ActualKW) || pf(bill.demandKW) || pf(bill.FacilitiesKW);
+    var kwCost = pf(bill.kwCost);
+    if (kw > 0 && kwCost > 0) {
+      bill.totalKwRate = (kwCost / kw).toFixed(5);
+      changed = true;
+    }
+  }
+
+  // Gas: totalGasRate (use gasCharge/commodity cost, not total bill cost — bug d4c78f06)
+  if (!pf(bill.totalGasRate)) {
+    var therms = pf(bill.NaturalGasTherms) || pf(bill.therms) || pf(bill.NaturalGasCCF);
+    var gasChg = pf(bill.GasCharge) || pf(bill.gasCharge) || pf(bill.thermCost);
+    if (therms > 0 && gasChg > 0) {
+      bill.totalGasRate = (gasChg / therms).toFixed(5);
+      changed = true;
+    }
+  }
+
+  // Propane: totalPropaneRate (prefer unitPrice if available)
+  if (!pf(bill.totalPropaneRate)) {
+    var up = pf(bill.UnitPrice) || pf(bill.unitPrice);
+    if (up > 0) {
+      bill.totalPropaneRate = up.toFixed(5);
+      changed = true;
+    } else {
+      var gal = pf(bill.GallonsDelivered) || pf(bill.gallonsDelivered);
+      var propCost = pf(bill.totalCost) || pf(bill.TotalAmountDue);
+      if (gal > 0 && propCost > 0) {
+        bill.totalPropaneRate = (propCost / gal).toFixed(5);
+        changed = true;
+      }
+    }
+  }
+
+  // Water: totalWaterRate
+  if (!pf(bill.totalWaterRate)) {
+    var wUsage = pf(bill.WaterUsage) || pf(bill.waterUsage);
+    var wChg = pf(bill.WaterCharge) || pf(bill.waterCharge);
+    if (wUsage > 0 && wChg > 0) {
+      bill.totalWaterRate = (wChg / wUsage).toFixed(5);
+      changed = true;
+    }
+  }
+
+  // Sewer: totalSewerRate
+  if (!pf(bill.totalSewerRate)) {
+    var sUsage = pf(bill.SewerUsage) || pf(bill.sewerUsage);
+    var sChg = pf(bill.SewerCharge) || pf(bill.sewerCharge);
+    if (sUsage > 0 && sChg > 0) {
+      bill.totalSewerRate = (sChg / sUsage).toFixed(5);
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 function validateImpliedRate(commodity, usage, charge, utilityName) {
   if (!usage || !charge || usage === 0) return null;
   const implied = Math.abs(charge / usage);
