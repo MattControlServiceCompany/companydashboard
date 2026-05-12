@@ -30646,54 +30646,35 @@
             let _kwhRateCell = '<div></div>',
               _kwRateCell = '<div></div>';
             if (parsed._rates || parsed.kWhConsumed) {
-              const _gc = (k) => _pf(parsed[k]);
-              const kwhCharges =
-                _gc('EnergyOnPeakCharge') +
-                _gc('EnergyOffPeakCharge') +
-                _gc('ECACharge') +
-                _gc('EERCharge') +
-                _gc('PTSCharge');
-              const totalKwh = _pf(parsed.kWhConsumed);
-              const kwhRate = totalKwh > 0 && kwhCharges > 0 ? kwhCharges / totalKwh : 0;
-              const kwCharges = _gc('FacilitiesCharge') + _gc('BilledKWCharge') + _gc('TDCCharge');
-              const totalKw = _pf(parsed.BilledKW) || _pf(parsed.ActualKW) || _pf(parsed.FacilitiesKW);
-              const kwRate = totalKw > 0 && kwCharges > 0 ? kwCharges / totalKw : 0;
+              const kwhRate = getExtractedRate(parsed, 'kwh');
+              const kwRate = getExtractedRate(parsed, 'kw');
               if (kwhRate > 0)
                 _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/kWh</div><input class="ef-input" value="$${kwhRate.toFixed(5)}/kWh" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
               if (kwRate > 0)
                 _kwRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/kW</div><input class="ef-input" value="$${kwRate.toFixed(3)}/kW" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
             }
             if (parsed.Commodity === 'Gas' || _detectCommodity(parsed) === 'gas') {
-              const therms = parseFloat(parsed.NaturalGasTherms) || 0;
-              const gasCharge = parseFloat(parsed.GasCharge) || 0;
-              if (therms > 0 && gasCharge > 0) {
-                const gasRate = gasCharge / therms;
+              const gasRate = getExtractedRate(parsed, 'gas');
+              if (gasRate > 0) {
                 _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/Therm</div><input class="ef-input" value="$${gasRate.toFixed(5)}/Therm" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
               }
             }
             if (parsed.Commodity === 'Water' || _detectCommodity(parsed) === 'water') {
-              const usage = parseFloat(parsed.WaterUsage) || 0;
-              const waterCharge = parseFloat(parsed.WaterCharge) || 0;
-              if (usage > 0 && waterCharge > 0) {
-                const waterRate = waterCharge / usage;
+              const waterRate = getExtractedRate(parsed, 'water');
+              if (waterRate > 0) {
                 _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/Gal</div><input class="ef-input" value="$${waterRate.toFixed(5)}/Gal" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
               }
             }
             if (parsed.Commodity === 'Propane' || _detectCommodity(parsed) === 'propane') {
-              const gallons = parseFloat(parsed.GallonsDelivered) || 0;
-              const unitPrice = parseFloat(parsed.UnitPrice) || 0;
-              const totalCharge = parseFloat(parsed.TotalCurrentCharges) || parseFloat(parsed.TotalAmountDue) || 0;
-              const propaneRate =
-                unitPrice > 0 ? unitPrice : gallons > 0 && totalCharge > 0 ? totalCharge / gallons : 0;
+              const propaneRate = getExtractedRate(parsed, 'propane');
               if (propaneRate > 0) {
                 _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/Gal</div><input class="ef-input" value="$${propaneRate.toFixed(5)}/Gal" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
               }
             }
             if (parsed.Commodity === 'Sewer' || _detectCommodity(parsed) === 'sewer') {
-              const sewerUsage = parseFloat(parsed.SewerUsage) || 0;
+              const sewerRate = getExtractedRate(parsed, 'sewer');
               const sewerCharge = parseFloat(parsed.SewerCharge) || 0;
-              if (sewerUsage > 0 && sewerCharge > 0) {
-                const sewerRate = sewerCharge / sewerUsage;
+              if (sewerRate > 0) {
                 _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/Gal</div><input class="ef-input" value="$${sewerRate.toFixed(5)}/Gal" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
               } else if (sewerCharge > 0) {
                 _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Sewer Charge</div><input class="ef-input" value="$${sewerCharge.toFixed(2)}" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
@@ -56252,10 +56233,8 @@
             const kw = parseFloat(bill.demandKW) || parseFloat(bill.billedKW) || 0;
             actualKwh[mo] = kwh;
             actualKw[mo] = kw;
-            const kwhCost = parseFloat(bill.kwhCost) || 0;
-            const kwCost = parseFloat(bill.kwCost) || 0;
-            avgKwhRate[mo] = kwh > 0 ? kwhCost / kwh : 0;
-            avgKwRate[mo] = kw > 0 ? kwCost / kw : 0;
+            avgKwhRate[mo] = getStoredRate(bill, 'kwh');
+            avgKwRate[mo] = getStoredRate(bill, 'kw');
           });
         }
         if (gasM) {
@@ -56268,9 +56247,8 @@
             if (!ym) return;
             const mo = parseInt(ym.split('-')[1]) - 1;
             const therms = parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
-            const gCost = parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0;
             actualTherms[mo] = therms;
-            avgThermRate[mo] = therms > 0 ? gCost / therms : 0;
+            avgThermRate[mo] = getStoredRate(bill, 'gas');
           });
         }
 
