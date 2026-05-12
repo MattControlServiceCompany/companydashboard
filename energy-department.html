@@ -34784,7 +34784,7 @@
           const annTotal = annElecCost + annGasCost + annPropCost;
           const kwhRate = annKwh > 0 ? annElecCost / annKwh : 0;
           const thermRate = annTherms > 0 ? annGasCost / annTherms : 0;
-          const annKbtu = annKwh * 3.412 + annTherms * 100 + annPropGal * 91.5;
+          const annKbtu = toKBtu(annKwh, annTherms, annPropGal);
           const eui = totalSqft > 0 ? annKbtu / totalSqft : 0;
           const tdS = (color = 'var(--text)') =>
             `padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${color};border:1px solid var(--border);white-space:nowrap`;
@@ -37765,7 +37765,7 @@
           const avgEuiPerMo = hasEUI ? avgMonthly / sqft : null;
           const last12 = rows.slice(-12);
           const rolling12kWh = last12.reduce((s, r) => s + r.usage, 0);
-          const rolling12EUI = hasEUI && last12.length === 12 ? (rolling12kWh * 3.412) / sqft : null;
+          const rolling12EUI = hasEUI && last12.length === 12 ? toKBtu(rolling12kWh, 0, 0) / sqft : null;
           // Avg regression baseline
           const rRows = rows.filter((r) => r.regrBaseline != null);
           const avgRegrBl = rRows.length ? rRows.reduce((s, r) => s + r.regrBaseline, 0) / rRows.length : null;
@@ -38774,7 +38774,7 @@
           const cost = blRows.reduce((s, r) => s + r.cost, 0);
           const hddBlRows = blRows.filter((r) => r.hdd != null && r.hdd > 0);
           const avgHDD = hddBlRows.length ? hddBlRows.reduce((s, r) => s + r.hdd, 0) / hddBlRows.length : null;
-          const blEUI = hasEUI_bl ? (total / blRows.length / sqftBl) * 3.412 * 12 : null;
+          const blEUI = hasEUI_bl ? (toKBtu(total / blRows.length, 0, 0) * 12) / sqftBl : null;
           const regrBlRows = blRows.filter((r) => r.regrBaseline != null);
           const avgRegrBl = regrBlRows.length
             ? regrBlRows.reduce((s, r) => s + r.regrBaseline, 0) / regrBlRows.length
@@ -39272,7 +39272,7 @@
           const cost = blRows.reduce((s, r) => s + r.cost, 0);
           const hddBlR = blRows.filter((r) => r.hdd != null && r.hdd > 0);
           const avgHDD = hddBlR.length ? hddBlR.reduce((s, r) => s + r.hdd, 0) / hddBlR.length : null;
-          const blEUI = hasEUI_r ? (total / blRows.length / sqftR) * 3.412 * 12 : null;
+          const blEUI = hasEUI_r ? (toKBtu(total / blRows.length, 0, 0) * 12) / sqftR : null;
           const regrBlR = blRows.filter((r) => r.regrBaseline != null);
           const avgRegrBl = regrBlR.length ? regrBlR.reduce((s, r) => s + r.regrBaseline, 0) / regrBlR.length : null;
 
@@ -39876,7 +39876,7 @@
         const avgWattsPerSf = sqft > 0 && totE.avgDemandKW > 0 ? (totE.avgDemandKW * 1000) / sqft : null;
         const elecDolPerSf = sqft > 0 && totE.energyCost > 0 ? totE.energyCost / sqft : null;
         const thermPerSf = sqft > 0 && totG.therms > 0 ? totG.therms / sqft : null;
-        const totalKbtuPerSf = sqft > 0 ? (totE.kwh * 3.412 + totG.therms * 100 + totP.gallons * 91.5) / sqft : null;
+        const totalKbtuPerSf = sqft > 0 ? toKBtu(totE.kwh, totG.therms, totP.gallons) / sqft : null;
         const utilityCostPerYear = totUtility;
 
         // Seasonal rates
@@ -40476,7 +40476,7 @@
         const avgWattsPerSf = isElec && sqft > 0 && totE.avgDemandKW > 0 ? (totE.avgDemandKW * 1000) / sqft : null;
         const elecDolPerSf = isElec && sqft > 0 ? totE.energyCost / sqft : null;
         const thermPerSf = isGas && sqft > 0 && totG.therms > 0 ? totG.therms / sqft : null;
-        const kbtuPerSf = sqft > 0 ? (totE.kwh * 3.412 + totG.therms * 100 + totP.gallons * 91.5) / sqft : null;
+        const kbtuPerSf = sqft > 0 ? toKBtu(totE.kwh, totG.therms, totP.gallons) / sqft : null;
         const hoursOperated = parseInt(bldg?.hoursOperated) || null;
 
         // Seasonal rates — electric only
@@ -42112,8 +42112,8 @@
           (s, r) => s + (rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage),
           0,
         );
-        const rolling12EUI = hasEUI_p && last12post.length === 12 ? (rolling12kWh * 3.412) / sqft5 : null;
-        const blEUI = hasEUI_p && blRows.length ? (blAvgMo * 12 * 3.412) / sqft5 : null;
+        const rolling12EUI = hasEUI_p && last12post.length === 12 ? toKBtu(rolling12kWh, 0, 0) / sqft5 : null;
+        const blEUI = hasEUI_p && blRows.length ? (toKBtu(blAvgMo, 0, 0) * 12) / sqft5 : null;
 
         // Avg regression baseline for baseline period (for display)
         const blRegrRows = blRows.filter((r) => r.regrBaseline != null);
@@ -47156,39 +47156,45 @@
             const blBills = _dashGetBaselineBills(m);
             if (m.commodity === 'Gas') {
               blBills.forEach((bill) => {
-                annBlKBtu += (parseFloat(bill.therms) || 0) * 100;
+                annBlKBtu += toKBtu(0, parseFloat(bill.therms) || 0, 0);
               });
               const last12 = bills.filter((bill) => {
                 const ym = normMonth(bill.start, bill.end, incl, bills);
                 return ym && allPostYMs.includes(ym) && allPostYMs.indexOf(ym) >= allPostYMs.length - 12;
               });
               last12.forEach((bill) => {
-                annCurKBtu += (parseFloat(bill.therms) || 0) * 100;
+                annCurKBtu += toKBtu(0, parseFloat(bill.therms) || 0, 0);
               });
             } else if (m.commodity === 'Propane') {
               blBills.forEach((bill) => {
-                annBlKBtu +=
-                  (parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 91.5;
+                annBlKBtu += toKBtu(
+                  0,
+                  0,
+                  parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0,
+                );
               });
               const last12 = bills.filter((bill) => {
                 const ym = normMonth(bill.start, bill.end, incl, bills);
                 return ym && allPostYMs.includes(ym) && allPostYMs.indexOf(ym) >= allPostYMs.length - 12;
               });
               last12.forEach((bill) => {
-                annCurKBtu +=
-                  (parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 91.5;
+                annCurKBtu += toKBtu(
+                  0,
+                  0,
+                  parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0,
+                );
               });
             } else {
               // Electric
               blBills.forEach((bill) => {
-                annBlKBtu += (parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 3.412;
+                annBlKBtu += toKBtu(parseFloat(bill.kwh) || parseFloat(bill.usage) || 0, 0, 0);
               });
               const last12 = bills.filter((bill) => {
                 const ym = normMonth(bill.start, bill.end, incl, bills);
                 return ym && allPostYMs.includes(ym) && allPostYMs.indexOf(ym) >= allPostYMs.length - 12;
               });
               last12.forEach((bill) => {
-                annCurKBtu += (parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 3.412;
+                annCurKBtu += toKBtu(parseFloat(bill.kwh) || parseFloat(bill.usage) || 0, 0, 0);
               });
             }
           });
@@ -47245,11 +47251,14 @@
               if (reportCalMonths.includes(calMo)) {
                 const kbtu =
                   mt.commodity === 'Gas'
-                    ? (parseFloat(bill.therms) || 0) * 100
+                    ? toKBtu(0, parseFloat(bill.therms) || 0, 0)
                     : mt.commodity === 'Propane'
-                      ? (parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) *
-                        91.5
-                      : (parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 3.412;
+                      ? toKBtu(
+                          0,
+                          0,
+                          parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0,
+                        )
+                      : toKBtu(parseFloat(bill.kwh) || parseFloat(bill.usage) || 0, 0, 0);
                 periodBlKBtu += kbtu;
                 periodBlMoCt++;
               }
@@ -47265,11 +47274,14 @@
                 curMoSet.add(ym);
                 const kbtu =
                   mt.commodity === 'Gas'
-                    ? (parseFloat(bill.therms) || 0) * 100
+                    ? toKBtu(0, parseFloat(bill.therms) || 0, 0)
                     : mt.commodity === 'Propane'
-                      ? (parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) *
-                        91.5
-                      : (parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 3.412;
+                      ? toKBtu(
+                          0,
+                          0,
+                          parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0,
+                        )
+                      : toKBtu(parseFloat(bill.kwh) || parseFloat(bill.usage) || 0, 0, 0);
                 periodCurKBtu += kbtu;
                 periodCurMoCt++;
               });
@@ -48940,15 +48952,15 @@
                 _yoyByYear[yr].kwh += mo.cur || 0;
                 _yoyByYear[yr].kw += mo.kwCur || 0;
                 _yoyByYear[yr].cost += mo.curCost || 0;
-                _yoyByYear[yr].kbtu += (mo.cur || 0) * 3.412;
+                _yoyByYear[yr].kbtu += toKBtu(mo.cur || 0, 0, 0);
               } else if (com === 'gas') {
                 _yoyByYear[yr].therms += mo.cur || 0;
                 _yoyByYear[yr].cost += mo.curCost || 0;
-                _yoyByYear[yr].kbtu += (mo.cur || 0) * 100;
+                _yoyByYear[yr].kbtu += toKBtu(0, mo.cur || 0, 0);
               } else {
                 _yoyByYear[yr].gal += mo.cur || 0;
                 _yoyByYear[yr].cost += mo.curCost || 0;
-                _yoyByYear[yr].kbtu += (mo.cur || 0) * 91.5;
+                _yoyByYear[yr].kbtu += toKBtu(0, 0, mo.cur || 0);
               }
             });
           });
@@ -50597,9 +50609,8 @@
           var _gaFull = buildFullYear(b.gas && b.gas.monthly, _bm.gasByMo, 'therms');
           var _prFull = buildFullYear(b.propane && b.propane.monthly, _bm.propaneByMo, 'gallons');
           for (var _ei = 0; _ei < 12; _ei++) {
-            var _blKBtu = (_elFull[_ei].bl || 0) * 3.412 + (_gaFull[_ei].bl || 0) * 100 + (_prFull[_ei].bl || 0) * 91.5;
-            var _curKBtu =
-              (_elFull[_ei].cur || 0) * 3.412 + (_gaFull[_ei].cur || 0) * 100 + (_prFull[_ei].cur || 0) * 91.5;
+            var _blKBtu = toKBtu(_elFull[_ei].bl || 0, _gaFull[_ei].bl || 0, _prFull[_ei].bl || 0);
+            var _curKBtu = toKBtu(_elFull[_ei].cur || 0, _gaFull[_ei].cur || 0, _prFull[_ei].cur || 0);
             euiMonthly.push({ month: _elFull[_ei].month, bl: _blKBtu / b.sqft, cur: _curKBtu / b.sqft });
           }
           if (euiMonthly.length > 1) {
@@ -51146,7 +51157,7 @@
                 (_tGasCost / _tTherms).toFixed(4) +
                 '</div></div>',
             );
-          var _totalKbtu = _tKwh * 3.412 + _tTherms * 100 + _tGal * 91.5;
+          var _totalKbtu = toKBtu(_tKwh, _tTherms, _tGal);
           if (b.sqft > 0 && _totalKbtu > 0)
             _statItems.push(
               '<div style="text-align:center"><div style="font-size:7px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.4px">kBtu / sf</div><div style="font-size:10px;font-weight:700;color:#c39bff">' +
@@ -53757,14 +53768,14 @@
             const blBills = _dashGetBaselineBills(m);
             if (m.commodity === 'Gas') {
               blBills.forEach((bill) => {
-                annBlKBtu += (parseFloat(bill.therms) || 0) * 100;
+                annBlKBtu += toKBtu(0, parseFloat(bill.therms) || 0, 0);
               });
               const last12 = bills.filter((bill) => {
                 const ym = normMonth(bill.start, bill.end, incl, bills);
                 return ym && allPostYMs.includes(ym) && allPostYMs.indexOf(ym) >= allPostYMs.length - 12;
               });
               last12.forEach((bill) => {
-                annCurKBtu += (parseFloat(bill.therms) || 0) * 100;
+                annCurKBtu += toKBtu(0, parseFloat(bill.therms) || 0, 0);
               });
               bills.forEach((bill) => {
                 const ym = normMonth(bill.start, bill.end, incl, bills);
@@ -53777,16 +53788,22 @@
               });
             } else if (m.commodity === 'Propane') {
               blBills.forEach((bill) => {
-                annBlKBtu +=
-                  (parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 91.5;
+                annBlKBtu += toKBtu(
+                  0,
+                  0,
+                  parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0,
+                );
               });
               const last12 = bills.filter((bill) => {
                 const ym = normMonth(bill.start, bill.end, incl, bills);
                 return ym && allPostYMs.includes(ym) && allPostYMs.indexOf(ym) >= allPostYMs.length - 12;
               });
               last12.forEach((bill) => {
-                annCurKBtu +=
-                  (parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 91.5;
+                annCurKBtu += toKBtu(
+                  0,
+                  0,
+                  parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0,
+                );
               });
               bills.forEach((bill) => {
                 const ym = normMonth(bill.start, bill.end, incl, bills);
@@ -53800,14 +53817,14 @@
               });
             } else {
               blBills.forEach((bill) => {
-                annBlKBtu += (parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 3.412;
+                annBlKBtu += toKBtu(parseFloat(bill.kwh) || parseFloat(bill.usage) || 0, 0, 0);
               });
               const last12 = bills.filter((bill) => {
                 const ym = normMonth(bill.start, bill.end, incl, bills);
                 return ym && allPostYMs.includes(ym) && allPostYMs.indexOf(ym) >= allPostYMs.length - 12;
               });
               last12.forEach((bill) => {
-                annCurKBtu += (parseFloat(bill.kwh) || parseFloat(bill.usage) || 0) * 3.412;
+                annCurKBtu += toKBtu(parseFloat(bill.kwh) || parseFloat(bill.usage) || 0, 0, 0);
               });
               bills.forEach((bill) => {
                 const ym = normMonth(bill.start, bill.end, incl, bills);
@@ -53926,7 +53943,7 @@
           Object.entries(yearUsage).forEach(([yr, u]) => {
             const moCount = yearMonthCount[yr] ? yearMonthCount[yr].size : 0;
             if (moCount < 10) return;
-            const kbtu = (u.kwh || 0) * 3.412 + (u.therms || 0) * 100 + (u.propaneGal || 0) * 91.5;
+            const kbtu = toKBtu(u.kwh || 0, u.therms || 0, u.propaneGal || 0);
             if (sqft > 0 && kbtu > 0) euiByYear[yr] = kbtu / sqft;
           });
 
@@ -56069,7 +56086,7 @@
                     '</strong></span>'
                   : '') +
                 '<span>kBtu/sf: <strong style="color:var(--em)">' +
-                ((totKwh * 3.412 + totTherms * 100 + totPropGal * 91.5) / sqft).toFixed(1) +
+                (toKBtu(totKwh, totTherms, totPropGal) / sqft).toFixed(1) +
                 '</strong></span>' +
                 '<span>$/sf: <strong style="color:var(--green)">' +
                 (totElecCost + totGasCost + totPropCost > 0
@@ -60758,7 +60775,7 @@
         const totalBlKwh = blKwhAvg.reduce((a, b) => a + b, 0);
         const totalBlGas = blGasAvg.reduce((a, b) => a + b, 0);
         const totalBlPropane = blPropaneAvg.reduce((a, b) => a + b, 0);
-        const blKbtu = totalBlKwh * 3.412 + totalBlGas * 100 + totalBlPropane * 91.5;
+        const blKbtu = toKBtu(totalBlKwh, totalBlGas, totalBlPropane);
         const blEui = sqft > 0 ? blKbtu / sqft : 0;
         const cbecsEui = CBECS_EUI[p.type] || 48.5;
 
@@ -60766,7 +60783,7 @@
         const latestYear = sortedYears.length > 0 ? sortedYears[sortedYears.length - 1] : null;
 
         // Build baseline kBtu per calendar month for completeness checks
-        const blKbtuPerMo = blKwhAvg.map((v, mi) => v * 3.412 + blGasAvg[mi] * 100 + blPropaneAvg[mi] * 91.5);
+        const blKbtuPerMo = blKwhAvg.map((v, mi) => toKBtu(v, blGasAvg[mi], blPropaneAvg[mi]));
 
         // Build a flat list of year-months with complete data, sorted chronologically.
         // A month is "complete" if its kBtu is at least 25% of the baseline average
@@ -60776,7 +60793,7 @@
           const yd = yearData[y];
           for (let mi = 0; mi < 12; mi++) {
             if (yd.kwh[mi] > 0 || yd.gas[mi] > 0 || yd.propane[mi] > 0) {
-              const moKbtu = yd.kwh[mi] * 3.412 + yd.gas[mi] * 100 + yd.propane[mi] * 91.5;
+              const moKbtu = toKBtu(yd.kwh[mi], yd.gas[mi], yd.propane[mi]);
               const blRef = blKbtuPerMo[mi];
               if (blRef > 0 && moKbtu < blRef * 0.25) continue;
               allYms.push({ y, mi, kwh: yd.kwh[mi], gas: yd.gas[mi], propane: yd.propane[mi], cost: yd.cost[mi] });
@@ -60790,7 +60807,7 @@
         let r12Kbtu = 0,
           r12Cost = 0;
         r12.forEach((m) => {
-          r12Kbtu += m.kwh * 3.412 + m.gas * 100 + (m.propane || 0) * 91.5;
+          r12Kbtu += toKBtu(m.kwh, m.gas, m.propane || 0);
           r12Cost += m.cost;
         });
         const r12Eui = sqft > 0 && r12.length > 0 ? ((r12Kbtu / r12.length) * 12) / sqft : 0;
@@ -60814,14 +60831,14 @@
             const ms = qMonthRanges[qi];
             const hasAll = ms.every((mi) => {
               if (yd.kwh[mi] <= 0 && yd.gas[mi] <= 0 && yd.propane[mi] <= 0) return false;
-              const moKbtu = yd.kwh[mi] * 3.412 + yd.gas[mi] * 100 + yd.propane[mi] * 91.5;
+              const moKbtu = toKBtu(yd.kwh[mi], yd.gas[mi], yd.propane[mi]);
               return blKbtuPerMo[mi] <= 0 || moKbtu >= blKbtuPerMo[mi] * 0.25;
             });
             if (hasAll) {
               let qKbtu = 0,
                 qBlKbtu = 0;
               ms.forEach((mi) => {
-                qKbtu += yd.kwh[mi] * 3.412 + yd.gas[mi] * 100 + yd.propane[mi] * 91.5;
+                qKbtu += toKBtu(yd.kwh[mi], yd.gas[mi], yd.propane[mi]);
                 qBlKbtu += blKbtuPerMo[mi];
               });
               qEui = sqft > 0 ? ((qKbtu / 3) * 12) / sqft : 0;
@@ -60838,7 +60855,7 @@
           moBlEui = 0,
           moLabel = '';
         if (latestMo) {
-          const moKbtu = latestMo.kwh * 3.412 + latestMo.gas * 100 + (latestMo.propane || 0) * 91.5;
+          const moKbtu = toKBtu(latestMo.kwh, latestMo.gas, latestMo.propane || 0);
           moEui = sqft > 0 ? (moKbtu * 12) / sqft : 0;
           moBlEui = sqft > 0 && blKbtuPerMo[latestMo.mi] > 0 ? (blKbtuPerMo[latestMo.mi] * 12) / sqft : 0;
           const moNamesFull = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -61186,7 +61203,7 @@
             if (!bd) continue;
             for (let mi = 0; mi < 12; mi++) {
               if (bd.kwh[mi] > 0 || bd.gas[mi] > 0 || bd.propane[mi] > 0) {
-                bBlKbtu[mi] += bd.kwh[mi] * 3.412 + bd.gas[mi] * 100 + bd.propane[mi] * 91.5;
+                bBlKbtu[mi] += toKBtu(bd.kwh[mi], bd.gas[mi], bd.propane[mi]);
                 bBlCount[mi]++;
               }
             }
@@ -61198,7 +61215,7 @@
             if (!bd) continue;
             for (let mi = 0; mi < 12; mi++) {
               if (bd.kwh[mi] > 0 || bd.gas[mi] > 0 || bd.propane[mi] > 0) {
-                const moKbtu = bd.kwh[mi] * 3.412 + bd.gas[mi] * 100 + bd.propane[mi] * 91.5;
+                const moKbtu = toKBtu(bd.kwh[mi], bd.gas[mi], bd.propane[mi]);
                 if (bBlAvg[mi] > 0 && moKbtu < bBlAvg[mi] * 0.25) continue;
                 bYms.push({ kwh: bd.kwh[mi], gas: bd.gas[mi], propane: bd.propane[mi], cost: bd.cost[mi] });
               }
@@ -61209,7 +61226,7 @@
           let kbtu = 0,
             cost = 0;
           last12.forEach((m) => {
-            kbtu += m.kwh * 3.412 + m.gas * 100 + (m.propane || 0) * 91.5;
+            kbtu += toKBtu(m.kwh, m.gas, m.propane || 0);
             cost += m.cost;
           });
           _bldgR12[b.name] = {
@@ -61392,7 +61409,7 @@
                       let moCount = 0;
                       for (let mi = 0; mi < 12; mi++) {
                         if (yd.kwh[mi] > 0 || yd.gas[mi] > 0 || yd.propane[mi] > 0) {
-                          const mk = yd.kwh[mi] * 3.412 + yd.gas[mi] * 100 + yd.propane[mi] * 91.5;
+                          const mk = toKBtu(yd.kwh[mi], yd.gas[mi], yd.propane[mi]);
                           if (blKbtuPerMo[mi] <= 0 || mk >= blKbtuPerMo[mi] * 0.25) moCount++;
                         }
                       }
@@ -61401,7 +61418,7 @@
                       const ykwh = ykwhRaw * annF;
                       const ygas = ygasRaw * annF;
                       const ypropane = ypropaneRaw * annF;
-                      const ykbtu = ykwh * 3.412 + ygas * 100 + ypropane * 91.5;
+                      const ykbtu = toKBtu(ykwh, ygas, ypropane);
                       const yeui = sqft > 0 && moCount > 0 ? ykbtu / sqft : 0;
                       const diff = blEui > 0 ? ((yeui - blEui) / blEui) * 100 : 0;
                       const isBl = blYears.has(y);
@@ -61459,7 +61476,7 @@
                             const bgas = bgasRaw * bAnnF;
                             const bpropane = bpropaneRaw * bAnnF;
                             const bcost = bcostRaw * bAnnF;
-                            const bkbtu = bkwh * 3.412 + bgas * 100 + bpropane * 91.5;
+                            const bkbtu = toKBtu(bkwh, bgas, bpropane);
                             const beui = bSqft > 0 && moCount > 0 ? bkbtu / bSqft : 0;
                             return { y, bkwh, bkw, bgas, bpropane, bcost, beui, moCount, bPartial };
                           })
@@ -61652,7 +61669,7 @@
                   const bgas = bd.gas.reduce((a, v) => a + v, 0);
                   const bprop = bd.propane ? bd.propane.reduce((a, v) => a + v, 0) : 0;
                   if (bkwh > 0 || bgas > 0 || bprop > 0) {
-                    totalBlKbtu += bkwh * 3.412 + bgas * 100 + bprop * 91.5;
+                    totalBlKbtu += toKBtu(bkwh, bgas, bprop);
                     for (let mi = 0; mi < 12; mi++) {
                       if (bd.kwh[mi] > 0 || bd.gas[mi] > 0 || (bd.propane && bd.propane[mi] > 0)) totalBlMoCount++;
                     }
@@ -61822,7 +61839,7 @@
                   qActPropane += yd.propane[mi];
                   qActCost += yd.cost[mi];
                   if (yd.kwh[mi] > 0 || yd.gas[mi] > 0 || yd.propane[mi] > 0) {
-                    const actKbtu = yd.kwh[mi] * 3.412 + yd.gas[mi] * 100 + yd.propane[mi] * 91.5;
+                    const actKbtu = toKBtu(yd.kwh[mi], yd.gas[mi], yd.propane[mi]);
                     const blRef = blKbtuPerMo[mi];
                     if (blRef > 0 && actKbtu < blRef * 0.25) continue;
                     hasActualData = true;
@@ -61910,7 +61927,7 @@
               totKbtu = 0,
               totCost = 0;
             for (let mi = 0; mi < 12; mi++) {
-              const mkbtu = blKwhAvg[mi] * 3.412 + blGasAvg[mi] * 100 + blPropaneAvg[mi] * 91.5;
+              const mkbtu = toKBtu(blKwhAvg[mi], blGasAvg[mi], blPropaneAvg[mi]);
               const mcost = blCostAvg2[mi];
               const mkw = blKw[mi];
               totKwh += blKwhAvg[mi];
