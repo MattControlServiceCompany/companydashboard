@@ -7778,38 +7778,21 @@ function renderPerfPane(pane, m, bills, incl) {
   const hasTotalCostSav = hasKwhCostSav || hasKwCostSav;
   const hasGasCostSav = !isElec && Object.keys(gasCostByYm).length > 0;
 
-  // ── Pre-compute per-row savings so Cost Delta pill = sum of Total Savings column ──
-  // This loop uses the EXACT same formulas as the table rows below.
-  const _perfRowSavings = filteredPostRows.map((r) => {
-    const calMo = parseInt(r.ym.split('-')[1]) - 1;
-    const expMo =
-      hasBlCalMap && blByCalMo[calMo] != null
-        ? blByCalMo[calMo]
-        : hasRegr_p && r.regrBaseline != null
-          ? r.regrBaseline
-          : blAvgMo;
-    const rawUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
-    const kwhSaved = expMo - rawUsage; // always total, not per-day
-    const dem = isElec ? perfDemByYm[r.ym] || {} : null;
-    const demKW = dem ? dem.demKW || 0 : 0;
-    const bilKW = dem ? dem.bilKW || 0 : 0;
-    const kwCostRow = dem ? (dem.kwCost || 0) + (dem.facKWCost || 0) : 0;
-    const kwhRate = dem ? dem.kwhRate || 0 : 0;
-    const kwhCostSav = hasKwhCostSav && kwhRate > 0 ? kwhSaved * kwhRate : 0;
-    const blExpKW = _kwReg && _kwNormByYm[r.ym] != null ? _kwNormByYm[r.ym] : blDemKWByCalMo[calMo] || 0;
-    const moKwRate = hasKwCostSav && demKW > 0 ? kwCostRow / demKW : 0;
-    const kwSaved = blExpKW - bilKW;
-    const kwCostSav = hasKwCostSav && moKwRate > 0 ? kwSaved * moKwRate : 0;
-    const totalCostSav = kwhCostSav + kwCostSav;
-    const gasMo = gasCostByYm[r.ym] || null;
-    const thermRate = gasMo ? gasMo.thermRate || 0 : 0;
-    const rawThermUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
-    const thermSaved = expMo - rawThermUsage;
-    const thermCostSav = hasGasCostSav && thermRate > 0 ? thermSaved * thermRate : 0;
-    const _costOvr = m.baseline?.costSavOverrides?.[r.ym];
-    const rowSav = _costOvr != null ? _costOvr : isElec ? totalCostSav : thermCostSav;
-    return { ym: r.ym, savings: rowSav, kwhSaved, kwhCostSav, kwCostSav, thermCostSav };
+  // Use shared renderer for table and per-row savings (single source of truth)
+  const _perfResult = buildMeterPerfTableHTML(m, bills, incl, {
+    mode: 'tab',
+    projId: udSelProjId,
+    bldgId: udSelBldgId,
+    filterYMs: filteredPostRows.map((r) => r.ym),
   });
+  const _perfRowSavings = (_perfResult.rows || []).map((r) => ({
+    ym: r.ym,
+    savings: r.savings,
+    kwhSaved: r.sav,
+    kwhCostSav: r.kwhCostSav || 0,
+    kwCostSav: r.kwCostSav || 0,
+    thermCostSav: r.thermCostSav || 0,
+  }));
 
   // Cost Delta = exact sum of the Total Savings ($) column values
   const savCost = _perfRowSavings.length ? _perfRowSavings.reduce((s, d) => s + d.savings, 0) : null;
@@ -7876,273 +7859,7 @@ function renderPerfPane(pane, m, bills, incl) {
     (rolling12EUI != null ? blPill(rolling12EUI.toFixed(1) + ' kBtu/sf/yr', '12-Mo EUI', 'var(--warn)') : '') +
     '</div>';
 
-  // ── Build table rows ──
-  const perfRows = filteredPostRows
-    .map((r) => {
-      const isTotal_p = _perfMetric === 'total';
-      // Expected = baseline normalized value for this calendar month (what Meter Data table shows)
-      // Falls back to regression on post-BL weather, then to simple baseline average
-      const calMo = parseInt(r.ym.split('-')[1]) - 1; // 0-11
-      const expMo =
-        hasBlCalMap && blByCalMo[calMo] != null
-          ? blByCalMo[calMo]
-          : hasRegr_p && r.regrBaseline != null
-            ? r.regrBaseline
-            : blAvgMo;
-      const expUsage = isTotal_p ? expMo : expMo / r.normDays;
-      const rawUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
-      const actual = isTotal_p ? rawUsage : r.normDays > 0 ? rawUsage / r.normDays : r.usagePerDay;
-      const sav = expUsage - actual;
-      const savPc = expUsage > 0 ? (sav / expUsage) * 100 : 0;
-      const isRegr = hasBlCalMap && blByCalMo[calMo] != null ? false : hasRegr_p && r.regrBaseline != null;
-      const dem = isElec ? perfDemByYm[r.ym] || {} : null;
-      const demKW = dem ? dem.demKW || 0 : 0;
-      const bilKW = dem ? dem.bilKW || 0 : 0;
-      const kwCostRow = dem ? (dem.kwCost || 0) + (dem.facKWCost || 0) : 0;
-      const kwhRate = dem ? dem.kwhRate || 0 : 0;
-      const kwhCostActual = dem ? dem.energyCostAmt || 0 : 0;
-      const gasMo = gasCostByYm[r.ym] || null;
-      const thermRate = gasMo ? gasMo.thermRate || 0 : 0;
-      const thermCostActual = gasMo ? gasMo.thermCostAmt || 0 : 0;
-
-      // kWh Cost Savings: (Expected kWh - Actual kWh) × current $/kWh rate
-      // Uses the CURRENT month's rate so savings reflect pure efficiency, not rate changes
-      const kwhSaved = isTotal_p ? sav : sav * r.normDays;
-      const expKwhCost = hasKwhCostSav && kwhRate > 0 ? expMo * kwhRate : 0;
-      const actKwhCostCalc = kwhCostActual;
-      const kwhCostSav = hasKwhCostSav && kwhRate > 0 ? kwhSaved * kwhRate : 0;
-
-      // kW Cost Savings: (Expected kW - Actual kW) × current $/kW rate
-      // Use weather-normalized Expected kW when regression is available
-      const blExpKW = _kwReg && _kwNormByYm[r.ym] != null ? _kwNormByYm[r.ym] : blDemKWByCalMo[calMo] || 0;
-      const moKwRate = hasKwCostSav && demKW > 0 ? kwCostRow / demKW : 0;
-      const kwSaved = blExpKW - bilKW;
-      const expKwCost = hasKwCostSav && moKwRate > 0 ? blExpKW * moKwRate : 0;
-      const kwCostSav = hasKwCostSav && moKwRate > 0 ? kwSaved * moKwRate : 0;
-
-      const _calcTotalCostSav = kwhCostSav + kwCostSav;
-
-      // Therm/Gas Cost Savings: (Expected therms - Actual therms) × current $/therm rate
-      const rawThermUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
-      const expThermUsage = expMo;
-      const thermSaved = expThermUsage - rawThermUsage;
-      const expThermCost = hasGasCostSav && thermRate > 0 ? expThermUsage * thermRate : 0;
-      const actThermCostCalc = hasGasCostSav && thermRate > 0 ? rawThermUsage * thermRate : thermCostActual;
-      const _calcThermCostSav = hasGasCostSav && thermRate > 0 ? thermSaved * thermRate : 0;
-      const _rowCostOvr = m.baseline?.costSavOverrides?.[r.ym];
-      const totalCostSav = _rowCostOvr != null && isElec ? _rowCostOvr : _calcTotalCostSav;
-      const thermCostSav = _rowCostOvr != null && !isElec ? _rowCostOvr : _calcThermCostSav;
-      const savColor = (v) => (v >= 0 ? 'var(--em)' : 'var(--danger)');
-      const costSign = (v) => (v >= 0 ? '' : '\u2212');
-      const savSign = (v) => (v >= 0 ? '+' : '\u2212');
-      const fmtN = (v, d = 0) =>
-        Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
-      const fmtC = (v) => Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      return (
-        '<tr>' +
-        '<td class="lbl">' +
-        r.label +
-        '</td>' +
-        '<td class="mono num">' +
-        r.normDays +
-        '</td>' +
-        '<td class="mono num" style="color:' +
-        (isRegr ? 'var(--violet)' : 'var(--text2)') +
-        '">' +
-        (isTotal_p ? expUsage.toLocaleString('en-US', { maximumFractionDigits: 0 }) : expUsage.toFixed(2)) +
-        (isRegr ? '<span style="font-size:9px;color:var(--violet);margin-left:3px">R</span>' : '') +
-        '</td>' +
-        '<td class="mono num">' +
-        (_perfMetric === 'total'
-          ? rawUsage.toLocaleString('en-US', { maximumFractionDigits: 0 })
-          : (r.normDays > 0 ? rawUsage / r.normDays : r.usagePerDay).toFixed(2)) +
-        '</td>' +
-        '<td class="mono num" style="color:' +
-        savColor(sav) +
-        '">' +
-        savSign(sav) +
-        fmtN(Math.abs(sav), _perfMetric === 'total' ? 0 : 2) +
-        '</td>' +
-        '<td class="mono num" style="color:' +
-        savColor(savPc) +
-        '">' +
-        savSign(savPc) +
-        Math.abs(savPc).toFixed(1) +
-        '%</td>' +
-        (hasKwhCostSav
-          ? '<td class="mono num" style="color:var(--text2)">' +
-            (kwhRate > 0 ? '$' + kwhRate.toFixed(5) : '&mdash;') +
-            '</td>'
-          : '') +
-        // "Expected kWh Cost" and "Act kWh × Rate" cells removed — redundant
-        (hasKwhCostSav
-          ? '<td class="mono num" style="color:' +
-            savColor(kwhCostSav) +
-            ';font-weight:600">' +
-            (kwhRate > 0 ? costSign(kwhCostSav) + '$' + fmtC(kwhCostSav) : '&mdash;') +
-            '</td>'
-          : '') +
-        (hasGasCostSav
-          ? '<td class="mono num" style="color:var(--text2)">' +
-            (thermRate > 0 ? '$' + thermRate.toFixed(4) : '&mdash;') +
-            '</td>'
-          : '') +
-        // "Expected Therm/Propane Cost" and "Act Therm/Propane × Rate" cells removed — redundant
-        (hasGasCostSav
-          ? '<td class="mono num" style="color:' +
-            savColor(thermCostSav) +
-            ';font-weight:600">' +
-            (thermRate > 0 || _rowCostOvr != null ? costSign(thermCostSav) + '$' + fmtC(thermCostSav) : '&mdash;') +
-            '</td>'
-          : '') +
-        (hasExpKW
-          ? '<td class="mono num" style="color:var(--text2)">' +
-            (blExpKW > 0
-              ? blExpKW.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
-              : '&mdash;') +
-            '</td>'
-          : '') +
-        (hasKwData
-          ? '<td class="mono num">' +
-            (demKW > 0
-              ? demKW.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
-              : '&mdash;') +
-            '</td>'
-          : '') +
-        (hasBilKW
-          ? '<td class="mono num">' +
-            (bilKW > 0
-              ? bilKW.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
-              : '&mdash;') +
-            '</td>'
-          : '') +
-        (hasKwCostSav
-          ? '<td class="mono num" style="color:var(--text2)">' +
-            (moKwRate > 0 ? '$' + moKwRate.toFixed(2) : '&mdash;') +
-            '</td>'
-          : '') +
-        (hasKwCostSav
-          ? '<td class="mono num" style="color:' +
-            savColor(kwCostSav) +
-            ';font-weight:600">' +
-            (moKwRate > 0 ? costSign(kwCostSav) + '$' + fmtC(kwCostSav) : '&mdash;') +
-            '</td>'
-          : '') +
-        (hasTotalCostSav
-          ? '<td class="mono num" style="color:' +
-            savColor(totalCostSav) +
-            ';font-weight:700">' +
-            costSign(totalCostSav) +
-            '$' +
-            fmtC(totalCostSav) +
-            '</td>'
-          : '') +
-        '</tr>'
-      );
-    })
-    .join('');
-
-  // ── Sum row for the Post-Baseline table ──
-  const _sumSavColor = (v) => (v >= 0 ? 'var(--em)' : 'var(--danger)');
-  const _sumCostSign = (v) => (v >= 0 ? '' : '−');
-  const _sumFmtC = (v) => Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const _sumTotalSav = _perfRowSavings.reduce((s, d) => s + d.savings, 0);
-  const _sumKwhSav = _perfRowSavings.reduce((s, d) => s + d.kwhCostSav, 0);
-  const _sumKwSav = _perfRowSavings.reduce((s, d) => s + d.kwCostSav, 0);
-  const _sumThermSav = _perfRowSavings.reduce((s, d) => s + d.thermCostSav, 0);
-  // Count columns for the "Total" label colspan (Month + Normalized Days + Baseline + Actual + Saved + %)
-  const _sumEmptyCols =
-    (hasKwhCostSav ? 1 : 0) + // Actual $/kWh
-    (hasGasCostSav ? 1 : 0) + // Actual $/Therm
-    (hasExpKW ? 1 : 0) +
-    (hasKwData ? 1 : 0) +
-    (hasBilKW ? 1 : 0) +
-    (hasKwCostSav ? 1 : 0) + // Actual $/kW
-    0;
-  const perfSumRow =
-    '<tr style="border-top:2px solid var(--border2);background:var(--s2);font-weight:700">' +
-    '<td class="lbl" colspan="6" style="text-align:right;font-weight:800;text-transform:uppercase;font-size:10px;letter-spacing:.5px">Total</td>' +
-    (hasKwhCostSav ? '<td class="mono num"></td>' : '') +
-    (hasKwhCostSav
-      ? '<td class="mono num" style="color:' +
-        _sumSavColor(_sumKwhSav) +
-        ';font-weight:700">' +
-        _sumCostSign(_sumKwhSav) +
-        '$' +
-        _sumFmtC(_sumKwhSav) +
-        '</td>'
-      : '') +
-    (hasGasCostSav ? '<td class="mono num"></td>' : '') +
-    (hasGasCostSav
-      ? '<td class="mono num" style="color:' +
-        _sumSavColor(_sumThermSav) +
-        ';font-weight:700">' +
-        _sumCostSign(_sumThermSav) +
-        '$' +
-        _sumFmtC(_sumThermSav) +
-        '</td>'
-      : '') +
-    (hasExpKW ? '<td class="mono num"></td>' : '') +
-    (hasKwData ? '<td class="mono num"></td>' : '') +
-    (hasBilKW ? '<td class="mono num"></td>' : '') +
-    (hasKwCostSav ? '<td class="mono num"></td>' : '') +
-    (hasKwCostSav
-      ? '<td class="mono num" style="color:' +
-        _sumSavColor(_sumKwSav) +
-        ';font-weight:700">' +
-        _sumCostSign(_sumKwSav) +
-        '$' +
-        _sumFmtC(_sumKwSav) +
-        '</td>'
-      : '') +
-    (hasTotalCostSav
-      ? '<td class="mono num" style="color:' +
-        _sumSavColor(_sumTotalSav) +
-        ';font-weight:800;font-size:13px">' +
-        _sumCostSign(_sumTotalSav) +
-        '$' +
-        _sumFmtC(_sumTotalSav) +
-        '</td>'
-      : '') +
-    '</tr>';
-
-  // ── Headers (must match row cell order exactly) ──
-  const perfTableLabel =
-    _perfMetric === 'total'
-      ? '<th class="num">Baseline ' +
-        unit +
-        (hasRegr_p ? ' &#x1F52C;' : ' ~avg') +
-        '</th><th class="num">Actual ' +
-        unit +
-        '</th>'
-      : '<th class="num">Baseline ' +
-        unit +
-        '/Day' +
-        (hasRegr_p ? ' &#x1F52C;' : ' ~avg') +
-        '</th><th class="num">Actual ' +
-        unit +
-        '/Day</th>';
-  const expKWHdr = hasExpKW ? '<th class="num">Baseline kW</th>' : '';
-  const demKWHdr = hasKwData ? '<th class="num">Actual kW</th>' : '';
-  const bilKWHdr = hasBilKW ? '<th class="num">Billed kW</th>' : '';
-  // "Baseline kW Cost" and "Act kW × Rate" columns removed — redundant with kW Savings ($)
-  const expKwCostHdr = '';
-  const kwCostHdr = '';
-  const kwRateHdr = hasKwCostSav ? '<th class="num">Actual $/kW</th>' : '';
-  const kwCostSavHdr = hasKwCostSav ? '<th class="num">kW Savings ($)</th>' : '';
-  const kwhRateHdr = hasKwhCostSav ? '<th class="num">Actual $/kWh</th>' : '';
-  // "Expected kWh Cost" and "Act kWh × Rate" columns removed — redundant with kWh Savings ($)
-  const expKwhCostHdr = '';
-  const actKwhCostHdr = '';
-  const kwhCostSavHdr = hasKwhCostSav ? '<th class="num">kWh Savings ($)</th>' : '';
-  const totalCostSavHdr = hasTotalCostSav ? '<th class="num">Total Savings ($)</th>' : '';
-  const _costUnitLabel = isPropane_p ? 'Gallon' : 'Therm';
-  const thermRateHdr = hasGasCostSav ? '<th class="num">Actual $/' + _costUnitLabel + '</th>' : '';
-  // "Expected Propane/Therm Cost" and "Act Therm/Propane × Rate" columns removed — redundant
-  const expThermCostHdr = '';
-  const actThermCostHdr = '';
-  const thermCostSavHdr = hasGasCostSav ? '<th class="num">' + _costUnitLabel + ' Savings ($)</th>' : '';
-  const euiTblHdr = '';
+  // -- Table HTML from shared renderer (rows, sum row, headers all handled by buildMeterPerfTableHTML) --
 
   // ── kW demand map for all chartRows (electric only) ──
   const perfKwByYm = {};
@@ -8191,36 +7908,8 @@ function renderPerfPane(pane, m, bills, incl) {
       ? 'Baseline = weather-normalized calendar month value · <span style="color:var(--violet)">🔬 R</span> = regression-derived'
       : 'Baseline = calendar month normalized value (simple avg)') +
     '</div>' +
-    (filteredPostRows.length
-      ? '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto">' +
-        '<table class="ma-tbl">' +
-        '<thead><tr><th class="lbl">Month</th><th class="num">Normalized Days</th>' +
-        perfTableLabel +
-        '<th class="num">' +
-        unit +
-        ' Saved</th><th class="num">%</th>' +
-        kwhRateHdr +
-        expKwhCostHdr +
-        actKwhCostHdr +
-        kwhCostSavHdr +
-        thermRateHdr +
-        expThermCostHdr +
-        actThermCostHdr +
-        thermCostSavHdr +
-        expKWHdr +
-        demKWHdr +
-        bilKWHdr +
-        kwRateHdr +
-        expKwCostHdr +
-        kwCostHdr +
-        kwCostSavHdr +
-        totalCostSavHdr +
-        '</tr></thead>' +
-        '<tbody>' +
-        perfRows +
-        perfSumRow +
-        '</tbody>' +
-        '</table></div>'
+    (filteredPostRows.length && _perfResult.html
+      ? _perfResult.html
       : '<div style="font-size:12px;color:var(--text3);padding:20px;text-align:center">No post-baseline data yet — add billing periods after <strong>' +
         fmtMon(blEnd + '-01') +
         '</strong></div>') +
