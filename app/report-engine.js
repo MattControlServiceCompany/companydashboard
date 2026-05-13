@@ -4185,7 +4185,7 @@ function rptPageBuildingSummary(n, d, b) {
         '</td><td class="rpt-n">' +
         (gasCost ? $c(gasCost) : '—') +
         '</td><td class="rpt-n">' +
-        (therms > 0 ? '$' + (gasCost / therms).toFixed(4) : '—') +
+        (gM.rate > 0 ? '$' + gM.rate.toFixed(4) : therms > 0 ? '$' + (gasCost / therms).toFixed(4) : '—') +
         '</td>';
     if (_showProp)
       blDataRows +=
@@ -6549,7 +6549,19 @@ function openReportModalV2(projId) {
   }
   const bldgs = getUDBldgs(projId);
   if (!bldgs.length) {
-    showToast('No buildings with utility data', 'warning');
+    // Show the modal with an empty-state message instead of silently returning
+    document.getElementById('reportGenModalBody').innerHTML =
+      '<div style="text-align:center;padding:32px 16px">' +
+      '<div style="font-size:36px;margin-bottom:12px">📊</div>' +
+      '<div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:8px">No Buildings With Utility Data</div>' +
+      '<div style="font-size:13px;color:var(--text2);line-height:1.5;max-width:360px;margin:0 auto">' +
+      'To generate a report, first add buildings and enter utility bill data on the <strong>Utility Data</strong> tab, then set a baseline.' +
+      '</div>' +
+      '<button class="btn btn-em btn-sm" style="margin-top:18px" onclick="document.getElementById(\'reportGenModal\').classList.remove(\'open\');var b=document.querySelector(\'.pdt[data-tab=&quot;utility&quot;]\');if(b)b.click();">Go to Utility Data</button>' +
+      '</div>';
+    var previewBtn = document.querySelector('#reportGenModal .modal-ftr .btn-em');
+    if (previewBtn) previewBtn.disabled = true;
+    document.getElementById('reportGenModal').classList.add('open');
     return;
   }
 
@@ -6687,6 +6699,8 @@ function openReportModalV2(projId) {
   html += '</div></div>';
 
   document.getElementById('reportGenModalBody').innerHTML = html;
+  var previewBtn = document.querySelector('#reportGenModal .modal-ftr .btn-em');
+  if (previewBtn) previewBtn.disabled = false;
   document.getElementById('reportGenModal').classList.add('open');
   _rptV2TypeChanged();
 }

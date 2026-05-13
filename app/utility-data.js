@@ -1560,11 +1560,13 @@ const CONDENSED_CATEGORIES = {
         _pfBills(r.ptsCharge),
     },
     {
-      // Blended kWh rate = sum of kWh charges / kWh consumed
+      // Blended kWh rate — prefer stored rate from bill, fall back to computation
       label: 'kWh Rate $/kWh',
       type: 'rate',
       w: 110,
       compute: (r) => {
+        const stored = getStoredRate(r, 'kwh');
+        if (stored > 0) return stored;
         const cost =
           _pfBills(r.onPeakCost) +
           _pfBills(r.offPeakCost) +

@@ -151,9 +151,11 @@ function buildMoMap(m, blRows, bills, incl) {
           normDays: r.normDays,
         };
       } else if (isGas) {
-        gasByMo[mo] = { therms: normUsage, cost: normUsage > 0 ? r.cost : 0 };
+        const gasRateAvg = bfr.length > 0 ? bfr.reduce((s, b) => s + getStoredRate(b, 'gas'), 0) / bfr.length : 0;
+        gasByMo[mo] = { therms: normUsage, cost: normUsage > 0 ? r.cost : 0, rate: gasRateAvg };
       } else if (isPropane) {
-        propaneByMo[mo] = { gallons: normUsage, cost: r.cost };
+        const propRateAvg = bfr.length > 0 ? bfr.reduce((s, b) => s + getStoredRate(b, 'propane'), 0) / bfr.length : 0;
+        propaneByMo[mo] = { gallons: normUsage, cost: r.cost, rate: propRateAvg };
       } else {
         waterByMo[mo] = { kgal: normUsage, cost: r.cost };
       }

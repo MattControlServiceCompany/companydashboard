@@ -55,7 +55,9 @@ function _pvRenderBldgPerf(b, projId) {
       return _parseISO(a.start) - _parseISO(c.start);
     });
     var incl = m.inclusive !== false;
-    var allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
+    var weatherByYm =
+      typeof getWeatherForBuilding === 'function' ? getWeatherForBuilding(projId, b.id).byYm || null : null;
+    var allRows = bills.length ? getNormRows(m, bills, incl, weatherByYm) : [];
     allRows
       .filter(function (r) {
         return bl.months.includes(r.ym);
@@ -550,10 +552,40 @@ function egfxRefresh(projId) {
     }
   }
 
-  // Average baseline per calendar month if baseline spans multiple years
-  const blKwhAvg = blKwh.map((v, mi) => v / (blYmPerMo[mi].size || 1));
-  const blGasAvg = blGas.map((v, mi) => v / (blYmPerMo[mi].size || 1));
-  const blPropaneAvg = blPropane.map((v, mi) => v / (blYmPerMo[mi].size || 1));
+  // Baseline per calendar month — use buildMoMap (same as Utility Data Performance tab)
+  const _blKwhFromMap = new Array(12).fill(0);
+  const _blGasFromMap = new Array(12).fill(0);
+  const _blPropaneFromMap = new Array(12).fill(0);
+  const _blKwFromMap = new Array(12).fill(0);
+  bldgs.forEach((b) => {
+    (b.meters || []).forEach((m) => {
+      if (m.baselineInclude === false) return;
+      if (!isCalcCommodity(projId, m.commodity)) return;
+      const bl = m.baseline;
+      if (!bl || !bl.months || bl.months.length < 3) return;
+      const mBills = (m.bills || []).slice().sort((a, c) => (a.start || '').localeCompare(c.start || ''));
+      const mIncl = m.inclusive !== false;
+      const wx = getWeatherForBuilding(projId, b.id);
+      const mAllRows = getNormRows(m, mBills, mIncl, wx.byYm);
+      const mBlRows = mAllRows.filter((r) => bl.months.includes(r.ym));
+      const mMap = buildMoMap(m, mBlRows, mBills, mIncl);
+      const isElec = m.commodity === 'Electric';
+      const isGas = m.commodity === 'Gas';
+      const isPropane = m.commodity === 'Propane';
+      const moMap = isElec ? mMap.elecByMo : isGas ? mMap.gasByMo : isPropane ? mMap.propaneByMo : {};
+      Object.entries(moMap).forEach(([mo, v]) => {
+        if (isElec) {
+          _blKwhFromMap[mo] += v.kwh || 0;
+          _blKwFromMap[mo] = Math.max(_blKwFromMap[mo], v.billedKW || v.demandKW || 0);
+        }
+        if (isGas) _blGasFromMap[mo] += v.therms || 0;
+        if (isPropane) _blPropaneFromMap[mo] += v.gallons || 0;
+      });
+    });
+  });
+  const blKwhAvg = _blKwhFromMap;
+  const blGasAvg = _blGasFromMap;
+  const blPropaneAvg = _blPropaneFromMap;
   const totalBlKwh = blKwhAvg.reduce((a, b) => a + b, 0);
   const totalBlGas = blGasAvg.reduce((a, b) => a + b, 0);
   const totalBlPropane = blPropaneAvg.reduce((a, b) => a + b, 0);
@@ -1086,7 +1118,9 @@ function egfxRefresh(projId) {
         if (!bl || !bl.months || bl.months.length < 3) return;
         const mBills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
         const mIncl = m.inclusive !== false;
-        const allRows = mBills.length ? getNormRows(m, mBills, mIncl, null) : [];
+        const bWeatherByYm =
+          typeof getWeatherForBuilding === 'function' ? getWeatherForBuilding(projId, b.id).byYm || null : null;
+        const allRows = mBills.length ? getNormRows(m, mBills, mIncl, bWeatherByYm) : [];
         const blRows = allRows.filter((r) => bl.months.includes(r.ym));
         const countByMo = {};
         blRows.forEach((r) => {

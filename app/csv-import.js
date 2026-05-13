@@ -892,19 +892,16 @@ function _billSchemaFor(commodity) {
 function _billReadValue(row, entry) {
   if (!row) return '';
   if (entry.key === 'totalKwhRate') {
-    const kwh = parseFloat(row.kwh) || 0;
-    const chg = parseFloat(row.kwhCost) || 0;
-    if (kwh > 0 && chg > 0) return (chg / kwh).toFixed(5);
+    const rate = getStoredRate(row, 'kwh');
+    if (rate > 0) return rate.toFixed(5);
   }
   if (entry.key === 'totalKwRate') {
-    const kw = parseFloat(row.billedKW) || parseFloat(row.demandKW) || parseFloat(row.facKW) || 0;
-    const chg = parseFloat(row.kwCost) || 0;
-    if (kw > 0 && chg > 0) return (chg / kw).toFixed(5);
+    const rate = getStoredRate(row, 'kw');
+    if (rate > 0) return rate.toFixed(5);
   }
   if (entry.key === 'totalGasRate') {
-    const therms = parseFloat(row.naturalGasTherms) || parseFloat(row.naturalGasCCF) || 0;
-    const chg = parseFloat(row.gasCharge) || 0;
-    if (therms > 0 && chg > 0) return (chg / therms).toFixed(5);
+    const rate = getStoredRate(row, 'gas');
+    if (rate > 0) return rate.toFixed(5);
   }
   const direct = row[entry.key];
   if (direct !== undefined && direct !== null && direct !== '' && direct !== 'null') return direct;
