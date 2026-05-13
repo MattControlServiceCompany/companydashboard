@@ -576,7 +576,7 @@ function egfxRefresh(projId) {
       Object.entries(moMap).forEach(([mo, v]) => {
         if (isElec) {
           _blKwhFromMap[mo] += v.kwh || 0;
-          _blKwFromMap[mo] = Math.max(_blKwFromMap[mo], v.billedKW || v.demandKW || 0);
+          _blKwFromMap[mo] += v.billedKW || v.demandKW || 0;
         }
         if (isGas) _blGasFromMap[mo] += v.therms || 0;
         if (isPropane) _blPropaneFromMap[mo] += v.gallons || 0;
@@ -592,6 +592,15 @@ function egfxRefresh(projId) {
   const blKbtu = toKBtu(totalBlKwh, totalBlGas, totalBlPropane);
   const blEui = sqft > 0 ? blKbtu / sqft : 0;
   const cbecsEui = CBECS_EUI[p.type] || 48.5;
+
+  // Overwrite baseline year(s) in yearData with normalized values so YoY charts match
+  const blYearArr = [...blYears].sort();
+  if (blYearArr.length === 1 && yearData[blYearArr[0]]) {
+    yearData[blYearArr[0]].kwh = blKwhAvg.slice();
+    yearData[blYearArr[0]].gas = blGasAvg.slice();
+    yearData[blYearArr[0]].propane = blPropaneAvg.slice();
+    yearData[blYearArr[0]].kw = _blKwFromMap.slice();
+  }
 
   const sortedYears = Object.keys(yearData).map(Number).sort();
   const latestYear = sortedYears.length > 0 ? sortedYears[sortedYears.length - 1] : null;
@@ -790,7 +799,7 @@ function egfxRefresh(projId) {
         _$f(egfxCostSavedByCommodity.Electric) +
         '</div></div>';
     }
-    if (blKw.some((v) => v > 0)) {
+    if (_blKwFromMap.some((v) => v > 0)) {
       cards +=
         '<div class="card" style="background:var(--s1);padding:12px;text-align:center">' +
         '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Peak kW Reduced</div>' +
@@ -1138,7 +1147,7 @@ function egfxRefresh(projId) {
 
   chartsEl.innerHTML = `
           ${_yoyHtml('Electric kWh', '⚡', 'kWh', 'kwh', blKwhAvg)}
-          ${totalBlKwh > 0 ? _yoyHtml('Electric Peak kW', '⚡', 'kW', 'kw', blKw) : ''}
+          ${totalBlKwh > 0 ? _yoyHtml('Electric Peak kW', '⚡', 'kW', 'kw', _blKwFromMap) : ''}
           ${hasGas ? _yoyHtml('Gas Therms', '🔥', 'therms', 'gas', blGasAvg) : ''}
           ${hasPropane ? _yoyHtml('Propane Gallons', '🛢️', 'gal', 'propane', blPropaneBl) : ''}
           <div class="card" style="background:var(--s1);padding:14px">
@@ -1640,7 +1649,7 @@ function egfxRefresh(projId) {
             for (let mi = 0; mi < 12; mi++) {
               const mkbtu = toKBtu(blKwhAvg[mi], blGasAvg[mi], blPropaneAvg[mi]);
               const mcost = blCostAvg2[mi];
-              const mkw = blKw[mi];
+              const mkw = _blKwFromMap[mi];
               totKwh += blKwhAvg[mi];
               totKw = Math.max(totKw, mkw);
               totGas += blGasAvg[mi];
