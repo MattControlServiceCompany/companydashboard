@@ -478,88 +478,8 @@
       /* localStorage failure must not break submit */
     }
 
-    var jsonStr = JSON.stringify(data, null, 2);
-    var pngBlob = state.screenshotBlob || null;
-
-    showDownloadModal(uuid, jsonStr, pngBlob);
+    showToast('Feedback logged — ' + uuid + '. Claude will add it to the backlog.', 'success');
     exitInspection();
-  }
-
-  function showDownloadModal(uuid, jsonStr, pngBlob) {
-    var overlay = document.createElement('div');
-    overlay.style.cssText =
-      'position:fixed;inset:0;background:rgba(5,8,15,0.88);z-index:100001;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px)';
-
-    var box = document.createElement('div');
-    box.style.cssText =
-      'background:var(--s2,#1a1e2e);border:1px solid var(--border2,#2a2e3e);border-radius:14px;padding:24px;width:480px;max-width:90vw;color:var(--text,#e0e0e0);font-family:inherit';
-
-    var title = document.createElement('div');
-    title.style.cssText = 'font-size:15px;font-weight:700;margin-bottom:6px';
-    title.textContent = 'Feedback Submitted';
-
-    var uuidLine = document.createElement('div');
-    uuidLine.style.cssText = 'font-size:12px;color:var(--text2,#7d8590);margin-bottom:16px';
-    uuidLine.textContent = 'UUID: ' + uuid;
-
-    // JSON section — show content in copyable textarea
-    var jsonLabel = document.createElement('div');
-    jsonLabel.style.cssText = 'font-size:12px;font-weight:600;color:var(--text2,#7d8590);margin-bottom:4px';
-    jsonLabel.textContent = 'JSON Data — select all and copy, or right-click the image to save:';
-
-    var jsonArea = document.createElement('textarea');
-    jsonArea.value = jsonStr;
-    jsonArea.readOnly = true;
-    jsonArea.style.cssText =
-      'width:100%;height:120px;background:var(--s1,#0d1117);color:var(--text,#e0e0e0);border:1px solid var(--border,#30363d);border-radius:6px;padding:8px;font-family:monospace;font-size:11px;resize:vertical;margin-bottom:8px';
-
-    var copyBtn = document.createElement('button');
-    copyBtn.className = 'btn btn-em btn-sm';
-    copyBtn.textContent = 'Copy JSON to Clipboard';
-    copyBtn.style.cssText = 'margin-bottom:12px';
-    copyBtn.onclick = function () {
-      navigator.clipboard.writeText(jsonStr).then(function () {
-        copyBtn.textContent = 'Copied!';
-        setTimeout(function () {
-          copyBtn.textContent = 'Copy JSON to Clipboard';
-        }, 2000);
-      });
-    };
-
-    box.appendChild(title);
-    box.appendChild(uuidLine);
-    box.appendChild(jsonLabel);
-    box.appendChild(jsonArea);
-    box.appendChild(copyBtn);
-
-    // PNG section — show as image user can right-click > Save Image As
-    if (pngBlob) {
-      var imgLabel = document.createElement('div');
-      imgLabel.style.cssText = 'font-size:12px;font-weight:600;color:var(--text2,#7d8590);margin-bottom:4px';
-      imgLabel.textContent = 'Screenshot — right-click → Save image as...';
-
-      var img = document.createElement('img');
-      img.src = URL.createObjectURL(pngBlob);
-      img.style.cssText =
-        'max-width:100%;max-height:200px;border:1px solid var(--border,#30363d);border-radius:6px;margin-bottom:12px;display:block';
-
-      box.appendChild(imgLabel);
-      box.appendChild(img);
-    }
-
-    var closeBtn = document.createElement('button');
-    closeBtn.className = 'btn btn-ghost btn-sm';
-    closeBtn.textContent = 'Close';
-    closeBtn.onclick = function () {
-      overlay.remove();
-    };
-
-    box.appendChild(closeBtn);
-    overlay.appendChild(box);
-    overlay.onclick = function (e) {
-      if (e.target === overlay) overlay.remove();
-    };
-    document.body.appendChild(overlay);
   }
 
   /* ── Init ── */
