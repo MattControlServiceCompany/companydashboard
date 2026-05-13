@@ -73,15 +73,14 @@ function _showPreview(config, pagesHTML) {
     config.clientName + ' — ' + typeLabel + ' Report' + (config.periodLabel ? ' (' + config.periodLabel + ')' : '');
 
   // Parse the HTML into individual pages
-  // The report engine wraps each page in a div with class "rpt-pg"
+  // The report engine wraps each page in a div with class "rpt-page"
   var tempDiv = document.createElement('div');
   tempDiv.innerHTML = pagesHTML;
-  var pageNodes = tempDiv.querySelectorAll('.rpt-pg');
+  var pageNodes = tempDiv.querySelectorAll('.rpt-page');
 
-  // If no rpt-pg divs, wrap the whole thing as one page
   if (pageNodes.length === 0) {
     pagesEl.innerHTML =
-      '<div class="rpt-page" data-section="all" data-page="1">' +
+      '<div class="rpt-preview-page" data-section="all" data-page="1">' +
       '<div style="width:100%;max-width:816px;min-height:1056px;background:#fff;' +
       'box-shadow:0 2px 12px rgba(0,0,0,0.3);padding:40px 48px;color:#000;font-family:Helvetica,Arial,sans-serif;font-size:10px;line-height:1.5">' +
       pagesHTML +
@@ -92,7 +91,7 @@ function _showPreview(config, pagesHTML) {
       var node = pageNodes[i];
       var sectionKey = node.getAttribute('data-section') || 'page-' + (i + 1);
       html +=
-        '<div class="rpt-page" data-section="' +
+        '<div class="rpt-preview-page" data-section="' +
         sectionKey +
         '" data-page="' +
         (i + 1) +
@@ -113,7 +112,7 @@ function _showPreview(config, pagesHTML) {
 
 function _rebuildSidebar() {
   var sidebarEl = document.getElementById('rptPreviewSidebar');
-  var pages = document.querySelectorAll('#rptPreviewPages .rpt-page');
+  var pages = document.querySelectorAll('#rptPreviewPages .rpt-preview-page');
   var html =
     '<div style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--s3);margin-bottom:4px">Sections</div>';
   var visibleIdx = 0;
@@ -168,7 +167,7 @@ function _rebuildSidebar() {
 }
 
 function togglePreviewSection(idx, visible) {
-  var pages = document.querySelectorAll('#rptPreviewPages .rpt-page');
+  var pages = document.querySelectorAll('#rptPreviewPages .rpt-preview-page');
   if (pages[idx]) {
     pages[idx].style.display = visible ? '' : 'none';
   }
@@ -177,7 +176,7 @@ function togglePreviewSection(idx, visible) {
 }
 
 function _updatePageNumbers() {
-  var pages = document.querySelectorAll('#rptPreviewPages .rpt-page');
+  var pages = document.querySelectorAll('#rptPreviewPages .rpt-preview-page');
   var visibleCount = 0;
   for (var i = 0; i < pages.length; i++) {
     if (pages[i].style.display !== 'none') visibleCount++;
@@ -211,7 +210,7 @@ function _rptDrop(e, targetIdx) {
   e.preventDefault();
   if (_rptDragIdx < 0 || _rptDragIdx === targetIdx) return;
   var pagesContainer = document.getElementById('rptPreviewPages');
-  var pages = Array.from(pagesContainer.querySelectorAll('.rpt-page'));
+  var pages = Array.from(pagesContainer.querySelectorAll('.rpt-preview-page'));
   if (!pages[_rptDragIdx] || !pages[targetIdx]) return;
 
   var draggedPage = pages[_rptDragIdx];
@@ -244,7 +243,7 @@ function saveReportTemplate() {
 
   // Collect current section state from sidebar
   var sections = [];
-  document.querySelectorAll('#rptPreviewPages .rpt-page').forEach(function (p) {
+  document.querySelectorAll('#rptPreviewPages .rpt-preview-page').forEach(function (p) {
     if (p.style.display !== 'none') {
       sections.push(p.getAttribute('data-section'));
     }
@@ -265,7 +264,7 @@ function saveReportTemplate() {
 
 // PDF export from preview
 async function downloadReportPDF() {
-  var pages = document.querySelectorAll('#rptPreviewPages .rpt-page');
+  var pages = document.querySelectorAll('#rptPreviewPages .rpt-preview-page');
   var visiblePages = [];
   for (var i = 0; i < pages.length; i++) {
     if (pages[i].style.display !== 'none') visiblePages.push(pages[i]);
