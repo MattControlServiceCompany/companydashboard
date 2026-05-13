@@ -512,10 +512,12 @@
     var jsonBtn = document.createElement('button');
     jsonBtn.className = 'btn btn-em btn-sm';
     jsonBtn.textContent = 'Save JSON';
-    jsonBtn.onclick = function () {
-      triggerDownload(new Blob([jsonStr], { type: 'application/json' }), 'feedback-' + uuid + '.json');
-      jsonBtn.textContent = 'Saved';
+    jsonBtn.onclick = async function () {
+      jsonBtn.textContent = 'Saving...';
       jsonBtn.disabled = true;
+      var ok = await triggerDownload(new Blob([jsonStr], { type: 'application/json' }), 'feedback-' + uuid + '.json');
+      jsonBtn.textContent = ok ? 'Saved' : 'Save JSON';
+      jsonBtn.disabled = ok ? true : false;
     };
 
     btnRow.appendChild(jsonBtn);
@@ -524,10 +526,12 @@
       var pngBtn = document.createElement('button');
       pngBtn.className = 'btn btn-em btn-sm';
       pngBtn.textContent = 'Save Screenshot';
-      pngBtn.onclick = function () {
-        triggerDownload(pngBlob, 'feedback-' + uuid + '.png');
-        pngBtn.textContent = 'Saved';
+      pngBtn.onclick = async function () {
+        pngBtn.textContent = 'Saving...';
         pngBtn.disabled = true;
+        var ok = await triggerDownload(pngBlob, 'feedback-' + uuid + '.png');
+        pngBtn.textContent = ok ? 'Saved' : 'Save Screenshot';
+        pngBtn.disabled = ok ? true : false;
       };
       btnRow.appendChild(pngBtn);
     }
@@ -552,11 +556,24 @@
     document.body.appendChild(overlay);
   }
 
-  function triggerDownload(blob, filename) {
-    if (navigator.msSaveBlob) {
-      navigator.msSaveBlob(blob, filename);
-      return;
+  async function triggerDownload(blob, filename) {
+    // File System Access API — opens a native Save As dialog (Edge/Chrome 86+)
+    if (window.showSaveFilePicker) {
+      try {
+        var ext = filename.split('.').pop();
+        var types = [];
+        if (ext === 'json') types = [{ description: 'JSON', accept: { 'application/json': ['.json'] } }];
+        else if (ext === 'png') types = [{ description: 'PNG Image', accept: { 'image/png': ['.png'] } }];
+        var handle = await window.showSaveFilePicker({ suggestedName: filename, types: types });
+        var writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return true;
+      } catch (e) {
+        if (e.name === 'AbortError') return false;
+      }
     }
+    // Fallback: blob URL anchor click
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
@@ -568,6 +585,7 @@
     setTimeout(function () {
       URL.revokeObjectURL(url);
     }, 5000);
+    return true;
   }
 
   /* ── Init ── */
