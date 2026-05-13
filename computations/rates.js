@@ -87,10 +87,10 @@ function ensureBillRates(bill) {
     }
   }
 
-  // Electric: totalKwRate
+  // Electric: totalKwRate (includes facKWCost — the full per-kW cost)
   if (!pf(bill.totalKwRate)) {
     var kw = pf(bill.BilledKW) || pf(bill.billedKW) || pf(bill.ActualKW) || pf(bill.demandKW) || pf(bill.FacilitiesKW);
-    var kwCost = pf(bill.kwCost);
+    var kwCost = pf(bill.kwCost) + pf(bill.facKWCost);
     if (kw > 0 && kwCost > 0) {
       bill.totalKwRate = (kwCost / kw).toFixed(5);
       changed = true;

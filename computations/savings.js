@@ -20,8 +20,10 @@ function getMeterSavings(m, bills, incl) {
   const bl = m.baseline;
   if (!bl || !bl.months || bl.months.length < 3) return empty;
 
-  // Cache: return stored result if bills haven't changed
-  const cacheKey = bills.length + '_' + (bills[0]?.start || '') + '_' + (bills[bills.length - 1]?.end || '');
+  // Cache: return stored result if bills AND overrides haven't changed
+  const _ovrHash = bl.costSavOverrides ? JSON.stringify(bl.costSavOverrides) : '';
+  const cacheKey =
+    bills.length + '_' + (bills[0]?.start || '') + '_' + (bills[bills.length - 1]?.end || '') + '_' + _ovrHash;
   if (m._savingsCache && m._savingsCacheKey === cacheKey) return m._savingsCache;
 
   const byYM = {};
@@ -124,7 +126,6 @@ function getMeterSavings(m, bills, incl) {
       const actKwh = actUsage;
       const n = bfr.length || 1;
       const _sKwhRate = bfr.reduce((s, b) => s + (parseFloat(b.totalKwhRate) || 0), 0) / n;
-      const _sKwRate = bfr.reduce((s, b) => s + (parseFloat(b.totalKwRate) || 0), 0) / n;
       const kwhCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwhCost || 0), 0);
       const kwhRate = _sKwhRate || (actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0);
       const kwhSaved = expUsage - actKwh;
@@ -134,7 +135,7 @@ function getMeterSavings(m, bills, incl) {
       const actDemKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.demandKW || 0))) : 0;
       const kwCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwCost || 0), 0);
       const facKWCostAmt = bfr.reduce((s, b) => s + parseFloat(b.facKWCost || 0), 0);
-      const moKwRate = _sKwRate || (actDemKW > 0 ? (kwCostAmt + facKWCostAmt) / actDemKW : 0);
+      const moKwRate = actBilKW > 0 ? (kwCostAmt + facKWCostAmt) / actBilKW : 0;
       const kwSaved = blExpKW - actBilKW;
       const kwCostSav = blExpKW > 0 && moKwRate > 0 ? kwSaved * moKwRate : 0;
       totalCostSav = kwhCostSav + kwCostSav;

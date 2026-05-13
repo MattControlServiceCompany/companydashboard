@@ -30,133 +30,8 @@ function _pvToggleBldg(projId, bldgId) {
 }
 
 function _pvRenderMeterPerf(m, bills, incl) {
-  var bl = m.baseline;
-  if (!bl || !bl.months || bl.months.length < 3) return '';
-  var isElec = m.commodity === 'Electric';
-  var isPropane = m.commodity === 'Propane';
-  var unit = isElec ? 'kWh' : isPropane ? 'Gallons' : 'Therms';
-  var allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
-  var blRows = allRows.filter(function (r) {
-    return bl.months.includes(r.ym);
-  });
-  var blEnd = bl.months.slice().sort().pop();
-  var postRows = allRows.filter(function (r) {
-    return r.ym > blEnd;
-  });
-  if (!postRows.length)
-    return '<div style="font-size:11px;color:var(--text3);padding:8px">No post-baseline data yet.</div>';
-  var { elecByMo: _eMo, gasByMo: _gMo, propaneByMo: _pMo } = buildMoMap(m, blRows, bills, incl);
-  var _blMoMap = isElec ? _eMo : m.commodity === 'Gas' ? _gMo : isPropane ? _pMo : {};
-  var blUsageByCalMo = {};
-  Object.entries(_blMoMap).forEach(function (entry) {
-    var mo = entry[0],
-      v = entry[1];
-    blUsageByCalMo[mo] = isElec ? v.kwh : m.commodity === 'Gas' ? v.therms : isPropane ? v.gallons : 0;
-  });
-  var hasRegrP = allRows.some(function (r) {
-    return r.regrBaseline != null;
-  });
-  var blAvgUsage =
-    blRows.length > 0
-      ? blRows.reduce(function (s, r) {
-          return s + r.usage;
-        }, 0) / blRows.length
-      : 0;
-  var savByCalMo = getMeterSavings(m, bills, incl).byCalMo;
-  var totalSav = Object.values(savByCalMo).reduce(function (s, v) {
-    return s + v;
-  }, 0);
-  var fmtC = function (v) {
-    return Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
-  var fmtU = function (v) {
-    return Math.round(Math.abs(v)).toLocaleString();
-  };
-  var savColor = function (v) {
-    return v >= 0 ? 'var(--em)' : 'var(--danger)';
-  };
-  var costSign = function (v) {
-    return v >= 0 ? '' : '−';
-  };
-  var _td = 'padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border)';
-  var rows = postRows
-    .map(function (r) {
-      var calMo = parseInt(r.ym.split('-')[1]) - 1;
-      var blUsage =
-        blUsageByCalMo[calMo] != null
-          ? blUsageByCalMo[calMo]
-          : hasRegrP && r.regrBaseline != null
-            ? r.regrBaseline
-            : blAvgUsage;
-      var actUsage = r.usage;
-      var bfr = isPropane
-        ? []
-        : bills.filter(function (b) {
-            return normMonth(b.start, b.end, incl, bills) === r.ym;
-          });
-      var actRate = 0;
-      if (isElec) {
-        var kwhCost = bfr.reduce(function (s, b) {
-          return s + (parseFloat(b.kwhCost) || 0);
-        }, 0);
-        actRate = actUsage > 0 && kwhCost > 0 ? kwhCost / actUsage : 0;
-      } else if (isPropane) {
-        actRate = actUsage > 0 && r.cost > 0 ? r.cost / actUsage : 0;
-      } else {
-        var thermCost = bfr.reduce(function (s, b) {
-          return s + (parseFloat(b.gasCharge) || parseFloat(b.thermCost) || parseFloat(b.cost) || 0);
-        }, 0);
-        actRate = actUsage > 0 && thermCost > 0 ? thermCost / actUsage : 0;
-      }
-      var costSav = savByCalMo[calMo] != null ? savByCalMo[calMo] : 0;
-      var usageSaved = blUsage - actUsage;
-      var pct = blUsage > 0 ? (usageSaved / blUsage) * 100 : 0;
-      return (
-        '<tr>' +
-        '<td style="padding:6px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s1)">' +
-        r.label +
-        '</td>' +
-        '<td style="' +
-        _td +
-        '">' +
-        r.normDays +
-        '</td>' +
-        '<td style="' +
-        _td +
-        '">' +
-        fmtU(blUsage) +
-        '</td>' +
-        '<td style="' +
-        _td +
-        '">' +
-        fmtU(actUsage) +
-        '</td>' +
-        '<td style="' +
-        _td +
-        '">' +
-        (actRate > 0 ? '$' + actRate.toFixed(4) : '—') +
-        '</td>' +
-        '<td style="' +
-        _td +
-        ';color:' +
-        savColor(costSav) +
-        ';font-weight:600">' +
-        costSign(costSav) +
-        '$' +
-        fmtC(costSav) +
-        '</td>' +
-        '<td style="' +
-        _td +
-        ';color:' +
-        savColor(pct) +
-        '">' +
-        (pct >= 0 ? '' : '−') +
-        Math.abs(pct).toFixed(1) +
-        '%</td>' +
-        '</tr>'
-      );
-    })
-    .join('');
+  var result = buildMeterPerfTableHTML(m, bills, incl, { mode: 'tab' });
+  if (!result.html) return '';
   return (
     '<div style="margin-bottom:12px">' +
     '<div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:4px">' +
@@ -164,33 +39,8 @@ function _pvRenderMeterPerf(m, bills, incl) {
     ' (' +
     m.commodity +
     ') — Meter Performance</div>' +
-    '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px">' +
-    '<table style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr style="background:var(--s1)">' +
-    '<th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Month</th>' +
-    '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Days</th>' +
-    '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Norm Baseline ' +
-    unit +
-    '</th>' +
-    '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Actual ' +
-    unit +
-    '</th>' +
-    '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Actual Rate</th>' +
-    '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">Savings ($)</th>' +
-    '<th style="padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">%</th>' +
-    '</tr></thead><tbody>' +
-    rows +
-    '</tbody>' +
-    '<tfoot><tr style="background:var(--s1);font-weight:700">' +
-    '<td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)" colspan="5">Total</td>' +
-    '<td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;border:1px solid var(--border);color:' +
-    savColor(totalSav) +
-    ';font-weight:700">' +
-    costSign(totalSav) +
-    '$' +
-    fmtC(totalSav) +
-    '</td>' +
-    '<td style="border:1px solid var(--border)"></td>' +
-    '</tr></tfoot></table></div></div>'
+    result.html +
+    '</div>'
   );
 }
 
