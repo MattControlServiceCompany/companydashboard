@@ -6812,7 +6812,7 @@ function _rptV2ReadConfig() {
 
 // Template CRUD
 function _getReportTemplates(projId) {
-  return Store.get('en_report_templates_' + projId) || [];
+  return sget('en_report_templates_' + projId, []);
 }
 
 function _saveReportTemplateData(projId, template) {
@@ -6826,7 +6826,7 @@ function _saveReportTemplateData(projId, template) {
   }
   if (idx >= 0) templates[idx] = template;
   else templates.push(template);
-  Store.set('en_report_templates_' + projId, templates);
+  sset('en_report_templates_' + projId, templates);
 }
 
 function _loadReportTemplate(projId, name) {
@@ -6841,7 +6841,7 @@ function _deleteReportTemplate(projId, name) {
   var templates = _getReportTemplates(projId).filter(function (t) {
     return t.name !== name;
   });
-  Store.set('en_report_templates_' + projId, templates);
+  sset('en_report_templates_' + projId, templates);
 }
 
 function openReportModal(projId, type) {
