@@ -479,33 +479,46 @@
     }
 
     var jsonBlob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    downloadBlob(jsonBlob, 'feedback-' + uuid + '.json');
+    var downloadOk = downloadBlob(jsonBlob, 'feedback-' + uuid + '.json');
 
     if (state.screenshotBlob) {
-      downloadBlob(state.screenshotBlob, 'feedback-' + uuid + '.png');
+      // Delay PNG download by 600ms — Edge blocks rapid back-to-back programmatic downloads
+      var pngBlob = state.screenshotBlob;
+      var pngName = 'feedback-' + uuid + '.png';
+      setTimeout(function () {
+        downloadBlob(pngBlob, pngName);
+      }, 600);
     }
 
-    showConfirmation(uuid);
+    showConfirmation(uuid, downloadOk);
     exitInspection();
   }
 
   function downloadBlob(blob, filename) {
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(function () {
-      URL.revokeObjectURL(url);
-    }, 1000);
+    try {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () {
+        URL.revokeObjectURL(url);
+      }, 2000);
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
-  function showConfirmation(uuid) {
+  function showConfirmation(uuid, downloadOk) {
     var el = document.createElement('div');
     el.className = 'fb-confirm';
-    el.innerHTML = '&#9989; Feedback submitted <span class="fb-confirm-uuid">' + uuid + '</span>';
+    var downloadNote =
+      downloadOk === false ? '<div class="fb-confirm-note">Download blocked — data saved to app storage</div>' : '';
+    el.innerHTML = '&#9989; Feedback submitted <span class="fb-confirm-uuid">' + uuid + '</span>' + downloadNote;
     document.body.appendChild(el);
     setTimeout(function () {
       el.style.opacity = '0';

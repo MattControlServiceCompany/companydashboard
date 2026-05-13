@@ -196,6 +196,11 @@
   color: #58a6ff;
   font-size: 12px;
 }
+.fb-confirm-note {
+  font-size: 11px;
+  color: var(--text2, #7d8590);
+  margin-top: 4px;
+}
 @keyframes fb-fade-in {
   from {
     opacity: 0;
