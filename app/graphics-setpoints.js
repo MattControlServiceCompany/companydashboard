@@ -1138,14 +1138,14 @@ function egfxRefresh(projId) {
 
   chartsEl.innerHTML = `
           ${_yoyHtml('Electric kWh', '⚡', 'kWh', 'kwh', blKwhAvg)}
-          ${totalBlKwh > 0 ? _yoyHtml('Electric Peak kW', '⚡', 'kW', 'kw', _blKwFromMap) : ''}
+          ${totalBlKwh > 0 ? _yoyHtml('Electric kW', '⚡', 'kW', 'kw', _blKwFromMap) : ''}
           ${hasGas ? _yoyHtml('Gas Therms', '🔥', 'therms', 'gas', blGasAvg) : ''}
           ${hasPropane ? _yoyHtml('Propane Gallons', '🛢️', 'gal', 'propane', blPropaneBl) : ''}
           <div class="card" style="background:var(--s1);padding:14px">
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📊 Annual Summary by Year</div>
             <div style="overflow-x:auto">
               <table class="dtbl" style="min-width:500px">
-                <thead><tr><th>Year</th><th style="text-align:right">kWh</th><th style="text-align:right">Peak kW</th><th style="text-align:right">Gas Therms</th>${hasPropane ? '<th style="text-align:right">Propane Gal</th>' : ''}<th style="text-align:right">EUI kBtu/ft²</th><th style="text-align:right">Baseline EUI</th><th style="text-align:right">vs Baseline</th></tr></thead>
+                <thead><tr><th>Year</th><th style="text-align:right">kWh</th><th style="text-align:right">kW</th><th style="text-align:right">Gas Therms</th>${hasPropane ? '<th style="text-align:right">Propane Gal</th>' : ''}<th style="text-align:right">EUI kBtu/ft²</th><th style="text-align:right">Baseline EUI</th><th style="text-align:right">vs Baseline</th></tr></thead>
                 <tbody>
                   ${yrsToShow
                     .map((y) => {
@@ -1196,7 +1196,7 @@ function egfxRefresh(projId) {
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">🏢 Annual Summary by Building</div>
             <div style="overflow-x:auto">
               <table class="dtbl" style="min-width:600px;border-collapse:collapse">
-                <thead><tr style="background:var(--s2)"><th style="text-align:left;padding:8px 10px">Building</th><th style="padding:8px 6px">Year</th><th style="text-align:right;padding:8px 10px">kWh</th><th style="text-align:right;padding:8px 10px">Peak kW</th><th style="text-align:right;padding:8px 10px">Gas Therms</th>${hasPropane ? '<th style="text-align:right;padding:8px 10px">Propane Gal</th>' : ''}<th style="text-align:right;padding:8px 10px">Cost</th><th style="text-align:right;padding:8px 10px">EUI</th></tr></thead>
+                <thead><tr style="background:var(--s2)"><th style="text-align:left;padding:8px 10px">Building</th><th style="padding:8px 6px">Year</th><th style="text-align:right;padding:8px 10px">kWh</th><th style="text-align:right;padding:8px 10px">kW</th><th style="text-align:right;padding:8px 10px">Gas Therms</th>${hasPropane ? '<th style="text-align:right;padding:8px 10px">Propane Gal</th>' : ''}<th style="text-align:right;padding:8px 10px">Cost</th><th style="text-align:right;padding:8px 10px">EUI</th></tr></thead>
                 <tbody>
                   ${(() => {
                     let rowIdx = 0;
@@ -1627,7 +1627,7 @@ function egfxRefresh(projId) {
             tbl += '<div style="overflow-x:auto"><table class="dtbl" style="min-width:500px">';
             tbl += '<thead><tr><th>Month</th>';
             if (totalBlKwh > 0) tbl += '<th style="text-align:right">kWh</th>';
-            tbl += '<th style="text-align:right">Peak kW</th>';
+            tbl += '<th style="text-align:right">kW</th>';
             if (totalBlGas > 0) tbl += '<th style="text-align:right">Therms</th>';
             if (hasPropaneBL) tbl += '<th style="text-align:right">Propane Gal</th>';
             tbl += '<th style="text-align:right">kBtu</th><th style="text-align:right">Cost</th></tr></thead><tbody>';
