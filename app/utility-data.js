@@ -997,10 +997,10 @@ function renderUDProjAggPanel(content) {
     const annProjSav = _perfProjSavByMo.reduce((s, v) => s + v, 0);
     const avgSavPct = annBase > 0 ? annProjSav / annBase : 0;
     const actSavByMo = {};
-    allMeters.forEach(({ m, bills, incl }) => {
+    allMeters.forEach(({ m, bills, incl, bldg }) => {
       const bl = m.baseline;
       if (!bl || !bl.months || bl.months.length < 3) return;
-      const sav = getMeterSavings(m, bills, incl).byCalMo;
+      const sav = getMeterSavings(m, bills, incl, udSelProjId, bldg.id).byCalMo;
       Object.entries(sav).forEach(([mo, v]) => {
         actSavByMo[mo] = (actSavByMo[mo] || 0) + v;
       });
@@ -2560,8 +2560,10 @@ function fmtDate(d) {
 // → canonical source: computations/normalization.js (inline copies removed)
 
 // Returns {byYm: {YYYY-MM: {hdd,cdd,avgTemp}}, cache: [...], zip: string}
-function getWeatherForBuilding() {
-  const b = getUDBldg(udSelProjId, udSelBldgId);
+function getWeatherForBuilding(projId, bldgId) {
+  const pid = projId || udSelProjId;
+  const bid = bldgId || udSelBldgId;
+  const b = getUDBldg(pid, bid);
   const zip = b?.zip || '';
   if (!zip) return { byYm: null, cache: [], zip: '' };
   const cache = wddLoadCache(zip);
@@ -6383,7 +6385,7 @@ function renderBldgPerfPane(pane, b) {
     if (!(m.baseline?.months?.length >= 3)) return;
     const mbills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
     const mincl = m.inclusive !== false;
-    const _mSavResult = getMeterSavings(m, mbills, mincl);
+    const _mSavResult = getMeterSavings(m, mbills, mincl, udSelProjId, b.id);
     Object.entries(_mSavResult.byCalMo).forEach(([mo, v]) => {
       actualSavingsByCalMo[mo] = (actualSavingsByCalMo[mo] || 0) + v;
     });

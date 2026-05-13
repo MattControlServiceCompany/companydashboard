@@ -261,7 +261,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
       }
 
       // Actual cost savings from single source of truth
-      const meterSavByYM = getMeterSavings(m, bills, incl).byYM;
+      const meterSavByYM = getMeterSavings(m, bills, incl, projId, b.id).byYM;
 
       // Process post-baseline rows within the reporting period
       postRows.forEach((r) => {
@@ -4359,7 +4359,12 @@ function rptPageBuildingSummary(n, d, b) {
         return (a.start || '').localeCompare(c.start || '');
       });
       var mIncl = meter.inclusive !== false;
-      var result = buildMeterPerfTableHTML(meter, mBills, mIncl, { mode: 'report', filterYMs: _rptFilterYMs });
+      var result = buildMeterPerfTableHTML(meter, mBills, mIncl, {
+        mode: 'report',
+        filterYMs: _rptFilterYMs,
+        projId: d.project.id,
+        bldgId: b.id,
+      });
       if (result.html) {
         var commLabel =
           meter.commodity === 'Electric'
@@ -7182,7 +7187,7 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
       const blRows = allRows.filter((r) => bl.months.includes(r.ym));
       const { elecByMo: eM, gasByMo: gM, propaneByMo: pM } = buildMoMap(m, blRows, bills, incl);
 
-      const mSavByYM = getMeterSavings(m, bills, incl).byYM;
+      const mSavByYM = getMeterSavings(m, bills, incl, projId, b.id).byYM;
       Object.entries(mSavByYM).forEach(([ym, v]) => {
         if (!savByYM[ym]) savByYM[ym] = 0;
         savByYM[ym] += v;

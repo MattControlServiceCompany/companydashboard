@@ -1298,7 +1298,7 @@ function initDashboardTab(projId) {
         for (let mo = 0; mo < 12; mo++)
           bldgMoBase[mo] += (eM[mo]?.commodityCost || 0) + (gM[mo]?.cost || 0) + (pM[mo]?.cost || 0);
         // Normalized actual savings per calendar month
-        const sav = getMeterSavings(m, bills, incl).byCalMo;
+        const sav = getMeterSavings(m, bills, incl, projId, b.id).byCalMo;
         Object.entries(sav).forEach(([mo, v]) => {
           bldgSav += v;
           const moIdx = parseInt(mo);
@@ -1402,7 +1402,7 @@ function initDashboardTab(projId) {
             new Date(last + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
         }
         const _actIncl = m.inclusive !== false;
-        const _actSav = getMeterSavings(m, bills, _actIncl).byCalMo;
+        const _actSav = getMeterSavings(m, bills, _actIncl, projId, b.id).byCalMo;
         Object.entries(_actSav).forEach(([mo, v]) => {
           const qi = Math.floor(parseInt(mo) / 3);
           actualByQtr[qi] += v;

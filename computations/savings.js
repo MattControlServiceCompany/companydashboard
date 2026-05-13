@@ -15,7 +15,7 @@
      unitsByCalMo: {0-11: {kwh, kw, therms, gallons}}
    }
 ───────────────────────────────────────────────────────────── */
-function getMeterSavings(m, bills, incl) {
+function getMeterSavings(m, bills, incl, projId, bldgId) {
   const empty = { byYM: {}, byCalMo: {}, unitsByYM: {}, unitsByCalMo: {} };
   const bl = m.baseline;
   if (!bl || !bl.months || bl.months.length < 3) return empty;
@@ -33,7 +33,7 @@ function getMeterSavings(m, bills, incl) {
 
   const isElec = m.commodity === 'Electric';
   const isPropane = m.commodity === 'Propane';
-  const { byYm: weatherByYm } = getWeatherForBuilding();
+  const { byYm: weatherByYm } = getWeatherForBuilding(projId, bldgId);
   const allRows = bills.length ? getNormRows(m, bills, incl, weatherByYm) : [];
   const blRows = allRows.filter((r) => bl.months.includes(r.ym));
   const blEnd = bl.months.slice().sort().pop();
@@ -215,7 +215,7 @@ function getBuildingSavingsByYM(bldg, projId) {
   const result = {};
   bldg.meters.forEach((m) => {
     const bills = (m.bills || []).slice().sort((a, c) => (a.start || '').localeCompare(c.start || ''));
-    const mSav = getMeterSavings(m, bills, incl).byYM;
+    const mSav = getMeterSavings(m, bills, incl, projId, bldg.id).byYM;
     Object.entries(mSav).forEach(([ym, v]) => {
       result[ym] = (result[ym] || 0) + v;
     });

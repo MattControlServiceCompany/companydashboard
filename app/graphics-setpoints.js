@@ -29,8 +29,8 @@ function _pvToggleBldg(projId, bldgId) {
   if (chev) chev.textContent = open ? '▼' : '▶';
 }
 
-function _pvRenderMeterPerf(m, bills, incl) {
-  var result = buildMeterPerfTableHTML(m, bills, incl, { mode: 'tab' });
+function _pvRenderMeterPerf(m, bills, incl, projId, bldgId) {
+  var result = buildMeterPerfTableHTML(m, bills, incl, { mode: 'tab', projId: projId, bldgId: bldgId });
   if (!result.html) return '';
   return (
     '<div style="margin-bottom:12px">' +
@@ -79,7 +79,7 @@ function _pvRenderBldgPerf(b, projId) {
       return _parseISO(a.start) - _parseISO(c.start);
     });
     var mincl = m.inclusive !== false;
-    var mSav = getMeterSavings(m, mbills, mincl).byCalMo;
+    var mSav = getMeterSavings(m, mbills, mincl, projId, b.id).byCalMo;
     Object.keys(mSav).forEach(function (mo) {
       actualSavByCalMo[mo] = (actualSavByCalMo[mo] || 0) + mSav[mo];
     });
@@ -213,7 +213,7 @@ function _pvRenderProjPerf(bldgs, projId) {
         return _parseISO(a.start) - _parseISO(c.start);
       });
       var incl = m.inclusive !== false;
-      var sav = getMeterSavings(m, bills, incl).byCalMo;
+      var sav = getMeterSavings(m, bills, incl, projId, b.id).byCalMo;
       Object.keys(sav).forEach(function (mo) {
         actSavByMo[mo] = (actSavByMo[mo] || 0) + sav[mo];
       });
@@ -328,7 +328,7 @@ function egfxRenderPerfVerify(projId) {
         return _parseISO(a.start) - _parseISO(c.start);
       });
       var incl = m.inclusive !== false;
-      meterHtml += _pvRenderMeterPerf(m, bills, incl);
+      meterHtml += _pvRenderMeterPerf(m, bills, incl, projId, b.id);
     });
     var bldgPerfHtml = _pvRenderBldgPerf(b, projId);
     if (!meterHtml && !bldgPerfHtml) return;
@@ -669,7 +669,7 @@ function egfxRefresh(projId) {
       if (!bl || !bl.months || bl.months.length < 3) return;
       const mBills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
       const mIncl = m.inclusive !== false;
-      const savResult = getMeterSavings(m, mBills, mIncl);
+      const savResult = getMeterSavings(m, mBills, mIncl, projId, b.id);
       let meterCostSav = 0;
       Object.entries(savResult.byCalMo).forEach(([mo, v]) => {
         egfxSavByMo[mo] = (egfxSavByMo[mo] || 0) + v;
