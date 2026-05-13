@@ -478,55 +478,96 @@
       /* localStorage failure must not break submit */
     }
 
-    var jsonBlob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    var downloadOk = downloadBlob(jsonBlob, 'feedback-' + uuid + '.json');
+    var jsonStr = JSON.stringify(data, null, 2);
+    var pngBlob = state.screenshotBlob || null;
 
-    if (state.screenshotBlob) {
-      // Delay PNG download by 600ms — Edge blocks rapid back-to-back programmatic downloads
-      var pngBlob = state.screenshotBlob;
-      var pngName = 'feedback-' + uuid + '.png';
-      setTimeout(function () {
-        downloadBlob(pngBlob, pngName);
-      }, 600);
-    }
-
-    showConfirmation(uuid, downloadOk);
+    showDownloadModal(uuid, jsonStr, pngBlob);
     exitInspection();
   }
 
-  function downloadBlob(blob, filename) {
-    try {
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(function () {
-        URL.revokeObjectURL(url);
-      }, 2000);
-      return true;
-    } catch (e) {
-      return false;
+  function showDownloadModal(uuid, jsonStr, pngBlob) {
+    var overlay = document.createElement('div');
+    overlay.style.cssText =
+      'position:fixed;inset:0;background:rgba(5,8,15,0.88);z-index:100001;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px)';
+
+    var box = document.createElement('div');
+    box.style.cssText =
+      'background:var(--s2,#1a1e2e);border:1px solid var(--border2,#2a2e3e);border-radius:14px;padding:24px;width:420px;max-width:90vw;color:var(--text,#e0e0e0);font-family:inherit';
+
+    var title = document.createElement('div');
+    title.style.cssText = 'font-size:15px;font-weight:700;margin-bottom:6px';
+    title.textContent = 'Feedback Submitted';
+
+    var uuidLine = document.createElement('div');
+    uuidLine.style.cssText = 'font-size:12px;color:var(--text2,#7d8590);margin-bottom:16px';
+    uuidLine.textContent = 'UUID: ' + uuid;
+
+    var msg = document.createElement('div');
+    msg.style.cssText = 'font-size:13px;color:var(--text2,#7d8590);margin-bottom:16px;line-height:1.5';
+    msg.textContent = 'Data saved to app storage. Click below to download files:';
+
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
+
+    var jsonBtn = document.createElement('button');
+    jsonBtn.className = 'btn btn-em btn-sm';
+    jsonBtn.textContent = 'Save JSON';
+    jsonBtn.onclick = function () {
+      triggerDownload(new Blob([jsonStr], { type: 'application/json' }), 'feedback-' + uuid + '.json');
+      jsonBtn.textContent = 'Saved';
+      jsonBtn.disabled = true;
+    };
+
+    btnRow.appendChild(jsonBtn);
+
+    if (pngBlob) {
+      var pngBtn = document.createElement('button');
+      pngBtn.className = 'btn btn-em btn-sm';
+      pngBtn.textContent = 'Save Screenshot';
+      pngBtn.onclick = function () {
+        triggerDownload(pngBlob, 'feedback-' + uuid + '.png');
+        pngBtn.textContent = 'Saved';
+        pngBtn.disabled = true;
+      };
+      btnRow.appendChild(pngBtn);
     }
+
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'btn btn-ghost btn-sm';
+    closeBtn.textContent = 'Close';
+    closeBtn.onclick = function () {
+      overlay.remove();
+    };
+
+    btnRow.appendChild(closeBtn);
+
+    box.appendChild(title);
+    box.appendChild(uuidLine);
+    box.appendChild(msg);
+    box.appendChild(btnRow);
+    overlay.appendChild(box);
+    overlay.onclick = function (e) {
+      if (e.target === overlay) overlay.remove();
+    };
+    document.body.appendChild(overlay);
   }
 
-  function showConfirmation(uuid, downloadOk) {
-    var el = document.createElement('div');
-    el.className = 'fb-confirm';
-    var downloadNote =
-      downloadOk === false ? '<div class="fb-confirm-note">Download blocked — data saved to app storage</div>' : '';
-    el.innerHTML = '&#9989; Feedback submitted <span class="fb-confirm-uuid">' + uuid + '</span>' + downloadNote;
-    document.body.appendChild(el);
+  function triggerDownload(blob, filename) {
+    if (navigator.msSaveBlob) {
+      navigator.msSaveBlob(blob, filename);
+      return;
+    }
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     setTimeout(function () {
-      el.style.opacity = '0';
-      el.style.transition = 'opacity .3s';
-      setTimeout(function () {
-        el.remove();
-      }, 300);
-    }, 3000);
+      URL.revokeObjectURL(url);
+    }, 5000);
   }
 
   /* ── Init ── */
