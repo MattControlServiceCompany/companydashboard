@@ -492,7 +492,7 @@
 
     var box = document.createElement('div');
     box.style.cssText =
-      'background:var(--s2,#1a1e2e);border:1px solid var(--border2,#2a2e3e);border-radius:14px;padding:24px;width:420px;max-width:90vw;color:var(--text,#e0e0e0);font-family:inherit';
+      'background:var(--s2,#1a1e2e);border:1px solid var(--border2,#2a2e3e);border-radius:14px;padding:24px;width:480px;max-width:90vw;color:var(--text,#e0e0e0);font-family:inherit';
 
     var title = document.createElement('div');
     title.style.cssText = 'font-size:15px;font-weight:700;margin-bottom:6px';
@@ -502,38 +502,49 @@
     uuidLine.style.cssText = 'font-size:12px;color:var(--text2,#7d8590);margin-bottom:16px';
     uuidLine.textContent = 'UUID: ' + uuid;
 
-    var msg = document.createElement('div');
-    msg.style.cssText = 'font-size:13px;color:var(--text2,#7d8590);margin-bottom:16px;line-height:1.5';
-    msg.textContent = 'Data saved to app storage. Click below to download files:';
+    // JSON section — show content in copyable textarea
+    var jsonLabel = document.createElement('div');
+    jsonLabel.style.cssText = 'font-size:12px;font-weight:600;color:var(--text2,#7d8590);margin-bottom:4px';
+    jsonLabel.textContent = 'JSON Data — select all and copy, or right-click the image to save:';
 
-    var btnRow = document.createElement('div');
-    btnRow.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
+    var jsonArea = document.createElement('textarea');
+    jsonArea.value = jsonStr;
+    jsonArea.readOnly = true;
+    jsonArea.style.cssText =
+      'width:100%;height:120px;background:var(--s1,#0d1117);color:var(--text,#e0e0e0);border:1px solid var(--border,#30363d);border-radius:6px;padding:8px;font-family:monospace;font-size:11px;resize:vertical;margin-bottom:8px';
 
-    var jsonBtn = document.createElement('button');
-    jsonBtn.className = 'btn btn-em btn-sm';
-    jsonBtn.textContent = 'Save JSON';
-    jsonBtn.onclick = async function () {
-      jsonBtn.textContent = 'Saving...';
-      jsonBtn.disabled = true;
-      var ok = await triggerDownload(new Blob([jsonStr], { type: 'application/json' }), 'feedback-' + uuid + '.json');
-      jsonBtn.textContent = ok ? 'Saved' : 'Save JSON';
-      jsonBtn.disabled = ok ? true : false;
+    var copyBtn = document.createElement('button');
+    copyBtn.className = 'btn btn-em btn-sm';
+    copyBtn.textContent = 'Copy JSON to Clipboard';
+    copyBtn.style.cssText = 'margin-bottom:12px';
+    copyBtn.onclick = function () {
+      navigator.clipboard.writeText(jsonStr).then(function () {
+        copyBtn.textContent = 'Copied!';
+        setTimeout(function () {
+          copyBtn.textContent = 'Copy JSON to Clipboard';
+        }, 2000);
+      });
     };
 
-    btnRow.appendChild(jsonBtn);
+    box.appendChild(title);
+    box.appendChild(uuidLine);
+    box.appendChild(jsonLabel);
+    box.appendChild(jsonArea);
+    box.appendChild(copyBtn);
 
+    // PNG section — show as image user can right-click > Save Image As
     if (pngBlob) {
-      var pngBtn = document.createElement('button');
-      pngBtn.className = 'btn btn-em btn-sm';
-      pngBtn.textContent = 'Save Screenshot';
-      pngBtn.onclick = async function () {
-        pngBtn.textContent = 'Saving...';
-        pngBtn.disabled = true;
-        var ok = await triggerDownload(pngBlob, 'feedback-' + uuid + '.png');
-        pngBtn.textContent = ok ? 'Saved' : 'Save Screenshot';
-        pngBtn.disabled = ok ? true : false;
-      };
-      btnRow.appendChild(pngBtn);
+      var imgLabel = document.createElement('div');
+      imgLabel.style.cssText = 'font-size:12px;font-weight:600;color:var(--text2,#7d8590);margin-bottom:4px';
+      imgLabel.textContent = 'Screenshot — right-click → Save image as...';
+
+      var img = document.createElement('img');
+      img.src = URL.createObjectURL(pngBlob);
+      img.style.cssText =
+        'max-width:100%;max-height:200px;border:1px solid var(--border,#30363d);border-radius:6px;margin-bottom:12px;display:block';
+
+      box.appendChild(imgLabel);
+      box.appendChild(img);
     }
 
     var closeBtn = document.createElement('button');
@@ -543,49 +554,12 @@
       overlay.remove();
     };
 
-    btnRow.appendChild(closeBtn);
-
-    box.appendChild(title);
-    box.appendChild(uuidLine);
-    box.appendChild(msg);
-    box.appendChild(btnRow);
+    box.appendChild(closeBtn);
     overlay.appendChild(box);
     overlay.onclick = function (e) {
       if (e.target === overlay) overlay.remove();
     };
     document.body.appendChild(overlay);
-  }
-
-  async function triggerDownload(blob, filename) {
-    // File System Access API — opens a native Save As dialog (Edge/Chrome 86+)
-    if (window.showSaveFilePicker) {
-      try {
-        var ext = filename.split('.').pop();
-        var types = [];
-        if (ext === 'json') types = [{ description: 'JSON', accept: { 'application/json': ['.json'] } }];
-        else if (ext === 'png') types = [{ description: 'PNG Image', accept: { 'image/png': ['.png'] } }];
-        var handle = await window.showSaveFilePicker({ suggestedName: filename, types: types });
-        var writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        return true;
-      } catch (e) {
-        if (e.name === 'AbortError') return false;
-      }
-    }
-    // Fallback: blob URL anchor click
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(function () {
-      URL.revokeObjectURL(url);
-    }, 5000);
-    return true;
   }
 
   /* ── Init ── */
