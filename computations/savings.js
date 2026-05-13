@@ -184,6 +184,15 @@ function getMeterSavings(m, bills, incl) {
     unitsByCalMo[calMo].gallons += unitSav.gallons;
   });
 
+  // Inject overrides for months that have no postRow (e.g. propane with no delivery that month)
+  const _allOverrides = bl.costSavOverrides || {};
+  Object.entries(_allOverrides).forEach(([ym, val]) => {
+    if (val == null || ym <= blEnd || byYM[ym] != null) return;
+    const calMo = parseInt(ym.split('-')[1]) - 1;
+    byYM[ym] = val;
+    byCalMo[calMo] = (byCalMo[calMo] || 0) + val;
+  });
+
   // Also set legacy m._unitSavByCalMo for any remaining references
   m._unitSavByCalMo = unitsByCalMo;
 
