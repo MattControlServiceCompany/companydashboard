@@ -593,15 +593,6 @@ function egfxRefresh(projId) {
   const blEui = sqft > 0 ? blKbtu / sqft : 0;
   const cbecsEui = CBECS_EUI[p.type] || 48.5;
 
-  // Overwrite baseline year(s) in yearData with normalized values so YoY charts match
-  const blYearArr = [...blYears].sort();
-  if (blYearArr.length === 1 && yearData[blYearArr[0]]) {
-    yearData[blYearArr[0]].kwh = blKwhAvg.slice();
-    yearData[blYearArr[0]].gas = blGasAvg.slice();
-    yearData[blYearArr[0]].propane = blPropaneAvg.slice();
-    yearData[blYearArr[0]].kw = _blKwFromMap.slice();
-  }
-
   const sortedYears = Object.keys(yearData).map(Number).sort();
   const latestYear = sortedYears.length > 0 ? sortedYears[sortedYears.length - 1] : null;
 
