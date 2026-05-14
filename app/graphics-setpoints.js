@@ -473,11 +473,11 @@ function egfxRefresh(projId) {
             const kwVal = parseFloat(bill.demandKW) || 0;
             const costVal = _elecCommodityCost(bill);
             yearData[yr].kwh[mi] += kwhVal;
-            yearData[yr].kw[mi] = Math.max(yearData[yr].kw[mi], kwVal);
+            yearData[yr].kw[mi] += kwVal;
             yearData[yr].cost[mi] += costVal;
             yearData[yr].elecCost[mi] += costVal;
             byd.kwh[mi] += kwhVal;
-            byd.kw[mi] = Math.max(byd.kw[mi], kwVal);
+            byd.kw[mi] += kwVal;
             byd.cost[mi] += costVal;
             byd.elecCost[mi] += costVal;
           }
@@ -555,7 +555,7 @@ function egfxRefresh(projId) {
   const _blGasFromMap = new Array(12).fill(0);
   const _blPropaneFromMap = new Array(12).fill(0);
   const _blKwFromMap = new Array(12).fill(0);
-  const _kwNormByYm = {}; // project-level: YYYY-MM -> max CDD-regression-predicted kW across meters
+  const _kwNormByYm = {}; // project-level: YYYY-MM -> sum of CDD-regression-predicted kW across meters
   bldgs.forEach((b) => {
     (b.meters || []).forEach((m) => {
       if (m.baselineInclude === false) return;
@@ -580,10 +580,10 @@ function egfxRefresh(projId) {
       }
       const _hasKwNorm = Object.keys(_mKwNorm).length > 0;
 
-      // Merge this meter's kW predictions into project-level lookup (max across meters per YM)
+      // Merge this meter's kW predictions into project-level lookup (sum across meters per YM)
       if (_hasKwNorm) {
         Object.entries(_mKwNorm).forEach(([ym, kw]) => {
-          _kwNormByYm[ym] = Math.max(_kwNormByYm[ym] || 0, kw);
+          _kwNormByYm[ym] = (_kwNormByYm[ym] || 0) + kw;
         });
       }
 
@@ -604,14 +604,14 @@ function egfxRefresh(projId) {
             });
             const avgKwNorm = kwNormCnt > 0 ? kwNormSum / kwNormCnt : 0;
             if (avgKwNorm > 0) {
-              _blKwFromMap[mo] = Math.max(_blKwFromMap[mo], avgKwNorm);
+              _blKwFromMap[mo] += avgKwNorm;
             } else {
               // Fallback to raw if regression returned nothing for this month
-              _blKwFromMap[mo] = Math.max(_blKwFromMap[mo], v.demandKW || 0);
+              _blKwFromMap[mo] += v.demandKW || 0;
             }
           } else {
             // No regression available — fallback to raw demandKW (same as before)
-            _blKwFromMap[mo] = Math.max(_blKwFromMap[mo], v.demandKW || 0);
+            _blKwFromMap[mo] += v.demandKW || 0;
           }
         }
         if (isGas) _blGasFromMap[mo] += v.therms || 0;
