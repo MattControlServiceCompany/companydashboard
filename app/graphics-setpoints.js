@@ -373,7 +373,6 @@ function egfxRefresh(projId) {
 
   // Collect baseline and post-baseline data from all electric and gas meters
   let blKwh = new Array(12).fill(0),
-    blKw = new Array(12).fill(0),
     blGas = new Array(12).fill(0),
     blPropane = new Array(12).fill(0);
   let blCost = new Array(12).fill(0);
@@ -432,7 +431,6 @@ function egfxRefresh(projId) {
           // Baseline data
           if (isElec) {
             blKwh[mi] += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-            blKw[mi] = Math.max(blKw[mi], parseFloat(bill.demandKW) || 0);
             blCost[mi] += _elecCommodityCost(bill);
           }
           if (isGas) blGas[mi] += parseFloat(bill.therms) || parseFloat(bill.usage) || 0;
@@ -576,7 +574,9 @@ function egfxRefresh(projId) {
       Object.entries(moMap).forEach(([mo, v]) => {
         if (isElec) {
           _blKwhFromMap[mo] += v.kwh || 0;
-          _blKwFromMap[mo] += v.billedKW || v.demandKW || 0;
+          // Use demandKW (not billedKW) to match bar data field (line 475)
+          // Use Math.max (not +=) to match bar aggregation across meters (line 478)
+          _blKwFromMap[mo] = Math.max(_blKwFromMap[mo], v.demandKW || 0);
         }
         if (isGas) _blGasFromMap[mo] += v.therms || 0;
         if (isPropane) _blPropaneFromMap[mo] += v.gallons || 0;
@@ -842,7 +842,12 @@ function egfxRefresh(projId) {
         const _addrStr = p.addr || '';
         const _stateMatch = _addrStr.match(/\b([A-Z]{2})\b(?=\s*\d{5}|\s*$|,|\s*$)/);
         const _stateCode = (_stateMatch ? _stateMatch[1] : null) || 'KS';
-        const _pc = calculatePollutionCredits(kwhSaved, gasSaved, propSaved, _stateCode);
+        const _pc = calculatePollutionCredits(
+          Math.max(0, kwhSaved),
+          Math.max(0, gasSaved),
+          Math.max(0, propSaved),
+          _stateCode,
+        );
         const _pol = _pc.pollutants;
         const _eq = _pc.equivalents;
         const _fmt = (n) => Math.round(Math.abs(n)).toLocaleString();
@@ -915,11 +920,11 @@ function egfxRefresh(projId) {
           'State: <strong>' +
           _stateCode +
           '</strong> • Inputs: <strong>' +
-          Math.round(Math.abs(kwhSaved)).toLocaleString() +
+          Math.round(kwhSaved).toLocaleString() +
           '</strong> kWh + <strong>' +
-          Math.round(Math.abs(gasSaved)).toLocaleString() +
+          Math.round(gasSaved).toLocaleString() +
           '</strong> Therms + <strong>' +
-          Math.round(Math.abs(propSaved)).toLocaleString() +
+          Math.round(propSaved).toLocaleString() +
           '</strong> Gal Propane' +
           '</div>';
       } else {

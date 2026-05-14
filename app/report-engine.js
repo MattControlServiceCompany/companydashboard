@@ -611,6 +611,8 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
     inputs: { kwhSaved: 0, thermsSaved: 0, propaneGalSaved: 0 },
   };
   try {
+    // Clamp to zero: negative savings (usage increase) produce zero pollution credits,
+    // not negative ones. Dashboard (graphics-setpoints.js) must match this behavior.
     pollution = calculatePollutionCredits(
       Math.max(0, totKwhSaved),
       Math.max(0, totThermsSaved),
@@ -2187,7 +2189,7 @@ function rptPageSavingsPerformance(n, d) {
     '<thead><tr style="text-align:center;white-space:normal;word-wrap:break-word;line-height:1.2">' +
     '<th style="width:12%">Year</th>' +
     '<th class="rpt-n" style="width:14%">kWh</th>' +
-    '<th class="rpt-n" style="width:10%">Peak kW</th>' +
+    '<th class="rpt-n" style="width:10%">kW</th>' +
     '<th class="rpt-n" style="width:12%">Therms</th>' +
     '<th class="rpt-n" style="width:12%">Propane<br>Gal</th>' +
     '<th class="rpt-n" style="width:14%">Cost</th>' +

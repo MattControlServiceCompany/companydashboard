@@ -2050,18 +2050,19 @@ function calculatePollutionCredits(kwhSaved, thermsSaved, propaneGalSaved, state
   });
   var co2Lbs = pollutants.co2;
   var eq = POLLUTION_EQUIVALENTS;
+  var absCo2Lbs = Math.abs(co2Lbs);
   var equivalents = {
-    carsRemoved: Math.round(co2Lbs * eq.carsPerLbCO2),
-    gallonsGasoline: Math.round(co2Lbs * eq.gallonsGasPerLbCO2),
-    tankerTrucks: Math.round(co2Lbs * eq.gallonsGasPerLbCO2 * eq.tankerTrucksPerGal),
-    barrelsOil: Math.round(co2Lbs * eq.barrelsOilPerLbCO2),
-    households: Math.round(co2Lbs * eq.householdsPerLbCO2),
-    treeSeedlings: Math.round(co2Lbs * eq.treeSeedlingsPerLbCO2),
-    acresForest: Math.round(co2Lbs * eq.acresForestPerLbCO2),
-    railcarsCoal: Math.round(co2Lbs * eq.railcarsCoalPerLbCO2),
-    tonsRecycled: Math.round(co2Lbs * eq.tonsRecycledPerLbCO2),
-    propaneCylinders: Math.round(co2Lbs * eq.propaneCylindersPerLbCO2),
-    coalPlants: Math.round(co2Lbs * eq.coalPlantsPerLbCO2),
+    carsRemoved: Math.round(absCo2Lbs * eq.carsPerLbCO2),
+    gallonsGasoline: Math.round(absCo2Lbs * eq.gallonsGasPerLbCO2),
+    tankerTrucks: Math.round(absCo2Lbs * eq.gallonsGasPerLbCO2 * eq.tankerTrucksPerGal),
+    barrelsOil: Math.round(absCo2Lbs * eq.barrelsOilPerLbCO2),
+    households: Math.round(absCo2Lbs * eq.householdsPerLbCO2),
+    treeSeedlings: Math.round(absCo2Lbs * eq.treeSeedlingsPerLbCO2),
+    acresForest: Math.round(absCo2Lbs * eq.acresForestPerLbCO2),
+    railcarsCoal: Math.round(absCo2Lbs * eq.railcarsCoalPerLbCO2),
+    tonsRecycled: Math.round(absCo2Lbs * eq.tonsRecycledPerLbCO2),
+    propaneCylinders: Math.round(absCo2Lbs * eq.propaneCylindersPerLbCO2),
+    coalPlants: Math.round(absCo2Lbs * eq.coalPlantsPerLbCO2),
   };
   return {
     pollutants: pollutants,

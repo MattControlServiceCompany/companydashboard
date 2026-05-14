@@ -127,39 +127,85 @@ function buildMoMap(m, blRows, bills, incl) {
     gasByMo = {},
     waterByMo = {},
     propaneByMo = {};
-  blRows
-    .slice()
-    .sort((a, c) => a.ym.localeCompare(c.ym))
-    .forEach((r) => {
-      const mo = parseInt(r.ym.split('-')[1]) - 1;
-      const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
-      const n = Math.max(1, bfr.length);
-      const normUsage = r.regrBaseline != null ? r.regrBaseline : r.usage;
-      if (isElec) {
-        const kwCostSum = bfr.reduce((s, b) => s + parseFloat(b.kwCost || 0), 0);
-        const kwhCostSum = bfr.reduce((s, b) => s + (parseFloat(b.kwhCost) || 0), 0);
-        elecByMo[mo] = {
-          kwh: normUsage,
-          demandKW: bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.demandKW || 0))) : 0,
-          billedKW: bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.billedKW || b.demandKW || 0))) : 0,
-          facKW: bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.facKW || 0))) : 0,
-          kwCost: bfr.reduce((s, b) => s + parseFloat(b.kwCost || 0), 0),
-          facKWCost: bfr.reduce((s, b) => s + parseFloat(b.facKWCost || 0), 0),
-          energyCost: kwhCostSum,
-          totalCost: r.cost,
-          commodityCost: kwhCostSum + kwCostSum + bfr.reduce((s, b) => s + (parseFloat(b.facKWCost) || 0), 0),
-          normDays: r.normDays,
-        };
-      } else if (isGas) {
-        const gasRateAvg = bfr.length > 0 ? bfr.reduce((s, b) => s + getStoredRate(b, 'gas'), 0) / bfr.length : 0;
-        gasByMo[mo] = { therms: normUsage, cost: normUsage > 0 ? r.cost : 0, rate: gasRateAvg };
-      } else if (isPropane) {
-        const propRateAvg = bfr.length > 0 ? bfr.reduce((s, b) => s + getStoredRate(b, 'propane'), 0) / bfr.length : 0;
-        propaneByMo[mo] = { gallons: normUsage, cost: r.cost, rate: propRateAvg };
-      } else {
-        waterByMo[mo] = { kgal: normUsage, cost: r.cost };
-      }
-    });
+  // Two-pass accumulate-then-average for multi-year baselines.
+  // Pass 1: group all blRows by calendar month (mo = 0-11).
+  //   Each mo may have entries from multiple years (e.g. 2024-01 and 2025-01 both → mo=0).
+  // Pass 2: average all values across years for each mo.
+  // For kW: use average across years (per Manager decision — matches kWh behavior).
+  const _moAccum = {}; // { mo: [rowEntry, ...] }
+  blRows.forEach((r) => {
+    const mo = parseInt(r.ym.split('-')[1]) - 1;
+    if (!_moAccum[mo]) _moAccum[mo] = [];
+    const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
+    const normUsage = r.regrBaseline != null ? r.regrBaseline : r.usage;
+    _moAccum[mo].push({ r, bfr, normUsage });
+  });
+  Object.entries(_moAccum).forEach(([mo, entries]) => {
+    const cnt = entries.length; // number of years contributing to this calendar month
+    if (isElec) {
+      const kwh = entries.reduce((s, e) => s + e.normUsage, 0) / cnt;
+      const demandKW =
+        entries.reduce(
+          (s, e) => s + (e.bfr.length ? Math.max(...e.bfr.map((b) => parseFloat(b.demandKW || 0))) : 0),
+          0,
+        ) / cnt;
+      const billedKW =
+        entries.reduce(
+          (s, e) => s + (e.bfr.length ? Math.max(...e.bfr.map((b) => parseFloat(b.billedKW || b.demandKW || 0))) : 0),
+          0,
+        ) / cnt;
+      const facKW =
+        entries.reduce((s, e) => s + (e.bfr.length ? Math.max(...e.bfr.map((b) => parseFloat(b.facKW || 0))) : 0), 0) /
+        cnt;
+      const kwCost = entries.reduce((s, e) => s + e.bfr.reduce((ss, b) => ss + parseFloat(b.kwCost || 0), 0), 0) / cnt;
+      const facKWCost =
+        entries.reduce((s, e) => s + e.bfr.reduce((ss, b) => ss + parseFloat(b.facKWCost || 0), 0), 0) / cnt;
+      const kwhCostSum =
+        entries.reduce((s, e) => s + e.bfr.reduce((ss, b) => ss + (parseFloat(b.kwhCost) || 0), 0), 0) / cnt;
+      const kwCostSum =
+        entries.reduce((s, e) => s + e.bfr.reduce((ss, b) => ss + parseFloat(b.kwCost || 0), 0), 0) / cnt;
+      const facKWCostSum =
+        entries.reduce((s, e) => s + e.bfr.reduce((ss, b) => ss + (parseFloat(b.facKWCost) || 0), 0), 0) / cnt;
+      const totalCost = entries.reduce((s, e) => s + e.r.cost, 0) / cnt;
+      const normDays = entries.reduce((s, e) => s + e.r.normDays, 0) / cnt;
+      elecByMo[mo] = {
+        kwh,
+        demandKW,
+        billedKW,
+        facKW,
+        kwCost,
+        facKWCost,
+        energyCost: kwhCostSum,
+        totalCost,
+        commodityCost: kwhCostSum + kwCostSum + facKWCostSum,
+        normDays,
+      };
+    } else if (isGas) {
+      const therms = entries.reduce((s, e) => s + e.normUsage, 0) / cnt;
+      const cost = entries.reduce((s, e) => s + (e.normUsage > 0 ? e.r.cost : 0), 0) / cnt;
+      const rate =
+        entries.reduce(
+          (s, e) =>
+            s + (e.bfr.length > 0 ? e.bfr.reduce((ss, b) => ss + getStoredRate(b, 'gas'), 0) / e.bfr.length : 0),
+          0,
+        ) / cnt;
+      gasByMo[mo] = { therms, cost, rate };
+    } else if (isPropane) {
+      const gallons = entries.reduce((s, e) => s + e.normUsage, 0) / cnt;
+      const cost = entries.reduce((s, e) => s + e.r.cost, 0) / cnt;
+      const rate =
+        entries.reduce(
+          (s, e) =>
+            s + (e.bfr.length > 0 ? e.bfr.reduce((ss, b) => ss + getStoredRate(b, 'propane'), 0) / e.bfr.length : 0),
+          0,
+        ) / cnt;
+      propaneByMo[mo] = { gallons, cost, rate };
+    } else {
+      const kgal = entries.reduce((s, e) => s + e.normUsage, 0) / cnt;
+      const cost = entries.reduce((s, e) => s + e.r.cost, 0) / cnt;
+      waterByMo[mo] = { kgal, cost };
+    }
+  });
   return { elecByMo, gasByMo, waterByMo, propaneByMo };
 }
 
