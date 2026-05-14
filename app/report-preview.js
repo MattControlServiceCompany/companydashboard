@@ -6,6 +6,7 @@
 
 var _reportConfig = null;
 var _reportData = null;
+var _rptInspectActive = false;
 
 function generateReportPreview() {
   var config = _rptV2ReadConfig();
@@ -108,62 +109,137 @@ function _showPreview(config, pagesHTML) {
   // Show container
   container.style.display = '';
   document.body.style.overflow = 'hidden';
+
+  // Initialize inspector listener (idempotent — only binds once)
+  _rptInitInspector();
 }
 
 function _rebuildSidebar() {
   var sidebarEl = document.getElementById('rptPreviewSidebar');
   var pages = document.querySelectorAll('#rptPreviewPages .rpt-preview-page');
-  var html =
-    '<div style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--s3);margin-bottom:4px">Sections</div>';
-  var visibleIdx = 0;
 
+  // Build a map: sectionKey -> { pageIdx, isVisible }
+  // Only the first page for multi-page sections is tracked (for scroll-to and page number)
+  var sectionPageMap = {};
+  var visibleCountByKey = {};
+  var globalVisibleIdx = 0;
   for (var i = 0; i < pages.length; i++) {
-    var page = pages[i];
-    var sectionKey = page.getAttribute('data-section') || 'page-' + (i + 1);
-    var isVisible = page.style.display !== 'none';
-    if (isVisible) visibleIdx++;
+    var pg = pages[i];
+    var sk = pg.getAttribute('data-section') || '';
+    // Strip -cont suffix to normalize continuation pages back to their parent key
+    var baseKey = sk.replace(/-cont$/, '');
+    var isVis = pg.style.display !== 'none';
+    if (isVis) globalVisibleIdx++;
+    // Only record the first (non-cont) page for each section key
+    if (baseKey && !sk.endsWith('-cont') && !(baseKey in sectionPageMap)) {
+      sectionPageMap[baseKey] = { pageIdx: i, isVisible: isVis, pageNum: isVis ? globalVisibleIdx : null };
+    }
+  }
 
-    // Find section label
-    var label = sectionKey;
-    for (var j = 0; j < REPORT_SECTIONS.length; j++) {
-      if (REPORT_SECTIONS[j].key === sectionKey) {
-        label = REPORT_SECTIONS[j].label;
-        break;
+  // Recalculate accurate page numbers for each section key (visible pages only, in DOM order)
+  var visNum = 0;
+  for (var pi = 0; pi < pages.length; pi++) {
+    var pgSk = pages[pi].getAttribute('data-section') || '';
+    var pgBase = pgSk.replace(/-cont$/, '');
+    if (pages[pi].style.display !== 'none') {
+      visNum++;
+      if (pgBase && !pgSk.endsWith('-cont') && sectionPageMap[pgBase] && sectionPageMap[pgBase].pageNum === null) {
+        // shouldn't happen, but guard
+      }
+      if (pgBase && !pgSk.endsWith('-cont') && sectionPageMap[pgBase]) {
+        sectionPageMap[pgBase].pageNum = visNum;
       }
     }
-    if (label === sectionKey) {
-      // Try to extract from page content
-      var h2 = page.querySelector('h2, [style*="font-size:14px"], [style*="font-weight:700"]');
-      if (h2) label = h2.textContent.substring(0, 30);
+  }
+
+  var html =
+    '<div style="padding:8px 12px;font-size:11px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--s3);margin-bottom:4px">Sections</div>';
+
+  var lastGroup = null;
+  for (var si = 0; si < REPORT_SECTIONS.length; si++) {
+    var sec = REPORT_SECTIONS[si];
+
+    // Group header
+    if (sec.group !== lastGroup) {
+      lastGroup = sec.group;
+      html +=
+        '<div style="padding:6px 12px 2px;font-size:9px;font-weight:700;letter-spacing:0.06em;' +
+        'color:var(--text3);text-transform:uppercase">' +
+        sec.group +
+        '</div>';
     }
 
-    html +=
-      '<div class="rpt-sidebar-row" draggable="true" data-idx="' +
-      i +
-      '" ' +
-      'ondragstart="_rptDragStart(event,' +
-      i +
-      ')" ' +
-      'ondragover="_rptDragOver(event)" ' +
-      'ondrop="_rptDrop(event,' +
-      i +
-      ')" ' +
-      'style="display:flex;align-items:center;gap:6px;padding:5px 12px;cursor:grab;' +
-      'border-bottom:1px solid var(--s2);font-size:11px;color:var(--text)">';
-    html +=
-      '<input type="checkbox" ' +
-      (isVisible ? 'checked' : '') +
-      ' onchange="togglePreviewSection(' +
-      i +
-      ',this.checked)" style="accent-color:var(--em);width:13px;height:13px;flex-shrink:0">';
-    html += '<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</span>';
-    if (isVisible) {
-      html += '<span style="font-size:9px;color:var(--text3);flex-shrink:0">p' + visibleIdx + '</span>';
+    var info = sectionPageMap[sec.key];
+    var isIncluded = !!info; // page was rendered for this section
+    var isVisible = isIncluded && info.isVisible;
+
+    if (isIncluded) {
+      // Rendered section — show checkbox, label, page number, drag handle
+      var pgIdx = info.pageIdx;
+      html +=
+        '<div class="rpt-sidebar-row" draggable="true" data-idx="' +
+        pgIdx +
+        '" ' +
+        'ondragstart="_rptDragStart(event,' +
+        pgIdx +
+        ')" ' +
+        'ondragover="_rptDragOver(event)" ' +
+        'ondrop="_rptDrop(event,' +
+        pgIdx +
+        ')" ' +
+        'onclick="_toggleSectionByKey(\'' +
+        sec.key +
+        '\')" ' +
+        'style="display:flex;align-items:center;gap:6px;padding:5px 12px;cursor:pointer;' +
+        'border-bottom:1px solid var(--s2);font-size:11px;color:var(--text)">';
+      html +=
+        '<input type="checkbox" ' +
+        (isVisible ? 'checked' : '') +
+        ' onclick="event.stopPropagation();togglePreviewSection(' +
+        pgIdx +
+        ',this.checked)" style="accent-color:var(--em);width:13px;height:13px;flex-shrink:0;cursor:pointer">';
+      html +=
+        '<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" ' +
+        'onclick="event.stopPropagation();_scrollToSection(\'' +
+        sec.key +
+        '\')">' +
+        sec.label +
+        '</span>';
+      if (isVisible && info.pageNum) {
+        html += '<span style="font-size:9px;color:var(--text3);flex-shrink:0">p' + info.pageNum + '</span>';
+      }
+      html += '</div>';
+    } else {
+      // Not included — show grayed label, no checkbox, no page number
+      html +=
+        '<div style="display:flex;align-items:center;gap:6px;padding:5px 12px;' +
+        'border-bottom:1px solid var(--s2);font-size:11px;color:var(--text3);opacity:0.55">';
+      html += '<span style="width:13px;height:13px;flex-shrink:0"></span>';
+      html +=
+        '<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-style:italic">' +
+        sec.label +
+        '</span>';
+      html += '<span style="font-size:9px;color:var(--text3);flex-shrink:0">—</span>';
+      html += '</div>';
     }
-    html += '</div>';
   }
 
   sidebarEl.innerHTML = html;
+}
+
+function _toggleSectionByKey(key) {
+  var page = document.querySelector('#rptPreviewPages .rpt-preview-page[data-section="' + key + '"]');
+  if (!page) return;
+  var pages = document.querySelectorAll('#rptPreviewPages .rpt-preview-page');
+  var idx = Array.prototype.indexOf.call(pages, page);
+  if (idx < 0) return;
+  var nowVisible = page.style.display === 'none';
+  togglePreviewSection(idx, nowVisible);
+}
+
+function _scrollToSection(key) {
+  var page = document.querySelector('#rptPreviewPages .rpt-preview-page[data-section="' + key + '"]');
+  if (page) page.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function togglePreviewSection(idx, visible) {
@@ -229,6 +305,94 @@ function _rptDrop(e, targetIdx) {
 function closeReportPreview() {
   document.getElementById('reportPreviewContainer').style.display = 'none';
   document.body.style.overflow = '';
+  // Reset inspector state
+  _rptInspectActive = false;
+  var tip = document.getElementById('rptTextInspector');
+  if (tip) tip.style.display = 'none';
+  var btn = document.getElementById('rptInspectToggle');
+  if (btn) {
+    btn.style.background = '';
+    btn.style.color = '';
+  }
+}
+
+function _rptToggleInspect() {
+  _rptInspectActive = !_rptInspectActive;
+  var btn = document.getElementById('rptInspectToggle');
+  var tip = document.getElementById('rptTextInspector');
+  if (btn) {
+    btn.style.background = _rptInspectActive ? 'var(--em)' : '';
+    btn.style.color = _rptInspectActive ? '#fff' : '';
+  }
+  if (!_rptInspectActive && tip) tip.style.display = 'none';
+}
+
+function _rgbToHex(rgb) {
+  var m = rgb.match(/\d+/g);
+  if (!m || m.length < 3) return rgb;
+  return (
+    '#' +
+    [m[0], m[1], m[2]]
+      .map(function (n) {
+        return ('0' + parseInt(n).toString(16)).slice(-2);
+      })
+      .join('')
+  );
+}
+
+function _rptInitInspector() {
+  var pages = document.getElementById('rptPreviewPages');
+  if (!pages || pages._inspectorBound) return;
+  pages._inspectorBound = true;
+
+  pages.addEventListener('mousemove', function (e) {
+    if (!_rptInspectActive) return;
+    var tip = document.getElementById('rptTextInspector');
+    if (!tip) return;
+
+    var target = e.target;
+    // Skip if hovering the pages container itself
+    if (target === pages) {
+      tip.style.display = 'none';
+      return;
+    }
+
+    var cs = getComputedStyle(target);
+    var fontFamily = cs.fontFamily || '';
+    var fontSize = cs.fontSize || '';
+    var color = _rgbToHex(cs.color || '');
+
+    tip.innerHTML =
+      '<span style="color:#a0c4ff">font</span> ' +
+      fontFamily +
+      '<br>' +
+      '<span style="color:#a0c4ff">size</span> ' +
+      fontSize +
+      '<br>' +
+      '<span style="color:#a0c4ff">color</span> <span style="display:inline-block;width:10px;height:10px;background:' +
+      color +
+      ';border:1px solid #666;vertical-align:middle;margin-right:3px;border-radius:2px"></span>' +
+      color;
+
+    tip.style.display = 'block';
+    tip.style.left = e.clientX + 16 + 'px';
+    tip.style.top = e.clientY + 14 + 'px';
+
+    // Keep tooltip within viewport edges
+    var tw = tip.offsetWidth,
+      th = tip.offsetHeight;
+    if (e.clientX + 16 + tw > window.innerWidth - 8) {
+      tip.style.left = e.clientX - tw - 8 + 'px';
+    }
+    if (e.clientY + 14 + th > window.innerHeight - 8) {
+      tip.style.top = e.clientY - th - 8 + 'px';
+    }
+  });
+
+  pages.addEventListener('mouseleave', function () {
+    var tip = document.getElementById('rptTextInspector');
+    if (tip) tip.style.display = 'none';
+  });
 }
 
 // Template save from preview toolbar

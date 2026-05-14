@@ -426,7 +426,8 @@ function getNormRows(m, bills, incl, weatherByYm) {
   const byMonth = {};
   const isElec = m.commodity === 'Electric',
     isGas = m.commodity === 'Gas',
-    isPropane = m.commodity === 'Propane';
+    isPropane = m.commodity === 'Propane',
+    isSewer = m.commodity === 'Sewer';
 
   // ── Propane: use HDD-weighted normalization instead of day-prorating ──
   // Propane deliveries have start===end (DeliveryDate), so the normal
@@ -463,7 +464,9 @@ function getNormRows(m, bills, incl, weatherByYm) {
         ? parseFloat(row.kwh) || 0
         : isGas
           ? parseFloat(row.therms) || 0
-          : parseFloat(row.waterUsage) || 0;
+          : isSewer
+            ? parseFloat(row.sewerUsage) || parseFloat(row.waterUsage) || 0
+            : parseFloat(row.waterUsage) || 0;
       const cost = isElec
         ? parseFloat(row.totalCost) || 0
         : isGas

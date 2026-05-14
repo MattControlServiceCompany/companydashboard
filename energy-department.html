@@ -1877,9 +1877,6 @@
 
       /* ── Narrative Block ── */
       .rpt-narrative {
-        background: linear-gradient(135deg, #f8fafb, #eef4f8);
-        border: 1px solid #d4e4f0;
-        border-radius: 2px;
         padding: 10px 14px;
         margin: 6px 0;
         font-size: 11px;
@@ -1923,13 +1920,10 @@
         color: #2e86c1;
       }
       .rpt-finding-list {
-        background: #f0f7eb;
-        border-left: 3px solid #27ae60;
         padding: 8px 12px;
         margin: 6px 0;
         font-size: 10.5px;
         line-height: 1.5;
-        border-radius: 0 2px 2px 0;
       }
       .rpt-finding-list li {
         margin: 2px 0;
@@ -13398,6 +13392,14 @@
         </div>
         <div style="display: flex; align-items: center; gap: 8px">
           <button class="btn btn-ghost btn-sm" onclick="saveReportTemplate()">Save Template</button>
+          <button
+            id="rptInspectToggle"
+            class="btn btn-ghost btn-sm"
+            onclick="_rptToggleInspect()"
+            title="Hover over text to see font, color, and size"
+          >
+            Inspect Text
+          </button>
           <button class="btn btn-em btn-sm" onclick="downloadReportPDF()">Download PDF</button>
         </div>
       </div>
@@ -13426,6 +13428,23 @@
           "
         ></div>
       </div>
+      <div
+        id="rptTextInspector"
+        style="
+          display: none;
+          position: fixed;
+          z-index: 9100;
+          background: #1a1a2e;
+          color: #e8e8f0;
+          font-family: monospace;
+          font-size: 11px;
+          padding: 6px 10px;
+          border-radius: 5px;
+          line-height: 1.6;
+          pointer-events: none;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+        "
+      ></div>
     </div>
 
     <!-- ═══════════════════════════════════════════════════

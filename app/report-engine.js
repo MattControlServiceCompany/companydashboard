@@ -943,22 +943,36 @@ function generateReportHTML(data, selectedSections) {
   let pageNum = 1;
   const s = selectedSections || {};
 
+  // Helper: inject data-section="key" into the first .rpt-page div in an HTML string
+  function _tagSection(html, key) {
+    return html.replace('<div class="rpt-page"', '<div class="rpt-page" data-section="' + key + '"');
+  }
+
   // Main pages
-  if (s.cover !== false) pages.push(rptPageCover(pageNum++, data));
-  if (s.financial !== false) pages.push(rptPageFinancial(pageNum++, data));
-  if (s.savingsPerformance !== false) pages.push(rptPageSavingsPerformance(pageNum++, data));
-  if (s.euiBenchmarking !== false) pages.push(rptPageEUI(pageNum++, data));
-  if (s.environmentalImpact !== false) pages.push(rptPageEnvironmentalImpact(pageNum++, data));
-  if (s.observations !== false) pages.push(rptPageObservations(pageNum++, data));
-  if (s.approvedChanges !== false) pages.push(rptPageApprovedChanges(pageNum++, data));
-  if (s.contractProjection !== false) pages.push(rptPageContractProjection(pageNum++, data));
-  if (s.setpoints !== false) pages.push(rptPageSetPoints(pageNum++, data));
+  if (s.cover !== false) pages.push(_tagSection(rptPageCover(pageNum++, data), 'cover'));
+  if (s.financial !== false) pages.push(_tagSection(rptPageFinancial(pageNum++, data), 'financial'));
+  if (s.savingsPerformance !== false)
+    pages.push(_tagSection(rptPageSavingsPerformance(pageNum++, data), 'savingsPerformance'));
+  if (s.euiBenchmarking !== false) pages.push(_tagSection(rptPageEUI(pageNum++, data), 'euiBenchmarking'));
+  if (s.environmentalImpact !== false)
+    pages.push(_tagSection(rptPageEnvironmentalImpact(pageNum++, data), 'environmentalImpact'));
+  if (s.observations !== false) pages.push(_tagSection(rptPageObservations(pageNum++, data), 'observations'));
+  if (s.approvedChanges !== false) pages.push(_tagSection(rptPageApprovedChanges(pageNum++, data), 'approvedChanges'));
+  if (s.contractProjection !== false)
+    pages.push(_tagSection(rptPageContractProjection(pageNum++, data), 'contractProjection'));
+  if (s.setpoints !== false) pages.push(_tagSection(rptPageSetPoints(pageNum++, data), 'setpoints'));
 
   // Per-building summaries
   if (s.buildingSummaries !== false) {
+    var _bsFirst = true;
     data.buildings.forEach(function (b) {
       var bResult = rptPageBuildingSummary(pageNum, data, b);
-      pages.push(bResult.html);
+      // Tag the first page of building summaries with the section key; continuations get -cont
+      var taggedHtml = _bsFirst
+        ? bResult.html.replace('<div class="rpt-page"', '<div class="rpt-page" data-section="buildingSummaries"')
+        : bResult.html.replace('<div class="rpt-page"', '<div class="rpt-page" data-section="buildingSummaries-cont"');
+      pages.push(taggedHtml);
+      _bsFirst = false;
       pageNum += bResult.summaryPageCount;
     });
   }
@@ -982,17 +996,21 @@ function generateReportHTML(data, selectedSections) {
     // One building per page to prevent table overflow
     for (var _mpI = 0; _mpI < _mpBlocks.length; _mpI++) {
       var _mpTitle = _mpI === 0 ? 'Meter Performance — All Buildings' : 'Meter Performance (continued)';
+      var _mpKey = _mpI === 0 ? 'meterPerformance' : 'meterPerformance-cont';
       pages.push(
-        rptPage(pageNum++, _mpTitle, _mpBlocks[_mpI], {
-          data: data,
-          label: 'Page ' + pageNum + ' — Meter Performance',
-        }),
+        _tagSection(
+          rptPage(pageNum++, _mpTitle, _mpBlocks[_mpI], {
+            data: data,
+            label: 'Page ' + pageNum + ' — Meter Performance',
+          }),
+          _mpKey,
+        ),
       );
     }
   }
 
   // Commodity detail pages
-  if (s.electricDetail !== false) pages.push(rptPageElectric(pageNum++, data));
+  if (s.electricDetail !== false) pages.push(_tagSection(rptPageElectric(pageNum++, data), 'electricDetail'));
   var _hasGasBldgs = data.buildings.some(function (b) {
     return b.commodities && b.commodities.includes('Gas') && b.gas && b.gas.thermsBl > 0;
   });
@@ -1000,10 +1018,12 @@ function generateReportHTML(data, selectedSections) {
     return b.commodities && b.commodities.includes('Propane') && b.propane && b.propane.galBl > 0;
   });
   if (_hasGasBldgs && _hasPropBldgs) {
-    if (s.gasDetail !== false || s.propaneDetail !== false) pages.push(rptPageGasPropane(pageNum++, data));
+    if (s.gasDetail !== false || s.propaneDetail !== false)
+      pages.push(_tagSection(rptPageGasPropane(pageNum++, data), 'gasDetail'));
   } else {
-    if (s.gasDetail !== false && _hasGasBldgs) pages.push(rptPageGas(pageNum++, data));
-    if (s.propaneDetail !== false && _hasPropBldgs) pages.push(rptPagePropane(pageNum++, data));
+    if (s.gasDetail !== false && _hasGasBldgs) pages.push(_tagSection(rptPageGas(pageNum++, data), 'gasDetail'));
+    if (s.propaneDetail !== false && _hasPropBldgs)
+      pages.push(_tagSection(rptPagePropane(pageNum++, data), 'propaneDetail'));
   }
 
   // Appendices
@@ -1015,10 +1035,14 @@ function generateReportHTML(data, selectedSections) {
     _appLtr = String.fromCharCode(l.charCodeAt(0) + 1);
     return l;
   }
-  if (s.appendixA !== false) pages.push(rptPageAppendixNormalization(pageNum++, data, _nextAppLtr('norm')));
-  if (s.appendixB !== false) pages.push(rptPageAppendixBaseline(pageNum++, data, _nextAppLtr('regr'), _appMap));
-  if (s.appendixC !== false) pages.push(rptPageAppendixWeather(pageNum++, data, _nextAppLtr('weather')));
-  if (s.appendixD !== false) pages.push(rptPageAppendixBills(pageNum++, data, _nextAppLtr('bills')));
+  if (s.appendixA !== false)
+    pages.push(_tagSection(rptPageAppendixNormalization(pageNum++, data, _nextAppLtr('norm')), 'appendixA'));
+  if (s.appendixB !== false)
+    pages.push(_tagSection(rptPageAppendixBaseline(pageNum++, data, _nextAppLtr('regr'), _appMap), 'appendixB'));
+  if (s.appendixC !== false)
+    pages.push(_tagSection(rptPageAppendixWeather(pageNum++, data, _nextAppLtr('weather')), 'appendixC'));
+  if (s.appendixD !== false)
+    pages.push(_tagSection(rptPageAppendixBills(pageNum++, data, _nextAppLtr('bills')), 'appendixD'));
 
   return pages.join('\n');
 }
@@ -3166,7 +3190,7 @@ function rptPageContractProjection(n, d) {
     '</table>';
 
   // ── Cumulative vs Projected SVG chart (bars + green fill line) ──
-  const svgW = 400,
+  const svgW = 716,
     svgH = 120;
   const totalQtrs = contractYears * 4;
   var padL = 40,
@@ -3272,7 +3296,9 @@ function rptPageContractProjection(n, d) {
       var val = f * _maxBarVal;
       var y = _barY(val);
       return (
-        '<text x="36" y="' +
+        '<text x="' +
+        (padL - 4) +
+        '" y="' +
         y.toFixed(0) +
         '" text-anchor="end" font-size="7" fill="#888">$' +
         Math.round(val / 1000) +
@@ -3303,7 +3329,9 @@ function rptPageContractProjection(n, d) {
   var svgChart =
     '<div style="margin:8px 0">' +
     '<div style="font-size:9px;color:#000;margin-bottom:3px">Projected Quarterly Savings (bars) vs Actual Cumulative (green line)</div>' +
-    '<svg width="100%" viewBox="0 0 ' +
+    '<svg width="' +
+    svgW +
+    '" viewBox="0 0 ' +
     svgW +
     ' ' +
     svgH +
@@ -3811,7 +3839,7 @@ function rptPageBuildingSummary(n, d, b) {
   if (bldgNotes) {
     leftHTML +=
       '<div style="font-size:9px;font-weight:600;color:#000;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
-      '<div contenteditable="true" style="min-height:40px;font-size:9px;color:#444;border:1px solid #ddd;border-radius:3px;padding:6px;line-height:1.5;background:#fafafa">' +
+      '<div contenteditable="true" style="min-height:40px;font-size:9px;color:#444;padding:6px;line-height:1.5">' +
       bldgNotes +
       '</div>';
   }
@@ -5509,7 +5537,7 @@ function rptPageAppendixNormalization(n, d, appLetter) {
   var blEnd = (d.project && d.project.blEnd) || '—';
 
   var methodBox =
-    '<div contenteditable="true" style="border:1px solid #ccc;border-radius:4px;padding:10px 12px;font-size:9px;line-height:1.7;color:#333;background:#fafafa;margin-bottom:12px">' +
+    '<div contenteditable="true" style="padding:10px 12px;font-size:9px;line-height:1.7;color:#333;margin-bottom:12px">' +
     '<strong>Normalization Method:</strong> Regression analysis using Heating Degree Days (HDD) and Cooling Degree Days (CDD) at balance point 60°F, per contract specification.<br>' +
     '<strong>Baseline Period:</strong> ' +
     blStart +
@@ -5640,7 +5668,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
   }
 
   var regressionExplainer =
-    '<div contenteditable="true" style="border:1px solid #ccc;border-radius:4px;padding:10px 14px;font-size:9px;line-height:1.7;color:#333;background:#fafafa;margin-bottom:12px">' +
+    '<div contenteditable="true" style="padding:10px 14px;font-size:9px;line-height:1.7;color:#333;margin-bottom:12px">' +
     '<strong style="font-size:10px;color:#1a5276">Regression Model Overview</strong><br>' +
     'Weather-normalized savings use an OLS regression model: <span style="font-family:monospace;background:#fff;border:1px solid #ddd;padding:1px 4px;border-radius:2px">Usage = β₀ × Days + β₁ × HDD + β₂ × CDD</span><br>' +
     'Where β₀ = base load per day, β₁ = heating coefficient, β₂ = cooling coefficient. ' +
@@ -6111,7 +6139,7 @@ function rptPageAppendixWeather(n, d, appLetter) {
     'Balance point: 60°F per contract specification.';
 
   var narrativeBox =
-    '<div contenteditable="true" style="border:1px solid #ccc;border-radius:4px;padding:10px 12px;font-size:9px;line-height:1.7;color:#333;background:#fafafa;margin-top:10px">' +
+    '<div contenteditable="true" style="padding:10px 12px;font-size:9px;line-height:1.7;color:#333;margin-top:10px">' +
     narrativeText +
     '</div>';
 
@@ -6163,7 +6191,7 @@ function rptPageAppendixWeather(n, d, appLetter) {
     '<h3 style="font-size:9.5px;font-weight:700;color:#000;margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.04em">Weather Impact Summary</h3>' +
     narrativeBox +
     hddCddParagraph +
-    '<div style="margin-top:16px;padding:10px 12px;background:#f8f9fa;border:1px solid #e0e0e0;border-radius:4px;font-size:8.5px;color:#444;line-height:1.5">' +
+    '<div style="margin-top:16px;padding:10px 12px;font-size:8.5px;color:#444;line-height:1.5">' +
     '<div style="font-weight:700;font-size:9px;color:#333;margin-bottom:6px">What is a degree day?</div>' +
     '<div style="margin-bottom:6px">A degree day is a measure of relative heating and cooling energy required by buildings. It&#39;s calculated as the difference between the average daily temperature and the balance point temperature (60 degrees). When the average daily temperature is above the balance point, the result is cooling degree days; when below, the result is heating degree days.</div>' +
     '<div style="margin-bottom:6px"><strong>Example 1:</strong> Average daily temperature = 80. Balance point = 60. Cooling degree days = 20 CDD. (80-60=20)</div>' +
@@ -6677,6 +6705,26 @@ function openReportModalV2(projId) {
       lastGroup = sec.group;
     }
     var checked = sec.defaultOff ? '' : 'checked';
+    var emptyWarn = '';
+    if (sec.key === 'approvedChanges') {
+      if (!p || !(p.approvedChanges && p.approvedChanges.length > 0))
+        emptyWarn = _rptV2WarnHtml(projId, 'docs', 'approved');
+    }
+    if (sec.key === 'setpoints') {
+      if (!p || !(p.setpoints && p.setpoints.length > 0)) emptyWarn = _rptV2WarnHtml(projId, 'setpoints', null);
+    }
+    if (sec.key === 'contractProjection') {
+      if (!p || !p.start) emptyWarn = _rptV2WarnHtml(projId, 'utility', null);
+    }
+    if (sec.key === 'electricDetail') {
+      if (!_rptHasMeterWithBaseline(projId, 'Electric')) emptyWarn = _rptV2WarnHtml(projId, 'utility', null);
+    }
+    if (sec.key === 'gasDetail') {
+      if (!_rptHasMeterWithBaseline(projId, 'Gas')) emptyWarn = _rptV2WarnHtml(projId, 'utility', null);
+    }
+    if (sec.key === 'propaneDetail') {
+      if (!_rptHasMeterWithBaseline(projId, 'Propane')) emptyWarn = _rptV2WarnHtml(projId, 'utility', null);
+    }
     html +=
       '<label style="display:flex;align-items:center;gap:8px;padding:3px 8px;border-radius:4px;background:var(--s1);cursor:pointer">';
     html +=
@@ -6686,6 +6734,7 @@ function openReportModalV2(projId) {
       sec.key +
       '" style="accent-color:var(--em);width:14px;height:14px">';
     html += '<span style="font-size:12px;color:var(--text)">' + sec.label + '</span>';
+    html += emptyWarn;
     html += '</label>';
   });
   html += '</div></div>';
@@ -6735,6 +6784,46 @@ function _rptV2SelectAll(group, checked) {
   var cls = group === 'bldg' ? '.rptV2Bldg' : '.rptV2Sec';
   document.querySelectorAll(cls).forEach(function (cb) {
     cb.checked = checked;
+  });
+}
+
+function _rptV2WarnHtml(projId, tab, subTab) {
+  var callArgs = subTab ? projId + ",'" + tab + "','" + subTab + "'" : projId + ",'" + tab + "'";
+  return (
+    '<span style="display:flex;align-items:center;gap:4px;margin-left:auto">' +
+    '<span style="font-size:10px;color:var(--warn);font-weight:600">⚠ Empty</span>' +
+    '<button type="button" onclick="event.preventDefault();event.stopPropagation();_rptV2GoEdit(' +
+    callArgs +
+    ')" style="font-size:10px;padding:1px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--em);cursor:pointer;font-weight:600;line-height:1.4">Edit ↗</button>' +
+    '</span>'
+  );
+}
+
+function _rptHasMeterWithBaseline(projId, commodity) {
+  var bldgs = getUDBldgs(projId);
+  return bldgs.some(function (b) {
+    return (b.meters || []).some(function (m) {
+      return m.commodity === commodity && m.baseline && m.baseline.months && m.baseline.months.length >= 3;
+    });
+  });
+}
+
+function _rptV2GoEdit(projId, tab, subTab) {
+  document.getElementById('reportGenModal').classList.remove('open');
+  openDetail(projId);
+  requestAnimationFrame(function () {
+    var btn = document.querySelector('.pdt[data-tab="' + tab + '"]');
+    sPTab(tab, btn || null);
+    if (subTab === 'approved') {
+      window._docsSubTab = 'approved';
+      renderDocsSubTab('approved', projId);
+    }
+    var labels = {
+      docs: 'Approved Changes (Documents tab)',
+      setpoints: 'Set Points & Schedules tab',
+      utility: 'Utility Data tab',
+    };
+    showToast('Add data in the ' + (labels[tab] || tab) + ', then reopen Generate Report');
   });
 }
 

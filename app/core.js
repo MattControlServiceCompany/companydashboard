@@ -289,8 +289,38 @@ function sv(id, btn) {
     });
   }
   if (id === 'projects') {
-    showList();
-    renderProjTable();
+    const _savedProj = sessionStorage.getItem('ch_proj');
+    let _restored = false;
+    if (_savedProj) {
+      try {
+        const _s = JSON.parse(_savedProj);
+        if (_s.view === 'detail' && _s.projId != null) {
+          const _p = projects.find((p) => p.id == _s.projId);
+          if (_p) {
+            document.getElementById('projListView').style.display = 'none';
+            document.getElementById('projDetailView').style.display = 'block';
+            renderDetail(_p);
+            document.querySelectorAll('.spfi').forEach((c) => c.classList.remove('active'));
+            document.querySelectorAll(`.spfi[data-pid="${_p.id}"]`).forEach((c) => c.classList.add('active'));
+            window._activeProjId = _p.id;
+            window._activeProjTab = _s.tab || 'dashboard';
+            if (_s.tab) {
+              setTimeout(() => {
+                const _btn = document.querySelector(`.pdt[data-tab="${_s.tab}"]`);
+                if (_btn) sPTab(_s.tab, _btn);
+              }, 0);
+            }
+            _restored = true;
+          }
+        }
+      } catch (e) {}
+    }
+    if (!_restored) {
+      showList();
+      renderProjTable();
+    } else {
+      renderProjTable();
+    }
   }
   if (id === 'district' && dcEvents.length) {
     dcRenderAll();
