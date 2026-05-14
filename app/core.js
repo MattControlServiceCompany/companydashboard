@@ -299,16 +299,14 @@ function sv(id, btn) {
           if (_p) {
             document.getElementById('projListView').style.display = 'none';
             document.getElementById('projDetailView').style.display = 'block';
+            window._activeProjId = _p.id;
+            window._activeProjTab = _s.tab || 'dashboard';
             renderDetail(_p);
             document.querySelectorAll('.spfi').forEach((c) => c.classList.remove('active'));
             document.querySelectorAll(`.spfi[data-pid="${_p.id}"]`).forEach((c) => c.classList.add('active'));
-            window._activeProjId = _p.id;
-            window._activeProjTab = _s.tab || 'dashboard';
             if (_s.tab) {
-              setTimeout(() => {
-                const _btn = document.querySelector(`.pdt[data-tab="${_s.tab}"]`);
-                if (_btn) sPTab(_s.tab, _btn);
-              }, 0);
+              const _btn = document.querySelector(`.pdt[data-tab="${_s.tab}"]`);
+              if (_btn) sPTab(_s.tab, _btn);
             }
             _restored = true;
           }

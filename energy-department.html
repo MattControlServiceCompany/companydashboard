@@ -700,6 +700,10 @@
         min-height: 0;
         display: flex;
         flex-direction: column;
+        visibility: hidden;
+      }
+      .content.app-ready {
+        visibility: visible;
       }
       .view {
         display: none;
@@ -1521,17 +1525,10 @@
         overflow: hidden;
         color: #333;
         font-family: 'Segoe UI', Arial, sans-serif;
-        font-size: 11px;
+        font-size: 13px;
         line-height: 1.5;
       }
-      .rpt-page::after {
-        content: attr(data-page);
-        position: absolute;
-        bottom: 10px;
-        right: 20px;
-        font-size: 8px;
-        color: #999;
-      }
+      /* Page number now rendered by JS via .rpt-pg-footer-pagenum */
 
       /* ── Page Footer ── */
       .rpt-footer {
@@ -1546,7 +1543,7 @@
         display: block;
       }
       .rpt-footer-text {
-        font-size: 7px;
+        font-size: 9px;
         color: #999;
         padding: 4px 50px;
         display: flex;
@@ -1562,12 +1559,12 @@
         border-bottom: 1px solid #ddd;
       }
       .rpt-pg-title {
-        font-size: 16px;
+        font-size: 19px;
         font-weight: 700;
         letter-spacing: -0.5px;
       }
       .rpt-info {
-        font-size: 8px;
+        font-size: 10px;
         opacity: 0.6;
         text-align: right;
       }
@@ -1579,7 +1576,7 @@
 
       /* ── Section Headings ── */
       .rpt-body h2 {
-        font-size: 13px;
+        font-size: 16px;
         color: #1a5276;
         margin: 10px 0 4px;
         display: flex;
@@ -1593,12 +1590,12 @@
         background: #d4e4f0;
       }
       .rpt-body h3 {
-        font-size: 11px;
+        font-size: 13px;
         color: #333;
         margin: 6px 0 2px;
       }
       .rpt-su {
-        font-size: 10px;
+        font-size: 12px;
         color: #888;
         margin-bottom: 4px;
       }
@@ -1607,7 +1604,7 @@
       .rpt-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 10.5px;
+        font-size: 13px;
         margin: 4px 0;
       }
       .rpt-table th {
@@ -1616,7 +1613,7 @@
         padding: 4px 6px;
         text-align: center;
         font-weight: 600;
-        font-size: 9.5px;
+        font-size: 12px;
         text-transform: uppercase;
         white-space: nowrap;
       }
@@ -1666,14 +1663,14 @@
         background: #0070c0;
         color: #ffffff;
         border-color: #00599b;
-        font-size: 7.5px;
+        font-size: 10px;
         text-transform: uppercase;
         letter-spacing: 0.3px;
       }
       .rpt-table-bl td {
         border-color: #d9d9d9;
         color: #000000;
-        font-size: 7.5px;
+        font-size: 10px;
       }
       .rpt-table-bl tr:nth-child(even) td {
         background: #f2f2f2;
@@ -1686,7 +1683,7 @@
       }
       /* Commodity-colored column group headers */
       .rpt-table-bl th.bl-grp {
-        font-size: 7px;
+        font-size: 9px;
         font-weight: 700;
         letter-spacing: 0.5px;
         text-transform: uppercase;
@@ -1717,9 +1714,9 @@
         gap: 0;
         flex-wrap: wrap;
         justify-content: center;
-        margin-bottom: 6px;
+        margin-bottom: 0;
         border: 1px solid #d9d9d9;
-        border-radius: 4px;
+        border-radius: 0;
         background: #ffffff;
       }
       .rpt-bl-stats > div {
@@ -1733,14 +1730,14 @@
         border-right: none;
       }
       .rpt-bl-stats .bl-stat-label {
-        font-size: 6.5px;
+        font-size: 9px;
         color: #3c4042;
         text-transform: uppercase;
         letter-spacing: 0.4px;
         font-weight: 600;
       }
       .rpt-bl-stats .bl-stat-val {
-        font-size: 10px;
+        font-size: 12px;
         font-weight: 700;
         color: #000000;
       }
@@ -1752,13 +1749,13 @@
         table-layout: fixed;
       }
       .rpt-table-compact th {
-        font-size: 6px;
+        font-size: 8px;
         padding: 2px 2px;
         white-space: normal;
         word-break: break-word;
       }
       .rpt-table-compact td {
-        font-size: 6.5px;
+        font-size: 9px;
         padding: 2px 2px;
       }
       .rpt-g {
@@ -1782,14 +1779,14 @@
         margin: 6px 0;
       }
       .rpt-kpi {
-        background: linear-gradient(135deg, #f4f8fb, #e8f0f8);
+        background: transparent;
         border: 1px solid #d4e4f0;
         border-radius: 2px;
         padding: 8px;
         text-align: center;
       }
       .rpt-kpi .rpt-kpi-val {
-        font-size: 22px;
+        font-size: 26px;
         font-weight: 700;
         color: #1a5276;
       }
@@ -1797,14 +1794,14 @@
         color: #1e8449;
       }
       .rpt-kpi .rpt-kpi-label {
-        font-size: 8.5px;
+        font-size: 11px;
         color: #666;
         text-transform: uppercase;
         letter-spacing: 0.4px;
         margin-top: 1px;
       }
       .rpt-kpi .rpt-kpi-desc {
-        font-size: 9px;
+        font-size: 11px;
         color: #888;
       }
 
@@ -1815,25 +1812,25 @@
         gap: 6px;
         align-items: center;
         padding: 8px 12px;
-        background: #f4f8fb;
-        border-radius: 2px;
-        border: 1px solid #d4e4f0;
+        background: transparent;
+        border-radius: 0;
+        border: none;
         margin: 6px 0;
       }
       .rpt-vs-side {
         text-align: center;
       }
       .rpt-vs-side .rpt-vs-val {
-        font-size: 20px;
+        font-size: 24px;
         font-weight: 700;
       }
       .rpt-vs-side .rpt-vs-lbl {
-        font-size: 9px;
+        font-size: 11px;
         color: #666;
         margin-top: 1px;
       }
       .rpt-vs-mid {
-        font-size: 18px;
+        font-size: 22px;
         color: #2e86c1;
         font-weight: 700;
       }
@@ -1855,7 +1852,7 @@
         padding: 0 10px;
         color: #fff;
         font-weight: 600;
-        font-size: 11px;
+        font-size: 13px;
       }
       .rpt-progress-fill.rpt-ahead {
         background: linear-gradient(90deg, #27ae60, #2ecc71);
@@ -1903,12 +1900,12 @@
       .rpt-gauge-val {
         position: relative;
         z-index: 1;
-        font-size: 14px;
+        font-size: 17px;
         font-weight: 700;
         color: #1a5276;
       }
       .rpt-gauge-label {
-        font-size: 8.5px;
+        font-size: 11px;
         color: #666;
         text-transform: uppercase;
       }
@@ -1927,21 +1924,21 @@
         border: 1px solid;
       }
       .rpt-status-card.rpt-ok {
-        background: #f0faf4;
+        background: transparent;
         border-color: #a3e4bc;
       }
       .rpt-status-card.rpt-warn {
-        background: #fef7f0;
+        background: transparent;
         border-color: #f5d0a9;
       }
       .rpt-status-card .rpt-sc-name {
-        font-size: 9px;
+        font-size: 11px;
         font-weight: 600;
         color: #333;
         margin-bottom: 1px;
       }
       .rpt-status-card .rpt-sc-val {
-        font-size: 22px;
+        font-size: 26px;
         font-weight: 700;
       }
       .rpt-status-card.rpt-ok .rpt-sc-val {
@@ -1951,7 +1948,7 @@
         color: #e67e22;
       }
       .rpt-status-card .rpt-sc-label {
-        font-size: 8px;
+        font-size: 10px;
         text-transform: uppercase;
         letter-spacing: 0.3px;
       }
@@ -1966,7 +1963,7 @@
       .rpt-narrative {
         padding: 10px 14px;
         margin: 6px 0;
-        font-size: 11px;
+        font-size: 13px;
         line-height: 1.6;
         color: #333;
       }
@@ -1980,7 +1977,7 @@
         gap: 8px;
         align-items: flex-start;
         margin: 4px 0;
-        font-size: 10.5px;
+        font-size: 13px;
         line-height: 1.4;
         color: #444;
       }
@@ -1991,7 +1988,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 9px;
+        font-size: 11px;
         flex-shrink: 0;
       }
       .rpt-finding-icon.rpt-fi-up {
@@ -6586,7 +6583,7 @@
         <main class="content">
           <!-- HOME -->
           <!-- Pipeline test: verified 2026-04-26 -->
-          <div id="view-home" class="view active" data-ui-id="en-home" data-fb="energy.home">
+          <div id="view-home" class="view" data-ui-id="en-home" data-fb="energy.home">
             <div style="display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0; margin-bottom: 14px">
               <button class="btn btn-ghost" onclick="openTaskModal()" data-fb="energy.home.add-task-btn">+ Task</button>
               <button
@@ -12047,6 +12044,23 @@
               };
             })();
           </script>
+          <script>
+            /* Synchronous view restore — runs before first paint to prevent flash.
+               Sets the correct view active BEFORE DOMContentLoaded fires init(). */
+            (function () {
+              var lastView = localStorage.getItem('ch_activeView') || sessionStorage.getItem('ch_activeView');
+              if (lastView) {
+                var el = document.getElementById('view-' + lastView);
+                if (el) {
+                  el.classList.add('active');
+                } else {
+                  document.getElementById('view-home').classList.add('active');
+                }
+              } else {
+                document.getElementById('view-home').classList.add('active');
+              }
+            })();
+          </script>
         </main>
       </div>
 
@@ -13755,5 +13769,29 @@
 
     <script src="app/tooltips-help.js"></script>
     <script src="feedback-widget.js"></script>
+    <script>
+      /* Handle ?openProject=... URL params — opened by _rptV2GoEdit() popup window */
+      (function _handleEditRedirect() {
+        var params = new URLSearchParams(window.location.search);
+        var projId = params.get('openProject');
+        var tab = params.get('tab');
+        var subTab = params.get('subTab');
+        if (projId) {
+          // Clean URL to avoid re-triggering
+          window.history.replaceState({}, '', window.location.pathname);
+          setTimeout(function () {
+            openDetail(projId);
+            if (tab) {
+              var btn = document.querySelector('.pdt[data-tab="' + tab + '"]');
+              sPTab(tab, btn || null);
+            }
+            if (subTab === 'approved') {
+              window._docsSubTab = 'approved';
+              renderDocsSubTab('approved', projId);
+            }
+          }, 500);
+        }
+      })();
+    </script>
   </body>
 </html>

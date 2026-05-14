@@ -877,15 +877,13 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     '</div>';
   const footerLabelHtml =
     data && data.period
-      ? '<div style="text-align:center;font-size:8px;color:#000;padding:4px 0 2px;position:absolute;bottom:' +
+      ? '<div style="text-align:center;font-size:10px;color:#000;padding:4px 0 2px;position:absolute;bottom:' +
         (footerImgHtml ? '45px' : '8px') +
         ';left:0;right:0">' +
-        (data.period.year || '') +
-        ' Q' +
-        (data.period.quarter || 1) +
-        ' ' +
-        (data.period.type === 'quarterly' ? 'Quarterly' : 'Annual') +
-        ' Report</div>'
+        (data.period.type === 'quarterly'
+          ? 'Q' + (data.period.quarter || 1) + ' ' + (data.period.year || '') + ' Quarterly Report'
+          : (data.period.year || '') + ' Annual Report') +
+        '</div>'
       : '';
 
   if (isHero) {
@@ -900,6 +898,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
       CSC_HEADER_B64 +
       '" alt="CSC Letterhead" style="width:100%;display:block">' +
       bodyHTML +
+      '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:#999"></div>' +
       footerLabelHtml +
       footerImgHtml +
       '</div>'
@@ -926,6 +925,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     '<div class="rpt-body">' +
     bodyHTML +
     '</div>' +
+    '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:#999"></div>' +
     footerLabelHtml +
     footerImgHtml +
     '</div>'
@@ -985,7 +985,7 @@ function generateReportHTML(data, selectedSections) {
       if (bResult.meterPerfHTML) {
         _mpBlocks.push(
           '<div style="page-break-inside:avoid;break-inside:avoid;margin-bottom:10px">' +
-            '<div style="font-size:10px;font-weight:700;color:#1a5276;margin-bottom:3px;border-bottom:1px solid #d4e4f0;padding-bottom:2px">' +
+            '<div style="font-size:12px;font-weight:700;color:#1a5276;margin-bottom:3px;border-bottom:1px solid #d4e4f0;padding-bottom:2px">' +
             (b.name || 'Building') +
             '</div>' +
             bResult.meterPerfHTML +
@@ -1261,7 +1261,7 @@ function rptPageCover(n, d) {
       valText +
       '</text>' +
       '</svg>' +
-      '<div style="font-size:8.5px;color:#000;text-transform:uppercase">' +
+      '<div style="font-size:11px;color:#000;text-transform:uppercase">' +
       label +
       '</div>' +
       '</div>'
@@ -1306,7 +1306,7 @@ function rptPageCover(n, d) {
           : b.status === 'near_target'
             ? '&#9658; Near Target'
             : '&#9658; Below Target';
-      const cardStyle = b.status === 'below_target' ? 'background:#fdf0f0;border-color:#f5a9a9;' : '';
+      const cardStyle = b.status === 'below_target' ? 'border-color:#f5a9a9;' : '';
       const valColor = b.status === 'on_track' ? '#1e8449' : b.status === 'near_target' ? '#e67e22' : '#c0392b';
       const labelColor = b.status === 'on_track' ? '#27ae60' : b.status === 'near_target' ? '#e67e22' : '#c0392b';
       return (
@@ -1436,7 +1436,7 @@ function rptPageCover(n, d) {
     '</div>' +
     // Portfolio Metrics (full width, on top)
     '<div style="margin-top:6px">' +
-    '<div style="font-size:9px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Portfolio Metrics</div>' +
+    '<div style="font-size:11px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Portfolio Metrics</div>' +
     '<div class="rpt-gauge-row">' +
     gaugeSVG(pctOfTarget, '#27ae60', 'vs Target', pctOfTarget + '%') +
     gaugeSVG(energyRedPct, '#2e86c1', 'Energy Reduced', energyRedPct + '%') +
@@ -1446,7 +1446,7 @@ function rptPageCover(n, d) {
     '</div>' +
     // Building Status (full width, below — cards side by side)
     '<div style="margin-top:6px">' +
-    '<div style="font-size:9px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Building Status</div>' +
+    '<div style="font-size:11px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Building Status</div>' +
     '<div style="display:flex;flex-wrap:wrap;gap:6px">' +
     statusCards +
     padCards +
@@ -1454,7 +1454,7 @@ function rptPageCover(n, d) {
     '</div>' +
     // Key Findings
     '<div style="margin-top:6px;">' +
-    '<div style="font-size:9px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Key Findings</div>' +
+    '<div style="font-size:11px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Key Findings</div>' +
     findingsHTML +
     '</div>' +
     '</div>';
@@ -1563,7 +1563,7 @@ function rptPageFinancial(n, d) {
     '</tr>';
 
   const bldgTable =
-    '<table class="rpt-table" contenteditable="false" style="font-size:8px;width:100%;table-layout:fixed">' +
+    '<table class="rpt-table" contenteditable="false" style="font-size:10px;width:100%;table-layout:fixed">' +
     '<thead><tr style="text-align:center;white-space:normal;word-wrap:break-word;line-height:1.2">' +
     '<th style="width:18%">Building</th>' +
     '<th class="rpt-n" style="width:10%">Sq Ft</th>' +
@@ -1676,7 +1676,7 @@ function rptPageFinancial(n, d) {
     '</td>' +
     '</tr>';
   const qtrTable =
-    '<table class="rpt-table" contenteditable="false" style="font-size:7.5px;width:100%;table-layout:fixed">' +
+    '<table class="rpt-table" contenteditable="false" style="font-size:10px;width:100%;table-layout:fixed">' +
     '<thead><tr style="text-align:center;white-space:normal;word-wrap:break-word;line-height:1.2">' +
     '<th style="width:8%">Quarter</th>' +
     '<th class="rpt-n" style="width:10%">Baseline<br>kWh</th>' +
@@ -1984,7 +1984,7 @@ function rptPageFinancial(n, d) {
         $c(_tCur) +
         '</td></tr>';
       return (
-        '<h2>Monthly Cost Breakdown</h2><table class="rpt-table" style="font-size:8px"><thead><tr><th>Month</th><th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th></tr></thead><tbody>' +
+        '<h2>Monthly Cost Breakdown</h2><table class="rpt-table" style="font-size:10px"><thead><tr><th>Month</th><th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th></tr></thead><tbody>' +
         _rows +
         '</tbody></table>'
       );
@@ -2051,7 +2051,7 @@ function rptPageSavingsPerformance(n, d) {
         const actPct = Math.min(100, ((moActual[ym] || 0) / maxVal) * 100).toFixed(1);
         return (
           '<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">' +
-          '<div style="width:40px;text-align:right;font-size:7px;color:#000">' +
+          '<div style="width:40px;text-align:right;font-size:9px;color:#000">' +
           moLabel +
           '</div>' +
           '<div style="flex:1">' +
@@ -2059,7 +2059,7 @@ function rptPageSavingsPerformance(n, d) {
           '<div style="width:' +
           projPct +
           '%;height:7px;background:#f39c12;border-radius:2px;min-width:1px"></div>' +
-          '<span style="font-size:6px;color:#000">' +
+          '<span style="font-size:8px;color:#000">' +
           $c(moProj[ym]) +
           '</span>' +
           '</div>' +
@@ -2067,7 +2067,7 @@ function rptPageSavingsPerformance(n, d) {
           '<div style="width:' +
           actPct +
           '%;height:7px;background:#27ae60;border-radius:2px;min-width:1px"></div>' +
-          '<span style="font-size:6px;color:#000">' +
+          '<span style="font-size:8px;color:#000">' +
           $c(moActual[ym]) +
           '</span>' +
           '</div>' +
@@ -2079,7 +2079,7 @@ function rptPageSavingsPerformance(n, d) {
     chartSection =
       '<div class="rpt-chart-box">' +
       '<div class="rpt-chart-title">Monthly Savings — Projected (orange) vs Actual (green) — Dollar Cost</div>' +
-      '<div style="display:flex;gap:12px;margin-bottom:4px;font-size:7px">' +
+      '<div style="display:flex;gap:12px;margin-bottom:4px;font-size:9px">' +
       '<span><span style="display:inline-block;width:10px;height:7px;background:#f39c12;border-radius:2px;vertical-align:middle"></span> Projected Baseline</span>' +
       '<span><span style="display:inline-block;width:10px;height:7px;background:#27ae60;border-radius:2px;vertical-align:middle"></span> Actual</span>' +
       '</div>' +
@@ -2238,7 +2238,7 @@ function rptPageSavingsPerformance(n, d) {
         '<tr style="' +
         rowBg +
         '">' +
-        '<td style="font-weight:600;vertical-align:middle;font-size:7px;' +
+        '<td style="font-weight:600;vertical-align:middle;font-size:9px;' +
         rowBg +
         '" contenteditable="true">' +
         (b.name || '—') +
@@ -2268,7 +2268,7 @@ function rptPageSavingsPerformance(n, d) {
         '<tr style="' +
         rowBg +
         '">' +
-        '<td style="font-weight:600;vertical-align:middle;font-size:7px;' +
+        '<td style="font-weight:600;vertical-align:middle;font-size:9px;' +
         rowBg +
         '" contenteditable="true">' +
         (b.name || '\u2014') +
@@ -2305,7 +2305,7 @@ function rptPageSavingsPerformance(n, d) {
     .join('');
 
   const bldgTable =
-    '<table class="rpt-table" contenteditable="true" style="font-size:8px">' +
+    '<table class="rpt-table" contenteditable="true" style="font-size:10px">' +
     '<thead><tr>' +
     '<th>Building</th>' +
     '<th>Year</th>' +
@@ -2322,7 +2322,7 @@ function rptPageSavingsPerformance(n, d) {
     '</table>';
 
   const bodyHTML =
-    '<p contenteditable="true" style="font-size:10px;color:#000;line-height:1.6;margin:0 0 8px">This page compares projected energy savings against actual performance. The monthly chart shows weather-normalized baseline consumption (projected) versus actual consumption by month. The annual summary tables aggregate consumption, demand, and cost data across all commodities to show the portfolio\'s year-over-year performance trend.</p>' +
+    '<p contenteditable="true" style="font-size:12px;color:#000;line-height:1.6;margin:0 0 8px">This page compares projected energy savings against actual performance. The monthly chart shows weather-normalized baseline consumption (projected) versus actual consumption by month. The annual summary tables aggregate consumption, demand, and cost data across all commodities to show the portfolio\'s year-over-year performance trend.</p>' +
     '<h2>Monthly Savings: Projected vs Actual</h2>' +
     chartSection +
     '<h2>Annual Summary by Year</h2>' +
@@ -2409,7 +2409,7 @@ function rptPageEUI(n, d) {
     .join('');
 
   const rankTable =
-    '<table class="rpt-table" contenteditable="true" style="font-size:8px">' +
+    '<table class="rpt-table" contenteditable="true" style="font-size:10px">' +
     '<thead><tr>' +
     '<th>#</th>' +
     '<th>Building</th>' +
@@ -2445,7 +2445,7 @@ function rptPageEUI(n, d) {
       const barColor = cur <= cbecs ? '#27ae60' : '#f39c12';
       return (
         '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
-        '<div style="width:140px;text-align:right;font-size:8px;color:#000;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">' +
+        '<div style="width:140px;text-align:right;font-size:10px;color:#000;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">' +
         (b.name || '—') +
         '</div>' +
         '<div style="flex:1;height:18px;background:#f0f0f0;border-radius:3px;position:relative">' +
@@ -2463,7 +2463,7 @@ function rptPageEUI(n, d) {
             '%;top:0;bottom:0;width:2px;background:#8e44ad;z-index:1"></div>'
           : '') +
         '</div>' +
-        '<div style="width:35px;font-size:7px;font-weight:600;color:#333;flex-shrink:0">' +
+        '<div style="width:35px;font-size:9px;font-weight:600;color:#333;flex-shrink:0">' +
         (cur > 0 ? cur.toFixed(1) : '—') +
         '</div>' +
         '</div>'
@@ -2474,7 +2474,7 @@ function rptPageEUI(n, d) {
   const euiChart =
     '<div class="rpt-chart-box">' +
     '<div class="rpt-chart-title">Current EUI by Building</div>' +
-    '<div style="display:flex;gap:12px;margin-bottom:4px;font-size:7px">' +
+    '<div style="display:flex;gap:12px;margin-bottom:4px;font-size:9px">' +
     '<span><span style="display:inline-block;width:10px;height:7px;background:#27ae60;border-radius:2px;vertical-align:middle"></span> Below CBECS</span>' +
     '<span><span style="display:inline-block;width:10px;height:7px;background:#f39c12;border-radius:2px;vertical-align:middle"></span> Above CBECS</span>' +
     '<span><span style="display:inline-block;width:2px;height:10px;background:#c0392b;vertical-align:middle"></span> CBECS Median</span>' +
@@ -2572,8 +2572,8 @@ function rptPageEnvironmentalImpact(n, d) {
   function polLine(val, unit, label) {
     if (!val || Math.round(Math.abs(val)) === 0) return '';
     return (
-      '<div style="font-size:11px;color:#333;padding:2px 0;line-height:1.5;text-align:center">' +
-      '<strong style="color:#1a5276;font-size:13px">' +
+      '<div style="font-size:13px;color:#333;padding:2px 0;line-height:1.5;text-align:center">' +
+      '<strong style="color:#1a5276;font-size:16px">' +
       $n(val) +
       '</strong>' +
       ' total ' +
@@ -2587,9 +2587,9 @@ function rptPageEnvironmentalImpact(n, d) {
   function eqLine(prefix, val, suffix) {
     if (!val || Math.round(Math.abs(val)) === 0) return '';
     return (
-      '<div style="font-size:11px;color:#333;padding:2px 0;line-height:1.5;text-align:center">' +
+      '<div style="font-size:13px;color:#333;padding:2px 0;line-height:1.5;text-align:center">' +
       (prefix ? prefix + ' ' : '') +
-      '<strong style="color:#1e8449;font-size:13px">' +
+      '<strong style="color:#1e8449;font-size:16px">' +
       $n(val) +
       '</strong>' +
       ' ' +
@@ -2632,21 +2632,21 @@ function rptPageEnvironmentalImpact(n, d) {
 
   const bodyHTML =
     '<div contenteditable="true">' +
-    '<div style="font-size:13px;font-weight:700;color:#1a5276;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.5px;text-align:center">Environmental Impact — Pollution Reduction Credits</div>' +
-    '<div style="font-size:10px;color:#000;margin-bottom:10px;text-align:center">Emission reductions resulting from energy savings achieved during the reporting period' +
+    '<div style="font-size:16px;font-weight:700;color:#1a5276;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.5px;text-align:center">Environmental Impact — Pollution Reduction Credits</div>' +
+    '<div style="font-size:12px;color:#000;margin-bottom:10px;text-align:center">Emission reductions resulting from energy savings achieved during the reporting period' +
     (_annualize ? ' (values annualized ×4 from quarterly data)' : '') +
     '</div>' +
     '<div style="display:flex;flex-direction:column;gap:10px">' +
     '<div style="padding:4px 0;text-align:center">' +
-    '<div style="font-size:11px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;border-bottom:1px solid #d4e4f0;padding-bottom:4px">Pollutants Avoided</div>' +
+    '<div style="font-size:13px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Pollutants Avoided</div>' +
     polLines +
     '</div>' +
     '<div style="padding:4px 0;text-align:center">' +
-    '<div style="font-size:11px;font-weight:700;color:#1e6b3a;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;border-bottom:1px solid #b7dfc7;padding-bottom:4px">Real-World Equivalents</div>' +
+    '<div style="font-size:13px;font-weight:700;color:#1e6b3a;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Real-World Equivalents</div>' +
     eqLines +
     '</div>' +
     '</div>' +
-    '<div style="margin-top:10px;font-size:7.5px;color:#000;border-top:1px solid #eee;padding-top:6px;text-align:center">' +
+    '<div style="margin-top:24px;font-size:10px;color:#000;padding-top:6px;text-align:center">' +
     'Source: EPA eGRID2023 Version 1.0 Rev 1 — https://www.epa.gov/egrid | State: ' +
     st +
     ' | Inputs: ' +
@@ -2801,7 +2801,7 @@ function rptPageObservations(n, d) {
       }
 
       return (
-        '<h3 contenteditable="true" style="font-size:12px;font-weight:700;color:' +
+        '<h3 contenteditable="true" style="font-size:14px;font-weight:700;color:' +
         statusColor +
         ';margin:10px 0 2px">' +
         arrow +
@@ -2813,7 +2813,7 @@ function rptPageObservations(n, d) {
         '<p contenteditable="true">' +
         narrative +
         '</p>' +
-        '<p contenteditable="true" style="font-size:10px;color:#000;margin-top:2px"><strong>Recommendation:</strong> ' +
+        '<p contenteditable="true" style="font-size:12px;color:#000;margin-top:2px"><strong>Recommendation:</strong> ' +
         rec +
         '</p>'
       );
@@ -2868,7 +2868,7 @@ function rptPageObservations(n, d) {
   const bodyHTML =
     '<div class="rpt-body ob">' +
     '<h2 contenteditable="true">Building Performance</h2>' +
-    '<div style="font-size:12px;line-height:1.6;margin-bottom:8px" contenteditable="true">' +
+    '<div style="font-size:14px;line-height:1.6;margin-bottom:8px" contenteditable="true">' +
     summaryPara +
     '</div>' +
     bldgSections +
@@ -2970,14 +2970,14 @@ function rptPageApprovedChanges(n, d) {
 
   const bodyHTML =
     '<div class="rpt-body">' +
-    '<p style="font-size:10px;color:#000;margin:0 0 8px">Schedule and setpoint changes implemented this quarter — sourced from meeting minutes</p>' +
+    '<p style="font-size:12px;color:#000;margin:0 0 8px">Schedule and setpoint changes implemented this quarter — sourced from meeting minutes</p>' +
     '<h2 contenteditable="true">Changes Implemented</h2>' +
     changesTable +
     '<h2 contenteditable="true">Net Impact Analysis</h2>' +
     narrativeBox +
     '<h2 contenteditable="true">Upcoming Scheduled Changes</h2>' +
     upcomingTable +
-    '<p style="font-size:9px;color:#000;margin-top:10px">Monthly reviews: 2nd Monday of each month. Onsite tech: up to 8 labor hours/quarter per contract.</p>' +
+    '<p style="font-size:11px;color:#000;margin-top:10px">Monthly reviews: 2nd Monday of each month. Onsite tech: up to 8 labor hours/quarter per contract.</p>' +
     '</div>';
 
   return rptPage(n, 'Approved Changes', bodyHTML, {
@@ -3079,7 +3079,7 @@ function rptPageContractProjection(n, d) {
     q +
     ' Savings</div>' +
     '</div>' +
-    '<div class="rpt-vs-mid" style="font-size:28px">' +
+    '<div class="rpt-vs-mid" style="font-size:34px">' +
     (ahead ? '✓' : '✗') +
     '</div>' +
     '<div class="rpt-vs-side">' +
@@ -3149,7 +3149,7 @@ function rptPageContractProjection(n, d) {
       '</td>' +
       '<td class="rpt-n">' +
       (isCurrentYr && isQuarterly
-        ? $c(displayProj) + '<div style="font-size:6px;color:#000">Annual: ' + $c(yearProj) + '</div>'
+        ? $c(displayProj) + '<div style="font-size:8px;color:#000">Annual: ' + $c(yearProj) + '</div>'
         : $c(yearProj)) +
       '</td>' +
       '<td class="rpt-n">' +
@@ -3320,7 +3320,7 @@ function rptPageContractProjection(n, d) {
       '" y="' +
       (svgH - 4) +
       '" text-anchor="middle" font-size="' +
-      (totalQtrs > 12 ? '5' : '6') +
+      (totalQtrs > 12 ? '7' : '8') +
       '" fill="#888">' +
       _lbl +
       '</text>';
@@ -3328,7 +3328,7 @@ function rptPageContractProjection(n, d) {
 
   var svgChart =
     '<div style="margin:8px 0">' +
-    '<div style="font-size:9px;color:#000;margin-bottom:3px">Projected Quarterly Savings (bars) vs Actual Cumulative (green line)</div>' +
+    '<div style="font-size:11px;color:#000;margin-bottom:3px">Projected Quarterly Savings (bars) vs Actual Cumulative (green line)</div>' +
     '<svg width="' +
     svgW +
     '" viewBox="0 0 ' +
@@ -3366,7 +3366,7 @@ function rptPageContractProjection(n, d) {
     '" y="4" width="8" height="6" fill="#2e86c1" opacity="0.6" rx="1"/>' +
     '<text x="' +
     (padL + cW - 108) +
-    '" y="10" font-size="6" fill="#555">Projected/Qtr</text>' +
+    '" y="10" font-size="8" fill="#555">Projected/Qtr</text>' +
     '<line x1="' +
     (padL + cW - 50) +
     '" y1="7" x2="' +
@@ -3374,7 +3374,7 @@ function rptPageContractProjection(n, d) {
     '" y2="7" stroke="#27ae60" stroke-width="2.5"/>' +
     '<text x="' +
     (padL + cW - 34) +
-    '" y="10" font-size="6" fill="#555">Actual</text>' +
+    '" y="10" font-size="8" fill="#555">Actual</text>' +
     '</svg></div>';
 
   const bodyHTML =
@@ -3391,7 +3391,7 @@ function rptPageContractProjection(n, d) {
     fiveYrTable +
     '<h2 contenteditable="true">Cumulative vs Projected</h2>' +
     svgChart +
-    '<p style="font-size:9px;color:#000;margin-top:8px">' +
+    '<p style="font-size:11px;color:#000;margin-top:8px">' +
     escalation +
     '% annual utility rate escalation applied per contract terms.</p>' +
     '</div>';
@@ -3566,11 +3566,11 @@ function rptPageSetPoints(n, d) {
     setpoints.length && setpoints[0].viewMode === 'average' ? 'building averages' : 'individual zones';
   const bodyHTML =
     '<div class="rpt-body">' +
-    '<p style="font-size:10px;color:#000;margin:0 0 8px">Baseline setpoints and operating schedules per building — from uploaded BAS exports (' +
+    '<p style="font-size:12px;color:#000;margin:0 0 8px">Baseline setpoints and operating schedules per building — from uploaded BAS exports (' +
     rptViewMode +
     ')</p>' +
     bodyContent +
-    '<p style="font-size:9px;color:#000;margin-top:12px">Source: BAS export uploaded to Set Points &amp; Schedules tab.</p>' +
+    '<p style="font-size:11px;color:#000;margin-top:12px">Source: BAS export uploaded to Set Points &amp; Schedules tab.</p>' +
     '</div>';
 
   return rptPage(n, 'BAS Set Points & Schedules' + vLabel, bodyHTML, {
@@ -3661,7 +3661,7 @@ function rptPageBuildingSummary(n, d, b) {
       allVals.push(mo.bl || 0, mo.cur || 0);
     });
     var maxVal = Math.max.apply(null, allVals) || 1;
-    var maxH = 56; // px — maximum bar height
+    var maxH = 80; // px — maximum bar height
 
     var blTot = 0,
       curTot = 0;
@@ -3676,7 +3676,7 @@ function rptPageBuildingSummary(n, d, b) {
         '<div style="display:flex;align-items:flex-end;gap:1px;height:' +
         maxH +
         'px">' +
-        '<div style="width:7px;height:' +
+        '<div style="width:10px;height:' +
         blH +
         'px;background:' +
         blColor +
@@ -3685,7 +3685,7 @@ function rptPageBuildingSummary(n, d, b) {
         ' ' +
         unit +
         '"></div>' +
-        '<div style="width:7px;height:' +
+        '<div style="width:10px;height:' +
         curH +
         'px;background:' +
         curColor +
@@ -3695,14 +3695,14 @@ function rptPageBuildingSummary(n, d, b) {
         unit +
         '"></div>' +
         '</div>' +
-        '<div style="font-size:7px;color:#000;margin-top:1px">' +
+        '<div style="font-size:9px;color:#000;margin-top:1px">' +
         moLabel(mo.month) +
         '</div>' +
         '</div>';
     });
 
     var legend =
-      '<div style="display:flex;gap:10px;margin-top:4px;font-size:8px;color:#000">' +
+      '<div style="display:flex;gap:10px;margin-top:4px;font-size:10px;color:#000">' +
       '<span><span style="display:inline-block;width:8px;height:8px;background:' +
       blColor +
       ';border-radius:1px;margin-right:3px"></span>Baseline ' +
@@ -3733,7 +3733,7 @@ function rptPageBuildingSummary(n, d, b) {
 
   // Building name
   var leftHTML =
-    '<div contenteditable="true" style="font-size:15px;font-weight:700;color:#1a5276;line-height:1.2;margin-bottom:4px">' +
+    '<div contenteditable="true" style="font-size:18px;font-weight:700;color:#1a5276;line-height:1.2;margin-bottom:4px">' +
     (b.name || 'Building') +
     '</div>';
 
@@ -3741,7 +3741,7 @@ function rptPageBuildingSummary(n, d, b) {
   var addr = b.address || (d && d.project && d.project.addr) || '';
   var sqftStr = b.sqft ? b.sqft.toLocaleString() + ' sq ft' : '';
   leftHTML +=
-    '<div contenteditable="true" style="font-size:9px;color:#000;margin-bottom:10px;line-height:1.5">' +
+    '<div contenteditable="true" style="font-size:11px;color:#000;margin-bottom:10px;line-height:1.5">' +
     (sqftStr ? sqftStr + '<br>' : '') +
     (addr ? addr : '') +
     '</div>';
@@ -3755,7 +3755,7 @@ function rptPageBuildingSummary(n, d, b) {
   var euiCurH = Math.max(4, Math.round((euiCur / euiMax) * euiBarMaxH));
 
   leftHTML +=
-    '<div style="font-size:9.5px;font-weight:600;color:#333;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.03em">EUI (kBtu/sq ft/yr)</div>' +
+    '<div style="font-size:12px;font-weight:600;color:#333;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.03em">EUI (kBtu/sq ft/yr)</div>' +
     '<div style="display:flex;gap:16px;align-items:flex-end;margin-bottom:12px">' +
     // Baseline bar
     '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">' +
@@ -3766,10 +3766,10 @@ function rptPageBuildingSummary(n, d, b) {
     euiBlH +
     'px;background:#e67e22;border-radius:2px 2px 0 0"></div>' +
     '</div>' +
-    '<div style="font-size:11px;font-weight:700;color:#e67e22">' +
+    '<div style="font-size:13px;font-weight:700;color:#e67e22">' +
     euiBl.toFixed(1) +
     '</div>' +
-    '<div style="font-size:8px;color:#000">Baseline</div>' +
+    '<div style="font-size:10px;color:#000">Baseline</div>' +
     '</div>' +
     // Current bar
     '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">' +
@@ -3780,10 +3780,10 @@ function rptPageBuildingSummary(n, d, b) {
     euiCurH +
     'px;background:#1a8a4e;border-radius:2px 2px 0 0"></div>' +
     '</div>' +
-    '<div style="font-size:11px;font-weight:700;color:#1a8a4e">' +
+    '<div style="font-size:13px;font-weight:700;color:#1a8a4e">' +
     euiCur.toFixed(1) +
     '</div>' +
-    '<div style="font-size:8px;color:#000">Current</div>' +
+    '<div style="font-size:10px;color:#000">Current</div>' +
     '</div>' +
     '</div>';
 
@@ -3798,6 +3798,9 @@ function rptPageBuildingSummary(n, d, b) {
       var _curKBtu = toKBtu(_elFull[_ei].cur || 0, _gaFull[_ei].cur || 0, _prFull[_ei].cur || 0);
       euiMonthly.push({ month: _elFull[_ei].month, bl: _blKBtu / b.sqft, cur: _curKBtu / b.sqft });
     }
+    euiMonthly = euiMonthly.filter(function (mo) {
+      return mo.bl > 0 || mo.cur > 0;
+    });
     if (euiMonthly.length > 1) {
       var euiMax =
         Math.max.apply(
@@ -3806,7 +3809,7 @@ function rptPageBuildingSummary(n, d, b) {
             return Math.max(m.bl, m.cur);
           }),
         ) || 1;
-      var euiChartH = 40;
+      var euiChartH = 80;
       var euiBars = euiMonthly
         .map(function (mo) {
           var blH = Math.max(1, Math.round((mo.bl / euiMax) * euiChartH));
@@ -3815,22 +3818,27 @@ function rptPageBuildingSummary(n, d, b) {
           return (
             '<div style="display:flex;flex-direction:column;align-items:center;flex:1"><div style="display:flex;align-items:flex-end;gap:1px;height:' +
             euiChartH +
-            'px"><div style="width:5px;height:' +
+            'px"><div style="width:10px;height:' +
             blH +
-            'px;background:#e67e22;border-radius:1px 1px 0 0"></div><div style="width:5px;height:' +
+            'px;background:#e67e22;border-radius:1px 1px 0 0"></div><div style="width:10px;height:' +
             curH +
-            'px;background:#1a8a4e;border-radius:1px 1px 0 0"></div></div><div style="font-size:5.5px;color:#000">' +
+            'px;background:#1a8a4e;border-radius:1px 1px 0 0"></div></div><div style="font-size:8px;color:#000">' +
             moLbl +
             '</div></div>'
           );
         })
         .join('');
+      var euiYMax = euiMax.toFixed(1);
       leftHTML +=
-        '<div style="font-size:8px;font-weight:600;color:#000;margin:8px 0 3px">Monthly EUI (kBtu/ft²)</div>' +
+        '<div style="font-size:10px;font-weight:600;color:#000;margin:8px 0 3px">Monthly EUI (kBtu/ft²)</div>' +
+        '<div style="position:relative;padding-left:28px">' +
+        '<div style="position:absolute;left:0;top:0;bottom:0;display:flex;flex-direction:column;justify-content:space-between;font-size:7px;color:#888;text-align:right;width:24px"><span>' +
+        euiYMax +
+        '</span><span>0</span></div>' +
         '<div style="display:flex;align-items:flex-end;gap:1px">' +
         euiBars +
-        '</div>' +
-        '<div style="font-size:6.5px;color:#000;margin-top:2px"><span style="display:inline-block;width:6px;height:6px;background:#e67e22;border-radius:1px;margin-right:2px"></span>Baseline <span style="display:inline-block;width:6px;height:6px;background:#1a8a4e;border-radius:1px;margin-left:4px;margin-right:2px"></span>Cur</div>';
+        '</div></div>' +
+        '<div style="font-size:9px;color:#000;margin-top:2px"><span style="display:inline-block;width:6px;height:6px;background:#e67e22;border-radius:1px;margin-right:2px"></span>Baseline <span style="display:inline-block;width:6px;height:6px;background:#1a8a4e;border-radius:1px;margin-left:4px;margin-right:2px"></span>Current</div>';
     }
   }
 
@@ -3838,8 +3846,8 @@ function rptPageBuildingSummary(n, d, b) {
   var bldgNotes = b.notes || '';
   if (bldgNotes) {
     leftHTML +=
-      '<div style="font-size:9px;font-weight:600;color:#000;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
-      '<div contenteditable="true" style="min-height:40px;font-size:9px;color:#444;padding:6px;line-height:1.5">' +
+      '<div style="font-size:11px;font-weight:600;color:#000;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
+      '<div contenteditable="true" style="min-height:40px;font-size:11px;color:#444;padding:6px;line-height:1.5">' +
       bldgNotes +
       '</div>';
   }
@@ -3851,8 +3859,8 @@ function rptPageBuildingSummary(n, d, b) {
   // Goals and Progression header
   var rightHTML =
     '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">' +
-    '<div style="font-size:12px;font-weight:700;color:#1a5276">Goals and Progression</div>' +
-    '<div style="font-size:8.5px;color:#000">Period: ' +
+    '<div style="font-size:14px;font-weight:700;color:#1a5276">Goals and Progression</div>' +
+    '<div style="font-size:11px;color:#000">Period: ' +
     ((d && d.period && d.period.label) || '') +
     '</div>' +
     '</div>';
@@ -3863,7 +3871,7 @@ function rptPageBuildingSummary(n, d, b) {
     return v >= 0 ? '#1e8449' : '#c0392b';
   }
   function _savBg(v) {
-    return v >= 0 ? '#e9f7ef' : '#fde8e8';
+    return 'transparent';
   }
   if (hasElec) {
     var kwhSaved = b.electric.kwhSaved || 0;
@@ -3872,24 +3880,24 @@ function rptPageBuildingSummary(n, d, b) {
       '<div style="flex:1;min-width:60px;text-align:center;background:' +
       _savBg(kwhSaved) +
       ';border-radius:2px;padding:5px 4px">' +
-      '<div style="font-size:13px;margin-bottom:1px">⚡</div>' +
-      '<div style="font-size:12px;font-weight:700;color:' +
+      '<div style="font-size:16px;margin-bottom:1px">⚡</div>' +
+      '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(kwhSaved) +
       '">' +
       $n(kwhSaved) +
       '</div>' +
-      '<div style="font-size:7.5px;color:#000">kWh Saved</div>' +
+      '<div style="font-size:10px;color:#000">kWh Saved</div>' +
       '</div>' +
       '<div style="flex:1;min-width:60px;text-align:center;background:' +
       _savBg(kwReduced) +
       ';border-radius:2px;padding:5px 4px">' +
-      '<div style="font-size:13px;margin-bottom:1px">⚡</div>' +
-      '<div style="font-size:12px;font-weight:700;color:' +
+      '<div style="font-size:16px;margin-bottom:1px">📉</div>' +
+      '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(kwReduced) +
       '">' +
       $n(kwReduced) +
       '</div>' +
-      '<div style="font-size:7.5px;color:#000">kW Reduced</div>' +
+      '<div style="font-size:10px;color:#000">kW Reduced</div>' +
       '</div>';
   }
   if (hasGas) {
@@ -3898,13 +3906,13 @@ function rptPageBuildingSummary(n, d, b) {
       '<div style="flex:1;min-width:60px;text-align:center;background:' +
       _savBg(thermsSaved) +
       ';border-radius:2px;padding:5px 4px">' +
-      '<div style="font-size:13px;margin-bottom:1px">🔥</div>' +
-      '<div style="font-size:12px;font-weight:700;color:' +
+      '<div style="font-size:16px;margin-bottom:1px">🔥</div>' +
+      '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(thermsSaved) +
       '">' +
       $n(thermsSaved) +
       '</div>' +
-      '<div style="font-size:7.5px;color:#000">Therms Saved</div>' +
+      '<div style="font-size:10px;color:#000">Therms Saved</div>' +
       '</div>';
   }
   if (hasPropane) {
@@ -3913,13 +3921,13 @@ function rptPageBuildingSummary(n, d, b) {
       '<div style="flex:1;min-width:60px;text-align:center;background:' +
       _savBg(galSaved) +
       ';border-radius:2px;padding:5px 4px">' +
-      '<div style="font-size:13px;margin-bottom:1px">💧</div>' +
-      '<div style="font-size:12px;font-weight:700;color:' +
+      '<div style="font-size:16px;margin-bottom:1px">💧</div>' +
+      '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(galSaved) +
       '">' +
       $n(galSaved) +
       '</div>' +
-      '<div style="font-size:7.5px;color:#000">Gal Saved</div>' +
+      '<div style="font-size:10px;color:#000">Gal Saved</div>' +
       '</div>';
   }
   // Always show $ savings
@@ -3928,15 +3936,15 @@ function rptPageBuildingSummary(n, d, b) {
     '<div style="flex:1;min-width:60px;text-align:center;background:' +
     _savBg(totalSaved) +
     ';border-radius:2px;padding:5px 4px">' +
-    '<div style="font-size:13px;margin-bottom:1px">💰</div>' +
-    '<div style="font-size:12px;font-weight:700;color:' +
+    '<div style="font-size:16px;margin-bottom:1px">💰</div>' +
+    '<div style="font-size:14px;font-weight:700;color:' +
     _savColor(totalSaved) +
     '">' +
     (totalSaved >= 0 ? '' : '-') +
     '$' +
     Math.abs(Math.round(totalSaved)).toLocaleString() +
     '</div>' +
-    '<div style="font-size:7.5px;color:#000">Total Saved</div>' +
+    '<div style="font-size:10px;color:#000">Total Saved</div>' +
     '</div>';
 
   rightHTML += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">' + iconItems + '</div>';
@@ -4086,7 +4094,7 @@ function rptPageBuildingSummary(n, d, b) {
     var elDataMonths = filterToDataMonths(elFullYear);
     var elChart = buildBarChart(elDataMonths, '#aed6f1', '#1a5276', 'kWh');
     rightHTML +=
-      '<div style="text-align:center;font-size:9.5px;font-weight:600;color:#1a5276;margin:6px 0 2px">' +
+      '<div style="text-align:center;font-size:12px;font-weight:600;color:#1a5276;margin:6px 0 2px">' +
       'Electricity Consumption' +
       '</div>' +
       '<div style="display:flex;justify-content:center">' +
@@ -4100,7 +4108,7 @@ function rptPageBuildingSummary(n, d, b) {
     var gasDataMonths = filterToDataMonths(gasFullYear);
     var gasChart = buildBarChart(gasDataMonths, '#f0b27a', '#e67e22', 'Therms');
     rightHTML +=
-      '<div style="text-align:center;font-size:9.5px;font-weight:600;color:#8b4513;margin:6px 0 2px">' +
+      '<div style="text-align:center;font-size:12px;font-weight:600;color:#8b4513;margin:6px 0 2px">' +
       'Natural Gas Consumption' +
       '</div>' +
       '<div style="display:flex;justify-content:center">' +
@@ -4114,7 +4122,7 @@ function rptPageBuildingSummary(n, d, b) {
     var propDataMonths = filterToDataMonths(propFullYear);
     var propChart = buildBarChart(propDataMonths, '#f9e4b7', '#b7770d', 'Gal');
     rightHTML +=
-      '<div style="text-align:center;font-size:9.5px;font-weight:600;color:#7d5a00;margin:6px 0 2px">' +
+      '<div style="text-align:center;font-size:12px;font-weight:600;color:#7d5a00;margin:6px 0 2px">' +
       'Propane Consumption' +
       '</div>' +
       '<div style="display:flex;justify-content:center">' +
@@ -4367,10 +4375,10 @@ function rptPageBuildingSummary(n, d, b) {
   }
 
   var blDataTable = blDataRows
-    ? '<div style="margin-top:14px;width:100%;overflow-x:auto">' +
-      '<div style="font-size:9.5px;font-weight:600;color:#FFFFFF;margin-bottom:4px;padding:6px 10px;background:#0070C0;border-radius:4px 4px 0 0;text-transform:uppercase;letter-spacing:0.5px">Building Baseline Data</div>' +
+    ? '<div style="margin-top:14px;width:100%;overflow-x:auto;border:1px solid #000">' +
       blStats +
-      '<table class="rpt-table rpt-table-bl" style="font-size:7.5px;width:100%">' +
+      '<div style="font-size:12px;font-weight:600;color:#FFFFFF;margin-bottom:0;padding:6px 10px;background:#0070C0;text-transform:uppercase;letter-spacing:0.5px;text-align:center">Building Baseline Data</div>' +
+      '<table class="rpt-table rpt-table-bl" style="font-size:10px;width:100%">' +
       '<thead><tr>' +
       blGrpHdr +
       '</tr><tr>' +
@@ -4414,7 +4422,7 @@ function rptPageBuildingSummary(n, d, b) {
                 : meter.commodity;
         var commColor = meter.commodity === 'Electric' ? '#1a5276' : meter.commodity === 'Gas' ? '#8b4513' : '#7d5a00';
         meterPerfHTML +=
-          '<div style="font-size:8px;font-weight:600;color:' +
+          '<div style="font-size:10px;font-weight:600;color:' +
           commColor +
           ';margin:6px 0 2px">' +
           commLabel +
@@ -4425,7 +4433,7 @@ function rptPageBuildingSummary(n, d, b) {
   }
   if (meterPerfHTML) {
     meterPerfHTML =
-      '<div style="margin-top:8px"><div style="font-size:9.5px;font-weight:600;color:#1a5276;margin-bottom:3px">Meter Performance — ' +
+      '<div style="margin-top:8px"><div style="font-size:12px;font-weight:600;color:#1a5276;margin-bottom:3px">Meter Performance — ' +
       ((d && d.period && d.period.label) || '') +
       '</div>' +
       meterPerfHTML +
@@ -4434,8 +4442,8 @@ function rptPageBuildingSummary(n, d, b) {
 
   // Notes
   leftHTML +=
-    '<div style="margin-top:10px;font-size:8px;color:#000;line-height:1.5">' +
-    '<div style="font-weight:600;color:#000;text-transform:uppercase;font-size:7px;letter-spacing:.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
+    '<div style="margin-top:10px;font-size:10px;color:#000;line-height:1.5">' +
+    '<div style="font-weight:600;color:#000;text-transform:uppercase;font-size:9px;letter-spacing:.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
     '<div>1. Achieved (%) for each energy type represents the percent of energy units saved for the months included in this report.</div>' +
     '<div>2. Achieved ($) represents the utility cost savings for this time period calculated by subtracting the baseline energy usage from the current energy usage multiplied by the higher of current or baseline utility rates.</div>' +
     '<div>3. The Baseline EUIs are normalized for weather and square footage when applicable.</div>' +
@@ -4494,7 +4502,7 @@ function rptPageElectric(n, d) {
 
   // ── Shared bar-chart builder ──────────────────────────────────────────
   function buildElecBarChart(monthly, blColor, curColor, unit, title) {
-    if (!monthly || !monthly.length) return '<p style="font-size:8px;color:#aaa;padding:4px 0">No monthly data</p>';
+    if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#aaa;padding:4px 0">No monthly data</p>';
     var allVals = [];
     monthly.forEach(function (mo) {
       allVals.push(mo.bl || 0, mo.cur || 0);
@@ -4535,14 +4543,14 @@ function rptPageElectric(n, d) {
         unit +
         '"></div>' +
         '</div>' +
-        '<div style="font-size:7.5px;color:#000;margin-top:1px">' +
+        '<div style="font-size:10px;color:#000;margin-top:1px">' +
         moLbl +
         '</div>' +
         '</div>';
     });
     return (
       '<div class="rpt-chart-box">' +
-      '<div style="font-size:8px;font-weight:600;color:#000;margin-bottom:3px">' +
+      '<div style="font-size:10px;font-weight:600;color:#000;margin-bottom:3px">' +
       title +
       '</div>' +
       '<div style="display:flex;align-items:flex-end;gap:2px;height:' +
@@ -4550,7 +4558,7 @@ function rptPageElectric(n, d) {
       'px">' +
       bars +
       '</div>' +
-      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:8.5px;color:#000">' +
+      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:11px;color:#000">' +
       '<span><span style="display:inline-block;width:8px;height:8px;background:' +
       blColor +
       ';border-radius:1px;margin-right:2px"></span>Baseline ' +
@@ -4621,7 +4629,7 @@ function rptPageElectric(n, d) {
   // ── Charts ────────────────────────────────────────────────────────────
   var kwhChart = elecBldgs.length
     ? buildElecBarChart(kwhMonthly, '#b0c4d8', '#1a5276', 'kWh', 'Monthly Electric kWh — Year over Year')
-    : '<p style="font-size:8px;color:#aaa">No electric data</p>';
+    : '<p style="font-size:10px;color:#aaa">No electric data</p>';
 
   var hasKwData = kwMonthly.some(function (mo) {
     return (mo.bl || 0) > 0 || (mo.cur || 0) > 0;
@@ -4746,7 +4754,7 @@ function rptPageElectric(n, d) {
   }
 
   var bldgTable =
-    '<table class="rpt-table" contenteditable="true" style="font-size:7.5px">' +
+    '<table class="rpt-table" contenteditable="true" style="font-size:10px">' +
     '<thead><tr>' +
     '<th>Building</th><th class="rpt-n">Baseline kWh</th><th class="rpt-n">Actual kWh</th>' +
     '<th class="rpt-n">Saved</th><th class="rpt-n">%</th>' +
@@ -4760,13 +4768,13 @@ function rptPageElectric(n, d) {
 
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<p contenteditable="true" style="font-size:10px;color:#000;line-height:1.6;margin:0 0 8px">This page details electricity consumption across all buildings for the reporting period. The charts compare weather-normalized baseline usage against actual consumption by month. The table below breaks down kilowatt-hour (kWh) usage, peak demand (kW), and costs by building to identify where the greatest savings and opportunities exist.</p>' +
-    '<div style="margin-bottom:6px;font-size:9px;color:#000">Period: ' +
+    '<p contenteditable="true" style="font-size:12px;color:#000;line-height:1.6;margin:0 0 8px">This page details electricity consumption across all buildings for the reporting period. The charts compare weather-normalized baseline usage against actual consumption by month. The table below breaks down kilowatt-hour (kWh) usage, peak demand (kW), and costs by building to identify where the greatest savings and opportunities exist.</p>' +
+    '<div style="margin-bottom:6px;font-size:11px;color:#000">Period: ' +
     periodLabel +
     '</div>' +
     kwhChart +
     kwChart +
-    '<h2 style="font-size:10px;font-weight:700;color:#1a5276;margin:10px 0 4px">Electric by Building — ' +
+    '<h2 style="font-size:12px;font-weight:700;color:#1a5276;margin:10px 0 4px">Electric by Building — ' +
     periodLabel +
     '</h2>' +
     bldgTable;
@@ -4806,7 +4814,7 @@ function rptPageGas(n, d) {
   ];
 
   function buildGasBarChart(monthly, blColor, curColor, unit, title) {
-    if (!monthly || !monthly.length) return '<p style="font-size:8px;color:#aaa;padding:4px 0">No monthly data</p>';
+    if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#aaa;padding:4px 0">No monthly data</p>';
     var allVals = [];
     monthly.forEach(function (mo) {
       allVals.push(mo.bl || 0, mo.cur || 0);
@@ -4846,13 +4854,13 @@ function rptPageGas(n, d) {
         ' ' +
         unit +
         '"></div>' +
-        '</div><div style="font-size:7.5px;color:#000;margin-top:1px">' +
+        '</div><div style="font-size:10px;color:#000;margin-top:1px">' +
         moLbl +
         '</div></div>';
     });
     return (
       '<div class="rpt-chart-box">' +
-      '<div style="font-size:8px;font-weight:600;color:#000;margin-bottom:3px">' +
+      '<div style="font-size:10px;font-weight:600;color:#000;margin-bottom:3px">' +
       title +
       '</div>' +
       '<div style="display:flex;align-items:flex-end;gap:2px;height:' +
@@ -4860,7 +4868,7 @@ function rptPageGas(n, d) {
       'px">' +
       bars +
       '</div>' +
-      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:8.5px;color:#000">' +
+      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:11px;color:#000">' +
       '<span><span style="display:inline-block;width:8px;height:8px;background:' +
       blColor +
       ';border-radius:1px;margin-right:2px"></span>Baseline ' +
@@ -4912,7 +4920,7 @@ function rptPageGas(n, d) {
 
   var thermsChart = gasBldgs.length
     ? buildGasBarChart(thermsMonthly, '#e8c4a0', '#d35400', 'Therms', 'Monthly Natural Gas Therms — Year over Year')
-    : '<p style="font-size:8px;color:#aaa">No gas data</p>';
+    : '<p style="font-size:10px;color:#aaa">No gas data</p>';
 
   var totBlTherms = 0,
     totCurTherms = 0,
@@ -5006,7 +5014,7 @@ function rptPageGas(n, d) {
   }
 
   var bldgTable =
-    '<table class="rpt-table" contenteditable="true" style="font-size:7.5px">' +
+    '<table class="rpt-table" contenteditable="true" style="font-size:10px">' +
     '<thead><tr><th>Building</th><th class="rpt-n">Baseline Therms</th><th class="rpt-n">Actual Therms</th>' +
     '<th class="rpt-n">Saved</th><th class="rpt-n">%</th>' +
     '<th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">$ Saved</th>' +
@@ -5016,12 +5024,12 @@ function rptPageGas(n, d) {
 
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<p contenteditable="true" style="font-size:10px;color:#000;line-height:1.6;margin:0 0 8px">This page details natural gas consumption across all buildings for the reporting period. Gas usage is measured in therms and is primarily driven by heating loads. The chart compares baseline consumption against actual usage by month, while the per-building table identifies where gas savings or overages are occurring.</p>' +
-    '<div style="margin-bottom:6px;font-size:9px;color:#000">Period: ' +
+    '<p contenteditable="true" style="font-size:12px;color:#000;line-height:1.6;margin:0 0 8px">This page details natural gas consumption across all buildings for the reporting period. Gas usage is measured in therms and is primarily driven by heating loads. The chart compares baseline consumption against actual usage by month, while the per-building table identifies where gas savings or overages are occurring.</p>' +
+    '<div style="margin-bottom:6px;font-size:11px;color:#000">Period: ' +
     periodLabel +
     '</div>' +
     thermsChart +
-    '<h2 style="font-size:10px;font-weight:700;color:#8b4513;margin:10px 0 4px">Natural Gas by Building — ' +
+    '<h2 style="font-size:12px;font-weight:700;color:#8b4513;margin:10px 0 4px">Natural Gas by Building — ' +
     periodLabel +
     '</h2>' +
     bldgTable;
@@ -5062,7 +5070,7 @@ function rptPagePropane(n, d) {
   ];
 
   function buildPropBarChart(monthly, blColor, curColor, unit, title) {
-    if (!monthly || !monthly.length) return '<p style="font-size:8px;color:#aaa;padding:4px 0">No monthly data</p>';
+    if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#aaa;padding:4px 0">No monthly data</p>';
     var allVals = [];
     monthly.forEach(function (mo) {
       allVals.push(mo.bl || 0, mo.cur || 0);
@@ -5102,13 +5110,13 @@ function rptPagePropane(n, d) {
         ' ' +
         unit +
         '"></div>' +
-        '</div><div style="font-size:7.5px;color:#000;margin-top:1px">' +
+        '</div><div style="font-size:10px;color:#000;margin-top:1px">' +
         moLbl +
         '</div></div>';
     });
     return (
       '<div class="rpt-chart-box">' +
-      '<div style="font-size:8px;font-weight:600;color:#000;margin-bottom:3px">' +
+      '<div style="font-size:10px;font-weight:600;color:#000;margin-bottom:3px">' +
       title +
       '</div>' +
       '<div style="display:flex;align-items:flex-end;gap:2px;height:' +
@@ -5116,7 +5124,7 @@ function rptPagePropane(n, d) {
       'px">' +
       bars +
       '</div>' +
-      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:8.5px;color:#000">' +
+      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:11px;color:#000">' +
       '<span><span style="display:inline-block;width:8px;height:8px;background:' +
       blColor +
       ';border-radius:1px;margin-right:2px"></span>Baseline ' +
@@ -5168,7 +5176,7 @@ function rptPagePropane(n, d) {
 
   var galChart = propBldgs.length
     ? buildPropBarChart(galMonthly, '#f5deb3', '#b8860b', 'Gal', 'Monthly Propane Gallons — Year over Year')
-    : '<p style="font-size:8px;color:#aaa">No propane data</p>';
+    : '<p style="font-size:10px;color:#aaa">No propane data</p>';
 
   var totBlGal = 0,
     totCurGal = 0,
@@ -5263,7 +5271,7 @@ function rptPagePropane(n, d) {
   }
 
   var bldgTable =
-    '<table class="rpt-table" contenteditable="true" style="font-size:7.5px">' +
+    '<table class="rpt-table" contenteditable="true" style="font-size:10px">' +
     '<thead><tr><th>Building</th><th class="rpt-n">Baseline Gallons</th><th class="rpt-n">Actual Gallons</th>' +
     '<th class="rpt-n">Saved</th><th class="rpt-n">%</th>' +
     '<th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">$ Saved</th>' +
@@ -5282,15 +5290,15 @@ function rptPagePropane(n, d) {
 
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<div style="margin-bottom:6px;font-size:9px;color:#000">Period: ' +
+    '<div style="margin-bottom:6px;font-size:11px;color:#000">Period: ' +
     periodLabel +
     '</div>' +
     galChart +
-    '<h2 style="font-size:10px;font-weight:700;color:#7d5a00;margin:10px 0 4px">Propane by Building — ' +
+    '<h2 style="font-size:12px;font-weight:700;color:#7d5a00;margin:10px 0 4px">Propane by Building — ' +
     periodLabel +
     '</h2>' +
     bldgTable +
-    '<div style="margin-top:8px;font-size:8px;color:#777;font-style:italic;border-top:1px solid #ddd;padding-top:6px" contenteditable="true">' +
+    '<div style="margin-top:8px;font-size:10px;color:#777;font-style:italic;border-top:1px solid #ddd;padding-top:6px" contenteditable="true">' +
     noteText +
     '</div>';
 
@@ -5329,7 +5337,7 @@ function rptPageGasPropane(n, d) {
     'December',
   ];
   function _barChart(monthly, blColor, curColor, unit, title) {
-    if (!monthly || !monthly.length) return '<p style="font-size:8px;color:#aaa;padding:4px 0">No monthly data</p>';
+    if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#aaa;padding:4px 0">No monthly data</p>';
     var allVals = [];
     monthly.forEach(function (mo) {
       allVals.push(mo.bl || 0, mo.cur || 0);
@@ -5356,18 +5364,18 @@ function rptPageGasPropane(n, d) {
         curH +
         'px;background:' +
         curColor +
-        ';border-radius:2px 2px 0 0"></div></div><div style="font-size:6.5px;color:#000;margin-top:1px">' +
+        ';border-radius:2px 2px 0 0"></div></div><div style="font-size:9px;color:#000;margin-top:1px">' +
         (moIdx >= 0 ? MO_SHORT[moIdx].slice(0, 3) : '?') +
         '</div></div>';
     });
     return (
-      '<div class="rpt-chart-box" style="margin-bottom:6px"><div style="font-size:8px;font-weight:600;color:#000;margin-bottom:3px">' +
+      '<div class="rpt-chart-box" style="margin-bottom:6px"><div style="font-size:10px;font-weight:600;color:#000;margin-bottom:3px">' +
       title +
       '</div><div style="display:flex;align-items:flex-end;gap:2px;height:' +
       (maxH + 14) +
       'px">' +
       bars +
-      '</div><div style="display:flex;gap:8px;margin-top:2px;justify-content:center;font-size:7.5px;color:#000"><span><span style="display:inline-block;width:7px;height:7px;background:' +
+      '</div><div style="display:flex;gap:8px;margin-top:2px;justify-content:center;font-size:10px;color:#000"><span><span style="display:inline-block;width:7px;height:7px;background:' +
       blColor +
       ';border-radius:1px;margin-right:2px"></span>BL ' +
       $n(blTot) +
@@ -5456,7 +5464,7 @@ function rptPageGasPropane(n, d) {
         '</td></tr>';
     }
     return (
-      '<table class="rpt-table" contenteditable="true" style="font-size:7px"><thead><tr><th>Building</th><th class="rpt-n">Baseline ' +
+      '<table class="rpt-table" contenteditable="true" style="font-size:9px"><thead><tr><th>Building</th><th class="rpt-n">Baseline ' +
       unitLabel +
       '</th><th class="rpt-n">Actual</th><th class="rpt-n">Saved</th><th class="rpt-n">%</th><th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">$ Saved</th></tr></thead><tbody>' +
       rows +
@@ -5493,9 +5501,9 @@ function rptPageGasPropane(n, d) {
   });
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<p contenteditable="true" style="font-size:9px;color:#000;line-height:1.5;margin:0 0 6px">This page details natural gas and propane consumption across all buildings for the reporting period.</p>' +
+    '<p contenteditable="true" style="font-size:11px;color:#000;line-height:1.5;margin:0 0 6px">This page details natural gas and propane consumption across all buildings for the reporting period.</p>' +
     _barChart(thermsMonthly, '#e8c4a0', '#d35400', 'Therms', 'Natural Gas Therms') +
-    '<h2 style="font-size:9px;font-weight:700;color:#8b4513;margin:8px 0 3px">Natural Gas by Building</h2>' +
+    '<h2 style="font-size:11px;font-weight:700;color:#8b4513;margin:8px 0 3px">Natural Gas by Building</h2>' +
     _table(
       gasBldgs,
       function (b) {
@@ -5511,7 +5519,7 @@ function rptPageGasPropane(n, d) {
       'Therms',
     ) +
     _barChart(galMonthly, '#f5deb3', '#b8860b', 'Gal', 'Propane Gallons') +
-    '<h2 style="font-size:9px;font-weight:700;color:#7d5a00;margin:8px 0 3px">Propane by Building</h2>' +
+    '<h2 style="font-size:11px;font-weight:700;color:#7d5a00;margin:8px 0 3px">Propane by Building</h2>' +
     _table(
       propBldgs,
       function (b) {
@@ -5545,7 +5553,7 @@ function rptPageAppendixNormalization(n, d, appLetter) {
   var blEnd = (d.project && d.project.blEnd) || '—';
 
   var methodBox =
-    '<div contenteditable="true" style="padding:10px 12px;font-size:9px;line-height:1.7;color:#333;margin-bottom:12px">' +
+    '<div contenteditable="true" style="padding:10px 12px;font-size:11px;line-height:1.7;color:#333;margin-bottom:12px">' +
     '<strong>Normalization Method:</strong> Regression analysis using Heating Degree Days (HDD) and Cooling Degree Days (CDD) at balance point 60°F, per contract specification.<br>' +
     '<strong>Baseline Period:</strong> ' +
     blStart +
@@ -5617,10 +5625,10 @@ function rptPageAppendixNormalization(n, d, appLetter) {
       })
       .join('');
     meterTables +=
-      '<div style="font-size:9px;font-weight:700;color:#1a5276;background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
+      '<div style="font-size:11px;font-weight:700;color:#1a5276;background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
       (b.name || 'Building') +
       '</div>' +
-      '<table class="rpt-table" style="font-size:7.5px;margin-bottom:6px">' +
+      '<table class="rpt-table" style="font-size:10px;margin-bottom:6px">' +
       '<thead><tr>' +
       '<th>Meter</th><th>Baseline Period</th><th>Regression</th><th class="rpt-n">R²</th>' +
       '<th class="rpt-n">HDD</th><th class="rpt-n">CDD</th><th class="rpt-n">Usage/Year</th><th class="rpt-n">Cost/Year</th>' +
@@ -5630,15 +5638,15 @@ function rptPageAppendixNormalization(n, d, appLetter) {
   });
 
   if (!meterTables) {
-    meterTables = '<p style="font-size:8px;color:#aaa;font-style:italic">No building meter data available.</p>';
+    meterTables = '<p style="font-size:10px;color:#aaa;font-style:italic">No building meter data available.</p>';
   }
 
   var bodyHTML =
-    '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 8px">Appendix ' +
+    '<h2 style="font-size:13px;font-weight:700;color:#333;margin:0 0 8px">Appendix ' +
     appLetter +
     ': Normalization &amp; Meter Baseline</h2>' +
     methodBox +
-    '<h3 style="font-size:9.5px;font-weight:700;color:#000;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.04em">Per-Building Meter Detail</h3>' +
+    '<h3 style="font-size:12px;font-weight:700;color:#000;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.04em">Per-Building Meter Detail</h3>' +
     meterTables;
 
   return rptPage(n, 'Appendix ' + appLetter + ': Normalization & Meter Baseline', bodyHTML, {
@@ -5676,8 +5684,8 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
   }
 
   var regressionExplainer =
-    '<div contenteditable="true" style="padding:10px 14px;font-size:9px;line-height:1.7;color:#333;margin-bottom:12px">' +
-    '<strong style="font-size:10px;color:#1a5276">Regression Model Overview</strong><br>' +
+    '<div contenteditable="true" style="padding:10px 14px;font-size:11px;line-height:1.7;color:#333;margin-bottom:12px">' +
+    '<strong style="font-size:12px;color:#1a5276">Regression Model Overview</strong><br>' +
     'Weather-normalized savings use an OLS regression model: <span style="font-family:monospace;background:#fff;border:1px solid #ddd;padding:1px 4px;border-radius:2px">Usage = β₀ × Days + β₁ × HDD + β₂ × CDD</span><br>' +
     'Where β₀ = base load per day, β₁ = heating coefficient, β₂ = cooling coefficient. ' +
     'The model is fit to baseline period data and applied to current weather to predict what consumption <em>would have been</em> without efficiency improvements. ' +
@@ -5707,7 +5715,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
     if (!metersWithCoeffs.length && !metersWithBlOnly.length) return;
 
     calcHTML +=
-      '<div style="font-size:10px;font-weight:700;color:#1a5276;background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
+      '<div style="font-size:12px;font-weight:700;color:#1a5276;background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
       (b.name || 'Building') +
       '</div>';
 
@@ -5727,14 +5735,14 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
 
       calcHTML +=
         '<div style="margin:6px 0 4px">' +
-        '<div style="font-size:8.5px;font-weight:600;color:#000">' +
+        '<div style="font-size:11px;font-weight:600;color:#000">' +
         md.commodity +
         ' — ' +
         md.regrType +
         ' (R² = ' +
         md.r2 +
         ')</div>' +
-        '<div style="font-family:monospace;font-size:8px;background:#f0f4f8;border:1px solid #d0dce8;border-radius:3px;padding:4px 8px;margin:2px 0 6px;color:#1a5276">' +
+        '<div style="font-family:monospace;font-size:10px;background:#f0f4f8;border:1px solid #d0dce8;border-radius:3px;padding:4px 8px;margin:2px 0 6px;color:#1a5276">' +
         eqn +
         '</div>' +
         '</div>';
@@ -5819,7 +5827,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
             '<tr style="background:#f5f5f5;color:#000">' +
             '<td>' +
             moName +
-            ' <span style="font-size:6px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span>' +
+            ' <span style="font-size:8px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span>' +
             '</td>' +
             '<td class="rpt-n" style="color:#bbb">' +
             days +
@@ -5830,7 +5838,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
             '<td class="rpt-n" style="color:#bbb">' +
             Math.round(cdd).toLocaleString() +
             '</td>' +
-            '<td style="font-family:monospace;font-size:6.5px;color:#bbb;white-space:nowrap">' +
+            '<td style="font-family:monospace;font-size:9px;color:#bbb;white-space:nowrap">' +
             formulaParts +
             '</td>' +
             '<td class="rpt-n" style="color:#aaa">' +
@@ -5859,7 +5867,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
             '<td class="rpt-n">' +
             Math.round(cdd).toLocaleString() +
             '</td>' +
-            '<td style="font-family:monospace;font-size:6.5px;color:#000;white-space:nowrap">' +
+            '<td style="font-family:monospace;font-size:9px;color:#000;white-space:nowrap">' +
             formulaParts +
             '</td>' +
             '<td class="rpt-n" style="font-weight:600">' +
@@ -5894,7 +5902,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         '</tr>';
 
       calcHTML +=
-        '<table class="rpt-table" style="font-size:7px;margin-bottom:10px">' +
+        '<table class="rpt-table" style="font-size:9px;margin-bottom:10px">' +
         '<thead><tr>' +
         '<th>Month</th><th class="rpt-n">Days</th><th class="rpt-n">HDD</th><th class="rpt-n">CDD</th>' +
         '<th>Calculation</th>' +
@@ -5919,7 +5927,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
 
       calcHTML +=
         '<div style="margin:6px 0 4px">' +
-        '<div style="font-size:8.5px;font-weight:600;color:#000">' +
+        '<div style="font-size:11px;font-weight:600;color:#000">' +
         md.commodity +
         ' — Baseline Data (no regression model)</div>' +
         '</div>';
@@ -5934,7 +5942,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
           '<tr style="background:#f5f5f5;color:#000">' +
           '<td>' +
           moName +
-          ' <span style="font-size:6px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span></td>' +
+          ' <span style="font-size:8px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span></td>' +
           '<td class="rpt-n" style="color:#bbb">' +
           days +
           '</td>' +
@@ -5944,7 +5952,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
           '<td class="rpt-n" style="color:#bbb">' +
           Math.round(wx.cddBl || 0).toLocaleString() +
           '</td>' +
-          '<td style="font-size:7px;color:#bbb">—</td>' +
+          '<td style="font-size:9px;color:#bbb">—</td>' +
           '<td class="rpt-n" style="color:#bbb">—</td>' +
           '<td class="rpt-n" style="color:#bbb">—</td>' +
           '<td class="rpt-n" style="color:#bbb">—</td>' +
@@ -5952,7 +5960,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
       });
 
       calcHTML +=
-        '<table class="rpt-table" style="font-size:7px;margin-bottom:10px">' +
+        '<table class="rpt-table" style="font-size:9px;margin-bottom:10px">' +
         '<thead><tr>' +
         '<th>Month</th><th class="rpt-n">Days</th><th class="rpt-n">HDD</th><th class="rpt-n">CDD</th>' +
         '<th>Calculation</th>' +
@@ -5973,16 +5981,16 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
 
   if (!calcHTML) {
     calcHTML =
-      '<p style="font-size:8px;color:#aaa;font-style:italic">No regression data available for calculation display.</p>';
+      '<p style="font-size:10px;color:#aaa;font-style:italic">No regression data available for calculation display.</p>';
   }
 
   var bodyHTML =
-    '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' +
+    '<h2 style="font-size:13px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' +
     appLetter +
     ': Regression Model Methodology</h2>' +
-    '<div style="font-size:8.5px;color:#000;margin-bottom:8px">Weather-normalized baseline calculations per building and commodity</div>' +
+    '<div style="font-size:11px;color:#000;margin-bottom:8px">Weather-normalized baseline calculations per building and commodity</div>' +
     regressionExplainer +
-    '<h3 style="font-size:9.5px;font-weight:700;color:#000;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.04em">Monthly Baseline Calculations</h3>' +
+    '<h3 style="font-size:12px;font-weight:700;color:#000;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.04em">Monthly Baseline Calculations</h3>' +
     calcHTML;
 
   return rptPage(n, 'Appendix ' + appLetter + ': Regression Model Methodology', bodyHTML, {
@@ -6044,7 +6052,7 @@ function rptPageAppendixWeather(n, d, appLetter) {
     var cddVal = ip ? cddCur : cddBl;
     var badge = ip
       ? ''
-      : ' <span style="font-size:6px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span>';
+      : ' <span style="font-size:8px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span>';
     tableRows +=
       '<tr style="' +
       rowStyle +
@@ -6103,7 +6111,7 @@ function rptPageAppendixWeather(n, d, appLetter) {
   }
 
   var weatherTable =
-    '<table class="rpt-table" contenteditable="true" style="font-size:10px">' +
+    '<table class="rpt-table" contenteditable="true" style="font-size:12px">' +
     '<thead><tr>' +
     '<th>Month</th>' +
     '<th class="rpt-n">HDD</th>' +
@@ -6147,7 +6155,7 @@ function rptPageAppendixWeather(n, d, appLetter) {
     'Balance point: 60°F per contract specification.';
 
   var narrativeBox =
-    '<div contenteditable="true" style="padding:10px 12px;font-size:9px;line-height:1.7;color:#333;margin-top:10px">' +
+    '<div contenteditable="true" style="padding:10px 12px;font-size:11px;line-height:1.7;color:#333;margin-top:10px">' +
     narrativeText +
     '</div>';
 
@@ -6170,7 +6178,7 @@ function rptPageAppendixWeather(n, d, appLetter) {
         ? Math.round(((d.weather.totals.cddCur - d.weather.totals.cddBl) / d.weather.totals.cddBl) * 100)
         : 0;
     hddCddParagraph =
-      '<div contenteditable="true" style="margin-top:10px;font-size:9px;color:#444;line-height:1.7">' +
+      '<div contenteditable="true" style="margin-top:10px;font-size:11px;color:#444;line-height:1.7">' +
       'Heating degree days (HDD) for the period were ' +
       pHDD +
       ' vs. a baseline average of ' +
@@ -6191,16 +6199,16 @@ function rptPageAppendixWeather(n, d, appLetter) {
       '</div>';
   }
   var bodyHTML =
-    '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' +
+    '<h2 style="font-size:13px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' +
     appLetter +
     ': Weather Data</h2>' +
-    '<div style="font-size:8.5px;color:#000;margin-bottom:10px">Combined HDD and CDD — Base 60°F per contract</div>' +
+    '<div style="font-size:11px;color:#000;margin-bottom:10px">Combined HDD and CDD — Base 60°F per contract</div>' +
     weatherTable +
-    '<h3 style="font-size:9.5px;font-weight:700;color:#000;margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.04em">Weather Impact Summary</h3>' +
+    '<h3 style="font-size:12px;font-weight:700;color:#000;margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.04em">Weather Impact Summary</h3>' +
     narrativeBox +
     hddCddParagraph +
-    '<div style="margin-top:16px;padding:10px 12px;font-size:8.5px;color:#444;line-height:1.5">' +
-    '<div style="font-weight:700;font-size:9px;color:#333;margin-bottom:6px">What is a degree day?</div>' +
+    '<div style="margin-top:16px;padding:10px 12px;font-size:11px;color:#444;line-height:1.5">' +
+    '<div style="font-weight:700;font-size:11px;color:#333;margin-bottom:6px">What is a degree day?</div>' +
     '<div style="margin-bottom:6px">A degree day is a measure of relative heating and cooling energy required by buildings. It&#39;s calculated as the difference between the average daily temperature and the balance point temperature (60 degrees). When the average daily temperature is above the balance point, the result is cooling degree days; when below, the result is heating degree days.</div>' +
     '<div style="margin-bottom:6px"><strong>Example 1:</strong> Average daily temperature = 80. Balance point = 60. Cooling degree days = 20 CDD. (80-60=20)</div>' +
     '<div style="margin-bottom:6px"><strong>Example 2:</strong> Average daily temperature = 45. Balance point = 60. Heating degree days = 15 HDD. (60-45=15)</div>' +
@@ -6258,7 +6266,7 @@ function rptPageAppendixBills(n, d, appLetter) {
   var sections = '';
   var allBillImages = '';
   if (!periodYMs.length) {
-    sections = '<p style="font-size:8px;color:#aaa;font-style:italic">No reporting period months configured.</p>';
+    sections = '<p style="font-size:10px;color:#aaa;font-style:italic">No reporting period months configured.</p>';
   } else {
     periodYMs.forEach(function (ym) {
       var parts = ym.split('-');
@@ -6310,7 +6318,7 @@ function rptPageAppendixBills(n, d, appLetter) {
           allBillImages +=
             '<div style="display:inline-block;margin:4px 6px 4px 0;border:1px solid #ccc;border-radius:3px;overflow:hidden"><img src="' +
             bill.pdfImage +
-            '" style="height:120px;width:auto;display:block"><div style="font-size:6.5px;color:#000;padding:2px 4px;background:#f8f8f8;text-align:center">' +
+            '" style="height:120px;width:auto;display:block"><div style="font-size:9px;color:#000;padding:2px 4px;background:#f8f8f8;text-align:center">' +
             bill.building +
             ' · ' +
             bill.commodity +
@@ -6320,10 +6328,10 @@ function rptPageAppendixBills(n, d, appLetter) {
         }
       });
       sections +=
-        '<div style="font-size:9px;font-weight:700;color:#1a5276;background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
+        '<div style="font-size:11px;font-weight:700;color:#1a5276;background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
         moLabel +
         '</div>' +
-        '<table class="rpt-table" style="font-size:7.5px;margin-bottom:6px">' +
+        '<table class="rpt-table" style="font-size:10px;margin-bottom:6px">' +
         '<thead><tr>' +
         '<th>Building</th><th>Commodity</th><th>Provider</th><th class="rpt-n">kWh</th><th class="rpt-n">kW</th><th class="rpt-n">Therms</th><th class="rpt-n">Gallons</th><th class="rpt-n">Cost</th><th>Bill Date</th>' +
         '</tr></thead><tbody>' +
@@ -6334,7 +6342,7 @@ function rptPageAppendixBills(n, d, appLetter) {
 
   var billImagesSection = allBillImages
     ? '<div style="margin-top:16px;border-top:1px solid #ddd;padding-top:10px">' +
-      '<div style="font-size:9.5px;font-weight:700;color:#1a5276;margin-bottom:6px">Scanned Bill Images</div>' +
+      '<div style="font-size:12px;font-weight:700;color:#1a5276;margin-bottom:6px">Scanned Bill Images</div>' +
       '<div style="display:flex;flex-wrap:wrap">' +
       allBillImages +
       '</div></div>'
@@ -6342,17 +6350,17 @@ function rptPageAppendixBills(n, d, appLetter) {
 
   var _hasBillImages = allBillImages.length > 0;
   var footerNote =
-    '<div style="margin-top:12px;font-size:8px;color:#777;font-style:italic;border-top:1px solid #ddd;padding-top:6px">' +
+    '<div style="margin-top:12px;font-size:10px;color:#777;font-style:italic;border-top:1px solid #ddd;padding-top:6px">' +
     (_hasBillImages
       ? 'Bill thumbnails shown above are rendered from stored PDF files.'
       : 'No scanned bill images available. Upload PDFs in the Energy Department to include bill images in future reports.') +
     '</div>';
 
   var bodyHTML =
-    '<h2 style="font-size:11px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' +
+    '<h2 style="font-size:13px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' +
     appLetter +
     ': Utility Bills</h2>' +
-    '<div style="font-size:8.5px;color:#000;margin-bottom:10px">Original utility bill PDFs for the reporting period</div>' +
+    '<div style="font-size:11px;color:#000;margin-bottom:10px">Original utility bill PDFs for the reporting period</div>' +
     sections +
     billImagesSection +
     footerNote;
@@ -6817,22 +6825,10 @@ function _rptHasMeterWithBaseline(projId, commodity) {
 }
 
 function _rptV2GoEdit(projId, tab, subTab) {
-  document.getElementById('reportGenModal').classList.remove('open');
-  openDetail(projId);
-  requestAnimationFrame(function () {
-    var btn = document.querySelector('.pdt[data-tab="' + tab + '"]');
-    sPTab(tab, btn || null);
-    if (subTab === 'approved') {
-      window._docsSubTab = 'approved';
-      renderDocsSubTab('approved', projId);
-    }
-    var labels = {
-      docs: 'Approved Changes (Documents tab)',
-      setpoints: 'Set Points & Schedules tab',
-      utility: 'Utility Data tab',
-    };
-    showToast('Add data in the ' + (labels[tab] || tab) + ', then reopen Generate Report');
-  });
+  // Open a new browser window so user can edit data while the report modal stays open
+  var url = window.location.pathname + '?openProject=' + encodeURIComponent(projId) + '&tab=' + encodeURIComponent(tab);
+  if (subTab) url += '&subTab=' + encodeURIComponent(subTab);
+  window.open(url, '_blank', 'width=1200,height=800,resizable=yes,scrollbars=yes');
 }
 
 function _rptV2LoadTemplate(name) {
@@ -9278,6 +9274,7 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   refreshNotifUI();
   init();
+  document.querySelector('.content')?.classList.add('app-ready');
 });
 window.addEventListener('resize', () => {
   ['utility', 'savings'].forEach((id) => {
