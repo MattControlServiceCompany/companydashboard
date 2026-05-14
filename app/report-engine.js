@@ -4125,12 +4125,13 @@ function rptPageBuildingSummary(n, d, b) {
   // ═══════════════════════════════════════════════════════════════════
   // Building Baseline Data table (Energy Dept styling, merged kW Cost, no Load %)
   // ═══════════════════════════════════════════════════════════════════
-  var _opts = (d.reportOptions && d.reportOptions.blCommodities) || {
-    electric: true,
-    gas: true,
-    propane: true,
-    water: false,
+  var _blCalcDefaults = {
+    electric: typeof isCalcCommodity === 'function' ? isCalcCommodity(d.project.id, 'Electric') : true,
+    gas: typeof isCalcCommodity === 'function' ? isCalcCommodity(d.project.id, 'Gas') : true,
+    propane: typeof isCalcCommodity === 'function' ? isCalcCommodity(d.project.id, 'Propane') : true,
+    water: typeof isCalcCommodity === 'function' ? isCalcCommodity(d.project.id, 'Water') : false,
   };
+  var _opts = (d.reportOptions && d.reportOptions.blCommodities) || _blCalcDefaults;
   var _showElec = hasElec && _opts.electric;
   var _showGas = hasGas && _opts.gas;
   var _showProp = hasPropane && _opts.propane;
@@ -4287,85 +4288,92 @@ function rptPageBuildingSummary(n, d, b) {
         '</td>';
     blDataRows += '<td class="rpt-n">' + $c(_tTotalCost) + '</td></tr>';
   }
-  var blHdr = '<th style="white-space:nowrap">Month</th>';
+  // Column group header row (commodity-colored)
+  var blGrpHdr = '<th rowspan="2" style="white-space:nowrap">Month</th>';
+  if (_showElec) blGrpHdr += '<th colspan="7" class="bl-grp bl-elec">Electric</th>';
+  if (_showGas) blGrpHdr += '<th colspan="3" class="bl-grp bl-gas">Gas</th>';
+  if (_showProp) blGrpHdr += '<th colspan="3" class="bl-grp bl-prop">Propane</th>';
+  if (_showWater) blGrpHdr += '<th colspan="3" class="bl-grp bl-water">Water</th>';
+  blGrpHdr +=
+    '<th rowspan="2" class="rpt-n bl-grp bl-total" style="white-space:normal;line-height:1.2">Total<br>Cost</th>';
+  // Detail column header row
+  var blHdr = '';
   if (_showElec)
     blHdr +=
-      '<th class="rpt-n">kWh</th>' +
-      '<th class="rpt-n" style="white-space:normal;line-height:1.2">Actual<br>kW</th>' +
-      '<th class="rpt-n" style="white-space:normal;line-height:1.2">Billed<br>kW</th>' +
-      '<th class="rpt-n" style="white-space:normal;line-height:1.2">kW<br>Cost</th>' +
-      '<th class="rpt-n" style="white-space:normal;line-height:1.2">Energy<br>Cost</th>' +
-      '<th class="rpt-n" style="white-space:normal;line-height:1.2">Electric<br>Cost</th>' +
-      '<th class="rpt-n">$/kWh</th>';
+      '<th class="rpt-n bl-elec">kWh</th>' +
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Actual<br>kW</th>' +
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Billed<br>kW</th>' +
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">kW<br>Cost</th>' +
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Energy<br>Cost</th>' +
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Electric<br>Cost</th>' +
+      '<th class="rpt-n bl-elec">$/kWh</th>';
   if (_showGas)
     blHdr +=
-      '<th class="rpt-n">Therms</th><th class="rpt-n" style="white-space:normal;line-height:1.2">Gas<br>Cost</th><th class="rpt-n">$/Therm</th>';
+      '<th class="rpt-n bl-gas">Therms</th><th class="rpt-n bl-gas" style="white-space:normal;line-height:1.2">Gas<br>Cost</th><th class="rpt-n bl-gas">$/Therm</th>';
   if (_showProp)
     blHdr +=
-      '<th class="rpt-n">Gallons</th><th class="rpt-n" style="white-space:normal;line-height:1.2">Prop<br>Cost</th><th class="rpt-n">$/Gal</th>';
+      '<th class="rpt-n bl-prop">Gallons</th><th class="rpt-n bl-prop" style="white-space:normal;line-height:1.2">Prop<br>Cost</th><th class="rpt-n bl-prop">$/Gal</th>';
   if (_showWater)
     blHdr +=
-      '<th class="rpt-n">kGal</th><th class="rpt-n" style="white-space:normal;line-height:1.2">Water<br>Cost</th><th class="rpt-n">$/kGal</th>';
-  blHdr += '<th class="rpt-n" style="white-space:normal;line-height:1.2">Total<br>Cost</th>';
+      '<th class="rpt-n bl-water">kGal</th><th class="rpt-n bl-water" style="white-space:normal;line-height:1.2">Water<br>Cost</th><th class="rpt-n bl-water">$/kGal</th>';
 
-  // Statistics summary (matching Energy Department)
+  // Statistics summary — light bordered grid for print-ready report
   var blStats = '';
   if (blDataRows) {
     var _statItems = [];
     if (b.sqft > 0)
       _statItems.push(
-        '<div style="text-align:center"><div style="font-size:7px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.4px">Square Feet</div><div style="font-size:10px;font-weight:700;color:#e8f4ff">' +
+        '<div><div class="bl-stat-label">Square Feet</div><div class="bl-stat-val">' +
           b.sqft.toLocaleString() +
           '</div></div>',
       );
     if (b.sqft > 0 && _tKwh > 0)
       _statItems.push(
-        '<div style="text-align:center"><div style="font-size:7px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.4px">kWh / sf</div><div style="font-size:10px;font-weight:700;color:#7dd8ff">' +
+        '<div><div class="bl-stat-label">kWh / sf</div><div class="bl-stat-val">' +
           (_tKwh / b.sqft).toFixed(2) +
           '</div></div>',
       );
     if (b.sqft > 0 && _tTotalCost > 0)
       _statItems.push(
-        '<div style="text-align:center"><div style="font-size:7px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.4px">Utility Cost / sf</div><div style="font-size:10px;font-weight:700;color:#40e8a0">' +
+        '<div><div class="bl-stat-label">Utility Cost / sf</div><div class="bl-stat-val">' +
           $c(Math.round(_tTotalCost / b.sqft)) +
           '</div></div>',
       );
     if (_tKwh > 0 && _tElecCost > 0)
       _statItems.push(
-        '<div style="text-align:center"><div style="font-size:7px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.4px">Avg $/kWh</div><div style="font-size:10px;font-weight:700;color:#7dd8ff">$' +
+        '<div><div class="bl-stat-label">Avg $/kWh</div><div class="bl-stat-val">$' +
           (_tElecCost / _tKwh).toFixed(4) +
           '</div></div>',
       );
     if (_tTherms > 0 && _tGasCost > 0)
       _statItems.push(
-        '<div style="text-align:center"><div style="font-size:7px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.4px">Avg $/Therm</div><div style="font-size:10px;font-weight:700;color:#ffb040">$' +
+        '<div><div class="bl-stat-label">Avg $/Therm</div><div class="bl-stat-val">$' +
           (_tGasCost / _tTherms).toFixed(4) +
           '</div></div>',
       );
     var _totalKbtu = toKBtu(_tKwh, _tTherms, _tGal);
     if (b.sqft > 0 && _totalKbtu > 0)
       _statItems.push(
-        '<div style="text-align:center"><div style="font-size:7px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.4px">kBtu / sf</div><div style="font-size:10px;font-weight:700;color:#c39bff">' +
+        '<div><div class="bl-stat-label">kBtu / sf</div><div class="bl-stat-val">' +
           (_totalKbtu / b.sqft).toFixed(2) +
           '</div></div>',
       );
     _statItems.push(
-      '<div style="text-align:center"><div style="font-size:7px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.4px">Utility Costs / Year</div><div style="font-size:10px;font-weight:700;color:#40e8a0">' +
+      '<div><div class="bl-stat-label">Utility Costs / Year</div><div class="bl-stat-val">' +
         $c(_tTotalCost) +
         '</div></div>',
     );
-    blStats =
-      '<div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;padding:8px 12px;background:#0d1525;border-radius:6px;margin-bottom:6px">' +
-      _statItems.join('') +
-      '</div>';
+    blStats = '<div class="rpt-bl-stats">' + _statItems.join('') + '</div>';
   }
 
   var blDataTable = blDataRows
     ? '<div style="margin-top:14px;width:100%;overflow-x:auto">' +
-      '<div style="font-size:9.5px;font-weight:600;color:#e8f4ff;margin-bottom:4px;padding:6px 10px;background:#1a5276;border-radius:4px 4px 0 0">Building Baseline Data</div>' +
+      '<div style="font-size:9.5px;font-weight:600;color:#FFFFFF;margin-bottom:4px;padding:6px 10px;background:#0070C0;border-radius:4px 4px 0 0;text-transform:uppercase;letter-spacing:0.5px">Building Baseline Data</div>' +
       blStats +
-      '<table class="rpt-table rpt-table-dark" style="font-size:6.5px;width:100%">' +
-      '<thead><tr style="background:#122a45;color:#8ab0d0;font-size:7px">' +
+      '<table class="rpt-table rpt-table-bl" style="font-size:7.5px;width:100%">' +
+      '<thead><tr>' +
+      blGrpHdr +
+      '</tr><tr>' +
       blHdr +
       '</tr></thead><tbody>' +
       blDataRows +

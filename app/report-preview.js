@@ -36,7 +36,12 @@ function generateReportPreview() {
   // Attach report options
   data.reportOptions = {
     annualizePollution: config.pollutionMode === 'annualized',
-    blCommodities: { electric: true, gas: true, propane: true, water: false },
+    blCommodities: {
+      electric: typeof isCalcCommodity === 'function' ? isCalcCommodity(config.projId, 'Electric') : true,
+      gas: typeof isCalcCommodity === 'function' ? isCalcCommodity(config.projId, 'Gas') : true,
+      propane: typeof isCalcCommodity === 'function' ? isCalcCommodity(config.projId, 'Propane') : true,
+      water: typeof isCalcCommodity === 'function' ? isCalcCommodity(config.projId, 'Water') : false,
+    },
   };
 
   // Override period info for custom/cumulative types

@@ -901,7 +901,7 @@ function egfxRefresh(projId) {
         );
         const _pol = _pc.pollutants;
         const _eq = _pc.equivalents;
-        const _fmt = (n) => Math.round(Math.abs(n)).toLocaleString();
+        const _fmt = (n) => Math.ceil(Math.abs(n)).toLocaleString();
         _pcEl.innerHTML =
           '<div style="font-weight:800;font-size:14px;letter-spacing:.8px;margin-bottom:12px;color:var(--text)">DETAILED POLLUTION CREDIT CALCULATIONS</div>' +
           '<div style="margin-bottom:14px;color:var(--text2)">The emission reductions produced from implementing this project are equivalent to saving:</div>' +
@@ -926,6 +926,9 @@ function egfxRefresh(projId) {
           '<div style="margin-bottom:4px"><strong>' +
           _fmt(_pol.pm10_oz) +
           '</strong> total ounces of PM10 reduction (particles of 10 micrometers or less)</div>' +
+          '<div style="margin-bottom:4px"><strong>' +
+          _fmt(_pol.pm_filt_oz) +
+          '</strong> total ounces of PM2.5 reduction (fine particulate matter)</div>' +
           '<div style="margin-bottom:4px"><strong>' +
           _fmt(_pol.voc_oz) +
           '</strong> total ounces of VOC reduction (volatile organic compounds)</div>' +

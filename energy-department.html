@@ -1657,6 +1657,93 @@
         border-top-color: #2980b9;
         color: #e8f4ff;
       }
+      /* ── Building Baseline Data — print-optimized light theme ── */
+      .rpt-table-bl {
+        background: #ffffff;
+        color: #000000;
+      }
+      .rpt-table-bl th {
+        background: #0070c0;
+        color: #ffffff;
+        border-color: #00599b;
+        font-size: 7.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+      }
+      .rpt-table-bl td {
+        border-color: #d9d9d9;
+        color: #000000;
+        font-size: 7.5px;
+      }
+      .rpt-table-bl tr:nth-child(even) td {
+        background: #f2f2f2;
+      }
+      .rpt-table-bl tr.rpt-tot td {
+        background: #eef4f8;
+        border-top: 2px solid #0070c0;
+        color: #000000;
+        font-weight: 700;
+      }
+      /* Commodity-colored column group headers */
+      .rpt-table-bl th.bl-grp {
+        font-size: 7px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+      }
+      .rpt-table-bl th.bl-elec {
+        background: #0070c0;
+      }
+      .rpt-table-bl th.bl-gas {
+        background: #e36c09;
+        border-color: #9a4704;
+      }
+      .rpt-table-bl th.bl-prop {
+        background: #b7770d;
+        border-color: #8b5a06;
+      }
+      .rpt-table-bl th.bl-water {
+        background: #2ca343;
+        border-color: #1e7a30;
+      }
+      .rpt-table-bl th.bl-total {
+        background: #1b3a5c;
+        border-color: #152d49;
+      }
+      /* Stats summary bar — light bordered version */
+      .rpt-bl-stats {
+        display: flex;
+        gap: 0;
+        flex-wrap: wrap;
+        justify-content: center;
+        margin-bottom: 6px;
+        border: 1px solid #d9d9d9;
+        border-radius: 4px;
+        background: #ffffff;
+      }
+      .rpt-bl-stats > div {
+        text-align: center;
+        padding: 6px 12px;
+        border-right: 1px solid #d9d9d9;
+        flex: 1;
+        min-width: 80px;
+      }
+      .rpt-bl-stats > div:last-child {
+        border-right: none;
+      }
+      .rpt-bl-stats .bl-stat-label {
+        font-size: 6.5px;
+        color: #3c4042;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        font-weight: 600;
+      }
+      .rpt-bl-stats .bl-stat-val {
+        font-size: 10px;
+        font-weight: 700;
+        color: #000000;
+      }
       .rpt-table .rpt-n {
         text-align: right;
         font-variant-numeric: tabular-nums;
