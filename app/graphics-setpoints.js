@@ -555,6 +555,7 @@ function egfxRefresh(projId) {
   const _blGasFromMap = new Array(12).fill(0);
   const _blPropaneFromMap = new Array(12).fill(0);
   const _blKwFromMap = new Array(12).fill(0);
+  const _kwNormByYm = {}; // project-level: YYYY-MM -> max CDD-regression-predicted kW across meters
   bldgs.forEach((b) => {
     (b.meters || []).forEach((m) => {
       if (m.baselineInclude === false) return;
@@ -570,19 +571,69 @@ function egfxRefresh(projId) {
       const isElec = m.commodity === 'Electric';
       const isGas = m.commodity === 'Gas';
       const isPropane = m.commodity === 'Propane';
+
+      // kW CDD regression: normalize kW using the same pattern as perf-table.js
+      // computeKwCddRegression returns {ym: predictedKW} for all months, or {} if insufficient data
+      let _mKwNorm = {};
+      if (isElec && typeof computeKwCddRegression === 'function') {
+        _mKwNorm = computeKwCddRegression(mBlRows, mAllRows, mBills, mIncl);
+      }
+      const _hasKwNorm = Object.keys(_mKwNorm).length > 0;
+
+      // Merge this meter's kW predictions into project-level lookup (max across meters per YM)
+      if (_hasKwNorm) {
+        Object.entries(_mKwNorm).forEach(([ym, kw]) => {
+          _kwNormByYm[ym] = Math.max(_kwNormByYm[ym] || 0, kw);
+        });
+      }
+
       const moMap = isElec ? mMap.elecByMo : isGas ? mMap.gasByMo : isPropane ? mMap.propaneByMo : {};
       Object.entries(moMap).forEach(([mo, v]) => {
         if (isElec) {
           _blKwhFromMap[mo] += v.kwh || 0;
-          // Use demandKW (not billedKW) to match bar data field (line 475)
-          // Use Math.max (not +=) to match bar aggregation across meters (line 478)
-          _blKwFromMap[mo] = Math.max(_blKwFromMap[mo], v.demandKW || 0);
+          if (_hasKwNorm) {
+            // Baseline kW: average regression predictions for this calendar month across baseline YMs
+            const blYmsForMo = mBlRows.filter((r) => parseInt(r.ym.split('-')[1]) - 1 === parseInt(mo));
+            let kwNormSum = 0,
+              kwNormCnt = 0;
+            blYmsForMo.forEach((r) => {
+              if (_mKwNorm[r.ym] != null) {
+                kwNormSum += _mKwNorm[r.ym];
+                kwNormCnt++;
+              }
+            });
+            const avgKwNorm = kwNormCnt > 0 ? kwNormSum / kwNormCnt : 0;
+            if (avgKwNorm > 0) {
+              _blKwFromMap[mo] = Math.max(_blKwFromMap[mo], avgKwNorm);
+            } else {
+              // Fallback to raw if regression returned nothing for this month
+              _blKwFromMap[mo] = Math.max(_blKwFromMap[mo], v.demandKW || 0);
+            }
+          } else {
+            // No regression available — fallback to raw demandKW (same as before)
+            _blKwFromMap[mo] = Math.max(_blKwFromMap[mo], v.demandKW || 0);
+          }
         }
         if (isGas) _blGasFromMap[mo] += v.therms || 0;
         if (isPropane) _blPropaneFromMap[mo] += v.gallons || 0;
       });
     });
   });
+
+  // Overwrite yearData kW with CDD-regression-normalized values where available
+  // This ensures the YoY bar chart shows weather-normalized kW, not raw demandKW
+  if (Object.keys(_kwNormByYm).length > 0) {
+    for (const yr of Object.keys(yearData)) {
+      for (let mi = 0; mi < 12; mi++) {
+        const ym = yr + '-' + String(mi + 1).padStart(2, '0');
+        if (_kwNormByYm[ym] != null) {
+          yearData[yr].kw[mi] = _kwNormByYm[ym];
+        }
+        // If no regression prediction for this YM, leave raw demandKW in place (graceful fallback)
+      }
+    }
+  }
+
   const blKwhAvg = _blKwhFromMap;
   const blGasAvg = _blGasFromMap;
   const blPropaneAvg = _blPropaneFromMap;
