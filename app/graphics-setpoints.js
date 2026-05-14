@@ -620,19 +620,10 @@ function egfxRefresh(projId) {
     });
   });
 
-  // Overwrite yearData kW with CDD-regression-normalized values where available
-  // This ensures the YoY bar chart shows weather-normalized kW, not raw demandKW
-  if (Object.keys(_kwNormByYm).length > 0) {
-    for (const yr of Object.keys(yearData)) {
-      for (let mi = 0; mi < 12; mi++) {
-        const ym = yr + '-' + String(mi + 1).padStart(2, '0');
-        if (_kwNormByYm[ym] != null) {
-          yearData[yr].kw[mi] = _kwNormByYm[ym];
-        }
-        // If no regression prediction for this YM, leave raw demandKW in place (graceful fallback)
-      }
-    }
-  }
+  // NOTE: _kwNormByYm is no longer used to overwrite yearData kW.
+  // The baseline line uses _blKwFromMap (passed as blAvgArr to the chart).
+  // Each year's bars should show actual summed demandKW from bills, not regression predictions.
+  // Removed overwrite block that made all YoY series show identical regression values.
 
   const blKwhAvg = _blKwhFromMap;
   const blGasAvg = _blGasFromMap;
@@ -1757,7 +1748,7 @@ function egfxRefresh(projId) {
             return (
               '<div style="margin-top:12px">' +
               bldgs
-                .map((b) => _buildBaselineDataHtml(b))
+                .map((b) => _buildBaselineDataHtml(b, projId))
                 .filter(Boolean)
                 .join('') +
               '</div>'

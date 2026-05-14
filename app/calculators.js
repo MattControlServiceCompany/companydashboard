@@ -123,33 +123,41 @@ function _hvlSelectBldg(projId, bldgId) {
   initHvacLoadTab(projId);
 }
 
-function _buildBaselineDataHtml(b) {
+function _buildBaselineDataHtml(b, projId) {
   if (!b) return '';
   const sqft = parseInt(b.sqft) || 0;
   const meters = b.meters || [];
   const elecM = meters.find((m) => m.commodity === 'Electric');
   const gasM = meters.find((m) => m.commodity === 'Gas');
   const propaneM = meters.find((m) => m.commodity === 'Propane');
-  function _blBillsByMo(meter) {
+
+  // ── Use buildMoMap for normalized baseline data (matches Utility Data table) ──
+  const _wxByYm = typeof getWeatherForBuilding === 'function' && projId ? getWeatherForBuilding(projId, b.id).byYm : {};
+  function _getNormMoMap(meter) {
     if (!meter) return {};
-    const blBills = _dashGetBaselineBills(meter);
-    const allBills = (meter.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
-    const bills = blBills.length ? blBills : allBills;
+    const bills = (meter.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
     const incl = meter.inclusive !== false;
-    const byMo = {};
-    bills.forEach((bill) => {
-      const ym = normMonth(bill.start, bill.end, incl, allBills);
-      if (!ym) return;
-      const mo = parseInt(ym.split('-')[1]) - 1;
-      byMo[mo] = bill;
-    });
-    return byMo;
+    const allRows = typeof getNormRows === 'function' && bills.length ? getNormRows(meter, bills, incl, _wxByYm) : [];
+    const bl = meter.baseline || {};
+    const blMonths = bl.months || [];
+    const blRows = blMonths.length >= 3 ? allRows.filter((r) => blMonths.includes(r.ym)) : allRows.slice(-12);
+    if (!blRows.length) return {};
+    return typeof buildMoMap === 'function' ? buildMoMap(meter, blRows, bills, incl) : {};
   }
-  const eByMo = _blBillsByMo(elecM);
-  const gByMo = _blBillsByMo(gasM);
-  const pByMo = _blBillsByMo(propaneM);
+  const eMoMap = _getNormMoMap(elecM);
+  const gMoMap = _getNormMoMap(gasM);
+  const pMoMap = _getNormMoMap(propaneM);
+  const eByMo = eMoMap.elecByMo || {};
+  const gByMo = gMoMap.gasByMo || {};
+  const pByMo = pMoMap.propaneByMo || {};
+
+  // Detect whether Billed kW / Facilities kW data exists
+  const hasBilledKW = Object.values(eByMo).some((v) => (v.billedKW || 0) > 0);
+  const hasFacKW = Object.values(eByMo).some((v) => (v.facKW || 0) > 0);
   let totKwh = 0,
     totKw = 0,
+    totBilledKW = 0,
+    totFacKW = 0,
     totKwCost = 0,
     totKwhCost = 0,
     totElecCost = 0;
@@ -161,25 +169,27 @@ function _buildBaselineDataHtml(b) {
   MO_SHORT.forEach((_, i) => {
     const eb = eByMo[i];
     if (eb) {
-      totKwh += parseFloat(eb.kwh) || parseFloat(eb.usage) || 0;
-      const kwVal = parseFloat(eb.demandKW) || parseFloat(eb.billedKW) || 0;
+      totKwh += eb.kwh || 0;
+      const kwVal = eb.demandKW || 0;
       if (kwVal > 0) {
         totKw += kwVal;
         kwMonths++;
       }
-      totKwCost += parseFloat(eb.kwCost) || parseFloat(eb.demandCost) || 0;
-      totKwhCost += parseFloat(eb.kwhCost) || parseFloat(eb.energyCost) || 0;
-      totElecCost += parseFloat(eb.totalCost) || parseFloat(eb.cost) || 0;
+      totBilledKW += eb.billedKW || 0;
+      totFacKW += eb.facKW || 0;
+      totKwCost += eb.kwCost || 0;
+      totKwhCost += eb.energyCost || 0;
+      totElecCost += eb.totalCost || 0;
     }
     const gb = gByMo[i];
     if (gb) {
-      totTherms += parseFloat(gb.therms) || parseFloat(gb.usage) || 0;
-      totGasCost += parseFloat(gb.totalCost) || parseFloat(gb.cost) || 0;
+      totTherms += gb.therms || 0;
+      totGasCost += gb.cost || 0;
     }
     const pb = pByMo[i];
     if (pb) {
-      totPropGal += parseFloat(pb.gallonsDelivered) || parseFloat(pb.kwh) || parseFloat(pb.usage) || 0;
-      totPropCost += parseFloat(pb.totalCost) || parseFloat(pb.cost) || 0;
+      totPropGal += pb.gallons || 0;
+      totPropCost += pb.cost || 0;
     }
   });
   if (totKwh === 0 && totTherms === 0 && totPropGal === 0) return '';
@@ -194,7 +204,7 @@ function _buildBaselineDataHtml(b) {
               <thead>
                 <tr>
                   <th style="width:80px">Month</th>
-                  ${elecM ? '<th style="text-align:right">kWh</th><th style="text-align:right">Actual kW</th><th style="text-align:right">kW Cost</th><th style="text-align:right">kWh Cost</th><th style="text-align:right">Electric Cost</th><th style="text-align:right">Avg $/kWh</th><th style="text-align:right">Avg $/kW</th><th style="text-align:right">Load Factor</th>' : ''}
+                  ${elecM ? '<th style="text-align:right">Norm kWh</th><th style="text-align:right">Actual kW</th>' + (hasBilledKW ? '<th style="text-align:right">Billed kW</th>' : '') + (hasFacKW ? '<th style="text-align:right">Facilities kW</th>' : '') + '<th style="text-align:right">kW Cost</th><th style="text-align:right">kWh Cost</th><th style="text-align:right">Electric Cost</th><th style="text-align:right">Avg $/kWh</th><th style="text-align:right">Avg $/kW</th><th style="text-align:right">Load Factor</th>' : ''}
                   ${gasM ? '<th style="border-left:2px solid var(--border2);text-align:right">Therms</th><th style="text-align:right">Avg $/Therm</th><th style="text-align:right">Gas Cost</th>' : ''}
                   ${propaneM ? '<th style="border-left:2px solid var(--border2);text-align:right">Propane Gal</th><th style="text-align:right">Avg $/Gal</th><th style="text-align:right">Propane Cost</th>' : ''}
                   <th style="text-align:right;border-left:2px solid var(--border2)">Total Utility</th>
@@ -205,20 +215,22 @@ function _buildBaselineDataHtml(b) {
                   const eb = eByMo[i] || {};
                   const gb = gByMo[i] || {};
                   const pb = pByMo[i] || {};
-                  const kwh = parseFloat(eb.kwh) || parseFloat(eb.usage) || 0;
-                  const kw = parseFloat(eb.demandKW) || parseFloat(eb.billedKW) || 0;
-                  const kwCost = parseFloat(eb.kwCost) || parseFloat(eb.demandCost) || 0;
-                  const kwhCost = parseFloat(eb.kwhCost) || parseFloat(eb.energyCost) || 0;
-                  const eCost = parseFloat(eb.totalCost) || parseFloat(eb.cost) || 0;
-                  const avgKwh = getStoredRate(eb, 'kwh');
-                  const avgKw = getStoredRate(eb, 'kw');
-                  const days = eb.days || 30;
+                  const kwh = eb.kwh || 0;
+                  const kw = eb.demandKW || 0;
+                  const bilKW = eb.billedKW || 0;
+                  const facKW = eb.facKW || 0;
+                  const kwCost = eb.kwCost || 0;
+                  const kwhCost = eb.energyCost || 0;
+                  const eCost = eb.totalCost || 0;
+                  const avgKwh = kwh > 0 && kwhCost > 0 ? kwhCost / kwh : 0;
+                  const avgKw = kw > 0 && kwCost > 0 ? kwCost / kw : 0;
+                  const days = eb.normDays || 30;
                   const lf = kw > 0 && kwh > 0 ? kwh / (kw * 24 * days) : 0;
-                  const therms = parseFloat(gb.therms) || parseFloat(gb.usage) || 0;
-                  const gCost = parseFloat(gb.totalCost) || parseFloat(gb.cost) || 0;
+                  const therms = gb.therms || 0;
+                  const gCost = gb.cost || 0;
                   const avgTherm = therms > 0 && gCost > 0 ? gCost / therms : 0;
-                  const propGal = parseFloat(pb.gallonsDelivered) || parseFloat(pb.kwh) || parseFloat(pb.usage) || 0;
-                  const pCost = parseFloat(pb.totalCost) || parseFloat(pb.cost) || 0;
+                  const propGal = pb.gallons || 0;
+                  const pCost = pb.cost || 0;
                   const avgPropGal = propGal > 0 && pCost > 0 ? pCost / propGal : 0;
                   const moTotal = eCost + gCost + pCost;
                   return (
@@ -233,6 +245,16 @@ function _buildBaselineDataHtml(b) {
                         '<td style="text-align:right;font-family:var(--mono)">' +
                         (kw ? kw.toFixed(1) : '—') +
                         '</td>' +
+                        (hasBilledKW
+                          ? '<td style="text-align:right;font-family:var(--mono)">' +
+                            (bilKW ? bilKW.toFixed(1) : '—') +
+                            '</td>'
+                          : '') +
+                        (hasFacKW
+                          ? '<td style="text-align:right;font-family:var(--mono)">' +
+                            (facKW ? facKW.toFixed(1) : '—') +
+                            '</td>'
+                          : '') +
                         '<td style="text-align:right;font-family:var(--mono)">' +
                         (kwCost ? $c(kwCost) : '—') +
                         '</td>' +
@@ -286,6 +308,8 @@ function _buildBaselineDataHtml(b) {
                     elecM
                       ? `<td style="text-align:right;font-family:var(--mono)">${totKwh ? Math.round(totKwh).toLocaleString() : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono)">${totKw ? totKw.toFixed(1) : '—'}</td>
+                  ${hasBilledKW ? `<td style="text-align:right;font-family:var(--mono)">${totBilledKW ? totBilledKW.toFixed(1) : '—'}</td>` : ''}
+                  ${hasFacKW ? `<td style="text-align:right;font-family:var(--mono)">${totFacKW ? totFacKW.toFixed(1) : '—'}</td>` : ''}
                   <td style="text-align:right;font-family:var(--mono)">${totKwCost ? $c(totKwCost) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono)">${totKwhCost ? $c(totKwhCost) : '—'}</td>
                   <td style="text-align:right;font-family:var(--mono);color:var(--em)">${totElecCost ? $c(totElecCost) : '—'}</td>
@@ -342,7 +366,7 @@ function _buildBaselineDataHtml(b) {
 function _hvlRenderBaselineSummary(projId, b) {
   const wrap = document.getElementById('hvl-baseline-summary-' + projId);
   if (!wrap || !b) return;
-  wrap.innerHTML = _buildBaselineDataHtml(b);
+  wrap.innerHTML = _buildBaselineDataHtml(b, projId);
 }
 
 function _hvlRenderMethod(projId, bldgId, method) {
