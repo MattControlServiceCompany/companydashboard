@@ -920,11 +920,11 @@ function egfxRefresh(projId) {
           'State: <strong>' +
           _stateCode +
           '</strong> • Inputs: <strong>' +
-          Math.round(kwhSaved).toLocaleString() +
+          Math.round(Math.max(0, kwhSaved)).toLocaleString() +
           '</strong> kWh + <strong>' +
-          Math.round(gasSaved).toLocaleString() +
+          Math.round(Math.max(0, gasSaved)).toLocaleString() +
           '</strong> Therms + <strong>' +
-          Math.round(propSaved).toLocaleString() +
+          Math.round(Math.max(0, propSaved)).toLocaleString() +
           '</strong> Gal Propane' +
           '</div>';
       } else {
