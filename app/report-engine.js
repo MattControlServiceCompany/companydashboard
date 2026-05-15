@@ -1714,7 +1714,7 @@ function rptPageFinancial(n, d) {
     cumPoints.push({ q: qi, proj: _cumP });
   }
   const maxY = (_cumP || annTarget * yrs) * 1.1;
-  const padL = 60,
+  const padL = 20,
     padR = 20,
     padT = 10,
     padB = 30;
@@ -3193,7 +3193,7 @@ function rptPageContractProjection(n, d) {
   const svgW = 716,
     svgH = 120;
   const totalQtrs = contractYears * 4;
-  var padL = 40,
+  var padL = 20,
     padR = 20,
     padT = 10,
     padB = 20;
@@ -3810,21 +3810,51 @@ function rptPageBuildingSummary(n, d, b) {
           }),
         ) || 1;
       var euiChartH = 80;
+      var euiMidLabel = (euiMax / 2).toFixed(1);
       var euiBars = euiMonthly
         .map(function (mo) {
           var blH = Math.max(1, Math.round((mo.bl / euiMax) * euiChartH));
           var curH = Math.max(1, Math.round((mo.cur / euiMax) * euiChartH));
           var moLbl = moLabel(mo.month);
+          // Value labels: show above bar if bar is tall enough (>=8px) and value > 0
+          var blLabel =
+            mo.bl > 0 && blH >= 8
+              ? '<div style="font-size:5px;color:#555;line-height:1;margin-bottom:1px;text-align:center">' +
+                mo.bl.toFixed(1) +
+                '</div>'
+              : '<div style="font-size:5px;line-height:1;margin-bottom:1px">&nbsp;</div>';
+          var curLabel =
+            mo.cur > 0 && curH >= 8
+              ? '<div style="font-size:5px;color:#555;line-height:1;margin-bottom:1px;text-align:center">' +
+                mo.cur.toFixed(1) +
+                '</div>'
+              : '<div style="font-size:5px;line-height:1;margin-bottom:1px">&nbsp;</div>';
           return (
-            '<div style="display:flex;flex-direction:column;align-items:center;flex:1"><div style="display:flex;align-items:flex-end;gap:1px;height:' +
+            '<div style="display:flex;flex-direction:column;align-items:center;flex:1">' +
+            '<div style="display:flex;align-items:flex-end;gap:1px;height:' +
             euiChartH +
-            'px"><div style="width:10px;height:' +
+            'px">' +
+            '<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:' +
+            euiChartH +
+            'px">' +
+            blLabel +
+            '<div style="width:10px;height:' +
             blH +
-            'px;background:#e67e22;border-radius:1px 1px 0 0"></div><div style="width:10px;height:' +
+            'px;background:#e67e22;border-radius:1px 1px 0 0"></div>' +
+            '</div>' +
+            '<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:' +
+            euiChartH +
+            'px">' +
+            curLabel +
+            '<div style="width:10px;height:' +
             curH +
-            'px;background:#1a8a4e;border-radius:1px 1px 0 0"></div></div><div style="font-size:8px;color:#000">' +
+            'px;background:#1a8a4e;border-radius:1px 1px 0 0"></div>' +
+            '</div>' +
+            '</div>' +
+            '<div style="font-size:8px;color:#000">' +
             moLbl +
-            '</div></div>'
+            '</div>' +
+            '</div>'
           );
         })
         .join('');
@@ -3832,12 +3862,22 @@ function rptPageBuildingSummary(n, d, b) {
       leftHTML +=
         '<div style="font-size:10px;font-weight:600;color:#000;margin:8px 0 3px">Monthly EUI (kBtu/ft²)</div>' +
         '<div style="position:relative;padding-left:28px">' +
-        '<div style="position:absolute;left:0;top:0;bottom:0;display:flex;flex-direction:column;justify-content:space-between;font-size:7px;color:#888;text-align:right;width:24px"><span>' +
+        '<div style="position:absolute;left:0;top:0;bottom:16px;display:flex;flex-direction:column;justify-content:space-between;font-size:7px;color:#888;text-align:right;width:24px">' +
+        '<span>' +
         euiYMax +
-        '</span><span>0</span></div>' +
+        '</span>' +
+        '<span>' +
+        euiMidLabel +
+        '</span>' +
+        '<span>0</span>' +
+        '</div>' +
+        '<div style="position:relative">' +
+        '<div style="position:absolute;left:0;right:0;bottom:50%;border-top:1px dashed #ccc;pointer-events:none"></div>' +
         '<div style="display:flex;align-items:flex-end;gap:1px">' +
         euiBars +
-        '</div></div>' +
+        '</div>' +
+        '</div>' +
+        '</div>' +
         '<div style="font-size:9px;color:#000;margin-top:2px"><span style="display:inline-block;width:6px;height:6px;background:#e67e22;border-radius:1px;margin-right:2px"></span>Baseline <span style="display:inline-block;width:6px;height:6px;background:#1a8a4e;border-radius:1px;margin-left:4px;margin-right:2px"></span>Current</div>';
     }
   }
@@ -6825,10 +6865,18 @@ function _rptHasMeterWithBaseline(projId, commodity) {
 }
 
 function _rptV2GoEdit(projId, tab, subTab) {
-  // Open a new browser window so user can edit data while the report modal stays open
+  // Open a centered popup window so user can edit data while the report modal stays open
   var url = window.location.pathname + '?openProject=' + encodeURIComponent(projId) + '&tab=' + encodeURIComponent(tab);
   if (subTab) url += '&subTab=' + encodeURIComponent(subTab);
-  window.open(url, '_blank', 'width=1200,height=800,resizable=yes,scrollbars=yes');
+  var pw = 1200,
+    ph = 800;
+  var left = Math.max(0, window.screenX + Math.round((window.outerWidth - pw) / 2));
+  var top = Math.max(0, window.screenY + Math.round((window.outerHeight - ph) / 2));
+  window.open(
+    url,
+    'rptEditPopup',
+    'width=' + pw + ',height=' + ph + ',left=' + left + ',top=' + top + ',resizable=yes,scrollbars=yes',
+  );
 }
 
 function _rptV2LoadTemplate(name) {
