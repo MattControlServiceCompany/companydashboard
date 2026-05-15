@@ -45,8 +45,8 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
     return result;
   }
 
-  const { elecByMo: eMo, gasByMo: gMo, propaneByMo: pMo } = buildMoMap(m, blRows, bills, incl);
-  const _moMap = isElec ? eMo : m.commodity === 'Gas' ? gMo : isPropane ? pMo : {};
+  const { elecByMo: eMo, gasByMo: gMo, propaneByMo: pMo, waterByMo: wMo } = buildMoMap(m, blRows, bills, incl);
+  const _moMap = isElec ? eMo : m.commodity === 'Gas' ? gMo : isPropane ? pMo : wMo;
   const blByCalMo = {};
   const blDemKWByCalMo = {};
   Object.entries(_moMap).forEach(([mo, v]) => {
@@ -94,7 +94,11 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
       bills.forEach((b) => {
         const ym = normMonth(b.start, b.end, incl, bills);
         if (!ym) return;
-        rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + parseFloat(b.therms || b.usage || 0);
+        const actUsage =
+          m.commodity === 'Gas'
+            ? parseFloat(b.therms || b.usage || 0)
+            : parseFloat(b.waterUsage || b.sewerUsage || b.usage || 0);
+        rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + actUsage;
       });
     }
   }

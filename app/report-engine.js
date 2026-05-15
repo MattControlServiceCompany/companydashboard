@@ -205,13 +205,13 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
     bMeters.forEach(({ m, bills, incl, allRows, bl, blEnd, postRows }) => {
       commoditySet.add(m.commodity);
       const blRows = allRows.filter((r) => bl.months.includes(r.ym));
-      const { elecByMo: eM, gasByMo: gM, propaneByMo: pM } = buildMoMap(m, blRows, bills, incl);
+      const { elecByMo: eM, gasByMo: gM, propaneByMo: pM, waterByMo: wM } = buildMoMap(m, blRows, bills, incl);
 
       const isElec = m.commodity === 'Electric';
       const isPropane = m.commodity === 'Propane';
 
       // Expected usage by calendar month — use buildMoMap (matches canonical savings function)
-      const _moMapR = isElec ? eM : m.commodity === 'Gas' ? gM : isPropane ? pM : {};
+      const _moMapR = isElec ? eM : m.commodity === 'Gas' ? gM : isPropane ? pM : wM;
       const blByCalMo = {};
       Object.entries(_moMapR).forEach(([mo, v]) => {
         blByCalMo[mo] = isElec ? v.kwh : m.commodity === 'Gas' ? v.therms : isPropane ? v.gallons : v.kgal;
@@ -236,7 +236,12 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
       } else if (!isPropane) {
         bills.forEach((b2) => {
           const ym = normMonth(b2.start, b2.end, incl, bills);
-          if (ym) rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + parseFloat(b2.therms || b2.usage || 0);
+          if (!ym) return;
+          const actUsage =
+            m.commodity === 'Gas'
+              ? parseFloat(b2.therms || b2.usage || 0)
+              : parseFloat(b2.waterUsage || b2.sewerUsage || b2.usage || 0);
+          rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + actUsage;
         });
       } else {
         allRows.forEach((r) => {
@@ -255,7 +260,8 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
           blCostByCalMo[mo] = v.cost || 0;
         });
       } else {
-        Object.entries(gM).forEach(([mo, v]) => {
+        const _costMap = m.commodity === 'Gas' ? gM : wM;
+        Object.entries(_costMap).forEach(([mo, v]) => {
           blCostByCalMo[mo] = v.cost || 0;
         });
       }
