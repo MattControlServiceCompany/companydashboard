@@ -373,8 +373,9 @@ function normalizePropaneDeliveries(bills, hddByMonth) {
     const galPerHDD = pHDD > 0 && lastGal > 0 ? lastGal / pHDD : 0;
     if (galPerHDD > 0) {
       const fwdStart = _parseISO(lastD.start);
-      const now = new Date();
-      const fwdEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      // Cap forward projection at the last delivery date (not today) so
+      // results are deterministic and don't drift daily with the clock.
+      const fwdEnd = _parseISO(lastD.start);
       const fwdSpans = monthSpans(fwdStart, fwdEnd);
       let fwdTotalHDD = 0;
       const fwdHDD = fwdSpans.map(function (s) {
