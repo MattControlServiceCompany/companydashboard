@@ -1326,13 +1326,20 @@ function initDashboardTab(projId) {
         for (let mo = 0; mo < 12; mo++)
           bldgMoBase[mo] += (eM[mo]?.commodityCost || 0) + (gM[mo]?.cost || 0) + (pM[mo]?.cost || 0);
         // Normalized actual savings per calendar month
-        const sav = getMeterSavings(m, bills, incl, projId, b.id).byCalMo;
-        Object.entries(sav).forEach(([mo, v]) => {
+        const savResult = getMeterSavings(m, bills, incl, projId, b.id);
+        const savCalMo = savResult.byCalMo;
+        Object.entries(savCalMo).forEach(([mo, v]) => {
           bldgSav += v;
           const moIdx = parseInt(mo);
-          const qi = Math.floor(moIdx / 3);
-          actualByQtr[qi] += v;
           if (v !== 0 && moIdx > latestSavMonth) latestSavMonth = moIdx;
+        });
+        const curYear = String(new Date().getFullYear());
+        Object.entries(savResult.byYM).forEach(([ym, v]) => {
+          if (ym.startsWith(curYear)) {
+            const moIdx = parseInt(ym.split('-')[1]) - 1;
+            const qi = Math.floor(moIdx / 3);
+            actualByQtr[qi] += v;
+          }
         });
         // Usage for EUI
         if (m.commodity === 'Gas') {
@@ -1430,10 +1437,14 @@ function initDashboardTab(projId) {
             new Date(last + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
         }
         const _actIncl = m.inclusive !== false;
-        const _actSav = getMeterSavings(m, bills, _actIncl, projId, b.id).byCalMo;
-        Object.entries(_actSav).forEach(([mo, v]) => {
-          const qi = Math.floor(parseInt(mo) / 3);
-          actualByQtr[qi] += v;
+        const _actSavResult = getMeterSavings(m, bills, _actIncl, projId, b.id);
+        const _curYear = String(new Date().getFullYear());
+        Object.entries(_actSavResult.byYM).forEach(([ym, v]) => {
+          if (ym.startsWith(_curYear)) {
+            const moIdx = parseInt(ym.split('-')[1]) - 1;
+            const qi = Math.floor(moIdx / 3);
+            actualByQtr[qi] += v;
+          }
         });
       });
     }
