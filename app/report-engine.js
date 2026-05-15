@@ -3812,7 +3812,7 @@ function rptPageBuildingSummary(n, d, b) {
       euiMonthly.push({ month: _elFull[_ei].month, bl: _blKBtu / b.sqft, cur: _curKBtu / b.sqft });
     }
     euiMonthly = euiMonthly.filter(function (mo) {
-      return mo.bl > 0 || mo.cur > 0;
+      return mo.cur > 0;
     });
     if (euiMonthly.length > 1) {
       var euiMax =
@@ -3822,26 +3822,24 @@ function rptPageBuildingSummary(n, d, b) {
             return Math.max(m.bl, m.cur);
           }),
         ) || 1;
-      var euiChartH = 80;
+      var euiChartH = 140;
       var euiMidLabel = (euiMax / 2).toFixed(1);
       var euiBars = euiMonthly
         .map(function (mo) {
           var blH = Math.max(1, Math.round((mo.bl / euiMax) * euiChartH));
           var curH = Math.max(1, Math.round((mo.cur / euiMax) * euiChartH));
           var moLbl = moLabel(mo.month);
-          // Value labels: show above bar if bar is tall enough (>=8px) and value > 0
-          var blLabel =
-            mo.bl > 0 && blH >= 8
-              ? '<div style="font-size:5px;color:#555;line-height:1;margin-bottom:1px;text-align:center">' +
-                mo.bl.toFixed(1) +
+          // Value labels: rendered below month label
+          var blLabel = mo.bl > 0 ? '<span style="color:#e67e22">' + mo.bl.toFixed(1) + '</span>' : '';
+          var curLabel = mo.cur > 0 ? '<span style="color:#1a8a4e">' + mo.cur.toFixed(1) + '</span>' : '';
+          var valLine =
+            blLabel || curLabel
+              ? '<div style="font-size:8px;color:#555;line-height:1.2;text-align:center;white-space:nowrap">' +
+                (blLabel ? blLabel : '') +
+                (blLabel && curLabel ? '<br>' : '') +
+                (curLabel ? curLabel : '') +
                 '</div>'
-              : '<div style="font-size:5px;line-height:1;margin-bottom:1px">&nbsp;</div>';
-          var curLabel =
-            mo.cur > 0 && curH >= 8
-              ? '<div style="font-size:5px;color:#555;line-height:1;margin-bottom:1px;text-align:center">' +
-                mo.cur.toFixed(1) +
-                '</div>'
-              : '<div style="font-size:5px;line-height:1;margin-bottom:1px">&nbsp;</div>';
+              : '';
           return (
             '<div style="display:flex;flex-direction:column;align-items:center;flex:1">' +
             '<div style="display:flex;align-items:flex-end;gap:1px;height:' +
@@ -3850,23 +3848,22 @@ function rptPageBuildingSummary(n, d, b) {
             '<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:' +
             euiChartH +
             'px">' +
-            blLabel +
-            '<div style="width:10px;height:' +
+            '<div style="width:15px;height:' +
             blH +
             'px;background:#e67e22;border-radius:1px 1px 0 0"></div>' +
             '</div>' +
             '<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:' +
             euiChartH +
             'px">' +
-            curLabel +
-            '<div style="width:10px;height:' +
+            '<div style="width:15px;height:' +
             curH +
             'px;background:#1a8a4e;border-radius:1px 1px 0 0"></div>' +
             '</div>' +
             '</div>' +
-            '<div style="font-size:8px;color:#000">' +
+            '<div style="font-size:9px;color:#000;text-align:center">' +
             moLbl +
             '</div>' +
+            valLine +
             '</div>'
           );
         })
@@ -3874,8 +3871,8 @@ function rptPageBuildingSummary(n, d, b) {
       var euiYMax = euiMax.toFixed(1);
       leftHTML +=
         '<div style="font-size:10px;font-weight:600;color:#000;margin:8px 0 3px">Monthly EUI (kBtu/ft²)</div>' +
-        '<div style="position:relative;padding-left:28px">' +
-        '<div style="position:absolute;left:0;top:0;bottom:16px;display:flex;flex-direction:column;justify-content:space-between;font-size:7px;color:#888;text-align:right;width:24px">' +
+        '<div style="position:relative;padding-left:36px">' +
+        '<div style="position:absolute;left:0;top:0;bottom:16px;display:flex;flex-direction:column;justify-content:space-between;font-size:9px;color:#888;text-align:right;width:30px">' +
         '<span>' +
         euiYMax +
         '</span>' +
@@ -3944,7 +3941,7 @@ function rptPageBuildingSummary(n, d, b) {
       '<div style="flex:1;min-width:60px;text-align:center;background:' +
       _savBg(kwReduced) +
       ';border-radius:2px;padding:5px 4px">' +
-      '<div style="font-size:16px;margin-bottom:1px">📉</div>' +
+      '<div style="font-size:16px;margin-bottom:1px">⬇️</div>' +
       '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(kwReduced) +
       '">' +
@@ -3974,7 +3971,7 @@ function rptPageBuildingSummary(n, d, b) {
       '<div style="flex:1;min-width:60px;text-align:center;background:' +
       _savBg(galSaved) +
       ';border-radius:2px;padding:5px 4px">' +
-      '<div style="font-size:16px;margin-bottom:1px">💧</div>' +
+      '<div style="font-size:16px;margin-bottom:1px">⛽</div>' +
       '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(galSaved) +
       '">' +
@@ -3989,7 +3986,7 @@ function rptPageBuildingSummary(n, d, b) {
     '<div style="flex:1;min-width:60px;text-align:center;background:' +
     _savBg(totalSaved) +
     ';border-radius:2px;padding:5px 4px">' +
-    '<div style="font-size:16px;margin-bottom:1px">💰</div>' +
+    '<div style="font-size:16px;margin-bottom:1px">✅</div>' +
     '<div style="font-size:14px;font-weight:700;color:' +
     _savColor(totalSaved) +
     '">' +
