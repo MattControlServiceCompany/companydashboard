@@ -1857,7 +1857,7 @@ function egfxRefresh(projId) {
                 font: { size: 10 },
                 callback: (v) => '$' + v.toLocaleString(),
               },
-              grid: { color: 'rgba(255,255,255,.08)' },
+              grid: { color: 'rgba(255,255,255,.12)' },
             },
           },
         },
@@ -2072,7 +2072,7 @@ function renderSetpointsTab(projId) {
 
 function _spZoneRow(projId, bldgId, z, idx) {
   const v = (val) => (val !== undefined && val !== null ? val : '');
-  return `<tr style="border-bottom:1px solid var(--border1)" data-sp-idx="${idx}">
+  return `<tr style="border-bottom:1px solid var(--border)" data-sp-idx="${idx}">
           <td style="padding:4px 6px"><input class="fi" style="width:100%;font-size:12px" type="text"
             value="${_escHtml(z.name || '')}" placeholder="Zone or system name"
             oninput="spUpdateField('${projId}','${bldgId}',${idx},'name',this.value)"></td>
@@ -2127,7 +2127,7 @@ function _spComputeAvgRow(zones, bldg) {
 
 function _spAvgRow(z) {
   const v = (val) => (val !== null && val !== undefined ? val : '—');
-  return `<tr style="border-bottom:1px solid var(--border1)">
+  return `<tr style="border-bottom:1px solid var(--border)">
           <td style="padding:6px 8px;font-size:12px;font-weight:600;color:var(--text)">${_escHtml(z.name)}</td>
           <td style="padding:6px 8px;font-size:12px;font-family:var(--mono);text-align:center;color:var(--text2)">${v(z.occHeat)}</td>
           <td style="padding:6px 8px;font-size:12px;font-family:var(--mono);text-align:center;color:var(--text2)">${v(z.occCool)}</td>
@@ -2139,7 +2139,7 @@ function _spAvgRow(z) {
 
 function _spReadOnlyZoneRow(z) {
   const v = (val) => (val !== null && val !== undefined ? val : '—');
-  return `<tr style="border-bottom:1px solid var(--border1)">
+  return `<tr style="border-bottom:1px solid var(--border)">
           <td style="padding:6px 8px;font-size:12px;font-weight:600;color:var(--text)">${_escHtml(z.name || '')}</td>
           <td style="padding:6px 8px;font-size:12px;font-family:var(--mono);text-align:center;color:var(--text2)">${v(z.occHeat)}</td>
           <td style="padding:6px 8px;font-size:12px;font-family:var(--mono);text-align:center;color:var(--text2)">${v(z.occCool)}</td>
@@ -2362,7 +2362,7 @@ function spAddZoneRow(projId, bldgId) {
   if (placeholder) tbody.innerHTML = '';
   const idx = zones.length - 1;
   const row = document.createElement('tr');
-  row.style.borderBottom = '1px solid var(--border1)';
+  row.style.borderBottom = '1px solid var(--border)';
   row.setAttribute('data-sp-idx', idx);
   row.innerHTML = _spZoneRow(projId, bldgId, zones[idx], idx)
     .replace(/^<tr[^>]*>/, '')

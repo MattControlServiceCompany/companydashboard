@@ -6481,7 +6481,7 @@ function openReportHistory(projId) {
         const date = new Date(entry.savedAt);
         const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;background:var(--s1);margin-bottom:6px">
+        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;background:var(--s2);margin-bottom:6px">
               <div>
                 <div style="font-size:13px;font-weight:600;color:var(--text)">${entry.period} ${entry.type === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
                 <div style="font-size:11px;color:var(--text3)">${entry.projectName} • Saved ${dateStr} ${timeStr}</div>
@@ -6736,14 +6736,14 @@ function openReportModalV2(projId) {
   html += '<span style="font-size:13px;font-weight:600;color:var(--text)">Buildings</span>';
   html += '<div style="display:flex;gap:6px">';
   html +=
-    '<button onclick="_rptV2SelectAll(\'bldg\',true)" style="font-size:10px;padding:2px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s1);color:var(--text);cursor:pointer">All</button>';
+    '<button onclick="_rptV2SelectAll(\'bldg\',true)" style="font-size:10px;padding:2px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--text);cursor:pointer">All</button>';
   html +=
-    '<button onclick="_rptV2SelectAll(\'bldg\',false)" style="font-size:10px;padding:2px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s1);color:var(--text);cursor:pointer">None</button>';
+    '<button onclick="_rptV2SelectAll(\'bldg\',false)" style="font-size:10px;padding:2px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--text);cursor:pointer">None</button>';
   html += '</div></div>';
   html += '<div style="display:flex;flex-direction:column;gap:3px;max-height:120px;overflow-y:auto">';
   bldgs.forEach(function (b) {
     html +=
-      '<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;background:var(--s1);cursor:pointer">';
+      '<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;background:var(--s2);cursor:pointer">';
     html +=
       '<input type="checkbox" checked class="rptV2Bldg" data-bid="' +
       b.id +
@@ -6763,9 +6763,9 @@ function openReportModalV2(projId) {
   html += '<span style="font-size:13px;font-weight:600;color:var(--text)">Report Sections</span>';
   html += '<div style="display:flex;gap:6px">';
   html +=
-    '<button onclick="_rptV2SelectAll(\'sec\',true)" style="font-size:10px;padding:2px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s1);color:var(--text);cursor:pointer">All</button>';
+    '<button onclick="_rptV2SelectAll(\'sec\',true)" style="font-size:10px;padding:2px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--text);cursor:pointer">All</button>';
   html +=
-    '<button onclick="_rptV2SelectAll(\'sec\',false)" style="font-size:10px;padding:2px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s1);color:var(--text);cursor:pointer">None</button>';
+    '<button onclick="_rptV2SelectAll(\'sec\',false)" style="font-size:10px;padding:2px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--text);cursor:pointer">None</button>';
   html += '</div></div>';
   html += '<div style="display:flex;flex-direction:column;gap:2px;max-height:250px;overflow-y:auto">';
   var lastGroup = null;
@@ -6799,7 +6799,7 @@ function openReportModalV2(projId) {
       if (!_rptHasMeterWithBaseline(projId, 'Propane')) emptyWarn = _rptV2WarnHtml(projId, 'utility', null);
     }
     html +=
-      '<label style="display:flex;align-items:center;gap:8px;padding:3px 8px;border-radius:4px;background:var(--s1);cursor:pointer">';
+      '<label style="display:flex;align-items:center;gap:8px;padding:3px 8px;border-radius:4px;background:var(--s2);cursor:pointer">';
     html +=
       '<input type="checkbox" ' +
       checked +
@@ -7019,7 +7019,7 @@ function openReportModal(projId, type) {
     .map(
       (
         b,
-      ) => `<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:var(--s1);cursor:pointer">
+      ) => `<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:var(--s2);cursor:pointer">
           <input type="checkbox" checked data-bid="${b.id}" style="accent-color:var(--em);width:16px;height:16px">
           <span style="font-size:13px;color:var(--text)">${b.name || 'Unnamed'}</span>
           <span style="font-size:11px;color:var(--text3);margin-left:auto">${b.sqft ? parseInt(b.sqft).toLocaleString() + ' sf' : ''}</span>
@@ -7051,7 +7051,7 @@ function openReportModal(projId, type) {
       if (!hasSetpoints)
         emptyWarn = `<span style="display:flex;align-items:center;gap:6px;margin-left:auto"><span style="font-size:10px;color:var(--warn);font-weight:600">⚠ Empty</span><button type="button" onclick="event.preventDefault();event.stopPropagation();_rptGoEdit(${projId},'setpoints')" style="font-size:10px;padding:1px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--em);cursor:pointer;font-weight:600;line-height:1.4">Edit ↗</button></span>`;
     }
-    sectionHTML += `<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;background:var(--s1);cursor:pointer">
+    sectionHTML += `<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;background:var(--s2);cursor:pointer">
             <input type="checkbox" ${isChecked} data-section="${sec.key}" style="accent-color:var(--em);width:14px;height:14px">
             <span style="font-size:12px;color:var(--text)">${sec.label}</span>
             ${emptyWarn}

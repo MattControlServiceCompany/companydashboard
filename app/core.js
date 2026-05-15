@@ -298,7 +298,7 @@ function sv(id, btn) {
           const _p = projects.find((p) => p.id == _s.projId);
           if (_p) {
             document.getElementById('projListView').style.display = 'none';
-            document.getElementById('projDetailView').style.display = 'block';
+            document.getElementById('projDetailView').style.display = 'flex';
             window._activeProjId = _p.id;
             window._activeProjTab = _s.tab || 'dashboard';
             renderDetail(_p);
@@ -673,11 +673,11 @@ function openDetail(id) {
     sv('projects', document.getElementById('sb-proj-btn'));
   }
   document.getElementById('projListView').style.display = 'none';
-  document.getElementById('projDetailView').style.display = 'block';
+  document.getElementById('projDetailView').style.display = 'flex';
   renderDetail(p);
   document.querySelectorAll('.spfi').forEach((c) => c.classList.remove('active'));
   document.querySelectorAll(`.spfi[data-pid="${id}"]`).forEach((c) => c.classList.add('active'));
-  document.querySelector('.view.active')?.scrollTo({ top: 0, behavior: 'smooth' });
+  document.querySelector('.ptab.active')?.scrollTo({ top: 0, behavior: 'smooth' });
   window._activeProjId = id;
   const _dfltTab = sget('ch_defaultProjTab', 'dashboard');
   if (!window._activeProjTab || _dfltTab !== 'last')
@@ -828,14 +828,19 @@ function renderDetail(p) {
               ${buildContactsDetailHTML(p.contacts || [], p.id)}
             </div>
             <div id="ptab-utility" class="ptab" style="padding:0">
+              <!-- Fix 35571527: Saved Bills merged into Utility Data tab — shown at top -->
+              <div style="padding:16px;border-bottom:1px solid var(--border);flex-shrink:0">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                  <span style="font-size:13px;font-weight:700;color:var(--text)">🗄️ Saved Bills</span>
+                </div>
+                <div id="ptab-savedbills-body-${p.id}">
+                  <div style="text-align:center;color:var(--text3);padding:40px">Loading saved bills…</div>
+                </div>
+              </div>
               <!-- Full Utility Data layout embedded, scoped to this project -->
-              <!-- The Projects-tab embed of Utility Data uses a viewport-based min-height
-                   because the parent .ptab is display:block (not a flex container), so
-                   .ud-layout's flex:1 in the CSS file is a no-op here and we need an
-                   explicit height floor. 78vh leaves room for the top bar + project hero
-                   + tab bar while still filling most of the window. Previous value was
-                   500px which made the bills table pane feel cut short on larger screens. -->
-              <div class="ud-layout" id="projUdLayout-${p.id}" style="border-top:1px solid var(--border);min-height:78vh">
+              <!-- .ptab.active is now a flex column, so .ud-layout's flex:1 works without
+                   a viewport-based min-height fallback. -->
+              <div class="ud-layout" id="projUdLayout-${p.id}" style="border-top:1px solid var(--border);flex:1;min-height:0">
                 <!-- Left: buildings nav -->
                 <div class="ud-nav" style="max-width:240px">
                   <div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
@@ -872,15 +877,6 @@ function renderDetail(p) {
                   </div>
                 </div>
               </div>
-              <!-- Fix 35571527: Saved Bills merged into Utility Data tab -->
-              <div style="padding:16px;border-top:1px solid var(--border)">
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                  <span style="font-size:13px;font-weight:700;color:var(--text)">🗄️ Saved Bills</span>
-                </div>
-                <div id="ptab-savedbills-body-${p.id}">
-                  <div style="text-align:center;color:var(--text3);padding:40px">Loading saved bills…</div>
-                </div>
-              </div>
             </div>
             <div id="ptab-savedbills" class="ptab" style="padding:16px;overflow-y:auto">
               <!-- Merged into Utility Data tab (fix 35571527) — kept for backward compat -->
@@ -910,22 +906,22 @@ function renderDetail(p) {
                 </div>
                 <div style="padding:16px">
                   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
-                    <div class="card" style="background:var(--s1);padding:14px;text-align:center">
+                    <div class="card" style="background:var(--s3);padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Baseline EUI</div>
                       <div id="egfx-blEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--accent);margin:6px 0">—</div>
                       <div style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
                     </div>
-                    <div class="card" style="background:var(--s1);padding:14px;text-align:center">
+                    <div class="card" style="background:var(--s3);padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Rolling 12-Mo EUI</div>
                       <div id="egfx-curEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--em);margin:6px 0">—</div>
                       <div id="egfx-curEuiSub-${p.id}" style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
                     </div>
-                    <div class="card" style="background:var(--s1);padding:14px;text-align:center">
+                    <div class="card" style="background:var(--s3);padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Projected Savings</div>
                       <div id="egfx-projSav-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--accent);margin:6px 0">—</div>
                       <div id="egfx-projSavSub-${p.id}" style="font-size:11px;color:var(--text2)">annual target</div>
                     </div>
-                    <div class="card" style="background:var(--s1);padding:14px;text-align:center">
+                    <div class="card" style="background:var(--s3);padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Current Savings</div>
                       <div id="egfx-curSav-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--green);margin:6px 0">—</div>
                       <div id="egfx-curSavSub-${p.id}" style="font-size:11px;color:var(--text2)">actual to date</div>
@@ -934,11 +930,11 @@ function renderDetail(p) {
                   <div id="egfx-commodity-savings-${p.id}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px"></div>
                   <!-- Pollution Credit Calculator collapsible section -->
                   <div id="egfx-pollcalc-wrap-${p.id}" style="margin-bottom:16px">
-                    <div onclick="egfxTogglePollCalc(${p.id})" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--s1);border-radius:8px;cursor:pointer;border:1px solid var(--border1)">
+                    <div onclick="egfxTogglePollCalc(${p.id})" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--s1);border-radius:8px;cursor:pointer;border:1px solid var(--border)">
                       <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2)">Pollution Credit Calculator</span>
                       <span id="egfx-pollcalc-chev-${p.id}" style="font-size:10px;color:var(--text3)">▶</span>
                     </div>
-                    <div id="egfx-pollcalc-body-${p.id}" style="display:none;padding:20px 16px 16px 16px;background:var(--s1);border:1px solid var(--border1);border-top:none;border-radius:0 0 8px 8px">
+                    <div id="egfx-pollcalc-body-${p.id}" style="display:none;padding:20px 16px 16px 16px;background:var(--s1);border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px">
                       <div id="egfx-pollcalc-content-${p.id}" style="font-size:13px;line-height:2;text-align:center;color:var(--text)">
                         <span style="color:var(--text3)">Refresh energy graphics to calculate pollution credits.</span>
                       </div>
@@ -946,11 +942,11 @@ function renderDetail(p) {
                   </div>
                   <!-- Performance Verification collapsible section -->
                   <div id="egfx-perfverify-wrap-${p.id}" style="margin-bottom:16px">
-                    <div onclick="egfxTogglePerfVerify(${p.id})" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--s1);border-radius:8px;cursor:pointer;border:1px solid var(--border1)">
+                    <div onclick="egfxTogglePerfVerify(${p.id})" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--s1);border-radius:8px;cursor:pointer;border:1px solid var(--border)">
                       <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2)">Performance Verification</span>
                       <span id="egfx-perfverify-chev-${p.id}" style="font-size:10px;color:var(--text3)">&#9654;</span>
                     </div>
-                    <div id="egfx-perfverify-body-${p.id}" style="display:none;padding:20px 16px 16px;background:var(--s1);border:1px solid var(--border1);border-top:none;border-radius:0 0 8px 8px">
+                    <div id="egfx-perfverify-body-${p.id}" style="display:none;padding:20px 16px 16px;background:var(--s1);border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px">
                       <div id="egfx-perfverify-content-${p.id}" style="font-size:13px;color:var(--text)">
                         <span style="color:var(--text3)">Expand to load performance verification data.</span>
                       </div>
