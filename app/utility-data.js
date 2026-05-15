@@ -7785,7 +7785,7 @@ function renderPerfPane(pane, m, bills, incl) {
     mode: 'tab',
     projId: udSelProjId,
     bldgId: udSelBldgId,
-    filterYMs: filteredPostRows.map((r) => r.ym),
+    filterYMs: filteredPostRows.length ? filteredPostRows.map((r) => r.ym) : truePostRows.map((r) => r.ym),
   });
   const _perfRowSavings = (_perfResult.rows || []).map((r) => ({
     ym: r.ym,

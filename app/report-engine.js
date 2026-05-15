@@ -4195,7 +4195,14 @@ function rptPageBuildingSummary(n, d, b) {
   var _opts = (d.reportOptions && d.reportOptions.blCommodities) || _blCalcDefaults;
   var _showElec = hasElec && _opts.electric;
   var _showGas = hasGas && _opts.gas;
-  var _showProp = hasPropane && _opts.propane;
+  var _showProp =
+    (hasPropane ||
+      (_bm &&
+        _bm.propaneByMo &&
+        Object.values(_bm.propaneByMo).some(function (v) {
+          return v && (v.gallons > 0 || v.cost > 0);
+        }))) &&
+    _opts.propane;
   var _showWater = _opts.water && Object.keys(_bm.waterByMo).length > 0;
   var blDataRows = '';
   var _tKwh = 0,
