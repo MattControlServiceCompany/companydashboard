@@ -1,4 +1,11 @@
-﻿// ═══════════════════════════════════════════════════════════════════════
+﻿// Local fallback — only defined if computations/rates.js hasn't already defined it
+if (typeof toKBtu === 'undefined') {
+  function toKBtu(kwh, therms, gallons) {
+    return (parseFloat(kwh) || 0) * 3.412 + (parseFloat(therms) || 0) * 100 + (parseFloat(gallons) || 0) * 91.5;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // collectReportData(projId, buildingIds, reportDateStr, reportType)
 //
 // Gathers ALL data needed for report generation into a single structured
@@ -1720,7 +1727,7 @@ function rptPageFinancial(n, d) {
     cumPoints.push({ q: qi, proj: _cumP });
   }
   const maxY = (_cumP || annTarget * yrs) * 1.1;
-  const padL = 20,
+  const padL = 35,
     padR = 20,
     padT = 10,
     padB = 30;
@@ -3199,7 +3206,7 @@ function rptPageContractProjection(n, d) {
   const svgW = 716,
     svgH = 120;
   const totalQtrs = contractYears * 4;
-  var padL = 20,
+  var padL = 35,
     padR = 20,
     padT = 10,
     padB = 20;
