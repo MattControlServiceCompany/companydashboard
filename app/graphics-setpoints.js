@@ -1190,6 +1190,7 @@ function egfxRefresh(projId) {
         // Determine how many baseline years contributed to each calendar month
         // so we can average across years (same logic as buildMoMap)
         const moAccum = {}; // {mo: [usage, ...]}
+        const meterBlYears = new Set(bl.months.map((bym) => bym.slice(0, 4)));
         allRows.forEach((r) => {
           const mo = parseInt(r.ym.split('-')[1]) - 1;
           const yr = r.ym.slice(0, 4);
@@ -1198,8 +1199,7 @@ function egfxRefresh(projId) {
           const sameCalMoInBl = bl.months.some((bym) => parseInt(bym.slice(5, 7)) - 1 === mo);
           if (!sameCalMoInBl) return;
           // Only include years that are actually in the baseline
-          const blYears = new Set(bl.months.map((bym) => bym.slice(0, 4)));
-          if (!blYears.has(yr)) return;
+          if (!meterBlYears.has(yr)) return;
           if (!moAccum[mo]) moAccum[mo] = [];
           moAccum[mo].push(r.usage);
         });
