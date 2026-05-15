@@ -716,7 +716,7 @@ function renderUDProjAggPanel(content) {
   }
 
   const thS =
-    'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s3);border:1px solid var(--border2);white-space:nowrap';
+    'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
 
   if (_udProjPanel === 'baseline') {
     const elecByMo = {},
@@ -774,22 +774,22 @@ function renderUDProjAggPanel(content) {
             <div style="padding:14px 18px;background:var(--s2);border-bottom:1px solid var(--border)">
               <div style="font-size:14px;font-weight:800;font-family:var(--head);color:var(--em);margin-bottom:10px">📊 ${projName} — Project Baseline</div>
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px">
-                ${totalSqft ? `<div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Total Sq Ft</div><div style="font-size:15px;font-weight:800">${$n(totalSqft)}</div></div>` : ''}
-                <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual kWh</div><div style="font-size:15px;font-weight:800;color:var(--em2)">${$n(annKwh)}</div></div>
-                <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual Therms</div><div style="font-size:15px;font-weight:800;color:var(--warn)">${$n(annTherms)}</div></div>
-                <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Electric $/yr</div><div style="font-size:15px;font-weight:800;color:var(--em2)">${$f(annElecCost)}</div></div>
-                <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Gas $/yr</div><div style="font-size:15px;font-weight:800;color:var(--warn)">${$f(annGasCost)}</div></div>
-                <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Total Utility $/yr</div><div style="font-size:15px;font-weight:800;color:var(--em)">${$f(annTotal)}</div></div>
-                ${kwhRate ? `<div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Avg $/kWh</div><div style="font-size:15px;font-weight:800">${$f(kwhRate, 4)}</div></div>` : ''}
-                ${thermRate ? `<div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Avg $/Therm</div><div style="font-size:15px;font-weight:800">${$f(thermRate, 2)}</div></div>` : ''}
-                ${eui ? `<div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Site EUI</div><div style="font-size:15px;font-weight:800;color:var(--violet)">${$n(eui, 1)} <span style="font-size:10px;font-weight:400">kBtu/sf/yr</span></div></div>` : ''}
+                ${totalSqft ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Total Sq Ft</div><div style="font-size:15px;font-weight:800">${$n(totalSqft)}</div></div>` : ''}
+                <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual kWh</div><div style="font-size:15px;font-weight:800;color:var(--em2)">${$n(annKwh)}</div></div>
+                <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual Therms</div><div style="font-size:15px;font-weight:800;color:var(--warn)">${$n(annTherms)}</div></div>
+                <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Electric $/yr</div><div style="font-size:15px;font-weight:800;color:var(--em2)">${$f(annElecCost)}</div></div>
+                <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Gas $/yr</div><div style="font-size:15px;font-weight:800;color:var(--warn)">${$f(annGasCost)}</div></div>
+                <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Total Utility $/yr</div><div style="font-size:15px;font-weight:800;color:var(--em)">${$f(annTotal)}</div></div>
+                ${kwhRate ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Avg $/kWh</div><div style="font-size:15px;font-weight:800">${$f(kwhRate, 4)}</div></div>` : ''}
+                ${thermRate ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Avg $/Therm</div><div style="font-size:15px;font-weight:800">${$f(thermRate, 2)}</div></div>` : ''}
+                ${eui ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Site EUI</div><div style="font-size:15px;font-weight:800;color:var(--violet)">${$n(eui, 1)} <span style="font-size:10px;font-weight:400">kBtu/sf/yr</span></div></div>` : ''}
               </div>
             </div>
             <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
-              <thead><tr style="background:var(--s3)"><th style="${thS};text-align:left">Month</th>
+              <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Month</th>
                 <th style="${thS}">kWh</th><th style="${thS}">Elec $</th><th style="${thS}">Therms</th><th style="${thS}">Gas $</th><th style="${thS}">Total $</th></tr></thead>
               <tbody>${rows}</tbody>
-              <tfoot><tr style="background:var(--s3)">
+              <tfoot><tr style="background:var(--s1)">
                 <td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)">Annual</td>
                 <td style="${tdS('var(--em2)')};font-weight:700">${$n(annKwh)}</td><td style="${tdS()};font-weight:700">${$f(annElecCost, 2)}</td>
                 <td style="${tdS('var(--warn)')};font-weight:700">${$n(annTherms)}</td><td style="${tdS()};font-weight:700">${$f(annGasCost, 2)}</td>
@@ -899,17 +899,17 @@ function renderUDProjAggPanel(content) {
               <div style="font-size:14px;font-weight:800;font-family:var(--head);color:var(--em);margin-bottom:4px">📈 ${projName} — Projected Savings</div>
               ${_srcLabel}
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:8px">
-                <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual Baseline</div><div style="font-size:15px;font-weight:800">${$f(annBase)}</div></div>
-                <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Savings</div><div style="font-size:15px;font-weight:800;color:var(--em)">${$f(annProjSav)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${(avgSavPct * 100).toFixed(1)}% of baseline</div></div>
-                <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Spend</div><div style="font-size:15px;font-weight:800;color:var(--em2)">${$f(annBase - annProjSav)}</div></div>
-                <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Buildings</div><div style="font-size:15px;font-weight:800">${bldgs.length}</div></div>
+                <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual Baseline</div><div style="font-size:15px;font-weight:800">${$f(annBase)}</div></div>
+                <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Savings</div><div style="font-size:15px;font-weight:800;color:var(--em)">${$f(annProjSav)}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${(avgSavPct * 100).toFixed(1)}% of baseline</div></div>
+                <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Spend</div><div style="font-size:15px;font-weight:800;color:var(--em2)">${$f(annBase - annProjSav)}</div></div>
+                <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Buildings</div><div style="font-size:15px;font-weight:800">${bldgs.length}</div></div>
               </div>
             </div>
             <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
-              <thead><tr style="background:var(--s3)"><th style="${thS};text-align:left">Month</th>
+              <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Month</th>
                 <th style="${thS}">Baseline $</th><th style="${thS}">Projected Spend $</th><th style="${thS}">Projected Savings $</th></tr></thead>
               <tbody>${rows}</tbody>
-              <tfoot><tr style="background:var(--s3)">
+              <tfoot><tr style="background:var(--s1)">
                 <td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)">Annual</td>
                 ${tdN(annBase)}${tdN(annBase - annProjSav)}${tdN(annProjSav, 'var(--em)')}
               </tr></tfoot>
@@ -1031,17 +1031,17 @@ function renderUDProjAggPanel(content) {
             <div style="padding:14px 18px;background:var(--s2);border-bottom:1px solid var(--border)">
               <div style="font-size:14px;font-weight:800;font-family:var(--head);color:var(--em);margin-bottom:10px">💡 ${projName} — Performance</div>
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
-                <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual Baseline</div><div style="font-size:15px;font-weight:800">${$f(annBase)}</div></div>
-                ${hasActual ? `<div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Current Savings</div><div style="font-size:15px;font-weight:800;color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav < 0 ? '−' : ''}${$f(annActSav)}</div>${actPct != null ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct < 0 ? '−' : ''}${Math.abs(actPct).toFixed(1)}%</div>` : ''}</div>` : ''}
-                <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Savings</div><div style="font-size:13px;font-weight:600;color:var(--text2)">${$f(annProjSav)}</div><div style="font-size:10px;color:var(--text3);margin-top:2px">${(avgSavPct * 100).toFixed(1)}%</div></div>
-                ${hasActual && ytdDiff != null ? `<div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">vs Projected (${actMonths.length}mo YTD)</div><div style="font-size:15px;font-weight:800;color:${ytdDiff >= 0 ? 'var(--em)' : 'var(--danger)'}">${ytdDiff >= 0 ? '+' : '−'}${$f(Math.abs(ytdDiff))}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${ytdDiff >= 0 ? '▲ Above' : '▼ Below'} target</div></div>` : ''}
+                <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual Baseline</div><div style="font-size:15px;font-weight:800">${$f(annBase)}</div></div>
+                ${hasActual ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Current Savings</div><div style="font-size:15px;font-weight:800;color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav < 0 ? '−' : ''}${$f(annActSav)}</div>${actPct != null ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct < 0 ? '−' : ''}${Math.abs(actPct).toFixed(1)}%</div>` : ''}</div>` : ''}
+                <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Projected Savings</div><div style="font-size:13px;font-weight:600;color:var(--text2)">${$f(annProjSav)}</div><div style="font-size:10px;color:var(--text3);margin-top:2px">${(avgSavPct * 100).toFixed(1)}%</div></div>
+                ${hasActual && ytdDiff != null ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">vs Projected (${actMonths.length}mo YTD)</div><div style="font-size:15px;font-weight:800;color:${ytdDiff >= 0 ? 'var(--em)' : 'var(--danger)'}">${ytdDiff >= 0 ? '+' : '−'}${$f(Math.abs(ytdDiff))}</div><div style="font-size:11px;color:var(--text2);margin-top:2px">${ytdDiff >= 0 ? '▲ Above' : '▼ Below'} target</div></div>` : ''}
               </div>
             </div>
             <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
-              <thead><tr style="background:var(--s3)"><th style="${thS};text-align:left">Month</th>
+              <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Month</th>
                 <th style="${thS}">Current Savings $</th><th style="${thS}">% of Baseline</th></tr></thead>
               <tbody>${rows}</tbody>
-              <tfoot><tr style="background:var(--s3)">
+              <tfoot><tr style="background:var(--s1)">
                 <td style="padding:6px 10px;font-size:12px;font-weight:700;border:1px solid var(--border)">Annual</td>
                 ${tdV(hasActual ? annActSav : null)}
                 <td style="padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${actPct != null && actPct >= 0 ? 'var(--em)' : 'var(--danger)'};font-weight:700;border:1px solid var(--border)">${actPct != null ? (actPct < 0 ? '−' : '') + Math.abs(actPct).toFixed(1) + '%' : '—'}</td>

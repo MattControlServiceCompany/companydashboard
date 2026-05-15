@@ -329,6 +329,7 @@ function sv(id, btn) {
 let currentUser = null;
 function signOut() {
   sessionStorage.removeItem('ch_user');
+  localStorage.removeItem('ch_user');
   window.location.href = 'index.html';
 }
 function enterApp() {
@@ -339,7 +340,7 @@ function enterApp() {
 }
 (function () {
   try {
-    const s = sessionStorage.getItem('ch_user');
+    const s = sessionStorage.getItem('ch_user') || localStorage.getItem('ch_user');
     if (s) {
       currentUser = JSON.parse(s);
       enterApp();
@@ -906,22 +907,22 @@ function renderDetail(p) {
                 </div>
                 <div style="padding:16px">
                   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
-                    <div class="card" style="background:var(--s3);padding:14px;text-align:center">
+                    <div class="card" style="background:var(--s1);padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Baseline EUI</div>
                       <div id="egfx-blEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--accent);margin:6px 0">—</div>
                       <div style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
                     </div>
-                    <div class="card" style="background:var(--s3);padding:14px;text-align:center">
+                    <div class="card" style="background:var(--s1);padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Rolling 12-Mo EUI</div>
                       <div id="egfx-curEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--em);margin:6px 0">—</div>
                       <div id="egfx-curEuiSub-${p.id}" style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
                     </div>
-                    <div class="card" style="background:var(--s3);padding:14px;text-align:center">
+                    <div class="card" style="background:var(--s1);padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Projected Savings</div>
                       <div id="egfx-projSav-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--accent);margin:6px 0">—</div>
                       <div id="egfx-projSavSub-${p.id}" style="font-size:11px;color:var(--text2)">annual target</div>
                     </div>
-                    <div class="card" style="background:var(--s3);padding:14px;text-align:center">
+                    <div class="card" style="background:var(--s1);padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Current Savings</div>
                       <div id="egfx-curSav-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--green);margin:6px 0">—</div>
                       <div id="egfx-curSavSub-${p.id}" style="font-size:11px;color:var(--text2)">actual to date</div>

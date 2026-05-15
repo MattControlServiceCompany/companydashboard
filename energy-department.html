@@ -2395,7 +2395,7 @@
         margin-bottom: 20px;
       }
       .stat {
-        background: var(--s3);
+        background: var(--s1);
         border: 1px solid var(--border);
         border-radius: var(--r);
         padding: 14px 16px;
@@ -2701,7 +2701,7 @@
         padding: 9px 13px;
         text-align: left;
         border-bottom: 1px solid var(--border);
-        background: var(--s3);
+        background: var(--s1);
         white-space: nowrap;
         position: sticky;
         top: 0;
@@ -5128,7 +5128,7 @@
         font-weight: 700;
         padding: 8px 10px;
         text-align: center;
-        background: var(--s3);
+        background: var(--s1);
         white-space: normal;
         line-height: 1.3;
         border-bottom: 1px solid var(--border2);
@@ -5736,7 +5736,7 @@
         margin-bottom: 18px;
       }
       .ma-stat {
-        background: var(--s3);
+        background: var(--s1);
         border: 1px solid var(--border);
         border-radius: 8px;
         padding: 11px 14px;
@@ -5770,12 +5770,12 @@
         font-size: 10px;
         text-transform: uppercase;
         letter-spacing: 0.4px;
-        color: #c0d0e8;
+        color: var(--text);
         font-weight: 700;
         padding: 7px 10px;
         text-align: center;
         border-bottom: 2px solid rgba(255, 255, 255, 0.14);
-        background: var(--s3);
+        background: var(--s1);
         white-space: nowrap;
         position: sticky;
         top: 0;
@@ -5898,7 +5898,7 @@
         padding: 6px 10px;
         text-align: left;
         border-bottom: 1px solid var(--border);
-        background: var(--s3);
+        background: var(--s1);
       }
       .hdd-tbl td {
         padding: 5px 8px;
@@ -6261,7 +6261,7 @@
       .bas-tbl th {
         position: sticky;
         top: 0;
-        background: var(--s3);
+        background: var(--s1);
         padding: 5px 8px;
         font-size: 10px;
         font-weight: 700;
@@ -6368,6 +6368,21 @@
         </div>
         <p class="login-sub">Sign in with your company Microsoft 365 account to access all departments and tools.</p>
         <button class="btn-ms" onclick="window.location.href = 'index.html'">← Return to Sign In</button>
+        <button
+          class="btn-ms"
+          style="margin-top: 8px; background: var(--s3); color: var(--text2); border: 1px solid var(--s4)"
+          onclick="
+            (function () {
+              var u = { name: 'Demo User', email: 'demo@controlservice.com', initials: 'DU', isReal: false };
+              sessionStorage.setItem('ch_user', JSON.stringify(u));
+              localStorage.setItem('ch_user', JSON.stringify(u));
+              currentUser = u;
+              enterApp();
+            })()
+          "
+        >
+          Continue as Demo
+        </button>
       </div>
     </div>
 
@@ -8021,7 +8036,7 @@
                 margin-bottom: 18px;
               }
               #view-ems .stat {
-                background: var(--s2);
+                background: var(--s1);
                 border: 1px solid var(--border);
                 border-radius: var(--r);
                 padding: 13px 15px;
@@ -8274,7 +8289,7 @@
                 letter-spacing: 0.7px;
                 text-transform: uppercase;
                 color: var(--text2);
-                background: var(--s2);
+                background: var(--s1);
                 border-bottom: 2px solid var(--border2);
                 white-space: nowrap;
                 cursor: pointer;
@@ -13783,14 +13798,11 @@
           // Clean URL to avoid re-triggering
           window.history.replaceState({}, '', window.location.pathname);
           setTimeout(function () {
+            if (subTab === 'approved') window._docsSubTab = 'approved';
             openDetail(projId);
             if (tab) {
               var btn = document.querySelector('.pdt[data-tab="' + tab + '"]');
               sPTab(tab, btn || null);
-            }
-            if (subTab === 'approved') {
-              window._docsSubTab = 'approved';
-              renderDocsSubTab('approved', projId);
             }
           }, 500);
         }

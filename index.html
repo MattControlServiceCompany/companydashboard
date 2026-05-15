@@ -57,8 +57,8 @@
         --em: #00d4aa;
         --em-dim: rgba(0, 212, 170, 0.1);
         --text: #e2e8f8;
-        --text2: #6b7a9e;
-        --text3: #323b56;
+        --text2: #9fb3d4;
+        --text3: #6b7a9e;
         --font: 'Outfit', sans-serif;
         --mono: 'JetBrains Mono', monospace;
         --r: 10px;
@@ -1881,10 +1881,11 @@
 
       function saveSession(u) {
         sessionStorage.setItem('ch_user', JSON.stringify(u));
+        localStorage.setItem('ch_user', JSON.stringify(u));
       }
       function loadSession() {
         try {
-          const s = sessionStorage.getItem('ch_user');
+          const s = sessionStorage.getItem('ch_user') || localStorage.getItem('ch_user');
           return s ? JSON.parse(s) : null;
         } catch (e) {
           return null;
@@ -1892,6 +1893,7 @@
       }
       function clearSession() {
         sessionStorage.removeItem('ch_user');
+        localStorage.removeItem('ch_user');
       }
 
       function loginDemo() {
