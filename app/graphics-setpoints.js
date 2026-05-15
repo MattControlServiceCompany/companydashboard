@@ -322,8 +322,13 @@ function egfxRenderPerfVerify(projId) {
   var html = '';
   bldgs.forEach(function (b) {
     var meterHtml = '';
-    (b.meters || []).forEach(function (m) {
+    var _commOrder = ['Electric', 'Gas', 'Propane', 'Water', 'Sewer', 'Stormwater'];
+    var sortedMeters = (b.meters || []).slice().sort(function (a, b) {
+      return _commOrder.indexOf(a.commodity) - _commOrder.indexOf(b.commodity);
+    });
+    sortedMeters.forEach(function (m) {
       if (m.baselineInclude === false) return;
+      if (!isCalcCommodity(projId, m.commodity)) return;
       var bl = m.baseline;
       if (!bl || !bl.months || bl.months.length < 3) return;
       var bills = (m.bills || []).slice().sort(function (a, c) {
