@@ -1259,7 +1259,7 @@ function initDashboardTab(projId) {
   let projectedAnnual = 0;
   const actualByQtr = [0, 0, 0, 0];
   let latestBillEnd = null;
-  let latestSavMonth = -1; // 0-11 index of last month with savings data
+  let latestSavYM = null; // full 'YYYY-MM' string of last month with savings data
   const curQtr = Math.floor(new Date().getMonth() / 3);
   const bldgRows = bldgs.map((b) => {
     const meters = b.meters || [];
@@ -1330,8 +1330,9 @@ function initDashboardTab(projId) {
         const savCalMo = savResult.byCalMo;
         Object.entries(savCalMo).forEach(([mo, v]) => {
           bldgSav += v;
-          const moIdx = parseInt(mo);
-          if (v !== 0 && moIdx > latestSavMonth) latestSavMonth = moIdx;
+        });
+        Object.entries(savResult.byYM).forEach(([ym, v]) => {
+          if (v !== 0 && (latestSavYM === null || ym > latestSavYM)) latestSavYM = ym;
         });
         const curYear = String(new Date().getFullYear());
         Object.entries(savResult.byYM).forEach(([ym, v]) => {
@@ -1446,6 +1447,9 @@ function initDashboardTab(projId) {
             actualByQtr[qi] += v;
           }
         });
+        Object.entries(_actSavResult.byYM).forEach(([ym, v]) => {
+          if (v !== 0 && (latestSavYM === null || ym > latestSavYM)) latestSavYM = ym;
+        });
       });
     }
     // Fallback: if no baseline set and actual mode, annualize allCost
@@ -1538,8 +1542,8 @@ function initDashboardTab(projId) {
   const curQtrProjected = projectedByQtr[curQtr];
   const curQtrPct = curQtrProjected > 0 ? ((curQtrActual / curQtrProjected) * 100).toFixed(1) : null;
   const throughDate =
-    latestSavMonth >= 0
-      ? new Date(new Date().getFullYear(), latestSavMonth, 1).toLocaleDateString('en-US', {
+    latestSavYM !== null
+      ? new Date(latestSavYM + '-01T12:00:00').toLocaleDateString('en-US', {
           month: 'long',
           year: 'numeric',
         })
