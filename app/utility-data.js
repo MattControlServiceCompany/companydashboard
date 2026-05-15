@@ -4529,6 +4529,8 @@ function renderBaselinePane(pane, m, bills, incl) {
   const isElecBl = m.commodity === 'Electric';
   let kwChartSection = '';
   const kwByYm = {};
+  let _blKwReg = null;
+  const _blKwNormByYm = {};
   if (isElecBl && hasBl) {
     blRows.forEach((r) => {
       const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
@@ -4536,10 +4538,38 @@ function renderBaselinePane(pane, m, bills, incl) {
       const bilKW = bfr.reduce((s, b) => s + parseFloat(b.billedKW || b.demandKW || 0), 0) / Math.max(1, bfr.length);
       if (demKW > 0 || bilKW > 0) kwByYm[r.ym] = { label: r.label, demKW, bilKW };
     });
+
+    // ── CDD regression for normalized kW baseline line ──
+    _blKwReg = (() => {
+      const pts = blRows
+        .map((r) => {
+          const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
+          const kw = bfr.length ? bfr.reduce((s, b) => s + (parseFloat(b.demandKW) || 0), 0) / bfr.length : 0;
+          return { x: r.cdd != null ? r.cdd : 0, y: kw };
+        })
+        .filter((p) => p.y > 0);
+      if (pts.length < 3) return null;
+      const n = pts.length;
+      const mx = pts.reduce((s, p) => s + p.x, 0) / n;
+      const my = pts.reduce((s, p) => s + p.y, 0) / n;
+      const ssxx = pts.reduce((s, p) => s + (p.x - mx) ** 2, 0);
+      const ssxy = pts.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0);
+      if (ssxx === 0) return null;
+      const slope = ssxy / ssxx;
+      const intercept = my - slope * mx;
+      return { slope, intercept };
+    })();
+    if (_blKwReg) {
+      blRows.forEach((r) => {
+        const cdd = r.cdd != null ? r.cdd : 0;
+        _blKwNormByYm[r.ym] = Math.max(0, _blKwReg.intercept + _blKwReg.slope * cdd);
+      });
+    }
+
     if (Object.keys(kwByYm).length) {
       kwChartSection =
         '<div style="margin-bottom:14px">' +
-        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">Actual kW Demand — Baseline Period</div>' +
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">kW Demand — Baseline Period</div>' +
         '<div class="ma-chart-wrap" style="height:220px"><canvas id="blKwChart" style="height:188px"></canvas></div>' +
         '</div>';
     }
@@ -4687,6 +4717,26 @@ function renderBaselinePane(pane, m, bills, incl) {
           borderRadius: 3,
         });
       }
+      const _hasBlNormKw = _blKwReg && Object.keys(_blKwNormByYm).length > 0;
+      if (_hasBlNormKw) {
+        const kwEntriesYm = blRows.filter((r) => kwByYm[r.ym]).map((r) => r.ym);
+        datasets.push({
+          label: 'Normalized kW Baseline',
+          type: 'line',
+          data: kwEntriesYm.map((ym) => {
+            const v = _blKwNormByYm[ym];
+            return v != null ? +v.toFixed(1) : null;
+          }),
+          borderColor: 'rgba(139,92,246,0.9)',
+          backgroundColor: 'transparent',
+          pointBackgroundColor: 'rgba(139,92,246,1)',
+          borderWidth: 2,
+          borderDash: [5, 4],
+          pointRadius: 3,
+          tension: 0.3,
+          order: 0,
+        });
+      }
       _maCharts['blKwChart'] = new Chart(kwCanvas, {
         type: 'bar',
         data: { labels: kwLabels, datasets },
@@ -4696,7 +4746,7 @@ function renderBaselinePane(pane, m, bills, incl) {
           interaction: { mode: 'index', intersect: false },
           plugins: {
             legend: {
-              display: hasBilKW,
+              display: hasBilKW || _hasBlNormKw,
               position: 'top',
               labels: { color: 'rgba(200,220,240,0.9)', font: { size: 11 }, boxWidth: 12, padding: 12 },
             },
