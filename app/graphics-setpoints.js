@@ -730,6 +730,7 @@ function egfxRefresh(projId) {
   // Compute actual savings from meter performance (single source of truth)
   const blCostAvg = blCost.map((v, mi) => v / (blYmPerMo[mi].size || 1));
   const totalBlCost = blCostAvg.reduce((a, b) => a + b, 0);
+  const curYear = String(new Date().getFullYear());
   const egfxSavByMo = {};
   const egfxSavByYm = {};
   const egfxSavByCommodity = { Electric: 0, Gas: 0, Propane: 0 };
@@ -745,17 +746,18 @@ function egfxRefresh(projId) {
       const mIncl = m.inclusive !== false;
       const savResult = getMeterSavings(m, mBills, mIncl, projId, b.id);
       let meterCostSav = 0;
-      Object.entries(savResult.byCalMo).forEach(([mo, v]) => {
-        egfxSavByMo[mo] = (egfxSavByMo[mo] || 0) + v;
-        meterCostSav += v;
-      });
       Object.entries(savResult.byYM).forEach(([ym, v]) => {
         egfxSavByYm[ym] = (egfxSavByYm[ym] || 0) + v;
+        if (ym.startsWith(curYear)) {
+          egfxSavByMo[ym] = (egfxSavByMo[ym] || 0) + v;
+          meterCostSav += v;
+        }
       });
       if (egfxCostSavedByCommodity[m.commodity] !== undefined) {
         egfxCostSavedByCommodity[m.commodity] += meterCostSav;
       }
-      Object.values(savResult.unitsByCalMo).forEach((u) => {
+      Object.entries(savResult.unitsByYM).forEach(([ym, u]) => {
+        if (!ym.startsWith(curYear)) return;
         egfxUnitsSaved.kwh += u.kwh || 0;
         egfxUnitsSaved.kw += u.kw || 0;
         egfxUnitsSaved.therms += u.therms || 0;
@@ -763,11 +765,15 @@ function egfxRefresh(projId) {
       });
     });
   });
-  const hasEgfxSav = Object.keys(egfxSavByMo).length > 0;
-  const totalEgfxSav = hasEgfxSav ? Object.values(egfxSavByMo).reduce((s, v) => s + v, 0) : 0;
+  const hasEgfxSav = Object.keys(egfxSavByYm).some((ym) => ym.startsWith(curYear));
+  const totalEgfxSav = hasEgfxSav
+    ? Object.entries(egfxSavByYm)
+        .filter(([ym]) => ym.startsWith(curYear))
+        .reduce((s, [, v]) => s + v, 0)
+    : 0;
 
   // Unit savings (kwh, therms, gallons) are now accumulated from getMeterSavings
-  // via savResult.unitsByCalMo in the meter loop above — weather-normalized, not rolling-12
+  // via savResult.unitsByYM filtered to current year — weather-normalized, not rolling-12
 
   // Projected Savings card — from measures only (buildings with all meters excluded are skipped)
   const projSavEl = document.getElementById(`egfx-projSav-${projId}`);
@@ -1795,7 +1801,10 @@ function egfxRefresh(projId) {
         }
       });
       const projVals = months.map((_, mo) => _egfxProjSavByMo[mo]);
-      const actVals = months.map((_, mo) => (egfxSavByMo[mo] != null ? egfxSavByMo[mo] : null));
+      const actVals = months.map((_, mo) => {
+        const ym = curYear + '-' + String(mo + 1).padStart(2, '0');
+        return egfxSavByMo[ym] != null ? egfxSavByMo[ym] : null;
+      });
       _maCharts[savChartId] = new Chart(savChartCv, {
         type: 'bar',
         data: {
