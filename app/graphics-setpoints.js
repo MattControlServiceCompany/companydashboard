@@ -1170,6 +1170,11 @@ function egfxRefresh(projId) {
   const hasPropane = totalBlPropane > 0 || sortedYears.some((y) => yearData[y].propane.some((g) => g > 0));
 
   // Compute normalized propane baseline (HDD-weighted monthly consumption, not raw deliveries)
+  // Fix (a75cb5c1): Run normalization on the FULL bill history first, then derive the
+  // baseline average from the normalized output. The old code filtered bills to baseline
+  // months BEFORE normalization, which discarded summer months that normalizePropaneDeliveries
+  // correctly spreads deliveries into. Now we normalize all bills, then average only the
+  // baseline-period months to get the per-calendar-month baseline value.
   const blPropaneNorm = new Array(12).fill(0);
   if (hasPropane) {
     bldgs.forEach((b) => {
@@ -1178,19 +1183,29 @@ function egfxRefresh(projId) {
         const bl = m.baseline;
         if (!bl || !bl.months || bl.months.length < 3) return;
         const mBills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
-        const mIncl = m.inclusive !== false;
         const bWeatherByYm =
           typeof getWeatherForBuilding === 'function' ? getWeatherForBuilding(projId, b.id).byYm || null : null;
-        const allRows = mBills.length ? getNormRows(m, mBills, mIncl, bWeatherByYm) : [];
-        const blRows = allRows.filter((r) => bl.months.includes(r.ym));
-        const countByMo = {};
-        blRows.forEach((r) => {
+        // Normalize ALL bills (full history) so summer months get their HDD-weighted share
+        const allRows = mBills.length ? getNormRows(m, mBills, m.inclusive !== false, bWeatherByYm) : [];
+        // Determine how many baseline years contributed to each calendar month
+        // so we can average across years (same logic as buildMoMap)
+        const moAccum = {}; // {mo: [usage, ...]}
+        allRows.forEach((r) => {
           const mo = parseInt(r.ym.split('-')[1]) - 1;
-          blPropaneNorm[mo] += r.usage;
-          countByMo[mo] = (countByMo[mo] || 0) + 1;
+          const yr = r.ym.slice(0, 4);
+          // Include this row in the baseline average if any baseline YM in the same
+          // calendar month (same month number, any baseline year) exists
+          const sameCalMoInBl = bl.months.some((bym) => parseInt(bym.slice(5, 7)) - 1 === mo);
+          if (!sameCalMoInBl) return;
+          // Only include years that are actually in the baseline
+          const blYears = new Set(bl.months.map((bym) => bym.slice(0, 4)));
+          if (!blYears.has(yr)) return;
+          if (!moAccum[mo]) moAccum[mo] = [];
+          moAccum[mo].push(r.usage);
         });
-        Object.entries(countByMo).forEach(([mo, cnt]) => {
-          if (cnt > 1) blPropaneNorm[mo] /= cnt;
+        Object.entries(moAccum).forEach(([mo, usages]) => {
+          const avg = usages.reduce((s, v) => s + v, 0) / usages.length;
+          blPropaneNorm[parseInt(mo)] += avg;
         });
       });
     });
