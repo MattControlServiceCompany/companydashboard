@@ -3878,6 +3878,7 @@ function drawNormChart(canvasId, rows, unit, metric, weatherDDLabel, bills, incl
   }
   const isElec = unit === 'kWh';
   const isGasU = unit === 'Therms';
+  const isPropaneU = unit === 'Gallons';
   const labels = rows.map((r) => r.label);
   const blColor = rows.map((r) => (r.isBaseline ? 'rgba(0,212,170,0.85)' : 'rgba(100,160,255,0.75)'));
   const hasRegr = rows.some((r) => r.regrBaseline != null);
@@ -3945,7 +3946,13 @@ function drawNormChart(canvasId, rows, unit, metric, weatherDDLabel, bills, incl
       bills.forEach((b) => {
         if (!b.start || !b.end) return;
         const ym = normMonth(b.start, b.end, incl, bills);
-        const usage = isElec ? parseFloat(b.kwh) || 0 : isGasU ? parseFloat(b.therms) || 0 : parseFloat(b.usage) || 0;
+        const usage = isElec
+          ? parseFloat(b.kwh) || 0
+          : isGasU
+            ? parseFloat(b.therms) || 0
+            : isPropaneU
+              ? parseFloat(b.gallonsDelivered) || parseFloat(b.kwh) || 0
+              : parseFloat(b.usage) || 0; // Bug #139: propane uses gallonsDelivered
         const days = Math.max(1, parseInt(calcDays(b.start, b.end, incl)) || 1);
         if (!billByYm[ym] || usage > 0) billByYm[ym] = { usage, days, perDay: +(usage / days).toFixed(2) };
       });
@@ -5075,6 +5082,7 @@ function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay, metric) {
   }
   const isElec = unit === 'kWh';
   const isGasU = unit === 'Therms';
+  const isPropaneBl = unit === 'Gallons';
   const isTotal = metric === 'total';
   const yLabel = isTotal ? unit + '/Month' : unit + '/Day';
   const MON_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -5141,7 +5149,13 @@ function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay, metric) {
     bills.forEach((b) => {
       if (!b.start || !b.end) return;
       const ym = normMonth(b.start, b.end, incl, bills);
-      const usage = isElec ? parseFloat(b.kwh) || 0 : isGasU ? parseFloat(b.therms) || 0 : parseFloat(b.usage) || 0;
+      const usage = isElec
+        ? parseFloat(b.kwh) || 0
+        : isGasU
+          ? parseFloat(b.therms) || 0
+          : isPropaneBl
+            ? parseFloat(b.gallonsDelivered) || parseFloat(b.kwh) || 0
+            : parseFloat(b.usage) || 0;
       const days = Math.max(1, parseInt(calcDays(b.start, b.end, incl)) || 1);
       if (!billByYm[ym] || usage > 0) billByYm[ym] = { usage, days, perDay: +(usage / days).toFixed(2) };
     });

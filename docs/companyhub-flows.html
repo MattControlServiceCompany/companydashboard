@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CompanyHub - Architecture and Flows</title>
+<style>
+:root {
+  --bg: #0a0e18;
+  --s1: #0f1422;
+  --s2: #141a2c;
+  --s3: #1a2138;
+  --border: #1e2740;
+  --border2: #2a3455;
+  --accent: #e8a825;
+  --accent-dim: rgba(232,168,37,0.12);
+  --accent-border: rgba(232,168,37,0.5);
+  --blue: #3b82f6;
+  --teal: #14b8a6;
+  --violet: #8b5cf6;
+  --rose: #f43f5e;
+  --green: #22c55e;
+  --amber: #f59e0b;
+  --sky: #38bdf8;
+  --text: #e2e8f8;
+  --text2: #7b8baa;
+  --text3: #3e4a66;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --mono: 'Cascadia Code', 'SF Mono', 'Consolas', monospace;
+}
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; -webkit-font-smoothing: antialiased; }
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: var(--s1); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+.page { display: flex; flex-direction: column; height: 100vh; }
+.hdr {
+  padding: 18px 28px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.hdr h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; letter-spacing: -.02em; }
+.hdr p { font-size: 13px; color: var(--text2); max-width: 700px; line-height: 1.5; }
+.legend { display: flex; gap: 18px; margin-top: 10px; flex-wrap: wrap; }
+.leg-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text2); }
+.leg-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+.body { display: flex; flex: 1; overflow: hidden; }
+
+.diagram-wrap { flex: 1; overflow: auto; padding: 24px 20px 40px; position: relative; }
+.diagram { display: grid; grid-template-columns: repeat(6, 160px); gap: 14px 20px; min-width: 1060px; position: relative; }
+svg.connectors { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1; overflow: visible; }
+svg.connectors line { stroke: var(--accent); stroke-width: 2; opacity: 0.7; }
+svg.connectors circle { fill: var(--accent); }
+svg.connectors text { fill: var(--bg); font-size: 9px; font-weight: 800; font-family: var(--font); text-anchor: middle; dominant-baseline: central; }
+.col-label {
+  font-size: 10px; font-weight: 700; letter-spacing: .8px;
+  text-transform: uppercase; color: var(--text3);
+  padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+
+.box {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  transition: all .2s;
+  position: relative;
+}
+.box .name { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+.box .detail { font-size: 10px; color: var(--text3); line-height: 1.4; }
+.box.highlight {
+  border-color: var(--accent-border);
+  background: var(--accent-dim);
+  box-shadow: 0 0 12px rgba(232,168,37,0.15);
+}
+.box.highlight .name { color: var(--accent); }
+.box .step-num { display: none; }
+
+.box.cat-page { border-left: 3px solid var(--blue); }
+.box.cat-shared { border-left: 3px solid var(--teal); }
+.box.cat-data { border-left: 3px solid var(--green); }
+.box.cat-lib { border-left: 3px solid var(--violet); }
+.box.cat-ext { border-left: 3px solid var(--text3); }
+.box.cat-user { border-left: 3px solid var(--rose); }
+
+.flows-panel {
+  width: 360px; flex-shrink: 0;
+  background: var(--s1);
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.flows-hdr {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px; font-weight: 700;
+}
+.flows-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+.flow-item {
+  padding: 10px 18px;
+  cursor: pointer;
+  transition: all .12s;
+  border-left: 3px solid transparent;
+}
+.flow-item:hover { background: var(--s2); }
+.flow-item.active {
+  background: var(--accent-dim);
+  border-left-color: var(--accent);
+}
+.flow-item .fl-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+.flow-item.active .fl-name { color: var(--accent); }
+.flow-item .fl-desc { font-size: 11px; color: var(--text3); line-height: 1.4; }
+.flow-item.active .fl-desc { color: var(--text2); }
+
+.clear-btn {
+  display: inline-block;
+  padding: 5px 12px; margin: 8px 18px;
+  font-size: 11px; color: var(--text2);
+  background: var(--s2); border: 1px solid var(--border);
+  border-radius: 5px; cursor: pointer;
+  font-family: var(--font); transition: all .12s;
+}
+.clear-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.steps-panel {
+  border-top: 1px solid var(--border);
+  max-height: 320px; overflow-y: auto;
+  padding: 12px 18px;
+  display: none;
+}
+.steps-panel.visible { display: block; }
+.steps-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--text3); margin-bottom: 10px; }
+.step-row { display: flex; gap: 10px; margin-bottom: 12px; }
+.step-circle {
+  width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+  background: var(--accent); color: var(--bg);
+  font-size: 11px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+.step-body { flex: 1; }
+.step-label { font-size: 12px; font-weight: 600; font-family: var(--mono); margin-bottom: 2px; }
+.step-detail { font-size: 11px; color: var(--text2); line-height: 1.4; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="hdr">
+  <h1>CompanyHub - Architecture &amp; Flows</h1>
+  <p>Every page, library, and data store that powers CompanyHub. Pick a flow on the right to highlight the path through the system and see what gets passed at each step.</p>
+  <div class="legend">
+    <div class="leg-item"><div class="leg-dot" style="background:var(--rose)"></div> User / Actor</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--blue)"></div> Page</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--teal)"></div> Shared Infrastructure</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--green)"></div> Data Store</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--violet)"></div> Library</div>
+    <div class="leg-item"><div class="leg-dot" style="background:var(--text3)"></div> External Service</div>
+  </div>
+</div>
+
+<div class="body">
+  <div class="diagram-wrap" id="diagramWrap">
+    <div class="diagram" id="diagram"></div>
+    <svg class="connectors" id="connectorSvg"></svg>
+  </div>
+  <div class="flows-panel">
+    <div class="flows-hdr">FLOWS</div>
+    <div class="flows-list" id="flowsList"></div>
+    <div class="steps-panel" id="stepsPanel">
+      <div class="steps-title">STEPS</div>
+      <div id="stepsBody"></div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+var COMPONENTS = [
+  { id: 'user',        col: 0, name: 'User (Browser)',      detail: 'Edge / Chrome',                cat: 'user' },
+  { id: 'index',       col: 1, name: 'index.html',          detail: 'Dashboard, metrics, calendar',  cat: 'page' },
+  { id: 'energy',      col: 1, name: 'energy-department',   detail: '13k lines, projects, bills, OCR', cat: 'page' },
+  { id: 'service',     col: 1, name: 'service-department',  detail: 'PM schedule, staff, dispatch',  cat: 'page' },
+  { id: 'ems',         col: 1, name: 'ems-leads',           detail: 'Kanban pipeline, CSV import',   cat: 'page' },
+  { id: 'siteui',      col: 2, name: 'site-ui.js',          detail: 'Store, DashboardController, theme', cat: 'shared' },
+  { id: 'sitecss',     col: 2, name: 'site-ui.css',         detail: 'Topbar, sidebar, tokens, modals', cat: 'shared' },
+  { id: 'msal',        col: 2, name: 'MSAL.js',             detail: 'Microsoft 365 auth library',    cat: 'shared' },
+  { id: 'feedback',    col: 2, name: 'feedback-widget',     detail: 'In-page feedback capture',      cat: 'shared' },
+  { id: 'store',       col: 3, name: 'Store object',        detail: 'get / set / update / delete',   cat: 'data' },
+  { id: 'ls',          col: 3, name: 'localStorage',        detail: 'en_*, sv_*, ems_*, ch_*',       cat: 'data' },
+  { id: 'ss',          col: 3, name: 'sessionStorage',      detail: 'ch_user (login session)',        cat: 'data' },
+  { id: 'idb',         col: 3, name: 'IndexedDB',           detail: 'en_pdf_store (PDF file blobs)', cat: 'data' },
+  { id: 'tesseract',   col: 4, name: 'Tesseract.js',        detail: 'OCR for scanned PDFs',          cat: 'lib' },
+  { id: 'pdfjs',       col: 4, name: 'PDF.js',              detail: 'PDF text extraction',           cat: 'lib' },
+  { id: 'xlsx',        col: 4, name: 'XLSX / SheetJS',      detail: 'Spreadsheet import/export',     cat: 'lib' },
+  { id: 'rules',       col: 4, name: 'UTILITY_RULES',       detail: 'Evergy, Spire, Louisburg, Generic', cat: 'lib' },
+  { id: 'msgraph',     col: 5, name: 'Microsoft Graph',     detail: 'Calendar sync, user profile',   cat: 'ext' },
+  { id: 'ghpages',     col: 5, name: 'GitHub Pages',        detail: 'Production hosting',            cat: 'ext' },
+  { id: 'onedrive',    col: 5, name: 'OneDrive',            detail: 'Backup file storage',           cat: 'ext' },
+  { id: 'azure',       col: 5, name: 'Azure AD',            detail: 'OAuth tenant, token issuer',    cat: 'ext' },
+];
+
+var COL_LABELS = ['ACTORS', 'PAGES', 'SHARED INFRA', 'DATA STORES', 'LIBRARIES', 'EXTERNAL SERVICES'];
+
+var FLOWS = [
+  {
+    id: 'auth', name: 'Microsoft 365 login', desc: 'User authenticates via MSAL popup and enters the app',
+    path: ['user','index','msal','azure','ss'],
+    steps: [
+      { from:'user', to:'index', label:'User clicks "Sign in with Microsoft"', detail:'Login screen shown on page load if no session exists.' },
+      { from:'index', to:'msal', label:'index.html calls loginWithMicrosoft()', detail:'MSAL.js opens OAuth popup window.' },
+      { from:'msal', to:'azure', label:'MSAL redirects to Azure AD', detail:'User enters Microsoft 365 credentials in popup.' },
+      { from:'azure', to:'ss', label:'Token returned, session saved', detail:'User object {name, email, initials, isReal} stored in sessionStorage.' },
+      { from:'ss', to:'index', label:'enterApp() shows dashboard', detail:'Login screen hides, topbar populates with user info.' },
+    ]
+  },
+  {
+    id: 'pdf-extract', name: 'PDF bill extraction', desc: 'Upload a utility PDF, extract fields via OCR or text parsing',
+    path: ['user','energy','pdfjs','tesseract','rules','idb','store','ls'],
+    steps: [
+      { from:'user', to:'energy', label:'User uploads PDF file', detail:'File input triggers handlePDFUpload().' },
+      { from:'energy', to:'pdfjs', label:'PDF.js extracts text from each page', detail:'Digital PDFs yield text directly. Fast path.' },
+      { from:'pdfjs', to:'tesseract', label:'Fallback: Tesseract OCR if text < 100 chars', detail:'Scanned PDFs get page images OCR\'d via worker.' },
+      { from:'tesseract', to:'rules', label:'Combined text passed to UTILITY_RULES', detail:'Each rule\'s detect() tested: Evergy, Spire, Louisburg, Generic.' },
+      { from:'rules', to:'energy', label:'Extracted fields returned for review', detail:'Duplicate compare modal if existing bill found.' },
+      { from:'energy', to:'idb', label:'PDF blob saved to IndexedDB', detail:'Stored under en_pdf_store with unique key.' },
+      { from:'energy', to:'store', label:'Bill data saved via Store.set()', detail:'Assigned to project > building > meter.' },
+      { from:'store', to:'ls', label:'localStorage updated, dataUpdated fired', detail:'Bill appears in meter data table.' },
+    ]
+  },
+  {
+    id: 'manual-bill', name: 'Manual bill entry', desc: 'User types bill data directly into the meter bill form',
+    path: ['user','energy','store','ls'],
+    steps: [
+      { from:'user', to:'energy', label:'User opens bill modal on a meter', detail:'Form fields change based on commodity type.' },
+      { from:'energy', to:'energy', label:'User fills dates, usage, charges', detail:'kW demand for Electric, therms for Gas, etc.' },
+      { from:'energy', to:'store', label:'saveBillRow() writes via Store.set()', detail:'Bill appended to meter.bills array.' },
+      { from:'store', to:'ls', label:'localStorage updated', detail:'Meter data table re-renders with new row.' },
+    ]
+  },
+  {
+    id: 'project-crud', name: 'Project / Building / Meter CRUD', desc: 'Create and manage the energy project hierarchy',
+    path: ['user','energy','store','ls'],
+    steps: [
+      { from:'user', to:'energy', label:'User opens create modal', detail:'Project (20 fields), Building (4), or Meter (commodity, units).' },
+      { from:'energy', to:'store', label:'Data saved via Store.set()', detail:'Metadata to en_projects, utility tree to en_utility_{id}.' },
+      { from:'store', to:'ls', label:'localStorage updated, sidebar re-renders', detail:'New item appears in project tree.' },
+    ]
+  },
+  {
+    id: 'baseline', name: 'Baseline and savings calculation', desc: 'Compute energy savings: (Baseline - Actual) x Rate',
+    path: ['user','energy','ls','store'],
+    steps: [
+      { from:'user', to:'energy', label:'User sets baseline period on meter', detail:'Bills in range used for regression model.' },
+      { from:'energy', to:'ls', label:'Read weather data (en_weather_{zip})', detail:'HDD/CDD for ASHRAE Guideline 14 normalization.' },
+      { from:'ls', to:'energy', label:'calculateBaseline() runs regression', detail:'Coefficients frozen at save in m.baseline.reg.' },
+      { from:'energy', to:'store', label:'Results rendered in savings matrix', detail:'Monthly: (Baseline - Actual) x Rate, then sum.' },
+    ]
+  },
+  {
+    id: 'report', name: 'Report generation', desc: 'Generate quarterly/annual reports with charts and tables',
+    path: ['user','energy','ls','store'],
+    steps: [
+      { from:'user', to:'energy', label:'User opens report modal', detail:'Select type, date, buildings, sections.' },
+      { from:'energy', to:'ls', label:'Read all project/meter/bill data', detail:'Pulled from localStorage for selected scope.' },
+      { from:'ls', to:'energy', label:'Report engine generates HTML pages', detail:'Charts, tables, baseline, EUI, emissions.' },
+      { from:'energy', to:'store', label:'Saved to en_report_history', detail:'HTML stored in en_report_{id}.' },
+      { from:'energy', to:'user', label:'Report overlay displayed', detail:'Print-preview with Export to PDF button.' },
+    ]
+  },
+  {
+    id: 'pm-schedule', name: 'PM schedule calendar', desc: 'Auto-generate PM dates from natural-language patterns',
+    path: ['user','service','ls'],
+    steps: [
+      { from:'user', to:'service', label:'User views PM Schedule tab', detail:'SA list with search and tech/frequency filters.' },
+      { from:'service', to:'ls', label:'Read sv_saData from localStorage', detail:'57+ service agreements with pattern field.' },
+      { from:'ls', to:'service', label:'generateDatesForPattern(pattern, year)', detail:'Parses "2nd Thu - Feb/May/Aug/Nov" etc.' },
+      { from:'service', to:'user', label:'Calendar renders with tech-colored dots', detail:'Click day for events, click SA for detail panel.' },
+    ]
+  },
+  {
+    id: 'outlook-sync', name: 'Outlook calendar sync', desc: 'Push PM events to Microsoft 365 Outlook calendar',
+    path: ['user','service','msal','azure','msgraph','ls'],
+    steps: [
+      { from:'user', to:'service', label:'User clicks Sync to Outlook', detail:'syncToOutlook() triggered from sidebar.' },
+      { from:'service', to:'msal', label:'Acquire token silently', detail:'MSAL gets cached or refreshed token.' },
+      { from:'msal', to:'azure', label:'Token validated with Azure AD', detail:'Scopes: User.Read, Calendars.ReadWrite.' },
+      { from:'service', to:'msgraph', label:'POST events to Graph API', detail:'Next 30 days, max 5 PM events.' },
+      { from:'msgraph', to:'ls', label:'Events cached in ch_outlook_events', detail:'Dashboard calendar reads these for markers.' },
+    ]
+  },
+  {
+    id: 'ems-pipeline', name: 'EMS lead pipeline', desc: 'Drag-and-drop Kanban board with 8 stages',
+    path: ['user','ems','ls'],
+    steps: [
+      { from:'user', to:'ems', label:'User views pipeline or creates lead', detail:'Prospect > Contacted > Qualifying > Proposal > Negotiating > Won/Lost/On Hold.' },
+      { from:'ems', to:'ems', label:'Drag card to new stage column', detail:'dropToStage() updates lead.stage and updatedAt.' },
+      { from:'ems', to:'ls', label:'Saved to ems_leads_v1', detail:'All views re-render: pipeline, table, follow-ups, analytics.' },
+    ]
+  },
+  {
+    id: 'csv-import', name: 'EMS CSV import', desc: 'Import leads from CSV with auto-column mapping',
+    path: ['user','ems','ls'],
+    steps: [
+      { from:'user', to:'ems', label:'User drops CSV file', detail:'openImportModal() shows drag-drop zone.' },
+      { from:'ems', to:'ems', label:'parseCSVPreview() auto-maps columns', detail:'Recognizes "company", "customer", "account", etc.' },
+      { from:'ems', to:'ls', label:'runImport() saves to ems_leads_v1', detail:'Each row becomes a lead, stage=Prospect.' },
+    ]
+  },
+  {
+    id: 'backup', name: 'Backup / Restore', desc: 'Export or import all localStorage data as JSON',
+    path: ['user','index','siteui','ls'],
+    steps: [
+      { from:'user', to:'index', label:'User clicks Backup button', detail:'Available on any page via sidebar.' },
+      { from:'index', to:'siteui', label:'siteBackup() serializes localStorage', detail:'All ch_*, sv_*, en_*, ems_* keys.' },
+      { from:'siteui', to:'ls', label:'Read all localStorage keys', detail:'Serialized to single JSON object.' },
+      { from:'ls', to:'user', label:'Download CompanyHub-localdatafile-YYYYMMDD.json', detail:'Browser downloads file.' },
+    ]
+  },
+  {
+    id: 'dashboard-refresh', name: 'Cross-page data sync', desc: 'Dashboard auto-refreshes when other pages update data',
+    path: ['energy','store','ls','siteui','index'],
+    steps: [
+      { from:'energy', to:'store', label:'Any page calls Store.set(key, data)', detail:'Energy, service, or EMS page saving data.' },
+      { from:'store', to:'ls', label:'localStorage.setItem() + dataUpdated event', detail:'CustomEvent dispatched on window.' },
+      { from:'siteui', to:'index', label:'DashboardController.refresh()', detail:'Re-reads staff, SA, project counts.' },
+      { from:'index', to:'index', label:'Stat cards update in real-time', detail:'Staff, SA Records, Energy Projects refresh.' },
+    ]
+  },
+  {
+    id: 'theme', name: 'Theme and settings', desc: 'Dark/light mode, accent color, default landing page',
+    path: ['user','index','siteui','ls'],
+    steps: [
+      { from:'user', to:'index', label:'User opens Settings modal', detail:'siteOpenSettings() from sidebar.' },
+      { from:'index', to:'siteui', label:'User picks theme or accent color', detail:'8 presets + custom hex. Dark/light toggle.' },
+      { from:'siteui', to:'ls', label:'Saved to ch_theme and ch_settings', detail:'{theme, accentColor, defaultLoginScreen, feedbackMode}.' },
+      { from:'ls', to:'index', label:'CSS variables updated live', detail:'--accent, --accent-dim set on :root.' },
+    ]
+  },
+  {
+    id: 'weather', name: 'Weather data upload', desc: 'Import HDD/CDD data by ZIP for normalization',
+    path: ['user','energy','ls'],
+    steps: [
+      { from:'user', to:'energy', label:'User opens weather data modal', detail:'CSV drop zone for weather file.' },
+      { from:'energy', to:'energy', label:'Parse CSV: month, year, hdd, cdd, avg_temp', detail:'Preview table shown before save.' },
+      { from:'energy', to:'ls', label:'Saved to en_weather_{zipcode}', detail:'Applied to buildings with matching ZIP.' },
+    ]
+  },
+];
+
+function buildDiagram() {
+  var d = document.getElementById('diagram');
+  var html = '';
+  for (var i = 0; i < 6; i++) {
+    html += '<div class="col-label">' + COL_LABELS[i] + '</div>';
+  }
+  var cols = [[],[],[],[],[],[]];
+  COMPONENTS.forEach(function(c) { cols[c.col].push(c); });
+  var maxRows = 0;
+  cols.forEach(function(col) { if (col.length > maxRows) maxRows = col.length; });
+  for (var row = 0; row < maxRows; row++) {
+    for (var col = 0; col < 6; col++) {
+      var comp = cols[col][row];
+      if (comp) {
+        html += '<div class="box cat-' + comp.cat + '" id="box-' + comp.id + '">';
+        html += '<div class="step-num" id="step-' + comp.id + '"></div>';
+        html += '<div class="name">' + esc(comp.name) + '</div>';
+        html += '<div class="detail">' + esc(comp.detail) + '</div>';
+        html += '</div>';
+      } else {
+        html += '<div></div>';
+      }
+    }
+  }
+  d.innerHTML = html;
+}
+
+function buildFlowsList() {
+  var list = document.getElementById('flowsList');
+  var html = '';
+  FLOWS.forEach(function(f) {
+    html += '<div class="flow-item" data-flow="' + f.id + '" onclick="selectFlow(\'' + f.id + '\')">';
+    html += '<div class="fl-name">' + esc(f.name) + '</div>';
+    html += '<div class="fl-desc">' + esc(f.desc) + '</div>';
+    html += '</div>';
+  });
+  html += '<button class="clear-btn" onclick="clearSelection()">Clear selection</button>';
+  list.innerHTML = html;
+}
+
+function getBoxCenter(id) {
+  var box = document.getElementById('box-' + id);
+  var wrap = document.getElementById('diagramWrap');
+  if (!box || !wrap) return null;
+  var br = box.getBoundingClientRect();
+  var wr = wrap.getBoundingClientRect();
+  return {
+    x: br.left - wr.left + wrap.scrollLeft + br.width / 2,
+    y: br.top - wr.top + wrap.scrollTop + br.height / 2,
+    right: br.left - wr.left + wrap.scrollLeft + br.width,
+    left: br.left - wr.left + wrap.scrollLeft,
+    top: br.top - wr.top + wrap.scrollTop,
+    bottom: br.top - wr.top + wrap.scrollTop + br.height
+  };
+}
+
+function drawConnectors(flow) {
+  var svg = document.getElementById('connectorSvg');
+  var wrap = document.getElementById('diagramWrap');
+  var diagram = document.getElementById('diagram');
+  var dr = diagram.getBoundingClientRect();
+  svg.setAttribute('width', Math.max(dr.width, wrap.scrollWidth));
+  svg.setAttribute('height', Math.max(dr.height + 40, wrap.scrollHeight));
+  svg.innerHTML = '';
+
+  flow.steps.forEach(function(s, i) {
+    if (s.from === s.to) return;
+    var a = getBoxCenter(s.from);
+    var b = getBoxCenter(s.to);
+    if (!a || !b) return;
+
+    var x1, y1, x2, y2;
+    if (Math.abs(a.x - b.x) > 40) {
+      if (a.x < b.x) { x1 = a.right; x2 = b.left; }
+      else { x1 = a.left; x2 = b.right; }
+      y1 = a.y; y2 = b.y;
+    } else {
+      x1 = a.x; x2 = b.x;
+      if (a.y < b.y) { y1 = a.bottom; y2 = b.top; }
+      else { y1 = a.top; y2 = b.bottom; }
+    }
+
+    var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+    svg.appendChild(line);
+
+    var mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    var circ = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circ.setAttribute('cx', mx); circ.setAttribute('cy', my); circ.setAttribute('r', 10);
+    svg.appendChild(circ);
+
+    var txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    txt.setAttribute('x', mx); txt.setAttribute('y', my);
+    txt.textContent = i + 1;
+    svg.appendChild(txt);
+  });
+}
+
+function selectFlow(id) {
+  var flow = FLOWS.find(function(f) { return f.id === id; });
+  if (!flow) return;
+  document.querySelectorAll('.flow-item').forEach(function(el) {
+    el.classList.toggle('active', el.getAttribute('data-flow') === id);
+  });
+  document.querySelectorAll('.box').forEach(function(el) { el.classList.remove('highlight'); });
+  document.querySelectorAll('.step-num').forEach(function(el) { el.classList.remove('visible'); el.textContent = ''; });
+
+  flow.steps.forEach(function(s) {
+    [s.from, s.to].forEach(function(cid) {
+      var box = document.getElementById('box-' + cid);
+      if (box) box.classList.add('highlight');
+    });
+  });
+
+  drawConnectors(flow);
+
+  var sp = document.getElementById('stepsPanel');
+  var sb = document.getElementById('stepsBody');
+  var html = '';
+  flow.steps.forEach(function(s, i) {
+    html += '<div class="step-row">';
+    html += '<div class="step-circle">' + (i+1) + '</div>';
+    html += '<div class="step-body">';
+    html += '<div class="step-label">' + esc(s.from) + ' -&gt; ' + esc(s.to) + '</div>';
+    html += '<div class="step-detail"><strong>' + esc(s.label) + '</strong></div>';
+    html += '<div class="step-detail">' + esc(s.detail) + '</div>';
+    html += '</div></div>';
+  });
+  sb.innerHTML = html;
+  sp.classList.add('visible');
+}
+
+function clearSelection() {
+  document.querySelectorAll('.flow-item').forEach(function(el) { el.classList.remove('active'); });
+  document.querySelectorAll('.box').forEach(function(el) { el.classList.remove('highlight'); });
+  document.querySelectorAll('.step-num').forEach(function(el) { el.classList.remove('visible'); });
+  document.getElementById('stepsPanel').classList.remove('visible');
+  document.getElementById('connectorSvg').innerHTML = '';
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+buildDiagram();
+buildFlowsList();
+</script>
+</body>
+</html>

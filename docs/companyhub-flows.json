@@ -1,0 +1,552 @@
+{
+  "meta": {
+    "title": "CompanyHub Application Flows",
+    "version": "1.0",
+    "generated": "2026-05-12",
+    "description": "Complete documentation of all user flows, data models, and architecture for CompanyHub - an internal web dashboard for Control Service Company."
+  },
+  "architecture": {
+    "type": "Static frontend (vanilla HTML/CSS/JS)",
+    "backend": "None  -  all data in browser localStorage",
+    "auth": "Microsoft 365 SSO (MSAL.js) + Demo mode fallback",
+    "hosting": "GitHub Pages (production)",
+    "fonts": {
+      "primary": "Outfit",
+      "mono": "JetBrains Mono",
+      "emsLeads": "Syne / DM Sans / DM Mono"
+    },
+    "sharedInfrastructure": {
+      "css": "site-ui.css (also copy-pasted inline into each HTML <style id='site-ui-styles'>)",
+      "js": "site-ui.js (Store, DashboardController, theme, backup, settings, clock)",
+      "feedbackWidget": "feedback-widget.css + inline JS in HTML files"
+    }
+  },
+  "pages": [
+    {
+      "id": "index",
+      "file": "index.html",
+      "title": "Dashboard",
+      "icon": "HOME",
+      "description": "Main landing page with company-wide metrics, department navigation, calendar widget, notifications, and settings.",
+      "flows": [
+        {
+          "id": "auth",
+          "name": "Authentication",
+          "description": "Two-path login: Microsoft 365 SSO (MSAL popup) or Demo mode. Session stored in sessionStorage as ch_user. Auto-login on page refresh if session exists.",
+          "steps": [
+            "Page loads, checks sessionStorage for ch_user",
+            "If session exists → enterApp() immediately (auto-login)",
+            "If no session → show login screen",
+            "User clicks 'Sign in with Microsoft' → MSAL popup OAuth",
+            "On success → save user object to sessionStorage, call enterApp()",
+            "On MSAL fail with dummy clientId → auto-fallback to demo mode",
+            "enterApp() hides login, shows app, populates topbar user chip"
+          ],
+          "functions": ["loginWithMicrosoft()", "loginDemo()", "saveSession(u)", "loadSession()", "clearSession()", "enterApp()", "signOut()"],
+          "storageKeys": ["ch_user (sessionStorage)"],
+          "dataModel": {
+            "user": {
+              "name": "string  -  display name",
+              "email": "string  -  email or demo placeholder",
+              "initials": "string  -  2-char for avatar",
+              "isReal": "boolean  -  true=MSAL, false=demo"
+            }
+          }
+        },
+        {
+          "id": "dashboard-metrics",
+          "name": "Dashboard Metric Cards",
+          "description": "Four stat cards showing company-wide numbers, plus two department cards and eight quick-access cards. Stats pull from localStorage keys written by other pages.",
+          "steps": [
+            "On page load, read sv_staffData, sv_saData, en_projects from localStorage",
+            "Populate stat cards with counts (fallback to defaults if empty)",
+            "Department cards link to service-department.html and energy-department.html",
+            "Quick-access cards link to specific views within those pages"
+          ],
+          "functions": ["DashboardController.refresh()"],
+          "statCards": [
+            {"label": "Departments", "element": "static", "default": "2"},
+            {"label": "Service Staff", "element": "dash-stat-staff", "source": "sv_staffData.length"},
+            {"label": "SA Records", "element": "dash-stat-sa", "source": "sv_saData.length"},
+            {"label": "Energy Projects", "element": "dash-stat-projects", "source": "en_projects.length"}
+          ]
+        },
+        {
+          "id": "calendar-widget",
+          "name": "Calendar & Events",
+          "description": "Mini calendar with event markers from three sources. Shows upcoming events list (top 5).",
+          "steps": [
+            "On page load, call getUpcomingEvents() to aggregate from 3 localStorage sources",
+            "Render calendar grid with colored dots on event days",
+            "Show top 5 upcoming events in sidebar list",
+            "Month navigation with calNav(dir)"
+          ],
+          "functions": ["renderCalendar()", "renderCalendarEvents()", "getUpcomingEvents()", "getCalendarEventDays(year, month)", "calNav(dir)"],
+          "eventSources": [
+            {"source": "sv_saData", "color": "Teal", "label": "PM Visit: {building}"},
+            {"source": "en_projects", "color": "Violet", "label": "{project}  -  Deadline"},
+            {"source": "ch_outlook_events", "color": "Amber", "label": "{subject}"}
+          ]
+        },
+        {
+          "id": "notifications",
+          "name": "Notifications Panel",
+          "description": "Persistent notification system with localStorage backing. Bell icon in topbar with badge count and dropdown panel.",
+          "functions": ["loadNotifs()", "saveNotifs()", "addNotif(title, detail, icon)", "clearNotif(id)", "clearAllNotifs()", "refreshNotifUI()", "toggleNotifPanel()", "renderNotifList()", "getNotifTimeAgo(date)"],
+          "storageKeys": ["ch_notifs"],
+          "dataModel": {
+            "notification": {
+              "id": "number  -  Date.now() timestamp",
+              "title": "string",
+              "detail": "string",
+              "icon": "string  -  emoji",
+              "time": "string  -  ISO date"
+            }
+          }
+        },
+        {
+          "id": "settings",
+          "name": "Settings Modal",
+          "description": "Overlay modal for theme (dark/light), accent color (8 presets + custom hex), default login page, and feedback mode toggle. Dynamically built on first load.",
+          "functions": ["siteOpenSettings()", "siteCloseSettings()", "siteApplyTheme(mode)", "siteApplyAccent(hex)", "siteSetDefaultLogin(val)", "siteBuildSettingsModal()"],
+          "storageKeys": ["ch_theme", "ch_settings"],
+          "sections": [
+            "Display Mode: Dark/Light toggle",
+            "Accent Color: 8 presets + custom hex picker",
+            "Default Login Screen: Dashboard / Service / Energy",
+            "Developer Tools: Feedback Mode toggle"
+          ]
+        },
+        {
+          "id": "backup-restore",
+          "name": "Backup / Restore / Reset",
+          "description": "Full localStorage export to JSON file, restore from JSON, and reset all data. Buttons in sidebar bottom.",
+          "functions": ["siteBackup()", "siteRestore()", "processRestoreFile(file)", "siteResetData()"],
+          "details": {
+            "backupFilename": "CompanyHub-localdatafile-YYYYMMDD.json",
+            "restoreValidation": "Must be .json file",
+            "resetBehavior": "Clears both localStorage AND sessionStorage, reloads page"
+          }
+        },
+        {
+          "id": "navigation",
+          "name": "Navigation System",
+          "description": "Topbar brand + department tabs, sidebar with view switching, and cross-page links via hrefs.",
+          "functions": ["setView(view, sideEl)", "setDept(dept, tabEl)"],
+          "departmentTabs": ["Dashboard (index.html)", "Service Department (service-department.html)", "Energy Department (energy-department.html)"],
+          "sidebarSections": ["Dashboard: Overview", "Service: Personnel, PM Schedule, Dispatch Board", "Energy: PDF/OCR, Weather Normalize, Baseline, Energy Savings, WebCTRL"]
+        }
+      ]
+    },
+    {
+      "id": "energy",
+      "file": "energy-department.html",
+      "title": "Energy Department",
+      "icon": "BOLT",
+      "description": "Energy department tool: project management, utility bill data entry, PDF OCR extraction, weather normalization, equipment tracking, baseline/savings calculations, and report generation. ~13,000 lines.",
+      "flows": [
+        {
+          "id": "project-mgmt",
+          "name": "Project Management",
+          "description": "CRUD for energy projects. Each project contains buildings, which contain meters, which contain bills.",
+          "functions": ["openProjModal()", "saveProject()", "deleteProject(projId)", "renderProjectsList()", "renderProjNav()"],
+          "storageKeys": ["en_projects"],
+          "modalId": "#projModal",
+          "fields": ["Project Name", "Client/Owner", "Building Address", "Project Type", "Status (Planning/Active/On Hold/Complete)", "Phase (Audit/Design/Bidding/Construction/Commissioning/M&V/EMS/Closeout)", "Project Manager", "Field Technician", "SA#", "Contract Value", "Estimated Savings $/yr", "Baseline Comparison (Normalized/Actual)", "Utility Escalation %", "CSC Compensation %", "Start Date", "Target End Date", "Progress %", "Priority", "Description", "Tags"]
+        },
+        {
+          "id": "building-mgmt",
+          "name": "Building Management",
+          "description": "Multi-building per project. Each building has a name, address, square footage, and ZIP code (for weather data matching).",
+          "functions": ["openBldgModal()", "saveBuilding()", "deleteBuilding(projId, bldgId)"],
+          "modalId": "#bldgModal",
+          "fields": ["Facility Name (required)", "Facility Address", "Square Footage", "ZIP Code"]
+        },
+        {
+          "id": "meter-mgmt",
+          "name": "Meter Management",
+          "description": "Multiple meters per building. Commodity types determine available units. Meters hold bills and optional baseline regressions.",
+          "functions": ["openMeterModal()", "saveMeter()", "deleteMeter(projId, bldgId, meterId)", "updateMeterModalFields()", "setMeterInclusive(bool)"],
+          "modalId": "#meterModal",
+          "commodityTypes": [
+            {"type": "Electric", "billUnits": ["kWh"], "displayUnits": ["kWh", "MWh", "kW avg"]},
+            {"type": "Gas", "billUnits": ["Therms", "CCF"], "displayUnits": ["Therms", "CCF", "MCF", "MMBTU"]},
+            {"type": "Water", "billUnits": ["Gallons", "Acre-feet"], "displayUnits": ["Gallons", "kGal", "Acre-feet"]},
+            {"type": "Steam", "billUnits": ["Lbs", "MMBTU"], "displayUnits": ["Lbs", "MMBTU"]},
+            {"type": "Propane", "billUnits": ["Gallons"], "displayUnits": ["Gallons"]}
+          ],
+          "fields": ["Commodity Type (required)", "Bill Unit", "Display Unit", "Utility Provider", "Account #", "Meter #", "Meter Address", "Date Calculation (Inclusive/Exclusive)", "Include in Baseline & Performance"]
+        },
+        {
+          "id": "bill-entry",
+          "name": "Utility Bill Data Entry",
+          "description": "Manual bill entry per meter with dynamic fields based on commodity type. Also supports CSV import and audit logging.",
+          "functions": ["openBillModal(meterId, editRowId)", "saveBillRow()", "deleteBillRow(meterId, billId)", "handleBillCsvDrop(event)", "importBillCsvRows()", "openAuditLogModal()"],
+          "modalIds": ["#billModal", "#billCsvModal", "#auditLogModal"],
+          "storageKeys": ["en_bill_audit_log"],
+          "fields": ["Start Date", "End Date", "Usage/Consumption", "Commodity charges", "Fixed charges", "Demand charges (Electric)", "Meter readings", "Peak demand kW (Electric)", "Tax/adjustment charges"]
+        },
+        {
+          "id": "pdf-extraction",
+          "name": "PDF OCR Extraction Engine",
+          "description": "Two-stage pipeline: PDF.js text extraction first (fast, digital PDFs), falls back to Tesseract.js OCR if text < 100 chars (scanned PDFs). Rule-based extraction via UTILITY_RULES array. 100% local, no AI.",
+          "steps": [
+            "User uploads PDF via file input",
+            "PDF.js extracts text from each page",
+            "If text < 100 chars on a page → Tesseract.js OCR that page",
+            "Combined text passed through UTILITY_RULES detect() functions",
+            "First matching rule's extract() or extractAll() runs",
+            "Extracted fields shown for review",
+            "Duplicate detection: compare against existing bills",
+            "User can overwrite, merge, or skip duplicates per field",
+            "Assign extracted data to project > building > meter"
+          ],
+          "functions": ["handlePDFUpload(e)", "processPDFUpload()", "extractPDFPages(file)", "tessOCRPage(imgData)", "detectBillsSections(text)", "openDupCompareModal()", "openManualAssignModal()", "confirmManualAssign()"],
+          "modalIds": ["#dupCompareModal", "#manualAssignModal", "#assignBillModal"],
+          "utilityRules": [
+            {
+              "name": "Evergy",
+              "commodity": "Electric",
+              "detect": "Matches 'Billing Details - service from MM/DD/YYYY to MM/DD/YYYY' patterns",
+              "features": ["Multi-bill PDF support via extractAll()", "Page-first grouping resolution", "Fuzzy date-pair merge for OCR-garbled dates", "Chain-continuity normalization", "Neighbor-bill fallback for missing fields"],
+              "extractedFields": ["BillingPeriodStart/End", "AccountNumber", "CustomerName", "ServiceAddress", "RateSchedule", "MeterNumber", "kWhConsumed", "PeakDemandKW", "NumberOfDays", "BilledKWCharge", "DemandCharge", "TDCCharge", "CustomerCharge", "FranchiseFee", "TaxExemptDelivery", "ECA", "EER", "PTS", "BillOffset"]
+            },
+            {
+              "name": "Gas Utilities (Spire, Laclede, Kansas Gas, Atmos, Black Hills)",
+              "commodity": "Gas",
+              "detect": "Natural gas bill signatures (therms, CCF, gas utility names)",
+              "extractedFields": ["NaturalGasTherms", "NaturalGasCCF", "MeterReadPrevious/Current/Difference", "GasCharge", "CustomerCharge", "FuelAdjustment", "ThermFactor", "TotalAmountDue"]
+            },
+            {
+              "name": "City of Louisburg (Municipal Multi-Utility)",
+              "commodity": "Multi (Gas, Water, Sewer, Stormwater)",
+              "detect": "Louisburg KS bills",
+              "features": ["Multi-commodity per page", "extractAll() splits one page into multiple bills", "Period alignment across commodities", "Sequential date inference", "Gas rate corrections with historical rate tables"]
+            },
+            {
+              "name": "Generic Fallback",
+              "commodity": "Any",
+              "detect": "Any document with cost + usage patterns (must stay last in array)",
+              "extractedFields": ["Broad regex commodity detection", "Fewer fields guaranteed"]
+            }
+          ],
+          "billFieldMapping": {
+            "kwCost": "BilledKWCharge + TDCCharge",
+            "kwhCost": "On/Off-Peak + ECA + EER + PTS",
+            "otherCost": "CustomerCharge + TaxExemptDelivery + BillOffset",
+            "taxCost": "FranchiseFee",
+            "validationTolerance": "$0.10"
+          }
+        },
+        {
+          "id": "weather-normalization",
+          "name": "Weather Normalization",
+          "description": "Upload weather data CSV by ZIP code. Used in ASHRAE Guideline 14 baseline calculations to adjust consumption for weather variations.",
+          "functions": ["openWddModal()", "wddHandleDrop(event)", "wddHandleFile(file)", "wddApplyParsed()"],
+          "modalId": "#wddModal",
+          "storageKeys": ["en_weather_<zipcode>"],
+          "csvColumns": ["month", "year", "hdd", "cdd", "avg_temp"]
+        },
+        {
+          "id": "equipment-tracking",
+          "name": "Equipment Tracking",
+          "description": "Track equipment per project: AHUs, RTUs, boilers, chillers, VAVs, etc.",
+          "functions": ["openEquipModal()", "saveEquip()", "deleteEquip(projId, equipId)"],
+          "modalId": "#equipModal",
+          "equipmentTypes": ["AHU", "RTU", "Boiler", "Chiller", "VAV Box", "Fan Coil", "Exhaust Fan", "Pump", "Cooling Tower", "HX", "Meter", "Other"],
+          "fields": ["Equipment Tag", "Type", "Manufacturer", "Model Number", "Capacity", "Efficiency", "Location/Project", "Notes"]
+        },
+        {
+          "id": "baseline-savings",
+          "name": "Baseline & Savings Calculations",
+          "description": "Compute baseline consumption, weather-normalized savings, EUI, and CSC compensation. Supports both Normalized and Actual baseline comparison modes.",
+          "functions": ["calculateBaseline(projId, bldgId)", "calculateSavings(projId)", "calculateEUI(projId, bldgId)", "calculateNormalizedUsage(monthData, weatherData)", "renderSavingsMatrix(projId)"],
+          "formula": "(Baseline Usage - Actual Usage) x Current Rate, calculated monthly then summed",
+          "modes": ["Normalized (ASHRAE weather adjustment)", "Actual (direct comparison)"],
+          "keyFields": ["project.baselineComparison", "project.estimatedSavings", "project.utilityEscalation", "project.cscCompensation"]
+        },
+        {
+          "id": "report-generation",
+          "name": "Report Generation",
+          "description": "Generate quarterly or annual reports with selectable sections. Output as HTML pages with charts and tables. Export to PDF available.",
+          "functions": ["openReportBldgModal()", "launchNewReport()", "exportReportToPDF()", "saveReportToHistory()", "showReportHistory()"],
+          "modalIds": ["#reportBldgModal", "#reportOverlay"],
+          "storageKeys": ["en_report_history", "en_report_<id>"],
+          "reportSections": ["Executive Summary", "Energy Analysis", "Savings", "Equipment", "Baseline", "Emissions"]
+        }
+      ]
+    },
+    {
+      "id": "service",
+      "file": "service-department.html",
+      "title": "Service Department",
+      "icon": "WRENCH",
+      "description": "Service department dashboard: personnel management, PM scheduling calendar with natural-language pattern parsing, and technician dispatch board.",
+      "flows": [
+        {
+          "id": "personnel",
+          "name": "Personnel Management",
+          "description": "Staff roster with status tracking (On Duty / Off / On Leave), filtering, and stats cards.",
+          "functions": ["renderStaff()", "filterStaff(f)", "updateStaffStats()", "removeStaff(id)", "openStaffModal()", "addStaff()"],
+          "modalId": "#staffModal",
+          "storageKeys": ["sv_staffData"],
+          "statCards": ["On Duty Today", "On Leave", "Off Today", "Total Staff"],
+          "filters": ["All", "On Duty", "Leave"],
+          "dataModel": {
+            "staff": {
+              "id": "number",
+              "name": "string",
+              "role": "string",
+              "hours": "number  -  weekly hours",
+              "status": "string  -  'on' | 'off' | 'leave'"
+            }
+          }
+        },
+        {
+          "id": "pm-schedule",
+          "name": "PM Scheduling Calendar",
+          "description": "Preventative maintenance schedule with auto-generated dates from natural-language patterns (Column M from service agreements). Supports 10+ pattern types. Calendar shows colored dots per technician.",
+          "steps": [
+            "Load service agreements from sv_saData",
+            "For each SA, parse pattern field through generateDatesForPattern(pattern, year)",
+            "Filter dates to contract start/end range",
+            "Render calendar grid with tech-colored event dots",
+            "Click day to see list of PM events",
+            "Click SA row to see detail panel with all generated dates"
+          ],
+          "functions": ["renderSAList()", "selectSA(id)", "renderSADetail()", "removeSA(id)", "updatePMStats()", "generateDatesForPattern(pattern, year)", "getNthWeekday(year, month, weekday, n)", "buildCalendar(mode, year, month, selDay, containerId)", "generateAllPMEvents(calYear)"],
+          "modalId": "#pmModal",
+          "storageKeys": ["sv_saData"],
+          "statCards": ["SA Records", "This Month", "Next 7 Days", "Active Techs"],
+          "patternTypes": [
+            "'Nth DAY - Month/Month/Month' (e.g., '2nd Thu - Feb/May/Aug/Nov')",
+            "'Nth DAY & Nth DAY' (e.g., '1st & 3rd Fri')",
+            "'Monthly - Nth DAY' (e.g., 'Monthly - 1st Fri')",
+            "'2x Monthly - Nth DAY'",
+            "'Nth per Year - Nth DAY - Months'",
+            "Generic: 'Monthly', 'Bi-Monthly', 'Quarterly', 'Semi-Annual', 'Annual'",
+            "Multi-line patterns (split by newline)"
+          ],
+          "frequencyColors": {
+            "Monthly / 2x Monthly": "Amber",
+            "Quarterly": "Blue",
+            "Semi-Annual": "Violet",
+            "Annual": "Teal",
+            "Bi-Monthly / Other": "Red"
+          },
+          "dataModel": {
+            "serviceAgreement": {
+              "id": "number",
+              "saNum": "string  -  SA number",
+              "customer": "string",
+              "addr": "string  -  site address",
+              "tech": "string  -  assigned technician",
+              "pmLabel": "string  -  frequency label (Col L)",
+              "pattern": "string  -  natural language pattern (Col M)",
+              "adminContact": "string",
+              "fieldContact": "string",
+              "contractStart": "string  -  date",
+              "contractEnd": "string  -  date"
+            }
+          }
+        },
+        {
+          "id": "dispatch",
+          "name": "Dispatch Board",
+          "description": "Work order management and technician assignments. Table view with status indicators.",
+          "functions": ["renderDispatch()", "openDispatchModal()", "addWorkOrder()"],
+          "modalId": "#dispatchModal",
+          "storageKeys": ["sv_dispatchData"],
+          "dataModel": {
+            "workOrder": {
+              "id": "number",
+              "saNum": "string",
+              "customer": "string",
+              "site": "string",
+              "start": "string  -  datetime",
+              "end": "string  -  datetime",
+              "tech": "string",
+              "status": "string  -  'Assigned' | 'Not Assigned'"
+            }
+          }
+        },
+        {
+          "id": "outlook-sync",
+          "name": "Microsoft 365 / Outlook Sync",
+          "description": "Sync upcoming PM events (next 30 days, max 5) to user's Outlook Calendar via Microsoft Graph API.",
+          "functions": ["syncToOutlook()"],
+          "details": "Posts events to graph.microsoft.com/v1.0/me/events with title '[PM] Customer  -  SA# (Label)'"
+        }
+      ]
+    },
+    {
+      "id": "ems-leads",
+      "file": "ems-leads.html",
+      "title": "EMS Leads",
+      "icon": "CHART",
+      "description": "Energy Management Sales lead/pipeline tracker with Kanban board, table view, follow-ups, analytics, CSV import/export, and activity logging.",
+      "flows": [
+        {
+          "id": "pipeline-kanban",
+          "name": "Pipeline Kanban Board",
+          "description": "Drag-and-drop Kanban board with 8 pipeline stages. Cards show company, location, priority, CSC contact, tags, value, next action, and overdue warnings.",
+          "functions": ["renderPipeline()", "getFilteredLeads()", "leadCardHTML(l)", "dragStart(id, e)", "dropToStage(stage, e)"],
+          "stages": [
+            {"name": "Prospect", "color": "#2a3450"},
+            {"name": "Contacted", "color": "#0ea5e9"},
+            {"name": "Qualifying", "color": "#f59e0b"},
+            {"name": "Proposal", "color": "#a78bfa"},
+            {"name": "Negotiating", "color": "#84cc16"},
+            {"name": "Won", "color": "#00d4aa"},
+            {"name": "Lost", "color": "#f43f5e"},
+            {"name": "On Hold", "color": "#2a3450"}
+          ]
+        },
+        {
+          "id": "lead-crud",
+          "name": "Lead CRUD Operations",
+          "description": "Create, read, update, delete leads. Detail drawer with 3 tabs: Overview (form), Activity Log, AI Tools (disabled).",
+          "functions": ["openNewLeadModal()", "saveNewLead()", "openDrawer(id)", "closeDrawer()", "saveDrawerChanges()", "deleteCurrentLead()"],
+          "storageKeys": ["ems_leads_v1"],
+          "dataModel": {
+            "lead": {
+              "id": "string  -  timestamp base36 + random",
+              "company": "string",
+              "stage": "string  -  one of 8 stages",
+              "priority": "string  -  High/Medium/Low",
+              "cscContact": "string",
+              "cscEngineer": "string",
+              "type": "string  -  EMS Project Type",
+              "annualValue": "number",
+              "contactName": "string",
+              "contactTitle": "string",
+              "contactPhone": "string",
+              "contactEmail": "string",
+              "address": "string",
+              "city": "string",
+              "state": "string",
+              "zip": "string",
+              "buildingType": "string",
+              "buildingSqft": "number",
+              "nextActionDate": "string  -  YYYY-MM-DD",
+              "lastContact": "string  -  YYYY-MM-DD",
+              "nextAction": "string",
+              "notes": "string",
+              "tags": "string[]",
+              "activity": "[{text, time, user?, color}]",
+              "createdAt": "string  -  ISO timestamp",
+              "updatedAt": "string  -  ISO timestamp"
+            }
+          }
+        },
+        {
+          "id": "csv-import",
+          "name": "CSV Import",
+          "description": "Import leads from CSV with drag-drop or file picker. Auto-maps common column names. Preview before import. Currently creates separate leads (merge/skip modes planned).",
+          "functions": ["openImportModal()", "handleCSVFile(e)", "readCSVFile(f)", "parseCSV(text)", "parseCSVPreview()", "runImport()"],
+          "autoMapAliases": {
+            "company": ["company", "customer", "name", "account", "prospect", "business", "organization", "client"],
+            "address": ["address", "street", "addr", "street address"],
+            "contactEmail": ["email", "e-mail", "contact email"],
+            "buildingSqft": ["sqft", "sq ft", "square feet", "square footage", "size", "building size"]
+          }
+        },
+        {
+          "id": "views",
+          "name": "Multiple View Modes",
+          "description": "Four view modes accessible from sidebar: Pipeline (Kanban), All Leads (sortable table), Follow-ups (grouped by urgency), Analytics (summary stats and breakdowns).",
+          "functions": ["switchView(view, el)", "renderPipeline()", "renderTable()", "renderFollowups()", "renderAnalytics()"],
+          "views": [
+            {"name": "Pipeline", "description": "Drag-and-drop Kanban board"},
+            {"name": "All Leads", "description": "Sortable spreadsheet table with column sorting"},
+            {"name": "Follow-ups", "description": "Leads grouped: Overdue (red), This Week (amber), No Date Set (blue)"},
+            {"name": "Analytics", "description": "Total Pipeline Value, Won Revenue, Win Rate, Avg Deal Size, Stage/CSC/Type breakdowns"}
+          ]
+        },
+        {
+          "id": "filtering-sorting",
+          "name": "Filtering, Sorting & Search",
+          "description": "Real-time search across company/city/contact/notes. Filter by stage, priority, CSC contact. Table supports column sorting (numeric + string).",
+          "functions": ["getFilteredLeads()", "filterByStage(stage, el)", "filterByPriority(pri, el)", "sortTable(col)", "populateCSCFilter()"]
+        },
+        {
+          "id": "csv-export",
+          "name": "CSV Export",
+          "description": "Export all leads to CSV with 21 columns. Downloads as EMS-Leads-YYYY-MM-DD.csv.",
+          "functions": ["exportCSV()"]
+        },
+        {
+          "id": "activity-log",
+          "name": "Activity Log",
+          "description": "Per-lead activity history. Add notes with timestamp and optional user. Auto-updates lastContact date.",
+          "functions": ["renderActivityLog(lead)", "addActivity()"]
+        }
+      ]
+    }
+  ],
+  "sharedInfrastructure": {
+    "store": {
+      "description": "Centralized data layer via Store object in site-ui.js. All CRUD operations go through Store, which fires dataUpdated CustomEvents for cross-page sync.",
+      "api": [
+        {"method": "Store.get(key)", "description": "Read and parse JSON from localStorage, returns [] on failure"},
+        {"method": "Store.set(key, data)", "description": "Write JSON to localStorage and fire dataUpdated event"},
+        {"method": "Store.update(key, id, newData)", "description": "Find item by id, merge newData, stamp updatedAt, save"},
+        {"method": "Store.delete(key, id)", "description": "Filter out item by id and save"}
+      ]
+    },
+    "dashboardController": {
+      "description": "Watches Store data and auto-updates dashboard metric cards. Listens for dataUpdated events, reads staff/SA/project counts.",
+      "api": [
+        {"method": "DashboardController.refresh()", "description": "Re-read all data sources and update stat card elements"}
+      ]
+    },
+    "themeSystem": {
+      "description": "CSS custom properties for all colors. Dark/light mode via data-theme attribute. Accent color user-customizable.",
+      "cssTokens": ["--bg", "--s1 through --s4", "--border", "--border2", "--accent", "--accent-dim", "--accent-glow", "--teal", "--amber", "--red", "--violet", "--green", "--em", "--text", "--text2", "--text3", "--font", "--mono", "--r"],
+      "presetAccents": ["Blue (#3b82f6)", "Teal (#14b8a6)", "Violet (#8b5cf6)", "Rose (#f43f5e)", "Amber (#f59e0b)", "Emerald (#22c55e)", "Sky (#0ea5e9)", "Orange (#fb923c)"]
+    },
+    "helpers": {
+      "showToast(msg)": "Bottom-right toast notification, auto-hides after 3.4s",
+      "sset(key, value)": "Wrapper for Store.set() with fallback to raw localStorage",
+      "sget(key, fallback)": "Wrapper for Store.get() with fallback value"
+    },
+    "accessibility": {
+      "features": ["ESC key closes modals", "Focus trap in modals", "ARIA roles on navigation", "44px minimum touch targets", "Focus-visible outlines", "Mobile sidebar drawer with hamburger toggle"]
+    }
+  },
+  "storageKeys": {
+    "global": [
+      {"key": "ch_theme", "type": "string", "description": "Dark/light mode preference"},
+      {"key": "ch_settings", "type": "object", "description": "Theme, accent color, default login, feedback mode, UI customization"},
+      {"key": "ch_notifs", "type": "array", "description": "Notification history"},
+      {"key": "ch_user", "type": "object", "storage": "sessionStorage", "description": "Logged-in user data"},
+      {"key": "ch_outlook_events", "type": "array", "description": "Synced Outlook calendar events"}
+    ],
+    "service": [
+      {"key": "sv_saData", "type": "array", "description": "Service agreements with PM patterns"},
+      {"key": "sv_staffData", "type": "array", "description": "Staff roster"},
+      {"key": "sv_dispatchData", "type": "array", "description": "Dispatch work orders"}
+    ],
+    "energy": [
+      {"key": "en_projects", "type": "array", "description": "Energy project metadata"},
+      {"key": "en_pdf_bills", "type": "array", "description": "PDF-extracted bills (deprecated, now meter-assigned)"},
+      {"key": "en_bill_audit_log", "type": "array", "description": "Bill edit history"},
+      {"key": "en_weather_<zip>", "type": "object", "description": "Weather data by ZIP code"},
+      {"key": "en_report_history", "type": "array", "description": "Generated report metadata"},
+      {"key": "en_report_<id>", "type": "string", "description": "Full HTML report content"}
+    ],
+    "ems": [
+      {"key": "ems_leads_v1", "type": "array", "description": "EMS pipeline leads with activity logs"}
+    ]
+  },
+  "crossPageDataFlow": {
+    "description": "Each page reads from localStorage on load, writes back on mutation via Store.set() which fires dataUpdated events. Dashboard auto-refreshes metric cards. Backup/restore serializes entire localStorage to JSON.",
+    "pattern": [
+      "Page load → sget(key) into local variables",
+      "User mutation → validate → sset(key, data) → fires dataUpdated event",
+      "DashboardController listens → refresh() updates stat cards",
+      "Backup → serialize all localStorage keys to JSON file",
+      "Restore → parse JSON, write all keys back, reload page"
+    ]
+  }
+}

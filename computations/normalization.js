@@ -353,61 +353,6 @@ function normalizePropaneDeliveries(bills, hddByMonth) {
     }
   }
 
-  // Last delivery forward: estimate ongoing consumption from last delivery
-  // to today using gal/HDD rate from the most recent measured period.
-  if (sorted.length >= 2) {
-    const lastD = sorted[sorted.length - 1];
-    const prevD = sorted[sorted.length - 2];
-    const lastGal = parseFloat(lastD.gallonsDelivered || lastD.kwh) || 0;
-    const lastCost = parseFloat(lastD.totalCost) || 0;
-    const pricePerGal = lastGal > 0 ? lastCost / lastGal : 0;
-    const pStart = _parseISO(prevD.start);
-    const pEnd = _parseISO(lastD.start);
-    const pSpans = monthSpans(pStart, pEnd);
-    let pHDD = 0;
-    pSpans.forEach(function (s) {
-      const w = hddByMonth && hddByMonth[s.ym];
-      const calDays = calDaysInMonth(s.ym);
-      pHDD += w && w.hdd ? w.hdd * (s.days / calDays) : 0;
-    });
-    const galPerHDD = pHDD > 0 && lastGal > 0 ? lastGal / pHDD : 0;
-    if (galPerHDD > 0) {
-      const fwdStart = _parseISO(lastD.start);
-      // Cap forward projection at the last delivery date (not today) so
-      // results are deterministic and don't drift daily with the clock.
-      const fwdEnd = _parseISO(lastD.start);
-      const fwdSpans = monthSpans(fwdStart, fwdEnd);
-      let fwdTotalHDD = 0;
-      const fwdHDD = fwdSpans.map(function (s) {
-        const w = hddByMonth && hddByMonth[s.ym];
-        const calDays = calDaysInMonth(s.ym);
-        const frac = calDays > 0 ? s.days / calDays : 0;
-        const hdd = w && w.hdd != null ? w.hdd * frac : 0;
-        fwdTotalHDD += hdd;
-        return { ym: s.ym, days: s.days, hdd: hdd };
-      });
-      fwdHDD.forEach(function (s) {
-        const share =
-          fwdTotalHDD > 0
-            ? s.hdd / fwdTotalHDD
-            : s.days /
-              Math.max(
-                1,
-                fwdSpans.reduce(function (t, x) {
-                  return t + x.days;
-                }, 0),
-              );
-        const estGal = fwdTotalHDD > 0 ? fwdTotalHDD * galPerHDD * share : 0;
-        const estCost = estGal * pricePerGal;
-        if (estGal > 0) {
-          if (!result[s.ym]) result[s.ym] = { gallons: 0, cost: 0 };
-          result[s.ym].gallons += estGal;
-          result[s.ym].cost += estCost;
-        }
-      });
-    }
-  }
-
   return Object.entries(result)
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([month, v]) => ({ month, gallons: v.gallons, cost: v.cost }));
