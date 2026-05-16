@@ -1232,7 +1232,7 @@ function hvacLoadBenchFill(projId) {
               <div class="fg"><label class="fl">HVAC % of Total Gas</label><input class="fi hvl-in" id="hvl-b-gasPct-${projId}" type="number" value="${vals.gasPct}"></div>
             </div>
             <div class="card" style="background:var(--s1);padding:14px">
-              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">EUI Reference</div>
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">Site EUI Reference</div>
               <div style="font-size:13px;color:var(--text2);line-height:1.7">
                 CBECS National Median: <strong style="color:var(--em)">${CBECS_EUI[type] || 'N/A'} kBtu/ft²</strong><br>
                 Climate zone ${clim} adjustments applied to HVAC split percentages.

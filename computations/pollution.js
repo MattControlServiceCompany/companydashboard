@@ -87,15 +87,17 @@ var EGRID_FACTORS = {
   WY: { co2: 2.356978, ch4: 0.000252, n2o: 0.000037, so2: 0.001587, nox: 0.001612, hg: 0 },
 };
 
-// Equivalency factors: per metric ton CO2-equivalent (Excel Calculations rows 34-44)
+// Equivalency factors: per metric ton CO2-equivalent
+// Source: EPA Greenhouse Gas Equivalencies Calculator (updated to 2023 values)
+// https://www.epa.gov/energy/greenhouse-gas-equivalencies-calculator
 var EQUIV_PER_MT_CO2E = {
-  carsRemoved: 1 / 5.23,
-  gallonsGasoline: 1 / 0.00889,
+  carsRemoved: 1 / 4.65, // EPA 2023: 4.65 MT CO2e/vehicle/year (was 5.23, older EPA value)
+  gallonsGasoline: 1 / 0.00889, // EPA current: unchanged
   tankerTrucks: 1 / 74.89,
   barrelsOil: 2.11,
-  households: 1 / 7.7,
-  treeSeedlings: 23,
-  acresForest: 0.0074,
+  households: 1 / 7.46, // EPA 2023: 7.46 MT CO2e/household (was 7.7, older EPA value)
+  treeSeedlings: 17, // EPA current: ~17 trees/MT (was 23, older EPA value)
+  acresForest: 1.099, // EPA current: 1.099 acres/MT (0.91 MT/acre/yr); was 0.0074 which was erroneous
   railcarsCoal: 0.0046,
   tonsRecycled: 1 / 2.97,
   propaneCylinders: 1 / 0.054,
@@ -106,15 +108,15 @@ var EQUIV_PER_MT_CO2E = {
 var GWP_CH4 = 21;
 var GWP_N2O = 310;
 
-// Metric ton equivalents — used by PDF export (updated to match Excel values)
+// Metric ton equivalents — used by PDF export (mirrors EQUIV_PER_MT_CO2E above)
 var POLLUTION_EQUIV_MT = {
   co2PerKwh: 0.000404, // retained for backward compat (PDF export section uses its own constants)
   co2PerTherm: 0.005302, // retained for backward compat
   co2PerPropGal: 0.00574, // retained for backward compat
-  treesPerTon: 23, // updated from 16.5 to match Excel (EQUIV_PER_MT_CO2E.treeSeedlings)
-  carsPerTon: 1 / 5.23, // updated from 1/4.6 to match Excel
-  homesPerTon: 1 / 7.7, // updated from 1/8.9 to match Excel
-  acresForestPerTon: 0.0074, // updated from 1/0.84 to match Excel
+  treesPerTon: 17, // EPA 2023: ~17 trees/MT (was 23)
+  carsPerTon: 1 / 4.65, // EPA 2023: 4.65 MT CO2e/vehicle/year (was 1/5.23)
+  homesPerTon: 1 / 7.46, // EPA 2023: 7.46 MT CO2e/household (was 1/7.7)
+  acresForestPerTon: 1.099, // EPA current: 1.099 acres/MT (was 0.0074, erroneous)
 };
 
 function calculatePollutionCredits(kwhSaved, thermsSaved, propaneGalSaved, stateCode, unit) {

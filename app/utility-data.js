@@ -3351,7 +3351,7 @@ function renderNormPane(pane, m, bills, incl) {
       blPill('$' + totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 }), 'Total Cost', 'var(--em2)') +
       blPill(rows.length + ' mo', 'Data Points') +
       (hasEUI && rolling12EUI != null
-        ? blPill(rolling12EUI.toFixed(1) + ' kBtu/sf/yr', '12-Mo EUI', 'var(--warn)')
+        ? blPill(rolling12EUI.toFixed(1) + ' kBtu/sf/yr', '12-Mo Site EUI', 'var(--warn)')
         : '') +
       '</div>';
 
@@ -4381,7 +4381,7 @@ function renderBaselinePane(pane, m, bills, incl) {
         : null,
       cost > 0 ? { v: '$' + cost.toLocaleString(undefined, { maximumFractionDigits: 0 }), lbl: 'Total Cost' } : null,
       avgHDD != null ? { v: avgHDD.toFixed(0) + ' HDD', lbl: 'Avg HDD' } : null,
-      blEUI != null ? { v: blEUI.toFixed(1) + ' kBtu/sf/yr', lbl: 'EUI' } : null,
+      blEUI != null ? { v: blEUI.toFixed(1) + ' kBtu/sf/yr', lbl: 'Site EUI' } : null,
       avgRatePerUnit != null
         ? { v: fmtRate(avgRatePerUnit) + '/' + unit, lbl: 'Blended Rate', color: 'var(--em2)' }
         : null,
@@ -4908,7 +4908,7 @@ function refreshBaselineStats(mid) {
         : null,
       cost > 0 ? { v: '$' + cost.toLocaleString(undefined, { maximumFractionDigits: 0 }), lbl: 'Total Cost' } : null,
       avgHDD != null ? { v: avgHDD.toFixed(0) + ' HDD', lbl: 'Avg HDD' } : null,
-      blEUI != null ? { v: blEUI.toFixed(1) + ' kBtu/sf/yr', lbl: 'EUI' } : null,
+      blEUI != null ? { v: blEUI.toFixed(1) + ' kBtu/sf/yr', lbl: 'Site EUI' } : null,
       avgRatePerUnit != null
         ? { v: fmtRate(avgRatePerUnit) + '/' + unit2, lbl: 'Blended Rate', color: 'var(--em2)' }
         : null,
@@ -7921,8 +7921,8 @@ function renderPerfPane(pane, m, bills, incl) {
     (_qtrSavings.projected !== null && _qtrSavings.monthsWithData < 3
       ? blPill(_savFmtPill(_qtrSavings.projected), 'Projected ' + _qtrSavings.label + ' Savings', 'var(--warn)')
       : '') +
-    (blEUI != null ? blPill(blEUI.toFixed(1) + ' kBtu/sf/yr', 'Baseline EUI') : '') +
-    (rolling12EUI != null ? blPill(rolling12EUI.toFixed(1) + ' kBtu/sf/yr', '12-Mo EUI', 'var(--warn)') : '') +
+    (blEUI != null ? blPill(blEUI.toFixed(1) + ' kBtu/sf/yr', 'Baseline Site EUI') : '') +
+    (rolling12EUI != null ? blPill(rolling12EUI.toFixed(1) + ' kBtu/sf/yr', '12-Mo Site EUI', 'var(--warn)') : '') +
     '</div>';
 
   // -- Table HTML from shared renderer (rows, sum row, headers all handled by buildMeterPerfTableHTML) --

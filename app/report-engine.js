@@ -911,6 +911,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
       CSC_HEADER_B64 +
       '" alt="CSC Letterhead" style="width:100%;display:block">' +
       bodyHTML +
+      footerTextHtml +
       '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:#999"></div>' +
       footerLabelHtml +
       footerImgHtml +
@@ -938,6 +939,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     '<div class="rpt-body">' +
     bodyHTML +
     '</div>' +
+    footerTextHtml +
     '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:#999"></div>' +
     footerLabelHtml +
     footerImgHtml +
@@ -1453,7 +1455,7 @@ function rptPageCover(n, d) {
     '<div class="rpt-gauge-row">' +
     gaugeSVG(pctOfTarget, '#27ae60', 'vs Target', pctOfTarget + '%') +
     gaugeSVG(energyRedPct, '#2e86c1', 'Energy Reduced', energyRedPct + '%') +
-    gaugeSVG(Math.max(0, euiImpPct), '#1e8449', 'EUI Improved', euiImpPct + '%') +
+    gaugeSVG(Math.max(0, euiImpPct), '#1e8449', 'Site EUI Improved', euiImpPct + '%') +
     gaugeSVG(contractDonePct, '#8e44ad', 'Contract Progress', contractDonePct + '%') +
     '</div>' +
     '</div>' +
@@ -2230,7 +2232,7 @@ function rptPageSavingsPerformance(n, d) {
     '<th class="rpt-n" style="width:12%">Therms</th>' +
     '<th class="rpt-n" style="width:12%">Propane<br>Gal</th>' +
     '<th class="rpt-n" style="width:14%">Cost</th>' +
-    '<th class="rpt-n" style="width:8%">EUI</th>' +
+    '<th class="rpt-n" style="width:8%">Site EUI</th>' +
     '<th class="rpt-n" style="width:12%">vs<br>Baseline</th>' +
     '</tr></thead>' +
     '<tbody>' +
@@ -2327,7 +2329,7 @@ function rptPageSavingsPerformance(n, d) {
     '<th class="rpt-n">Therms</th>' +
     '<th class="rpt-n">Propane Gallons</th>' +
     '<th class="rpt-n">Cost</th>' +
-    '<th class="rpt-n">EUI</th>' +
+    '<th class="rpt-n">Site EUI</th>' +
     '</tr></thead>' +
     '<tbody>' +
     bldgRows +
@@ -2416,6 +2418,9 @@ function rptPageEUI(n, d) {
         '<td class="rpt-n" contenteditable="true">' +
         (cpSqft > 0 ? '$' + cpSqft.toFixed(2) : '—') +
         '</td>' +
+        '<td contenteditable="true">' +
+        eStarCell +
+        '</td>' +
         '</tr>'
       );
     })
@@ -2428,12 +2433,13 @@ function rptPageEUI(n, d) {
     '<th>Building</th>' +
     '<th>Type</th>' +
     '<th class="rpt-n">Square Feet</th>' +
-    '<th class="rpt-n">Baseline EUI</th>' +
-    '<th class="rpt-n">Current EUI</th>' +
+    '<th class="rpt-n">Baseline Site EUI</th>' +
+    '<th class="rpt-n">Current Site EUI</th>' +
     '<th class="rpt-n">CBECS</th>' +
     '<th class="rpt-n">versus CBECS %</th>' +
     '<th>Percentile</th>' +
     '<th class="rpt-n">$/ft²</th>' +
+    '<th>ENERGY STAR</th>' +
     '</tr></thead>' +
     '<tbody>' +
     rankRows +
@@ -2486,12 +2492,12 @@ function rptPageEUI(n, d) {
 
   const euiChart =
     '<div class="rpt-chart-box">' +
-    '<div class="rpt-chart-title">Current EUI by Building</div>' +
+    '<div class="rpt-chart-title">Current Site EUI by Building</div>' +
     '<div style="display:flex;gap:12px;margin-bottom:4px;font-size:9px">' +
     '<span><span style="display:inline-block;width:10px;height:7px;background:#27ae60;border-radius:2px;vertical-align:middle"></span> Below CBECS</span>' +
     '<span><span style="display:inline-block;width:10px;height:7px;background:#f39c12;border-radius:2px;vertical-align:middle"></span> Above CBECS</span>' +
     '<span><span style="display:inline-block;width:2px;height:10px;background:#c0392b;vertical-align:middle"></span> CBECS Median</span>' +
-    '<span><span style="display:inline-block;width:2px;height:10px;background:#8e44ad;vertical-align:middle"></span> Baseline EUI</span>' +
+    '<span><span style="display:inline-block;width:2px;height:10px;background:#8e44ad;vertical-align:middle"></span> Baseline Site EUI</span>' +
     '</div>' +
     euiBars +
     '</div>';
@@ -2540,10 +2546,10 @@ function rptPageEUI(n, d) {
     '<table class="rpt-table" contenteditable="true">' +
     '<thead><tr>' +
     '<th>Building</th>' +
-    '<th class="rpt-n">Baseline EUI</th>' +
+    '<th class="rpt-n">Baseline Site EUI</th>' +
     '<th class="rpt-n">' +
     curYrLabel +
-    ' EUI</th>' +
+    ' Site EUI</th>' +
     '<th class="rpt-n">Reduction</th>' +
     '<th>Trend</th>' +
     '</tr></thead>' +
@@ -2553,15 +2559,15 @@ function rptPageEUI(n, d) {
     '</table>';
 
   const bodyHTML =
-    '<p contenteditable="true" style="font-size:10px;color:#000;line-height:1.6;margin:0 0 8px">Energy Use Intensity (EUI) measures total energy consumption per square foot per year in kBtu/ft². Lower EUI values indicate more efficient buildings. Buildings are benchmarked against national CBECS (Commercial Buildings Energy Consumption Survey) median values for their building type. Buildings performing below the CBECS median are more efficient than the national average. The rolling 12-month EUI accounts for seasonal variation and provides a stable year-round performance indicator.</p>' +
+    '<p contenteditable="true" style="font-size:10px;color:#000;line-height:1.6;margin:0 0 8px">Site Energy Use Intensity (Site EUI) measures total energy consumption at the utility meter per square foot per year in kBtu/ft². Lower EUI values indicate more efficient buildings. Buildings are benchmarked against national CBECS (Commercial Buildings Energy Consumption Survey) median values for their building type. Buildings performing below the CBECS median are more efficient than the national average. The rolling 12-month Site EUI accounts for seasonal variation and provides a stable year-round performance indicator.</p>' +
     '<h2>Building Performance Rankings</h2>' +
     rankTable +
-    '<h2>EUI vs CBECS Benchmark</h2>' +
+    '<h2>Site EUI vs CBECS Benchmark</h2>' +
     euiChart +
-    '<h2>EUI Trend</h2>' +
+    '<h2>Site EUI Trend</h2>' +
     trendTable;
 
-  return rptPage(n, 'EUI Benchmarking', bodyHTML, { data: d, label: 'Page ' + n + ' — EUI Benchmarking' });
+  return rptPage(n, 'Site EUI Benchmarking', bodyHTML, { data: d, label: 'Page ' + n + ' — Site EUI Benchmarking' });
 }
 function rptPageEnvironmentalImpact(n, d) {
   var _annualize = d.reportOptions && d.reportOptions.annualizePollution && d.period && d.period.type === 'quarterly';
@@ -3768,7 +3774,7 @@ function rptPageBuildingSummary(n, d, b) {
   var euiCurH = Math.max(4, Math.round((euiCur / euiMax) * euiBarMaxH));
 
   leftHTML +=
-    '<div style="font-size:12px;font-weight:600;color:#333;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.03em">EUI (kBtu/sq ft/yr)</div>' +
+    '<div style="font-size:12px;font-weight:600;color:#333;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.03em">Site EUI (kBtu/sq ft/yr)</div>' +
     '<div style="display:flex;gap:16px;align-items:flex-end;margin-bottom:12px">' +
     // Baseline bar
     '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">' +
@@ -3870,7 +3876,7 @@ function rptPageBuildingSummary(n, d, b) {
         .join('');
       var euiYMax = euiMax.toFixed(1);
       leftHTML +=
-        '<div style="font-size:10px;font-weight:600;color:#000;margin:8px 0 3px">Monthly EUI (kBtu/ft²)</div>' +
+        '<div style="font-size:10px;font-weight:600;color:#000;margin:8px 0 3px">Monthly Site EUI (kBtu/ft²)</div>' +
         '<div style="position:relative;padding-left:36px">' +
         '<div style="position:absolute;left:0;top:0;bottom:16px;display:flex;flex-direction:column;justify-content:space-between;font-size:9px;color:#888;text-align:right;width:30px">' +
         '<span>' +
@@ -4503,7 +4509,7 @@ function rptPageBuildingSummary(n, d, b) {
     '<div style="font-weight:600;color:#000;text-transform:uppercase;font-size:9px;letter-spacing:.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
     '<div>1. Achieved (%) for each energy type represents the percent of energy units saved for the months included in this report.</div>' +
     '<div>2. Achieved ($) represents the utility cost savings for this time period calculated by subtracting the baseline energy usage from the current energy usage multiplied by the higher of current or baseline utility rates.</div>' +
-    '<div>3. The Baseline EUIs are normalized for weather and square footage when applicable.</div>' +
+    '<div>3. The Baseline Site EUIs are normalized for weather and square footage when applicable. Site EUI measures energy at the utility meter (kBtu/ft²/yr).</div>' +
     '</div>';
 
   // ═══════════════════════════════════════════════════════════════════
@@ -4542,20 +4548,7 @@ function rptPageElectric(n, d) {
     return v >= 0 ? '#1e8449' : '#c0392b';
   }
 
-  var MO_SHORT = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
+  var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   // ── Shared bar-chart builder ──────────────────────────────────────────
   function buildElecBarChart(monthly, blColor, curColor, unit, title) {
@@ -4855,20 +4848,7 @@ function rptPageGas(n, d) {
   function _sc(v) {
     return v >= 0 ? '#1e8449' : '#c0392b';
   }
-  var MO_SHORT = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
+  var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   function buildGasBarChart(monthly, blColor, curColor, unit, title) {
     if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#aaa;padding:4px 0">No monthly data</p>';
@@ -5111,20 +5091,7 @@ function rptPagePropane(n, d) {
   function _sc(v) {
     return v >= 0 ? '#1e8449' : '#c0392b';
   }
-  var MO_SHORT = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
+  var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   function buildPropBarChart(monthly, blColor, curColor, unit, title) {
     if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#aaa;padding:4px 0">No monthly data</p>';
@@ -5379,20 +5346,7 @@ function rptPageGasPropane(n, d) {
   function _sc(v) {
     return v >= 0 ? '#1e8449' : '#c0392b';
   }
-  var MO_SHORT = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
+  var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function _barChart(monthly, blColor, curColor, unit, title) {
     if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#aaa;padding:4px 0">No monthly data</p>';
     var allVals = [];
@@ -6620,7 +6574,7 @@ const REPORT_SECTIONS = [
   { key: 'cover', label: 'Cover Page', group: 'Main' },
   { key: 'financial', label: 'Financial Summary', group: 'Main' },
   { key: 'savingsPerformance', label: 'Savings Performance', group: 'Main' },
-  { key: 'euiBenchmarking', label: 'EUI Benchmarking', group: 'Main' },
+  { key: 'euiBenchmarking', label: 'Site EUI Benchmarking', group: 'Main' },
   { key: 'environmentalImpact', label: 'Environmental Impact', group: 'Main' },
   { key: 'observations', label: 'Observations & Recommendations', group: 'Main' },
   { key: 'approvedChanges', label: 'Approved Changes', group: 'Main' },
@@ -8628,10 +8582,10 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
   if (bottomQuartile.length > 0) {
     const names = bottomQuartile.map((d) => d.name).join(', ');
     obs.push(
-      'EUI Benchmark Alert: ' +
+      'Site EUI Benchmark Alert: ' +
         names +
         (bottomQuartile.length > 1 ? ' have' : ' has') +
-        ' EUI values in the bottom 25% nationally. A targeted operations review may identify optimization opportunities.',
+        ' Site EUI values in the bottom 25% nationally. A targeted operations review may identify optimization opportunities.',
     );
   }
 

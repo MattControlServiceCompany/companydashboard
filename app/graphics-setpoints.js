@@ -1221,7 +1221,7 @@ function egfxRefresh(projId) {
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📊 Annual Summary by Year</div>
             <div style="overflow-x:auto">
               <table class="dtbl" style="min-width:500px">
-                <thead><tr><th>Year</th><th style="text-align:right">kWh</th><th style="text-align:right">kW</th><th style="text-align:right">Gas Therms</th>${hasPropane ? '<th style="text-align:right">Propane Gal</th>' : ''}<th style="text-align:right">EUI kBtu/ft²</th><th style="text-align:right">Baseline EUI</th><th style="text-align:right">vs Baseline</th></tr></thead>
+                <thead><tr><th>Year</th><th style="text-align:right">kWh</th><th style="text-align:right">kW</th><th style="text-align:right">Gas Therms</th>${hasPropane ? '<th style="text-align:right">Propane Gal</th>' : ''}<th style="text-align:right">Site EUI kBtu/ft²</th><th style="text-align:right">Baseline Site EUI</th><th style="text-align:right">vs Baseline</th></tr></thead>
                 <tbody>
                   ${yrsToShow
                     .map((y) => {
@@ -1272,7 +1272,7 @@ function egfxRefresh(projId) {
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">🏢 Annual Summary by Building</div>
             <div style="overflow-x:auto">
               <table class="dtbl" style="min-width:600px;border-collapse:collapse">
-                <thead><tr style="background:var(--s1)"><th style="text-align:left;padding:8px 10px">Building</th><th style="padding:8px 6px">Year</th><th style="text-align:right;padding:8px 10px">kWh</th><th style="text-align:right;padding:8px 10px">kW</th><th style="text-align:right;padding:8px 10px">Gas Therms</th>${hasPropane ? '<th style="text-align:right;padding:8px 10px">Propane Gal</th>' : ''}<th style="text-align:right;padding:8px 10px">Cost</th><th style="text-align:right;padding:8px 10px">EUI</th></tr></thead>
+                <thead><tr style="background:var(--s1)"><th style="text-align:left;padding:8px 10px">Building</th><th style="padding:8px 6px">Year</th><th style="text-align:right;padding:8px 10px">kWh</th><th style="text-align:right;padding:8px 10px">kW</th><th style="text-align:right;padding:8px 10px">Gas Therms</th>${hasPropane ? '<th style="text-align:right;padding:8px 10px">Propane Gal</th>' : ''}<th style="text-align:right;padding:8px 10px">Cost</th><th style="text-align:right;padding:8px 10px">Site EUI</th></tr></thead>
                 <tbody>
                   ${(() => {
                     let rowIdx = 0;
@@ -1425,7 +1425,7 @@ function egfxRefresh(projId) {
             _yoyChartsToDraw.push({ cid: benchCanvasId, _benchRows: benchRows });
             const chartH = Math.max(120, benchRows.length * 40 + 40);
             return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
-              <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📊 EUI Benchmark — Your Buildings vs CBECS National Median</div>
+              <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📊 Site EUI Benchmark — Your Buildings vs CBECS National Median</div>
               <div style="font-size:10px;color:var(--text3);margin-bottom:8px">kBtu/ft²/yr · rolling 12-month data · buildings without sqft are excluded</div>
               <div style="position:relative;height:${chartH}px"><canvas id="${benchCanvasId}"></canvas></div>
             </div>`;
@@ -1513,8 +1513,8 @@ function egfxRefresh(projId) {
                     <th style="text-align:left">Building</th>
                     <th style="text-align:left">Type</th>
                     <th style="text-align:right">Sqft</th>
-                    <th style="text-align:right">Baseline EUI</th>
-                    <th style="text-align:right">Current EUI</th>
+                    <th style="text-align:right">Baseline Site EUI</th>
+                    <th style="text-align:right">Current Site EUI</th>
                     <th style="text-align:right">CBECS Median</th>
                     <th style="text-align:right">vs CBECS</th>
                     <th style="text-align:center">Percentile</th>
@@ -1556,10 +1556,10 @@ function egfxRefresh(projId) {
                 bRows.length > 1
                   ? `<div style="margin-top:12px;font-size:10px;color:var(--text3)">
                 <strong style="color:var(--text2)">Key:</strong>
-                EUI = kBtu/ft²/yr · CBECS = DOE Commercial Buildings Energy Consumption Survey national median ·
+                Site EUI = kBtu/ft²/yr (energy at the meter) · CBECS = DOE Commercial Buildings Energy Consumption Survey national median ·
                 EnergyStar = Score 75 threshold (minimum for certification) ·
                 Percentile = estimated position in CBECS distribution ·
-                $/ft² = annual energy cost per square foot · Trend = rolling 12-month EUI vs baseline EUI
+                $/ft² = annual energy cost per square foot · Trend = rolling 12-month Site EUI vs baseline Site EUI
               </div>`
                   : ''
               }

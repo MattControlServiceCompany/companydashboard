@@ -117,6 +117,9 @@ function _showPreview(config, pagesHTML) {
 
   // Initialize inspector listener (idempotent — only binds once)
   _rptInitInspector();
+
+  // Populate page number footers now that pages are in the DOM
+  _updatePageNumbers();
 }
 
 function _rebuildSidebar() {
