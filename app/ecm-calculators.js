@@ -1363,6 +1363,920 @@ const ECM_TEMPLATES = {
       };
     },
   },
+
+  /* ── 9. PUMP VFD INSTALLATION ───────────────────────── */
+  pump_vfd: {
+    id: 'pump_vfd',
+    name: 'Pump VFD Installation',
+    category: 'Pumps',
+    description:
+      'Calculates energy savings from adding a variable frequency drive to a constant-speed pump. Uses the pump affinity law: power scales with the cube of speed ratio. BHP = (GPM × head_ft) / (3960 × pump_eff). Applicable to hot water, chilled water, condenser water, and domestic booster pumps.',
+    icon: '💧',
+    inputs: [
+      { id: 'gpm', label: 'Design Flow Rate', unit: 'GPM', type: 'number', default: 200, min: 1, max: 50000 },
+      { id: 'head_ft', label: 'System Head', unit: 'ft w.g.', type: 'number', default: 60, min: 1, max: 500 },
+      { id: 'pump_eff', label: 'Pump Efficiency', unit: '%', type: 'number', default: 72, min: 30, max: 92 },
+      { id: 'motor_eff', label: 'Motor Efficiency', unit: '%', type: 'number', default: 91, min: 70, max: 97 },
+      {
+        id: 'avg_speed_ratio',
+        label: 'Avg Speed Ratio After VFD',
+        unit: '0–1',
+        type: 'number',
+        default: 0.7,
+        min: 0.2,
+        max: 0.99,
+      },
+      {
+        id: 'op_hours',
+        label: 'Annual Operating Hours',
+        unit: 'hr/yr',
+        type: 'number',
+        default: 1800,
+        min: 100,
+        max: 8760,
+      },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      { id: 'install_cost', label: 'VFD Install Cost', unit: '$', type: 'number', default: 8000, min: 0, max: 500000 },
+    ],
+    outputs: [
+      {
+        id: 'bhp_design',
+        label: 'Design BHP',
+        unit: 'BHP',
+        formula: 'BHP = (GPM × head_ft) / (3960 × pump_eff)  [pump affinity law — 3960 is unit constant for GPM/ft/HP]',
+      },
+      { id: 'kw_design', label: 'Design kW', unit: 'kW', formula: 'kW = BHP × 0.746 / motor_eff' },
+      {
+        id: 'kwh_existing',
+        label: 'Existing Annual Energy',
+        unit: 'kWh/yr',
+        formula: 'kWh = kW_design × op_hours  (constant speed — pump runs at full power)',
+      },
+      {
+        id: 'kwh_new',
+        label: 'New Annual Energy (VFD)',
+        unit: 'kWh/yr',
+        formula: 'kWh = kW_design × avg_speed_ratio³ × op_hours  (cube law: power ∝ speed³)',
+      },
+      { id: 'savings_kwh', label: 'Annual kWh Savings', unit: 'kWh/yr', formula: 'savings = kwh_existing − kwh_new' },
+      { id: 'annual_savings_dollar', label: 'Annual Cost Savings', unit: '$/yr', formula: 'savings_kwh × elec_rate' },
+      { id: 'simple_payback', label: 'Simple Payback', unit: 'years', formula: 'install_cost / annual_cost_savings' },
+    ],
+    calculate(inp) {
+      const pe = inp.pump_eff / 100;
+      const me = inp.motor_eff / 100;
+      const sr = inp.avg_speed_ratio;
+      const bhp_design = (inp.gpm * inp.head_ft) / (3960 * pe);
+      const kw_design = (bhp_design * 0.746) / me;
+      const kwh_existing = kw_design * inp.op_hours;
+      const kwh_new = kw_design * Math.pow(sr, 3) * inp.op_hours;
+      const savings_kwh = kwh_existing - kwh_new;
+      const annual_savings_dollar = savings_kwh * inp.elec_rate;
+      const simple_payback = annual_savings_dollar > 0 ? inp.install_cost / annual_savings_dollar : Infinity;
+      return {
+        bhp_design: Math.round(bhp_design * 100) / 100,
+        kw_design: Math.round(kw_design * 100) / 100,
+        kwh_existing: Math.round(kwh_existing),
+        kwh_new: Math.round(kwh_new),
+        savings_kwh: Math.round(savings_kwh),
+        annual_savings_dollar: Math.round(annual_savings_dollar),
+        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
+      };
+    },
+  },
+
+  /* ── 10. PREMIUM EFFICIENCY MOTOR ───────────────────── */
+  motor_premium: {
+    id: 'motor_premium',
+    name: 'Premium Efficiency Motor',
+    category: 'Motors & Drives',
+    description:
+      'Calculates energy savings from replacing a standard-efficiency motor with a NEMA Premium (IE3) motor. Savings formula: HP × 0.746 × load_factor × hours × (1/eff_old − 1/eff_new) × rate. Supports full-replacement and incremental-cost payback (premium vs. standard motor at failure).',
+    icon: '⚙️',
+    inputs: [
+      { id: 'hp', label: 'Motor Horsepower', unit: 'HP', type: 'number', default: 20, min: 0.5, max: 1000 },
+      {
+        id: 'load_factor',
+        label: 'Load Factor (fraction of nameplate HP)',
+        unit: '0–1',
+        type: 'number',
+        default: 0.85,
+        min: 0.1,
+        max: 1.0,
+      },
+      { id: 'eff_old', label: 'Existing Motor Efficiency', unit: '%', type: 'number', default: 91.0, min: 60, max: 97 },
+      {
+        id: 'eff_new',
+        label: 'NEMA Premium Motor Efficiency',
+        unit: '%',
+        type: 'number',
+        default: 93.0,
+        min: 70,
+        max: 99,
+      },
+      {
+        id: 'op_hours',
+        label: 'Annual Operating Hours',
+        unit: 'hr/yr',
+        type: 'number',
+        default: 4380,
+        min: 100,
+        max: 8760,
+      },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      {
+        id: 'total_cost',
+        label: 'Total Replacement Cost',
+        unit: '$',
+        type: 'number',
+        default: 1000,
+        min: 0,
+        max: 500000,
+      },
+      {
+        id: 'incr_cost',
+        label: 'Incremental Cost (premium vs. standard at failure)',
+        unit: '$',
+        type: 'number',
+        default: 200,
+        min: 0,
+        max: 50000,
+      },
+    ],
+    outputs: [
+      { id: 'shaft_hp', label: 'Shaft HP', unit: 'HP', formula: 'shaft_hp = nameplate_HP × load_factor' },
+      { id: 'kw_old', label: 'Existing Motor kW', unit: 'kW', formula: 'kW = shaft_hp × 0.746 / eff_old' },
+      { id: 'kw_new', label: 'New Motor kW', unit: 'kW', formula: 'kW = shaft_hp × 0.746 / eff_new' },
+      {
+        id: 'savings_kwh',
+        label: 'Annual kWh Savings',
+        unit: 'kWh/yr',
+        formula: '(kW_old − kW_new) × op_hours  — same shaft load, fewer input watts',
+      },
+      { id: 'annual_savings_dollar', label: 'Annual Cost Savings', unit: '$/yr', formula: 'savings_kwh × elec_rate' },
+      {
+        id: 'payback_full',
+        label: 'Payback — Full Cost',
+        unit: 'years',
+        formula: 'total_cost / annual_savings_dollar',
+      },
+      {
+        id: 'payback_incr',
+        label: 'Payback — Incremental Cost',
+        unit: 'years',
+        formula:
+          'incr_cost / annual_savings_dollar  (motor replaced anyway at failure — only the premium delta matters)',
+      },
+    ],
+    calculate(inp) {
+      const eo = inp.eff_old / 100;
+      const en = inp.eff_new / 100;
+      const shaft_hp = inp.hp * inp.load_factor;
+      const kw_old = (shaft_hp * 0.746) / eo;
+      const kw_new = (shaft_hp * 0.746) / en;
+      const savings_kwh = (kw_old - kw_new) * inp.op_hours;
+      const annual_savings_dollar = savings_kwh * inp.elec_rate;
+      const payback_full = annual_savings_dollar > 0 ? inp.total_cost / annual_savings_dollar : Infinity;
+      const payback_incr = annual_savings_dollar > 0 ? inp.incr_cost / annual_savings_dollar : Infinity;
+      return {
+        shaft_hp: Math.round(shaft_hp * 100) / 100,
+        kw_old: Math.round(kw_old * 1000) / 1000,
+        kw_new: Math.round(kw_new * 1000) / 1000,
+        savings_kwh: Math.round(savings_kwh),
+        annual_savings_dollar: Math.round(annual_savings_dollar),
+        payback_full: payback_full === Infinity ? null : Math.round(payback_full * 10) / 10,
+        payback_incr: payback_incr === Infinity ? null : Math.round(payback_incr * 10) / 10,
+      };
+    },
+  },
+
+  /* ── 11. DEMAND CONTROLLED VENTILATION (DCV) ─────────── */
+  dcv: {
+    id: 'dcv',
+    name: 'Demand Controlled Ventilation',
+    category: 'HVAC Controls',
+    description:
+      'Estimates heating and cooling savings from CO2-based DCV. OA is reduced proportionally when occupancy falls below design. Based on ASHRAE 62.1: Vbz = (Rp × people) + (Ra × area). Only the per-person OA component varies with CO2/occupancy — the area component is always required.',
+    icon: '🌬️',
+    inputs: [
+      {
+        id: 'oa_cfm_design',
+        label: 'Design OA CFM (full occupancy)',
+        unit: 'CFM',
+        type: 'number',
+        default: 2290,
+        min: 50,
+        max: 100000,
+      },
+      {
+        id: 'per_person_frac',
+        label: 'Per-Person OA Fraction of Total OA',
+        unit: '0–1',
+        type: 'number',
+        default: 0.76,
+        min: 0.1,
+        max: 1.0,
+      },
+      {
+        id: 'avg_occ_frac',
+        label: 'Avg Occupancy During Occupied Hours',
+        unit: '0–1',
+        type: 'number',
+        default: 0.65,
+        min: 0.05,
+        max: 1.0,
+      },
+      {
+        id: 'heat_hours',
+        label: 'Occupied Heating Season Hours',
+        unit: 'hr/yr',
+        type: 'number',
+        default: 1000,
+        min: 0,
+        max: 4000,
+      },
+      {
+        id: 'avg_dt_heat',
+        label: 'Avg Heating ΔT (indoor − outdoor)',
+        unit: '°F',
+        type: 'number',
+        default: 35,
+        min: 5,
+        max: 80,
+      },
+      { id: 'boiler_afue', label: 'Boiler AFUE', unit: '%', type: 'number', default: 82, min: 60, max: 99 },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
+      {
+        id: 'cool_hours',
+        label: 'Occupied Cooling Season Hours',
+        unit: 'hr/yr',
+        type: 'number',
+        default: 600,
+        min: 0,
+        max: 3000,
+      },
+      {
+        id: 'avg_dt_cool',
+        label: 'Avg Cooling ΔT (outdoor − indoor)',
+        unit: '°F',
+        type: 'number',
+        default: 10,
+        min: 0,
+        max: 40,
+      },
+      { id: 'chiller_cop', label: 'Cooling System COP', unit: 'COP', type: 'number', default: 3.5, min: 1, max: 8 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      {
+        id: 'install_cost',
+        label: 'CO2 Sensor Install Cost',
+        unit: '$',
+        type: 'number',
+        default: 3750,
+        min: 0,
+        max: 500000,
+      },
+    ],
+    outputs: [
+      {
+        id: 'oa_reduction_pct',
+        label: 'Avg OA Reduction',
+        unit: '%',
+        formula: 'per_person_frac × (1 − avg_occ_frac)  — only per-person component varies with CO2',
+      },
+      { id: 'cfm_saved', label: 'Avg CFM Reduced', unit: 'CFM', formula: 'oa_cfm_design × oa_reduction_frac' },
+      {
+        id: 'therms_saved',
+        label: 'Heating Therms Saved',
+        unit: 'therms/yr',
+        formula: '1.08 × cfm_saved × avg_dt_heat × heat_hours / (100,000 × AFUE)',
+      },
+      { id: 'gas_savings_dollar', label: 'Heating Cost Savings', unit: '$/yr', formula: 'therms_saved × gas_rate' },
+      {
+        id: 'cool_kwh_saved',
+        label: 'Cooling kWh Saved',
+        unit: 'kWh/yr',
+        formula: '1.08 × cfm_saved × avg_dt_cool × cool_hours / (COP × 3,412)',
+      },
+      { id: 'cool_savings_dollar', label: 'Cooling Cost Savings', unit: '$/yr', formula: 'cool_kwh_saved × elec_rate' },
+      {
+        id: 'total_savings_dollar',
+        label: 'Total Annual Savings',
+        unit: '$/yr',
+        formula: 'gas_savings + cooling_savings',
+      },
+      { id: 'simple_payback', label: 'Simple Payback', unit: 'years', formula: 'install_cost / total_annual_savings' },
+    ],
+    calculate(inp) {
+      const afue = inp.boiler_afue / 100;
+      const avgOaReduction = inp.per_person_frac * (1 - inp.avg_occ_frac);
+      const cfm_saved = inp.oa_cfm_design * avgOaReduction;
+      const heat_btu = 1.08 * cfm_saved * inp.avg_dt_heat * inp.heat_hours;
+      const therms_saved = heat_btu / (100000 * afue);
+      const gas_savings_dollar = therms_saved * inp.gas_rate;
+      const cool_btu = 1.08 * cfm_saved * inp.avg_dt_cool * inp.cool_hours;
+      const cool_kwh_saved = cool_btu / (inp.chiller_cop * 3412);
+      const cool_savings_dollar = cool_kwh_saved * inp.elec_rate;
+      const total_savings_dollar = gas_savings_dollar + cool_savings_dollar;
+      const simple_payback = total_savings_dollar > 0 ? inp.install_cost / total_savings_dollar : Infinity;
+      return {
+        oa_reduction_pct: Math.round(avgOaReduction * 1000) / 10,
+        cfm_saved: Math.round(cfm_saved),
+        therms_saved: Math.round(therms_saved),
+        gas_savings_dollar: Math.round(gas_savings_dollar),
+        cool_kwh_saved: Math.round(cool_kwh_saved),
+        cool_savings_dollar: Math.round(cool_savings_dollar),
+        total_savings_dollar: Math.round(total_savings_dollar),
+        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
+      };
+    },
+  },
+
+  /* ── 12. VAV REHEAT OPTIMIZATION ────────────────────── */
+  vav_reheat: {
+    id: 'vav_reheat',
+    name: 'VAV Reheat Optimization',
+    category: 'HVAC Controls',
+    description:
+      'Estimates savings from reducing simultaneous heating and cooling in VAV systems via two measures: (1) Supply Air Temperature (SAT) reset — raise SAT during mild weather so reheat zones need less heat while the AHU cools less air; (2) Minimum airflow setpoint reduction — per ASHRAE Guideline 36.',
+    icon: '🔁',
+    inputs: [
+      {
+        id: 'system_cfm',
+        label: 'Total System CFM',
+        unit: 'CFM',
+        type: 'number',
+        default: 20000,
+        min: 500,
+        max: 500000,
+      },
+      {
+        id: 'pct_zones_heat',
+        label: '% Zones in Simultaneous Reheat',
+        unit: '%',
+        type: 'number',
+        default: 40,
+        min: 5,
+        max: 100,
+      },
+      {
+        id: 'avg_dt_reheat',
+        label: 'Avg Reheat Reduction from SAT Reset',
+        unit: '°F',
+        type: 'number',
+        default: 8,
+        min: 1,
+        max: 20,
+      },
+      {
+        id: 'season_hours',
+        label: 'Simultaneous H/C Hours per Year',
+        unit: 'hr/yr',
+        type: 'number',
+        default: 1000,
+        min: 0,
+        max: 3000,
+      },
+      {
+        id: 'reheat_type',
+        label: 'Reheat Energy Source',
+        unit: '',
+        type: 'select',
+        options: [
+          { value: 'gas', label: 'Gas hot water reheat' },
+          { value: 'electric', label: 'Electric resistance reheat' },
+        ],
+        default: 'gas',
+      },
+      {
+        id: 'boiler_afue',
+        label: 'Boiler AFUE (gas reheat only)',
+        unit: '%',
+        type: 'number',
+        default: 82,
+        min: 60,
+        max: 99,
+      },
+      { id: 'cooling_cop', label: 'Cooling System COP', unit: 'COP', type: 'number', default: 3.5, min: 1, max: 8 },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      {
+        id: 'min_flow_old',
+        label: 'Current Min Airflow Setpoint',
+        unit: '%',
+        type: 'number',
+        default: 35,
+        min: 0,
+        max: 100,
+      },
+      {
+        id: 'min_flow_new',
+        label: 'Proposed Min Airflow Setpoint',
+        unit: '%',
+        type: 'number',
+        default: 15,
+        min: 0,
+        max: 100,
+      },
+      {
+        id: 'fan_kw_design',
+        label: 'Fan Motor kW at Design CFM',
+        unit: 'kW',
+        type: 'number',
+        default: 15,
+        min: 0.5,
+        max: 1000,
+      },
+      {
+        id: 'unocc_hours',
+        label: 'Unoccupied Hours per Year',
+        unit: 'hr/yr',
+        type: 'number',
+        default: 2000,
+        min: 0,
+        max: 5000,
+      },
+      {
+        id: 'install_cost',
+        label: 'Controls Install Cost',
+        unit: '$',
+        type: 'number',
+        default: 5000,
+        min: 0,
+        max: 500000,
+      },
+    ],
+    outputs: [
+      {
+        id: 'reheat_saved_qty',
+        label: 'Reheat Savings (therms or kWh)',
+        unit: 'therms or kWh/yr',
+        formula: '1.08 × (system_cfm × pct_zones) × avg_dT × season_hours → ÷ (100,000×AFUE) gas, ÷ 3412 electric',
+      },
+      {
+        id: 'reheat_savings_dollar',
+        label: 'Reheat Energy Cost Savings',
+        unit: '$/yr',
+        formula: 'reheat_qty × gas_rate or elec_rate',
+      },
+      {
+        id: 'cool_kwh_saved',
+        label: 'Cooling kWh Saved (SAT reset)',
+        unit: 'kWh/yr',
+        formula:
+          '1.08 × system_cfm × avg_dT × season_hours × 0.30 / (COP × 3,412)  — 30% of airflow benefits from SAT reset',
+      },
+      {
+        id: 'fan_kwh_saved',
+        label: 'Fan kWh Saved (min flow)',
+        unit: 'kWh/yr',
+        formula: 'fan_kW × (min_old_ratio³ − min_new_ratio³) × unocc_hours  — cube law on airflow fraction',
+      },
+      {
+        id: 'total_savings_dollar',
+        label: 'Total Annual Savings',
+        unit: '$/yr',
+        formula: 'reheat_cost + cooling_cost + fan_cost',
+      },
+      { id: 'simple_payback', label: 'Simple Payback', unit: 'years', formula: 'install_cost / total_annual_savings' },
+    ],
+    calculate(inp) {
+      const pct = inp.pct_zones_heat / 100;
+      const afue = inp.boiler_afue / 100;
+      const mfOld = inp.min_flow_old / 100;
+      const mfNew = inp.min_flow_new / 100;
+      const isElec = inp.reheat_type === 'electric';
+      const zones_cfm = inp.system_cfm * pct;
+      const reheat_btu_total = 1.08 * zones_cfm * inp.avg_dt_reheat * inp.season_hours;
+      let reheat_saved_qty, reheat_savings_dollar;
+      if (isElec) {
+        reheat_saved_qty = Math.round(reheat_btu_total / 3412);
+        reheat_savings_dollar = Math.round(reheat_saved_qty * inp.elec_rate);
+      } else {
+        reheat_saved_qty = Math.round(reheat_btu_total / (100000 * afue));
+        reheat_savings_dollar = Math.round(reheat_saved_qty * inp.gas_rate);
+      }
+      const cool_btu = 1.08 * inp.system_cfm * inp.avg_dt_reheat * inp.season_hours * 0.3;
+      const cool_kwh_saved = Math.round(cool_btu / (inp.cooling_cop * 3412));
+      const cool_dollar = Math.round(cool_kwh_saved * inp.elec_rate);
+      const fan_kwh_saved = Math.max(
+        0,
+        Math.round(inp.fan_kw_design * (Math.pow(mfOld, 3) - Math.pow(mfNew, 3)) * inp.unocc_hours),
+      );
+      const fan_dollar = Math.round(fan_kwh_saved * inp.elec_rate);
+      const total_savings_dollar = reheat_savings_dollar + cool_dollar + fan_dollar;
+      const simple_payback = total_savings_dollar > 0 ? inp.install_cost / total_savings_dollar : Infinity;
+      return {
+        reheat_saved_qty: reheat_saved_qty,
+        reheat_savings_dollar: reheat_savings_dollar,
+        cool_kwh_saved: cool_kwh_saved,
+        fan_kwh_saved: fan_kwh_saved,
+        total_savings_dollar: total_savings_dollar,
+        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
+      };
+    },
+  },
+
+  /* ── 13. HOT WATER BOILER REPLACEMENT ───────────────── */
+  boiler_replacement: {
+    id: 'boiler_replacement',
+    name: 'Hot Water Boiler Replacement',
+    category: 'HVAC Equipment',
+    description:
+      'Calculates gas savings from replacing an aging hot water boiler with a high-efficiency condensing unit. Uses HDD-based annual load: peak_load × HDD × 24 / design_ΔT. Includes standby loss adjustment for cast iron boilers (+10%) vs. standard (+3%). Supports full and incremental (end-of-life) payback.',
+    icon: '🔥',
+    inputs: [
+      {
+        id: 'boiler_cap_btuh',
+        label: 'Existing Boiler Input Capacity',
+        unit: 'Btu/hr',
+        type: 'number',
+        default: 1000000,
+        min: 10000,
+        max: 50000000,
+      },
+      { id: 'eff_old', label: 'Existing Boiler AFUE', unit: '%', type: 'number', default: 78, min: 60, max: 99 },
+      { id: 'eff_new', label: 'New Boiler AFUE', unit: '%', type: 'number', default: 95, min: 60, max: 99 },
+      {
+        id: 'hdd',
+        label: 'Annual Heating Degree Days',
+        unit: 'HDD',
+        type: 'number',
+        default: 5000,
+        min: 500,
+        max: 12000,
+      },
+      {
+        id: 'design_delta_t',
+        label: 'Design ΔT (indoor − outdoor)',
+        unit: '°F',
+        type: 'number',
+        default: 75,
+        min: 30,
+        max: 120,
+      },
+      {
+        id: 'oversize_factor',
+        label: 'Boiler Oversizing Factor',
+        unit: '0–1',
+        type: 'number',
+        default: 0.85,
+        min: 0.5,
+        max: 1.0,
+      },
+      {
+        id: 'boiler_type',
+        label: 'Existing Boiler Type',
+        unit: '',
+        type: 'select',
+        options: [
+          { value: 'cast_iron', label: 'Cast iron / pre-1990 (+10% standby loss adjustment)' },
+          { value: 'standard', label: 'Standard gas boiler (+3% standby adjustment)' },
+        ],
+        default: 'cast_iron',
+      },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
+      {
+        id: 'install_cost',
+        label: 'Boiler Install Cost (full)',
+        unit: '$',
+        type: 'number',
+        default: 55000,
+        min: 0,
+        max: 5000000,
+      },
+      {
+        id: 'incr_cost',
+        label: 'Incremental Cost vs. Standard',
+        unit: '$',
+        type: 'number',
+        default: 15000,
+        min: 0,
+        max: 2000000,
+      },
+    ],
+    outputs: [
+      {
+        id: 'annual_heating_mmbtu',
+        label: 'Annual Heating Load',
+        unit: 'MMBtu/yr',
+        formula: 'peak_load × HDD × 24 / design_ΔT  (peak = boiler_cap × oversize_factor)',
+      },
+      {
+        id: 'existing_therms',
+        label: 'Existing Therms/yr',
+        unit: 'therms/yr',
+        formula: 'annual_heating_MMBtu × 10 / eff_old',
+      },
+      { id: 'new_therms', label: 'New Therms/yr', unit: 'therms/yr', formula: 'annual_heating_MMBtu × 10 / eff_new' },
+      {
+        id: 'pct_savings',
+        label: 'Efficiency Improvement',
+        unit: '%',
+        formula: '1 − eff_old/eff_new  (before standby adjustment)',
+      },
+      {
+        id: 'therms_saved',
+        label: 'Total Therms Saved/yr',
+        unit: 'therms/yr',
+        formula: '(existing − new) × (1 + standby_factor)  — cast iron: +10%, standard: +3%',
+      },
+      { id: 'annual_savings_dollar', label: 'Annual Gas Savings', unit: '$/yr', formula: 'therms_saved × gas_rate' },
+      { id: 'payback_full', label: 'Payback — Full Cost', unit: 'years', formula: 'install_cost / annual_savings' },
+      {
+        id: 'payback_incr',
+        label: 'Payback — Incremental',
+        unit: 'years',
+        formula: 'incr_cost / annual_savings  (if replacing at end-of-life anyway — only delta to condensing matters)',
+      },
+    ],
+    calculate(inp) {
+      const eo = inp.eff_old / 100;
+      const en = inp.eff_new / 100;
+      const isCastIron = inp.boiler_type === 'cast_iron';
+      const standby_factor = isCastIron ? 0.1 : 0.03;
+      const peak_load_btu_hr = inp.boiler_cap_btuh * inp.oversize_factor;
+      const annual_heating_btu = (peak_load_btu_hr * inp.hdd * 24) / inp.design_delta_t;
+      const annual_heating_mmbtu = Math.round(annual_heating_btu / 1e6);
+      const existing_therms = annual_heating_btu / (100000 * eo);
+      const new_therms = annual_heating_btu / (100000 * en);
+      const therms_saved_base = existing_therms - new_therms;
+      const therms_saved = therms_saved_base * (1 + standby_factor);
+      const pct_savings = Math.round((1 - eo / en) * 1000) / 10;
+      const annual_savings_dollar = therms_saved * inp.gas_rate;
+      const payback_full = annual_savings_dollar > 0 ? inp.install_cost / annual_savings_dollar : Infinity;
+      const payback_incr = annual_savings_dollar > 0 ? inp.incr_cost / annual_savings_dollar : Infinity;
+      return {
+        annual_heating_mmbtu: annual_heating_mmbtu,
+        existing_therms: Math.round(existing_therms),
+        new_therms: Math.round(new_therms),
+        pct_savings: pct_savings,
+        therms_saved: Math.round(therms_saved),
+        annual_savings_dollar: Math.round(annual_savings_dollar),
+        payback_full: payback_full === Infinity ? null : Math.round(payback_full * 10) / 10,
+        payback_incr: payback_incr === Infinity ? null : Math.round(payback_incr * 10) / 10,
+      };
+    },
+  },
+
+  /* ── 14. WEATHERIZATION / BUILDING ENVELOPE ─────────── */
+  weatherization: {
+    id: 'weatherization',
+    name: 'Weatherization / Envelope',
+    category: 'Envelope',
+    description:
+      'Estimates heating and cooling savings from insulation, window, or air sealing upgrades. Formula: area × (1/R_old − 1/R_new) × HDD × 24 / (eff × fuel_conversion). Based on ECM #51-69 Weatherization Savings Calc methodology. Cooling: same ΔU applied to CDD.',
+    icon: '🏠',
+    inputs: [
+      { id: 'area', label: 'Affected Assembly Area', unit: 'sf', type: 'number', default: 5000, min: 10, max: 1000000 },
+      { id: 'r_old', label: 'Existing R-Value', unit: 'R', type: 'number', default: 11, min: 1, max: 100 },
+      { id: 'r_new', label: 'Proposed R-Value', unit: 'R', type: 'number', default: 30, min: 1, max: 100 },
+      { id: 'hdd', label: 'Heating Degree Days', unit: 'HDD', type: 'number', default: 5000, min: 500, max: 12000 },
+      { id: 'cdd', label: 'Cooling Degree Days', unit: 'CDD', type: 'number', default: 1500, min: 0, max: 5000 },
+      { id: 'heat_eff', label: 'Heating System Efficiency', unit: '%', type: 'number', default: 82, min: 50, max: 100 },
+      {
+        id: 'heat_fuel',
+        label: 'Heating Fuel',
+        unit: '',
+        type: 'select',
+        options: [
+          { value: 'gas', label: 'Natural gas (therms)' },
+          { value: 'electric', label: 'Electric (kWh)' },
+        ],
+        default: 'gas',
+      },
+      { id: 'cooling_cop', label: 'Cooling System COP', unit: 'COP', type: 'number', default: 3.5, min: 1, max: 8 },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      { id: 'install_cost', label: 'Install Cost', unit: '$', type: 'number', default: 25000, min: 0, max: 5000000 },
+    ],
+    outputs: [
+      {
+        id: 'delta_u',
+        label: 'U-Value Improvement',
+        unit: 'Btu/hr·°F·sf',
+        formula: 'ΔU = 1/R_old − 1/R_new  (U-value is conductance; lower R = higher U = more heat loss)',
+      },
+      {
+        id: 'heat_qty',
+        label: 'Heating Energy Saved',
+        unit: 'therms or kWh/yr',
+        formula: 'area × ΔU × HDD × 24 → ÷ 100,000 for therms (gas), ÷ 3,412 for kWh (electric), both ÷ efficiency',
+      },
+      {
+        id: 'heat_savings_dollar',
+        label: 'Heating Cost Savings',
+        unit: '$/yr',
+        formula: 'heat_qty × rate (gas_rate for therms, elec_rate for kWh)',
+      },
+      {
+        id: 'cool_kwh_saved',
+        label: 'Cooling kWh Saved',
+        unit: 'kWh/yr',
+        formula: 'area × ΔU × CDD × 24 / (COP × 3,412)',
+      },
+      { id: 'cool_savings_dollar', label: 'Cooling Cost Savings', unit: '$/yr', formula: 'cool_kwh_saved × elec_rate' },
+      {
+        id: 'total_savings_dollar',
+        label: 'Total Annual Savings',
+        unit: '$/yr',
+        formula: 'heat_savings + cooling_savings',
+      },
+      { id: 'simple_payback', label: 'Simple Payback', unit: 'years', formula: 'install_cost / total_annual_savings' },
+    ],
+    calculate(inp) {
+      const he = inp.heat_eff / 100;
+      const isElecHeat = inp.heat_fuel === 'electric';
+      const delta_u = 1 / inp.r_old - 1 / inp.r_new;
+      const heat_btu_yr = delta_u * inp.area * inp.hdd * 24;
+      let heat_qty, heat_savings_dollar;
+      if (isElecHeat) {
+        heat_qty = Math.round(heat_btu_yr / (he * 3412));
+        heat_savings_dollar = Math.round(heat_qty * inp.elec_rate);
+      } else {
+        heat_qty = Math.round(heat_btu_yr / (100000 * he));
+        heat_savings_dollar = Math.round(heat_qty * inp.gas_rate);
+      }
+      const cool_btu_yr = delta_u * inp.area * inp.cdd * 24;
+      const cool_kwh_saved = Math.round(cool_btu_yr / (inp.cooling_cop * 3412));
+      const cool_savings_dollar = Math.round(cool_kwh_saved * inp.elec_rate);
+      const total_savings_dollar = heat_savings_dollar + cool_savings_dollar;
+      const simple_payback = total_savings_dollar > 0 ? inp.install_cost / total_savings_dollar : Infinity;
+      return {
+        delta_u: Math.round(delta_u * 10000) / 10000,
+        heat_qty: heat_qty,
+        heat_savings_dollar: heat_savings_dollar,
+        cool_kwh_saved: cool_kwh_saved,
+        cool_savings_dollar: cool_savings_dollar,
+        total_savings_dollar: total_savings_dollar,
+        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
+      };
+    },
+  },
+
+  /* ── 15. FAN WALL REPLACEMENT ───────────────────────── */
+  fan_wall: {
+    id: 'fan_wall',
+    name: 'Fan Wall Replacement',
+    category: 'HVAC Equipment',
+    description:
+      'Estimates energy savings from replacing a belt-drive centrifugal fan with an EC (electronically commutated) plug fan wall. EC fans eliminate belt drive losses and achieve 92–95% motor+drive efficiency. BHP = (CFM × SP) / (6356 × fan_eff × belt_eff). Cube law applied at average operating speed.',
+    icon: '💨',
+    inputs: [
+      {
+        id: 'cfm',
+        label: 'System Design Airflow',
+        unit: 'CFM',
+        type: 'number',
+        default: 20000,
+        min: 1000,
+        max: 500000,
+      },
+      {
+        id: 'static_pressure',
+        label: 'Total Static Pressure',
+        unit: 'in. w.g.',
+        type: 'number',
+        default: 2.5,
+        min: 0.1,
+        max: 10,
+      },
+      {
+        id: 'fan_eff_old',
+        label: 'Existing Fan Aerodynamic Efficiency',
+        unit: '%',
+        type: 'number',
+        default: 68,
+        min: 40,
+        max: 85,
+      },
+      { id: 'belt_eff', label: 'Belt Drive Efficiency', unit: '%', type: 'number', default: 94, min: 85, max: 99 },
+      {
+        id: 'motor_eff_old',
+        label: 'Existing Motor Efficiency',
+        unit: '%',
+        type: 'number',
+        default: 91,
+        min: 70,
+        max: 97,
+      },
+      {
+        id: 'fan_eff_new',
+        label: 'EC Fan Array Aerodynamic Efficiency',
+        unit: '%',
+        type: 'number',
+        default: 78,
+        min: 60,
+        max: 90,
+      },
+      {
+        id: 'motor_eff_new',
+        label: 'EC Motor+Drive Efficiency',
+        unit: '%',
+        type: 'number',
+        default: 93,
+        min: 80,
+        max: 97,
+      },
+      {
+        id: 'avg_speed_ratio',
+        label: 'Avg Operating Speed Ratio',
+        unit: '0–1',
+        type: 'number',
+        default: 0.75,
+        min: 0.2,
+        max: 1.0,
+      },
+      {
+        id: 'op_hours',
+        label: 'Annual Operating Hours',
+        unit: 'hr/yr',
+        type: 'number',
+        default: 3000,
+        min: 100,
+        max: 8760,
+      },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      {
+        id: 'install_cost',
+        label: 'Fan Wall Install Cost',
+        unit: '$',
+        type: 'number',
+        default: 45000,
+        min: 0,
+        max: 5000000,
+      },
+    ],
+    outputs: [
+      {
+        id: 'bhp_old',
+        label: 'Existing Fan BHP',
+        unit: 'BHP',
+        formula: 'BHP = (CFM × SP) / (6356 × fan_eff × belt_eff)  [6356 = unit constant for CFM/in.wg/HP]',
+      },
+      { id: 'kw_old_design', label: 'Existing kW at Design', unit: 'kW', formula: 'kW = BHP × 0.746 / motor_eff_old' },
+      {
+        id: 'bhp_new',
+        label: 'New EC Fan BHP',
+        unit: 'BHP',
+        formula: 'BHP = (CFM × SP) / (6356 × ec_fan_eff)  — no belt_eff term (direct drive)',
+      },
+      {
+        id: 'kw_new_design',
+        label: 'New kW at Design',
+        unit: 'kW',
+        formula: 'kW = BHP × 0.746 / ec_motor_eff  — EC motor+drive is 92–95%',
+      },
+      {
+        id: 'pct_improvement',
+        label: 'Efficiency Gain at Design',
+        unit: '%',
+        formula: '(kW_old − kW_new) / kW_old × 100',
+      },
+      {
+        id: 'savings_kwh',
+        label: 'Annual kWh Savings',
+        unit: 'kWh/yr',
+        formula: '(kW_old − kW_new) × avg_speed_ratio³ × op_hours  — cube law at avg operating speed',
+      },
+      { id: 'annual_savings_dollar', label: 'Annual Cost Savings', unit: '$/yr', formula: 'savings_kwh × elec_rate' },
+      {
+        id: 'simple_payback',
+        label: 'Simple Payback',
+        unit: 'years',
+        formula:
+          'install_cost / annual_savings  (note: energy-only payback typically 10–25 yrs; fan walls often justified by maintenance savings + AHU replacement decision)',
+      },
+    ],
+    calculate(inp) {
+      const feo = inp.fan_eff_old / 100;
+      const be = inp.belt_eff / 100;
+      const meo = inp.motor_eff_old / 100;
+      const fen = inp.fan_eff_new / 100;
+      const men = inp.motor_eff_new / 100;
+      const sr = inp.avg_speed_ratio;
+      const power_ratio = Math.pow(sr, 3);
+      const bhp_old = (inp.cfm * inp.static_pressure) / (6356 * feo * be);
+      const kw_old_design = (bhp_old * 0.746) / meo;
+      const bhp_new = (inp.cfm * inp.static_pressure) / (6356 * fen);
+      const kw_new_design = (bhp_new * 0.746) / men;
+      const kwh_old = kw_old_design * power_ratio * inp.op_hours;
+      const kwh_new = kw_new_design * power_ratio * inp.op_hours;
+      const savings_kwh = kwh_old - kwh_new;
+      const annual_savings_dollar = savings_kwh * inp.elec_rate;
+      const pct_improvement = kw_old_design > 0 ? ((kw_old_design - kw_new_design) / kw_old_design) * 100 : 0;
+      const simple_payback = annual_savings_dollar > 0 ? inp.install_cost / annual_savings_dollar : Infinity;
+      return {
+        bhp_old: Math.round(bhp_old * 100) / 100,
+        kw_old_design: Math.round(kw_old_design * 100) / 100,
+        bhp_new: Math.round(bhp_new * 100) / 100,
+        kw_new_design: Math.round(kw_new_design * 100) / 100,
+        pct_improvement: Math.round(pct_improvement * 10) / 10,
+        savings_kwh: Math.round(savings_kwh),
+        annual_savings_dollar: Math.round(annual_savings_dollar),
+        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
+      };
+    },
+  },
 };
 
 /* ─── Calculate API ──────────────────────────────────── */
@@ -1398,11 +2312,20 @@ function calculateEcm(templateId, inputs) {
  * @param {HTMLElement} container
  * @param {Function} onSelect — called with templateId when a card is clicked
  */
+// Global callback registry so onclick attributes can fire into the current context
+let _ecmPickerOnSelect = null;
+
+function _ecmPickerSelect(templateId) {
+  if (typeof _ecmPickerOnSelect === 'function') _ecmPickerOnSelect(templateId);
+}
+
 function renderEcmPicker(container, onSelect) {
+  _ecmPickerOnSelect = onSelect;
+
   const cards = Object.values(ECM_TEMPLATES)
     .map((t) => {
       return `
-      <button class="ecm-picker-card card" onclick="(${onSelect.toString()})('${t.id}')"
+      <button class="ecm-picker-card card" onclick="_ecmPickerSelect('${t.id}')"
         style="background:var(--s1);padding:18px;border:1px solid var(--border);cursor:pointer;text-align:left;
                transition:border-color .15s;border-radius:8px;width:100%;"
         onmouseenter="this.style.borderColor='var(--accent)'"
