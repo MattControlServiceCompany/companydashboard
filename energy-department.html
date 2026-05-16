@@ -1460,6 +1460,81 @@
       .settings-toggle input:checked ~ .toggle-knob {
         transform: translateX(20px);
       }
+
+      /* ── MOBILE RESPONSIVE (mirrors site-ui.css @media block) ── */
+      @media (max-width: 768px) {
+        .sidebar-toggle-btn {
+          display: flex;
+        }
+
+        .sidebar {
+          position: fixed;
+          top: 0;
+          left: 0;
+          bottom: 0;
+          z-index: 150;
+          width: 260px;
+          transform: translateX(-100%);
+          transition: transform 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+          padding-top: 60px;
+        }
+        .sidebar.drawer-open {
+          transform: translateX(0);
+        }
+
+        .app-wrap {
+          display: block;
+        }
+
+        .content {
+          padding: 16px;
+        }
+
+        /* Stack forms vertically */
+        .settings-row {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 8px;
+        }
+        .settings-select {
+          width: 100%;
+        }
+
+        /* Dept card grid single column */
+        .dept-grid {
+          grid-template-columns: 1fr;
+        }
+
+        /* Stats row 2-col on mobile */
+        .stats-row {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        /* Topbar overflow — hide verbose text at narrow widths */
+        .u-name,
+        .u-dept {
+          display: none;
+        }
+        .sync-btn {
+          display: none;
+        }
+        .topbar {
+          padding: 0 12px;
+        }
+        .brand-name {
+          font-size: 14px;
+        }
+
+        /* Dept tabs — touch scrolling */
+        .dept-nav {
+          -webkit-overflow-scrolling: touch;
+          scroll-snap-type: x mandatory;
+        }
+        .dept-tab {
+          scroll-snap-align: start;
+          padding: 10px 12px;
+        }
+      }
     </style>
 
     <!-- ═══════════════════════════════════════════════════
@@ -6589,6 +6664,14 @@
                 </button>
                 <button class="s-item" data-sidebar-id="ems" data-fb="energy.sidebar.ems" onclick="sv('ems', this)">
                   <span class="s-ico">📊</span>EMS Leads
+                </button>
+                <button
+                  class="s-item"
+                  data-sidebar-id="calculators"
+                  data-fb="energy.sidebar.calculators"
+                  onclick="sv('calculators', this)"
+                >
+                  <span class="s-ico">🧮</span>ECM Calculators
                 </button>
               </div>
             </div>
@@ -12091,9 +12174,35 @@
               window.sv = function (id, btn) {
                 _svOrig(id, btn);
                 if (id === 'ems') emsRenderAll();
+                if (id === 'calculators') {
+                  if (typeof initEcmCalculatorsView === 'function') initEcmCalculatorsView();
+                }
               };
             })();
           </script>
+          <!-- ECM CALCULATORS VIEW -->
+          <div id="view-calculators" class="view view-flex" data-ui-id="en-calculators" data-fb="energy.calculators">
+            <div
+              class="pg-hdr"
+              style="
+                flex-shrink: 0;
+                padding: 16px 20px 0;
+                border-bottom: 1px solid var(--border);
+                margin-bottom: 0;
+                padding-bottom: 14px;
+              "
+            >
+              <div>
+                <h1 class="pg-title">ECM <em>Calculator Library</em></h1>
+                <p class="pg-sub">
+                  Select a template to estimate energy savings from common HVAC and controls measures. Results include
+                  formula traces for transparency and reproducibility.
+                </p>
+              </div>
+            </div>
+            <div id="ecm-view-body" style="flex: 1; overflow-y: auto; min-height: 0"></div>
+          </div>
+
           <script>
             /* Synchronous view restore — runs before first paint to prevent flash.
                Sets the correct view active BEFORE DOMContentLoaded fires init(). */
@@ -13695,6 +13804,7 @@
     <script src="app/report-engine.js"></script>
     <script src="app/report-preview.js"></script>
     <script src="app/calculators.js"></script>
+    <script src="app/ecm-calculators.js"></script>
     <script src="app/graphics-setpoints.js"></script>
 
     <script src="app/site-functions.js"></script>
