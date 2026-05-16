@@ -8460,13 +8460,13 @@ function renderPerfPane(pane, m, bills, incl) {
   // ── Demand Analytics Charts ──
   if (_demAnalytics && _demAnalytics.months.length > 0) {
     requestAnimationFrame(() => {
-      drawDemandCostChart('demCostChart', _demAnalytics.months);
+      if (typeof drawDemandCostChart === 'function') drawDemandCostChart('demCostChart', _demAnalytics.months);
     });
     requestAnimationFrame(() => {
-      drawDemandTrendChart('demTrendChart', _demAnalytics.months);
+      if (typeof drawDemandTrendChart === 'function') drawDemandTrendChart('demTrendChart', _demAnalytics.months);
     });
     requestAnimationFrame(() => {
-      drawLoadFactorChart('demLFChart', _demAnalytics.months);
+      if (typeof drawLoadFactorChart === 'function') drawLoadFactorChart('demLFChart', _demAnalytics.months);
     });
   }
 }
@@ -8611,6 +8611,282 @@ function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, i
           ticks: { font: { size: 10 } },
           grid: { color: 'rgba(255,255,255,0.06)' },
           title: { display: true, text: yLabel, font: { size: 10 } },
+        },
+      },
+    },
+  });
+}
+
+/* ══════════════════════════════════════════
+   DEMAND ANALYTICS CHARTS
+   All three receive the `bills` array from
+   _demAnalytics.months — each element has:
+     label, demandKW, billedKW, facKW,
+     demandCost, facilitiesCost, energyCost,
+     fixedCost, loadFactor, normDays, kwh
+   ══════════════════════════════════════════ */
+
+function drawDemandCostChart(canvasId, bills) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  if (_maCharts[canvasId]) {
+    _maCharts[canvasId].destroy();
+  }
+
+  const labels = bills.map((b) => b.label);
+
+  // Stacked cost breakdown datasets
+  const datasets = [
+    {
+      label: 'Demand Charge',
+      data: bills.map((b) => +(b.demandCost || 0).toFixed(2)),
+      backgroundColor: 'rgba(100,160,255,0.80)',
+      borderColor: 'rgba(100,160,255,1)',
+      borderWidth: 1,
+      stack: 'cost',
+    },
+    {
+      label: 'Facilities Charge',
+      data: bills.map((b) => +(b.facilitiesCost || 0).toFixed(2)),
+      backgroundColor: 'rgba(139,92,246,0.75)',
+      borderColor: 'rgba(139,92,246,1)',
+      borderWidth: 1,
+      stack: 'cost',
+    },
+    {
+      label: 'Energy Charge',
+      data: bills.map((b) => +(b.energyCost || 0).toFixed(2)),
+      backgroundColor: 'rgba(0,212,170,0.72)',
+      borderColor: 'rgba(0,212,170,1)',
+      borderWidth: 1,
+      stack: 'cost',
+    },
+    {
+      label: 'Fixed Charges',
+      data: bills.map((b) => +(b.fixedCost || 0).toFixed(2)),
+      backgroundColor: 'rgba(245,158,11,0.72)',
+      borderColor: 'rgba(245,158,11,1)',
+      borderWidth: 1,
+      stack: 'cost',
+    },
+  ];
+
+  _maCharts[canvasId] = new Chart(canvas, {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          labels: { color: 'rgba(200,210,230,0.85)', font: { size: 10 }, boxWidth: 12, padding: 10 },
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const v = ctx.parsed.y;
+              if (v == null || v === 0) return null;
+              return (
+                ' ' +
+                ctx.dataset.label +
+                ': $' +
+                v.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+              );
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          stacked: true,
+          ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 10 }, maxRotation: 45 },
+          grid: { color: 'rgba(255,255,255,0.10)' },
+        },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          ticks: {
+            color: 'rgba(180,200,220,0.8)',
+            font: { size: 10 },
+            callback: (v) => '$' + v.toLocaleString('en-US', { maximumFractionDigits: 0 }),
+          },
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          title: { display: true, text: 'Cost ($)', color: 'rgba(160,185,210,0.8)', font: { size: 10 } },
+        },
+      },
+    },
+  });
+}
+
+function drawDemandTrendChart(canvasId, bills) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  if (_maCharts[canvasId]) {
+    _maCharts[canvasId].destroy();
+  }
+
+  const labels = bills.map((b) => b.label);
+  const hasActual = bills.some((b) => (b.demandKW || 0) > 0);
+  const hasBilled = bills.some((b) => (b.billedKW || 0) > 0);
+  const hasFac = bills.some((b) => (b.facKW || 0) > 0);
+
+  const datasets = [];
+
+  if (hasActual) {
+    datasets.push({
+      label: 'Actual kW',
+      data: bills.map((b) => (b.demandKW > 0 ? +b.demandKW.toFixed(1) : null)),
+      borderColor: 'rgba(100,160,255,0.9)',
+      backgroundColor: 'rgba(100,160,255,0.15)',
+      borderWidth: 2,
+      pointRadius: 3,
+      pointBackgroundColor: 'rgba(100,160,255,1)',
+      tension: 0.3,
+      fill: false,
+    });
+  }
+
+  if (hasBilled) {
+    datasets.push({
+      label: 'Billed kW',
+      data: bills.map((b) => (b.billedKW > 0 ? +b.billedKW.toFixed(1) : null)),
+      borderColor: 'rgba(245,158,11,0.9)',
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      borderDash: [5, 4],
+      pointRadius: 3,
+      pointBackgroundColor: 'rgba(245,158,11,1)',
+      tension: 0.3,
+      fill: false,
+    });
+  }
+
+  if (hasFac) {
+    datasets.push({
+      label: 'Facilities kW',
+      data: bills.map((b) => (b.facKW > 0 ? +b.facKW.toFixed(1) : null)),
+      borderColor: 'rgba(139,92,246,0.9)',
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      borderDash: [3, 3],
+      pointRadius: 3,
+      pointBackgroundColor: 'rgba(139,92,246,1)',
+      tension: 0.3,
+      fill: false,
+    });
+  }
+
+  _maCharts[canvasId] = new Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: datasets.length > 1,
+          position: 'top',
+          labels: { color: 'rgba(200,210,230,0.85)', font: { size: 10 }, boxWidth: 12, padding: 10 },
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const v = ctx.parsed.y;
+              if (v == null) return null;
+              return ' ' + ctx.dataset.label + ': ' + v.toFixed(1) + ' kW';
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 10 }, maxRotation: 45 },
+          grid: { color: 'rgba(255,255,255,0.10)' },
+        },
+        y: {
+          beginAtZero: false,
+          ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 10 } },
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          title: { display: true, text: 'kW', color: 'rgba(160,185,210,0.8)', font: { size: 10 } },
+        },
+      },
+    },
+  });
+}
+
+function drawLoadFactorChart(canvasId, bills) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  if (_maCharts[canvasId]) {
+    _maCharts[canvasId].destroy();
+  }
+
+  const labels = bills.map((b) => b.label);
+
+  // Load factor = kWh / (demandKW x 24 x days); already computed as b.loadFactor
+  // Color-code bars: green >0.5, yellow 0.3-0.5, red <0.3
+  const data = bills.map((b) => (b.loadFactor != null ? +b.loadFactor.toFixed(3) : null));
+  const colors = data.map((v) => {
+    if (v == null) return 'rgba(120,130,150,0.4)';
+    if (v >= 0.5) return 'rgba(0,212,170,0.80)';
+    if (v >= 0.3) return 'rgba(245,158,11,0.80)';
+    return 'rgba(239,68,68,0.80)';
+  });
+  const borderColors = colors.map((c) => c.replace('0.80)', '1)').replace('0.4)', '1)'));
+
+  _maCharts[canvasId] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Load Factor',
+          data,
+          backgroundColor: colors,
+          borderColor: borderColors,
+          borderWidth: 1,
+          borderRadius: 3,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const v = ctx.parsed.y;
+              if (v == null) return null;
+              const pct = (v * 100).toFixed(1) + '%';
+              const grade = v >= 0.5 ? 'Good' : v >= 0.3 ? 'Fair' : 'Poor';
+              return ' Load Factor: ' + v.toFixed(3) + ' (' + pct + ' - ' + grade + ')';
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 10 }, maxRotation: 45 },
+          grid: { color: 'rgba(255,255,255,0.10)' },
+        },
+        y: {
+          beginAtZero: true,
+          min: 0,
+          max: 1,
+          ticks: {
+            color: 'rgba(180,200,220,0.8)',
+            font: { size: 10 },
+            callback: (v) => (v * 100).toFixed(0) + '%',
+            stepSize: 0.1,
+          },
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          title: { display: true, text: 'Load Factor (0-1)', color: 'rgba(160,185,210,0.8)', font: { size: 10 } },
         },
       },
     },
