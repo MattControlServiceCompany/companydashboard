@@ -106,7 +106,17 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
     }
     if (!reportYMs.length) reportYMs = allPostYMs.slice(-3);
   } else {
-    reportYMs = allPostYMs.slice(-12);
+    // Annual report: filter to the target year from reportDateStr (YYYY-MM-DD).
+    // Fall back to the most recent 12 months if no date or no data for that year.
+    var _annualYear = reportDateStr ? parseInt(reportDateStr.split('-')[0]) : null;
+    if (_annualYear) {
+      var _yearFiltered = allPostYMs.filter(function (ym) {
+        return parseInt(ym.split('-')[0]) === _annualYear;
+      });
+      reportYMs = _yearFiltered.length ? _yearFiltered : allPostYMs.slice(-12);
+    } else {
+      reportYMs = allPostYMs.slice(-12);
+    }
   }
   const reportStart = reportYMs[0] || '';
   const reportEnd = reportYMs[reportYMs.length - 1] || '';
@@ -1012,11 +1022,12 @@ function generateReportHTML(data, selectedSections) {
     for (var _mpI = 0; _mpI < _mpBlocks.length; _mpI++) {
       var _mpTitle = _mpI === 0 ? 'Meter Performance — All Buildings' : 'Meter Performance (continued)';
       var _mpKey = _mpI === 0 ? 'meterPerformance' : 'meterPerformance-cont';
+      var _mpPageNum = pageNum++;
       pages.push(
         _tagSection(
-          rptPage(pageNum++, _mpTitle, _mpBlocks[_mpI], {
+          rptPage(_mpPageNum, _mpTitle, _mpBlocks[_mpI], {
             data: data,
-            label: 'Page ' + pageNum + ' — Meter Performance',
+            label: 'Page ' + _mpPageNum + ' — Meter Performance',
           }),
           _mpKey,
         ),
@@ -1085,7 +1096,7 @@ function closeReportOverlay() {
 // ── Stub page template functions (replaced by Tasks 6–17) ──
 function rptPageCover(n, d) {
   const $c = function (v) {
-    return '$' + Math.abs(Math.round(v)).toLocaleString();
+    return (v < 0 ? '-$' : '$') + Math.abs(Math.round(v)).toLocaleString();
   };
   const $p = function (v) {
     return v.toFixed(1) + '%';
@@ -1100,14 +1111,22 @@ function rptPageCover(n, d) {
   const periodTitle =
     d.period.type === 'quarterly' ? 'Q' + q + ' ' + (d.period.year || '') : (d.period.year || '') + ' Annual';
   const ahead = d.totals.savings - target;
+  const _periodWord = d.period.type === 'annual' ? 'annual' : 'quarterly';
   const aheadLabel =
-    ahead >= 0 ? $c(ahead) + ' ahead of quarterly projection' : $c(Math.abs(ahead)) + ' behind quarterly projection';
+    ahead >= 0
+      ? $c(ahead) + ' ahead of ' + _periodWord + ' projection'
+      : $c(Math.abs(ahead)) + ' behind ' + _periodWord + ' projection';
 
   // Building status counts
   const onTrack = d.buildings.filter(function (b) {
     return b.status === 'on_track';
   }).length;
-  const exceedLabel = onTrack + ' of ' + d.buildings.length + ' buildings exceeding expectations';
+  const exceedLabel =
+    pctOfTarget > 105
+      ? onTrack + ' of ' + d.buildings.length + ' buildings exceeding expectations'
+      : pctOfTarget >= 90
+        ? onTrack + ' of ' + d.buildings.length + ' buildings on track'
+        : onTrack + ' of ' + d.buildings.length + ' buildings need attention';
 
   // Narrative paragraph
   const contractYrLabel = 'Year ' + d.contract.currentYear + ' of ' + d.contract.years;
@@ -1140,7 +1159,7 @@ function rptPageCover(n, d) {
   const findings = [];
   // Top performer
   const sorted = d.buildings.slice().sort(function (a, b) {
-    return b.savingsPct - a.savingsPct;
+    return (b.savingsPct ?? 0) - (a.savingsPct ?? 0);
   });
   if (sorted.length) {
     const top = sorted[0];
@@ -1310,8 +1329,8 @@ function rptPageCover(n, d) {
   // Energy reduction %
   const energyRedPct = d.totals.kwhBl > 0 ? Math.round(((d.totals.kwhBl - d.totals.kwhCur) / d.totals.kwhBl) * 100) : 0;
 
-  // Building status grid cards (max 6)
-  const gridBldgs = d.buildings.slice(0, 6);
+  // Building status grid cards (all buildings)
+  const gridBldgs = d.buildings;
   const statusCards = gridBldgs
     .map(function (b) {
       const cardClass = b.status === 'on_track' ? 'rpt-ok' : b.status === 'near_target' ? 'rpt-warn' : '';
@@ -1347,12 +1366,6 @@ function rptPageCover(n, d) {
       );
     })
     .join('');
-  // Pad to 6 if fewer buildings
-  var padCards = '';
-  for (var pi = gridBldgs.length; pi < 6; pi++) {
-    padCards += '<div class="rpt-status-card" style="background:#f8f8f8;border-color:#e0e0e0;opacity:0.4"></div>';
-  }
-
   // Findings HTML
   const findingsHTML = findings
     .map(function (f) {
@@ -1464,7 +1477,6 @@ function rptPageCover(n, d) {
     '<div style="font-size:11px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Building Status</div>' +
     '<div style="display:flex;flex-wrap:wrap;gap:6px">' +
     statusCards +
-    padCards +
     '</div>' +
     '</div>' +
     // Key Findings
@@ -1989,6 +2001,8 @@ function rptPageFinancial(n, d) {
           $c(bl) +
           '</td><td class="rpt-n">' +
           $c(cur) +
+          '</td><td class="rpt-n">' +
+          $c(sav) +
           '</td></tr>';
       });
       var _tPct = _tBl > 0 ? ((_tSav / _tBl) * 100).toFixed(1) + '%' : '—';
@@ -1997,9 +2011,11 @@ function rptPageFinancial(n, d) {
         $c(_tBl) +
         '</td><td class="rpt-n">' +
         $c(_tCur) +
+        '</td><td class="rpt-n">' +
+        $c(_tSav) +
         '</td></tr>';
       return (
-        '<h2>Monthly Cost Breakdown</h2><table class="rpt-table" style="font-size:10px"><thead><tr><th>Month</th><th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th></tr></thead><tbody>' +
+        '<h2>Monthly Cost Breakdown</h2><table class="rpt-table" style="font-size:10px"><thead><tr><th>Month</th><th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">Savings $</th></tr></thead><tbody>' +
         _rows +
         '</tbody></table>'
       );
@@ -3926,16 +3942,11 @@ function rptPageBuildingSummary(n, d, b) {
   function _savColor(v) {
     return v >= 0 ? '#1e8449' : '#c0392b';
   }
-  function _savBg(v) {
-    return 'transparent';
-  }
   if (hasElec) {
     var kwhSaved = b.electric.kwhSaved || 0;
     var kwReduced = (b.electric.kwBl || 0) - (b.electric.kwCur || 0);
     iconItems +=
-      '<div style="flex:1;min-width:60px;text-align:center;background:' +
-      _savBg(kwhSaved) +
-      ';border-radius:2px;padding:5px 4px">' +
+      '<div style="flex:1;min-width:60px;text-align:center;background:transparent;border-radius:2px;padding:5px 4px">' +
       '<div style="font-size:16px;margin-bottom:1px">⚡</div>' +
       '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(kwhSaved) +
@@ -3944,9 +3955,7 @@ function rptPageBuildingSummary(n, d, b) {
       '</div>' +
       '<div style="font-size:10px;color:#000">kWh Saved</div>' +
       '</div>' +
-      '<div style="flex:1;min-width:60px;text-align:center;background:' +
-      _savBg(kwReduced) +
-      ';border-radius:2px;padding:5px 4px">' +
+      '<div style="flex:1;min-width:60px;text-align:center;background:transparent;border-radius:2px;padding:5px 4px">' +
       '<div style="font-size:16px;margin-bottom:1px">⬇️</div>' +
       '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(kwReduced) +
@@ -3959,9 +3968,7 @@ function rptPageBuildingSummary(n, d, b) {
   if (hasGas) {
     var thermsSaved = b.gas.thermsSaved || 0;
     iconItems +=
-      '<div style="flex:1;min-width:60px;text-align:center;background:' +
-      _savBg(thermsSaved) +
-      ';border-radius:2px;padding:5px 4px">' +
+      '<div style="flex:1;min-width:60px;text-align:center;background:transparent;border-radius:2px;padding:5px 4px">' +
       '<div style="font-size:16px;margin-bottom:1px">🔥</div>' +
       '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(thermsSaved) +
@@ -3974,9 +3981,7 @@ function rptPageBuildingSummary(n, d, b) {
   if (hasPropane) {
     var galSaved = b.propane.galSaved || 0;
     iconItems +=
-      '<div style="flex:1;min-width:60px;text-align:center;background:' +
-      _savBg(galSaved) +
-      ';border-radius:2px;padding:5px 4px">' +
+      '<div style="flex:1;min-width:60px;text-align:center;background:transparent;border-radius:2px;padding:5px 4px">' +
       '<div style="font-size:16px;margin-bottom:1px">⛽</div>' +
       '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(galSaved) +
@@ -3989,9 +3994,7 @@ function rptPageBuildingSummary(n, d, b) {
   // Always show $ savings
   var totalSaved = b.savings || 0;
   iconItems +=
-    '<div style="flex:1;min-width:60px;text-align:center;background:' +
-    _savBg(totalSaved) +
-    ';border-radius:2px;padding:5px 4px">' +
+    '<div style="flex:1;min-width:60px;text-align:center;background:transparent;border-radius:2px;padding:5px 4px">' +
     '<div style="font-size:16px;margin-bottom:1px">✅</div>' +
     '<div style="font-size:14px;font-weight:700;color:' +
     _savColor(totalSaved) +
@@ -4654,7 +4657,8 @@ function rptPageElectric(n, d) {
     for (var _mi = 0; _mi < 12; _mi++) {
       var _ym = _rptYear + '-' + String(_mi + 1).padStart(2, '0');
       var blKwh = (blMap[_mi] && blMap[_mi].kwh) || 0;
-      var blKw = (blMap[_mi] && (blMap[_mi].kw || blMap[_mi].kwPeak)) || 0;
+      var blKw =
+        (blMap[_mi] && (blMap[_mi].billedKW || blMap[_mi].demandKW || blMap[_mi].kw || blMap[_mi].kwPeak)) || 0;
       var curMo = curByMo[_mi];
       if (curMo) {
         // Reporting-period month: prefer the stored bl from the monthly entry
@@ -4944,7 +4948,7 @@ function rptPageGas(n, d) {
     });
     for (var _mi = 0; _mi < 12; _mi++) {
       var _ym = _gasRptYear + '-' + String(_mi + 1).padStart(2, '0');
-      var blTherms = (blMap[_mi] && (blMap[_mi].therms || blMap[_mi].usage)) || 0;
+      var blTherms = blMap[_mi]?.therms ?? 0;
       var curMo = curByMo[_mi];
       if (curMo) blTherms = curMo.bl || blTherms;
       thermsByMonth[_ym].bl += blTherms;
@@ -5187,7 +5191,7 @@ function rptPagePropane(n, d) {
     });
     for (var _pmi = 0; _pmi < 12; _pmi++) {
       var _pym2 = _propRptYear + '-' + String(_pmi + 1).padStart(2, '0');
-      var blGal = (blMap[_pmi] && (blMap[_pmi].gallons || blMap[_pmi].usage)) || 0;
+      var blGal = blMap[_pmi]?.gallons ?? 0;
       var curMo = curByMo[_pmi];
       if (curMo) blGal = curMo.bl || blGal;
       galByMonth[_pym2].bl += blGal;

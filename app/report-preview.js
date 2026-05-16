@@ -454,7 +454,7 @@ async function downloadReportPDF() {
       pageH = 792;
 
     for (var i = 0; i < visiblePages.length; i++) {
-      var el = visiblePages[i].querySelector('.rpt-pg') || visiblePages[i];
+      var el = visiblePages[i].querySelector('.rpt-page') || visiblePages[i];
       var canvas = await html2canvas(el, {
         scale: 2,
         useCORS: true,
