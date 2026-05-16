@@ -216,15 +216,44 @@ function updateHomeStats() {
     return d >= ws && d <= we;
   }).length;
   // Count projects with at least one meter that has a baseline period set
+  // Bug fix: old code checked m.baselineStart/m.baselineEnd which don't exist;
+  // the data model stores m.baseline.months array (multi-baseline: m.baselines)
   const baselineCount = projects.filter((p) => {
     const projBldgs = (utilityData[p.id] || {}).buildings || [];
-    return projBldgs.some((b) => (b.meters || []).some((m) => m.baselineStart && m.baselineEnd));
+    return projBldgs.some((b) =>
+      (b.meters || []).some((m) => m.baseline?.months?.length > 0 || (m.baselines && m.baselines.length > 0)),
+    );
   }).length;
   document.getElementById('h-base').textContent = baselineCount;
-  // Sum estimated savings/yr across active and in-progress projects
-  const totalSav = projects
+  // Sum estimated savings/yr by computing from meter-level savings (byCalMo).
+  // Bug fix: old code read p.savings from the project object which is always 0.
+  // Actual savings are computed by getMeterSavings() and never written back to p.savings.
+  let totalSav = 0;
+  projects
     .filter((p) => p.status === 'active' || p.status === 'in_progress')
-    .reduce((sum, p) => sum + (parseFloat(p.savings) || 0), 0);
+    .forEach((p) => {
+      const projBldgs = (utilityData[p.id] || {}).buildings || [];
+      projBldgs.forEach((b) => {
+        (b.meters || []).forEach((m) => {
+          if (m.baselineInclude === false) return;
+          if (!(m.baseline?.months?.length >= 3) && !(m.baselines && m.baselines.length > 0)) return;
+          const mbills = (m.bills || []).slice().sort((a, c) => {
+            const da = a.start ? new Date(a.start + 'T12:00:00') : 0;
+            const dc = c.start ? new Date(c.start + 'T12:00:00') : 0;
+            return da - dc;
+          });
+          const mincl = m.inclusive !== false;
+          try {
+            const savResult = getMeterSavings(m, mbills, mincl, p.id, b.id);
+            Object.values(savResult.byCalMo).forEach((v) => {
+              totalSav += v || 0;
+            });
+          } catch (e) {
+            /* skip meters that fail savings computation */
+          }
+        });
+      });
+    });
   document.getElementById('h-sav').textContent = '$' + Math.round(totalSav).toLocaleString();
 }
 
