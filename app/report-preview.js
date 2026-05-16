@@ -145,18 +145,31 @@ function _rebuildSidebar() {
   }
 
   // Recalculate accurate page numbers for each section key (visible pages only, in DOM order)
+  // Only record the FIRST visible page per section (not the last).
   var visNum = 0;
+  var _seenSectionForPageNum = {};
   for (var pi = 0; pi < pages.length; pi++) {
     var pgSk = pages[pi].getAttribute('data-section') || '';
     var pgBase = pgSk.replace(/-cont$/, '');
     if (pages[pi].style.display !== 'none') {
       visNum++;
-      if (pgBase && !pgSk.endsWith('-cont') && sectionPageMap[pgBase] && sectionPageMap[pgBase].pageNum === null) {
-        // shouldn't happen, but guard
-      }
-      if (pgBase && !pgSk.endsWith('-cont') && sectionPageMap[pgBase]) {
+      if (pgBase && !pgSk.endsWith('-cont') && sectionPageMap[pgBase] && !_seenSectionForPageNum[pgBase]) {
         sectionPageMap[pgBase].pageNum = visNum;
+        _seenSectionForPageNum[pgBase] = true;
       }
+    }
+  }
+
+  // Build dynamic appendix letter map: assign sequential letters (A, B, C…) only to
+  // appendix sections that were actually rendered (present in sectionPageMap), in
+  // REPORT_SECTIONS order. This mirrors what _nextAppLtr() did during generation so
+  // the sidebar label matches the letter shown inside the page body.
+  var _appLetterMap = {};
+  var _appCharCode = 65; // 'A'
+  for (var ai = 0; ai < REPORT_SECTIONS.length; ai++) {
+    var _aSec = REPORT_SECTIONS[ai];
+    if (_aSec.key.indexOf('appendix') === 0 && sectionPageMap[_aSec.key]) {
+      _appLetterMap[_aSec.key] = String.fromCharCode(_appCharCode++);
     }
   }
 
@@ -180,6 +193,14 @@ function _rebuildSidebar() {
     var info = sectionPageMap[sec.key];
     var isIncluded = !!info; // page was rendered for this section
     var isVisible = isIncluded && info.isVisible;
+
+    // For appendix sections, derive the label from the actual rendered letter.
+    var secLabel = sec.label;
+    if (sec.key.indexOf('appendix') === 0 && _appLetterMap[sec.key]) {
+      var _appLtr = _appLetterMap[sec.key];
+      // Replace the letter portion of the label (e.g. "Appendix A:" → "Appendix X:")
+      secLabel = sec.label.replace(/^Appendix\s+[A-Z]:/, 'Appendix ' + _appLtr + ':');
+    }
 
     if (isIncluded) {
       // Rendered section — show checkbox, label, page number, drag handle
@@ -211,7 +232,7 @@ function _rebuildSidebar() {
         'onclick="event.stopPropagation();_scrollToSection(\'' +
         sec.key +
         '\')">' +
-        sec.label +
+        secLabel +
         '</span>';
       if (isVisible && info.pageNum) {
         html += '<span style="font-size:9px;color:var(--text3);flex-shrink:0">p' + info.pageNum + '</span>';
@@ -225,7 +246,7 @@ function _rebuildSidebar() {
       html += '<span style="width:13px;height:13px;flex-shrink:0"></span>';
       html +=
         '<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-style:italic">' +
-        sec.label +
+        secLabel +
         '</span>';
       html += '<span style="font-size:9px;color:var(--text3);flex-shrink:0">—</span>';
       html += '</div>';
