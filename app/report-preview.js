@@ -521,3 +521,52 @@ function _saveReportToHistory(config, filename) {
   if (history.length > 20) history = history.slice(0, 20);
   Store.set(key, history);
 }
+
+// ── CROSS-WINDOW REFRESH (Issue 5) ──────────────────────────────────────────
+// Re-generates the report preview using the same config but fresh localStorage data.
+// Called manually via the "Refresh Report" toolbar button, or automatically when
+// the storage event fires because the popup window saved changes to en_projects.
+function refreshReportPreview() {
+  if (!_reportConfig) return;
+  var data = collectReportData(_reportConfig.projId, _reportConfig.buildingIds, null, _reportConfig.reportType);
+  if (!data) {
+    showToast('Could not refresh — check that buildings have data', 'error');
+    return;
+  }
+  // Preserve report options (annualize pollution, commodity toggles)
+  data.reportOptions = _reportData ? _reportData.reportOptions : {};
+  // Preserve period label for cumulative/current/custom types
+  if (
+    _reportConfig.reportType === 'cumulative' ||
+    _reportConfig.reportType === 'current' ||
+    _reportConfig.reportType === 'custom'
+  ) {
+    data.period = data.period || {};
+    data.period.label = _reportConfig.periodLabel;
+  }
+  _reportData = data;
+  var selectedSections = {};
+  REPORT_SECTIONS.forEach(function (sec) {
+    selectedSections[sec.key] = _reportConfig.sections.indexOf(sec.key) >= 0;
+  });
+  var pagesHTML = generateReportHTML(data, selectedSections);
+  _showPreview(_reportConfig, pagesHTML);
+  // Hide stale banner if visible
+  var banner = document.getElementById('rptStaleBanner');
+  if (banner) banner.style.display = 'none';
+  showToast('Report refreshed', 'success');
+}
+
+// Listen for localStorage changes made by the popup window.
+// storage events fire in OTHER windows when localStorage changes — not in the
+// same window that made the change — so this correctly detects popup saves.
+window.addEventListener('storage', function (e) {
+  if (e.key === 'en_projects' && _reportConfig && _reportConfig.projId) {
+    clearTimeout(window._rptAutoRefreshTimer);
+    window._rptAutoRefreshTimer = setTimeout(function () {
+      // Show stale banner; user can also click Refresh manually
+      var banner = document.getElementById('rptStaleBanner');
+      if (banner) banner.style.display = 'flex';
+    }, 500);
+  }
+});

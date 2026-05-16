@@ -692,8 +692,11 @@ function openDetail(id) {
   document.querySelector('.ptab.active')?.scrollTo({ top: 0, behavior: 'smooth' });
   window._activeProjId = id;
   const _dfltTab = sget('ch_defaultProjTab', 'dashboard');
-  if (!window._activeProjTab || _dfltTab !== 'last')
-    window._activeProjTab = _dfltTab === 'last' ? window._activeProjTab || 'dashboard' : _dfltTab;
+  if (_dfltTab === 'last') {
+    window._activeProjTab = window._activeProjTab || 'dashboard'; // fall back if no prior tab
+  } else {
+    window._activeProjTab = _dfltTab;
+  }
   saveProjSession();
 }
 

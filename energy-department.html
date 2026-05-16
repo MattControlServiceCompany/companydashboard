@@ -320,6 +320,20 @@
         animation: fadeUp 0.4s ease;
       }
 
+      /* ── POPUP MODE — suppress login flash and fade animation ── */
+      [data-popup-mode] #loginScreen {
+        display: none !important;
+      }
+      [data-popup-mode] #app {
+        display: flex !important;
+        opacity: 0;
+      }
+      [data-popup-mode] #app.visible {
+        opacity: 1;
+        transition: opacity 0.15s ease;
+        animation: none;
+      }
+
       /* ── TOPBAR ── */
       .topbar {
         flex-shrink: 0;
@@ -6360,6 +6374,13 @@
     crossorigin="anonymous"
   ></script>
   <body>
+    <script>
+      (function () {
+        if (new URLSearchParams(window.location.search).get('openProject')) {
+          document.documentElement.setAttribute('data-popup-mode', 'true');
+        }
+      })();
+    </script>
     <div id="loginScreen">
       <div class="login-card">
         <div class="login-logo">
@@ -13521,6 +13542,43 @@
           <span id="rptPreviewTitle" style="font-size: 14px; font-weight: 600; color: var(--text)"></span>
         </div>
         <div style="display: flex; align-items: center; gap: 8px">
+          <div
+            id="rptStaleBanner"
+            style="
+              display: none;
+              align-items: center;
+              gap: 8px;
+              padding: 4px 10px;
+              background: var(--warn, #f59e0b);
+              color: #000;
+              border-radius: 4px;
+              font-size: 12px;
+              font-weight: 600;
+            "
+          >
+            Data changed in popup —
+            <button
+              class="btn btn-sm"
+              style="
+                background: rgba(0, 0, 0, 0.15);
+                border: none;
+                color: #000;
+                font-size: 11px;
+                padding: 2px 8px;
+                cursor: pointer;
+              "
+              onclick="refreshReportPreview()"
+            >
+              Refresh now
+            </button>
+          </div>
+          <button
+            class="btn btn-ghost btn-sm"
+            onclick="refreshReportPreview()"
+            title="Re-generate report with latest data from the popup"
+          >
+            ↺ Refresh Report
+          </button>
           <button class="btn btn-ghost btn-sm" onclick="saveReportTemplate()">Save Template</button>
           <button
             id="rptInspectToggle"
@@ -13805,18 +13863,30 @@
         var projId = params.get('openProject');
         var tab = params.get('tab');
         var subTab = params.get('subTab');
-        if (projId) {
-          // Clean URL to avoid re-triggering
-          window.history.replaceState({}, '', window.location.pathname);
-          setTimeout(function () {
-            if (subTab === 'approved') window._docsSubTab = 'approved';
-            openDetail(projId);
-            if (tab) {
-              var btn = document.querySelector('.pdt[data-tab="' + tab + '"]');
-              sPTab(tab, btn || null);
-            }
-          }, 500);
+        if (!projId) return;
+        // Clean URL to avoid re-triggering on refresh
+        window.history.replaceState({}, '', window.location.pathname);
+
+        // Poll until projects array is populated (max 4s, retry every 100ms)
+        var attempts = 0;
+        var maxAttempts = 40;
+        function tryNavigate() {
+          attempts++;
+          if (typeof projects === 'undefined' || !projects.length) {
+            if (attempts < maxAttempts) setTimeout(tryNavigate, 100);
+            return;
+          }
+          if (subTab === 'approved') window._docsSubTab = 'approved';
+          openDetail(projId);
+          if (tab) {
+            var btn = document.querySelector('.pdt[data-tab="' + tab + '"]');
+            sPTab(tab, btn || null);
+          }
+          // Reveal app if in popup mode (opacity was set to 0 in CSS)
+          var app = document.getElementById('app');
+          if (app) app.style.opacity = '1';
         }
+        setTimeout(tryNavigate, 100);
       })();
     </script>
   </body>
