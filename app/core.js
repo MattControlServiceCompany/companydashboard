@@ -215,6 +215,17 @@ function updateHomeStats() {
     const d = new Date(t.due + 'T12:00:00');
     return d >= ws && d <= we;
   }).length;
+  // Count projects with at least one meter that has a baseline period set
+  const baselineCount = projects.filter((p) => {
+    const projBldgs = (utilityData[p.id] || {}).buildings || [];
+    return projBldgs.some((b) => (b.meters || []).some((m) => m.baselineStart && m.baselineEnd));
+  }).length;
+  document.getElementById('h-base').textContent = baselineCount;
+  // Sum estimated savings/yr across active and in-progress projects
+  const totalSav = projects
+    .filter((p) => p.status === 'active' || p.status === 'in_progress')
+    .reduce((sum, p) => sum + (parseFloat(p.savings) || 0), 0);
+  document.getElementById('h-sav').textContent = '$' + Math.round(totalSav).toLocaleString();
 }
 
 /* ── VIEW SWITCH ── */
