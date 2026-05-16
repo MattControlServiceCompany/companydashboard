@@ -901,7 +901,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
   const footerLabelHtml =
     data && data.period
       ? '<div style="text-align:center;font-size:10px;color:#000;padding:4px 0 2px;position:absolute;bottom:' +
-        (footerImgHtml ? '45px' : '8px') +
+        '45px' +
         ';left:0;right:0">' +
         (data.period.type === 'quarterly'
           ? 'Q' + (data.period.quarter || 1) + ' ' + (data.period.year || '') + ' Quarterly Report'
@@ -1144,7 +1144,9 @@ function rptPageCover(n, d) {
     d.buildings.length +
     ' buildings, the portfolio is ' +
     perfWord +
-    ' the quarterly savings target of <strong>' +
+    ' the ' +
+    _periodWord +
+    ' savings target of <strong>' +
     $c(target) +
     '</strong>, ' +
     'having achieved <strong>' +
@@ -2244,7 +2246,7 @@ function rptPageSavingsPerformance(n, d) {
     '<thead><tr style="text-align:center;white-space:normal;word-wrap:break-word;line-height:1.2">' +
     '<th style="width:12%">Year</th>' +
     '<th class="rpt-n" style="width:14%">kWh</th>' +
-    '<th class="rpt-n" style="width:10%">kW</th>' +
+    '<th class="rpt-n" style="width:10%">Peak kW</th>' +
     '<th class="rpt-n" style="width:12%">Therms</th>' +
     '<th class="rpt-n" style="width:12%">Propane<br>Gal</th>' +
     '<th class="rpt-n" style="width:14%">Cost</th>' +
@@ -2889,8 +2891,8 @@ function rptPageObservations(n, d) {
 
   // ── Next Quarter section ──
   const qNum = d.period ? d.period.quarter : null;
-  const isHeatingSeason = qNum === 1 || qNum === 4;
-  const seasonNote = isHeatingSeason
+  const inHeatingSeason = qNum === 1 || qNum === 4;
+  const seasonNote = inHeatingSeason
     ? 'As we move toward the cooling season, expect electric demand to increase. Monitor peak demand events and ensure economizer and scheduling programs are ready for summer operation.'
     : 'As we transition toward the heating season, verify heating setpoints and boiler/furnace scheduling are properly programmed. Confirm warm-weather setbacks are not lingering into fall.';
   const nextQPara =
@@ -3416,8 +3418,8 @@ function rptPageContractProjection(n, d) {
     '<div class="rpt-body">' +
     '<h2 contenteditable="true">Quarterly Targets</h2>' +
     qtTable +
-    '<h2 contenteditable="true">Target vs Actual — Q' +
-    q +
+    '<h2 contenteditable="true">' +
+    (d.period.type === 'annual' ? 'Annual vs Target' : 'Q' + q + ' vs Target') +
     '</h2>' +
     vsBox +
     '<h2 contenteditable="true">' +
@@ -3689,8 +3691,11 @@ function rptPageBuildingSummary(n, d, b) {
   // ── Bar chart builder ─────────────────────────────────────────────
   // blColor / curColor: CSS color strings
   // unit: string appended to tooltip / footer labels
-  function buildBarChart(monthly, blColor, curColor, unit) {
+  function buildBarChart(monthly, blColor, curColor, unit, title) {
     if (!monthly || !monthly.length) return '';
+    var titleHtml = title
+      ? '<div style="font-size:11px;font-weight:600;color:#333;margin-bottom:4px">' + title + '</div>'
+      : '';
     var allVals = [];
     monthly.forEach(function (mo) {
       allVals.push(mo.bl || 0, mo.cur || 0);
@@ -3755,6 +3760,7 @@ function rptPageBuildingSummary(n, d, b) {
       '</div>';
 
     return (
+      titleHtml +
       '<div style="display:flex;flex-wrap:nowrap;gap:2px;align-items:flex-end;padding:4px 0;overflow:hidden">' +
       bars +
       '</div>' +
@@ -4130,7 +4136,7 @@ function rptPageBuildingSummary(n, d, b) {
     '<table class="rpt-table" style="margin-bottom:10px">' +
     '<thead><tr>' +
     '<th>Commodity Type</th>' +
-    '<th class="rpt-n">Period End</th>' +
+    '<th class="rpt-n">Through</th>' +
     '<th class="rpt-n">Goal %</th>' +
     '<th class="rpt-n">Achieved %</th>' +
     '<th class="rpt-n">Achieved $</th>' +
@@ -4257,8 +4263,8 @@ function rptPageBuildingSummary(n, d, b) {
     _tTotalCost += totalCost;
     var hasData = kwh || therms || gal || water || totalCost;
     if (!hasData) continue;
-    var costPerKwh = kwh > 0 ? elecCost / kwh : 0;
-    blDataRows += '<tr><td>' + MO_ABBR[mi] + '</td>';
+    var costPerKwh = kwh > 0 ? enCost / kwh : 0;
+    blDataRows += '<tr><td>' + MO_SHORT[mi] + '</td>';
     if (_showElec) {
       blDataRows +=
         '<td class="rpt-n">' +
@@ -4812,7 +4818,7 @@ function rptPageElectric(n, d) {
     '<thead><tr>' +
     '<th>Building</th><th class="rpt-n">Baseline kWh</th><th class="rpt-n">Actual kWh</th>' +
     '<th class="rpt-n">Saved</th><th class="rpt-n">%</th>' +
-    '<th class="rpt-n">Baseline kW</th><th class="rpt-n">Actual kW</th>' +
+    '<th class="rpt-n">Baseline Peak kW</th><th class="rpt-n">Actual kW</th>' +
     '<th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">$ Saved</th>' +
     '</tr></thead>' +
     '<tbody>' +
@@ -5380,7 +5386,7 @@ function rptPageGasPropane(n, d) {
         'px;background:' +
         curColor +
         ';border-radius:2px 2px 0 0"></div></div><div style="font-size:9px;color:#000;margin-top:1px">' +
-        (moIdx >= 0 ? MO_SHORT[moIdx].slice(0, 3) : '?') +
+        (moIdx >= 0 ? MO_SHORT[moIdx] : '?') +
         '</div></div>';
     });
     return (
