@@ -732,6 +732,47 @@ function egfxRefresh(projId) {
   if (curEl) curEl.textContent = r12Eui > 0 ? r12Eui.toFixed(1) : '—';
   if (curSubEl) curSubEl.textContent = r12Eui > 0 ? 'kBtu/ft² · ' + r12Label : 'kBtu/ft²';
 
+  // Compute source EUI and estimated ENERGY STAR score from rolling 12-month data
+  // r12 entries have raw site units: kwh (kWh), gas (therms), propane (gallons)
+  const estarScoreEl = document.getElementById(`egfx-estarScore-${projId}`);
+  const estarScoreSubEl = document.getElementById(`egfx-estarScoreSub-${projId}`);
+  if (estarScoreEl && r12.length > 0 && sqft > 0) {
+    // Sum raw site fuel for the rolling 12 months
+    let r12Kwh = 0,
+      r12Gas = 0,
+      r12Prop = 0;
+    r12.forEach((m) => {
+      r12Kwh += m.kwh || 0;
+      r12Gas += m.gas || 0;
+      r12Prop += m.propane || 0;
+    });
+    // Annualize (same pattern as r12Eui): scale to 12 months
+    const annFactor = 12 / r12.length;
+    const annKwh = r12Kwh * annFactor;
+    const annGas = r12Gas * annFactor;
+    const annProp = r12Prop * annFactor;
+    // computeSourceEUI lives in computations/eui.js (loaded before this file)
+    const srcEui = typeof computeSourceEUI === 'function' ? computeSourceEUI(annKwh, annGas, annProp, sqft) : 0;
+    const score = srcEui > 0 && typeof estimateEnergyStarScore === 'function' ? estimateEnergyStarScore(srcEui) : 0;
+    if (score > 0) {
+      estarScoreEl.textContent = '~' + score;
+      // Color: green ≥75, yellow 50–74, red <50
+      const scoreColor = score >= 75 ? 'var(--green)' : score >= 50 ? 'var(--amber)' : 'var(--danger)';
+      estarScoreEl.style.color = scoreColor;
+      if (estarScoreSubEl) {
+        estarScoreSubEl.style.color = 'var(--text2)';
+        estarScoreSubEl.innerHTML =
+          'source EUI ' +
+          srcEui.toFixed(0) +
+          ' kBtu/ft²' +
+          ' <span title="Based on source EUI vs CBECS K-12 data. Official score requires Portfolio Manager." style="cursor:help;color:var(--text3)">&#9432;</span>';
+      }
+    } else {
+      estarScoreEl.textContent = '—';
+      if (estarScoreSubEl) estarScoreSubEl.textContent = 'source EUI est.';
+    }
+  }
+
   // Compute actual savings from meter performance (single source of truth)
   const blCostAvg = blCost.map((v, mi) => v / (blYmPerMo[mi].size || 1));
   const totalBlCost = blCostAvg.reduce((a, b) => a + b, 0);
@@ -1098,15 +1139,26 @@ function egfxRefresh(projId) {
     const last12 = bYms.slice(-12);
     if (last12.length === 0) return;
     let kbtu = 0,
-      cost = 0;
+      cost = 0,
+      sumKwh = 0,
+      sumGas = 0,
+      sumPropane = 0;
     last12.forEach((m) => {
       kbtu += toKBtu(m.kwh, m.gas, m.propane || 0);
       cost += m.cost;
+      sumKwh += m.kwh || 0;
+      sumGas += m.gas || 0;
+      sumPropane += m.propane || 0;
     });
+    const annF12 = 12 / last12.length;
     _bldgR12[b.name] = {
       eui: ((kbtu / last12.length) * 12) / bSqft,
       costSqft: ((cost / last12.length) * 12) / bSqft,
       months: last12.length,
+      // Annualized site fuel totals (for source EUI / ENERGY STAR score)
+      kwh: sumKwh * annF12,
+      gas: sumGas * annF12,
+      propane: sumPropane * annF12,
     };
   });
 
@@ -1473,6 +1525,18 @@ function egfxRefresh(projId) {
                 }
                 const estarStatus = estar ? (latestEui <= estar ? '✓ Eligible' : '✗ Above') : '—';
                 const estarColor = estar ? (latestEui <= estar ? 'var(--green)' : 'var(--text3)') : 'var(--text3)';
+                // Compute per-building source EUI and estimated ENERGY STAR score
+                // Use rolling 12-month raw fuel from _bldgR12 (kwh/gas/propane are site values)
+                let bSrcEui = 0;
+                let bEstScore = 0;
+                if (bR12.kwh != null || bR12.gas != null || bR12.propane != null) {
+                  bSrcEui =
+                    typeof computeSourceEUI === 'function'
+                      ? computeSourceEUI(bR12.kwh || 0, bR12.gas || 0, bR12.propane || 0, bSqft)
+                      : 0;
+                  bEstScore =
+                    bSrcEui > 0 && typeof estimateEnergyStarScore === 'function' ? estimateEnergyStarScore(bSrcEui) : 0;
+                }
                 // Trend: rolling 12-month EUI vs baseline EUI for this building
                 let trend = '';
                 if (bBlEui > 0) {
@@ -1496,6 +1560,8 @@ function egfxRefresh(projId) {
                   estarStatus,
                   estarColor,
                   pctileLabel,
+                  srcEui: bSrcEui,
+                  estScore: bEstScore,
                   trend,
                 };
               })

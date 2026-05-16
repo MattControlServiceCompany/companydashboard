@@ -897,6 +897,11 @@ function renderDetail(p) {
               <!-- Merged into Utility Data tab (fix 35571527) — kept for backward compat -->
               <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Saved Bills have moved to the ⚡ Utility Data tab.</div>
             </div>
+            <div id="ptab-budget" class="ptab" style="padding:0;overflow-y:auto">
+              <div id="ptab-budget-body-${p.id}">
+                <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading budget data...</div>
+              </div>
+            </div>
             <div id="ptab-equipment" class="ptab" style="padding:16px">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap">
                 <input class="fi" id="equipQ-proj-${p.id}" placeholder="Search tag, type..." style="width:200px" oninput="renderProjEquip(${p.id})">
@@ -930,6 +935,11 @@ function renderDetail(p) {
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Rolling 12-Mo Site EUI</div>
                       <div id="egfx-curEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--em);margin:6px 0">—</div>
                       <div id="egfx-curEuiSub-${p.id}" style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
+                    </div>
+                    <div class="card" style="background:var(--s1);padding:14px;text-align:center">
+                      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Est. ENERGY STAR Score</div>
+                      <div id="egfx-estarScore-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--text3);margin:6px 0">—</div>
+                      <div id="egfx-estarScoreSub-${p.id}" style="font-size:11px;color:var(--text3)">source EUI est.</div>
                     </div>
                     <div class="card" style="background:var(--s1);padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Projected Savings</div>
@@ -1620,6 +1630,12 @@ function initDashboardTab(projId) {
               </div>
             </div>
           </div>
+          ${(function () {
+            const _budgetKPI = typeof renderBudgetKPICard === 'function' ? renderBudgetKPICard(projId) : '';
+            return _budgetKPI
+              ? `<div class="card" style="margin-bottom:16px"><div style="padding:20px;display:flex;gap:16px;align-items:stretch;flex-wrap:wrap">${_budgetKPI}</div></div>`
+              : '';
+          })()}
           <div class="card">
             <div class="card-hdr"><span class="card-title">Building Performance</span></div>
             <div style="overflow:auto;max-height:60vh">
@@ -1909,6 +1925,7 @@ const PROJ_TABS_DEFAULT = [
   { id: 'contacts', label: '👥 Contacts' },
   { id: 'utility', label: '⚡ Utility Data' },
   { id: 'savedbills', label: '🗄️ Saved Bills' },
+  { id: 'budget', label: '💰 Budget' },
   { id: 'equipment', label: '⚙️ Equipment' },
   { id: 'hvacload', label: '🌡️ HVAC Load Est' },
   { id: 'energygfx', label: '📈 Energy Graphics' },
@@ -2050,6 +2067,7 @@ function sPTab(tab, el) {
   if (tab === 'dashboard') initDashboardTab(p.id);
   if (tab === 'utility') initProjUDTab(p.id);
   if (tab === 'savedbills') renderProjSavedBills(p.id);
+  if (tab === 'budget') initBudgetTab(p.id);
   if (tab === 'equipment') renderProjEquip(p.id);
   if (tab === 'savings') initSavingsTab(p.id);
   if (tab === 'hvacload') requestAnimationFrame(() => initHvacLoadTab(p.id));
