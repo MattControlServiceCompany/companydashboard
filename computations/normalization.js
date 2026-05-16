@@ -353,17 +353,20 @@ function normalizePropaneDeliveries(bills, hddByMonth) {
     }
   }
 
-  // Last delivery: estimate how far FORWARD consumption will go using
-  // the gal/HDD rate from the previous inter-delivery period, then
-  // distribute forward via HDD weighting up to 6 months.
-  // Symmetric to the first-delivery backward estimation block above.
+  // Last delivery: estimate forward consumption from the delivery date using
+  // the gal/HDD rate from the last measured inter-delivery period.
+  // The main loop already distributed the last delivery's gallons backward into
+  // the pre-delivery span (delivery[N-1] → delivery[N]). This block adds
+  // projected gallons for POST-delivery months (delivery date forward), using
+  // the consumption rate as a model. These are estimated values, capped at
+  // galLast to avoid over-projecting beyond the tank capacity.
   if (sorted.length >= 2) {
     const dLast = sorted[sorted.length - 1];
     const dPrev = sorted[sorted.length - 2];
     const galLast = parseFloat(dLast.gallonsDelivered || dLast.kwh) || 0;
-    const costLast = parseFloat(dLast.totalCost) || 0;
+    const costPerGal = galLast > 0 ? (parseFloat(dLast.totalCost) || 0) / galLast : 0;
     if (galLast > 0) {
-      // Estimate consumption rate from the last measured inter-delivery period
+      // Derive gal/HDD rate from the last measured inter-delivery period
       const galSecondLast = parseFloat(dPrev.gallonsDelivered || dPrev.kwh) || 0;
       const sLast = _parseISO(dPrev.start);
       const eLast = _parseISO(dLast.start);
@@ -374,37 +377,30 @@ function normalizePropaneDeliveries(bills, hddByMonth) {
         const calDays = calDaysInMonth(s.ym);
         prevPeriodHDD += w && w.hdd ? w.hdd * (s.days / calDays) : 0;
       });
-      const galPerHDDFwd = prevPeriodHDD > 0 && galSecondLast > 0 ? galSecondLast / prevPeriodHDD : 0;
-      // Walk forward from delivery date until accumulated HDD accounts
-      // for the last delivery's gallons (or max 6 months forward)
-      const targetHDDFwd = galPerHDDFwd > 0 ? galLast / galPerHDDFwd : 0;
-      let accHDDFwd = 0;
-      const fwdSpans = [];
-      const deliveryDateFwd = _parseISO(dLast.start);
-      for (let mo = 0; mo < 6; mo++) {
-        const dt = new Date(deliveryDateFwd);
-        dt.setMonth(dt.getMonth() + mo);
-        const ym = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
-        const w = hddByMonth && hddByMonth[ym];
-        const moHDD = w && w.hdd ? w.hdd : 0;
-        const calDays = calDaysInMonth(ym);
-        // First month: only count days FROM delivery date to end of month
-        const frac = mo === 0 ? Math.max(1, calDays - deliveryDateFwd.getDate() + 1) / calDays : 1;
-        const hdd = moHDD * frac;
-        fwdSpans.push({ ym, hdd });
-        accHDDFwd += hdd;
-        if (targetHDDFwd > 0 && accHDDFwd >= targetHDDFwd) break;
+      const galPerHDD = prevPeriodHDD > 0 && galSecondLast > 0 ? galSecondLast / prevPeriodHDD : 0;
+      if (galPerHDD > 0) {
+        // Walk forward from delivery date, up to 6 months, capped at galLast total
+        let projAccum = 0;
+        const deliveryDateFwd = _parseISO(dLast.start);
+        for (let mo = 0; mo < 6 && projAccum < galLast; mo++) {
+          const dt = new Date(deliveryDateFwd);
+          dt.setMonth(dt.getMonth() + mo);
+          const ym = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
+          const w = hddByMonth && hddByMonth[ym];
+          const moHDD = w && w.hdd ? w.hdd : 0;
+          const calDays = calDaysInMonth(ym);
+          // First month: only count days FROM delivery date to end of month
+          const frac = mo === 0 ? Math.max(1, calDays - deliveryDateFwd.getDate() + 1) / calDays : 1;
+          const hdd = moHDD * frac;
+          const projGal = Math.min(galPerHDD * hdd, galLast - projAccum);
+          if (projGal > 0) {
+            if (!result[ym]) result[ym] = { gallons: 0, cost: 0 };
+            result[ym].gallons += projGal;
+            result[ym].cost += projGal * costPerGal;
+            projAccum += projGal;
+          }
+        }
       }
-      // Distribute last delivery's gallons across forward-spans by HDD
-      const totalFwdHDD = fwdSpans.reduce(function (s, b) {
-        return s + b.hdd;
-      }, 0);
-      fwdSpans.forEach(function (s) {
-        const share = totalFwdHDD > 0 ? s.hdd / totalFwdHDD : 1 / fwdSpans.length;
-        if (!result[s.ym]) result[s.ym] = { gallons: 0, cost: 0 };
-        result[s.ym].gallons += galLast * share;
-        result[s.ym].cost += costLast * share;
-      });
     }
   }
 
