@@ -7819,6 +7819,217 @@ function renderPerfPane(pane, m, bills, incl) {
     }
   }
 
+  // ── Demand Analytics (electric only) — trailing 24 months from all bills ──
+  // Build per-norm-month demand data from all bills (not just post-BL filtered rows)
+  const _demAnalytics = (() => {
+    if (!isElec) return null;
+    // Collect all sorted norm-months from allRows
+    const allYms = allRows.map((r) => r.ym).sort();
+    // Sort bills and build per-ym map
+    const sortedBills = (bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+    const byYm = {};
+    sortedBills.forEach((b) => {
+      const ym = normMonth(b.start, b.end, incl, sortedBills);
+      if (!ym) return;
+      const pf = (v) => parseFloat(String(v || 0).replace(/,/g, '')) || 0;
+      if (!byYm[ym]) {
+        byYm[ym] = {
+          demandKW: 0,
+          billedKW: 0,
+          facKW: 0,
+          demandCharge: 0,
+          facilitiesCharge: 0,
+          tdcCharge: 0,
+          onPeakCost: 0,
+          offPeakCost: 0,
+          ecaCharge: 0,
+          eerCharge: 0,
+          ptsCharge: 0,
+          kwCost: 0,
+          facKWCost: 0,
+          kwhCost: 0,
+          customerCharge: 0,
+          rkvaCharge: 0,
+          taxExemptDelivery: 0,
+          billOffset: 0,
+          franchiseFee: 0,
+          totalCost: 0,
+          kwh: 0,
+          normDays: 0,
+          count: 0,
+          hasGranular: false,
+        };
+      }
+      const e = byYm[ym];
+      // kW: take max across bills in same period
+      e.demandKW = Math.max(e.demandKW, pf(b.demandKW));
+      e.billedKW = Math.max(e.billedKW, pf(b.billedKW || b.demandKW));
+      e.facKW = Math.max(e.facKW, pf(b.facKW));
+      // Granular charge fields
+      e.demandCharge += pf(b.demandCharge);
+      e.facilitiesCharge += pf(b.facilitiesCharge || b.facKWCost);
+      e.tdcCharge += pf(b.tdcCharge);
+      e.onPeakCost += pf(b.onPeakCost);
+      e.offPeakCost += pf(b.offPeakCost);
+      e.ecaCharge += pf(b.ecaCharge);
+      e.eerCharge += pf(b.eerCharge);
+      e.ptsCharge += pf(b.ptsCharge);
+      // Fallback aggregate fields
+      e.kwCost += pf(b.kwCost);
+      e.facKWCost += pf(b.facKWCost);
+      e.kwhCost += pf(b.kwhCost);
+      e.customerCharge += pf(b.customerCharge);
+      e.rkvaCharge += pf(b.rkvaCharge);
+      e.taxExemptDelivery += pf(b.taxExemptDelivery);
+      e.billOffset += pf(b.billOffset);
+      e.franchiseFee += pf(b.franchiseFee);
+      e.totalCost += pf(b.totalCost);
+      e.kwh += pf(b.kwh);
+      // normDays: take from matching norm row
+      const nr = allRows.find((r) => r.ym === ym);
+      if (nr) e.normDays = nr.normDays || 30;
+      e.count++;
+      if (pf(b.demandCharge) > 0 || pf(b.onPeakCost) > 0 || pf(b.facilitiesCharge) > 0) e.hasGranular = true;
+    });
+
+    // Sorted ym list — trailing 24 months with data
+    const yms = Object.keys(byYm).sort();
+    const trailing24 = yms.slice(-24);
+    const trailing12 = yms.slice(-12);
+
+    if (!trailing12.length) return null;
+
+    // Per-month computed values
+    const months = trailing24.map((ym) => {
+      const e = byYm[ym];
+      const pf = (v) => parseFloat(String(v || 0).replace(/,/g, '')) || 0;
+
+      // Cost breakdown — prefer granular, fall back to aggregates
+      const demandCost = e.hasGranular ? e.demandCharge + e.tdcCharge : e.kwCost;
+      const facilitiesCost = e.hasGranular ? e.facilitiesCharge : e.facKWCost;
+      const energyCost = e.hasGranular
+        ? e.onPeakCost + e.offPeakCost + e.ecaCharge + e.eerCharge + e.ptsCharge
+        : e.kwhCost || e.totalCost - e.kwCost - e.facKWCost - e.customerCharge - e.rkvaCharge - e.franchiseFee;
+      const fixedCost =
+        e.customerCharge + e.rkvaCharge + e.taxExemptDelivery + e.franchiseFee + (e.billOffset < 0 ? e.billOffset : 0); // bill offset can be negative credit
+      const totalKwCost = demandCost + facilitiesCost;
+      const totalBill = e.totalCost > 0 ? e.totalCost : totalKwCost + energyCost + fixedCost;
+
+      // Load factor
+      const lf = e.demandKW > 0 && e.normDays > 0 && e.kwh > 0 ? e.kwh / (e.demandKW * 24 * e.normDays) : null;
+
+      // Effective demand rate per kW (for ratchet cost calculation)
+      const effDemRate =
+        e.billedKW > 0 && e.kwCost > 0
+          ? e.kwCost / e.billedKW
+          : e.billedKW > 0 && demandCost > 0
+            ? demandCost / e.billedKW
+            : 0;
+
+      // Ratchet cost: extra billed above actual demand
+      const ratchetGap = e.billedKW > e.demandKW ? e.billedKW - e.demandKW : 0;
+      const ratchetCost = ratchetGap > 0 && effDemRate > 0 ? ratchetGap * effDemRate : 0;
+
+      // Month label
+      const [yr, mo] = ym.split('-');
+      const label =
+        ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(mo) - 1] +
+        ' ' +
+        yr.slice(2);
+
+      return {
+        ym,
+        label,
+        hasGranular: e.hasGranular,
+        demandKW: e.demandKW,
+        billedKW: e.billedKW,
+        facKW: e.facKW,
+        demandCost,
+        facilitiesCost,
+        energyCost,
+        fixedCost,
+        totalKwCost,
+        totalBill,
+        loadFactor: lf,
+        effDemRate,
+        ratchetCost,
+        ratchetGap,
+      };
+    });
+
+    const t12months = months.filter((m) => trailing12.includes(m.ym));
+
+    // KPI calculations — trailing 12 months
+    const t12withBill = t12months.filter((m) => m.totalBill > 0);
+    const demandPct = t12withBill.length
+      ? t12withBill.reduce((s, m) => s + m.totalKwCost / m.totalBill, 0) / t12withBill.length
+      : null;
+
+    const peakKW = t12months.length ? Math.max(...t12months.map((m) => m.demandKW).filter((v) => v > 0)) : null;
+    const peakMo = peakKW != null ? t12months.find((m) => m.demandKW === peakKW) : null;
+
+    const lfMos = t12months.filter((m) => m.loadFactor != null && m.loadFactor > 0 && m.loadFactor <= 1.5);
+    const avgLoadFactor = lfMos.length ? lfMos.reduce((s, m) => s + m.loadFactor, 0) / lfMos.length : null;
+
+    const annualRatchet = t12months.reduce((s, m) => s + m.ratchetCost, 0);
+
+    // Insight strings
+    const insights = [];
+    if (demandPct != null && demandPct > 0) {
+      const pctStr = (demandPct * 100).toFixed(0) + '%';
+      if (demandPct >= 0.4) {
+        insights.push(
+          'Demand charges represent <strong>' +
+            pctStr +
+            '</strong> of the electric bill. For most commercial buildings, reducing peak demand is more cost-effective than reducing total energy use alone.',
+        );
+      } else {
+        insights.push('Demand charges represent <strong>' + pctStr + '</strong> of the electric bill.');
+      }
+    }
+    if (annualRatchet > 100 && peakMo) {
+      insights.push(
+        'An estimated <strong>$' +
+          annualRatchet.toLocaleString('en-US', { maximumFractionDigits: 0 }) +
+          '/yr</strong> in ratchet charges — billing demand exceeds metered demand in months where the ratchet clause is active. The summer peak sets a demand floor for the following 11 months.',
+      );
+    }
+    if (avgLoadFactor != null && avgLoadFactor < 0.3) {
+      insights.push(
+        'Average load factor of <strong>' +
+          (avgLoadFactor * 100).toFixed(0) +
+          '%</strong> indicates highly concentrated usage — typical of buildings where HVAC equipment starts simultaneously. Staggered equipment start sequences can reduce peak demand by 10–20% without reducing total energy use.',
+      );
+    } else if (avgLoadFactor != null && avgLoadFactor < 0.4) {
+      insights.push(
+        'Average load factor of <strong>' +
+          (avgLoadFactor * 100).toFixed(0) +
+          '%</strong>. A load factor below 33% is a signal of concentrated morning startup peaks. Well-managed commercial buildings typically reach 50%+.',
+      );
+    }
+    const hasAnyRatchet = t12months.some((m) => m.ratchetGap > 5);
+    if (hasAnyRatchet && !insights.some((s) => s.includes('ratchet'))) {
+      const ratchetMos = t12months.filter((m) => m.ratchetGap > 5);
+      insights.push(
+        'Billed demand exceeds metered demand in <strong>' +
+          ratchetMos.length +
+          ' of the last 12 months</strong> — the utility ratchet clause is active. Reducing peak summer demand saves money immediately and reduces the ratchet floor for the following year.',
+      );
+    }
+
+    return {
+      months, // trailing 24 months
+      t12months, // trailing 12 months
+      demandPct,
+      peakKW,
+      peakMo,
+      avgLoadFactor,
+      annualRatchet,
+      insights,
+      hasGranular: months.some((m) => m.hasGranular),
+    };
+  })();
+
   // ── Column visibility flags — computed ONCE, used by both headers and rows ──
   const hasKwData = isElec && Object.keys(perfDemByYm).length > 0;
   const hasBilKW =
@@ -7939,6 +8150,25 @@ function renderPerfPane(pane, m, bills, incl) {
   }
   const hasPerfKwData = Object.keys(perfKwByYm).length > 0;
 
+  // ── Anomaly detection ──
+  // computeAnomalyScores / detectRateChanges / getBaseloadTrend are defined in
+  // computations/anomaly-detection.js, loaded before this file.
+  const _anomalyScoreMap =
+    typeof computeAnomalyScores === 'function' ? computeAnomalyScores(m, allRows, blRows, bills, incl) : {};
+  const _anomalyRateMap = typeof detectRateChanges === 'function' ? detectRateChanges(m, bills, incl) : {};
+  const _anomalyBaseloadTrend = typeof getBaseloadTrend === 'function' ? getBaseloadTrend(m, allRows, blRows) : null;
+  // Attach transient _anomaly flag to each bill object (not persisted)
+  if (typeof attachAnomalyToBills === 'function') {
+    attachAnomalyToBills(_anomalyScoreMap, bills, incl);
+  }
+  const anomalySection =
+    typeof anomalyAlertHTML === 'function' && filteredPostRows.length
+      ? '<div style="margin-bottom:14px">' +
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">Anomaly Detection</div>' +
+        anomalyAlertHTML(_anomalyScoreMap, _anomalyRateMap, _anomalyBaseloadTrend, unit) +
+        '</div>'
+      : '';
+
   const chartSection = _perfChartVis
     ? '<div>' +
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px">' +
@@ -7960,6 +8190,118 @@ function renderPerfPane(pane, m, bills, incl) {
       '</div>'
     : '<div></div>';
 
+  // ── Demand Analytics HTML section ──
+  const demandSection = (() => {
+    if (!_demAnalytics) return '';
+    const da = _demAnalytics;
+    const nc = (v) => (v != null ? '$' + Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—');
+    const n1 = (v) => (v != null ? v.toLocaleString('en-US', { maximumFractionDigits: 1 }) : '—');
+    const pct = (v) => (v != null ? (v * 100).toFixed(0) + '%' : '—');
+
+    // KPI card helper
+    const kpiCard = (label, value, sub, accentColor) =>
+      '<div style="background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:12px 14px;min-width:120px;flex:1">' +
+      '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">' +
+      label +
+      '</div>' +
+      '<div style="font-size:20px;font-weight:800;color:' +
+      (accentColor || 'var(--text)') +
+      ';font-family:var(--mono,monospace);line-height:1.1">' +
+      value +
+      '</div>' +
+      (sub ? '<div style="font-size:10px;color:var(--text3);margin-top:3px">' + sub + '</div>' : '') +
+      '</div>';
+
+    // KPI values
+    const demPctColor =
+      da.demandPct == null
+        ? 'var(--text)'
+        : da.demandPct >= 0.4
+          ? 'var(--warn)'
+          : da.demandPct < 0.3
+            ? 'var(--em)'
+            : 'var(--text)';
+    const lfColor =
+      da.avgLoadFactor == null
+        ? 'var(--text)'
+        : da.avgLoadFactor >= 0.4
+          ? 'var(--em)'
+          : da.avgLoadFactor >= 0.3
+            ? 'var(--warn)'
+            : 'var(--danger)';
+    const ratchetColor = da.annualRatchet > 100 ? 'var(--warn)' : 'var(--text)';
+    const peakSub = da.peakMo ? 'in ' + da.peakMo.label : 'trailing 12 mo';
+
+    const kpiRow =
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">' +
+      kpiCard('Demand % of Bill', da.demandPct != null ? pct(da.demandPct) : '—', 'trailing 12-mo avg', demPctColor) +
+      kpiCard('Peak Demand', da.peakKW != null ? n1(da.peakKW) + ' kW' : '—', peakSub, 'var(--text)') +
+      kpiCard(
+        'Avg Load Factor',
+        da.avgLoadFactor != null ? pct(da.avgLoadFactor) : '—',
+        'trailing 12-mo avg',
+        lfColor,
+      ) +
+      kpiCard(
+        'Est. Ratchet Cost',
+        da.annualRatchet > 0 ? nc(da.annualRatchet) + '/yr' : '$0',
+        'billed − metered × rate',
+        ratchetColor,
+      ) +
+      '</div>';
+
+    // Granular data note
+    const granularNote = !da.hasGranular
+      ? '<div style="font-size:11px;color:var(--text3);background:var(--s3);border:1px solid var(--border);border-radius:5px;padding:6px 10px;margin-bottom:12px">' +
+        'Note: Detailed demand breakdown not available — bills do not have granular charge fields (demandCharge, facilitiesCharge). Showing totals from kwCost/facKWCost.' +
+        '</div>'
+      : '';
+
+    // Insight callouts
+    const insightHTML = da.insights.length
+      ? '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">' +
+        da.insights
+          .map(
+            (txt) =>
+              '<div style="font-size:12px;color:var(--text2);background:var(--s3);border-left:3px solid var(--em);border-radius:0 5px 5px 0;padding:7px 10px;line-height:1.5">' +
+              txt +
+              '</div>',
+          )
+          .join('') +
+        '</div>'
+      : '';
+
+    // Chart canvases
+    const chartCanvases =
+      '<div style="display:grid;grid-template-columns:1fr;gap:16px">' +
+      '<div>' +
+      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:6px">Cost Breakdown by Month</div>' +
+      '<div style="font-size:10px;color:var(--text3);margin-bottom:6px">Demand (kW charges + TDC) · Facilities · Energy · Fixed</div>' +
+      '<div class="ma-chart-wrap" style="height:220px"><canvas id="demCostChart"></canvas></div>' +
+      '</div>' +
+      '<div>' +
+      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:6px">Peak Demand Trend</div>' +
+      '<div style="font-size:10px;color:var(--text3);margin-bottom:6px">Metered kW · Billed kW (ratchet floor) · Facilities kW (12-mo rolling peak)</div>' +
+      '<div class="ma-chart-wrap" style="height:220px"><canvas id="demTrendChart"></canvas></div>' +
+      '</div>' +
+      '<div>' +
+      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:6px">Load Factor Trend</div>' +
+      '<div style="font-size:10px;color:var(--text3);margin-bottom:6px">kWh ÷ (demandKW × 24 × days) — dashed lines: 33% typical school · 50% target</div>' +
+      '<div class="ma-chart-wrap" style="height:180px"><canvas id="demLFChart"></canvas></div>' +
+      '</div>' +
+      '</div>';
+
+    return (
+      '<div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">' +
+      '<div style="font-size:13px;font-weight:800;font-family:var(--head);letter-spacing:-.01em;margin-bottom:12px;color:var(--text)">Demand Charge Analysis</div>' +
+      granularNote +
+      kpiRow +
+      insightHTML +
+      chartCanvases +
+      '</div>'
+    );
+  })();
+
   pane.innerHTML =
     '<div style="margin-bottom:14px"><div style="font-size:16px;font-weight:800;font-family:var(--head);letter-spacing:-.01em">⚡ ' +
     (m.name || 'Meter') +
@@ -7980,12 +8322,26 @@ function renderPerfPane(pane, m, bills, incl) {
         fmtMon(blEnd + '-01') +
         '</strong></div>') +
     '</div>' +
+    anomalySection +
     perfControlBar +
-    chartSection;
+    chartSection +
+    demandSection;
 
   if (_perfChartVis) {
     requestAnimationFrame(() => {
-      drawPerfChart('perfChart', chartRows, blAvgDay, blAvgMo, barColors, unit, bills, incl, _perfMetric, _perfOverlay);
+      drawPerfChart(
+        'perfChart',
+        chartRows,
+        blAvgDay,
+        blAvgMo,
+        barColors,
+        unit,
+        bills,
+        incl,
+        _perfMetric,
+        _perfOverlay,
+        _anomalyScoreMap,
+      );
     });
     if (isElec && hasPerfKwData) {
       requestAnimationFrame(() => {
@@ -8100,6 +8456,19 @@ function renderPerfPane(pane, m, bills, incl) {
       });
     }
   }
+
+  // ── Demand Analytics Charts ──
+  if (_demAnalytics && _demAnalytics.months.length > 0) {
+    requestAnimationFrame(() => {
+      drawDemandCostChart('demCostChart', _demAnalytics.months);
+    });
+    requestAnimationFrame(() => {
+      drawDemandTrendChart('demTrendChart', _demAnalytics.months);
+    });
+    requestAnimationFrame(() => {
+      drawLoadFactorChart('demLFChart', _demAnalytics.months);
+    });
+  }
 }
 
 function setPerfYearFilter(mid, val) {
@@ -8116,7 +8485,7 @@ function setPerfYearFilter(mid, val) {
   renderPerfPane(pane, m, bills, incl);
 }
 
-function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, incl, metric, showOverlay) {
+function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, incl, metric, showOverlay, scoreMap) {
   metric = metric || 'total';
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
