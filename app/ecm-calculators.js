@@ -2607,7 +2607,7 @@ function initEcmCalculatorsView() {
 
   _ecmActiveTemplate = null;
 
-  renderEcmPicker(container, function (templateId) {
+  function onSelect(templateId) {
     _ecmActiveTemplate = templateId;
     renderEcmCalculator(
       templateId,
@@ -2616,7 +2616,6 @@ function initEcmCalculatorsView() {
       function onBack() {
         // Return to picker
         _ecmActiveTemplate = null;
-        renderEcmPicker(container, arguments.callee.caller);
         initEcmCalculatorsView();
       },
       function onCalculate(tid, inputs, results) {
@@ -2624,5 +2623,19 @@ function initEcmCalculatorsView() {
         // Future: hook could push results to a project savings measure
       },
     );
-  });
+  }
+
+  renderEcmPicker(container, onSelect);
 }
+
+/* ─── Auto-init if navigating directly to calculators view ── */
+/* This handles the case where the sv() wrapper fails (e.g. local file:// CORS) */
+document.addEventListener('DOMContentLoaded', function () {
+  var lastView = localStorage.getItem('ch_activeView') || sessionStorage.getItem('ch_activeView');
+  if (lastView === 'calculators') {
+    // Page was reloaded while on calculators view — init immediately
+    setTimeout(function () {
+      if (typeof initEcmCalculatorsView === 'function') initEcmCalculatorsView();
+    }, 150);
+  }
+});
