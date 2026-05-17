@@ -616,6 +616,21 @@ function _renderSavingsContent(wrap, projId) {
     if (!m.rates) m.rates = calcBldgDefaultRates(projId, m.bldgId);
   });
   if (_migrated) sset('en_projects', projects);
+  // Auto-sync SQFT from current building data if measure has a building assigned
+  let _sqftChanged = false;
+  sd.measures.forEach((m) => {
+    if (m.bldgId) {
+      const bldg = getUDBldg(projId, m.bldgId);
+      if (bldg) {
+        const bldgSqft = parseFloat(bldg.sqft) || 0;
+        if (bldgSqft > 0 && (m.sqft || 0) !== bldgSqft) {
+          m.sqft = bldgSqft;
+          _sqftChanged = true;
+        }
+      }
+    }
+  });
+  if (_sqftChanged) sset('en_projects', projects);
   const MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   // ── Collapsible month header helper ──
@@ -784,7 +799,9 @@ function _renderSavingsContent(wrap, projId) {
     totGas = Array(12).fill(0),
     totPropane = Array(12).fill(0);
   let grandTotal = 0;
+  let totSqft = 0;
   selMsrs.forEach((m) => {
+    totSqft += parseFloat(m.sqft) || 0;
     m.kwh.forEach((v, i) => (totKwh[i] += parseFloat(v) || 0));
     m.kw.forEach((v, i) => (totKw[i] += parseFloat(v) || 0));
     m.gas.forEach((v, i) => (totGas[i] += parseFloat(v) || 0));
@@ -829,7 +846,10 @@ function _renderSavingsContent(wrap, projId) {
   };
 
   const footRow = `<tr class="sv-foot-row">
-          <td colspan="12" style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
+          <td></td><td></td><td></td>
+          <td style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
+          <td style="font-family:var(--mono);font-size:11px;font-weight:700;text-align:right;padding:5px 4px">${totSqft ? totSqft.toLocaleString(undefined, { maximumFractionDigits: 0 }) : ''}</td>
+          <td colspan="7"></td>
           ${footUsage(totKwh, 'kwh', 'var(--accent)')}
           ${footUsage(totKw, 'kw', 'var(--amber)')}
           ${footUsage(totGas, 'gas', 'var(--teal)')}
