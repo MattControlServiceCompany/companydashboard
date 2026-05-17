@@ -825,13 +825,13 @@ function renderDetail(p) {
           </div>
           <!-- Project-level panel content (shown when project-level buttons clicked) -->
           <div id="pd-proj-panel-content-${p.id}" style="display:none;border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;overflow-y:auto"></div>
-          <div class="card" id="pd-tabs-card-${p.id}">
-            <div class="pd-tabs" id="pdTabBar" style="overflow-x:auto;flex-wrap:nowrap;white-space:nowrap">
+          <div class="card" id="pd-tabs-card-${p.id}" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
+            <div class="pd-tabs" id="pdTabBar" style="overflow-x:auto;flex-wrap:nowrap;white-space:nowrap;flex-shrink:0">
               ${_getProjTabHTML()}
             </div>
             <div id="ptab-dashboard" class="ptab active" style="padding:0;overflow-y:auto">
               <div id="dash-hdr-${p.id}"></div>
-              <div style="padding:16px;overflow-y:auto;flex:1">
+              <div style="padding:16px;flex:1">
                 <div class="dash-grid">
                   <div id="dash-perf-${p.id}"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
                   <div id="dash-cal-${p.id}"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
@@ -956,7 +956,7 @@ function renderDetail(p) {
                   </div>
                 </div>
                 <div style="padding:16px">
-                  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+                  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px">
                     <div class="card" style="background:var(--s1);padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Baseline Site EUI</div>
                       <div id="egfx-blEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--accent);margin:6px 0">—</div>
