@@ -1665,6 +1665,12 @@ function initDashboardTab(projId) {
               ? `<div class="card" style="margin-bottom:16px"><div style="padding:20px;display:flex;gap:16px;align-items:stretch;flex-wrap:wrap">${_budgetKPI}</div></div>`
               : '';
           })()}
+          <div class="card" id="dash-waterfall-card-${projId}" style="margin-bottom:16px;display:${totalBl > 0 ? 'block' : 'none'}">
+            <div class="card-hdr"><span class="card-title">Savings Waterfall</span><span style="font-size:10px;color:var(--text3);font-weight:400;margin-left:8px">${useNormalized ? 'Weather-normalized' : 'Actual'}</span></div>
+            <div style="padding:16px;position:relative;height:220px">
+              <canvas id="dash-waterfall-canvas-${projId}" style="width:100%;height:100%"></canvas>
+            </div>
+          </div>
           <div class="card">
             <div class="card-hdr"><span class="card-title">Building Performance</span></div>
             <div style="overflow:auto;max-height:60vh">
@@ -1737,6 +1743,155 @@ function initDashboardTab(projId) {
           </div>`;
 
   if (typeof renderDashCalendar === 'function') renderDashCalendar(projId);
+  renderSavingsWaterfall(projId, totalBl, totalCur, totalSav, useNormalized);
+}
+
+// ── Savings Waterfall Chart ──
+function renderSavingsWaterfall(projId, baseline, actual, savings, isNormalized) {
+  const canvas = document.getElementById('dash-waterfall-canvas-' + projId);
+  if (!canvas || !baseline || baseline <= 0) return;
+
+  // Destroy previous chart instance if it exists
+  if (canvas._wfChart) {
+    canvas._wfChart.destroy();
+    canvas._wfChart = null;
+  }
+
+  const fmt$ = (n) => '$' + Math.round(Math.abs(n)).toLocaleString();
+  const fmtPct = (n, base) => (base > 0 ? ((n / base) * 100).toFixed(1) + '%' : '');
+
+  // Clamp actual cost — can't go below 0 or above baseline for chart purposes
+  const actualCost = Math.max(0, actual > 0 ? actual : baseline - savings);
+  const savingsAmt = baseline - actualCost;
+  const savingsIncrease = savingsAmt < 0; // cost went up
+
+  // Waterfall data using [base, top] floating bar format:
+  // Baseline: from 0 to baseline (full bar)
+  // Savings step: from actualCost to baseline (the drop)
+  // Actual: from 0 to actualCost (final bar)
+  const labels = ['Baseline', savingsIncrease ? 'Cost Increase' : 'Energy Savings', 'Actual'];
+  const data = [[0, baseline], savingsIncrease ? [baseline, actualCost] : [actualCost, baseline], [0, actualCost]];
+
+  // Colors: blue for anchor bars, green for savings drop, red for cost increase
+  const blueColor = 'rgba(74,158,255,0.85)';
+  const greenColor = 'rgba(34,197,94,0.85)';
+  const redColor = 'rgba(239,68,68,0.80)';
+  const bgColors = [blueColor, savingsIncrease ? redColor : greenColor, blueColor];
+  const borderColors = ['#4a9eff', savingsIncrease ? '#ef4444' : '#22c55e', '#4a9eff'];
+
+  const ctx = canvas.getContext('2d');
+  canvas._wfChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Value',
+          data,
+          backgroundColor: bgColors,
+          borderColor: borderColors,
+          borderWidth: 1,
+          borderRadius: 3,
+          borderSkipped: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { top: 24, right: 12, bottom: 4, left: 8 } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label(ctx) {
+              const [base, top] = ctx.raw;
+              const val = Math.abs(top - base);
+              const idx = ctx.dataIndex;
+              if (idx === 0) return 'Baseline Annual Cost: ' + fmt$(val);
+              if (idx === 2) return 'Actual Annual Cost: ' + fmt$(val);
+              const pct = fmtPct(val, baseline);
+              return (savingsIncrease ? 'Cost Increase: +' : 'Savings: ') + fmt$(val) + (pct ? ' (' + pct + ')' : '');
+            },
+            title(ctx) {
+              return ctx[0].label;
+            },
+          },
+          backgroundColor: 'rgba(15,15,20,0.92)',
+          titleColor: '#e2e8f0',
+          bodyColor: '#94a3b8',
+          borderColor: 'rgba(255,255,255,0.1)',
+          borderWidth: 1,
+          padding: 10,
+          cornerRadius: 6,
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { color: 'var(--text2)', font: { size: 11 } },
+          border: { color: 'rgba(255,255,255,0.08)' },
+        },
+        y: {
+          min: 0,
+          max: Math.ceil(baseline * 1.05),
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          ticks: {
+            color: 'var(--text3)',
+            font: { size: 10 },
+            callback: (v) => '$' + (v >= 1000 ? (v / 1000).toFixed(0) + 'K' : v),
+            maxTicksLimit: 6,
+          },
+          border: { color: 'rgba(255,255,255,0.08)' },
+        },
+      },
+    },
+    plugins: [
+      {
+        // Draw value labels above/on bars and connector lines
+        id: 'waterfallLabels',
+        afterDraw(chart) {
+          const {
+            ctx: c,
+            scales: { y },
+          } = chart;
+          const meta = chart.getDatasetMeta(0);
+          c.save();
+          c.font = '600 11px var(--sans, system-ui)';
+          c.textAlign = 'center';
+          meta.data.forEach((bar, i) => {
+            const [base, top] = data[i];
+            const val = Math.abs(top - base);
+            let label = '';
+            if (i === 0) label = fmt$(val);
+            else if (i === 2) label = fmt$(val);
+            else label = (savingsIncrease ? '+' : '-') + fmt$(val) + ' (' + fmtPct(val, baseline) + ')';
+            c.fillStyle = i === 1 ? (savingsIncrease ? '#ef4444' : '#22c55e') : '#e2e8f0';
+            const barTop = y.getPixelForValue(Math.max(base, top));
+            c.fillText(label, bar.x, barTop - 6);
+          });
+          // Connector lines between bars
+          c.strokeStyle = 'rgba(148,163,184,0.35)';
+          c.lineWidth = 1;
+          c.setLineDash([4, 3]);
+          for (let i = 0; i < meta.data.length - 1; i++) {
+            const curr = meta.data[i];
+            const next = meta.data[i + 1];
+            // Connect right edge of bar to the starting height of the next bar
+            const connectY = i === 0 ? y.getPixelForValue(baseline) : y.getPixelForValue(actualCost);
+            const x1 = curr.x + curr.width / 2;
+            const x2 = next.x - next.width / 2;
+            c.beginPath();
+            c.moveTo(x1, connectY);
+            c.lineTo(x2, connectY);
+            c.stroke();
+          }
+          c.setLineDash([]);
+          c.restore();
+        },
+      },
+    ],
+  });
 }
 
 // ── Dashboard Calendar ──
