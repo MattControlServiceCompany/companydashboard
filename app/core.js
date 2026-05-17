@@ -905,6 +905,7 @@ function renderDetail(p) {
                       <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','baseline')">📊 Baseline Data</button>
                       <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','savproj')">📈 Savings Projection</button>
                       <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','perf')">💡 Building Performance</button>
+                      <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','scorecard')" title="Print-ready building summary for board presentations">📋 Scorecard</button>
                       <button class="btn btn-ghost btn-sm" onclick="openBldgModalForProj(${p.id}, projUDSelBldg['${p.id}'])">✏️ Edit Building</button>
                       <button class="btn btn-ghost btn-sm" onclick="openExportModal('building','${p.id}')" title="Export utility bill data to JSON or CSV">📤 Export Data</button>
                       <button class="btn btn-em btn-sm" onclick="projUDOpenMeterModal('${p.id}')">+ Add Meter</button>
@@ -2337,7 +2338,7 @@ function updateProjPerfSetting(projId, field, value) {
 // ── Embedded Project Utility Data tab ──
 // projUDSelBldg tracks which building is selected per project
 const projUDSelBldg = {};
-const projUDSelPanel = {}; // 'baseline'|'savproj'|'perf'|null
+const projUDSelPanel = {}; // 'baseline'|'savproj'|'perf'|'scorecard'|null
 
 function initProjUDTab(projId) {
   renderProjUDBldgNav(projId);
@@ -2461,6 +2462,7 @@ function renderProjUDBody(projId, bldgId) {
       if (panel === 'baseline') renderBuildingStatsPane(pane, b);
       if (panel === 'savproj') renderBldgSavProjPane(pane, b);
       if (panel === 'perf') renderBldgPerfPane(pane, b);
+      if (panel === 'scorecard') renderBuildingScorecardPane(pane, b, projId);
       // Append to DOM first so recalc can find elements via getElementById
       pEl.appendChild(pane);
       // Re-trigger calculation now that elements are in the document

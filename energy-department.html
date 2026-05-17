@@ -6440,6 +6440,294 @@
         border-color: var(--em);
         border-bottom: 1px solid var(--s3);
       }
+
+      /* ═══════════════════════════════════════════
+         BUILDING SCORECARD — sc-* classes
+         Print-friendly one-pager for school board.
+      ═══════════════════════════════════════════ */
+      .sc-root {
+        background: var(--s1);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 24px;
+        max-width: 860px;
+        margin: 0 auto;
+        font-family: var(--font);
+      }
+      .sc-print-bar {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        margin-bottom: 16px;
+        gap: 8px;
+      }
+      /* ── Header ── */
+      .sc-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 20px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 20px;
+      }
+      .sc-header-left {
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+        flex: 1;
+        min-width: 0;
+      }
+      .sc-photo-placeholder {
+        width: 80px;
+        height: 80px;
+        border-radius: 10px;
+        background: var(--s3);
+        border: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .sc-header-info {
+        flex: 1;
+        min-width: 0;
+      }
+      .sc-building-name {
+        font-size: 22px;
+        font-weight: 800;
+        font-family: var(--head);
+        letter-spacing: -0.02em;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .sc-building-addr {
+        font-size: 12px;
+        color: var(--text2);
+        margin-top: 3px;
+      }
+      .sc-building-meta {
+        font-size: 11px;
+        color: var(--text3);
+        margin-top: 2px;
+      }
+      .sc-generated {
+        font-size: 10px;
+        color: var(--text3);
+        margin-top: 6px;
+        font-style: italic;
+      }
+      .sc-header-right {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex-shrink: 0;
+      }
+      /* ── ENERGY STAR badge ── */
+      .sc-star-badge {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      /* ── Grade badge ── */
+      .sc-grade-badge {
+        width: 72px;
+        height: 72px;
+        border-radius: 50%;
+        border: 3px solid;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.04);
+      }
+      .sc-grade-letter {
+        font-size: 28px;
+        font-weight: 900;
+        font-family: var(--head);
+        line-height: 1;
+      }
+      .sc-grade-label {
+        font-size: 8px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        opacity: 0.7;
+        margin-top: 2px;
+      }
+      /* ── Section label ── */
+      .sc-section-label {
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--text3);
+        margin-bottom: 12px;
+      }
+      /* ── KPI gauges ── */
+      .sc-gauges-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+      .sc-gauge-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        background: var(--s2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px 8px 10px;
+        gap: 4px;
+      }
+      .sc-gauge-sublabel {
+        font-size: 10px;
+        color: var(--text3);
+        font-weight: 600;
+        text-align: center;
+        letter-spacing: 0.3px;
+      }
+      /* ── Bottom row ── */
+      .sc-bottom-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      .sc-spark-card,
+      .sc-env-card {
+        background: var(--s2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 16px;
+      }
+      .sc-card-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--text3);
+        margin-bottom: 10px;
+      }
+      .sc-spark-labels {
+        display: flex;
+        justify-content: space-between;
+        font-size: 9px;
+        color: var(--text3);
+        margin-top: 4px;
+      }
+      /* ── Environmental impact ── */
+      .sc-env-items {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .sc-env-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .sc-env-icon {
+        font-size: 26px;
+        flex-shrink: 0;
+      }
+      .sc-env-text {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .sc-env-text strong {
+        font-size: 20px;
+        font-weight: 800;
+        font-family: var(--head);
+        color: var(--em);
+        line-height: 1;
+      }
+      .sc-env-text span {
+        font-size: 11px;
+        color: var(--text2);
+      }
+      /* ── Footer ── */
+      .sc-footer {
+        text-align: center;
+        font-size: 10px;
+        color: var(--text3);
+        margin-top: 20px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border);
+        letter-spacing: 0.3px;
+      }
+      .print-only {
+        display: none !important;
+      }
+
+      /* ── Print styles ── */
+      @media print {
+        body {
+          background: #fff !important;
+          color: #111 !important;
+        }
+        .sc-root {
+          background: #fff !important;
+          border: none !important;
+          border-radius: 0 !important;
+          padding: 12px !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          box-shadow: none !important;
+        }
+        .no-print {
+          display: none !important;
+        }
+        .print-only {
+          display: block !important;
+        }
+        .sc-header {
+          border-bottom-color: #ccc !important;
+        }
+        .sc-building-name {
+          color: #111 !important;
+          font-size: 20px !important;
+        }
+        .sc-building-addr,
+        .sc-building-meta,
+        .sc-generated,
+        .sc-section-label,
+        .sc-card-title,
+        .sc-gauge-sublabel,
+        .sc-spark-labels,
+        .sc-env-text span,
+        .sc-footer {
+          color: #555 !important;
+        }
+        .sc-gauge-wrap,
+        .sc-spark-card,
+        .sc-env-card {
+          background: #f8f8f8 !important;
+          border-color: #ddd !important;
+        }
+        .sc-photo-placeholder {
+          background: #eee !important;
+          border-color: #ccc !important;
+        }
+        .sc-grade-badge {
+          background: #f8f8f8 !important;
+        }
+        .sc-env-text strong {
+          color: #0a7a5a !important;
+        }
+        .sc-footer {
+          border-top-color: #ccc !important;
+          color: #777 !important;
+        }
+        @page {
+          margin: 0.5in;
+          size: letter landscape;
+        }
+      }
     </style>
     <link rel="stylesheet" href="feedback-widget.css" />
   </head>
@@ -6926,6 +7214,13 @@
                     </button>
                     <button class="btn btn-ghost btn-sm" id="ud-proj-perf-btn" onclick="toggleUDProjPanel('perf')">
                       💡 Project Performance
+                    </button>
+                    <button
+                      class="btn btn-ghost btn-sm"
+                      id="ud-proj-compare-btn"
+                      onclick="toggleUDProjPanel('compare')"
+                    >
+                      🕸 Building Comparison
                     </button>
                   </div>
                 </div>
@@ -13818,6 +14113,7 @@
     <script src="app/ecm-calculators.js"></script>
     <script src="app/graphics-setpoints.js"></script>
     <script src="app/budget.js"></script>
+    <script src="app/scorecard.js"></script>
 
     <script src="app/site-functions.js"></script>
 
