@@ -906,6 +906,7 @@ function renderDetail(p) {
                       <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','savproj')">📈 Savings Projection</button>
                       <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','perf')">💡 Building Performance</button>
                       <button class="btn btn-ghost btn-sm" onclick="toggleProjUDPanel('${p.id}','scorecard')" title="Print-ready building summary for board presentations">📋 Scorecard</button>
+                      <button class="btn btn-ghost btn-sm" onclick="(function(){var _b=getUDBldg('${p.id}',projUDSelBldg['${p.id}']);if(typeof openEcmCalculatorForBuilding==='function')openEcmCalculatorForBuilding('${p.id}',projUDSelBldg['${p.id}'],_b?_b.name:'Building');})()" title="Open ECM Calculator pre-filled with this building's bill data">⚡ ECM Calculator</button>
                       <button class="btn btn-ghost btn-sm" onclick="openBldgModalForProj(${p.id}, projUDSelBldg['${p.id}'])">✏️ Edit Building</button>
                       <button class="btn btn-ghost btn-sm" onclick="openExportModal('building','${p.id}')" title="Export utility bill data to JSON or CSV">📤 Export Data</button>
                       <button class="btn btn-em btn-sm" onclick="projUDOpenMeterModal('${p.id}')">+ Add Meter</button>
@@ -1600,6 +1601,12 @@ function initDashboardTab(projId) {
         })
       : null;
 
+  // ECM projected savings
+  const _ecmResult =
+    typeof getProjectEcmTotal === 'function' ? getProjectEcmTotal(projId) : { total: 0, count: 0, ecms: [] };
+  const ecmTotal = _ecmResult.total || 0;
+  const ecmCount = _ecmResult.count || 0;
+
   perfWrap.innerHTML = `
           <div class="card" style="margin-bottom:16px">
             <div style="padding:20px;display:flex;gap:24px;align-items:stretch;flex-wrap:wrap">
@@ -1657,6 +1664,7 @@ function initDashboardTab(projId) {
                 <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Baseline</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(totalBl)}</div></div>
                 <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Current</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(totalCur)}</div></div>
                 ${estSavings > 0 ? '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Target</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">$' + Number(estSavings).toLocaleString() + '</div></div>' : ''}
+                ${ecmTotal > 0 ? '<div style="text-align:center;border-top:1px solid rgba(167,139,250,0.25);padding-top:8px;margin-top:4px"><div style="font-size:10px;color:#a78bfa;text-transform:uppercase">ECM Projected</div><div style="font-size:16px;font-weight:700;font-family:var(--mono);color:#c084fc">$' + ecmTotal.toLocaleString() + '/yr</div><div style="font-size:10px;color:var(--text3)">' + ecmCount + ' ECM' + (ecmCount !== 1 ? 's' : '') + ' saved — <button onclick="sv(\'calculators\')" style="font-size:10px;color:#a78bfa;background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">view</button></div></div>' : ''}
               </div>
             </div>
           </div>
@@ -1667,7 +1675,7 @@ function initDashboardTab(projId) {
               : '';
           })()}
           <div class="card" id="dash-waterfall-card-${projId}" style="margin-bottom:16px;display:${totalBl > 0 ? 'block' : 'none'}">
-            <div class="card-hdr"><span class="card-title">Savings Waterfall</span><span style="font-size:10px;color:var(--text3);font-weight:400;margin-left:8px">${useNormalized ? 'Weather-normalized' : 'Actual'}</span></div>
+            <div class="card-hdr"><span class="card-title">Savings Waterfall</span><span style="font-size:10px;color:var(--text3);font-weight:400;margin-left:8px">${useNormalized ? 'Weather-normalized' : 'Actual'}${ecmCount > 0 ? ' · ' + ecmCount + ' ECM' + (ecmCount !== 1 ? 's' : '') : ''}</span></div>
             <div style="padding:16px;position:relative;height:220px">
               <canvas id="dash-waterfall-canvas-${projId}" style="width:100%;height:100%"></canvas>
             </div>
@@ -1744,11 +1752,14 @@ function initDashboardTab(projId) {
           </div>`;
 
   if (typeof renderDashCalendar === 'function') renderDashCalendar(projId);
-  renderSavingsWaterfall(projId, totalBl, totalCur, totalSav, useNormalized);
+  // Pass ECM data to waterfall so individual ECM bars can be shown
+  const _ecmWfData = typeof getProjectEcmTotal === 'function' ? getProjectEcmTotal(projId) : null;
+  renderSavingsWaterfall(projId, totalBl, totalCur, totalSav, useNormalized, _ecmWfData);
 }
 
 // ── Savings Waterfall Chart ──
-function renderSavingsWaterfall(projId, baseline, actual, savings, isNormalized) {
+// ecmData: optional { total, count, ecms } from getProjectEcmTotal()
+function renderSavingsWaterfall(projId, baseline, actual, savings, isNormalized, ecmData) {
   const canvas = document.getElementById('dash-waterfall-canvas-' + projId);
   if (!canvas || !baseline || baseline <= 0) return;
 
@@ -1766,19 +1777,75 @@ function renderSavingsWaterfall(projId, baseline, actual, savings, isNormalized)
   const savingsAmt = baseline - actualCost;
   const savingsIncrease = savingsAmt < 0; // cost went up
 
-  // Waterfall data using [base, top] floating bar format:
-  // Baseline: from 0 to baseline (full bar)
-  // Savings step: from actualCost to baseline (the drop)
-  // Actual: from 0 to actualCost (final bar)
-  const labels = ['Baseline', savingsIncrease ? 'Cost Increase' : 'Energy Savings', 'Actual'];
-  const data = [[0, baseline], savingsIncrease ? [baseline, actualCost] : [actualCost, baseline], [0, actualCost]];
+  // Determine whether to use ECM-level breakdown or the single savings bar.
+  // Use ECM breakdown when: there are saved ECMs AND they have non-zero savings.
+  const ecmList = ecmData && ecmData.ecms && ecmData.ecms.length > 0 ? ecmData.ecms : null;
+  const useEcmBars = ecmList !== null && !savingsIncrease;
 
-  // Colors: blue for anchor bars, green for savings drop, red for cost increase
-  const blueColor = 'rgba(74,158,255,0.85)';
-  const greenColor = 'rgba(34,197,94,0.85)';
-  const redColor = 'rgba(239,68,68,0.80)';
-  const bgColors = [blueColor, savingsIncrease ? redColor : greenColor, blueColor];
-  const borderColors = ['#4a9eff', savingsIncrease ? '#ef4444' : '#22c55e', '#4a9eff'];
+  let labels, data, bgColors, borderColors;
+
+  if (useEcmBars) {
+    // Waterfall with individual ECM bars between Baseline and Actual:
+    //   Baseline → ECM1 drop → ECM2 drop → … → Actual
+    // Each ECM bar is a floating [base,top] segment descending from baseline.
+    labels = ['Baseline'];
+    data = [[0, baseline]];
+    bgColors = ['rgba(74,158,255,0.85)'];
+    borderColors = ['#4a9eff'];
+
+    // ECM color palette (purple tones for projected savings)
+    const ecmColors = [
+      'rgba(167,139,250,0.85)',
+      'rgba(196,132,252,0.85)',
+      'rgba(139,92,246,0.85)',
+      'rgba(217,70,239,0.85)',
+      'rgba(236,72,153,0.85)',
+    ];
+    const ecmBorders = ['#a78bfa', '#c084fc', '#8b5cf6', '#d946ef', '#ec4899'];
+
+    let runningTop = baseline;
+    ecmList.forEach((ecm, i) => {
+      const out = ecm.outputs || {};
+      const sav = Math.max(
+        0,
+        parseFloat(
+          out.annual_savings_dollars ||
+            out.total_savings_dollar ||
+            out.annual_cost_saved ||
+            out.annual_savings_dollar ||
+            0,
+        ),
+      );
+      if (sav <= 0) return;
+      const tmplName =
+        (typeof ECM_TEMPLATES !== 'undefined' && ECM_TEMPLATES[ecm.templateId]
+          ? ECM_TEMPLATES[ecm.templateId].name
+          : ecm.templateId) + (ecm.buildingName ? ' (' + ecm.buildingName + ')' : '');
+      labels.push(tmplName);
+      const segBase = runningTop - sav;
+      data.push([segBase, runningTop]);
+      const ci = i % ecmColors.length;
+      bgColors.push(ecmColors[ci]);
+      borderColors.push(ecmBorders[ci]);
+      runningTop = segBase;
+    });
+
+    // Actual bar
+    labels.push('Actual');
+    data.push([0, actualCost]);
+    bgColors.push('rgba(74,158,255,0.85)');
+    borderColors.push('#4a9eff');
+  } else {
+    // Standard 3-bar waterfall: Baseline | Savings/Increase | Actual
+    labels = ['Baseline', savingsIncrease ? 'Cost Increase' : 'Energy Savings', 'Actual'];
+    data = [[0, baseline], savingsIncrease ? [baseline, actualCost] : [actualCost, baseline], [0, actualCost]];
+    bgColors = [
+      'rgba(74,158,255,0.85)',
+      savingsIncrease ? 'rgba(239,68,68,0.80)' : 'rgba(34,197,94,0.85)',
+      'rgba(74,158,255,0.85)',
+    ];
+    borderColors = ['#4a9eff', savingsIncrease ? '#ef4444' : '#22c55e', '#4a9eff'];
+  }
 
   const ctx = canvas.getContext('2d');
   canvas._wfChart = new Chart(ctx, {
@@ -1809,10 +1876,16 @@ function renderSavingsWaterfall(projId, baseline, actual, savings, isNormalized)
               const [base, top] = ctx.raw;
               const val = Math.abs(top - base);
               const idx = ctx.dataIndex;
+              const lastIdx = data.length - 1;
               if (idx === 0) return 'Baseline Annual Cost: ' + fmt$(val);
-              if (idx === 2) return 'Actual Annual Cost: ' + fmt$(val);
+              if (idx === lastIdx) return 'Actual Annual Cost: ' + fmt$(val);
+              if (!useEcmBars) {
+                const pct = fmtPct(val, baseline);
+                return (savingsIncrease ? 'Cost Increase: +' : 'Savings: ') + fmt$(val) + (pct ? ' (' + pct + ')' : '');
+              }
+              // ECM bar
               const pct = fmtPct(val, baseline);
-              return (savingsIncrease ? 'Cost Increase: +' : 'Savings: ') + fmt$(val) + (pct ? ' (' + pct + ')' : '');
+              return 'ECM Savings: -' + fmt$(val) + (pct ? ' (' + pct + ' of baseline)' : '');
             },
             title(ctx) {
               return ctx[0].label;
@@ -1830,7 +1903,7 @@ function renderSavingsWaterfall(projId, baseline, actual, savings, isNormalized)
       scales: {
         x: {
           grid: { display: false },
-          ticks: { color: 'var(--text2)', font: { size: 11 } },
+          ticks: { color: 'var(--text2)', font: { size: 11 }, maxRotation: useEcmBars ? 30 : 0 },
           border: { color: 'rgba(255,255,255,0.08)' },
         },
         y: {
@@ -1860,14 +1933,28 @@ function renderSavingsWaterfall(projId, baseline, actual, savings, isNormalized)
           c.save();
           c.font = '600 11px var(--sans, system-ui)';
           c.textAlign = 'center';
+          const lastIdx = data.length - 1;
           meta.data.forEach((bar, i) => {
             const [base, top] = data[i];
             const val = Math.abs(top - base);
             let label = '';
-            if (i === 0) label = fmt$(val);
-            else if (i === 2) label = fmt$(val);
-            else label = (savingsIncrease ? '+' : '-') + fmt$(val) + ' (' + fmtPct(val, baseline) + ')';
-            c.fillStyle = i === 1 ? (savingsIncrease ? '#ef4444' : '#22c55e') : '#e2e8f0';
+            if (i === 0) {
+              label = fmt$(val);
+            } else if (i === lastIdx) {
+              label = fmt$(val);
+            } else if (useEcmBars) {
+              label = '-' + fmt$(val);
+            } else {
+              label = (savingsIncrease ? '+' : '-') + fmt$(val) + ' (' + fmtPct(val, baseline) + ')';
+            }
+            // Color: green for ECM savings bars, same logic as before for standard bars
+            if (i === 0 || i === lastIdx) {
+              c.fillStyle = '#e2e8f0';
+            } else if (useEcmBars) {
+              c.fillStyle = '#c084fc';
+            } else {
+              c.fillStyle = savingsIncrease ? '#ef4444' : '#22c55e';
+            }
             const barTop = y.getPixelForValue(Math.max(base, top));
             c.fillText(label, bar.x, barTop - 6);
           });
@@ -1878,8 +1965,9 @@ function renderSavingsWaterfall(projId, baseline, actual, savings, isNormalized)
           for (let i = 0; i < meta.data.length - 1; i++) {
             const curr = meta.data[i];
             const next = meta.data[i + 1];
-            // Connect right edge of bar to the starting height of the next bar
-            const connectY = i === 0 ? y.getPixelForValue(baseline) : y.getPixelForValue(actualCost);
+            // Connect right edge of current bar to starting height of next bar
+            const [cBase, cTop] = data[i];
+            const connectY = y.getPixelForValue(Math.min(cBase, cTop));
             const x1 = curr.x + curr.width / 2;
             const x2 = next.x - next.width / 2;
             c.beginPath();

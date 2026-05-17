@@ -2279,6 +2279,196 @@ const ECM_TEMPLATES = {
   },
 };
 
+/* ─── Project Rate Helper ────────────────────────────── */
+
+/**
+ * Compute average energy rates for a project from the last 12 months of bills.
+ * Returns an object with electric_rate, gas_rate, demand_rate, and source labels.
+ * Reads from the runtime utilityData object populated by loadUtilityData().
+ * @param {string|number} projId
+ * @returns {{ electric_rate: number|null, gas_rate: number|null, demand_rate: number|null, sourceLabel: string, billCount: number }}
+ */
+function getProjectRates(projId) {
+  const result = {
+    electric_rate: null,
+    gas_rate: null,
+    demand_rate: null,
+    sourceLabel: '',
+    billCount: 0,
+  };
+
+  // utilityData is the runtime object in core.js / utility-data.js
+  const ud = typeof utilityData !== 'undefined' && utilityData ? utilityData[projId] : null;
+  if (!ud || !ud.buildings) return result;
+
+  const now = new Date();
+  const cutoff = new Date(now.getFullYear() - 1, now.getMonth(), 1); // 12 months back
+
+  let elecCost = 0,
+    elecKwh = 0,
+    elecBills = 0;
+  let gasCost = 0,
+    gasTherms = 0,
+    gasBills = 0;
+  let demandCharge = 0,
+    demandKw = 0,
+    demandBills = 0;
+
+  for (const bldg of ud.buildings) {
+    for (const meter of bldg.meters || []) {
+      const commodity = (meter.commodity || '').toLowerCase();
+      const isElec = commodity === 'electric';
+      const isGas = commodity === 'gas' || commodity === 'natural gas';
+
+      for (const bill of meter.bills || []) {
+        // Only use last 12 months
+        const billEnd = bill.end ? new Date(bill.end + 'T12:00:00') : null;
+        if (!billEnd || billEnd < cutoff) continue;
+
+        result.billCount++;
+
+        if (isElec) {
+          const cost =
+            (parseFloat(bill.kwhCost) || 0) +
+            (parseFloat(bill.kwCost) || 0) +
+            (parseFloat(bill.otherCost) || 0) +
+            (parseFloat(bill.taxCost) || 0);
+          const kwh = parseFloat(bill.kwh || bill.kWhConsumed) || 0;
+          if (cost > 0 && kwh > 0) {
+            elecCost += cost;
+            elecKwh += kwh;
+            elecBills++;
+          }
+          // Demand: from demand charge line items
+          const dc = parseFloat(bill.kwCost) || 0; // BilledKWCharge + TDCCharge
+          const bkw = parseFloat(bill.billedKW || bill.BilledKW) || 0;
+          if (dc > 0 && bkw > 0) {
+            demandCharge += dc;
+            demandKw += bkw;
+            demandBills++;
+          }
+        }
+
+        if (isGas) {
+          const _gasBillCost = parseFloat(bill.cost) || 0;
+          const cost =
+            _gasBillCost > 0
+              ? _gasBillCost
+              : (parseFloat(bill.kwhCost) || 0) + (parseFloat(bill.otherCost) || 0) + (parseFloat(bill.taxCost) || 0);
+          const therms = parseFloat(bill.therms || bill.units) || 0;
+          if (cost > 0 && therms > 0) {
+            gasCost += cost;
+            gasTherms += therms;
+            gasBills++;
+          }
+        }
+      }
+    }
+  }
+
+  if (elecKwh > 0) {
+    result.electric_rate = Math.round((elecCost / elecKwh) * 10000) / 10000;
+    result.sourceLabel = elecBills + ' bill' + (elecBills !== 1 ? 's' : '') + ' (12-mo avg)';
+  }
+  if (gasTherms > 0) {
+    result.gas_rate = Math.round((gasCost / gasTherms) * 10000) / 10000;
+  }
+  if (demandKw > 0 && demandBills > 0) {
+    // $/kW/month: total demand charges / (sum of billed kW / months)
+    result.demand_rate = Math.round((demandCharge / demandBills / (demandKw / demandBills)) * 100) / 100;
+  }
+
+  return result;
+}
+
+/* ─── ECM Project Storage ────────────────────────────── */
+
+/**
+ * Get all saved ECMs for a project.
+ * @param {string|number} projId
+ * @returns {Array}
+ */
+function getProjectEcms(projId) {
+  const projects = typeof sget === 'function' ? sget('en_projects', []) : [];
+  const p = projects.find((x) => String(x.id) === String(projId));
+  return p && Array.isArray(p.ecms) ? p.ecms : [];
+}
+
+/**
+ * Sum ECM annual savings across all saved ECMs for a project.
+ * Looks for outputs.annual_savings_dollars, outputs.total_savings_dollar,
+ * or outputs.annual_cost_saved — whichever field the template produced.
+ * @param {string|number} projId
+ * @returns {{ total: number, count: number, ecms: Array }}
+ */
+function getProjectEcmTotal(projId) {
+  const ecms = getProjectEcms(projId);
+  let total = 0;
+  for (const ecm of ecms) {
+    const out = ecm.outputs || {};
+    const sav =
+      out.annual_savings_dollars || out.total_savings_dollar || out.annual_cost_saved || out.annual_savings_dollar || 0;
+    total += parseFloat(sav) || 0;
+  }
+  return { total: Math.round(total), count: ecms.length, ecms };
+}
+
+/**
+ * Save a completed ECM calculation to the project record.
+ * @param {string|number} projId
+ * @param {string} buildingId
+ * @param {string} buildingName
+ * @param {string} templateId
+ * @param {Object} inputs — key/value map (may include source metadata)
+ * @param {Object} outputs — result from calculateEcm()
+ * @param {string} [notes]
+ * @returns {boolean} success
+ */
+function saveEcmToProject(projId, buildingId, buildingName, templateId, inputs, outputs, notes) {
+  if (typeof sget !== 'function' || typeof sset !== 'function') return false;
+  const projects = sget('en_projects', []);
+  const p = projects.find((x) => String(x.id) === String(projId));
+  if (!p) return false;
+
+  if (!Array.isArray(p.ecms)) p.ecms = [];
+
+  // Build a clean inputs record — strip source metadata for storage,
+  // but keep the sourceLabel for display
+  const cleanInputs = {};
+  for (const [k, v] of Object.entries(inputs)) {
+    if (typeof v === 'object' && v !== null && 'value' in v) {
+      cleanInputs[k] = v; // already has { value, source, sourceLabel, manual }
+    } else {
+      cleanInputs[k] = { value: v, source: 'manual', manual: true };
+    }
+  }
+
+  const ecmId = 'ecm_' + Date.now() + Math.random().toString(36).slice(2, 6);
+  const record = {
+    id: ecmId,
+    templateId,
+    buildingId: buildingId || null,
+    buildingName: buildingName || null,
+    inputs: cleanInputs,
+    outputs,
+    savedAt: new Date().toISOString(),
+    notes: notes || '',
+  };
+
+  // Replace existing record for same template+building combo, or append
+  const existIdx = p.ecms.findIndex(
+    (e) => e.templateId === templateId && String(e.buildingId || '') === String(buildingId || ''),
+  );
+  if (existIdx >= 0) {
+    p.ecms[existIdx] = record;
+  } else {
+    p.ecms.push(record);
+  }
+
+  sset('en_projects', projects);
+  return true;
+}
+
 /* ─── Calculate API ──────────────────────────────────── */
 
 /**
@@ -2355,20 +2545,52 @@ function renderEcmPicker(container, onSelect) {
  * Render the input form for a template into a container element.
  * @param {string} templateId
  * @param {HTMLElement} container
- * @param {Object} savedValues — previously entered values (optional)
+ * @param {Object|null} savedValues — previously entered values (optional)
  * @param {Function} onBack — called when Back is clicked
- * @param {Function} onCalculate — called with (templateId, inputs) when Calculate is clicked
+ * @param {Function} onCalculate — called with (templateId, inputs, results) when Calculate is clicked
+ * @param {Object|null} projectContext — { projId, buildingId, buildingName } when opened from a project
  */
-function renderEcmCalculator(templateId, container, savedValues, onBack, onCalculate) {
+function renderEcmCalculator(templateId, container, savedValues, onBack, onCalculate, projectContext) {
   const tmpl = ECM_TEMPLATES[templateId];
   if (!tmpl || !container) return;
 
   const sv = savedValues || {};
+  const ctx = projectContext || null;
+
+  // Auto-populate rates from project bill data when context is provided
+  let autoRates = null;
+  if (ctx && ctx.projId) {
+    try {
+      autoRates = getProjectRates(ctx.projId);
+    } catch (e) {
+      autoRates = null;
+    }
+  }
+
+  // Map of input IDs that can be auto-populated from bills
+  const AUTO_FIELDS = {
+    elec_rate: autoRates && autoRates.electric_rate != null ? autoRates.electric_rate : null,
+    electric_rate: autoRates && autoRates.electric_rate != null ? autoRates.electric_rate : null,
+    gas_rate: autoRates && autoRates.gas_rate != null ? autoRates.gas_rate : null,
+    demand_rate: autoRates && autoRates.demand_rate != null ? autoRates.demand_rate : null,
+  };
+
+  // Track which fields were auto-populated (for styling and source display)
+  const autoPopulated = {};
 
   const fields = tmpl.inputs
     .map((inp) => {
-      const val = sv[inp.id] != null ? sv[inp.id] : inp.default;
+      let val = sv[inp.id] != null ? sv[inp.id] : inp.default;
       const id = 'ecm-inp-' + inp.id;
+
+      // Check for auto-population
+      const autoVal = AUTO_FIELDS[inp.id];
+      let isAuto = false;
+      if (autoVal != null && sv[inp.id] == null) {
+        val = autoVal;
+        isAuto = true;
+        autoPopulated[inp.id] = true;
+      }
 
       if (inp.type === 'select') {
         const opts = inp.options
@@ -2383,7 +2605,14 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
         </div>`;
       }
 
-      // Number input with inline validation
+      // Auto-populated inputs shown in blue with a source tag; override clears the tag
+      const autoStyle = isAuto ? 'color:#60a5fa;border-color:rgba(96,165,250,0.4)' : '';
+      const autoTag = isAuto
+        ? `<span id="${id}-autotag" style="font-size:10px;color:#60a5fa;margin-top:3px;display:block">
+             from bills (${autoRates.sourceLabel}) — <button type="button" style="font-size:10px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline" onclick="document.getElementById('${id}').style.color='';document.getElementById('${id}').style.borderColor='';document.getElementById('${id}-autotag').style.display='none'">override</button>
+           </span>`
+        : '';
+
       return `
       <div class="ecm-field-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px;flex-wrap:wrap">
         <label for="${id}" style="flex:0 0 280px;font-size:12px;font-weight:600;color:var(--text2);padding-top:6px">${inp.label}${inp.unit ? ' <span style="opacity:.6;font-weight:400">(' + inp.unit + ')</span>' : ''}</label>
@@ -2391,13 +2620,24 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
           <input id="${id}" class="fi ecm-input" type="number" data-inp="${inp.id}"
             value="${val}" min="${inp.min}" max="${inp.max}"
             step="${inp.type === 'number' && val < 1 ? '0.001' : '1'}"
-            style="width:100%;font-size:13px"
+            style="width:100%;font-size:13px;${autoStyle}"
             oninput="_ecmValidateInput(this,${inp.min},${inp.max})" />
+          ${autoTag}
           <div id="${id}-err" style="font-size:11px;color:var(--red,#e55);margin-top:2px;display:none"></div>
         </div>
       </div>`;
     })
     .join('');
+
+  // Build context banner if opened from a project
+  const autoCount = Object.keys(autoPopulated).length;
+  const contextBanner =
+    ctx && ctx.buildingName
+      ? `<div style="background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#93c5fd;display:flex;align-items:center;gap:8px">
+           <span style="font-size:16px">📌</span>
+           <span>Auto-populated from <strong>${ctx.buildingName}</strong> data${autoCount > 0 ? ' — ' + autoCount + ' rate' + (autoCount !== 1 ? 's' : '') + ' filled from bills' : ' — no bill data found'}</span>
+         </div>`
+      : '';
 
   container.innerHTML = `
     <div style="padding:20px;overflow-y:auto;flex:1" id="ecm-calc-form-wrap">
@@ -2407,6 +2647,7 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
         <h2 style="font-size:18px;font-weight:700;margin:0;color:var(--text)">${tmpl.name}</h2>
         <span style="font-size:11px;color:var(--accent);font-weight:600;text-transform:uppercase;letter-spacing:.5px;padding:2px 8px;border:1px solid var(--accent);border-radius:10px">${tmpl.category}</span>
       </div>
+      ${contextBanner}
       <p style="font-size:13px;color:var(--text2);margin:0 0 20px;line-height:1.6">${tmpl.description}</p>
 
       <div class="card" style="padding:16px 20px;margin-bottom:16px">
@@ -2433,7 +2674,13 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
   container.querySelector('#ecm-reset-btn').addEventListener('click', () => {
     tmpl.inputs.forEach((inp) => {
       const el = container.querySelector('#ecm-inp-' + inp.id);
-      if (el) el.value = inp.default;
+      if (el) {
+        el.value = inp.default;
+        el.style.color = '';
+        el.style.borderColor = '';
+      }
+      const tag = container.querySelector('#ecm-inp-' + inp.id + '-autotag');
+      if (tag) tag.style.display = 'none';
     });
     container.querySelector('#ecm-results-wrap').innerHTML = '';
   });
@@ -2455,7 +2702,7 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
     if (!valid) return;
 
     const results = calculateEcm(templateId, inputs);
-    renderEcmResults(templateId, results, container.querySelector('#ecm-results-wrap'));
+    renderEcmResults(templateId, results, container.querySelector('#ecm-results-wrap'), ctx, inputs);
 
     if (typeof onCalculate === 'function') onCalculate(templateId, inputs, results);
   });
@@ -2475,13 +2722,14 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
  * @param {string} templateId
  * @param {Object} results
  * @param {HTMLElement} container
+ * @param {Object|null} projectContext — { projId, buildingId, buildingName } for Save to Project
+ * @param {Object|null} inputs — raw input values (for storing with the ECM record)
  */
-function renderEcmResults(templateId, results, container) {
+function renderEcmResults(templateId, results, container, projectContext, inputs) {
   const tmpl = ECM_TEMPLATES[templateId];
   if (!tmpl || !container) return;
 
-  // Check that we have non-trivial results
-  const hasResults = Object.values(results).some((v) => v != null && v !== 0);
+  const ctx = projectContext || null;
 
   const rows = tmpl.outputs
     .map((out) => {
@@ -2535,6 +2783,20 @@ function renderEcmResults(templateId, results, container) {
     })
     .join('');
 
+  // Build the "Save to Project" footer if a project context is available
+  const saveBtnHtml =
+    ctx && ctx.projId
+      ? `<div style="padding:14px 16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+         <div style="flex:1;min-width:200px">
+           <input type="text" id="ecm-save-notes" class="fi" placeholder="Notes (optional — e.g. 'RTU-3 and RTU-4')" style="width:100%;font-size:12px" />
+         </div>
+         <button class="btn btn-em btn-sm" id="ecm-save-to-proj-btn" style="white-space:nowrap">
+           Save to ${ctx.buildingName ? ctx.buildingName : 'Project'}
+         </button>
+         <span id="ecm-save-status" style="font-size:11px;color:var(--green);display:none">Saved!</span>
+       </div>`
+      : '';
+
   container.innerHTML = `
     <div class="card" style="margin-top:4px">
       <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
@@ -2548,7 +2810,39 @@ function renderEcmResults(templateId, results, container) {
           ${rows}
         </tbody>
       </table>
+      ${saveBtnHtml}
     </div>`;
+
+  // Wire Save to Project button
+  if (ctx && ctx.projId) {
+    const saveBtn = container.querySelector('#ecm-save-to-proj-btn');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => {
+        const notesEl = container.querySelector('#ecm-save-notes');
+        const notes = notesEl ? notesEl.value.trim() : '';
+        const ok = saveEcmToProject(
+          ctx.projId,
+          ctx.buildingId,
+          ctx.buildingName,
+          templateId,
+          inputs || {},
+          results,
+          notes,
+        );
+        const status = container.querySelector('#ecm-save-status');
+        if (ok) {
+          saveBtn.textContent = 'Saved';
+          saveBtn.disabled = true;
+          if (status) status.style.display = 'inline';
+          if (typeof showToast === 'function') {
+            showToast('ECM saved to project — projected savings updated');
+          }
+        } else {
+          if (typeof showToast === 'function') showToast('Could not save — project not found', 'warn');
+        }
+      });
+    }
+  }
 }
 
 /* ─── Input Validation Helpers ───────────────────────── */
@@ -2597,15 +2891,21 @@ function _ecmToggleFormula(btn, outId) {
 /* ─── Main View Controller ───────────────────────────── */
 
 let _ecmActiveTemplate = null;
+// Current project context: { projId, buildingId, buildingName } or null
+let _ecmProjectContext = null;
 
 /**
  * Initialize the Calculators view. Called when the user navigates to view-calculators.
+ * @param {Object|null} projectContext — optional { projId, buildingId, buildingName }
+ *   Pass this when opening from a building context so inputs are auto-populated from bills
+ *   and results can be saved back to the project.
  */
-function initEcmCalculatorsView() {
+function initEcmCalculatorsView(projectContext) {
   const container = document.getElementById('ecm-view-body');
   if (!container) return;
 
   _ecmActiveTemplate = null;
+  _ecmProjectContext = projectContext || null;
 
   function onSelect(templateId) {
     _ecmActiveTemplate = templateId;
@@ -2614,18 +2914,36 @@ function initEcmCalculatorsView() {
       container,
       null, // no saved values on first open
       function onBack() {
-        // Return to picker
+        // Return to picker, preserving context
         _ecmActiveTemplate = null;
-        initEcmCalculatorsView();
+        initEcmCalculatorsView(_ecmProjectContext);
       },
       function onCalculate(tid, inputs, results) {
-        // Results are rendered inline by renderEcmResults — nothing extra needed here
-        // Future: hook could push results to a project savings measure
+        // Results are rendered inline by renderEcmResults (with Save to Project button if ctx set)
       },
+      _ecmProjectContext,
     );
   }
 
   renderEcmPicker(container, onSelect);
+}
+
+/**
+ * Open the Calculators view pre-scoped to a specific project/building.
+ * Call this from the project UI to launch a calculator with auto-populated inputs.
+ * @param {string|number} projId
+ * @param {string} buildingId
+ * @param {string} buildingName
+ */
+function openEcmCalculatorForBuilding(projId, buildingId, buildingName) {
+  // Navigate to calculators view
+  if (typeof sv === 'function') {
+    sv('calculators');
+  }
+  // Set context and reinitialize after view is active
+  setTimeout(function () {
+    initEcmCalculatorsView({ projId: String(projId), buildingId: buildingId, buildingName: buildingName });
+  }, 50);
 }
 
 /* ─── Auto-init if navigating directly to calculators view ── */
