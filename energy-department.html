@@ -5817,6 +5817,223 @@
       .ma-pane.active {
         display: block;
       }
+
+      /* ── PIPELINE DIAGRAM ── */
+      /* 11-column interleaved grid: odd cols = nodes, even cols = arrow connectors */
+      /* 3 rows: row 1 = top nodes, row 2 = vertical arrows, row 3 = bottom nodes */
+      .pd-diagram {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr) 40px repeat(5, 1fr);
+        grid-template-columns: 1fr 40px 1fr 40px 1fr 40px 1fr 40px 1fr 40px 1fr;
+        grid-template-rows: auto 36px auto;
+        gap: 6px 0;
+        padding: 16px;
+        background: var(--s1);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        margin-bottom: 10px;
+        position: relative;
+      }
+      .pd-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;
+        padding: 10px 8px 8px;
+        background: var(--s2);
+        border: 1.5px solid var(--border);
+        border-radius: 9px;
+        cursor: pointer;
+        transition: all 0.14s;
+        position: relative;
+        min-width: 80px;
+        text-align: center;
+      }
+      .pd-node:hover {
+        border-color: var(--nd-color, var(--em));
+        background: var(--nd-dim, var(--em-dim));
+        transform: translateY(-1px);
+      }
+      .pd-node.pd-node-active {
+        border-color: var(--nd-color, var(--em));
+        background: var(--nd-dim, var(--em-dim));
+        box-shadow: 0 0 0 2px var(--nd-color, var(--em));
+      }
+      @keyframes pdPulse {
+        0% {
+          box-shadow: 0 0 0 0 var(--nd-color, var(--em));
+        }
+        60% {
+          box-shadow: 0 0 0 6px transparent;
+        }
+        100% {
+          box-shadow: 0 0 0 0 transparent;
+        }
+      }
+      .pd-node.pd-node-pulse {
+        animation: pdPulse 0.7s ease-out forwards;
+        border-color: var(--nd-color, var(--em));
+        background: var(--nd-dim, var(--em-dim));
+      }
+      .pd-node-status {
+        position: absolute;
+        top: 5px;
+        right: 7px;
+        font-size: 10px;
+        line-height: 1;
+      }
+      .pd-node-icon {
+        font-size: 20px;
+        line-height: 1;
+      }
+      .pd-node-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text2);
+        line-height: 1.2;
+        white-space: nowrap;
+      }
+      .pd-edge-btn {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        background: transparent;
+        border: 1px dashed var(--border2);
+        border-radius: 6px;
+        cursor: pointer;
+        padding: 3px 6px;
+        transition: all 0.13s;
+        min-width: 0;
+        font-family: var(--font);
+      }
+      .pd-edge-btn:hover,
+      .pd-edge-btn.pd-edge-active {
+        border-color: var(--em);
+        background: var(--em-dim);
+      }
+      .pd-edge-arrow {
+        font-size: 14px;
+        color: var(--text3);
+        line-height: 1;
+      }
+      .pd-edge-btn:hover .pd-edge-arrow,
+      .pd-edge-btn.pd-edge-active .pd-edge-arrow {
+        color: var(--em);
+      }
+      .pd-edge-label {
+        font-size: 9px;
+        color: var(--text3);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 90px;
+      }
+      .pd-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        font-size: 11px;
+        color: var(--text3);
+        align-items: center;
+        padding: 6px 2px;
+        margin-bottom: 4px;
+      }
+      .pd-legend-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .pd-stat-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .pd-stat {
+        background: var(--s2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 9px 12px;
+      }
+      .pd-stat-lbl {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text3);
+        font-weight: 700;
+        margin-bottom: 3px;
+      }
+      .pd-stat-val {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--text);
+        line-height: 1.2;
+      }
+      .pd-stat-unit {
+        font-size: 10px;
+        color: var(--text3);
+        font-weight: 400;
+      }
+      .pd-code-block {
+        background: var(--s3);
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        padding: 10px 13px;
+      }
+      .pd-code-label {
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--text3);
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+      .pd-code-block code {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        color: var(--em);
+        word-break: break-all;
+        white-space: pre-wrap;
+      }
+      .pd-eq-block {
+        background: var(--s2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-bottom: 8px;
+      }
+      .pd-eq-label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text3);
+        font-weight: 700;
+        margin-bottom: 5px;
+      }
+      .pd-eq {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: var(--violet);
+        margin-bottom: 4px;
+      }
+      .pd-eq-sub {
+        font-size: 11px;
+        color: var(--text3);
+        font-family: 'JetBrains Mono', monospace;
+      }
+      .pd-frozen-badge {
+        display: inline-block;
+        background: var(--amber-dim);
+        border: 1px solid var(--amber);
+        color: var(--amber);
+        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 20px;
+        margin-top: 8px;
+      }
+
       /* Analysis stat cards */
       .ma-stats {
         display: grid;
@@ -14106,6 +14323,7 @@
     <script src="app/bill-analysis.js"></script>
     <script src="app/district-calendar.js"></script>
     <script src="app/utility-data.js"></script>
+    <script src="app/pipeline-diagram.js"></script>
     <script src="app/csv-import.js"></script>
     <script src="app/report-engine.js"></script>
     <script src="app/report-preview.js"></script>

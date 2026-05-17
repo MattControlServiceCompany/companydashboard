@@ -1849,6 +1849,7 @@ function renderMeterWorkspace() {
     { id: 'baseline', label: '📊 Baseline' },
     { id: 'stats', label: '📈 Meter Data' },
     { id: 'perf', label: '💡 Meter Performance' },
+    { id: 'pipeline', label: '🔀 Data Pipeline' },
   ];
 
   ws.innerHTML =
@@ -1885,6 +1886,7 @@ function renderMeterWorkspace() {
   if (udActiveTab === 'baseline') renderBaselinePane(pane, m, bills, incl);
   if (udActiveTab === 'stats') renderMeterDataPane(pane, m, bills, incl);
   if (udActiveTab === 'perf') renderPerfPane(pane, m, bills, incl);
+  if (udActiveTab === 'pipeline') renderPipelinePane(pane, m, bills, incl);
 }
 
 /* ══════════════════════════════════════════
