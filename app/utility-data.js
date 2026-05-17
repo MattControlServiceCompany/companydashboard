@@ -578,7 +578,7 @@ function udSelectBldg(bid) {
     }
     const wrap = document.getElementById('udDetailWrap');
     if (wrap) wrap.style.display = '';
-    ['ud-proj-baseline-btn', 'ud-proj-savproj-btn', 'ud-proj-perf-btn'].forEach((id) => {
+    ['ud-proj-baseline-btn', 'ud-proj-savproj-btn', 'ud-proj-perf-btn', 'ud-proj-compare-btn'].forEach((id) => {
       const btn = document.getElementById(id);
       if (btn) {
         btn.style.borderColor = '';
@@ -593,7 +593,12 @@ function udSelectBldg(bid) {
 
 function toggleUDProjPanel(key) {
   _udProjPanel = _udProjPanel === key ? null : key;
-  const map = { baseline: 'ud-proj-baseline-btn', savproj: 'ud-proj-savproj-btn', perf: 'ud-proj-perf-btn' };
+  const map = {
+    baseline: 'ud-proj-baseline-btn',
+    savproj: 'ud-proj-savproj-btn',
+    perf: 'ud-proj-perf-btn',
+    compare: 'ud-proj-compare-btn',
+  };
   Object.entries(map).forEach(([k, id]) => {
     const btn = document.getElementById(id);
     if (!btn) return;
@@ -1121,7 +1126,360 @@ function renderUDProjAggPanel(content) {
         },
       });
     });
+  } else if (_udProjPanel === 'compare') {
+    renderBldgComparisonPanel(content, bldgs, projName, udSelProjId);
   }
+}
+
+// ── BUILDING COMPARISON RADAR CHART ──────────────────────────────────────────
+// Renders a radar (spider) chart comparing all buildings in a project on 6
+// normalised performance metrics:
+//   EUI, Cost/sqft, Savings%, Load Factor, ENERGY STAR score, Demand Intensity
+//
+// Normalisation: each metric is scaled to 0–100 where 100 = best.
+//   Lower-is-better metrics (EUI, cost/sqft, demand intensity) are inverted:
+//   score = 100 × (1 − value / max_in_project)
+//   Higher-is-better metrics (savings%, load factor, ENERGY STAR) are scaled
+//   directly to 0–100.
+//
+// Tooltips show the raw (un-normalised) actual value for each building/axis.
+// Building selector checkboxes let the user toggle buildings on/off.
+function renderBldgComparisonPanel(content, bldgs, projName, projId) {
+  // ── Colour palette — 8 distinct colours, cycling if >8 buildings ──
+  const PALETTE = [
+    'rgba(59,130,246,1)', // blue
+    'rgba(249,115,22,1)', // orange
+    'rgba(16,185,129,1)', // green
+    'rgba(139,92,246,1)', // violet
+    'rgba(244,63,94,1)', // rose
+    'rgba(20,184,166,1)', // teal
+    'rgba(234,179,8,1)', // yellow
+    'rgba(168,85,247,1)', // purple
+  ];
+  const AXES = ['EUI', 'Cost/sqft', 'Savings %', 'Load Factor', 'ENERGY STAR', 'Demand/sqft'];
+
+  if (!bldgs.length) {
+    content.innerHTML =
+      '<div style="padding:20px;font-size:13px;color:var(--text2)">No buildings in this project yet.</div>';
+    return;
+  }
+
+  // ── Gather raw metrics per building ──────────────────────────────────────
+  const rawMetrics = bldgs.map((b) => {
+    const sqft = parseFloat(b.sqft || 0);
+    const meters = (b.meters || []).filter((m) => m.baselineInclude !== false);
+
+    // Collect trailing-12-month bills per commodity
+    let totalCost = 0,
+      kwh12 = 0,
+      gas12 = 0,
+      prop12 = 0;
+    let peakKW = 0;
+    let loadFactorSum = 0,
+      loadFactorCount = 0;
+
+    const now = new Date();
+    const cutoffYm = (() => {
+      const d = new Date(now.getFullYear(), now.getMonth() - 12, 1);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    })();
+
+    meters.forEach((m) => {
+      const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+      const incl = m.inclusive !== false;
+      const isElec = m.commodity === 'Electric';
+      const isGas = m.commodity === 'Gas';
+      const isProp = m.commodity === 'Propane';
+
+      // Use getNormRows to get trailing-12-month normalised rows
+      const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
+      // trailing 12 months
+      const t12 = allRows.slice(-12);
+      t12.forEach((r) => {
+        totalCost += r.totalCost || 0;
+        if (isElec) {
+          kwh12 += r.usage || 0;
+          // load factor: kWh / (demandKW × 24 × days)
+          const rowBills = bills.filter((b2) => normMonth(b2.start, b2.end, incl, bills) === r.ym);
+          rowBills.forEach((bill) => {
+            const kw = parseFloat(bill.demandKW || 0);
+            const days = parseFloat(bill.days || 30);
+            if (kw > 0 && days > 0 && r.usage > 0) {
+              const lf = r.usage / (kw * 24 * days);
+              if (lf > 0 && lf <= 1.5) {
+                loadFactorSum += lf;
+                loadFactorCount++;
+              }
+            }
+            const demKW = parseFloat(bill.demandKW || 0);
+            if (demKW > peakKW) peakKW = demKW;
+          });
+        }
+        if (isGas) gas12 += r.usage || 0;
+        if (isProp) prop12 += r.usage || 0;
+      });
+    });
+
+    // EUI — site kBtu/sqft/yr (rolling 12 months annualised)
+    const siteKBtu = computeKBtu(kwh12, gas12, prop12);
+    const eui = sqft > 0 && siteKBtu > 0 ? ((siteKBtu / 12) * 12) / sqft : null;
+
+    // Cost / sqft — annual
+    const costPerSqft = sqft > 0 && totalCost > 0 ? totalCost / sqft : null;
+
+    // Savings % — aggregate across all meters with baselines
+    let totalBlCost = 0,
+      totalActSav = 0;
+    meters.forEach((m) => {
+      const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+      const incl = m.inclusive !== false;
+      const bl = m.baseline || (m.baselines && m.baselines[0]);
+      if (!bl || !bl.months || bl.months.length < 3) return;
+      const savResult = getMeterSavings(m, bills, incl, projId, b.id);
+      const savVals = Object.values(savResult.byYM || {});
+      totalActSav += savVals.reduce((s, v) => s + v, 0);
+      // Baseline cost: average monthly × 12
+      const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
+      const blRows = allRows.filter((r) => bl.months.includes(r.ym));
+      const { elecByMo: eM, gasByMo: gM, propaneByMo: pM, waterByMo: wM } = buildMoMap(m, blRows, bills, incl);
+      for (let mo = 0; mo < 12; mo++)
+        totalBlCost += (eM[mo]?.totalCost || 0) + (gM[mo]?.cost || 0) + (pM[mo]?.cost || 0) + (wM[mo]?.cost || 0);
+    });
+    const savingsPct = totalBlCost > 0 ? (totalActSav / totalBlCost) * 100 : null;
+
+    // Load factor — average of trailing-12 monthly values
+    const loadFactor = loadFactorCount > 0 ? loadFactorSum / loadFactorCount : null;
+
+    // ENERGY STAR estimate (source EUI, K-12 table)
+    const srcEui = typeof computeSourceEUI === 'function' ? computeSourceEUI(kwh12, gas12, prop12, sqft) : 0;
+    const energyStar =
+      srcEui > 0 && typeof estimateEnergyStarScore === 'function' ? estimateEnergyStarScore(srcEui) : null;
+
+    // Demand intensity — peak kW / sqft
+    const demandIntensity = sqft > 0 && peakKW > 0 ? peakKW / sqft : null;
+
+    return {
+      name: b.name || 'Building',
+      sqft,
+      eui,
+      costPerSqft,
+      savingsPct,
+      loadFactor,
+      energyStar,
+      demandIntensity,
+    };
+  });
+
+  // ── Normalise to 0–100 per axis ───────────────────────────────────────────
+  function maxOf(key) {
+    const vals = rawMetrics.map((r) => r[key]).filter((v) => v != null && isFinite(v));
+    return vals.length ? Math.max(...vals) : 1;
+  }
+  function minOf(key) {
+    const vals = rawMetrics.map((r) => r[key]).filter((v) => v != null && isFinite(v));
+    return vals.length ? Math.min(...vals) : 0;
+  }
+
+  const maxEui = maxOf('eui') || 1;
+  const maxCost = maxOf('costPerSqft') || 1;
+  const maxDemI = maxOf('demandIntensity') || 1;
+  const maxLF = maxOf('loadFactor') || 1;
+
+  function norm(raw, key) {
+    if (raw == null || !isFinite(raw)) return 0;
+    switch (key) {
+      case 'eui':
+        return Math.max(0, Math.min(100, 100 * (1 - raw / maxEui)));
+      case 'costPerSqft':
+        return Math.max(0, Math.min(100, 100 * (1 - raw / maxCost)));
+      case 'savingsPct':
+        return Math.max(0, Math.min(100, raw)); // already 0–100
+      case 'loadFactor':
+        return Math.max(0, Math.min(100, raw * 100)); // 0–1 → 0–100
+      case 'energyStar':
+        return Math.max(0, Math.min(100, raw)); // already 1–99
+      case 'demandIntensity':
+        return Math.max(0, Math.min(100, 100 * (1 - raw / maxDemI)));
+      default:
+        return 0;
+    }
+  }
+
+  const datasets = rawMetrics.map((r, i) => {
+    const color = PALETTE[i % PALETTE.length];
+    const fill = color.replace('1)', '0.18)');
+    return {
+      label: r.name,
+      data: [
+        norm(r.eui, 'eui'),
+        norm(r.costPerSqft, 'costPerSqft'),
+        norm(r.savingsPct, 'savingsPct'),
+        norm(r.loadFactor, 'loadFactor'),
+        norm(r.energyStar, 'energyStar'),
+        norm(r.demandIntensity, 'demandIntensity'),
+      ],
+      borderColor: color,
+      backgroundColor: fill,
+      pointBackgroundColor: color,
+      pointBorderColor: '#1a2130',
+      pointRadius: 5,
+      borderWidth: 2,
+      _raw: r, // store raw for tooltips
+    };
+  });
+
+  // ── Build selector HTML ───────────────────────────────────────────────────
+  const selectorRows = rawMetrics
+    .map((r, i) => {
+      const color = PALETTE[i % PALETTE.length];
+      const fmtEui = r.eui != null ? r.eui.toFixed(1) + ' kBtu/sf' : '—';
+      const fmtCost = r.costPerSqft != null ? '$' + r.costPerSqft.toFixed(2) + '/sf' : '—';
+      const fmtSav = r.savingsPct != null ? (r.savingsPct >= 0 ? '+' : '') + r.savingsPct.toFixed(1) + '%' : '—';
+      const fmtLF = r.loadFactor != null ? (r.loadFactor * 100).toFixed(0) + '%' : '—';
+      const fmtES = r.energyStar != null ? '~' + r.energyStar : '—';
+      const fmtDem = r.demandIntensity != null ? r.demandIntensity.toFixed(4) + ' kW/sf' : '—';
+      return `<tr>
+      <td style="padding:5px 8px;white-space:nowrap">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" data-bldg-idx="${i}" checked
+            style="accent-color:${color};width:14px;height:14px">
+          <span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:${color};flex-shrink:0"></span>
+          <span style="font-size:12px;font-weight:600;color:var(--text)">${r.name}</span>
+        </label>
+      </td>
+      <td style="padding:5px 8px;font-size:11px;font-family:var(--mono);color:var(--text2);text-align:right">${fmtEui}</td>
+      <td style="padding:5px 8px;font-size:11px;font-family:var(--mono);color:var(--text2);text-align:right">${fmtCost}</td>
+      <td style="padding:5px 8px;font-size:11px;font-family:var(--mono);color:${r.savingsPct != null && r.savingsPct >= 0 ? 'var(--em)' : 'var(--danger)'};text-align:right">${fmtSav}</td>
+      <td style="padding:5px 8px;font-size:11px;font-family:var(--mono);color:var(--text2);text-align:right">${fmtLF}</td>
+      <td style="padding:5px 8px;font-size:11px;font-family:var(--mono);color:var(--text2);text-align:right">${fmtES}</td>
+      <td style="padding:5px 8px;font-size:11px;font-family:var(--mono);color:var(--text2);text-align:right">${fmtDem}</td>
+    </tr>`;
+    })
+    .join('');
+
+  const thS2 =
+    'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);background:var(--s2);border-bottom:1px solid var(--border);text-align:right;white-space:nowrap';
+
+  content.innerHTML = `
+    <div style="padding:14px 18px 10px;background:var(--s2);border-bottom:1px solid var(--border)">
+      <div style="font-size:14px;font-weight:800;font-family:var(--head);color:var(--em);margin-bottom:4px">🕸 ${projName} — Building Comparison</div>
+      <div style="font-size:11px;color:var(--text3)">Radar chart — all axes normalised 0–100 (100 = best). Hover for actual values.</div>
+    </div>
+    <div style="display:flex;gap:0;flex-wrap:wrap">
+      <div style="flex:1;min-width:320px;padding:18px 22px 18px 18px">
+        <div style="position:relative;height:380px"><canvas id="bldgCompareRadarChart"></canvas></div>
+      </div>
+      <div style="flex:0 0 auto;padding:14px 18px;border-left:1px solid var(--border);overflow-x:auto">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:8px">Select / Deselect Buildings</div>
+        <table style="border-collapse:collapse;min-width:480px">
+          <thead><tr>
+            <th style="${thS2.replace('text-align:right', 'text-align:left')}">Building</th>
+            <th style="${thS2}">EUI</th>
+            <th style="${thS2}">$/sqft</th>
+            <th style="${thS2}">Savings</th>
+            <th style="${thS2}">Load Factor</th>
+            <th style="${thS2}">ENERGY STAR</th>
+            <th style="${thS2}">Dem/sqft</th>
+          </tr></thead>
+          <tbody id="bldgCompareRows">${selectorRows}</tbody>
+        </table>
+        <div style="margin-top:10px;font-size:10px;color:var(--text3);line-height:1.5">
+          EUI: lower is better &nbsp;|&nbsp; $/sqft: lower is better &nbsp;|&nbsp; Savings: higher is better<br>
+          Load Factor: higher is better &nbsp;|&nbsp; ENERGY STAR: higher is better &nbsp;|&nbsp; Dem/sqft: lower is better
+        </div>
+      </div>
+    </div>`;
+
+  // ── Render radar chart ────────────────────────────────────────────────────
+  requestAnimationFrame(() => {
+    const cv = document.getElementById('bldgCompareRadarChart');
+    if (!cv) return;
+    if (_maCharts['bldgCompareRadar']) _maCharts['bldgCompareRadar'].destroy();
+    _maCharts['bldgCompareRadar'] = new Chart(cv, {
+      type: 'radar',
+      data: { labels: AXES, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 400 },
+        scales: {
+          r: {
+            min: 0,
+            max: 100,
+            ticks: {
+              stepSize: 25,
+              color: 'rgba(180,200,220,.6)',
+              font: { size: 9 },
+              backdropColor: 'transparent',
+            },
+            grid: { color: 'rgba(255,255,255,.1)' },
+            angleLines: { color: 'rgba(255,255,255,.15)' },
+            pointLabels: { color: 'rgba(200,220,240,.9)', font: { size: 12, weight: '600' } },
+          },
+        },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'bottom',
+            labels: {
+              color: 'rgba(200,220,240,.9)',
+              font: { size: 11 },
+              boxWidth: 14,
+              padding: 14,
+            },
+          },
+          tooltip: {
+            callbacks: {
+              label(ctx) {
+                const raw = ctx.dataset._raw;
+                if (!raw) return ctx.dataset.label + ': ' + ctx.parsed.r.toFixed(0);
+                const axis = AXES[ctx.dataIndex];
+                let actual = '—';
+                switch (axis) {
+                  case 'EUI':
+                    actual = raw.eui != null ? raw.eui.toFixed(1) + ' kBtu/sf/yr' : '—';
+                    break;
+                  case 'Cost/sqft':
+                    actual = raw.costPerSqft != null ? '$' + raw.costPerSqft.toFixed(2) + '/sf' : '—';
+                    break;
+                  case 'Savings %':
+                    actual = raw.savingsPct != null ? raw.savingsPct.toFixed(1) + '%' : '—';
+                    break;
+                  case 'Load Factor':
+                    actual = raw.loadFactor != null ? (raw.loadFactor * 100).toFixed(0) + '%' : '—';
+                    break;
+                  case 'ENERGY STAR':
+                    actual = raw.energyStar != null ? '~' + raw.energyStar : '—';
+                    break;
+                  case 'Demand/sqft':
+                    actual = raw.demandIntensity != null ? raw.demandIntensity.toFixed(4) + ' kW/sf' : '—';
+                    break;
+                }
+                return (
+                  ' ' + ctx.dataset.label + ' — ' + axis + ': ' + actual + ' (score ' + ctx.parsed.r.toFixed(0) + ')'
+                );
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // ── Checkbox toggling ─────────────────────────────────────────────────
+    const tbody = document.getElementById('bldgCompareRows');
+    if (tbody) {
+      tbody.addEventListener('change', (e) => {
+        const cb = e.target;
+        if (!cb || cb.type !== 'checkbox') return;
+        const idx = parseInt(cb.dataset.bldgIdx);
+        const chart = _maCharts['bldgCompareRadar'];
+        if (!chart) return;
+        const meta = chart.getDatasetMeta(idx);
+        meta.hidden = !cb.checked;
+        chart.update();
+      });
+    }
+  });
 }
 
 /* ── RENDER RIGHT DETAIL: Building header + Meters ── */
