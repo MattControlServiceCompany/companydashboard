@@ -2350,12 +2350,12 @@ function getProjectRates(projId) {
         }
 
         if (isGas) {
-          const _gasBillCost = parseFloat(bill.cost) || 0;
-          const cost =
-            _gasBillCost > 0
-              ? _gasBillCost
-              : (parseFloat(bill.kwhCost) || 0) + (parseFloat(bill.otherCost) || 0) + (parseFloat(bill.taxCost) || 0);
-          const therms = parseFloat(bill.therms || bill.units) || 0;
+          // Gas bills store total cost in totalCost; therms in bill.therms, bill.units, or bill.kwh (generic field)
+          const _gasTotalCost = parseFloat(bill.totalCost) || 0;
+          const _gasLineCost =
+            (parseFloat(bill.kwhCost) || 0) + (parseFloat(bill.otherCost) || 0) + (parseFloat(bill.taxCost) || 0);
+          const cost = _gasTotalCost > 0 ? _gasTotalCost : _gasLineCost;
+          const therms = parseFloat(bill.therms || bill.units || bill.kwh) || 0;
           if (cost > 0 && therms > 0) {
             gasCost += cost;
             gasTherms += therms;
