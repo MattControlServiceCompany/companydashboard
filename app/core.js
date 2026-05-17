@@ -1674,12 +1674,6 @@ function initDashboardTab(projId) {
               ? `<div class="card" style="margin-bottom:16px"><div style="padding:20px;display:flex;gap:16px;align-items:stretch;flex-wrap:wrap">${_budgetKPI}</div></div>`
               : '';
           })()}
-          <div class="card" id="dash-waterfall-card-${projId}" style="margin-bottom:16px;display:${totalBl > 0 ? 'block' : 'none'}">
-            <div class="card-hdr"><span class="card-title">Savings Waterfall</span><span style="font-size:10px;color:var(--text3);font-weight:400;margin-left:8px">${useNormalized ? 'Weather-normalized' : 'Actual'}${ecmCount > 0 ? ' · ' + ecmCount + ' ECM' + (ecmCount !== 1 ? 's' : '') : ''}</span></div>
-            <div style="padding:16px;position:relative;height:220px">
-              <canvas id="dash-waterfall-canvas-${projId}" style="width:100%;height:100%"></canvas>
-            </div>
-          </div>
           <div class="card">
             <div class="card-hdr"><span class="card-title">Building Performance</span></div>
             <div style="overflow:auto;max-height:60vh">
@@ -1752,9 +1746,9 @@ function initDashboardTab(projId) {
           </div>`;
 
   if (typeof renderDashCalendar === 'function') renderDashCalendar(projId);
-  // Pass ECM data to waterfall so individual ECM bars can be shown
-  const _ecmWfData = typeof getProjectEcmTotal === 'function' ? getProjectEcmTotal(projId) : null;
-  renderSavingsWaterfall(projId, totalBl, totalCur, totalSav, useNormalized, _ecmWfData);
+  // Waterfall chart removed from dashboard tab (2026-05-17); function definition kept for potential future use
+  // const _ecmWfData = typeof getProjectEcmTotal === 'function' ? getProjectEcmTotal(projId) : null;
+  // renderSavingsWaterfall(projId, totalBl, totalCur, totalSav, useNormalized, _ecmWfData);
 }
 
 // ── Savings Waterfall Chart ──
