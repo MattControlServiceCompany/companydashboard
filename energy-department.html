@@ -3499,6 +3499,11 @@
         overflow-y: auto;
         min-height: 0;
       }
+      /* Direct children of scrolling tabs must not shrink — they must overflow the
+         bounded container so overflow-y:auto can actually scroll them. */
+      .ptab.active > * {
+        flex-shrink: 0;
+      }
       #ptab-dashboard.active {
         display: flex;
         flex-direction: column;

@@ -831,7 +831,7 @@ function renderDetail(p) {
             </div>
             <div id="ptab-dashboard" class="ptab active" style="padding:0;overflow-y:auto">
               <div id="dash-hdr-${p.id}"></div>
-              <div style="padding:16px;flex:1">
+              <div style="padding:16px">
                 <div class="dash-grid">
                   <div id="dash-perf-${p.id}"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
                   <div id="dash-cal-${p.id}"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
