@@ -1095,6 +1095,7 @@ function egfxRefresh(projId) {
   }
 
   const chartsEl = document.getElementById(`egfx-charts-${projId}`);
+  const prePollCalcEl = document.getElementById(`egfx-pre-pollcalc-${projId}`);
   if (!chartsEl) return;
   if (totalBlKwh === 0 && totalBlGas === 0 && totalBlPropane === 0) {
     chartsEl.innerHTML =
@@ -1440,319 +1441,6 @@ function egfxRefresh(projId) {
               : ''
           }
           ${(() => {
-            // CBECS Benchmark Comparison Chart — canvas via SharedCharts
-            if (bldgs.length === 0 || !latestYear) return '';
-            const benchRows = bldgs
-              .map((b) => {
-                const bSqft = parseInt(b.sqft || 0);
-                if (bSqft <= 0) return null;
-                const bR12 = _bldgR12[b.name];
-                if (!bR12 || bR12.eui <= 0) return null;
-                const beui = bR12.eui;
-                const bType = b.type || p.type || 'K-12 School';
-                const cbVal = CBECS_EUI[bType] || CBECS_EUI['Other'] || 52.4;
-                // Compute baseline EUI for this building
-                let bBlEui = 0;
-                let totalBlKbtu = 0,
-                  totalBlMoCount = 0;
-                for (const blY of blYears) {
-                  const bd = bldgYearData[b.name]?.[blY];
-                  if (!bd) continue;
-                  const bkwh = bd.kwh.reduce((a, v) => a + v, 0);
-                  const bgas = bd.gas.reduce((a, v) => a + v, 0);
-                  const bprop = bd.propane ? bd.propane.reduce((a, v) => a + v, 0) : 0;
-                  if (bkwh > 0 || bgas > 0 || bprop > 0) {
-                    totalBlKbtu += toKBtu(bkwh, bgas, bprop);
-                    for (let mi = 0; mi < 12; mi++) {
-                      if (bd.kwh[mi] > 0 || bd.gas[mi] > 0 || (bd.propane && bd.propane[mi] > 0)) totalBlMoCount++;
-                    }
-                  }
-                }
-                if (totalBlMoCount > 0) bBlEui = ((totalBlKbtu / totalBlMoCount) * 12) / bSqft;
-                return { name: b.name, eui: beui, blEui: bBlEui, cbecs: cbVal, type: bType };
-              })
-              .filter(Boolean);
-            if (benchRows.length === 0) return '';
-            const benchCanvasId = 'egfx-euiBench-' + projId;
-            _yoyChartsToDraw.push({ cid: benchCanvasId, _benchRows: benchRows });
-            const chartH = Math.max(120, benchRows.length * 40 + 40);
-            return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
-              <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📊 Site EUI Benchmark — Your Buildings vs CBECS National Median</div>
-              <div style="font-size:10px;color:var(--text3);margin-bottom:8px">kBtu/ft²/yr · rolling 12-month data · buildings without sqft are excluded</div>
-              <div style="position:relative;height:${chartH}px"><canvas id="${benchCanvasId}"></canvas></div>
-            </div>`;
-          })()}
-          ${(() => {
-            // Building Performance Benchmarking — comprehensive comparison table
-            if (bldgs.length === 0 || !latestYear) return '';
-            const bRows = bldgs
-              .map((b) => {
-                const bSqft = parseInt(b.sqft || 0);
-                if (bSqft <= 0) return null;
-                const bType = b.type || p.type || 'K-12 School';
-                const cbecs = CBECS_EUI[bType] || CBECS_EUI['Other'] || 52.4;
-                const estar = ESTAR_EUI[bType] || null;
-                const pctiles = CBECS_PERCENTILES[bType] || CBECS_PERCENTILES['Other'];
-                const bR12 = _bldgR12[b.name];
-                if (!bR12 || bR12.eui <= 0) return null;
-                const latestEui = bR12.eui;
-                const latestCostSqft = bR12.costSqft;
-                // Compute baseline EUI for this building (average across all baseline years)
-                let bBlEui = 0;
-                let totalBlKbtu = 0,
-                  totalBlMoCount = 0;
-                for (const blY of blYears) {
-                  const bd = bldgYearData[b.name]?.[blY];
-                  if (!bd) continue;
-                  const bkwh = bd.kwh.reduce((a, v) => a + v, 0);
-                  const bgas = bd.gas.reduce((a, v) => a + v, 0);
-                  const bprop = bd.propane ? bd.propane.reduce((a, v) => a + v, 0) : 0;
-                  if (bkwh > 0 || bgas > 0 || bprop > 0) {
-                    totalBlKbtu += toKBtu(bkwh, bgas, bprop);
-                    for (let mi = 0; mi < 12; mi++) {
-                      if (bd.kwh[mi] > 0 || bd.gas[mi] > 0 || (bd.propane && bd.propane[mi] > 0)) totalBlMoCount++;
-                    }
-                  }
-                }
-                if (totalBlMoCount > 0) bBlEui = ((totalBlKbtu / totalBlMoCount) * 12) / bSqft;
-                // Percentile estimate: where does the building fall?
-                let pctileLabel = '';
-                if (pctiles) {
-                  if (latestEui <= pctiles[0]) pctileLabel = 'Top 25%';
-                  else if (latestEui <= pctiles[1]) pctileLabel = '25th–50th';
-                  else if (latestEui <= pctiles[2]) pctileLabel = '50th–75th';
-                  else pctileLabel = 'Bottom 25%';
-                }
-                const estarStatus = estar ? (latestEui <= estar ? '✓ Eligible' : '✗ Above') : '—';
-                const estarColor = estar ? (latestEui <= estar ? 'var(--green)' : 'var(--text3)') : 'var(--text3)';
-                // Compute per-building source EUI and estimated ENERGY STAR score
-                // Use rolling 12-month raw fuel from _bldgR12 (kwh/gas/propane are site values)
-                let bSrcEui = 0;
-                let bEstScore = 0;
-                if (bR12.kwh != null || bR12.gas != null || bR12.propane != null) {
-                  bSrcEui =
-                    typeof computeSourceEUI === 'function'
-                      ? computeSourceEUI(bR12.kwh || 0, bR12.gas || 0, bR12.propane || 0, bSqft)
-                      : 0;
-                  bEstScore =
-                    bSrcEui > 0 && typeof estimateEnergyStarScore === 'function' ? estimateEnergyStarScore(bSrcEui) : 0;
-                }
-                // Trend: rolling 12-month EUI vs baseline EUI for this building
-                let trend = '';
-                if (bBlEui > 0) {
-                  const chg = ((latestEui - bBlEui) / bBlEui) * 100;
-                  trend =
-                    chg <= -2
-                      ? '<span style="color:var(--green)">↓ ' + Math.abs(chg).toFixed(1) + '%</span>'
-                      : chg >= 2
-                        ? '<span style="color:var(--danger)">↑ ' + chg.toFixed(1) + '%</span>'
-                        : '<span style="color:var(--text3)">→ flat</span>';
-                }
-                return {
-                  name: b.name,
-                  type: bType,
-                  sqft: bSqft,
-                  blEui: bBlEui,
-                  eui: latestEui,
-                  costSqft: latestCostSqft,
-                  cbecs,
-                  estar,
-                  estarStatus,
-                  estarColor,
-                  pctileLabel,
-                  srcEui: bSrcEui,
-                  estScore: bEstScore,
-                  trend,
-                };
-              })
-              .filter(Boolean);
-            if (bRows.length === 0) return '';
-            // Sort by EUI descending (worst performers first)
-            bRows.sort((a, b) => b.eui - a.eui);
-            return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
-              <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">🏆 Building Performance Benchmarking</div>
-              <div style="font-size:10px;color:var(--text3);margin-bottom:12px">Ranked by EUI (highest = most opportunity) · rolling 12-month data · CBECS percentiles + EnergyStar score-75 threshold</div>
-              <div style="overflow-x:auto">
-                <table class="dtbl" style="min-width:700px">
-                  <thead><tr>
-                    <th style="text-align:left">#</th>
-                    <th style="text-align:left">Building</th>
-                    <th style="text-align:left">Type</th>
-                    <th style="text-align:right">Sqft</th>
-                    <th style="text-align:right">Baseline Site EUI</th>
-                    <th style="text-align:right">Current Site EUI</th>
-                    <th style="text-align:right">CBECS Median</th>
-                    <th style="text-align:right">vs CBECS</th>
-                    <th style="text-align:center">Percentile</th>
-                    <th style="text-align:center">EnergyStar</th>
-                    <th style="text-align:right">$/ft²</th>
-                    <th style="text-align:center">Trend</th>
-                  </tr></thead>
-                  <tbody>
-                    ${bRows
-                      .map((r, i) => {
-                        const vsCbecs = r.cbecs > 0 ? ((r.eui - r.cbecs) / r.cbecs) * 100 : 0;
-                        const vsColor = vsCbecs <= 0 ? 'var(--green)' : 'var(--danger)';
-                        const pctBg =
-                          r.pctileLabel === 'Top 25%'
-                            ? 'rgba(34,197,94,0.15)'
-                            : r.pctileLabel === 'Bottom 25%'
-                              ? 'rgba(239,68,68,0.15)'
-                              : 'transparent';
-                        return `<tr>
-                        <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${i + 1}</td>
-                        <td style="font-weight:600;white-space:nowrap">${r.name}</td>
-                        <td style="font-size:11px;color:var(--text2)">${r.type}</td>
-                        <td style="text-align:right;font-family:var(--mono)">${r.sqft.toLocaleString()}</td>
-                        <td style="text-align:right;font-family:var(--mono);color:var(--text2)">${r.blEui > 0 ? r.blEui.toFixed(1) : '—'}</td>
-                        <td style="text-align:right;font-family:var(--mono);font-weight:700">${r.eui.toFixed(1)}</td>
-                        <td style="text-align:right;font-family:var(--mono);color:var(--amber)">${r.cbecs.toFixed(1)}</td>
-                        <td style="text-align:right;font-family:var(--mono);color:${vsColor};font-weight:600">${vsCbecs > 0 ? '+' : ''}${vsCbecs.toFixed(0)}%</td>
-                        <td style="text-align:center;font-size:10px;font-weight:600;background:${pctBg};border-radius:4px">${r.pctileLabel}</td>
-                        <td style="text-align:center;font-size:10px;color:${r.estarColor};font-weight:600">${r.estarStatus}</td>
-                        <td style="text-align:right;font-family:var(--mono)">$${r.costSqft.toFixed(2)}</td>
-                        <td style="text-align:center;font-size:11px">${r.trend || '—'}</td>
-                      </tr>`;
-                      })
-                      .join('')}
-                  </tbody>
-                </table>
-              </div>
-              ${
-                bRows.length > 1
-                  ? `<div style="margin-top:12px;font-size:10px;color:var(--text3)">
-                <strong style="color:var(--text2)">Key:</strong>
-                Site EUI = kBtu/ft²/yr (energy at the meter) · CBECS = DOE Commercial Buildings Energy Consumption Survey national median ·
-                EnergyStar = Score 75 threshold (minimum for certification) ·
-                Percentile = estimated position in CBECS distribution ·
-                $/ft² = annual energy cost per square foot · Trend = rolling 12-month Site EUI vs baseline Site EUI
-              </div>`
-                  : ''
-              }
-            </div>`;
-          })()}
-          ${(() => {
-            const maxBlYear = Math.max(...blYears);
-            const postBlYears = sortedYears.filter((y) => y > maxBlYear);
-            if (postBlYears.length === 0 || blEui === 0) return '';
-            const qNames = ['Q1 (Jan-Mar)', 'Q2 (Apr-Jun)', 'Q3 (Jul-Sep)', 'Q4 (Oct-Dec)'];
-            const qMonths = [
-              [0, 1, 2],
-              [3, 4, 5],
-              [6, 7, 8],
-              [9, 10, 11],
-            ];
-
-            const hasElec = totalBlKwh > 0 || sortedYears.some((y) => yearData[y].kwh.some((v) => v > 0));
-            const hasGasQ = totalBlGas > 0 || sortedYears.some((y) => yearData[y].gas.some((v) => v > 0));
-            const hasPropaneQ = totalBlPropane > 0 || sortedYears.some((y) => yearData[y].propane.some((v) => v > 0));
-            let qHtml =
-              '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">' +
-              '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">💰 Monthly Savings: Projected vs Current</div>' +
-              '<div style="height:173px;position:relative;margin-bottom:14px"><canvas id="egfx-savChart-' +
-              projId +
-              '"></canvas></div>' +
-              '</div>';
-            qHtml += '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">';
-            qHtml +=
-              '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📅 Quarterly Savings vs Baseline</div>';
-            qHtml += '<div style="overflow-x:auto"><table class="dtbl" style="min-width:500px">';
-            qHtml += '<thead><tr><th>Year</th><th>Quarter</th>';
-            if (hasElec)
-              qHtml += '<th style="text-align:right">Baseline kWh</th><th style="text-align:right">Actual kWh</th>';
-            if (hasGasQ)
-              qHtml +=
-                '<th style="text-align:right">Baseline Therms</th><th style="text-align:right">Actual Therms</th>';
-            if (hasPropaneQ)
-              qHtml += '<th style="text-align:right">Baseline Gal</th><th style="text-align:right">Actual Gal</th>';
-            qHtml +=
-              '<th style="text-align:right">Baseline Cost</th><th style="text-align:right">Actual Cost</th><th style="text-align:right">Savings</th><th style="text-align:right">Savings %</th></tr></thead><tbody>';
-            for (const y of postBlYears) {
-              const yd = yearData[y];
-              if (!yd) continue;
-              for (let qi = 0; qi < 4; qi++) {
-                let qBlKwh = 0,
-                  qActKwh = 0,
-                  qBlGas = 0,
-                  qActGas = 0,
-                  qBlPropane = 0,
-                  qActPropane = 0,
-                  qBlCost = 0,
-                  qActCost = 0;
-                let hasActualData = false;
-                let moWithData = 0;
-                for (const mi of qMonths[qi]) {
-                  const nYrs = blYmPerMo[mi].size || 1;
-                  qBlKwh += blKwhAvg[mi];
-                  qBlGas += blGasAvg[mi];
-                  qBlPropane += blPropaneAvg[mi];
-                  qBlCost += blCostAvg[mi];
-                  qActKwh += yd.kwh[mi];
-                  qActGas += yd.gas[mi];
-                  qActPropane += yd.propane[mi];
-                  qActCost += yd.cost[mi];
-                  if (yd.kwh[mi] > 0 || yd.gas[mi] > 0 || yd.propane[mi] > 0) {
-                    const actKbtu = toKBtu(yd.kwh[mi], yd.gas[mi], yd.propane[mi]);
-                    const blRef = blKbtuPerMo[mi];
-                    if (blRef > 0 && actKbtu < blRef * 0.25) continue;
-                    hasActualData = true;
-                    moWithData++;
-                  }
-                }
-                if (!hasActualData) continue;
-                if (moWithData < 3) continue;
-                let costSav = 0;
-                for (const mi of qMonths[qi]) {
-                  const ym = y + '-' + String(mi + 1).padStart(2, '0');
-                  costSav += egfxSavByYm[ym] || 0;
-                }
-                const costPct = qBlCost > 0 ? (costSav / qBlCost) * 100 : 0;
-                const savColor = costSav >= 0 ? 'var(--green)' : 'var(--red)';
-                const $f = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
-                qHtml += '<tr><td>' + y + '</td><td>' + qNames[qi] + '</td>';
-                if (hasElec)
-                  qHtml +=
-                    '<td style="text-align:right;font-family:var(--mono)">' +
-                    Math.round(qBlKwh).toLocaleString() +
-                    '</td><td style="text-align:right;font-family:var(--mono)">' +
-                    Math.round(qActKwh).toLocaleString() +
-                    '</td>';
-                if (hasGasQ)
-                  qHtml +=
-                    '<td style="text-align:right;font-family:var(--mono)">' +
-                    Math.round(qBlGas).toLocaleString() +
-                    '</td><td style="text-align:right;font-family:var(--mono)">' +
-                    Math.round(qActGas).toLocaleString() +
-                    '</td>';
-                if (hasPropaneQ)
-                  qHtml +=
-                    '<td style="text-align:right;font-family:var(--mono)">' +
-                    Math.round(qBlPropane).toLocaleString() +
-                    '</td><td style="text-align:right;font-family:var(--mono)">' +
-                    Math.round(qActPropane).toLocaleString() +
-                    '</td>';
-                qHtml += '<td style="text-align:right;font-family:var(--mono)">' + $f(qBlCost) + '</td>';
-                qHtml += '<td style="text-align:right;font-family:var(--mono)">' + $f(qActCost) + '</td>';
-                qHtml +=
-                  '<td style="text-align:right;font-family:var(--mono);color:' +
-                  savColor +
-                  '">' +
-                  (costSav >= 0 ? '' : '-') +
-                  $f(costSav) +
-                  '</td>';
-                qHtml +=
-                  '<td style="text-align:right;font-family:var(--mono);color:' +
-                  savColor +
-                  '">' +
-                  (costSav >= 0 ? '+' : '') +
-                  costPct.toFixed(1) +
-                  '%</td></tr>';
-              }
-            }
-            qHtml += '</tbody></table></div></div>';
-            return qHtml;
-          })()}
-          ${(() => {
             if (blEui === 0) return '';
             const blYearList = [...blYears].sort();
             const blPeriod =
@@ -1846,6 +1534,319 @@ function egfxRefresh(projId) {
               '</div>'
             );
           })()}`;
+
+  if (prePollCalcEl) {
+    prePollCalcEl.innerHTML = `${(() => {
+      // CBECS Benchmark Comparison Chart — canvas via SharedCharts
+      if (bldgs.length === 0 || !latestYear) return '';
+      const benchRows = bldgs
+        .map((b) => {
+          const bSqft = parseInt(b.sqft || 0);
+          if (bSqft <= 0) return null;
+          const bR12 = _bldgR12[b.name];
+          if (!bR12 || bR12.eui <= 0) return null;
+          const beui = bR12.eui;
+          const bType = b.type || p.type || 'K-12 School';
+          const cbVal = CBECS_EUI[bType] || CBECS_EUI['Other'] || 52.4;
+          // Compute baseline EUI for this building
+          let bBlEui = 0;
+          let totalBlKbtu = 0,
+            totalBlMoCount = 0;
+          for (const blY of blYears) {
+            const bd = bldgYearData[b.name]?.[blY];
+            if (!bd) continue;
+            const bkwh = bd.kwh.reduce((a, v) => a + v, 0);
+            const bgas = bd.gas.reduce((a, v) => a + v, 0);
+            const bprop = bd.propane ? bd.propane.reduce((a, v) => a + v, 0) : 0;
+            if (bkwh > 0 || bgas > 0 || bprop > 0) {
+              totalBlKbtu += toKBtu(bkwh, bgas, bprop);
+              for (let mi = 0; mi < 12; mi++) {
+                if (bd.kwh[mi] > 0 || bd.gas[mi] > 0 || (bd.propane && bd.propane[mi] > 0)) totalBlMoCount++;
+              }
+            }
+          }
+          if (totalBlMoCount > 0) bBlEui = ((totalBlKbtu / totalBlMoCount) * 12) / bSqft;
+          return { name: b.name, eui: beui, blEui: bBlEui, cbecs: cbVal, type: bType };
+        })
+        .filter(Boolean);
+      if (benchRows.length === 0) return '';
+      const benchCanvasId = 'egfx-euiBench-' + projId;
+      _yoyChartsToDraw.push({ cid: benchCanvasId, _benchRows: benchRows });
+      const chartH = Math.max(120, benchRows.length * 40 + 40);
+      return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
+              <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📊 Site EUI Benchmark — Your Buildings vs CBECS National Median</div>
+              <div style="font-size:10px;color:var(--text3);margin-bottom:8px">kBtu/ft²/yr · rolling 12-month data · buildings without sqft are excluded</div>
+              <div style="position:relative;height:${chartH}px"><canvas id="${benchCanvasId}"></canvas></div>
+            </div>`;
+    })()}${(() => {
+      // Building Performance Benchmarking — comprehensive comparison table
+      if (bldgs.length === 0 || !latestYear) return '';
+      const bRows = bldgs
+        .map((b) => {
+          const bSqft = parseInt(b.sqft || 0);
+          if (bSqft <= 0) return null;
+          const bType = b.type || p.type || 'K-12 School';
+          const cbecs = CBECS_EUI[bType] || CBECS_EUI['Other'] || 52.4;
+          const estar = ESTAR_EUI[bType] || null;
+          const pctiles = CBECS_PERCENTILES[bType] || CBECS_PERCENTILES['Other'];
+          const bR12 = _bldgR12[b.name];
+          if (!bR12 || bR12.eui <= 0) return null;
+          const latestEui = bR12.eui;
+          const latestCostSqft = bR12.costSqft;
+          // Compute baseline EUI for this building (average across all baseline years)
+          let bBlEui = 0;
+          let totalBlKbtu = 0,
+            totalBlMoCount = 0;
+          for (const blY of blYears) {
+            const bd = bldgYearData[b.name]?.[blY];
+            if (!bd) continue;
+            const bkwh = bd.kwh.reduce((a, v) => a + v, 0);
+            const bgas = bd.gas.reduce((a, v) => a + v, 0);
+            const bprop = bd.propane ? bd.propane.reduce((a, v) => a + v, 0) : 0;
+            if (bkwh > 0 || bgas > 0 || bprop > 0) {
+              totalBlKbtu += toKBtu(bkwh, bgas, bprop);
+              for (let mi = 0; mi < 12; mi++) {
+                if (bd.kwh[mi] > 0 || bd.gas[mi] > 0 || (bd.propane && bd.propane[mi] > 0)) totalBlMoCount++;
+              }
+            }
+          }
+          if (totalBlMoCount > 0) bBlEui = ((totalBlKbtu / totalBlMoCount) * 12) / bSqft;
+          // Percentile estimate: where does the building fall?
+          let pctileLabel = '';
+          if (pctiles) {
+            if (latestEui <= pctiles[0]) pctileLabel = 'Top 25%';
+            else if (latestEui <= pctiles[1]) pctileLabel = '25th–50th';
+            else if (latestEui <= pctiles[2]) pctileLabel = '50th–75th';
+            else pctileLabel = 'Bottom 25%';
+          }
+          const estarStatus = estar ? (latestEui <= estar ? '✓ Eligible' : '✗ Above') : '—';
+          const estarColor = estar ? (latestEui <= estar ? 'var(--green)' : 'var(--text3)') : 'var(--text3)';
+          // Compute per-building source EUI and estimated ENERGY STAR score
+          // Use rolling 12-month raw fuel from _bldgR12 (kwh/gas/propane are site values)
+          let bSrcEui = 0;
+          let bEstScore = 0;
+          if (bR12.kwh != null || bR12.gas != null || bR12.propane != null) {
+            bSrcEui =
+              typeof computeSourceEUI === 'function'
+                ? computeSourceEUI(bR12.kwh || 0, bR12.gas || 0, bR12.propane || 0, bSqft)
+                : 0;
+            bEstScore =
+              bSrcEui > 0 && typeof estimateEnergyStarScore === 'function' ? estimateEnergyStarScore(bSrcEui) : 0;
+          }
+          // Trend: rolling 12-month EUI vs baseline EUI for this building
+          let trend = '';
+          if (bBlEui > 0) {
+            const chg = ((latestEui - bBlEui) / bBlEui) * 100;
+            trend =
+              chg <= -2
+                ? '<span style="color:var(--green)">↓ ' + Math.abs(chg).toFixed(1) + '%</span>'
+                : chg >= 2
+                  ? '<span style="color:var(--danger)">↑ ' + chg.toFixed(1) + '%</span>'
+                  : '<span style="color:var(--text3)">→ flat</span>';
+          }
+          return {
+            name: b.name,
+            type: bType,
+            sqft: bSqft,
+            blEui: bBlEui,
+            eui: latestEui,
+            costSqft: latestCostSqft,
+            cbecs,
+            estar,
+            estarStatus,
+            estarColor,
+            pctileLabel,
+            srcEui: bSrcEui,
+            estScore: bEstScore,
+            trend,
+          };
+        })
+        .filter(Boolean);
+      if (bRows.length === 0) return '';
+      // Sort by EUI descending (worst performers first)
+      bRows.sort((a, b) => b.eui - a.eui);
+      return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
+              <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">🏆 Building Performance Benchmarking</div>
+              <div style="font-size:10px;color:var(--text3);margin-bottom:12px">Ranked by EUI (highest = most opportunity) · rolling 12-month data · CBECS percentiles + EnergyStar score-75 threshold</div>
+              <div style="overflow-x:auto">
+                <table class="dtbl" style="min-width:700px">
+                  <thead><tr>
+                    <th style="text-align:left">#</th>
+                    <th style="text-align:left">Building</th>
+                    <th style="text-align:left">Type</th>
+                    <th style="text-align:right">Sqft</th>
+                    <th style="text-align:right">Baseline Site EUI</th>
+                    <th style="text-align:right">Current Site EUI</th>
+                    <th style="text-align:right">CBECS Median</th>
+                    <th style="text-align:right">vs CBECS</th>
+                    <th style="text-align:center">Percentile</th>
+                    <th style="text-align:center">EnergyStar</th>
+                    <th style="text-align:right">$/ft²</th>
+                    <th style="text-align:center">Trend</th>
+                  </tr></thead>
+                  <tbody>
+                    ${bRows
+                      .map((r, i) => {
+                        const vsCbecs = r.cbecs > 0 ? ((r.eui - r.cbecs) / r.cbecs) * 100 : 0;
+                        const vsColor = vsCbecs <= 0 ? 'var(--green)' : 'var(--danger)';
+                        const pctBg =
+                          r.pctileLabel === 'Top 25%'
+                            ? 'rgba(34,197,94,0.15)'
+                            : r.pctileLabel === 'Bottom 25%'
+                              ? 'rgba(239,68,68,0.15)'
+                              : 'transparent';
+                        return `<tr>
+                        <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${i + 1}</td>
+                        <td style="font-weight:600;white-space:nowrap">${r.name}</td>
+                        <td style="font-size:11px;color:var(--text2)">${r.type}</td>
+                        <td style="text-align:right;font-family:var(--mono)">${r.sqft.toLocaleString()}</td>
+                        <td style="text-align:right;font-family:var(--mono);color:var(--text2)">${r.blEui > 0 ? r.blEui.toFixed(1) : '—'}</td>
+                        <td style="text-align:right;font-family:var(--mono);font-weight:700">${r.eui.toFixed(1)}</td>
+                        <td style="text-align:right;font-family:var(--mono);color:var(--amber)">${r.cbecs.toFixed(1)}</td>
+                        <td style="text-align:right;font-family:var(--mono);color:${vsColor};font-weight:600">${vsCbecs > 0 ? '+' : ''}${vsCbecs.toFixed(0)}%</td>
+                        <td style="text-align:center;font-size:10px;font-weight:600;background:${pctBg};border-radius:4px">${r.pctileLabel}</td>
+                        <td style="text-align:center;font-size:10px;color:${r.estarColor};font-weight:600">${r.estarStatus}</td>
+                        <td style="text-align:right;font-family:var(--mono)">$${r.costSqft.toFixed(2)}</td>
+                        <td style="text-align:center;font-size:11px">${r.trend || '—'}</td>
+                      </tr>`;
+                      })
+                      .join('')}
+                  </tbody>
+                </table>
+              </div>
+              ${
+                bRows.length > 1
+                  ? `<div style="margin-top:12px;font-size:10px;color:var(--text3)">
+                <strong style="color:var(--text2)">Key:</strong>
+                Site EUI = kBtu/ft²/yr (energy at the meter) · CBECS = DOE Commercial Buildings Energy Consumption Survey national median ·
+                EnergyStar = Score 75 threshold (minimum for certification) ·
+                Percentile = estimated position in CBECS distribution ·
+                $/ft² = annual energy cost per square foot · Trend = rolling 12-month Site EUI vs baseline Site EUI
+              </div>`
+                  : ''
+              }
+            </div>`;
+    })()}${(() => {
+      const maxBlYear = Math.max(...blYears);
+      const postBlYears = sortedYears.filter((y) => y > maxBlYear);
+      if (postBlYears.length === 0 || blEui === 0) return '';
+      const qNames = ['Q1 (Jan-Mar)', 'Q2 (Apr-Jun)', 'Q3 (Jul-Sep)', 'Q4 (Oct-Dec)'];
+      const qMonths = [
+        [0, 1, 2],
+        [3, 4, 5],
+        [6, 7, 8],
+        [9, 10, 11],
+      ];
+
+      const hasElec = totalBlKwh > 0 || sortedYears.some((y) => yearData[y].kwh.some((v) => v > 0));
+      const hasGasQ = totalBlGas > 0 || sortedYears.some((y) => yearData[y].gas.some((v) => v > 0));
+      const hasPropaneQ = totalBlPropane > 0 || sortedYears.some((y) => yearData[y].propane.some((v) => v > 0));
+      let qHtml =
+        '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">' +
+        '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">💰 Monthly Savings: Projected vs Current</div>' +
+        '<div style="height:173px;position:relative;margin-bottom:14px"><canvas id="egfx-savChart-' +
+        projId +
+        '"></canvas></div>' +
+        '</div>';
+      qHtml += '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">';
+      qHtml +=
+        '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📅 Quarterly Savings vs Baseline</div>';
+      qHtml += '<div style="overflow-x:auto"><table class="dtbl" style="min-width:500px">';
+      qHtml += '<thead><tr><th>Year</th><th>Quarter</th>';
+      if (hasElec)
+        qHtml += '<th style="text-align:right">Baseline kWh</th><th style="text-align:right">Actual kWh</th>';
+      if (hasGasQ)
+        qHtml += '<th style="text-align:right">Baseline Therms</th><th style="text-align:right">Actual Therms</th>';
+      if (hasPropaneQ)
+        qHtml += '<th style="text-align:right">Baseline Gal</th><th style="text-align:right">Actual Gal</th>';
+      qHtml +=
+        '<th style="text-align:right">Baseline Cost</th><th style="text-align:right">Actual Cost</th><th style="text-align:right">Savings</th><th style="text-align:right">Savings %</th></tr></thead><tbody>';
+      for (const y of postBlYears) {
+        const yd = yearData[y];
+        if (!yd) continue;
+        for (let qi = 0; qi < 4; qi++) {
+          let qBlKwh = 0,
+            qActKwh = 0,
+            qBlGas = 0,
+            qActGas = 0,
+            qBlPropane = 0,
+            qActPropane = 0,
+            qBlCost = 0,
+            qActCost = 0;
+          let hasActualData = false;
+          let moWithData = 0;
+          for (const mi of qMonths[qi]) {
+            const nYrs = blYmPerMo[mi].size || 1;
+            qBlKwh += blKwhAvg[mi];
+            qBlGas += blGasAvg[mi];
+            qBlPropane += blPropaneAvg[mi];
+            qBlCost += blCostAvg[mi];
+            qActKwh += yd.kwh[mi];
+            qActGas += yd.gas[mi];
+            qActPropane += yd.propane[mi];
+            qActCost += yd.cost[mi];
+            if (yd.kwh[mi] > 0 || yd.gas[mi] > 0 || yd.propane[mi] > 0) {
+              const actKbtu = toKBtu(yd.kwh[mi], yd.gas[mi], yd.propane[mi]);
+              const blRef = blKbtuPerMo[mi];
+              if (blRef > 0 && actKbtu < blRef * 0.25) continue;
+              hasActualData = true;
+              moWithData++;
+            }
+          }
+          if (!hasActualData) continue;
+          if (moWithData < 3) continue;
+          let costSav = 0;
+          for (const mi of qMonths[qi]) {
+            const ym = y + '-' + String(mi + 1).padStart(2, '0');
+            costSav += egfxSavByYm[ym] || 0;
+          }
+          const costPct = qBlCost > 0 ? (costSav / qBlCost) * 100 : 0;
+          const savColor = costSav >= 0 ? 'var(--green)' : 'var(--red)';
+          const $f = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
+          qHtml += '<tr><td>' + y + '</td><td>' + qNames[qi] + '</td>';
+          if (hasElec)
+            qHtml +=
+              '<td style="text-align:right;font-family:var(--mono)">' +
+              Math.round(qBlKwh).toLocaleString() +
+              '</td><td style="text-align:right;font-family:var(--mono)">' +
+              Math.round(qActKwh).toLocaleString() +
+              '</td>';
+          if (hasGasQ)
+            qHtml +=
+              '<td style="text-align:right;font-family:var(--mono)">' +
+              Math.round(qBlGas).toLocaleString() +
+              '</td><td style="text-align:right;font-family:var(--mono)">' +
+              Math.round(qActGas).toLocaleString() +
+              '</td>';
+          if (hasPropaneQ)
+            qHtml +=
+              '<td style="text-align:right;font-family:var(--mono)">' +
+              Math.round(qBlPropane).toLocaleString() +
+              '</td><td style="text-align:right;font-family:var(--mono)">' +
+              Math.round(qActPropane).toLocaleString() +
+              '</td>';
+          qHtml += '<td style="text-align:right;font-family:var(--mono)">' + $f(qBlCost) + '</td>';
+          qHtml += '<td style="text-align:right;font-family:var(--mono)">' + $f(qActCost) + '</td>';
+          qHtml +=
+            '<td style="text-align:right;font-family:var(--mono);color:' +
+            savColor +
+            '">' +
+            (costSav >= 0 ? '' : '-') +
+            $f(costSav) +
+            '</td>';
+          qHtml +=
+            '<td style="text-align:right;font-family:var(--mono);color:' +
+            savColor +
+            '">' +
+            (costSav >= 0 ? '+' : '') +
+            costPct.toFixed(1) +
+            '%</td></tr>';
+        }
+      }
+      qHtml += '</tbody></table></div></div>';
+      return qHtml;
+    })()}`;
+  }
 
   setTimeout(() => {
     _yoyChartsToDraw.forEach((entry) => {

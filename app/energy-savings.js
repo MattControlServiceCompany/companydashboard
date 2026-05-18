@@ -331,8 +331,14 @@ function renderSavingsFooter(projId, sd) {
     totKw = Array(12).fill(0),
     totGas = Array(12).fill(0),
     totPropane = Array(12).fill(0);
-  let grandTotal = 0;
+  let grandTotal = 0,
+    totSqft = 0,
+    totKwhCost = 0,
+    totKwCost = 0,
+    totGasCost = 0,
+    totPropaneCost = 0;
   selMsrs.forEach((m) => {
+    totSqft += parseFloat(m.sqft) || 0;
     m.kwh.forEach((v, i) => (totKwh[i] += parseFloat(v) || 0));
     m.kw.forEach((v, i) => (totKw[i] += parseFloat(v) || 0));
     m.gas.forEach((v, i) => (totGas[i] += parseFloat(v) || 0));
@@ -340,13 +346,19 @@ function renderSavingsFooter(projId, sd) {
     const rates = m.rates || (sd.blRates || {})[m.bldgId] || {};
     for (let mo = 0; mo < 12; mo++) {
       const s = SUMMER_MOS.includes(mo);
-      grandTotal += (parseFloat(m.kwh[mo]) || 0) * (s ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
-      grandTotal += (parseFloat(m.kw[mo]) || 0) * (s ? rates.kwSummer || 0 : rates.kwWinter || 0);
-      grandTotal += (parseFloat(m.gas[mo]) || 0) * (rates.thermRate || 0);
-      grandTotal += (parseFloat((m.propane || [])[mo]) || 0) * (rates.gallonRate || 0);
+      const kwhAmt = (parseFloat(m.kwh[mo]) || 0) * (s ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
+      const kwAmt = (parseFloat(m.kw[mo]) || 0) * (s ? rates.kwSummer || 0 : rates.kwWinter || 0);
+      const gasAmt = (parseFloat(m.gas[mo]) || 0) * (rates.thermRate || 0);
+      const propaneAmt = (parseFloat((m.propane || [])[mo]) || 0) * (rates.gallonRate || 0);
+      grandTotal += kwhAmt + kwAmt + gasAmt + propaneAmt;
+      totKwhCost += kwhAmt;
+      totKwCost += kwAmt;
+      totGasCost += gasAmt;
+      totPropaneCost += propaneAmt;
     }
   });
   const fmtN = (v) => (v ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '');
+  const fmtD = (v) => (v > 0 ? '$' + Math.round(v).toLocaleString() : '');
   // Footer usage cells (collapsible months + total)
   const _footUsage = (totArr, grp, color) => {
     const isOpen = !!_svColGroupState[grp];
@@ -361,7 +373,7 @@ function renderSavingsFooter(projId, sd) {
       `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;color:${color};text-align:right;padding:5px 3px">${fmtN(annTotal)}</td>`
     );
   };
-  const _footCost = (grp) => {
+  const _footCost = (grp, totCost) => {
     const isOpen = !!_svColGroupState[grp];
     return (
       Array(12)
@@ -370,16 +382,20 @@ function renderSavingsFooter(projId, sd) {
           (_, i) =>
             `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:5px 3px"></td>`,
         )
-        .join('') + '<td style="border-left:1px solid var(--border);padding:5px 3px"></td>'
+        .join('') +
+      `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;text-align:right;padding:5px 3px;color:var(--green)">${fmtD(totCost)}</td>`
     );
   };
   tfoot.innerHTML = `<tr class="sv-foot-row">
-          <td colspan="12" style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
+          <td></td><td></td><td></td>
+          <td style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
+          <td style="font-family:var(--mono);font-size:11px;font-weight:700;text-align:right;padding:5px 4px">${totSqft ? totSqft.toLocaleString(undefined, { maximumFractionDigits: 0 }) : ''}</td>
+          <td colspan="7"></td>
           ${_footUsage(totKwh, 'kwh', 'var(--accent)')}
           ${_footUsage(totKw, 'kw', 'var(--amber)')}
           ${_footUsage(totGas, 'gas', 'var(--teal)')}
           ${_footUsage(totPropane, 'propane', 'var(--purple,#a855f7)')}
-          ${_footCost('kwhCost')}${_footCost('kwCost')}${_footCost('gasCost')}${_footCost('propaneCost')}
+          ${_footCost('kwhCost', totKwhCost)}${_footCost('kwCost', totKwCost)}${_footCost('gasCost', totGasCost)}${_footCost('propaneCost', totPropaneCost)}
           <td class="sv-total-cell sv-foot-total" style="border-left:2px solid var(--border2)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</td>
           <td></td>
         </tr>`;
@@ -728,6 +744,7 @@ function _renderSavingsContent(wrap, projId) {
           : '';
         return `<tr id="sv-pg-msr-row-${mid}">
               <td style="text-align:center;vertical-align:top;padding-top:6px"><span class="sv-detail-toggle" id="sv-dtog-${mid}" onclick="svToggleDetail('${mid}')">▶</span></td>
+              <td style="text-align:center"><button class="btn-del" onclick="svRemoveMeasure('${mid}')">✕</button></td>
               <td style="text-align:center"><input type="checkbox" class="sv-sel-cb" ${m.selected ? 'checked' : ''} onchange="svUpdateMsrSel('${mid}',this.checked)"></td>
               <td><input class="sv-msr-txt" style="width:44px;text-align:center" placeholder="#" value="${m.msrNum || ''}" onchange="svUpdateMsrField('${mid}','msrNum',this.value)" onfocusout="svAutoSave()"></td>
               <td><select class="sv-msr-sel" onchange="svUpdateMsrField('${mid}','bldgId',this.value)">${selOpts}</select></td>
@@ -745,7 +762,6 @@ function _renderSavingsContent(wrap, projId) {
               ${costCells(m.gas, 'gasCost', 'rgba(20,184,166,0.02)', gasRateFn(r))}
               ${costCells(m.propane, 'propaneCost', 'rgba(168,85,247,0.02)', propRateFn(r))}
               <td class="sv-total-cell" style="border-left:2px solid var(--border2)" id="sv-pg-total-${mid}">${dollar}</td>
-              <td style="text-align:center"><button class="btn-del" onclick="svRemoveMeasure('${mid}')">✕</button></td>
             </tr>
             <tr id="sv-detail-${mid}" class="sv-detail-row" style="display:none">
               <td colspan="200" style="padding:12px 16px">
@@ -799,7 +815,11 @@ function _renderSavingsContent(wrap, projId) {
     totGas = Array(12).fill(0),
     totPropane = Array(12).fill(0);
   let grandTotal = 0;
-  let totSqft = 0;
+  let totSqft = 0,
+    totKwhCost = 0,
+    totKwCost = 0,
+    totGasCost = 0,
+    totPropaneCost = 0;
   selMsrs.forEach((m) => {
     totSqft += parseFloat(m.sqft) || 0;
     m.kwh.forEach((v, i) => (totKwh[i] += parseFloat(v) || 0));
@@ -809,13 +829,19 @@ function _renderSavingsContent(wrap, projId) {
     const rates = m.rates || (sd.blRates || {})[m.bldgId] || {};
     for (let mo = 0; mo < 12; mo++) {
       const s = SUMMER_MOS.includes(mo);
-      grandTotal += (parseFloat(m.kwh[mo]) || 0) * (s ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
-      grandTotal += (parseFloat(m.kw[mo]) || 0) * (s ? rates.kwSummer || 0 : rates.kwWinter || 0);
-      grandTotal += (parseFloat(m.gas[mo]) || 0) * (rates.thermRate || 0);
-      grandTotal += (parseFloat((m.propane || [])[mo]) || 0) * (rates.gallonRate || 0);
+      const kwhAmt = (parseFloat(m.kwh[mo]) || 0) * (s ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
+      const kwAmt = (parseFloat(m.kw[mo]) || 0) * (s ? rates.kwSummer || 0 : rates.kwWinter || 0);
+      const gasAmt = (parseFloat(m.gas[mo]) || 0) * (rates.thermRate || 0);
+      const propaneAmt = (parseFloat((m.propane || [])[mo]) || 0) * (rates.gallonRate || 0);
+      grandTotal += kwhAmt + kwAmt + gasAmt + propaneAmt;
+      totKwhCost += kwhAmt;
+      totKwCost += kwAmt;
+      totGasCost += gasAmt;
+      totPropaneCost += propaneAmt;
     }
   });
   const fmtN = (v) => (v ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '');
+  const fmtD = (v) => (v > 0 ? '$' + Math.round(v).toLocaleString() : '');
 
   // Footer usage cells (collapsible months + total)
   const footUsage = (totArr, grp, color) => {
@@ -831,8 +857,8 @@ function _renderSavingsContent(wrap, projId) {
       `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;color:${color};text-align:right;padding:5px 3px">${fmtN(annTotal)}</td>`
     );
   };
-  // Footer cost cells (collapsible months empty + total empty — rates differ per measure)
-  const footCost = (grp) => {
+  // Footer cost cells (collapsible months empty + annual total)
+  const footCost = (grp, totCost) => {
     const isOpen = !!_svColGroupState[grp];
     return (
       Array(12)
@@ -841,12 +867,13 @@ function _renderSavingsContent(wrap, projId) {
           (_, i) =>
             `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:5px 3px"></td>`,
         )
-        .join('') + '<td style="border-left:1px solid var(--border);padding:5px 3px"></td>'
+        .join('') +
+      `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;text-align:right;padding:5px 3px;color:var(--green)">${fmtD(totCost)}</td>`
     );
   };
 
   const footRow = `<tr class="sv-foot-row">
-          <td></td><td></td><td></td>
+          <td></td><td></td><td></td><td></td>
           <td style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
           <td style="font-family:var(--mono);font-size:11px;font-weight:700;text-align:right;padding:5px 4px">${totSqft ? totSqft.toLocaleString(undefined, { maximumFractionDigits: 0 }) : ''}</td>
           <td colspan="7"></td>
@@ -854,9 +881,8 @@ function _renderSavingsContent(wrap, projId) {
           ${footUsage(totKw, 'kw', 'var(--amber)')}
           ${footUsage(totGas, 'gas', 'var(--teal)')}
           ${footUsage(totPropane, 'propane', 'var(--purple,#a855f7)')}
-          ${footCost('kwhCost')}${footCost('kwCost')}${footCost('gasCost')}${footCost('propaneCost')}
+          ${footCost('kwhCost', totKwhCost)}${footCost('kwCost', totKwCost)}${footCost('gasCost', totGasCost)}${footCost('propaneCost', totPropaneCost)}
           <td class="sv-total-cell sv-foot-total" style="border-left:2px solid var(--border2)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</td>
-          <td></td>
         </tr>`;
 
   // ── Summary card ──
@@ -895,7 +921,7 @@ function _renderSavingsContent(wrap, projId) {
               <table class="dtbl sv-matrix-tbl">
                 <thead>
                   <tr>
-                    <th style="width:20px"></th><th style="width:28px">✓</th><th style="width:44px">Msr #</th>
+                    <th style="width:20px"></th><th style="width:28px"></th><th style="width:28px">✓</th><th style="width:44px">Msr #</th>
                     <th style="min-width:130px">Building</th><th style="width:74px">Sq Ft</th><th style="min-width:190px">Measure Description</th>
                     <th style="width:54px;font-size:9px;text-align:center">kWh $/S</th><th style="width:54px;font-size:9px;text-align:center">kWh $/W</th>
                     <th style="width:54px;font-size:9px;text-align:center">kW $/S</th><th style="width:54px;font-size:9px;text-align:center">kW $/W</th>
@@ -909,14 +935,13 @@ function _renderSavingsContent(wrap, projId) {
                     ${grpHdr('gasCost', '💲 Gas $', 13, 'rgba(20,184,166,0.04)')}
                     ${grpHdr('propaneCost', '💲 Propane $', 13, 'rgba(168,85,247,0.04)')}
                     <th style="border-left:2px solid var(--border2);text-align:center;background:rgba(34,197,94,0.07);min-width:110px">💰 Projected $</th>
-                    <th style="width:28px"></th>
                   </tr>
                   <tr>
-                    <th></th><th></th><th></th><th></th><th></th><th></th>
+                    <th></th><th></th><th></th><th></th><th></th><th></th><th></th>
                     <th></th><th></th><th></th><th></th><th></th><th></th>
                     ${moHdrs('kwh')}${moHdrs('kw')}${moHdrs('gas')}${moHdrs('propane')}
                     ${moHdrs('kwhCost')}${moHdrs('kwCost')}${moHdrs('gasCost')}${moHdrs('propaneCost')}
-                    <th style="border-left:2px solid var(--border2)"></th><th></th>
+                    <th style="border-left:2px solid var(--border2)"></th>
                   </tr>
                 </thead>
                 <tbody>${msrRows}</tbody>

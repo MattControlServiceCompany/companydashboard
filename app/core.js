@@ -834,22 +834,22 @@ function renderDetail(p) {
               <div style="padding:16px">
                 <div class="dash-grid">
                   <div id="dash-perf-${p.id}"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
-                  <div id="dash-cal-${p.id}"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
-                </div>
-                <!-- Fix 35571527: Notes and Tasks merged into Dashboard tab -->
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
-                  <div class="card">
-                    <div class="card-hdr"><span class="card-title">📝 Notes</span></div>
-                    <div style="padding:12px">
-                      <textarea class="fta" style="min-height:120px;width:100%" id="proj-notes-ta-dash-${p.id}" oninput="autoSaveNotes(${p.id},this.value)">${p.notes || ''}</textarea>
+                  <div id="dash-cal-${p.id}" style="display:flex;flex-direction:column;gap:16px">
+                    <div id="dash-cal-inner-${p.id}"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
+                    <!-- Fix 27cf12ac: Notes and Tasks moved below calendar in right column -->
+                    <div class="card">
+                      <div class="card-hdr"><span class="card-title">📝 Notes</span></div>
+                      <div style="padding:12px">
+                        <textarea class="fta" style="min-height:120px;width:100%" id="proj-notes-ta-dash-${p.id}" oninput="autoSaveNotes(${p.id},this.value)">${p.notes || ''}</textarea>
+                      </div>
                     </div>
-                  </div>
-                  <div class="card">
-                    <div class="card-hdr" style="justify-content:space-between">
-                      <span class="card-title">✅ Tasks</span>
-                      <button class="btn btn-em btn-sm" onclick="document.getElementById('mt-proj').value=${p.id};openTaskModal()">+ Add Task</button>
+                    <div class="card">
+                      <div class="card-hdr" style="justify-content:space-between">
+                        <span class="card-title">✅ Tasks</span>
+                        <button class="btn btn-em btn-sm" onclick="document.getElementById('mt-proj').value=${p.id};openTaskModal()">+ Add Task</button>
+                      </div>
+                      <div id="dash-tasks-list-${p.id}" style="padding:12px">${tasksHTML}</div>
                     </div>
-                    <div id="dash-tasks-list-${p.id}" style="padding:12px">${tasksHTML}</div>
                   </div>
                 </div>
               </div>
@@ -984,6 +984,7 @@ function renderDetail(p) {
                     </div>
                   </div>
                   <div id="egfx-commodity-savings-${p.id}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px"></div>
+                  <div id="egfx-pre-pollcalc-${p.id}" style="margin-bottom:0"></div>
                   <!-- Pollution Credit Calculator collapsible section -->
                   <div id="egfx-pollcalc-wrap-${p.id}" style="margin-bottom:16px">
                     <div onclick="egfxTogglePollCalc(${p.id})" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--s1);border-radius:8px;cursor:pointer;border:1px solid var(--border)">
@@ -1981,7 +1982,7 @@ function renderSavingsWaterfall(projId, baseline, actual, savings, isNormalized,
 let _dashCalMonth = null;
 
 function renderDashCalendar(projId) {
-  const wrap = document.getElementById('dash-cal-' + projId);
+  const wrap = document.getElementById('dash-cal-inner-' + projId);
   if (!wrap) return;
   const p = projects.find((x) => x.id === projId);
   if (!p) {
