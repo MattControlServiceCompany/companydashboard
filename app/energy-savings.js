@@ -744,7 +744,6 @@ function _renderSavingsContent(wrap, projId) {
           : '';
         return `<tr id="sv-pg-msr-row-${mid}">
               <td style="text-align:center;vertical-align:top;padding-top:6px"><span class="sv-detail-toggle" id="sv-dtog-${mid}" onclick="svToggleDetail('${mid}')">▶</span></td>
-              <td style="text-align:center"><button class="btn-del" onclick="svRemoveMeasure('${mid}')">✕</button></td>
               <td style="text-align:center"><input type="checkbox" class="sv-sel-cb" ${m.selected ? 'checked' : ''} onchange="svUpdateMsrSel('${mid}',this.checked)"></td>
               <td><input class="sv-msr-txt" style="width:44px;text-align:center" placeholder="#" value="${m.msrNum || ''}" onchange="svUpdateMsrField('${mid}','msrNum',this.value)" onfocusout="svAutoSave()"></td>
               <td><select class="sv-msr-sel" onchange="svUpdateMsrField('${mid}','bldgId',this.value)">${selOpts}</select></td>
@@ -762,6 +761,7 @@ function _renderSavingsContent(wrap, projId) {
               ${costCells(m.gas, 'gasCost', 'rgba(20,184,166,0.02)', gasRateFn(r))}
               ${costCells(m.propane, 'propaneCost', 'rgba(168,85,247,0.02)', propRateFn(r))}
               <td class="sv-total-cell" style="border-left:2px solid var(--border2)" id="sv-pg-total-${mid}">${dollar}</td>
+              <td style="text-align:center"><button class="btn-del" onclick="svRemoveMeasure('${pid}','${mid}')">✕</button></td>
             </tr>
             <tr id="sv-detail-${mid}" class="sv-detail-row" style="display:none">
               <td colspan="200" style="padding:12px 16px">
@@ -1001,9 +1001,10 @@ function svAddMeasure() {
   renderSvDetail();
 }
 
-function svRemoveMeasure(msrId) {
-  if (!svSelProjId) return;
-  removeSavingsMeasure(svSelProjId, msrId);
+function svRemoveMeasure(projId, msrId) {
+  const pid = projId || svSelProjId;
+  if (!pid) return;
+  removeSavingsMeasure(pid, msrId);
   renderSvProjNav();
   renderSvDetail();
 }
