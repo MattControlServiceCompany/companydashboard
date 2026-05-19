@@ -479,9 +479,13 @@ async function downloadReportPDF() {
       var canvas = await html2canvas(el, {
         scale: 2,
         useCORS: true,
+        allowTaint: true,
         backgroundColor: '#ffffff',
         width: el.scrollWidth,
         height: el.scrollHeight,
+        ignoreElements: function (element) {
+          return element.tagName === 'CANVAS' && (element.width === 0 || element.height === 0);
+        },
       });
       var imgData = canvas.toDataURL('image/jpeg', 0.92);
       if (i > 0) pdf.addPage();
