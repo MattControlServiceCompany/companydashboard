@@ -9246,6 +9246,7 @@
                 transition: all 0.15s;
                 text-align: left;
                 font-family: var(--font);
+                color: var(--text);
               }
               #view-ems .ai-tool-btn:hover {
                 border-color: var(--em);
@@ -12686,12 +12687,6 @@
               emsLoad();
               emsMigrateLeads(); // normalize legacy CSV data (dates, key names, bad state values)
               emsRenderAll(); // populate counts immediately on page load
-              // Re-render when EMS view becomes active (handles lazy nav)
-              const _svOrig = window.sv;
-              window.sv = function (id, btn) {
-                _svOrig(id, btn);
-                if (id === 'ems') emsRenderAll();
-              };
             })();
           </script>
           <!-- ECM CALCULATORS VIEW -->
@@ -12716,19 +12711,6 @@
             </div>
             <div id="ecm-view-body" style="flex: 1; overflow-y: auto; min-height: 0"></div>
           </div>
-
-          <script>
-            /* ECM Calculators — wrap sv() to init the view on navigation */
-            (function () {
-              var _svEcmOrig = window.sv;
-              window.sv = function (id, btn) {
-                _svEcmOrig(id, btn);
-                if (id === 'calculators' && typeof initEcmCalculatorsView === 'function') {
-                  initEcmCalculatorsView();
-                }
-              };
-            })();
-          </script>
 
           <script>
             /* Synchronous view restore — runs before first paint to prevent flash.
