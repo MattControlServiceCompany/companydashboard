@@ -1005,8 +1005,12 @@ function svRemoveMeasure(projId, msrId) {
   const pid = projId || svSelProjId;
   if (!pid) return;
   removeSavingsMeasure(pid, msrId);
-  renderSvProjNav();
-  renderSvDetail();
+  if (document.getElementById('ptab-savings')?.offsetParent !== null) {
+    initSavingsTab(pid);
+  } else {
+    renderSvProjNav();
+    renderSvDetail();
+  }
 }
 
 function svUpdateMsrVal(msrId, type, moIdx, val) {
