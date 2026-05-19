@@ -922,7 +922,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
       '" alt="CSC Letterhead" style="width:100%;display:block">' +
       bodyHTML +
       footerTextHtml +
-      '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:#999"></div>' +
+      '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:#000000"></div>' +
       footerLabelHtml +
       footerImgHtml +
       '</div>'
@@ -950,7 +950,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     bodyHTML +
     '</div>' +
     footerTextHtml +
-    '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:#999"></div>' +
+    '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:#000000"></div>' +
     footerLabelHtml +
     footerImgHtml +
     '</div>'
@@ -1780,7 +1780,7 @@ function rptPageFinancial(n, d) {
         (padL - 4) +
         '" y="' +
         y.toFixed(1) +
-        '" text-anchor="end" font-size="8" fill="#888" dominant-baseline="middle">$' +
+        '" text-anchor="end" font-size="8" fill="#000000" dominant-baseline="middle">$' +
         Math.round(val / 1000) +
         'k</text>'
       );
@@ -1800,7 +1800,7 @@ function rptPageFinancial(n, d) {
         (svgH - 8) +
         '" text-anchor="middle" font-size="' +
         (totalQtrs > 12 ? '6' : '7') +
-        '" fill="#888">' +
+        '" fill="#000000">' +
         label +
         '</text>'
       );
@@ -1872,7 +1872,7 @@ function rptPageFinancial(n, d) {
         (padL - 4) +
         '" y="' +
         y.toFixed(1) +
-        '" text-anchor="end" font-size="8" fill="#888" dominant-baseline="middle">$' +
+        '" text-anchor="end" font-size="8" fill="#000000" dominant-baseline="middle">$' +
         Math.round(val / 1000) +
         'k</text>'
       );
@@ -1945,7 +1945,7 @@ function rptPageFinancial(n, d) {
     '" y="6" width="10" height="8" fill="#2e86c1" opacity="0.6" rx="1"/>' +
     '<text x="' +
     (padL + cW - 126) +
-    '" y="14" font-size="8" fill="#555">Projected/Qtr</text>' +
+    '" y="14" font-size="8" fill="#000000">Projected/Qtr</text>' +
     '<line x1="' +
     (padL + cW - 60) +
     '" y1="10" x2="' +
@@ -1953,7 +1953,7 @@ function rptPageFinancial(n, d) {
     '" y2="10" stroke="#27ae60" stroke-width="2.5"/>' +
     '<text x="' +
     (padL + cW - 42) +
-    '" y="14" font-size="8" fill="#555">Actual</text>' +
+    '" y="14" font-size="8" fill="#000000">Actual</text>' +
     '</svg>';
 
   const bodyHTML =
@@ -2500,7 +2500,7 @@ function rptPageEUI(n, d) {
             '%;top:0;bottom:0;width:2px;background:#8e44ad;z-index:1"></div>'
           : '') +
         '</div>' +
-        '<div style="width:35px;font-size:9px;font-weight:600;color:#333;flex-shrink:0">' +
+        '<div style="width:35px;font-size:9px;font-weight:600;color:#000000;flex-shrink:0">' +
         (cur > 0 ? cur.toFixed(1) : '—') +
         '</div>' +
         '</div>'
@@ -2609,7 +2609,7 @@ function rptPageEnvironmentalImpact(n, d) {
   function polLine(val, unit, label) {
     if (!val || Math.round(Math.abs(val)) === 0) return '';
     return (
-      '<div style="font-size:13px;color:#333;padding:2px 0;line-height:1.5;text-align:center">' +
+      '<div style="font-size:13px;color:#000000;padding:2px 0;line-height:1.5;text-align:center">' +
       '<strong style="color:#1a5276;font-size:16px">' +
       $n(val) +
       '</strong>' +
@@ -2624,7 +2624,7 @@ function rptPageEnvironmentalImpact(n, d) {
   function eqLine(prefix, val, suffix) {
     if (!val || Math.round(Math.abs(val)) === 0) return '';
     return (
-      '<div style="font-size:13px;color:#333;padding:2px 0;line-height:1.5;text-align:center">' +
+      '<div style="font-size:13px;color:#000000;padding:2px 0;line-height:1.5;text-align:center">' +
       (prefix ? prefix + ' ' : '') +
       '<strong style="color:#1e8449;font-size:16px">' +
       $n(val) +
@@ -2662,10 +2662,10 @@ function rptPageEnvironmentalImpact(n, d) {
 
   if (!polLines)
     polLines =
-      '<div style="font-size:10px;color:#aaa;font-style:italic;text-align:center">No pollutant data available.</div>';
+      '<div style="font-size:10px;color:#000000;font-style:italic;text-align:center">No pollutant data available.</div>';
   if (!eqLines)
     eqLines =
-      '<div style="font-size:10px;color:#aaa;font-style:italic;text-align:center">No equivalents data available.</div>';
+      '<div style="font-size:10px;color:#000000;font-style:italic;text-align:center">No equivalents data available.</div>';
 
   const bodyHTML =
     '<div contenteditable="true">' +
@@ -3337,7 +3337,7 @@ function rptPageContractProjection(n, d) {
         (padL - 4) +
         '" y="' +
         y.toFixed(0) +
-        '" text-anchor="end" font-size="7" fill="#888">$' +
+        '" text-anchor="end" font-size="7" fill="#000000">$' +
         Math.round(val / 1000) +
         'K</text>'
       );
@@ -3358,7 +3358,7 @@ function rptPageContractProjection(n, d) {
       (svgH - 4) +
       '" text-anchor="middle" font-size="' +
       (totalQtrs > 12 ? '7' : '8') +
-      '" fill="#888">' +
+      '" fill="#000000">' +
       _lbl +
       '</text>';
   }
@@ -3403,7 +3403,7 @@ function rptPageContractProjection(n, d) {
     '" y="4" width="8" height="6" fill="#2e86c1" opacity="0.6" rx="1"/>' +
     '<text x="' +
     (padL + cW - 108) +
-    '" y="10" font-size="8" fill="#555">Projected/Qtr</text>' +
+    '" y="10" font-size="8" fill="#000000">Projected/Qtr</text>' +
     '<line x1="' +
     (padL + cW - 50) +
     '" y1="7" x2="' +
@@ -3411,7 +3411,7 @@ function rptPageContractProjection(n, d) {
     '" y2="7" stroke="#27ae60" stroke-width="2.5"/>' +
     '<text x="' +
     (padL + cW - 34) +
-    '" y="10" font-size="8" fill="#555">Actual</text>' +
+    '" y="10" font-size="8" fill="#000000">Actual</text>' +
     '</svg></div>';
 
   const bodyHTML =
@@ -3580,7 +3580,8 @@ function rptPageSetPoints(n, d) {
     });
     var colCount = (allAvgMode ? 3 : 4) + (hasUnoccHeat ? 1 : 0) + (hasUnoccCool ? 1 : 0) + (hasSchedule ? 1 : 0);
     if (!allRows) {
-      allRows = '<tr><td colspan="' + colCount + '" style="color:#aaa;font-style:italic">No zones recorded</td></tr>';
+      allRows =
+        '<tr><td colspan="' + colCount + '" style="color:#000000;font-style:italic">No zones recorded</td></tr>';
     }
     bodyContent =
       '<table class="rpt-table" contenteditable="true">' +
@@ -3694,7 +3695,7 @@ function rptPageBuildingSummary(n, d, b) {
   function buildBarChart(monthly, blColor, curColor, unit, title) {
     if (!monthly || !monthly.length) return '';
     var titleHtml = title
-      ? '<div style="font-size:11px;font-weight:600;color:#333;margin-bottom:4px">' + title + '</div>'
+      ? '<div style="font-size:11px;font-weight:600;color:#000000;margin-bottom:4px">' + title + '</div>'
       : '';
     var allVals = [];
     monthly.forEach(function (mo) {
@@ -3796,7 +3797,7 @@ function rptPageBuildingSummary(n, d, b) {
   var euiCurH = Math.max(4, Math.round((euiCur / euiMax) * euiBarMaxH));
 
   leftHTML +=
-    '<div style="font-size:12px;font-weight:600;color:#333;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.03em">Site EUI (kBtu/sq ft/yr)</div>' +
+    '<div style="font-size:12px;font-weight:600;color:#000000;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.03em">Site EUI (kBtu/sq ft/yr)</div>' +
     '<div style="display:flex;gap:16px;align-items:flex-end;margin-bottom:12px">' +
     // Baseline bar
     '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">' +
@@ -3862,7 +3863,7 @@ function rptPageBuildingSummary(n, d, b) {
           var curLabel = mo.cur > 0 ? '<span style="color:#1a8a4e">' + mo.cur.toFixed(1) + '</span>' : '';
           var valLine =
             blLabel || curLabel
-              ? '<div style="font-size:8px;color:#555;line-height:1.2;text-align:center;white-space:nowrap">' +
+              ? '<div style="font-size:8px;color:#000000;line-height:1.2;text-align:center;white-space:nowrap">' +
                 (blLabel ? blLabel : '') +
                 (blLabel && curLabel ? '<br>' : '') +
                 (curLabel ? curLabel : '') +
@@ -3900,7 +3901,7 @@ function rptPageBuildingSummary(n, d, b) {
       leftHTML +=
         '<div style="font-size:10px;font-weight:600;color:#000;margin:8px 0 3px">Monthly Site EUI (kBtu/ft²)</div>' +
         '<div style="position:relative;padding-left:36px">' +
-        '<div style="position:absolute;left:0;top:0;bottom:16px;display:flex;flex-direction:column;justify-content:space-between;font-size:9px;color:#888;text-align:right;width:30px">' +
+        '<div style="position:absolute;left:0;top:0;bottom:16px;display:flex;flex-direction:column;justify-content:space-between;font-size:9px;color:#000000;text-align:right;width:30px">' +
         '<span>' +
         euiYMax +
         '</span>' +
@@ -3925,7 +3926,7 @@ function rptPageBuildingSummary(n, d, b) {
   if (bldgNotes) {
     leftHTML +=
       '<div style="font-size:11px;font-weight:600;color:#000;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
-      '<div contenteditable="true" style="min-height:40px;font-size:11px;color:#444;padding:6px;line-height:1.5">' +
+      '<div contenteditable="true" style="min-height:40px;font-size:11px;color:#000000;padding:6px;line-height:1.5">' +
       bldgNotes +
       '</div>';
   }
@@ -4129,7 +4130,7 @@ function rptPageBuildingSummary(n, d, b) {
   }
   if (!tableRows) {
     tableRows =
-      '<tr><td colspan="5" style="color:#aaa;font-style:italic">No commodity data for this building</td></tr>';
+      '<tr><td colspan="5" style="color:#000000;font-style:italic">No commodity data for this building</td></tr>';
   }
 
   rightHTML +=
@@ -4561,7 +4562,7 @@ function rptPageElectric(n, d) {
 
   // ── Shared bar-chart builder ──────────────────────────────────────────
   function buildElecBarChart(monthly, blColor, curColor, unit, title) {
-    if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#aaa;padding:4px 0">No monthly data</p>';
+    if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#000000;padding:4px 0">No monthly data</p>';
     var allVals = [];
     monthly.forEach(function (mo) {
       allVals.push(mo.bl || 0, mo.cur || 0);
@@ -4689,7 +4690,7 @@ function rptPageElectric(n, d) {
   // ── Charts ────────────────────────────────────────────────────────────
   var kwhChart = elecBldgs.length
     ? buildElecBarChart(kwhMonthly, '#b0c4d8', '#1a5276', 'kWh', 'Monthly Electric kWh — Year over Year')
-    : '<p style="font-size:10px;color:#aaa">No electric data</p>';
+    : '<p style="font-size:10px;color:#000000">No electric data</p>';
 
   var hasKwData = kwMonthly.some(function (mo) {
     return (mo.bl || 0) > 0 || (mo.cur || 0) > 0;
@@ -4771,7 +4772,7 @@ function rptPageElectric(n, d) {
 
   if (!tableRows) {
     tableRows =
-      '<tr><td colspan="10" style="color:#aaa;font-style:italic">No electric buildings in this project</td></tr>';
+      '<tr><td colspan="10" style="color:#000000;font-style:italic">No electric buildings in this project</td></tr>';
   } else {
     var totSavPct = totBlKwh > 0 ? (totSavKwh / totBlKwh) * 100 : 0;
     tableRows +=
@@ -4861,7 +4862,7 @@ function rptPageGas(n, d) {
   var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   function buildGasBarChart(monthly, blColor, curColor, unit, title) {
-    if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#aaa;padding:4px 0">No monthly data</p>';
+    if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#000000;padding:4px 0">No monthly data</p>';
     var allVals = [];
     monthly.forEach(function (mo) {
       allVals.push(mo.bl || 0, mo.cur || 0);
@@ -4967,7 +4968,7 @@ function rptPageGas(n, d) {
 
   var thermsChart = gasBldgs.length
     ? buildGasBarChart(thermsMonthly, '#e8c4a0', '#d35400', 'Therms', 'Monthly Natural Gas Therms — Year over Year')
-    : '<p style="font-size:10px;color:#aaa">No gas data</p>';
+    : '<p style="font-size:10px;color:#000000">No gas data</p>';
 
   var totBlTherms = 0,
     totCurTherms = 0,
@@ -5025,7 +5026,8 @@ function rptPageGas(n, d) {
       '</tr>';
   });
   if (!tableRows) {
-    tableRows = '<tr><td colspan="8" style="color:#aaa;font-style:italic">No gas buildings in this project</td></tr>';
+    tableRows =
+      '<tr><td colspan="8" style="color:#000000;font-style:italic">No gas buildings in this project</td></tr>';
   } else {
     var tSavPct = totBlTherms > 0 ? (totSavTherms / totBlTherms) * 100 : 0;
     tableRows +=
@@ -5104,7 +5106,7 @@ function rptPagePropane(n, d) {
   var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   function buildPropBarChart(monthly, blColor, curColor, unit, title) {
-    if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#aaa;padding:4px 0">No monthly data</p>';
+    if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#000000;padding:4px 0">No monthly data</p>';
     var allVals = [];
     monthly.forEach(function (mo) {
       allVals.push(mo.bl || 0, mo.cur || 0);
@@ -5210,7 +5212,7 @@ function rptPagePropane(n, d) {
 
   var galChart = propBldgs.length
     ? buildPropBarChart(galMonthly, '#f5deb3', '#b8860b', 'Gal', 'Monthly Propane Gallons — Year over Year')
-    : '<p style="font-size:10px;color:#aaa">No propane data</p>';
+    : '<p style="font-size:10px;color:#000000">No propane data</p>';
 
   var totBlGal = 0,
     totCurGal = 0,
@@ -5269,7 +5271,7 @@ function rptPagePropane(n, d) {
   });
   if (!tableRows) {
     tableRows =
-      '<tr><td colspan="8" style="color:#aaa;font-style:italic">No propane buildings in this project</td></tr>';
+      '<tr><td colspan="8" style="color:#000000;font-style:italic">No propane buildings in this project</td></tr>';
   } else {
     var tSavPct = totBlGal > 0 ? (totSavGal / totBlGal) * 100 : 0;
     tableRows +=
@@ -5332,7 +5334,7 @@ function rptPagePropane(n, d) {
     periodLabel +
     '</h2>' +
     bldgTable +
-    '<div style="margin-top:8px;font-size:10px;color:#777;font-style:italic;border-top:1px solid #ddd;padding-top:6px" contenteditable="true">' +
+    '<div style="margin-top:8px;font-size:10px;color:#000000;font-style:italic;border-top:1px solid #ddd;padding-top:6px" contenteditable="true">' +
     noteText +
     '</div>';
 
@@ -5358,7 +5360,7 @@ function rptPageGasPropane(n, d) {
   }
   var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function _barChart(monthly, blColor, curColor, unit, title) {
-    if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#aaa;padding:4px 0">No monthly data</p>';
+    if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#000000;padding:4px 0">No monthly data</p>';
     var allVals = [];
     monthly.forEach(function (mo) {
       allVals.push(mo.bl || 0, mo.cur || 0);
@@ -5574,7 +5576,7 @@ function rptPageAppendixNormalization(n, d, appLetter) {
   var blEnd = (d.project && d.project.blEnd) || '—';
 
   var methodBox =
-    '<div contenteditable="true" style="padding:10px 12px;font-size:11px;line-height:1.7;color:#333;margin-bottom:12px">' +
+    '<div contenteditable="true" style="padding:10px 12px;font-size:11px;line-height:1.7;color:#000000;margin-bottom:12px">' +
     '<strong>Normalization Method:</strong> Regression analysis using Heating Degree Days (HDD) and Cooling Degree Days (CDD) at balance point 60°F, per contract specification.<br>' +
     '<strong>Baseline Period:</strong> ' +
     blStart +
@@ -5659,11 +5661,11 @@ function rptPageAppendixNormalization(n, d, appLetter) {
   });
 
   if (!meterTables) {
-    meterTables = '<p style="font-size:10px;color:#aaa;font-style:italic">No building meter data available.</p>';
+    meterTables = '<p style="font-size:10px;color:#000000;font-style:italic">No building meter data available.</p>';
   }
 
   var bodyHTML =
-    '<h2 style="font-size:13px;font-weight:700;color:#333;margin:0 0 8px">Appendix ' +
+    '<h2 style="font-size:13px;font-weight:700;color:#000000;margin:0 0 8px">Appendix ' +
     appLetter +
     ': Normalization &amp; Meter Baseline</h2>' +
     methodBox +
@@ -5705,7 +5707,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
   }
 
   var regressionExplainer =
-    '<div contenteditable="true" style="padding:10px 14px;font-size:11px;line-height:1.7;color:#333;margin-bottom:12px">' +
+    '<div contenteditable="true" style="padding:10px 14px;font-size:11px;line-height:1.7;color:#000000;margin-bottom:12px">' +
     '<strong style="font-size:12px;color:#1a5276">Regression Model Overview</strong><br>' +
     'Weather-normalized savings use an OLS regression model: <span style="font-family:monospace;background:#fff;border:1px solid #ddd;padding:1px 4px;border-radius:2px">Usage = β₀ × Days + β₁ × HDD + β₂ × CDD</span><br>' +
     'Where β₀ = base load per day, β₁ = heating coefficient, β₂ = cooling coefficient. ' +
@@ -5848,25 +5850,25 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
             '<tr style="background:#f5f5f5;color:#000">' +
             '<td>' +
             moName +
-            ' <span style="font-size:8px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span>' +
+            ' <span style="font-size:8px;font-weight:700;color:#000000;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span>' +
             '</td>' +
-            '<td class="rpt-n" style="color:#bbb">' +
+            '<td class="rpt-n" style="color:#000000">' +
             days +
             '</td>' +
-            '<td class="rpt-n" style="color:#bbb">' +
+            '<td class="rpt-n" style="color:#000000">' +
             Math.round(hdd).toLocaleString() +
             '</td>' +
-            '<td class="rpt-n" style="color:#bbb">' +
+            '<td class="rpt-n" style="color:#000000">' +
             Math.round(cdd).toLocaleString() +
             '</td>' +
-            '<td style="font-family:monospace;font-size:9px;color:#bbb;white-space:nowrap">' +
+            '<td style="font-family:monospace;font-size:9px;color:#000000;white-space:nowrap">' +
             formulaParts +
             '</td>' +
-            '<td class="rpt-n" style="color:#aaa">' +
+            '<td class="rpt-n" style="color:#000000">' +
             $n(predicted) +
             '</td>' +
-            '<td class="rpt-n" style="color:#bbb">—</td>' +
-            '<td class="rpt-n" style="color:#bbb">—</td>' +
+            '<td class="rpt-n" style="color:#000000">—</td>' +
+            '<td class="rpt-n" style="color:#000000">—</td>' +
             '</tr>';
         } else {
           var actual = (entry.moData && entry.moData.cur) || 0;
@@ -5963,20 +5965,20 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
           '<tr style="background:#f5f5f5;color:#000">' +
           '<td>' +
           moName +
-          ' <span style="font-size:8px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span></td>' +
-          '<td class="rpt-n" style="color:#bbb">' +
+          ' <span style="font-size:8px;font-weight:700;color:#000000;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span></td>' +
+          '<td class="rpt-n" style="color:#000000">' +
           days +
           '</td>' +
-          '<td class="rpt-n" style="color:#bbb">' +
+          '<td class="rpt-n" style="color:#000000">' +
           Math.round(wx.hddBl || 0).toLocaleString() +
           '</td>' +
-          '<td class="rpt-n" style="color:#bbb">' +
+          '<td class="rpt-n" style="color:#000000">' +
           Math.round(wx.cddBl || 0).toLocaleString() +
           '</td>' +
-          '<td style="font-size:9px;color:#bbb">—</td>' +
-          '<td class="rpt-n" style="color:#bbb">—</td>' +
-          '<td class="rpt-n" style="color:#bbb">—</td>' +
-          '<td class="rpt-n" style="color:#bbb">—</td>' +
+          '<td style="font-size:9px;color:#000000">—</td>' +
+          '<td class="rpt-n" style="color:#000000">—</td>' +
+          '<td class="rpt-n" style="color:#000000">—</td>' +
+          '<td class="rpt-n" style="color:#000000">—</td>' +
           '</tr>';
       });
 
@@ -6002,11 +6004,11 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
 
   if (!calcHTML) {
     calcHTML =
-      '<p style="font-size:10px;color:#aaa;font-style:italic">No regression data available for calculation display.</p>';
+      '<p style="font-size:10px;color:#000000;font-style:italic">No regression data available for calculation display.</p>';
   }
 
   var bodyHTML =
-    '<h2 style="font-size:13px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' +
+    '<h2 style="font-size:13px;font-weight:700;color:#000000;margin:0 0 4px">Appendix ' +
     appLetter +
     ': Regression Model Methodology</h2>' +
     '<div style="font-size:11px;color:#000;margin-bottom:8px">Weather-normalized baseline calculations per building and commodity</div>' +
@@ -6073,7 +6075,7 @@ function rptPageAppendixWeather(n, d, appLetter) {
     var cddVal = ip ? cddCur : cddBl;
     var badge = ip
       ? ''
-      : ' <span style="font-size:8px;font-weight:700;color:#aaa;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span>';
+      : ' <span style="font-size:8px;font-weight:700;color:#000000;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span>';
     tableRows +=
       '<tr style="' +
       rowStyle +
@@ -6093,7 +6095,7 @@ function rptPageAppendixWeather(n, d, appLetter) {
 
   if (!tableRows) {
     tableRows =
-      '<tr><td colspan="7" style="color:#aaa;font-style:italic">No weather data for this period. Enter HDD/CDD in project settings.</td></tr>';
+      '<tr><td colspan="7" style="color:#000000;font-style:italic">No weather data for this period. Enter HDD/CDD in project settings.</td></tr>';
   } else {
     var totHddVar = totHddBl > 0 ? ((totHddCur - totHddBl) / totHddBl) * 100 : 0;
     var totCddVar = totCddBl > 0 ? ((totCddCur - totCddBl) / totCddBl) * 100 : 0;
@@ -6176,7 +6178,7 @@ function rptPageAppendixWeather(n, d, appLetter) {
     'Balance point: 60°F per contract specification.';
 
   var narrativeBox =
-    '<div contenteditable="true" style="padding:10px 12px;font-size:11px;line-height:1.7;color:#333;margin-top:10px">' +
+    '<div contenteditable="true" style="padding:10px 12px;font-size:11px;line-height:1.7;color:#000000;margin-top:10px">' +
     narrativeText +
     '</div>';
 
@@ -6199,7 +6201,7 @@ function rptPageAppendixWeather(n, d, appLetter) {
         ? Math.round(((d.weather.totals.cddCur - d.weather.totals.cddBl) / d.weather.totals.cddBl) * 100)
         : 0;
     hddCddParagraph =
-      '<div contenteditable="true" style="margin-top:10px;font-size:11px;color:#444;line-height:1.7">' +
+      '<div contenteditable="true" style="margin-top:10px;font-size:11px;color:#000000;line-height:1.7">' +
       'Heating degree days (HDD) for the period were ' +
       pHDD +
       ' vs. a baseline average of ' +
@@ -6220,7 +6222,7 @@ function rptPageAppendixWeather(n, d, appLetter) {
       '</div>';
   }
   var bodyHTML =
-    '<h2 style="font-size:13px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' +
+    '<h2 style="font-size:13px;font-weight:700;color:#000000;margin:0 0 4px">Appendix ' +
     appLetter +
     ': Weather Data</h2>' +
     '<div style="font-size:11px;color:#000;margin-bottom:10px">Combined HDD and CDD — Base 60°F per contract</div>' +
@@ -6228,8 +6230,8 @@ function rptPageAppendixWeather(n, d, appLetter) {
     '<h3 style="font-size:12px;font-weight:700;color:#000;margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.04em">Weather Impact Summary</h3>' +
     narrativeBox +
     hddCddParagraph +
-    '<div style="margin-top:16px;padding:10px 12px;font-size:11px;color:#444;line-height:1.5">' +
-    '<div style="font-weight:700;font-size:11px;color:#333;margin-bottom:6px">What is a degree day?</div>' +
+    '<div style="margin-top:16px;padding:10px 12px;font-size:11px;color:#000000;line-height:1.5">' +
+    '<div style="font-weight:700;font-size:11px;color:#000000;margin-bottom:6px">What is a degree day?</div>' +
     '<div style="margin-bottom:6px">A degree day is a measure of relative heating and cooling energy required by buildings. It&#39;s calculated as the difference between the average daily temperature and the balance point temperature (60 degrees). When the average daily temperature is above the balance point, the result is cooling degree days; when below, the result is heating degree days.</div>' +
     '<div style="margin-bottom:6px"><strong>Example 1:</strong> Average daily temperature = 80. Balance point = 60. Cooling degree days = 20 CDD. (80-60=20)</div>' +
     '<div style="margin-bottom:6px"><strong>Example 2:</strong> Average daily temperature = 45. Balance point = 60. Heating degree days = 15 HDD. (60-45=15)</div>' +
@@ -6287,7 +6289,7 @@ function rptPageAppendixBills(n, d, appLetter) {
   var sections = '';
   var allBillImages = '';
   if (!periodYMs.length) {
-    sections = '<p style="font-size:10px;color:#aaa;font-style:italic">No reporting period months configured.</p>';
+    sections = '<p style="font-size:10px;color:#000000;font-style:italic">No reporting period months configured.</p>';
   } else {
     periodYMs.forEach(function (ym) {
       var parts = ym.split('-');
@@ -6295,7 +6297,7 @@ function rptPageAppendixBills(n, d, appLetter) {
       var bills = billsByMonth[ym] || [];
       var rows = '';
       if (!bills.length) {
-        rows = '<tr><td colspan="9" style="color:#aaa;font-style:italic">No bills recorded for this month</td></tr>';
+        rows = '<tr><td colspan="9" style="color:#000000;font-style:italic">No bills recorded for this month</td></tr>';
       } else {
         bills.forEach(function (bill) {
           var _kwh = bill.kwh || bill.kwhUsage || 0;
@@ -6371,14 +6373,14 @@ function rptPageAppendixBills(n, d, appLetter) {
 
   var _hasBillImages = allBillImages.length > 0;
   var footerNote =
-    '<div style="margin-top:12px;font-size:10px;color:#777;font-style:italic;border-top:1px solid #ddd;padding-top:6px">' +
+    '<div style="margin-top:12px;font-size:10px;color:#000000;font-style:italic;border-top:1px solid #ddd;padding-top:6px">' +
     (_hasBillImages
       ? 'Bill thumbnails shown above are rendered from stored PDF files.'
       : 'No scanned bill images available. Upload PDFs in the Energy Department to include bill images in future reports.') +
     '</div>';
 
   var bodyHTML =
-    '<h2 style="font-size:13px;font-weight:700;color:#333;margin:0 0 4px">Appendix ' +
+    '<h2 style="font-size:13px;font-weight:700;color:#000000;margin:0 0 4px">Appendix ' +
     appLetter +
     ': Utility Bills</h2>' +
     '<div style="font-size:11px;color:#000;margin-bottom:10px">Original utility bill PDFs for the reporting period</div>' +
@@ -8093,7 +8095,7 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
     }
   });
   // Data source
-  ctx2.fillStyle = '#999';
+  ctx2.fillStyle = '#666666';
   ctx2.font = '7px Helvetica';
   ctx2.textAlign = 'left';
   ctx2.fillText(

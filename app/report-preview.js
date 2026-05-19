@@ -469,16 +469,21 @@ async function downloadReportPDF() {
 
   showToast('Generating PDF — this may take a moment...', 'info');
 
-  try {
-    var allCanvases = document.querySelectorAll('canvas');
-    var hiddenCanvases = [];
-    allCanvases.forEach(function (c) {
-      if (!c.closest('#rptPreviewPages')) {
-        hiddenCanvases.push({ el: c, prev: c.style.visibility });
-        c.style.visibility = 'hidden';
-      }
-    });
+  // Hide all canvases outside the preview pages to prevent tainted-canvas errors.
+  // Cross-origin Chart.js canvases (egfx-euiBench, egfx-savChart, egfx-yoy, etc.)
+  // will taint the output if html2canvas clones them, causing toDataURL() to throw.
+  // We hide them (not display:none — that changes layout) before the export loop and
+  // restore in finally so they come back even if the export fails.
+  var hiddenCanvases = [];
+  var allCanvases = document.querySelectorAll('canvas');
+  allCanvases.forEach(function (c) {
+    if (!c.closest('#rptPreviewPages')) {
+      hiddenCanvases.push({ el: c, prev: c.style.visibility });
+      c.style.visibility = 'hidden';
+    }
+  });
 
+  try {
     var pdf = new jspdf.jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
     var pageW = 612,
       pageH = 792;
@@ -500,10 +505,6 @@ async function downloadReportPDF() {
       pdf.addImage(imgData, 'JPEG', 0, 0, pageW, pageH);
     }
 
-    hiddenCanvases.forEach(function (h) {
-      h.el.style.visibility = h.prev;
-    });
-
     var config = _reportConfig || {};
     var typeName = (config.reportType || 'report').charAt(0).toUpperCase() + (config.reportType || 'report').slice(1);
     var filename =
@@ -519,10 +520,12 @@ async function downloadReportPDF() {
     _saveReportToHistory(config, filename);
     showToast('PDF downloaded: ' + filename, 'success');
   } catch (err) {
+    showToast('PDF export failed: ' + err.message, 'error');
+  } finally {
+    // Always restore hidden canvases, whether export succeeded or failed.
     hiddenCanvases.forEach(function (h) {
       h.el.style.visibility = h.prev;
     });
-    showToast('PDF export failed: ' + err.message, 'error');
   }
 }
 
