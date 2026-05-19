@@ -162,8 +162,6 @@ function removeSavingsMeasure(projId, msrId) {
   const sd = getProjSavingsData(projId);
   sd.measures = sd.measures.filter((m) => m.id !== msrId);
   sset('en_projects', projects);
-  renderSavingsMatrix(projId);
-  calcProjSavingsMatrix(projId);
 }
 
 function renderSavingsMatrix(projId) {
@@ -275,7 +273,7 @@ function renderSavingsMatrix(projId) {
             ${_costCells(m.gas, 'gasCost', 'rgba(20,184,166,0.02)', _gasRateFn(r))}
             ${_costCells(m.propane, 'propaneCost', 'rgba(168,85,247,0.02)', _propRateFn(r))}
             <td class="sv-total-cell" style="border-left:2px solid var(--border2)" id="sv-msr-total-${projId}-${m.id}">${dollarStr}</td>
-            <td style="text-align:center"><button class="btn-del" onclick="removeSavingsMeasure('${projId}','${m.id}')">✕</button></td>
+            <td style="text-align:center"><button class="btn-del" onclick="removeSavingsMeasure(${projId},'${m.id}')">✕</button></td>
           </tr>
           <tr id="sv-detail-${m.id}" class="sv-detail-row" style="display:none">
             <td colspan="200" style="padding:12px 16px">
@@ -761,7 +759,7 @@ function _renderSavingsContent(wrap, projId) {
               ${costCells(m.gas, 'gasCost', 'rgba(20,184,166,0.02)', gasRateFn(r))}
               ${costCells(m.propane, 'propaneCost', 'rgba(168,85,247,0.02)', propRateFn(r))}
               <td class="sv-total-cell" style="border-left:2px solid var(--border2)" id="sv-pg-total-${mid}">${dollar}</td>
-              <td style="text-align:center"><button class="btn-del" onclick="svRemoveMeasure('${pid}','${mid}')">✕</button></td>
+              <td style="text-align:center"><button class="btn-del" onclick="svRemoveMeasure(${pid},'${mid}')">✕</button></td>
             </tr>
             <tr id="sv-detail-${mid}" class="sv-detail-row" style="display:none">
               <td colspan="200" style="padding:12px 16px">
@@ -883,6 +881,7 @@ function _renderSavingsContent(wrap, projId) {
           ${footUsage(totPropane, 'propane', 'var(--purple,#a855f7)')}
           ${footCost('kwhCost', totKwhCost)}${footCost('kwCost', totKwCost)}${footCost('gasCost', totGasCost)}${footCost('propaneCost', totPropaneCost)}
           <td class="sv-total-cell sv-foot-total" style="border-left:2px solid var(--border2)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</td>
+          <td></td>
         </tr>`;
 
   // ── Summary card ──
@@ -935,6 +934,7 @@ function _renderSavingsContent(wrap, projId) {
                     ${grpHdr('gasCost', '💲 Gas $', 13, 'rgba(20,184,166,0.04)')}
                     ${grpHdr('propaneCost', '💲 Propane $', 13, 'rgba(168,85,247,0.04)')}
                     <th style="border-left:2px solid var(--border2);text-align:center;background:rgba(34,197,94,0.07);min-width:110px">💰 Projected $</th>
+                    <th style="width:32px"></th>
                   </tr>
                   <tr>
                     <th></th><th></th><th></th><th></th><th></th><th></th><th></th>
@@ -942,6 +942,7 @@ function _renderSavingsContent(wrap, projId) {
                     ${moHdrs('kwh')}${moHdrs('kw')}${moHdrs('gas')}${moHdrs('propane')}
                     ${moHdrs('kwhCost')}${moHdrs('kwCost')}${moHdrs('gasCost')}${moHdrs('propaneCost')}
                     <th style="border-left:2px solid var(--border2)"></th>
+                    <th style="width:32px"></th>
                   </tr>
                 </thead>
                 <tbody>${msrRows}</tbody>
