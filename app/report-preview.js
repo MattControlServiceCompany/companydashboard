@@ -470,6 +470,15 @@ async function downloadReportPDF() {
   showToast('Generating PDF — this may take a moment...', 'info');
 
   try {
+    var allCanvases = document.querySelectorAll('canvas');
+    var hiddenCanvases = [];
+    allCanvases.forEach(function (c) {
+      if (!c.closest('#rptPreviewPages')) {
+        hiddenCanvases.push({ el: c, prev: c.style.visibility });
+        c.style.visibility = 'hidden';
+      }
+    });
+
     var pdf = new jspdf.jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
     var pageW = 612,
       pageH = 792;
@@ -479,7 +488,6 @@ async function downloadReportPDF() {
       var canvas = await html2canvas(el, {
         scale: 2,
         useCORS: true,
-        allowTaint: true,
         backgroundColor: '#ffffff',
         width: el.scrollWidth,
         height: el.scrollHeight,
@@ -491,6 +499,10 @@ async function downloadReportPDF() {
       if (i > 0) pdf.addPage();
       pdf.addImage(imgData, 'JPEG', 0, 0, pageW, pageH);
     }
+
+    hiddenCanvases.forEach(function (h) {
+      h.el.style.visibility = h.prev;
+    });
 
     var config = _reportConfig || {};
     var typeName = (config.reportType || 'report').charAt(0).toUpperCase() + (config.reportType || 'report').slice(1);
@@ -507,6 +519,9 @@ async function downloadReportPDF() {
     _saveReportToHistory(config, filename);
     showToast('PDF downloaded: ' + filename, 'success');
   } catch (err) {
+    hiddenCanvases.forEach(function (h) {
+      h.el.style.visibility = h.prev;
+    });
     showToast('PDF export failed: ' + err.message, 'error');
   }
 }
