@@ -742,6 +742,7 @@ function _renderSavingsContent(wrap, projId) {
           : '';
         return `<tr id="sv-pg-msr-row-${mid}">
               <td style="text-align:center;vertical-align:top;padding-top:6px"><span class="sv-detail-toggle" id="sv-dtog-${mid}" onclick="svToggleDetail('${mid}')">▶</span></td>
+              <td></td>
               <td style="text-align:center"><input type="checkbox" class="sv-sel-cb" ${m.selected ? 'checked' : ''} onchange="svUpdateMsrSel('${mid}',this.checked)"></td>
               <td><input class="sv-msr-txt" style="width:44px;text-align:center" placeholder="#" value="${m.msrNum || ''}" onchange="svUpdateMsrField('${mid}','msrNum',this.value)" onfocusout="svAutoSave()"></td>
               <td><select class="sv-msr-sel" onchange="svUpdateMsrField('${mid}','bldgId',this.value)">${selOpts}</select></td>
