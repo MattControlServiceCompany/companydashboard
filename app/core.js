@@ -662,7 +662,8 @@ function showList() {
   document.getElementById('projDetailView').style.display = 'none';
   document.querySelectorAll('.spfi').forEach((c) => c.classList.remove('active'));
   window._activeProjId = null;
-  window._activeProjTab = sget('ch_defaultProjTab', 'dashboard');
+  const _dl = sget('ch_defaultProjTab', 'dashboard');
+  if (_dl !== 'last') window._activeProjTab = _dl;
   saveProjSession();
 }
 function backToList() {
@@ -1397,34 +1398,42 @@ function initDashboardTab(projId) {
         Object.entries(savResult.byYM).forEach(([ym, v]) => {
           if (v !== 0 && (latestSavYM === null || ym > latestSavYM)) latestSavYM = ym;
         });
-        const curYear = String(new Date().getFullYear());
-        Object.entries(savResult.byYM).forEach(([ym, v]) => {
-          if (ym.startsWith(curYear)) {
-            const moIdx = parseInt(ym.split('-')[1]) - 1;
-            const qi = Math.floor(moIdx / 3);
-            actualByQtr[qi] += v;
-          }
-        });
+        const _savYMKeys = Object.keys(savResult.byYM).filter((ym) => savResult.byYM[ym] !== 0);
+        const _reportYear = _savYMKeys.length ? _savYMKeys.slice().sort().pop().slice(0, 4) : null;
+        if (_reportYear) {
+          Object.entries(savResult.byYM).forEach(([ym, v]) => {
+            if (ym.startsWith(_reportYear)) {
+              const moIdx = parseInt(ym.split('-')[1]) - 1;
+              const qi = Math.floor(moIdx / 3);
+              actualByQtr[qi] += v;
+            }
+          });
+        }
         // Usage for EUI
+        const _blEndYM = bl.months.slice().sort().pop();
+        const _curBills = bills.filter((bill) => {
+          const ym = normMonth(bill.start, bill.end, incl, bills);
+          return ym && ym > _blEndYM;
+        });
         if (m.commodity === 'Gas') {
           blBills.forEach((bill) => {
             blTherms += parseFloat(bill.therms) || 0;
           });
-          bills.slice(-12).forEach((bill) => {
+          _curBills.forEach((bill) => {
             curTherms += parseFloat(bill.therms) || 0;
           });
         } else if (m.commodity === 'Propane') {
           blBills.forEach((bill) => {
             blPropane += parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
           });
-          bills.slice(-12).forEach((bill) => {
+          _curBills.forEach((bill) => {
             curPropane += parseFloat(bill.gallonsDelivered) || parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
           });
         } else {
           blBills.forEach((bill) => {
             blKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
           });
-          bills.slice(-12).forEach((bill) => {
+          _curBills.forEach((bill) => {
             curKwh += parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
           });
         }
@@ -1502,14 +1511,17 @@ function initDashboardTab(projId) {
         }
         const _actIncl = m.inclusive !== false;
         const _actSavResult = getMeterSavings(m, bills, _actIncl, projId, b.id);
-        const _curYear = String(new Date().getFullYear());
-        Object.entries(_actSavResult.byYM).forEach(([ym, v]) => {
-          if (ym.startsWith(_curYear)) {
-            const moIdx = parseInt(ym.split('-')[1]) - 1;
-            const qi = Math.floor(moIdx / 3);
-            actualByQtr[qi] += v;
-          }
-        });
+        const _actSavYMKeys = Object.keys(_actSavResult.byYM).filter((ym) => _actSavResult.byYM[ym] !== 0);
+        const _actReportYear = _actSavYMKeys.length ? _actSavYMKeys.slice().sort().pop().slice(0, 4) : null;
+        if (_actReportYear) {
+          Object.entries(_actSavResult.byYM).forEach(([ym, v]) => {
+            if (ym.startsWith(_actReportYear)) {
+              const moIdx = parseInt(ym.split('-')[1]) - 1;
+              const qi = Math.floor(moIdx / 3);
+              actualByQtr[qi] += v;
+            }
+          });
+        }
         Object.entries(_actSavResult.byYM).forEach(([ym, v]) => {
           if (v !== 0 && (latestSavYM === null || ym > latestSavYM)) latestSavYM = ym;
         });
