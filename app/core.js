@@ -878,24 +878,28 @@ function renderDetail(p) {
               ${buildContactsDetailHTML(p.contacts || [], p.id)}
             </div>
             <div id="ptab-utility" class="ptab" style="padding:0">
-              <!-- Fix 35571527: Saved Bills merged into Utility Data tab — shown at top -->
-              <div style="padding:16px;border-bottom:1px solid var(--border);flex-shrink:0">
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                  <span style="font-size:13px;font-weight:700;color:var(--text)">🗄️ Saved Bills</span>
-                </div>
-                <div id="ptab-savedbills-body-${p.id}">
-                  <div style="text-align:center;color:var(--text3);padding:40px">Loading saved bills…</div>
-                </div>
-              </div>
               <!-- Full Utility Data layout embedded, scoped to this project -->
               <!-- .ptab.active is now a flex column, so .ud-layout's flex:1 works without
                    a viewport-based min-height fallback. -->
               <div class="ud-layout" id="projUdLayout-${p.id}" style="border-top:1px solid var(--border);flex:1;min-height:0">
                 <!-- Left: buildings nav -->
                 <div class="ud-nav" style="max-width:240px">
-                  <div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+                  <div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;position:relative">
                     <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3)">Buildings</span>
-                    <button class="btn btn-em btn-sm" style="font-size:10px;padding:2px 7px" onclick="openBldgModalForProj(${p.id})">+ Add</button>
+                    <div style="display:flex;gap:4px;align-items:center">
+                      <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 7px" onclick="toggleSavedBillsPanel(${JSON.stringify(p.id)})" id="saved-bills-btn-${p.id}" title="View saved PDF bills">🗄️ Bills</button>
+                      <button class="btn btn-em btn-sm" style="font-size:10px;padding:2px 7px" onclick="openBldgModalForProj(${p.id})">+ Add</button>
+                    </div>
+                    <!-- Saved Bills dropdown panel — hidden by default, anchored to this bar. min-width ensures the bills table fits; overflow-x allows horizontal scroll. -->
+                    <div id="ptab-savedbills-panel-${p.id}" style="display:none;position:absolute;top:100%;left:0;z-index:50;min-width:760px;background:var(--s1);border:1px solid var(--border);border-top:none;box-shadow:0 4px 12px rgba(0,0,0,.25);max-height:420px;overflow-y:auto;overflow-x:auto">
+                      <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+                        <span style="font-size:12px;font-weight:700;color:var(--text)">Saved Bills</span>
+                        <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:1px 6px" onclick="toggleSavedBillsPanel(${JSON.stringify(p.id)})" title="Close">✕</button>
+                      </div>
+                      <div id="ptab-savedbills-body-${p.id}" style="padding:12px 14px">
+                        <div style="text-align:center;color:var(--text3);padding:20px">Loading saved bills…</div>
+                      </div>
+                    </div>
                   </div>
                   <div id="proj-ud-bldg-nav-${p.id}" style="flex:1;overflow-y:auto"></div>
                 </div>
@@ -2454,8 +2458,6 @@ function initProjUDTab(projId) {
         projId +
         ')">+ Add Building</button></div></div>';
   }
-  // Fix 35571527: render saved bills in the merged Utility Data sub-section
-  renderProjSavedBills(projId);
 }
 
 function renderProjUDBldgNav(projId) {
@@ -2684,6 +2686,32 @@ function _sbSortClick(projId, col) {
     _sbSortState[projId] = { col, dir: 'asc' };
   }
   renderProjSavedBills(projId);
+}
+
+function toggleSavedBillsPanel(projId) {
+  const panel = document.getElementById('ptab-savedbills-panel-' + projId);
+  const btn = document.getElementById('saved-bills-btn-' + projId);
+  if (!panel) return;
+  const isOpen = panel.style.display !== 'none';
+  if (isOpen) {
+    panel.style.display = 'none';
+    if (btn) btn.classList.remove('active');
+  } else {
+    panel.style.display = 'block';
+    if (btn) btn.classList.add('active');
+    renderProjSavedBills(projId);
+    // Close panel when clicking outside
+    setTimeout(() => {
+      const handler = (e) => {
+        if (!panel.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
+          panel.style.display = 'none';
+          if (btn) btn.classList.remove('active');
+          document.removeEventListener('mousedown', handler, true);
+        }
+      };
+      document.addEventListener('mousedown', handler, true);
+    }, 0);
+  }
 }
 
 function renderProjSavedBills(projId) {

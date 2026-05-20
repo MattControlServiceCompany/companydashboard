@@ -115,6 +115,11 @@ function _pdFmtMoney(n) {
   if (n == null || isNaN(n)) return '—';
   return '$' + Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
+function _pdFmtYm(ym) {
+  if (!ym || typeof ym !== 'string') return ym;
+  const parts = ym.split('-');
+  return parts.length === 2 ? parts[1] + '/' + parts[0] : ym;
+}
 
 /* ── Build node detail content ── */
 function _pdNodeDetail(nodeId, m, bills, incl) {
@@ -192,7 +197,7 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
           '<div class="pd-stat-grid">' +
           _pdStatCard('ZIP Code', zip, '') +
           _pdStatCard('Months Available', cache.length, 'months') +
-          _pdStatCard('Date Range', first + ' → ' + last, '') +
+          _pdStatCard('Date Range', _pdFmtYm(first) + ' → ' + _pdFmtYm(last), '') +
           _pdStatCard('Avg HDD/mo', _pdFmt(avgHDD, 0), 'HDD') +
           _pdStatCard('Avg CDD/mo', _pdFmt(avgCDD, 0), 'CDD') +
           '</div>' +
@@ -344,7 +349,7 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
       return (
         '<div class="pd-stat-grid">' +
         _pdStatCard('Baseline Months', bl.months.length, 'months') +
-        _pdStatCard('Period', bl.months[0] + ' → ' + bl.months[bl.months.length - 1], '') +
+        _pdStatCard('Period', _pdFmtYm(bl.months[0]) + ' → ' + _pdFmtYm(bl.months[bl.months.length - 1]), '') +
         _pdStatCard('Avg Monthly', avgMo != null ? _pdFmt(avgMo, 0) + ' ' + unit : '—', '') +
         _pdStatCard('Frozen Regression', hasFrozen ? 'Yes' : 'No', '') +
         _pdStatCard('Manual Overrides', overrideCount, overrideCount === 1 ? 'month' : 'months') +
@@ -407,7 +412,7 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
           monthRows +=
             '<tr>' +
             '<td style="padding:4px 8px;color:var(--text2)">' +
-            r.ym +
+            _pdFmtYm(r.ym) +
             '</td>' +
             '<td style="padding:4px 8px;text-align:right;font-variant-numeric:tabular-nums">' +
             _pdFmt(r.regrBaseline, 0) +
@@ -459,7 +464,10 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
           monthRows +
           '</tbody>' +
           '</table>' +
-          '</div>';
+          '</div>' +
+          '<p style="font-size:11px;color:var(--text3);margin-top:8px;font-style:italic">Note: ' +
+          (bl.months[0] ? bl.months[0].slice(0, 4) : 'baseline year') +
+          ' is excluded (baseline period).</p>';
       } catch (e) {
         savHTML = '<p style="color:var(--text3)">Could not compute savings: ' + e.message + '</p>';
       }
@@ -473,14 +481,14 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
         if (!rows.length || !reg) {
           return '<p style="color:var(--text3)">Anomaly detection requires bills and regression data.</p>';
         }
-        // Compute residuals and z-scores
-        const residuals = rows.filter((r) => r.regrBaseline != null).map((r) => r.usage - r.regrBaseline);
+        // Compute residuals and z-scores (exclude partial months to avoid false anomalies)
+        const residuals = rows.filter((r) => r.regrBaseline != null && !r.partial).map((r) => r.usage - r.regrBaseline);
         if (!residuals.length) return '<p style="color:var(--text3)">No regression baseline rows to check.</p>';
         const mean = residuals.reduce((s, v) => s + v, 0) / residuals.length;
         const variance = residuals.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / residuals.length;
         const stddev = Math.sqrt(variance);
         const alerts = rows
-          .filter((r) => r.regrBaseline != null)
+          .filter((r) => r.regrBaseline != null && !r.partial)
           .map((r) => {
             const residual = r.usage - r.regrBaseline;
             const z = stddev > 0 ? (residual - mean) / stddev : 0;
@@ -495,7 +503,7 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
             (a) =>
               '<tr>' +
               '<td style="padding:4px 8px;color:var(--text2)">' +
-              a.ym +
+              _pdFmtYm(a.ym) +
               '</td>' +
               '<td style="padding:4px 8px;text-align:right;font-variant-numeric:tabular-nums">' +
               _pdFmt(a.usage, 0) +
@@ -519,7 +527,7 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
 
         return (
           '<div class="pd-stat-grid" style="margin-bottom:12px">' +
-          _pdStatCard('Months Checked', rows.filter((r) => r.regrBaseline != null).length, '') +
+          _pdStatCard('Months Checked', rows.filter((r) => r.regrBaseline != null && !r.partial).length, '') +
           _pdStatCard('Anomalies (|z| ≥ 2)', alerts.length, 'months') +
           _pdStatCard('Std Dev', _pdFmt(stddev, 1) + ' ' + unit, 'residual std dev') +
           '</div>' +
