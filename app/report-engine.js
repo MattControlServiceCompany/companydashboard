@@ -7046,7 +7046,7 @@ function _rptGoEdit(projId, tab) {
   openDetail(projId);
   requestAnimationFrame(function () {
     const actualTab = tab === 'docs' ? 'docs' : tab;
-    const btn = document.querySelector('.pdt[data-tab="' + actualTab + '"]');
+    const btn = document.querySelector('#pdTabBar button[data-tab="' + actualTab + '"]');
     sPTab(actualTab, btn || null);
     if (tab === 'docs') {
       window._docsSubTab = 'approved';
@@ -8770,8 +8770,8 @@ function restoreProjSession() {
       if (p) {
         openDetail(p.id);
         if (s.tab && s.tab !== 'notes') {
-          const btn = document.querySelector(`.pdt[data-tab="${s.tab}"]`);
-          if (btn) sPTab(s.tab, btn);
+          const btn = document.querySelector(`#pdTabBar button[data-tab="${s.tab}"]`);
+          if (btn) btn.click();
         }
       }
     }

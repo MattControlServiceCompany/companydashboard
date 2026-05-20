@@ -14502,8 +14502,12 @@
           if (subTab === 'approved') window._docsSubTab = 'approved';
           openDetail(projId);
           if (tab) {
-            var btn = document.querySelector('.pdt[data-tab="' + tab + '"]');
+            var btn = document.querySelector('#pdTabBar button[data-tab="' + tab + '"]');
             sPTab(tab, btn || null);
+            if (tab === 'docs' && window._docsSubTab) {
+              renderDocsSubTab(window._docsSubTab, projId);
+              window._docsSubTab = null;
+            }
           }
           // Reveal app if in popup mode (opacity was set to 0 in CSS)
           var app = document.getElementById('app');

@@ -315,15 +315,19 @@ function renderBuildingScorecardPane(pane, b, projId) {
 
     // Total cost & usage for cost/sqft and load factor
     bills.forEach(function (bill) {
-      var billCost = (bill.kwhCost || 0) + (bill.kwCost || 0) + (bill.otherCost || 0) + (bill.taxCost || 0);
+      var billCost =
+        (parseFloat(bill.kwhCost) || 0) +
+        (parseFloat(bill.kwCost) || 0) +
+        (parseFloat(bill.otherCost) || 0) +
+        (parseFloat(bill.taxCost) || 0);
       if (!billCost) {
-        billCost = bill.totalCost || bill.cost || 0;
+        billCost = parseFloat(bill.totalCost || bill.cost) || 0;
       }
       totalCost += billCost;
-      totalKwh += bill.kwh || bill.kWh || 0;
+      totalKwh += parseFloat(bill.kwh || bill.kWh) || 0;
       if (m.commodity === 'Electric') {
-        if ((bill.kw || 0) > peakKW) peakKW = bill.kw || 0;
-        peakHours += (bill.days || 30) * 24;
+        if ((parseFloat(bill.kw) || 0) > peakKW) peakKW = parseFloat(bill.kw) || 0;
+        peakHours += (parseFloat(bill.days) || 30) * 24;
       }
     });
   });
@@ -358,9 +362,9 @@ function renderBuildingScorecardPane(pane, b, projId) {
       (m.bills || []).forEach(function (bill) {
         var ym = (bill.start || '').substring(0, 7);
         if (!last12YM.length || last12YM.includes(ym) || ymKeys.length === 0) {
-          if (m.commodity === 'Electric') kwhLast += bill.kwh || bill.kWh || 0;
-          else if (m.commodity === 'Gas') thermsLast += bill.therms || 0;
-          else if (m.commodity === 'Propane') propLast += bill.gallons || 0;
+          if (m.commodity === 'Electric') kwhLast += parseFloat(bill.kwh || bill.kWh) || 0;
+          else if (m.commodity === 'Gas') thermsLast += parseFloat(bill.therms) || 0;
+          else if (m.commodity === 'Propane') propLast += parseFloat(bill.gallons) || 0;
         }
       });
     });
@@ -368,9 +372,9 @@ function renderBuildingScorecardPane(pane, b, projId) {
     if (!kwhLast && !thermsLast && !propLast) {
       (b.meters || []).forEach(function (m) {
         (m.bills || []).slice(-12).forEach(function (bill) {
-          if (m.commodity === 'Electric') kwhLast += bill.kwh || bill.kWh || 0;
-          else if (m.commodity === 'Gas') thermsLast += bill.therms || 0;
-          else if (m.commodity === 'Propane') propLast += bill.gallons || 0;
+          if (m.commodity === 'Electric') kwhLast += parseFloat(bill.kwh || bill.kWh) || 0;
+          else if (m.commodity === 'Gas') thermsLast += parseFloat(bill.therms) || 0;
+          else if (m.commodity === 'Propane') propLast += parseFloat(bill.gallons) || 0;
         });
       });
     }
@@ -388,9 +392,9 @@ function renderBuildingScorecardPane(pane, b, projId) {
         propY = 0;
       (b.meters || []).forEach(function (m) {
         (m.bills || []).slice(-12).forEach(function (bill) {
-          if (m.commodity === 'Electric') kwhY += bill.kwh || bill.kWh || 0;
-          else if (m.commodity === 'Gas') thermsY += bill.therms || 0;
-          else if (m.commodity === 'Propane') propY += bill.gallons || 0;
+          if (m.commodity === 'Electric') kwhY += parseFloat(bill.kwh || bill.kWh) || 0;
+          else if (m.commodity === 'Gas') thermsY += parseFloat(bill.therms) || 0;
+          else if (m.commodity === 'Propane') propY += parseFloat(bill.gallons) || 0;
         });
       });
       sourceEUI = computeSourceEUI(kwhY, thermsY, propY, sqft);
