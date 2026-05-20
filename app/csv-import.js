@@ -974,6 +974,7 @@ function _billColumnWidth(entry) {
   if (entry.type === 'date') return 105;
   if (entry.type === 'text') {
     if (/address|name|company/i.test(entry.key)) return 160;
+    if (entry.key === 'rateSchedule') return 80;
     return 120;
   }
   if (entry.type === 'number') {

@@ -721,7 +721,7 @@ function renderUDProjAggPanel(content) {
   }
 
   const thS =
-    'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
+    'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s3);border:1px solid var(--border2);white-space:nowrap';
 
   if (_udProjPanel === 'baseline') {
     const elecByMo = {},
@@ -791,7 +791,7 @@ function renderUDProjAggPanel(content) {
               </div>
             </div>
             <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
-              <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Month</th>
+              <thead><tr style="background:var(--s3)"><th style="${thS};text-align:left">Month</th>
                 <th style="${thS}">kWh</th><th style="${thS}">Elec $</th><th style="${thS}">Therms</th><th style="${thS}">Gas $</th><th style="${thS}">Total $</th></tr></thead>
               <tbody>${rows}</tbody>
               <tfoot><tr style="background:var(--s1)">
@@ -911,7 +911,7 @@ function renderUDProjAggPanel(content) {
               </div>
             </div>
             <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
-              <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Month</th>
+              <thead><tr style="background:var(--s3)"><th style="${thS};text-align:left">Month</th>
                 <th style="${thS}">Baseline $</th><th style="${thS}">Projected Spend $</th><th style="${thS}">Projected Savings $</th></tr></thead>
               <tbody>${rows}</tbody>
               <tfoot><tr style="background:var(--s1)">
@@ -1043,7 +1043,7 @@ function renderUDProjAggPanel(content) {
               </div>
             </div>
             <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
-              <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Month</th>
+              <thead><tr style="background:var(--s3)"><th style="${thS};text-align:left">Month</th>
                 <th style="${thS}">Current Savings $</th><th style="${thS}">% of Baseline</th></tr></thead>
               <tbody>${rows}</tbody>
               <tfoot><tr style="background:var(--s1)">
@@ -1358,7 +1358,7 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
     .join('');
 
   const thS2 =
-    'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);background:var(--s2);border-bottom:1px solid var(--border);text-align:right;white-space:nowrap';
+    'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);background:var(--s3);border-bottom:1px solid var(--border);text-align:right;white-space:nowrap';
 
   content.innerHTML = `
     <div style="padding:14px 18px 10px;background:var(--s2);border-bottom:1px solid var(--border)">
@@ -2342,7 +2342,7 @@ function renderBillsPane(pane, m, bills, incl) {
                         <span class="bts-label">Table Settings</span>
                       </div>`,
       a: 'td-actions',
-      w: 110,
+      w: 80,
       rightSticky: true,
     },
   ];
@@ -2355,7 +2355,7 @@ function renderBillsPane(pane, m, bills, incl) {
         const classes = [c.a];
         if (c.sticky) classes.push('sticky-col');
         if (c.rightSticky) classes.push('sticky-col-right');
-        return `<th class="${classes.filter(Boolean).join(' ')}" style="min-width:${c.w}px" data-col="${i}">${c.h}<div class="col-resize-handle" data-col="${i}"></div></th>`;
+        return `<th class="${classes.filter(Boolean).join(' ')}" style="min-width:${c.w}px;max-width:${c.w * 1.5}px" data-col="${i}">${c.h}<div class="col-resize-handle" data-col="${i}"></div></th>`;
       })
       .join('') +
     `</tr></thead>`;
