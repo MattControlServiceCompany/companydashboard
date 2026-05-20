@@ -2215,7 +2215,14 @@ function _getProjTabOrder() {
     if (Array.isArray(o)) {
       const valid = new Set(PROJ_TABS_DEFAULT.map((t) => t.id));
       const filtered = o.filter((id) => valid.has(id));
-      if (filtered.length) return filtered;
+      if (filtered.length) {
+        // Append any tabs from PROJ_TABS_DEFAULT that are missing from the stored order.
+        // This ensures new tabs (e.g. "budget") automatically appear for projects
+        // that were created before the tab was added.
+        const storedSet = new Set(filtered);
+        const missing = PROJ_TABS_DEFAULT.map((t) => t.id).filter((id) => !storedSet.has(id));
+        return filtered.concat(missing);
+      }
     }
   } catch (e) {}
   return PROJ_TABS_DEFAULT.map((t) => t.id);
