@@ -170,7 +170,6 @@ function init() {
   renderSidebarFolders();
   renderEquip();
   renderUpcomingTasks();
-  updateHomeStats();
   const homeDateEl = document.getElementById('home-date');
   if (homeDateEl)
     homeDateEl.textContent = NOW.toLocaleDateString('en-US', {
@@ -180,6 +179,7 @@ function init() {
       year: 'numeric',
     });
   initUtilityTool();
+  updateHomeStats(); // Must run after initUtilityTool() so utilityData is populated
   // Restore last active view from session
   const lastView = localStorage.getItem('ch_activeView') || sessionStorage.getItem('ch_activeView');
   // Read project session NOW before sv('projects') → showList() overwrites it
