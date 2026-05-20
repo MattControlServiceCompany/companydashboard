@@ -721,7 +721,7 @@ function renderUDProjAggPanel(content) {
   }
 
   const thS =
-    'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s3);border:1px solid var(--border2);white-space:nowrap';
+    'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
 
   if (_udProjPanel === 'baseline') {
     const elecByMo = {},
@@ -791,7 +791,7 @@ function renderUDProjAggPanel(content) {
               </div>
             </div>
             <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
-              <thead><tr style="background:var(--s3)"><th style="${thS};text-align:left">Month</th>
+              <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Month</th>
                 <th style="${thS}">kWh</th><th style="${thS}">Elec $</th><th style="${thS}">Therms</th><th style="${thS}">Gas $</th><th style="${thS}">Total $</th></tr></thead>
               <tbody>${rows}</tbody>
               <tfoot><tr style="background:var(--s1)">
@@ -911,7 +911,7 @@ function renderUDProjAggPanel(content) {
               </div>
             </div>
             <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
-              <thead><tr style="background:var(--s3)"><th style="${thS};text-align:left">Month</th>
+              <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Month</th>
                 <th style="${thS}">Baseline $</th><th style="${thS}">Projected Spend $</th><th style="${thS}">Projected Savings $</th></tr></thead>
               <tbody>${rows}</tbody>
               <tfoot><tr style="background:var(--s1)">
@@ -1043,7 +1043,7 @@ function renderUDProjAggPanel(content) {
               </div>
             </div>
             <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
-              <thead><tr style="background:var(--s3)"><th style="${thS};text-align:left">Month</th>
+              <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Month</th>
                 <th style="${thS}">Current Savings $</th><th style="${thS}">% of Baseline</th></tr></thead>
               <tbody>${rows}</tbody>
               <tfoot><tr style="background:var(--s1)">
@@ -1358,7 +1358,7 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
     .join('');
 
   const thS2 =
-    'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);background:var(--s3);border-bottom:1px solid var(--border);text-align:right;white-space:nowrap';
+    'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);background:var(--s1);border-bottom:1px solid var(--border);text-align:right;white-space:nowrap';
 
   content.innerHTML = `
     <div style="padding:14px 18px 10px;background:var(--s2);border-bottom:1px solid var(--border)">
@@ -7153,12 +7153,12 @@ function bpRecalc() {
   const actPct = hasActual && annBase > 0 ? ((annActSav / annBase) * 100).toFixed(1) + '%' : null;
 
   const thS =
-    'padding:7px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s3);border:1px solid var(--border2);white-space:nowrap';
+    'padding:7px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
   const colHdrs = cols.map((c) => `<th style="${thS}">${c.label}</th>`).join('');
 
   let yearHdr = '';
   if (view === 'quarterly') {
-    yearHdr = '<tr style="background:var(--s3)"><th style="border:1px solid var(--border2)"></th>';
+    yearHdr = '<tr style="background:var(--s1)"><th style="border:1px solid var(--border2)"></th>';
     for (let yr = 0; yr < years; yr++)
       yearHdr += `<th colspan="4" style="text-align:center;padding:5px;font-size:11px;font-weight:700;color:var(--text);border:1px solid var(--border2);border-bottom:2px solid var(--em)">Year ${yr + 1}</th>`;
     yearHdr +=
@@ -7345,7 +7345,7 @@ function bpRecalc() {
             <table style="border-collapse:collapse;width:100%;font-size:12px">
               <thead>
                 ${yearHdr}
-                <tr style="background:var(--s3)">
+                <tr style="background:var(--s1)">
                   <th style="padding:7px 12px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)"></th>
                   ${colHdrs}
                   <th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);border:1px solid var(--border2)">%</th>

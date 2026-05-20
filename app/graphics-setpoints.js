@@ -101,7 +101,7 @@ function _pvRenderBldgPerf(b, projId) {
     return v >= 0 ? 'var(--em)' : 'var(--danger)';
   };
   var thS =
-    'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s3);border:1px solid var(--border2);white-space:nowrap';
+    'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
   var tdS = function (c) {
     return (
       'padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:' +
@@ -151,7 +151,7 @@ function _pvRenderBldgPerf(b, projId) {
     _escHtml(b.name) +
     ' — Building Performance</div>' +
     '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px">' +
-    '<table style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr style="background:var(--s3)">' +
+    '<table style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr style="background:var(--s1)">' +
     '<th style="' +
     thS +
     ';text-align:left">Month</th><th style="' +
@@ -229,7 +229,7 @@ function _pvRenderProjPerf(bldgs, projId) {
     return v >= 0 ? 'var(--em)' : 'var(--danger)';
   };
   var thS =
-    'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s3);border:1px solid var(--border2);white-space:nowrap';
+    'padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
   var tdS = function (c) {
     return (
       'padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:' +
@@ -277,7 +277,7 @@ function _pvRenderProjPerf(bldgs, projId) {
     _escHtml(projName) +
     ' — Project Performance Total</div>' +
     '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px">' +
-    '<table style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr style="background:var(--s3)">' +
+    '<table style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr style="background:var(--s1)">' +
     '<th style="' +
     thS +
     ';text-align:left">Month</th><th style="' +
