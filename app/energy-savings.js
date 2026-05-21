@@ -705,6 +705,37 @@ function _renderSavingsContent(wrap, projId) {
       sset('en_projects', projects);
     }
   }
+  // One-time restore: Circle Grove Elementary measure had corrupted rates/fuel-type fields
+  // Restore it to exact May 11, 2026 backup state (bldgId b1776962484232)
+  if (!p._circleGroveRestored && p.name && p.name.indexOf('Louisburg') !== -1) {
+    const cgIdx = sd.measures.findIndex((m) => m.bldgId === 'b1776962484232');
+    if (cgIdx !== -1) {
+      sd.measures[cgIdx] = {
+        id: 'm_csv_b1776962484232',
+        bldgId: 'b1776962484232',
+        desc: 'BAS Savings',
+        msrNum: '',
+        sqft: 0,
+        selected: true,
+        source: 'bas',
+        totalDollar: 2167.0283010000003,
+        rates: {
+          kwhSummer: 0.1025,
+          kwhWinter: 0.0837,
+          kwSummer: 542.71,
+          kwWinter: 226.34,
+          thermRate: 0,
+          gallonRate: 1.6,
+        },
+        kwh: [731.14, 450.78, 280.63, 70.84, 1235.96, 2652.89, 3889.82, 2880.23, 1541.63, 806.71, 217.57, 487.85],
+        kw: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        gas: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        propane: [124, 100, 56, 13, 0, 0, 0, 0, 0, 0, 40, 95],
+      };
+    }
+    p._circleGroveRestored = true;
+    sset('en_projects', projects);
+  }
   // Auto-sync SQFT from current building data if measure has a building assigned
   let _sqftChanged = false;
   sd.measures.forEach((m) => {
