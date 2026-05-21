@@ -1461,6 +1461,171 @@
         transform: translateX(20px);
       }
 
+      /* ── Release Notes Modal ── */
+      .rn-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(6, 8, 16, 0.88);
+        backdrop-filter: blur(10px);
+        z-index: 800;
+        display: none;
+        align-items: center;
+        justify-content: center;
+      }
+      .rn-overlay.open {
+        display: flex;
+      }
+      .rn-modal {
+        background: var(--s2);
+        border: 1px solid var(--border2);
+        border-radius: 14px;
+        width: 620px;
+        max-width: 95vw;
+        max-height: 85vh;
+        display: flex;
+        flex-direction: column;
+        animation: fadeUp 0.18s ease;
+        box-shadow: 0 40px 80px rgba(0, 0, 0, 0.6);
+      }
+      .rn-hdr {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+      .rn-title {
+        font-size: 15px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .rn-x {
+        width: 27px;
+        height: 27px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text2);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        transition: all 0.13s;
+        font-family: var(--font);
+      }
+      .rn-x:hover {
+        border-color: var(--red);
+        color: var(--red);
+      }
+      .rn-body {
+        padding: 20px;
+        overflow-y: auto;
+        flex: 1;
+      }
+      .rn-entry {
+        margin-bottom: 24px;
+        padding-bottom: 24px;
+        border-bottom: 1px solid var(--border);
+      }
+      .rn-entry:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+        padding-bottom: 0;
+      }
+      .rn-version-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+      .rn-version-badge {
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 600;
+        background: var(--accent-dim);
+        color: var(--accent);
+        border: 1px solid var(--accent);
+        border-radius: 5px;
+        padding: 2px 8px;
+        letter-spacing: 0.5px;
+      }
+      .rn-date {
+        font-size: 11px;
+        color: var(--text3);
+        font-family: var(--mono);
+      }
+      .rn-latest-badge {
+        font-size: 10px;
+        font-weight: 600;
+        background: var(--accent);
+        color: #fff;
+        border-radius: 4px;
+        padding: 1px 6px;
+        letter-spacing: 0.4px;
+      }
+      .rn-entry-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text);
+        margin-bottom: 8px;
+      }
+      .rn-features {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .rn-features li {
+        font-size: 13px;
+        color: var(--text2);
+        padding-left: 18px;
+        position: relative;
+        line-height: 1.5;
+      }
+      .rn-features li::before {
+        content: '+';
+        position: absolute;
+        left: 0;
+        color: var(--accent);
+        font-weight: 700;
+        font-size: 13px;
+      }
+      .rn-features li.rn-fix::before {
+        content: '\2713';
+        color: #10b981;
+      }
+      .rn-features li.rn-change::before {
+        content: '\2022';
+        color: var(--text3);
+      }
+      .rn-whats-new-btn {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        background: var(--s1);
+        color: var(--text2);
+        font-family: var(--font);
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s;
+        margin-bottom: 6px;
+      }
+      .rn-whats-new-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
       /* ── MOBILE SIDEBAR DRAWER TOGGLE ── */
       .sidebar-toggle-btn {
         display: none;
@@ -1573,6 +1738,139 @@
          Print-preview overlay for quarterly/annual reports
     ═══════════════════════════════════════════════════ -->
     <style id="report-styles">
+      /* ══════════════════════════════════════════════════════
+         REPORT DESIGN TOKENS
+         All colors, fonts, and semantic values used in the
+         report engine are defined here as CSS custom properties.
+         Never hardcode hex values in report CSS or JS templates —
+         reference these variables instead.
+      ══════════════════════════════════════════════════════ */
+      :root {
+        /* ── Overlay chrome (dark UI shell) ── */
+        --rpt-overlay-bg: #1e1e2e;
+        --rpt-toolbar-bg: #12121e;
+        --rpt-toolbar-border: #2a2a3e;
+        --rpt-toolbar-text: #ccc;
+        --rpt-toolbar-hover: #fff;
+
+        /* ── Page surface (white print page) ── */
+        --rpt-page-bg: #ffffff;
+        --rpt-page-text: #000000;
+        --rpt-font: 'Segoe UI', Arial, sans-serif;
+
+        /* ── Brand / primary accent ── */
+        --rpt-blue: #1a5276; /* headings, KPI values, table headers */
+        --rpt-blue-btn: #2e86c1; /* toolbar primary button, vs-mid */
+        --rpt-blue-btn-hover: #3498db;
+        --rpt-blue-light: #d4e4f0; /* h2 rule, KPI card border */
+        --rpt-blue-tint: #e8f0f8; /* light bg highlights */
+        --rpt-blue-dark: #144a6a; /* table header border */
+
+        /* ── Status colors ── */
+        --rpt-green: #27ae60; /* on-track status label */
+        --rpt-green-dark: #1e8449; /* on-track value, big-number amount */
+        --rpt-green-light: #e8f8ef; /* finding icon bg (up) */
+        --rpt-orange: #e67e22; /* near-target */
+        --rpt-orange-light: #fef5e7; /* finding icon bg (warn) */
+        --rpt-orange-chart: #f39c12; /* chart bar baseline color */
+        --rpt-red: #c0392b; /* below-target, target marker */
+        --rpt-red-light: #f5a9a9; /* below-target card border tint */
+        --rpt-red-dash: #e74c3c; /* dashed threshold line */
+
+        /* ── Table palette (light theme) ── */
+        --rpt-table-text: #000000;
+        --rpt-table-th-bg: #1a5276;
+        --rpt-table-th-text: #ffffff;
+        --rpt-table-th-border: #144a6a;
+        --rpt-table-td-border: #d0d0d0;
+        --rpt-table-stripe: #f8fafb;
+        --rpt-table-tot-bg: #eef4f8;
+        --rpt-table-tot-bdr: #1a5276;
+        --rpt-table-bh-bg: #e8eef3; /* building heading row */
+
+        /* ── Dark table variant ── */
+        --rpt-dtbl-bg: #0a1628;
+        --rpt-dtbl-text: #c8ddf0;
+        --rpt-dtbl-th-bg: #122a45;
+        --rpt-dtbl-th-text: #8ab0d0;
+        --rpt-dtbl-th-border: #1a3a5c;
+        --rpt-dtbl-stripe: #0d1a30;
+        --rpt-dtbl-tot-bg: #122a45;
+        --rpt-dtbl-tot-bdr: #2980b9;
+        --rpt-dtbl-tot-text: #e8f4ff;
+
+        /* ── Baseline table (electric/gas/propane column headers) ── */
+        --rpt-bl-blue: #0070c0;
+        --rpt-bl-blue-border: #00599b;
+        --rpt-bl-orange: #e36c09;
+        --rpt-bl-orange-bdr: #9a4704;
+        --rpt-bl-amber: #b7770d;
+        --rpt-bl-amber-bdr: #8b5a06;
+        --rpt-bl-green: #2ca343;
+        --rpt-bl-green-bdr: #1e7a30;
+        --rpt-bl-navy: #1b3a5c;
+        --rpt-bl-navy-bdr: #152d49;
+        --rpt-bl-stripe: #f2f2f2;
+        --rpt-bl-tot-bg: #eef4f8;
+        --rpt-bl-stat-border: #d9d9d9;
+        --rpt-bl-stat-label: #3c4042;
+
+        /* ── Dividers & surfaces ── */
+        --rpt-divider: #ddd;
+        --rpt-chart-bg: #f8fafb;
+        --rpt-progress-bg: #e8e8e8;
+        --rpt-page-label: #555;
+
+        /* ── Semantic chart palette ── */
+        --rpt-chart-green: #27ae60; /* actual savings line/bars */
+        --rpt-chart-green-dk: #1e8449;
+        --rpt-chart-blue: #2e86c1; /* projected/baseline */
+        --rpt-chart-orange: #f39c12; /* projected baseline bars */
+        --rpt-chart-green-fill: rgba(39, 174, 96, 0.2);
+
+        /* ── Env/equivalency cards ── */
+        --rpt-env-bg: #f0f7eb;
+        --rpt-env-border: #c8e6c0;
+        --rpt-env-val: #1e8449;
+
+        /* ── Finding icons ── */
+        --rpt-fi-up-bg: #e8f8ef;
+        --rpt-fi-up-text: #27ae60;
+        --rpt-fi-warn-bg: #fef5e7;
+        --rpt-fi-warn-text: #e67e22;
+        --rpt-fi-star-bg: #eef0fb;
+        --rpt-fi-star-text: #2e86c1;
+
+        /* ── Status card borders ── */
+        --rpt-ok-border: #a3e4bc;
+        --rpt-warn-border: #f5d0a9;
+
+        /* ── Monospace / code ── */
+        --rpt-mono: monospace;
+        --rpt-code-bg: #f0f4f8;
+        --rpt-code-border: #d0dce8;
+        --rpt-code-text: #1a5276;
+
+        /* ── Commodity chart palette ── */
+        --rpt-elec-bl: #aed6f1; /* electric baseline bar (light blue) */
+        --rpt-elec-cur: #1a5276; /* electric current bar (dark blue) */
+        --rpt-elec-head: #1a5276; /* electric section heading */
+        --rpt-gas-bl: #f0b27a; /* gas baseline bar (light orange) */
+        --rpt-gas-cur: #e67e22; /* gas current bar (dark orange) */
+        --rpt-gas-head: #8b4513; /* gas section heading (brown) */
+        --rpt-prop-bl: #f9e4b7; /* propane baseline bar (light amber) */
+        --rpt-prop-cur: #b7770d; /* propane current bar (dark amber) */
+        --rpt-prop-head: #7d5a00; /* propane section heading (dark amber) */
+
+        /* ── EUI chart palette ── */
+        --rpt-eui-bl: #e67e22; /* EUI baseline bar color */
+        --rpt-eui-cur: #1a8a4e; /* EUI current bar color (slightly brighter green) */
+        --rpt-eui-purple: #8e44ad; /* EUI baseline marker line (purple) */
+
+        /* ── HDD/CDD variance highlight ── */
+        --rpt-variance: #c0392b; /* HDD/CDD variance warning color */
+      }
+
       /* ── Overlay & Toolbar ── */
       .report-overlay {
         position: fixed;
@@ -1580,21 +1878,21 @@
         z-index: 99999;
         display: flex;
         flex-direction: column;
-        background: #1e1e2e;
+        background: var(--rpt-overlay-bg);
       }
       .report-toolbar {
         display: flex;
         justify-content: space-between;
         align-items: center;
         padding: 10px 20px;
-        background: #12121e;
-        border-bottom: 1px solid #2a2a3e;
+        background: var(--rpt-toolbar-bg);
+        border-bottom: 1px solid var(--rpt-toolbar-border);
         flex-shrink: 0;
       }
       .rpt-toolbar-btn {
         background: rgba(255, 255, 255, 0.08);
         border: 1px solid rgba(255, 255, 255, 0.15);
-        color: #ccc;
+        color: var(--rpt-toolbar-text);
         padding: 6px 14px;
         border-radius: 6px;
         font-size: 13px;
@@ -1605,15 +1903,15 @@
       }
       .rpt-toolbar-btn:hover {
         background: rgba(255, 255, 255, 0.15);
-        color: #fff;
+        color: var(--rpt-toolbar-hover);
       }
       .rpt-toolbar-primary {
-        background: #2e86c1;
-        border-color: #2e86c1;
-        color: #fff;
+        background: var(--rpt-blue-btn);
+        border-color: var(--rpt-blue-btn);
+        color: var(--rpt-page-bg);
       }
       .rpt-toolbar-primary:hover {
-        background: #3498db;
+        background: var(--rpt-blue-btn-hover);
       }
       .report-pages {
         flex: 1;
@@ -1627,7 +1925,7 @@
 
       /* ── Page Label ── */
       .rpt-pl {
-        color: #555;
+        color: var(--rpt-page-label);
         font-size: 10px;
         margin-bottom: 4px;
         text-align: center;
@@ -1639,12 +1937,12 @@
       .rpt-page {
         width: 816px;
         min-height: 1056px;
-        background: #fff;
+        background: var(--rpt-page-bg);
         box-shadow: 0 8px 40px rgba(0, 0, 0, 0.7);
         position: relative;
         overflow: hidden;
-        color: #000000;
-        font-family: 'Segoe UI', Arial, sans-serif;
+        color: var(--rpt-page-text);
+        font-family: var(--rpt-font);
         font-size: 13px;
         line-height: 1.5;
       }
@@ -1664,7 +1962,7 @@
       }
       .rpt-footer-text {
         font-size: 9px;
-        color: #000000;
+        color: var(--rpt-page-text);
         padding: 4px 50px;
         display: flex;
         justify-content: space-between;
@@ -1676,7 +1974,7 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        border-bottom: 1px solid #ddd;
+        border-bottom: 1px solid var(--rpt-divider);
       }
       .rpt-pg-title {
         font-size: 19px;
@@ -1697,7 +1995,7 @@
       /* ── Section Headings ── */
       .rpt-body h2 {
         font-size: 16px;
-        color: #1a5276;
+        color: var(--rpt-blue);
         margin: 10px 0 4px;
         display: flex;
         align-items: center;
@@ -1707,16 +2005,16 @@
         content: '';
         flex: 1;
         height: 1px;
-        background: #d4e4f0;
+        background: var(--rpt-blue-light);
       }
       .rpt-body h3 {
         font-size: 13px;
-        color: #000000;
+        color: var(--rpt-page-text);
         margin: 6px 0 2px;
       }
       .rpt-su {
         font-size: 12px;
-        color: #000000;
+        color: var(--rpt-page-text);
         margin-bottom: 4px;
       }
 
@@ -1728,8 +2026,8 @@
         margin: 4px 0;
       }
       .rpt-table th {
-        background: #1a5276;
-        color: #fff;
+        background: var(--rpt-table-th-bg);
+        color: var(--rpt-table-th-text);
         padding: 4px 6px;
         text-align: center;
         font-weight: 600;
@@ -1739,66 +2037,66 @@
       }
       .rpt-table td {
         padding: 4px 6px;
-        border: 1px solid #d0d0d0;
+        border: 1px solid var(--rpt-table-td-border);
         white-space: nowrap;
       }
       .rpt-table th {
-        border: 1px solid #144a6a;
+        border: 1px solid var(--rpt-table-th-border);
       }
       .rpt-table tr:nth-child(even) td {
-        background: #f8fafb;
+        background: var(--rpt-table-stripe);
       }
       .rpt-table tr.rpt-tot td {
         font-weight: 700;
-        border-top: 2px solid #1a5276;
-        background: #eef4f8;
+        border-top: 2px solid var(--rpt-table-tot-bdr);
+        background: var(--rpt-table-tot-bg);
       }
       .rpt-table-dark {
-        background: #0a1628;
-        color: #c8ddf0;
+        background: var(--rpt-dtbl-bg);
+        color: var(--rpt-dtbl-text);
       }
       .rpt-table-dark th {
-        background: #122a45;
-        color: #8ab0d0;
-        border-color: #1a3a5c;
+        background: var(--rpt-dtbl-th-bg);
+        color: var(--rpt-dtbl-th-text);
+        border-color: var(--rpt-dtbl-th-border);
       }
       .rpt-table-dark td {
-        border-color: #1a3a5c;
-        color: #c8ddf0;
+        border-color: var(--rpt-dtbl-th-border);
+        color: var(--rpt-dtbl-text);
       }
       .rpt-table-dark tr:nth-child(even) td {
-        background: #0d1a30;
+        background: var(--rpt-dtbl-stripe);
       }
       .rpt-table-dark tr.rpt-tot td {
-        background: #122a45;
-        border-top-color: #2980b9;
-        color: #e8f4ff;
+        background: var(--rpt-dtbl-tot-bg);
+        border-top-color: var(--rpt-dtbl-tot-bdr);
+        color: var(--rpt-dtbl-tot-text);
       }
       /* ── Building Baseline Data — print-optimized light theme ── */
       .rpt-table-bl {
-        background: #ffffff;
-        color: #000000;
+        background: var(--rpt-page-bg);
+        color: var(--rpt-page-text);
       }
       .rpt-table-bl th {
-        background: #0070c0;
-        color: #ffffff;
-        border-color: #00599b;
+        background: var(--rpt-bl-blue);
+        color: var(--rpt-page-bg);
+        border-color: var(--rpt-bl-blue-border);
         font-size: 10px;
         text-transform: uppercase;
         letter-spacing: 0.3px;
       }
       .rpt-table-bl td {
         border-color: #333;
-        color: #000000;
+        color: var(--rpt-page-text);
         font-size: 10px;
       }
       .rpt-table-bl tr:nth-child(even) td {
-        background: #f2f2f2;
+        background: var(--rpt-bl-stripe);
       }
       .rpt-table-bl tr.rpt-tot td {
-        background: #eef4f8;
-        border-top: 2px solid #0070c0;
-        color: #000000;
+        background: var(--rpt-bl-tot-bg);
+        border-top: 2px solid var(--rpt-bl-blue);
+        color: var(--rpt-page-text);
         font-weight: 700;
       }
       /* Commodity-colored column group headers */
@@ -1810,23 +2108,23 @@
         border-bottom: 2px solid rgba(255, 255, 255, 0.3);
       }
       .rpt-table-bl th.bl-elec {
-        background: #0070c0;
+        background: var(--rpt-bl-blue);
       }
       .rpt-table-bl th.bl-gas {
-        background: #e36c09;
-        border-color: #9a4704;
+        background: var(--rpt-bl-orange);
+        border-color: var(--rpt-bl-orange-bdr);
       }
       .rpt-table-bl th.bl-prop {
-        background: #b7770d;
-        border-color: #8b5a06;
+        background: var(--rpt-bl-amber);
+        border-color: var(--rpt-bl-amber-bdr);
       }
       .rpt-table-bl th.bl-water {
-        background: #2ca343;
-        border-color: #1e7a30;
+        background: var(--rpt-bl-green);
+        border-color: var(--rpt-bl-green-bdr);
       }
       .rpt-table-bl th.bl-total {
-        background: #1b3a5c;
-        border-color: #152d49;
+        background: var(--rpt-bl-navy);
+        border-color: var(--rpt-bl-navy-bdr);
       }
       /* Stats summary bar — light bordered version */
       .rpt-bl-stats {
@@ -1835,14 +2133,14 @@
         flex-wrap: wrap;
         justify-content: center;
         margin-bottom: 0;
-        border: 1px solid #d9d9d9;
+        border: 1px solid var(--rpt-bl-stat-border);
         border-radius: 0;
-        background: #ffffff;
+        background: var(--rpt-page-bg);
       }
       .rpt-bl-stats > div {
         text-align: center;
         padding: 6px 12px;
-        border-right: 1px solid #d9d9d9;
+        border-right: 1px solid var(--rpt-bl-stat-border);
         flex: 1;
         min-width: 80px;
       }
@@ -1851,7 +2149,7 @@
       }
       .rpt-bl-stats .bl-stat-label {
         font-size: 9px;
-        color: #3c4042;
+        color: var(--rpt-bl-stat-label);
         text-transform: uppercase;
         letter-spacing: 0.4px;
         font-weight: 600;
@@ -1859,7 +2157,7 @@
       .rpt-bl-stats .bl-stat-val {
         font-size: 12px;
         font-weight: 700;
-        color: #000000;
+        color: var(--rpt-page-text);
       }
       .rpt-table .rpt-n {
         text-align: right;
@@ -1879,15 +2177,15 @@
         padding: 2px 2px;
       }
       .rpt-g {
-        color: #1e8449;
+        color: var(--rpt-green-dark);
         font-weight: 600;
       }
       .rpt-r {
-        color: #c0392b;
+        color: var(--rpt-red);
         font-weight: 600;
       }
       .rpt-o {
-        color: #e67e22;
+        color: var(--rpt-orange);
         font-weight: 600;
       }
 
@@ -1900,7 +2198,7 @@
       }
       .rpt-kpi {
         background: transparent;
-        border: 1px solid #d4e4f0;
+        border: 1px solid var(--rpt-blue-light);
         border-radius: 2px;
         padding: 8px;
         text-align: center;
@@ -1908,21 +2206,21 @@
       .rpt-kpi .rpt-kpi-val {
         font-size: 26px;
         font-weight: 700;
-        color: #1a5276;
+        color: var(--rpt-blue);
       }
       .rpt-kpi .rpt-kpi-val.rpt-kpi-green {
-        color: #1e8449;
+        color: var(--rpt-green-dark);
       }
       .rpt-kpi .rpt-kpi-label {
         font-size: 11px;
-        color: #000000;
+        color: var(--rpt-page-text);
         text-transform: uppercase;
         letter-spacing: 0.4px;
         margin-top: 1px;
       }
       .rpt-kpi .rpt-kpi-desc {
         font-size: 11px;
-        color: #000000;
+        color: var(--rpt-page-text);
       }
 
       /* ── Comparison Box (target vs actual) ── */
@@ -1946,19 +2244,19 @@
       }
       .rpt-vs-side .rpt-vs-lbl {
         font-size: 11px;
-        color: #000000;
+        color: var(--rpt-page-text);
         margin-top: 1px;
       }
       .rpt-vs-mid {
         font-size: 22px;
-        color: #2e86c1;
+        color: var(--rpt-blue-btn);
         font-weight: 700;
       }
 
       /* ── Progress Bar ── */
       .rpt-progress-bar {
         height: 22px;
-        background: #e8e8e8;
+        background: var(--rpt-progress-bg);
         border-radius: 2px;
         overflow: visible;
         margin: 4px 0;
@@ -1970,22 +2268,22 @@
         display: flex;
         align-items: center;
         padding: 0 10px;
-        color: #fff;
+        color: var(--rpt-page-bg);
         font-weight: 600;
         font-size: 13px;
       }
       .rpt-progress-fill.rpt-ahead {
-        background: linear-gradient(90deg, #27ae60, #2ecc71);
+        background: linear-gradient(90deg, var(--rpt-green), #2ecc71);
       }
       .rpt-progress-fill.rpt-behind {
-        background: linear-gradient(90deg, #e67e22, #f39c12);
+        background: linear-gradient(90deg, var(--rpt-orange), var(--rpt-orange-chart));
       }
       .rpt-target-marker {
         position: absolute;
         top: -3px;
         bottom: -3px;
         width: 3px;
-        background: #c0392b;
+        background: var(--rpt-red);
         border-radius: 2px;
       }
 
@@ -2015,18 +2313,18 @@
         position: absolute;
         inset: 3px;
         border-radius: 50%;
-        background: #fff;
+        background: var(--rpt-page-bg);
       }
       .rpt-gauge-val {
         position: relative;
         z-index: 1;
         font-size: 17px;
         font-weight: 700;
-        color: #1a5276;
+        color: var(--rpt-blue);
       }
       .rpt-gauge-label {
         font-size: 11px;
-        color: #000000;
+        color: var(--rpt-page-text);
         text-transform: uppercase;
       }
 
@@ -2045,16 +2343,16 @@
       }
       .rpt-status-card.rpt-ok {
         background: transparent;
-        border-color: #a3e4bc;
+        border-color: var(--rpt-ok-border);
       }
       .rpt-status-card.rpt-warn {
         background: transparent;
-        border-color: #f5d0a9;
+        border-color: var(--rpt-warn-border);
       }
       .rpt-status-card .rpt-sc-name {
         font-size: 11px;
         font-weight: 600;
-        color: #000000;
+        color: var(--rpt-page-text);
         margin-bottom: 1px;
       }
       .rpt-status-card .rpt-sc-val {
@@ -2062,10 +2360,10 @@
         font-weight: 700;
       }
       .rpt-status-card.rpt-ok .rpt-sc-val {
-        color: #1e8449;
+        color: var(--rpt-green-dark);
       }
       .rpt-status-card.rpt-warn .rpt-sc-val {
-        color: #e67e22;
+        color: var(--rpt-orange);
       }
       .rpt-status-card .rpt-sc-label {
         font-size: 10px;
@@ -2073,10 +2371,10 @@
         letter-spacing: 0.3px;
       }
       .rpt-status-card.rpt-ok .rpt-sc-label {
-        color: #27ae60;
+        color: var(--rpt-green);
       }
       .rpt-status-card.rpt-warn .rpt-sc-label {
-        color: #e67e22;
+        color: var(--rpt-orange);
       }
 
       /* ── Narrative Block ── */
@@ -2085,10 +2383,10 @@
         margin: 6px 0;
         font-size: 13px;
         line-height: 1.6;
-        color: #000000;
+        color: var(--rpt-page-text);
       }
       .rpt-narrative strong {
-        color: #1a5276;
+        color: var(--rpt-blue);
       }
 
       /* ── Key Finding ── */
@@ -2099,7 +2397,7 @@
         margin: 4px 0;
         font-size: 13px;
         line-height: 1.4;
-        color: #000000;
+        color: var(--rpt-page-text);
       }
       .rpt-finding-icon {
         width: 16px;
@@ -2112,16 +2410,16 @@
         flex-shrink: 0;
       }
       .rpt-finding-icon.rpt-fi-up {
-        background: #e8f8ef;
-        color: #27ae60;
+        background: var(--rpt-fi-up-bg);
+        color: var(--rpt-fi-up-text);
       }
       .rpt-finding-icon.rpt-fi-warn {
-        background: #fef5e7;
-        color: #e67e22;
+        background: var(--rpt-fi-warn-bg);
+        color: var(--rpt-fi-warn-text);
       }
       .rpt-finding-icon.rpt-fi-star {
-        background: #eef0fb;
-        color: #2e86c1;
+        background: var(--rpt-fi-star-bg);
+        color: var(--rpt-fi-star-text);
       }
       .rpt-finding-list {
         padding: 8px 12px;
@@ -2135,8 +2433,8 @@
 
       /* ── Chart Container ── */
       .rpt-chart-box {
-        background: #f8fafb;
-        border: 1px solid #ddd;
+        background: var(--rpt-chart-bg);
+        border: 1px solid var(--rpt-divider);
         border-radius: 2px;
         padding: 8px;
         margin: 4px 0;
@@ -2145,7 +2443,7 @@
       .rpt-chart-title {
         font-size: 8px;
         font-weight: 600;
-        color: #000000;
+        color: var(--rpt-page-text);
         margin-bottom: 3px;
       }
 
@@ -2157,8 +2455,8 @@
         margin: 6px 0;
       }
       .rpt-env-card {
-        background: #f0f7eb;
-        border: 1px solid #c8e6c0;
+        background: var(--rpt-env-bg);
+        border: 1px solid var(--rpt-env-border);
         border-radius: 2px;
         padding: 6px;
         text-align: center;
@@ -2169,19 +2467,19 @@
       .rpt-env-card .rpt-env-val {
         font-size: 14px;
         font-weight: 700;
-        color: #1e8449;
+        color: var(--rpt-env-val);
         margin: 1px 0;
       }
       .rpt-env-card .rpt-env-label {
         font-size: 6.5px;
-        color: #000000;
+        color: var(--rpt-page-text);
       }
 
       /* ── Hero / Cover Page ── */
       .rpt-hero {
-        background: #fff;
+        background: var(--rpt-page-bg);
         padding: 20px 50px 16px;
-        color: #1a5276;
+        color: var(--rpt-blue);
         position: relative;
         overflow: hidden;
       }
@@ -2204,7 +2502,7 @@
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 2px;
-        color: #1a5276;
+        color: var(--rpt-blue);
         padding: 2px 0;
       }
       .rpt-hero-main {
@@ -2217,18 +2515,18 @@
         font-size: 28px;
         font-weight: 800;
         letter-spacing: -1px;
-        color: #1a5276;
+        color: var(--rpt-blue);
         margin: 0;
       }
       .rpt-hero-main .rpt-hero-client {
         font-size: 16px;
-        color: #000000;
+        color: var(--rpt-page-text);
         font-weight: 700;
         margin-bottom: 1px;
       }
       .rpt-hero-main .rpt-hero-period {
         font-size: 9px;
-        color: #000000;
+        color: var(--rpt-page-text);
         letter-spacing: 1px;
       }
       .rpt-big-number {
@@ -2243,16 +2541,16 @@
       .rpt-big-number .rpt-bn-amount {
         font-size: 44px;
         font-weight: 800;
-        color: #1e8449;
+        color: var(--rpt-green-dark);
         letter-spacing: -2px;
       }
       .rpt-big-number .rpt-bn-label {
         font-size: 12px;
-        color: #000000;
+        color: var(--rpt-page-text);
       }
       .rpt-big-number .rpt-bn-badge {
-        background: #1e8449;
-        color: #fff;
+        background: var(--rpt-green-dark);
+        color: var(--rpt-page-bg);
         font-size: 10px;
         font-weight: 700;
         padding: 3px 10px;
@@ -2264,29 +2562,29 @@
         z-index: 1;
         text-align: center;
         font-size: 9px;
-        color: #000000;
+        color: var(--rpt-page-text);
         margin-bottom: 0;
       }
 
       /* ── Observations ── */
       .rpt-ob h3 {
         font-size: 11px;
-        color: #1a5276;
+        color: var(--rpt-blue);
         margin: 6px 0 3px;
       }
       .rpt-ob p {
         font-size: 10.5px;
-        color: #000000;
+        color: var(--rpt-page-text);
         line-height: 1.5;
         margin-bottom: 3px;
       }
 
       /* ── Building heading row in tables ── */
       .rpt-table tr.rpt-bh td {
-        background: #e8eef3 !important;
+        background: var(--rpt-table-bh-bg) !important;
         font-weight: 700;
         font-size: 8.5px;
-        color: #1a5276;
+        color: var(--rpt-blue);
       }
       .rpt-table tr.rpt-mr td {
         padding-left: 14px;
@@ -2332,7 +2630,7 @@
       }
       .rpt-bar-group .rpt-bar-ml {
         font-size: 7.5px;
-        color: #000000;
+        color: var(--rpt-page-text);
         margin-top: 1px;
       }
       .rpt-legend {
@@ -2341,7 +2639,7 @@
         margin-top: 3px;
         justify-content: center;
         font-size: 8.5px;
-        color: #000000;
+        color: var(--rpt-page-text);
       }
       .rpt-legend span {
         display: flex;
@@ -2360,13 +2658,13 @@
         position: absolute;
         left: 8px;
         right: 8px;
-        border-top: 2px dashed #e74c3c;
+        border-top: 2px dashed var(--rpt-red-dash);
       }
       .rpt-dash-label {
         position: absolute;
         right: 10px;
         font-size: 8px;
-        color: #e74c3c;
+        color: var(--rpt-red-dash);
         font-weight: 600;
       }
     </style>
@@ -7226,6 +7524,7 @@
             </div>
           </div>
           <div class="sidebar-bottom">
+            <button class="rn-whats-new-btn" onclick="openReleaseNotes()">&#128196; What's New</button>
             <button class="sb-settings-btn" id="uiCustomizeBtn" onclick="uiEditToggle()">&#9998; Customize</button>
             <button class="sb-settings-btn" onclick="siteOpenSettings()">&#9881; Settings</button>
             <div class="sb-divider"></div>

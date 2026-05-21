@@ -1,19 +1,19 @@
-﻿// Local fallback — only defined if computations/rates.js hasn't already defined it
+// Local fallback � only defined if computations/rates.js hasn't already defined it
 if (typeof toKBtu === 'undefined') {
   function toKBtu(kwh, therms, gallons) {
     return (parseFloat(kwh) || 0) * 3.412 + (parseFloat(therms) || 0) * 100 + (parseFloat(gallons) || 0) * 91.5;
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------------
 // collectReportData(projId, buildingIds, reportDateStr, reportType)
 //
 // Gathers ALL data needed for report generation into a single structured
-// object. Every report page template reads from this object — no page
+// object. Every report page template reads from this object � no page
 // template should access localStorage or compute savings directly.
 //
 // Adapted from the data-gathering portion of generatePerformanceReport().
-// ═══════════════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------------
 function collectReportData(projId, buildingIds, reportDateStr, reportType) {
   const p = projects.find((x) => x.id === projId);
   if (!p) return null;
@@ -40,7 +40,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
   ];
   const periodMonths = reportType === 'quarterly' ? 3 : 12;
 
-  // ─── Gather all post-baseline year-months and meter data ───
+  // --- Gather all post-baseline year-months and meter data ---
   let allPostYMs = [];
   const allBldgMeters = [];
   bldgs.forEach((b) => {
@@ -74,7 +74,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
   });
   allPostYMs.sort();
 
-  // ─── Determine reporting period year-months ───
+  // --- Determine reporting period year-months ---
   let reportYMs = [];
   if (reportType === 'quarterly') {
     const curQ = Math.ceil((now.getMonth() + 1) / 3);
@@ -143,7 +143,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
     periodYear = parseInt(rpEndYear) || now.getFullYear();
   }
 
-  // ─── Contract info ───
+  // --- Contract info ---
   const contractYears = parseInt(p.contractYears) || 3;
   const escalation = parseFloat(p.escalation) || 0;
   const cscComp = parseFloat(p.cscCompensation) || 0;
@@ -156,10 +156,10 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
     contractYearNum = Math.max(1, Math.min(contractYears, Math.ceil(msElapsed / (365.25 * 86400000))));
   }
 
-  // ─── Baseline costs from single source of truth ───
+  // --- Baseline costs from single source of truth ---
   const baselineMoMap = aggBaseMoMapForBldgs(bldgs);
 
-  // ─── Per-building data ───
+  // --- Per-building data ---
   const totalSqft = bldgs.reduce((s, b) => s + parseInt(b.sqft || 0), 0);
   // Accumulators for project-wide totals
   let totKwhSaved = 0,
@@ -227,7 +227,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
       const isElec = m.commodity === 'Electric';
       const isPropane = m.commodity === 'Propane';
 
-      // Expected usage by calendar month — use buildMoMap (matches canonical savings function)
+      // Expected usage by calendar month � use buildMoMap (matches canonical savings function)
       const _moMapR = isElec ? eM : m.commodity === 'Gas' ? gM : isPropane ? pM : wM;
       const blByCalMo = {};
       Object.entries(_moMapR).forEach(([mo, v]) => {
@@ -374,7 +374,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
         if (inPeriod) periodSavings += totalCostSav;
       });
 
-      // Annual EUI — baseline and current (rolling 12 months)
+      // Annual EUI � baseline and current (rolling 12 months)
       const blBills = _dashGetBaselineBills(m);
       if (m.commodity === 'Gas') {
         blBills.forEach((bill) => {
@@ -455,7 +455,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
       savings: (propaneMonthly[ym] || {}).savings || 0,
     }));
 
-    // EUI calculations — period-matched comparison (same months for baseline and current)
+    // EUI calculations � period-matched comparison (same months for baseline and current)
     const reportCalMonths = reportYMs.map((ym) => parseInt(ym.split('-')[1]));
     let periodBlKBtu = 0,
       periodCurKBtu = 0;
@@ -575,7 +575,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
     };
   });
 
-  // ─── Project totals ───
+  // --- Project totals ---
   const totSavingsPct = totBlCost > 0 ? (totSavings / totBlCost) * 100 : 0;
   // Annualize project EUI: weighted average of per-building annualized EUIs
   let _euiBlWt = 0,
@@ -592,7 +592,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
   const euiBaseline = _euiSqftSum > 0 ? _euiBlWt / _euiSqftSum : 0;
   const euiCurrent = _euiSqftSum > 0 ? _euiCurWt / _euiSqftSum : 0;
 
-  // Quarterly targets from measures only — no percentage fallback
+  // Quarterly targets from measures only � no percentage fallback
   const annualBaseline = Object.values(baselineMoMap).reduce((s, v) => s + v, 0);
   const _rptProjSavByMo = Array(12).fill(0);
   bldgs.forEach((b) => {
@@ -611,7 +611,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
     return qSav;
   });
 
-  // ─── Chart images ───
+  // --- Chart images ---
   const chartImages = {};
   if (typeof _maCharts === 'object' && _maCharts) {
     Object.entries(_maCharts).forEach(([key, chart]) => {
@@ -625,7 +625,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
     });
   }
 
-  // ─── Pollution credits ───
+  // --- Pollution credits ---
   const stateCode = extractStateFromAddress(p.addr);
   let pollution = {
     pollutants: {},
@@ -646,10 +646,10 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
     /* pollution calc not critical */
   }
 
-  // ─── Weather data ───
+  // --- Weather data ---
   const weather = collectWeatherData(allBldgMeters, reportYMs);
 
-  // ─── Setpoints ───
+  // --- Setpoints ---
   const setpoints = (p.setpoints || []).map((sp) => {
     const bldg = bldgs.find((b) => String(b.id) === String(sp.buildingId));
     return {
@@ -660,7 +660,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
     };
   });
 
-  // ─── Meetings (for observations/recommendations context) ───
+  // --- Meetings (for observations/recommendations context) ---
   const meetings = (p.meetings || []).map((m) => ({
     id: m.id,
     date: m.date,
@@ -669,7 +669,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
     items: m.items || [],
   }));
 
-  // ─── Baseline period dates ───
+  // --- Baseline period dates ---
   let blPeriodStart = null,
     blPeriodEnd = null;
   allBldgMeters.forEach(({ bl }) => {
@@ -683,12 +683,12 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
   });
   const blStartLabel = blPeriodStart
     ? monthNames[parseInt(blPeriodStart.split('-')[1]) - 1] + ' ' + blPeriodStart.split('-')[0]
-    : '—';
+    : '�';
   const blEndLabel = blPeriodEnd
     ? monthNames[parseInt(blPeriodEnd.split('-')[1]) - 1] + ' ' + blPeriodEnd.split('-')[0]
-    : '—';
+    : '�';
 
-  // ─── Per-building meter regression data + baseline month maps for appendices ───
+  // --- Per-building meter regression data + baseline month maps for appendices ---
   buildingsData.forEach((bd) => {
     const bMeters = allBldgMeters.filter((x) => x.b.id === bd.id || x.b.name === bd.name);
     bd.meterDetails = [];
@@ -712,8 +712,8 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
       const annUsage = blR.reduce((s, r) => s + (r.usage || 0), 0);
       const annCost = blR.reduce((s, r) => s + (r.cost || 0), 0);
       const blYears = blMonths.length / 12 || 1;
-      var bestR2 = '—';
-      var regrType = '—';
+      var bestR2 = '�';
+      var regrType = '�';
       if (reg) {
         if (reg.dual && reg.dual.r2 != null) {
           bestR2 = reg.dual.r2.toFixed(3);
@@ -760,7 +760,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
     });
   });
 
-  // ─── Raw utility bills for Appendix D ───
+  // --- Raw utility bills for Appendix D ---
   const rawBills = [];
   allBldgMeters.forEach(({ b, m, bills }) => {
     (bills || []).forEach((bill) => {
@@ -768,10 +768,10 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
         normMonth(bill.start, bill.end, m.inclusive !== false, bills) || (bill.start ? bill.start.substring(0, 7) : '');
       if (!reportYMs.includes(_billYm)) return;
       rawBills.push({
-        building: b.name || '—',
+        building: b.name || '�',
         commodity: m.commodity,
-        provider: m.provider || bill.provider || '—',
-        account: m.account || bill.account || '—',
+        provider: m.provider || bill.provider || '�',
+        account: m.account || bill.account || '�',
         start: bill.start || '',
         end: bill.end || '',
         kwh: parseFloat(bill.kwh) || parseFloat(bill.usage) || 0,
@@ -785,7 +785,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
     });
   });
 
-  // ─── Assemble final object ───
+  // --- Assemble final object ---
   return {
     project: {
       id: p.id,
@@ -852,14 +852,14 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
   };
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------------
 // REPORT TEMPLATE INFRASTRUCTURE
 // Page wrapper, master assembly, overlay display/close, and stub
 // functions for all 17 page templates. Built by Task 5.
-// ═══════════════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------------
 
 /**
- * rptPage — wraps a single report page with header, body, and footer.
+ * rptPage � wraps a single report page with header, body, and footer.
  * @param {number} pageNum - Page number for the data-page attribute
  * @param {string} title - Title shown in the interior page header
  * @param {string} bodyHTML - Inner HTML content for the page body
@@ -895,12 +895,12 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
   const footerTextHtml =
     '<div class="rpt-footer-text">' +
     '<span>' +
-    (data ? data.project.client + (_fmtRptDate ? ' — ' + _fmtRptDate : ' — ' + data.period.label) : '') +
+    (data ? data.project.client + (_fmtRptDate ? ' � ' + _fmtRptDate : ' � ' + data.period.label) : '') +
     '</span>' +
     '</div>';
   const footerLabelHtml =
     data && data.period
-      ? '<div style="text-align:center;font-size:10px;color:#000;padding:4px 0 2px;position:absolute;bottom:' +
+      ? '<div style="text-align:center;font-size:10px;color:var(--rpt-page-text);padding:4px 0 2px;position:absolute;bottom:' +
         '45px' +
         ';left:0;right:0">' +
         (data.period.type === 'quarterly'
@@ -922,7 +922,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
       '" alt="CSC Letterhead" style="width:100%;display:block">' +
       bodyHTML +
       footerTextHtml +
-      '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:#000000"></div>' +
+      '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:var(--rpt-page-text)"></div>' +
       footerLabelHtml +
       footerImgHtml +
       '</div>'
@@ -950,7 +950,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
     bodyHTML +
     '</div>' +
     footerTextHtml +
-    '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:#000000"></div>' +
+    '<div class="rpt-pg-footer-pagenum" style="position:absolute;bottom:12px;right:20px;font-size:10px;color:var(--rpt-page-text)"></div>' +
     footerLabelHtml +
     footerImgHtml +
     '</div>'
@@ -958,7 +958,7 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
 }
 
 /**
- * generateReportHTML — assembles all selected report pages into HTML.
+ * generateReportHTML � assembles all selected report pages into HTML.
  * @param {object} data - Output from collectReportData()
  * @param {object} selectedSections - Which sections to include (all default true)
  * @returns {string} Combined HTML for all pages
@@ -1002,7 +1002,7 @@ function generateReportHTML(data, selectedSections) {
     });
   }
 
-  // Per-building meter performance (independent section — split across pages)
+  // Per-building meter performance (independent section � split across pages)
   if (s.meterPerformance !== false) {
     var _mpBlocks = [];
     data.buildings.forEach(function (b) {
@@ -1010,7 +1010,7 @@ function generateReportHTML(data, selectedSections) {
       if (bResult.meterPerfHTML) {
         _mpBlocks.push(
           '<div style="page-break-inside:avoid;break-inside:avoid;margin-bottom:10px">' +
-            '<div style="font-size:12px;font-weight:700;color:#1a5276;margin-bottom:3px;border-bottom:1px solid #d4e4f0;padding-bottom:2px">' +
+            '<div style="font-size:12px;font-weight:700;color:var(--rpt-blue);margin-bottom:3px;border-bottom:1px solid var(--rpt-blue-light);padding-bottom:2px">' +
             (b.name || 'Building') +
             '</div>' +
             bResult.meterPerfHTML +
@@ -1020,14 +1020,14 @@ function generateReportHTML(data, selectedSections) {
     });
     // One building per page to prevent table overflow
     for (var _mpI = 0; _mpI < _mpBlocks.length; _mpI++) {
-      var _mpTitle = _mpI === 0 ? 'Meter Performance — All Buildings' : 'Meter Performance (continued)';
+      var _mpTitle = _mpI === 0 ? 'Meter Performance � All Buildings' : 'Meter Performance (continued)';
       var _mpKey = _mpI === 0 ? 'meterPerformance' : 'meterPerformance-cont';
       var _mpPageNum = pageNum++;
       pages.push(
         _tagSection(
           rptPage(_mpPageNum, _mpTitle, _mpBlocks[_mpI], {
             data: data,
-            label: 'Page ' + _mpPageNum + ' — Meter Performance',
+            label: 'Page ' + _mpPageNum + ' � Meter Performance',
           }),
           _mpKey,
         ),
@@ -1074,7 +1074,7 @@ function generateReportHTML(data, selectedSections) {
 }
 
 /**
- * showReportOverlay — displays the report preview overlay with generated HTML.
+ * showReportOverlay � displays the report preview overlay with generated HTML.
  */
 function showReportOverlay(html, title) {
   document.getElementById('reportPages').innerHTML = html;
@@ -1085,7 +1085,7 @@ function showReportOverlay(html, title) {
 }
 
 /**
- * closeReportOverlay — hides the report preview overlay and cleans up.
+ * closeReportOverlay � hides the report preview overlay and cleans up.
  */
 function closeReportOverlay() {
   document.getElementById('reportOverlay').style.display = 'none';
@@ -1093,7 +1093,7 @@ function closeReportOverlay() {
   document.body.style.overflow = '';
 }
 
-// ── Stub page template functions (replaced by Tasks 6–17) ──
+// -- Stub page template functions (replaced by Tasks 6�17) --
 function rptPageCover(n, d) {
   const $c = function (v) {
     return (v < 0 ? '-$' : '$') + Math.abs(Math.round(v)).toLocaleString();
@@ -1222,7 +1222,7 @@ function rptPageCover(n, d) {
         esStar.length +
         ' building' +
         (esStar.length > 1 ? 's are' : ' is') +
-        ' in the top EUI quartile for their building type — <strong>ENERGY STAR eligible</strong>: ' +
+        ' in the top EUI quartile for their building type � <strong>ENERGY STAR eligible</strong>: ' +
         esStar
           .map(function (b) {
             return b.name;
@@ -1265,7 +1265,7 @@ function rptPageCover(n, d) {
       cy +
       '" r="' +
       r +
-      '" fill="none" stroke="#e0e0e0" stroke-width="' +
+      '" fill="none" stroke="var(--rpt-progress-bg)" stroke-width="' +
       sw +
       '"/>' +
       '<circle cx="' +
@@ -1293,11 +1293,11 @@ function rptPageCover(n, d) {
       cx +
       '" y="' +
       (cy + 5) +
-      '" text-anchor="middle" font-size="14" font-weight="700" fill="#1a5276">' +
+      '" text-anchor="middle" font-size="14" font-weight="700" fill="var(--rpt-blue)">' +
       valText +
       '</text>' +
       '</svg>' +
-      '<div style="font-size:11px;color:#000;text-transform:uppercase">' +
+      '<div style="font-size:11px;color:var(--rpt-page-text);text-transform:uppercase">' +
       label +
       '</div>' +
       '</div>'
@@ -1309,7 +1309,7 @@ function rptPageCover(n, d) {
     d.totals.euiBaseline > 0
       ? Math.round(((d.totals.euiBaseline - d.totals.euiCurrent) / d.totals.euiBaseline) * 100)
       : 0;
-  // Contract progress % — use actual dates like dashboard calcAutoProgress
+  // Contract progress % � use actual dates like dashboard calcAutoProgress
   var contractDonePct = 0;
   if (d.contract.start && d.contract.end) {
     var _cStart = new Date(d.contract.start + 'T00:00:00');
@@ -1342,9 +1342,19 @@ function rptPageCover(n, d) {
           : b.status === 'near_target'
             ? '&#9658; Near Target'
             : '&#9658; Below Target';
-      const cardStyle = b.status === 'below_target' ? 'border-color:#f5a9a9;' : '';
-      const valColor = b.status === 'on_track' ? '#1e8449' : b.status === 'near_target' ? '#e67e22' : '#c0392b';
-      const labelColor = b.status === 'on_track' ? '#27ae60' : b.status === 'near_target' ? '#e67e22' : '#c0392b';
+      const cardStyle = b.status === 'below_target' ? 'border-color:var(--rpt-red-light);' : '';
+      const valColor =
+        b.status === 'on_track'
+          ? 'var(--rpt-green-dark)'
+          : b.status === 'near_target'
+            ? 'var(--rpt-orange)'
+            : 'var(--rpt-red)';
+      const labelColor =
+        b.status === 'on_track'
+          ? 'var(--rpt-green)'
+          : b.status === 'near_target'
+            ? 'var(--rpt-orange)'
+            : 'var(--rpt-red)';
       return (
         '<div class="rpt-status-card ' +
         cardClass +
@@ -1384,7 +1394,7 @@ function rptPageCover(n, d) {
     })
     .join('');
 
-  // Hero section (below letterhead — no gradient, no logo text)
+  // Hero section (below letterhead � no gradient, no logo text)
   const heroHTML =
     '<div class="rpt-hero">' +
     '<div class="rpt-hero-top">' +
@@ -1401,7 +1411,7 @@ function rptPageCover(n, d) {
     ' Results</h1>' +
     '<div class="rpt-hero-period" contenteditable="true">' +
     contractYrLabel +
-    ' &nbsp;•&nbsp; ' +
+    ' &nbsp;�&nbsp; ' +
     d.period.label +
     '</div>' +
     '</div>' +
@@ -1418,7 +1428,7 @@ function rptPageCover(n, d) {
     '</div>' +
     '<div class="rpt-hero-sub" contenteditable="true">' +
     aheadLabel +
-    ' &nbsp;•&nbsp; ' +
+    ' &nbsp;�&nbsp; ' +
     exceedLabel +
     '</div>' +
     '</div>';
@@ -1434,7 +1444,7 @@ function rptPageCover(n, d) {
     '<div class="rpt-vs-box">' +
     '<div class="rpt-vs-side">' +
     '<div class="rpt-vs-val" style="color:' +
-    (d.totals.savings >= target ? '#1e8449' : '#e67e22') +
+    (d.totals.savings >= target ? 'var(--rpt-green-dark)' : 'var(--rpt-orange)') +
     '" contenteditable="true">' +
     $c(d.totals.savings) +
     '</div>' +
@@ -1444,7 +1454,7 @@ function rptPageCover(n, d) {
     '</div>' +
     '<div class="rpt-vs-mid">vs</div>' +
     '<div class="rpt-vs-side">' +
-    '<div class="rpt-vs-val" style="color:#1a5276" contenteditable="true">' +
+    '<div class="rpt-vs-val" style="color:var(--rpt-blue)" contenteditable="true">' +
     $c(target) +
     '</div>' +
     '<div class="rpt-vs-lbl">Q' +
@@ -1466,29 +1476,29 @@ function rptPageCover(n, d) {
     '</div>' +
     // Portfolio Metrics (full width, on top)
     '<div style="margin-top:6px">' +
-    '<div style="font-size:11px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Portfolio Metrics</div>' +
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Portfolio Metrics</div>' +
     '<div class="rpt-gauge-row">' +
-    gaugeSVG(pctOfTarget, '#27ae60', 'vs Target', pctOfTarget + '%') +
-    gaugeSVG(energyRedPct, '#2e86c1', 'Energy Reduced', energyRedPct + '%') +
-    gaugeSVG(Math.max(0, euiImpPct), '#1e8449', 'Site EUI Improved', euiImpPct + '%') +
-    gaugeSVG(contractDonePct, '#8e44ad', 'Contract Progress', contractDonePct + '%') +
+    gaugeSVG(pctOfTarget, 'var(--rpt-green)', 'vs Target', pctOfTarget + '%') +
+    gaugeSVG(energyRedPct, 'var(--rpt-blue-btn)', 'Energy Reduced', energyRedPct + '%') +
+    gaugeSVG(Math.max(0, euiImpPct), 'var(--rpt-green-dark)', 'Site EUI Improved', euiImpPct + '%') +
+    gaugeSVG(contractDonePct, 'var(--rpt-eui-purple)', 'Contract Progress', contractDonePct + '%') +
     '</div>' +
     '</div>' +
-    // Building Status (full width, below — cards side by side)
+    // Building Status (full width, below � cards side by side)
     '<div style="margin-top:6px">' +
-    '<div style="font-size:11px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Building Status</div>' +
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Building Status</div>' +
     '<div style="display:flex;flex-wrap:wrap;gap:6px">' +
     statusCards +
     '</div>' +
     '</div>' +
     // Key Findings
     '<div style="margin-top:6px;">' +
-    '<div style="font-size:11px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Key Findings</div>' +
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Key Findings</div>' +
     findingsHTML +
     '</div>' +
     '</div>';
 
-  return rptPage(n, 'Cover', heroHTML + bodyHTML, { hero: true, data: d, label: 'Page ' + n + ' — Cover' });
+  return rptPage(n, 'Cover', heroHTML + bodyHTML, { hero: true, data: d, label: 'Page ' + n + ' � Cover' });
 }
 
 function rptPageFinancial(n, d) {
@@ -1512,7 +1522,7 @@ function rptPageFinancial(n, d) {
   var cscAmt = _split.csc;
   var clientAmt = _split.client;
 
-  // ── Building Performance table ──
+  // -- Building Performance table --
   const qTarget = d.contract.quarterlyTargets[q - 1] || 0;
   const totBlCostForPct = d.totals.blCost || 1;
   const bRows = d.buildings
@@ -1611,7 +1621,7 @@ function rptPageFinancial(n, d) {
     '</tbody>' +
     '</table>';
 
-  // ── CSC Compensation table ──
+  // -- CSC Compensation table --
   const cscTable =
     '<table class="rpt-table" contenteditable="false">' +
     '<thead><tr>' +
@@ -1668,7 +1678,7 @@ function rptPageFinancial(n, d) {
     '</tbody>' +
     '</table>';
 
-  // ── Quarterly Savings vs Baseline table ──
+  // -- Quarterly Savings vs Baseline table --
   const qBlCost = d.totals.blCost;
   const qCurCost = d.totals.curCost;
   const qtrRow =
@@ -1725,7 +1735,7 @@ function rptPageFinancial(n, d) {
     '</tbody>' +
     '</table>';
 
-  // ── Cumulative vs Projection SVG chart (quarterly) ──
+  // -- Cumulative vs Projection SVG chart (quarterly) --
   const svgW = 700,
     svgH = 110;
   const yrs = d.contract.years || 5;
@@ -1766,7 +1776,7 @@ function rptPageFinancial(n, d) {
   }
   const maxBarVal = Math.max.apply(null, qtrProjVals) * 1.3 || 1;
 
-  // Current actual point — use cumulative savings across all completed quarters, not just this period
+  // Current actual point � use cumulative savings across all completed quarters, not just this period
   const curQtr = ((d.contract.currentYear || 1) - 1) * 4 + (d.period.quarter || 1);
   const actCumVal = d.totals.cumulativeSavings != null ? d.totals.cumulativeSavings : d.totals.savings || 0;
 
@@ -1780,14 +1790,14 @@ function rptPageFinancial(n, d) {
         (padL - 4) +
         '" y="' +
         y.toFixed(1) +
-        '" text-anchor="end" font-size="8" fill="#000000" dominant-baseline="middle">$' +
+        '" text-anchor="end" font-size="8" fill="var(--rpt-page-text)" dominant-baseline="middle">$' +
         Math.round(val / 1000) +
         'k</text>'
       );
     })
     .join('');
 
-  // X-axis labels — Q1-Q4 for each year
+  // X-axis labels � Q1-Q4 for each year
   const xAxisLabels = cumPoints
     .map(function (pt) {
       var qNum = ((pt.q - 1) % 4) + 1;
@@ -1800,7 +1810,7 @@ function rptPageFinancial(n, d) {
         (svgH - 8) +
         '" text-anchor="middle" font-size="' +
         (totalQtrs > 12 ? '6' : '7') +
-        '" fill="#000000">' +
+        '" fill="var(--rpt-page-text)">' +
         label +
         '</text>'
       );
@@ -1831,7 +1841,7 @@ function rptPageFinancial(n, d) {
         '" height="' +
         h.toFixed(1) +
         '" fill="' +
-        (isFuture ? '#d5e8f0' : '#2e86c1') +
+        (isFuture ? 'var(--rpt-blue-tint)' : 'var(--rpt-blue-btn)') +
         '" opacity="0.6" rx="1"/>'
       );
     })
@@ -1872,7 +1882,7 @@ function rptPageFinancial(n, d) {
         (padL - 4) +
         '" y="' +
         y.toFixed(1) +
-        '" text-anchor="end" font-size="8" fill="#000000" dominant-baseline="middle">$' +
+        '" text-anchor="end" font-size="8" fill="var(--rpt-page-text)" dominant-baseline="middle">$' +
         Math.round(val / 1000) +
         'k</text>'
       );
@@ -1893,7 +1903,7 @@ function rptPageFinancial(n, d) {
     padL +
     '" y2="' +
     (padT + cH) +
-    '" stroke="#ccc" stroke-width="1"/>' +
+    '" stroke="var(--rpt-divider)" stroke-width="1"/>' +
     '<line x1="' +
     padL +
     '" y1="' +
@@ -1902,7 +1912,7 @@ function rptPageFinancial(n, d) {
     (padL + cW) +
     '" y2="' +
     (padT + cH) +
-    '" stroke="#ccc" stroke-width="1"/>' +
+    '" stroke="var(--rpt-divider)" stroke-width="1"/>' +
     [0.25, 0.5, 0.75]
       .map(function (f) {
         var y = barYScale(f * maxBarVal);
@@ -1915,26 +1925,28 @@ function rptPageFinancial(n, d) {
           (padL + cW) +
           '" y2="' +
           y.toFixed(1) +
-          '" stroke="#eee" stroke-width="1"/>'
+          '" stroke="#eee" stroke-width="1" opacity="0.12"/>'
         );
       })
       .join('') +
     projBars +
-    (actLinePts.length > 1 ? '<path d="' + actFillPath + '" fill="rgba(39,174,96,0.2)"/>' : '') +
-    (actLinePts.length > 1 ? '<path d="' + actLinePath + '" fill="none" stroke="#27ae60" stroke-width="2.5"/>' : '') +
+    (actLinePts.length > 1 ? '<path d="' + actFillPath + '" fill="var(--rpt-chart-green-fill)"/>' : '') +
+    (actLinePts.length > 1
+      ? '<path d="' + actLinePath + '" fill="none" stroke="var(--rpt-chart-green)" stroke-width="2.5"/>'
+      : '') +
     (actLinePts.length > 1
       ? '<circle cx="' +
         (padL + (curQtr / totalQtrs) * cW).toFixed(1) +
         '" cy="' +
         barYScale(Math.min(Math.abs(actCumVal), maxBarVal)).toFixed(1) +
-        '" r="4" fill="#27ae60" stroke="#fff" stroke-width="1.5"/>'
+        '" r="4" fill="var(--rpt-chart-green)" stroke="var(--rpt-page-bg)" stroke-width="1.5"/>'
       : '') +
     (actLinePts.length > 1
       ? '<text x="' +
         (padL + (curQtr / totalQtrs) * cW + 8).toFixed(1) +
         '" y="' +
         (barYScale(Math.min(Math.abs(actCumVal), maxBarVal)) - 5).toFixed(1) +
-        '" font-size="9" fill="#1e8449" font-weight="bold">' +
+        '" font-size="9" fill="var(--rpt-chart-green-dk)" font-weight="bold">' +
         $c(actCumVal) +
         '</text>'
       : '') +
@@ -1942,22 +1954,22 @@ function rptPageFinancial(n, d) {
     xAxisLabels +
     '<rect x="' +
     (padL + cW - 140) +
-    '" y="6" width="10" height="8" fill="#2e86c1" opacity="0.6" rx="1"/>' +
+    '" y="6" width="10" height="8" fill="var(--rpt-blue-btn)" opacity="0.6" rx="1"/>' +
     '<text x="' +
     (padL + cW - 126) +
-    '" y="14" font-size="8" fill="#000000">Projected/Qtr</text>' +
+    '" y="14" font-size="8" fill="var(--rpt-page-text)">Projected/Qtr</text>' +
     '<line x1="' +
     (padL + cW - 60) +
     '" y1="10" x2="' +
     (padL + cW - 46) +
-    '" y2="10" stroke="#27ae60" stroke-width="2.5"/>' +
+    '" y2="10" stroke="var(--rpt-chart-green)" stroke-width="2.5"/>' +
     '<text x="' +
     (padL + cW - 42) +
-    '" y="14" font-size="8" fill="#000000">Actual</text>' +
+    '" y="14" font-size="8" fill="var(--rpt-page-text)">Actual</text>' +
     '</svg>';
 
   const bodyHTML =
-    '<p contenteditable="true" style="font-size:10px;color:#000;line-height:1.6;margin:0 0 8px">This page summarizes the financial performance of each building in the portfolio for the reporting period. Baseline costs represent the expected energy spend based on historical consumption adjusted for weather. Projected costs reflect the target spend based on the contracted savings percentage. Current costs are the actual utility charges during the period. The difference between baseline and current represents verified cost avoidance.</p>' +
+    '<p contenteditable="true" style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page summarizes the financial performance of each building in the portfolio for the reporting period. Baseline costs represent the expected energy spend based on historical consumption adjusted for weather. Projected costs reflect the target spend based on the contracted savings percentage. Current costs are the actual utility charges during the period. The difference between baseline and current represents verified cost avoidance.</p>' +
     '<h2>Building Performance</h2>' +
     bldgTable +
     '<h2>Quarterly Savings vs Baseline</h2>' +
@@ -1974,7 +1986,7 @@ function rptPageFinancial(n, d) {
             if (!_moData[m.month]) _moData[m.month] = { bl: 0, cur: 0, sav: 0 };
             _moData[m.month].bl += m.blCost || 0;
             _moData[m.month].cur += m.curCost || 0;
-            // Use canonical savings (Baseline Usage - Actual Usage) × Current Rate; fall back to dollar delta
+            // Use canonical savings (Baseline Usage - Actual Usage) � Current Rate; fall back to dollar delta
             _moData[m.month].sav += m.savings != null ? m.savings : (m.blCost || 0) - (m.curCost || 0);
           });
         });
@@ -1990,7 +2002,7 @@ function rptPageFinancial(n, d) {
         var bl = _moData[ym].bl,
           cur = _moData[ym].cur,
           sav = _moData[ym].sav;
-        var pct = bl > 0 ? ((sav / bl) * 100).toFixed(1) + '%' : '—';
+        var pct = bl > 0 ? ((sav / bl) * 100).toFixed(1) + '%' : '�';
         _tBl += bl;
         _tCur += cur;
         _tSav += sav;
@@ -2007,7 +2019,7 @@ function rptPageFinancial(n, d) {
           $c(sav) +
           '</td></tr>';
       });
-      var _tPct = _tBl > 0 ? ((_tSav / _tBl) * 100).toFixed(1) + '%' : '—';
+      var _tPct = _tBl > 0 ? ((_tSav / _tBl) * 100).toFixed(1) + '%' : '�';
       _rows +=
         '<tr class="rpt-tot"><td>Total</td><td class="rpt-n">' +
         $c(_tBl) +
@@ -2024,7 +2036,7 @@ function rptPageFinancial(n, d) {
     })() +
     '';
 
-  return rptPage(n, 'Financial Summary', bodyHTML, { data: d, label: 'Page ' + n + ' — Financial Summary' });
+  return rptPage(n, 'Financial Summary', bodyHTML, { data: d, label: 'Page ' + n + ' � Financial Summary' });
 }
 function rptPageSavingsPerformance(n, d) {
   const $c = function (v) {
@@ -2037,7 +2049,7 @@ function rptPageSavingsPerformance(n, d) {
     return (v || 0).toFixed(1) + '%';
   };
 
-  // ── Monthly Savings: Projected vs Actual chart ──
+  // -- Monthly Savings: Projected vs Actual chart --
   // Inline HTML bars: projected (baseline) vs actual per month in period
   let chartSection = '';
   {
@@ -2084,23 +2096,23 @@ function rptPageSavingsPerformance(n, d) {
         const actPct = Math.min(100, ((moActual[ym] || 0) / maxVal) * 100).toFixed(1);
         return (
           '<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px">' +
-          '<div style="width:40px;text-align:right;font-size:9px;color:#000">' +
+          '<div style="width:40px;text-align:right;font-size:9px;color:var(--rpt-page-text)">' +
           moLabel +
           '</div>' +
           '<div style="flex:1">' +
           '<div style="display:flex;gap:2px;align-items:center">' +
           '<div style="width:' +
           projPct +
-          '%;height:7px;background:#f39c12;border-radius:2px;min-width:1px"></div>' +
-          '<span style="font-size:8px;color:#000">' +
+          '%;height:7px;background:var(--rpt-chart-orange);border-radius:2px;min-width:1px"></div>' +
+          '<span style="font-size:8px;color:var(--rpt-page-text)">' +
           $c(moProj[ym]) +
           '</span>' +
           '</div>' +
           '<div style="display:flex;gap:2px;align-items:center;margin-top:1px">' +
           '<div style="width:' +
           actPct +
-          '%;height:7px;background:#27ae60;border-radius:2px;min-width:1px"></div>' +
-          '<span style="font-size:8px;color:#000">' +
+          '%;height:7px;background:var(--rpt-chart-green);border-radius:2px;min-width:1px"></div>' +
+          '<span style="font-size:8px;color:var(--rpt-page-text)">' +
           $c(moActual[ym]) +
           '</span>' +
           '</div>' +
@@ -2111,16 +2123,16 @@ function rptPageSavingsPerformance(n, d) {
       .join('');
     chartSection =
       '<div class="rpt-chart-box">' +
-      '<div class="rpt-chart-title">Monthly Savings — Projected (orange) vs Actual (green) — Dollar Cost</div>' +
+      '<div class="rpt-chart-title">Monthly Savings � Projected (orange) vs Actual (green) � Dollar Cost</div>' +
       '<div style="display:flex;gap:12px;margin-bottom:4px;font-size:9px">' +
-      '<span><span style="display:inline-block;width:10px;height:7px;background:#f39c12;border-radius:2px;vertical-align:middle"></span> Projected Baseline</span>' +
-      '<span><span style="display:inline-block;width:10px;height:7px;background:#27ae60;border-radius:2px;vertical-align:middle"></span> Actual</span>' +
+      '<span><span style="display:inline-block;width:10px;height:7px;background:var(--rpt-chart-orange);border-radius:2px;vertical-align:middle"></span> Projected Baseline</span>' +
+      '<span><span style="display:inline-block;width:10px;height:7px;background:var(--rpt-chart-green);border-radius:2px;vertical-align:middle"></span> Actual</span>' +
       '</div>' +
       bars +
       '</div>';
   }
 
-  // ── Annual Summary by Year table ──
+  // -- Annual Summary by Year table --
   // We have baseline totals and current period; build rows accordingly
   const _blYearStr = d.project.blEnd ? d.project.blEnd.split(' ').pop() : '';
   const blYearLabel = _blYearStr ? _blYearStr + ' Baseline' : 'Baseline';
@@ -2145,9 +2157,9 @@ function rptPageSavingsPerformance(n, d) {
     $c(d.totals.blCost) +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    (d.totals.euiBaseline > 0 ? d.totals.euiBaseline.toFixed(1) : '—') +
+    (d.totals.euiBaseline > 0 ? d.totals.euiBaseline.toFixed(1) : '�') +
     '</td>' +
-    '<td class="rpt-n" contenteditable="true">—</td>' +
+    '<td class="rpt-n" contenteditable="true">�</td>' +
     '</tr>';
 
   const savPct = d.totals.blCost > 0 ? ((d.totals.blCost - d.totals.curCost) / d.totals.blCost) * 100 : 0;
@@ -2173,7 +2185,7 @@ function rptPageSavingsPerformance(n, d) {
     $c(d.totals.curCost) +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    (d.totals.euiCurrent > 0 ? d.totals.euiCurrent.toFixed(1) : '—') +
+    (d.totals.euiCurrent > 0 ? d.totals.euiCurrent.toFixed(1) : '�') +
     '</td>' +
     '<td class="rpt-n ' +
     (savPct >= 0 ? 'rpt-g' : 'rpt-r') +
@@ -2216,7 +2228,7 @@ function rptPageSavingsPerformance(n, d) {
   var _yoyRows = '';
   _yoyYears.forEach(function (yr) {
     var y = _yoyByYear[yr];
-    var eui = _totalSqft > 0 ? (y.kbtu / _totalSqft).toFixed(1) : '—';
+    var eui = _totalSqft > 0 ? (y.kbtu / _totalSqft).toFixed(1) : '�';
     var vsBl = d.totals.blCost > 0 ? ((d.totals.blCost - y.cost) / d.totals.blCost) * 100 : 0;
     _yoyRows +=
       '<tr><td contenteditable="true">' +
@@ -2258,15 +2270,15 @@ function rptPageSavingsPerformance(n, d) {
     '</tbody>' +
     '</table>';
 
-  // ── Annual Summary by Building table (2 rows per building: BL + current) ──
+  // -- Annual Summary by Building table (2 rows per building: BL + current) --
   const bldgRows = d.buildings
     .map(function (b, bIdx) {
       const bSavPct = b.blCost > 0 ? ((b.blCost - b.curCost) / b.blCost) * 100 : 0;
-      const blEUI = b.eui.baseline > 0 ? b.eui.baseline.toFixed(1) : '—';
-      const curEUI = b.eui.current > 0 ? b.eui.current.toFixed(1) : '—';
+      const blEUI = b.eui.baseline > 0 ? b.eui.baseline.toFixed(1) : '�';
+      const curEUI = b.eui.current > 0 ? b.eui.current.toFixed(1) : '�';
       const euiChange =
         b.eui.baseline > 0 && b.eui.current > 0 ? ((b.eui.baseline - b.eui.current) / b.eui.baseline) * 100 : 0;
-      var rowBg = bIdx % 2 === 1 ? 'background:#f4f8fb;' : '';
+      var rowBg = bIdx % 2 === 1 ? 'background:var(--rpt-table-stripe);' : '';
       return (
         '<tr style="' +
         rowBg +
@@ -2274,9 +2286,9 @@ function rptPageSavingsPerformance(n, d) {
         '<td style="font-weight:600;vertical-align:middle;font-size:9px;' +
         rowBg +
         '" contenteditable="true">' +
-        (b.name || '—') +
+        (b.name || '�') +
         '</td>' +
-        '<td contenteditable="true" style="color:#000">' +
+        '<td contenteditable="true" style="color:var(--rpt-page-text)">' +
         blYearLabel +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
@@ -2306,7 +2318,7 @@ function rptPageSavingsPerformance(n, d) {
         '" contenteditable="true">' +
         (b.name || '\u2014') +
         '</td>' +
-        '<td contenteditable="true" style="color:#1a5276;font-weight:600">' +
+        '<td contenteditable="true" style="color:var(--rpt-blue);font-weight:600">' +
         curYrLabel +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
@@ -2355,7 +2367,7 @@ function rptPageSavingsPerformance(n, d) {
     '</table>';
 
   const bodyHTML =
-    '<p contenteditable="true" style="font-size:12px;color:#000;line-height:1.6;margin:0 0 8px">This page compares projected energy savings against actual performance. The monthly chart shows weather-normalized baseline consumption (projected) versus actual consumption by month. The annual summary tables aggregate consumption, demand, and cost data across all commodities to show the portfolio\'s year-over-year performance trend.</p>' +
+    '<p contenteditable="true" style="font-size:12px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page compares projected energy savings against actual performance. The monthly chart shows weather-normalized baseline consumption (projected) versus actual consumption by month. The annual summary tables aggregate consumption, demand, and cost data across all commodities to show the portfolio\'s year-over-year performance trend.</p>' +
     '<h2>Monthly Savings: Projected vs Actual</h2>' +
     chartSection +
     '<h2>Annual Summary by Year</h2>' +
@@ -2363,7 +2375,7 @@ function rptPageSavingsPerformance(n, d) {
     '<h2>Annual Summary by Building</h2>' +
     bldgTable;
 
-  return rptPage(n, 'Savings Performance', bodyHTML, { data: d, label: 'Page ' + n + ' — Savings Performance' });
+  return rptPage(n, 'Savings Performance', bodyHTML, { data: d, label: 'Page ' + n + ' � Savings Performance' });
 }
 function rptPageEUI(n, d) {
   const $c = function (v) {
@@ -2376,7 +2388,7 @@ function rptPageEUI(n, d) {
     return (v || 0).toFixed(1) + '%';
   };
 
-  // ── Building Performance Rankings table ──
+  // -- Building Performance Rankings table --
   const hasEnergyStar = d.buildings.some(function (b) {
     return b.eui && b.eui.energyStar;
   });
@@ -2392,38 +2404,38 @@ function rptPageEUI(n, d) {
       const bl = b.eui.baseline || 0;
       const vsCbecs = cbecs > 0 ? ((cur - cbecs) / cbecs) * 100 : 0;
       const vsCbecsClass = vsCbecs <= 0 ? 'rpt-g' : 'rpt-r';
-      const eStarCell = b.eui.energyStar ? '<span style="color:#27ae60;font-weight:700">Yes</span>' : '—';
+      const eStarCell = b.eui.energyStar ? '<span style="color:var(--rpt-green);font-weight:700">Yes</span>' : '�';
       const cpSqft = b.sqft > 0 ? b.curCost / b.sqft : 0;
       const trendCell =
         cur > 0 && bl > 0
           ? cur < bl
-            ? '<span style="color:#27ae60">&#9660;</span>'
+            ? '<span style="color:var(--rpt-green)">&#9660;</span>'
             : cur > bl
-              ? '<span style="color:#c0392b">&#9650;</span>'
-              : '<span style="color:#000">&#9654;</span>'
-          : '<span style="color:#000">—</span>';
+              ? '<span style="color:var(--rpt-red)">&#9650;</span>'
+              : '<span style="color:var(--rpt-page-text)">&#9654;</span>'
+          : '<span style="color:var(--rpt-page-text)">�</span>';
       return (
         '<tr>' +
         '<td contenteditable="true">' +
         (i + 1) +
         '</td>' +
         '<td contenteditable="true">' +
-        (b.name || '—') +
+        (b.name || '�') +
         '</td>' +
         '<td contenteditable="true">' +
-        (b.type || '—') +
+        (b.type || '�') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
         $n(b.sqft) +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        (bl > 0 ? bl.toFixed(1) : '—') +
+        (bl > 0 ? bl.toFixed(1) : '�') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        (cur > 0 ? cur.toFixed(1) : '—') +
+        (cur > 0 ? cur.toFixed(1) : '�') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        (cbecs > 0 ? cbecs.toFixed(1) : '—') +
+        (cbecs > 0 ? cbecs.toFixed(1) : '�') +
         '</td>' +
         '<td class="rpt-n ' +
         vsCbecsClass +
@@ -2431,10 +2443,10 @@ function rptPageEUI(n, d) {
         $p(vsCbecs) +
         '</td>' +
         '<td contenteditable="true">' +
-        (b.eui.percentile || '—') +
+        (b.eui.percentile || '�') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        (cpSqft > 0 ? '$' + cpSqft.toFixed(2) : '—') +
+        (cpSqft > 0 ? '$' + cpSqft.toFixed(2) : '�') +
         '</td>' +
         '<td contenteditable="true">' +
         eStarCell +
@@ -2456,7 +2468,7 @@ function rptPageEUI(n, d) {
     '<th class="rpt-n">CBECS</th>' +
     '<th class="rpt-n">versus CBECS %</th>' +
     '<th>Percentile</th>' +
-    '<th class="rpt-n">$/ft²</th>' +
+    '<th class="rpt-n">$/ft�</th>' +
     '<th>ENERGY STAR</th>' +
     '</tr></thead>' +
     '<tbody>' +
@@ -2464,7 +2476,7 @@ function rptPageEUI(n, d) {
     '</tbody>' +
     '</table>';
 
-  // ── EUI vs CBECS horizontal bar chart ──
+  // -- EUI vs CBECS horizontal bar chart --
   // Find max EUI across buildings and CBECS values for scaling
   const allEuis = d.buildings.map(function (b) {
     return Math.max(b.eui.current || 0, b.eui.cbecs || 0, b.eui.baseline || 0);
@@ -2479,13 +2491,13 @@ function rptPageEUI(n, d) {
       const barPct = Math.min(100, (cur / maxEUI) * 100).toFixed(1);
       const cbecsLinePct = Math.min(100, (cbecs / maxEUI) * 100).toFixed(1);
       const blLinePct = bl > 0 ? Math.min(100, (bl / maxEUI) * 100).toFixed(1) : 0;
-      const barColor = cur <= cbecs ? '#27ae60' : '#f39c12';
+      const barColor = cur <= cbecs ? 'var(--rpt-chart-green)' : 'var(--rpt-chart-orange)';
       return (
         '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
-        '<div style="width:140px;text-align:right;font-size:10px;color:#000;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">' +
-        (b.name || '—') +
+        '<div style="width:140px;text-align:right;font-size:10px;color:var(--rpt-page-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0">' +
+        (b.name || '�') +
         '</div>' +
-        '<div style="flex:1;height:18px;background:#f0f0f0;border-radius:3px;position:relative">' +
+        '<div style="flex:1;height:18px;background:var(--rpt-progress-bg);border-radius:3px;position:relative">' +
         '<div style="width:' +
         barPct +
         '%;height:100%;background:' +
@@ -2493,15 +2505,15 @@ function rptPageEUI(n, d) {
         ';border-radius:3px"></div>' +
         '<div style="position:absolute;left:' +
         cbecsLinePct +
-        '%;top:0;bottom:0;width:2px;background:#c0392b;z-index:1"></div>' +
+        '%;top:0;bottom:0;width:2px;background:var(--rpt-red);z-index:1"></div>' +
         (bl > 0
           ? '<div style="position:absolute;left:' +
             blLinePct +
-            '%;top:0;bottom:0;width:2px;background:#8e44ad;z-index:1"></div>'
+            '%;top:0;bottom:0;width:2px;background:var(--rpt-eui-purple);z-index:1"></div>'
           : '') +
         '</div>' +
-        '<div style="width:35px;font-size:9px;font-weight:600;color:#000000;flex-shrink:0">' +
-        (cur > 0 ? cur.toFixed(1) : '—') +
+        '<div style="width:35px;font-size:9px;font-weight:600;color:var(--rpt-page-text);flex-shrink:0">' +
+        (cur > 0 ? cur.toFixed(1) : '�') +
         '</div>' +
         '</div>'
       );
@@ -2512,15 +2524,15 @@ function rptPageEUI(n, d) {
     '<div class="rpt-chart-box">' +
     '<div class="rpt-chart-title">Current Site EUI by Building</div>' +
     '<div style="display:flex;gap:12px;margin-bottom:4px;font-size:9px">' +
-    '<span><span style="display:inline-block;width:10px;height:7px;background:#27ae60;border-radius:2px;vertical-align:middle"></span> Below CBECS</span>' +
-    '<span><span style="display:inline-block;width:10px;height:7px;background:#f39c12;border-radius:2px;vertical-align:middle"></span> Above CBECS</span>' +
-    '<span><span style="display:inline-block;width:2px;height:10px;background:#c0392b;vertical-align:middle"></span> CBECS Median</span>' +
-    '<span><span style="display:inline-block;width:2px;height:10px;background:#8e44ad;vertical-align:middle"></span> Baseline Site EUI</span>' +
+    '<span><span style="display:inline-block;width:10px;height:7px;background:var(--rpt-chart-green);border-radius:2px;vertical-align:middle"></span> Below CBECS</span>' +
+    '<span><span style="display:inline-block;width:10px;height:7px;background:var(--rpt-chart-orange);border-radius:2px;vertical-align:middle"></span> Above CBECS</span>' +
+    '<span><span style="display:inline-block;width:2px;height:10px;background:var(--rpt-red);vertical-align:middle"></span> CBECS Median</span>' +
+    '<span><span style="display:inline-block;width:2px;height:10px;background:var(--rpt-eui-purple);vertical-align:middle"></span> Baseline Site EUI</span>' +
     '</div>' +
     euiBars +
     '</div>';
 
-  // ── EUI Trend table ──
+  // -- EUI Trend table --
   const curYrLabel = d.period.year ? String(d.period.year) : 'Current';
   const trendRows = d.buildings
     .map(function (b) {
@@ -2531,21 +2543,21 @@ function rptPageEUI(n, d) {
       const trendIcon =
         cur > 0 && bl > 0
           ? cur < bl
-            ? '<span style="color:#27ae60">&#9660;</span>'
+            ? '<span style="color:var(--rpt-green)">&#9660;</span>'
             : cur > bl
-              ? '<span style="color:#c0392b">&#9650;</span>'
-              : '<span style="color:#000">&#9654;</span>'
-          : '<span style="color:#000">—</span>';
+              ? '<span style="color:var(--rpt-red)">&#9650;</span>'
+              : '<span style="color:var(--rpt-page-text)">&#9654;</span>'
+          : '<span style="color:var(--rpt-page-text)">�</span>';
       return (
         '<tr>' +
         '<td contenteditable="true">' +
-        (b.name || '—') +
+        (b.name || '�') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        (bl > 0 ? bl.toFixed(1) : '—') +
+        (bl > 0 ? bl.toFixed(1) : '�') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        (cur > 0 ? cur.toFixed(1) : '—') +
+        (cur > 0 ? cur.toFixed(1) : '�') +
         '</td>' +
         '<td class="rpt-n ' +
         redClass +
@@ -2577,7 +2589,7 @@ function rptPageEUI(n, d) {
     '</table>';
 
   const bodyHTML =
-    '<p contenteditable="true" style="font-size:10px;color:#000;line-height:1.6;margin:0 0 8px">Site Energy Use Intensity (Site EUI) measures total energy consumption at the utility meter per square foot per year in kBtu/ft². Lower EUI values indicate more efficient buildings. Buildings are benchmarked against national CBECS (Commercial Buildings Energy Consumption Survey) median values for their building type. Buildings performing below the CBECS median are more efficient than the national average. The rolling 12-month Site EUI accounts for seasonal variation and provides a stable year-round performance indicator.</p>' +
+    '<p contenteditable="true" style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">Site Energy Use Intensity (Site EUI) measures total energy consumption at the utility meter per square foot per year in kBtu/ft�. Lower EUI values indicate more efficient buildings. Buildings are benchmarked against national CBECS (Commercial Buildings Energy Consumption Survey) median values for their building type. Buildings performing below the CBECS median are more efficient than the national average. The rolling 12-month Site EUI accounts for seasonal variation and provides a stable year-round performance indicator.</p>' +
     '<h2>Building Performance Rankings</h2>' +
     rankTable +
     '<h2>Site EUI vs CBECS Benchmark</h2>' +
@@ -2585,7 +2597,7 @@ function rptPageEUI(n, d) {
     '<h2>Site EUI Trend</h2>' +
     trendTable;
 
-  return rptPage(n, 'Site EUI Benchmarking', bodyHTML, { data: d, label: 'Page ' + n + ' — Site EUI Benchmarking' });
+  return rptPage(n, 'Site EUI Benchmarking', bodyHTML, { data: d, label: 'Page ' + n + ' � Site EUI Benchmarking' });
 }
 function rptPageEnvironmentalImpact(n, d) {
   var _annualize = d.reportOptions && d.reportOptions.annualizePollution && d.period && d.period.type === 'quarterly';
@@ -2601,7 +2613,7 @@ function rptPageEnvironmentalImpact(n, d) {
     eq[k] = (_eqRaw[k] || 0) * _annFactor;
   });
   const inp = d.pollution && d.pollution.inputs ? d.pollution.inputs : {};
-  const st = d.pollution && d.pollution.stateCode ? d.pollution.stateCode : '—';
+  const st = d.pollution && d.pollution.stateCode ? d.pollution.stateCode : '�';
   const $n = function (v) {
     return Math.round(Math.abs(v || 0)).toLocaleString();
   };
@@ -2609,8 +2621,8 @@ function rptPageEnvironmentalImpact(n, d) {
   function polLine(val, unit, label) {
     if (!val || Math.round(Math.abs(val)) === 0) return '';
     return (
-      '<div style="font-size:13px;color:#000000;padding:2px 0;line-height:1.5;text-align:center">' +
-      '<strong style="color:#1a5276;font-size:16px">' +
+      '<div style="font-size:13px;color:var(--rpt-page-text);padding:2px 0;line-height:1.5;text-align:center">' +
+      '<strong style="color:var(--rpt-blue);font-size:16px">' +
       $n(val) +
       '</strong>' +
       ' total ' +
@@ -2624,9 +2636,9 @@ function rptPageEnvironmentalImpact(n, d) {
   function eqLine(prefix, val, suffix) {
     if (!val || Math.round(Math.abs(val)) === 0) return '';
     return (
-      '<div style="font-size:13px;color:#000000;padding:2px 0;line-height:1.5;text-align:center">' +
+      '<div style="font-size:13px;color:var(--rpt-page-text);padding:2px 0;line-height:1.5;text-align:center">' +
       (prefix ? prefix + ' ' : '') +
-      '<strong style="color:#1e8449;font-size:16px">' +
+      '<strong style="color:var(--rpt-green-dark);font-size:16px">' +
       $n(val) +
       '</strong>' +
       ' ' +
@@ -2637,10 +2649,10 @@ function rptPageEnvironmentalImpact(n, d) {
 
   // Build only the non-zero lines so blank space is eliminated
   var polLines =
-    polLine(pol.co2, 'pounds', 'CO₂ (carbon dioxide)') +
-    polLine(pol.ch4, 'pounds', 'CH₄ (methane)') +
-    polLine(pol.n2o, 'pounds', 'N₂O (nitrous oxide)') +
-    polLine(pol.so2, 'pounds', 'SO₂ (sulfur dioxide)') +
+    polLine(pol.co2, 'pounds', 'CO2 (carbon dioxide)') +
+    polLine(pol.ch4, 'pounds', 'CH4 (methane)') +
+    polLine(pol.n2o, 'pounds', 'N2O (nitrous oxide)') +
+    polLine(pol.so2, 'pounds', 'SO2 (sulfur dioxide)') +
     polLine(pol.nox, 'pounds', 'NOX (nitrogen oxide)') +
     polLine(pol.hg_oz, 'ounces', 'HG (mercury)') +
     polLine(pol.pm10_oz, 'ounces', 'PM10 (fine particles)') +
@@ -2662,29 +2674,29 @@ function rptPageEnvironmentalImpact(n, d) {
 
   if (!polLines)
     polLines =
-      '<div style="font-size:10px;color:#000000;font-style:italic;text-align:center">No pollutant data available.</div>';
+      '<div style="font-size:10px;color:var(--rpt-page-text);font-style:italic;text-align:center">No pollutant data available.</div>';
   if (!eqLines)
     eqLines =
-      '<div style="font-size:10px;color:#000000;font-style:italic;text-align:center">No equivalents data available.</div>';
+      '<div style="font-size:10px;color:var(--rpt-page-text);font-style:italic;text-align:center">No equivalents data available.</div>';
 
   const bodyHTML =
     '<div contenteditable="true">' +
-    '<div style="font-size:16px;font-weight:700;color:#1a5276;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.5px;text-align:center">Environmental Impact — Pollution Reduction Credits</div>' +
-    '<div style="font-size:12px;color:#000;margin-bottom:10px;text-align:center">Emission reductions resulting from energy savings achieved during the reporting period' +
-    (_annualize ? ' (values annualized ×4 from quarterly data)' : '') +
+    '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue);margin:0 0 6px;text-transform:uppercase;letter-spacing:0.5px;text-align:center">Environmental Impact � Pollution Reduction Credits</div>' +
+    '<div style="font-size:12px;color:var(--rpt-page-text);margin-bottom:10px;text-align:center">Emission reductions resulting from energy savings achieved during the reporting period' +
+    (_annualize ? ' (values annualized �4 from quarterly data)' : '') +
     '</div>' +
     '<div style="display:flex;flex-direction:column;gap:10px">' +
     '<div style="padding:4px 0;text-align:center">' +
-    '<div style="font-size:13px;font-weight:700;color:#1a5276;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Pollutants Avoided</div>' +
+    '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Pollutants Avoided</div>' +
     polLines +
     '</div>' +
     '<div style="padding:4px 0;text-align:center">' +
-    '<div style="font-size:13px;font-weight:700;color:#1e6b3a;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Real-World Equivalents</div>' +
+    '<div style="font-size:13px;font-weight:700;color:var(--rpt-bl-green);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Real-World Equivalents</div>' +
     eqLines +
     '</div>' +
     '</div>' +
-    '<div style="margin-top:24px;font-size:10px;color:#000;padding-top:6px;text-align:center">' +
-    'Source: EPA eGRID2023 Version 1.0 Rev 1 — https://www.epa.gov/egrid | State: ' +
+    '<div style="margin-top:24px;font-size:10px;color:var(--rpt-page-text);padding-top:6px;text-align:center">' +
+    'Source: EPA eGRID2023 Version 1.0 Rev 1 � https://www.epa.gov/egrid | State: ' +
     st +
     ' | Inputs: ' +
     $n(inp.kwhSaved) +
@@ -2698,7 +2710,7 @@ function rptPageEnvironmentalImpact(n, d) {
 
   return rptPage(n, 'Environmental Impact', bodyHTML, {
     data: d,
-    label: 'Page ' + n + ' — Environmental Impact',
+    label: 'Page ' + n + ' � Environmental Impact',
   });
 }
 function rptPageObservations(n, d) {
@@ -2709,7 +2721,7 @@ function rptPageObservations(n, d) {
     return (v || 0).toFixed(1) + '%';
   };
 
-  // ── Overall summary ──
+  // -- Overall summary --
   const totalSav = d.totals ? d.totals.savings : 0;
   const target = d.contract
     ? d.period && d.period.quarter
@@ -2737,7 +2749,7 @@ function rptPageObservations(n, d) {
     $c(totalSav) +
     ' in verified energy cost savings, representing ' +
     pctOfTarget +
-    '% of the period target — ' +
+    '% of the period target � ' +
     perfWord +
     ' the contracted performance benchmark. ' +
     onTrackCount +
@@ -2748,11 +2760,16 @@ function rptPageObservations(n, d) {
     ' on track or ahead of target for the period.' +
     '</p>';
 
-  // ── Per-building narrative ──
+  // -- Per-building narrative --
   const bldgSections = (d.buildings || [])
     .map(function (b) {
-      const statusColor = b.status === 'on_track' ? '#27ae60' : b.status === 'near_target' ? '#e67e22' : '#c0392b';
-      const arrow = b.status === 'below_target' ? '►' : '▲';
+      const statusColor =
+        b.status === 'on_track'
+          ? 'var(--rpt-green)'
+          : b.status === 'near_target'
+            ? 'var(--rpt-orange)'
+            : 'var(--rpt-red)';
+      const arrow = b.status === 'below_target' ? '?' : '?';
       const statusLabel =
         b.status === 'on_track' ? 'On Track' : b.status === 'near_target' ? 'Approaching Target' : 'Below Target';
 
@@ -2844,20 +2861,20 @@ function rptPageObservations(n, d) {
         arrow +
         ' ' +
         (b.name || 'Building') +
-        ' — ' +
+        ' � ' +
         subtitle +
         '</h3>' +
         '<p contenteditable="true">' +
         narrative +
         '</p>' +
-        '<p contenteditable="true" style="font-size:12px;color:#000;margin-top:2px"><strong>Recommendation:</strong> ' +
+        '<p contenteditable="true" style="font-size:12px;color:var(--rpt-page-text);margin-top:2px"><strong>Recommendation:</strong> ' +
         rec +
         '</p>'
       );
     })
     .join('');
 
-  // ── Weather section ──
+  // -- Weather section --
   const wt = d.weather && d.weather.totals ? d.weather.totals : { hddBl: 0, hddCur: 0, cddBl: 0, cddCur: 0 };
   const hddDiff = wt.hddCur - wt.hddBl;
   const cddDiff = wt.cddCur - wt.cddBl;
@@ -2874,7 +2891,7 @@ function rptPageObservations(n, d) {
     ' vs. a baseline average of ' +
     Math.round(wt.hddBl) +
     ' (' +
-    (hddDiff >= 0 ? '+' : '−') +
+    (hddDiff >= 0 ? '+' : '-') +
     hddPct +
     '%). ' +
     'Cooling degree days (CDD) were ' +
@@ -2882,14 +2899,14 @@ function rptPageObservations(n, d) {
     ' vs. a baseline of ' +
     Math.round(wt.cddBl) +
     ' (' +
-    (cddDiff >= 0 ? '+' : '−') +
+    (cddDiff >= 0 ? '+' : '-') +
     cddPct +
     '%). ' +
     hddNote +
     'Normalized savings figures account for weather variance using regression-based baseline adjustment.' +
     '</p>';
 
-  // ── Next Quarter section ──
+  // -- Next Quarter section --
   const qNum = d.period ? d.period.quarter : null;
   const inHeatingSeason = qNum === 1 || qNum === 4;
   const seasonNote = inHeatingSeason
@@ -2917,7 +2934,7 @@ function rptPageObservations(n, d) {
 
   return rptPage(n, 'Observations & Recommendations', bodyHTML, {
     data: d,
-    label: 'Page ' + n + ' — Observations',
+    label: 'Page ' + n + ' � Observations',
   });
 }
 function rptPageApprovedChanges(n, d) {
@@ -2974,7 +2991,7 @@ function rptPageApprovedChanges(n, d) {
     '</tbody>' +
     '</table>';
 
-  // ── Net Impact narrative box ──
+  // -- Net Impact narrative box --
   const narrativeBox =
     '<div class="rpt-narrative" contenteditable="true">' +
     '<strong>Positive impacts:</strong> [describe schedule/setpoint optimizations and estimated savings]<br>' +
@@ -2984,7 +3001,7 @@ function rptPageApprovedChanges(n, d) {
     ' effect:</strong> [net impact summary]' +
     '</div>';
 
-  // ── Upcoming Scheduled Changes table (3 empty rows) ──
+  // -- Upcoming Scheduled Changes table (3 empty rows) --
   let upcomingRows = '';
   for (var ui = 0; ui < 3; ui++) {
     upcomingRows +=
@@ -3007,19 +3024,19 @@ function rptPageApprovedChanges(n, d) {
 
   const bodyHTML =
     '<div class="rpt-body">' +
-    '<p style="font-size:12px;color:#000;margin:0 0 8px">Schedule and setpoint changes implemented this quarter — sourced from meeting minutes</p>' +
+    '<p style="font-size:12px;color:var(--rpt-page-text);margin:0 0 8px">Schedule and setpoint changes implemented this quarter � sourced from meeting minutes</p>' +
     '<h2 contenteditable="true">Changes Implemented</h2>' +
     changesTable +
     '<h2 contenteditable="true">Net Impact Analysis</h2>' +
     narrativeBox +
     '<h2 contenteditable="true">Upcoming Scheduled Changes</h2>' +
     upcomingTable +
-    '<p style="font-size:11px;color:#000;margin-top:10px">Monthly reviews: 2nd Monday of each month. Onsite tech: up to 8 labor hours/quarter per contract.</p>' +
+    '<p style="font-size:11px;color:var(--rpt-page-text);margin-top:10px">Monthly reviews: 2nd Monday of each month. Onsite tech: up to 8 labor hours/quarter per contract.</p>' +
     '</div>';
 
   return rptPage(n, 'Approved Changes', bodyHTML, {
     data: d,
-    label: 'Page ' + n + ' — Approved Changes',
+    label: 'Page ' + n + ' � Approved Changes',
   });
 }
 function rptPageContractProjection(n, d) {
@@ -3048,7 +3065,7 @@ function rptPageContractProjection(n, d) {
     d && d.totals && d.totals.cumulativeSavings != null ? d.totals.cumulativeSavings : actualSavings;
   const q = (d && d.period && d.period.quarter) || 1;
 
-  // ── Quarterly Targets table ──
+  // -- Quarterly Targets table --
   const qTarget = qTargets[q - 1] || 0;
   const annualSum = qTargets.reduce(function (s, v) {
     return s + (v || 0);
@@ -3101,14 +3118,14 @@ function rptPageContractProjection(n, d) {
     '</tbody>' +
     '</table>';
 
-  // ── Target vs Actual comparison box ──
+  // -- Target vs Actual comparison box --
   const ahead = actualSavings >= qTarget;
   const pctOfTarget = qTarget > 0 ? Math.round((actualSavings / qTarget) * 100) : 0;
   const vsBox =
     '<div class="rpt-vs-box">' +
     '<div class="rpt-vs-side">' +
     '<div class="rpt-vs-val" style="color:' +
-    (ahead ? '#1e8449' : '#c0392b') +
+    (ahead ? 'var(--rpt-green-dark)' : 'var(--rpt-red)') +
     '">' +
     $c(actualSavings) +
     '</div>' +
@@ -3117,10 +3134,10 @@ function rptPageContractProjection(n, d) {
     ' Savings</div>' +
     '</div>' +
     '<div class="rpt-vs-mid" style="font-size:34px">' +
-    (ahead ? '✓' : '✗') +
+    (ahead ? '?' : '?') +
     '</div>' +
     '<div class="rpt-vs-side">' +
-    '<div class="rpt-vs-val" style="color:#000">' +
+    '<div class="rpt-vs-val" style="color:var(--rpt-page-text)">' +
     $c(qTarget) +
     '</div>' +
     '<div class="rpt-vs-lbl">Q' +
@@ -3131,7 +3148,7 @@ function rptPageContractProjection(n, d) {
     '</div>' +
     '</div>';
 
-  // ── Multi-Year Projection table ──
+  // -- Multi-Year Projection table --
   let fiveYrRows = '';
   let totalProj = 0,
     totalCsc = 0,
@@ -3150,8 +3167,8 @@ function rptPageContractProjection(n, d) {
     if (isCurrentYr && isQuarterly) {
       // Blend actual savings for completed quarters with projected for remaining
       // q = reported (last completed) quarter (1-based)
-      // Quarters 1..q are completed → use actualSavings for their total
-      // Quarters (q+1)..4 are future → sum their projected targets
+      // Quarters 1..q are completed ? use actualSavings for their total
+      // Quarters (q+1)..4 are future ? sum their projected targets
       var remainingProj = 0;
       for (var qi = q; qi < 4; qi++) {
         remainingProj += qTargets[qi] || 0;
@@ -3186,7 +3203,7 @@ function rptPageContractProjection(n, d) {
       '</td>' +
       '<td class="rpt-n">' +
       (isCurrentYr && isQuarterly
-        ? $c(displayProj) + '<div style="font-size:8px;color:#000">Annual: ' + $c(yearProj) + '</div>'
+        ? $c(displayProj) + '<div style="font-size:8px;color:var(--rpt-page-text)">Annual: ' + $c(yearProj) + '</div>'
         : $c(yearProj)) +
       '</td>' +
       '<td class="rpt-n">' +
@@ -3226,7 +3243,7 @@ function rptPageContractProjection(n, d) {
     '</tbody>' +
     '</table>';
 
-  // ── Cumulative vs Projected SVG chart (bars + green fill line) ──
+  // -- Cumulative vs Projected SVG chart (bars + green fill line) --
   const svgW = 716,
     svgH = 120;
   const totalQtrs = contractYears * 4;
@@ -3271,7 +3288,7 @@ function rptPageContractProjection(n, d) {
         '" height="' +
         h.toFixed(1) +
         '" fill="' +
-        (isFuture ? '#d5e8f0' : '#2e86c1') +
+        (isFuture ? 'var(--rpt-blue-tint)' : 'var(--rpt-blue-btn)') +
         '" opacity="0.6" rx="1"/>'
       );
     })
@@ -3310,19 +3327,19 @@ function rptPageContractProjection(n, d) {
       x1.toFixed(1) +
       '" y2="' +
       y1.toFixed(1) +
-      '" stroke="#27ae60" stroke-width="2.5"/>';
+      '" stroke="var(--rpt-chart-green)" stroke-width="2.5"/>';
     _actDot =
       '<circle cx="' +
       x1.toFixed(1) +
       '" cy="' +
       y1.toFixed(1) +
-      '" r="4" fill="#27ae60" stroke="#fff" stroke-width="1.5"/>';
+      '" r="4" fill="var(--rpt-chart-green)" stroke="var(--rpt-page-bg)" stroke-width="1.5"/>';
     _actLabel =
       '<text x="' +
       (x1 + 5).toFixed(1) +
       '" y="' +
       (y1 - 4).toFixed(1) +
-      '" font-size="7" fill="#1e8449" font-weight="bold">' +
+      '" font-size="7" fill="var(--rpt-chart-green-dk)" font-weight="bold">' +
       $c(actCumSavings) +
       '</text>';
   }
@@ -3337,14 +3354,14 @@ function rptPageContractProjection(n, d) {
         (padL - 4) +
         '" y="' +
         y.toFixed(0) +
-        '" text-anchor="end" font-size="7" fill="#000000">$' +
+        '" text-anchor="end" font-size="7" fill="var(--rpt-page-text)">$' +
         Math.round(val / 1000) +
         'K</text>'
       );
     })
     .join('');
 
-  // X-axis labels — Q1-Q4
+  // X-axis labels � Q1-Q4
   var xLabelsHTML = '';
   for (var qi3 = 1; qi3 <= totalQtrs; qi3++) {
     var _qn = ((qi3 - 1) % 4) + 1;
@@ -3358,14 +3375,14 @@ function rptPageContractProjection(n, d) {
       (svgH - 4) +
       '" text-anchor="middle" font-size="' +
       (totalQtrs > 12 ? '7' : '8') +
-      '" fill="#000000">' +
+      '" fill="var(--rpt-page-text)">' +
       _lbl +
       '</text>';
   }
 
   var svgChart =
     '<div style="margin:8px 0">' +
-    '<div style="font-size:11px;color:#000;margin-bottom:3px">Projected Quarterly Savings (bars) vs Actual Cumulative (green line)</div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:3px">Projected Quarterly Savings (bars) vs Actual Cumulative (green line)</div>' +
     '<svg width="' +
     svgW +
     '" viewBox="0 0 ' +
@@ -3381,7 +3398,7 @@ function rptPageContractProjection(n, d) {
     padL +
     '" y2="' +
     (padT + cH) +
-    '" stroke="#ccc" stroke-width="1"/>' +
+    '" stroke="var(--rpt-divider)" stroke-width="1"/>' +
     '<line x1="' +
     padL +
     '" y1="' +
@@ -3390,7 +3407,7 @@ function rptPageContractProjection(n, d) {
     (padL + cW) +
     '" y2="' +
     (padT + cH) +
-    '" stroke="#ccc" stroke-width="1"/>' +
+    '" stroke="var(--rpt-divider)" stroke-width="1"/>' +
     _barsHTML +
     _actFill +
     _actPath +
@@ -3400,18 +3417,18 @@ function rptPageContractProjection(n, d) {
     xLabelsHTML +
     '<rect x="' +
     (padL + cW - 120) +
-    '" y="4" width="8" height="6" fill="#2e86c1" opacity="0.6" rx="1"/>' +
+    '" y="4" width="8" height="6" fill="var(--rpt-blue-btn)" opacity="0.6" rx="1"/>' +
     '<text x="' +
     (padL + cW - 108) +
-    '" y="10" font-size="8" fill="#000000">Projected/Qtr</text>' +
+    '" y="10" font-size="8" fill="var(--rpt-page-text)">Projected/Qtr</text>' +
     '<line x1="' +
     (padL + cW - 50) +
     '" y1="7" x2="' +
     (padL + cW - 38) +
-    '" y2="7" stroke="#27ae60" stroke-width="2.5"/>' +
+    '" y2="7" stroke="var(--rpt-chart-green)" stroke-width="2.5"/>' +
     '<text x="' +
     (padL + cW - 34) +
-    '" y="10" font-size="8" fill="#000000">Actual</text>' +
+    '" y="10" font-size="8" fill="var(--rpt-page-text)">Actual</text>' +
     '</svg></div>';
 
   const bodyHTML =
@@ -3428,14 +3445,14 @@ function rptPageContractProjection(n, d) {
     fiveYrTable +
     '<h2 contenteditable="true">Cumulative vs Projected</h2>' +
     svgChart +
-    '<p style="font-size:11px;color:#000;margin-top:8px">' +
+    '<p style="font-size:11px;color:var(--rpt-page-text);margin-top:8px">' +
     escalation +
     '% annual utility rate escalation applied per contract terms.</p>' +
     '</div>';
 
   return rptPage(n, 'Contract Projection', bodyHTML, {
     data: d,
-    label: 'Page ' + n + ' — Contract Projection',
+    label: 'Page ' + n + ' � Contract Projection',
   });
 }
 function rptPageSetPoints(n, d) {
@@ -3454,7 +3471,7 @@ function rptPageSetPoints(n, d) {
   const vDateRaw = setpoints.length > 0 ? setpoints[0].versionDate || '' : '';
   let vLabel = '';
   if (vTypeRaw) {
-    vLabel = ' — ' + vTypeRaw.charAt(0).toUpperCase() + vTypeRaw.slice(1);
+    vLabel = ' � ' + vTypeRaw.charAt(0).toUpperCase() + vTypeRaw.slice(1);
   }
   if (vDateRaw) {
     vLabel += ' (' + _basFormatDate(vDateRaw) + ')';
@@ -3470,12 +3487,12 @@ function rptPageSetPoints(n, d) {
 
   // Helper: flag extended schedule (evening past 6pm or weekends)
   function scheduleLabel(sched) {
-    if (!sched) return '—';
+    if (!sched) return '�';
     var s = sched.toLowerCase();
     var extended =
       /\b(sat|sun|weekend)/i.test(s) || /\b(1[7-9]|2[0-3])[:h]/i.test(s) || /\b(7|8|9|10|11)\s*pm/i.test(s);
     if (extended) {
-      return sched + ' <span style="color:#e67e22">(extended)</span>';
+      return sched + ' <span style="color:var(--rpt-orange)">(extended)</span>';
     }
     return sched;
   }
@@ -3484,7 +3501,7 @@ function rptPageSetPoints(n, d) {
 
   if (!setpoints || setpoints.length === 0) {
     bodyContent =
-      '<p style="padding:16px;color:#000;font-style:italic">No BAS data uploaded — add data in Set Points &amp; Schedules tab.</p>';
+      '<p style="padding:16px;color:var(--rpt-page-text);font-style:italic">No BAS data uploaded � add data in Set Points &amp; Schedules tab.</p>';
   } else {
     // Scan all zones to determine which optional columns have at least one real value
     var hasUnoccHeat = false;
@@ -3512,7 +3529,7 @@ function rptPageSetPoints(n, d) {
       }
     });
 
-    // Check if ALL setpoints use average mode — if so, hide Zone/System column
+    // Check if ALL setpoints use average mode � if so, hide Zone/System column
     var allAvgMode = setpoints.every(function (sp) {
       return sp.viewMode === 'average';
     });
@@ -3535,19 +3552,19 @@ function rptPageSetPoints(n, d) {
             '</td>' +
             (allAvgMode ? '' : '<td contenteditable="true">' + (avg.name || 'Average') + '</td>') +
             '<td class="rpt-n" contenteditable="true">' +
-            (avg.occHeat != null ? avg.occHeat + '°F' : '—') +
+            (avg.occHeat != null ? avg.occHeat + '�F' : '�') +
             '</td>' +
             '<td class="rpt-n" contenteditable="true">' +
-            (avg.occCool != null ? avg.occCool + '°F' : '—') +
+            (avg.occCool != null ? avg.occCool + '�F' : '�') +
             '</td>' +
             (hasUnoccHeat
               ? '<td class="rpt-n" contenteditable="true">' +
-                (avg.unoccHeat != null ? avg.unoccHeat + '°F' : '—') +
+                (avg.unoccHeat != null ? avg.unoccHeat + '�F' : '�') +
                 '</td>'
               : '') +
             (hasUnoccCool
               ? '<td class="rpt-n" contenteditable="true">' +
-                (avg.unoccCool != null ? avg.unoccCool + '°F' : '—') +
+                (avg.unoccCool != null ? avg.unoccCool + '�F' : '�') +
                 '</td>'
               : '') +
             (hasSchedule ? '<td contenteditable="true">' + scheduleLabel(avg.schedule) + '</td>' : '') +
@@ -3560,18 +3577,18 @@ function rptPageSetPoints(n, d) {
             '<td contenteditable="true">' +
             bldgName +
             '</td>' +
-            (allAvgMode ? '' : '<td contenteditable="true">' + (z.name || '—') + '</td>') +
+            (allAvgMode ? '' : '<td contenteditable="true">' + (z.name || '�') + '</td>') +
             '<td class="rpt-n" contenteditable="true">' +
-            (z.occHeat != null ? z.occHeat + '°F' : '—') +
+            (z.occHeat != null ? z.occHeat + '�F' : '�') +
             '</td>' +
             '<td class="rpt-n" contenteditable="true">' +
-            (z.occCool != null ? z.occCool + '°F' : '—') +
+            (z.occCool != null ? z.occCool + '�F' : '�') +
             '</td>' +
             (hasUnoccHeat
-              ? '<td class="rpt-n" contenteditable="true">' + (z.unoccHeat != null ? z.unoccHeat + '°F' : '—') + '</td>'
+              ? '<td class="rpt-n" contenteditable="true">' + (z.unoccHeat != null ? z.unoccHeat + '�F' : '�') + '</td>'
               : '') +
             (hasUnoccCool
-              ? '<td class="rpt-n" contenteditable="true">' + (z.unoccCool != null ? z.unoccCool + '°F' : '—') + '</td>'
+              ? '<td class="rpt-n" contenteditable="true">' + (z.unoccCool != null ? z.unoccCool + '�F' : '�') + '</td>'
               : '') +
             (hasSchedule ? '<td contenteditable="true">' + scheduleLabel(z.schedule) + '</td>' : '') +
             '</tr>';
@@ -3581,7 +3598,9 @@ function rptPageSetPoints(n, d) {
     var colCount = (allAvgMode ? 3 : 4) + (hasUnoccHeat ? 1 : 0) + (hasUnoccCool ? 1 : 0) + (hasSchedule ? 1 : 0);
     if (!allRows) {
       allRows =
-        '<tr><td colspan="' + colCount + '" style="color:#000000;font-style:italic">No zones recorded</td></tr>';
+        '<tr><td colspan="' +
+        colCount +
+        '" style="color:var(--rpt-page-text);font-style:italic">No zones recorded</td></tr>';
     }
     bodyContent =
       '<table class="rpt-table" contenteditable="true">' +
@@ -3604,16 +3623,16 @@ function rptPageSetPoints(n, d) {
     setpoints.length && setpoints[0].viewMode === 'average' ? 'building averages' : 'individual zones';
   const bodyHTML =
     '<div class="rpt-body">' +
-    '<p style="font-size:12px;color:#000;margin:0 0 8px">Baseline setpoints and operating schedules per building — from uploaded BAS exports (' +
+    '<p style="font-size:12px;color:var(--rpt-page-text);margin:0 0 8px">Baseline setpoints and operating schedules per building � from uploaded BAS exports (' +
     rptViewMode +
     ')</p>' +
     bodyContent +
-    '<p style="font-size:11px;color:#000;margin-top:12px">Source: BAS export uploaded to Set Points &amp; Schedules tab.</p>' +
+    '<p style="font-size:11px;color:var(--rpt-page-text);margin-top:12px">Source: BAS export uploaded to Set Points &amp; Schedules tab.</p>' +
     '</div>';
 
   return rptPage(n, 'BAS Set Points & Schedules' + vLabel, bodyHTML, {
     data: d,
-    label: 'Page ' + n + ' — Set Points',
+    label: 'Page ' + n + ' � Set Points',
   });
 }
 function rptPageBuildingSummary(n, d, b) {
@@ -3628,16 +3647,16 @@ function rptPageBuildingSummary(n, d, b) {
     return (v || 0).toFixed(1) + '%';
   };
 
-  // ── Helpers ──────────────────────────────────────────────────────────
+  // -- Helpers ----------------------------------------------------------
   const hasElec = b.commodities && b.commodities.includes('Electric') && b.electric && b.electric.kwhBl > 0;
   const hasGas = b.commodities && b.commodities.includes('Gas') && b.gas && b.gas.thermsBl > 0;
   const hasPropane = b.commodities && b.commodities.includes('Propane') && b.propane && b.propane.galBl > 0;
 
-  // ── Target % from per-building savings projection config ──────────
+  // -- Target % from per-building savings projection config ----------
   const targetPct = b.targetPct || 10;
   const savingsPct = b.savingsPct || 0;
 
-  // ── Month label helpers ─────────────────────────
+  // -- Month label helpers -------------------------
   const MO_ABBR = [
     'January',
     'February',
@@ -3659,13 +3678,13 @@ function rptPageBuildingSummary(n, d, b) {
     return MO_SHORT[parseInt(parts[1], 10) - 1] || ym;
   }
   function moFullLabel(ym) {
-    if (!ym) return '—';
+    if (!ym) return '�';
     var parts = ym.split('-');
     return MO_ABBR[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
   }
   var periodEndLabel = moFullLabel(d && d.period && d.period.end);
 
-  // ── Full-year monthly builder: 12 calendar months with baseline + current ──
+  // -- Full-year monthly builder: 12 calendar months with baseline + current --
   var _bm = b.baselineMaps || { elecByMo: {}, gasByMo: {}, propaneByMo: {}, waterByMo: {} };
   var _chartYear = d && d.period && d.period.end ? d.period.end.split('-')[0] : '2026';
   function buildFullYear(monthlyArr, blMap, blField) {
@@ -3689,20 +3708,20 @@ function rptPageBuildingSummary(n, d, b) {
     return result;
   }
 
-  // ── Bar chart builder ─────────────────────────────────────────────
+  // -- Bar chart builder ---------------------------------------------
   // blColor / curColor: CSS color strings
   // unit: string appended to tooltip / footer labels
   function buildBarChart(monthly, blColor, curColor, unit, title) {
     if (!monthly || !monthly.length) return '';
     var titleHtml = title
-      ? '<div style="font-size:11px;font-weight:600;color:#000000;margin-bottom:4px">' + title + '</div>'
+      ? '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);margin-bottom:4px">' + title + '</div>'
       : '';
     var allVals = [];
     monthly.forEach(function (mo) {
       allVals.push(mo.bl || 0, mo.cur || 0);
     });
     var maxVal = Math.max.apply(null, allVals) || 1;
-    var maxH = 80; // px — maximum bar height
+    var maxH = 80; // px � maximum bar height
 
     var blTot = 0,
       curTot = 0;
@@ -3736,14 +3755,14 @@ function rptPageBuildingSummary(n, d, b) {
         unit +
         '"></div>' +
         '</div>' +
-        '<div style="font-size:9px;color:#000;margin-top:1px">' +
+        '<div style="font-size:9px;color:var(--rpt-page-text);margin-top:1px">' +
         moLabel(mo.month) +
         '</div>' +
         '</div>';
     });
 
     var legend =
-      '<div style="display:flex;gap:10px;margin-top:4px;font-size:10px;color:#000">' +
+      '<div style="display:flex;gap:10px;margin-top:4px;font-size:10px;color:var(--rpt-page-text)">' +
       '<span><span style="display:inline-block;width:8px;height:8px;background:' +
       blColor +
       ';border-radius:1px;margin-right:3px"></span>Baseline ' +
@@ -3769,13 +3788,13 @@ function rptPageBuildingSummary(n, d, b) {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------
   // LEFT COLUMN
-  // ═══════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------
 
   // Building name
   var leftHTML =
-    '<div contenteditable="true" style="font-size:18px;font-weight:700;color:#1a5276;line-height:1.2;margin-bottom:4px">' +
+    '<div contenteditable="true" style="font-size:18px;font-weight:700;color:var(--rpt-blue);line-height:1.2;margin-bottom:4px">' +
     (b.name || 'Building') +
     '</div>';
 
@@ -3783,7 +3802,7 @@ function rptPageBuildingSummary(n, d, b) {
   var addr = b.address || (d && d.project && d.project.addr) || '';
   var sqftStr = b.sqft ? b.sqft.toLocaleString() + ' sq ft' : '';
   leftHTML +=
-    '<div contenteditable="true" style="font-size:11px;color:#000;margin-bottom:10px;line-height:1.5">' +
+    '<div contenteditable="true" style="font-size:11px;color:var(--rpt-page-text);margin-bottom:10px;line-height:1.5">' +
     (sqftStr ? sqftStr + '<br>' : '') +
     (addr ? addr : '') +
     '</div>';
@@ -3797,7 +3816,7 @@ function rptPageBuildingSummary(n, d, b) {
   var euiCurH = Math.max(4, Math.round((euiCur / euiMax) * euiBarMaxH));
 
   leftHTML +=
-    '<div style="font-size:12px;font-weight:600;color:#000000;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.03em">Site EUI (kBtu/sq ft/yr)</div>' +
+    '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-text);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.03em">Site EUI (kBtu/sq ft/yr)</div>' +
     '<div style="display:flex;gap:16px;align-items:flex-end;margin-bottom:12px">' +
     // Baseline bar
     '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">' +
@@ -3806,12 +3825,12 @@ function rptPageBuildingSummary(n, d, b) {
     'px;display:flex;align-items:flex-end">' +
     '<div style="width:32px;height:' +
     euiBlH +
-    'px;background:#e67e22;border-radius:2px 2px 0 0"></div>' +
+    'px;background:var(--rpt-orange);border-radius:2px 2px 0 0"></div>' +
     '</div>' +
-    '<div style="font-size:13px;font-weight:700;color:#e67e22">' +
+    '<div style="font-size:13px;font-weight:700;color:var(--rpt-orange)">' +
     euiBl.toFixed(1) +
     '</div>' +
-    '<div style="font-size:10px;color:#000">Baseline</div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text)">Baseline</div>' +
     '</div>' +
     // Current bar
     '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">' +
@@ -3820,16 +3839,16 @@ function rptPageBuildingSummary(n, d, b) {
     'px;display:flex;align-items:flex-end">' +
     '<div style="width:32px;height:' +
     euiCurH +
-    'px;background:#1a8a4e;border-radius:2px 2px 0 0"></div>' +
+    'px;background:var(--rpt-green-dark);border-radius:2px 2px 0 0"></div>' +
     '</div>' +
-    '<div style="font-size:13px;font-weight:700;color:#1a8a4e">' +
+    '<div style="font-size:13px;font-weight:700;color:var(--rpt-green-dark)">' +
     euiCur.toFixed(1) +
     '</div>' +
-    '<div style="font-size:10px;color:#000">Current</div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text)">Current</div>' +
     '</div>' +
     '</div>';
 
-  // Monthly EUI mini-chart (kBtu/sqft per month) — full 12 months
+  // Monthly EUI mini-chart (kBtu/sqft per month) � full 12 months
   if (b.sqft > 0) {
     var euiMonthly = [];
     var _elFull = buildFullYear(b.electric && b.electric.monthly, _bm.elecByMo, 'kwh');
@@ -3859,11 +3878,11 @@ function rptPageBuildingSummary(n, d, b) {
           var curH = Math.max(1, Math.round((mo.cur / euiMax) * euiChartH));
           var moLbl = moLabel(mo.month);
           // Value labels: rendered below month label
-          var blLabel = mo.bl > 0 ? '<span style="color:#e67e22">' + mo.bl.toFixed(1) + '</span>' : '';
-          var curLabel = mo.cur > 0 ? '<span style="color:#1a8a4e">' + mo.cur.toFixed(1) + '</span>' : '';
+          var blLabel = mo.bl > 0 ? '<span style="color:var(--rpt-orange)">' + mo.bl.toFixed(1) + '</span>' : '';
+          var curLabel = mo.cur > 0 ? '<span style="color:var(--rpt-green-dark)">' + mo.cur.toFixed(1) + '</span>' : '';
           var valLine =
             blLabel || curLabel
-              ? '<div style="font-size:8px;color:#000000;line-height:1.2;text-align:center;white-space:nowrap">' +
+              ? '<div style="font-size:8px;color:var(--rpt-page-text);line-height:1.2;text-align:center;white-space:nowrap">' +
                 (blLabel ? blLabel : '') +
                 (blLabel && curLabel ? '<br>' : '') +
                 (curLabel ? curLabel : '') +
@@ -3879,17 +3898,17 @@ function rptPageBuildingSummary(n, d, b) {
             'px">' +
             '<div style="width:15px;height:' +
             blH +
-            'px;background:#e67e22;border-radius:1px 1px 0 0"></div>' +
+            'px;background:var(--rpt-orange);border-radius:1px 1px 0 0"></div>' +
             '</div>' +
             '<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:' +
             euiChartH +
             'px">' +
             '<div style="width:15px;height:' +
             curH +
-            'px;background:#1a8a4e;border-radius:1px 1px 0 0"></div>' +
+            'px;background:var(--rpt-green-dark);border-radius:1px 1px 0 0"></div>' +
             '</div>' +
             '</div>' +
-            '<div style="font-size:9px;color:#000;text-align:center">' +
+            '<div style="font-size:9px;color:var(--rpt-page-text);text-align:center">' +
             moLbl +
             '</div>' +
             valLine +
@@ -3899,9 +3918,9 @@ function rptPageBuildingSummary(n, d, b) {
         .join('');
       var euiYMax = euiMax.toFixed(1);
       leftHTML +=
-        '<div style="font-size:10px;font-weight:600;color:#000;margin:8px 0 3px">Monthly Site EUI (kBtu/ft²)</div>' +
+        '<div style="font-size:10px;font-weight:600;color:var(--rpt-page-text);margin:8px 0 3px">Monthly Site EUI (kBtu/ft�)</div>' +
         '<div style="position:relative;padding-left:36px">' +
-        '<div style="position:absolute;left:0;top:0;bottom:16px;display:flex;flex-direction:column;justify-content:space-between;font-size:9px;color:#000000;text-align:right;width:30px">' +
+        '<div style="position:absolute;left:0;top:0;bottom:16px;display:flex;flex-direction:column;justify-content:space-between;font-size:9px;color:var(--rpt-page-text);text-align:right;width:30px">' +
         '<span>' +
         euiYMax +
         '</span>' +
@@ -3911,98 +3930,98 @@ function rptPageBuildingSummary(n, d, b) {
         '<span>0</span>' +
         '</div>' +
         '<div style="position:relative">' +
-        '<div style="position:absolute;left:0;right:0;bottom:50%;border-top:1px dashed #ccc;pointer-events:none"></div>' +
+        '<div style="position:absolute;left:0;right:0;bottom:50%;border-top:1px dashed var(--rpt-divider);pointer-events:none"></div>' +
         '<div style="display:flex;align-items:flex-end;gap:1px">' +
         euiBars +
         '</div>' +
         '</div>' +
         '</div>' +
-        '<div style="font-size:9px;color:#000;margin-top:2px"><span style="display:inline-block;width:6px;height:6px;background:#e67e22;border-radius:1px;margin-right:2px"></span>Baseline <span style="display:inline-block;width:6px;height:6px;background:#1a8a4e;border-radius:1px;margin-left:4px;margin-right:2px"></span>Current</div>';
+        '<div style="font-size:9px;color:var(--rpt-page-text);margin-top:2px"><span style="display:inline-block;width:6px;height:6px;background:var(--rpt-orange);border-radius:1px;margin-right:2px"></span>Baseline <span style="display:inline-block;width:6px;height:6px;background:var(--rpt-green-dark);border-radius:1px;margin-left:4px;margin-right:2px"></span>Current</div>';
     }
   }
 
-  // Notes — only show if building has notes stored
+  // Notes � only show if building has notes stored
   var bldgNotes = b.notes || '';
   if (bldgNotes) {
     leftHTML +=
-      '<div style="font-size:11px;font-weight:600;color:#000;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
-      '<div contenteditable="true" style="min-height:40px;font-size:11px;color:#000000;padding:6px;line-height:1.5">' +
+      '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);text-transform:uppercase;letter-spacing:0.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
+      '<div contenteditable="true" style="min-height:40px;font-size:11px;color:var(--rpt-page-text);padding:6px;line-height:1.5">' +
       bldgNotes +
       '</div>';
   }
 
-  // ═══════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------
   // RIGHT COLUMN
-  // ═══════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------
 
   // Goals and Progression header
   var rightHTML =
     '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">' +
-    '<div style="font-size:14px;font-weight:700;color:#1a5276">Goals and Progression</div>' +
-    '<div style="font-size:11px;color:#000">Period: ' +
+    '<div style="font-size:14px;font-weight:700;color:var(--rpt-blue)">Goals and Progression</div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text)">Period: ' +
     ((d && d.period && d.period.label) || '') +
     '</div>' +
     '</div>';
 
-  // Icon savings row — green for positive savings, red for negative
+  // Icon savings row � green for positive savings, red for negative
   var iconItems = '';
   function _savColor(v) {
-    return v >= 0 ? '#1e8449' : '#c0392b';
+    return v >= 0 ? 'var(--rpt-green-dark)' : 'var(--rpt-red)';
   }
   if (hasElec) {
     var kwhSaved = b.electric.kwhSaved || 0;
     var kwReduced = (b.electric.kwBl || 0) - (b.electric.kwCur || 0);
     iconItems +=
       '<div style="flex:1;min-width:60px;text-align:center;background:transparent;border-radius:2px;padding:5px 4px">' +
-      '<div style="font-size:16px;margin-bottom:1px">⚡</div>' +
+      '<div style="font-size:16px;margin-bottom:1px">?</div>' +
       '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(kwhSaved) +
       '">' +
       $n(kwhSaved) +
       '</div>' +
-      '<div style="font-size:10px;color:#000">kWh Saved</div>' +
+      '<div style="font-size:10px;color:var(--rpt-page-text)">kWh Saved</div>' +
       '</div>' +
       '<div style="flex:1;min-width:60px;text-align:center;background:transparent;border-radius:2px;padding:5px 4px">' +
-      '<div style="font-size:16px;margin-bottom:1px">⬇️</div>' +
+      '<div style="font-size:16px;margin-bottom:1px">??</div>' +
       '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(kwReduced) +
       '">' +
       $n(kwReduced) +
       '</div>' +
-      '<div style="font-size:10px;color:#000">kW Reduced</div>' +
+      '<div style="font-size:10px;color:var(--rpt-page-text)">kW Reduced</div>' +
       '</div>';
   }
   if (hasGas) {
     var thermsSaved = b.gas.thermsSaved || 0;
     iconItems +=
       '<div style="flex:1;min-width:60px;text-align:center;background:transparent;border-radius:2px;padding:5px 4px">' +
-      '<div style="font-size:16px;margin-bottom:1px">🔥</div>' +
+      '<div style="font-size:16px;margin-bottom:1px">??</div>' +
       '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(thermsSaved) +
       '">' +
       $n(thermsSaved) +
       '</div>' +
-      '<div style="font-size:10px;color:#000">Therms Saved</div>' +
+      '<div style="font-size:10px;color:var(--rpt-page-text)">Therms Saved</div>' +
       '</div>';
   }
   if (hasPropane) {
     var galSaved = b.propane.galSaved || 0;
     iconItems +=
       '<div style="flex:1;min-width:60px;text-align:center;background:transparent;border-radius:2px;padding:5px 4px">' +
-      '<div style="font-size:16px;margin-bottom:1px">⛽</div>' +
+      '<div style="font-size:16px;margin-bottom:1px">?</div>' +
       '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(galSaved) +
       '">' +
       $n(galSaved) +
       '</div>' +
-      '<div style="font-size:10px;color:#000">Gal Saved</div>' +
+      '<div style="font-size:10px;color:var(--rpt-page-text)">Gal Saved</div>' +
       '</div>';
   }
   // Always show $ savings
   var totalSaved = b.savings || 0;
   iconItems +=
     '<div style="flex:1;min-width:60px;text-align:center;background:transparent;border-radius:2px;padding:5px 4px">' +
-    '<div style="font-size:16px;margin-bottom:1px">✅</div>' +
+    '<div style="font-size:16px;margin-bottom:1px">?</div>' +
     '<div style="font-size:14px;font-weight:700;color:' +
     _savColor(totalSaved) +
     '">' +
@@ -4010,14 +4029,14 @@ function rptPageBuildingSummary(n, d, b) {
     '$' +
     Math.abs(Math.round(totalSaved)).toLocaleString() +
     '</div>' +
-    '<div style="font-size:10px;color:#000">Total Saved</div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text)">Total Saved</div>' +
     '</div>';
 
   rightHTML += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">' + iconItems + '</div>';
 
   // Summary table
   function _pctColor(v) {
-    return v >= 0 ? '#1e8449' : '#c0392b';
+    return v >= 0 ? 'var(--rpt-green-dark)' : 'var(--rpt-red)';
   }
   var tableRows = '';
   if (hasElec) {
@@ -4052,7 +4071,7 @@ function rptPageBuildingSummary(n, d, b) {
       var curCostMo = mo.curCost || 0;
       var blUsage = mo.bl || 0;
       var curUsage = mo.cur || 0;
-      // kW rate = (blCost - kWhCost portion) / kwBl — approximate using cost ratio
+      // kW rate = (blCost - kWhCost portion) / kwBl � approximate using cost ratio
       // Simpler: proportional split of cost delta attributable to kW
       var totalKwSav = kwSav;
       var kwRate = blCostMo > 0 && (mo.kwBl || 0) > 0 ? blCostMo / (mo.kwBl || 1) : 0;
@@ -4130,7 +4149,7 @@ function rptPageBuildingSummary(n, d, b) {
   }
   if (!tableRows) {
     tableRows =
-      '<tr><td colspan="5" style="color:#000000;font-style:italic">No commodity data for this building</td></tr>';
+      '<tr><td colspan="5" style="color:var(--rpt-page-text);font-style:italic">No commodity data for this building</td></tr>';
   }
 
   rightHTML +=
@@ -4154,13 +4173,13 @@ function rptPageBuildingSummary(n, d, b) {
     });
   }
 
-  // Electricity Consumption chart — reporting period only
+  // Electricity Consumption chart � reporting period only
   if (hasElec) {
     var elFullYear = buildFullYear(b.electric.monthly, _bm.elecByMo, 'kwh');
     var elDataMonths = filterToDataMonths(elFullYear);
-    var elChart = buildBarChart(elDataMonths, '#aed6f1', '#1a5276', 'kWh');
+    var elChart = buildBarChart(elDataMonths, 'var(--rpt-elec-bl)', 'var(--rpt-elec-cur)', 'kWh');
     rightHTML +=
-      '<div style="text-align:center;font-size:12px;font-weight:600;color:#1a5276;margin:6px 0 2px">' +
+      '<div style="text-align:center;font-size:12px;font-weight:600;color:var(--rpt-blue);margin:6px 0 2px">' +
       'Electricity Consumption' +
       '</div>' +
       '<div style="display:flex;justify-content:center">' +
@@ -4168,13 +4187,13 @@ function rptPageBuildingSummary(n, d, b) {
       '</div>';
   }
 
-  // Natural Gas Consumption chart — reporting period only
+  // Natural Gas Consumption chart � reporting period only
   if (hasGas) {
     var gasFullYear = buildFullYear(b.gas.monthly, _bm.gasByMo, 'therms');
     var gasDataMonths = filterToDataMonths(gasFullYear);
-    var gasChart = buildBarChart(gasDataMonths, '#f0b27a', '#e67e22', 'Therms');
+    var gasChart = buildBarChart(gasDataMonths, 'var(--rpt-gas-bl)', 'var(--rpt-gas-cur)', 'Therms');
     rightHTML +=
-      '<div style="text-align:center;font-size:12px;font-weight:600;color:#8b4513;margin:6px 0 2px">' +
+      '<div style="text-align:center;font-size:12px;font-weight:600;color:var(--rpt-gas-head);margin:6px 0 2px">' +
       'Natural Gas Consumption' +
       '</div>' +
       '<div style="display:flex;justify-content:center">' +
@@ -4182,13 +4201,13 @@ function rptPageBuildingSummary(n, d, b) {
       '</div>';
   }
 
-  // Propane Consumption chart — reporting period only
+  // Propane Consumption chart � reporting period only
   if (hasPropane) {
     var propFullYear = buildFullYear(b.propane.monthly, _bm.propaneByMo, 'gallons');
     var propDataMonths = filterToDataMonths(propFullYear);
-    var propChart = buildBarChart(propDataMonths, '#f9e4b7', '#b7770d', 'Gal');
+    var propChart = buildBarChart(propDataMonths, 'var(--rpt-prop-bl)', 'var(--rpt-prop-cur)', 'Gal');
     rightHTML +=
-      '<div style="text-align:center;font-size:12px;font-weight:600;color:#7d5a00;margin:6px 0 2px">' +
+      '<div style="text-align:center;font-size:12px;font-weight:600;color:var(--rpt-prop-head);margin:6px 0 2px">' +
       'Propane Consumption' +
       '</div>' +
       '<div style="display:flex;justify-content:center">' +
@@ -4196,9 +4215,9 @@ function rptPageBuildingSummary(n, d, b) {
       '</div>';
   }
 
-  // ═══════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------
   // Building Baseline Data table (Energy Dept styling, merged kW Cost, no Load %)
-  // ═══════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------
   var _blCalcDefaults = {
     electric: typeof isCalcCommodity === 'function' ? isCalcCommodity(d.project.id, 'Electric') : true,
     gas: typeof isCalcCommodity === 'function' ? isCalcCommodity(d.project.id, 'Gas') : true,
@@ -4269,55 +4288,55 @@ function rptPageBuildingSummary(n, d, b) {
     if (_showElec) {
       blDataRows +=
         '<td class="rpt-n">' +
-        (kwh ? $n(kwh) : '—') +
+        (kwh ? $n(kwh) : '�') +
         '</td>' +
         '<td class="rpt-n">' +
-        (demKw ? demKw.toFixed(1) : '—') +
+        (demKw ? demKw.toFixed(1) : '�') +
         '</td>' +
         '<td class="rpt-n">' +
-        (bKw ? bKw.toFixed(1) : '—') +
+        (bKw ? bKw.toFixed(1) : '�') +
         '</td>' +
         '<td class="rpt-n">' +
-        (kwCostTotal ? $c(kwCostTotal) : '—') +
+        (kwCostTotal ? $c(kwCostTotal) : '�') +
         '</td>' +
         '<td class="rpt-n">' +
-        (enCost ? $c(enCost) : '—') +
+        (enCost ? $c(enCost) : '�') +
         '</td>' +
         '<td class="rpt-n">' +
-        (elecCost ? $c(elecCost) : '—') +
+        (elecCost ? $c(elecCost) : '�') +
         '</td>' +
         '<td class="rpt-n">' +
-        (costPerKwh ? '$' + costPerKwh.toFixed(4) : '—') +
+        (costPerKwh ? '$' + costPerKwh.toFixed(4) : '�') +
         '</td>';
     }
     if (_showGas)
       blDataRows +=
         '<td class="rpt-n">' +
-        (therms ? $n(therms) : '—') +
+        (therms ? $n(therms) : '�') +
         '</td><td class="rpt-n">' +
-        (gasCost ? $c(gasCost) : '—') +
+        (gasCost ? $c(gasCost) : '�') +
         '</td><td class="rpt-n">' +
-        (gM.rate > 0 ? '$' + gM.rate.toFixed(4) : therms > 0 ? '$' + (gasCost / therms).toFixed(4) : '—') +
+        (gM.rate > 0 ? '$' + gM.rate.toFixed(4) : therms > 0 ? '$' + (gasCost / therms).toFixed(4) : '�') +
         '</td>';
     if (_showProp)
       blDataRows +=
         '<td class="rpt-n">' +
-        (gal ? $n(gal) : '—') +
+        (gal ? $n(gal) : '�') +
         '</td><td class="rpt-n">' +
-        (propCost ? $c(propCost) : '—') +
+        (propCost ? $c(propCost) : '�') +
         '</td><td class="rpt-n">' +
-        (gal > 0 ? '$' + (propCost / gal).toFixed(4) : '—') +
+        (gal > 0 ? '$' + (propCost / gal).toFixed(4) : '�') +
         '</td>';
     if (_showWater)
       blDataRows +=
         '<td class="rpt-n">' +
-        (water ? water.toFixed(1) : '—') +
+        (water ? water.toFixed(1) : '�') +
         '</td><td class="rpt-n">' +
-        (waterCost ? $c(waterCost) : '—') +
+        (waterCost ? $c(waterCost) : '�') +
         '</td><td class="rpt-n">' +
-        (water > 0 ? '$' + (waterCost / water).toFixed(2) : '—') +
+        (water > 0 ? '$' + (waterCost / water).toFixed(2) : '�') +
         '</td>';
-    blDataRows += '<td class="rpt-n">' + (totalCost ? $c(totalCost) : '—') + '</td></tr>';
+    blDataRows += '<td class="rpt-n">' + (totalCost ? $c(totalCost) : '�') + '</td></tr>';
   }
   if (blDataRows) {
     blDataRows += '<tr class="rpt-tot"><td>Annual</td>';
@@ -4327,9 +4346,9 @@ function rptPageBuildingSummary(n, d, b) {
         '<td class="rpt-n">' +
         $n(_tKwh) +
         '</td><td class="rpt-n">' +
-        (_tKw ? (_tKw / 12).toFixed(1) : '—') +
+        (_tKw ? (_tKw / 12).toFixed(1) : '�') +
         '</td><td class="rpt-n">' +
-        (_tBkw ? (_tBkw / 12).toFixed(1) : '—') +
+        (_tBkw ? (_tBkw / 12).toFixed(1) : '�') +
         '</td><td class="rpt-n">' +
         $c(_tKwCost) +
         '</td><td class="rpt-n">' +
@@ -4337,7 +4356,7 @@ function rptPageBuildingSummary(n, d, b) {
         '</td><td class="rpt-n">' +
         $c(_tElecCost) +
         '</td><td class="rpt-n">' +
-        (_avgCpk ? '$' + _avgCpk.toFixed(4) : '—') +
+        (_avgCpk ? '$' + _avgCpk.toFixed(4) : '�') +
         '</td>';
     }
     if (_showGas)
@@ -4347,7 +4366,7 @@ function rptPageBuildingSummary(n, d, b) {
         '</td><td class="rpt-n">' +
         $c(_tGasCost) +
         '</td><td class="rpt-n">' +
-        (_tTherms > 0 ? '$' + (_tGasCost / _tTherms).toFixed(4) : '—') +
+        (_tTherms > 0 ? '$' + (_tGasCost / _tTherms).toFixed(4) : '�') +
         '</td>';
     if (_showProp)
       blDataRows +=
@@ -4356,7 +4375,7 @@ function rptPageBuildingSummary(n, d, b) {
         '</td><td class="rpt-n">' +
         $c(_tPropCost) +
         '</td><td class="rpt-n">' +
-        (_tGal > 0 ? '$' + (_tPropCost / _tGal).toFixed(4) : '—') +
+        (_tGal > 0 ? '$' + (_tPropCost / _tGal).toFixed(4) : '�') +
         '</td>';
     if (_showWater)
       blDataRows +=
@@ -4365,7 +4384,7 @@ function rptPageBuildingSummary(n, d, b) {
         '</td><td class="rpt-n">' +
         $c(_tWaterCost) +
         '</td><td class="rpt-n">' +
-        (_tWater > 0 ? '$' + (_tWaterCost / _tWater).toFixed(2) : '—') +
+        (_tWater > 0 ? '$' + (_tWaterCost / _tWater).toFixed(2) : '�') +
         '</td>';
     blDataRows += '<td class="rpt-n">' + $c(_tTotalCost) + '</td></tr>';
   }
@@ -4398,7 +4417,7 @@ function rptPageBuildingSummary(n, d, b) {
     blHdr +=
       '<th class="rpt-n bl-water">kGal</th><th class="rpt-n bl-water" style="white-space:normal;line-height:1.2">Water<br>Cost</th><th class="rpt-n bl-water">$/kGal</th>';
 
-  // Statistics summary — light bordered grid for print-ready report
+  // Statistics summary � light bordered grid for print-ready report
   var blStats = '';
   if (blDataRows) {
     var _statItems = [];
@@ -4448,9 +4467,9 @@ function rptPageBuildingSummary(n, d, b) {
   }
 
   var blDataTable = blDataRows
-    ? '<div style="margin-top:14px;width:100%;overflow-x:auto;border:1px solid #000">' +
+    ? '<div style="margin-top:14px;width:100%;overflow-x:auto;border:1px solid var(--rpt-page-text)">' +
       blStats +
-      '<div style="font-size:12px;font-weight:600;color:#FFFFFF;margin-bottom:0;padding:6px 10px;background:#0070C0;text-transform:uppercase;letter-spacing:0.5px;text-align:center">Building Baseline Data</div>' +
+      '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-bg);margin-bottom:0;padding:6px 10px;background:var(--rpt-bl-blue);text-transform:uppercase;letter-spacing:0.5px;text-align:center">Building Baseline Data</div>' +
       '<table class="rpt-table rpt-table-bl" style="font-size:10px;width:100%">' +
       '<thead><tr>' +
       blGrpHdr +
@@ -4461,10 +4480,10 @@ function rptPageBuildingSummary(n, d, b) {
       '</tbody></table></div>'
     : '';
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Meter Performance table — uses shared buildMeterPerfTableHTML
-  // (same rendering as Meter Performance tab — single source of truth)
-  // ═══════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------
+  // Meter Performance table � uses shared buildMeterPerfTableHTML
+  // (same rendering as Meter Performance tab � single source of truth)
+  // -------------------------------------------------------------------
   var meterPerfHTML = '';
   var _rptBldg = getUDBldg(d.project.id, b.id);
   var _rptFilterYMs = d.period.yearMonths || null;
@@ -4493,7 +4512,12 @@ function rptPageBuildingSummary(n, d, b) {
               : meter.commodity === 'Propane'
                 ? 'Propane'
                 : meter.commodity;
-        var commColor = meter.commodity === 'Electric' ? '#1a5276' : meter.commodity === 'Gas' ? '#8b4513' : '#7d5a00';
+        var commColor =
+          meter.commodity === 'Electric'
+            ? 'var(--rpt-elec-head)'
+            : meter.commodity === 'Gas'
+              ? 'var(--rpt-gas-head)'
+              : 'var(--rpt-prop-head)';
         meterPerfHTML +=
           '<div style="font-size:10px;font-weight:600;color:' +
           commColor +
@@ -4506,7 +4530,7 @@ function rptPageBuildingSummary(n, d, b) {
   }
   if (meterPerfHTML) {
     meterPerfHTML =
-      '<div style="margin-top:8px"><div style="font-size:12px;font-weight:600;color:#1a5276;margin-bottom:3px">Meter Performance — ' +
+      '<div style="margin-top:8px"><div style="font-size:12px;font-weight:600;color:var(--rpt-blue);margin-bottom:3px">Meter Performance � ' +
       ((d && d.period && d.period.label) || '') +
       '</div>' +
       meterPerfHTML +
@@ -4515,19 +4539,19 @@ function rptPageBuildingSummary(n, d, b) {
 
   // Notes
   leftHTML +=
-    '<div style="margin-top:10px;font-size:10px;color:#000;line-height:1.5">' +
-    '<div style="font-weight:600;color:#000;text-transform:uppercase;font-size:9px;letter-spacing:.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
+    '<div style="margin-top:10px;font-size:10px;color:var(--rpt-page-text);line-height:1.5">' +
+    '<div style="font-weight:600;color:var(--rpt-page-text);text-transform:uppercase;font-size:9px;letter-spacing:.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
     '<div>1. Achieved (%) for each energy type represents the percent of energy units saved for the months included in this report.</div>' +
     '<div>2. Achieved ($) represents the utility cost savings for this time period calculated by subtracting the baseline energy usage from the current energy usage multiplied by the higher of current or baseline utility rates.</div>' +
-    '<div>3. The Baseline Site EUIs are normalized for weather and square footage when applicable. Site EUI measures energy at the utility meter (kBtu/ft²/yr).</div>' +
+    '<div>3. The Baseline Site EUIs are normalized for weather and square footage when applicable. Site EUI measures energy at the utility meter (kBtu/ft�/yr).</div>' +
     '</div>';
 
-  // ═══════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------
   // Assemble two-column layout
-  // ═══════════════════════════════════════════════════════════════════
+  // -------------------------------------------------------------------
   var bodyHTML =
     '<div style="display:flex;gap:16px;align-items:flex-start">' +
-    '<div style="flex:0 0 38%;max-width:38%;padding-right:12px;border-right:1px solid #d4e4f0">' +
+    '<div style="flex:0 0 38%;max-width:38%;padding-right:12px;border-right:1px solid var(--rpt-blue-light)">' +
     leftHTML +
     '</div>' +
     '<div style="flex:1;min-width:0">' +
@@ -4536,9 +4560,9 @@ function rptPageBuildingSummary(n, d, b) {
     '</div>' +
     blDataTable;
 
-  var result = rptPage(n, (b.name || 'Building') + ' — Building Summary', bodyHTML, {
+  var result = rptPage(n, (b.name || 'Building') + ' � Building Summary', bodyHTML, {
     data: d,
-    label: 'Page ' + n + ' — ' + (b.name || 'Building'),
+    label: 'Page ' + n + ' � ' + (b.name || 'Building'),
   });
 
   return { html: result, summaryPageCount: 1, meterPerfHTML: meterPerfHTML || '' };
@@ -4555,14 +4579,15 @@ function rptPageElectric(n, d) {
     return (v || 0).toFixed(1) + '%';
   };
   function _sc(v) {
-    return v >= 0 ? '#1e8449' : '#c0392b';
+    return v >= 0 ? 'var(--rpt-green-dark)' : 'var(--rpt-red)';
   }
 
   var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-  // ── Shared bar-chart builder ──────────────────────────────────────────
+  // -- Shared bar-chart builder ------------------------------------------
   function buildElecBarChart(monthly, blColor, curColor, unit, title) {
-    if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#000000;padding:4px 0">No monthly data</p>';
+    if (!monthly || !monthly.length)
+      return '<p style="font-size:10px;color:var(--rpt-page-text);padding:4px 0">No monthly data</p>';
     var allVals = [];
     monthly.forEach(function (mo) {
       allVals.push(mo.bl || 0, mo.cur || 0);
@@ -4603,14 +4628,14 @@ function rptPageElectric(n, d) {
         unit +
         '"></div>' +
         '</div>' +
-        '<div style="font-size:10px;color:#000;margin-top:1px">' +
+        '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:1px">' +
         moLbl +
         '</div>' +
         '</div>';
     });
     return (
       '<div class="rpt-chart-box">' +
-      '<div style="font-size:10px;font-weight:600;color:#000;margin-bottom:3px">' +
+      '<div style="font-size:10px;font-weight:600;color:var(--rpt-page-text);margin-bottom:3px">' +
       title +
       '</div>' +
       '<div style="display:flex;align-items:flex-end;gap:2px;height:' +
@@ -4618,7 +4643,7 @@ function rptPageElectric(n, d) {
       'px">' +
       bars +
       '</div>' +
-      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:11px;color:#000">' +
+      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:11px;color:var(--rpt-page-text)">' +
       '<span><span style="display:inline-block;width:8px;height:8px;background:' +
       blColor +
       ';border-radius:1px;margin-right:2px"></span>Baseline ' +
@@ -4638,12 +4663,12 @@ function rptPageElectric(n, d) {
     );
   }
 
-  // ── Aggregate monthly data across all electric buildings ───────────────
+  // -- Aggregate monthly data across all electric buildings ---------------
   var elecBldgs = (d.buildings || []).filter(function (b) {
     return b.commodities && b.commodities.includes('Electric') && b.electric && b.electric.kwhBl > 0;
   });
 
-  // Combined monthly kWh (bl + cur) across all buildings — full 12-month year using baselineMaps
+  // Combined monthly kWh (bl + cur) across all buildings � full 12-month year using baselineMaps
   var _rptYear = d.period && d.period.year ? d.period.year : new Date().getFullYear();
   var kwhByMonth = {};
   var kwByMonth = {};
@@ -4687,20 +4712,32 @@ function rptPageElectric(n, d) {
     return a.month < b.month ? -1 : 1;
   });
 
-  // ── Charts ────────────────────────────────────────────────────────────
+  // -- Charts ------------------------------------------------------------
   var kwhChart = elecBldgs.length
-    ? buildElecBarChart(kwhMonthly, '#b0c4d8', '#1a5276', 'kWh', 'Monthly Electric kWh — Year over Year')
-    : '<p style="font-size:10px;color:#000000">No electric data</p>';
+    ? buildElecBarChart(
+        kwhMonthly,
+        'var(--rpt-elec-bl)',
+        'var(--rpt-elec-cur)',
+        'kWh',
+        'Monthly Electric kWh � Year over Year',
+      )
+    : '<p style="font-size:10px;color:var(--rpt-page-text)">No electric data</p>';
 
   var hasKwData = kwMonthly.some(function (mo) {
     return (mo.bl || 0) > 0 || (mo.cur || 0) > 0;
   });
   var kwChart =
     elecBldgs.length && hasKwData
-      ? buildElecBarChart(kwMonthly, '#b0c4d8', '#1a5276', 'kW', 'Monthly Peak kW — Year over Year')
+      ? buildElecBarChart(
+          kwMonthly,
+          'var(--rpt-elec-bl)',
+          'var(--rpt-elec-cur)',
+          'kW',
+          'Monthly Peak kW � Year over Year',
+        )
       : '';
 
-  // ── By-building table ─────────────────────────────────────────────────
+  // -- By-building table -------------------------------------------------
   var totBlKwh = 0,
     totCurKwh = 0,
     totSavKwh = 0,
@@ -4732,7 +4769,7 @@ function rptPageElectric(n, d) {
     tableRows +=
       '<tr>' +
       '<td contenteditable="true">' +
-      (b.name || '—') +
+      (b.name || '�') +
       '</td>' +
       '<td class="rpt-n" contenteditable="true">' +
       $n(blKwh) +
@@ -4772,7 +4809,7 @@ function rptPageElectric(n, d) {
 
   if (!tableRows) {
     tableRows =
-      '<tr><td colspan="10" style="color:#000000;font-style:italic">No electric buildings in this project</td></tr>';
+      '<tr><td colspan="10" style="color:var(--rpt-page-text);font-style:italic">No electric buildings in this project</td></tr>';
   } else {
     var totSavPct = totBlKwh > 0 ? (totSavKwh / totBlKwh) * 100 : 0;
     tableRows +=
@@ -4829,20 +4866,20 @@ function rptPageElectric(n, d) {
 
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<p contenteditable="true" style="font-size:12px;color:#000;line-height:1.6;margin:0 0 8px">This page details electricity consumption across all buildings for the reporting period. The charts compare weather-normalized baseline usage against actual consumption by month. The table below breaks down kilowatt-hour (kWh) usage, peak demand (kW), and costs by building to identify where the greatest savings and opportunities exist.</p>' +
-    '<div style="margin-bottom:6px;font-size:11px;color:#000">Period: ' +
+    '<p contenteditable="true" style="font-size:12px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page details electricity consumption across all buildings for the reporting period. The charts compare weather-normalized baseline usage against actual consumption by month. The table below breaks down kilowatt-hour (kWh) usage, peak demand (kW), and costs by building to identify where the greatest savings and opportunities exist.</p>' +
+    '<div style="margin-bottom:6px;font-size:11px;color:var(--rpt-page-text)">Period: ' +
     periodLabel +
     '</div>' +
     kwhChart +
     kwChart +
-    '<h2 style="font-size:12px;font-weight:700;color:#1a5276;margin:10px 0 4px">Electric by Building — ' +
+    '<h2 style="font-size:12px;font-weight:700;color:var(--rpt-blue);margin:10px 0 4px">Electric by Building � ' +
     periodLabel +
     '</h2>' +
     bldgTable;
 
   return rptPage(n, 'Electric Consumption Detail', bodyHTML, {
     data: d,
-    label: 'Page ' + n + ' — Electric Detail',
+    label: 'Page ' + n + ' � Electric Detail',
   });
 }
 function rptPageGas(n, d) {
@@ -4857,12 +4894,13 @@ function rptPageGas(n, d) {
     return (v || 0).toFixed(1) + '%';
   };
   function _sc(v) {
-    return v >= 0 ? '#1e8449' : '#c0392b';
+    return v >= 0 ? 'var(--rpt-green-dark)' : 'var(--rpt-red)';
   }
   var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   function buildGasBarChart(monthly, blColor, curColor, unit, title) {
-    if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#000000;padding:4px 0">No monthly data</p>';
+    if (!monthly || !monthly.length)
+      return '<p style="font-size:10px;color:var(--rpt-page-text);padding:4px 0">No monthly data</p>';
     var allVals = [];
     monthly.forEach(function (mo) {
       allVals.push(mo.bl || 0, mo.cur || 0);
@@ -4902,13 +4940,13 @@ function rptPageGas(n, d) {
         ' ' +
         unit +
         '"></div>' +
-        '</div><div style="font-size:10px;color:#000;margin-top:1px">' +
+        '</div><div style="font-size:10px;color:var(--rpt-page-text);margin-top:1px">' +
         moLbl +
         '</div></div>';
     });
     return (
       '<div class="rpt-chart-box">' +
-      '<div style="font-size:10px;font-weight:600;color:#000;margin-bottom:3px">' +
+      '<div style="font-size:10px;font-weight:600;color:var(--rpt-page-text);margin-bottom:3px">' +
       title +
       '</div>' +
       '<div style="display:flex;align-items:flex-end;gap:2px;height:' +
@@ -4916,7 +4954,7 @@ function rptPageGas(n, d) {
       'px">' +
       bars +
       '</div>' +
-      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:11px;color:#000">' +
+      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:11px;color:var(--rpt-page-text)">' +
       '<span><span style="display:inline-block;width:8px;height:8px;background:' +
       blColor +
       ';border-radius:1px;margin-right:2px"></span>Baseline ' +
@@ -4967,8 +5005,14 @@ function rptPageGas(n, d) {
   });
 
   var thermsChart = gasBldgs.length
-    ? buildGasBarChart(thermsMonthly, '#e8c4a0', '#d35400', 'Therms', 'Monthly Natural Gas Therms — Year over Year')
-    : '<p style="font-size:10px;color:#000000">No gas data</p>';
+    ? buildGasBarChart(
+        thermsMonthly,
+        'var(--rpt-gas-bl)',
+        'var(--rpt-gas-cur)',
+        'Therms',
+        'Monthly Natural Gas Therms � Year over Year',
+      )
+    : '<p style="font-size:10px;color:var(--rpt-page-text)">No gas data</p>';
 
   var totBlTherms = 0,
     totCurTherms = 0,
@@ -4994,7 +5038,7 @@ function rptPageGas(n, d) {
     tableRows +=
       '<tr>' +
       '<td contenteditable="true">' +
-      (b.name || '—') +
+      (b.name || '�') +
       '</td>' +
       '<td class="rpt-n" contenteditable="true">' +
       $n(blT) +
@@ -5027,7 +5071,7 @@ function rptPageGas(n, d) {
   });
   if (!tableRows) {
     tableRows =
-      '<tr><td colspan="8" style="color:#000000;font-style:italic">No gas buildings in this project</td></tr>';
+      '<tr><td colspan="8" style="color:var(--rpt-page-text);font-style:italic">No gas buildings in this project</td></tr>';
   } else {
     var tSavPct = totBlTherms > 0 ? (totSavTherms / totBlTherms) * 100 : 0;
     tableRows +=
@@ -5073,19 +5117,19 @@ function rptPageGas(n, d) {
 
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<p contenteditable="true" style="font-size:12px;color:#000;line-height:1.6;margin:0 0 8px">This page details natural gas consumption across all buildings for the reporting period. Gas usage is measured in therms and is primarily driven by heating loads. The chart compares baseline consumption against actual usage by month, while the per-building table identifies where gas savings or overages are occurring.</p>' +
-    '<div style="margin-bottom:6px;font-size:11px;color:#000">Period: ' +
+    '<p contenteditable="true" style="font-size:12px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page details natural gas consumption across all buildings for the reporting period. Gas usage is measured in therms and is primarily driven by heating loads. The chart compares baseline consumption against actual usage by month, while the per-building table identifies where gas savings or overages are occurring.</p>' +
+    '<div style="margin-bottom:6px;font-size:11px;color:var(--rpt-page-text)">Period: ' +
     periodLabel +
     '</div>' +
     thermsChart +
-    '<h2 style="font-size:12px;font-weight:700;color:#8b4513;margin:10px 0 4px">Natural Gas by Building — ' +
+    '<h2 style="font-size:12px;font-weight:700;color:var(--rpt-gas-head);margin:10px 0 4px">Natural Gas by Building � ' +
     periodLabel +
     '</h2>' +
     bldgTable;
 
   return rptPage(n, 'Natural Gas Consumption Detail', bodyHTML, {
     data: d,
-    label: 'Page ' + n + ' — Gas Detail',
+    label: 'Page ' + n + ' � Gas Detail',
   });
 }
 
@@ -5101,12 +5145,13 @@ function rptPagePropane(n, d) {
     return (v || 0).toFixed(1) + '%';
   };
   function _sc(v) {
-    return v >= 0 ? '#1e8449' : '#c0392b';
+    return v >= 0 ? 'var(--rpt-green-dark)' : 'var(--rpt-red)';
   }
   var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   function buildPropBarChart(monthly, blColor, curColor, unit, title) {
-    if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#000000;padding:4px 0">No monthly data</p>';
+    if (!monthly || !monthly.length)
+      return '<p style="font-size:10px;color:var(--rpt-page-text);padding:4px 0">No monthly data</p>';
     var allVals = [];
     monthly.forEach(function (mo) {
       allVals.push(mo.bl || 0, mo.cur || 0);
@@ -5146,13 +5191,13 @@ function rptPagePropane(n, d) {
         ' ' +
         unit +
         '"></div>' +
-        '</div><div style="font-size:10px;color:#000;margin-top:1px">' +
+        '</div><div style="font-size:10px;color:var(--rpt-page-text);margin-top:1px">' +
         moLbl +
         '</div></div>';
     });
     return (
       '<div class="rpt-chart-box">' +
-      '<div style="font-size:10px;font-weight:600;color:#000;margin-bottom:3px">' +
+      '<div style="font-size:10px;font-weight:600;color:var(--rpt-page-text);margin-bottom:3px">' +
       title +
       '</div>' +
       '<div style="display:flex;align-items:flex-end;gap:2px;height:' +
@@ -5160,7 +5205,7 @@ function rptPagePropane(n, d) {
       'px">' +
       bars +
       '</div>' +
-      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:11px;color:#000">' +
+      '<div style="display:flex;gap:8px;margin-top:3px;justify-content:center;font-size:11px;color:var(--rpt-page-text)">' +
       '<span><span style="display:inline-block;width:8px;height:8px;background:' +
       blColor +
       ';border-radius:1px;margin-right:2px"></span>Baseline ' +
@@ -5211,8 +5256,14 @@ function rptPagePropane(n, d) {
   });
 
   var galChart = propBldgs.length
-    ? buildPropBarChart(galMonthly, '#f5deb3', '#b8860b', 'Gal', 'Monthly Propane Gallons — Year over Year')
-    : '<p style="font-size:10px;color:#000000">No propane data</p>';
+    ? buildPropBarChart(
+        galMonthly,
+        'var(--rpt-prop-bl)',
+        'var(--rpt-prop-cur)',
+        'Gal',
+        'Monthly Propane Gallons � Year over Year',
+      )
+    : '<p style="font-size:10px;color:var(--rpt-page-text)">No propane data</p>';
 
   var totBlGal = 0,
     totCurGal = 0,
@@ -5238,7 +5289,7 @@ function rptPagePropane(n, d) {
     tableRows +=
       '<tr>' +
       '<td contenteditable="true">' +
-      (b.name || '—') +
+      (b.name || '�') +
       '</td>' +
       '<td class="rpt-n" contenteditable="true">' +
       $n(blG) +
@@ -5271,7 +5322,7 @@ function rptPagePropane(n, d) {
   });
   if (!tableRows) {
     tableRows =
-      '<tr><td colspan="8" style="color:#000000;font-style:italic">No propane buildings in this project</td></tr>';
+      '<tr><td colspan="8" style="color:var(--rpt-page-text);font-style:italic">No propane buildings in this project</td></tr>';
   } else {
     var tSavPct = totBlGal > 0 ? (totSavGal / totBlGal) * 100 : 0;
     tableRows +=
@@ -5326,21 +5377,21 @@ function rptPagePropane(n, d) {
 
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<div style="margin-bottom:6px;font-size:11px;color:#000">Period: ' +
+    '<div style="margin-bottom:6px;font-size:11px;color:var(--rpt-page-text)">Period: ' +
     periodLabel +
     '</div>' +
     galChart +
-    '<h2 style="font-size:12px;font-weight:700;color:#7d5a00;margin:10px 0 4px">Propane by Building — ' +
+    '<h2 style="font-size:12px;font-weight:700;color:var(--rpt-prop-head);margin:10px 0 4px">Propane by Building � ' +
     periodLabel +
     '</h2>' +
     bldgTable +
-    '<div style="margin-top:8px;font-size:10px;color:#000000;font-style:italic;border-top:1px solid #ddd;padding-top:6px" contenteditable="true">' +
+    '<div style="margin-top:8px;font-size:10px;color:var(--rpt-page-text);font-style:italic;border-top:1px solid var(--rpt-divider);padding-top:6px" contenteditable="true">' +
     noteText +
     '</div>';
 
   return rptPage(n, 'Propane Consumption Detail', bodyHTML, {
     data: d,
-    label: 'Page ' + n + ' — Propane Detail',
+    label: 'Page ' + n + ' � Propane Detail',
   });
 }
 
@@ -5356,11 +5407,12 @@ function rptPageGasPropane(n, d) {
     return (v || 0).toFixed(1) + '%';
   };
   function _sc(v) {
-    return v >= 0 ? '#1e8449' : '#c0392b';
+    return v >= 0 ? 'var(--rpt-green-dark)' : 'var(--rpt-red)';
   }
   var MO_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function _barChart(monthly, blColor, curColor, unit, title) {
-    if (!monthly || !monthly.length) return '<p style="font-size:10px;color:#000000;padding:4px 0">No monthly data</p>';
+    if (!monthly || !monthly.length)
+      return '<p style="font-size:10px;color:var(--rpt-page-text);padding:4px 0">No monthly data</p>';
     var allVals = [];
     monthly.forEach(function (mo) {
       allVals.push(mo.bl || 0, mo.cur || 0);
@@ -5387,18 +5439,18 @@ function rptPageGasPropane(n, d) {
         curH +
         'px;background:' +
         curColor +
-        ';border-radius:2px 2px 0 0"></div></div><div style="font-size:9px;color:#000;margin-top:1px">' +
+        ';border-radius:2px 2px 0 0"></div></div><div style="font-size:9px;color:var(--rpt-page-text);margin-top:1px">' +
         (moIdx >= 0 ? MO_SHORT[moIdx] : '?') +
         '</div></div>';
     });
     return (
-      '<div class="rpt-chart-box" style="margin-bottom:6px"><div style="font-size:10px;font-weight:600;color:#000;margin-bottom:3px">' +
+      '<div class="rpt-chart-box" style="margin-bottom:6px"><div style="font-size:10px;font-weight:600;color:var(--rpt-page-text);margin-bottom:3px">' +
       title +
       '</div><div style="display:flex;align-items:flex-end;gap:2px;height:' +
       (maxH + 14) +
       'px">' +
       bars +
-      '</div><div style="display:flex;gap:8px;margin-top:2px;justify-content:center;font-size:10px;color:#000"><span><span style="display:inline-block;width:7px;height:7px;background:' +
+      '</div><div style="display:flex;gap:8px;margin-top:2px;justify-content:center;font-size:10px;color:var(--rpt-page-text)"><span><span style="display:inline-block;width:7px;height:7px;background:' +
       blColor +
       ';border-radius:1px;margin-right:2px"></span>BL ' +
       $n(blTot) +
@@ -5438,7 +5490,7 @@ function rptPageGasPropane(n, d) {
       totSavC += savC;
       rows +=
         '<tr><td contenteditable="true">' +
-        (b.name || '—') +
+        (b.name || '�') +
         '</td><td class="rpt-n" contenteditable="true">' +
         $n(bl) +
         '</td><td class="rpt-n" contenteditable="true">' +
@@ -5524,9 +5576,9 @@ function rptPageGasPropane(n, d) {
   });
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
-    '<p contenteditable="true" style="font-size:11px;color:#000;line-height:1.5;margin:0 0 6px">This page details natural gas and propane consumption across all buildings for the reporting period.</p>' +
-    _barChart(thermsMonthly, '#e8c4a0', '#d35400', 'Therms', 'Natural Gas Therms') +
-    '<h2 style="font-size:11px;font-weight:700;color:#8b4513;margin:8px 0 3px">Natural Gas by Building</h2>' +
+    '<p contenteditable="true" style="font-size:11px;color:var(--rpt-page-text);line-height:1.5;margin:0 0 6px">This page details natural gas and propane consumption across all buildings for the reporting period.</p>' +
+    _barChart(thermsMonthly, 'var(--rpt-gas-bl)', 'var(--rpt-gas-cur)', 'Therms', 'Natural Gas Therms') +
+    '<h2 style="font-size:11px;font-weight:700;color:var(--rpt-gas-head);margin:8px 0 3px">Natural Gas by Building</h2>' +
     _table(
       gasBldgs,
       function (b) {
@@ -5541,8 +5593,8 @@ function rptPageGasPropane(n, d) {
       },
       'Therms',
     ) +
-    _barChart(galMonthly, '#f5deb3', '#b8860b', 'Gal', 'Propane Gallons') +
-    '<h2 style="font-size:11px;font-weight:700;color:#7d5a00;margin:8px 0 3px">Propane by Building</h2>' +
+    _barChart(galMonthly, 'var(--rpt-prop-bl)', 'var(--rpt-prop-cur)', 'Gal', 'Propane Gallons') +
+    '<h2 style="font-size:11px;font-weight:700;color:var(--rpt-prop-head);margin:8px 0 3px">Propane by Building</h2>' +
     _table(
       propBldgs,
       function (b) {
@@ -5559,7 +5611,7 @@ function rptPageGasPropane(n, d) {
     );
   return rptPage(n, 'Gas & Propane Consumption Detail', bodyHTML, {
     data: d,
-    label: 'Page ' + n + ' — Gas & Propane Detail',
+    label: 'Page ' + n + ' � Gas & Propane Detail',
   });
 }
 
@@ -5572,19 +5624,19 @@ function rptPageAppendixNormalization(n, d, appLetter) {
     return Math.round(v || 0).toLocaleString();
   };
 
-  var blStart = (d.project && d.project.blStart) || '—';
-  var blEnd = (d.project && d.project.blEnd) || '—';
+  var blStart = (d.project && d.project.blStart) || '�';
+  var blEnd = (d.project && d.project.blEnd) || '�';
 
   var methodBox =
-    '<div contenteditable="true" style="padding:10px 12px;font-size:11px;line-height:1.7;color:#000000;margin-bottom:12px">' +
-    '<strong>Normalization Method:</strong> Regression analysis using Heating Degree Days (HDD) and Cooling Degree Days (CDD) at balance point 60°F, per contract specification.<br>' +
+    '<div contenteditable="true" style="padding:10px 12px;font-size:11px;line-height:1.7;color:var(--rpt-page-text);margin-bottom:12px">' +
+    '<strong>Normalization Method:</strong> Regression analysis using Heating Degree Days (HDD) and Cooling Degree Days (CDD) at balance point 60�F, per contract specification.<br>' +
     '<strong>Baseline Period:</strong> ' +
     blStart +
     ' through ' +
     blEnd +
     '<br>' +
     '<strong>Savings Calculation:</strong> Units saved (weather-normalized baseline minus actual) multiplied by current monthly utility rate.<br>' +
-    '<strong>Regression Model:</strong> Ordinary Least Squares (OLS) with HDD and CDD as independent variables. R² values shown per meter below.' +
+    '<strong>Regression Model:</strong> Ordinary Least Squares (OLS) with HDD and CDD as independent variables. R� values shown per meter below.' +
     '</div>';
 
   // Per-building meter tables using meterDetails from collectReportData
@@ -5608,18 +5660,18 @@ function rptPageAppendixNormalization(n, d, appLetter) {
     if (!details.length) return;
     var meterRows = details
       .map(function (md) {
-        var blPeriod = '—';
+        var blPeriod = '�';
         if (md.blStart && md.blEnd) {
           var s = md.blStart.split('-');
           var e = md.blEnd.split('-');
-          blPeriod = monthNames[parseInt(s[1]) - 1] + ' ' + s[0] + ' – ' + monthNames[parseInt(e[1]) - 1] + ' ' + e[0];
+          blPeriod = monthNames[parseInt(s[1]) - 1] + ' ' + s[0] + ' � ' + monthNames[parseInt(e[1]) - 1] + ' ' + e[0];
         }
         var unitLabel = md.commodity === 'Electric' ? ' kWh' : md.commodity === 'Gas' ? ' Therms' : ' Gallons';
         return (
           '<tr>' +
           '<td contenteditable="true">' +
           md.commodity +
-          (md.account ? ' · ' + md.account : '') +
+          (md.account ? ' � ' + md.account : '') +
           '</td>' +
           '<td contenteditable="true">' +
           blPeriod +
@@ -5634,7 +5686,7 @@ function rptPageAppendixNormalization(n, d, appLetter) {
           $n(md.hdd) +
           '</td>' +
           '<td class="rpt-n" contenteditable="true">' +
-          (md.commodity === 'Electric' ? $n(md.cdd) : '—') +
+          (md.commodity === 'Electric' ? $n(md.cdd) : '�') +
           '</td>' +
           '<td class="rpt-n" contenteditable="true">' +
           $n(md.usagePerYear) +
@@ -5648,12 +5700,12 @@ function rptPageAppendixNormalization(n, d, appLetter) {
       })
       .join('');
     meterTables +=
-      '<div style="font-size:11px;font-weight:700;color:#1a5276;background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
+      '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
       (b.name || 'Building') +
       '</div>' +
       '<table class="rpt-table" style="font-size:10px;margin-bottom:6px">' +
       '<thead><tr>' +
-      '<th>Meter</th><th>Baseline Period</th><th>Regression</th><th class="rpt-n">R²</th>' +
+      '<th>Meter</th><th>Baseline Period</th><th>Regression</th><th class="rpt-n">R�</th>' +
       '<th class="rpt-n">HDD</th><th class="rpt-n">CDD</th><th class="rpt-n">Usage/Year</th><th class="rpt-n">Cost/Year</th>' +
       '</tr></thead><tbody>' +
       meterRows +
@@ -5661,20 +5713,21 @@ function rptPageAppendixNormalization(n, d, appLetter) {
   });
 
   if (!meterTables) {
-    meterTables = '<p style="font-size:10px;color:#000000;font-style:italic">No building meter data available.</p>';
+    meterTables =
+      '<p style="font-size:10px;color:var(--rpt-page-text);font-style:italic">No building meter data available.</p>';
   }
 
   var bodyHTML =
-    '<h2 style="font-size:13px;font-weight:700;color:#000000;margin:0 0 8px">Appendix ' +
+    '<h2 style="font-size:13px;font-weight:700;color:var(--rpt-page-text);margin:0 0 8px">Appendix ' +
     appLetter +
     ': Normalization &amp; Meter Baseline</h2>' +
     methodBox +
-    '<h3 style="font-size:12px;font-weight:700;color:#000;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.04em">Per-Building Meter Detail</h3>' +
+    '<h3 style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:0 0 6px;text-transform:uppercase;letter-spacing:0.04em">Per-Building Meter Detail</h3>' +
     meterTables;
 
   return rptPage(n, 'Appendix ' + appLetter + ': Normalization & Meter Baseline', bodyHTML, {
     data: d,
-    label: 'Page ' + n + ' — Appendix ' + appLetter,
+    label: 'Page ' + n + ' � Appendix ' + appLetter,
   });
 }
 
@@ -5707,12 +5760,12 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
   }
 
   var regressionExplainer =
-    '<div contenteditable="true" style="padding:10px 14px;font-size:11px;line-height:1.7;color:#000000;margin-bottom:12px">' +
-    '<strong style="font-size:12px;color:#1a5276">Regression Model Overview</strong><br>' +
-    'Weather-normalized savings use an OLS regression model: <span style="font-family:monospace;background:#fff;border:1px solid #ddd;padding:1px 4px;border-radius:2px">Usage = β₀ × Days + β₁ × HDD + β₂ × CDD</span><br>' +
-    'Where β₀ = base load per day, β₁ = heating coefficient, β₂ = cooling coefficient. ' +
+    '<div contenteditable="true" style="padding:10px 14px;font-size:11px;line-height:1.7;color:var(--rpt-page-text);margin-bottom:12px">' +
+    '<strong style="font-size:12px;color:var(--rpt-blue)">Regression Model Overview</strong><br>' +
+    'Weather-normalized savings use an OLS regression model: <span style="font-family:var(--rpt-mono);background:var(--rpt-page-bg);border:1px solid var(--rpt-divider);padding:1px 4px;border-radius:2px">Usage = �0 � Days + �1 � HDD + �2 � CDD</span><br>' +
+    'Where �0 = base load per day, �1 = heating coefficient, �2 = cooling coefficient. ' +
     'The model is fit to baseline period data and applied to current weather to predict what consumption <em>would have been</em> without efficiency improvements. ' +
-    'R² values above 0.75 indicate a strong fit.' +
+    'R� values above 0.75 indicate a strong fit.' +
     (appMap.norm ? ' Full regression details are in Appendix ' + appMap.norm + '.' : '') +
     '' +
     '</div>';
@@ -5728,17 +5781,17 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
   (d.buildings || []).forEach(function (b) {
     var meters = b.meterDetails || [];
     var metersWithCoeffs = meters.filter(function (md) {
-      return md.regrCoeffs && md.r2 && md.r2 !== '—';
+      return md.regrCoeffs && md.r2 && md.r2 !== '�';
     });
     // Also include meters that have baseline months but no regression (show baseline data only)
     var metersWithBlOnly = meters.filter(function (md) {
-      return (!md.regrCoeffs || !md.r2 || md.r2 === '—') && md.blMonths && md.blMonths.length;
+      return (!md.regrCoeffs || !md.r2 || md.r2 === '�') && md.blMonths && md.blMonths.length;
     });
     // Skip buildings with no regression data AND no baseline months at all
     if (!metersWithCoeffs.length && !metersWithBlOnly.length) return;
 
     calcHTML +=
-      '<div style="font-size:12px;font-weight:700;color:#1a5276;background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
+      '<div style="font-size:12px;font-weight:700;color:var(--rpt-blue);background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
       (b.name || 'Building') +
       '</div>';
 
@@ -5747,25 +5800,25 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
       var unit = md.commodity === 'Electric' ? 'kWh' : md.commodity === 'Gas' ? 'Therms' : 'Gal';
 
       // Regression equation display
-      var eqn = 'Usage = ' + rc.intercept.toFixed(4) + ' × Days';
+      var eqn = 'Usage = ' + rc.intercept.toFixed(4) + ' � Days';
       if (rc.type === 'dual') {
-        eqn += ' + ' + rc.slopeHDD.toFixed(4) + ' × HDD + ' + rc.slopeCDD.toFixed(4) + ' × CDD';
+        eqn += ' + ' + rc.slopeHDD.toFixed(4) + ' � HDD + ' + rc.slopeCDD.toFixed(4) + ' � CDD';
       } else if (rc.type === 'hdd') {
-        eqn += ' + ' + rc.slope.toFixed(4) + ' × HDD';
+        eqn += ' + ' + rc.slope.toFixed(4) + ' � HDD';
       } else {
-        eqn += ' + ' + rc.slope.toFixed(4) + ' × CDD';
+        eqn += ' + ' + rc.slope.toFixed(4) + ' � CDD';
       }
 
       calcHTML +=
         '<div style="margin:6px 0 4px">' +
-        '<div style="font-size:11px;font-weight:600;color:#000">' +
+        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text)">' +
         md.commodity +
-        ' — ' +
+        ' � ' +
         md.regrType +
-        ' (R² = ' +
+        ' (R� = ' +
         md.r2 +
         ')</div>' +
-        '<div style="font-family:monospace;font-size:10px;background:#f0f4f8;border:1px solid #d0dce8;border-radius:3px;padding:4px 8px;margin:2px 0 6px;color:#1a5276">' +
+        '<div style="font-family:var(--rpt-mono);font-size:10px;background:var(--rpt-code-bg);border:1px solid var(--rpt-code-border);border-radius:3px;padding:4px 8px;margin:2px 0 6px;color:var(--rpt-code-text)">' +
         eqn +
         '</div>' +
         '</div>';
@@ -5826,49 +5879,49 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         predicted = Math.max(0, predicted);
 
         // Show formula breakdown
-        var formulaParts = rc.intercept.toFixed(2) + '×' + days;
+        var formulaParts = rc.intercept.toFixed(2) + '�' + days;
         if (rc.type === 'dual') {
           formulaParts +=
             ' + ' +
             rc.slopeHDD.toFixed(2) +
-            '×' +
+            '�' +
             Math.round(hdd) +
             ' + ' +
             rc.slopeCDD.toFixed(2) +
-            '×' +
+            '�' +
             Math.round(cdd);
         } else if (rc.type === 'hdd') {
-          formulaParts += ' + ' + rc.slope.toFixed(2) + '×' + Math.round(hdd);
+          formulaParts += ' + ' + rc.slope.toFixed(2) + '�' + Math.round(hdd);
         } else {
-          formulaParts += ' + ' + rc.slope.toFixed(2) + '×' + Math.round(cdd);
+          formulaParts += ' + ' + rc.slope.toFixed(2) + '�' + Math.round(cdd);
         }
 
         if (entry.isBaseline) {
-          // Baseline reference row — show predicted only, mark Actual/Saved as BL reference
+          // Baseline reference row � show predicted only, mark Actual/Saved as BL reference
           totBl += predicted;
           rows +=
-            '<tr style="background:#f5f5f5;color:#000">' +
+            '<tr style="background:#f5f5f5;color:var(--rpt-page-text)">' +
             '<td>' +
             moName +
-            ' <span style="font-size:8px;font-weight:700;color:#000000;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span>' +
+            ' <span style="font-size:8px;font-weight:700;color:var(--rpt-page-text);background:var(--rpt-progress-bg);border-radius:2px;padding:0 3px">BL</span>' +
             '</td>' +
-            '<td class="rpt-n" style="color:#000000">' +
+            '<td class="rpt-n" style="color:var(--rpt-page-text)">' +
             days +
             '</td>' +
-            '<td class="rpt-n" style="color:#000000">' +
+            '<td class="rpt-n" style="color:var(--rpt-page-text)">' +
             Math.round(hdd).toLocaleString() +
             '</td>' +
-            '<td class="rpt-n" style="color:#000000">' +
+            '<td class="rpt-n" style="color:var(--rpt-page-text)">' +
             Math.round(cdd).toLocaleString() +
             '</td>' +
-            '<td style="font-family:monospace;font-size:9px;color:#000000;white-space:nowrap">' +
+            '<td style="font-family:monospace;font-size:9px;color:var(--rpt-page-text);white-space:nowrap">' +
             formulaParts +
             '</td>' +
-            '<td class="rpt-n" style="color:#000000">' +
+            '<td class="rpt-n" style="color:var(--rpt-page-text)">' +
             $n(predicted) +
             '</td>' +
-            '<td class="rpt-n" style="color:#000000">—</td>' +
-            '<td class="rpt-n" style="color:#000000">—</td>' +
+            '<td class="rpt-n" style="color:var(--rpt-page-text)">�</td>' +
+            '<td class="rpt-n" style="color:var(--rpt-page-text)">�</td>' +
             '</tr>';
         } else {
           var actual = (entry.moData && entry.moData.cur) || 0;
@@ -5890,7 +5943,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
             '<td class="rpt-n">' +
             Math.round(cdd).toLocaleString() +
             '</td>' +
-            '<td style="font-family:monospace;font-size:9px;color:#000;white-space:nowrap">' +
+            '<td style="font-family:monospace;font-size:9px;color:var(--rpt-page-text);white-space:nowrap">' +
             formulaParts +
             '</td>' +
             '<td class="rpt-n" style="font-weight:600">' +
@@ -5900,7 +5953,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
             $n(actual) +
             '</td>' +
             '<td class="rpt-n" style="color:' +
-            (saved >= 0 ? '#1e8449' : '#c0392b') +
+            (saved >= 0 ? 'var(--rpt-green-dark)' : 'var(--rpt-red)') +
             ';font-weight:600">' +
             $n(saved) +
             '</td>' +
@@ -5918,7 +5971,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         $n(totCur) +
         '</td>' +
         '<td class="rpt-n" style="color:' +
-        (totSav >= 0 ? '#1e8449' : '#c0392b') +
+        (totSav >= 0 ? 'var(--rpt-green-dark)' : 'var(--rpt-red)') +
         '">' +
         $n(totSav) +
         '</td>' +
@@ -5950,9 +6003,9 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
 
       calcHTML +=
         '<div style="margin:6px 0 4px">' +
-        '<div style="font-size:11px;font-weight:600;color:#000">' +
+        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text)">' +
         md.commodity +
-        ' — Baseline Data (no regression model)</div>' +
+        ' � Baseline Data (no regression model)</div>' +
         '</div>';
 
       var rows = '';
@@ -5962,23 +6015,23 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         var days = ym ? _daysInMonth(ym) : 30;
         var wx = wxByYm[ym] || {};
         rows +=
-          '<tr style="background:#f5f5f5;color:#000">' +
+          '<tr style="background:#f5f5f5;color:var(--rpt-page-text)">' +
           '<td>' +
           moName +
-          ' <span style="font-size:8px;font-weight:700;color:#000000;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span></td>' +
-          '<td class="rpt-n" style="color:#000000">' +
+          ' <span style="font-size:8px;font-weight:700;color:var(--rpt-page-text);background:var(--rpt-progress-bg);border-radius:2px;padding:0 3px">BL</span></td>' +
+          '<td class="rpt-n" style="color:var(--rpt-page-text)">' +
           days +
           '</td>' +
-          '<td class="rpt-n" style="color:#000000">' +
+          '<td class="rpt-n" style="color:var(--rpt-page-text)">' +
           Math.round(wx.hddBl || 0).toLocaleString() +
           '</td>' +
-          '<td class="rpt-n" style="color:#000000">' +
+          '<td class="rpt-n" style="color:var(--rpt-page-text)">' +
           Math.round(wx.cddBl || 0).toLocaleString() +
           '</td>' +
-          '<td style="font-size:9px;color:#000000">—</td>' +
-          '<td class="rpt-n" style="color:#000000">—</td>' +
-          '<td class="rpt-n" style="color:#000000">—</td>' +
-          '<td class="rpt-n" style="color:#000000">—</td>' +
+          '<td style="font-size:9px;color:var(--rpt-page-text)">�</td>' +
+          '<td class="rpt-n" style="color:var(--rpt-page-text)">�</td>' +
+          '<td class="rpt-n" style="color:var(--rpt-page-text)">�</td>' +
+          '<td class="rpt-n" style="color:var(--rpt-page-text)">�</td>' +
           '</tr>';
       });
 
@@ -6004,21 +6057,21 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
 
   if (!calcHTML) {
     calcHTML =
-      '<p style="font-size:10px;color:#000000;font-style:italic">No regression data available for calculation display.</p>';
+      '<p style="font-size:10px;color:var(--rpt-page-text);font-style:italic">No regression data available for calculation display.</p>';
   }
 
   var bodyHTML =
-    '<h2 style="font-size:13px;font-weight:700;color:#000000;margin:0 0 4px">Appendix ' +
+    '<h2 style="font-size:13px;font-weight:700;color:var(--rpt-page-text);margin:0 0 4px">Appendix ' +
     appLetter +
     ': Regression Model Methodology</h2>' +
-    '<div style="font-size:11px;color:#000;margin-bottom:8px">Weather-normalized baseline calculations per building and commodity</div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Weather-normalized baseline calculations per building and commodity</div>' +
     regressionExplainer +
-    '<h3 style="font-size:12px;font-weight:700;color:#000;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.04em">Monthly Baseline Calculations</h3>' +
+    '<h3 style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:8px 0 4px;text-transform:uppercase;letter-spacing:.04em">Monthly Baseline Calculations</h3>' +
     calcHTML;
 
   return rptPage(n, 'Appendix ' + appLetter + ': Regression Model Methodology', bodyHTML, {
     data: d,
-    label: 'Page ' + n + ' — Appendix ' + appLetter,
+    label: 'Page ' + n + ' � Appendix ' + appLetter,
   });
 }
 
@@ -6052,7 +6105,7 @@ function rptPageAppendixWeather(n, d, appLetter) {
     'December',
   ];
   function _wFmtDate(ym) {
-    if (!ym) return '—';
+    if (!ym) return '�';
     var parts = ym.split('-');
     var mi = parseInt(parts[1], 10) - 1;
     return (_wMoNames[mi] || ym) + ' ' + parts[0];
@@ -6070,12 +6123,12 @@ function rptPageAppendixWeather(n, d, appLetter) {
       totCddBl += cddBl;
       totCddCur += cddCur;
     }
-    var rowStyle = ip ? '' : 'color:#000;background:#f8f8f8';
+    var rowStyle = ip ? '' : 'color:var(--rpt-page-text);background:#f8f8f8';
     var hddVal = ip ? hddCur : hddBl;
     var cddVal = ip ? cddCur : cddBl;
     var badge = ip
       ? ''
-      : ' <span style="font-size:8px;font-weight:700;color:#000000;background:#e8e8e8;border-radius:2px;padding:0 3px">BL</span>';
+      : ' <span style="font-size:8px;font-weight:700;color:var(--rpt-page-text);background:var(--rpt-progress-bg);border-radius:2px;padding:0 3px">BL</span>';
     tableRows +=
       '<tr style="' +
       rowStyle +
@@ -6095,7 +6148,7 @@ function rptPageAppendixWeather(n, d, appLetter) {
 
   if (!tableRows) {
     tableRows =
-      '<tr><td colspan="7" style="color:#000000;font-style:italic">No weather data for this period. Enter HDD/CDD in project settings.</td></tr>';
+      '<tr><td colspan="7" style="color:var(--rpt-page-text);font-style:italic">No weather data for this period. Enter HDD/CDD in project settings.</td></tr>';
   } else {
     var totHddVar = totHddBl > 0 ? ((totHddCur - totHddBl) / totHddBl) * 100 : 0;
     var totCddVar = totCddBl > 0 ? ((totCddCur - totCddBl) / totCddBl) * 100 : 0;
@@ -6121,12 +6174,12 @@ function rptPageAppendixWeather(n, d, appLetter) {
       '<tr class="rpt-tot">' +
       '<td>Variance</td>' +
       '<td class="rpt-n" style="' +
-      (Math.abs(totHddVar) > 10 ? 'color:#c0392b;font-weight:600' : '') +
+      (Math.abs(totHddVar) > 10 ? 'color:var(--rpt-variance);font-weight:600' : '') +
       '">' +
       $p(totHddVar) +
       '</td>' +
       '<td class="rpt-n" style="' +
-      (Math.abs(totCddVar) > 10 ? 'color:#c0392b;font-weight:600' : '') +
+      (Math.abs(totCddVar) > 10 ? 'color:var(--rpt-variance);font-weight:600' : '') +
       '">' +
       $p(totCddVar) +
       '</td>' +
@@ -6175,10 +6228,10 @@ function rptPageAppendixWeather(n, d, appLetter) {
       cddNote ||
       'Weather conditions during the reporting period were within normal range of the baseline average. ') +
     'Weather-normalized savings figures reflect genuine performance improvements and are not attributable to weather effects. ' +
-    'Balance point: 60°F per contract specification.';
+    'Balance point: 60�F per contract specification.';
 
   var narrativeBox =
-    '<div contenteditable="true" style="padding:10px 12px;font-size:11px;line-height:1.7;color:#000000;margin-top:10px">' +
+    '<div contenteditable="true" style="padding:10px 12px;font-size:11px;line-height:1.7;color:var(--rpt-page-text);margin-top:10px">' +
     narrativeText +
     '</div>';
 
@@ -6201,7 +6254,7 @@ function rptPageAppendixWeather(n, d, appLetter) {
         ? Math.round(((d.weather.totals.cddCur - d.weather.totals.cddBl) / d.weather.totals.cddBl) * 100)
         : 0;
     hddCddParagraph =
-      '<div contenteditable="true" style="margin-top:10px;font-size:11px;color:#000000;line-height:1.7">' +
+      '<div contenteditable="true" style="margin-top:10px;font-size:11px;color:var(--rpt-page-text);line-height:1.7">' +
       'Heating degree days (HDD) for the period were ' +
       pHDD +
       ' vs. a baseline average of ' +
@@ -6222,16 +6275,16 @@ function rptPageAppendixWeather(n, d, appLetter) {
       '</div>';
   }
   var bodyHTML =
-    '<h2 style="font-size:13px;font-weight:700;color:#000000;margin:0 0 4px">Appendix ' +
+    '<h2 style="font-size:13px;font-weight:700;color:var(--rpt-page-text);margin:0 0 4px">Appendix ' +
     appLetter +
     ': Weather Data</h2>' +
-    '<div style="font-size:11px;color:#000;margin-bottom:10px">Combined HDD and CDD — Base 60°F per contract</div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:10px">Combined HDD and CDD � Base 60�F per contract</div>' +
     weatherTable +
-    '<h3 style="font-size:12px;font-weight:700;color:#000;margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.04em">Weather Impact Summary</h3>' +
+    '<h3 style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.04em">Weather Impact Summary</h3>' +
     narrativeBox +
     hddCddParagraph +
-    '<div style="margin-top:16px;padding:10px 12px;font-size:11px;color:#000000;line-height:1.5">' +
-    '<div style="font-weight:700;font-size:11px;color:#000000;margin-bottom:6px">What is a degree day?</div>' +
+    '<div style="margin-top:16px;padding:10px 12px;font-size:11px;color:var(--rpt-page-text);line-height:1.5">' +
+    '<div style="font-weight:700;font-size:11px;color:var(--rpt-page-text);margin-bottom:6px">What is a degree day?</div>' +
     '<div style="margin-bottom:6px">A degree day is a measure of relative heating and cooling energy required by buildings. It&#39;s calculated as the difference between the average daily temperature and the balance point temperature (60 degrees). When the average daily temperature is above the balance point, the result is cooling degree days; when below, the result is heating degree days.</div>' +
     '<div style="margin-bottom:6px"><strong>Example 1:</strong> Average daily temperature = 80. Balance point = 60. Cooling degree days = 20 CDD. (80-60=20)</div>' +
     '<div style="margin-bottom:6px"><strong>Example 2:</strong> Average daily temperature = 45. Balance point = 60. Heating degree days = 15 HDD. (60-45=15)</div>' +
@@ -6241,7 +6294,7 @@ function rptPageAppendixWeather(n, d, appLetter) {
 
   return rptPage(n, 'Appendix ' + appLetter + ': Weather Data', bodyHTML, {
     data: d,
-    label: 'Page ' + n + ' — Appendix ' + appLetter,
+    label: 'Page ' + n + ' � Appendix ' + appLetter,
   });
 }
 
@@ -6268,7 +6321,7 @@ function rptPageAppendixBills(n, d, appLetter) {
   ];
 
   function _fmtBillDate(dateStr) {
-    if (!dateStr) return '—';
+    if (!dateStr) return '�';
     var d2 = new Date(dateStr + 'T00:00:00');
     if (isNaN(d2)) return dateStr;
     return d2.getMonth() + 1 + '/' + d2.getDate() + '/' + d2.getFullYear();
@@ -6289,7 +6342,8 @@ function rptPageAppendixBills(n, d, appLetter) {
   var sections = '';
   var allBillImages = '';
   if (!periodYMs.length) {
-    sections = '<p style="font-size:10px;color:#000000;font-style:italic">No reporting period months configured.</p>';
+    sections =
+      '<p style="font-size:10px;color:var(--rpt-page-text);font-style:italic">No reporting period months configured.</p>';
   } else {
     periodYMs.forEach(function (ym) {
       var parts = ym.split('-');
@@ -6297,7 +6351,8 @@ function rptPageAppendixBills(n, d, appLetter) {
       var bills = billsByMonth[ym] || [];
       var rows = '';
       if (!bills.length) {
-        rows = '<tr><td colspan="9" style="color:#000000;font-style:italic">No bills recorded for this month</td></tr>';
+        rows =
+          '<tr><td colspan="9" style="color:var(--rpt-page-text);font-style:italic">No bills recorded for this month</td></tr>';
       } else {
         bills.forEach(function (bill) {
           var _kwh = bill.kwh || bill.kwhUsage || 0;
@@ -6313,22 +6368,22 @@ function rptPageAppendixBills(n, d, appLetter) {
             bill.commodity +
             '</td>' +
             '<td contenteditable="true">' +
-            (bill.provider || '—') +
+            (bill.provider || '�') +
             '</td>' +
             '<td class="rpt-n" contenteditable="true">' +
-            (_kwh ? Math.round(_kwh).toLocaleString() : '—') +
+            (_kwh ? Math.round(_kwh).toLocaleString() : '�') +
             '</td>' +
             '<td class="rpt-n" contenteditable="true">' +
-            (_kw ? Math.round(_kw).toLocaleString() : '—') +
+            (_kw ? Math.round(_kw).toLocaleString() : '�') +
             '</td>' +
             '<td class="rpt-n" contenteditable="true">' +
-            (_therms ? Math.round(_therms).toLocaleString() : '—') +
+            (_therms ? Math.round(_therms).toLocaleString() : '�') +
             '</td>' +
             '<td class="rpt-n" contenteditable="true">' +
-            (_gal ? Math.round(_gal).toLocaleString() : '—') +
+            (_gal ? Math.round(_gal).toLocaleString() : '�') +
             '</td>' +
             '<td class="rpt-n" contenteditable="true">' +
-            (bill.amount ? $c(bill.amount) : '—') +
+            (bill.amount ? $c(bill.amount) : '�') +
             '</td>' +
             '<td contenteditable="true">' +
             _fmtBillDate(bill.billDate || bill.start) +
@@ -6339,19 +6394,19 @@ function rptPageAppendixBills(n, d, appLetter) {
       bills.forEach(function (bill) {
         if (bill.pdfImage) {
           allBillImages +=
-            '<div style="display:inline-block;margin:4px 6px 4px 0;border:1px solid #ccc;border-radius:3px;overflow:hidden"><img src="' +
+            '<div style="display:inline-block;margin:4px 6px 4px 0;border:1px solid var(--rpt-divider);border-radius:3px;overflow:hidden"><img src="' +
             bill.pdfImage +
-            '" style="height:120px;width:auto;display:block"><div style="font-size:9px;color:#000;padding:2px 4px;background:#f8f8f8;text-align:center">' +
+            '" style="height:120px;width:auto;display:block"><div style="font-size:9px;color:var(--rpt-page-text);padding:2px 4px;background:#f8f8f8;text-align:center">' +
             bill.building +
-            ' · ' +
+            ' � ' +
             bill.commodity +
-            ' · ' +
+            ' � ' +
             moLabel +
             '</div></div>';
         }
       });
       sections +=
-        '<div style="font-size:11px;font-weight:700;color:#1a5276;background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
+        '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);background:#e8f0f8;padding:4px 8px;border-radius:3px;margin:10px 0 4px">' +
         moLabel +
         '</div>' +
         '<table class="rpt-table" style="font-size:10px;margin-bottom:6px">' +
@@ -6364,8 +6419,8 @@ function rptPageAppendixBills(n, d, appLetter) {
   }
 
   var billImagesSection = allBillImages
-    ? '<div style="margin-top:16px;border-top:1px solid #ddd;padding-top:10px">' +
-      '<div style="font-size:12px;font-weight:700;color:#1a5276;margin-bottom:6px">Scanned Bill Images</div>' +
+    ? '<div style="margin-top:16px;border-top:1px solid var(--rpt-divider);padding-top:10px">' +
+      '<div style="font-size:12px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Scanned Bill Images</div>' +
       '<div style="display:flex;flex-wrap:wrap">' +
       allBillImages +
       '</div></div>'
@@ -6373,24 +6428,24 @@ function rptPageAppendixBills(n, d, appLetter) {
 
   var _hasBillImages = allBillImages.length > 0;
   var footerNote =
-    '<div style="margin-top:12px;font-size:10px;color:#000000;font-style:italic;border-top:1px solid #ddd;padding-top:6px">' +
+    '<div style="margin-top:12px;font-size:10px;color:var(--rpt-page-text);font-style:italic;border-top:1px solid var(--rpt-divider);padding-top:6px">' +
     (_hasBillImages
       ? 'Bill thumbnails shown above are rendered from stored PDF files.'
       : 'No scanned bill images available. Upload PDFs in the Energy Department to include bill images in future reports.') +
     '</div>';
 
   var bodyHTML =
-    '<h2 style="font-size:13px;font-weight:700;color:#000000;margin:0 0 4px">Appendix ' +
+    '<h2 style="font-size:13px;font-weight:700;color:var(--rpt-page-text);margin:0 0 4px">Appendix ' +
     appLetter +
     ': Utility Bills</h2>' +
-    '<div style="font-size:11px;color:#000;margin-bottom:10px">Original utility bill PDFs for the reporting period</div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:10px">Original utility bill PDFs for the reporting period</div>' +
     sections +
     billImagesSection +
     footerNote;
 
   return rptPage(n, 'Appendix ' + appLetter + ': Utility Bills', bodyHTML, {
     data: d,
-    label: 'Page ' + n + ' — Appendix ' + appLetter,
+    label: 'Page ' + n + ' � Appendix ' + appLetter,
   });
 }
 
@@ -6418,18 +6473,18 @@ function saveReportToHistory() {
   while (history.length > 3) history.pop();
   try {
     localStorage.setItem('en_report_history', JSON.stringify(history));
-    showToast('Report saved to history ✓');
+    showToast('Report saved to history ?');
   } catch (e) {
     // If still too large, remove oldest until it fits
     while (history.length > 1) {
       history.pop();
       try {
         localStorage.setItem('en_report_history', JSON.stringify(history));
-        showToast('Report saved (older reports removed to free storage) ✓');
+        showToast('Report saved (older reports removed to free storage) ?');
         return;
       } catch (e2) {}
     }
-    showToast('Save failed — storage full. Delete older reports first.');
+    showToast('Save failed � storage full. Delete older reports first.');
   }
 }
 
@@ -6450,12 +6505,12 @@ function openReportHistory(projId) {
         return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;background:var(--s2);margin-bottom:6px">
               <div>
                 <div style="font-size:13px;font-weight:600;color:var(--text)">${entry.period} ${entry.type === 'quarterly' ? 'Quarterly' : 'Annual'}</div>
-                <div style="font-size:11px;color:var(--text3)">${entry.projectName} • Saved ${dateStr} ${timeStr}</div>
+                <div style="font-size:11px;color:var(--text3)">${entry.projectName} � Saved ${dateStr} ${timeStr}</div>
               </div>
               <div style="display:flex;gap:6px">
                 <button onclick="reopenReport('${entry.id}')" style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid var(--s3);background:var(--s1);color:var(--text);cursor:pointer">Open</button>
                 <button onclick="reexportReport('${entry.id}')" style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid var(--s3);background:var(--s1);color:var(--text);cursor:pointer">Export PDF</button>
-                <button onclick="deleteReport('${entry.id}')" style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid var(--s3);background:var(--s1);color:var(--text3);cursor:pointer">✕</button>
+                <button onclick="deleteReport('${entry.id}')" style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid var(--s3);background:var(--s1);color:var(--text3);cursor:pointer">?</button>
               </div>
             </div>`;
       })
@@ -6474,7 +6529,7 @@ function reopenReport(entryId) {
   }
 
   document.getElementById('reportHistoryModal').style.display = 'none';
-  showReportOverlay(entry.html, `${entry.projectName} — ${entry.period} (saved)`);
+  showReportOverlay(entry.html, `${entry.projectName} � ${entry.period} (saved)`);
 }
 
 async function reexportReport(entryId) {
@@ -6520,7 +6575,7 @@ async function exportReportToPDF() {
   const originalBtnText = exportBtn ? exportBtn.textContent : '';
   if (exportBtn) {
     exportBtn.disabled = true;
-    exportBtn.textContent = '⏳ Generating...';
+    exportBtn.textContent = '? Generating...';
   }
 
   showToast('Generating PDF... this may take a moment');
@@ -6564,7 +6619,7 @@ async function exportReportToPDF() {
     const filename = client + ' - ' + typeLabel + ' Savings Report ' + dateStr + '.pdf';
 
     doc.save(filename);
-    showToast('Report exported to PDF ✓');
+    showToast('Report exported to PDF ?');
   } catch (err) {
     console.error('PDF export failed:', err);
     showToast('PDF export failed: ' + (err.message || 'Unknown error'), 'error');
@@ -6572,12 +6627,12 @@ async function exportReportToPDF() {
     // Restore button state
     if (exportBtn) {
       exportBtn.disabled = false;
-      exportBtn.textContent = originalBtnText || '📄 Export to PDF';
+      exportBtn.textContent = originalBtnText || '?? Export to PDF';
     }
   }
 }
 
-/* ── QUARTERLY / ANNUAL PERFORMANCE REPORTS ── */
+/* -- QUARTERLY / ANNUAL PERFORMANCE REPORTS -- */
 
 let _reportProjId = null,
   _reportType = null;
@@ -6603,9 +6658,9 @@ const REPORT_SECTIONS = [
   { key: 'appendixD', label: 'Appendix D: Utility Bills', group: 'Appendices', defaultOff: true },
 ];
 
-// ═══════════════════════════════════════════════════
-// NEW REPORT GENERATION MODAL V2 — from Energy Graphics
-// ═══════════════════════════════════════════════════
+// ---------------------------------------------------
+// NEW REPORT GENERATION MODAL V2 � from Energy Graphics
+// ---------------------------------------------------
 
 var _rptV2ProjId = null;
 
@@ -6621,7 +6676,7 @@ function openReportModalV2(projId) {
     // Show the modal with an empty-state message instead of silently returning
     document.getElementById('reportGenModalBody').innerHTML =
       '<div style="text-align:center;padding:32px 16px">' +
-      '<div style="font-size:36px;margin-bottom:12px">📊</div>' +
+      '<div style="font-size:36px;margin-bottom:12px">??</div>' +
       '<div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:8px">No Buildings With Utility Data</div>' +
       '<div style="font-size:13px;color:var(--text2);line-height:1.5;max-width:360px;margin:0 auto">' +
       'To generate a report, first add buildings and enter utility bill data on the <strong>Utility Data</strong> tab, then set a baseline.' +
@@ -6646,7 +6701,7 @@ function openReportModalV2(projId) {
   html += '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px">Template</div>';
   html +=
     '<select id="rptV2Template" onchange="_rptV2LoadTemplate(this.value)" style="width:100%;padding:7px 10px;border:1px solid var(--s3);border-radius:6px;background:var(--s1);color:var(--text);font-size:13px">';
-  html += '<option value="">— Custom —</option>';
+  html += '<option value="">� Custom �</option>';
   templates.forEach(function (t) {
     html += '<option value="' + t.name + '">' + t.name + '</option>';
   });
@@ -6830,10 +6885,10 @@ function _rptV2WarnHtml(projId, tab, subTab) {
   var callArgs = subTab ? projId + ",'" + tab + "','" + subTab + "'" : projId + ",'" + tab + "'";
   return (
     '<span style="display:flex;align-items:center;gap:4px;margin-left:auto">' +
-    '<span style="font-size:10px;color:var(--warn);font-weight:600">⚠ Empty</span>' +
+    '<span style="font-size:10px;color:var(--warn);font-weight:600">? Empty</span>' +
     '<button type="button" onclick="event.preventDefault();event.stopPropagation();_rptV2GoEdit(' +
     callArgs +
-    ')" style="font-size:10px;padding:1px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--em);cursor:pointer;font-weight:600;line-height:1.4">Edit ↗</button>' +
+    ')" style="font-size:10px;padding:1px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--em);cursor:pointer;font-weight:600;line-height:1.4">Edit ?</button>' +
     '</span>'
   );
 }
@@ -7010,12 +7065,12 @@ function openReportModal(projId, type) {
     if (sec.key === 'approvedChanges') {
       const hasChanges = p && p.approvedChanges && p.approvedChanges.length > 0;
       if (!hasChanges)
-        emptyWarn = `<span style="display:flex;align-items:center;gap:6px;margin-left:auto"><span style="font-size:10px;color:var(--warn);font-weight:600">⚠ Empty</span><button type="button" onclick="event.preventDefault();event.stopPropagation();_rptGoEdit(${projId},'docs')" style="font-size:10px;padding:1px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--em);cursor:pointer;font-weight:600;line-height:1.4">Edit ↗</button></span>`;
+        emptyWarn = `<span style="display:flex;align-items:center;gap:6px;margin-left:auto"><span style="font-size:10px;color:var(--warn);font-weight:600">? Empty</span><button type="button" onclick="event.preventDefault();event.stopPropagation();_rptGoEdit(${projId},'docs')" style="font-size:10px;padding:1px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--em);cursor:pointer;font-weight:600;line-height:1.4">Edit ?</button></span>`;
     }
     if (sec.key === 'setpoints') {
       const hasSetpoints = p && p.setpoints && p.setpoints.length > 0;
       if (!hasSetpoints)
-        emptyWarn = `<span style="display:flex;align-items:center;gap:6px;margin-left:auto"><span style="font-size:10px;color:var(--warn);font-weight:600">⚠ Empty</span><button type="button" onclick="event.preventDefault();event.stopPropagation();_rptGoEdit(${projId},'setpoints')" style="font-size:10px;padding:1px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--em);cursor:pointer;font-weight:600;line-height:1.4">Edit ↗</button></span>`;
+        emptyWarn = `<span style="display:flex;align-items:center;gap:6px;margin-left:auto"><span style="font-size:10px;color:var(--warn);font-weight:600">? Empty</span><button type="button" onclick="event.preventDefault();event.stopPropagation();_rptGoEdit(${projId},'setpoints')" style="font-size:10px;padding:1px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--em);cursor:pointer;font-weight:600;line-height:1.4">Edit ?</button></span>`;
     }
     sectionHTML += `<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;background:var(--s2);cursor:pointer">
             <input type="checkbox" ${isChecked} data-section="${sec.key}" style="accent-color:var(--em);width:14px;height:14px">
@@ -7146,7 +7201,7 @@ async function launchNewReport() {
 
   // Generate and show
   const html = generateReportHTML(data, selectedSections);
-  const title = `${data.project.client} — ${data.period.label} ${type === 'quarterly' ? 'Quarterly' : 'Annual'} Report`;
+  const title = `${data.project.client} � ${data.period.label} ${type === 'quarterly' ? 'Quarterly' : 'Annual'} Report`;
   showReportOverlay(html, title);
 }
 
@@ -7162,7 +7217,7 @@ function launchReport() {
   _legacyGeneratePerformanceReport(_reportProjId, _reportType, ids, reportDate);
 }
 
-// Legacy report generator — kept as fallback, replaced by new template-engine system (Tasks 1-21)
+// Legacy report generator � kept as fallback, replaced by new template-engine system (Tasks 1-21)
 function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateStr) {
   const p = projects.find((x) => x.id === projId);
   if (!p) return;
@@ -7221,16 +7276,16 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
     if (y + needed > ph - 70) newPage();
   }
 
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
   // GATHER ALL DATA UP FRONT
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
 
   let allPostYMs = [];
   const allBldgMeters = [];
   bldgs.forEach((b) => {
     (b.meters || []).forEach((m) => {
       if (m.baselineInclude === false) return;
-      // Only include energy commodities — exclude water, sewer, stormwater
+      // Only include energy commodities � exclude water, sewer, stormwater
       const energyCommodities = ['Electric', 'Gas', 'Propane'];
       if (!energyCommodities.includes(m.commodity)) return;
       const bl = m.baseline;
@@ -7498,7 +7553,7 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
       else pctileLabel = 'Bottom 25%';
     }
 
-    // Per-year EUI — only include years with >= 10 months of data
+    // Per-year EUI � only include years with >= 10 months of data
     const euiByYear = {};
     Object.entries(yearUsage).forEach(([yr, u]) => {
       const moCount = yearMonthCount[yr] ? yearMonthCount[yr].size : 0;
@@ -7639,9 +7694,9 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
   const expHDD = blAvgHDDperMo * rpMeterMonths;
   const expCDD = blAvgCDDperMo * rpMeterMonths;
 
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
   // PAGE 1: COVER + EXECUTIVE SUMMARY
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
 
   try {
     doc.addImage(CSC_HEADER_B64, 'JPEG', 0, 0, pw, 145);
@@ -7774,9 +7829,9 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
 
   addFooter();
 
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
   // PAGE 2: BUILDING PERFORMANCE TABLE + TREND
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
 
   doc.addPage();
   pageNum++;
@@ -7937,9 +7992,9 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
 
   addFooter();
 
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
   // PAGE 3: EUI BENCHMARKING
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
 
   doc.addPage();
   pageNum++;
@@ -8149,7 +8204,7 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
       cx += nameColW;
       const dYears = allYears.map((yr) => d.euiByYear[yr] || null);
       dYears.forEach((v) => {
-        doc.text(v != null ? v.toFixed(1) : '—', cx, y);
+        doc.text(v != null ? v.toFixed(1) : '�', cx, y);
         cx += yrColW;
       });
       const validYears = dYears.filter((v) => v != null);
@@ -8175,9 +8230,9 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
 
   addFooter();
 
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
   // PAGE 4: PROJECTED SAVINGS
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
 
   doc.addPage();
   pageNum++;
@@ -8270,9 +8325,9 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
 
   addFooter();
 
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
   // PAGE 5: ENVIRONMENTAL IMPACT
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
 
   doc.addPage();
   pageNum++;
@@ -8280,7 +8335,7 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
-  doc.text('Environmental Impact — Pollution Equivalents Saved', ml, y);
+  doc.text('Environmental Impact � Pollution Equivalents Saved', ml, y);
   y += 6;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
@@ -8356,7 +8411,7 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
   const envBoxH = 52;
   const envItems = [
     {
-      label: 'CO₂ Avoided',
+      label: 'CO2 Avoided',
       value: Math.abs(totalCO2).toFixed(1) + ' metric tons/yr',
       sub: Math.round(Math.abs(lbsCO2)).toLocaleString() + ' lbs/yr',
     },
@@ -8407,7 +8462,7 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.5);
-  const eCols = ['Energy Source', 'Annual Savings', 'CO₂ Factor', 'CO₂ ' + co2Label];
+  const eCols = ['Energy Source', 'Annual Savings', 'CO2 Factor', 'CO2 ' + co2Label];
   const eW = [contentW * 0.25, contentW * 0.25, contentW * 0.25, contentW * 0.25];
   cx = ml;
   eCols.forEach((c, i) => {
@@ -8469,8 +8524,8 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
   doc.setTextColor(120, 120, 120);
   const epaNote = doc.splitTextToSize(
     'Conversion factors: EPA eGRID (electricity, Kansas/SPP region), EPA GHG Equivalencies Calculator. ' +
-      '1 passenger car = 4.6 MT CO₂/yr. 1 tree seedling grown 10 years = 0.06 MT CO₂. 1 home = 8.9 MT CO₂/yr. ' +
-      '1 acre US forest = 0.84 MT CO₂/yr.',
+      '1 passenger car = 4.6 MT CO2/yr. 1 tree seedling grown 10 years = 0.06 MT CO2. 1 home = 8.9 MT CO2/yr. ' +
+      '1 acre US forest = 0.84 MT CO2/yr.',
     contentW,
   );
   epaNote.forEach((line) => {
@@ -8481,9 +8536,9 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
 
   addFooter();
 
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
   // PAGE 6: OBSERVATIONS & RECOMMENDATIONS
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
 
   doc.addPage();
   pageNum++;
@@ -8631,9 +8686,9 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
 
   addFooter();
 
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
   // PAGE 6: BASELINE METHODOLOGY APPENDIX
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
 
   doc.addPage();
   pageNum++;
@@ -8731,9 +8786,9 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
 
   addFooter();
 
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
   // SAVE PDF
-  // ═══════════════════════════════════════════
+  // -------------------------------------------
 
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '.');
   const filename =
@@ -8744,11 +8799,11 @@ function _legacyGeneratePerformanceReport(projId, type, buildingIds, reportDateS
     dateStr +
     '.pdf';
   doc.save(filename);
-  showToast(type === 'quarterly' ? 'Quarterly report generated ✓' : 'Annual report generated ✓');
+  showToast(type === 'quarterly' ? 'Quarterly report generated ?' : 'Annual report generated ?');
 }
-/* ── SESSION PERSISTENCE ── */
+/* -- SESSION PERSISTENCE -- */
 
-// ── Projects page ──
+// -- Projects page --
 function saveProjSession() {
   const isDetail = document.getElementById('projDetailView')?.style.display !== 'none';
   sessionStorage.setItem(
@@ -8765,7 +8820,7 @@ function restoreProjSession() {
   try {
     const s = JSON.parse(sessionStorage.getItem('ch_proj') || '{}');
     if (s.view === 'detail' && s.projId != null) {
-      // projId may be string after JSON parse — coerce to match project id type
+      // projId may be string after JSON parse � coerce to match project id type
       const p = projects.find((p) => p.id == s.projId);
       if (p) {
         openDetail(p.id);
@@ -8780,7 +8835,7 @@ function restoreProjSession() {
   }
 }
 
-// ── Utility Data ──
+// -- Utility Data --
 function saveUDSession() {
   sessionStorage.setItem(
     'ch_ud',
@@ -8894,7 +8949,7 @@ function initUtilityTool() {
       const storedVer = localStorage.getItem(_CH_VER_KEY);
       if (storedVer && storedVer !== fetchedVer) {
         _savePageStateForVersionUpdate();
-        showToast('Site updated to ' + fetchedVer + ' — your in-progress work has been preserved');
+        showToast('Site updated to ' + fetchedVer + ' � your in-progress work has been preserved');
       }
       localStorage.setItem(_CH_VER_KEY, fetchedVer);
     })
@@ -8961,7 +9016,7 @@ function openBldgModalForProj(projId, editId) {
   openBldgModal(editId || null);
 }
 
-/* ── CLIENT CONTACTS ── */
+/* -- CLIENT CONTACTS -- */
 let _modalContacts = [];
 
 function _ccField(id) {
@@ -8994,7 +9049,7 @@ function saveContactRow() {
   };
   if (editIdx !== '') {
     _modalContacts[parseInt(editIdx)] = entry;
-    showToast('Contact updated ✓');
+    showToast('Contact updated ?');
   } else {
     _modalContacts.push(entry);
   }
@@ -9002,7 +9057,7 @@ function saveContactRow() {
   renderModalContacts();
 }
 
-/* kept for backward compat — old HTML called addContactRow */
+/* kept for backward compat � old HTML called addContactRow */
 function addContactRow() {
   saveContactRow();
 }
@@ -9019,7 +9074,7 @@ function startEditContact(idx) {
   const lbl = document.getElementById('cc-add-label');
   if (lbl) lbl.textContent = 'Editing: ' + (ct.first || '') + ' ' + (ct.last || '');
   const saveBtn = document.getElementById('cc-save-btn');
-  if (saveBtn) saveBtn.textContent = '💾 Save Changes';
+  if (saveBtn) saveBtn.textContent = '?? Save Changes';
   const cancelBtn = document.getElementById('cc-cancel-edit-btn');
   if (cancelBtn) cancelBtn.style.display = '';
   // Scroll add-row into view
@@ -9049,7 +9104,7 @@ function renderModalContacts() {
   if (!wrap) return;
   const editIdx = _ccVal('cc-edit-idx');
   if (!_modalContacts.length) {
-    wrap.innerHTML = '<div class="cc-empty">No contacts yet — fill in the fields below and click + Add Contact.</div>';
+    wrap.innerHTML = '<div class="cc-empty">No contacts yet � fill in the fields below and click + Add Contact.</div>';
     return;
   }
   wrap.innerHTML = _modalContacts
@@ -9057,17 +9112,17 @@ function renderModalContacts() {
       const isEditing = editIdx !== '' && parseInt(editIdx) === i;
       return `<div class="cc-row${isEditing ? ' cc-row-editing' : ''}" id="ccrow-${ct.id}">
             <div class="cc-order-btns">
-              <button class="cc-order-btn" onclick="moveContact(${i},-1)" ${i === 0 ? 'disabled' : ''} title="Move up">▲</button>
-              <button class="cc-order-btn" onclick="moveContact(${i},1)"  ${i === _modalContacts.length - 1 ? 'disabled' : ''} title="Move down">▼</button>
+              <button class="cc-order-btn" onclick="moveContact(${i},-1)" ${i === 0 ? 'disabled' : ''} title="Move up">?</button>
+              <button class="cc-order-btn" onclick="moveContact(${i},1)"  ${i === _modalContacts.length - 1 ? 'disabled' : ''} title="Move down">?</button>
             </div>
             <div class="cc-field">
               <div style="font-weight:600;font-size:12px;margin-bottom:2px">${ct.first || ''} ${ct.last || ''}</div>
               ${ct.title ? `<span class="cc-title-badge">${ct.title}</span>` : ''}
             </div>
-            <div class="cc-field" style="font-size:11px">${ct.phone || '<span style="color:var(--text3)">—</span>'}</div>
-            <div class="cc-field" style="font-size:11px;word-break:break-all">${ct.email || '<span style="color:var(--text3)">—</span>'}</div>
-            <button class="btn btn-ghost btn-sm" onclick="startEditContact(${i})" title="Edit contact" style="padding:2px 8px;font-size:10px">✏️</button>
-            <button class="btn-del" onclick="removeContact(${i})" title="Remove">✕</button>
+            <div class="cc-field" style="font-size:11px">${ct.phone || '<span style="color:var(--text3)">�</span>'}</div>
+            <div class="cc-field" style="font-size:11px;word-break:break-all">${ct.email || '<span style="color:var(--text3)">�</span>'}</div>
+            <button class="btn btn-ghost btn-sm" onclick="startEditContact(${i})" title="Edit contact" style="padding:2px 8px;font-size:10px">??</button>
+            <button class="btn-del" onclick="removeContact(${i})" title="Remove">?</button>
           </div>`;
     })
     .join('');
@@ -9088,26 +9143,26 @@ function removeContact(idx) {
   renderModalContacts();
 }
 
-/* ── CONTACTS DISPLAY IN PROJECT DETAIL TAB ── */
+/* -- CONTACTS DISPLAY IN PROJECT DETAIL TAB -- */
 function buildContactsDetailHTML(contacts, projId) {
   const icons = {
-    Owner: '👤',
-    'Facilities Director': '🏢',
-    'Facilities Manager': '🔧',
-    'Energy Manager': '⚡',
-    'Project Manager': '📋',
-    Engineer: '⚙️',
-    'Maintenance Supervisor': '🛠️',
-    'Operations Manager': '📊',
-    'Procurement Officer': '💼',
-    'Financial Officer': '💰',
-    'IT Director': '🖥️',
-    'Executive Director': '🏛️',
-    Superintendent: '🎓',
-    Other: '👤',
+    Owner: '??',
+    'Facilities Director': '??',
+    'Facilities Manager': '??',
+    'Energy Manager': '?',
+    'Project Manager': '??',
+    Engineer: '??',
+    'Maintenance Supervisor': '???',
+    'Operations Manager': '??',
+    'Procurement Officer': '??',
+    'Financial Officer': '??',
+    'IT Director': '???',
+    'Executive Director': '???',
+    Superintendent: '??',
+    Other: '??',
   };
   if (!contacts || !contacts.length) {
-    return `<div class="cc-empty">No contacts yet —
+    return `<div class="cc-empty">No contacts yet �
             <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="editProj(${projId})">+ Add Contacts</button></div>`;
   }
   return (
@@ -9116,13 +9171,13 @@ function buildContactsDetailHTML(contacts, projId) {
       .map(
         (ct) => `
           <div class="cc-card">
-            <div class="cc-card-av">${icons[ct.title] || '👤'}</div>
+            <div class="cc-card-av">${icons[ct.title] || '??'}</div>
             <div class="cc-card-info" style="flex:1">
               <div class="cc-card-name">${(ct.first || '') + ' ' + (ct.last || '')}</div>
               ${ct.title ? `<div class="cc-card-title">${ct.title}</div>` : ''}
               <div class="cc-card-meta">
-                ${ct.phone ? `<span>📞 ${ct.phone}</span>` : ''}
-                ${ct.email ? `<span>✉️ <a href="mailto:${ct.email}">${ct.email}</a></span>` : ''}
+                ${ct.phone ? `<span>?? ${ct.phone}</span>` : ''}
+                ${ct.email ? `<span>?? <a href="mailto:${ct.email}">${ct.email}</a></span>` : ''}
               </div>
             </div>
           </div>`,
@@ -9132,7 +9187,7 @@ function buildContactsDetailHTML(contacts, projId) {
   );
 }
 
-/* ── TOAST ── */
+/* -- TOAST -- */
 let toastTmr;
 function showToast(msg) {
   const t = document.getElementById('toast');
@@ -9142,7 +9197,7 @@ function showToast(msg) {
   toastTmr = setTimeout(() => t.classList.remove('show'), 3000);
 }
 
-// ── Formula Audit Popover ──
+// -- Formula Audit Popover --
 let _formulaPopover = null;
 function showFormula(html, evt) {
   if (evt) evt.stopPropagation();
@@ -9152,7 +9207,7 @@ function showFormula(html, evt) {
   pop.style.cssText =
     'position:fixed;z-index:9999;background:#0d1525;border:2px solid var(--em);border-radius:10px;padding:14px 18px;max-width:420px;min-width:240px;font-size:12px;color:#e0e8ff;box-shadow:0 8px 32px rgba(0,0,0,.6);line-height:1.6;';
   pop.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--em)">Formula Breakdown</span><button onclick="closeFormula()" style="background:none;border:none;color:var(--text3);font-size:16px;cursor:pointer;padding:0 4px">✕</button></div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--em)">Formula Breakdown</span><button onclick="closeFormula()" style="background:none;border:none;color:var(--text3);font-size:16px;cursor:pointer;padding:0 4px">?</button></div>' +
     html;
   document.body.appendChild(pop);
   if (evt && evt.target) {
@@ -9192,7 +9247,7 @@ function _fml(label, formula, result, sources) {
   return h;
 }
 
-/* ── NOTIFICATIONS ── */
+/* -- NOTIFICATIONS -- */
 let notifications = [];
 async function loadNotifs() {
   try {
@@ -9208,7 +9263,7 @@ function saveNotifs() {
   } catch (e) {}
 }
 function addNotif(title, detail, icon) {
-  notifications.unshift({ id: Date.now(), title, detail, icon: icon || '🔔', time: new Date().toISOString() });
+  notifications.unshift({ id: Date.now(), title, detail, icon: icon || '??', time: new Date().toISOString() });
   saveNotifs();
   refreshNotifUI();
 }
@@ -9249,13 +9304,13 @@ function renderNotifList() {
     .map((n) => {
       const ago = getTimeAgo(new Date(n.time));
       return `<div style="display:flex;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border);align-items:flex-start">
-            <span style="font-size:16px;flex-shrink:0;margin-top:1px">${n.icon || '🔔'}</span>
+            <span style="font-size:16px;flex-shrink:0;margin-top:1px">${n.icon || '??'}</span>
             <div style="flex:1;min-width:0">
               <div style="font-size:13px;font-weight:600;margin-bottom:2px">${n.title}</div>
               <div style="font-size:12px;color:var(--text2);line-height:1.5">${n.detail}</div>
               <div style="font-size:10px;color:var(--text3);margin-top:3px;font-family:var(--mono)">${ago}</div>
             </div>
-            <button onclick="clearNotif(${n.id})" style="width:22px;height:22px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;font-size:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .13s" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">✕</button>
+            <button onclick="clearNotif(${n.id})" style="width:22px;height:22px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;font-size:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .13s" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">?</button>
           </div>`;
     })
     .join('');
@@ -9280,7 +9335,7 @@ document.addEventListener('click', (e) => {
   if (p && p.style.display === 'block' && b && !p.contains(e.target) && !b.contains(e.target)) p.style.display = 'none';
 });
 
-/* ── CSV / QUICK ENTRY IMPORT ── */
+/* -- CSV / QUICK ENTRY IMPORT -- */
 
 window.addEventListener('DOMContentLoaded', function () {
   loadNotifs();
@@ -9290,14 +9345,14 @@ window.addEventListener('DOMContentLoaded', function () {
         id: 1,
         title: 'Baseline Report Due',
         detail: 'Advent Health baseline report is due in 2 days. Review M&V data before submitting.',
-        icon: '📊',
+        icon: '??',
         time: new Date(Date.now() - 3600000).toISOString(),
       },
       {
         id: 2,
         title: 'High Priority Task',
-        detail: 'Upload utility bills Q1 — ISD is marked high priority and due this week.',
-        icon: '⚠️',
+        detail: 'Upload utility bills Q1 � ISD is marked high priority and due this week.',
+        icon: '??',
         time: new Date(Date.now() - 7200000).toISOString(),
       },
     ];
