@@ -192,10 +192,11 @@ function init() {
       if (s.view === 'detail' && s.projId != null) {
         const p = projects.find((p) => p.id == s.projId);
         if (p) {
+          const _tabToRestore = s.tab || 'dashboard';
           openDetail(p.id);
-          if (s.tab && s.tab !== 'notes') {
-            const btn = document.querySelector(`.pdt[data-tab="${s.tab}"]`);
-            if (btn) sPTab(s.tab, btn);
+          if (_tabToRestore !== 'dashboard') {
+            const btn = document.querySelector('#pdTabBar button[data-tab="' + _tabToRestore + '"]');
+            if (btn) sPTab(_tabToRestore, btn);
           }
         }
       }

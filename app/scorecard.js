@@ -326,7 +326,7 @@ function renderBuildingScorecardPane(pane, b, projId) {
       totalCost += billCost;
       totalKwh += parseFloat(bill.kwh || bill.kWh) || 0;
       if (m.commodity === 'Electric') {
-        if ((parseFloat(bill.kw) || 0) > peakKW) peakKW = parseFloat(bill.kw) || 0;
+        if ((parseFloat(bill.demandKW) || 0) > peakKW) peakKW = parseFloat(bill.demandKW) || 0;
         peakHours += (parseFloat(bill.days) || 30) * 24;
       }
     });
