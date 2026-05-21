@@ -2342,7 +2342,7 @@ function renderBillsPane(pane, m, bills, incl) {
                         <span class="bts-label">Table Settings</span>
                       </div>`,
       a: 'td-actions',
-      w: 80,
+      w: 100,
       rightSticky: true,
     },
   ];
@@ -2355,7 +2355,7 @@ function renderBillsPane(pane, m, bills, incl) {
         const classes = [c.a];
         if (c.sticky) classes.push('sticky-col');
         if (c.rightSticky) classes.push('sticky-col-right');
-        return `<th class="${classes.filter(Boolean).join(' ')}" style="min-width:${c.w}px;max-width:${c.w * 1.5}px" data-col="${i}">${c.h}<div class="col-resize-handle" data-col="${i}"></div></th>`;
+        return `<th class="${classes.filter(Boolean).join(' ')}" data-col="${i}">${c.h}<div class="col-resize-handle" data-col="${i}"></div></th>`;
       })
       .join('') +
     `</tr></thead>`;

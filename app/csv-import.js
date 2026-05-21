@@ -23,9 +23,9 @@ function udMeterDropHandler(e, mid) {
         processPDF(file);
       }
     }, 150);
-    showToast('Sending to PDF extractor…');
+    showToast('Sending to PDF extractorï¿½');
   } else {
-    // CSV — open the normal import modal
+    // CSV ï¿½ open the normal import modal
     openCsvImportForMeter(mid);
     // Then process the file directly
     processBillCsvFile(file);
@@ -60,7 +60,7 @@ function openCsvImportForMeter(mid) {
   document.getElementById('billCsvColGuide').textContent = cols;
   document.getElementById('billCsvColNote').textContent = note;
   document.getElementById('billCsvModalTitle').textContent =
-    '?? Import Bills — ' + m.commodity + ' · ' + (m.provider || 'Meter');
+    '?? Import Bills ï¿½ ' + m.commodity + ' ï¿½ ' + (m.provider || 'Meter');
   document.getElementById('billCsvPreviewWrap').style.display = 'none';
   document.getElementById('billCsvImportBtn').style.display = 'none';
   document.getElementById('billCsvDropLabel').textContent = 'Drop CSV file or click to browse';
@@ -173,7 +173,7 @@ function parseBillCsv(text, fname) {
       return;
     }
 
-    // Derive end date if missing — last day of start month
+    // Derive end date if missing ï¿½ last day of start month
     const effectiveEnd = endD || lastDayOfMonth(startD);
 
     const row = { id: 'r' + Date.now() + Math.random(), start: startD, end: effectiveEnd };
@@ -207,7 +207,7 @@ function parseBillCsv(text, fname) {
   }
 
   // Deduplicate: collapse exact duplicate start dates only (same bill entered twice).
-  // DO NOT deduplicate by normMonth — split-month bills (e.g. 2/1–2/15 and 2/15–3/1) must
+  // DO NOT deduplicate by normMonth ï¿½ split-month bills (e.g. 2/1ï¿½2/15 and 2/15ï¿½3/1) must
   // both survive so getNormRows can prorate them correctly across calendar months.
   const byStart = {};
   parsed.forEach((r) => {
@@ -272,7 +272,7 @@ function parseFlexDate(s) {
 function showBillCsvPreview(rows, m, fname, warnings) {
   const isElec = m.commodity === 'Electric',
     isGas = m.commodity === 'Gas';
-  document.getElementById('billCsvDropLabel').textContent = '? ' + fname + ' — click to change';
+  document.getElementById('billCsvDropLabel').textContent = '? ' + fname + ' ï¿½ click to change';
   document.getElementById('billCsvRowCount').textContent =
     rows.length + ' period' + (rows.length !== 1 ? 's' : '') + ' found';
 
@@ -289,17 +289,17 @@ function showBillCsvPreview(rows, m, fname, warnings) {
       const days = Math.round((_parseISO(r.end) - _parseISO(r.start)) / 864e5) + 1;
       let cells = '';
       if (isElec)
-        cells = `<td>${(r.kwh || 0).toLocaleString()}</td><td>${r.demandKW || '—'}</td><td>${r.facKW || '—'}</td><td>${r.kwCost ? '$' + (r.kwCost || 0).toLocaleString() : '—'}</td><td>${r.facKWCost ? '$' + (r.facKWCost || 0).toLocaleString() : '—'}</td><td>${r.totalCost ? '$' + (r.totalCost || 0).toLocaleString() : '—'}</td>`;
+        cells = `<td>${(r.kwh || 0).toLocaleString()}</td><td>${r.demandKW || 'ï¿½'}</td><td>${r.facKW || 'ï¿½'}</td><td>${r.kwCost ? '$' + (r.kwCost || 0).toLocaleString() : 'ï¿½'}</td><td>${r.facKWCost ? '$' + (r.facKWCost || 0).toLocaleString() : 'ï¿½'}</td><td>${r.totalCost ? '$' + (r.totalCost || 0).toLocaleString() : 'ï¿½'}</td>`;
       else if (isGas)
         cells =
           '<td>' +
           (r.therms || 0).toLocaleString() +
           '</td><td>' +
-          (r.thermCost ? '$' + (r.thermCost || 0) : '—') +
+          (r.thermCost ? '$' + (r.thermCost || 0) : 'ï¿½') +
           '</td>';
       else
         cells =
-          '<td>' + (r.usage || 0) + '</td><td>' + (r.cost != null && r.cost !== '' ? '$' + r.cost : '—') + '</td>';
+          '<td>' + (r.usage || 0) + '</td><td>' + (r.cost != null && r.cost !== '' ? '$' + r.cost : 'ï¿½') + '</td>';
       return (
         '<tr><td>' + fmtDate(r.start) + '</td><td>' + fmtDate(r.end) + '</td><td>' + days + '</td>' + cells + '</tr>'
       );
@@ -308,7 +308,7 @@ function showBillCsvPreview(rows, m, fname, warnings) {
 
   document.getElementById('billCsvPreviewTable').innerHTML = '<thead>' + thead + '</thead><tbody>' + tbody + '</tbody>';
   document.getElementById('billCsvPreviewLabel').textContent =
-    'Preview — ' + rows.length + ' period' + (rows.length !== 1 ? 's' : '');
+    'Preview ï¿½ ' + rows.length + ' period' + (rows.length !== 1 ? 's' : '');
   document.getElementById('billCsvPreviewWrap').style.display = '';
 
   const warnEl = document.getElementById('billCsvWarnings');
@@ -331,7 +331,7 @@ function importBillCsvRows() {
   if (!m) return;
   m.bills = m.bills || [];
 
-  // Merge on exact start date — split-month bills (e.g. 2/1 and 2/15) are distinct rows
+  // Merge on exact start date ï¿½ split-month bills (e.g. 2/1 and 2/15) are distinct rows
   const existing = new Set(m.bills.map((r) => r.start));
   let added = 0,
     updated = 0;
@@ -378,7 +378,7 @@ function _billFieldWarnings(row, commodity) {
   Object.entries(_CHARGE_QTY_PAIRS).forEach(([chargeKey, qtyKey]) => {
     if (_pf(row[chargeKey]) > 0 && _pf(row[qtyKey]) === 0) {
       warnings[qtyKey] = 'Charge of $' + _pf(row[chargeKey]).toFixed(2) + ' exists but qty is missing';
-      warnings[chargeKey] = 'Has charge but no qty — verify extraction';
+      warnings[chargeKey] = 'Has charge but no qty ï¿½ verify extraction';
     }
   });
   // kWh identity check
@@ -410,7 +410,7 @@ function renderBillRow(row, m, incl, allBills, cols) {
   // Propane deliveries use DeliveryDate as both start and end, so
   // calcDays returns 0 when inclusive is false.  Show 1 instead.
   if (days === 0 && row.start && row.start === row.end && m.commodity === 'Propane') days = 1;
-  // Show the ?? button whenever the row has ANY usable PDF reference —
+  // Show the ?? button whenever the row has ANY usable PDF reference ï¿½
   // either an old per-bill pdfBillId OR a shared pdfKey. Bills saved via the
   // batch shared-key path (_ensureBatchPdfStored) may legitimately have no
   // pdfBillId but still have a valid pdfKey pointing at IndexedDB or the
@@ -428,7 +428,7 @@ function renderBillRow(row, m, incl, allBills, cols) {
           <button class="btn-del"  onclick="deleteBillRow('${m.id}','${row.id}')" title="Delete">?</button>
         </td>`;
 
-  const fmtD = (v) => (v ? fmtDate(v) : '—');
+  const fmtD = (v) => (v ? fmtDate(v) : 'ï¿½');
   // Update 82: schema-driven cells. renderBillsPane passes the cols
   // array; each field column pulls its value via _billReadValue (honors
   // fallbackKey for legacy data) and formats it via _billFormatValue.
@@ -455,14 +455,14 @@ function renderBillRow(row, m, incl, allBills, cols) {
   }
   // First 3 base columns (Norm Month, Start, End) get the sticky-col
   // class so they stay pinned during horizontal scroll. Days (col 3) is
-  // NOT sticky — it's the first column that scrolls with the body.
+  // NOT sticky ï¿½ it's the first column that scrolls with the body.
   const _fieldWarningsEarly = _billFieldWarnings(row, m.commodity);
   const _hasRowWarning = Object.keys(_fieldWarningsEarly).length > 0;
   // Bug #17: rows with missing start/end dates get a special class so they're
   // visually distinct from normal rows and easy to identify for deletion/re-extraction.
   const _missingDates = !row.start || !row.end;
   const _warnTip = _missingDates
-    ? 'Missing start/end dates — delete this row and re-extract'
+    ? 'Missing start/end dates ï¿½ delete this row and re-extract'
     : 'This bill has missing or inconsistent data fields';
   let html =
     `<tr style="cursor:pointer" onclick="showBillSplitPanel('${m.id}','${row.id}',event)"${_missingDates ? ' class="ud-bill-missing-dates"' : ''}>` +
@@ -496,23 +496,23 @@ function renderBillRow(row, m, incl, allBills, cols) {
       let formatted;
       if (c.category.type === 'currency') {
         formatted =
-          val === 0 ? '—' : '$' + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          val === 0 ? 'ï¿½' : '$' + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       } else if (c.category.type === 'rate') {
-        // Blended per-unit rates use 5 decimals — typical utility rate
+        // Blended per-unit rates use 5 decimals ï¿½ typical utility rate
         // precision (e.g. $0.03854/kWh).
         formatted =
-          val === 0 ? '—' : '$' + val.toLocaleString('en-US', { minimumFractionDigits: 5, maximumFractionDigits: 5 });
+          val === 0 ? 'ï¿½' : '$' + val.toLocaleString('en-US', { minimumFractionDigits: 5, maximumFractionDigits: 5 });
       } else if (c.category.type === 'number') {
         const isQty = /kwh|kw\b|rkva|gallon|ccf|therm|usage/i.test(c.category.label);
         formatted =
           val === 0
-            ? '—'
+            ? 'ï¿½'
             : val.toLocaleString('en-US', {
                 minimumFractionDigits: isQty ? 2 : 0,
                 maximumFractionDigits: 4,
               });
       } else {
-        formatted = val || '—';
+        formatted = val || 'ï¿½';
       }
       const rightCls = c.rightSticky ? ' sticky-col-right' : '';
       const rightAttr = c.rightSticky ? ' data-sticky-right="' + i + '"' : '';
@@ -521,7 +521,7 @@ function renderBillRow(row, m, incl, allBills, cols) {
       continue;
     }
     if (!c.entry) {
-      html += '<td>—</td>';
+      html += '<td>ï¿½</td>';
       continue;
     }
     let raw = _billReadValue(row, c.entry);
@@ -593,13 +593,13 @@ async function deleteAllBills(mid, pid, bid) {
   if (bid) udSelBldgId = bid;
   const b = getUDBldg(udSelProjId, udSelBldgId);
   if (!b) {
-    showToast('Could not find building — try reselecting it', 'error');
+    showToast('Could not find building ï¿½ try reselecting it', 'error');
     console.error('deleteAllBills: building not found', { pid: udSelProjId, bid: udSelBldgId });
     return;
   }
   const m = b?.meters?.find((m) => m.id === mid);
   if (!m) {
-    showToast('Could not find meter — try reselecting it', 'error');
+    showToast('Could not find meter ï¿½ try reselecting it', 'error');
     console.error('deleteAllBills: meter not found', { mid, building: b.name });
     return;
   }
@@ -677,7 +677,7 @@ async function deleteBillRow(mid, rowId) {
       n +
       ' Billing Period' +
       (n !== 1 ? 's' : '') +
-      (n ? ' · ' + getDateRange(m.bills.slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start))) : '');
+      (n ? ' ï¿½ ' + getDateRange(m.bills.slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start))) : '');
   }
   // Full re-render after animation
   setTimeout(() => {
@@ -702,7 +702,7 @@ async function deleteBillRow(mid, rowId) {
                - key:         camelCase saved-row field name (modal input id = 'bl-' + key)
                - label:       display text for modal label + table column header
                - type:        'text' | 'date' | 'number' | 'currency'
-               - pdfKey:      PascalCase extractor field name (optional — used by
+               - pdfKey:      PascalCase extractor field name (optional ï¿½ used by
                               the PDF ingestion save path field map downstream)
                - fallbackKey: legacy camelCase key to read from when the modern
                               key is empty on an existing saved row (e.g. old
@@ -915,18 +915,18 @@ function _billReadValue(row, entry) {
 function _billFormatValue(val, entry) {
   const hasVal = val !== undefined && val !== null && val !== '' && !isNaN(val);
   if (entry.type === 'currency') {
-    if (!hasVal || +val === 0) return '—';
+    if (!hasVal || +val === 0) return 'ï¿½';
     return '$' + (+val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
   if (entry.type === 'number') {
-    if (!hasVal) return val || '—';
-    // Update 94: match renderPDFFields' FOURDP_FIELDS set exactly —
+    if (!hasVal) return val || 'ï¿½';
+    // Update 94: match renderPDFFields' FOURDP_FIELDS set exactly ï¿½
     // every kW/kWh quantity, meter read, read-difference, and meter
     // multiplier renders with 4 decimal places per Evergy Billing
     // Details rules. Without explicit min/maxFractionDigits, the
     // default `.toLocaleString()` caps at 3 digits AND strips trailing
     // zeros, so 54,656.8791 showed as "54,656.879" while 100 showed as
-    // "100" — same place-value intent, inconsistent rendered width.
+    // "100" ï¿½ same place-value intent, inconsistent rendered width.
     const FOURDP_PDF_KEYS = new Set([
       'FacilitiesKW',
       'BilledKW',
@@ -948,33 +948,33 @@ function _billFormatValue(val, entry) {
       /rkva/i.test(entry.key) ||
       /read$|multiplier|difference/i.test(entry.key)
     ) {
-      if (+val === 0) return '—';
+      if (+val === 0) return 'ï¿½';
       // Bug #18: Read Difference must always display positive (current - previous read)
       const dispVal = /difference/i.test(entry.key) ? Math.abs(+val) : +val;
       return dispVal.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
     }
-    // Default numeric fields (e.g. numberOfDays) — integer display.
+    // Default numeric fields (e.g. numberOfDays) ï¿½ integer display.
     return (+val).toLocaleString('en-US');
   }
   if (entry.type === 'rate5') {
-    if (!hasVal || +val === 0) return '—';
+    if (!hasVal || +val === 0) return 'ï¿½';
     return '$' + (+val).toFixed(5);
   }
   if (entry.type === 'rate3') {
-    if (!hasVal || +val === 0) return '—';
+    if (!hasVal || +val === 0) return 'ï¿½';
     return '$' + (+val).toFixed(3);
   }
-  if (entry.type === 'date') return val ? fmtDate(val) : '—';
-  return val || '—';
+  if (entry.type === 'date') return val ? fmtDate(val) : 'ï¿½';
+  return val || 'ï¿½';
 }
 // Helper: default column width for a schema entry based on type/key.
 function _billColumnWidth(entry) {
   if (entry.type === 'currency') return 100;
-  // Date columns must fit MM/DD/YYYY — 105px at 12px tabular font.
+  // Date columns must fit MM/DD/YYYY ï¿½ 105px at 12px tabular font.
   if (entry.type === 'date') return 105;
   if (entry.type === 'text') {
     if (/address|name|company/i.test(entry.key)) return 160;
-    if (entry.key === 'rateSchedule') return 80;
+    if (entry.key === 'rateSchedule') return 100;
     return 120;
   }
   if (entry.type === 'number') {
@@ -993,7 +993,7 @@ function _billColumnWidth(entry) {
                section headers, wide/pair rows for metadata, and 3-column charge-line
                rows (qty | rate | charge) with running totals and a total check row.
                Duplicated (not imported) to avoid hoisting renderPDFFields internals
-               to module scope — keep BILL_MODAL_LAYOUTS[x] and _LAYOUT_X in sync.
+               to module scope ï¿½ keep BILL_MODAL_LAYOUTS[x] and _LAYOUT_X in sync.
                `unit` drives the rate decimal-places (kWh=5dp, kW/RkVA=3dp).
             */
 const BILL_MODAL_LAYOUTS = {
@@ -1208,8 +1208,8 @@ function _billRecalcRunningTotals() {
 }
 
 /* -- BILL MODAL (single period add/edit, Update 83) --
-               Walks BILL_MODAL_LAYOUTS[commodity] — same structure as the PDF/OCR
-               extracted-output card — so the modal matches the card by construction:
+               Walks BILL_MODAL_LAYOUTS[commodity] ï¿½ same structure as the PDF/OCR
+               extracted-output card ï¿½ so the modal matches the card by construction:
                sections, wide/pair rows, 3-column charge-line rows (qty | rate | charge),
                running totals, total-match check. Rate auto-computes on qty/charge edit.
             */
@@ -1255,7 +1255,7 @@ function showBillSplitPanel(mid, billId, evt) {
   const splitHtml = `
           <div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);margin-bottom:10px">
             <button class="btn btn-ghost btn-sm" onclick="renderMeterWorkspace()">? Back to Bills</button>
-            <span style="font-size:13px;font-weight:700">${m.commodity || 'Meter'} · ${period}</span>
+            <span style="font-size:13px;font-weight:700">${m.commodity || 'Meter'} ï¿½ ${period}</span>
           </div>
           <div style="display:flex;gap:16px;min-height:500px">
             <div style="flex:1;overflow-y:auto;padding-right:12px;border-right:1px solid var(--border)">
@@ -1330,12 +1330,12 @@ function openBillModal(mid, editRowId) {
   udBillEditId = editRowId || null;
   const b = getUDBldg(udSelProjId, udSelBldgId);
   if (!b) {
-    showToast('Could not find building — try reselecting it', 'error');
+    showToast('Could not find building ï¿½ try reselecting it', 'error');
     return;
   }
   const m = b?.meters?.find((m) => m.id === mid);
   if (!m) {
-    showToast('Could not find meter — try reselecting it', 'error');
+    showToast('Could not find meter ï¿½ try reselecting it', 'error');
     return;
   }
   const row = editRowId ? m.bills.find((r) => r.id === editRowId) : null;
@@ -1366,7 +1366,7 @@ function openBillModal(mid, editRowId) {
   }
   document.getElementById('billModalTitle').textContent = row
     ? '?? Edit Billing Period'
-    : '+ Add Billing Period — ' + meterLabel(m);
+    : '+ Add Billing Period ï¿½ ' + meterLabel(m);
   const commKey = (m.commodity || 'Electric').toLowerCase();
   let layout = BILL_MODAL_LAYOUTS[commKey] || BILL_MODAL_LAYOUTS.electric;
   if (commKey === 'gas') {
@@ -1441,7 +1441,7 @@ function openBillModal(mid, editRowId) {
       qtyHtml = `<div class="ef-item"><div class="ef-key">${qtyLabel}</div><input class="ef-input bl-qty-input" id="${qtyId}" type="text" inputmode="decimal" placeholder="0" value="${qtyVal}" ${recalc} onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,false)"></div>`;
     } else {
       qtyHtml =
-        '<div class="ef-item" style="opacity:.5"><div class="ef-key">—</div><input class="ef-input" disabled placeholder="—"></div>';
+        '<div class="ef-item" style="opacity:.5"><div class="ef-key">ï¿½</div><input class="ef-input" disabled placeholder="ï¿½"></div>';
     }
     const rateLabel = r.label + (unit ? ' ' + unit : '') + ' Rate';
     const rateHtml = `<div class="ef-item"><div class="ef-key">${rateLabel}</div><input class="ef-input bl-rate-input" readonly tabindex="-1" style="color:var(--text2);font-size:11px" value=""></div>`;
@@ -1491,13 +1491,13 @@ function openBillModal(mid, editRowId) {
     bldgs.forEach((bl) => {
       (bl.meters || []).forEach((mt) => {
         if (mt.id === mid) return;
-        const label = (bl.name || 'Building') + ' — ' + (mt.name || mt.commodity || 'Meter');
+        const label = (bl.name || 'Building') + ' ï¿½ ' + (mt.name || mt.commodity || 'Meter');
         moveOpts += '<option value="' + bl.id + '|' + mt.id + '">' + label + '</option>';
       });
     });
     if (moveOpts) {
       body +=
-        '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:16px;background:var(--s1)"><div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Move to Different Meter</div><select class="fs" id="bl-move-meter" style="width:100%"><option value="">— Keep on current meter —</option>' +
+        '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:16px;background:var(--s1)"><div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Move to Different Meter</div><select class="fs" id="bl-move-meter" style="width:100%"><option value="">ï¿½ Keep on current meter ï¿½</option>' +
         moveOpts +
         '</select></div>';
     }
@@ -1517,11 +1517,11 @@ function openBillModal(mid, editRowId) {
       body += buildTotalRow(r);
     }
   }
-  // Auto-sum button (Electric only) — reads same input ids, unchanged
+  // Auto-sum button (Electric only) ï¿½ reads same input ids, unchanged
   if (commKey === 'electric') {
     body += `<div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn btn-ghost btn-sm" type="button" onclick="billAutoSum()" title="Sum individual line items into Total">S Auto-Sum</button></div>`;
   }
-  // Legacy hidden inputs — preserve old aggregate fields on existing rows
+  // Legacy hidden inputs ï¿½ preserve old aggregate fields on existing rows
   const LEGACY_PASSTHROUGH = [
     'kwCost',
     'facKWCost',
@@ -1550,8 +1550,8 @@ function openBillModal(mid, editRowId) {
       if (_blEndInp.value) {
         const endParts = _blEndInp.value.split('-');
         const endYr = endParts.length === 3 ? +endParts[0] : 0;
-        if (endYr >= 2000 && endYr <= 2100) return; // valid year — treat as user-set
-        // Bad year (e.g. 0002) — fall through and overwrite with correct value
+        if (endYr >= 2000 && endYr <= 2100) return; // valid year ï¿½ treat as user-set
+        // Bad year (e.g. 0002) ï¿½ fall through and overwrite with correct value
       }
       if (!_blStartInp.value) return;
       const parts = _blStartInp.value.split('-');
@@ -1563,7 +1563,7 @@ function openBillModal(mid, editRowId) {
       // like "0002" if the user types a small number, which causes new Date()
       // to create a year-2 or year-1902 date and the output to show 0002 or 1902.
       if (!yr || yr < 2000 || yr > 2100 || !mo || !da) return;
-      const d = new Date(yr, mo - 1, da); // local date — no UTC shift
+      const d = new Date(yr, mo - 1, da); // local date ï¿½ no UTC shift
       if (isNaN(d.getTime())) return;
       d.setDate(d.getDate() + 30); // add 30 days via setDate (handles month rollover correctly)
       _blEndInp.value =
@@ -1590,7 +1590,7 @@ function openBillModal(mid, editRowId) {
         const custVal = _blCustInp ? parseFloat(_billStripCurrency(_blCustInp.value)) || 0 : 0;
         // Bug 4f27fc5d: hide hint when Base Charge field already has a value.
         // The hint should only appear when Gas Charge exists AND Base Charge is
-        // empty/zero — i.e. suggesting the base charge may be bundled into the gas
+        // empty/zero ï¿½ i.e. suggesting the base charge may be bundled into the gas
         // total. When Base Charge is already filled, the fields are correctly
         // separated and the hint is misleading.
         if (custVal > 0 || gasVal <= 0) return;
@@ -1633,7 +1633,7 @@ function openBillModal(mid, editRowId) {
             if (prev > _rvB * 0.9 && cur < _rvB * 0.1) {
               diff = _rvB + 1 - prev + cur;
               showToast(
-                'Meter rollover detected — Read Difference = ' +
+                'Meter rollover detected ï¿½ Read Difference = ' +
                   diff.toFixed(4) +
                   ' (wrap-around at ' +
                   _rvB.toLocaleString() +
@@ -1655,7 +1655,7 @@ function openBillModal(mid, editRowId) {
   for (const r of layout) {
     if (r.chargeField) _billRecalcRow(r.chargeField);
   }
-  // Bug b777c198: Gas — compute Fuel Adjustment Rate = FuelAdjustment / Gas Usage (CCF or Therms).
+  // Bug b777c198: Gas ï¿½ compute Fuel Adjustment Rate = FuelAdjustment / Gas Usage (CCF or Therms).
   // The FuelAdjustment row has no qtyField so _billRecalcRow leaves its rate blank.
   // Derive the rate here using the gas usage qty from the GasCharge row.
   if (commKey === 'gas') {
@@ -1707,7 +1707,7 @@ function billAutoSum() {
   // `_billRecalcRunningTotals` uses so Auto-Sum and the running-total
   // column always agree. The old formula summed legacy aggregate
   // fields (kwCost / otherCost / taxCost / solarCredit) that the new
-  // 3-column layout doesn't render — producing a different total than
+  // 3-column layout doesn't render ï¿½ producing a different total than
   // what the user sees on the right side of the modal.
   let sum = 0;
   document.querySelectorAll('.ef-charge-row[data-charge-key]').forEach((r) => {
@@ -1749,7 +1749,7 @@ function saveBillRow() {
     if (v !== '') data[entry.key] = v;
     else if (entry.key === 'start' || entry.key === 'end') data[entry.key] = '';
   }
-  // Legacy passthroughs — preserve any values already on the row.
+  // Legacy passthroughs ï¿½ preserve any values already on the row.
   const LEGACY_PASSTHROUGH = [
     'kwCost',
     'facKWCost',
@@ -1793,7 +1793,7 @@ function saveBillRow() {
         action: 'move',
         ..._actx,
         period: _auditPeriodLabel(row),
-        note: 'Moved to ' + (_mvBldg.name || '') + ' — ' + meterLabel(_mvMeter),
+        note: 'Moved to ' + (_mvBldg.name || '') + ' ï¿½ ' + meterLabel(_mvMeter),
         source: 'manual',
       });
       saveUtilityData();
@@ -1971,7 +1971,7 @@ function openMeterModal(editId, projId, bldgId) {
       if (bldgs.length > 1) {
         const sel = document.getElementById('mm-move-bldg');
         sel.innerHTML =
-          '<option value="">— Keep on current building —</option>' +
+          '<option value="">ï¿½ Keep on current building ï¿½</option>' +
           bldgs
             .filter((bb) => bb.id !== _bid)
             .map((bb) => '<option value="' + bb.id + '">' + (bb.name || 'Unnamed') + '</option>')
@@ -1995,7 +1995,7 @@ function closeMeterModal() {
   document.getElementById('meterModal').classList.remove('open');
 }
 function updateMeterModalFields() {
-  /* commodity fields are shared across types — no field changes needed */
+  /* commodity fields are shared across types ï¿½ no field changes needed */
 }
 function _refreshBldgPerfIfVisible() {
   const pane = document.getElementById('bldgPerfPaneInner');
@@ -2048,7 +2048,7 @@ function saveMeter() {
     b.meters.push(nm);
     udActiveMid = nm.id;
     const _blCount = _inheritBaselinesForProject(_targetProjId);
-    showToast('Meter added to ' + (b.name || 'building') + (_blCount ? ' · baseline inherited ?' : ' ?'));
+    showToast('Meter added to ' + (b.name || 'building') + (_blCount ? ' ï¿½ baseline inherited ?' : ' ?'));
   }
   saveUtilityData();
   closeMeterModal();
@@ -2112,7 +2112,7 @@ function getDefaultTemplate() {
       {
         text: 'BAS (Building Automation) Updates',
         subItems: [
-          'Current system status — controllers, sensors, network health.',
+          'Current system status ï¿½ controllers, sensors, network health.',
           'Setpoint or schedule changes made since last meeting.',
           'Pending programming changes or graphics requests.',
           'Open BAS work orders and targeted completion dates.',
@@ -2508,7 +2508,7 @@ function _acShowImportPreview(projId, parsed, approvedBy, filename) {
                 <label style="font-size:12px;font-weight:600;color:var(--text2)">Approved By:</label>
                 <input id="acImpApprovedBy" value="${approvedBy}" style="flex:1;padding:4px 8px;border:1px solid var(--s3);border-radius:4px;background:var(--s1);color:var(--text);font-size:13px">
               </div>
-              <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Source: ${filename} · ${parsed.length} rows found</div>
+              <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Source: ${filename} ï¿½ ${parsed.length} rows found</div>
               <div style="overflow-x:auto">
                 <table style="width:100%;border-collapse:collapse">
                   <thead><tr style="background:var(--s2);font-size:10px;text-transform:uppercase;color:var(--text3)">
@@ -2649,7 +2649,7 @@ function renderMeetingsList(projId) {
       recurEl.innerHTML = active
         .map(
           (r) =>
-            `<div style="font-size:12px;color:var(--text2);padding:6px 10px;background:var(--s2);border:1px solid var(--border);border-radius:6px;margin-bottom:4px">?? Every ${nths[r.nthWeek]} ${dayNames[r.weekday]} at ${r.time} · Auto-generates ${r.autoGenerateDaysBefore} days before</div>`,
+            `<div style="font-size:12px;color:var(--text2);padding:6px 10px;background:var(--s2);border:1px solid var(--border);border-radius:6px;margin-bottom:4px">?? Every ${nths[r.nthWeek]} ${dayNames[r.weekday]} at ${r.time} ï¿½ Auto-generates ${r.autoGenerateDaysBefore} days before</div>`,
         )
         .join('');
     } else recurEl.innerHTML = '';
@@ -2667,7 +2667,7 @@ function renderMeetingsList(projId) {
         return `<div class="mtg-row" onclick="reopenReport('${r.id}')">
             <span class="mtg-date">${ds}</span>
             <span class="mtg-badge" style="background:rgba(59,130,246,0.15);color:#3b82f6">Report</span>
-            <span class="mtg-title">${r.period || ''} ${r.type === 'quarterly' ? 'Quarterly' : 'Annual'} Report · ${ts}</span>
+            <span class="mtg-title">${r.period || ''} ${r.type === 'quarterly' ? 'Quarterly' : 'Annual'} Report ï¿½ ${ts}</span>
             <div class="mtg-actions" onclick="event.stopPropagation()">
               <button class="btn btn-ghost btn-sm" onclick="reopenReport('${r.id}')" title="Open">??</button>
               <button class="btn btn-ghost btn-sm" onclick="reexportReport('${r.id}')" title="Export PDF">??</button>
@@ -2693,7 +2693,7 @@ function renderMeetingsList(projId) {
         return `<div class="mtg-row" onclick="openMeetingEditor(${projId},${m.id})">
             <span class="mtg-date">${ds}</span>
             <span class="mtg-badge ${badge}">${label}</span>
-            <span class="mtg-title">${m.projectNickname || ''} — ${m.sectionHeading || ''}</span>
+            <span class="mtg-title">${m.projectNickname || ''} ï¿½ ${m.sectionHeading || ''}</span>
             <div class="mtg-actions" onclick="event.stopPropagation()">
               <button class="btn btn-ghost btn-sm" onclick="generateMeetingPDFById(${projId},${m.id})" title="Download PDF">??</button>
               ${m.type === 'agenda' ? `<button class="btn btn-ghost btn-sm" onclick="convertToMinutesById(${projId},${m.id})" title="Convert to Minutes">??</button>` : ''}
@@ -3094,7 +3094,7 @@ function createMeetingTask(p, m) {
   if (exists) return;
   tasks.push({
     id: Date.now() + 1,
-    text: `Meeting: ${m.projectNickname} — ${m.type === 'agenda' ? 'Agenda' : 'Minutes'}`,
+    text: `Meeting: ${m.projectNickname} ï¿½ ${m.type === 'agenda' ? 'Agenda' : 'Minutes'}`,
     due: (m.date || '').split('T')[0],
     projId: p.id,
     pri: 'normal',
@@ -3626,7 +3626,7 @@ function buildMeetingPDF(m, returnDoc) {
 /* -- REPORT DATA COLLECTOR -- */
 // Extracts a 2-letter US state code from a free-text address string.
 // Looks for a 2-letter uppercase code before a ZIP code or at end of string.
-// Falls back to 'KS' (Kansas) if no match — most CSC projects are in the KC metro.
+// Falls back to 'KS' (Kansas) if no match ï¿½ most CSC projects are in the KC metro.
 function extractStateFromAddress(addr) {
   if (!addr) return 'KS';
   const m = addr.match(/\b([A-Z]{2})\b(?=\s*\d{5}|\s*$|,|\s*$)/);
