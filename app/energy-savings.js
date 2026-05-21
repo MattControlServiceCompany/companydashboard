@@ -648,35 +648,58 @@ function _renderSavingsContent(wrap, projId) {
     }
   });
   if (_migrated) sset('en_projects', projects);
-  // One-time restore: Broadmoor Elementary measure was deleted between May 11-20, 2026
-  // Restore it from the May 11 backup if this is the Louisburg project and the measure is missing
-  if (!p._broadmoorRestored && p.name && p.name.indexOf('Louisburg') !== -1) {
-    const hasBroadmoor = sd.measures.some((m) => m.bldgId === 'b1776962504464');
-    if (!hasBroadmoor) {
-      sd.measures.push({
-        id: 'm_csv_b1776962504464',
-        bldgId: 'b1776962504464',
-        desc: 'BAS Savings',
-        selected: true,
-        source: 'bas',
-        sqft: 0,
-        totalDollar: 8129.792025,
-        rates: {
-          kwhSummer: 0.0711,
-          kwhWinter: 0.0553,
-          kwSummer: 3190.1,
-          kwWinter: 2332.98,
-          thermRate: 0.798,
-        },
-        kwh: [
-          5298.44, 4374.63, 3722.75, 1483.52, 8364.24, 18323.82, 29494.55, 20370.85, 10319.94, 5719.57, 3741.26,
-          4842.72,
-        ],
-        gas: [133.41, 110.15, 93.73, 37.35, 0, 0, 0, 0, 0, 0, 94.2, 121.93],
-        kw: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        propane: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      });
-      // Restore associated per-building config keys
+  // Idempotent restore: Broadmoor Elementary (bldgId b1776962504464) in Louisburg project.
+  // Runs on every render — only mutates if measure is missing or has wrong data. Safe no-op otherwise.
+  if (p.name && p.name.indexOf('Louisburg') !== -1) {
+    const _bmCorrect = {
+      id: 'm_csv_b1776962504464',
+      bldgId: 'b1776962504464',
+      desc: 'BAS Savings',
+      selected: true,
+      source: 'bas',
+      sqft: 0,
+      totalDollar: 8129.792025,
+      rates: {
+        kwhSummer: 0.0711,
+        kwhWinter: 0.0553,
+        kwSummer: 3190.1,
+        kwWinter: 2332.98,
+        thermRate: 0.798,
+      },
+      kwh: [
+        5298.44, 4374.63, 3722.75, 1483.52, 8364.24, 18323.82, 29494.55, 20370.85, 10319.94, 5719.57, 3741.26, 4842.72,
+      ],
+      gas: [133.41, 110.15, 93.73, 37.35, 0, 0, 0, 0, 0, 0, 94.2, 121.93],
+      kw: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      propane: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    };
+    const bmIdx = sd.measures.findIndex((m) => m.bldgId === 'b1776962504464');
+    let _bmChanged = false;
+    if (bmIdx === -1) {
+      // Measure is missing — push it
+      sd.measures.push(_bmCorrect);
+      _bmChanged = true;
+    } else {
+      const bm = sd.measures[bmIdx];
+      // Check if totalDollar or critical rates are wrong
+      if (
+        bm.totalDollar !== _bmCorrect.totalDollar ||
+        !bm.rates ||
+        bm.rates.kwhSummer !== _bmCorrect.rates.kwhSummer ||
+        bm.rates.kwhWinter !== _bmCorrect.rates.kwhWinter ||
+        bm.rates.thermRate !== _bmCorrect.rates.thermRate
+      ) {
+        sd.measures[bmIdx] = _bmCorrect;
+        _bmChanged = true;
+      }
+      // If present and correct but unchecked, re-enable it
+      if (!_bmChanged && sd.measures[bmIdx].selected === false) {
+        sd.measures[bmIdx].selected = true;
+        _bmChanged = true;
+      }
+    }
+    if (_bmChanged) {
+      // Restore associated per-building config keys if not already set
       const bspKey = 'bldgsavproj_cfg_b1776962504464';
       const bpKey = 'bldgperf_cfg_b1776962504464';
       if (!localStorage.getItem(bspKey)) {
@@ -697,44 +720,62 @@ function _renderSavingsContent(wrap, projId) {
           }),
         );
       }
-      p._broadmoorRestored = true;
-      sset('en_projects', projects);
-    } else {
-      // Measure already exists — mark as done so we don't check again
-      p._broadmoorRestored = true;
       sset('en_projects', projects);
     }
   }
-  // One-time restore: Circle Grove Elementary measure had corrupted rates/fuel-type fields
-  // Restore it to exact May 11, 2026 backup state (bldgId b1776962484232)
-  if (!p._circleGroveRestored && p.name && p.name.indexOf('Louisburg') !== -1) {
+  // Idempotent restore: Circle Grove Elementary (bldgId b1776962484232) in Louisburg project.
+  // Runs on every render — only mutates if measure is missing, has wrong data, or is unchecked.
+  if (p.name && p.name.indexOf('Louisburg') !== -1) {
+    const _cgCorrect = {
+      id: 'm_csv_b1776962484232',
+      bldgId: 'b1776962484232',
+      desc: 'BAS Savings',
+      msrNum: '',
+      sqft: 0,
+      selected: true,
+      source: 'bas',
+      totalDollar: 2167.0283010000003,
+      rates: {
+        kwhSummer: 0.1025,
+        kwhWinter: 0.0837,
+        kwSummer: 542.71,
+        kwWinter: 226.34,
+        thermRate: 0,
+        gallonRate: 1.6,
+      },
+      kwh: [731.14, 450.78, 280.63, 70.84, 1235.96, 2652.89, 3889.82, 2880.23, 1541.63, 806.71, 217.57, 487.85],
+      kw: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      gas: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      propane: [124, 100, 56, 13, 0, 0, 0, 0, 0, 0, 40, 95],
+    };
     const cgIdx = sd.measures.findIndex((m) => m.bldgId === 'b1776962484232');
-    if (cgIdx !== -1) {
-      sd.measures[cgIdx] = {
-        id: 'm_csv_b1776962484232',
-        bldgId: 'b1776962484232',
-        desc: 'BAS Savings',
-        msrNum: '',
-        sqft: 0,
-        selected: true,
-        source: 'bas',
-        totalDollar: 2167.0283010000003,
-        rates: {
-          kwhSummer: 0.1025,
-          kwhWinter: 0.0837,
-          kwSummer: 542.71,
-          kwWinter: 226.34,
-          thermRate: 0,
-          gallonRate: 1.6,
-        },
-        kwh: [731.14, 450.78, 280.63, 70.84, 1235.96, 2652.89, 3889.82, 2880.23, 1541.63, 806.71, 217.57, 487.85],
-        kw: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        gas: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        propane: [124, 100, 56, 13, 0, 0, 0, 0, 0, 0, 40, 95],
-      };
+    let _cgChanged = false;
+    if (cgIdx === -1) {
+      // Measure is missing — push it (handles the case Circle Grove was deleted)
+      sd.measures.push(_cgCorrect);
+      _cgChanged = true;
+    } else {
+      const cg = sd.measures[cgIdx];
+      // Check if fuel type is wrong (no gallonRate means propane field is corrupt) or rates are wrong
+      if (
+        cg.totalDollar !== _cgCorrect.totalDollar ||
+        !cg.rates ||
+        cg.rates.gallonRate !== _cgCorrect.rates.gallonRate ||
+        cg.rates.kwhSummer !== _cgCorrect.rates.kwhSummer ||
+        cg.rates.thermRate !== _cgCorrect.rates.thermRate
+      ) {
+        sd.measures[cgIdx] = _cgCorrect;
+        _cgChanged = true;
+      }
+      // If present and correct but unchecked, re-enable it
+      if (!_cgChanged && sd.measures[cgIdx].selected === false) {
+        sd.measures[cgIdx].selected = true;
+        _cgChanged = true;
+      }
     }
-    p._circleGroveRestored = true;
-    sset('en_projects', projects);
+    if (_cgChanged) {
+      sset('en_projects', projects);
+    }
   }
   // Auto-sync SQFT from current building data if measure has a building assigned
   let _sqftChanged = false;
