@@ -2157,9 +2157,12 @@ function openBillsTableSettings(mid) {
                   <div class="modal-body bts-modal-body" data-meter-id="${mid}">
                     ${viewToggle}
                     <div class="bts-rows-wrap">${rowsHtml}</div>
-                    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
-                      <button class="btn btn-ghost" onclick="closeBillsTableSettings()">Cancel</button>
-                      <button class="btn btn-em" onclick="saveBillsTableSettings('${mid}')">Save</button>
+                    <div style="display:flex;gap:8px;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+                      <button class="btn btn-ghost" onclick="resetBillsColumnWidths('${mid}')" title="Clear saved column widths so columns auto-fit to content">Reset Column Widths</button>
+                      <div style="margin-left:auto;display:flex;gap:8px">
+                        <button class="btn btn-ghost" onclick="closeBillsTableSettings()">Cancel</button>
+                        <button class="btn btn-em" onclick="saveBillsTableSettings('${mid}')">Save</button>
+                      </div>
                     </div>
                   </div>
                 </div>`;
@@ -2194,6 +2197,15 @@ function saveBillsTableSettings(mid) {
   _saveBillsTableViewState(mid, state);
   closeBillsTableSettings();
   // Re-render the meter's bills pane so the new column set shows.
+  if (typeof renderMeterWorkspace === 'function') renderMeterWorkspace();
+}
+
+// Reset saved column widths for a meter's bills table so auto-fit recalculates
+// on next render. Clears the bills_col_widths_<mid> localStorage key, closes
+// the settings modal, and re-renders the workspace.
+function resetBillsColumnWidths(mid) {
+  localStorage.removeItem('bills_col_widths_' + mid);
+  closeBillsTableSettings();
   if (typeof renderMeterWorkspace === 'function') renderMeterWorkspace();
 }
 
