@@ -398,6 +398,8 @@ function renderSavingsFooter(projId, sd) {
           <td></td>
         </tr>`;
   renderSavingsSummary(projId, sd, totKwh, totKw, totGas, totPropane, grandTotal);
+  // Keep the compact header banner in sync with the computed grand total
+  if (typeof _updateCompactHdrSavings === 'function') _updateCompactHdrSavings(projId);
 }
 
 function renderSavingsSummary(projId, sd, totKwh, totKw, totGas, totPropane, grandTotal) {

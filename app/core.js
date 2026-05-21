@@ -814,7 +814,7 @@ function renderDetail(p) {
             <span class="phc-sep">|</span>
             <span>SA# <span class="phc-val">${p.sa || '—'}</span></span>
             <span class="phc-sep">|</span>
-            <span>Savings <span class="phc-val">${p.savings ? '$' + Number(p.savings).toLocaleString() + '/yr' : '—'}</span></span>
+            <span id="phc-savings-${p.id}">Savings <span class="phc-val">${p.savings ? '$' + Number(p.savings).toLocaleString() + '/yr' : '—'}</span></span>
             <span class="phc-sep">|</span>
             <span><span class="phc-val">${p.start ? _parseISO(p.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span> → <span class="phc-val">${p.end ? _parseISO(p.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span></span>
             <span class="phc-sep">|</span>
@@ -1198,7 +1198,37 @@ function renderDetail(p) {
     initProjUDTab(p.id);
     initDashboardTab(p.id);
     _updateCompactHdrBaseline(p.id);
+    _updateCompactHdrSavings(p.id);
   });
+}
+
+function _updateCompactHdrSavings(projId) {
+  const savEl = document.getElementById('phc-savings-' + projId);
+  if (!savEl) return;
+  const p = projects.find((x) => x.id === projId);
+  if (!p) return;
+  const sd = p.savingsData;
+  if (sd && sd.measures && sd.measures.length > 0) {
+    const selMsrs = sd.measures.filter((m) => m.selected !== false);
+    let grandTotal = 0;
+    selMsrs.forEach((m) => {
+      const rates = m.rates || (sd.blRates || {})[m.bldgId] || {};
+      for (let mo = 0; mo < 12; mo++) {
+        const s = SUMMER_MOS.includes(mo);
+        grandTotal += (parseFloat(m.kwh[mo]) || 0) * (s ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
+        grandTotal += (parseFloat(m.kw[mo]) || 0) * (s ? rates.kwSummer || 0 : rates.kwWinter || 0);
+        grandTotal += (parseFloat(m.gas[mo]) || 0) * (rates.thermRate || 0);
+        grandTotal += (parseFloat((m.propane || [])[mo]) || 0) * (rates.gallonRate || 0);
+      }
+    });
+    if (grandTotal > 0) {
+      savEl.innerHTML = 'Savings <span class="phc-val">$' + Math.round(grandTotal).toLocaleString() + '/yr</span>';
+      return;
+    }
+  }
+  // Fallback to manually-entered p.savings
+  savEl.innerHTML =
+    'Savings <span class="phc-val">' + (p.savings ? '$' + Number(p.savings).toLocaleString() + '/yr' : '—') + '</span>';
 }
 
 function _updateCompactHdrBaseline(projId) {
