@@ -698,12 +698,16 @@ function _pdStopAnim() {
   }
 }
 
+function _pdGetPane() {
+  return (window._udActiveWrap || document.getElementById('udDetailWrap')).querySelector('#maPane');
+}
+
 /* ── Click handlers ── */
 function pdSelectNode(nodeId) {
   _pdStopAnim();
   _pdActive = _pdActive === nodeId ? null : nodeId;
   _pdEdgeActive = null;
-  const pane = document.getElementById('maPane');
+  const pane = _pdGetPane();
   if (pane) _pdRefreshDetail(pane);
 }
 
@@ -712,7 +716,7 @@ function pdSelectEdge(fromId, toId) {
   const key = fromId + ':' + toId;
   _pdEdgeActive = _pdEdgeActive === key ? null : key;
   _pdActive = null;
-  const pane = document.getElementById('maPane');
+  const pane = _pdGetPane();
   if (pane) _pdRefreshDetail(pane);
 }
 
@@ -980,7 +984,7 @@ function renderPipelinePane(pane, m, bills, incl) {
     '</strong></div>' +
     '</div>' +
     '<div style="display:flex;gap:8px">' +
-    '<button class="btn btn-ghost btn-sm" onclick="_pdStartAnim(document.getElementById(\'maPane\'))" title="Animate data flow">▶ Animate</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="_pdStartAnim(_pdGetPane())" title="Animate data flow">▶ Animate</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="_pdStopAnim();document.querySelectorAll(\'.pd-node-pulse\').forEach(n=>n.classList.remove(\'pd-node-pulse\'))" title="Stop animation">■ Stop</button>' +
     '</div>' +
     '</div>' +
@@ -1001,7 +1005,7 @@ function renderPipelinePane(pane, m, bills, incl) {
     '<div id="pdDetailPanel" style="display:none;margin-top:14px;border:1px solid var(--border);border-radius:10px;background:var(--s1);overflow:hidden">' +
     '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border)">' +
     '<div id="pdDetailTitle" style="font-weight:700;font-size:14px;color:var(--text)"></div>' +
-    '<button class="btn btn-ghost btn-sm" onclick="_pdActive=null;_pdEdgeActive=null;_pdRefreshDetail(document.getElementById(\'maPane\'))">✕</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="_pdActive=null;_pdEdgeActive=null;_pdRefreshDetail(_pdGetPane())">✕</button>' +
     '</div>' +
     '<div id="pdDetailBody" style="padding:16px"></div>' +
     '</div>';
