@@ -7463,14 +7463,6 @@
                 </button>
                 <button
                   class="s-item"
-                  data-sidebar-id="equipment"
-                  data-fb="energy.sidebar.equipment"
-                  onclick="sv('equipment', this)"
-                >
-                  <span class="s-ico">⚙️</span>Equipment
-                </button>
-                <button
-                  class="s-item"
                   data-sidebar-id="drawings"
                   data-fb="energy.sidebar.drawings"
                   onclick="sv('drawings', this)"
@@ -7511,14 +7503,6 @@
                   onclick="sv('calculators', this)"
                 >
                   <span class="s-ico">🧮</span>ECM Calculators
-                </button>
-                <button
-                  class="s-item"
-                  data-sidebar-id="eq-matrix"
-                  data-fb="energy.sidebar.eq-matrix"
-                  onclick="sv('eq-matrix', this)"
-                >
-                  <span class="s-ico">📋</span>Equipment Matrix
                 </button>
               </div>
             </div>
@@ -8489,51 +8473,6 @@
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- EQUIPMENT -->
-          <div id="view-equipment" class="view" data-ui-id="en-equipment" data-fb="energy.equipment">
-            <div
-              style="
-                display: flex;
-                justify-content: flex-end;
-                align-items: center;
-                gap: 8px;
-                flex-shrink: 0;
-                margin-bottom: 14px;
-              "
-            >
-              <input
-                class="fi"
-                id="equipQ"
-                placeholder="Search..."
-                style="width: 200px"
-                oninput="renderEquip()"
-                data-fb="energy.equipment.search"
-              />
-              <button class="btn btn-em" onclick="openEquipModal()" data-fb="energy.equipment.add-btn">
-                + Add Equipment
-              </button>
-            </div>
-            <div class="card">
-              <div style="overflow-x: auto">
-                <table class="dtbl" style="min-width: 860px" data-fb="energy.equipment.table">
-                  <thead>
-                    <tr>
-                      <th>Tag</th>
-                      <th>Type</th>
-                      <th>Make / Model</th>
-                      <th>Capacity</th>
-                      <th>Efficiency</th>
-                      <th>Location / Project</th>
-                      <th>Notes</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody id="equipBody"></tbody>
-                </table>
               </div>
             </div>
           </div>
@@ -13048,29 +12987,6 @@
               </div>
             </div>
             <div id="ecm-view-body" style="flex: 1; overflow-y: auto; min-height: 0"></div>
-          </div>
-
-          <!-- EQUIPMENT MATRIX VIEW -->
-          <div id="view-eq-matrix" class="view view-flex" data-ui-id="en-eq-matrix" data-fb="energy.eq-matrix">
-            <div
-              class="pg-hdr"
-              style="
-                flex-shrink: 0;
-                padding: 16px 20px 0;
-                border-bottom: 1px solid var(--border);
-                margin-bottom: 0;
-                padding-bottom: 14px;
-              "
-            >
-              <div>
-                <h1 class="pg-title">Equipment <em>Matrix</em></h1>
-                <p class="pg-sub">
-                  Import WebCTRL CSV exports to track ASHRAE Guideline 36 sequences, sensors, and live point values by
-                  equipment.
-                </p>
-              </div>
-            </div>
-            <div id="em-view-body" style="flex: 1; overflow-y: auto; min-height: 0"></div>
           </div>
 
           <script>

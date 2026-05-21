@@ -945,12 +945,8 @@ function renderDetail(p) {
                 <div style="text-align:center;color:var(--text3);padding:40px;font-size:13px">Loading budget data...</div>
               </div>
             </div>
-            <div id="ptab-equipment" class="ptab" style="padding:16px">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap">
-                <input class="fi" id="equipQ-proj-${p.id}" placeholder="Search tag, type..." style="width:200px" oninput="renderProjEquip(${p.id})">
-                <button class="btn btn-em btn-sm" onclick="openEquipModal()">+ Add Equipment</button>
-              </div>
-              <div id="ptab-equipment-body-${p.id}"></div>
+            <div id="ptab-eq-matrix" class="ptab" style="padding:0">
+              <div id="em-proj-wrap"></div>
             </div>
             <div id="ptab-hvacload" class="ptab" style="padding:0;overflow-y:auto">
               <div id="hvl-container-${p.id}" style="display:flex;flex-direction:column;height:100%;min-height:0">
