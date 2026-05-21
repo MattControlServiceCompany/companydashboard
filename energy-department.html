@@ -7214,6 +7214,14 @@
                 >
                   <span class="s-ico">🧮</span>ECM Calculators
                 </button>
+                <button
+                  class="s-item"
+                  data-sidebar-id="eq-matrix"
+                  data-fb="energy.sidebar.eq-matrix"
+                  onclick="sv('eq-matrix', this)"
+                >
+                  <span class="s-ico">📋</span>Equipment Matrix
+                </button>
               </div>
             </div>
           </div>
@@ -12743,6 +12751,29 @@
             <div id="ecm-view-body" style="flex: 1; overflow-y: auto; min-height: 0"></div>
           </div>
 
+          <!-- EQUIPMENT MATRIX VIEW -->
+          <div id="view-eq-matrix" class="view view-flex" data-ui-id="en-eq-matrix" data-fb="energy.eq-matrix">
+            <div
+              class="pg-hdr"
+              style="
+                flex-shrink: 0;
+                padding: 16px 20px 0;
+                border-bottom: 1px solid var(--border);
+                margin-bottom: 0;
+                padding-bottom: 14px;
+              "
+            >
+              <div>
+                <h1 class="pg-title">Equipment <em>Matrix</em></h1>
+                <p class="pg-sub">
+                  Import WebCTRL CSV exports to track ASHRAE Guideline 36 sequences, sensors, and live point values by
+                  equipment.
+                </p>
+              </div>
+            </div>
+            <div id="em-view-body" style="flex: 1; overflow-y: auto; min-height: 0"></div>
+          </div>
+
           <script>
             /* Synchronous view restore — runs before first paint to prevent flash.
                Sets the correct view active BEFORE DOMContentLoaded fires init(). */
@@ -14347,6 +14378,7 @@
     <script src="app/report-preview.js"></script>
     <script src="app/calculators.js"></script>
     <script src="app/ecm-calculators.js"></script>
+    <script src="app/equipment-matrix.js"></script>
     <script src="app/graphics-setpoints.js"></script>
     <script src="app/budget.js"></script>
     <script src="app/scorecard.js"></script>

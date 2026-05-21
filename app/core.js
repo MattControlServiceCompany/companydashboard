@@ -369,6 +369,9 @@ function sv(id, btn) {
   if (id === 'ems' && typeof emsRenderAll === 'function') {
     emsRenderAll();
   }
+  if (id === 'eq-matrix' && typeof initEquipMatrix === 'function') {
+    initEquipMatrix(emGetActiveProjId());
+  }
 }
 
 /* ── AUTH ── */
