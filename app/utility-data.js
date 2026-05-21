@@ -2748,6 +2748,13 @@ function renderBillsPane(pane, m, bills, incl) {
     if (!firstRow) return;
     const rawWidths = Array.from(firstRow.querySelectorAll('td')).map((td) => td.getBoundingClientRect().width);
     if (!rawWidths.length) return;
+    // Update b7e542eb: also measure header cell widths (in their own auto-layout
+    // table) so that header text (e.g. "RATE SCHEDULE") sets the minimum — the
+    // column can't be narrower than its header even if data values are short.
+    const hdrRow = hdrTbl.querySelector('thead tr');
+    const hdrWidths = hdrRow
+      ? Array.from(hdrRow.querySelectorAll('th')).map((th) => th.getBoundingClientRect().width)
+      : [];
 
     let savedWidths = null;
     try {
@@ -2757,10 +2764,18 @@ function renderBillsPane(pane, m, bills, incl) {
     // Update 97: `minW` on a col is a hard floor that saved widths can't
     // undercut — ensures date columns (and any other structurally-wide
     // fields) can't be shrunk below readability by a stale resize save.
+    // Update b7e542eb: removed `cols[i]?.w || 0` from the max calculation
+    // so columns use their natural browser-measured content width instead
+    // of being forced to the defined `w` default. This lets narrower
+    // columns (Rate Schedule, Table Settings, etc.) shrink to fit their
+    // actual content and frees up visible space for more data columns.
+    // Column width = max(body cell, header cell, minW floor) — never the
+    // arbitrary `w` hint that was padding columns wider than necessary.
     const widths = rawWidths.map((w, i) => {
       const floor = Math.max(40, cols[i]?.minW || 0);
       if (savedWidths && savedWidths[i]) return Math.max(floor, savedWidths[i]);
-      return Math.max(Math.ceil(w), cols[i]?.w || 0, floor);
+      const hdrW = hdrWidths[i] || 0;
+      return Math.max(Math.ceil(w), Math.ceil(hdrW), floor);
     });
 
     function applyWidths(ws) {
