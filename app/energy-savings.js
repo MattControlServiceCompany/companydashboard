@@ -648,6 +648,63 @@ function _renderSavingsContent(wrap, projId) {
     }
   });
   if (_migrated) sset('en_projects', projects);
+  // One-time restore: Broadmoor Elementary measure was deleted between May 11-20, 2026
+  // Restore it from the May 11 backup if this is the Louisburg project and the measure is missing
+  if (!p._broadmoorRestored && p.name && p.name.indexOf('Louisburg') !== -1) {
+    const hasBroadmoor = sd.measures.some((m) => m.bldgId === 'b1776962504464');
+    if (!hasBroadmoor) {
+      sd.measures.push({
+        id: 'm_csv_b1776962504464',
+        bldgId: 'b1776962504464',
+        desc: 'BAS Savings',
+        selected: true,
+        source: 'bas',
+        sqft: 0,
+        totalDollar: 8129.792025,
+        rates: {
+          kwhSummer: 0.0711,
+          kwhWinter: 0.0553,
+          kwSummer: 3190.1,
+          kwWinter: 2332.98,
+          thermRate: 0.798,
+        },
+        kwh: [
+          5298.44, 4374.63, 3722.75, 1483.52, 8364.24, 18323.82, 29494.55, 20370.85, 10319.94, 5719.57, 3741.26,
+          4842.72,
+        ],
+        gas: [133.41, 110.15, 93.73, 37.35, 0, 0, 0, 0, 0, 0, 94.2, 121.93],
+        kw: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        propane: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      });
+      // Restore associated per-building config keys
+      const bspKey = 'bldgsavproj_cfg_b1776962504464';
+      const bpKey = 'bldgperf_cfg_b1776962504464';
+      if (!localStorage.getItem(bspKey)) {
+        localStorage.setItem(bspKey, JSON.stringify({ cscPct: 60, escPct: 3.5, savingsPct: 6.7 }));
+      }
+      if (!localStorage.getItem(bpKey)) {
+        localStorage.setItem(
+          bpKey,
+          JSON.stringify({
+            cscMode: 'pct',
+            cscPct: 60,
+            cscFixed: 0,
+            years: 3,
+            escPct: 3.5,
+            _customEsc: true,
+            view: 'monthly',
+            _customCsc: true,
+          }),
+        );
+      }
+      p._broadmoorRestored = true;
+      sset('en_projects', projects);
+    } else {
+      // Measure already exists — mark as done so we don't check again
+      p._broadmoorRestored = true;
+      sset('en_projects', projects);
+    }
+  }
   // Auto-sync SQFT from current building data if measure has a building assigned
   let _sqftChanged = false;
   sd.measures.forEach((m) => {
