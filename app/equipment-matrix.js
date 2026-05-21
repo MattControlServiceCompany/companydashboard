@@ -315,10 +315,31 @@ function emParseCSVText(text) {
 }
 
 function emDetectColMap(headerRow) {
+  var h0 = (headerRow[0] || '').trim().toLowerCase();
+  var h1 = (headerRow[1] || '').trim().toLowerCase();
+
+  // WebCTRL 14-column point-list export
+  if (h0 === 'location' && h1 === 'control program') {
+    return {
+      format: 'webctrl',
+      building: 0, // BACnet path — parsed for building name
+      location: 1, // Control Program — part before " - "
+      equipName: 1, // Control Program — part after " - "
+      equipType: 1, // inferred from equipment name portion
+      pointName: 2, // BACnet point Name
+      pointValue: 3, // Live value
+      checkStart: -1,
+      checkCount: 0,
+      pointStart: -1,
+    };
+  }
+
+  // Enriched 45-column matrix (original format)
   var n = headerRow.length;
   var checkCount = 11;
   if (n >= 4 + 14) checkCount = 14;
   return {
+    format: 'enriched',
     building: 0,
     location: 1,
     equipName: 2,
@@ -326,6 +347,29 @@ function emDetectColMap(headerRow) {
     checkStart: 4,
     checkCount: checkCount,
     pointStart: 4 + checkCount,
+  };
+}
+
+// Parse a BACnet path from WebCTRL (e.g. "/Johnson County/Courthouse/Fire/...")
+// Returns the second path segment as the building name (first is the org/county level).
+function emParseBACnetBuilding(pathStr) {
+  if (!pathStr) return '';
+  var parts = pathStr.replace(/^\//, '').split('/');
+  // Return index 1 (building) if it exists, else index 0
+  return (parts[1] || parts[0] || '').trim();
+}
+
+// Parse a WebCTRL Control Program name like "Air Handling Unit B1 - Supply Duct"
+// Returns { location, equipName }
+// The part before the first " - " (space-dash-space) is the location/system area.
+// The part after is the equipment name.
+function emParseControlProgram(cpStr) {
+  if (!cpStr) return { location: '', equipName: cpStr || '' };
+  var idx = cpStr.indexOf(' - ');
+  if (idx === -1) return { location: '', equipName: cpStr.trim() };
+  return {
+    location: cpStr.slice(0, idx).trim(),
+    equipName: cpStr.slice(idx + 3).trim(),
   };
 }
 
@@ -370,6 +414,54 @@ function emMapPointToColumn(pointName, pointType, equipCategory) {
 
 function emExtractEquipmentGroups(rows, colMap) {
   var groups = new Map();
+
+  // ── WebCTRL 14-column point-list format ──
+  // Each row is a single BACnet point. Multiple rows share the same Control Program (col 1).
+  // Group by building + Control Program name. Parse location and equipment name from the CP string.
+  if (colMap.format === 'webctrl') {
+    for (var wi = 0; wi < rows.length; wi++) {
+      var wrow = rows[wi];
+      if (!wrow || wrow.length < 4) continue;
+      var bacnetPath = (wrow[0] || '').trim();
+      var controlProgram = (wrow[1] || '').trim();
+      var pointName = (wrow[2] || '').trim();
+      var pointVal = (wrow[3] || '').trim();
+      if (!controlProgram) continue;
+
+      var building = emParseBACnetBuilding(bacnetPath);
+      var parsed = emParseControlProgram(controlProgram);
+      var location = parsed.location;
+      var equipName = parsed.equipName || controlProgram;
+
+      // Infer equipment type from the equipment name portion
+      var category = emClassifyEquipType(equipName);
+      if (category === null) continue;
+
+      var groupKey = building + '||' + location + '||' + equipName;
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, {
+          building: building,
+          location: location,
+          equipName: equipName,
+          equipTypeStr: equipName,
+          category: category,
+          checkValues: {},
+          pointValues: {},
+          colMap: colMap,
+        });
+      }
+      var wgroup = groups.get(groupKey);
+
+      // Map point name + value to a live data column if we recognise it
+      var pointCol = emMapPointToColumn(pointName, null, category);
+      if (pointCol && pointVal !== '') {
+        wgroup.pointValues[pointCol] = pointVal;
+      }
+    }
+    return groups;
+  }
+
+  // ── Enriched 45-column matrix format (original) ──
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
     if (!row || row.length < 4) continue;
@@ -380,7 +472,8 @@ function emExtractEquipmentGroups(rows, colMap) {
     if (!building || !equipName || equipName === '—') continue;
     var category = emClassifyEquipType(equipTypeStr);
     if (category === null) continue;
-    var groupKey = building + '||' + equipName;
+    // Include location in key so same-named equipment in different locations stays separate
+    var groupKey = building + '||' + location + '||' + equipName;
     if (!groups.has(groupKey)) {
       groups.set(groupKey, {
         building: building,
@@ -446,6 +539,8 @@ function emGetActiveProjId() {
 
 function emLoadMatrix(projId) {
   if (!projId) return { rows: [], importedAt: null, buildings: [] };
+  // '__preview__' is an in-memory-only sentinel — return the preview data without touching localStorage
+  if (projId === '__preview__') return window._emPreviewData || { rows: [], importedAt: null, buildings: [] };
   return sget('en_eqmatrix_' + projId, { rows: [], importedAt: null, buildings: [] });
 }
 
@@ -508,7 +603,8 @@ function initEquipMatrix(projId) {
   var container = document.getElementById('em-view-body');
   if (!container) return;
   if (!pid) {
-    emRenderNoProject(container);
+    // No project selected — still show the upload panel so user can import a CSV
+    emRenderNoProjectUpload(container);
     return;
   }
   var data = emLoadMatrix(pid);
@@ -519,12 +615,35 @@ function initEquipMatrix(projId) {
   }
 }
 
-function emRenderNoProject(container) {
+// Shown when no project is active. Offers CSV upload with a note about project assignment.
+function emRenderNoProjectUpload(container) {
   container.innerHTML =
-    '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:260px;gap:10px">' +
-    '<div style="font-size:32px;opacity:0.25">📋</div>' +
-    '<div style="font-size:14px;font-weight:600;color:var(--text2)">No project selected</div>' +
-    '<div style="font-size:12px;color:var(--text3)">Open a project from the Projects view, then return here.</div>' +
+    '<div style="padding:20px 24px">' +
+    '<div style="margin-bottom:12px;padding:10px 14px;background:var(--s2);border:1px solid var(--border);border-radius:6px;font-size:12px;color:var(--text2)">' +
+    '<strong style="color:var(--text)">No project selected.</strong> ' +
+    'You can still import a CSV — open a project first (Projects view) to save the matrix to it, ' +
+    'or import here to preview.' +
+    '</div>' +
+    '<div id="em-drop-zone" ' +
+    'style="border:2px dashed var(--border);border-radius:8px;padding:32px 24px;text-align:center;cursor:pointer;background:var(--s2);transition:border-color 0.15s;margin-bottom:12px" ' +
+    'ondragover="emHandleFileDrop(event,\'over\')" ' +
+    'ondragleave="emHandleFileDrop(event,\'leave\')" ' +
+    'ondrop="emHandleFileDrop(event,\'drop\')" ' +
+    'onclick="document.getElementById(\'em-file-input\').click()">' +
+    '<div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px">Drop CSV files here</div>' +
+    '<div style="font-size:11px;color:var(--text3)">Accepts WebCTRL point-list exports or enriched matrix CSVs</div>' +
+    '</div>' +
+    '<input type="file" id="em-file-input" accept=".csv" multiple style="display:none" onchange="emHandleFileSelect(event)">' +
+    '<div id="em-file-list" style="margin-bottom:12px;display:none">' +
+    '<div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px">Files queued:</div>' +
+    '<ul id="em-file-items" style="list-style:none;padding:0;margin:0;font-size:11px;color:var(--text)"></ul>' +
+    '</div>' +
+    '<div id="em-import-row" style="display:none">' +
+    '<button class="btn btn-sm" style="background:var(--accent);color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-weight:600" onclick="emHandleImport(null)">' +
+    'Preview Import' +
+    '</button>' +
+    '<span id="em-import-status" style="font-size:11px;color:var(--text3);margin-left:10px">Select a project to save permanently.</span>' +
+    '</div>' +
     '</div>';
 }
 
@@ -1070,24 +1189,63 @@ function emHandleImport(pid) {
   var statusEl = document.getElementById('em-import-status');
   if (statusEl) statusEl.textContent = 'Parsing...';
   var allRows = [];
+  var detectedFormats = [];
   var pending = _emPendingFiles.length;
   var done = 0;
   function onFileDone() {
     done++;
     if (done < pending) return;
-    var existingData = emLoadMatrix(pid);
-    var merged = emMergeIntoMatrix(existingData, allRows);
-    emSaveMatrix(pid, merged);
-    var container = document.getElementById('em-view-body');
-    if (container) emRenderMatrix(container, merged, pid);
-    showToast(
-      'Equipment matrix imported: ' +
-        allRows.length +
-        ' rows from ' +
-        merged.buildings.length +
-        ' building' +
-        (merged.buildings.length !== 1 ? 's' : ''),
-    );
+
+    // ── Zero-row warning ──
+    if (allRows.length === 0) {
+      var formatList = detectedFormats.join(', ') || 'unknown';
+      console.warn(
+        '[EquipMatrix] Import produced 0 rows. Detected format(s): ' +
+          formatList +
+          '. Check that the CSV has recognisable equipment type names ' +
+          '(e.g. AHU, VAV, FPB, Boiler) in the Control Program column (WebCTRL) ' +
+          'or Equipment Type column (enriched matrix).',
+      );
+      showToast('WARNING: No equipment found in CSV — check the file format', 'warn');
+      if (statusEl) statusEl.textContent = 'No equipment rows found.';
+      return;
+    }
+
+    // Only save to localStorage when a project is selected
+    if (pid) {
+      var existingData = emLoadMatrix(pid);
+      var merged = emMergeIntoMatrix(existingData, allRows);
+      emSaveMatrix(pid, merged);
+      var container = document.getElementById('em-view-body');
+      if (container) emRenderMatrix(container, merged, pid);
+      showToast(
+        'Equipment matrix imported: ' +
+          allRows.length +
+          ' rows from ' +
+          merged.buildings.length +
+          ' building' +
+          (merged.buildings.length !== 1 ? 's' : ''),
+      );
+    } else {
+      // No project — render a preview without saving
+      var previewData = emMergeIntoMatrix({ rows: [], buildings: [] }, allRows);
+      var container = document.getElementById('em-view-body');
+      if (container) {
+        // Store preview in a temporary in-memory key so emRenderMatrix can load it
+        window._emPreviewData = previewData;
+        window._emActivePid = '__preview__';
+        emRenderMatrix(container, previewData, '__preview__');
+      }
+      showToast(
+        'Preview: ' +
+          allRows.length +
+          ' rows from ' +
+          previewData.buildings.length +
+          ' building' +
+          (previewData.buildings.length !== 1 ? 's' : '') +
+          ' — select a project to save',
+      );
+    }
   }
   for (var i = 0; i < _emPendingFiles.length; i++) {
     (function (file) {
@@ -1100,6 +1258,7 @@ function emHandleImport(pid) {
           return;
         }
         var colMap = emDetectColMap(parsed[0]);
+        detectedFormats.push(colMap.format || 'enriched');
         var groups = emExtractEquipmentGroups(parsed.slice(1), colMap);
         groups.forEach(function (group, key) {
           allRows.push(emGroupToMatrixRow(key, group));
