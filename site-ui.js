@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.21.304';
+  var CH_VERSION = 'v2026.05.21.305';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -26,6 +26,149 @@
     theme: 'dark',
     feedbackMode: false,
   };
+
+  /* ── RELEASE NOTES ── */
+  var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.21.303',
+      date: '2026-05-21',
+      title: 'Release Notes, Savings Banner, Data Migrations',
+      features: [
+        { type: 'new', text: "Release Notes — What's New modal accessible from the sidebar on all pages" },
+        {
+          type: 'fix',
+          text: 'Project banner Savings field now shows computed value from Energy Savings measures instead of always showing "—"',
+        },
+        {
+          type: 'fix',
+          text: 'Energy Savings measures with legacy rate field names (rates.gas, rates.propane) automatically migrated to current schema (rates.thermRate, rates.gallonRate)',
+        },
+        {
+          type: 'fix',
+          text: 'Broadmoor Elementary Energy Savings measure restored from May 2026 backup for Louisburg USD #416',
+        },
+        { type: 'fix', text: 'csv-import.js Unicode characters restored after encoding corruption in previous commit' },
+      ],
+    },
+    {
+      version: 'v2026.05.21.302',
+      date: '2026-05-21',
+      title: 'Equipment Matrix WebCTRL Format Support',
+      features: [
+        {
+          type: 'new',
+          text: 'Equipment Matrix now imports WebCTRL CSV point-list exports (Location / Control Program format)',
+        },
+        {
+          type: 'new',
+          text: 'No-project preview mode — import a CSV without selecting a project to preview results before saving',
+        },
+        { type: 'fix', text: 'Zero-row import now shows a clear warning toast instead of silently saving empty data' },
+        {
+          type: 'change',
+          text: 'Equipment group key now includes location segment to prevent same-named equipment in different locations from merging',
+        },
+      ],
+    },
+    {
+      version: 'v2026.05.21.300',
+      date: '2026-05-21',
+      title: 'Equipment Matrix Expansion + Scorecard Fix',
+      features: [
+        {
+          type: 'new',
+          text: 'JOCO equipment matrix expanded from 19 summary rows to 1,030 individual equipment rows using real program names from audit files',
+        },
+        {
+          type: 'fix',
+          text: 'Scorecard Load Factor calculation fixed — was reading wrong field name (kw instead of demandKW)',
+        },
+        { type: 'fix', text: 'Project tab pane now restores to the previously active tab when reopening a project' },
+        {
+          type: 'new',
+          text: 'Equipment Matrix phases 4-5: full 45-column table with filtering, sorting, cell editing, CSV export, and add-row',
+        },
+      ],
+    },
+    {
+      version: 'v2026.05.20.299',
+      date: '2026-05-20',
+      title: 'Energy Savings Matrix Improvements',
+      features: [
+        {
+          type: 'new',
+          text: 'Per-measure rate editing with expandable detail row — edit kWh/kW/gas rates per measure, reset to building defaults',
+        },
+        { type: 'new', text: 'Project Dashboard tab added as default landing tab with savings summary and calendar' },
+        { type: 'new', text: 'District Calendar replaced with upload/parse/edit flow — paste text or upload PDF' },
+        { type: 'fix', text: 'Bill line items validation tolerance held at $0.10 — fixes false sum-mismatch warnings' },
+        { type: 'new', text: 'Duplicate bill detection modal now has per-bill overwrite + merge action buttons' },
+      ],
+    },
+    {
+      version: 'v2026.05.05.40',
+      date: '2026-05-05',
+      title: 'Solar Calc PDR Compliance + Electric Bill Line Items',
+      features: [
+        { type: 'new', text: 'Solar Calc rewritten to match Excel PDR cell-for-cell across 8 sections (A-H)' },
+        { type: 'new', text: 'Net Metering and Behind the Meter profiles shown separately (Sections F and G)' },
+        { type: 'new', text: 'Solar Calc now uses live auto-calc (Excel-style) — no Calculate button needed' },
+        {
+          type: 'new',
+          text: 'Electric bill modal expanded with 15 new line-item fields (on-peak/off-peak, riders, franchise fee, solar credit)',
+        },
+        { type: 'new', text: 'HVAC Load Estimation rebuilt per-building with Reverse Utility Analysis method' },
+        {
+          type: 'new',
+          text: 'Energy Savings unified — project tab and sidebar page share the same rendering function',
+        },
+      ],
+    },
+    {
+      version: 'v2026.04.14',
+      date: '2026-04-14',
+      title: 'PDF Extraction Engine Overhaul',
+      features: [
+        { type: 'new', text: 'Multi-bill PDF support — import a single PDF with 12+ monthly bills at once' },
+        { type: 'fix', text: 'Evergy charge extraction regex fixed for multiline end-of-line patterns' },
+        {
+          type: 'fix',
+          text: 'PDF page range anchored to billing period cover page — no more 5-page ranges for 3-page bills',
+        },
+        { type: 'fix', text: 'Sub-dollar sum mismatch auto-correction added to reduce false validation warnings' },
+        { type: 'new', text: 'Audit log added for bill changes — append-only, max 500 entries' },
+      ],
+    },
+    {
+      version: 'v2026.03.27',
+      date: '2026-03-27',
+      title: 'Solar Calc, Calc Templates, Energy Graphics',
+      features: [
+        { type: 'new', text: 'Solar Calculator added — array sizing, tiered Evergy rate math, payback years' },
+        { type: 'new', text: 'Calc Templates launcher added to Energy Savings view' },
+        {
+          type: 'new',
+          text: 'Energy Graphics tab added to project detail — monthly kWh/gas charts and EUI comparison',
+        },
+        { type: 'new', text: 'Number input spinners removed across all 90+ inputs — clean keyboard entry' },
+        { type: 'new', text: 'HVAC Load Estimation tab added to project detail' },
+      ],
+    },
+    {
+      version: 'v2026.03.16',
+      date: '2026-03-16',
+      title: 'Hybrid PDF Extraction Engine',
+      features: [
+        {
+          type: 'new',
+          text: 'Rule-based PDF extraction added for Evergy and Spire/Laclede Gas — eliminates AI API cost for known formats',
+        },
+        { type: 'new', text: 'Tesseract.js OCR fallback for scanned/image PDFs' },
+        { type: 'new', text: 'Confidence scoring — counts non-null extracted fields to measure extraction quality' },
+        { type: 'change', text: 'AI removed from utility bill extraction — 100% local and offline-capable' },
+      ],
+    },
+  ];
 
   /* ── LOAD / SAVE SETTINGS ── */
   function loadSettings() {
@@ -215,6 +358,7 @@
     var bottom = document.createElement('div');
     bottom.className = 'sidebar-bottom';
     bottom.innerHTML =
+      '<button class="rn-whats-new-btn" onclick="window.__siteUI.openReleaseNotes()">&#128196; What\'s New</button>' +
       '<button class="sb-settings-btn" onclick="window.__siteUI.openSettings()">&#9881; Settings</button>' +
       '<div class="sb-divider"></div>' +
       '<div class="sb-clock" id="sb-clock">--:-- --</div>' +
@@ -478,6 +622,68 @@
   }
   function closeHelp() {
     var overlay = document.getElementById('helpOverlay');
+    if (overlay) overlay.classList.remove('open');
+  }
+
+  /* ── RELEASE NOTES MODAL ── */
+  function buildReleaseNotesModal() {
+    var overlay = document.createElement('div');
+    overlay.className = 'rn-overlay';
+    overlay.id = 'rnOverlay';
+    overlay.onclick = function (e) {
+      if (e.target === overlay) closeReleaseNotes();
+    };
+
+    var entriesHTML = RELEASE_NOTES.map(function (entry, idx) {
+      var isLatest = idx === 0;
+      var featuresHTML = entry.features
+        .map(function (f) {
+          var cls = f.type === 'fix' ? ' rn-fix' : f.type === 'change' ? ' rn-change' : '';
+          return '<li class="' + cls + '">' + f.text + '</li>';
+        })
+        .join('');
+
+      return (
+        '<div class="rn-entry">' +
+        '<div class="rn-version-row">' +
+        '<span class="rn-version-badge">' +
+        entry.version +
+        '</span>' +
+        '<span class="rn-date">' +
+        entry.date +
+        '</span>' +
+        (isLatest ? '<span class="rn-latest-badge">Latest</span>' : '') +
+        '</div>' +
+        '<div class="rn-entry-title">' +
+        entry.title +
+        '</div>' +
+        '<ul class="rn-features">' +
+        featuresHTML +
+        '</ul>' +
+        '</div>'
+      );
+    }).join('');
+
+    overlay.innerHTML =
+      '<div class="rn-modal">' +
+      '<div class="rn-hdr">' +
+      '<span class="rn-title">&#128196; What\'s New</span>' +
+      '<button class="rn-x" onclick="window.__siteUI.closeReleaseNotes()">&#10005;</button>' +
+      '</div>' +
+      '<div class="rn-body">' +
+      entriesHTML +
+      '</div>' +
+      '</div>';
+
+    document.body.appendChild(overlay);
+  }
+
+  function openReleaseNotes() {
+    var overlay = document.getElementById('rnOverlay');
+    if (overlay) overlay.classList.add('open');
+  }
+  function closeReleaseNotes() {
+    var overlay = document.getElementById('rnOverlay');
     if (overlay) overlay.classList.remove('open');
   }
 
@@ -762,6 +968,7 @@
     buildHelpButton();
     buildSettingsModal();
     buildHelpModal();
+    buildReleaseNotesModal();
     buildMobileSidebarToggle();
     applyDeptNavAria();
     applyModalAccessibility();
@@ -787,6 +994,8 @@
     closeSettings: closeSettings,
     openHelp: openHelp,
     closeHelp: closeHelp,
+    openReleaseNotes: openReleaseNotes,
+    closeReleaseNotes: closeReleaseNotes,
     backupData: backupData,
     restoreData: restoreData,
     resetData: resetData,
