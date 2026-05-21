@@ -804,7 +804,9 @@ function emRenderToolbar(data, pid, projBadge) {
     (projBadge || '') +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleSaveEdits()" style="height:28px;font-size:11px">Save Edits</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleExportCSV()" style="height:28px;font-size:11px">Export CSV</button>' +
-    '<button class="btn btn-ghost btn-sm" onclick="emHandleAddRow()" style="height:28px;font-size:11px">+ Add Row</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="emAddManualRow(\'' +
+    pid +
+    '\')" style="height:28px;font-size:11px">+ Add Row</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emAddCustomCol(\'' +
     pid +
     '\')" style="height:28px;font-size:11px">+ Column</button>' +
@@ -1238,6 +1240,61 @@ function emHandleAddRow() {
   emSaveMatrix(pid, data);
   emRenderTable(data, _emFilters);
   showToast('New row added');
+}
+
+function emAddManualRow(projId) {
+  if (!projId) projId = window._emActivePid;
+  if (!projId) return;
+  var data = emLoadMatrix(projId);
+  var newRow = {
+    id: 'manual_' + Date.now(),
+    // Identity
+    building: '',
+    location: '',
+    equipName: '',
+    equipType: '',
+    category: '',
+    floor: '',
+    area: '',
+    // Checks / Points
+    checks: {},
+    points: {},
+    // Physical Attributes
+    serial: '',
+    model: '',
+    manufacturer: '',
+    sizeCapacity: '',
+    voltage: '',
+    phase: '',
+    amps: '',
+    hpTons: '',
+    // Lifecycle
+    installDate: '',
+    age: '',
+    expectedLife: '',
+    condition: '',
+    // Maintenance
+    warrantyInfo: '',
+    lastServiceDate: '',
+    serviceProvider: '',
+    // Location Detail
+    room: '',
+    floorDetail: '',
+    wing: '',
+    buildingArea: '',
+    // Controls/BAS
+    controllerType: '',
+    bacnetAddr: '',
+    ipAddr: '',
+    // Notes
+    notes: '',
+    editedAt: new Date().toISOString(),
+  };
+  if (!data.rows) data.rows = [];
+  data.rows.push(newRow);
+  emSaveMatrix(projId, data);
+  emRenderTable(data, _emFilters);
+  showToast('New row added — fill in inline');
 }
 
 function emRenderUploadPanel(container, pid, inline) {
