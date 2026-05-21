@@ -370,9 +370,6 @@ function sv(id, btn) {
   if (id === 'ems' && typeof emsRenderAll === 'function') {
     emsRenderAll();
   }
-  if (id === 'eq-matrix' && typeof initEquipMatrix === 'function') {
-    initEquipMatrix(emGetActiveProjId());
-  }
 }
 
 /* ── AUTH ── */
@@ -2260,7 +2257,7 @@ const PROJ_TABS_DEFAULT = [
   { id: 'utility', label: '⚡ Utility Data' },
   { id: 'savedbills', label: '🗄️ Saved Bills' },
   { id: 'budget', label: '💰 Budget' },
-  { id: 'equipment', label: '⚙️ Equipment' },
+  { id: 'eq-matrix', label: '📋 Equipment Matrix' },
   { id: 'hvacload', label: '🌡️ HVAC Load Est' },
   { id: 'energygfx', label: '📈 Energy Graphics' },
   { id: 'district', label: '🗓️ District Calendar' },
@@ -2409,7 +2406,7 @@ function sPTab(tab, el) {
   if (tab === 'utility') initProjUDTab(p.id);
   if (tab === 'savedbills') renderProjSavedBills(p.id);
   if (tab === 'budget') initBudgetTab(p.id);
-  if (tab === 'equipment') renderProjEquip(p.id);
+  if (tab === 'eq-matrix') initEquipMatrix(p.id);
   if (tab === 'savings') initSavingsTab(p.id);
   if (tab === 'hvacload') requestAnimationFrame(() => initHvacLoadTab(p.id));
   if (tab === 'energygfx') egfxRefresh(p.id);
