@@ -517,6 +517,33 @@ function emGroupToMatrixRow(groupKey, group) {
     category: group.category,
     checks: checks,
     points: group.pointValues,
+    // Physical Attributes
+    serial: '',
+    model: '',
+    manufacturer: '',
+    sizeCapacity: '',
+    voltage: '',
+    phase: '',
+    amps: '',
+    hpTons: '',
+    // Lifecycle
+    installDate: '',
+    age: '',
+    expectedLife: '',
+    condition: '',
+    // Maintenance
+    warrantyInfo: '',
+    lastServiceDate: '',
+    serviceProvider: '',
+    // Location Detail
+    room: '',
+    floorDetail: '',
+    wing: '',
+    buildingArea: '',
+    // Controls/BAS
+    controllerType: '',
+    bacnetAddr: '',
+    ipAddr: '',
     notes: '',
     editedAt: null,
   };
@@ -584,6 +611,7 @@ var _emPendingFiles = [];
 var _emSortCol = null;
 var _emSortDir = 1;
 var _emFilters = { building: '', type: '', search: '' };
+var _emHiddenGroups = {};
 
 function initEquipMatrix(projId) {
   var wrap = document.getElementById('em-proj-wrap');
@@ -602,6 +630,7 @@ function emRenderMatrix(container, data, pid) {
   _emFilters = { building: '', type: '', search: '' };
   _emSortCol = null;
   _emSortDir = 1;
+  _emHiddenGroups = {};
 
   var projName = '';
   if (typeof projects !== 'undefined') {
@@ -717,7 +746,29 @@ function emRenderToolbar(data, pid, projBadge) {
     '<option value="hwp">HW Plant</option>' +
     '<option value="chwp">CHW Plant</option>' +
     '<option value="ct">Cooling Tower</option>';
+  var colToggleStyle =
+    'display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);cursor:pointer;padding:2px 6px;border-radius:3px;border:1px solid var(--border);background:var(--s2);user-select:none';
+  var colToggles =
+    '<div style="display:flex;align-items:center;gap:6px;padding:4px 16px 6px;flex-wrap:wrap;border-top:1px solid var(--border)">' +
+    '<span style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-right:2px">Columns:</span>' +
+    '<label style="' +
+    colToggleStyle +
+    '"><input type="checkbox" checked onchange="emToggleColGroup(\'physical\',this.checked)" style="margin:0"> Physical</label>' +
+    '<label style="' +
+    colToggleStyle +
+    '"><input type="checkbox" checked onchange="emToggleColGroup(\'lifecycle\',this.checked)" style="margin:0"> Lifecycle</label>' +
+    '<label style="' +
+    colToggleStyle +
+    '"><input type="checkbox" checked onchange="emToggleColGroup(\'maintenance\',this.checked)" style="margin:0"> Maintenance</label>' +
+    '<label style="' +
+    colToggleStyle +
+    '"><input type="checkbox" checked onchange="emToggleColGroup(\'locDetail\',this.checked)" style="margin:0"> Location</label>' +
+    '<label style="' +
+    colToggleStyle +
+    '"><input type="checkbox" checked onchange="emToggleColGroup(\'controls\',this.checked)" style="margin:0"> Controls</label>' +
+    '</div>';
   return (
+    '<div style="display:flex;flex-direction:column">' +
     '<div style="display:flex;align-items:center;gap:8px;padding:8px 16px;flex-wrap:wrap">' +
     '<select id="em-filter-bldg" onchange="emApplyFilters()" style="font-size:11px;padding:4px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:28px">' +
     bldgOpts +
@@ -733,6 +784,8 @@ function emRenderToolbar(data, pid, projBadge) {
     '<button class="btn btn-ghost btn-sm" onclick="emHandleExportCSV()" style="height:28px;font-size:11px">Export CSV</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleAddRow()" style="height:28px;font-size:11px">+ Add Row</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emShowUploadPanel(this)" style="height:28px;font-size:11px">Re-import CSVs</button>' +
+    '</div>' +
+    colToggles +
     '</div>'
   );
 }
@@ -777,6 +830,38 @@ function emGetColDefs() {
     }
     defs.push({ key: pm.col, label: pm.label, group: grp, width: 120, isLive: true });
   }
+  // Physical Attributes
+  defs.push({ key: 'serial', label: 'Serial #', group: 'physical', width: 120 });
+  defs.push({ key: 'model', label: 'Model #', group: 'physical', width: 120 });
+  defs.push({ key: 'manufacturer', label: 'Manufacturer', group: 'physical', width: 140 });
+  defs.push({ key: 'sizeCapacity', label: 'Size/Capacity', group: 'physical', width: 120 });
+  defs.push({ key: 'voltage', label: 'Voltage', group: 'physical', width: 80 });
+  defs.push({ key: 'phase', label: 'Phase', group: 'physical', width: 70 });
+  defs.push({ key: 'amps', label: 'Amps', group: 'physical', width: 70 });
+  defs.push({ key: 'hpTons', label: 'HP/Tons', group: 'physical', width: 80 });
+
+  // Lifecycle
+  defs.push({ key: 'installDate', label: 'Install Date', group: 'lifecycle', width: 100 });
+  defs.push({ key: 'age', label: 'Age', group: 'lifecycle', width: 60 });
+  defs.push({ key: 'expectedLife', label: 'Expected Life', group: 'lifecycle', width: 90 });
+  defs.push({ key: 'condition', label: 'Condition', group: 'lifecycle', width: 90 });
+
+  // Maintenance
+  defs.push({ key: 'warrantyInfo', label: 'Warranty Info', group: 'maintenance', width: 120 });
+  defs.push({ key: 'lastServiceDate', label: 'Last Service', group: 'maintenance', width: 100 });
+  defs.push({ key: 'serviceProvider', label: 'Service Provider', group: 'maintenance', width: 130 });
+
+  // Location Detail
+  defs.push({ key: 'room', label: 'Room', group: 'locDetail', width: 80 });
+  defs.push({ key: 'floorDetail', label: 'Floor', group: 'locDetail', width: 70 });
+  defs.push({ key: 'wing', label: 'Wing', group: 'locDetail', width: 80 });
+  defs.push({ key: 'buildingArea', label: 'Building Area', group: 'locDetail', width: 120 });
+
+  // Controls/BAS
+  defs.push({ key: 'controllerType', label: 'Controller Type', group: 'controls', width: 120 });
+  defs.push({ key: 'bacnetAddr', label: 'BACnet Addr', group: 'controls', width: 110 });
+  defs.push({ key: 'ipAddr', label: 'IP Address', group: 'controls', width: 110 });
+
   defs.push({ key: 'notes', label: 'Notes', group: 'id', width: 200 });
   _EM_COL_DEFS = defs;
   return defs;
@@ -790,7 +875,25 @@ var _EM_GROUP_COLORS = {
   'live-hw': '#e74c3c',
   'live-chw': '#3498db',
   'live-ct': '#9b59b6',
+  physical: '#27ae60',
+  lifecycle: '#f39c12',
+  maintenance: '#2980b9',
+  locDetail: '#8e44ad',
+  controls: '#16a085',
 };
+
+function emGetCellValByDef(row, def, edits) {
+  var editKey = row.id + '::' + def.key;
+  if (edits && edits[editKey] !== undefined) return edits[editKey];
+  if (def.key.indexOf('check_') === 0) {
+    var checkCols = EM_CHECK_COLS_14;
+    return (row.checks && row.checks[checkCols[def.checkIdx]]) || '';
+  }
+  if (def.isLive) {
+    return (row.points && row.points[def.key]) || '';
+  }
+  return row[def.key] || '';
+}
 
 function emRenderTable(data, filters) {
   var wrap = document.getElementById('em-table-wrap');
@@ -799,23 +902,27 @@ function emRenderTable(data, filters) {
   var edits = data.edits || {};
   var filtered = emFilterRows(rows, filters);
 
+  var defs = emGetColDefs().filter(function (d) {
+    return !_emHiddenGroups[d.group];
+  });
+  var checkCols = EM_CHECK_COLS_14;
+
   if (_emSortCol !== null) {
-    var sc = _emSortCol;
+    var sortDef = defs[_emSortCol];
     var sd = _emSortDir;
-    filtered = filtered.slice().sort(function (a, b) {
-      var av = emGetCellVal(a, sc, data.edits);
-      var bv = emGetCellVal(b, sc, data.edits);
-      if (av < bv) return -sd;
-      if (av > bv) return sd;
-      return 0;
-    });
+    if (sortDef) {
+      filtered = filtered.slice().sort(function (a, b) {
+        var av = emGetCellValByDef(a, sortDef, data.edits);
+        var bv = emGetCellValByDef(b, sortDef, data.edits);
+        if (av < bv) return -sd;
+        if (av > bv) return sd;
+        return 0;
+      });
+    }
   }
 
   var countEl = document.getElementById('em-row-count');
   if (countEl) countEl.textContent = filtered.length + ' of ' + rows.length + ' rows';
-
-  var defs = emGetColDefs();
-  var checkCols = EM_CHECK_COLS_14;
 
   var theadCells = '';
   for (var ci = 0; ci < defs.length; ci++) {
@@ -852,7 +959,7 @@ function emRenderTable(data, filters) {
       var def = defs[di];
       var editKey = rowId + '::' + def.key;
       var isEdited = edits && edits[editKey] !== undefined;
-      var rawVal = emGetCellVal(row, di, edits);
+      var rawVal = emGetCellValByDef(row, def, edits);
       var displayVal = emFormatCell(rawVal, def);
       var cellStyle =
         'padding:4px 8px;font-size:11px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:middle;' +
@@ -967,6 +1074,15 @@ function emApplyFilters() {
   emRenderTable(data, _emFilters);
 }
 
+function emToggleColGroup(group, visible) {
+  _emHiddenGroups[group] = !visible;
+  // Reset column defs cache so index-based sort stays consistent
+  _EM_COL_DEFS = null;
+  _emSortCol = null;
+  var data = emLoadMatrix(window._emActivePid);
+  emRenderTable(data, _emFilters);
+}
+
 function emHandleSort(colIdx) {
   if (_emSortCol === colIdx) {
     _emSortDir = _emSortDir === 1 ? -1 : 1;
@@ -1045,6 +1161,33 @@ function emHandleAddRow() {
     category: null,
     checks: {},
     points: {},
+    // Physical Attributes
+    serial: '',
+    model: '',
+    manufacturer: '',
+    sizeCapacity: '',
+    voltage: '',
+    phase: '',
+    amps: '',
+    hpTons: '',
+    // Lifecycle
+    installDate: '',
+    age: '',
+    expectedLife: '',
+    condition: '',
+    // Maintenance
+    warrantyInfo: '',
+    lastServiceDate: '',
+    serviceProvider: '',
+    // Location Detail
+    room: '',
+    floorDetail: '',
+    wing: '',
+    buildingArea: '',
+    // Controls/BAS
+    controllerType: '',
+    bacnetAddr: '',
+    ipAddr: '',
     notes: '',
     editedAt: new Date().toISOString(),
   };
