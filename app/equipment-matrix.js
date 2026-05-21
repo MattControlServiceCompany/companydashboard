@@ -551,6 +551,28 @@ function emGroupToMatrixRow(groupKey, group) {
 
 /* ── PHASE 2: STORAGE AND MERGE ── */
 
+function emLoadCustomCols(projId) {
+  var raw = localStorage.getItem('en_eqmatrix_cols_' + projId);
+  return raw ? JSON.parse(raw) : [];
+}
+function emSaveCustomCols(projId, cols) {
+  localStorage.setItem('en_eqmatrix_cols_' + projId, JSON.stringify(cols));
+}
+
+function emAddCustomCol(projId) {
+  if (!projId) return;
+  var label = (window.prompt('New column name:') || '').trim();
+  if (!label) return;
+  var key = 'custom_col_' + Date.now();
+  var cols = emLoadCustomCols(projId);
+  cols.push({ key: key, label: label, dataType: 'text' });
+  emSaveCustomCols(projId, cols);
+  // Invalidate col defs cache so the new column renders immediately
+  _EM_COL_DEFS = null;
+  var data = emLoadMatrix(projId);
+  emRenderTable(data, _emFilters);
+}
+
 function emLoadMatrix(projId) {
   if (!projId) return { rows: [], importedAt: null, buildings: [] };
   // '__preview__' is an in-memory-only sentinel — return the preview data without touching localStorage
@@ -783,6 +805,9 @@ function emRenderToolbar(data, pid, projBadge) {
     '<button class="btn btn-ghost btn-sm" onclick="emHandleSaveEdits()" style="height:28px;font-size:11px">Save Edits</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleExportCSV()" style="height:28px;font-size:11px">Export CSV</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleAddRow()" style="height:28px;font-size:11px">+ Add Row</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="emAddCustomCol(\'' +
+    pid +
+    '\')" style="height:28px;font-size:11px">+ Column</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emShowUploadPanel(this)" style="height:28px;font-size:11px">Re-import CSVs</button>' +
     '</div>' +
     colToggles +
@@ -791,8 +816,10 @@ function emRenderToolbar(data, pid, projBadge) {
 }
 
 var _EM_COL_DEFS = null;
-function emGetColDefs() {
-  if (_EM_COL_DEFS) return _EM_COL_DEFS;
+function emGetColDefs(projId) {
+  var customCols = projId ? emLoadCustomCols(projId) : [];
+  // Only use the cache when there are no custom columns (custom cols are per-project and dynamic)
+  if (!customCols.length && _EM_COL_DEFS) return _EM_COL_DEFS;
   var checkCols14 = EM_CHECK_COLS_14;
   var defs = [
     { key: 'building', label: 'Building', group: 'id', width: 180 },
@@ -863,7 +890,21 @@ function emGetColDefs() {
   defs.push({ key: 'ipAddr', label: 'IP Address', group: 'controls', width: 110 });
 
   defs.push({ key: 'notes', label: 'Notes', group: 'id', width: 200 });
-  _EM_COL_DEFS = defs;
+
+  // Append user-created custom columns at the end
+  for (var cc = 0; cc < customCols.length; cc++) {
+    var ccol = customCols[cc];
+    defs.push({
+      key: ccol.key,
+      label: ccol.label,
+      group: 'custom',
+      width: 120,
+      isCustom: true,
+      dataType: ccol.dataType,
+    });
+  }
+
+  if (!customCols.length) _EM_COL_DEFS = defs;
   return defs;
 }
 
@@ -880,6 +921,7 @@ var _EM_GROUP_COLORS = {
   maintenance: '#2980b9',
   locDetail: '#8e44ad',
   controls: '#16a085',
+  custom: '#c0392b',
 };
 
 function emGetCellValByDef(row, def, edits) {
@@ -902,7 +944,7 @@ function emRenderTable(data, filters) {
   var edits = data.edits || {};
   var filtered = emFilterRows(rows, filters);
 
-  var defs = emGetColDefs().filter(function (d) {
+  var defs = emGetColDefs(window._emActivePid).filter(function (d) {
     return !_emHiddenGroups[d.group];
   });
   var checkCols = EM_CHECK_COLS_14;
