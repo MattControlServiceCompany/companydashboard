@@ -1205,30 +1205,40 @@ function renderDetail(p) {
 function _updateCompactHdrSavings(projId) {
   const savEl = document.getElementById('phc-savings-' + projId);
   if (!savEl) return;
-  const p = projects.find((x) => x.id === projId);
-  if (!p) return;
-  const sd = p.savingsData;
-  if (sd && sd.measures && sd.measures.length > 0) {
-    const selMsrs = sd.measures.filter((m) => m.selected !== false);
-    let grandTotal = 0;
-    selMsrs.forEach((m) => {
-      const rates = m.rates || (sd.blRates || {})[m.bldgId] || {};
-      for (let mo = 0; mo < 12; mo++) {
-        const s = SUMMER_MOS.includes(mo);
-        grandTotal += (parseFloat(m.kwh[mo]) || 0) * (s ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
-        grandTotal += (parseFloat(m.kw[mo]) || 0) * (s ? rates.kwSummer || 0 : rates.kwWinter || 0);
-        grandTotal += (parseFloat(m.gas[mo]) || 0) * (rates.thermRate || 0);
-        grandTotal += (parseFloat((m.propane || [])[mo]) || 0) * (rates.gallonRate || 0);
+  // Compute actual cumulative savings from baseline vs actual bills using the
+  // canonical formula: (Baseline Usage - Actual Usage) × Current Rate, summed
+  // monthly across all meters. Same approach as updateHomeStats / h-sav.
+  const projBldgs = (utilityData[projId] || {}).buildings || [];
+  let totalSav = 0;
+  let hasData = false;
+  projBldgs.forEach((b) => {
+    (b.meters || []).forEach((m) => {
+      if (m.baselineInclude === false) return;
+      if (!(m.baseline?.months?.length >= 3) && !(m.baselines && m.baselines.length > 0)) return;
+      const mbills = (m.bills || []).slice().sort((a, c) => {
+        const da = a.start ? new Date(a.start + 'T12:00:00') : 0;
+        const dc = c.start ? new Date(c.start + 'T12:00:00') : 0;
+        return da - dc;
+      });
+      const mincl = m.inclusive !== false;
+      try {
+        const savResult = getMeterSavings(m, mbills, mincl, projId, b.id);
+        // Sum byYM (per actual year-month with bills) for true cumulative savings to date
+        Object.values(savResult.byYM).forEach((v) => {
+          totalSav += v || 0;
+          hasData = true;
+        });
+      } catch (e) {
+        /* skip meters that fail savings computation */
       }
     });
-    if (grandTotal > 0) {
-      savEl.innerHTML = 'Savings <span class="phc-val">$' + Math.round(grandTotal).toLocaleString() + '/yr</span>';
-      return;
-    }
+  });
+  if (hasData) {
+    savEl.innerHTML = 'Actual Savings <span class="phc-val">$' + Math.round(totalSav).toLocaleString() + '</span>';
+    return;
   }
-  // Fallback to manually-entered p.savings
-  savEl.innerHTML =
-    'Savings <span class="phc-val">' + (p.savings ? '$' + Number(p.savings).toLocaleString() + '/yr' : '—') + '</span>';
+  // Fallback: no baseline/bills data available
+  savEl.innerHTML = 'Actual Savings <span class="phc-val">—</span>';
 }
 
 function _updateCompactHdrBaseline(projId) {
