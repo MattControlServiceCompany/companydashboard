@@ -157,7 +157,7 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
       return (
         '<div class="pd-stat-grid">' +
         _pdStatCard('Bills', bills.length, 'periods') +
-        _pdStatCard('Date Range', first.slice(0, 7) + ' → ' + last.slice(0, 7), '') +
+        _pdStatCard('Date Range', _pdFmtYm(first.slice(0, 7)) + ' → ' + _pdFmtYm(last.slice(0, 7)), '') +
         _pdStatCard('Commodity', m.commodity, '') +
         _pdStatCard('Total Cost', _pdFmtMoney(totalCost), '') +
         '</div>' +
