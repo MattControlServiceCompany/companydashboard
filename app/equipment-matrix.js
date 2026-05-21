@@ -499,55 +499,494 @@ function emMergeIntoMatrix(existingData, newRows) {
 /* ── PHASE 3: VIEW SCAFFOLD ── */
 
 var _emPendingFiles = [];
+var _emSortCol = null;
+var _emSortDir = 1;
+var _emFilters = { building: '', type: '', search: '' };
 
 function initEquipMatrix(projId) {
   var pid = projId || emGetActiveProjId();
   var container = document.getElementById('em-view-body');
   if (!container) return;
+  if (!pid) {
+    emRenderNoProject(container);
+    return;
+  }
   var data = emLoadMatrix(pid);
   if (data && data.rows && data.rows.length > 0) {
-    emRenderSummary(container, data, pid);
+    emRenderMatrix(container, data, pid);
   } else {
     emRenderUploadPanel(container, pid);
   }
 }
 
-function emRenderSummary(container, data, pid) {
-  var bldgCount = data.buildings ? data.buildings.length : 0;
-  var rowCount = data.rows ? data.rows.length : 0;
+function emRenderNoProject(container) {
   container.innerHTML =
-    '<div style="padding:20px 24px">' +
-    '<div style="background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:16px 20px;margin-bottom:16px">' +
-    '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Matrix loaded: ' +
-    rowCount +
-    ' rows from ' +
-    bldgCount +
-    ' building' +
-    (bldgCount !== 1 ? 's' : '') +
-    '</div>' +
-    (data.importedAt
-      ? '<div style="font-size:11px;color:var(--text3)">Last imported: ' +
-        new Date(data.importedAt).toLocaleString() +
-        '</div>'
-      : '') +
-    '</div>' +
-    '<button class="btn btn-ghost btn-sm" onclick="emShowUploadPanel(this)" style="margin-bottom:12px">+ Import More CSVs</button>' +
-    '<div id="em-upload-inline" style="display:none"></div>' +
+    '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:260px;gap:10px">' +
+    '<div style="font-size:32px;opacity:0.25">📋</div>' +
+    '<div style="font-size:14px;font-weight:600;color:var(--text2)">No project selected</div>' +
+    '<div style="font-size:12px;color:var(--text3)">Open a project from the Projects view, then return here.</div>' +
     '</div>';
+}
+
+function emRenderMatrix(container, data, pid) {
   window._emActivePid = pid;
+  if (!data.edits) data.edits = {};
+  _emFilters = { building: '', type: '', search: '' };
+  _emSortCol = null;
+  _emSortDir = 1;
+
+  var projName = '';
+  if (typeof projects !== 'undefined') {
+    var proj = projects.find(function (p) {
+      return String(p.id) === String(pid);
+    });
+    if (proj) projName = proj.name;
+  }
+
+  var stats = emCalcSummaryStats(data.rows || []);
+  var statsHtml =
+    '<div style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0">' +
+    emStatPill('Buildings', stats.buildings) +
+    emStatPill('Equipment', stats.total) +
+    emStatPill('AHU / RTU', stats.ahu) +
+    emStatPill('VAV / FPB', stats.vav) +
+    emStatPill('Plants', stats.plants) +
+    emStatPill('Live Data', stats.live) +
+    '</div>';
+
+  var projBadge = projName
+    ? '<span style="font-size:11px;color:var(--text3);margin-left:10px;font-weight:400">' + projName + '</span>'
+    : '';
+
+  var toolbarHtml = emRenderToolbar(data, pid, projBadge);
+
+  container.innerHTML =
+    '<div style="display:flex;flex-direction:column;height:100%;min-height:0">' +
+    statsHtml +
+    '<div style="flex-shrink:0;border-bottom:1px solid var(--border)">' +
+    toolbarHtml +
+    '</div>' +
+    '<div id="em-table-wrap" style="flex:1;overflow:auto;min-height:0"></div>' +
+    '<div id="em-upload-inline" style="display:none;flex-shrink:0;border-top:1px solid var(--border);padding:16px 20px"></div>' +
+    '</div>';
+
+  emRenderTable(data, _emFilters);
+}
+
+function emStatPill(label, val) {
+  return (
+    '<div style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
+    '<div style="font-size:18px;font-weight:700;color:var(--text);line-height:1">' +
+    val +
+    '</div>' +
+    '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">' +
+    label +
+    '</div>' +
+    '</div>'
+  );
+}
+
+function emCalcSummaryStats(rows) {
+  var buildings = {},
+    ahu = 0,
+    vav = 0,
+    plants = 0,
+    live = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (r.building) buildings[r.building] = true;
+    if (r.category === 'ahu') ahu++;
+    if (r.category === 'vav' || r.category === 'fpb' || r.category === 'ddvav') vav++;
+    if (r.category === 'hwp' || r.category === 'chwp' || r.category === 'ct') plants++;
+    var pts = r.points || {};
+    var hasLive = false;
+    for (var k in pts) {
+      if (pts[k] !== '' && pts[k] != null) {
+        hasLive = true;
+        break;
+      }
+    }
+    if (hasLive) live++;
+  }
+  return {
+    buildings: Object.keys(buildings).length,
+    total: rows.length,
+    ahu: ahu,
+    vav: vav,
+    plants: plants,
+    live: live,
+  };
 }
 
 function emShowUploadPanel(btn) {
   var inline = document.getElementById('em-upload-inline');
   if (!inline) return;
+  var data = emLoadMatrix(window._emActivePid);
   if (inline.style.display === 'none') {
     inline.style.display = 'block';
     emRenderUploadPanel(inline, window._emActivePid, true);
     btn.textContent = 'Cancel';
   } else {
     inline.style.display = 'none';
-    btn.textContent = '+ Import More CSVs';
+    btn.textContent = 'Re-import CSVs';
   }
+}
+
+/* ── PHASE 4: TOOLBAR & TABLE ── */
+
+function emRenderToolbar(data, pid, projBadge) {
+  var buildings = data.buildings || [];
+  var bldgOpts = '<option value="">All Buildings</option>';
+  for (var i = 0; i < buildings.length; i++) {
+    bldgOpts += '<option value="' + buildings[i].replace(/"/g, '&quot;') + '">' + buildings[i] + '</option>';
+  }
+  var typeOpts =
+    '<option value="">All Types</option>' +
+    '<option value="ahu">AHU</option>' +
+    '<option value="vav">VAV</option>' +
+    '<option value="fpb">FPB</option>' +
+    '<option value="ddvav">DD-VAV</option>' +
+    '<option value="hwp">HW Plant</option>' +
+    '<option value="chwp">CHW Plant</option>' +
+    '<option value="ct">Cooling Tower</option>';
+  return (
+    '<div style="display:flex;align-items:center;gap:8px;padding:8px 16px;flex-wrap:wrap">' +
+    '<select id="em-filter-bldg" onchange="emApplyFilters()" style="font-size:11px;padding:4px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:28px">' +
+    bldgOpts +
+    '</select>' +
+    '<select id="em-filter-type" onchange="emApplyFilters()" style="font-size:11px;padding:4px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:28px">' +
+    typeOpts +
+    '</select>' +
+    '<input id="em-filter-search" type="text" placeholder="Search..." oninput="emApplyFilters()" style="font-size:11px;padding:4px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:28px;width:140px">' +
+    '<span id="em-row-count" style="font-size:11px;color:var(--text3);margin-left:4px"></span>' +
+    '<div style="flex:1"></div>' +
+    (projBadge || '') +
+    '<button class="btn btn-ghost btn-sm" onclick="emHandleSaveEdits()" style="height:28px;font-size:11px">Save Edits</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="emHandleExportCSV()" style="height:28px;font-size:11px">Export CSV</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="emHandleAddRow()" style="height:28px;font-size:11px">+ Add Row</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="emShowUploadPanel(this)" style="height:28px;font-size:11px">Re-import CSVs</button>' +
+    '</div>'
+  );
+}
+
+var _EM_COL_DEFS = null;
+function emGetColDefs() {
+  if (_EM_COL_DEFS) return _EM_COL_DEFS;
+  var checkCols14 = EM_CHECK_COLS_14;
+  var defs = [
+    { key: 'building', label: 'Building', group: 'id', width: 120 },
+    { key: 'floor', label: 'Floor', group: 'id', width: 70 },
+    { key: 'equipName', label: 'Equipment', group: 'id', width: 120 },
+    { key: 'category', label: 'Type', group: 'id', width: 60 },
+  ];
+  for (var i = 0; i < checkCols14.length; i++) {
+    var ck = checkCols14[i];
+    var isSeq =
+      ck.indexOf('Sequence') !== -1 ||
+      ck.indexOf('Reset') !== -1 ||
+      ck.indexOf('Start') !== -1 ||
+      ck.indexOf('Lag') !== -1 ||
+      ck.indexOf('Control') !== -1 ||
+      ck.indexOf('Measurement') !== -1;
+    defs.push({ key: 'check_' + i, label: ck, group: 'check', width: isSeq ? 90 : 80, checkIdx: i });
+  }
+  var liveCols = EM_POINT_MAP;
+  var liveCatGroups = {
+    ahu: { group: 'live-ahu', cats: ['ahu'] },
+    zone: { group: 'live-zone', cats: ['vav', 'fpb', 'ddvav'] },
+    hwp: { group: 'live-hw', cats: ['hwp'] },
+    chwp: { group: 'live-chw', cats: ['chwp'] },
+    ct: { group: 'live-ct', cats: ['ct'] },
+  };
+  for (var j = 0; j < liveCols.length; j++) {
+    var pm = liveCols[j];
+    var grp = 'live-ahu';
+    for (var gk in liveCatGroups) {
+      if (liveCatGroups[gk].cats.indexOf(pm.cats[0]) !== -1) {
+        grp = liveCatGroups[gk].group;
+        break;
+      }
+    }
+    defs.push({ key: pm.col, label: pm.label, group: grp, width: 100, isLive: true });
+  }
+  defs.push({ key: 'notes', label: 'Notes', group: 'id', width: 160 });
+  _EM_COL_DEFS = defs;
+  return defs;
+}
+
+var _EM_GROUP_COLORS = {
+  id: 'transparent',
+  check: 'var(--text3)',
+  'live-ahu': '#2ecc71',
+  'live-zone': '#e67e22',
+  'live-hw': '#e74c3c',
+  'live-chw': '#3498db',
+  'live-ct': '#9b59b6',
+};
+
+function emRenderTable(data, filters) {
+  var wrap = document.getElementById('em-table-wrap');
+  if (!wrap) return;
+  var rows = data.rows || [];
+  var edits = data.edits || {};
+  var filtered = emFilterRows(rows, filters);
+
+  if (_emSortCol !== null) {
+    var sc = _emSortCol;
+    var sd = _emSortDir;
+    filtered = filtered.slice().sort(function (a, b) {
+      var av = emGetCellVal(a, sc, data.edits);
+      var bv = emGetCellVal(b, sc, data.edits);
+      if (av < bv) return -sd;
+      if (av > bv) return sd;
+      return 0;
+    });
+  }
+
+  var countEl = document.getElementById('em-row-count');
+  if (countEl) countEl.textContent = filtered.length + ' of ' + rows.length + ' rows';
+
+  var defs = emGetColDefs();
+  var checkCols = EM_CHECK_COLS_14;
+
+  var theadCells = '';
+  for (var ci = 0; ci < defs.length; ci++) {
+    var d = defs[ci];
+    var color = _EM_GROUP_COLORS[d.group] || 'transparent';
+    var borderTop =
+      color !== 'transparent' ? 'border-top:3px solid ' + color + ';' : 'border-top:3px solid transparent;';
+    var isSorted = _emSortCol === ci;
+    var sortInd = isSorted ? (_emSortDir === 1 ? ' ▲' : ' ▼') : '';
+    theadCells +=
+      '<th data-ci="' +
+      ci +
+      '" onclick="emHandleSort(' +
+      ci +
+      ')" ' +
+      'style="position:sticky;top:0;z-index:2;background:var(--s1);' +
+      borderTop +
+      'padding:6px 8px;font-size:10px;font-weight:600;color:var(--text2);white-space:nowrap;cursor:pointer;' +
+      'min-width:' +
+      d.width +
+      'px;max-width:' +
+      (d.width + 40) +
+      'px;text-align:left;' +
+      'border-bottom:1px solid var(--border);border-right:1px solid var(--border)">' +
+      d.label +
+      sortInd +
+      '</th>';
+  }
+
+  var tbodyRows = '';
+  for (var ri = 0; ri < filtered.length; ri++) {
+    var row = filtered[ri];
+    var rowId = row.id;
+    var cells = '';
+    for (var di = 0; di < defs.length; di++) {
+      var def = defs[di];
+      var editKey = rowId + '::' + def.key;
+      var isEdited = edits && edits[editKey] !== undefined;
+      var rawVal = emGetCellVal(row, di, edits);
+      var displayVal = emFormatCell(rawVal, def);
+      var cellStyle =
+        'padding:4px 8px;font-size:11px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:middle;' +
+        (def.isLive ? 'font-family:Consolas,monospace;font-size:10px;' : '') +
+        (isEdited ? 'background:#fffde7;border-left:3px solid var(--em);' : '');
+      cells +=
+        '<td contenteditable="true" ' +
+        'onblur="emHandleCellEdit(\'' +
+        rowId.replace(/'/g, "\\'") +
+        "','" +
+        def.key +
+        '\',this.textContent)" ' +
+        'style="' +
+        cellStyle +
+        '">' +
+        displayVal +
+        '</td>';
+    }
+    tbodyRows += '<tr>' + cells + '</tr>';
+  }
+
+  if (filtered.length === 0) {
+    tbodyRows =
+      '<tr><td colspan="' +
+      defs.length +
+      '" style="padding:32px;text-align:center;font-size:12px;color:var(--text3)">No rows match the current filters.</td></tr>';
+  }
+
+  wrap.innerHTML =
+    '<table style="border-collapse:collapse;width:100%;table-layout:fixed">' +
+    '<thead><tr>' +
+    theadCells +
+    '</tr></thead>' +
+    '<tbody>' +
+    tbodyRows +
+    '</tbody>' +
+    '</table>';
+}
+
+function emGetCellVal(row, colIdx, edits) {
+  var defs = emGetColDefs();
+  var def = defs[colIdx];
+  if (!def) return '';
+  var editKey = row.id + '::' + def.key;
+  if (edits && edits[editKey] !== undefined) return edits[editKey];
+  if (def.key.indexOf('check_') === 0) {
+    var idx = def.checkIdx;
+    var checkCols = EM_CHECK_COLS_14;
+    return (row.checks && row.checks[checkCols[idx]]) || '';
+  }
+  if (def.isLive) {
+    return (row.points && row.points[def.key]) || '';
+  }
+  return row[def.key] || '';
+}
+
+function emFormatCell(val, def) {
+  if (val === null || val === undefined || val === '') return '<span style="color:var(--text3)">—</span>';
+  var s = String(val);
+  if (def.key.indexOf('check_') === 0) {
+    if (!def.isLive) {
+      var isSeq =
+        def.label.indexOf('Sequence') !== -1 ||
+        def.label.indexOf('Reset') !== -1 ||
+        def.label.indexOf('Start') !== -1 ||
+        def.label.indexOf('Lag') !== -1 ||
+        def.label.indexOf('Control') !== -1 ||
+        def.label.indexOf('Measurement') !== -1;
+      if (isSeq) {
+        if (/^active$/i.test(s))
+          return '<span style="display:inline-block;padding:1px 6px;border-radius:3px;background:#1a4a2e;color:#2ecc71;font-size:10px;font-weight:600">Active</span>';
+        if (/^partial$/i.test(s))
+          return '<span style="display:inline-block;padding:1px 6px;border-radius:3px;background:#3a3010;color:#f1c40f;font-size:10px;font-weight:600">Partial</span>';
+        if (/^missing$/i.test(s))
+          return '<span style="display:inline-block;padding:1px 6px;border-radius:3px;background:#4a1010;color:#e74c3c;font-size:10px;font-weight:600">Missing</span>';
+        if (/^n\/?a$/i.test(s))
+          return '<span style="display:inline-block;padding:1px 6px;border-radius:3px;background:var(--s3);color:var(--text3);font-size:10px">N/A</span>';
+      } else {
+        if (/^x$/i.test(s)) return '<span style="color:#2ecc71;font-size:13px;font-weight:700">✓</span>';
+        if (/^missing$/i.test(s)) return '<span style="color:#e74c3c;font-size:13px;font-weight:700">✗</span>';
+        if (/^n\/?a$/i.test(s)) return '<span style="color:var(--text3);font-size:11px">N/A</span>';
+      }
+    }
+  }
+  return s;
+}
+
+function emFilterRows(rows, filters) {
+  var f = filters || {};
+  return rows.filter(function (r) {
+    if (f.building && r.building !== f.building) return false;
+    if (f.type && r.category !== f.type) return false;
+    if (f.search) {
+      var q = f.search.toLowerCase();
+      var haystack = (r.building + ' ' + r.equipName + ' ' + r.location + ' ' + r.notes).toLowerCase();
+      if (haystack.indexOf(q) === -1) return false;
+    }
+    return true;
+  });
+}
+
+function emApplyFilters() {
+  var bldg = document.getElementById('em-filter-bldg');
+  var type = document.getElementById('em-filter-type');
+  var search = document.getElementById('em-filter-search');
+  _emFilters = {
+    building: bldg ? bldg.value : '',
+    type: type ? type.value : '',
+    search: search ? search.value : '',
+  };
+  var data = emLoadMatrix(window._emActivePid);
+  emRenderTable(data, _emFilters);
+}
+
+function emHandleSort(colIdx) {
+  if (_emSortCol === colIdx) {
+    _emSortDir = _emSortDir === 1 ? -1 : 1;
+  } else {
+    _emSortCol = colIdx;
+    _emSortDir = 1;
+  }
+  var data = emLoadMatrix(window._emActivePid);
+  emRenderTable(data, _emFilters);
+}
+
+function emHandleCellEdit(rowId, fieldKey, newValue) {
+  var pid = window._emActivePid;
+  if (!pid) return;
+  var data = emLoadMatrix(pid);
+  if (!data.edits) data.edits = {};
+  var editKey = rowId + '::' + fieldKey;
+  data.edits[editKey] = newValue.trim();
+  emSaveMatrix(pid, data);
+}
+
+function emHandleSaveEdits() {
+  var pid = window._emActivePid;
+  if (!pid) return;
+  var data = emLoadMatrix(pid);
+  var editCount = data.edits ? Object.keys(data.edits).length : 0;
+  emSaveMatrix(pid, data);
+  showToast('Edits saved — ' + editCount + ' field' + (editCount !== 1 ? 's' : '') + ' modified');
+}
+
+function emHandleExportCSV() {
+  var pid = window._emActivePid;
+  if (!pid) return;
+  var data = emLoadMatrix(pid);
+  var rows = data.rows || [];
+  var defs = emGetColDefs();
+  var headers = defs
+    .map(function (d) {
+      return '"' + d.label.replace(/"/g, '""') + '"';
+    })
+    .join(',');
+  var lines = [headers];
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var cells = defs.map(function (def, ci) {
+      var val = emGetCellVal(row, ci, data.edits);
+      if (val === null || val === undefined) val = '';
+      return '"' + String(val).replace(/"/g, '""') + '"';
+    });
+    lines.push(cells.join(','));
+  }
+  var csv = lines.join('\n');
+  var blob = new Blob([csv], { type: 'text/csv' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'equipment-matrix-' + pid + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function emHandleAddRow() {
+  var pid = window._emActivePid;
+  if (!pid) return;
+  var data = emLoadMatrix(pid);
+  var newRow = {
+    id: 'custom_' + Date.now(),
+    building: '',
+    location: '',
+    floor: '',
+    area: '',
+    equipName: 'New Equipment',
+    equipType: '',
+    category: null,
+    checks: {},
+    points: {},
+    notes: '',
+    editedAt: new Date().toISOString(),
+  };
+  if (!data.rows) data.rows = [];
+  data.rows.push(newRow);
+  emSaveMatrix(pid, data);
+  emRenderTable(data, _emFilters);
+  showToast('New row added');
 }
 
 function emRenderUploadPanel(container, pid, inline) {
@@ -640,7 +1079,7 @@ function emHandleImport(pid) {
     var merged = emMergeIntoMatrix(existingData, allRows);
     emSaveMatrix(pid, merged);
     var container = document.getElementById('em-view-body');
-    if (container) emRenderSummary(container, merged, pid);
+    if (container) emRenderMatrix(container, merged, pid);
     showToast(
       'Equipment matrix imported: ' +
         allRows.length +
