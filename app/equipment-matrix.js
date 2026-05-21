@@ -811,6 +811,9 @@ function emRenderToolbar(data, pid, projBadge) {
     pid +
     '\')" style="height:28px;font-size:11px">+ Column</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emShowUploadPanel(this)" style="height:28px;font-size:11px">Re-import CSVs</button>' +
+    '<button class="btn btn-sm" onclick="emCopyFromProject(\'' +
+    pid +
+    '\')" style="height:28px;font-size:11px">📋 Copy From Project</button>' +
     '</div>' +
     colToggles +
     '</div>'
@@ -1460,4 +1463,46 @@ function emHandleImport(pid) {
       reader.readAsText(file);
     })(_emPendingFiles[i]);
   }
+}
+
+function emCopyFromProject(targetProjId) {
+  var projects = sget('en_projects') || [];
+  var otherProjects = projects.filter(function (p) {
+    return p.id !== targetProjId;
+  });
+  if (!otherProjects.length) {
+    alert('No other projects available to copy from.');
+    return;
+  }
+  var listText = otherProjects
+    .map(function (p, i) {
+      return i + 1 + '. ' + (p.name || p.id);
+    })
+    .join('\n');
+  var answer = prompt('Copy equipment from which project?\n\n' + listText + '\n\nEnter number:');
+  if (!answer) return;
+  var idx = parseInt(answer, 10) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= otherProjects.length) {
+    alert('Invalid selection.');
+    return;
+  }
+  var sourceProj = otherProjects[idx];
+  var sourceData = emLoadMatrix(sourceProj.id);
+  if (!sourceData || !sourceData.rows || !sourceData.rows.length) {
+    alert('No equipment data found in "' + (sourceProj.name || sourceProj.id) + '".');
+    return;
+  }
+  var clonedRows = JSON.parse(JSON.stringify(sourceData.rows));
+  var now = Date.now();
+  for (var i = 0; i < clonedRows.length; i++) {
+    clonedRows[i].id = 'copy_' + now + i;
+  }
+  var targetData = emLoadMatrix(targetProjId);
+  for (var j = 0; j < clonedRows.length; j++) {
+    targetData.rows.push(clonedRows[j]);
+  }
+  emSaveMatrix(targetProjId, targetData);
+  var container = document.getElementById('em-proj-wrap');
+  if (container) emRenderMatrix(container, targetData, targetProjId);
+  alert(clonedRows.length + ' rows copied from "' + (sourceProj.name || sourceProj.id) + '".');
 }
