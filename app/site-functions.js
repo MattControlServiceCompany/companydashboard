@@ -631,6 +631,47 @@ function siteCheckDefaultLogin() {
   return false;
 }
 
+/* Mobile sidebar hamburger toggle */
+function buildMobileSidebarToggle() {
+  if (document.getElementById('sidebarToggleBtn')) return;
+  var deptNav = document.querySelector('.dept-nav');
+  if (!deptNav) return;
+
+  var btn = document.createElement('button');
+  btn.id = 'sidebarToggleBtn';
+  btn.className = 'sidebar-toggle-btn';
+  btn.setAttribute('aria-label', 'Toggle navigation menu');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-controls', 'appSidebar');
+  btn.innerHTML = '☰';
+  btn.onclick = function () {
+    var sidebar = document.getElementById('appSidebar') || document.querySelector('.sidebar');
+    if (!sidebar) return;
+    var open = sidebar.classList.toggle('drawer-open');
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.innerHTML = open ? '✕' : '☰';
+    var bd = document.getElementById('sidebarBackdrop');
+    if (bd) bd.style.display = open ? 'block' : 'none';
+  };
+
+  var backdrop = document.createElement('div');
+  backdrop.id = 'sidebarBackdrop';
+  backdrop.className = 'sidebar-backdrop';
+  backdrop.style.display = 'none';
+  backdrop.onclick = function () {
+    var sidebar = document.getElementById('appSidebar') || document.querySelector('.sidebar');
+    if (sidebar) sidebar.classList.remove('drawer-open');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.innerHTML = '☰';
+    backdrop.style.display = 'none';
+  };
+  document.body.appendChild(backdrop);
+  deptNav.insertBefore(btn, deptNav.firstChild);
+
+  var sidebar = document.querySelector('.sidebar');
+  if (sidebar && !sidebar.id) sidebar.id = 'appSidebar';
+}
+
 /* Init saved settings on load */
 document.addEventListener('DOMContentLoaded', function () {
   uiCustomApply();
@@ -640,8 +681,8 @@ document.addEventListener('DOMContentLoaded', function () {
     var theme = s.theme || localStorage.getItem('ch_theme') || 'dark';
     siteApplyTheme(theme);
   } catch (e) {}
-  // Build settings modal if not already in DOM
   if (!document.getElementById('siteSettingsOverlay')) siteBuildSettingsModal();
+  buildMobileSidebarToggle();
 });
 
 /* Build settings modal */
