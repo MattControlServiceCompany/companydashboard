@@ -793,10 +793,10 @@ function emGetColDefs() {
   if (_EM_COL_DEFS) return _EM_COL_DEFS;
   var checkCols14 = EM_CHECK_COLS_14;
   var defs = [
-    { key: 'building', label: 'Building', group: 'id', width: 120 },
-    { key: 'floor', label: 'Floor', group: 'id', width: 70 },
-    { key: 'equipName', label: 'Equipment', group: 'id', width: 120 },
-    { key: 'category', label: 'Type', group: 'id', width: 60 },
+    { key: 'building', label: 'Building', group: 'id', width: 180 },
+    { key: 'floor', label: 'Floor', group: 'id', width: 80 },
+    { key: 'equipName', label: 'Equipment', group: 'id', width: 200 },
+    { key: 'category', label: 'Type', group: 'id', width: 80 },
   ];
   for (var i = 0; i < checkCols14.length; i++) {
     var ck = checkCols14[i];
@@ -807,7 +807,7 @@ function emGetColDefs() {
       ck.indexOf('Lag') !== -1 ||
       ck.indexOf('Control') !== -1 ||
       ck.indexOf('Measurement') !== -1;
-    defs.push({ key: 'check_' + i, label: ck, group: 'check', width: isSeq ? 90 : 80, checkIdx: i });
+    defs.push({ key: 'check_' + i, label: ck, group: 'check', width: isSeq ? 110 : 90, checkIdx: i });
   }
   var liveCols = EM_POINT_MAP;
   var liveCatGroups = {
@@ -826,9 +826,9 @@ function emGetColDefs() {
         break;
       }
     }
-    defs.push({ key: pm.col, label: pm.label, group: grp, width: 100, isLive: true });
+    defs.push({ key: pm.col, label: pm.label, group: grp, width: 120, isLive: true });
   }
-  defs.push({ key: 'notes', label: 'Notes', group: 'id', width: 160 });
+  defs.push({ key: 'notes', label: 'Notes', group: 'id', width: 200 });
   _EM_COL_DEFS = defs;
   return defs;
 }
@@ -882,13 +882,11 @@ function emRenderTable(data, filters) {
       '" onclick="emHandleSort(' +
       ci +
       ')" ' +
-      'style="position:sticky;top:0;z-index:2;background:var(--s1);' +
+      'style="position:sticky;top:0;z-index:2;background:var(--s2);' +
       borderTop +
       'padding:6px 8px;font-size:10px;font-weight:600;color:var(--text2);white-space:nowrap;cursor:pointer;' +
       'min-width:' +
       d.width +
-      'px;max-width:' +
-      (d.width + 40) +
       'px;text-align:left;' +
       'border-bottom:1px solid var(--border);border-right:1px solid var(--border)">' +
       d.label +
@@ -935,7 +933,7 @@ function emRenderTable(data, filters) {
   }
 
   wrap.innerHTML =
-    '<table style="border-collapse:collapse;width:100%;table-layout:fixed">' +
+    '<table style="border-collapse:collapse;table-layout:auto">' +
     '<thead><tr>' +
     theadCells +
     '</tr></thead>' +
