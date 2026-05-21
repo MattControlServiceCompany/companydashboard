@@ -630,6 +630,22 @@ function _renderSavingsContent(wrap, projId) {
       _migrated = true;
     }
     if (!m.rates) m.rates = calcBldgDefaultRates(projId, m.bldgId);
+    // Migrate wrong rate field names (rates.gas → rates.thermRate, rates.propane → rates.gallonRate)
+    if (m.rates && 'gas' in m.rates && !('thermRate' in m.rates)) {
+      m.rates.thermRate = m.rates.gas;
+      delete m.rates.gas;
+      _migrated = true;
+    }
+    if (m.rates && 'propane' in m.rates && !('gallonRate' in m.rates)) {
+      m.rates.gallonRate = m.rates.propane;
+      delete m.rates.propane;
+      _migrated = true;
+    }
+    // Migrate missing selected field (undefined → true)
+    if (m.selected === undefined) {
+      m.selected = true;
+      _migrated = true;
+    }
   });
   if (_migrated) sset('en_projects', projects);
   // Auto-sync SQFT from current building data if measure has a building assigned
