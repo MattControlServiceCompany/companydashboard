@@ -1193,58 +1193,6 @@ function emHandleExportCSV() {
   URL.revokeObjectURL(url);
 }
 
-function emHandleAddRow() {
-  var pid = window._emActivePid;
-  if (!pid) return;
-  var data = emLoadMatrix(pid);
-  var newRow = {
-    id: 'custom_' + Date.now(),
-    building: '',
-    location: '',
-    floor: '',
-    area: '',
-    equipName: 'New Equipment',
-    equipType: '',
-    category: null,
-    checks: {},
-    points: {},
-    // Physical Attributes
-    serial: '',
-    model: '',
-    manufacturer: '',
-    sizeCapacity: '',
-    voltage: '',
-    phase: '',
-    amps: '',
-    hpTons: '',
-    // Lifecycle
-    installDate: '',
-    age: '',
-    expectedLife: '',
-    condition: '',
-    // Maintenance
-    warrantyInfo: '',
-    lastServiceDate: '',
-    serviceProvider: '',
-    // Location Detail
-    room: '',
-    floorDetail: '',
-    wing: '',
-    buildingArea: '',
-    // Controls/BAS
-    controllerType: '',
-    bacnetAddr: '',
-    ipAddr: '',
-    notes: '',
-    editedAt: new Date().toISOString(),
-  };
-  if (!data.rows) data.rows = [];
-  data.rows.push(newRow);
-  emSaveMatrix(pid, data);
-  emRenderTable(data, _emFilters);
-  showToast('New row added');
-}
-
 function emAddManualRow(projId) {
   if (!projId) projId = window._emActivePid;
   if (!projId) return;

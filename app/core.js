@@ -1187,7 +1187,6 @@ function renderDetail(p) {
   // Populate tabs after DOM is ready
   requestAnimationFrame(() => {
     _initTabDrag();
-    renderProjEquip(p.id);
     initProjUDTab(p.id);
     initDashboardTab(p.id);
     _updateCompactHdrBaseline(p.id);
@@ -2654,45 +2653,6 @@ function toggleProjUDPanel(projId, panelKey) {
 function projUDOpenMeterModal(projId) {
   const bldgId = projUDSelBldg[projId];
   openMeterModal(null, projId, bldgId);
-}
-
-// ── Project Equipment Tab ──
-function renderProjEquip(projId) {
-  const el = document.getElementById('ptab-equipment-body-' + projId);
-  if (!el) return;
-  const p = projects.find((x) => x.id === projId);
-  if (!p) return;
-  const q = (document.getElementById('equipQ-proj-' + projId)?.value || '').toLowerCase();
-  const rows = equipment.filter((e) => {
-    const matchProj =
-      e.projId === projId || (e.loc || '').toLowerCase().includes((p.name || '').toLowerCase().slice(0, 15));
-    const matchQ = !q || [e.tag, e.type, e.make, e.model, e.loc || ''].some((f) => f.toLowerCase().includes(q));
-    return matchProj && matchQ;
-  });
-  if (!rows.length) {
-    el.innerHTML =
-      '<div style="font-size:13px;color:var(--text2);padding:12px 0">No equipment linked to this project yet. <button class="btn btn-ghost btn-sm" onclick="openEquipModal()">+ Add Equipment</button></div>';
-    return;
-  }
-  el.innerHTML = `<div class="card"><div style="overflow-x:auto">
-          <table class="dtbl" style="min-width:700px">
-            <thead><tr><th>Tag</th><th>Type</th><th>Make / Model</th><th>Capacity</th><th>Efficiency</th><th>Location</th><th>Notes</th><th></th></tr></thead>
-            <tbody>${rows
-              .map(
-                (e) => `<tr>
-              <td><span class="eq-tag">${e.tag}</span></td>
-              <td style="font-size:12px;color:var(--text2)">${e.type}</td>
-              <td><strong>${e.make}</strong> <span style="color:var(--text2)">${e.model}</span></td>
-              <td style="font-family:var(--mono);font-size:12px">${e.cap || '—'}</td>
-              <td style="font-family:var(--mono);font-size:12px">${e.eff || '—'}</td>
-              <td style="font-size:12px;color:var(--text2)">${e.loc || '—'}</td>
-              <td style="font-size:12px;color:var(--text2);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.notes || '—'}</td>
-              <td><button class="btn-del" onclick="removeEquip(${e.id})">✕</button></td>
-            </tr>`,
-              )
-              .join('')}</tbody>
-          </table>
-        </div></div>`;
 }
 
 // ── #131: Saved Bills tab per project ──
