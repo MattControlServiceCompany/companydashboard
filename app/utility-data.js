@@ -1196,7 +1196,7 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
       // trailing 12 months
       const t12 = allRows.slice(-12);
       t12.forEach((r) => {
-        totalCost += r.totalCost || 0;
+        totalCost += r.cost || 0;
         if (isElec) {
           kwh12 += r.usage || 0;
           // load factor: kWh / (demandKW × 24 × days)
