@@ -524,19 +524,6 @@ function emGroupToMatrixRow(groupKey, group) {
 
 /* ── PHASE 2: STORAGE AND MERGE ── */
 
-function emGetActiveProjId() {
-  if (typeof udSelProjId !== 'undefined' && udSelProjId) return String(udSelProjId);
-  try {
-    var stored = localStorage.getItem('ch_activeView');
-    var proj = sessionStorage.getItem('ch_proj');
-    if (proj) {
-      var p = JSON.parse(proj);
-      if (p && p.projId != null) return String(p.projId);
-    }
-  } catch (e) {}
-  return null;
-}
-
 function emLoadMatrix(projId) {
   if (!projId) return { rows: [], importedAt: null, buildings: [] };
   // '__preview__' is an in-memory-only sentinel — return the preview data without touching localStorage
@@ -599,52 +586,14 @@ var _emSortDir = 1;
 var _emFilters = { building: '', type: '', search: '' };
 
 function initEquipMatrix(projId) {
-  var pid = projId || emGetActiveProjId();
-  var container = document.getElementById('em-view-body');
-  if (!container) return;
-  if (!pid) {
-    // No project selected — still show the upload panel so user can import a CSV
-    emRenderNoProjectUpload(container);
+  var wrap = document.getElementById('em-proj-wrap');
+  if (!wrap) return;
+  if (!projId) {
+    wrap.innerHTML = '<p style="padding:24px;color:var(--t2)">Select a project to view equipment.</p>';
     return;
   }
-  var data = emLoadMatrix(pid);
-  if (data && data.rows && data.rows.length > 0) {
-    emRenderMatrix(container, data, pid);
-  } else {
-    emRenderUploadPanel(container, pid);
-  }
-}
-
-// Shown when no project is active. Offers CSV upload with a note about project assignment.
-function emRenderNoProjectUpload(container) {
-  container.innerHTML =
-    '<div style="padding:20px 24px">' +
-    '<div style="margin-bottom:12px;padding:10px 14px;background:var(--s2);border:1px solid var(--border);border-radius:6px;font-size:12px;color:var(--text2)">' +
-    '<strong style="color:var(--text)">No project selected.</strong> ' +
-    'You can still import a CSV — open a project first (Projects view) to save the matrix to it, ' +
-    'or import here to preview.' +
-    '</div>' +
-    '<div id="em-drop-zone" ' +
-    'style="border:2px dashed var(--border);border-radius:8px;padding:32px 24px;text-align:center;cursor:pointer;background:var(--s2);transition:border-color 0.15s;margin-bottom:12px" ' +
-    'ondragover="emHandleFileDrop(event,\'over\')" ' +
-    'ondragleave="emHandleFileDrop(event,\'leave\')" ' +
-    'ondrop="emHandleFileDrop(event,\'drop\')" ' +
-    'onclick="document.getElementById(\'em-file-input\').click()">' +
-    '<div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px">Drop CSV files here</div>' +
-    '<div style="font-size:11px;color:var(--text3)">Accepts WebCTRL point-list exports or enriched matrix CSVs</div>' +
-    '</div>' +
-    '<input type="file" id="em-file-input" accept=".csv" multiple style="display:none" onchange="emHandleFileSelect(event)">' +
-    '<div id="em-file-list" style="margin-bottom:12px;display:none">' +
-    '<div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px">Files queued:</div>' +
-    '<ul id="em-file-items" style="list-style:none;padding:0;margin:0;font-size:11px;color:var(--text)"></ul>' +
-    '</div>' +
-    '<div id="em-import-row" style="display:none">' +
-    '<button class="btn btn-sm" style="background:var(--accent);color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-weight:600" onclick="emHandleImport(null)">' +
-    'Preview Import' +
-    '</button>' +
-    '<span id="em-import-status" style="font-size:11px;color:var(--text3);margin-left:10px">Select a project to save permanently.</span>' +
-    '</div>' +
-    '</div>';
+  var data = emLoadMatrix(projId);
+  emRenderMatrix(wrap, data, projId);
 }
 
 function emRenderMatrix(container, data, pid) {
@@ -1214,7 +1163,7 @@ function emHandleImport(pid) {
       var existingData = emLoadMatrix(pid);
       var merged = emMergeIntoMatrix(existingData, allRows);
       emSaveMatrix(pid, merged);
-      var container = document.getElementById('em-view-body');
+      var container = document.getElementById('em-proj-wrap');
       if (container) emRenderMatrix(container, merged, pid);
       showToast(
         'Equipment matrix imported: ' +
@@ -1227,7 +1176,7 @@ function emHandleImport(pid) {
     } else {
       // No project — render a preview without saving
       var previewData = emMergeIntoMatrix({ rows: [], buildings: [] }, allRows);
-      var container = document.getElementById('em-view-body');
+      var container = document.getElementById('em-proj-wrap');
       if (container) {
         // Store preview in a temporary in-memory key so emRenderMatrix can load it
         window._emPreviewData = previewData;
