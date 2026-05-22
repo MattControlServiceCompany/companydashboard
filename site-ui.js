@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.21.322';
+  var CH_VERSION = 'v2026.05.21.324';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,17 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.21.304',
+      date: '2026-05-21',
+      title: 'Fix chart Y-axis label alignment in Contract Projection and Financial reports',
+      features: [
+        {
+          type: 'fix',
+          text: 'Report chart Y-axis labels now left-aligned (text-anchor="start", x=4) instead of right-indented in rptPageFinancial and rptPageContractProjection',
+        },
+      ],
+    },
     {
       version: 'v2026.05.21.303',
       date: '2026-05-21',
@@ -969,6 +980,16 @@
     buildSettingsModal();
     buildHelpModal();
     buildReleaseNotesModal();
+    // Auto-show release notes on first visit after a version bump.
+    // ch_seen_version stores the last version the user saw notes for.
+    // If the stored value doesn't match CH_VERSION, show the modal and update the key.
+    var seenVersion = localStorage.getItem('ch_seen_version');
+    if (seenVersion !== CH_VERSION) {
+      setTimeout(function () {
+        openReleaseNotes();
+      }, 800);
+      localStorage.setItem('ch_seen_version', CH_VERSION);
+    }
     buildMobileSidebarToggle();
     applyDeptNavAria();
     applyModalAccessibility();
