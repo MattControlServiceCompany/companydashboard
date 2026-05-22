@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.21.325';
+  var CH_VERSION = 'v2026.05.21.326';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -30,7 +30,7 @@
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
     {
-      version: 'v2026.05.21.325',
+      version: 'v2026.05.21.326',
       date: '2026-05-21',
       title: 'Report encoding fix, chart axis alignment, and release notes auto-show',
       features: [
