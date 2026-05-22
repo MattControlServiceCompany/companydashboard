@@ -565,7 +565,7 @@
       }
       .sidebar-top {
         flex: 1;
-        overflow-y: auto;
+        overflow-y: visible;
         padding: 14px 0;
       }
       .sidebar-bottom {
@@ -1676,6 +1676,10 @@
         }
         .sidebar.drawer-open {
           transform: translateX(0);
+        }
+
+        .sidebar-top {
+          overflow-y: auto;
         }
 
         .app-wrap {

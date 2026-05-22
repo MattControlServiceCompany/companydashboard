@@ -477,7 +477,7 @@ body {
 }
 .sidebar-top {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: visible;
 }
 .sidebar-bottom {
   padding: 0 12px 14px;
@@ -1074,6 +1074,10 @@ a:focus-visible,
   }
   .sidebar.drawer-open {
     transform: translateX(0);
+  }
+
+  .sidebar-top {
+    overflow-y: auto;
   }
 
   .app-wrap {
