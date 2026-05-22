@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.21.326';
+  var CH_VERSION = 'v2026.05.22.327';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,17 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.22.327',
+      date: '2026-05-22',
+      title: 'Fix duplicate const declarations in report-engine.js causing SyntaxError on live site',
+      features: [
+        {
+          type: 'fix',
+          text: 'Removed 3 duplicate const declarations (cardStyle, valColor, blEUI, statusColor) left behind by the encoding fix, which caused a fatal SyntaxError preventing the energy department page from loading',
+        },
+      ],
+    },
     {
       version: 'v2026.05.21.326',
       date: '2026-05-21',

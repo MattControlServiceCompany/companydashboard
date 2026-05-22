@@ -1344,8 +1344,6 @@ function rptPageCover(n, d) {
           : b.status === 'near_target'
             ? '&#9658; Near Target'
             : '&#9658; Below Target';
-      const cardStyle = b.status === 'below_target' ? 'border-color:#f5a9a9;' : '';
-      const valColor = b.status === 'on_track' ? '#1e8449' : b.status === 'near_target' ? '#e67e22' : '#c0392b';
       const cardStyle = b.status === 'below_target' ? 'border-color:var(--rpt-red-light);' : '';
       const valColor =
         b.status === 'on_track'
@@ -2286,7 +2284,6 @@ function rptPageSavingsPerformance(n, d) {
     .map(function (b, bIdx) {
       const bSavPct = b.blCost > 0 ? ((b.blCost - b.curCost) / b.blCost) * 100 : 0;
       const blEUI = b.eui.baseline > 0 ? b.eui.baseline.toFixed(1) : '—';
-      const blEUI = b.eui.baseline > 0 ? b.eui.baseline.toFixed(1) : '—';
       const curEUI = b.eui.current > 0 ? b.eui.current.toFixed(1) : '—';
       const euiChange =
         b.eui.baseline > 0 && b.eui.current > 0 ? ((b.eui.baseline - b.eui.current) / b.eui.baseline) * 100 : 0;
@@ -2789,7 +2786,6 @@ function rptPageObservations(n, d) {
   // -- Per-building narrative --
   const bldgSections = (d.buildings || [])
     .map(function (b) {
-      const statusColor = b.status === 'on_track' ? '#27ae60' : b.status === 'near_target' ? '#e67e22' : '#c0392b';
       const statusColor =
         b.status === 'on_track'
           ? 'var(--rpt-green)'
