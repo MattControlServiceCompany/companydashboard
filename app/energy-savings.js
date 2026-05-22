@@ -1352,7 +1352,6 @@ function openProjModal() {
     'mp-savings',
     'mp-start',
     'mp-end',
-    'mp-notes',
     'mp-tags',
     'mp-escalation',
     'mp-cscCompensation',
@@ -1360,6 +1359,7 @@ function openProjModal() {
     const e = document.getElementById(id);
     if (e) e.value = '';
   });
+  if (window._mpNotesQuill) window._mpNotesQuill.setContents([]);
   document.getElementById('mp-status').value = 'planning';
   document.getElementById('mp-phase').value = '';
   document.getElementById('mp-priority').value = 'normal';
@@ -1392,9 +1392,21 @@ function editProj(id) {
     cscCompensation: p.cscCompensation,
   };
   Object.entries(fv).forEach(([k, v]) => {
+    if (k === 'notes') return; // handled separately via Quill
     const e = document.getElementById('mp-' + k);
     if (e) e.value = v || '';
   });
+  if (typeof initQuillEditor === 'function') {
+    if (!window._mpNotesQuill) {
+      window._mpNotesQuill = initQuillEditor('mp-notes-editor', p.notes || '');
+    } else {
+      window._mpNotesQuill.setContents([]);
+      if (p.notes) window._mpNotesQuill.clipboard.dangerouslyPasteHTML(p.notes);
+    }
+  } else {
+    var mpEl = document.getElementById('mp-notes-editor');
+    if (mpEl) mpEl.textContent = p.notes || '';
+  }
   document.getElementById('mp-type').value = p.type || 'K-12 School';
   document.getElementById('mp-coolType').value = p.coolType || '';
   document.getElementById('mp-heatType').value = p.heatType || '';
@@ -1493,7 +1505,12 @@ function saveProject() {
     end: document.getElementById('mp-end').value,
     progress: Math.max(0, Math.min(100, parseInt(document.getElementById('mp-progress').value) || 0)),
     priority: document.getElementById('mp-priority').value,
-    notes: document.getElementById('mp-notes').value,
+    notes:
+      typeof getQuillHTML === 'function' && window._mpNotesQuill
+        ? getQuillHTML(window._mpNotesQuill)
+        : document.getElementById('mp-notes-editor')
+          ? document.getElementById('mp-notes-editor').textContent
+          : '',
     tags: document.getElementById('mp-tags').value,
   };
   if (editId) {

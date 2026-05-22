@@ -2875,6 +2875,31 @@ function _normalizeAddr(a) {
     .replace(/\b(place|pl\.?)\b/g, 'pl')
     .replace(/[^a-z0-9]/g, '');
 }
+function _levenshtein(a, b) {
+  var m = a.length,
+    n = b.length;
+  var d = Array.from({ length: m + 1 }, function (_, i) {
+    return i;
+  });
+  for (var j = 1; j <= n; j++) {
+    var prev = d[0];
+    d[0] = j;
+    for (var i = 1; i <= m; i++) {
+      var tmp = d[i];
+      d[i] = a[i - 1] === b[j - 1] ? prev : Math.min(prev, d[i], d[i - 1]) + 1;
+      prev = tmp;
+    }
+  }
+  return d[m];
+}
+function _addressSimilarity(a, b) {
+  var na = _normalizeAddr(a),
+    nb = _normalizeAddr(b);
+  if (!na || !nb) return 0;
+  if (na === nb) return 1;
+  var maxLen = Math.max(na.length, nb.length);
+  return maxLen === 0 ? 0 : 1 - _levenshtein(na, nb) / maxLen;
+}
 // Flexible account/meter number comparison that survives utility format changes.
 // Strips dashes, spaces, and leading zeros before comparing, then falls back
 // to substring containment so e.g. "123456" matches "0123456-00" after stripping.
@@ -2915,14 +2940,33 @@ function findMeterMatch(extracted) {
       // a commodity-matched address hit can override a commodity-mismatched
       // account hit. Also picks the commodity-matching meter within the
       // building rather than always defaulting to the first meter.
+      // Fixed: was reading bldg.address (always undefined); correct field is bldg.addr.
+      // Extended: checks addrAliases array and uses fuzzy similarity for near-matches.
       if (billAddr && billAddr.length >= 5) {
-        const bldgAddr = _normalizeAddr(bldg.address);
-        if (bldgAddr && bldgAddr === billAddr) {
+        const bldgAddrNorm = _normalizeAddr(bldg.addr);
+        const aliases = (bldg.addrAliases || []).map(_normalizeAddr).filter(Boolean);
+        // Check exact match against primary addr or any alias
+        const exactHit = (bldgAddrNorm && bldgAddrNorm === billAddr) || aliases.some((a) => a === billAddr);
+        // Compute best fuzzy score across primary + aliases
+        let bestScore = bldgAddrNorm ? _addressSimilarity(bldg.addr, extracted.ServiceAddress) : 0;
+        let isAlias = false;
+        for (const rawAlias of bldg.addrAliases || []) {
+          const s = _addressSimilarity(rawAlias, extracted.ServiceAddress);
+          if (s > bestScore) {
+            bestScore = s;
+            isAlias = true;
+          }
+        }
+        if (bldgAddrNorm && _addressSimilarity(bldg.addr, extracted.ServiceAddress) >= bestScore) {
+          isAlias = false;
+        }
+        // Threshold: 0.60+ qualifies; exact wins over fuzzy
+        if ((exactHit || bestScore >= 0.6) && !addrMatch) {
           const commMeter = billComm
             ? (bldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm)
             : null;
           const candidateMeter = commMeter || (bldg.meters || [])[0];
-          if (candidateMeter && !addrMatch) {
+          if (candidateMeter) {
             addrMatch = {
               proj,
               bldg,
@@ -2930,6 +2974,8 @@ function findMeterMatch(extracted) {
               projId: proj.id,
               bldgId: bldg.id,
               meterId: candidateMeter.id,
+              fuzzyScore: exactHit ? 1.0 : bestScore,
+              isAlias,
             };
           }
         }
@@ -2938,6 +2984,21 @@ function findMeterMatch(extracted) {
   }
   return bestMatch || addrMatch;
 }
+// Save a new address alias to a building (called after fuzzy match).
+// Adds aliasString to bldg.addrAliases if not already present, then persists.
+function saveAddressAlias(projId, bldgId, aliasString) {
+  const alias = (aliasString || '').trim();
+  if (!alias) return;
+  const bldg = getUDBldg(projId, bldgId);
+  if (!bldg) return;
+  if (!Array.isArray(bldg.addrAliases)) bldg.addrAliases = [];
+  const normNew = _normalizeAddr(alias);
+  const already = bldg.addrAliases.some((a) => _normalizeAddr(a) === normNew);
+  if (already) return;
+  bldg.addrAliases.push(alias);
+  saveUtilityData();
+}
+window.saveAddressAlias = saveAddressAlias;
 function showAutoAssignBanner(match, extracted) {
   if (!match) return;
   _autoAssignTarget = match;
@@ -6785,7 +6846,18 @@ async function processPDF(file) {
                 ' billing periods extracted' +
                 (warnCount ? ' — ' + warnCount + ' warning' + (warnCount > 1 ? 's' : '') + ' found' : ''),
             );
-            showAutoAssignBanner(findMeterMatch(finalBills[0]), finalBills[0]);
+            var _multiBillMatch = findMeterMatch(finalBills[0]);
+            if (
+              _multiBillMatch &&
+              _multiBillMatch.fuzzyScore &&
+              _multiBillMatch.fuzzyScore < 1.0 &&
+              !_multiBillMatch.isAlias &&
+              typeof saveAddressAlias === 'function' &&
+              finalBills[0].ServiceAddress
+            ) {
+              saveAddressAlias(_multiBillMatch.projId, _multiBillMatch.bldgId, finalBills[0].ServiceAddress);
+            }
+            showAutoAssignBanner(_multiBillMatch, finalBills[0]);
           } else {
             const extracted = finalBills[0] || bills[0];
             window._pdfMultiBills = [extracted]; // always store as array for consistency
@@ -6812,7 +6884,18 @@ async function processPDF(file) {
                 rule.name +
                 (warnCount ? ' — ' + warnCount + ' warning' + (warnCount > 1 ? 's' : '') : ' ✓'),
             );
-            showAutoAssignBanner(findMeterMatch(extracted), extracted);
+            var _singleBillMatch = findMeterMatch(extracted);
+            if (
+              _singleBillMatch &&
+              _singleBillMatch.fuzzyScore &&
+              _singleBillMatch.fuzzyScore < 1.0 &&
+              !_singleBillMatch.isAlias &&
+              typeof saveAddressAlias === 'function' &&
+              extracted.ServiceAddress
+            ) {
+              saveAddressAlias(_singleBillMatch.projId, _singleBillMatch.bldgId, extracted.ServiceAddress);
+            }
+            showAutoAssignBanner(_singleBillMatch, extracted);
           }
           _saveExtractionState();
           // Auto-save debug file on every successful extraction

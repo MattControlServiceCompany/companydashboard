@@ -975,6 +975,9 @@ function generateReportHTML(data, selectedSections) {
     return html.replace('<div class="rpt-page"', '<div class="rpt-page" data-section="' + key + '"');
   }
 
+  // Board executive summary (standalone — inserted before cover when selected)
+  if (s.boardSummary) pages.push(_tagSection(rptPageBoardSummary(pageNum++, data), 'boardSummary'));
+
   // Main pages
   if (s.cover !== false) pages.push(_tagSection(rptPageCover(pageNum++, data), 'cover'));
   if (s.financial !== false) pages.push(_tagSection(rptPageFinancial(pageNum++, data), 'financial'));
@@ -1094,6 +1097,57 @@ function closeReportOverlay() {
   document.getElementById('reportPages').innerHTML = '';
   document.body.style.overflow = '';
 }
+
+/**
+ * printBoardSummary — generates and displays a single-page board executive summary
+ * for the given project in the report preview overlay.
+ * @param {number} projId - Project ID
+ */
+function printBoardSummary(projId) {
+  const p = projects.find((x) => x.id === projId);
+  if (!p) {
+    showToast('Project not found', 'error');
+    return;
+  }
+  const bldgs = getUDBldgs(projId);
+  if (!bldgs.length) {
+    showToast('No utility data — add buildings and bill data first', 'error');
+    return;
+  }
+  try {
+    const data = collectReportData(projId, null, null, 'annual');
+    if (!data) {
+      showToast('Could not build report data for this project', 'error');
+      return;
+    }
+    const html = generateReportHTML(data, {
+      boardSummary: true,
+      cover: false,
+      financial: false,
+      savingsPerformance: false,
+      euiBenchmarking: false,
+      environmentalImpact: false,
+      observations: false,
+      approvedChanges: false,
+      contractProjection: false,
+      setpoints: false,
+      buildingSummaries: false,
+      meterPerformance: false,
+      electricDetail: false,
+      gasDetail: false,
+      propaneDetail: false,
+      appendixA: false,
+      appendixB: false,
+      appendixC: false,
+      appendixD: false,
+    });
+    showReportOverlay(html, (p.client || p.name || 'Project') + ' — Board Executive Summary');
+  } catch (e) {
+    showToast('Error generating board summary: ' + e.message, 'error');
+    console.error('printBoardSummary error:', e);
+  }
+}
+window.printBoardSummary = printBoardSummary;
 
 // -- Stub page template functions (replaced by Tasks 6–17) --
 function rptPageCover(n, d) {
@@ -6673,12 +6727,311 @@ async function exportReportToPDF() {
   }
 }
 
+/* -- BOARD EXECUTIVE SUMMARY PAGE -- */
+
+/**
+ * boardSummaryBarChartSVG — builds an inline SVG bar chart showing monthly savings dollars.
+ * @param {Array} monthData - Array of {label, value} (12 months)
+ * @returns {string} SVG markup string
+ */
+function boardSummaryBarChartSVG(monthData) {
+  var W = 560,
+    H = 150,
+    padL = 48,
+    padR = 8,
+    padT = 10,
+    padB = 28;
+  var chartW = W - padL - padR;
+  var chartH = H - padT - padB;
+  var n = monthData.length;
+  if (n === 0) return '';
+
+  var vals = monthData.map(function (d) {
+    return d.value || 0;
+  });
+  var maxVal = Math.max.apply(null, vals.map(Math.abs));
+  if (maxVal === 0) maxVal = 1;
+
+  var barW = Math.floor(chartW / n) - 2;
+  var zeroY = padT + chartH; // baseline at bottom (all-positive chart)
+
+  // Y-axis grid lines (4 levels)
+  var gridLines = '';
+  var yLabels = '';
+  for (var gi = 0; gi <= 4; gi++) {
+    var gv = (maxVal / 4) * gi;
+    var gy = padT + chartH - (gv / maxVal) * chartH;
+    gridLines +=
+      '<line x1="' +
+      padL +
+      '" y1="' +
+      gy.toFixed(1) +
+      '" x2="' +
+      (W - padR) +
+      '" y2="' +
+      gy.toFixed(1) +
+      '" stroke="var(--rpt-progress-bg)" stroke-width="0.5"/>';
+    var labelText = gv >= 1000 ? '$' + (gv / 1000).toFixed(0) + 'k' : '$' + gv.toFixed(0);
+    yLabels +=
+      '<text x="' +
+      (padL - 3) +
+      '" y="' +
+      (gy + 3).toFixed(1) +
+      '" text-anchor="end" font-size="7" fill="var(--rpt-page-text)">' +
+      labelText +
+      '</text>';
+  }
+
+  var bars = '';
+  var xLabels = '';
+  for (var i = 0; i < n; i++) {
+    var v = vals[i];
+    var barColor = v >= 0 ? 'var(--rpt-green)' : 'var(--rpt-orange)';
+    var barH = Math.max(1, (Math.abs(v) / maxVal) * chartH);
+    var bx = padL + i * (chartW / n) + 1;
+    var by = v >= 0 ? padT + chartH - barH : padT + chartH;
+    bars +=
+      '<rect x="' +
+      bx.toFixed(1) +
+      '" y="' +
+      by.toFixed(1) +
+      '" width="' +
+      barW +
+      '" height="' +
+      barH.toFixed(1) +
+      '" fill="' +
+      barColor +
+      '" rx="1"/>';
+    var lx = bx + barW / 2;
+    xLabels +=
+      '<text x="' +
+      lx.toFixed(1) +
+      '" y="' +
+      (H - 6) +
+      '" text-anchor="middle" font-size="7" fill="var(--rpt-page-text)">' +
+      (monthData[i].label || '') +
+      '</text>';
+  }
+
+  return (
+    '<svg width="' +
+    W +
+    '" height="' +
+    H +
+    '" viewBox="0 0 ' +
+    W +
+    ' ' +
+    H +
+    '" xmlns="http://www.w3.org/2000/svg">' +
+    gridLines +
+    yLabels +
+    bars +
+    xLabels +
+    '<line x1="' +
+    padL +
+    '" y1="' +
+    padT +
+    '" x2="' +
+    padL +
+    '" y2="' +
+    (padT + chartH) +
+    '" stroke="var(--rpt-page-text)" stroke-width="0.5"/>' +
+    '<line x1="' +
+    padL +
+    '" y1="' +
+    (padT + chartH) +
+    '" x2="' +
+    (W - padR) +
+    '" y2="' +
+    (padT + chartH) +
+    '" stroke="var(--rpt-page-text)" stroke-width="0.5"/>' +
+    '</svg>'
+  );
+}
+
+/**
+ * rptPageBoardSummary — single-page board-ready executive summary.
+ * Dollar-forward, plain language, no internal metrics.
+ * @param {number} n - Page number
+ * @param {object} d - Report data from collectReportData()
+ */
+function rptPageBoardSummary(n, d) {
+  var $c = function (v) {
+    return (v < 0 ? '-$' : '$') + Math.abs(Math.round(v || 0)).toLocaleString();
+  };
+  var $n = function (v) {
+    return Math.round(Math.abs(v || 0)).toLocaleString();
+  };
+
+  // Contract progress
+  var contractYears = (d.contract && d.contract.years) || 1;
+  var currentYear = (d.contract && d.contract.currentYear) || 1;
+  var pctDone = Math.min(100, Math.round((currentYear / contractYears) * 100));
+
+  // Savings vs annual target
+  var totalSavings = (d.totals && d.totals.savings) || 0;
+  var annualTarget = (d.contract && d.contract.annualTarget) || 0;
+  var savingsPct = annualTarget > 0 ? Math.min(100, Math.round((totalSavings / annualTarget) * 100)) : 0;
+  var savingsColor =
+    totalSavings >= annualTarget * 0.9
+      ? 'var(--rpt-green-dark)'
+      : totalSavings >= annualTarget * 0.6
+        ? 'var(--rpt-orange)'
+        : '#c0392b';
+
+  // CO2 equivalents
+  var pol = d.pollution && d.pollution.pollutants ? d.pollution.pollutants : {};
+  var eq = d.pollution && d.pollution.equivalents ? d.pollution.equivalents : {};
+  var co2Lbs = Math.round(pol.co2 || 0);
+  var trees = Math.round(eq.treeSeedlings || 0);
+  var cars = Math.round(eq.carsRemoved || 0);
+
+  // Monthly savings bar chart — aggregate across all buildings
+  var moNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var moMap = {};
+  (d.buildings || []).forEach(function (b) {
+    ((b.electric && b.electric.monthly) || []).forEach(function (mo) {
+      var k = mo.ym || '';
+      if (!k) return;
+      moMap[k] = (moMap[k] || 0) + (mo.savings || 0);
+    });
+    ((b.gas && b.gas.monthly) || []).forEach(function (mo) {
+      var k = mo.ym || '';
+      if (!k) return;
+      moMap[k] = (moMap[k] || 0) + (mo.savings || 0);
+    });
+    ((b.propane && b.propane.monthly) || []).forEach(function (mo) {
+      var k = mo.ym || '';
+      if (!k) return;
+      moMap[k] = (moMap[k] || 0) + (mo.savings || 0);
+    });
+  });
+  var sortedYMs = Object.keys(moMap).sort().slice(-12);
+  var chartData = sortedYMs.map(function (ym) {
+    var mo = parseInt(ym.split('-')[1]) - 1;
+    return { label: moNames[mo] || ym, value: moMap[ym] };
+  });
+
+  // Progress bar HTML helper
+  function progressBar(pct, color, label) {
+    return (
+      '<div style="margin-bottom:6px">' +
+      '<div style="font-size:10px;color:var(--rpt-page-text);margin-bottom:3px">' +
+      label +
+      '</div>' +
+      '<div style="background:var(--rpt-progress-bg);border-radius:4px;height:12px;overflow:hidden">' +
+      '<div style="width:' +
+      Math.max(0, Math.min(100, pct)) +
+      '%;height:100%;background:' +
+      color +
+      ';border-radius:4px;transition:width 0.3s"></div>' +
+      '</div>' +
+      '<div style="font-size:10px;color:var(--rpt-page-text);text-align:right;margin-top:2px">' +
+      pct +
+      '%</div>' +
+      '</div>'
+    );
+  }
+
+  // Mini-card HTML helper
+  function miniCard(value, label, desc) {
+    return (
+      '<div style="flex:1;border:1px solid var(--rpt-progress-bg);border-radius:6px;padding:10px 8px;text-align:center">' +
+      '<div style="font-size:22px;font-weight:800;color:var(--rpt-green-dark);font-family:monospace;line-height:1.1">' +
+      value +
+      '</div>' +
+      '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.04em;margin:3px 0 2px">' +
+      label +
+      '</div>' +
+      '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.4">' +
+      desc +
+      '</div>' +
+      '</div>'
+    );
+  }
+
+  var chartSVG =
+    chartData.length > 0
+      ? boardSummaryBarChartSVG(chartData)
+      : '<div style="font-size:10px;color:var(--rpt-page-text);font-style:italic;text-align:center;padding:16px">No monthly savings data available.</div>';
+
+  var bodyHTML =
+    '<div contenteditable="true" style="padding:4px 0">' +
+    // Headline
+    '<div style="text-align:center;margin-bottom:14px">' +
+    '<div style="font-size:18px;font-weight:800;color:var(--rpt-blue);letter-spacing:0.01em">' +
+    (d.project ? d.project.client : '') +
+    '</div>' +
+    '<div style="font-size:12px;color:var(--rpt-page-text);margin-top:2px">' +
+    (d.period ? d.period.label : '') +
+    '</div>' +
+    '</div>' +
+    // Two-column KPI row
+    '<div style="display:flex;gap:16px;margin-bottom:14px">' +
+    // Contract progress column
+    '<div style="flex:1;border:1px solid var(--rpt-progress-bg);border-radius:6px;padding:12px">' +
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Contract Progress</div>' +
+    progressBar(
+      pctDone,
+      'var(--rpt-blue-btn)',
+      'Year ' + currentYear + ' of ' + contractYears + ' — Contract Completion',
+    ) +
+    progressBar(savingsPct, 'var(--rpt-green)', 'Annual Savings Target Progress') +
+    '</div>' +
+    // Total savings column
+    '<div style="flex:1;border:1px solid var(--rpt-progress-bg);border-radius:6px;padding:12px;text-align:center">' +
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px">Period Savings</div>' +
+    '<div style="font-size:36px;font-weight:800;color:' +
+    savingsColor +
+    ';font-family:monospace;line-height:1.1">' +
+    $c(totalSavings) +
+    '</div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:4px">vs annual target of <strong>' +
+    $c(annualTarget) +
+    '</strong></div>' +
+    '</div>' +
+    '</div>' +
+    // CO2 mini-cards
+    '<div style="display:flex;gap:10px;margin-bottom:14px">' +
+    miniCard(
+      co2Lbs > 0 ? $n(co2Lbs) : '—',
+      'Pounds of CO₂ Avoided',
+      'Carbon dioxide emissions eliminated through energy savings',
+    ) +
+    miniCard(
+      trees > 0 ? $n(trees) : '—',
+      'Tree Equivalent',
+      'Equivalent to growing this many tree seedlings for 10 years',
+    ) +
+    miniCard(
+      cars > 0 ? $n(cars) : '—',
+      'Cars Removed',
+      'Equivalent to removing this many cars from the road for one year',
+    ) +
+    '</div>' +
+    // Monthly savings chart
+    '<div style="border:1px solid var(--rpt-progress-bg);border-radius:6px;padding:10px">' +
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px">Monthly Savings — Dollars Saved by Month</div>' +
+    '<div style="text-align:center">' +
+    chartSVG +
+    '</div>' +
+    '</div>' +
+    '</div>';
+
+  return rptPage(n, 'Board Executive Summary', bodyHTML, {
+    data: d,
+    hero: true,
+    label: 'Page ' + n + ' — Board Executive Summary',
+  });
+}
+
 /* -- QUARTERLY / ANNUAL PERFORMANCE REPORTS -- */
 
 let _reportProjId = null,
   _reportType = null;
 
 const REPORT_SECTIONS = [
+  { key: 'boardSummary', label: 'Board Executive Summary', group: 'Executive' },
   { key: 'cover', label: 'Cover Page', group: 'Main' },
   { key: 'financial', label: 'Financial Summary', group: 'Main' },
   { key: 'savingsPerformance', label: 'Savings Performance', group: 'Main' },

@@ -1918,9 +1918,49 @@ function saveBillRow() {
 }
 
 /* ── BUILDING MODAL ── */
+function _bmRenderAliasTags(aliases) {
+  const container = document.getElementById('bm-alias-tags');
+  if (!container) return;
+  container.innerHTML = (aliases || [])
+    .map(
+      (a, i) =>
+        '<span style="display:inline-flex;align-items:center;gap:4px;background:var(--s2);border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:12px">' +
+        '<span>' +
+        a.replace(/</g, '&lt;') +
+        '</span>' +
+        '<button type="button" onclick="bmRemoveAlias(' +
+        i +
+        ')" style="background:none;border:none;cursor:pointer;color:var(--text3);padding:0;font-size:13px;line-height:1">&#x2715;</button>' +
+        '</span>',
+    )
+    .join('');
+}
+function bmAddAlias() {
+  const input = document.getElementById('bm-alias-input');
+  const val = (input?.value || '').trim();
+  if (!val) return;
+  const tags = document.getElementById('bm-alias-tags');
+  const existing = Array.from(tags.querySelectorAll('span > span')).map((s) => s.textContent.trim());
+  if (existing.includes(val)) {
+    showToast('Alias already added');
+    return;
+  }
+  existing.push(val);
+  _bmRenderAliasTags(existing);
+  input.value = '';
+  input.focus();
+}
+function bmRemoveAlias(index) {
+  const tags = document.getElementById('bm-alias-tags');
+  const existing = Array.from(tags.querySelectorAll('span > span')).map((s) => s.textContent.trim());
+  existing.splice(index, 1);
+  _bmRenderAliasTags(existing);
+}
 function openBldgModal(editId) {
   const modal = document.getElementById('bldgModal');
   document.getElementById('bm-edit-id').value = editId || '';
+  const aliasSection = document.getElementById('bm-aliases-section');
+  const aliasInput = document.getElementById('bm-alias-input');
   if (editId) {
     const b = getUDBldg(udSelProjId, editId);
     document.getElementById('bldgModalTitle').textContent = '✏️ Edit Building';
@@ -1928,17 +1968,30 @@ function openBldgModal(editId) {
     document.getElementById('bm-addr').value = b?.addr || '';
     document.getElementById('bm-sqft').value = b?.sqft || '';
     document.getElementById('bm-zip').value = b?.zip || '';
+    _bmRenderAliasTags(b?.addrAliases || []);
+    if (aliasSection) aliasSection.style.display = '';
+    if (aliasInput) aliasInput.value = '';
   } else {
     document.getElementById('bldgModalTitle').textContent = '+ Add Building';
     document.getElementById('bm-name').value = '';
     document.getElementById('bm-addr').value = '';
     document.getElementById('bm-sqft').value = '';
     document.getElementById('bm-zip').value = '';
+    _bmRenderAliasTags([]);
+    if (aliasSection) aliasSection.style.display = 'none';
+    if (aliasInput) aliasInput.value = '';
   }
   modal.classList.add('open');
 }
 function closeBldgModal() {
   document.getElementById('bldgModal').classList.remove('open');
+}
+function _bmReadAliasesFromDOM() {
+  const tags = document.getElementById('bm-alias-tags');
+  if (!tags) return [];
+  return Array.from(tags.querySelectorAll('span > span'))
+    .map((s) => s.textContent.trim())
+    .filter(Boolean);
 }
 function saveBuilding() {
   const name = document.getElementById('bm-name').value.trim();
@@ -1947,6 +2000,7 @@ function saveBuilding() {
     return;
   }
   const editId = document.getElementById('bm-edit-id').value;
+  const aliases = _bmReadAliasesFromDOM();
   if (editId) {
     const b = getUDBldg(udSelProjId, editId);
     if (b) {
@@ -1954,6 +2008,7 @@ function saveBuilding() {
       b.addr = document.getElementById('bm-addr').value;
       b.sqft = parseInt(document.getElementById('bm-sqft').value) || 0;
       b.zip = (document.getElementById('bm-zip').value || '').trim();
+      b.addrAliases = aliases;
     }
     showToast('Building updated ✓');
   } else {
@@ -1964,6 +2019,7 @@ function saveBuilding() {
       addr: document.getElementById('bm-addr').value,
       sqft: parseInt(document.getElementById('bm-sqft').value) || 0,
       zip: (document.getElementById('bm-zip').value || '').trim(),
+      addrAliases: aliases,
       meters: [],
     });
     showToast('Building added ✓');

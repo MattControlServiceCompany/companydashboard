@@ -1724,6 +1724,21 @@ function renderUDDetail(targetWrap) {
               _mFlagCount +
               '</span>'
             : '';
+        var _dq = typeof computeMeterQualityScore === 'function' ? computeMeterQualityScore(m) : null;
+        var _dqBadge = _dq ? getMeterQualityBadge(_dq.score) : null;
+        var _dqTag = _dqBadge
+          ? '<span style="background:' +
+            _dqBadge.bgColor +
+            ';color:' +
+            _dqBadge.textColor +
+            ';padding:1px 6px;border-radius:8px;font-size:11px;font-weight:700;margin-left:4px" title="Data Quality: ' +
+            _dq.score +
+            '/100 — ' +
+            qualityBreakdownTooltip(_dq) +
+            '">' +
+            _dqBadge.label +
+            '</span>'
+          : '';
         return (
           '<button class="ma-meter-pill' +
           _pCls +
@@ -1745,6 +1760,7 @@ function renderUDDetail(targetWrap) {
           _exclTag +
           _blTag +
           _flagTag +
+          _dqTag +
           '</button>'
         );
       })
@@ -6464,6 +6480,10 @@ function renderMeterDataPane(pane, m, bills, incl) {
       : (v * 100).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
   const td = (v, cls = '') => `<td${cls ? ' class="' + cls + '"' : ''}>${v}</td>`;
 
+  // ── Data quality score ──
+  const _dqScore = typeof computeMeterQualityScore === 'function' ? computeMeterQualityScore(m) : null;
+  const _dqBadgeData = _dqScore ? getMeterQualityBadge(_dqScore.score) : null;
+
   // ── Get baseline rows (same logic as renderBuildingStatsPane getBlRows) ──
   const sortedBills = (bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
   const allRows = sortedBills.length ? getNormRows(m, sortedBills, incl, weatherByYm) : [];
@@ -6710,6 +6730,41 @@ function renderMeterDataPane(pane, m, bills, incl) {
           </style>
           <div class="bbd-wrap" style="--mdd-lbl-color:${isElec ? '#6ab0e8' : isGas ? '#d08030' : isPropane ? '#d08030' : '#40c8a0'}">
             <div class="bbd-title">Meter Data</div>
+
+            <!-- Data Quality Score Card -->
+            ${
+              _dqScore
+                ? `<div style="background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+              <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+                <span style="font-size:28px;font-weight:900;color:${_dqBadgeData.textColor};background:${_dqBadgeData.bgColor};padding:2px 14px;border-radius:10px;line-height:1.3">${_dqBadgeData.label}</span>
+                <div>
+                  <div style="font-size:18px;font-weight:800;color:#e8eef8;font-family:var(--mono);line-height:1">${_dqScore.score}<span style="font-size:11px;color:#8ab0d0;font-weight:600">/100</span></div>
+                  <div style="font-size:9.5px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-top:2px">Data Quality</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:12px;flex-wrap:wrap;flex:1">
+                ${['dataMonths', 'baselineR2', 'gaps', 'fieldCompleteness', 'flags']
+                  .map((key) => {
+                    const comp = _dqScore.components[key];
+                    const labels = {
+                      dataMonths: 'Months',
+                      baselineR2: 'R²',
+                      gaps: 'Gaps',
+                      fieldCompleteness: 'Fields',
+                      flags: 'Flags',
+                    };
+                    const full = comp.points >= comp.max;
+                    return `<div style="display:flex;flex-direction:column;gap:2px;min-width:56px">
+                  <div style="font-size:9px;color:#6a90b0;text-transform:uppercase;letter-spacing:.4px;font-weight:700">${labels[key]}</div>
+                  <div style="font-size:13px;font-weight:800;color:${full ? '#22c55e' : '#e8eef8'};font-family:var(--mono)">${comp.points}<span style="font-size:9px;color:#6a90b0">/${comp.max}</span></div>
+                  <div style="font-size:9px;color:#6a90b0">${comp.detail}</div>
+                </div>`;
+                  })
+                  .join('')}
+              </div>
+            </div>`
+                : ''
+            }
 
             <!-- Meta row -->
             <div style="display:grid;grid-template-columns:auto 1fr auto;gap:12px 28px;margin-bottom:14px;align-items:start;background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:14px 18px">

@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.22.333';
+  var CH_VERSION = 'v2026.05.22.337';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,29 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.22.337',
+      date: '2026-05-22',
+      title: 'Data quality scores, address aliases, board summary report, rich text editors',
+      features: [
+        {
+          type: 'new',
+          text: 'Data quality score per meter: A–F letter grade and 5-component score (months, R², gaps, field completeness, flags) shown as badge on meter pills and summary card in Meter Data pane',
+        },
+        {
+          type: 'fix',
+          text: 'Address alias management: bldg.address bug fixed to bldg.addr in findMeterMatch; Levenshtein fuzzy matching; alias UI in Building Edit modal; saveAddressAlias wired to PDF extraction flow',
+        },
+        {
+          type: 'new',
+          text: 'Executive summary report: single-page board-ready report with savings vs target, contract progress, CO2 equivalents, and monthly bar chart; accessible from Board Summary button in project header',
+        },
+        {
+          type: 'new',
+          text: 'Browser editor Phase 1: Quill rich text wired for ed-notes, mp-notes, and eq-notes fields; new lib/rich-text.js helper',
+        },
+      ],
+    },
     {
       version: 'v2026.05.22.333',
       date: '2026-05-22',

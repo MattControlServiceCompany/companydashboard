@@ -29,6 +29,7 @@
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
+    <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet" />
 
     <style id="site-ui-styles">
       /* ═══════════════════════════════════════════════════
@@ -7351,7 +7352,44 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.22.333" />
+    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.22.337" />
+    <style>
+      /* ── Quill rich text editor — dark theme overrides ── */
+      .ql-toolbar.ql-snow {
+        background: var(--s1);
+        border-color: var(--s3);
+      }
+      .ql-toolbar .ql-stroke {
+        stroke: var(--dim);
+      }
+      .ql-toolbar .ql-fill {
+        fill: var(--dim);
+      }
+      .ql-toolbar .ql-picker-label {
+        color: var(--dim);
+      }
+      .ql-toolbar button:hover .ql-stroke,
+      .ql-toolbar button.ql-active .ql-stroke {
+        stroke: var(--text);
+      }
+      .ql-toolbar button:hover .ql-fill,
+      .ql-toolbar button.ql-active .ql-fill {
+        fill: var(--text);
+      }
+      .ql-container.ql-snow {
+        border-color: var(--s3);
+        background: var(--bg);
+        color: var(--text);
+        min-height: 80px;
+      }
+      .ql-editor {
+        min-height: 80px;
+        font-size: 13px;
+      }
+      .ql-editor.ql-blank::before {
+        color: var(--dim);
+      }
+    </style>
   </head>
   <script
     src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"
@@ -10035,7 +10073,7 @@
                     </div>
                     <div class="detail-field" style="grid-column: 1/-1">
                       <div class="df-label">Notes</div>
-                      <textarea class="df-textarea" id="ed-notes" rows="4"></textarea>
+                      <div id="ed-notes-editor" style="min-height: 80px"></div>
                     </div>
                     <div class="detail-field" style="grid-column: 1/-1">
                       <div class="df-label">Tags (comma separated)</div>
@@ -11526,11 +11564,19 @@
                   'nextActionDate',
                   'lastContact',
                   'nextAction',
-                  'notes',
                 ].forEach((f) => {
                   const el = document.getElementById('ed-' + f);
                   if (el) el.value = lead[f] || '';
                 });
+                // Initialize or update Quill editor for notes
+                if (typeof initQuillEditor === 'function') {
+                  if (!window._emsNotesQuill) {
+                    window._emsNotesQuill = initQuillEditor('ed-notes-editor', lead.notes || '');
+                  } else {
+                    window._emsNotesQuill.setContents([]);
+                    if (lead.notes) window._emsNotesQuill.clipboard.dangerouslyPasteHTML(lead.notes);
+                  }
+                }
                 document.getElementById('ed-tags').value = (lead.tags || []).join(', ');
                 // Populate client type dropdown with current value selected
                 const ctEl = document.getElementById('ed-clientType');
@@ -11573,6 +11619,10 @@
                   'nextAction',
                   'notes',
                 ].forEach((f) => {
+                  if (f === 'notes' && typeof getQuillHTML === 'function' && window._emsNotesQuill) {
+                    lead[f] = getQuillHTML(window._emsNotesQuill);
+                    return;
+                  }
                   const el = document.getElementById('ed-' + f);
                   if (el) lead[f] = el.value;
                 });
@@ -12801,12 +12851,8 @@
             </div>
             <div class="modal-sect">Description &amp; Notes</div>
             <div class="fg">
-              <label class="fl">Project Description / Scope</label
-              ><textarea
-                class="fta"
-                id="mp-notes"
-                placeholder="Project goals, scope summary, key contacts..."
-              ></textarea>
+              <label class="fl">Project Description / Scope</label>
+              <div id="mp-notes-editor" style="min-height: 80px"></div>
             </div>
             <div class="fg">
               <label class="fl">Tags (comma-separated)</label
@@ -12864,6 +12910,22 @@
             <div class="fg">
               <label class="fl">Facility Address</label
               ><input class="fi" id="bm-addr" placeholder="e.g. 2500 Van Horn Rd, Independence MO 64050" />
+            </div>
+            <div class="fg" id="bm-aliases-section" style="display: none">
+              <label class="fl" style="margin-bottom: 4px"
+                >Address Aliases
+                <span style="font-size: 10px; color: var(--text3)">(variant spellings from bills)</span></label
+              >
+              <div
+                id="bm-alias-tags"
+                style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; min-height: 24px"
+              ></div>
+              <div style="display: flex; gap: 6px">
+                <input class="fi" id="bm-alias-input" placeholder="e.g. 2500 Van Horn Road" style="flex: 1" />
+                <button class="btn btn-ghost" type="button" onclick="bmAddAlias()" style="white-space: nowrap">
+                  Add
+                </button>
+              </div>
             </div>
             <div class="fg">
               <label class="fl">Square Footage</label
@@ -13295,12 +13357,8 @@
               ><input class="fi" id="eq-loc" placeholder="e.g. Van Horn HS — Mech Room B" />
             </div>
             <div class="fg">
-              <label class="fl">Notes</label
-              ><textarea
-                class="fta"
-                id="eq-notes"
-                placeholder="Install year, serial number, BACnet address..."
-              ></textarea>
+              <label class="fl">Notes</label>
+              <div id="eq-notes-editor" style="min-height: 80px"></div>
             </div>
           </div>
           <div class="modal-ftr">
@@ -14186,40 +14244,41 @@
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
     <!-- CompanyHub computation modules -->
-    <script src="lib/date-helpers.js?v=v2026.05.22.333"></script>
-    <script src="lib/formatting.js?v=v2026.05.22.333"></script>
-    <script src="lib/unit-conversion.js?v=v2026.05.22.333"></script>
-    <script src="lib/csv-parser.js?v=v2026.05.22.333"></script>
-    <script src="computations/rates.js?v=v2026.05.22.333"></script>
-    <script src="computations/regression.js?v=v2026.05.22.333"></script>
-    <script src="computations/normalization.js?v=v2026.05.22.333"></script>
-    <script src="computations/eui.js?v=v2026.05.22.333"></script>
-    <script src="computations/pollution.js?v=v2026.05.22.333"></script>
-    <script src="computations/csc.js?v=v2026.05.22.333"></script>
-    <script src="computations/savings.js?v=v2026.05.22.333"></script>
-    <script src="computations/anomaly-detection.js?v=v2026.05.22.333"></script>
-    <script src="lib/perf-table.js?v=v2026.05.22.333"></script>
-    <script src="lib/shared-charts.js?v=v2026.05.22.333"></script>
-    <script src="computations/report-data.js?v=v2026.05.22.333"></script>
-    <script src="extraction/pdf-engine.js?v=v2026.05.22.333"></script>
-    <script src="app/core.js?v=v2026.05.22.333"></script>
-    <script src="app/energy-savings.js?v=v2026.05.22.333"></script>
-    <script src="app/bill-analysis.js?v=v2026.05.22.333"></script>
-    <script src="extraction/bill-validation.js?v=v2026.05.22.333"></script>
-    <script src="app/district-calendar.js?v=v2026.05.22.333"></script>
-    <script src="app/utility-data.js?v=v2026.05.22.333"></script>
-    <script src="app/pipeline-diagram.js?v=v2026.05.22.333"></script>
-    <script src="app/csv-import.js?v=v2026.05.22.333"></script>
-    <script src="app/report-engine.js?v=v2026.05.22.333"></script>
-    <script src="app/report-preview.js?v=v2026.05.22.333"></script>
-    <script src="app/calculators.js?v=v2026.05.22.333"></script>
-    <script src="app/ecm-calculators.js?v=v2026.05.22.333"></script>
-    <script src="app/equipment-matrix.js?v=v2026.05.22.333"></script>
-    <script src="app/graphics-setpoints.js?v=v2026.05.22.333"></script>
-    <script src="app/budget.js?v=v2026.05.22.333"></script>
-    <script src="app/scorecard.js?v=v2026.05.22.333"></script>
+    <script src="lib/date-helpers.js?v=v2026.05.22.337"></script>
+    <script src="lib/formatting.js?v=v2026.05.22.337"></script>
+    <script src="lib/unit-conversion.js?v=v2026.05.22.337"></script>
+    <script src="lib/csv-parser.js?v=v2026.05.22.337"></script>
+    <script src="computations/rates.js?v=v2026.05.22.337"></script>
+    <script src="computations/regression.js?v=v2026.05.22.337"></script>
+    <script src="computations/normalization.js?v=v2026.05.22.337"></script>
+    <script src="computations/eui.js?v=v2026.05.22.337"></script>
+    <script src="computations/pollution.js?v=v2026.05.22.337"></script>
+    <script src="computations/csc.js?v=v2026.05.22.337"></script>
+    <script src="computations/savings.js?v=v2026.05.22.337"></script>
+    <script src="computations/anomaly-detection.js?v=v2026.05.22.337"></script>
+    <script src="lib/perf-table.js?v=v2026.05.22.337"></script>
+    <script src="lib/shared-charts.js?v=v2026.05.22.337"></script>
+    <script src="computations/report-data.js?v=v2026.05.22.337"></script>
+    <script src="computations/data-quality.js?v=v2026.05.22.337"></script>
+    <script src="extraction/pdf-engine.js?v=v2026.05.22.337"></script>
+    <script src="app/core.js?v=v2026.05.22.337"></script>
+    <script src="app/energy-savings.js?v=v2026.05.22.337"></script>
+    <script src="app/bill-analysis.js?v=v2026.05.22.337"></script>
+    <script src="extraction/bill-validation.js?v=v2026.05.22.337"></script>
+    <script src="app/district-calendar.js?v=v2026.05.22.337"></script>
+    <script src="app/utility-data.js?v=v2026.05.22.337"></script>
+    <script src="app/pipeline-diagram.js?v=v2026.05.22.337"></script>
+    <script src="app/csv-import.js?v=v2026.05.22.337"></script>
+    <script src="app/report-engine.js?v=v2026.05.22.337"></script>
+    <script src="app/report-preview.js?v=v2026.05.22.337"></script>
+    <script src="app/calculators.js?v=v2026.05.22.337"></script>
+    <script src="app/ecm-calculators.js?v=v2026.05.22.337"></script>
+    <script src="app/equipment-matrix.js?v=v2026.05.22.337"></script>
+    <script src="app/graphics-setpoints.js?v=v2026.05.22.337"></script>
+    <script src="app/budget.js?v=v2026.05.22.337"></script>
+    <script src="app/scorecard.js?v=v2026.05.22.337"></script>
 
-    <script src="app/site-functions.js?v=v2026.05.22.333"></script>
+    <script src="app/site-functions.js?v=v2026.05.22.337"></script>
 
     <script>
       /* ── DRAG-TO-RESIZE PANELS ── */
@@ -14376,8 +14435,10 @@
       </div>
     </div>
 
-    <script src="app/tooltips-help.js?v=v2026.05.22.333"></script>
-    <script src="feedback-widget.js?v=v2026.05.22.333"></script>
+    <script src="app/tooltips-help.js?v=v2026.05.22.337"></script>
+    <script src="feedback-widget.js?v=v2026.05.22.337"></script>
+    <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js" crossorigin="anonymous"></script>
+    <script src="lib/rich-text.js?v=v2026.05.22.337"></script>
     <script>
       /* Handle ?openProject=... URL params — opened by _rptV2GoEdit() popup window */
       (function _handleEditRedirect() {
