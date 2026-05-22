@@ -736,6 +736,139 @@ function _analyzeMeterBills(bills, m) {
       }
     }
 
+    // ── Overlap detection ──
+    // Flag bills where date ranges overlap with other bills on the same meter
+    // by more than 3 days (matches the renderBillsPane visual overlap threshold).
+    if (b.start && b.end) {
+      const bStart = _parseISO(b.start);
+      const bEnd = _parseISO(b.end);
+      for (const other of bills) {
+        if (other.id === b.id || !other.start || !other.end) continue;
+        const oStart = _parseISO(other.start);
+        const oEnd = _parseISO(other.end);
+        if (oStart <= bEnd && oEnd >= bStart) {
+          const overlapMs = Math.min(bEnd, oEnd) - Math.max(bStart, oStart);
+          const overlapDays = Math.round(overlapMs / 86400000);
+          if (overlapDays > 3) {
+            rowFlags.push({
+              field: 'start',
+              msg:
+                'Overlapping billing period — ' +
+                overlapDays +
+                ' day' +
+                (overlapDays !== 1 ? 's' : '') +
+                ' overlap with ' +
+                other.start +
+                '–' +
+                other.end,
+              level: 'error',
+            });
+            break; // one overlap flag per bill is sufficient
+          }
+        }
+      }
+    }
+
+    // ── Year-over-year spike ──
+    // Flag usage that deviates >40% vs the same calendar month in the prior year.
+    const _usageField = isElec ? 'kwh' : isGas ? 'therms' : 'usage';
+    const _usageFn = checks.find((c) => c.field === _usageField);
+    if (_usageFn && b.start) {
+      const thisUsage = _usageFn.fn(b);
+      if (thisUsage > 0) {
+        const thisDate = _parseISO(b.start);
+        const thisMonth = thisDate.getMonth();
+        const thisYear = thisDate.getFullYear();
+        // Look for a bill starting within ±30 days of the same month in the prior year
+        const priorYearBill = bills.find((other) => {
+          if (!other.start || other.id === b.id) return false;
+          const otherDate = _parseISO(other.start);
+          if (otherDate.getFullYear() !== thisYear - 1) return false;
+          const daysDiff = Math.abs(
+            otherDate.getMonth() * 30 + otherDate.getDate() - (thisMonth * 30 + thisDate.getDate()),
+          );
+          return daysDiff <= 30;
+        });
+        if (priorYearBill) {
+          const priorUsage = _usageFn.fn(priorYearBill);
+          if (priorUsage > 0) {
+            const deviation = Math.abs(thisUsage - priorUsage) / priorUsage;
+            if (deviation > 0.4) {
+              const pct = Math.round(deviation * 100);
+              rowFlags.push({
+                field: _usageField,
+                msg:
+                  'Year-over-year spike: ' +
+                  thisUsage.toLocaleString(undefined, { maximumFractionDigits: 1 }) +
+                  ' vs prior year ' +
+                  priorUsage.toLocaleString(undefined, { maximumFractionDigits: 1 }) +
+                  ' (' +
+                  (thisUsage > priorUsage ? '+' : '-') +
+                  pct +
+                  '%)',
+                level: 'warn',
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // ── Rate anomaly ──
+    // Flag bills where the implied $/unit deviates >30% from the trailing 6-bill average.
+    // Requires at least 3 prior bills to compute a baseline.
+    {
+      const _rateFn = (() => {
+        if (isElec) {
+          return (bill) => {
+            const u = pf(bill.kwh);
+            const c = pf(bill.totalCost);
+            return u > 0 && c > 0 ? c / u : 0;
+          };
+        } else if (isGas) {
+          return (bill) => {
+            const u = pf(bill.therms);
+            const c = pf(bill.gasCharge) || pf(bill.thermCost) || pf(bill.totalCost);
+            return u > 0 && c > 0 ? c / u : 0;
+          };
+        } else {
+          return (bill) => {
+            const u = pf(bill.usage || bill.waterUsage || bill.gallonsDelivered);
+            const c = pf(bill.cost || bill.totalCost);
+            return u > 0 && c > 0 ? c / u : 0;
+          };
+        }
+      })();
+      const thisRate = _rateFn(b);
+      if (thisRate > 0) {
+        // Build trailing 6-bill window (bills before this one by start date)
+        const billIdx = bills.indexOf(b);
+        const priorBills = bills.filter((_, i) => i !== billIdx).slice(0, billIdx < 6 ? billIdx : 6);
+        const priorRates = priorBills.map(_rateFn).filter((r) => r > 0);
+        if (priorRates.length >= 3) {
+          const trailingAvg = priorRates.reduce((a, v) => a + v, 0) / priorRates.length;
+          if (trailingAvg > 0) {
+            const deviation = Math.abs(thisRate - trailingAvg) / trailingAvg;
+            if (deviation > 0.3) {
+              rowFlags.push({
+                field: 'totalCost',
+                msg:
+                  'Rate anomaly: $' +
+                  thisRate.toFixed(4) +
+                  '/unit vs trailing avg $' +
+                  trailingAvg.toFixed(4) +
+                  '/unit (' +
+                  (thisRate > trailingAvg ? '+' : '-') +
+                  Math.round(deviation * 100) +
+                  '%)',
+                level: 'warn',
+              });
+            }
+          }
+        }
+      }
+    }
+
     for (const f of missingChecks) {
       const v = b[f];
       if (v === null || v === undefined || v === '' || v === 0) {
@@ -3477,6 +3610,11 @@ function _saveBillToMatchedMeter(extracted, match) {
   } else {
     liveMeter.bills.push(billRow);
     liveMeter.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+  }
+  // Run validation on the saved bill to persist _flags
+  if (typeof runBillValidation === 'function') {
+    const _savedBill = existing || billRow;
+    runBillValidation(liveMeter, _savedBill);
   }
   saveUtilityData();
   return liveProj.name + ' → ' + liveBldg.name + ' → ' + (liveMeter.provider || liveMeter.meter || 'meter');
@@ -9939,6 +10077,8 @@ async function _saveSinglePDFBill(extracted, projId) {
         targetMeter.bills.push(billRow);
         targetMeter.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
       }
+      // Run validation on the saved bill to persist _flags
+      if (typeof runBillValidation === 'function') runBillValidation(targetMeter, dup || billRow);
     }
     // Second try: single matching commodity meter
     if (!matched) {
@@ -9962,6 +10102,8 @@ async function _saveSinglePDFBill(extracted, projId) {
           m.bills.push(billRow);
           m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
         }
+        // Run validation on the saved bill to persist _flags
+        if (typeof runBillValidation === 'function') runBillValidation(m, dup || billRow);
         matched = true;
       }
     }

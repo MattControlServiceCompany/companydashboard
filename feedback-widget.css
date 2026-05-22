@@ -211,3 +211,40 @@
     transform: translateY(0);
   }
 }
+
+/* ── Download Badge Button ── */
+.fb-dl-btn {
+  position: fixed;
+  bottom: 76px;
+  right: 24px;
+  z-index: 90000;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: var(--s2, #30363d);
+  color: var(--text, #c9d1d9);
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  transition:
+    background 0.2s,
+    transform 0.15s;
+}
+.fb-dl-btn:hover {
+  transform: scale(1.08);
+  background: var(--s3, #484f58);
+}
+.fb-badge {
+  background: var(--accent, #238636);
+  color: #fff;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  line-height: 1.4;
+}

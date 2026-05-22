@@ -5534,6 +5534,73 @@
       .bills-scroll-body .ud-bill-tbl {
         margin: 0;
       }
+      /* ── Value Correction Mode (Update a3a423eb) ── */
+      .vcm-corrected {
+        color: var(--em);
+        font-style: italic;
+      }
+      .vcm-active td[data-vcm-field] {
+        cursor: pointer;
+      }
+      .vcm-active td[data-vcm-field]:hover {
+        background: var(--s2);
+        outline: 1px solid var(--accent);
+      }
+      #vcm-toggle.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+      #vcm-popover {
+        position: absolute;
+        z-index: 90000;
+        background: var(--s1);
+        border: 1px solid var(--s3);
+        border-radius: 8px;
+        padding: 12px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        min-width: 220px;
+      }
+      .vcm-pop-title {
+        font-weight: 700;
+        margin-bottom: 6px;
+        color: var(--text);
+      }
+      .vcm-pop-current {
+        font-size: 12px;
+        color: var(--dim);
+        margin-bottom: 8px;
+      }
+      #vcm-input,
+      #vcm-note {
+        width: 100%;
+        padding: 6px 8px;
+        margin-bottom: 6px;
+        background: var(--bg);
+        border: 1px solid var(--s3);
+        border-radius: 4px;
+        color: var(--text);
+        box-sizing: border-box;
+      }
+      .vcm-pop-btns {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .vcm-pop-btns button {
+        padding: 4px 12px;
+        border-radius: 4px;
+        border: none;
+        cursor: pointer;
+      }
+      .vcm-pop-btns button:first-child {
+        background: var(--s2);
+        color: var(--text);
+      }
+      .vcm-pop-btns button:last-child {
+        background: var(--accent);
+        color: #fff;
+      }
       .ud-bill-tbl {
         width: 100%;
         /* Update 92: separate (not collapse) so each cell paints its OWN
@@ -7284,7 +7351,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css" />
+    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.22.333" />
   </head>
   <script
     src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"
@@ -7451,22 +7518,6 @@
                 </button>
                 <button
                   class="s-item"
-                  data-sidebar-id="savings"
-                  data-fb="energy.sidebar.savings"
-                  onclick="sv('savings', this)"
-                >
-                  <span class="s-ico">💡</span>Energy Savings
-                </button>
-                <button
-                  class="s-item"
-                  data-sidebar-id="district"
-                  data-fb="energy.sidebar.district"
-                  onclick="sv('district', this)"
-                >
-                  <span class="s-ico">🗓️</span>District Calendar
-                </button>
-                <button
-                  class="s-item"
                   data-sidebar-id="drawings"
                   data-fb="energy.sidebar.drawings"
                   onclick="sv('drawings', this)"
@@ -7480,14 +7531,6 @@
                   onclick="sv('specs', this)"
                 >
                   <span class="s-ico">✍️</span>Spec Writer
-                </button>
-                <button
-                  class="s-item"
-                  data-sidebar-id="contracts"
-                  data-fb="energy.sidebar.contracts"
-                  onclick="sv('contracts', this)"
-                >
-                  <span class="s-ico">📋</span>Contracts
                 </button>
                 <button
                   class="s-item"
@@ -8134,353 +8177,6 @@
           <!-- WEATHER -->
           <!-- Weather & Normalize and Baseline are integrated into Utility Data meter workspace tabs -->
 
-          <!-- ENERGY SAVINGS -->
-          <div id="view-savings" class="view view-flex" data-ui-id="en-savings" data-fb="energy.savings">
-            <div class="ud-layout">
-              <div
-                class="ud-nav"
-                id="svProjNav"
-                style="min-width: 200px; max-width: 240px"
-                data-fb="energy.savings.nav"
-              >
-                <div class="ud-nav-sect">
-                  <div class="ud-nav-sect-hdr"><span class="ud-nav-sect-title">Projects</span></div>
-                </div>
-                <div class="ud-nav-body" id="svNavList"></div>
-              </div>
-              <div class="ud-detail-col">
-                <div
-                  id="svDetailHdr"
-                  style="
-                    display: none;
-                    flex-shrink: 0;
-                    padding: 12px 20px;
-                    border-bottom: 1px solid var(--border);
-                    background: var(--s1);
-                    align-items: center;
-                    justify-content: space-between;
-                    flex-wrap: wrap;
-                    gap: 8px;
-                  "
-                >
-                  <div>
-                    <div style="font-size: 16px; font-weight: 700" id="svDetailHdrTitle"></div>
-                    <div style="font-size: 12px; color: var(--text2); margin-top: 2px" id="svDetailHdrSub"></div>
-                  </div>
-                  <div style="display: flex; gap: 8px; flex-wrap: wrap" id="svDetailHdrBtns">
-                    <button
-                      class="btn btn-ghost btn-sm"
-                      onclick="if (svSelProjId) openCalcTemplates(svSelProjId, 'sv');"
-                      data-fb="energy.savings.calc-templates-btn"
-                    >
-                      📐 Calc Templates
-                    </button>
-                    <button
-                      class="btn btn-ghost btn-sm"
-                      onclick="svSaveProjBaselineRates()"
-                      data-fb="energy.savings.save-rates-btn"
-                    >
-                      💾 Save Rates
-                    </button>
-                    <button
-                      class="btn btn-ghost btn-sm"
-                      onclick="svAddMeasure()"
-                      data-fb="energy.savings.add-measure-btn"
-                    >
-                      + Add Measure
-                    </button>
-                    <button class="btn btn-em btn-sm" onclick="svRecalc()" data-fb="energy.savings.recalc-btn">
-                      ⚡ Recalc $ Savings
-                    </button>
-                  </div>
-                </div>
-                <div class="ud-detail-body" id="svDetailWrap">
-                  <div class="ud-empty">
-                    <div class="ud-empty-ico">💡</div>
-                    <div>Select a project from the left<br />to view and edit energy savings</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- DISTRICT CALENDAR -->
-          <div id="view-district" class="view" data-ui-id="en-district" data-fb="energy.district">
-            <div class="pg-hdr">
-              <div>
-                <h1 class="pg-title">District <em>Calendar</em></h1>
-                <p class="pg-sub">
-                  Load a district PDF calendar via URL or upload — events are parsed locally and displayed in a visual
-                  schedule
-                </p>
-              </div>
-              <div class="hdr-actions">
-                <button class="btn btn-ghost btn-sm" onclick="dcClear()" data-fb="energy.district.clear-btn">
-                  ✕ Clear
-                </button>
-                <button class="btn btn-em btn-sm" onclick="dcExport()" data-fb="energy.district.export-btn">
-                  ⬇ Export Schedule
-                </button>
-              </div>
-            </div>
-
-            <div class="g-6040">
-              <!-- LEFT col: input + calendar -->
-              <div>
-                <!-- Input mode tabs -->
-                <div class="dc-input-tabs" data-fb="energy.district.input-tabs">
-                  <button
-                    class="dc-itab active"
-                    id="dc-tab-url"
-                    onclick="dcTab('url', this)"
-                    data-fb="energy.district.tab.url"
-                  >
-                    🔗 Paste URL
-                  </button>
-                  <button
-                    class="dc-itab"
-                    id="dc-tab-pdf"
-                    onclick="dcTab('pdf', this)"
-                    data-fb="energy.district.tab.pdf"
-                  >
-                    📄 Upload PDF
-                  </button>
-                  <button
-                    class="dc-itab"
-                    id="dc-tab-text"
-                    onclick="dcTab('text', this)"
-                    data-fb="energy.district.tab.text"
-                  >
-                    📋 Paste Text
-                  </button>
-                </div>
-
-                <!-- URL panel -->
-                <div class="dc-input-panel active" id="dc-panel-url">
-                  <div class="fg">
-                    <label class="fl">PDF Calendar URL</label>
-                    <div class="dc-url-row">
-                      <input class="fi" id="dc-url" placeholder="https://...calendar.pdf" />
-                      <button class="btn btn-em" onclick="dcLoadURL()">Load</button>
-                    </div>
-                    <div class="fhint">
-                      Paste a direct link to the district's PDF calendar. If blocked by CORS, download and upload the
-                      PDF instead.
-                    </div>
-                  </div>
-                </div>
-
-                <!-- PDF upload panel -->
-                <div class="dc-input-panel" id="dc-panel-pdf">
-                  <div
-                    class="dc-drop-zone"
-                    id="dcDropZone"
-                    onclick="document.getElementById('dcFileInput').click()"
-                    ondragover="
-                      event.preventDefault();
-                      this.classList.add('drag');
-                    "
-                    ondragleave="this.classList.remove('drag')"
-                    ondrop="dcDrop(event)"
-                  >
-                    <div style="font-size: 28px; margin-bottom: 6px">📅</div>
-                    <div
-                      style="font-family: var(--head); font-size: 13px; font-weight: 700; margin-bottom: 3px"
-                      id="dcDropLabel"
-                    >
-                      Drop PDF calendar here or click to browse
-                    </div>
-                    <div style="font-size: 11px; color: var(--text2)">District calendar PDFs accepted</div>
-                    <input
-                      type="file"
-                      id="dcFileInput"
-                      accept=".pdf"
-                      style="display: none"
-                      onchange="dcFileChosen(event)"
-                    />
-                  </div>
-                </div>
-
-                <!-- Text paste panel -->
-                <div class="dc-input-panel" id="dc-panel-text">
-                  <div class="fg">
-                    <label class="fl">Paste Calendar Text</label>
-                    <textarea
-                      class="fta"
-                      id="dist-cal"
-                      style="min-height: 110px"
-                      placeholder="Paste school calendar text — holidays, early release days, school start/end dates, professional development days..."
-                    ></textarea>
-                  </div>
-                  <button class="btn btn-em" style="width: 100%; margin-bottom: 10px" onclick="dcParseText()">
-                    📅 Parse Calendar
-                  </button>
-                </div>
-
-                <!-- Settings -->
-                <div class="card" style="margin-bottom: 10px">
-                  <div class="card-hdr"><span class="card-title">⚙️ Settings</span></div>
-                  <div style="padding: 11px">
-                    <div class="f2" style="margin-bottom: 8px">
-                      <div class="fg" style="margin: 0">
-                        <label class="fl">District Name</label
-                        ><input class="fi" id="dist-name" placeholder="e.g. USD 416 Pratt" />
-                      </div>
-                      <div class="fg" style="margin: 0">
-                        <label class="fl">School Year</label
-                        ><input class="fi" id="dist-year" placeholder="e.g. 2025-2026" />
-                      </div>
-                    </div>
-                    <div class="f2" style="margin-bottom: 8px">
-                      <div class="fg" style="margin: 0">
-                        <label class="fl">Occupied Start</label><input class="fi" id="dist-occ-s" value="7:00 AM" />
-                      </div>
-                      <div class="fg" style="margin: 0">
-                        <label class="fl">Occupied End</label><input class="fi" id="dist-occ-e" value="5:00 PM" />
-                      </div>
-                    </div>
-                    <div class="f2" style="margin: 0">
-                      <div class="fg" style="margin: 0">
-                        <label class="fl">Heat Setback °F</label
-                        ><input class="fi" id="dist-sh" type="number" value="60" />
-                      </div>
-                      <div class="fg" style="margin: 0">
-                        <label class="fl">Cool Setback °F</label
-                        ><input class="fi" id="dist-sc" type="number" value="85" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="dc-progress" id="dcProgress">
-                  <div class="tdots"><span></span><span></span><span></span></div>
-                  <span id="dcProgressMsg">Loading...</span>
-                </div>
-
-                <!-- Visual calendar -->
-                <div id="dcCalWrap" style="display: none">
-                  <div class="dc-cal-wrap">
-                    <div class="dc-cal-nav">
-                      <span class="dc-cal-title" id="dcCalTitle">📅 District Calendar</span>
-                      <div style="display: flex; gap: 5px">
-                        <button class="cnav" onclick="dcNav(-1)">‹</button>
-                        <button class="cnav" onclick="dcNav(1)">›</button>
-                      </div>
-                    </div>
-                    <div id="dcCalMonths"></div>
-                    <div class="dc-legend">
-                      <div class="dc-leg-item">
-                        <div class="dc-leg-dot" style="background: var(--warn)"></div>
-                        Holiday
-                      </div>
-                      <div class="dc-leg-item">
-                        <div class="dc-leg-dot" style="background: var(--danger)"></div>
-                        No School
-                      </div>
-                      <div class="dc-leg-item">
-                        <div class="dc-leg-dot" style="background: var(--violet)"></div>
-                        Early Release
-                      </div>
-                      <div class="dc-leg-item">
-                        <div class="dc-leg-dot" style="background: var(--em2)"></div>
-                        Prof Dev
-                      </div>
-                      <div class="dc-leg-item">
-                        <div class="dc-leg-dot" style="background: var(--em)"></div>
-                        Break
-                      </div>
-                      <div class="dc-leg-item">
-                        <div class="dc-leg-dot" style="background: var(--lime)"></div>
-                        Event
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- RIGHT col: stats + event list + BAS schedule -->
-              <div>
-                <div id="dcStatsRow" style="display: none" class="dc-stat-row" data-fb="energy.district.stats">
-                  <div class="dc-stat">
-                    <div class="dc-stat-val c-warn" id="dc-s-hol">—</div>
-                    <div class="dc-stat-lbl">Holidays</div>
-                  </div>
-                  <div class="dc-stat">
-                    <div class="dc-stat-val c-violet" id="dc-s-early">—</div>
-                    <div class="dc-stat-lbl">Early Release</div>
-                  </div>
-                  <div class="dc-stat">
-                    <div class="dc-stat-val c-em2" id="dc-s-pd">—</div>
-                    <div class="dc-stat-lbl">Prof Dev</div>
-                  </div>
-                  <div class="dc-stat">
-                    <div class="dc-stat-val c-em" id="dc-s-break">—</div>
-                    <div class="dc-stat-lbl">Break Days</div>
-                  </div>
-                </div>
-
-                <div id="dcEventCard" style="display: none" class="card" data-fb="energy.district.event-list">
-                  <div class="card-hdr">
-                    <span class="card-title">📋 All Events</span>
-                    <input
-                      class="fi"
-                      id="dcSearch"
-                      data-fb="energy.district.search"
-                      placeholder="Filter..."
-                      style="width: 110px; padding: 4px 8px; font-size: 11px"
-                      oninput="dcFilterEvents()"
-                    />
-                  </div>
-                  <div style="max-height: 320px; overflow-y: auto; padding: 9px" id="dcEventList"></div>
-                </div>
-
-                <div id="dcBasCard" style="display: none" class="card" data-fb="energy.district.bas-schedule">
-                  <div class="card-hdr">
-                    <span class="card-title">🔌 WebCTRL Exception Schedule</span>
-                    <button
-                      class="btn btn-ghost btn-sm"
-                      onclick="
-                        navigator.clipboard
-                          .writeText(document.getElementById('distBox').textContent)
-                          .then(() => showToast('Copied ✓'))
-                      "
-                    >
-                      Copy
-                    </button>
-                  </div>
-                  <div style="padding: 12px">
-                    <div
-                      class="ai-box"
-                      id="distBox"
-                      style="
-                        min-height: 100px;
-                        max-height: 280px;
-                        overflow-y: auto;
-                        font-family: var(--mono);
-                        font-size: 11px;
-                        line-height: 1.7;
-                      "
-                    ></div>
-                  </div>
-                </div>
-
-                <!-- Empty state -->
-                <div id="dcEmpty" class="card">
-                  <div style="padding: 44px 20px; text-align: center">
-                    <div style="font-size: 40px; margin-bottom: 10px">🗓️</div>
-                    <div style="font-family: var(--head); font-size: 14px; font-weight: 700; margin-bottom: 5px">
-                      No calendar loaded
-                    </div>
-                    <div style="font-size: 12px; color: var(--text2); line-height: 1.6">
-                      Paste a PDF URL, upload a PDF, or paste calendar text on the left. Events are detected and placed
-                      on a visual calendar automatically.
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <!-- DRAWINGS -->
           <div id="view-drawings" class="view" data-fb="energy.drawings">
             <div class="g2">
@@ -8595,85 +8291,6 @@
                 </div>
                 <div class="spec-out" id="specOut" data-fb="energy.specs.output">
                   Select system types and fill in project details, then click Generate Specification.
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- CONTRACTS -->
-          <div id="view-contracts" class="view" data-fb="energy.contracts">
-            <div style="display: flex; justify-content: flex-end; flex-shrink: 0; margin-bottom: 14px">
-              <button
-                class="btn btn-ghost"
-                onclick="document.getElementById('tmplInput').click()"
-                data-fb="energy.contracts.upload-btn"
-              >
-                📤 Upload Template
-              </button>
-              <input
-                type="file"
-                id="tmplInput"
-                accept=".pdf,.docx,.txt"
-                style="display: none"
-                onchange="loadTemplate(event)"
-              />
-            </div>
-            <div class="g2">
-              <div>
-                <div class="card" style="margin-bottom: 14px">
-                  <div class="card-hdr"><span class="card-title">📋 Template Status</span></div>
-                  <div style="padding: 14px" id="tmplStatus">
-                    <div style="font-size: 13px; color: var(--text2); line-height: 1.6">
-                      No template loaded. Upload a contract template or use the default below.
-                    </div>
-                    <button class="btn btn-ghost btn-sm" style="margin-top: 10px" onclick="loadDefaultTemplate()">
-                      Use Generic Template
-                    </button>
-                  </div>
-                </div>
-                <div class="card" id="contractVarsCard" style="display: none">
-                  <div class="card-hdr"><span class="card-title">✏️ Contract Variables</span></div>
-                  <div style="padding: 14px" id="contractVars"></div>
-                  <div style="padding: 0 14px 14px">
-                    <button
-                      class="btn btn-em"
-                      style="width: 100%"
-                      onclick="generateContract()"
-                      data-fb="energy.contracts.generate-btn"
-                    >
-                      📋 Generate Contract
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div>
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px">
-                  <div class="ai-label" style="margin: 0">📋 Generated Contract</div>
-                  <div style="display: flex; gap: 7px">
-                    <button
-                      class="btn btn-ghost btn-sm"
-                      onclick="
-                        navigator.clipboard.writeText(document.getElementById('contractOut').textContent);
-                        showToast('Copied ✓');
-                      "
-                    >
-                      📋 Copy
-                    </button>
-                    <button
-                      class="btn btn-ghost btn-sm"
-                      onclick="document.getElementById('contractOut').textContent = ''"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                </div>
-                <div
-                  class="ai-box"
-                  id="contractOut"
-                  style="min-height: 400px; max-height: 560px; overflow-y: auto"
-                  data-fb="energy.contracts.output"
-                >
-                  Upload your template or click "Use Generic Template" to get started.
                 </div>
               </div>
             </div>
@@ -14569,40 +14186,40 @@
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
     <!-- CompanyHub computation modules -->
-    <script src="lib/date-helpers.js"></script>
-    <script src="lib/formatting.js"></script>
-    <script src="lib/unit-conversion.js"></script>
-    <script src="lib/csv-parser.js"></script>
-    <script src="computations/rates.js"></script>
-    <script src="computations/regression.js"></script>
-    <script src="computations/normalization.js"></script>
-    <script src="computations/eui.js"></script>
-    <script src="computations/pollution.js"></script>
-    <script src="computations/csc.js"></script>
-    <script src="computations/savings.js"></script>
-    <script src="computations/anomaly-detection.js"></script>
-    <script src="lib/perf-table.js"></script>
-    <script src="lib/shared-charts.js"></script>
-    <script src="computations/report-data.js"></script>
-    <script src="extraction/bill-validation.js"></script>
-    <script src="extraction/pdf-engine.js"></script>
-    <script src="app/core.js"></script>
-    <script src="app/energy-savings.js"></script>
-    <script src="app/bill-analysis.js"></script>
-    <script src="app/district-calendar.js"></script>
-    <script src="app/utility-data.js"></script>
-    <script src="app/pipeline-diagram.js"></script>
-    <script src="app/csv-import.js"></script>
-    <script src="app/report-engine.js"></script>
-    <script src="app/report-preview.js"></script>
-    <script src="app/calculators.js"></script>
-    <script src="app/ecm-calculators.js"></script>
-    <script src="app/equipment-matrix.js"></script>
-    <script src="app/graphics-setpoints.js"></script>
-    <script src="app/budget.js"></script>
-    <script src="app/scorecard.js"></script>
+    <script src="lib/date-helpers.js?v=v2026.05.22.333"></script>
+    <script src="lib/formatting.js?v=v2026.05.22.333"></script>
+    <script src="lib/unit-conversion.js?v=v2026.05.22.333"></script>
+    <script src="lib/csv-parser.js?v=v2026.05.22.333"></script>
+    <script src="computations/rates.js?v=v2026.05.22.333"></script>
+    <script src="computations/regression.js?v=v2026.05.22.333"></script>
+    <script src="computations/normalization.js?v=v2026.05.22.333"></script>
+    <script src="computations/eui.js?v=v2026.05.22.333"></script>
+    <script src="computations/pollution.js?v=v2026.05.22.333"></script>
+    <script src="computations/csc.js?v=v2026.05.22.333"></script>
+    <script src="computations/savings.js?v=v2026.05.22.333"></script>
+    <script src="computations/anomaly-detection.js?v=v2026.05.22.333"></script>
+    <script src="lib/perf-table.js?v=v2026.05.22.333"></script>
+    <script src="lib/shared-charts.js?v=v2026.05.22.333"></script>
+    <script src="computations/report-data.js?v=v2026.05.22.333"></script>
+    <script src="extraction/pdf-engine.js?v=v2026.05.22.333"></script>
+    <script src="app/core.js?v=v2026.05.22.333"></script>
+    <script src="app/energy-savings.js?v=v2026.05.22.333"></script>
+    <script src="app/bill-analysis.js?v=v2026.05.22.333"></script>
+    <script src="extraction/bill-validation.js?v=v2026.05.22.333"></script>
+    <script src="app/district-calendar.js?v=v2026.05.22.333"></script>
+    <script src="app/utility-data.js?v=v2026.05.22.333"></script>
+    <script src="app/pipeline-diagram.js?v=v2026.05.22.333"></script>
+    <script src="app/csv-import.js?v=v2026.05.22.333"></script>
+    <script src="app/report-engine.js?v=v2026.05.22.333"></script>
+    <script src="app/report-preview.js?v=v2026.05.22.333"></script>
+    <script src="app/calculators.js?v=v2026.05.22.333"></script>
+    <script src="app/ecm-calculators.js?v=v2026.05.22.333"></script>
+    <script src="app/equipment-matrix.js?v=v2026.05.22.333"></script>
+    <script src="app/graphics-setpoints.js?v=v2026.05.22.333"></script>
+    <script src="app/budget.js?v=v2026.05.22.333"></script>
+    <script src="app/scorecard.js?v=v2026.05.22.333"></script>
 
-    <script src="app/site-functions.js"></script>
+    <script src="app/site-functions.js?v=v2026.05.22.333"></script>
 
     <script>
       /* ── DRAG-TO-RESIZE PANELS ── */
@@ -14759,8 +14376,8 @@
       </div>
     </div>
 
-    <script src="app/tooltips-help.js"></script>
-    <script src="feedback-widget.js"></script>
+    <script src="app/tooltips-help.js?v=v2026.05.22.333"></script>
+    <script src="feedback-widget.js?v=v2026.05.22.333"></script>
     <script>
       /* Handle ?openProject=... URL params — opened by _rptV2GoEdit() popup window */
       (function _handleEditRedirect() {

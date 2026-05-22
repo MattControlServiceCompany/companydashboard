@@ -351,6 +351,13 @@ function importBillCsvRows() {
   });
 
   m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+  // Run validation on all newly-imported/updated bills so _flags are persisted immediately
+  if (typeof runBillValidation === 'function') {
+    _csvImportRows.forEach((r) => {
+      const addedBill = m.bills.find((b) => b.start === r.start);
+      if (addedBill) runBillValidation(m, addedBill);
+    });
+  }
   saveUtilityData();
   closeBillCsvModal();
   udActiveTab = 'bills';
@@ -538,7 +545,23 @@ function renderBillRow(row, m, incl, allBills, cols) {
     const warnAttr = warn
       ? ' title="' + warn.replace(/"/g, '&quot;') + '" style="background:rgba(245,158,11,.12)"'
       : '';
-    html += `<td${finalCls ? ' class="' + finalCls + '"' : ''}${rightAttr}${warnAttr}>${formatted}</td>`;
+    // VCM: add data attributes on numeric/currency/rate cells so click handler can target them (Update a3a423eb)
+    const _vcmEligible = c.entry.type === 'currency' || c.entry.type === 'number' || c.entry.type === 'rate';
+    const _vcmAttrs = _vcmEligible
+      ? ' data-vcm-field="' + c.entry.key + '" data-vcm-rowid="' + row.id + '" data-vcm-mid="' + m.id + '"'
+      : '';
+    // If this field has a user correction, wrap the value with a star indicator
+    const _corr = row._userCorrected && row._userCorrected[c.entry.key];
+    const _displayVal = _corr
+      ? '<span class="vcm-corrected" title="Corrected from ' +
+        _corr.original +
+        ' on ' +
+        (_corr.at ? _corr.at.slice(0, 10) : '?') +
+        '">&#9733; ' +
+        formatted +
+        '</span>'
+      : formatted;
+    html += `<td${finalCls ? ' class="' + finalCls + '"' : ''}${rightAttr}${warnAttr}${_vcmAttrs}>${_displayVal}</td>`;
   }
   html += actionBtns + '</tr>';
   return html;
@@ -561,6 +584,68 @@ function updateBillField(mid, rowId, field, val) {
   }
   saveUtilityData();
 }
+
+/* ── SUBMIT VALUE CORRECTION (Update a3a423eb) ──
+   Called from the VCM popover Save button. Overwrites the field value on the
+   bill row, stores the original + timestamp on row._userCorrected[field] for
+   audit display, logs to the utility audit log, appends to the
+   en_value_corrections localStorage key, then saves + re-renders. */
+function submitValueCorrection(mid, rowId, field, correctedValue, note) {
+  // Remove any lingering VCM keydown handler — Save button doesn't go through _vcmCancelPopover
+  if (typeof window._vcmCancelPopover === 'function') window._vcmCancelPopover();
+  if (!udSelProjId || !udSelBldgId) return;
+  var meter = getUDMeter(udSelProjId, udSelBldgId, mid);
+  if (!meter) return;
+  var row = meter.bills.find(function (r) {
+    return r.id === rowId;
+  });
+  if (!row) return;
+  if (isNaN(correctedValue)) {
+    showToast('Please enter a valid number', 'warn');
+    return;
+  }
+  var originalValue = row[field];
+  row[field] = correctedValue;
+  if (!row._userCorrected) row._userCorrected = {};
+  row._userCorrected[field] = { original: originalValue, at: new Date().toISOString() };
+  // Audit log entry
+  logUtilityAudit(
+    Object.assign(
+      {
+        action: 'correction',
+        period: _auditPeriodLabel(row),
+        changes: [{ field: field, from: originalValue, to: correctedValue }],
+        note: note || '',
+        source: 'value_correction_mode',
+      },
+      _auditCtxFromIds(udSelProjId, udSelBldgId, mid),
+    ),
+  );
+  // Corrections log (separate from main audit log, max 1000 entries)
+  var corrections = [];
+  try {
+    corrections = JSON.parse(localStorage.getItem('en_value_corrections') || '[]');
+  } catch (e) {}
+  corrections.push({
+    ts: new Date().toISOString(),
+    projId: udSelProjId,
+    bldgId: udSelBldgId,
+    meterId: mid,
+    billId: rowId,
+    field: field,
+    originalValue: originalValue,
+    correctedValue: correctedValue,
+    note: note || '',
+  });
+  if (corrections.length > 1000) corrections = corrections.slice(-1000);
+  localStorage.setItem('en_value_corrections', JSON.stringify(corrections));
+  // Close popover, save, re-render
+  var pop = document.getElementById('vcm-popover');
+  if (pop) pop.remove();
+  saveUtilityData();
+  renderMeterWorkspace();
+}
+window.submitValueCorrection = submitValueCorrection;
 
 function setMeterIncl(mid, val) {
   if (!udSelProjId || !udSelBldgId) return;
@@ -1822,6 +1907,11 @@ function saveBillRow() {
     showToast('Period added ✓');
   }
   m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+  // Run validation on the saved bill to keep _flags current
+  if (typeof runBillValidation === 'function') {
+    const _savedBill = row || m.bills.find((b) => b.start === data.start) || m.bills[m.bills.length - 1];
+    if (_savedBill) runBillValidation(m, _savedBill);
+  }
   saveUtilityData();
   closeBillModal();
   renderMeterWorkspace();

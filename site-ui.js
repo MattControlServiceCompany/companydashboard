@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.22.328';
+  var CH_VERSION = 'v2026.05.22.333';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,39 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.22.333',
+      date: '2026-05-22',
+      title: 'Cache-busting, feedback inbox download, sidebar cleanup, value correction mode, bill validation flags',
+      features: [
+        {
+          type: 'new',
+          text: 'Cache-busting version params added to all script/stylesheet references so browsers always load the latest code after a deploy',
+        },
+        { type: 'new', text: 'Feedback inbox: download button exports all captured feedback as a CSV file' },
+        { type: 'new', text: 'Sidebar button removal: cleaned up stale navigation buttons from the sidebar' },
+        {
+          type: 'new',
+          text: 'Value Correction Mode (VCM): select a bill field and override its value with an audited correction, stored in localStorage',
+        },
+        {
+          type: 'new',
+          text: 'Bill validation flags: automatic per-bill health checks (year-over-year spikes, missing fields, cost outliers) displayed as colored dots in the bills pane with dismissible notes',
+        },
+        {
+          type: 'fix',
+          text: 'VCM keydown listener leak: Escape, Cancel, and Save all now clean up the listener; no more listener accumulation across multiple VCM sessions',
+        },
+        {
+          type: 'fix',
+          text: 'bill-validation.js script load order corrected: now loads after bill-analysis.js so _analyzeMeterBills is always defined at call time',
+        },
+        {
+          type: 'fix',
+          text: 'feedback-widget.js disable() now removes dlBtn from DOM, preventing stale-node reference after a disable/enable cycle',
+        },
+      ],
+    },
     {
       version: 'v2026.05.22.328',
       date: '2026-05-22',

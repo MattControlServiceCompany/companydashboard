@@ -322,13 +322,6 @@ function sv(id, btn) {
       renderUDDetail();
     });
   }
-  if (id === 'savings') {
-    requestAnimationFrame(() => {
-      _setUDLayoutHeight('savings');
-      renderSvProjNav();
-      renderSvDetail();
-    });
-  }
   if (id === 'projects') {
     const _savedProj = sessionStorage.getItem('ch_proj');
     let _restored = false;
@@ -360,9 +353,6 @@ function sv(id, btn) {
     } else {
       renderProjTable();
     }
-  }
-  if (id === 'district' && dcEvents.length) {
-    dcRenderAll();
   }
   if (id === 'calculators' && typeof initEcmCalculatorsView === 'function') {
     initEcmCalculatorsView();

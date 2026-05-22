@@ -12,6 +12,7 @@
     selectedEl: null,
     popup: null,
     btn: null,
+    dlBtn: null,
     screenshotBlob: null,
     screenshotMethod: null,
   };
@@ -480,6 +481,53 @@
 
     showToast('Feedback logged — ' + uuid + '. Claude will add it to the backlog.', 'success');
     exitInspection();
+    updateBadge();
+  }
+
+  /* ── Download Badge ── */
+  function updateBadge() {
+    var existing = localStorage.getItem('fb_issues');
+    var count = 0;
+    try {
+      count = existing ? JSON.parse(existing).length : 0;
+    } catch (e) {}
+
+    if (!state.dlBtn) {
+      if (count === 0) return;
+      var dlBtn = document.createElement('button');
+      dlBtn.className = 'fb-dl-btn';
+      dlBtn.title = 'Download feedback inbox';
+      dlBtn.innerHTML = '&#8681; <span class="fb-badge">' + count + '</span>';
+      dlBtn.onclick = downloadInbox;
+      document.body.appendChild(dlBtn);
+      state.dlBtn = dlBtn;
+    } else {
+      if (count === 0) {
+        state.dlBtn.remove();
+        state.dlBtn = null;
+      } else {
+        state.dlBtn.querySelector('.fb-badge').textContent = count;
+      }
+    }
+  }
+
+  function downloadInbox() {
+    var raw = localStorage.getItem('fb_issues');
+    var issues = [];
+    try {
+      issues = raw ? JSON.parse(raw) : [];
+    } catch (e) {}
+    if (issues.length === 0) {
+      return;
+    }
+    var json = JSON.stringify(issues, null, 2);
+    var blob = new Blob([json], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'CompanyHub-feedback-' + new Date().toISOString().slice(0, 10) + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   /* ── Init ── */
@@ -501,12 +549,17 @@
   function enable() {
     state.enabled = true;
     createButton();
+    updateBadge();
   }
 
   function disable() {
     state.enabled = false;
     if (state.inspecting) exitInspection();
     removeButton();
+    if (state.dlBtn) {
+      state.dlBtn.remove();
+      state.dlBtn = null;
+    }
   }
 
   if (document.readyState === 'loading') {

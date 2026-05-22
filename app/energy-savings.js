@@ -1245,12 +1245,6 @@ function svRecalc() {
   showToast('Savings recalculated ✓');
 }
 
-// Navigate directly to savings page for a given project (e.g. from project header link)
-function openSavingsForProj(projId) {
-  svSelProjId = projId;
-  sv('savings', document.querySelector('.s-item[onclick*="\'savings\'"]'));
-}
-
 // ── Contracts per project ──
 let _projContractTemplate = {};
 function loadDefaultTemplatForProj(projId) {

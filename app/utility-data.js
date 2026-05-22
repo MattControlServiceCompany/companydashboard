@@ -21,6 +21,8 @@ let udSelMeterId = null; // for bill modal
 let udBillEditId = null;
 let _meterInclusive = true;
 const _openMeterIds = new Set(); // tracks which meter cards are expanded
+let _vcmActive = false; // Value Correction Mode toggle state (Update a3a423eb)
+let _vcmKeyHandler = null; // module-level ref so Cancel/Save can remove it
 
 function loadUtilityData() {
   utilityData = {};
@@ -202,6 +204,85 @@ function _auditPeriodLabel(row) {
   if (row.BillingPeriodStart && row.BillingPeriodEnd) return row.BillingPeriodStart + ' to ' + row.BillingPeriodEnd;
   return '';
 }
+
+/* ── VALUE CORRECTION MODE (Update a3a423eb) ──
+   Toggle a per-session flag that turns the bills table into an edit surface.
+   When active, clicking any numeric cell opens a popover to enter a
+   corrected value with an optional reason note. The original value is
+   preserved on row._userCorrected[field] for audit trail. */
+function toggleValueCorrectionMode() {
+  _vcmActive = !_vcmActive;
+  var btn = document.getElementById('vcm-toggle');
+  if (btn) btn.classList.toggle('active', _vcmActive);
+  var tbl = document.getElementById('billsBodyTbl');
+  if (tbl) tbl.classList.toggle('vcm-active', _vcmActive);
+}
+window.toggleValueCorrectionMode = toggleValueCorrectionMode;
+
+function showVCMPopover(td) {
+  // Remove any stale keydown handler from a previous open popover
+  if (_vcmKeyHandler) {
+    document.removeEventListener('keydown', _vcmKeyHandler);
+    _vcmKeyHandler = null;
+  }
+  var existing = document.getElementById('vcm-popover');
+  if (existing) existing.remove();
+  var field = td.dataset.vcmField;
+  var rowId = td.dataset.vcmRowid;
+  var mid = td.dataset.vcmMid;
+  // Strip display formatting to get a raw number for the input default value
+  var currentText = td.textContent.trim();
+  var currentVal = currentText.replace(/[$,%\s★]/g, '').replace(/,/g, '') || '';
+  var pop = document.createElement('div');
+  pop.id = 'vcm-popover';
+  pop.innerHTML =
+    '<div class="vcm-pop-title">Correct Value</div>' +
+    '<div class="vcm-pop-current">Current: ' +
+    currentText +
+    '</div>' +
+    '<input id="vcm-input" type="number" step="any" placeholder="Corrected value" value="' +
+    currentVal +
+    '">' +
+    '<input id="vcm-note" type="text" placeholder="Reason (optional)">' +
+    '<div class="vcm-pop-btns">' +
+    '<button onclick="_vcmCancelPopover()">Cancel</button>' +
+    '<button onclick="submitValueCorrection(\'' +
+    mid +
+    "','" +
+    rowId +
+    "','" +
+    field +
+    "'," +
+    "parseFloat(document.getElementById('vcm-input').value)," +
+    "document.getElementById('vcm-note').value)\">Save</button>" +
+    '</div>';
+  var rect = td.getBoundingClientRect();
+  pop.style.top = rect.bottom + window.scrollY + 4 + 'px';
+  pop.style.left = rect.left + window.scrollX + 'px';
+  document.body.appendChild(pop);
+  var inp = document.getElementById('vcm-input');
+  if (inp) inp.focus();
+  // Close on Escape — store in module-level var so Cancel/Save can remove it
+  _vcmKeyHandler = function (e) {
+    if (e.key === 'Escape') {
+      _vcmCancelPopover();
+    }
+  };
+  document.addEventListener('keydown', _vcmKeyHandler);
+}
+window.showVCMPopover = showVCMPopover;
+
+// Shared cancel helper — removes the keydown listener and the popover DOM node.
+// Called by Cancel button (inline onclick) and Escape handler.
+function _vcmCancelPopover() {
+  if (_vcmKeyHandler) {
+    document.removeEventListener('keydown', _vcmKeyHandler);
+    _vcmKeyHandler = null;
+  }
+  var p = document.getElementById('vcm-popover');
+  if (p) p.remove();
+}
+window._vcmCancelPopover = _vcmCancelPopover;
 
 function _auditDiffBillFields(before, after) {
   if (!before || !after) return null;
@@ -517,11 +598,25 @@ function renderUDProjList() {
                   ? `<span style="color:var(--amber);font-size:10px" title="${mWithBl} of ${mCount} baseline meters have baselines set">⚠ ${mWithBl}/${mCount} BL</span>`
                   : `<span style="color:var(--text3);font-size:10px" title="No baselines set">— 0/${mCount} BL</span>`
               : '';
+          // Count active (non-dismissed) flags across all meters → bills in this building
+          const _bFlagCount = _allMeters.reduce((sum, meter) => {
+            return (
+              sum +
+              (meter.bills || []).reduce((s, bill) => {
+                if (!Array.isArray(bill._flags)) return s;
+                return s + bill._flags.filter((f) => !f.dismissed).length;
+              }, 0)
+            );
+          }, 0);
+          const flagBadge =
+            _bFlagCount > 0
+              ? `<span style="color:var(--amber);font-size:10px" title="${_bFlagCount} bill flag${_bFlagCount !== 1 ? 's' : ''} need review">⚠ ${_bFlagCount} review</span>`
+              : '';
           const bldgActive = b.id === udSelBldgId ? ' active' : '';
           html += `<div class="ud-nav-bldg-item${bldgActive}" onclick="udSelectBldg('${b.id}')">
                   <div style="flex:1;min-width:0">
                     <div class="ud-nav-bldg-name" title="${b.name}">${b.name}</div>
-                    <div class="ud-nav-bldg-meta">${b.sqft ? Number(b.sqft).toLocaleString() + ' sf · ' : ''}${_totalMCount} meter${_totalMCount !== 1 ? 's' : ''} ${blBadge}</div>
+                    <div class="ud-nav-bldg-meta">${b.sqft ? Number(b.sqft).toLocaleString() + ' sf · ' : ''}${_totalMCount} meter${_totalMCount !== 1 ? 's' : ''} ${blBadge}${flagBadge ? ' ' + flagBadge : ''}</div>
                   </div>
                   <div class="ud-nav-bldg-actions">
                     <button class="btn btn-ghost btn-sm" style="padding:1px 5px;font-size:11px" onclick="event.stopPropagation();openBldgModal('${b.id}')" title="Edit">✏️</button>
@@ -1590,6 +1685,11 @@ function renderUDDetail(targetWrap) {
       .map((m) => {
         const active = m.id === _curMid;
         const bcount = (m.bills || []).length;
+        // Count active (non-dismissed) flags across all bills on this meter
+        const _mFlagCount = (m.bills || []).reduce((sum, bill) => {
+          if (!Array.isArray(bill._flags)) return sum;
+          return sum + bill._flags.filter((f) => !f.dismissed).length;
+        }, 0);
         const _pClsMap = {
           Electric: ' elec-pill',
           Gas: ' gas-pill',
@@ -1614,6 +1714,16 @@ function renderUDDetail(targetWrap) {
           m.baseline && m.baseline.months && m.baseline.months.length > 0
             ? '<span style="font-size:8px;font-weight:700;color:#22c55e;background:rgba(34,197,94,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Baseline set">BL</span>'
             : '';
+        const _flagTag =
+          _mFlagCount > 0
+            ? '<span style="font-size:8px;font-weight:700;color:var(--amber);background:rgba(245,158,11,.12);padding:1px 4px;border-radius:3px;margin-left:2px" title="' +
+              _mFlagCount +
+              ' bill flag' +
+              (_mFlagCount !== 1 ? 's' : '') +
+              ' need review">⚠ ' +
+              _mFlagCount +
+              '</span>'
+            : '';
         return (
           '<button class="ma-meter-pill' +
           _pCls +
@@ -1634,6 +1744,7 @@ function renderUDDetail(targetWrap) {
           '</span>' +
           _exclTag +
           _blTag +
+          _flagTag +
           '</button>'
         );
       })
@@ -2432,7 +2543,20 @@ function renderBillsPane(pane, m, bills, incl) {
         tblBody += `<tr class="ud-bill-gap-row"><td colspan="${cols.length}"><div class="ud-bill-gap-msg">⚠️ Gap in data — ${gapMonths > 1 ? '~' + gapMonths + ' months (' : ''}${gapDays} day${gapDays !== 1 ? 's' : ''}${gapMonths > 1 ? ')' : ''} missing between ${fmtDate(gapEarlier)} and ${fmtDate(gapLater)}${_emptyRowNote}</div></td></tr>`;
       }
     }
-    const flags = billFlags[row.id] || [];
+    // Prefer persisted _flags on the bill over transient re-computed flags.
+    // Persisted _flags come from runBillValidation() called at save time.
+    // Fall back to transient billFlags (from _analyzeMeterBills) for bills
+    // saved before this feature was added.
+    const _persistedFlags = Array.isArray(row._flags) ? row._flags.filter((f) => !f.dismissed) : null;
+    const flags =
+      _persistedFlags !== null
+        ? _persistedFlags.map((f) => ({
+            field: (f.id || '').split('_').slice(0, -1).join('_') || f.id,
+            msg: f.label,
+            level: f.severity === 'error' ? 'error' : 'warn',
+            _persistFlag: f,
+          }))
+        : billFlags[row.id] || [];
     if (flags.length) flagCount++;
     let rowHtml = renderBillRow(row, m, incl, bills, cols);
     // Meter change and charge part indicators (icons only — onclick stays as showBillSplitPanel from renderBillRow)
@@ -2447,7 +2571,7 @@ function renderBillsPane(pane, m, bills, incl) {
         '$1<span title="Charge line items" style="font-size:10px;margin-right:3px;opacity:0.7">💲</span>',
       );
     }
-    // Add amber background and info icons for flagged rows
+    // Add amber background and colored flag badges for flagged rows
     if (flags.length) {
       const _flagTitle = flags
         .map((f) => f.msg)
@@ -2482,15 +2606,24 @@ function renderBillsPane(pane, m, bills, incl) {
             stormWaterCharge: 'Stormwater Charge',
             gallonsDelivered: 'Gallons',
             readDifference: 'Read Difference',
+            start: 'Start Date',
           }[f.field] ||
           f.field ||
           '';
         const _warnTip = (_warnColLabel ? _warnColLabel + ': ' : '') + f.msg;
+        // Use red dot for errors, amber for warnings
+        const _dotColor = f.level === 'error' ? 'var(--danger,#ef4444)' : 'var(--amber)';
+        // Build dismiss onclick if the flag is persisted (has _persistFlag with an id)
+        const _pf = f._persistFlag;
+        const _dismissAttr = _pf
+          ? ` onclick="event.stopPropagation();dismissBillFlag('${udSelProjId}','${udSelBldgId}','${m.id}','${row.id}','${_pf.id}','');return false;"`
+          : '';
+        const _dismissTip = _pf ? ' Click to dismiss.' : '';
         let tdCount = 0;
         rowHtml = rowHtml.replace(/<td([^>]*)>/g, (match, attrs) => {
           tdCount++;
           if (tdCount === colIdx + 1) {
-            return `<td${attrs}><span title="${_warnTip.replace(/"/g, '&quot;')}" style="cursor:help;color:var(--amber);font-size:10px;margin-right:3px;opacity:0.8">ⓘ</span>`;
+            return `<td${attrs}><span title="${(_warnTip + _dismissTip).replace(/"/g, '&quot;')}" style="cursor:${_pf ? 'pointer' : 'help'};color:${_dotColor};font-size:10px;margin-right:3px;opacity:0.9;user-select:none"${_dismissAttr}>●</span>`;
           }
           return match;
         });
@@ -2711,6 +2844,9 @@ function renderBillsPane(pane, m, bills, incl) {
     '<button class="btn btn-em btn-sm" onclick="openBillModal(\'' +
     m.id +
     '\')">+ Add Period</button>' +
+    '<button id="vcm-toggle" class="btn btn-ghost btn-sm' +
+    (_vcmActive ? ' active' : '') +
+    '" onclick="toggleValueCorrectionMode()" title="Value Correction Mode — click numeric cells to correct values">✏️ Correct</button>' +
     '</div>';
 
   // Flag banner
@@ -2744,6 +2880,23 @@ function renderBillsPane(pane, m, bills, incl) {
     '</tbody>' +
     '</table>' +
     '</div>';
+
+  // VCM delegated click listener (Update a3a423eb) — single handler on the body table
+  // so it survives re-renders and doesn't leak multiple listeners
+  var vcmBodyTbl = pane.querySelector('#billsBodyTbl');
+  if (vcmBodyTbl) {
+    if (vcmBodyTbl._vcmHandler) vcmBodyTbl.removeEventListener('click', vcmBodyTbl._vcmHandler);
+    vcmBodyTbl._vcmHandler = function (e) {
+      if (!_vcmActive) return;
+      var td = e.target.closest('td[data-vcm-field]');
+      if (!td) return;
+      e.stopPropagation(); // prevent row click (showBillSplitPanel)
+      showVCMPopover(td);
+    };
+    vcmBodyTbl.addEventListener('click', vcmBodyTbl._vcmHandler);
+    // Re-apply vcm-active class if mode was already on when table re-rendered
+    if (_vcmActive) vcmBodyTbl.classList.add('vcm-active');
+  }
 
   // After browser auto-sizes body table, copy column widths to header table so they align
   requestAnimationFrame(() => {
