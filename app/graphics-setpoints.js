@@ -541,7 +541,33 @@ function egfxRefresh(projId) {
       normResult.forEach((nr) => {
         const yr = parseInt(nr.month.slice(0, 4));
         const mi = parseInt(nr.month.slice(5, 7)) - 1;
-        if (bldgYearData[bName]?.[yr]) bldgYearData[bName][yr].propane[mi] += nr.gallons;
+        // Create entries if normalization spans into a year with no raw bills
+        if (!bldgYearData[bName]) bldgYearData[bName] = {};
+        if (!bldgYearData[bName][yr]) {
+          bldgYearData[bName][yr] = {
+            kwh: new Array(12).fill(0),
+            kw: new Array(12).fill(0),
+            gas: new Array(12).fill(0),
+            propane: new Array(12).fill(0),
+            cost: new Array(12).fill(0),
+            elecCost: new Array(12).fill(0),
+            gasCost: new Array(12).fill(0),
+            propaneCost: new Array(12).fill(0),
+          };
+        }
+        if (!yearData[yr]) {
+          yearData[yr] = {
+            kwh: new Array(12).fill(0),
+            kw: new Array(12).fill(0),
+            gas: new Array(12).fill(0),
+            propane: new Array(12).fill(0),
+            cost: new Array(12).fill(0),
+            elecCost: new Array(12).fill(0),
+            gasCost: new Array(12).fill(0),
+            propaneCost: new Array(12).fill(0),
+          };
+        }
+        bldgYearData[bName][yr].propane[mi] += nr.gallons;
       });
     });
   });
