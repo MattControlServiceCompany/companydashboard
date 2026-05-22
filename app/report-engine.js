@@ -1787,10 +1787,10 @@ function rptPageFinancial(n, d) {
       const y = yScale(val);
       return (
         '<text x="' +
-        (padL - 4) +
+        4 +
         '" y="' +
         y.toFixed(1) +
-        '" text-anchor="end" font-size="8" fill="var(--rpt-page-text)" dominant-baseline="middle">$' +
+        '" text-anchor="start" font-size="8" fill="var(--rpt-page-text)" dominant-baseline="middle">$' +
         Math.round(val / 1000) +
         'k</text>'
       );
@@ -1879,10 +1879,10 @@ function rptPageFinancial(n, d) {
       var y = barYScale(val);
       return (
         '<text x="' +
-        (padL - 4) +
+        4 +
         '" y="' +
         y.toFixed(1) +
-        '" text-anchor="end" font-size="8" fill="var(--rpt-page-text)" dominant-baseline="middle">$' +
+        '" text-anchor="start" font-size="8" fill="var(--rpt-page-text)" dominant-baseline="middle">$' +
         Math.round(val / 1000) +
         'k</text>'
       );
@@ -3351,10 +3351,10 @@ function rptPageContractProjection(n, d) {
       var y = _barY(val);
       return (
         '<text x="' +
-        (padL - 4) +
+        4 +
         '" y="' +
         y.toFixed(0) +
-        '" text-anchor="end" font-size="7" fill="var(--rpt-page-text)">$' +
+        '" text-anchor="start" font-size="7" fill="var(--rpt-page-text)">$' +
         Math.round(val / 1000) +
         'K</text>'
       );

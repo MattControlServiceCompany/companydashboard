@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.21.322';
+  var CH_VERSION = 'v2026.05.21.323';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,17 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.21.304',
+      date: '2026-05-21',
+      title: 'Fix chart Y-axis label alignment in Contract Projection and Financial reports',
+      features: [
+        {
+          type: 'fix',
+          text: 'Report chart Y-axis labels now left-aligned (text-anchor="start", x=4) instead of right-indented in rptPageFinancial and rptPageContractProjection',
+        },
+      ],
+    },
     {
       version: 'v2026.05.21.303',
       date: '2026-05-21',
