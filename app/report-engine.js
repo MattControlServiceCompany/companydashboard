@@ -2422,8 +2422,8 @@ function rptPageEUI(n, d) {
             : cur > bl
               ? '<span style="color:#c0392b">&#9650;</span>'
               : '<span style="color:#000">&#9654;</span>'
-              ? '<span style="color:var(--rpt-red)">&#9650;</span>'
-              : '<span style="color:var(--rpt-page-text)">&#9654;</span>'
+                ? '<span style="color:var(--rpt-red)">&#9650;</span>'
+                : '<span style="color:var(--rpt-page-text)">&#9654;</span>'
           : '<span style="color:var(--rpt-page-text)">—</span>';
       return (
         '<tr>' +
@@ -2561,8 +2561,8 @@ function rptPageEUI(n, d) {
             : cur > bl
               ? '<span style="color:#c0392b">&#9650;</span>'
               : '<span style="color:#000">&#9654;</span>'
-              ? '<span style="color:var(--rpt-red)">&#9650;</span>'
-              : '<span style="color:var(--rpt-page-text)">&#9654;</span>'
+                ? '<span style="color:var(--rpt-red)">&#9650;</span>'
+                : '<span style="color:var(--rpt-page-text)">&#9654;</span>'
           : '<span style="color:var(--rpt-page-text)">—</span>';
       return (
         '<tr>' +
@@ -4742,7 +4742,6 @@ function rptPageElectric(n, d) {
 
   // -- Charts ------------------------------------------------------------
   var kwhChart = elecBldgs.length
-    ? buildElecBarChart(kwhMonthly, '#b0c4d8', '#1a5276', 'kWh', 'Monthly Electric kWh — Year over Year')
     ? buildElecBarChart(
         kwhMonthly,
         'var(--rpt-elec-bl)',
@@ -5035,7 +5034,6 @@ function rptPageGas(n, d) {
   });
 
   var thermsChart = gasBldgs.length
-    ? buildGasBarChart(thermsMonthly, '#e8c4a0', '#d35400', 'Therms', 'Monthly Natural Gas Therms — Year over Year')
     ? buildGasBarChart(
         thermsMonthly,
         'var(--rpt-gas-bl)',
@@ -5288,7 +5286,6 @@ function rptPagePropane(n, d) {
   });
 
   var galChart = propBldgs.length
-    ? buildPropBarChart(galMonthly, '#f5deb3', '#b8860b', 'Gal', 'Monthly Propane Gallons — Year over Year')
     ? buildPropBarChart(
         galMonthly,
         'var(--rpt-prop-bl)',
@@ -5610,8 +5607,6 @@ function rptPageGasPropane(n, d) {
   var periodLabel = (d.period && d.period.label) || '';
   var bodyHTML =
     '<p contenteditable="true" style="font-size:11px;color:#000;line-height:1.5;margin:0 0 6px">This page details natural gas and propane consumption across all buildings for the reporting period.</p>' +
-    _barChart(thermsMonthly, '#e8c4a0', '#d35400', 'Therms', 'Natural Gas Therms') +
-    '<p contenteditable="true" style="font-size:11px;color:var(--rpt-page-text);line-height:1.5;margin:0 0 6px">This page details natural gas and propane consumption across all buildings for the reporting period.</p>' +
     _barChart(thermsMonthly, 'var(--rpt-gas-bl)', 'var(--rpt-gas-cur)', 'Therms', 'Natural Gas Therms') +
     '<h2 style="font-size:11px;font-weight:700;color:var(--rpt-gas-head);margin:8px 0 3px">Natural Gas by Building</h2>' +
     _table(
@@ -5628,7 +5623,6 @@ function rptPageGasPropane(n, d) {
       },
       'Therms',
     ) +
-    _barChart(galMonthly, '#f5deb3', '#b8860b', 'Gal', 'Propane Gallons') +
     _barChart(galMonthly, 'var(--rpt-prop-bl)', 'var(--rpt-prop-cur)', 'Gal', 'Propane Gallons') +
     '<h2 style="font-size:11px;font-weight:700;color:var(--rpt-prop-head);margin:8px 0 3px">Propane by Building</h2>' +
     _table(
@@ -6466,7 +6460,6 @@ function rptPageAppendixBills(n, d, appLetter) {
   }
 
   var billImagesSection = allBillImages
-    ? '<div style="margin-top:16px;border-top:1px solid #ddd;padding-top:10px">' +
     ? '<div style="margin-top:16px;border-top:1px solid var(--rpt-divider);padding-top:10px">' +
       '<div style="font-size:12px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Scanned Bill Images</div>' +
       '<div style="display:flex;flex-wrap:wrap">' +

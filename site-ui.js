@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.22.327';
+  var CH_VERSION = 'v2026.05.22.328';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,17 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.22.328',
+      date: '2026-05-22',
+      title: 'Fix all remaining duplicate lines in report-engine.js (P0 complete)',
+      features: [
+        {
+          type: 'fix',
+          text: 'Removed 5 additional duplicate lines in report-engine.js: chart builder calls (buildElecBarChart, buildGasBarChart, buildPropBarChart), string concat _barChart calls, and a ternary string duplicate — all left behind by the encoding fix. File is now syntax-error free.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.22.327',
       date: '2026-05-22',
