@@ -969,6 +969,16 @@
     buildSettingsModal();
     buildHelpModal();
     buildReleaseNotesModal();
+    // Auto-show release notes on first visit after a version bump.
+    // ch_seen_version stores the last version the user saw notes for.
+    // If the stored value doesn't match CH_VERSION, show the modal and update the key.
+    var seenVersion = localStorage.getItem('ch_seen_version');
+    if (seenVersion !== CH_VERSION) {
+      setTimeout(function () {
+        openReleaseNotes();
+      }, 800);
+      localStorage.setItem('ch_seen_version', CH_VERSION);
+    }
     buildMobileSidebarToggle();
     applyDeptNavAria();
     applyModalAccessibility();
