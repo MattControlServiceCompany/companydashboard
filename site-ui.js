@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.21.324';
+  var CH_VERSION = 'v2026.05.21.325';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,22 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.21.325',
+      date: '2026-05-21',
+      title: 'Report encoding fix, chart axis alignment, and release notes auto-show',
+      features: [
+        {
+          type: 'fix',
+          text: 'Fixed 233 corrupted Unicode characters (em-dashes, multiplication signs, degree signs) in report-engine.js',
+        },
+        {
+          type: 'fix',
+          text: 'Report chart Y-axis labels now correctly left-aligned from the SVG edge instead of indented',
+        },
+        { type: 'new', text: 'Release Notes modal now auto-shows on first visit after a version update' },
+      ],
+    },
     {
       version: 'v2026.05.21.304',
       date: '2026-05-21',
