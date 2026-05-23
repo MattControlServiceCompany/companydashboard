@@ -818,6 +818,8 @@ function renderDetail(p) {
             <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px;flex-shrink:0" id="pd-proj-perf-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'perf')">💡 Project Performance</button>
             <span class="phc-sep">|</span>
             <span style="display:flex;gap:4px;flex-shrink:0">
+              <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px" onclick="printBoardSummary(${p.id})">📋 Board Summary</button>
+              <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px" onclick="publishClientPortal(${p.id})" title="Export sanitized savings data for client portal">${p.portalToken ? '🔗 Update Portal' : '🌐 Publish Portal'}</button>
               <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px" onclick="openProjModal();editProj(${p.id})">✏️ Edit Project</button>
             </span>
           </div>
@@ -949,8 +951,6 @@ function renderDetail(p) {
                   <div style="display:flex;gap:8px">
                     <button class="btn btn-ghost btn-sm" onclick="egfxExport(${p.id})">⬇ Export</button>
                     <button class="btn btn-ghost btn-sm" onclick="openReportModalV2(${p.id})">📄 Generate Report</button>
-                    <button class="btn btn-ghost btn-sm" onclick="printBoardSummary(${p.id})">📋 Board Summary</button>
-                    <button class="btn btn-ghost btn-sm" onclick="publishClientPortal(${p.id})" title="Export sanitized savings data for client portal">${p.portalToken ? '🔗 Update Portal' : '🌐 Publish Portal'}</button>
                     <button class="btn btn-em btn-sm" onclick="egfxRefresh(${p.id})">🔄 Refresh</button>
                   </div>
                 </div>
