@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.22.337';
+  var CH_VERSION = 'v2026.05.22.339';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,21 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.22.339',
+      date: '2026-05-22',
+      title: 'Quarterly projected savings breakdown and Node.js weather data script',
+      features: [
+        {
+          type: 'new',
+          text: 'Quarterly savings breakdown: Energy Savings tab now shows Q1–Q4 sub-rows under the annual Projected Savings total, calculated from the existing monthly data',
+        },
+        {
+          type: 'new',
+          text: 'Node.js weather fetch script: replaces Excel VBA macro; fetches HDD/CDD/avgTemp from weatherdatadepot.com and saves as JSON files in the repo; CompanyHub auto-loads weather data from GitHub Pages',
+        },
+      ],
+    },
     {
       version: 'v2026.05.22.337',
       date: '2026-05-22',

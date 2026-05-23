@@ -663,6 +663,9 @@ function udSelectBldg(bid) {
   udSelBldgId = bid;
   udActiveMid = null;
   saveUDSession();
+  // Fire-and-forget: populate weather cache from GitHub Pages if localStorage is empty
+  const _wddBldg = getUDBldg(udSelProjId, bid);
+  if (_wddBldg && _wddBldg.zip) wddPrefetchFromServer(_wddBldg.zip);
   // Close any open project panel
   if (_udProjPanel) {
     _udProjPanel = null;
@@ -4606,6 +4609,28 @@ function wddSaveCache(zip, rows) {
   try {
     localStorage.setItem(wddCacheKey(zip), JSON.stringify(rows));
   } catch (e) {}
+}
+// Async fallback: if localStorage has no weather data for this ZIP, try to load
+// the static JSON file that scripts/fetch-weather.js writes to weather-data/.
+// localStorage acts as the manual override layer — if data is already there
+// (from a CSV upload or a previous fetch), we leave it alone.
+// Called fire-and-forget from udSelectBldg; never blocks the sync call path.
+async function wddPrefetchFromServer(zip) {
+  if (!zip) return;
+  try {
+    // Only fetch if localStorage is empty for this ZIP
+    const existing = wddLoadCache(zip);
+    if (existing.length) return;
+    const res = await fetch('weather-data/' + encodeURIComponent(zip) + '.json');
+    if (!res.ok) return; // file not published yet — silently skip
+    const rows = await res.json();
+    if (!Array.isArray(rows) || !rows.length) return;
+    wddSaveCache(zip, rows);
+    // Re-render the current view so weather data appears without a manual refresh
+    if (typeof renderMeterWorkspace === 'function') renderMeterWorkspace();
+  } catch (e) {
+    // Network error or JSON parse failure — silently skip, user can still upload CSV
+  }
 }
 function wddSetStatus(msg, color) {
   const el = document.getElementById('wddStatus');

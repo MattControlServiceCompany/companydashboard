@@ -419,6 +419,29 @@ function renderSavingsSummary(projId, sd, totKwh, totKw, totGas, totPropane, gra
   const totIncent = selMsrs.reduce((s, m) => s + (parseFloat(m.incentive) || 0), 0);
   const netCost = totImpl - totIncent;
   const payback = grandTotal > 0 && netCost > 0 ? (netCost / grandTotal).toFixed(1) : null;
+  // Compute quarterly savings totals (Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec)
+  const qtrs = [0, 0, 0, 0];
+  selMsrs.forEach((m) => {
+    const r = m.rates || {};
+    for (let mo = 0; mo < 12; mo++) {
+      const qi = Math.floor(mo / 3);
+      const s = SUMMER_MOS.includes(mo);
+      qtrs[qi] += (parseFloat(m.kwh[mo]) || 0) * (s ? r.kwhSummer || 0 : r.kwhWinter || 0);
+      qtrs[qi] += (parseFloat(m.kw[mo]) || 0) * (s ? r.kwSummer || 0 : r.kwWinter || 0);
+      qtrs[qi] += (parseFloat(m.gas[mo]) || 0) * (r.thermRate || 0);
+      qtrs[qi] += (parseFloat((m.propane || [])[mo]) || 0) * (r.gallonRate || 0);
+    }
+  });
+  const qtrLabels = ['Q1 (Jan–Mar)', 'Q2 (Apr–Jun)', 'Q3 (Jul–Sep)', 'Q4 (Oct–Dec)'];
+  const qtrHtml =
+    grandTotal > 0
+      ? qtrLabels
+          .map(
+            (lbl, i) =>
+              `<div class="bl-qtr-item"><span class="bl-qtr-lbl">${lbl}</span><span class="bl-qtr-val">${qtrs[i] > 0 ? '$' + Math.round(qtrs[i]).toLocaleString() : '—'}</span></div>`,
+          )
+          .join('')
+      : '';
   el.innerHTML = `<div class="bl-result" style="margin-top:0">
           <div class="bl-title">💡 Selected Measures Summary (${selCount} measure${selCount !== 1 ? 's' : ''})</div>
           <div class="bl-grid">
@@ -426,7 +449,11 @@ function renderSavingsSummary(projId, sd, totKwh, totKw, totGas, totPropane, gra
             <div class="bl-item"><div class="bl-lbl">Avg kW Reduction</div><div class="bl-val" style="color:var(--amber)">${annKwAvg.toFixed(1)}<span class="bl-unit"> kW avg</span></div></div>
             <div class="bl-item"><div class="bl-lbl">Annual Gas Savings</div><div class="bl-val" style="color:var(--teal)">${Math.round(annGas).toLocaleString()}<span class="bl-unit"> Therms/yr</span></div></div>
             <div class="bl-item"><div class="bl-lbl">Annual Propane Savings</div><div class="bl-val" style="color:var(--purple,#a855f7)">${Math.round(annPropane).toLocaleString()}<span class="bl-unit"> Gal/yr</span></div></div>
-            <div class="bl-item"><div class="bl-lbl">Projected Savings $</div><div class="bl-val" style="color:var(--green)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</div></div>
+            <div class="bl-item" style="grid-column:1/-1">
+              <div class="bl-lbl">Projected Savings $</div>
+              <div class="bl-val" style="color:var(--green)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</div>
+              ${qtrHtml ? `<div class="bl-qtrs">${qtrHtml}</div>` : ''}
+            </div>
             ${totImpl > 0 ? `<div class="bl-item"><div class="bl-lbl">Total Impl. Cost</div><div class="bl-val" style="color:var(--text)">$${Math.round(netCost).toLocaleString()}<span class="bl-unit">${totIncent > 0 ? ' (net of $' + Math.round(totIncent).toLocaleString() + ' incentive)' : ''}</span></div></div>` : ''}
             ${payback ? `<div class="bl-item"><div class="bl-lbl">Simple Payback</div><div class="bl-val" style="color:var(--accent)">${payback}<span class="bl-unit"> years</span></div></div>` : ''}
           </div>
@@ -966,6 +993,7 @@ function _renderSavingsContent(wrap, projId) {
     totKwCost = 0,
     totGasCost = 0,
     totPropaneCost = 0;
+  const svQtrs = [0, 0, 0, 0];
   selMsrs.forEach((m) => {
     totSqft += parseFloat(m.sqft) || 0;
     m.kwh.forEach((v, i) => (totKwh[i] += parseFloat(v) || 0));
@@ -979,7 +1007,9 @@ function _renderSavingsContent(wrap, projId) {
       const kwAmt = (parseFloat(m.kw[mo]) || 0) * (s ? rates.kwSummer || 0 : rates.kwWinter || 0);
       const gasAmt = (parseFloat(m.gas[mo]) || 0) * (rates.thermRate || 0);
       const propaneAmt = (parseFloat((m.propane || [])[mo]) || 0) * (rates.gallonRate || 0);
-      grandTotal += kwhAmt + kwAmt + gasAmt + propaneAmt;
+      const moTotal = kwhAmt + kwAmt + gasAmt + propaneAmt;
+      grandTotal += moTotal;
+      svQtrs[Math.floor(mo / 3)] += moTotal;
       totKwhCost += kwhAmt;
       totKwCost += kwAmt;
       totGasCost += gasAmt;
@@ -1038,6 +1068,16 @@ function _renderSavingsContent(wrap, projId) {
   const annGas = totGas.reduce((a, b) => a + b, 0);
   const annPropane = totPropane.reduce((a, b) => a + b, 0);
   const sc = selMsrs.length;
+  const svQtrLabels = ['Q1 (Jan–Mar)', 'Q2 (Apr–Jun)', 'Q3 (Jul–Sep)', 'Q4 (Oct–Dec)'];
+  const svQtrHtml =
+    grandTotal > 0
+      ? svQtrLabels
+          .map(
+            (lbl, i) =>
+              `<div class="bl-qtr-item"><span class="bl-qtr-lbl">${lbl}</span><span class="bl-qtr-val">${svQtrs[i] > 0 ? '$' + Math.round(svQtrs[i]).toLocaleString() : '—'}</span></div>`,
+          )
+          .join('')
+      : '';
   const summaryHtml = sc
     ? `<div class="bl-result">
           <div class="bl-title">💡 Selected Measures — ${p.name} (${sc} measure${sc !== 1 ? 's' : ''})</div>
@@ -1046,7 +1086,11 @@ function _renderSavingsContent(wrap, projId) {
             <div class="bl-item"><div class="bl-lbl">Avg kW Reduction</div><div class="bl-val" style="color:var(--amber)">${annKwAvg.toFixed(1)}<span class="bl-unit"> kW avg</span></div></div>
             <div class="bl-item"><div class="bl-lbl">Annual Gas Savings</div><div class="bl-val" style="color:var(--teal)">${Math.round(annGas).toLocaleString()}<span class="bl-unit"> Therms/yr</span></div></div>
             <div class="bl-item"><div class="bl-lbl">Annual Propane Savings</div><div class="bl-val" style="color:var(--purple,#a855f7)">${Math.round(annPropane).toLocaleString()}<span class="bl-unit"> Gal/yr</span></div></div>
-            <div class="bl-item"><div class="bl-lbl">Projected Savings $</div><div class="bl-val" style="color:var(--green)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</div></div>
+            <div class="bl-item" style="grid-column:1/-1">
+              <div class="bl-lbl">Projected Savings $</div>
+              <div class="bl-val" style="color:var(--green)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</div>
+              ${svQtrHtml ? `<div class="bl-qtrs">${svQtrHtml}</div>` : ''}
+            </div>
           </div>
         </div>`
     : '';
