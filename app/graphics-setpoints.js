@@ -3265,10 +3265,38 @@ function spRenderBASSnapshot(projId) {
   var snapDate = snap.snapshotDate ? _basFormatDate(snap.snapshotDate) : '';
   var dateLabel = snapDate ? 'Snapshot: ' + snapDate : _escHtml(snap.fileName || '');
 
+  // Pre-compute fault count for tab badge
+  var shcFaults = detectSHCFaults(rows);
+  var shcCount = shcFaults.length;
+  var healthScore = _basHealthScore(shcCount, rows.length);
+  var healthBadge =
+    healthScore !== null
+      ? ' <span style="font-size:10px;padding:1px 6px;border-radius:8px;font-weight:700;background:' +
+        (healthScore >= 90
+          ? 'rgba(34,197,94,.18)'
+          : healthScore >= 70
+            ? 'rgba(245,158,11,.18)'
+            : 'rgba(244,63,94,.18)') +
+        ';color:' +
+        (healthScore >= 90 ? 'var(--green,#22c55e)' : healthScore >= 70 ? 'var(--em)' : 'var(--red)') +
+        '">' +
+        healthScore +
+        '%</span>'
+      : '';
+  var faultTabLabel =
+    'Fault Detection' +
+    (shcCount > 0
+      ? ' <span style="font-size:10px;padding:1px 6px;border-radius:8px;font-weight:700;background:rgba(244,63,94,.18);color:var(--red)">' +
+        shcCount +
+        '</span>'
+      : '');
+
   return (
     '<div class="card" style="margin-top:16px">' +
     '<div class="card-hdr" style="justify-content:space-between">' +
-    '<span class="card-title">📊 BAS Equipment Snapshot</span>' +
+    '<span class="card-title">📊 BAS Equipment Snapshot' +
+    healthBadge +
+    '</span>' +
     '<div style="display:flex;gap:8px;align-items:center;font-size:11px;color:var(--text3)">' +
     snapSelector +
     '<span>' +
@@ -3293,6 +3321,11 @@ function spRenderBASSnapshot(projId) {
     "','analysis',this)\">Building Analysis (" +
     buildings.length +
     ')</button>' +
+    '<button class="bas-tab" onclick="spBASTab(\'' +
+    projId +
+    "','faults',this)\">" +
+    faultTabLabel +
+    '</button>' +
     '</div>' +
     '<div id="bas-panel-data-' +
     projId +
@@ -3314,6 +3347,11 @@ function spRenderBASSnapshot(projId) {
     projId +
     '" style="display:none">' +
     _basRenderAnalysis(buildings) +
+    '</div>' +
+    '<div id="bas-panel-faults-' +
+    projId +
+    '" style="display:none">' +
+    _basRenderFaultDetection(projId, rows) +
     '</div>' +
     '</div>' +
     '</div>'
@@ -3450,8 +3488,168 @@ function spBASTab(projId, tab, btn) {
   btn.classList.add('active');
   var dataPanel = document.getElementById('bas-panel-data-' + projId);
   var analysisPanel = document.getElementById('bas-panel-analysis-' + projId);
+  var faultPanel = document.getElementById('bas-panel-faults-' + projId);
   if (dataPanel) dataPanel.style.display = tab === 'data' ? '' : 'none';
   if (analysisPanel) analysisPanel.style.display = tab === 'analysis' ? '' : 'none';
+  if (faultPanel) faultPanel.style.display = tab === 'faults' ? '' : 'none';
+}
+
+/* ── SHC Fault Detection ─────────────────────────────── */
+
+function detectSHCFaults(zones) {
+  // For each zone row: if heatPct > 0 AND coolPct > 0, flag it
+  // Returns array sorted by severity (highest combined %) first
+  var faults = [];
+  (zones || []).forEach(function (r) {
+    var h = r.heatPct;
+    var c = r.coolPct;
+    if (h === null || h === undefined || c === null || c === undefined) return;
+    if (h > 0 && c > 0) {
+      faults.push({
+        zoneName: r.location || '(Unknown)',
+        building: r.building || '',
+        heatPct: h,
+        coolPct: c,
+        zoneTemp: r.zoneTemp !== null && r.zoneTemp !== undefined ? r.zoneTemp : null,
+        heatSP: r.heatSP !== null && r.heatSP !== undefined ? r.heatSP : null,
+        coolSP: r.coolSP !== null && r.coolSP !== undefined ? r.coolSP : null,
+        severity: h + c, // higher combined % = more energy waste
+      });
+    }
+  });
+  faults.sort(function (a, b) {
+    return b.severity - a.severity;
+  });
+  return faults;
+}
+
+function _basHealthScore(faultCount, totalZones) {
+  if (!totalZones) return null;
+  return Math.max(0, Math.round(100 - (faultCount / totalZones) * 100));
+}
+
+function _basRenderFaultDetection(projId, rows) {
+  var totalZones = (rows || []).length;
+  var faults = detectSHCFaults(rows);
+  var faultCount = faults.length;
+  var score = _basHealthScore(faultCount, totalZones);
+  var scoreColor =
+    score === null ? 'var(--text3)' : score >= 90 ? 'var(--green,#22c55e)' : score >= 70 ? 'var(--em)' : 'var(--red)';
+
+  var badgeText = totalZones
+    ? faultCount + ' of ' + totalZones + ' zone' + (totalZones !== 1 ? 's' : '') + ' with SHC faults'
+    : '—';
+
+  var scoreHtml =
+    score !== null
+      ? '<div style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;background:var(--s2);border:1px solid var(--border2);font-size:12px;font-weight:600;color:' +
+        scoreColor +
+        '">' +
+        'BAS Health Score: <span style="font-size:15px;font-weight:700">' +
+        score +
+        '%</span>' +
+        '</div>'
+      : '';
+
+  var badgeColor = faultCount === 0 ? 'var(--green,#22c55e)' : 'var(--red)';
+  var badgeHtml =
+    '<span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;background:' +
+    (faultCount === 0 ? 'rgba(34,197,94,.15)' : 'rgba(244,63,94,.15)') +
+    ';color:' +
+    badgeColor +
+    ';border:1px solid ' +
+    (faultCount === 0 ? 'rgba(34,197,94,.3)' : 'rgba(244,63,94,.3)') +
+    '">' +
+    badgeText +
+    '</span>';
+
+  var header =
+    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">' +
+    '<div style="display:flex;align-items:center;gap:10px">' +
+    badgeHtml +
+    '</div>' +
+    scoreHtml +
+    '</div>';
+
+  if (!totalZones) {
+    return (
+      header +
+      '<div style="color:var(--text3);padding:20px;text-align:center;font-size:13px">No zone data in this snapshot.</div>'
+    );
+  }
+
+  if (!faultCount) {
+    return (
+      header +
+      '<div style="color:var(--text3);padding:20px;text-align:center;font-size:13px">No simultaneous heating and cooling faults detected in this snapshot.</div>'
+    );
+  }
+
+  // Render fault table
+  var thead =
+    '<tr>' +
+    '<th>Building</th>' +
+    '<th>Zone</th>' +
+    '<th class="num">Heat %</th>' +
+    '<th class="num">Cool %</th>' +
+    '<th class="num">Zone Temp</th>' +
+    '<th class="num">Heat SP</th>' +
+    '<th class="num">Cool SP</th>' +
+    '<th>Severity</th>' +
+    '</tr>';
+
+  var tbody = faults
+    .map(function (f) {
+      // Severity tiers: both > 25% = severe (red), otherwise moderate (amber)
+      var isSevere = f.heatPct > 25 && f.coolPct > 25;
+      var rowBg = isSevere ? 'background:rgba(244,63,94,.08)' : 'background:rgba(245,158,11,.07)';
+      var severityLabel = isSevere
+        ? '<span style="color:var(--red);font-weight:700;font-size:11px">Severe</span>'
+        : '<span style="color:var(--em);font-weight:600;font-size:11px">Moderate</span>';
+      function cell(v) {
+        return v !== null && v !== undefined ? '<td class="num">' + v + '</td>' : '<td class="bas-blank num">—</td>';
+      }
+      return (
+        '<tr style="border-bottom:1px solid var(--border);' +
+        rowBg +
+        '">' +
+        '<td>' +
+        _escHtml(f.building || '—') +
+        '</td>' +
+        '<td>' +
+        _escHtml(f.zoneName) +
+        '</td>' +
+        '<td class="num" style="color:var(--red);font-weight:600">' +
+        f.heatPct +
+        '%</td>' +
+        '<td class="num" style="color:#38bdf8;font-weight:600">' +
+        f.coolPct +
+        '%</td>' +
+        cell(f.zoneTemp !== null ? f.zoneTemp + '°F' : null) +
+        cell(f.heatSP !== null ? f.heatSP + '°F' : null) +
+        cell(f.coolSP !== null ? f.coolSP + '°F' : null) +
+        '<td>' +
+        severityLabel +
+        '</td>' +
+        '</tr>'
+      );
+    })
+    .join('');
+
+  var table =
+    '<div class="bas-wrap"><table class="bas-tbl"><thead>' +
+    thead +
+    '</thead><tbody>' +
+    tbody +
+    '</tbody></table></div>';
+
+  var legend =
+    '<div style="font-size:11px;color:var(--text3);margin-top:8px;display:flex;gap:16px;flex-wrap:wrap">' +
+    '<span><span style="color:var(--red);font-weight:700">Severe</span> — both Heat% and Cool% above 25%</span>' +
+    '<span><span style="color:var(--em);font-weight:600">Moderate</span> — any simultaneous heating and cooling</span>' +
+    '</div>';
+
+  return header + table + legend;
 }
 
 function spBASFilter(projId, building) {

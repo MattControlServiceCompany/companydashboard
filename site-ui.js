@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.22.341';
+  var CH_VERSION = 'v2026.05.22.342';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,25 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.22.342',
+      date: '2026-05-22',
+      title: 'BAS fault detection — simultaneous heating/cooling checks',
+      features: [
+        {
+          type: 'new',
+          text: 'BAS Equipment Snapshot now detects simultaneous heating and cooling (SHC) faults across all zones, showing a color-coded fault table with Severe/Moderate tiers',
+        },
+        {
+          type: 'new',
+          text: 'BAS Health Score badge added to the snapshot card title — 100 = no SHC faults, score drops proportionally with fault count',
+        },
+        {
+          type: 'new',
+          text: 'New Fault Detection tab in the BAS snapshot panel with red count badge when faults are present',
+        },
+      ],
+    },
     {
       version: 'v2026.05.22.341',
       date: '2026-05-22',
