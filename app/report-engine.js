@@ -9250,6 +9250,7 @@ function saveUDSession() {
       perfChart: _perfChartVis,
       perfOverlay: _perfOverlay,
       perfYear: _perfYearFilter,
+      perfWeatherMode: _perfWeatherMode,
       regrPanel: _regressionPanelVis,
     }),
   );
@@ -9296,6 +9297,7 @@ function initUtilityTool() {
     if (s.perfChart != null) _perfChartVis = s.perfChart;
     if (s.perfOverlay != null) _perfOverlay = s.perfOverlay;
     if (s.perfYear != null) _perfYearFilter = s.perfYear;
+    if (s.perfWeatherMode != null) _perfWeatherMode = s.perfWeatherMode;
     if (s.regrPanel != null) _regressionPanelVis = s.regrPanel;
   } catch (e) {}
   if (_restoreExtractionState()) {

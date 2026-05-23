@@ -1606,6 +1606,7 @@ let udBlOverlay = false; // overlay raw bill data on baseline chart
 let _perfMetric = 'total'; // 'perday' | 'total' — perf chart metric, default monthly
 let _perfOverlay = false; // overlay raw bill data on perf chart
 let _perfChartVis = true; // perf chart visible
+let _perfWeatherMode = 'actual'; // 'actual' | 'normal' — weather mode for expected usage (Update a1f2b3c4)
 let _regressionPanelVis = false; // show/hide regression coefficients panel in Norm tab
 let _maCharts = {};
 
@@ -3180,6 +3181,11 @@ function togglePerfOverlay() {
 }
 function togglePerfChart() {
   _perfChartVis = !_perfChartVis;
+  saveUDSession();
+  renderMeterWorkspace();
+}
+function setPerfWeatherMode(mode) {
+  _perfWeatherMode = mode;
   saveUDSession();
   renderMeterWorkspace();
 }
@@ -8127,12 +8133,10 @@ function renderPerfPane(pane, m, bills, incl) {
   }
   const unit = getMeterDisplayUnit(m);
   const isElec = m.commodity === 'Electric';
-  const { byYm: weatherByYm } = getWeatherForBuilding();
+  const { byYm: weatherByYm, cache: _wddCache } = getWeatherForBuilding();
   const allRows = getNormRows(m, bills, incl, weatherByYm); // sets m._reg, fills regrBaseline
-  const blRows = allRows.filter((r) => bl.months.includes(r.ym));
   const blStart = bl.months.slice().sort()[0];
   const blEnd = bl.months.slice().sort()[bl.months.length - 1];
-  const truePostRows = allRows.filter((r) => r.ym > blEnd);
 
   // EUI
   const bldg5 = getUDBldg(udSelProjId, udSelBldgId);
@@ -8143,10 +8147,51 @@ function renderPerfPane(pane, m, bills, incl) {
   const proj_p = getUDProj(udSelProjId);
   const normBasis_p = proj_p?.normBasis || 'calendar';
 
+  // ── Long-term Normal Weather (Update a1f2b3c4) ──────────────────────────────
+  // Compute multi-year average HDD/CDD per calendar month from the full weather cache.
+  // Used when _perfWeatherMode === 'normal' to replace actual monthly HDD/CDD in
+  // expected-usage calculations. The regression coefficients are NEVER changed here —
+  // only the X values (HDD/CDD) fed into the regression prediction change.
+  const _ltNormals =
+    typeof computeLongTermNormals === 'function' && _wddCache && _wddCache.length
+      ? computeLongTermNormals(_wddCache)
+      : null;
+  const _useNormalWeather = _perfWeatherMode === 'normal' && _ltNormals != null;
+
+  // When normal weather mode is active, build a version of allRows where each row's
+  // hdd/cdd is replaced by the long-term average for that calendar month, and
+  // regrBaseline is recomputed with the same frozen regression coefficients.
+  // This does NOT change the regression fit — only the prediction inputs change.
+  const _effectiveRows = (() => {
+    if (!_useNormalWeather) return allRows;
+    return allRows.map((r) => {
+      const mo = r.ym.split('-')[1]; // '01'–'12'
+      const norm = _ltNormals[mo];
+      if (!norm) return r;
+      const patchedRow = Object.assign({}, r, {
+        hdd: norm.hdd,
+        cdd: norm.cdd,
+      });
+      const regToUse = m._reg || null;
+      patchedRow.regrBaseline = regToUse
+        ? regressionBaseline(patchedRow, regToUse, m.commodity, normBasis_p)
+        : r.regrBaseline;
+      return patchedRow;
+    });
+  })();
+
+  // Use _effectiveRows for all calculations — actual usage (r.usage) is identical between
+  // allRows and _effectiveRows; only hdd/cdd/regrBaseline differ in normal weather mode.
+  const truePostRows = _effectiveRows.filter((r) => r.ym > blEnd);
+  const blRows = _effectiveRows.filter((r) => bl.months.includes(r.ym));
+  // Actual-weather baseline rows — always from allRows regardless of weather mode.
+  // Used for regression fitting (regression is always fit on actual weather data).
+  const _blRowsActual = allRows.filter((r) => bl.months.includes(r.ym));
+
   // Baseline averages (simple fallback when no regression)
   const blAvgDay = blRows.length ? blRows.reduce((s, r) => s + r.usagePerDay, 0) / blRows.length : 0;
   const blAvgMo = blRows.length ? blRows.reduce((s, r) => s + r.usage, 0) / blRows.length : 0;
-  const hasRegr_p = allRows.some((r) => r.regrBaseline != null);
+  const hasRegr_p = _effectiveRows.some((r) => r.regrBaseline != null);
 
   // Use shared buildMoMap — same authoritative source as Meter Data table
   const isPropane_p = m.commodity === 'Propane';
@@ -8177,9 +8222,10 @@ function renderPerfPane(pane, m, bills, incl) {
   // kW regression: predict Expected kW from weather (CDD) instead of
   // using raw baseline kW per calendar month. This normalizes demand
   // for weather so the kW savings reflect efficiency, not temperature.
+  // Always fit on actual-weather CDD (_blRowsActual) regardless of weather mode.
   const _kwReg = (() => {
     if (!isElec || !hasRegr_p) return null;
-    const pts = blRows
+    const pts = _blRowsActual
       .map((r) => {
         const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
         const kw = bfr.length ? bfr.reduce((s, b) => s + (parseFloat(b.demandKW) || 0), 0) / bfr.length : 0;
@@ -8204,7 +8250,8 @@ function renderPerfPane(pane, m, bills, incl) {
   })();
   const _kwNormByYm = {};
   if (_kwReg) {
-    allRows.forEach((r) => {
+    // Use _effectiveRows so kW baseline line reflects normal-weather CDD when mode is active
+    _effectiveRows.forEach((r) => {
       const cdd = r.cdd != null ? r.cdd : 0;
       _kwNormByYm[r.ym] = Math.max(0, _kwReg.intercept + _kwReg.slope * cdd);
     });
@@ -8343,6 +8390,40 @@ function renderPerfPane(pane, m, bills, incl) {
       : '⚠️ No regression — using simple baseline average as expected. Upload weather data to enable.') +
     ' · Change in Normalized tab</div>';
 
+  // ── Weather mode toggle (Update a1f2b3c4) ──────────────────────────────────
+  // Shown only when regression is active and long-term normals are available (≥3 complete years).
+  // Switching to Normal Weather replaces actual monthly HDD/CDD with long-term averages
+  // in the expected-usage computation. Regression coefficients do not change.
+  const weatherModeBar = (() => {
+    if (!hasRegr_p) return '';
+    const disabledNote = !_ltNormals
+      ? '<span style="font-size:11px;color:var(--text3);margin-left:8px">' +
+        'Normal Weather unavailable — need ≥3 complete years of weather data' +
+        '</span>'
+      : _useNormalWeather
+        ? '<span style="font-size:11px;color:var(--violet);margin-left:8px">' +
+          '☁ Using long-term average HDD/CDD · Savings are weather-independent' +
+          '</span>'
+        : '';
+    return (
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">' +
+      '<span style="font-size:11px;color:var(--text2)">Weather Baseline:</span>' +
+      '<button class="ud-incl-btn' +
+      (_perfWeatherMode === 'actual' ? ' sel' : '') +
+      '" onclick="setPerfWeatherMode(\'actual\')" title="Use actual monthly HDD/CDD for expected usage">Actual Weather</button>' +
+      '<button class="ud-incl-btn' +
+      (_perfWeatherMode === 'normal' ? ' sel' : '') +
+      (!_ltNormals ? ' disabled' : '') +
+      '" onclick="' +
+      (_ltNormals ? "setPerfWeatherMode('normal')" : '') +
+      '" title="Use long-term average HDD/CDD for expected usage (weather-normalized savings)"' +
+      (!_ltNormals ? ' style="opacity:0.45;cursor:not-allowed"' : '') +
+      '>Normal Weather</button>' +
+      disabledNote +
+      '</div>'
+    );
+  })();
+
   // Chart rows: era-tagged
   const postYmCutoff =
     _perfYearFilter === 'all'
@@ -8350,7 +8431,10 @@ function renderPerfPane(pane, m, bills, incl) {
       : filteredPostRows.length
         ? filteredPostRows[filteredPostRows.length - 1].ym
         : null;
-  const chartRows = allRows
+  // Chart rows: use _effectiveRows so the regression baseline line reflects normal-weather
+  // expected values when Normal Weather mode is active. Actual usage bars come from row.usage
+  // which is unchanged between allRows and _effectiveRows.
+  const chartRows = _effectiveRows
     .filter(
       (r) =>
         r.ym < blStart ||
@@ -8675,12 +8759,14 @@ function renderPerfPane(pane, m, bills, incl) {
   const hasTotalCostSav = hasKwhCostSav || hasKwCostSav;
   const hasGasCostSav = !isElec && Object.keys(gasCostByYm).length > 0;
 
-  // Use shared renderer for table and per-row savings (single source of truth)
+  // Use shared renderer for table and per-row savings (single source of truth).
+  // Pass effectiveRows so the table uses normal-weather baselines when _useNormalWeather is active.
   const _perfResult = buildMeterPerfTableHTML(m, bills, incl, {
     mode: 'tab',
     projId: udSelProjId,
     bldgId: udSelBldgId,
     filterYMs: filteredPostRows.length ? filteredPostRows.map((r) => r.ym) : truePostRows.map((r) => r.ym),
+    effectiveRows: _useNormalWeather ? _effectiveRows : null,
   });
   const _perfRowSavings = (_perfResult.rows || []).map((r) => ({
     ym: r.ym,
@@ -8928,6 +9014,7 @@ function renderPerfPane(pane, m, bills, incl) {
     ' — Meter Performance</div></div>' +
     statsHTML +
     basisNote_p +
+    weatherModeBar +
     yearPills +
     '<div style="margin-bottom:14px">' +
     '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:4px">Post-Baseline Monthly vs Baseline</div>' +

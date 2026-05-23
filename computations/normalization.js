@@ -628,3 +628,66 @@ function getNormRows(m, bills, incl, weatherByYm) {
 
   return rawRows;
 }
+
+// ── Long-term Normal HDD/CDD ───────────────────────────────────────────────
+// Computes multi-year average (normal) HDD and CDD for each calendar month
+// using the weather cache rows (same format as wddLoadCache output).
+//
+// weatherRows: array of {ym: 'YYYY-MM', hdd, cdd, avgTemp} from the ZIP cache
+// Returns: { '01': {hdd, cdd}, '02': {...}, ... '12': {...} }
+//          or null if fewer than 3 complete years are present.
+//
+// "Complete year" = all 12 calendar months (01–12) present for that year.
+// Only complete years are included in the averages so that partial years
+// (e.g. a mid-year upload or the current in-progress year) don't bias results.
+function computeLongTermNormals(weatherRows) {
+  if (!weatherRows || weatherRows.length === 0) return null;
+
+  // Group rows by year, then by month
+  var byYear = {}; // { YYYY: { '01': {hdd, cdd}, ... } }
+  weatherRows.forEach(function (r) {
+    if (!r || !r.ym) return;
+    var parts = r.ym.split('-');
+    if (parts.length < 2) return;
+    var yr = parts[0];
+    var mo = parts[1]; // '01'–'12'
+    if (!byYear[yr]) byYear[yr] = {};
+    byYear[yr][mo] = {
+      hdd: r.hdd != null ? Number(r.hdd) : 0,
+      cdd: r.cdd != null ? Number(r.cdd) : 0,
+    };
+  });
+
+  // Keep only complete years (all 12 months present)
+  var allMonths = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+  var completeYears = Object.keys(byYear).filter(function (yr) {
+    return allMonths.every(function (mo) {
+      return byYear[yr][mo] != null;
+    });
+  });
+
+  // Require at least 3 complete years for a meaningful normal
+  if (completeYears.length < 3) return null;
+
+  // Average HDD and CDD by calendar month across all complete years
+  var normals = {}; // { '01': {hdd, cdd}, ... }
+  allMonths.forEach(function (mo) {
+    var hddSum = 0,
+      cddSum = 0,
+      cnt = 0;
+    completeYears.forEach(function (yr) {
+      var entry = byYear[yr][mo];
+      if (entry) {
+        hddSum += entry.hdd;
+        cddSum += entry.cdd;
+        cnt++;
+      }
+    });
+    normals[mo] = {
+      hdd: cnt > 0 ? hddSum / cnt : 0,
+      cdd: cnt > 0 ? cddSum / cnt : 0,
+    };
+  });
+
+  return normals;
+}

@@ -24,7 +24,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
-    <title>CompanyHub — Energy Department</title>
+    <title>CompanyHub ï¿½ Energy Department</title>
     <link
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
@@ -33,7 +33,7 @@
 
     <style id="site-ui-styles">
       /* ---------------------------------------------------
-   SITE-UI.CSS — Shared CompanyHub UI Shell
+   SITE-UI.CSS ï¿½ Shared CompanyHub UI Shell
    Topbar, sidebar, dept-nav, settings, theming
 --------------------------------------------------- */
 
@@ -123,7 +123,7 @@
         background: var(--border2);
         border-radius: 3px;
       }
-      /* #108: Bills data table horizontal scrollbar — larger and more visible */
+      /* #108: Bills data table horizontal scrollbar ï¿½ larger and more visible */
       .bills-scroll-body::-webkit-scrollbar {
         height: 12px;
       }
@@ -321,7 +321,7 @@
         animation: fadeUp 0.4s ease;
       }
 
-      /* -- POPUP MODE — suppress login flash and fade animation -- */
+      /* -- POPUP MODE ï¿½ suppress login flash and fade animation -- */
       [data-popup-mode] #loginScreen {
         display: none !important;
       }
@@ -1123,7 +1123,7 @@
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
       }
 
-      /* drop-overlay styles removed — restore is button-only now */
+      /* drop-overlay styles removed ï¿½ restore is button-only now */
 
       /* -- TOOLTIP SYSTEM -- */
       .ch-tip-anchor {
@@ -1711,7 +1711,7 @@
           grid-template-columns: repeat(2, 1fr);
         }
 
-        /* Topbar overflow — hide verbose text at narrow widths */
+        /* Topbar overflow ï¿½ hide verbose text at narrow widths */
         .u-name,
         .u-dept {
           display: none;
@@ -1726,7 +1726,7 @@
           font-size: 14px;
         }
 
-        /* Dept tabs — touch scrolling */
+        /* Dept tabs ï¿½ touch scrolling */
         .dept-nav {
           -webkit-overflow-scrolling: touch;
           scroll-snap-type: x mandatory;
@@ -1747,7 +1747,7 @@
          REPORT DESIGN TOKENS
          All colors, fonts, and semantic values used in the
          report engine are defined here as CSS custom properties.
-         Never hardcode hex values in report CSS or JS templates —
+         Never hardcode hex values in report CSS or JS templates ï¿½
          reference these variables instead.
       ------------------------------------------------------ */
       :root {
@@ -2077,7 +2077,7 @@
         border-top-color: var(--rpt-dtbl-tot-bdr);
         color: var(--rpt-dtbl-tot-text);
       }
-      /* -- Building Baseline Data — print-optimized light theme -- */
+      /* -- Building Baseline Data ï¿½ print-optimized light theme -- */
       .rpt-table-bl {
         background: var(--rpt-page-bg);
         color: var(--rpt-page-text);
@@ -2131,7 +2131,7 @@
         background: var(--rpt-bl-navy);
         border-color: var(--rpt-bl-navy-bdr);
       }
-      /* Stats summary bar — light bordered version */
+      /* Stats summary bar ï¿½ light bordered version */
       .rpt-bl-stats {
         display: flex;
         gap: 0;
@@ -3001,7 +3001,7 @@
         filter: invert(0.7);
         cursor: pointer;
       }
-      /* #75: Bill modal date inputs use .ef-input — add explicit calendar icon visibility */
+      /* #75: Bill modal date inputs use .ef-input ï¿½ add explicit calendar icon visibility */
       .ef-input[type='date']::-webkit-calendar-picker-indicator {
         filter: invert(1) opacity(0.85);
         cursor: pointer;
@@ -3833,7 +3833,7 @@
         overflow-y: auto;
         min-height: 0;
       }
-      /* Direct children of scrolling tabs must not shrink — they must overflow the
+      /* Direct children of scrolling tabs must not shrink ï¿½ they must overflow the
          bounded container so overflow-y:auto can actually scroll them. */
       .ptab.active > * {
         flex-shrink: 0;
@@ -4116,7 +4116,7 @@
       table tr[data-acid]:hover td {
         background: var(--s2);
       }
-      /* Issue b2f5ee0b: condensed extracted-fields panel — 2-column grid so more
+      /* Issue b2f5ee0b: condensed extracted-fields panel ï¿½ 2-column grid so more
          values are visible at once without scrolling. */
       .ef-grid {
         display: grid;
@@ -4156,7 +4156,7 @@
       .ef-row-fit > .ef-icons {
         margin-left: auto;
       }
-      /* Compact icon strip — hover any icon to see the full explanation in a tooltip.
+      /* Compact icon strip ï¿½ hover any icon to see the full explanation in a tooltip.
          Cell height stays constant regardless of how much warning text there is. */
       .ef-icons {
         flex: 0 0 auto;
@@ -4169,7 +4169,7 @@
         cursor: help;
         line-height: 1;
       }
-      /* Cell hover popup — appears on any hover over the cell, styled as a solid-background
+      /* Cell hover popup ï¿½ appears on any hover over the cell, styled as a solid-background
          bordered box. Default color is green (auto-correct); level-* variants recolor to
          match warning severity so the $0-charge info icon etc. share the same popup style. */
       .ef-ac-tooltip {
@@ -4239,7 +4239,7 @@
       .ef-ac-revert:hover {
         background: rgba(34, 197, 94, 0.2);
       }
-      /* Pill column container — flex layout for pill rows. The "frozen header" behavior
+      /* Pill column container ï¿½ flex layout for pill rows. The "frozen header" behavior
          is handled by the parent view-flex layout (pdfFrozenHdr outside the scroll area),
          so no position:sticky hacks are needed inside the column. */
       .ef-pill-col {
@@ -5142,7 +5142,7 @@
         opacity: 1;
       }
 
-      /* -- UTILITY DATA — TWO-COLUMN MASTER/DETAIL -- */
+      /* -- UTILITY DATA ï¿½ TWO-COLUMN MASTER/DETAIL -- */
       .ud-layout {
         display: grid;
         grid-template-columns: var(--ud-nav-w, 260px) 1fr;
@@ -5152,7 +5152,7 @@
         /* flex:1 + min-height:0 so this grid takes the full remaining height of
            its view-flex parent. Without these, .ud-layout took natural content
            height and every flex:1 below it (ud-detail-body ? maMeterWorkspace ?
-           maPane ? bills-scroll-body) had no anchored ceiling — the bills table
+           maPane ? bills-scroll-body) had no anchored ceiling ï¿½ the bills table
            would expand to its own content height and push the horizontal
            scrollbar below the viewport. */
         flex: 1 1 0;
@@ -5172,7 +5172,7 @@
         border-right: none;
         padding: 0;
       }
-      /* Collapse/expand tab — straddles the divider between nav and detail, vertically centered */
+      /* Collapse/expand tab ï¿½ straddles the divider between nav and detail, vertically centered */
       .ud-collapse-tab {
         position: absolute;
         top: 50%;
@@ -5315,7 +5315,7 @@
         /* overflow must allow the collapse tab to escape on the left so it can straddle
            the divider between the buildings panel and the data column. Children that need
            internal scrolling (.ud-detail-body, .ud-meter-card contents, etc.) have their
-           own overflow-y: auto — no need to clip at the column level. */
+           own overflow-y: auto ï¿½ no need to clip at the column level. */
         overflow: visible;
         min-height: 0;
         /* CRITICAL: without min-width:0 this grid cell inherits its content's min-content
@@ -5366,7 +5366,7 @@
            constrain its children to the available height. Previously this was a
            block container with overflow-y:auto, which meant every flex:1 inside
            (maMeterWorkspace, maPane, bills-scroll-body) was a no-op and the bills
-           table expanded to natural height — hiding the horizontal scrollbar below
+           table expanded to natural height ï¿½ hiding the horizontal scrollbar below
            the fold and breaking the sticky thead behavior. min-width:0 is critical
            alongside min-height:0 so the width constraint propagates down to the
            bills table body where overflow-x:auto can actually engage. */
@@ -5476,7 +5476,7 @@
       .ud-meter-body.open {
         display: block;
       }
-      /* Meter info grid — responsive auto-fit */
+      /* Meter info grid ï¿½ responsive auto-fit */
       .ud-meter-info {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -5533,7 +5533,7 @@
       /* Update 91: hide header wrapper scrollbar. The inline style on the
          #billsTheadWrap element switches from overflow-x:hidden to
          overflow-x:auto so the sticky-col cells in the header engage
-         properly — but we don't want the scrollbar to render visually,
+         properly ï¿½ but we don't want the scrollbar to render visually,
          since the body already shows one and the two are JS-synced. */
       .bills-thead-wrap {
         scrollbar-width: none;
@@ -5633,7 +5633,7 @@
         width: 100%;
         /* Update 92: separate (not collapse) so each cell paints its OWN
            right + bottom borders. With collapse, adjacent cells SHARE one
-           1px border line — and on sticky cells during horizontal scroll,
+           1px border line ï¿½ and on sticky cells during horizontal scroll,
            that shared line is treated as part of the scrolled column, not
            the frozen one, so scrolled text showed through the border gap.
            Separate gives every cell an opaque 1px solid-color edge that
@@ -5758,9 +5758,9 @@
         white-space: nowrap;
         text-align: center;
         padding: 4px 8px;
-        /* Update 95: action cells contain icon buttons, not text — disable
+        /* Update 95: action cells contain icon buttons, not text ï¿½ disable
            the overflow:hidden + text-overflow:ellipsis from the generic td
-           rule so the ?? / ?? / ? buttons don't get clipped to "…". */
+           rule so the ?? / ?? / ? buttons don't get clipped to "ï¿½". */
         overflow: visible;
         text-overflow: clip;
       }
@@ -5781,7 +5781,7 @@
       }
       /* Update 90 / 91 / 92: sticky left columns (Norm Month / Start / End).
          Content from scrolling columns must NEVER show behind the sticky
-         cells — requires: (a) solid opaque background-color, (b) z-index
+         cells ï¿½ requires: (a) solid opaque background-color, (b) z-index
          higher than any scrolling cell's effective stacking level, and
          (c) a right-edge separator (box-shadow beats a real border because
          border-collapse:collapse clips the cell's own borders during scroll).
@@ -5836,7 +5836,7 @@
       .ud-bill-tbl tr.ud-bill-empty-row td.sticky-col-right {
         background-color: var(--s1) !important;
       }
-      /* Table Settings header — full cell is clickable, gear icon above a
+      /* Table Settings header ï¿½ full cell is clickable, gear icon above a
          "Table Settings" label. Lives as a child <div> inside the <th> so
          the col-resize-handle sibling stays functional. */
       .bts-header-btn {
@@ -5950,14 +5950,14 @@
         gap: 8px;
         letter-spacing: 0.01em;
       }
-      /* Bug #17: Bill rows with no start/end dates — amber left-border + subtle tint */
+      /* Bug #17: Bill rows with no start/end dates ï¿½ amber left-border + subtle tint */
       tr.ud-bill-missing-dates td {
         background: rgba(245, 158, 11, 0.06) !important;
       }
       tr.ud-bill-missing-dates td:first-child {
         box-shadow: inset 3px 0 0 var(--amber);
       }
-      /* Bug #26: Overlap warning row — amber/orange to distinguish from gap (red) */
+      /* Bug #26: Overlap warning row ï¿½ amber/orange to distinguish from gap (red) */
       .ud-bill-overlap-row td {
         padding: 10px 14px;
         background: rgba(245, 158, 11, 0.12);
@@ -6188,7 +6188,7 @@
         border-color: var(--em);
         background: var(--em-dim);
       }
-      /* Inline Add Meter pill — dashed border, muted background, brightens on hover */
+      /* Inline Add Meter pill ï¿½ dashed border, muted background, brightens on hover */
       .ma-meter-pill.ma-add-meter-pill {
         border-style: dashed;
         border-color: var(--border2);
@@ -7092,7 +7092,7 @@
       }
 
       /* -------------------------------------------
-         BUILDING SCORECARD — sc-* classes
+         BUILDING SCORECARD ï¿½ sc-* classes
          Print-friendly one-pager for school board.
       ------------------------------------------- */
       .sc-root {
@@ -7381,7 +7381,7 @@
     </style>
     <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.22.339" />
     <style>
-      /* -- Quill rich text editor — dark theme overrides -- */
+      /* -- Quill rich text editor ï¿½ dark theme overrides -- */
       .ql-toolbar.ql-snow {
         background: var(--s1);
         border-color: var(--s3);
@@ -7565,7 +7565,7 @@
                   onclick="toggleProjSection(event)"
                   title="Collapse projects"
                 >
-                  ‹
+                  ï¿½
                 </button>
               </div>
               <div class="s-proj-section" id="sidebarProjFolders"></div>
@@ -7737,9 +7737,9 @@
                 <div class="cal-top">
                   <span style="font-family: var(--head); font-size: 14px; font-weight: 700">?? Monthly Calendar</span>
                   <div class="cal-nav">
-                    <button class="cnav" onclick="changeHCal(-1)">‹</button>
+                    <button class="cnav" onclick="changeHCal(-1)">ï¿½</button>
                     <span class="cal-mlbl" id="hCalLbl"></span>
-                    <button class="cnav" onclick="changeHCal(1)">›</button>
+                    <button class="cnav" onclick="changeHCal(1)">ï¿½</button>
                   </div>
                 </div>
                 <div class="cal-grid">
@@ -7966,7 +7966,7 @@
 
           <!-- PDF OCR -->
           <div id="view-pdf" class="view view-flex" data-ui-id="en-pdf" data-fb="energy.pdf">
-            <!-- Page title bar — stays frozen at top, spans full width -->
+            <!-- Page title bar ï¿½ stays frozen at top, spans full width -->
             <div id="pdfPageHdr" style="flex-shrink: 0; padding: 16px 18px 10px; background: var(--bg)">
               <div class="pg-hdr">
                 <div>
@@ -8002,7 +8002,7 @@
             </div>
             <!-- Two true side-by-side columns. Each column is a self-contained flex column that
                  goes from the top of the body area to the bottom and manages its own vertical
-                 scrolling. No shared frozen header across columns — that caused the visual gap
+                 scrolling. No shared frozen header across columns ï¿½ that caused the visual gap
                  between the "Extraction Output" label and the JSON box in previous layouts. -->
             <div
               id="pdfBody"
@@ -8030,7 +8030,7 @@
                 >
                   <span class="dz-ico">??</span>
                   <div class="dz-title" id="dz-title">Drop PDF here or click to browse</div>
-                  <div class="dz-sub">Utility bills · Drawings · Equipment submittals · Contracts</div>
+                  <div class="dz-sub">Utility bills ï¿½ Drawings ï¿½ Equipment submittals ï¿½ Contracts</div>
                   <input
                     type="file"
                     id="pdfInput"
@@ -8106,10 +8106,10 @@
                         style="flex: 1; min-width: 120px; font-size: 11px"
                         onchange="pdfBannerUpdateMeterOpts()"
                       >
-                        <option value="">— Building —</option>
+                        <option value="">ï¿½ Building ï¿½</option>
                       </select>
                       <select class="fs" id="pdfBannerMeterSel" style="flex: 1; min-width: 120px; font-size: 11px">
-                        <option value="">— Meter —</option>
+                        <option value="">ï¿½ Meter ï¿½</option>
                       </select>
                     </div>
                   </div>
@@ -8253,7 +8253,7 @@
                 >
                   <span class="dz-ico">??</span>
                   <div class="dz-title">Upload Construction Drawing PDF</div>
-                  <div class="dz-sub">Mechanical plans · Equipment schedules · Controls drawings</div>
+                  <div class="dz-sub">Mechanical plans ï¿½ Equipment schedules ï¿½ Controls drawings</div>
                   <input
                     type="file"
                     id="dwgInput"
@@ -8382,12 +8382,12 @@
               >
                 <div class="wcm-ico">??</div>
                 <div class="wcm-name">Diagnose Logic</div>
-                <div class="wcm-desc">Paste in existing logic — get plain-English explanation and fixes</div>
+                <div class="wcm-desc">Paste in existing logic ï¿½ get plain-English explanation and fixes</div>
               </div>
               <div class="wcm" id="wcm-write" onclick="setWCMode('write', this)" data-fb="energy.webctrl.mode.write">
                 <div class="wcm-ico">??</div>
                 <div class="wcm-name">Write Logic</div>
-                <div class="wcm-desc">Describe what you need — get complete WebCTRL-compatible logic</div>
+                <div class="wcm-desc">Describe what you need ï¿½ get complete WebCTRL-compatible logic</div>
               </div>
             </div>
             <div id="wc-guide" class="card">
@@ -8401,9 +8401,9 @@
                   <div class="fg">
                     <label class="fl">Experience Level</label
                     ><select class="fs" id="wc-g-lvl">
-                      <option>Beginner — explain from scratch</option>
-                      <option>Intermediate — I know the basics</option>
-                      <option>Advanced — skip the basics</option>
+                      <option>Beginner ï¿½ explain from scratch</option>
+                      <option>Intermediate ï¿½ I know the basics</option>
+                      <option>Advanced ï¿½ skip the basics</option>
                     </select>
                   </div>
                 </div>
@@ -9753,7 +9753,7 @@
                   <div class="pg-hdr">
                     <div>
                       <div class="pg-title">All <em>Leads</em></div>
-                      <div class="pg-sub">Spreadsheet view — click any row to open lead detail</div>
+                      <div class="pg-sub">Spreadsheet view ï¿½ click any row to open lead detail</div>
                     </div>
                     <div class="hdr-actions">
                       <button class="btn btn-ghost btn-sm" onclick="emsExportCSV()">? Export CSV</button>
@@ -10018,7 +10018,7 @@
                     <div class="detail-field">
                       <div class="df-label">EMS Project Type</div>
                       <select class="df-select" id="ed-type">
-                        <option value="">— Select —</option>
+                        <option value="">ï¿½ Select ï¿½</option>
                         <option>Energy Audit</option>
                         <option>Controls Retrofit</option>
                         <option>BAS Upgrade</option>
@@ -10112,7 +10112,7 @@
                       />
                     </div>
                   </div>
-                  <!-- Extra fields from CSV import — rendered dynamically -->
+                  <!-- Extra fields from CSV import ï¿½ rendered dynamically -->
                   <div id="emsExtraFields"></div>
                 </div>
                 <div class="dpanel" id="dAct">
@@ -10209,7 +10209,7 @@
                     <div class="fg">
                       <label class="fl">EMS Project Type</label
                       ><select class="fs" id="enl-type">
-                        <option value="">— Select —</option>
+                        <option value="">ï¿½ Select ï¿½</option>
                         <option>Energy Audit</option>
                         <option>Controls Retrofit</option>
                         <option>BAS Upgrade</option>
@@ -10251,7 +10251,7 @@
                     <div class="fg">
                       <label class="fl">Building Type</label
                       ><select class="fs" id="enl-buildingType">
-                        <option value="">— Select —</option>
+                        <option value="">ï¿½ Select ï¿½</option>
                         <option>Office</option>
                         <option>School / K-12</option>
                         <option>University</option>
@@ -10434,8 +10434,8 @@
                         ? Duplicate Handling
                       </div>
                       <div style="font-size: 11px; color: var(--text2); margin-bottom: 10px; line-height: 1.6">
-                        When the same company name appears more than once — either in this file or matching an existing
-                        lead — each row's site info will be treated as a separate building/location on that company.
+                        When the same company name appears more than once ï¿½ either in this file or matching an existing
+                        lead ï¿½ each row's site info will be treated as a separate building/location on that company.
                       </div>
                       <div style="display: flex; flex-direction: column; gap: 7px">
                         <label
@@ -10461,7 +10461,7 @@
                           />
                           <div>
                             <div style="font-size: 12px; font-weight: 600; color: var(--text)">
-                              Merge — add as buildings on existing lead
+                              Merge ï¿½ add as buildings on existing lead
                               <span style="font-size: 10px; color: var(--em); font-weight: 700; margin-left: 4px"
                                 >RECOMMENDED</span
                               >
@@ -10686,7 +10686,7 @@
 
           <script>
             /* ----------------------------------------
-               EMS LEADS — embedded in energy-department
+               EMS LEADS ï¿½ embedded in energy-department
                All functions prefixed ems* to avoid conflicts
                Selectors scoped to #view-ems / ems-specific IDs
             ---------------------------------------- */
@@ -10748,9 +10748,9 @@
                   // Merge: start with builtins (with any saved label overrides), then append custom fields
                   const builtins = EMS_BUILTIN_FIELDS.map((f) => ({ ...f, label: saved.labels?.[f.key] ?? f.label }));
                   const customs = saved.custom || [];
-                  return [...builtins, ...customs, { key: '', label: '— Skip —' }];
+                  return [...builtins, ...customs, { key: '', label: 'ï¿½ Skip ï¿½' }];
                 } catch (e) {
-                  return [...EMS_BUILTIN_FIELDS, { key: '', label: '— Skip —' }];
+                  return [...EMS_BUILTIN_FIELDS, { key: '', label: 'ï¿½ Skip ï¿½' }];
                 }
               }
               function emsSaveFields(fields) {
@@ -10845,7 +10845,7 @@
                 } catch (e) {
                   emsLeads = [];
                 }
-                // Stamp original order index — used to restore default table order
+                // Stamp original order index ï¿½ used to restore default table order
                 emsLeads.forEach((l, i) => {
                   if (l._origIdx == null) l._origIdx = i;
                 });
@@ -10941,7 +10941,7 @@
                   });
                 });
                 if (dirty) emsSave();
-                // Check if key-remapping is needed — show preview modal if so
+                // Check if key-remapping is needed ï¿½ show preview modal if so
                 const changes = emsScanMigration().filter((c) => c.action === 'migrate' || c.action === 'delete_dup');
                 if (changes.length) emsShowMigrationModal(changes);
               }
@@ -10980,7 +10980,7 @@
                 <div style="background:var(--s2);border:1px solid var(--border2);border-radius:14px;width:820px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 40px 80px rgba(0,0,0,.7)">
                   <div style="padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0">
                     <div style="font-family:var(--head);font-size:15px;font-weight:700">?? Field Migration Preview</div>
-                    <div style="font-size:11px;color:var(--text2);margin-top:4px;line-height:1.6">Found <strong style="color:var(--warn)">${changes.length} field${changes.length !== 1 ? 's' : ''}</strong> across <strong style="color:var(--warn)">${Object.keys(byCompany).length} lead${Object.keys(byCompany).length !== 1 ? 's' : ''}</strong> with old CSV column names that need remapping. Review below — <strong style="color:var(--em)">nothing changes until you click Apply.</strong></div>
+                    <div style="font-size:11px;color:var(--text2);margin-top:4px;line-height:1.6">Found <strong style="color:var(--warn)">${changes.length} field${changes.length !== 1 ? 's' : ''}</strong> across <strong style="color:var(--warn)">${Object.keys(byCompany).length} lead${Object.keys(byCompany).length !== 1 ? 's' : ''}</strong> with old CSV column names that need remapping. Review below ï¿½ <strong style="color:var(--em)">nothing changes until you click Apply.</strong></div>
                   </div>
                   <div style="flex:1;overflow:auto;padding:0 20px 16px">
                     <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:16px">
@@ -11032,7 +11032,7 @@
                 if (dirty) emsSave();
                 document.getElementById('emsMigrateModal')?.remove();
                 emsRenderAll();
-                showToast('Migration applied ? — fields remapped and duplicates removed');
+                showToast('Migration applied ? ï¿½ fields remapped and duplicates removed');
               };
               function emsSave() {
                 localStorage.setItem(EMS_KEY, JSON.stringify(emsLeads));
@@ -11059,7 +11059,7 @@
                 // YYYY/MM/DD
                 const ymd = s.match(/^(\d{4})\/(\d{2})\/(\d{2})/);
                 if (ymd) return new Date(+ymd[1], +ymd[2] - 1, +ymd[3]);
-                // DD-MM-YYYY or MM-DD-YYYY — try JS default
+                // DD-MM-YYYY or MM-DD-YYYY ï¿½ try JS default
                 const fallback = new Date(s);
                 return isNaN(fallback) ? null : fallback;
               }
@@ -11164,7 +11164,7 @@
                     return `<div class="stage-col">
                   <div class="stage-hdr">
                     <div class="stage-name"><div class="stage-dot" style="background:${EMS_STAGE_COLORS[stage]}"></div>${stage}</div>
-                    <div class="stage-count">${sl.length}${sv2 > 0 ? ' · $' + emsFmtNum(sv2) : ''}</div>
+                    <div class="stage-count">${sl.length}${sv2 > 0 ? ' ï¿½ $' + emsFmtNum(sv2) : ''}</div>
                   </div>
                   <div class="stage-body" id="estage-${stage.replace(' ', '-')}"
                     ondragover="event.preventDefault();this.classList.add('drag-over')"
@@ -11208,7 +11208,7 @@
                 onclick="emsOpenDrawer('${l.id}')">
                 <div style="display:flex;align-items:flex-start;gap:7px">
                   <div class="priority-dot" style="background:${pc};margin-top:4px"></div>
-                  <div class="lc-company">${emsEsc(l.company || '—')}</div>
+                  <div class="lc-company">${emsEsc(l.company || 'ï¿½')}</div>
                 </div>
                 <div class="lc-meta">${(() => {
                   const bldgs = l.buildings || [];
@@ -11217,7 +11217,7 @@
                     const loc = first.address || [first.city, first.state].filter(Boolean).join(', ');
                     return (
                       (bldgs.length > 1 ? bldgs.length + ' buildings' : first.buildingType || '1 building') +
-                      (loc ? ' · ' + loc : '')
+                      (loc ? ' ï¿½ ' + loc : '')
                     );
                   }
                   return l.address || l.buildingType || 'No location set';
@@ -11325,26 +11325,26 @@
                     : data
                         .map(
                           (l) => `<tr onclick="emsOpenDrawer('${l.id}')">
-                  <td class="td-company">${emsEsc(l.company || '—')}</td>
-                  <td>${emsEsc(l.clientType || '—')}</td>
+                  <td class="td-company">${emsEsc(l.company || 'ï¿½')}</td>
+                  <td>${emsEsc(l.clientType || 'ï¿½')}</td>
                   <td>${emsEsc(
                     (() => {
                       const bldgs = l.buildings || [];
                       if (bldgs.length && bldgs[0].address) {
                         return bldgs[0].address + (bldgs.length > 1 ? ' +' + (bldgs.length - 1) + ' more' : '');
                       }
-                      return l.address || '—';
+                      return l.address || 'ï¿½';
                     })(),
                   )}</td>
-                  <td class="td-mono">${emsEsc(l.saNum || '—')}</td>
-                  <td>${emsEsc(l.webctrlVersion || '—')}</td>
-                  <td style="${emsOverdue(l.renewalDate) ? 'color:var(--danger)' : ''}">${emsFmtDate(l.renewalDate) || '—'}</td>
-                  <td><span class="stage-pill ${EMS_STAGE_CLS[l.stage] || ''}">${l.stage || '—'}</span></td>
-                  <td class="pri-${(l.priority || '').toLowerCase()}">${l.priority || '—'}</td>
-                  <td>${emsEsc(l.cscContact || '—')}</td>
-                  <td class="td-mono">${l.annualValue ? '$' + emsFmtNum(l.annualValue) : '—'}</td>
-                  <td style="${emsOverdue(l.nextActionDate) ? 'color:var(--danger)' : ''}">${emsFmtDate(l.nextActionDate) || '—'}</td>
-                  <td>${emsFmtDate(l.lastContact) || '—'}</td>
+                  <td class="td-mono">${emsEsc(l.saNum || 'ï¿½')}</td>
+                  <td>${emsEsc(l.webctrlVersion || 'ï¿½')}</td>
+                  <td style="${emsOverdue(l.renewalDate) ? 'color:var(--danger)' : ''}">${emsFmtDate(l.renewalDate) || 'ï¿½'}</td>
+                  <td><span class="stage-pill ${EMS_STAGE_CLS[l.stage] || ''}">${l.stage || 'ï¿½'}</span></td>
+                  <td class="pri-${(l.priority || '').toLowerCase()}">${l.priority || 'ï¿½'}</td>
+                  <td>${emsEsc(l.cscContact || 'ï¿½')}</td>
+                  <td class="td-mono">${l.annualValue ? '$' + emsFmtNum(l.annualValue) : 'ï¿½'}</td>
+                  <td style="${emsOverdue(l.nextActionDate) ? 'color:var(--danger)' : ''}">${emsFmtDate(l.nextActionDate) || 'ï¿½'}</td>
+                  <td>${emsFmtDate(l.lastContact) || 'ï¿½'}</td>
                 </tr>`,
                         )
                         .join('');
@@ -11401,7 +11401,7 @@
                         ) => `<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:border-color .14s" onclick="emsOpenDrawer('${l.id}')" onmouseover="this.style.borderColor='var(--em)'" onmouseout="this.style.borderColor='var(--border)'">
                       <div>
                         <div style="font-family:var(--head);font-size:13px;font-weight:700">${emsEsc(l.company)}</div>
-                        <div style="font-size:11px;color:var(--text2);margin-top:3px">${l.nextAction || 'No action specified'} ${l.nextActionDate ? '· ' + emsFmtDate(l.nextActionDate) : ''}</div>
+                        <div style="font-size:11px;color:var(--text2);margin-top:3px">${l.nextAction || 'No action specified'} ${l.nextActionDate ? 'ï¿½ ' + emsFmtDate(l.nextActionDate) : ''}</div>
                       </div>
                       <div style="display:flex;align-items:center;gap:10px">
                         <span class="stage-pill ${EMS_STAGE_CLS[l.stage] || ''}">${l.stage}</span>
@@ -11498,7 +11498,7 @@
                 </div>`;
               }
 
-              // Keys that have dedicated inputs in the drawer — everything else is "extra"
+              // Keys that have dedicated inputs in the drawer ï¿½ everything else is "extra"
               const EMS_KNOWN_KEYS = new Set([
                 'id',
                 'company',
@@ -11532,7 +11532,7 @@
                 'createdAt',
                 'updatedAt',
                 '_origIdx',
-                // Legacy CSV import keys — migrated on open, suppressed from Additional Fields
+                // Legacy CSV import keys ï¿½ migrated on open, suppressed from Additional Fields
                 'sa #',
                 'sa#',
                 'building',
@@ -11725,7 +11725,7 @@
                 'Other',
               ];
 
-              /* -- Client Types — editable list -- */
+              /* -- Client Types ï¿½ editable list -- */
               const EMS_CLIENT_TYPES_KEY = 'ems_client_types';
               const EMS_CLIENT_TYPES_DEFAULT = [
                 'School',
@@ -11754,7 +11754,7 @@
 
               function emsClientTypeOptions(selectedVal) {
                 return (
-                  '<option value="">— Select —</option>' +
+                  '<option value="">ï¿½ Select ï¿½</option>' +
                   emsClientTypes
                     .map((t) => `<option${t === selectedVal ? ' selected' : ''}>${emsEsc(t)}</option>`)
                     .join('')
@@ -11859,7 +11859,7 @@
                 const bldgs = lead.buildings || [];
                 const container = document.getElementById('emsBuildingList');
                 if (bldgs.length === 0) {
-                  container.innerHTML = `<div class="bldg-empty">No buildings added yet — click <strong style="color:var(--em)">+ Add Building</strong> to get started.</div>`;
+                  container.innerHTML = `<div class="bldg-empty">No buildings added yet ï¿½ click <strong style="color:var(--em)">+ Add Building</strong> to get started.</div>`;
                   return;
                 }
                 container.innerHTML = bldgs
@@ -11901,7 +11901,7 @@
                       <div class="bldg-field" style="grid-column:1/-1">
                         <div class="bldg-lbl">Building Type</div>
                         <select class="bldg-select" data-bid="${b.id}" data-field="buildingType">
-                          <option value="">— Select —</option>
+                          <option value="">ï¿½ Select ï¿½</option>
                           ${EMS_BLDG_TYPES.map((t) => `<option${b.buildingType === t ? ' selected' : ''}>${t}</option>`).join('')}
                         </select>
                       </div>
@@ -12030,7 +12030,7 @@
                 }
 
                 // If still no city, check if entire value looks like "City, State" with no street
-                // (common in imported CSVs — e.g. "Lexington, Missouri")
+                // (common in imported CSVs ï¿½ e.g. "Lexington, Missouri")
                 if (!detectedCity && !detectedState) {
                   const simple = /^([A-Za-z\s\.\-]+),\s*([A-Za-z\s\.]+)$/.exec(val);
                   if (simple) {
@@ -12146,7 +12146,7 @@
                         .reverse()
                         .map(
                           (a) =>
-                            `<div class="activity-item"><div class="act-dot" style="background:${a.color || 'var(--em)'}"></div><div class="act-body"><div class="act-text">${emsEsc(a.text)}</div><div class="act-time">${a.time} · ${a.user || 'You'}</div></div></div>`,
+                            `<div class="activity-item"><div class="act-dot" style="background:${a.color || 'var(--em)'}"></div><div class="act-body"><div class="act-text">${emsEsc(a.text)}</div><div class="act-time">${a.time} ï¿½ ${a.user || 'You'}</div></div></div>`,
                         )
                         .join('');
               }
@@ -12492,7 +12492,7 @@
                       });
                       existing.updatedAt = new Date().toISOString();
                     } else {
-                      // New company — create one lead, all rows become buildings
+                      // New company ï¿½ create one lead, all rows become buildings
                       const lead = rows[0];
                       if (!lead.buildings) lead.buildings = [];
                       rows.forEach((obj, i) => {
@@ -12519,7 +12519,7 @@
                 if (added) parts.push(added + ' lead' + (added > 1 ? 's' : '') + ' added');
                 if (merged) parts.push(merged + ' building' + (merged > 1 ? 's' : '') + ' merged into existing leads');
                 if (skipped) parts.push(skipped + ' skipped');
-                showToast((parts.join(' · ') || 'Nothing imported') + ' ?');
+                showToast((parts.join(' ï¿½ ') || 'Nothing imported') + ' ?');
                 document.getElementById('emsCsvPaste').value = '';
                 document.getElementById('emsColMapper').style.display = 'none';
                 document.getElementById('emsImportBtn').style.display = 'none';
@@ -12558,7 +12558,7 @@
                     `<span style="color:var(--em2)">${crossDups} match${crossDups > 1 ? '' : 'es'} an existing lead</span>`,
                   );
                 panel.innerHTML = parts.length
-                  ? 'Detected: ' + parts.join(' · ')
+                  ? 'Detected: ' + parts.join(' ï¿½ ')
                   : '<span style="color:var(--em)">? No duplicates detected</span>';
               }
 
@@ -12630,7 +12630,7 @@
                 out.className = 'ai-output visible';
                 out.innerHTML =
                   '<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Generating...</div>';
-                out.textContent = 'AI features are not available — this app has no backend API connection.';
+                out.textContent = 'AI features are not available ï¿½ this app has no backend API connection.';
               };
 
               // Drag-drop on CSV drop zone (init after DOM ready)
@@ -12688,7 +12688,7 @@
           </div>
 
           <script>
-            /* Synchronous view restore — runs before first paint to prevent flash.
+            /* Synchronous view restore ï¿½ runs before first paint to prevent flash.
                Sets the correct view active BEFORE DOMContentLoaded fires init(). */
             (function () {
               var lastView = localStorage.getItem('ch_activeView') || sessionStorage.getItem('ch_activeView');
@@ -12769,7 +12769,7 @@
               <div class="fg">
                 <label class="fl">Phase</label>
                 <select class="fs" id="mp-phase">
-                  <option value="">— Select Phase —</option>
+                  <option value="">ï¿½ Select Phase ï¿½</option>
                   <option>Audit / Assessment</option>
                   <option>Design</option>
                   <option>Bidding</option>
@@ -13060,7 +13060,7 @@
             >
               <label class="fl">Move to Different Building</label>
               <select class="fs" id="mm-move-bldg" style="width: 100%">
-                <option value="">— Keep on current building —</option>
+                <option value="">ï¿½ Keep on current building ï¿½</option>
               </select>
               <div style="font-size: 11px; color: var(--text2); margin-top: 5px">
                 All bills will move with the meter.
@@ -13108,7 +13108,7 @@
       <div class="modal-bg" id="wddModal">
         <div class="modal" style="width: 520px; max-width: 96vw">
           <div class="modal-hdr">
-            <span class="modal-title">??? Import Weather Data — CSV</span>
+            <span class="modal-title">??? Import Weather Data ï¿½ CSV</span>
             <button class="modal-x" onclick="closeWddModal()">?</button>
           </div>
           <div class="modal-body">
@@ -13135,7 +13135,7 @@
               <div style="font-family: var(--mono); color: var(--em); margin-bottom: 6px">
                 month, year, hdd, cdd, avg_temp
               </div>
-              Month can be a name (January, Jan) or number (1–12). avg_temp is optional. One row per month. Re-importing
+              Month can be a name (January, Jan) or number (1ï¿½12). avg_temp is optional. One row per month. Re-importing
               updates existing months.
             </div>
             <div
@@ -13200,7 +13200,7 @@
       <div class="modal-bg" id="billCsvModal">
         <div class="modal" style="width: 700px; max-width: 96vw">
           <div class="modal-hdr">
-            <span class="modal-title" id="billCsvModalTitle">?? Import Bill Periods — CSV</span>
+            <span class="modal-title" id="billCsvModalTitle">?? Import Bill Periods ï¿½ CSV</span>
             <button class="modal-x" onclick="closeBillCsvModal()">?</button>
           </div>
           <div class="modal-body">
@@ -13234,7 +13234,7 @@
               <span class="dz-ico" style="font-size: 26px">??</span>
               <div class="dz-title" id="billCsvDropLabel" style="font-size: 13px">Drop CSV file or click to browse</div>
               <div class="dz-sub" style="font-size: 11px">
-                One row per billing period · Header row optional · Duplicates merged by month
+                One row per billing period ï¿½ Header row optional ï¿½ Duplicates merged by month
               </div>
               <input
                 type="file"
@@ -13312,7 +13312,7 @@
               <div class="fg">
                 <label class="fl">Project</label
                 ><select class="fs" id="mt-proj">
-                  <option value="">— General —</option>
+                  <option value="">ï¿½ General ï¿½</option>
                 </select>
               </div>
             </div>
@@ -13381,7 +13381,7 @@
             </div>
             <div class="fg">
               <label class="fl">Location / Project</label
-              ><input class="fi" id="eq-loc" placeholder="e.g. Van Horn HS — Mech Room B" />
+              ><input class="fi" id="eq-loc" placeholder="e.g. Van Horn HS ï¿½ Mech Room B" />
             </div>
             <div class="fg">
               <label class="fl">Notes</label>
@@ -13557,7 +13557,7 @@
                   background: transparent;
                   color: #f59e0b;
                 "
-                title="Skip every duplicate bill — the existing records stay untouched"
+                title="Skip every duplicate bill ï¿½ the existing records stay untouched"
               >
                 Skip All
               </button>
@@ -13656,7 +13656,7 @@
       <div class="modal-bg" id="manualAssignModal" onclick="if (event.target === this) closeManualAssignModal();">
         <div class="modal" style="width: 520px">
           <div class="modal-hdr">
-            <span class="modal-title">Manual Assign — PDF Page to Billing Period</span>
+            <span class="modal-title">Manual Assign ï¿½ PDF Page to Billing Period</span>
             <button class="modal-x" onclick="closeManualAssignModal()">?</button>
           </div>
           <div class="modal-body">
@@ -13700,7 +13700,7 @@
               <div class="fg">
                 <label class="fl">Existing Billing Period</label>
                 <select class="fs" id="mam-period">
-                  <option value="">— Select a billing period —</option>
+                  <option value="">ï¿½ Select a billing period ï¿½</option>
                 </select>
               </div>
               <div style="font-size: 11px; color: var(--text3); margin-top: 4px">
@@ -14043,7 +14043,7 @@
                     style="accent-color: var(--em); width: 14px; height: 14px"
                   />
                   <span style="font-size: 12px; color: var(--text)">Annualized</span>
-                  <span style="font-size: 10px; color: var(--text3); margin-left: 4px">(×4 from quarterly)</span>
+                  <span style="font-size: 10px; color: var(--text3); margin-left: 4px">(ï¿½4 from quarterly)</span>
                 </label>
                 <div style="font-size: 11px; color: var(--text2); padding: 4px 8px; font-weight: 600">
                   Baseline Data Table Commodities:
@@ -14098,7 +14098,7 @@
     <!-- /app -->
 
     <!-- ---------------------------------------------------
-         NEW REPORT GENERATION MODAL (v2) — launched from Energy Graphics
+         NEW REPORT GENERATION MODAL (v2) ï¿½ launched from Energy Graphics
     --------------------------------------------------- -->
     <div class="modal-bg" id="reportGenModal" onclick="if (event.target === this) this.classList.remove('open');">
       <div class="modal" style="width: 540px; max-height: 85vh; overflow-y: auto">
@@ -14121,7 +14121,7 @@
     </div>
 
     <!-- ---------------------------------------------------
-         REPORT PREVIEW CONTAINER — fullscreen preview/editor
+         REPORT PREVIEW CONTAINER ï¿½ fullscreen preview/editor
     --------------------------------------------------- -->
     <div
       id="reportPreviewContainer"
@@ -14157,7 +14157,7 @@
               font-weight: 600;
             "
           >
-            Data changed in popup —
+            Data changed in popup ï¿½
             <button
               class="btn btn-sm"
               style="
@@ -14237,7 +14237,7 @@
     </div>
 
     <!-- ---------------------------------------------------
-         REPORT OVERLAY — fullscreen print-preview container (legacy)
+         REPORT OVERLAY ï¿½ fullscreen print-preview container (legacy)
     --------------------------------------------------- -->
     <div id="reportOverlay" class="report-overlay" style="display: none">
       <div class="report-toolbar">
@@ -14277,13 +14277,13 @@
     <script src="lib/csv-parser.js?v=v2026.05.22.339"></script>
     <script src="computations/rates.js?v=v2026.05.22.339"></script>
     <script src="computations/regression.js?v=v2026.05.22.339"></script>
-    <script src="computations/normalization.js?v=v2026.05.22.339"></script>
+    <script src="computations/normalization.js?v=v2026.05.22.340"></script>
     <script src="computations/eui.js?v=v2026.05.22.339"></script>
     <script src="computations/pollution.js?v=v2026.05.22.339"></script>
     <script src="computations/csc.js?v=v2026.05.22.339"></script>
     <script src="computations/savings.js?v=v2026.05.22.339"></script>
     <script src="computations/anomaly-detection.js?v=v2026.05.22.339"></script>
-    <script src="lib/perf-table.js?v=v2026.05.22.339"></script>
+    <script src="lib/perf-table.js?v=v2026.05.22.340"></script>
     <script src="lib/shared-charts.js?v=v2026.05.22.339"></script>
     <script src="computations/report-data.js?v=v2026.05.22.339"></script>
     <script src="computations/data-quality.js?v=v2026.05.22.339"></script>
@@ -14293,10 +14293,10 @@
     <script src="app/bill-analysis.js?v=v2026.05.22.339"></script>
     <script src="extraction/bill-validation.js?v=v2026.05.22.339"></script>
     <script src="app/district-calendar.js?v=v2026.05.22.339"></script>
-    <script src="app/utility-data.js?v=v2026.05.22.339"></script>
+    <script src="app/utility-data.js?v=v2026.05.22.340"></script>
     <script src="app/pipeline-diagram.js?v=v2026.05.22.339"></script>
     <script src="app/csv-import.js?v=v2026.05.22.339"></script>
-    <script src="app/report-engine.js?v=v2026.05.22.339"></script>
+    <script src="app/report-engine.js?v=v2026.05.22.340"></script>
     <script src="app/report-preview.js?v=v2026.05.22.339"></script>
     <script src="app/calculators.js?v=v2026.05.22.339"></script>
     <script src="app/ecm-calculators.js?v=v2026.05.22.339"></script>
@@ -14467,7 +14467,7 @@
     <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js" crossorigin="anonymous"></script>
     <script src="lib/rich-text.js?v=v2026.05.22.339"></script>
     <script>
-      /* Handle ?openProject=... URL params — opened by _rptV2GoEdit() popup window */
+      /* Handle ?openProject=... URL params ï¿½ opened by _rptV2GoEdit() popup window */
       (function _handleEditRedirect() {
         var params = new URLSearchParams(window.location.search);
         var projId = params.get('openProject');
