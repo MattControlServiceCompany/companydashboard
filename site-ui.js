@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.22.342';
+  var CH_VERSION = 'v2026.05.22.343';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,17 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.22.343',
+      date: '2026-05-22',
+      title: 'CSP style-src fix across all HTML files for Quill stylesheet',
+      features: [
+        {
+          type: 'fix',
+          text: 'Added cdn.jsdelivr.net to CSP style-src, script-src, font-src, and connect-src in index.html, service-department.html, and ems-leads.html so Quill and other jsdelivr resources load without CSP errors',
+        },
+      ],
+    },
     {
       version: 'v2026.05.22.342',
       date: '2026-05-22',
