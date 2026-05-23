@@ -950,6 +950,7 @@ function renderDetail(p) {
                     <button class="btn btn-ghost btn-sm" onclick="egfxExport(${p.id})">⬇ Export</button>
                     <button class="btn btn-ghost btn-sm" onclick="openReportModalV2(${p.id})">📄 Generate Report</button>
                     <button class="btn btn-ghost btn-sm" onclick="printBoardSummary(${p.id})">📋 Board Summary</button>
+                    <button class="btn btn-ghost btn-sm" onclick="publishClientPortal(${p.id})" title="Export sanitized savings data for client portal">${p.portalToken ? '🔗 Update Portal' : '🌐 Publish Portal'}</button>
                     <button class="btn btn-em btn-sm" onclick="egfxRefresh(${p.id})">🔄 Refresh</button>
                   </div>
                 </div>

@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "token": "a7f3e9b2-c1d4-4e5a-b6c7-8d9e0f1a2b3c",
+    "projectName": "Sample School District",
+    "publishedAt": "2026-05-22T18:00:00Z",
+    "reportingPeriodLabel": "Jul 2025 – Apr 2026",
+    "contractYears": 3,
+    "currentContractYear": 1,
+    "currency": "USD"
+  },
+  "summary": {
+    "totalSavingsDollars": 7188,
+    "contractProgressPct": 12.2,
+    "totalKwhSaved": 18400,
+    "totalThermsSaved": 312,
+    "co2AvoidedLbs": 12540,
+    "treesEquivalent": 102,
+    "carsRemovedEquivalent": 3
+  },
+  "monthly": [
+    { "month": "2025-07", "label": "Jul 2025", "savingsDollars": 620 },
+    { "month": "2025-08", "label": "Aug 2025", "savingsDollars": 980 },
+    { "month": "2025-09", "label": "Sep 2025", "savingsDollars": 870 },
+    { "month": "2025-10", "label": "Oct 2025", "savingsDollars": 540 },
+    { "month": "2025-11", "label": "Nov 2025", "savingsDollars": 710 },
+    { "month": "2025-12", "label": "Dec 2025", "savingsDollars": 890 },
+    { "month": "2026-01", "label": "Jan 2026", "savingsDollars": 1040 },
+    { "month": "2026-02", "label": "Feb 2026", "savingsDollars": 820 },
+    { "month": "2026-03", "label": "Mar 2026", "savingsDollars": 430 },
+    { "month": "2026-04", "label": "Apr 2026", "savingsDollars": 288 }
+  ],
+  "contact": {
+    "company": "Control Service Company",
+    "name": "Jane Doe",
+    "email": "contact@example.com"
+  }
+}

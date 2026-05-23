@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.22.340';
+  var CH_VERSION = 'v2026.05.22.341';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,21 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.22.341',
+      date: '2026-05-22',
+      title: 'Client portal and Quill CSP fix',
+      features: [
+        {
+          type: 'fix',
+          text: 'CSP fix: added cdn.jsdelivr.net to style-src in energy-department.html so Quill editor stylesheet loads without console errors',
+        },
+        {
+          type: 'new',
+          text: 'Client portal Phase 1: one-click "Publish Portal" button on project detail exports sanitized savings data to a permanent URL clients can bookmark without login',
+        },
+      ],
+    },
     {
       version: 'v2026.05.22.339',
       date: '2026-05-22',
