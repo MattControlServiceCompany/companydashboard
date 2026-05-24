@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.24.347';
+  var CH_VERSION = 'v2026.05.24.348';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,17 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.24.348',
+      date: '2026-05-24',
+      title: 'Fix corrupted Unicode characters',
+      features: [
+        {
+          type: 'fix',
+          text: 'Restored 122 corrupted Unicode characters (U+FFFD) in energy-department.html: em dashes, middle dots, angle quotes, multiplication sign, en dash, and checkmarks.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.24.347',
       date: '2026-05-24',
