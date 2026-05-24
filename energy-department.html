@@ -25,7 +25,10 @@
       content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
     <title>CompanyHub — Energy Department</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='15' fill='%23238636'/><text x='50' y='72' font-size='60' font-weight='bold' text-anchor='middle' fill='white'>C</text></svg>">
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='15' fill='%23238636'/><text x='50' y='72' font-size='60' font-weight='bold' text-anchor='middle' fill='white'>C</text></svg>"
+    />
     <link
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
@@ -7380,7 +7383,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.24.346" />
+    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.24.347" />
     <style>
       /* -- Quill rich text editor � dark theme overrides -- */
       .ql-toolbar.ql-snow {
@@ -13296,6 +13299,114 @@
         </div>
       </div>
 
+      <!-- BUILDING LIST IMPORT MODAL -->
+      <div class="modal-bg" id="bldgImportModal">
+        <div class="modal" style="width: 720px; max-width: 96vw">
+          <div class="modal-hdr">
+            <span class="modal-title">⬆ Import Building List</span>
+            <button class="modal-x" onclick="closeBldgImportModal()">✕</button>
+          </div>
+          <div class="modal-body">
+            <div
+              style="
+                background: var(--s3);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                padding: 12px 14px;
+                margin-bottom: 14px;
+                font-size: 12px;
+                line-height: 1.7;
+              "
+            >
+              <div style="font-weight: 700; margin-bottom: 4px; color: var(--text)">
+                Expected columns (Excel or CSV):
+              </div>
+              <div style="font-family: var(--mono); font-size: 11px; color: var(--em)">
+                Building Name, Building SQFT, Address
+              </div>
+              <div style="margin-top: 6px; color: var(--text2)">
+                Header row required. SQFT column may contain $ or ¢ characters — they will be stripped.
+              </div>
+            </div>
+            <div
+              class="drop-zone"
+              id="bldgImportDrop"
+              style="padding: 20px; margin-bottom: 12px"
+              onclick="document.getElementById('bldgImportInput').click()"
+              ondragover="
+                event.preventDefault();
+                this.classList.add('drag');
+              "
+              ondragleave="this.classList.remove('drag')"
+              ondrop="
+                event.preventDefault();
+                this.classList.remove('drag');
+                if (event.dataTransfer.files[0]) handleBldgImportFile({ files: event.dataTransfer.files });
+              "
+            >
+              <span class="dz-ico" style="font-size: 26px">🏢</span>
+              <div class="dz-title" id="bldgImportDropLabel" style="font-size: 13px">
+                Drop .xlsx or .csv file, or click to browse
+              </div>
+              <div class="dz-sub" style="font-size: 11px">One row per building · Header row required</div>
+              <input
+                type="file"
+                id="bldgImportInput"
+                accept=".xlsx,.xls,.csv"
+                style="display: none"
+                onchange="handleBldgImportFile(this)"
+              />
+            </div>
+            <div id="bldgImportPreviewWrap" style="display: none">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px">
+                <div
+                  style="
+                    font-size: 11px;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    letter-spacing: 0.6px;
+                    color: var(--em);
+                  "
+                >
+                  Preview — <span id="bldgImportCount">0</span> buildings found
+                </div>
+                <label style="font-size: 11px; color: var(--text2); cursor: pointer; user-select: none">
+                  <input
+                    type="checkbox"
+                    id="bldgImportSelectAll"
+                    checked
+                    onchange="bldgImportToggleAll(this.checked)"
+                    style="margin-right: 4px"
+                  />
+                  Select all
+                </label>
+              </div>
+              <div
+                style="
+                  overflow-x: auto;
+                  border: 1px solid var(--border);
+                  border-radius: 7px;
+                  max-height: 280px;
+                  overflow-y: auto;
+                "
+              >
+                <table
+                  class="ud-bill-tbl"
+                  id="bldgImportPreviewTable"
+                  style="min-width: unset; font-size: 12px"
+                ></table>
+              </div>
+            </div>
+          </div>
+          <div class="modal-ftr">
+            <button class="btn btn-ghost" onclick="closeBldgImportModal()">Cancel</button>
+            <button class="btn btn-em" id="bldgImportBtn" style="display: none" onclick="importBuildingList()">
+              Import Selected Buildings
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- TASK MODAL -->
       <div class="modal-bg" id="taskModal" role="presentation" aria-label="Task dialog">
         <div class="modal" role="dialog" aria-modal="true" style="width: 420px">
@@ -14272,42 +14383,42 @@
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
     <!-- CompanyHub computation modules -->
-    <script src="lib/date-helpers.js?v=v2026.05.24.346"></script>
-    <script src="lib/formatting.js?v=v2026.05.24.346"></script>
-    <script src="lib/unit-conversion.js?v=v2026.05.24.346"></script>
-    <script src="lib/csv-parser.js?v=v2026.05.24.346"></script>
-    <script src="computations/rates.js?v=v2026.05.24.346"></script>
-    <script src="computations/regression.js?v=v2026.05.24.346"></script>
-    <script src="computations/normalization.js?v=v2026.05.24.346"></script>
-    <script src="computations/eui.js?v=v2026.05.24.346"></script>
-    <script src="computations/pollution.js?v=v2026.05.24.346"></script>
-    <script src="computations/csc.js?v=v2026.05.24.346"></script>
-    <script src="computations/savings.js?v=v2026.05.24.346"></script>
-    <script src="computations/anomaly-detection.js?v=v2026.05.24.346"></script>
-    <script src="lib/perf-table.js?v=v2026.05.24.346"></script>
-    <script src="lib/shared-charts.js?v=v2026.05.24.346"></script>
-    <script src="computations/report-data.js?v=v2026.05.24.346"></script>
-    <script src="computations/data-quality.js?v=v2026.05.24.346"></script>
-    <script src="extraction/pdf-engine.js?v=v2026.05.24.346"></script>
-    <script src="app/core.js?v=v2026.05.24.346"></script>
-    <script src="app/energy-savings.js?v=v2026.05.24.346"></script>
-    <script src="app/bill-analysis.js?v=v2026.05.24.346"></script>
-    <script src="extraction/bill-validation.js?v=v2026.05.24.346"></script>
-    <script src="app/district-calendar.js?v=v2026.05.24.346"></script>
-    <script src="app/utility-data.js?v=v2026.05.24.346"></script>
-    <script src="app/pipeline-diagram.js?v=v2026.05.24.346"></script>
-    <script src="app/csv-import.js?v=v2026.05.24.346"></script>
-    <script src="app/report-engine.js?v=v2026.05.24.346"></script>
-    <script src="app/report-preview.js?v=v2026.05.24.346"></script>
-    <script src="app/calculators.js?v=v2026.05.24.346"></script>
-    <script src="app/ecm-calculators.js?v=v2026.05.24.346"></script>
-    <script src="app/equipment-matrix.js?v=v2026.05.24.346"></script>
-    <script src="app/graphics-setpoints.js?v=v2026.05.24.346"></script>
-    <script src="app/budget.js?v=v2026.05.24.346"></script>
-    <script src="app/scorecard.js?v=v2026.05.24.346"></script>
-    <script src="app/portal-export.js?v=v2026.05.24.346"></script>
+    <script src="lib/date-helpers.js?v=v2026.05.24.347"></script>
+    <script src="lib/formatting.js?v=v2026.05.24.347"></script>
+    <script src="lib/unit-conversion.js?v=v2026.05.24.347"></script>
+    <script src="lib/csv-parser.js?v=v2026.05.24.347"></script>
+    <script src="computations/rates.js?v=v2026.05.24.347"></script>
+    <script src="computations/regression.js?v=v2026.05.24.347"></script>
+    <script src="computations/normalization.js?v=v2026.05.24.347"></script>
+    <script src="computations/eui.js?v=v2026.05.24.347"></script>
+    <script src="computations/pollution.js?v=v2026.05.24.347"></script>
+    <script src="computations/csc.js?v=v2026.05.24.347"></script>
+    <script src="computations/savings.js?v=v2026.05.24.347"></script>
+    <script src="computations/anomaly-detection.js?v=v2026.05.24.347"></script>
+    <script src="lib/perf-table.js?v=v2026.05.24.347"></script>
+    <script src="lib/shared-charts.js?v=v2026.05.24.347"></script>
+    <script src="computations/report-data.js?v=v2026.05.24.347"></script>
+    <script src="computations/data-quality.js?v=v2026.05.24.347"></script>
+    <script src="extraction/pdf-engine.js?v=v2026.05.24.347"></script>
+    <script src="app/core.js?v=v2026.05.24.347"></script>
+    <script src="app/energy-savings.js?v=v2026.05.24.347"></script>
+    <script src="app/bill-analysis.js?v=v2026.05.24.347"></script>
+    <script src="extraction/bill-validation.js?v=v2026.05.24.347"></script>
+    <script src="app/district-calendar.js?v=v2026.05.24.347"></script>
+    <script src="app/utility-data.js?v=v2026.05.24.347"></script>
+    <script src="app/pipeline-diagram.js?v=v2026.05.24.347"></script>
+    <script src="app/csv-import.js?v=v2026.05.24.347"></script>
+    <script src="app/report-engine.js?v=v2026.05.24.347"></script>
+    <script src="app/report-preview.js?v=v2026.05.24.347"></script>
+    <script src="app/calculators.js?v=v2026.05.24.347"></script>
+    <script src="app/ecm-calculators.js?v=v2026.05.24.347"></script>
+    <script src="app/equipment-matrix.js?v=v2026.05.24.347"></script>
+    <script src="app/graphics-setpoints.js?v=v2026.05.24.347"></script>
+    <script src="app/budget.js?v=v2026.05.24.347"></script>
+    <script src="app/scorecard.js?v=v2026.05.24.347"></script>
+    <script src="app/portal-export.js?v=v2026.05.24.347"></script>
 
-    <script src="app/site-functions.js?v=v2026.05.24.346"></script>
+    <script src="app/site-functions.js?v=v2026.05.24.347"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
@@ -14464,10 +14575,10 @@
       </div>
     </div>
 
-    <script src="app/tooltips-help.js?v=v2026.05.24.346"></script>
-    <script src="feedback-widget.js?v=v2026.05.24.346"></script>
+    <script src="app/tooltips-help.js?v=v2026.05.24.347"></script>
+    <script src="feedback-widget.js?v=v2026.05.24.347"></script>
     <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js" crossorigin="anonymous"></script>
-    <script src="lib/rich-text.js?v=v2026.05.24.346"></script>
+    <script src="lib/rich-text.js?v=v2026.05.24.347"></script>
     <script>
       /* Handle ?openProject=... URL params � opened by _rptV2GoEdit() popup window */
       (function _handleEditRedirect() {

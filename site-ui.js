@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.24.346';
+  var CH_VERSION = 'v2026.05.24.347';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,17 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.24.347',
+      date: '2026-05-24',
+      title: 'Building list import from Excel/CSV',
+      features: [
+        {
+          type: 'feature',
+          text: 'Added Import List button next to Add Building in the project sidebar. Accepts .xlsx or .csv files with Building Name, SQFT, and Address columns. Shows a preview table with checkboxes before importing.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.24.346',
       date: '2026-05-24',

@@ -3854,3 +3854,229 @@ function collectWeatherData(allBldgMeters, reportYMs) {
     totals: { hddBl: totHddBl, hddCur: totHddCur, cddBl: totCddBl, cddCur: totCddCur },
   };
 }
+
+/* ══════════════════════════════════════════
+       BUILDING LIST IMPORT (Excel / CSV)
+   ══════════════════════════════════════════ */
+let _bldgImportRows = []; // parsed preview rows [{name, sqft, addr, zip}]
+
+function openBldgImportModal() {
+  _bldgImportRows = [];
+  document.getElementById('bldgImportDropLabel').textContent = 'Drop .xlsx or .csv file, or click to browse';
+  document.getElementById('bldgImportInput').value = '';
+  document.getElementById('bldgImportPreviewWrap').style.display = 'none';
+  document.getElementById('bldgImportBtn').style.display = 'none';
+  document.getElementById('bldgImportModal').classList.add('open');
+}
+window.openBldgImportModal = openBldgImportModal;
+
+function closeBldgImportModal() {
+  document.getElementById('bldgImportModal').classList.remove('open');
+  _bldgImportRows = [];
+}
+window.closeBldgImportModal = closeBldgImportModal;
+
+function handleBldgImportFile(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  document.getElementById('bldgImportDropLabel').textContent = '⏳ Reading ' + file.name + '…';
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    try {
+      let rows = [];
+      const name = file.name.toLowerCase();
+      if (name.endsWith('.csv') || name.endsWith('.txt')) {
+        // CSV path — split on newlines, skip header
+        const lines = e.target.result
+          .split(/\r?\n/)
+          .map(function (l) {
+            return l.trim();
+          })
+          .filter(function (l) {
+            return l.length > 0;
+          });
+        if (lines.length < 2) {
+          showToast('File appears empty', 'warn');
+          return;
+        }
+        // Skip the header row (index 0)
+        for (var i = 1; i < lines.length; i++) {
+          var cols = splitCsvLine(lines[i]);
+          rows.push([cols[0] || '', cols[1] || '', cols[2] || '']);
+        }
+      } else {
+        // Excel path — use SheetJS
+        if (typeof XLSX === 'undefined') {
+          showToast('Excel library not loaded — try a CSV export instead', 'warn');
+          return;
+        }
+        var data = new Uint8Array(e.target.result);
+        var wb = XLSX.read(data, { type: 'array' });
+        var ws = wb.Sheets[wb.SheetNames[0]];
+        // Convert to 2D array, raw so numbers stay as numbers
+        var arr = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+        if (!arr || arr.length < 2) {
+          showToast('Sheet appears empty', 'warn');
+          return;
+        }
+        // Skip header row
+        for (var j = 1; j < arr.length; j++) {
+          var r = arr[j];
+          // Skip fully blank rows
+          if (!r[0] && !r[1] && !r[2]) continue;
+          rows.push([r[0] || '', r[1] || '', r[2] || '']);
+        }
+      }
+
+      if (!rows.length) {
+        showToast('No data rows found in file', 'warn');
+        return;
+      }
+
+      // Parse into structured objects
+      _bldgImportRows = rows
+        .map(function (r) {
+          var rawName = String(r[0]).trim();
+          var rawSqft = String(r[1]).trim();
+          var rawAddr = String(r[2]).trim();
+          // Strip non-numeric chars from sqft (handles $, ¢, commas)
+          var sqft = parseInt(rawSqft.replace(/[^0-9]/g, ''), 10) || 0;
+          // Extract ZIP from end of address
+          var zipMatch = rawAddr.match(/\d{5}(?:-\d{4})?$/);
+          var zip = zipMatch ? zipMatch[0] : '';
+          return { name: rawName, sqft: sqft, addr: rawAddr, zip: zip, _checked: true };
+        })
+        .filter(function (r) {
+          return r.name.length > 0;
+        });
+
+      if (!_bldgImportRows.length) {
+        showToast('No buildings with names found', 'warn');
+        return;
+      }
+
+      _renderBldgImportPreview(file.name);
+    } catch (err) {
+      showToast('Error reading file: ' + (err.message || err), 'warn');
+      console.error('bldgImport error:', err);
+    }
+  };
+  if (file.name.toLowerCase().endsWith('.csv') || file.name.toLowerCase().endsWith('.txt')) {
+    reader.readAsText(file);
+  } else {
+    reader.readAsArrayBuffer(file);
+  }
+}
+window.handleBldgImportFile = handleBldgImportFile;
+
+function _renderBldgImportPreview(fname) {
+  document.getElementById('bldgImportDropLabel').textContent = '✓ ' + fname + ' — click to change';
+  document.getElementById('bldgImportCount').textContent = _bldgImportRows.length;
+
+  var thead =
+    '<tr>' +
+    '<th style="width:32px"><input type="checkbox" id="bldgImportSelectAll" checked onchange="bldgImportToggleAll(this.checked)"></th>' +
+    '<th>Building Name</th>' +
+    '<th>SQFT</th>' +
+    '<th>Address</th>' +
+    '<th>ZIP</th>' +
+    '</tr>';
+
+  var tbody = _bldgImportRows
+    .map(function (r, i) {
+      return (
+        '<tr>' +
+        '<td><input type="checkbox" data-bldg-idx="' +
+        i +
+        '" checked onchange="bldgImportRowCheck(' +
+        i +
+        ',this.checked)"></td>' +
+        '<td>' +
+        _escHtml(r.name) +
+        '</td>' +
+        '<td style="text-align:right">' +
+        (r.sqft ? r.sqft.toLocaleString() : '—') +
+        '</td>' +
+        '<td>' +
+        _escHtml(r.addr) +
+        '</td>' +
+        '<td>' +
+        _escHtml(r.zip) +
+        '</td>' +
+        '</tr>'
+      );
+    })
+    .join('');
+
+  document.getElementById('bldgImportPreviewTable').innerHTML =
+    '<thead>' + thead + '</thead><tbody>' + tbody + '</tbody>';
+  document.getElementById('bldgImportPreviewWrap').style.display = '';
+  document.getElementById('bldgImportBtn').style.display = '';
+}
+
+function bldgImportToggleAll(checked) {
+  _bldgImportRows.forEach(function (r) {
+    r._checked = checked;
+  });
+  document.querySelectorAll('[data-bldg-idx]').forEach(function (cb) {
+    cb.checked = checked;
+  });
+}
+window.bldgImportToggleAll = bldgImportToggleAll;
+
+function bldgImportRowCheck(idx, checked) {
+  if (_bldgImportRows[idx]) _bldgImportRows[idx]._checked = checked;
+  // Sync select-all checkbox
+  var allChecked = _bldgImportRows.every(function (r) {
+    return r._checked;
+  });
+  var anyChecked = _bldgImportRows.some(function (r) {
+    return r._checked;
+  });
+  var sa = document.getElementById('bldgImportSelectAll');
+  if (sa) {
+    sa.checked = allChecked;
+    sa.indeterminate = !allChecked && anyChecked;
+  }
+}
+window.bldgImportRowCheck = bldgImportRowCheck;
+
+function importBuildingList() {
+  var proj = getUDProj(udSelProjId);
+  if (!proj) {
+    showToast('No project selected', 'warn');
+    return;
+  }
+  var selected = _bldgImportRows.filter(function (r) {
+    return r._checked && r.name;
+  });
+  if (!selected.length) {
+    showToast('No buildings selected', 'warn');
+    return;
+  }
+
+  var now = Date.now();
+  selected.forEach(function (r, i) {
+    proj.buildings = proj.buildings || [];
+    proj.buildings.push({
+      id: 'b' + (now + i),
+      name: r.name,
+      addr: r.addr,
+      sqft: r.sqft || 0,
+      zip: r.zip || '',
+      addrAliases: [],
+      meters: [],
+    });
+  });
+
+  saveUtilityData();
+  renderUDProjList();
+  if (typeof renderUDDetail === 'function') renderUDDetail();
+  showToast('Imported ' + selected.length + ' building' + (selected.length !== 1 ? 's' : '') + ' ✓');
+  closeBldgImportModal();
+}
+window.importBuildingList = importBuildingList;
+
+function _escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}

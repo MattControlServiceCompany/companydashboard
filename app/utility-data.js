@@ -624,8 +624,9 @@ function renderUDProjList() {
                   </div>
                 </div>`;
         });
-        html += `<div style="padding:5px 14px 8px 30px">
-                <button class="btn btn-ghost btn-sm" style="font-size:11px;width:100%" onclick="openBldgModal(null)">+ Add Building</button>
+        html += `<div style="padding:5px 14px 8px 30px;display:flex;gap:6px">
+                <button class="btn btn-ghost btn-sm" style="font-size:11px;flex:1" onclick="openBldgModal(null)">+ Add Building</button>
+                <button class="btn btn-ghost btn-sm" style="font-size:11px;flex:1" onclick="openBldgImportModal()">⬆ Import List</button>
               </div>`;
       }
     }
