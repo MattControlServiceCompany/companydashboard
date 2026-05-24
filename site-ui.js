@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.22.344';
+  var CH_VERSION = 'v2026.05.22.345';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,17 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.22.345',
+      date: '2026-05-23',
+      title: 'Restore all emoji icons clobbered by batch 3 deployer',
+      features: [
+        {
+          type: 'fix',
+          text: 'Restored 134+ emoji characters in energy-department.html and app/report-engine.js that were replaced with literal ?? by a prior deployer agent — sidebar icons, nav tabs, buttons, and labels now display correctly',
+        },
+      ],
+    },
     {
       version: 'v2026.05.22.343',
       date: '2026-05-22',

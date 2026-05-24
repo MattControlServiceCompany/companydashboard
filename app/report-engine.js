@@ -4063,7 +4063,7 @@ function rptPageBuildingSummary(n, d, b) {
       '<div style="font-size:10px;color:var(--rpt-page-text)">kWh Saved</div>' +
       '</div>' +
       '<div style="flex:1;min-width:60px;text-align:center;background:transparent;border-radius:2px;padding:5px 4px">' +
-      '<div style="font-size:16px;margin-bottom:1px">??</div>' +
+      '<div style="font-size:16px;margin-bottom:1px">📉</div>' +
       '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(kwReduced) +
       '">' +
@@ -4076,7 +4076,7 @@ function rptPageBuildingSummary(n, d, b) {
     var thermsSaved = b.gas.thermsSaved || 0;
     iconItems +=
       '<div style="flex:1;min-width:60px;text-align:center;background:transparent;border-radius:2px;padding:5px 4px">' +
-      '<div style="font-size:16px;margin-bottom:1px">??</div>' +
+      '<div style="font-size:16px;margin-bottom:1px">🔥</div>' +
       '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(thermsSaved) +
       '">' +
@@ -6722,7 +6722,7 @@ async function exportReportToPDF() {
     // Restore button state
     if (exportBtn) {
       exportBtn.disabled = false;
-      exportBtn.textContent = originalBtnText || '?? Export to PDF';
+      exportBtn.textContent = originalBtnText || '📄 Export to PDF';
     }
   }
 }
@@ -7072,7 +7072,7 @@ function openReportModalV2(projId) {
     // Show the modal with an empty-state message instead of silently returning
     document.getElementById('reportGenModalBody').innerHTML =
       '<div style="text-align:center;padding:32px 16px">' +
-      '<div style="font-size:36px;margin-bottom:12px">??</div>' +
+      '<div style="font-size:36px;margin-bottom:12px">🏢</div>' +
       '<div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:8px">No Buildings With Utility Data</div>' +
       '<div style="font-size:13px;color:var(--text2);line-height:1.5;max-width:360px;margin:0 auto">' +
       'To generate a report, first add buildings and enter utility bill data on the <strong>Utility Data</strong> tab, then set a baseline.' +
@@ -9473,7 +9473,7 @@ function startEditContact(idx) {
   const lbl = document.getElementById('cc-add-label');
   if (lbl) lbl.textContent = 'Editing: ' + (ct.first || '') + ' ' + (ct.last || '');
   const saveBtn = document.getElementById('cc-save-btn');
-  if (saveBtn) saveBtn.textContent = '?? Save Changes';
+  if (saveBtn) saveBtn.textContent = '💾 Save Changes';
   const cancelBtn = document.getElementById('cc-cancel-edit-btn');
   if (cancelBtn) cancelBtn.style.display = '';
   // Scroll add-row into view
@@ -9524,8 +9524,7 @@ function renderModalContacts() {
             <button class="btn btn-ghost btn-sm" onclick="startEditContact(${i})" title="Edit contact" style="padding:2px 8px;font-size:10px">✏️</button>
             <div class="cc-field" style="font-size:11px">${ct.phone || '<span style="color:var(--text3)">—</span>'}</div>
             <div class="cc-field" style="font-size:11px;word-break:break-all">${ct.email || '<span style="color:var(--text3)">—</span>'}</div>
-            <button class="btn btn-ghost btn-sm" onclick="startEditContact(${i})" title="Edit contact" style="padding:2px 8px;font-size:10px">??</button>
-            <button class="btn-del" onclick="removeContact(${i})" title="Remove">?</button>
+            <button class="btn-del" onclick="removeContact(${i})" title="Remove">✕</button>
           </div>`;
     })
     .join('');
@@ -9562,20 +9561,7 @@ function buildContactsDetailHTML(contacts, projId) {
     'IT Director': '🖥️',
     'Executive Director': '🏛️',
     Superintendent: '🎓',
-    Owner: '??',
-    'Facilities Director': '??',
-    'Facilities Manager': '??',
-    'Energy Manager': '?',
-    'Project Manager': '??',
-    Engineer: '??',
-    'Maintenance Supervisor': '???',
-    'Operations Manager': '??',
-    'Procurement Officer': '??',
-    'Financial Officer': '??',
-    'IT Director': '???',
-    'Executive Director': '???',
-    Superintendent: '??',
-    Other: '??',
+    Other: '👤',
   };
   if (!contacts || !contacts.length) {
     return `<div class="cc-empty">No contacts yet —
@@ -9587,14 +9573,14 @@ function buildContactsDetailHTML(contacts, projId) {
       .map(
         (ct) => `
           <div class="cc-card">
-            <div class="cc-card-av">${icons[ct.title] || '??'}</div>
+            <div class="cc-card-av">${icons[ct.title] || '👤'}</div>
             <div class="cc-card-info" style="flex:1">
               <div class="cc-card-name">${(ct.first || '') + ' ' + (ct.last || '')}</div>
               ${ct.title ? `<div class="cc-card-title">${ct.title}</div>` : ''}
               <div class="cc-card-meta">
                 ${ct.phone ? `<span>📞 ${ct.phone}</span>` : ''}
-                ${ct.phone ? `<span>?? ${ct.phone}</span>` : ''}
-                ${ct.email ? `<span>?? <a href="mailto:${ct.email}">${ct.email}</a></span>` : ''}
+
+                ${ct.email ? `<span>📧 <a href="mailto:${ct.email}">${ct.email}</a></span>` : ''}
               </div>
             </div>
           </div>`,
@@ -9680,7 +9666,7 @@ function saveNotifs() {
   } catch (e) {}
 }
 function addNotif(title, detail, icon) {
-  notifications.unshift({ id: Date.now(), title, detail, icon: icon || '??', time: new Date().toISOString() });
+  notifications.unshift({ id: Date.now(), title, detail, icon: icon || '🔔', time: new Date().toISOString() });
   saveNotifs();
   refreshNotifUI();
 }
@@ -9721,7 +9707,7 @@ function renderNotifList() {
     .map((n) => {
       const ago = getTimeAgo(new Date(n.time));
       return `<div style="display:flex;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border);align-items:flex-start">
-            <span style="font-size:16px;flex-shrink:0;margin-top:1px">${n.icon || '??'}</span>
+            <span style="font-size:16px;flex-shrink:0;margin-top:1px">${n.icon || '🔔'}</span>
             <div style="flex:1;min-width:0">
               <div style="font-size:13px;font-weight:600;margin-bottom:2px">${n.title}</div>
               <div style="font-size:12px;color:var(--text2);line-height:1.5">${n.detail}</div>
@@ -9762,7 +9748,7 @@ window.addEventListener('DOMContentLoaded', function () {
         id: 1,
         title: 'Baseline Report Due',
         detail: 'Advent Health baseline report is due in 2 days. Review M&V data before submitting.',
-        icon: '??',
+        icon: '📋',
         time: new Date(Date.now() - 3600000).toISOString(),
       },
       {
@@ -9770,7 +9756,7 @@ window.addEventListener('DOMContentLoaded', function () {
         title: 'High Priority Task',
         detail: 'Upload utility bills Q1 — ISD is marked high priority and due this week.',
         detail: 'Upload utility bills Q1 — ISD is marked high priority and due this week.',
-        icon: '??',
+        icon: '⚡',
         time: new Date(Date.now() - 7200000).toISOString(),
       },
     ];
