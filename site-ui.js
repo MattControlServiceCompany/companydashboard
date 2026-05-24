@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.22.345';
+  var CH_VERSION = 'v2026.05.24.346';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,17 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.24.346',
+      date: '2026-05-24',
+      title: 'Fix corrupted title tag and add inline SVG favicon',
+      features: [
+        {
+          type: 'fix',
+          text: 'Fixed corrupted title tag in energy-department.html (? → em dash) and added inline SVG favicon to all 4 HTML pages so the browser tab shows the CompanyHub icon',
+        },
+      ],
+    },
     {
       version: 'v2026.05.22.345',
       date: '2026-05-23',
