@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.24.348';
+  var CH_VERSION = 'v2026.05.24.349';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,21 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.24.349',
+      date: '2026-05-24',
+      title: 'Fix saveProject recursion bug and remaining corrupted characters',
+      features: [
+        {
+          type: 'fix',
+          text: 'Fixed infinite recursion in saveProject/closeProjModal — removed auto-save block from closeProjModal that caused mutual recursion and duplicate project entries on new project creation.',
+        },
+        {
+          type: 'fix',
+          text: 'Fixed 22 remaining corrupted ? characters in energy-department.html: modal close buttons (✕), sidebar collapse tab (◀), and export/apply button symbols.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.24.348',
       date: '2026-05-24',

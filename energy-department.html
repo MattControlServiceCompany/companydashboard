@@ -7383,7 +7383,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.24.348" />
+    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.24.349" />
     <style>
       /* -- Quill rich text editor — dark theme overrides -- */
       .ql-toolbar.ql-snow {
@@ -7842,7 +7842,7 @@
               </div>
               <!-- Right detail: project header + building header + meters -->
               <div class="ud-detail-col">
-                <div class="ud-collapse-tab" onclick="toggleUdNav('udLayout')" title="Toggle buildings panel">?</div>
+                <div class="ud-collapse-tab" onclick="toggleUdNav('udLayout')" title="Toggle buildings panel">◀</div>
                 <!-- Project-level panels bar (shown when project selected, above building header) -->
                 <div
                   id="udProjPanelBar"
@@ -10656,9 +10656,9 @@
                         this.style.color = 'var(--text2)';
                       "
                     >
-                      ? Export CSV
+                      ⬇ Export CSV
                     </button>
-                    <button class="ems-modal-x" onclick="emsCloseRawTable()">?</button>
+                    <button class="ems-modal-x" onclick="emsCloseRawTable()">✕</button>
                   </div>
                 </div>
                 <!-- Table -->
@@ -11004,7 +11004,7 @@
                   <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;align-items:center;flex-shrink:0">
                     <span style="font-size:11px;color:var(--text2);flex:1">Your data is untouched until you confirm. You can dismiss and check individual leads first.</span>
                     <button onclick="document.getElementById('emsMigrateModal').remove()" style="font-family:var(--font);font-size:12px;font-weight:600;padding:8px 16px;border-radius:7px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer">Dismiss for Now</button>
-                    <button onclick="emsApplyMigration()" style="font-family:var(--font);font-size:12px;font-weight:600;padding:8px 18px;border-radius:7px;border:none;background:var(--em);color:#05080f;cursor:pointer">? Apply Migration</button>
+                    <button onclick="emsApplyMigration()" style="font-family:var(--font);font-size:12px;font-weight:600;padding:8px 18px;border-radius:7px;border:none;background:var(--em);color:#05080f;cursor:pointer">✓ Apply Migration</button>
                   </div>
                 </div>`;
                 document.body.appendChild(modal);
@@ -12716,7 +12716,7 @@
         <div class="modal" role="dialog" aria-modal="true">
           <div class="modal-hdr">
             <span class="modal-title" id="projModalTitle">+ New Energy Project</span
-            ><button class="modal-x" onclick="closeProjModal()">?</button>
+            ><button class="modal-x" onclick="closeProjModal()">✕</button>
           </div>
           <div class="modal-body">
             <div class="modal-sect">Project Info</div>
@@ -12931,7 +12931,7 @@
         <div class="modal" role="dialog" aria-modal="true" style="width: 480px">
           <div class="modal-hdr">
             <span class="modal-title" id="bldgModalTitle">+ Add Building</span
-            ><button class="modal-x" onclick="closeBldgModal()">?</button>
+            ><button class="modal-x" onclick="closeBldgModal()">✕</button>
           </div>
           <div class="modal-body">
             <div class="fg">
@@ -12981,7 +12981,7 @@
         <div class="modal" role="dialog" aria-modal="true" style="width: 520px">
           <div class="modal-hdr">
             <span class="modal-title" id="meterModalTitle">+ Add Meter</span
-            ><button class="modal-x" onclick="closeMeterModal()">?</button>
+            ><button class="modal-x" onclick="closeMeterModal()">✕</button>
           </div>
           <div class="modal-body">
             <div class="fg">
@@ -13083,7 +13083,7 @@
         <div class="modal" role="dialog" aria-modal="true" style="width: 560px">
           <div class="modal-hdr">
             <span class="modal-title" id="billModalTitle">+ Add Billing Period</span
-            ><button class="modal-x" onclick="closeBillModal()">?</button>
+            ><button class="modal-x" onclick="closeBillModal()">✕</button>
           </div>
           <div class="modal-body" id="billModalBody"></div>
           <div class="modal-ftr">
@@ -13098,7 +13098,7 @@
         <div class="modal" style="width: 800px; max-width: 96vw; max-height: 90vh">
           <div class="modal-hdr">
             <span class="modal-title">📋 Utility Data History</span
-            ><button class="modal-x" onclick="closeAuditLogModal()">?</button>
+            ><button class="modal-x" onclick="closeAuditLogModal()">✕</button>
           </div>
           <div class="modal-body" id="auditLogBody" style="overflow-y: auto; max-height: 65vh"></div>
           <div class="modal-ftr">
@@ -13113,7 +13113,7 @@
         <div class="modal" style="width: 520px; max-width: 96vw">
           <div class="modal-hdr">
             <span class="modal-title">🌡️ Import Weather Data — CSV</span>
-            <button class="modal-x" onclick="closeWddModal()">?</button>
+            <button class="modal-x" onclick="closeWddModal()">✕</button>
           </div>
           <div class="modal-body">
             <div
@@ -13205,7 +13205,7 @@
         <div class="modal" style="width: 700px; max-width: 96vw">
           <div class="modal-hdr">
             <span class="modal-title" id="billCsvModalTitle">📥 Import Bill Periods — CSV</span>
-            <button class="modal-x" onclick="closeBillCsvModal()">?</button>
+            <button class="modal-x" onclick="closeBillCsvModal()">✕</button>
           </div>
           <div class="modal-body">
             <div
@@ -13412,7 +13412,7 @@
         <div class="modal" role="dialog" aria-modal="true" style="width: 420px">
           <div class="modal-hdr">
             <span class="modal-title" id="taskModalTitle">+ Add Task</span
-            ><button class="modal-x" onclick="closeTaskModal()">?</button>
+            ><button class="modal-x" onclick="closeTaskModal()">✕</button>
           </div>
           <div class="modal-body">
             <div class="fg">
@@ -13450,7 +13450,7 @@
         <div class="modal" role="dialog" aria-modal="true" style="width: 480px">
           <div class="modal-hdr">
             <span class="modal-title">+ Add Equipment</span
-            ><button class="modal-x" onclick="closeEquipModal()">?</button>
+            ><button class="modal-x" onclick="closeEquipModal()">✕</button>
           </div>
           <div class="modal-body">
             <div class="f2">
@@ -13578,7 +13578,7 @@
             >
               🗑 Delete All
             </button>
-            <button class="modal-x" onclick="closeSavedBillsModal()">?</button>
+            <button class="modal-x" onclick="closeSavedBillsModal()">✕</button>
           </div>
           <div class="modal-body" style="padding: 0">
             <div id="savedBillsList" style="padding: 16px; max-height: 65vh; overflow-y: auto"></div>
@@ -13723,7 +13723,7 @@
         <div class="modal" style="width: 480px">
           <div class="modal-hdr">
             <span class="modal-title">Assign Bill to Project / Building</span
-            ><button class="modal-x" onclick="closeAssignModal()">?</button>
+            ><button class="modal-x" onclick="closeAssignModal()">✕</button>
           </div>
           <div class="modal-body">
             <div class="fg">
@@ -13769,7 +13769,7 @@
         <div class="modal" style="width: 520px">
           <div class="modal-hdr">
             <span class="modal-title">Manual Assign — PDF Page to Billing Period</span>
-            <button class="modal-x" onclick="closeManualAssignModal()">?</button>
+            <button class="modal-x" onclick="closeManualAssignModal()">✕</button>
           </div>
           <div class="modal-body">
             <div style="font-size: 12px; color: var(--text2); margin-bottom: 12px; line-height: 1.5">
@@ -13858,7 +13858,7 @@
         <div class="modal" style="width: min(1200px, 92vw); max-height: 92vh; display: flex; flex-direction: column">
           <div class="modal-hdr">
             <span class="modal-title" id="meetingModalTitle">New Meeting Agenda</span>
-            <button class="modal-x" onclick="closeMeetingModal()">?</button>
+            <button class="modal-x" onclick="closeMeetingModal()">✕</button>
           </div>
           <div style="display: flex; flex: 1; min-height: 0; overflow: hidden">
             <div
@@ -13911,7 +13911,7 @@
         <div class="modal" style="width: 560px">
           <div class="modal-hdr">
             <span class="modal-title">Recurring Meeting Schedule</span>
-            <button class="modal-x" onclick="closeRecurringModal()">?</button>
+            <button class="modal-x" onclick="closeRecurringModal()">✕</button>
           </div>
           <div class="modal-body" id="recurringModalBody"></div>
           <div class="modal-ftr">
@@ -13931,7 +13931,7 @@
           <div class="modal-hdr">
             <span class="modal-title">Meeting History</span>
             <button class="modal-x" onclick="document.getElementById('mtgHistoryModal').classList.remove('open')">
-              ?
+              ✕
             </button>
           </div>
           <div class="modal-body" id="mtgHistoryBody" style="max-height: 60vh; overflow-y: auto"></div>
@@ -13948,7 +13948,7 @@
           <div class="modal-hdr">
             <span class="modal-title">Meeting Template Settings</span>
             <button class="modal-x" onclick="document.getElementById('mtgTemplateModal').classList.remove('open')">
-              ?
+              ✕
             </button>
           </div>
           <div class="modal-body" id="mtgTemplateBody"></div>
@@ -14010,7 +14010,7 @@
           <div class="modal-hdr">
             <span class="modal-title">Generate Report</span>
             <button class="modal-x" onclick="document.getElementById('reportBldgModal').classList.remove('open')">
-              ?
+              ✕
             </button>
           </div>
           <div class="modal-body">
@@ -14217,7 +14217,7 @@
         <div class="modal-hdr">
           <span class="modal-title">Generate Report</span>
           <button class="modal-x" onclick="document.getElementById('reportGenModal').classList.remove('open')">
-            ?
+            ✕
           </button>
         </div>
         <div class="modal-body" id="reportGenModalBody">
@@ -14383,42 +14383,42 @@
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
     <!-- CompanyHub computation modules -->
-    <script src="lib/date-helpers.js?v=v2026.05.24.348"></script>
-    <script src="lib/formatting.js?v=v2026.05.24.348"></script>
-    <script src="lib/unit-conversion.js?v=v2026.05.24.348"></script>
-    <script src="lib/csv-parser.js?v=v2026.05.24.348"></script>
-    <script src="computations/rates.js?v=v2026.05.24.348"></script>
-    <script src="computations/regression.js?v=v2026.05.24.348"></script>
-    <script src="computations/normalization.js?v=v2026.05.24.348"></script>
-    <script src="computations/eui.js?v=v2026.05.24.348"></script>
-    <script src="computations/pollution.js?v=v2026.05.24.348"></script>
-    <script src="computations/csc.js?v=v2026.05.24.348"></script>
-    <script src="computations/savings.js?v=v2026.05.24.348"></script>
-    <script src="computations/anomaly-detection.js?v=v2026.05.24.348"></script>
-    <script src="lib/perf-table.js?v=v2026.05.24.348"></script>
-    <script src="lib/shared-charts.js?v=v2026.05.24.348"></script>
-    <script src="computations/report-data.js?v=v2026.05.24.348"></script>
-    <script src="computations/data-quality.js?v=v2026.05.24.348"></script>
-    <script src="extraction/pdf-engine.js?v=v2026.05.24.348"></script>
-    <script src="app/core.js?v=v2026.05.24.348"></script>
-    <script src="app/energy-savings.js?v=v2026.05.24.348"></script>
-    <script src="app/bill-analysis.js?v=v2026.05.24.348"></script>
-    <script src="extraction/bill-validation.js?v=v2026.05.24.348"></script>
-    <script src="app/district-calendar.js?v=v2026.05.24.348"></script>
-    <script src="app/utility-data.js?v=v2026.05.24.348"></script>
-    <script src="app/pipeline-diagram.js?v=v2026.05.24.348"></script>
-    <script src="app/csv-import.js?v=v2026.05.24.348"></script>
-    <script src="app/report-engine.js?v=v2026.05.24.348"></script>
-    <script src="app/report-preview.js?v=v2026.05.24.348"></script>
-    <script src="app/calculators.js?v=v2026.05.24.348"></script>
-    <script src="app/ecm-calculators.js?v=v2026.05.24.348"></script>
-    <script src="app/equipment-matrix.js?v=v2026.05.24.348"></script>
-    <script src="app/graphics-setpoints.js?v=v2026.05.24.348"></script>
-    <script src="app/budget.js?v=v2026.05.24.348"></script>
-    <script src="app/scorecard.js?v=v2026.05.24.348"></script>
-    <script src="app/portal-export.js?v=v2026.05.24.348"></script>
+    <script src="lib/date-helpers.js?v=v2026.05.24.349"></script>
+    <script src="lib/formatting.js?v=v2026.05.24.349"></script>
+    <script src="lib/unit-conversion.js?v=v2026.05.24.349"></script>
+    <script src="lib/csv-parser.js?v=v2026.05.24.349"></script>
+    <script src="computations/rates.js?v=v2026.05.24.349"></script>
+    <script src="computations/regression.js?v=v2026.05.24.349"></script>
+    <script src="computations/normalization.js?v=v2026.05.24.349"></script>
+    <script src="computations/eui.js?v=v2026.05.24.349"></script>
+    <script src="computations/pollution.js?v=v2026.05.24.349"></script>
+    <script src="computations/csc.js?v=v2026.05.24.349"></script>
+    <script src="computations/savings.js?v=v2026.05.24.349"></script>
+    <script src="computations/anomaly-detection.js?v=v2026.05.24.349"></script>
+    <script src="lib/perf-table.js?v=v2026.05.24.349"></script>
+    <script src="lib/shared-charts.js?v=v2026.05.24.349"></script>
+    <script src="computations/report-data.js?v=v2026.05.24.349"></script>
+    <script src="computations/data-quality.js?v=v2026.05.24.349"></script>
+    <script src="extraction/pdf-engine.js?v=v2026.05.24.349"></script>
+    <script src="app/core.js?v=v2026.05.24.349"></script>
+    <script src="app/energy-savings.js?v=v2026.05.24.349"></script>
+    <script src="app/bill-analysis.js?v=v2026.05.24.349"></script>
+    <script src="extraction/bill-validation.js?v=v2026.05.24.349"></script>
+    <script src="app/district-calendar.js?v=v2026.05.24.349"></script>
+    <script src="app/utility-data.js?v=v2026.05.24.349"></script>
+    <script src="app/pipeline-diagram.js?v=v2026.05.24.349"></script>
+    <script src="app/csv-import.js?v=v2026.05.24.349"></script>
+    <script src="app/report-engine.js?v=v2026.05.24.349"></script>
+    <script src="app/report-preview.js?v=v2026.05.24.349"></script>
+    <script src="app/calculators.js?v=v2026.05.24.349"></script>
+    <script src="app/ecm-calculators.js?v=v2026.05.24.349"></script>
+    <script src="app/equipment-matrix.js?v=v2026.05.24.349"></script>
+    <script src="app/graphics-setpoints.js?v=v2026.05.24.349"></script>
+    <script src="app/budget.js?v=v2026.05.24.349"></script>
+    <script src="app/scorecard.js?v=v2026.05.24.349"></script>
+    <script src="app/portal-export.js?v=v2026.05.24.349"></script>
 
-    <script src="app/site-functions.js?v=v2026.05.24.348"></script>
+    <script src="app/site-functions.js?v=v2026.05.24.349"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
@@ -14575,10 +14575,10 @@
       </div>
     </div>
 
-    <script src="app/tooltips-help.js?v=v2026.05.24.348"></script>
-    <script src="feedback-widget.js?v=v2026.05.24.348"></script>
+    <script src="app/tooltips-help.js?v=v2026.05.24.349"></script>
+    <script src="feedback-widget.js?v=v2026.05.24.349"></script>
     <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js" crossorigin="anonymous"></script>
-    <script src="lib/rich-text.js?v=v2026.05.24.348"></script>
+    <script src="lib/rich-text.js?v=v2026.05.24.349"></script>
     <script>
       /* Handle ?openProject=... URL params — opened by _rptV2GoEdit() popup window */
       (function _handleEditRedirect() {

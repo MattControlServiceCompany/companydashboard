@@ -1501,10 +1501,6 @@ function confirmAsync(msg) {
 }
 
 function closeProjModal() {
-  // Auto-save new projects on close if name is filled
-  const editId = document.getElementById('mp-edit-id').value;
-  const name = document.getElementById('mp-name').value.trim();
-  if (!editId && name) saveProject();
   document.getElementById('projModal').classList.remove('open');
 }
 function saveProject() {
