@@ -1560,6 +1560,10 @@ function saveProject() {
     const p = projects.find((p) => p.id == editId);
     if (p && document.getElementById('projDetailView').style.display !== 'none') renderDetail(p);
   } else {
+    if (projects.some((p) => p.name === name && p.id !== editId)) {
+      showToast(name + ' already exists');
+      return;
+    }
     projects.push({ id: Date.now(), ...fields });
     showToast(name + ' created ✓');
   }

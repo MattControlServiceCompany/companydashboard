@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.24.349';
+  var CH_VERSION = 'v2026.05.24.350';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,21 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.24.350',
+      date: '2026-05-24',
+      title: 'Add IndexedDB storage layer with auto-migration from localStorage',
+      features: [
+        {
+          type: 'feature',
+          text: 'Added IndexedDB storage layer (app/db.js) with synchronous cache, auto-migration from localStorage on first load, and localStorage fallback if IDB is unavailable.',
+        },
+        {
+          type: 'fix',
+          text: 'Added dedup guards in init() and saveProject() to prevent and clean up duplicate project entries caused by the prior recursion bug.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.24.349',
       date: '2026-05-24',

@@ -6,34 +6,12 @@ async function claudePDF(prompt, b64, sys) {
   return 'AI features are not available — this app has no backend API connection.';
 }
 
-/* ── STORAGE — delegates to window.Store so dataUpdated events fire ── */
-function sset(k, v) {
-  if (window.Store) {
-    window.Store.set(k, v);
-    return;
-  }
-  try {
-    localStorage.setItem(k, JSON.stringify(v));
-  } catch (e) {
-    console.warn('sset failed:', e);
-  }
-}
+/* ── STORAGE — backed by IndexedDB via DB wrapper (app/db.js) ── */
 function sget(k, fb) {
-  if (window.Store) {
-    try {
-      const r = localStorage.getItem(k);
-      const d = r !== null ? JSON.parse(r) : null;
-      return d !== null ? d : fb !== undefined ? fb : [];
-    } catch (e) {
-      return fb !== undefined ? fb : [];
-    }
-  }
-  try {
-    const r = localStorage.getItem(k);
-    return r !== null ? JSON.parse(r) : fb;
-  } catch (e) {
-    return fb;
-  }
+  return DB.get(k, fb);
+}
+function sset(k, v) {
+  DB.set(k, v);
 }
 
 /* ── IndexedDB helpers for large PDF file storage ── */
@@ -126,6 +104,17 @@ const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 /* ── INIT ── */
 function init() {
   projects = sget('en_projects', []);
+  // Dedup guard: remove duplicate project entries (same id)
+  const _seen = new Set();
+  const _deduped = projects.filter((p) => {
+    if (_seen.has(p.id)) return false;
+    _seen.add(p.id);
+    return true;
+  });
+  if (_deduped.length < projects.length) {
+    projects = _deduped;
+    sset('en_projects', projects);
+  }
   tasks = sget('en_tasks', []);
   equipment = sget('en_equipment', []);
   const _dcSaved = sget('en_dc_events', null);
