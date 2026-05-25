@@ -4785,8 +4785,12 @@ const UTILITY_RULES = [
       let splitRe;
       if (isKGS) {
         splitRe = /(?=Statement\s+Date\s+\d{2}-\d{2}-\d{2})/i;
-        // If Statement Date pattern not found, fall back to splitting on %%PAGE_ markers
-        if (!splitRe.test(t)) {
+        // Fall back to %%PAGE_ markers if Statement Date split finds fewer than 80% of pages.
+        // OCR garbles "Statement Date" on roughly half of pages in some KGS PDFs — when that
+        // happens the Statement Date split bundles multiple billing periods into one section.
+        const _stmtCount = t.split(splitRe).length - 1;
+        const _pageCount = t.split(/(?=%%PAGE_\d+%%)/).length - 1;
+        if (_stmtCount === 0 || (_pageCount > 2 && _stmtCount < _pageCount * 0.8)) {
           splitRe = /(?=%%PAGE_\d+%%)/;
         }
       } else {
@@ -4862,19 +4866,20 @@ const UTILITY_RULES = [
           t.match(/(?:service|delivery|billing)\s*address[\s:\n]+([^\n]{10,60})/i)?.[1]?.trim() ||
           null,
         // KGS meter row: "[MeterNum]   01-19-26   02-17-26   29   305   316..."
-        // dates are MM-DD-YY; days are the 4th token on the row
+        // dates are MM-DD-YY; days are the 4th token on the row.
+        // OCR sometimes renders the separator between dates as "~~" (tildes) — allow for it.
         BillingPeriodStart: (() => {
-          const meterRow = t.match(/([A-Z0-9]{6,12})\s+(\d{2}-\d{2}-\d{2})\s+(\d{2}-\d{2}-\d{2})\s+(\d+)/);
+          const meterRow = t.match(/([A-Z0-9]{6,12})\s+(\d{2}-\d{2}-\d{2})\s*(?:~~\s*)?(\d{2}-\d{2}-\d{2})\s+(\d+)/);
           if (meterRow) return meterRow[2];
           return t.match(/(?:from|service\s*(?:from|period))[\s:]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)?.[1] || null;
         })(),
         BillingPeriodEnd: (() => {
-          const meterRow = t.match(/([A-Z0-9]{6,12})\s+(\d{2}-\d{2}-\d{2})\s+(\d{2}-\d{2}-\d{2})\s+(\d+)/);
+          const meterRow = t.match(/([A-Z0-9]{6,12})\s+(\d{2}-\d{2}-\d{2})\s*(?:~~\s*)?(\d{2}-\d{2}-\d{2})\s+(\d+)/);
           if (meterRow) return meterRow[3];
           return t.match(/(?:to|service\s*to|through|thru)[\s:]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)?.[1] || null;
         })(),
         NumberOfDays: (() => {
-          const meterRow = t.match(/([A-Z0-9]{6,12})\s+(\d{2}-\d{2}-\d{2})\s+(\d{2}-\d{2}-\d{2})\s+(\d+)/);
+          const meterRow = t.match(/([A-Z0-9]{6,12})\s+(\d{2}-\d{2}-\d{2})\s*(?:~~\s*)?(\d{2}-\d{2}-\d{2})\s+(\d+)/);
           if (meterRow) return meterRow[4];
           return t.match(/(\d+)\s*(?:day|billing\s*day)/i)?.[1] || null;
         })(),

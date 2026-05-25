@@ -2515,7 +2515,7 @@ function _postExtractionVerify(bills, utilityName, rawText) {
         const prevEnd = sorted[i - 1].BillingPeriodEnd;
         const curStart = sorted[i].BillingPeriodStart;
         const toDate = (d) => {
-          const p = d.split('/');
+          const p = d.split(/[\/\-]/); // accept both "/" and "-" separators (KGS uses MM-DD-YY)
           return new Date(
             (p[2].length === 2 ? '20' + p[2] : p[2]) +
               '-' +
@@ -6688,7 +6688,11 @@ async function processPDF(file) {
             _singleDroppedBills || [],
           );
           statusMsg('Verifying extraction against historical data...');
-          finalBills = _postExtractionVerify(finalBills, rule.name, text);
+          try {
+            finalBills = _postExtractionVerify(finalBills, rule.name, text);
+          } catch (pev_err) {
+            console.warn('[processPDF] _postExtractionVerify failed, continuing without verification:', pev_err);
+          }
 
           // ── MULTI-PASS OCR CONSENSUS: re-extract from alternate passes for mismatched values ──
           const passTexts = window._pdfOcrPasses || {};

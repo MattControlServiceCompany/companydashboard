@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.25.353';
+  var CH_VERSION = 'v2026.05.25.354';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -30,7 +30,7 @@
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
     {
-      version: 'v2026.05.25.353',
+      version: 'v2026.05.25.354',
       date: '2026-05-25',
       title: 'Fix 23 corrupted emoji icons showing as ? throughout EMS Leads and report engine',
       features: [
