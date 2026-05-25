@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.25.351';
+  var CH_VERSION = 'v2026.05.25.352';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,25 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.25.352',
+      date: '2026-05-25',
+      title: 'Fix Kansas Gas Service bill extraction (11 regex issues) and reorder Equipment Matrix tab',
+      features: [
+        {
+          type: 'fix',
+          text: 'Fixed 9 KGS extraction issues: multi-bill splitter, account number, billing period, Mcf→therms conversion, gas charge, meter number, rate schedule, service address, and customer name.',
+        },
+        {
+          type: 'fix',
+          text: 'Fixed 4 toISO() date conversion instances to handle dash-separated dates (MM-DD-YY) used in KGS bills, plus KGS-aware retry bypass to skip unnecessary OCR passes.',
+        },
+        {
+          type: 'fix',
+          text: 'Moved Equipment Matrix tab to appear between Utility Data and HVAC Load Est in the project tab bar.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.25.351',
       date: '2026-05-25',

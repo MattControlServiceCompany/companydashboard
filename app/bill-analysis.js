@@ -3080,7 +3080,8 @@ async function confirmAutoAssign() {
     const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
     function toISO(d) {
       if (!d) return '';
-      const p = d.split('/');
+      let p = d.split('/');
+      if (p.length !== 3) p = d.split('-');
       if (p.length !== 3) return d;
       const yr = p[2].length === 2 ? '20' + p[2] : p[2];
       return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
@@ -6264,8 +6265,17 @@ async function extractPDFText(ab, statusCb) {
           if (pass === 1 && bestScore >= 10) break;
         }
         // Run retry passes if primary results have issues (low score or missing key patterns)
-        const needsRetry =
-          bestScore < 5 || !/service\s+from[:\s]\s*\d/i.test(bestText) || !/\$[\d,]+\.\d{2}/g.test(bestText);
+        // KGS bills never have a "service from" pattern — don't require it for retry decision
+        const isKGSText =
+          /kansas\s+gas\s+service/i.test(bestText) || /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(bestText);
+        const kgsScore = isKGSText
+          ? (/Account\s+Number/i.test(bestText) ? 2 : 0) +
+            (/\$\d+\.\d{2}/.test(bestText) ? 2 : 0) +
+            (/\d{2}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2}/.test(bestText) ? 2 : 0)
+          : 0;
+        const needsRetry = isKGSText
+          ? kgsScore < 4 // KGS: retry only if account+dollar+meter dates all missing
+          : bestScore < 5 || !/service\s+from[:\s]\s*\d/i.test(bestText) || !/\$[\d,]+\.\d{2}/g.test(bestText);
         if (needsRetry) {
           for (let pass = 0; pass < OCR_RETRY_PASSES.length; pass++) {
             if (window._pdfAbort) break; // Bug #134: honour cancel inside retry pass loop
@@ -9452,7 +9462,8 @@ function confirmAssignBill() {
   const totalCost = pf(bill.TotalCurrentCharges);
   function toISO(d) {
     if (!d) return '';
-    const p = d.split('/');
+    let p = d.split('/');
+    if (p.length !== 3) p = d.split('-');
     if (p.length !== 3) return d;
     const yr = p[2].length === 2 ? '20' + p[2] : p[2];
     return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
@@ -9733,7 +9744,8 @@ function confirmManualAssign() {
   const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
   function toISO(d) {
     if (!d) return '';
-    const parts = String(d).split('/');
+    let parts = String(d).split('/');
+    if (parts.length !== 3) parts = String(d).split('-');
     if (parts.length !== 3) return d;
     const yr = parts[2].length === 2 ? '20' + parts[2] : parts[2];
     return yr + '-' + parts[0].padStart(2, '0') + '-' + parts[1].padStart(2, '0');
@@ -9910,7 +9922,8 @@ async function _saveSinglePDFBill(extracted, projId) {
   const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
   function toISO(d) {
     if (!d) return '';
-    const p = d.split('/');
+    let p = d.split('/');
+    if (p.length !== 3) p = d.split('-');
     if (p.length !== 3) return d;
     const yr = p[2].length === 2 ? '20' + p[2] : p[2];
     return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');

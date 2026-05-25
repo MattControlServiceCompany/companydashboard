@@ -4778,13 +4778,26 @@ const UTILITY_RULES = [
       return 'Natural Gas Utility';
     },
     extractAll: function (t) {
-      // Try to split multi-bill gas PDFs on page markers or repeating "Service from" headers.
-      const splitRe = /(?=Service\s+(?:from|period)[\s:]+\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i;
+      // KGS bills: each page = one monthly bill, no "Service from" header.
+      // Split on "Statement Date MM-DD-YY" which appears at the top of each KGS bill page,
+      // OR fall back to page markers if KGS text is present but Statement Date not found.
+      const isKGS = /kansas\s+gas\s+service/i.test(t);
+      let splitRe;
+      if (isKGS) {
+        splitRe = /(?=Statement\s+Date\s+\d{2}-\d{2}-\d{2})/i;
+        // If Statement Date pattern not found, fall back to splitting on %%PAGE_ markers
+        if (!splitRe.test(t)) {
+          splitRe = /(?=%%PAGE_\d+%%)/;
+        }
+      } else {
+        // Non-KGS gas bills: split on "Service from" headers
+        splitRe = /(?=Service\s+(?:from|period)[\s:]+\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i;
+      }
       const raw = t.split(splitRe);
       const sections = [];
       const _unmatchedSections = [];
       for (const s of raw) {
-        if (/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(s)) {
+        if (/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(s) || /\d{2}-\d{2}-\d{2}/.test(s)) {
           sections.push(s);
         } else if (s.trim().length > 50) {
           const pageNums = [...s.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => parseInt(m[1]));
@@ -4808,7 +4821,7 @@ const UTILITY_RULES = [
       const company = this._detectCompany(t);
       // Gas charge line items
       const _gasChargeM = t.match(
-        /(?:gas\s*(?:charge|service|cost|supply)|distribution\s*charge|commodity\s*charge)[\s:$]*(\-?[0-9,]+\.[0-9]{2})/i,
+        /(?:cost\s+of\s+gas|gas\s*(?:charge|service|cost|supply)|distribution\s*charge|commodity\s*charge)[\s:$]*(\-?[0-9,]+\.[0-9]{2})/i,
       );
       const _custChargeM = t.match(
         /(?:customer\s*charge|basic\s*service|service\s*charge|base\s*charge|minimum\s*charge|facility\s*charge)[\s:$]*(\-?[0-9,]+\.[0-9]{2})/i,
@@ -4826,24 +4839,61 @@ const UTILITY_RULES = [
         UtilityCompany: company,
         Commodity: 'Gas',
         CustomerName:
+          // KGS: customer name appears before "DIRECTOR OF FACILITIES", "Account Number", or "PO BOX"
+          t.match(/([A-Z][A-Z &]{2,50})\s*\n\s*(?:DIRECTOR|Account\s+Number|PO\s+BOX)/i)?.[1]?.trim() ||
+          // Generic labeled name
           t
             .match(
               /(?:Customer\s*Name|Account\s*Name|Bill(?:ing)?\s*Name)[:\s\n]+([A-Za-z][A-Za-z0-9 .&'#\-]{2,50}?)(?=\s+(?:Account|Page|Service)|\n)/im,
             )?.[1]
-            ?.trim() || null,
-        AccountNumber: t.match(/account[\s#:]*([0-9\-]{6,20})/i)?.[1] || null,
-        ServiceAddress: t.match(/(?:service|delivery|billing)\s*address[\s:\n]+([^\n]{10,60})/i)?.[1]?.trim() || null,
-        BillingPeriodStart:
-          t.match(/(?:from|service\s*(?:from|period))[\s:]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)?.[1] || null,
-        BillingPeriodEnd:
-          t.match(/(?:to|service\s*to|through|thru)[\s:]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)?.[1] || null,
-        NumberOfDays: t.match(/(\d+)\s*(?:day|billing\s*day)/i)?.[1] || null,
+            ?.trim() ||
+          null,
+        AccountNumber:
+          // KGS format: "Account Number    510000123 2051604 18" — spaces between digit groups
+          t.match(/Account\s+Number[\s:]*([0-9 ]{10,30})/i)?.[1]?.replace(/\s/g, '') ||
+          t.match(/account[\s#:]*([0-9\-]{6,20})/i)?.[1] ||
+          null,
+        ServiceAddress:
+          // KGS: address is the line immediately before the city/state line (e.g. "BALDWIN CITY, KS")
+          t.match(/([A-Z0-9][A-Z0-9 ]{4,49})\s*\n\s*[A-Z][A-Z ]+,\s*KS/)?.[1]?.trim() ||
+          // Street number + street name pattern
+          t.match(/(\d{2,5}\s+[A-Z][A-Z0-9 ]+(?:ST|AVE|DR|BLVD|LN|RD|CT|WAY|PKWY|HWY)\b)/i)?.[1]?.trim() ||
+          // Generic labeled address
+          t.match(/(?:service|delivery|billing)\s*address[\s:\n]+([^\n]{10,60})/i)?.[1]?.trim() ||
+          null,
+        // KGS meter row: "[MeterNum]   01-19-26   02-17-26   29   305   316..."
+        // dates are MM-DD-YY; days are the 4th token on the row
+        BillingPeriodStart: (() => {
+          const meterRow = t.match(/([A-Z0-9]{6,12})\s+(\d{2}-\d{2}-\d{2})\s+(\d{2}-\d{2}-\d{2})\s+(\d+)/);
+          if (meterRow) return meterRow[2];
+          return t.match(/(?:from|service\s*(?:from|period))[\s:]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)?.[1] || null;
+        })(),
+        BillingPeriodEnd: (() => {
+          const meterRow = t.match(/([A-Z0-9]{6,12})\s+(\d{2}-\d{2}-\d{2})\s+(\d{2}-\d{2}-\d{2})\s+(\d+)/);
+          if (meterRow) return meterRow[3];
+          return t.match(/(?:to|service\s*to|through|thru)[\s:]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i)?.[1] || null;
+        })(),
+        NumberOfDays: (() => {
+          const meterRow = t.match(/([A-Z0-9]{6,12})\s+(\d{2}-\d{2}-\d{2})\s+(\d{2}-\d{2}-\d{2})\s+(\d+)/);
+          if (meterRow) return meterRow[4];
+          return t.match(/(\d+)\s*(?:day|billing\s*day)/i)?.[1] || null;
+        })(),
         kWhConsumed: null,
         PeakDemandKW: null,
-        NaturalGasTherms:
-          t.match(/(?:therms?\s*used|total\s*therms?|gas\s*usage)[\s:]*([0-9,]+\.?\d*)/i)?.[1]?.replace(/,/g, '') ||
-          t.match(/([0-9,]+\.?\d*)\s*therms?/i)?.[1]?.replace(/,/g, '') ||
-          null,
+        NaturalGasTherms: (() => {
+          // Standard therms patterns
+          const thermMatch =
+            t.match(/(?:therms?\s*used|total\s*therms?|gas\s*usage)[\s:]*([0-9,]+\.?\d*)/i)?.[1]?.replace(/,/g, '') ||
+            t.match(/([0-9,]+\.?\d*)\s*therms?/i)?.[1]?.replace(/,/g, '') ||
+            null;
+          if (thermMatch) return thermMatch;
+          // KGS uses Mcf (not therms). 1 Mcf = 10 therms.
+          // Patterns: "Current  29  1.100  0.038" (meter row) or "Mcf Billed: 1.100"
+          const mcfMatch =
+            t.match(/Current\s+\d+\s+([\d.]+)\s+[\d.]/)?.[1] || t.match(/Mcf\s+Billed[\s:]*(\d+\.?\d*)/i)?.[1] || null;
+          if (mcfMatch) return String(parseFloat(mcfMatch) * 10);
+          return null;
+        })(),
         NaturalGasCCF: t.match(/([0-9,]+\.?\d*)\s*(?:ccf|hundred\s*cubic\s*feet)/i)?.[1]?.replace(/,/g, '') || null,
         GasCharge: _gasChargeM?.[1]?.replace(/,/g, '') || null,
         CustomerCharge: _custChargeM?.[1]?.replace(/,/g, '') || null,
@@ -4858,8 +4908,16 @@ const UTILITY_RULES = [
             ?.replace(/,/g, '') || null,
         TotalCurrentCharges:
           t.match(/total\s*current\s*charges[\s:$]*(\-?[0-9,]+\.[0-9]{2})/i)?.[1]?.replace(/,/g, '') || null,
-        RateSchedule: t.match(/rate[\s:]*(?:schedule|code)?[\s:]*([A-Z0-9\-]{2,12})/i)?.[1] || null,
-        MeterNumber: t.match(/meter[\s#:]*([A-Z0-9\-]{4,20})/i)?.[1] || null,
+        RateSchedule:
+          // KGS: "Rate Schedule: General Service Sm" — capture full name including Sm/Lg/Med suffix
+          t.match(/Rate[\s:]+(?:Schedule[\s:]+)?([A-Za-z ]+(?:Sm|Lg|Med))\b/i)?.[1]?.trim() ||
+          t.match(/rate[\s:]*(?:schedule|code)?[\s:]*([A-Z0-9\-]{2,12})/i)?.[1] ||
+          null,
+        MeterNumber:
+          // KGS: meter number like "0322A82382" appears before a date pair on the meter row
+          t.match(/\b([A-Z0-9]{8,12})\s+\d{2}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2}/)?.[1] ||
+          t.match(/meter[\s#:]*([A-Z0-9\-]{4,20})/i)?.[1] ||
+          null,
         _utilityName: company,
       };
     },
