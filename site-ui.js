@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.25.354';
+  var CH_VERSION = 'v2026.05.25.355';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,21 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.25.355',
+      date: '2026-05-25',
+      title: 'Fix toDate crash on undefined input that blocks PDF extraction',
+      features: [
+        {
+          type: 'fix',
+          text: 'Added null/undefined guard to inline toDate() arrow function in _postExtractionVerify (bill-analysis.js line ~2518): if (!d) return null. Previously crashed with "Cannot read properties of undefined (reading \'length\')" whenever BillingPeriodStart or BillingPeriodEnd was missing, freezing the UI on "Verifying extraction...".',
+        },
+        {
+          type: 'fix',
+          text: 'Wrapped entire _postExtractionVerify function body in try/catch. If any verification step throws, the function logs a console.warn and returns bills unchanged rather than propagating the error to the caller.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.25.354',
       date: '2026-05-25',

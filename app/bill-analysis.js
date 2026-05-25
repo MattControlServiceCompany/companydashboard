@@ -920,415 +920,1825 @@ function _analyzeMeterBills(bills, m) {
 // ── POST-EXTRACTION VERIFICATION ──
 // Uses historical meter data + logical rules to fix extraction errors
 function _postExtractionVerify(bills, utilityName, rawText) {
-  if (!bills.length) return bills;
-  const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+  try {
+    if (!bills.length) return bills;
+    const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
 
-  // Calculate NumberOfDays from billing period dates when not extracted
-  for (const b of bills) {
-    if (!b.NumberOfDays && b.BillingPeriodStart && b.BillingPeriodEnd) {
-      const _ps = String(b.BillingPeriodStart).split('/');
-      const _pe = String(b.BillingPeriodEnd).split('/');
-      if (_ps.length === 3 && _pe.length === 3) {
-        const _ds = new Date(+(_ps[2].length === 2 ? '20' + _ps[2] : _ps[2]), +_ps[0] - 1, +_ps[1]);
-        const _de = new Date(+(_pe[2].length === 2 ? '20' + _pe[2] : _pe[2]), +_pe[0] - 1, +_pe[1]);
-        const _diff = Math.round((_de - _ds) / 86400000);
-        if (_diff > 0 && _diff < 120) b.NumberOfDays = String(_diff);
+    // Calculate NumberOfDays from billing period dates when not extracted
+    for (const b of bills) {
+      if (!b.NumberOfDays && b.BillingPeriodStart && b.BillingPeriodEnd) {
+        const _ps = String(b.BillingPeriodStart).split('/');
+        const _pe = String(b.BillingPeriodEnd).split('/');
+        if (_ps.length === 3 && _pe.length === 3) {
+          const _ds = new Date(+(_ps[2].length === 2 ? '20' + _ps[2] : _ps[2]), +_ps[0] - 1, +_ps[1]);
+          const _de = new Date(+(_pe[2].length === 2 ? '20' + _pe[2] : _pe[2]), +_pe[0] - 1, +_pe[1]);
+          const _diff = Math.round((_de - _ds) / 86400000);
+          if (_diff > 0 && _diff < 120) b.NumberOfDays = String(_diff);
+        }
       }
     }
-  }
 
-  // ── CROSS-BILL CONSENSUS ──
-  // OCR misreads are random — the same field on 19 of 20 bills will be
-  // correct while 1 has a garbled digit. For every identity/metadata field
-  // that should be consistent across bills from the same account, find the
-  // most common value and correct outliers. Groups bills by normalized
-  // ServiceAddress to handle multi-building PDFs.
-  if (bills.length > 1) {
-    const _CONSENSUS_FIELDS = [
-      'AccountNumber',
-      'MeterNumber',
-      'ServiceAddress',
-      'CustomerName',
-      'UtilityCompany',
-      'RateSchedule',
-    ];
-    const _addrNorm = (s) => {
-      let n = (s || 'unknown')
-        .toLowerCase()
-        .replace(/[^a-z0-9 ]/g, '')
-        .trim();
-      n = n
-        .replace(/\b(drive|drv)\b/g, 'dr')
-        .replace(/\b(street|str)\b/g, 'st')
-        .replace(/\b(avenue|aven)\b/g, 'ave')
-        .replace(/\b(boulevard|blvd)\b/g, 'blvd')
-        .replace(/\b(road)\b/g, 'rd')
-        .replace(/\b(lane)\b/g, 'ln')
-        .replace(/\b(court)\b/g, 'ct')
-        .replace(/\b(circle|cir)\b/g, 'cir')
-        .replace(/\b(place)\b/g, 'pl');
-      return n.replace(/\s+/g, '');
-    };
-    const _addrGroups = {};
-    for (const b of bills) {
-      const addr = _addrNorm(b.ServiceAddress);
-      if (!_addrGroups[addr]) _addrGroups[addr] = [];
-      _addrGroups[addr].push(b);
-    }
-    // If address OCR is garbled, most bills cluster at the same normalized
-    // address. Merge tiny groups (≤2 bills) into the largest group — they're
-    // almost certainly the same building with a garbled address.
-    //
-    // Two-tier identity check to prevent merging different accounts:
-    //   PRIMARY (stable fields): AccountNumber, ServiceAddress
-    //   SECONDARY (can change over time): RateSchedule, MeterNumber
-    //
-    // Primary determines the decision. Secondary verifies:
-    //   - Account number conflict → always block (definitive)
-    //   - Address conflict → block UNLESS secondary data says same (false positive)
-    //   - No primary conflict but both secondaries conflict → block (false negative)
-    const groupKeys = Object.keys(_addrGroups);
-    if (groupKeys.length > 1) {
-      const largest = groupKeys.reduce((a, b) => (_addrGroups[a].length >= _addrGroups[b].length ? a : b));
-      const _idNorm = (v) => (v || '').replace(/[\s\-]/g, '').toLowerCase();
-      const _addrWords = (v) =>
-        (v || '')
+    // ── CROSS-BILL CONSENSUS ──
+    // OCR misreads are random — the same field on 19 of 20 bills will be
+    // correct while 1 has a garbled digit. For every identity/metadata field
+    // that should be consistent across bills from the same account, find the
+    // most common value and correct outliers. Groups bills by normalized
+    // ServiceAddress to handle multi-building PDFs.
+    if (bills.length > 1) {
+      const _CONSENSUS_FIELDS = [
+        'AccountNumber',
+        'MeterNumber',
+        'ServiceAddress',
+        'CustomerName',
+        'UtilityCompany',
+        'RateSchedule',
+      ];
+      const _addrNorm = (s) => {
+        let n = (s || 'unknown')
           .toLowerCase()
           .replace(/[^a-z0-9 ]/g, '')
-          .split(/\s+/)
-          .filter(Boolean);
-      const _valsFor = (group, field) => group.map((b) => _idNorm(b[field])).filter(Boolean);
-      const _setsConflict = (smallVals, largeVals) => {
-        if (smallVals.length === 0 || largeVals.length === 0) return false;
-        const largeSet = new Set(largeVals);
-        return smallVals.some((v) => !largeSet.has(v));
+          .trim();
+        n = n
+          .replace(/\b(drive|drv)\b/g, 'dr')
+          .replace(/\b(street|str)\b/g, 'st')
+          .replace(/\b(avenue|aven)\b/g, 'ave')
+          .replace(/\b(boulevard|blvd)\b/g, 'blvd')
+          .replace(/\b(road)\b/g, 'rd')
+          .replace(/\b(lane)\b/g, 'ln')
+          .replace(/\b(court)\b/g, 'ct')
+          .replace(/\b(circle|cir)\b/g, 'cir')
+          .replace(/\b(place)\b/g, 'pl');
+        return n.replace(/\s+/g, '');
       };
-      const _lgAccts = _valsFor(_addrGroups[largest], 'AccountNumber');
-      const _lgAddrW = new Set(_addrGroups[largest].flatMap((b) => _addrWords(b.ServiceAddress)));
-      const _lgRates = _valsFor(_addrGroups[largest], 'RateSchedule');
-      const _lgMeters = _valsFor(_addrGroups[largest], 'MeterNumber');
-      for (const k of groupKeys) {
-        if (k !== largest && _addrGroups[k].length <= 2) {
-          const sm = _addrGroups[k];
-          const _acctConflict = _setsConflict(_valsFor(sm, 'AccountNumber'), _lgAccts);
-          const _smAddrW = sm.flatMap((b) => _addrWords(b.ServiceAddress));
-          const _addrOverlap =
-            _smAddrW.length > 0 && _lgAddrW.size > 0
-              ? _smAddrW.filter((w) => _lgAddrW.has(w)).length / _smAddrW.length
-              : 1;
-          const _addrConflict = _addrOverlap < 0.5;
-          const _rateConflict = _setsConflict(_valsFor(sm, 'RateSchedule'), _lgRates);
-          const _meterConflict = _setsConflict(_valsFor(sm, 'MeterNumber'), _lgMeters);
-          if (_acctConflict) {
-            continue;
-          }
-          if (_addrConflict) {
-            const _hasSecondary = _lgRates.length > 0 || _lgMeters.length > 0;
-            const _secondarySame = _hasSecondary && !_rateConflict && !_meterConflict;
-            if (!_secondarySame) {
+      const _addrGroups = {};
+      for (const b of bills) {
+        const addr = _addrNorm(b.ServiceAddress);
+        if (!_addrGroups[addr]) _addrGroups[addr] = [];
+        _addrGroups[addr].push(b);
+      }
+      // If address OCR is garbled, most bills cluster at the same normalized
+      // address. Merge tiny groups (≤2 bills) into the largest group — they're
+      // almost certainly the same building with a garbled address.
+      //
+      // Two-tier identity check to prevent merging different accounts:
+      //   PRIMARY (stable fields): AccountNumber, ServiceAddress
+      //   SECONDARY (can change over time): RateSchedule, MeterNumber
+      //
+      // Primary determines the decision. Secondary verifies:
+      //   - Account number conflict → always block (definitive)
+      //   - Address conflict → block UNLESS secondary data says same (false positive)
+      //   - No primary conflict but both secondaries conflict → block (false negative)
+      const groupKeys = Object.keys(_addrGroups);
+      if (groupKeys.length > 1) {
+        const largest = groupKeys.reduce((a, b) => (_addrGroups[a].length >= _addrGroups[b].length ? a : b));
+        const _idNorm = (v) => (v || '').replace(/[\s\-]/g, '').toLowerCase();
+        const _addrWords = (v) =>
+          (v || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9 ]/g, '')
+            .split(/\s+/)
+            .filter(Boolean);
+        const _valsFor = (group, field) => group.map((b) => _idNorm(b[field])).filter(Boolean);
+        const _setsConflict = (smallVals, largeVals) => {
+          if (smallVals.length === 0 || largeVals.length === 0) return false;
+          const largeSet = new Set(largeVals);
+          return smallVals.some((v) => !largeSet.has(v));
+        };
+        const _lgAccts = _valsFor(_addrGroups[largest], 'AccountNumber');
+        const _lgAddrW = new Set(_addrGroups[largest].flatMap((b) => _addrWords(b.ServiceAddress)));
+        const _lgRates = _valsFor(_addrGroups[largest], 'RateSchedule');
+        const _lgMeters = _valsFor(_addrGroups[largest], 'MeterNumber');
+        for (const k of groupKeys) {
+          if (k !== largest && _addrGroups[k].length <= 2) {
+            const sm = _addrGroups[k];
+            const _acctConflict = _setsConflict(_valsFor(sm, 'AccountNumber'), _lgAccts);
+            const _smAddrW = sm.flatMap((b) => _addrWords(b.ServiceAddress));
+            const _addrOverlap =
+              _smAddrW.length > 0 && _lgAddrW.size > 0
+                ? _smAddrW.filter((w) => _lgAddrW.has(w)).length / _smAddrW.length
+                : 1;
+            const _addrConflict = _addrOverlap < 0.5;
+            const _rateConflict = _setsConflict(_valsFor(sm, 'RateSchedule'), _lgRates);
+            const _meterConflict = _setsConflict(_valsFor(sm, 'MeterNumber'), _lgMeters);
+            if (_acctConflict) {
               continue;
             }
-          }
-          if (_rateConflict && _meterConflict) {
-            continue;
-          }
-          _addrGroups[largest].push(..._addrGroups[k]);
-          delete _addrGroups[k];
-        }
-      }
-    }
-    const _groupEntries = Object.entries(_addrGroups);
-    for (const [_gKey, group] of _groupEntries) {
-      if (group.length < 2) continue;
-      for (const field of _CONSENSUS_FIELDS) {
-        const counts = {};
-        for (const b of group) {
-          const v = b[field];
-          if (v === null || v === undefined || v === '') continue;
-          counts[v] = (counts[v] || 0) + 1;
-        }
-        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-        if (sorted.length < 2) continue;
-        const winner = sorted[0][0];
-        const winCount = sorted[0][1];
-        let corrected = 0;
-        for (const b of group) {
-          if (b[field] && b[field] !== winner) {
-            b['_auto_corrected_' + field] = {
-              original: b[field],
-              corrected: winner,
-              reason: 'Consensus: ' + winCount + '/' + group.length + ' bills use "' + winner + '"',
-            };
-            b[field] = winner;
-            corrected++;
+            if (_addrConflict) {
+              const _hasSecondary = _lgRates.length > 0 || _lgMeters.length > 0;
+              const _secondarySame = _hasSecondary && !_rateConflict && !_meterConflict;
+              if (!_secondarySame) {
+                continue;
+              }
+            }
+            if (_rateConflict && _meterConflict) {
+              continue;
+            }
+            _addrGroups[largest].push(..._addrGroups[k]);
+            delete _addrGroups[k];
           }
         }
       }
-    }
-  }
-
-  // Gather historical bills for the same account
-  function getHistorical(acct) {
-    const hist = [];
-    if (!acct) return hist;
-    const acctClean = acct.replace(/[\s\-]/g, '').toLowerCase();
-    for (const proj of typeof projects !== 'undefined' ? projects : []) {
-      const udProj = getUDProj(proj.id);
-      for (const bldg of udProj.buildings || []) {
-        for (const m of bldg.meters || []) {
-          if ((m.account || '').replace(/[\s\-]/g, '').toLowerCase() === acctClean) {
-            for (const b of m.bills || []) hist.push(b);
+      const _groupEntries = Object.entries(_addrGroups);
+      for (const [_gKey, group] of _groupEntries) {
+        if (group.length < 2) continue;
+        for (const field of _CONSENSUS_FIELDS) {
+          const counts = {};
+          for (const b of group) {
+            const v = b[field];
+            if (v === null || v === undefined || v === '') continue;
+            counts[v] = (counts[v] || 0) + 1;
           }
-        }
-      }
-    }
-    return hist;
-  }
-
-  // Fields that are almost always present on every bill for a given account
-  const ALWAYS_PRESENT_FIELDS = {
-    Evergy: [
-      'CustomerCharge',
-      'FacilitiesCharge',
-      'BilledKWCharge',
-      'EnergyOnPeakCharge',
-      'ECACharge',
-      'TDCCharge',
-      'FranchiseFee',
-      'TotalCurrentCharges',
-      'kWhConsumed',
-      'ActualKW',
-      'RateSchedule',
-      'CustomerName',
-      'FacilitiesKW',
-    ],
-    _default: ['TotalCurrentCharges', 'TotalAmountDue'],
-  };
-
-  const alwaysFields = ALWAYS_PRESENT_FIELDS[utilityName] || ALWAYS_PRESENT_FIELDS._default;
-
-  for (let i = 0; i < bills.length; i++) {
-    const b = bills[i];
-    const hist = getHistorical(b.AccountNumber);
-
-    // 1. Auto-recover missing fields using raw text structure + historical data
-    //    These fields are 100% present on every bill — if null, it's an OCR garble, not a missing field.
-    //    Use structural position in the raw text as primary recovery, historical data as validation.
-    if (hist.length >= 2) {
-      const FIELD_MAP = {
-        CustomerCharge: { saved: 'customerCharge' },
-        FacilitiesCharge: { saved: 'facilitiesCharge' },
-        FacilitiesKW: { saved: 'facKW' },
-        RateSchedule: { saved: 'rateSchedule' },
-        CustomerName: { saved: 'customerName' },
-        BilledKWCharge: { saved: 'demandCharge' },
-        EnergyOnPeakCharge: { saved: 'onPeakCost' },
-      };
-      for (const field of alwaysFields) {
-        const val = b[field];
-        if (val !== null && val !== undefined && val !== '') continue;
-        const mapping = FIELD_MAP[field];
-        if (!mapping) continue;
-        const histVals = hist.map((h) => parseFloat(h[mapping.saved]) || 0).filter((v) => v > 0);
-        const presence = histVals.length / hist.length;
-        if (presence >= 0.8) {
-          // Try to recover from raw text using structural position before flagging
-          let recovered = false;
-
-          // For RateSchedule: grab from historical if consistent (rate doesn't change often)
-          if (field === 'RateSchedule' && !recovered) {
-            const histRates = hist.map((h) => h[mapping.saved]).filter((v) => v && v !== '');
-            if (histRates.length > 0) {
-              // Use most recent rate schedule
-              b.RateSchedule = histRates[histRates.length - 1];
-              b['_auto_recovered_' + field] = 'from historical data';
-              recovered = true;
+          const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+          if (sorted.length < 2) continue;
+          const winner = sorted[0][0];
+          const winCount = sorted[0][1];
+          let corrected = 0;
+          for (const b of group) {
+            if (b[field] && b[field] !== winner) {
+              b['_auto_corrected_' + field] = {
+                original: b[field],
+                corrected: winner,
+                reason: 'Consensus: ' + winCount + '/' + group.length + ' bills use "' + winner + '"',
+              };
+              b[field] = winner;
+              corrected++;
             }
           }
+        }
+      }
+    }
 
-          // For CustomerName: grab from historical (name doesn't change)
-          if (field === 'CustomerName' && !recovered) {
-            const histNames = hist.map((h) => h[mapping.saved]).filter((v) => v && v !== '');
-            if (histNames.length > 0) {
-              b.CustomerName = histNames[histNames.length - 1];
-              b['_auto_recovered_' + field] = 'from historical data';
-              recovered = true;
+    // Gather historical bills for the same account
+    function getHistorical(acct) {
+      const hist = [];
+      if (!acct) return hist;
+      const acctClean = acct.replace(/[\s\-]/g, '').toLowerCase();
+      for (const proj of typeof projects !== 'undefined' ? projects : []) {
+        const udProj = getUDProj(proj.id);
+        for (const bldg of udProj.buildings || []) {
+          for (const m of bldg.meters || []) {
+            if ((m.account || '').replace(/[\s\-]/g, '').toLowerCase() === acctClean) {
+              for (const b of m.bills || []) hist.push(b);
             }
-          }
-
-          if (!recovered) {
-            b['_likely_missing_' + field] = true;
           }
         }
       }
+      return hist;
+    }
 
-      // 2. Flag order-of-magnitude outliers (10x or 100x off) — do NOT auto-correct
-      const numericChecks = [
-        'kWhConsumed',
-        'ActualKW',
-        'TotalCurrentCharges',
+    // Fields that are almost always present on every bill for a given account
+    const ALWAYS_PRESENT_FIELDS = {
+      Evergy: [
         'CustomerCharge',
+        'FacilitiesCharge',
         'BilledKWCharge',
         'EnergyOnPeakCharge',
-        'FacilitiesCharge',
-      ];
-      for (const field of numericChecks) {
-        const val = pf(b[field]);
-        if (val <= 0) continue;
-        const SAVED_MAP = {
-          kWhConsumed: 'kwh',
-          ActualKW: 'demandKW',
-          TotalCurrentCharges: 'totalCost',
-          CustomerCharge: 'customerCharge',
-          BilledKWCharge: 'demandCharge',
-          EnergyOnPeakCharge: 'onPeakCost',
-          FacilitiesCharge: 'facilitiesCharge',
+        'ECACharge',
+        'TDCCharge',
+        'FranchiseFee',
+        'TotalCurrentCharges',
+        'kWhConsumed',
+        'ActualKW',
+        'RateSchedule',
+        'CustomerName',
+        'FacilitiesKW',
+      ],
+      _default: ['TotalCurrentCharges', 'TotalAmountDue'],
+    };
+
+    const alwaysFields = ALWAYS_PRESENT_FIELDS[utilityName] || ALWAYS_PRESENT_FIELDS._default;
+
+    for (let i = 0; i < bills.length; i++) {
+      const b = bills[i];
+      const hist = getHistorical(b.AccountNumber);
+
+      // 1. Auto-recover missing fields using raw text structure + historical data
+      //    These fields are 100% present on every bill — if null, it's an OCR garble, not a missing field.
+      //    Use structural position in the raw text as primary recovery, historical data as validation.
+      if (hist.length >= 2) {
+        const FIELD_MAP = {
+          CustomerCharge: { saved: 'customerCharge' },
+          FacilitiesCharge: { saved: 'facilitiesCharge' },
+          FacilitiesKW: { saved: 'facKW' },
+          RateSchedule: { saved: 'rateSchedule' },
+          CustomerName: { saved: 'customerName' },
+          BilledKWCharge: { saved: 'demandCharge' },
+          EnergyOnPeakCharge: { saved: 'onPeakCost' },
         };
-        const savedField = SAVED_MAP[field];
-        if (!savedField) continue;
-        const bComm = (b.Commodity || '').toLowerCase();
-        const commHist = bComm ? hist.filter((h) => (h.commodity || '').toLowerCase() === bComm) : hist;
-        const histVals = commHist.map((h) => parseFloat(h[savedField]) || 0).filter((v) => v > 0);
-        if (histVals.length < 3) continue;
-        const mean = histVals.reduce((a, c) => a + c, 0) / histVals.length;
-        if (mean <= 0) continue;
-        const ratio = val / mean;
-        if (ratio >= 8 || ratio <= 0.12) {
-          b['_magnitude_flag_' + field] = { value: val, mean, ratio };
+        for (const field of alwaysFields) {
+          const val = b[field];
+          if (val !== null && val !== undefined && val !== '') continue;
+          const mapping = FIELD_MAP[field];
+          if (!mapping) continue;
+          const histVals = hist.map((h) => parseFloat(h[mapping.saved]) || 0).filter((v) => v > 0);
+          const presence = histVals.length / hist.length;
+          if (presence >= 0.8) {
+            // Try to recover from raw text using structural position before flagging
+            let recovered = false;
+
+            // For RateSchedule: grab from historical if consistent (rate doesn't change often)
+            if (field === 'RateSchedule' && !recovered) {
+              const histRates = hist.map((h) => h[mapping.saved]).filter((v) => v && v !== '');
+              if (histRates.length > 0) {
+                // Use most recent rate schedule
+                b.RateSchedule = histRates[histRates.length - 1];
+                b['_auto_recovered_' + field] = 'from historical data';
+                recovered = true;
+              }
+            }
+
+            // For CustomerName: grab from historical (name doesn't change)
+            if (field === 'CustomerName' && !recovered) {
+              const histNames = hist.map((h) => h[mapping.saved]).filter((v) => v && v !== '');
+              if (histNames.length > 0) {
+                b.CustomerName = histNames[histNames.length - 1];
+                b['_auto_recovered_' + field] = 'from historical data';
+                recovered = true;
+              }
+            }
+
+            if (!recovered) {
+              b['_likely_missing_' + field] = true;
+            }
+          }
+        }
+
+        // 2. Flag order-of-magnitude outliers (10x or 100x off) — do NOT auto-correct
+        const numericChecks = [
+          'kWhConsumed',
+          'ActualKW',
+          'TotalCurrentCharges',
+          'CustomerCharge',
+          'BilledKWCharge',
+          'EnergyOnPeakCharge',
+          'FacilitiesCharge',
+        ];
+        for (const field of numericChecks) {
+          const val = pf(b[field]);
+          if (val <= 0) continue;
+          const SAVED_MAP = {
+            kWhConsumed: 'kwh',
+            ActualKW: 'demandKW',
+            TotalCurrentCharges: 'totalCost',
+            CustomerCharge: 'customerCharge',
+            BilledKWCharge: 'demandCharge',
+            EnergyOnPeakCharge: 'onPeakCost',
+            FacilitiesCharge: 'facilitiesCharge',
+          };
+          const savedField = SAVED_MAP[field];
+          if (!savedField) continue;
+          const bComm = (b.Commodity || '').toLowerCase();
+          const commHist = bComm ? hist.filter((h) => (h.commodity || '').toLowerCase() === bComm) : hist;
+          const histVals = commHist.map((h) => parseFloat(h[savedField]) || 0).filter((v) => v > 0);
+          if (histVals.length < 3) continue;
+          const mean = histVals.reduce((a, c) => a + c, 0) / histVals.length;
+          if (mean <= 0) continue;
+          const ratio = val / mean;
+          if (ratio >= 8 || ratio <= 0.12) {
+            b['_magnitude_flag_' + field] = { value: val, mean, ratio };
+          }
+        }
+      }
+
+      // ── STORMWATER OCR DECIMAL-DROP FIX ──
+      // City of Louisburg stormwater is always ~$4. OCR sometimes drops the
+      // decimal, producing $400 instead of $4.00. Auto-correct when dividing
+      // by 100 lands in the plausible $2–$10 range.
+      if (b.Commodity === 'Stormwater' && typeof b.StormWaterCharge === 'number' && b.StormWaterCharge > 20) {
+        const corrected = b.StormWaterCharge / 100;
+        if (corrected >= 2 && corrected <= 10) {
+          const original = b.StormWaterCharge;
+          b._auto_corrected_StormWaterCharge = {
+            original: original,
+            corrected: corrected,
+            reason: 'OCR decimal-drop: ' + original + ' → ' + corrected,
+          };
+          b.StormWaterCharge = corrected;
+          b.TotalCurrentCharges = corrected.toFixed(2);
+          b.TotalAmountDue = corrected.toFixed(2);
+          console.log('[PostVerify] Stormwater decimal-drop corrected: $' + original + ' → $' + corrected);
+        }
+      }
+
+      // ── GAS CHARGE OCR DECIMAL-DROP FIX (rate-validated) ──
+      // Only apply decimal corrections when the corrected values produce
+      // an implied rate closer to the known rate. Never blindly divide by
+      // 100 based on magnitude alone — large buildings legitimately have
+      // charges > $5k and usage > 10k therms.
+      if (b.Commodity === 'Gas') {
+        const _gc = pf(b.GasCharge);
+        const _th = pf(b.NaturalGasTherms);
+        const _utilName = b._utilityName || b.UtilityCompany || '';
+        if (_gc > 0 && _th > 0) {
+          const origRate = validateImpliedRate('Gas', _th, _gc, _utilName);
+          if (origRate && origRate.severity === 'error') {
+            // Rate is way off — try decimal correction candidates
+            const candidates = [];
+            // Candidate 1: correct charge only
+            if (_gc > 500) {
+              const cGC = Math.round(_gc) / 100;
+              const r1 = validateImpliedRate('Gas', _th, cGC, _utilName);
+              if (r1) candidates.push({ gc: cGC, th: _th, rate: r1, label: 'charge' });
+            }
+            // Candidate 2: correct therms only
+            if (_th > 1000) {
+              const cTh = Math.round(_th) / 100;
+              const r2 = validateImpliedRate('Gas', cTh, _gc, _utilName);
+              if (r2) candidates.push({ gc: _gc, th: cTh, rate: r2, label: 'therms' });
+            }
+            // Candidate 3: correct both
+            if (_gc > 500 && _th > 1000) {
+              const cGC = Math.round(_gc) / 100;
+              const cTh = Math.round(_th) / 100;
+              const r3 = validateImpliedRate('Gas', cTh, cGC, _utilName);
+              if (r3) candidates.push({ gc: cGC, th: cTh, rate: r3, label: 'both' });
+            }
+            // Pick the candidate closest to the typical rate
+            const best = candidates
+              .filter((c) => !c.rate.severity || c.rate.severity === 'info')
+              .sort((a, b) => Math.abs(a.rate.implied - a.rate.typical) - Math.abs(b.rate.implied - b.rate.typical))[0];
+            if (best) {
+              if (best.gc !== _gc) {
+                b._auto_corrected_GasCharge = {
+                  original: _gc,
+                  corrected: best.gc,
+                  reason:
+                    'OCR decimal-drop: $' +
+                    _gc +
+                    ' → $' +
+                    best.gc +
+                    ' (implied rate $' +
+                    best.rate.implied.toFixed(4) +
+                    best.rate.unit +
+                    ' matches expected)',
+                };
+                b.GasCharge = best.gc;
+                console.log('[PostVerify] Gas charge rate-validated correction: $' + _gc + ' → $' + best.gc);
+              }
+              if (best.th !== _th) {
+                b._auto_corrected_NaturalGasTherms = {
+                  original: _th,
+                  corrected: best.th,
+                  reason:
+                    'OCR decimal-drop: ' +
+                    _th +
+                    ' → ' +
+                    best.th +
+                    ' (implied rate $' +
+                    best.rate.implied.toFixed(4) +
+                    best.rate.unit +
+                    ' matches expected)',
+                };
+                b.NaturalGasTherms = best.th;
+                console.log('[PostVerify] Gas therms rate-validated correction: ' + _th + ' → ' + best.th);
+              }
+              // Recompute total from corrected components
+              const _cust = pf(b.CustomerCharge);
+              const _fa = pf(b.FuelAdjustment);
+              if (best.gc > 0 && _cust > 0) {
+                const newTotal = best.gc + _cust + _fa;
+                b.TotalCurrentCharges = newTotal.toFixed(2);
+                b.TotalAmountDue = newTotal.toFixed(2);
+              }
+            }
+          }
+        }
+      }
+
+      // ──────────────────────────────────────────────────────────────
+      // Stage 3: Total validation + coherent per-charge reconciliation (Update 86)
+      // ──────────────────────────────────────────────────────────────
+      // The old code clobbered `TotalCurrentCharges` with compSum whenever they
+      // disagreed by >$0.50, BEFORE running the per-charge math validators. If a
+      // single charge had an OCR bleed (e.g. EER regex reaching forward to PTS's
+      // $86.61), compSum was inflated and the clean OCR'd total got thrown away.
+      //
+      // Re-ordered so that reconciliation is purposeful:
+      //   3a. Measure — read ocrTotal, compute compSum from current charges.
+      //   3b. Reconcile per-charge math (Strategy B: rate×qty corrections that
+      //       close the gap to ocrTotal → apply high-confidence fix).
+      //   3c. Subtraction inference (Strategy C: a lone charge with no _rates
+      //       entry absorbs the residual — OCR single-digit misread).
+      //   3d. Final total decision:
+      //       - ocrTotal missing  → use compSum.
+      //       - compSum matches ocrTotal within $0.02 → keep ocrTotal.
+      //       - compSum still > ocrTotal AND no _rate_mismatch_* flags remain
+      //         → ocrTotal was likely a page-1 summary missing detail charges;
+      //           accept compSum and mark _totalFromChargeSum with reason.
+      //       - Residual remains → flag _sum_mismatch, keep ocrTotal for review.
+      //       NEVER silently clobber ocrTotal when there's evidence of per-charge
+      //       contamination.
+      if (utilityName === 'Evergy') {
+        const CHARGE_FIELDS = [
+          'CustomerCharge',
+          'FacilitiesCharge',
+          'BilledKWCharge',
+          'EnergyOnPeakCharge',
+          'EnergyOffPeakCharge',
+          'ECACharge',
+          'EERCharge',
+          'PTSCharge',
+          'TDCCharge',
+          'RkVACharge',
+          'TaxExemptDelivery',
+          'BillOffset',
+          'FranchiseFee',
+          'SolarCredit',
+          'RenewableCharge',
+        ];
+        // Round to cents to prevent floating-point accumulation errors
+        // across 15 addends from producing phantom ±$0.01 mismatches.
+        const _sumCharges = () => Math.round(CHARGE_FIELDS.reduce((s, f) => s + pf(b[f]), 0) * 100) / 100;
+
+        // 3a. Measure
+        const ocrTotal = pf(b.TotalCurrentCharges);
+        let compSum = _sumCharges();
+
+        if (!ocrTotal) {
+          // No OCR'd total — compSum is the only evidence we have.
+          if (compSum > 0) {
+            b.TotalCurrentCharges = compSum.toFixed(2);
+            b._totalFromChargeSum = true;
+            b._totalSource = 'compSum (no OCR total available)';
+          }
+        } else if (Math.abs(compSum - ocrTotal) < 0.02) {
+          // 3a'. Already consistent — done, no mutation needed.
+        } else {
+          // Disagreement between ocrTotal and compSum. Run principled diagnosis.
+
+          // 3b-pre. TDC CHARGE VERIFICATION FALLBACK (#43)
+          // Strategy B can only verify charges that have _rates entries (from xRate).
+          // When OCR garbled the TDC rate line so xRate returned nothing, TDC is
+          // unverifiable and any OCR misread on its charge silently persists. Fallback:
+          // if _rates.TDCCharge is missing but we have both the charge amount and the
+          // kW quantity, derive rate = charge / qty and synthesize a _rates entry.
+          // This gives Strategy B a computed value to cross-check against.
+          if (b._rates && !b._rates.TDCCharge && pf(b.TDCCharge) > 0 && pf(b.TDCkW) > 0) {
+            const _tdcChg = pf(b.TDCCharge);
+            const _tdcQty = pf(b.TDCkW);
+            const _tdcRate = _tdcChg / _tdcQty;
+            // Sanity: Evergy TDC rates are typically $1-$5/kW. Accept $0.10-$50/kW range.
+            if (_tdcRate >= 0.1 && _tdcRate <= 50) {
+              b._rates.TDCCharge = {
+                qty: _tdcQty,
+                rate: _tdcRate,
+                unit: 'kW',
+                computed: Math.round(_tdcQty * _tdcRate * 100) / 100,
+                _derived: true,
+              };
+            }
+          }
+
+          // 3b. Strategy B — apply ALL rate×qty corrections where the direction
+          // matches the gap (charge too low when sum is too low, or too high when
+          // sum is too high). Multiple corrections may be needed to close the gap
+          // (e.g., ECA + PTS both under-extracted on a changeover bill).
+          let targetDelta = compSum - ocrTotal;
+          if (b._rates && Math.abs(targetDelta) >= 0.02) {
+            for (const [field, ri] of Object.entries(b._rates)) {
+              const ocrVal = pf(b[field]);
+              if (!ocrVal || !ri.computed) continue;
+              if (ri.computed > 1e6 || ri.rate > 10000) continue;
+              const chargeDelta = ocrVal - ri.computed;
+              if (Math.abs(chargeDelta) < 0.02) continue;
+              const sameDirection = (targetDelta < 0 && chargeDelta < 0) || (targetDelta > 0 && chargeDelta > 0);
+              // Don't replace a charge value when xChg found more parts
+              // than xRate. xChg correctly summed all OCR'd dollar amounts
+              // but xRate couldn't parse the rate info from garbled lines.
+              // Replacing the correct xChg total with the incomplete xRate
+              // computed value CREATES a mismatch that didn't exist.
+              const xChgParts = b._xChgParts && b._xChgParts[field];
+              const xRateParts = ri.parts || [ri];
+              if (xChgParts && xChgParts.length > xRateParts.length) continue;
+              if (sameDirection) {
+                b['_auto_corrected_' + field] = {
+                  original: b[field],
+                  corrected: ri.computed.toFixed(2),
+                  rate: ri.rate,
+                  qty: ri.qty,
+                  unit: ri.unit,
+                  reason:
+                    ri.qty.toFixed(4) + ' ' + ri.unit + ' × $' + ri.rate.toFixed(5) + ' = $' + ri.computed.toFixed(2),
+                };
+                b[field] = ri.computed.toFixed(2);
+              }
+            }
+            compSum = _sumCharges();
+            targetDelta = compSum - ocrTotal;
+          }
+
+          // 3c. Strategy C — subtraction inference for a lone unverified field.
+          // Only runs if a gap remains AND exactly one rate-based charge has no
+          // _rates entry (meaning we can't verify it by math).
+          if (Math.abs(compSum - ocrTotal) >= 0.02) {
+            const RATE_BASED = [
+              'FacilitiesCharge',
+              'BilledKWCharge',
+              'EnergyOnPeakCharge',
+              'EnergyOffPeakCharge',
+              'ECACharge',
+              'EERCharge',
+              'PTSCharge',
+              'TDCCharge',
+              'RkVACharge',
+            ];
+            const unverified = RATE_BASED.filter((f) => {
+              const v = pf(b[f]);
+              if (v <= 0) return false;
+              if (b._rates && b._rates[f]) return false;
+              if (b['_auto_corrected_' + f]) return false;
+              if (b['_ocr_consensus_' + f]) return false;
+              return true;
+            });
+            if (unverified.length === 1) {
+              const f = unverified[0];
+              const origVal = pf(b[f]);
+              const residual = ocrTotal - (compSum - origVal);
+              if (residual > 0) {
+                b['_auto_corrected_' + f] = {
+                  original: b[f],
+                  corrected: residual.toFixed(2),
+                  reason:
+                    'Derived from TotalCurrentCharges − Σ(other charges). No rate data for ' +
+                    f +
+                    '; every other charge verified, so this field absorbs the residual.',
+                };
+                b[f] = residual.toFixed(2);
+                compSum = _sumCharges();
+              }
+            }
+          }
+
+          // 3d. Final decision — evidence-weighted, never blind.
+          const finalDelta = compSum - ocrTotal;
+          // SUBTOTAL CORROBORATION GUARD: on Evergy tax-exempt bills the
+          // printed Subtotal and Current Charges are always equal. When
+          // both OCR'd cleanly to the same value, that pair is ground
+          // truth — a compSum disagreement points to a per-charge bug
+          // (wrong sign, missed line item), not a wrong total. Don't let
+          // compSum clobber a corroborated ocrTotal.
+          const _subVal = pf(b._subtotal);
+          const subtotalCorroborates = _subVal > 0 && Math.abs(_subVal - ocrTotal) < 0.02;
+          if (Math.abs(finalDelta) < 0.02) {
+            // Reconciled. Keep ocrTotal. No flag needed.
+          } else {
+            // Still disagree. Check if any per-charge rate mismatches remain
+            // (signal that compSum is still contaminated).
+            const hasRateMismatch = Object.keys(b).some((k) => k.startsWith('_rate_mismatch_'));
+            if (finalDelta > 0.5 && !hasRateMismatch && !subtotalCorroborates) {
+              // compSum > ocrTotal, all per-charge math verifies → ocrTotal was
+              // likely a page-1 summary that excluded some detail charges that
+              // extracted cleanly. Trust compSum.
+              b.TotalCurrentCharges = compSum.toFixed(2);
+              b._totalFromChargeSum = true;
+              b._totalSource =
+                'compSum (ocrTotal of $' +
+                ocrTotal.toFixed(2) +
+                ' appears to be an incomplete summary; no per-charge rate mismatches remain to cast doubt on compSum)';
+            } else {
+              // Can't confidently reconcile — flag for user, keep ocrTotal.
+              b._sum_mismatch = {
+                compSum,
+                total: ocrTotal,
+                diff: Math.abs(finalDelta),
+                reason:
+                  'Charges sum to $' +
+                  compSum.toFixed(2) +
+                  ' vs OCR total $' +
+                  ocrTotal.toFixed(2) +
+                  (hasRateMismatch
+                    ? '. Per-charge rate mismatches remain after correction attempts — user review needed.'
+                    : finalDelta > 0
+                      ? '. No rate mismatches to pinpoint, but compSum exceeds OCR total by less than the switch threshold.'
+                      : '. A charge was likely missed during extraction.'),
+              };
+            }
+          }
         }
       }
     }
 
-    // ── STORMWATER OCR DECIMAL-DROP FIX ──
-    // City of Louisburg stormwater is always ~$4. OCR sometimes drops the
-    // decimal, producing $400 instead of $4.00. Auto-correct when dividing
-    // by 100 lands in the plausible $2–$10 range.
-    if (b.Commodity === 'Stormwater' && typeof b.StormWaterCharge === 'number' && b.StormWaterCharge > 20) {
-      const corrected = b.StormWaterCharge / 100;
-      if (corrected >= 2 && corrected <= 10) {
-        const original = b.StormWaterCharge;
-        b._auto_corrected_StormWaterCharge = {
-          original: original,
-          corrected: corrected,
-          reason: 'OCR decimal-drop: ' + original + ' → ' + corrected,
-        };
-        b.StormWaterCharge = corrected;
-        b.TotalCurrentCharges = corrected.toFixed(2);
-        b.TotalAmountDue = corrected.toFixed(2);
-        console.log('[PostVerify] Stormwater decimal-drop corrected: $' + original + ' → $' + corrected);
-      }
-    }
-
-    // ── GAS CHARGE OCR DECIMAL-DROP FIX (rate-validated) ──
-    // Only apply decimal corrections when the corrected values produce
-    // an implied rate closer to the known rate. Never blindly divide by
-    // 100 based on magnitude alone — large buildings legitimately have
-    // charges > $5k and usage > 10k therms.
-    if (b.Commodity === 'Gas') {
-      const _gc = pf(b.GasCharge);
-      const _th = pf(b.NaturalGasTherms);
-      const _utilName = b._utilityName || b.UtilityCompany || '';
-      if (_gc > 0 && _th > 0) {
-        const origRate = validateImpliedRate('Gas', _th, _gc, _utilName);
-        if (origRate && origRate.severity === 'error') {
-          // Rate is way off — try decimal correction candidates
-          const candidates = [];
-          // Candidate 1: correct charge only
-          if (_gc > 500) {
-            const cGC = Math.round(_gc) / 100;
-            const r1 = validateImpliedRate('Gas', _th, cGC, _utilName);
-            if (r1) candidates.push({ gc: cGC, th: _th, rate: r1, label: 'charge' });
-          }
-          // Candidate 2: correct therms only
-          if (_th > 1000) {
-            const cTh = Math.round(_th) / 100;
-            const r2 = validateImpliedRate('Gas', cTh, _gc, _utilName);
-            if (r2) candidates.push({ gc: _gc, th: cTh, rate: r2, label: 'therms' });
-          }
-          // Candidate 3: correct both
-          if (_gc > 500 && _th > 1000) {
-            const cGC = Math.round(_gc) / 100;
-            const cTh = Math.round(_th) / 100;
-            const r3 = validateImpliedRate('Gas', cTh, cGC, _utilName);
-            if (r3) candidates.push({ gc: cGC, th: cTh, rate: r3, label: 'both' });
-          }
-          // Pick the candidate closest to the typical rate
-          const best = candidates
-            .filter((c) => !c.rate.severity || c.rate.severity === 'info')
-            .sort((a, b) => Math.abs(a.rate.implied - a.rate.typical) - Math.abs(b.rate.implied - b.rate.typical))[0];
-          if (best) {
-            if (best.gc !== _gc) {
-              b._auto_corrected_GasCharge = {
-                original: _gc,
-                corrected: best.gc,
-                reason:
-                  'OCR decimal-drop: $' +
-                  _gc +
-                  ' → $' +
-                  best.gc +
-                  ' (implied rate $' +
-                  best.rate.implied.toFixed(4) +
-                  best.rate.unit +
-                  ' matches expected)',
-              };
-              b.GasCharge = best.gc;
-              console.log('[PostVerify] Gas charge rate-validated correction: $' + _gc + ' → $' + best.gc);
-            }
-            if (best.th !== _th) {
-              b._auto_corrected_NaturalGasTherms = {
-                original: _th,
-                corrected: best.th,
-                reason:
-                  'OCR decimal-drop: ' +
-                  _th +
-                  ' → ' +
-                  best.th +
-                  ' (implied rate $' +
-                  best.rate.implied.toFixed(4) +
-                  best.rate.unit +
-                  ' matches expected)',
-              };
-              b.NaturalGasTherms = best.th;
-              console.log('[PostVerify] Gas therms rate-validated correction: ' + _th + ' → ' + best.th);
-            }
-            // Recompute total from corrected components
-            const _cust = pf(b.CustomerCharge);
-            const _fa = pf(b.FuelAdjustment);
-            if (best.gc > 0 && _cust > 0) {
-              const newTotal = best.gc + _cust + _fa;
-              b.TotalCurrentCharges = newTotal.toFixed(2);
-              b.TotalAmountDue = newTotal.toFixed(2);
-            }
-          }
-        }
-      }
-    }
-
-    // ──────────────────────────────────────────────────────────────
-    // Stage 3: Total validation + coherent per-charge reconciliation (Update 86)
-    // ──────────────────────────────────────────────────────────────
-    // The old code clobbered `TotalCurrentCharges` with compSum whenever they
-    // disagreed by >$0.50, BEFORE running the per-charge math validators. If a
-    // single charge had an OCR bleed (e.g. EER regex reaching forward to PTS's
-    // $86.61), compSum was inflated and the clean OCR'd total got thrown away.
-    //
-    // Re-ordered so that reconciliation is purposeful:
-    //   3a. Measure — read ocrTotal, compute compSum from current charges.
-    //   3b. Reconcile per-charge math (Strategy B: rate×qty corrections that
-    //       close the gap to ocrTotal → apply high-confidence fix).
-    //   3c. Subtraction inference (Strategy C: a lone charge with no _rates
-    //       entry absorbs the residual — OCR single-digit misread).
-    //   3d. Final total decision:
-    //       - ocrTotal missing  → use compSum.
-    //       - compSum matches ocrTotal within $0.02 → keep ocrTotal.
-    //       - compSum still > ocrTotal AND no _rate_mismatch_* flags remain
-    //         → ocrTotal was likely a page-1 summary missing detail charges;
-    //           accept compSum and mark _totalFromChargeSum with reason.
-    //       - Residual remains → flag _sum_mismatch, keep ocrTotal for review.
-    //       NEVER silently clobber ocrTotal when there's evidence of per-charge
-    //       contamination.
+    // ── CROSS-FIELD VALIDATION: kWhConsumed and ActualKW consensus from charge lines ──
+    // Per Evergy bill structure, several charge lines carry the SAME quantity:
+    //   - PTS Chg qty = total kWh for the period
+    //   - EER Chg qty = total kWh for the period
+    //   - ECA Chg qty (sum of parts if seasonal) = total kWh
+    //   - Energy On-Peak + Off-Peak qty sum = total kWh
+    //   - TDC Chg qty = ActualKW (current month billed demand)
+    // When the meter table is OCR-garbled but the charge lines extracted cleanly, we can recover
+    // kWhConsumed and ActualKW from this charge-line consensus. The CSC Evergy bill format rules:
+    //   - kW sanity: single monthly kW almost never exceeds 9,999.9999
+    //   - kWh sanity: single monthly kWh almost never exceeds 999,999.9999
+    // Anything outside those bounds is an OCR/parse error; reject and recover from consensus.
     if (utilityName === 'Evergy') {
-      const CHARGE_FIELDS = [
+      for (let i = 0; i < bills.length; i++) {
+        const b = bills[i];
+        if (!b._rates) continue;
+        // kWh charge line parts represent portions of the SAME total period (seasonal split,
+        // prorated days, etc.) so their qty should sum to kWhConsumed.
+        const getPartsQtySum = (rateKey) => {
+          const r = b._rates[rateKey];
+          if (!r || !r.parts || !r.parts.length) return null;
+          const s = r.parts.reduce((a, p) => a + (p.qty || 0), 0);
+          return s > 0 ? s : null;
+        };
+        // kW charge line parts can represent DIFFERENT kW values on meter-change bills
+        // (old meter + new meter mid-month), so summing is wrong — the true ActualKW is the MAX.
+        // On seasonal rate changeover bills, both parts have the same kW and MAX == either one.
+        const getPartsQtyMax = (rateKey) => {
+          const r = b._rates[rateKey];
+          if (!r || !r.parts || !r.parts.length) return null;
+          const m = Math.max(...r.parts.map((p) => p.qty || 0));
+          return m > 0 ? m : null;
+        };
+        // Collect implied kWh from each charge line that spans the full period
+        const kwhImplied = [];
+        for (const key of ['PTSCharge', 'EERCharge', 'ECACharge']) {
+          const q = getPartsQtySum(key);
+          if (q) kwhImplied.push({ source: key, value: q });
+        }
+        // Energy On+Off peak sum (both may exist; total = on + off)
+        const onQ = getPartsQtySum('EnergyOnPeakCharge') || 0;
+        const offQ = getPartsQtySum('EnergyOffPeakCharge') || 0;
+        if (onQ + offQ > 0) kwhImplied.push({ source: 'Energy On+Off', value: onQ + offQ });
+        // Find the mode (most common value within 2% tolerance) — gives a robust consensus
+        const consensusKwh = (() => {
+          if (kwhImplied.length < 2) return kwhImplied[0]?.value || null;
+          const buckets = [];
+          for (const item of kwhImplied) {
+            const bkt = buckets.find((b2) => Math.abs(b2.value - item.value) / item.value < 0.02);
+            if (bkt) {
+              bkt.count++;
+              bkt.sources.push(item.source);
+            } else {
+              buckets.push({ value: item.value, count: 1, sources: [item.source] });
+            }
+          }
+          buckets.sort((a, b2) => b2.count - a.count);
+          return buckets[0].count >= 2 ? buckets[0].value : null;
+        })();
+        // Decide whether current kWhConsumed is suspect
+        const curKwh = pf(b.kWhConsumed);
+        const kwhOutOfRange = curKwh > 0 && (curKwh > 500000 || curKwh < 1);
+        const kwhOffFromConsensus = consensusKwh && curKwh > 0 && Math.abs(curKwh - consensusKwh) / consensusKwh > 0.05;
+        if (consensusKwh && (kwhOutOfRange || kwhOffFromConsensus || !curKwh)) {
+          b['_auto_corrected_kWhConsumed'] = {
+            original: b.kWhConsumed,
+            corrected: consensusKwh.toFixed(4),
+            reason:
+              'Cross-validated from charge line qty consensus (' +
+              kwhImplied
+                .filter((x) => Math.abs(x.value - consensusKwh) / consensusKwh < 0.02)
+                .map((x) => x.source)
+                .join(', ') +
+              ')',
+          };
+          b.kWhConsumed = consensusKwh.toFixed(4);
+        }
+        // ActualKW recovery rule (Evergy LGS Secondary minimum 200 kW billed demand):
+        //   BilledKW = max(ActualKW, 200)
+        // Corollary: when BilledKW > 200, the floor is NOT applied, so ActualKW == BilledKW
+        // by mathematical identity — we can recover ActualKW from the Demand Chg line.
+        // When BilledKW <= 200, we keep whatever the meter table reading was; the user can
+        // see it and correct it manually if it's garbled (ActualKW < 200 is legitimate on
+        // low-demand months and shouldn't be nulled).
+        const curKw = pf(b.ActualKW);
+        const kwOutOfRange = curKw > 0 && (curKw > 10000 || curKw < 0.1);
+        const demandKwMax = getPartsQtyMax('BilledKWCharge');
+        if ((!curKw || kwOutOfRange) && demandKwMax && demandKwMax > 200 && demandKwMax < 10000) {
+          b['_auto_corrected_ActualKW'] = {
+            original: b.ActualKW,
+            corrected: demandKwMax.toFixed(4),
+            reason:
+              'BilledKW (' +
+              demandKwMax.toFixed(4) +
+              ' kW) exceeds the 200 kW LGS Secondary minimum, so ActualKW = BilledKW by identity',
+          };
+          b.ActualKW = demandKwMax.toFixed(4);
+        }
+        const tdcKwMax = getPartsQtyMax('TDCCharge');
+        const curTdcKw = pf(b.TDCkW);
+        const tdcKwParts = b._rates?.TDCCharge?.parts || [];
+        const tdcKwMatchesPart = curTdcKw > 0 && tdcKwParts.some((p) => Math.abs(curTdcKw - (p.qty || 0)) < 0.01);
+        if (tdcKwMax && curTdcKw > 0 && !tdcKwMatchesPart && Math.abs(curTdcKw - tdcKwMax) / tdcKwMax > 0.05) {
+          b['_auto_corrected_TDCkW'] = {
+            original: b.TDCkW,
+            corrected: tdcKwMax.toFixed(4),
+            reason: 'Derived from TDC Chg qty (max of parts)',
+          };
+          b.TDCkW = tdcKwMax.toFixed(4);
+        } else if (!curTdcKw && tdcKwMax) {
+          b.TDCkW = tdcKwMax.toFixed(4);
+        }
+        // FacilitiesKW: on rate changeover bills, the Facilities Chg line splits into two parts
+        // with different per-period kW values. Only override if the extracted value doesn't
+        // match any part's qty — matching means the meter table reading is valid for that period.
+        const facKwMax = getPartsQtyMax('FacilitiesCharge');
+        const curFacKw = pf(b.FacilitiesKW);
+        const facKwParts = b._rates?.FacilitiesCharge?.parts || [];
+        const facKwMatchesPart = curFacKw > 0 && facKwParts.some((p) => Math.abs(curFacKw - (p.qty || 0)) < 0.01);
+        if (
+          facKwMax &&
+          facKwMax > 0 &&
+          facKwMax < 10000 &&
+          curFacKw > 0 &&
+          !facKwMatchesPart &&
+          Math.abs(curFacKw - facKwMax) / facKwMax > 0.05
+        ) {
+          b['_auto_corrected_FacilitiesKW'] = {
+            original: b.FacilitiesKW,
+            corrected: facKwMax.toFixed(4),
+            reason: 'Cross-validated from Facilities Chg qty (max of parts)',
+          };
+          b.FacilitiesKW = facKwMax.toFixed(4);
+        } else if (!curFacKw && facKwMax && facKwMax < 10000) {
+          b.FacilitiesKW = facKwMax.toFixed(4);
+        }
+        // BilledKW: on changeover bills, parts have different per-period kW values.
+        // Only override if the extracted value doesn't match ANY part's qty —
+        // matching any part means the meter table reading is valid for that period.
+        const billedKwMax = getPartsQtyMax('BilledKWCharge');
+        const curBilledKw = pf(b.BilledKW);
+        const billedKwParts = b._rates?.BilledKWCharge?.parts || [];
+        const billedKwMatchesPart =
+          curBilledKw > 0 && billedKwParts.some((p) => Math.abs(curBilledKw - (p.qty || 0)) < 0.01);
+        if (
+          billedKwMax &&
+          billedKwMax > 0 &&
+          billedKwMax < 10000 &&
+          curBilledKw > 0 &&
+          !billedKwMatchesPart &&
+          Math.abs(curBilledKw - billedKwMax) / billedKwMax > 0.05
+        ) {
+          b['_auto_corrected_BilledKW'] = {
+            original: b.BilledKW,
+            corrected: billedKwMax.toFixed(4),
+            reason: 'Cross-validated from Demand Chg qty (max of parts)',
+          };
+          b.BilledKW = billedKwMax.toFixed(4);
+        } else if (!curBilledKw && billedKwMax && billedKwMax < 10000) {
+          b.BilledKW = billedKwMax.toFixed(4);
+        }
+        // ── ActualKW sanity clamp: ActualKW ≤ BilledKW (physical constraint) ──
+        // BilledKW is derived by the utility as max(ActualKW, LGS floor, 12-month ratchet).
+        // That means BilledKW is ALWAYS ≥ ActualKW by construction — if OCR produces an
+        // ActualKW that exceeds BilledKW, the meter-table reading is wrong (common garble:
+        // "475.5360" read as "4755360", "578.784" as "5787840", etc.). Clamp down to the
+        // smaller of BilledKW and FacilitiesKW so the correction respects both physical
+        // constraints ("Actual kW can never be more than Billed kW or Facilities kW") in
+        // one shot. Runs AFTER BilledKW and FacilitiesKW have been cross-validated against
+        // their rate-line qty, so the clamp target is trustworthy.
+        //
+        // This rule intentionally does NOT fire on ActualKW > FacilitiesKW alone — a real
+        // new 12-month peak has ActualKW == BilledKW > prior FacilitiesKW, and is handled
+        // by the downstream "new peak + forward propagation" logic. Firing here would
+        // swallow legitimate peak growth. The strict trigger is ActualKW > BilledKW,
+        // which is physically impossible and therefore always an OCR error.
+        //
+        // Respects prior _auto_corrected_ActualKW markers: if an earlier rule (e.g. the
+        // 200 kW LGS floor recovery above) already wrote one, we don't overwrite it.
+        const curActual = pf(b.ActualKW);
+        const curBilledFinal = pf(b.BilledKW);
+        const curFacFinal = pf(b.FacilitiesKW);
+        if (curActual > 0 && curBilledFinal > 0 && curActual > curBilledFinal + 0.001) {
+          // CHARGE-LINE CONSENSUS FIRST: BilledKW == TDCkW proves the real demand.
+          // When two independent charge lines (Demand Chg and TDC Chg) agree on the
+          // kW value AND it has decimals (not a round minimum floor), ActualKW must
+          // equal them — no floor was applied, so Actual = Billed = TDC by identity.
+          // This is stronger evidence than decimal-shift guessing because the charge
+          // lines were extracted cleanly even when the meter table was garbled.
+          const curTdcFinal = pf(b.TDCkW);
+          const billedTdcAgree =
+            curBilledFinal > 0 &&
+            curTdcFinal > 0 &&
+            Math.abs(curBilledFinal - curTdcFinal) < 0.01 &&
+            curBilledFinal % 1 !== 0;
+          if (!b['_auto_corrected_ActualKW'] && billedTdcAgree) {
+            b['_auto_corrected_ActualKW'] = {
+              original: b.ActualKW,
+              corrected: curBilledFinal.toFixed(4),
+              reason:
+                'BilledKW (' +
+                curBilledFinal.toFixed(4) +
+                ') == TDCkW (' +
+                curTdcFinal.toFixed(4) +
+                ') with decimals — no minimum floor applied, so ActualKW = BilledKW by identity',
+            };
+            b.ActualKW = curBilledFinal.toFixed(4);
+          }
+          // DECIMAL-SHIFT RECOVERY (Bill 29 Nov 2025 Louis Elementary):
+          // OCR commonly drops the decimal on the meter table kW column
+          // (e.g. "198.7920" → "1987920"). When curActual is far larger than
+          // BilledKW (>2x), try shifting the decimal left by powers of 10 and
+          // pick the largest result that still fits under BilledKW AND
+          // FacilitiesKW. This preserves the real sub-floor reading instead
+          // of clamping to the LGS 200 kW minimum, which would wipe it out.
+          else {
+            let decimalShifted = null;
+            if (!b['_auto_corrected_ActualKW'] && curActual > curBilledFinal * 2) {
+              const facLimit = curFacFinal > 0 ? curFacFinal : Infinity;
+              let best = null;
+              for (const div of [10, 100, 1000, 10000, 100000]) {
+                const v = curActual / div;
+                if (v > 0.1 && v <= curBilledFinal + 0.001 && v <= facLimit + 0.001) {
+                  if (best === null || v > best) best = v;
+                }
+              }
+              if (best !== null) decimalShifted = best;
+            }
+            if (decimalShifted !== null) {
+              b['_auto_corrected_ActualKW'] = {
+                original: b.ActualKW,
+                corrected: decimalShifted.toFixed(4),
+                reason:
+                  'OCR dropped the decimal point on the meter table kW reading — recovered ' +
+                  decimalShifted.toFixed(4) +
+                  ' kW (fits under BilledKW ' +
+                  curBilledFinal.toFixed(4) +
+                  (curFacFinal > 0 ? ' and FacilitiesKW ' + curFacFinal.toFixed(4) : '') +
+                  ')',
+              };
+              b.ActualKW = decimalShifted.toFixed(4);
+            } else {
+              let clampTarget = curBilledFinal;
+              let clampSource = 'BilledKW';
+              if (curFacFinal > 0 && curFacFinal < clampTarget) {
+                clampTarget = curFacFinal;
+                clampSource = 'FacilitiesKW';
+              }
+              if (!b['_auto_corrected_ActualKW']) {
+                const facPart = curFacFinal > 0 ? ' or FacilitiesKW (' + curFacFinal.toFixed(4) + ')' : '';
+                b['_auto_corrected_ActualKW'] = {
+                  original: b.ActualKW,
+                  corrected: clampTarget.toFixed(4),
+                  reason:
+                    'ActualKW (' +
+                    curActual.toFixed(4) +
+                    ') cannot exceed BilledKW (' +
+                    curBilledFinal.toFixed(4) +
+                    ')' +
+                    facPart +
+                    ' — clamped to ' +
+                    clampSource +
+                    ' = ' +
+                    clampTarget.toFixed(4),
+                };
+                b.ActualKW = clampTarget.toFixed(4);
+              }
+            }
+          } // end else (decimal-shift / clamp branch)
+        }
+        // ── Meter table cross-validation: ReadDifference / MeterMultiplier / kWhConsumed ──
+        // Two identities anchor the meter table:
+        //   (1) EndRead - StartRead = ReadDifference
+        //   (2) ReadDifference × MeterMultiplier = kWhConsumed
+        // And one sanity rule:
+        //   ReadDifference ≤ EndRead  (unless EndRead < StartRead, which is a meter rollover)
+        // MeterMultiplier is almost always consistent across bills for the same meter, so
+        // neighbor bills provide a trustworthy reference when OCR garbles the current bill.
+        const _getNeighborMult = () => {
+          const acct = (b.AccountNumber || '').replace(/[\s\-]/g, '');
+          const multCounts = {};
+          for (let j = Math.max(0, i - 6); j < Math.min(bills.length, i + 7); j++) {
+            if (j === i) continue;
+            const nb = bills[j];
+            if ((nb.AccountNumber || '').replace(/[\s\-]/g, '') !== acct) continue;
+            const nm = pf(nb.MeterMultiplier);
+            if (nm > 0 && nm <= 10000) {
+              const key = nm.toFixed(4);
+              multCounts[key] = (multCounts[key] || 0) + 1;
+            }
+          }
+          const sorted = Object.entries(multCounts).sort((a, c) => c[1] - a[1]);
+          return sorted.length ? parseFloat(sorted[0][0]) : null;
+        };
+        const curMult = pf(b.MeterMultiplier);
+        const neighborMult = _getNeighborMult();
+        // Correct an obviously-garbled multiplier (> 10k or way off neighbor consensus)
+        if (neighborMult && neighborMult > 0) {
+          const multOutOfRange = curMult > 10000;
+          const multOffNeighbor = curMult > 0 && Math.abs(curMult - neighborMult) / neighborMult > 0.05;
+          if (multOutOfRange || multOffNeighbor || !curMult) {
+            b['_auto_corrected_MeterMultiplier'] = {
+              original: b.MeterMultiplier,
+              corrected: neighborMult.toFixed(4),
+              reason: 'Neighbor bills on the same account use ' + neighborMult.toFixed(4),
+            };
+            b.MeterMultiplier = neighborMult.toFixed(4);
+          }
+        } else if (curMult > 10000) {
+          b['_likely_missing_MeterMultiplier'] = true;
+          b.MeterMultiplier = null;
+        }
+        // Bug #18: ReadDifference must always be positive (current read - previous read).
+        // Negative values occur when OCR reverses the subtraction order or the sign is
+        // included in the extracted text. Abs() here before any downstream identity checks.
+        if (b.ReadDifference) {
+          const _rdRaw = parseFloat(String(b.ReadDifference).replace(/,/g, ''));
+          if (!isNaN(_rdRaw) && _rdRaw < 0) b.ReadDifference = Math.abs(_rdRaw).toFixed(4);
+        }
+        // ── DETERMINISTIC VALIDATION CHAIN (Update 139 / #127) ──
+        // Meter reads are the most trustworthy OCR values (5-7 digit numbers
+        // are hard to garble significantly). ReadDifference is derived and OCR
+        // frequently misreads a single digit (e.g. 41.8176 vs 41.6176).
+        // ALWAYS compute ReadDifference from reads when both are available,
+        // then cascade corrections through kWhConsumed → On-Peak kWh.
+        const endR = pf(b.EndRead);
+        const startR = pf(b.StartRead);
+        const multNow = pf(b.MeterMultiplier);
+        const curDiff = pf(b.ReadDifference);
+
+        // Step 1: ReadDifference = EndRead - StartRead (authoritative)
+        // For meter rollovers (endR < startR but near a boundary), compute the
+        // wrap-around usage: boundary + 1 - startR + endR (Feature 0de6c188).
+        if (endR > 0 && startR > 0 && endR < startR) {
+          const _rvBounds = [99999, 999999, 9999999];
+          for (const _rvB of _rvBounds) {
+            if (startR > _rvB * 0.9 && endR < _rvB * 0.1) {
+              const rolloverDiff = _rvB + 1 - startR + endR;
+              if (rolloverDiff > 0 && rolloverDiff < _rvB) {
+                if (!curDiff || Math.abs(curDiff - rolloverDiff) > 0.005) {
+                  b['_auto_corrected_ReadDifference'] = {
+                    original: b.ReadDifference,
+                    corrected: rolloverDiff.toFixed(4),
+                    reason:
+                      'Meter rollover: boundary ' +
+                      _rvB +
+                      '+1 − StartRead(' +
+                      startR +
+                      ') + EndRead(' +
+                      endR +
+                      ') = ' +
+                      rolloverDiff.toFixed(4),
+                  };
+                  b.ReadDifference = rolloverDiff.toFixed(4);
+                  b._meterRollover = {
+                    boundary: _rvB,
+                    startRead: startR,
+                    endRead: endR,
+                    rolloverUsage: rolloverDiff,
+                  };
+                }
+              }
+              break;
+            }
+          }
+        } else if (endR > 0 && startR > 0 && endR > startR) {
+          const computedDiff = endR - startR;
+          if (computedDiff > 0 && computedDiff < 1000000) {
+            if (!curDiff || Math.abs(curDiff - computedDiff) > 0.005) {
+              b['_auto_corrected_ReadDifference'] = {
+                original: b.ReadDifference,
+                corrected: computedDiff.toFixed(4),
+                reason: 'EndRead (' + endR + ') − StartRead (' + startR + ') = ' + computedDiff.toFixed(4),
+              };
+              b.ReadDifference = computedDiff.toFixed(4);
+            }
+          }
+        } else if (!curDiff) {
+          // No reads available — try kWh / multiplier fallback
+          const kwhNow = pf(b.kWhConsumed);
+          const kwhDerivedDiff = kwhNow > 0 && multNow > 0 ? kwhNow / multNow : null;
+          if (kwhDerivedDiff !== null && kwhDerivedDiff > 0 && kwhDerivedDiff < 1000000) {
+            b.ReadDifference = kwhDerivedDiff.toFixed(4);
+            b['_auto_recovered_ReadDifference'] = {
+              original: null,
+              corrected: b.ReadDifference,
+              reason: 'kWhConsumed ÷ MeterMultiplier = ' + kwhDerivedDiff.toFixed(4),
+            };
+          }
+        }
+        // Sanity: ReadDifference must not exceed EndRead (unless rollover)
+        const newDiff = pf(b.ReadDifference);
+        if (newDiff > 0 && endR > 0 && startR > 0 && endR >= startR && newDiff > endR) {
+          b['_likely_missing_ReadDifference'] = true;
+          b.ReadDifference = null;
+        }
+
+        // Step 2: kWhConsumed = ReadDifference × MeterMultiplier (cascade)
+        // Guard: don't cascade if the result is outside commercial range (0–2M kWh)
+        // or if the current value is reasonable and the cascade would change it by 10x+.
+        // Garbled multi-meter OCR can produce huge ReadDifference × Multiplier values
+        // that destroy correct charge-line-derived kWhConsumed.
+        const cascadeDiff = pf(b.ReadDifference);
+        if (cascadeDiff > 0 && multNow > 0) {
+          const expectedKwh = cascadeDiff * multNow;
+          const curKwhForChain = pf(b.kWhConsumed);
+          const _kwhSane = expectedKwh > 0 && expectedKwh < 2000000;
+          const _wouldClobber = curKwhForChain > 0 && expectedKwh / curKwhForChain > 10;
+          if (_kwhSane && !_wouldClobber && (!curKwhForChain || Math.abs(curKwhForChain - expectedKwh) > 1)) {
+            b['_auto_corrected_kWhConsumed'] = {
+              original: b.kWhConsumed,
+              corrected: expectedKwh.toFixed(4),
+              reason:
+                'Cascaded: ReadDifference (' +
+                cascadeDiff.toFixed(4) +
+                ') × MeterMultiplier (' +
+                multNow.toFixed(4) +
+                ') = ' +
+                expectedKwh.toFixed(4),
+            };
+            b.kWhConsumed = expectedKwh.toFixed(4);
+          }
+        }
+
+        // Step 3: On-Peak kWh = kWhConsumed - Off-Peak kWh (cascade)
+        const chainKwh = pf(b.kWhConsumed);
+        const chainOffPk = pf(b.OffPeakKWh);
+        const chainOnPk = pf(b.OnPeakKWh);
+        if (chainKwh > 0 && chainOffPk > 0 && chainOnPk > 0) {
+          const expectedOnPk = chainKwh - chainOffPk;
+          if (expectedOnPk > 0 && Math.abs(chainOnPk - expectedOnPk) > 0.5) {
+            // Cross-check: does On-Peak charge / On-Peak rate agree?
+            const onRi = b._rates && b._rates.EnergyOnPeakCharge;
+            const onCharge = pf(b.EnergyOnPeakCharge);
+            let useExpected = true;
+            if (onRi && onRi.rate > 0 && onCharge > 0) {
+              const rateImplied = onCharge / onRi.rate;
+              if (Math.abs(rateImplied - chainOnPk) < Math.abs(rateImplied - expectedOnPk)) {
+                useExpected = false; // rate×qty agrees with current On-Peak, not the subtraction
+              }
+            }
+            if (useExpected) {
+              b['_auto_corrected_OnPeakKWh'] = {
+                original: b.OnPeakKWh,
+                corrected: expectedOnPk.toFixed(4),
+                reason:
+                  'Cascaded: kWhConsumed (' +
+                  chainKwh.toFixed(4) +
+                  ') − OffPeakKWh (' +
+                  chainOffPk.toFixed(4) +
+                  ') = ' +
+                  expectedOnPk.toFixed(4),
+              };
+              b.OnPeakKWh = expectedOnPk.toFixed(4);
+            }
+          }
+        }
+        // Final sanity strip: if ActualKW/BilledKW/FacilitiesKW are still in the insane range, null them
+        for (const kwField of ['ActualKW', 'BilledKW', 'FacilitiesKW', 'TDCkW', 'ActualRKVA']) {
+          const v = pf(b[kwField]);
+          if (v > 10000) {
+            b['_likely_missing_' + kwField] = true;
+            b[kwField] = null;
+          }
+        }
+        // kW can never exceed kWh — if it does, the kW value is garbage
+        const _finalKwh = pf(b.kWhConsumed);
+        if (_finalKwh > 0) {
+          for (const kwField of ['ActualKW', 'BilledKW', 'FacilitiesKW', 'TDCkW']) {
+            const v = pf(b[kwField]);
+            if (v > 0 && v > _finalKwh) {
+              b['_likely_missing_' + kwField] = true;
+              b[kwField] = null;
+            }
+          }
+        }
+        // ── FINAL ActualKW consensus: BilledKW == TDCkW → ActualKW must match ──
+        // Runs after all other kW corrections. If BilledKW and TDCkW agree
+        // (within 0.01) and ActualKW differs by any amount, correct it.
+        const _fAct = pf(b.ActualKW),
+          _fBil = pf(b.BilledKW),
+          _fTdc = pf(b.TDCkW);
+        if (
+          _fAct > 0 &&
+          _fBil > 0 &&
+          _fTdc > 0 &&
+          Math.abs(_fBil - _fTdc) < 0.01 &&
+          _fBil % 1 !== 0 &&
+          Math.abs(_fAct - _fBil) > 0.001
+        ) {
+          b['_auto_corrected_ActualKW'] = {
+            original: b.ActualKW,
+            corrected: _fBil.toFixed(4),
+            reason: 'BilledKW (' + _fBil.toFixed(4) + ') == TDCkW (' + _fTdc.toFixed(4) + ') — ActualKW aligned',
+          };
+          b.ActualKW = _fBil.toFixed(4);
+        }
+      }
+    }
+
+    // ── SEQUENTIAL READ VALIDATION + CROSS-BILL RECOVERY (Update 98) ──
+    // Multi-bill Evergy PDFs are a chain of continuous readings on one
+    // account. A bill's period should abut its neighbors' periods and a
+    // bill's StartRead should equal the previous bill's EndRead (unless
+    // there was a meter change or an odometer rollover). We lean on this
+    // structure to:
+    //   1. Flag non-matching reads between adjacent bills (OCR digit errors).
+    //   2. Recover a missing StartRead from the previous EndRead when
+    //      periods are continuous.
+    //   3. Recover a missing EndRead from the next StartRead.
+    //   4. Apply arithmetic recovery on every bill: given any 3 of
+    //      {StartRead, EndRead, ReadDifference, MeterMultiplier,
+    //      kWhConsumed}, compute the 4th via the two relations:
+    //         EndRead − StartRead = ReadDifference
+    //         ReadDifference × MeterMultiplier = kWhConsumed
+    if (bills.length > 1) {
+      const pfR = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+      const sameAcct = (a, b) => {
+        const x = (a.AccountNumber || '').replace(/[\s\-]/g, '');
+        const y = (b.AccountNumber || '').replace(/[\s\-]/g, '');
+        if (x && y && x !== y) return false;
+        const ca = (a.Commodity || '').toLowerCase();
+        const cb = (b.Commodity || '').toLowerCase();
+        if (ca && cb && ca !== cb) return false;
+        return true;
+      };
+      const dayDiff = (d1, d2) => {
+        if (!d1 || !d2) return Infinity;
+        const p1 = new Date(d1 + 'T12:00:00');
+        const p2 = new Date(d2 + 'T12:00:00');
+        if (isNaN(p1) || isNaN(p2)) return Infinity;
+        return Math.abs((p1 - p2) / 86400000);
+      };
+      // 1. Sequential-read mismatch flags — with meter-change / rollover
+      //    auto-detection. When next.StartRead is near-zero while
+      //    curr.EndRead is large, that's a new meter install or a
+      //    physical odometer rollover, NOT an OCR error. Record a
+      //    `_meterChange` marker instead of a mismatch so the UI can
+      //    treat it as expected continuity.
+      for (let i = 0; i < bills.length - 1; i++) {
+        const curr = bills[i],
+          next = bills[i + 1];
+        if (!curr.EndRead || !next.StartRead) continue;
+        if (!sameAcct(curr, next)) continue;
+        const endR = pfR(curr.EndRead);
+        const startR = pfR(next.StartRead);
+        if (endR > 0 && startR > 0 && Math.abs(endR - startR) > 0.001) {
+          // Meter change / odometer rollover: next.StartRead < 10 AND
+          // prev.EndRead > 1000 (substantially different magnitudes).
+          // Don't flag — the near-zero read is the new meter's zero point.
+          const isMeterChange = startR < 10 && endR > 1000;
+          if (isMeterChange) {
+            next._meterChange = {
+              priorEnd: curr.EndRead,
+              newStart: next.StartRead,
+              reason:
+                'New meter installed (or odometer rollover) — StartRead of ' +
+                next.StartRead +
+                ' is the zero point of the replacement, not a continuation of ' +
+                curr.EndRead +
+                '.',
+            };
+            continue;
+          }
+          curr._seqReadMismatch = {
+            field: 'EndRead',
+            value: curr.EndRead,
+            expected: next.StartRead,
+            nextBill: next.BillingPeriodStart + '–' + next.BillingPeriodEnd,
+          };
+          next._seqReadMismatch = {
+            field: 'StartRead',
+            value: next.StartRead,
+            expected: curr.EndRead,
+            prevBill: curr.BillingPeriodStart + '–' + curr.BillingPeriodEnd,
+          };
+        }
+      }
+      // 2. Cross-bill continuity recovery — copy a missing read from the
+      //    neighbor when billing periods abut (within 5 days).
+      for (let i = 0; i < bills.length; i++) {
+        const curr = bills[i];
+        const prev = i > 0 ? bills[i - 1] : null;
+        const next = i < bills.length - 1 ? bills[i + 1] : null;
+        if (!curr.StartRead && prev && sameAcct(curr, prev) && prev.EndRead) {
+          if (dayDiff(prev.BillingPeriodEnd, curr.BillingPeriodStart) <= 5) {
+            curr.StartRead = prev.EndRead;
+            curr._auto_recovered_StartRead = {
+              original: null,
+              corrected: curr.StartRead,
+              reason:
+                "Copied from previous bill's EndRead (" +
+                prev.EndRead +
+                ') — billing period continuous with ' +
+                prev.BillingPeriodEnd +
+                '.',
+            };
+          }
+        }
+        if (!curr.EndRead && next && sameAcct(curr, next) && next.StartRead) {
+          if (dayDiff(curr.BillingPeriodEnd, next.BillingPeriodStart) <= 5) {
+            curr.EndRead = next.StartRead;
+            curr._auto_recovered_EndRead = {
+              original: null,
+              corrected: curr.EndRead,
+              reason:
+                "Copied from next bill's StartRead (" +
+                next.StartRead +
+                ') — billing period continuous with ' +
+                next.BillingPeriodStart +
+                '.',
+            };
+          }
+        }
+      }
+      // 3. Arithmetic recovery pass: fill any remaining missing value
+      //    from the two identities above. Cascaded so a recovered
+      //    ReadDifference can subsequently yield a missing StartRead/EndRead.
+      for (const b of bills) {
+        for (let pass = 0; pass < 2; pass++) {
+          const sR = pfR(b.StartRead),
+            eR = pfR(b.EndRead),
+            dR = pfR(b.ReadDifference),
+            mM = pfR(b.MeterMultiplier),
+            kC = pfR(b.kWhConsumed);
+          // EndRead − StartRead = ReadDifference
+          if (sR > 0 && eR > 0 && !dR) {
+            const v = eR - sR;
+            b.ReadDifference = v.toFixed(4);
+            b._auto_recovered_ReadDifference = {
+              original: null,
+              corrected: b.ReadDifference,
+              reason: `EndRead (${eR}) − StartRead (${sR}) = ${v.toFixed(4)}.`,
+            };
+          } else if (dR > 0 && sR > 0 && !eR) {
+            const v = sR + dR;
+            b.EndRead = v.toFixed(4);
+            b._auto_recovered_EndRead = {
+              original: null,
+              corrected: b.EndRead,
+              reason: `StartRead (${sR}) + ReadDifference (${dR}) = ${v.toFixed(4)}.`,
+            };
+          } else if (dR > 0 && eR > 0 && !sR) {
+            const v = eR - dR;
+            b.StartRead = v.toFixed(4);
+            b._auto_recovered_StartRead = {
+              original: null,
+              corrected: b.StartRead,
+              reason: `EndRead (${eR}) − ReadDifference (${dR}) = ${v.toFixed(4)}.`,
+            };
+          }
+          // ReadDifference × MeterMultiplier = kWhConsumed
+          if (dR > 0 && mM > 0 && !kC) {
+            const v = dR * mM;
+            if (v > 0 && v < 2000000) {
+              b.kWhConsumed = v.toFixed(4);
+              b._auto_recovered_kWhConsumed = {
+                original: null,
+                corrected: b.kWhConsumed,
+                reason: `ReadDifference (${dR}) × MeterMultiplier (${mM}) = ${v.toFixed(4)}.`,
+              };
+            }
+          } else if (dR > 0 && mM > 0 && kC > 0) {
+            const expected = dR * mM;
+            const mismatch = Math.abs(kC - expected);
+            const _expectedSane = expected > 0 && expected < 2000000;
+            const _wouldClobber2 = kC > 0 && expected / kC > 10;
+            if (_expectedSane && !_wouldClobber2 && mismatch > 1 && mismatch / expected > 0.001) {
+              b['_auto_corrected_kWhConsumed'] = {
+                original: b.kWhConsumed,
+                corrected: expected.toFixed(4),
+                reason: `ReadDifference (${dR}) × MeterMultiplier (${mM}) = ${expected.toFixed(4)}. OCR value ${kC.toFixed(4)} differs by ${mismatch.toFixed(4)}.`,
+              };
+              b.kWhConsumed = expected.toFixed(4);
+            }
+          } else if (kC > 0 && mM > 0 && !dR) {
+            const v = kC / mM;
+            b.ReadDifference = v.toFixed(4);
+            b._auto_recovered_ReadDifference = {
+              original: null,
+              corrected: b.ReadDifference,
+              reason: `kWhConsumed (${kC}) / MeterMultiplier (${mM}) = ${v.toFixed(4)}.`,
+            };
+          } else if (kC > 0 && dR > 0 && !mM) {
+            const v = kC / dR;
+            b.MeterMultiplier = v.toFixed(4);
+            b._auto_recovered_MeterMultiplier = {
+              original: null,
+              corrected: b.MeterMultiplier,
+              reason: `kWhConsumed (${kC}) / ReadDifference (${dR}) = ${v.toFixed(4)}.`,
+            };
+          }
+        }
+      }
+    }
+
+    // ── HELPER: find consensus Facilities rate from neighboring bills ──
+    // When OCR garbles the rate (e.g. "$2079" instead of "$2.979"), the rate used to
+    // recompute FacilitiesCharge will be wrong. Compare against neighbors on same account.
+    function _getNeighborFacRate(bills, idx) {
+      const acct = (bills[idx].AccountNumber || '').replace(/[\s\-]/g, '');
+      const rates = [];
+      for (let j = Math.max(0, idx - 6); j < Math.min(bills.length, idx + 7); j++) {
+        if (j === idx) continue;
+        const b = bills[j];
+        if ((b.AccountNumber || '').replace(/[\s\-]/g, '') !== acct) continue;
+        if (b._rates && b._rates.FacilitiesCharge && b._rates.FacilitiesCharge.rate > 0) {
+          rates.push(b._rates.FacilitiesCharge.rate);
+        }
+      }
+      if (rates.length === 0) return null;
+      // Find the most common rate (mode)
+      const counts = {};
+      for (const r of rates) {
+        const key = r.toFixed(5);
+        counts[key] = (counts[key] || 0) + 1;
+      }
+      return parseFloat(Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]);
+    }
+
+    // ── FACILITIES KW ROLLING PEAK VALIDATION ──
+    // FacilitiesKW is the highest demand in the past 12 months (rolling peak).
+    // It only changes when a new monthly BilledKW exceeds the previous peak.
+    // If FacilitiesKW changes between consecutive bills, verify it's legitimate:
+    //   Legitimate: new FacilitiesKW = current BilledKW (new peak set this month)
+    //   OCR error:  new FacilitiesKW ≠ BilledKW, and decimal digits match prior value
+    //               (e.g. 576.7840 vs 578.7840 — same .7840, just integer digit swap)
+    if (bills.length > 1 && utilityName === 'Evergy') {
+      for (let i = 1; i < bills.length; i++) {
+        const prev = bills[i - 1],
+          curr = bills[i];
+        // Only compare same account
+        const acct1 = (prev.AccountNumber || '').replace(/[\s\-]/g, '');
+        const acct2 = (curr.AccountNumber || '').replace(/[\s\-]/g, '');
+        if (acct1 && acct2 && acct1 !== acct2) continue;
+        const prevFac = pf(prev.FacilitiesKW),
+          currFac = pf(curr.FacilitiesKW);
+        const currBilled = pf(curr.BilledKW);
+        if (!prevFac || !currFac || Math.abs(prevFac - currFac) < 0.001) continue;
+        // FacilitiesKW changed — is it legitimate?
+        if (Math.abs(currFac - currBilled) < 0.001) {
+          // New FacilitiesKW = current BilledKW → could be a new peak.
+          // Check: were all previous BilledKW values below this?
+          // Look back up to 11 bills for the same account.
+          let allBelow = true;
+          for (let j = Math.max(0, i - 11); j < i; j++) {
+            const pAcct = (bills[j].AccountNumber || '').replace(/[\s\-]/g, '');
+            if (pAcct && acct2 && pAcct !== acct2) continue;
+            if (pf(bills[j].BilledKW) >= currFac - 0.001) {
+              allBelow = false;
+              break;
+            }
+          }
+          if (allBelow) continue; // Legitimate new peak — skip correction
+        }
+        // Check if decimal digits match (strong indicator of integer-digit OCR error)
+        const prevDec = String(prev.FacilitiesKW).split('.')[1] || '';
+        const currDec = String(curr.FacilitiesKW).split('.')[1] || '';
+        if (prevDec === currDec && prevDec.length >= 3) {
+          // Same decimal portion (e.g. both .7840) — integer digit OCR error.
+          // Use the previous bill's FacilitiesKW (the established rolling peak).
+          curr['_auto_corrected_FacilitiesKW'] = {
+            original: curr.FacilitiesKW,
+            corrected: prev.FacilitiesKW,
+            rate: 0,
+            qty: 0,
+            unit: 'kW',
+            reason:
+              'Rolling 12-month peak: decimal .' +
+              currDec +
+              ' matches prior bill, integer digit OCR error (' +
+              curr.FacilitiesKW +
+              ' → ' +
+              prev.FacilitiesKW +
+              ')',
+          };
+          curr.FacilitiesKW = prev.FacilitiesKW;
+          // Also recompute FacilitiesCharge if we have the rate
+          // Validate rate against neighbors — OCR may garble it (e.g. "$2079" → 2.079 instead of 2.979)
+          if (curr._rates && curr._rates.FacilitiesCharge) {
+            let facRate = curr._rates.FacilitiesCharge.rate;
+            const neighborRate = _getNeighborFacRate(bills, i);
+            if (neighborRate && Math.abs(neighborRate - facRate) > 0.01) {
+              facRate = neighborRate; // neighbor consensus rate is more reliable
+            }
+            const newCharge = Math.round(pf(prev.FacilitiesKW) * facRate * 100) / 100;
+            if (newCharge > 0) {
+              curr['_auto_corrected_FacilitiesCharge'] = {
+                original: curr.FacilitiesCharge,
+                corrected: newCharge.toFixed(2),
+                rate: facRate,
+                qty: pf(prev.FacilitiesKW),
+                unit: 'kW',
+                reason: prev.FacilitiesKW + ' kW × $' + facRate.toFixed(5) + ' = $' + newCharge.toFixed(2),
+              };
+              curr.FacilitiesCharge = newCharge.toFixed(2);
+            }
+          }
+        }
+      }
+    }
+
+    // ── NEIGHBOR-BILL FALLBACK ──
+    // When a bill has null fields, borrow from adjacent bills in the same multi-bill PDF
+    // that share the same AccountNumber (and MeterNumber when both have one).
+    const NEIGHBOR_FIELDS = ['UtilityCompany', 'CustomerName', 'ServiceAddress', 'RateSchedule'];
+    for (let i = 0; i < bills.length; i++) {
+      const b = bills[i];
+      if (!b.AccountNumber) continue;
+      const needsFill = NEIGHBOR_FIELDS.some((f) => b[f] === null || b[f] === undefined || b[f] === '');
+      if (!needsFill) continue;
+      const prev = i > 0 ? bills[i - 1] : null;
+      const next = i < bills.length - 1 ? bills[i + 1] : null;
+      const acctClean = (s) => (s || '').replace(/[\s\-]/g, '').toLowerCase();
+      const isNeighbor = (n) => {
+        if (!n || !n.AccountNumber) return false;
+        if (acctClean(n.AccountNumber) !== acctClean(b.AccountNumber)) return false;
+        if (b.MeterNumber && n.MeterNumber && b.MeterNumber !== n.MeterNumber) return false;
+        return true;
+      };
+      const donors = []; // prefer previous, then next
+      if (isNeighbor(prev)) donors.push(prev);
+      if (isNeighbor(next)) donors.push(next);
+      for (const f of NEIGHBOR_FIELDS) {
+        if (b[f] !== null && b[f] !== undefined && b[f] !== '') continue;
+        for (const donor of donors) {
+          if (donor[f] !== null && donor[f] !== undefined && donor[f] !== '') {
+            b[f] = donor[f];
+            b['_neighbor_filled_' + f] = true;
+            break;
+          }
+        }
+      }
+    }
+
+    // ── CROSS-BILL CONSISTENCY: CustomerCharge and FacilitiesKW ──
+    // CustomerCharge is a fixed monthly fee — should be identical across all bills on the same rate.
+    // FacilitiesKW is a rolling 12-month peak — shouldn't all be identical unless demand never changed.
+    // If all bills have the same value, flag for OCR review (likely copied from one good read).
+    if (bills.length >= 3) {
+      const custCharges = bills.map((b) => pf(b.CustomerCharge)).filter((v) => v > 0);
+      const facKWs = bills.map((b) => pf(b.FacilitiesKW)).filter((v) => v > 0);
+      // CustomerCharge: all same is expected (fixed fee) — no action needed
+      // FacilitiesKW: if ALL are identical across 3+ bills, that's suspicious
+      // (real FacilitiesKW changes when a new peak is set)
+      if (facKWs.length >= 3) {
+        const allSame = facKWs.every((v) => Math.abs(v - facKWs[0]) < 0.001);
+        if (allSame) {
+          bills.forEach((b) => {
+            if (!b._warnings) b._warnings = [];
+            b._warnings.push(
+              'FacilitiesKW is identical across all bills (' + facKWs[0].toFixed(4) + ') — verify OCR accuracy',
+            );
+          });
+        }
+      }
+    }
+
+    // ── NEW PEAK LOGIC + FORWARD PROPAGATION ──
+    // When ActualKW exceeds the rolling 12-month peak, a new peak is set.
+    // FacilitiesKW = ActualKW = BilledKW for that month.
+    // Then propagate: all subsequent bills must have FacilitiesKW >= the new peak
+    // (the peak can only decrease when it rolls off after 12 months).
+    // This also undoes any incorrect rolling peak corrections applied earlier.
+    for (let i = 0; i < bills.length; i++) {
+      const b = bills[i];
+      const actualKW = pf(b.ActualKW);
+      const facKW = pf(b.FacilitiesKW);
+      const billedKW = pf(b.BilledKW);
+      if (actualKW > 0 && facKW > 0 && actualKW > facKW) {
+        // New peak set this month
+        b.FacilitiesKW = b.ActualKW;
+        if (billedKW > 0 && Math.abs(billedKW - actualKW) > 0.01) {
+          b.BilledKW = b.ActualKW;
+        }
+        b['_auto_corrected_FacilitiesKW'] = {
+          original: facKW.toFixed(4),
+          corrected: b.FacilitiesKW,
+          reason:
+            'New 12-month peak: ActualKW (' +
+            actualKW.toFixed(4) +
+            ') exceeds prior FacilitiesKW (' +
+            facKW.toFixed(4) +
+            ')',
+        };
+        // Forward propagation: update all subsequent bills within 12 months
+        const newPeak = pf(b.FacilitiesKW);
+        for (let j = i + 1; j < bills.length && j < i + 12; j++) {
+          const nb = bills[j];
+          const nbFacKW = pf(nb.FacilitiesKW);
+          // If a subsequent bill's FacilitiesKW is less than the new peak, it's wrong
+          if (nbFacKW > 0 && nbFacKW < newPeak) {
+            const nbOriginal = nb._auto_corrected_FacilitiesKW?.original || nb.FacilitiesKW;
+            nb.FacilitiesKW = newPeak.toFixed(4);
+            nb['_auto_corrected_FacilitiesKW'] = {
+              original: nbOriginal,
+              corrected: nb.FacilitiesKW,
+              reason:
+                'Forward propagation: peak of ' +
+                newPeak.toFixed(4) +
+                ' kW set in bill ' +
+                (i + 1) +
+                ' carries forward',
+            };
+            // Recompute FacilitiesCharge if rate is available
+            // Validate rate against neighbors — OCR may garble it
+            if (nb._rates && nb._rates.FacilitiesCharge && nb._rates.FacilitiesCharge.rate > 0) {
+              let facRate = nb._rates.FacilitiesCharge.rate;
+              const neighborRate = _getNeighborFacRate(bills, j);
+              if (neighborRate && Math.abs(neighborRate - facRate) > 0.01) {
+                facRate = neighborRate;
+              }
+              const newCharge = Math.round(newPeak * facRate * 100) / 100;
+              if (newCharge > 0) {
+                nb['_auto_corrected_FacilitiesCharge'] = {
+                  original: nb.FacilitiesCharge,
+                  corrected: newCharge.toFixed(2),
+                  rate: facRate,
+                  qty: newPeak,
+                  unit: 'kW',
+                  reason:
+                    newPeak.toFixed(4) +
+                    ' kW × $' +
+                    facRate.toFixed(5) +
+                    ' = $' +
+                    newCharge.toFixed(2) +
+                    ' (peak propagated)',
+                };
+                nb.FacilitiesCharge = newCharge.toFixed(2);
+              }
+            }
+          }
+          // If a subsequent bill sets an even higher peak, stop propagating this one
+          const nbActual = pf(nb.ActualKW);
+          if (nbActual > newPeak) break;
+        }
+      }
+    }
+
+    // Clean up no-op corrections: if a field was corrected then corrected back to its original value, remove the correction record
+    for (const b of bills) {
+      for (const key of Object.keys(b)) {
+        if (!key.startsWith('_auto_corrected_')) continue;
+        const corr = b[key];
+        if (!corr) continue;
+        const field = key.replace('_auto_corrected_', '');
+        const origVal = String(corr.original || '').replace(/,/g, '');
+        const finalVal = String(b[field] || '').replace(/,/g, '');
+        if (origVal && finalVal && parseFloat(origVal).toFixed(4) === parseFloat(finalVal).toFixed(4)) {
+          delete b[key]; // No net change — remove the correction warning
+        }
+      }
+      // Clear magnitude flags when the CORRECTED value is within normal range.
+      // Magnitude flags are set against original (pre-correction) values in Stage 2,
+      // but auto-corrections in Stage 3+ may have fixed the value. Re-evaluate using
+      // the final corrected value — only keep the flag if it's still an outlier.
+      for (const key of Object.keys(b)) {
+        if (!key.startsWith('_magnitude_flag_')) continue;
+        const field = key.replace('_magnitude_flag_', '');
+        const correctedVal = pf(b[field]);
+        if (correctedVal <= 0) continue;
+        const flag = b[key];
+        const correctedRatio = correctedVal / flag.mean;
+        if (correctedRatio < 8 && correctedRatio > 0.12) {
+          delete b[key];
+        }
+      }
+    }
+
+    // ── BILLING PERIOD GAP DETECTION ──
+    // Flag gaps between consecutive bills of the same commodity.
+    // Groups by Commodity (or 'Electric' default), sorts by start date,
+    // checks for gaps > 5 days between one bill's end and the next's start.
+    if (bills.length > 1) {
+      const _commGroups = {};
+      for (const b of bills) {
+        const c = b.Commodity || 'Electric';
+        if (!_commGroups[c]) _commGroups[c] = [];
+        _commGroups[c].push(b);
+      }
+      for (const [comm, group] of Object.entries(_commGroups)) {
+        const sorted = group
+          .filter((b) => b.BillingPeriodStart && b.BillingPeriodEnd)
+          .sort((a, b) => {
+            const da = new Date(
+              a.BillingPeriodStart.replace(
+                /(\d+)\/(\d+)\/(\d+)/,
+                (_, m, d, y) => (y.length === 2 ? '20' + y : y) + '-' + m.padStart(2, '0') + '-' + d.padStart(2, '0'),
+              ),
+            );
+            const db = new Date(
+              b.BillingPeriodStart.replace(
+                /(\d+)\/(\d+)\/(\d+)/,
+                (_, m, d, y) => (y.length === 2 ? '20' + y : y) + '-' + m.padStart(2, '0') + '-' + d.padStart(2, '0'),
+              ),
+            );
+            return da - db;
+          });
+        for (let i = 1; i < sorted.length; i++) {
+          const prevEnd = sorted[i - 1].BillingPeriodEnd;
+          const curStart = sorted[i].BillingPeriodStart;
+          const toDate = (d) => {
+            if (!d) return null; // guard: undefined date would crash on .split()
+            const p = d.split(/[\/\-]/); // accept both "/" and "-" separators (KGS uses MM-DD-YY)
+            return new Date(
+              (p[2].length === 2 ? '20' + p[2] : p[2]) +
+                '-' +
+                p[0].padStart(2, '0') +
+                '-' +
+                p[1].padStart(2, '0') +
+                'T12:00:00',
+            );
+          };
+          const gapDays = Math.round((toDate(curStart) - toDate(prevEnd)) / 86400000);
+          if (gapDays > 5) {
+            sorted[i]._billing_gap = {
+              days: gapDays,
+              afterPeriod: prevEnd,
+              commodity: comm,
+              reason:
+                gapDays +
+                '-day gap in ' +
+                comm +
+                ' billing: previous period ended ' +
+                prevEnd +
+                ', this period starts ' +
+                curStart,
+            };
+          }
+        }
+      }
+    }
+
+    // ── RE-VALIDATE: OnPeakKWh + OffPeakKWh = kWhConsumed ──
+    // The extractor corrects On-Peak kWh early, but _postExtractionVerify may
+    // later change kWhConsumed (via charge-line consensus or meter-table identity).
+    // Re-check the identity and re-correct On-Peak/Off-Peak to match the final kWhConsumed.
+    if (utilityName === 'Evergy') {
+      for (const b of bills) {
+        const onPk = pf(b.OnPeakKWh);
+        const offPk = pf(b.OffPeakKWh);
+        const total = pf(b.kWhConsumed);
+        if (onPk > 0 && offPk > 0 && total > 0 && Math.abs(onPk + offPk - total) > 1) {
+          const onRi = b._rates && b._rates.EnergyOnPeakCharge;
+          const offRi = b._rates && b._rates.EnergyOffPeakCharge;
+          let fixed = false;
+          if (onRi && onRi.rate > 0 && pf(b.EnergyOnPeakCharge) > 0) {
+            const derivedOn = pf(b.EnergyOnPeakCharge) / onRi.rate;
+            if (derivedOn > 0 && Math.abs(derivedOn + offPk - total) < 1) {
+              b['_auto_corrected_OnPeakKWh'] = {
+                original: b.OnPeakKWh,
+                corrected: derivedOn.toFixed(4),
+                reason: 'Re-validated after kWhConsumed correction: charge / rate = ' + derivedOn.toFixed(4),
+              };
+              b.OnPeakKWh = derivedOn.toFixed(4);
+              fixed = true;
+            }
+          }
+          if (!fixed && offRi && offRi.rate > 0 && pf(b.EnergyOffPeakCharge) > 0) {
+            const derivedOff = pf(b.EnergyOffPeakCharge) / offRi.rate;
+            if (derivedOff > 0 && Math.abs(onPk + derivedOff - total) < 1) {
+              b['_auto_corrected_OffPeakKWh'] = {
+                original: b.OffPeakKWh,
+                corrected: derivedOff.toFixed(4),
+                reason: 'Re-validated after kWhConsumed correction: charge / rate = ' + derivedOff.toFixed(4),
+              };
+              b.OffPeakKWh = derivedOff.toFixed(4);
+              fixed = true;
+            }
+          }
+          if (!fixed) {
+            const derivedOn = total - offPk;
+            if (derivedOn > 0) {
+              b['_auto_corrected_OnPeakKWh'] = {
+                original: b.OnPeakKWh,
+                corrected: derivedOn.toFixed(4),
+                reason:
+                  'Re-validated: kWhConsumed (' +
+                  total.toFixed(2) +
+                  ') - OffPeakKWh (' +
+                  offPk.toFixed(2) +
+                  ') = ' +
+                  derivedOn.toFixed(4),
+              };
+              b.OnPeakKWh = derivedOn.toFixed(4);
+            }
+          }
+        }
+      }
+    }
+
+    // ── FINAL SANITY PASS: catch impossible values set by late-stage corrections ──
+    // Sequential-read arithmetic and meter-table identity can produce garbage
+    // kWhConsumed (e.g. garbled ReadDifference × MeterMultiplier = 999,539).
+    // This runs AFTER all correction stages so nothing slips through.
+    for (const b of bills) {
+      const comm = (b.Commodity || '').toLowerCase();
+      if (comm && comm !== 'electric') continue;
+      const _kwhVal = pf(b.kWhConsumed);
+      if (_kwhVal > 500000) {
+        const _eR = pf(b.EndRead),
+          _sR = pf(b.StartRead),
+          _mM = pf(b.MeterMultiplier);
+        const _recomputed = _eR > 0 && _sR > 0 && _eR > _sR && _mM > 0 ? (_eR - _sR) * _mM : 0;
+        const _crossCheck = b._kwhCrossCheck ? b._kwhCrossCheck.calculated : 0;
+        const _recovery =
+          _recomputed > 0 && _recomputed < 500000
+            ? _recomputed
+            : _crossCheck > 0 && _crossCheck < 500000
+              ? _crossCheck
+              : 0;
+        if (_recovery > 0) {
+          b['_auto_corrected_kWhConsumed'] = {
+            original: b.kWhConsumed,
+            corrected: _recovery.toFixed(4),
+            reason:
+              'Value ' +
+              _kwhVal +
+              ' exceeded 500k ceiling; recovered from ' +
+              (_recomputed > 0 ? 'EndRead-StartRead×Mult' : 'charge-line cross-check'),
+          };
+          b.kWhConsumed = _recovery.toFixed(4);
+        } else {
+          b['_likely_missing_kWhConsumed'] = true;
+          b.kWhConsumed = null;
+        }
+      }
+      const _kwhNow = pf(b.kWhConsumed);
+      for (const kwField of ['ActualKW', 'BilledKW', 'FacilitiesKW', 'TDCkW']) {
+        const v = pf(b[kwField]);
+        if (v > 10000) {
+          b['_likely_missing_' + kwField] = true;
+          b[kwField] = null;
+        } else if (_kwhNow > 0 && v > _kwhNow) {
+          b['_likely_missing_' + kwField] = true;
+          b[kwField] = null;
+        }
+      }
+    }
+
+    // ── GAS SANITY PASS: catch impossible therms, charges, and fuel adjustments ──
+    for (const b of bills) {
+      const comm = (b.Commodity || '').toLowerCase();
+      if (comm !== 'gas') continue;
+      const therms = pf(b.NaturalGasTherms);
+      const gasChg = pf(b.GasCharge);
+      const custChg = pf(b.CustomerCharge);
+      const fa = pf(b.FuelAdjustment);
+      if (therms > 10000) {
+        b['_likely_garbled_NaturalGasTherms'] = {
+          original: b.NaturalGasTherms,
+          reason: 'Therms > 10,000 ceiling for monthly bill',
+        };
+        b.NaturalGasTherms = null;
+      }
+      if (therms > 0 && gasChg > 0) {
+        const rate = gasChg / therms;
+        if (rate > 2.0) {
+          b['_likely_garbled_GasCharge'] = {
+            original: b.GasCharge,
+            rate: rate.toFixed(4),
+            reason: 'Rate $' + rate.toFixed(2) + '/therm exceeds $2.00 ceiling',
+          };
+          b.GasCharge = null;
+        }
+      }
+      // FA ratio check: in summer months with very low gas usage the
+      // GasCharge can be just a few dollars (e.g. $2.39) while the FA is a
+      // flat credit (e.g. -$12). The 50% ratio test false-positives on those
+      // bills. Only apply the ratio check when GasCharge > $25 (roughly the
+      // base charge); for small charges, only flag when |FA| > 2× GasCharge
+      // to catch truly garbled values while keeping legitimate small-bill FAs.
+      if (fa !== 0 && gasChg > 0) {
+        const faAbs = Math.abs(fa);
+        const isGarbledFA = gasChg > 25 ? faAbs > gasChg * 0.5 : faAbs > gasChg * 2;
+        if (isGarbledFA) {
+          b['_likely_garbled_FuelAdjustment'] = {
+            original: b.FuelAdjustment,
+            reason:
+              gasChg > 25
+                ? '|FA| exceeds 50% of GasCharge ($' + gasChg.toFixed(2) + ')'
+                : '|FA| exceeds 2× GasCharge ($' + gasChg.toFixed(2) + ') [small-charge threshold]',
+          };
+          b.FuelAdjustment = null;
+          const fixedTotal = gasChg + custChg;
+          b.TotalCurrentCharges = fixedTotal.toFixed(2);
+          b.TotalAmountDue = fixedTotal.toFixed(2);
+        }
+      }
+      let total = pf(b.TotalCurrentCharges);
+      if (total < 0 && gasChg > 0 && custChg > 0) {
+        const fixedTotal = gasChg + custChg + (pf(b.FuelAdjustment) || 0);
+        b.TotalCurrentCharges = fixedTotal.toFixed(2);
+        b.TotalAmountDue = fixedTotal.toFixed(2);
+        total = fixedTotal;
+      }
+      if (total > 0 && gasChg > 0 && custChg > 0) {
+        const expectedTotal = gasChg + custChg + (pf(b.FuelAdjustment) || 0);
+        if (Math.abs(expectedTotal - total) > total * 0.15 && Math.abs(expectedTotal - total) > 5) {
+          b._warnings = b._warnings || [];
+          b._warnings.push({
+            level: 'warn',
+            field: 'TotalCurrentCharges',
+            message: 'Gas total $' + total.toFixed(2) + ' differs from components sum $' + expectedTotal.toFixed(2),
+          });
+        }
+      }
+    }
+
+    // ── GENERAL VALIDATION: line item exceeds total (all utilities) ──
+    // A bill where any single charge field is greater than TotalCurrentCharges
+    // is physically impossible and indicates a parse/OCR error. Recalculate
+    // the total from charge components when possible; only warn when data is
+    // genuinely missing and can't be computed.
+    const COMMODITY_CHARGE_FIELDS = {
+      Gas: ['CustomerCharge', 'GasCharge', 'FuelAdjustment'],
+      Water: ['WaterCharge', 'WaterProtectionFee'],
+      Sewer: ['SewerCharge'],
+      Stormwater: ['StormWaterCharge'],
+      Propane: ['PropaneCharge'],
+      Electric: [
         'CustomerCharge',
         'FacilitiesCharge',
         'BilledKWCharge',
@@ -1344,1496 +2754,96 @@ function _postExtractionVerify(bills, utilityName, rawText) {
         'FranchiseFee',
         'SolarCredit',
         'RenewableCharge',
-      ];
-      // Round to cents to prevent floating-point accumulation errors
-      // across 15 addends from producing phantom ±$0.01 mismatches.
-      const _sumCharges = () => Math.round(CHARGE_FIELDS.reduce((s, f) => s + pf(b[f]), 0) * 100) / 100;
-
-      // 3a. Measure
-      const ocrTotal = pf(b.TotalCurrentCharges);
-      let compSum = _sumCharges();
-
-      if (!ocrTotal) {
-        // No OCR'd total — compSum is the only evidence we have.
-        if (compSum > 0) {
-          b.TotalCurrentCharges = compSum.toFixed(2);
-          b._totalFromChargeSum = true;
-          b._totalSource = 'compSum (no OCR total available)';
+      ],
+    };
+    const ALL_CHARGE_FIELDS = [...new Set(Object.values(COMMODITY_CHARGE_FIELDS).flat())];
+    for (const b of bills) {
+      const total = pf(b.TotalCurrentCharges);
+      if (total <= 0) continue;
+      const comm = (b.Commodity || '').replace(/\s/g, '');
+      const chargeFields = COMMODITY_CHARGE_FIELDS[comm] || ALL_CHARGE_FIELDS;
+      const compSum =
+        Math.round(
+          chargeFields.reduce(function (s, f) {
+            return s + pf(b[f]);
+          }, 0) * 100,
+        ) / 100;
+      // If sum of all components (including negatives like Fuel Adjustment)
+      // matches total within tolerance, no violation — individual items can
+      // legitimately exceed total when credits/adjustments bring it down.
+      if (Math.abs(compSum - total) < 0.5) continue;
+      const violations = [];
+      for (const f of chargeFields) {
+        const v = pf(b[f]);
+        if (v > 0 && v > total + 0.1) {
+          violations.push({ field: f, value: v });
         }
-      } else if (Math.abs(compSum - ocrTotal) < 0.02) {
-        // 3a'. Already consistent — done, no mutation needed.
+      }
+      if (violations.length === 0) continue;
+      if (compSum > total + 0.1) {
+        const origTotal = b.TotalCurrentCharges;
+        b.TotalCurrentCharges = compSum.toFixed(2);
+        b.TotalAmountDue = compSum.toFixed(2);
+        b._auto_corrected_TotalCurrentCharges = {
+          original: origTotal,
+          corrected: compSum.toFixed(2),
+          reason:
+            violations
+              .map(function (vi) {
+                return vi.field + ' ($' + vi.value.toFixed(2) + ') exceeded total ($' + pf(origTotal).toFixed(2) + ')';
+              })
+              .join('; ') +
+            ' — recalculated from charge components: $' +
+            compSum.toFixed(2),
+        };
+        console.log(
+          '[PostVerify] Total corrected for ' + comm + ': $' + pf(origTotal).toFixed(2) + ' → $' + compSum.toFixed(2),
+        );
       } else {
-        // Disagreement between ocrTotal and compSum. Run principled diagnosis.
-
-        // 3b-pre. TDC CHARGE VERIFICATION FALLBACK (#43)
-        // Strategy B can only verify charges that have _rates entries (from xRate).
-        // When OCR garbled the TDC rate line so xRate returned nothing, TDC is
-        // unverifiable and any OCR misread on its charge silently persists. Fallback:
-        // if _rates.TDCCharge is missing but we have both the charge amount and the
-        // kW quantity, derive rate = charge / qty and synthesize a _rates entry.
-        // This gives Strategy B a computed value to cross-check against.
-        if (b._rates && !b._rates.TDCCharge && pf(b.TDCCharge) > 0 && pf(b.TDCkW) > 0) {
-          const _tdcChg = pf(b.TDCCharge);
-          const _tdcQty = pf(b.TDCkW);
-          const _tdcRate = _tdcChg / _tdcQty;
-          // Sanity: Evergy TDC rates are typically $1-$5/kW. Accept $0.10-$50/kW range.
-          if (_tdcRate >= 0.1 && _tdcRate <= 50) {
-            b._rates.TDCCharge = {
-              qty: _tdcQty,
-              rate: _tdcRate,
-              unit: 'kW',
-              computed: Math.round(_tdcQty * _tdcRate * 100) / 100,
-              _derived: true,
-            };
-          }
-        }
-
-        // 3b. Strategy B — apply ALL rate×qty corrections where the direction
-        // matches the gap (charge too low when sum is too low, or too high when
-        // sum is too high). Multiple corrections may be needed to close the gap
-        // (e.g., ECA + PTS both under-extracted on a changeover bill).
-        let targetDelta = compSum - ocrTotal;
-        if (b._rates && Math.abs(targetDelta) >= 0.02) {
-          for (const [field, ri] of Object.entries(b._rates)) {
-            const ocrVal = pf(b[field]);
-            if (!ocrVal || !ri.computed) continue;
-            if (ri.computed > 1e6 || ri.rate > 10000) continue;
-            const chargeDelta = ocrVal - ri.computed;
-            if (Math.abs(chargeDelta) < 0.02) continue;
-            const sameDirection = (targetDelta < 0 && chargeDelta < 0) || (targetDelta > 0 && chargeDelta > 0);
-            // Don't replace a charge value when xChg found more parts
-            // than xRate. xChg correctly summed all OCR'd dollar amounts
-            // but xRate couldn't parse the rate info from garbled lines.
-            // Replacing the correct xChg total with the incomplete xRate
-            // computed value CREATES a mismatch that didn't exist.
-            const xChgParts = b._xChgParts && b._xChgParts[field];
-            const xRateParts = ri.parts || [ri];
-            if (xChgParts && xChgParts.length > xRateParts.length) continue;
-            if (sameDirection) {
-              b['_auto_corrected_' + field] = {
-                original: b[field],
-                corrected: ri.computed.toFixed(2),
-                rate: ri.rate,
-                qty: ri.qty,
-                unit: ri.unit,
-                reason:
-                  ri.qty.toFixed(4) + ' ' + ri.unit + ' × $' + ri.rate.toFixed(5) + ' = $' + ri.computed.toFixed(2),
-              };
-              b[field] = ri.computed.toFixed(2);
-            }
-          }
-          compSum = _sumCharges();
-          targetDelta = compSum - ocrTotal;
-        }
-
-        // 3c. Strategy C — subtraction inference for a lone unverified field.
-        // Only runs if a gap remains AND exactly one rate-based charge has no
-        // _rates entry (meaning we can't verify it by math).
-        if (Math.abs(compSum - ocrTotal) >= 0.02) {
-          const RATE_BASED = [
-            'FacilitiesCharge',
-            'BilledKWCharge',
-            'EnergyOnPeakCharge',
-            'EnergyOffPeakCharge',
-            'ECACharge',
-            'EERCharge',
-            'PTSCharge',
-            'TDCCharge',
-            'RkVACharge',
-          ];
-          const unverified = RATE_BASED.filter((f) => {
-            const v = pf(b[f]);
-            if (v <= 0) return false;
-            if (b._rates && b._rates[f]) return false;
-            if (b['_auto_corrected_' + f]) return false;
-            if (b['_ocr_consensus_' + f]) return false;
-            return true;
-          });
-          if (unverified.length === 1) {
-            const f = unverified[0];
-            const origVal = pf(b[f]);
-            const residual = ocrTotal - (compSum - origVal);
-            if (residual > 0) {
-              b['_auto_corrected_' + f] = {
-                original: b[f],
-                corrected: residual.toFixed(2),
-                reason:
-                  'Derived from TotalCurrentCharges − Σ(other charges). No rate data for ' +
-                  f +
-                  '; every other charge verified, so this field absorbs the residual.',
-              };
-              b[f] = residual.toFixed(2);
-              compSum = _sumCharges();
-            }
-          }
-        }
-
-        // 3d. Final decision — evidence-weighted, never blind.
-        const finalDelta = compSum - ocrTotal;
-        // SUBTOTAL CORROBORATION GUARD: on Evergy tax-exempt bills the
-        // printed Subtotal and Current Charges are always equal. When
-        // both OCR'd cleanly to the same value, that pair is ground
-        // truth — a compSum disagreement points to a per-charge bug
-        // (wrong sign, missed line item), not a wrong total. Don't let
-        // compSum clobber a corroborated ocrTotal.
-        const _subVal = pf(b._subtotal);
-        const subtotalCorroborates = _subVal > 0 && Math.abs(_subVal - ocrTotal) < 0.02;
-        if (Math.abs(finalDelta) < 0.02) {
-          // Reconciled. Keep ocrTotal. No flag needed.
-        } else {
-          // Still disagree. Check if any per-charge rate mismatches remain
-          // (signal that compSum is still contaminated).
-          const hasRateMismatch = Object.keys(b).some((k) => k.startsWith('_rate_mismatch_'));
-          if (finalDelta > 0.5 && !hasRateMismatch && !subtotalCorroborates) {
-            // compSum > ocrTotal, all per-charge math verifies → ocrTotal was
-            // likely a page-1 summary that excluded some detail charges that
-            // extracted cleanly. Trust compSum.
-            b.TotalCurrentCharges = compSum.toFixed(2);
-            b._totalFromChargeSum = true;
-            b._totalSource =
-              'compSum (ocrTotal of $' +
-              ocrTotal.toFixed(2) +
-              ' appears to be an incomplete summary; no per-charge rate mismatches remain to cast doubt on compSum)';
-          } else {
-            // Can't confidently reconcile — flag for user, keep ocrTotal.
-            b._sum_mismatch = {
-              compSum,
-              total: ocrTotal,
-              diff: Math.abs(finalDelta),
-              reason:
-                'Charges sum to $' +
-                compSum.toFixed(2) +
-                ' vs OCR total $' +
-                ocrTotal.toFixed(2) +
-                (hasRateMismatch
-                  ? '. Per-charge rate mismatches remain after correction attempts — user review needed.'
-                  : finalDelta > 0
-                    ? '. No rate mismatches to pinpoint, but compSum exceeds OCR total by less than the switch threshold.'
-                    : '. A charge was likely missed during extraction.'),
-            };
-          }
-        }
-      }
-    }
-  }
-
-  // ── CROSS-FIELD VALIDATION: kWhConsumed and ActualKW consensus from charge lines ──
-  // Per Evergy bill structure, several charge lines carry the SAME quantity:
-  //   - PTS Chg qty = total kWh for the period
-  //   - EER Chg qty = total kWh for the period
-  //   - ECA Chg qty (sum of parts if seasonal) = total kWh
-  //   - Energy On-Peak + Off-Peak qty sum = total kWh
-  //   - TDC Chg qty = ActualKW (current month billed demand)
-  // When the meter table is OCR-garbled but the charge lines extracted cleanly, we can recover
-  // kWhConsumed and ActualKW from this charge-line consensus. The CSC Evergy bill format rules:
-  //   - kW sanity: single monthly kW almost never exceeds 9,999.9999
-  //   - kWh sanity: single monthly kWh almost never exceeds 999,999.9999
-  // Anything outside those bounds is an OCR/parse error; reject and recover from consensus.
-  if (utilityName === 'Evergy') {
-    for (let i = 0; i < bills.length; i++) {
-      const b = bills[i];
-      if (!b._rates) continue;
-      // kWh charge line parts represent portions of the SAME total period (seasonal split,
-      // prorated days, etc.) so their qty should sum to kWhConsumed.
-      const getPartsQtySum = (rateKey) => {
-        const r = b._rates[rateKey];
-        if (!r || !r.parts || !r.parts.length) return null;
-        const s = r.parts.reduce((a, p) => a + (p.qty || 0), 0);
-        return s > 0 ? s : null;
-      };
-      // kW charge line parts can represent DIFFERENT kW values on meter-change bills
-      // (old meter + new meter mid-month), so summing is wrong — the true ActualKW is the MAX.
-      // On seasonal rate changeover bills, both parts have the same kW and MAX == either one.
-      const getPartsQtyMax = (rateKey) => {
-        const r = b._rates[rateKey];
-        if (!r || !r.parts || !r.parts.length) return null;
-        const m = Math.max(...r.parts.map((p) => p.qty || 0));
-        return m > 0 ? m : null;
-      };
-      // Collect implied kWh from each charge line that spans the full period
-      const kwhImplied = [];
-      for (const key of ['PTSCharge', 'EERCharge', 'ECACharge']) {
-        const q = getPartsQtySum(key);
-        if (q) kwhImplied.push({ source: key, value: q });
-      }
-      // Energy On+Off peak sum (both may exist; total = on + off)
-      const onQ = getPartsQtySum('EnergyOnPeakCharge') || 0;
-      const offQ = getPartsQtySum('EnergyOffPeakCharge') || 0;
-      if (onQ + offQ > 0) kwhImplied.push({ source: 'Energy On+Off', value: onQ + offQ });
-      // Find the mode (most common value within 2% tolerance) — gives a robust consensus
-      const consensusKwh = (() => {
-        if (kwhImplied.length < 2) return kwhImplied[0]?.value || null;
-        const buckets = [];
-        for (const item of kwhImplied) {
-          const bkt = buckets.find((b2) => Math.abs(b2.value - item.value) / item.value < 0.02);
-          if (bkt) {
-            bkt.count++;
-            bkt.sources.push(item.source);
-          } else {
-            buckets.push({ value: item.value, count: 1, sources: [item.source] });
-          }
-        }
-        buckets.sort((a, b2) => b2.count - a.count);
-        return buckets[0].count >= 2 ? buckets[0].value : null;
-      })();
-      // Decide whether current kWhConsumed is suspect
-      const curKwh = pf(b.kWhConsumed);
-      const kwhOutOfRange = curKwh > 0 && (curKwh > 500000 || curKwh < 1);
-      const kwhOffFromConsensus = consensusKwh && curKwh > 0 && Math.abs(curKwh - consensusKwh) / consensusKwh > 0.05;
-      if (consensusKwh && (kwhOutOfRange || kwhOffFromConsensus || !curKwh)) {
-        b['_auto_corrected_kWhConsumed'] = {
-          original: b.kWhConsumed,
-          corrected: consensusKwh.toFixed(4),
+        b._charge_exceeds_total = {
+          total: total,
+          violations: violations,
           reason:
-            'Cross-validated from charge line qty consensus (' +
-            kwhImplied
-              .filter((x) => Math.abs(x.value - consensusKwh) / consensusKwh < 0.02)
-              .map((x) => x.source)
-              .join(', ') +
-            ')',
-        };
-        b.kWhConsumed = consensusKwh.toFixed(4);
-      }
-      // ActualKW recovery rule (Evergy LGS Secondary minimum 200 kW billed demand):
-      //   BilledKW = max(ActualKW, 200)
-      // Corollary: when BilledKW > 200, the floor is NOT applied, so ActualKW == BilledKW
-      // by mathematical identity — we can recover ActualKW from the Demand Chg line.
-      // When BilledKW <= 200, we keep whatever the meter table reading was; the user can
-      // see it and correct it manually if it's garbled (ActualKW < 200 is legitimate on
-      // low-demand months and shouldn't be nulled).
-      const curKw = pf(b.ActualKW);
-      const kwOutOfRange = curKw > 0 && (curKw > 10000 || curKw < 0.1);
-      const demandKwMax = getPartsQtyMax('BilledKWCharge');
-      if ((!curKw || kwOutOfRange) && demandKwMax && demandKwMax > 200 && demandKwMax < 10000) {
-        b['_auto_corrected_ActualKW'] = {
-          original: b.ActualKW,
-          corrected: demandKwMax.toFixed(4),
-          reason:
-            'BilledKW (' +
-            demandKwMax.toFixed(4) +
-            ' kW) exceeds the 200 kW LGS Secondary minimum, so ActualKW = BilledKW by identity',
-        };
-        b.ActualKW = demandKwMax.toFixed(4);
-      }
-      const tdcKwMax = getPartsQtyMax('TDCCharge');
-      const curTdcKw = pf(b.TDCkW);
-      const tdcKwParts = b._rates?.TDCCharge?.parts || [];
-      const tdcKwMatchesPart = curTdcKw > 0 && tdcKwParts.some((p) => Math.abs(curTdcKw - (p.qty || 0)) < 0.01);
-      if (tdcKwMax && curTdcKw > 0 && !tdcKwMatchesPart && Math.abs(curTdcKw - tdcKwMax) / tdcKwMax > 0.05) {
-        b['_auto_corrected_TDCkW'] = {
-          original: b.TDCkW,
-          corrected: tdcKwMax.toFixed(4),
-          reason: 'Derived from TDC Chg qty (max of parts)',
-        };
-        b.TDCkW = tdcKwMax.toFixed(4);
-      } else if (!curTdcKw && tdcKwMax) {
-        b.TDCkW = tdcKwMax.toFixed(4);
-      }
-      // FacilitiesKW: on rate changeover bills, the Facilities Chg line splits into two parts
-      // with different per-period kW values. Only override if the extracted value doesn't
-      // match any part's qty — matching means the meter table reading is valid for that period.
-      const facKwMax = getPartsQtyMax('FacilitiesCharge');
-      const curFacKw = pf(b.FacilitiesKW);
-      const facKwParts = b._rates?.FacilitiesCharge?.parts || [];
-      const facKwMatchesPart = curFacKw > 0 && facKwParts.some((p) => Math.abs(curFacKw - (p.qty || 0)) < 0.01);
-      if (
-        facKwMax &&
-        facKwMax > 0 &&
-        facKwMax < 10000 &&
-        curFacKw > 0 &&
-        !facKwMatchesPart &&
-        Math.abs(curFacKw - facKwMax) / facKwMax > 0.05
-      ) {
-        b['_auto_corrected_FacilitiesKW'] = {
-          original: b.FacilitiesKW,
-          corrected: facKwMax.toFixed(4),
-          reason: 'Cross-validated from Facilities Chg qty (max of parts)',
-        };
-        b.FacilitiesKW = facKwMax.toFixed(4);
-      } else if (!curFacKw && facKwMax && facKwMax < 10000) {
-        b.FacilitiesKW = facKwMax.toFixed(4);
-      }
-      // BilledKW: on changeover bills, parts have different per-period kW values.
-      // Only override if the extracted value doesn't match ANY part's qty —
-      // matching any part means the meter table reading is valid for that period.
-      const billedKwMax = getPartsQtyMax('BilledKWCharge');
-      const curBilledKw = pf(b.BilledKW);
-      const billedKwParts = b._rates?.BilledKWCharge?.parts || [];
-      const billedKwMatchesPart =
-        curBilledKw > 0 && billedKwParts.some((p) => Math.abs(curBilledKw - (p.qty || 0)) < 0.01);
-      if (
-        billedKwMax &&
-        billedKwMax > 0 &&
-        billedKwMax < 10000 &&
-        curBilledKw > 0 &&
-        !billedKwMatchesPart &&
-        Math.abs(curBilledKw - billedKwMax) / billedKwMax > 0.05
-      ) {
-        b['_auto_corrected_BilledKW'] = {
-          original: b.BilledKW,
-          corrected: billedKwMax.toFixed(4),
-          reason: 'Cross-validated from Demand Chg qty (max of parts)',
-        };
-        b.BilledKW = billedKwMax.toFixed(4);
-      } else if (!curBilledKw && billedKwMax && billedKwMax < 10000) {
-        b.BilledKW = billedKwMax.toFixed(4);
-      }
-      // ── ActualKW sanity clamp: ActualKW ≤ BilledKW (physical constraint) ──
-      // BilledKW is derived by the utility as max(ActualKW, LGS floor, 12-month ratchet).
-      // That means BilledKW is ALWAYS ≥ ActualKW by construction — if OCR produces an
-      // ActualKW that exceeds BilledKW, the meter-table reading is wrong (common garble:
-      // "475.5360" read as "4755360", "578.784" as "5787840", etc.). Clamp down to the
-      // smaller of BilledKW and FacilitiesKW so the correction respects both physical
-      // constraints ("Actual kW can never be more than Billed kW or Facilities kW") in
-      // one shot. Runs AFTER BilledKW and FacilitiesKW have been cross-validated against
-      // their rate-line qty, so the clamp target is trustworthy.
-      //
-      // This rule intentionally does NOT fire on ActualKW > FacilitiesKW alone — a real
-      // new 12-month peak has ActualKW == BilledKW > prior FacilitiesKW, and is handled
-      // by the downstream "new peak + forward propagation" logic. Firing here would
-      // swallow legitimate peak growth. The strict trigger is ActualKW > BilledKW,
-      // which is physically impossible and therefore always an OCR error.
-      //
-      // Respects prior _auto_corrected_ActualKW markers: if an earlier rule (e.g. the
-      // 200 kW LGS floor recovery above) already wrote one, we don't overwrite it.
-      const curActual = pf(b.ActualKW);
-      const curBilledFinal = pf(b.BilledKW);
-      const curFacFinal = pf(b.FacilitiesKW);
-      if (curActual > 0 && curBilledFinal > 0 && curActual > curBilledFinal + 0.001) {
-        // CHARGE-LINE CONSENSUS FIRST: BilledKW == TDCkW proves the real demand.
-        // When two independent charge lines (Demand Chg and TDC Chg) agree on the
-        // kW value AND it has decimals (not a round minimum floor), ActualKW must
-        // equal them — no floor was applied, so Actual = Billed = TDC by identity.
-        // This is stronger evidence than decimal-shift guessing because the charge
-        // lines were extracted cleanly even when the meter table was garbled.
-        const curTdcFinal = pf(b.TDCkW);
-        const billedTdcAgree =
-          curBilledFinal > 0 &&
-          curTdcFinal > 0 &&
-          Math.abs(curBilledFinal - curTdcFinal) < 0.01 &&
-          curBilledFinal % 1 !== 0;
-        if (!b['_auto_corrected_ActualKW'] && billedTdcAgree) {
-          b['_auto_corrected_ActualKW'] = {
-            original: b.ActualKW,
-            corrected: curBilledFinal.toFixed(4),
-            reason:
-              'BilledKW (' +
-              curBilledFinal.toFixed(4) +
-              ') == TDCkW (' +
-              curTdcFinal.toFixed(4) +
-              ') with decimals — no minimum floor applied, so ActualKW = BilledKW by identity',
-          };
-          b.ActualKW = curBilledFinal.toFixed(4);
-        }
-        // DECIMAL-SHIFT RECOVERY (Bill 29 Nov 2025 Louis Elementary):
-        // OCR commonly drops the decimal on the meter table kW column
-        // (e.g. "198.7920" → "1987920"). When curActual is far larger than
-        // BilledKW (>2x), try shifting the decimal left by powers of 10 and
-        // pick the largest result that still fits under BilledKW AND
-        // FacilitiesKW. This preserves the real sub-floor reading instead
-        // of clamping to the LGS 200 kW minimum, which would wipe it out.
-        else {
-          let decimalShifted = null;
-          if (!b['_auto_corrected_ActualKW'] && curActual > curBilledFinal * 2) {
-            const facLimit = curFacFinal > 0 ? curFacFinal : Infinity;
-            let best = null;
-            for (const div of [10, 100, 1000, 10000, 100000]) {
-              const v = curActual / div;
-              if (v > 0.1 && v <= curBilledFinal + 0.001 && v <= facLimit + 0.001) {
-                if (best === null || v > best) best = v;
-              }
-            }
-            if (best !== null) decimalShifted = best;
-          }
-          if (decimalShifted !== null) {
-            b['_auto_corrected_ActualKW'] = {
-              original: b.ActualKW,
-              corrected: decimalShifted.toFixed(4),
-              reason:
-                'OCR dropped the decimal point on the meter table kW reading — recovered ' +
-                decimalShifted.toFixed(4) +
-                ' kW (fits under BilledKW ' +
-                curBilledFinal.toFixed(4) +
-                (curFacFinal > 0 ? ' and FacilitiesKW ' + curFacFinal.toFixed(4) : '') +
-                ')',
-            };
-            b.ActualKW = decimalShifted.toFixed(4);
-          } else {
-            let clampTarget = curBilledFinal;
-            let clampSource = 'BilledKW';
-            if (curFacFinal > 0 && curFacFinal < clampTarget) {
-              clampTarget = curFacFinal;
-              clampSource = 'FacilitiesKW';
-            }
-            if (!b['_auto_corrected_ActualKW']) {
-              const facPart = curFacFinal > 0 ? ' or FacilitiesKW (' + curFacFinal.toFixed(4) + ')' : '';
-              b['_auto_corrected_ActualKW'] = {
-                original: b.ActualKW,
-                corrected: clampTarget.toFixed(4),
-                reason:
-                  'ActualKW (' +
-                  curActual.toFixed(4) +
-                  ') cannot exceed BilledKW (' +
-                  curBilledFinal.toFixed(4) +
-                  ')' +
-                  facPart +
-                  ' — clamped to ' +
-                  clampSource +
-                  ' = ' +
-                  clampTarget.toFixed(4),
-              };
-              b.ActualKW = clampTarget.toFixed(4);
-            }
-          }
-        } // end else (decimal-shift / clamp branch)
-      }
-      // ── Meter table cross-validation: ReadDifference / MeterMultiplier / kWhConsumed ──
-      // Two identities anchor the meter table:
-      //   (1) EndRead - StartRead = ReadDifference
-      //   (2) ReadDifference × MeterMultiplier = kWhConsumed
-      // And one sanity rule:
-      //   ReadDifference ≤ EndRead  (unless EndRead < StartRead, which is a meter rollover)
-      // MeterMultiplier is almost always consistent across bills for the same meter, so
-      // neighbor bills provide a trustworthy reference when OCR garbles the current bill.
-      const _getNeighborMult = () => {
-        const acct = (b.AccountNumber || '').replace(/[\s\-]/g, '');
-        const multCounts = {};
-        for (let j = Math.max(0, i - 6); j < Math.min(bills.length, i + 7); j++) {
-          if (j === i) continue;
-          const nb = bills[j];
-          if ((nb.AccountNumber || '').replace(/[\s\-]/g, '') !== acct) continue;
-          const nm = pf(nb.MeterMultiplier);
-          if (nm > 0 && nm <= 10000) {
-            const key = nm.toFixed(4);
-            multCounts[key] = (multCounts[key] || 0) + 1;
-          }
-        }
-        const sorted = Object.entries(multCounts).sort((a, c) => c[1] - a[1]);
-        return sorted.length ? parseFloat(sorted[0][0]) : null;
-      };
-      const curMult = pf(b.MeterMultiplier);
-      const neighborMult = _getNeighborMult();
-      // Correct an obviously-garbled multiplier (> 10k or way off neighbor consensus)
-      if (neighborMult && neighborMult > 0) {
-        const multOutOfRange = curMult > 10000;
-        const multOffNeighbor = curMult > 0 && Math.abs(curMult - neighborMult) / neighborMult > 0.05;
-        if (multOutOfRange || multOffNeighbor || !curMult) {
-          b['_auto_corrected_MeterMultiplier'] = {
-            original: b.MeterMultiplier,
-            corrected: neighborMult.toFixed(4),
-            reason: 'Neighbor bills on the same account use ' + neighborMult.toFixed(4),
-          };
-          b.MeterMultiplier = neighborMult.toFixed(4);
-        }
-      } else if (curMult > 10000) {
-        b['_likely_missing_MeterMultiplier'] = true;
-        b.MeterMultiplier = null;
-      }
-      // Bug #18: ReadDifference must always be positive (current read - previous read).
-      // Negative values occur when OCR reverses the subtraction order or the sign is
-      // included in the extracted text. Abs() here before any downstream identity checks.
-      if (b.ReadDifference) {
-        const _rdRaw = parseFloat(String(b.ReadDifference).replace(/,/g, ''));
-        if (!isNaN(_rdRaw) && _rdRaw < 0) b.ReadDifference = Math.abs(_rdRaw).toFixed(4);
-      }
-      // ── DETERMINISTIC VALIDATION CHAIN (Update 139 / #127) ──
-      // Meter reads are the most trustworthy OCR values (5-7 digit numbers
-      // are hard to garble significantly). ReadDifference is derived and OCR
-      // frequently misreads a single digit (e.g. 41.8176 vs 41.6176).
-      // ALWAYS compute ReadDifference from reads when both are available,
-      // then cascade corrections through kWhConsumed → On-Peak kWh.
-      const endR = pf(b.EndRead);
-      const startR = pf(b.StartRead);
-      const multNow = pf(b.MeterMultiplier);
-      const curDiff = pf(b.ReadDifference);
-
-      // Step 1: ReadDifference = EndRead - StartRead (authoritative)
-      // For meter rollovers (endR < startR but near a boundary), compute the
-      // wrap-around usage: boundary + 1 - startR + endR (Feature 0de6c188).
-      if (endR > 0 && startR > 0 && endR < startR) {
-        const _rvBounds = [99999, 999999, 9999999];
-        for (const _rvB of _rvBounds) {
-          if (startR > _rvB * 0.9 && endR < _rvB * 0.1) {
-            const rolloverDiff = _rvB + 1 - startR + endR;
-            if (rolloverDiff > 0 && rolloverDiff < _rvB) {
-              if (!curDiff || Math.abs(curDiff - rolloverDiff) > 0.005) {
-                b['_auto_corrected_ReadDifference'] = {
-                  original: b.ReadDifference,
-                  corrected: rolloverDiff.toFixed(4),
-                  reason:
-                    'Meter rollover: boundary ' +
-                    _rvB +
-                    '+1 − StartRead(' +
-                    startR +
-                    ') + EndRead(' +
-                    endR +
-                    ') = ' +
-                    rolloverDiff.toFixed(4),
-                };
-                b.ReadDifference = rolloverDiff.toFixed(4);
-                b._meterRollover = {
-                  boundary: _rvB,
-                  startRead: startR,
-                  endRead: endR,
-                  rolloverUsage: rolloverDiff,
-                };
-              }
-            }
-            break;
-          }
-        }
-      } else if (endR > 0 && startR > 0 && endR > startR) {
-        const computedDiff = endR - startR;
-        if (computedDiff > 0 && computedDiff < 1000000) {
-          if (!curDiff || Math.abs(curDiff - computedDiff) > 0.005) {
-            b['_auto_corrected_ReadDifference'] = {
-              original: b.ReadDifference,
-              corrected: computedDiff.toFixed(4),
-              reason: 'EndRead (' + endR + ') − StartRead (' + startR + ') = ' + computedDiff.toFixed(4),
-            };
-            b.ReadDifference = computedDiff.toFixed(4);
-          }
-        }
-      } else if (!curDiff) {
-        // No reads available — try kWh / multiplier fallback
-        const kwhNow = pf(b.kWhConsumed);
-        const kwhDerivedDiff = kwhNow > 0 && multNow > 0 ? kwhNow / multNow : null;
-        if (kwhDerivedDiff !== null && kwhDerivedDiff > 0 && kwhDerivedDiff < 1000000) {
-          b.ReadDifference = kwhDerivedDiff.toFixed(4);
-          b['_auto_recovered_ReadDifference'] = {
-            original: null,
-            corrected: b.ReadDifference,
-            reason: 'kWhConsumed ÷ MeterMultiplier = ' + kwhDerivedDiff.toFixed(4),
-          };
-        }
-      }
-      // Sanity: ReadDifference must not exceed EndRead (unless rollover)
-      const newDiff = pf(b.ReadDifference);
-      if (newDiff > 0 && endR > 0 && startR > 0 && endR >= startR && newDiff > endR) {
-        b['_likely_missing_ReadDifference'] = true;
-        b.ReadDifference = null;
-      }
-
-      // Step 2: kWhConsumed = ReadDifference × MeterMultiplier (cascade)
-      // Guard: don't cascade if the result is outside commercial range (0–2M kWh)
-      // or if the current value is reasonable and the cascade would change it by 10x+.
-      // Garbled multi-meter OCR can produce huge ReadDifference × Multiplier values
-      // that destroy correct charge-line-derived kWhConsumed.
-      const cascadeDiff = pf(b.ReadDifference);
-      if (cascadeDiff > 0 && multNow > 0) {
-        const expectedKwh = cascadeDiff * multNow;
-        const curKwhForChain = pf(b.kWhConsumed);
-        const _kwhSane = expectedKwh > 0 && expectedKwh < 2000000;
-        const _wouldClobber = curKwhForChain > 0 && expectedKwh / curKwhForChain > 10;
-        if (_kwhSane && !_wouldClobber && (!curKwhForChain || Math.abs(curKwhForChain - expectedKwh) > 1)) {
-          b['_auto_corrected_kWhConsumed'] = {
-            original: b.kWhConsumed,
-            corrected: expectedKwh.toFixed(4),
-            reason:
-              'Cascaded: ReadDifference (' +
-              cascadeDiff.toFixed(4) +
-              ') × MeterMultiplier (' +
-              multNow.toFixed(4) +
-              ') = ' +
-              expectedKwh.toFixed(4),
-          };
-          b.kWhConsumed = expectedKwh.toFixed(4);
-        }
-      }
-
-      // Step 3: On-Peak kWh = kWhConsumed - Off-Peak kWh (cascade)
-      const chainKwh = pf(b.kWhConsumed);
-      const chainOffPk = pf(b.OffPeakKWh);
-      const chainOnPk = pf(b.OnPeakKWh);
-      if (chainKwh > 0 && chainOffPk > 0 && chainOnPk > 0) {
-        const expectedOnPk = chainKwh - chainOffPk;
-        if (expectedOnPk > 0 && Math.abs(chainOnPk - expectedOnPk) > 0.5) {
-          // Cross-check: does On-Peak charge / On-Peak rate agree?
-          const onRi = b._rates && b._rates.EnergyOnPeakCharge;
-          const onCharge = pf(b.EnergyOnPeakCharge);
-          let useExpected = true;
-          if (onRi && onRi.rate > 0 && onCharge > 0) {
-            const rateImplied = onCharge / onRi.rate;
-            if (Math.abs(rateImplied - chainOnPk) < Math.abs(rateImplied - expectedOnPk)) {
-              useExpected = false; // rate×qty agrees with current On-Peak, not the subtraction
-            }
-          }
-          if (useExpected) {
-            b['_auto_corrected_OnPeakKWh'] = {
-              original: b.OnPeakKWh,
-              corrected: expectedOnPk.toFixed(4),
-              reason:
-                'Cascaded: kWhConsumed (' +
-                chainKwh.toFixed(4) +
-                ') − OffPeakKWh (' +
-                chainOffPk.toFixed(4) +
-                ') = ' +
-                expectedOnPk.toFixed(4),
-            };
-            b.OnPeakKWh = expectedOnPk.toFixed(4);
-          }
-        }
-      }
-      // Final sanity strip: if ActualKW/BilledKW/FacilitiesKW are still in the insane range, null them
-      for (const kwField of ['ActualKW', 'BilledKW', 'FacilitiesKW', 'TDCkW', 'ActualRKVA']) {
-        const v = pf(b[kwField]);
-        if (v > 10000) {
-          b['_likely_missing_' + kwField] = true;
-          b[kwField] = null;
-        }
-      }
-      // kW can never exceed kWh — if it does, the kW value is garbage
-      const _finalKwh = pf(b.kWhConsumed);
-      if (_finalKwh > 0) {
-        for (const kwField of ['ActualKW', 'BilledKW', 'FacilitiesKW', 'TDCkW']) {
-          const v = pf(b[kwField]);
-          if (v > 0 && v > _finalKwh) {
-            b['_likely_missing_' + kwField] = true;
-            b[kwField] = null;
-          }
-        }
-      }
-      // ── FINAL ActualKW consensus: BilledKW == TDCkW → ActualKW must match ──
-      // Runs after all other kW corrections. If BilledKW and TDCkW agree
-      // (within 0.01) and ActualKW differs by any amount, correct it.
-      const _fAct = pf(b.ActualKW),
-        _fBil = pf(b.BilledKW),
-        _fTdc = pf(b.TDCkW);
-      if (
-        _fAct > 0 &&
-        _fBil > 0 &&
-        _fTdc > 0 &&
-        Math.abs(_fBil - _fTdc) < 0.01 &&
-        _fBil % 1 !== 0 &&
-        Math.abs(_fAct - _fBil) > 0.001
-      ) {
-        b['_auto_corrected_ActualKW'] = {
-          original: b.ActualKW,
-          corrected: _fBil.toFixed(4),
-          reason: 'BilledKW (' + _fBil.toFixed(4) + ') == TDCkW (' + _fTdc.toFixed(4) + ') — ActualKW aligned',
-        };
-        b.ActualKW = _fBil.toFixed(4);
-      }
-    }
-  }
-
-  // ── SEQUENTIAL READ VALIDATION + CROSS-BILL RECOVERY (Update 98) ──
-  // Multi-bill Evergy PDFs are a chain of continuous readings on one
-  // account. A bill's period should abut its neighbors' periods and a
-  // bill's StartRead should equal the previous bill's EndRead (unless
-  // there was a meter change or an odometer rollover). We lean on this
-  // structure to:
-  //   1. Flag non-matching reads between adjacent bills (OCR digit errors).
-  //   2. Recover a missing StartRead from the previous EndRead when
-  //      periods are continuous.
-  //   3. Recover a missing EndRead from the next StartRead.
-  //   4. Apply arithmetic recovery on every bill: given any 3 of
-  //      {StartRead, EndRead, ReadDifference, MeterMultiplier,
-  //      kWhConsumed}, compute the 4th via the two relations:
-  //         EndRead − StartRead = ReadDifference
-  //         ReadDifference × MeterMultiplier = kWhConsumed
-  if (bills.length > 1) {
-    const pfR = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
-    const sameAcct = (a, b) => {
-      const x = (a.AccountNumber || '').replace(/[\s\-]/g, '');
-      const y = (b.AccountNumber || '').replace(/[\s\-]/g, '');
-      if (x && y && x !== y) return false;
-      const ca = (a.Commodity || '').toLowerCase();
-      const cb = (b.Commodity || '').toLowerCase();
-      if (ca && cb && ca !== cb) return false;
-      return true;
-    };
-    const dayDiff = (d1, d2) => {
-      if (!d1 || !d2) return Infinity;
-      const p1 = new Date(d1 + 'T12:00:00');
-      const p2 = new Date(d2 + 'T12:00:00');
-      if (isNaN(p1) || isNaN(p2)) return Infinity;
-      return Math.abs((p1 - p2) / 86400000);
-    };
-    // 1. Sequential-read mismatch flags — with meter-change / rollover
-    //    auto-detection. When next.StartRead is near-zero while
-    //    curr.EndRead is large, that's a new meter install or a
-    //    physical odometer rollover, NOT an OCR error. Record a
-    //    `_meterChange` marker instead of a mismatch so the UI can
-    //    treat it as expected continuity.
-    for (let i = 0; i < bills.length - 1; i++) {
-      const curr = bills[i],
-        next = bills[i + 1];
-      if (!curr.EndRead || !next.StartRead) continue;
-      if (!sameAcct(curr, next)) continue;
-      const endR = pfR(curr.EndRead);
-      const startR = pfR(next.StartRead);
-      if (endR > 0 && startR > 0 && Math.abs(endR - startR) > 0.001) {
-        // Meter change / odometer rollover: next.StartRead < 10 AND
-        // prev.EndRead > 1000 (substantially different magnitudes).
-        // Don't flag — the near-zero read is the new meter's zero point.
-        const isMeterChange = startR < 10 && endR > 1000;
-        if (isMeterChange) {
-          next._meterChange = {
-            priorEnd: curr.EndRead,
-            newStart: next.StartRead,
-            reason:
-              'New meter installed (or odometer rollover) — StartRead of ' +
-              next.StartRead +
-              ' is the zero point of the replacement, not a continuation of ' +
-              curr.EndRead +
-              '.',
-          };
-          continue;
-        }
-        curr._seqReadMismatch = {
-          field: 'EndRead',
-          value: curr.EndRead,
-          expected: next.StartRead,
-          nextBill: next.BillingPeriodStart + '–' + next.BillingPeriodEnd,
-        };
-        next._seqReadMismatch = {
-          field: 'StartRead',
-          value: next.StartRead,
-          expected: curr.EndRead,
-          prevBill: curr.BillingPeriodStart + '–' + curr.BillingPeriodEnd,
+            violations
+              .map(function (vi) {
+                return vi.field + ' ($' + vi.value.toFixed(2) + ') > TotalCurrentCharges ($' + total.toFixed(2) + ')';
+              })
+              .join('; ') + ' — could not auto-correct, verify against PDF',
         };
       }
     }
-    // 2. Cross-bill continuity recovery — copy a missing read from the
-    //    neighbor when billing periods abut (within 5 days).
-    for (let i = 0; i < bills.length; i++) {
-      const curr = bills[i];
-      const prev = i > 0 ? bills[i - 1] : null;
-      const next = i < bills.length - 1 ? bills[i + 1] : null;
-      if (!curr.StartRead && prev && sameAcct(curr, prev) && prev.EndRead) {
-        if (dayDiff(prev.BillingPeriodEnd, curr.BillingPeriodStart) <= 5) {
-          curr.StartRead = prev.EndRead;
-          curr._auto_recovered_StartRead = {
-            original: null,
-            corrected: curr.StartRead,
-            reason:
-              "Copied from previous bill's EndRead (" +
-              prev.EndRead +
-              ') — billing period continuous with ' +
-              prev.BillingPeriodEnd +
-              '.',
-          };
-        }
-      }
-      if (!curr.EndRead && next && sameAcct(curr, next) && next.StartRead) {
-        if (dayDiff(curr.BillingPeriodEnd, next.BillingPeriodStart) <= 5) {
-          curr.EndRead = next.StartRead;
-          curr._auto_recovered_EndRead = {
-            original: null,
-            corrected: curr.EndRead,
-            reason:
-              "Copied from next bill's StartRead (" +
-              next.StartRead +
-              ') — billing period continuous with ' +
-              next.BillingPeriodStart +
-              '.',
-          };
-        }
-      }
-    }
-    // 3. Arithmetic recovery pass: fill any remaining missing value
-    //    from the two identities above. Cascaded so a recovered
-    //    ReadDifference can subsequently yield a missing StartRead/EndRead.
-    for (const b of bills) {
-      for (let pass = 0; pass < 2; pass++) {
-        const sR = pfR(b.StartRead),
-          eR = pfR(b.EndRead),
-          dR = pfR(b.ReadDifference),
-          mM = pfR(b.MeterMultiplier),
-          kC = pfR(b.kWhConsumed);
-        // EndRead − StartRead = ReadDifference
-        if (sR > 0 && eR > 0 && !dR) {
-          const v = eR - sR;
-          b.ReadDifference = v.toFixed(4);
-          b._auto_recovered_ReadDifference = {
-            original: null,
-            corrected: b.ReadDifference,
-            reason: `EndRead (${eR}) − StartRead (${sR}) = ${v.toFixed(4)}.`,
-          };
-        } else if (dR > 0 && sR > 0 && !eR) {
-          const v = sR + dR;
-          b.EndRead = v.toFixed(4);
-          b._auto_recovered_EndRead = {
-            original: null,
-            corrected: b.EndRead,
-            reason: `StartRead (${sR}) + ReadDifference (${dR}) = ${v.toFixed(4)}.`,
-          };
-        } else if (dR > 0 && eR > 0 && !sR) {
-          const v = eR - dR;
-          b.StartRead = v.toFixed(4);
-          b._auto_recovered_StartRead = {
-            original: null,
-            corrected: b.StartRead,
-            reason: `EndRead (${eR}) − ReadDifference (${dR}) = ${v.toFixed(4)}.`,
-          };
-        }
-        // ReadDifference × MeterMultiplier = kWhConsumed
-        if (dR > 0 && mM > 0 && !kC) {
-          const v = dR * mM;
-          if (v > 0 && v < 2000000) {
-            b.kWhConsumed = v.toFixed(4);
-            b._auto_recovered_kWhConsumed = {
-              original: null,
-              corrected: b.kWhConsumed,
-              reason: `ReadDifference (${dR}) × MeterMultiplier (${mM}) = ${v.toFixed(4)}.`,
-            };
-          }
-        } else if (dR > 0 && mM > 0 && kC > 0) {
-          const expected = dR * mM;
-          const mismatch = Math.abs(kC - expected);
-          const _expectedSane = expected > 0 && expected < 2000000;
-          const _wouldClobber2 = kC > 0 && expected / kC > 10;
-          if (_expectedSane && !_wouldClobber2 && mismatch > 1 && mismatch / expected > 0.001) {
-            b['_auto_corrected_kWhConsumed'] = {
-              original: b.kWhConsumed,
-              corrected: expected.toFixed(4),
-              reason: `ReadDifference (${dR}) × MeterMultiplier (${mM}) = ${expected.toFixed(4)}. OCR value ${kC.toFixed(4)} differs by ${mismatch.toFixed(4)}.`,
-            };
-            b.kWhConsumed = expected.toFixed(4);
-          }
-        } else if (kC > 0 && mM > 0 && !dR) {
-          const v = kC / mM;
-          b.ReadDifference = v.toFixed(4);
-          b._auto_recovered_ReadDifference = {
-            original: null,
-            corrected: b.ReadDifference,
-            reason: `kWhConsumed (${kC}) / MeterMultiplier (${mM}) = ${v.toFixed(4)}.`,
-          };
-        } else if (kC > 0 && dR > 0 && !mM) {
-          const v = kC / dR;
-          b.MeterMultiplier = v.toFixed(4);
-          b._auto_recovered_MeterMultiplier = {
-            original: null,
-            corrected: b.MeterMultiplier,
-            reason: `kWhConsumed (${kC}) / ReadDifference (${dR}) = ${v.toFixed(4)}.`,
-          };
-        }
-      }
-    }
-  }
 
-  // ── HELPER: find consensus Facilities rate from neighboring bills ──
-  // When OCR garbles the rate (e.g. "$2079" instead of "$2.979"), the rate used to
-  // recompute FacilitiesCharge will be wrong. Compare against neighbors on same account.
-  function _getNeighborFacRate(bills, idx) {
-    const acct = (bills[idx].AccountNumber || '').replace(/[\s\-]/g, '');
-    const rates = [];
-    for (let j = Math.max(0, idx - 6); j < Math.min(bills.length, idx + 7); j++) {
-      if (j === idx) continue;
-      const b = bills[j];
-      if ((b.AccountNumber || '').replace(/[\s\-]/g, '') !== acct) continue;
-      if (b._rates && b._rates.FacilitiesCharge && b._rates.FacilitiesCharge.rate > 0) {
-        rates.push(b._rates.FacilitiesCharge.rate);
-      }
-    }
-    if (rates.length === 0) return null;
-    // Find the most common rate (mode)
-    const counts = {};
-    for (const r of rates) {
-      const key = r.toFixed(5);
-      counts[key] = (counts[key] || 0) + 1;
-    }
-    return parseFloat(Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]);
-  }
-
-  // ── FACILITIES KW ROLLING PEAK VALIDATION ──
-  // FacilitiesKW is the highest demand in the past 12 months (rolling peak).
-  // It only changes when a new monthly BilledKW exceeds the previous peak.
-  // If FacilitiesKW changes between consecutive bills, verify it's legitimate:
-  //   Legitimate: new FacilitiesKW = current BilledKW (new peak set this month)
-  //   OCR error:  new FacilitiesKW ≠ BilledKW, and decimal digits match prior value
-  //               (e.g. 576.7840 vs 578.7840 — same .7840, just integer digit swap)
-  if (bills.length > 1 && utilityName === 'Evergy') {
-    for (let i = 1; i < bills.length; i++) {
-      const prev = bills[i - 1],
-        curr = bills[i];
-      // Only compare same account
-      const acct1 = (prev.AccountNumber || '').replace(/[\s\-]/g, '');
-      const acct2 = (curr.AccountNumber || '').replace(/[\s\-]/g, '');
-      if (acct1 && acct2 && acct1 !== acct2) continue;
-      const prevFac = pf(prev.FacilitiesKW),
-        currFac = pf(curr.FacilitiesKW);
-      const currBilled = pf(curr.BilledKW);
-      if (!prevFac || !currFac || Math.abs(prevFac - currFac) < 0.001) continue;
-      // FacilitiesKW changed — is it legitimate?
-      if (Math.abs(currFac - currBilled) < 0.001) {
-        // New FacilitiesKW = current BilledKW → could be a new peak.
-        // Check: were all previous BilledKW values below this?
-        // Look back up to 11 bills for the same account.
-        let allBelow = true;
-        for (let j = Math.max(0, i - 11); j < i; j++) {
-          const pAcct = (bills[j].AccountNumber || '').replace(/[\s\-]/g, '');
-          if (pAcct && acct2 && pAcct !== acct2) continue;
-          if (pf(bills[j].BilledKW) >= currFac - 0.001) {
-            allBelow = false;
-            break;
-          }
-        }
-        if (allBelow) continue; // Legitimate new peak — skip correction
-      }
-      // Check if decimal digits match (strong indicator of integer-digit OCR error)
-      const prevDec = String(prev.FacilitiesKW).split('.')[1] || '';
-      const currDec = String(curr.FacilitiesKW).split('.')[1] || '';
-      if (prevDec === currDec && prevDec.length >= 3) {
-        // Same decimal portion (e.g. both .7840) — integer digit OCR error.
-        // Use the previous bill's FacilitiesKW (the established rolling peak).
-        curr['_auto_corrected_FacilitiesKW'] = {
-          original: curr.FacilitiesKW,
-          corrected: prev.FacilitiesKW,
-          rate: 0,
-          qty: 0,
-          unit: 'kW',
-          reason:
-            'Rolling 12-month peak: decimal .' +
-            currDec +
-            ' matches prior bill, integer digit OCR error (' +
-            curr.FacilitiesKW +
-            ' → ' +
-            prev.FacilitiesKW +
-            ')',
+    // ── RECALCULATE RATES after all corrections ──
+    // TotalKWhRate and TotalKWRate are computed during extraction but charge
+    // values may have been corrected by Strategy B, subtraction inference, or
+    // other post-extraction fixes. Recalculate from final charge values.
+    if (utilityName === 'Evergy') {
+      for (const b of bills) {
+        const kwhChargeSum =
+          pf(b.EnergyOnPeakCharge) + pf(b.EnergyOffPeakCharge) + pf(b.ECACharge) + pf(b.EERCharge) + pf(b.PTSCharge);
+        const totalKwh = pf(b.kWhConsumed);
+        b.TotalKWhRate = totalKwh > 0 && kwhChargeSum > 0 ? kwhChargeSum / totalKwh : null;
+        b._rateCalcTrace = {
+          OnPeak: pf(b.EnergyOnPeakCharge),
+          OffPeak: pf(b.EnergyOffPeakCharge),
+          ECA: pf(b.ECACharge),
+          EER: pf(b.EERCharge),
+          PTS: pf(b.PTSCharge),
+          chargeSum: kwhChargeSum,
+          kWh: totalKwh,
+          rate: b.TotalKWhRate,
         };
-        curr.FacilitiesKW = prev.FacilitiesKW;
-        // Also recompute FacilitiesCharge if we have the rate
-        // Validate rate against neighbors — OCR may garble it (e.g. "$2079" → 2.079 instead of 2.979)
-        if (curr._rates && curr._rates.FacilitiesCharge) {
-          let facRate = curr._rates.FacilitiesCharge.rate;
-          const neighborRate = _getNeighborFacRate(bills, i);
-          if (neighborRate && Math.abs(neighborRate - facRate) > 0.01) {
-            facRate = neighborRate; // neighbor consensus rate is more reliable
-          }
-          const newCharge = Math.round(pf(prev.FacilitiesKW) * facRate * 100) / 100;
-          if (newCharge > 0) {
-            curr['_auto_corrected_FacilitiesCharge'] = {
-              original: curr.FacilitiesCharge,
-              corrected: newCharge.toFixed(2),
-              rate: facRate,
-              qty: pf(prev.FacilitiesKW),
-              unit: 'kW',
-              reason: prev.FacilitiesKW + ' kW × $' + facRate.toFixed(5) + ' = $' + newCharge.toFixed(2),
-            };
-            curr.FacilitiesCharge = newCharge.toFixed(2);
-          }
-        }
+        const kwChargeSum = pf(b.FacilitiesCharge) + pf(b.BilledKWCharge) + pf(b.TDCCharge);
+        const totalKw = pf(b.BilledKW) || pf(b.ActualKW) || pf(b.FacilitiesKW);
+        b.TotalKWRate = totalKw > 0 && kwChargeSum > 0 ? kwChargeSum / totalKw : null;
       }
     }
-  }
 
-  // ── NEIGHBOR-BILL FALLBACK ──
-  // When a bill has null fields, borrow from adjacent bills in the same multi-bill PDF
-  // that share the same AccountNumber (and MeterNumber when both have one).
-  const NEIGHBOR_FIELDS = ['UtilityCompany', 'CustomerName', 'ServiceAddress', 'RateSchedule'];
-  for (let i = 0; i < bills.length; i++) {
-    const b = bills[i];
-    if (!b.AccountNumber) continue;
-    const needsFill = NEIGHBOR_FIELDS.some((f) => b[f] === null || b[f] === undefined || b[f] === '');
-    if (!needsFill) continue;
-    const prev = i > 0 ? bills[i - 1] : null;
-    const next = i < bills.length - 1 ? bills[i + 1] : null;
-    const acctClean = (s) => (s || '').replace(/[\s\-]/g, '').toLowerCase();
-    const isNeighbor = (n) => {
-      if (!n || !n.AccountNumber) return false;
-      if (acctClean(n.AccountNumber) !== acctClean(b.AccountNumber)) return false;
-      if (b.MeterNumber && n.MeterNumber && b.MeterNumber !== n.MeterNumber) return false;
-      return true;
-    };
-    const donors = []; // prefer previous, then next
-    if (isNeighbor(prev)) donors.push(prev);
-    if (isNeighbor(next)) donors.push(next);
-    for (const f of NEIGHBOR_FIELDS) {
-      if (b[f] !== null && b[f] !== undefined && b[f] !== '') continue;
-      for (const donor of donors) {
-        if (donor[f] !== null && donor[f] !== undefined && donor[f] !== '') {
-          b[f] = donor[f];
-          b['_neighbor_filled_' + f] = true;
-          break;
-        }
-      }
-    }
+    return bills;
+  } catch (e) {
+    console.warn('[PDF] _postExtractionVerify failed:', e.message);
+    return bills; // Return bills unchanged if verification crashes
   }
-
-  // ── CROSS-BILL CONSISTENCY: CustomerCharge and FacilitiesKW ──
-  // CustomerCharge is a fixed monthly fee — should be identical across all bills on the same rate.
-  // FacilitiesKW is a rolling 12-month peak — shouldn't all be identical unless demand never changed.
-  // If all bills have the same value, flag for OCR review (likely copied from one good read).
-  if (bills.length >= 3) {
-    const custCharges = bills.map((b) => pf(b.CustomerCharge)).filter((v) => v > 0);
-    const facKWs = bills.map((b) => pf(b.FacilitiesKW)).filter((v) => v > 0);
-    // CustomerCharge: all same is expected (fixed fee) — no action needed
-    // FacilitiesKW: if ALL are identical across 3+ bills, that's suspicious
-    // (real FacilitiesKW changes when a new peak is set)
-    if (facKWs.length >= 3) {
-      const allSame = facKWs.every((v) => Math.abs(v - facKWs[0]) < 0.001);
-      if (allSame) {
-        bills.forEach((b) => {
-          if (!b._warnings) b._warnings = [];
-          b._warnings.push(
-            'FacilitiesKW is identical across all bills (' + facKWs[0].toFixed(4) + ') — verify OCR accuracy',
-          );
-        });
-      }
-    }
-  }
-
-  // ── NEW PEAK LOGIC + FORWARD PROPAGATION ──
-  // When ActualKW exceeds the rolling 12-month peak, a new peak is set.
-  // FacilitiesKW = ActualKW = BilledKW for that month.
-  // Then propagate: all subsequent bills must have FacilitiesKW >= the new peak
-  // (the peak can only decrease when it rolls off after 12 months).
-  // This also undoes any incorrect rolling peak corrections applied earlier.
-  for (let i = 0; i < bills.length; i++) {
-    const b = bills[i];
-    const actualKW = pf(b.ActualKW);
-    const facKW = pf(b.FacilitiesKW);
-    const billedKW = pf(b.BilledKW);
-    if (actualKW > 0 && facKW > 0 && actualKW > facKW) {
-      // New peak set this month
-      b.FacilitiesKW = b.ActualKW;
-      if (billedKW > 0 && Math.abs(billedKW - actualKW) > 0.01) {
-        b.BilledKW = b.ActualKW;
-      }
-      b['_auto_corrected_FacilitiesKW'] = {
-        original: facKW.toFixed(4),
-        corrected: b.FacilitiesKW,
-        reason:
-          'New 12-month peak: ActualKW (' +
-          actualKW.toFixed(4) +
-          ') exceeds prior FacilitiesKW (' +
-          facKW.toFixed(4) +
-          ')',
-      };
-      // Forward propagation: update all subsequent bills within 12 months
-      const newPeak = pf(b.FacilitiesKW);
-      for (let j = i + 1; j < bills.length && j < i + 12; j++) {
-        const nb = bills[j];
-        const nbFacKW = pf(nb.FacilitiesKW);
-        // If a subsequent bill's FacilitiesKW is less than the new peak, it's wrong
-        if (nbFacKW > 0 && nbFacKW < newPeak) {
-          const nbOriginal = nb._auto_corrected_FacilitiesKW?.original || nb.FacilitiesKW;
-          nb.FacilitiesKW = newPeak.toFixed(4);
-          nb['_auto_corrected_FacilitiesKW'] = {
-            original: nbOriginal,
-            corrected: nb.FacilitiesKW,
-            reason:
-              'Forward propagation: peak of ' + newPeak.toFixed(4) + ' kW set in bill ' + (i + 1) + ' carries forward',
-          };
-          // Recompute FacilitiesCharge if rate is available
-          // Validate rate against neighbors — OCR may garble it
-          if (nb._rates && nb._rates.FacilitiesCharge && nb._rates.FacilitiesCharge.rate > 0) {
-            let facRate = nb._rates.FacilitiesCharge.rate;
-            const neighborRate = _getNeighborFacRate(bills, j);
-            if (neighborRate && Math.abs(neighborRate - facRate) > 0.01) {
-              facRate = neighborRate;
-            }
-            const newCharge = Math.round(newPeak * facRate * 100) / 100;
-            if (newCharge > 0) {
-              nb['_auto_corrected_FacilitiesCharge'] = {
-                original: nb.FacilitiesCharge,
-                corrected: newCharge.toFixed(2),
-                rate: facRate,
-                qty: newPeak,
-                unit: 'kW',
-                reason:
-                  newPeak.toFixed(4) +
-                  ' kW × $' +
-                  facRate.toFixed(5) +
-                  ' = $' +
-                  newCharge.toFixed(2) +
-                  ' (peak propagated)',
-              };
-              nb.FacilitiesCharge = newCharge.toFixed(2);
-            }
-          }
-        }
-        // If a subsequent bill sets an even higher peak, stop propagating this one
-        const nbActual = pf(nb.ActualKW);
-        if (nbActual > newPeak) break;
-      }
-    }
-  }
-
-  // Clean up no-op corrections: if a field was corrected then corrected back to its original value, remove the correction record
-  for (const b of bills) {
-    for (const key of Object.keys(b)) {
-      if (!key.startsWith('_auto_corrected_')) continue;
-      const corr = b[key];
-      if (!corr) continue;
-      const field = key.replace('_auto_corrected_', '');
-      const origVal = String(corr.original || '').replace(/,/g, '');
-      const finalVal = String(b[field] || '').replace(/,/g, '');
-      if (origVal && finalVal && parseFloat(origVal).toFixed(4) === parseFloat(finalVal).toFixed(4)) {
-        delete b[key]; // No net change — remove the correction warning
-      }
-    }
-    // Clear magnitude flags when the CORRECTED value is within normal range.
-    // Magnitude flags are set against original (pre-correction) values in Stage 2,
-    // but auto-corrections in Stage 3+ may have fixed the value. Re-evaluate using
-    // the final corrected value — only keep the flag if it's still an outlier.
-    for (const key of Object.keys(b)) {
-      if (!key.startsWith('_magnitude_flag_')) continue;
-      const field = key.replace('_magnitude_flag_', '');
-      const correctedVal = pf(b[field]);
-      if (correctedVal <= 0) continue;
-      const flag = b[key];
-      const correctedRatio = correctedVal / flag.mean;
-      if (correctedRatio < 8 && correctedRatio > 0.12) {
-        delete b[key];
-      }
-    }
-  }
-
-  // ── BILLING PERIOD GAP DETECTION ──
-  // Flag gaps between consecutive bills of the same commodity.
-  // Groups by Commodity (or 'Electric' default), sorts by start date,
-  // checks for gaps > 5 days between one bill's end and the next's start.
-  if (bills.length > 1) {
-    const _commGroups = {};
-    for (const b of bills) {
-      const c = b.Commodity || 'Electric';
-      if (!_commGroups[c]) _commGroups[c] = [];
-      _commGroups[c].push(b);
-    }
-    for (const [comm, group] of Object.entries(_commGroups)) {
-      const sorted = group
-        .filter((b) => b.BillingPeriodStart && b.BillingPeriodEnd)
-        .sort((a, b) => {
-          const da = new Date(
-            a.BillingPeriodStart.replace(
-              /(\d+)\/(\d+)\/(\d+)/,
-              (_, m, d, y) => (y.length === 2 ? '20' + y : y) + '-' + m.padStart(2, '0') + '-' + d.padStart(2, '0'),
-            ),
-          );
-          const db = new Date(
-            b.BillingPeriodStart.replace(
-              /(\d+)\/(\d+)\/(\d+)/,
-              (_, m, d, y) => (y.length === 2 ? '20' + y : y) + '-' + m.padStart(2, '0') + '-' + d.padStart(2, '0'),
-            ),
-          );
-          return da - db;
-        });
-      for (let i = 1; i < sorted.length; i++) {
-        const prevEnd = sorted[i - 1].BillingPeriodEnd;
-        const curStart = sorted[i].BillingPeriodStart;
-        const toDate = (d) => {
-          const p = d.split(/[\/\-]/); // accept both "/" and "-" separators (KGS uses MM-DD-YY)
-          return new Date(
-            (p[2].length === 2 ? '20' + p[2] : p[2]) +
-              '-' +
-              p[0].padStart(2, '0') +
-              '-' +
-              p[1].padStart(2, '0') +
-              'T12:00:00',
-          );
-        };
-        const gapDays = Math.round((toDate(curStart) - toDate(prevEnd)) / 86400000);
-        if (gapDays > 5) {
-          sorted[i]._billing_gap = {
-            days: gapDays,
-            afterPeriod: prevEnd,
-            commodity: comm,
-            reason:
-              gapDays +
-              '-day gap in ' +
-              comm +
-              ' billing: previous period ended ' +
-              prevEnd +
-              ', this period starts ' +
-              curStart,
-          };
-        }
-      }
-    }
-  }
-
-  // ── RE-VALIDATE: OnPeakKWh + OffPeakKWh = kWhConsumed ──
-  // The extractor corrects On-Peak kWh early, but _postExtractionVerify may
-  // later change kWhConsumed (via charge-line consensus or meter-table identity).
-  // Re-check the identity and re-correct On-Peak/Off-Peak to match the final kWhConsumed.
-  if (utilityName === 'Evergy') {
-    for (const b of bills) {
-      const onPk = pf(b.OnPeakKWh);
-      const offPk = pf(b.OffPeakKWh);
-      const total = pf(b.kWhConsumed);
-      if (onPk > 0 && offPk > 0 && total > 0 && Math.abs(onPk + offPk - total) > 1) {
-        const onRi = b._rates && b._rates.EnergyOnPeakCharge;
-        const offRi = b._rates && b._rates.EnergyOffPeakCharge;
-        let fixed = false;
-        if (onRi && onRi.rate > 0 && pf(b.EnergyOnPeakCharge) > 0) {
-          const derivedOn = pf(b.EnergyOnPeakCharge) / onRi.rate;
-          if (derivedOn > 0 && Math.abs(derivedOn + offPk - total) < 1) {
-            b['_auto_corrected_OnPeakKWh'] = {
-              original: b.OnPeakKWh,
-              corrected: derivedOn.toFixed(4),
-              reason: 'Re-validated after kWhConsumed correction: charge / rate = ' + derivedOn.toFixed(4),
-            };
-            b.OnPeakKWh = derivedOn.toFixed(4);
-            fixed = true;
-          }
-        }
-        if (!fixed && offRi && offRi.rate > 0 && pf(b.EnergyOffPeakCharge) > 0) {
-          const derivedOff = pf(b.EnergyOffPeakCharge) / offRi.rate;
-          if (derivedOff > 0 && Math.abs(onPk + derivedOff - total) < 1) {
-            b['_auto_corrected_OffPeakKWh'] = {
-              original: b.OffPeakKWh,
-              corrected: derivedOff.toFixed(4),
-              reason: 'Re-validated after kWhConsumed correction: charge / rate = ' + derivedOff.toFixed(4),
-            };
-            b.OffPeakKWh = derivedOff.toFixed(4);
-            fixed = true;
-          }
-        }
-        if (!fixed) {
-          const derivedOn = total - offPk;
-          if (derivedOn > 0) {
-            b['_auto_corrected_OnPeakKWh'] = {
-              original: b.OnPeakKWh,
-              corrected: derivedOn.toFixed(4),
-              reason:
-                'Re-validated: kWhConsumed (' +
-                total.toFixed(2) +
-                ') - OffPeakKWh (' +
-                offPk.toFixed(2) +
-                ') = ' +
-                derivedOn.toFixed(4),
-            };
-            b.OnPeakKWh = derivedOn.toFixed(4);
-          }
-        }
-      }
-    }
-  }
-
-  // ── FINAL SANITY PASS: catch impossible values set by late-stage corrections ──
-  // Sequential-read arithmetic and meter-table identity can produce garbage
-  // kWhConsumed (e.g. garbled ReadDifference × MeterMultiplier = 999,539).
-  // This runs AFTER all correction stages so nothing slips through.
-  for (const b of bills) {
-    const comm = (b.Commodity || '').toLowerCase();
-    if (comm && comm !== 'electric') continue;
-    const _kwhVal = pf(b.kWhConsumed);
-    if (_kwhVal > 500000) {
-      const _eR = pf(b.EndRead),
-        _sR = pf(b.StartRead),
-        _mM = pf(b.MeterMultiplier);
-      const _recomputed = _eR > 0 && _sR > 0 && _eR > _sR && _mM > 0 ? (_eR - _sR) * _mM : 0;
-      const _crossCheck = b._kwhCrossCheck ? b._kwhCrossCheck.calculated : 0;
-      const _recovery =
-        _recomputed > 0 && _recomputed < 500000
-          ? _recomputed
-          : _crossCheck > 0 && _crossCheck < 500000
-            ? _crossCheck
-            : 0;
-      if (_recovery > 0) {
-        b['_auto_corrected_kWhConsumed'] = {
-          original: b.kWhConsumed,
-          corrected: _recovery.toFixed(4),
-          reason:
-            'Value ' +
-            _kwhVal +
-            ' exceeded 500k ceiling; recovered from ' +
-            (_recomputed > 0 ? 'EndRead-StartRead×Mult' : 'charge-line cross-check'),
-        };
-        b.kWhConsumed = _recovery.toFixed(4);
-      } else {
-        b['_likely_missing_kWhConsumed'] = true;
-        b.kWhConsumed = null;
-      }
-    }
-    const _kwhNow = pf(b.kWhConsumed);
-    for (const kwField of ['ActualKW', 'BilledKW', 'FacilitiesKW', 'TDCkW']) {
-      const v = pf(b[kwField]);
-      if (v > 10000) {
-        b['_likely_missing_' + kwField] = true;
-        b[kwField] = null;
-      } else if (_kwhNow > 0 && v > _kwhNow) {
-        b['_likely_missing_' + kwField] = true;
-        b[kwField] = null;
-      }
-    }
-  }
-
-  // ── GAS SANITY PASS: catch impossible therms, charges, and fuel adjustments ──
-  for (const b of bills) {
-    const comm = (b.Commodity || '').toLowerCase();
-    if (comm !== 'gas') continue;
-    const therms = pf(b.NaturalGasTherms);
-    const gasChg = pf(b.GasCharge);
-    const custChg = pf(b.CustomerCharge);
-    const fa = pf(b.FuelAdjustment);
-    if (therms > 10000) {
-      b['_likely_garbled_NaturalGasTherms'] = {
-        original: b.NaturalGasTherms,
-        reason: 'Therms > 10,000 ceiling for monthly bill',
-      };
-      b.NaturalGasTherms = null;
-    }
-    if (therms > 0 && gasChg > 0) {
-      const rate = gasChg / therms;
-      if (rate > 2.0) {
-        b['_likely_garbled_GasCharge'] = {
-          original: b.GasCharge,
-          rate: rate.toFixed(4),
-          reason: 'Rate $' + rate.toFixed(2) + '/therm exceeds $2.00 ceiling',
-        };
-        b.GasCharge = null;
-      }
-    }
-    // FA ratio check: in summer months with very low gas usage the
-    // GasCharge can be just a few dollars (e.g. $2.39) while the FA is a
-    // flat credit (e.g. -$12). The 50% ratio test false-positives on those
-    // bills. Only apply the ratio check when GasCharge > $25 (roughly the
-    // base charge); for small charges, only flag when |FA| > 2× GasCharge
-    // to catch truly garbled values while keeping legitimate small-bill FAs.
-    if (fa !== 0 && gasChg > 0) {
-      const faAbs = Math.abs(fa);
-      const isGarbledFA = gasChg > 25 ? faAbs > gasChg * 0.5 : faAbs > gasChg * 2;
-      if (isGarbledFA) {
-        b['_likely_garbled_FuelAdjustment'] = {
-          original: b.FuelAdjustment,
-          reason:
-            gasChg > 25
-              ? '|FA| exceeds 50% of GasCharge ($' + gasChg.toFixed(2) + ')'
-              : '|FA| exceeds 2× GasCharge ($' + gasChg.toFixed(2) + ') [small-charge threshold]',
-        };
-        b.FuelAdjustment = null;
-        const fixedTotal = gasChg + custChg;
-        b.TotalCurrentCharges = fixedTotal.toFixed(2);
-        b.TotalAmountDue = fixedTotal.toFixed(2);
-      }
-    }
-    let total = pf(b.TotalCurrentCharges);
-    if (total < 0 && gasChg > 0 && custChg > 0) {
-      const fixedTotal = gasChg + custChg + (pf(b.FuelAdjustment) || 0);
-      b.TotalCurrentCharges = fixedTotal.toFixed(2);
-      b.TotalAmountDue = fixedTotal.toFixed(2);
-      total = fixedTotal;
-    }
-    if (total > 0 && gasChg > 0 && custChg > 0) {
-      const expectedTotal = gasChg + custChg + (pf(b.FuelAdjustment) || 0);
-      if (Math.abs(expectedTotal - total) > total * 0.15 && Math.abs(expectedTotal - total) > 5) {
-        b._warnings = b._warnings || [];
-        b._warnings.push({
-          level: 'warn',
-          field: 'TotalCurrentCharges',
-          message: 'Gas total $' + total.toFixed(2) + ' differs from components sum $' + expectedTotal.toFixed(2),
-        });
-      }
-    }
-  }
-
-  // ── GENERAL VALIDATION: line item exceeds total (all utilities) ──
-  // A bill where any single charge field is greater than TotalCurrentCharges
-  // is physically impossible and indicates a parse/OCR error. Recalculate
-  // the total from charge components when possible; only warn when data is
-  // genuinely missing and can't be computed.
-  const COMMODITY_CHARGE_FIELDS = {
-    Gas: ['CustomerCharge', 'GasCharge', 'FuelAdjustment'],
-    Water: ['WaterCharge', 'WaterProtectionFee'],
-    Sewer: ['SewerCharge'],
-    Stormwater: ['StormWaterCharge'],
-    Propane: ['PropaneCharge'],
-    Electric: [
-      'CustomerCharge',
-      'FacilitiesCharge',
-      'BilledKWCharge',
-      'EnergyOnPeakCharge',
-      'EnergyOffPeakCharge',
-      'ECACharge',
-      'EERCharge',
-      'PTSCharge',
-      'TDCCharge',
-      'RkVACharge',
-      'TaxExemptDelivery',
-      'BillOffset',
-      'FranchiseFee',
-      'SolarCredit',
-      'RenewableCharge',
-    ],
-  };
-  const ALL_CHARGE_FIELDS = [...new Set(Object.values(COMMODITY_CHARGE_FIELDS).flat())];
-  for (const b of bills) {
-    const total = pf(b.TotalCurrentCharges);
-    if (total <= 0) continue;
-    const comm = (b.Commodity || '').replace(/\s/g, '');
-    const chargeFields = COMMODITY_CHARGE_FIELDS[comm] || ALL_CHARGE_FIELDS;
-    const compSum =
-      Math.round(
-        chargeFields.reduce(function (s, f) {
-          return s + pf(b[f]);
-        }, 0) * 100,
-      ) / 100;
-    // If sum of all components (including negatives like Fuel Adjustment)
-    // matches total within tolerance, no violation — individual items can
-    // legitimately exceed total when credits/adjustments bring it down.
-    if (Math.abs(compSum - total) < 0.5) continue;
-    const violations = [];
-    for (const f of chargeFields) {
-      const v = pf(b[f]);
-      if (v > 0 && v > total + 0.1) {
-        violations.push({ field: f, value: v });
-      }
-    }
-    if (violations.length === 0) continue;
-    if (compSum > total + 0.1) {
-      const origTotal = b.TotalCurrentCharges;
-      b.TotalCurrentCharges = compSum.toFixed(2);
-      b.TotalAmountDue = compSum.toFixed(2);
-      b._auto_corrected_TotalCurrentCharges = {
-        original: origTotal,
-        corrected: compSum.toFixed(2),
-        reason:
-          violations
-            .map(function (vi) {
-              return vi.field + ' ($' + vi.value.toFixed(2) + ') exceeded total ($' + pf(origTotal).toFixed(2) + ')';
-            })
-            .join('; ') +
-          ' — recalculated from charge components: $' +
-          compSum.toFixed(2),
-      };
-      console.log(
-        '[PostVerify] Total corrected for ' + comm + ': $' + pf(origTotal).toFixed(2) + ' → $' + compSum.toFixed(2),
-      );
-    } else {
-      b._charge_exceeds_total = {
-        total: total,
-        violations: violations,
-        reason:
-          violations
-            .map(function (vi) {
-              return vi.field + ' ($' + vi.value.toFixed(2) + ') > TotalCurrentCharges ($' + total.toFixed(2) + ')';
-            })
-            .join('; ') + ' — could not auto-correct, verify against PDF',
-      };
-    }
-  }
-
-  // ── RECALCULATE RATES after all corrections ──
-  // TotalKWhRate and TotalKWRate are computed during extraction but charge
-  // values may have been corrected by Strategy B, subtraction inference, or
-  // other post-extraction fixes. Recalculate from final charge values.
-  if (utilityName === 'Evergy') {
-    for (const b of bills) {
-      const kwhChargeSum =
-        pf(b.EnergyOnPeakCharge) + pf(b.EnergyOffPeakCharge) + pf(b.ECACharge) + pf(b.EERCharge) + pf(b.PTSCharge);
-      const totalKwh = pf(b.kWhConsumed);
-      b.TotalKWhRate = totalKwh > 0 && kwhChargeSum > 0 ? kwhChargeSum / totalKwh : null;
-      b._rateCalcTrace = {
-        OnPeak: pf(b.EnergyOnPeakCharge),
-        OffPeak: pf(b.EnergyOffPeakCharge),
-        ECA: pf(b.ECACharge),
-        EER: pf(b.EERCharge),
-        PTS: pf(b.PTSCharge),
-        chargeSum: kwhChargeSum,
-        kWh: totalKwh,
-        rate: b.TotalKWhRate,
-      };
-      const kwChargeSum = pf(b.FacilitiesCharge) + pf(b.BilledKWCharge) + pf(b.TDCCharge);
-      const totalKw = pf(b.BilledKW) || pf(b.ActualKW) || pf(b.FacilitiesKW);
-      b.TotalKWRate = totalKw > 0 && kwChargeSum > 0 ? kwChargeSum / totalKw : null;
-    }
-  }
-
-  return bills;
 }
 
 // Run full validation + stats on extracted bill(s), return combined warnings per bill index
