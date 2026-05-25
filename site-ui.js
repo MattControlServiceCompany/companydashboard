@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.25.352';
+  var CH_VERSION = 'v2026.05.25.353';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,21 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.25.353',
+      date: '2026-05-25',
+      title: 'Fix 23 corrupted emoji icons showing as ? throughout EMS Leads and report engine',
+      features: [
+        {
+          type: 'fix',
+          text: 'Replaced 18 corrupted ? icons in energy-department.html: PDF/OCR Clear button (✕), column sort indicators (⇅), Add Lead button (+), Remove field button (✕), overdue/scheduled action icons (⚠/📅), sort direction (▲/▼), clear sort (✕), move up/down client type (▲/▼), delete client type (✕), CSV parse OK (✓), no duplicates (✓), Report History modal close (✕), Back to Energy Graphics (←), Return to Sign In (←), Meter Match Found (✓), CSV mapping arrow (→).',
+        },
+        {
+          type: 'fix',
+          text: 'Replaced 8 corrupted ? icons in report-engine.js: kWh Saved icon (⚡), Gal Saved propane icon (🛢), Total Saved icon (💰), delete report history button (✕), contact move up/down buttons (▲/▼), formula popover close (✕), clear notification button (✕).',
+        },
+      ],
+    },
     {
       version: 'v2026.05.25.352',
       date: '2026-05-25',

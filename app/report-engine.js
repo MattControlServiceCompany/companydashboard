@@ -4054,7 +4054,7 @@ function rptPageBuildingSummary(n, d, b) {
     var kwReduced = (b.electric.kwBl || 0) - (b.electric.kwCur || 0);
     iconItems +=
       '<div style="flex:1;min-width:60px;text-align:center;background:transparent;border-radius:2px;padding:5px 4px">' +
-      '<div style="font-size:16px;margin-bottom:1px">?</div>' +
+      '<div style="font-size:16px;margin-bottom:1px">⚡</div>' +
       '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(kwhSaved) +
       '">' +
@@ -4089,7 +4089,7 @@ function rptPageBuildingSummary(n, d, b) {
     var galSaved = b.propane.galSaved || 0;
     iconItems +=
       '<div style="flex:1;min-width:60px;text-align:center;background:transparent;border-radius:2px;padding:5px 4px">' +
-      '<div style="font-size:16px;margin-bottom:1px">?</div>' +
+      '<div style="font-size:16px;margin-bottom:1px">🛢</div>' +
       '<div style="font-size:14px;font-weight:700;color:' +
       _savColor(galSaved) +
       '">' +
@@ -4102,7 +4102,7 @@ function rptPageBuildingSummary(n, d, b) {
   var totalSaved = b.savings || 0;
   iconItems +=
     '<div style="flex:1;min-width:60px;text-align:center;background:transparent;border-radius:2px;padding:5px 4px">' +
-    '<div style="font-size:16px;margin-bottom:1px">?</div>' +
+    '<div style="font-size:16px;margin-bottom:1px">💰</div>' +
     '<div style="font-size:14px;font-weight:700;color:' +
     _savColor(totalSaved) +
     '">' +
@@ -6605,7 +6605,7 @@ function openReportHistory(projId) {
               <div style="display:flex;gap:6px">
                 <button onclick="reopenReport('${entry.id}')" style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid var(--s3);background:var(--s1);color:var(--text);cursor:pointer">Open</button>
                 <button onclick="reexportReport('${entry.id}')" style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid var(--s3);background:var(--s1);color:var(--text);cursor:pointer">Export PDF</button>
-                <button onclick="deleteReport('${entry.id}')" style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid var(--s3);background:var(--s1);color:var(--text3);cursor:pointer">?</button>
+                <button onclick="deleteReport('${entry.id}')" style="padding:4px 10px;font-size:11px;border-radius:4px;border:1px solid var(--s3);background:var(--s1);color:var(--text3);cursor:pointer">✕</button>
               </div>
             </div>`;
       })
@@ -9512,8 +9512,8 @@ function renderModalContacts() {
       return `<div class="cc-row${isEditing ? ' cc-row-editing' : ''}" id="ccrow-${ct.id}">
             <div class="cc-order-btns">
               <button class="cc-order-btn" onclick="moveContact(${i},-1)" ${i === 0 ? 'disabled' : ''} title="Move up">▲</button>
-              <button class="cc-order-btn" onclick="moveContact(${i},-1)" ${i === 0 ? 'disabled' : ''} title="Move up">?</button>
-              <button class="cc-order-btn" onclick="moveContact(${i},1)"  ${i === _modalContacts.length - 1 ? 'disabled' : ''} title="Move down">?</button>
+              <button class="cc-order-btn" onclick="moveContact(${i},-1)" ${i === 0 ? 'disabled' : ''} title="Move up">▲</button>
+              <button class="cc-order-btn" onclick="moveContact(${i},1)"  ${i === _modalContacts.length - 1 ? 'disabled' : ''} title="Move down">▼</button>
             </div>
             <div class="cc-field">
               <div style="font-weight:600;font-size:12px;margin-bottom:2px">${ct.first || ''} ${ct.last || ''}</div>
@@ -9610,7 +9610,7 @@ function showFormula(html, evt) {
   pop.style.cssText =
     'position:fixed;z-index:9999;background:#0d1525;border:2px solid var(--em);border-radius:10px;padding:14px 18px;max-width:420px;min-width:240px;font-size:12px;color:#e0e8ff;box-shadow:0 8px 32px rgba(0,0,0,.6);line-height:1.6;';
   pop.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--em)">Formula Breakdown</span><button onclick="closeFormula()" style="background:none;border:none;color:var(--text3);font-size:16px;cursor:pointer;padding:0 4px">?</button></div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--em)">Formula Breakdown</span><button onclick="closeFormula()" style="background:none;border:none;color:var(--text3);font-size:16px;cursor:pointer;padding:0 4px">✕</button></div>' +
     html;
   document.body.appendChild(pop);
   if (evt && evt.target) {
@@ -9713,7 +9713,7 @@ function renderNotifList() {
               <div style="font-size:12px;color:var(--text2);line-height:1.5">${n.detail}</div>
               <div style="font-size:10px;color:var(--text3);margin-top:3px;font-family:var(--mono)">${ago}</div>
             </div>
-            <button onclick="clearNotif(${n.id})" style="width:22px;height:22px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;font-size:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .13s" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">?</button>
+            <button onclick="clearNotif(${n.id})" style="width:22px;height:22px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;font-size:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .13s" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">✕</button>
           </div>`;
     })
     .join('');
