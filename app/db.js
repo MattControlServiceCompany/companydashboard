@@ -25,6 +25,7 @@ const DB = (() => {
   }
 
   async function migrateFromLocalStorage() {
+    if (localStorage.length === 0) return;
     const db = await _open();
     const migrated = await new Promise((resolve) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
@@ -63,7 +64,16 @@ const DB = (() => {
       tx.onerror = () => reject(tx.error);
     });
 
-    console.log('[DB] Migration complete: localStorage → IndexedDB (' + localStorage.length + ' keys)');
+    const migratedKeyCount = localStorage.length;
+    // Migration confirmed complete — clear localStorage to prevent double-read on future loads
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k) localStorage.removeItem(k);
+    }
+
+    console.log(
+      '[DB] Migration complete: localStorage → IndexedDB (' + migratedKeyCount + ' keys), localStorage cleared',
+    );
   }
 
   async function warmCache() {

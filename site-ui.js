@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.24.350';
+  var CH_VERSION = 'v2026.05.25.351';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,21 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.25.351',
+      date: '2026-05-25',
+      title: 'Fix page load lag by clearing localStorage after IndexedDB migration',
+      features: [
+        {
+          type: 'fix',
+          text: 'Added fast early-exit in migrateFromLocalStorage() when localStorage is empty, eliminating redundant IDB reads on every load after initial migration.',
+        },
+        {
+          type: 'fix',
+          text: 'localStorage is now cleared after a successful IndexedDB migration, eliminating the double-read (localStorage + IDB) that caused ~6.4s load times.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.24.350',
       date: '2026-05-24',
