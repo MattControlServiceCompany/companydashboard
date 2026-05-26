@@ -156,8 +156,8 @@
       .pg-sub{font-size:13px;color:var(--text2);margin-top:4px;}
 
       /* ── TOAST ── */
-      .toast{position:fixed;top:22px;right:22px;z-index:999;background:var(--s3);border:1px solid var(--accent);border-radius:10px;padding:11px 15px;font-size:12px;color:var(--text);display:flex;align-items:center;gap:8px;max-width:320px;transform:translateY(-80px);opacity:0;transition:all .32s cubic-bezier(.34,1.56,.64,1);}
-      .toast.show{transform:translateY(0);opacity:1;}
+      .toast{position:fixed;top:22px;left:50%;transform:translateX(-50%) translateY(-80px);z-index:9999;background:var(--s3);border:1px solid var(--accent);border-radius:10px;padding:11px 15px;font-size:12px;color:var(--text);display:flex;align-items:center;gap:8px;max-width:320px;opacity:0;transition:transform 0.3s ease,opacity 0.3s ease;}
+      .toast-show{transform:translateX(-50%) translateY(0);opacity:1;}
       .t-ic{color:var(--teal);font-size:14px;}
 
       /* ── SETTINGS MODAL ── */
@@ -1070,7 +1070,7 @@
         background: var(--s3);
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.26.372" />
+    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.26.373" />
   </head>
   <body>
     <!-- LOGIN -->
@@ -2722,16 +2722,6 @@
         if (view === 'dispatch') renderDispatch();
       }
 
-      /* ── TOAST ── */
-      let toastTimer;
-      function showToast(msg) {
-        const t = document.getElementById('toast');
-        document.getElementById('toastMsg').textContent = msg;
-        t.classList.add('show');
-        clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => t.classList.remove('show'), 3400);
-      }
-
       /* ── NOTIFICATIONS ── */
       let notifications = [];
       function loadNotifs() {
@@ -3213,6 +3203,6 @@
 
       /* ── beforeunload warning removed — state persistence approach ── */
     </script>
-    <script src="feedback-widget.js?v=v2026.05.26.372"></script>
+    <script src="feedback-widget.js?v=v2026.05.26.373"></script>
   </body>
 </html>

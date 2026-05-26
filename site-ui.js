@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.26.372';
+  var CH_VERSION = 'v2026.05.26.373';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -1500,3 +1500,21 @@
   window.Store = Store;
   window.DashboardController = DashboardController;
 })();
+
+/* ── TOAST (global — available on all pages) ── */
+function showToast(msg, type) {
+  var el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'toast toast-show' + (type ? ' toast-' + type : '');
+  clearTimeout(window._toastTimer);
+  var duration = parseInt(localStorage.getItem('ch_toast_duration') || '3500', 10);
+  if (duration > 0) {
+    window._toastTimer = setTimeout(hideToast, duration);
+  }
+}
+
+function hideToast() {
+  var el = document.getElementById('toast');
+  if (el) el.className = 'toast';
+}

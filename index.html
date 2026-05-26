@@ -687,8 +687,9 @@
       .toast {
         position: fixed;
         top: 22px;
-        right: 22px;
-        z-index: 999;
+        left: 50%;
+        transform: translateX(-50%) translateY(-80px);
+        z-index: 9999;
         background: var(--s3);
         border: 1px solid var(--accent);
         border-radius: 10px;
@@ -699,12 +700,13 @@
         align-items: center;
         gap: 8px;
         max-width: 320px;
-        transform: translateY(-80px);
         opacity: 0;
-        transition: all 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+        transition:
+          transform 0.3s ease,
+          opacity 0.3s ease;
       }
-      .toast.show {
-        transform: translateY(0);
+      .toast-show {
+        transform: translateX(-50%) translateY(0);
         opacity: 1;
       }
       .t-ic {
@@ -1436,7 +1438,7 @@
         line-height: 1.7;
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.26.372" />
+    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.26.373" />
   </head>
   <body>
     <!-- LOGIN -->
@@ -1978,16 +1980,6 @@
       function setDept(dept, tabEl) {
         document.querySelectorAll('.dept-tab').forEach((t) => t.classList.remove('active'));
         if (tabEl) tabEl.classList.add('active');
-      }
-
-      /* ── TOAST ── */
-      let toastTimer;
-      function showToast(msg) {
-        const t = document.getElementById('toast');
-        document.getElementById('toastMsg').textContent = msg;
-        t.classList.add('show');
-        clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => t.classList.remove('show'), 3400);
       }
 
       /* ── NOTIFICATIONS ── */
@@ -2666,6 +2658,6 @@
         renderCalendar();
       });
     </script>
-    <script src="feedback-widget.js?v=v2026.05.26.372"></script>
+    <script src="feedback-widget.js?v=v2026.05.26.373"></script>
   </body>
 </html>
