@@ -1020,6 +1020,11 @@ function emRenderToolbar(data, pid, projBadge) {
     pid +
     '\')" style="height:28px;font-size:11px">📋 Copy From Project</button>' +
     '<span style="width:1px;height:20px;background:var(--border);display:inline-block;margin:0 4px;vertical-align:middle"></span>' +
+    (data.buildings && data.buildings.length > 0
+      ? '<button class="btn btn-ghost btn-sm" onclick="emOpenCreateBldgsModal(\'' +
+        pid +
+        '\')" style="height:28px;font-size:11px">+ Create Buildings</button>'
+      : '') +
     (data.rows && data.rows.length > 0
       ? '<button class="btn btn-sm" onclick="openASHRAE36ReportModal(\'' +
         pid +
@@ -5316,6 +5321,278 @@ function emLoadCustomMappings(projId) {
 function emSaveCustomMappings(projId, mappings) {
   if (!projId) return;
   localStorage.setItem('en_eqmatrix_cmaps_' + projId, JSON.stringify(mappings));
+}
+
+/* ── CREATE BUILDINGS FROM EQUIPMENT MATRIX ──────────────────────────────── */
+
+/* ── _emCreateBldgsRows ─────────────────────────────────────────────────────
+   Module-level state for the Create Buildings modal.                      */
+var _emCreateBldgsRows = [];
+
+/* ── emOpenCreateBldgsModal ─────────────────────────────────────────────────
+   Reads unique building names from the equipment matrix, checks which ones
+   already exist in the project's utility data, and opens the modal.      */
+function emOpenCreateBldgsModal(pid) {
+  if (!pid) return;
+  var data = emLoadMatrix(pid);
+  var matrixBuildings = data.buildings || [];
+  if (matrixBuildings.length === 0) {
+    showToast('No buildings in equipment matrix');
+    return;
+  }
+
+  // Get existing buildings from utility data for this project
+  var existingBldgs = [];
+  if (typeof getUDProj === 'function') {
+    var proj = getUDProj(pid);
+    existingBldgs = proj && proj.buildings ? proj.buildings : [];
+  }
+
+  // Build a set of existing names (lower-case) for dedup check
+  var existingNamesLower = {};
+  for (var ei = 0; ei < existingBldgs.length; ei++) {
+    existingNamesLower[(existingBldgs[ei].name || '').toLowerCase()] = true;
+  }
+
+  // Count equipment per building from matrix rows
+  var equipCount = {};
+  var rows = data.rows || [];
+  for (var ri = 0; ri < rows.length; ri++) {
+    var bname = rows[ri].building || '';
+    if (bname) equipCount[bname] = (equipCount[bname] || 0) + 1;
+  }
+
+  // Build row data — dedup within batch handled by name
+  var seen = {};
+  _emCreateBldgsRows = [];
+  for (var bi = 0; bi < matrixBuildings.length; bi++) {
+    var name = matrixBuildings[bi];
+    var nameLower = name.toLowerCase();
+    if (seen[nameLower]) continue;
+    seen[nameLower] = true;
+    var alreadyExists = !!existingNamesLower[nameLower];
+    _emCreateBldgsRows.push({
+      name: name,
+      alreadyExists: alreadyExists,
+      checked: !alreadyExists,
+      equipCount: equipCount[name] || 0,
+    });
+  }
+
+  // Populate summary
+  var newCount = _emCreateBldgsRows.filter(function (r) {
+    return !r.alreadyExists;
+  }).length;
+  var existCount = _emCreateBldgsRows.filter(function (r) {
+    return r.alreadyExists;
+  }).length;
+  var summaryEl = document.getElementById('emCreateBldgsSummary');
+  if (summaryEl) {
+    summaryEl.textContent =
+      'Found ' +
+      matrixBuildings.length +
+      ' building' +
+      (matrixBuildings.length !== 1 ? 's' : '') +
+      ' in equipment matrix. ' +
+      newCount +
+      ' new, ' +
+      existCount +
+      ' already exist in this project.';
+  }
+
+  // Render table
+  var tableEl = document.getElementById('emCreateBldgsTable');
+  if (tableEl) tableEl.innerHTML = emRenderCreateBldgsTable(_emCreateBldgsRows);
+
+  // Update submit button
+  emUpdateCreateBldgsSubmitBtn();
+
+  // Open modal
+  var modal = document.getElementById('emCreateBldgsModal');
+  if (modal) modal.classList.add('open');
+}
+
+/* ── emRenderCreateBldgsTable ───────────────────────────────────────────────
+   Returns HTML string for the table shown in the Create Buildings modal.  */
+function emRenderCreateBldgsTable(rows) {
+  if (!rows || rows.length === 0) return '<p style="color:var(--text3);font-size:13px">No buildings found.</p>';
+
+  var html =
+    '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+    '<thead>' +
+    '<tr style="background:var(--s1);border-bottom:2px solid var(--border)">' +
+    '<th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text2);width:32px">' +
+    '<input type="checkbox" id="emCreateBldgsSelectAll" checked ' +
+    'onchange="emToggleAllCreateBldgs(this.checked)" title="Select/deselect all">' +
+    '</th>' +
+    '<th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text2)">Building Name</th>' +
+    '<th style="padding:6px 8px;text-align:center;font-weight:600;color:var(--text2);width:100px">Equipment</th>' +
+    '<th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text2);width:130px">Status</th>' +
+    '</tr>' +
+    '</thead>' +
+    '<tbody>';
+
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var dimStyle = row.alreadyExists ? 'opacity:0.5;' : '';
+    var statusHtml = row.alreadyExists
+      ? '<span style="font-size:11px;color:var(--text3);font-style:italic">(already exists)</span>'
+      : '<span style="font-size:11px;color:var(--em)">New</span>';
+    html +=
+      '<tr style="border-bottom:1px solid var(--border);' +
+      dimStyle +
+      '">' +
+      '<td style="padding:6px 8px;text-align:center">' +
+      '<input type="checkbox" class="em-create-bldg-cb" data-idx="' +
+      i +
+      '" ' +
+      (row.checked ? 'checked' : '') +
+      ' ' +
+      (row.alreadyExists ? 'disabled' : '') +
+      ' ' +
+      'onchange="emUpdateCreateBldgsSubmitBtn()">' +
+      '</td>' +
+      '<td style="padding:6px 8px">' +
+      '<input type="text" class="em-create-bldg-name" data-idx="' +
+      i +
+      '" ' +
+      'value="' +
+      emHtmlEsc(row.name) +
+      '" ' +
+      (row.alreadyExists ? 'disabled ' : '') +
+      'style="width:100%;font-size:12px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);' +
+      'color:var(--text);border-radius:3px;box-sizing:border-box">' +
+      '</td>' +
+      '<td style="padding:6px 8px;text-align:center;color:var(--text2)">' +
+      row.equipCount +
+      '</td>' +
+      '<td style="padding:6px 8px">' +
+      statusHtml +
+      '</td>' +
+      '</tr>';
+  }
+
+  html += '</tbody></table>';
+  return html;
+}
+
+/* ── emToggleAllCreateBldgs ─────────────────────────────────────────────────
+   Selects or deselects all non-disabled checkboxes in the modal table.   */
+function emToggleAllCreateBldgs(checked) {
+  var cbs = document.querySelectorAll('.em-create-bldg-cb');
+  for (var i = 0; i < cbs.length; i++) {
+    if (!cbs[i].disabled) cbs[i].checked = checked;
+  }
+  emUpdateCreateBldgsSubmitBtn();
+}
+
+/* ── emUpdateCreateBldgsSubmitBtn ───────────────────────────────────────────
+   Updates the submit button text with the count of selected buildings.   */
+function emUpdateCreateBldgsSubmitBtn() {
+  var cbs = document.querySelectorAll('.em-create-bldg-cb');
+  var count = 0;
+  for (var i = 0; i < cbs.length; i++) {
+    if (cbs[i].checked && !cbs[i].disabled) count++;
+  }
+  var btn = document.getElementById('emCreateBldgsSubmitBtn');
+  if (btn) {
+    btn.textContent = count > 0 ? 'Create ' + count + ' Building' + (count !== 1 ? 's' : '') : 'Create Buildings';
+    btn.disabled = count === 0;
+  }
+}
+
+/* ── emCloseCreateBldgsModal ────────────────────────────────────────────────
+   Closes the Create Buildings modal and clears module state.             */
+function emCloseCreateBldgsModal() {
+  var modal = document.getElementById('emCreateBldgsModal');
+  if (modal) modal.classList.remove('open');
+  _emCreateBldgsRows = [];
+}
+
+/* ── emExecuteCreateBuildings ───────────────────────────────────────────────
+   Reads checked rows from the modal, creates building records in utility
+   data for the active project, then refreshes all relevant views.        */
+function emExecuteCreateBuildings() {
+  var pid = window._emActivePid;
+  if (!pid) return;
+
+  // Collect name inputs (user may have edited them)
+  var nameInputs = document.querySelectorAll('.em-create-bldg-name');
+  var cbs = document.querySelectorAll('.em-create-bldg-cb');
+
+  // Build final list of buildings to create
+  var toCreate = [];
+  var skipped = 0;
+  for (var i = 0; i < cbs.length; i++) {
+    var cb = cbs[i];
+    var idx = parseInt(cb.getAttribute('data-idx'), 10);
+    var row = _emCreateBldgsRows[idx];
+    if (!row) continue;
+    if (!cb.checked || cb.disabled) {
+      if (row.alreadyExists) skipped++;
+      continue;
+    }
+    // Read the (possibly edited) name from the input
+    var nameInput = document.querySelector('.em-create-bldg-name[data-idx="' + idx + '"]');
+    var name = nameInput ? nameInput.value.trim() : row.name;
+    if (!name) continue;
+    toCreate.push(name);
+  }
+
+  if (toCreate.length === 0) {
+    showToast('No buildings selected');
+    return;
+  }
+
+  // Get the project's utility data
+  if (typeof getUDProj !== 'function') {
+    showToast('Cannot access project data');
+    return;
+  }
+  var proj = getUDProj(pid);
+  if (!proj) return;
+  if (!proj.buildings) proj.buildings = [];
+
+  // Dedup within batch (case-insensitive) and against existing buildings
+  var existingNamesLower = {};
+  for (var ei = 0; ei < proj.buildings.length; ei++) {
+    existingNamesLower[(proj.buildings[ei].name || '').toLowerCase()] = true;
+  }
+
+  var created = 0;
+  var batchSeen = {};
+  for (var ci = 0; ci < toCreate.length; ci++) {
+    var bname = toCreate[ci];
+    var bnameLower = bname.toLowerCase();
+    if (existingNamesLower[bnameLower] || batchSeen[bnameLower]) {
+      skipped++;
+      continue;
+    }
+    batchSeen[bnameLower] = true;
+    proj.buildings.push({
+      id: 'b' + (Date.now() + ci),
+      name: bname,
+      addr: '',
+      sqft: 0,
+      zip: '',
+      addrAliases: [],
+      meters: [],
+    });
+    created++;
+  }
+
+  // Persist and refresh
+  if (typeof saveUtilityData === 'function') saveUtilityData();
+  if (typeof renderUDProjList === 'function') renderUDProjList();
+  if (typeof renderUDDetail === 'function') renderUDDetail();
+  if (typeof renderProjTable === 'function') renderProjTable();
+  if (typeof renderSidebarFolders === 'function') renderSidebarFolders();
+
+  emCloseCreateBldgsModal();
+
+  var msg = 'Created ' + created + ' building' + (created !== 1 ? 's' : '');
+  if (skipped > 0) msg += ' (' + skipped + ' skipped)';
+  showToast(msg);
 }
 
 /* ── emNormalizePointWithCustom ─────────────────────────────────────────────
