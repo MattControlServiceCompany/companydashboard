@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <script>
     (function () {
@@ -24,7 +24,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
-    <title>CompanyHub â€” Energy Department</title>
+    <title>CompanyHub — Energy Department</title>
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='15' fill='%23238636'/><text x='50' y='72' font-size='60' font-weight='bold' text-anchor='middle' fill='white'>C</text></svg>"
@@ -37,7 +37,7 @@
 
     <style id="site-ui-styles">
       /* ---------------------------------------------------
-   SITE-UI.CSS â€” Shared CompanyHub UI Shell
+   SITE-UI.CSS — Shared CompanyHub UI Shell
    Topbar, sidebar, dept-nav, settings, theming
 --------------------------------------------------- */
 
@@ -127,7 +127,7 @@
         background: var(--border2);
         border-radius: 3px;
       }
-      /* #108: Bills data table horizontal scrollbar â€” larger and more visible */
+      /* #108: Bills data table horizontal scrollbar — larger and more visible */
       .bills-scroll-body::-webkit-scrollbar {
         height: 12px;
       }
@@ -325,7 +325,7 @@
         animation: fadeUp 0.4s ease;
       }
 
-      /* -- POPUP MODE â€” suppress login flash and fade animation -- */
+      /* -- POPUP MODE — suppress login flash and fade animation -- */
       [data-popup-mode] #loginScreen {
         display: none !important;
       }
@@ -1141,7 +1141,7 @@
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
       }
 
-      /* drop-overlay styles removed â€” restore is button-only now */
+      /* drop-overlay styles removed — restore is button-only now */
 
       /* -- TOOLTIP SYSTEM -- */
       .ch-tip-anchor {
@@ -1729,7 +1729,7 @@
           grid-template-columns: repeat(2, 1fr);
         }
 
-        /* Topbar overflow â€” hide verbose text at narrow widths */
+        /* Topbar overflow — hide verbose text at narrow widths */
         .u-name,
         .u-dept {
           display: none;
@@ -1744,7 +1744,7 @@
           font-size: 14px;
         }
 
-        /* Dept tabs â€” touch scrolling */
+        /* Dept tabs — touch scrolling */
         .dept-nav {
           -webkit-overflow-scrolling: touch;
           scroll-snap-type: x mandatory;
@@ -1765,7 +1765,7 @@
          REPORT DESIGN TOKENS
          All colors, fonts, and semantic values used in the
          report engine are defined here as CSS custom properties.
-         Never hardcode hex values in report CSS or JS templates â€”
+         Never hardcode hex values in report CSS or JS templates —
          reference these variables instead.
       ------------------------------------------------------ */
       :root {
@@ -2095,7 +2095,7 @@
         border-top-color: var(--rpt-dtbl-tot-bdr);
         color: var(--rpt-dtbl-tot-text);
       }
-      /* -- Building Baseline Data â€” print-optimized light theme -- */
+      /* -- Building Baseline Data — print-optimized light theme -- */
       .rpt-table-bl {
         background: var(--rpt-page-bg);
         color: var(--rpt-page-text);
@@ -2149,7 +2149,7 @@
         background: var(--rpt-bl-navy);
         border-color: var(--rpt-bl-navy-bdr);
       }
-      /* Stats summary bar â€” light bordered version */
+      /* Stats summary bar — light bordered version */
       .rpt-bl-stats {
         display: flex;
         gap: 0;
@@ -3019,7 +3019,7 @@
         filter: invert(0.7);
         cursor: pointer;
       }
-      /* #75: Bill modal date inputs use .ef-input â€” add explicit calendar icon visibility */
+      /* #75: Bill modal date inputs use .ef-input — add explicit calendar icon visibility */
       .ef-input[type='date']::-webkit-calendar-picker-indicator {
         filter: invert(1) opacity(0.85);
         cursor: pointer;
@@ -3851,7 +3851,7 @@
         overflow-y: auto;
         min-height: 0;
       }
-      /* Direct children of scrolling tabs must not shrink â€” they must overflow the
+      /* Direct children of scrolling tabs must not shrink — they must overflow the
          bounded container so overflow-y:auto can actually scroll them. */
       .ptab.active > * {
         flex-shrink: 0;
@@ -4146,7 +4146,7 @@
       table tr[data-acid]:hover td {
         background: var(--s2);
       }
-      /* Issue b2f5ee0b: condensed extracted-fields panel â€” 2-column grid so more
+      /* Issue b2f5ee0b: condensed extracted-fields panel — 2-column grid so more
          values are visible at once without scrolling. */
       .ef-grid {
         display: grid;
@@ -4186,7 +4186,7 @@
       .ef-row-fit > .ef-icons {
         margin-left: auto;
       }
-      /* Compact icon strip â€” hover any icon to see the full explanation in a tooltip.
+      /* Compact icon strip — hover any icon to see the full explanation in a tooltip.
          Cell height stays constant regardless of how much warning text there is. */
       .ef-icons {
         flex: 0 0 auto;
@@ -4199,7 +4199,7 @@
         cursor: help;
         line-height: 1;
       }
-      /* Cell hover popup â€” appears on any hover over the cell, styled as a solid-background
+      /* Cell hover popup — appears on any hover over the cell, styled as a solid-background
          bordered box. Default color is green (auto-correct); level-* variants recolor to
          match warning severity so the $0-charge info icon etc. share the same popup style. */
       .ef-ac-tooltip {
@@ -4269,7 +4269,7 @@
       .ef-ac-revert:hover {
         background: rgba(34, 197, 94, 0.2);
       }
-      /* Pill column container â€” flex layout for pill rows. The "frozen header" behavior
+      /* Pill column container — flex layout for pill rows. The "frozen header" behavior
          is handled by the parent view-flex layout (pdfFrozenHdr outside the scroll area),
          so no position:sticky hacks are needed inside the column. */
       .ef-pill-col {
@@ -5186,7 +5186,7 @@
         opacity: 1;
       }
 
-      /* -- UTILITY DATA â€” TWO-COLUMN MASTER/DETAIL -- */
+      /* -- UTILITY DATA — TWO-COLUMN MASTER/DETAIL -- */
       .ud-layout {
         display: grid;
         grid-template-columns: var(--ud-nav-w, 260px) 1fr;
@@ -5196,7 +5196,7 @@
         /* flex:1 + min-height:0 so this grid takes the full remaining height of
            its view-flex parent. Without these, .ud-layout took natural content
            height and every flex:1 below it (ud-detail-body ? maMeterWorkspace ?
-           maPane ? bills-scroll-body) had no anchored ceiling â€” the bills table
+           maPane ? bills-scroll-body) had no anchored ceiling — the bills table
            would expand to its own content height and push the horizontal
            scrollbar below the viewport. */
         flex: 1 1 0;
@@ -5216,7 +5216,7 @@
         border-right: none;
         padding: 0;
       }
-      /* Collapse/expand tab â€” straddles the divider between nav and detail, vertically centered */
+      /* Collapse/expand tab — straddles the divider between nav and detail, vertically centered */
       .ud-collapse-tab {
         position: absolute;
         top: 50%;
@@ -5359,7 +5359,7 @@
         /* overflow must allow the collapse tab to escape on the left so it can straddle
            the divider between the buildings panel and the data column. Children that need
            internal scrolling (.ud-detail-body, .ud-meter-card contents, etc.) have their
-           own overflow-y: auto â€” no need to clip at the column level. */
+           own overflow-y: auto — no need to clip at the column level. */
         overflow: visible;
         min-height: 0;
         /* CRITICAL: without min-width:0 this grid cell inherits its content's min-content
@@ -5410,7 +5410,7 @@
            constrain its children to the available height. Previously this was a
            block container with overflow-y:auto, which meant every flex:1 inside
            (maMeterWorkspace, maPane, bills-scroll-body) was a no-op and the bills
-           table expanded to natural height â€” hiding the horizontal scrollbar below
+           table expanded to natural height — hiding the horizontal scrollbar below
            the fold and breaking the sticky thead behavior. min-width:0 is critical
            alongside min-height:0 so the width constraint propagates down to the
            bills table body where overflow-x:auto can actually engage. */
@@ -5520,7 +5520,7 @@
       .ud-meter-body.open {
         display: block;
       }
-      /* Meter info grid â€” responsive auto-fit */
+      /* Meter info grid — responsive auto-fit */
       .ud-meter-info {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -5577,7 +5577,7 @@
       /* Update 91: hide header wrapper scrollbar. The inline style on the
          #billsTheadWrap element switches from overflow-x:hidden to
          overflow-x:auto so the sticky-col cells in the header engage
-         properly â€” but we don't want the scrollbar to render visually,
+         properly — but we don't want the scrollbar to render visually,
          since the body already shows one and the two are JS-synced. */
       .bills-thead-wrap {
         scrollbar-width: none;
@@ -5677,7 +5677,7 @@
         width: 100%;
         /* Update 92: separate (not collapse) so each cell paints its OWN
            right + bottom borders. With collapse, adjacent cells SHARE one
-           1px border line â€” and on sticky cells during horizontal scroll,
+           1px border line — and on sticky cells during horizontal scroll,
            that shared line is treated as part of the scrolled column, not
            the frozen one, so scrolled text showed through the border gap.
            Separate gives every cell an opaque 1px solid-color edge that
@@ -5802,9 +5802,9 @@
         white-space: nowrap;
         text-align: center;
         padding: 4px 8px;
-        /* Update 95: action cells contain icon buttons, not text â€” disable
+        /* Update 95: action cells contain icon buttons, not text — disable
            the overflow:hidden + text-overflow:ellipsis from the generic td
-           rule so the ðŸ“„ / âœï¸ / âœ• buttons don't get clipped to "â€¦". */
+           rule so the 📄 / ✏️ / ✕ buttons don't get clipped to "…". */
         overflow: visible;
         text-overflow: clip;
       }
@@ -5825,7 +5825,7 @@
       }
       /* Update 90 / 91 / 92: sticky left columns (Norm Month / Start / End).
          Content from scrolling columns must NEVER show behind the sticky
-         cells â€” requires: (a) solid opaque background-color, (b) z-index
+         cells — requires: (a) solid opaque background-color, (b) z-index
          higher than any scrolling cell's effective stacking level, and
          (c) a right-edge separator (box-shadow beats a real border because
          border-collapse:collapse clips the cell's own borders during scroll).
@@ -5880,7 +5880,7 @@
       .ud-bill-tbl tr.ud-bill-empty-row td.sticky-col-right {
         background-color: var(--s1) !important;
       }
-      /* Table Settings header â€” full cell is clickable, gear icon above a
+      /* Table Settings header — full cell is clickable, gear icon above a
          "Table Settings" label. Lives as a child <div> inside the <th> so
          the col-resize-handle sibling stays functional. */
       .bts-header-btn {
@@ -5994,14 +5994,14 @@
         gap: 8px;
         letter-spacing: 0.01em;
       }
-      /* Bug #17: Bill rows with no start/end dates â€” amber left-border + subtle tint */
+      /* Bug #17: Bill rows with no start/end dates — amber left-border + subtle tint */
       tr.ud-bill-missing-dates td {
         background: rgba(245, 158, 11, 0.06) !important;
       }
       tr.ud-bill-missing-dates td:first-child {
         box-shadow: inset 3px 0 0 var(--amber);
       }
-      /* Bug #26: Overlap warning row â€” amber/orange to distinguish from gap (red) */
+      /* Bug #26: Overlap warning row — amber/orange to distinguish from gap (red) */
       .ud-bill-overlap-row td {
         padding: 10px 14px;
         background: rgba(245, 158, 11, 0.12);
@@ -6232,7 +6232,7 @@
         border-color: var(--em);
         background: var(--em-dim);
       }
-      /* Inline Add Meter pill â€” dashed border, muted background, brightens on hover */
+      /* Inline Add Meter pill — dashed border, muted background, brightens on hover */
       .ma-meter-pill.ma-add-meter-pill {
         border-style: dashed;
         border-color: var(--border2);
@@ -7136,7 +7136,7 @@
       }
 
       /* -------------------------------------------
-         BUILDING SCORECARD â€” sc-* classes
+         BUILDING SCORECARD — sc-* classes
          Print-friendly one-pager for school board.
       ------------------------------------------- */
       .sc-root {
@@ -7423,9 +7423,9 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.26.370" />
+    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.26.371" />
     <style>
-      /* -- Quill rich text editor â€” dark theme overrides -- */
+      /* -- Quill rich text editor — dark theme overrides -- */
       .ql-toolbar.ql-snow {
         background: var(--s1);
         border-color: var(--s3);
@@ -7482,7 +7482,7 @@
           <span class="login-brand">CompanyHub</span>
         </div>
         <p class="login-sub">Sign in with your company Microsoft 365 account to access all departments and tools.</p>
-        <button class="btn-ms" onclick="window.location.href = 'index.html'">â† Return to Sign In</button>
+        <button class="btn-ms" onclick="window.location.href = 'index.html'">← Return to Sign In</button>
         <button
           class="btn-ms"
           style="margin-top: 8px; background: var(--s3); color: var(--text2); border: 1px solid var(--s4)"
@@ -7526,7 +7526,7 @@
             onclick="toggleNotifPanel()"
             title="Notifications"
           >
-            ðŸ””<span class="npip" id="notifPip" style="display: none"></span>
+            🔔<span class="npip" id="notifPip" style="display: none"></span>
             <span
               id="notifBadge"
               style="
@@ -7585,9 +7585,9 @@
       </header>
 
       <nav class="dept-nav" data-fb="energy.dept-nav">
-        <a class="dept-tab" data-fb="energy.dept-nav.dashboard" href="index.html">ðŸ  Dashboard</a>
-        <a class="dept-tab" data-fb="energy.dept-nav.service" href="service-department.html">ðŸ”§ Service Department</a>
-        <button class="dept-tab active" data-fb="energy.dept-nav.energy">âš¡ Energy Department</button>
+        <a class="dept-tab" data-fb="energy.dept-nav.dashboard" href="index.html">🏠 Dashboard</a>
+        <a class="dept-tab" data-fb="energy.dept-nav.service" href="service-department.html">🔧 Service Department</a>
+        <button class="dept-tab active" data-fb="energy.dept-nav.energy">⚡ Energy Department</button>
       </nav>
 
       <div class="app-wrap">
@@ -7597,11 +7597,11 @@
             <div class="s-sect">
               <div class="s-lbl">Energy</div>
               <button class="s-item active" data-fb="energy.sidebar.home" onclick="sv('home', this)">
-                <span class="s-ico">ðŸ </span>Home
+                <span class="s-ico">🏠</span>Home
               </button>
               <div class="s-proj-header" id="sb-proj-btn">
                 <button class="s-item s-proj-toggle" onclick="sv('projects', document.getElementById('sb-proj-btn'))">
-                  <span class="s-ico">ðŸ“</span>Projects
+                  <span class="s-ico">📁</span>Projects
                 </button>
                 <button
                   class="s-proj-collapse"
@@ -7609,13 +7609,13 @@
                   onclick="toggleProjSection(event)"
                   title="Collapse projects"
                 >
-                  â€¹
+                  ‹
                 </button>
               </div>
               <div class="s-proj-section" id="sidebarProjFolders"></div>
               <div id="sidebarSortable">
                 <button class="s-item" data-sidebar-id="pdf" data-fb="energy.sidebar.pdf" onclick="sv('pdf', this)">
-                  <span class="s-ico">ðŸ“„</span>PDF / OCR
+                  <span class="s-ico">📄</span>PDF / OCR
                 </button>
                 <button
                   class="s-item"
@@ -7623,7 +7623,7 @@
                   data-fb="energy.sidebar.utility"
                   onclick="sv('utility', this)"
                 >
-                  <span class="s-ico">âš¡</span>Utility Data
+                  <span class="s-ico">⚡</span>Utility Data
                 </button>
                 <button
                   class="s-item"
@@ -7631,7 +7631,7 @@
                   data-fb="energy.sidebar.drawings"
                   onclick="sv('drawings', this)"
                 >
-                  <span class="s-ico">ðŸ“</span>Drawings
+                  <span class="s-ico">📐</span>Drawings
                 </button>
                 <button
                   class="s-item"
@@ -7639,7 +7639,7 @@
                   data-fb="energy.sidebar.specs"
                   onclick="sv('specs', this)"
                 >
-                  <span class="s-ico">âœï¸</span>Spec Writer
+                  <span class="s-ico">✍️</span>Spec Writer
                 </button>
                 <button
                   class="s-item"
@@ -7647,10 +7647,10 @@
                   data-fb="energy.sidebar.webctrl"
                   onclick="sv('webctrl', this)"
                 >
-                  <span class="s-ico">ðŸ”Œ</span>WebCTRL
+                  <span class="s-ico">🔌</span>WebCTRL
                 </button>
                 <button class="s-item" data-sidebar-id="ems" data-fb="energy.sidebar.ems" onclick="sv('ems', this)">
-                  <span class="s-ico">ðŸ“Š</span>EMS Leads
+                  <span class="s-ico">📊</span>EMS Leads
                 </button>
                 <button
                   class="s-item"
@@ -7658,7 +7658,7 @@
                   data-fb="energy.sidebar.calculators"
                   onclick="sv('calculators', this)"
                 >
-                  <span class="s-ico">ðŸ§®</span>ECM Calculators
+                  <span class="s-ico">🧮</span>ECM Calculators
                 </button>
               </div>
             </div>
@@ -7771,7 +7771,7 @@
               data-fb="energy.home.week-card"
             >
               <div class="card-hdr">
-                <span class="card-title">ðŸ“… Current Week</span
+                <span class="card-title">📅 Current Week</span
                 ><span style="font-size: 12px; color: var(--text2)" id="week-range-lbl"></span>
               </div>
               <div style="padding: 13px 15px"><div class="week-strip" id="weekStrip"></div></div>
@@ -7779,11 +7779,11 @@
             <div class="g-6040" data-ui-id="en-home-grid" data-fb="energy.home.grid">
               <div class="cal-outer" data-ui-id="en-home-calendar" data-fb="energy.home.calendar">
                 <div class="cal-top">
-                  <span style="font-family: var(--head); font-size: 14px; font-weight: 700">ðŸ“… Monthly Calendar</span>
+                  <span style="font-family: var(--head); font-size: 14px; font-weight: 700">📅 Monthly Calendar</span>
                   <div class="cal-nav">
-                    <button class="cnav" onclick="changeHCal(-1)">â€¹</button>
+                    <button class="cnav" onclick="changeHCal(-1)">‹</button>
                     <span class="cal-mlbl" id="hCalLbl"></span>
-                    <button class="cnav" onclick="changeHCal(1)">â€º</button>
+                    <button class="cnav" onclick="changeHCal(1)">›</button>
                   </div>
                 </div>
                 <div class="cal-grid">
@@ -7806,7 +7806,7 @@
                 data-fb="energy.home.tasks-card"
               >
                 <div class="card-hdr">
-                  <span class="card-title">âœ… Upcoming Tasks</span
+                  <span class="card-title">✅ Upcoming Tasks</span
                   ><button class="btn btn-ghost btn-sm" onclick="openTaskModal()">+ Add</button>
                 </div>
                 <div style="padding: 13px; overflow-y: auto; flex: 1" id="upcomingTasksList"></div>
@@ -7831,7 +7831,7 @@
                 <input
                   class="proj-search"
                   id="projSearchQ"
-                  placeholder="ðŸ” Search..."
+                  placeholder="🔍 Search..."
                   oninput="renderProjTable()"
                   data-fb="energy.projects.search"
                 />
@@ -7882,7 +7882,7 @@
               </div>
               <!-- Right detail: project header + building header + meters -->
               <div class="ud-detail-col">
-                <div class="ud-collapse-tab" onclick="toggleUdNav('udLayout')" title="Toggle buildings panel">â—€</div>
+                <div class="ud-collapse-tab" onclick="toggleUdNav('udLayout')" title="Toggle buildings panel">◀</div>
                 <!-- Project-level panels bar (shown when project selected, above building header) -->
                 <div
                   id="udProjPanelBar"
@@ -7903,24 +7903,24 @@
                       id="ud-proj-baseline-btn"
                       onclick="toggleUDProjPanel('baseline')"
                     >
-                      ðŸ“Š Project Baseline
+                      📊 Project Baseline
                     </button>
                     <button
                       class="btn btn-ghost btn-sm"
                       id="ud-proj-savproj-btn"
                       onclick="toggleUDProjPanel('savproj')"
                     >
-                      ðŸ“ˆ Projected Savings
+                      📈 Projected Savings
                     </button>
                     <button class="btn btn-ghost btn-sm" id="ud-proj-perf-btn" onclick="toggleUDProjPanel('perf')">
-                      ðŸ’¡ Project Performance
+                      💡 Project Performance
                     </button>
                     <button
                       class="btn btn-ghost btn-sm"
                       id="ud-proj-compare-btn"
                       onclick="toggleUDProjPanel('compare')"
                     >
-                      ðŸ•¸ Building Comparison
+                      🕸 Building Comparison
                     </button>
                   </div>
                 </div>
@@ -7941,7 +7941,7 @@
                       onclick="toggleBldgStatsPanel()"
                       data-fb="energy.utility.baseline-btn"
                     >
-                      ðŸ“Š Baseline Data
+                      📊 Baseline Data
                     </button>
                     <button
                       class="btn btn-ghost btn-sm"
@@ -7949,7 +7949,7 @@
                       onclick="toggleBldgSavProjPanel()"
                       data-fb="energy.utility.savings-proj-btn"
                     >
-                      ðŸ“ˆ Building Savings Projection
+                      📈 Building Savings Projection
                     </button>
                     <button
                       class="btn btn-ghost btn-sm"
@@ -7957,7 +7957,7 @@
                       onclick="toggleBldgPerfPanel()"
                       data-fb="energy.utility.performance-btn"
                     >
-                      ðŸ’¡ Building Performance
+                      💡 Building Performance
                     </button>
                     <button
                       class="btn btn-ghost btn-sm"
@@ -7965,7 +7965,7 @@
                       onclick="openBldgModal(window._udSelBldgId)"
                       data-fb="energy.utility.edit-building-btn"
                     >
-                      âœï¸ Edit Building
+                      ✏️ Edit Building
                     </button>
                     <!-- Header + Add Meter button is hidden; the inline Add Meter pill lives
                          directly to the right of the meter pills in .ma-meter-bar. -->
@@ -7985,7 +7985,7 @@
                       title="Export utility bill data to JSON or CSV"
                       data-fb="energy.utility.export-btn"
                     >
-                      ðŸ“¤ Export Data
+                      📤 Export Data
                     </button>
                     <button
                       class="btn btn-ghost btn-sm"
@@ -7994,13 +7994,13 @@
                       title="View in Projects page"
                       data-fb="energy.utility.view-project-btn"
                     >
-                      ðŸ“ View Project
+                      📁 View Project
                     </button>
                   </div>
                 </div>
                 <div class="ud-detail-body" id="udDetailWrap">
                   <div class="ud-empty">
-                    <div class="ud-empty-ico">ðŸ“</div>
+                    <div class="ud-empty-ico">📁</div>
                     <div>Select a project and building<br />from the left to view meters</div>
                   </div>
                 </div>
@@ -8010,7 +8010,7 @@
 
           <!-- PDF OCR -->
           <div id="view-pdf" class="view view-flex" data-ui-id="en-pdf" data-fb="energy.pdf">
-            <!-- Page title bar â€” stays frozen at top, spans full width -->
+            <!-- Page title bar — stays frozen at top, spans full width -->
             <div id="pdfPageHdr" style="flex-shrink: 0; padding: 16px 18px 10px; background: var(--bg)">
               <div class="pg-hdr">
                 <div>
@@ -8026,7 +8026,7 @@
                     id="savedBillsBtn"
                     data-fb="energy.pdf.saved-bills-btn"
                   >
-                    ðŸ—„ï¸ Saved Bills
+                    🗄️ Saved Bills
                     <span
                       id="pdfBillCount"
                       style="
@@ -8046,7 +8046,7 @@
             </div>
             <!-- Two true side-by-side columns. Each column is a self-contained flex column that
                  goes from the top of the body area to the bottom and manages its own vertical
-                 scrolling. No shared frozen header across columns â€” that caused the visual gap
+                 scrolling. No shared frozen header across columns — that caused the visual gap
                  between the "Extraction Output" label and the JSON box in previous layouts. -->
             <div
               id="pdfBody"
@@ -8072,9 +8072,9 @@
                   ondragleave="this.classList.remove('drag')"
                   ondrop="handleDrop(event)"
                 >
-                  <span class="dz-ico">ðŸ“„</span>
+                  <span class="dz-ico">📄</span>
                   <div class="dz-title" id="dz-title">Drop PDF here or click to browse</div>
-                  <div class="dz-sub">Utility bills Â· Drawings Â· Equipment submittals Â· Contracts</div>
+                  <div class="dz-sub">Utility bills · Drawings · Equipment submittals · Contracts</div>
                   <input
                     type="file"
                     id="pdfInput"
@@ -8091,17 +8091,17 @@
                         clearPDFOCR();
                       "
                     >
-                      âœ• Clear
+                      ✕ Clear
                     </button>
                   </div>
                 </div>
                 <div id="pdfTypeSection" style="margin-top: 12px" data-fb="energy.pdf.type-selector">
                   <div class="fl" style="margin-bottom: 6px">Document Type</div>
                   <div class="pdf-type-pills">
-                    <button class="ptpill sel" onclick="setPDFType('utility', this)">ðŸ”Œ Utility Bill</button>
-                    <button class="ptpill" onclick="setPDFType('drawing', this)">ðŸ“ Drawing</button>
-                    <button class="ptpill" onclick="setPDFType('submittal', this)">âš™ï¸ Submittal</button>
-                    <button class="ptpill" onclick="setPDFType('contract', this)">ðŸ“‹ Contract</button>
+                    <button class="ptpill sel" onclick="setPDFType('utility', this)">🔌 Utility Bill</button>
+                    <button class="ptpill" onclick="setPDFType('drawing', this)">📐 Drawing</button>
+                    <button class="ptpill" onclick="setPDFType('submittal', this)">⚙️ Submittal</button>
+                    <button class="ptpill" onclick="setPDFType('contract', this)">📋 Contract</button>
                   </div>
                 </div>
                 <div id="extractedFieldsHdr" data-fb="energy.pdf.extracted-fields-hdr"></div>
@@ -8120,7 +8120,7 @@
                     line-height: 1.5;
                   "
                 >
-                  <div style="font-weight: 600; color: var(--em); margin-bottom: 4px">âœ“ Meter Match Found</div>
+                  <div style="font-weight: 600; color: var(--em); margin-bottom: 4px">✓ Meter Match Found</div>
                   <div id="pdfAutoAssignMsg" style="color: var(--text2); margin-bottom: 8px"></div>
                   <!-- Override row: collapsible, lets user pick a different destination -->
                   <div
@@ -8150,10 +8150,10 @@
                         style="flex: 1; min-width: 120px; font-size: 11px"
                         onchange="pdfBannerUpdateMeterOpts()"
                       >
-                        <option value="">â€” Building â€”</option>
+                        <option value="">— Building —</option>
                       </select>
                       <select class="fs" id="pdfBannerMeterSel" style="flex: 1; min-width: 120px; font-size: 11px">
-                        <option value="">â€” Meter â€”</option>
+                        <option value="">— Meter —</option>
                       </select>
                     </div>
                   </div>
@@ -8195,7 +8195,7 @@
                     </select>
                     <button class="btn btn-em" onclick="savePDFData()" data-fb="energy.pdf.save-btn">Save</button>
                     <button class="btn btn-ghost" onclick="clearPDFOCR()" title="Clear extracted data and reset">
-                      âœ• Clear
+                      ✕ Clear
                     </button>
                   </div>
                 </div>
@@ -8221,7 +8221,7 @@
                     padding-bottom: 4px;
                   "
                 >
-                  <div class="ai-label" style="margin: 0">ðŸ“„ Extraction Output</div>
+                  <div class="ai-label" style="margin: 0">📄 Extraction Output</div>
                   <div style="display: flex; align-items: center; gap: 7px">
                     <button
                       id="pdfDebugBtn"
@@ -8238,7 +8238,7 @@
                       "
                       onclick="togglePDFRawText()"
                     >
-                      ðŸ” Raw Text
+                      🔍 Raw Text
                     </button>
                     <button
                       id="pdfSaveDebugBtn"
@@ -8255,7 +8255,7 @@
                       "
                       onclick="savePDFDebug()"
                     >
-                      ðŸ’¾ Save Debug
+                      💾 Save Debug
                     </button>
                     <div
                       id="extractMethodBadge"
@@ -8295,9 +8295,9 @@
                   onclick="document.getElementById('dwgInput').click()"
                   data-fb="energy.drawings.upload-area"
                 >
-                  <span class="dz-ico">ðŸ“</span>
+                  <span class="dz-ico">📐</span>
                   <div class="dz-title">Upload Construction Drawing PDF</div>
-                  <div class="dz-sub">Mechanical plans Â· Equipment schedules Â· Controls drawings</div>
+                  <div class="dz-sub">Mechanical plans · Equipment schedules · Controls drawings</div>
                   <input
                     type="file"
                     id="dwgInput"
@@ -8309,7 +8309,7 @@
                 <div id="dwgExtracted" style="margin-top: 13px"></div>
               </div>
               <div>
-                <div class="ai-label">ðŸ“ Drawing Analysis</div>
+                <div class="ai-label">📐 Drawing Analysis</div>
                 <div class="ai-box" id="dwgBox" style="min-height: 320px" data-fb="energy.drawings.output-box">
                   Upload a drawing PDF to analyze.
                 </div>
@@ -8375,23 +8375,23 @@
                       onclick="writeSpec()"
                       data-fb="energy.specs.generate-btn"
                     >
-                      âœï¸ Generate Specification
+                      ✍️ Generate Specification
                     </button>
                   </div>
                 </div>
               </div>
               <div>
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px">
-                  <div class="ai-label" style="margin: 0">âœï¸ Generated Specification</div>
+                  <div class="ai-label" style="margin: 0">✍️ Generated Specification</div>
                   <div style="display: flex; gap: 7px">
                     <button
                       class="btn btn-ghost btn-sm"
                       onclick="
                         navigator.clipboard.writeText(document.getElementById('specOut').textContent);
-                        showToast('Copied âœ“');
+                        showToast('Copied ✓');
                       "
                     >
-                      ðŸ“‹ Copy
+                      📋 Copy
                     </button>
                     <button class="btn btn-ghost btn-sm" onclick="document.getElementById('specOut').textContent = ''">
                       Clear
@@ -8414,7 +8414,7 @@
                 onclick="setWCMode('guide', this)"
                 data-fb="energy.webctrl.mode.guide"
               >
-                <div class="wcm-ico">ðŸ—ºï¸</div>
+                <div class="wcm-ico">🗺️</div>
                 <div class="wcm-name">Guided Walkthrough</div>
                 <div class="wcm-desc">Step-by-step explanations of WebCTRL logic concepts</div>
               </div>
@@ -8424,18 +8424,18 @@
                 onclick="setWCMode('diagnose', this)"
                 data-fb="energy.webctrl.mode.diagnose"
               >
-                <div class="wcm-ico">ðŸ”</div>
+                <div class="wcm-ico">🔍</div>
                 <div class="wcm-name">Diagnose Logic</div>
-                <div class="wcm-desc">Paste in existing logic â€” get plain-English explanation and fixes</div>
+                <div class="wcm-desc">Paste in existing logic — get plain-English explanation and fixes</div>
               </div>
               <div class="wcm" id="wcm-write" onclick="setWCMode('write', this)" data-fb="energy.webctrl.mode.write">
-                <div class="wcm-ico">âœï¸</div>
+                <div class="wcm-ico">✍️</div>
                 <div class="wcm-name">Write Logic</div>
-                <div class="wcm-desc">Describe what you need â€” get complete WebCTRL-compatible logic</div>
+                <div class="wcm-desc">Describe what you need — get complete WebCTRL-compatible logic</div>
               </div>
             </div>
             <div id="wc-guide" class="card">
-              <div class="card-hdr"><span class="card-title">ðŸ—ºï¸ Guided Walkthrough</span></div>
+              <div class="card-hdr"><span class="card-title">🗺️ Guided Walkthrough</span></div>
               <div style="padding: 16px">
                 <div class="f2">
                   <div class="fg">
@@ -8445,19 +8445,19 @@
                   <div class="fg">
                     <label class="fl">Experience Level</label
                     ><select class="fs" id="wc-g-lvl">
-                      <option>Beginner â€” explain from scratch</option>
-                      <option>Intermediate â€” I know the basics</option>
-                      <option>Advanced â€” skip the basics</option>
+                      <option>Beginner — explain from scratch</option>
+                      <option>Intermediate — I know the basics</option>
+                      <option>Advanced — skip the basics</option>
                     </select>
                   </div>
                 </div>
-                <button class="btn btn-em" onclick="runWC('guide')">ðŸ—ºï¸ Explain This</button>
-                <div class="ai-label" style="margin-top: 14px">ðŸ’¡ Explanation</div>
+                <button class="btn btn-em" onclick="runWC('guide')">🗺️ Explain This</button>
+                <div class="ai-label" style="margin-top: 14px">💡 Explanation</div>
                 <div class="logic-out" id="wc-g-out">Ask any WebCTRL or Automated Logic question above.</div>
               </div>
             </div>
             <div id="wc-diagnose" class="card" style="display: none">
-              <div class="card-hdr"><span class="card-title">ðŸ” Diagnose Logic</span></div>
+              <div class="card-hdr"><span class="card-title">🔍 Diagnose Logic</span></div>
               <div style="padding: 16px">
                 <div class="fg">
                   <label class="fl">Paste Logic or Program</label
@@ -8471,13 +8471,13 @@
                   <label class="fl">Reported Issue (optional)</label
                   ><input class="fi" id="wc-d-issue" placeholder="e.g. AHU never goes to occupied mode..." />
                 </div>
-                <button class="btn btn-em" onclick="runWC('diagnose')">ðŸ” Diagnose</button>
-                <div class="ai-label" style="margin-top: 14px">ðŸ” Diagnosis</div>
+                <button class="btn btn-em" onclick="runWC('diagnose')">🔍 Diagnose</button>
+                <div class="ai-label" style="margin-top: 14px">🔍 Diagnosis</div>
                 <div class="logic-out" id="wc-d-out">Paste logic above and click Diagnose.</div>
               </div>
             </div>
             <div id="wc-write" class="card" style="display: none">
-              <div class="card-hdr"><span class="card-title">âœï¸ Write Logic</span></div>
+              <div class="card-hdr"><span class="card-title">✍️ Write Logic</span></div>
               <div style="padding: 16px">
                 <div class="f2">
                   <div class="fg">
@@ -8497,17 +8497,17 @@
                     placeholder="Describe what you need the logic to do..."
                   ></textarea>
                 </div>
-                <button class="btn btn-em" onclick="runWC('write')">âœï¸ Write Logic</button>
+                <button class="btn btn-em" onclick="runWC('write')">✍️ Write Logic</button>
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 14px">
-                  <div class="ai-label" style="margin: 0">âš™ï¸ Generated Logic</div>
+                  <div class="ai-label" style="margin: 0">⚙️ Generated Logic</div>
                   <button
                     class="btn btn-ghost btn-sm"
                     onclick="
                       navigator.clipboard.writeText(document.getElementById('wc-w-out').textContent);
-                      showToast('Copied âœ“');
+                      showToast('Copied ✓');
                     "
                   >
-                    ðŸ“‹ Copy
+                    📋 Copy
                   </button>
                 </div>
                 <div class="logic-out" id="wc-w-out">Describe your sequence above.</div>
@@ -9681,10 +9681,10 @@
 
             <!-- EMS Nav Tabs -->
             <div class="ems-nav-bar">
-              <button class="ems-ntab active" onclick="emsSwitch('pipeline', this)">ðŸ“‹ Pipeline</button>
-              <button class="ems-ntab" onclick="emsSwitch('table', this)">ðŸ“Š All Leads</button>
-              <button class="ems-ntab" onclick="emsSwitch('followups', this)">ðŸ”” Follow-ups</button>
-              <button class="ems-ntab" onclick="emsSwitch('analytics', this)">ðŸ“ˆ Analytics</button>
+              <button class="ems-ntab active" onclick="emsSwitch('pipeline', this)">📋 Pipeline</button>
+              <button class="ems-ntab" onclick="emsSwitch('table', this)">📊 All Leads</button>
+              <button class="ems-ntab" onclick="emsSwitch('followups', this)">🔔 Follow-ups</button>
+              <button class="ems-ntab" onclick="emsSwitch('analytics', this)">📈 Analytics</button>
             </div>
 
             <!-- EMS Content Wrap -->
@@ -9694,10 +9694,10 @@
                 <div class="ems-s-sect">
                   <div class="ems-s-lbl">Pipeline</div>
                   <div class="ems-s-item active" id="esb-all" onclick="emsFilterStage('', this)">
-                    <span class="ems-s-ico">ðŸŒ</span>All Leads<span class="ems-s-badge" id="esb-count-all">0</span>
+                    <span class="ems-s-ico">🌐</span>All Leads<span class="ems-s-badge" id="esb-count-all">0</span>
                   </div>
                   <div class="ems-s-item" id="esb-prospect" onclick="emsFilterStage('Prospect', this)">
-                    <span class="ems-s-ico">ðŸ‘</span>Prospect<span
+                    <span class="ems-s-ico">👁</span>Prospect<span
                       class="ems-s-badge"
                       id="esb-count-prospect"
                       style="background: var(--s4); color: var(--text2)"
@@ -9705,7 +9705,7 @@
                     >
                   </div>
                   <div class="ems-s-item" id="esb-qualifying" onclick="emsFilterStage('Qualifying', this)">
-                    <span class="ems-s-ico">ðŸ”</span>Qualifying<span
+                    <span class="ems-s-ico">🔍</span>Qualifying<span
                       class="ems-s-badge"
                       id="esb-count-qualifying"
                       style="background: var(--warn-dim); color: var(--warn)"
@@ -9713,7 +9713,7 @@
                     >
                   </div>
                   <div class="ems-s-item" id="esb-proposal" onclick="emsFilterStage('Proposal', this)">
-                    <span class="ems-s-ico">ðŸ“„</span>Proposal<span
+                    <span class="ems-s-ico">📄</span>Proposal<span
                       class="ems-s-badge"
                       id="esb-count-proposal"
                       style="background: var(--violet-dim); color: var(--violet)"
@@ -9721,7 +9721,7 @@
                     >
                   </div>
                   <div class="ems-s-item" id="esb-won" onclick="emsFilterStage('Won', this)">
-                    <span class="ems-s-ico">âœ…</span>Won<span
+                    <span class="ems-s-ico">✅</span>Won<span
                       class="ems-s-badge"
                       id="esb-count-won"
                       style="background: var(--em-dim); color: var(--em)"
@@ -9729,7 +9729,7 @@
                     >
                   </div>
                   <div class="ems-s-item" id="esb-lost" onclick="emsFilterStage('Lost', this)">
-                    <span class="ems-s-ico">âŒ</span>Lost<span
+                    <span class="ems-s-ico">❌</span>Lost<span
                       class="ems-s-badge"
                       id="esb-count-lost"
                       style="background: var(--danger-dim); color: var(--danger)"
@@ -9740,19 +9740,19 @@
                 <div class="ems-s-sect">
                   <div class="ems-s-lbl">Priority</div>
                   <div class="ems-s-item" onclick="emsFilterPri('High', this)">
-                    <span class="ems-s-ico" style="color: var(--danger)">â—</span>High
+                    <span class="ems-s-ico" style="color: var(--danger)">●</span>High
                   </div>
                   <div class="ems-s-item" onclick="emsFilterPri('Medium', this)">
-                    <span class="ems-s-ico" style="color: var(--warn)">â—</span>Medium
+                    <span class="ems-s-ico" style="color: var(--warn)">●</span>Medium
                   </div>
                   <div class="ems-s-item" onclick="emsFilterPri('Low', this)">
-                    <span class="ems-s-ico" style="color: var(--text2)">â—</span>Low
+                    <span class="ems-s-ico" style="color: var(--text2)">●</span>Low
                   </div>
                 </div>
                 <div class="ems-s-sect">
                   <div class="ems-s-lbl">Actions</div>
-                  <div class="ems-s-item" onclick="emsOpenImport()"><span class="ems-s-ico">â¬†</span>Import CSV</div>
-                  <div class="ems-s-item" onclick="emsExportCSV()"><span class="ems-s-ico">â¬‡</span>Export CSV</div>
+                  <div class="ems-s-item" onclick="emsOpenImport()"><span class="ems-s-ico">⬆</span>Import CSV</div>
+                  <div class="ems-s-item" onclick="emsExportCSV()"><span class="ems-s-ico">⬇</span>Export CSV</div>
                 </div>
               </div>
 
@@ -9768,7 +9768,7 @@
                     <div class="hdr-actions">
                       <div class="filter-bar" style="margin: 0">
                         <div class="search-box">
-                          <span style="color: var(--text2); font-size: 13px">ðŸ”</span
+                          <span style="color: var(--text2); font-size: 13px">🔍</span
                           ><input
                             type="text"
                             id="epipeSearch"
@@ -9781,7 +9781,7 @@
                         </select>
                       </div>
                       <button class="btn btn-ghost" onclick="emsOpenRawTable()" title="View all leads as a spreadsheet">
-                        ðŸ“‹ Raw Data
+                        📋 Raw Data
                       </button>
                       <button class="btn btn-em" onclick="emsOpenNew()">+ New Lead</button>
                     </div>
@@ -9797,10 +9797,10 @@
                   <div class="pg-hdr">
                     <div>
                       <div class="pg-title">All <em>Leads</em></div>
-                      <div class="pg-sub">Spreadsheet view â€” click any row to open lead detail</div>
+                      <div class="pg-sub">Spreadsheet view — click any row to open lead detail</div>
                     </div>
                     <div class="hdr-actions">
-                      <button class="btn btn-ghost btn-sm" onclick="emsExportCSV()">â¬‡ Export CSV</button>
+                      <button class="btn btn-ghost btn-sm" onclick="emsExportCSV()">⬇ Export CSV</button>
                       <button
                         class="btn btn-ghost btn-sm"
                         onclick="emsDeleteAllLeads()"
@@ -9808,14 +9808,14 @@
                         onmouseover="this.style.background = 'rgba(240,80,80,.1)'"
                         onmouseout="this.style.background = 'transparent'"
                       >
-                        ðŸ—‘ Delete All
+                        🗑 Delete All
                       </button>
                       <button class="btn btn-em" onclick="emsOpenNew()">+ New Lead</button>
                     </div>
                   </div>
                   <div class="filter-bar">
                     <div class="search-box">
-                      <span style="color: var(--text2); font-size: 13px">ðŸ”</span
+                      <span style="color: var(--text2); font-size: 13px">🔍</span
                       ><input
                         type="text"
                         id="etableSearch"
@@ -9847,52 +9847,52 @@
                       <thead>
                         <tr>
                           <th onclick="emsSortTable('company')" data-sort-col="company" data-label="Company">
-                            Company â‡…
+                            Company ⇅
                           </th>
                           <th onclick="emsSortTable('clientType')" data-sort-col="clientType" data-label="Client Type">
-                            Client Type â‡…
+                            Client Type ⇅
                           </th>
                           <th onclick="emsSortTable('address')" data-sort-col="address" data-label="Address">
-                            Address â‡…
+                            Address ⇅
                           </th>
-                          <th onclick="emsSortTable('saNum')" data-sort-col="saNum" data-label="SA #">SA # â‡…</th>
+                          <th onclick="emsSortTable('saNum')" data-sort-col="saNum" data-label="SA #">SA # ⇅</th>
                           <th
                             onclick="emsSortTable('webctrlVersion')"
                             data-sort-col="webctrlVersion"
                             data-label="WebCTRL Ver"
                           >
-                            WebCTRL Ver â‡…
+                            WebCTRL Ver ⇅
                           </th>
                           <th
                             onclick="emsSortTable('renewalDate')"
                             data-sort-col="renewalDate"
                             data-label="Renewal Date"
                           >
-                            Renewal Date â‡…
+                            Renewal Date ⇅
                           </th>
-                          <th onclick="emsSortTable('stage')" data-sort-col="stage" data-label="Stage">Stage â‡…</th>
+                          <th onclick="emsSortTable('stage')" data-sort-col="stage" data-label="Stage">Stage ⇅</th>
                           <th onclick="emsSortTable('priority')" data-sort-col="priority" data-label="Priority">
-                            Priority â‡…
+                            Priority ⇅
                           </th>
                           <th onclick="emsSortTable('cscContact')" data-sort-col="cscContact" data-label="CSC Contact">
-                            CSC Contact â‡…
+                            CSC Contact ⇅
                           </th>
                           <th onclick="emsSortTable('annualValue')" data-sort-col="annualValue" data-label="Est. Value">
-                            Est. Value â‡…
+                            Est. Value ⇅
                           </th>
                           <th
                             onclick="emsSortTable('nextActionDate')"
                             data-sort-col="nextActionDate"
                             data-label="Next Action"
                           >
-                            Next Action â‡…
+                            Next Action ⇅
                           </th>
                           <th
                             onclick="emsSortTable('lastContact')"
                             data-sort-col="lastContact"
                             data-label="Last Contact"
                           >
-                            Last Contact â‡…
+                            Last Contact ⇅
                           </th>
                         </tr>
                       </thead>
@@ -9934,15 +9934,15 @@
               <div class="drawer-hdr">
                 <div class="drawer-title" id="emsDrawerTitle">Lead Detail</div>
                 <div class="drawer-hdr-actions">
-                  <button class="btn btn-danger btn-sm" onclick="emsDeleteLead()">ðŸ—‘ Delete</button>
-                  <button class="btn btn-em btn-sm" onclick="emsSaveDrawer()">ðŸ’¾ Save</button>
-                  <button class="ems-modal-x" onclick="emsCloseDrawer()">âœ•</button>
+                  <button class="btn btn-danger btn-sm" onclick="emsDeleteLead()">🗑 Delete</button>
+                  <button class="btn btn-em btn-sm" onclick="emsSaveDrawer()">💾 Save</button>
+                  <button class="ems-modal-x" onclick="emsCloseDrawer()">✕</button>
                 </div>
               </div>
               <div class="dtabs">
                 <button class="dtab active" onclick="emsDTab('dOv', this)">Overview</button>
                 <button class="dtab" onclick="emsDTab('dAct', this)">Activity Log</button>
-                <button class="dtab" onclick="emsDTab('dAI', this)">ðŸ”§ Tools</button>
+                <button class="dtab" onclick="emsDTab('dAI', this)">🔧 Tools</button>
               </div>
               <div class="drawer-body">
                 <div class="dpanel active" id="dOv">
@@ -9995,7 +9995,7 @@
                             this.style.color = 'var(--text2)';
                           "
                         >
-                          âœï¸ Edit
+                          ✏️ Edit
                         </button>
                       </div>
                       <!-- Inline client type editor -->
@@ -10062,7 +10062,7 @@
                     <div class="detail-field">
                       <div class="df-label">EMS Project Type</div>
                       <select class="df-select" id="ed-type">
-                        <option value="">â€” Select â€”</option>
+                        <option value="">— Select —</option>
                         <option>Energy Audit</option>
                         <option>Controls Retrofit</option>
                         <option>BAS Upgrade</option>
@@ -10156,7 +10156,7 @@
                       />
                     </div>
                   </div>
-                  <!-- Extra fields from CSV import â€” rendered dynamically -->
+                  <!-- Extra fields from CSV import — rendered dynamically -->
                   <div id="emsExtraFields"></div>
                 </div>
                 <div class="dpanel" id="dAct">
@@ -10178,22 +10178,22 @@
                   </div>
                   <div class="ai-tool-row">
                     <button class="ai-tool-btn" onclick="emsRunAI('outreach')">
-                      <div class="atb-ico">âœ‰ï¸</div>
+                      <div class="atb-ico">✉️</div>
                       <div class="atb-name">Draft Outreach</div>
                       <div class="atb-desc">Email or call script</div>
                     </button>
                     <button class="ai-tool-btn" onclick="emsRunAI('opportunity')">
-                      <div class="atb-ico">âš¡</div>
+                      <div class="atb-ico">⚡</div>
                       <div class="atb-name">EMS Opportunity</div>
                       <div class="atb-desc">Estimate savings potential</div>
                     </button>
                     <button class="ai-tool-btn" onclick="emsRunAI('nextsteps')">
-                      <div class="atb-ico">ðŸ—º</div>
+                      <div class="atb-ico">🗺</div>
                       <div class="atb-name">Next Steps</div>
                       <div class="atb-desc">Stage-based recommendations</div>
                     </button>
                     <button class="ai-tool-btn" onclick="emsRunAI('objections')">
-                      <div class="atb-ico">ðŸ›¡</div>
+                      <div class="atb-ico">🛡</div>
                       <div class="atb-name">Handle Objections</div>
                       <div class="atb-desc">Common objections &amp; rebuttals</div>
                     </button>
@@ -10207,8 +10207,8 @@
             <div class="ems-modal-bg" id="emsNewModal">
               <div class="ems-modal">
                 <div class="ems-modal-hdr">
-                  <div class="ems-modal-title">âž• Add New Lead</div>
-                  <button class="ems-modal-x" onclick="emsCloseNew()">âœ•</button>
+                  <div class="ems-modal-title">➕ Add New Lead</div>
+                  <button class="ems-modal-x" onclick="emsCloseNew()">✕</button>
                 </div>
                 <div class="ems-modal-body">
                   <div class="section-divider">Prospect Info</div>
@@ -10253,7 +10253,7 @@
                     <div class="fg">
                       <label class="fl">EMS Project Type</label
                       ><select class="fs" id="enl-type">
-                        <option value="">â€” Select â€”</option>
+                        <option value="">— Select —</option>
                         <option>Energy Audit</option>
                         <option>Controls Retrofit</option>
                         <option>BAS Upgrade</option>
@@ -10295,7 +10295,7 @@
                     <div class="fg">
                       <label class="fl">Building Type</label
                       ><select class="fs" id="enl-buildingType">
-                        <option value="">â€” Select â€”</option>
+                        <option value="">— Select —</option>
                         <option>Office</option>
                         <option>School / K-12</option>
                         <option>University</option>
@@ -10338,8 +10338,8 @@
             <div class="ems-modal-bg" id="emsImportModal">
               <div class="ems-modal ems-modal-lg">
                 <div class="ems-modal-hdr">
-                  <div class="ems-modal-title">â¬† Import from CSV / Excel</div>
-                  <button class="ems-modal-x" onclick="emsCloseImport()">âœ•</button>
+                  <div class="ems-modal-title">⬆ Import from CSV / Excel</div>
+                  <button class="ems-modal-x" onclick="emsCloseImport()">✕</button>
                 </div>
                 <div class="ems-modal-body">
                   <p style="font-size: 12px; color: var(--text2); margin-bottom: 14px; line-height: 1.7">
@@ -10347,7 +10347,7 @@
                     drag &amp; drop the file. Map your columns to the correct fields below.
                   </p>
                   <div class="csv-drop" id="emsCsvDrop" onclick="document.getElementById('emsCsvFile').click()">
-                    <div style="font-size: 28px">â¬†</div>
+                    <div style="font-size: 28px">⬆</div>
                     <p>Click to select a <em>.csv file</em> or paste CSV data below</p>
                   </div>
                   <input
@@ -10379,7 +10379,7 @@
                         onclick="emsToggleFieldEditor()"
                         style="font-size: 10px; padding: 3px 9px"
                       >
-                        âœï¸ Edit Fields
+                        ✏️ Edit Fields
                       </button>
                     </div>
                     <p style="font-size: 11px; color: var(--text2); margin-bottom: 10px">
@@ -10478,8 +10478,8 @@
                         ? Duplicate Handling
                       </div>
                       <div style="font-size: 11px; color: var(--text2); margin-bottom: 10px; line-height: 1.6">
-                        When the same company name appears more than once â€” either in this file or matching an existing
-                        lead â€” each row's site info will be treated as a separate building/location on that company.
+                        When the same company name appears more than once — either in this file or matching an existing
+                        lead — each row's site info will be treated as a separate building/location on that company.
                       </div>
                       <div style="display: flex; flex-direction: column; gap: 7px">
                         <label
@@ -10505,7 +10505,7 @@
                           />
                           <div>
                             <div style="font-size: 12px; font-weight: 600; color: var(--text)">
-                              Merge â€” add as buildings on existing lead
+                              Merge — add as buildings on existing lead
                               <span style="font-size: 10px; color: var(--em); font-weight: 700; margin-left: 4px"
                                 >RECOMMENDED</span
                               >
@@ -10616,7 +10616,7 @@
                   "
                 >
                   <div style="display: flex; align-items: center; gap: 12px">
-                    <span style="font-family: var(--head); font-size: 15px; font-weight: 700">ðŸ“‹ Raw Lead Data</span>
+                    <span style="font-family: var(--head); font-size: 15px; font-weight: 700">📋 Raw Lead Data</span>
                     <span
                       id="emsRawCount"
                       style="font-size: 11px; color: var(--text2); font-family: var(--mono)"
@@ -10634,7 +10634,7 @@
                         padding: 6px 11px;
                       "
                     >
-                      <span style="color: var(--text2); font-size: 13px">ðŸ”</span>
+                      <span style="color: var(--text2); font-size: 13px">🔍</span>
                       <input
                         type="text"
                         id="emsRawSearch"
@@ -10696,9 +10696,9 @@
                         this.style.color = 'var(--text2)';
                       "
                     >
-                      â¬‡ Export CSV
+                      ⬇ Export CSV
                     </button>
-                    <button class="ems-modal-x" onclick="emsCloseRawTable()">âœ•</button>
+                    <button class="ems-modal-x" onclick="emsCloseRawTable()">✕</button>
                   </div>
                 </div>
                 <!-- Table -->
@@ -10730,7 +10730,7 @@
 
           <script>
             /* ----------------------------------------
-               EMS LEADS â€” embedded in energy-department
+               EMS LEADS — embedded in energy-department
                All functions prefixed ems* to avoid conflicts
                Selectors scoped to #view-ems / ems-specific IDs
             ---------------------------------------- */
@@ -10792,9 +10792,9 @@
                   // Merge: start with builtins (with any saved label overrides), then append custom fields
                   const builtins = EMS_BUILTIN_FIELDS.map((f) => ({ ...f, label: saved.labels?.[f.key] ?? f.label }));
                   const customs = saved.custom || [];
-                  return [...builtins, ...customs, { key: '', label: 'â€” Skip â€”' }];
+                  return [...builtins, ...customs, { key: '', label: '— Skip —' }];
                 } catch (e) {
-                  return [...EMS_BUILTIN_FIELDS, { key: '', label: 'â€” Skip â€”' }];
+                  return [...EMS_BUILTIN_FIELDS, { key: '', label: '— Skip —' }];
                 }
               }
               function emsSaveFields(fields) {
@@ -10830,7 +10830,7 @@
                   ${
                     f.builtin
                       ? `<span style="font-size:10px;color:var(--text3);width:52px;text-align:center">built-in</span>`
-                      : `<button onclick="emsRemoveField(${i})" style="background:transparent;border:1px solid rgba(240,80,80,.3);color:var(--red);border-radius:5px;cursor:pointer;padding:3px 8px;font-size:11px;font-family:var(--font)">âœ•</button>`
+                      : `<button onclick="emsRemoveField(${i})" style="background:transparent;border:1px solid rgba(240,80,80,.3);color:var(--red);border-radius:5px;cursor:pointer;padding:3px 8px;font-size:11px;font-family:var(--font)">✕</button>`
                   }
                 </div>`,
                   )
@@ -10889,7 +10889,7 @@
                 } catch (e) {
                   emsLeads = [];
                 }
-                // Stamp original order index â€” used to restore default table order
+                // Stamp original order index — used to restore default table order
                 emsLeads.forEach((l, i) => {
                   if (l._origIdx == null) l._origIdx = i;
                 });
@@ -10985,7 +10985,7 @@
                   });
                 });
                 if (dirty) emsSave();
-                // Check if key-remapping is needed â€” show preview modal if so
+                // Check if key-remapping is needed — show preview modal if so
                 const changes = emsScanMigration().filter((c) => c.action === 'migrate' || c.action === 'delete_dup');
                 if (changes.length) emsShowMigrationModal(changes);
               }
@@ -11004,7 +11004,7 @@
                   <tr style="border-bottom:1px solid var(--border)">
                     ${i === 0 ? `<td rowspan="${chs.length}" style="padding:8px 12px;font-weight:600;font-family:var(--head);font-size:12px;vertical-align:top;border-right:1px solid var(--border);white-space:nowrap">${emsEsc(company)}</td>` : ''}
                     <td style="padding:6px 12px;font-family:var(--mono);font-size:11px;color:var(--warn)">${emsEsc(c.oldKey)}</td>
-                    <td style="padding:6px 12px;font-size:13px;color:var(--text2)">â†’</td>
+                    <td style="padding:6px 12px;font-size:13px;color:var(--text2)">→</td>
                     <td style="padding:6px 12px;font-size:11px;color:var(--em);font-weight:600">${emsEsc(c.canonLabel)}</td>
                     <td style="padding:6px 12px;font-family:var(--mono);font-size:11px;color:var(--text);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${emsEsc(String(c.oldVal || ''))}</td>
                     <td style="padding:6px 12px;font-size:10px;color:var(--text3)">${c.action === 'delete_dup' ? 'Remove duplicate' : 'Move value'}</td>
@@ -11023,8 +11023,8 @@
                 modal.innerHTML = `
                 <div style="background:var(--s2);border:1px solid var(--border2);border-radius:14px;width:820px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 40px 80px rgba(0,0,0,.7)">
                   <div style="padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0">
-                    <div style="font-family:var(--head);font-size:15px;font-weight:700">ðŸ”„ Field Migration Preview</div>
-                    <div style="font-size:11px;color:var(--text2);margin-top:4px;line-height:1.6">Found <strong style="color:var(--warn)">${changes.length} field${changes.length !== 1 ? 's' : ''}</strong> across <strong style="color:var(--warn)">${Object.keys(byCompany).length} lead${Object.keys(byCompany).length !== 1 ? 's' : ''}</strong> with old CSV column names that need remapping. Review below â€” <strong style="color:var(--em)">nothing changes until you click Apply.</strong></div>
+                    <div style="font-family:var(--head);font-size:15px;font-weight:700">🔄 Field Migration Preview</div>
+                    <div style="font-size:11px;color:var(--text2);margin-top:4px;line-height:1.6">Found <strong style="color:var(--warn)">${changes.length} field${changes.length !== 1 ? 's' : ''}</strong> across <strong style="color:var(--warn)">${Object.keys(byCompany).length} lead${Object.keys(byCompany).length !== 1 ? 's' : ''}</strong> with old CSV column names that need remapping. Review below — <strong style="color:var(--em)">nothing changes until you click Apply.</strong></div>
                   </div>
                   <div style="flex:1;overflow:auto;padding:0 20px 16px">
                     <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:16px">
@@ -11044,7 +11044,7 @@
                   <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;align-items:center;flex-shrink:0">
                     <span style="font-size:11px;color:var(--text2);flex:1">Your data is untouched until you confirm. You can dismiss and check individual leads first.</span>
                     <button onclick="document.getElementById('emsMigrateModal').remove()" style="font-family:var(--font);font-size:12px;font-weight:600;padding:8px 16px;border-radius:7px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer">Dismiss for Now</button>
-                    <button onclick="emsApplyMigration()" style="font-family:var(--font);font-size:12px;font-weight:600;padding:8px 18px;border-radius:7px;border:none;background:var(--em);color:#05080f;cursor:pointer">âœ“ Apply Migration</button>
+                    <button onclick="emsApplyMigration()" style="font-family:var(--font);font-size:12px;font-weight:600;padding:8px 18px;border-radius:7px;border:none;background:var(--em);color:#05080f;cursor:pointer">✓ Apply Migration</button>
                   </div>
                 </div>`;
                 document.body.appendChild(modal);
@@ -11076,7 +11076,7 @@
                 if (dirty) emsSave();
                 document.getElementById('emsMigrateModal')?.remove();
                 emsRenderAll();
-                showToast('Migration applied âœ“ â€” fields remapped and duplicates removed');
+                showToast('Migration applied ✓ — fields remapped and duplicates removed');
               };
               function emsSave() {
                 localStorage.setItem(EMS_KEY, JSON.stringify(emsLeads));
@@ -11103,7 +11103,7 @@
                 // YYYY/MM/DD
                 const ymd = s.match(/^(\d{4})\/(\d{2})\/(\d{2})/);
                 if (ymd) return new Date(+ymd[1], +ymd[2] - 1, +ymd[3]);
-                // DD-MM-YYYY or MM-DD-YYYY â€” try JS default
+                // DD-MM-YYYY or MM-DD-YYYY — try JS default
                 const fallback = new Date(s);
                 return isNaN(fallback) ? null : fallback;
               }
@@ -11208,7 +11208,7 @@
                     return `<div class="stage-col">
                   <div class="stage-hdr">
                     <div class="stage-name"><div class="stage-dot" style="background:${EMS_STAGE_COLORS[stage]}"></div>${stage}</div>
-                    <div class="stage-count">${sl.length}${sv2 > 0 ? ' Â· $' + emsFmtNum(sv2) : ''}</div>
+                    <div class="stage-count">${sl.length}${sv2 > 0 ? ' · $' + emsFmtNum(sv2) : ''}</div>
                   </div>
                   <div class="stage-body" id="estage-${stage.replace(' ', '-')}"
                     ondragover="event.preventDefault();this.classList.add('drag-over')"
@@ -11252,7 +11252,7 @@
                 onclick="emsOpenDrawer('${l.id}')">
                 <div style="display:flex;align-items:flex-start;gap:7px">
                   <div class="priority-dot" style="background:${pc};margin-top:4px"></div>
-                  <div class="lc-company">${emsEsc(l.company || 'â€”')}</div>
+                  <div class="lc-company">${emsEsc(l.company || '—')}</div>
                 </div>
                 <div class="lc-meta">${(() => {
                   const bldgs = l.buildings || [];
@@ -11261,12 +11261,12 @@
                     const loc = first.address || [first.city, first.state].filter(Boolean).join(', ');
                     return (
                       (bldgs.length > 1 ? bldgs.length + ' buildings' : first.buildingType || '1 building') +
-                      (loc ? ' Â· ' + loc : '')
+                      (loc ? ' · ' + loc : '')
                     );
                   }
                   return l.address || l.buildingType || 'No location set';
                 })()}</div>
-                ${l.cscContact ? `<div style="font-size:10px;color:var(--em2)">ðŸ‘¤ ${emsEsc(l.cscContact)}</div>` : ''}
+                ${l.cscContact ? `<div style="font-size:10px;color:var(--em2)">👤 ${emsEsc(l.cscContact)}</div>` : ''}
                 ${
                   l.tags && l.tags.length
                     ? `<div class="lc-tags">${l.tags
@@ -11279,7 +11279,7 @@
                   <div class="lc-value">${l.annualValue ? '$' + emsFmtNum(l.annualValue) : ''}</div>
                   <div class="lc-date">${l.type || ''}</div>
                 </div>
-                ${l.nextAction ? `<div class="lc-action ${ov ? 'overdue-flag' : ''}">${ov ? 'âš ' : 'ðŸ“…'} ${emsEsc(l.nextAction)}${nad ? ' (' + emsFmtDate(l.nextActionDate) + ')' : ''}</div>` : ''}
+                ${l.nextAction ? `<div class="lc-action ${ov ? 'overdue-flag' : ''}">${ov ? '⚠' : '📅'} ${emsEsc(l.nextAction)}${nad ? ' (' + emsFmtDate(l.nextActionDate) + ')' : ''}</div>` : ''}
               </div>`;
               }
 
@@ -11355,11 +11355,11 @@
                     th.innerHTML =
                       base +
                       ' ' +
-                      (emsSortAsc ? 'â–²' : 'â–¼') +
-                      ` <span onclick="event.stopPropagation();emsClearSort()" title="Clear sort" style="cursor:pointer;color:var(--text3);font-size:10px;margin-left:2px">âœ•</span>`;
+                      (emsSortAsc ? '▲' : '▼') +
+                      ` <span onclick="event.stopPropagation();emsClearSort()" title="Clear sort" style="cursor:pointer;color:var(--text3);font-size:10px;margin-left:2px">✕</span>`;
                     th.style.color = 'var(--em)';
                   } else {
-                    th.textContent = base + ' â‡…';
+                    th.textContent = base + ' ⇅';
                     th.style.color = '';
                   }
                 });
@@ -11369,26 +11369,26 @@
                     : data
                         .map(
                           (l) => `<tr onclick="emsOpenDrawer('${l.id}')">
-                  <td class="td-company">${emsEsc(l.company || 'â€”')}</td>
-                  <td>${emsEsc(l.clientType || 'â€”')}</td>
+                  <td class="td-company">${emsEsc(l.company || '—')}</td>
+                  <td>${emsEsc(l.clientType || '—')}</td>
                   <td>${emsEsc(
                     (() => {
                       const bldgs = l.buildings || [];
                       if (bldgs.length && bldgs[0].address) {
                         return bldgs[0].address + (bldgs.length > 1 ? ' +' + (bldgs.length - 1) + ' more' : '');
                       }
-                      return l.address || 'â€”';
+                      return l.address || '—';
                     })(),
                   )}</td>
-                  <td class="td-mono">${emsEsc(l.saNum || 'â€”')}</td>
-                  <td>${emsEsc(l.webctrlVersion || 'â€”')}</td>
-                  <td style="${emsOverdue(l.renewalDate) ? 'color:var(--danger)' : ''}">${emsFmtDate(l.renewalDate) || 'â€”'}</td>
-                  <td><span class="stage-pill ${EMS_STAGE_CLS[l.stage] || ''}">${l.stage || 'â€”'}</span></td>
-                  <td class="pri-${(l.priority || '').toLowerCase()}">${l.priority || 'â€”'}</td>
-                  <td>${emsEsc(l.cscContact || 'â€”')}</td>
-                  <td class="td-mono">${l.annualValue ? '$' + emsFmtNum(l.annualValue) : 'â€”'}</td>
-                  <td style="${emsOverdue(l.nextActionDate) ? 'color:var(--danger)' : ''}">${emsFmtDate(l.nextActionDate) || 'â€”'}</td>
-                  <td>${emsFmtDate(l.lastContact) || 'â€”'}</td>
+                  <td class="td-mono">${emsEsc(l.saNum || '—')}</td>
+                  <td>${emsEsc(l.webctrlVersion || '—')}</td>
+                  <td style="${emsOverdue(l.renewalDate) ? 'color:var(--danger)' : ''}">${emsFmtDate(l.renewalDate) || '—'}</td>
+                  <td><span class="stage-pill ${EMS_STAGE_CLS[l.stage] || ''}">${l.stage || '—'}</span></td>
+                  <td class="pri-${(l.priority || '').toLowerCase()}">${l.priority || '—'}</td>
+                  <td>${emsEsc(l.cscContact || '—')}</td>
+                  <td class="td-mono">${l.annualValue ? '$' + emsFmtNum(l.annualValue) : '—'}</td>
+                  <td style="${emsOverdue(l.nextActionDate) ? 'color:var(--danger)' : ''}">${emsFmtDate(l.nextActionDate) || '—'}</td>
+                  <td>${emsFmtDate(l.lastContact) || '—'}</td>
                 </tr>`,
                         )
                         .join('');
@@ -11445,7 +11445,7 @@
                         ) => `<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:border-color .14s" onclick="emsOpenDrawer('${l.id}')" onmouseover="this.style.borderColor='var(--em)'" onmouseout="this.style.borderColor='var(--border)'">
                       <div>
                         <div style="font-family:var(--head);font-size:13px;font-weight:700">${emsEsc(l.company)}</div>
-                        <div style="font-size:11px;color:var(--text2);margin-top:3px">${l.nextAction || 'No action specified'} ${l.nextActionDate ? 'â€” ' + emsFmtDate(l.nextActionDate) : ''}</div>
+                        <div style="font-size:11px;color:var(--text2);margin-top:3px">${l.nextAction || 'No action specified'} ${l.nextActionDate ? '— ' + emsFmtDate(l.nextActionDate) : ''}</div>
                       </div>
                       <div style="display:flex;align-items:center;gap:10px">
                         <span class="stage-pill ${EMS_STAGE_CLS[l.stage] || ''}">${l.stage}</span>
@@ -11457,17 +11457,17 @@
                   </div>
                 </div>`;
                 document.getElementById('emsFollowupList').innerHTML =
-                  sec('âš  Overdue', overdue, 'var(--danger)') +
-                    sec('ðŸ“… This Week', thisWeek, 'var(--warn)') +
-                    sec('ðŸ“‹ No Date Set', noDate, 'var(--em2)') ||
-                  `<div class="empty-state"><div class="ico">âœ…</div><h3>All caught up!</h3><p>No follow-ups overdue or due this week.</p></div>`;
+                  sec('⚠ Overdue', overdue, 'var(--danger)') +
+                    sec('📅 This Week', thisWeek, 'var(--warn)') +
+                    sec('📋 No Date Set', noDate, 'var(--em2)') ||
+                  `<div class="empty-state"><div class="ico">✅</div><h3>All caught up!</h3><p>No follow-ups overdue or due this week.</p></div>`;
               }
 
               function emsRenderAnalytics() {
                 const total = emsLeads.length;
                 if (total === 0) {
                   document.getElementById('emsAnalyticsContent').innerHTML =
-                    `<div class="empty-state"><div class="ico">ðŸ“ˆ</div><h3>No data yet</h3><p>Add leads to see analytics.</p></div>`;
+                    `<div class="empty-state"><div class="ico">📈</div><h3>No data yet</h3><p>Add leads to see analytics.</p></div>`;
                   return;
                 }
                 const stageData = EMS_STAGES.map((s) => ({
@@ -11542,7 +11542,7 @@
                 </div>`;
               }
 
-              // Keys that have dedicated inputs in the drawer â€” everything else is "extra"
+              // Keys that have dedicated inputs in the drawer — everything else is "extra"
               const EMS_KNOWN_KEYS = new Set([
                 'id',
                 'company',
@@ -11576,7 +11576,7 @@
                 'createdAt',
                 'updatedAt',
                 '_origIdx',
-                // Legacy CSV import keys â€” migrated on open, suppressed from Additional Fields
+                // Legacy CSV import keys — migrated on open, suppressed from Additional Fields
                 'sa #',
                 'sa#',
                 'building',
@@ -11769,7 +11769,7 @@
                 'Other',
               ];
 
-              /* -- Client Types â€” editable list -- */
+              /* -- Client Types — editable list -- */
               const EMS_CLIENT_TYPES_KEY = 'ems_client_types';
               const EMS_CLIENT_TYPES_DEFAULT = [
                 'School',
@@ -11798,7 +11798,7 @@
 
               function emsClientTypeOptions(selectedVal) {
                 return (
-                  '<option value="">â€” Select â€”</option>' +
+                  '<option value="">— Select —</option>' +
                   emsClientTypes
                     .map((t) => `<option${t === selectedVal ? ' selected' : ''}>${emsEsc(t)}</option>`)
                     .join('')
@@ -11845,9 +11845,9 @@
                 <div style="display:flex;align-items:center;gap:7px;padding:5px 8px;background:var(--s2);border:1px solid var(--border);border-radius:6px">
                   <input class="df-input" value="${emsEsc(t)}" data-ct-idx="${i}" oninput="emsUpdateClientType(this)"
                     style="flex:1;font-size:12px;padding:5px 8px">
-                  <button onclick="emsMoveClientType(${i},-1)" title="Move up" ${i === 0 ? 'disabled' : ''} style="font-family:var(--font);font-size:11px;padding:3px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer">â–²</button>
-                  <button onclick="emsMoveClientType(${i},1)" title="Move down" ${i === emsClientTypes.length - 1 ? 'disabled' : ''} style="font-family:var(--font);font-size:11px;padding:3px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer">â–¼</button>
-                  <button onclick="emsDeleteClientType(${i})" title="Delete" style="font-family:var(--font);font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid rgba(240,80,80,.4);background:transparent;color:var(--red);cursor:pointer">âœ•</button>
+                  <button onclick="emsMoveClientType(${i},-1)" title="Move up" ${i === 0 ? 'disabled' : ''} style="font-family:var(--font);font-size:11px;padding:3px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer">▲</button>
+                  <button onclick="emsMoveClientType(${i},1)" title="Move down" ${i === emsClientTypes.length - 1 ? 'disabled' : ''} style="font-family:var(--font);font-size:11px;padding:3px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer">▼</button>
+                  <button onclick="emsDeleteClientType(${i})" title="Delete" style="font-family:var(--font);font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid rgba(240,80,80,.4);background:transparent;color:var(--red);cursor:pointer">✕</button>
                 </div>`,
                   )
                   .join('');
@@ -11903,7 +11903,7 @@
                 const bldgs = lead.buildings || [];
                 const container = document.getElementById('emsBuildingList');
                 if (bldgs.length === 0) {
-                  container.innerHTML = `<div class="bldg-empty">No buildings added yet â€” click <strong style="color:var(--em)">+ Add Building</strong> to get started.</div>`;
+                  container.innerHTML = `<div class="bldg-empty">No buildings added yet — click <strong style="color:var(--em)">+ Add Building</strong> to get started.</div>`;
                   return;
                 }
                 container.innerHTML = bldgs
@@ -11911,10 +11911,10 @@
                     (b, i) => `
                 <div class="bldg-card${i === 0 ? ' open' : ''}" id="ebldg-${b.id}">
                   <div class="bldg-card-hdr" onclick="emsToggleBuilding('${b.id}')">
-                    <span class="bldg-card-ico">ðŸ¢</span>
+                    <span class="bldg-card-ico">🏢</span>
                     <span class="bldg-card-name">${emsEsc(b.name || 'Building ' + (i + 1))}</span>
                     <span class="bldg-card-meta">${[b.city, b.state].filter(Boolean).join(', ')}</span>
-                    <span class="bldg-card-chevron">â–¼</span>
+                    <span class="bldg-card-chevron">▼</span>
                   </div>
                   <div class="bldg-card-body">
                     <div class="bldg-grid">
@@ -11945,7 +11945,7 @@
                       <div class="bldg-field" style="grid-column:1/-1">
                         <div class="bldg-lbl">Building Type</div>
                         <select class="bldg-select" data-bid="${b.id}" data-field="buildingType">
-                          <option value="">â€” Select â€”</option>
+                          <option value="">— Select —</option>
                           ${EMS_BLDG_TYPES.map((t) => `<option${b.buildingType === t ? ' selected' : ''}>${t}</option>`).join('')}
                         </select>
                       </div>
@@ -11955,7 +11955,7 @@
                       </div>
                     </div>
                     <div class="bldg-footer">
-                      <button onclick="emsRemoveBuilding('${b.id}')" style="font-family:var(--font);font-size:11px;font-weight:600;padding:4px 10px;border-radius:5px;border:1px solid rgba(240,80,80,.4);background:transparent;color:var(--red);cursor:pointer;transition:all .14s" onmouseover="this.style.background='rgba(240,80,80,.12)'" onmouseout="this.style.background='transparent'">ðŸ—‘ Remove</button>
+                      <button onclick="emsRemoveBuilding('${b.id}')" style="font-family:var(--font);font-size:11px;font-weight:600;padding:4px 10px;border-radius:5px;border:1px solid rgba(240,80,80,.4);background:transparent;color:var(--red);cursor:pointer;transition:all .14s" onmouseover="this.style.background='rgba(240,80,80,.12)'" onmouseout="this.style.background='transparent'">🗑 Remove</button>
                     </div>
                   </div>
                 </div>`,
@@ -12074,7 +12074,7 @@
                 }
 
                 // If still no city, check if entire value looks like "City, State" with no street
-                // (common in imported CSVs â€” e.g. "Lexington, Missouri")
+                // (common in imported CSVs — e.g. "Lexington, Missouri")
                 if (!detectedCity && !detectedState) {
                   const simple = /^([A-Za-z\s\.\-]+),\s*([A-Za-z\s\.]+)$/.exec(val);
                   if (simple) {
@@ -12190,7 +12190,7 @@
                         .reverse()
                         .map(
                           (a) =>
-                            `<div class="activity-item"><div class="act-dot" style="background:${a.color || 'var(--em)'}"></div><div class="act-body"><div class="act-text">${emsEsc(a.text)}</div><div class="act-time">${a.time} Â· ${a.user || 'You'}</div></div></div>`,
+                            `<div class="activity-item"><div class="act-dot" style="background:${a.color || 'var(--em)'}"></div><div class="act-body"><div class="act-text">${emsEsc(a.text)}</div><div class="act-time">${a.time} · ${a.user || 'You'}</div></div></div>`,
                         )
                         .join('');
               }
@@ -12345,7 +12345,7 @@
                 emsCsvHeaders = parsed[0];
                 emsCsvRows = parsed.slice(1).filter((r) => r.some((c) => c));
                 document.getElementById('emsCsvStatus').innerHTML =
-                  `<div class="parse-ok">âœ“ Found ${emsCsvRows.length} rows and ${emsCsvHeaders.length} columns</div>`;
+                  `<div class="parse-ok">✓ Found ${emsCsvRows.length} rows and ${emsCsvHeaders.length} columns</div>`;
                 const autoMap = {
                   company: ['company', 'customer', 'name', 'account', 'prospect'],
                   city: ['city', 'town'],
@@ -12536,7 +12536,7 @@
                       });
                       existing.updatedAt = new Date().toISOString();
                     } else {
-                      // New company â€” create one lead, all rows become buildings
+                      // New company — create one lead, all rows become buildings
                       const lead = rows[0];
                       if (!lead.buildings) lead.buildings = [];
                       rows.forEach((obj, i) => {
@@ -12563,7 +12563,7 @@
                 if (added) parts.push(added + ' lead' + (added > 1 ? 's' : '') + ' added');
                 if (merged) parts.push(merged + ' building' + (merged > 1 ? 's' : '') + ' merged into existing leads');
                 if (skipped) parts.push(skipped + ' skipped');
-                showToast((parts.join(' Â· ') || 'Nothing imported') + ' âœ“');
+                showToast((parts.join(' · ') || 'Nothing imported') + ' ✓');
                 document.getElementById('emsCsvPaste').value = '';
                 document.getElementById('emsColMapper').style.display = 'none';
                 document.getElementById('emsImportBtn').style.display = 'none';
@@ -12602,8 +12602,8 @@
                     `<span style="color:var(--em2)">${crossDups} match${crossDups > 1 ? '' : 'es'} an existing lead</span>`,
                   );
                 panel.innerHTML = parts.length
-                  ? 'Detected: ' + parts.join(' Â· ')
-                  : '<span style="color:var(--em)">âœ“ No duplicates detected</span>';
+                  ? 'Detected: ' + parts.join(' · ')
+                  : '<span style="color:var(--em)">✓ No duplicates detected</span>';
               }
 
               window.emsExportCSV = function () {
@@ -12674,7 +12674,7 @@
                 out.className = 'ai-output visible';
                 out.innerHTML =
                   '<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Generating...</div>';
-                out.textContent = 'AI features are not available â€” this app has no backend API connection.';
+                out.textContent = 'AI features are not available — this app has no backend API connection.';
               };
 
               // Drag-drop on CSV drop zone (init after DOM ready)
@@ -12732,7 +12732,7 @@
           </div>
 
           <script>
-            /* Synchronous view restore â€” runs before first paint to prevent flash.
+            /* Synchronous view restore — runs before first paint to prevent flash.
                Sets the correct view active BEFORE DOMContentLoaded fires init(). */
             (function () {
               var lastView = localStorage.getItem('ch_activeView') || sessionStorage.getItem('ch_activeView');
@@ -12756,7 +12756,7 @@
         <div class="modal" role="dialog" aria-modal="true">
           <div class="modal-hdr">
             <span class="modal-title" id="projModalTitle">+ New Energy Project</span
-            ><button class="modal-x" onclick="closeProjModal()">âœ•</button>
+            ><button class="modal-x" onclick="closeProjModal()">✕</button>
           </div>
           <div class="modal-body">
             <div class="modal-sect">Project Info</div>
@@ -12813,7 +12813,7 @@
               <div class="fg">
                 <label class="fl">Phase</label>
                 <select class="fs" id="mp-phase">
-                  <option value="">â€” Select Phase â€”</option>
+                  <option value="">— Select Phase —</option>
                   <option>Audit / Assessment</option>
                   <option>Design</option>
                   <option>Bidding</option>
@@ -12971,7 +12971,7 @@
         <div class="modal" role="dialog" aria-modal="true" style="width: 480px">
           <div class="modal-hdr">
             <span class="modal-title" id="bldgModalTitle">+ Add Building</span
-            ><button class="modal-x" onclick="closeBldgModal()">âœ•</button>
+            ><button class="modal-x" onclick="closeBldgModal()">✕</button>
           </div>
           <div class="modal-body">
             <div class="fg">
@@ -13021,7 +13021,7 @@
         <div class="modal" role="dialog" aria-modal="true" style="width: 520px">
           <div class="modal-hdr">
             <span class="modal-title" id="meterModalTitle">+ Add Meter</span
-            ><button class="modal-x" onclick="closeMeterModal()">âœ•</button>
+            ><button class="modal-x" onclick="closeMeterModal()">✕</button>
           </div>
           <div class="modal-body">
             <div class="fg">
@@ -13104,7 +13104,7 @@
             >
               <label class="fl">Move to Different Building</label>
               <select class="fs" id="mm-move-bldg" style="width: 100%">
-                <option value="">â€” Keep on current building â€”</option>
+                <option value="">— Keep on current building —</option>
               </select>
               <div style="font-size: 11px; color: var(--text2); margin-top: 5px">
                 All bills will move with the meter.
@@ -13123,7 +13123,7 @@
         <div class="modal" role="dialog" aria-modal="true" style="width: 560px">
           <div class="modal-hdr">
             <span class="modal-title" id="billModalTitle">+ Add Billing Period</span
-            ><button class="modal-x" onclick="closeBillModal()">âœ•</button>
+            ><button class="modal-x" onclick="closeBillModal()">✕</button>
           </div>
           <div class="modal-body" id="billModalBody"></div>
           <div class="modal-ftr">
@@ -13137,8 +13137,8 @@
       <div class="modal-bg" id="auditLogModal">
         <div class="modal" style="width: 800px; max-width: 96vw; max-height: 90vh">
           <div class="modal-hdr">
-            <span class="modal-title">ðŸ“‹ Utility Data History</span
-            ><button class="modal-x" onclick="closeAuditLogModal()">âœ•</button>
+            <span class="modal-title">📋 Utility Data History</span
+            ><button class="modal-x" onclick="closeAuditLogModal()">✕</button>
           </div>
           <div class="modal-body" id="auditLogBody" style="overflow-y: auto; max-height: 65vh"></div>
           <div class="modal-ftr">
@@ -13152,8 +13152,8 @@
       <div class="modal-bg" id="wddModal">
         <div class="modal" style="width: 520px; max-width: 96vw">
           <div class="modal-hdr">
-            <span class="modal-title">ðŸŒ¡ï¸ Import Weather Data â€” CSV</span>
-            <button class="modal-x" onclick="closeWddModal()">âœ•</button>
+            <span class="modal-title">🌡️ Import Weather Data — CSV</span>
+            <button class="modal-x" onclick="closeWddModal()">✕</button>
           </div>
           <div class="modal-body">
             <div
@@ -13179,7 +13179,7 @@
               <div style="font-family: var(--mono); color: var(--em); margin-bottom: 6px">
                 month, year, hdd, cdd, avg_temp
               </div>
-              Month can be a name (January, Jan) or number (1â€“12). avg_temp is optional. One row per month. Re-importing
+              Month can be a name (January, Jan) or number (1–12). avg_temp is optional. One row per month. Re-importing
               updates existing months.
             </div>
             <div
@@ -13201,7 +13201,7 @@
                 style="display: none"
                 onchange="wddHandleFile(this.files[0])"
               />
-              <div class="ma-csv-drop-title" id="wddDropLabel">ðŸ“ Drop CSV or click to upload</div>
+              <div class="ma-csv-drop-title" id="wddDropLabel">📁 Drop CSV or click to upload</div>
               <div class="ma-csv-drop-sub">month, year, hdd, cdd, avg_temp</div>
             </div>
             <div id="wddStatus" style="font-size: 12px; min-height: 18px; margin-bottom: 10px; line-height: 1.6"></div>
@@ -13244,8 +13244,8 @@
       <div class="modal-bg" id="billCsvModal">
         <div class="modal" style="width: 700px; max-width: 96vw">
           <div class="modal-hdr">
-            <span class="modal-title" id="billCsvModalTitle">ðŸ“¥ Import Bill Periods â€” CSV</span>
-            <button class="modal-x" onclick="closeBillCsvModal()">âœ•</button>
+            <span class="modal-title" id="billCsvModalTitle">📥 Import Bill Periods — CSV</span>
+            <button class="modal-x" onclick="closeBillCsvModal()">✕</button>
           </div>
           <div class="modal-body">
             <div
@@ -13275,10 +13275,10 @@
               ondragleave="this.classList.remove('drag')"
               ondrop="handleBillCsvDrop(event)"
             >
-              <span class="dz-ico" style="font-size: 26px">ðŸ“„</span>
+              <span class="dz-ico" style="font-size: 26px">📄</span>
               <div class="dz-title" id="billCsvDropLabel" style="font-size: 13px">Drop CSV file or click to browse</div>
               <div class="dz-sub" style="font-size: 11px">
-                One row per billing period Â· Header row optional Â· Duplicates merged by month
+                One row per billing period · Header row optional · Duplicates merged by month
               </div>
               <input
                 type="file"
@@ -13343,8 +13343,8 @@
       <div class="modal-bg" id="bldgImportModal">
         <div class="modal" style="width: 720px; max-width: 96vw">
           <div class="modal-hdr">
-            <span class="modal-title">â¬† Import Building List</span>
-            <button class="modal-x" onclick="closeBldgImportModal()">âœ•</button>
+            <span class="modal-title">⬆ Import Building List</span>
+            <button class="modal-x" onclick="closeBldgImportModal()">✕</button>
           </div>
           <div class="modal-body">
             <div
@@ -13365,7 +13365,7 @@
                 Building Name, Building SQFT, Address
               </div>
               <div style="margin-top: 6px; color: var(--text2)">
-                Header row required. SQFT column may contain $ or Â¢ characters â€” they will be stripped.
+                Header row required. SQFT column may contain $ or ¢ characters — they will be stripped.
               </div>
             </div>
             <div
@@ -13384,11 +13384,11 @@
                 if (event.dataTransfer.files[0]) handleBldgImportFile({ files: event.dataTransfer.files });
               "
             >
-              <span class="dz-ico" style="font-size: 26px">ðŸ¢</span>
+              <span class="dz-ico" style="font-size: 26px">🏢</span>
               <div class="dz-title" id="bldgImportDropLabel" style="font-size: 13px">
                 Drop .xlsx or .csv file, or click to browse
               </div>
-              <div class="dz-sub" style="font-size: 11px">One row per building Â· Header row required</div>
+              <div class="dz-sub" style="font-size: 11px">One row per building · Header row required</div>
               <input
                 type="file"
                 id="bldgImportInput"
@@ -13408,7 +13408,7 @@
                     color: var(--em);
                   "
                 >
-                  Preview â€” <span id="bldgImportCount">0</span> buildings found
+                  Preview — <span id="bldgImportCount">0</span> buildings found
                 </div>
                 <label style="font-size: 11px; color: var(--text2); cursor: pointer; user-select: none">
                   <input
@@ -13452,7 +13452,7 @@
         <div class="modal" role="dialog" aria-modal="true" style="width: 420px">
           <div class="modal-hdr">
             <span class="modal-title" id="taskModalTitle">+ Add Task</span
-            ><button class="modal-x" onclick="closeTaskModal()">âœ•</button>
+            ><button class="modal-x" onclick="closeTaskModal()">✕</button>
           </div>
           <div class="modal-body">
             <div class="fg">
@@ -13464,7 +13464,7 @@
               <div class="fg">
                 <label class="fl">Project</label
                 ><select class="fs" id="mt-proj">
-                  <option value="">â€” General â€”</option>
+                  <option value="">— General —</option>
                 </select>
               </div>
             </div>
@@ -13490,7 +13490,7 @@
         <div class="modal" role="dialog" aria-modal="true" style="width: 480px">
           <div class="modal-hdr">
             <span class="modal-title">+ Add Equipment</span
-            ><button class="modal-x" onclick="closeEquipModal()">âœ•</button>
+            ><button class="modal-x" onclick="closeEquipModal()">✕</button>
           </div>
           <div class="modal-body">
             <div class="f2">
@@ -13533,7 +13533,7 @@
             </div>
             <div class="fg">
               <label class="fl">Location / Project</label
-              ><input class="fi" id="eq-loc" placeholder="e.g. Van Horn HS â€” Mech Room B" />
+              ><input class="fi" id="eq-loc" placeholder="e.g. Van Horn HS — Mech Room B" />
             </div>
             <div class="fg">
               <label class="fl">Notes</label>
@@ -13574,7 +13574,7 @@
             border-bottom: 1px solid var(--border);
           "
         >
-          <span style="font-size: 14px; font-weight: 700">ðŸ”” Notifications</span>
+          <span style="font-size: 14px; font-weight: 700">🔔 Notifications</span>
           <div style="display: flex; gap: 7px; align-items: center">
             <button class="btn btn-ghost btn-sm" onclick="clearAllNotifs()">Clear All</button>
             <button
@@ -13593,7 +13593,7 @@
                 justify-content: center;
               "
             >
-              âœ•
+              ✕
             </button>
           </div>
         </div>
@@ -13603,23 +13603,23 @@
       </div>
 
       <div class="toast" id="toast">
-        <span style="color: var(--em); font-size: 14px">âœ“</span><span id="toastMsg">Done!</span>
-        <button class="toast-x" onclick="hideToast()">âœ•</button>
+        <span style="color: var(--em); font-size: 14px">✓</span><span id="toastMsg">Done!</span>
+        <button class="toast-x" onclick="hideToast()">✕</button>
       </div>
 
       <!-- Saved Bills Modal -->
       <div class="modal-bg" id="savedBillsModal">
         <div class="modal" style="width: 820px; max-width: 96vw">
           <div class="modal-hdr">
-            <span class="modal-title">ðŸ—„ï¸ Saved Bill Records</span>
+            <span class="modal-title">🗄️ Saved Bill Records</span>
             <button
               class="btn btn-ghost btn-sm"
               style="color: var(--red); border-color: var(--red); margin-left: auto; margin-right: 8px"
               onclick="deleteAllSavedBills()"
             >
-              ðŸ—‘ Delete All
+              🗑 Delete All
             </button>
-            <button class="modal-x" onclick="closeSavedBillsModal()">âœ•</button>
+            <button class="modal-x" onclick="closeSavedBillsModal()">✕</button>
           </div>
           <div class="modal-body" style="padding: 0">
             <div id="savedBillsList" style="padding: 16px; max-height: 65vh; overflow-y: auto"></div>
@@ -13635,7 +13635,7 @@
         >
           <div class="modal-hdr">
             <span class="modal-title">Saved Bills</span>
-            <button class="modal-x" onclick="closeProjSavedBillsModal()">âœ•</button>
+            <button class="modal-x" onclick="closeProjSavedBillsModal()">✕</button>
           </div>
           <div class="modal-body" id="projSavedBillsBody" style="flex: 1; overflow-y: auto"></div>
         </div>
@@ -13724,7 +13724,7 @@
                   background: transparent;
                   color: #f59e0b;
                 "
-                title="Skip every duplicate bill â€” the existing records stay untouched"
+                title="Skip every duplicate bill — the existing records stay untouched"
               >
                 Skip All
               </button>
@@ -13778,7 +13778,7 @@
         <div class="modal" style="width: 480px">
           <div class="modal-hdr">
             <span class="modal-title">Assign Bill to Project / Building</span
-            ><button class="modal-x" onclick="closeAssignModal()">âœ•</button>
+            ><button class="modal-x" onclick="closeAssignModal()">✕</button>
           </div>
           <div class="modal-body">
             <div class="fg">
@@ -13823,8 +13823,8 @@
       <div class="modal-bg" id="manualAssignModal" onclick="if (event.target === this) closeManualAssignModal();">
         <div class="modal" style="width: 520px">
           <div class="modal-hdr">
-            <span class="modal-title">Manual Assign â€” PDF Page to Billing Period</span>
-            <button class="modal-x" onclick="closeManualAssignModal()">âœ•</button>
+            <span class="modal-title">Manual Assign — PDF Page to Billing Period</span>
+            <button class="modal-x" onclick="closeManualAssignModal()">✕</button>
           </div>
           <div class="modal-body">
             <div style="font-size: 12px; color: var(--text2); margin-bottom: 12px; line-height: 1.5">
@@ -13867,7 +13867,7 @@
               <div class="fg">
                 <label class="fl">Existing Billing Period</label>
                 <select class="fs" id="mam-period">
-                  <option value="">â€” Select a billing period â€”</option>
+                  <option value="">— Select a billing period —</option>
                 </select>
               </div>
               <div style="font-size: 11px; color: var(--text3); margin-top: 4px">
@@ -13913,7 +13913,7 @@
         <div class="modal" style="width: min(1200px, 92vw); max-height: 92vh; display: flex; flex-direction: column">
           <div class="modal-hdr">
             <span class="modal-title" id="meetingModalTitle">New Meeting Agenda</span>
-            <button class="modal-x" onclick="closeMeetingModal()">âœ•</button>
+            <button class="modal-x" onclick="closeMeetingModal()">✕</button>
           </div>
           <div style="display: flex; flex: 1; min-height: 0; overflow: hidden">
             <div
@@ -13951,11 +13951,11 @@
           </div>
           <div class="modal-ftr" id="meetingModalFtr">
             <button class="btn btn-ghost" onclick="closeMeetingModal()">Cancel</button>
-            <button class="btn btn-ghost" onclick="showMeetingHistory()">ðŸ•‘ History</button>
+            <button class="btn btn-ghost" onclick="showMeetingHistory()">🕑 History</button>
             <button class="btn btn-ghost" id="mtgConvertBtn" style="display: none" onclick="convertToMinutes()">
-              ðŸ“ Convert to Minutes
+              📝 Convert to Minutes
             </button>
-            <button class="btn btn-em" onclick="generateMeetingPDF()">ðŸ“„ PDF</button>
+            <button class="btn btn-em" onclick="generateMeetingPDF()">📄 PDF</button>
             <button class="btn btn-em" onclick="saveMeeting()">Save</button>
           </div>
         </div>
@@ -13966,7 +13966,7 @@
         <div class="modal" style="width: 560px">
           <div class="modal-hdr">
             <span class="modal-title">Recurring Meeting Schedule</span>
-            <button class="modal-x" onclick="closeRecurringModal()">âœ•</button>
+            <button class="modal-x" onclick="closeRecurringModal()">✕</button>
           </div>
           <div class="modal-body" id="recurringModalBody"></div>
           <div class="modal-ftr">
@@ -13986,7 +13986,7 @@
           <div class="modal-hdr">
             <span class="modal-title">Meeting History</span>
             <button class="modal-x" onclick="document.getElementById('mtgHistoryModal').classList.remove('open')">
-              âœ•
+              ✕
             </button>
           </div>
           <div class="modal-body" id="mtgHistoryBody" style="max-height: 60vh; overflow-y: auto"></div>
@@ -14003,7 +14003,7 @@
           <div class="modal-hdr">
             <span class="modal-title">Meeting Template Settings</span>
             <button class="modal-x" onclick="document.getElementById('mtgTemplateModal').classList.remove('open')">
-              âœ•
+              ✕
             </button>
           </div>
           <div class="modal-body" id="mtgTemplateBody"></div>
@@ -14049,7 +14049,7 @@
               onclick="document.getElementById('reportHistoryModal').style.display = 'none'"
               style="background: none; border: none; font-size: 18px; cursor: pointer; color: var(--text3)"
             >
-              âœ•
+              ✕
             </button>
           </div>
           <div id="reportHistoryList"></div>
@@ -14065,7 +14065,7 @@
           <div class="modal-hdr">
             <span class="modal-title">Generate Report</span>
             <button class="modal-x" onclick="document.getElementById('reportBldgModal').classList.remove('open')">
-              âœ•
+              ✕
             </button>
           </div>
           <div class="modal-body">
@@ -14210,7 +14210,7 @@
                     style="accent-color: var(--em); width: 14px; height: 14px"
                   />
                   <span style="font-size: 12px; color: var(--text)">Annualized</span>
-                  <span style="font-size: 10px; color: var(--text3); margin-left: 4px">(Ã—4 from quarterly)</span>
+                  <span style="font-size: 10px; color: var(--text3); margin-left: 4px">(×4 from quarterly)</span>
                 </label>
                 <div style="font-size: 11px; color: var(--text2); padding: 4px 8px; font-weight: 600">
                   Baseline Data Table Commodities:
@@ -14265,14 +14265,14 @@
     <!-- /app -->
 
     <!-- ---------------------------------------------------
-         NEW REPORT GENERATION MODAL (v2) â€” launched from Energy Graphics
+         NEW REPORT GENERATION MODAL (v2) — launched from Energy Graphics
     --------------------------------------------------- -->
     <div class="modal-bg" id="reportGenModal" onclick="if (event.target === this) this.classList.remove('open');">
       <div class="modal" style="width: 540px; max-height: 85vh; overflow-y: auto">
         <div class="modal-hdr">
           <span class="modal-title">Generate Report</span>
           <button class="modal-x" onclick="document.getElementById('reportGenModal').classList.remove('open')">
-            âœ•
+            ✕
           </button>
         </div>
         <div class="modal-body" id="reportGenModalBody">
@@ -14294,7 +14294,7 @@
       <div class="modal" style="width: 620px; max-height: 80vh; display: flex; flex-direction: column">
         <div class="modal-hdr">
           <span class="modal-title">Create Buildings from Equipment Matrix</span>
-          <button class="modal-x" onclick="emCloseCreateBldgsModal()">âœ•</button>
+          <button class="modal-x" onclick="emCloseCreateBldgsModal()">✕</button>
         </div>
         <div
           class="modal-body"
@@ -14320,7 +14320,7 @@
         <div class="modal-hdr">
           <span class="modal-title">Generate ASHRAE 36 Report</span>
           <button class="modal-x" onclick="document.getElementById('ashrae36ReportModal').classList.remove('open')">
-            âœ•
+            ✕
           </button>
         </div>
         <div class="modal-body" id="ashrae36ReportModalBody">
@@ -14339,7 +14339,7 @@
     </div>
 
     <!-- ---------------------------------------------------
-         REPORT PREVIEW CONTAINER â€” fullscreen preview/editor
+         REPORT PREVIEW CONTAINER — fullscreen preview/editor
     --------------------------------------------------- -->
     <div
       id="reportPreviewContainer"
@@ -14357,7 +14357,7 @@
         "
       >
         <div style="display: flex; align-items: center; gap: 12px">
-          <button class="btn btn-ghost btn-sm" onclick="closeReportPreview()">â† Back to Energy Graphics</button>
+          <button class="btn btn-ghost btn-sm" onclick="closeReportPreview()">← Back to Energy Graphics</button>
           <span id="rptPreviewTitle" style="font-size: 14px; font-weight: 600; color: var(--text)"></span>
         </div>
         <div style="display: flex; align-items: center; gap: 8px">
@@ -14375,7 +14375,7 @@
               font-weight: 600;
             "
           >
-            Data changed in popup â€”
+            Data changed in popup —
             <button
               class="btn btn-sm"
               style="
@@ -14455,17 +14455,17 @@
     </div>
 
     <!-- ---------------------------------------------------
-         REPORT OVERLAY â€” fullscreen print-preview container (legacy)
+         REPORT OVERLAY — fullscreen print-preview container (legacy)
     --------------------------------------------------- -->
     <div id="reportOverlay" class="report-overlay" style="display: none">
       <div class="report-toolbar">
         <div style="display: flex; align-items: center; gap: 12px">
-          <button onclick="closeReportOverlay()" class="rpt-toolbar-btn">âœ• Close</button>
+          <button onclick="closeReportOverlay()" class="rpt-toolbar-btn">✕ Close</button>
           <span id="reportOverlayTitle" style="font-size: 16px; font-weight: 600; color: #fff">Report Preview</span>
         </div>
         <div style="display: flex; gap: 8px">
-          <button onclick="saveReportToHistory()" class="rpt-toolbar-btn">ðŸ’¾ Save</button>
-          <button onclick="exportReportToPDF()" class="rpt-toolbar-btn rpt-toolbar-primary">ðŸ“„ Export to PDF</button>
+          <button onclick="saveReportToHistory()" class="rpt-toolbar-btn">💾 Save</button>
+          <button onclick="exportReportToPDF()" class="rpt-toolbar-btn rpt-toolbar-primary">📄 Export to PDF</button>
         </div>
       </div>
       <div id="reportPages" class="report-pages"></div>
@@ -14489,43 +14489,43 @@
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
     <!-- CompanyHub computation modules -->
-    <script src="lib/date-helpers.js?v=v2026.05.26.370"></script>
-    <script src="lib/formatting.js?v=v2026.05.26.370"></script>
-    <script src="lib/unit-conversion.js?v=v2026.05.26.370"></script>
-    <script src="lib/csv-parser.js?v=v2026.05.26.370"></script>
-    <script src="computations/rates.js?v=v2026.05.26.370"></script>
-    <script src="computations/regression.js?v=v2026.05.26.370"></script>
-    <script src="computations/normalization.js?v=v2026.05.26.370"></script>
-    <script src="computations/eui.js?v=v2026.05.26.370"></script>
-    <script src="computations/pollution.js?v=v2026.05.26.370"></script>
-    <script src="computations/csc.js?v=v2026.05.26.370"></script>
-    <script src="computations/savings.js?v=v2026.05.26.370"></script>
-    <script src="computations/anomaly-detection.js?v=v2026.05.26.370"></script>
-    <script src="lib/perf-table.js?v=v2026.05.26.370"></script>
-    <script src="lib/shared-charts.js?v=v2026.05.26.370"></script>
-    <script src="computations/report-data.js?v=v2026.05.26.370"></script>
-    <script src="computations/data-quality.js?v=v2026.05.26.370"></script>
-    <script src="extraction/pdf-engine.js?v=v2026.05.26.370"></script>
-    <script src="app/db.js?v=v2026.05.26.370"></script>
-    <script src="app/core.js?v=v2026.05.26.370"></script>
-    <script src="app/energy-savings.js?v=v2026.05.26.370"></script>
-    <script src="app/bill-analysis.js?v=v2026.05.26.370"></script>
-    <script src="extraction/bill-validation.js?v=v2026.05.26.370"></script>
-    <script src="app/district-calendar.js?v=v2026.05.26.370"></script>
-    <script src="app/utility-data.js?v=v2026.05.26.370"></script>
-    <script src="app/pipeline-diagram.js?v=v2026.05.26.370"></script>
-    <script src="app/csv-import.js?v=v2026.05.26.370"></script>
-    <script src="app/report-engine.js?v=v2026.05.26.370"></script>
-    <script src="app/report-preview.js?v=v2026.05.26.370"></script>
-    <script src="app/calculators.js?v=v2026.05.26.370"></script>
-    <script src="app/ecm-calculators.js?v=v2026.05.26.370"></script>
-    <script src="app/equipment-matrix.js?v=v2026.05.26.370"></script>
-    <script src="app/graphics-setpoints.js?v=v2026.05.26.370"></script>
-    <script src="app/budget.js?v=v2026.05.26.370"></script>
-    <script src="app/scorecard.js?v=v2026.05.26.370"></script>
-    <script src="app/portal-export.js?v=v2026.05.26.370"></script>
+    <script src="lib/date-helpers.js?v=v2026.05.26.371"></script>
+    <script src="lib/formatting.js?v=v2026.05.26.371"></script>
+    <script src="lib/unit-conversion.js?v=v2026.05.26.371"></script>
+    <script src="lib/csv-parser.js?v=v2026.05.26.371"></script>
+    <script src="computations/rates.js?v=v2026.05.26.371"></script>
+    <script src="computations/regression.js?v=v2026.05.26.371"></script>
+    <script src="computations/normalization.js?v=v2026.05.26.371"></script>
+    <script src="computations/eui.js?v=v2026.05.26.371"></script>
+    <script src="computations/pollution.js?v=v2026.05.26.371"></script>
+    <script src="computations/csc.js?v=v2026.05.26.371"></script>
+    <script src="computations/savings.js?v=v2026.05.26.371"></script>
+    <script src="computations/anomaly-detection.js?v=v2026.05.26.371"></script>
+    <script src="lib/perf-table.js?v=v2026.05.26.371"></script>
+    <script src="lib/shared-charts.js?v=v2026.05.26.371"></script>
+    <script src="computations/report-data.js?v=v2026.05.26.371"></script>
+    <script src="computations/data-quality.js?v=v2026.05.26.371"></script>
+    <script src="extraction/pdf-engine.js?v=v2026.05.26.371"></script>
+    <script src="app/db.js?v=v2026.05.26.371"></script>
+    <script src="app/core.js?v=v2026.05.26.371"></script>
+    <script src="app/energy-savings.js?v=v2026.05.26.371"></script>
+    <script src="app/bill-analysis.js?v=v2026.05.26.371"></script>
+    <script src="extraction/bill-validation.js?v=v2026.05.26.371"></script>
+    <script src="app/district-calendar.js?v=v2026.05.26.371"></script>
+    <script src="app/utility-data.js?v=v2026.05.26.371"></script>
+    <script src="app/pipeline-diagram.js?v=v2026.05.26.371"></script>
+    <script src="app/csv-import.js?v=v2026.05.26.371"></script>
+    <script src="app/report-engine.js?v=v2026.05.26.371"></script>
+    <script src="app/report-preview.js?v=v2026.05.26.371"></script>
+    <script src="app/calculators.js?v=v2026.05.26.371"></script>
+    <script src="app/ecm-calculators.js?v=v2026.05.26.371"></script>
+    <script src="app/equipment-matrix.js?v=v2026.05.26.371"></script>
+    <script src="app/graphics-setpoints.js?v=v2026.05.26.371"></script>
+    <script src="app/budget.js?v=v2026.05.26.371"></script>
+    <script src="app/scorecard.js?v=v2026.05.26.371"></script>
+    <script src="app/portal-export.js?v=v2026.05.26.371"></script>
 
-    <script src="app/site-functions.js?v=v2026.05.26.370"></script>
+    <script src="app/site-functions.js?v=v2026.05.26.371"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
@@ -14660,7 +14660,7 @@
     <div class="qs-overlay" id="qsOverlay">
       <div class="qs-modal" role="dialog" aria-modal="true" aria-label="Quick Start Guide">
         <div class="qs-hdr">
-          <div class="qs-hdr-icon">ðŸš€</div>
+          <div class="qs-hdr-icon">🚀</div>
           <div class="qs-hdr-text">
             <div class="qs-hdr-title">Quick Start Guide</div>
             <div class="qs-hdr-sub">5 steps to get your first project running</div>
@@ -14682,12 +14682,12 @@
       </div>
     </div>
 
-    <script src="app/tooltips-help.js?v=v2026.05.26.370"></script>
-    <script src="feedback-widget.js?v=v2026.05.26.370"></script>
+    <script src="app/tooltips-help.js?v=v2026.05.26.371"></script>
+    <script src="feedback-widget.js?v=v2026.05.26.371"></script>
     <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js" crossorigin="anonymous"></script>
-    <script src="lib/rich-text.js?v=v2026.05.26.370"></script>
+    <script src="lib/rich-text.js?v=v2026.05.26.371"></script>
     <script>
-      /* Handle ?openProject=... URL params â€” opened by _rptV2GoEdit() popup window */
+      /* Handle ?openProject=... URL params — opened by _rptV2GoEdit() popup window */
       (function _handleEditRedirect() {
         var params = new URLSearchParams(window.location.search);
         var projId = params.get('openProject');
