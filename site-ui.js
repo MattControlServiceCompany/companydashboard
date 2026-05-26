@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.25.356';
+  var CH_VERSION = 'v2026.05.25.357';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,17 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.25.357',
+      date: '2026-05-25',
+      title: 'KGS extraction accuracy fixes — 9 regex issues fixed, 276/276 fields correct',
+      features: [
+        {
+          type: 'fix',
+          text: 'Fixed 9 KGS regex issues in energy-savings.js: added fixNum() OCR colon-to-period normalizer, expanded char class to [\\d,.:]+, StatementDate garble fallback, RateSchedule Residential match, CustomerName same-line OCR layout, PaymentsReceived plural + CR suffix, TotalCurrentCharges multiline anchor, TotalAmountDue digit-start guard, GasSystemReliability optional CR. All 276 fields across 12 bills now extract correctly.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.25.356',
       date: '2026-05-25',

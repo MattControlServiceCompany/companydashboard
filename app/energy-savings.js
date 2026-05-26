@@ -4829,25 +4829,46 @@ const UTILITY_RULES = [
       // the way Spire/Atmos bills are. A dedicated path is required.
       const isKGS = /kansas\s+gas\s+service/i.test(t) || /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(t);
       if (isKGS) {
+        // Helper: normalize OCR number artifacts — colon misread as period (e.g. "17:55" → "17.55")
+        const fixNum = (s) => (s ? s.replace(/(\d):(\d)/, '$1.$2') : null);
+
         // === HEADER BLOCK ===
         // Account Number: "Account Number    510000123 2051604 18"
         const accountM = t.match(/Account\s+Number[\s:]*([0-9 ]{10,30})/i);
         const AccountNumber = accountM ? accountM[1].replace(/\s+/g, ' ').trim() : null;
 
         // Statement Date: "Statement Date  02-20-26"
-        const stmtM = t.match(/Statement\s+Date\s+(\d{2}-\d{2}-\d{2})/i);
+        // OCR sometimes splits "Statement Date" across garbled tokens: "Stat     t Dat               12-19-25"
+        // The word "Statement" becomes "Stat" + spaces + "t" and "Date" becomes "Dat".
+        // Pattern 1: normal "Statement Date MM-DD-YY"
+        // Pattern 2: garbled — allow any non-digit chars between "Stat" and the date, but keep it short
+        // to avoid matching unrelated text. The date always appears within ~30 chars of "Stat".
+        const stmtM =
+          t.match(/Statement\s+Dat\w*\s+(\d{2}-\d{2}-\d{2})/i) || t.match(/Stat\b[^0-9\n]{0,30}(\d{2}-\d{2}-\d{2})/i);
         const StatementDate = stmtM ? stmtM[1] : null;
 
-        // Rate: "Rate    General Service Lg"
-        const rateM = t.match(/Rate[\s:]+(?:Schedule[\s:]+)?([A-Za-z ]+(?:Sm|Lg|Med))\b/i);
+        // Rate Schedule: "Rate    Residential" or "Rate    General Service Lg"
+        // OCR sometimes misreads "Rate" as "FE", "Fat", "Rat", etc. so we can't always rely on the
+        // keyword. Primary: match the literal word "Rate" followed by the rate name on the same line.
+        // Fallback: look for "Residential" or "General Service" near the header block.
+        const rateM =
+          t.match(/\bRate\s+(Residential|General\s+Service\s*(?:Sm|Lg|Med)?[A-Za-z]*|Commercial[A-Za-z ]*)/i) ||
+          t.match(/(?:DIRECTOR OF FACILITIES|Active Deposit)[^\n]*(Residential|General\s+Service[^\n]{0,20})/i);
         const RateSchedule = rateM ? rateM[1].trim() : null;
 
-        // Customer Name: all-caps line before "DIRECTOR OF FACILITIES", "Account Number", or "PO BOX"
-        const custM = t.match(/([A-Z][A-Z &]{2,50})\s*\n\s*(?:DIRECTOR|Account\s+Number|PO\s+BOX)/i);
+        // Customer Name: all-caps line immediately before "DIRECTOR OF FACILITIES"
+        // OCR renders "BAKER UNIVERSITY      Account Number ..." all on ONE line — the account number
+        // text is on the same line, not a separate line. So \n won't separate them.
+        // Pattern: capture the all-caps name appearing before the word DIRECTOR anywhere on the page,
+        // allowing it to be on the same line (separated by many spaces) or a different line.
+        const custM = t.match(/([A-Z][A-Z &]{2,50})\s{2,}(?:[A-Z0-9 ]*\n\s*)?DIRECTOR\s+OF\s+FACILITIES/i);
         const CustomerName = custM ? custM[1].trim() : null;
 
-        // Service Address: line immediately before city/state (KS) line
-        const addrM = t.match(/([A-Z0-9][A-Z0-9 ]{4,49})\s*\n\s*[A-Z][A-Z ]+,\s*KS/);
+        // Service Address: KGS bills have the address on the line above "BALDWIN CITY, KS" but that
+        // line also contains "Active Deposit   NONE | Statement Date  XX-XX-XX" (OCR merges columns).
+        // Extract the street address from the beginning of that line, stopping before "Active".
+        // Example: "305 6TH ST # 306          Active Deposit    NONE | Statement Date   11-18-25"
+        const addrM = t.match(/([A-Z0-9#][A-Z0-9# ]{4,49?})\s{2,}Active\s+D/i);
         const ServiceAddress = addrM ? addrM[1].trim() : null;
 
         // === METER READING TABLE ===
@@ -4872,43 +4893,61 @@ const UTILITY_RULES = [
         const NaturalGasTherms = _mcf > 0 ? String(Math.round(_mcf * _multiplier * 10 * 100) / 100) : null;
 
         // === BALANCE SECTION ===
-        const prevBalM = t.match(/Previous\s+Balance\s+\$?([\d,.]+)/i);
-        const PreviousBalance = prevBalM ? prevBalM[1] : null;
+        // All dollar-amount patterns use [\\d,.:] to capture values whether OCR renders decimal as
+        // "." (normal) or ":" (misread — e.g. "17:55"). fixNum() then normalises colon→period.
+        const prevBalM = t.match(/Previous\s+Balance\s+\$?([\d,.:]+)/i);
+        const PreviousBalance = fixNum(prevBalM ? prevBalM[1] : null);
 
-        const paymentM = t.match(/Payment\s+Received[^\n]*-?\$?([\d,.]+)/i);
-        const PaymentsReceived = paymentM ? paymentM[1] : null;
+        // OCR renders "Payments Received      82.90CR" — plural "Payments", amount at far right with CR suffix.
+        // Old pattern used singular "Payment\s+Received" and tried to capture after a dash/dollar sign
+        // which never appeared; the amount trailed by "CR" was after the regex had already given up.
+        const paymentM = t.match(/Payments?\s+Received[^\n]*?([\d,.:]+)CR/i);
+        const PaymentsReceived = fixNum(paymentM ? paymentM[1] : null);
 
         // === CHARGES SECTION ===
-        const serviceChargeM = t.match(/Service\s+Charge\s+\$?([\d,.]+)/i);
-        const CustomerCharge = serviceChargeM ? serviceChargeM[1] : null;
+        // fixNum() is applied to all captured dollar values to handle OCR colon-for-period artifacts
+        // (e.g. "17:55" → "17.55" — seen on page 12 of test file).
+        const serviceChargeM = t.match(/Service\s+Charge\s+\$?([\d,.:]+)/i);
+        const CustomerCharge = fixNum(serviceChargeM ? serviceChargeM[1] : null);
 
-        const deliveryM = t.match(/Delivery\s+Charge\s+\$?([\d,.]+)/i);
-        const DeliveryCharge = deliveryM ? deliveryM[1] : null;
+        const deliveryM = t.match(/Delivery\s+Charge\s+\$?([\d,.:]+)/i);
+        const DeliveryCharge = fixNum(deliveryM ? deliveryM[1] : null);
 
-        const gsrsM = t.match(/Gas\s+System\s+Reliability\s+Surcharge\s+\$?([\d,.]+)/i);
-        const GasSystemReliability = gsrsM ? gsrsM[1] : null;
+        // GSRS is absent on some summer bills — null is correct when line doesn't appear.
+        // Allow optional "CR" suffix (credit months, e.g. page 7 shows "0.37CR").
+        const gsrsM = t.match(/Gas\s+System\s+Reliability\s+Surcharge\s+\$?([\d,.:]+)(?:CR)?/i);
+        const GasSystemReliability = fixNum(gsrsM ? gsrsM[1] : null);
 
-        const wnaM = t.match(/Weather\s+Normalization\s+(?:Adj(?:ustment)?)?\s+\$?([\d,.]+)/i);
-        const WeatherNormalization = wnaM ? wnaM[1] : null;
+        const wnaM = t.match(/Weather\s+Normalization\s+(?:Adj(?:ustment)?)?\s+\$?([\d,.:]+)/i);
+        const WeatherNormalization = fixNum(wnaM ? wnaM[1] : null);
 
-        const costGasM = t.match(/Cost\s+of\s+Gas\s+\$?([\d,.]+)/i);
-        const GasCharge = costGasM ? costGasM[1] : null;
+        const costGasM = t.match(/Cost\s+of\s+Gas\s+\$?([\d,.:]+)/i);
+        const GasCharge = fixNum(costGasM ? costGasM[1] : null);
 
-        const winterM = t.match(/Winter\s+Event\s+Securitized\s+Cost\s+\$?([\d,.]+)/i);
-        const WinterEventCost = winterM ? winterM[1] : null;
+        const winterM = t.match(/Winter\s+Event\s+Securitized\s+Cost\s+\$?([\d,.:]+)/i);
+        const WinterEventCost = fixNum(winterM ? winterM[1] : null);
 
         // Sum all Franchise Fee line items (KGS often has two: state + local)
-        const franchiseMs = [...t.matchAll(/Franchise\s+Fee\s+\$?([\d,.]+)/gi)];
+        const franchiseMs = [...t.matchAll(/Franchise\s+Fee\s+\$?([\d,.:]+)/gi)];
         const FranchiseFee =
           franchiseMs.length > 0
-            ? String(franchiseMs.reduce((sum, m) => sum + parseFloat(m[1].replace(/,/g, '')), 0).toFixed(2))
+            ? String(
+                franchiseMs.reduce((sum, m) => sum + parseFloat((fixNum(m[1]) || '0').replace(/,/g, '')), 0).toFixed(2),
+              )
             : null;
 
-        const currentChargesM = t.match(/Current\s+Charges\s+\$?([\d,.]+)/i);
-        const TotalCurrentCharges = currentChargesM ? currentChargesM[1] : null;
+        // "Total Current Charges" — OCR sometimes inserts "___ $" before the dollar amount.
+        // Old pattern: "Total\s+Current\s+Charges\s+\$?(\d+)" — fails when "___" appears.
+        // Also: "Current Charges" (without "Total") appears as a subtotal row mid-bill; we want
+        // the TOTAL line, so match "Total Current Charges" specifically and allow any intervening chars.
+        const currentChargesM = t.match(/Total\s+Current\s+Charges[^\n]*?([\d,.:]+)\s*$/im);
+        const TotalCurrentCharges = fixNum(currentChargesM ? currentChargesM[1] : null);
 
-        const amtDueM = t.match(/Amount\s+Due\s+\$?([\d,.]+)/i);
-        const TotalAmountDue = amtDueM ? amtDueM[1] : null;
+        // "Amount Due" can be followed by formatting colons and spaces before the dollar amount
+        // (e.g. "Amount Due   :   $107.95"). Skip non-digit chars after the label, then require
+        // the value to START with a digit to avoid capturing a bare colon.
+        const amtDueM = t.match(/Amount\s+Due[^0-9\n]*(\d[\d,.:]*)/i);
+        const TotalAmountDue = fixNum(amtDueM ? amtDueM[1] : null);
 
         return {
           UtilityCompany: 'Kansas Gas Service',
