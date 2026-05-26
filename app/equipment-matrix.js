@@ -30,11 +30,25 @@ var EM_EQUIP_TYPES = {
   chwp: 'chwp',
   'cooling tower': 'ct',
   ct: 'ct',
-  'weather station (no hvac)': null,
-  'weather station': null,
-  'no gl36 equipment': null,
-  'no bas equipment': null,
+  'weather station (no hvac)': 'other',
+  'weather station': 'other',
+  'no gl36 equipment': 'other',
+  'no bas equipment': 'other',
 };
+
+/* ── EDIT MODE FLAG ── */
+var _emEditMode = false;
+
+function emToggleEditMode(btn) {
+  _emEditMode = !_emEditMode;
+  if (btn) {
+    btn.textContent = _emEditMode ? '🔒 Lock' : '✏️ Edit';
+    btn.style.background = _emEditMode ? 'var(--accent)' : '';
+    btn.style.color = _emEditMode ? '#fff' : '';
+  }
+  var data = emLoadMatrix(window._emActivePid);
+  emRenderTable(data, _emFilters);
+}
 
 var EM_CHECK_COLS_11 = [
   'Duct Static Pressure Sensor',
@@ -383,7 +397,7 @@ function emParseLocation(locString) {
 }
 
 function emClassifyEquipType(equipTypeStr) {
-  if (!equipTypeStr) return null;
+  if (!equipTypeStr) return 'other';
   var key = equipTypeStr.trim().toLowerCase();
   if (key in EM_EQUIP_TYPES) return EM_EQUIP_TYPES[key];
   for (var pattern in EM_EQUIP_TYPES) {
@@ -396,8 +410,8 @@ function emClassifyEquipType(equipTypeStr) {
   if (/hot.?water.*boil|boiler|hwp/i.test(key)) return 'hwp';
   if (/chill|chw.*plant|chwp/i.test(key)) return 'chwp';
   if (/cool.*tower|cooling tower|\bct\b/i.test(key)) return 'ct';
-  if (/weather.?station|no.*(gl36|bas|hvac)/i.test(key)) return null;
-  return null;
+  // All unrecognized types (including weather stations, etc.) are kept as 'other'
+  return 'other';
 }
 
 function emMapPointToColumn(pointName, pointType, equipCategory) {
@@ -429,18 +443,22 @@ function emExtractEquipmentGroups(rows, colMap) {
       if (!controlProgram) continue;
 
       var building = emParseBACnetBuilding(bacnetPath);
+      // Extract floor from BACnet path segment 2 (e.g. /Site/Building/Floor/Area/CP)
+      var bacnetParts = bacnetPath.replace(/^\//, '').split('/');
+      var wfloor = (bacnetParts[2] || '').trim();
       var parsed = emParseControlProgram(controlProgram);
       var location = parsed.location;
       var equipName = parsed.equipName || controlProgram;
 
       // Infer equipment type from the equipment name portion
+      // emClassifyEquipType always returns a non-null string now — no rows are filtered
       var category = emClassifyEquipType(equipName);
-      if (category === null) continue;
 
       var groupKey = building + '||' + location + '||' + equipName;
       if (!groups.has(groupKey)) {
         groups.set(groupKey, {
           building: building,
+          floor: wfloor,
           location: location,
           equipName: equipName,
           equipTypeStr: equipName,
@@ -452,7 +470,11 @@ function emExtractEquipmentGroups(rows, colMap) {
       }
       var wgroup = groups.get(groupKey);
 
-      // Map point name + value to a live data column if we recognise it
+      // Map point name + value to a live data column if we recognise it.
+      // Also store every point directly under its raw name for dynamic column display.
+      if (pointName !== '' && pointVal !== '') {
+        wgroup.pointValues[pointName] = pointVal;
+      }
       var pointCol = emMapPointToColumn(pointName, null, category);
       if (pointCol && pointVal !== '') {
         wgroup.pointValues[pointCol] = pointVal;
@@ -470,8 +492,8 @@ function emExtractEquipmentGroups(rows, colMap) {
     var equipName = (row[colMap.equipName] || '').trim();
     var equipTypeStr = (row[colMap.equipType] || '').trim();
     if (!building || !equipName || equipName === '—') continue;
+    // emClassifyEquipType always returns a non-null string now — no rows are filtered
     var category = emClassifyEquipType(equipTypeStr);
-    if (category === null) continue;
     // Include location in key so same-named equipment in different locations stays separate
     var groupKey = building + '||' + location + '||' + equipName;
     if (!groups.has(groupKey)) {
@@ -506,11 +528,13 @@ function emGroupToMatrixRow(groupKey, group) {
   for (var i = 0; i < checkCols.length; i++) {
     checks[checkCols[i]] = group.checkValues[checkCols[i]] || '';
   }
+  // Prefer floor extracted directly from BACnet path (stored on group.floor); fall back to parsed location
+  var floorVal = group.floor || loc.floor;
   return {
     id: groupKey,
     building: group.building,
     location: group.location,
-    floor: loc.floor,
+    floor: floorVal,
     area: loc.area,
     equipName: group.equipName,
     equipType: group.equipTypeStr,
@@ -646,6 +670,24 @@ function initEquipMatrix(projId) {
   emRenderMatrix(wrap, data, projId);
 }
 
+function emInjectMatrixCSS() {
+  if (document.getElementById('em-matrix-styles')) return;
+  var style = document.createElement('style');
+  style.id = 'em-matrix-styles';
+  style.textContent = [
+    '.em-table-wrap { overflow: scroll; max-height: 70vh; }',
+    '.em-table-wrap::-webkit-scrollbar { height: 14px; width: 14px; }',
+    '.em-table-wrap::-webkit-scrollbar-thumb { background: var(--s4); border-radius: 7px; border: 3px solid var(--s2); }',
+    '.em-table-wrap::-webkit-scrollbar-track { background: var(--s1); }',
+    '.em-table-wrap thead th { position: sticky; top: 0; background: var(--s2); z-index: 3; }',
+    '.em-table-wrap td:nth-child(1), .em-table-wrap th:nth-child(1) { position: sticky; left: 0; background: var(--s2); z-index: 2; }',
+    '.em-table-wrap td:nth-child(2), .em-table-wrap th:nth-child(2) { position: sticky; left: 150px; background: var(--s2); z-index: 2; }',
+    '.em-table-wrap td:nth-child(3), .em-table-wrap th:nth-child(3) { position: sticky; left: 300px; background: var(--s2); z-index: 2; }',
+    '.em-table-wrap thead th:nth-child(-n+3) { z-index: 4; }',
+  ].join('\n');
+  document.head.appendChild(style);
+}
+
 function emRenderMatrix(container, data, pid) {
   window._emActivePid = pid;
   if (!data.edits) data.edits = {};
@@ -653,6 +695,8 @@ function emRenderMatrix(container, data, pid) {
   _emSortCol = null;
   _emSortDir = 1;
   _emHiddenGroups = {};
+  _emEditMode = false;
+  emInjectMatrixCSS();
 
   var projName = '';
   if (typeof projects !== 'undefined') {
@@ -671,6 +715,7 @@ function emRenderMatrix(container, data, pid) {
     emStatPill('VAV / FPB', stats.vav) +
     emStatPill('Plants', stats.plants) +
     emStatPill('Live Data', stats.live) +
+    (data.totalBASPoints ? emStatPill('BAS Points', data.totalBASPoints.toLocaleString()) : '') +
     '</div>';
 
   var projBadge = projName
@@ -685,7 +730,7 @@ function emRenderMatrix(container, data, pid) {
     '<div style="flex-shrink:0;border-bottom:1px solid var(--border)">' +
     toolbarHtml +
     '</div>' +
-    '<div id="em-table-wrap" style="flex:1;overflow:auto;min-height:0"></div>' +
+    '<div id="em-table-wrap" class="em-table-wrap" style="flex:1;min-height:0"></div>' +
     '<div id="em-upload-inline" style="display:none;flex-shrink:0;border-top:1px solid var(--border);padding:16px 20px"></div>' +
     '</div>';
 
@@ -802,6 +847,7 @@ function emRenderToolbar(data, pid, projBadge) {
     '<span id="em-row-count" style="font-size:11px;color:var(--text3);margin-left:4px"></span>' +
     '<div style="flex:1"></div>' +
     (projBadge || '') +
+    '<button id="em-edit-mode-btn" class="btn btn-ghost btn-sm" onclick="emToggleEditMode(this)" style="height:28px;font-size:11px">✏️ Edit</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleSaveEdits()" style="height:28px;font-size:11px">Save Edits</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleExportCSV()" style="height:28px;font-size:11px">Export CSV</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emAddManualRow(\'' +
@@ -830,7 +876,7 @@ function emGetColDefs(projId) {
     { key: 'building', label: 'Building', group: 'id', width: 180 },
     { key: 'floor', label: 'Floor', group: 'id', width: 80 },
     { key: 'equipName', label: 'Equipment', group: 'id', width: 200 },
-    { key: 'category', label: 'Type', group: 'id', width: 80 },
+    { key: 'equipType', label: 'Control Program', group: 'id', width: 160 },
   ];
   for (var i = 0; i < checkCols14.length; i++) {
     var ck = checkCols14[i];
@@ -936,7 +982,7 @@ function emGetCellValByDef(row, def, edits) {
     var checkCols = EM_CHECK_COLS_14;
     return (row.checks && row.checks[checkCols[def.checkIdx]]) || '';
   }
-  if (def.isLive) {
+  if (def.isLive || def.isDynPoint) {
     return (row.points && row.points[def.key]) || '';
   }
   return row[def.key] || '';
@@ -952,6 +998,39 @@ function emRenderTable(data, filters) {
   var defs = emGetColDefs(window._emActivePid).filter(function (d) {
     return !_emHiddenGroups[d.group];
   });
+
+  // ── Dynamic point columns ──
+  // Collect all unique point names from every row's .points object.
+  // Skip keys that are already covered by a mapped live column (e.g. 'satLive') or
+  // any standard def key — only raw BACnet point names become dynamic columns.
+  var existingDefKeys = {};
+  for (var ex = 0; ex < defs.length; ex++) existingDefKeys[defs[ex].key] = true;
+  // Also skip the short EM_POINT_MAP col names (satLive, ratLive, etc.)
+  for (var pm = 0; pm < EM_POINT_MAP.length; pm++) existingDefKeys[EM_POINT_MAP[pm].col] = true;
+
+  var dynPointOrder = [];
+  var dynPointSeen = {};
+  for (var rr = 0; rr < rows.length; rr++) {
+    var pts = rows[rr].points || {};
+    for (var ptKey in pts) {
+      if (!dynPointSeen[ptKey] && !existingDefKeys[ptKey]) {
+        dynPointSeen[ptKey] = true;
+        dynPointOrder.push(ptKey);
+      }
+    }
+  }
+  dynPointOrder.sort();
+  for (var dp = 0; dp < dynPointOrder.length; dp++) {
+    var dpKey = dynPointOrder[dp];
+    if (!_emHiddenGroups['dynpoint']) {
+      defs.push({ key: dpKey, label: dpKey, group: 'dynpoint', width: 120, isDynPoint: true });
+    }
+  }
+
+  if (!_EM_GROUP_COLORS['dynpoint']) {
+    _EM_GROUP_COLORS['dynpoint'] = '#7f8c8d';
+  }
+
   var checkCols = EM_CHECK_COLS_14;
 
   if (_emSortCol !== null) {
@@ -1011,19 +1090,24 @@ function emRenderTable(data, filters) {
       var cellStyle =
         'padding:4px 8px;font-size:11px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:middle;' +
         (def.isLive ? 'font-family:Consolas,monospace;font-size:10px;' : '') +
+        (def.isDynPoint ? 'font-family:Consolas,monospace;font-size:10px;' : '') +
         (isEdited ? 'background:#fffde7;border-left:3px solid var(--em);' : '');
-      cells +=
-        '<td contenteditable="true" ' +
-        'onblur="emHandleCellEdit(\'' +
-        rowId.replace(/'/g, "\\'") +
-        "','" +
-        def.key +
-        '\',this.textContent)" ' +
-        'style="' +
-        cellStyle +
-        '">' +
-        displayVal +
-        '</td>';
+      if (_emEditMode) {
+        cells +=
+          '<td contenteditable="true" ' +
+          'onblur="emHandleCellEdit(\'' +
+          rowId.replace(/'/g, "\\'") +
+          "','" +
+          def.key.replace(/'/g, "\\'") +
+          '\',this.textContent)" ' +
+          'style="' +
+          cellStyle +
+          '">' +
+          displayVal +
+          '</td>';
+      } else {
+        cells += '<td style="' + cellStyle + '">' + displayVal + '</td>';
+      }
     }
     tbodyRows += '<tr>' + cells + '</tr>';
   }
@@ -1057,7 +1141,7 @@ function emGetCellVal(row, colIdx, edits) {
     var checkCols = EM_CHECK_COLS_14;
     return (row.checks && row.checks[checkCols[idx]]) || '';
   }
-  if (def.isLive) {
+  if (def.isLive || def.isDynPoint) {
     return (row.points && row.points[def.key]) || '';
   }
   return row[def.key] || '';
@@ -1330,6 +1414,7 @@ function emHandleImport(pid) {
   if (statusEl) statusEl.textContent = 'Parsing...';
   var allRows = [];
   var detectedFormats = [];
+  var totalRawRows = 0; // count of raw CSV data rows across all files, before grouping
   var pending = _emPendingFiles.length;
   var done = 0;
   function onFileDone() {
@@ -1355,6 +1440,8 @@ function emHandleImport(pid) {
     if (pid) {
       var existingData = emLoadMatrix(pid);
       var merged = emMergeIntoMatrix(existingData, allRows);
+      // Accumulate total BAS points: add new raw rows to any previously stored count
+      merged.totalBASPoints = (existingData.totalBASPoints || 0) + totalRawRows;
       emSaveMatrix(pid, merged);
       var container = document.getElementById('em-proj-wrap');
       if (container) emRenderMatrix(container, merged, pid);
@@ -1369,6 +1456,7 @@ function emHandleImport(pid) {
     } else {
       // No project — render a preview without saving
       var previewData = emMergeIntoMatrix({ rows: [], buildings: [] }, allRows);
+      previewData.totalBASPoints = totalRawRows;
       var container = document.getElementById('em-proj-wrap');
       if (container) {
         // Store preview in a temporary in-memory key so emRenderMatrix can load it
@@ -1399,6 +1487,8 @@ function emHandleImport(pid) {
         }
         var colMap = emDetectColMap(parsed[0]);
         detectedFormats.push(colMap.format || 'enriched');
+        // Count raw data rows (header row excluded) before grouping
+        totalRawRows += parsed.slice(1).length;
         var groups = emExtractEquipmentGroups(parsed.slice(1), colMap);
         groups.forEach(function (group, key) {
           allRows.push(emGroupToMatrixRow(key, group));

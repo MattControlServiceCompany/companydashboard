@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.25.357';
+  var CH_VERSION = 'v2026.05.25.358';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,41 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.25.358',
+      date: '2026-05-25',
+      title: 'Equipment Matrix redesign: sticky headers, edit mode toggle, dynamic columns, floor parsing',
+      features: [
+        {
+          type: 'feature',
+          text: 'Equipment Matrix now shows all imported equipment — no type filtering. Rows for unrecognized control programs are kept instead of dropped.',
+        },
+        {
+          type: 'feature',
+          text: 'Matrix is read-only by default. An Edit Mode toggle button enables cell editing, preventing accidental edits during review.',
+        },
+        {
+          type: 'feature',
+          text: 'Frozen header row and first 3 columns (sticky CSS) so column/row labels stay visible while scrolling large matrices.',
+        },
+        {
+          type: 'feature',
+          text: 'Thicker 14px scrollbar with accent-colored thumb for visibility on wide tables.',
+        },
+        {
+          type: 'feature',
+          text: 'Floor parsed from BACnet path segment 3 instead of fragile program-name regex.',
+        },
+        {
+          type: 'feature',
+          text: 'Column headers generated dynamically from point names in the imported data. Unused columns are omitted.',
+        },
+        {
+          type: 'feature',
+          text: 'Category column shows original control program name from BACnet path.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.25.357',
       date: '2026-05-25',
