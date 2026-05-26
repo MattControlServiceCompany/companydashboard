@@ -830,6 +830,7 @@ var _emPageSize = 100;
 var _emShowAllDynCols = false; // when false, limit dynamic point columns to top 20 by frequency
 var EM_DYN_COL_LIMIT = 20; // max dynamic point columns shown by default
 var _emViewMode = 'audit'; // 'audit' = ASHRAE 36 compliance columns; 'raw' = raw point columns
+var _emZoomLevel = 100; // zoom percentage, 50–150
 
 function initEquipMatrix(projId) {
   var wrap = document.getElementById('em-proj-wrap');
@@ -935,6 +936,8 @@ function emRenderMatrix(container, data, pid) {
   _emPageSize = EM_PAGE_SIZE;
   _emShowAllDynCols = false;
   _emViewMode = 'audit';
+  var savedZoom = parseInt(localStorage.getItem('en_em_zoom') || '100', 10);
+  _emZoomLevel = savedZoom >= 50 && savedZoom <= 150 ? savedZoom : 100;
   emInjectMatrixCSS();
 
   var projName = '';
@@ -974,6 +977,8 @@ function emRenderMatrix(container, data, pid) {
     '</div>';
 
   emRenderTable(data, _emFilters);
+  // Apply persisted zoom (no-op at 100% but sets up the style tag consistently)
+  emSetZoom(0);
 }
 
 function emStatPill(label, val) {
@@ -1155,10 +1160,52 @@ function emRenderToolbar(data, pid, projBadge) {
         pid +
         '\',\'proposal\')" style="height:28px;font-size:11px;background:#7c3aed;color:#fff;border-color:transparent">Service Proposal</button>'
       : '') +
+    '<span style="width:1px;height:20px;background:var(--border);display:inline-block;margin:0 4px;vertical-align:middle"></span>' +
+    '<div style="display:inline-flex;align-items:center;gap:2px">' +
+    '<button onclick="emSetZoom(-10)" style="height:28px;width:24px;font-size:13px;line-height:1;background:var(--s2);border:1px solid var(--border);color:var(--text2);border-radius:4px;cursor:pointer;padding:0" title="Zoom out">−</button>' +
+    '<span id="em-zoom-label" style="font-size:11px;color:var(--text2);min-width:38px;text-align:center;user-select:none">' +
+    _emZoomLevel +
+    '%</span>' +
+    '<button onclick="emSetZoom(10)" style="height:28px;width:24px;font-size:13px;line-height:1;background:var(--s2);border:1px solid var(--border);color:var(--text2);border-radius:4px;cursor:pointer;padding:0" title="Zoom in">+</button>' +
+    '</div>' +
     '</div>' +
     colToggles +
     '</div>'
   );
+}
+
+/**
+ * emSetZoom — Adjusts the table zoom level by `delta` percent (e.g. +10 or -10).
+ * Clamped to 50–150. Applies font-size and padding scaling to .em-table-wrap
+ * proportionally: at 100% font-size is 11px and cell padding is 4px 8px.
+ * Persists the choice to localStorage as `en_em_zoom`.
+ */
+function emSetZoom(delta) {
+  _emZoomLevel = Math.min(150, Math.max(50, _emZoomLevel + delta));
+  localStorage.setItem('en_em_zoom', String(_emZoomLevel));
+
+  var wrap = document.getElementById('em-table-wrap');
+  if (wrap) {
+    var ratio = _emZoomLevel / 100;
+    var fs = Math.round(11 * ratio);
+    var padV = Math.round(4 * ratio);
+    var padH = Math.round(8 * ratio);
+    // Apply to all td and th inside the table wrap via a dynamic style tag
+    var styleEl = document.getElementById('em-zoom-style');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'em-zoom-style';
+      document.head.appendChild(styleEl);
+    }
+    styleEl.textContent =
+      '#em-table-wrap td, #em-table-wrap th { font-size: ' + fs + 'px; padding: ' + padV + 'px ' + padH + 'px; }';
+  }
+
+  var label = document.getElementById('em-zoom-label');
+  if (label) label.textContent = _emZoomLevel + '%';
+
+  // Column widths change with font-size — recompute sticky offsets
+  emUpdateStickyOffsets();
 }
 
 var _EM_COL_DEFS = null;
@@ -1359,6 +1406,36 @@ function emGetAuditColDefs(filteredRows) {
     });
   }
 
+  // Add one column per relevant ASHRAE 36 sequence (Sequences group)
+  // Only include sequences that apply to at least one equipment type visible in the filtered rows
+  var seqTypeSet = typeSet; // reuse the type set already built above
+  for (var sdi = 0; sdi < EM_SEQUENCE_DEFS.length; sdi++) {
+    var seqDef = EM_SEQUENCE_DEFS[sdi];
+    // Check if any of this sequence's equipTypes are in the visible set
+    var seqVisible = false;
+    for (var sti = 0; sti < seqDef.equipTypes.length; sti++) {
+      if (seqTypeSet[seqDef.equipTypes[sti]]) {
+        seqVisible = true;
+        break;
+      }
+    }
+    if (!seqVisible) continue;
+    defs.push({
+      key: '_seq_' + seqDef.key,
+      label: seqDef.label,
+      group: 'audit-seq',
+      width: 100,
+      isAuditSeq: true,
+      seqKey: seqDef.key,
+      seqEquipTypes: seqDef.equipTypes,
+      title:
+        seqDef.label +
+        ' sequence (' +
+        seqDef.ashrae36 +
+        '). ✓ = ready (all points present), ~ = partial, ✗ = blocked (key points missing), — = N/A.',
+    });
+  }
+
   return defs;
 }
 
@@ -1379,9 +1456,32 @@ function emComputeAuditStats(rows) {
       covCount++;
     }
   }
+  // Compute sequence readiness across all applicable rows
+  // Count sequences that are 'ready' vs total applicable (non-'na') sequences
+  var totalSeqApplicable = 0;
+  var totalSeqReady = 0;
+  for (var si = 0; si < rows.length; si++) {
+    var sr = rows[si];
+    if (!sr.category || !EM_POINT_CATEGORIES[sr.category]) continue;
+    var srCompliance = emComputeCompliance(sr, {});
+    var srReadiness = emComputeSequenceReadiness(sr, srCompliance);
+    for (var sk in srReadiness) {
+      if (!srReadiness.hasOwnProperty(sk)) continue;
+      var seqEntry = srReadiness[sk];
+      if (seqEntry.status !== 'na') {
+        totalSeqApplicable++;
+        if (seqEntry.status === 'ready') totalSeqReady++;
+      }
+    }
+  }
+  var seqReadinessPct = totalSeqApplicable > 0 ? Math.round((totalSeqReady / totalSeqApplicable) * 100) : 0;
+
   return {
     avgCoverage: covCount > 0 ? Math.round(totalCoverage / covCount) : 0,
     totalBASPoints: totalPts,
+    seqReadinessPct: seqReadinessPct,
+    seqReady: totalSeqReady,
+    seqApplicable: totalSeqApplicable,
   };
 }
 
@@ -1401,12 +1501,26 @@ function emUpdateStatsPillsForAudit(rows) {
     ';line-height:1">' +
     avgCov +
     '%</div>' +
-    '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Avg Coverage</div>' +
+    '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Pt Coverage</div>' +
     '</div>';
+  var seqPct = audit.seqReadinessPct;
+  var seqColor = seqPct >= 75 ? '#27ae60' : seqPct >= 50 ? '#e67e22' : '#c0392b';
+  var seqPill =
+    audit.seqApplicable > 0
+      ? '<div style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
+        '<div style="font-size:18px;font-weight:700;color:' +
+        seqColor +
+        ';line-height:1">' +
+        seqPct +
+        '%</div>' +
+        '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Seq Ready</div>' +
+        '</div>'
+      : '';
   bar.innerHTML =
     emStatPill('Buildings', base.buildings) +
     emStatPill('Equipment', base.total) +
     covPill +
+    seqPill +
     emStatPill('BAS Points', audit.totalBASPoints.toLocaleString());
 }
 
@@ -1443,6 +1557,7 @@ var _EM_GROUP_COLORS = {
   custom: '#c0392b',
   audit: '#1e40af',
   'audit-cat': '#3b82f6',
+  'audit-seq': '#7c3aed',
 };
 
 function emGetCellValByDef(row, def, edits) {
@@ -1803,11 +1918,13 @@ function emRenderAuditTable(data, filters) {
   var pageEnd = useAll ? filtered.length : Math.min(pageStart + pageSize, filtered.length);
   var pageRows = filtered.slice(pageStart, pageEnd);
 
-  // ── Pre-compute compliance for each page row ──
+  // ── Pre-compute compliance and sequence readiness for each page row ──
   var complianceCache = {};
+  var seqReadinessCache = {};
   for (var pr = 0; pr < pageRows.length; pr++) {
     var r = pageRows[pr];
     complianceCache[r.id] = emComputeCompliance(r, {});
+    seqReadinessCache[r.id] = emComputeSequenceReadiness(r, complianceCache[r.id]);
   }
 
   // ── Build thead ──
@@ -1858,10 +1975,11 @@ function emRenderAuditTable(data, filters) {
       missingMap[compliance.missingPoints[mp].categoryKey] = true;
     }
 
+    var seqReadiness = seqReadinessCache[row.id] || {};
     var cells = '';
     for (var di = 0; di < defs.length; di++) {
       var def = defs[di];
-      cells += emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap);
+      cells += emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, seqReadiness);
     }
     tbodyRows += '<tr>' + cells + '</tr>';
   }
@@ -1949,7 +2067,7 @@ function emRenderAuditTable(data, filters) {
 /* ── emRenderAuditCell ──────────────────────────────────────────────────────
    Renders a single <td> for a compliance column in audit view.
    Returns HTML string.                                                    */
-function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap) {
+function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, seqReadiness) {
   var baseStyle =
     'padding:4px 8px;font-size:11px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:middle;text-align:center;';
 
@@ -2066,6 +2184,17 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap) 
     return '<td style="' + baseStyle + 'color:var(--text3)"></td>';
   }
 
+  // ── Sequence status cell ──
+  if (def.isAuditSeq) {
+    var seqKey = def.seqKey;
+    var seqResult = seqReadiness ? seqReadiness[seqKey] : null;
+    // Gray if this sequence doesn't apply to this equipment type
+    if (!row.category || def.seqEquipTypes.indexOf(row.category) === -1) {
+      return '<td style="' + baseStyle + 'background:rgba(128,128,128,0.08);color:var(--text3)">—</td>';
+    }
+    return emRenderSequenceCell(def.label, seqResult);
+  }
+
   // ── Fallback ──
   return '<td style="' + baseStyle + '">' + emHtmlEsc(String(row[def.key] || '')) + '</td>';
 }
@@ -2101,6 +2230,15 @@ function emAuditGetSortVal(row, def) {
       if (comp.coveredPoints[i].categoryKey === catKey) return comp.coveredPoints[i].matchTier;
     }
     return 99; // missing
+  }
+  if (def.isAuditSeq) {
+    if (!row.category || def.seqEquipTypes.indexOf(row.category) === -1) return -1;
+    var seqComp = emComputeCompliance(row, {});
+    var seqR = emComputeSequenceReadiness(row, seqComp);
+    var seqEntry = seqR[def.seqKey];
+    if (!seqEntry || seqEntry.status === 'na') return -1;
+    var statusOrder = { ready: 0, partial: 1, blocked: 2 };
+    return statusOrder[seqEntry.status] !== undefined ? statusOrder[seqEntry.status] : 99;
   }
   return '';
 }
@@ -5779,4 +5917,340 @@ function emNormalizePointWithCustom(rawName, equipCategory, customMappings) {
     }
   }
   return emNormalizePoint(rawName, equipCategory);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 3 — SEQUENCE STATUS COLUMNS
+   Added: 2026-05-26
+   Purpose: For each ASHRAE 36 control sequence relevant to the equipment
+   type, check whether the required BAS point categories are present.
+   Results are displayed as additional columns in Audit View.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── EM_SEQUENCE_DEFS ───────────────────────────────────────────────────────
+   Defines ASHRAE 36 sequences per equipment type.
+   Each sequence entry: {
+     key:          unique string ID for this sequence
+     label:        short display label (fits in a table header)
+     ashrae36:     section reference
+     equipTypes:   array of equipment category strings this applies to
+     requiredCats: array of point category keys — ALL must be present for 'ready'
+     keyCats:      array of category keys considered "key" — absence = 'blocked'
+                   (subset of requiredCats; if any key cat missing → blocked,
+                    if only non-key cats missing → partial)
+   }                                                                         */
+var EM_SEQUENCE_DEFS = [
+  /* ── AHU sequences ─────────────────────────────────────────────────── */
+  {
+    key: 'ahu_sat_reset',
+    label: 'SAT Reset',
+    ashrae36: '§5.16.2',
+    equipTypes: ['ahu'],
+    requiredCats: ['sat', 'oat', 'sfSpeed'],
+    keyCats: ['sat', 'oat'],
+  },
+  {
+    key: 'ahu_dsp_reset',
+    label: 'DSP Reset',
+    ashrae36: '§5.16.1',
+    equipTypes: ['ahu'],
+    requiredCats: ['dsp', 'sfSpeed', 'sfSpeedCmd'],
+    keyCats: ['dsp', 'sfSpeedCmd'],
+  },
+  {
+    key: 'ahu_economizer',
+    label: 'Economizer',
+    ashrae36: '§5.16.10',
+    equipTypes: ['ahu'],
+    requiredCats: ['oat', 'oaDampCmd', 'mat'],
+    keyCats: ['oaDampCmd'],
+    configFlag: 'hasEconomizer',
+  },
+  {
+    key: 'ahu_freeze_prot',
+    label: 'Freeze Prot.',
+    ashrae36: '§5.16.12',
+    equipTypes: ['ahu'],
+    requiredCats: ['freezeStat', 'mat'],
+    keyCats: ['freezeStat'],
+  },
+  {
+    key: 'ahu_min_oa',
+    label: 'Min OA',
+    ashrae36: '§5.16.6',
+    equipTypes: ['ahu'],
+    requiredCats: ['oaDampCmd', 'sfSpeedCmd'],
+    keyCats: ['oaDampCmd'],
+  },
+  {
+    key: 'ahu_rf_control',
+    label: 'RF Control',
+    ashrae36: '§5.16.5',
+    equipTypes: ['ahu'],
+    requiredCats: ['rfEnable', 'rfSpeedCmd'],
+    keyCats: ['rfEnable'],
+    configFlag: 'hasReturnFan',
+  },
+
+  /* ── VAV sequences ──────────────────────────────────────────────────── */
+  {
+    key: 'vav_zone_temp',
+    label: 'Zone Temp',
+    ashrae36: '§5.6.1',
+    equipTypes: ['vav', 'fpb', 'ddvav'],
+    requiredCats: ['zoneTemp', 'dampCmd', 'coolSP', 'htgSP'],
+    keyCats: ['zoneTemp', 'dampCmd'],
+  },
+  {
+    key: 'vav_reheat',
+    label: 'Reheat',
+    ashrae36: '§5.6.4',
+    equipTypes: ['vav', 'fpb'],
+    requiredCats: ['reheatValve', 'zoneTemp', 'dat'],
+    keyCats: ['reheatValve'],
+    configFlag: 'hasReheat',
+  },
+
+  /* ── HWP sequences ──────────────────────────────────────────────────── */
+  {
+    key: 'hwp_supply_reset',
+    label: 'Supply Temp Reset',
+    ashrae36: '§5.19.1',
+    equipTypes: ['hwp'],
+    requiredCats: ['hwst', 'oat', 'hwSetpoint'],
+    keyCats: ['hwst', 'hwSetpoint'],
+  },
+  {
+    key: 'hwp_pump_dp_reset',
+    label: 'Pump DP Reset',
+    ashrae36: '§5.19.2',
+    equipTypes: ['hwp'],
+    requiredCats: ['hwdp', 'hwPumpSpeed'],
+    keyCats: ['hwdp', 'hwPumpSpeed'],
+  },
+  {
+    key: 'hwp_staging',
+    label: 'Staging',
+    ashrae36: '§5.19.3',
+    equipTypes: ['hwp'],
+    requiredCats: ['boilerStatus', 'boilerEnable', 'hwPumpStatus'],
+    keyCats: ['boilerEnable'],
+  },
+
+  /* ── CHWP sequences ─────────────────────────────────────────────────── */
+  {
+    key: 'chwp_supply_reset',
+    label: 'Supply Temp Reset',
+    ashrae36: '§5.20.1',
+    equipTypes: ['chwp'],
+    requiredCats: ['chwst', 'oat', 'chwSetpoint'],
+    keyCats: ['chwst', 'chwSetpoint'],
+  },
+  {
+    key: 'chwp_pump_dp_reset',
+    label: 'Pump DP Reset',
+    ashrae36: '§5.20.2',
+    equipTypes: ['chwp'],
+    requiredCats: ['chwdp', 'schwpSpeed'],
+    keyCats: ['chwdp', 'schwpSpeed'],
+  },
+  {
+    key: 'chwp_staging',
+    label: 'Staging',
+    ashrae36: '§5.20.3',
+    equipTypes: ['chwp'],
+    requiredCats: ['chillerStatus', 'chillerEnable', 'pchwpStatus'],
+    keyCats: ['chillerEnable'],
+  },
+];
+
+/* ── emComputeSequenceReadiness ─────────────────────────────────────────────
+   For each ASHRAE 36 sequence relevant to this equipment type, check whether
+   all required point categories are present in the compliance data.
+
+   Parameters:
+     equipRow      — a matrix row object (needs .category, .points)
+     complianceData — result of emComputeCompliance(equipRow, {})
+                      Provides coveredPoints[], missingPoints[], naPoints[]
+
+   Returns an object keyed by sequence key:
+     {
+       [seqKey]: {
+         status:        'ready'|'partial'|'blocked'|'na'
+         label:         display label
+         ashrae36:      section reference
+         presentCats:   string[] — category keys that ARE present
+         missingCats:   string[] — category keys that are missing
+         keyCatsMissing: bool — true if any key category is absent
+       }
+     }
+
+   Status logic:
+     'na'      — sequence does not apply to this equipment type, OR
+                 sequence has a configFlag set to false (by default)
+     'ready'   — all requiredCats present
+     'partial' — some requiredCats present, but no key cats missing
+     'blocked' — one or more keyCats are missing                         */
+function emComputeSequenceReadiness(equipRow, complianceData) {
+  var result = {};
+  var category = equipRow && equipRow.category;
+  if (!category) return result;
+
+  // Build a set of covered category keys from complianceData for fast lookup
+  var coveredSet = {};
+  var covered = (complianceData && complianceData.coveredPoints) || [];
+  for (var ci = 0; ci < covered.length; ci++) {
+    coveredSet[covered[ci].categoryKey] = true;
+  }
+
+  for (var si = 0; si < EM_SEQUENCE_DEFS.length; si++) {
+    var seq = EM_SEQUENCE_DEFS[si];
+
+    // Check if this sequence applies to this equipment type
+    var applies = seq.equipTypes.indexOf(category) !== -1;
+    if (!applies) {
+      result[seq.key] = {
+        status: 'na',
+        label: seq.label,
+        ashrae36: seq.ashrae36,
+        presentCats: [],
+        missingCats: seq.requiredCats.slice(),
+        keyCatsMissing: false,
+      };
+      continue;
+    }
+
+    // Check configFlag — if defined and default is false, mark N/A
+    if (seq.configFlag) {
+      var flagDefs = (category && EM_EQUIP_CONFIG_FLAGS[category]) || [];
+      var flagDefault = false;
+      for (var fi = 0; fi < flagDefs.length; fi++) {
+        if (flagDefs[fi].key === seq.configFlag) {
+          flagDefault = flagDefs[fi]['default'];
+          break;
+        }
+      }
+      // If flag defaults false and no override, treat as N/A
+      if (!flagDefault) {
+        result[seq.key] = {
+          status: 'na',
+          label: seq.label,
+          ashrae36: seq.ashrae36,
+          presentCats: [],
+          missingCats: seq.requiredCats.slice(),
+          keyCatsMissing: false,
+        };
+        continue;
+      }
+    }
+
+    // Evaluate which required categories are present and which are missing
+    var presentCats = [];
+    var missingCats = [];
+    var requiredCats = seq.requiredCats || [];
+    for (var ri = 0; ri < requiredCats.length; ri++) {
+      var catKey = requiredCats[ri];
+      if (coveredSet[catKey]) {
+        presentCats.push(catKey);
+      } else {
+        missingCats.push(catKey);
+      }
+    }
+
+    // Check if any key categories are missing
+    var keyCats = seq.keyCats || [];
+    var keyCatsMissing = false;
+    for (var ki = 0; ki < keyCats.length; ki++) {
+      if (!coveredSet[keyCats[ki]]) {
+        keyCatsMissing = true;
+        break;
+      }
+    }
+
+    var status;
+    if (missingCats.length === 0) {
+      status = 'ready';
+    } else if (keyCatsMissing) {
+      status = 'blocked';
+    } else {
+      status = 'partial';
+    }
+
+    result[seq.key] = {
+      status: status,
+      label: seq.label,
+      ashrae36: seq.ashrae36,
+      presentCats: presentCats,
+      missingCats: missingCats,
+      keyCatsMissing: keyCatsMissing,
+    };
+  }
+
+  return result;
+}
+
+/* ── emRenderSequenceCell ───────────────────────────────────────────────────
+   Renders a single <td> for a sequence status column in audit view.
+   Returns an HTML string.
+
+   Status → visual:
+     'ready'   — green  ✓  (all required points present)
+     'partial' — amber  ~  (some points present, no key points missing)
+     'blocked' — red    ✗  (key points missing)
+     'na'      — gray   —  (not applicable)
+
+   Tooltip shows present and missing category keys for quick diagnosis.    */
+function emRenderSequenceCell(seqName, readiness) {
+  var baseStyle =
+    'padding:4px 8px;font-size:11px;border-bottom:1px solid var(--border);' +
+    'border-right:1px solid var(--border);vertical-align:middle;text-align:center;';
+
+  if (!readiness || readiness.status === 'na') {
+    return (
+      '<td style="' +
+      baseStyle +
+      'background:rgba(128,128,128,0.08);color:var(--text3)" title="N/A for this equipment">—</td>'
+    );
+  }
+
+  var status = readiness.status;
+  var presentList = (readiness.presentCats || []).join(', ');
+  var missingList = (readiness.missingCats || []).join(', ');
+  var tooltip = seqName + ' (' + (readiness.ashrae36 || '') + ')';
+  if (presentList) tooltip += '\nPresent: ' + presentList;
+  if (missingList) tooltip += '\nMissing: ' + missingList;
+
+  if (status === 'ready') {
+    return (
+      '<td style="' +
+      baseStyle +
+      'background:rgba(39,174,96,0.15);color:#27ae60;font-size:14px;font-weight:700" ' +
+      'title="' +
+      emHtmlEsc(tooltip) +
+      '">&#10003;</td>'
+    );
+  }
+  if (status === 'partial') {
+    return (
+      '<td style="' +
+      baseStyle +
+      'background:rgba(230,126,34,0.15);color:#e67e22;font-size:14px;font-weight:700" ' +
+      'title="' +
+      emHtmlEsc(tooltip) +
+      '">~</td>'
+    );
+  }
+  if (status === 'blocked') {
+    return (
+      '<td style="' +
+      baseStyle +
+      'background:rgba(192,57,43,0.15);color:#c0392b;font-size:14px;font-weight:700" ' +
+      'title="' +
+      emHtmlEsc(tooltip) +
+      '">&#10007;</td>'
+    );
+  }
+
+  // Fallback — should not reach here
+  return '<td style="' + baseStyle + 'color:var(--text3)">—</td>';
 }
