@@ -46,6 +46,8 @@ function emToggleEditMode(btn) {
     btn.style.background = _emEditMode ? 'var(--accent)' : '';
     btn.style.color = _emEditMode ? '#fff' : '';
   }
+  var deleteAllBtn = document.getElementById('em-delete-all-btn');
+  if (deleteAllBtn) deleteAllBtn.style.display = _emEditMode ? '' : 'none';
   var data = emLoadMatrix(window._emActivePid);
   emRenderTable(data, _emFilters);
 }
@@ -745,8 +747,8 @@ function emRenderMatrix(container, data, pid) {
     '<div style="flex-shrink:0;border-bottom:1px solid var(--border)">' +
     toolbarHtml +
     '</div>' +
+    '<div id="em-upload-inline" style="display:none;flex-shrink:0;border-bottom:1px solid var(--border);padding:16px 20px"></div>' +
     '<div id="em-table-wrap" class="em-table-wrap" style="flex:1;min-height:0"></div>' +
-    '<div id="em-upload-inline" style="display:none;flex-shrink:0;border-top:1px solid var(--border);padding:16px 20px"></div>' +
     '</div>';
 
   emRenderTable(data, _emFilters);
@@ -800,8 +802,12 @@ function emCalcSummaryStats(rows) {
 function emShowUploadPanel(btn) {
   var inline = document.getElementById('em-upload-inline');
   if (!inline) return;
-  var data = emLoadMatrix(window._emActivePid);
   if (inline.style.display === 'none') {
+    // If there is existing data, confirm before overwriting
+    var data = emLoadMatrix(window._emActivePid);
+    if (data && data.rows && data.rows.length > 0) {
+      if (!confirm('This will replace all existing equipment data for this project. Continue?')) return;
+    }
     inline.style.display = 'block';
     emRenderUploadPanel(inline, window._emActivePid, true);
     btn.textContent = 'Cancel';
@@ -871,6 +877,9 @@ function emRenderToolbar(data, pid, projBadge) {
     (projBadge || '') +
     '<button id="em-edit-mode-btn" class="btn btn-ghost btn-sm" onclick="emToggleEditMode(this)" style="height:28px;font-size:11px">✏️ Edit</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleSaveEdits()" style="height:28px;font-size:11px">Save Edits</button>' +
+    '<button id="em-delete-all-btn" class="btn btn-ghost btn-sm" onclick="emDeleteAllRows(\'' +
+    pid +
+    '\')" style="height:28px;font-size:11px;display:none;background:#fee2e2;border-color:#fca5a5;color:#b91c1c">🗑 Delete All</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleExportCSV()" style="height:28px;font-size:11px">Export CSV</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emAddManualRow(\'' +
     pid +
@@ -1142,6 +1151,12 @@ function emRenderTable(data, filters) {
   var pageRows = filtered.slice(pageStart, pageEnd);
 
   var theadCells = '';
+  if (_emEditMode) {
+    theadCells +=
+      '<th style="position:sticky;top:0;background:var(--s2);border-top:3px solid transparent;' +
+      'padding:6px 8px;font-size:10px;font-weight:600;color:var(--text2);white-space:nowrap;' +
+      'width:36px;text-align:center;border-bottom:1px solid var(--border);border-right:1px solid var(--border)"></th>';
+  }
   for (var ci = 0; ci < defs.length; ci++) {
     var d = defs[ci];
     var color = _EM_GROUP_COLORS[d.group] || 'transparent';
@@ -1172,6 +1187,19 @@ function emRenderTable(data, filters) {
     var row = pageRows[ri];
     var rowId = row.id;
     var cells = '';
+    if (_emEditMode) {
+      var delLabel = String(row.building || '') + ', ' + String(row.name || row.id || '');
+      cells +=
+        '<td style="padding:2px 6px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:middle;white-space:nowrap">' +
+        '<button onclick="emDeleteRow(\'' +
+        String(rowId).replace(/'/g, "\\'") +
+        "','" +
+        delLabel.replace(/'/g, "\\'") +
+        '\')" ' +
+        'style="font-size:10px;padding:1px 6px;background:#fee2e2;border:1px solid #fca5a5;color:#b91c1c;border-radius:3px;cursor:pointer;line-height:1.4" ' +
+        'title="Delete this row">&#x2715;</button>' +
+        '</td>';
+    }
     for (var di = 0; di < defs.length; di++) {
       var def = defs[di];
       var editKey = rowId + '::' + def.key;
@@ -1231,14 +1259,16 @@ function emRenderTable(data, filters) {
   var nextDisabled = _emCurrentPage >= totalPages - 1 || useAll;
   var pageLabel = useAll
     ? 'All ' + filtered.length + ' rows'
-    : 'Page ' + (_emCurrentPage + 1) + ' of ' + totalPages + ' (' + filtered.length + ' total rows)';
+    : totalPages === 1
+      ? 'All rows visible (' + filtered.length + ' rows)'
+      : 'Page ' + (_emCurrentPage + 1) + ' of ' + totalPages + ' (' + filtered.length + ' total rows)';
 
   var paginationHtml =
     '<div class="em-pagination" style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--border);background:var(--s1);flex-shrink:0;font-size:11px;color:var(--text2)">' +
     '<button onclick="emPrevPage(' +
     JSON.stringify(pid) +
     ')" ' +
-    (prevDisabled ? 'disabled style="opacity:0.4;cursor:default;' : 'style="cursor:pointer;') +
+    (prevDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
     'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">&#8592; Previous</button>' +
     '<span style="flex:1;text-align:center">' +
     pageLabel +
@@ -1246,7 +1276,7 @@ function emRenderTable(data, filters) {
     '<button onclick="emNextPage(' +
     JSON.stringify(pid) +
     ')" ' +
-    (nextDisabled ? 'disabled style="opacity:0.4;cursor:default;' : 'style="cursor:pointer;') +
+    (nextDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
     'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Next &#8594;</button>' +
     '<span style="color:var(--text3)">Rows per page:</span>' +
     sizeSelectHtml +
@@ -1282,8 +1312,13 @@ function emPrevPage(pid) {
 }
 
 function emNextPage(pid) {
-  _emCurrentPage++;
   var data = emLoadMatrix(pid);
+  var rows = data ? data.rows || [] : [];
+  var filtered = emFilterRows(rows, _emFilters);
+  var totalPages = _emPageSize === 0 ? 1 : Math.ceil(filtered.length / _emPageSize);
+  if (totalPages < 1) totalPages = 1;
+  if (_emCurrentPage >= totalPages - 1) return;
+  _emCurrentPage++;
   emRenderTable(data, _emFilters);
 }
 
@@ -1292,7 +1327,58 @@ function emSetPageSize(pid, val) {
   if (isNaN(_emPageSize)) _emPageSize = EM_PAGE_SIZE;
   _emCurrentPage = 0;
   var data = emLoadMatrix(pid);
+  var rows = data ? data.rows || [] : [];
+  var filtered = emFilterRows(rows, _emFilters);
   emRenderTable(data, _emFilters);
+  if (_emPageSize === 0) {
+    showToast('Showing all ' + filtered.length + ' rows');
+  } else {
+    var showing = Math.min(_emPageSize, filtered.length);
+    showToast('Showing rows 1–' + showing + ' of ' + filtered.length);
+  }
+}
+
+function emDeleteRow(rowId, label) {
+  if (!confirm('Delete this equipment row?\n(' + label + ')')) return;
+  var pid = window._emActivePid;
+  var data = emLoadMatrix(pid);
+  if (!data || !data.rows) return;
+  data.rows = data.rows.filter(function (r) {
+    return String(r.id) !== String(rowId);
+  });
+  // Rebuild buildings list
+  var bldgSeen = {};
+  var buildings = [];
+  for (var i = 0; i < data.rows.length; i++) {
+    if (!bldgSeen[data.rows[i].building]) {
+      buildings.push(data.rows[i].building);
+      bldgSeen[data.rows[i].building] = true;
+    }
+  }
+  data.buildings = buildings;
+  emSaveMatrix(pid, data);
+  emRenderTable(data, _emFilters);
+  showToast('Row deleted');
+}
+
+function emDeleteAllRows(pid) {
+  var data = emLoadMatrix(pid);
+  var rowCount = data && data.rows ? data.rows.length : 0;
+  if (rowCount === 0) {
+    showToast('No equipment data to delete');
+    return;
+  }
+  if (
+    !confirm('Delete ALL equipment data for this project? This will remove ' + rowCount + ' rows and cannot be undone.')
+  )
+    return;
+  data.rows = [];
+  data.buildings = [];
+  data.totalBASPoints = 0;
+  emSaveMatrix(pid, data);
+  var container = document.getElementById('em-proj-wrap');
+  if (container) emRenderMatrix(container, data, pid);
+  showToast('All equipment data deleted');
 }
 
 function emGetCellVal(row, colIdx, edits) {
@@ -1529,17 +1615,12 @@ function emRenderUploadPanel(container, pid, inline) {
     '<div style="font-size:11px;color:var(--text3)">or click to browse — accepts multiple files</div>' +
     '</div>' +
     '<input type="file" id="em-file-input" accept=".csv" multiple style="display:none" onchange="emHandleFileSelect(event)">' +
-    '<div id="em-file-list" style="margin-bottom:12px;display:none">' +
+    '<div id="em-file-list" style="margin-bottom:8px;display:none">' +
     '<div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px">Files queued:</div>' +
     '<ul id="em-file-items" style="list-style:none;padding:0;margin:0;font-size:11px;color:var(--text)"></ul>' +
     '</div>' +
-    '<div id="em-import-row" style="display:none">' +
-    '<button class="btn btn-sm" style="background:var(--accent);color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-weight:600" onclick="emHandleImport(\'' +
-    pid +
-    '\')">' +
-    'Import' +
-    '</button>' +
-    '<span id="em-import-status" style="font-size:11px;color:var(--text3);margin-left:10px"></span>' +
+    '<div id="em-import-status-wrap" style="display:none">' +
+    '<span id="em-import-status" style="font-size:11px;color:var(--text3)"></span>' +
     '</div>' +
     '</div>';
 }
@@ -1577,22 +1658,24 @@ function emQueueFiles(files) {
   }
   var listDiv = document.getElementById('em-file-list');
   var itemsUl = document.getElementById('em-file-items');
-  var importRow = document.getElementById('em-import-row');
-  if (!listDiv || !itemsUl || !importRow) return;
+  if (!listDiv || !itemsUl) return;
   if (_emPendingFiles.length === 0) return;
   listDiv.style.display = 'block';
-  importRow.style.display = 'block';
   var html = '';
   for (var j = 0; j < _emPendingFiles.length; j++) {
     html += '<li style="padding:2px 0;color:var(--text)">' + _emPendingFiles[j].name + '</li>';
   }
   itemsUl.innerHTML = html;
+  // Auto-start import as soon as valid CSVs are queued
+  emHandleImport(window._emActivePid);
 }
 
 function emHandleImport(pid) {
   if (!_emPendingFiles || _emPendingFiles.length === 0) return;
   var statusEl = document.getElementById('em-import-status');
-  if (statusEl) statusEl.textContent = 'Parsing...';
+  var statusWrap = document.getElementById('em-import-status-wrap');
+  if (statusWrap) statusWrap.style.display = 'block';
+  if (statusEl) statusEl.textContent = 'Parsing file 1 of ' + _emPendingFiles.length + '...';
   var allRows = [];
   var detectedFormats = [];
   var totalRawRows = 0; // count of raw CSV data rows across all files, before grouping
@@ -1600,7 +1683,10 @@ function emHandleImport(pid) {
   var done = 0;
   function onFileDone() {
     done++;
-    if (done < pending) return;
+    if (done < pending) {
+      if (statusEl) statusEl.textContent = 'Processing file ' + (done + 1) + ' of ' + pending + '...';
+      return;
+    }
 
     // ── Zero-row warning ──
     if (allRows.length === 0) {
@@ -1619,20 +1705,13 @@ function emHandleImport(pid) {
 
     // Only save to localStorage when a project is selected
     if (pid) {
-      var existingData = emLoadMatrix(pid);
-      var merged = emMergeIntoMatrix(existingData, allRows);
-      // Accumulate total BAS points: add new raw rows to any previously stored count
-      merged.totalBASPoints = (existingData.totalBASPoints || 0) + totalRawRows;
+      var merged = emMergeIntoMatrix({ rows: [], buildings: [] }, allRows);
+      merged.totalBASPoints = totalRawRows;
       emSaveMatrix(pid, merged);
       var container = document.getElementById('em-proj-wrap');
       if (container) emRenderMatrix(container, merged, pid);
       showToast(
-        'Equipment matrix imported: ' +
-          allRows.length +
-          ' rows from ' +
-          merged.buildings.length +
-          ' building' +
-          (merged.buildings.length !== 1 ? 's' : ''),
+        'Imported ' + totalRawRows.toLocaleString() + ' rows from ' + pending + ' file' + (pending !== 1 ? 's' : ''),
       );
     } else {
       // No project — render a preview without saving
