@@ -7995,8 +7995,18 @@ function renderPDFFields(parsed, warnings) {
     PTSRate: 'PTS Rate',
     NaturalGasTherms: 'Natural Gas Therms',
     NaturalGasCCF: 'Natural Gas (CCF)',
+    McfBilled: 'Usage (Mcf)',
     GasCharge: 'Gas Charge',
     FuelAdjustment: 'Fuel Adjustment',
+    DeliveryCharge: 'Delivery Charge',
+    GasSystemReliability: 'Gas System Reliability Surcharge',
+    WeatherNormalization: 'Weather Normalization',
+    WinterEventCost: 'Winter Event Securitized Cost',
+    PreviousBalance: 'Previous Balance',
+    PaymentsReceived: 'Payments Received',
+    StatementDate: 'Statement Date',
+    MeterReadPrevious: 'Meter Read (Previous)',
+    MeterReadCurrent: 'Meter Read (Current)',
     WaterUsage: 'Water Usage (gal)',
     WaterCharge: 'Water Charge',
     WaterProtectionFee: 'Water Protection Fee',
@@ -8057,6 +8067,13 @@ function renderPDFFields(parsed, warnings) {
     'Subtotal',
     'Tax',
     'UnitPrice',
+    // KGS-specific charge fields
+    'DeliveryCharge',
+    'GasSystemReliability',
+    'WeatherNormalization',
+    'WinterEventCost',
+    'PreviousBalance',
+    'PaymentsReceived',
   ]);
   // Fields that MUST display with 4 decimal places (kW, kWh, meter reads per Evergy Billing Details rules)
   const FOURDP_FIELDS = new Set([
@@ -8086,7 +8103,20 @@ function renderPDFFields(parsed, warnings) {
     'Meter2_RKVA',
   ]);
   // Fields that should NOT be number-formatted (show raw value from PDF)
-  const ID_FIELDS = new Set(['AccountNumber', 'MeterNumber', 'InvoiceNumber', 'SaleNumber', 'Commodity', 'FuelType']);
+  // Date fields are included so MM-DD-YY strings don't get parsed as numbers
+  const ID_FIELDS = new Set([
+    'AccountNumber',
+    'MeterNumber',
+    'InvoiceNumber',
+    'SaleNumber',
+    'Commodity',
+    'FuelType',
+    'BillingPeriodStart',
+    'BillingPeriodEnd',
+    'StatementDate',
+    'BillDate',
+    'DeliveryDate',
+  ]);
   // ── Field layouts per commodity (Update 81) ──
   // Pick the layout based on the bill's Commodity / FuelType / UtilityCompany
   // so non-electric bills don't show empty Evergy charge rows.
@@ -8265,26 +8295,69 @@ function renderPDFFields(parsed, warnings) {
     { type: 'charge-line', label: 'Tax', chargeField: 'Tax', rateKey: null },
     { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
   ];
+  // KGS-specific layout: correct field order matching the bill structure
+  // (balance-forward items → line-item charges → total → amount due)
+  const _LAYOUT_KGS = [
+    { section: 'Account Info' },
+    { type: 'wide', fields: ['UtilityCompany'] },
+    { type: 'wide', fields: ['CustomerName'] },
+    { type: 'wide', fields: ['ServiceAddress'] },
+    { type: 'pair', fields: ['AccountNumber', 'MeterNumber'] },
+    { type: 'pair', fields: ['RateSchedule', 'StatementDate'] },
+    { section: 'Billing Period & Meter' },
+    { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
+    { type: 'pair', fields: ['NumberOfDays', 'MeterMultiplier'] },
+    { type: 'pair', fields: ['MeterReadPrevious', 'MeterReadCurrent'] },
+    { type: 'pair', fields: ['McfBilled', 'NaturalGasTherms'] },
+    { section: 'Balance Forward' },
+    { type: 'charge-line', label: 'Previous Balance', chargeField: 'PreviousBalance', rateKey: null },
+    { type: 'charge-line', label: 'Payments Received', chargeField: 'PaymentsReceived', rateKey: null },
+    { section: 'Charges' },
+    { type: 'charge-line', label: 'Service Charge', chargeField: 'CustomerCharge', rateKey: null },
+    { type: 'charge-line', label: 'Delivery Charge', chargeField: 'DeliveryCharge', rateKey: null },
+    {
+      type: 'charge-line',
+      label: 'Gas System Reliability Surcharge',
+      chargeField: 'GasSystemReliability',
+      rateKey: null,
+    },
+    { type: 'charge-line', label: 'Weather Normalization', chargeField: 'WeatherNormalization', rateKey: null },
+    {
+      type: 'charge-line',
+      label: 'Cost of Gas',
+      chargeField: 'GasCharge',
+      qtyField: 'NaturalGasTherms',
+      unit: 'Therms',
+      rateKey: null,
+    },
+    { type: 'charge-line', label: 'Winter Event Securitized Cost', chargeField: 'WinterEventCost', rateKey: null },
+    { type: 'charge-line', label: 'Franchise Fee', chargeField: 'FranchiseFee', rateKey: null },
+    { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
+    { type: 'pair', fields: ['TotalAmountDue'] },
+  ];
   // Detect the commodity for this bill and pick a layout. Priority:
-  // 1. explicit Commodity field (Louisburg split + propane)
-  // 2. FuelType field (propane fallback when Commodity missing)
-  // 3. UtilityCompany name hints (generic gas / spire)
-  // 4. Evergy / electric default
+  // 1. KGS bills — detected by UtilityCompany name (gets dedicated layout with KGS field order)
+  // 2. explicit Commodity field (Louisburg split + propane)
+  // 3. FuelType field (propane fallback when Commodity missing)
+  // 4. UtilityCompany name hints (generic gas / spire)
+  // 5. Evergy / electric default
   const _detectCommodity = (b) => {
+    const uc = (b.UtilityCompany || '').toLowerCase();
+    if (/kansas\s*gas/.test(uc) || b._utilityName === 'Kansas Gas Service') return 'kgs';
     const c = (b.Commodity || '').toLowerCase();
     if (c === 'gas') return 'gas';
     if (c === 'water') return 'water';
     if (c === 'sewer') return 'sewer';
     if (c === 'stormwater') return 'stormwater';
     if (c === 'propane' || b.FuelType) return 'propane';
-    const uc = (b.UtilityCompany || '').toLowerCase();
-    if (/spire|laclede|kansas\s*gas|atmos|black\s*hills/.test(uc)) return 'gas';
+    if (/spire|laclede|atmos|black\s*hills/.test(uc)) return 'gas';
     if (/propane|mfa\s*oil|fuel\s*oil/.test(uc)) return 'propane';
     return 'electric';
   };
   const _COMMODITY_LAYOUTS = {
     electric: _LAYOUT_ELECTRIC,
     gas: _LAYOUT_GAS,
+    kgs: _LAYOUT_KGS,
     water: _LAYOUT_WATER,
     sewer: _LAYOUT_SEWER,
     stormwater: _LAYOUT_STORMWATER,
@@ -8650,7 +8723,8 @@ function renderPDFFields(parsed, warnings) {
         if (kwRate > 0)
           _kwRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/kW</div><input class="ef-input" value="$${kwRate.toFixed(3)}/kW" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
       }
-      if (parsed.Commodity === 'Gas' || _detectCommodity(parsed) === 'gas') {
+      const _detectedComm = _detectCommodity(parsed);
+      if (parsed.Commodity === 'Gas' || _detectedComm === 'gas' || _detectedComm === 'kgs') {
         const gasRate = getExtractedRate(parsed, 'gas');
         if (gasRate > 0) {
           _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/Therm</div><input class="ef-input" value="$${gasRate.toFixed(5)}/Therm" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
@@ -8724,7 +8798,16 @@ function renderPDFFields(parsed, warnings) {
       'SolarCredit',
       'RenewableCharge',
     ],
-    Gas: ['CustomerCharge', 'GasCharge', 'FuelAdjustment'],
+    Gas: [
+      'CustomerCharge',
+      'GasCharge',
+      'FuelAdjustment',
+      'DeliveryCharge',
+      'GasSystemReliability',
+      'WeatherNormalization',
+      'WinterEventCost',
+      'FranchiseFee',
+    ],
     Water: ['WaterCharge', 'WaterProtectionFee'],
     Sewer: ['SewerCharge'],
     Stormwater: ['StormWaterCharge'],

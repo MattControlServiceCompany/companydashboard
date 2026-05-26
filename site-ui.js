@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.25.358';
+  var CH_VERSION = 'v2026.05.25.359';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,25 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.25.359',
+      date: '2026-05-25',
+      title: 'Fix KGS extraction display: field order, Mcf source unit, date rendering, sum validation',
+      features: [
+        {
+          type: 'fix',
+          text: 'KGS bill fields now appear in correct order: account info, billing period/meter, balance forward, charges, totals. Previously charges appeared after totals.',
+        },
+        {
+          type: 'fix',
+          text: 'Usage field labeled "Usage (Mcf)" instead of raw unlabeled number. Date fields (BillingPeriodStart, BillingPeriodEnd, StatementDate) now display correctly instead of showing truncated digits.',
+        },
+        {
+          type: 'fix',
+          text: 'Charge sum validation now includes all KGS charges (DeliveryCharge, GasSystemReliability, WeatherNormalization, WinterEventCost, FranchiseFee). Removed duplicate FuelAdjustment alias that was inflating sums.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.25.358',
       date: '2026-05-25',

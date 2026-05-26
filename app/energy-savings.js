@@ -4970,7 +4970,7 @@ const UTILITY_RULES = [
           WeatherNormalization,
           WinterEventCost,
           FranchiseFee,
-          FuelAdjustment: WeatherNormalization,
+          FuelAdjustment: null,
           TotalCurrentCharges,
           TotalAmountDue,
           PreviousBalance,
