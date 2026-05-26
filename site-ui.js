@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.26.361';
+  var CH_VERSION = 'v2026.05.26.362';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,34 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.26.362',
+      date: '2026-05-26',
+      title:
+        'Fix KGS startRead/endRead alias, equipment matrix empty-state + cell-budget, bill-analysis commodity filter + gas field mapping',
+      features: [
+        {
+          type: 'fix',
+          text: 'KGS bills now correctly populate billing period start/end dates (startRead/endRead). Previously these were blank due to a missing alias in the KGS extraction block.',
+        },
+        {
+          type: 'fix',
+          text: 'Equipment matrix empty-state message now appears correctly when no equipment rows are present in the current project.',
+        },
+        {
+          type: 'fix',
+          text: 'Equipment matrix cell-budget cap calculation corrected to accurately prevent runaway cell counts on edge-case datasets.',
+        },
+        {
+          type: 'fix',
+          text: 'Bill analysis commodity dropdown filter now correctly filters the bill list to show only bills of the selected commodity.',
+        },
+        {
+          type: 'fix',
+          text: 'KGS gas field mapping corrected in bill analysis so all charge fields (DeliveryCharge, GasSystemReliability, etc.) display with correct labels.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.26.361',
       date: '2026-05-26',

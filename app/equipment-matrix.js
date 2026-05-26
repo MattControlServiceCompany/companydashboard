@@ -1051,8 +1051,10 @@ function emRenderTable(data, filters) {
   var dynColsToShow = _emShowAllDynCols ? allDynKeys : allDynKeys.slice(0, EM_DYN_COL_LIMIT);
 
   // Safety check: if projected cell count per page is still too large, reduce further.
-  // pageRows is not yet sliced here, so estimate using _emPageSize (or filtered.length for "All").
-  var _estRowsPerPage = _emPageSize === 0 ? filtered.length : Math.min(_emPageSize, filtered.length);
+  // Cap _estRowsPerPage at EM_PAGE_SIZE for budget calculation — the budget was designed around
+  // page size, not total row count. When "All" rows mode is active with a large dataset,
+  // using filtered.length would make cellBudget go negative and zero out all dynamic columns.
+  var _estRowsPerPage = Math.min(_emPageSize === 0 ? EM_PAGE_SIZE : _emPageSize, filtered.length);
   var projectedCells = _estRowsPerPage * (defs.length + dynColsToShow.length);
   if (projectedCells > 10000 && !_emShowAllDynCols) {
     // Calculate how many dyn cols fit within the 10,000-cell budget
@@ -1060,6 +1062,11 @@ function emRenderTable(data, filters) {
     var safeDynCount = _estRowsPerPage > 0 ? Math.floor(cellBudget / _estRowsPerPage) : 0;
     safeDynCount = Math.max(0, Math.min(safeDynCount, dynColsToShow.length));
     dynColsToShow = dynColsToShow.slice(0, safeDynCount);
+  }
+  // Guard: "Show All Columns" + "All Rows" with a very large dataset can freeze the browser.
+  // If the true projected cell count (using actual row count) would be extreme, ignore _emShowAllDynCols.
+  if (_emShowAllDynCols && _emPageSize === 0 && filtered.length * (defs.length + dynColsToShow.length) > 100000) {
+    dynColsToShow = dynColsToShow.slice(0, EM_DYN_COL_LIMIT);
   }
 
   if (!_emHiddenGroups['dynpoint']) {
@@ -1186,7 +1193,7 @@ function emRenderTable(data, filters) {
     tbodyRows =
       '<tr><td colspan="' +
       defs.length +
-      '" style="padding:32px;text-align:center;font-size:12px;color:var(--text3)">No rows match the current filters.</td></tr>';
+      '" style="padding:32px;text-align:center;font-size:12px;color:var(--text2)">No rows match the current filters.</td></tr>';
   }
 
   // ── Pagination bar ──

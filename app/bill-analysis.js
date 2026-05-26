@@ -9501,6 +9501,7 @@ function _closePdfModal(modal, blobUrl) {
 
 /* ── ASSIGN MODAL ── */
 let _assignBillId = null;
+let _assignBillCommodity = '';
 function openAssignModal(billId) {
   _assignBillId = billId;
   document.getElementById('abm-bill-id').value = billId;
@@ -9513,6 +9514,7 @@ function openAssignModal(billId) {
   // Pre-select if already assigned
   const bills = sget('en_pdf_bills', []) || [];
   const bill = bills.find((b) => b.id === billId);
+  _assignBillCommodity = bill?.Commodity || '';
   if (bill?.projId) projSel.value = bill.projId;
   populateAssignBuildings();
   document.getElementById('assignBillModal').classList.add('open');
@@ -9520,6 +9522,7 @@ function openAssignModal(billId) {
 function closeAssignModal() {
   document.getElementById('assignBillModal').classList.remove('open');
   _assignBillId = null;
+  _assignBillCommodity = '';
 }
 function populateAssignBuildings() {
   const pid = parseInt(document.getElementById('abm-proj').value);
@@ -9546,15 +9549,16 @@ function populateAssignMeters() {
   }
   const udProj = getUDProj(pid);
   const bldg = (udProj.buildings || []).find((b) => b.id === bid);
-  const meters = (bldg?.meters || []).filter((m) => m.commodity === 'Electric');
+  const meters = (bldg?.meters || []).filter((m) => !_assignBillCommodity || m.commodity === _assignBillCommodity);
   if (!meters.length) {
-    meterSel.innerHTML = '<option value="">No electric meters in this building</option>';
+    const commLabel = _assignBillCommodity || '';
+    meterSel.innerHTML = `<option value="">No${commLabel ? ' ' + commLabel : ''} meters in this building</option>`;
     return;
   }
   meterSel.innerHTML = meters
     .map(
       (m) =>
-        `<option value="${m.id}">${m.provider || ''} ${m.account ? '#' + m.account : ''} ${m.maddr || ''}</option>`,
+        `<option value="${m.id}">${[m.commodity, m.provider, m.account ? '#' + m.account : '', m.maddr].filter(Boolean).join(' ')}</option>`,
     )
     .join('');
 }
@@ -9652,6 +9656,32 @@ function confirmAssignBill() {
     Meter2_kWh: bill.Meter2_kWh || '',
     Meter2_KW: bill.Meter2_KW || '',
     Meter2_RKVA: bill.Meter2_RKVA || '',
+    // Non-electric commodity fields (matches _saveBillToMatchedMeter mapping)
+    commodity: bill.Commodity || '',
+    naturalGasCCF: bill.NaturalGasCCF || '',
+    naturalGasTherms: bill.NaturalGasTherms || '',
+    therms: pf(bill.NaturalGasTherms) || pf(bill.NaturalGasCCF) || '',
+    thermCost: bill.NaturalGasTherms || bill.NaturalGasCCF ? bill.GasCharge || bill.TotalCurrentCharges || '' : '',
+    gasCharge: bill.GasCharge || '',
+    fuelAdjustment: bill.FuelAdjustment || '',
+    waterUsage: bill.WaterUsage || '',
+    waterCharge: bill.WaterCharge || '',
+    waterProtectionFee: bill.WaterProtectionFee || '',
+    sewerUsage: bill.SewerUsage || '',
+    sewerCharge: bill.SewerCharge || '',
+    stormWaterCharge: bill.StormWaterCharge || '',
+    invoiceNumber: bill.InvoiceNumber || '',
+    saleNumber: bill.SaleNumber || '',
+    deliveryDate: bill.DeliveryDate || '',
+    fuelType: bill.FuelType || '',
+    gallonsDelivered: bill.GallonsDelivered || '',
+    unitPrice: bill.UnitPrice || '',
+    subtotal: bill.Subtotal || '',
+    tax: bill.Tax || '',
+    mcfBilled: bill.McfBilled || null,
+    deliveryCharge: bill.DeliveryCharge || null,
+    gasSystemReliability: bill.GasSystemReliability || null,
+    winterEventCost: bill.WinterEventCost || null,
   };
   if (bill._rates) {
     const cp = {};

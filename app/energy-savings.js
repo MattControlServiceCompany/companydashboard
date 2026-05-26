@@ -4959,6 +4959,12 @@ const UTILITY_RULES = [
           NumberOfDays,
           MeterReadPrevious,
           MeterReadCurrent,
+          StartRead: MeterReadPrevious,
+          EndRead: MeterReadCurrent,
+          ReadDifference:
+            MeterReadCurrent && MeterReadPrevious
+              ? String(parseInt(MeterReadCurrent, 10) - parseInt(MeterReadPrevious, 10))
+              : null,
           MeterMultiplier,
           McfBilled,
           NaturalGasTherms,
