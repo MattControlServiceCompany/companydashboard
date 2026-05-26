@@ -661,6 +661,8 @@ var _emHiddenGroups = {};
 var EM_PAGE_SIZE = 100;
 var _emCurrentPage = 0;
 var _emPageSize = 100;
+var _emShowAllDynCols = false; // when false, limit dynamic point columns to top 20 by frequency
+var EM_DYN_COL_LIMIT = 20; // max dynamic point columns shown by default
 
 function initEquipMatrix(projId) {
   var wrap = document.getElementById('em-proj-wrap');
@@ -701,6 +703,7 @@ function emRenderMatrix(container, data, pid) {
   _emEditMode = false;
   _emCurrentPage = 0;
   _emPageSize = EM_PAGE_SIZE;
+  _emShowAllDynCols = false;
   emInjectMatrixCSS();
 
   var projName = '';
@@ -838,6 +841,13 @@ function emRenderToolbar(data, pid, projBadge) {
     '<label style="' +
     colToggleStyle +
     '"><input type="checkbox" checked onchange="emToggleColGroup(\'controls\',this.checked)" style="margin:0"> Controls</label>' +
+    '<span style="margin-left:8px;border-left:1px solid var(--border);padding-left:8px;display:inline-flex;align-items:center;gap:4px">' +
+    '<span id="em-dyn-col-info" style="font-size:10px;color:var(--text3)"></span>' +
+    '<button id="em-dyn-col-toggle" onclick="emToggleAllDynCols()" ' +
+    'style="font-size:10px;padding:2px 8px;background:var(--s3);border:1px solid var(--border);color:var(--text2);border-radius:3px;cursor:pointer;height:20px;line-height:1">' +
+    'Show All Point Columns' +
+    '</button>' +
+    '</span>' +
     '</div>';
   return (
     '<div style="display:flex;flex-direction:column">' +
@@ -1008,32 +1018,77 @@ function emRenderTable(data, filters) {
   // Collect all unique point names from every row's .points object.
   // Skip keys that are already covered by a mapped live column (e.g. 'satLive') or
   // any standard def key — only raw BACnet point names become dynamic columns.
+  // PERFORMANCE LIMIT: With thousands of BAS points, showing every unique point name
+  // as a column creates hundreds/thousands of columns × 100 rows = tens of thousands of
+  // cells, causing the browser to freeze. Default: show only the top 20 most common
+  // point names. Use the "Show All Columns" toggle to override.
   var existingDefKeys = {};
   for (var ex = 0; ex < defs.length; ex++) existingDefKeys[defs[ex].key] = true;
   // Also skip the short EM_POINT_MAP col names (satLive, ratLive, etc.)
   for (var pm = 0; pm < EM_POINT_MAP.length; pm++) existingDefKeys[EM_POINT_MAP[pm].col] = true;
 
-  var dynPointOrder = [];
-  var dynPointSeen = {};
+  // Count frequency of each raw point name across all rows
+  var dynPointFreq = {};
   for (var rr = 0; rr < rows.length; rr++) {
     var pts = rows[rr].points || {};
     for (var ptKey in pts) {
-      if (!dynPointSeen[ptKey] && !existingDefKeys[ptKey]) {
-        dynPointSeen[ptKey] = true;
-        dynPointOrder.push(ptKey);
+      if (!existingDefKeys[ptKey]) {
+        dynPointFreq[ptKey] = (dynPointFreq[ptKey] || 0) + 1;
       }
     }
   }
-  dynPointOrder.sort();
-  for (var dp = 0; dp < dynPointOrder.length; dp++) {
-    var dpKey = dynPointOrder[dp];
-    if (!_emHiddenGroups['dynpoint']) {
-      defs.push({ key: dpKey, label: dpKey, group: 'dynpoint', width: 120, isDynPoint: true });
+  var allDynKeys = Object.keys(dynPointFreq);
+  var totalUniqueDynCols = allDynKeys.length;
+
+  // Sort by frequency descending, then alphabetically for ties
+  allDynKeys.sort(function (a, b) {
+    var diff = dynPointFreq[b] - dynPointFreq[a];
+    if (diff !== 0) return diff;
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+
+  // Apply column limit unless user toggled "Show All"
+  var dynColsToShow = _emShowAllDynCols ? allDynKeys : allDynKeys.slice(0, EM_DYN_COL_LIMIT);
+
+  // Safety check: if projected cell count per page is still too large, reduce further.
+  // pageRows is not yet sliced here, so estimate using _emPageSize (or filtered.length for "All").
+  var _estRowsPerPage = _emPageSize === 0 ? filtered.length : Math.min(_emPageSize, filtered.length);
+  var projectedCells = _estRowsPerPage * (defs.length + dynColsToShow.length);
+  if (projectedCells > 10000 && !_emShowAllDynCols) {
+    // Calculate how many dyn cols fit within the 10,000-cell budget
+    var cellBudget = Math.max(0, 10000 - _estRowsPerPage * defs.length);
+    var safeDynCount = _estRowsPerPage > 0 ? Math.floor(cellBudget / _estRowsPerPage) : 0;
+    safeDynCount = Math.max(0, Math.min(safeDynCount, dynColsToShow.length));
+    dynColsToShow = dynColsToShow.slice(0, safeDynCount);
+  }
+
+  if (!_emHiddenGroups['dynpoint']) {
+    for (var dp = 0; dp < dynColsToShow.length; dp++) {
+      defs.push({ key: dynColsToShow[dp], label: dynColsToShow[dp], group: 'dynpoint', width: 120, isDynPoint: true });
     }
   }
 
   if (!_EM_GROUP_COLORS['dynpoint']) {
     _EM_GROUP_COLORS['dynpoint'] = '#7f8c8d';
+  }
+
+  // Update the dyn-col info label and toggle button state to reflect current counts
+  var dynInfoEl = document.getElementById('em-dyn-col-info');
+  if (dynInfoEl) {
+    if (totalUniqueDynCols === 0) {
+      dynInfoEl.textContent = 'No raw point columns';
+    } else if (_emShowAllDynCols) {
+      dynInfoEl.textContent = 'Showing all ' + dynColsToShow.length + ' point columns';
+    } else {
+      dynInfoEl.textContent = 'Showing ' + dynColsToShow.length + ' of ' + totalUniqueDynCols + ' point columns';
+    }
+  }
+  var dynToggleBtn = document.getElementById('em-dyn-col-toggle');
+  if (dynToggleBtn) {
+    dynToggleBtn.textContent = _emShowAllDynCols ? 'Limit to Top ' + EM_DYN_COL_LIMIT : 'Show All Point Columns';
+    dynToggleBtn.style.background = _emShowAllDynCols ? 'var(--accent)' : 'var(--s3)';
+    dynToggleBtn.style.color = _emShowAllDynCols ? '#fff' : 'var(--text2)';
+    dynToggleBtn.style.display = totalUniqueDynCols === 0 ? 'none' : '';
   }
 
   var checkCols = EM_CHECK_COLS_14;
@@ -1301,6 +1356,20 @@ function emToggleColGroup(group, visible) {
   _EM_COL_DEFS = null;
   _emSortCol = null;
   _emCurrentPage = 0;
+  var data = emLoadMatrix(window._emActivePid);
+  emRenderTable(data, _emFilters);
+}
+
+function emToggleAllDynCols() {
+  _emShowAllDynCols = !_emShowAllDynCols;
+  _emSortCol = null;
+  _emCurrentPage = 0;
+  var btn = document.getElementById('em-dyn-col-toggle');
+  if (btn) {
+    btn.textContent = _emShowAllDynCols ? 'Limit to Top ' + EM_DYN_COL_LIMIT : 'Show All Point Columns';
+    btn.style.background = _emShowAllDynCols ? 'var(--accent)' : 'var(--s3)';
+    btn.style.color = _emShowAllDynCols ? '#fff' : 'var(--text2)';
+  }
   var data = emLoadMatrix(window._emActivePid);
   emRenderTable(data, _emFilters);
 }

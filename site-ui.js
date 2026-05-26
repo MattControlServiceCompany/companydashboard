@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.25.360';
+  var CH_VERSION = 'v2026.05.26.361';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,25 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.26.361',
+      date: '2026-05-26',
+      title: 'Equipment Matrix render fix: limit dynamic columns to top 20, add safety cell budget',
+      features: [
+        {
+          type: 'fix',
+          text: 'Equipment Matrix now limits dynamic point columns to the top 20 by frequency, preventing browser freeze on BAS imports with 2,700+ rows and hundreds of unique point names.',
+        },
+        {
+          type: 'fix',
+          text: 'Safety cell-budget cap further reduces columns if estimated cells per page exceeds 10,000, even after the top-20 limit.',
+        },
+        {
+          type: 'feature',
+          text: 'Added "Show All Point Columns" / "Limit to Top 20" toggle in the column-toggles bar so power users can see all columns when needed.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.25.360',
       date: '2026-05-25',
