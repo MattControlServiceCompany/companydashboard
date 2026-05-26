@@ -9774,3 +9774,1375 @@ window.addEventListener('resize', () => {
     if (viewEl && viewEl.classList.contains('active')) _setUDLayoutHeight(id);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ASHRAE GUIDELINE 36 AUDIT REPORT & SERVICE PROPOSAL
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * ASHRAE36_GAP_DESCRIPTIONS — plain-language descriptions for each check
+ * column key from the equipment matrix.
+ * Each entry: { short, impact, plain }
+ */
+var ASHRAE36_GAP_DESCRIPTIONS = {
+  sat: {
+    short: 'Supply air temperature sensor',
+    impact: '3–8% heating & cooling savings',
+    plain:
+      'A supply air temperature sensor tells the system exactly how warm or cold the air leaving the air handler is. Without it, the system cannot reset temperature setpoints based on outside conditions — a key ASHRAE 36 energy-saving strategy.',
+  },
+  rat: {
+    short: 'Return air temperature sensor',
+    impact: '2–5% fan and cooling savings',
+    plain:
+      'The return air sensor measures the temperature of air coming back from the occupied spaces. Combined with supply air temperature, it lets the BAS calculate how effectively the system is conditioning the building and adjust accordingly.',
+  },
+  mat: {
+    short: 'Mixed air temperature sensor',
+    impact: '3–6% cooling savings',
+    plain:
+      'The mixed air sensor measures the blend of outdoor and return air before it reaches heating and cooling coils. It is essential for economizer control — the ability to use free outdoor air for cooling — which is one of the biggest energy-saving opportunities in commercial HVAC.',
+  },
+  oat: {
+    short: 'Outdoor air temperature sensor',
+    impact: '4–10% combined savings',
+    plain:
+      'Outdoor air temperature is used by nearly every ASHRAE 36 sequence: reset schedules, economizer control, warm-up/cool-down, and heating/cooling staging. Without a reliable OAT reading, the system cannot adapt its operation to changing weather.',
+  },
+  dsp: {
+    short: 'Duct static pressure sensor',
+    impact: '15–30% fan energy savings',
+    plain:
+      'Duct static pressure control is required for variable-speed fan drives. When static pressure is measured and reset based on actual zone needs, fan speed drops significantly during mild weather — often cutting fan energy use by 20–30%.',
+  },
+  sfVfd: {
+    short: 'Supply fan VFD',
+    impact: '20–40% fan energy savings',
+    plain:
+      'A variable frequency drive (VFD) on the supply fan allows fan speed to vary with actual building load. At 80% speed, a fan uses roughly half the energy it uses at full speed. This is one of the highest-return hardware investments in building controls.',
+  },
+  satReset: {
+    short: 'Supply air temperature reset sequence',
+    impact: '5–12% heating & cooling savings',
+    plain:
+      'Supply air temperature reset adjusts how warm or cold the air handler delivers air based on what zones actually need. In mild weather, the system delivers less extreme temperatures, reducing the energy needed to heat or cool the air.',
+  },
+  dspReset: {
+    short: 'Duct static pressure reset sequence',
+    impact: '10–25% fan energy savings',
+    plain:
+      'Static pressure reset lowers the duct pressure target when most zones have their dampers wide open — meaning the system can deliver the right amount of air at lower fan speed. This sequence alone can cut fan energy use by 15% or more.',
+  },
+  economizer: {
+    short: 'Economizer control sequence',
+    impact: '5–15% cooling savings',
+    plain:
+      'Economizer control uses outdoor air for free cooling whenever conditions allow — typically when outdoor air is cooler and drier than return air. Without a properly programmed economizer, mechanical cooling runs when it does not need to.',
+  },
+  demandCtrl: {
+    short: 'CO2-based demand control ventilation',
+    impact: '5–10% fan and cooling savings',
+    plain:
+      'Demand control ventilation uses CO2 sensors to bring in only as much outdoor air as occupancy actually requires. Without it, the system must heat and cool full design outdoor air even when rooms are nearly empty.',
+  },
+  optStart: {
+    short: 'Optimal start/stop sequence',
+    impact: '3–8% overall savings',
+    plain:
+      'Optimal start calculates the shortest warmup or cooldown period needed to reach comfort before occupancy, then delays startup accordingly. Without it, systems often start 1–2 hours earlier than necessary, wasting energy conditioning an empty building.',
+  },
+  hwReset: {
+    short: 'Hot water supply temperature reset',
+    impact: '5–15% boiler savings',
+    plain:
+      'Hot water reset lowers the boiler supply temperature setpoint when outdoor air is warmer, reducing heat loss and improving boiler efficiency. Modern condensing boilers can achieve efficiency gains of 3–5% for every 10°F reduction in return water temperature.',
+  },
+  chwReset: {
+    short: 'Chilled water supply temperature reset',
+    impact: '3–10% chiller savings',
+    plain:
+      'Chilled water reset raises the chilled water setpoint when the building load is light, allowing the chiller to operate more efficiently. Chillers are significantly more efficient at higher leaving water temperatures.',
+  },
+  leadLag: {
+    short: 'Lead/lag equipment rotation',
+    impact: '2–5% equipment life extension',
+    plain:
+      'Lead/lag rotation alternates which pump or boiler serves as the primary unit, distributing runtime evenly across equipment. This extends equipment life and ensures all units are exercised regularly to prevent seizing.',
+  },
+  zoneCoolSp: {
+    short: 'Zone cooling setpoint',
+    impact: 'Baseline requirement',
+    plain:
+      'Zone cooling setpoints define the target temperature for cooling in each space. Properly programmed setpoints with appropriate deadbands between heating and cooling are required for ASHRAE 36 compliance and prevent simultaneous heating and cooling.',
+  },
+  zoneHtgSp: {
+    short: 'Zone heating setpoint',
+    impact: 'Baseline requirement',
+    plain:
+      'Zone heating setpoints define the minimum temperature for each space. ASHRAE 36 requires setbacks during unoccupied periods and prohibits simultaneous heating and cooling within the deadband range.',
+  },
+  discFlow: {
+    short: 'Discharge airflow measurement',
+    impact: 'Required for VAV minimum ventilation',
+    plain:
+      'Airflow measurement at terminal units is required by ASHRAE 62.1 for minimum ventilation compliance and enables the static pressure reset sequences that cut fan energy. Without measured airflow, the system cannot verify that spaces are receiving adequate ventilation.',
+  },
+  hwSupTemp: {
+    short: 'Hot water supply temperature sensor',
+    impact: 'Required for HW reset',
+    plain:
+      'The hot water supply temperature sensor is essential for monitoring boiler output and enabling hot water temperature reset sequences. Without it, the system cannot verify that distribution temperatures are appropriate for building load conditions.',
+  },
+  hwRetTemp: {
+    short: 'Hot water return temperature sensor',
+    impact: 'Required for delta-T monitoring',
+    plain:
+      'Return temperature monitoring allows the BAS to calculate the temperature differential across the heating system. Low delta-T is a common source of inefficiency in hot water systems and can indicate pump, balancing, or coil issues.',
+  },
+  hwDiffPres: {
+    short: 'Hot water differential pressure sensor',
+    impact: '10–20% pump energy savings',
+    plain:
+      'Differential pressure measurement enables pump speed control: the pump slows when fewer zones call for heat. Without it, the pump runs at full speed regardless of load, wasting significant energy during partial-load conditions.',
+  },
+  chwSupTemp: {
+    short: 'Chilled water supply temperature sensor',
+    impact: 'Required for CHW reset',
+    plain:
+      'The chilled water supply temperature sensor verifies chiller output and enables the temperature reset sequences that improve chiller efficiency during mild weather.',
+  },
+  chwRetTemp: {
+    short: 'Chilled water return temperature sensor',
+    impact: 'Required for delta-T monitoring',
+    plain:
+      'Return temperature monitoring reveals chilled water delta-T, a key indicator of plant efficiency. Low delta-T on a chilled water system often signals coil or valve issues that cause the chiller to work harder than necessary.',
+  },
+  chwDiffPres: {
+    short: 'Chilled water differential pressure sensor',
+    impact: '10–20% pump energy savings',
+    plain:
+      'Chilled water differential pressure control allows pump speed to be reduced when building load is light. This is particularly valuable because chilled water pump energy scales with the cube of speed.',
+  },
+  cwSupTemp: {
+    short: 'Condenser water supply temperature sensor',
+    impact: '3–8% chiller savings',
+    plain:
+      'Condenser water supply temperature monitoring is required for optimal chiller and cooling tower operation, including condenser water temperature reset to improve chiller efficiency.',
+  },
+  ctFanSpeed: {
+    short: 'Cooling tower fan speed control',
+    impact: '30–50% tower fan savings',
+    plain:
+      'Variable-speed cooling tower fans can reduce tower fan energy by 30–50% during mild weather. Tower fans are required to deliver specific condenser water temperatures, and variable speed allows them to achieve this at the minimum possible energy input.',
+  },
+};
+
+/**
+ * ASHRAE36_SECTIONS — defines available report sections for the audit and proposal.
+ * Mirrors the REPORT_SECTIONS pattern.
+ */
+var ASHRAE36_SECTIONS = {
+  audit: [
+    { key: 'cover', label: 'Cover Page', group: 'Report', defaultOn: true },
+    { key: 'executive', label: 'Executive Summary', group: 'Report', defaultOn: true },
+    { key: 'building', label: 'Per-Building Detail', group: 'Report', defaultOn: true },
+    { key: 'recommendations', label: 'Recommendations', group: 'Report', defaultOn: true },
+  ],
+  proposal: [
+    { key: 'proposalCover', label: 'Cover Page', group: 'Proposal', defaultOn: true },
+    { key: 'proposalScope', label: 'Scope of Work', group: 'Proposal', defaultOn: true },
+    { key: 'proposalOutcomes', label: 'Expected Outcomes', group: 'Proposal', defaultOn: true },
+  ],
+};
+
+// ─── collectASHRAE36Data ───────────────────────────────────────────────────
+/**
+ * Reads equipment matrix data and computes compliance scores for all buildings.
+ * Returns a structured data object consumed by the page template functions.
+ *
+ * @param {number|string} projId
+ * @returns {object|null}
+ */
+function collectASHRAE36Data(projId) {
+  if (typeof emLoadMatrix !== 'function') return null;
+  var matData = emLoadMatrix(projId);
+  if (!matData || !matData.rows || !matData.rows.length) return null;
+
+  var proj = (typeof projects !== 'undefined' ? projects : []).find(function (x) {
+    return x.id === projId;
+  });
+  var projName = proj ? proj.client || proj.name || 'Project' : 'Project';
+  var today = new Date();
+  var dateStr = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  // Group rows by building
+  var bldgMap = {};
+  matData.rows.forEach(function (row) {
+    var bName = row.building || 'Unknown Building';
+    if (!bldgMap[bName]) bldgMap[bName] = [];
+    bldgMap[bName].push(row);
+  });
+
+  // Auditable equipment categories (excludes 'other')
+  var AUDITABLE = ['ahu', 'vav', 'fpb', 'ddvav', 'hwp', 'chwp', 'ct'];
+  var CAT_LABELS = {
+    ahu: 'Air Handling Unit',
+    vav: 'VAV Terminal',
+    fpb: 'Fan-Powered Terminal',
+    ddvav: 'Dual-Duct Terminal',
+    hwp: 'Hot Water Plant',
+    chwp: 'Chilled Water Plant',
+    ct: 'Cooling Tower',
+  };
+
+  // Compute per-building compliance
+  var buildingsData = [];
+  var portfolioGapCounts = {}; // key -> count across all buildings
+
+  Object.keys(bldgMap).forEach(function (bName) {
+    var rows = bldgMap[bName];
+    var auditableRows = rows.filter(function (r) {
+      return AUDITABLE.indexOf(r.category) !== -1;
+    });
+
+    if (!auditableRows.length) return;
+
+    // Per-equipment compliance via emComputeCompliance
+    var equipResults = [];
+    var totalPointsRequired = 0;
+    var totalPointsMatched = 0;
+    var totalSeqRequired = 0;
+    var totalSeqMatched = 0;
+    var bldgGaps = {};
+
+    auditableRows.forEach(function (row) {
+      if (typeof emComputeCompliance !== 'function') return;
+      var flags = typeof emLoadEquipConfigFlags === 'function' ? emLoadEquipConfigFlags(projId, row.id) : {};
+      var result = emComputeCompliance(row, flags);
+
+      // Identify which gaps are sequence-related vs. point-related
+      var SEQUENCE_KEYS = [
+        'satReset',
+        'dspReset',
+        'economizer',
+        'demandCtrl',
+        'optStart',
+        'hwReset',
+        'chwReset',
+        'leadLag',
+      ];
+      var missingSeq = result.missingPoints.filter(function (p) {
+        return SEQUENCE_KEYS.indexOf(p.categoryKey) !== -1;
+      });
+      var missingPts = result.missingPoints.filter(function (p) {
+        return SEQUENCE_KEYS.indexOf(p.categoryKey) === -1;
+      });
+
+      totalPointsRequired += result.totalRequired - missingSeq.length;
+      totalPointsMatched += result.totalMatched;
+      totalSeqRequired +=
+        missingSeq.length +
+        result.coveredPoints.filter(function (p) {
+          return SEQUENCE_KEYS.indexOf(p.categoryKey) !== -1;
+        }).length;
+      totalSeqMatched += result.coveredPoints.filter(function (p) {
+        return SEQUENCE_KEYS.indexOf(p.categoryKey) !== -1;
+      }).length;
+
+      // Accumulate gap counts for portfolio summary
+      result.missingPoints.forEach(function (mp) {
+        portfolioGapCounts[mp.categoryKey] = (portfolioGapCounts[mp.categoryKey] || 0) + 1;
+        bldgGaps[mp.categoryKey] = (bldgGaps[mp.categoryKey] || 0) + 1;
+      });
+
+      equipResults.push({
+        id: row.id,
+        name: row.equipName || row.name || 'Unknown',
+        category: row.category,
+        categoryLabel: CAT_LABELS[row.category] || row.category,
+        location: row.location || '',
+        compliance: result,
+      });
+    });
+
+    // Calculate point and sequence coverage percentages
+    var pointPct = totalPointsRequired > 0 ? Math.round((totalPointsMatched / totalPointsRequired) * 100) : 0;
+    var seqPct = totalSeqRequired > 0 ? Math.round((totalSeqMatched / totalSeqRequired) * 100) : 0;
+    var composite = Math.round(pointPct * 0.4 + seqPct * 0.6);
+
+    // Status band
+    var status = composite >= 75 ? 'green' : composite >= 50 ? 'amber' : 'red';
+    var statusColor = composite >= 75 ? 'var(--rpt-green)' : composite >= 50 ? 'var(--rpt-orange)' : 'var(--rpt-red)';
+    var statusLabel = composite >= 75 ? 'Good' : composite >= 50 ? 'Needs Attention' : 'Significant Gaps';
+
+    // Top gaps for this building
+    var topGaps = Object.keys(bldgGaps)
+      .sort(function (a, b) {
+        return bldgGaps[b] - bldgGaps[a];
+      })
+      .slice(0, 5)
+      .map(function (key) {
+        return {
+          key: key,
+          count: bldgGaps[key],
+          desc: ASHRAE36_GAP_DESCRIPTIONS[key] || { short: key, impact: '', plain: '' },
+        };
+      });
+
+    // Equipment type inventory
+    var equipCounts = {};
+    auditableRows.forEach(function (r) {
+      equipCounts[r.category] = (equipCounts[r.category] || 0) + 1;
+    });
+
+    buildingsData.push({
+      name: bName,
+      equipCount: auditableRows.length,
+      equipCounts: equipCounts,
+      equipResults: equipResults,
+      pointPct: pointPct,
+      seqPct: seqPct,
+      composite: composite,
+      status: status,
+      statusColor: statusColor,
+      statusLabel: statusLabel,
+      topGaps: topGaps,
+    });
+  });
+
+  if (!buildingsData.length) return null;
+
+  // Portfolio-level top gaps (most common missing checks across all buildings)
+  var portfolioTopGaps = Object.keys(portfolioGapCounts)
+    .sort(function (a, b) {
+      return portfolioGapCounts[b] - portfolioGapCounts[a];
+    })
+    .slice(0, 8)
+    .map(function (key) {
+      return {
+        key: key,
+        count: portfolioGapCounts[key],
+        buildingCount: buildingsData.filter(function (b) {
+          return b.topGaps.some(function (g) {
+            return g.key === key;
+          });
+        }).length,
+        desc: ASHRAE36_GAP_DESCRIPTIONS[key] || { short: key, impact: '', plain: '' },
+      };
+    });
+
+  // Portfolio averages
+  var portfolioComposite = buildingsData.length
+    ? Math.round(
+        buildingsData.reduce(function (s, b) {
+          return s + b.composite;
+        }, 0) / buildingsData.length,
+      )
+    : 0;
+  var portfolioPointPct = buildingsData.length
+    ? Math.round(
+        buildingsData.reduce(function (s, b) {
+          return s + b.pointPct;
+        }, 0) / buildingsData.length,
+      )
+    : 0;
+  var portfolioSeqPct = buildingsData.length
+    ? Math.round(
+        buildingsData.reduce(function (s, b) {
+          return s + b.seqPct;
+        }, 0) / buildingsData.length,
+      )
+    : 0;
+  var greenCount = buildingsData.filter(function (b) {
+    return b.status === 'green';
+  }).length;
+  var amberCount = buildingsData.filter(function (b) {
+    return b.status === 'amber';
+  }).length;
+  var redCount = buildingsData.filter(function (b) {
+    return b.status === 'red';
+  }).length;
+  var portfolioStatus = portfolioComposite >= 75 ? 'green' : portfolioComposite >= 50 ? 'amber' : 'red';
+
+  return {
+    project: { name: projName, id: projId },
+    date: dateStr,
+    buildings: buildingsData,
+    portfolio: {
+      composite: portfolioComposite,
+      pointPct: portfolioPointPct,
+      seqPct: portfolioSeqPct,
+      status: portfolioStatus,
+      greenCount: greenCount,
+      amberCount: amberCount,
+      redCount: redCount,
+      topGaps: portfolioTopGaps,
+      totalBuildings: buildingsData.length,
+      totalEquip: buildingsData.reduce(function (s, b) {
+        return s + b.equipCount;
+      }, 0),
+    },
+  };
+}
+
+// ─── Gauge ring SVG helper ─────────────────────────────────────────────────
+function _a36GaugeSVG(pct, color, label, size) {
+  size = size || 90;
+  var r = size * 0.38;
+  var cx = size / 2;
+  var cy = size / 2;
+  var circumference = 2 * Math.PI * r;
+  var filled = (Math.min(100, Math.max(0, pct)) / 100) * circumference;
+  var empty = circumference - filled;
+  return (
+    '<svg width="' +
+    size +
+    '" height="' +
+    size +
+    '" viewBox="0 0 ' +
+    size +
+    ' ' +
+    size +
+    '" style="display:block">' +
+    '<circle cx="' +
+    cx +
+    '" cy="' +
+    cy +
+    '" r="' +
+    r +
+    '" fill="none" stroke="var(--rpt-rule)" stroke-width="' +
+    size * 0.09 +
+    '"/>' +
+    '<circle cx="' +
+    cx +
+    '" cy="' +
+    cy +
+    '" r="' +
+    r +
+    '" fill="none" stroke="' +
+    color +
+    '" stroke-width="' +
+    size * 0.09 +
+    '"' +
+    ' stroke-dasharray="' +
+    filled.toFixed(2) +
+    ' ' +
+    empty.toFixed(2) +
+    '"' +
+    ' stroke-linecap="round" transform="rotate(-90 ' +
+    cx +
+    ' ' +
+    cy +
+    ')"/>' +
+    '<text x="' +
+    cx +
+    '" y="' +
+    (cy + size * 0.065) +
+    '" text-anchor="middle" font-size="' +
+    size * 0.22 +
+    '" font-weight="700" fill="' +
+    color +
+    '" font-family="Arial,sans-serif">' +
+    pct +
+    '%</text>' +
+    '<text x="' +
+    cx +
+    '" y="' +
+    (cy + size * 0.22) +
+    '" text-anchor="middle" font-size="' +
+    size * 0.115 +
+    '" fill="var(--rpt-page-text)" font-family="Arial,sans-serif">' +
+    label +
+    '</text>' +
+    '</svg>'
+  );
+}
+
+// ─── Status chip helper ────────────────────────────────────────────────────
+function _a36StatusChip(status) {
+  var color = status === 'green' ? 'var(--rpt-green)' : status === 'amber' ? 'var(--rpt-orange)' : 'var(--rpt-red)';
+  var bg = status === 'green' ? '#f0fdf4' : status === 'amber' ? '#fff7ed' : '#fef2f2';
+  var label = status === 'green' ? 'Good' : status === 'amber' ? 'Needs Attention' : 'Significant Gaps';
+  return (
+    '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;color:' +
+    color +
+    ';background:' +
+    bg +
+    ';border:1px solid ' +
+    color +
+    '">' +
+    label +
+    '</span>'
+  );
+}
+
+// ─── rptPageASHRAE36Cover ─────────────────────────────────────────────────
+/**
+ * Cover page: three gauge rings (overall/sensor/sequence), one-paragraph finding.
+ * Hero page — no interior header, uses CSC letterhead.
+ */
+function rptPageASHRAE36Cover(n, d) {
+  var p = d.portfolio;
+  var color = p.composite >= 75 ? 'var(--rpt-green)' : p.composite >= 50 ? 'var(--rpt-orange)' : 'var(--rpt-red)';
+  var statusWord = p.composite >= 75 ? 'strong' : p.composite >= 50 ? 'moderate' : 'limited';
+  var readinessWord =
+    p.composite >= 75 ? 'largely compliant' : p.composite >= 50 ? 'partially compliant' : 'not yet compliant';
+
+  // One-paragraph finding
+  var finding =
+    'This ASHRAE Guideline 36 compliance audit evaluated <strong>' +
+    p.totalEquip +
+    ' pieces of HVAC equipment</strong> across <strong>' +
+    p.totalBuildings +
+    ' buildings</strong> at ' +
+    d.project.name +
+    '. ' +
+    'The portfolio achieved an overall compliance score of <strong style="color:' +
+    color +
+    '">' +
+    p.composite +
+    '%</strong>, ' +
+    'indicating <strong>' +
+    statusWord +
+    '</strong> readiness for Guideline 36 sequences. ' +
+    'Point coverage (sensors and actuators) averaged <strong>' +
+    p.pointPct +
+    '%</strong> and ' +
+    'sequence programming coverage averaged <strong>' +
+    p.seqPct +
+    '%</strong>. ' +
+    'Of the ' +
+    p.totalBuildings +
+    ' buildings audited, ' +
+    p.greenCount +
+    ' are ' +
+    readinessWord +
+    ', ' +
+    p.amberCount +
+    ' have moderate gaps, and ' +
+    p.redCount +
+    ' have significant gaps requiring attention. ' +
+    'The sections that follow detail findings by building and provide a prioritized list of recommended upgrades.';
+
+  var gauges =
+    '<div style="display:flex;justify-content:center;gap:36px;margin:24px 0 20px">' +
+    '<div style="text-align:center">' +
+    _a36GaugeSVG(p.composite, color, 'Overall', 110) +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Composite Score</div></div>' +
+    '<div style="text-align:center">' +
+    _a36GaugeSVG(p.pointPct, 'var(--rpt-blue)', 'Points', 110) +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sensor Coverage</div></div>' +
+    '<div style="text-align:center">' +
+    _a36GaugeSVG(p.seqPct, '#7c3aed', 'Sequences', 110) +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sequence Coverage</div></div>' +
+    '</div>';
+
+  var bodyHTML =
+    '<div style="padding:20px 48px 16px">' +
+    '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">ASHRAE Guideline 36 Compliance Audit</div>' +
+    '<div style="font-size:15px;color:var(--rpt-page-text);margin-bottom:2px">' +
+    d.project.name +
+    '</div>' +
+    '<div style="font-size:12px;color:var(--rpt-page-text);margin-bottom:20px">' +
+    d.date +
+    '</div>' +
+    gauges +
+    '<div style="background:#f8fafc;border-left:3px solid ' +
+    color +
+    ';padding:12px 14px;border-radius:0 4px 4px 0;font-size:12px;line-height:1.6;color:var(--rpt-page-text)">' +
+    finding +
+    '</div>' +
+    '<div style="display:flex;gap:16px;margin-top:16px">' +
+    '<div style="flex:1;background:#f8fafc;border-radius:4px;padding:10px 12px;text-align:center">' +
+    '<div style="font-size:20px;font-weight:700;color:var(--rpt-green)">' +
+    p.greenCount +
+    '</div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text)">Buildings — Good</div>' +
+    '</div>' +
+    '<div style="flex:1;background:#f8fafc;border-radius:4px;padding:10px 12px;text-align:center">' +
+    '<div style="font-size:20px;font-weight:700;color:var(--rpt-orange)">' +
+    p.amberCount +
+    '</div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text)">Buildings — Needs Attention</div>' +
+    '</div>' +
+    '<div style="flex:1;background:#f8fafc;border-radius:4px;padding:10px 12px;text-align:center">' +
+    '<div style="font-size:20px;font-weight:700;color:var(--rpt-red)">' +
+    p.redCount +
+    '</div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text)">Buildings — Significant Gaps</div>' +
+    '</div>' +
+    '<div style="flex:1;background:#f8fafc;border-radius:4px;padding:10px 12px;text-align:center">' +
+    '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
+    p.totalEquip +
+    '</div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text)">Equipment Units Audited</div>' +
+    '</div>' +
+    '</div>' +
+    '</div>';
+
+  // Use rptPage with a data-like object for footer formatting
+  var fakeData = { project: { client: d.project.name }, period: { label: d.date, reportDate: null } };
+  return rptPage(n, 'ASHRAE 36 Audit — Cover', bodyHTML, {
+    hero: true,
+    data: fakeData,
+    label: 'Page ' + n + ' — ASHRAE 36 Cover',
+  });
+}
+
+// ─── rptPageASHRAE36Executive ─────────────────────────────────────────────
+/**
+ * Executive summary: portfolio stats, building status table, key finding callout.
+ */
+function rptPageASHRAE36Executive(n, d) {
+  var p = d.portfolio;
+  var fakeData = { project: { client: d.project.name }, period: { label: d.date, reportDate: null } };
+
+  // Building status table
+  var tableRows = '';
+  d.buildings.forEach(function (b) {
+    var bar =
+      '<div style="display:flex;align-items:center;gap:4px">' +
+      '<div style="width:' +
+      b.composite +
+      'px;max-width:120px;height:8px;background:' +
+      b.statusColor +
+      ';border-radius:2px;min-width:2px"></div>' +
+      '<span style="font-size:10px;color:var(--rpt-page-text)">' +
+      b.composite +
+      '%</span>' +
+      '</div>';
+    tableRows +=
+      '<tr>' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' +
+      b.name +
+      '</td>' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' +
+      b.equipCount +
+      '</td>' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' +
+      b.pointPct +
+      '%</td>' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);text-align:center">' +
+      b.seqPct +
+      '%</td>' +
+      '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-rule)">' +
+      bar +
+      '</td>' +
+      '<td style="padding:5px 8px;border-bottom:1px solid var(--rpt-rule)">' +
+      _a36StatusChip(b.status) +
+      '</td>' +
+      '</tr>';
+  });
+
+  var thStyle =
+    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left';
+  var table =
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:16px">' +
+    '<thead><tr>' +
+    '<th style="' +
+    thStyle +
+    '">Building</th>' +
+    '<th style="' +
+    thStyle +
+    ';text-align:center">Equipment</th>' +
+    '<th style="' +
+    thStyle +
+    ';text-align:center">Sensors</th>' +
+    '<th style="' +
+    thStyle +
+    ';text-align:center">Sequences</th>' +
+    '<th style="' +
+    thStyle +
+    '">Score</th>' +
+    '<th style="' +
+    thStyle +
+    '">Status</th>' +
+    '</tr></thead>' +
+    '<tbody>' +
+    tableRows +
+    '</tbody>' +
+    '</table>';
+
+  // Key finding callout
+  var topGap = p.topGaps[0];
+  var callout = '';
+  if (topGap) {
+    callout =
+      '<div style="background:#fffbeb;border-left:3px solid var(--rpt-orange);padding:10px 12px;border-radius:0 4px 4px 0;margin-bottom:14px">' +
+      '<div style="font-size:11px;font-weight:700;color:var(--rpt-orange);margin-bottom:4px">Most Common Gap Across Portfolio</div>' +
+      '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-text);margin-bottom:2px">' +
+      (ASHRAE36_GAP_DESCRIPTIONS[topGap.key] ? ASHRAE36_GAP_DESCRIPTIONS[topGap.key].short : topGap.key) +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--rpt-page-text)">' +
+      (ASHRAE36_GAP_DESCRIPTIONS[topGap.key] ? ASHRAE36_GAP_DESCRIPTIONS[topGap.key].plain : '') +
+      '</div>' +
+      '</div>';
+  }
+
+  // Portfolio stat bar
+  var statBar =
+    '<div style="display:flex;gap:12px;margin-bottom:16px">' +
+    '<div style="flex:1;background:#f8fafc;border-radius:4px;padding:8px 10px;text-align:center;border:1px solid var(--rpt-rule)">' +
+    '<div style="font-size:18px;font-weight:700;color:' +
+    (p.composite >= 75 ? 'var(--rpt-green)' : p.composite >= 50 ? 'var(--rpt-orange)' : 'var(--rpt-red)') +
+    '">' +
+    p.composite +
+    '%</div>' +
+    '<div style="font-size:9px;color:var(--rpt-page-text);text-transform:uppercase;letter-spacing:0.04em">Portfolio Score</div>' +
+    '</div>' +
+    '<div style="flex:1;background:#f8fafc;border-radius:4px;padding:8px 10px;text-align:center;border:1px solid var(--rpt-rule)">' +
+    '<div style="font-size:18px;font-weight:700;color:var(--rpt-blue)">' +
+    p.pointPct +
+    '%</div>' +
+    '<div style="font-size:9px;color:var(--rpt-page-text);text-transform:uppercase;letter-spacing:0.04em">Sensor Coverage</div>' +
+    '</div>' +
+    '<div style="flex:1;background:#f8fafc;border-radius:4px;padding:8px 10px;text-align:center;border:1px solid var(--rpt-rule)">' +
+    '<div style="font-size:18px;font-weight:700;color:#7c3aed">' +
+    p.seqPct +
+    '%</div>' +
+    '<div style="font-size:9px;color:var(--rpt-page-text);text-transform:uppercase;letter-spacing:0.04em">Sequence Coverage</div>' +
+    '</div>' +
+    '<div style="flex:1;background:#f8fafc;border-radius:4px;padding:8px 10px;text-align:center;border:1px solid var(--rpt-rule)">' +
+    '<div style="font-size:18px;font-weight:700;color:var(--rpt-page-text)">' +
+    p.totalEquip +
+    '</div>' +
+    '<div style="font-size:9px;color:var(--rpt-page-text);text-transform:uppercase;letter-spacing:0.04em">Equipment Audited</div>' +
+    '</div>' +
+    '</div>';
+
+  var bodyHTML = statBar + callout + table;
+  return rptPage(n, 'ASHRAE 36 Audit — Executive Summary', bodyHTML, {
+    data: fakeData,
+    label: 'Page ' + n + ' — Executive Summary',
+  });
+}
+
+// ─── rptPageASHRAE36Building ──────────────────────────────────────────────
+/**
+ * Per-building detail page: equipment overview, what's working, gaps with
+ * plain-language explanations.
+ * @param {number} n - Page number
+ * @param {object} d - Data from collectASHRAE36Data
+ * @param {object} building - Single building entry from d.buildings
+ */
+function rptPageASHRAE36Building(n, d, building) {
+  var b = building;
+  var fakeData = { project: { client: d.project.name }, period: { label: d.date, reportDate: null } };
+
+  // Equipment type breakdown
+  var equipBreakdown = Object.keys(b.equipCounts)
+    .map(function (cat) {
+      var CAT_LABELS = {
+        ahu: 'Air Handlers',
+        vav: 'VAV Terminals',
+        fpb: 'Fan-Powered Terminals',
+        ddvav: 'Dual-Duct Terminals',
+        hwp: 'Hot Water Plant',
+        chwp: 'Chilled Water Plant',
+        ct: 'Cooling Towers',
+      };
+      return (
+        '<span style="font-size:10px;padding:2px 8px;background:#f1f5f9;border-radius:10px;color:var(--rpt-page-text);margin-right:4px">' +
+        b.equipCounts[cat] +
+        ' ' +
+        (CAT_LABELS[cat] || cat) +
+        '</span>'
+      );
+    })
+    .join('');
+
+  // Coverage gauges
+  var gauges =
+    '<div style="display:flex;gap:20px;margin-bottom:12px;align-items:center">' +
+    '<div style="text-align:center">' +
+    _a36GaugeSVG(b.composite, b.statusColor, 'Overall', 70) +
+    '</div>' +
+    '<div style="text-align:center">' +
+    _a36GaugeSVG(b.pointPct, 'var(--rpt-blue)', 'Sensors', 70) +
+    '</div>' +
+    '<div style="text-align:center">' +
+    _a36GaugeSVG(b.seqPct, '#7c3aed', 'Sequences', 70) +
+    '</div>' +
+    '<div style="flex:1">' +
+    '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-text);margin-bottom:4px">' +
+    b.name +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:6px">' +
+    b.equipCount +
+    ' equipment units audited</div>' +
+    '<div style="margin-bottom:4px">' +
+    equipBreakdown +
+    '</div>' +
+    _a36StatusChip(b.status) +
+    '</div>' +
+    '</div>';
+
+  // What's working (covered points summary)
+  var workingItems = [];
+  b.equipResults.forEach(function (eq) {
+    if (eq.compliance.coveredPoints && eq.compliance.coveredPoints.length) {
+      eq.compliance.coveredPoints.forEach(function (cp) {
+        if (workingItems.indexOf(cp.categoryLabel) === -1) workingItems.push(cp.categoryLabel);
+      });
+    }
+  });
+  var workingHTML = '';
+  if (workingItems.length) {
+    workingHTML =
+      '<div style="margin-bottom:12px">' +
+      '<div style="font-size:11px;font-weight:700;color:var(--rpt-green);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.04em">What Is Working</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:4px">' +
+      workingItems
+        .map(function (w) {
+          return (
+            '<span style="font-size:10px;padding:2px 8px;background:#f0fdf4;border:1px solid var(--rpt-green);border-radius:10px;color:var(--rpt-green)">' +
+            w +
+            '</span>'
+          );
+        })
+        .join('') +
+      '</div></div>';
+  }
+
+  // Gaps section
+  var gapsHTML = '';
+  if (b.topGaps.length) {
+    var gapRows = b.topGaps
+      .map(function (gap) {
+        var desc = gap.desc || {};
+        return (
+          '<div style="margin-bottom:10px;padding:8px 10px;background:#fef9f0;border-left:3px solid var(--rpt-orange);border-radius:0 4px 4px 0">' +
+          '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">' +
+          '<span style="font-size:11px;font-weight:700;color:var(--rpt-page-text)">' +
+          (desc.short || gap.key) +
+          '</span>' +
+          '<span style="font-size:10px;color:var(--rpt-orange)">' +
+          (desc.impact || '') +
+          '</span>' +
+          '</div>' +
+          '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.5">' +
+          (desc.plain || '') +
+          '</div>' +
+          '</div>'
+        );
+      })
+      .join('');
+    gapsHTML =
+      '<div>' +
+      '<div style="font-size:11px;font-weight:700;color:var(--rpt-orange);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Top Gaps — ' +
+      b.name +
+      '</div>' +
+      gapRows +
+      '</div>';
+  } else {
+    gapsHTML =
+      '<div style="font-size:11px;color:var(--rpt-green);padding:8px">No significant gaps identified for this building.</div>';
+  }
+
+  var bodyHTML = gauges + workingHTML + gapsHTML;
+  return rptPage(n, 'ASHRAE 36 Audit — ' + b.name, bodyHTML, { data: fakeData, label: 'Page ' + n + ' — ' + b.name });
+}
+
+// ─── rptPageASHRAE36Recommendations ──────────────────────────────────────
+/**
+ * Recommendations page: ranked gaps by impact, plain descriptions, next step.
+ */
+function rptPageASHRAE36Recommendations(n, d) {
+  var p = d.portfolio;
+  var fakeData = { project: { client: d.project.name }, period: { label: d.date, reportDate: null } };
+
+  var recRows = p.topGaps
+    .map(function (gap, idx) {
+      var desc = gap.desc || {};
+      var affectedList = d.buildings
+        .filter(function (b) {
+          return b.topGaps.some(function (g) {
+            return g.key === gap.key;
+          });
+        })
+        .map(function (b) {
+          return b.name;
+        });
+      var affectedStr =
+        affectedList.length > 3
+          ? affectedList.slice(0, 3).join(', ') + ' + ' + (affectedList.length - 3) + ' more'
+          : affectedList.join(', ');
+      return (
+        '<tr>' +
+        '<td style="padding:6px 8px;font-size:11px;font-weight:700;color:var(--rpt-blue);border-bottom:1px solid var(--rpt-rule);vertical-align:top">' +
+        (idx + 1) +
+        '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid var(--rpt-rule);vertical-align:top">' +
+        '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);margin-bottom:2px">' +
+        (desc.short || gap.key) +
+        '</div>' +
+        '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.5">' +
+        (desc.plain || '') +
+        '</div>' +
+        '</td>' +
+        '<td style="padding:6px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border-bottom:1px solid var(--rpt-rule);vertical-align:top;white-space:nowrap">' +
+        (desc.impact || '—') +
+        '</td>' +
+        '<td style="padding:6px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);vertical-align:top">' +
+        gap.count +
+        ' units' +
+        (affectedStr ? '<br><span style="color:var(--rpt-page-text);opacity:0.7">' + affectedStr + '</span>' : '') +
+        '</td>' +
+        '</tr>'
+      );
+    })
+    .join('');
+
+  var thStyle =
+    'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left';
+  var table =
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:16px">' +
+    '<thead><tr>' +
+    '<th style="' +
+    thStyle +
+    ';width:24px">#</th>' +
+    '<th style="' +
+    thStyle +
+    '">Recommendation</th>' +
+    '<th style="' +
+    thStyle +
+    '">Typical Savings</th>' +
+    '<th style="' +
+    thStyle +
+    '">Affected Units</th>' +
+    '</tr></thead>' +
+    '<tbody>' +
+    recRows +
+    '</tbody>' +
+    '</table>';
+
+  var nextStep =
+    '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:4px;padding:10px 12px">' +
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">What Happens Next</div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
+    'Control Service Company can provide a detailed scope of work and fixed-fee proposal to address these gaps through BAS programming and hardware upgrades. ' +
+    'Typical projects are phased to minimize disruption and are designed to begin generating energy savings within the first 90 days. ' +
+    'Contact your CSC representative to review these findings and discuss next steps.' +
+    '</div>' +
+    '</div>';
+
+  var bodyHTML = table + nextStep;
+  return rptPage(n, 'ASHRAE 36 Audit — Recommendations', bodyHTML, {
+    data: fakeData,
+    label: 'Page ' + n + ' — Recommendations',
+  });
+}
+
+// ─── rptPageASHRAE36ProposalCover ─────────────────────────────────────────
+/**
+ * Proposal cover page with table of contents.
+ */
+function rptPageASHRAE36ProposalCover(n, d) {
+  var p = d.portfolio;
+  var fakeData = { project: { client: d.project.name }, period: { label: d.date, reportDate: null } };
+  var color = p.composite >= 75 ? 'var(--rpt-green)' : p.composite >= 50 ? 'var(--rpt-orange)' : 'var(--rpt-red)';
+
+  var toc =
+    '<div style="background:#f8fafc;border-radius:4px;padding:12px 16px;margin-bottom:16px">' +
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.04em">Contents</div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);line-height:2">' +
+    '<div>1. Executive Summary</div>' +
+    '<div>2. Scope of Work — Phase 1: Critical Gaps</div>' +
+    '<div>3. Scope of Work — Phase 2: Sequence Programming</div>' +
+    '<div>4. Expected Outcomes &amp; Timeline</div>' +
+    '<div>5. Next Steps</div>' +
+    '</div>' +
+    '</div>';
+
+  var intro =
+    '<div style="font-size:12px;color:var(--rpt-page-text);line-height:1.7;margin-bottom:16px">' +
+    'Based on our ASHRAE Guideline 36 compliance audit of <strong>' +
+    d.project.name +
+    '</strong>, ' +
+    'Control Service Company is pleased to present this service proposal. ' +
+    'Our audit identified an overall compliance score of <strong style="color:' +
+    color +
+    '">' +
+    p.composite +
+    '%</strong> across ' +
+    p.totalBuildings +
+    ' buildings and ' +
+    p.totalEquip +
+    ' equipment units. ' +
+    'This proposal outlines the programming and hardware upgrades needed to bring your facility to full Guideline 36 compliance, ' +
+    'maximizing energy savings and occupant comfort.' +
+    '</div>';
+
+  var bodyHTML =
+    '<div style="padding:16px 0">' +
+    '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">ASHRAE Guideline 36</div>' +
+    '<div style="font-size:17px;font-weight:600;color:var(--rpt-page-text);margin-bottom:4px">BAS Programming &amp; Upgrade Proposal</div>' +
+    '<div style="font-size:13px;color:var(--rpt-page-text);margin-bottom:20px">' +
+    d.project.name +
+    ' &nbsp;|&nbsp; ' +
+    d.date +
+    '</div>' +
+    '<div style="height:2px;background:var(--rpt-blue);margin-bottom:20px"></div>' +
+    intro +
+    toc +
+    '<div style="font-size:10px;color:var(--rpt-page-text);border-top:1px solid var(--rpt-rule);padding-top:8px">' +
+    'Prepared by Control Service Company &nbsp;&bull;&nbsp; Building Automation &amp; Energy Services' +
+    '</div>' +
+    '</div>';
+
+  return rptPage(n, 'ASHRAE 36 Proposal — Cover', bodyHTML, {
+    hero: true,
+    data: fakeData,
+    label: 'Page ' + n + ' — Proposal Cover',
+  });
+}
+
+// ─── rptPageASHRAE36ProposalScope ─────────────────────────────────────────
+/**
+ * Phased scope of work auto-populated from audit findings.
+ */
+function rptPageASHRAE36ProposalScope(n, d) {
+  var p = d.portfolio;
+  var fakeData = { project: { client: d.project.name }, period: { label: d.date, reportDate: null } };
+
+  // Phase 1: Hardware/sensor gaps (non-sequence keys)
+  var SEQUENCE_KEYS = [
+    'satReset',
+    'dspReset',
+    'economizer',
+    'demandCtrl',
+    'optStart',
+    'hwReset',
+    'chwReset',
+    'leadLag',
+  ];
+  var phase1Gaps = p.topGaps.filter(function (g) {
+    return SEQUENCE_KEYS.indexOf(g.key) === -1;
+  });
+  var phase2Gaps = p.topGaps.filter(function (g) {
+    return SEQUENCE_KEYS.indexOf(g.key) !== -1;
+  });
+
+  function scopeRow(gap) {
+    var desc = gap.desc || {};
+    return (
+      '<tr>' +
+      '<td style="padding:5px 8px;font-size:11px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' +
+      (desc.short || gap.key) +
+      '</td>' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule)">' +
+      gap.count +
+      ' units affected</td>' +
+      '<td style="padding:5px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border-bottom:1px solid var(--rpt-rule)">' +
+      (desc.impact || '—') +
+      '</td>' +
+      '</tr>'
+    );
+  }
+
+  var thStyle =
+    'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left';
+
+  var ph1HTML = phase1Gaps.length
+    ? '<table style="width:100%;border-collapse:collapse;margin-bottom:4px">' +
+      '<thead><tr><th style="' +
+      thStyle +
+      '">Work Item</th><th style="' +
+      thStyle +
+      '">Scope</th><th style="' +
+      thStyle +
+      '">Typical Savings</th></tr></thead>' +
+      '<tbody>' +
+      phase1Gaps.map(scopeRow).join('') +
+      '</tbody></table>'
+    : '<div style="font-size:11px;color:var(--rpt-green);padding:6px">No hardware gaps identified — all required sensors and actuators appear to be present.</div>';
+
+  var ph2HTML = phase2Gaps.length
+    ? '<table style="width:100%;border-collapse:collapse;margin-bottom:4px">' +
+      '<thead><tr><th style="' +
+      thStyle +
+      '">Sequence</th><th style="' +
+      thStyle +
+      '">Scope</th><th style="' +
+      thStyle +
+      '">Typical Savings</th></tr></thead>' +
+      '<tbody>' +
+      phase2Gaps.map(scopeRow).join('') +
+      '</tbody></table>'
+    : '<div style="font-size:11px;color:var(--rpt-green);padding:6px">No sequence programming gaps identified — all key ASHRAE 36 sequences appear to be active.</div>';
+
+  var bodyHTML =
+    '<div style="margin-bottom:14px">' +
+    '<div style="font-size:12px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px;border-bottom:2px solid var(--rpt-blue);padding-bottom:3px">Phase 1 — Hardware &amp; Sensor Upgrades</div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Installation of missing sensors and actuators required for Guideline 36 compliance. This phase establishes the hardware foundation for sequence programming.</div>' +
+    ph1HTML +
+    '</div>' +
+    '<div style="margin-bottom:14px">' +
+    '<div style="font-size:12px;font-weight:700;color:#7c3aed;margin-bottom:6px;border-bottom:2px solid #7c3aed;padding-bottom:3px">Phase 2 — BAS Sequence Programming</div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:8px">Programming and commissioning of ASHRAE Guideline 36 control sequences in the building automation system. Sequences are tested and verified with occupied building conditions.</div>' +
+    ph2HTML +
+    '</div>';
+
+  return rptPage(n, 'ASHRAE 36 Proposal — Scope of Work', bodyHTML, {
+    data: fakeData,
+    label: 'Page ' + n + ' — Scope of Work',
+  });
+}
+
+// ─── rptPageASHRAE36ProposalOutcomes ──────────────────────────────────────
+/**
+ * Benefits, timeline, and next step for the proposal.
+ */
+function rptPageASHRAE36ProposalOutcomes(n, d) {
+  var p = d.portfolio;
+  var fakeData = { project: { client: d.project.name }, period: { label: d.date, reportDate: null } };
+
+  var outcomes =
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">' +
+    _proposalOutcomeCard(
+      'Energy Cost Reduction',
+      'ASHRAE 36 sequences typically reduce HVAC energy use by 15–30% compared to conventional control strategies, primarily through fan speed optimization, temperature reset, and economizer improvements.',
+      'var(--rpt-green)',
+    ) +
+    _proposalOutcomeCard(
+      'Improved Occupant Comfort',
+      'Reset sequences and demand control ventilation deliver the right conditions when spaces are occupied and reduce over-conditioning during unoccupied periods.',
+      'var(--rpt-blue)',
+    ) +
+    _proposalOutcomeCard(
+      'Longer Equipment Life',
+      'Lead/lag rotation and demand-based staging reduce runtime on individual pieces of equipment, extending service life and reducing maintenance frequency.',
+      '#7c3aed',
+    ) +
+    _proposalOutcomeCard(
+      'Code Compliance',
+      'ASHRAE Guideline 36 sequences support compliance with ASHRAE 90.1 and 62.1 requirements for energy efficiency and ventilation — increasingly required by local authorities.',
+      'var(--rpt-orange)',
+    ) +
+    '</div>';
+
+  var timeline =
+    '<div style="background:#f8fafc;border-radius:4px;padding:12px 14px;margin-bottom:14px">' +
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.04em">Typical Implementation Timeline</div>' +
+    '<div style="display:flex;gap:0">' +
+    _timelineStep('Weeks 1–2', 'Site Assessment', 'Final point verification and hardware list confirmation') +
+    _timelineStep(
+      'Weeks 3–6',
+      'Hardware Installation',
+      'Sensor and actuator installation with minimal operational impact',
+    ) +
+    _timelineStep('Weeks 7–10', 'Programming', 'BAS sequence programming and initial testing') +
+    _timelineStep(
+      'Weeks 11–12',
+      'Commissioning',
+      'Functional testing and savings verification with occupied conditions',
+    ) +
+    '</div>' +
+    '</div>';
+
+  var nextStep =
+    '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:4px;padding:12px 14px">' +
+    '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">Ready to Move Forward?</div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
+    'Contact your Control Service Company representative to schedule a pre-proposal walkthrough, finalize scope, and receive a fixed-fee project cost. ' +
+    'We can typically begin hardware procurement within two weeks of contract execution.' +
+    '</div>' +
+    '</div>';
+
+  var bodyHTML = outcomes + timeline + nextStep;
+  return rptPage(n, 'ASHRAE 36 Proposal — Expected Outcomes', bodyHTML, {
+    data: fakeData,
+    label: 'Page ' + n + ' — Expected Outcomes',
+  });
+}
+
+function _proposalOutcomeCard(title, body, color) {
+  return (
+    '<div style="background:#f8fafc;border-radius:4px;padding:10px 12px;border-top:3px solid ' +
+    color +
+    '">' +
+    '<div style="font-size:11px;font-weight:700;color:' +
+    color +
+    ';margin-bottom:4px">' +
+    title +
+    '</div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.5">' +
+    body +
+    '</div>' +
+    '</div>'
+  );
+}
+
+function _timelineStep(period, title, desc) {
+  return (
+    '<div style="flex:1;text-align:center;padding:6px 4px">' +
+    '<div style="font-size:9px;color:var(--rpt-blue);font-weight:700;margin-bottom:2px">' +
+    period +
+    '</div>' +
+    '<div style="font-size:10px;font-weight:700;color:var(--rpt-page-text);margin-bottom:2px">' +
+    title +
+    '</div>' +
+    '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.4">' +
+    desc +
+    '</div>' +
+    '</div>'
+  );
+}
+
+// ─── generateASHRAE36AuditHTML ────────────────────────────────────────────
+/**
+ * Assembles all selected audit report pages into an HTML string.
+ * @param {object} data - Output from collectASHRAE36Data()
+ * @param {object} selectedSections - Which sections to include
+ * @returns {string}
+ */
+function generateASHRAE36AuditHTML(data, selectedSections) {
+  var pages = [];
+  var pageNum = 1;
+  var s = selectedSections || {};
+
+  function _tagA36Section(html, key) {
+    return html.replace('<div class="rpt-page"', '<div class="rpt-page" data-section="' + key + '"');
+  }
+
+  if (s.cover !== false) pages.push(_tagA36Section(rptPageASHRAE36Cover(pageNum++, data), 'cover'));
+  if (s.executive !== false) pages.push(_tagA36Section(rptPageASHRAE36Executive(pageNum++, data), 'executive'));
+
+  if (s.building !== false) {
+    data.buildings.forEach(function (b) {
+      pages.push(_tagA36Section(rptPageASHRAE36Building(pageNum++, data, b), 'building'));
+    });
+  }
+
+  if (s.recommendations !== false)
+    pages.push(_tagA36Section(rptPageASHRAE36Recommendations(pageNum++, data), 'recommendations'));
+
+  return pages.join('\n');
+}
+
+// ─── generateASHRAE36ProposalHTML ────────────────────────────────────────
+/**
+ * Assembles all selected proposal pages into an HTML string.
+ * @param {object} data - Output from collectASHRAE36Data()
+ * @param {object} selectedSections - Which sections to include
+ * @returns {string}
+ */
+function generateASHRAE36ProposalHTML(data, selectedSections) {
+  var pages = [];
+  var pageNum = 1;
+  var s = selectedSections || {};
+
+  function _tagA36Section(html, key) {
+    return html.replace('<div class="rpt-page"', '<div class="rpt-page" data-section="' + key + '"');
+  }
+
+  if (s.proposalCover !== false)
+    pages.push(_tagA36Section(rptPageASHRAE36ProposalCover(pageNum++, data), 'proposalCover'));
+  if (s.proposalScope !== false)
+    pages.push(_tagA36Section(rptPageASHRAE36ProposalScope(pageNum++, data), 'proposalScope'));
+  if (s.proposalOutcomes !== false)
+    pages.push(_tagA36Section(rptPageASHRAE36ProposalOutcomes(pageNum++, data), 'proposalOutcomes'));
+
+  return pages.join('\n');
+}
+
+// ─── openASHRAE36ReportModal ──────────────────────────────────────────────
+/**
+ * Opens the ASHRAE 36 report/proposal generation modal.
+ * @param {number|string} projId
+ * @param {'audit'|'proposal'} type
+ */
+function openASHRAE36ReportModal(projId, type) {
+  var modal = document.getElementById('ashrae36ReportModal');
+  if (!modal) {
+    showToast('ASHRAE 36 report modal not found', 'error');
+    return;
+  }
+
+  var title = type === 'proposal' ? 'Generate ASHRAE 36 Service Proposal' : 'Generate ASHRAE 36 Audit Report';
+  var titleEl = modal.querySelector('.modal-title');
+  if (titleEl) titleEl.textContent = title;
+
+  var sections = ASHRAE36_SECTIONS[type] || ASHRAE36_SECTIONS.audit;
+
+  var bodyHTML =
+    '<div style="margin-bottom:14px">' +
+    '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Report Date</div>' +
+    '<input type="date" id="a36ReportDate" value="' +
+    new Date().toISOString().slice(0, 10) +
+    '" style="padding:6px 10px;border:1px solid var(--s3);border-radius:6px;background:var(--s1);color:var(--text);font-size:13px;width:180px">' +
+    '</div>' +
+    '<div style="margin-bottom:14px">' +
+    '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px">Sections to Include</div>';
+
+  var lastGroup = null;
+  sections.forEach(function (sec) {
+    if (sec.group !== lastGroup) {
+      if (lastGroup !== null) bodyHTML += '</div>';
+      bodyHTML +=
+        '<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;margin-top:8px">' +
+        sec.group +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:3px">';
+      lastGroup = sec.group;
+    }
+    bodyHTML +=
+      '<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;background:var(--s2);cursor:pointer">' +
+      '<input type="checkbox" ' +
+      (sec.defaultOn !== false ? 'checked' : '') +
+      ' class="a36SecCheck" data-key="' +
+      sec.key +
+      '" style="accent-color:var(--em);width:14px;height:14px">' +
+      '<span style="font-size:12px;color:var(--text)">' +
+      sec.label +
+      '</span>' +
+      '</label>';
+  });
+  bodyHTML += '</div></div>';
+
+  var bodyEl = modal.querySelector('#ashrae36ReportModalBody');
+  if (bodyEl) bodyEl.innerHTML = bodyHTML;
+
+  // Store context for generate button
+  modal._a36ProjId = projId;
+  modal._a36Type = type;
+
+  modal.classList.add('open');
+}
+window.openASHRAE36ReportModal = openASHRAE36ReportModal;
+
+/**
+ * generateASHRAE36Preview — called by the modal Generate button.
+ */
+function generateASHRAE36Preview() {
+  var modal = document.getElementById('ashrae36ReportModal');
+  if (!modal) return;
+  var projId = modal._a36ProjId;
+  var type = modal._a36Type;
+
+  var data = collectASHRAE36Data(projId);
+  if (!data) {
+    showToast('No equipment matrix data found. Import a BAS point list on the Equipment tab first.', 'error');
+    return;
+  }
+
+  // Build selected sections object
+  var selectedSections = {};
+  var checks = modal.querySelectorAll('.a36SecCheck');
+  checks.forEach(function (cb) {
+    selectedSections[cb.dataset.key] = cb.checked;
+  });
+
+  var html =
+    type === 'proposal'
+      ? generateASHRAE36ProposalHTML(data, selectedSections)
+      : generateASHRAE36AuditHTML(data, selectedSections);
+
+  modal.classList.remove('open');
+  var reportTitle =
+    type === 'proposal'
+      ? data.project.name + ' — ASHRAE 36 Service Proposal'
+      : data.project.name + ' — ASHRAE 36 Audit Report';
+  showReportOverlay(html, reportTitle);
+}
+window.generateASHRAE36Preview = generateASHRAE36Preview;

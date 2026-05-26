@@ -965,6 +965,15 @@ function emRenderToolbar(data, pid, projBadge) {
     '<button class="btn btn-sm" onclick="emCopyFromProject(\'' +
     pid +
     '\')" style="height:28px;font-size:11px">📋 Copy From Project</button>' +
+    '<span style="width:1px;height:20px;background:var(--border);display:inline-block;margin:0 4px;vertical-align:middle"></span>' +
+    (data.rows && data.rows.length > 0
+      ? '<button class="btn btn-sm" onclick="openASHRAE36ReportModal(\'' +
+        pid +
+        '\',\'audit\')" style="height:28px;font-size:11px;background:var(--rpt-blue,#1e40af);color:#fff;border-color:transparent">Audit Report</button>' +
+        '<button class="btn btn-sm" onclick="openASHRAE36ReportModal(\'' +
+        pid +
+        '\',\'proposal\')" style="height:28px;font-size:11px;background:#7c3aed;color:#fff;border-color:transparent">Service Proposal</button>'
+      : '') +
     '</div>' +
     colToggles +
     '</div>'
