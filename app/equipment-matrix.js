@@ -658,6 +658,9 @@ var _emSortCol = null;
 var _emSortDir = 1;
 var _emFilters = { building: '', type: '', search: '' };
 var _emHiddenGroups = {};
+var EM_PAGE_SIZE = 100;
+var _emCurrentPage = 0;
+var _emPageSize = 100;
 
 function initEquipMatrix(projId) {
   var wrap = document.getElementById('em-proj-wrap');
@@ -696,6 +699,8 @@ function emRenderMatrix(container, data, pid) {
   _emSortDir = 1;
   _emHiddenGroups = {};
   _emEditMode = false;
+  _emCurrentPage = 0;
+  _emPageSize = EM_PAGE_SIZE;
   emInjectMatrixCSS();
 
   var projName = '';
@@ -1050,6 +1055,16 @@ function emRenderTable(data, filters) {
   var countEl = document.getElementById('em-row-count');
   if (countEl) countEl.textContent = filtered.length + ' of ' + rows.length + ' rows';
 
+  // ── Pagination ──
+  var pageSize = _emPageSize;
+  var useAll = pageSize === 0;
+  var totalPages = useAll ? 1 : Math.ceil(filtered.length / pageSize);
+  if (totalPages < 1) totalPages = 1;
+  _emCurrentPage = Math.max(0, Math.min(_emCurrentPage, totalPages - 1));
+  var pageStart = useAll ? 0 : _emCurrentPage * pageSize;
+  var pageEnd = useAll ? filtered.length : Math.min(pageStart + pageSize, filtered.length);
+  var pageRows = filtered.slice(pageStart, pageEnd);
+
   var theadCells = '';
   for (var ci = 0; ci < defs.length; ci++) {
     var d = defs[ci];
@@ -1077,8 +1092,8 @@ function emRenderTable(data, filters) {
   }
 
   var tbodyRows = '';
-  for (var ri = 0; ri < filtered.length; ri++) {
-    var row = filtered[ri];
+  for (var ri = 0; ri < pageRows.length; ri++) {
+    var row = pageRows[ri];
     var rowId = row.id;
     var cells = '';
     for (var di = 0; di < defs.length; di++) {
@@ -1119,6 +1134,48 @@ function emRenderTable(data, filters) {
       '" style="padding:32px;text-align:center;font-size:12px;color:var(--text3)">No rows match the current filters.</td></tr>';
   }
 
+  // ── Pagination bar ──
+  var pid = window._emActivePid || '';
+  var pageSizeOptions = [50, 100, 250, 0];
+  var pageSizeLabels = { 50: '50', 100: '100', 250: '250', 0: 'All' };
+  var sizeSelectHtml =
+    '<select onchange="emSetPageSize(' +
+    JSON.stringify(pid) +
+    ', this.value)" style="font-size:11px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">';
+  for (var si = 0; si < pageSizeOptions.length; si++) {
+    var opt = pageSizeOptions[si];
+    var lbl = pageSizeLabels[opt];
+    var isCurrent = _emPageSize === opt;
+    var warn = opt === 0 && filtered.length > 500 ? ' ⚠️ slow' : '';
+    sizeSelectHtml += '<option value="' + opt + '"' + (isCurrent ? ' selected' : '') + '>' + lbl + warn + '</option>';
+  }
+  sizeSelectHtml += '</select>';
+
+  var prevDisabled = _emCurrentPage <= 0 || useAll;
+  var nextDisabled = _emCurrentPage >= totalPages - 1 || useAll;
+  var pageLabel = useAll
+    ? 'All ' + filtered.length + ' rows'
+    : 'Page ' + (_emCurrentPage + 1) + ' of ' + totalPages + ' (' + filtered.length + ' total rows)';
+
+  var paginationHtml =
+    '<div class="em-pagination" style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--border);background:var(--s1);flex-shrink:0;font-size:11px;color:var(--text2)">' +
+    '<button onclick="emPrevPage(' +
+    JSON.stringify(pid) +
+    ')" ' +
+    (prevDisabled ? 'disabled style="opacity:0.4;cursor:default;' : 'style="cursor:pointer;') +
+    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">&#8592; Previous</button>' +
+    '<span style="flex:1;text-align:center">' +
+    pageLabel +
+    '</span>' +
+    '<button onclick="emNextPage(' +
+    JSON.stringify(pid) +
+    ')" ' +
+    (nextDisabled ? 'disabled style="opacity:0.4;cursor:default;' : 'style="cursor:pointer;') +
+    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Next &#8594;</button>' +
+    '<span style="color:var(--text3)">Rows per page:</span>' +
+    sizeSelectHtml +
+    '</div>';
+
   wrap.innerHTML =
     '<table style="border-collapse:collapse;table-layout:auto">' +
     '<thead><tr>' +
@@ -1128,6 +1185,38 @@ function emRenderTable(data, filters) {
     tbodyRows +
     '</tbody>' +
     '</table>';
+
+  // Inject pagination bar after the scroll container (outside the scroll wrap)
+  var tableWrap = document.getElementById('em-table-wrap');
+  if (tableWrap && tableWrap.parentNode) {
+    var existingPag = tableWrap.parentNode.querySelector('.em-pagination');
+    if (existingPag) existingPag.parentNode.removeChild(existingPag);
+    var pagDiv = document.createElement('div');
+    pagDiv.innerHTML = paginationHtml;
+    tableWrap.parentNode.insertBefore(pagDiv.firstChild, tableWrap.nextSibling);
+  }
+}
+
+function emPrevPage(pid) {
+  if (_emCurrentPage > 0) {
+    _emCurrentPage--;
+    var data = emLoadMatrix(pid);
+    emRenderTable(data, _emFilters);
+  }
+}
+
+function emNextPage(pid) {
+  _emCurrentPage++;
+  var data = emLoadMatrix(pid);
+  emRenderTable(data, _emFilters);
+}
+
+function emSetPageSize(pid, val) {
+  _emPageSize = parseInt(val, 10);
+  if (isNaN(_emPageSize)) _emPageSize = EM_PAGE_SIZE;
+  _emCurrentPage = 0;
+  var data = emLoadMatrix(pid);
+  emRenderTable(data, _emFilters);
 }
 
 function emGetCellVal(row, colIdx, edits) {
@@ -1201,6 +1290,7 @@ function emApplyFilters() {
     type: type ? type.value : '',
     search: search ? search.value : '',
   };
+  _emCurrentPage = 0;
   var data = emLoadMatrix(window._emActivePid);
   emRenderTable(data, _emFilters);
 }
@@ -1210,6 +1300,7 @@ function emToggleColGroup(group, visible) {
   // Reset column defs cache so index-based sort stays consistent
   _EM_COL_DEFS = null;
   _emSortCol = null;
+  _emCurrentPage = 0;
   var data = emLoadMatrix(window._emActivePid);
   emRenderTable(data, _emFilters);
 }

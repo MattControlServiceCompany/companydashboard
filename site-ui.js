@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.25.359';
+  var CH_VERSION = 'v2026.05.25.360';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,25 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.25.360',
+      date: '2026-05-25',
+      title: 'Equipment Matrix pagination to handle 2700+ rows without crashing',
+      features: [
+        {
+          type: 'fix',
+          text: 'Equipment Matrix no longer crashes with RangeError on large datasets (2,721+ rows). Pagination renders 100 rows at a time by default.',
+        },
+        {
+          type: 'feature',
+          text: 'Previous/Next page controls and rows-per-page selector (50/100/250/All) added below the matrix table.',
+        },
+        {
+          type: 'fix',
+          text: 'Filter and column-toggle changes reset to page 1 automatically.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.25.359',
       date: '2026-05-25',
