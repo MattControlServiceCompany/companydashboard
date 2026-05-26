@@ -1976,3 +1976,2777 @@ function emCopyFromProject(targetProjId) {
   if (container) emRenderMatrix(container, targetData, targetProjId);
   alert(clonedRows.length + ' rows copied from "' + (sourceProj.name || sourceProj.id) + '".');
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 1 — AUDIT DATA LAYER: Point Normalization Engine
+   Added: 2026-05-26
+   Purpose: ASHRAE 36 compliance audit — normalize BAS point names to
+   canonical ASHRAE 36 categories and compute per-equipment coverage scores.
+   These functions are additive. Phase 2 will wire them into the view.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── EM_EXCLUSION_PATTERNS ──────────────────────────────────────────────────
+   Points matching any of these should be flagged auditRelevant=false.
+   They are operational/monitoring/metering points, not ASHRAE 36 control
+   inputs/outputs. Filtering them prevents false-positive coverage credits.  */
+var EM_EXCLUSION_PATTERNS = [
+  /^EI\s/i, // Environmental Index points (WebCTRL)
+  /environmental\s*index/i,
+  /air\s*source\s*status/i, // WebCTRL VAV "Air Source Status" (mode enum, not a control point)
+  /air\s*source\s*mode/i,
+  /smoke\s*(detector|zone|alarm|damper|stat)?/i,
+  /\bsmoke\b/i,
+  /\bschedule\b/i, // BACnet schedule objects
+  /\bruntime\b/i,
+  /run\s*hours?/i,
+  /energy.*month/i,
+  /energy.*year/i,
+  /monthly.*energy/i,
+  /yearly.*energy/i,
+  /\bdemand\b/i, // demand meter readings (not control)
+  /electrical\s*bypass/i,
+  /\bbypass\b.*\b(relay|contact|switch)\b/i,
+  /\balarm\b/i,
+  /BNI$/, // WebCTRL BACnet Network Interface suffix
+  /\btrend\b/i, // trend logs
+  /\bhistory\b/i,
+  /occupied\s*override/i,
+  /occupancy\s*override/i,
+];
+
+/* ── EM_EQUIP_CONFIG_FLAGS schema ───────────────────────────────────────────
+   Per-equipment configuration flags stored in data.edits keyed by
+   rowId + '::config'. Describes optional equipment features so the
+   compliance engine knows which N/A categories to skip.               */
+var EM_EQUIP_CONFIG_FLAGS = {
+  ahu: [
+    { key: 'hasReturnFan', label: 'Has Return Fan', default: false },
+    { key: 'hasReliefFan', label: 'Has Relief Fan', default: false },
+    { key: 'hasEconomizer', label: 'Has Economizer', default: true },
+    { key: 'hasCHWCoil', label: 'Has CHW Coil', default: true },
+    { key: 'hasHWCoil', label: 'Has HW Coil', default: true },
+    { key: 'hasCO2', label: 'Has CO2 Sensor', default: false },
+    { key: 'hasOAFlow', label: 'Has OA Flow Meter', default: false },
+  ],
+  vav: [
+    { key: 'hasReheat', label: 'Has Reheat Coil', default: true },
+    { key: 'hasCO2', label: 'Has CO2 Sensor', default: false },
+    { key: 'hasOccSensor', label: 'Has Occupancy Sensor', default: false },
+  ],
+  fpb: [
+    { key: 'hasReheat', label: 'Has Reheat Coil', default: true },
+    { key: 'isSeries', label: 'Series Fan (vs Parallel)', default: false },
+    { key: 'hasCO2', label: 'Has CO2 Sensor', default: false },
+  ],
+  ddvav: [
+    { key: 'hasCO2', label: 'Has CO2 Sensor', default: false },
+    { key: 'hasOccSensor', label: 'Has Occupancy Sensor', default: false },
+  ],
+  hwp: [
+    { key: 'hasSecPump', label: 'Has Secondary HW Pump', default: true },
+    { key: 'hasFlowMeter', label: 'Has HW Flow Meter', default: false },
+    { key: 'hasIsoValves', label: 'Has Isolation Valves', default: true },
+  ],
+  chwp: [
+    { key: 'hasSecPump', label: 'Has Secondary CHW Pump', default: true },
+    { key: 'hasFlowMeter', label: 'Has CHW Flow Meter', default: false },
+    { key: 'hasIsoValves', label: 'Has Isolation Valves', default: true },
+    { key: 'hasPrimary', label: 'Has Primary Pump', default: true },
+  ],
+  ct: [
+    { key: 'hasVFD', label: 'Has VFD Fan', default: true },
+    { key: 'hasCWIsoValve', label: 'Has CW Isolation Valve', default: true },
+    { key: 'hasMakeupValve', label: 'Has Makeup Water Valve', default: true },
+  ],
+};
+
+/* ── EM_POINT_CATEGORIES ────────────────────────────────────────────────────
+   Structured per-equipment-type point category map.
+   Each entry: { key, label, ashrae36Name, ashrae36Section, required,
+                 configFlag (optional — if set, only required when flag=true),
+                 patterns[], aliases[] }
+   patterns = regex array for matching raw BAS point names (vendor-neutral)
+   aliases  = standard alias strings (lowercased for matching)           */
+var EM_POINT_CATEGORIES = {
+  /* ── AHU (Multizone VAV, ASHRAE 36 §5.16) ─────────────────────────── */
+  ahu: [
+    {
+      key: 'sat',
+      label: 'Supply Air Temperature',
+      required: true,
+      ashrae36Name: 'Supply Air Temperature',
+      ashrae36Section: '5.16',
+      patterns: [
+        /\bsat\b/i,
+        /supply air temp/i,
+        /discharge air temp/i,
+        /\bdat\b/i,
+        /leaving air temp/i,
+        /ahu.?sat/i,
+        /supply.?temp/i,
+        /discharge temp/i,
+        /sa temp/i,
+        /\blat\b/i,
+      ],
+      aliases: [
+        'sat',
+        'supply air temp',
+        'discharge air temp',
+        'dat',
+        'discharge air temperature',
+        'supply temp',
+        'leaving air temp',
+        'ahu supply temp',
+        'sa temp',
+        'supply-air temp',
+        'ahu-sat',
+        'lat',
+      ],
+    },
+    {
+      key: 'rat',
+      label: 'Return Air Temperature',
+      required: true,
+      ashrae36Name: 'Return Air Temperature',
+      ashrae36Section: '5.16',
+      patterns: [/\brat\b/i, /return air temp/i, /ra temp/i, /ahu.?return/i, /return.?air.?temp/i],
+      aliases: [
+        'rat',
+        'return air temp',
+        'return temp',
+        'ra temp',
+        'ahu return temp',
+        'return-air temp',
+        'ahu-rat',
+        'return air temperature',
+      ],
+    },
+    {
+      key: 'mat',
+      label: 'Mixed Air Temperature',
+      required: true,
+      ashrae36Name: 'Mixed Air Temperature',
+      ashrae36Section: '5.16',
+      patterns: [/\bmat\b/i, /mixed air temp/i, /mix air temp/i, /mixing box temp/i, /post.?mix temp/i],
+      aliases: [
+        'mat',
+        'mixed air temp',
+        'mix air temp',
+        'ahu mixed air temp',
+        'mixing box temp',
+        'mixed-air temp',
+        'ahu-mat',
+        'post-mix temp',
+      ],
+    },
+    {
+      key: 'oat',
+      label: 'Outdoor Air Temperature',
+      required: true,
+      ashrae36Name: 'Outdoor Air Temperature',
+      ashrae36Section: '5.16',
+      patterns: [
+        /\boat\b/i,
+        /outdoor air temp/i,
+        /outside air temp/i,
+        /oa temp/i,
+        /ambient temp/i,
+        /outdoor temp/i,
+        /external temp/i,
+        /outside air dry bulb/i,
+        /oa dry bulb/i,
+      ],
+      aliases: [
+        'oat',
+        'outdoor air temp',
+        'outside air temp',
+        'oa temp',
+        'ambient temp',
+        'outdoor temp',
+        'oa-t',
+        'ahu oat',
+        'external temperature',
+        'outside air dry bulb',
+        'oa dry bulb',
+      ],
+    },
+    {
+      key: 'dsp',
+      label: 'Duct Static Pressure',
+      required: true,
+      ashrae36Name: 'Duct Static Pressure',
+      ashrae36Section: '5.16',
+      patterns: [
+        /\bdsp\b/i,
+        /duct static pressure/i,
+        /duct static/i,
+        /static pressure/i,
+        /supply duct.?sp/i,
+        /duct.?sp/i,
+        /ahu static/i,
+        /sa static/i,
+        /duct pressure/i,
+        /dp duct/i,
+      ],
+      aliases: [
+        'dsp',
+        'duct static',
+        'static pressure',
+        'supply duct sp',
+        'duct sp',
+        'ahu static pressure',
+        'supply duct static',
+        'duct pressure',
+        'sa static pressure',
+        'duct-sp',
+        'dp duct',
+      ],
+    },
+    {
+      key: 'oaFlow',
+      label: 'Outdoor Air Flow',
+      required: true,
+      ashrae36Name: 'Outdoor Air Flow',
+      ashrae36Section: '5.16',
+      configFlag: 'hasOAFlow',
+      patterns: [
+        /oa.?flow/i,
+        /outdoor air.?cfm/i,
+        /oa.?airflow/i,
+        /outside air flow/i,
+        /ventilation airflow/i,
+        /oa airflow station/i,
+        /oa cfm/i,
+        /minimum oa flow/i,
+      ],
+      aliases: [
+        'oa flow',
+        'outdoor air cfm',
+        'oa airflow',
+        'outdoor air volume flow',
+        'oa volume',
+        'outside air flow',
+        'oa-flow',
+        'oa cfm',
+        'ventilation airflow',
+        'oa airflow station',
+        'outside air flow',
+        'minimum oa flow',
+      ],
+    },
+    {
+      key: 'sfStatus',
+      label: 'Supply Fan Status',
+      required: true,
+      ashrae36Name: 'Supply Fan Status',
+      ashrae36Section: '5.16',
+      patterns: [
+        /supply fan.?run/i,
+        /supply fan.?status/i,
+        /sf.?status/i,
+        /sf.?run/i,
+        /ahu fan.?run/i,
+        /ahu fan.?status/i,
+        /fan.?run.?status/i,
+        /supply fan.?vfd.?status/i,
+        /supply fan enabled/i,
+      ],
+      aliases: [
+        'supply fan run',
+        'sf status',
+        'supply fan proof',
+        'fan run status',
+        'ahu fan status',
+        'supply fan on',
+        'sf run',
+        'fan status',
+        'ahu fan run',
+        'sa fan status',
+        'supply fan vfd status',
+        'supply fan enabled',
+      ],
+    },
+    {
+      key: 'sfSpeed',
+      label: 'Supply Fan Speed',
+      required: true,
+      ashrae36Name: 'Supply Fan Speed',
+      ashrae36Section: '5.16',
+      patterns: [
+        /supply fan.?speed/i,
+        /sf.?speed/i,
+        /supply.?vfd.?feedback/i,
+        /sf.?hz/i,
+        /fan speed feedback/i,
+        /vfd speed feedback/i,
+        /supply vfd feedback/i,
+      ],
+      aliases: [
+        'sf speed',
+        'supply fan vfd feedback',
+        'fan speed feedback',
+        'vfd speed feedback',
+        'sf hz',
+        'supply fan hz',
+        'supply fan vfd speed',
+        'sf vfd speed',
+        'supply vfd feedback',
+        'supply fan speed feedback',
+      ],
+    },
+    {
+      key: 'sfEnable',
+      label: 'Supply Fan Enable Command',
+      required: true,
+      ashrae36Name: 'Supply Fan Enable Command',
+      ashrae36Section: '5.16',
+      patterns: [
+        /supply fan.?enable/i,
+        /sf.?enable/i,
+        /supply fan.?command/i,
+        /supply fan.?start/i,
+        /supply fan.?on.?off/i,
+      ],
+      aliases: [
+        'supply fan start/stop',
+        'sf enable',
+        'supply fan on/off',
+        'ahu fan enable',
+        'fan command',
+        'sf command',
+        'supply fan enable',
+        'supply fan command',
+        'supply fan start',
+      ],
+    },
+    {
+      key: 'sfSpeedCmd',
+      label: 'Supply Fan Speed Command',
+      required: true,
+      ashrae36Name: 'Supply Fan Speed Command',
+      ashrae36Section: '5.16',
+      patterns: [
+        /supply fan.?vfd.?speed/i,
+        /sf.?vfd.?speed/i,
+        /supply vfd speed/i,
+        /supply fan speed.?set/i,
+        /fan speed command/i,
+      ],
+      aliases: [
+        'sf vfd speed',
+        'supply fan vfd',
+        'fan speed command',
+        'sf speed setpoint',
+        'supply fan speed setpoint',
+        'supply fan vfd speed',
+        'sf vfd speed',
+        'supply vfd speed',
+        'supply fan speed',
+      ],
+    },
+    {
+      key: 'oaDampCmd',
+      label: 'OA Damper Position Command',
+      required: true,
+      ashrae36Name: 'Outdoor Air Damper Position Command',
+      ashrae36Section: '5.16',
+      configFlag: 'hasEconomizer',
+      patterns: [/oa.?damper/i, /outdoor air damper/i, /econ.?damper/i, /oad.?position/i, /outside air damper/i],
+      aliases: [
+        'oa damper',
+        'outdoor air damper',
+        'economizer damper',
+        'oa damper command',
+        'oad position',
+        'outside air damper',
+        'oa-damper',
+        'econ damper',
+      ],
+    },
+    {
+      key: 'raDampCmd',
+      label: 'Return Air Damper Position Command',
+      required: true,
+      ashrae36Name: 'Return Air Damper Position Command',
+      ashrae36Section: '5.16',
+      configFlag: 'hasEconomizer',
+      patterns: [/ra.?damper/i, /return air damper/i, /return damper/i, /rad.?position/i, /exhaust damper/i],
+      aliases: [
+        'ra damper',
+        'return air damper',
+        'return damper',
+        'ra damper command',
+        'rad position',
+        'return-damper',
+        'exhaust damper',
+      ],
+    },
+    {
+      key: 'clgValve',
+      label: 'Cooling Coil Valve',
+      required: true,
+      ashrae36Name: 'Cooling Coil Valve Position Command',
+      ashrae36Section: '5.16',
+      configFlag: 'hasCHWCoil',
+      patterns: [
+        /chw.?valve/i,
+        /cooling.?valve/i,
+        /cooling coil valve/i,
+        /ccv.?position/i,
+        /chilled water valve/i,
+        /clg.?valve/i,
+        /cool valve/i,
+      ],
+      aliases: [
+        'chw valve',
+        'cooling valve',
+        'cooling coil valve',
+        'chw coil valve',
+        'cool valve',
+        'chilled water valve',
+        'ccv position',
+        'cooling-valve',
+      ],
+    },
+    {
+      key: 'htgValve',
+      label: 'Heating Coil Valve',
+      required: true,
+      ashrae36Name: 'Heating Coil Valve Position Command',
+      ashrae36Section: '5.16',
+      configFlag: 'hasHWCoil',
+      patterns: [
+        /hw.?valve/i,
+        /heating.?valve/i,
+        /heating coil valve/i,
+        /hcv.?position/i,
+        /hot water valve/i,
+        /htg.?valve/i,
+        /preheat valve/i,
+        /heat valve/i,
+      ],
+      aliases: [
+        'hw valve',
+        'heating valve',
+        'heating coil valve',
+        'hw coil valve',
+        'heat valve',
+        'hot water valve',
+        'hcv position',
+        'heating-valve',
+        'preheat valve',
+      ],
+    },
+    {
+      key: 'freezeStat',
+      label: 'Freeze Protection Status',
+      required: true,
+      ashrae36Name: 'Freeze Protection Status',
+      ashrae36Section: '5.16',
+      patterns: [
+        /freeze.?stat/i,
+        /freeze.?protect/i,
+        /low.?temp.?cutout/i,
+        /freeze.?alarm/i,
+        /low.?limit/i,
+        /frost.?stat/i,
+        /low temp alarm/i,
+      ],
+      aliases: [
+        'freeze stat',
+        'freeze protection',
+        'low temp cutout',
+        'freeze thermostat',
+        'low limit stat',
+        'freezestat',
+        'frost stat',
+        'coil freeze stat',
+        'freeze alarm',
+        'low temp alarm',
+      ],
+    },
+    {
+      key: 'rfEnable',
+      label: 'Return Fan Enable Command',
+      required: false,
+      ashrae36Name: 'Return Fan Enable Command',
+      ashrae36Section: '5.16',
+      configFlag: 'hasReturnFan',
+      patterns: [
+        /return fan.?enable/i,
+        /rf.?enable/i,
+        /return fan.?command/i,
+        /return fan.?on.?off/i,
+        /return fan.?start/i,
+      ],
+      aliases: [
+        'return fan start/stop',
+        'rf enable',
+        'return fan on/off',
+        'rf command',
+        'return fan enable',
+        'return fan command',
+      ],
+    },
+    {
+      key: 'rfSpeedCmd',
+      label: 'Return Fan Speed Command',
+      required: false,
+      ashrae36Name: 'Return Fan Speed Command',
+      ashrae36Section: '5.16',
+      configFlag: 'hasReturnFan',
+      patterns: [/rf.?vfd.?speed/i, /return fan.?vfd/i, /return fan speed/i, /rf.?speed/i],
+      aliases: ['rf vfd speed', 'return fan vfd', 'return fan speed command', 'rf speed setpoint'],
+    },
+    {
+      key: 'bldgPressure',
+      label: 'Building Static Pressure',
+      required: false,
+      ashrae36Name: 'Building Static Pressure',
+      ashrae36Section: '5.16',
+      configFlag: 'hasReliefFan',
+      patterns: [
+        /building.?dp/i,
+        /building.?pressure/i,
+        /bldg.?static/i,
+        /bldg.?dp/i,
+        /building static/i,
+        /building pressurization/i,
+      ],
+      aliases: [
+        'building dp',
+        'building pressure',
+        'bldg pressure',
+        'bldg static',
+        'building static',
+        'bldg dp',
+        'building pressurization',
+        'building-dp',
+      ],
+    },
+    {
+      key: 'co2',
+      label: 'CO2 Sensor',
+      required: false,
+      ashrae36Name: 'CO2 Sensor (Return or Zone)',
+      ashrae36Section: '5.16',
+      configFlag: 'hasCO2',
+      patterns: [/\bco2\b/i, /carbon dioxide/i, /co2.?sensor/i, /return co2/i, /zone.?co2/i, /co2.?ppm/i, /duct co2/i],
+      aliases: [
+        'co2',
+        'carbon dioxide',
+        'co2 sensor',
+        'return co2',
+        'zone co2',
+        'co2 ppm',
+        'duct co2',
+        'return air co2',
+      ],
+    },
+    {
+      key: 'oaEnthalpy',
+      label: 'Outdoor Air Enthalpy',
+      required: false,
+      ashrae36Name: 'Outdoor Air Enthalpy',
+      ashrae36Section: '5.16',
+      configFlag: 'hasEconomizer',
+      patterns: [/oa.?enthalpy/i, /outdoor.?enthalpy/i, /outside air enthalpy/i, /enthalpy sensor/i],
+      aliases: ['oa enthalpy', 'outdoor enthalpy', 'outside air enthalpy', 'oa-h', 'outdoor air h', 'enthalpy sensor'],
+    },
+  ],
+
+  /* ── VAV (Single-Duct with Reheat, ASHRAE 36 §5.6) ────────────────── */
+  vav: [
+    {
+      key: 'zoneTemp',
+      label: 'Zone Air Temperature',
+      required: true,
+      ashrae36Name: 'Zone Air Temperature',
+      ashrae36Section: '5.6',
+      patterns: [
+        /zone.?temp/i,
+        /room.?temp/i,
+        /zone air temp/i,
+        /space temp/i,
+        /space temperature/i,
+        /room temperature/i,
+        /\bzat\b/i,
+        /occ space temp/i,
+        /t.?zone/i,
+      ],
+      aliases: [
+        'zone temp',
+        'room temp',
+        'zone air temp',
+        'space temp',
+        'space temperature',
+        'room temperature',
+        'zone temperature',
+        'tzone',
+        't-zone',
+        'zat',
+        'zone-temp',
+        'occ space temp',
+      ],
+    },
+    {
+      key: 'coolSP',
+      label: 'Zone Cooling Setpoint',
+      required: true,
+      ashrae36Name: 'Zone Cooling Setpoint',
+      ashrae36Section: '5.6',
+      patterns: [
+        /cooling.?setpoint/i,
+        /cool.?setpoint/i,
+        /zone.?cooling.?sp/i,
+        /cooling.?sp\b/i,
+        /t.?cool/i,
+        /setpoint.*cooling occupied/i,
+        /effective cooling setpoint/i,
+        /cooling occupied setpoint/i,
+      ],
+      aliases: [
+        'cooling setpoint',
+        'cool setpoint',
+        'zone cooling sp',
+        'cooling sp',
+        't-cool',
+        'tcool',
+        'cooling temp sp',
+        'zone cool sp',
+        'setpoint / cooling occupied setpoint',
+        'setpoint / effective cooling setpoint',
+        'cooling occupied setpoint',
+        'effective cooling setpoint',
+        'zone cooling setpoint',
+      ],
+    },
+    {
+      key: 'htgSP',
+      label: 'Zone Heating Setpoint',
+      required: true,
+      ashrae36Name: 'Zone Heating Setpoint',
+      ashrae36Section: '5.6',
+      patterns: [
+        /heating.?setpoint/i,
+        /heat.?setpoint/i,
+        /zone.?heating.?sp/i,
+        /heating.?sp\b/i,
+        /t.?heat/i,
+        /setpoint.*heating occupied/i,
+        /effective heating setpoint/i,
+        /heating occupied setpoint/i,
+      ],
+      aliases: [
+        'heating setpoint',
+        'heat setpoint',
+        'zone heating sp',
+        'heating sp',
+        't-heat',
+        'theat',
+        'heating temp sp',
+        'zone heat sp',
+        'setpoint / heating occupied setpoint',
+        'setpoint / effective heating setpoint',
+        'heating occupied setpoint',
+        'effective heating setpoint',
+        'zone heating setpoint',
+      ],
+    },
+    {
+      key: 'discFlow',
+      label: 'Discharge Airflow',
+      required: true,
+      ashrae36Name: 'Discharge Airflow',
+      ashrae36Section: '5.6',
+      patterns: [
+        /discharge.?airflow/i,
+        /zone.?airflow/i,
+        /box.?airflow/i,
+        /vav.?flow/i,
+        /vav.?cfm/i,
+        /primary.?airflow/i,
+        /disc.?flow/i,
+        /box.?cfm/i,
+        /zone.?cfm/i,
+        /air.?flow/i,
+        /\bcfm\b/i,
+        /flow control/i,
+        /flow input/i,
+        /air volume/i,
+      ],
+      aliases: [
+        'zone airflow',
+        'box airflow',
+        'vav flow',
+        'vav cfm',
+        'primary airflow',
+        'discharge flow',
+        'box cfm',
+        'zone cfm',
+        'vav box flow',
+        'primary flow',
+        'air volume',
+        'flow rate',
+        'flow control',
+        'flow input',
+        'air flow',
+        'airflow',
+        'zone air flow',
+        'cfm',
+        'discharge cfm',
+        'flow control / flow input',
+      ],
+    },
+    {
+      key: 'dat',
+      label: 'Discharge Air Temperature',
+      required: true,
+      ashrae36Name: 'Discharge Air Temperature',
+      ashrae36Section: '5.6',
+      patterns: [
+        /discharge air temp/i,
+        /\bdat\b/i,
+        /leaving air temp/i,
+        /box discharge temp/i,
+        /reheat discharge/i,
+        /zone discharge/i,
+        /\btdis\b/i,
+        /t.?discharge/i,
+        /discharge temp/i,
+        /supply temperature/i,
+      ],
+      aliases: [
+        'dat',
+        'discharge air temp',
+        'leaving air temp',
+        'box discharge temp',
+        'reheat discharge temp',
+        'zone discharge temp',
+        'discharge temp',
+        'tdis',
+        't-discharge',
+        'supply temperature',
+        'zone supply temp',
+      ],
+    },
+    {
+      key: 'fanStatus',
+      label: 'AHU Supply Fan Status',
+      required: true,
+      ashrae36Name: 'AHU Supply Fan Status',
+      ashrae36Section: '5.6',
+      patterns: [
+        /ahu fan.?status/i,
+        /supply fan.?status/i,
+        /fan.?run.?status/i,
+        /ahu fan.?run/i,
+        /fan status/i,
+        /air source status/i,
+      ],
+      aliases: [
+        'fan status',
+        'ahu fan status',
+        'supply fan status',
+        'ahu fan run',
+        'fan run status',
+        'air source status',
+        'primary air source status',
+      ],
+    },
+    {
+      key: 'dampCmd',
+      label: 'Damper Position Command',
+      required: true,
+      ashrae36Name: 'Damper Position Command',
+      ashrae36Section: '5.6',
+      patterns: [
+        /damper.?position/i,
+        /vav.?damper/i,
+        /box.?damper/i,
+        /damper.?command/i,
+        /damper.?signal/i,
+        /air.?valve/i,
+        /zone.?damper/i,
+      ],
+      aliases: [
+        'damper position',
+        'vav damper',
+        'box damper',
+        'damper command',
+        'damper signal',
+        'air valve',
+        'zone damper',
+        'damper-position',
+        'air damper',
+      ],
+    },
+    {
+      key: 'reheatValve',
+      label: 'Reheat Valve Position Command',
+      required: false,
+      ashrae36Name: 'Reheat Valve Position Command',
+      ashrae36Section: '5.6',
+      configFlag: 'hasReheat',
+      patterns: [
+        /reheat.?valve/i,
+        /hw.?reheat/i,
+        /heating.?valve/i,
+        /hot water valve/i,
+        /hw.?valve/i,
+        /zone.?hw.?valve/i,
+        /reheat coil valve/i,
+        /heating coil valve/i,
+      ],
+      aliases: [
+        'reheat valve',
+        'hw reheat valve',
+        'heating valve',
+        'hot water valve',
+        'reheat coil valve',
+        'hw valve',
+        'zone hw valve',
+        'reheat-valve',
+        'heating coil valve',
+      ],
+    },
+    {
+      key: 'hwPlantStatus',
+      label: 'Hot Water Plant Status',
+      required: false,
+      ashrae36Name: 'Hot Water Plant Status',
+      ashrae36Section: '5.6',
+      configFlag: 'hasReheat',
+      patterns: [
+        /hw.?plant.?status/i,
+        /heat.?source.?status/i,
+        /heating.?source.?status/i,
+        /hw plant on.?off/i,
+        /heating plant status/i,
+      ],
+      aliases: [
+        'hw plant status',
+        'hw plant on/off',
+        'heating plant status',
+        'boiler plant status',
+        'heat source status',
+        'heating source status',
+        'heat source mode',
+        'heating source mode',
+      ],
+    },
+    {
+      key: 'ahuSAT',
+      label: 'AHU Supply Air Temperature',
+      required: false,
+      ashrae36Name: 'AHU Supply Air Temperature',
+      ashrae36Section: '5.6',
+      patterns: [
+        /ahu.?sat/i,
+        /system.?sat/i,
+        /ahu.?supply.?temp/i,
+        /central.?sat/i,
+        /air source supply/i,
+        /primary air supply temp/i,
+      ],
+      aliases: [
+        'ahu sat',
+        'system sat',
+        'ahu supply temp',
+        'supply air temp',
+        'sat',
+        'central sat',
+        'system supply temp',
+        'air source supply temp',
+        'air source supply',
+        'primary air supply temp',
+      ],
+    },
+    {
+      key: 'co2',
+      label: 'Zone CO2 Sensor',
+      required: false,
+      ashrae36Name: 'Zone CO2 Concentration',
+      ashrae36Section: '5.6',
+      configFlag: 'hasCO2',
+      patterns: [/\bco2\b/i, /carbon dioxide/i, /co2.?ppm/i, /zone.?co2/i],
+      aliases: ['zone co2', 'room co2', 'co2 sensor', 'co2 ppm', 'carbon dioxide', 'space co2'],
+    },
+  ],
+
+  /* ── FPB (Fan-Powered Box — Parallel or Series, ASHRAE 36 §5.7/5.8) ─ */
+  fpb: [
+    {
+      key: 'zoneTemp',
+      label: 'Zone Air Temperature',
+      required: true,
+      ashrae36Name: 'Zone Air Temperature',
+      ashrae36Section: '5.7',
+      patterns: [/zone.?temp/i, /room.?temp/i, /space temp/i, /\bzat\b/i],
+      aliases: ['zone temp', 'room temp', 'zone air temp', 'space temp', 'space temperature', 'zat', 'zone-temp'],
+    },
+    {
+      key: 'coolSP',
+      label: 'Zone Cooling Setpoint',
+      required: true,
+      ashrae36Name: 'Zone Cooling Setpoint',
+      ashrae36Section: '5.7',
+      patterns: [/cooling.?setpoint/i, /cool.?setpoint/i, /t.?cool/i, /cooling occupied setpoint/i],
+      aliases: [
+        'cooling setpoint',
+        'cool setpoint',
+        'zone cooling sp',
+        't-cool',
+        'cooling sp',
+        'cooling occupied setpoint',
+      ],
+    },
+    {
+      key: 'htgSP',
+      label: 'Zone Heating Setpoint',
+      required: true,
+      ashrae36Name: 'Zone Heating Setpoint',
+      ashrae36Section: '5.7',
+      patterns: [/heating.?setpoint/i, /heat.?setpoint/i, /t.?heat/i, /heating occupied setpoint/i],
+      aliases: [
+        'heating setpoint',
+        'heat setpoint',
+        'zone heating sp',
+        't-heat',
+        'heating sp',
+        'heating occupied setpoint',
+      ],
+    },
+    {
+      key: 'primaryFlow',
+      label: 'Primary (Cold Deck) Airflow',
+      required: true,
+      ashrae36Name: 'Primary (Cold Deck) Airflow',
+      ashrae36Section: '5.7',
+      patterns: [
+        /primary.?airflow/i,
+        /cold.?deck.?flow/i,
+        /vav.?primary.?flow/i,
+        /box.?primary.?cfm/i,
+        /primary.?cfm/i,
+        /primary air volume/i,
+        /vav.?flow/i,
+        /box.?airflow/i,
+        /zone.?airflow/i,
+        /air.?flow/i,
+        /flow control/i,
+        /flow input/i,
+      ],
+      aliases: [
+        'primary airflow',
+        'cold deck flow',
+        'vav primary flow',
+        'box primary cfm',
+        'primary cfm',
+        'vpri_flow',
+        'primary air volume',
+        'vav flow',
+        'box airflow',
+        'zone airflow',
+        'flow control',
+        'flow input',
+      ],
+    },
+    {
+      key: 'dat',
+      label: 'Discharge Air Temperature',
+      required: true,
+      ashrae36Name: 'Discharge Air Temperature',
+      ashrae36Section: '5.7',
+      patterns: [/discharge air temp/i, /\bdat\b/i, /reheat discharge/i, /\btdis\b/i, /supply temperature/i],
+      aliases: [
+        'dat',
+        'discharge air temp',
+        'box discharge temp',
+        'reheat discharge temp',
+        'tdis',
+        'discharge temp',
+        'supply temperature',
+      ],
+    },
+    {
+      key: 'termFanStatus',
+      label: 'Terminal Fan Status',
+      required: true,
+      ashrae36Name: 'Terminal Fan Status',
+      ashrae36Section: '5.7',
+      patterns: [
+        /term.?fan.?status/i,
+        /box.?fan.?status/i,
+        /terminal.?fan.?run/i,
+        /fan.?proof/i,
+        /plenum fan/i,
+        /\bu1terfan\b/i,
+      ],
+      aliases: ['term fan status', 'box fan status', 'terminal fan run', 'fan proof', 'plenum fan status', 'u1terfan'],
+    },
+    {
+      key: 'fanStatus',
+      label: 'AHU Supply Fan Status',
+      required: true,
+      ashrae36Name: 'AHU Supply Fan Status',
+      ashrae36Section: '5.7',
+      patterns: [/ahu fan.?status/i, /supply fan.?status/i, /fan status/i, /air source status/i],
+      aliases: ['fan status', 'ahu fan status', 'supply fan status', 'ahu fan run', 'air source status'],
+    },
+    {
+      key: 'dampCmd',
+      label: 'Primary Damper Position Command',
+      required: true,
+      ashrae36Name: 'Primary Damper Position Command',
+      ashrae36Section: '5.7',
+      patterns: [/primary.?damper/i, /damper.?position/i, /vav.?damper/i, /box.?damper/i, /cold.?deck.?damper/i],
+      aliases: ['damper position', 'primary damper', 'cold deck damper', 'vav damper', 'box damper'],
+    },
+    {
+      key: 'termFanEnable',
+      label: 'Terminal Fan Enable Command',
+      required: true,
+      ashrae36Name: 'Terminal Fan Enable Command',
+      ashrae36Section: '5.7',
+      patterns: [/term.?fan.?enable/i, /box.?fan.?enable/i, /terminal.?fan.?command/i, /\by1fan\b/i, /fan.?enable/i],
+      aliases: [
+        'term fan enable',
+        'box fan enable',
+        'terminal fan command',
+        'plenum fan command',
+        'fan enable',
+        'y1fan',
+      ],
+    },
+    {
+      key: 'reheatValve',
+      label: 'Reheat Valve Position Command',
+      required: false,
+      ashrae36Name: 'Reheat Valve Position Command',
+      ashrae36Section: '5.7',
+      configFlag: 'hasReheat',
+      patterns: [/reheat.?valve/i, /hw.?reheat/i, /heating.?valve/i, /hot water valve/i, /hw.?valve/i],
+      aliases: ['reheat valve', 'hw reheat valve', 'heating valve', 'hot water valve', 'hw valve'],
+    },
+    {
+      key: 'termFanSpeed',
+      label: 'Terminal Fan Speed Command',
+      required: false,
+      ashrae36Name: 'Terminal Fan Speed Command',
+      ashrae36Section: '5.8',
+      configFlag: 'isSeries',
+      patterns: [
+        /term.?fan.?speed/i,
+        /box.?fan.?vfd/i,
+        /series.?fan.?speed/i,
+        /terminal.?fan.?vfd/i,
+        /fan speed command/i,
+      ],
+      aliases: [
+        'term fan speed',
+        'box fan vfd',
+        'series fan speed',
+        'terminal fan vfd',
+        'fan speed command',
+        'vfan_flow_set',
+      ],
+    },
+  ],
+
+  /* ── DDVAV (Dual Duct VAV, ASHRAE 36 §5.13) ────────────────────────── */
+  ddvav: [
+    {
+      key: 'zoneTemp',
+      label: 'Zone Air Temperature',
+      required: true,
+      ashrae36Name: 'Zone Air Temperature',
+      ashrae36Section: '5.13',
+      patterns: [/zone.?temp/i, /room.?temp/i, /space temp/i, /\bzat\b/i],
+      aliases: ['zone temp', 'room temp', 'zone air temp', 'space temp', 'space temperature', 'zat', 'zone-temp'],
+    },
+    {
+      key: 'coolSP',
+      label: 'Zone Cooling Setpoint',
+      required: true,
+      ashrae36Name: 'Zone Cooling Setpoint',
+      ashrae36Section: '5.13',
+      patterns: [/cooling.?setpoint/i, /cool.?setpoint/i, /t.?cool/i],
+      aliases: ['cooling setpoint', 'cool setpoint', 'zone cooling sp', 't-cool', 'cooling sp'],
+    },
+    {
+      key: 'htgSP',
+      label: 'Zone Heating Setpoint',
+      required: true,
+      ashrae36Name: 'Zone Heating Setpoint',
+      ashrae36Section: '5.13',
+      patterns: [/heating.?setpoint/i, /heat.?setpoint/i, /t.?heat/i],
+      aliases: ['heating setpoint', 'heat setpoint', 'zone heating sp', 't-heat', 'heating sp'],
+    },
+    {
+      key: 'discFlow',
+      label: 'Discharge Airflow',
+      required: true,
+      ashrae36Name: 'Discharge Airflow',
+      ashrae36Section: '5.13',
+      patterns: [
+        /discharge.?flow/i,
+        /total.?discharge.?cfm/i,
+        /box.?airflow/i,
+        /zone.?airflow/i,
+        /discharge.?cfm/i,
+        /mixed.?discharge/i,
+        /air.?flow/i,
+        /flow control/i,
+      ],
+      aliases: [
+        'discharge flow',
+        'total discharge cfm',
+        'box airflow',
+        'zone airflow',
+        'discharge cfm',
+        'mixed discharge flow',
+        'air flow',
+        'flow control',
+      ],
+    },
+    {
+      key: 'fanStatus',
+      label: 'AHU Supply Fan Status',
+      required: true,
+      ashrae36Name: 'AHU Supply Fan Status',
+      ashrae36Section: '5.13',
+      patterns: [/ahu fan.?status/i, /supply fan.?status/i, /fan status/i, /air source status/i],
+      aliases: ['fan status', 'ahu fan status', 'supply fan status', 'air source status'],
+    },
+    {
+      key: 'coldDampCmd',
+      label: 'Cold Deck Damper Position Command',
+      required: true,
+      ashrae36Name: 'Cold Deck Damper Position Command',
+      ashrae36Section: '5.13',
+      patterns: [/cold.?deck.?damper/i, /cold.?damper/i, /cooling.?damper/i, /supply.?damper/i, /cold air damper/i],
+      aliases: [
+        'cold deck damper',
+        'cold damper',
+        'cooling damper',
+        'cold duct damper',
+        'supply damper',
+        'cold air damper',
+      ],
+    },
+    {
+      key: 'hotDampCmd',
+      label: 'Hot Deck Damper Position Command',
+      required: true,
+      ashrae36Name: 'Hot Deck Damper Position Command',
+      ashrae36Section: '5.13',
+      patterns: [/hot.?deck.?damper/i, /hot.?damper/i, /heating.?damper/i, /warm.?damper/i, /hot air damper/i],
+      aliases: ['hot deck damper', 'hot damper', 'heating damper', 'hot duct damper', 'warm damper', 'hot air damper'],
+    },
+  ],
+
+  /* ── HWP (Hot Water Plant, ASHRAE 36 §5.19) ────────────────────────── */
+  hwp: [
+    {
+      key: 'hwst',
+      label: 'Hot Water Supply Temperature',
+      required: true,
+      ashrae36Name: 'Hot Water Supply Temperature',
+      ashrae36Section: '5.19',
+      patterns: [
+        /\bhwst\b/i,
+        /hw.?supply.?temp/i,
+        /hot.?water.?supply/i,
+        /heating.?water.?supply/i,
+        /boiler.?supply.?temp/i,
+        /\bhws\b.?temp/i,
+        /supply.?water.?temp/i,
+        /system supply/i,
+        /supply temp/i,
+        /boiler.*supply.*water.*temp/i,
+      ],
+      aliases: [
+        'hwst',
+        'hw supply temp',
+        'hot water supply temp',
+        'leaving hw temp',
+        'boiler supply temp',
+        'heating water supply temp',
+        'hws temp',
+        'hw-st',
+        'hw_st',
+        'boiler lwt',
+        'loop supply temp',
+        'heating water supply temperature',
+        'boiler 1 heating water supply temperature',
+        'boiler 2 heating water supply temperature',
+        'boiler 1 supply water temperature',
+        'boiler 2 supply water temperature',
+        'supply water temperature',
+        'system supply',
+        'supply temp',
+        'hw supply',
+        'hot water supply',
+        'hws temp',
+      ],
+    },
+    {
+      key: 'hwrt',
+      label: 'Hot Water Return Temperature',
+      required: true,
+      ashrae36Name: 'Hot Water Return Temperature',
+      ashrae36Section: '5.19',
+      patterns: [
+        /\bhwrt\b/i,
+        /hw.?return.?temp/i,
+        /hot.?water.?return/i,
+        /heating.?water.?return/i,
+        /boiler.?return/i,
+        /return.?temp/i,
+        /return.?water.?temp/i,
+      ],
+      aliases: [
+        'hwrt',
+        'hw return temp',
+        'hot water return temp',
+        'entering hw temp',
+        'boiler return temp',
+        'heating water return temp',
+        'hwr temp',
+        'hw-rt',
+        'hw_rt',
+        'loop return temp',
+        'heating water return temperature',
+        'boiler return',
+        'return temperature',
+        'boiler 1 return water temperature',
+        'boiler 2 return water temperature',
+        'return water temperature',
+        'return temp av',
+        'return temp',
+        'hw return',
+        'hot water return',
+      ],
+    },
+    {
+      key: 'hwdp',
+      label: 'Hot Water Differential Pressure',
+      required: true,
+      ashrae36Name: 'Hot Water Differential Pressure',
+      ashrae36Section: '5.19',
+      patterns: [
+        /\bhwdp\b/i,
+        /hw.?dp\b/i,
+        /hot.?water.?dp/i,
+        /hw.?differential/i,
+        /heating.?water.?dp/i,
+        /hw.?system.?dp/i,
+        /heating.?loop.?dp/i,
+        /hw.?diff.?press/i,
+        /hot water loop dp/i,
+        /differential pressure \d/i,
+        /system differential pressure/i,
+      ],
+      aliases: [
+        'hw dp',
+        'hwdp',
+        'hot water dp',
+        'heating water dp',
+        'hw differential pressure',
+        'hw system dp',
+        'secondary hw dp',
+        'heating loop dp',
+        'hw-dp',
+        'hw_dp',
+        'heating dp',
+        'hot water loop dp',
+        'hot water loop differential pressure',
+        'differential pressure 1',
+        'differential pressure 2',
+        'hot water differential pressure',
+        'system differential pressure',
+        'hw sdp',
+        'hw system dp',
+        'high hot water loop differential pressure',
+        'low hot water loop differential pressure',
+      ],
+    },
+    {
+      key: 'hwFlow',
+      label: 'Hot Water Flow',
+      required: false,
+      ashrae36Name: 'Hot Water Flow',
+      ashrae36Section: '5.19',
+      configFlag: 'hasFlowMeter',
+      patterns: [/hw.?flow/i, /\bhwfm\b/i, /hot.?water.?flow/i, /heating.?water.?flow/i, /boiler.?loop.?flow/i],
+      aliases: [
+        'hw flow',
+        'hwfm',
+        'hot water flow rate',
+        'heating water flow',
+        'primary hw flow',
+        'hw gpm',
+        'boiler loop flow',
+        'hw volume flow',
+      ],
+    },
+    {
+      key: 'oat',
+      label: 'Outdoor Air Temperature',
+      required: true,
+      ashrae36Name: 'Outdoor Air Temperature',
+      ashrae36Section: '5.19',
+      patterns: [/\boat\b/i, /outdoor air temp/i, /outside air temp/i, /oa temp/i, /ambient temp/i],
+      aliases: [
+        'oat',
+        'outdoor air temp',
+        'outside air temp',
+        'oa temp',
+        'ambient temp',
+        'outdoor temp',
+        'oa-t',
+        'external temperature',
+      ],
+    },
+    {
+      key: 'boilerStatus',
+      label: 'Boiler Status',
+      required: true,
+      ashrae36Name: 'Boiler Status',
+      ashrae36Section: '5.19',
+      patterns: [
+        /boiler.?run.?status/i,
+        /boiler.?alarm/i,
+        /boiler.?fault/i,
+        /boiler.?status/i,
+        /boiler.?on.?off/i,
+        /boiler.?\d+.?status/i,
+        /boiler.?system.?alarm/i,
+        /\bb-1b.?status/i,
+        /\bb-2b.?status/i,
+      ],
+      aliases: [
+        'boiler run status',
+        'boiler alarm',
+        'boiler fault',
+        'boiler enable status',
+        'boiler proof',
+        'boiler on/off status',
+        'boiler 1 status',
+        'boiler 2 status',
+        'boiler 3 status',
+        'b-1 status',
+        'boiler 1 run',
+        'boiler 2 run',
+        'boiler 3 run',
+        'boiler b-1b status',
+        'boiler b-2b status',
+        'boiler system alarm',
+        'boiler 1 alarm',
+        'boiler 2 alarm',
+        'boiler 3 alarm',
+        'boiler status',
+        'boiler 1 alarm bni',
+        'boiler 2 alarm bni',
+      ],
+    },
+    {
+      key: 'hwPumpStatus',
+      label: 'Primary HW Pump Status',
+      required: true,
+      ashrae36Name: 'Primary Hot Water Pump Status',
+      ashrae36Section: '5.19',
+      patterns: [
+        /phwp.?status/i,
+        /primary.?hw.?pump.?status/i,
+        /primary.?pump.?run/i,
+        /hw.?pump.?status/i,
+        /hot.?water.?pump.?\d*.?status/i,
+        /hhwp.?\d.?vfd.?status/i,
+        /pump.?p.?\d.?status/i,
+      ],
+      aliases: [
+        'phwp status',
+        'primary hw pump status',
+        'primary pump run',
+        'hw primary pump proof',
+        'boiler pump status',
+        'primary hwp status',
+        'hot water pump 1 status',
+        'hot water pump 2 status',
+        'hot water pump 3 status',
+        'hot water pump 4 status',
+        'hot water pump 1 fault',
+        'hot water pump 2 fault',
+        'hhwp-1 vfd status',
+        'hhwp-2 vfd status',
+        'pump p-1 vfd status',
+        'pump p-2 vfd status',
+        'hw pump a status',
+        'hw pump status',
+        'pump p-1 status',
+        'pump p-2 status',
+      ],
+    },
+    {
+      key: 'hwIsoValve',
+      label: 'HW Isolation Valve Status',
+      required: false,
+      ashrae36Name: 'HW Isolation Valve Status',
+      ashrae36Section: '5.19',
+      configFlag: 'hasIsoValves',
+      patterns: [
+        /boiler.?iso.?valve/i,
+        /hw.?isolation.?valve/i,
+        /hw.?iso.?valve/i,
+        /boiler.?\d+.?isolation.?valve/i,
+        /boiler shutoff valve/i,
+      ],
+      aliases: [
+        'boiler iso valve',
+        'hw isolation valve',
+        'boiler shutoff valve',
+        'boiler hw valve status',
+        'hw shutoff valve',
+        'boiler 1 isolation valve',
+        'boiler 2 isolation valve',
+        'hw isolation valve',
+        'boiler isolation valve status',
+        'hw iso valve',
+      ],
+    },
+    {
+      key: 'boilerEnable',
+      label: 'Boiler Enable Command',
+      required: true,
+      ashrae36Name: 'Boiler Enable Command',
+      ashrae36Section: '5.19',
+      patterns: [
+        /boiler.?enable/i,
+        /boiler.?start.?stop/i,
+        /boiler.?command/i,
+        /boiler.?on.?command/i,
+        /boiler.?system.?enable/i,
+      ],
+      aliases: [
+        'boiler start/stop',
+        'boiler enable',
+        'boiler command',
+        'boiler on command',
+        'boiler 1 enable',
+        'boiler 2 enable',
+        'boiler 3 enable',
+        'boiler system enable',
+        'boiler enable / set point',
+      ],
+    },
+    {
+      key: 'hwSetpoint',
+      label: 'Boiler HW Supply Temperature Setpoint',
+      required: true,
+      ashrae36Name: 'Boiler HW Supply Temperature Setpoint',
+      ashrae36Section: '5.19',
+      patterns: [
+        /boiler.?lwt.?setpoint/i,
+        /hw.?setpoint/i,
+        /hw.?set.?point/i,
+        /boiler.?setpoint/i,
+        /hw.?supply.?setpoint/i,
+        /hw.?temp.?setpoint/i,
+        /boiler.?outlet.?setpoint/i,
+        /hw.?reset/i,
+      ],
+      aliases: [
+        'boiler lwt setpoint',
+        'boiler setpoint',
+        'hw setpoint',
+        'boiler supply temp setpoint',
+        'boiler temp setpoint',
+        'boiler system set point reference',
+        'hw setpoint av',
+        'boiler 1 outlet setpoint',
+        'boiler 2 outlet setpoint',
+        'boiler outlet setpoint',
+        'hw setpoint ani',
+        'boiler hw reset',
+        'hw set point av',
+        'hw reset',
+        'hw supply setpoint',
+        'hw set point',
+        'hws setpoint',
+        'supply setpoint',
+      ],
+    },
+    {
+      key: 'hwPumpEnable',
+      label: 'Primary HW Pump Enable Command',
+      required: true,
+      ashrae36Name: 'Primary HW Pump Enable Command',
+      ashrae36Section: '5.19',
+      patterns: [
+        /primary.?hw.?pump.?enable/i,
+        /phwp.?enable/i,
+        /hw.?pump.?\w+.?enable/i,
+        /hot.?water.?pump.?\d+.?enable/i,
+        /hhwp.?\d.?vfd.?enable/i,
+        /pump.?p.?\d.?enable/i,
+      ],
+      aliases: [
+        'primary hw pump start/stop',
+        'phwp enable',
+        'boiler pump command',
+        'hot water pump 1 enable',
+        'hot water pump 2 enable',
+        'hot water pump 3 enable',
+        'hot water pump 4 enable',
+        'hhwp-1 vfd enable',
+        'hhwp-2 vfd enable',
+        'pump p-1 vfd enable',
+        'pump p-2 vfd enable',
+        'pump p-1 enable',
+        'hw pump a enable',
+      ],
+    },
+    {
+      key: 'hwPumpSpeed',
+      label: 'Primary HW Pump Speed Command',
+      required: true,
+      ashrae36Name: 'Primary HW Pump Speed Command',
+      ashrae36Section: '5.19',
+      patterns: [
+        /primary.?hw.?pump.?vfd/i,
+        /phwp.?speed/i,
+        /hw.?pump.?speed/i,
+        /hot.?water.?pump.?\d+.?speed/i,
+        /hhwp.?\d.?vfd.?signal/i,
+        /pump.?p.?\d.?speed/i,
+      ],
+      aliases: [
+        'primary hw pump vfd speed',
+        'phwp speed command',
+        'boiler pump speed',
+        'primary hw vfd',
+        'hot water pump 1 speed',
+        'hot water pump 2 speed',
+        'hot water pump 3 speed',
+        'hot water pump 4 speed',
+        'pump 3 vfd speed',
+        'pump 4 vfd speed',
+        'pump 3 speed ani',
+        'pump 4 speed ani',
+        'hhwp-1 vfd signal',
+        'hhwp-2 vfd signal',
+        'pump p-1 speed',
+        'pump p-2 speed',
+        'hw pump speed',
+      ],
+    },
+    {
+      key: 'secHWPumpStatus',
+      label: 'Secondary HW Pump Status',
+      required: false,
+      ashrae36Name: 'Secondary Hot Water Pump Status',
+      ashrae36Section: '5.19',
+      configFlag: 'hasSecPump',
+      patterns: [
+        /shwp.?status/i,
+        /secondary.?hw.?pump.?status/i,
+        /secondary.?pump.?run/i,
+        /dist.?hwp.?status/i,
+        /sec.?pump.?status/i,
+      ],
+      aliases: [
+        'shwp status',
+        'secondary hw pump status',
+        'secondary pump run',
+        'distribution hw pump status',
+        'dist hwp status',
+        'secondary hwp status',
+        'sec pump status',
+        'hw sec pump status',
+      ],
+    },
+    {
+      key: 'hwIsoValveCmd',
+      label: 'HW Isolation Valve Command',
+      required: false,
+      ashrae36Name: 'HW Isolation Valve Command',
+      ashrae36Section: '5.19',
+      configFlag: 'hasIsoValves',
+      patterns: [
+        /boiler.?iso.?valve.?command/i,
+        /hw.?isolation.?valve.?command/i,
+        /boiler.?\d+.?isolation.?valve.?enable/i,
+        /boiler.?isolation.?valve.?enable/i,
+      ],
+      aliases: [
+        'boiler iso valve command',
+        'hw isolation valve command',
+        'boiler shutoff valve command',
+        'boiler 1 isolation valve enable',
+        'boiler 2 isolation valve enable',
+        'boiler isolation valve enable',
+      ],
+    },
+  ],
+
+  /* ── CHWP (Chilled Water Plant, ASHRAE 36 §5.20) ───────────────────── */
+  chwp: [
+    {
+      key: 'chwst',
+      label: 'CHW Supply Temperature',
+      required: true,
+      ashrae36Name: 'Chilled Water Supply Temperature',
+      ashrae36Section: '5.20',
+      patterns: [
+        /\bchwst\b/i,
+        /chw.?supply.?temp/i,
+        /chilled.?water.?supply.?temp/i,
+        /leaving.?chilled.?water/i,
+        /\blchwt\b/i,
+        /\blwt\b/i,
+        /chiller.?plant.?supply/i,
+        /\bchws\b.?temp/i,
+      ],
+      aliases: [
+        'chwst',
+        'chw supply temp',
+        'chilled water supply temp',
+        'leaving chilled water temp',
+        'lchwt',
+        'lwt',
+        'supply chw temp',
+        'chiller plant supply temp',
+        'chw-st',
+        'chw_st',
+        'chws temp',
+        'cw supply temp',
+      ],
+    },
+    {
+      key: 'chwrt',
+      label: 'CHW Return Temperature',
+      required: true,
+      ashrae36Name: 'Chilled Water Return Temperature',
+      ashrae36Section: '5.20',
+      patterns: [
+        /\bchwrt\b/i,
+        /chw.?return.?temp/i,
+        /chilled.?water.?return.?temp/i,
+        /entering.?chilled.?water/i,
+        /\bechwt\b/i,
+      ],
+      aliases: [
+        'chwrt',
+        'chw return temp',
+        'chilled water return temp',
+        'entering chilled water temp',
+        'echwt',
+        'ewt',
+        'return chw temp',
+        'chw-rt',
+        'chw_rt',
+        'chwr temp',
+      ],
+    },
+    {
+      key: 'chwdp',
+      label: 'CHW Differential Pressure',
+      required: true,
+      ashrae36Name: 'Chilled Water Differential Pressure',
+      ashrae36Section: '5.20',
+      patterns: [
+        /chw.?dp\b/i,
+        /\bchwdp\b/i,
+        /chw.?differential/i,
+        /chilled.?water.?dp/i,
+        /chw.?system.?dp/i,
+        /chw.?loop.?dp/i,
+        /chilled.?water.?loop.?dp/i,
+        /chw.?system.?differential/i,
+        /chilled.?water.?loop.?differential/i,
+        /system.?diff.?pressure/i,
+      ],
+      aliases: [
+        'chw dp',
+        'chwdp',
+        'chw differential pressure',
+        'chilled water dp',
+        'chw system dp',
+        'secondary chw dp',
+        'distribution dp',
+        'chw header dp',
+        'chilled water pressure differential',
+        'chw-dp',
+        'chw_dp',
+        'chilled-water loop dp',
+        'chilled water loop dp',
+        'chilled water differential pressure av',
+        'chilled water loop differential pressure',
+        'system diff pressure',
+        'chw system differential pressure',
+        'chw sdp',
+      ],
+    },
+    {
+      key: 'chillerEvapDP',
+      label: 'Chiller Evaporator DP',
+      required: false,
+      ashrae36Name: 'Chiller Evaporator Differential Pressure',
+      ashrae36Section: '5.20',
+      patterns: [
+        /chiller.?evap.?dp/i,
+        /evaporator.?dp/i,
+        /chiller.?dp\b/i,
+        /chiller.?flow.?dp/i,
+        /chiller.?min.?flow.?dp/i,
+        /chiller.?\d+.?evap.?diff/i,
+      ],
+      aliases: [
+        'chiller dp',
+        'evaporator dp',
+        'chiller evap dp',
+        'primary loop dp',
+        'chw evaporator pressure drop',
+        'chiller flow pressure drop',
+        'chiller 1 evap diff pressure',
+        'chiller 2 evap diff pressure',
+        'chiller evap diff pressure',
+        'chiller 1 evaporator return pressure',
+        'chiller 2 evaporator return pressure',
+        'chilled water pump 1 dp',
+        'chilled water pump 2 dp',
+        'chiller minimum flow dp sensor',
+        'chiller evap dp',
+        'chiller flow dp',
+        'chiller minimum flow dp',
+      ],
+    },
+    {
+      key: 'chwFlow',
+      label: 'Chilled Water Flow',
+      required: false,
+      ashrae36Name: 'Chilled Water Flow',
+      ashrae36Section: '5.20',
+      configFlag: 'hasFlowMeter',
+      patterns: [/chw.?flow/i, /chilled.?water.?flow/i, /chiller.?flow\b/i, /onicon.?tons/i],
+      aliases: [
+        'chw flow',
+        'chwf',
+        'chilled water flow rate',
+        'primary chw flow',
+        'chw gpm',
+        'chiller flow',
+        'primary flow',
+        'chw volume flow',
+        'chw-flow',
+        'chw_flow',
+        'chilled water supply flow',
+        'chilled water flow input',
+        'secondary chilled water flow',
+        'schwf',
+        'onicon tons',
+      ],
+    },
+    {
+      key: 'oat',
+      label: 'Outdoor Air Temperature',
+      required: true,
+      ashrae36Name: 'Outdoor Air Temperature',
+      ashrae36Section: '5.20',
+      patterns: [/\boat\b/i, /outdoor air temp/i, /outside air temp/i, /oa temp/i, /ambient temp/i],
+      aliases: [
+        'oat',
+        'outdoor air temp',
+        'outside air temp',
+        'oa temp',
+        'ambient temp',
+        'outdoor temp',
+        'external temperature',
+      ],
+    },
+    {
+      key: 'chillerStatus',
+      label: 'Chiller Status',
+      required: true,
+      ashrae36Name: 'Chiller Status',
+      ashrae36Section: '5.20',
+      patterns: [
+        /chiller.?run.?status/i,
+        /chiller.?on.?off/i,
+        /chiller.?fault/i,
+        /chiller.?alarm/i,
+        /chiller.?status/i,
+        /chiller.?running.?state/i,
+        /chiller.?\d+.?status/i,
+        /chiller.?\d+.?alarm/i,
+      ],
+      aliases: [
+        'chiller run status',
+        'chiller on/off status',
+        'chiller fault',
+        'chiller alarm',
+        'chiller enable status',
+        'chiller proof',
+        'chiller run proof',
+        'ch status',
+        'ch-1 status',
+        'chiller 1 status',
+        'chiller 2 status',
+        'chiller running state',
+        'chiller general alarm',
+        'chiller 1 general alarm',
+        'chiller 2 general alarm',
+      ],
+    },
+    {
+      key: 'pchwpStatus',
+      label: 'Primary CHW Pump Status',
+      required: true,
+      ashrae36Name: 'Primary Chilled Water Pump Status',
+      ashrae36Section: '5.20',
+      configFlag: 'hasPrimary',
+      patterns: [
+        /pchwp.?status/i,
+        /primary.?chw.?pump.?status/i,
+        /chw.?pump.?\d+.?status/i,
+        /chwp.?\w+.?dp.?status/i,
+        /chwp.?\d+.?status/i,
+        /chilled.?water.?pump.?\d+.?status/i,
+        /chilled.?water.?pump.?\d+.?vfd.?status/i,
+      ],
+      aliases: [
+        'pchwp status',
+        'primary chw pump status',
+        'primary pump run',
+        'primary pump proof',
+        'p-chw pump status',
+        'primary cwp status',
+        'chiller pump status',
+        'pcw pump status',
+        'chw pump 1 status',
+        'chw pump 2 status',
+        'chilled water pump 1 status',
+        'chilled water pump 2 status',
+        'chilled water pump 1 vfd status',
+        'chilled water pump 2 vfd status',
+        'chwp a dp status',
+        'chwp-1 status',
+      ],
+    },
+    {
+      key: 'schwpStatus',
+      label: 'Secondary CHW Pump Status',
+      required: false,
+      ashrae36Name: 'Secondary Chilled Water Pump Status',
+      ashrae36Section: '5.20',
+      configFlag: 'hasSecPump',
+      patterns: [/schwp.?status/i, /secondary.?chw.?pump.?status/i, /chwp.?\w+b.?status/i, /chwp.?\d+b.?status/i],
+      aliases: [
+        'schwp status',
+        'secondary chw pump status',
+        'secondary pump run',
+        'secondary pump proof',
+        's-chw pump status',
+        'distribution pump status',
+        'dist pump status',
+        'chwp b vfd status',
+        'chwp-2 status',
+      ],
+    },
+    {
+      key: 'schwpSpeed',
+      label: 'Secondary CHW Pump Speed',
+      required: false,
+      ashrae36Name: 'Secondary Chilled Water Pump Speed',
+      ashrae36Section: '5.20',
+      configFlag: 'hasSecPump',
+      patterns: [/schwp.?speed/i, /secondary.?chw.?pump.?speed/i, /secondary.?pump.?speed/i, /pump.?\d+.?vfd.?speed/i],
+      aliases: [
+        'schwp speed',
+        'secondary pump speed',
+        'secondary chw pump speed feedback',
+        'vfd speed',
+        'vfd feedback',
+        'pump hz',
+        'pump speed feedback',
+        'chilled water pump 2 speed',
+        'chilled-water pump 2 speed',
+        'chwp-2 speed',
+      ],
+    },
+    {
+      key: 'chwIsoValveStatus',
+      label: 'CHW Isolation Valve Status',
+      required: false,
+      ashrae36Name: 'Chiller CHW Isolation Valve Status',
+      ashrae36Section: '5.20',
+      configFlag: 'hasIsoValves',
+      patterns: [
+        /chw.?isolation.?valve.?status/i,
+        /chiller.?isolation.?valve/i,
+        /ch.?iso.?valve/i,
+        /chiller.?\d+.?chw.?isolation/i,
+        /chiller.?\d+.?evaporator.?valve.?feedback/i,
+      ],
+      aliases: [
+        'chw isolation valve',
+        'chiller isolation valve',
+        'chw shutoff valve',
+        'evaporator isolation valve',
+        'ch iso valve',
+        'chiller chw valve status',
+        'chiller 1 isolation valve',
+        'chiller 2 isolation valve',
+        'chiller 1 evaporator valve feedback',
+        'chiller 2 evaporator valve feedback',
+        'chilled water pump 1 isolation valve',
+        'chilled water pump 2 isolation valve',
+      ],
+    },
+    {
+      key: 'chillerEnable',
+      label: 'Chiller Enable Command',
+      required: true,
+      ashrae36Name: 'Chiller Enable Command',
+      ashrae36Section: '5.20',
+      patterns: [/chiller.?enable/i, /chiller.?start.?stop/i, /chiller.?command/i, /\bch.?\d+.?enable\b/i],
+      aliases: [
+        'chiller start/stop',
+        'chiller enable',
+        'chiller command',
+        'ch enable',
+        'chiller on command',
+        'ch-1 enable',
+        'chiller 1 command',
+      ],
+    },
+    {
+      key: 'chwSetpoint',
+      label: 'CHW Supply Temperature Setpoint',
+      required: true,
+      ashrae36Name: 'Chiller CHW Supply Temperature Setpoint',
+      ashrae36Section: '5.20',
+      patterns: [
+        /chiller.?chwst.?setpoint/i,
+        /lwt.?setpoint/i,
+        /chw.?setpoint/i,
+        /chw.?set.?point/i,
+        /cool.?set.?p/i,
+        /cooling.?set.?point/i,
+        /chilled.?water.?set.?point/i,
+        /chiller.?\d+.?active.?setpoint/i,
+      ],
+      aliases: [
+        'chiller chwst setpoint',
+        'lwt setpoint',
+        'chiller leaving water setpoint',
+        'chw setpoint',
+        'ch lwt sp',
+        'chiller temp setpoint',
+        'cooling set point',
+        'cool set point',
+        'chw set point av',
+        'chilled water set point',
+        'chiller 1 active setpoint',
+        'chiller 2 active setpoint',
+        'chws set point',
+        'chws setpoint',
+        'chw supply setpoint',
+        'cool setpt',
+        'alc cool setpt',
+      ],
+    },
+    {
+      key: 'pchwpEnable',
+      label: 'Primary CHW Pump Enable Command',
+      required: true,
+      ashrae36Name: 'Primary CHW Pump Enable Command',
+      ashrae36Section: '5.20',
+      configFlag: 'hasPrimary',
+      patterns: [
+        /pchwp.?enable/i,
+        /primary.?chw.?pump.?enable/i,
+        /chwp.?\w*.?enable/i,
+        /chw.?pump.?\d+.?enable/i,
+        /chilled.?water.?pump.?\d+.?enable/i,
+      ],
+      aliases: [
+        'primary pump start/stop',
+        'pchwp enable',
+        'primary chw pump command',
+        'primary pump command',
+        'chw pump 1 enable',
+        'chw pump 2 enable',
+        'chilled water pump 1 enable',
+        'chilled water pump 2 enable',
+        'chilled water pump 1 vfd enable',
+        'chilled water pump 2 vfd enable',
+        'chwp a enable',
+        'chwp-1 enable',
+        'chwp enable',
+      ],
+    },
+    {
+      key: 'schwpEnable',
+      label: 'Secondary CHW Pump Enable Command',
+      required: false,
+      ashrae36Name: 'Secondary CHW Pump Enable Command',
+      ashrae36Section: '5.20',
+      configFlag: 'hasSecPump',
+      patterns: [/schwp.?enable/i, /secondary.?chw.?pump.?enable/i, /chwp.?\w*b.?enable/i],
+      aliases: [
+        'secondary pump start/stop',
+        'schwp enable',
+        'secondary chw pump command',
+        'dist pump enable',
+        'chwp b enable',
+        'chwp-2 enable',
+      ],
+    },
+    {
+      key: 'chwIsoValveCmd',
+      label: 'CHW Isolation Valve Command',
+      required: false,
+      ashrae36Name: 'CHW Isolation Valve Command',
+      ashrae36Section: '5.20',
+      configFlag: 'hasIsoValves',
+      patterns: [
+        /chw.?iso.?valve.?command/i,
+        /chiller.?iso.?valve.?command/i,
+        /chw.?isolation.?valve.?open/i,
+        /chiller.?\d+.?isolation.?valve\b/i,
+        /chiller.?\d+.?evaporator.?valve.?signal/i,
+      ],
+      aliases: [
+        'chiller iso valve command',
+        'chw isolation valve open/close',
+        'chiller shutoff valve command',
+        'evaporator valve command',
+        'chiller 1 isolation valve',
+        'chiller 2 isolation valve',
+        'chiller 1 evaporator valve signal',
+        'chiller 2 evaporator valve signal',
+        'ch condenser valve signal',
+        'chw isolation valve',
+      ],
+    },
+  ],
+
+  /* ── CT (Cooling Tower Plant, ASHRAE 36 §5.21) ─────────────────────── */
+  ct: [
+    {
+      key: 'cwst',
+      label: 'Condenser Water Supply Temperature',
+      required: true,
+      ashrae36Name: 'Condenser Water Supply Temperature',
+      ashrae36Section: '5.21',
+      patterns: [
+        /\bcwst\b/i,
+        /cw.?supply.?temp/i,
+        /condenser.?water.?supply/i,
+        /leaving.?cw.?temp/i,
+        /tower.?supply.?temp/i,
+        /tower.?leaving.?water/i,
+        /condenser.?supply.?temp/i,
+        /condenser.?water.?temp.?to.?tower/i,
+        /cws.?temp/i,
+      ],
+      aliases: [
+        'cwst',
+        'cw supply temp',
+        'condenser water supply temp',
+        'leaving cw temp',
+        'tower supply temp',
+        'tower leaving water temp',
+        'condenser supply temp',
+        'tower outlet temp',
+        'cw-st',
+        'cw_st',
+        'cond water supply temp',
+        'condenser water temp to towers',
+        'cws temp',
+        'condenser supply',
+      ],
+    },
+    {
+      key: 'cwrt',
+      label: 'Condenser Water Return Temperature',
+      required: true,
+      ashrae36Name: 'Condenser Water Return Temperature',
+      ashrae36Section: '5.21',
+      patterns: [
+        /\bcwrt\b/i,
+        /cw.?return.?temp/i,
+        /condenser.?water.?return/i,
+        /entering.?cw.?temp/i,
+        /tower.?return.?temp/i,
+        /tower.?entering.?water/i,
+        /condenser.?water.?temp.?from.?tower/i,
+        /cwr.?temp/i,
+      ],
+      aliases: [
+        'cwrt',
+        'cw return temp',
+        'condenser water return temp',
+        'entering cw temp',
+        'tower return temp',
+        'tower entering water temp',
+        'condenser return temp',
+        'tower inlet temp',
+        'cw-rt',
+        'cw_rt',
+        'cond water return temp',
+        'condenser water temp from towers',
+        'cwr temp',
+        'condenser return',
+      ],
+    },
+    {
+      key: 'oaWetBulb',
+      label: 'Outdoor Air Wet Bulb Temperature',
+      required: true,
+      ashrae36Name: 'Outdoor Air Wet Bulb Temperature',
+      ashrae36Section: '5.21',
+      patterns: [
+        /wet.?bulb/i,
+        /\bwb\b.?temp/i,
+        /oa.?wet.?bulb/i,
+        /\boawb\b/i,
+        /outdoor.?wb/i,
+        /ambient.?wet.?bulb/i,
+        /dewpoint.?temp/i,
+      ],
+      aliases: [
+        'oa wet bulb',
+        'wb temp',
+        'wet bulb temperature',
+        'oat wb',
+        'outdoor wb',
+        'ambient wet bulb',
+        'wet bulb',
+        'oa-wb',
+        'oa enthalpy (calculated)',
+        'dewpoint temp',
+      ],
+    },
+    {
+      key: 'oaRH',
+      label: 'Outdoor Air Relative Humidity',
+      required: false,
+      ashrae36Name: 'Outdoor Air Relative Humidity',
+      ashrae36Section: '5.21',
+      patterns: [/oa.?rh\b/i, /outdoor.?humidity/i, /outside.?air.?humidity/i, /relative.?humidity/i, /\boat.?rh\b/i],
+      aliases: [
+        'oa rh',
+        'outdoor humidity',
+        'outside air humidity',
+        'oa humidity',
+        'relative humidity',
+        'oat rh',
+        'outdoor rh',
+        'ambient rh',
+        'oa-rh',
+      ],
+    },
+    {
+      key: 'ctFanStatus',
+      label: 'Cooling Tower Fan Status',
+      required: true,
+      ashrae36Name: 'Cooling Tower Fan Status',
+      ashrae36Section: '5.21',
+      patterns: [
+        /tower.?fan.?status/i,
+        /ct.?fan.?status/i,
+        /ct.?\d+.?fan.?status/i,
+        /cooling.?tower.?fan.?run/i,
+        /ct.?fan.?vfd.?status/i,
+      ],
+      aliases: [
+        'tower fan status',
+        'ct fan status',
+        'cooling tower fan run',
+        'tower fan run',
+        'ct fan run',
+        'tower fan proof',
+        'ct fan 1 status',
+        'cell fan status',
+        'ct fan vfd status',
+        'ct 1 fan vfd status',
+        'ct 2 fan vfd status',
+      ],
+    },
+    {
+      key: 'cwPumpStatus',
+      label: 'Condenser Water Pump Status',
+      required: true,
+      ashrae36Name: 'Condenser Water Pump Status',
+      ashrae36Section: '5.21',
+      patterns: [
+        /cw.?pump.?status/i,
+        /condenser.?pump.?status/i,
+        /condenser.?water.?pump.?run/i,
+        /cwp.?dp.?status/i,
+        /cwp.?\d+.?dp.?status/i,
+      ],
+      aliases: [
+        'cw pump status',
+        'condenser pump status',
+        'condenser water pump run',
+        'cw pump run',
+        'tower pump status',
+        'condenser pump run',
+        'cwp status',
+        'cwp run',
+        'cwp dp status',
+        'cwp 1 dp status',
+        'cwp 2 dp status',
+      ],
+    },
+    {
+      key: 'sumpLevel',
+      label: 'Sump Level',
+      required: true,
+      ashrae36Name: 'Sump Level',
+      ashrae36Section: '5.21',
+      patterns: [
+        /sump.?level/i,
+        /ct.?sump/i,
+        /basin.?level/i,
+        /tower.?sump/i,
+        /cooling.?tower.?basin.?level/i,
+        /makeup.?water.?level/i,
+      ],
+      aliases: [
+        'tower sump level',
+        'ct sump level',
+        'basin level',
+        'cooling tower basin level',
+        'sump float',
+        'tower basin level',
+        'water level',
+        'makeup water level',
+        'ct level',
+      ],
+    },
+    {
+      key: 'cwIsoValveStatus',
+      label: 'CW Isolation Valve Status',
+      required: false,
+      ashrae36Name: 'Condenser Water Isolation Valve Status',
+      ashrae36Section: '5.21',
+      configFlag: 'hasCWIsoValve',
+      patterns: [
+        /condenser.?iso.?valve/i,
+        /cw.?isolation.?valve/i,
+        /chiller.?cw.?valve/i,
+        /cnd.?isolation.?valve/i,
+        /condenser.?isolation.?valve/i,
+      ],
+      aliases: [
+        'condenser iso valve',
+        'cw isolation valve',
+        'chiller cw valve status',
+        'condenser isolation valve',
+        'cw shutoff valve',
+        'cond isolation valve',
+        'ch cnd isolation valve status',
+        'condenser valve status',
+      ],
+    },
+    {
+      key: 'ctFanEnable',
+      label: 'CT Fan Enable Command',
+      required: true,
+      ashrae36Name: 'Cooling Tower Fan Enable Command',
+      ashrae36Section: '5.21',
+      patterns: [
+        /tower.?fan.?enable/i,
+        /ct.?fan.?enable/i,
+        /ct.?\d+.?fan.?enable/i,
+        /tower.?fan.?start/i,
+        /ct.?fan.?vfd.?enable/i,
+      ],
+      aliases: [
+        'tower fan enable',
+        'ct fan command',
+        'tower fan start/stop',
+        'ct fan on/off',
+        'cell fan enable',
+        'ct fan vfd enable',
+        'ct 1 fan vfd enable',
+        'ct 2 fan vfd enable',
+        'ct fan enable',
+      ],
+    },
+    {
+      key: 'ctFanSpeed',
+      label: 'CT Fan Speed Command',
+      required: false,
+      ashrae36Name: 'Cooling Tower Fan Speed Command',
+      ashrae36Section: '5.21',
+      configFlag: 'hasVFD',
+      patterns: [/tower.?fan.?speed/i, /ct.?fan.?vfd.?speed/i, /ct.?\d+.?fan.?speed/i, /ct.?fan.?speed/i],
+      aliases: [
+        'tower fan speed',
+        'ct fan vfd',
+        'tower fan vfd speed',
+        'ct fan speed command',
+        'tower vfd speed',
+        'cell fan speed',
+        'ct fan vfd speed',
+        'ct 1 fan vfd speed',
+        'ct 2 fan vfd speed',
+        'ct fan speed',
+      ],
+    },
+    {
+      key: 'cwPumpEnable',
+      label: 'CW Pump Enable Command',
+      required: true,
+      ashrae36Name: 'Condenser Water Pump Enable Command',
+      ashrae36Section: '5.21',
+      patterns: [
+        /cw.?pump.?enable/i,
+        /condenser.?pump.?enable/i,
+        /cw.?pump.?start/i,
+        /tower.?pump.?enable/i,
+        /cwp.?\d+.?enable/i,
+      ],
+      aliases: [
+        'cw pump enable',
+        'condenser pump command',
+        'cw pump start/stop',
+        'tower pump enable',
+        'cwp enable',
+        'cwp 1 enable',
+        'cwp 2 enable',
+        'cwp 3 enable',
+      ],
+    },
+    {
+      key: 'cwIsoValveCmd',
+      label: 'CW Isolation Valve Command',
+      required: false,
+      ashrae36Name: 'Condenser Water Isolation Valve Command',
+      ashrae36Section: '5.21',
+      configFlag: 'hasCWIsoValve',
+      patterns: [
+        /cw.?iso.?valve.?command/i,
+        /condenser.?iso.?valve.?command/i,
+        /condenser.?valve.?signal/i,
+        /cw.?shutoff.?valve.?command/i,
+        /\bcv.?ref\b/i,
+        /\bcv\d+ref\b/i,
+      ],
+      aliases: [
+        'cw iso valve command',
+        'condenser isolation valve command',
+        'cw shutoff valve command',
+        'condenser valve open/close',
+        'ch condenser valve signal',
+        'condenser valve signal',
+        'cv ref',
+        'cv1ref',
+        'cv2ref',
+      ],
+    },
+    {
+      key: 'makeupValveCmd',
+      label: 'Makeup Water Valve Command',
+      required: false,
+      ashrae36Name: 'Makeup Water Valve Command',
+      ashrae36Section: '5.21',
+      configFlag: 'hasMakeupValve',
+      patterns: [
+        /makeup.?water.?valve/i,
+        /basin.?fill.?valve/i,
+        /sump.?makeup/i,
+        /ct.?makeup.?valve/i,
+        /tower.?fill.?valve/i,
+        /makeup.?valve/i,
+      ],
+      aliases: [
+        'makeup water valve',
+        'basin fill valve',
+        'sump makeup valve',
+        'ct makeup valve',
+        'tower fill valve',
+        'makeup valve',
+      ],
+    },
+  ],
+};
+
+/* ── emNormalizePointName ───────────────────────────────────────────────────
+   Internal helper: normalize a raw BAS point name for fuzzy matching.
+   - Lowercases
+   - Replaces _-/.# with spaces
+   - Strips numeric suffixes (removes unit numbers like "1", "2" etc.)
+     but keeps them in original for display
+   - Collapses whitespace                                                 */
+function emNormalizePointName(name) {
+  if (!name) return '';
+  return name
+    .toLowerCase()
+    .replace(/[_\-\/\.#]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/* ── emNormalizePointNameStrip ─────────────────────────────────────────────
+   Aggressive normalize: strips digits too (for alias matching where "pump 1"
+   and "pump 2" should both match "pump" categories).                    */
+function emNormalizePointNameStrip(name) {
+  if (!name) return '';
+  return name
+    .toLowerCase()
+    .replace(/[_\-\/\.#]/g, ' ')
+    .replace(/\b(ahu|asu|rtu)\b/gi, 'ahu')
+    .replace(/\d+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/* ── emNormalizePoint ───────────────────────────────────────────────────────
+   3-tier point name matcher.
+   Returns: { categoryKey, categoryLabel, matchTier, confidence,
+              auditRelevant, ashrae36PointName, ashrae36Section }
+   matchTier: 1=exact name, 2=standard alias exact, 3=pattern/alias fuzzy
+   Returns null if the point does not match any category.
+   auditRelevant=false if matched an exclusion pattern.                  */
+function emNormalizePoint(rawName, equipCategory) {
+  if (!rawName) return null;
+
+  // ── Exclusion check ──────────────────────────────────────────────────
+  for (var ei = 0; ei < EM_EXCLUSION_PATTERNS.length; ei++) {
+    if (EM_EXCLUSION_PATTERNS[ei].test(rawName)) {
+      return {
+        categoryKey: null,
+        categoryLabel: null,
+        matchTier: 0,
+        confidence: 'excluded',
+        auditRelevant: false,
+        ashrae36PointName: null,
+        ashrae36Section: null,
+        rawName: rawName,
+      };
+    }
+  }
+
+  var cats = equipCategory && EM_POINT_CATEGORIES[equipCategory] ? EM_POINT_CATEGORIES[equipCategory] : [];
+
+  // If no category known, try all equipment types
+  if (!cats.length) {
+    var allCats = Object.keys(EM_POINT_CATEGORIES);
+    for (var ac = 0; ac < allCats.length; ac++) {
+      cats = cats.concat(EM_POINT_CATEGORIES[allCats[ac]]);
+    }
+  }
+
+  var normDisplay = emNormalizePointName(rawName);
+  var normStripped = emNormalizePointNameStrip(rawName);
+
+  for (var ci = 0; ci < cats.length; ci++) {
+    var cat = cats[ci];
+
+    // ── Tier 1: Exact canonical name match (case-insensitive) ────────
+    var canonNorm = emNormalizePointName(cat.ashrae36Name || cat.label);
+    if (normDisplay === canonNorm) {
+      return {
+        categoryKey: cat.key,
+        categoryLabel: cat.label,
+        matchTier: 1,
+        confidence: 'high',
+        auditRelevant: true,
+        ashrae36PointName: cat.ashrae36Name,
+        ashrae36Section: cat.ashrae36Section,
+        rawName: rawName,
+        required: cat.required,
+        configFlag: cat.configFlag || null,
+      };
+    }
+
+    // ── Tier 2: Standard alias exact match ──────────────────────────
+    var aliases = cat.aliases || [];
+    for (var ai = 0; ai < aliases.length; ai++) {
+      var aliasNorm = emNormalizePointName(aliases[ai]);
+      if (normDisplay === aliasNorm) {
+        return {
+          categoryKey: cat.key,
+          categoryLabel: cat.label,
+          matchTier: 2,
+          confidence: 'high',
+          auditRelevant: true,
+          ashrae36PointName: cat.ashrae36Name,
+          ashrae36Section: cat.ashrae36Section,
+          rawName: rawName,
+          required: cat.required,
+          configFlag: cat.configFlag || null,
+        };
+      }
+      // Alias substring: alias must appear within the normalized name
+      if (aliasNorm.length >= 4 && normDisplay.includes(aliasNorm)) {
+        return {
+          categoryKey: cat.key,
+          categoryLabel: cat.label,
+          matchTier: 2,
+          confidence: 'medium',
+          auditRelevant: true,
+          ashrae36PointName: cat.ashrae36Name,
+          ashrae36Section: cat.ashrae36Section,
+          rawName: rawName,
+          required: cat.required,
+          configFlag: cat.configFlag || null,
+        };
+      }
+    }
+
+    // ── Tier 3: Regex pattern match ──────────────────────────────────
+    var patterns = cat.patterns || [];
+    for (var pi = 0; pi < patterns.length; pi++) {
+      if (patterns[pi].test(rawName)) {
+        return {
+          categoryKey: cat.key,
+          categoryLabel: cat.label,
+          matchTier: 3,
+          confidence: 'medium',
+          auditRelevant: true,
+          ashrae36PointName: cat.ashrae36Name,
+          ashrae36Section: cat.ashrae36Section,
+          rawName: rawName,
+          required: cat.required,
+          configFlag: cat.configFlag || null,
+        };
+      }
+    }
+
+    // Tier 3b: stripped alias (number-insensitive)
+    for (var ai2 = 0; ai2 < aliases.length; ai2++) {
+      var aliasStripped = emNormalizePointNameStrip(aliases[ai2]);
+      if (aliasStripped.length >= 4 && normStripped === aliasStripped) {
+        return {
+          categoryKey: cat.key,
+          categoryLabel: cat.label,
+          matchTier: 3,
+          confidence: 'low',
+          auditRelevant: true,
+          ashrae36PointName: cat.ashrae36Name,
+          ashrae36Section: cat.ashrae36Section,
+          rawName: rawName,
+          required: cat.required,
+          configFlag: cat.configFlag || null,
+        };
+      }
+    }
+  }
+
+  // No match found
+  return {
+    categoryKey: null,
+    categoryLabel: null,
+    matchTier: 0,
+    confidence: 'none',
+    auditRelevant: true,
+    ashrae36PointName: null,
+    ashrae36Section: null,
+    rawName: rawName,
+  };
+}
+
+/* ── emComputeCompliance ────────────────────────────────────────────────────
+   For a single equipment row, compute ASHRAE 36 coverage.
+   equipRow.category = 'ahu'|'vav'|'fpb'|'ddvav'|'hwp'|'chwp'|'ct'
+   equipRow.points   = { rawPointName: value, ... }
+   configFlags       = object of { hasReturnFan: bool, hasEconomizer: bool, ... }
+                       loaded from emLoadEquipConfigFlags()
+
+   Returns:
+   {
+     coveredPoints:  [{ categoryKey, categoryLabel, matchTier, confidence, pointName }]
+     missingPoints:  [{ categoryKey, categoryLabel, ashrae36Name, required }]
+     naPoints:       [{ categoryKey, categoryLabel, reason }]   // N/A due to configFlag
+     coveragePct:    number 0-100  (matched required / (required - na))
+     totalRequired:  number
+     totalMatched:   number
+     totalNA:        number
+   }                                                                      */
+function emComputeCompliance(equipRow, configFlags) {
+  var category = equipRow && equipRow.category;
+  var catDefs = category && EM_POINT_CATEGORIES[category];
+  if (!catDefs) {
+    return {
+      coveredPoints: [],
+      missingPoints: [],
+      naPoints: [],
+      coveragePct: 0,
+      totalRequired: 0,
+      totalMatched: 0,
+      totalNA: 0,
+    };
+  }
+
+  var flags = configFlags || {};
+  var points = equipRow.points || {};
+  var rawNames = Object.keys(points);
+
+  // Build a set of covered category keys from matching point names
+  var coveredKeys = {}; // key -> match result
+  var coveredPoints = [];
+
+  for (var ri = 0; ri < rawNames.length; ri++) {
+    var pName = rawNames[ri];
+    var match = emNormalizePoint(pName, category);
+    if (match && match.auditRelevant && match.categoryKey) {
+      // Keep the highest-confidence match per category key
+      if (!coveredKeys[match.categoryKey] || match.matchTier < coveredKeys[match.categoryKey].matchTier) {
+        coveredKeys[match.categoryKey] = match;
+      }
+    }
+  }
+
+  // Build covered list
+  for (var ck in coveredKeys) {
+    if (coveredKeys.hasOwnProperty(ck)) {
+      var m = coveredKeys[ck];
+      coveredPoints.push({
+        categoryKey: m.categoryKey,
+        categoryLabel: m.categoryLabel,
+        ashrae36PointName: m.ashrae36PointName,
+        ashrae36Section: m.ashrae36Section,
+        matchTier: m.matchTier,
+        confidence: m.confidence,
+        pointName: m.rawName,
+        required: m.required,
+      });
+    }
+  }
+
+  var missingPoints = [];
+  var naPoints = [];
+  var totalRequired = 0;
+  var totalNA = 0;
+  var totalMatched = 0;
+
+  for (var di = 0; di < catDefs.length; di++) {
+    var def = catDefs[di];
+    if (!def.required) continue; // Only count required points toward coverage
+
+    totalRequired++;
+
+    // Check if this category is N/A due to a config flag being false
+    if (def.configFlag) {
+      // Default flag value: look up EM_EQUIP_CONFIG_FLAGS for default
+      var flagDefault = true;
+      var flagDefs = EM_EQUIP_CONFIG_FLAGS[category] || [];
+      for (var fi = 0; fi < flagDefs.length; fi++) {
+        if (flagDefs[fi].key === def.configFlag) {
+          flagDefault = flagDefs[fi]['default'];
+          break;
+        }
+      }
+      var flagVal = def.configFlag in flags ? flags[def.configFlag] : flagDefault;
+      if (!flagVal) {
+        naPoints.push({ categoryKey: def.key, categoryLabel: def.label, reason: def.configFlag + '=false' });
+        totalNA++;
+        continue;
+      }
+    }
+
+    if (coveredKeys[def.key]) {
+      totalMatched++;
+    } else {
+      missingPoints.push({
+        categoryKey: def.key,
+        categoryLabel: def.label,
+        ashrae36Name: def.ashrae36Name,
+        ashrae36Section: def.ashrae36Section,
+        required: true,
+      });
+    }
+  }
+
+  var denominator = totalRequired - totalNA;
+  var coveragePct = denominator > 0 ? Math.round((totalMatched / denominator) * 100) : 0;
+
+  return {
+    coveredPoints: coveredPoints,
+    missingPoints: missingPoints,
+    naPoints: naPoints,
+    coveragePct: coveragePct,
+    totalRequired: totalRequired,
+    totalMatched: totalMatched,
+    totalNA: totalNA,
+  };
+}
+
+/* ── emLoadEquipConfigFlags / emSaveEquipConfigFlags ────────────────────────
+   Per-equipment configuration flags stored in data.edits, keyed by
+   rowId + '::config'. These tell the compliance engine which optional
+   hardware features are present (has economizer, has return fan, etc.)  */
+function emLoadEquipConfigFlags(projId, rowId) {
+  var editKey = 'en_eqmatrix_edits_' + projId;
+  var raw = localStorage.getItem(editKey);
+  var edits = raw ? JSON.parse(raw) : {};
+  return edits[rowId + '::config'] || {};
+}
+
+function emSaveEquipConfigFlags(projId, rowId, flags) {
+  var editKey = 'en_eqmatrix_edits_' + projId;
+  var raw = localStorage.getItem(editKey);
+  var edits = raw ? JSON.parse(raw) : {};
+  edits[rowId + '::config'] = flags;
+  localStorage.setItem(editKey, JSON.stringify(edits));
+}
+
+/* ── emLoadCustomMappings / emSaveCustomMappings ────────────────────────────
+   Per-project custom point name → category mappings.
+   Allows users to manually override the auto-match for unusual BAS names.
+   Stored in localStorage as an array of { rawName, categoryKey, equipCategory }.  */
+function emLoadCustomMappings(projId) {
+  if (!projId) return [];
+  var raw = localStorage.getItem('en_eqmatrix_cmaps_' + projId);
+  return raw ? JSON.parse(raw) : [];
+}
+
+function emSaveCustomMappings(projId, mappings) {
+  if (!projId) return;
+  localStorage.setItem('en_eqmatrix_cmaps_' + projId, JSON.stringify(mappings));
+}
+
+/* ── emNormalizePointWithCustom ─────────────────────────────────────────────
+   Wrapper around emNormalizePoint that checks custom mappings first.
+   Custom mappings take priority over all 3 auto-match tiers.           */
+function emNormalizePointWithCustom(rawName, equipCategory, customMappings) {
+  var maps = customMappings || [];
+  var normRaw = emNormalizePointName(rawName);
+  for (var mi = 0; mi < maps.length; mi++) {
+    var m = maps[mi];
+    if (!m.rawName || !m.categoryKey) continue;
+    if ((!m.equipCategory || m.equipCategory === equipCategory) && emNormalizePointName(m.rawName) === normRaw) {
+      // Custom mapping: tier 0 (highest priority), confidence 'custom'
+      var catDefs = (equipCategory && EM_POINT_CATEGORIES[equipCategory]) || [];
+      var catDef = null;
+      for (var di = 0; di < catDefs.length; di++) {
+        if (catDefs[di].key === m.categoryKey) {
+          catDef = catDefs[di];
+          break;
+        }
+      }
+      return {
+        categoryKey: m.categoryKey,
+        categoryLabel: catDef ? catDef.label : m.categoryKey,
+        matchTier: 0,
+        confidence: 'custom',
+        auditRelevant: true,
+        ashrae36PointName: catDef ? catDef.ashrae36Name : null,
+        ashrae36Section: catDef ? catDef.ashrae36Section : null,
+        rawName: rawName,
+        required: catDef ? catDef.required : false,
+        configFlag: catDef ? catDef.configFlag || null : null,
+      };
+    }
+  }
+  return emNormalizePoint(rawName, equipCategory);
+}
