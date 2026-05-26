@@ -56,6 +56,48 @@ function emToggleEditMode(btn) {
   emRenderTable(data, _emFilters);
 }
 
+/* ── emToggleViewMode ───────────────────────────────────────────────────────
+   Switches between 'audit' (ASHRAE 36 compliance columns) and 'raw' (raw
+   point name columns). Updates the toggle button label/style and re-renders
+   the table. Also shows/hides the appropriate column-toggle controls.    */
+function emToggleViewMode() {
+  _emViewMode = _emViewMode === 'audit' ? 'raw' : 'audit';
+  var btn = document.getElementById('em-view-mode-btn');
+  if (btn) {
+    if (_emViewMode === 'audit') {
+      btn.textContent = 'Audit View';
+      btn.style.background = 'var(--accent)';
+      btn.style.color = '#fff';
+      btn.style.borderColor = 'transparent';
+    } else {
+      btn.textContent = 'Raw View';
+      btn.style.background = 'var(--s2)';
+      btn.style.color = 'var(--text2)';
+      btn.style.borderColor = 'var(--border)';
+    }
+  }
+  emSyncViewModeControls();
+  var data = emLoadMatrix(window._emActivePid);
+  emRenderTable(data, _emFilters);
+}
+
+/* ── emSyncViewModeControls ─────────────────────────────────────────────────
+   Shows/hides toolbar controls based on current _emViewMode.             */
+function emSyncViewModeControls() {
+  var rawToggles = document.getElementById('em-raw-col-toggles');
+  var dynControls = document.getElementById('em-dyn-col-controls');
+  var auditInfo = document.getElementById('em-audit-col-info');
+  if (_emViewMode === 'audit') {
+    if (rawToggles) rawToggles.style.display = 'none';
+    if (dynControls) dynControls.style.display = 'none';
+    if (auditInfo) auditInfo.style.display = '';
+  } else {
+    if (rawToggles) rawToggles.style.display = 'inline-flex';
+    if (dynControls) dynControls.style.display = 'inline-flex';
+    if (auditInfo) auditInfo.style.display = 'none';
+  }
+}
+
 var EM_CHECK_COLS_11 = [
   'Duct Static Pressure Sensor',
   'Supply Air Temp Sensor',
@@ -679,6 +721,7 @@ var _emCurrentPage = 0;
 var _emPageSize = 100;
 var _emShowAllDynCols = false; // when false, limit dynamic point columns to top 20 by frequency
 var EM_DYN_COL_LIMIT = 20; // max dynamic point columns shown by default
+var _emViewMode = 'audit'; // 'audit' = ASHRAE 36 compliance columns; 'raw' = raw point columns
 
 function initEquipMatrix(projId) {
   var wrap = document.getElementById('em-proj-wrap');
@@ -778,11 +821,12 @@ function emRenderMatrix(container, data, pid) {
   _emFilters = { building: '', type: '', search: '' };
   _emSortCol = null;
   _emSortDir = 1;
-  _emHiddenGroups = {};
+  _emHiddenGroups = { asset: true }; // asset columns (Serial#, Model#, Manufacturer, Size/Capacity) hidden by default
   _emEditMode = false;
   _emCurrentPage = 0;
   _emPageSize = EM_PAGE_SIZE;
   _emShowAllDynCols = false;
+  _emViewMode = 'audit';
   emInjectMatrixCSS();
 
   var projName = '';
@@ -795,7 +839,7 @@ function emRenderMatrix(container, data, pid) {
 
   var stats = emCalcSummaryStats(data.rows || []);
   var statsHtml =
-    '<div style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0">' +
+    '<div id="em-stats-bar" style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0">' +
     emStatPill('Buildings', stats.buildings) +
     emStatPill('Equipment', stats.total) +
     emStatPill('AHU / RTU', stats.ahu) +
@@ -908,8 +952,10 @@ function emRenderToolbar(data, pid, projBadge) {
   var colToggleStyle =
     'display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);cursor:pointer;padding:2px 6px;border-radius:3px;border:1px solid var(--border);background:var(--s2);user-select:none';
   var colToggles =
-    '<div style="display:flex;align-items:center;gap:6px;padding:4px 16px 6px;flex-wrap:wrap;border-top:1px solid var(--border)">' +
+    '<div id="em-col-toggles" style="display:flex;align-items:center;gap:6px;padding:4px 16px 6px;flex-wrap:wrap;border-top:1px solid var(--border)">' +
     '<span style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-right:2px">Columns:</span>' +
+    // Raw-view-only toggles (hidden in audit mode)
+    '<span id="em-raw-col-toggles" style="display:none;align-items:center;gap:6px">' +
     '<label style="' +
     colToggleStyle +
     '"><input type="checkbox" checked onchange="emToggleColGroup(\'physical\',this.checked)" style="margin:0"> Physical</label>' +
@@ -925,13 +971,20 @@ function emRenderToolbar(data, pid, projBadge) {
     '<label style="' +
     colToggleStyle +
     '"><input type="checkbox" checked onchange="emToggleColGroup(\'controls\',this.checked)" style="margin:0"> Controls</label>' +
-    '<span style="margin-left:8px;border-left:1px solid var(--border);padding-left:8px;display:inline-flex;align-items:center;gap:4px">' +
+    '<label style="' +
+    colToggleStyle +
+    '"><input type="checkbox" onchange="emToggleColGroup(\'asset\',this.checked)" style="margin:0"> Asset Details</label>' +
+    '</span>' +
+    // Raw-mode dynamic point column controls
+    '<span id="em-dyn-col-controls" style="display:none;margin-left:8px;border-left:1px solid var(--border);padding-left:8px;align-items:center;gap:4px">' +
     '<span id="em-dyn-col-info" style="font-size:10px;color:var(--text3)"></span>' +
     '<button id="em-dyn-col-toggle" onclick="emToggleAllDynCols()" ' +
     'style="font-size:10px;padding:2px 8px;background:var(--s3);border:1px solid var(--border);color:var(--text2);border-radius:3px;cursor:pointer;height:20px;line-height:1">' +
     'Show All Point Columns' +
     '</button>' +
     '</span>' +
+    // Audit-view info label
+    '<span id="em-audit-col-info" style="font-size:10px;color:var(--text3)">Showing ASHRAE 36 compliance columns</span>' +
     '</div>';
   return (
     '<div style="display:flex;flex-direction:column">' +
@@ -946,6 +999,7 @@ function emRenderToolbar(data, pid, projBadge) {
     '<span id="em-row-count" style="font-size:11px;color:var(--text3);margin-left:4px"></span>' +
     '<div style="flex:1"></div>' +
     (projBadge || '') +
+    '<button id="em-view-mode-btn" class="btn btn-sm" onclick="emToggleViewMode()" style="height:28px;font-size:11px;background:var(--accent);color:#fff;border-color:transparent">Audit View</button>' +
     '<button id="em-edit-mode-btn" class="btn btn-ghost btn-sm" onclick="emToggleEditMode(this)" style="height:28px;font-size:11px">✏️ Edit</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleSaveEdits()" style="height:28px;font-size:11px">Save Edits</button>' +
     '<button id="em-delete-all-btn" class="btn btn-ghost btn-sm" onclick="emDeleteAllRows(\'' +
@@ -1022,11 +1076,13 @@ function emGetColDefs(projId) {
     }
     defs.push({ key: pm.col, label: pm.label, group: grp, width: 120, isLive: true });
   }
-  // Physical Attributes
-  defs.push({ key: 'serial', label: 'Serial #', group: 'physical', width: 120 });
-  defs.push({ key: 'model', label: 'Model #', group: 'physical', width: 120 });
-  defs.push({ key: 'manufacturer', label: 'Manufacturer', group: 'physical', width: 140 });
-  defs.push({ key: 'sizeCapacity', label: 'Size/Capacity', group: 'physical', width: 120 });
+  // Asset Details (hidden by default — enable via "Asset Details" toggle)
+  // Serial #, Model #, Manufacturer, Size/Capacity are excluded from default view
+  defs.push({ key: 'serial', label: 'Serial #', group: 'asset', width: 120 });
+  defs.push({ key: 'model', label: 'Model #', group: 'asset', width: 120 });
+  defs.push({ key: 'manufacturer', label: 'Manufacturer', group: 'asset', width: 140 });
+  defs.push({ key: 'sizeCapacity', label: 'Size/Capacity', group: 'asset', width: 120 });
+  // Physical Attributes (remaining)
   defs.push({ key: 'voltage', label: 'Voltage', group: 'physical', width: 80 });
   defs.push({ key: 'phase', label: 'Phase', group: 'physical', width: 70 });
   defs.push({ key: 'amps', label: 'Amps', group: 'physical', width: 70 });
@@ -1073,6 +1129,143 @@ function emGetColDefs(projId) {
   return defs;
 }
 
+/* ── emGetAuditColDefs ──────────────────────────────────────────────────────
+   Returns column definitions for Audit View mode.
+   Frozen columns: Building, Floor, Equipment Name (same as raw).
+   Then: Equipment Type, Coverage %, Total BAS Points.
+   Then: One column per required point category, derived from EM_POINT_CATEGORIES
+   for the equipment types actually present in the filtered rows.
+
+   equipTypes = array of unique category strings present in the data/filter.
+   When multiple equipment types are visible ("All Types"), the UNION of all
+   required categories is shown. Cells are blank/gray for non-applicable types.  */
+function emGetAuditColDefs(filteredRows) {
+  // Collect the equipment types present in these rows
+  var typeSet = {};
+  for (var ri = 0; ri < filteredRows.length; ri++) {
+    var cat = filteredRows[ri].category;
+    if (cat && EM_POINT_CATEGORIES[cat]) typeSet[cat] = true;
+  }
+  var equipTypes = Object.keys(typeSet);
+
+  // If only one equipment type is selected, use its categories only.
+  // Otherwise, take the UNION of all required point categories across present types.
+  // Track which equipment types each category applies to for gray-out logic.
+  var categoryMap = {}; // key -> { key, label, equipTypes: [] }
+  for (var ti = 0; ti < equipTypes.length; ti++) {
+    var et = equipTypes[ti];
+    var cats = EM_POINT_CATEGORIES[et] || [];
+    for (var ci = 0; ci < cats.length; ci++) {
+      var c = cats[ci];
+      if (!categoryMap[c.key]) {
+        categoryMap[c.key] = {
+          key: c.key,
+          label: c.label,
+          equipTypes: [],
+          required: c.required,
+          configFlag: c.configFlag || null,
+        };
+      }
+      if (categoryMap[c.key].equipTypes.indexOf(et) === -1) {
+        categoryMap[c.key].equipTypes.push(et);
+      }
+    }
+  }
+
+  // Build defs array
+  var defs = [
+    { key: 'building', label: 'Building', group: 'id', width: 180 },
+    { key: 'floor', label: 'Floor', group: 'id', width: 80 },
+    { key: 'equipName', label: 'Equipment Name', group: 'id', width: 200 },
+    { key: 'category', label: 'Equipment Type', group: 'audit', width: 120, isAuditType: true },
+    { key: '_coverage', label: 'Coverage %', group: 'audit', width: 90, isAuditCoverage: true },
+    { key: '_baspoints', label: 'Total BAS Points', group: 'audit', width: 110, isAuditBasPts: true },
+  ];
+
+  // Add one column per point category (required and optional)
+  var catKeys = Object.keys(categoryMap);
+  for (var ki = 0; ki < catKeys.length; ki++) {
+    var cd = categoryMap[catKeys[ki]];
+    defs.push({
+      key: '_cat_' + cd.key,
+      label: cd.label,
+      group: 'audit-cat',
+      width: 110,
+      isAuditCat: true,
+      catKey: cd.key,
+      catEquipTypes: cd.equipTypes,
+      catRequired: cd.required,
+      catConfigFlag: cd.configFlag,
+    });
+  }
+
+  return defs;
+}
+
+/* ── emComputeAuditStats ────────────────────────────────────────────────────
+   Compute average compliance % and total BAS point count across all rows.
+   Returns: { avgCoverage: number, totalBASPoints: number }              */
+function emComputeAuditStats(rows) {
+  var totalPts = 0;
+  var totalCoverage = 0;
+  var covCount = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var pts = r.points || {};
+    totalPts += Object.keys(pts).length;
+    if (r.category && EM_POINT_CATEGORIES[r.category]) {
+      var compliance = emComputeCompliance(r, {});
+      totalCoverage += compliance.coveragePct;
+      covCount++;
+    }
+  }
+  return {
+    avgCoverage: covCount > 0 ? Math.round(totalCoverage / covCount) : 0,
+    totalBASPoints: totalPts,
+  };
+}
+
+/* ── emUpdateStatsPillsForAudit ─────────────────────────────────────────────
+   Replace the stats bar with audit-mode pills when in audit view.       */
+function emUpdateStatsPillsForAudit(rows) {
+  var bar = document.getElementById('em-stats-bar');
+  if (!bar) return;
+  var base = emCalcSummaryStats(rows);
+  var audit = emComputeAuditStats(rows);
+  var avgCov = audit.avgCoverage;
+  var covColor = avgCov >= 75 ? '#27ae60' : avgCov >= 50 ? '#e67e22' : '#c0392b';
+  var covPill =
+    '<div style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
+    '<div style="font-size:18px;font-weight:700;color:' +
+    covColor +
+    ';line-height:1">' +
+    avgCov +
+    '%</div>' +
+    '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Avg Coverage</div>' +
+    '</div>';
+  bar.innerHTML =
+    emStatPill('Buildings', base.buildings) +
+    emStatPill('Equipment', base.total) +
+    covPill +
+    emStatPill('BAS Points', audit.totalBASPoints.toLocaleString());
+}
+
+/* ── emUpdateStatsPillsForRaw ───────────────────────────────────────────────
+   Restore the stats bar to raw-mode pills.                               */
+function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
+  var bar = document.getElementById('em-stats-bar');
+  if (!bar) return;
+  var stats = emCalcSummaryStats(rows);
+  bar.innerHTML =
+    emStatPill('Buildings', stats.buildings) +
+    emStatPill('Equipment', stats.total) +
+    emStatPill('AHU / RTU', stats.ahu) +
+    emStatPill('VAV / FPB', stats.vav) +
+    emStatPill('Plants', stats.plants) +
+    emStatPill('Live Data', stats.live) +
+    (totalBASPoints ? emStatPill('BAS Points', totalBASPoints.toLocaleString()) : '');
+}
+
 var _EM_GROUP_COLORS = {
   id: 'transparent',
   check: 'var(--text3)',
@@ -1082,11 +1275,14 @@ var _EM_GROUP_COLORS = {
   'live-chw': '#3498db',
   'live-ct': '#9b59b6',
   physical: '#27ae60',
+  asset: '#6b7280',
   lifecycle: '#f39c12',
   maintenance: '#2980b9',
   locDetail: '#8e44ad',
   controls: '#16a085',
   custom: '#c0392b',
+  audit: '#1e40af',
+  'audit-cat': '#3b82f6',
 };
 
 function emGetCellValByDef(row, def, edits) {
@@ -1103,6 +1299,13 @@ function emGetCellValByDef(row, def, edits) {
 }
 
 function emRenderTable(data, filters) {
+  // Route to audit renderer when in audit view mode
+  if (_emViewMode === 'audit') {
+    emRenderAuditTable(data, filters);
+    return;
+  }
+  emSyncViewModeControls();
+
   var wrap = document.getElementById('em-table-wrap');
   if (!wrap) return;
   var rows = data.rows || [];
@@ -1365,6 +1568,9 @@ function emRenderTable(data, filters) {
     sizeSelectHtml +
     '</div>';
 
+  // Update stats bar for raw view
+  emUpdateStatsPillsForRaw(rows, data.totalBASPoints);
+
   wrap.innerHTML =
     '<table style="border-collapse:separate;border-spacing:0;table-layout:auto">' +
     '<thead><tr>' +
@@ -1392,8 +1598,396 @@ function emRenderTable(data, filters) {
   emAttachColResizeHandler(wrap);
 }
 
+/* ── emRenderAuditTable ─────────────────────────────────────────────────────
+   Renders the equipment table in ASHRAE 36 Audit View mode.
+   Uses emGetAuditColDefs() to generate compliance columns, and calls
+   emComputeCompliance() per row to determine cell indicators.
+   Pagination, sorting, and sticky frozen columns all work the same as raw view.
+   Edit mode is suppressed in audit view (compliance cells are computed, not edited). */
+function emRenderAuditTable(data, filters) {
+  emSyncViewModeControls();
+
+  var wrap = document.getElementById('em-table-wrap');
+  if (!wrap) return;
+  var rows = data.rows || [];
+  var filtered = emFilterRows(rows, filters);
+
+  // Build column defs from filtered rows so category columns match what's visible
+  var defs = emGetAuditColDefs(filtered);
+
+  // ── Sort ──
+  if (_emSortCol !== null) {
+    var sortDef = defs[_emSortCol];
+    var sd = _emSortDir;
+    if (sortDef) {
+      filtered = filtered.slice().sort(function (a, b) {
+        var av = emAuditGetSortVal(a, sortDef);
+        var bv = emAuditGetSortVal(b, sortDef);
+        if (av < bv) return -sd;
+        if (av > bv) return sd;
+        return 0;
+      });
+    }
+  }
+
+  var countEl = document.getElementById('em-row-count');
+  if (countEl) countEl.textContent = filtered.length + ' of ' + rows.length + ' rows';
+
+  // ── Pagination ──
+  var pageSize = _emPageSize;
+  var useAll = pageSize === 0;
+  var totalPages = useAll ? 1 : Math.ceil(filtered.length / pageSize);
+  if (totalPages < 1) totalPages = 1;
+  _emCurrentPage = Math.max(0, Math.min(_emCurrentPage, totalPages - 1));
+  var pageStart = useAll ? 0 : _emCurrentPage * pageSize;
+  var pageEnd = useAll ? filtered.length : Math.min(pageStart + pageSize, filtered.length);
+  var pageRows = filtered.slice(pageStart, pageEnd);
+
+  // ── Pre-compute compliance for each page row ──
+  var complianceCache = {};
+  for (var pr = 0; pr < pageRows.length; pr++) {
+    var r = pageRows[pr];
+    complianceCache[r.id] = emComputeCompliance(r, {});
+  }
+
+  // ── Build thead ──
+  var theadCells = '';
+  for (var ci = 0; ci < defs.length; ci++) {
+    var d = defs[ci];
+    var color = _EM_GROUP_COLORS[d.group] || 'transparent';
+    var borderTop =
+      color !== 'transparent' ? 'border-top:3px solid ' + color + ';' : 'border-top:3px solid transparent;';
+    var isSorted = _emSortCol === ci;
+    var sortInd = isSorted ? (_emSortDir === 1 ? ' ▲' : ' ▼') : '';
+    theadCells +=
+      '<th data-ci="' +
+      ci +
+      '" onclick="emHandleSort(' +
+      ci +
+      ')" ' +
+      'style="position:sticky;top:0;background:var(--s2);' +
+      borderTop +
+      'padding:6px 8px;font-size:10px;font-weight:600;color:var(--text2);white-space:nowrap;cursor:pointer;' +
+      'min-width:' +
+      d.width +
+      'px;text-align:left;' +
+      'border-bottom:1px solid var(--border);border-right:1px solid var(--border)">' +
+      d.label +
+      sortInd +
+      '</th>';
+  }
+
+  // ── Build tbody ──
+  var tbodyRows = '';
+  for (var ri = 0; ri < pageRows.length; ri++) {
+    var row = pageRows[ri];
+    var compliance = complianceCache[row.id] || { coveredPoints: [], missingPoints: [], naPoints: [], coveragePct: 0 };
+    // Build a quick lookup: catKey -> match result
+    var coveredMap = {};
+    for (var cp = 0; cp < compliance.coveredPoints.length; cp++) {
+      var cp2 = compliance.coveredPoints[cp];
+      coveredMap[cp2.categoryKey] = cp2;
+    }
+    var naMap = {};
+    for (var np = 0; np < compliance.naPoints.length; np++) {
+      naMap[compliance.naPoints[np].categoryKey] = true;
+    }
+    var missingMap = {};
+    for (var mp = 0; mp < compliance.missingPoints.length; mp++) {
+      missingMap[compliance.missingPoints[mp].categoryKey] = true;
+    }
+
+    var cells = '';
+    for (var di = 0; di < defs.length; di++) {
+      var def = defs[di];
+      cells += emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap);
+    }
+    tbodyRows += '<tr>' + cells + '</tr>';
+  }
+
+  if (filtered.length === 0) {
+    tbodyRows =
+      '<tr><td colspan="' +
+      defs.length +
+      '" ' +
+      'style="padding:32px;text-align:center;font-size:12px;color:var(--text2)">No rows match the current filters.</td></tr>';
+  }
+
+  // ── Pagination bar ──
+  var pid = window._emActivePid || '';
+  var pageSizeOptions = [50, 100, 250, 0];
+  var pageSizeLabels = { 50: '50', 100: '100', 250: '250', 0: 'All' };
+  var sizeSelectHtml =
+    '<select onchange="emSetPageSize(' +
+    JSON.stringify(pid) +
+    ', this.value)" ' +
+    'style="font-size:11px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">';
+  for (var si = 0; si < pageSizeOptions.length; si++) {
+    var opt = pageSizeOptions[si];
+    var isCurrent = _emPageSize === opt;
+    var warn = opt === 0 && filtered.length > 500 ? ' slow' : '';
+    sizeSelectHtml +=
+      '<option value="' + opt + '"' + (isCurrent ? ' selected' : '') + '>' + pageSizeLabels[opt] + warn + '</option>';
+  }
+  sizeSelectHtml += '</select>';
+
+  var prevDisabled = _emCurrentPage <= 0 || useAll;
+  var nextDisabled = _emCurrentPage >= totalPages - 1 || useAll;
+  var pageLabel = useAll
+    ? 'All ' + filtered.length + ' rows'
+    : totalPages === 1
+      ? 'All rows visible (' + filtered.length + ' rows)'
+      : 'Page ' + (_emCurrentPage + 1) + ' of ' + totalPages + ' (' + filtered.length + ' total rows)';
+
+  var paginationHtml =
+    '<div class="em-pagination" style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--border);background:var(--s1);flex-shrink:0;font-size:11px;color:var(--text2)">' +
+    '<button onclick="emPrevPage(' +
+    JSON.stringify(pid) +
+    ')" ' +
+    (prevDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
+    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">&#8592; Previous</button>' +
+    '<span style="flex:1;text-align:center">' +
+    pageLabel +
+    '</span>' +
+    '<button onclick="emNextPage(' +
+    JSON.stringify(pid) +
+    ')" ' +
+    (nextDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
+    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Next &#8594;</button>' +
+    '<span style="color:var(--text3)">Rows per page:</span>' +
+    sizeSelectHtml +
+    '</div>';
+
+  // Update stats bar for audit view
+  emUpdateStatsPillsForAudit(rows);
+
+  wrap.innerHTML =
+    '<table style="border-collapse:separate;border-spacing:0;table-layout:auto">' +
+    '<thead><tr>' +
+    theadCells +
+    '</tr></thead>' +
+    '<tbody>' +
+    tbodyRows +
+    '</tbody>' +
+    '</table>';
+
+  // Inject pagination bar
+  var tableWrap = document.getElementById('em-table-wrap');
+  if (tableWrap && tableWrap.parentNode) {
+    var existingPag = tableWrap.parentNode.querySelector('.em-pagination');
+    if (existingPag) existingPag.parentNode.removeChild(existingPag);
+    var pagDiv = document.createElement('div');
+    pagDiv.innerHTML = paginationHtml;
+    tableWrap.parentNode.insertBefore(pagDiv.firstChild, tableWrap.nextSibling);
+  }
+
+  emUpdateStickyOffsets();
+  emAttachColResizeHandler(wrap);
+}
+
+/* ── emRenderAuditCell ──────────────────────────────────────────────────────
+   Renders a single <td> for a compliance column in audit view.
+   Returns HTML string.                                                    */
+function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap) {
+  var baseStyle =
+    'padding:4px 8px;font-size:11px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:middle;text-align:center;';
+
+  // ── Frozen identity columns ──
+  if (def.key === 'building') {
+    return '<td style="' + baseStyle + 'text-align:left;font-weight:500">' + emHtmlEsc(row.building || '') + '</td>';
+  }
+  if (def.key === 'floor') {
+    return '<td style="' + baseStyle + 'text-align:left">' + emHtmlEsc(row.floor || '') + '</td>';
+  }
+  if (def.key === 'equipName') {
+    return '<td style="' + baseStyle + 'text-align:left">' + emHtmlEsc(row.equipName || row.name || '') + '</td>';
+  }
+
+  // ── Equipment Type ──
+  if (def.isAuditType) {
+    var catLabel = row.category ? row.category.toUpperCase() : '—';
+    return (
+      '<td style="' + baseStyle + 'text-align:left;font-size:10px;color:var(--text2)">' + emHtmlEsc(catLabel) + '</td>'
+    );
+  }
+
+  // ── Coverage % ──
+  if (def.isAuditCoverage) {
+    var pct = compliance.coveragePct;
+    var pctColor = pct >= 75 ? '#27ae60' : pct >= 50 ? '#e67e22' : '#c0392b';
+    var pctBg = pct >= 75 ? 'rgba(39,174,96,0.1)' : pct >= 50 ? 'rgba(230,126,34,0.1)' : 'rgba(192,57,43,0.1)';
+    var hasPoints = row.category && EM_POINT_CATEGORIES[row.category];
+    if (!hasPoints) {
+      return '<td style="' + baseStyle + 'color:var(--text3)">—</td>';
+    }
+    return (
+      '<td onclick="emShowComplianceDetail(\'' +
+      String(row.id).replace(/'/g, "\\'") +
+      '\')" ' +
+      'style="' +
+      baseStyle +
+      'background:' +
+      pctBg +
+      ';color:' +
+      pctColor +
+      ';font-weight:700;cursor:pointer" ' +
+      'title="Click for compliance detail">' +
+      pct +
+      '%</td>'
+    );
+  }
+
+  // ── Total BAS Points ──
+  if (def.isAuditBasPts) {
+    var ptCount = Object.keys(row.points || {}).length;
+    return '<td style="' + baseStyle + 'color:var(--text2)">' + (ptCount > 0 ? ptCount : '—') + '</td>';
+  }
+
+  // ── Compliance category cell ──
+  if (def.isAuditCat) {
+    var catKey = def.catKey;
+    // Gray/blank if this equipment type doesn't have this category at all
+    if (!row.category || def.catEquipTypes.indexOf(row.category) === -1) {
+      return '<td style="' + baseStyle + 'background:rgba(128,128,128,0.08);color:var(--text3)">—</td>';
+    }
+    // N/A due to config flag
+    if (naMap[catKey]) {
+      return (
+        '<td style="' +
+        baseStyle +
+        'background:rgba(128,128,128,0.08);color:var(--text3)" title="N/A for this equipment">N/A</td>'
+      );
+    }
+    // Matched: determine tier
+    if (coveredMap[catKey]) {
+      var match = coveredMap[catKey];
+      var tier = match.matchTier;
+      if (tier <= 2) {
+        // High confidence — green checkmark
+        return (
+          '<td style="' +
+          baseStyle +
+          'background:rgba(39,174,96,0.15);color:#27ae60;font-size:14px;font-weight:700" ' +
+          'title="' +
+          emHtmlEsc(match.pointName || '') +
+          ' (tier ' +
+          tier +
+          ')">&#10003;</td>'
+        );
+      } else {
+        // Fuzzy match — amber tilde
+        return (
+          '<td style="' +
+          baseStyle +
+          'background:rgba(230,126,34,0.15);color:#e67e22;font-size:14px;font-weight:700" ' +
+          'title="' +
+          emHtmlEsc(match.pointName || '') +
+          ' (fuzzy match, tier ' +
+          tier +
+          ')">~</td>'
+        );
+      }
+    }
+    // Required but missing — red X
+    if (def.catRequired && missingMap[catKey]) {
+      return (
+        '<td style="' +
+        baseStyle +
+        'background:rgba(192,57,43,0.15);color:#c0392b;font-size:14px;font-weight:700" title="Required point missing">&#10007;</td>'
+      );
+    }
+    // Optional and not present — blank
+    return '<td style="' + baseStyle + 'color:var(--text3)"></td>';
+  }
+
+  // ── Fallback ──
+  return '<td style="' + baseStyle + '">' + emHtmlEsc(String(row[def.key] || '')) + '</td>';
+}
+
+/* ── emHtmlEsc ──────────────────────────────────────────────────────────────
+   Escape HTML special characters for safe insertion into HTML strings.   */
+function emHtmlEsc(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/* ── emAuditGetSortVal ──────────────────────────────────────────────────────
+   Get sort value for a given audit column def and row.                   */
+function emAuditGetSortVal(row, def) {
+  if (def.key === 'building') return row.building || '';
+  if (def.key === 'floor') return row.floor || '';
+  if (def.key === 'equipName') return row.equipName || row.name || '';
+  if (def.isAuditType) return row.category || '';
+  if (def.isAuditCoverage) {
+    var c = emComputeCompliance(row, {});
+    return c.coveragePct;
+  }
+  if (def.isAuditBasPts) return Object.keys(row.points || {}).length;
+  if (def.isAuditCat) {
+    var catKey = def.catKey;
+    if (!row.category || def.catEquipTypes.indexOf(row.category) === -1) return -1;
+    var comp = emComputeCompliance(row, {});
+    for (var i = 0; i < comp.coveredPoints.length; i++) {
+      if (comp.coveredPoints[i].categoryKey === catKey) return comp.coveredPoints[i].matchTier;
+    }
+    return 99; // missing
+  }
+  return '';
+}
+
+/* ── emShowComplianceDetail ─────────────────────────────────────────────────
+   Clicking the Coverage % cell opens a simple detail view showing which
+   points were matched, fuzzy-matched, or missing.
+   Phase 3 will replace this with a panel — for now, shows an alert summary. */
+function emShowComplianceDetail(rowId) {
+  var data = emLoadMatrix(window._emActivePid);
+  if (!data) return;
+  var row = null;
+  for (var i = 0; i < (data.rows || []).length; i++) {
+    if (data.rows[i].id === rowId) {
+      row = data.rows[i];
+      break;
+    }
+  }
+  if (!row) return;
+  var c = emComputeCompliance(row, {});
+  var lines = [
+    (row.equipName || row.name || rowId) + ' — ' + (row.category || '').toUpperCase() + ' Compliance',
+    'Coverage: ' + c.coveragePct + '% (' + c.totalMatched + '/' + (c.totalRequired - c.totalNA) + ' required points)',
+    '',
+  ];
+  if (c.coveredPoints.length) {
+    lines.push('Matched (' + c.coveredPoints.length + '):');
+    for (var cp = 0; cp < c.coveredPoints.length; cp++) {
+      var p = c.coveredPoints[cp];
+      lines.push('  ' + (p.matchTier <= 2 ? '[OK]' : '[~]') + ' ' + p.categoryLabel + ' — "' + p.pointName + '"');
+    }
+    lines.push('');
+  }
+  if (c.missingPoints.length) {
+    lines.push('Missing required (' + c.missingPoints.length + '):');
+    for (var mp = 0; mp < c.missingPoints.length; mp++) {
+      lines.push('  [X] ' + c.missingPoints[mp].categoryLabel);
+    }
+    lines.push('');
+  }
+  if (c.naPoints.length) {
+    lines.push('N/A (' + c.naPoints.length + '):');
+    for (var np = 0; np < c.naPoints.length; np++) {
+      lines.push('  [-] ' + c.naPoints[np].categoryLabel);
+    }
+  }
+  alert(lines.join('\n'));
+}
+
 /**
  * emAttachColResizeHandler — Enables drag-to-resize on column header right edges.
+ * Detects mousedown within 5px of a th right border, then updates column width on drag.
+ * After resize, calls emUpdateStickyOffsets() to recompute frozen column positions.
  * Detects mousedown within 5px of a th right border, then updates column width on drag.
  * After resize, calls emUpdateStickyOffsets() to recompute frozen column positions.
  */
