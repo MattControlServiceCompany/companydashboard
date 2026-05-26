@@ -3479,11 +3479,20 @@ function _saveBillToMatchedMeter(extracted, match) {
   const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
   const toISO = (d) => {
     if (!d) return '';
-    const p = d.split('/');
+    let p = d.split('/');
+    if (p.length !== 3) p = d.split('-');
     if (p.length !== 3) return d;
     const yr = p[2].length === 2 ? '20' + p[2] : p[2];
     return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
   };
+  // Fix 2: parse service address from filename when OCR didn't capture it
+  // KGS filenames: "604 Dearborn St Howard Hall - Gas Bills.pdf"
+  const _srcFile = extracted._sourceFile || '';
+  const _filenameAddr = _srcFile
+    .replace(/\s*-\s*Gas Bills\.pdf$/i, '')
+    .replace(/\.pdf$/i, '')
+    .trim();
+  if (_filenameAddr && !extracted.ServiceAddress) extracted.ServiceAddress = _filenameAddr;
   const kwhCost = (
     pf(extracted.EnergyOnPeakCharge) +
     pf(extracted.EnergyOffPeakCharge) +
@@ -3651,6 +3660,14 @@ function _saveBillToMatchedMeter(extracted, match) {
     Meter2_kWh: extracted.Meter2_kWh || '',
     Meter2_KW: extracted.Meter2_KW || '',
     Meter2_RKVA: extracted.Meter2_RKVA || '',
+    // Fix 3: KGS-specific fields
+    mcfBilled: extracted.McfBilled || null,
+    deliveryCharge: extracted.DeliveryCharge || null,
+    gasSystemReliability: extracted.GasSystemReliability || null,
+    winterEventCost: extracted.WinterEventCost || null,
+    previousBalance: extracted.PreviousBalance || null,
+    paymentsReceived: extracted.PaymentsReceived || null,
+    statementDate: toISO(extracted.StatementDate) || null,
   };
   if (extracted._rates) {
     const cp = {};
@@ -3687,6 +3704,10 @@ function _saveBillToMatchedMeter(extracted, match) {
   if (typeof runBillValidation === 'function') {
     const _savedBill = existing || billRow;
     runBillValidation(liveMeter, _savedBill);
+  }
+  // Fix 4: auto-populate meter account number on first save
+  if (extracted.AccountNumber && !liveMeter.account) {
+    liveMeter.account = extracted.AccountNumber;
   }
   saveUtilityData();
   return liveProj.name + ' → ' + liveBldg.name + ' → ' + (liveMeter.provider || liveMeter.meter || 'meter');
@@ -5110,7 +5131,8 @@ function _buildDiffFields(extracted, existing) {
   const isSaved = !existing.start && existing.BillingPeriodStart !== undefined;
   const toISO = (d) => {
     if (!d) return '';
-    const p = d.split('/');
+    let p = d.split('/');
+    if (p.length !== 3) p = d.split('-');
     if (p.length !== 3) return d;
     const yr = p[2].length === 2 ? '20' + p[2] : p[2];
     return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
@@ -5240,10 +5262,11 @@ async function _checkDuplicates(bills) {
   };
   const periodClose = (s1, e1, s2, e2) =>
     !!s1 && !!e1 && !!s2 && !!e2 && dayDiff(s1, s2) <= FUZZY_DAY_TOLERANCE && dayDiff(e1, e2) <= FUZZY_DAY_TOLERANCE;
-  // Convert extracted date (MM/DD/YYYY) to ISO (YYYY-MM-DD) for comparison
+  // Convert extracted date (MM/DD/YYYY or MM-DD-YY) to ISO (YYYY-MM-DD) for comparison
   const toISO = (d) => {
     if (!d) return '';
-    const p = d.split('/');
+    let p = d.split('/');
+    if (p.length !== 3) p = d.split('-');
     if (p.length !== 3) return d;
     const yr = p[2].length === 2 ? '20' + p[2] : p[2];
     return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
@@ -7606,7 +7629,8 @@ async function savePDFAllBills(commodityFilter) {
 async function _applyDupUpdate(billIdx, extracted, dup) {
   const toISO = (d) => {
     if (!d) return '';
-    const p = d.split('/');
+    let p = d.split('/');
+    if (p.length !== 3) p = d.split('-');
     if (p.length !== 3) return d;
     const yr = p[2].length === 2 ? '20' + p[2] : p[2];
     return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
@@ -7696,6 +7720,14 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
       UnitPrice: 'unitPrice',
       Subtotal: 'subtotal',
       Tax: 'tax',
+      // KGS-specific fields (Fix 3)
+      McfBilled: 'mcfBilled',
+      DeliveryCharge: 'deliveryCharge',
+      GasSystemReliability: 'gasSystemReliability',
+      WinterEventCost: 'winterEventCost',
+      PreviousBalance: 'previousBalance',
+      PaymentsReceived: 'paymentsReceived',
+      StatementDate: 'statementDate',
     };
     // Facilities is also stored in the newer `facilitiesCharge` key; keep both
     // synced when extraction provides a value, so the modal's Demand Charges
@@ -7792,6 +7824,8 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
           existing[billKey] = extracted[extKey];
         }
       }
+      // Apply ISO conversion to date fields written via FIELD_MAP
+      if (existing.statementDate) existing.statementDate = toISO(existing.statementDate) || existing.statementDate;
       _copyPageRange();
       _recalcAggregates();
     } else if (dup.action === 'merge') {
@@ -7805,6 +7839,8 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
           existing[billKey] = extracted[extKey];
         }
       }
+      // Apply ISO conversion to date fields written via FIELD_MAP
+      if (existing.statementDate) existing.statementDate = toISO(existing.statementDate) || existing.statementDate;
       // Page range: only fill if missing, never overwrite a valid existing range
       if (!existing.pdfPageStart && extracted._pageStart) existing.pdfPageStart = extracted._pageStart;
       if (!existing.pdfPageEnd && extracted._pageEnd) existing.pdfPageEnd = extracted._pageEnd;
@@ -9232,7 +9268,8 @@ async function viewSavedPDF(id, pageStart, pageEnd, pdfKey) {
         const extMatch = window._pdfMultiBills.find((eb) => {
           const toISO = (d) => {
             if (!d) return '';
-            const p = d.split('/');
+            let p = d.split('/');
+            if (p.length !== 3) p = d.split('-');
             if (p.length !== 3) return d;
             const yr = p[2].length === 2 ? '20' + p[2] : p[2];
             return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');

@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.25.355';
+  var CH_VERSION = 'v2026.05.25.356';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,21 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.25.356',
+      date: '2026-05-25',
+      title: 'Complete KGS bill extraction rewrite + fix save path date handling and field mappings',
+      features: [
+        {
+          type: 'fix',
+          text: 'Complete KGS extraction rewrite in energy-savings.js: dedicated parser extracts all fields — meter reads, multiplier, all charges, statement date, previous balance, payments, franchise fees.',
+        },
+        {
+          type: 'fix',
+          text: 'Fixed 5 toISO copies in bill-analysis.js for dash-format dates (MM-DD-YY), added 7 KGS field mappings, service address from filename, account auto-population on first save.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.25.355',
       date: '2026-05-25',

@@ -4823,6 +4823,129 @@ const UTILITY_RULES = [
     },
     extract: function (t) {
       const company = this._detectCompany(t);
+
+      // ── KGS dedicated extraction path ──────────────────────────────────────
+      // KGS bills use a tabular columnar format — data is NOT on labeled lines
+      // the way Spire/Atmos bills are. A dedicated path is required.
+      const isKGS = /kansas\s+gas\s+service/i.test(t) || /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(t);
+      if (isKGS) {
+        // === HEADER BLOCK ===
+        // Account Number: "Account Number    510000123 2051604 18"
+        const accountM = t.match(/Account\s+Number[\s:]*([0-9 ]{10,30})/i);
+        const AccountNumber = accountM ? accountM[1].replace(/\s+/g, ' ').trim() : null;
+
+        // Statement Date: "Statement Date  02-20-26"
+        const stmtM = t.match(/Statement\s+Date\s+(\d{2}-\d{2}-\d{2})/i);
+        const StatementDate = stmtM ? stmtM[1] : null;
+
+        // Rate: "Rate    General Service Lg"
+        const rateM = t.match(/Rate[\s:]+(?:Schedule[\s:]+)?([A-Za-z ]+(?:Sm|Lg|Med))\b/i);
+        const RateSchedule = rateM ? rateM[1].trim() : null;
+
+        // Customer Name: all-caps line before "DIRECTOR OF FACILITIES", "Account Number", or "PO BOX"
+        const custM = t.match(/([A-Z][A-Z &]{2,50})\s*\n\s*(?:DIRECTOR|Account\s+Number|PO\s+BOX)/i);
+        const CustomerName = custM ? custM[1].trim() : null;
+
+        // Service Address: line immediately before city/state (KS) line
+        const addrM = t.match(/([A-Z0-9][A-Z0-9 ]{4,49})\s*\n\s*[A-Z][A-Z ]+,\s*KS/);
+        const ServiceAddress = addrM ? addrM[1].trim() : null;
+
+        // === METER READING TABLE ===
+        // Pattern: MeterNum   MM-DD-YY   MM-DD-YY   Days   Prev   Curr   Const   Mcf   WNA   CostGas
+        // OCR sometimes inserts "~~" between dates
+        const meterRowM = t.match(
+          /([A-Z0-9]{6,12})\s+(\d{2}-\d{2}-\d{2})\s*(?:~~\s*)?(\d{2}-\d{2}-\d{2})\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)/,
+        );
+
+        const MeterNumber = meterRowM ? meterRowM[1] : null;
+        const BillingPeriodStart = meterRowM ? meterRowM[2] : null;
+        const BillingPeriodEnd = meterRowM ? meterRowM[3] : null;
+        const NumberOfDays = meterRowM ? meterRowM[4] : null;
+        const MeterReadPrevious = meterRowM ? meterRowM[5] : null;
+        const MeterReadCurrent = meterRowM ? meterRowM[6] : null;
+        const MeterMultiplier = meterRowM ? meterRowM[7] : null;
+        const McfBilled = meterRowM ? meterRowM[8] : null;
+
+        // Therms = Mcf × Multiplier × 10 (KGS reports in Mcf; 1 Mcf ≈ 10 therms)
+        const _multiplier = parseFloat(MeterMultiplier) || 1.0;
+        const _mcf = parseFloat(McfBilled) || 0;
+        const NaturalGasTherms = _mcf > 0 ? String(Math.round(_mcf * _multiplier * 10 * 100) / 100) : null;
+
+        // === BALANCE SECTION ===
+        const prevBalM = t.match(/Previous\s+Balance\s+\$?([\d,.]+)/i);
+        const PreviousBalance = prevBalM ? prevBalM[1] : null;
+
+        const paymentM = t.match(/Payment\s+Received[^\n]*-?\$?([\d,.]+)/i);
+        const PaymentsReceived = paymentM ? paymentM[1] : null;
+
+        // === CHARGES SECTION ===
+        const serviceChargeM = t.match(/Service\s+Charge\s+\$?([\d,.]+)/i);
+        const CustomerCharge = serviceChargeM ? serviceChargeM[1] : null;
+
+        const deliveryM = t.match(/Delivery\s+Charge\s+\$?([\d,.]+)/i);
+        const DeliveryCharge = deliveryM ? deliveryM[1] : null;
+
+        const gsrsM = t.match(/Gas\s+System\s+Reliability\s+Surcharge\s+\$?([\d,.]+)/i);
+        const GasSystemReliability = gsrsM ? gsrsM[1] : null;
+
+        const wnaM = t.match(/Weather\s+Normalization\s+(?:Adj(?:ustment)?)?\s+\$?([\d,.]+)/i);
+        const WeatherNormalization = wnaM ? wnaM[1] : null;
+
+        const costGasM = t.match(/Cost\s+of\s+Gas\s+\$?([\d,.]+)/i);
+        const GasCharge = costGasM ? costGasM[1] : null;
+
+        const winterM = t.match(/Winter\s+Event\s+Securitized\s+Cost\s+\$?([\d,.]+)/i);
+        const WinterEventCost = winterM ? winterM[1] : null;
+
+        // Sum all Franchise Fee line items (KGS often has two: state + local)
+        const franchiseMs = [...t.matchAll(/Franchise\s+Fee\s+\$?([\d,.]+)/gi)];
+        const FranchiseFee =
+          franchiseMs.length > 0
+            ? String(franchiseMs.reduce((sum, m) => sum + parseFloat(m[1].replace(/,/g, '')), 0).toFixed(2))
+            : null;
+
+        const currentChargesM = t.match(/Current\s+Charges\s+\$?([\d,.]+)/i);
+        const TotalCurrentCharges = currentChargesM ? currentChargesM[1] : null;
+
+        const amtDueM = t.match(/Amount\s+Due\s+\$?([\d,.]+)/i);
+        const TotalAmountDue = amtDueM ? amtDueM[1] : null;
+
+        return {
+          UtilityCompany: 'Kansas Gas Service',
+          Commodity: 'Gas',
+          AccountNumber,
+          MeterNumber,
+          BillingPeriodStart,
+          BillingPeriodEnd,
+          NumberOfDays,
+          MeterReadPrevious,
+          MeterReadCurrent,
+          MeterMultiplier,
+          McfBilled,
+          NaturalGasTherms,
+          NaturalGasCCF: null,
+          GasCharge,
+          CustomerCharge,
+          DeliveryCharge,
+          GasSystemReliability,
+          WeatherNormalization,
+          WinterEventCost,
+          FranchiseFee,
+          FuelAdjustment: WeatherNormalization,
+          TotalCurrentCharges,
+          TotalAmountDue,
+          PreviousBalance,
+          PaymentsReceived,
+          CustomerName,
+          ServiceAddress,
+          StatementDate,
+          RateSchedule,
+          commodity: 'gas',
+          _utilityName: 'Kansas Gas Service',
+        };
+      }
+      // ── end KGS path ───────────────────────────────────────────────────────
+
       // Gas charge line items
       const _gasChargeM = t.match(
         /(?:cost\s+of\s+gas|gas\s*(?:charge|service|cost|supply)|distribution\s*charge|commodity\s*charge)[\s:$]*(\-?[0-9,]+\.[0-9]{2})/i,
