@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -7,7 +7,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
-    <title>CompanyHub — EMS Leads</title>
+    <title>CompanyHub â€” EMS Leads</title>
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='15' fill='%23238636'/><text x='50' y='72' font-size='60' font-weight='bold' text-anchor='middle' fill='white'>C</text></svg>"
@@ -17,7 +17,7 @@
       rel="stylesheet"
     />
     <style>
-      /* ═══ TOKENS ═══ */
+      /* â•â•â• TOKENS â•â•â• */
       :root {
         --bg: #05080f;
         --s1: #090c16;
@@ -103,7 +103,7 @@
         }
       }
 
-      /* ═══ TOPBAR ═══ */
+      /* â•â•â• TOPBAR â•â•â• */
       .topbar {
         flex-shrink: 0;
         z-index: 400;
@@ -176,7 +176,7 @@
         gap: 7px;
       }
 
-      /* ═══ NAV TABS ═══ */
+      /* â•â•â• NAV TABS â•â•â• */
       .nav-bar {
         background: var(--s1);
         border-bottom: 1px solid var(--border);
@@ -214,7 +214,7 @@
         font-weight: 600;
       }
 
-      /* ═══ LAYOUT ═══ */
+      /* â•â•â• LAYOUT â•â•â• */
       .app-wrap {
         display: flex;
         flex: 1;
@@ -297,7 +297,7 @@
         display: block;
       }
 
-      /* ═══ PAGE HEADER ═══ */
+      /* â•â•â• PAGE HEADER â•â•â• */
       .pg-hdr {
         display: flex;
         align-items: flex-start;
@@ -330,7 +330,7 @@
         align-items: center;
       }
 
-      /* ═══ BUTTONS ═══ */
+      /* â•â•â• BUTTONS â•â•â• */
       .btn {
         font-family: var(--font);
         font-size: 12px;
@@ -394,7 +394,7 @@
         color: var(--em);
       }
 
-      /* ═══ STATS ═══ */
+      /* â•â•â• STATS â•â•â• */
       .stats-row {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -455,7 +455,7 @@
         color: var(--danger);
       }
 
-      /* ═══ FILTER BAR ═══ */
+      /* â•â•â• FILTER BAR â•â•â• */
       .filter-bar {
         display: flex;
         gap: 8px;
@@ -508,7 +508,7 @@
         background: var(--s2);
       }
 
-      /* ═══ PIPELINE (KANBAN) ═══ */
+      /* â•â•â• PIPELINE (KANBAN) â•â•â• */
       .pipeline-wrap {
         overflow-x: auto;
         padding-bottom: 16px;
@@ -645,7 +645,7 @@
         color: var(--danger);
       }
 
-      /* ═══ TABLE VIEW ═══ */
+      /* â•â•â• TABLE VIEW â•â•â• */
       .tbl-wrap {
         overflow-x: auto;
       }
@@ -693,7 +693,7 @@
         font-size: 11px;
       }
 
-      /* ═══ STAGE PILLS ═══ */
+      /* â•â•â• STAGE PILLS â•â•â• */
       .stage-pill {
         display: inline-flex;
         align-items: center;
@@ -746,7 +746,7 @@
         color: var(--text2);
       }
 
-      /* ═══ DETAIL DRAWER ═══ */
+      /* â•â•â• DETAIL DRAWER â•â•â• */
       .drawer-overlay {
         position: fixed;
         inset: 0;
@@ -1071,7 +1071,7 @@
         }
       }
 
-      /* ═══ MODALS ═══ */
+      /* â•â•â• MODALS â•â•â• */
       .modal-bg {
         position: fixed;
         inset: 0;
@@ -1207,7 +1207,7 @@
         border-bottom: 1px solid var(--border);
       }
 
-      /* ═══ IMPORT ═══ */
+      /* â•â•â• IMPORT â•â•â• */
       .csv-drop {
         background: var(--s3);
         border: 2px dashed var(--border2);
@@ -1277,7 +1277,7 @@
         margin-top: 8px;
       }
 
-      /* ═══ EMPTY STATE ═══ */
+      /* â•â•â• EMPTY STATE â•â•â• */
       .empty-state {
         display: flex;
         flex-direction: column;
@@ -1304,7 +1304,7 @@
         line-height: 1.6;
       }
 
-      /* ═══ TOAST ═══ */
+      /* â•â•â• TOAST â•â•â• */
       #toast {
         position: fixed;
         top: 22px;
@@ -1326,7 +1326,7 @@
         opacity: 1;
       }
 
-      /* ═══ RESPONSIVE ═══ */
+      /* â•â•â• RESPONSIVE â•â•â• */
       @media (max-width: 800px) {
         .sidebar {
           display: none;
@@ -1343,15 +1343,15 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.26.369" />
+    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.26.370" />
   </head>
   <body>
     <!-- TOPBAR -->
     <div class="topbar">
       <div class="t-left">
-        <a href="energy-department.html" class="back-link">← Energy Dept</a>
+        <a href="energy-department.html" class="back-link">â† Energy Dept</a>
         <div class="topbrand">
-          <div class="tbmark">⚡</div>
+          <div class="tbmark">âš¡</div>
           <div>
             <div class="tbname">CompanyHub</div>
             <div class="tbdept">EMS LEADS</div>
@@ -1360,7 +1360,7 @@
       </div>
       <div class="t-right">
         <button class="btn btn-ghost btn-sm" data-fb="ems.import-csv-btn" onclick="openImportModal()">
-          ⬆ Import CSV
+          â¬† Import CSV
         </button>
         <button class="btn btn-em" data-fb="ems.new-lead-btn" onclick="openNewLeadModal()">+ New Lead</button>
       </div>
@@ -1368,10 +1368,10 @@
 
     <!-- NAV -->
     <div class="nav-bar">
-      <button class="ntab active" data-fb="ems.tab.pipeline" onclick="switchView('pipeline', this)">📋 Pipeline</button>
-      <button class="ntab" data-fb="ems.tab.table" onclick="switchView('table', this)">📊 All Leads</button>
-      <button class="ntab" data-fb="ems.tab.followups" onclick="switchView('followups', this)">🔔 Follow-ups</button>
-      <button class="ntab" data-fb="ems.tab.analytics" onclick="switchView('analytics', this)">📈 Analytics</button>
+      <button class="ntab active" data-fb="ems.tab.pipeline" onclick="switchView('pipeline', this)">ðŸ“‹ Pipeline</button>
+      <button class="ntab" data-fb="ems.tab.table" onclick="switchView('table', this)">ðŸ“Š All Leads</button>
+      <button class="ntab" data-fb="ems.tab.followups" onclick="switchView('followups', this)">ðŸ”” Follow-ups</button>
+      <button class="ntab" data-fb="ems.tab.analytics" onclick="switchView('analytics', this)">ðŸ“ˆ Analytics</button>
     </div>
 
     <!-- APP -->
@@ -1381,10 +1381,10 @@
         <div class="s-sect">
           <div class="s-lbl">Pipeline</div>
           <div class="s-item active" id="sb-all" data-fb="ems.sidebar.all-leads" onclick="filterByStage('', this)">
-            <span class="s-ico">🌐</span>All Leads<span class="s-badge" id="sb-count-all">0</span>
+            <span class="s-ico">ðŸŒ</span>All Leads<span class="s-badge" id="sb-count-all">0</span>
           </div>
           <div class="s-item" id="sb-prospect" data-fb="ems.sidebar.prospect" onclick="filterByStage('Prospect', this)">
-            <span class="s-ico">👁</span>Prospect<span
+            <span class="s-ico">ðŸ‘</span>Prospect<span
               class="s-badge"
               id="sb-count-prospect"
               style="background: var(--s4); color: var(--text2)"
@@ -1397,7 +1397,7 @@
             data-fb="ems.sidebar.contacted"
             onclick="filterByStage('Contacted', this)"
           >
-            <span class="s-ico">📞</span>Contacted<span
+            <span class="s-ico">ðŸ“ž</span>Contacted<span
               class="s-badge"
               id="sb-count-contacted"
               style="background: var(--em2-dim); color: var(--em2)"
@@ -1410,7 +1410,7 @@
             data-fb="ems.sidebar.qualifying"
             onclick="filterByStage('Qualifying', this)"
           >
-            <span class="s-ico">🔍</span>Qualifying<span
+            <span class="s-ico">ðŸ”</span>Qualifying<span
               class="s-badge"
               id="sb-count-qualifying"
               style="background: var(--warn-dim); color: var(--warn)"
@@ -1418,7 +1418,7 @@
             >
           </div>
           <div class="s-item" id="sb-proposal" data-fb="ems.sidebar.proposal" onclick="filterByStage('Proposal', this)">
-            <span class="s-ico">📄</span>Proposal<span
+            <span class="s-ico">ðŸ“„</span>Proposal<span
               class="s-badge"
               id="sb-count-proposal"
               style="background: var(--violet-dim); color: var(--violet)"
@@ -1431,7 +1431,7 @@
             data-fb="ems.sidebar.negotiating"
             onclick="filterByStage('Negotiating', this)"
           >
-            <span class="s-ico">🤝</span>Negotiating<span
+            <span class="s-ico">ðŸ¤</span>Negotiating<span
               class="s-badge"
               id="sb-count-negotiating"
               style="background: var(--lime-dim); color: var(--lime)"
@@ -1439,7 +1439,7 @@
             >
           </div>
           <div class="s-item" id="sb-won" data-fb="ems.sidebar.won" onclick="filterByStage('Won', this)">
-            <span class="s-ico">✅</span>Won<span
+            <span class="s-ico">âœ…</span>Won<span
               class="s-badge"
               id="sb-count-won"
               style="background: var(--em-dim); color: var(--em)"
@@ -1447,7 +1447,7 @@
             >
           </div>
           <div class="s-item" id="sb-lost" data-fb="ems.sidebar.lost" onclick="filterByStage('Lost', this)">
-            <span class="s-ico">❌</span>Lost<span
+            <span class="s-ico">âŒ</span>Lost<span
               class="s-badge"
               id="sb-count-lost"
               style="background: var(--danger-dim); color: var(--danger)"
@@ -1458,22 +1458,22 @@
         <div class="s-sect">
           <div class="s-lbl">Priority</div>
           <div class="s-item" data-fb="ems.sidebar.priority-high" onclick="filterByPriority('High', this)">
-            <span class="s-ico" style="color: var(--danger)">●</span>High
+            <span class="s-ico" style="color: var(--danger)">â—</span>High
           </div>
           <div class="s-item" data-fb="ems.sidebar.priority-medium" onclick="filterByPriority('Medium', this)">
-            <span class="s-ico" style="color: var(--warn)">●</span>Medium
+            <span class="s-ico" style="color: var(--warn)">â—</span>Medium
           </div>
           <div class="s-item" data-fb="ems.sidebar.priority-low" onclick="filterByPriority('Low', this)">
-            <span class="s-ico" style="color: var(--text2)">●</span>Low
+            <span class="s-ico" style="color: var(--text2)">â—</span>Low
           </div>
         </div>
         <div class="s-sect">
           <div class="s-lbl">Actions</div>
           <div class="s-item" data-fb="ems.sidebar.import" onclick="openImportModal()">
-            <span class="s-ico">⬆</span>Import CSV
+            <span class="s-ico">â¬†</span>Import CSV
           </div>
           <div class="s-item" data-fb="ems.sidebar.export" onclick="exportCSV()">
-            <span class="s-ico">⬇</span>Export CSV
+            <span class="s-ico">â¬‡</span>Export CSV
           </div>
         </div>
       </div>
@@ -1490,7 +1490,7 @@
             <div class="hdr-actions">
               <div class="filter-bar" style="margin: 0">
                 <div class="search-box">
-                  <span style="color: var(--text2); font-size: 13px">🔍</span
+                  <span style="color: var(--text2); font-size: 13px">ðŸ”</span
                   ><input
                     type="text"
                     id="pipeSearch"
@@ -1525,16 +1525,16 @@
           <div class="pg-hdr">
             <div>
               <div class="pg-title">All <em>Leads</em></div>
-              <div class="pg-sub">Spreadsheet view — click any row to open lead detail</div>
+              <div class="pg-sub">Spreadsheet view â€” click any row to open lead detail</div>
             </div>
             <div class="hdr-actions">
-              <button class="btn btn-ghost btn-sm" onclick="exportCSV()">⬇ Export CSV</button>
+              <button class="btn btn-ghost btn-sm" onclick="exportCSV()">â¬‡ Export CSV</button>
               <button class="btn btn-em" onclick="openNewLeadModal()">+ New Lead</button>
             </div>
           </div>
           <div class="filter-bar">
             <div class="search-box">
-              <span style="color: var(--text2); font-size: 13px">🔍</span
+              <span style="color: var(--text2); font-size: 13px">ðŸ”</span
               ><input
                 type="text"
                 id="tableSearch"
@@ -1568,14 +1568,14 @@
             <table>
               <thead>
                 <tr>
-                  <th onclick="sortTable('company')">Company ↕</th>
-                  <th onclick="sortTable('city')">Location ↕</th>
-                  <th onclick="sortTable('stage')">Stage ↕</th>
-                  <th onclick="sortTable('priority')">Priority ↕</th>
-                  <th onclick="sortTable('cscContact')">CSC Contact ↕</th>
-                  <th onclick="sortTable('annualValue')">Est. Value ↕</th>
-                  <th onclick="sortTable('nextActionDate')">Next Action ↕</th>
-                  <th onclick="sortTable('lastContact')">Last Contact ↕</th>
+                  <th onclick="sortTable('company')">Company â†•</th>
+                  <th onclick="sortTable('city')">Location â†•</th>
+                  <th onclick="sortTable('stage')">Stage â†•</th>
+                  <th onclick="sortTable('priority')">Priority â†•</th>
+                  <th onclick="sortTable('cscContact')">CSC Contact â†•</th>
+                  <th onclick="sortTable('annualValue')">Est. Value â†•</th>
+                  <th onclick="sortTable('nextActionDate')">Next Action â†•</th>
+                  <th onclick="sortTable('lastContact')">Last Contact â†•</th>
                 </tr>
               </thead>
               <tbody id="tableBody" data-fb="ems.table-body"></tbody>
@@ -1616,15 +1616,15 @@
       <div class="drawer-hdr">
         <div class="drawer-title" id="drawerTitle">Lead Detail</div>
         <div class="drawer-hdr-actions">
-          <button class="btn btn-danger btn-sm" onclick="deleteCurrentLead()">🗑 Delete</button>
-          <button class="btn btn-em btn-sm" onclick="saveDrawerChanges()">💾 Save</button>
-          <button class="modal-x" onclick="closeDrawer()">✕</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteCurrentLead()">ðŸ—‘ Delete</button>
+          <button class="btn btn-em btn-sm" onclick="saveDrawerChanges()">ðŸ’¾ Save</button>
+          <button class="modal-x" onclick="closeDrawer()">âœ•</button>
         </div>
       </div>
       <div class="dtabs">
         <button class="dtab active" onclick="switchDTab('dOverview', this)">Overview</button>
         <button class="dtab" onclick="switchDTab('dActivity', this)">Activity Log</button>
-        <button class="dtab" onclick="switchDTab('dAI', this)">🤖 AI Tools</button>
+        <button class="dtab" onclick="switchDTab('dAI', this)">ðŸ¤– AI Tools</button>
       </div>
       <div class="drawer-body">
         <!-- OVERVIEW TAB -->
@@ -1667,7 +1667,7 @@
             <div class="detail-field">
               <div class="df-label">EMS Project Type</div>
               <select class="df-select" id="d-type">
-                <option value="">— Select —</option>
+                <option value="">â€” Select â€”</option>
                 <option>Energy Audit</option>
                 <option>Controls Retrofit</option>
                 <option>BAS Upgrade</option>
@@ -1727,7 +1727,7 @@
             <div class="detail-field">
               <div class="df-label">Building Type</div>
               <select class="df-select" id="d-buildingType">
-                <option value="">— Select —</option>
+                <option value="">â€” Select â€”</option>
                 <option>Office</option>
                 <option>School / K-12</option>
                 <option>University</option>
@@ -1797,26 +1797,26 @@
         <!-- AI TAB -->
         <div class="dpanel" id="dAI">
           <div style="margin-bottom: 12px; font-size: 12px; color: var(--text2)">
-            AI tools powered by Claude — uses the current lead data from the Overview tab.
+            AI tools powered by Claude â€” uses the current lead data from the Overview tab.
           </div>
           <div class="ai-tool-row">
             <button class="ai-tool-btn" onclick="runAITool('outreach')">
-              <div class="atb-ico">✉️</div>
+              <div class="atb-ico">âœ‰ï¸</div>
               <div class="atb-name">Draft Outreach</div>
               <div class="atb-desc">Email or call script</div>
             </button>
             <button class="ai-tool-btn" onclick="runAITool('opportunity')">
-              <div class="atb-ico">⚡</div>
+              <div class="atb-ico">âš¡</div>
               <div class="atb-name">EMS Opportunity</div>
               <div class="atb-desc">Estimate savings potential</div>
             </button>
             <button class="ai-tool-btn" onclick="runAITool('nextsteps')">
-              <div class="atb-ico">🗺</div>
+              <div class="atb-ico">ðŸ—º</div>
               <div class="atb-name">Next Steps</div>
               <div class="atb-desc">Stage-based recommendations</div>
             </button>
             <button class="ai-tool-btn" onclick="runAITool('objections')">
-              <div class="atb-ico">🛡</div>
+              <div class="atb-ico">ðŸ›¡</div>
               <div class="atb-name">Handle Objections</div>
               <div class="atb-desc">Common objections & rebuttals</div>
             </button>
@@ -1831,8 +1831,8 @@
     <div class="modal-bg" id="newLeadModal" data-fb="ems.modal.new-lead">
       <div class="modal">
         <div class="modal-hdr">
-          <div class="modal-title">➕ Add New Lead</div>
-          <button class="modal-x" onclick="closeNewLeadModal()">✕</button>
+          <div class="modal-title">âž• Add New Lead</div>
+          <button class="modal-x" onclick="closeNewLeadModal()">âœ•</button>
         </div>
         <div class="modal-body">
           <div class="section-divider">Prospect Info</div>
@@ -1874,7 +1874,7 @@
             <div class="fg">
               <label class="fl">EMS Project Type</label>
               <select class="fs" id="nl-type">
-                <option value="">— Select —</option>
+                <option value="">â€” Select â€”</option>
                 <option>Energy Audit</option>
                 <option>Controls Retrofit</option>
                 <option>BAS Upgrade</option>
@@ -1910,7 +1910,7 @@
             <div class="fg">
               <label class="fl">Building Type</label>
               <select class="fs" id="nl-buildingType">
-                <option value="">— Select —</option>
+                <option value="">â€” Select â€”</option>
                 <option>Office</option>
                 <option>School / K-12</option>
                 <option>University</option>
@@ -1941,7 +1941,7 @@
         </div>
         <div class="modal-footer">
           <button class="btn btn-ghost" onclick="closeNewLeadModal()">Cancel</button>
-          <button class="btn btn-em" onclick="saveNewLead()">✓ Add Lead</button>
+          <button class="btn btn-em" onclick="saveNewLead()">âœ“ Add Lead</button>
         </div>
       </div>
     </div>
@@ -1950,16 +1950,16 @@
     <div class="modal-bg" id="importModal" data-fb="ems.modal.import">
       <div class="modal modal-lg">
         <div class="modal-hdr">
-          <div class="modal-title">⬆ Import from CSV / Excel</div>
-          <button class="modal-x" onclick="closeImportModal()">✕</button>
+          <div class="modal-title">â¬† Import from CSV / Excel</div>
+          <button class="modal-x" onclick="closeImportModal()">âœ•</button>
         </div>
         <div class="modal-body">
           <p style="font-size: 12px; color: var(--text2); margin-bottom: 14px; line-height: 1.7">
-            Export your Excel spreadsheet as CSV (File → Save As → CSV), then paste the CSV content below, or drag &
+            Export your Excel spreadsheet as CSV (File â†’ Save As â†’ CSV), then paste the CSV content below, or drag &
             drop the file. Map your columns to the correct fields below.
           </p>
           <div class="csv-drop" id="csvDrop" onclick="document.getElementById('csvFileInput').click()">
-            <div style="font-size: 28px">📂</div>
+            <div style="font-size: 28px">ðŸ“‚</div>
             <p>Click to select a <em>.csv file</em> or paste CSV data below</p>
           </div>
           <input type="file" id="csvFileInput" accept=".csv" style="display: none" onchange="handleCSVFile(event)" />
@@ -1995,7 +1995,7 @@
         </div>
         <div class="modal-footer">
           <button class="btn btn-ghost" onclick="closeImportModal()">Cancel</button>
-          <button class="btn btn-em" id="importBtn" onclick="runImport()" style="display: none">⬆ Import Leads</button>
+          <button class="btn btn-em" id="importBtn" onclick="runImport()" style="display: none">â¬† Import Leads</button>
         </div>
       </div>
     </div>
@@ -2004,9 +2004,9 @@
     <div id="toast"><span id="toastMsg"></span></div>
 
     <script>
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    DATA & STORAGE
-═══════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       const STORAGE_KEY = 'ems_leads_v1';
       let leads = [];
       let activeLeadId = null;
@@ -2060,7 +2060,7 @@
         { key: 'nextAction', label: 'Next Action' },
         { key: 'nextActionDate', label: 'Next Action Date' },
         { key: 'lastContact', label: 'Last Contact Date' },
-        { key: '', label: '— Skip —' },
+        { key: '', label: 'â€” Skip â€”' },
       ];
 
       function load() {
@@ -2077,9 +2077,9 @@
         return Date.now().toString(36) + Math.random().toString(36).slice(2);
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    INIT
-═══════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       window.addEventListener('DOMContentLoaded', () => {
         load();
         renderAll();
@@ -2096,9 +2096,9 @@
         populateCSCFilter();
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    SIDEBAR COUNTS
-═══════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       function updateSidebarCounts() {
         const all = leads.filter((l) => l.stage !== 'Lost');
         document.getElementById('sb-count-all').textContent = leads.length;
@@ -2120,9 +2120,9 @@
         });
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    VIEW SWITCHING
-═══════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       function switchView(view, el) {
         document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
         document.querySelectorAll('.ntab').forEach((t) => t.classList.remove('active'));
@@ -2146,9 +2146,9 @@
         renderTable();
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    STATS ROW
-═══════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       function renderStats() {
         const active = leads.filter((l) => !['Lost', 'Won'].includes(l.stage));
         const totalVal = leads.filter((l) => l.stage !== 'Lost').reduce((s, l) => s + (+l.annualValue || 0), 0);
@@ -2166,9 +2166,9 @@
   `;
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    PIPELINE
-═══════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       function getFilteredLeads() {
         const search = (document.getElementById('pipeSearch') || {}).value?.toLowerCase() || '';
         const csc = (document.getElementById('pipeFilterCSC') || {}).value || '';
@@ -2200,7 +2200,7 @@
             <div class="stage-dot" style="background:${STAGE_COLORS[stage]}"></div>
             ${stage}
           </div>
-          <div class="stage-count">${stageLeads.length}${stageVal > 0 ? ' · $' + fmtNum(stageVal) : ''}</div>
+          <div class="stage-count">${stageLeads.length}${stageVal > 0 ? ' Â· $' + fmtNum(stageVal) : ''}</div>
         </div>
         <div class="stage-body" id="stage-${stage.replace(' ', '-')}"
           ondragover="event.preventDefault();this.classList.add('drag-over')"
@@ -2227,10 +2227,10 @@
       onclick="openDrawer('${l.id}')">
       <div style="display:flex;align-items:flex-start;gap:7px">
         <div class="priority-dot" style="background:${priColor};margin-top:4px"></div>
-        <div class="lc-company">${esc(l.company || '—')}</div>
+        <div class="lc-company">${esc(l.company || 'â€”')}</div>
       </div>
-      <div class="lc-meta">${[l.buildingType, l.city && l.state ? l.city + ', ' + l.state : l.city || l.state].filter(Boolean).join(' · ') || 'No location set'}</div>
-      ${l.cscContact ? `<div style="font-size:10px;color:var(--em2)">👤 ${esc(l.cscContact)}</div>` : ''}
+      <div class="lc-meta">${[l.buildingType, l.city && l.state ? l.city + ', ' + l.state : l.city || l.state].filter(Boolean).join(' Â· ') || 'No location set'}</div>
+      ${l.cscContact ? `<div style="font-size:10px;color:var(--em2)">ðŸ‘¤ ${esc(l.cscContact)}</div>` : ''}
       ${
         l.tags && l.tags.length
           ? `<div class="lc-tags">${l.tags
@@ -2243,7 +2243,7 @@
         <div class="lc-value">${l.annualValue ? '$' + fmtNum(l.annualValue) : ''}</div>
         <div class="lc-date">${l.type || ''}</div>
       </div>
-      ${l.nextAction ? `<div class="lc-action ${overdue ? 'overdue-flag' : ''}">${overdue ? '⚠' : '→'} ${esc(l.nextAction)}${nad ? ' (' + fmtDate(l.nextActionDate) + ')' : ''}</div>` : ''}
+      ${l.nextAction ? `<div class="lc-action ${overdue ? 'overdue-flag' : ''}">${overdue ? 'âš ' : 'â†’'} ${esc(l.nextAction)}${nad ? ' (' + fmtDate(l.nextActionDate) + ')' : ''}</div>` : ''}
     </div>`;
       }
 
@@ -2262,14 +2262,14 @@
           lead.updatedAt = new Date().toISOString();
           save();
           renderAll();
-          showToast(`Moved to ${stage} ✓`);
+          showToast(`Moved to ${stage} âœ“`);
         }
         dragId = null;
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    TABLE VIEW
-═══════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       function renderTable() {
         const search = document.getElementById('tableSearch')?.value?.toLowerCase() || '';
         const stage = document.getElementById('tableStage')?.value || '';
@@ -2300,14 +2300,14 @@
                 .map(
                   (l) => `
         <tr onclick="openDrawer('${l.id}')">
-          <td class="td-company">${esc(l.company || '—')}</td>
-          <td>${[l.city, l.state].filter(Boolean).join(', ') || '—'}</td>
-          <td><span class="stage-pill ${STAGE_CLS[l.stage] || ''}">${l.stage || '—'}</span></td>
-          <td class="pri-${(l.priority || '').toLowerCase()}">${l.priority || '—'}</td>
-          <td>${esc(l.cscContact || '—')}</td>
-          <td class="td-mono">${l.annualValue ? '$' + fmtNum(l.annualValue) : '—'}</td>
-          <td style="${isOverdue(l.nextActionDate) ? 'color:var(--danger)' : ''}">${l.nextActionDate ? fmtDate(l.nextActionDate) : '—'}</td>
-          <td>${l.lastContact ? fmtDate(l.lastContact) : '—'}</td>
+          <td class="td-company">${esc(l.company || 'â€”')}</td>
+          <td>${[l.city, l.state].filter(Boolean).join(', ') || 'â€”'}</td>
+          <td><span class="stage-pill ${STAGE_CLS[l.stage] || ''}">${l.stage || 'â€”'}</span></td>
+          <td class="pri-${(l.priority || '').toLowerCase()}">${l.priority || 'â€”'}</td>
+          <td>${esc(l.cscContact || 'â€”')}</td>
+          <td class="td-mono">${l.annualValue ? '$' + fmtNum(l.annualValue) : 'â€”'}</td>
+          <td style="${isOverdue(l.nextActionDate) ? 'color:var(--danger)' : ''}">${l.nextActionDate ? fmtDate(l.nextActionDate) : 'â€”'}</td>
+          <td>${l.lastContact ? fmtDate(l.lastContact) : 'â€”'}</td>
         </tr>`,
                 )
                 .join('');
@@ -2321,9 +2321,9 @@
         renderTable();
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    FOLLOW-UPS VIEW
-═══════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       function renderFollowups() {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -2357,7 +2357,7 @@
           <div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:border-color .14s" onclick="openDrawer('${l.id}')" onmouseover="this.style.borderColor='var(--em)'" onmouseout="this.style.borderColor='var(--border)'">
             <div>
               <div style="font-family:var(--head);font-size:13px;font-weight:700">${esc(l.company)}</div>
-              <div style="font-size:11px;color:var(--text2);margin-top:3px">${l.nextAction || 'No action specified'} ${l.nextActionDate ? '· ' + fmtDate(l.nextActionDate) : ''}</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:3px">${l.nextAction || 'No action specified'} ${l.nextActionDate ? 'Â· ' + fmtDate(l.nextActionDate) : ''}</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px">
               <span class="stage-pill ${STAGE_CLS[l.stage] || ''}">${l.stage}</span>
@@ -2370,20 +2370,20 @@
     </div>`;
 
         document.getElementById('followupList').innerHTML =
-          section('⚠ Overdue', overdue, 'var(--danger)') +
-            section('📅 This Week', thisWeek, 'var(--warn)') +
-            section('📋 No Date Set', noDate, 'var(--em2)') ||
-          `<div class="empty-state"><div class="ico">✅</div><h3>All caught up!</h3><p>No follow-ups overdue or due this week.</p></div>`;
+          section('âš  Overdue', overdue, 'var(--danger)') +
+            section('ðŸ“… This Week', thisWeek, 'var(--warn)') +
+            section('ðŸ“‹ No Date Set', noDate, 'var(--em2)') ||
+          `<div class="empty-state"><div class="ico">âœ…</div><h3>All caught up!</h3><p>No follow-ups overdue or due this week.</p></div>`;
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    ANALYTICS VIEW
-═══════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       function renderAnalytics() {
         const total = leads.length;
         if (total === 0) {
           document.getElementById('analyticsContent').innerHTML =
-            `<div class="empty-state"><div class="ico">📈</div><h3>No data yet</h3><p>Add leads to see analytics.</p></div>`;
+            `<div class="empty-state"><div class="ico">ðŸ“ˆ</div><h3>No data yet</h3><p>Add leads to see analytics.</p></div>`;
           return;
         }
         const stageData = STAGES.map((s) => ({
@@ -2471,9 +2471,9 @@
     </div>`;
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    DETAIL DRAWER
-═══════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       function openDrawer(id) {
         const lead = leads.find((l) => l.id === id);
         if (!lead) return;
@@ -2563,7 +2563,7 @@
         document.getElementById('drawerTitle').textContent = lead.company || 'Lead Detail';
         save();
         renderAll();
-        showToast('Lead saved ✓');
+        showToast('Lead saved âœ“');
       }
 
       function onStageChange() {} // reserved for future stage-change activity log
@@ -2586,9 +2586,9 @@
         if (el) el.classList.add('active');
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    ACTIVITY LOG
-═══════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       function renderActivityLog(lead) {
         const list = lead.activity || [];
         document.getElementById('activityList').innerHTML =
@@ -2602,7 +2602,7 @@
           <div class="act-dot" style="background:${a.color || 'var(--em)'}"></div>
           <div class="act-body">
             <div class="act-text">${esc(a.text)}</div>
-            <div class="act-time">${a.time} · ${a.user || 'You'}</div>
+            <div class="act-time">${a.time} Â· ${a.user || 'You'}</div>
           </div>
         </div>`,
                 )
@@ -2623,12 +2623,12 @@
         save();
         renderActivityLog(lead);
         document.getElementById('d-lastContact').value = lead.lastContact;
-        showToast('Activity logged ✓');
+        showToast('Activity logged âœ“');
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    NEW LEAD MODAL
-═══════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       function openNewLeadModal() {
         document.getElementById('newLeadModal').classList.add('open');
       }
@@ -2638,7 +2638,7 @@
       function saveNewLead() {
         const company = document.getElementById('nl-company').value.trim();
         if (!company) {
-          showToast('Company name required ⚠');
+          showToast('Company name required âš ');
           return;
         }
         const lead = {
@@ -2671,7 +2671,7 @@
         save();
         closeNewLeadModal();
         renderAll();
-        showToast(company + ' added ✓');
+        showToast(company + ' added âœ“');
         // Clear form
         [
           'nl-company',
@@ -2695,9 +2695,9 @@
         });
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    CSV IMPORT
-═══════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       function openImportModal() {
         document.getElementById('importModal').classList.add('open');
       }
@@ -2770,13 +2770,13 @@
         const parsed = parseCSV(text);
         if (parsed.length < 2) {
           document.getElementById('csvParseStatus').innerHTML =
-            '<div style="color:var(--danger);font-size:12px;margin-top:6px">Could not parse CSV — make sure it has headers in row 1.</div>';
+            '<div style="color:var(--danger);font-size:12px;margin-top:6px">Could not parse CSV â€” make sure it has headers in row 1.</div>';
           return;
         }
         csvHeaders = parsed[0];
         csvRows = parsed.slice(1).filter((r) => r.some((c) => c));
         document.getElementById('csvParseStatus').innerHTML =
-          `<div class="parse-ok">✓ Found ${csvRows.length} rows and ${csvHeaders.length} columns</div>`;
+          `<div class="parse-ok">âœ“ Found ${csvRows.length} rows and ${csvHeaders.length} columns</div>`;
 
         // Auto-map common column names
         const autoMap = {
@@ -2871,16 +2871,16 @@
         save();
         closeImportModal();
         renderAll();
-        showToast(`Imported ${added} leads${skipped > 0 ? ' (' + skipped + ' skipped — no company name)' : ''} ✓`);
+        showToast(`Imported ${added} leads${skipped > 0 ? ' (' + skipped + ' skipped â€” no company name)' : ''} âœ“`);
         document.getElementById('csvPaste').value = '';
         document.getElementById('columnMapper').style.display = 'none';
         document.getElementById('importBtn').style.display = 'none';
         document.getElementById('csvParseStatus').innerHTML = '';
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    EXPORT CSV
-═══════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       function exportCSV() {
         const headers = [
           'Company',
@@ -2935,21 +2935,21 @@
         a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
         a.download = 'EMS-Leads-' + new Date().toISOString().split('T')[0] + '.csv';
         a.click();
-        showToast('Exported ✓');
+        showToast('Exported âœ“');
       }
 
-      /* ═══════════════════════════════════
-   AI TOOLS (disabled — no backend)
-═══════════════════════════════════ */
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   AI TOOLS (disabled â€” no backend)
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       async function runAITool(tool) {
         const out = document.getElementById('aiOutput');
         out.className = 'ai-output visible';
-        out.textContent = 'AI features are not available — this app has no backend API connection.';
+        out.textContent = 'AI features are not available â€” this app has no backend API connection.';
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    HELPERS
-═══════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       function fmtNum(n) {
         if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
         if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
@@ -2983,6 +2983,6 @@
         toastTmr = setTimeout(() => t.classList.remove('show'), 3200);
       }
     </script>
-    <script src="feedback-widget.js?v=v2026.05.26.369"></script>
+    <script src="feedback-widget.js?v=v2026.05.26.370"></script>
   </body>
 </html>

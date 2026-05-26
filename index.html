@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <script>
     (function () {
@@ -15,7 +15,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self' 'unsafe-inline' https://alcdn.msauth.net https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com https://cdn.jsdelivr.net; worker-src 'self' blob:; frame-src 'self' https://login.microsoftonline.com; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
-    <title>CompanyHub — Dashboard</title>
+    <title>CompanyHub â€” Dashboard</title>
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='15' fill='%23238636'/><text x='50' y='72' font-size='60' font-weight='bold' text-anchor='middle' fill='white'>C</text></svg>"
@@ -31,12 +31,12 @@
     />
 
     <style id="site-ui-styles">
-      /* ═══════════════════════════════════════════════════
-         SITE-UI.CSS — Shared CompanyHub UI Shell
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+         SITE-UI.CSS â€” Shared CompanyHub UI Shell
          Topbar, sidebar, dept-nav, settings, theming
-      ═══════════════════════════════════════════════════ */
+      â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
-      /* ── THEME TOKENS ── */
+      /* â”€â”€ THEME TOKENS â”€â”€ */
       :root {
         --bg: #060810;
         --s1: #0c0f1a;
@@ -68,7 +68,7 @@
         --r: 10px;
       }
 
-      /* ── RESET ── */
+      /* â”€â”€ RESET â”€â”€ */
       *,
       *::before,
       *::after {
@@ -100,7 +100,7 @@
         border-radius: 3px;
       }
 
-      /* ── ANIMATIONS ── */
+      /* â”€â”€ ANIMATIONS â”€â”€ */
       @keyframes fadeUp {
         from {
           opacity: 0;
@@ -117,7 +117,7 @@
         }
       }
 
-      /* ── LOGIN ── */
+      /* â”€â”€ LOGIN â”€â”€ */
       #loginScreen {
         position: fixed;
         inset: 0;
@@ -269,7 +269,7 @@
         text-decoration: none;
       }
 
-      /* ── APP ── */
+      /* â”€â”€ APP â”€â”€ */
       #app {
         display: none;
       }
@@ -281,7 +281,7 @@
         animation: fadeUp 0.4s ease;
       }
 
-      /* ── TOPBAR ── */
+      /* â”€â”€ TOPBAR â”€â”€ */
       .topbar {
         flex-shrink: 0;
         z-index: 200;
@@ -458,7 +458,7 @@
         color: var(--red);
       }
 
-      /* ── DEPT TABS ── */
+      /* â”€â”€ DEPT TABS â”€â”€ */
       .dept-nav {
         flex-shrink: 0;
         background: var(--s1);
@@ -494,7 +494,7 @@
         text-decoration: none;
       }
 
-      /* ── SIDEBAR LAYOUT ── */
+      /* â”€â”€ SIDEBAR LAYOUT â”€â”€ */
       .app-wrap {
         display: flex;
         flex: 1;
@@ -577,7 +577,7 @@
         padding: 1px 6px;
       }
 
-      /* ── SIDEBAR BOTTOM WIDGETS ── */
+      /* â”€â”€ SIDEBAR BOTTOM WIDGETS â”€â”€ */
       .sb-settings-btn {
         display: flex;
         align-items: center;
@@ -644,7 +644,7 @@
         color: var(--red);
       }
 
-      /* ── CONTENT ── */
+      /* â”€â”€ CONTENT â”€â”€ */
       .content {
         flex: 1;
         min-height: 0;
@@ -659,7 +659,7 @@
         display: block;
       }
 
-      /* ── PAGE HEADER ── */
+      /* â”€â”€ PAGE HEADER â”€â”€ */
       .pg-hdr {
         display: flex;
         align-items: flex-start;
@@ -683,7 +683,7 @@
         margin-top: 4px;
       }
 
-      /* ── TOAST ── */
+      /* â”€â”€ TOAST â”€â”€ */
       .toast {
         position: fixed;
         top: 22px;
@@ -712,7 +712,7 @@
         font-size: 14px;
       }
 
-      /* ── SETTINGS MODAL ── */
+      /* â”€â”€ SETTINGS MODAL â”€â”€ */
       .settings-overlay {
         position: fixed;
         inset: 0;
@@ -955,7 +955,7 @@
         line-height: 1.6;
       }
 
-      /* ── THEME PILLS (Settings Modal) ── */
+      /* â”€â”€ THEME PILLS (Settings Modal) â”€â”€ */
       .theme-pills {
         display: flex;
         gap: 6px;
@@ -983,7 +983,7 @@
         font-weight: 600;
       }
 
-      /* ── LIGHT MODE THEME ── */
+      /* â”€â”€ LIGHT MODE THEME â”€â”€ */
       [data-theme='light'] {
         --bg: #f0f2f7;
         --s1: #e4e8f2;
@@ -1030,7 +1030,7 @@
       [data-theme='light'] .help-modal {
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
       }
-      /* ── Feedback Mode Toggle ── */
+      /* â”€â”€ Feedback Mode Toggle â”€â”€ */
       .settings-toggle {
         position: relative;
         width: 44px;
@@ -1069,7 +1069,7 @@
     </style>
 
     <style>
-      /* ── INDEX-SPECIFIC STYLES ── */
+      /* â”€â”€ INDEX-SPECIFIC STYLES â”€â”€ */
       html,
       body {
         height: 100%;
@@ -1436,7 +1436,7 @@
         line-height: 1.7;
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.26.369" />
+    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.26.370" />
   </head>
   <body>
     <!-- LOGIN -->
@@ -1454,7 +1454,7 @@
         <div class="login-divider"><span>or</span></div>
         <button class="btn-demo" onclick="loginDemo()">Continue in Demo Mode</button>
         <p class="login-note">
-          Your Microsoft credentials are verified by Microsoft — CompanyHub never sees your password.
+          Your Microsoft credentials are verified by Microsoft â€” CompanyHub never sees your password.
         </p>
       </div>
     </div>
@@ -1485,7 +1485,7 @@
             title="Notifications"
             style="cursor: pointer"
           >
-            🔔
+            ðŸ””
             <div class="npip" id="notifPip" style="display: none"></div>
             <span
               id="notifBadge"
@@ -1514,9 +1514,9 @@
       </header>
 
       <nav class="dept-nav" data-fb="index.dept-nav">
-        <button class="dept-tab active" onclick="setDept('hub', this)">🏠 Dashboard</button>
-        <a class="dept-tab" href="service-department.html">🔧 Service Department</a>
-        <a class="dept-tab" href="energy-department.html">⚡ Energy Department</a>
+        <button class="dept-tab active" onclick="setDept('hub', this)">ðŸ  Dashboard</button>
+        <a class="dept-tab" href="service-department.html">ðŸ”§ Service Department</a>
+        <a class="dept-tab" href="energy-department.html">âš¡ Energy Department</a>
       </nav>
 
       <div class="app-wrap">
@@ -1525,23 +1525,23 @@
           <div class="sidebar-top">
             <div class="s-sect">
               <div class="s-lbl">Dashboard</div>
-              <div class="s-item active" onclick="setView('overview', this)"><span class="s-ico">🏠</span>Overview</div>
+              <div class="s-item active" onclick="setView('overview', this)"><span class="s-ico">ðŸ </span>Overview</div>
             </div>
             <div class="s-sect">
               <div class="s-lbl">Service</div>
-              <a class="s-item" href="service-department.html"><span class="s-ico">👥</span>Personnel</a>
+              <a class="s-item" href="service-department.html"><span class="s-ico">ðŸ‘¥</span>Personnel</a>
               <a class="s-item" href="service-department.html"
-                ><span class="s-ico">🗓️</span>PM Schedule <span class="s-badge">57</span></a
+                ><span class="s-ico">ðŸ—“ï¸</span>PM Schedule <span class="s-badge">57</span></a
               >
-              <a class="s-item" href="service-department.html"><span class="s-ico">📡</span>Dispatch Board</a>
+              <a class="s-item" href="service-department.html"><span class="s-ico">ðŸ“¡</span>Dispatch Board</a>
             </div>
             <div class="s-sect">
               <div class="s-lbl">Energy</div>
-              <a class="s-item" href="energy-department.html"><span class="s-ico">📄</span>PDF / OCR</a>
-              <a class="s-item" href="energy-department.html"><span class="s-ico">🌡️</span>Weather Normalize</a>
-              <a class="s-item" href="energy-department.html"><span class="s-ico">📊</span>Baseline</a>
-              <a class="s-item" href="energy-department.html"><span class="s-ico">💡</span>Energy Savings</a>
-              <a class="s-item" href="energy-department.html"><span class="s-ico">🔌</span>WebCTRL</a>
+              <a class="s-item" href="energy-department.html"><span class="s-ico">ðŸ“„</span>PDF / OCR</a>
+              <a class="s-item" href="energy-department.html"><span class="s-ico">ðŸŒ¡ï¸</span>Weather Normalize</a>
+              <a class="s-item" href="energy-department.html"><span class="s-ico">ðŸ“Š</span>Baseline</a>
+              <a class="s-item" href="energy-department.html"><span class="s-ico">ðŸ’¡</span>Energy Savings</a>
+              <a class="s-item" href="energy-department.html"><span class="s-ico">ðŸ”Œ</span>WebCTRL</a>
             </div>
           </div>
           <div class="sidebar-bottom">
@@ -1610,7 +1610,7 @@
               <a class="dept-card blue" href="service-department.html" data-fb="index.dept-card.service">
                 <div class="dc-banner blue"></div>
                 <div class="dc-body">
-                  <div class="dc-icon blue">🔧</div>
+                  <div class="dc-icon blue">ðŸ”§</div>
                   <div class="dc-name">Service Department</div>
                   <div class="dc-desc">
                     Personnel scheduling, preventative maintenance agreements, technician dispatch board, and PM
@@ -1630,13 +1630,13 @@
                       <div class="dc-stat-lbl">Views</div>
                     </div>
                   </div>
-                  <div class="dc-footer"><span class="dc-link">Open Service Department →</span></div>
+                  <div class="dc-footer"><span class="dc-link">Open Service Department â†’</span></div>
                 </div>
               </a>
               <a class="dept-card teal" href="energy-department.html" data-fb="index.dept-card.energy">
                 <div class="dc-banner teal"></div>
                 <div class="dc-body">
-                  <div class="dc-icon teal">⚡</div>
+                  <div class="dc-icon teal">âš¡</div>
                   <div class="dc-name">Energy Department</div>
                   <div class="dc-desc">
                     Energy projects, PDF &amp; OCR tools, weather normalization, utility baseline calculations, energy
@@ -1656,7 +1656,7 @@
                       <div class="dc-stat-lbl">Integration</div>
                     </div>
                   </div>
-                  <div class="dc-footer"><span class="dc-link">Open Energy Department →</span></div>
+                  <div class="dc-footer"><span class="dc-link">Open Energy Department â†’</span></div>
                 </div>
               </a>
             </div>
@@ -1664,56 +1664,56 @@
             <div class="sec-lbl">Quick Access</div>
             <div class="quick-grid" data-fb="index.quick-access">
               <a class="quick-card" href="service-department.html" data-fb="index.quick-card.personnel"
-                ><div class="qc-ico">👥</div>
+                ><div class="qc-ico">ðŸ‘¥</div>
                 <div>
                   <div class="qc-name">Personnel</div>
                   <div class="qc-sub">Staff schedule</div>
                 </div></a
               >
               <a class="quick-card" href="service-department.html" data-fb="index.quick-card.pm-schedule"
-                ><div class="qc-ico">🗓️</div>
+                ><div class="qc-ico">ðŸ—“ï¸</div>
                 <div>
                   <div class="qc-name">PM Schedule</div>
                   <div class="qc-sub"><span id="qa-pm">57</span> service agreements</div>
                 </div></a
               >
               <a class="quick-card" href="service-department.html" data-fb="index.quick-card.dispatch"
-                ><div class="qc-ico">📡</div>
+                ><div class="qc-ico">ðŸ“¡</div>
                 <div>
                   <div class="qc-name">Dispatch Board</div>
                   <div class="qc-sub">Active work orders</div>
                 </div></a
               >
               <a class="quick-card" href="energy-department.html" data-fb="index.quick-card.pdf"
-                ><div class="qc-ico">📄</div>
+                ><div class="qc-ico">ðŸ“„</div>
                 <div>
                   <div class="qc-name">PDF / OCR</div>
                   <div class="qc-sub">AI document extraction</div>
                 </div></a
               >
               <a class="quick-card" href="energy-department.html" data-fb="index.quick-card.weather"
-                ><div class="qc-ico">🌡️</div>
+                ><div class="qc-ico">ðŸŒ¡ï¸</div>
                 <div>
                   <div class="qc-name">Weather Normalize</div>
                   <div class="qc-sub">HDD / CDD adjustment</div>
                 </div></a
               >
               <a class="quick-card" href="energy-department.html" data-fb="index.quick-card.baseline"
-                ><div class="qc-ico">📊</div>
+                ><div class="qc-ico">ðŸ“Š</div>
                 <div>
                   <div class="qc-name">Energy Baseline</div>
                   <div class="qc-sub">ASHRAE Guideline 14</div>
                 </div></a
               >
               <a class="quick-card" href="energy-department.html" data-fb="index.quick-card.spec-writer"
-                ><div class="qc-ico">✍️</div>
+                ><div class="qc-ico">âœï¸</div>
                 <div>
                   <div class="qc-name">Spec Writer</div>
                   <div class="qc-sub">Controls specs</div>
                 </div></a
               >
               <a class="quick-card" href="energy-department.html" data-fb="index.quick-card.webctrl"
-                ><div class="qc-ico">🔌</div>
+                ><div class="qc-ico">ðŸ”Œ</div>
                 <div>
                   <div class="qc-name">WebCTRL</div>
                   <div class="qc-sub">BAS integration</div>
@@ -1756,7 +1756,7 @@
               <a class="dept-card blue" href="service-department.html">
                 <div class="dc-banner blue"></div>
                 <div class="dc-body">
-                  <div class="dc-icon blue">🔧</div>
+                  <div class="dc-icon blue">ðŸ”§</div>
                   <div class="dc-name">Service Department</div>
                   <div class="dc-desc">
                     Personnel scheduling, preventative maintenance agreements, technician dispatch board, and PM
@@ -1776,13 +1776,13 @@
                       <div class="dc-stat-lbl">Views</div>
                     </div>
                   </div>
-                  <div class="dc-footer"><span class="dc-link">Open Service Department →</span></div>
+                  <div class="dc-footer"><span class="dc-link">Open Service Department â†’</span></div>
                 </div>
               </a>
               <a class="dept-card teal" href="energy-department.html">
                 <div class="dc-banner teal"></div>
                 <div class="dc-body">
-                  <div class="dc-icon teal">⚡</div>
+                  <div class="dc-icon teal">âš¡</div>
                   <div class="dc-name">Energy Department</div>
                   <div class="dc-desc">
                     Energy projects, PDF &amp; OCR tools, weather normalization, utility baseline calculations, energy
@@ -1802,7 +1802,7 @@
                       <div class="dc-stat-lbl">Integration</div>
                     </div>
                   </div>
-                  <div class="dc-footer"><span class="dc-link">Open Energy Department →</span></div>
+                  <div class="dc-footer"><span class="dc-link">Open Energy Department â†’</span></div>
                 </div>
               </a>
             </div>
@@ -1839,7 +1839,7 @@
           border-bottom: 1px solid var(--border);
         "
       >
-        <span style="font-size: 14px; font-weight: 700">🔔 Notifications</span>
+        <span style="font-size: 14px; font-weight: 700">ðŸ”” Notifications</span>
         <div style="display: flex; gap: 7px; align-items: center">
           <button class="btn btn-ghost btn-sm" onclick="clearAllNotifs()">Clear All</button>
           <button
@@ -1858,7 +1858,7 @@
               justify-content: center;
             "
           >
-            ✕
+            âœ•
           </button>
         </div>
       </div>
@@ -1867,10 +1867,10 @@
       </div>
     </div>
 
-    <div class="toast" id="toast"><span class="t-ic">✓</span><span id="toastMsg">Done!</span></div>
+    <div class="toast" id="toast"><span class="t-ic">âœ“</span><span id="toastMsg">Done!</span></div>
 
     <script>
-      /* ── AUTH ── */
+      /* â”€â”€ AUTH â”€â”€ */
       const M365 = {
         auth: {
           clientId: 'YOUR_CLIENT_ID',
@@ -1907,7 +1907,7 @@
       }
       async function loginWithMicrosoft() {
         const btn = document.getElementById('msBtn');
-        btn.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">⟳</span> Connecting...';
+        btn.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">âŸ³</span> Connecting...';
         btn.disabled = true;
         try {
           msalApp = new msal.PublicClientApplication(M365);
@@ -1928,10 +1928,10 @@
           enterApp();
         } catch (e) {
           if (M365.auth.clientId === 'YOUR_CLIENT_ID') {
-            showToast('Demo mode — replace YOUR_CLIENT_ID for real login');
+            showToast('Demo mode â€” replace YOUR_CLIENT_ID for real login');
             setTimeout(loginDemo, 700);
           } else {
-            btn.innerHTML = '⚠️ Login failed';
+            btn.innerHTML = 'âš ï¸ Login failed';
             btn.disabled = false;
           }
         }
@@ -1968,7 +1968,7 @@
         }
       })();
 
-      /* ── VIEW SWITCHING ── */
+      /* â”€â”€ VIEW SWITCHING â”€â”€ */
       function setView(view, sideEl) {
         document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
         document.getElementById('view-' + view).classList.add('active');
@@ -1980,7 +1980,7 @@
         if (tabEl) tabEl.classList.add('active');
       }
 
-      /* ── TOAST ── */
+      /* â”€â”€ TOAST â”€â”€ */
       let toastTimer;
       function showToast(msg) {
         const t = document.getElementById('toast');
@@ -1990,7 +1990,7 @@
         toastTimer = setTimeout(() => t.classList.remove('show'), 3400);
       }
 
-      /* ── NOTIFICATIONS ── */
+      /* â”€â”€ NOTIFICATIONS â”€â”€ */
       let notifications = [];
       function loadNotifs() {
         try {
@@ -2006,7 +2006,7 @@
         } catch (e) {}
       }
       function addNotif(title, detail, icon) {
-        notifications.unshift({ id: Date.now(), title, detail, icon: icon || '🔔', time: new Date().toISOString() });
+        notifications.unshift({ id: Date.now(), title, detail, icon: icon || 'ðŸ””', time: new Date().toISOString() });
         saveNotifs();
         refreshNotifUI();
       }
@@ -2047,13 +2047,13 @@
           .map((n) => {
             const ago = getNotifTimeAgo(new Date(n.time));
             return `<div style="display:flex;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border);align-items:flex-start">
-      <span style="font-size:16px;flex-shrink:0;margin-top:1px">${n.icon || '🔔'}</span>
+      <span style="font-size:16px;flex-shrink:0;margin-top:1px">${n.icon || 'ðŸ””'}</span>
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600;margin-bottom:2px">${n.title}</div>
         <div style="font-size:12px;color:var(--text2);line-height:1.5">${n.detail}</div>
         <div style="font-size:10px;color:var(--text3);margin-top:3px;font-family:var(--mono)">${ago}</div>
       </div>
-      <button onclick="clearNotif(${n.id})" style="width:22px;height:22px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;font-size:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .13s" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">✕</button>
+      <button onclick="clearNotif(${n.id})" style="width:22px;height:22px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;font-size:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .13s" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">âœ•</button>
     </div>`;
           })
           .join('');
@@ -2084,16 +2084,16 @@
           notifications = [
             {
               id: 1,
-              title: 'PM Schedule — 57 Items Due',
+              title: 'PM Schedule â€” 57 Items Due',
               detail: '57 service agreements are pending PM scheduling this quarter.',
-              icon: '🔧',
+              icon: 'ðŸ”§',
               time: new Date(Date.now() - 3600000).toISOString(),
             },
             {
               id: 2,
               title: 'Energy Audit Milestone',
-              detail: 'Independence School District energy audit is 35% complete — baseline data upload needed.',
-              icon: '⚡',
+              detail: 'Independence School District energy audit is 35% complete â€” baseline data upload needed.',
+              icon: 'âš¡',
               time: new Date(Date.now() - 86400000).toISOString(),
             },
           ];
@@ -2104,7 +2104,7 @@
     </script>
 
     <script id="site-fns">
-      /* ══ SITE FUNCTIONS ══ */
+      /* â•â• SITE FUNCTIONS â•â• */
 
       /* Clock */
       function siteTickClock() {
@@ -2225,7 +2225,7 @@
             Object.keys(data).forEach(function (k) {
               localStorage.setItem(k, data[k]);
             });
-            if (typeof showToast === 'function') showToast('Restored — reloading...');
+            if (typeof showToast === 'function') showToast('Restored â€” reloading...');
             setTimeout(function () {
               location.reload();
             }, 1200);
@@ -2248,7 +2248,7 @@
         if (!confirm('Reset ALL data? This cannot be undone.')) return;
         localStorage.clear();
         sessionStorage.clear();
-        if (typeof showToast === 'function') showToast('Reset — reloading...');
+        if (typeof showToast === 'function') showToast('Reset â€” reloading...');
         setTimeout(function () {
           location.reload();
         }, 1200);
@@ -2452,7 +2452,7 @@
         })
         .catch(function () {});
 
-      /* ── CALENDAR WIDGET ── */
+      /* â”€â”€ CALENDAR WIDGET â”€â”€ */
       var calYear, calMonth;
       (function initCalDate() {
         var now = new Date();
@@ -2589,7 +2589,7 @@
                 if (pdDate >= now) {
                   events.push({
                     date: proj.deadline,
-                    name: (proj.name || 'Energy Project') + ' — Deadline',
+                    name: (proj.name || 'Energy Project') + ' â€” Deadline',
                     detail: proj.status || 'In progress',
                     color: 'violet',
                   });
@@ -2649,13 +2649,13 @@
           html += '<div class="cal-event-dot ' + (ev.color || '') + '"></div>';
           html += '<div class="cal-event-info">';
           html += '<div class="cal-event-name">' + ev.name + '</div>';
-          html += '<div class="cal-event-detail">' + dateStr + (ev.detail ? ' — ' + ev.detail : '') + '</div>';
+          html += '<div class="cal-event-detail">' + dateStr + (ev.detail ? ' â€” ' + ev.detail : '') + '</div>';
           html += '</div></div>';
         }
         listEl.innerHTML = html;
       }
 
-      /* ── ACTIVE TAB GUARD ── */
+      /* â”€â”€ ACTIVE TAB GUARD â”€â”€ */
       document.addEventListener('DOMContentLoaded', function () {
         // Ensure Dashboard tab has active class on this page
         var dashTab = document.querySelector('.dept-nav .dept-tab');
@@ -2666,6 +2666,6 @@
         renderCalendar();
       });
     </script>
-    <script src="feedback-widget.js?v=v2026.05.26.369"></script>
+    <script src="feedback-widget.js?v=v2026.05.26.370"></script>
   </body>
 </html>

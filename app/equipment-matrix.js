@@ -7,6 +7,22 @@ var EM_EQUIP_TYPES = {
   'vav ahu': 'ahu',
   ahu: 'ahu',
   'air handling unit': 'ahu',
+  rtu: 'ahu',
+  'rooftop unit': 'ahu',
+  rooftop: 'ahu',
+  mau: 'ahu',
+  'makeup air unit': 'ahu',
+  'makeup air': 'ahu',
+  doas: 'ahu',
+  erv: 'ahu',
+  hrv: 'ahu',
+  'fan coil': 'ahu',
+  fcu: 'ahu',
+  crac: 'ahu',
+  crah: 'ahu',
+  'heat pump': 'ahu',
+  wshp: 'ahu',
+  gshp: 'ahu',
   'vav terminal w/ reheat': 'vav',
   'vav terminal with reheat': 'vav',
   'vav reheat': 'vav',
@@ -24,6 +40,10 @@ var EM_EQUIP_TYPES = {
   'hot water plant (boilers)': 'hwp',
   'boiler plant': 'hwp',
   hwp: 'hwp',
+  blr: 'hwp',
+  furnace: 'hwp',
+  'unit heater': 'hwp',
+  uh: 'hwp',
   'chilled water plant': 'chwp',
   'chilled water plant (chillers)': 'chwp',
   'chiller plant': 'chwp',
@@ -38,6 +58,11 @@ var EM_EQUIP_TYPES = {
 
 /* ── EDIT MODE FLAG ── */
 var _emEditMode = false;
+
+/* ── UPLOAD TARGET PID ──
+   Set when the upload panel opens. Used by emQueueFiles/emHandleImport
+   instead of window._emActivePid so stale-pid contamination cannot occur.  */
+var _emUploadTargetPid = null;
 
 /* ── COLUMN RESIZE STATE ── */
 // Stores custom widths set by the user dragging column borders: { colIndex: widthPx }
@@ -451,20 +476,87 @@ function emParseLocation(locString) {
   return { floor: floor, area: area };
 }
 
+/* ── emClassifyEquipType ────────────────────────────────────────────────────
+   Maps an equipment type string (from CSV "Equipment Type" or control program
+   name) to one of the internal category keys: ahu, vav, fpb, ddvav, hwp,
+   chwp, ct, or 'other'.
+
+   Steps (in order):
+   A. Strip leading manufacturer name if present
+   B. Exact lookup in EM_EQUIP_TYPES
+   C. Substring scan of EM_EQUIP_TYPES keys
+   D. Regex pattern fallbacks (expanded)
+   E. Fuzzy keyword scan as last resort                                     */
 function emClassifyEquipType(equipTypeStr) {
   if (!equipTypeStr) return 'other';
-  var key = equipTypeStr.trim().toLowerCase();
+  var raw = equipTypeStr.trim();
+
+  // ── A. Strip leading manufacturer names ──
+  var mfgPattern =
+    /^(?:trane|carrier|lennox|york|daikin|mcquay|rheem|ruud|heil|bard|aaon|mammoth|reznor|modine|lochinvar|honeywell|johnson controls|siemens|schneider|alc|automated logic)\s+/i;
+  var stripped = raw.replace(mfgPattern, '');
+
+  var key = stripped.toLowerCase();
+
+  // ── B. Exact lookup ──
   if (key in EM_EQUIP_TYPES) return EM_EQUIP_TYPES[key];
+
+  // ── C. Substring scan of EM_EQUIP_TYPES keys ──
   for (var pattern in EM_EQUIP_TYPES) {
     if (key.indexOf(pattern) !== -1) return EM_EQUIP_TYPES[pattern];
   }
-  if (/ahu|air.?handl/i.test(key)) return 'ahu';
+
+  // ── D. Regex fallbacks (expanded) ──
+  if (/\bahu\b|air.?handl/i.test(key)) return 'ahu';
+  if (/\brtu\b/i.test(key)) return 'ahu';
+  if (/\bmau\b/i.test(key)) return 'ahu';
+  if (/\bdoas\b/i.test(key)) return 'ahu';
+  if (/\berv\b/i.test(key)) return 'ahu';
+  if (/\bhrv\b/i.test(key)) return 'ahu';
+  if (/\bfcu\b/i.test(key)) return 'ahu';
+  if (/\bcrac\b/i.test(key)) return 'ahu';
+  if (/\bcrah\b/i.test(key)) return 'ahu';
+  if (/roof.?top/i.test(key)) return 'ahu';
+  if (/make.?up.?air/i.test(key)) return 'ahu';
+  if (/heat.?pump/i.test(key)) return 'ahu';
+  if (/\bwshp\b/i.test(key)) return 'ahu';
+  if (/\bgshp\b/i.test(key)) return 'ahu';
   if (/vav|variable.?air.?vol/i.test(key)) return 'vav';
-  if (/fan.?pow|parallel.?fan|fpb|fpt/i.test(key)) return 'fpb';
+  if (/\bfpb\b/i.test(key)) return 'fpb';
+  if (/fan.?pow|parallel.?fan|\bfpt\b/i.test(key)) return 'fpb';
+  if (/fan.?power/i.test(key)) return 'fpb';
   if (/dual.?duct|ddvav/i.test(key)) return 'ddvav';
-  if (/hot.?water.*boil|boiler|hwp/i.test(key)) return 'hwp';
-  if (/chill|chw.*plant|chwp/i.test(key)) return 'chwp';
-  if (/cool.*tower|cooling tower|\bct\b/i.test(key)) return 'ct';
+  if (/\bboiler\b/i.test(key)) return 'hwp';
+  if (/\bhwp\b/i.test(key)) return 'hwp';
+  if (/\bblr\b/i.test(key)) return 'hwp';
+  if (/\bfurnace\b/i.test(key)) return 'hwp';
+  if (/unit.?heater/i.test(key)) return 'hwp';
+  if (/\buh[\-\s]?\d/i.test(key)) return 'hwp';
+  if (/hot.?water.*boil/i.test(key)) return 'hwp';
+  if (/\bchiller\b/i.test(key)) return 'chwp';
+  if (/\bchwp\b/i.test(key)) return 'chwp';
+  if (/chilled.?water/i.test(key)) return 'chwp';
+  if (/chill|chw.*plant/i.test(key)) return 'chwp';
+  if (/cool.*tower/i.test(key)) return 'ct';
+  if (/\bcwp\b/i.test(key)) return 'ct';
+
+  // ── E. Fuzzy keyword scan (last resort) ──
+  var fuzzyMap = [
+    ['ahu', 'ahu'],
+    ['rtu', 'ahu'],
+    ['vav', 'vav'],
+    ['chiller', 'chwp'],
+    ['boiler', 'hwp'],
+    ['cooling tower', 'ct'],
+    ['pump', 'hwp'],
+    ['fan coil', 'ahu'],
+    ['rooftop', 'ahu'],
+    ['air handler', 'ahu'],
+  ];
+  for (var fi = 0; fi < fuzzyMap.length; fi++) {
+    if (key.indexOf(fuzzyMap[fi][0]) !== -1) return fuzzyMap[fi][1];
+  }
+
   // All unrecognized types (including weather stations, etc.) are kept as 'other'
   return 'other';
 }
@@ -697,6 +789,17 @@ function emMergeIntoMatrix(existingData, newRows) {
       seen[nid] = true;
     }
   }
+  // ── Sort rows alphabetically by building, then by equipment name ──
+  merged.sort(function (a, b) {
+    var ab = (a.building || '').toLowerCase();
+    var bb = (b.building || '').toLowerCase();
+    if (ab < bb) return -1;
+    if (ab > bb) return 1;
+    var ae = (a.equipName || '').toLowerCase();
+    var be = (b.equipName || '').toLowerCase();
+    return ae < be ? -1 : ae > be ? 1 : 0;
+  });
+
   var buildings = [];
   var bldgSeen = {};
   for (var n = 0; n < merged.length; n++) {
@@ -705,6 +808,11 @@ function emMergeIntoMatrix(existingData, newRows) {
       bldgSeen[merged[n].building] = true;
     }
   }
+  // ── Sort buildings list alphabetically ──
+  buildings.sort(function (a, b) {
+    return (a || '').toLowerCase() < (b || '').toLowerCase() ? -1 : 1;
+  });
+
   return { rows: merged, importedAt: new Date().toISOString(), buildings: buildings };
 }
 
@@ -913,20 +1021,30 @@ function emCalcSummaryStats(rows) {
   };
 }
 
-function emShowUploadPanel(btn, mode) {
+function emShowUploadPanel(btn, mode, pid) {
   var inline = document.getElementById('em-upload-inline');
   if (!inline) return;
   var resolvedMode = mode || 'merge';
+  // Resolve the target pid: prefer the explicit argument, fall back to window._emActivePid.
+  // Guard: never allow __preview__ or falsy as the import target.
+  var resolvedPid = pid || window._emActivePid;
+  if (!resolvedPid || resolvedPid === '__preview__') {
+    showToast('No project selected — please select a project before importing CSVs', 'warn');
+    return;
+  }
   if (inline.style.display === 'none') {
     // Re-Import mode requires confirmation before opening the panel
     if (resolvedMode === 'replace') {
       if (!confirm('This will replace all existing equipment data for this project. Continue?')) return;
     }
     _emImportMode = resolvedMode;
+    // Lock in the target pid at panel-open time so file-drop cannot use a stale pid
+    _emUploadTargetPid = resolvedPid;
     inline.style.display = 'block';
-    emRenderUploadPanel(inline, window._emActivePid, true);
+    emRenderUploadPanel(inline, resolvedPid, true);
     btn.textContent = 'Cancel';
   } else {
+    _emUploadTargetPid = null;
     inline.style.display = 'none';
     btn.textContent = resolvedMode === 'replace' ? 'Re-Import CSVs' : 'Import CSVs';
   }
@@ -1012,9 +1130,13 @@ function emRenderToolbar(data, pid, projBadge) {
     '<button class="btn btn-ghost btn-sm" onclick="emAddCustomCol(\'' +
     pid +
     '\')" style="height:28px;font-size:11px">+ Column</button>' +
-    '<button class="btn btn-ghost btn-sm" onclick="emShowUploadPanel(this,\'merge\')" style="height:28px;font-size:11px">Import CSVs</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="emShowUploadPanel(this,\'merge\',\'' +
+    pid +
+    '\')" style="height:28px;font-size:11px">Import CSVs</button>' +
     (data.rows && data.rows.length > 0
-      ? '<button class="btn btn-ghost btn-sm" onclick="emShowUploadPanel(this,\'replace\')" style="height:28px;font-size:11px;color:#b45309;border-color:#d97706">Re-Import CSVs</button>'
+      ? '<button class="btn btn-ghost btn-sm" onclick="emShowUploadPanel(this,\'replace\',\'' +
+        pid +
+        '\')" style="height:28px;font-size:11px;color:#b45309;border-color:#d97706">Re-Import CSVs</button>'
       : '') +
     '<button class="btn btn-sm" onclick="emCopyFromProject(\'' +
     pid +
@@ -1182,15 +1304,43 @@ function emGetAuditColDefs(filteredRows) {
     { key: 'building', label: 'Building', group: 'id', width: 180 },
     { key: 'floor', label: 'Floor', group: 'id', width: 80 },
     { key: 'equipName', label: 'Equipment Name', group: 'id', width: 200 },
-    { key: 'category', label: 'Equipment Type', group: 'audit', width: 120, isAuditType: true },
-    { key: '_coverage', label: 'Coverage %', group: 'audit', width: 90, isAuditCoverage: true },
-    { key: '_baspoints', label: 'Total BAS Points', group: 'audit', width: 110, isAuditBasPts: true },
+    {
+      key: 'category',
+      label: 'Equipment Type',
+      group: 'audit',
+      width: 120,
+      isAuditType: true,
+      title: 'ASHRAE 36 equipment category used to determine compliance requirements',
+    },
+    {
+      key: '_coverage',
+      label: 'Coverage %',
+      group: 'audit',
+      width: 90,
+      isAuditCoverage: true,
+      title:
+        'Percentage of required ASHRAE 36 BAS points present for this equipment. Click a cell for details. N/A = no requirements for this type.',
+    },
+    {
+      key: '_baspoints',
+      label: 'Total BAS Points',
+      group: 'audit',
+      width: 110,
+      isAuditBasPts: true,
+      title: 'Total number of BAS data points found in the imported CSV for this equipment',
+    },
   ];
 
   // Add one column per point category (required and optional)
   var catKeys = Object.keys(categoryMap);
   for (var ki = 0; ki < catKeys.length; ki++) {
     var cd = categoryMap[catKeys[ki]];
+    var reqLabel = cd.required ? 'Required' : 'Optional';
+    var appliesToLabel = cd.equipTypes
+      .map(function (t) {
+        return t.toUpperCase();
+      })
+      .join(', ');
     defs.push({
       key: '_cat_' + cd.key,
       label: cd.label,
@@ -1201,6 +1351,11 @@ function emGetAuditColDefs(filteredRows) {
       catEquipTypes: cd.equipTypes,
       catRequired: cd.required,
       catConfigFlag: cd.configFlag,
+      title:
+        reqLabel +
+        ' ASHRAE 36 point — applies to: ' +
+        appliesToLabel +
+        '. ✓ = present, ~ = fuzzy match, ✗ = missing, — = not applicable.',
     });
   }
 
@@ -1670,6 +1825,7 @@ function emRenderAuditTable(data, filters) {
       '" onclick="emHandleSort(' +
       ci +
       ')" ' +
+      (d.title ? 'title="' + emHtmlEsc(d.title) + '" ' : '') +
       'style="position:sticky;top:0;background:var(--s2);' +
       borderTop +
       'padding:6px 8px;font-size:10px;font-weight:600;color:var(--text2);white-space:nowrap;cursor:pointer;' +
@@ -1823,7 +1979,12 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap) 
     var pctBg = pct >= 75 ? 'rgba(39,174,96,0.1)' : pct >= 50 ? 'rgba(230,126,34,0.1)' : 'rgba(192,57,43,0.1)';
     var hasPoints = row.category && EM_POINT_CATEGORIES[row.category];
     if (!hasPoints) {
-      return '<td style="' + baseStyle + 'color:var(--text3)">—</td>';
+      // Equipment type is 'other' or unrecognized — no ASHRAE 36 compliance requirements apply
+      return (
+        '<td style="' +
+        baseStyle +
+        'color:var(--text3)" title="No ASHRAE 36 compliance requirements for this equipment type">N/A</td>'
+      );
     }
     return (
       '<td onclick="emShowComplianceDetail(\'' +
@@ -2436,8 +2597,9 @@ function emQueueFiles(files) {
     html += '<li style="padding:2px 0;color:var(--text)">' + _emPendingFiles[j].name + '</li>';
   }
   itemsUl.innerHTML = html;
-  // Auto-start import as soon as valid CSVs are queued
-  emHandleImport(window._emActivePid);
+  // Auto-start import as soon as valid CSVs are queued.
+  // Use _emUploadTargetPid (locked at panel-open time) to prevent stale-pid contamination.
+  emHandleImport(_emUploadTargetPid);
 }
 
 function emHandleImport(pid) {
@@ -2494,25 +2656,13 @@ function emHandleImport(pid) {
           (pending !== 1 ? 's' : ''),
       );
     } else {
-      // No project — render a preview without saving
-      var previewData = emMergeIntoMatrix({ rows: [], buildings: [] }, allRows);
-      previewData.totalBASPoints = totalRawRows;
-      var container = document.getElementById('em-proj-wrap');
-      if (container) {
-        // Store preview in a temporary in-memory key so emRenderMatrix can load it
-        window._emPreviewData = previewData;
-        window._emActivePid = '__preview__';
-        emRenderMatrix(container, previewData, '__preview__');
-      }
-      showToast(
-        'Preview: ' +
-          allRows.length +
-          ' rows from ' +
-          previewData.buildings.length +
-          ' building' +
-          (previewData.buildings.length !== 1 ? 's' : '') +
-          ' — select a project to save',
-      );
+      // No project selected — abort with a clear error.
+      // The old __preview__ path was removed because it poisoned window._emActivePid with
+      // the sentinel '__preview__', which caused subsequent real-project imports to save
+      // to a ghost localStorage key (en_eqmatrix___preview__), silently discarding data.
+      showToast('No project selected — select a project first, then import CSVs', 'warn');
+      if (statusEl) statusEl.textContent = 'No project selected. Select a project and try again.';
+      _emPendingFiles = [];
     }
   }
   for (var i = 0; i < _emPendingFiles.length; i++) {

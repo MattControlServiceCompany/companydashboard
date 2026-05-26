@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <script>
     (function () {
@@ -15,7 +15,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self' 'unsafe-inline' https://alcdn.msauth.net https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com https://cdn.jsdelivr.net; worker-src 'self' blob:; frame-src 'self' https://login.microsoftonline.com; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
-    <title>CompanyHub — Service Dashboard</title>
+    <title>CompanyHub â€” Service Dashboard</title>
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='15' fill='%23238636'/><text x='50' y='72' font-size='60' font-weight='bold' text-anchor='middle' fill='white'>C</text></svg>"
@@ -31,12 +31,12 @@
     />
 
     <style id="site-ui-styles">
-      /* ═══════════════════════════════════════════════════
-         SITE-UI.CSS — Shared CompanyHub UI Shell
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+         SITE-UI.CSS â€” Shared CompanyHub UI Shell
          Topbar, sidebar, dept-nav, settings, theming
-      ═══════════════════════════════════════════════════ */
+      â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
-      /* ── THEME TOKENS ── */
+      /* â”€â”€ THEME TOKENS â”€â”€ */
       :root {
         --bg:#060810;--s1:#0c0f1a;--s2:#181d2e;--s3:#1e2438;--s4:#252c42;
         --border:#2a3555;--border2:#354165;
@@ -51,7 +51,7 @@
         --font:'Outfit',sans-serif;--mono:'JetBrains Mono',monospace;--r:10px;
       }
 
-      /* ── RESET ── */
+      /* â”€â”€ RESET â”€â”€ */
       *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
       html{height:100%;}
       body{font-family:var(--font);background:var(--bg);color:var(--text);height:100%;overflow:hidden;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;}
@@ -59,11 +59,11 @@
       ::-webkit-scrollbar-track{background:var(--s1);}
       ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
 
-      /* ── ANIMATIONS ── */
+      /* â”€â”€ ANIMATIONS â”€â”€ */
       @keyframes fadeUp{from{opacity:0;transform:translateY(9px);}to{opacity:1;transform:translateY(0);}}
       @keyframes spin{to{transform:rotate(360deg);}}
 
-      /* ── LOGIN ── */
+      /* â”€â”€ LOGIN â”€â”€ */
       #loginScreen{position:fixed;inset:0;z-index:1000;background:var(--bg);display:flex;align-items:center;justify-content:center;}
       #loginScreen::before{content:'';position:absolute;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:48px 48px;opacity:.35;mask-image:radial-gradient(ellipse 70% 60% at 50% 40%,black 40%,transparent 100%);}
       .login-card{position:relative;z-index:1;background:var(--s2);border:1px solid var(--border2);border-radius:18px;padding:44px 48px;width:400px;max-width:95vw;text-align:center;box-shadow:0 40px 80px rgba(0,0,0,.5);animation:fadeUp .5s ease;}
@@ -85,12 +85,12 @@
       .login-note{font-size:11px;color:var(--text3);margin-top:18px;line-height:1.7;}
       .login-note a{color:var(--accent);text-decoration:none;}
 
-      /* ── APP ── */
+      /* â”€â”€ APP â”€â”€ */
       #app{display:none;}
       #app.visible{display:flex;flex-direction:column;height:100%;}
       #app.visible{display:flex;flex-direction:column;height:100%;animation:fadeUp .4s ease;}
 
-      /* ── TOPBAR ── */
+      /* â”€â”€ TOPBAR â”€â”€ */
       .topbar{position:sticky;top:0;z-index:200;display:flex;align-items:center;justify-content:space-between;height:54px;padding:0 24px;background:rgba(12,15,26,.95);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);}
       .t-brand{display:flex;align-items:center;gap:10px;}
       .brand-mark{width:28px;height:28px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--teal));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;}
@@ -114,13 +114,13 @@
       .signout{font-family:var(--font);font-size:12px;color:var(--text2);background:transparent;border:1px solid var(--border);border-radius:7px;padding:6px 12px;cursor:pointer;transition:all .18s;}
       .signout:hover{border-color:var(--red);color:var(--red);}
 
-      /* ── DEPT TABS ── */
+      /* â”€â”€ DEPT TABS â”€â”€ */
       .dept-nav{background:var(--s1);border-bottom:1px solid var(--border);padding:0 24px;display:flex;overflow-x:auto;}
       .dept-tab{display:flex;align-items:center;gap:7px;padding:12px 16px;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;transition:all .16s;white-space:nowrap;font-family:var(--font);text-decoration:none;}
       .dept-tab:hover{color:var(--text);text-decoration:none;}
       .dept-tab.active{color:var(--accent);border-bottom-color:var(--accent);text-decoration:none;}
 
-      /* ── SIDEBAR LAYOUT ── */
+      /* â”€â”€ SIDEBAR LAYOUT â”€â”€ */
       .app-wrap{display:flex;flex:1;min-height:0;overflow:hidden;}
       .sidebar{width:220px;flex-shrink:0;background:var(--s1);border-right:1px solid var(--border);padding:0;display:flex;flex-direction:column;}
       .sidebar-top{flex:1;overflow-y:visible;padding:14px 0;}
@@ -133,7 +133,7 @@
       .s-ico{font-size:14px;width:18px;text-align:center;}
       .s-badge{margin-left:auto;font-size:10px;font-family:var(--mono);background:var(--accent);color:#fff;border-radius:9px;padding:1px 6px;}
 
-      /* ── SIDEBAR BOTTOM WIDGETS ── */
+      /* â”€â”€ SIDEBAR BOTTOM WIDGETS â”€â”€ */
       .sb-settings-btn{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border-radius:7px;border:1px solid var(--border);background:var(--s1);color:var(--text2);font-family:var(--font);font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;}
       .sb-settings-btn:hover{border-color:var(--accent);color:var(--accent);}
       .sb-divider{height:1px;background:var(--border);margin:10px 0;}
@@ -144,23 +144,23 @@
       .sb-btn:hover{border-color:var(--accent);color:var(--accent);}
       .sb-btn.danger:hover{border-color:var(--red);color:var(--red);}
 
-      /* ── CONTENT ── */
+      /* â”€â”€ CONTENT â”€â”€ */
       .content{flex:1;overflow:hidden;min-height:0;display:flex;flex-direction:column;}
       .tab-panel{display:none;animation:fadeUp .26s ease;}
       .tab-panel.active{display:block;}
 
-      /* ── PAGE HEADER ── */
+      /* â”€â”€ PAGE HEADER â”€â”€ */
       .pg-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;}
       .pg-title{font-size:22px;font-weight:800;letter-spacing:-.02em;}
       .pg-title em{color:var(--accent);font-style:normal;}
       .pg-sub{font-size:13px;color:var(--text2);margin-top:4px;}
 
-      /* ── TOAST ── */
+      /* â”€â”€ TOAST â”€â”€ */
       .toast{position:fixed;top:22px;right:22px;z-index:999;background:var(--s3);border:1px solid var(--accent);border-radius:10px;padding:11px 15px;font-size:12px;color:var(--text);display:flex;align-items:center;gap:8px;max-width:320px;transform:translateY(-80px);opacity:0;transition:all .32s cubic-bezier(.34,1.56,.64,1);}
       .toast.show{transform:translateY(0);opacity:1;}
       .t-ic{color:var(--teal);font-size:14px;}
 
-      /* ── SETTINGS MODAL ── */
+      /* â”€â”€ SETTINGS MODAL â”€â”€ */
       .settings-overlay{position:fixed;inset:0;background:rgba(6,8,16,.88);backdrop-filter:blur(10px);z-index:800;display:none;align-items:center;justify-content:center;}
       .settings-overlay.open{display:flex;}
       .settings-modal{background:var(--s2);border:1px solid var(--border2);border-radius:14px;width:480px;max-width:95vw;max-height:90vh;overflow-y:auto;animation:fadeUp .18s ease;box-shadow:0 40px 80px rgba(0,0,0,.6);}
@@ -204,13 +204,13 @@
       .help-item-title{font-size:13px;font-weight:600;margin-bottom:4px;}
       .help-item-desc{font-size:12px;color:var(--text2);line-height:1.6;}
 
-      /* ── THEME PILLS (Settings Modal) ── */
+      /* â”€â”€ THEME PILLS (Settings Modal) â”€â”€ */
       .theme-pills{display:flex;gap:6px;}
       .theme-pill{font-family:var(--font);font-size:12px;font-weight:500;padding:6px 14px;border-radius:7px;border:1px solid var(--border2);background:var(--s4);color:var(--text2);cursor:pointer;transition:all .15s;}
       .theme-pill:hover{border-color:var(--accent);color:var(--accent);}
       .theme-pill.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
 
-      /* ── LIGHT MODE THEME ── */
+      /* â”€â”€ LIGHT MODE THEME â”€â”€ */
       [data-theme="light"]{
         --bg:#f0f2f7;
         --s1:#e4e8f2;
@@ -270,7 +270,7 @@
       [data-theme="light"] .theme-pill.active{color:#fff;}
       [data-theme="light"] .modal{box-shadow:0 20px 60px rgba(0,0,0,.18);}
       [data-theme="light"] .settings-modal,[data-theme="light"] .help-modal{box-shadow:0 20px 60px rgba(0,0,0,.18);}
-      /* ── Feedback Mode Toggle ── */
+      /* â”€â”€ Feedback Mode Toggle â”€â”€ */
       .settings-toggle{position:relative;width:44px;height:24px;flex-shrink:0}
       .settings-toggle input{opacity:0;width:0;height:0}
       .settings-toggle .toggle-track{position:absolute;inset:0;background:var(--s2);border-radius:12px;cursor:pointer;transition:background .2s}
@@ -1070,7 +1070,7 @@
         background: var(--s3);
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.26.369" />
+    <link rel="stylesheet" href="feedback-widget.css?v=v2026.05.26.370" />
   </head>
   <body>
     <!-- LOGIN -->
@@ -1090,7 +1090,7 @@
         <div class="login-divider"><span>or</span></div>
         <button class="btn-demo" onclick="loginDemo()">Continue in Demo Mode</button>
         <p class="login-note">
-          Your Microsoft credentials are verified by Microsoft — CompanyHub never sees your password.
+          Your Microsoft credentials are verified by Microsoft â€” CompanyHub never sees your password.
         </p>
       </div>
     </div>
@@ -1121,7 +1121,7 @@
             title="Notifications"
             style="cursor: pointer"
           >
-            🔔
+            ðŸ””
             <div class="npip" id="notifPip" style="display: none"></div>
             <span
               id="notifBadge"
@@ -1150,9 +1150,9 @@
       </header>
 
       <nav class="dept-nav">
-        <a class="dept-tab" href="index.html">🏠 Dashboard</a>
-        <button class="dept-tab active">🔧 Service Department</button>
-        <a class="dept-tab" href="energy-department.html">⚡ Energy Department</a>
+        <a class="dept-tab" href="index.html">ðŸ  Dashboard</a>
+        <button class="dept-tab active">ðŸ”§ Service Department</button>
+        <a class="dept-tab" href="energy-department.html">âš¡ Energy Department</a>
       </nav>
 
       <div class="app-wrap">
@@ -1161,21 +1161,21 @@
             <div class="s-sect">
               <div class="s-lbl">Service</div>
               <div class="s-item active" onclick="setView('schedule', this)">
-                <span class="s-ico">📋</span>Personnel <span class="s-badge" id="sbStaff">8</span>
+                <span class="s-ico">ðŸ“‹</span>Personnel <span class="s-badge" id="sbStaff">8</span>
               </div>
               <div class="s-item" onclick="setView('pm', this)">
-                <span class="s-ico">🗓️</span>PM Schedule <span class="s-badge" id="sbPM">57</span>
+                <span class="s-ico">ðŸ—“ï¸</span>PM Schedule <span class="s-badge" id="sbPM">57</span>
               </div>
-              <div class="s-item" onclick="setView('dispatch', this)"><span class="s-ico">📡</span>Dispatch Board</div>
+              <div class="s-item" onclick="setView('dispatch', this)"><span class="s-ico">ðŸ“¡</span>Dispatch Board</div>
             </div>
             <div class="s-sect">
               <div class="s-lbl">Reports</div>
-              <div class="s-item" onclick="setView('schedule', this)"><span class="s-ico">📈</span>Performance</div>
-              <div class="s-item" onclick="setView('schedule', this)"><span class="s-ico">🕐</span>Time Logs</div>
+              <div class="s-item" onclick="setView('schedule', this)"><span class="s-ico">ðŸ“ˆ</span>Performance</div>
+              <div class="s-item" onclick="setView('schedule', this)"><span class="s-ico">ðŸ•</span>Time Logs</div>
             </div>
             <div class="s-sect">
               <div class="s-lbl">Tools</div>
-              <div class="s-item" onclick="syncToOutlook()"><span class="s-ico">🔗</span>O365 Sync</div>
+              <div class="s-item" onclick="syncToOutlook()"><span class="s-ico">ðŸ”—</span>O365 Sync</div>
             </div>
           </div>
           <div class="sidebar-bottom">
@@ -1214,7 +1214,7 @@
                 <p class="pg-sub" id="schedSub">Personnel scheduling</p>
               </div>
               <div class="hdr-btns">
-                <button class="btn btn-ghost" onclick="syncToOutlook()">🔄 Sync to Outlook</button>
+                <button class="btn btn-ghost" onclick="syncToOutlook()">ðŸ”„ Sync to Outlook</button>
                 <button class="btn btn-primary" data-fb="service.add-employee-btn" onclick="openStaffModal()">
                   + Add Employee
                 </button>
@@ -1223,29 +1223,29 @@
             <div class="stats-row" data-fb="service.stats">
               <div class="stat-card" data-fb="service.stat-card.on-duty">
                 <div class="stat-lbl">On Duty Today</div>
-                <div class="stat-val c-blue" id="s-on">—</div>
+                <div class="stat-val c-blue" id="s-on">â€”</div>
                 <div class="stat-meta" id="s-onm">of 0 staff</div>
               </div>
               <div class="stat-card" data-fb="service.stat-card.leave">
                 <div class="stat-lbl">On Leave</div>
-                <div class="stat-val c-amber" id="s-lv">—</div>
+                <div class="stat-val c-amber" id="s-lv">â€”</div>
                 <div class="stat-meta">approved</div>
               </div>
               <div class="stat-card" data-fb="service.stat-card.off">
                 <div class="stat-lbl">Off Today</div>
-                <div class="stat-val c-red" id="s-off">—</div>
+                <div class="stat-val c-red" id="s-off">â€”</div>
                 <div class="stat-meta">not scheduled</div>
               </div>
               <div class="stat-card" data-fb="service.stat-card.total">
                 <div class="stat-lbl">Total Staff</div>
-                <div class="stat-val c-teal" id="s-tot">—</div>
+                <div class="stat-val c-teal" id="s-tot">â€”</div>
                 <div class="stat-meta">service employees</div>
               </div>
             </div>
             <div class="two-col">
               <div class="card">
                 <div class="card-hdr">
-                  <span class="card-title">👥 Personnel Schedule</span>
+                  <span class="card-title">ðŸ‘¥ Personnel Schedule</span>
                   <div style="display: flex; gap: 6px">
                     <button
                       class="btn btn-ghost btn-sm"
@@ -1297,10 +1297,10 @@
             <div class="pg-hdr">
               <div>
                 <h1 class="pg-title">Preventative <em>Maintenance</em></h1>
-                <p class="pg-sub">57 service agreements — recurring PM dates auto-generated from Col M patterns</p>
+                <p class="pg-sub">57 service agreements â€” recurring PM dates auto-generated from Col M patterns</p>
               </div>
               <div class="hdr-btns">
-                <button class="btn btn-ghost" onclick="syncToOutlook()">🔄 Sync to Outlook</button>
+                <button class="btn btn-ghost" onclick="syncToOutlook()">ðŸ”„ Sync to Outlook</button>
                 <button class="btn btn-primary" data-fb="service.add-sa-btn" onclick="openPMModal()">
                   + Add SA Record
                 </button>
@@ -1314,17 +1314,17 @@
               </div>
               <div class="stat-card" data-fb="service.stat-card.this-month">
                 <div class="stat-lbl">This Month</div>
-                <div class="stat-val c-teal" id="pm-month">—</div>
+                <div class="stat-val c-teal" id="pm-month">â€”</div>
                 <div class="stat-meta">PM visits due</div>
               </div>
               <div class="stat-card" data-fb="service.stat-card.next-7">
                 <div class="stat-lbl">Next 7 Days</div>
-                <div class="stat-val c-amber" id="pm-week">—</div>
+                <div class="stat-val c-amber" id="pm-week">â€”</div>
                 <div class="stat-meta">upcoming visits</div>
               </div>
               <div class="stat-card" data-fb="service.stat-card.active-techs">
                 <div class="stat-lbl">Active Techs</div>
-                <div class="stat-val c-violet" id="pm-techs">—</div>
+                <div class="stat-val c-violet" id="pm-techs">â€”</div>
                 <div class="stat-meta">assigned</div>
               </div>
             </div>
@@ -1353,7 +1353,7 @@
             <div class="two-col">
               <div class="card" data-fb="service.agreements">
                 <div class="card-hdr">
-                  <span class="card-title">📋 Service Agreements</span>
+                  <span class="card-title">ðŸ“‹ Service Agreements</span>
                   <select
                     class="filter-select"
                     id="techFilter"
@@ -1416,14 +1416,14 @@
                 <p class="pg-sub">Work orders mirroring your SharePoint Technician Dispatch Board</p>
               </div>
               <div class="hdr-btns">
-                <button class="btn btn-ghost" onclick="syncToOutlook()">🔄 Sync to Outlook</button>
+                <button class="btn btn-ghost" onclick="syncToOutlook()">ðŸ”„ Sync to Outlook</button>
                 <button class="btn btn-primary" data-fb="service.dispatch-new-btn" onclick="openDispatchModal()">
                   + New Work Order
                 </button>
               </div>
             </div>
             <div class="card">
-              <div class="card-hdr"><span class="card-title">📡 Active Work Orders</span></div>
+              <div class="card-hdr"><span class="card-title">ðŸ“¡ Active Work Orders</span></div>
               <div class="dispatch-wrap">
                 <table class="dispatch-tbl" data-fb="service.dispatch-table">
                   <thead>
@@ -1450,7 +1450,7 @@
     <div class="modal-bg" id="staffModal" data-fb="service.modal.staff">
       <div class="modal-box" role="dialog" aria-modal="true">
         <div class="modal-hdr">
-          <span class="modal-title">+ Add Employee</span><button class="modal-x" onclick="closeStaffModal()">✕</button>
+          <span class="modal-title">+ Add Employee</span><button class="modal-x" onclick="closeStaffModal()">âœ•</button>
         </div>
         <div class="modal-body">
           <div class="fg">
@@ -1466,9 +1466,9 @@
             <div class="fg">
               <label class="fl">Status</label>
               <select class="fs" id="iStatus">
-                <option value="on">✅ On Duty</option>
-                <option value="off">⬜ Off</option>
-                <option value="leave">🟡 On Leave</option>
+                <option value="on">âœ… On Duty</option>
+                <option value="off">â¬œ Off</option>
+                <option value="leave">ðŸŸ¡ On Leave</option>
               </select>
             </div>
           </div>
@@ -1484,7 +1484,7 @@
     <div class="modal-bg" id="pmModal" data-fb="service.modal.pm">
       <div class="modal-box" role="dialog" aria-modal="true">
         <div class="modal-hdr">
-          <span class="modal-title">+ Add SA Record</span><button class="modal-x" onclick="closePMModal()">✕</button>
+          <span class="modal-title">+ Add SA Record</span><button class="modal-x" onclick="closePMModal()">âœ•</button>
         </div>
         <div class="modal-body">
           <div class="f2">
@@ -1511,7 +1511,7 @@
             </div>
           </div>
           <div class="fg">
-            <label class="fl">PM Pattern — Col M (used to generate dates)</label>
+            <label class="fl">PM Pattern â€” Col M (used to generate dates)</label>
             <input class="fi" id="pm-pattern" placeholder="e.g. PMs Quarterly - 2nd Thu - Feb/May/Aug/Nov" />
             <div class="fhint">Paste exactly from Column M. If blank/N/A, no dates will be generated.</div>
           </div>
@@ -1532,7 +1532,7 @@
       <div class="modal-box" role="dialog" aria-modal="true">
         <div class="modal-hdr">
           <span class="modal-title">+ New Work Order</span
-          ><button class="modal-x" onclick="closeDispatchModal()">✕</button>
+          ><button class="modal-x" onclick="closeDispatchModal()">âœ•</button>
         </div>
         <div class="modal-body">
           <div class="f2">
@@ -1592,7 +1592,7 @@
           border-bottom: 1px solid var(--border);
         "
       >
-        <span style="font-size: 14px; font-weight: 700">🔔 Notifications</span>
+        <span style="font-size: 14px; font-weight: 700">ðŸ”” Notifications</span>
         <div style="display: flex; gap: 7px; align-items: center">
           <button class="btn btn-ghost btn-sm" onclick="clearAllNotifs()">Clear All</button>
           <button
@@ -1611,7 +1611,7 @@
               justify-content: center;
             "
           >
-            ✕
+            âœ•
           </button>
         </div>
       </div>
@@ -1620,12 +1620,12 @@
       </div>
     </div>
 
-    <div class="toast" id="toast"><span class="t-ic">✓</span><span id="toastMsg">Done!</span></div>
+    <div class="toast" id="toast"><span class="t-ic">âœ“</span><span id="toastMsg">Done!</span></div>
 
     <script>
-      /* ═══════════════════════════════════
-         M365 CONFIG — replace to enable live login
-      ═══════════════════════════════════ */
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+         M365 CONFIG â€” replace to enable live login
+      â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       const M365 = {
         auth: {
           clientId: 'YOUR_CLIENT_ID',
@@ -1646,7 +1646,7 @@
 
       async function loginWithMicrosoft() {
         const btn = document.getElementById('msBtn');
-        btn.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">⟳</span> Connecting...';
+        btn.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">âŸ³</span> Connecting...';
         btn.disabled = true;
         try {
           msalApp = new msal.PublicClientApplication(M365);
@@ -1667,10 +1667,10 @@
           enterApp();
         } catch (e) {
           if (M365.auth.clientId === 'YOUR_CLIENT_ID') {
-            showToast('Demo mode — replace YOUR_CLIENT_ID for real login');
+            showToast('Demo mode â€” replace YOUR_CLIENT_ID for real login');
             setTimeout(loginDemo, 700);
           } else {
-            btn.innerHTML = '⚠️ Login failed';
+            btn.innerHTML = 'âš ï¸ Login failed';
             btn.disabled = false;
           }
         }
@@ -1683,7 +1683,7 @@
         document.getElementById('topAv').textContent = currentUser.initials;
         const td = new Date();
         document.getElementById('schedSub').textContent =
-          'Personnel scheduling — ' +
+          'Personnel scheduling â€” ' +
           td.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
         renderStaff();
         renderSAList();
@@ -1735,7 +1735,7 @@
               method: 'POST',
               headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                subject: '[PM] ' + pm.customer + ' — ' + pm.saNum + ' (' + pm.pmLabel + ')',
+                subject: '[PM] ' + pm.customer + ' â€” ' + pm.saNum + ' (' + pm.pmLabel + ')',
                 start: { dateTime: ds + 'T08:00:00', timeZone: 'America/Chicago' },
                 end: { dateTime: ds + 'T17:00:00', timeZone: 'America/Chicago' },
                 body: {
@@ -1746,17 +1746,17 @@
             });
             synced++;
           }
-          showToast('✓ ' + synced + ' PM events synced to Outlook');
+          showToast('âœ“ ' + synced + ' PM events synced to Outlook');
         } catch (e) {
           console.error(e);
-          showToast('Sync error — check console');
+          showToast('Sync error â€” check console');
         }
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
          TECH COLORS
-      ═══════════════════════════════════ */
-      // Fixed color per technician — consistent across calendar, list, and detail
+      â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+      // Fixed color per technician â€” consistent across calendar, list, and detail
       const TECH_COLOR_MAP = {
         '[REDACTED]': '#3b82f6', // blue
         '[REDACTED]': '#f43f5e', // red
@@ -1772,11 +1772,11 @@
       let _ovIdx = 0;
       function getTechColor(tech) {
         if (!tech || tech === 'N/A' || tech === '') return '#6b7a9e';
-        // Handle "Mike/Jason" combined techs — use first name's color
+        // Handle "Mike/Jason" combined techs â€” use first name's color
         const first = tech.split('/')[0].trim();
         if (TECH_COLOR_MAP[first]) return TECH_COLOR_MAP[first];
         if (TECH_COLOR_MAP[tech]) return TECH_COLOR_MAP[tech];
-        // Unknown tech — assign from overflow pool and remember it
+        // Unknown tech â€” assign from overflow pool and remember it
         if (!TECH_COLOR_MAP[tech]) {
           TECH_COLOR_MAP[tech] = _OVERFLOW[_ovIdx % _OVERFLOW.length];
           _ovIdx++;
@@ -1793,11 +1793,11 @@
           .toUpperCase();
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
          PM DATE ENGINE
          Reads Col M patterns and generates
          actual calendar dates
-      ═══════════════════════════════════ */
+      â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       const DAYS_MAP = {
         sun: 0,
         mon: 1,
@@ -1889,7 +1889,7 @@
           return dates;
         }
 
-        // "Nth DAY - Month/Month/Month" — e.g. "2nd Thu - Feb/May/Aug/Nov"
+        // "Nth DAY - Month/Month/Month" â€” e.g. "2nd Thu - Feb/May/Aug/Nov"
         const nthDayMonths = p.match(
           /(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)[^a-z]*((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\/\w]*)/i,
         );
@@ -1903,7 +1903,7 @@
           }
         }
 
-        // "Nth DAY & Nth DAY" monthly — e.g. "1st & 3rd Fri"
+        // "Nth DAY & Nth DAY" monthly â€” e.g. "1st & 3rd Fri"
         const twoNth = p.match(
           /(\d+(?:st|nd|rd|th))\s*&\s*(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)/i,
         );
@@ -1920,7 +1920,7 @@
           }
         }
 
-        // "Nth DAY & DAY" (two different days monthly) — e.g. "4th Tues & Wed"
+        // "Nth DAY & DAY" (two different days monthly) â€” e.g. "4th Tues & Wed"
         const twoDays = p.match(
           /(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)\s*&\s*(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)/i,
         );
@@ -1977,7 +1977,7 @@
           }
         }
 
-        // Bi-Monthly with month list — e.g. "4th Fri - Jan/Mar/May/Jul/Sep/Nov"
+        // Bi-Monthly with month list â€” e.g. "4th Fri - Jan/Mar/May/Jul/Sep/Nov"
         const biMonthlyList = p.match(
           /(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)[^a-z]*((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\/\w]{5,})/i,
         );
@@ -2009,7 +2009,7 @@
           return dates;
         }
 
-        // Semi-Annual with months — e.g. "1st Wed - May/Nov"
+        // Semi-Annual with months â€” e.g. "1st Wed - May/Nov"
         const semiMonths = p.match(
           /(\d+(?:st|nd|rd|th))\s+(sun\w*|mon\w*|tue\w*|wed\w*|thu\w*|fri\w*|sat\w*)[^a-z]*((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\/\w]*)/i,
         );
@@ -2107,13 +2107,13 @@
       }
       function getPMChipLabel(lbl) {
         if (!lbl || lbl === 'N/A') return 'PM';
-        return lbl.length > 22 ? lbl.slice(0, 20) + '…' : lbl;
+        return lbl.length > 22 ? lbl.slice(0, 20) + 'â€¦' : lbl;
       }
 
-      /* ═══════════════════════════════════
-         SA DATA — 57 real records from CSV
-      ═══════════════════════════════════ */
-      /* ── PERSISTENT STORAGE — delegates to window.Store so dataUpdated events fire ── */
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+         SA DATA â€” 57 real records from CSV
+      â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+      /* â”€â”€ PERSISTENT STORAGE â€” delegates to window.Store so dataUpdated events fire â”€â”€ */
       function sset(k, v) {
         if (window.Store) {
           window.Store.set(k, v);
@@ -2134,12 +2134,12 @@
         }
       }
 
-      let saData = []; // Data lives in localStorage only — never hardcode real data in source
+      let saData = []; // Data lives in localStorage only â€” never hardcode real data in source
       saData = sget('sv_saData', saData);
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
          STAFF DATA
-      ═══════════════════════════════════ */
+      â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       let staffData = []; // Data lives in localStorage only
       staffData = sget('sv_staffData', staffData);
       const AV_COLORS = [
@@ -2213,9 +2213,9 @@
         showToast('Removed ' + (e?.name || 'employee'));
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
          SA LIST
-      ═══════════════════════════════════ */
+      â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       let selectedSA = null;
       function populateTechFilter() {
         const sel = document.getElementById('techFilter');
@@ -2258,8 +2258,8 @@
             <td><span class="sa-num">${r.saNum}</span></td>
             <td><div class="cust-name">${r.customer}</div><div class="cust-addr">${r.addr}</div></td>
             <td><span class="pm-chip ${chipCls}">${chipLbl}</span></td>
-            <td><div class="tech-pill"><div class="tech-av" style="background:${c1}">${init}</div>${r.tech || '—'}</div></td>
-            <td><button class="btn-del" onclick="event.stopPropagation();removeSA(${r.id})">✕</button></td></tr>`;
+            <td><div class="tech-pill"><div class="tech-av" style="background:${c1}">${init}</div>${r.tech || 'â€”'}</div></td>
+            <td><button class="btn-del" onclick="event.stopPropagation();removeSA(${r.id})">âœ•</button></td></tr>`;
           })
           .join('');
         updatePMStats();
@@ -2301,7 +2301,7 @@
         const futureDates = dates.filter((d) => d >= now);
         const nextDate = futureDates.length ? futureDates.reduce((a, b) => (a < b ? a : b)) : null;
 
-        // Build date chips — highlight the next upcoming one
+        // Build date chips â€” highlight the next upcoming one
         let datesHTML = '';
         if (!dates.length) {
           datesHTML = '<span style="color:var(--text3);font-size:11px">No recognizable pattern in Col M</span>';
@@ -2313,13 +2313,13 @@
               const isNext = nextDate && d.toDateString() === nextDate.toDateString();
               const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
               if (isPast) {
-                // past — dimmed only, no strikethrough
+                // past â€” dimmed only, no strikethrough
                 return `<span style="font-size:10px;font-family:var(--mono);padding:3px 8px;border-radius:12px;background:var(--s4);color:var(--text3);margin:2px">${label}</span>`;
               } else if (isNext) {
-                // next upcoming — blue highlight, same size as other chips
+                // next upcoming â€” blue highlight, same size as other chips
                 return `<span style="font-size:10px;font-family:var(--mono);padding:3px 8px;border-radius:12px;background:var(--blue);color:#fff;font-weight:700;box-shadow:0 2px 10px var(--blue-glow);margin:2px">${label}</span>`;
               } else {
-                // future — normal
+                // future â€” normal
                 return `<span style="font-size:10px;font-family:var(--mono);padding:3px 8px;border-radius:12px;background:var(--s3);color:var(--text);border:1px solid var(--border);margin:2px">${label}</span>`;
               }
             })
@@ -2329,16 +2329,16 @@
         panel.innerHTML = `<div class="detail-panel">
           <div class="dp-title">
             <div class="tech-av" style="background:${c1};width:26px;height:26px;border-radius:6px">${techInits(selectedSA.tech)}</div>
-            ${selectedSA.saNum} — ${selectedSA.customer}
+            ${selectedSA.saNum} â€” ${selectedSA.customer}
           </div>
           <div class="dp-grid">
             <div class="dp-item"><div class="dp-lbl">SA Number</div><div class="dp-val mono">${selectedSA.saNum}</div></div>
-            <div class="dp-item"><div class="dp-lbl">Technician (Col K)</div><div class="dp-val">${selectedSA.tech || '—'}</div></div>
-            <div class="dp-item"><div class="dp-lbl">PM Frequency (Col L)</div><div class="dp-val">${selectedSA.pmLabel || '—'}</div></div>
-            <div class="dp-item"><div class="dp-lbl">Contract</div><div class="dp-val" style="font-size:11px">${selectedSA.contractStart} → ${selectedSA.contractEnd}</div></div>
+            <div class="dp-item"><div class="dp-lbl">Technician (Col K)</div><div class="dp-val">${selectedSA.tech || 'â€”'}</div></div>
+            <div class="dp-item"><div class="dp-lbl">PM Frequency (Col L)</div><div class="dp-val">${selectedSA.pmLabel || 'â€”'}</div></div>
+            <div class="dp-item"><div class="dp-lbl">Contract</div><div class="dp-val" style="font-size:11px">${selectedSA.contractStart} â†’ ${selectedSA.contractEnd}</div></div>
             <div class="dp-item" style="grid-column:1/-1"><div class="dp-lbl">Col M Pattern</div><div class="dp-val" style="font-size:11px;line-height:1.7;color:var(--text2)">${selectedSA.pattern}</div></div>
-            <div class="dp-item"><div class="dp-lbl">Admin Contact</div><div class="dp-val" style="font-size:11px">${selectedSA.adminContact || '—'}</div></div>
-            <div class="dp-item"><div class="dp-lbl">Field Contact</div><div class="dp-val" style="font-size:11px">${selectedSA.fieldContact || '—'}</div></div>
+            <div class="dp-item"><div class="dp-lbl">Admin Contact</div><div class="dp-val" style="font-size:11px">${selectedSA.adminContact || 'â€”'}</div></div>
+            <div class="dp-item"><div class="dp-lbl">Field Contact</div><div class="dp-val" style="font-size:11px">${selectedSA.fieldContact || 'â€”'}</div></div>
             <div class="dp-item" style="grid-column:1/-1">
               <div class="dp-lbl" style="display:flex;justify-content:space-between">
                 <span>Generated PM Dates (contract span)</span>
@@ -2377,9 +2377,9 @@
         document.getElementById('pm-techs').textContent = techs.size;
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
          DISPATCH DATA
-      ═══════════════════════════════════ */
+      â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       let dispatchData = [
         {
           id: 1,
@@ -2452,9 +2452,9 @@
           .join('');
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
          CALENDAR ENGINE
-      ═══════════════════════════════════ */
+      â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       const MONTHS = [
         'January',
         'February',
@@ -2518,23 +2518,23 @@
         const monthVisits = Object.values(eventsByDay).reduce((a, b) => a + b.length, 0);
         const dayVisits = (eventsByDay[selDay] || []).length;
 
-        // Events panel — show visits on selected day
+        // Events panel â€” show visits on selected day
         let evHTML = '';
         if (mode === 'pm') {
           const selEvs = (eventsByDay[selDay] || []).sort((a, b) => a.customer.localeCompare(b.customer));
           if (!selEvs.length) {
-            evHTML = `<div class="no-evs">No PM visits on ${MONTHS[month].slice(0, 3)} ${selDay} — click a day with dots to see visits</div>`;
+            evHTML = `<div class="no-evs">No PM visits on ${MONTHS[month].slice(0, 3)} ${selDay} â€” click a day with dots to see visits</div>`;
           } else {
             evHTML = selEvs
               .map(
                 (e) => `<div class="cal-ev" onclick="selectSA(${e.id})">
               <div class="ev-stripe" style="background:${e.color}"></div>
               <div class="ev-body">
-                <div class="ev-title">${e.saNum} — ${e.customer}</div>
-                <div class="ev-sub">${MONTHS[e.date.getMonth()].slice(0, 3)} ${e.date.getDate()} · ${e.pmLabel || 'PM Visit'}</div>
+                <div class="ev-title">${e.saNum} â€” ${e.customer}</div>
+                <div class="ev-sub">${MONTHS[e.date.getMonth()].slice(0, 3)} ${e.date.getDate()} Â· ${e.pmLabel || 'PM Visit'}</div>
                 <div class="ev-tech" style="display:flex;align-items:center;gap:5px">
                   <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${e.color};flex-shrink:0"></span>
-                  ${e.tech || '—'}
+                  ${e.tech || 'â€”'}
                 </div>
               </div></div>`,
               )
@@ -2557,11 +2557,11 @@
 
         container.innerHTML = `
           <div class="cal-hdr">
-            <span class="card-title">📅 ${mode === 'pm' ? 'PM' : 'Team'} Calendar</span>
+            <span class="card-title">ðŸ“… ${mode === 'pm' ? 'PM' : 'Team'} Calendar</span>
             <div class="cal-nav">
-              <button class="cnav-btn" onclick="changeCalMonth('${mode}',-1)">‹</button>
+              <button class="cnav-btn" onclick="changeCalMonth('${mode}',-1)">â€¹</button>
               <span class="cal-month-lbl">${MONTHS[month]} ${year}</span>
-              <button class="cnav-btn" onclick="changeCalMonth('${mode}',1)">›</button>
+              <button class="cnav-btn" onclick="changeCalMonth('${mode}',1)">â€º</button>
             </div>
           </div>
           <div class="cal-body">
@@ -2615,9 +2615,9 @@
         }
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
          MODALS
-      ═══════════════════════════════════ */
+      â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       function openStaffModal() {
         document.getElementById('staffModal').classList.add('open');
       }
@@ -2627,7 +2627,7 @@
       function addStaff() {
         const name = document.getElementById('iName').value.trim();
         if (!name) {
-          showToast('Enter a name ⚠️');
+          showToast('Enter a name âš ï¸');
           return;
         }
         staffData.push({
@@ -2640,7 +2640,7 @@
         sset('sv_staffData', staffData);
         closeStaffModal();
         renderStaff();
-        showToast(name + ' added ✓');
+        showToast(name + ' added âœ“');
         ['iName', 'iRole', 'iHours'].forEach((id) => (document.getElementById(id).value = ''));
       }
       function openPMModal() {
@@ -2654,7 +2654,7 @@
         const sa = document.getElementById('pm-sa').value.trim();
         const cust = document.getElementById('pm-cust').value.trim();
         if (!sa || !cust) {
-          showToast('SA# and Customer required ⚠️');
+          showToast('SA# and Customer required âš ï¸');
           return;
         }
         saData.push({
@@ -2675,7 +2675,7 @@
         renderSAList();
         populateTechFilter();
         buildCalendar('pm', pmCalYear, pmCalMonth, pmSelDay, 'pmCalCard');
-        showToast(sa + ' added to PM schedule ✓');
+        showToast(sa + ' added to PM schedule âœ“');
       }
       function openDispatchModal() {
         document.getElementById('dispatchModal').classList.add('open');
@@ -2687,7 +2687,7 @@
         const sa = document.getElementById('d-sa').value.trim();
         const cust = document.getElementById('d-cust').value.trim();
         if (!sa || !cust) {
-          showToast('SA# and Customer required ⚠️');
+          showToast('SA# and Customer required âš ï¸');
           return;
         }
         dispatchData.push({
@@ -2703,12 +2703,12 @@
         sset('sv_dispatchData', dispatchData);
         closeDispatchModal();
         renderDispatch();
-        showToast('Work order added ✓');
+        showToast('Work order added âœ“');
       }
 
-      /* ═══════════════════════════════════
+      /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
          VIEW SWITCHING
-      ═══════════════════════════════════ */
+      â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
       function setView(view, sideEl) {
         document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
         document.querySelectorAll('.s-item').forEach((i) => i.classList.remove('active'));
@@ -2722,7 +2722,7 @@
         if (view === 'dispatch') renderDispatch();
       }
 
-      /* ── TOAST ── */
+      /* â”€â”€ TOAST â”€â”€ */
       let toastTimer;
       function showToast(msg) {
         const t = document.getElementById('toast');
@@ -2732,7 +2732,7 @@
         toastTimer = setTimeout(() => t.classList.remove('show'), 3400);
       }
 
-      /* ── NOTIFICATIONS ── */
+      /* â”€â”€ NOTIFICATIONS â”€â”€ */
       let notifications = [];
       function loadNotifs() {
         try {
@@ -2748,7 +2748,7 @@
         } catch (e) {}
       }
       function addNotif(title, detail, icon) {
-        notifications.unshift({ id: Date.now(), title, detail, icon: icon || '🔔', time: new Date().toISOString() });
+        notifications.unshift({ id: Date.now(), title, detail, icon: icon || 'ðŸ””', time: new Date().toISOString() });
         saveNotifs();
         refreshNotifUI();
       }
@@ -2789,13 +2789,13 @@
           .map((n) => {
             const ago = getNotifTimeAgo(new Date(n.time));
             return `<div style="display:flex;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border);align-items:flex-start">
-            <span style="font-size:16px;flex-shrink:0;margin-top:1px">${n.icon || '🔔'}</span>
+            <span style="font-size:16px;flex-shrink:0;margin-top:1px">${n.icon || 'ðŸ””'}</span>
             <div style="flex:1;min-width:0">
               <div style="font-size:13px;font-weight:600;margin-bottom:2px">${n.title}</div>
               <div style="font-size:12px;color:var(--text2);line-height:1.5">${n.detail}</div>
               <div style="font-size:10px;color:var(--text3);margin-top:3px;font-family:var(--mono)">${ago}</div>
             </div>
-            <button onclick="clearNotif(${n.id})" style="width:22px;height:22px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;font-size:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .13s" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">✕</button>
+            <button onclick="clearNotif(${n.id})" style="width:22px;height:22px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;font-size:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .13s" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">âœ•</button>
           </div>`;
           })
           .join('');
@@ -2821,7 +2821,7 @@
           p.style.display = 'none';
       });
 
-      /* ── NOTIFICATIONS INIT ── */
+      /* â”€â”€ NOTIFICATIONS INIT â”€â”€ */
       document.addEventListener('DOMContentLoaded', function () {
         loadNotifs();
         if (!notifications.length) {
@@ -2831,14 +2831,14 @@
               title: 'PM Schedule Alert',
               detail:
                 '57 service agreements are due for PM scheduling this quarter. Review the PM Schedule for assignments.',
-              icon: '🔧',
+              icon: 'ðŸ”§',
               time: new Date(Date.now() - 3600000).toISOString(),
             },
             {
               id: 2,
               title: 'Dispatch Board Update',
               detail: '3 work orders are unassigned and pending technician assignment.',
-              icon: '📋',
+              icon: 'ðŸ“‹',
               time: new Date(Date.now() - 7200000).toISOString(),
             },
           ];
@@ -2849,7 +2849,7 @@
     </script>
 
     <script id="site-fns">
-      /* ══ SITE FUNCTIONS ══ */
+      /* â•â• SITE FUNCTIONS â•â• */
 
       /* Clock */
       function siteTickClock() {
@@ -2970,7 +2970,7 @@
             Object.keys(data).forEach(function (k) {
               localStorage.setItem(k, data[k]);
             });
-            if (typeof showToast === 'function') showToast('Restored — reloading...');
+            if (typeof showToast === 'function') showToast('Restored â€” reloading...');
             setTimeout(function () {
               location.reload();
             }, 1200);
@@ -2993,7 +2993,7 @@
         if (!confirm('Reset ALL data? This cannot be undone.')) return;
         localStorage.clear();
         sessionStorage.clear();
-        if (typeof showToast === 'function') showToast('Reset — reloading...');
+        if (typeof showToast === 'function') showToast('Reset â€” reloading...');
         setTimeout(function () {
           location.reload();
         }, 1200);
@@ -3197,7 +3197,7 @@
         })
         .catch(function () {});
 
-      /* ── ESC KEY — closes any open modal-bg ── */
+      /* â”€â”€ ESC KEY â€” closes any open modal-bg â”€â”€ */
       document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape') return;
         var closers = {
@@ -3211,8 +3211,8 @@
         });
       });
 
-      /* ── beforeunload warning removed — state persistence approach ── */
+      /* â”€â”€ beforeunload warning removed â€” state persistence approach â”€â”€ */
     </script>
-    <script src="feedback-widget.js?v=v2026.05.26.369"></script>
+    <script src="feedback-widget.js?v=v2026.05.26.370"></script>
   </body>
 </html>
