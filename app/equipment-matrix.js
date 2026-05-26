@@ -373,18 +373,25 @@ function emParseBACnetBuilding(pathStr) {
   return (parts[1] || parts[0] || '').trim();
 }
 
-// Parse a WebCTRL Control Program name like "Air Handling Unit B1 - Supply Duct"
+// Parse a WebCTRL Control Program name.
 // Returns { location, equipName }
-// The part before the first " - " (space-dash-space) is the location/system area.
-// The part after is the equipment name.
+// Auto-detects two naming conventions:
+//   Standard WebCTRL: "{Location/Area} - {Equipment Name}" (e.g. "Supply Duct - Air Handling Unit B1")
+//   JOCO-style:       "{Equipment Type} - {Building Abbr}" (e.g. "Cooling Towers - ADC")
+// Detection: if the part BEFORE the first " - " classifies to a known equipment type,
+// it is JOCO-style and the assignment is flipped (equipName=first, location=second).
 function emParseControlProgram(cpStr) {
   if (!cpStr) return { location: '', equipName: cpStr || '' };
   var idx = cpStr.indexOf(' - ');
   if (idx === -1) return { location: '', equipName: cpStr.trim() };
-  return {
-    location: cpStr.slice(0, idx).trim(),
-    equipName: cpStr.slice(idx + 3).trim(),
-  };
+  var firstPart = cpStr.slice(0, idx).trim();
+  var secondPart = cpStr.slice(idx + 3).trim();
+  // If the first segment is a recognizable equipment type, this is JOCO-style naming
+  if (emClassifyEquipType(firstPart) !== 'other') {
+    return { location: secondPart, equipName: firstPart };
+  }
+  // Standard WebCTRL style: location before the dash, equipment name after
+  return { location: firstPart, equipName: secondPart };
 }
 
 function emParseLocation(locString) {
@@ -680,15 +687,15 @@ function emInjectMatrixCSS() {
   var style = document.createElement('style');
   style.id = 'em-matrix-styles';
   style.textContent = [
-    '.em-table-wrap { overflow: scroll; max-height: 70vh; }',
+    '.em-table-wrap { overflow: scroll; scrollbar-gutter: stable both-edges; isolation: isolate; }',
     '.em-table-wrap::-webkit-scrollbar { height: 14px; width: 14px; }',
     '.em-table-wrap::-webkit-scrollbar-thumb { background: var(--s4); border-radius: 7px; border: 3px solid var(--s2); }',
     '.em-table-wrap::-webkit-scrollbar-track { background: var(--s1); }',
-    '.em-table-wrap thead th { position: sticky; top: 0; background: var(--s2); z-index: 3; }',
-    '.em-table-wrap td:nth-child(1), .em-table-wrap th:nth-child(1) { position: sticky; left: 0; background: var(--s2); z-index: 2; }',
-    '.em-table-wrap td:nth-child(2), .em-table-wrap th:nth-child(2) { position: sticky; left: 150px; background: var(--s2); z-index: 2; }',
-    '.em-table-wrap td:nth-child(3), .em-table-wrap th:nth-child(3) { position: sticky; left: 300px; background: var(--s2); z-index: 2; }',
-    '.em-table-wrap thead th:nth-child(-n+3) { z-index: 4; }',
+    '.em-table-wrap thead th { position: sticky; top: 0; background: var(--s2); z-index: 11; }',
+    '.em-table-wrap td:nth-child(1), .em-table-wrap th:nth-child(1) { position: sticky; left: 0; background: var(--s2); z-index: 10; }',
+    '.em-table-wrap td:nth-child(2), .em-table-wrap th:nth-child(2) { position: sticky; left: 150px; background: var(--s2); z-index: 10; }',
+    '.em-table-wrap td:nth-child(3), .em-table-wrap th:nth-child(3) { position: sticky; left: 300px; background: var(--s2); z-index: 10; }',
+    '.em-table-wrap thead th:nth-child(-n+3) { z-index: 12; }',
   ].join('\n');
   document.head.appendChild(style);
 }
@@ -1069,6 +1076,13 @@ function emRenderTable(data, filters) {
     dynColsToShow = dynColsToShow.slice(0, EM_DYN_COL_LIMIT);
   }
 
+  // Sort final dynamic column list by point count descending so most common columns appear leftmost
+  dynColsToShow.sort(function (a, b) {
+    var diff = (dynPointFreq[b] || 0) - (dynPointFreq[a] || 0);
+    if (diff !== 0) return diff;
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+
   if (!_emHiddenGroups['dynpoint']) {
     for (var dp = 0; dp < dynColsToShow.length; dp++) {
       defs.push({ key: dynColsToShow[dp], label: dynColsToShow[dp], group: 'dynpoint', width: 120, isDynPoint: true });
@@ -1141,7 +1155,7 @@ function emRenderTable(data, filters) {
       '" onclick="emHandleSort(' +
       ci +
       ')" ' +
-      'style="position:sticky;top:0;z-index:2;background:var(--s2);' +
+      'style="position:sticky;top:0;background:var(--s2);' +
       borderTop +
       'padding:6px 8px;font-size:10px;font-weight:600;color:var(--text2);white-space:nowrap;cursor:pointer;' +
       'min-width:' +
@@ -1239,7 +1253,7 @@ function emRenderTable(data, filters) {
     '</div>';
 
   wrap.innerHTML =
-    '<table style="border-collapse:collapse;table-layout:auto">' +
+    '<table style="border-collapse:separate;border-spacing:0;table-layout:auto">' +
     '<thead><tr>' +
     theadCells +
     '</tr></thead>' +

@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.26.362';
+  var CH_VERSION = 'v2026.05.26.363';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,38 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.26.363',
+      date: '2026-05-26',
+      title:
+        'Fix Equipment Matrix frozen columns, scroll sync, scrollbar visibility, equipment name parsing, and column sort order',
+      features: [
+        {
+          type: 'fix',
+          text: 'Raised z-index ladder so frozen column headers no longer overlap scrolling content (sticky body cells: 10, all thead: 11, corner intersection: 12).',
+        },
+        {
+          type: 'fix',
+          text: 'Removed inline z-index:2 from dynamically written <th> elements so CSS z-index rules are no longer overridden by inline styles.',
+        },
+        {
+          type: 'fix',
+          text: 'Changed table border-collapse from collapse to separate+spacing:0 to fix Chrome/Edge sticky-header bug that broke frozen columns.',
+        },
+        {
+          type: 'fix',
+          text: 'Removed max-height:70vh from the scroll container so the horizontal scrollbar stays on-screen and the flex layout controls height naturally.',
+        },
+        {
+          type: 'fix',
+          text: 'Equipment name parser now auto-detects JOCO-style naming (Equipment Type - Building Abbr) so names like "Cooling Towers - ADC" display correctly.',
+        },
+        {
+          type: 'fix',
+          text: 'Dynamic columns are now sorted by point count descending after all safety-cap slicing, so the most common point names always appear leftmost.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.26.362',
       date: '2026-05-26',
