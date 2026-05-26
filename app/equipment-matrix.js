@@ -39,6 +39,10 @@ var EM_EQUIP_TYPES = {
 /* ── EDIT MODE FLAG ── */
 var _emEditMode = false;
 
+/* ── COLUMN RESIZE STATE ── */
+// Stores custom widths set by the user dragging column borders: { colIndex: widthPx }
+var _emColWidths = {};
+
 function emToggleEditMode(btn) {
   _emEditMode = !_emEditMode;
   if (btn) {
@@ -452,9 +456,11 @@ function emExtractEquipmentGroups(rows, colMap) {
       if (!controlProgram) continue;
 
       var building = emParseBACnetBuilding(bacnetPath);
-      // Extract floor from BACnet path segment 2 (e.g. /Site/Building/Floor/Area/CP)
+      // Extract floor from BACnet path — use the last segment after the building level.
+      // This handles variable-depth paths: standard 3-segment paths are unaffected;
+      // 4-segment paths like /Org/Building/Station/Floor correctly use the last segment.
       var bacnetParts = bacnetPath.replace(/^\//, '').split('/');
-      var wfloor = (bacnetParts[2] || '').trim();
+      var wfloor = (bacnetParts.length > 2 ? bacnetParts[bacnetParts.length - 1] : '').trim();
       var parsed = emParseControlProgram(controlProgram);
       var location = parsed.location;
       var equipName = parsed.equipName || controlProgram;
@@ -663,6 +669,7 @@ function emMergeIntoMatrix(existingData, newRows) {
 /* ── PHASE 3: VIEW SCAFFOLD ── */
 
 var _emPendingFiles = [];
+var _emImportMode = 'merge'; // 'merge' = add to existing data; 'replace' = clear and reimport
 var _emSortCol = null;
 var _emSortDir = 1;
 var _emFilters = { building: '', type: '', search: '' };
@@ -693,13 +700,76 @@ function emInjectMatrixCSS() {
     '.em-table-wrap::-webkit-scrollbar { height: 14px; width: 14px; }',
     '.em-table-wrap::-webkit-scrollbar-thumb { background: var(--s4); border-radius: 7px; border: 3px solid var(--s2); }',
     '.em-table-wrap::-webkit-scrollbar-track { background: var(--s1); }',
+    // All cells get right + bottom borders for a full grid
+    '.em-table-wrap td, .em-table-wrap th { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }',
+    // Frozen column base styles — left: values are set dynamically by emUpdateStickyOffsets()
+    '.em-table-wrap td.em-frozen, .em-table-wrap th.em-frozen { position: sticky; background: var(--s2); z-index: 10; }',
+    // Frozen header corners need higher z-index so they sit above both sticky header and sticky column
+    '.em-table-wrap thead th.em-frozen { z-index: 12; }',
+    // Non-frozen headers stay at z-index 11 (above body, horizontally scrollable)
     '.em-table-wrap thead th { position: sticky; top: 0; background: var(--s2); z-index: 11; }',
-    '.em-table-wrap td:nth-child(1), .em-table-wrap th:nth-child(1) { position: sticky; left: 0; background: var(--s2); z-index: 10; }',
-    '.em-table-wrap td:nth-child(2), .em-table-wrap th:nth-child(2) { position: sticky; left: 150px; background: var(--s2); z-index: 10; }',
-    '.em-table-wrap td:nth-child(3), .em-table-wrap th:nth-child(3) { position: sticky; left: 300px; background: var(--s2); z-index: 10; }',
-    '.em-table-wrap thead th:nth-child(-n+3) { z-index: 12; }',
+    // Resize cursor hint — applied to th when hovering near right edge (set via JS)
+    '.em-table-wrap th.em-col-resizing { cursor: col-resize; user-select: none; }',
   ].join('\n');
   document.head.appendChild(style);
+}
+
+/**
+ * emUpdateStickyOffsets — Computes and sets inline left: positions on the 3 frozen columns.
+ * Called after every table render and after column resize. Handles edit mode (extra delete col).
+ *
+ * In normal mode: columns 0, 1, 2 (Building, Floor, Equipment) are frozen.
+ * In edit mode: column 0 is the delete button; columns 1, 2, 3 (Building, Floor, Equipment) are frozen.
+ * We freeze whichever columns those are (always 3 data columns + delete button if present).
+ */
+function emUpdateStickyOffsets() {
+  var wrap = document.getElementById('em-table-wrap');
+  if (!wrap) return;
+  var table = wrap.querySelector('table');
+  if (!table) return;
+
+  // Determine if edit mode is active by checking for the delete button column in the first body row
+  var firstBodyRow = table.querySelector('tbody tr');
+  var hasDelCol = false;
+  if (firstBodyRow) {
+    var firstCell = firstBodyRow.cells[0];
+    if (firstCell && firstCell.querySelector('button')) hasDelCol = true;
+  }
+
+  // Number of frozen columns: always 3 data columns. In edit mode, also freeze the delete col.
+  var frozenCount = hasDelCol ? 4 : 3;
+
+  // Collect all rows (thead + tbody)
+  var allRows = [];
+  var theadRows = table.querySelectorAll('thead tr');
+  var tbodyRows = table.querySelectorAll('tbody tr');
+  for (var i = 0; i < theadRows.length; i++) allRows.push(theadRows[i]);
+  for (var j = 0; j < tbodyRows.length; j++) allRows.push(tbodyRows[j]);
+
+  if (allRows.length === 0) return;
+
+  // Read actual cell widths from first row to compute cumulative offsets
+  var firstRow = allRows[0];
+  var offsets = [0]; // offsets[n] = left position for column n
+  for (var c = 0; c < frozenCount - 1; c++) {
+    var cell = firstRow.cells[c];
+    if (!cell) break;
+    offsets.push(offsets[c] + cell.offsetWidth);
+  }
+
+  // Apply frozen class and left: style to every row
+  for (var r = 0; r < allRows.length; r++) {
+    var row = allRows[r];
+    var isHeadRow = row.parentNode && row.parentNode.nodeName === 'THEAD';
+    for (var col = 0; col < frozenCount; col++) {
+      var td = row.cells[col];
+      if (!td) continue;
+      td.classList.add('em-frozen');
+      td.style.left = (offsets[col] || 0) + 'px';
+      // Ensure top:0 on header frozen cells
+      if (isHeadRow) td.style.top = '0px';
+    }
+  }
 }
 
 function emRenderMatrix(container, data, pid) {
@@ -799,21 +869,22 @@ function emCalcSummaryStats(rows) {
   };
 }
 
-function emShowUploadPanel(btn) {
+function emShowUploadPanel(btn, mode) {
   var inline = document.getElementById('em-upload-inline');
   if (!inline) return;
+  var resolvedMode = mode || 'merge';
   if (inline.style.display === 'none') {
-    // If there is existing data, confirm before overwriting
-    var data = emLoadMatrix(window._emActivePid);
-    if (data && data.rows && data.rows.length > 0) {
+    // Re-Import mode requires confirmation before opening the panel
+    if (resolvedMode === 'replace') {
       if (!confirm('This will replace all existing equipment data for this project. Continue?')) return;
     }
+    _emImportMode = resolvedMode;
     inline.style.display = 'block';
     emRenderUploadPanel(inline, window._emActivePid, true);
     btn.textContent = 'Cancel';
   } else {
     inline.style.display = 'none';
-    btn.textContent = 'Re-import CSVs';
+    btn.textContent = resolvedMode === 'replace' ? 'Re-Import CSVs' : 'Import CSVs';
   }
 }
 
@@ -887,7 +958,10 @@ function emRenderToolbar(data, pid, projBadge) {
     '<button class="btn btn-ghost btn-sm" onclick="emAddCustomCol(\'' +
     pid +
     '\')" style="height:28px;font-size:11px">+ Column</button>' +
-    '<button class="btn btn-ghost btn-sm" onclick="emShowUploadPanel(this)" style="height:28px;font-size:11px">Re-import CSVs</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="emShowUploadPanel(this,\'merge\')" style="height:28px;font-size:11px">Import CSVs</button>' +
+    (data.rows && data.rows.length > 0
+      ? '<button class="btn btn-ghost btn-sm" onclick="emShowUploadPanel(this,\'replace\')" style="height:28px;font-size:11px;color:#b45309;border-color:#d97706">Re-Import CSVs</button>'
+      : '') +
     '<button class="btn btn-sm" onclick="emCopyFromProject(\'' +
     pid +
     '\')" style="height:28px;font-size:11px">📋 Copy From Project</button>' +
@@ -1301,6 +1375,94 @@ function emRenderTable(data, filters) {
     pagDiv.innerHTML = paginationHtml;
     tableWrap.parentNode.insertBefore(pagDiv.firstChild, tableWrap.nextSibling);
   }
+
+  // Apply computed left: positions to frozen columns now that the DOM is live
+  emUpdateStickyOffsets();
+
+  // Attach column resize handler to the thead
+  emAttachColResizeHandler(wrap);
+}
+
+/**
+ * emAttachColResizeHandler — Enables drag-to-resize on column header right edges.
+ * Detects mousedown within 5px of a th right border, then updates column width on drag.
+ * After resize, calls emUpdateStickyOffsets() to recompute frozen column positions.
+ */
+function emAttachColResizeHandler(wrap) {
+  if (!wrap) return;
+  var thead = wrap.querySelector('thead');
+  if (!thead) return;
+
+  var _resizing = false;
+  var _resizeTh = null;
+  var _resizeStartX = 0;
+  var _resizeStartW = 0;
+
+  function onMouseMove(e) {
+    if (!_resizing) {
+      // Change cursor when near right edge of a th
+      var th = e.target.closest ? e.target.closest('th') : null;
+      if (th && th.closest('thead')) {
+        var rect = th.getBoundingClientRect();
+        if (rect.right - e.clientX <= 5) {
+          th.classList.add('em-col-resizing');
+        } else {
+          th.classList.remove('em-col-resizing');
+        }
+      }
+      return;
+    }
+    // Actively resizing
+    var dx = e.clientX - _resizeStartX;
+    var newW = Math.max(40, _resizeStartW + dx);
+    _resizeTh.style.minWidth = newW + 'px';
+    _resizeTh.style.width = newW + 'px';
+  }
+
+  function onMouseDown(e) {
+    var th = e.target.closest ? e.target.closest('th') : null;
+    if (!th || !th.closest('thead')) return;
+    var rect = th.getBoundingClientRect();
+    if (rect.right - e.clientX > 5) return; // not near right edge
+    e.preventDefault();
+    _resizing = true;
+    _resizeTh = th;
+    _resizeStartX = e.clientX;
+    _resizeStartW = th.offsetWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }
+
+  function onMouseUp() {
+    if (_resizing) {
+      _resizing = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      // Recalculate frozen column offsets after resize
+      emUpdateStickyOffsets();
+    }
+  }
+
+  // Clean up any document-level handlers from a previous render to prevent accumulation
+  if (wrap._emDocMoveHandler) document.removeEventListener('mousemove', wrap._emDocMoveHandler);
+  if (wrap._emDocUpHandler) document.removeEventListener('mouseup', wrap._emDocUpHandler);
+
+  // Remove any previous thead-level handlers by cloning (safe — no inline events on thead itself)
+  var newThead = thead.cloneNode(true);
+  thead.parentNode.replaceChild(newThead, thead);
+
+  // Re-query wrap since we replaced thead
+  var activeThead = wrap.querySelector('thead');
+  activeThead.addEventListener('mousemove', onMouseMove);
+  activeThead.addEventListener('mousedown', onMouseDown);
+
+  // Store named references so we can remove them on next render
+  wrap._emDocMoveHandler = function (e) {
+    if (_resizing) onMouseMove(e);
+  };
+  wrap._emDocUpHandler = onMouseUp;
+  document.addEventListener('mousemove', wrap._emDocMoveHandler);
+  document.addEventListener('mouseup', wrap._emDocUpHandler);
 }
 
 function emPrevPage(pid) {
@@ -1705,13 +1867,23 @@ function emHandleImport(pid) {
 
     // Only save to localStorage when a project is selected
     if (pid) {
-      var merged = emMergeIntoMatrix({ rows: [], buildings: [] }, allRows);
+      // merge mode: preserve existing rows and dedup by id; replace mode: start fresh
+      var baseData =
+        _emImportMode === 'replace' ? { rows: [], buildings: [] } : emLoadMatrix(pid) || { rows: [], buildings: [] };
+      var merged = emMergeIntoMatrix(baseData, allRows);
       merged.totalBASPoints = totalRawRows;
       emSaveMatrix(pid, merged);
       var container = document.getElementById('em-proj-wrap');
       if (container) emRenderMatrix(container, merged, pid);
+      var modeLabel = _emImportMode === 'replace' ? 'Re-imported' : 'Imported';
       showToast(
-        'Imported ' + totalRawRows.toLocaleString() + ' rows from ' + pending + ' file' + (pending !== 1 ? 's' : ''),
+        modeLabel +
+          ' ' +
+          totalRawRows.toLocaleString() +
+          ' rows from ' +
+          pending +
+          ' file' +
+          (pending !== 1 ? 's' : ''),
       );
     } else {
       // No project — render a preview without saving
