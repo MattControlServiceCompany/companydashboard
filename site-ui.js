@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.27.387';
+  var CH_VERSION = 'v2026.05.27.388';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,33 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v388',
+      date: '2026-05-27',
+      title: 'BAS Trends — CSV import, health score dashboard, fault log, timeline heat map, OAT scatter chart',
+      features: [
+        {
+          type: 'feature',
+          text: 'New BAS Trends view in Energy Department: import CSV trend data exported from your BAS. Finds the view in the Energy sidebar under BAS Trends.',
+        },
+        {
+          type: 'feature',
+          text: 'Health Score dashboard grades each equipment unit (EXCELLENT/GOOD/FAIR/POOR) across six fault categories: after-hours runtime, simultaneous heating+cooling, economizer misses, setpoint adherence, sensor health, and override rate.',
+        },
+        {
+          type: 'feature',
+          text: 'Fault Log shows detected faults as a filterable, sortable table with energy cost estimates. Faults can be acknowledged or resolved and that status is remembered.',
+        },
+        {
+          type: 'feature',
+          text: 'Timeline heat map shows fault density by equipment and month so you can spot seasonal patterns at a glance.',
+        },
+        {
+          type: 'feature',
+          text: 'OAT scatter chart plots equipment runtime or setpoint deviation against outdoor air temperature to reveal weather-dependent control problems.',
+        },
+      ],
+    },
     {
       version: 'v387',
       date: '2026-05-27',
