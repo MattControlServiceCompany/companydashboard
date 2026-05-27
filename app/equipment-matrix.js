@@ -1230,8 +1230,8 @@ function emRenderToolbar(data, pid, projBadge) {
     '</span>' +
     // Audit-view legend bar — always visible in audit mode, shows all cell state symbols
     '<span id="em-audit-col-info" style="display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--text3)">' +
-    '<span title="BAS point present — automatic match to ASHRAE 36 requirement" style="padding:1px 6px;border-radius:3px;background:rgba(39,174,96,0.15);color:#27ae60;font-weight:600">Yes</span>' +
-    '<span title="Similar point found — lower confidence match" style="padding:1px 6px;border-radius:3px;background:rgba(230,126,34,0.15);color:#e67e22;font-weight:600">Fuzzy</span>' +
+    '<span title="BAS point present — showing live value. Green background = automatic match" style="padding:1px 6px;border-radius:3px;background:rgba(39,174,96,0.15);color:#27ae60;font-weight:600">Yes</span>' +
+    '<span title="Similar point found — showing live value. Amber background = lower confidence match" style="padding:1px 6px;border-radius:3px;background:rgba(230,126,34,0.15);color:#e67e22;font-weight:600">Fuzzy</span>' +
     '<span title="Required ASHRAE 36 point not found in BAS" style="padding:1px 6px;border-radius:3px;background:rgba(192,57,43,0.15);color:#c0392b;font-weight:600">No</span>' +
     '<span title="Not applicable to this equipment type" style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.08);color:var(--text3)">N/A</span>' +
     '<span title="Optional point — not present in BAS data" style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.05);color:var(--text3)">--</span>' +
@@ -2322,29 +2322,34 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
     if (coveredMap[catKey]) {
       var match = coveredMap[catKey];
       var tier = match.matchTier;
+      var rawVal = row.points && match.pointName ? row.points[match.pointName] || '' : '';
+      var displayVal = rawVal ? (rawVal.length > 8 ? rawVal.slice(0, 8) : rawVal) : null;
+      var tooltipBase = emHtmlEsc((match.pointName || '') + (rawVal ? ': ' + rawVal : ''));
       if (tier <= 2) {
-        // High confidence — green Yes
+        // High confidence — green cell showing live value (fallback to "Yes" if no value)
         return (
           '<td style="' +
           baseStyle +
           'background:rgba(39,174,96,0.15);color:#27ae60;font-size:11px;font-weight:700" ' +
           'title="' +
-          emHtmlEsc(match.pointName || '') +
-          ' (tier ' +
-          tier +
-          ')">Yes</td>'
+          tooltipBase +
+          ' (auto-matched)">' +
+          (displayVal !== null ? emHtmlEsc(displayVal) : 'Yes') +
+          '</td>'
         );
       } else {
-        // Fuzzy match — amber Fuzzy
+        // Fuzzy match — amber cell showing live value (fallback to "Fuzzy" if no value)
         return (
           '<td style="' +
           baseStyle +
           'background:rgba(230,126,34,0.15);color:#e67e22;font-size:11px;font-weight:700" ' +
           'title="' +
-          emHtmlEsc(match.pointName || '') +
+          tooltipBase +
           ' (fuzzy match, tier ' +
           tier +
-          ')">Fuzzy</td>'
+          ')">' +
+          (displayVal !== null ? emHtmlEsc(displayVal) : 'Fuzzy') +
+          '</td>'
         );
       }
     }
@@ -6503,33 +6508,53 @@ function emRenderSequenceCell(seqName, readiness) {
 /* ═══════════════════════════════════════════════════════════════════════════
    PHASE 4 — MANAGE MAPPINGS UI
    Added: 2026-05-26
+   Updated: 2026-05-27 — show all points (matched + unmatched), merge save,
+                          functional dropdown grouping, guidance text
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── emGetUnmatchedPoints ───────────────────────────────────────────────────
-   Scans all equipment rows in the matrix and collects raw BAS point names
-   that emNormalizePoint returned null (no category match) or 'excluded'.
-   Returns an array sorted by frequency descending:
-     [{ name: string, count: number, equipCategory: string }, ...]
-   equipCategory is the most common equipment type this point appeared in.  */
+   Preserved for backward compatibility. Delegates to emGetAllPoints and
+   returns only the unmatched subset.                                        */
 function emGetUnmatchedPoints(rows) {
-  // freq map: rawName -> { count, catFreq: { equipCat: count } }
+  var all = emGetAllPoints(rows);
+  return all.filter(function (p) {
+    return p.status === 'unmatched';
+  });
+}
+
+/* ── emGetAllPoints ─────────────────────────────────────────────────────────
+   Scans all equipment rows and collects every raw BAS point name, classifying
+   each as 'unmatched', 'matched', or 'excluded'.
+   Returns an array sorted by count descending:
+     [{
+       name:          string   — raw BAS point name
+       count:         number   — how many equipment rows contain this name
+       equipCategory: string   — most common equipment type for this point
+       status:        string   — 'unmatched' | 'matched' | 'excluded'
+       matchedLabel:  string   — category label if matched (else '')
+       matchedKey:    string   — "equipType:categoryKey" if matched (else '')
+       confidence:    string   — 'high' | 'medium' | 'low' | 'excluded' | ''
+     }, ...]
+   NOTE: uses emNormalizePoint (auto-match only). Custom mappings are applied
+   in the open-modal function so the modal can show pre-selected values.     */
+function emGetAllPoints(rows) {
+  // freq map: rawName -> { count, catFreq, normResult }
+  // normResult is from the FIRST row this name appeared in (for status/label)
   var freq = {};
   for (var ri = 0; ri < rows.length; ri++) {
     var row = rows[ri];
     var pts = row.points || {};
     for (var ptKey in pts) {
       if (!pts.hasOwnProperty(ptKey)) continue;
-      // Skip internal mapped keys (e.g. 'satLive') — only process raw BAS names
-      // Raw names contain spaces or slashes; mapped keys use camelCase with 'Live' suffix
+      // Skip internal mapped keys (camelCase + 'Live' suffix)
       if (/Live$/.test(ptKey) && !/\s/.test(ptKey)) continue;
-      var norm = emNormalizePoint(ptKey, row.category);
-      // Unmatched: null return, or auditRelevant=false (excluded), or no categoryKey
-      if (!norm || !norm.categoryKey || !norm.auditRelevant) {
-        if (!freq[ptKey]) freq[ptKey] = { count: 0, catFreq: {} };
-        freq[ptKey].count++;
-        var ec = row.category || 'other';
-        freq[ptKey].catFreq[ec] = (freq[ptKey].catFreq[ec] || 0) + 1;
+      var ec = row.category || 'other';
+      if (!freq[ptKey]) {
+        var norm = emNormalizePoint(ptKey, row.category);
+        freq[ptKey] = { count: 0, catFreq: {}, norm: norm };
       }
+      freq[ptKey].count++;
+      freq[ptKey].catFreq[ec] = (freq[ptKey].catFreq[ec] || 0) + 1;
     }
   }
 
@@ -6537,7 +6562,7 @@ function emGetUnmatchedPoints(rows) {
   for (var name in freq) {
     if (!freq.hasOwnProperty(name)) continue;
     var entry = freq[name];
-    // Find most common equipment category this point appeared in
+    // Find most common equipment category
     var bestCat = '';
     var bestCount = 0;
     for (var cat in entry.catFreq) {
@@ -6546,7 +6571,34 @@ function emGetUnmatchedPoints(rows) {
         bestCat = cat;
       }
     }
-    result.push({ name: name, count: entry.count, equipCategory: bestCat });
+    var norm = entry.norm;
+    var status, matchedLabel, matchedKey, confidence;
+    if (!norm || !norm.categoryKey) {
+      status = 'unmatched';
+      matchedLabel = '';
+      matchedKey = '';
+      confidence = '';
+    } else if (!norm.auditRelevant) {
+      status = 'excluded';
+      matchedLabel = '';
+      matchedKey = '';
+      confidence = 'excluded';
+    } else {
+      status = 'matched';
+      matchedLabel = norm.categoryLabel || norm.categoryKey;
+      // Build "equipType:categoryKey" — use bestCat as equipment type approximation
+      matchedKey = (bestCat || 'ahu') + ':' + norm.categoryKey;
+      confidence = norm.confidence || 'medium';
+    }
+    result.push({
+      name: name,
+      count: entry.count,
+      equipCategory: bestCat,
+      status: status,
+      matchedLabel: matchedLabel,
+      matchedKey: matchedKey,
+      confidence: confidence,
+    });
   }
 
   result.sort(function (a, b) {
@@ -6557,11 +6609,174 @@ function emGetUnmatchedPoints(rows) {
   return result;
 }
 
+/* ── emBuildFunctionalCatOptions ────────────────────────────────────────────
+   Builds the category dropdown options list grouped by point function
+   (Temperature, Pressure, Airflow, etc.) rather than by equipment type.
+   Returns an array of { key, label, equipType, funcGroup } sorted by group.
+   Deduplicates by label within each group to avoid showing the same concept
+   twice (e.g. "Supply Air Temperature" from AHU and from FPB).             */
+function emBuildFunctionalCatOptions() {
+  // Functional group assignments by label keywords — order matters (first match wins)
+  var funcGroups = [
+    {
+      name: 'Temperature',
+      test: function (label) {
+        return /temp|temperature|enthalpy/i.test(label);
+      },
+    },
+    {
+      name: 'Pressure',
+      test: function (label) {
+        return /pressure|static/i.test(label);
+      },
+    },
+    {
+      name: 'Airflow',
+      test: function (label) {
+        return /airflow|flow|cfm/i.test(label);
+      },
+    },
+    {
+      name: 'Valve Commands',
+      test: function (label) {
+        return /valve/i.test(label);
+      },
+    },
+    {
+      name: 'Damper Commands',
+      test: function (label) {
+        return /damper/i.test(label);
+      },
+    },
+    {
+      name: 'Fan Controls',
+      test: function (label) {
+        return /fan|vfd|speed/i.test(label);
+      },
+    },
+    {
+      name: 'Setpoints',
+      test: function (label) {
+        return /setpoint|set point/i.test(label);
+      },
+    },
+    {
+      name: 'Status & Sensors',
+      test: function (label) {
+        return /status|sensor|co2|freeze|plant/i.test(label);
+      },
+    },
+  ];
+
+  var catTypeOrder = ['ahu', 'vav', 'fpb', 'ddvav', 'hwp', 'chwp', 'ct'];
+  // Collect all options: { key, label, equipType }
+  var raw = [];
+  var rawSeen = {}; // equipType:key dedup
+  for (var ti = 0; ti < catTypeOrder.length; ti++) {
+    var et = catTypeOrder[ti];
+    var cats = EM_POINT_CATEGORIES[et] || [];
+    for (var ci = 0; ci < cats.length; ci++) {
+      var ck = et + ':' + cats[ci].key;
+      if (!rawSeen[ck]) {
+        rawSeen[ck] = true;
+        raw.push({ key: cats[ci].key, label: cats[ci].label, equipType: et });
+      }
+    }
+  }
+
+  // Assign functional group, deduplicate by label within each group
+  var grouped = {}; // groupName -> [{ key, label, equipType }]
+  var labelInGroup = {}; // groupName + ':' + normLabel -> true
+  for (var ri = 0; ri < raw.length; ri++) {
+    var opt = raw[ri];
+    var grpName = 'Other';
+    for (var gi = 0; gi < funcGroups.length; gi++) {
+      if (funcGroups[gi].test(opt.label)) {
+        grpName = funcGroups[gi].name;
+        break;
+      }
+    }
+    var dedupeKey = grpName + ':' + opt.label.toLowerCase();
+    if (!labelInGroup[dedupeKey]) {
+      labelInGroup[dedupeKey] = true;
+      if (!grouped[grpName]) grouped[grpName] = [];
+      grouped[grpName].push({ key: opt.key, label: opt.label, equipType: opt.equipType, funcGroup: grpName });
+    }
+  }
+
+  // Flatten in group order (funcGroups order, then Other)
+  var result = [];
+  var groupOrder = funcGroups.map(function (g) {
+    return g.name;
+  });
+  groupOrder.push('Other');
+  for (var gi2 = 0; gi2 < groupOrder.length; gi2++) {
+    var gName = groupOrder[gi2];
+    var entries = grouped[gName] || [];
+    for (var ei = 0; ei < entries.length; ei++) {
+      result.push(entries[ei]);
+    }
+  }
+  return result;
+}
+
+/* ── emBuildCategoryDropdown ────────────────────────────────────────────────
+   Builds the HTML for a category <select> element, grouped by point function.
+   currentVal: the currently selected value ("equipType:categoryKey" or
+   "__exclude__" or ""). rawName and equipCategory are stored as data attrs. */
+function emBuildCategoryDropdown(rawName, equipCategory, currentVal, allCatOptions) {
+  var selectHtml =
+    '<select data-rawname="' +
+    emHtmlEsc(rawName) +
+    '" data-equip="' +
+    emHtmlEsc(equipCategory) +
+    '" ' +
+    'style="font-size:11px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);' +
+    'color:var(--text);border-radius:4px;height:24px;max-width:280px">' +
+    '<option value="">— Select category —</option>' +
+    '<option value="__exclude__"' +
+    (currentVal === '__exclude__' ? ' selected' : '') +
+    '>Exclude (not audit relevant)</option>';
+
+  var lastGroup = '';
+  for (var oi = 0; oi < allCatOptions.length; oi++) {
+    var opt = allCatOptions[oi];
+    if (opt.funcGroup !== lastGroup) {
+      if (lastGroup !== '') selectHtml += '</optgroup>';
+      selectHtml += '<optgroup label="' + emHtmlEsc(opt.funcGroup) + '">';
+      lastGroup = opt.funcGroup;
+    }
+    var optVal = opt.equipType + ':' + opt.key;
+    // Match: currentVal may be "equipType:key" — try exact match first,
+    // then match on key alone (for cases where equipType differs)
+    var isSelected =
+      currentVal === optVal ||
+      (currentVal &&
+        currentVal !== '__exclude__' &&
+        currentVal.split(':').slice(1).join(':') === opt.key &&
+        !selectHtml.includes(' selected'));
+    selectHtml +=
+      '<option value="' +
+      emHtmlEsc(optVal) +
+      '"' +
+      (isSelected ? ' selected' : '') +
+      '>' +
+      emHtmlEsc(opt.label) +
+      '</option>';
+  }
+  if (lastGroup !== '') selectHtml += '</optgroup>';
+  selectHtml += '</select>';
+  return selectHtml;
+}
+
 /* ── emOpenManageMappings ───────────────────────────────────────────────────
    Opens the Manage Mappings modal.
-   Shows all unmatched point names (sorted by frequency) with a dropdown
-   to assign each to a point category. Existing custom mappings are
-   pre-selected in the dropdowns.                                           */
+   Section 1: Unmatched Points — points with no auto-match; each has a
+              dropdown to assign to a category.
+   Section 2: Mapped Points — points that auto-matched; shown read-only with
+              category label and confidence level.
+   Guidance text at top. Dropdown groups by point function, not equipment type.
+   Existing custom mappings are pre-selected in unmatched dropdowns.        */
 function emOpenManageMappings(pid) {
   if (!pid) pid = window._emActivePid;
   if (!pid) return;
@@ -6573,92 +6788,72 @@ function emOpenManageMappings(pid) {
     return;
   }
 
-  var unmatched = emGetUnmatchedPoints(rows);
+  var allPoints = emGetAllPoints(rows);
   var customMappings = emLoadCustomMappings(pid);
 
-  // Build a quick lookup of existing custom mappings: normName -> categoryKey
-  var existingMap = {};
+  // Build lookup: normName -> { categoryKey, equipCategory } from existing custom mappings
+  var existingCustomMap = {};
   for (var mi = 0; mi < customMappings.length; mi++) {
     var m = customMappings[mi];
-    if (m.rawName) existingMap[emNormalizePointName(m.rawName)] = m.categoryKey;
+    if (m.rawName) existingCustomMap[emNormalizePointName(m.rawName)] = m;
   }
 
-  // Count unique + total for header
-  var totalOccurrences = 0;
-  for (var ui = 0; ui < unmatched.length; ui++) totalOccurrences += unmatched[ui].count;
-
-  // Build category options — union of all EM_POINT_CATEGORIES across all types
-  // Build a deduplicated list: { key, label, equipType }
-  var allCatOptions = [];
-  var catSeen = {};
-  var catTypeOrder = ['ahu', 'vav', 'fpb', 'ddvav', 'hwp', 'chwp', 'ct'];
-  for (var ti = 0; ti < catTypeOrder.length; ti++) {
-    var et = catTypeOrder[ti];
-    var cats = EM_POINT_CATEGORIES[et] || [];
-    for (var ci = 0; ci < cats.length; ci++) {
-      var ck = et + ':' + cats[ci].key;
-      if (!catSeen[ck]) {
-        catSeen[ck] = true;
-        allCatOptions.push({ key: cats[ci].key, label: cats[ci].label, equipType: et });
-      }
+  // Separate into unmatched (need attention) and matched (auto-detected)
+  var unmatchedPoints = [];
+  var matchedPoints = [];
+  for (var pi = 0; pi < allPoints.length; pi++) {
+    var pt = allPoints[pi];
+    var normName = emNormalizePointName(pt.name);
+    var hasCustom = !!existingCustomMap[normName];
+    if (pt.status === 'unmatched' || hasCustom) {
+      // Unmatched OR previously custom-mapped — show in editable section
+      unmatchedPoints.push(pt);
+    } else if (pt.status === 'matched') {
+      matchedPoints.push(pt);
     }
+    // excluded points are silently omitted (they're already handled)
   }
 
-  // Build table rows HTML
-  var tableRowsHtml = '';
-  if (unmatched.length === 0) {
-    tableRowsHtml =
-      '<tr><td colspan="3" style="padding:20px;text-align:center;color:var(--text3);font-size:12px">' +
-      'All point names are matched — no unrecognised points found.' +
+  // Build functional category options for dropdown
+  var allCatOptions = emBuildFunctionalCatOptions();
+
+  // ── Section 1: Unmatched Points ──────────────────────────────────────────
+  var unmatchedRowsHtml = '';
+  var unmatchedTotalOccurrences = 0;
+  for (var ui = 0; ui < unmatchedPoints.length; ui++) {
+    unmatchedTotalOccurrences += unmatchedPoints[ui].count;
+  }
+
+  if (unmatchedPoints.length === 0) {
+    unmatchedRowsHtml =
+      '<tr><td colspan="3" style="padding:16px 12px;text-align:center;color:var(--text3);font-size:11px">' +
+      'All points are matched — nothing needs mapping.' +
       '</td></tr>';
   } else {
-    for (var upi = 0; upi < unmatched.length; upi++) {
-      var up = unmatched[upi];
+    for (var upi = 0; upi < unmatchedPoints.length; upi++) {
+      var up = unmatchedPoints[upi];
       var normUp = emNormalizePointName(up.name);
-      var currentVal = existingMap[normUp] || '';
-
-      // Build the dropdown — group options by equipment type
-      var selectHtml =
-        '<select data-rawname="' +
-        emHtmlEsc(up.name) +
-        '" data-equip="' +
-        emHtmlEsc(up.equipCategory) +
-        '" ' +
-        'style="font-size:11px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);' +
-        'color:var(--text);border-radius:4px;height:24px;max-width:280px">' +
-        '<option value="">— Select category —</option>' +
-        '<option value="__exclude__"' +
-        (currentVal === '__exclude__' ? ' selected' : '') +
-        '>Exclude (not audit relevant)</option>';
-
-      var lastType = '';
-      for (var oi = 0; oi < allCatOptions.length; oi++) {
-        var opt = allCatOptions[oi];
-        if (opt.equipType !== lastType) {
-          if (lastType !== '') selectHtml += '</optgroup>';
-          selectHtml += '<optgroup label="' + opt.equipType.toUpperCase() + '">';
-          lastType = opt.equipType;
-        }
-        var optVal = opt.equipType + ':' + opt.key;
-        var isSelected = currentVal === optVal;
-        selectHtml +=
-          '<option value="' +
-          emHtmlEsc(optVal) +
-          '"' +
-          (isSelected ? ' selected' : '') +
-          '>' +
-          emHtmlEsc(opt.label) +
-          '</option>';
+      // currentVal: use existing custom mapping if present, else empty
+      var existingEntry = existingCustomMap[normUp];
+      var currentVal = '';
+      if (existingEntry) {
+        currentVal =
+          existingEntry.categoryKey === '__exclude__'
+            ? '__exclude__'
+            : existingEntry.equipCategory
+              ? existingEntry.equipCategory + ':' + existingEntry.categoryKey
+              : existingEntry.categoryKey;
       }
-      if (lastType !== '') selectHtml += '</optgroup>';
-      selectHtml += '</select>';
-
-      tableRowsHtml +=
+      var countTitle = 'This point appears on ' + up.count + ' equipment row' + (up.count !== 1 ? 's' : '');
+      var selectHtml = emBuildCategoryDropdown(up.name, up.equipCategory, currentVal, allCatOptions);
+      unmatchedRowsHtml +=
         '<tr style="border-bottom:1px solid var(--border)">' +
         '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:var(--text);max-width:320px;word-break:break-word">' +
         emHtmlEsc(up.name) +
         '</td>' +
-        '<td style="padding:6px 12px;font-size:11px;color:var(--text2);text-align:center;white-space:nowrap">' +
+        '<td style="padding:6px 12px;font-size:11px;color:var(--text2);text-align:center;white-space:nowrap" title="' +
+        emHtmlEsc(countTitle) +
+        '">' +
         up.count +
         '</td>' +
         '<td style="padding:6px 8px;font-size:11px">' +
@@ -6668,47 +6863,130 @@ function emOpenManageMappings(pid) {
     }
   }
 
+  // ── Section 2: Auto-Matched Points ───────────────────────────────────────
+  var matchedRowsHtml = '';
+  for (var mpi = 0; mpi < matchedPoints.length; mpi++) {
+    var mp = matchedPoints[mpi];
+    var confColor = mp.confidence === 'high' ? '#27ae60' : mp.confidence === 'medium' ? '#e67e22' : '#888';
+    var confLabel = mp.confidence === 'high' ? 'High' : mp.confidence === 'medium' ? 'Medium' : 'Low';
+    var confTitle =
+      'Auto-match confidence: ' +
+      confLabel +
+      '. Click Save if this looks correct, or use the Unmatched section to override.';
+    var mCountTitle = 'This point appears on ' + mp.count + ' equipment row' + (mp.count !== 1 ? 's' : '');
+    matchedRowsHtml +=
+      '<tr style="border-bottom:1px solid var(--border)">' +
+      '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:var(--text);max-width:280px;word-break:break-word">' +
+      emHtmlEsc(mp.name) +
+      '</td>' +
+      '<td style="padding:6px 12px;font-size:11px;color:var(--text2);text-align:center;white-space:nowrap" title="' +
+      emHtmlEsc(mCountTitle) +
+      '">' +
+      mp.count +
+      '</td>' +
+      '<td style="padding:6px 12px;font-size:11px;color:var(--text2)">' +
+      emHtmlEsc(mp.matchedLabel) +
+      '</td>' +
+      '<td style="padding:6px 12px;font-size:11px;text-align:center" title="' +
+      emHtmlEsc(confTitle) +
+      '">' +
+      '<span style="color:' +
+      confColor +
+      ';font-weight:600;font-size:10px">' +
+      confLabel +
+      '</span>' +
+      '</td>' +
+      '</tr>';
+  }
+
+  // ── Assemble modal HTML ───────────────────────────────────────────────────
+  var thStyle =
+    'padding:8px 12px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;' +
+    'letter-spacing:0.05em;text-align:left;border-bottom:1px solid var(--border);' +
+    'position:sticky;top:0;background:var(--s1)';
+
+  var sectionHeadStyle =
+    'padding:8px 12px;font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;' +
+    'letter-spacing:0.06em;background:var(--s1);border-bottom:1px solid var(--border);' +
+    'border-top:2px solid var(--border)';
+
+  var matchedSection =
+    matchedPoints.length === 0
+      ? ''
+      : '<tr><td colspan="4" style="' +
+        sectionHeadStyle +
+        '">Auto-Matched Points (' +
+        matchedPoints.length +
+        ') — verify these look correct</td></tr>' +
+        matchedRowsHtml;
+
   var modalHtml =
     '<div id="em-manage-mappings-overlay" ' +
     'style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:20px" ' +
     'onclick="emCloseManageMappings(event)">' +
-    '<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;width:800px;max-width:100%;' +
+    '<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;width:860px;max-width:100%;' +
     'max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.4)" ' +
     'onclick="event.stopPropagation()">' +
     // Header
-    '<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-shrink:0">' +
+    '<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px;flex-shrink:0">' +
     '<div style="flex:1">' +
     '<div style="font-size:14px;font-weight:700;color:var(--text)">Manage Point Mappings</div>' +
-    '<div style="font-size:11px;color:var(--text3);margin-top:2px">Unmatched Points: ' +
-    unmatched.length +
-    ' unique, ' +
-    totalOccurrences.toLocaleString() +
-    ' total occurrences</div>' +
+    '<div style="font-size:11px;color:var(--text3);margin-top:4px" ' +
+    'title="Map unrecognized BAS points to ASHRAE 36 categories. Hover any point name or count for details.">' +
+    'Map unrecognized BAS points to ASHRAE 36 categories. Hover any point for details.' +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--text3);margin-top:2px">' +
+    unmatchedPoints.length +
+    ' unmatched &nbsp;|&nbsp; ' +
+    matchedPoints.length +
+    ' auto-matched &nbsp;|&nbsp; ' +
+    (unmatchedTotalOccurrences +
+      (function () {
+        var t = 0;
+        for (var i = 0; i < matchedPoints.length; i++) t += matchedPoints[i].count;
+        return t;
+      })()) +
+    ' total point occurrences' +
+    '</div>' +
     '</div>' +
     '<button onclick="emCloseManageMappings()" ' +
-    'style="font-size:16px;background:none;border:none;color:var(--text2);cursor:pointer;padding:4px 8px;line-height:1">X</button>' +
+    'style="font-size:16px;background:none;border:none;color:var(--text2);cursor:pointer;padding:4px 8px;line-height:1;flex-shrink:0">X</button>' +
     '</div>' +
     // Table scroll area
     '<div style="flex:1;overflow-y:auto;min-height:0">' +
     '<table style="width:100%;border-collapse:collapse">' +
     '<thead>' +
     '<tr style="background:var(--s1)">' +
-    '<th style="padding:8px 12px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;' +
-    'letter-spacing:0.05em;text-align:left;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--s1)">Point Name</th>' +
-    '<th style="padding:8px 12px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;' +
-    'letter-spacing:0.05em;text-align:center;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--s1);width:70px">Count</th>' +
-    '<th style="padding:8px 12px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;' +
-    'letter-spacing:0.05em;text-align:left;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--s1)">Assign to Category</th>' +
+    '<th style="' +
+    thStyle +
+    '">Point Name</th>' +
+    '<th style="' +
+    thStyle +
+    ';text-align:center;width:70px" title="Number of equipment rows that contain this point name">Devices</th>' +
+    '<th style="' +
+    thStyle +
+    '">Assign to Category</th>' +
+    '<th style="' +
+    thStyle +
+    ';width:10px"></th>' +
     '</tr>' +
     '</thead>' +
     '<tbody>' +
-    tableRowsHtml +
+    // Unmatched section header
+    '<tr><td colspan="4" style="' +
+    sectionHeadStyle +
+    'border-top:none">Unmatched Points (' +
+    unmatchedPoints.length +
+    ') — need mapping</td></tr>' +
+    unmatchedRowsHtml +
+    // Matched section
+    matchedSection +
     '</tbody>' +
     '</table>' +
     '</div>' +
     // Footer
     '<div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0">' +
-    '<span style="font-size:11px;color:var(--text3);flex:1">Assignments saved per project. Re-import is not required — the table will re-render immediately.</span>' +
+    '<span style="font-size:11px;color:var(--text3);flex:1">Mappings are saved per project. Re-import is not required — the matrix re-renders immediately.</span>' +
     '<button onclick="emCloseManageMappings()" ' +
     'style="font-size:11px;padding:6px 16px;background:var(--s3);border:1px solid var(--border);color:var(--text);border-radius:4px;cursor:pointer;height:30px">Cancel</button>' +
     '<button onclick="emSaveManageMappings(\'' +
@@ -6735,36 +7013,83 @@ function emCloseManageMappings(evt) {
 }
 
 /* ── emSaveManageMappings ───────────────────────────────────────────────────
-   Reads all dropdown values from the Manage Mappings modal, converts them
-   to custom mapping objects, persists via emSaveCustomMappings(), closes
-   the modal, and re-renders the table.                                     */
+   Reads all dropdown values from the Manage Mappings modal, merges with
+   existing custom mappings (preserving any not shown in the modal), persists
+   via emSaveCustomMappings(), closes the modal, and re-renders the table.
+
+   MERGE LOGIC (fixes data-loss bug):
+   1. Load existing saved mappings from storage.
+   2. Build a set of raw names present in the modal (the "shown" set).
+   3. For each shown point: if the user selected a value, update/add the
+      entry. If the user left "— Select category —", remove any existing
+      entry for that point (explicit clear).
+   4. Preserve all existing entries whose raw name was NOT shown in the modal
+      (i.e. previously mapped points that now auto-match and are not in the
+      unmatched list). These are never deleted.                              */
 function emSaveManageMappings(pid) {
   if (!pid) return;
   var overlay = document.getElementById('em-manage-mappings-overlay');
   if (!overlay) return;
 
+  // Load existing mappings to merge into
+  var existing = emLoadCustomMappings(pid);
+  // Build lookup: normName -> index in existing array
+  var existingIdx = {};
+  for (var ei = 0; ei < existing.length; ei++) {
+    if (existing[ei].rawName) {
+      existingIdx[emNormalizePointName(existing[ei].rawName)] = ei;
+    }
+  }
+
+  // Read all dropdowns shown in the modal
   var selects = overlay.querySelectorAll('select[data-rawname]');
-  var mappings = [];
+  // Track which rawNames are shown in the modal (to know what we can safely update/remove)
+  var shownNorms = {};
+  var modalMappings = []; // new/updated entries from the modal
+
   for (var si = 0; si < selects.length; si++) {
     var sel = selects[si];
     var rawName = sel.getAttribute('data-rawname');
     var val = sel.value;
-    if (!val || val === '') continue; // no assignment selected — skip
+    var normName = emNormalizePointName(rawName);
+    shownNorms[normName] = true;
+
+    if (!val || val === '') {
+      // User left blank — explicit clear: this rawName will be removed from saved mappings
+      // (handled below by not including it in modalMappings)
+      continue;
+    }
 
     if (val === '__exclude__') {
-      // Store as an explicit exclusion mapping (categoryKey = '__exclude__')
-      mappings.push({ rawName: rawName, categoryKey: '__exclude__', equipCategory: '' });
+      modalMappings.push({ rawName: rawName, categoryKey: '__exclude__', equipCategory: '' });
     } else {
       // val is "equipType:categoryKey" e.g. "ahu:sat"
       var parts = val.split(':');
       if (parts.length < 2) continue;
       var equipType = parts[0];
       var categoryKey = parts.slice(1).join(':');
-      mappings.push({ rawName: rawName, categoryKey: categoryKey, equipCategory: equipType });
+      modalMappings.push({ rawName: rawName, categoryKey: categoryKey, equipCategory: equipType });
     }
   }
 
-  emSaveCustomMappings(pid, mappings);
+  // Build merged result:
+  // Start with existing entries that were NOT shown in the modal (preserve them)
+  var merged = [];
+  for (var xi = 0; xi < existing.length; xi++) {
+    var xEntry = existing[xi];
+    var xNorm = xEntry.rawName ? emNormalizePointName(xEntry.rawName) : '';
+    if (!shownNorms[xNorm]) {
+      // Not shown in modal — preserve as-is
+      merged.push(xEntry);
+    }
+    // If shown, it will be replaced by modalMappings (or dropped if blank)
+  }
+  // Add all entries from the modal that have a selection
+  for (var nmi = 0; nmi < modalMappings.length; nmi++) {
+    merged.push(modalMappings[nmi]);
+  }
+
+  emSaveCustomMappings(pid, merged);
 
   // Close modal
   if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
@@ -6772,5 +7097,13 @@ function emSaveManageMappings(pid) {
   // Re-render with updated mappings
   var data = emLoadMatrix(pid);
   emRenderTable(data, _emFilters);
-  showToast('Mappings saved — ' + mappings.length + ' assignment' + (mappings.length !== 1 ? 's' : '') + ' stored');
+  showToast(
+    'Mappings saved — ' +
+      modalMappings.length +
+      ' assignment' +
+      (modalMappings.length !== 1 ? 's' : '') +
+      ' stored, ' +
+      (merged.length - modalMappings.length) +
+      ' preserved',
+  );
 }
