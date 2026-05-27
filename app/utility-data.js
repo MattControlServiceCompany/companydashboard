@@ -46,7 +46,7 @@ function loadUtilityData() {
   // produced by the old toISO function. Without this, date comparisons, sorting,
   // normMonth, and duplicate detection all break.
   const _migratedKey = 'en_utility_dates_migrated_v1';
-  if (!localStorage.getItem(_migratedKey)) {
+  if (!DB.get(_migratedKey)) {
     let fixed = 0;
     const _fixDate = (d) => {
       if (!d || typeof d !== 'string') return d;
@@ -72,12 +72,12 @@ function loadUtilityData() {
       saveUtilityData();
       console.log('[date migration] Fixed ' + fixed + ' 2-digit year dates');
     }
-    localStorage.setItem(_migratedKey, '1');
+    DB.set(_migratedKey, '1');
   }
   // One-time migration: backfill derived rate fields on bills that have
   // usage + cost data but missing rate fields (totalGasRate, totalPropaneRate, etc.)
   const _ratesMigratedKey = 'en_utility_rates_backfilled_v2';
-  if (!localStorage.getItem(_ratesMigratedKey)) {
+  if (!DB.get(_ratesMigratedKey)) {
     let ratesFilled = 0;
     for (const pid of Object.keys(utilityData)) {
       const ud = utilityData[pid];
@@ -99,7 +99,7 @@ function loadUtilityData() {
         '[rate backfill v2] Recalculated rates on ' + ratesFilled + ' bills (totalKwRate now includes facKWCost)',
       );
     }
-    localStorage.setItem(_ratesMigratedKey, '1');
+    DB.set(_ratesMigratedKey, '1');
   }
   // Auto-inherit baselines: any meter with bills but no baseline gets
   // the majority baseline from same-commodity meters in the same project
