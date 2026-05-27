@@ -1058,7 +1058,9 @@ function emShowUploadPanel(btn, mode, pid) {
 /* ── PHASE 4: TOOLBAR & TABLE ── */
 
 function emRenderToolbar(data, pid, projBadge) {
-  var buildings = data.buildings || [];
+  var buildings = (data.buildings || []).slice().sort(function (a, b) {
+    return (a || '').toLowerCase() < (b || '').toLowerCase() ? -1 : 1;
+  });
   var bldgOpts = '<option value="">All Buildings</option>';
   for (var i = 0; i < buildings.length; i++) {
     bldgOpts += '<option value="' + buildings[i].replace(/"/g, '&quot;') + '">' + buildings[i] + '</option>';
@@ -2424,6 +2426,9 @@ function emDeleteRow(rowId, label) {
       bldgSeen[data.rows[i].building] = true;
     }
   }
+  buildings.sort(function (a, b) {
+    return (a || '').toLowerCase() < (b || '').toLowerCase() ? -1 : 1;
+  });
   data.buildings = buildings;
   emSaveMatrix(pid, data);
   emRenderTable(data, _emFilters);

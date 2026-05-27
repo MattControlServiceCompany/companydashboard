@@ -1158,6 +1158,12 @@ document.addEventListener('keydown', function (e) {
 });
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'Escape') return;
+  // Confirm modal takes priority — resolve false and return
+  var confirmModal = document.getElementById('confirmModal');
+  if (confirmModal && confirmModal.classList.contains('open')) {
+    window._confirmResolve && window._confirmResolve(false);
+    return;
+  }
   // Report overlay is fullscreen — close it first before anything else
   var overlay = document.getElementById('reportOverlay');
   if (overlay && overlay.style.display !== 'none') {
@@ -1186,6 +1192,6 @@ document.addEventListener('keydown', function (e) {
   };
   Object.keys(closers).forEach(function (id) {
     var el = document.getElementById(id);
-    if (el && el.style.display !== 'none' && closers[id]) closers[id]();
+    if (el && el.classList.contains('open') && closers[id]) closers[id]();
   });
 });

@@ -1488,6 +1488,9 @@ function updateBaselineDesc() {
 }
 
 function confirmAsync(msg) {
+  if (window._confirmResolve) {
+    window._confirmResolve(false);
+  }
   return new Promise((resolve) => {
     const modal = document.getElementById('confirmModal');
     document.getElementById('confirmModalMsg').textContent = msg;
