@@ -1157,6 +1157,48 @@ function _getRnVersion() {
 
 var RELEASE_NOTES = [
   {
+    version: 'v388',
+    date: '2026-05-27',
+    title: 'BAS Trends — import CSV trend data, health scores, fault log, heat map, OAT chart',
+    features: [
+      {
+        type: 'feature',
+        text: 'BAS Trends — New view in the Energy sidebar. Import CSV trend data exported from your BAS to automatically detect faults and score equipment health.',
+      },
+      {
+        type: 'feature',
+        text: 'Health Score — Grades each equipment unit (EXCELLENT / GOOD / FAIR / POOR) across six fault categories: after-hours runtime, simultaneous heating+cooling, economizer misses, setpoint adherence, sensor health, and override rate.',
+      },
+      {
+        type: 'feature',
+        text: 'Fault Log — Detected faults appear in a filterable, sortable table with estimated energy cost impact. Mark faults as acknowledged or resolved.',
+      },
+      {
+        type: 'feature',
+        text: 'Timeline Heat Map — Shows fault density by equipment and month so you can spot seasonal patterns at a glance.',
+      },
+      {
+        type: 'feature',
+        text: 'OAT Scatter Chart — Plots equipment runtime or setpoint deviation against outdoor air temperature to reveal weather-dependent control problems.',
+      },
+    ],
+  },
+  {
+    version: 'v387',
+    date: '2026-05-27',
+    title: 'Equipment Matrix BACnet floor detection fix, removed per-cell audit tooltips',
+    features: [
+      {
+        type: 'fix',
+        text: 'BACnet Floor Detection — The Equipment Matrix now correctly identifies floors in 4-segment BACnet paths like /Org/Building/First Floor/AHU Zone. Previously, it always took the last segment (the equipment name) as the floor label.',
+      },
+      {
+        type: 'fix',
+        text: 'Audit View — Removed redundant tooltips from individual data cells in the Equipment Matrix audit view. Legend badges and column headers still show tooltips.',
+      },
+    ],
+  },
+  {
     version: 'v386',
     date: '2026-05-27',
     title: 'Tab persistence fix, user-facing release notes',
