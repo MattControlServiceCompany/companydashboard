@@ -831,6 +831,7 @@ var _emShowAllDynCols = false; // when false, limit dynamic point columns to top
 var EM_DYN_COL_LIMIT = 20; // max dynamic point columns shown by default
 var _emViewMode = 'audit'; // 'audit' = ASHRAE 36 compliance columns; 'raw' = raw point columns
 var _emZoomLevel = 100; // zoom percentage, 50–150
+var _emCollapsedBuildings = {}; // Phase 4: tracks which buildings are collapsed in audit view
 
 function initEquipMatrix(projId) {
   var wrap = document.getElementById('em-proj-wrap');
@@ -936,6 +937,7 @@ function emRenderMatrix(container, data, pid) {
   _emPageSize = EM_PAGE_SIZE;
   _emShowAllDynCols = false;
   _emViewMode = 'audit';
+  _emCollapsedBuildings = {}; // start all buildings expanded
   var savedZoom = parseInt(localStorage.getItem('en_em_zoom') || '100', 10);
   _emZoomLevel = savedZoom >= 50 && savedZoom <= 150 ? savedZoom : 100;
   emInjectMatrixCSS();
@@ -1061,9 +1063,24 @@ function emRenderToolbar(data, pid, projBadge) {
   var buildings = (data.buildings || []).slice().sort(function (a, b) {
     return (a || '').toLowerCase() < (b || '').toLowerCase() ? -1 : 1;
   });
-  var bldgOpts = '<option value="">All Buildings</option>';
+
+  // Phase 4: count equipment per building for the filter dropdown labels
+  var equipCountPerBldg = {};
+  var totalEquip = 0;
+  var rows = data.rows || [];
+  for (var rci = 0; rci < rows.length; rci++) {
+    var bname = rows[rci].building || '';
+    if (bname) {
+      equipCountPerBldg[bname] = (equipCountPerBldg[bname] || 0) + 1;
+      totalEquip++;
+    }
+  }
+
+  var bldgOpts = '<option value="">All Buildings (' + totalEquip + ' equipment)</option>';
   for (var i = 0; i < buildings.length; i++) {
-    bldgOpts += '<option value="' + buildings[i].replace(/"/g, '&quot;') + '">' + buildings[i] + '</option>';
+    var bCount = equipCountPerBldg[buildings[i]] || 0;
+    bldgOpts +=
+      '<option value="' + buildings[i].replace(/"/g, '&quot;') + '">' + buildings[i] + ' (' + bCount + ')</option>';
   }
   var typeOpts =
     '<option value="">All Types</option>' +
@@ -1144,6 +1161,11 @@ function emRenderToolbar(data, pid, projBadge) {
       ? '<button class="btn btn-ghost btn-sm" onclick="emShowUploadPanel(this,\'replace\',\'' +
         pid +
         '\')" style="height:28px;font-size:11px;color:#b45309;border-color:#d97706">Re-Import CSVs</button>'
+      : '') +
+    (data.rows && data.rows.length > 0
+      ? '<button class="btn btn-ghost btn-sm" onclick="emOpenManageMappings(\'' +
+        pid +
+        '\')" style="height:28px;font-size:11px">Manage Mappings</button>'
       : '') +
     '<button class="btn btn-sm" onclick="emCopyFromProject(\'' +
     pid +
@@ -1957,10 +1979,104 @@ function emRenderAuditTable(data, filters) {
       '</th>';
   }
 
+  // ── Phase 4: Build per-building summary data from ALL filtered rows (not just page) ──
+  // Only show building summary rows when no single-building filter is active
+  var showBldgSummary = !_emFilters.building;
+  var bldgSummaryMap = {};
+  if (showBldgSummary) {
+    for (var bsi = 0; bsi < filtered.length; bsi++) {
+      var bsr = filtered[bsi];
+      var bname = bsr.building || '';
+      if (!bldgSummaryMap[bname]) {
+        bldgSummaryMap[bname] = {
+          ahu: 0,
+          vav: 0,
+          plants: 0,
+          other: 0,
+          total: 0,
+          totalPts: 0,
+          covTotal: 0,
+          covCount: 0,
+        };
+      }
+      var bse = bldgSummaryMap[bname];
+      bse.total++;
+      bse.totalPts += Object.keys(bsr.points || {}).length;
+      if (bsr.category === 'ahu') bse.ahu++;
+      else if (bsr.category === 'vav' || bsr.category === 'fpb' || bsr.category === 'ddvav') bse.vav++;
+      else if (bsr.category === 'hwp' || bsr.category === 'chwp' || bsr.category === 'ct') bse.plants++;
+      else bse.other++;
+      if (bsr.category && EM_POINT_CATEGORIES[bsr.category]) {
+        var bsComp = emComputeCompliance(bsr, {});
+        bse.covTotal += bsComp.coveragePct;
+        bse.covCount++;
+      }
+    }
+  }
+
   // ── Build tbody ──
   var tbodyRows = '';
+  var lastBldg = null;
   for (var ri = 0; ri < pageRows.length; ri++) {
     var row = pageRows[ri];
+
+    // Emit building summary row when building changes
+    if (showBldgSummary && row.building !== lastBldg) {
+      lastBldg = row.building;
+      var bSum = bldgSummaryMap[row.building] || {
+        ahu: 0,
+        vav: 0,
+        plants: 0,
+        total: 0,
+        totalPts: 0,
+        covTotal: 0,
+        covCount: 0,
+      };
+      var bAvgCov = bSum.covCount > 0 ? Math.round(bSum.covTotal / bSum.covCount) : 0;
+      var bCovColor = bAvgCov >= 75 ? '#27ae60' : bAvgCov >= 50 ? '#e67e22' : '#c0392b';
+      var bIsCollapsed = !!_emCollapsedBuildings[row.building];
+      var bToggle = bIsCollapsed ? '[+]' : '[−]';
+      var bldgEsc = row.building ? row.building.replace(/'/g, "\\'") : '';
+      // Equip type summary label
+      var typeLabels = [];
+      if (bSum.ahu > 0) typeLabels.push('AHU: ' + bSum.ahu);
+      if (bSum.vav > 0) typeLabels.push('VAV: ' + bSum.vav);
+      if (bSum.plants > 0) typeLabels.push('Plants: ' + bSum.plants);
+      if (bSum.other > 0) typeLabels.push('Other: ' + bSum.other);
+      var typeSummary = typeLabels.join('  |  ');
+      var covLabel =
+        bSum.covCount > 0
+          ? '<span style="color:' + bCovColor + ';font-weight:700">' + bAvgCov + '% Coverage</span>'
+          : '';
+      tbodyRows +=
+        '<tr class="em-bldg-summary-row" style="background:var(--s1);cursor:pointer" onclick="emToggleBuildingCollapse(\'' +
+        bldgEsc +
+        '\')">' +
+        '<td colspan="' +
+        defs.length +
+        '" style="padding:6px 12px;font-size:11px;font-weight:600;color:var(--text);' +
+        'border-bottom:1px solid var(--border);border-right:1px solid var(--border);' +
+        'border-top:2px solid var(--border);user-select:none;white-space:nowrap">' +
+        '<span style="font-family:Consolas,monospace;color:var(--text3);margin-right:8px">' +
+        bToggle +
+        '</span>' +
+        emHtmlEsc(row.building || '') +
+        (typeSummary
+          ? '<span style="color:var(--text2);font-weight:400;margin-left:16px">' + typeSummary + '</span>'
+          : '') +
+        (bSum.totalPts > 0
+          ? '<span style="color:var(--text2);font-weight:400;margin-left:16px">' +
+            bSum.totalPts.toLocaleString() +
+            ' pts</span>'
+          : '') +
+        (covLabel ? '<span style="margin-left:16px">' + covLabel + '</span>' : '') +
+        '</td>' +
+        '</tr>';
+    }
+
+    // Skip equipment rows if this building is collapsed
+    if (_emCollapsedBuildings[row.building]) continue;
+
     var compliance = complianceCache[row.id] || { coveredPoints: [], missingPoints: [], naPoints: [], coveragePct: 0 };
     // Build a quick lookup: catKey -> match result
     var coveredMap = {};
@@ -6258,4 +6374,295 @@ function emRenderSequenceCell(seqName, readiness) {
 
   // Fallback — should not reach here
   return '<td style="' + baseStyle + 'color:var(--text3)">—</td>';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 4 — BUILDING SUMMARY ROWS + MANAGE MAPPINGS UI
+   Added: 2026-05-26
+   Purpose:
+     1. Collapsible building summary rows in Audit View
+     2. Manage Mappings modal for unmatched BAS point names
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── emToggleBuildingCollapse ───────────────────────────────────────────────
+   Toggles the collapsed state for a building in audit view, then re-renders
+   the table. Called by clicking a building summary row.                    */
+function emToggleBuildingCollapse(buildingName) {
+  if (_emCollapsedBuildings[buildingName]) {
+    delete _emCollapsedBuildings[buildingName];
+  } else {
+    _emCollapsedBuildings[buildingName] = true;
+  }
+  var data = emLoadMatrix(window._emActivePid);
+  emRenderTable(data, _emFilters);
+}
+
+/* ── emGetUnmatchedPoints ───────────────────────────────────────────────────
+   Scans all equipment rows in the matrix and collects raw BAS point names
+   that emNormalizePoint returned null (no category match) or 'excluded'.
+   Returns an array sorted by frequency descending:
+     [{ name: string, count: number, equipCategory: string }, ...]
+   equipCategory is the most common equipment type this point appeared in.  */
+function emGetUnmatchedPoints(rows) {
+  // freq map: rawName -> { count, catFreq: { equipCat: count } }
+  var freq = {};
+  for (var ri = 0; ri < rows.length; ri++) {
+    var row = rows[ri];
+    var pts = row.points || {};
+    for (var ptKey in pts) {
+      if (!pts.hasOwnProperty(ptKey)) continue;
+      // Skip internal mapped keys (e.g. 'satLive') — only process raw BAS names
+      // Raw names contain spaces or slashes; mapped keys use camelCase with 'Live' suffix
+      if (/Live$/.test(ptKey) && !/\s/.test(ptKey)) continue;
+      var norm = emNormalizePoint(ptKey, row.category);
+      // Unmatched: null return, or auditRelevant=false (excluded), or no categoryKey
+      if (!norm || !norm.categoryKey || !norm.auditRelevant) {
+        if (!freq[ptKey]) freq[ptKey] = { count: 0, catFreq: {} };
+        freq[ptKey].count++;
+        var ec = row.category || 'other';
+        freq[ptKey].catFreq[ec] = (freq[ptKey].catFreq[ec] || 0) + 1;
+      }
+    }
+  }
+
+  var result = [];
+  for (var name in freq) {
+    if (!freq.hasOwnProperty(name)) continue;
+    var entry = freq[name];
+    // Find most common equipment category this point appeared in
+    var bestCat = '';
+    var bestCount = 0;
+    for (var cat in entry.catFreq) {
+      if (entry.catFreq[cat] > bestCount) {
+        bestCount = entry.catFreq[cat];
+        bestCat = cat;
+      }
+    }
+    result.push({ name: name, count: entry.count, equipCategory: bestCat });
+  }
+
+  result.sort(function (a, b) {
+    var diff = b.count - a.count;
+    if (diff !== 0) return diff;
+    return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+  });
+  return result;
+}
+
+/* ── emOpenManageMappings ───────────────────────────────────────────────────
+   Opens the Manage Mappings modal.
+   Shows all unmatched point names (sorted by frequency) with a dropdown
+   to assign each to a point category. Existing custom mappings are
+   pre-selected in the dropdowns.                                           */
+function emOpenManageMappings(pid) {
+  if (!pid) pid = window._emActivePid;
+  if (!pid) return;
+
+  var data = emLoadMatrix(pid);
+  var rows = data.rows || [];
+  if (rows.length === 0) {
+    showToast('No equipment data to analyse', 'warn');
+    return;
+  }
+
+  var unmatched = emGetUnmatchedPoints(rows);
+  var customMappings = emLoadCustomMappings(pid);
+
+  // Build a quick lookup of existing custom mappings: normName -> categoryKey
+  var existingMap = {};
+  for (var mi = 0; mi < customMappings.length; mi++) {
+    var m = customMappings[mi];
+    if (m.rawName) existingMap[emNormalizePointName(m.rawName)] = m.categoryKey;
+  }
+
+  // Count unique + total for header
+  var totalOccurrences = 0;
+  for (var ui = 0; ui < unmatched.length; ui++) totalOccurrences += unmatched[ui].count;
+
+  // Build category options — union of all EM_POINT_CATEGORIES across all types
+  // Build a deduplicated list: { key, label, equipType }
+  var allCatOptions = [];
+  var catSeen = {};
+  var catTypeOrder = ['ahu', 'vav', 'fpb', 'ddvav', 'hwp', 'chwp', 'ct'];
+  for (var ti = 0; ti < catTypeOrder.length; ti++) {
+    var et = catTypeOrder[ti];
+    var cats = EM_POINT_CATEGORIES[et] || [];
+    for (var ci = 0; ci < cats.length; ci++) {
+      var ck = et + ':' + cats[ci].key;
+      if (!catSeen[ck]) {
+        catSeen[ck] = true;
+        allCatOptions.push({ key: cats[ci].key, label: cats[ci].label, equipType: et });
+      }
+    }
+  }
+
+  // Build table rows HTML
+  var tableRowsHtml = '';
+  if (unmatched.length === 0) {
+    tableRowsHtml =
+      '<tr><td colspan="3" style="padding:20px;text-align:center;color:var(--text3);font-size:12px">' +
+      'All point names are matched — no unrecognised points found.' +
+      '</td></tr>';
+  } else {
+    for (var upi = 0; upi < unmatched.length; upi++) {
+      var up = unmatched[upi];
+      var normUp = emNormalizePointName(up.name);
+      var currentVal = existingMap[normUp] || '';
+
+      // Build the dropdown — group options by equipment type
+      var selectHtml =
+        '<select data-rawname="' +
+        emHtmlEsc(up.name) +
+        '" data-equip="' +
+        emHtmlEsc(up.equipCategory) +
+        '" ' +
+        'style="font-size:11px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);' +
+        'color:var(--text);border-radius:4px;height:24px;max-width:280px">' +
+        '<option value="">— Select category —</option>' +
+        '<option value="__exclude__"' +
+        (currentVal === '__exclude__' ? ' selected' : '') +
+        '>Exclude (not audit relevant)</option>';
+
+      var lastType = '';
+      for (var oi = 0; oi < allCatOptions.length; oi++) {
+        var opt = allCatOptions[oi];
+        if (opt.equipType !== lastType) {
+          if (lastType !== '') selectHtml += '</optgroup>';
+          selectHtml += '<optgroup label="' + opt.equipType.toUpperCase() + '">';
+          lastType = opt.equipType;
+        }
+        var optVal = opt.equipType + ':' + opt.key;
+        var isSelected = currentVal === optVal;
+        selectHtml +=
+          '<option value="' +
+          emHtmlEsc(optVal) +
+          '"' +
+          (isSelected ? ' selected' : '') +
+          '>' +
+          emHtmlEsc(opt.label) +
+          '</option>';
+      }
+      if (lastType !== '') selectHtml += '</optgroup>';
+      selectHtml += '</select>';
+
+      tableRowsHtml +=
+        '<tr style="border-bottom:1px solid var(--border)">' +
+        '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:var(--text);max-width:320px;word-break:break-word">' +
+        emHtmlEsc(up.name) +
+        '</td>' +
+        '<td style="padding:6px 12px;font-size:11px;color:var(--text2);text-align:center;white-space:nowrap">' +
+        up.count +
+        '</td>' +
+        '<td style="padding:6px 8px;font-size:11px">' +
+        selectHtml +
+        '</td>' +
+        '</tr>';
+    }
+  }
+
+  var modalHtml =
+    '<div id="em-manage-mappings-overlay" ' +
+    'style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:20px" ' +
+    'onclick="emCloseManageMappings(event)">' +
+    '<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;width:800px;max-width:100%;' +
+    'max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.4)" ' +
+    'onclick="event.stopPropagation()">' +
+    // Header
+    '<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-shrink:0">' +
+    '<div style="flex:1">' +
+    '<div style="font-size:14px;font-weight:700;color:var(--text)">Manage Point Mappings</div>' +
+    '<div style="font-size:11px;color:var(--text3);margin-top:2px">Unmatched Points: ' +
+    unmatched.length +
+    ' unique, ' +
+    totalOccurrences.toLocaleString() +
+    ' total occurrences</div>' +
+    '</div>' +
+    '<button onclick="emCloseManageMappings()" ' +
+    'style="font-size:16px;background:none;border:none;color:var(--text2);cursor:pointer;padding:4px 8px;line-height:1">&#10005;</button>' +
+    '</div>' +
+    // Table scroll area
+    '<div style="flex:1;overflow-y:auto;min-height:0">' +
+    '<table style="width:100%;border-collapse:collapse">' +
+    '<thead>' +
+    '<tr style="background:var(--s1)">' +
+    '<th style="padding:8px 12px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;' +
+    'letter-spacing:0.05em;text-align:left;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--s1)">Point Name</th>' +
+    '<th style="padding:8px 12px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;' +
+    'letter-spacing:0.05em;text-align:center;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--s1);width:70px">Count</th>' +
+    '<th style="padding:8px 12px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;' +
+    'letter-spacing:0.05em;text-align:left;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--s1)">Assign to Category</th>' +
+    '</tr>' +
+    '</thead>' +
+    '<tbody>' +
+    tableRowsHtml +
+    '</tbody>' +
+    '</table>' +
+    '</div>' +
+    // Footer
+    '<div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0">' +
+    '<span style="font-size:11px;color:var(--text3);flex:1">Assignments saved per project. Re-import is not required — the table will re-render immediately.</span>' +
+    '<button onclick="emCloseManageMappings()" ' +
+    'style="font-size:11px;padding:6px 16px;background:var(--s3);border:1px solid var(--border);color:var(--text);border-radius:4px;cursor:pointer;height:30px">Cancel</button>' +
+    '<button onclick="emSaveManageMappings(\'' +
+    pid +
+    '\')" ' +
+    'style="font-size:11px;padding:6px 16px;background:var(--accent);border:none;color:#fff;border-radius:4px;cursor:pointer;height:30px;font-weight:600">Save Mappings</button>' +
+    '</div>' +
+    '</div>' +
+    '</div>';
+
+  var el = document.createElement('div');
+  el.innerHTML = modalHtml;
+  document.body.appendChild(el.firstChild);
+}
+
+/* ── emCloseManageMappings ──────────────────────────────────────────────────
+   Closes the Manage Mappings modal. Called by the Cancel button, the X
+   button, and clicks on the overlay backdrop.                              */
+function emCloseManageMappings(evt) {
+  // If called from the overlay onclick, only close if the click target IS the overlay
+  if (evt && evt.target && evt.target.id !== 'em-manage-mappings-overlay') return;
+  var overlay = document.getElementById('em-manage-mappings-overlay');
+  if (overlay) overlay.parentNode.removeChild(overlay);
+}
+
+/* ── emSaveManageMappings ───────────────────────────────────────────────────
+   Reads all dropdown values from the Manage Mappings modal, converts them
+   to custom mapping objects, persists via emSaveCustomMappings(), closes
+   the modal, and re-renders the table.                                     */
+function emSaveManageMappings(pid) {
+  if (!pid) return;
+  var overlay = document.getElementById('em-manage-mappings-overlay');
+  if (!overlay) return;
+
+  var selects = overlay.querySelectorAll('select[data-rawname]');
+  var mappings = [];
+  for (var si = 0; si < selects.length; si++) {
+    var sel = selects[si];
+    var rawName = sel.getAttribute('data-rawname');
+    var val = sel.value;
+    if (!val || val === '') continue; // no assignment selected — skip
+
+    if (val === '__exclude__') {
+      // Store as an explicit exclusion mapping (categoryKey = '__exclude__')
+      mappings.push({ rawName: rawName, categoryKey: '__exclude__', equipCategory: '' });
+    } else {
+      // val is "equipType:categoryKey" e.g. "ahu:sat"
+      var parts = val.split(':');
+      if (parts.length < 2) continue;
+      var equipType = parts[0];
+      var categoryKey = parts.slice(1).join(':');
+      mappings.push({ rawName: rawName, categoryKey: categoryKey, equipCategory: equipType });
+    }
+  }
+
+  emSaveCustomMappings(pid, mappings);
+
+  // Close modal
+  if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+
+  // Re-render with updated mappings
+  var data = emLoadMatrix(pid);
+  emRenderTable(data, _emFilters);
+  showToast('Mappings saved — ' + mappings.length + ' assignment' + (mappings.length !== 1 ? 's' : '') + ' stored');
 }
