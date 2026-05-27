@@ -16,6 +16,7 @@ var EM_EQUIP_TYPES = {
   doas: 'ahu',
   erv: 'ahu',
   hrv: 'ahu',
+  'energy recovery ventilator': 'ahu',
   'fan coil': 'ahu',
   fcu: 'ahu',
   crac: 'ahu',
@@ -33,6 +34,7 @@ var EM_EQUIP_TYPES = {
   'fan-powered terminal': 'fpb',
   fpt: 'fpb',
   fpb: 'fpb',
+  ftu: 'fpb',
   'dual duct vav terminal': 'ddvav',
   'dual duct terminal': 'ddvav',
   'ddvav terminal': 'ddvav',
@@ -521,10 +523,13 @@ function emClassifyEquipType(equipTypeStr) {
   if (/heat.?pump/i.test(key)) return 'ahu';
   if (/\bwshp\b/i.test(key)) return 'ahu';
   if (/\bgshp\b/i.test(key)) return 'ahu';
+  if (/split.?system/i.test(key)) return 'ahu';
   if (/vav|variable.?air.?vol/i.test(key)) return 'vav';
+  if (/\bvas[\s\-]?\d/i.test(key)) return 'vav';
   if (/\bfpb\b/i.test(key)) return 'fpb';
   if (/fan.?pow|parallel.?fan|\bfpt\b/i.test(key)) return 'fpb';
   if (/fan.?power/i.test(key)) return 'fpb';
+  if (/\bftu\b/i.test(key)) return 'fpb';
   if (/dual.?duct|ddvav/i.test(key)) return 'ddvav';
   if (/\bboiler\b/i.test(key)) return 'hwp';
   if (/\bhwp\b/i.test(key)) return 'hwp';
@@ -533,6 +538,7 @@ function emClassifyEquipType(equipTypeStr) {
   if (/unit.?heater/i.test(key)) return 'hwp';
   if (/\buh[\-\s]?\d/i.test(key)) return 'hwp';
   if (/hot.?water.*boil/i.test(key)) return 'hwp';
+  if (/heating.?water/i.test(key)) return 'hwp';
   if (/\bchiller\b/i.test(key)) return 'chwp';
   if (/\bchwp\b/i.test(key)) return 'chwp';
   if (/chilled.?water/i.test(key)) return 'chwp';
@@ -754,6 +760,9 @@ function emLoadMatrix(projId) {
 
 function emSaveMatrix(projId, data) {
   if (!projId) return;
+  // Invalidate caches — data may have changed (edits, imports, deletions)
+  _emComplianceCache = {};
+  _emNormCache = new Map();
   sset('en_eqmatrix_' + projId, data);
 }
 
@@ -831,6 +840,13 @@ var EM_DYN_COL_LIMIT = 20; // max dynamic point columns shown by default
 var _emViewMode = 'audit'; // 'audit' = ASHRAE 36 compliance columns; 'raw' = raw point columns
 var _emZoomLevel = 100; // zoom percentage, 50–150
 var _emCollapsedBuildings = {}; // Phase 4: tracks which buildings are collapsed in audit view
+var _emComplianceCache = {}; // Performance: module-level compliance result cache, keyed by row.id
+var _emNormCache = new Map(); // Performance: memoized emNormalizePoint results, keyed by rawName+'\0'+category
+var _emSearchTimer = null; // Performance: debounce timer for search input
+function emDebouncedSearch() {
+  clearTimeout(_emSearchTimer);
+  _emSearchTimer = setTimeout(emApplyFilters, 200);
+}
 
 function initEquipMatrix(projId) {
   var wrap = document.getElementById('em-proj-wrap');
@@ -1124,8 +1140,21 @@ function emRenderToolbar(data, pid, projBadge) {
     'Show All Point Columns' +
     '</button>' +
     '</span>' +
-    // Audit-view info label
-    '<span id="em-audit-col-info" style="font-size:10px;color:var(--text3)">Showing ASHRAE 36 compliance columns</span>' +
+    // Audit-view legend bar — always visible in audit mode, shows all cell state symbols
+    '<span id="em-audit-col-info" style="display:inline-flex;align-items:center;gap:10px;font-size:10px;color:var(--text3)">' +
+    '<span style="color:#27ae60;font-weight:700">&#10003;</span><span>Present</span>' +
+    '<span style="color:#e67e22;font-weight:700">~</span><span>Fuzzy match</span>' +
+    '<span style="color:#c0392b;font-weight:700">&#10007;</span><span>Missing (required)</span>' +
+    '<span style="color:var(--text3)">—</span><span>N/A</span>' +
+    '<span style="color:var(--text3)">·</span><span>Optional, absent</span>' +
+    '</span>' +
+    // Collapse All / Expand All button — audit mode, all-buildings view only
+    (buildings.length > 1
+      ? '<button id="em-collapse-all-btn" onclick="emToggleCollapseAll()" ' +
+        'style="height:24px;font-size:10px;padding:0 8px;background:var(--s3);border:1px solid var(--border);color:var(--text2);border-radius:3px;cursor:pointer;margin-left:8px">' +
+        (Object.keys(_emCollapsedBuildings).length >= buildings.length ? 'Expand All' : 'Collapse All') +
+        '</button>'
+      : '') +
     '</div>';
   return (
     '<div style="display:flex;flex-direction:column">' +
@@ -1136,7 +1165,7 @@ function emRenderToolbar(data, pid, projBadge) {
     '<select id="em-filter-type" onchange="emApplyFilters()" style="font-size:11px;padding:4px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:28px">' +
     typeOpts +
     '</select>' +
-    '<input id="em-filter-search" type="text" placeholder="Search..." oninput="emApplyFilters()" style="font-size:11px;padding:4px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:28px;width:140px">' +
+    '<input id="em-filter-search" type="text" placeholder="Search..." oninput="emDebouncedSearch()" style="font-size:11px;padding:4px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:28px;width:140px">' +
     '<span id="em-row-count" style="font-size:11px;color:var(--text3);margin-left:4px"></span>' +
     '<div style="flex:1"></div>' +
     (projBadge || '') +
@@ -1789,11 +1818,13 @@ function emRenderTable(data, filters) {
       var editKey = rowId + '::' + def.key;
       var isEdited = edits && edits[editKey] !== undefined;
       var rawVal = emGetCellValByDef(row, def, edits);
+      var isEmpty = rawVal === null || rawVal === undefined || rawVal === '';
       var displayVal = emFormatCell(rawVal, def);
       var cellStyle =
         'padding:4px 8px;font-size:11px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:middle;' +
         (def.isLive ? 'font-family:Consolas,monospace;font-size:10px;' : '') +
         (def.isDynPoint ? 'font-family:Consolas,monospace;font-size:10px;' : '') +
+        (isEmpty ? 'color:var(--text3);' : '') +
         (isEdited ? 'background:#fffde7;border-left:3px solid var(--em);' : '');
       if (_emEditMode) {
         cells +=
@@ -1931,15 +1962,26 @@ function emRenderAuditTable(data, filters) {
   var countEl = document.getElementById('em-row-count');
   if (countEl) countEl.textContent = filtered.length + ' of ' + rows.length + ' rows';
 
-  // ── Pagination ──
+  // ── Collapse-aware pagination ──
+  // visibleRows excludes rows belonging to collapsed buildings so page count
+  // shrinks when a building is collapsed instead of showing empty pages.
+  // filtered is kept intact for building summary stats computation below.
+  var showBldgSummaryPagination = !_emFilters.building;
+  var visibleRows =
+    showBldgSummaryPagination && Object.keys(_emCollapsedBuildings).length > 0
+      ? filtered.filter(function (r) {
+          return !_emCollapsedBuildings[r.building];
+        })
+      : filtered;
+
   var pageSize = _emPageSize;
   var useAll = pageSize === 0;
-  var totalPages = useAll ? 1 : Math.ceil(filtered.length / pageSize);
+  var totalPages = useAll ? 1 : Math.ceil(visibleRows.length / pageSize);
   if (totalPages < 1) totalPages = 1;
   _emCurrentPage = Math.max(0, Math.min(_emCurrentPage, totalPages - 1));
   var pageStart = useAll ? 0 : _emCurrentPage * pageSize;
-  var pageEnd = useAll ? filtered.length : Math.min(pageStart + pageSize, filtered.length);
-  var pageRows = filtered.slice(pageStart, pageEnd);
+  var pageEnd = useAll ? visibleRows.length : Math.min(pageStart + pageSize, visibleRows.length);
+  var pageRows = visibleRows.slice(pageStart, pageEnd);
 
   // ── Pre-compute compliance and sequence readiness for each page row ──
   var complianceCache = {};
@@ -2249,7 +2291,11 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
     var catKey = def.catKey;
     // Gray/blank if this equipment type doesn't have this category at all
     if (!row.category || def.catEquipTypes.indexOf(row.category) === -1) {
-      return '<td style="' + baseStyle + 'background:rgba(128,128,128,0.08);color:var(--text3)">—</td>';
+      return (
+        '<td style="' +
+        baseStyle +
+        'background:rgba(128,128,128,0.08);color:var(--text3)" title="Not applicable to this equipment type">—</td>'
+      );
     }
     // N/A due to config flag
     if (naMap[catKey]) {
@@ -2297,8 +2343,8 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
         'background:rgba(192,57,43,0.15);color:#c0392b;font-size:14px;font-weight:700" title="Required point missing">&#10007;</td>'
       );
     }
-    // Optional and not present — blank
-    return '<td style="' + baseStyle + 'color:var(--text3)"></td>';
+    // Optional and not present — small middle dot so the cell is not silently blank
+    return '<td style="' + baseStyle + 'color:var(--text3)" title="Optional point — not present in BAS">·</td>';
   }
 
   // ── Sequence status cell ──
@@ -2307,7 +2353,11 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
     var seqResult = seqReadiness ? seqReadiness[seqKey] : null;
     // Gray if this sequence doesn't apply to this equipment type
     if (!row.category || def.seqEquipTypes.indexOf(row.category) === -1) {
-      return '<td style="' + baseStyle + 'background:rgba(128,128,128,0.08);color:var(--text3)">—</td>';
+      return (
+        '<td style="' +
+        baseStyle +
+        'background:rgba(128,128,128,0.08);color:var(--text3)" title="Not applicable to this equipment type">—</td>'
+      );
     }
     return emRenderSequenceCell(def.label, seqResult);
   }
@@ -2588,7 +2638,7 @@ function emGetCellVal(row, colIdx, edits) {
 }
 
 function emFormatCell(val, def) {
-  if (val === null || val === undefined || val === '') return '<span style="color:var(--text3)">—</span>';
+  if (val === null || val === undefined || val === '') return '—';
   var s = String(val);
   if (def.key.indexOf('check_') === 0) {
     if (!def.isLive) {
@@ -5435,6 +5485,16 @@ function emNormalizePointNameStrip(name) {
 function emNormalizePoint(rawName, equipCategory) {
   if (!rawName) return null;
 
+  // ── Memoization ───────────────────────────────────────────────────────
+  var _normCacheKey = rawName + '\0' + (equipCategory || '');
+  if (_emNormCache.has(_normCacheKey)) return _emNormCache.get(_normCacheKey);
+
+  var _normResult = emNormalizePointInner(rawName, equipCategory);
+  _emNormCache.set(_normCacheKey, _normResult);
+  return _normResult;
+}
+
+function emNormalizePointInner(rawName, equipCategory) {
   // ── Exclusion check ──────────────────────────────────────────────────
   for (var ei = 0; ei < EM_EXCLUSION_PATTERNS.length; ei++) {
     if (EM_EXCLUSION_PATTERNS[ei].test(rawName)) {
@@ -5589,6 +5649,10 @@ function emNormalizePoint(rawName, equipCategory) {
      totalNA:        number
    }                                                                      */
 function emComputeCompliance(equipRow, configFlags) {
+  // ── Module-level cache (keyed by row.id; all call sites pass flags={}) ──
+  var _cacheId = equipRow && equipRow.id;
+  if (_cacheId && _emComplianceCache[_cacheId]) return _emComplianceCache[_cacheId];
+
   var category = equipRow && equipRow.category;
   var catDefs = category && EM_POINT_CATEGORIES[category];
   if (!catDefs) {
@@ -5686,7 +5750,7 @@ function emComputeCompliance(equipRow, configFlags) {
   var denominator = totalRequired - totalNA;
   var coveragePct = denominator > 0 ? Math.round((totalMatched / denominator) * 100) : 0;
 
-  return {
+  var _compResult = {
     coveredPoints: coveredPoints,
     missingPoints: missingPoints,
     naPoints: naPoints,
@@ -5695,6 +5759,8 @@ function emComputeCompliance(equipRow, configFlags) {
     totalMatched: totalMatched,
     totalNA: totalNA,
   };
+  if (_cacheId) _emComplianceCache[_cacheId] = _compResult;
+  return _compResult;
 }
 
 /* ── emLoadEquipConfigFlags / emSaveEquipConfigFlags ────────────────────────
@@ -5772,6 +5838,7 @@ function emOpenCreateBldgsModal(pid) {
   _emCreateBldgsRows = [];
   for (var bi = 0; bi < matrixBuildings.length; bi++) {
     var name = matrixBuildings[bi];
+    if (!name) continue; // skip empty building names (e.g. WebCTRL single-segment BACnet paths)
     var nameLower = name.toLowerCase();
     if (seen[nameLower]) continue;
     seen[nameLower] = true;
@@ -5822,12 +5889,19 @@ function emOpenCreateBldgsModal(pid) {
 function emRenderCreateBldgsTable(rows) {
   if (!rows || rows.length === 0) return '<p style="color:var(--text3);font-size:13px">No buildings found.</p>';
 
+  // Select All should only be checked if at least one non-disabled (new) row exists
+  var hasSelectableRow = rows.some(function (r) {
+    return !r.alreadyExists;
+  });
+
   var html =
     '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
     '<thead>' +
     '<tr style="background:var(--s1);border-bottom:2px solid var(--border)">' +
     '<th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text2);width:32px">' +
-    '<input type="checkbox" id="emCreateBldgsSelectAll" checked ' +
+    '<input type="checkbox" id="emCreateBldgsSelectAll"' +
+    (hasSelectableRow ? ' checked' : '') +
+    ' ' +
     'onchange="emToggleAllCreateBldgs(this.checked)" title="Select/deselect all">' +
     '</th>' +
     '<th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text2)">Building Name</th>' +
@@ -5927,14 +6001,19 @@ function emExecuteCreateBuildings() {
 
   // Build final list of buildings to create
   var toCreate = [];
-  var skipped = 0;
+  var skippedExisting = 0;
+  var skippedDeselected = 0;
   for (var i = 0; i < cbs.length; i++) {
     var cb = cbs[i];
     var idx = parseInt(cb.getAttribute('data-idx'), 10);
     var row = _emCreateBldgsRows[idx];
     if (!row) continue;
     if (!cb.checked || cb.disabled) {
-      if (row.alreadyExists) skipped++;
+      if (row.alreadyExists) {
+        skippedExisting++;
+      } else {
+        skippedDeselected++;
+      }
       continue;
     }
     // Read the (possibly edited) name from the input
@@ -5970,7 +6049,7 @@ function emExecuteCreateBuildings() {
     var bname = toCreate[ci];
     var bnameLower = bname.toLowerCase();
     if (existingNamesLower[bnameLower] || batchSeen[bnameLower]) {
-      skipped++;
+      skippedExisting++;
       continue;
     }
     batchSeen[bnameLower] = true;
@@ -5996,7 +6075,10 @@ function emExecuteCreateBuildings() {
   emCloseCreateBldgsModal();
 
   var msg = 'Created ' + created + ' building' + (created !== 1 ? 's' : '');
-  if (skipped > 0) msg += ' (' + skipped + ' skipped)';
+  var skippedParts = [];
+  if (skippedExisting > 0) skippedParts.push(skippedExisting + ' already existed');
+  if (skippedDeselected > 0) skippedParts.push(skippedDeselected + ' deselected');
+  if (skippedParts.length > 0) msg += ' (' + skippedParts.join(', ') + ')';
   showToast(msg);
 }
 
@@ -6390,6 +6472,24 @@ function emToggleBuildingCollapse(buildingName) {
     _emCollapsedBuildings[buildingName] = true;
   }
   var data = emLoadMatrix(window._emActivePid);
+  emRenderTable(data, _emFilters);
+}
+
+function emToggleCollapseAll() {
+  var data = emLoadMatrix(window._emActivePid);
+  var buildings = data && data.buildings ? data.buildings : [];
+  var allCollapsed = Object.keys(_emCollapsedBuildings).length >= buildings.length;
+  if (allCollapsed) {
+    // Expand all
+    _emCollapsedBuildings = {};
+  } else {
+    // Collapse all
+    _emCollapsedBuildings = {};
+    for (var bi = 0; bi < buildings.length; bi++) {
+      _emCollapsedBuildings[buildings[bi]] = true;
+    }
+  }
+  _emCurrentPage = 0;
   emRenderTable(data, _emFilters);
 }
 

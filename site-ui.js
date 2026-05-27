@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.26.379';
+  var CH_VERSION = 'v2026.05.27.380';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,29 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.27.380',
+      date: '2026-05-27',
+      title: 'Equipment matrix UX pass 2, ASHRAE report sequence score fix, toISO guard, multi-account KGS splitting',
+      features: [
+        {
+          type: 'fix',
+          text: 'Equipment matrix: performance caching for compliance and normalization, collapse-aware pagination, Collapse All / Expand All button, empty cell span removal, search debounce.',
+        },
+        {
+          type: 'fix',
+          text: 'ASHRAE 36 report: sequence score always-0% fixed by using emComputeSequenceReadiness; gap descriptions added for ~40 missing point categories; footer blank label fixed; no-auditable-equipment sentinel.',
+        },
+        {
+          type: 'fix',
+          text: 'bill-analysis.js: toISO() now guards against double-conversion of already-ISO dates, preventing date corruption on re-import.',
+        },
+        {
+          type: 'fix',
+          text: 'energy-savings.js: multi-account KGS consolidated statements now split per account before extraction, preventing wrong meter/charge data from being saved.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.26.379',
       date: '2026-05-26',

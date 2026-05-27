@@ -4809,15 +4809,42 @@ const UTILITY_RULES = [
         }
       }
       if (sections.length <= 1) return [this.extract(t)];
-      const result = sections.map((s) => {
-        const r = this.extract(s);
+      const result = [];
+      for (const s of sections) {
         const pageMarkers = [...s.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => parseInt(m[1]));
-        if (pageMarkers.length) {
-          r._pageStart = Math.min(...pageMarkers);
-          r._pageEnd = Math.max(...pageMarkers);
+        const pageStart = pageMarkers.length ? Math.min(...pageMarkers) : null;
+        const pageEnd = pageMarkers.length ? Math.max(...pageMarkers) : null;
+
+        // Multi-account KGS detection: if a section contains more than one "Account Number" header,
+        // the OCR has linearized multiple account columns into a single text block. Split on each
+        // "Account Number" boundary so each account is extracted independently.
+        // Only applies to KGS sections (identified by the KGS brand text or Statement Date pattern).
+        const isKGSSection = /kansas\s+gas\s+service/i.test(s) || /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(s);
+        const accountMatches = isKGSSection ? [...s.matchAll(/(?=Account\s+Number[\s:]*[0-9 ]{10,30})/gi)] : [];
+
+        if (isKGSSection && accountMatches.length > 1) {
+          // Split the section text at each "Account Number" boundary.
+          // Each sub-block starts at an "Account Number" line and ends at the next one.
+          const subBlocks = s.split(/(?=Account\s+Number[\s:]*[0-9 ]{10,30})/i).filter((b) => b.trim().length > 20);
+          for (const block of subBlocks) {
+            // Preserve the KGS brand text (needed for isKGS detection in extract()) and page markers
+            // by prepending the section header up to the first "Account Number" if the block lacks it.
+            const hasKGSBrand =
+              /kansas\s+gas\s+service/i.test(block) || /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(block);
+            const blockText = hasKGSBrand ? block : 'Kansas Gas Service\n' + block;
+            const r = this.extract(blockText);
+            r._multiAccount = true;
+            if (pageStart !== null) r._pageStart = pageStart;
+            if (pageEnd !== null) r._pageEnd = pageEnd;
+            result.push(r);
+          }
+        } else {
+          const r = this.extract(s);
+          if (pageStart !== null) r._pageStart = pageStart;
+          if (pageEnd !== null) r._pageEnd = pageEnd;
+          result.push(r);
         }
-        return r;
-      });
+      }
       if (_unmatchedSections.length) result._unmatchedPages = _unmatchedSections;
       return result;
     },

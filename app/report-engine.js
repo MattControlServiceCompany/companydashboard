@@ -904,7 +904,9 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
         ';left:0;right:0">' +
         (data.period.type === 'quarterly'
           ? 'Q' + (data.period.quarter || 1) + ' ' + (data.period.year || '') + ' Quarterly Report'
-          : (data.period.year || '') + ' Annual Report') +
+          : data.period.year
+            ? data.period.year + ' Annual Report'
+            : '') +
         '</div>'
       : '';
 
@@ -9911,6 +9913,244 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
     plain:
       'Variable-speed cooling tower fans can reduce tower fan energy by 30–50% during mild weather. Tower fans are required to deliver specific condenser water temperatures, and variable speed allows them to achieve this at the minimum possible energy input.',
   },
+  // ── AHU point keys ──────────────────────────────────────────────────────
+  sfStatus: {
+    short: 'Supply fan status feedback',
+    impact: 'Required for proof-of-operation',
+    plain:
+      'The supply fan status point confirms that the fan is actually running, not just commanded on. ASHRAE 36 requires fan proof-of-operation for alarm management and to prevent sequences from running without airflow — which can damage equipment and waste energy.',
+  },
+  sfSpeed: {
+    short: 'Supply fan speed feedback',
+    impact: 'Required for VFD verification',
+    plain:
+      'Supply fan speed feedback confirms the actual VFD output frequency. Without it, the BAS cannot verify that speed commands are being executed or detect VFD faults that would cause the fan to run at full speed regardless of load.',
+  },
+  sfEnable: {
+    short: 'Supply fan enable command',
+    impact: 'Required for scheduled operation',
+    plain:
+      'The fan enable point allows the BAS to start and stop the air handler according to occupancy schedules and optimal start/stop sequences. Without a verified enable command, the system cannot automate or verify equipment start/stop.',
+  },
+  sfSpeedCmd: {
+    short: 'Supply fan speed command',
+    impact: '20–40% fan energy savings',
+    plain:
+      'The fan speed command point is how the BAS sends a speed setpoint to the VFD. Without it, the VFD cannot be modulated by the control system and will run at a fixed speed, eliminating the energy savings that variable-speed operation provides.',
+  },
+  oaDampCmd: {
+    short: 'OA damper position command',
+    impact: 'Required for economizer control',
+    plain:
+      'The outdoor air damper command controls how much outdoor air the air handler brings in for ventilation and free cooling. Without it, the economizer sequence cannot operate and the system is limited to minimum fixed ventilation rates.',
+  },
+  raDampCmd: {
+    short: 'Return air damper position command',
+    impact: 'Required for economizer control',
+    plain:
+      'The return air damper works in concert with the outdoor air damper: as outdoor air increases for economizer cooling, the return air damper closes to maintain proper airflow balance. Without it, economizer operation causes pressure imbalance.',
+  },
+  clgValve: {
+    short: 'Cooling coil valve command',
+    impact: 'Required for mechanical cooling control',
+    plain:
+      'The cooling coil valve modulates chilled water flow through the coil to meet supply air temperature setpoints. Without a controlled valve, the system cannot perform supply air temperature reset or economizer sequencing with mechanical cooling.',
+  },
+  htgValve: {
+    short: 'Heating coil valve command',
+    impact: 'Required for preheat and morning warm-up',
+    plain:
+      'The heating coil valve controls hot water flow through the preheat or heating coil. It is essential for morning warm-up sequences, freeze protection, and supply air temperature reset during cold weather.',
+  },
+  freezeStat: {
+    short: 'Freeze protection status',
+    impact: 'Required for freeze protection safety',
+    plain:
+      'The freeze stat is a low-limit safety device that shuts down the air handler if coil temperatures approach freezing. ASHRAE 36 requires the BAS to monitor and respond to freeze stat trips to protect coils from damage.',
+  },
+  oaFlow: {
+    short: 'Outdoor airflow measurement',
+    impact: 'Required for ventilation compliance',
+    plain:
+      'A dedicated outdoor airflow station measures the actual volume of outside air entering the unit. Without measured OA flow, the system cannot verify that minimum ventilation rates required by ASHRAE 62.1 are being met.',
+  },
+  oaEnthalpy: {
+    short: 'Outdoor air enthalpy sensor',
+    impact: 'Required for differential enthalpy economizer',
+    plain:
+      'An enthalpy sensor measures both temperature and humidity of outdoor air. Combined with return air enthalpy, it enables differential enthalpy economizer control — the most accurate method for determining when outdoor air provides net cooling benefit.',
+  },
+  rfEnable: {
+    short: 'Return fan enable command',
+    impact: 'Required for building pressure control',
+    plain:
+      'The return fan enable command starts and stops the return fan in coordination with the supply fan. Proper return fan sequencing is required to maintain building pressurization and prevent over- or under-pressurization during economizer operation.',
+  },
+  rfSpeedCmd: {
+    short: 'Return fan speed command',
+    impact: 'Required for building pressure control',
+    plain:
+      'Return fan speed is modulated to track supply fan airflow and maintain the correct building pressure differential. Without speed control, the return fan runs at fixed speed and cannot adapt to the wide range of airflow conditions that ASHRAE 36 sequences create.',
+  },
+  bldgPressure: {
+    short: 'Building static pressure sensor',
+    impact: 'Required for relief fan/exhaust control',
+    plain:
+      'Building static pressure is used to modulate relief fans or exhaust systems to prevent the building from becoming over-pressurized during economizer operation. Uncontrolled pressure can cause door-opening problems, infiltration, and comfort complaints.',
+  },
+  co2: {
+    short: 'CO2 sensor (return or zone)',
+    impact: '5–10% fan and cooling savings',
+    plain:
+      'CO2 concentration is a proxy for occupancy: as more people occupy a space, CO2 rises. The BAS uses this signal to bring in only as much outdoor air as current occupancy requires, reducing the energy needed to condition excess ventilation air.',
+  },
+  // ── VAV / Terminal point keys ────────────────────────────────────────────
+  zoneTemp: {
+    short: 'Zone air temperature sensor',
+    impact: 'Required for zone control',
+    plain:
+      'Zone temperature is the fundamental feedback signal for VAV control. Without it, the terminal unit cannot modulate airflow to meet heating or cooling setpoints, and the system has no way to verify that occupied spaces are comfortable.',
+  },
+  coolSP: {
+    short: 'Zone cooling setpoint',
+    impact: 'Baseline requirement',
+    plain:
+      'Zone cooling setpoints define the target temperature for cooling in each space. Properly programmed setpoints with appropriate deadbands between heating and cooling are required for ASHRAE 36 compliance and prevent simultaneous heating and cooling.',
+  },
+  htgSP: {
+    short: 'Zone heating setpoint',
+    impact: 'Baseline requirement',
+    plain:
+      'Zone heating setpoints define the minimum temperature for each space. ASHRAE 36 requires setbacks during unoccupied periods and prohibits simultaneous heating and cooling within the deadband range.',
+  },
+  dat: {
+    short: 'Discharge air temperature sensor',
+    impact: 'Required for reheat control',
+    plain:
+      'Discharge air temperature at the terminal unit is used to control reheat valve position and verify that the air delivered to the space is within acceptable limits. Without it, the BAS cannot prevent overcooling or verify reheat operation.',
+  },
+  fanStatus: {
+    short: 'AHU supply fan status (at terminal)',
+    impact: 'Required for terminal unit sequencing',
+    plain:
+      'Terminal units need to know whether the air handling unit is operating before opening their dampers. Without this signal, the VAV box may open fully when there is no primary airflow, or fail to open when the AHU is running.',
+  },
+  dampCmd: {
+    short: 'Damper position command',
+    impact: 'Required for zone airflow control',
+    plain:
+      'The VAV damper command controls how much conditioned air the terminal unit delivers to the zone. It is the primary actuator for meeting zone temperature setpoints and maintaining minimum ventilation rates — fundamental to all ASHRAE 36 terminal sequences.',
+  },
+  reheatValve: {
+    short: 'Reheat valve command',
+    impact: 'Required for zone heating',
+    plain:
+      'The reheat valve controls the flow of hot water through the terminal reheat coil. Without it, the BAS cannot provide zone heating through the VAV box, forcing all heating to come from the primary air system and significantly reducing system efficiency.',
+  },
+  primaryFlow: {
+    short: 'Primary (cold deck) airflow',
+    impact: 'Required for fan-powered box control',
+    plain:
+      'Primary airflow measurement on a fan-powered box tracks how much cold primary air the terminal is receiving from the air handler. This signal drives damper modulation and determines when the terminal fan should operate.',
+  },
+  termFanStatus: {
+    short: 'Terminal fan status',
+    impact: 'Required for fan-powered box proof',
+    plain:
+      'The terminal fan status confirms that the fan-powered box fan is actually running. ASHRAE 36 requires this proof-of-operation to enable proper sequencing and alarming when the fan fails to start.',
+  },
+  termFanEnable: {
+    short: 'Terminal fan enable command',
+    impact: 'Required for fan-powered box control',
+    plain:
+      'The terminal fan enable command starts and stops the fan in the fan-powered box according to the zone control sequence. Without it, the fan may run continuously (wasting energy) or never run (causing comfort and air quality problems).',
+  },
+  coldDampCmd: {
+    short: 'Cold deck damper command (dual-duct)',
+    impact: 'Required for dual-duct cooling control',
+    plain:
+      'The cold deck damper controls cool air delivery in a dual-duct system. Without a BAS-controlled cold deck damper, the system cannot modulate cooling to meet zone setpoints or coordinate cooling and heating to prevent simultaneous conditioning.',
+  },
+  hotDampCmd: {
+    short: 'Hot deck damper command (dual-duct)',
+    impact: 'Required for dual-duct heating control',
+    plain:
+      'The hot deck damper controls warm air delivery in a dual-duct system. Without control of both hot and cold deck dampers, the BAS cannot implement the ASHRAE 36 dual-duct sequences that prevent simultaneous heating and cooling.',
+  },
+  // ── HW Plant point keys ──────────────────────────────────────────────────
+  hwst: {
+    short: 'Hot water supply temperature sensor',
+    impact: 'Required for HW reset sequences',
+    plain:
+      'The hot water supply temperature sensor is the primary feedback for boiler plant control and is required for hot water temperature reset sequences. Without it, the system cannot verify boiler output or reduce supply temperature during mild weather to save energy.',
+  },
+  hwrt: {
+    short: 'Hot water return temperature sensor',
+    impact: 'Required for delta-T monitoring',
+    plain:
+      'Return temperature monitoring allows the BAS to calculate the temperature differential across the heating system. Low delta-T is a common source of inefficiency in hot water systems and can indicate pump, balancing, or coil issues that increase operating costs.',
+  },
+  hwdp: {
+    short: 'Hot water differential pressure sensor',
+    impact: '10–20% pump energy savings',
+    plain:
+      'Differential pressure measurement enables variable-speed pump control: the pump slows when fewer zones call for heat, following the heating load rather than running at full speed. This directly reduces pump energy and extends pump life.',
+  },
+  boilerStatus: {
+    short: 'Boiler status feedback',
+    impact: 'Required for boiler staging',
+    plain:
+      'Boiler status confirms that each boiler is firing and not in fault. The BAS uses this feedback for lead/lag rotation, staging additional boilers when demand increases, and generating alarms when a boiler fails.',
+  },
+  boilerEnable: {
+    short: 'Boiler enable command',
+    impact: 'Required for boiler sequencing',
+    plain:
+      'The boiler enable point allows the BAS to start and stop individual boilers as part of staging and lead/lag sequences. Without it, the BAS cannot control which boilers run, preventing energy-efficient staging strategies.',
+  },
+  hwSetpoint: {
+    short: 'HW supply temperature setpoint',
+    impact: 'Required for outdoor air reset',
+    plain:
+      'The hot water supply setpoint command is how the BAS tells the boiler what temperature to target. Modulating this setpoint based on outdoor air temperature — hot water reset — is one of the most effective boiler plant efficiency strategies.',
+  },
+  hwPumpStatus: {
+    short: 'Hot water pump status feedback',
+    impact: 'Required for pump sequencing',
+    plain:
+      'Hot water pump status confirms that the pump is running and providing flow. Without this feedback, the BAS cannot verify that heating water is circulating, cannot implement lead/lag rotation, and cannot alarm on pump failures.',
+  },
+  hwPumpEnable: {
+    short: 'Hot water pump enable command',
+    impact: 'Required for pump staging',
+    plain:
+      'The pump enable command allows the BAS to start individual pumps as part of lead/lag and staging sequences. Without individual pump control, the plant cannot rotate equipment or respond to reduced demand by shutting down unnecessary pumps.',
+  },
+  hwPumpSpeed: {
+    short: 'Hot water pump speed command',
+    impact: '10–25% pump energy savings',
+    plain:
+      'Variable-speed pump control reduces pump energy when heating loads are low by slowing pump speed to maintain only the differential pressure needed by the most open zone valve. Without speed control, the pump runs at full design speed regardless of demand.',
+  },
+  // ── CHW Plant point keys ─────────────────────────────────────────────────
+  chwst: {
+    short: 'Chilled water supply temperature sensor',
+    impact: 'Required for CHW reset sequences',
+    plain:
+      'The chilled water supply temperature sensor verifies chiller output and is required for chilled water temperature reset sequences. Raising the chilled water setpoint during mild weather allows the chiller to operate more efficiently.',
+  },
+  chwrt: {
+    short: 'Chilled water return temperature sensor',
+    impact: 'Required for delta-T monitoring',
+    plain:
+      'Return temperature monitoring reveals chilled water delta-T, a key indicator of plant efficiency. Low delta-T on a chilled water system — meaning the water is not being fully utilized — is a common cause of chiller over-cycling and excess energy use.',
+  },
+  chwdp: {
+    short: 'Chilled water differential pressure sensor',
+    impact: '10–20% pump energy savings',
+    plain:
+      'Chilled water differential pressure control allows pump speed to be reduced when building load is light. Pump energy scales with the cube of speed, so even modest speed reductions deliver large energy savings during the many hours of partial-load operation.',
+  },
 };
 
 /**
@@ -9996,36 +10236,31 @@ function collectASHRAE36Data(projId) {
       var flags = typeof emLoadEquipConfigFlags === 'function' ? emLoadEquipConfigFlags(projId, row.id) : {};
       var result = emComputeCompliance(row, flags);
 
-      // Identify which gaps are sequence-related vs. point-related
-      var SEQUENCE_KEYS = [
-        'satReset',
-        'dspReset',
-        'economizer',
-        'demandCtrl',
-        'optStart',
-        'hwReset',
-        'chwReset',
-        'leadLag',
-      ];
-      var missingSeq = result.missingPoints.filter(function (p) {
-        return SEQUENCE_KEYS.indexOf(p.categoryKey) !== -1;
-      });
-      var missingPts = result.missingPoints.filter(function (p) {
-        return SEQUENCE_KEYS.indexOf(p.categoryKey) === -1;
-      });
-
-      totalPointsRequired += result.totalRequired - missingSeq.length;
+      // Accumulate physical point coverage totals
+      totalPointsRequired += result.totalRequired;
       totalPointsMatched += result.totalMatched;
-      totalSeqRequired +=
-        missingSeq.length +
-        result.coveredPoints.filter(function (p) {
-          return SEQUENCE_KEYS.indexOf(p.categoryKey) !== -1;
-        }).length;
-      totalSeqMatched += result.coveredPoints.filter(function (p) {
-        return SEQUENCE_KEYS.indexOf(p.categoryKey) !== -1;
-      }).length;
 
-      // Accumulate gap counts for portfolio summary
+      // Accumulate sequence readiness using emComputeSequenceReadiness (same approach
+      // as emComputeAuditStats in equipment-matrix.js). Counts non-'na' sequences as
+      // required and 'ready' sequences as matched. 'blocked'/'partial' count as gaps.
+      if (typeof emComputeSequenceReadiness === 'function') {
+        var seqReadiness = emComputeSequenceReadiness(row, result);
+        for (var seqKey in seqReadiness) {
+          if (!seqReadiness.hasOwnProperty(seqKey)) continue;
+          var seqEntry = seqReadiness[seqKey];
+          if (seqEntry.status === 'na') continue;
+          totalSeqRequired++;
+          if (seqEntry.status === 'ready') {
+            totalSeqMatched++;
+          } else {
+            // 'blocked' or 'partial' — accumulate as a gap for proposals/recommendations
+            portfolioGapCounts[seqKey] = (portfolioGapCounts[seqKey] || 0) + 1;
+            bldgGaps[seqKey] = (bldgGaps[seqKey] || 0) + 1;
+          }
+        }
+      }
+
+      // Accumulate hardware point gap counts for portfolio summary
       result.missingPoints.forEach(function (mp) {
         portfolioGapCounts[mp.categoryKey] = (portfolioGapCounts[mp.categoryKey] || 0) + 1;
         bldgGaps[mp.categoryKey] = (bldgGaps[mp.categoryKey] || 0) + 1;
@@ -10086,7 +10321,7 @@ function collectASHRAE36Data(projId) {
     });
   });
 
-  if (!buildingsData.length) return null;
+  if (!buildingsData.length) return { _noAuditableEquip: true };
 
   // Portfolio-level top gaps (most common missing checks across all buildings)
   var portfolioTopGaps = Object.keys(portfolioGapCounts)
@@ -11099,6 +11334,13 @@ function generateASHRAE36Preview() {
   var data = collectASHRAE36Data(projId);
   if (!data) {
     showToast('No equipment matrix data found. Import a BAS point list on the Equipment tab first.', 'error');
+    return;
+  }
+  if (data._noAuditableEquip) {
+    showToast(
+      'No auditable equipment found. Equipment must be classified as AHU, VAV, FPB, HWP, CHWP, or CT — not "Other" — to generate a report.',
+      'error',
+    );
     return;
   }
 

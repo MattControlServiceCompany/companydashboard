@@ -3090,6 +3090,7 @@ async function confirmAutoAssign() {
     const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
     function toISO(d) {
       if (!d) return '';
+      if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
       let p = d.split('/');
       if (p.length !== 3) p = d.split('-');
       if (p.length !== 3) return d;
@@ -3479,6 +3480,7 @@ function _saveBillToMatchedMeter(extracted, match) {
   const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
   const toISO = (d) => {
     if (!d) return '';
+    if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
     let p = d.split('/');
     if (p.length !== 3) p = d.split('-');
     if (p.length !== 3) return d;
@@ -5131,6 +5133,7 @@ function _buildDiffFields(extracted, existing) {
   const isSaved = !existing.start && existing.BillingPeriodStart !== undefined;
   const toISO = (d) => {
     if (!d) return '';
+    if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
     let p = d.split('/');
     if (p.length !== 3) p = d.split('-');
     if (p.length !== 3) return d;
@@ -5265,6 +5268,7 @@ async function _checkDuplicates(bills) {
   // Convert extracted date (MM/DD/YYYY or MM-DD-YY) to ISO (YYYY-MM-DD) for comparison
   const toISO = (d) => {
     if (!d) return '';
+    if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
     let p = d.split('/');
     if (p.length !== 3) p = d.split('-');
     if (p.length !== 3) return d;
@@ -7629,6 +7633,7 @@ async function savePDFAllBills(commodityFilter) {
 async function _applyDupUpdate(billIdx, extracted, dup) {
   const toISO = (d) => {
     if (!d) return '';
+    if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
     let p = d.split('/');
     if (p.length !== 3) p = d.split('-');
     if (p.length !== 3) return d;
@@ -9351,6 +9356,7 @@ async function viewSavedPDF(id, pageStart, pageEnd, pdfKey) {
         const extMatch = window._pdfMultiBills.find((eb) => {
           const toISO = (d) => {
             if (!d) return '';
+            if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
             let p = d.split('/');
             if (p.length !== 3) p = d.split('-');
             if (p.length !== 3) return d;
@@ -9600,6 +9606,7 @@ function confirmAssignBill() {
   const totalCost = pf(bill.TotalCurrentCharges);
   function toISO(d) {
     if (!d) return '';
+    if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
     let p = d.split('/');
     if (p.length !== 3) p = d.split('-');
     if (p.length !== 3) return d;
@@ -9908,6 +9915,7 @@ function confirmManualAssign() {
   const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
   function toISO(d) {
     if (!d) return '';
+    if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
     let parts = String(d).split('/');
     if (parts.length !== 3) parts = String(d).split('-');
     if (parts.length !== 3) return d;
@@ -10086,6 +10094,7 @@ async function _saveSinglePDFBill(extracted, projId) {
   const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
   function toISO(d) {
     if (!d) return '';
+    if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
     let p = d.split('/');
     if (p.length !== 3) p = d.split('-');
     if (p.length !== 3) return d;
