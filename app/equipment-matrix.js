@@ -725,11 +725,10 @@ function emGroupToMatrixRow(groupKey, group) {
 /* ── PHASE 2: STORAGE AND MERGE ── */
 
 function emLoadCustomCols(projId) {
-  var raw = localStorage.getItem('en_eqmatrix_cols_' + projId);
-  return raw ? JSON.parse(raw) : [];
+  return DB.get('en_eqmatrix_cols_' + projId, []);
 }
 function emSaveCustomCols(projId, cols) {
-  localStorage.setItem('en_eqmatrix_cols_' + projId, JSON.stringify(cols));
+  DB.set('en_eqmatrix_cols_' + projId, cols);
 }
 
 function emAddCustomCol(projId) {
@@ -748,7 +747,7 @@ function emAddCustomCol(projId) {
 
 function emLoadMatrix(projId) {
   if (!projId) return { rows: [], importedAt: null, buildings: [] };
-  // '__preview__' is an in-memory-only sentinel — return the preview data without touching localStorage
+  // '__preview__' is an in-memory-only sentinel — return the preview data without touching the DB
   if (projId === '__preview__') return window._emPreviewData || { rows: [], importedAt: null, buildings: [] };
   return sget('en_eqmatrix_' + projId, { rows: [], importedAt: null, buildings: [] });
 }
@@ -938,7 +937,7 @@ function emRenderMatrix(container, data, pid) {
   _emShowAllDynCols = false;
   _emViewMode = 'audit';
   _emCollapsedBuildings = {}; // start all buildings expanded
-  var savedZoom = parseInt(localStorage.getItem('en_em_zoom') || '100', 10);
+  var savedZoom = parseInt(DB.get('en_em_zoom', '100'), 10);
   _emZoomLevel = savedZoom >= 50 && savedZoom <= 150 ? savedZoom : 100;
   emInjectMatrixCSS();
 
@@ -1202,11 +1201,11 @@ function emRenderToolbar(data, pid, projBadge) {
  * emSetZoom — Adjusts the table zoom level by `delta` percent (e.g. +10 or -10).
  * Clamped to 50–150. Applies font-size and padding scaling to .em-table-wrap
  * proportionally: at 100% font-size is 11px and cell padding is 4px 8px.
- * Persists the choice to localStorage as `en_em_zoom`.
+ * Persists the choice to IndexedDB as `en_em_zoom`.
  */
 function emSetZoom(delta) {
   _emZoomLevel = Math.min(150, Math.max(50, _emZoomLevel + delta));
-  localStorage.setItem('en_em_zoom', String(_emZoomLevel));
+  DB.set('en_em_zoom', String(_emZoomLevel));
 
   var wrap = document.getElementById('em-table-wrap');
   if (wrap) {
@@ -2894,7 +2893,7 @@ function emHandleImport(pid) {
       return;
     }
 
-    // Only save to localStorage when a project is selected
+    // Only save to DB when a project is selected
     if (pid) {
       // merge mode: preserve existing rows and dedup by id; replace mode: start fresh
       var baseData =
@@ -2918,7 +2917,7 @@ function emHandleImport(pid) {
       // No project selected — abort with a clear error.
       // The old __preview__ path was removed because it poisoned window._emActivePid with
       // the sentinel '__preview__', which caused subsequent real-project imports to save
-      // to a ghost localStorage key (en_eqmatrix___preview__), silently discarding data.
+      // to a ghost DB key (en_eqmatrix___preview__), silently discarding data.
       showToast('No project selected — select a project first, then import CSVs', 'warn');
       if (statusEl) statusEl.textContent = 'No project selected. Select a project and try again.';
       _emPendingFiles = [];
@@ -5704,32 +5703,29 @@ function emComputeCompliance(equipRow, configFlags) {
    hardware features are present (has economizer, has return fan, etc.)  */
 function emLoadEquipConfigFlags(projId, rowId) {
   var editKey = 'en_eqmatrix_edits_' + projId;
-  var raw = localStorage.getItem(editKey);
-  var edits = raw ? JSON.parse(raw) : {};
+  var edits = DB.get(editKey, {});
   return edits[rowId + '::config'] || {};
 }
 
 function emSaveEquipConfigFlags(projId, rowId, flags) {
   var editKey = 'en_eqmatrix_edits_' + projId;
-  var raw = localStorage.getItem(editKey);
-  var edits = raw ? JSON.parse(raw) : {};
+  var edits = DB.get(editKey, {});
   edits[rowId + '::config'] = flags;
-  localStorage.setItem(editKey, JSON.stringify(edits));
+  DB.set(editKey, edits);
 }
 
 /* ── emLoadCustomMappings / emSaveCustomMappings ────────────────────────────
    Per-project custom point name → category mappings.
    Allows users to manually override the auto-match for unusual BAS names.
-   Stored in localStorage as an array of { rawName, categoryKey, equipCategory }.  */
+   Stored in IndexedDB as an array of { rawName, categoryKey, equipCategory }.  */
 function emLoadCustomMappings(projId) {
   if (!projId) return [];
-  var raw = localStorage.getItem('en_eqmatrix_cmaps_' + projId);
-  return raw ? JSON.parse(raw) : [];
+  return DB.get('en_eqmatrix_cmaps_' + projId, []);
 }
 
 function emSaveCustomMappings(projId, mappings) {
   if (!projId) return;
-  localStorage.setItem('en_eqmatrix_cmaps_' + projId, JSON.stringify(mappings));
+  DB.set('en_eqmatrix_cmaps_' + projId, mappings);
 }
 
 /* ── CREATE BUILDINGS FROM EQUIPMENT MATRIX ──────────────────────────────── */
