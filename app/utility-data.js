@@ -807,10 +807,7 @@ function renderUDProjAggPanel(content) {
         wtSav += msrSav.reduce((s, v) => s + v, 0);
       } else {
         const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-        let bspCfg = {};
-        try {
-          bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
-        } catch (e) {}
+        const bspCfg = DB.get(bspKey, {});
         const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
         wtSav += savPct * bldgBase;
       }
@@ -1089,10 +1086,7 @@ function renderUDProjAggPanel(content) {
         });
       } else {
         const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-        let bspCfg = {};
-        try {
-          bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
-        } catch (e) {}
+        const bspCfg = DB.get(bspKey, {});
         const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
         const bMoBase = aggBaseMoMapForBldgs([b]);
         for (let mo = 0; mo < 12; mo++) _perfProjSavByMo[mo] += (bMoBase[mo] || 0) * savPct;
@@ -1953,9 +1947,9 @@ function toggleBldgSavProjPanel() {
     if (_b3) {
       try {
         const _k = 'bldgsavproj_cfg_' + (_b3.id || _b3.name);
-        const _c = JSON.parse(localStorage.getItem(_k) || '{}');
+        const _c = DB.get(_k, {});
         delete _c.moBase;
-        localStorage.setItem(_k, JSON.stringify(_c));
+        DB.set(_k, _c);
       } catch (e) {}
     }
     renderBldgSavProjPane(document.getElementById('bldgSavProjPaneInner'), b);
@@ -7062,10 +7056,7 @@ function renderBldgPerfPane(pane, b) {
 
   // ── Projected spend per calendar month — from BSP saved config ──
   const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-  let bspCfg = {};
-  try {
-    bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
-  } catch (e) {}
+  const bspCfg = DB.get(bspKey, {});
   const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
   _bpMsrSavByMo = getBldgMeasureSavingsByMo(udSelProjId, b.id);
 
@@ -7095,10 +7086,7 @@ function renderBldgPerfPane(pane, b) {
 
   // ── Saved settings ──
   const storeKey = 'bldgperf_cfg_' + (b.id || b.name);
-  let cfg = {};
-  try {
-    cfg = JSON.parse(localStorage.getItem(storeKey) || '{}');
-  } catch (e) {}
+  const cfg = DB.get(storeKey, {});
   const defCscMode = cfg.cscMode ?? 'pct'; // 'pct' or 'fixed'
   // Fall back to project-level cscCompensation if building has no custom override
   const projMeta = projects.find((p) => p.id === udSelProjId);
@@ -7231,8 +7219,8 @@ function bpApplyToAllBuildings() {
   bldgs.forEach((b) => {
     const key = 'bldgperf_cfg_' + (b.id || b.name);
     try {
-      const existing = JSON.parse(localStorage.getItem(key) || '{}');
-      localStorage.setItem(key, JSON.stringify({ ...existing, ...settings }));
+      const existing = DB.get(key, {});
+      DB.set(key, { ...existing, ...settings });
       count++;
     } catch (e) {}
   });
@@ -7267,7 +7255,7 @@ function bpRecalc() {
   if (b) {
     const storeKey = 'bldgperf_cfg_' + (b.id || b.name);
     try {
-      const _prevCfg = JSON.parse(localStorage.getItem(storeKey) || '{}');
+      const _prevCfg = DB.get(storeKey, {});
       const _projM = projects.find((p) => p.id === udSelProjId);
       const _projEsc = _projM?.escalation ?? 3;
       const _projCsc = _projM?.cscCompensation ?? 0;
@@ -7282,16 +7270,13 @@ function bpRecalc() {
       delete _saveCfg.moBase;
       _saveCfg._customEsc = escPct * 100 !== _projEsc ? true : undefined;
       _saveCfg._customCsc = cscPct * 100 !== _projCsc ? true : undefined;
-      localStorage.setItem(storeKey, JSON.stringify(_saveCfg));
+      DB.set(storeKey, _saveCfg);
     } catch (e) {}
   }
 
   // Projected spend from BSP config
   const bspKey = b ? 'bldgsavproj_cfg_' + (b.id || b.name) : null;
-  let bspCfg = {};
-  try {
-    if (bspKey) bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
-  } catch (e) {}
+  const bspCfg = bspKey ? DB.get(bspKey, {}) : {};
   const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
   const _msrSavByMo = _bpMsrSavByMo;
   const _useMeasures = !!_msrSavByMo;
@@ -7718,10 +7703,7 @@ function renderBldgSavProjPane(pane, b) {
 
   // ── Saved settings ──
   const storeKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-  let cfg = {};
-  try {
-    cfg = JSON.parse(localStorage.getItem(storeKey) || '{}');
-  } catch (e) {}
+  const cfg = DB.get(storeKey, {});
   const defSavingsPct = cfg.savingsPct ?? 11;
   const defClientPct = cfg.clientPct ?? 5;
   // Fall back to project-level cscCompensation if building has no custom override
@@ -7842,7 +7824,7 @@ function bspRecalc() {
   if (b) {
     const storeKey = 'bldgsavproj_cfg_' + (b.id || b.name);
     try {
-      const _prevBspCfg = JSON.parse(localStorage.getItem(storeKey) || '{}');
+      const _prevBspCfg = DB.get(storeKey, {});
       const _saveBspCfg = {
         savingsPct: savPct * 100,
         clientPct: cliPct * 100,
@@ -7862,7 +7844,7 @@ function bspRecalc() {
       if (cscPct * 100 !== _projCsc2) {
         _saveBspCfg._customCsc = true;
       }
-      localStorage.setItem(storeKey, JSON.stringify(_saveBspCfg));
+      DB.set(storeKey, _saveBspCfg);
     } catch (e) {}
   }
 

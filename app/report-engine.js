@@ -213,10 +213,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
 
     // Per-building savings % from Building Savings Projection config
     const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-    let bspCfg = {};
-    try {
-      bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
-    } catch (e) {}
+    const bspCfg = DB.get(bspKey, {});
     const bldgSavPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
 
     bMeters.forEach(({ m, bills, incl, allRows, bl, blEnd, postRows }) => {
@@ -9590,15 +9587,7 @@ function buildContactsDetailHTML(contacts, projId) {
   );
 }
 
-/* -- TOAST -- */
-let toastTmr;
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  document.getElementById('toastMsg').textContent = msg;
-  t.classList.add('show');
-  clearTimeout(toastTmr);
-  toastTmr = setTimeout(() => t.classList.remove('show'), 3000);
-}
+/* -- TOAST -- handled by site-ui.js showToast() */
 
 // -- Formula Audit Popover --
 let _formulaPopover = null;

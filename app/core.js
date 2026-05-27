@@ -2421,25 +2421,25 @@ function updateProjPerfSetting(projId, field, value) {
         const bpKey = 'bldgperf_cfg_' + (b.id || b.name);
         const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
         try {
-          const bpCfg = JSON.parse(localStorage.getItem(bpKey) || '{}');
+          const bpCfg = DB.get(bpKey, {});
           if (!bpCfg._customEsc && field === 'escalation') {
             bpCfg.escPct = value;
-            localStorage.setItem(bpKey, JSON.stringify(bpCfg));
+            DB.set(bpKey, bpCfg);
           }
           if (!bpCfg._customCsc && field === 'cscCompensation') {
             bpCfg.cscPct = value;
-            localStorage.setItem(bpKey, JSON.stringify(bpCfg));
+            DB.set(bpKey, bpCfg);
           }
         } catch (e) {}
         try {
-          const bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
+          const bspCfg = DB.get(bspKey, {});
           if (!bspCfg._customEsc && field === 'escalation') {
             bspCfg.escPct = value;
-            localStorage.setItem(bspKey, JSON.stringify(bspCfg));
+            DB.set(bspKey, bspCfg);
           }
           if (!bspCfg._customCsc && field === 'cscCompensation') {
             bspCfg.cscPct = value;
-            localStorage.setItem(bspKey, JSON.stringify(bspCfg));
+            DB.set(bspKey, bspCfg);
           }
         } catch (e) {}
       }

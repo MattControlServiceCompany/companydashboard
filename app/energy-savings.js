@@ -729,23 +729,20 @@ function _renderSavingsContent(wrap, projId) {
       // Restore associated per-building config keys if not already set
       const bspKey = 'bldgsavproj_cfg_b1776962504464';
       const bpKey = 'bldgperf_cfg_b1776962504464';
-      if (!localStorage.getItem(bspKey)) {
-        localStorage.setItem(bspKey, JSON.stringify({ cscPct: 60, escPct: 3.5, savingsPct: 6.7 }));
+      if (!DB.get(bspKey, null)) {
+        DB.set(bspKey, { cscPct: 60, escPct: 3.5, savingsPct: 6.7 });
       }
-      if (!localStorage.getItem(bpKey)) {
-        localStorage.setItem(
-          bpKey,
-          JSON.stringify({
-            cscMode: 'pct',
-            cscPct: 60,
-            cscFixed: 0,
-            years: 3,
-            escPct: 3.5,
-            _customEsc: true,
-            view: 'monthly',
-            _customCsc: true,
-          }),
-        );
+      if (!DB.get(bpKey, null)) {
+        DB.set(bpKey, {
+          cscMode: 'pct',
+          cscPct: 60,
+          cscFixed: 0,
+          years: 3,
+          escPct: 3.5,
+          _customEsc: true,
+          view: 'monthly',
+          _customCsc: true,
+        });
       }
       sset('en_projects', projects);
     }
@@ -1580,17 +1577,17 @@ function saveProject() {
       const bpKey = 'bldgperf_cfg_' + (b.id || b.name);
       const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
       try {
-        const bpCfg = JSON.parse(localStorage.getItem(bpKey) || '{}');
+        const bpCfg = DB.get(bpKey, {});
         if (!bpCfg._customEsc) {
           bpCfg.escPct = fields.escalation;
-          localStorage.setItem(bpKey, JSON.stringify(bpCfg));
+          DB.set(bpKey, bpCfg);
         }
       } catch (e) {}
       try {
-        const bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
+        const bspCfg = DB.get(bspKey, {});
         if (!bspCfg._customEsc) {
           bspCfg.escPct = fields.escalation;
-          localStorage.setItem(bspKey, JSON.stringify(bspCfg));
+          DB.set(bspKey, bspCfg);
         }
       } catch (e) {}
     });
@@ -1604,17 +1601,17 @@ function saveProject() {
       const bpKey = 'bldgperf_cfg_' + (b.id || b.name);
       const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
       try {
-        const bpCfg = JSON.parse(localStorage.getItem(bpKey) || '{}');
+        const bpCfg = DB.get(bpKey, {});
         if (!bpCfg._customCsc) {
           bpCfg.cscPct = fields.cscCompensation;
-          localStorage.setItem(bpKey, JSON.stringify(bpCfg));
+          DB.set(bpKey, bpCfg);
         }
       } catch (e) {}
       try {
-        const bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
+        const bspCfg = DB.get(bspKey, {});
         if (!bspCfg._customCsc) {
           bspCfg.cscPct = fields.cscCompensation;
-          localStorage.setItem(bspKey, JSON.stringify(bspCfg));
+          DB.set(bspKey, bspCfg);
         }
       } catch (e) {}
     });
