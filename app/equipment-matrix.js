@@ -73,7 +73,7 @@ var _emColWidths = {};
 function emToggleEditMode(btn) {
   _emEditMode = !_emEditMode;
   if (btn) {
-    btn.textContent = _emEditMode ? '🔒 Lock' : '✏️ Edit';
+    btn.textContent = _emEditMode ? 'Lock' : 'Edit';
     btn.style.background = _emEditMode ? 'var(--accent)' : '';
     btn.style.color = _emEditMode ? '#fff' : '';
   }
@@ -839,7 +839,6 @@ var _emShowAllDynCols = false; // when false, limit dynamic point columns to top
 var EM_DYN_COL_LIMIT = 20; // max dynamic point columns shown by default
 var _emViewMode = 'audit'; // 'audit' = ASHRAE 36 compliance columns; 'raw' = raw point columns
 var _emZoomLevel = 100; // zoom percentage, 50–150
-var _emCollapsedBuildings = {}; // Phase 4: tracks which buildings are collapsed in audit view
 var _emComplianceCache = {}; // Performance: module-level compliance result cache, keyed by row.id
 var _emNormCache = new Map(); // Performance: memoized emNormalizePoint results, keyed by rawName+'\0'+category
 var _emSearchTimer = null; // Performance: debounce timer for search input
@@ -952,7 +951,6 @@ function emRenderMatrix(container, data, pid) {
   _emPageSize = EM_PAGE_SIZE;
   _emShowAllDynCols = false;
   _emViewMode = 'audit';
-  _emCollapsedBuildings = {}; // start all buildings expanded
   var savedZoom = parseInt(DB.get('en_em_zoom', '100'), 10);
   _emZoomLevel = savedZoom >= 50 && savedZoom <= 150 ? savedZoom : 100;
   emInjectMatrixCSS();
@@ -1141,20 +1139,13 @@ function emRenderToolbar(data, pid, projBadge) {
     '</button>' +
     '</span>' +
     // Audit-view legend bar — always visible in audit mode, shows all cell state symbols
-    '<span id="em-audit-col-info" style="display:inline-flex;align-items:center;gap:10px;font-size:10px;color:var(--text3)">' +
-    '<span style="color:#27ae60;font-weight:700">&#10003;</span><span>Present</span>' +
-    '<span style="color:#e67e22;font-weight:700">~</span><span>Fuzzy match</span>' +
-    '<span style="color:#c0392b;font-weight:700">&#10007;</span><span>Missing (required)</span>' +
-    '<span style="color:var(--text3)">—</span><span>N/A</span>' +
-    '<span style="color:var(--text3)">·</span><span>Optional, absent</span>' +
+    '<span id="em-audit-col-info" style="display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--text3)">' +
+    '<span style="padding:1px 6px;border-radius:3px;background:rgba(39,174,96,0.15);color:#27ae60;font-weight:600">Yes</span>' +
+    '<span style="padding:1px 6px;border-radius:3px;background:rgba(230,126,34,0.15);color:#e67e22;font-weight:600">Fuzzy</span>' +
+    '<span style="padding:1px 6px;border-radius:3px;background:rgba(192,57,43,0.15);color:#c0392b;font-weight:600">No</span>' +
+    '<span style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.08);color:var(--text3)">N/A</span>' +
+    '<span style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.05);color:var(--text3)">--</span>' +
     '</span>' +
-    // Collapse All / Expand All button — audit mode, all-buildings view only
-    (buildings.length > 1
-      ? '<button id="em-collapse-all-btn" onclick="emToggleCollapseAll()" ' +
-        'style="height:24px;font-size:10px;padding:0 8px;background:var(--s3);border:1px solid var(--border);color:var(--text2);border-radius:3px;cursor:pointer;margin-left:8px">' +
-        (Object.keys(_emCollapsedBuildings).length >= buildings.length ? 'Expand All' : 'Collapse All') +
-        '</button>'
-      : '') +
     '</div>';
   return (
     '<div style="display:flex;flex-direction:column">' +
@@ -1170,11 +1161,11 @@ function emRenderToolbar(data, pid, projBadge) {
     '<div style="flex:1"></div>' +
     (projBadge || '') +
     '<button id="em-view-mode-btn" class="btn btn-sm" onclick="emToggleViewMode()" style="height:28px;font-size:11px;background:var(--accent);color:#fff;border-color:transparent">Audit View</button>' +
-    '<button id="em-edit-mode-btn" class="btn btn-ghost btn-sm" onclick="emToggleEditMode(this)" style="height:28px;font-size:11px">✏️ Edit</button>' +
+    '<button id="em-edit-mode-btn" class="btn btn-ghost btn-sm" onclick="emToggleEditMode(this)" style="height:28px;font-size:11px">Edit</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleSaveEdits()" style="height:28px;font-size:11px">Save Edits</button>' +
     '<button id="em-delete-all-btn" class="btn btn-ghost btn-sm" onclick="emDeleteAllRows(\'' +
     pid +
-    '\')" style="height:28px;font-size:11px;display:none;background:#fee2e2;border-color:#fca5a5;color:#b91c1c">🗑 Delete All</button>' +
+    '\')" style="height:28px;font-size:11px;display:none;background:#fee2e2;border-color:#fca5a5;color:#b91c1c">Delete All</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleExportCSV()" style="height:28px;font-size:11px">Export CSV</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emAddManualRow(\'' +
     pid +
@@ -1197,7 +1188,7 @@ function emRenderToolbar(data, pid, projBadge) {
       : '') +
     '<button class="btn btn-sm" onclick="emCopyFromProject(\'' +
     pid +
-    '\')" style="height:28px;font-size:11px">📋 Copy From Project</button>' +
+    '\')" style="height:28px;font-size:11px">Copy From Project</button>' +
     '<span style="width:1px;height:20px;background:var(--border);display:inline-block;margin:0 4px;vertical-align:middle"></span>' +
     (data.buildings && data.buildings.length > 0
       ? '<button class="btn btn-ghost btn-sm" onclick="emOpenCreateBldgsModal(\'' +
@@ -1454,7 +1445,7 @@ function emGetAuditColDefs(filteredRows) {
         reqLabel +
         ' ASHRAE 36 point — applies to: ' +
         appliesToLabel +
-        '. ✓ = present, ~ = fuzzy match, ✗ = missing, — = not applicable.',
+        '. Yes = present, Fuzzy = fuzzy match, No = missing, N/A = not applicable.',
     });
   }
 
@@ -1484,7 +1475,7 @@ function emGetAuditColDefs(filteredRows) {
         seqDef.label +
         ' sequence (' +
         seqDef.ashrae36 +
-        '). ✓ = ready (all points present), ~ = partial, ✗ = blocked (key points missing), — = N/A.',
+        '). Yes = ready (all points present), Partial = partial, No = blocked (key points missing), N/A = not applicable.',
     });
   }
 
@@ -1751,7 +1742,17 @@ function emRenderTable(data, filters) {
   }
 
   var countEl = document.getElementById('em-row-count');
-  if (countEl) countEl.textContent = filtered.length + ' of ' + rows.length + ' rows';
+  if (countEl) {
+    var totalPts = 0,
+      filteredPts = 0;
+    for (var i = 0; i < rows.length; i++) totalPts += Object.keys(rows[i].points || {}).length;
+    for (var i = 0; i < filtered.length; i++) filteredPts += Object.keys(filtered[i].points || {}).length;
+    var ptsText =
+      filtered.length < rows.length
+        ? filteredPts.toLocaleString() + ' of ' + totalPts.toLocaleString() + ' BAS Points'
+        : totalPts.toLocaleString() + ' Total BAS Points';
+    countEl.textContent = ptsText;
+  }
 
   // ── Pagination ──
   var pageSize = _emPageSize;
@@ -1776,7 +1777,7 @@ function emRenderTable(data, filters) {
     var borderTop =
       color !== 'transparent' ? 'border-top:3px solid ' + color + ';' : 'border-top:3px solid transparent;';
     var isSorted = _emSortCol === ci;
-    var sortInd = isSorted ? (_emSortDir === 1 ? ' ▲' : ' ▼') : '';
+    var sortInd = isSorted ? (_emSortDir === 1 ? ' (asc)' : ' (desc)') : '';
     theadCells +=
       '<th data-ci="' +
       ci +
@@ -1810,7 +1811,7 @@ function emRenderTable(data, filters) {
         delLabel.replace(/'/g, "\\'") +
         '\')" ' +
         'style="font-size:10px;padding:1px 6px;background:#fee2e2;border:1px solid #fca5a5;color:#b91c1c;border-radius:3px;cursor:pointer;line-height:1.4" ' +
-        'title="Delete this row">&#x2715;</button>' +
+        'title="Delete this row">X</button>' +
         '</td>';
     }
     for (var di = 0; di < defs.length; di++) {
@@ -1865,7 +1866,7 @@ function emRenderTable(data, filters) {
     var opt = pageSizeOptions[si];
     var lbl = pageSizeLabels[opt];
     var isCurrent = _emPageSize === opt;
-    var warn = opt === 0 && filtered.length > 500 ? ' ⚠️ slow' : '';
+    var warn = opt === 0 && filtered.length > 500 ? ' (slow)' : '';
     sizeSelectHtml += '<option value="' + opt + '"' + (isCurrent ? ' selected' : '') + '>' + lbl + warn + '</option>';
   }
   sizeSelectHtml += '</select>';
@@ -1884,7 +1885,7 @@ function emRenderTable(data, filters) {
     JSON.stringify(pid) +
     ')" ' +
     (prevDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
-    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">&#8592; Previous</button>' +
+    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Prev</button>' +
     '<span style="flex:1;text-align:center">' +
     pageLabel +
     '</span>' +
@@ -1892,7 +1893,7 @@ function emRenderTable(data, filters) {
     JSON.stringify(pid) +
     ')" ' +
     (nextDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
-    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Next &#8594;</button>' +
+    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Next</button>' +
     '<span style="color:var(--text3)">Rows per page:</span>' +
     sizeSelectHtml +
     '</div>';
@@ -1960,19 +1961,19 @@ function emRenderAuditTable(data, filters) {
   }
 
   var countEl = document.getElementById('em-row-count');
-  if (countEl) countEl.textContent = filtered.length + ' of ' + rows.length + ' rows';
+  if (countEl) {
+    var totalPts = 0,
+      filteredPts = 0;
+    for (var i = 0; i < rows.length; i++) totalPts += Object.keys(rows[i].points || {}).length;
+    for (var i = 0; i < filtered.length; i++) filteredPts += Object.keys(filtered[i].points || {}).length;
+    var ptsText =
+      filtered.length < rows.length
+        ? filteredPts.toLocaleString() + ' of ' + totalPts.toLocaleString() + ' BAS Points'
+        : totalPts.toLocaleString() + ' Total BAS Points';
+    countEl.textContent = ptsText;
+  }
 
-  // ── Collapse-aware pagination ──
-  // visibleRows excludes rows belonging to collapsed buildings so page count
-  // shrinks when a building is collapsed instead of showing empty pages.
-  // filtered is kept intact for building summary stats computation below.
-  var showBldgSummaryPagination = !_emFilters.building;
-  var visibleRows =
-    showBldgSummaryPagination && Object.keys(_emCollapsedBuildings).length > 0
-      ? filtered.filter(function (r) {
-          return !_emCollapsedBuildings[r.building];
-        })
-      : filtered;
+  var visibleRows = filtered;
 
   var pageSize = _emPageSize;
   var useAll = pageSize === 0;
@@ -2000,7 +2001,7 @@ function emRenderAuditTable(data, filters) {
     var borderTop =
       color !== 'transparent' ? 'border-top:3px solid ' + color + ';' : 'border-top:3px solid transparent;';
     var isSorted = _emSortCol === ci;
-    var sortInd = isSorted ? (_emSortDir === 1 ? ' ▲' : ' ▼') : '';
+    var sortInd = isSorted ? (_emSortDir === 1 ? ' (asc)' : ' (desc)') : '';
     theadCells +=
       '<th data-ci="' +
       ci +
@@ -2020,103 +2021,10 @@ function emRenderAuditTable(data, filters) {
       '</th>';
   }
 
-  // ── Phase 4: Build per-building summary data from ALL filtered rows (not just page) ──
-  // Only show building summary rows when no single-building filter is active
-  var showBldgSummary = !_emFilters.building;
-  var bldgSummaryMap = {};
-  if (showBldgSummary) {
-    for (var bsi = 0; bsi < filtered.length; bsi++) {
-      var bsr = filtered[bsi];
-      var bname = bsr.building || '';
-      if (!bldgSummaryMap[bname]) {
-        bldgSummaryMap[bname] = {
-          ahu: 0,
-          vav: 0,
-          plants: 0,
-          other: 0,
-          total: 0,
-          totalPts: 0,
-          covTotal: 0,
-          covCount: 0,
-        };
-      }
-      var bse = bldgSummaryMap[bname];
-      bse.total++;
-      bse.totalPts += Object.keys(bsr.points || {}).length;
-      if (bsr.category === 'ahu') bse.ahu++;
-      else if (bsr.category === 'vav' || bsr.category === 'fpb' || bsr.category === 'ddvav') bse.vav++;
-      else if (bsr.category === 'hwp' || bsr.category === 'chwp' || bsr.category === 'ct') bse.plants++;
-      else bse.other++;
-      if (bsr.category && EM_POINT_CATEGORIES[bsr.category]) {
-        var bsComp = emComputeCompliance(bsr, {});
-        bse.covTotal += bsComp.coveragePct;
-        bse.covCount++;
-      }
-    }
-  }
-
   // ── Build tbody ──
   var tbodyRows = '';
-  var lastBldg = null;
   for (var ri = 0; ri < pageRows.length; ri++) {
     var row = pageRows[ri];
-
-    // Emit building summary row when building changes
-    if (showBldgSummary && row.building !== lastBldg) {
-      lastBldg = row.building;
-      var bSum = bldgSummaryMap[row.building] || {
-        ahu: 0,
-        vav: 0,
-        plants: 0,
-        total: 0,
-        totalPts: 0,
-        covTotal: 0,
-        covCount: 0,
-      };
-      var bAvgCov = bSum.covCount > 0 ? Math.round(bSum.covTotal / bSum.covCount) : 0;
-      var bCovColor = bAvgCov >= 75 ? '#27ae60' : bAvgCov >= 50 ? '#e67e22' : '#c0392b';
-      var bIsCollapsed = !!_emCollapsedBuildings[row.building];
-      var bToggle = bIsCollapsed ? '[+]' : '[−]';
-      var bldgEsc = row.building ? row.building.replace(/'/g, "\\'") : '';
-      // Equip type summary label
-      var typeLabels = [];
-      if (bSum.ahu > 0) typeLabels.push('AHU: ' + bSum.ahu);
-      if (bSum.vav > 0) typeLabels.push('VAV: ' + bSum.vav);
-      if (bSum.plants > 0) typeLabels.push('Plants: ' + bSum.plants);
-      if (bSum.other > 0) typeLabels.push('Other: ' + bSum.other);
-      var typeSummary = typeLabels.join('  |  ');
-      var covLabel =
-        bSum.covCount > 0
-          ? '<span style="color:' + bCovColor + ';font-weight:700">' + bAvgCov + '% Coverage</span>'
-          : '';
-      tbodyRows +=
-        '<tr class="em-bldg-summary-row" style="background:var(--s1);cursor:pointer" onclick="emToggleBuildingCollapse(\'' +
-        bldgEsc +
-        '\')">' +
-        '<td colspan="' +
-        defs.length +
-        '" style="padding:6px 12px;font-size:11px;font-weight:600;color:var(--text);' +
-        'border-bottom:1px solid var(--border);border-right:1px solid var(--border);' +
-        'border-top:2px solid var(--border);user-select:none;white-space:nowrap">' +
-        '<span style="font-family:Consolas,monospace;color:var(--text3);margin-right:8px">' +
-        bToggle +
-        '</span>' +
-        emHtmlEsc(row.building || '') +
-        (typeSummary
-          ? '<span style="color:var(--text2);font-weight:400;margin-left:16px">' + typeSummary + '</span>'
-          : '') +
-        (bSum.totalPts > 0
-          ? '<span style="color:var(--text2);font-weight:400;margin-left:16px">' +
-            bSum.totalPts.toLocaleString() +
-            ' pts</span>'
-          : '') +
-        (covLabel ? '<span style="margin-left:16px">' + covLabel + '</span>' : '') +
-        '</td>' +
-        '</tr>';
-    }
-
-    // Skip equipment rows if this building is collapsed
-    if (_emCollapsedBuildings[row.building]) continue;
 
     var compliance = complianceCache[row.id] || { coveredPoints: [], missingPoints: [], naPoints: [], coveragePct: 0 };
     // Build a quick lookup: catKey -> match result
@@ -2183,7 +2091,7 @@ function emRenderAuditTable(data, filters) {
     JSON.stringify(pid) +
     ')" ' +
     (prevDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
-    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">&#8592; Previous</button>' +
+    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Prev</button>' +
     '<span style="flex:1;text-align:center">' +
     pageLabel +
     '</span>' +
@@ -2191,7 +2099,7 @@ function emRenderAuditTable(data, filters) {
     JSON.stringify(pid) +
     ')" ' +
     (nextDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
-    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Next &#8594;</button>' +
+    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Next</button>' +
     '<span style="color:var(--text3)">Rows per page:</span>' +
     sizeSelectHtml +
     '</div>';
@@ -2243,7 +2151,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
 
   // ── Equipment Type ──
   if (def.isAuditType) {
-    var catLabel = row.category ? row.category.toUpperCase() : '—';
+    var catLabel = row.category ? row.category.toUpperCase() : 'Unknown';
     return (
       '<td style="' + baseStyle + 'text-align:left;font-size:10px;color:var(--text2)">' + emHtmlEsc(catLabel) + '</td>'
     );
@@ -2283,7 +2191,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
   // ── Total BAS Points ──
   if (def.isAuditBasPts) {
     var ptCount = Object.keys(row.points || {}).length;
-    return '<td style="' + baseStyle + 'color:var(--text2)">' + (ptCount > 0 ? ptCount : '—') + '</td>';
+    return '<td style="' + baseStyle + 'color:var(--text2)">' + (ptCount > 0 ? ptCount : '--') + '</td>';
   }
 
   // ── Compliance category cell ──
@@ -2294,7 +2202,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       return (
         '<td style="' +
         baseStyle +
-        'background:rgba(128,128,128,0.08);color:var(--text3)" title="Not applicable to this equipment type">—</td>'
+        'background:rgba(128,128,128,0.08);color:var(--text3)" title="Not applicable to this equipment type">N/A</td>'
       );
     }
     // N/A due to config flag
@@ -2310,41 +2218,41 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       var match = coveredMap[catKey];
       var tier = match.matchTier;
       if (tier <= 2) {
-        // High confidence — green checkmark
+        // High confidence — green Yes
         return (
           '<td style="' +
           baseStyle +
-          'background:rgba(39,174,96,0.15);color:#27ae60;font-size:14px;font-weight:700" ' +
+          'background:rgba(39,174,96,0.15);color:#27ae60;font-size:11px;font-weight:700" ' +
           'title="' +
           emHtmlEsc(match.pointName || '') +
           ' (tier ' +
           tier +
-          ')">&#10003;</td>'
+          ')">Yes</td>'
         );
       } else {
-        // Fuzzy match — amber tilde
+        // Fuzzy match — amber Fuzzy
         return (
           '<td style="' +
           baseStyle +
-          'background:rgba(230,126,34,0.15);color:#e67e22;font-size:14px;font-weight:700" ' +
+          'background:rgba(230,126,34,0.15);color:#e67e22;font-size:11px;font-weight:700" ' +
           'title="' +
           emHtmlEsc(match.pointName || '') +
           ' (fuzzy match, tier ' +
           tier +
-          ')">~</td>'
+          ')">Fuzzy</td>'
         );
       }
     }
-    // Required but missing — red X
+    // Required but missing — red No
     if (def.catRequired && missingMap[catKey]) {
       return (
         '<td style="' +
         baseStyle +
-        'background:rgba(192,57,43,0.15);color:#c0392b;font-size:14px;font-weight:700" title="Required point missing">&#10007;</td>'
+        'background:rgba(192,57,43,0.15);color:#c0392b;font-size:11px;font-weight:700" title="Required point missing">No</td>'
       );
     }
-    // Optional and not present — small middle dot so the cell is not silently blank
-    return '<td style="' + baseStyle + 'color:var(--text3)" title="Optional point — not present in BAS">·</td>';
+    // Optional and not present — dash so the cell is not silently blank
+    return '<td style="' + baseStyle + 'color:var(--text3)" title="Optional point — not present in BAS">--</td>';
   }
 
   // ── Sequence status cell ──
@@ -2356,7 +2264,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       return (
         '<td style="' +
         baseStyle +
-        'background:rgba(128,128,128,0.08);color:var(--text3)" title="Not applicable to this equipment type">—</td>'
+        'background:rgba(128,128,128,0.08);color:var(--text3)" title="Not applicable to this equipment type">N/A</td>'
       );
     }
     return emRenderSequenceCell(def.label, seqResult);
@@ -2638,7 +2546,7 @@ function emGetCellVal(row, colIdx, edits) {
 }
 
 function emFormatCell(val, def) {
-  if (val === null || val === undefined || val === '') return '—';
+  if (val === null || val === undefined || val === '') return '--';
   var s = String(val);
   if (def.key.indexOf('check_') === 0) {
     if (!def.isLive) {
@@ -2659,8 +2567,8 @@ function emFormatCell(val, def) {
         if (/^n\/?a$/i.test(s))
           return '<span style="display:inline-block;padding:1px 6px;border-radius:3px;background:var(--s3);color:var(--text3);font-size:10px">N/A</span>';
       } else {
-        if (/^x$/i.test(s)) return '<span style="color:#2ecc71;font-size:13px;font-weight:700">✓</span>';
-        if (/^missing$/i.test(s)) return '<span style="color:#e74c3c;font-size:13px;font-weight:700">✗</span>';
+        if (/^x$/i.test(s)) return '<span style="color:#2ecc71;font-size:11px;font-weight:700">Yes</span>';
+        if (/^missing$/i.test(s)) return '<span style="color:#e74c3c;font-size:11px;font-weight:700">No</span>';
         if (/^n\/?a$/i.test(s)) return '<span style="color:var(--text3);font-size:11px">N/A</span>';
       }
     }
@@ -6408,7 +6316,7 @@ function emRenderSequenceCell(seqName, readiness) {
     return (
       '<td style="' +
       baseStyle +
-      'background:rgba(128,128,128,0.08);color:var(--text3)" title="N/A for this equipment">—</td>'
+      'background:rgba(128,128,128,0.08);color:var(--text3)" title="N/A for this equipment">N/A</td>'
     );
   }
 
@@ -6423,75 +6331,41 @@ function emRenderSequenceCell(seqName, readiness) {
     return (
       '<td style="' +
       baseStyle +
-      'background:rgba(39,174,96,0.15);color:#27ae60;font-size:14px;font-weight:700" ' +
+      'background:rgba(39,174,96,0.15);color:#27ae60;font-size:11px;font-weight:700" ' +
       'title="' +
       emHtmlEsc(tooltip) +
-      '">&#10003;</td>'
+      '">Yes</td>'
     );
   }
   if (status === 'partial') {
     return (
       '<td style="' +
       baseStyle +
-      'background:rgba(230,126,34,0.15);color:#e67e22;font-size:14px;font-weight:700" ' +
+      'background:rgba(230,126,34,0.15);color:#e67e22;font-size:11px;font-weight:700" ' +
       'title="' +
       emHtmlEsc(tooltip) +
-      '">~</td>'
+      '">Partial</td>'
     );
   }
   if (status === 'blocked') {
     return (
       '<td style="' +
       baseStyle +
-      'background:rgba(192,57,43,0.15);color:#c0392b;font-size:14px;font-weight:700" ' +
+      'background:rgba(192,57,43,0.15);color:#c0392b;font-size:11px;font-weight:700" ' +
       'title="' +
       emHtmlEsc(tooltip) +
-      '">&#10007;</td>'
+      '">No</td>'
     );
   }
 
   // Fallback — should not reach here
-  return '<td style="' + baseStyle + 'color:var(--text3)">—</td>';
+  return '<td style="' + baseStyle + 'color:var(--text3)">N/A</td>';
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   PHASE 4 — BUILDING SUMMARY ROWS + MANAGE MAPPINGS UI
+   PHASE 4 — MANAGE MAPPINGS UI
    Added: 2026-05-26
-   Purpose:
-     1. Collapsible building summary rows in Audit View
-     2. Manage Mappings modal for unmatched BAS point names
    ═══════════════════════════════════════════════════════════════════════════ */
-
-/* ── emToggleBuildingCollapse ───────────────────────────────────────────────
-   Toggles the collapsed state for a building in audit view, then re-renders
-   the table. Called by clicking a building summary row.                    */
-function emToggleBuildingCollapse(buildingName) {
-  if (_emCollapsedBuildings[buildingName]) {
-    delete _emCollapsedBuildings[buildingName];
-  } else {
-    _emCollapsedBuildings[buildingName] = true;
-  }
-  var data = emLoadMatrix(window._emActivePid);
-  emRenderTable(data, _emFilters);
-}
-
-function emToggleCollapseAll() {
-  var data = emLoadMatrix(window._emActivePid);
-  var buildings = data && data.buildings ? data.buildings : [];
-  var allCollapsed = Object.keys(_emCollapsedBuildings).length >= buildings.length;
-  if (allCollapsed) {
-    // Expand all
-    _emCollapsedBuildings = {};
-  } else {
-    // Collapse all
-    _emCollapsedBuildings = {};
-    for (var bi = 0; bi < buildings.length; bi++) {
-      _emCollapsedBuildings[buildings[bi]] = true;
-    }
-  }
-  _emCurrentPage = 0;
-  emRenderTable(data, _emFilters);
-}
 
 /* ── emGetUnmatchedPoints ───────────────────────────────────────────────────
    Scans all equipment rows in the matrix and collects raw BAS point names
@@ -6674,7 +6548,7 @@ function emOpenManageMappings(pid) {
     ' total occurrences</div>' +
     '</div>' +
     '<button onclick="emCloseManageMappings()" ' +
-    'style="font-size:16px;background:none;border:none;color:var(--text2);cursor:pointer;padding:4px 8px;line-height:1">&#10005;</button>' +
+    'style="font-size:16px;background:none;border:none;color:var(--text2);cursor:pointer;padding:4px 8px;line-height:1">X</button>' +
     '</div>' +
     // Table scroll area
     '<div style="flex:1;overflow-y:auto;min-height:0">' +
