@@ -170,18 +170,17 @@ function init() {
   initUtilityTool();
   updateHomeStats(); // Must run after initUtilityTool() so utilityData is populated
   // Restore last active view from session.
-  // Priority: IDB (DB.get) > sessionStorage > localStorage.
-  // DB is guaranteed warm here (init() only runs inside warmCache().then()), so DB.get()
-  // returns the most recent value written by sv() via DB.set(). localStorage may be stale
-  // if the IDB write in sv() happened after a localStorage-only read elsewhere.
-  const _dbView = typeof DB !== 'undefined' && DB.isReady() ? DB.get('ch_activeView') : null;
-  const lastView = _dbView || sessionStorage.getItem('ch_activeView') || localStorage.getItem('ch_activeView');
-  // Keep localStorage in sync with IDB so future synchronous reads see the right value
-  if (_dbView && localStorage.getItem('ch_activeView') !== _dbView) {
-    try {
-      localStorage.setItem('ch_activeView', _dbView);
-    } catch (e) {}
-  }
+  // Priority: sessionStorage > localStorage > IDB.
+  // sessionStorage is written synchronously by sv() — always current in this tab.
+  // localStorage is written synchronously by sv() — survives browser restart.
+  // IDB is the fallback only: its write is async and may lag behind if the user
+  // refreshed before the IDB transaction committed. The db.js repair loop already
+  // restores IDB values into localStorage before init() runs, so IDB is redundant
+  // in the common case and should not override the synchronous stores.
+  const lastView =
+    sessionStorage.getItem('ch_activeView') ||
+    localStorage.getItem('ch_activeView') ||
+    (typeof DB !== 'undefined' && DB.isReady && DB.isReady() ? DB.get('ch_activeView') : null);
   // Read project session NOW before sv('projects') → showList() overwrites it
   const savedProjSession = sessionStorage.getItem('ch_proj');
   if (lastView && document.getElementById('view-' + lastView)) {
@@ -312,7 +311,12 @@ function sv(id, btn) {
   document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
   document.querySelectorAll('.sidebar .s-item').forEach((t) => t.classList.remove('active'));
   document.querySelectorAll('.sidebar .spfi').forEach((t) => t.classList.remove('active'));
-  document.getElementById('view-' + id).classList.add('active');
+  const viewEl = document.getElementById('view-' + id);
+  if (!viewEl) {
+    console.warn('[sv] No view for id:', id);
+    return;
+  }
+  viewEl.classList.add('active');
   // btn may be a wrapper div (projects header) — activate the inner s-item if so
   const target = btn?.classList.contains('s-item') ? btn : btn?.querySelector('.s-item') || btn;
   (target || document.querySelector(`.sidebar .s-item[onclick*="'${id}'"]`))?.classList.add('active');
@@ -2242,6 +2246,7 @@ const PROJ_TABS_DEFAULT = [
   { id: 'utility', label: '⚡ Utility Data' },
   { id: 'savedbills', label: '🗄️ Saved Bills' },
   { id: 'eq-matrix', label: '📋 Equipment Matrix' },
+  { id: 'bas-trends', label: '📊 BAS Trends' },
   { id: 'budget', label: '💰 Budget' },
   { id: 'hvacload', label: '🌡️ HVAC Load Est' },
   { id: 'energygfx', label: '📈 Energy Graphics' },

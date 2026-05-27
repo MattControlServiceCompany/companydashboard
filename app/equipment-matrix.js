@@ -1648,6 +1648,21 @@ function emGetAuditColDefs(filteredRows) {
     });
   }
 
+  // "Behavior" column — BAS trend behavioral check verdict for this equipment.
+  // Only shown when bas-trends.js is loaded (btGetBuildingBehaviorSummary exists).
+  // PASS = all checks pass, WARN = warnings present, FAIL = checks failed, No Data = no trend import.
+  defs.push({
+    key: '_behavior',
+    label: 'Behavior',
+    group: 'audit-behavior',
+    width: 90,
+    isAuditBehavior: true,
+    title:
+      'BAS trend behavioral verification — whether the ASHRAE 36 sequences are actually running correctly based on measured trend data. ' +
+      'PASS = all checks passed, WARN = warnings, FAIL = checks failed, No Data = no trend data uploaded. ' +
+      'Upload trend CSVs via the BAS Trends view to populate this column.',
+  });
+
   return defs;
 }
 
@@ -1770,6 +1785,7 @@ var _EM_GROUP_COLORS = {
   audit: '#1e40af',
   'audit-cat': '#3b82f6',
   'audit-seq': '#7c3aed',
+  'audit-behavior': '#0891b2',
 };
 
 function emGetCellValByDef(row, def, edits) {
@@ -2485,6 +2501,23 @@ function emRenderAuditTable(data, filters) {
     seqReadinessCache[r.id] = emComputeSequenceReadiness(r, complianceCache[r.id]);
   }
 
+  // ── Pre-compute BAS behavior summaries per building (Phase 5) ──
+  // Only runs when bas-trends.js is loaded. Results keyed by building name.
+  var behaviorByBuilding = {};
+  var hasBehaviorCol = typeof btGetBuildingBehaviorSummary === 'function';
+  if (hasBehaviorCol) {
+    var pid5 = window._emActivePid;
+    // Collect unique building names from page rows
+    var bldgSet5 = {};
+    for (var b5 = 0; b5 < pageRows.length; b5++) {
+      if (pageRows[b5].building) bldgSet5[pageRows[b5].building] = true;
+    }
+    for (var bldg5 in bldgSet5) {
+      if (!bldgSet5.hasOwnProperty(bldg5)) continue;
+      behaviorByBuilding[bldg5] = btGetBuildingBehaviorSummary(pid5, bldg5);
+    }
+  }
+
   // ── Build thead ──
   var theadCells = '';
   for (var ci = 0; ci < defs.length; ci++) {
@@ -2535,10 +2568,11 @@ function emRenderAuditTable(data, filters) {
     }
 
     var seqReadiness = seqReadinessCache[row.id] || {};
+    var rowBehaviorSummary = hasBehaviorCol ? behaviorByBuilding[row.building] || {} : {};
     var cells = '';
     for (var di = 0; di < defs.length; di++) {
       var def = defs[di];
-      cells += emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, seqReadiness);
+      cells += emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, seqReadiness, rowBehaviorSummary);
     }
     tbodyRows += '<tr>' + cells + '</tr>';
   }
@@ -2624,8 +2658,9 @@ function emRenderAuditTable(data, filters) {
 
 /* ── emRenderAuditCell ──────────────────────────────────────────────────────
    Renders a single <td> for a compliance column in audit view.
-   Returns HTML string.                                                    */
-function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, seqReadiness) {
+   Returns HTML string.
+   behaviorSummary (optional) — per-building map from btGetBuildingBehaviorSummary().  */
+function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, seqReadiness, behaviorSummary) {
   var baseStyle =
     'border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:middle;text-align:center;';
 
@@ -2758,6 +2793,95 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
     return emRenderSequenceCell(def.label, seqResult);
   }
 
+  // ── Behavior column (Phase 5 — BAS trend behavioral verification) ──
+  if (def.isAuditBehavior) {
+    // If bas-trends.js is not loaded, show a static "No Data" cell
+    if (typeof btMatchBehaviorToRow !== 'function' || !behaviorSummary) {
+      return (
+        '<td style="' +
+        baseStyle +
+        'color:var(--text3);font-size:10px" ' +
+        'title="Upload trend data via BAS Trends view to populate">No Data</td>'
+      );
+    }
+    var behaviorEntry = btMatchBehaviorToRow(behaviorSummary, row);
+    if (!behaviorEntry) {
+      return (
+        '<td style="' +
+        baseStyle +
+        'color:var(--text3);font-size:10px" ' +
+        'title="No trend data uploaded for this equipment. Use the BAS Trends view to import a WebCTRL CSV.">No Data</td>'
+      );
+    }
+    var bVerdict = behaviorEntry.verdict;
+    var bDays = behaviorEntry.daysCount || 0;
+    var bRange = behaviorEntry.dataRange || {};
+    var bRangeText = bRange.start && bRange.end ? bRange.start + ' to ' + bRange.end : '';
+    var bTooltip = behaviorEntry.label ? 'Equipment: ' + behaviorEntry.label + '. ' : '';
+    bTooltip += bDays + ' days of trend data' + (bRangeText ? ' (' + bRangeText + ')' : '') + '.';
+
+    // Build check detail tooltip
+    if (behaviorEntry.checks) {
+      var checkLines = [];
+      var checkLabels = {
+        satReset: 'SAT Reset',
+        dspReset: 'DSP Reset',
+        economizer: 'Economizer',
+        shc: 'SHC',
+        afterHours: 'After-Hours',
+        setpointDeviation: 'Setpoint Dev.',
+        hunting: 'Valve Hunting',
+      };
+      for (var ck in behaviorEntry.checks) {
+        if (!behaviorEntry.checks.hasOwnProperty(ck)) continue;
+        var checkObj = behaviorEntry.checks[ck];
+        var ckLabel = checkLabels[ck] || ck;
+        checkLines.push(ckLabel + ': ' + checkObj.verdict);
+      }
+      if (checkLines.length) bTooltip += ' | ' + checkLines.join(', ');
+    }
+
+    if (bVerdict === 'PASS') {
+      return (
+        '<td style="' +
+        baseStyle +
+        'background:rgba(39,174,96,0.15);color:#27ae60;font-size:11px;font-weight:700" ' +
+        'title="' +
+        emHtmlEsc(bTooltip) +
+        '">PASS</td>'
+      );
+    }
+    if (bVerdict === 'WARN') {
+      return (
+        '<td style="' +
+        baseStyle +
+        'background:rgba(230,126,34,0.15);color:#e67e22;font-size:11px;font-weight:700" ' +
+        'title="' +
+        emHtmlEsc(bTooltip) +
+        '">WARN</td>'
+      );
+    }
+    if (bVerdict === 'FAIL') {
+      return (
+        '<td style="' +
+        baseStyle +
+        'background:rgba(192,57,43,0.15);color:#c0392b;font-size:11px;font-weight:700" ' +
+        'title="' +
+        emHtmlEsc(bTooltip) +
+        '">FAIL</td>'
+      );
+    }
+    // NO_DATA or unknown
+    return (
+      '<td style="' +
+      baseStyle +
+      'color:var(--text3);font-size:10px" ' +
+      'title="' +
+      emHtmlEsc(bTooltip) +
+      '">No Data</td>'
+    );
+  }
+
   // ── Fallback ──
   return '<td style="' + baseStyle + '">' + emHtmlEsc(String(row[def.key] || '')) + '</td>';
 }
@@ -2802,6 +2926,18 @@ function emAuditGetSortVal(row, def) {
     if (!seqEntry || seqEntry.status === 'na') return -1;
     var statusOrder = { ready: 0, partial: 1, blocked: 2 };
     return statusOrder[seqEntry.status] !== undefined ? statusOrder[seqEntry.status] : 99;
+  }
+  // Behavior column sort: FAIL=0, WARN=1, PASS=2, NO_DATA=3, (no BAS data)=4
+  if (def.isAuditBehavior) {
+    if (typeof btGetBuildingBehaviorSummary === 'function' && typeof btMatchBehaviorToRow === 'function') {
+      var bSummary = btGetBuildingBehaviorSummary(window._emActivePid, row.building);
+      var bEntry = btMatchBehaviorToRow(bSummary, row);
+      if (bEntry) {
+        var bOrder = { FAIL: 0, WARN: 1, PASS: 2, NO_DATA: 3 };
+        return bOrder[bEntry.verdict] !== undefined ? bOrder[bEntry.verdict] : 4;
+      }
+    }
+    return 4; // no BAS data — sort last
   }
   return '';
 }

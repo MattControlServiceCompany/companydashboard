@@ -2641,6 +2641,21 @@ function renderBillsPane(pane, m, bills, incl) {
         });
       });
     }
+    // BAS Analysis button — shown when BAS trend data exists for this building
+    // during the bill's date range.  Calls btOpenBillCorrelation in bas-trends.js.
+    if (
+      row.start &&
+      row.end &&
+      udSelBldgId &&
+      typeof btHasBASDataForPeriod === 'function' &&
+      btHasBASDataForPeriod(udSelProjId, udSelBldgId, row.start, row.end)
+    ) {
+      const _basOnClick = `event.stopPropagation();btOpenBillCorrelation('${udSelProjId}','${udSelBldgId}','${row.start}','${row.end}');return false;`;
+      const _basBtn =
+        `<button class="btn-edit" onclick="${_basOnClick}" title="View BAS trend analysis for this billing period" ` +
+        `style="color:var(--green);font-size:11px;padding:2px 5px;">&#128200;</button>`;
+      rowHtml = rowHtml.replace(/(<td class="td-actions[^"]*"[^>]*>)/, '$1' + _basBtn);
+    }
     tblBody += rowHtml;
     if (row.Meter1_ReadStart) {
       const mtrId = 'meter-detail-' + row.id;

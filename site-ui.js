@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.27.389';
+  var CH_VERSION = 'v2026.05.27.390';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -30,13 +30,45 @@
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
     {
+      version: 'v390',
+      date: '2026-05-27',
+      title:
+        'BAS Trends — Phase 4 bill correlation, Phase 5 EM integration, moved to project subtab; tab persistence fix',
+      features: [
+        {
+          type: 'fix',
+          text: 'Tab persistence now checks sessionStorage first, then URL params, then localStorage — fixes tabs not restoring correctly after navigation.',
+        },
+        {
+          type: 'fix',
+          text: 'sv() null guard added to prevent errors when storage keys return undefined.',
+        },
+        {
+          type: 'feature',
+          text: 'BAS Trends Phase 4: bill correlation view — overlays BAS fault periods against utility bill data to quantify energy cost impact.',
+        },
+        {
+          type: 'feature',
+          text: 'BAS Trends Phase 5: EM (Energy Manager) integration — BAS Analysis button on utility bill rows launches fault correlation for that billing period.',
+        },
+        {
+          type: 'feature',
+          text: 'Equipment Matrix Phase 5: behavior column added to show control strategy per equipment unit.',
+        },
+        {
+          type: 'feature',
+          text: 'BAS Trends moved from Energy sidebar to project subtab for better context alongside project data.',
+        },
+      ],
+    },
+    {
       version: 'v388',
       date: '2026-05-27',
       title: 'BAS Trends — CSV import, health score dashboard, fault log, timeline heat map, OAT scatter chart',
       features: [
         {
           type: 'feature',
-          text: 'New BAS Trends view in Energy Department: import CSV trend data exported from your BAS. Finds the view in the Energy sidebar under BAS Trends.',
+          text: 'New BAS Trends view in Energy Department: import CSV trend data exported from your BAS. Find the view in the Energy project tab under BAS Trends.',
         },
         {
           type: 'feature',

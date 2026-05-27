@@ -7423,7 +7423,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=2026.05.27.389" />
+    <link rel="stylesheet" href="feedback-widget.css?v=2026.05.27.390" />
     <style>
       /* -- Quill rich text editor — dark theme overrides -- */
       .ql-toolbar.ql-snow {
@@ -7660,14 +7660,7 @@
                 >
                   <span class="s-ico">🧮</span>ECM Calculators
                 </button>
-                <button
-                  class="s-item"
-                  data-sidebar-id="bas-trends"
-                  data-fb="energy.sidebar.bas-trends"
-                  onclick="sv('bas-trends', this)"
-                >
-                  <span class="s-ico">📈</span>BAS Trends
-                </button>
+
               </div>
             </div>
           </div>
@@ -12739,47 +12732,6 @@
             <div id="ecm-view-body" style="flex: 1; overflow-y: auto; min-height: 0"></div>
           </div>
 
-          <!-- BAS TRENDS VIEW -->
-          <div id="view-bas-trends" class="view view-flex" data-ui-id="en-bas-trends" data-fb="energy.bas-trends">
-            <div
-              class="pg-hdr"
-              style="
-                flex-shrink: 0;
-                padding: 16px 20px 0;
-                border-bottom: 1px solid var(--border);
-                margin-bottom: 0;
-                padding-bottom: 14px;
-              "
-            >
-              <div style="display: flex; align-items: center; justify-content: space-between">
-                <div>
-                  <h1 class="pg-title">BAS <em>Trend Analysis</em></h1>
-                  <p class="pg-sub">
-                    Import WebCTRL CSV exports to analyze equipment runtime, detect control faults, and correlate with
-                    utility bills.
-                  </p>
-                </div>
-                <button
-                  onclick="btOpenImportModal()"
-                  style="
-                    background: var(--accent);
-                    color: #fff;
-                    border: none;
-                    padding: 8px 16px;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    font-size: 13px;
-                    white-space: nowrap;
-                    flex-shrink: 0;
-                  "
-                  title="Import a WebCTRL CSV trend export"
-                >
-                  &#128196; Import Data
-                </button>
-              </div>
-            </div>
-            <div id="bt-view-body" style="flex: 1; overflow-y: auto; min-height: 0"></div>
-          </div>
 
           <script>
             /* Synchronous view restore — runs before first paint to prevent flash.
@@ -14545,44 +14497,44 @@
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
     <!-- CompanyHub computation modules -->
-    <script src="lib/date-helpers.js?v=2026.05.27.389"></script>
-    <script src="lib/formatting.js?v=2026.05.27.389"></script>
-    <script src="lib/unit-conversion.js?v=2026.05.27.389"></script>
-    <script src="lib/csv-parser.js?v=2026.05.27.389"></script>
-    <script src="computations/rates.js?v=2026.05.27.389"></script>
-    <script src="computations/regression.js?v=2026.05.27.389"></script>
-    <script src="computations/normalization.js?v=2026.05.27.389"></script>
-    <script src="computations/eui.js?v=2026.05.27.389"></script>
-    <script src="computations/pollution.js?v=2026.05.27.389"></script>
-    <script src="computations/csc.js?v=2026.05.27.389"></script>
-    <script src="computations/savings.js?v=2026.05.27.389"></script>
-    <script src="computations/anomaly-detection.js?v=2026.05.27.389"></script>
-    <script src="lib/perf-table.js?v=2026.05.27.389"></script>
-    <script src="lib/shared-charts.js?v=2026.05.27.389"></script>
-    <script src="computations/report-data.js?v=2026.05.27.389"></script>
-    <script src="computations/data-quality.js?v=2026.05.27.389"></script>
-    <script src="extraction/pdf-engine.js?v=2026.05.27.389"></script>
-    <script src="app/db.js?v=2026.05.27.389"></script>
-    <script src="app/core.js?v=2026.05.27.389"></script>
-    <script src="app/energy-savings.js?v=2026.05.27.389"></script>
-    <script src="app/bill-analysis.js?v=2026.05.27.389"></script>
-    <script src="extraction/bill-validation.js?v=2026.05.27.389"></script>
-    <script src="app/district-calendar.js?v=2026.05.27.389"></script>
-    <script src="app/utility-data.js?v=2026.05.27.389"></script>
-    <script src="app/pipeline-diagram.js?v=2026.05.27.389"></script>
-    <script src="app/csv-import.js?v=2026.05.27.389"></script>
-    <script src="app/report-engine.js?v=2026.05.27.389"></script>
-    <script src="app/report-preview.js?v=2026.05.27.389"></script>
-    <script src="app/calculators.js?v=2026.05.27.389"></script>
-    <script src="app/ecm-calculators.js?v=2026.05.27.389"></script>
-    <script src="app/equipment-matrix.js?v=2026.05.27.389"></script>
-    <script src="app/graphics-setpoints.js?v=2026.05.27.389"></script>
-    <script src="app/budget.js?v=2026.05.27.389"></script>
-    <script src="app/scorecard.js?v=2026.05.27.389"></script>
-    <script src="app/portal-export.js?v=2026.05.27.389"></script>
-    <script src="app/bas-trends.js?v=2026.05.27.389"></script>
+    <script src="lib/date-helpers.js?v=2026.05.27.390"></script>
+    <script src="lib/formatting.js?v=2026.05.27.390"></script>
+    <script src="lib/unit-conversion.js?v=2026.05.27.390"></script>
+    <script src="lib/csv-parser.js?v=2026.05.27.390"></script>
+    <script src="computations/rates.js?v=2026.05.27.390"></script>
+    <script src="computations/regression.js?v=2026.05.27.390"></script>
+    <script src="computations/normalization.js?v=2026.05.27.390"></script>
+    <script src="computations/eui.js?v=2026.05.27.390"></script>
+    <script src="computations/pollution.js?v=2026.05.27.390"></script>
+    <script src="computations/csc.js?v=2026.05.27.390"></script>
+    <script src="computations/savings.js?v=2026.05.27.390"></script>
+    <script src="computations/anomaly-detection.js?v=2026.05.27.390"></script>
+    <script src="lib/perf-table.js?v=2026.05.27.390"></script>
+    <script src="lib/shared-charts.js?v=2026.05.27.390"></script>
+    <script src="computations/report-data.js?v=2026.05.27.390"></script>
+    <script src="computations/data-quality.js?v=2026.05.27.390"></script>
+    <script src="extraction/pdf-engine.js?v=2026.05.27.390"></script>
+    <script src="app/db.js?v=2026.05.27.390"></script>
+    <script src="app/core.js?v=2026.05.27.390"></script>
+    <script src="app/energy-savings.js?v=2026.05.27.390"></script>
+    <script src="app/bill-analysis.js?v=2026.05.27.390"></script>
+    <script src="extraction/bill-validation.js?v=2026.05.27.390"></script>
+    <script src="app/district-calendar.js?v=2026.05.27.390"></script>
+    <script src="app/utility-data.js?v=2026.05.27.390"></script>
+    <script src="app/pipeline-diagram.js?v=2026.05.27.390"></script>
+    <script src="app/csv-import.js?v=2026.05.27.390"></script>
+    <script src="app/report-engine.js?v=2026.05.27.390"></script>
+    <script src="app/report-preview.js?v=2026.05.27.390"></script>
+    <script src="app/calculators.js?v=2026.05.27.390"></script>
+    <script src="app/ecm-calculators.js?v=2026.05.27.390"></script>
+    <script src="app/equipment-matrix.js?v=2026.05.27.390"></script>
+    <script src="app/graphics-setpoints.js?v=2026.05.27.390"></script>
+    <script src="app/budget.js?v=2026.05.27.390"></script>
+    <script src="app/scorecard.js?v=2026.05.27.390"></script>
+    <script src="app/portal-export.js?v=2026.05.27.390"></script>
+    <script src="app/bas-trends.js?v=2026.05.27.390"></script>
 
-    <script src="app/site-functions.js?v=2026.05.27.389"></script>
+    <script src="app/site-functions.js?v=2026.05.27.390"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
@@ -14739,10 +14691,10 @@
       </div>
     </div>
 
-    <script src="app/tooltips-help.js?v=2026.05.27.389"></script>
-    <script src="feedback-widget.js?v=2026.05.27.389"></script>
+    <script src="app/tooltips-help.js?v=2026.05.27.390"></script>
+    <script src="feedback-widget.js?v=2026.05.27.390"></script>
     <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js" crossorigin="anonymous"></script>
-    <script src="lib/rich-text.js?v=2026.05.27.389"></script>
+    <script src="lib/rich-text.js?v=2026.05.27.390"></script>
     <script>
       /* Handle ?openProject=... URL params — opened by _rptV2GoEdit() popup window */
       (function _handleEditRedirect() {

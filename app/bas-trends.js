@@ -4257,3 +4257,1545 @@ function btPhase3RenderTab(tabId) {
   }
   return false;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 5 — EQUIPMENT MATRIX INTEGRATION
+   Added: 2026-05-27
+   Purpose: Expose BAS trend behavioral check results to the Equipment Matrix
+   "Behavior" column, and provide a savings estimate panel for the BAS Trends view.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * btGetBuildingBehaviorSummary
+ * Returns a map of equipTag -> behavior verdict for a given building.
+ * Used by the Equipment Matrix Audit View "Behavior" column.
+ *
+ * Matching strategy:
+ *   1. Prefer equip.matrixEquipId linkage if stored (Phase 6 autofill)
+ *   2. Fall back to fuzzy name match: normalize both the equipment label
+ *      from BAS data and the equipName from the matrix row, then check
+ *      if either contains the other.
+ *
+ * Verdict derivation (from btRunBehavioralChecks on the equipment's .days):
+ *   PASS    = all checks with data have verdict PASS
+ *   WARN    = any check has verdict WARN (and none are FAIL)
+ *   FAIL    = any check has verdict FAIL
+ *   NO_DATA = no days data or all checks returned NO_DATA / INSUFFICIENT_DATA
+ *
+ * @param {string} projId
+ * @param {string} bldgName  - building name as it appears in the Equipment Matrix
+ * @returns {Object}  keyed by equipTag (BAS tag), each value:
+ *   { verdict: 'PASS'|'WARN'|'FAIL'|'NO_DATA', checks: {}, daysCount: number, dataRange: {} }
+ */
+function btGetBuildingBehaviorSummary(projId, bldgName) {
+  var result = {};
+  if (!projId || !bldgName) return result;
+
+  var basData = btGetData(projId);
+  if (!basData || !basData.buildings) return result;
+
+  // Find the matching building by name (case-insensitive)
+  var bldgNorm = bldgName.trim().toLowerCase();
+  var matchedBldg = null;
+  for (var bldgId in basData.buildings) {
+    if (!basData.buildings.hasOwnProperty(bldgId)) continue;
+    var b = basData.buildings[bldgId];
+    var bName = (b.name || bldgId || '').trim().toLowerCase();
+    if (bName === bldgNorm || bName.indexOf(bldgNorm) !== -1 || bldgNorm.indexOf(bName) !== -1) {
+      matchedBldg = b;
+      break;
+    }
+  }
+
+  if (!matchedBldg || !matchedBldg.equipment) return result;
+
+  for (var equipTag in matchedBldg.equipment) {
+    if (!matchedBldg.equipment.hasOwnProperty(equipTag)) continue;
+    var equip = matchedBldg.equipment[equipTag];
+    var days = equip.days || {};
+    var dayKeys = Object.keys(days);
+
+    if (dayKeys.length === 0) {
+      result[equipTag] = { verdict: 'NO_DATA', checks: {}, daysCount: 0, dataRange: equip.dataRange || {} };
+      continue;
+    }
+
+    // Run behavioral checks on the stored daily summaries
+    var checks = btRunBehavioralChecks(days);
+
+    // Derive overall verdict from individual check verdicts
+    var verdict = 'NO_DATA';
+    var hasFail = false;
+    var hasWarn = false;
+    var hasData = false;
+
+    for (var ck in checks) {
+      if (!checks.hasOwnProperty(ck)) continue;
+      var v = checks[ck].verdict;
+      if (v === 'FAIL') {
+        hasFail = true;
+        hasData = true;
+      } else if (v === 'WARN') {
+        hasWarn = true;
+        hasData = true;
+      } else if (v === 'PASS') {
+        hasData = true;
+      }
+      // NO_DATA and INSUFFICIENT_DATA do not count as data
+    }
+
+    if (hasFail) verdict = 'FAIL';
+    else if (hasWarn) verdict = 'WARN';
+    else if (hasData) verdict = 'PASS';
+
+    result[equipTag] = {
+      verdict: verdict,
+      checks: checks,
+      daysCount: dayKeys.length,
+      dataRange: equip.dataRange || {},
+      label: equip.label || equipTag,
+    };
+  }
+
+  return result;
+}
+
+/**
+ * btMatchBehaviorToRow
+ * Finds the behavior summary entry that best matches a matrix row.
+ * Used by the Equipment Matrix renderer to look up the verdict for one row.
+ *
+ * @param {Object} behaviorSummary  - return value of btGetBuildingBehaviorSummary()
+ * @param {Object} row              - equipment matrix row { equipName, building, matrixEquipId }
+ * @returns {Object|null}  matched entry or null if no data for this equipment
+ */
+function btMatchBehaviorToRow(behaviorSummary, row) {
+  if (!behaviorSummary || !row) return null;
+
+  // Strategy 1: matrixEquipId explicit linkage
+  if (row.matrixEquipId && behaviorSummary[row.matrixEquipId]) {
+    return behaviorSummary[row.matrixEquipId];
+  }
+
+  // Strategy 2: fuzzy name match — normalize both names
+  var rowName = (row.equipName || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\-_\s]+/g, ' ');
+
+  var bestMatch = null;
+  var bestScore = 0;
+
+  for (var equipTag in behaviorSummary) {
+    if (!behaviorSummary.hasOwnProperty(equipTag)) continue;
+    var entry = behaviorSummary[equipTag];
+    var tagNorm = (entry.label || equipTag)
+      .trim()
+      .toLowerCase()
+      .replace(/[\-_\s]+/g, ' ');
+
+    // Exact match
+    if (tagNorm === rowName) return entry;
+
+    // Containment match: score by length of shared text
+    var score = 0;
+    if (rowName.indexOf(tagNorm) !== -1) score = tagNorm.length;
+    else if (tagNorm.indexOf(rowName) !== -1) score = rowName.length;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = entry;
+    }
+  }
+
+  // Only return a containment match if it's reasonably specific (avoids matching "AHU" to everything)
+  return bestScore >= 3 ? bestMatch : null;
+}
+
+/**
+ * btEstimateSavings
+ * Computes engineering-estimate savings from BAS trend fault data for one building.
+ * Returns an array of estimate objects, one per fault type with available data.
+ *
+ * Accuracy: ±25% — not for guaranteed savings contracts.
+ *
+ * @param {string} projId
+ * @param {string} bldgId
+ * @param {Object} opts  - { elecRate: $/kWh, gasRate: $/therm, fanHpPerAhu: number, cfmPerAhu: number }
+ * @returns {Array}  [ { type, label, annualKwh, annualTherms, annualDollars, detail, basis }, ... ]
+ */
+function btEstimateSavings(projId, bldgId, opts) {
+  opts = opts || {};
+  var elecRate = opts.elecRate || btGetBlendedRate(projId, bldgId) || 0.1;
+  var gasRate = opts.gasRate || 0.8;
+  var fanHpPerAhu = opts.fanHpPerAhu || 5; // HP — conservative default for medium AHU
+  var cfmPerAhu = opts.cfmPerAhu || 10000; // CFM — conservative default
+
+  var basData = btGetData(projId);
+  if (!basData || !basData.buildings || !basData.buildings[bldgId]) return [];
+
+  var bldg = basData.buildings[bldgId];
+  var estimates = [];
+
+  // Aggregate fault hours across all equipment in this building
+  var totalAftHrs = 0,
+    totalShcHrs = 0;
+  var satFails = 0,
+    satWarns = 0,
+    satEquipCount = 0;
+  var dspFails = 0,
+    dspWarns = 0,
+    dspEquipCount = 0;
+  var econFails = 0,
+    econEquipCount = 0;
+  var equipCount = 0;
+  var totalDays = 0;
+
+  for (var equipTag in bldg.equipment) {
+    if (!bldg.equipment.hasOwnProperty(equipTag)) continue;
+    var equip = bldg.equipment[equipTag];
+    var days = equip.days || {};
+    var dayKeys = Object.keys(days);
+    if (dayKeys.length === 0) continue;
+    equipCount++;
+    totalDays = Math.max(totalDays, dayKeys.length);
+
+    for (var dk in days) {
+      if (!days.hasOwnProperty(dk)) continue;
+      var day = days[dk];
+      var f = day.faults || {};
+      totalAftHrs += f.afterHours || 0;
+      totalShcHrs += f.shc || 0;
+    }
+
+    var checks = btRunBehavioralChecks(days);
+
+    if (checks.satReset) {
+      satEquipCount++;
+      if (checks.satReset.verdict === 'FAIL') satFails++;
+      else if (checks.satReset.verdict === 'WARN') satWarns++;
+    }
+    if (checks.dspReset) {
+      dspEquipCount++;
+      if (checks.dspReset.verdict === 'FAIL') dspFails++;
+      else if (checks.dspReset.verdict === 'WARN') dspWarns++;
+    }
+    if (checks.economizer) {
+      econEquipCount++;
+      if (checks.economizer.verdict === 'FAIL') econFails++;
+    }
+  }
+
+  if (equipCount === 0) return [];
+
+  // Scale detected fault totals to an annual estimate
+  // Data covers totalDays days; scale to 365 days
+  var scaleFactor = totalDays > 14 ? 365 / totalDays : 1;
+
+  // ── SAT Reset savings ──
+  // Fixed SAT at 55°F vs optimal (55–65°F range), occupied hours only
+  // Savings estimate: 10% of AHU cooling energy for each AHU failing the check
+  // Simplified: use cooling hours (~1,800 hrs/yr in Kansas) × fan kW × 10% waste factor
+  if (satEquipCount > 0 && (satFails > 0 || satWarns > 0)) {
+    var satAhuCount = satFails + Math.round(satWarns * 0.5); // warns count half
+    var coolingHrsPerYear = 1800;
+    var fanKw = (fanHpPerAhu * 0.746) / 0.91; // HP × kW/HP / motor efficiency
+    // SAT reset saves cooling energy (reheat + chiller) — use 12% of AHU cooling energy
+    var satCoolingKwh = fanKw * coolingHrsPerYear * satAhuCount * 0.12;
+    // Also saves reheat gas: Delta_SAT = 5°F avg, CFM × 1.08 BTU/hr/cfm/°F → therms
+    var reheatBtuPerHr = cfmPerAhu * 1.08 * 5; // BTU/hr per AHU
+    var reheatThermsSaved = (reheatBtuPerHr * coolingHrsPerYear * satAhuCount) / 100000;
+    var satDollars = satCoolingKwh * elecRate + reheatThermsSaved * gasRate;
+    estimates.push({
+      type: 'satReset',
+      label: 'SAT Reset (Supply Air Temperature)',
+      annualKwh: Math.round(satCoolingKwh),
+      annualTherms: Math.round(reheatThermsSaved),
+      annualDollars: Math.round(satDollars),
+      detail: satFails + ' of ' + satEquipCount + ' AHUs show fixed SAT setpoint (ASHRAE G36 §5.16.3 not running)',
+      basis: '12% of AHU cooling energy + 5°F reheat reduction @ ' + cfmPerAhu.toLocaleString() + ' CFM',
+    });
+  }
+
+  // ── DSP Reset savings ──
+  // Fan affinity law: P ∝ speed³, speed ∝ sqrt(pressure)
+  // A 30% SP reduction → 70% speed → 34% of original power → 66% savings
+  // Conservative: assume 20% SP reduction achievable for FAILing AHUs
+  if (dspEquipCount > 0 && (dspFails > 0 || dspWarns > 0)) {
+    var dspAhuCount = dspFails + Math.round(dspWarns * 0.5);
+    var fanHrsPerYear = 2400; // occupied hours + some override
+    var fanKwDsp = (fanHpPerAhu * 0.746) / 0.91;
+    var spReductionFraction = 0.2; // 20% SP reduction
+    var speedRatio = Math.sqrt(1 - spReductionFraction);
+    var powerRatio = Math.pow(speedRatio, 3);
+    var savingsFraction = 1 - powerRatio;
+    var dspKwh = fanKwDsp * fanHrsPerYear * dspAhuCount * savingsFraction;
+    var dspDollars = dspKwh * elecRate;
+    estimates.push({
+      type: 'dspReset',
+      label: 'DSP Reset (Duct Static Pressure)',
+      annualKwh: Math.round(dspKwh),
+      annualTherms: 0,
+      annualDollars: Math.round(dspDollars),
+      detail: dspFails + ' of ' + dspEquipCount + ' AHUs show fixed duct static pressure (G36 §5.16.4 not running)',
+      basis: 'Fan affinity laws — 20% SP reduction → ' + Math.round(savingsFraction * 100) + '% fan power savings',
+    });
+  }
+
+  // ── After-hours savings ──
+  // Annual after-hours hours (scaled from data window)
+  if (totalAftHrs > 0) {
+    var annualAftHrs = totalAftHrs * scaleFactor;
+    // Estimate HVAC kW per AHU: fan + some conditioning
+    var hvacKwPerAhu = ((fanHpPerAhu * 0.746) / 0.91) * 1.2; // fan + 20% for conditioning
+    var aftKwh = hvacKwPerAhu * annualAftHrs;
+    var aftDollars = aftKwh * elecRate;
+    estimates.push({
+      type: 'afterHours',
+      label: 'After-Hours Operation',
+      annualKwh: Math.round(aftKwh),
+      annualTherms: 0,
+      annualDollars: Math.round(aftDollars),
+      detail:
+        Math.round(annualAftHrs) +
+        ' hrs/yr of fan operation outside scheduled occupied hours across ' +
+        equipCount +
+        ' equipment',
+      basis: 'Measured after-hours runtime × estimated HVAC kW (' + btRound(hvacKwPerAhu, 1) + ' kW/AHU)',
+    });
+  }
+
+  // ── SHC savings ──
+  // Simultaneous heating and cooling: count hours, estimate wasted heating kBTU
+  if (totalShcHrs > 0) {
+    var annualShcHrs = totalShcHrs * scaleFactor;
+    // Estimate heating waste: 40% of coil capacity wasted during SHC
+    var maxHeatBtuHr = cfmPerAhu * 1.08 * 20; // 20°F temperature rise at full heat
+    var shcWasteBtu = maxHeatBtuHr * annualShcHrs * 0.4;
+    var shcTherms = shcWasteBtu / 100000;
+    // Cooling waste overhead (compressor working against heating)
+    var shcKwh = (shcWasteBtu * 1.3) / 3412;
+    var shcDollars = shcTherms * gasRate + shcKwh * elecRate;
+    estimates.push({
+      type: 'shc',
+      label: 'Simultaneous Heating and Cooling (SHC)',
+      annualKwh: Math.round(shcKwh),
+      annualTherms: Math.round(shcTherms),
+      annualDollars: Math.round(shcDollars),
+      detail:
+        Math.round(annualShcHrs) + ' hrs/yr of simultaneous heating + cooling across ' + equipCount + ' equipment',
+      basis: '40% of max heating coil capacity wasted during SHC intervals',
+    });
+  }
+
+  return estimates;
+}
+
+/**
+ * btRenderSavingsPanel
+ * Renders the savings estimates panel HTML for a given building.
+ * Called from the BAS Trends view (not Equipment Matrix).
+ *
+ * @param {string} projId
+ * @param {string} bldgId
+ * @returns {string}  HTML string for the panel
+ */
+function btRenderSavingsPanel(projId, bldgId) {
+  var estimates = btEstimateSavings(projId, bldgId);
+
+  if (!estimates || estimates.length === 0) {
+    return (
+      '<div style="padding:24px;text-align:center;font-size:12px;color:var(--text3)">' +
+      'No fault data available to estimate savings. Import at least 14 days of trend data.' +
+      '</div>'
+    );
+  }
+
+  var totalDollars = 0;
+  for (var i = 0; i < estimates.length; i++) totalDollars += estimates[i].annualDollars;
+
+  var rows = '';
+  for (var j = 0; j < estimates.length; j++) {
+    var e = estimates[j];
+    var kwhText = e.annualKwh > 0 ? e.annualKwh.toLocaleString() + ' kWh' : '';
+    var thermText = e.annualTherms > 0 ? e.annualTherms.toLocaleString() + ' therms' : '';
+    var energyText = [kwhText, thermText].filter(Boolean).join(' + ') || '--';
+    rows +=
+      '<tr style="border-bottom:1px solid var(--border)">' +
+      '<td style="padding:6px 8px;color:var(--text);font-size:11px">' +
+      btEscapeHtml(e.label) +
+      '</td>' +
+      '<td style="padding:6px 8px;color:var(--text2);font-size:11px;font-family:Consolas,monospace">' +
+      energyText +
+      '</td>' +
+      '<td style="padding:6px 8px;color:var(--text);font-size:11px;font-weight:600;text-align:right">' +
+      '$' +
+      e.annualDollars.toLocaleString() +
+      '/yr' +
+      '</td>' +
+      '<td style="padding:6px 8px;color:var(--text3);font-size:10px">' +
+      '<span title="' +
+      btEscapeAttr(e.basis) +
+      '" style="cursor:help;text-decoration:underline dotted">' +
+      btEscapeHtml(e.detail) +
+      '</span>' +
+      '</td>' +
+      '</tr>';
+  }
+
+  return (
+    '<div style="padding:16px">' +
+    '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:12px">' +
+    '<div style="font-size:14px;font-weight:600;color:var(--text)">Savings Estimates</div>' +
+    '<div style="font-size:11px;color:var(--text3)" ' +
+    'title="Engineering estimates only. Based on measured fault hours and published ASHRAE/PNNL savings factors. ' +
+    'Not for use in guaranteed savings contracts. Verify against actual utility bills." ' +
+    'style="cursor:help;text-decoration:underline dotted">±25% accuracy — not for guaranteed savings contracts</div>' +
+    '</div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:11px">' +
+    '<thead>' +
+    '<tr style="border-bottom:2px solid var(--border)">' +
+    '<th style="padding:4px 8px;text-align:left;font-weight:600;color:var(--text2);font-size:10px;text-transform:uppercase">Sequence</th>' +
+    '<th style="padding:4px 8px;text-align:left;font-weight:600;color:var(--text2);font-size:10px;text-transform:uppercase">Annual Energy</th>' +
+    '<th style="padding:4px 8px;text-align:right;font-weight:600;color:var(--text2);font-size:10px;text-transform:uppercase">Est. Savings</th>' +
+    '<th style="padding:4px 8px;text-align:left;font-weight:600;color:var(--text2);font-size:10px;text-transform:uppercase">Basis</th>' +
+    '</tr>' +
+    '</thead>' +
+    '<tbody>' +
+    rows +
+    '</tbody>' +
+    '</table>' +
+    '<div style="margin-top:10px;padding:8px 10px;background:var(--s3);border-radius:4px;font-size:10px;color:var(--text3)">' +
+    '<strong>Total estimated savings:</strong> $' +
+    totalDollars.toLocaleString() +
+    '/yr &nbsp;|&nbsp; ' +
+    'Based on measured fault data from BAS trends. Rates: $' +
+    (btGetBlendedRate(projId, bldgId) || 0.1).toFixed(3) +
+    '/kWh, $0.80/therm.' +
+    '</div>' +
+    '</div>'
+  );
+}
+
+/* ── PHASE 4: BILL CORRELATION ───────────────────────────────────────────────
+   Adds a "Bill Correlation" subtab (subtab 5) to the BAS Trends analysis
+   panel.  For a selected utility bill it shows:
+     - BAS data coverage for the billing period
+     - Runtime summary (fan hours, cooling hours, heating hours, occupied hours)
+     - Fault hours by type with estimated kWh waste and estimated cost
+     - Comparison to the prior billing period (same metrics + delta)
+     - Per-equipment breakdown when multiple AHUs/units exist
+
+   Entry points:
+     btPhase4RegisterTab()         — appends tab button to the subtab bar
+     btPhase4RenderTab(tabId)      — dispatch delegate (returns true for 'billcorr')
+     btGetBASForBillPeriod(...)    — full implementation replacing Phase 1 stub
+     btOpenBillCorrelation(...)    — called from utility-data.js bill rows
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* ── MODULE STATE ────────────────────────────────────────────────────────── */
+
+var _btSelBillStart = null;
+var _btSelBillEnd = null;
+var _btSelBillCost = null;
+var _btSelBillUsage = null;
+var _btSelBillCommodity = null;
+
+/* ── TAB REGISTRATION ────────────────────────────────────────────────────── */
+
+/**
+ * Append the "Bill Correlation" tab button to Phase 2's subtab bar.
+ * Locates the bar by finding any existing .bt-stab button and walking to its
+ * parent container.  Safe to call multiple times — guards against double-
+ * registration with an id check.
+ */
+function btPhase4RegisterTab() {
+  var anyTab = document.querySelector('.bt-stab');
+  if (!anyTab) return;
+  var bar = anyTab.parentNode;
+  if (!bar) return;
+
+  if (document.getElementById('bt-subtab-billcorr')) return;
+
+  var btn = document.createElement('button');
+  btn.id = 'bt-subtab-billcorr';
+  btn.className = 'bt-stab';
+  btn.setAttribute('data-tab', 'billcorr');
+  btn.textContent = 'Bill Correlation';
+  btn.onclick = function () {
+    if (typeof btSwitchSubtab === 'function') btSwitchSubtab('billcorr');
+  };
+  bar.appendChild(btn);
+}
+
+/**
+ * Dispatch delegate for Phase 4's Bill Correlation subtab.
+ * Phase 2's btSwitchSubtab/btRenderSubtabContent should call
+ *   if (btPhase4RenderTab(tabId)) return;
+ * to handle this tab.  Returns true if handled.
+ *
+ * @param {string} tabId
+ * @returns {boolean}
+ */
+function btPhase4RenderTab(tabId) {
+  if (tabId === 'billcorr') {
+    btRenderBillCorrelation();
+    return true;
+  }
+  return false;
+}
+
+/* ── DATA HELPERS ────────────────────────────────────────────────────────── */
+
+/**
+ * Collect all bills for a building across all meters from utility data.
+ * Returns an array of enriched bill objects, sorted descending by start date.
+ *
+ * Each object:
+ *   { id, start, end, totalCost, usage, usageUnit, commodity, meterId, meterName }
+ *
+ * @param {string} projId
+ * @param {string} bldgId
+ * @returns {Array}
+ */
+function btGetBillsForBldg(projId, bldgId) {
+  var utilData = sget('en_utility_' + projId, null);
+  if (!utilData) return [];
+  var bldgs = utilData.buildings || [];
+  var bldg = null;
+  for (var i = 0; i < bldgs.length; i++) {
+    if (bldgs[i].id === bldgId) {
+      bldg = bldgs[i];
+      break;
+    }
+  }
+  if (!bldg) return [];
+
+  var out = [];
+  var meters = bldg.meters || [];
+  for (var mi = 0; mi < meters.length; mi++) {
+    var meter = meters[mi];
+    var commodity = meter.commodity || 'Unknown';
+    var bills = meter.bills || [];
+    for (var bi = 0; bi < bills.length; bi++) {
+      var b = bills[bi];
+      if (!b.start || !b.end) continue;
+
+      // Usage field name varies by commodity
+      var usage = 0;
+      var usageUnit = '';
+      if (commodity === 'Electric') {
+        usage = parseFloat(b.kwh || b.kWh || 0);
+        usageUnit = 'kWh';
+      } else if (commodity === 'Gas') {
+        usage = parseFloat(b.therms || b.ccf || 0);
+        usageUnit = 'Therms';
+      } else if (commodity === 'Propane') {
+        usage = parseFloat(b.gallonsDelivered || b.kwh || 0);
+        usageUnit = 'Gallons';
+      } else if (commodity === 'Water') {
+        usage = parseFloat(b.gallons || b.kwh || 0);
+        usageUnit = 'Gallons';
+      } else {
+        usage = parseFloat(b.kwh || b.therms || 0);
+        usageUnit = commodity;
+      }
+
+      out.push({
+        id: b.id,
+        start: b.start,
+        end: b.end,
+        totalCost: parseFloat(b.totalCost || 0),
+        usage: usage,
+        usageUnit: usageUnit,
+        commodity: commodity,
+        meterId: meter.id,
+        meterName: meter.meter || meter.account || commodity,
+      });
+    }
+  }
+
+  // Sort descending by start date (most recent first)
+  out.sort(function (a, b) {
+    return a.start < b.start ? 1 : a.start > b.start ? -1 : 0;
+  });
+  return out;
+}
+
+/**
+ * Full implementation of bill-period BAS aggregation.
+ * Replaces the Phase 1 getBASForBillPeriod stub for Phase 4 callers.
+ *
+ * Aggregates all daily summaries falling within [billStart, billEnd] across
+ * every equipment unit stored for the building.  Returns a structured object:
+ *
+ *   days           {Array}   sorted date strings with BAS data in range
+ *   dayCount       {number}  length of days
+ *   equipment      {Object}  per-equipment runtime + fault + estWaste
+ *   faultTotals    {Object}  { shc, afterHours, economizer, setpointDeviation, sensorFlat, override, hunting }
+ *   runtimeTotals  {Object}  { fanHours, coolingHours, heatingHours, occupiedHours }
+ *   blendedRate    {number|null}  $/kWh from bill or portfolio average
+ *   estWasteDollars {number} total estimated $ waste from energy faults (±25%)
+ *
+ * @param {string}      projId
+ * @param {string}      bldgId
+ * @param {string}      billStart   'YYYY-MM-DD'
+ * @param {string}      billEnd     'YYYY-MM-DD'
+ * @param {number|null} billCost    total bill cost (for bill-specific blended rate)
+ * @param {number|null} billUsage   bill kWh consumed (for bill-specific blended rate)
+ * @returns {Object|null}
+ */
+function btGetBASForBillPeriod(projId, bldgId, billStart, billEnd, billCost, billUsage) {
+  var basData = btGetData(projId);
+  if (!basData) return null;
+  var bldgBAS = basData.buildings && basData.buildings[bldgId];
+  if (!bldgBAS) return null;
+
+  // Blended rate: prefer bill-specific cost/usage, fall back to portfolio avg
+  var blendedRate = null;
+  if (billCost && billUsage && billUsage > 0) {
+    blendedRate = btRound(billCost / billUsage, 5);
+  } else {
+    blendedRate = btGetBlendedRate(projId, bldgId);
+  }
+
+  var HVAC_KW = 20; // default estimated HVAC kW per AHU
+
+  var result = {
+    days: [],
+    dayCount: 0,
+    equipment: {},
+    faultTotals: {
+      shc: 0,
+      afterHours: 0,
+      economizer: 0,
+      setpointDeviation: 0,
+      sensorFlat: 0,
+      override: 0,
+      hunting: 0,
+    },
+    runtimeTotals: { fanHours: 0, coolingHours: 0, heatingHours: 0, occupiedHours: 0 },
+    blendedRate: blendedRate,
+    estWasteDollars: 0,
+  };
+
+  for (var equipId in bldgBAS.equipment) {
+    if (!bldgBAS.equipment.hasOwnProperty(equipId)) continue;
+    var equip = bldgBAS.equipment[equipId];
+
+    result.equipment[equipId] = {
+      tag: equipId,
+      runtimeHours: 0,
+      coolingHours: 0,
+      heatingHours: 0,
+      occupiedHours: 0,
+      faults: { shc: 0, afterHours: 0, economizer: 0, setpointDeviation: 0, sensorFlat: 0, override: 0, hunting: 0 },
+      estWaste: 0,
+    };
+
+    var equipDays = equip.days || {};
+    for (var dk in equipDays) {
+      if (!equipDays.hasOwnProperty(dk)) continue;
+      if (dk < billStart || dk > billEnd) continue;
+
+      if (result.days.indexOf(dk) === -1) result.days.push(dk);
+
+      var day = equipDays[dk];
+
+      // Fan runtime
+      if (day.fanstatus) {
+        var fanHrs = day.fanstatus.runtimeHours || 0;
+        result.equipment[equipId].runtimeHours += fanHrs;
+        result.runtimeTotals.fanHours += fanHrs;
+      }
+
+      // Cooling/heating hours — approximate from occupied-average valve position
+      if (day.coolvalve) {
+        var coolHrs = (day.coolvalve.occupiedAvg || 0) > 5 ? day.occupiedHours || 8 : 0;
+        result.equipment[equipId].coolingHours += coolHrs;
+        result.runtimeTotals.coolingHours += coolHrs;
+      }
+      if (day.heatvalve) {
+        var heatHrs = (day.heatvalve.occupiedAvg || 0) > 5 ? day.occupiedHours || 8 : 0;
+        result.equipment[equipId].heatingHours += heatHrs;
+        result.runtimeTotals.heatingHours += heatHrs;
+      }
+
+      var occHrs = day.occupiedHours || 0;
+      result.equipment[equipId].occupiedHours += occHrs;
+      result.runtimeTotals.occupiedHours += occHrs;
+
+      // Fault hours
+      var f = day.faults || {};
+      for (var ft in result.faultTotals) {
+        if (!result.faultTotals.hasOwnProperty(ft)) continue;
+        var fHrs = f[ft] || 0;
+        result.equipment[equipId].faults[ft] += fHrs;
+        result.faultTotals[ft] += fHrs;
+      }
+
+      // Per-day waste estimate (energy faults only)
+      if (blendedRate) {
+        var ahKwh = (f.afterHours || 0) * HVAC_KW * 0.4;
+        var shcKwh = (f.shc || 0) * HVAC_KW * 0.2;
+        var econKwh = (f.economizer || 0) * HVAC_KW * 0.15;
+        var dayWaste = btRound((ahKwh + shcKwh + econKwh) * blendedRate, 3);
+        result.equipment[equipId].estWaste += dayWaste;
+        result.estWasteDollars += dayWaste;
+      }
+    }
+  }
+
+  result.days.sort();
+  result.dayCount = result.days.length;
+  result.estWasteDollars = btRound(result.estWasteDollars, 2);
+
+  return result;
+}
+
+/**
+ * Return true if any daily summary exists for the building in the date range.
+ * Used to decide whether to show the BAS Analysis button on a bill row.
+ *
+ * @param {string} projId
+ * @param {string} bldgId
+ * @param {string} start  'YYYY-MM-DD'
+ * @param {string} end    'YYYY-MM-DD'
+ * @returns {boolean}
+ */
+function btHasBASDataForPeriod(projId, bldgId, start, end) {
+  var basData = btGetData(projId);
+  if (!basData) return false;
+  var bldgBAS = basData.buildings && basData.buildings[bldgId];
+  if (!bldgBAS) return false;
+  for (var equipId in bldgBAS.equipment) {
+    if (!bldgBAS.equipment.hasOwnProperty(equipId)) continue;
+    var days = bldgBAS.equipment[equipId].days || {};
+    for (var dk in days) {
+      if (days.hasOwnProperty(dk) && dk >= start && dk <= end) return true;
+    }
+  }
+  return false;
+}
+
+/* ── SUBTAB RENDERER ─────────────────────────────────────────────────────── */
+
+/**
+ * Render the Bill Correlation subtab into #bt-subtab-body.
+ * Two-column layout: bill list on the left, analysis panel on the right.
+ */
+function btRenderBillCorrelation() {
+  var el = document.getElementById('bt-subtab-body');
+  if (!el) return;
+
+  var projId = window._activeProjId || null;
+  if (!projId) {
+    el.innerHTML =
+      '<div style="padding:32px;text-align:center;color:var(--text3);">Select a project to view bill correlation.</div>';
+    return;
+  }
+
+  if (!_btSelBldg) {
+    el.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text3);">Select a building above.</div>';
+    return;
+  }
+
+  var basData = btGetData(projId);
+  var hasBAS = basData && basData.buildings && basData.buildings[_btSelBldg];
+  if (!hasBAS) {
+    el.innerHTML = [
+      '<div style="padding:40px;text-align:center;">',
+      '<div style="font-size:13px;color:var(--text3);margin-bottom:10px;">',
+      'No BAS trend data imported for this building.',
+      '</div>',
+      '<div style="font-size:12px;color:var(--text3);">',
+      'Import a WebCTRL CSV export to enable bill correlation analysis.',
+      '</div>',
+      '</div>',
+    ].join('');
+    return;
+  }
+
+  var bills = btGetBillsForBldg(projId, _btSelBldg);
+  if (bills.length === 0) {
+    el.innerHTML = [
+      '<div style="padding:40px;text-align:center;">',
+      '<div style="font-size:13px;color:var(--text3);">',
+      'No utility bills found for this building.',
+      '</div>',
+      '<div style="font-size:12px;color:var(--text3);margin-top:6px;">',
+      'Add bills in the Utility Data tool to enable bill correlation.',
+      '</div>',
+      '</div>',
+    ].join('');
+    return;
+  }
+
+  el.innerHTML = [
+    '<div style="display:flex;height:100%;min-height:0;gap:0;">',
+    '<div id="bt-bill-list-panel" style="width:270px;flex-shrink:0;border-right:1px solid var(--border);overflow-y:auto;background:var(--s1);">',
+    btBuildBillListHTML(projId, _btSelBldg, bills),
+    '</div>',
+    '<div id="bt-bill-analysis-panel" style="flex:1;overflow-y:auto;padding:20px 24px;">',
+    _btSelBillStart ? btBuildBillAnalysisHTML(projId, _btSelBldg, bills) : btBuildBillAnalysisPrompt(),
+    '</div>',
+    '</div>',
+  ].join('');
+
+  // Register tab button now that the subtab bar exists
+  btPhase4RegisterTab();
+}
+
+/**
+ * Build the left-panel bill list HTML.
+ * Bills are grouped by commodity.  Each row shows date range, usage, and cost.
+ * A green dot appears when BAS trend data exists for the period.
+ *
+ * @param {string} projId
+ * @param {string} bldgId
+ * @param {Array}  bills
+ * @returns {string} HTML
+ */
+function btBuildBillListHTML(projId, bldgId, bills) {
+  if (!bills || bills.length === 0) {
+    return '<div style="padding:16px;font-size:12px;color:var(--text3);">No bills found.</div>';
+  }
+
+  var html = [
+    '<div style="padding:8px 12px 6px;font-size:10px;font-weight:600;text-transform:uppercase;',
+    'letter-spacing:.5px;color:var(--text3);border-bottom:1px solid var(--border);">',
+    'Utility Bills (' + bills.length + ')',
+    '</div>',
+  ];
+
+  // Group bills by commodity
+  var grouped = {};
+  for (var i = 0; i < bills.length; i++) {
+    var c = bills[i].commodity;
+    if (!grouped[c]) grouped[c] = [];
+    grouped[c].push(bills[i]);
+  }
+
+  var commodityOrder = ['Electric', 'Gas', 'Propane', 'Water'];
+  var allComm = Object.keys(grouped);
+  var ordered = [];
+  for (var ci = 0; ci < commodityOrder.length; ci++) {
+    if (grouped[commodityOrder[ci]]) ordered.push(commodityOrder[ci]);
+  }
+  for (var oi = 0; oi < allComm.length; oi++) {
+    if (ordered.indexOf(allComm[oi]) === -1) ordered.push(allComm[oi]);
+  }
+
+  for (var gi = 0; gi < ordered.length; gi++) {
+    var comm = ordered[gi];
+    var commBills = grouped[comm];
+    var commColor = comm === 'Electric' ? 'var(--em2)' : comm === 'Gas' ? 'var(--warn)' : 'var(--text2)';
+
+    html.push(
+      '<div style="padding:4px 12px 3px;font-size:10px;font-weight:700;text-transform:uppercase;',
+      'letter-spacing:.5px;color:' + commColor + ';border-bottom:1px solid var(--border);">',
+      comm,
+      '</div>',
+    );
+
+    for (var bi = 0; bi < commBills.length; bi++) {
+      var bill = commBills[bi];
+      var isSel = bill.start === _btSelBillStart && bill.end === _btSelBillEnd;
+      var hasBASData = btHasBASDataForPeriod(projId, bldgId, bill.start, bill.end);
+
+      var usageStr =
+        bill.usage > 0 ? bill.usage.toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' ' + bill.usageUnit : '—';
+      var costStr =
+        bill.totalCost > 0
+          ? '$' + bill.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : '—';
+
+      var dot = hasBASData
+        ? '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-left:5px;flex-shrink:0;" title="BAS trend data available for this period"></span>'
+        : '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--border);margin-left:5px;flex-shrink:0;" title="No BAS data for this period"></span>';
+
+      var bg = isSel ? 'background:var(--accent);' : '';
+      var textColor = isSel ? 'color:#fff;' : 'color:var(--text);';
+      var subColor = isSel ? 'color:rgba(255,255,255,0.75);' : 'color:var(--text3);';
+      var hoverAttr = isSel
+        ? ''
+        : ' onmouseover="this.style.background=\'var(--s2)\'" onmouseout="this.style.background=\'transparent\'"';
+
+      var onClick =
+        "btSelectBill('" +
+        projId +
+        "','" +
+        bldgId +
+        "','" +
+        bill.start +
+        "','" +
+        bill.end +
+        "'," +
+        bill.totalCost +
+        ',' +
+        bill.usage +
+        ",'" +
+        bill.commodity +
+        "')";
+
+      html.push(
+        '<div onclick="' + onClick + '"' + hoverAttr + ' style="',
+        'padding:7px 12px;cursor:pointer;border-bottom:1px solid var(--border);',
+        'transition:background 0.1s;' + bg + textColor,
+        '">',
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">',
+        '<span style="font-size:11px;font-weight:600;">' +
+          _btFmtDate(bill.start) +
+          '–' +
+          _btFmtDate(bill.end) +
+          '</span>',
+        dot,
+        '</div>',
+        '<div style="font-size:11px;' + subColor + '">',
+        usageStr + ' · ' + costStr,
+        '</div>',
+        '</div>',
+      );
+    }
+  }
+
+  html.push(
+    '<div style="padding:7px 12px;font-size:10px;color:var(--text3);border-top:1px solid var(--border);">',
+    '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);vertical-align:middle;margin-right:3px;"></span>BAS data available  ',
+    '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--border);vertical-align:middle;margin-right:3px;margin-left:4px;"></span>No BAS data',
+    '</div>',
+  );
+
+  return html.join('');
+}
+
+/**
+ * Placeholder shown in the analysis panel before a bill is selected.
+ * @returns {string} HTML
+ */
+function btBuildBillAnalysisPrompt() {
+  return [
+    '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;',
+    'min-height:220px;height:100%;text-align:center;">',
+    '<div style="font-size:30px;margin-bottom:12px;">&#128200;</div>',
+    '<div style="font-size:14px;color:var(--text2);font-weight:500;margin-bottom:6px;">Select a bill to analyze</div>',
+    '<div style="font-size:12px;color:var(--text3);max-width:300px;line-height:1.5;">',
+    'Click any bill on the left to see how BAS fault activity during that billing period may have contributed to energy waste.',
+    '</div>',
+    '</div>',
+  ].join('');
+}
+
+/**
+ * Handle bill selection — store state and refresh both panels in place.
+ *
+ * @param {string} projId
+ * @param {string} bldgId
+ * @param {string} start
+ * @param {string} end
+ * @param {number} totalCost
+ * @param {number} usage
+ * @param {string} commodity
+ */
+function btSelectBill(projId, bldgId, start, end, totalCost, usage, commodity) {
+  _btSelBillStart = start;
+  _btSelBillEnd = end;
+  _btSelBillCost = totalCost;
+  _btSelBillUsage = usage;
+  _btSelBillCommodity = commodity;
+
+  var listPanel = document.getElementById('bt-bill-list-panel');
+  var analysisPanel = document.getElementById('bt-bill-analysis-panel');
+
+  if (!listPanel || !analysisPanel) {
+    // Full re-render if panels have been torn down
+    btRenderBillCorrelation();
+    return;
+  }
+
+  var bills = btGetBillsForBldg(projId, bldgId);
+  listPanel.innerHTML = btBuildBillListHTML(projId, bldgId, bills);
+  analysisPanel.innerHTML = btBuildBillAnalysisHTML(projId, bldgId, bills);
+}
+
+/**
+ * Build the right-panel analysis HTML for the currently selected bill.
+ * Shows coverage card, runtime summary, fault activity, waste estimate, and
+ * an optional per-equipment breakdown.
+ *
+ * @param {string} projId
+ * @param {string} bldgId
+ * @param {Array}  bills  — full bill list used to locate the prior period
+ * @returns {string} HTML
+ */
+function btBuildBillAnalysisHTML(projId, bldgId, bills) {
+  var start = _btSelBillStart;
+  var end = _btSelBillEnd;
+  var totalCost = _btSelBillCost;
+  var usage = _btSelBillUsage;
+  var commodity = _btSelBillCommodity;
+
+  // Find matching bill object for usageUnit label
+  var selBill = null;
+  for (var si = 0; si < bills.length; si++) {
+    if (bills[si].start === start && bills[si].end === end) {
+      selBill = bills[si];
+      break;
+    }
+  }
+  var usageUnit = selBill ? selBill.usageUnit : '';
+
+  // BAS data for this period
+  var period = btGetBASForBillPeriod(projId, bldgId, start, end, totalCost, usage);
+  var noDays = !period || period.dayCount === 0;
+
+  // Find prior bill (same commodity, ends before this period starts)
+  var priorBill = null;
+  for (var pi = 0; pi < bills.length; pi++) {
+    var pb = bills[pi];
+    if (pb.commodity !== commodity) continue;
+    if (pb.end < start) {
+      if (!priorBill || pb.end > priorBill.end) priorBill = pb;
+    }
+  }
+  var priorPeriod = null;
+  if (priorBill) {
+    priorPeriod = btGetBASForBillPeriod(
+      projId,
+      bldgId,
+      priorBill.start,
+      priorBill.end,
+      priorBill.totalCost,
+      priorBill.usage,
+    );
+  }
+
+  var blendedRate = period ? period.blendedRate : null;
+
+  var html = [];
+
+  // ── Bill Header ──────────────────────────────────────────────────────────
+  var costStr =
+    totalCost > 0
+      ? '$' + totalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : '—';
+  var usageStr = usage > 0 ? usage.toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' ' + usageUnit : '';
+  var rateStr = blendedRate
+    ? ' ·  Blended rate: $' + blendedRate.toFixed(5) + '/' + (commodity === 'Electric' ? 'kWh' : 'unit')
+    : '';
+
+  html.push(
+    '<div style="margin-bottom:16px;">',
+    '<div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:3px;">',
+    commodity + ' Bill — ' + _btFmtDate(start) + ' to ' + _btFmtDate(end),
+    '</div>',
+    '<div style="font-size:12px;color:var(--text3);">',
+    costStr + (usageStr ? ' · ' + usageStr : '') + rateStr,
+    '</div>',
+    '</div>',
+  );
+
+  // ── BAS Coverage ─────────────────────────────────────────────────────────
+  if (noDays) {
+    html.push(
+      '<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;',
+      'padding:16px 20px;margin-bottom:16px;text-align:center;">',
+      '<div style="font-size:13px;color:var(--text3);">',
+      'No BAS trend data found for this billing period.',
+      '</div>',
+      '<div style="font-size:11px;color:var(--text3);margin-top:4px;">',
+      'Import WebCTRL data covering ' + _btFmtDate(start) + '–' + _btFmtDate(end) + ' to enable this analysis.',
+      '</div>',
+      '</div>',
+    );
+  } else {
+    var billDays = _btDaysBetween(start, end);
+    var coveragePct = billDays > 0 ? Math.round((period.dayCount / billDays) * 100) : 0;
+    var coverageColor = coveragePct >= 80 ? 'var(--green)' : coveragePct >= 50 ? 'var(--amber)' : 'var(--red)';
+    var equipCount = Object.keys(period.equipment).length;
+
+    // Coverage summary bar
+    html.push(
+      '<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;',
+      'padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;gap:16px;">',
+      _btStatCell(coveragePct + '%', 'Coverage', coverageColor),
+      '<div style="width:1px;height:32px;background:var(--border);"></div>',
+      _btStatCell(period.dayCount + '', 'Days w/ Data', 'var(--text)'),
+      '<div style="width:1px;height:32px;background:var(--border);"></div>',
+      _btStatCell(equipCount + '', 'Equipment', 'var(--text)'),
+      '</div>',
+    );
+
+    // Runtime summary
+    html.push(btBuildRuntimeCard(period, priorPeriod));
+
+    // Fault activity
+    html.push(btBuildFaultCard(period, priorPeriod, blendedRate));
+
+    // Waste estimate (only when blended rate available and waste > 0)
+    if (blendedRate && period.estWasteDollars > 0) {
+      html.push(btBuildWasteCard(period, priorPeriod, totalCost));
+    }
+
+    // Per-equipment breakdown (only when > 1 unit)
+    if (equipCount > 1) {
+      html.push(btBuildEquipmentTable(period, blendedRate));
+    }
+  }
+
+  // Prior period note
+  if (priorBill) {
+    html.push(
+      '<div style="font-size:11px;color:var(--text3);margin-top:10px;padding-top:8px;border-top:1px solid var(--border);">',
+      'Comparison period: ' + _btFmtDate(priorBill.start) + '–' + _btFmtDate(priorBill.end),
+      priorPeriod && priorPeriod.dayCount === 0 ? ' (no BAS data available for this period)' : '',
+      '</div>',
+    );
+  }
+
+  return html.join('');
+}
+
+/**
+ * Build the Runtime Summary table card.
+ *
+ * @param {Object}      period
+ * @param {Object|null} prior
+ * @returns {string} HTML
+ */
+function btBuildRuntimeCard(period, prior) {
+  var rt = period.runtimeTotals;
+  var prt = prior ? prior.runtimeTotals : null;
+
+  function deltaSpan(cur, prev) {
+    if (prev === null || prev === undefined || prev === 0) return '';
+    var d = btRound(cur - prev, 1);
+    var pct = Math.round((d / prev) * 100);
+    var col = d > 0 ? 'var(--red)' : 'var(--green)';
+    return (
+      '<span style="font-size:10px;color:' +
+      col +
+      ';margin-left:4px;" title="vs. prior billing period">' +
+      (d > 0 ? '+' : '') +
+      pct +
+      '%</span>'
+    );
+  }
+
+  var metrics = [
+    {
+      label: 'Total Fan Hours',
+      tip: 'Hours the supply fan ran across all equipment during this billing period',
+      val: rt.fanHours,
+      prev: prt ? prt.fanHours : null,
+    },
+    {
+      label: 'Occupied Hours',
+      tip: 'Scheduled occupied hours with BAS data coverage',
+      val: rt.occupiedHours,
+      prev: prt ? prt.occupiedHours : null,
+    },
+    {
+      label: 'Cooling Active',
+      tip: 'Hours cooling valve averaged >5% open during occupied time',
+      val: rt.coolingHours,
+      prev: prt ? prt.coolingHours : null,
+    },
+    {
+      label: 'Heating Active',
+      tip: 'Hours heating valve averaged >5% open during occupied time',
+      val: rt.heatingHours,
+      prev: prt ? prt.heatingHours : null,
+    },
+  ];
+
+  var rows = '';
+  for (var i = 0; i < metrics.length; i++) {
+    var m = metrics[i];
+    var valFmt = btRound(m.val, 1).toLocaleString('en-US', { maximumFractionDigits: 1 }) + ' hrs';
+    var prevFmt =
+      m.prev !== null && m.prev !== undefined
+        ? btRound(m.prev, 1).toLocaleString('en-US', { maximumFractionDigits: 1 }) + ' hrs'
+        : '—';
+    rows += [
+      '<tr>',
+      '<td style="padding:5px 8px;font-size:12px;color:var(--text2);" title="' + m.tip + '">' + m.label + '</td>',
+      '<td style="padding:5px 8px;font-size:12px;font-weight:600;color:var(--text);text-align:right;">' +
+        valFmt +
+        deltaSpan(m.val, m.prev) +
+        '</td>',
+      '<td style="padding:5px 8px;font-size:11px;color:var(--text3);text-align:right;">' + prevFmt + '</td>',
+      '</tr>',
+    ].join('');
+  }
+
+  return _btTableCard('Runtime Summary', ['Metric', 'This Period', 'Prior Period'], rows, '');
+}
+
+/**
+ * Build the Fault Activity table card.
+ *
+ * @param {Object}      period
+ * @param {Object|null} prior
+ * @param {number|null} blendedRate
+ * @returns {string} HTML
+ */
+function btBuildFaultCard(period, prior, blendedRate) {
+  var ft = period.faultTotals;
+  var pft = prior ? prior.faultTotals : null;
+  var HVAC_KW = 20;
+
+  var defs = [
+    {
+      key: 'afterHours',
+      label: 'After-Hours Operation',
+      tip: 'Fan running outside the scheduled occupied window',
+      kwhFactor: HVAC_KW * 0.4,
+    },
+    {
+      key: 'shc',
+      label: 'Simultaneous Heat+Cool',
+      tip: 'Both heating and cooling valves >10% simultaneously during occupied hours',
+      kwhFactor: HVAC_KW * 0.2,
+    },
+    {
+      key: 'economizer',
+      label: 'Economizer Miss',
+      tip: 'OA damper <20% when OAT <75°F and cooling load active — free cooling opportunity missed',
+      kwhFactor: HVAC_KW * 0.15,
+    },
+    {
+      key: 'setpointDeviation',
+      label: 'Setpoint Deviation',
+      tip: 'SAT or zone temp deviated >5°F from setpoint during occupied hours (control quality, no kWh estimate)',
+      kwhFactor: 0,
+    },
+    {
+      key: 'override',
+      label: 'BAS Overrides',
+      tip: 'BAS points in override/manual mode during occupied hours (control quality, no kWh estimate)',
+      kwhFactor: 0,
+    },
+    {
+      key: 'hunting',
+      label: 'Valve Hunting',
+      tip: '>6 reversals with >10% amplitude in a 1-hour window (mechanical wear risk)',
+      kwhFactor: 0,
+    },
+  ];
+
+  var hasAny = false;
+  for (var fi = 0; fi < defs.length; fi++) {
+    if ((ft[defs[fi].key] || 0) > 0) {
+      hasAny = true;
+      break;
+    }
+  }
+
+  if (!hasAny) {
+    return [
+      '<div style="margin-bottom:14px;">',
+      '<div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:6px;">Fault Activity</div>',
+      '<div style="background:var(--s2);border:1px solid var(--border);border-radius:7px;',
+      'padding:12px 16px;font-size:12px;color:var(--green);">',
+      '✓ No fault hours detected during this billing period.',
+      '</div>',
+      '</div>',
+    ].join('');
+  }
+
+  var rows = '';
+  for (var i = 0; i < defs.length; i++) {
+    var d = defs[i];
+    var hrs = ft[d.key] || 0;
+    if (hrs === 0) continue;
+
+    var prevHrs = pft ? pft[d.key] || 0 : null;
+    var estKwh = d.kwhFactor > 0 ? btRound(hrs * d.kwhFactor, 1) : null;
+    var estCost = estKwh !== null && blendedRate ? btRound(estKwh * blendedRate, 2) : null;
+
+    var deltaHtml = '';
+    if (prevHrs !== null && prevHrs > 0) {
+      var delta = btRound(hrs - prevHrs, 1);
+      var dcol = delta > 0 ? 'var(--red)' : 'var(--green)';
+      deltaHtml =
+        '<span style="font-size:10px;color:' +
+        dcol +
+        ';margin-left:4px;" title="vs. prior period">' +
+        (delta > 0 ? '+' : '') +
+        delta +
+        ' hrs</span>';
+    }
+
+    var costCell =
+      estCost !== null
+        ? '$' + estCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : estKwh !== null
+          ? '<span style="color:var(--text3);">no rate</span>'
+          : '—';
+
+    rows += [
+      '<tr>',
+      '<td style="padding:5px 8px;font-size:12px;color:var(--text2);" title="' + d.tip + '">' + d.label + '</td>',
+      '<td style="padding:5px 8px;font-size:12px;font-weight:600;color:var(--red);text-align:right;">' +
+        btRound(hrs, 1).toLocaleString('en-US', { maximumFractionDigits: 1 }) +
+        ' hrs' +
+        deltaHtml +
+        '</td>',
+      '<td style="padding:5px 8px;font-size:11px;color:var(--text3);text-align:right;">' +
+        (estKwh !== null ? estKwh.toLocaleString('en-US', { maximumFractionDigits: 1 }) + ' kWh' : '—') +
+        '</td>',
+      '<td style="padding:5px 8px;font-size:12px;font-weight:600;color:var(--red);text-align:right;">' +
+        costCell +
+        '</td>',
+      '</tr>',
+    ].join('');
+  }
+
+  var hdrNote =
+    '<span style="font-weight:400;font-style:italic;font-size:9px;" title="Estimated from blended $/kWh and 20 kW default HVAC load. Accuracy ±25%.">±25%</span>';
+
+  return _btTableCard('Fault Activity', ['Fault Type', 'Hours', 'Est. kWh', 'Est. $ ' + hdrNote], rows, '');
+}
+
+/**
+ * Build the Estimated Waste summary card.
+ *
+ * @param {Object}      period
+ * @param {Object|null} prior
+ * @param {number}      billTotal   — total bill cost for "% of bill" calc
+ * @returns {string} HTML
+ */
+function btBuildWasteCard(period, prior, billTotal) {
+  var waste = period.estWasteDollars;
+  var priorWaste = prior ? prior.estWasteDollars : null;
+
+  var deltaBadge = '';
+  if (priorWaste !== null && priorWaste > 0) {
+    var d = btRound(waste - priorWaste, 2);
+    var dcol = d > 0 ? 'var(--red)' : 'var(--green)';
+    deltaBadge =
+      '<span style="font-size:13px;color:' +
+      dcol +
+      ';margin-left:10px;" title="vs. prior billing period">' +
+      (d > 0 ? '+' : '') +
+      '$' +
+      Math.abs(d).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+      '</span>';
+  }
+
+  var pctLine =
+    billTotal > 0 && waste > 0
+      ? '<div style="font-size:11px;color:var(--text3);margin-top:4px;">' +
+        btRound((waste / billTotal) * 100, 1) +
+        '% of total bill</div>'
+      : '';
+
+  return [
+    '<div style="margin-bottom:14px;background:rgba(239,68,68,0.06);',
+    'border:1px solid rgba(239,68,68,0.28);border-radius:8px;padding:12px 18px;">',
+    '<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:5px;">',
+    'Estimated Waste This Period',
+    '<span style="font-weight:400;font-style:italic;font-size:9px;margin-left:4px;" title="Energy fault estimate only (After-Hours, SHC, Economizer). Based on blended rate and 20 kW default HVAC load assumption. Accuracy ±25%.">±25%</span>',
+    '</div>',
+    '<div style="font-size:24px;font-weight:800;color:var(--red);">',
+    '$' + waste.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    deltaBadge,
+    '</div>',
+    pctLine,
+    '</div>',
+  ].join('');
+}
+
+/**
+ * Build a per-equipment breakdown table.
+ *
+ * @param {Object}      period
+ * @param {number|null} blendedRate
+ * @returns {string} HTML
+ */
+function btBuildEquipmentTable(period, blendedRate) {
+  var equip = period.equipment;
+  var ids = Object.keys(equip).sort();
+
+  var rows = '';
+  for (var i = 0; i < ids.length; i++) {
+    var eid = ids[i];
+    var e = equip[eid];
+    var totalFaultHrs = 0;
+    for (var fk in e.faults) {
+      if (e.faults.hasOwnProperty(fk)) totalFaultHrs += e.faults[fk] || 0;
+    }
+    totalFaultHrs = btRound(totalFaultHrs, 1);
+    var wasteStr =
+      blendedRate && e.estWaste > 0
+        ? '$' + btRound(e.estWaste, 2).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : '—';
+    rows += [
+      '<tr>',
+      '<td style="padding:5px 8px;font-size:11px;font-weight:600;color:var(--text);">' + eid + '</td>',
+      '<td style="padding:5px 8px;font-size:11px;color:var(--text2);text-align:right;">' +
+        btRound(e.runtimeHours, 1).toLocaleString('en-US', { maximumFractionDigits: 1 }) +
+        '</td>',
+      '<td style="padding:5px 8px;font-size:11px;color:' +
+        (totalFaultHrs > 0 ? 'var(--red)' : 'var(--text2)') +
+        ';text-align:right;">' +
+        totalFaultHrs.toLocaleString('en-US', { maximumFractionDigits: 1 }) +
+        '</td>',
+      '<td style="padding:5px 8px;font-size:11px;font-weight:600;color:var(--red);text-align:right;">' +
+        wasteStr +
+        '</td>',
+      '</tr>',
+    ].join('');
+  }
+
+  return _btTableCard('Equipment Breakdown', ['Equipment', 'Fan Hrs', 'Fault Hrs', 'Est. Waste'], rows, '');
+}
+
+/* ── UTILITY-DATA.JS ENTRY POINT ─────────────────────────────────────────── */
+
+/**
+ * Called from the "BAS Analysis" button on a utility bill row.
+ * Navigates to the BAS Trends view, sets active building, and opens the
+ * Bill Correlation subtab pre-selected on the given billing period.
+ *
+ * @param {string} projId
+ * @param {string} bldgId
+ * @param {string} billStart  'YYYY-MM-DD'
+ * @param {string} billEnd    'YYYY-MM-DD'
+ */
+function btOpenBillCorrelation(projId, bldgId, billStart, billEnd) {
+  // Navigate to BAS Trends via sidebar
+  if (typeof sv === 'function') {
+    var sidebarBtn = document.querySelector('[data-sidebar-id="bas-trends"]');
+    sv('bas-trends', sidebarBtn);
+  }
+
+  // Set state before rendering
+  window._activeProjId = projId;
+  _btSelBldg = bldgId;
+  _btSubtab = 'billcorr';
+  _btSelBillStart = billStart;
+  _btSelBillEnd = billEnd;
+  _btSelBillCost = null;
+  _btSelBillUsage = null;
+  _btSelBillCommodity = null;
+
+  btRenderView();
+}
+
+/* ── SHARED HTML HELPERS ─────────────────────────────────────────────────── */
+
+/**
+ * Render a standard section card with a table inside it.
+ * Keeps table rendering DRY across Runtime, Fault, and Equipment cards.
+ *
+ * @param {string} title
+ * @param {Array}  headers   — header cell strings
+ * @param {string} rowsHtml  — pre-built <tr> HTML
+ * @param {string} extra     — optional HTML appended after the table
+ * @returns {string} HTML
+ */
+function _btTableCard(title, headers, rowsHtml, extra) {
+  var thHtml = headers
+    .map(function (h, idx) {
+      var align = idx === 0 ? 'left' : 'right';
+      return (
+        '<th style="padding:5px 8px;font-size:10px;font-weight:600;color:var(--text3);text-align:' +
+        align +
+        ';text-transform:uppercase;letter-spacing:.4px;">' +
+        h +
+        '</th>'
+      );
+    })
+    .join('');
+
+  return [
+    '<div style="margin-bottom:14px;">',
+    '<div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:5px;">' + title + '</div>',
+    '<table style="width:100%;border-collapse:collapse;background:var(--s2);border:1px solid var(--border);border-radius:7px;overflow:hidden;">',
+    '<thead><tr style="background:var(--s1);">' + thHtml + '</tr></thead>',
+    '<tbody>' + rowsHtml + '</tbody>',
+    '</table>',
+    extra || '',
+    '</div>',
+  ].join('');
+}
+
+/**
+ * Render a small statistic cell for the coverage bar.
+ *
+ * @param {string} value
+ * @param {string} label
+ * @param {string} color
+ * @returns {string} HTML
+ */
+function _btStatCell(value, label, color) {
+  return [
+    '<div style="text-align:center;min-width:52px;">',
+    '<div style="font-size:20px;font-weight:800;color:' + color + ';">' + value + '</div>',
+    '<div style="font-size:10px;color:var(--text3);">' + label + '</div>',
+    '</div>',
+  ].join('');
+}
+
+/**
+ * Format a YYYY-MM-DD date string for display (M/D/YYYY).
+ * @param {string} ds
+ * @returns {string}
+ */
+function _btFmtDate(ds) {
+  if (!ds) return '—';
+  var p = ds.split('-');
+  if (p.length !== 3) return ds;
+  return parseInt(p[1], 10) + '/' + parseInt(p[2], 10) + '/' + p[0];
+}
+
+/**
+ * Count calendar days between two YYYY-MM-DD strings, inclusive.
+ * @param {string} start
+ * @param {string} end
+ * @returns {number}
+ */
+function _btDaysBetween(start, end) {
+  if (!start || !end) return 0;
+  var s = new Date(start + 'T00:00:00');
+  var e = new Date(end + 'T00:00:00');
+  return Math.round((e - s) / 86400000) + 1;
+}
+
+/* ── PHASE 4 DISPATCH PATCH ──────────────────────────────────────────────────
+   Phase 2's btRenderSubtabContent only handles 'health' and 'faults'.
+   Phase 3 and Phase 4 add tabs but cannot modify Phase 2's function.
+   This patch wraps btRenderSubtabContent so that unknown tab ids are
+   delegated to btPhase3RenderTab and btPhase4RenderTab before falling
+   through.  It also patches btRenderView to call btPhase4RegisterTab()
+   after building the subtab bar so the Bill Correlation button appears.
+
+   The patch executes immediately at script parse time via an IIFE.
+   ─────────────────────────────────────────────────────────────────────────── */
+(function () {
+  // Wrap btRenderSubtabContent to delegate Phase 3 + Phase 4 tabs
+  var _origRenderSubtabContent = btRenderSubtabContent;
+  btRenderSubtabContent = function (tab, basData, projId) {
+    // Phase 4: Bill Correlation
+    if (tab === 'billcorr') {
+      btRenderBillCorrelation();
+      return;
+    }
+    // Phase 3: Timeline and OAT Chart
+    if (tab === 'timeline' || tab === 'oat') {
+      if (typeof btPhase3RenderTab === 'function' && btPhase3RenderTab(tab)) return;
+    }
+    // Fall through to Phase 2 handler
+    _origRenderSubtabContent(tab, basData, projId);
+  };
+
+  // Wrap btRenderView to register Phase 3 + Phase 4 tabs after the bar renders
+  var _origRenderView = btRenderView;
+  btRenderView = function () {
+    _origRenderView();
+    if (typeof btPhase3RegisterTabs === 'function') btPhase3RegisterTabs();
+    if (typeof btPhase4RegisterTab === 'function') btPhase4RegisterTab();
+  };
+})();
