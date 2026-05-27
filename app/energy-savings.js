@@ -4074,12 +4074,12 @@ function _lbg_tokens(line) {
     .filter((n) => !isNaN(n));
 }
 // Customer-specific account → facility name map is user-populated via
-// localStorage key `en_louisburg_facility_map` (JSON object {acct:"NAME"}).
+// DB key `en_louisburg_facility_map` (JSON object {acct:"NAME"}).
 // Nothing ships in source — the file stays free of customer data.
 function _lbg_facilityLookup(acct) {
   if (!acct) return null;
   try {
-    const m = JSON.parse(localStorage.getItem('en_louisburg_facility_map') || '{}');
+    const m = DB.get('en_louisburg_facility_map', {});
     return m[acct] || m[String(acct).replace(/-/g, '')] || null;
   } catch (e) {
     return null;

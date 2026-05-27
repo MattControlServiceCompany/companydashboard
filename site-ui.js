@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.26.378';
+  var CH_VERSION = 'v2026.05.26.379';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,26 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v2026.05.26.379',
+      date: '2026-05-26',
+      title:
+        'Complete IndexedDB migration Batches 3-4: report history, value corrections, weather cache, bill view state, facility map',
+      features: [
+        {
+          type: 'fix',
+          text: 'Migrated en_report_history (report-engine.js, 5 call sites) and en_value_corrections + en_report_history read (csv-import.js, 3 call sites) from localStorage to IndexedDB.',
+        },
+        {
+          type: 'fix',
+          text: 'Migrated bills_view_state, bills_col_widths, en_wdd weather cache, en_utilityData legacy cleanup (utility-data.js, 7 call sites) from localStorage to IndexedDB.',
+        },
+        {
+          type: 'fix',
+          text: 'Migrated en_louisburg_facility_map (energy-savings.js, 1 call site) and en_dc_events clear (district-calendar.js, 1 call site) from localStorage to IndexedDB.',
+        },
+      ],
+    },
     {
       version: 'v2026.05.26.363',
       date: '2026-05-26',

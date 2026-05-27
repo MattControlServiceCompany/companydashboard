@@ -33,7 +33,7 @@ function loadUtilityData() {
       sset('en_utility_' + pid, combined[pid]);
     });
     try {
-      localStorage.removeItem('en_utilityData');
+      DB.remove('en_utilityData');
     } catch (e) {}
     console.log('Migrated en_utilityData to per-project keys');
   }
@@ -664,7 +664,7 @@ function udSelectBldg(bid) {
   udSelBldgId = bid;
   udActiveMid = null;
   saveUDSession();
-  // Fire-and-forget: populate weather cache from GitHub Pages if localStorage is empty
+  // Fire-and-forget: populate weather cache from GitHub Pages if DB has no data for ZIP
   const _wddBldg = getUDBldg(udSelProjId, bid);
   if (_wddBldg && _wddBldg.zip) wddPrefetchFromServer(_wddBldg.zip);
   // Close any open project panel
@@ -2025,7 +2025,7 @@ function renderMeterWorkspace() {
 // columns into aggregate "category" columns (kWh Cost, kW Cost, Other
 // Charges, etc.) for an at-a-glance total breakdown. Detailed view keeps
 // the full BILL_SCHEMA column set. Per-meter preference stored in
-// localStorage['bills_view_state_' + meterId].
+// DB['bills_view_state_' + meterId].
 //
 // Each entry: { label, type, w, compute?, key? }
 //  - compute(row) returns the value to display
@@ -2141,16 +2141,13 @@ const CONDENSED_CATEGORIES = {
 };
 function _billsTableViewState(mid) {
   try {
-    const raw = localStorage.getItem('bills_view_state_' + mid);
-    if (raw) {
-      const s = JSON.parse(raw);
-      if (s && typeof s === 'object') {
-        return {
-          mode: s.mode === 'condensed' ? 'condensed' : 'detailed',
-          hidden: Array.isArray(s.hidden) ? s.hidden : [],
-          sortAsc: s.sortAsc !== false, // default ascending
-        };
-      }
+    const s = DB.get('bills_view_state_' + mid);
+    if (s && typeof s === 'object') {
+      return {
+        mode: s.mode === 'condensed' ? 'condensed' : 'detailed',
+        hidden: Array.isArray(s.hidden) ? s.hidden : [],
+        sortAsc: s.sortAsc !== false, // default ascending
+      };
     }
   } catch (e) {}
   try {
@@ -2178,7 +2175,7 @@ function toggleBillsTableSort(mid, evt) {
 }
 function _saveBillsTableViewState(mid, state) {
   try {
-    localStorage.setItem('bills_view_state_' + mid, JSON.stringify(state));
+    DB.set('bills_view_state_' + mid, state);
   } catch (e) {}
 }
 
@@ -2327,10 +2324,10 @@ function saveBillsTableSettings(mid) {
 }
 
 // Reset saved column widths for a meter's bills table so auto-fit recalculates
-// on next render. Clears the bills_col_widths_<mid> localStorage key, closes
+// on next render. Clears the bills_col_widths_<mid> DB key, closes
 // the settings modal, and re-renders the workspace.
 function resetBillsColumnWidths(mid) {
-  localStorage.removeItem('bills_col_widths_' + mid);
+  DB.remove('bills_col_widths_' + mid);
   closeBillsTableSettings();
   if (typeof renderMeterWorkspace === 'function') renderMeterWorkspace();
 }
@@ -2938,8 +2935,8 @@ function renderBillsPane(pane, m, bills, incl) {
 
     let savedWidths = null;
     try {
-      const s = localStorage.getItem(storageKey);
-      if (s) savedWidths = JSON.parse(s);
+      const s = DB.get(storageKey);
+      if (s) savedWidths = s;
     } catch (e) {}
     // Update 97: `minW` on a col is a hard floor that saved widths can't
     // undercut — ensures date columns (and any other structurally-wide
@@ -3012,7 +3009,7 @@ function renderBillsPane(pane, m, bills, incl) {
       { passive: true },
     );
 
-    // ── Column resize drag — each column resizes independently, saves to localStorage ──
+    // ── Column resize drag — each column resizes independently, saves to DB ──
     let _resizing = null;
     pane.addEventListener('mousedown', (e) => {
       const handle = e.target.closest('.col-resize-handle');
@@ -3047,12 +3044,12 @@ function renderBillsPane(pane, m, bills, incl) {
       if (!_resizing) return;
       _resizing.handle.classList.remove('dragging');
       document.body.style.cursor = '';
-      // Save widths to localStorage
+      // Save widths to DB
       const currentWidths = Array.from(hdrTbl.querySelectorAll('colgroup col')).map((c) =>
         parseInt(c.style.width || 0),
       );
       try {
-        localStorage.setItem(storageKey, JSON.stringify(currentWidths));
+        DB.set(storageKey, currentWidths);
       } catch (e) {}
       _resizing = null;
     });
@@ -4590,7 +4587,7 @@ function updateBillWeather(mid, rowId, field, val) {
 /* ══════════════════════════════════════════
          WEATHER DATA — CSV Upload
          User uploads CSV: month, year, hdd, cdd, avg_temp
-         Cached by ZIP in localStorage (en_wdd_{ZIP}).
+         Cached by ZIP in DB (en_wdd_{ZIP}).
       ══════════════════════════════════════════ */
 
 let _wddMid = null;
@@ -4601,25 +4598,25 @@ function wddCacheKey(zip) {
 }
 function wddLoadCache(zip) {
   try {
-    return JSON.parse(localStorage.getItem(wddCacheKey(zip))) || [];
+    return DB.get(wddCacheKey(zip)) || [];
   } catch (e) {
     return [];
   }
 }
 function wddSaveCache(zip, rows) {
   try {
-    localStorage.setItem(wddCacheKey(zip), JSON.stringify(rows));
+    DB.set(wddCacheKey(zip), rows);
   } catch (e) {}
 }
-// Async fallback: if localStorage has no weather data for this ZIP, try to load
+// Async fallback: if DB has no weather data for this ZIP, try to load
 // the static JSON file that scripts/fetch-weather.js writes to weather-data/.
-// localStorage acts as the manual override layer — if data is already there
+// DB acts as the manual override layer — if data is already there
 // (from a CSV upload or a previous fetch), we leave it alone.
 // Called fire-and-forget from udSelectBldg; never blocks the sync call path.
 async function wddPrefetchFromServer(zip) {
   if (!zip) return;
   try {
-    // Only fetch if localStorage is empty for this ZIP
+    // Only fetch if DB has no weather data for this ZIP
     const existing = wddLoadCache(zip);
     if (existing.length) return;
     const res = await fetch('weather-data/' + encodeURIComponent(zip) + '.json');

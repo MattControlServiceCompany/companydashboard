@@ -622,10 +622,7 @@ function submitValueCorrection(mid, rowId, field, correctedValue, note) {
     ),
   );
   // Corrections log (separate from main audit log, max 1000 entries)
-  var corrections = [];
-  try {
-    corrections = JSON.parse(localStorage.getItem('en_value_corrections') || '[]');
-  } catch (e) {}
+  var corrections = DB.get('en_value_corrections', []);
   corrections.push({
     ts: new Date().toISOString(),
     projId: udSelProjId,
@@ -638,7 +635,7 @@ function submitValueCorrection(mid, rowId, field, correctedValue, note) {
     note: note || '',
   });
   if (corrections.length > 1000) corrections = corrections.slice(-1000);
-  localStorage.setItem('en_value_corrections', JSON.stringify(corrections));
+  DB.set('en_value_corrections', corrections);
   // Close popover, save, re-render
   var pop = document.getElementById('vcm-popover');
   if (pop) pop.remove();
@@ -2803,7 +2800,7 @@ function renderMeetingsList(projId) {
   // Saved reports from en_report_history
   let reportRows = '';
   if (_mtgFilter === 'all' || _mtgFilter === 'report') {
-    const rptHistory = JSON.parse(localStorage.getItem('en_report_history') || '[]');
+    const rptHistory = DB.get('en_report_history', []);
     const projReports = rptHistory.filter((h) => String(h.projectId) === String(projId));
     reportRows = projReports
       .map((r) => {

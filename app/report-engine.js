@@ -6549,7 +6549,7 @@ function saveReportToHistory() {
     return;
   }
 
-  const history = JSON.parse(localStorage.getItem('en_report_history') || '[]');
+  const history = DB.get('en_report_history', []);
   const cleanHTML = pagesHTML.replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/g, '');
   const entry = {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
@@ -6561,27 +6561,14 @@ function saveReportToHistory() {
     html: cleanHTML,
   };
   history.unshift(entry);
-  // Cap to 3 reports to avoid localStorage size limit (~6.7 MB at 5 reports)
+  // Cap to 3 reports (IndexedDB has no size constraint like localStorage, but keep history manageable)
   while (history.length > 3) history.pop();
-  try {
-    localStorage.setItem('en_report_history', JSON.stringify(history));
-    showToast('Report saved to history ?');
-  } catch (e) {
-    // If still too large, remove oldest until it fits
-    while (history.length > 1) {
-      history.pop();
-      try {
-        localStorage.setItem('en_report_history', JSON.stringify(history));
-        showToast('Report saved (older reports removed to free storage) ?');
-        return;
-      } catch (e2) {}
-    }
-    showToast('Save failed — storage full. Delete older reports first.');
-  }
+  DB.set('en_report_history', history);
+  showToast('Report saved to history ?');
 }
 
 function openReportHistory(projId) {
-  const history = JSON.parse(localStorage.getItem('en_report_history') || '[]');
+  const history = DB.get('en_report_history', []);
   const filtered = projId ? history.filter((h) => String(h.projectId) === String(projId)) : history;
   const list = document.getElementById('reportHistoryList');
 
@@ -6613,7 +6600,7 @@ function openReportHistory(projId) {
 }
 
 function reopenReport(entryId) {
-  const history = JSON.parse(localStorage.getItem('en_report_history') || '[]');
+  const history = DB.get('en_report_history', []);
   const entry = history.find((h) => h.id === entryId);
   if (!entry) {
     showToast('Report not found');
@@ -6625,7 +6612,7 @@ function reopenReport(entryId) {
 }
 
 async function reexportReport(entryId) {
-  const history = JSON.parse(localStorage.getItem('en_report_history') || '[]');
+  const history = DB.get('en_report_history', []);
   const entry = history.find((h) => h.id === entryId);
   if (!entry) {
     showToast('Report not found');
@@ -6641,9 +6628,9 @@ async function reexportReport(entryId) {
 
 function deleteReport(entryId) {
   if (!confirm('Delete this saved report?')) return;
-  let history = JSON.parse(localStorage.getItem('en_report_history') || '[]');
+  let history = DB.get('en_report_history', []);
   history = history.filter((h) => h.id !== entryId);
-  localStorage.setItem('en_report_history', JSON.stringify(history));
+  DB.set('en_report_history', history);
   openReportHistory();
   showToast('Report deleted');
 }

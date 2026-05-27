@@ -511,7 +511,7 @@ function dcHideProg() {
 }
 function dcClear() {
   dcEvents = [];
-  localStorage.removeItem('en_dc_events');
+  DB.remove('en_dc_events');
   document.getElementById('dist-cal').value = '';
   document.getElementById('dc-url').value = '';
   document.getElementById('dcCalMonths').innerHTML = '';
