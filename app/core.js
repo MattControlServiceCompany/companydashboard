@@ -301,6 +301,8 @@ function sv(id, btn) {
   (target || document.querySelector(`.sidebar .s-item[onclick*="'${id}'"]`))?.classList.add('active');
   sessionStorage.setItem('ch_activeView', id);
   localStorage.setItem('ch_activeView', id);
+  // Belt-and-suspenders: also write to IDB so the value survives a future migration or clear
+  if (typeof DB !== 'undefined' && DB.isReady()) DB.set('ch_activeView', id);
   if (id === 'pdf') {
     setTimeout(updateBillCountBadge, 50);
   }

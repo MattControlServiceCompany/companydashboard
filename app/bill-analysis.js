@@ -10072,6 +10072,155 @@ function confirmManualAssign() {
   showToast('Assigned to ' + proj.name + ' → ' + mLbl + ' ✓');
 }
 
+// Auto-create a new meter (and building if needed) from extracted bill data.
+// Called when _saveSinglePDFBill cannot find a meter match but the bill has
+// enough identity information (AccountNumber or MeterNumber) to create one.
+// Returns { bldg, meter } on success, or null if creation was skipped.
+function _autoCreateMeterAndSaveBill(extracted, projId, billRow) {
+  if (!projId) return null;
+  const acctNum = extracted.AccountNumber || '';
+  const meterNum = extracted.MeterNumber || '';
+  if (!acctNum && !meterNum) return null;
+
+  const udProj = getUDProj(projId);
+  udProj.buildings = udProj.buildings || [];
+
+  // Step 1: Duplicate guard — check if a meter with this account already exists
+  // on any building in the project (handles re-uploads where findMeterMatch missed
+  // due to commodity mismatch or minor format variation).
+  const billComm = (extracted.Commodity || '').toLowerCase();
+  const acctClean = acctNum.replace(/[\s\-]/g, '').toLowerCase();
+  const meterClean = meterNum.replace(/[\s\-]/g, '').toLowerCase();
+  for (const b of udProj.buildings) {
+    for (const m of b.meters || []) {
+      const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
+      const mm = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
+      const mComm = (m.commodity || '').toLowerCase();
+      if ((_acctFuzzyMatch(acctClean, ma) || (meterClean && mm && meterClean === mm)) && mComm === billComm) {
+        // Already exists — save bill to the existing meter instead of creating a duplicate
+        m.bills = m.bills || [];
+        const dup = m.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
+        if (dup) {
+          Object.assign(dup, billRow);
+        } else {
+          m.bills.push(billRow);
+          m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+        }
+        if (typeof runBillValidation === 'function') runBillValidation(m, dup || billRow);
+        saveUtilityData();
+        const bldgLabel = b.name || b.addr || b.id;
+        showToast('Bill saved to existing meter ' + (acctNum || meterNum) + ' on ' + bldgLabel);
+        return { bldg: b, meter: m };
+      }
+    }
+  }
+
+  // Step 2: Find the best building match by service address similarity (threshold 0.60).
+  // If no building matches, find or create a single "Unmatched Bills" sentinel building.
+  let targetBldg = null;
+  const svcAddr = extracted.ServiceAddress || '';
+  if (svcAddr) {
+    let bestScore = 0;
+    let bestBldg = null;
+    for (const b of udProj.buildings) {
+      const score = _addressSimilarity(svcAddr, b.addr || '');
+      if (score > bestScore) {
+        bestScore = score;
+        bestBldg = b;
+      }
+      // Also check addrAliases
+      for (const alias of b.addrAliases || []) {
+        const aScore = _addressSimilarity(svcAddr, alias);
+        if (aScore > bestScore) {
+          bestScore = aScore;
+          bestBldg = b;
+        }
+      }
+    }
+    if (bestScore >= 0.6) {
+      targetBldg = bestBldg;
+    }
+  }
+
+  if (!targetBldg) {
+    // Find or create a single "Unmatched Bills" sentinel building for this project
+    targetBldg = udProj.buildings.find((b) => b._unmatchedSentinel === true);
+    if (!targetBldg) {
+      targetBldg = {
+        id: 'b' + Date.now(),
+        name: 'Unmatched Bills',
+        addr: '',
+        sqft: 0,
+        zip: '',
+        addrAliases: [],
+        meters: [],
+        _unmatchedSentinel: true,
+      };
+      udProj.buildings.push(targetBldg);
+    }
+  }
+
+  // Step 3: Check if a meter with this account/commodity already exists on the target building
+  // (in case the duplicate guard above missed a same-building re-upload scenario).
+  targetBldg.meters = targetBldg.meters || [];
+  for (const m of targetBldg.meters) {
+    const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
+    const mm = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
+    const mComm = (m.commodity || '').toLowerCase();
+    if ((_acctFuzzyMatch(acctClean, ma) || (meterClean && mm && meterClean === mm)) && mComm === billComm) {
+      m.bills = m.bills || [];
+      const dup = m.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
+      if (dup) {
+        Object.assign(dup, billRow);
+      } else {
+        m.bills.push(billRow);
+        m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+      }
+      if (typeof runBillValidation === 'function') runBillValidation(m, dup || billRow);
+      saveUtilityData();
+      const bldgLabel = targetBldg.name || targetBldg.addr || targetBldg.id;
+      showToast('Bill saved to existing meter ' + (acctNum || meterNum) + ' on ' + bldgLabel);
+      return { bldg: targetBldg, meter: m };
+    }
+  }
+
+  // Step 4: Create the new meter
+  const newMeter = {
+    id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+    commodity:
+      extracted.Commodity ||
+      (extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.GasCharge
+        ? 'Gas'
+        : extracted.GallonsDelivered || extracted.FuelType
+          ? 'Propane'
+          : 'Electric'),
+    provider: extracted.UtilityCompany || '',
+    account: acctNum,
+    meter: meterNum,
+    maddr: svcAddr,
+    inclusive: false,
+    baselineInclude: true,
+    billUnit: '',
+    displayUnit: '',
+    bills: [],
+  };
+  targetBldg.meters.push(newMeter);
+
+  // Step 5: Save the bill to the new meter
+  newMeter.bills.push(billRow);
+  newMeter.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+  if (typeof runBillValidation === 'function') runBillValidation(newMeter, billRow);
+
+  saveUtilityData();
+
+  const bldgLabel = targetBldg.name || targetBldg.addr || targetBldg.id;
+  const acctLabel = acctNum || meterNum;
+  showToast('Created meter ' + acctLabel + ' on ' + bldgLabel + ' — verify account details in Meter Settings');
+  console.log('[_autoCreateMeterAndSaveBill] created meter', acctLabel, 'on building', bldgLabel);
+
+  return { bldg: targetBldg, meter: newMeter };
+}
+
 async function _saveSinglePDFBill(extracted, projId) {
   if (!extracted || !extracted.UtilityCompany) return false;
   const proj = projId ? projects.find((p) => p.id === projId) : null;
@@ -10377,16 +10526,25 @@ async function _saveSinglePDFBill(extracted, projId) {
       }
     }
     if (!matched) {
-      // No meter match found — save to unassigned Saved Bills instead of
-      // silently creating a new meter on the first building. The user can
-      // assign it manually from the Saved Bills modal.
-      console.log(
-        '[_saveSinglePDFBill] no meter match for',
-        extracted.AccountNumber,
-        extracted.Commodity,
-        '— saving to unassigned',
-      );
-      showToast('No meter match found — saved to Saved Bills. Assign from Saved Bills tab.');
+      // If the bill has an account or meter number, auto-create a meter so the
+      // bill lands in the right project automatically. Fall through to unassigned
+      // only if there is no identity information to create a meaningful meter.
+      const hasIdentity = !!(extracted.AccountNumber || extracted.MeterNumber);
+      if (hasIdentity) {
+        const created = _autoCreateMeterAndSaveBill(extracted, projId, billRow);
+        if (created) {
+          matched = true;
+        }
+      }
+      if (!matched) {
+        console.log(
+          '[_saveSinglePDFBill] no meter match for',
+          extracted.AccountNumber,
+          extracted.Commodity,
+          '— saving to unassigned',
+        );
+        showToast('No meter match found — saved to Saved Bills. Assign from Saved Bills tab.');
+      }
     }
     if (matched) saveUtilityData();
   }

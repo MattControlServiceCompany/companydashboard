@@ -65,11 +65,38 @@ const DB = (() => {
     });
 
     const migratedKeyCount = localStorage.length;
+    // Keys that must stay in localStorage for synchronous reads before IndexedDB warms up.
+    // These are read by the pre-paint script and init() before DB.warmCache() resolves.
+    // Keep in sync with the lsOnlyKeys list in app/site-functions.js.
+    var lsPreserveKeys = [
+      'ch_activeView',
+      'ch_settings',
+      'ch_theme',
+      'ch_sidebar_collapsed',
+      'ch_seen_version',
+      'ch_user',
+      'ch_projTabOrder',
+      'ch_sidebarOrder',
+      'ch_dismissed_tips',
+      'ch_qs_seen',
+      'ch_toast_duration',
+      'ch_last_seen_version',
+      'ch_notifs',
+    ];
+    var preserved = {};
+    lsPreserveKeys.forEach(function (k) {
+      var v = localStorage.getItem(k);
+      if (v !== null) preserved[k] = v;
+    });
     // Migration confirmed complete — clear localStorage to prevent double-read on future loads
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
       if (k) localStorage.removeItem(k);
     }
+    // Restore keys that must remain in localStorage for synchronous access
+    Object.keys(preserved).forEach(function (k) {
+      localStorage.setItem(k, preserved[k]);
+    });
 
     console.log(
       '[DB] Migration complete: localStorage → IndexedDB (' + migratedKeyCount + ' keys), localStorage cleared',

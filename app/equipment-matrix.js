@@ -1320,10 +1320,14 @@ function emSetZoom(delta) {
   var wrap = document.getElementById('em-table-wrap');
   if (wrap) {
     var ratio = _emZoomLevel / 100;
-    var fs = Math.round(11 * ratio);
-    var padV = Math.round(4 * ratio);
-    var padH = Math.round(8 * ratio);
-    // Apply to all td and th inside the table wrap via a dynamic style tag
+    var tdFs = Math.round(11 * ratio);
+    var thFs = Math.round(10 * ratio);
+    var tdPadV = Math.round(4 * ratio);
+    var tdPadH = Math.round(8 * ratio);
+    var thPadV = Math.round(6 * ratio);
+    var thPadH = Math.round(8 * ratio);
+    // Apply to all td and th inside the table wrap via a dynamic style tag.
+    // Separate rules so th (10px/6px 8px base) and td (11px/4px 8px base) scale correctly.
     var styleEl = document.getElementById('em-zoom-style');
     if (!styleEl) {
       styleEl = document.createElement('style');
@@ -1331,7 +1335,20 @@ function emSetZoom(delta) {
       document.head.appendChild(styleEl);
     }
     styleEl.textContent =
-      '#em-table-wrap td, #em-table-wrap th { font-size: ' + fs + 'px; padding: ' + padV + 'px ' + padH + 'px; }';
+      '#em-table-wrap td { font-size: ' +
+      tdFs +
+      'px; padding: ' +
+      tdPadV +
+      'px ' +
+      tdPadH +
+      'px; } ' +
+      '#em-table-wrap th { font-size: ' +
+      thFs +
+      'px; padding: ' +
+      thPadV +
+      'px ' +
+      thPadH +
+      'px; }';
   }
 
   var label = document.getElementById('em-zoom-label');
@@ -1858,7 +1875,7 @@ function emRenderTable(data, filters) {
   if (_emEditMode) {
     theadCells +=
       '<th style="position:sticky;top:0;background:var(--s2);border-top:3px solid transparent;' +
-      'padding:6px 8px;font-size:10px;font-weight:600;color:var(--text2);white-space:nowrap;' +
+      'font-weight:600;color:var(--text2);white-space:nowrap;' +
       'width:36px;text-align:center;border-bottom:1px solid var(--border);border-right:1px solid var(--border)"></th>';
   }
   for (var ci = 0; ci < defs.length; ci++) {
@@ -1876,7 +1893,7 @@ function emRenderTable(data, filters) {
       ')" ' +
       'style="position:sticky;top:0;background:var(--s2);' +
       borderTop +
-      'padding:6px 8px;font-size:10px;font-weight:600;color:var(--text2);white-space:nowrap;cursor:pointer;' +
+      'font-weight:600;color:var(--text2);white-space:nowrap;cursor:pointer;' +
       'min-width:' +
       d.width +
       'px;text-align:left;' +
@@ -1912,7 +1929,7 @@ function emRenderTable(data, filters) {
       var isEmpty = rawVal === null || rawVal === undefined || rawVal === '';
       var displayVal = emFormatCell(rawVal, def);
       var cellStyle =
-        'padding:4px 8px;font-size:11px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:middle;' +
+        'border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:middle;' +
         (def.isLive ? 'font-family:Consolas,monospace;font-size:10px;' : '') +
         (def.isDynPoint ? 'font-family:Consolas,monospace;font-size:10px;' : '') +
         (isEmpty ? 'color:var(--text3);' : '') +
@@ -2100,7 +2117,7 @@ function emRenderAuditTable(data, filters) {
       (d.title ? 'title="' + emHtmlEsc(d.title) + '" ' : '') +
       'style="position:sticky;top:0;background:var(--s2);' +
       borderTop +
-      'padding:6px 8px;font-size:10px;font-weight:600;color:var(--text2);white-space:nowrap;cursor:pointer;' +
+      'font-weight:600;color:var(--text2);white-space:nowrap;cursor:pointer;' +
       'min-width:' +
       d.width +
       'px;text-align:left;' +
@@ -2224,7 +2241,7 @@ function emRenderAuditTable(data, filters) {
    Returns HTML string.                                                    */
 function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, seqReadiness) {
   var baseStyle =
-    'padding:4px 8px;font-size:11px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:middle;text-align:center;';
+    'border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:middle;text-align:center;';
 
   // ── Frozen identity columns ──
   if (def.key === 'building') {
@@ -6430,7 +6447,7 @@ function emComputeSequenceReadiness(equipRow, complianceData) {
    Tooltip shows present and missing category keys for quick diagnosis.    */
 function emRenderSequenceCell(seqName, readiness) {
   var baseStyle =
-    'padding:4px 8px;font-size:11px;border-bottom:1px solid var(--border);' +
+    'border-bottom:1px solid var(--border);' +
     'border-right:1px solid var(--border);vertical-align:middle;text-align:center;';
 
   if (!readiness || readiness.status === 'na') {
