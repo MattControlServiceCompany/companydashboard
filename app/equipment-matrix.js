@@ -3264,8 +3264,8 @@ function emRenderUploadPanel(container, pid, inline) {
     '</div>' +
     '<input type="file" id="em-file-input" accept=".csv" multiple style="display:none" onchange="emHandleFileSelect(event)">' +
     '<div id="em-file-list" style="margin-bottom:8px;display:none">' +
-    '<div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px">Files queued:</div>' +
-    '<ul id="em-file-items" style="list-style:none;padding:0;margin:0;font-size:11px;color:var(--text)"></ul>' +
+    '<div id="em-file-list-header" style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px">Files queued: 0</div>' +
+    '<ul id="em-file-items" style="list-style:none;padding:0;margin:0;font-size:11px;color:var(--text);max-height:150px;overflow-y:auto"></ul>' +
     '</div>' +
     '<div id="em-import-status-wrap" style="display:none;align-items:center;gap:8px;padding:10px;background:var(--s2);border-radius:6px">' +
     '<div id="em-import-spinner" style="width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite;flex-shrink:0"></div>' +
@@ -3275,6 +3275,7 @@ function emRenderUploadPanel(container, pid, inline) {
     '<span style="font-size:16px;color:#22c55e">&#x2713;</span>' +
     '<span id="em-import-success-msg" style="font-size:12px;font-weight:600;color:var(--text)"></span>' +
     '</div>' +
+    '<div id="em-import-summary" style="display:none;margin-top:10px"></div>' +
     '</div>';
 
   container.innerHTML = headerHtml + bodyHtml;
@@ -3313,12 +3314,14 @@ function emQueueFiles(files) {
   }
   var listDiv = document.getElementById('em-file-list');
   var itemsUl = document.getElementById('em-file-items');
+  var listHeader = document.getElementById('em-file-list-header');
   if (!listDiv || !itemsUl) return;
   if (_emPendingFiles.length === 0) return;
   listDiv.style.display = 'block';
+  if (listHeader) listHeader.textContent = 'Files queued: ' + _emPendingFiles.length;
   var html = '';
   for (var j = 0; j < _emPendingFiles.length; j++) {
-    html += '<li style="padding:2px 0;color:var(--text)">' + _emPendingFiles[j].name + '</li>';
+    html += '<li style="padding:2px 0;color:var(--text)">' + emHtmlEsc(_emPendingFiles[j].name) + '</li>';
   }
   itemsUl.innerHTML = html;
   // Auto-start import as soon as valid CSVs are queued.
@@ -3377,14 +3380,77 @@ function emHandleImport(pid) {
         pending +
         ' file' +
         (pending !== 1 ? 's' : '');
-      // Hide the spinner/status, show green success message for 800ms before closing
+      // Compute category breakdown from allRows (the newly imported rows)
+      var catCounts = {};
+      var catOrder = ['ahu', 'vav', 'fpb', 'ddvav', 'hwp', 'chwp', 'ct', 'lighting', 'other'];
+      var catLabels = {
+        ahu: 'AHU',
+        vav: 'VAV',
+        fpb: 'FPB',
+        ddvav: 'DDVAV',
+        hwp: 'HWP',
+        chwp: 'CHWP',
+        ct: 'CT',
+        lighting: 'Lighting',
+        other: 'Other',
+      };
+      allRows.forEach(function (r) {
+        catCounts[r.category] = (catCounts[r.category] || 0) + 1;
+      });
+      var withFloor = allRows.filter(function (r) {
+        return r.floor && r.floor.trim();
+      }).length;
+      var importBuildings = {};
+      allRows.forEach(function (r) {
+        importBuildings[r.building] = true;
+      });
+      var importBldgCount = Object.keys(importBuildings).length;
+      var otherRate = allRows.length > 0 ? (catCounts['other'] || 0) / allRows.length : 0;
+      var showPoints = totalRawRows !== allRows.length;
+      // Build category breakdown lines
+      var catLines = [];
+      catOrder.forEach(function (k) {
+        var n = catCounts[k] || 0;
+        if (n > 0) {
+          var pct = Math.round((n / allRows.length) * 100);
+          var pctStr = pct < 1 ? '<1%' : pct + '%';
+          var label = catLabels[k] + ': ' + n.toLocaleString() + ' (' + pctStr + ')';
+          if (k === 'other' && otherRate > 0.2) label += ' ⚠';
+          catLines.push('<div style="padding:1px 0">' + label + '</div>');
+        }
+      });
+      var summaryHtml =
+        '<div style="font-size:11px;color:var(--text2);line-height:1.6;background:var(--s3);border-radius:4px;padding:8px 10px">' +
+        '<div style="font-weight:600;color:var(--text);margin-bottom:6px">Category Breakdown:</div>' +
+        catLines.join('') +
+        '<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px">' +
+        'Buildings: ' +
+        importBldgCount +
+        (showPoints ? ' &nbsp;|&nbsp; BAS Points: ' + totalRawRows.toLocaleString() : '') +
+        ' &nbsp;|&nbsp; Floor field non-blank: ' +
+        withFloor.toLocaleString() +
+        ' of ' +
+        allRows.length.toLocaleString() +
+        '</div>' +
+        (otherRate > 0.2
+          ? '<div style="margin-top:6px;color:#f59e0b;font-weight:600">⚠ High unclassified rate — some equipment types may need mapping</div>'
+          : '') +
+        '</div>';
+      // Hide the spinner/status, show green success message before closing
       if (statusWrap) statusWrap.style.display = 'none';
       var successWrap = document.getElementById('em-import-success-wrap');
       var successMsgEl = document.getElementById('em-import-success-msg');
+      var summaryEl = document.getElementById('em-import-summary');
       if (successWrap) {
         successWrap.style.display = 'flex';
-        if (successMsgEl) successMsgEl.textContent = 'Import complete — ' + totalRawRows.toLocaleString() + ' rows';
+        if (successMsgEl)
+          successMsgEl.textContent = modeLabel + ' complete — ' + allRows.length.toLocaleString() + ' equipment rows';
       }
+      if (summaryEl) {
+        summaryEl.innerHTML = summaryHtml;
+        summaryEl.style.display = 'block';
+      }
+      var closeDelay = otherRate > 0.2 ? 4000 : 3000;
       setTimeout(function () {
         // Close the modal — emRenderMatrix below rebuilds the toolbar with fresh button text
         var backdrop = document.getElementById('em-upload-modal-backdrop');
@@ -3393,7 +3459,7 @@ function emHandleImport(pid) {
         var container = document.getElementById('em-proj-wrap');
         if (container) emRenderMatrix(container, merged, pid);
         showToast(successMsg);
-      }, 800);
+      }, closeDelay);
     } else {
       // No project selected — abort with a clear error.
       // The old __preview__ path was removed because it poisoned window._emActivePid with

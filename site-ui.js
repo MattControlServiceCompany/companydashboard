@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.27.385';
+  var CH_VERSION = 'v2026.05.27.386';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,29 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v386',
+      date: '2026-05-27',
+      title: 'Import summary with category breakdown, scrollable file list, fix row count display',
+      features: [
+        {
+          type: 'feature',
+          text: 'Equipment Matrix import modal now shows a category breakdown after import (AHU, VAV, FPB, etc.) with counts and percentages, building count, BAS point count, and floor field coverage.',
+        },
+        {
+          type: 'fix',
+          text: 'Import modal row count now correctly shows equipment rows (not raw BAS points). Previously a WebCTRL import of 2,700 units would show 37,800 rows.',
+        },
+        {
+          type: 'feature',
+          text: 'File list in the import modal is now scrollable (max 150px) and shows the queued file count.',
+        },
+        {
+          type: 'feature',
+          text: 'Import modal stays open 3 seconds (4 seconds if Other rate is high) so users can read the summary before it closes.',
+        },
+      ],
+    },
     {
       version: 'v385',
       date: '2026-05-27',
