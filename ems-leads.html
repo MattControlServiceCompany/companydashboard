@@ -62,6 +62,7 @@
         background: var(--bg);
         color: var(--text);
         height: 100%;
+        min-width: 960px;
         overflow: hidden;
         -webkit-font-smoothing: antialiased;
         font-variant-numeric: tabular-nums;
@@ -1345,7 +1346,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=2026.05.27.390" />
+    <link rel="stylesheet" href="feedback-widget.css?v=2026.05.27.391" />
   </head>
   <body>
     <!-- TOPBAR -->
@@ -1370,9 +1371,7 @@
 
     <!-- NAV -->
     <div class="nav-bar">
-      <button class="ntab active" data-fb="ems.tab.pipeline" onclick="switchView('pipeline', this)">
-        📋 Pipeline
-      </button>
+      <button class="ntab active" data-fb="ems.tab.pipeline" onclick="switchView('pipeline', this)">📋 Pipeline</button>
       <button class="ntab" data-fb="ems.tab.table" onclick="switchView('table', this)">📊 All Leads</button>
       <button class="ntab" data-fb="ems.tab.followups" onclick="switchView('followups', this)">🔔 Follow-ups</button>
       <button class="ntab" data-fb="ems.tab.analytics" onclick="switchView('analytics', this)">📈 Analytics</button>
@@ -2980,6 +2979,6 @@
         return (s || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       }
     </script>
-    <script src="feedback-widget.js?v=2026.05.27.390"></script>
+    <script src="feedback-widget.js?v=2026.05.27.391"></script>
   </body>
 </html>

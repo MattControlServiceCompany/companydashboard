@@ -112,6 +112,7 @@
         background: var(--bg);
         color: var(--text);
         height: 100%;
+        min-width: 960px;
         overflow: hidden;
         -webkit-font-smoothing: antialiased;
         font-variant-numeric: tabular-nums;
@@ -1674,6 +1675,13 @@
         z-index: 149;
         background: rgba(6, 8, 16, 0.6);
         backdrop-filter: blur(4px);
+      }
+
+      /* -- INTERMEDIATE BREAKPOINT — hide sync button before topbar clips -- */
+      @media (max-width: 1024px) {
+        .sync-btn {
+          display: none;
+        }
       }
 
       /* -- MOBILE RESPONSIVE (mirrors site-ui.css @media block) -- */
@@ -3814,6 +3822,9 @@
         padding: 12px 18px 0;
         border-bottom: 1px solid var(--border);
         flex-shrink: 0;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        -webkit-overflow-scrolling: touch;
       }
       .pdt {
         font-family: var(--font);
@@ -7423,7 +7434,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=2026.05.27.390" />
+    <link rel="stylesheet" href="feedback-widget.css?v=2026.05.27.391" />
     <style>
       /* -- Quill rich text editor — dark theme overrides -- */
       .ql-toolbar.ql-snow {
@@ -7660,7 +7671,6 @@
                 >
                   <span class="s-ico">🧮</span>ECM Calculators
                 </button>
-
               </div>
             </div>
           </div>
@@ -12732,7 +12742,6 @@
             <div id="ecm-view-body" style="flex: 1; overflow-y: auto; min-height: 0"></div>
           </div>
 
-
           <script>
             /* Synchronous view restore — runs before first paint to prevent flash.
                Only activates a view when localStorage/sessionStorage already has a
@@ -14497,44 +14506,44 @@
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
     <!-- CompanyHub computation modules -->
-    <script src="lib/date-helpers.js?v=2026.05.27.390"></script>
-    <script src="lib/formatting.js?v=2026.05.27.390"></script>
-    <script src="lib/unit-conversion.js?v=2026.05.27.390"></script>
-    <script src="lib/csv-parser.js?v=2026.05.27.390"></script>
-    <script src="computations/rates.js?v=2026.05.27.390"></script>
-    <script src="computations/regression.js?v=2026.05.27.390"></script>
-    <script src="computations/normalization.js?v=2026.05.27.390"></script>
-    <script src="computations/eui.js?v=2026.05.27.390"></script>
-    <script src="computations/pollution.js?v=2026.05.27.390"></script>
-    <script src="computations/csc.js?v=2026.05.27.390"></script>
-    <script src="computations/savings.js?v=2026.05.27.390"></script>
-    <script src="computations/anomaly-detection.js?v=2026.05.27.390"></script>
-    <script src="lib/perf-table.js?v=2026.05.27.390"></script>
-    <script src="lib/shared-charts.js?v=2026.05.27.390"></script>
-    <script src="computations/report-data.js?v=2026.05.27.390"></script>
-    <script src="computations/data-quality.js?v=2026.05.27.390"></script>
-    <script src="extraction/pdf-engine.js?v=2026.05.27.390"></script>
-    <script src="app/db.js?v=2026.05.27.390"></script>
-    <script src="app/core.js?v=2026.05.27.390"></script>
-    <script src="app/energy-savings.js?v=2026.05.27.390"></script>
-    <script src="app/bill-analysis.js?v=2026.05.27.390"></script>
-    <script src="extraction/bill-validation.js?v=2026.05.27.390"></script>
-    <script src="app/district-calendar.js?v=2026.05.27.390"></script>
-    <script src="app/utility-data.js?v=2026.05.27.390"></script>
-    <script src="app/pipeline-diagram.js?v=2026.05.27.390"></script>
-    <script src="app/csv-import.js?v=2026.05.27.390"></script>
-    <script src="app/report-engine.js?v=2026.05.27.390"></script>
-    <script src="app/report-preview.js?v=2026.05.27.390"></script>
-    <script src="app/calculators.js?v=2026.05.27.390"></script>
-    <script src="app/ecm-calculators.js?v=2026.05.27.390"></script>
-    <script src="app/equipment-matrix.js?v=2026.05.27.390"></script>
-    <script src="app/graphics-setpoints.js?v=2026.05.27.390"></script>
-    <script src="app/budget.js?v=2026.05.27.390"></script>
-    <script src="app/scorecard.js?v=2026.05.27.390"></script>
-    <script src="app/portal-export.js?v=2026.05.27.390"></script>
-    <script src="app/bas-trends.js?v=2026.05.27.390"></script>
+    <script src="lib/date-helpers.js?v=2026.05.27.391"></script>
+    <script src="lib/formatting.js?v=2026.05.27.391"></script>
+    <script src="lib/unit-conversion.js?v=2026.05.27.391"></script>
+    <script src="lib/csv-parser.js?v=2026.05.27.391"></script>
+    <script src="computations/rates.js?v=2026.05.27.391"></script>
+    <script src="computations/regression.js?v=2026.05.27.391"></script>
+    <script src="computations/normalization.js?v=2026.05.27.391"></script>
+    <script src="computations/eui.js?v=2026.05.27.391"></script>
+    <script src="computations/pollution.js?v=2026.05.27.391"></script>
+    <script src="computations/csc.js?v=2026.05.27.391"></script>
+    <script src="computations/savings.js?v=2026.05.27.391"></script>
+    <script src="computations/anomaly-detection.js?v=2026.05.27.391"></script>
+    <script src="lib/perf-table.js?v=2026.05.27.391"></script>
+    <script src="lib/shared-charts.js?v=2026.05.27.391"></script>
+    <script src="computations/report-data.js?v=2026.05.27.391"></script>
+    <script src="computations/data-quality.js?v=2026.05.27.391"></script>
+    <script src="extraction/pdf-engine.js?v=2026.05.27.391"></script>
+    <script src="app/db.js?v=2026.05.27.391"></script>
+    <script src="app/core.js?v=2026.05.27.391"></script>
+    <script src="app/energy-savings.js?v=2026.05.27.391"></script>
+    <script src="app/bill-analysis.js?v=2026.05.27.391"></script>
+    <script src="extraction/bill-validation.js?v=2026.05.27.391"></script>
+    <script src="app/district-calendar.js?v=2026.05.27.391"></script>
+    <script src="app/utility-data.js?v=2026.05.27.391"></script>
+    <script src="app/pipeline-diagram.js?v=2026.05.27.391"></script>
+    <script src="app/csv-import.js?v=2026.05.27.391"></script>
+    <script src="app/report-engine.js?v=2026.05.27.391"></script>
+    <script src="app/report-preview.js?v=2026.05.27.391"></script>
+    <script src="app/calculators.js?v=2026.05.27.391"></script>
+    <script src="app/ecm-calculators.js?v=2026.05.27.391"></script>
+    <script src="app/equipment-matrix.js?v=2026.05.27.391"></script>
+    <script src="app/graphics-setpoints.js?v=2026.05.27.391"></script>
+    <script src="app/budget.js?v=2026.05.27.391"></script>
+    <script src="app/scorecard.js?v=2026.05.27.391"></script>
+    <script src="app/portal-export.js?v=2026.05.27.391"></script>
+    <script src="app/bas-trends.js?v=2026.05.27.391"></script>
 
-    <script src="app/site-functions.js?v=2026.05.27.390"></script>
+    <script src="app/site-functions.js?v=2026.05.27.391"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
@@ -14691,10 +14700,10 @@
       </div>
     </div>
 
-    <script src="app/tooltips-help.js?v=2026.05.27.390"></script>
-    <script src="feedback-widget.js?v=2026.05.27.390"></script>
+    <script src="app/tooltips-help.js?v=2026.05.27.391"></script>
+    <script src="feedback-widget.js?v=2026.05.27.391"></script>
     <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js" crossorigin="anonymous"></script>
-    <script src="lib/rich-text.js?v=2026.05.27.390"></script>
+    <script src="lib/rich-text.js?v=2026.05.27.391"></script>
     <script>
       /* Handle ?openProject=... URL params — opened by _rptV2GoEdit() popup window */
       (function _handleEditRedirect() {

@@ -84,6 +84,7 @@
         background: var(--bg);
         color: var(--text);
         height: 100%;
+        min-width: 960px;
         overflow: hidden;
         -webkit-font-smoothing: antialiased;
         font-variant-numeric: tabular-nums;
@@ -1068,6 +1069,12 @@
       .settings-toggle input:checked ~ .toggle-knob {
         transform: translateX(20px);
       }
+
+      @media (max-width: 1024px) {
+        .sync-btn {
+          display: none;
+        }
+      }
     </style>
 
     <style>
@@ -1438,7 +1445,7 @@
         line-height: 1.7;
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=2026.05.27.390" />
+    <link rel="stylesheet" href="feedback-widget.css?v=2026.05.27.391" />
   </head>
   <body>
     <!-- LOGIN -->
@@ -2658,6 +2665,6 @@
         renderCalendar();
       });
     </script>
-    <script src="feedback-widget.js?v=2026.05.27.390"></script>
+    <script src="feedback-widget.js?v=2026.05.27.391"></script>
   </body>
 </html>
