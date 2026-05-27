@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.27.386';
+  var CH_VERSION = 'v2026.05.27.387';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -29,6 +29,25 @@
 
   /* ── RELEASE NOTES ── */
   var RELEASE_NOTES = [
+    {
+      version: 'v387',
+      date: '2026-05-27',
+      title: 'BACnet parser left-to-right floor scan, remove per-cell audit tooltips',
+      features: [
+        {
+          type: 'fix',
+          text: 'BACnet path floor extraction now scans left-to-right from index 2 instead of always taking the last segment. This correctly identifies floors in 4-segment paths like /Org/Building/First Floor/AHU Zone.',
+        },
+        {
+          type: 'fix',
+          text: 'Added plant, station, domestic, exterior, and interior to the BACnet segment rejection list so these equipment category nodes are never stored as floor labels.',
+        },
+        {
+          type: 'fix',
+          text: 'Removed per-cell tooltips from the Equipment Matrix audit view data cells. Legend badges and column headers retain their tooltips.',
+        },
+      ],
+    },
     {
       version: 'v386',
       date: '2026-05-27',

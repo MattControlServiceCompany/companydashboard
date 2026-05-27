@@ -169,11 +169,28 @@ function init() {
     });
   initUtilityTool();
   updateHomeStats(); // Must run after initUtilityTool() so utilityData is populated
-  // Restore last active view from session
-  const lastView = localStorage.getItem('ch_activeView') || sessionStorage.getItem('ch_activeView');
+  // Restore last active view from session.
+  // Priority: IDB (DB.get) > sessionStorage > localStorage.
+  // DB is guaranteed warm here (init() only runs inside warmCache().then()), so DB.get()
+  // returns the most recent value written by sv() via DB.set(). localStorage may be stale
+  // if the IDB write in sv() happened after a localStorage-only read elsewhere.
+  const _dbView = typeof DB !== 'undefined' && DB.isReady() ? DB.get('ch_activeView') : null;
+  const lastView = _dbView || sessionStorage.getItem('ch_activeView') || localStorage.getItem('ch_activeView');
+  // Keep localStorage in sync with IDB so future synchronous reads see the right value
+  if (_dbView && localStorage.getItem('ch_activeView') !== _dbView) {
+    try {
+      localStorage.setItem('ch_activeView', _dbView);
+    } catch (e) {}
+  }
   // Read project session NOW before sv('projects') → showList() overwrites it
   const savedProjSession = sessionStorage.getItem('ch_proj');
-  if (lastView && document.getElementById('view-' + lastView)) sv(lastView);
+  if (lastView && document.getElementById('view-' + lastView)) {
+    sv(lastView);
+  } else {
+    // No stored view or view element missing — fall back to home.
+    // The pre-paint script no longer hard-codes this fallback, so init() must do it.
+    sv('home');
+  }
   // Restore projects drill-down if on projects page
   if (lastView === 'projects' && savedProjSession) {
     try {

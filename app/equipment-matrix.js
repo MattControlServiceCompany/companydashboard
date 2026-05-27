@@ -560,7 +560,7 @@ function emIsFloorSegment(str) {
 
   // Reject anything that contains known equipment keywords
   if (
-    /\b(lighting|smoke|environmental|monitor|rtu|ahu|vav|boiler|chiller|exhaust|fan|pump|elevator|generator|weather|fire|irrigation|transfer|metering|erv|hrv|doas|mau|fcu|ftu|fpb)\b/i.test(
+    /\b(lighting|smoke|environmental|monitor|rtu|ahu|vav|boiler|chiller|exhaust|fan|pump|elevator|generator|weather|fire|irrigation|transfer|metering|erv|hrv|doas|mau|fcu|ftu|fpb|plant|station|domestic|exterior|interior)\b/i.test(
       s,
     )
   )
@@ -718,10 +718,16 @@ function emExtractEquipmentGroups(rows, colMap) {
       // This handles variable-depth paths: standard 3-segment paths are unaffected;
       // 4-segment paths like /Org/Building/Station/Floor correctly use the last segment.
       var bacnetParts = bacnetPath.replace(/^\//, '').split('/');
-      var wfloor = (bacnetParts.length > 2 ? bacnetParts[bacnetParts.length - 1] : '').trim();
-      // Validate: reject equipment category nodes (Lighting, Environmental Index, etc.)
-      // that appear as the last BACnet segment but are NOT floor identifiers.
-      if (wfloor && !emIsFloorSegment(wfloor)) wfloor = '';
+      // Left-to-right scan from index 2 (after project and building).
+      // Takes the first segment that passes emIsFloorSegment(), so a real floor
+      // at index 2 is found even when a sub-node at index 3+ is an equipment category.
+      var wfloor = '';
+      for (var si = 2; si < bacnetParts.length; si++) {
+        if (bacnetParts[si] && emIsFloorSegment(bacnetParts[si].trim())) {
+          wfloor = bacnetParts[si].trim();
+          break;
+        }
+      }
       var parsed = emParseControlProgram(controlProgram);
       var location = parsed.location;
       var equipName = parsed.equipName || controlProgram;
@@ -2710,10 +2716,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
         return (
           '<td style="' +
           baseStyle +
-          'background:rgba(39,174,96,0.15);color:#27ae60;font-size:11px;font-weight:700" ' +
-          'title="' +
-          tooltipBase +
-          ' (auto-matched)">' +
+          'background:rgba(39,174,96,0.15);color:#27ae60;font-size:11px;font-weight:700">' +
           (displayVal !== null ? emHtmlEsc(displayVal) : 'Yes') +
           '</td>'
         );
@@ -2722,12 +2725,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
         return (
           '<td style="' +
           baseStyle +
-          'background:rgba(230,126,34,0.15);color:#e67e22;font-size:11px;font-weight:700" ' +
-          'title="' +
-          tooltipBase +
-          ' (fuzzy match, tier ' +
-          tier +
-          ')">' +
+          'background:rgba(230,126,34,0.15);color:#e67e22;font-size:11px;font-weight:700">' +
           (displayVal !== null ? emHtmlEsc(displayVal) : 'Fuzzy') +
           '</td>'
         );
@@ -2738,11 +2736,11 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       return (
         '<td style="' +
         baseStyle +
-        'background:rgba(192,57,43,0.15);color:#c0392b;font-size:11px;font-weight:700" title="Required point missing">No</td>'
+        'background:rgba(192,57,43,0.15);color:#c0392b;font-size:11px;font-weight:700">No</td>'
       );
     }
     // Optional and not present — dash so the cell is not silently blank
-    return '<td style="' + baseStyle + 'color:var(--text3)" title="Optional point — not present in BAS">--</td>';
+    return '<td style="' + baseStyle + 'color:var(--text3)">--</td>';
   }
 
   // ── Sequence status cell ──

@@ -1157,121 +1157,115 @@ function _getRnVersion() {
 
 var RELEASE_NOTES = [
   {
-    version: 'v384',
+    version: 'v386',
     date: '2026-05-27',
-    title: 'Audit View point values, Manage Mappings redesign, data-loss fix',
+    title: 'Tab persistence fix, user-facing release notes',
     features: [
       {
-        type: 'feature',
-        text: 'Equipment Matrix Audit View now shows the actual BAS point values from your data instead of just Yes/No — so you can see exactly what is monitored and what is missing.',
-      },
-      {
-        type: 'feature',
-        text: 'Manage Point Mappings has been redesigned. It now shows both mapped and unmapped points in one place, grouped by function, making it much easier to see gaps and add missing mappings.',
+        type: 'fix',
+        text: 'Tab Memory — Fixed an issue where refreshing the page would always land on Utility Data instead of the tab you were on. The site now correctly remembers your active tab across page loads.',
       },
       {
         type: 'fix',
-        text: 'Fixed a data-loss bug in Manage Mappings where saving changes could silently delete custom mappings you had already set up.',
+        text: "What's New — Release notes now show user-friendly descriptions of each change instead of internal commit messages.",
+      },
+    ],
+  },
+  {
+    version: 'v385',
+    date: '2026-05-27',
+    title: 'Equipment Matrix Summary view, import summary, tab memory repair',
+    features: [
+      {
+        type: 'feature',
+        text: 'Summary View — New view in the Equipment Matrix. Click "Summary" in the toolbar to see average BAS point values grouped by building and equipment type.',
+      },
+      {
+        type: 'feature',
+        text: 'Import Summary — After importing CSVs to the Equipment Matrix, you see a breakdown of how many items were classified (AHU, VAV, etc.) and a warning if many items could not be identified.',
+      },
+      {
+        type: 'fix',
+        text: "What's New — Release notes now appear correctly when a new version is deployed.",
+      },
+    ],
+  },
+  {
+    version: 'v384',
+    date: '2026-05-27',
+    title: 'Live BAS point values in Audit View, redesigned Point Mappings',
+    features: [
+      {
+        type: 'feature',
+        text: 'Live Point Values — The Equipment Matrix Audit View now shows actual BAS values (temperatures, pressures, percentages) instead of just Yes/No — so you can see exactly what is monitored and what is missing.',
+      },
+      {
+        type: 'feature',
+        text: 'Point Mappings Redesigned — Manage Mappings now shows both mapped and unmapped points in one place, grouped by function. Previously-saved mappings are preserved when you save again.',
       },
     ],
   },
   {
     version: 'v383',
     date: '2026-05-27',
-    title: "Zoom fix, What's New button, tab persistence, auto-meter creation from bills",
+    title: 'Zoom fix, tab memory, auto-create meters from bills',
     features: [
       {
         type: 'fix',
-        text: 'Equipment Matrix zoom in/out now works correctly.',
+        text: 'Zoom — Equipment Matrix zoom in/out now works. Use the +/- buttons to resize the table.',
       },
       {
         type: 'fix',
-        text: "What's New button now works on the Energy Department page (was broken).",
+        text: "What's New — Release notes button now works on the Energy Department page.",
       },
       {
         type: 'fix',
-        text: 'Your active tab and settings now survive a page refresh — no more reverting to the Utility Data tab every time you reload.',
+        text: 'Tab Memory — The site now remembers which tab you were on when you refresh.',
       },
       {
         type: 'feature',
-        text: 'Bills that include an account number now automatically create a meter and match it to the right building — no manual setup needed.',
+        text: 'Auto-Create Meters — When you upload a bill with an account number, a meter is automatically created and matched to a building — no manual setup needed.',
       },
     ],
   },
   {
     version: 'v382',
     date: '2026-05-27',
-    title: 'CSV import modal, floor column fix, lighting classification, Audit View legend',
+    title: 'CSV Import modal, better equipment classification',
     features: [
       {
         type: 'feature',
-        text: 'CSV import now opens as a modal overlay with progress feedback so you can see what is happening during import.',
+        text: 'CSV Import Modal — The Equipment Matrix import now appears as a popup overlay so you can always see it, with progress feedback during import.',
       },
       {
-        type: 'fix',
-        text: 'Floor column no longer shows equipment category names (like "Lighting" or "Environmental Index") — it only shows actual floor values.',
-      },
-      {
-        type: 'fix',
-        text: 'Lighting is now recognized as an equipment type and classified correctly in the Equipment Matrix.',
-      },
-      {
-        type: 'fix',
-        text: 'JOCO-style equipment names (e.g. "Cooling Towers - ADC") now parse correctly for non-HVAC equipment types.',
-      },
-      {
-        type: 'fix',
-        text: 'Audit View legend now has proper spacing and includes tooltip explanations for each compliance indicator.',
-      },
-      {
-        type: 'fix',
-        text: 'Removed the "(slow)" label from the All Rows option in the rows-per-page selector.',
+        type: 'feature',
+        text: 'Better Equipment Classification — Lighting, smoke dampers, and other non-HVAC equipment types are now recognized and classified correctly.',
       },
     ],
   },
   {
     version: 'v381',
     date: '2026-05-27',
-    title: 'Cleaner Equipment Matrix — no icons, no building totals, BAS point count',
+    title: 'Cleaner Equipment Matrix view',
     features: [
       {
-        type: 'fix',
-        text: 'Removed all icons and emoji from the Equipment Matrix — everything now uses plain readable text.',
-      },
-      {
-        type: 'fix',
-        text: 'Removed building summary and total rows from the Equipment Matrix to reduce clutter.',
-      },
-      {
         type: 'feature',
-        text: 'Header now shows total BAS point count instead of a redundant row count.',
-      },
-      {
-        type: 'fix',
-        text: 'Fixed a pagination regression introduced in v380 that caused incorrect page counts.',
+        text: 'Cleaner Equipment Matrix — Removed icons and building summary rows for a cleaner, text-based view. Shows total BAS point count in the toolbar instead.',
       },
     ],
   },
   {
     version: 'v380',
     date: '2026-05-27',
-    title: 'Equipment matrix UX pass 2, ASHRAE report sequence score fix, toISO guard, multi-account KGS splitting',
+    title: 'Faster Equipment Matrix, ASHRAE 36 Report fixed',
     features: [
       {
-        type: 'fix',
-        text: 'Equipment matrix: performance caching for compliance and normalization, collapse-aware pagination, Collapse All / Expand All button, empty cell span removal, search debounce.',
+        type: 'feature',
+        text: 'Faster Equipment Matrix — Significant performance improvement when loading and filtering large datasets. Added Collapse All / Expand All button.',
       },
       {
         type: 'fix',
-        text: 'ASHRAE 36 report: sequence score always-0% fixed by using emComputeSequenceReadiness; gap descriptions added for ~40 missing point categories; footer blank label fixed; no-auditable-equipment sentinel.',
-      },
-      {
-        type: 'fix',
-        text: 'bill-analysis.js: toISO() now guards against double-conversion of already-ISO dates, preventing date corruption on re-import.',
-      },
-      {
-        type: 'fix',
-        text: 'energy-savings.js: multi-account KGS consolidated statements now split per account before extraction, preventing wrong meter/charge data from being saved.',
+        text: 'ASHRAE 36 Report Fixed — Sequence compliance scores now calculate correctly. Previously always showed 0%.',
       },
     ],
   },
