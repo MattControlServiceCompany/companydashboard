@@ -56,6 +56,15 @@ var EM_EQUIP_TYPES = {
   'weather station': 'other',
   'no gl36 equipment': 'other',
   'no bas equipment': 'other',
+  // Lighting — recognized category so JOCO-style "Lighting - ADC" parses correctly
+  lighting: 'lighting',
+  'lighting zone': 'lighting',
+  'lighting control': 'lighting',
+  elv: 'lighting',
+  // Non-HVAC equipment — explicitly 'other' so JOCO-style names flip correctly
+  'smoke damper': 'other',
+  'smoke damper monitor': 'other',
+  'environmental index': 'other',
 };
 
 /* ── EDIT MODE FLAG ── */
@@ -461,8 +470,14 @@ function emParseControlProgram(cpStr) {
   if (idx === -1) return { location: '', equipName: cpStr.trim() };
   var firstPart = cpStr.slice(0, idx).trim();
   var secondPart = cpStr.slice(idx + 3).trim();
-  // If the first segment is a recognizable equipment type, this is JOCO-style naming
-  if (emClassifyEquipType(firstPart) !== 'other') {
+  // If the first segment is a recognizable equipment type, this is JOCO-style naming.
+  // isKnownType triggers on HVAC types (non-'other' classification) AND on known non-HVAC
+  // program types that legitimately use the "Type - Building" JOCO naming pattern.
+  var firstCategory = emClassifyEquipType(firstPart);
+  var isKnownType =
+    firstCategory !== 'other' ||
+    /^(smoke|environmental|exhaust|weather|fire|generator|elevator|irrigation)/i.test(firstPart);
+  if (isKnownType) {
     return { location: secondPart, equipName: firstPart };
   }
   // Standard WebCTRL style: location before the dash, equipment name after
@@ -476,6 +491,49 @@ function emParseLocation(locString) {
   var floor = floorMatch ? floorMatch[1] : '';
   var area = s;
   return { floor: floor, area: area };
+}
+
+/* ── emIsFloorSegment ───────────────────────────────────────────────────────
+   Returns true if the string looks like a genuine floor/level identifier.
+   Used to validate BACnet path segments before assigning them to the Floor
+   column — prevents equipment category nodes ("Lighting", "Environmental Index")
+   from appearing in the Floor column.                                        */
+function emIsFloorSegment(str) {
+  if (!str) return false;
+  var s = str.trim();
+  if (!s) return false;
+
+  // Reject anything that contains known equipment keywords
+  if (
+    /\b(lighting|smoke|environmental|monitor|rtu|ahu|vav|boiler|chiller|exhaust|fan|pump|elevator|generator|weather|fire|irrigation|transfer|metering|erv|hrv|doas|mau|fcu|ftu|fpb)\b/i.test(
+      s,
+    )
+  )
+    return false;
+
+  // Reject if it matches any key in EM_EQUIP_TYPES (after lowercasing)
+  var lc = s.toLowerCase();
+  if (lc in EM_EQUIP_TYPES) return false;
+
+  // Accept: purely numeric (e.g. "1", "2", "01")
+  if (/^\d+$/.test(s)) return true;
+
+  // Accept: ordinal patterns — "1st", "2nd", "3rd", "4th", "5th" etc.
+  if (/^\d+(st|nd|rd|th)$/i.test(s)) return true;
+
+  // Accept: contains a number AND a floor/level/area/zone/wing keyword
+  if (/\d/.test(s) && /\b(floor|level|area|wing|zone)\b/i.test(s)) return true;
+
+  // Accept: named floor concepts
+  if (/\b(basement|ground|mezzanine|penthouse|roof|attic)\b/i.test(s)) return true;
+
+  // Accept: single-letter + number or number + single-letter (e.g. "A1", "1A", "B2")
+  if (/^[A-Za-z]\d+$/.test(s) || /^\d+[A-Za-z]$/.test(s)) return true;
+
+  // Accept: ordinal text combined with "floor" (e.g. "First Floor", "Second Floor")
+  if (/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+floor\b/i.test(s)) return true;
+
+  return false;
 }
 
 /* ── emClassifyEquipType ────────────────────────────────────────────────────
@@ -545,6 +603,10 @@ function emClassifyEquipType(equipTypeStr) {
   if (/chill|chw.*plant/i.test(key)) return 'chwp';
   if (/cool.*tower/i.test(key)) return 'ct';
   if (/\bcwp\b/i.test(key)) return 'ct';
+  // Lighting
+  if (/\blighting\b/i.test(key)) return 'lighting';
+  // Smoke damper — explicitly 'other' but recognized for JOCO-style flip
+  if (/smoke.?damper/i.test(key)) return 'other';
 
   // ── E. Fuzzy keyword scan (last resort) ──
   var fuzzyMap = [
@@ -558,6 +620,7 @@ function emClassifyEquipType(equipTypeStr) {
     ['fan coil', 'ahu'],
     ['rooftop', 'ahu'],
     ['air handler', 'ahu'],
+    ['lighting', 'lighting'],
   ];
   for (var fi = 0; fi < fuzzyMap.length; fi++) {
     if (key.indexOf(fuzzyMap[fi][0]) !== -1) return fuzzyMap[fi][1];
@@ -601,6 +664,9 @@ function emExtractEquipmentGroups(rows, colMap) {
       // 4-segment paths like /Org/Building/Station/Floor correctly use the last segment.
       var bacnetParts = bacnetPath.replace(/^\//, '').split('/');
       var wfloor = (bacnetParts.length > 2 ? bacnetParts[bacnetParts.length - 1] : '').trim();
+      // Validate: reject equipment category nodes (Lighting, Environmental Index, etc.)
+      // that appear as the last BACnet segment but are NOT floor identifiers.
+      if (wfloor && !emIsFloorSegment(wfloor)) wfloor = '';
       var parsed = emParseControlProgram(controlProgram);
       var location = parsed.location;
       var equipName = parsed.equipName || controlProgram;
@@ -1042,8 +1108,6 @@ function emCalcSummaryStats(rows) {
 }
 
 function emShowUploadPanel(btn, mode, pid) {
-  var inline = document.getElementById('em-upload-inline');
-  if (!inline) return;
   var resolvedMode = mode || 'merge';
   // Resolve the target pid: prefer the explicit argument, fall back to window._emActivePid.
   // Guard: never allow __preview__ or falsy as the import target.
@@ -1052,22 +1116,49 @@ function emShowUploadPanel(btn, mode, pid) {
     showToast('No project selected — please select a project before importing CSVs', 'warn');
     return;
   }
-  if (inline.style.display === 'none') {
-    // Re-Import mode requires confirmation before opening the panel
-    if (resolvedMode === 'replace') {
-      if (!confirm('This will replace all existing equipment data for this project. Continue?')) return;
-    }
-    _emImportMode = resolvedMode;
-    // Lock in the target pid at panel-open time so file-drop cannot use a stale pid
-    _emUploadTargetPid = resolvedPid;
-    inline.style.display = 'block';
-    emRenderUploadPanel(inline, resolvedPid, true);
-    btn.textContent = 'Cancel';
-  } else {
-    _emUploadTargetPid = null;
-    inline.style.display = 'none';
-    btn.textContent = resolvedMode === 'replace' ? 'Re-Import CSVs' : 'Import CSVs';
+
+  // If the modal is already open, close it (toggle behaviour)
+  var existing = document.getElementById('em-upload-modal-backdrop');
+  if (existing) {
+    emCloseUploadModal(btn, resolvedMode);
+    return;
   }
+
+  // Re-Import mode requires confirmation before opening the panel
+  if (resolvedMode === 'replace') {
+    if (!confirm('This will replace all existing equipment data for this project. Continue?')) return;
+  }
+  _emImportMode = resolvedMode;
+  // Lock in the target pid at panel-open time so file-drop cannot use a stale pid
+  _emUploadTargetPid = resolvedPid;
+
+  // Build a fixed-position backdrop + modal panel so it is immune to overflow:clip clipping
+  var backdrop = document.createElement('div');
+  backdrop.id = 'em-upload-modal-backdrop';
+  backdrop.style.cssText =
+    'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:9998;display:flex;align-items:flex-start;justify-content:center;padding-top:70px';
+  // Click on backdrop (not on the panel) closes the modal
+  backdrop.addEventListener('click', function (e) {
+    if (e.target === backdrop) emCloseUploadModal(btn, resolvedMode);
+  });
+
+  var panel = document.createElement('div');
+  panel.id = 'em-upload-modal-panel';
+  panel.style.cssText =
+    'background:var(--s1);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.28);width:600px;max-width:calc(100vw - 32px);z-index:9999;overflow:hidden';
+
+  backdrop.appendChild(panel);
+  document.body.appendChild(backdrop);
+
+  emRenderUploadPanel(panel, resolvedPid, true);
+  btn.textContent = 'Cancel';
+}
+
+function emCloseUploadModal(btn, resolvedMode) {
+  _emUploadTargetPid = null;
+  var backdrop = document.getElementById('em-upload-modal-backdrop');
+  if (backdrop) backdrop.parentNode.removeChild(backdrop);
+  if (btn) btn.textContent = resolvedMode === 'replace' ? 'Re-Import CSVs' : 'Import CSVs';
 }
 
 /* ── PHASE 4: TOOLBAR & TABLE ── */
@@ -1108,7 +1199,6 @@ function emRenderToolbar(data, pid, projBadge) {
     'display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);cursor:pointer;padding:2px 6px;border-radius:3px;border:1px solid var(--border);background:var(--s2);user-select:none';
   var colToggles =
     '<div id="em-col-toggles" style="display:flex;align-items:center;gap:6px;padding:4px 16px 6px;flex-wrap:wrap;border-top:1px solid var(--border)">' +
-    '<span style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-right:2px">Columns:</span>' +
     // Raw-view-only toggles (hidden in audit mode)
     '<span id="em-raw-col-toggles" style="display:none;align-items:center;gap:6px">' +
     '<label style="' +
@@ -1140,11 +1230,11 @@ function emRenderToolbar(data, pid, projBadge) {
     '</span>' +
     // Audit-view legend bar — always visible in audit mode, shows all cell state symbols
     '<span id="em-audit-col-info" style="display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--text3)">' +
-    '<span style="padding:1px 6px;border-radius:3px;background:rgba(39,174,96,0.15);color:#27ae60;font-weight:600">Yes</span>' +
-    '<span style="padding:1px 6px;border-radius:3px;background:rgba(230,126,34,0.15);color:#e67e22;font-weight:600">Fuzzy</span>' +
-    '<span style="padding:1px 6px;border-radius:3px;background:rgba(192,57,43,0.15);color:#c0392b;font-weight:600">No</span>' +
-    '<span style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.08);color:var(--text3)">N/A</span>' +
-    '<span style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.05);color:var(--text3)">--</span>' +
+    '<span title="BAS point present — automatic match to ASHRAE 36 requirement" style="padding:1px 6px;border-radius:3px;background:rgba(39,174,96,0.15);color:#27ae60;font-weight:600">Yes</span>' +
+    '<span title="Similar point found — lower confidence match" style="padding:1px 6px;border-radius:3px;background:rgba(230,126,34,0.15);color:#e67e22;font-weight:600">Fuzzy</span>' +
+    '<span title="Required ASHRAE 36 point not found in BAS" style="padding:1px 6px;border-radius:3px;background:rgba(192,57,43,0.15);color:#c0392b;font-weight:600">No</span>' +
+    '<span title="Not applicable to this equipment type" style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.08);color:var(--text3)">N/A</span>' +
+    '<span title="Optional point — not present in BAS data" style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.05);color:var(--text3)">--</span>' +
     '</span>' +
     '</div>';
   return (
@@ -1866,8 +1956,7 @@ function emRenderTable(data, filters) {
     var opt = pageSizeOptions[si];
     var lbl = pageSizeLabels[opt];
     var isCurrent = _emPageSize === opt;
-    var warn = opt === 0 && filtered.length > 500 ? ' (slow)' : '';
-    sizeSelectHtml += '<option value="' + opt + '"' + (isCurrent ? ' selected' : '') + '>' + lbl + warn + '</option>';
+    sizeSelectHtml += '<option value="' + opt + '"' + (isCurrent ? ' selected' : '') + '>' + lbl + '</option>';
   }
   sizeSelectHtml += '</select>';
 
@@ -2071,9 +2160,8 @@ function emRenderAuditTable(data, filters) {
   for (var si = 0; si < pageSizeOptions.length; si++) {
     var opt = pageSizeOptions[si];
     var isCurrent = _emPageSize === opt;
-    var warn = opt === 0 && filtered.length > 500 ? ' slow' : '';
     sizeSelectHtml +=
-      '<option value="' + opt + '"' + (isCurrent ? ' selected' : '') + '>' + pageSizeLabels[opt] + warn + '</option>';
+      '<option value="' + opt + '"' + (isCurrent ? ' selected' : '') + '>' + pageSizeLabels[opt] + '</option>';
   }
   sizeSelectHtml += '</select>';
 
@@ -2748,28 +2836,46 @@ function emAddManualRow(projId) {
 
 function emRenderUploadPanel(container, pid, inline) {
   _emPendingFiles = [];
-  container.innerHTML =
-    '<div style="' +
-    (inline ? '' : 'padding:20px 24px') +
-    '">' +
+  // Modal header with title + close button
+  var headerHtml =
+    '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border)">' +
+    '<div style="font-size:14px;font-weight:700;color:var(--text)">Import Equipment CSVs</div>' +
+    '<button onclick="emCloseUploadModal(null,\'' +
+    _emImportMode +
+    '\')" ' +
+    'style="background:none;border:none;cursor:pointer;font-size:18px;line-height:1;color:var(--text3);padding:2px 6px" ' +
+    'title="Close">&#x2715;</button>' +
+    '</div>';
+
+  // Drop zone + file input + status
+  var bodyHtml =
+    '<div style="padding:20px">' +
     '<div id="em-drop-zone" ' +
-    'style="border:2px dashed var(--border);border-radius:8px;padding:32px 24px;text-align:center;cursor:pointer;background:var(--s2);transition:border-color 0.15s;margin-bottom:12px" ' +
+    'style="border:2px dashed var(--border);border-radius:8px;padding:40px 24px;text-align:center;cursor:pointer;background:var(--s2);transition:border-color 0.15s;margin-bottom:12px" ' +
     'ondragover="emHandleFileDrop(event,\'over\')" ' +
     'ondragleave="emHandleFileDrop(event,\'leave\')" ' +
     'ondrop="emHandleFileDrop(event,\'drop\')" ' +
     'onclick="document.getElementById(\'em-file-input\').click()">' +
+    '<div style="font-size:32px;margin-bottom:8px;color:var(--text3)">&#x1F4C2;</div>' +
     '<div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px">Drop CSV files here</div>' +
-    '<div style="font-size:11px;color:var(--text3)">or click to browse — accepts multiple files</div>' +
+    '<div style="font-size:12px;color:var(--text3)">or click to browse — accepts multiple files</div>' +
     '</div>' +
     '<input type="file" id="em-file-input" accept=".csv" multiple style="display:none" onchange="emHandleFileSelect(event)">' +
     '<div id="em-file-list" style="margin-bottom:8px;display:none">' +
     '<div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px">Files queued:</div>' +
     '<ul id="em-file-items" style="list-style:none;padding:0;margin:0;font-size:11px;color:var(--text)"></ul>' +
     '</div>' +
-    '<div id="em-import-status-wrap" style="display:none">' +
-    '<span id="em-import-status" style="font-size:11px;color:var(--text3)"></span>' +
+    '<div id="em-import-status-wrap" style="display:none;align-items:center;gap:8px;padding:10px;background:var(--s2);border-radius:6px">' +
+    '<div id="em-import-spinner" style="width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite;flex-shrink:0"></div>' +
+    '<span id="em-import-status" style="font-size:12px;color:var(--text2)"></span>' +
+    '</div>' +
+    '<div id="em-import-success-wrap" style="display:none;align-items:center;gap:8px;padding:10px;background:var(--s2);border-radius:6px">' +
+    '<span style="font-size:16px;color:#22c55e">&#x2713;</span>' +
+    '<span id="em-import-success-msg" style="font-size:12px;font-weight:600;color:var(--text)"></span>' +
     '</div>' +
     '</div>';
+
+  container.innerHTML = headerHtml + bodyHtml;
 }
 
 function emHandleFileDrop(event, action) {
@@ -2822,7 +2928,8 @@ function emHandleImport(pid) {
   if (!_emPendingFiles || _emPendingFiles.length === 0) return;
   var statusEl = document.getElementById('em-import-status');
   var statusWrap = document.getElementById('em-import-status-wrap');
-  if (statusWrap) statusWrap.style.display = 'block';
+  // Use flex so spinner and text sit side-by-side (see emRenderUploadPanel)
+  if (statusWrap) statusWrap.style.display = 'flex';
   if (statusEl) statusEl.textContent = 'Parsing file 1 of ' + _emPendingFiles.length + '...';
   var allRows = [];
   var detectedFormats = [];
@@ -2859,18 +2966,32 @@ function emHandleImport(pid) {
       var merged = emMergeIntoMatrix(baseData, allRows);
       merged.totalBASPoints = totalRawRows;
       emSaveMatrix(pid, merged);
-      var container = document.getElementById('em-proj-wrap');
-      if (container) emRenderMatrix(container, merged, pid);
       var modeLabel = _emImportMode === 'replace' ? 'Re-imported' : 'Imported';
-      showToast(
+      var successMsg =
         modeLabel +
-          ' ' +
-          totalRawRows.toLocaleString() +
-          ' rows from ' +
-          pending +
-          ' file' +
-          (pending !== 1 ? 's' : ''),
-      );
+        ' ' +
+        totalRawRows.toLocaleString() +
+        ' rows from ' +
+        pending +
+        ' file' +
+        (pending !== 1 ? 's' : '');
+      // Hide the spinner/status, show green success message for 800ms before closing
+      if (statusWrap) statusWrap.style.display = 'none';
+      var successWrap = document.getElementById('em-import-success-wrap');
+      var successMsgEl = document.getElementById('em-import-success-msg');
+      if (successWrap) {
+        successWrap.style.display = 'flex';
+        if (successMsgEl) successMsgEl.textContent = 'Import complete — ' + totalRawRows.toLocaleString() + ' rows';
+      }
+      setTimeout(function () {
+        // Close the modal — emRenderMatrix below rebuilds the toolbar with fresh button text
+        var backdrop = document.getElementById('em-upload-modal-backdrop');
+        if (backdrop) backdrop.parentNode.removeChild(backdrop);
+        _emUploadTargetPid = null;
+        var container = document.getElementById('em-proj-wrap');
+        if (container) emRenderMatrix(container, merged, pid);
+        showToast(successMsg);
+      }, 800);
     } else {
       // No project selected — abort with a clear error.
       // The old __preview__ path was removed because it poisoned window._emActivePid with
