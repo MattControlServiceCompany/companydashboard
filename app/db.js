@@ -126,6 +126,36 @@ const DB = (() => {
             });
           }
           _ready = true;
+          // Hotfix: restore lsPreserveKeys that the IDB migration may have wiped.
+          // Runs on every page load (not guarded by migration flag) but is cheap —
+          // just a few localStorage.getItem checks against the already-warm cache.
+          var _lsRepairKeys = [
+            'ch_activeView',
+            'ch_settings',
+            'ch_theme',
+            'ch_sidebar_collapsed',
+            'ch_seen_version',
+            'ch_user',
+            'ch_projTabOrder',
+            'ch_sidebarOrder',
+            'ch_dismissed_tips',
+            'ch_qs_seen',
+            'ch_toast_duration',
+            'ch_last_seen_version',
+            'ch_notifs',
+          ];
+          _lsRepairKeys.forEach(function (k) {
+            if (localStorage.getItem(k) === null) {
+              var val = _cache[k];
+              if (val !== undefined && val !== null) {
+                try {
+                  localStorage.setItem(k, typeof val === 'string' ? val : JSON.stringify(val));
+                } catch (e) {
+                  console.warn('[DB] Repair: failed to restore', k, 'to localStorage:', e);
+                }
+              }
+            }
+          });
           resolve();
         };
         tx.onerror = () => reject(tx.error);

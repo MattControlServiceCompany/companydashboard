@@ -1157,7 +1157,103 @@ function _getRnVersion() {
 
 var RELEASE_NOTES = [
   {
-    version: 'v2026.05.27.382',
+    version: 'v384',
+    date: '2026-05-27',
+    title: 'Audit View point values, Manage Mappings redesign, data-loss fix',
+    features: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix Audit View now shows the actual BAS point values from your data instead of just Yes/No — so you can see exactly what is monitored and what is missing.',
+      },
+      {
+        type: 'feature',
+        text: 'Manage Point Mappings has been redesigned. It now shows both mapped and unmapped points in one place, grouped by function, making it much easier to see gaps and add missing mappings.',
+      },
+      {
+        type: 'fix',
+        text: 'Fixed a data-loss bug in Manage Mappings where saving changes could silently delete custom mappings you had already set up.',
+      },
+    ],
+  },
+  {
+    version: 'v383',
+    date: '2026-05-27',
+    title: "Zoom fix, What's New button, tab persistence, auto-meter creation from bills",
+    features: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix zoom in/out now works correctly.',
+      },
+      {
+        type: 'fix',
+        text: "What's New button now works on the Energy Department page (was broken).",
+      },
+      {
+        type: 'fix',
+        text: 'Your active tab and settings now survive a page refresh — no more reverting to the Utility Data tab every time you reload.',
+      },
+      {
+        type: 'feature',
+        text: 'Bills that include an account number now automatically create a meter and match it to the right building — no manual setup needed.',
+      },
+    ],
+  },
+  {
+    version: 'v382',
+    date: '2026-05-27',
+    title: 'CSV import modal, floor column fix, lighting classification, Audit View legend',
+    features: [
+      {
+        type: 'feature',
+        text: 'CSV import now opens as a modal overlay with progress feedback so you can see what is happening during import.',
+      },
+      {
+        type: 'fix',
+        text: 'Floor column no longer shows equipment category names (like "Lighting" or "Environmental Index") — it only shows actual floor values.',
+      },
+      {
+        type: 'fix',
+        text: 'Lighting is now recognized as an equipment type and classified correctly in the Equipment Matrix.',
+      },
+      {
+        type: 'fix',
+        text: 'JOCO-style equipment names (e.g. "Cooling Towers - ADC") now parse correctly for non-HVAC equipment types.',
+      },
+      {
+        type: 'fix',
+        text: 'Audit View legend now has proper spacing and includes tooltip explanations for each compliance indicator.',
+      },
+      {
+        type: 'fix',
+        text: 'Removed the "(slow)" label from the All Rows option in the rows-per-page selector.',
+      },
+    ],
+  },
+  {
+    version: 'v381',
+    date: '2026-05-27',
+    title: 'Cleaner Equipment Matrix — no icons, no building totals, BAS point count',
+    features: [
+      {
+        type: 'fix',
+        text: 'Removed all icons and emoji from the Equipment Matrix — everything now uses plain readable text.',
+      },
+      {
+        type: 'fix',
+        text: 'Removed building summary and total rows from the Equipment Matrix to reduce clutter.',
+      },
+      {
+        type: 'feature',
+        text: 'Header now shows total BAS point count instead of a redundant row count.',
+      },
+      {
+        type: 'fix',
+        text: 'Fixed a pagination regression introduced in v380 that caused incorrect page counts.',
+      },
+    ],
+  },
+  {
+    version: 'v380',
     date: '2026-05-27',
     title: 'Equipment matrix UX pass 2, ASHRAE report sequence score fix, toISO guard, multi-account KGS splitting',
     features: [

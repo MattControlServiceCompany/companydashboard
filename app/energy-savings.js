@@ -6419,6 +6419,441 @@ const UTILITY_RULES = [
     },
   },
   {
+    name: 'City of Baldwin City',
+    // Handles multi-account scanned PDF bills from City of Baldwin City, KS.
+    // Each PDF covers all Baker University accounts — one account per page.
+    // Page 1 is typically an email notification — skip it.
+    // Commodities: Electric (EL), Water (WA), Sewer (SW). No gas.
+    // Verified against 2025-04, 2025-07, 2025-12, 2026-02, 2026-04 bill formats.
+    detect: (t) =>
+      /baldwin\s*city|baldwincitygov?\.(?:com|org)|803\s+8th\s+Street[^,]*Baldwin/i.test(t) &&
+      /FRANCHISE\s+FEE|EL\s*-\s*ELECTRIC|ACCOUNT\s+NUMBER/i.test(t),
+    extractAll: function (t) {
+      const pages = _lbg_splitPages(t);
+      const _unmatchedPages = [];
+      const bills = pages.flatMap((p, i) => {
+        // Skip page 1 (email notification) — detected by email headers or
+        // absence of "ACCOUNT NUMBER" label. Also skip payment receipt pages.
+        const isEmailPage = /^\s*%%PAGE_1%%/.test(p) && (/From:|Subject:|To:/i.test(p) || !/ACCOUNT\s+NUMBER/i.test(p));
+        const isReceiptPage = /Payment\s+Receipt|Total\s+Paid/i.test(p) && !/ACCOUNT\s+NUMBER/i.test(p);
+        if (isEmailPage || isReceiptPage) return [];
+
+        const r = this._extractPage(p);
+        if (!r || (Array.isArray(r) && r.length === 0)) {
+          if (p.trim().length > 50) {
+            const pageNums = [...p.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => parseInt(m[1]));
+            _unmatchedPages.push({
+              pageNums: pageNums.length ? pageNums : [i + 1],
+              preview: p.trim().slice(0, 200),
+            });
+          }
+          return [];
+        }
+        const arr = Array.isArray(r) ? r : [r];
+        for (const b of arr) b._pageIndex = i + 1;
+        return arr;
+      });
+      if (_unmatchedPages.length) bills._unmatchedPages = _unmatchedPages;
+
+      // Backfill missing billing periods from neighbor bills sharing the
+      // same BillDate — same strategy as City of Louisburg.
+      const byBillDate = {};
+      for (const b of bills) {
+        if (b.BillDate && b.BillingPeriodStart && b.BillingPeriodEnd) {
+          byBillDate[b.BillDate] = { start: b.BillingPeriodStart, end: b.BillingPeriodEnd };
+        }
+      }
+      for (const b of bills) {
+        if ((!b.BillingPeriodStart || !b.BillingPeriodEnd) && b.BillDate && byBillDate[b.BillDate]) {
+          b.BillingPeriodStart = b.BillingPeriodStart || byBillDate[b.BillDate].start;
+          b.BillingPeriodEnd = b.BillingPeriodEnd || byBillDate[b.BillDate].end;
+          b._periodFromNeighbor = true;
+        }
+      }
+
+      return bills;
+    },
+    _extractPage: function (page) {
+      // ── Account number ──
+      // Prefer the "ACCOUNT NUMBER\n<9-digit>" box in the top stub.
+      // Fall back to "ACCOUNT #: <9-digit>" in the bottom stub.
+      let AccountNumber =
+        page.match(/ACCOUNT\s+NUMBER\s+(\d{7,10})/i)?.[1] || page.match(/ACCOUNT\s*#[:\s]+(\d{7,10})/i)?.[1] || null;
+
+      // Skip pages that have no account number (email/receipt pages that
+      // slipped through the page-1 guard).
+      if (!AccountNumber) return null;
+
+      // ── Bill date (print date, top-right corner) ──
+      // Standalone date line like "4/10/26" or "12/10/25".
+      // Also accepts "M/D/YY" from near "ACCOUNT NUMBER" label.
+      const BillDate =
+        page.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})\s+ACCOUNT\s+NUMBER/i)?.[1] ||
+        page.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s*$/m)?.[1] ||
+        null;
+
+      // ── Service FROM/TO (present in some pages, primarily older format) ──
+      let BillingPeriodStart = null;
+      let BillingPeriodEnd = null;
+      const servicePeriodMatch = page.match(
+        /SERVICE\s+FROM\s+(\d{1,2}\/\d{1,2}\/\d{2,4})\s+TO\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+      );
+      if (servicePeriodMatch) {
+        BillingPeriodStart = servicePeriodMatch[1];
+        BillingPeriodEnd = servicePeriodMatch[2];
+      }
+      // If no explicit period, infer from bill date (monthly cycle).
+      // Bill date is the print date (~10th of month); service period is
+      // typically the prior calendar month.
+      if (!BillingPeriodStart && BillDate) {
+        const sp = BillDate.split('/');
+        if (sp.length === 3) {
+          const mo = parseInt(sp[0]);
+          const yr = sp[2].length === 2 ? '20' + sp[2] : sp[2];
+          const prevMo = mo <= 1 ? 12 : mo - 1;
+          const prevYr = mo <= 1 ? String(parseInt(yr) - 1) : yr;
+          const daysInPrevMo = new Date(parseInt(prevYr), prevMo, 0).getDate();
+          BillingPeriodStart = prevMo + '/1/' + prevYr;
+          BillingPeriodEnd = prevMo + '/' + daysInPrevMo + '/' + prevYr;
+        }
+      }
+
+      // ── Amount due (total for all commodities on this account page) ──
+      // "AMOUNT DUE NOW" column — value appears after the due dates.
+      // The column layout is: DUE DATE | AFTER DUE DATE | AMOUNT DUE NOW
+      // OCR may collapse to one line or split across lines.
+      const amtDueMatch =
+        page.match(/AMOUNT\s+DUE\s+NOW\s+[\d.]+\s+([\d,]+\.\d{2})/i) ||
+        page.match(/AMOUNT\s+DUE\s+NOW\D{0,30}?([\d,]+\.\d{2})/i);
+      const TotalAmountDue = amtDueMatch ? amtDueMatch[1].replace(/,/g, '') : null;
+
+      // ── Service address (from bottom stub) ──
+      // "ADDRESS: 519 9TH ST" or "ADDRESS:  519 9TH ST"
+      const ServiceAddress = page.match(/ADDRESS\s*:\s*([^\n]+)/i)?.[1]?.trim() || null;
+
+      // ── Customer / building name ──
+      // "BAKER UNIVERSITY/COLLINS HOUSE" or "BAKER UNIVERSITY" alone.
+      const custMatch =
+        page.match(/BAKER\s+UNIVERSITY\s*\/\s*([A-Z][A-Z0-9 &'.'-]+)/i) || page.match(/BAKER\s+UNIVERSITY/i);
+      const CustomerName = custMatch
+        ? custMatch[1]
+          ? 'Baker University / ' + custMatch[1].trim().replace(/\s+/g, ' ')
+          : 'Baker University'
+        : null;
+
+      // ── Parse charge lines ──
+      // Format: "[CODE] - [LABEL]  [PREV]  [CURR]  [USAGE]  [CHARGE]"
+      // Some lines have no meter reads (franchise fee, fuel adj).
+      // Baldwin City charge codes:
+      //   EL - ELECTRIC        (one or more rows per account — sum kWh)
+      //   EL/GH - FRANCHISE FEE  (electric franchise)
+      //   FA/EL - FUEL ADJUSTMENT  (electric fuel adj, can be negative)
+      //   SW - SEWER           (one row, shares meter reads with water)
+      //   SW - FRANCHISE FEE   (sewer franchise)
+      //   WA - WATER           (one row, gallons)
+      //   WA - DEBT PMT / WA - METER DEBT PMT  (water debt fee)
+      //   WA/HA - FRANCHISE FEE  (water franchise)
+
+      const lines = page.split(/\r?\n/);
+
+      // Helpers ---------------------------------------------------------
+
+      // Parse a trailing dollar amount from a charge line.
+      // Baldwin bills have no "$" sign on line items; amounts like "16.99"
+      // or "2.04-" (trailing minus = negative) or "-2.04" (leading minus).
+      const _parseCharge = (s) => {
+        if (!s) return null;
+        s = s.trim();
+        // Trailing minus: "2.04-" → -2.04
+        if (/^[\d,]+\.\d{2}-$/.test(s)) return -parseFloat(s.slice(0, -1).replace(/,/g, ''));
+        // Parens: "(2.04)" → -2.04
+        if (/^\([\d,]+\.\d{2}\)$/.test(s)) return -parseFloat(s.slice(1, -1).replace(/,/g, ''));
+        // Leading minus: "-2.04"
+        if (/^-[\d,]+\.\d{2}$/.test(s)) return parseFloat(s.replace(/,/g, ''));
+        // Plain: "16.99" or ".97"
+        if (/^[\d,]*\.\d{2}$/.test(s)) return parseFloat(s.replace(/,/g, ''));
+        // ".00" style (zero charge shown as "\.00")
+        if (/^\.\d{2}$/.test(s)) return parseFloat(s);
+        return null;
+      };
+
+      // Extract numeric tokens from a line (meter reads, usage, charge).
+      // Returns array of floats; filters out page-number-sized ints < 10.
+      const _tokens = (s) => {
+        if (!s) return [];
+        return [...s.matchAll(/-?[\d,]+(?:\.\d+)?(?:-\d{2})?/g)]
+          .map((m) => {
+            let v = m[0];
+            // "1460-87" → 1460.87 (OCR cents encoding)
+            if (/^\d+-\d{2}$/.test(v)) v = v.replace(/-(\d{2})$/, '.$1');
+            return parseFloat(v.replace(/,/g, ''));
+          })
+          .filter((n) => !isNaN(n));
+      };
+
+      // Parse a metered charge line that has prev/curr/usage/charge cols.
+      // Returns {prevRead, currRead, usage, charge} or nulls.
+      const _parseMeteredLine = (line) => {
+        if (!line) return { prevRead: null, currRead: null, usage: null, charge: null };
+        const toks = _tokens(line);
+        if (toks.length < 2) return { prevRead: null, currRead: null, usage: null, charge: null };
+        // Last token should be the charge (decimal with .XX).
+        // Preceding integers are meter reads and/or usage.
+        const charge = toks[toks.length - 1];
+        if (isNaN(charge)) return { prevRead: null, currRead: null, usage: null, charge: null };
+        // Filter to integer-valued tokens (meter reads and usage are whole numbers).
+        const intToks = toks.slice(0, -1).filter((n) => Number.isInteger(n) && n >= 0);
+        let prevRead = null,
+          currRead = null,
+          usage = null;
+        if (intToks.length >= 3) {
+          // prev, curr, usage layout
+          prevRead = intToks[intToks.length - 3];
+          currRead = intToks[intToks.length - 2];
+          usage = intToks[intToks.length - 1];
+        } else if (intToks.length === 2) {
+          prevRead = intToks[0];
+          currRead = intToks[1];
+          usage = Math.abs(currRead - prevRead);
+        }
+        // Ensure prevRead <= currRead
+        if (prevRead != null && currRead != null && prevRead > currRead) {
+          const tmp = prevRead;
+          prevRead = currRead;
+          currRead = tmp;
+        }
+        return { prevRead, currRead, usage, charge };
+      };
+
+      // -----------------------------------------------------------------
+      // Accumulate fields across all charge lines
+      // -----------------------------------------------------------------
+
+      // Electric
+      const elMeters = []; // one entry per EL - ELECTRIC row
+      let elFranchiseFee = null;
+      let fuelAdjCharge = null; // signed (may be negative)
+
+      // Sewer
+      let swPrevRead = null,
+        swCurrRead = null,
+        swUsage = null,
+        swCharge = null;
+      let swFranchiseFee = null;
+
+      // Water
+      let waPrevRead = null,
+        waCurrRead = null,
+        waUsage = null,
+        waCharge = null;
+      let waDebtPmt = null;
+      let waFranchiseFee = null;
+
+      for (const rawLine of lines) {
+        const ln = rawLine.trim();
+        if (!ln) continue;
+
+        // ── Electric commodity lines ──
+        // EL - ELECTRIC (may appear 2-3 times for multi-meter accounts)
+        if (/^EL\s*-\s*ELECTRIC\b/i.test(ln) && !/FRANCHISE/i.test(ln)) {
+          const m = _parseMeteredLine(ln.replace(/^EL\s*-\s*ELECTRIC\s*/i, ''));
+          if (m.charge != null) elMeters.push(m);
+          continue;
+        }
+
+        // EL - FUEL ADJUSTMENT (older format uses EL prefix instead of FA)
+        if (/^EL\s*-\s*FUEL\s+ADJ/i.test(ln)) {
+          // Capture the signed charge amount
+          const raw = ln.replace(/^EL\s*-\s*FUEL\s+ADJ(?:USTMENT)?\s*/i, '').trim();
+          // Find the last decimal-looking token (handles trailing minus)
+          const m = raw.match(/(-?[\d,]+\.\d{2}-?|-\.[\d]+|\.\d{2})\s*$/);
+          if (m) {
+            let v = m[1];
+            const trailingMinus = v.endsWith('-');
+            if (trailingMinus) v = v.slice(0, -1);
+            fuelAdjCharge = parseFloat(v.replace(/,/g, ''));
+            if (trailingMinus && fuelAdjCharge > 0) fuelAdjCharge = -fuelAdjCharge;
+          }
+          continue;
+        }
+
+        // FA - FUEL ADJUSTMENT (standard prefix for fuel adj)
+        if (/^FA\s*-\s*FUEL\s+ADJ/i.test(ln)) {
+          const raw = ln.replace(/^FA\s*-\s*FUEL\s+ADJ(?:USTMENT)?\s*/i, '').trim();
+          const m = raw.match(/(-?[\d,]+\.\d{2}-?|-\.[\d]+|\.\d{2})\s*$/);
+          if (m) {
+            let v = m[1];
+            const trailingMinus = v.endsWith('-');
+            if (trailingMinus) v = v.slice(0, -1);
+            fuelAdjCharge = parseFloat(v.replace(/,/g, ''));
+            if (trailingMinus && fuelAdjCharge > 0) fuelAdjCharge = -fuelAdjCharge;
+          }
+          continue;
+        }
+
+        // EL/GH - FRANCHISE FEE (electric franchise — old format uses GH)
+        if (/^(?:EL|GH)\s*-\s*FRANCHISE\s+FEE/i.test(ln)) {
+          const raw = ln.replace(/^(?:EL|GH)\s*-\s*FRANCHISE\s+FEE\s*/i, '').trim();
+          const m = raw.match(/([\d,]+\.\d{2})\s*$/);
+          if (m) elFranchiseFee = (elFranchiseFee || 0) + parseFloat(m[1].replace(/,/g, ''));
+          continue;
+        }
+
+        // ── Sewer commodity lines ──
+        // SW - SEWER (metered)
+        if (/^SW\s*-\s*SEWER\b/i.test(ln) && !/FRANCHISE/i.test(ln)) {
+          const parsed = _parseMeteredLine(ln.replace(/^SW\s*-\s*SEWER\s*/i, ''));
+          if (swCharge === null && parsed.charge != null) {
+            swPrevRead = parsed.prevRead;
+            swCurrRead = parsed.currRead;
+            swUsage = parsed.usage;
+            swCharge = parsed.charge;
+          }
+          continue;
+        }
+
+        // SW - FRANCHISE FEE (sewer franchise)
+        if (/^SW\s*-\s*FRANCHISE\s+FEE/i.test(ln)) {
+          const raw = ln.replace(/^SW\s*-\s*FRANCHISE\s+FEE\s*/i, '').trim();
+          const m = raw.match(/([\d,]+\.\d{2})\s*$/);
+          if (m && swFranchiseFee === null) swFranchiseFee = parseFloat(m[1].replace(/,/g, ''));
+          continue;
+        }
+
+        // ── Water commodity lines ──
+        // WA - WATER (metered — NOT water debt, meter debt, or franchise)
+        if (/^WA\s*-\s*WATER\b/i.test(ln) && !/DEBT|METER|FRANCHISE/i.test(ln)) {
+          const parsed = _parseMeteredLine(ln.replace(/^WA\s*-\s*WATER\s*/i, ''));
+          if (waCharge === null && parsed.charge != null) {
+            waPrevRead = parsed.prevRead;
+            waCurrRead = parsed.currRead;
+            waUsage = parsed.usage;
+            waCharge = parsed.charge;
+          }
+          continue;
+        }
+
+        // WA - DEBT PMT or WA - METER DEBT PMT (water debt payment fee)
+        if (/^WA\s*-\s*(?:METER\s+)?DEBT\s+PMT/i.test(ln)) {
+          const raw = ln.replace(/^WA\s*-\s*(?:METER\s+)?DEBT\s+PMT\s*/i, '').trim();
+          const m = raw.match(/([\d,]+\.\d{2})\s*$/);
+          if (m && waDebtPmt === null) waDebtPmt = parseFloat(m[1].replace(/,/g, ''));
+          continue;
+        }
+
+        // WA - WATER DEBT PMT (older format label variant)
+        if (/^WA\s*-\s*WATER\s+DEBT\s+PMT/i.test(ln)) {
+          const raw = ln.replace(/^WA\s*-\s*WATER\s+DEBT\s+PMT\s*/i, '').trim();
+          const m = raw.match(/([\d,]+\.\d{2})\s*$/);
+          if (m && waDebtPmt === null) waDebtPmt = parseFloat(m[1].replace(/,/g, ''));
+          continue;
+        }
+
+        // WA/HA - FRANCHISE FEE (water franchise — old format uses HA)
+        if (/^(?:WA|HA)\s*-\s*FRANCHISE\s+FEE/i.test(ln)) {
+          const raw = ln.replace(/^(?:WA|HA)\s*-\s*FRANCHISE\s+FEE\s*/i, '').trim();
+          const m = raw.match(/([\d,]+\.\d{2})\s*$/);
+          if (m && waFranchiseFee === null) waFranchiseFee = parseFloat(m[1].replace(/,/g, ''));
+          continue;
+        }
+      }
+
+      // ── Sum electric meters ──
+      const totalKwh = elMeters.reduce((sum, m) => sum + (m.usage || 0), 0);
+      const totalElCharge = elMeters.reduce((sum, m) => sum + (m.charge || 0), 0);
+      // Use first meter's reads for StartRead/EndRead (primary meter).
+      const elPrevRead = elMeters[0]?.prevRead || null;
+      const elCurrRead = elMeters[0]?.currRead || null;
+
+      // ── Guard: no charge data at all means we couldn't parse the page ──
+      if (elMeters.length === 0 && swCharge === null && waCharge === null) return null;
+
+      // ── Build shared account fields ──
+      const shared = {
+        UtilityCompany: 'City of Baldwin City',
+        CustomerName,
+        AccountNumber,
+        ServiceAddress,
+        BillDate,
+        BillingPeriodStart,
+        BillingPeriodEnd,
+        NumberOfDays: null,
+        RateSchedule: null,
+        MeterNumber: null,
+      };
+
+      const bills = [];
+
+      // ── Electric bill ──
+      if (elMeters.length > 0 && totalElCharge > 0) {
+        const elTotal = totalElCharge + (elFranchiseFee || 0) + (fuelAdjCharge || 0);
+        bills.push({
+          ...shared,
+          Commodity: 'Electric',
+          StartRead: elPrevRead,
+          EndRead: elCurrRead,
+          kWh: totalKwh || null,
+          kW: null,
+          ElectricCharge: Math.round(totalElCharge * 100) / 100,
+          FranchiseFee: elFranchiseFee || null,
+          FuelAdjustment: fuelAdjCharge || null,
+          _electricMeterCount: elMeters.length,
+          TotalCurrentCharges: Math.round(elTotal * 100) / 100,
+          TotalAmountDue: TotalAmountDue || null,
+        });
+      }
+
+      // ── Water bill ──
+      if (waCharge != null && waCharge !== 0) {
+        const waTotal = waCharge + (waDebtPmt || 0) + (waFranchiseFee || 0);
+        bills.push({
+          ...shared,
+          Commodity: 'Water',
+          StartRead: waPrevRead,
+          EndRead: waCurrRead,
+          WaterUsageGallons: waUsage || null,
+          WaterCharge: waCharge,
+          WaterDebtPayment: waDebtPmt || null,
+          WaterFranchiseFee: waFranchiseFee || null,
+          TotalCurrentCharges: Math.round(waTotal * 100) / 100,
+          TotalAmountDue: TotalAmountDue || null,
+        });
+      }
+
+      // ── Sewer bill ──
+      if (swCharge != null && swCharge !== 0) {
+        // If sewer usage didn't parse but water did, share the water reads
+        // (they share the same physical meter).
+        if (!swUsage && waUsage) swUsage = waUsage;
+        const swTotal = swCharge + (swFranchiseFee || 0);
+        bills.push({
+          ...shared,
+          Commodity: 'Sewer',
+          StartRead: swPrevRead || waPrevRead,
+          EndRead: swCurrRead || waCurrRead,
+          SewerUsageGallons: swUsage || null,
+          SewerCharge: swCharge,
+          SewerFranchiseFee: swFranchiseFee || null,
+          TotalCurrentCharges: Math.round(swTotal * 100) / 100,
+          TotalAmountDue: TotalAmountDue || null,
+        });
+      }
+
+      // Fallback: we detected an account but couldn't match any charges —
+      // emit a minimal stub so the user can see the page was read.
+      if (bills.length === 0 && TotalAmountDue) {
+        bills.push({
+          ...shared,
+          Commodity: 'Other',
+          TotalCurrentCharges: TotalAmountDue,
+          TotalAmountDue,
+        });
+      }
+
+      return bills.length ? bills : null;
+    },
+  },
+  {
     name: 'Propane / Fuel Oil Delivery',
     // Tuned for MFA Oil delivery invoices while keeping the legacy rule
     // name so EXPECTED_FIELDS / validation still match. Multi-invoice

@@ -117,20 +117,75 @@ function emToggleViewMode() {
   emRenderTable(data, _emFilters);
 }
 
+/* ── emSetSummaryView ───────────────────────────────────────────────────────
+   Activates the Summary view mode. Separate button (not part of the
+   Audit/Raw toggle cycle) so neither existing toggle is disrupted.       */
+function emSetSummaryView() {
+  if (_emViewMode === 'summary') {
+    // Clicking Summary again returns to Audit View
+    _emViewMode = 'audit';
+  } else {
+    _emViewMode = 'summary';
+  }
+  emSyncViewModeControls();
+  var data = emLoadMatrix(window._emActivePid);
+  emRenderTable(data, _emFilters);
+}
+
 /* ── emSyncViewModeControls ─────────────────────────────────────────────────
    Shows/hides toolbar controls based on current _emViewMode.             */
 function emSyncViewModeControls() {
   var rawToggles = document.getElementById('em-raw-col-toggles');
   var dynControls = document.getElementById('em-dyn-col-controls');
   var auditInfo = document.getElementById('em-audit-col-info');
+  var summaryBtn = document.getElementById('em-summary-btn');
+  var viewModeBtn = document.getElementById('em-view-mode-btn');
   if (_emViewMode === 'audit') {
     if (rawToggles) rawToggles.style.display = 'none';
     if (dynControls) dynControls.style.display = 'none';
     if (auditInfo) auditInfo.style.display = '';
+    if (viewModeBtn) {
+      viewModeBtn.textContent = 'Audit View';
+      viewModeBtn.style.background = 'var(--accent)';
+      viewModeBtn.style.color = '#fff';
+      viewModeBtn.style.borderColor = 'transparent';
+    }
+    if (summaryBtn) {
+      summaryBtn.style.background = 'var(--s2)';
+      summaryBtn.style.color = 'var(--text2)';
+      summaryBtn.style.borderColor = 'var(--border)';
+    }
+  } else if (_emViewMode === 'summary') {
+    if (rawToggles) rawToggles.style.display = 'none';
+    if (dynControls) dynControls.style.display = 'none';
+    if (auditInfo) auditInfo.style.display = 'none';
+    if (viewModeBtn) {
+      viewModeBtn.textContent = 'Audit View';
+      viewModeBtn.style.background = 'var(--s2)';
+      viewModeBtn.style.color = 'var(--text2)';
+      viewModeBtn.style.borderColor = 'var(--border)';
+    }
+    if (summaryBtn) {
+      summaryBtn.style.background = 'var(--accent)';
+      summaryBtn.style.color = '#fff';
+      summaryBtn.style.borderColor = 'transparent';
+    }
   } else {
+    // raw mode
     if (rawToggles) rawToggles.style.display = 'inline-flex';
     if (dynControls) dynControls.style.display = 'inline-flex';
     if (auditInfo) auditInfo.style.display = 'none';
+    if (viewModeBtn) {
+      viewModeBtn.textContent = 'Raw View';
+      viewModeBtn.style.background = 'var(--s2)';
+      viewModeBtn.style.color = 'var(--text2)';
+      viewModeBtn.style.borderColor = 'var(--border)';
+    }
+    if (summaryBtn) {
+      summaryBtn.style.background = 'var(--s2)';
+      summaryBtn.style.color = 'var(--text2)';
+      summaryBtn.style.borderColor = 'var(--border)';
+    }
   }
 }
 
@@ -903,7 +958,7 @@ var _emCurrentPage = 0;
 var _emPageSize = 100;
 var _emShowAllDynCols = false; // when false, limit dynamic point columns to top 20 by frequency
 var EM_DYN_COL_LIMIT = 20; // max dynamic point columns shown by default
-var _emViewMode = 'audit'; // 'audit' = ASHRAE 36 compliance columns; 'raw' = raw point columns
+var _emViewMode = 'audit'; // 'audit' = ASHRAE 36 compliance columns; 'raw' = raw point columns; 'summary' = aggregated card view
 var _emZoomLevel = 100; // zoom percentage, 50–150
 var _emComplianceCache = {}; // Performance: module-level compliance result cache, keyed by row.id
 var _emNormCache = new Map(); // Performance: memoized emNormalizePoint results, keyed by rawName+'\0'+category
@@ -1251,6 +1306,7 @@ function emRenderToolbar(data, pid, projBadge) {
     '<div style="flex:1"></div>' +
     (projBadge || '') +
     '<button id="em-view-mode-btn" class="btn btn-sm" onclick="emToggleViewMode()" style="height:28px;font-size:11px;background:var(--accent);color:#fff;border-color:transparent">Audit View</button>' +
+    '<button id="em-summary-btn" class="btn btn-ghost btn-sm" onclick="emSetSummaryView()" title="Aggregated stats grouped by building and equipment type" style="height:28px;font-size:11px;background:var(--s2);color:var(--text2);border-color:var(--border)">Summary</button>' +
     '<button id="em-edit-mode-btn" class="btn btn-ghost btn-sm" onclick="emToggleEditMode(this)" style="height:28px;font-size:11px">Edit</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleSaveEdits()" style="height:28px;font-size:11px">Save Edits</button>' +
     '<button id="em-delete-all-btn" class="btn btn-ghost btn-sm" onclick="emDeleteAllRows(\'' +
@@ -1729,6 +1785,11 @@ function emRenderTable(data, filters) {
     emRenderAuditTable(data, filters);
     return;
   }
+  // Route to summary renderer when in summary view mode
+  if (_emViewMode === 'summary') {
+    emRenderSummaryView(data, filters);
+    return;
+  }
   emSyncViewModeControls();
 
   var wrap = document.getElementById('em-table-wrap');
@@ -2032,6 +2093,325 @@ function emRenderTable(data, filters) {
 
   // Attach column resize handler to the thead
   emAttachColResizeHandler(wrap);
+}
+
+/* ── emComputeSummaryStats ──────────────────────────────────────────────────
+   Groups rows by building and equipment category, then for each EM_POINT_MAP
+   entry whose cats[] includes the category, collects all numeric point values,
+   and computes: count, avg, min, max.
+   Returns:
+   {
+     [building]: {
+       [category]: {
+         label: string,           // e.g. "Courthouse"
+         category: string,        // e.g. "ahu"
+         equipCount: number,      // total equipment rows in this group
+         metrics: [
+           { col, label, count, avg, min, max }
+         ]
+       }
+     }
+   }                                                                        */
+function emComputeSummaryStats(rows) {
+  // Step 1: group rows by building and category
+  var groups = {};
+  for (var ri = 0; ri < rows.length; ri++) {
+    var row = rows[ri];
+    var bldg = (row.building || '(No Building)').trim();
+    var cat = (row.category || '').toLowerCase();
+    if (!cat) continue;
+    if (!groups[bldg]) groups[bldg] = {};
+    if (!groups[bldg][cat]) groups[bldg][cat] = { equipCount: 0, rows: [] };
+    groups[bldg][cat].equipCount++;
+    groups[bldg][cat].rows.push(row);
+  }
+
+  // Step 2: for each group, compute metrics from EM_POINT_MAP
+  var result = {};
+  var bldgKeys = Object.keys(groups).sort();
+  for (var bi = 0; bi < bldgKeys.length; bi++) {
+    var bldg = bldgKeys[bi];
+    result[bldg] = {};
+    var catKeys = Object.keys(groups[bldg]).sort();
+    for (var ci = 0; ci < catKeys.length; ci++) {
+      var cat = catKeys[ci];
+      var group = groups[bldg][cat];
+      var metrics = [];
+      for (var mi = 0; mi < EM_POINT_MAP.length; mi++) {
+        var entry = EM_POINT_MAP[mi];
+        // Only include this metric if it applies to this equipment category
+        if (entry.cats.indexOf(cat) === -1) continue;
+        // Collect numeric values from all rows in this group
+        var values = [];
+        for (var rj = 0; rj < group.rows.length; rj++) {
+          var pts = group.rows[rj].points || {};
+          var raw = pts[entry.col];
+          if (raw === undefined || raw === null || raw === '') continue;
+          var num = parseFloat(raw);
+          if (!isNaN(num)) values.push(num);
+        }
+        // Require at least 2 data points to show a stat
+        if (values.length < 2) continue;
+        var sum = 0;
+        var mn = values[0];
+        var mx = values[0];
+        for (var vi = 0; vi < values.length; vi++) {
+          sum += values[vi];
+          if (values[vi] < mn) mn = values[vi];
+          if (values[vi] > mx) mx = values[vi];
+        }
+        var avg = sum / values.length;
+        metrics.push({
+          col: entry.col,
+          label: entry.label,
+          count: values.length,
+          avg: avg,
+          min: mn,
+          max: mx,
+        });
+      }
+
+      // Also compute above/below setpoint for VAV zones if we have zone temp + setpoints
+      if ((cat === 'vav' || cat === 'fpb' || cat === 'ddvav') && group.rows.length > 0) {
+        var aboveCount = 0;
+        var belowCount = 0;
+        var spCompCount = 0;
+        for (var rk = 0; rk < group.rows.length; rk++) {
+          var pts2 = group.rows[rk].points || {};
+          var zoneTemp = parseFloat(pts2['zoneAirTempLive']);
+          var coolSp = parseFloat(pts2['zoneCoolSpLive']);
+          var htgSp = parseFloat(pts2['zoneHtgSpLive']);
+          if (isNaN(zoneTemp)) continue;
+          spCompCount++;
+          if (!isNaN(coolSp) && zoneTemp > coolSp) aboveCount++;
+          else if (!isNaN(htgSp) && zoneTemp < htgSp) belowCount++;
+        }
+        if (spCompCount >= 2) {
+          metrics.push({
+            col: '_setpointBand',
+            label: 'Zones vs Setpoint',
+            count: spCompCount,
+            aboveCount: aboveCount,
+            belowCount: belowCount,
+            withinCount: spCompCount - aboveCount - belowCount,
+            isSetpointBand: true,
+          });
+        }
+      }
+
+      result[bldg][cat] = {
+        equipCount: group.equipCount,
+        metrics: metrics,
+      };
+    }
+  }
+  return result;
+}
+
+/* ── emRenderSummaryView ────────────────────────────────────────────────────
+   Renders a card-based aggregated view of equipment point data.
+   Grouped by building, then by equipment category. Each card shows stats
+   (avg, min, max, count) for all relevant EM_POINT_MAP metrics.
+   Replaces the table and pagination when _emViewMode === 'summary'.     */
+function emRenderSummaryView(data, filters) {
+  emSyncViewModeControls();
+
+  var wrap = document.getElementById('em-table-wrap');
+  if (!wrap) return;
+
+  var rows = data.rows || [];
+  var filtered = emFilterRows(rows, filters);
+
+  // Remove any existing pagination bar (used by table views)
+  var tableWrap = document.getElementById('em-table-wrap');
+  if (tableWrap && tableWrap.parentNode) {
+    var existingPag = tableWrap.parentNode.querySelector('.em-pagination');
+    if (existingPag) existingPag.parentNode.removeChild(existingPag);
+  }
+
+  // Update row count pill
+  var countEl = document.getElementById('em-row-count');
+  if (countEl) {
+    var totalPts = 0,
+      filteredPts = 0;
+    for (var ii = 0; ii < rows.length; ii++) totalPts += Object.keys(rows[ii].points || {}).length;
+    for (var ii = 0; ii < filtered.length; ii++) filteredPts += Object.keys(filtered[ii].points || {}).length;
+    countEl.textContent =
+      filtered.length < rows.length
+        ? filteredPts.toLocaleString() + ' of ' + totalPts.toLocaleString() + ' BAS Points'
+        : totalPts.toLocaleString() + ' Total BAS Points';
+  }
+
+  if (filtered.length === 0) {
+    wrap.innerHTML =
+      '<div style="padding:48px;text-align:center;font-size:13px;color:var(--text2)">No rows match the current filters.</div>';
+    return;
+  }
+
+  var stats = emComputeSummaryStats(filtered);
+  var bldgKeys = Object.keys(stats);
+
+  // Category display labels
+  var catLabels = {
+    ahu: 'AHU / RTU',
+    vav: 'VAV Boxes',
+    fpb: 'Fan Powered Boxes',
+    ddvav: 'Dual Duct VAV',
+    hwp: 'Hot Water Plant',
+    chwp: 'Chilled Water Plant',
+    ct: 'Cooling Tower',
+    lighting: 'Lighting',
+    other: 'Other',
+  };
+
+  // Category accent colors (reuse the group color palette)
+  var catColors = {
+    ahu: '#2980b9',
+    vav: '#27ae60',
+    fpb: '#16a085',
+    ddvav: '#8e44ad',
+    hwp: '#c0392b',
+    chwp: '#2471a3',
+    ct: '#1abc9c',
+    lighting: '#f39c12',
+    other: '#7f8c8d',
+  };
+
+  // Helper: format a float to at most 1 decimal place
+  function fmtNum(n) {
+    return Math.round(n * 10) / 10;
+  }
+
+  var html = '<div style="padding:16px;overflow:auto;height:100%;box-sizing:border-box">';
+
+  if (bldgKeys.length === 0) {
+    html +=
+      '<div style="padding:48px;text-align:center;font-size:13px;color:var(--text2)">No point data available for the current filter selection.</div>';
+    html += '</div>';
+    wrap.innerHTML = html;
+    return;
+  }
+
+  for (var bi = 0; bi < bldgKeys.length; bi++) {
+    var bldg = bldgKeys[bi];
+    var bldgData = stats[bldg];
+    var catKeys = Object.keys(bldgData);
+
+    // Skip buildings where no category has any metrics
+    var hasAnyMetrics = false;
+    for (var cj = 0; cj < catKeys.length; cj++) {
+      if (bldgData[catKeys[cj]].metrics.length > 0) {
+        hasAnyMetrics = true;
+        break;
+      }
+    }
+    if (!hasAnyMetrics) continue;
+
+    // Building section header
+    html += '<div style="margin-bottom:20px">';
+    html +=
+      '<h3 style="font-size:13px;font-weight:600;color:var(--text);margin:0 0 10px 0;' +
+      'padding-bottom:6px;border-bottom:2px solid var(--border)">' +
+      emHtmlEsc(bldg) +
+      '</h3>';
+
+    // Card grid for this building
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px">';
+
+    for (var ci = 0; ci < catKeys.length; ci++) {
+      var cat = catKeys[ci];
+      var catData = bldgData[cat];
+      if (catData.metrics.length === 0) continue;
+
+      var color = catColors[cat] || '#7f8c8d';
+      var catLabel = catLabels[cat] || cat.toUpperCase();
+
+      html +=
+        '<div style="background:var(--s2);border:1px solid var(--border);border-radius:var(--r,6px);' +
+        'padding:12px;border-top:3px solid ' +
+        color +
+        '">';
+
+      // Card header
+      html += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">';
+      html += '<span style="font-size:12px;font-weight:600;color:var(--text)">' + emHtmlEsc(catLabel) + '</span>';
+      html +=
+        '<span style="font-size:10px;color:var(--text3)" title="Total equipment rows in this building for this type">' +
+        catData.equipCount +
+        ' units</span>';
+      html += '</div>';
+
+      // Metrics table
+      html += '<table style="width:100%;border-collapse:collapse;font-size:11px">';
+      html +=
+        '<thead><tr style="border-bottom:1px solid var(--border)">' +
+        '<th style="text-align:left;font-weight:500;color:var(--text3);padding:2px 4px 4px 0;white-space:nowrap">Metric</th>' +
+        '<th style="text-align:right;font-weight:500;color:var(--text3);padding:2px 0 4px 4px;white-space:nowrap" title="Count of units with data">N</th>' +
+        '<th style="text-align:right;font-weight:500;color:var(--text3);padding:2px 0 4px 4px;white-space:nowrap">Avg</th>' +
+        '<th style="text-align:right;font-weight:500;color:var(--text3);padding:2px 0 4px 4px;white-space:nowrap">Min</th>' +
+        '<th style="text-align:right;font-weight:500;color:var(--text3);padding:2px 0 4px 4px;white-space:nowrap">Max</th>' +
+        '</tr></thead>';
+      html += '<tbody>';
+
+      for (var mi = 0; mi < catData.metrics.length; mi++) {
+        var m = catData.metrics[mi];
+
+        if (m.isSetpointBand) {
+          // Special row: zones above / below / within setpoint
+          html += '<tr style="border-bottom:1px solid var(--border)">';
+          html +=
+            '<td style="padding:3px 4px 3px 0;color:var(--text2);white-space:nowrap" ' +
+            'title="Count of zones above cooling setpoint, below heating setpoint, or within the band">' +
+            emHtmlEsc(m.label) +
+            '</td>';
+          html += '<td style="padding:3px 0 3px 4px;text-align:right;color:var(--text3)">' + m.count + '</td>';
+          html += '<td colspan="3" style="padding:3px 0 3px 4px;text-align:right">';
+          html +=
+            '<span style="color:#c0392b;font-weight:500" title="Above cooling setpoint">' +
+            m.aboveCount +
+            ' hot</span>' +
+            ' <span style="color:var(--text3)">|</span> ' +
+            '<span style="color:#27ae60;font-weight:500" title="Within deadband">' +
+            m.withinCount +
+            ' ok</span>' +
+            ' <span style="color:var(--text3)">|</span> ' +
+            '<span style="color:#2980b9;font-weight:500" title="Below heating setpoint">' +
+            m.belowCount +
+            ' cold</span>';
+          html += '</td>';
+          html += '</tr>';
+          continue;
+        }
+
+        // Standard numeric metric row
+        html += '<tr style="border-bottom:1px solid var(--border)">';
+        html +=
+          '<td style="padding:3px 4px 3px 0;color:var(--text2);white-space:nowrap" ' +
+          'title="' +
+          emHtmlEsc(m.col) +
+          '">' +
+          emHtmlEsc(m.label) +
+          '</td>';
+        html += '<td style="padding:3px 0 3px 4px;text-align:right;color:var(--text3)">' + m.count + '</td>';
+        html +=
+          '<td style="padding:3px 0 3px 4px;text-align:right;font-weight:600;color:var(--text)">' +
+          fmtNum(m.avg) +
+          '</td>';
+        html += '<td style="padding:3px 0 3px 4px;text-align:right;color:var(--text3)">' + fmtNum(m.min) + '</td>';
+        html += '<td style="padding:3px 0 3px 4px;text-align:right;color:var(--text3)">' + fmtNum(m.max) + '</td>';
+        html += '</tr>';
+      }
+
+      html += '</tbody></table>';
+      html += '</div>'; // end card
+    }
+
+    html += '</div>'; // end card grid
+    html += '</div>'; // end building section
+  }
+
+  html += '</div>'; // end outer padding div
+  wrap.innerHTML = html;
 }
 
 /* ── emRenderAuditTable ─────────────────────────────────────────────────────
