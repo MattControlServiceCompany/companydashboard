@@ -2006,8 +2006,12 @@ function saveBuilding() {
       b.sqft = parseInt(document.getElementById('bm-sqft').value) || 0;
       b.zip = (document.getElementById('bm-zip').value || '').trim();
       b.addrAliases = aliases;
+      showToast('Building updated ✓');
+    } else {
+      console.warn('[saveBuilding] Building not found', { udSelProjId, editId });
+      showToast('Error: building not found — please try again');
+      return;
     }
-    showToast('Building updated ✓');
   } else {
     const proj = getUDProj(udSelProjId);
     proj.buildings.push({
@@ -2165,7 +2169,11 @@ function saveMeter() {
   const _targetProjId = document.getElementById('mm-target-proj').value || udSelProjId;
   const _targetBldgId = document.getElementById('mm-target-bldg').value || udSelBldgId;
   const b = getUDBldg(_targetProjId, _targetBldgId);
-  if (!b) return;
+  if (!b) {
+    console.warn('[saveMeter] Building not found', { _targetProjId, _targetBldgId });
+    showToast('Error: building not found — please try again');
+    return;
+  }
   b.meters = b.meters || [];
   if (editId) {
     const m = b.meters.find((m) => m.id === editId);
@@ -2196,6 +2204,11 @@ function saveMeter() {
   saveUtilityData();
   closeMeterModal();
   renderUDProjList();
+  if (window._udActiveWrap && !document.contains(window._udActiveWrap)) {
+    // _udActiveWrap is detached (stale reference from a previous render) — find the live container
+    const recovered = document.getElementById('proj-ud-body-' + udSelProjId);
+    if (recovered) window._udActiveWrap = recovered;
+  }
   const isEmbed = window._udActiveWrap && window._udActiveWrap !== document.getElementById('udDetailWrap');
   renderUDDetail(isEmbed ? window._udActiveWrap : undefined);
   _refreshBldgPerfIfVisible();

@@ -1347,6 +1347,9 @@ function emRenderToolbar(data, pid, projBadge) {
     '<button id="em-delete-all-btn" class="btn btn-ghost btn-sm" onclick="emDeleteAllRows(\'' +
     pid +
     '\')" style="height:28px;font-size:11px;display:none;background:#fee2e2;border-color:#fca5a5;color:#b91c1c">Delete All</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="emClearAllData(\'' +
+    pid +
+    '\')" style="height:28px;font-size:11px;background:#b91c1c;border-color:#991b1b;color:#fff">Clear All Data</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleExportCSV()" style="height:28px;font-size:11px">Export CSV</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emAddManualRow(\'' +
     pid +
@@ -2139,10 +2142,14 @@ function emRenderTable(data, filters) {
   }
 
   if (filtered.length === 0) {
+    var emptyMsg =
+      rows.length === 0 ? 'No equipment data — click Import CSVs to begin' : 'No rows match the current filters.';
     tbodyRows =
       '<tr><td colspan="' +
       defs.length +
-      '" style="padding:32px;text-align:center;font-size:12px;color:var(--text2)">No rows match the current filters.</td></tr>';
+      '" style="padding:48px 32px;text-align:center;font-size:14px;color:var(--text2)">' +
+      emptyMsg +
+      '</td></tr>';
   }
 
   // ── Pagination bar ──
@@ -2337,12 +2344,6 @@ function emRenderSummaryView(data, filters) {
       filtered.length < rows.length
         ? filteredPts.toLocaleString() + ' of ' + totalPts.toLocaleString() + ' BAS Points'
         : totalPts.toLocaleString() + ' Total BAS Points';
-  }
-
-  if (filtered.length === 0) {
-    wrap.innerHTML =
-      '<div style="padding:48px;text-align:center;font-size:13px;color:var(--text2)">No rows match the current filters.</div>';
-    return;
   }
 
   // ── Drill-down routing ──
@@ -2959,11 +2960,16 @@ function emRenderAuditTable(data, filters) {
   }
 
   if (filtered.length === 0) {
+    var emptyMsg =
+      rows.length === 0 ? 'No equipment data — click Import CSVs to begin' : 'No rows match the current filters.';
+    // When there is no data at all, defs only has 7 fixed columns (no equipment-type ASHRAE columns).
+    // Use those 7 columns — the empty-state row spans them all and the table still fills full width.
     tbodyRows =
       '<tr><td colspan="' +
       defs.length +
-      '" ' +
-      'style="padding:32px;text-align:center;font-size:12px;color:var(--text2)">No rows match the current filters.</td></tr>';
+      '" style="padding:48px 32px;text-align:center;font-size:14px;color:var(--text2)">' +
+      emptyMsg +
+      '</td></tr>';
   }
 
   // ── Pagination bar ──
@@ -3551,6 +3557,33 @@ function emDeleteAllRows(pid) {
   var container = document.getElementById('em-proj-wrap');
   if (container) emRenderMatrix(container, data, pid);
   showToast('All equipment data deleted');
+}
+
+function emClearAllData(pid) {
+  var data = emLoadMatrix(pid);
+  var rowCount = data && data.rows ? data.rows.length : 0;
+  if (
+    !confirm(
+      'Clear ALL Equipment Matrix data for this project? This removes ' +
+        rowCount +
+        ' rows, all edits, custom columns, and point mappings. This cannot be undone.',
+    )
+  )
+    return;
+  // Remove all 4 IndexedDB keys for this project
+  DB.remove('en_eqmatrix_' + pid);
+  DB.remove('en_eqmatrix_cols_' + pid);
+  DB.remove('en_eqmatrix_edits_' + pid);
+  DB.remove('en_eqmatrix_cmaps_' + pid);
+  // Clear in-memory caches
+  _EM_COL_DEFS = null;
+  _emComplianceCache = {};
+  _emNormCache = new Map();
+  // Re-render matrix as empty
+  var emptyData = { rows: [], importedAt: null, buildings: [] };
+  var container = document.getElementById('em-proj-wrap');
+  if (container) emRenderMatrix(container, emptyData, pid);
+  showToast('All Equipment Matrix data cleared');
 }
 
 function emGetCellVal(row, colIdx, edits) {

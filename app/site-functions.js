@@ -1163,6 +1163,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.28.398',
+    date: '2026-05-28',
+    title: 'Empty-state fixes, error feedback, tab reorder',
+    items: [
+      {
+        type: 'fix',
+        text: 'Energy Savings tab no longer shows an empty table when no measures are saved — it now shows a clear "no data" message.',
+      },
+      {
+        type: 'fix',
+        text: 'Saving a meter or building now shows a success or error message so you know if it worked.',
+      },
+      {
+        type: 'change',
+        text: 'Project tabs reordered: Savings, Budget, and District Calendar tabs now appear after Equipment Matrix and BAS Trends.',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix now correctly distinguishes "no data loaded" from "filters excluded all rows" — and includes a Clear All Data button in the toolbar.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.28.397',
     date: '2026-05-28',
     title: 'Equipment Matrix audit cells now scale with zoom',
