@@ -1093,12 +1093,32 @@ function _siteBuildDefaultTableSection(s) {
     '<div style="font-size:12px;color:var(--text3);margin-top:8px">Columns shown (' +
     (state.mode === 'condensed' ? 'condensed categories' : 'detailed fields') +
     ')</div>';
+  var COL_TOOLTIPS = {
+    'RkVA Charge':
+      'RKVA — Reactive kilovolt-amperes. A power factor charge on large commercial bills. Leave unchecked if not on your bills.',
+    'Actual RKVA':
+      'RKVA — Reactive kilovolt-amperes. The measured reactive power quantity billed. Leave unchecked if not on your bills.',
+    'ECA Charge':
+      'ECA — Energy Cost Adjustment. A fuel cost pass-through charge. Enable only if present on your bills.',
+    'EER Charge': 'EER — Energy Efficiency Rider. A rate adjustment charge. Enable only if present on your bills.',
+    'PTS Charge': 'PTS — Prairie Transition Surcharge (Evergy). Enable only if present on your bills.',
+    'TDC kW Charge':
+      'TDC — Transmission & Distribution Charge. A demand-based charge. Enable if present on your bills.',
+    'TDC kW': 'TDC — Transmission & Distribution Charge demand quantity (kW). Enable if present on your bills.',
+  };
   var rows = '';
   for (var i = 0; i < items.length; i++) {
     var it = items[i];
     var esc = String(it.key).replace(/"/g, '&quot;');
+    var tip = COL_TOOLTIPS[it.label] || COL_TOOLTIPS[it.key] || '';
+    var tipAttr = tip ? ' title="' + tip.replace(/"/g, '&quot;') + '"' : '';
+    var tipCursor = tip ? ';cursor:help' : '';
     rows +=
-      '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:2px 0">' +
+      '<label' +
+      tipAttr +
+      ' style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:2px 0' +
+      tipCursor +
+      '">' +
       '<input type="checkbox" data-dts-key="' +
       esc +
       '"' +
@@ -1162,6 +1182,21 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  {
+    v: 'v2026.05.28.400',
+    date: '2026-05-28',
+    title: 'Equipment Matrix sort and audit footer improvements',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix now lists HVAC equipment first by default — AHUs, VAVs, and fan-powered boxes appear at the top, followed by pumps, cooling towers, and other equipment types.',
+      },
+      {
+        type: 'feature',
+        text: 'Equipment Matrix audit view now shows point totals in the Page Total and Total footer rows instead of dashes — making it easier to see how many BAS points are on the current page and across all equipment.',
+      },
+    ],
+  },
   {
     v: 'v2026.05.28.399',
     date: '2026-05-28',

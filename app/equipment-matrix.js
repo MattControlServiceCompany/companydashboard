@@ -958,12 +958,16 @@ function emMergeIntoMatrix(existingData, newRows) {
       seen[nid] = true;
     }
   }
-  // ── Sort rows alphabetically by building, then by equipment name ──
+  // ── Sort rows: building alphabetically, then HVAC types before non-HVAC, then equipment name ──
+  var _emTypePriority = { ahu: 0, vav: 1, fpb: 2, ddvav: 3, hwp: 4, chwp: 5, ct: 6, lighting: 7, other: 8 };
   merged.sort(function (a, b) {
     var ab = (a.building || '').toLowerCase();
     var bb = (b.building || '').toLowerCase();
     if (ab < bb) return -1;
     if (ab > bb) return 1;
+    var ap = _emTypePriority[a.category] !== undefined ? _emTypePriority[a.category] : 8;
+    var bp = _emTypePriority[b.category] !== undefined ? _emTypePriority[b.category] : 8;
+    if (ap !== bp) return ap - bp;
     var ae = (a.equipName || '').toLowerCase();
     var be = (b.equipName || '').toLowerCase();
     return ae < be ? -1 : ae > be ? 1 : 0;
@@ -1863,6 +1867,55 @@ function emComputeFooterAvg(rows, defs) {
     result[def.key] = { sum: sum, count: count, avg: count > 0 ? sum / count : NaN };
   }
   return result;
+}
+
+/* ── emComputeAuditFooterTotals ─────────────────────────────────────────────
+   Computes footer totals for the Audit view.
+   Only the _baspoints column gets a meaningful total (sum of point counts).
+   Returns: { _baspoints: { sum, count } }                                    */
+function emComputeAuditFooterTotals(rows) {
+  var ptSum = 0;
+  for (var ri = 0; ri < rows.length; ri++) {
+    ptSum += Object.keys(rows[ri].points || {}).length;
+  }
+  return { _baspoints: { sum: ptSum, count: rows.length } };
+}
+
+/* ── buildAuditFooterRow ────────────────────────────────────────────────────
+   Builds a <tr> HTML string for an Audit view footer totals row.
+   totalsMap: output of emComputeAuditFooterTotals.
+   defs: column defs array.
+   label: text for the first (sticky) cell.
+   isBold: true → bold style (Total), false → italic style (Page Total).     */
+function buildAuditFooterRow(totalsMap, defs, label, isBold) {
+  var tdBase =
+    'padding:8px 12px;vertical-align:middle;border-top:2px solid var(--border);font-size:13px;background:var(--s1);';
+  var html = '<tr style="background:var(--s1);">';
+  for (var di = 0; di < defs.length; di++) {
+    var def = defs[di];
+    if (di === 0) {
+      var labelStyle =
+        tdBase +
+        'position:sticky;left:0;z-index:1;' +
+        (isBold ? 'font-weight:700;color:var(--text)' : 'font-style:italic;color:var(--text2)');
+      html += '<td style="' + labelStyle + '">' + label + '</td>';
+      continue;
+    }
+    if (def.isAuditBasPts && totalsMap['_baspoints'] && totalsMap['_baspoints'].count > 0) {
+      html +=
+        '<td style="' +
+        tdBase +
+        'text-align:right;font-weight:' +
+        (isBold ? '700' : '500') +
+        '">' +
+        totalsMap['_baspoints'].sum +
+        '</td>';
+    } else {
+      html += '<td style="' + tdBase + 'text-align:center;color:var(--text3)">&#8212;</td>';
+    }
+  }
+  html += '</tr>';
+  return html;
 }
 
 /* ── buildAvgFooterRow ──────────────────────────────────────────────────────
@@ -3025,12 +3078,12 @@ function emRenderAuditTable(data, filters) {
   // Update stats bar for audit view
   emUpdateStatsPillsForAudit(rows);
 
-  var pageAvg = emComputeFooterAvg(pageRows, defs);
-  var totalAvg = emComputeFooterAvg(filtered, defs);
+  var pageTotals = emComputeAuditFooterTotals(pageRows);
+  var allTotals = emComputeAuditFooterTotals(filtered);
   var tfootHtml =
     '<tfoot>' +
-    buildAvgFooterRow(pageAvg, defs, 'Page Average', false, false) +
-    buildAvgFooterRow(totalAvg, defs, 'Total Average', true, false) +
+    buildAuditFooterRow(pageTotals, defs, 'Page Total', false) +
+    buildAuditFooterRow(allTotals, defs, 'Total', true) +
     '</tfoot>';
 
   wrap.innerHTML =
