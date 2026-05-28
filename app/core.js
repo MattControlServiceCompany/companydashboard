@@ -19,6 +19,24 @@ function sset(k, v) {
   }
 }
 function sget(k, fb) {
+  // READ-PATH FIX: when IndexedDB cache is warm, read from it first.
+  // DB.get() reads _cache (populated by warmCache from IDB's 45 records).
+  // Fall back to localStorage so lsPreserveKeys (ch_theme, ch_activeView, etc.)
+  // that are intentionally kept in localStorage still work when not in _cache.
+  if (window.DB && window.DB.isReady()) {
+    const dbVal = window.DB.get(k);
+    if (dbVal !== null && dbVal !== undefined) return dbVal;
+    // Key not in IDB cache — try localStorage (covers lsPreserveKeys and any
+    // keys written before DB was ready).
+    try {
+      const r = localStorage.getItem(k);
+      if (r !== null) return JSON.parse(r);
+    } catch (e) {
+      /* fall through */
+    }
+    return fb;
+  }
+  // DB not ready yet — legacy path (same as before)
   if (window.Store) {
     try {
       const r = localStorage.getItem(k);

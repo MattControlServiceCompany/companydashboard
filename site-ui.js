@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.28.401';
+  var CH_VERSION = 'v2026.05.28.402';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -656,6 +656,22 @@
   ══════════════════════════════════════════ */
   var Store = {
     get: function (key) {
+      // READ-PATH FIX: when IndexedDB cache is warm, read from it first.
+      // Falls back to localStorage so lsPreserveKeys (ch_theme, ch_settings, etc.)
+      // that are intentionally kept in localStorage are still found.
+      if (window.DB && window.DB.isReady()) {
+        var dbVal = window.DB.get(key);
+        if (dbVal !== null && dbVal !== undefined) return dbVal;
+        // Key not in IDB cache — try localStorage fallback
+        try {
+          var lsRaw = localStorage.getItem(key);
+          if (lsRaw !== null) return JSON.parse(lsRaw);
+        } catch (e) {
+          /* fall through */
+        }
+        return [];
+      }
+      // DB not ready — legacy path
       try {
         return JSON.parse(localStorage.getItem(key)) || [];
       } catch (e) {
@@ -663,6 +679,13 @@
       }
     },
     set: function (key, data) {
+      // WRITE-PATH FIX: when IndexedDB is ready, persist to IDB (authoritative store).
+      // DB.set() updates _cache, writes to IndexedDB, and dispatches dataUpdated.
+      if (window.DB && window.DB.isReady()) {
+        window.DB.set(key, data);
+        return;
+      }
+      // DB not ready — legacy localStorage path
       try {
         localStorage.setItem(key, JSON.stringify(data));
       } catch (e) {

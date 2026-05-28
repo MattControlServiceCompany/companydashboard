@@ -1183,6 +1183,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.28.402',
+    date: '2026-05-28',
+    title: 'Projects and bills now load correctly after a data reset',
+    items: [
+      {
+        type: 'fix',
+        text: 'After clearing localStorage (via Clear All Data or a browser reset), projects and utility bills now display immediately on reload — the app reads from its IndexedDB cache when available, so data is never lost between page loads.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.28.401',
     date: '2026-05-28',
     title: 'Window overflow fix — pages no longer stretch beyond screen width',
@@ -1191,7 +1202,7 @@ var RELEASE_NOTES = [
         type: 'fix',
         text: 'Pages and panels no longer expand beyond the window edge — the dashboard, energy department, and all tabs now stay within the visible screen area without horizontal scrolling.',
       },
-    ]
+    ],
   },
   {
     v: 'v2026.05.28.400',
