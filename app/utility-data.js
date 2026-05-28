@@ -643,6 +643,7 @@ let _udProjPanel = null; // 'baseline'|'savproj'|'perf'|null
 
 function udSelectProj(pid) {
   udSelProjId = pid;
+  window._activeProjId = pid;
   udSelBldgId = null;
   udActiveMid = null;
   _udProjPanel = null;
@@ -6919,7 +6920,9 @@ function renderMeterDataPane(pane, m, bills, incl) {
               <div style="position:relative;height:300px"><canvas id="mddCostChart"></canvas></div>
             </div>
 
-            ${isElec ? `
+            ${
+              isElec
+                ? `
             <!-- Load Factor Trend Chart -->
             <div style="margin-top:18px;background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:16px 18px">
               <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#8ab0d0;margin-bottom:4px;text-align:center">Monthly Load Factor %</div>
@@ -6933,7 +6936,9 @@ function renderMeterDataPane(pane, m, bills, incl) {
               <div style="font-size:10px;color:rgba(180,200,220,0.6);text-align:center;margin-bottom:12px">kWh ÷ Actual kW — hours demand would need to run at peak to deliver actual kWh</div>
               <div style="position:relative;height:260px"><canvas id="mddMinHoursChart"></canvas></div>
             </div>
-            ` : ''}
+            `
+                : ''
+            }
 
           </div>`;
 
@@ -7054,8 +7059,7 @@ function renderMeterDataPane(pane, m, bills, incl) {
       const lfLabels = moList.map((mo) => MONTHS_S[mo]);
       const lfData = moList.map((mo) => {
         const e = elecByMo[mo];
-        if (!e || !e.demandKW || e.demandKW <= 0 || !e.normDays || e.normDays <= 0 || !e.kwh || e.kwh <= 0)
-          return null;
+        if (!e || !e.demandKW || e.demandKW <= 0 || !e.normDays || e.normDays <= 0 || !e.kwh || e.kwh <= 0) return null;
         return +((e.kwh / (e.demandKW * 24 * e.normDays)) * 100).toFixed(2);
       });
 
@@ -7084,8 +7088,7 @@ function renderMeterDataPane(pane, m, bills, incl) {
             },
             tooltip: {
               callbacks: {
-                label: (ctx) =>
-                  ctx.parsed.y != null ? ' Load Factor: ' + ctx.parsed.y.toFixed(2) + '%' : null,
+                label: (ctx) => (ctx.parsed.y != null ? ' Load Factor: ' + ctx.parsed.y.toFixed(2) + '%' : null),
               },
             },
           },
@@ -7157,8 +7160,7 @@ function renderMeterDataPane(pane, m, bills, incl) {
             },
             tooltip: {
               callbacks: {
-                label: (ctx) =>
-                  ctx.parsed.y != null ? ' Min Hours: ' + ctx.parsed.y.toFixed(2) + ' hrs' : null,
+                label: (ctx) => (ctx.parsed.y != null ? ' Min Hours: ' + ctx.parsed.y.toFixed(2) + ' hrs' : null),
               },
             },
           },

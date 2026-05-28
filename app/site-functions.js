@@ -1163,6 +1163,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.28.399',
+    date: '2026-05-28',
+    title: 'Equipment Matrix project sync, VFD fix, tab handler guard',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix now correctly tracks which project is active — switching projects in the sidebar updates the matrix without requiring a manual reload.',
+      },
+      {
+        type: 'fix',
+        text: 'VFD Integration is no longer incorrectly classified as a separate equipment category — it is now recognized as a flag on the equipment it belongs to.',
+      },
+      {
+        type: 'fix',
+        text: 'Opening the Equipment Matrix tab from a project no longer causes an error on pages where the matrix is not loaded.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.28.398',
     date: '2026-05-28',
     title: 'Empty-state fixes, error feedback, tab reorder',

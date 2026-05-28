@@ -79,6 +79,10 @@ var _emUploadTargetPid = null;
 // Stores custom widths set by the user dragging column borders: { colIndex: widthPx }
 var _emColWidths = {};
 
+function emGetActiveProjId() {
+  return window._activeProjId || window._emActivePid || null;
+}
+
 function emToggleEditMode(btn) {
   _emEditMode = !_emEditMode;
   if (btn) {
@@ -633,6 +637,8 @@ function emIsFloorSegment(str) {
 function emClassifyEquipType(equipTypeStr) {
   if (!equipTypeStr) return 'other';
   var raw = equipTypeStr.trim();
+
+  if (/\bvfd\s+integration\b/i.test(raw)) return 'other';
 
   // ── A. Strip leading manufacturer names ──
   var mfgPattern =
