@@ -1162,6 +1162,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.05.27.395', date: '2026-05-27', title: 'Floor parser improvements',
+    items: [
+      { type: 'fix', text: 'Equipment Matrix now recognizes text floor names — First Floor through Tenth Floor, Ground Floor, Ground Level, Penthouse, Rooftop, Basement, Mezzanine, and Lobby. Previously only numeric floors like 1st Floor were detected.' }
+    ]
+  },
   {
     v: 'v2026.05.27.394', date: '2026-05-27', title: 'Generate Report improvements',
     items: [

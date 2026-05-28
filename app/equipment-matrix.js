@@ -563,7 +563,11 @@ function emParseControlProgram(cpStr) {
 function emParseLocation(locString) {
   if (!locString) return { floor: '', area: '' };
   var s = locString.trim();
-  var floorMatch = s.match(/(\d+(?:st|nd|rd|th)?\s*floor)/i);
+  var floorMatch =
+    s.match(/(\d+(?:st|nd|rd|th)?\s*floor)/i) ||
+    s.match(/\b((?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+floor)\b/i) ||
+    s.match(/\b(ground\s+(?:floor|level))\b/i) ||
+    s.match(/\b(penthouse|rooftop|roof|basement|mezzanine|lobby)\b/i);
   var floor = floorMatch ? floorMatch[1] : '';
   var area = s;
   return { floor: floor, area: area };
@@ -600,8 +604,11 @@ function emIsFloorSegment(str) {
   // Accept: contains a number AND a floor/level/area/zone/wing keyword
   if (/\d/.test(s) && /\b(floor|level|area|wing|zone)\b/i.test(s)) return true;
 
-  // Accept: named floor concepts
-  if (/\b(basement|ground|mezzanine|penthouse|roof|attic)\b/i.test(s)) return true;
+  // Accept: named floor concepts (including text-ordinal standalone words and multi-word phrases)
+  if (/\b(basement|ground|mezzanine|penthouse|rooftop|roof|attic|lobby)\b/i.test(s)) return true;
+
+  // Accept: "Ground Level" as a phrase
+  if (/\bground\s+level\b/i.test(s)) return true;
 
   // Accept: single-letter + number or number + single-letter (e.g. "A1", "1A", "B2")
   if (/^[A-Za-z]\d+$/.test(s) || /^\d+[A-Za-z]$/.test(s)) return true;
