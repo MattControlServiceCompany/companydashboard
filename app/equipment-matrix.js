@@ -2228,119 +2228,6 @@ function emRenderTable(data, filters) {
   emAttachColResizeHandler(wrap);
 }
 
-/* ── emComputeSummaryStats ──────────────────────────────────────────────────
-   Groups rows by building and equipment category, then for each EM_POINT_MAP
-   entry whose cats[] includes the category, collects all numeric point values,
-   and computes: count, avg, min, max.
-   Returns:
-   {
-     [building]: {
-       [category]: {
-         label: string,           // e.g. "Courthouse"
-         category: string,        // e.g. "ahu"
-         equipCount: number,      // total equipment rows in this group
-         metrics: [
-           { col, label, count, avg, min, max }
-         ]
-       }
-     }
-   }                                                                        */
-function emComputeSummaryStats(rows) {
-  // Step 1: group rows by building and category
-  var groups = {};
-  for (var ri = 0; ri < rows.length; ri++) {
-    var row = rows[ri];
-    var bldg = (row.building || '(No Building)').trim();
-    var cat = (row.category || '').toLowerCase();
-    if (!cat) continue;
-    if (!groups[bldg]) groups[bldg] = {};
-    if (!groups[bldg][cat]) groups[bldg][cat] = { equipCount: 0, rows: [] };
-    groups[bldg][cat].equipCount++;
-    groups[bldg][cat].rows.push(row);
-  }
-
-  // Step 2: for each group, compute metrics from EM_POINT_MAP
-  var result = {};
-  var bldgKeys = Object.keys(groups).sort();
-  for (var bi = 0; bi < bldgKeys.length; bi++) {
-    var bldg = bldgKeys[bi];
-    result[bldg] = {};
-    var catKeys = Object.keys(groups[bldg]).sort();
-    for (var ci = 0; ci < catKeys.length; ci++) {
-      var cat = catKeys[ci];
-      var group = groups[bldg][cat];
-      var metrics = [];
-      for (var mi = 0; mi < EM_POINT_MAP.length; mi++) {
-        var entry = EM_POINT_MAP[mi];
-        // Only include this metric if it applies to this equipment category
-        if (entry.cats.indexOf(cat) === -1) continue;
-        // Collect numeric values from all rows in this group
-        var values = [];
-        for (var rj = 0; rj < group.rows.length; rj++) {
-          var pts = group.rows[rj].points || {};
-          var raw = pts[entry.col];
-          if (raw === undefined || raw === null || raw === '') continue;
-          var num = parseFloat(raw);
-          if (!isNaN(num)) values.push(num);
-        }
-        // Require at least 2 data points to show a stat
-        if (values.length < 2) continue;
-        var sum = 0;
-        var mn = values[0];
-        var mx = values[0];
-        for (var vi = 0; vi < values.length; vi++) {
-          sum += values[vi];
-          if (values[vi] < mn) mn = values[vi];
-          if (values[vi] > mx) mx = values[vi];
-        }
-        var avg = sum / values.length;
-        metrics.push({
-          col: entry.col,
-          label: entry.label,
-          count: values.length,
-          avg: avg,
-          min: mn,
-          max: mx,
-        });
-      }
-
-      // Also compute above/below setpoint for VAV zones if we have zone temp + setpoints
-      if ((cat === 'vav' || cat === 'fpb' || cat === 'ddvav') && group.rows.length > 0) {
-        var aboveCount = 0;
-        var belowCount = 0;
-        var spCompCount = 0;
-        for (var rk = 0; rk < group.rows.length; rk++) {
-          var pts2 = group.rows[rk].points || {};
-          var zoneTemp = parseFloat(pts2['zoneAirTempLive']);
-          var coolSp = parseFloat(pts2['zoneCoolSpLive']);
-          var htgSp = parseFloat(pts2['zoneHtgSpLive']);
-          if (isNaN(zoneTemp)) continue;
-          spCompCount++;
-          if (!isNaN(coolSp) && zoneTemp > coolSp) aboveCount++;
-          else if (!isNaN(htgSp) && zoneTemp < htgSp) belowCount++;
-        }
-        if (spCompCount >= 2) {
-          metrics.push({
-            col: '_setpointBand',
-            label: 'Zones vs Setpoint',
-            count: spCompCount,
-            aboveCount: aboveCount,
-            belowCount: belowCount,
-            withinCount: spCompCount - aboveCount - belowCount,
-            isSetpointBand: true,
-          });
-        }
-      }
-
-      result[bldg][cat] = {
-        equipCount: group.equipCount,
-        metrics: metrics,
-      };
-    }
-  }
-  return result;
-}
-
 /* ── emComputeBuildingZoneStats ─────────────────────────────────────────────
    Aggregates zone air temp, heating setpoint, cooling setpoint, and
    hot/ok/cold counts per building. Only processes VAV, FPB, and DD-VAV rows.
@@ -3254,7 +3141,9 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
         return (
           '<td style="' +
           baseStyle +
-          'background:rgba(39,174,96,0.15);color:#27ae60;font-size:11px;font-weight:700">' +
+          'background:rgba(39,174,96,0.15);color:#27ae60;font-weight:700" title="' +
+          tooltipBase +
+          '">' +
           (displayVal !== null ? emHtmlEsc(displayVal) : 'Yes') +
           '</td>'
         );
@@ -3263,7 +3152,9 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
         return (
           '<td style="' +
           baseStyle +
-          'background:rgba(230,126,34,0.15);color:#e67e22;font-size:11px;font-weight:700">' +
+          'background:rgba(230,126,34,0.15);color:#e67e22;font-weight:700" title="' +
+          tooltipBase +
+          '">' +
           (displayVal !== null ? emHtmlEsc(displayVal) : 'Fuzzy') +
           '</td>'
         );
@@ -3274,7 +3165,9 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       return (
         '<td style="' +
         baseStyle +
-        'background:rgba(192,57,43,0.15);color:#c0392b;font-size:11px;font-weight:700">No</td>'
+        'background:rgba(192,57,43,0.15);color:#c0392b;font-weight:700" title="Missing: ' +
+        emHtmlEsc(catKey) +
+        '">No</td>'
       );
     }
     // Optional and not present — dash so the cell is not silently blank

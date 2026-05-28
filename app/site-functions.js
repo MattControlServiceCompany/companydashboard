@@ -1162,41 +1162,105 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
-  { v: 'v2026.05.27.395', date: '2026-05-27', title: 'Floor parser improvements',
+  {
+    v: 'v2026.05.28.396',
+    date: '2026-05-28',
+    title: 'Equipment Matrix tooltips, KGS bill extraction fixes',
     items: [
-      { type: 'fix', text: 'Equipment Matrix now recognizes text floor names — First Floor through Tenth Floor, Ground Floor, Ground Level, Penthouse, Rooftop, Basement, Mezzanine, and Lobby. Previously only numeric floors like 1st Floor were detected.' }
-    ]
+      {
+        type: 'feature',
+        text: 'Equipment Matrix Audit View — hover over any cell to see a tooltip explaining what the audit status means and where the data came from.',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix — zoom no longer overrides the font size set for individual cells; text is now consistently sized when zooming in or out.',
+      },
+      {
+        type: 'fix',
+        text: 'KGS gas bills — multi-page PDF reports now correctly show the KGS brand header on every page instead of only the first.',
+      },
+      {
+        type: 'fix',
+        text: 'KGS gas bills — sanity check now accounts for Delivery Charge, Gas System Reliability, Weather Normalization, Winter Event Cost, and Franchise Fee so those charges no longer trigger a false-positive mismatch warning.',
+      },
+    ],
   },
   {
-    v: 'v2026.05.27.394', date: '2026-05-27', title: 'Generate Report improvements',
+    v: 'v2026.05.27.395',
+    date: '2026-05-27',
+    title: 'Floor parser improvements',
     items: [
-      { type: 'fix', text: "Generate Report popup — Edit buttons now open a separate window so you don't lose your selections. Previously clicking Edit navigated away from the modal." },
-      { type: 'feature', text: 'Generate Report popup — warnings now show for Contract Projection, Electric, Gas, and Propane sections when data is missing, with Edit buttons to fix them' }
-    ]
+      {
+        type: 'fix',
+        text: 'Equipment Matrix now recognizes text floor names — First Floor through Tenth Floor, Ground Floor, Ground Level, Penthouse, Rooftop, Basement, Mezzanine, and Lobby. Previously only numeric floors like 1st Floor were detected.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.05.27.394',
+    date: '2026-05-27',
+    title: 'Generate Report improvements',
+    items: [
+      {
+        type: 'fix',
+        text: "Generate Report popup — Edit buttons now open a separate window so you don't lose your selections. Previously clicking Edit navigated away from the modal.",
+      },
+      {
+        type: 'feature',
+        text: 'Generate Report popup — warnings now show for Contract Projection, Electric, Gas, and Propane sections when data is missing, with Edit buttons to fix them',
+      },
+    ],
   },
   {
     v: 'v2026.05.27.393',
     date: '2026-05-27',
     title: 'Equipment Matrix scroll fix and legend spacing',
     items: [
-      { type: 'fix', text: 'Equipment Matrix table can now scroll vertically to show all rows — previously rows were silently cut off' },
-      { type: 'fix', text: 'Audit View legend bar (Yes/Fuzzy/No/N/A/--) pills are now properly spaced apart instead of running together' }
-    ]
+      {
+        type: 'fix',
+        text: 'Equipment Matrix table can now scroll vertically to show all rows — previously rows were silently cut off',
+      },
+      {
+        type: 'fix',
+        text: 'Audit View legend bar (Yes/Fuzzy/No/N/A/--) pills are now properly spaced apart instead of running together',
+      },
+    ],
   },
   {
     v: 'v2026.05.27.392',
     date: '2026-05-27',
     title: "Equipment Matrix redesign, What's New popup, and 5 fixes",
     items: [
-      { type: 'feature', text: "Equipment Matrix Summary View redesigned as a building table — shows Zone Air Temp, Heating Setpoint, Cooling Setpoint, and Zones vs Setpoints per building. Click any building to drill into its detailed equipment list." },
-      { type: 'feature', text: 'Average and Total Average rows now appear at the bottom of all Equipment Matrix views (Summary, Audit, and Raw)' },
-      { type: 'feature', text: "What's New popup redesigned — current version takes up the full screen, scroll down for previous versions. New settings: choose to show every login, only on updates, or never." },
-      { type: 'feature', text: 'Meter Performance tab — Load Factor Trend chart and Minimum Hours chart added for electric meters. Demand chart moved above the data table.' },
-      { type: 'fix', text: 'Manage Mappings — custom point mappings now actually affect the audit compliance results. Previously they were saved but had no effect.' },
-      { type: 'fix', text: 'Bill extraction no longer freezes the browser during verification — large uploads process smoothly with a responsive cancel button' },
-      { type: 'fix', text: 'Energy Graphics now shows Water, Sewer, and Stormwater data for projects that were missing them after the commodity migration' },
-      { type: 'change', text: 'Sync to Outlook button removed from the top bar across all pages' }
-    ]
+      {
+        type: 'feature',
+        text: 'Equipment Matrix Summary View redesigned as a building table — shows Zone Air Temp, Heating Setpoint, Cooling Setpoint, and Zones vs Setpoints per building. Click any building to drill into its detailed equipment list.',
+      },
+      {
+        type: 'feature',
+        text: 'Average and Total Average rows now appear at the bottom of all Equipment Matrix views (Summary, Audit, and Raw)',
+      },
+      {
+        type: 'feature',
+        text: "What's New popup redesigned — current version takes up the full screen, scroll down for previous versions. New settings: choose to show every login, only on updates, or never.",
+      },
+      {
+        type: 'feature',
+        text: 'Meter Performance tab — Load Factor Trend chart and Minimum Hours chart added for electric meters. Demand chart moved above the data table.',
+      },
+      {
+        type: 'fix',
+        text: 'Manage Mappings — custom point mappings now actually affect the audit compliance results. Previously they were saved but had no effect.',
+      },
+      {
+        type: 'fix',
+        text: 'Bill extraction no longer freezes the browser during verification — large uploads process smoothly with a responsive cancel button',
+      },
+      {
+        type: 'fix',
+        text: 'Energy Graphics now shows Water, Sewer, and Stormwater data for projects that were missing them after the commodity migration',
+      },
+      { type: 'change', text: 'Sync to Outlook button removed from the top bar across all pages' },
+    ],
   },
   {
     v: 'v2026.05.27.391',

@@ -4839,7 +4839,11 @@ const UTILITY_RULES = [
             result.push(r);
           }
         } else {
-          const r = this.extract(s);
+          let sText = s;
+          if (isKGS && !/kansas\s+gas\s+service/i.test(s) && !/Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(s)) {
+            sText = 'Kansas Gas Service\n' + s;
+          }
+          const r = this.extract(sText);
           if (pageStart !== null) r._pageStart = pageStart;
           if (pageEnd !== null) r._pageEnd = pageEnd;
           result.push(r);

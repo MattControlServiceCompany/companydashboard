@@ -2752,7 +2752,15 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         total = fixedTotal;
       }
       if (total > 0 && gasChg > 0 && custChg > 0) {
-        const expectedTotal = gasChg + custChg + (pf(b.FuelAdjustment) || 0);
+        const expectedTotal =
+          gasChg +
+          custChg +
+          (pf(b.FuelAdjustment) || 0) +
+          (pf(b.DeliveryCharge) || 0) +
+          (pf(b.GasSystemReliability) || 0) +
+          (pf(b.WeatherNormalization) || 0) +
+          (pf(b.WinterEventCost) || 0) +
+          (pf(b.FranchiseFee) || 0);
         if (Math.abs(expectedTotal - total) > total * 0.15 && Math.abs(expectedTotal - total) > 5) {
           b._warnings = b._warnings || [];
           b._warnings.push({
