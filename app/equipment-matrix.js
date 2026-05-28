@@ -3241,7 +3241,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       return (
         '<td style="' +
         baseStyle +
-        'background:rgba(39,174,96,0.15);color:#27ae60;font-size:11px;font-weight:700" ' +
+        'background:rgba(39,174,96,0.15);color:#27ae60;font-weight:700" ' +
         'title="' +
         emHtmlEsc(bTooltip) +
         '">PASS</td>'
@@ -3251,7 +3251,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       return (
         '<td style="' +
         baseStyle +
-        'background:rgba(230,126,34,0.15);color:#e67e22;font-size:11px;font-weight:700" ' +
+        'background:rgba(230,126,34,0.15);color:#e67e22;font-weight:700" ' +
         'title="' +
         emHtmlEsc(bTooltip) +
         '">WARN</td>'
@@ -3261,7 +3261,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       return (
         '<td style="' +
         baseStyle +
-        'background:rgba(192,57,43,0.15);color:#c0392b;font-size:11px;font-weight:700" ' +
+        'background:rgba(192,57,43,0.15);color:#c0392b;font-weight:700" ' +
         'title="' +
         emHtmlEsc(bTooltip) +
         '">FAIL</td>'
@@ -7456,7 +7456,7 @@ function emRenderSequenceCell(seqName, readiness) {
     return (
       '<td style="' +
       baseStyle +
-      'background:rgba(39,174,96,0.15);color:#27ae60;font-size:11px;font-weight:700" ' +
+      'background:rgba(39,174,96,0.15);color:#27ae60;font-weight:700" ' +
       'title="' +
       emHtmlEsc(tooltip) +
       '">Yes</td>'
@@ -7466,7 +7466,7 @@ function emRenderSequenceCell(seqName, readiness) {
     return (
       '<td style="' +
       baseStyle +
-      'background:rgba(230,126,34,0.15);color:#e67e22;font-size:11px;font-weight:700" ' +
+      'background:rgba(230,126,34,0.15);color:#e67e22;font-weight:700" ' +
       'title="' +
       emHtmlEsc(tooltip) +
       '">Partial</td>'
@@ -7476,7 +7476,7 @@ function emRenderSequenceCell(seqName, readiness) {
     return (
       '<td style="' +
       baseStyle +
-      'background:rgba(192,57,43,0.15);color:#c0392b;font-size:11px;font-weight:700" ' +
+      'background:rgba(192,57,43,0.15);color:#c0392b;font-weight:700" ' +
       'title="' +
       emHtmlEsc(tooltip) +
       '">No</td>'

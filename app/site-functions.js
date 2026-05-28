@@ -1163,6 +1163,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.28.397',
+    date: '2026-05-28',
+    title: 'Equipment Matrix audit cells now scale with zoom',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix Audit View — audit compliance cells now scale correctly when you zoom in or out. Previously, inline font sizes were locking the text at 11px regardless of zoom level.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.28.396',
     date: '2026-05-28',
     title: 'Equipment Matrix tooltips, KGS bill extraction fixes',
