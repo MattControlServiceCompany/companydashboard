@@ -7446,13 +7446,23 @@ function openReportModal(projId, type) {
     let emptyWarn = '';
     if (sec.key === 'approvedChanges') {
       const hasChanges = p && p.approvedChanges && p.approvedChanges.length > 0;
-      if (!hasChanges)
-        emptyWarn = `<span style="display:flex;align-items:center;gap:6px;margin-left:auto"><span style="font-size:10px;color:var(--warn);font-weight:600">? Empty</span><button type="button" onclick="event.preventDefault();event.stopPropagation();_rptGoEdit(${projId},'docs')" style="font-size:10px;padding:1px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--em);cursor:pointer;font-weight:600;line-height:1.4">Edit ?</button></span>`;
+      if (!hasChanges) emptyWarn = _rptV2WarnHtml(projId, 'docs', 'approved');
     }
     if (sec.key === 'setpoints') {
       const hasSetpoints = p && p.setpoints && p.setpoints.length > 0;
-      if (!hasSetpoints)
-        emptyWarn = `<span style="display:flex;align-items:center;gap:6px;margin-left:auto"><span style="font-size:10px;color:var(--warn);font-weight:600">? Empty</span><button type="button" onclick="event.preventDefault();event.stopPropagation();_rptGoEdit(${projId},'setpoints')" style="font-size:10px;padding:1px 6px;border:1px solid var(--s3);border-radius:4px;background:var(--s2);color:var(--em);cursor:pointer;font-weight:600;line-height:1.4">Edit ?</button></span>`;
+      if (!hasSetpoints) emptyWarn = _rptV2WarnHtml(projId, 'setpoints', null);
+    }
+    if (sec.key === 'contractProjection') {
+      if (!p || !p.start) emptyWarn = _rptV2WarnHtml(projId, 'utility', null);
+    }
+    if (sec.key === 'electricDetail') {
+      if (!_rptHasMeterWithBaseline(projId, 'Electric')) emptyWarn = _rptV2WarnHtml(projId, 'utility', null);
+    }
+    if (sec.key === 'gasDetail') {
+      if (!_rptHasMeterWithBaseline(projId, 'Gas')) emptyWarn = _rptV2WarnHtml(projId, 'utility', null);
+    }
+    if (sec.key === 'propaneDetail') {
+      if (!_rptHasMeterWithBaseline(projId, 'Propane')) emptyWarn = _rptV2WarnHtml(projId, 'utility', null);
     }
     sectionHTML += `<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;background:var(--s2);cursor:pointer">
             <input type="checkbox" ${isChecked} data-section="${sec.key}" style="accent-color:var(--em);width:14px;height:14px">
