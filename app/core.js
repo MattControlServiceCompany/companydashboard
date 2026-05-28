@@ -877,11 +877,11 @@ function renderDetail(p) {
             <div class="pd-tabs" id="pdTabBar" style="overflow-x:auto;flex-wrap:nowrap;white-space:nowrap;flex-shrink:0">
               ${_getProjTabHTML()}
             </div>
-            <div id="ptab-dashboard" class="ptab active" style="padding:0;overflow-y:auto">
+            <div id="ptab-dashboard" class="ptab active" style="padding:0;overflow-y:auto;overflow-x:hidden">
               <div id="dash-hdr-${p.id}"></div>
               <div style="padding:16px">
                 <div class="dash-grid">
-                  <div id="dash-perf-${p.id}"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
+                  <div id="dash-perf-${p.id}" style="min-width:0"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
                   <div id="dash-cal-${p.id}" style="display:flex;flex-direction:column;gap:16px">
                     <div id="dash-cal-inner-${p.id}"><div style="text-align:center;color:var(--text3);padding:40px">Loading...</div></div>
                     <!-- Fix 27cf12ac: Notes and Tasks moved below calendar in right column -->

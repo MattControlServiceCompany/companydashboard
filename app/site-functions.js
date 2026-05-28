@@ -1183,6 +1183,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.28.401',
+    date: '2026-05-28',
+    title: 'Window overflow fix — pages no longer stretch beyond screen width',
+    items: [
+      {
+        type: 'fix',
+        text: 'Pages and panels no longer expand beyond the window edge — the dashboard, energy department, and all tabs now stay within the visible screen area without horizontal scrolling.',
+      },
+    ]
+  },
+  {
     v: 'v2026.05.28.400',
     date: '2026-05-28',
     title: 'Equipment Matrix sort and audit footer improvements',

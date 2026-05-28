@@ -615,6 +615,7 @@ body {
   min-height: 0;
   padding: 24px 26px;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 .tab-panel {
   display: none;
