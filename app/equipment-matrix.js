@@ -164,7 +164,7 @@ function emSyncViewModeControls() {
   if (_emViewMode === 'audit') {
     if (rawToggles) rawToggles.style.display = 'none';
     if (dynControls) dynControls.style.display = 'none';
-    if (auditInfo) auditInfo.style.display = '';
+    if (auditInfo) auditInfo.style.display = 'inline-flex';
     if (viewModeBtn) {
       viewModeBtn.textContent = 'Audit View';
       viewModeBtn.style.background = 'var(--accent)';
