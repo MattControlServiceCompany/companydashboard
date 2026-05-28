@@ -140,6 +140,25 @@ function init() {
       delete p.activeCommodities;
       sset('en_projects', projects);
     }
+    // Migration v2: expand calcCommodities to include any commodity the project
+    // actually has meters for. Repairs projects migrated with a narrow
+    // activeCommodities list (e.g. Louisburg got Electric + Gas only, missing
+    // Water/Sewer/Stormwater). Reads utility data directly from localStorage
+    // because utilityData global is not populated yet at this point in init().
+    if (p.calcCommodities) {
+      const _ud = sget('en_utility_' + p.id, null);
+      const _buildings = _ud && Array.isArray(_ud.buildings) ? _ud.buildings : [];
+      const _meterCommodities = [
+        ...new Set(
+          _buildings.flatMap((b) => (b.meters || []).map((m) => m.commodity)).filter((c) => c && typeof c === 'string'),
+        ),
+      ];
+      const _missing = _meterCommodities.filter((c) => !p.calcCommodities.includes(c));
+      if (_missing.length > 0) {
+        p.calcCommodities = [...p.calcCommodities, ..._missing];
+        sset('en_projects', projects);
+      }
+    }
   });
   // Migrate: remove deprecated tabs from saved tab order
   try {

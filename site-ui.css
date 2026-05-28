@@ -1073,11 +1073,13 @@ a:focus-visible,
   backdrop-filter: blur(4px);
 }
 
+/* [COMMENTED OUT] Media query for sync button — no longer needed
 @media (max-width: 1024px) {
   .sync-btn {
     display: none;
   }
 }
+*/
 
 @media (max-width: 768px) {
   .sidebar-toggle-btn {

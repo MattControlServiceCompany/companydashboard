@@ -718,23 +718,11 @@ document.addEventListener('DOMContentLoaded', function () {
     siteApplyTheme(theme);
   } catch (e) {}
   if (!document.getElementById('siteSettingsOverlay')) siteBuildSettingsModal();
-  buildReleaseNotesModal();
-  // Auto-show release notes on first visit after a version bump.
-  // ch_seen_version stores the last version the user saw notes for.
-  // The version string is populated by report-engine.js fetching site-ui.js, so we
-  // delay the check by 1200ms to let that fetch complete before comparing.
+  // Auto-show release notes based on user preference.
+  // Delay 800ms so the page finishes rendering before the modal appears.
   setTimeout(function () {
-    var currentVersion = _getRnVersion() || (RELEASE_NOTES[0] && RELEASE_NOTES[0].version);
-    if (currentVersion) {
-      var seenVersion = localStorage.getItem('ch_seen_version');
-      if (seenVersion !== currentVersion) {
-        setTimeout(function () {
-          openReleaseNotes();
-        }, 400);
-        localStorage.setItem('ch_seen_version', currentVersion);
-      }
-    }
-  }, 1200);
+    openReleaseNotesIfNeeded();
+  }, 800);
   buildMobileSidebarToggle();
 });
 
@@ -957,6 +945,23 @@ function siteBuildSettingsModal() {
     '<button class="btn btn-ghost" style="color:var(--red);border-color:var(--red)" onclick="uiCustomResetAll()">Reset All</button>' +
     '</div>' +
     '</div>' +
+    '<div class="settings-section">' +
+    '<div class="settings-section-title">What\'s New Popup</div>' +
+    '<div class="settings-row">' +
+    '<div><div class="settings-row-label">Show What\'s New</div><div class="settings-row-sub">When to show the release notes popup on page load</div></div>' +
+    '<select class="settings-select" id="siteRnShowMode" onchange="siteSetRnShowMode(this.value)">' +
+    '<option value="on-update"' +
+    ((s.rnShowMode || 'on-update') === 'on-update' ? ' selected' : '') +
+    '>Show on version updates</option>' +
+    '<option value="always"' +
+    (s.rnShowMode === 'always' ? ' selected' : '') +
+    '>Show every login</option>' +
+    '<option value="never"' +
+    (s.rnShowMode === 'never' ? ' selected' : '') +
+    '>Never show</option>' +
+    '</select>' +
+    '</div>' +
+    '</div>' +
     '</div>' +
     '</div>';
   document.body.appendChild(el);
@@ -991,6 +996,13 @@ function siteSetDefaultExportFormat(fmt, checked) {
       s.defaultExportFormat = { json: true, csv: false };
     }
     s.defaultExportFormat[fmt] = !!checked;
+    localStorage.setItem('ch_settings', JSON.stringify(s));
+  } catch (e) {}
+}
+function siteSetRnShowMode(val) {
+  try {
+    var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
+    s.rnShowMode = val;
     localStorage.setItem('ch_settings', JSON.stringify(s));
   } catch (e) {}
 }
@@ -1141,182 +1153,283 @@ async function siteResetAllMeterTableSettings() {
 }
 
 /* ── RELEASE NOTES ── */
-/* Version string is read at runtime from site-ui.js fetch in report-engine.js.
-   We store the version in a variable fetched once so the auto-show logic works. */
-var _rnVersion = null;
-function _getRnVersion() {
-  if (_rnVersion) return _rnVersion;
-  // Fall back to the version string embedded in the sidebar by report-engine.js
-  var el = document.getElementById('en-sb-version');
-  if (el && el.textContent) {
-    _rnVersion = el.textContent.trim();
-    return _rnVersion;
-  }
-  return null;
-}
-
+/* Single source of truth for all release notes.
+   - Field names: v (version string), date (ISO date), items (array of {type, text})
+   - Item types: 'feature' (+), 'fix' (checkmark), 'change' (bullet)
+   - Sorted descending — index 0 is always the current/latest release.
+   - ch_seen_version localStorage key stores the last version the user saw.
+   - The key format matches RELEASE_NOTES[0].v (e.g. 'v2026.05.27.391').
+   site-ui.js delegates to this array and should NOT maintain its own copy.
+*/
 var RELEASE_NOTES = [
   {
-    version: 'v388',
+    v: 'v2026.05.27.391',
     date: '2026-05-27',
-    title: 'BAS Trends — import CSV trend data, health scores, fault log, heat map, OAT chart',
-    features: [
+    title: "What's New redesign, legend, timestamps, settings toggle",
+    items: [
       {
         type: 'feature',
-        text: 'BAS Trends — New view in the Energy sidebar. Import CSV trend data exported from your BAS to automatically detect faults and score equipment health.',
+        text: "What's New popup redesigned: current version fills the modal, previous versions scroll below — making it clear you are looking at the latest release.",
       },
       {
         type: 'feature',
-        text: 'Health Score — Grades each equipment unit (EXCELLENT / GOOD / FAIR / POOR) across six fault categories: after-hours runtime, simultaneous heating+cooling, economizer misses, setpoint adherence, sensor health, and override rate.',
+        text: 'Symbol legend added: + means New Feature, checkmark means Bug Fix, and bullet means Change.',
       },
       {
         type: 'feature',
-        text: 'Fault Log — Detected faults appear in a filterable, sortable table with estimated energy cost impact. Mark faults as acknowledged or resolved.',
+        text: 'Timestamps added to each version entry so you can see when each release shipped.',
       },
       {
         type: 'feature',
-        text: 'Timeline Heat Map — Shows fault density by equipment and month so you can spot seasonal patterns at a glance.',
-      },
-      {
-        type: 'feature',
-        text: 'OAT Scatter Chart — Plots equipment runtime or setpoint deviation against outdoor air temperature to reveal weather-dependent control problems.',
+        text: 'Settings toggle added: choose whether the popup appears on every login, only when a new version ships, or never.',
       },
     ],
   },
   {
-    version: 'v387',
+    v: 'v2026.05.27.390',
     date: '2026-05-27',
-    title: 'Equipment Matrix BACnet floor detection fix, removed per-cell audit tooltips',
-    features: [
+    title:
+      'BAS Trends — Phase 4 bill correlation, Phase 5 EM integration, moved to project subtab; tab persistence fix',
+    items: [
       {
         type: 'fix',
-        text: 'BACnet Floor Detection — The Equipment Matrix now correctly identifies floors in 4-segment BACnet paths like /Org/Building/First Floor/AHU Zone. Previously, it always took the last segment (the equipment name) as the floor label.',
+        text: 'Tab persistence now checks sessionStorage first, then URL params, then localStorage — fixes tabs not restoring correctly after navigation.',
       },
       {
         type: 'fix',
-        text: 'Audit View — Removed redundant tooltips from individual data cells in the Equipment Matrix audit view. Legend badges and column headers still show tooltips.',
+        text: 'sv() null guard added to prevent errors when storage keys return undefined.',
+      },
+      {
+        type: 'feature',
+        text: 'BAS Trends Phase 4: bill correlation view — overlays BAS fault periods against utility bill data to quantify energy cost impact.',
+      },
+      {
+        type: 'feature',
+        text: 'BAS Trends Phase 5: EM (Energy Manager) integration — BAS Analysis button on utility bill rows launches fault correlation for that billing period.',
+      },
+      {
+        type: 'feature',
+        text: 'Equipment Matrix Phase 5: behavior column added to show control strategy per equipment unit.',
+      },
+      {
+        type: 'feature',
+        text: 'BAS Trends moved from Energy sidebar to project subtab for better context alongside project data.',
       },
     ],
   },
   {
-    version: 'v386',
+    v: 'v2026.05.27.388',
     date: '2026-05-27',
-    title: 'Tab persistence fix, user-facing release notes',
-    features: [
+    title: 'BAS Trends — CSV import, health score dashboard, fault log, timeline heat map, OAT scatter chart',
+    items: [
       {
-        type: 'fix',
-        text: 'Tab Memory — Fixed an issue where refreshing the page would always land on Utility Data instead of the tab you were on. The site now correctly remembers your active tab across page loads.',
+        type: 'feature',
+        text: 'New BAS Trends view in Energy Department: import CSV trend data exported from your BAS. Find the view in the Energy project tab under BAS Trends.',
       },
       {
-        type: 'fix',
-        text: "What's New — Release notes now show user-friendly descriptions of each change instead of internal commit messages.",
+        type: 'feature',
+        text: 'Health Score dashboard grades each equipment unit (EXCELLENT/GOOD/FAIR/POOR) across six fault categories: after-hours runtime, simultaneous heating+cooling, economizer misses, setpoint adherence, sensor health, and override rate.',
+      },
+      {
+        type: 'feature',
+        text: 'Fault Log shows detected faults as a filterable, sortable table with energy cost estimates. Faults can be acknowledged or resolved and that status is remembered.',
+      },
+      {
+        type: 'feature',
+        text: 'Timeline heat map shows fault density by equipment and month so you can spot seasonal patterns at a glance.',
+      },
+      {
+        type: 'feature',
+        text: 'OAT scatter chart plots equipment runtime or setpoint deviation against outdoor air temperature to reveal weather-dependent control problems.',
       },
     ],
   },
   {
-    version: 'v385',
+    v: 'v2026.05.27.387',
     date: '2026-05-27',
-    title: 'Equipment Matrix Summary view, import summary, tab memory repair',
-    features: [
+    title: 'BACnet parser left-to-right floor scan, remove per-cell audit tooltips',
+    items: [
       {
-        type: 'feature',
-        text: 'Summary View — New view in the Equipment Matrix. Click "Summary" in the toolbar to see average BAS point values grouped by building and equipment type.',
-      },
-      {
-        type: 'feature',
-        text: 'Import Summary — After importing CSVs to the Equipment Matrix, you see a breakdown of how many items were classified (AHU, VAV, etc.) and a warning if many items could not be identified.',
+        type: 'fix',
+        text: 'BACnet path floor extraction now scans left-to-right from index 2 instead of always taking the last segment. This correctly identifies floors in 4-segment paths like /Org/Building/First Floor/AHU Zone.',
       },
       {
         type: 'fix',
-        text: "What's New — Release notes now appear correctly when a new version is deployed.",
-      },
-    ],
-  },
-  {
-    version: 'v384',
-    date: '2026-05-27',
-    title: 'Live BAS point values in Audit View, redesigned Point Mappings',
-    features: [
-      {
-        type: 'feature',
-        text: 'Live Point Values — The Equipment Matrix Audit View now shows actual BAS values (temperatures, pressures, percentages) instead of just Yes/No — so you can see exactly what is monitored and what is missing.',
-      },
-      {
-        type: 'feature',
-        text: 'Point Mappings Redesigned — Manage Mappings now shows both mapped and unmapped points in one place, grouped by function. Previously-saved mappings are preserved when you save again.',
-      },
-    ],
-  },
-  {
-    version: 'v383',
-    date: '2026-05-27',
-    title: 'Zoom fix, tab memory, auto-create meters from bills',
-    features: [
-      {
-        type: 'fix',
-        text: 'Zoom — Equipment Matrix zoom in/out now works. Use the +/- buttons to resize the table.',
+        text: 'Added plant, station, domestic, exterior, and interior to the BACnet segment rejection list so these equipment category nodes are never stored as floor labels.',
       },
       {
         type: 'fix',
-        text: "What's New — Release notes button now works on the Energy Department page.",
+        text: 'Removed per-cell tooltips from the Equipment Matrix audit view data cells. Legend badges and column headers retain their tooltips.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.05.27.386',
+    date: '2026-05-27',
+    title: 'Import summary with category breakdown, scrollable file list, fix row count display',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix import modal now shows a category breakdown after import (AHU, VAV, FPB, etc.) with counts and percentages, building count, BAS point count, and floor field coverage.',
       },
       {
         type: 'fix',
-        text: 'Tab Memory — The site now remembers which tab you were on when you refresh.',
+        text: 'Import modal row count now correctly shows equipment rows (not raw BAS points). Previously a WebCTRL import of 2,700 units would show 37,800 rows.',
       },
       {
         type: 'feature',
-        text: 'Auto-Create Meters — When you upload a bill with an account number, a meter is automatically created and matched to a building — no manual setup needed.',
-      },
-    ],
-  },
-  {
-    version: 'v382',
-    date: '2026-05-27',
-    title: 'CSV Import modal, better equipment classification',
-    features: [
-      {
-        type: 'feature',
-        text: 'CSV Import Modal — The Equipment Matrix import now appears as a popup overlay so you can always see it, with progress feedback during import.',
+        text: 'File list in the import modal is now scrollable (max 150px) and shows the queued file count.',
       },
       {
         type: 'feature',
-        text: 'Better Equipment Classification — Lighting, smoke dampers, and other non-HVAC equipment types are now recognized and classified correctly.',
+        text: 'Import modal stays open 3 seconds (4 seconds if Other rate is high) so users can read the summary before it closes.',
       },
     ],
   },
   {
-    version: 'v381',
+    v: 'v2026.05.27.385',
     date: '2026-05-27',
-    title: 'Cleaner Equipment Matrix view',
-    features: [
+    title: 'Tab persistence hotfix, Baldwin City bill extractor, Equipment Matrix Summary View',
+    items: [
+      {
+        type: 'fix',
+        text: 'Tab persistence hotfix: users who ran the IDB migration before v383 had their active tab and settings wiped. This is now repaired automatically on every page load.',
+      },
       {
         type: 'feature',
-        text: 'Cleaner Equipment Matrix — Removed icons and building summary rows for a cleaner, text-based view. Shows total BAS point count in the toolbar instead.',
+        text: 'Baldwin City utility bills (electric, water, sewer) can now be extracted automatically from PDFs.',
+      },
+      {
+        type: 'feature',
+        text: 'Equipment Matrix now has a Summary View — a card-based snapshot showing average, min, and max values for each equipment category and building at a glance.',
       },
     ],
   },
   {
-    version: 'v380',
+    v: 'v2026.05.27.384',
     date: '2026-05-27',
-    title: 'Faster Equipment Matrix, ASHRAE 36 Report fixed',
-    features: [
+    title: 'Audit View point values, Manage Mappings redesign, data-loss fix',
+    items: [
       {
         type: 'feature',
-        text: 'Faster Equipment Matrix — Significant performance improvement when loading and filtering large datasets. Added Collapse All / Expand All button.',
+        text: 'Equipment Matrix Audit View now shows the actual BAS point values from your data instead of just Yes/No — so you can see exactly what is monitored and what is missing.',
+      },
+      {
+        type: 'feature',
+        text: 'Manage Point Mappings has been redesigned. It now shows both mapped and unmapped points in one place, grouped by function, making it much easier to see gaps and add missing mappings.',
       },
       {
         type: 'fix',
-        text: 'ASHRAE 36 Report Fixed — Sequence compliance scores now calculate correctly. Previously always showed 0%.',
+        text: 'Fixed a data-loss bug in Manage Mappings where saving changes could silently delete custom mappings you had already set up.',
       },
     ],
   },
   {
-    version: 'v2026.05.26.379',
+    v: 'v2026.05.27.383',
+    date: '2026-05-27',
+    title: "Zoom fix, What's New button, tab persistence, auto-meter creation from bills",
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix zoom in/out now works correctly.',
+      },
+      {
+        type: 'fix',
+        text: "What's New button now works on the Energy Department page (was broken).",
+      },
+      {
+        type: 'fix',
+        text: 'Your active tab and settings now survive a page refresh — no more reverting to the Utility Data tab every time you reload.',
+      },
+      {
+        type: 'feature',
+        text: 'Bills that include an account number now automatically create a meter and match it to the right building — no manual setup needed.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.05.27.382',
+    date: '2026-05-27',
+    title: 'CSV import modal, floor column fix, lighting classification, Audit View legend',
+    items: [
+      {
+        type: 'feature',
+        text: 'CSV import now opens as a modal overlay with progress feedback so you can see what is happening during import.',
+      },
+      {
+        type: 'fix',
+        text: 'Floor column no longer shows equipment category names (like "Lighting" or "Environmental Index") — it only shows actual floor values.',
+      },
+      {
+        type: 'fix',
+        text: 'Lighting is now recognized as an equipment type and classified correctly in the Equipment Matrix.',
+      },
+      {
+        type: 'fix',
+        text: 'JOCO-style equipment names (e.g. "Cooling Towers - ADC") now parse correctly for non-HVAC equipment types.',
+      },
+      {
+        type: 'fix',
+        text: 'Audit View legend now has proper spacing and includes tooltip explanations for each compliance indicator.',
+      },
+      {
+        type: 'fix',
+        text: 'Removed the "(slow)" label from the All Rows option in the rows-per-page selector.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.05.27.381',
+    date: '2026-05-27',
+    title: 'Cleaner Equipment Matrix — no icons, no building totals, BAS point count',
+    items: [
+      {
+        type: 'fix',
+        text: 'Removed all icons and emoji from the Equipment Matrix — everything now uses plain readable text.',
+      },
+      {
+        type: 'fix',
+        text: 'Removed building summary and total rows from the Equipment Matrix to reduce clutter.',
+      },
+      {
+        type: 'feature',
+        text: 'Header now shows total BAS point count instead of a redundant row count.',
+      },
+      {
+        type: 'fix',
+        text: 'Fixed a pagination regression introduced in v380 that caused incorrect page counts.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.05.27.380',
+    date: '2026-05-27',
+    title: 'Equipment matrix UX pass 2, ASHRAE report sequence score fix, toISO guard, multi-account KGS splitting',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment matrix: performance caching for compliance and normalization, collapse-aware pagination, Collapse All / Expand All button, empty cell span removal, search debounce.',
+      },
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 report: sequence score always-0% fixed by using emComputeSequenceReadiness; gap descriptions added for ~40 missing point categories; footer blank label fixed; no-auditable-equipment sentinel.',
+      },
+      {
+        type: 'fix',
+        text: 'bill-analysis.js: toISO() now guards against double-conversion of already-ISO dates, preventing date corruption on re-import.',
+      },
+      {
+        type: 'fix',
+        text: 'energy-savings.js: multi-account KGS consolidated statements now split per account before extraction, preventing wrong meter/charge data from being saved.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.05.26.379',
     date: '2026-05-26',
     title:
       'Complete IndexedDB migration Batches 3-4: report history, value corrections, weather cache, bill view state, facility map',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Migrated en_report_history (report-engine.js, 5 call sites) and en_value_corrections + en_report_history read (csv-import.js, 3 call sites) from localStorage to IndexedDB.',
@@ -1332,11 +1445,11 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.26.363',
+    v: 'v2026.05.26.363',
     date: '2026-05-26',
     title:
       'Fix Equipment Matrix frozen columns, scroll sync, scrollbar visibility, equipment name parsing, and column sort order',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Raised z-index ladder so frozen column headers no longer overlap scrolling content (sticky body cells: 10, all thead: 11, corner intersection: 12).',
@@ -1364,11 +1477,11 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.26.362',
+    v: 'v2026.05.26.362',
     date: '2026-05-26',
     title:
       'Fix KGS startRead/endRead alias, equipment matrix empty-state + cell-budget, bill-analysis commodity filter + gas field mapping',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'KGS bills now correctly populate billing period start/end dates (startRead/endRead). Previously these were blank due to a missing alias in the KGS extraction block.',
@@ -1392,10 +1505,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.26.361',
+    v: 'v2026.05.26.361',
     date: '2026-05-26',
     title: 'Equipment Matrix render fix: limit dynamic columns to top 20, add safety cell budget',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Equipment Matrix now limits dynamic point columns to the top 20 by frequency, preventing browser freeze on BAS imports with 2,700+ rows and hundreds of unique point names.',
@@ -1411,10 +1524,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.25.360',
+    v: 'v2026.05.25.360',
     date: '2026-05-25',
     title: 'Equipment Matrix pagination to handle 2700+ rows without crashing',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Equipment Matrix no longer crashes with RangeError on large datasets (2,721+ rows). Pagination renders 100 rows at a time by default.',
@@ -1427,10 +1540,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.25.359',
+    v: 'v2026.05.25.359',
     date: '2026-05-25',
     title: 'Fix KGS extraction display: field order, Mcf source unit, date rendering, sum validation',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'KGS bill fields now appear in correct order: account info, billing period/meter, balance forward, charges, totals. Previously charges appeared after totals.',
@@ -1446,10 +1559,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.25.358',
+    v: 'v2026.05.25.358',
     date: '2026-05-25',
     title: 'Equipment Matrix redesign: sticky headers, edit mode toggle, dynamic columns, floor parsing',
-    features: [
+    items: [
       {
         type: 'feature',
         text: 'Equipment Matrix now shows all imported equipment — no type filtering. Rows for unrecognized control programs are kept instead of dropped.',
@@ -1472,10 +1585,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.25.357',
+    v: 'v2026.05.25.357',
     date: '2026-05-25',
     title: 'KGS extraction accuracy fixes — 9 regex issues fixed, 276/276 fields correct',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Fixed 9 KGS regex issues in energy-savings.js: added fixNum() OCR colon-to-period normalizer, expanded char class to [\\d,.:]+, StatementDate garble fallback, RateSchedule Residential match, CustomerName same-line OCR layout, PaymentsReceived plural + CR suffix, TotalCurrentCharges multiline anchor, TotalAmountDue digit-start guard, GasSystemReliability optional CR. All 276 fields across 12 bills now extract correctly.',
@@ -1483,10 +1596,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.25.356',
+    v: 'v2026.05.25.356',
     date: '2026-05-25',
     title: 'Complete KGS bill extraction rewrite + fix save path date handling and field mappings',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Complete KGS extraction rewrite in energy-savings.js: dedicated parser extracts all fields — meter reads, multiplier, all charges, statement date, previous balance, payments, franchise fees.',
@@ -1498,10 +1611,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.25.355',
+    v: 'v2026.05.25.355',
     date: '2026-05-25',
     title: 'Fix toDate crash on undefined input that blocks PDF extraction',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Added null/undefined guard to inline toDate() arrow function in _postExtractionVerify (bill-analysis.js line ~2518): if (!d) return null. Previously crashed with "Cannot read properties of undefined (reading \'length\')" whenever BillingPeriodStart or BillingPeriodEnd was missing, freezing the UI on "Verifying extraction...".',
@@ -1513,10 +1626,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.25.354',
+    v: 'v2026.05.25.354',
     date: '2026-05-25',
     title: 'Fix 23 corrupted emoji icons showing as ? throughout EMS Leads and report engine',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Replaced 18 corrupted ? icons in energy-department.html: PDF/OCR Clear button (✕), column sort indicators (⇅), Add Lead button (+), Remove field button (✕), overdue/scheduled action icons (⚠/📅), sort direction (▲/▼), clear sort (✕), move up/down client type (▲/▼), delete client type (✕), CSV parse OK (✓), no duplicates (✓), Report History modal close (✕), Back to Energy Graphics (←), Return to Sign In (←), Meter Match Found (✓), CSV mapping arrow (→).',
@@ -1528,10 +1641,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.25.352',
+    v: 'v2026.05.25.352',
     date: '2026-05-25',
     title: 'Fix Kansas Gas Service bill extraction (11 regex issues) and reorder Equipment Matrix tab',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Fixed 9 KGS extraction issues: multi-bill splitter, account number, billing period, Mcf→therms conversion, gas charge, meter number, rate schedule, service address, and customer name.',
@@ -1547,10 +1660,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.25.351',
+    v: 'v2026.05.25.351',
     date: '2026-05-25',
     title: 'Fix page load lag by clearing localStorage after IndexedDB migration',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Added fast early-exit in migrateFromLocalStorage() when localStorage is empty, eliminating redundant IDB reads on every load after initial migration.',
@@ -1562,10 +1675,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.24.350',
+    v: 'v2026.05.24.350',
     date: '2026-05-24',
     title: 'Add IndexedDB storage layer with auto-migration from localStorage',
-    features: [
+    items: [
       {
         type: 'feature',
         text: 'Added IndexedDB storage layer (app/db.js) with synchronous cache, auto-migration from localStorage on first load, and localStorage fallback if IDB is unavailable.',
@@ -1577,10 +1690,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.24.349',
+    v: 'v2026.05.24.349',
     date: '2026-05-24',
     title: 'Fix saveProject recursion bug and remaining corrupted characters',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Fixed infinite recursion in saveProject/closeProjModal — removed auto-save block from closeProjModal that caused mutual recursion and duplicate project entries on new project creation.',
@@ -1592,10 +1705,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.24.348',
+    v: 'v2026.05.24.348',
     date: '2026-05-24',
     title: 'Fix corrupted Unicode characters',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Restored 122 corrupted Unicode characters (U+FFFD) in energy-department.html: em dashes, middle dots, angle quotes, multiplication sign, en dash, and checkmarks.',
@@ -1603,10 +1716,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.24.347',
+    v: 'v2026.05.24.347',
     date: '2026-05-24',
     title: 'Building list import from Excel/CSV',
-    features: [
+    items: [
       {
         type: 'feature',
         text: 'Added Import List button next to Add Building in the project sidebar. Accepts .xlsx or .csv files with Building Name, SQFT, and Address columns. Shows a preview table with checkboxes before importing.',
@@ -1614,10 +1727,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.24.346',
+    v: 'v2026.05.24.346',
     date: '2026-05-24',
     title: 'Fix corrupted title tag and add inline SVG favicon',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Fixed corrupted title tag in energy-department.html (? → em dash) and added inline SVG favicon to all 4 HTML pages so the browser tab shows the CompanyHub icon',
@@ -1625,10 +1738,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.22.345',
+    v: 'v2026.05.22.345',
     date: '2026-05-23',
     title: 'Restore all emoji icons clobbered by batch 3 deployer',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Restored 134+ emoji characters in energy-department.html and app/report-engine.js that were replaced with literal ?? by a prior deployer agent — sidebar icons, nav tabs, buttons, and labels now display correctly',
@@ -1636,10 +1749,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.22.343',
+    v: 'v2026.05.22.343',
     date: '2026-05-22',
     title: 'CSP style-src fix across all HTML files for Quill stylesheet',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Added cdn.jsdelivr.net to CSP style-src, script-src, font-src, and connect-src in index.html, service-department.html, and ems-leads.html so Quill and other jsdelivr resources load without CSP errors',
@@ -1647,61 +1760,61 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.22.342',
+    v: 'v2026.05.22.342',
     date: '2026-05-22',
     title: 'BAS fault detection — simultaneous heating/cooling checks',
-    features: [
+    items: [
       {
-        type: 'new',
+        type: 'feature',
         text: 'BAS Equipment Snapshot now detects simultaneous heating and cooling (SHC) faults across all zones, showing a color-coded fault table with Severe/Moderate tiers',
       },
       {
-        type: 'new',
+        type: 'feature',
         text: 'BAS Health Score badge added to the snapshot card title — 100 = no SHC faults, score drops proportionally with fault count',
       },
       {
-        type: 'new',
+        type: 'feature',
         text: 'New Fault Detection tab in the BAS snapshot panel with red count badge when faults are present',
       },
     ],
   },
   {
-    version: 'v2026.05.22.341',
+    v: 'v2026.05.22.341',
     date: '2026-05-22',
     title: 'Client portal and Quill CSP fix',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'CSP fix: added cdn.jsdelivr.net to style-src in energy-department.html so Quill editor stylesheet loads without console errors',
       },
       {
-        type: 'new',
+        type: 'feature',
         text: 'Client portal Phase 1: one-click "Publish Portal" button on project detail exports sanitized savings data to a permanent URL clients can bookmark without login',
       },
     ],
   },
   {
-    version: 'v2026.05.22.339',
+    v: 'v2026.05.22.339',
     date: '2026-05-22',
     title: 'Quarterly projected savings breakdown and Node.js weather data script',
-    features: [
+    items: [
       {
-        type: 'new',
+        type: 'feature',
         text: 'Quarterly savings breakdown: Energy Savings tab now shows Q1–Q4 sub-rows under the annual Projected Savings total, calculated from the existing monthly data',
       },
       {
-        type: 'new',
+        type: 'feature',
         text: 'Node.js weather fetch script: replaces Excel VBA macro; fetches HDD/CDD/avgTemp from weatherdatadepot.com and saves as JSON files in the repo; CompanyHub auto-loads weather data from GitHub Pages',
       },
     ],
   },
   {
-    version: 'v2026.05.22.337',
+    v: 'v2026.05.22.337',
     date: '2026-05-22',
     title: 'Data quality scores, address aliases, board summary report, rich text editors',
-    features: [
+    items: [
       {
-        type: 'new',
+        type: 'feature',
         text: 'Data quality score per meter: A–F letter grade and 5-component score (months, R², gaps, field completeness, flags) shown as badge on meter pills and summary card in Meter Data pane',
       },
       {
@@ -1709,32 +1822,32 @@ var RELEASE_NOTES = [
         text: 'Address alias management: bldg.address bug fixed to bldg.addr in findMeterMatch; Levenshtein fuzzy matching; alias UI in Building Edit modal; saveAddressAlias wired to PDF extraction flow',
       },
       {
-        type: 'new',
+        type: 'feature',
         text: 'Executive summary report: single-page board-ready report with savings vs target, contract progress, CO2 equivalents, and monthly bar chart; accessible from Board Summary button in project header',
       },
       {
-        type: 'new',
+        type: 'feature',
         text: 'Browser editor Phase 1: Quill rich text wired for ed-notes, mp-notes, and eq-notes fields; new lib/rich-text.js helper',
       },
     ],
   },
   {
-    version: 'v2026.05.22.333',
+    v: 'v2026.05.22.333',
     date: '2026-05-22',
     title: 'Cache-busting, feedback inbox download, sidebar cleanup, value correction mode, bill validation flags',
-    features: [
+    items: [
       {
-        type: 'new',
+        type: 'feature',
         text: 'Cache-busting version params added to all script/stylesheet references so browsers always load the latest code after a deploy',
       },
-      { type: 'new', text: 'Feedback inbox: download button exports all captured feedback as a CSV file' },
-      { type: 'new', text: 'Sidebar button removal: cleaned up stale navigation buttons from the sidebar' },
+      { type: 'feature', text: 'Feedback inbox: download button exports all captured feedback as a CSV file' },
+      { type: 'feature', text: 'Sidebar button removal: cleaned up stale navigation buttons from the sidebar' },
       {
-        type: 'new',
+        type: 'feature',
         text: 'Value Correction Mode (VCM): select a bill field and override its value with an audited correction, stored in localStorage',
       },
       {
-        type: 'new',
+        type: 'feature',
         text: 'Bill validation flags: automatic per-bill health checks (year-over-year spikes, missing fields, cost outliers) displayed as colored dots in the bills pane with dismissible notes',
       },
       {
@@ -1752,10 +1865,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.22.328',
+    v: 'v2026.05.22.328',
     date: '2026-05-22',
     title: 'Fix all remaining duplicate lines in report-engine.js (P0 complete)',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Removed 5 additional duplicate lines in report-engine.js: chart builder calls (buildElecBarChart, buildGasBarChart, buildPropBarChart), string concat _barChart calls, and a ternary string duplicate — all left behind by the encoding fix. File is now syntax-error free.',
@@ -1763,10 +1876,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.22.327',
+    v: 'v2026.05.22.327',
     date: '2026-05-22',
     title: 'Fix duplicate const declarations in report-engine.js causing SyntaxError on live site',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Removed 3 duplicate const declarations (cardStyle, valColor, blEUI, statusColor) left behind by the encoding fix, which caused a fatal SyntaxError preventing the energy department page from loading',
@@ -1774,10 +1887,10 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.21.326',
+    v: 'v2026.05.21.326',
     date: '2026-05-21',
     title: 'Report encoding fix, chart axis alignment, and release notes auto-show',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Fixed 233 corrupted Unicode characters (em-dashes, multiplication signs, degree signs) in report-engine.js',
@@ -1786,14 +1899,14 @@ var RELEASE_NOTES = [
         type: 'fix',
         text: 'Report chart Y-axis labels now correctly left-aligned from the SVG edge instead of indented',
       },
-      { type: 'new', text: 'Release Notes modal now auto-shows on first visit after a version update' },
+      { type: 'feature', text: 'Release Notes modal now auto-shows on first visit after a version update' },
     ],
   },
   {
-    version: 'v2026.05.21.304',
+    v: 'v2026.05.21.304',
     date: '2026-05-21',
     title: 'Fix chart Y-axis label alignment in Contract Projection and Financial reports',
-    features: [
+    items: [
       {
         type: 'fix',
         text: 'Report chart Y-axis labels now left-aligned (text-anchor="start", x=4) instead of right-indented in rptPageFinancial and rptPageContractProjection',
@@ -1801,11 +1914,11 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.21.303',
+    v: 'v2026.05.21.303',
     date: '2026-05-21',
     title: 'Release Notes, Savings Banner, Data Migrations',
-    features: [
-      { type: 'new', text: "Release Notes — What's New modal accessible from the sidebar on all pages" },
+    items: [
+      { type: 'feature', text: "Release Notes — What's New modal accessible from the sidebar on all pages" },
       {
         type: 'fix',
         text: 'Project banner Savings field now shows computed value from Energy Savings measures instead of always showing "—"',
@@ -1822,16 +1935,16 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.21.302',
+    v: 'v2026.05.21.302',
     date: '2026-05-21',
     title: 'Equipment Matrix WebCTRL Format Support',
-    features: [
+    items: [
       {
-        type: 'new',
+        type: 'feature',
         text: 'Equipment Matrix now imports WebCTRL CSV point-list exports (Location / Control Program format)',
       },
       {
-        type: 'new',
+        type: 'feature',
         text: 'No-project preview mode — import a CSV without selecting a project to preview results before saving',
       },
       { type: 'fix', text: 'Zero-row import now shows a clear warning toast instead of silently saving empty data' },
@@ -1842,12 +1955,12 @@ var RELEASE_NOTES = [
     ],
   },
   {
-    version: 'v2026.05.21.300',
+    v: 'v2026.05.21.300',
     date: '2026-05-21',
     title: 'Equipment Matrix Expansion + Scorecard Fix',
-    features: [
+    items: [
       {
-        type: 'new',
+        type: 'feature',
         text: 'JOCO equipment matrix expanded from 19 summary rows to 1,030 individual equipment rows using real program names from audit files',
       },
       {
@@ -1856,136 +1969,209 @@ var RELEASE_NOTES = [
       },
       { type: 'fix', text: 'Project tab pane now restores to the previously active tab when reopening a project' },
       {
-        type: 'new',
+        type: 'feature',
         text: 'Equipment Matrix phases 4-5: full 45-column table with filtering, sorting, cell editing, CSV export, and add-row',
       },
     ],
   },
   {
-    version: 'v2026.05.20.299',
+    v: 'v2026.05.20.299',
     date: '2026-05-20',
     title: 'Energy Savings Matrix Improvements',
-    features: [
+    items: [
       {
-        type: 'new',
+        type: 'feature',
         text: 'Per-measure rate editing with expandable detail row — edit kWh/kW/gas rates per measure, reset to building defaults',
       },
-      { type: 'new', text: 'Project Dashboard tab added as default landing tab with savings summary and calendar' },
-      { type: 'new', text: 'District Calendar replaced with upload/parse/edit flow — paste text or upload PDF' },
+      { type: 'feature', text: 'Project Dashboard tab added as default landing tab with savings summary and calendar' },
+      { type: 'feature', text: 'District Calendar replaced with upload/parse/edit flow — paste text or upload PDF' },
       { type: 'fix', text: 'Bill line items validation tolerance held at $0.10 — fixes false sum-mismatch warnings' },
-      { type: 'new', text: 'Duplicate bill detection modal now has per-bill overwrite + merge action buttons' },
+      { type: 'feature', text: 'Duplicate bill detection modal now has per-bill overwrite + merge action buttons' },
     ],
   },
   {
-    version: 'v2026.05.05.40',
+    v: 'v2026.05.05.40',
     date: '2026-05-05',
     title: 'Solar Calc PDR Compliance + Electric Bill Line Items',
-    features: [
-      { type: 'new', text: 'Solar Calc rewritten to match Excel PDR cell-for-cell across 8 sections (A-H)' },
-      { type: 'new', text: 'Net Metering and Behind the Meter profiles shown separately (Sections F and G)' },
-      { type: 'new', text: 'Solar Calc now uses live auto-calc (Excel-style) — no Calculate button needed' },
+    items: [
+      { type: 'feature', text: 'Solar Calc rewritten to match Excel PDR cell-for-cell across 8 sections (A-H)' },
+      { type: 'feature', text: 'Net Metering and Behind the Meter profiles shown separately (Sections F and G)' },
+      { type: 'feature', text: 'Solar Calc now uses live auto-calc (Excel-style) — no Calculate button needed' },
       {
-        type: 'new',
+        type: 'feature',
         text: 'Electric bill modal expanded with 15 new line-item fields (on-peak/off-peak, riders, franchise fee, solar credit)',
       },
-      { type: 'new', text: 'HVAC Load Estimation rebuilt per-building with Reverse Utility Analysis method' },
-      { type: 'new', text: 'Energy Savings unified — project tab and sidebar page share the same rendering function' },
+      { type: 'feature', text: 'HVAC Load Estimation rebuilt per-building with Reverse Utility Analysis method' },
+      {
+        type: 'feature',
+        text: 'Energy Savings unified — project tab and sidebar page share the same rendering function',
+      },
     ],
   },
   {
-    version: 'v2026.04.14',
+    v: 'v2026.04.14',
     date: '2026-04-14',
     title: 'PDF Extraction Engine Overhaul',
-    features: [
-      { type: 'new', text: 'Multi-bill PDF support — import a single PDF with 12+ monthly bills at once' },
+    items: [
+      { type: 'feature', text: 'Multi-bill PDF support — import a single PDF with 12+ monthly bills at once' },
       { type: 'fix', text: 'Evergy charge extraction regex fixed for multiline end-of-line patterns' },
       {
         type: 'fix',
         text: 'PDF page range anchored to billing period cover page — no more 5-page ranges for 3-page bills',
       },
       { type: 'fix', text: 'Sub-dollar sum mismatch auto-correction added to reduce false validation warnings' },
-      { type: 'new', text: 'Audit log added for bill changes — append-only, max 500 entries' },
+      { type: 'feature', text: 'Audit log added for bill changes — append-only, max 500 entries' },
     ],
   },
   {
-    version: 'v2026.03.27',
+    v: 'v2026.03.27',
     date: '2026-03-27',
     title: 'Solar Calc, Calc Templates, Energy Graphics',
-    features: [
-      { type: 'new', text: 'Solar Calculator added — array sizing, tiered Evergy rate math, payback years' },
-      { type: 'new', text: 'Calc Templates launcher added to Energy Savings view' },
-      { type: 'new', text: 'Energy Graphics tab added to project detail — monthly kWh/gas charts and EUI comparison' },
-      { type: 'new', text: 'Number input spinners removed across all 90+ inputs — clean keyboard entry' },
-      { type: 'new', text: 'HVAC Load Estimation tab added to project detail' },
+    items: [
+      { type: 'feature', text: 'Solar Calculator added — array sizing, tiered Evergy rate math, payback years' },
+      { type: 'feature', text: 'Calc Templates launcher added to Energy Savings view' },
+      {
+        type: 'feature',
+        text: 'Energy Graphics tab added to project detail — monthly kWh/gas charts and EUI comparison',
+      },
+      { type: 'feature', text: 'Number input spinners removed across all 90+ inputs — clean keyboard entry' },
+      { type: 'feature', text: 'HVAC Load Estimation tab added to project detail' },
     ],
   },
   {
-    version: 'v2026.03.16',
+    v: 'v2026.03.16',
     date: '2026-03-16',
     title: 'Hybrid PDF Extraction Engine',
-    features: [
+    items: [
       {
-        type: 'new',
+        type: 'feature',
         text: 'Rule-based PDF extraction added for Evergy and Spire/Laclede Gas — eliminates AI API cost for known formats',
       },
-      { type: 'new', text: 'Tesseract.js OCR fallback for scanned/image PDFs' },
-      { type: 'new', text: 'Confidence scoring — counts non-null extracted fields to measure extraction quality' },
+      { type: 'feature', text: 'Tesseract.js OCR fallback for scanned/image PDFs' },
+      { type: 'feature', text: 'Confidence scoring — counts non-null extracted fields to measure extraction quality' },
       { type: 'change', text: 'AI removed from utility bill extraction — 100% local and offline-capable' },
     ],
   },
 ];
 
-function buildReleaseNotesModal() {
-  if (document.getElementById('rnOverlay')) return; // already built
-  var overlay = document.createElement('div');
-  overlay.className = 'rn-overlay';
-  overlay.id = 'rnOverlay';
-  overlay.onclick = function (e) {
-    if (e.target === overlay) closeReleaseNotes();
+/* ── buildVersionBlock: builds one version entry as a DOM node (no innerHTML with data) ── */
+function buildVersionBlock(rn, isCurrent) {
+  var typeMap = {
+    feature: { symbol: '+', label: 'New Feature', cls: 'rn-feat' },
+    fix: { symbol: '✓', label: 'Bug Fix', cls: 'rn-fix' },
+    change: { symbol: '•', label: 'Change', cls: 'rn-chg' },
+    // legacy aliases from older entries
+    new: { symbol: '+', label: 'New Feature', cls: 'rn-feat' },
   };
 
-  var entriesHTML = RELEASE_NOTES.map(function (entry, idx) {
-    var isLatest = idx === 0;
-    var featuresHTML = entry.features
-      .map(function (f) {
-        var cls = f.type === 'fix' ? ' rn-fix' : f.type === 'change' ? ' rn-change' : '';
-        return '<li class="' + cls + '">' + f.text + '</li>';
-      })
-      .join('');
+  var block = document.createElement('div');
+  block.className = 'rn-version-block ' + (isCurrent ? 'rn-version-current' : 'rn-version-past');
 
-    return (
-      '<div class="rn-entry">' +
-      '<div class="rn-version-row">' +
-      '<span class="rn-version-badge">' +
-      entry.version +
-      '</span>' +
-      '<span class="rn-date">' +
-      entry.date +
-      '</span>' +
-      (isLatest ? '<span class="rn-latest-badge">Latest</span>' : '') +
+  var header = document.createElement('div');
+  header.className = 'rn-version-header';
+
+  var vNum = document.createElement('span');
+  vNum.className = 'rn-version-num';
+  vNum.textContent = rn.v || rn.version || '';
+
+  var vDate = document.createElement('span');
+  vDate.className = 'rn-version-date';
+  vDate.textContent = rn.date || '';
+
+  header.appendChild(vNum);
+  header.appendChild(vDate);
+  block.appendChild(header);
+
+  var ul = document.createElement('ul');
+  ul.className = 'rn-items';
+
+  var itemList = rn.items || rn.features || [];
+  itemList.forEach(function (item) {
+    var t = typeMap[item.type] || typeMap.change;
+
+    var li = document.createElement('li');
+    li.className = 'rn-item ' + t.cls;
+
+    var sym = document.createElement('span');
+    sym.className = 'rn-item-symbol';
+    sym.title = t.label;
+    sym.textContent = t.symbol;
+
+    var txt = document.createElement('span');
+    txt.className = 'rn-item-text';
+    txt.textContent = item.text || '';
+
+    li.appendChild(sym);
+    li.appendChild(txt);
+    ul.appendChild(li);
+  });
+
+  block.appendChild(ul);
+  return block;
+}
+
+function buildReleaseNotesModal() {
+  if (document.getElementById('rnOverlay')) return; // already built
+
+  // Step 1: Static structural skeleton only — no data values in this HTML string.
+  document.body.insertAdjacentHTML(
+    'beforeend',
+    '<div class="rn-overlay" id="rnOverlay">' +
+      '<div class="rn-modal">' +
+      '<div class="rn-header">' +
+      '<div class="rn-title-row">' +
+      '<span class="rn-title"></span>' +
+      '<button class="rn-close" id="rnCloseBtn">&#10005;</button>' +
       '</div>' +
-      '<div class="rn-entry-title">' +
-      entry.title +
+      '<div class="rn-legend">' +
+      '<span class="rn-legend-item rn-feat"></span>' +
+      '<span class="rn-legend-item rn-fix"></span>' +
+      '<span class="rn-legend-item rn-chg"></span>' +
       '</div>' +
-      '<ul class="rn-features">' +
-      featuresHTML +
-      '</ul>' +
-      '</div>'
-    );
-  }).join('');
+      '</div>' +
+      '<div class="rn-current" id="rnCurrent"></div>' +
+      '<div class="rn-history" id="rnHistory">' +
+      '<div class="rn-history-label"></div>' +
+      '</div>' +
+      '<div class="rn-footer">' +
+      '<button class="rn-dismiss-btn" id="rnDismissBtn"></button>' +
+      '</div>' +
+      '</div>' +
+      '</div>',
+  );
 
-  overlay.innerHTML =
-    '<div class="rn-modal">' +
-    '<div class="rn-hdr">' +
-    '<span class="rn-title">&#128196; What\'s New</span>' +
-    '<button class="rn-x" onclick="closeReleaseNotes()">&#10005;</button>' +
-    '</div>' +
-    '<div class="rn-body">' +
-    entriesHTML +
-    '</div>' +
-    '</div>';
+  // Step 2: Populate static text via textContent (never parsed as HTML).
+  var overlay = document.getElementById('rnOverlay');
+  overlay.querySelector('.rn-title').textContent = "📄 What's New";
+  overlay.querySelector('.rn-legend .rn-feat').textContent = '+ New Feature';
+  overlay.querySelector('.rn-legend .rn-fix').textContent = '✓ Bug Fix';
+  overlay.querySelector('.rn-legend .rn-chg').textContent = '• Change';
+  overlay.querySelector('.rn-history-label').textContent = 'Previous Versions';
+  overlay.querySelector('#rnDismissBtn').textContent = 'Got it';
 
-  document.body.appendChild(overlay);
+  // Step 3: Wire event handlers — no inline onclick attributes.
+  overlay.addEventListener('click', function (e) {
+    if (e.target === overlay) closeReleaseNotes(false);
+  });
+  document.getElementById('rnCloseBtn').addEventListener('click', function () {
+    closeReleaseNotes(false);
+  });
+  document.getElementById('rnDismissBtn').addEventListener('click', function () {
+    closeReleaseNotes(true);
+  });
+
+  // Step 4: Populate version data using DOM construction — no innerHTML with data.
+  var currentEl = document.getElementById('rnCurrent');
+  var historyEl = document.getElementById('rnHistory');
+  var labelEl = historyEl.querySelector('.rn-history-label');
+
+  if (RELEASE_NOTES[0]) {
+    currentEl.appendChild(buildVersionBlock(RELEASE_NOTES[0], true));
+  }
+  for (var i = 1; i < RELEASE_NOTES.length; i++) {
+    // Append in order — RELEASE_NOTES is already sorted descending (newest first)
+    historyEl.appendChild(buildVersionBlock(RELEASE_NOTES[i], false));
+  }
 }
 
 function openReleaseNotes() {
@@ -1993,12 +2179,41 @@ function openReleaseNotes() {
   var overlay = document.getElementById('rnOverlay');
   if (overlay) overlay.classList.add('open');
 }
-function closeReleaseNotes() {
+
+/* markSeen: true = "Got it" button clicked, update ch_seen_version.
+   false = X or backdrop click, do not update (modal will re-show next time if on-update mode). */
+function closeReleaseNotes(markSeen) {
+  if (markSeen && RELEASE_NOTES[0]) {
+    localStorage.setItem('ch_seen_version', RELEASE_NOTES[0].v || RELEASE_NOTES[0].version || '');
+  }
   var overlay = document.getElementById('rnOverlay');
   if (overlay) overlay.classList.remove('open');
 }
 
-/* Expose for backward compat */
+/* openReleaseNotesIfNeeded: respects rnShowMode preference.
+   Called on DOMContentLoaded (and delegated from site-ui.js initSiteUI). */
+function openReleaseNotesIfNeeded() {
+  var settings = {};
+  try {
+    settings = JSON.parse(localStorage.getItem('ch_settings') || '{}');
+  } catch (e) {}
+  var mode = settings.rnShowMode || 'on-update';
+  if (mode === 'never') return;
+  if (mode === 'always') {
+    if (!document.getElementById('rnOverlay')) buildReleaseNotesModal();
+    openReleaseNotes();
+    return;
+  }
+  // mode === 'on-update' (default)
+  var seen = localStorage.getItem('ch_seen_version');
+  var latest = RELEASE_NOTES[0] && (RELEASE_NOTES[0].v || RELEASE_NOTES[0].version);
+  if (seen !== latest) {
+    if (!document.getElementById('rnOverlay')) buildReleaseNotesModal();
+    openReleaseNotes();
+  }
+}
+
+/* Expose for backward compat and cross-file delegation */
 window.__siteUI = {
   openSettings: siteOpenSettings,
   closeSettings: siteCloseSettings,
@@ -2009,6 +2224,8 @@ window.__siteUI = {
   applyAccentColor: siteApplyAccent,
   openReleaseNotes: openReleaseNotes,
   closeReleaseNotes: closeReleaseNotes,
+  openReleaseNotesIfNeeded: openReleaseNotesIfNeeded,
+  RELEASE_NOTES: RELEASE_NOTES,
 };
 
 /* ── ESC KEY — closes any open modal-bg ── */

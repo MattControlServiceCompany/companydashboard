@@ -10231,10 +10231,11 @@ function collectASHRAE36Data(projId) {
     var totalSeqMatched = 0;
     var bldgGaps = {};
 
+    var _reportMaps = typeof emLoadCustomMappings === 'function' ? emLoadCustomMappings(projId) : [];
     auditableRows.forEach(function (row) {
       if (typeof emComputeCompliance !== 'function') return;
       var flags = typeof emLoadEquipConfigFlags === 'function' ? emLoadEquipConfigFlags(projId, row.id) : {};
-      var result = emComputeCompliance(row, flags);
+      var result = emComputeCompliance(row, flags, _reportMaps);
 
       // Accumulate physical point coverage totals
       totalPointsRequired += result.totalRequired;

@@ -379,7 +379,9 @@ function validateBillData(extracted, utilityName) {
 }
 
 // Statistical outlier detection — compare against historical bills for same account/meter
-function detectStatisticalOutliers(extracted) {
+// historicalCache (optional): pre-built { [normalizedAccountNumber]: bill[] } map from _postExtractionVerify.
+// When provided, skips the redundant project walk; falls back to walking projects if absent.
+function detectStatisticalOutliers(extracted, historicalCache) {
   const warnings = [];
   if (!extracted || !extracted.AccountNumber) return warnings;
   const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
@@ -387,16 +389,26 @@ function detectStatisticalOutliers(extracted) {
 
   const extComm = (extracted.Commodity || '').toLowerCase();
   const historicalBills = [];
-  for (const proj of typeof projects !== 'undefined' ? projects : []) {
-    const udProj = getUDProj(proj.id);
-    for (const bldg of udProj.buildings || []) {
-      for (const m of bldg.meters || []) {
-        const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
-        if (acct && ma && acct === ma) {
-          const mc = (m.commodity || '').toLowerCase();
-          if (!extComm || !mc || extComm === mc) {
-            for (const b of m.bills || []) {
-              historicalBills.push(b);
+
+  if (historicalCache && historicalCache[acct]) {
+    // Use pre-built cache: filter by commodity match, same as the original walk
+    for (const b of historicalCache[acct]) {
+      const bc = (b.commodity || b.Commodity || '').toLowerCase();
+      if (!extComm || !bc || extComm === bc) historicalBills.push(b);
+    }
+  } else {
+    // Fallback: original project walk (keeps backward compatibility)
+    for (const proj of typeof projects !== 'undefined' ? projects : []) {
+      const udProj = getUDProj(proj.id);
+      for (const bldg of udProj.buildings || []) {
+        for (const m of bldg.meters || []) {
+          const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
+          if (acct && ma && acct === ma) {
+            const mc = (m.commodity || '').toLowerCase();
+            if (!extComm || !mc || extComm === mc) {
+              for (const b of m.bills || []) {
+                historicalBills.push(b);
+              }
             }
           }
         }
@@ -919,7 +931,7 @@ function _analyzeMeterBills(bills, m) {
 
 // ── POST-EXTRACTION VERIFICATION ──
 // Uses historical meter data + logical rules to fix extraction errors
-function _postExtractionVerify(bills, utilityName, rawText) {
+async function _postExtractionVerify(bills, utilityName, rawText) {
   try {
     if (!bills.length) return bills;
     const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
@@ -1108,9 +1120,34 @@ function _postExtractionVerify(bills, utilityName, rawText) {
 
     const alwaysFields = ALWAYS_PRESENT_FIELDS[utilityName] || ALWAYS_PRESENT_FIELDS._default;
 
+    // Build account-number → historical bills map ONCE before the loop.
+    // Replaces per-bill O(n) walk with a single O(stored) pass + O(1) lookups.
+    const _historicalCache = {};
+    (function _buildHistoricalCache() {
+      for (const proj of typeof projects !== 'undefined' ? projects : []) {
+        const udProj = getUDProj(proj.id);
+        for (const bldg of udProj.buildings || []) {
+          for (const m of bldg.meters || []) {
+            const acct = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
+            if (!acct) continue;
+            if (!_historicalCache[acct]) _historicalCache[acct] = [];
+            for (const b of m.bills || []) _historicalCache[acct].push(b);
+          }
+        }
+      }
+    })();
+
+    const YIELD_EVERY = 10; // yield to event loop every N bills so cancel events and UI updates can process
     for (let i = 0; i < bills.length; i++) {
       const b = bills[i];
-      const hist = getHistorical(b.AccountNumber);
+
+      // Yield every YIELD_EVERY bills so cancel-button clicks and progress updates can process
+      if (i > 0 && i % YIELD_EVERY === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+
+      const _acctKey = (b.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
+      const hist = _historicalCache[_acctKey] || [];
 
       // 1. Auto-recover missing fields using raw text structure + historical data
       //    These fields are 100% present on every bill — if null, it's an OCR garble, not a missing field.
@@ -6726,7 +6763,7 @@ async function processPDF(file) {
           );
           statusMsg('Verifying extraction against historical data...');
           try {
-            finalBills = _postExtractionVerify(finalBills, rule.name, text);
+            finalBills = await _postExtractionVerify(finalBills, rule.name, text);
           } catch (pev_err) {
             console.warn('[processPDF] _postExtractionVerify failed, continuing without verification:', pev_err);
           }

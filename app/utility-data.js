@@ -6919,6 +6919,22 @@ function renderMeterDataPane(pane, m, bills, incl) {
               <div style="position:relative;height:300px"><canvas id="mddCostChart"></canvas></div>
             </div>
 
+            ${isElec ? `
+            <!-- Load Factor Trend Chart -->
+            <div style="margin-top:18px;background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:16px 18px">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#8ab0d0;margin-bottom:4px;text-align:center">Monthly Load Factor %</div>
+              <div style="font-size:10px;color:rgba(180,200,220,0.6);text-align:center;margin-bottom:12px">kWh ÷ (Actual kW × 24 × Norm Days)</div>
+              <div style="position:relative;height:260px"><canvas id="mddLoadFactorChart"></canvas></div>
+            </div>
+
+            <!-- Minimum Hours Chart -->
+            <div style="margin-top:18px;background:#0d1525;border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:16px 18px">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#8ab0d0;margin-bottom:4px;text-align:center">Monthly Minimum Hours</div>
+              <div style="font-size:10px;color:rgba(180,200,220,0.6);text-align:center;margin-bottom:12px">kWh ÷ Actual kW — hours demand would need to run at peak to deliver actual kWh</div>
+              <div style="position:relative;height:260px"><canvas id="mddMinHoursChart"></canvas></div>
+            </div>
+            ` : ''}
+
           </div>`;
 
   // ── Draw chart ──
@@ -7025,6 +7041,152 @@ function renderMeterDataPane(pane, m, bills, incl) {
       },
     });
   });
+
+  // ── Draw Load Factor chart (electric only) ──
+  if (isElec) {
+    requestAnimationFrame(() => {
+      const lfCanvas = document.getElementById('mddLoadFactorChart');
+      if (!lfCanvas) return;
+      if (_maCharts['mddLoadFactorChart']) {
+        _maCharts['mddLoadFactorChart'].destroy();
+      }
+      const MONTHS_S = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const lfLabels = moList.map((mo) => MONTHS_S[mo]);
+      const lfData = moList.map((mo) => {
+        const e = elecByMo[mo];
+        if (!e || !e.demandKW || e.demandKW <= 0 || !e.normDays || e.normDays <= 0 || !e.kwh || e.kwh <= 0)
+          return null;
+        return +((e.kwh / (e.demandKW * 24 * e.normDays)) * 100).toFixed(2);
+      });
+
+      _maCharts['mddLoadFactorChart'] = new Chart(lfCanvas, {
+        type: 'bar',
+        data: {
+          labels: lfLabels,
+          datasets: [
+            {
+              label: 'Load Factor %',
+              data: lfData,
+              backgroundColor: 'rgba(147,100,255,0.75)',
+              borderColor: 'rgba(147,100,255,1)',
+              borderWidth: 1,
+              borderRadius: 3,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: {
+              display: false,
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) =>
+                  ctx.parsed.y != null ? ' Load Factor: ' + ctx.parsed.y.toFixed(2) + '%' : null,
+              },
+            },
+          },
+          scales: {
+            x: {
+              ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 10 } },
+              grid: { color: 'rgba(255,255,255,0.10)' },
+            },
+            y: {
+              beginAtZero: true,
+              max: 100,
+              ticks: {
+                color: 'rgba(180,200,220,0.8)',
+                font: { size: 10 },
+                callback: (v) => v + '%',
+              },
+              grid: { color: 'rgba(255,255,255,0.12)' },
+              title: {
+                display: true,
+                text: 'Load Factor %',
+                color: 'rgba(160,185,210,0.8)',
+                font: { size: 11 },
+              },
+            },
+          },
+        },
+      });
+    });
+  }
+
+  // ── Draw Minimum Hours chart (electric only) ──
+  if (isElec) {
+    requestAnimationFrame(() => {
+      const mhCanvas = document.getElementById('mddMinHoursChart');
+      if (!mhCanvas) return;
+      if (_maCharts['mddMinHoursChart']) {
+        _maCharts['mddMinHoursChart'].destroy();
+      }
+      const MONTHS_S = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const mhLabels = moList.map((mo) => MONTHS_S[mo]);
+      const mhData = moList.map((mo) => {
+        const e = elecByMo[mo];
+        if (!e || !e.demandKW || e.demandKW <= 0 || !e.kwh || e.kwh <= 0) return null;
+        return +(e.kwh / e.demandKW).toFixed(2);
+      });
+
+      _maCharts['mddMinHoursChart'] = new Chart(mhCanvas, {
+        type: 'bar',
+        data: {
+          labels: mhLabels,
+          datasets: [
+            {
+              label: 'Min Hours',
+              data: mhData,
+              backgroundColor: 'rgba(100,220,160,0.75)',
+              borderColor: 'rgba(100,220,160,1)',
+              borderWidth: 1,
+              borderRadius: 3,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: {
+              display: false,
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) =>
+                  ctx.parsed.y != null ? ' Min Hours: ' + ctx.parsed.y.toFixed(2) + ' hrs' : null,
+              },
+            },
+          },
+          scales: {
+            x: {
+              ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 10 } },
+              grid: { color: 'rgba(255,255,255,0.10)' },
+            },
+            y: {
+              beginAtZero: true,
+              ticks: {
+                color: 'rgba(180,200,220,0.8)',
+                font: { size: 10 },
+                callback: (v) => v + ' hrs',
+              },
+              grid: { color: 'rgba(255,255,255,0.12)' },
+              title: {
+                display: true,
+                text: 'Hours',
+                color: 'rgba(160,185,210,0.8)',
+                font: { size: 11 },
+              },
+            },
+          },
+        },
+      });
+    });
+  }
 }
 
 /* ══════════════════════════════════════════════
@@ -9011,6 +9173,7 @@ function renderPerfPane(pane, m, bills, incl) {
     basisNote_p +
     weatherModeBar +
     yearPills +
+    chartSection +
     '<div style="margin-bottom:14px">' +
     '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:4px">Post-Baseline Monthly vs Baseline</div>' +
     '<div style="font-size:11px;color:var(--text3);margin-bottom:8px">' +
@@ -9026,7 +9189,6 @@ function renderPerfPane(pane, m, bills, incl) {
     '</div>' +
     anomalySection +
     perfControlBar +
-    chartSection +
     demandSection;
 
   if (_perfChartVis) {

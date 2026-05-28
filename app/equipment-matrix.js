@@ -97,6 +97,7 @@ function emToggleEditMode(btn) {
    point name columns). Updates the toggle button label/style and re-renders
    the table. Also shows/hides the appropriate column-toggle controls.    */
 function emToggleViewMode() {
+  _emDrillBuilding = null;
   _emViewMode = _emViewMode === 'audit' ? 'raw' : 'audit';
   var btn = document.getElementById('em-view-mode-btn');
   if (btn) {
@@ -121,6 +122,7 @@ function emToggleViewMode() {
    Activates the Summary view mode. Separate button (not part of the
    Audit/Raw toggle cycle) so neither existing toggle is disrupted.       */
 function emSetSummaryView() {
+  _emDrillBuilding = null;
   if (_emViewMode === 'summary') {
     // Clicking Summary again returns to Audit View
     _emViewMode = 'audit';
@@ -129,6 +131,25 @@ function emSetSummaryView() {
   }
   emSyncViewModeControls();
   var data = emLoadMatrix(window._emActivePid);
+  emRenderTable(data, _emFilters);
+}
+
+/* ── emDrillBuilding ────────────────────────────────────────────────────────
+   Enters per-building detail view within the Summary view.
+   Sets _emDrillBuilding to the building name and re-renders.             */
+function emDrillBuilding(pid, buildingName) {
+  _emDrillBuilding = buildingName;
+  _emCurrentPage = 0;
+  var data = emLoadMatrix(pid);
+  emRenderTable(data, _emFilters);
+}
+
+/* ── emExitDrillBuilding ────────────────────────────────────────────────────
+   Exits per-building detail view and returns to the summary table.       */
+function emExitDrillBuilding(pid) {
+  _emDrillBuilding = null;
+  _emCurrentPage = 0;
+  var data = emLoadMatrix(pid);
   emRenderTable(data, _emFilters);
 }
 
@@ -958,6 +979,7 @@ var _emImportMode = 'merge'; // 'merge' = add to existing data; 'replace' = clea
 var _emSortCol = null;
 var _emSortDir = 1;
 var _emFilters = { building: '', type: '', search: '' };
+var _emDrillBuilding = null; // null = summary table; string = per-building detail view
 var _emHiddenGroups = {};
 var EM_PAGE_SIZE = 100;
 var _emCurrentPage = 0;
@@ -1673,12 +1695,13 @@ function emComputeAuditStats(rows) {
   var totalPts = 0;
   var totalCoverage = 0;
   var covCount = 0;
+  var _auditStatsMaps = emLoadCustomMappings(window._emActivePid || '');
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     var pts = r.points || {};
     totalPts += Object.keys(pts).length;
     if (r.category && EM_POINT_CATEGORIES[r.category]) {
-      var compliance = emComputeCompliance(r, {});
+      var compliance = emComputeCompliance(r, {}, _auditStatsMaps);
       totalCoverage += compliance.coveragePct;
       covCount++;
     }
@@ -1690,7 +1713,7 @@ function emComputeAuditStats(rows) {
   for (var si = 0; si < rows.length; si++) {
     var sr = rows[si];
     if (!sr.category || !EM_POINT_CATEGORIES[sr.category]) continue;
-    var srCompliance = emComputeCompliance(sr, {});
+    var srCompliance = emComputeCompliance(sr, {}, _auditStatsMaps);
     var srReadiness = emComputeSequenceReadiness(sr, srCompliance);
     for (var sk in srReadiness) {
       if (!srReadiness.hasOwnProperty(sk)) continue;
@@ -1799,6 +1822,77 @@ function emGetCellValByDef(row, def, edits) {
     return (row.points && row.points[def.key]) || '';
   }
   return row[def.key] || '';
+}
+
+/* ── emComputeFooterAvg ─────────────────────────────────────────────────────
+   Computes per-column averages for a set of rows.
+   Only processes defs where def.type==='num' || def.isLive || def.isDynPoint.
+   Returns: { [def.key]: { sum, count, avg } }
+   Columns with no numeric data return { sum:0, count:0, avg:NaN }.      */
+function emComputeFooterAvg(rows, defs) {
+  var result = {};
+  for (var di = 0; di < defs.length; di++) {
+    var def = defs[di];
+    if (def.type !== 'num' && !def.isLive && !def.isDynPoint) continue;
+    var sum = 0,
+      count = 0;
+    for (var ri = 0; ri < rows.length; ri++) {
+      var raw = emGetCellValByDef(rows[ri], def, {});
+      if (raw === null || raw === undefined || raw === '') continue;
+      var n = parseFloat(raw);
+      if (isNaN(n)) continue;
+      sum += n;
+      count++;
+    }
+    result[def.key] = { sum: sum, count: count, avg: count > 0 ? sum / count : NaN };
+  }
+  return result;
+}
+
+/* ── buildAvgFooterRow ──────────────────────────────────────────────────────
+   Builds a <tr> HTML string for a footer average row.
+   avgMap: output of emComputeFooterAvg.
+   defs: column defs array.
+   label: text for the first cell (building column).
+   isBold: true → bold label style (Total Average), false → italic (Page Average).
+   hasEditCol: true → prepend an extra empty <td> for the edit/delete column.  */
+function buildAvgFooterRow(avgMap, defs, label, isBold, hasEditCol) {
+  var rowStyle = 'background:var(--s1);';
+  var tdBase =
+    'padding:8px 12px;vertical-align:middle;border-top:2px solid var(--border);font-size:13px;background:var(--s1);';
+  var html = '<tr style="' + rowStyle + '">';
+  if (hasEditCol) {
+    html += '<td style="' + tdBase + '"></td>';
+  }
+  for (var di = 0; di < defs.length; di++) {
+    var def = defs[di];
+    // First column (building) gets the label text
+    if (di === 0) {
+      var labelStyle =
+        tdBase +
+        'position:sticky;left:0;z-index:1;' +
+        (isBold ? 'font-weight:700;color:var(--text)' : 'font-style:italic;color:var(--text2)');
+      html += '<td style="' + labelStyle + '">' + label + '</td>';
+      continue;
+    }
+    // Numeric/live columns get the average value
+    if (avgMap[def.key] && avgMap[def.key].count > 0) {
+      var avg = avgMap[def.key].avg;
+      var formatted = (Math.round(avg * 10) / 10).toFixed(1);
+      html +=
+        '<td style="' +
+        tdBase +
+        'text-align:right;font-weight:' +
+        (isBold ? '700' : '500') +
+        '">' +
+        formatted +
+        '</td>';
+    } else {
+      html += '<td style="' + tdBase + 'text-align:center;color:var(--text3)">&#8212;</td>';
+    }
+  }
+  html += '</tr>';
+  return html;
 }
 
 function emRenderTable(data, filters) {
@@ -2090,6 +2184,15 @@ function emRenderTable(data, filters) {
   // Update stats bar for raw view
   emUpdateStatsPillsForRaw(rows, data.totalBASPoints);
 
+  // ── Footer average rows ──
+  var pageAvg = emComputeFooterAvg(pageRows, defs);
+  var totalAvg = emComputeFooterAvg(filtered, defs);
+  var tfootHtml =
+    '<tfoot>' +
+    buildAvgFooterRow(pageAvg, defs, 'Page Average', false, !!_emEditMode) +
+    buildAvgFooterRow(totalAvg, defs, 'Total Average', true, !!_emEditMode) +
+    '</tfoot>';
+
   wrap.innerHTML =
     '<table style="border-collapse:separate;border-spacing:0;table-layout:auto">' +
     '<thead><tr>' +
@@ -2098,6 +2201,7 @@ function emRenderTable(data, filters) {
     '<tbody>' +
     tbodyRows +
     '</tbody>' +
+    tfootHtml +
     '</table>';
 
   // Inject pagination bar after the scroll container (outside the scroll wrap)
@@ -2230,11 +2334,88 @@ function emComputeSummaryStats(rows) {
   return result;
 }
 
+/* ── emComputeBuildingZoneStats ─────────────────────────────────────────────
+   Aggregates zone air temp, heating setpoint, cooling setpoint, and
+   hot/ok/cold counts per building. Only processes VAV, FPB, and DD-VAV rows.
+   Returns: { [buildingName]: { zoneTemp, htgSp, coolSp, hot, ok, cold, totalZones } }
+   where zoneTemp/htgSp/coolSp are { sum, count, avg }.                  */
+function emComputeBuildingZoneStats(rows) {
+  var result = {};
+  var zoneCategories = { vav: true, fpb: true, ddvav: true };
+
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    if (!zoneCategories[row.category]) continue;
+
+    var bldg = row.building || '(No Building)';
+    if (!result[bldg]) {
+      result[bldg] = {
+        zoneTemp: { sum: 0, count: 0, avg: 0 },
+        htgSp: { sum: 0, count: 0, avg: 0 },
+        coolSp: { sum: 0, count: 0, avg: 0 },
+        hot: 0,
+        ok: 0,
+        cold: 0,
+        totalZones: 0,
+      };
+    }
+
+    var pts = row.points || {};
+    var bldgStats = result[bldg];
+    bldgStats.totalZones++;
+
+    var tempRaw = pts['zoneAirTempLive'];
+    var htgRaw = pts['zoneHtgSpLive'];
+    var coolRaw = pts['zoneCoolSpLive'];
+
+    var tempVal = tempRaw !== undefined && tempRaw !== '' ? parseFloat(tempRaw) : NaN;
+    var htgVal = htgRaw !== undefined && htgRaw !== '' ? parseFloat(htgRaw) : NaN;
+    var coolVal = coolRaw !== undefined && coolRaw !== '' ? parseFloat(coolRaw) : NaN;
+
+    if (!isNaN(tempVal)) {
+      bldgStats.zoneTemp.sum += tempVal;
+      bldgStats.zoneTemp.count += 1;
+    }
+    if (!isNaN(htgVal)) {
+      bldgStats.htgSp.sum += htgVal;
+      bldgStats.htgSp.count += 1;
+    }
+    if (!isNaN(coolVal)) {
+      bldgStats.coolSp.sum += coolVal;
+      bldgStats.coolSp.count += 1;
+    }
+
+    // Compute hot/ok/cold for this zone (only when we have temp and at least one setpoint)
+    if (!isNaN(tempVal) && (!isNaN(htgVal) || !isNaN(coolVal))) {
+      if (!isNaN(coolVal) && tempVal > coolVal) {
+        bldgStats.hot++;
+      } else if (!isNaN(htgVal) && tempVal < htgVal) {
+        bldgStats.cold++;
+      } else {
+        bldgStats.ok++;
+      }
+    }
+  }
+
+  // Compute averages
+  var bldgNames = Object.keys(result).sort();
+  var sorted = {};
+  for (var bi = 0; bi < bldgNames.length; bi++) {
+    var b = bldgNames[bi];
+    var s = result[b];
+    s.zoneTemp.avg = s.zoneTemp.count > 0 ? s.zoneTemp.sum / s.zoneTemp.count : NaN;
+    s.htgSp.avg = s.htgSp.count > 0 ? s.htgSp.sum / s.htgSp.count : NaN;
+    s.coolSp.avg = s.coolSp.count > 0 ? s.coolSp.sum / s.coolSp.count : NaN;
+    sorted[b] = s;
+  }
+  return sorted;
+}
+
 /* ── emRenderSummaryView ────────────────────────────────────────────────────
-   Renders a card-based aggregated view of equipment point data.
-   Grouped by building, then by equipment category. Each card shows stats
-   (avg, min, max, count) for all relevant EM_POINT_MAP metrics.
-   Replaces the table and pagination when _emViewMode === 'summary'.     */
+   Renders the Summary view. When _emDrillBuilding is set, delegates to
+   emRenderBuildingDetailView instead.
+   Otherwise renders a 5-column table: Building | Zone Air Temp |
+   Zone Htg Setpoint | Zone Clg Setpoint | Zones vs Setpoints.           */
 function emRenderSummaryView(data, filters) {
   emSyncViewModeControls();
 
@@ -2270,166 +2451,470 @@ function emRenderSummaryView(data, filters) {
     return;
   }
 
-  var stats = emComputeSummaryStats(filtered);
-  var bldgKeys = Object.keys(stats);
-
-  // Category display labels
-  var catLabels = {
-    ahu: 'AHU / RTU',
-    vav: 'VAV Boxes',
-    fpb: 'Fan Powered Boxes',
-    ddvav: 'Dual Duct VAV',
-    hwp: 'Hot Water Plant',
-    chwp: 'Chilled Water Plant',
-    ct: 'Cooling Tower',
-    lighting: 'Lighting',
-    other: 'Other',
-  };
-
-  // Category accent colors (reuse the group color palette)
-  var catColors = {
-    ahu: '#2980b9',
-    vav: '#27ae60',
-    fpb: '#16a085',
-    ddvav: '#8e44ad',
-    hwp: '#c0392b',
-    chwp: '#2471a3',
-    ct: '#1abc9c',
-    lighting: '#f39c12',
-    other: '#7f8c8d',
-  };
-
-  // Helper: format a float to at most 1 decimal place
-  function fmtNum(n) {
-    return Math.round(n * 10) / 10;
-  }
-
-  var html = '<div style="padding:16px;overflow:auto;height:100%;box-sizing:border-box">';
-
-  if (bldgKeys.length === 0) {
-    html +=
-      '<div style="padding:48px;text-align:center;font-size:13px;color:var(--text2)">No point data available for the current filter selection.</div>';
-    html += '</div>';
-    wrap.innerHTML = html;
+  // ── Drill-down routing ──
+  if (_emDrillBuilding !== null) {
+    emRenderBuildingDetailView(data, filters, _emDrillBuilding);
     return;
   }
 
-  for (var bi = 0; bi < bldgKeys.length; bi++) {
-    var bldg = bldgKeys[bi];
-    var bldgData = stats[bldg];
-    var catKeys = Object.keys(bldgData);
+  // ── Build zone stats from filtered rows (VAV + FPB + DD-VAV only) ──
+  var zoneStats = emComputeBuildingZoneStats(filtered);
+  var bldgNames = Object.keys(zoneStats); // already sorted alphabetically
 
-    // Skip buildings where no category has any metrics
-    var hasAnyMetrics = false;
-    for (var cj = 0; cj < catKeys.length; cj++) {
-      if (bldgData[catKeys[cj]].metrics.length > 0) {
-        hasAnyMetrics = true;
-        break;
-      }
+  // Also compute total-average stats from ALL rows (unfiltered)
+  var totalZoneStats = emComputeBuildingZoneStats(rows);
+
+  // Helper: format a numeric avg to 1 decimal + unit, or "—" if no data
+  function fmtAvg(statObj, unit) {
+    if (!statObj || statObj.count === 0 || isNaN(statObj.avg)) return '<span style="color:var(--text3)">&#8212;</span>';
+    return (Math.round(statObj.avg * 10) / 10).toFixed(1) + (unit || '');
+  }
+
+  // Helper: aggregate stats across all buildings in a stats map
+  function aggregateZoneStats(statsMap) {
+    var agg = {
+      zoneTemp: { sum: 0, count: 0, avg: 0 },
+      htgSp: { sum: 0, count: 0, avg: 0 },
+      coolSp: { sum: 0, count: 0, avg: 0 },
+      hot: 0,
+      ok: 0,
+      cold: 0,
+    };
+    var keys = Object.keys(statsMap);
+    for (var ki = 0; ki < keys.length; ki++) {
+      var s = statsMap[keys[ki]];
+      agg.zoneTemp.sum += s.zoneTemp.sum;
+      agg.zoneTemp.count += s.zoneTemp.count;
+      agg.htgSp.sum += s.htgSp.sum;
+      agg.htgSp.count += s.htgSp.count;
+      agg.coolSp.sum += s.coolSp.sum;
+      agg.coolSp.count += s.coolSp.count;
+      agg.hot += s.hot;
+      agg.ok += s.ok;
+      agg.cold += s.cold;
     }
-    if (!hasAnyMetrics) continue;
+    agg.zoneTemp.avg = agg.zoneTemp.count > 0 ? agg.zoneTemp.sum / agg.zoneTemp.count : NaN;
+    agg.htgSp.avg = agg.htgSp.count > 0 ? agg.htgSp.sum / agg.htgSp.count : NaN;
+    agg.coolSp.avg = agg.coolSp.count > 0 ? agg.coolSp.sum / agg.coolSp.count : NaN;
+    return agg;
+  }
 
-    // Building section header
-    html += '<div style="margin-bottom:20px">';
+  var pid = window._emActivePid || '';
+  var thStyle =
+    'padding:12px 16px;font-size:14px;font-weight:600;background:var(--s1);' +
+    'border-bottom:2px solid var(--border);color:var(--text2);white-space:nowrap;';
+  var thStyleCenter = thStyle + 'text-align:center;';
+  var thStyleLeft = thStyle + 'text-align:left;';
+
+  var html = '<div style="padding:24px;overflow:auto;height:100%;box-sizing:border-box">';
+  html +=
+    '<h2 style="font-size:20px;font-weight:600;margin:0 0 20px 0;color:var(--text)">Equipment Summary — Zone Comfort</h2>';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:15px">';
+  html += '<thead><tr>';
+  html += '<th style="' + thStyleLeft + '">Building</th>';
+  html += '<th style="' + thStyleCenter + '">Zone Air Temp</th>';
+  html += '<th style="' + thStyleCenter + '">Zone Htg Setpoint</th>';
+  html += '<th style="' + thStyleCenter + '">Zone Clg Setpoint</th>';
+  html += '<th style="' + thStyleCenter + '">Zones vs Setpoints</th>';
+  html += '</tr></thead>';
+  html += '<tbody>';
+
+  if (bldgNames.length === 0) {
     html +=
-      '<h3 style="font-size:13px;font-weight:600;color:var(--text);margin:0 0 10px 0;' +
-      'padding-bottom:6px;border-bottom:2px solid var(--border)">' +
-      emHtmlEsc(bldg) +
-      '</h3>';
+      '<tr><td colspan="5" style="padding:48px;text-align:center;font-size:14px;color:var(--text2)">' +
+      'No zone equipment (VAV/FPB/DD-VAV) found for the current filter selection.</td></tr>';
+  } else {
+    var tdStyle = 'padding:12px 16px;border-bottom:1px solid var(--border);vertical-align:middle;font-size:15px;';
+    var tdCenter = tdStyle + 'text-align:center;';
+    for (var bi = 0; bi < bldgNames.length; bi++) {
+      var bldg = bldgNames[bi];
+      var bs = zoneStats[bldg];
+      // Building name as hyperlink — use JSON.stringify to safely handle special chars
+      var bldgLink =
+        '<a href="#" onclick="emDrillBuilding(' +
+        JSON.stringify(pid) +
+        ',' +
+        JSON.stringify(bldg) +
+        ');return false;" ' +
+        'style="color:var(--accent);cursor:pointer;font-weight:600;font-size:15px;text-decoration:none">' +
+        emHtmlEsc(bldg) +
+        '</a>';
+      // Zones vs Setpoints cell
+      var vsCell =
+        '<span style="color:#c0392b;font-weight:500">' +
+        bs.hot +
+        ' hot</span> <span style="color:var(--text3)">|</span> ' +
+        '<span style="color:#27ae60;font-weight:500">' +
+        bs.ok +
+        ' ok</span> <span style="color:var(--text3)">|</span> ' +
+        '<span style="color:#2980b9;font-weight:500">' +
+        bs.cold +
+        ' cold</span>';
+      html += '<tr style="min-height:48px">';
+      html += '<td style="' + tdStyle + 'font-weight:600">' + bldgLink + '</td>';
+      html += '<td style="' + tdCenter + 'font-weight:600">' + fmtAvg(bs.zoneTemp, '°F') + '</td>';
+      html += '<td style="' + tdCenter + '">' + fmtAvg(bs.htgSp, '°F') + '</td>';
+      html += '<td style="' + tdCenter + '">' + fmtAvg(bs.coolSp, '°F') + '</td>';
+      html += '<td style="' + tdCenter + '">' + vsCell + '</td>';
+      html += '</tr>';
+    }
+  }
 
-    // Card grid for this building
-    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px">';
+  html += '</tbody>';
 
-    for (var ci = 0; ci < catKeys.length; ci++) {
-      var cat = catKeys[ci];
-      var catData = bldgData[cat];
-      if (catData.metrics.length === 0) continue;
+  // ── tfoot: Page Average + Total Average ──
+  var pageAgg = aggregateZoneStats(zoneStats); // filtered buildings
+  var totalAgg = aggregateZoneStats(totalZoneStats); // all rows
+  var tfootRowStyle = 'background:var(--s1);border-top:2px solid var(--border);min-height:44px;font-size:13px;';
+  var tfootTdBase = 'padding:10px 16px;vertical-align:middle;border-top:2px solid var(--border);';
+  var tfootTdCenter = tfootTdBase + 'text-align:center;';
 
-      var color = catColors[cat] || '#7f8c8d';
-      var catLabel = catLabels[cat] || cat.toUpperCase();
+  // Page Average row
+  var pageVsCell =
+    '<span style="color:#c0392b">' +
+    pageAgg.hot +
+    ' hot</span> <span style="color:var(--text3)">|</span> ' +
+    '<span style="color:#27ae60">' +
+    pageAgg.ok +
+    ' ok</span> <span style="color:var(--text3)">|</span> ' +
+    '<span style="color:#2980b9">' +
+    pageAgg.cold +
+    ' cold</span>';
+  html += '<tfoot>';
+  html += '<tr style="' + tfootRowStyle + '">';
+  html +=
+    '<td style="' +
+    tfootTdBase +
+    'font-style:italic;color:var(--text2)">Page Average (' +
+    bldgNames.length +
+    ' buildings)</td>';
+  html += '<td style="' + tfootTdCenter + '">' + fmtAvg(pageAgg.zoneTemp, '°F') + '</td>';
+  html += '<td style="' + tfootTdCenter + '">' + fmtAvg(pageAgg.htgSp, '°F') + '</td>';
+  html += '<td style="' + tfootTdCenter + '">' + fmtAvg(pageAgg.coolSp, '°F') + '</td>';
+  html += '<td style="' + tfootTdCenter + '">' + pageVsCell + '</td>';
+  html += '</tr>';
 
-      html +=
-        '<div style="background:var(--s2);border:1px solid var(--border);border-radius:var(--r,6px);' +
-        'padding:12px;border-top:3px solid ' +
-        color +
-        '">';
+  // Total Average row (all rows in project)
+  var totalBldgCount = Object.keys(totalZoneStats).length;
+  var totalVsCell =
+    '<span style="color:#c0392b">' +
+    totalAgg.hot +
+    ' hot</span> <span style="color:var(--text3)">|</span> ' +
+    '<span style="color:#27ae60">' +
+    totalAgg.ok +
+    ' ok</span> <span style="color:var(--text3)">|</span> ' +
+    '<span style="color:#2980b9">' +
+    totalAgg.cold +
+    ' cold</span>';
+  html += '<tr style="' + tfootRowStyle + '">';
+  html +=
+    '<td style="' +
+    tfootTdBase +
+    'font-weight:700;color:var(--text)">Total Average (' +
+    totalBldgCount +
+    ' buildings)</td>';
+  html += '<td style="' + tfootTdCenter + 'font-weight:600">' + fmtAvg(totalAgg.zoneTemp, '°F') + '</td>';
+  html += '<td style="' + tfootTdCenter + 'font-weight:600">' + fmtAvg(totalAgg.htgSp, '°F') + '</td>';
+  html += '<td style="' + tfootTdCenter + 'font-weight:600">' + fmtAvg(totalAgg.coolSp, '°F') + '</td>';
+  html += '<td style="' + tfootTdCenter + '">' + totalVsCell + '</td>';
+  html += '</tr>';
+  html += '</tfoot>';
 
-      // Card header
-      html += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">';
-      html += '<span style="font-size:12px;font-weight:600;color:var(--text)">' + emHtmlEsc(catLabel) + '</span>';
-      html +=
-        '<span style="font-size:10px;color:var(--text3)" title="Total equipment rows in this building for this type">' +
-        catData.equipCount +
-        ' units</span>';
-      html += '</div>';
+  html += '</table>';
+  html += '</div>'; // end outer padding div
+  wrap.innerHTML = html;
+}
 
-      // Metrics table
-      html += '<table style="width:100%;border-collapse:collapse;font-size:11px">';
-      html +=
-        '<thead><tr style="border-bottom:1px solid var(--border)">' +
-        '<th style="text-align:left;font-weight:500;color:var(--text3);padding:2px 4px 4px 0;white-space:nowrap">Metric</th>' +
-        '<th style="text-align:right;font-weight:500;color:var(--text3);padding:2px 0 4px 4px;white-space:nowrap" title="Count of units with data">N</th>' +
-        '<th style="text-align:right;font-weight:500;color:var(--text3);padding:2px 0 4px 4px;white-space:nowrap">Avg</th>' +
-        '<th style="text-align:right;font-weight:500;color:var(--text3);padding:2px 0 4px 4px;white-space:nowrap">Min</th>' +
-        '<th style="text-align:right;font-weight:500;color:var(--text3);padding:2px 0 4px 4px;white-space:nowrap">Max</th>' +
-        '</tr></thead>';
-      html += '<tbody>';
+/* ── emRenderBuildingDetailView ─────────────────────────────────────────────
+   Renders a per-building detail view when the user clicks a building name in
+   the Summary table. Shows all VAV/FPB/DD-VAV rows for that building with
+   zone air temp, setpoints, and status color coding. Includes a Back button,
+   a stats bar, a detail table, footer avg rows, and pagination.           */
+function emRenderBuildingDetailView(data, filters, buildingName) {
+  var wrap = document.getElementById('em-table-wrap');
+  if (!wrap) return;
 
-      for (var mi = 0; mi < catData.metrics.length; mi++) {
-        var m = catData.metrics[mi];
+  var pid = window._emActivePid || '';
+  var allRows = data.rows || [];
+  var zoneCategories = { vav: true, fpb: true, ddvav: true };
+  var catLabels = { vav: 'VAV', fpb: 'FPB', ddvav: 'DD-VAV' };
 
-        if (m.isSetpointBand) {
-          // Special row: zones above / below / within setpoint
-          html += '<tr style="border-bottom:1px solid var(--border)">';
-          html +=
-            '<td style="padding:3px 4px 3px 0;color:var(--text2);white-space:nowrap" ' +
-            'title="Count of zones above cooling setpoint, below heating setpoint, or within the band">' +
-            emHtmlEsc(m.label) +
-            '</td>';
-          html += '<td style="padding:3px 0 3px 4px;text-align:right;color:var(--text3)">' + m.count + '</td>';
-          html += '<td colspan="3" style="padding:3px 0 3px 4px;text-align:right">';
-          html +=
-            '<span style="color:#c0392b;font-weight:500" title="Above cooling setpoint">' +
-            m.aboveCount +
-            ' hot</span>' +
-            ' <span style="color:var(--text3)">|</span> ' +
-            '<span style="color:#27ae60;font-weight:500" title="Within deadband">' +
-            m.withinCount +
-            ' ok</span>' +
-            ' <span style="color:var(--text3)">|</span> ' +
-            '<span style="color:#2980b9;font-weight:500" title="Below heating setpoint">' +
-            m.belowCount +
-            ' cold</span>';
-          html += '</td>';
-          html += '</tr>';
-          continue;
+  // Filter: apply current filters first, then restrict to this building's zone equipment
+  var baseFiltered = emFilterRows(allRows, filters);
+  var bldgRows = baseFiltered.filter(function (r) {
+    return r.building === buildingName && zoneCategories[r.category];
+  });
+
+  // Pagination
+  var pageSize = _emPageSize;
+  var useAll = pageSize === 0;
+  var totalPages = useAll ? 1 : Math.ceil(bldgRows.length / pageSize);
+  if (totalPages < 1) totalPages = 1;
+  _emCurrentPage = Math.max(0, Math.min(_emCurrentPage, totalPages - 1));
+  var pageStart = useAll ? 0 : _emCurrentPage * pageSize;
+  var pageEnd = useAll ? bldgRows.length : Math.min(pageStart + pageSize, bldgRows.length);
+  var pageRows = bldgRows.slice(pageStart, pageEnd);
+
+  // Compute stats for the whole building (all bldgRows, not just page)
+  var statAll = emComputeBuildingZoneStats(bldgRows);
+  var bs = statAll[buildingName] || {
+    zoneTemp: { count: 0, avg: NaN },
+    htgSp: { count: 0, avg: NaN },
+    coolSp: { count: 0, avg: NaN },
+    hot: 0,
+    ok: 0,
+    cold: 0,
+    totalZones: 0,
+  };
+
+  function fmtTempVal(statObj) {
+    if (!statObj || statObj.count === 0 || isNaN(statObj.avg)) return '—';
+    return (Math.round(statObj.avg * 10) / 10).toFixed(1) + '°F';
+  }
+
+  // ── Back button + header ──
+  var html = '<div style="padding:24px;overflow:auto;height:100%;box-sizing:border-box">';
+  html +=
+    '<button onclick="emExitDrillBuilding(' +
+    JSON.stringify(pid) +
+    ')" ' +
+    'style="background:var(--s2);border:1px solid var(--border);color:var(--text);' +
+    'padding:6px 14px;border-radius:4px;cursor:pointer;font-size:13px;margin-bottom:16px">&#8592; Back to Summary</button>';
+  html +=
+    '<h2 style="font-size:22px;font-weight:700;margin:0 0 16px 0;color:var(--text)">' +
+    emHtmlEsc(buildingName) +
+    '</h2>';
+
+  // ── Stats bar ──
+  html +=
+    '<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:15px;padding:10px 16px;' +
+    'background:var(--s1);border-radius:6px;margin-bottom:20px;border:1px solid var(--border)">';
+  html +=
+    '<span style="color:var(--text2)">Total Zones: <strong style="color:var(--text)">' +
+    bs.totalZones +
+    '</strong></span>';
+  html +=
+    '<span style="color:var(--text2)">Zones with Live Data: <strong style="color:var(--text)">' +
+    bs.zoneTemp.count +
+    '</strong></span>';
+  html += '<span style="color:#c0392b">Hot: <strong>' + bs.hot + '</strong></span>';
+  html += '<span style="color:#27ae60">OK: <strong>' + bs.ok + '</strong></span>';
+  html += '<span style="color:#2980b9">Cold: <strong>' + bs.cold + '</strong></span>';
+  html += '</div>';
+
+  // ── Detail table ──
+  var thStyle =
+    'padding:10px 14px;font-size:13px;font-weight:600;background:var(--s1);' +
+    'border-bottom:2px solid var(--border);color:var(--text2);white-space:nowrap;text-align:left;';
+  var thCenter = thStyle + 'text-align:center;';
+
+  html += '<table style="width:100%;border-collapse:collapse;font-size:15px">';
+  html += '<thead><tr>';
+  html += '<th style="' + thStyle + '">Equipment Name</th>';
+  html += '<th style="' + thStyle + '">Type</th>';
+  html += '<th style="' + thStyle + '">Floor / Area</th>';
+  html += '<th style="' + thCenter + '">Zone Air Temp</th>';
+  html += '<th style="' + thCenter + '">Htg Setpoint</th>';
+  html += '<th style="' + thCenter + '">Clg Setpoint</th>';
+  html += '<th style="' + thCenter + '">Status</th>';
+  html += '<th style="' + thCenter + '">Damper Posn</th>';
+  html += '<th style="' + thCenter + '">Discharge Air Temp</th>';
+  html += '</tr></thead>';
+  html += '<tbody>';
+
+  if (pageRows.length === 0) {
+    html +=
+      '<tr><td colspan="9" style="padding:32px;text-align:center;font-size:14px;color:var(--text2)">' +
+      'No zone equipment rows for this building with current filters.</td></tr>';
+  } else {
+    var tdBase = 'padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:middle;font-size:15px;';
+    var tdCenter = tdBase + 'text-align:center;';
+
+    for (var ri = 0; ri < pageRows.length; ri++) {
+      var row = pageRows[ri];
+      var pts = row.points || {};
+
+      var tempRaw = pts['zoneAirTempLive'];
+      var htgRaw = pts['zoneHtgSpLive'];
+      var coolRaw = pts['zoneCoolSpLive'];
+      var dampRaw = pts['dampPosnLive'];
+      var datRaw = pts['datLive'];
+
+      var tempVal = tempRaw !== undefined && tempRaw !== '' ? parseFloat(tempRaw) : NaN;
+      var htgVal = htgRaw !== undefined && htgRaw !== '' ? parseFloat(htgRaw) : NaN;
+      var coolVal = coolRaw !== undefined && coolRaw !== '' ? parseFloat(coolRaw) : NaN;
+
+      // Determine status
+      var status = 'none';
+      if (!isNaN(tempVal)) {
+        if (!isNaN(coolVal) && tempVal > coolVal) {
+          status = 'hot';
+        } else if (!isNaN(htgVal) && tempVal < htgVal) {
+          status = 'cold';
+        } else if (!isNaN(htgVal) || !isNaN(coolVal)) {
+          status = 'ok';
         }
-
-        // Standard numeric metric row
-        html += '<tr style="border-bottom:1px solid var(--border)">';
-        html +=
-          '<td style="padding:3px 4px 3px 0;color:var(--text2);white-space:nowrap" ' +
-          'title="' +
-          emHtmlEsc(m.col) +
-          '">' +
-          emHtmlEsc(m.label) +
-          '</td>';
-        html += '<td style="padding:3px 0 3px 4px;text-align:right;color:var(--text3)">' + m.count + '</td>';
-        html +=
-          '<td style="padding:3px 0 3px 4px;text-align:right;font-weight:600;color:var(--text)">' +
-          fmtNum(m.avg) +
-          '</td>';
-        html += '<td style="padding:3px 0 3px 4px;text-align:right;color:var(--text3)">' + fmtNum(m.min) + '</td>';
-        html += '<td style="padding:3px 0 3px 4px;text-align:right;color:var(--text3)">' + fmtNum(m.max) + '</td>';
-        html += '</tr>';
       }
 
-      html += '</tbody></table>';
-      html += '</div>'; // end card
-    }
+      // Zone Air Temp cell — color coded
+      var tempBg = '';
+      var tempColor = 'var(--text)';
+      if (status === 'hot') {
+        tempBg = 'background:#fde8e8;';
+        tempColor = '#c0392b';
+      } else if (status === 'cold') {
+        tempBg = 'background:#e8f0fd;';
+        tempColor = '#2980b9';
+      } else if (status === 'ok') {
+        tempBg = 'background:#e8f8ee;';
+        tempColor = '#27ae60';
+      }
 
-    html += '</div>'; // end card grid
-    html += '</div>'; // end building section
+      var tempDisplay = isNaN(tempVal)
+        ? '<span style="color:var(--text3)">—</span>'
+        : '<span style="color:' + tempColor + ';font-weight:600">' + tempVal.toFixed(1) + '°F</span>';
+      var htgDisplay = isNaN(htgVal) ? '<span style="color:var(--text3)">—</span>' : htgVal.toFixed(1) + '°F';
+      var coolDisplay = isNaN(coolVal) ? '<span style="color:var(--text3)">—</span>' : coolVal.toFixed(1) + '°F';
+
+      // Status pill
+      var statusPill = '<span style="color:var(--text3)">—</span>';
+      if (status === 'hot') {
+        statusPill =
+          '<span style="background:#fde8e8;color:#c0392b;padding:2px 8px;border-radius:10px;font-weight:600;font-size:13px">Hot</span>';
+      } else if (status === 'cold') {
+        statusPill =
+          '<span style="background:#e8f0fd;color:#2980b9;padding:2px 8px;border-radius:10px;font-weight:600;font-size:13px">Cold</span>';
+      } else if (status === 'ok') {
+        statusPill =
+          '<span style="background:#e8f8ee;color:#27ae60;padding:2px 8px;border-radius:10px;font-weight:600;font-size:13px">OK</span>';
+      }
+
+      var dampDisplay =
+        dampRaw !== undefined && dampRaw !== ''
+          ? parseFloat(dampRaw).toFixed(1) + '%'
+          : '<span style="color:var(--text3)">—</span>';
+      var datDisplay =
+        datRaw !== undefined && datRaw !== ''
+          ? parseFloat(datRaw).toFixed(1) + '°F'
+          : '<span style="color:var(--text3)">—</span>';
+
+      html += '<tr style="min-height:44px">';
+      html += '<td style="' + tdBase + 'font-weight:500">' + emHtmlEsc(row.equipName || row.name || '') + '</td>';
+      html +=
+        '<td style="' +
+        tdBase +
+        'color:var(--text2)">' +
+        emHtmlEsc(catLabels[row.category] || row.category || '') +
+        '</td>';
+      html += '<td style="' + tdBase + 'color:var(--text2)">' + emHtmlEsc(row.floor || '') + '</td>';
+      html += '<td style="' + tdCenter + tempBg + '">' + tempDisplay + '</td>';
+      html += '<td style="' + tdCenter + '">' + htgDisplay + '</td>';
+      html += '<td style="' + tdCenter + '">' + coolDisplay + '</td>';
+      html += '<td style="' + tdCenter + '">' + statusPill + '</td>';
+      html += '<td style="' + tdCenter + '">' + dampDisplay + '</td>';
+      html += '<td style="' + tdCenter + '">' + datDisplay + '</td>';
+      html += '</tr>';
+    }
+  }
+
+  html += '</tbody>';
+
+  // ── tfoot: Page Average + Total Average ──
+  var pageStatMap = emComputeBuildingZoneStats(pageRows);
+  var pageAgg = {
+    zoneTemp: { sum: 0, count: 0, avg: NaN },
+    htgSp: { sum: 0, count: 0, avg: NaN },
+    coolSp: { sum: 0, count: 0, avg: NaN },
+  };
+  var pgKeys = Object.keys(pageStatMap);
+  for (var pki = 0; pki < pgKeys.length; pki++) {
+    var pgs = pageStatMap[pgKeys[pki]];
+    pageAgg.zoneTemp.sum += pgs.zoneTemp.sum;
+    pageAgg.zoneTemp.count += pgs.zoneTemp.count;
+    pageAgg.htgSp.sum += pgs.htgSp.sum;
+    pageAgg.htgSp.count += pgs.htgSp.count;
+    pageAgg.coolSp.sum += pgs.coolSp.sum;
+    pageAgg.coolSp.count += pgs.coolSp.count;
+  }
+  pageAgg.zoneTemp.avg = pageAgg.zoneTemp.count > 0 ? pageAgg.zoneTemp.sum / pageAgg.zoneTemp.count : NaN;
+  pageAgg.htgSp.avg = pageAgg.htgSp.count > 0 ? pageAgg.htgSp.sum / pageAgg.htgSp.count : NaN;
+  pageAgg.coolSp.avg = pageAgg.coolSp.count > 0 ? pageAgg.coolSp.sum / pageAgg.coolSp.count : NaN;
+
+  function fmtFootAvg(statObj) {
+    if (!statObj || statObj.count === 0 || isNaN(statObj.avg)) return '<span style="color:var(--text3)">&#8212;</span>';
+    return (Math.round(statObj.avg * 10) / 10).toFixed(1) + '°F';
+  }
+
+  var ftdBase =
+    'padding:10px 14px;vertical-align:middle;border-top:2px solid var(--border);font-size:14px;background:var(--s1);';
+  var ftdCenter = ftdBase + 'text-align:center;font-weight:600;';
+
+  html += '<tfoot>';
+  html += '<tr>';
+  html += '<td colspan="3" style="' + ftdBase + 'font-style:italic;color:var(--text2)">Page Average</td>';
+  html += '<td style="' + ftdCenter + '">' + fmtFootAvg(pageAgg.zoneTemp) + '</td>';
+  html += '<td style="' + ftdCenter + '">' + fmtFootAvg(pageAgg.htgSp) + '</td>';
+  html += '<td style="' + ftdCenter + '">' + fmtFootAvg(pageAgg.coolSp) + '</td>';
+  html += '<td colspan="3" style="' + ftdBase + '"></td>';
+  html += '</tr>';
+  html += '<tr>';
+  html +=
+    '<td colspan="3" style="' +
+    ftdBase +
+    'font-weight:700;color:var(--text)">Total Average (' +
+    bldgRows.length +
+    ' zones)</td>';
+  html += '<td style="' + ftdCenter + '">' + fmtFootAvg(bs.zoneTemp) + '</td>';
+  html += '<td style="' + ftdCenter + '">' + fmtFootAvg(bs.htgSp) + '</td>';
+  html += '<td style="' + ftdCenter + '">' + fmtFootAvg(bs.coolSp) + '</td>';
+  html += '<td colspan="3" style="' + ftdBase + '"></td>';
+  html += '</tr>';
+  html += '</tfoot>';
+
+  html += '</table>';
+
+  // ── Pagination bar ──
+  if (!useAll && totalPages > 1) {
+    var prevDisabled = _emCurrentPage <= 0;
+    var nextDisabled = _emCurrentPage >= totalPages - 1;
+    var pageLabel = 'Page ' + (_emCurrentPage + 1) + ' of ' + totalPages + ' (' + bldgRows.length + ' total zones)';
+    var pageSizeOptions = [50, 100, 250, 0];
+    var pageSizeLabels = { 50: '50', 100: '100', 250: '250', 0: 'All' };
+    var sizeSelectHtml =
+      '<select onchange="emSetPageSize(' +
+      JSON.stringify(pid) +
+      ', this.value)" style="font-size:11px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">';
+    for (var si = 0; si < pageSizeOptions.length; si++) {
+      var opt = pageSizeOptions[si];
+      sizeSelectHtml +=
+        '<option value="' +
+        opt +
+        '"' +
+        (_emPageSize === opt ? ' selected' : '') +
+        '>' +
+        pageSizeLabels[opt] +
+        '</option>';
+    }
+    sizeSelectHtml += '</select>';
+
+    html +=
+      '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;font-size:11px;color:var(--text2);margin-top:8px">' +
+      '<button onclick="emPrevPage(' +
+      JSON.stringify(pid) +
+      ')" ' +
+      (prevDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
+      'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Prev</button>' +
+      '<span style="flex:1;text-align:center">' +
+      pageLabel +
+      '</span>' +
+      '<button onclick="emNextPage(' +
+      JSON.stringify(pid) +
+      ')" ' +
+      (nextDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
+      'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Next</button>' +
+      '<span style="color:var(--text3)">Rows per page:</span>' +
+      sizeSelectHtml +
+      '</div>';
   }
 
   html += '</div>'; // end outer padding div
@@ -2448,6 +2933,8 @@ function emRenderAuditTable(data, filters) {
   var wrap = document.getElementById('em-table-wrap');
   if (!wrap) return;
   var rows = data.rows || [];
+  var _auditPid = window._emActivePid || '';
+  var _auditMaps = emLoadCustomMappings(_auditPid);
   var filtered = emFilterRows(rows, filters);
 
   // Build column defs from filtered rows so category columns match what's visible
@@ -2497,7 +2984,7 @@ function emRenderAuditTable(data, filters) {
   var seqReadinessCache = {};
   for (var pr = 0; pr < pageRows.length; pr++) {
     var r = pageRows[pr];
-    complianceCache[r.id] = emComputeCompliance(r, {});
+    complianceCache[r.id] = emComputeCompliance(r, {}, _auditMaps);
     seqReadinessCache[r.id] = emComputeSequenceReadiness(r, complianceCache[r.id]);
   }
 
@@ -2632,6 +3119,14 @@ function emRenderAuditTable(data, filters) {
   // Update stats bar for audit view
   emUpdateStatsPillsForAudit(rows);
 
+  var pageAvg = emComputeFooterAvg(pageRows, defs);
+  var totalAvg = emComputeFooterAvg(filtered, defs);
+  var tfootHtml =
+    '<tfoot>' +
+    buildAvgFooterRow(pageAvg, defs, 'Page Average', false, false) +
+    buildAvgFooterRow(totalAvg, defs, 'Total Average', true, false) +
+    '</tfoot>';
+
   wrap.innerHTML =
     '<table style="border-collapse:separate;border-spacing:0;table-layout:auto">' +
     '<thead><tr>' +
@@ -2640,6 +3135,7 @@ function emRenderAuditTable(data, filters) {
     '<tbody>' +
     tbodyRows +
     '</tbody>' +
+    tfootHtml +
     '</table>';
 
   // Inject pagination bar
@@ -2900,19 +3396,22 @@ function emHtmlEsc(str) {
 /* ── emAuditGetSortVal ──────────────────────────────────────────────────────
    Get sort value for a given audit column def and row.                   */
 function emAuditGetSortVal(row, def) {
+  var _sortMaps = null; // loaded lazily below when needed
   if (def.key === 'building') return row.building || '';
   if (def.key === 'floor') return row.floor || '';
   if (def.key === 'equipName') return row.equipName || row.name || '';
   if (def.isAuditType) return row.category || '';
   if (def.isAuditCoverage) {
-    var c = emComputeCompliance(row, {});
+    _sortMaps = _sortMaps || emLoadCustomMappings(window._emActivePid || '');
+    var c = emComputeCompliance(row, {}, _sortMaps);
     return c.coveragePct;
   }
   if (def.isAuditBasPts) return Object.keys(row.points || {}).length;
   if (def.isAuditCat) {
     var catKey = def.catKey;
     if (!row.category || def.catEquipTypes.indexOf(row.category) === -1) return -1;
-    var comp = emComputeCompliance(row, {});
+    _sortMaps = _sortMaps || emLoadCustomMappings(window._emActivePid || '');
+    var comp = emComputeCompliance(row, {}, _sortMaps);
     for (var i = 0; i < comp.coveredPoints.length; i++) {
       if (comp.coveredPoints[i].categoryKey === catKey) return comp.coveredPoints[i].matchTier;
     }
@@ -2920,7 +3419,8 @@ function emAuditGetSortVal(row, def) {
   }
   if (def.isAuditSeq) {
     if (!row.category || def.seqEquipTypes.indexOf(row.category) === -1) return -1;
-    var seqComp = emComputeCompliance(row, {});
+    _sortMaps = _sortMaps || emLoadCustomMappings(window._emActivePid || '');
+    var seqComp = emComputeCompliance(row, {}, _sortMaps);
     var seqR = emComputeSequenceReadiness(row, seqComp);
     var seqEntry = seqR[def.seqKey];
     if (!seqEntry || seqEntry.status === 'na') return -1;
@@ -2957,7 +3457,8 @@ function emShowComplianceDetail(rowId) {
     }
   }
   if (!row) return;
-  var c = emComputeCompliance(row, {});
+  var _detailMaps = emLoadCustomMappings(window._emActivePid || '');
+  var c = emComputeCompliance(row, {}, _detailMaps);
   var lines = [
     (row.equipName || row.name || rowId) + ' — ' + (row.category || '').toUpperCase() + ' Compliance',
     'Coverage: ' + c.coveragePct + '% (' + c.totalMatched + '/' + (c.totalRequired - c.totalNA) + ' required points)',
@@ -6279,7 +6780,7 @@ function emNormalizePointInner(rawName, equipCategory) {
      totalMatched:   number
      totalNA:        number
    }                                                                      */
-function emComputeCompliance(equipRow, configFlags) {
+function emComputeCompliance(equipRow, configFlags, customMappings) {
   // ── Module-level cache (keyed by row.id; all call sites pass flags={}) ──
   var _cacheId = equipRow && equipRow.id;
   if (_cacheId && _emComplianceCache[_cacheId]) return _emComplianceCache[_cacheId];
@@ -6308,7 +6809,7 @@ function emComputeCompliance(equipRow, configFlags) {
 
   for (var ri = 0; ri < rawNames.length; ri++) {
     var pName = rawNames[ri];
-    var match = emNormalizePoint(pName, category);
+    var match = emNormalizePointWithCustom(pName, category, customMappings || []);
     if (match && match.auditRelevant && match.categoryKey) {
       // Keep the highest-confidence match per category key
       if (!coveredKeys[match.categoryKey] || match.matchTier < coveredKeys[match.categoryKey].matchTier) {
@@ -6732,12 +7233,13 @@ function emNormalizePointWithCustom(rawName, equipCategory, customMappings) {
           break;
         }
       }
+      var isExclude = m.categoryKey === '__exclude__';
       return {
-        categoryKey: m.categoryKey,
+        categoryKey: isExclude ? null : m.categoryKey,
         categoryLabel: catDef ? catDef.label : m.categoryKey,
         matchTier: 0,
         confidence: 'custom',
-        auditRelevant: true,
+        auditRelevant: !isExclude,
         ashrae36PointName: catDef ? catDef.ashrae36Name : null,
         ashrae36Section: catDef ? catDef.ashrae36Section : null,
         rawName: rawName,
@@ -7670,6 +8172,10 @@ function emSaveManageMappings(pid) {
   }
 
   emSaveCustomMappings(pid, merged);
+
+  // Invalidate compliance cache so re-render uses the new mappings
+  _emComplianceCache = {};
+  _emNormCache = new Map();
 
   // Close modal
   if (overlay.parentNode) overlay.parentNode.removeChild(overlay);

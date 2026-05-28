@@ -277,7 +277,9 @@
       .settings-toggle input:checked+.toggle-track{background:var(--accent)}
       .settings-toggle .toggle-knob{position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .2s}
       .settings-toggle input:checked~.toggle-knob{transform:translateX(20px)}
+      /* [COMMENTED OUT] Media query for sync button — no longer needed
       @media (max-width:1024px){.sync-btn{display:none;}}
+      */
     </style>
 
     <style>
@@ -1070,8 +1072,193 @@
       .dispatch-tbl tr:hover td {
         background: var(--s3);
       }
+
+      /* -- Release Notes Modal -- */
+      .rn-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.45);
+        z-index: 800;
+        display: none;
+        align-items: center;
+        justify-content: center;
+      }
+      .rn-overlay.open {
+        display: flex;
+      }
+      .rn-modal {
+        width: 620px;
+        max-width: 94vw;
+        max-height: 85vh;
+        background: var(--s2);
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.28);
+      }
+      .rn-header {
+        flex-shrink: 0;
+        padding: 18px 20px 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      .rn-title-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+      }
+      .rn-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--text);
+      }
+      .rn-close {
+        background: none;
+        border: none;
+        font-size: 1.4rem;
+        line-height: 1;
+        cursor: pointer;
+        color: var(--text2);
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+      .rn-close:hover {
+        background: var(--border);
+        color: var(--text);
+      }
+      .rn-legend {
+        display: flex;
+        gap: 16px;
+        font-size: 0.78rem;
+        color: var(--text2);
+      }
+      .rn-legend-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .rn-legend-item.rn-feat { color: var(--green); }
+      .rn-legend-item.rn-fix  { color: var(--accent); }
+      .rn-legend-item.rn-chg  { color: var(--text3); }
+      .rn-current {
+        flex: 0 0 auto;
+        min-height: 52%;
+        padding: 20px 24px 16px;
+        border-bottom: 2px solid var(--border);
+        overflow-y: auto;
+      }
+      .rn-history {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        padding: 12px 24px 20px;
+      }
+      .rn-history-label {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text3);
+        margin-bottom: 12px;
+      }
+      .rn-version-block {
+        margin-bottom: 20px;
+      }
+      .rn-version-current .rn-version-num {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: var(--em);
+      }
+      .rn-version-past .rn-version-num {
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: var(--text2);
+      }
+      .rn-version-header {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .rn-version-date {
+        font-size: 0.78rem;
+        color: var(--text3);
+      }
+      .rn-items {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .rn-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        font-size: 0.88rem;
+        line-height: 1.4;
+      }
+      .rn-item-symbol {
+        flex-shrink: 0;
+        width: 16px;
+        text-align: center;
+        font-weight: 700;
+        margin-top: 1px;
+      }
+      .rn-item.rn-feat .rn-item-symbol { color: var(--green); }
+      .rn-item.rn-fix  .rn-item-symbol { color: var(--accent); }
+      .rn-item.rn-chg  .rn-item-symbol { color: var(--text3); }
+      .rn-item-text {
+        color: var(--text);
+      }
+      .rn-version-current .rn-item {
+        font-size: 0.92rem;
+      }
+      .rn-footer {
+        flex-shrink: 0;
+        padding: 12px 24px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        justify-content: flex-end;
+      }
+      .rn-dismiss-btn {
+        background: var(--em);
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        padding: 7px 18px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .rn-dismiss-btn:hover {
+        opacity: 0.88;
+      }
+      .rn-whats-new-btn {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        background: var(--s1);
+        color: var(--text2);
+        font-family: var(--font);
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s;
+        margin-bottom: 6px;
+      }
+      .rn-whats-new-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=2026.05.27.391" />
+    <link rel="stylesheet" href="feedback-widget.css?v=2026.05.27.392" />
   </head>
   <body>
     <!-- LOGIN -->
@@ -1111,10 +1298,12 @@
               <div class="u-dept">Service Dept</div>
             </div>
           </div>
+          <!-- [COMMENTED OUT] Sync to Outlook topbar button
           <button class="sync-btn" onclick="syncToOutlook()">
             <div class="ms-sq"><span></span><span></span><span></span><span></span></div>
             Sync to Outlook
           </button>
+          -->
           <div
             class="icon-btn"
             id="notifBtn"
@@ -3204,6 +3393,6 @@
 
       /* ── beforeunload warning removed — state persistence approach ── */
     </script>
-    <script src="feedback-widget.js?v=2026.05.27.391"></script>
+    <script src="feedback-widget.js?v=2026.05.27.392"></script>
   </body>
 </html>
