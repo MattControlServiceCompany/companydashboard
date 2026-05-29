@@ -1108,6 +1108,21 @@ function emUpdateStickyOffsets() {
 function emRenderMatrix(container, data, pid) {
   window._emActivePid = pid;
   if (!data.edits) data.edits = {};
+
+  // ── Empty state: no rows yet ───────────────────────────────────────────────
+  if (!data.rows || data.rows.length === 0) {
+    container.innerHTML =
+      '<div style="display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:var(--text2);min-height:0">' +
+      '<div style="font-size:32px;opacity:.3">📋</div>' +
+      '<div style="font-size:14px;font-weight:600">No equipment data for this project yet</div>' +
+      '<div style="font-size:12px;color:var(--text3)">Import a WebCTRL CSV export to build the Equipment Matrix.</div>' +
+      '<button class="btn btn-em btn-sm" style="margin-top:6px" onclick="emShowUploadPanel(this,\'merge\',\'' +
+      pid +
+      '\')">Import CSVs</button>' +
+      '</div>';
+    return;
+  }
+
   _emFilters = { building: '', type: '', search: '' };
   _emSortCol = null;
   _emSortDir = 1;
@@ -1148,7 +1163,7 @@ function emRenderMatrix(container, data, pid) {
   var toolbarHtml = emRenderToolbar(data, pid, projBadge);
 
   container.innerHTML =
-    '<div style="display:flex;flex-direction:column;height:100%;min-height:0">' +
+    '<div style="display:flex;flex-direction:column;flex:1;min-height:0">' +
     statsHtml +
     '<div style="flex-shrink:0;border-bottom:1px solid var(--border)">' +
     toolbarHtml +
@@ -1871,14 +1886,28 @@ function emComputeFooterAvg(rows, defs) {
 
 /* ── emComputeAuditFooterTotals ─────────────────────────────────────────────
    Computes footer totals for the Audit view.
-   Only the _baspoints column gets a meaningful total (sum of point counts).
-   Returns: { _baspoints: { sum, count } }                                    */
+   _baspoints: sum of BAS point counts across all rows.
+   _coverage:  average coverage % across rows that have a recognized point
+               category (mirrors the avgCoverage logic in emComputeAuditStats).
+   Returns: { _baspoints: { sum, count }, _coverage: { avg, count } }         */
 function emComputeAuditFooterTotals(rows) {
   var ptSum = 0;
+  var covSum = 0;
+  var covCount = 0;
+  var _footerMaps = emLoadCustomMappings(window._emActivePid || '');
   for (var ri = 0; ri < rows.length; ri++) {
-    ptSum += Object.keys(rows[ri].points || {}).length;
+    var r = rows[ri];
+    ptSum += Object.keys(r.points || {}).length;
+    if (r.category && EM_POINT_CATEGORIES[r.category]) {
+      var comp = emComputeCompliance(r, {}, _footerMaps);
+      covSum += comp.coveragePct;
+      covCount++;
+    }
   }
-  return { _baspoints: { sum: ptSum, count: rows.length } };
+  return {
+    _baspoints: { sum: ptSum, count: rows.length },
+    _coverage: covCount > 0 ? { avg: Math.round(covSum / covCount), count: covCount } : null,
+  };
 }
 
 /* ── buildAuditFooterRow ────────────────────────────────────────────────────
@@ -1910,6 +1939,19 @@ function buildAuditFooterRow(totalsMap, defs, label, isBold) {
         '">' +
         totalsMap['_baspoints'].sum +
         '</td>';
+    } else if (def.isAuditCoverage && totalsMap['_coverage']) {
+      var cov = totalsMap['_coverage'].avg;
+      var covColor = cov >= 75 ? '#27ae60' : cov >= 50 ? '#e67e22' : '#c0392b';
+      html +=
+        '<td style="' +
+        tdBase +
+        'text-align:right;font-weight:' +
+        (isBold ? '700' : '500') +
+        ';color:' +
+        covColor +
+        '">' +
+        cov +
+        '%</td>';
     } else {
       html += '<td style="' + tdBase + 'text-align:center;color:var(--text3)">&#8212;</td>';
     }

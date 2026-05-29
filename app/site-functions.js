@@ -1183,6 +1183,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.28.408',
+    date: '2026-05-29',
+    title: 'Equipment Matrix: empty state, scrolling fix, Coverage % in totals',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix now shows a clear empty state with an Import button when a project has no data yet — no more blank screen.',
+      },
+      {
+        type: 'fix',
+        text: 'Fixed the Equipment Matrix table not scrolling — the table now scrolls correctly within the panel.',
+      },
+      {
+        type: 'feature',
+        text: 'The Page Total and Total rows in the Equipment Matrix footer now show average Coverage % in addition to point counts.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.28.407',
     date: '2026-05-28',
     title: 'Equipment Matrix and BAS Trends tabs work again',

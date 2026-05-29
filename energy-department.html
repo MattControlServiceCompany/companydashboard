@@ -3901,10 +3901,12 @@
       .ptab.active > * {
         flex-shrink: 0;
       }
-      /* Equipment Matrix tab: only the data table should scroll, not the whole page.
-         overflow: clip hidden prevents creating a second scroll container on the x-axis.
-         'clip' does not establish a block formatting context, so position:sticky inside
-         the inner scroll wrap continues to work correctly. */
+      /* Equipment Matrix tab: only #em-table-wrap scrolls (both axes).
+         overflow:clip (not hidden) keeps position:sticky headers working because
+         clip does not establish a block formatting context.
+         #em-proj-wrap is a flex column so its child (the outer wrapper div
+         built by emRenderMatrix) can flex:1 and give #em-table-wrap a real
+         height constraint for overflow:auto to scroll against. */
       #ptab-eq-matrix.active {
         overflow: clip;
       }
@@ -3912,6 +3914,12 @@
         flex: 1;
         min-height: 0;
         flex-shrink: 1;
+      }
+      #em-proj-wrap {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
       }
       #ptab-dashboard.active {
         display: flex;
@@ -14586,14 +14594,14 @@
     <script src="app/report-preview.js?v=399"></script>
     <script src="app/calculators.js?v=399"></script>
     <script src="app/ecm-calculators.js?v=404"></script>
-    <script src="app/equipment-matrix.js?v=400"></script>
+    <script src="app/equipment-matrix.js?v=408"></script>
     <script src="app/graphics-setpoints.js?v=399"></script>
     <script src="app/budget.js?v=399"></script>
     <script src="app/scorecard.js?v=399"></script>
     <script src="app/portal-export.js?v=399"></script>
     <script src="app/bas-trends.js?v=399"></script>
 
-    <script src="app/site-functions.js?v=407"></script>
+    <script src="app/site-functions.js?v=408"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
