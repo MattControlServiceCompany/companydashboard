@@ -3940,9 +3940,11 @@ function emRenderUploadPanel(container, pid, inline) {
     '<div id="em-import-spinner" style="width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite;flex-shrink:0"></div>' +
     '<span id="em-import-status" style="font-size:12px;color:var(--text2)"></span>' +
     '</div>' +
-    '<div id="em-import-success-wrap" style="display:none;align-items:center;gap:8px;padding:10px;background:var(--s2);border-radius:6px">' +
+    '<div id="em-import-success-wrap" style="display:none;align-items:center;gap:8px;padding:10px;background:var(--s2);border-radius:6px;flex-wrap:wrap">' +
     '<span style="font-size:16px;color:#22c55e">&#x2713;</span>' +
-    '<span id="em-import-success-msg" style="font-size:12px;font-weight:600;color:var(--text)"></span>' +
+    '<span id="em-import-success-msg" style="font-size:12px;font-weight:600;color:var(--text);flex:1;min-width:0"></span>' +
+    '<button onclick="emCloseUploadModal(null,_emImportMode)" ' +
+    'style="background:var(--accent);color:#fff;border:none;border-radius:5px;padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0">Done</button>' +
     '</div>' +
     '<div id="em-import-summary" style="display:none;margin-top:10px"></div>' +
     '</div>';
@@ -4119,16 +4121,12 @@ function emHandleImport(pid) {
         summaryEl.innerHTML = summaryHtml;
         summaryEl.style.display = 'block';
       }
-      var closeDelay = otherRate > 0.2 ? 4000 : 3000;
-      setTimeout(function () {
-        // Close the modal — emRenderMatrix below rebuilds the toolbar with fresh button text
-        var backdrop = document.getElementById('em-upload-modal-backdrop');
-        if (backdrop) backdrop.parentNode.removeChild(backdrop);
-        _emUploadTargetPid = null;
-        var container = document.getElementById('em-proj-wrap');
-        if (container) emRenderMatrix(container, merged, pid);
-        showToast(successMsg);
-      }, closeDelay);
+      // Re-render the matrix immediately (modal is position:fixed so it stays on top);
+      // the user closes the modal manually via the Done button or the × button.
+      _emUploadTargetPid = null;
+      var container = document.getElementById('em-proj-wrap');
+      if (container) emRenderMatrix(container, merged, pid);
+      showToast(successMsg);
     } else {
       // No project selected — abort with a clear error.
       // The old __preview__ path was removed because it poisoned window._emActivePid with

@@ -1183,6 +1183,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.28.409',
+    date: '2026-05-29',
+    title: 'Equipment Matrix import window stays open until you click Done',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix import: the import window no longer closes itself after a few seconds — the import summary stays on screen until you click Done, so you can actually read it.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.28.408',
     date: '2026-05-29',
     title: 'Equipment Matrix: empty state, scrolling fix, Coverage % in totals',
