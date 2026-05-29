@@ -123,7 +123,7 @@
       /* ── SIDEBAR LAYOUT ── */
       .app-wrap{display:flex;flex:1;min-height:0;overflow:hidden;}
       .sidebar{width:220px;flex-shrink:0;background:var(--s1);border-right:1px solid var(--border);padding:0;display:flex;flex-direction:column;}
-      .sidebar-top{flex:1;overflow-y:visible;padding:14px 0;}
+      .sidebar-top{flex:1;overflow-y:auto;min-height:0;padding:14px 0;}
       .sidebar-bottom{padding:10px 12px 14px;flex-shrink:0;}
       .s-sect{margin-bottom:22px;}
       .s-lbl{font-size:11px;font-weight:600;letter-spacing:.8px;color:var(--text2);text-transform:uppercase;padding:0 16px;margin-bottom:6px;}
@@ -1077,7 +1077,7 @@
       .rn-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(0,0,0,0.45);
+        background: rgba(0, 0, 0, 0.45);
         z-index: 800;
         display: none;
         align-items: center;
@@ -1096,7 +1096,7 @@
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.28);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
       }
       .rn-header {
         flex-shrink: 0;
@@ -1139,9 +1139,15 @@
         align-items: center;
         gap: 4px;
       }
-      .rn-legend-item.rn-feat { color: var(--green); }
-      .rn-legend-item.rn-fix  { color: var(--accent); }
-      .rn-legend-item.rn-chg  { color: var(--text3); }
+      .rn-legend-item.rn-feat {
+        color: var(--green);
+      }
+      .rn-legend-item.rn-fix {
+        color: var(--accent);
+      }
+      .rn-legend-item.rn-chg {
+        color: var(--text3);
+      }
       .rn-current {
         flex: 0 0 auto;
         min-height: 52%;
@@ -1207,9 +1213,15 @@
         font-weight: 700;
         margin-top: 1px;
       }
-      .rn-item.rn-feat .rn-item-symbol { color: var(--green); }
-      .rn-item.rn-fix  .rn-item-symbol { color: var(--accent); }
-      .rn-item.rn-chg  .rn-item-symbol { color: var(--text3); }
+      .rn-item.rn-feat .rn-item-symbol {
+        color: var(--green);
+      }
+      .rn-item.rn-fix .rn-item-symbol {
+        color: var(--accent);
+      }
+      .rn-item.rn-chg .rn-item-symbol {
+        color: var(--text3);
+      }
       .rn-item-text {
         color: var(--text);
       }

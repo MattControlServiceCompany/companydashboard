@@ -478,7 +478,8 @@ body {
 }
 .sidebar-top {
   flex: 1;
-  overflow-y: visible;
+  overflow-y: auto;
+  min-height: 0;
 }
 .sidebar-bottom {
   padding: 0 12px 14px;

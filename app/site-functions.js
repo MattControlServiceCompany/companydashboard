@@ -1183,6 +1183,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.28.403',
+    date: '2026-05-28',
+    title: 'Sidebar bottom items always reachable at any window height',
+    items: [
+      {
+        type: 'fix',
+        text: 'Sidebar bottom items (Settings, version) no longer get cut off — the navigation now scrolls when the window is short, so everything stays reachable at any window height.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.28.402',
     date: '2026-05-28',
     title: 'Projects and bills now load correctly after a data reset',
