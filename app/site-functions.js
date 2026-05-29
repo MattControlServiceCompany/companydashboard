@@ -1183,6 +1183,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.28.407',
+    date: '2026-05-28',
+    title: 'Equipment Matrix and BAS Trends tabs work again',
+    items: [
+      {
+        type: 'fix',
+        text: 'Fixed: the Equipment Matrix project tab opens correctly again — it was erroring and doing nothing. The BAS Trends tab also no longer errors.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.28.406',
     date: '2026-05-28',
     title: 'No more sideways scroll on phones and tablets',
