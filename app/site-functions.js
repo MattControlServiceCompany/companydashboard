@@ -1183,6 +1183,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.29.410',
+    date: '2026-05-29',
+    title: 'Equipment Matrix imports survive an immediate page refresh',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix: imported data is now fully written to storage before the success message appears — refreshing the page immediately after an import no longer wipes the data.',
+      },
+      {
+        type: 'fix',
+        text: 'A page-unload warning now appears if you try to close or navigate away while an Equipment Matrix save is still in progress.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.28.409',
     date: '2026-05-29',
     title: 'Equipment Matrix import window stays open until you click Done',

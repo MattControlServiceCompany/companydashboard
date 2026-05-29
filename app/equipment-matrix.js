@@ -920,11 +920,13 @@ function emLoadMatrix(projId) {
 }
 
 function emSaveMatrix(projId, data) {
-  if (!projId) return;
+  if (!projId) return Promise.resolve();
   // Invalidate caches — data may have changed (edits, imports, deletions)
   _emComplianceCache = {};
   _emNormCache = new Map();
-  sset('en_eqmatrix_' + projId, data);
+  // sset() returns a Promise that resolves on IDB tx.oncomplete (real commit).
+  // Callers that need write durability (e.g. emHandleImport) should await this.
+  return sset('en_eqmatrix_' + projId, data);
 }
 
 function emMergeIntoMatrix(existingData, newRows) {
@@ -3635,7 +3637,7 @@ function emDeleteRow(rowId, label) {
     return (a || '').toLowerCase() < (b || '').toLowerCase() ? -1 : 1;
   });
   data.buildings = buildings;
-  emSaveMatrix(pid, data);
+  emSaveMatrix(pid, data).catch(() => {});
   emRenderTable(data, _emFilters);
   showToast('Row deleted');
 }
@@ -3654,7 +3656,7 @@ function emDeleteAllRows(pid) {
   data.rows = [];
   data.buildings = [];
   data.totalBASPoints = 0;
-  emSaveMatrix(pid, data);
+  emSaveMatrix(pid, data).catch(() => {});
   var container = document.getElementById('em-proj-wrap');
   if (container) emRenderMatrix(container, data, pid);
   showToast('All equipment data deleted');
@@ -3805,7 +3807,7 @@ function emHandleCellEdit(rowId, fieldKey, newValue) {
   if (!data.edits) data.edits = {};
   var editKey = rowId + '::' + fieldKey;
   data.edits[editKey] = newValue.trim();
-  emSaveMatrix(pid, data);
+  emSaveMatrix(pid, data).catch(() => {});
 }
 
 function emHandleSaveEdits() {
@@ -3813,7 +3815,7 @@ function emHandleSaveEdits() {
   if (!pid) return;
   var data = emLoadMatrix(pid);
   var editCount = data.edits ? Object.keys(data.edits).length : 0;
-  emSaveMatrix(pid, data);
+  emSaveMatrix(pid, data).catch(() => {});
   showToast('Edits saved — ' + editCount + ' field' + (editCount !== 1 ? 's' : '') + ' modified');
 }
 
@@ -3900,7 +3902,7 @@ function emAddManualRow(projId) {
   };
   if (!data.rows) data.rows = [];
   data.rows.push(newRow);
-  emSaveMatrix(projId, data);
+  emSaveMatrix(projId, data).catch(() => {});
   emRenderTable(data, _emFilters);
   showToast('New row added — fill in inline');
 }
@@ -4012,7 +4014,7 @@ function emHandleImport(pid) {
   var totalRawRows = 0; // count of raw CSV data rows across all files, before grouping
   var pending = _emPendingFiles.length;
   var done = 0;
-  function onFileDone() {
+  async function onFileDone() {
     done++;
     if (done < pending) {
       if (statusEl) statusEl.textContent = 'Processing file ' + (done + 1) + ' of ' + pending + '...';
@@ -4041,7 +4043,18 @@ function emHandleImport(pid) {
         _emImportMode === 'replace' ? { rows: [], buildings: [] } : emLoadMatrix(pid) || { rows: [], buildings: [] };
       var merged = emMergeIntoMatrix(baseData, allRows);
       merged.totalBASPoints = totalRawRows;
-      emSaveMatrix(pid, merged);
+      // Show "Saving..." while awaiting the real IDB commit (tx.oncomplete).
+      // We do NOT show "Import complete" until the write is fully durable on disk.
+      if (statusEl) statusEl.textContent = 'Saving to database...';
+      if (statusWrap) statusWrap.style.display = 'flex';
+      try {
+        await emSaveMatrix(pid, merged);
+      } catch (e) {
+        console.error('[EquipMatrix] emSaveMatrix failed:', e);
+        showToast('Save failed — your import was NOT stored. Try again.', 'error');
+        if (statusEl) statusEl.textContent = 'Save failed.';
+        return;
+      }
       var modeLabel = _emImportMode === 'replace' ? 'Re-imported' : 'Imported';
       var successMsg =
         modeLabel +
@@ -4123,7 +4136,10 @@ function emHandleImport(pid) {
       }
       // Re-render the matrix immediately (modal is position:fixed so it stays on top);
       // the user closes the modal manually via the Done button or the × button.
-      _emUploadTargetPid = null;
+      // Keep _emUploadTargetPid set to the current pid so a second file drop works.
+      // (Setting it to null was the v409 bug: dropping a 2nd file then showed
+      // "No project selected" because the pid had been cleared.)
+      _emUploadTargetPid = pid;
       var container = document.getElementById('em-proj-wrap');
       if (container) emRenderMatrix(container, merged, pid);
       showToast(successMsg);
@@ -4201,7 +4217,7 @@ function emCopyFromProject(targetProjId) {
   for (var j = 0; j < clonedRows.length; j++) {
     targetData.rows.push(clonedRows[j]);
   }
-  emSaveMatrix(targetProjId, targetData);
+  emSaveMatrix(targetProjId, targetData).catch(() => {});
   var container = document.getElementById('em-proj-wrap');
   if (container) emRenderMatrix(container, targetData, targetProjId);
   alert(clonedRows.length + ' rows copied from "' + (sourceProj.name || sourceProj.id) + '".');

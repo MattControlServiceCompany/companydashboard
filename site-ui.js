@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.28.409';
+  var CH_VERSION = 'v2026.05.29.410';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -680,19 +680,21 @@
     },
     set: function (key, data) {
       // WRITE-PATH FIX: when IndexedDB is ready, persist to IDB (authoritative store).
-      // DB.set() updates _cache, writes to IndexedDB, and dispatches dataUpdated.
+      // DB.set() updates _cache synchronously (UI stays responsive), starts the IDB
+      // write, and returns a Promise that resolves on tx.oncomplete (real commit).
+      // Callers that need write durability should await the returned Promise.
       if (window.DB && window.DB.isReady()) {
-        window.DB.set(key, data);
-        return;
+        return window.DB.set(key, data);
       }
       // DB not ready — legacy localStorage path
       try {
         localStorage.setItem(key, JSON.stringify(data));
       } catch (e) {
         console.warn('Store.set failed:', e);
-        return;
+        return Promise.resolve();
       }
       window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key: key } }));
+      return Promise.resolve();
     },
     update: function (key, id, newData) {
       var items = this.get(key).map(function (item) {

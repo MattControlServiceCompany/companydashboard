@@ -8,6 +8,9 @@ const DB = (() => {
   const _cache = {};
   let _ready = false;
   let _usingFallback = false;
+  // Track the number of IDB writes that have not yet received tx.oncomplete.
+  // Used by the beforeunload guard to warn users if they navigate away mid-write.
+  let _pendingWriteCount = 0;
 
   function _open() {
     return new Promise((resolve, reject) => {
@@ -182,24 +185,61 @@ const DB = (() => {
   }
 
   function set(key, value) {
+    // Update in-memory cache immediately so the UI stays responsive.
     _cache[key] = value;
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key } }));
     }
     if (_usingFallback) {
-      try {
-        localStorage.setItem(key, JSON.stringify(value));
-      } catch (e) {
-        console.warn('[DB] localStorage write failed:', key, e);
-      }
-      return;
+      return new Promise((resolve, reject) => {
+        try {
+          localStorage.setItem(key, JSON.stringify(value));
+          resolve();
+        } catch (e) {
+          console.warn('[DB] localStorage write failed:', key, e);
+          reject(e);
+        }
+      });
     }
-    _open()
+    // Return a Promise that resolves only on tx.oncomplete — the real IDB commit.
+    // Callers that care about durability (e.g. bulk import) can await this.
+    _pendingWriteCount++;
+    let _txCreated = false;
+    return _open()
       .then((db) => {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).put(value, key);
+        _txCreated = true;
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          tx.objectStore(STORE_NAME).put(value, key);
+          tx.oncomplete = () => {
+            _pendingWriteCount--;
+            resolve();
+          };
+          // tx.onerror is intentionally omitted. Per the IndexedDB spec, an
+          // unhandled request error causes the transaction to abort, so
+          // tx.onabort always fires for every failure mode (request error,
+          // I/O error, QuotaExceededError, explicit abort). Keeping both
+          // handlers would decrement _pendingWriteCount TWICE on request
+          // errors, driving the counter negative and silently disabling the
+          // beforeunload guard for the rest of the session.
+          tx.onabort = () => {
+            _pendingWriteCount--;
+            const err = tx.error;
+            console.warn('[DB] Write failed — transaction aborted:', key, err);
+            if (typeof showToast === 'function') {
+              showToast('Save failed — data may not persist after reload', 'error');
+            }
+            reject(err || new Error('IDB transaction aborted'));
+          };
+        });
       })
-      .catch((e) => console.warn('[DB] Write failed:', key, e));
+      .catch((e) => {
+        // If _open() itself failed (before tx was created), decrement now.
+        // If tx was created, its oncomplete/onerror/onabort already decremented.
+        if (!_txCreated) _pendingWriteCount--;
+        console.warn('[DB] Write failed:', key, e);
+        throw e;
+      });
   }
 
   function remove(key) {
@@ -243,8 +283,24 @@ const DB = (() => {
   function isFallback() {
     return _usingFallback;
   }
+  function hasPendingWrites() {
+    return _pendingWriteCount > 0;
+  }
 
-  return { warmCache, get, set, remove, clear, getAllKeys, getAll, isReady, isFallback };
+  // Safety net: if the user navigates away while an IDB write is still in-flight,
+  // show a browser confirmation dialog. Modern browsers may ignore returnValue for
+  // navigation but it still fires and gives the IDB engine a chance to flush.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', (e) => {
+      if (_pendingWriteCount > 0) {
+        e.preventDefault();
+        // Chrome requires returnValue to be set to trigger the dialog.
+        e.returnValue = 'Data is still being saved. Leaving now may lose your import. Are you sure?';
+      }
+    });
+  }
+
+  return { warmCache, get, set, remove, clear, getAllKeys, getAll, isReady, isFallback, hasPendingWrites };
 })();
 
 window.DB = DB;

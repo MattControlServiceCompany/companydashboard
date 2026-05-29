@@ -7,10 +7,11 @@ async function claudePDF(prompt, b64, sys) {
 }
 
 /* ── STORAGE — delegates to window.Store so dataUpdated events fire ── */
+// Returns a Promise that resolves when the IDB write commits (or immediately for
+// the localStorage fallback). Callers that need write durability can await this.
 function sset(k, v) {
   if (window.Store) {
-    window.Store.set(k, v);
-    return;
+    return window.Store.set(k, v);
   }
   try {
     localStorage.setItem(k, JSON.stringify(v));
