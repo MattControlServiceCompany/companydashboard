@@ -84,7 +84,7 @@
         background: var(--bg);
         color: var(--text);
         height: 100%;
-        min-width: 960px;
+        min-width: 900px;
         overflow: hidden;
         -webkit-font-smoothing: antialiased;
         font-variant-numeric: tabular-nums;
@@ -1303,7 +1303,7 @@
         grid-template-columns: 1fr 1fr;
         gap: 16px;
       }
-      @media (max-width: 768px) {
+      @media (max-width: 899px) {
         .cal-container {
           grid-template-columns: 1fr;
         }
@@ -1644,6 +1644,93 @@
       .rn-whats-new-btn:hover {
         border-color: var(--accent);
         color: var(--accent);
+      }
+
+      /* ── MOBILE SIDEBAR DRAWER TOGGLE ── */
+      .sidebar-toggle-btn {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        background: var(--s3);
+        color: var(--text2);
+        font-size: 16px;
+        cursor: pointer;
+        transition: all 0.15s;
+        font-family: var(--font);
+        flex-shrink: 0;
+        margin-right: 8px;
+      }
+      .sidebar-toggle-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .sidebar-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 149;
+        background: rgba(6, 8, 16, 0.6);
+        backdrop-filter: blur(4px);
+      }
+
+      @media (max-width: 899px) {
+        .sidebar-toggle-btn {
+          display: flex;
+        }
+
+        .sidebar {
+          position: fixed;
+          top: 0;
+          left: 0;
+          bottom: 0;
+          z-index: 150;
+          width: 260px;
+          transform: translateX(-100%);
+          transition: transform 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+          padding-top: 60px;
+        }
+        .sidebar.drawer-open {
+          transform: translateX(0);
+        }
+
+        .sidebar-top {
+          overflow-y: auto;
+        }
+
+        .app-wrap {
+          display: block;
+        }
+
+        .content {
+          padding: 16px;
+          overflow-x: auto;
+        }
+
+        .u-name,
+        .u-dept {
+          display: none;
+        }
+        .sync-btn {
+          display: none;
+        }
+        .topbar {
+          padding: 0 12px;
+        }
+        .brand-name {
+          font-size: 14px;
+        }
+        .dept-nav {
+          -webkit-overflow-scrolling: touch;
+          scroll-snap-type: x mandatory;
+        }
+        .dept-tab {
+          scroll-snap-align: start;
+          padding: 10px 12px;
+        }
       }
     </style>
     <link rel="stylesheet" href="feedback-widget.css?v=399" />
@@ -2866,6 +2953,84 @@
         }
         // Render calendar widget
         renderCalendar();
+      });
+    </script>
+    <script src="app/db.js?v=405"></script>
+    <script>
+      /* ── MOBILE SIDEBAR DRAWER ── */
+      function buildMobileSidebarToggle() {
+        // Only add if not already present
+        if (document.getElementById('sidebarToggleBtn')) return;
+        var deptNav = document.querySelector('.dept-nav');
+        if (!deptNav) return;
+
+        var btn = document.createElement('button');
+        btn.id = 'sidebarToggleBtn';
+        btn.className = 'sidebar-toggle-btn';
+        btn.setAttribute('aria-label', 'Toggle navigation menu');
+        btn.setAttribute('aria-expanded', 'false');
+        btn.setAttribute('aria-controls', 'appSidebar');
+        btn.innerHTML = '☰';
+        btn.onclick = function () {
+          var sidebar = document.getElementById('appSidebar') || document.querySelector('.sidebar');
+          if (!sidebar) return;
+          var open = sidebar.classList.toggle('drawer-open');
+          btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+          btn.innerHTML = open ? '✕' : '☰';
+          // Backdrop
+          var bd = document.getElementById('sidebarBackdrop');
+          if (bd) bd.style.display = open ? 'block' : 'none';
+        };
+
+        // Backdrop
+        var backdrop = document.createElement('div');
+        backdrop.id = 'sidebarBackdrop';
+        backdrop.className = 'sidebar-backdrop';
+        backdrop.style.display = 'none';
+        backdrop.onclick = function () {
+          var sidebar = document.getElementById('appSidebar') || document.querySelector('.sidebar');
+          if (sidebar) sidebar.classList.remove('drawer-open');
+          btn.setAttribute('aria-expanded', 'false');
+          btn.innerHTML = '☰';
+          backdrop.style.display = 'none';
+        };
+        document.body.appendChild(backdrop);
+        deptNav.insertBefore(btn, deptNav.firstChild);
+
+        // Give sidebar an id if it doesn't have one
+        var sidebar = document.querySelector('.sidebar');
+        if (sidebar && !sidebar.id) sidebar.id = 'appSidebar';
+      }
+
+      document.addEventListener('DOMContentLoaded', function () {
+        buildMobileSidebarToggle();
+        if (typeof DB !== 'undefined') {
+          DB.warmCache().then(function () {
+            try {
+              var s = DB.get('sv_staffData');
+              var sa = DB.get('sv_saData');
+              var pr = DB.get('en_projects');
+              var set = function (id, v) {
+                var el = document.getElementById(id);
+                if (el != null && v != null) el.textContent = v;
+              };
+              if (Array.isArray(s)) {
+                set('dash-stat-staff', s.length);
+                set('dash-dc-technicians', s.length);
+              }
+              if (Array.isArray(sa)) {
+                set('dash-stat-sa', sa.length);
+                set('dash-dc-sa', sa.length);
+                set('qa-pm', sa.length);
+              }
+              if (Array.isArray(pr)) {
+                set('dash-stat-projects', pr.length);
+              }
+            } catch (e) {
+              console.warn('tile refresh failed', e);
+            }
+          });
+        }
       });
     </script>
     <script src="feedback-widget.js?v=399"></script>

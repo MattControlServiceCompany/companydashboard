@@ -1183,6 +1183,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.28.405',
+    date: '2026-05-28',
+    title: 'Mobile-responsive layout and live Dashboard Overview tiles',
+    items: [
+      {
+        type: 'feature',
+        text: 'CompanyHub now works on phones and tablets — the sidebar collapses into a tap-to-open menu (hamburger) on small screens, layouts reflow to fit, and wide tables scroll within their panels.',
+      },
+      {
+        type: 'fix',
+        text: 'The Dashboard Overview tiles (Energy Projects, Service Staff, SA Records) now show live counts from your actual data instead of fixed placeholder numbers.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.28.404',
     date: '2026-05-28',
     title: 'ECM Calculator tooltips + Meter Performance Minimum Hours chart',
