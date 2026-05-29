@@ -4038,10 +4038,41 @@ function emHandleImport(pid) {
 
     // Only save to DB when a project is selected
     if (pid) {
+      // In replace mode: snapshot old notes/editedAt and old buildings BEFORE wiping, so we can
+      // (a) re-apply hand-typed notes to matching rows, and (b) warn about removed buildings.
+      var _replaceNotesMap = {}; // id → { notes, editedAt }
+      var _oldBuildingSet = {}; // building name → true
+      if (_emImportMode === 'replace') {
+        var _oldData = emLoadMatrix(pid) || { rows: [], buildings: [] };
+        (_oldData.rows || []).forEach(function (r) {
+          if (r.id) {
+            _replaceNotesMap[r.id] = { notes: r.notes || '', editedAt: r.editedAt || '' };
+          }
+          if (r.building) _oldBuildingSet[r.building] = true;
+        });
+      }
+
       // merge mode: preserve existing rows and dedup by id; replace mode: start fresh
       var baseData =
         _emImportMode === 'replace' ? { rows: [], buildings: [] } : emLoadMatrix(pid) || { rows: [], buildings: [] };
       var merged = emMergeIntoMatrix(baseData, allRows);
+
+      // Re-apply preserved notes/editedAt onto newly merged rows (replace mode only).
+      // emMergeIntoMatrix ran with empty existing[], so the preservation block inside it
+      // never fired. Walk the merged rows here and restore from our snapshot.
+      if (_emImportMode === 'replace') {
+        var _notesPreservedCount = 0;
+        merged.rows.forEach(function (r) {
+          var saved = _replaceNotesMap[r.id];
+          if (saved) {
+            if (saved.notes && !r.notes) {
+              r.notes = saved.notes;
+              _notesPreservedCount++;
+            }
+            if (saved.editedAt && !r.editedAt) r.editedAt = saved.editedAt;
+          }
+        });
+      }
       merged.totalBASPoints = totalRawRows;
       // Show "Saving..." while awaiting the real IDB commit (tx.oncomplete).
       // We do NOT show "Import complete" until the write is fully durable on disk.
@@ -4103,6 +4134,59 @@ function emHandleImport(pid) {
           catLines.push('<div style="padding:1px 0">' + label + '</div>');
         }
       });
+      // Compute diff for replace mode: compare old row IDs vs new row IDs.
+      var _replaceDiffHtml = '';
+      if (_emImportMode === 'replace') {
+        var _newIdSet = {};
+        merged.rows.forEach(function (r) {
+          _newIdSet[r.id] = true;
+        });
+        var _oldIds = Object.keys(_replaceNotesMap);
+        var _addedCount = 0;
+        var _removedCount = 0;
+        var _updatedCount = 0;
+        merged.rows.forEach(function (r) {
+          if (_replaceNotesMap[r.id]) {
+            _updatedCount++;
+          } else {
+            _addedCount++;
+          }
+        });
+        _oldIds.forEach(function (id) {
+          if (!_newIdSet[id]) _removedCount++;
+        });
+        var _removedBuildings = Object.keys(_oldBuildingSet).filter(function (b) {
+          return !importBuildings[b];
+        });
+        var _diffParts = [];
+        if (_addedCount > 0) _diffParts.push('+' + _addedCount + ' added');
+        if (_removedCount > 0) _diffParts.push('−' + _removedCount + ' removed');
+        if (_updatedCount > 0) _diffParts.push(_updatedCount + ' updated');
+        if (_notesPreservedCount > 0) _diffParts.push(_notesPreservedCount + ' notes preserved');
+        _replaceDiffHtml =
+          '<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px;font-weight:600;color:var(--text)">' +
+          'Changes vs. previous import:</div>' +
+          '<div style="padding:1px 0">' +
+          (_diffParts.length ? _diffParts.join(' &nbsp;|&nbsp; ') : 'No changes') +
+          '</div>';
+        if (_removedBuildings.length > 0) {
+          _replaceDiffHtml +=
+            '<div style="margin-top:6px;background:#fef3c7;border:1px solid #f59e0b;border-radius:4px;padding:6px 8px;color:#92400e;font-weight:600">' +
+            'WARNING: The following building' +
+            (_removedBuildings.length > 1 ? 's were' : ' was') +
+            ' in the previous import but NOT in the new CSVs — those rows were removed:<br>' +
+            '<span style="font-weight:400">' +
+            _removedBuildings
+              .map(function (b) {
+                return '&bull; ' + b;
+              })
+              .join('<br>') +
+            '</span>' +
+            '<br><span style="font-weight:400;font-style:italic">To keep those buildings, re-import all CSVs together or use Import (not Re-Import).</span>' +
+            '</div>';
+        }
+      }
+
       var summaryHtml =
         '<div style="font-size:11px;color:var(--text2);line-height:1.6;background:var(--s3);border-radius:4px;padding:8px 10px">' +
         '<div style="font-weight:600;color:var(--text);margin-bottom:6px">Category Breakdown:</div>' +
@@ -4116,6 +4200,7 @@ function emHandleImport(pid) {
         ' of ' +
         allRows.length.toLocaleString() +
         '</div>' +
+        _replaceDiffHtml +
         (otherRate > 0.2
           ? '<div style="margin-top:6px;color:#f59e0b;font-weight:600">⚠ High unclassified rate — some equipment types may need mapping</div>'
           : '') +

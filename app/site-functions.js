@@ -1183,6 +1183,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.29.420',
+    date: '2026-05-29',
+    title: 'Equipment Matrix preserves notes on re-import; Backup/Restore/Reset buttons fixed in Energy page',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix re-import (Replace mode) now preserves any hand-typed notes you added to rows. If the new CSVs remove a building, a yellow warning lists which buildings were dropped so nothing disappears silently.',
+      },
+      {
+        type: 'fix',
+        text: 'Backup Data, Restore Data, and Reset Data buttons in the Energy department sidebar now work correctly — they were throwing an error and doing nothing before this fix.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.29.419',
     date: '2026-05-29',
     title: 'Reset Data warning strengthened; ASHRAE report descriptions added',
