@@ -18,6 +18,7 @@ const ECM_TEMPLATES = {
       {
         id: 'unit_cfm',
         label: 'Unit Supply Air CFM',
+        help: 'CFM — Cubic Feet per Minute. The total volume of air the unit delivers.',
         unit: 'CFM',
         type: 'number',
         default: 10000,
@@ -27,6 +28,7 @@ const ECM_TEMPLATES = {
       {
         id: 'design_oa_cfm',
         label: 'Design Minimum OA CFM',
+        help: 'OA — Outside Air. CFM — Cubic Feet per Minute. The minimum fresh outdoor air the unit should bring in per code.',
         unit: 'CFM',
         type: 'number',
         default: 2000,
@@ -75,6 +77,7 @@ const ECM_TEMPLATES = {
       {
         id: 'avg_delta_t_heating',
         label: 'Avg ΔT Heating Season (Indoor–Outdoor)',
+        help: 'ΔT — Delta-T, the temperature difference between indoors and outdoors. Higher ΔT means more energy is wasted heating excess outdoor air.',
         unit: '°F',
         type: 'number',
         default: 35,
@@ -84,14 +87,33 @@ const ECM_TEMPLATES = {
       {
         id: 'avg_delta_t_cooling',
         label: 'Avg ΔT Cooling Season (Outdoor–Indoor)',
+        help: 'ΔT — Delta-T, the temperature difference between outdoors and indoors. Higher ΔT means more energy is wasted cooling excess outdoor air.',
         unit: '°F',
         type: 'number',
         default: 10,
         min: 0,
         max: 40,
       },
-      { id: 'boiler_afue', label: 'Boiler AFUE', unit: '%', type: 'number', default: 80, min: 60, max: 99 },
-      { id: 'chiller_cop', label: 'Chiller / DX COP', unit: '', type: 'number', default: 3.5, min: 1, max: 8 },
+      {
+        id: 'boiler_afue',
+        label: 'Boiler AFUE',
+        help: 'AFUE — Annual Fuel Utilization Efficiency. How much of the fuel burned becomes useful heat. Older boilers: 70–80%. Modern high-efficiency: 85–95%.',
+        unit: '%',
+        type: 'number',
+        default: 80,
+        min: 60,
+        max: 99,
+      },
+      {
+        id: 'chiller_cop',
+        label: 'Chiller / DX COP',
+        help: 'COP — Coefficient of Performance. How efficiently the chiller converts electricity into cooling. Higher = more efficient. DX — Direct Expansion (refrigerant-based cooling). Typical range: 3–5.',
+        unit: '',
+        type: 'number',
+        default: 3.5,
+        min: 1,
+        max: 8,
+      },
       { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
       { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
       {
@@ -632,6 +654,7 @@ const ECM_TEMPLATES = {
       {
         id: 'oa_cfm',
         label: 'Outdoor Air CFM',
+        help: 'OA — Outside Air. CFM — Cubic Feet per Minute. The volume of fresh outdoor air brought into the building.',
         unit: 'CFM',
         type: 'number',
         default: 2000,
@@ -722,6 +745,7 @@ const ECM_TEMPLATES = {
       {
         id: 'afue',
         label: 'Heating Efficiency (AFUE or COP)',
+        help: 'AFUE — Annual Fuel Utilization Efficiency (for gas systems, e.g. 0.80 = 80%). COP — Coefficient of Performance (for heat pumps, e.g. 3.0). Enter the appropriate value for your heating system.',
         unit: '',
         type: 'number',
         default: 0.8,
@@ -731,6 +755,7 @@ const ECM_TEMPLATES = {
       {
         id: 'eer',
         label: 'Cooling Efficiency (EER)',
+        help: 'EER — Energy Efficiency Ratio. Cooling output (BTU/hr) divided by electrical input (watts). Higher = more efficient. Typical packaged units: 10–14 EER.',
         unit: 'EER',
         type: 'number',
         default: 12.0,
@@ -1598,13 +1623,23 @@ const ECM_TEMPLATES = {
       {
         id: 'avg_dt_heat',
         label: 'Avg Heating ΔT (indoor − outdoor)',
+        help: 'ΔT — Delta-T, the temperature difference between indoors and outdoors during heating season.',
         unit: '°F',
         type: 'number',
         default: 35,
         min: 5,
         max: 80,
       },
-      { id: 'boiler_afue', label: 'Boiler AFUE', unit: '%', type: 'number', default: 82, min: 60, max: 99 },
+      {
+        id: 'boiler_afue',
+        label: 'Boiler AFUE',
+        help: 'AFUE — Annual Fuel Utilization Efficiency. How much of the fuel burned becomes useful heat. Older boilers: 70–80%. Modern high-efficiency: 85–95%.',
+        unit: '%',
+        type: 'number',
+        default: 82,
+        min: 60,
+        max: 99,
+      },
       { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
       {
         id: 'cool_hours',
@@ -1618,13 +1653,23 @@ const ECM_TEMPLATES = {
       {
         id: 'avg_dt_cool',
         label: 'Avg Cooling ΔT (outdoor − indoor)',
+        help: 'ΔT — Delta-T, the temperature difference between outdoors and indoors during cooling season.',
         unit: '°F',
         type: 'number',
         default: 10,
         min: 0,
         max: 40,
       },
-      { id: 'chiller_cop', label: 'Cooling System COP', unit: 'COP', type: 'number', default: 3.5, min: 1, max: 8 },
+      {
+        id: 'chiller_cop',
+        label: 'Cooling System COP',
+        help: 'COP — Coefficient of Performance. How efficiently the cooling system converts electricity into cooling. Higher = more efficient. Typical range: 3–5.',
+        unit: 'COP',
+        type: 'number',
+        default: 3.5,
+        min: 1,
+        max: 8,
+      },
       { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
       {
         id: 'install_cost',
@@ -1750,13 +1795,23 @@ const ECM_TEMPLATES = {
       {
         id: 'boiler_afue',
         label: 'Boiler AFUE (gas reheat only)',
+        help: 'AFUE — Annual Fuel Utilization Efficiency. How much of the fuel burned becomes useful heat. Older boilers: 70–80%. Modern high-efficiency: 85–95%.',
         unit: '%',
         type: 'number',
         default: 82,
         min: 60,
         max: 99,
       },
-      { id: 'cooling_cop', label: 'Cooling System COP', unit: 'COP', type: 'number', default: 3.5, min: 1, max: 8 },
+      {
+        id: 'cooling_cop',
+        label: 'Cooling System COP',
+        help: 'COP — Coefficient of Performance. How efficiently the cooling system converts electricity into cooling. Higher = more efficient. Typical range: 3–5.',
+        unit: 'COP',
+        type: 'number',
+        default: 3.5,
+        min: 1,
+        max: 8,
+      },
       { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
       { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
       {
@@ -1894,8 +1949,26 @@ const ECM_TEMPLATES = {
         min: 10000,
         max: 50000000,
       },
-      { id: 'eff_old', label: 'Existing Boiler AFUE', unit: '%', type: 'number', default: 78, min: 60, max: 99 },
-      { id: 'eff_new', label: 'New Boiler AFUE', unit: '%', type: 'number', default: 95, min: 60, max: 99 },
+      {
+        id: 'eff_old',
+        label: 'Existing Boiler AFUE',
+        help: 'AFUE — Annual Fuel Utilization Efficiency. The percentage of fuel burned that becomes useful heat. Typical old boilers: 70–80%.',
+        unit: '%',
+        type: 'number',
+        default: 78,
+        min: 60,
+        max: 99,
+      },
+      {
+        id: 'eff_new',
+        label: 'New Boiler AFUE',
+        help: 'AFUE — Annual Fuel Utilization Efficiency. Modern condensing boilers typically achieve 90–97% AFUE.',
+        unit: '%',
+        type: 'number',
+        default: 95,
+        min: 60,
+        max: 99,
+      },
       {
         id: 'hdd',
         label: 'Annual Heating Degree Days',
@@ -1908,6 +1981,7 @@ const ECM_TEMPLATES = {
       {
         id: 'design_delta_t',
         label: 'Design ΔT (indoor − outdoor)',
+        help: 'ΔT — Delta-T, the design temperature difference between indoors and outdoors at peak heating conditions. Used to size the boiler load.',
         unit: '°F',
         type: 'number',
         default: 75,
@@ -2592,13 +2666,16 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
         autoPopulated[inp.id] = true;
       }
 
+      const helpTitle = inp.help ? ` title="${inp.help.replace(/"/g, '&quot;')}"` : '';
+      const helpCursor = inp.help ? ';cursor:help' : '';
+
       if (inp.type === 'select') {
         const opts = inp.options
           .map((o) => `<option value="${o.value}" ${o.value === val ? 'selected' : ''}>${o.label}</option>`)
           .join('');
         return `
         <div class="ecm-field-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-          <label style="flex:0 0 280px;font-size:12px;font-weight:600;color:var(--text2);padding-top:4px">${inp.label}</label>
+          <label${helpTitle} style="flex:0 0 280px;font-size:12px;font-weight:600;color:var(--text2);padding-top:4px${helpCursor}">${inp.label}</label>
           <select id="${id}" class="fs ecm-input" data-inp="${inp.id}" style="flex:1;min-width:200px;font-size:13px">
             ${opts}
           </select>
@@ -2615,7 +2692,7 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
 
       return `
       <div class="ecm-field-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-        <label for="${id}" style="flex:0 0 280px;font-size:12px;font-weight:600;color:var(--text2);padding-top:6px">${inp.label}${inp.unit ? ' <span style="opacity:.6;font-weight:400">(' + inp.unit + ')</span>' : ''}</label>
+        <label for="${id}"${helpTitle} style="flex:0 0 280px;font-size:12px;font-weight:600;color:var(--text2);padding-top:6px${helpCursor}">${inp.label}${inp.unit ? ' <span style="opacity:.6;font-weight:400">(' + inp.unit + ')</span>' : ''}</label>
         <div style="flex:1;min-width:160px">
           <input id="${id}" class="fi ecm-input" type="number" data-inp="${inp.id}"
             value="${val}" min="${inp.min}" max="${inp.max}"

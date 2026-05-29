@@ -8817,6 +8817,8 @@ function renderPerfPane(pane, m, bills, incl) {
         effDemRate,
         ratchetCost,
         ratchetGap,
+        kwh: e.kwh,
+        normDays: e.normDays,
       };
     });
 
@@ -9151,8 +9153,13 @@ function renderPerfPane(pane, m, bills, incl) {
       '</div>' +
       '<div>' +
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:6px">Load Factor Trend</div>' +
-      '<div style="font-size:10px;color:var(--text3);margin-bottom:6px">kWh ÷ (demandKW × 24 × days) — dashed lines: 33% typical school · 50% target</div>' +
+      '<div style="font-size:10px;color:var(--text3);margin-bottom:6px">kWh ÷ (Actual metered kW × 24 × days) — not billed/ratchet kW · dashed lines: 33% typical school · 50% target</div>' +
       '<div class="ma-chart-wrap" style="height:180px"><canvas id="demLFChart"></canvas></div>' +
+      '</div>' +
+      '<div>' +
+      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:6px">Minimum Hours</div>' +
+      '<div style="font-size:10px;color:var(--text3);margin-bottom:6px">kWh ÷ Actual kW — hours demand would need to run at peak to deliver actual energy</div>' +
+      '<div class="ma-chart-wrap" style="height:180px"><canvas id="demMinHoursChart"></canvas></div>' +
       '</div>' +
       '</div>';
 
@@ -9176,6 +9183,7 @@ function renderPerfPane(pane, m, bills, incl) {
     weatherModeBar +
     yearPills +
     chartSection +
+    demandSection +
     '<div style="margin-bottom:14px">' +
     '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:4px">Post-Baseline Monthly vs Baseline</div>' +
     '<div style="font-size:11px;color:var(--text3);margin-bottom:8px">' +
@@ -9190,8 +9198,7 @@ function renderPerfPane(pane, m, bills, incl) {
         '</strong></div>') +
     '</div>' +
     anomalySection +
-    perfControlBar +
-    demandSection;
+    perfControlBar;
 
   if (_perfChartVis) {
     requestAnimationFrame(() => {
@@ -9333,6 +9340,9 @@ function renderPerfPane(pane, m, bills, incl) {
     });
     requestAnimationFrame(() => {
       if (typeof drawLoadFactorChart === 'function') drawLoadFactorChart('demLFChart', _demAnalytics.months);
+    });
+    requestAnimationFrame(() => {
+      if (typeof drawMinimumHoursChart === 'function') drawMinimumHoursChart('demMinHoursChart', _demAnalytics.months);
     });
   }
 }
@@ -9731,7 +9741,7 @@ function drawLoadFactorChart(canvasId, bills) {
               if (v == null) return null;
               const pct = (v * 100).toFixed(1) + '%';
               const grade = v >= 0.5 ? 'Good' : v >= 0.3 ? 'Fair' : 'Poor';
-              return ' Load Factor: ' + v.toFixed(3) + ' (' + pct + ' - ' + grade + ')';
+              return ' Load Factor: ' + pct + ' (' + grade + ')';
             },
           },
         },
@@ -9744,15 +9754,75 @@ function drawLoadFactorChart(canvasId, bills) {
         y: {
           beginAtZero: true,
           min: 0,
-          max: 1,
           ticks: {
             color: 'rgba(180,200,220,0.8)',
             font: { size: 10 },
             callback: (v) => (v * 100).toFixed(0) + '%',
-            stepSize: 0.1,
           },
           grid: { color: 'rgba(255,255,255,0.06)' },
-          title: { display: true, text: 'Load Factor (0-1)', color: 'rgba(160,185,210,0.8)', font: { size: 10 } },
+          title: { display: true, text: 'Load Factor %', color: 'rgba(160,185,210,0.8)', font: { size: 10 } },
+        },
+      },
+    },
+  });
+}
+
+function drawMinimumHoursChart(canvasId, bills) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  if (_maCharts[canvasId]) {
+    _maCharts[canvasId].destroy();
+  }
+
+  const labels = bills.map((b) => b.label);
+
+  // Minimum Hours = kWh ÷ Actual kW — hours demand would need to run at peak to deliver actual energy
+  const data = bills.map((b) => (b.demandKW > 0 && b.kwh > 0 ? +(b.kwh / b.demandKW).toFixed(2) : null));
+
+  _maCharts[canvasId] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Minimum Hours',
+          data,
+          backgroundColor: 'rgba(100,220,160,0.75)',
+          borderColor: 'rgba(100,220,160,1)',
+          borderWidth: 1,
+          borderRadius: 3,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const v = ctx.parsed.y;
+              if (v == null) return null;
+              return ' Min Hours: ' + v.toFixed(1) + ' hrs';
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 10 }, maxRotation: 45 },
+          grid: { color: 'rgba(255,255,255,0.10)' },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: {
+            color: 'rgba(180,200,220,0.8)',
+            font: { size: 10 },
+            callback: (v) => v + ' hrs',
+          },
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          title: { display: true, text: 'Hours', color: 'rgba(160,185,210,0.8)', font: { size: 10 } },
         },
       },
     },

@@ -1183,6 +1183,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.28.404',
+    date: '2026-05-28',
+    title: 'ECM Calculator tooltips + Meter Performance Minimum Hours chart',
+    items: [
+      {
+        type: 'feature',
+        text: 'ECM Calculators now show help tooltips — hover any input label for a plain-language explanation of what to enter.',
+      },
+      {
+        type: 'feature',
+        text: 'Meter Performance now includes a Minimum Hours chart and an auto-scaling Load Factor axis for clearer demand analysis.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.28.403',
     date: '2026-05-28',
     title: 'Sidebar bottom items always reachable at any window height',
