@@ -7733,10 +7733,10 @@
             <div class="sb-clock" id="sb-clock">--:-- --</div>
             <div class="sb-date" id="sb-date">Loading...</div>
             <div class="sb-btn-row">
-              <button class="sb-btn" onclick="siteBackup()">Backup</button>
-              <button class="sb-btn" onclick="siteRestore()">Restore</button>
+              <button class="sb-btn" onclick="siteBackup()" title="Backup all data">Backup</button>
+              <button class="sb-btn" onclick="siteRestore()" title="Restore from backup">Restore</button>
             </div>
-            <button class="sb-btn danger" style="width: 100%" onclick="siteResetData()">Reset Data</button>
+            <button class="sb-btn danger" style="width: 100%" onclick="siteResetData()" title="WARNING: Permanently deletes ALL projects, buildings, meters, and bills. Cannot be undone.">Reset Data</button>
             <div
               class="sb-version"
               id="en-sb-version"
@@ -14590,7 +14590,7 @@
     <script src="app/utility-data.js?v=404"></script>
     <script src="app/pipeline-diagram.js?v=399"></script>
     <script src="app/csv-import.js?v=399"></script>
-    <script src="app/report-engine.js?v=399"></script>
+    <script src="app/report-engine.js?v=419"></script>
     <script src="app/report-preview.js?v=399"></script>
     <script src="app/calculators.js?v=399"></script>
     <script src="app/ecm-calculators.js?v=404"></script>
@@ -14601,7 +14601,7 @@
     <script src="app/portal-export.js?v=399"></script>
     <script src="app/bas-trends.js?v=399"></script>
 
-    <script src="app/site-functions.js?v=409"></script>
+    <script src="app/site-functions.js?v=419"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */

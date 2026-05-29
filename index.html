@@ -1853,10 +1853,10 @@
             <div class="sb-clock" id="sb-clock">--:-- --</div>
             <div class="sb-date" id="sb-date">Loading...</div>
             <div class="sb-btn-row">
-              <button class="sb-btn" onclick="siteBackup()">Backup</button>
-              <button class="sb-btn" onclick="siteRestore()">Restore</button>
+              <button class="sb-btn" onclick="siteBackup()" title="Backup all data">Backup</button>
+              <button class="sb-btn" onclick="siteRestore()" title="Restore from backup">Restore</button>
             </div>
-            <button class="sb-btn danger" style="width: 100%" onclick="siteResetData()">Reset Data</button>
+            <button class="sb-btn danger" style="width: 100%" onclick="siteResetData()" title="WARNING: Permanently deletes ALL projects, buildings, meters, and bills. Cannot be undone.">Reset Data</button>
             <div
               class="sb-version"
               id="sb-version"
@@ -2538,7 +2538,7 @@
         inp.click();
       }
       function siteResetData() {
-        if (!confirm('Reset ALL data? This cannot be undone.')) return;
+        if (!confirm('WARNING: This will permanently delete ALL projects, buildings, meters, and utility bills. There is no undo and no server backup. Make sure you have downloaded a backup first.\n\nClick OK to delete everything, or Cancel to go back.')) return;
         localStorage.clear();
         sessionStorage.clear();
         if (typeof showToast === 'function') showToast('Reset — reloading...');

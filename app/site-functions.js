@@ -1183,6 +1183,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.29.419',
+    date: '2026-05-29',
+    title: 'Reset Data warning strengthened; ASHRAE report descriptions added',
+    items: [
+      {
+        type: 'fix',
+        text: 'Reset Data button now shows a warning tooltip on hover — hover over it to see the full warning before clicking. The confirmation dialog also uses clearer language reminding you to download a backup first.',
+      },
+      {
+        type: 'fix',
+        text: 'ASHRAE 36 gap reports now show plain-language descriptions for chilled water plant, hot water plant, and cooling tower points (e.g. "Primary chilled water pump status feedback") instead of raw key names like pchwpStatus.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.29.410',
     date: '2026-05-29',
     title: 'Equipment Matrix imports survive an immediate page refresh',

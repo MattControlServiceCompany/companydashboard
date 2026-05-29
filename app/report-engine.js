@@ -9911,7 +9911,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
     plain:
       'Chilled water differential pressure control allows pump speed to be reduced when building load is light. This is particularly valuable because chilled water pump energy scales with the cube of speed.',
   },
-  cwSupTemp: {
+  cwst: {
     short: 'Condenser water supply temperature sensor',
     impact: '3–8% chiller savings',
     plain:
@@ -10160,6 +10160,171 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
     impact: '10–20% pump energy savings',
     plain:
       'Chilled water differential pressure control allows pump speed to be reduced when building load is light. Pump energy scales with the cube of speed, so even modest speed reductions deliver large energy savings during the many hours of partial-load operation.',
+  },
+  // ── HWP additional point keys ───────────────────────────────────────────
+  hwFlow: {
+    short: 'Hot water flow meter',
+    impact: 'Required for BTU metering and delta-T monitoring',
+    plain:
+      'A flow meter on the hot water loop allows the BAS to calculate actual heat delivered (BTUs), monitor system efficiency, and detect low delta-T conditions that signal pumping or coil problems.',
+  },
+  hwIsoValve: {
+    short: 'Boiler isolation valve status',
+    impact: 'Required for safe boiler staging',
+    plain:
+      'Isolation valve status feedback confirms that a boiler\'s inlet and outlet valves have opened before the boiler fires. Without it, the BAS cannot safely stage boilers — opening a boiler into a closed system risks pressure damage and failed starts.',
+  },
+  secHWPumpStatus: {
+    short: 'Secondary hot water pump status feedback',
+    impact: 'Required for secondary loop verification',
+    plain:
+      'Secondary pump status confirms that distribution pumps serving the building loop are running. Without this feedback, the BAS cannot verify that heat is being delivered to terminal units, cannot implement lead/lag rotation, and cannot alarm on pump failures.',
+  },
+  hwIsoValveCmd: {
+    short: 'Boiler isolation valve command',
+    impact: 'Required for boiler sequencing',
+    plain:
+      'The isolation valve command allows the BAS to open and close individual boiler ports as part of staging and lead/lag sequences. Without individual valve control, the plant cannot safely add or remove boilers from the loop without manual intervention.',
+  },
+  // ── CHWP additional point keys ─────────────────────────────────────────
+  chillerEvapDP: {
+    short: 'Chiller evaporator differential pressure sensor',
+    impact: 'Required for minimum flow protection',
+    plain:
+      'The evaporator differential pressure sensor verifies that adequate chilled water flow is passing through the chiller barrel. Without it, the BAS cannot detect low-flow conditions that can freeze the evaporator and damage the chiller — one of the most expensive HVAC failures.',
+  },
+  chwFlow: {
+    short: 'Chilled water flow meter',
+    impact: 'Required for ton metering and delta-T monitoring',
+    plain:
+      'A chilled water flow meter allows the BAS to calculate actual cooling delivered in tons, monitor system efficiency, and detect low delta-T conditions. Low delta-T on a chilled water plant is a common cause of chiller over-cycling and excess energy use.',
+  },
+  chillerStatus: {
+    short: 'Chiller run status feedback',
+    impact: 'Required for chiller staging and alarming',
+    plain:
+      'Chiller status confirms that each chiller is running and not in fault. The BAS uses this feedback for lead/lag rotation, staging additional chillers when demand increases, and generating alarms when a chiller trips — the most critical plant equipment in the system.',
+  },
+  pchwpStatus: {
+    short: 'Primary chilled water pump status feedback',
+    impact: 'Required for pump sequencing and alarming',
+    plain:
+      'Primary pump status confirms that chilled water is circulating through the chiller barrel. Without this feedback, the BAS cannot verify that the chiller has flow before starting it, cannot implement lead/lag rotation, and cannot detect pump failures that would lead to chiller shutdown.',
+  },
+  schwpStatus: {
+    short: 'Secondary chilled water pump status feedback',
+    impact: 'Required for distribution loop verification',
+    plain:
+      'Secondary pump status confirms that chilled water is being distributed to the building loop. Without it, the BAS cannot verify that cooling is reaching terminal units, cannot alarm on distribution pump failures, and cannot implement lead/lag rotation across secondary pumps.',
+  },
+  schwpSpeed: {
+    short: 'Secondary chilled water pump speed feedback',
+    impact: 'Required for pump VFD verification',
+    plain:
+      'Secondary pump speed feedback confirms that the variable frequency drive is responding to speed commands. Without it, the BAS cannot verify that pump speed modulation is working or detect VFD faults that would cause the pump to run at full speed regardless of building load.',
+  },
+  chwIsoValveStatus: {
+    short: 'Chiller CHW isolation valve status feedback',
+    impact: 'Required for safe chiller staging',
+    plain:
+      'Chiller isolation valve status confirms that the evaporator-side valve has opened before the chiller is enabled. Without this feedback, the BAS cannot safely stage chillers — enabling a chiller without confirmed flow through the evaporator risks freeze damage and failed starts.',
+  },
+  chillerEnable: {
+    short: 'Chiller enable command',
+    impact: 'Required for chiller staging sequences',
+    plain:
+      'The chiller enable point allows the BAS to start and stop individual chillers as part of staging and lead/lag sequences. Without it, the BAS cannot control which chillers run, preventing energy-efficient staging strategies.',
+  },
+  chwSetpoint: {
+    short: 'Chiller leaving water temperature setpoint command',
+    impact: 'Required for CHW supply temperature reset',
+    plain:
+      'The chilled water setpoint command allows the BAS to tell the chiller what temperature to target. Raising this setpoint during mild weather — chilled water temperature reset — is one of the most effective chiller plant efficiency strategies and requires this writable point.',
+  },
+  pchwpEnable: {
+    short: 'Primary chilled water pump enable command',
+    impact: 'Required for pump staging sequences',
+    plain:
+      'The primary pump enable command allows the BAS to start individual pumps before enabling the chiller and as part of lead/lag sequences. Without individual pump control, the plant cannot safely stage chillers or rotate primary pumps to equalize runtime.',
+  },
+  schwpEnable: {
+    short: 'Secondary chilled water pump enable command',
+    impact: 'Required for distribution pump staging',
+    plain:
+      'The secondary pump enable command allows the BAS to start and stop distribution pumps in response to building load. Without it, secondary pumps must run continuously, wasting energy during periods of low cooling demand.',
+  },
+  chwIsoValveCmd: {
+    short: 'CHW isolation valve command',
+    impact: 'Required for chiller isolation during staging',
+    plain:
+      'The isolation valve command allows the BAS to open and close each chiller\'s evaporator-side port during staging and lead/lag sequences. Without individual valve control, chillers cannot be safely added to or removed from the loop without manual intervention.',
+  },
+  // ── CT (Cooling Tower) point keys ─────────────────────────────────────────
+  cwrt: {
+    short: 'Condenser water return temperature sensor',
+    impact: 'Required for condenser delta-T monitoring',
+    plain:
+      'Condenser water return temperature allows the BAS to calculate the heat rejected through the cooling tower. Low condenser water delta-T can indicate tower, chiller, or pumping problems that reduce overall plant efficiency.',
+  },
+  oaWetBulb: {
+    short: 'Outdoor air wet-bulb temperature sensor',
+    impact: 'Required for cooling tower approach control',
+    plain:
+      'Wet-bulb temperature is the fundamental limit for cooling tower performance — a tower can only cool water to within a few degrees of the wet-bulb. Wet-bulb measurement is required for optimal condenser water setpoint reset, which improves chiller efficiency during mild weather.',
+  },
+  oaRH: {
+    short: 'Outdoor air relative humidity sensor',
+    impact: 'Supports wet-bulb calculation',
+    plain:
+      'Outdoor humidity combined with dry-bulb temperature allows the BAS to calculate wet-bulb temperature when a dedicated wet-bulb sensor is not available. This enables condenser water setpoint reset based on actual atmospheric conditions.',
+  },
+  ctFanStatus: {
+    short: 'Cooling tower fan run status feedback',
+    impact: 'Required for fan proof-of-operation',
+    plain:
+      'Cooling tower fan status confirms that the tower fan is running and providing evaporative cooling. Without this feedback, the BAS cannot verify fan operation, implement lead/lag across multiple tower cells, or alarm when a fan fails — which would allow condenser water temperatures to rise and reduce chiller efficiency.',
+  },
+  cwPumpStatus: {
+    short: 'Condenser water pump run status feedback',
+    impact: 'Required for pump proof-of-operation',
+    plain:
+      'Condenser pump status confirms that condenser water is circulating through the chiller and cooling tower. Without it, the BAS cannot verify that the chiller has condenser flow before starting, cannot detect pump failures, and cannot implement lead/lag pump rotation.',
+  },
+  sumpLevel: {
+    short: 'Cooling tower sump/basin water level',
+    impact: 'Required for freeze and overflow protection',
+    plain:
+      'The sump level sensor monitors the water level in the cooling tower basin. Low level triggers makeup water valves to prevent pump cavitation; high level indicates overflow or valve problems. Without sump monitoring, the BAS cannot prevent dry-running pumps or wasted water from an open makeup valve.',
+  },
+  cwIsoValveStatus: {
+    short: 'Condenser water isolation valve status feedback',
+    impact: 'Required for safe chiller staging',
+    plain:
+      'Condenser isolation valve status confirms that the condenser-side port has opened before the chiller is enabled. Without it, the BAS cannot safely stage chillers — enabling a chiller without confirmed condenser flow risks refrigerant-side damage and failed starts.',
+  },
+  ctFanEnable: {
+    short: 'Cooling tower fan enable command',
+    impact: 'Required for tower fan sequencing',
+    plain:
+      'The tower fan enable command allows the BAS to start and stop cooling tower fans in response to condenser water temperature. Without it, fans must run continuously or be controlled manually, eliminating the significant energy savings available from fan cycling and variable-speed control.',
+  },
+  cwPumpEnable: {
+    short: 'Condenser water pump enable command',
+    impact: 'Required for condenser pump staging',
+    plain:
+      'The condenser pump enable command allows the BAS to start pumps before enabling the chiller and as part of lead/lag sequences. Without individual pump control, the plant cannot safely stage chillers or rotate condenser pumps to equalize runtime.',
+  },
+  cwIsoValveCmd: {
+    short: 'Condenser water isolation valve command',
+    impact: 'Required for chiller staging sequences',
+    plain:
+      'The condenser isolation valve command allows the BAS to open and close each chiller\'s condenser-side port during staging and lead/lag sequences. Without it, chillers cannot be safely added to or removed from the condenser loop without manual intervention.',
+  },
+  makeupValveCmd: {
+    short: 'Cooling tower makeup water valve command',
+    impact: 'Required for basin level control',
+    plain:
+      'The makeup water valve command allows the BAS to automatically refill the cooling tower basin when the sump level drops. Without BAS control, the makeup valve must be set to a fixed position, risking overflow during low-load periods or pump cavitation when the basin empties.',
   },
 };
 
