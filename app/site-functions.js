@@ -1,4 +1,4 @@
-﻿/* ══ SITE FUNCTIONS ══ */
+/* ══ SITE FUNCTIONS ══ */
 
 /* Clock */
 function siteTickClock() {
@@ -1182,6 +1182,17 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  {
+    v: 'v2026.05.28.406',
+    date: '2026-05-28',
+    title: 'No more sideways scroll on phones and tablets',
+    items: [
+      {
+        type: 'fix',
+        text: 'Phones and tablets no longer scroll sideways — page content now reflows to fit the screen width below 900px.',
+      },
+    ],
+  },
   {
     v: 'v2026.05.28.405',
     date: '2026-05-28',
