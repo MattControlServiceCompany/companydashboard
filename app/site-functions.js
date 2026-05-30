@@ -1183,6 +1183,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.30.422',
+    date: '2026-05-30',
+    title: 'Equipment Matrix data-loss fix — large imports now save reliably',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix imports no longer silently fail on the Energy page. Large projects (2,000+ rows) were hitting a browser storage size limit and losing all imported data on reload. Saves now go to IndexedDB (no size limit) instead of the limited localStorage.',
+      },
+      {
+        type: 'fix',
+        text: 'Toast notifications (the green/red status messages) now work correctly on the Energy page. They were silently throwing errors before, so some import feedback was invisible.',
+      },
+      {
+        type: 'fix',
+        text: 'Equipment Matrix footer now shows real counts per point type in the Page Total and Total rows, instead of dashes.',
+      },
+      {
+        type: 'fix',
+        text: 'Backup and Restore on the Energy page now saves/loads from IndexedDB, matching where data is actually stored.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.29.421',
     date: '2026-05-29',
     title: 'Better equipment-type classification; ASHRAE Service Proposal report fixes',
@@ -2692,3 +2715,33 @@ document.addEventListener('keydown', function (e) {
     if (el && el.classList.contains('open') && closers[id]) closers[id]();
   });
 });
+
+/* ── TOAST FALLBACK (guarded) ──────────────────────────────────────────────
+ * showToast / hideToast are defined in site-ui.js:987 for pages that load
+ * site-ui.js (index.html, service-department.html, ems-leads.html).
+ * energy-department.html does NOT load site-ui.js, so they are undefined
+ * there — causing ReferenceError on every toast call in equipment-matrix.js.
+ * site-functions.js IS loaded on the energy page, so we define them here
+ * only when the site-ui.js versions are absent. The `if` guards prevent
+ * double-definition on pages that load both files.
+ * Signature and behavior are identical to site-ui.js:987–1002.
+ * ─────────────────────────────────────────────────────────────────────── */
+if (typeof window.showToast !== 'function') {
+  window.showToast = function showToast(msg, type) {
+    var el = document.getElementById('toast');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'toast toast-show' + (type ? ' toast-' + type : '');
+    clearTimeout(window._toastTimer);
+    var duration = parseInt(localStorage.getItem('ch_toast_duration') || '3500', 10);
+    if (duration > 0) {
+      window._toastTimer = setTimeout(window.hideToast, duration);
+    }
+  };
+}
+if (typeof window.hideToast !== 'function') {
+  window.hideToast = function hideToast() {
+    var el = document.getElementById('toast');
+    if (el) el.className = 'toast';
+  };
+}

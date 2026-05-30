@@ -1084,6 +1084,35 @@ function initEquipMatrix(projId) {
     wrap.innerHTML = '<p style="padding:24px;color:var(--t2)">Select a project to view equipment.</p>';
     return;
   }
+  // ── State (a): DB not ready yet — show loading placeholder, re-render when ready ──
+  if (window.DB && !window.DB.isReady()) {
+    wrap.innerHTML =
+      '<div style="display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--text2);min-height:0">' +
+      '<div style="font-size:28px;opacity:.4">&#x23F3;</div>' +
+      '<div style="font-size:14px;font-weight:600">Loading equipment data…</div>' +
+      '</div>';
+    // Re-render once DB signals completion — dbReady (success), dbLoadFailed (failure),
+    // or dataUpdated (write that incidentally means DB became ready). All use {once:true}
+    // so the handler fires exactly once regardless of which event arrives first.
+    var _emInitPending = function () {
+      initEquipMatrix(projId);
+    };
+    window.addEventListener('dbReady', _emInitPending, { once: true });
+    window.addEventListener('dbLoadFailed', _emInitPending, { once: true });
+    window.addEventListener('dataUpdated', _emInitPending, { once: true });
+    return;
+  }
+  // ── State (b): DB ready but load failed (IDB unavailable, fell back to localStorage) ──
+  if (window._dbLoadFailed || (window.DB && window.DB.isLoadFailed())) {
+    wrap.innerHTML =
+      '<div style="display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:0">' +
+      '<div style="font-size:32px">&#x26A0;&#xFE0F;</div>' +
+      '<div style="font-size:14px;font-weight:700;color:var(--text)">Couldn\'t load equipment data</div>' +
+      '<div style="font-size:12px;color:var(--text2);text-align:center;max-width:320px">Storage failed to initialize. Your data is not lost — try refreshing.</div>' +
+      '<button class="btn btn-sm" style="margin-top:6px" onclick="location.reload()">Refresh</button>' +
+      '</div>';
+    return;
+  }
   var data = emLoadMatrix(projId);
   emRenderMatrix(wrap, data, projId);
 }
@@ -1953,25 +1982,108 @@ function emComputeFooterAvg(rows, defs) {
    _baspoints: sum of BAS point counts across all rows.
    _coverage:  average coverage % across rows that have a recognized point
                category (mirrors the avgCoverage logic in emComputeAuditStats).
-   Returns: { _baspoints: { sum, count }, _coverage: { avg, count } }         */
-function emComputeAuditFooterTotals(rows) {
+   _cat_<key>: count of rows where that point category is "present" (covered,
+               tier 1/2 = exact match, tier 3+ = fuzzy match). N/A rows are
+               excluded from the count (not applicable to equip type).
+   _seq_<key>: count of rows where the sequence is 'ready' or 'partial'
+               (i.e. at least one required point present). N/A rows excluded.
+   defs: optional array of column defs — if provided, _cat_ and _seq_ counts
+         are computed. If omitted, only _baspoints and _coverage are returned.
+   Returns: { _baspoints, _coverage, [_cat_*]: { present, applicable },
+                                     [_seq_*]: { present, applicable } }      */
+function emComputeAuditFooterTotals(rows, defs) {
   var ptSum = 0;
   var covSum = 0;
   var covCount = 0;
   var _footerMaps = emLoadCustomMappings(window._emActivePid || '');
+
+  // Collect cat and seq defs we need to count
+  var catDefs = [];
+  var seqDefs = [];
+  if (defs) {
+    for (var di = 0; di < defs.length; di++) {
+      if (defs[di].isAuditCat) catDefs.push(defs[di]);
+      else if (defs[di].isAuditSeq) seqDefs.push(defs[di]);
+    }
+  }
+
+  // Accumulators: present count and applicable count per column key
+  var catCounts = {}; // key -> { present: 0, applicable: 0 }
+  var seqCounts = {}; // key -> { present: 0, applicable: 0 }
+  for (var ci = 0; ci < catDefs.length; ci++) {
+    catCounts[catDefs[ci].key] = { present: 0, applicable: 0 };
+  }
+  for (var si = 0; si < seqDefs.length; si++) {
+    seqCounts[seqDefs[si].key] = { present: 0, applicable: 0 };
+  }
+
   for (var ri = 0; ri < rows.length; ri++) {
     var r = rows[ri];
     ptSum += Object.keys(r.points || {}).length;
+    var comp = null;
     if (r.category && EM_POINT_CATEGORIES[r.category]) {
-      var comp = emComputeCompliance(r, {}, _footerMaps);
+      comp = emComputeCompliance(r, {}, _footerMaps);
       covSum += comp.coveragePct;
       covCount++;
     }
+
+    // Count per-cat column presence
+    if (catDefs.length) {
+      if (!comp && r.category && EM_POINT_CATEGORIES[r.category]) {
+        comp = emComputeCompliance(r, {}, _footerMaps);
+      }
+      for (var cdi = 0; cdi < catDefs.length; cdi++) {
+        var cd = catDefs[cdi];
+        var colKey = cd.key; // e.g. "_cat_sat"
+        var catKey = cd.catKey;
+        // N/A if equip type doesn't match this column
+        if (!r.category || cd.catEquipTypes.indexOf(r.category) === -1) continue;
+        catCounts[colKey].applicable++;
+        if (comp) {
+          // Present if coveredPoints contains this catKey
+          for (var pi = 0; pi < comp.coveredPoints.length; pi++) {
+            if (comp.coveredPoints[pi].categoryKey === catKey) {
+              catCounts[colKey].present++;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // Count per-seq column presence
+    if (seqDefs.length) {
+      if (!comp) comp = emComputeCompliance(r, {}, _footerMaps);
+      var seqReadiness = emComputeSequenceReadiness(r, comp);
+      for (var sdi = 0; sdi < seqDefs.length; sdi++) {
+        var sd = seqDefs[sdi];
+        var sColKey = sd.key; // e.g. "_seq_sat_reset"
+        var seqKey = sd.seqKey;
+        // N/A if equip type doesn't match this sequence
+        if (!r.category || sd.seqEquipTypes.indexOf(r.category) === -1) continue;
+        seqCounts[sColKey].applicable++;
+        var seqEntry = seqReadiness && seqReadiness[seqKey];
+        if (seqEntry && (seqEntry.status === 'ready' || seqEntry.status === 'partial')) {
+          seqCounts[sColKey].present++;
+        }
+      }
+    }
   }
-  return {
+
+  var result = {
     _baspoints: { sum: ptSum, count: rows.length },
     _coverage: covCount > 0 ? { avg: Math.round(covSum / covCount), count: covCount } : null,
   };
+
+  // Merge cat/seq counts into result
+  for (var ck in catCounts) {
+    if (catCounts.hasOwnProperty(ck)) result[ck] = catCounts[ck];
+  }
+  for (var sk in seqCounts) {
+    if (seqCounts.hasOwnProperty(sk)) result[sk] = seqCounts[sk];
+  }
+
+  return result;
 }
 
 /* ── buildAuditFooterRow ────────────────────────────────────────────────────
@@ -2016,6 +2128,27 @@ function buildAuditFooterRow(totalsMap, defs, label, isBold) {
         '">' +
         cov +
         '%</td>';
+    } else if ((def.isAuditCat || def.isAuditSeq) && totalsMap[def.key] !== undefined) {
+      var colTot = totalsMap[def.key];
+      var presentCount = colTot.present;
+      var applicableCount = colTot.applicable;
+      if (applicableCount === 0) {
+        // No rows where this column applies — show dash
+        html += '<td style="' + tdBase + 'text-align:center;color:var(--text3)">&#8212;</td>';
+      } else {
+        html +=
+          '<td style="' +
+          tdBase +
+          'text-align:right;font-weight:' +
+          (isBold ? '700' : '500') +
+          ';color:var(--text2)" title="' +
+          presentCount +
+          ' of ' +
+          applicableCount +
+          ' applicable units have this point/sequence present">' +
+          presentCount +
+          '</td>';
+      }
     } else {
       html += '<td style="' + tdBase + 'text-align:center;color:var(--text3)">&#8212;</td>';
     }
@@ -3184,8 +3317,8 @@ function emRenderAuditTable(data, filters) {
   // Update stats bar for audit view
   emUpdateStatsPillsForAudit(rows);
 
-  var pageTotals = emComputeAuditFooterTotals(pageRows);
-  var allTotals = emComputeAuditFooterTotals(filtered);
+  var pageTotals = emComputeAuditFooterTotals(pageRows, defs);
+  var allTotals = emComputeAuditFooterTotals(filtered, defs);
   var tfootHtml =
     '<tfoot>' +
     buildAuditFooterRow(pageTotals, defs, 'Page Total', false) +

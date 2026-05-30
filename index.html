@@ -2483,11 +2483,17 @@
 
       /* Backup / Restore / Reset */
       function siteBackup() {
-        var data = {};
+        // Get all DB data (IndexedDB-backed)
+        var dbData = typeof DB !== 'undefined' && DB.isReady() ? DB.getAll() : {};
+        // Also grab any remaining localStorage keys (preferences, settings)
+        var lsData = {};
         for (var i = 0; i < localStorage.length; i++) {
           var k = localStorage.key(i);
-          data[k] = localStorage.getItem(k);
+          lsData[k] = localStorage.getItem(k);
         }
+        // Merge — DB data takes precedence
+        var allData = Object.assign({}, lsData, dbData);
+        var data = allData;
         var d = new Date();
         var ds = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
         var filename = 'CompanyHub-localdatafile-' + ds + '.json';
@@ -2515,8 +2521,38 @@
         fr.onload = function (ev) {
           try {
             var data = JSON.parse(ev.target.result);
+            // Keys that must stay in localStorage (read synchronously before DB warms)
+            var lsOnlyKeys = [
+              'ch_settings',
+              'ch_theme',
+              'ch_user',
+              'ch_activeView',
+              'ch_projTabOrder',
+              'ch_sidebarOrder',
+              'ch_dismissed_tips',
+              'ch_qs_seen',
+              'ch_seen_version',
+              'ch_toast_duration',
+              'ch_last_seen_version',
+              'ch_notifs',
+            ];
+            var useDB = typeof DB !== 'undefined' && DB.isReady();
             Object.keys(data).forEach(function (k) {
-              localStorage.setItem(k, data[k]);
+              var isLsKey = lsOnlyKeys.some(function (p) {
+                return k === p || k.indexOf(p) === 0;
+              });
+              if (isLsKey || !useDB) {
+                localStorage.setItem(k, data[k]);
+              } else {
+                // DB.set expects a parsed value, but backup stores raw JSON strings for complex types
+                var val = data[k];
+                try {
+                  val = JSON.parse(val);
+                } catch (e) {
+                  /* leave as string */
+                }
+                DB.set(k, val);
+              }
             });
             if (typeof showToast === 'function') showToast('Restored — reloading...');
             setTimeout(function () {
@@ -2959,7 +2995,7 @@
         renderCalendar();
       });
     </script>
-    <script src="app/db.js?v=410"></script>
+    <script src="app/db.js?v=422"></script>
     <script>
       /* ── MOBILE SIDEBAR DRAWER ── */
       function buildMobileSidebarToggle() {

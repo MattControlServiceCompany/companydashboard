@@ -8,6 +8,7 @@ const DB = (() => {
   const _cache = {};
   let _ready = false;
   let _usingFallback = false;
+  let _loadFailed = false;
   // Track the number of IDB writes that have not yet received tx.oncomplete.
   // Used by the beforeunload guard to warn users if they navigate away mid-write.
   let _pendingWriteCount = 0;
@@ -159,6 +160,11 @@ const DB = (() => {
               }
             }
           });
+          // Signal successful cache warm so any components stuck in a "Loading…"
+          // state can re-render. The fallback path dispatches dbLoadFailed instead.
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('dbReady'));
+          }
           resolve();
         };
         tx.onerror = () => reject(tx.error);
@@ -166,6 +172,7 @@ const DB = (() => {
     } catch (e) {
       console.warn('[DB] IndexedDB unavailable, falling back to localStorage:', e);
       _usingFallback = true;
+      _loadFailed = true;
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         try {
@@ -175,6 +182,18 @@ const DB = (() => {
         }
       }
       _ready = true;
+      // Surface a VISIBLE warning — silent fallback looks identical to "no data" to the user.
+      // Defer by one tick so showToast is defined (all scripts have loaded) before we call it.
+      if (typeof window !== 'undefined') {
+        window._dbLoadFailed = true;
+        setTimeout(function () {
+          if (typeof showToast === 'function') {
+            showToast("Couldn't load saved data from storage — try refreshing. Your data is not lost.", 'error', 8000);
+          }
+          // Notify any listeners (e.g. equipment-matrix) that the load failed
+          window.dispatchEvent(new CustomEvent('dbLoadFailed'));
+        }, 0);
+      }
     }
   }
 
@@ -283,6 +302,9 @@ const DB = (() => {
   function isFallback() {
     return _usingFallback;
   }
+  function isLoadFailed() {
+    return _loadFailed;
+  }
   function hasPendingWrites() {
     return _pendingWriteCount > 0;
   }
@@ -300,7 +322,19 @@ const DB = (() => {
     });
   }
 
-  return { warmCache, get, set, remove, clear, getAllKeys, getAll, isReady, isFallback, hasPendingWrites };
+  return {
+    warmCache,
+    get,
+    set,
+    remove,
+    clear,
+    getAllKeys,
+    getAll,
+    isReady,
+    isFallback,
+    isLoadFailed,
+    hasPendingWrites,
+  };
 })();
 
 window.DB = DB;

@@ -9,14 +9,26 @@ async function claudePDF(prompt, b64, sys) {
 /* ── STORAGE — delegates to window.Store so dataUpdated events fire ── */
 // Returns a Promise that resolves when the IDB write commits (or immediately for
 // the localStorage fallback). Callers that need write durability can await this.
+//
+// Priority order:
+//   1. window.DB (IndexedDB — no size limit, available on all pages via db.js)
+//   2. window.Store (site-ui.js Store wrapper — only on pages that load site-ui.js)
+//   3. localStorage fallback — throws on QuotaExceededError so callers see failures
+//
+// sget() already follows this same priority order (DB first). sset() must match.
 function sset(k, v) {
+  if (window.DB && window.DB.isReady()) {
+    return window.DB.set(k, v); // IDB — unlimited storage, returns a Promise
+  }
   if (window.Store) {
     return window.Store.set(k, v);
   }
   try {
     localStorage.setItem(k, JSON.stringify(v));
+    return Promise.resolve();
   } catch (e) {
     console.warn('sset failed:', e);
+    return Promise.reject(e); // re-throw so awaiting callers see the failure
   }
 }
 function sget(k, fb) {
