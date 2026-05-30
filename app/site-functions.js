@@ -1183,6 +1183,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.29.421',
+    date: '2026-05-29',
+    title: 'Better equipment-type classification; ASHRAE Service Proposal report fixes',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix now correctly classifies more equipment types. HVAC subtypes and lighting controls are recognized by name. The Other catch-all dropped from ~51% to ~17% on a real project import.',
+      },
+      {
+        type: 'fix',
+        text: 'ASHRAE Service Proposal reports now populate the Sequences section with all 14 sequence-key descriptions instead of showing a blank table.',
+      },
+      {
+        type: 'fix',
+        text: 'ASHRAE report headers now show the real project name instead of object Object.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.29.420',
     date: '2026-05-29',
     title: 'Equipment Matrix preserves notes on re-import; Backup/Restore/Reset buttons fixed in Energy page',

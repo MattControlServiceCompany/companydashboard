@@ -10172,7 +10172,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
     short: 'Boiler isolation valve status',
     impact: 'Required for safe boiler staging',
     plain:
-      'Isolation valve status feedback confirms that a boiler\'s inlet and outlet valves have opened before the boiler fires. Without it, the BAS cannot safely stage boilers — opening a boiler into a closed system risks pressure damage and failed starts.',
+      "Isolation valve status feedback confirms that a boiler's inlet and outlet valves have opened before the boiler fires. Without it, the BAS cannot safely stage boilers — opening a boiler into a closed system risks pressure damage and failed starts.",
   },
   secHWPumpStatus: {
     short: 'Secondary hot water pump status feedback',
@@ -10257,7 +10257,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
     short: 'CHW isolation valve command',
     impact: 'Required for chiller isolation during staging',
     plain:
-      'The isolation valve command allows the BAS to open and close each chiller\'s evaporator-side port during staging and lead/lag sequences. Without individual valve control, chillers cannot be safely added to or removed from the loop without manual intervention.',
+      "The isolation valve command allows the BAS to open and close each chiller's evaporator-side port during staging and lead/lag sequences. Without individual valve control, chillers cannot be safely added to or removed from the loop without manual intervention.",
   },
   // ── CT (Cooling Tower) point keys ─────────────────────────────────────────
   cwrt: {
@@ -10318,13 +10318,98 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
     short: 'Condenser water isolation valve command',
     impact: 'Required for chiller staging sequences',
     plain:
-      'The condenser isolation valve command allows the BAS to open and close each chiller\'s condenser-side port during staging and lead/lag sequences. Without it, chillers cannot be safely added to or removed from the condenser loop without manual intervention.',
+      "The condenser isolation valve command allows the BAS to open and close each chiller's condenser-side port during staging and lead/lag sequences. Without it, chillers cannot be safely added to or removed from the condenser loop without manual intervention.",
   },
   makeupValveCmd: {
     short: 'Cooling tower makeup water valve command',
     impact: 'Required for basin level control',
     plain:
       'The makeup water valve command allows the BAS to automatically refill the cooling tower basin when the sump level drops. Without BAS control, the makeup valve must be set to a fixed position, risking overflow during low-load periods or pump cavitation when the basin empties.',
+  },
+  // ── EM_SEQUENCE_DEFS sequence keys ──────────────────────────────────────
+  ahu_sat_reset: {
+    short: 'Supply air temperature reset sequence (AHU)',
+    impact: '5–12% heating & cooling savings',
+    plain:
+      'ASHRAE 36 §5.16.2: Supply air temperature reset adjusts the setpoint based on outdoor air temperature and zone demand. During mild weather the system delivers less extreme supply temperatures, reducing the energy required to heat or cool air before it reaches occupied spaces.',
+  },
+  ahu_dsp_reset: {
+    short: 'Duct static pressure reset sequence (AHU)',
+    impact: '10–25% fan energy savings',
+    plain:
+      'ASHRAE 36 §5.16.1: Static pressure reset lowers the duct pressure target when most VAV boxes have their dampers wide open, allowing the supply fan to slow down significantly. This sequence alone typically reduces fan energy by 15% or more across the year.',
+  },
+  ahu_economizer: {
+    short: 'Economizer control sequence (AHU)',
+    impact: '5–15% cooling savings',
+    plain:
+      'ASHRAE 36 §5.16.10: Economizer control uses outdoor air for free cooling whenever conditions allow. Without a properly programmed economizer sequence, mechanical cooling runs when outdoor air could cool the building at zero energy cost.',
+  },
+  ahu_freeze_prot: {
+    short: 'Freeze protection sequence (AHU)',
+    impact: 'Required for coil safety',
+    plain:
+      'ASHRAE 36 §5.16.12: Freeze protection monitors mixed air or coil temperatures and shuts down the air handler if freezing conditions are detected. Without this sequence, cold outdoor air can freeze water coils during fan-off periods, causing costly equipment damage.',
+  },
+  ahu_min_oa: {
+    short: 'Minimum outdoor air control sequence (AHU)',
+    impact: 'Required for ASHRAE 62.1 ventilation compliance',
+    plain:
+      'ASHRAE 36 §5.16.6: Minimum outdoor air control ensures the air handler delivers at least the code-required ventilation rate at all times. The sequence coordinates OA damper position with fan speed so that minimum ventilation is maintained even as the fan slows for energy savings.',
+  },
+  ahu_rf_control: {
+    short: 'Return fan control sequence (AHU)',
+    impact: 'Required for building pressure control',
+    plain:
+      'ASHRAE 36 §5.16.5: Return fan speed tracks supply fan airflow to maintain building pressurization. Without coordinated return fan control, economizer operation can over-pressurize or under-pressurize the building, causing door-opening problems and comfort complaints.',
+  },
+  vav_zone_temp: {
+    short: 'Zone temperature control sequence (VAV)',
+    impact: 'Required for zone comfort and ASHRAE 36 compliance',
+    plain:
+      'ASHRAE 36 §5.6.1: Zone temperature control is the fundamental VAV sequence — the terminal unit modulates airflow to maintain the zone between heating and cooling setpoints. Without this sequence, zone temperatures float freely and simultaneous heating and cooling is common.',
+  },
+  vav_reheat: {
+    short: 'Zone reheat sequence (VAV)',
+    impact: 'Required for zone heating at minimum airflow',
+    plain:
+      'ASHRAE 36 §5.6.4: Reheat sequencing activates the terminal reheat valve when zone temperature drops below the heating setpoint at minimum airflow. Without it, zones cannot be heated through the VAV box and must rely entirely on primary air, which increases air handler energy and reduces comfort.',
+  },
+  hwp_supply_reset: {
+    short: 'Hot water supply temperature reset sequence',
+    impact: '5–15% boiler savings',
+    plain:
+      'ASHRAE 36 §5.19.1: Hot water supply temperature reset reduces the boiler setpoint as outdoor air warms, cutting heat loss and improving boiler efficiency. Modern condensing boilers gain 3–5% efficiency for every 10°F reduction in return water temperature.',
+  },
+  hwp_pump_dp_reset: {
+    short: 'Hot water pump differential pressure reset sequence',
+    impact: '10–25% pump energy savings',
+    plain:
+      'ASHRAE 36 §5.19.2: Pump differential pressure reset lowers the pressure setpoint when most zone valves are wide open, allowing pump speed to drop significantly. Since pump energy scales with the cube of speed, even modest pressure reductions deliver large energy savings.',
+  },
+  hwp_staging: {
+    short: 'Boiler and pump staging sequence',
+    impact: 'Required for efficient multi-boiler operation',
+    plain:
+      'ASHRAE 36 §5.19.3: Boiler and pump staging sequences start and stop equipment based on heating demand, rotating lead/lag assignments to equalize runtime. Without staging, systems either run all equipment at once regardless of load or rely on manual operation.',
+  },
+  chwp_supply_reset: {
+    short: 'Chilled water supply temperature reset sequence',
+    impact: '3–10% chiller savings',
+    plain:
+      'ASHRAE 36 §5.20.1: Chilled water supply temperature reset raises the chiller setpoint when building load is light, allowing the chiller to operate more efficiently. Chillers are significantly more efficient at higher leaving water temperatures during mild weather.',
+  },
+  chwp_pump_dp_reset: {
+    short: 'Chilled water pump differential pressure reset sequence',
+    impact: '10–20% pump energy savings',
+    plain:
+      'ASHRAE 36 §5.20.2: Chilled water pump DP reset lowers the differential pressure setpoint when coil valves are wide open, reducing pump speed and energy. This sequence is particularly valuable because chilled water systems often run at partial load for the majority of cooling hours.',
+  },
+  chwp_staging: {
+    short: 'Chiller and pump staging sequence',
+    impact: 'Required for efficient multi-chiller operation',
+    plain:
+      'ASHRAE 36 §5.20.3: Chiller and pump staging sequences start and stop equipment based on cooling demand and rotate lead/lag assignments to equalize runtime. Without staging, systems run excess capacity at low efficiency during shoulder seasons.',
   },
 };
 
@@ -10360,7 +10445,8 @@ function collectASHRAE36Data(projId) {
   if (!matData || !matData.rows || !matData.rows.length) return null;
 
   var proj = (typeof projects !== 'undefined' ? projects : []).find(function (x) {
-    return x.id === projId;
+    // Coerce both sides to string to handle numeric id vs string projId mismatch
+    return String(x.id) === String(projId);
   });
   var projName = proj ? proj.client || proj.name || 'Project' : 'Project';
   var today = new Date();
@@ -11192,17 +11278,15 @@ function rptPageASHRAE36ProposalScope(n, d) {
   var p = d.portfolio;
   var fakeData = { project: { client: d.project.name }, period: { label: d.date, reportDate: null } };
 
-  // Phase 1: Hardware/sensor gaps (non-sequence keys)
-  var SEQUENCE_KEYS = [
-    'satReset',
-    'dspReset',
-    'economizer',
-    'demandCtrl',
-    'optStart',
-    'hwReset',
-    'chwReset',
-    'leadLag',
-  ];
+  // Phase 1: Hardware/sensor gaps; Phase 2: sequence programming gaps.
+  // Derive the sequence key set from EM_SEQUENCE_DEFS (equipment-matrix.js)
+  // so this list stays in sync with the actual sequence definitions.
+  var SEQUENCE_KEYS =
+    typeof EM_SEQUENCE_DEFS !== 'undefined' && Array.isArray(EM_SEQUENCE_DEFS)
+      ? EM_SEQUENCE_DEFS.map(function (s) {
+          return s.key;
+        })
+      : [];
   var phase1Gaps = p.topGaps.filter(function (g) {
     return SEQUENCE_KEYS.indexOf(g.key) === -1;
   });

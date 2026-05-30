@@ -56,11 +56,31 @@ var EM_EQUIP_TYPES = {
   'weather station': 'other',
   'no gl36 equipment': 'other',
   'no bas equipment': 'other',
+  // Exhaust fans — map to ahu (nearest audit bucket)
+  'exhaust fan': 'ahu',
+  // Blower coil units (fan-coil equivalent in data rooms)
+  bcu: 'ahu',
+  // Fan terminal coils — fan-powered terminal equivalent
+  ftc: 'fpb',
+  // Energy recovery units
+  eru: 'ahu',
+  // Radiant heating ceiling panels — HW-fed terminal heating
+  rhc: 'hwp',
+  // VRF outdoor units
+  'vrf outdoor unit': 'ahu',
+  'vrf condenser': 'ahu',
+  // Typo: "Air Handing Unit" (missing 'l')
+  'air handing unit': 'ahu',
+  // Destratification fans — air circulation, ahu bucket
+  'destratification fans': 'ahu',
+  // Fintube heat — HW terminal heating
+  'fintube heat': 'hwp',
   // Lighting — recognized category so JOCO-style "Lighting - ADC" parses correctly
   lighting: 'lighting',
   'lighting zone': 'lighting',
   'lighting control': 'lighting',
-  elv: 'lighting',
+  // Lighting / shade programs — JOCO Courthouse naming conventions
+  glpp: 'lighting',
   // Non-HVAC equipment — explicitly 'other' so JOCO-style names flip correctly
   'smoke damper': 'other',
   'smoke damper monitor': 'other',
@@ -656,7 +676,8 @@ function emClassifyEquipType(equipTypeStr) {
   }
 
   // ── D. Regex fallbacks (expanded) ──
-  if (/\bahu\b|air.?handl/i.test(key)) return 'ahu';
+  // Widen air-handling match to catch "Air Handing Unit" typo (missing 'l')
+  if (/\bahu\b|air.?hand/i.test(key)) return 'ahu';
   if (/\brtu\b/i.test(key)) return 'ahu';
   if (/\bmau\b/i.test(key)) return 'ahu';
   if (/\bdoas\b/i.test(key)) return 'ahu';
@@ -671,12 +692,30 @@ function emClassifyEquipType(equipTypeStr) {
   if (/\bwshp\b/i.test(key)) return 'ahu';
   if (/\bgshp\b/i.test(key)) return 'ahu';
   if (/split.?system/i.test(key)) return 'ahu';
+  // VAV check must come before short-code patterns (EF/DD) to avoid
+  // misclassifying combo names like "VAV-11/EF-3" as ahu/ddvav.
   if (/vav|variable.?air.?vol/i.test(key)) return 'vav';
   if (/\bvas[\s\-]?\d/i.test(key)) return 'vav';
+  // Exhaust fans: short-code EF-N format
+  if (/\bef[-\s]?\d/i.test(key)) return 'ahu';
+  // Make-up air units with suffix (MUA-KT01, MUA-1, etc.)
+  if (/\bmua[-\s]?(?:\d|[a-z])/i.test(key)) return 'ahu';
+  // Energy recovery units (ERU-1 format)
+  if (/\beru[-\s]?\d/i.test(key)) return 'ahu';
+  // Blower coil units (BCU-1A format)
+  if (/\bbcu[-\s]?\d/i.test(key)) return 'ahu';
+  // Stairwell pressurization fans (SPF-1)
+  if (/\bspf[-\s]?\d/i.test(key)) return 'ahu';
+  // VRF outdoor condensing units
+  if (/\bvrf\b/i.test(key)) return 'ahu';
   if (/\bfpb\b/i.test(key)) return 'fpb';
   if (/fan.?pow|parallel.?fan|\bfpt\b/i.test(key)) return 'fpb';
   if (/fan.?power/i.test(key)) return 'fpb';
   if (/\bftu\b/i.test(key)) return 'fpb';
+  // Fan terminal coils (FTC-1.01) — fpb bucket
+  if (/\bftc[-\s.]?\d/i.test(key)) return 'fpb';
+  // Dual-duct abbreviation DD-N — must come BEFORE the broader dual.?duct line
+  if (/\bdd[-\s]?\d/i.test(key)) return 'ddvav';
   if (/dual.?duct|ddvav/i.test(key)) return 'ddvav';
   if (/\bboiler\b/i.test(key)) return 'hwp';
   if (/\bhwp\b/i.test(key)) return 'hwp';
@@ -686,14 +725,32 @@ function emClassifyEquipType(equipTypeStr) {
   if (/\buh[\-\s]?\d/i.test(key)) return 'hwp';
   if (/hot.?water.*boil/i.test(key)) return 'hwp';
   if (/heating.?water/i.test(key)) return 'hwp';
+  // Radiant heating ceiling panels (RHC-0101 format)
+  if (/\brhc[-\s]?\d/i.test(key)) return 'hwp';
   if (/\bchiller\b/i.test(key)) return 'chwp';
   if (/\bchwp\b/i.test(key)) return 'chwp';
   if (/chilled.?water/i.test(key)) return 'chwp';
   if (/chill|chw.*plant/i.test(key)) return 'chwp';
   if (/cool.*tower/i.test(key)) return 'ct';
   if (/\bcwp\b/i.test(key)) return 'ct';
-  // Lighting
+  // Lighting — general keyword
   if (/\blighting\b/i.test(key)) return 'lighting';
+  // Lighting / shade programs by naming convention (JOCO Courthouse)
+  // GLPP-NN-* (glass panel lighting programs) — numeric panel ID prefix
+  if (/^\d{4}\s+-\s+glpp-/i.test(key)) return 'lighting'; // e.g. "2800 - GLPP-46-2A"
+  if (/^glpp-\d/i.test(key)) return 'lighting'; // e.g. "GLPP-21-1A"
+  // LZ-NN-* (lighting zones) — starts with LZ- followed by digits
+  if (/^\[?lz[-.]?\d/i.test(key)) return 'lighting'; // "LZ-01-0", "[LZ.51][EXT-1]..."
+  // Zone-N / Zone N Color / Zone-F3-7 (lighting zone programs)
+  // Anchor tightly: "Zone" followed by hyphen-digit or space-digit (not "Zone Temp" / "Zone Damper")
+  if (/^zone[-\s]\d/i.test(key)) return 'lighting'; // "Zone-1", "Zone 9D Color"
+  if (/^zone-[a-f]\d/i.test(key)) return 'lighting'; // "Zone-F3-7" style
+  // S-NN-* (shade zone programs) — two-digit shade code
+  if (/^s-\d{2}[-\s]/i.test(key)) return 'lighting'; // "S-01-0", "S-09-4B"
+  // Shades-* and Shades_* (alternate shade format)
+  if (/^(?:\w+\s+)?shades[-_]/i.test(key)) return 'lighting'; // "Shades-00-2A", "West Shades_03-1B"
+  // EXT-* (exterior lighting zones) — letter code format
+  if (/^ext-[a-z]-/i.test(key)) return 'lighting'; // "EXT-A-0", "EXT-B-4B"
   // Smoke damper — explicitly 'other' but recognized for JOCO-style flip
   if (/smoke.?damper/i.test(key)) return 'other';
 
@@ -709,6 +766,11 @@ function emClassifyEquipType(equipTypeStr) {
     ['fan coil', 'ahu'],
     ['rooftop', 'ahu'],
     ['air handler', 'ahu'],
+    ['exhaust fan', 'ahu'],
+    ['destratification', 'ahu'],
+    ['blower coil', 'ahu'],
+    ['radiant heat', 'hwp'],
+    ['vrf', 'ahu'],
     ['lighting', 'lighting'],
   ];
   for (var fi = 0; fi < fuzzyMap.length; fi++) {
