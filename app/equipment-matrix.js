@@ -113,6 +113,7 @@ function emToggleEditMode(btn) {
   var deleteAllBtn = document.getElementById('em-delete-all-btn');
   if (deleteAllBtn) deleteAllBtn.style.display = _emEditMode ? '' : 'none';
   var data = emLoadMatrix(window._emActivePid);
+  if (!data) return; // DB not ready yet — user will re-click after load
   emRenderTable(data, _emFilters);
 }
 
@@ -139,6 +140,7 @@ function emToggleViewMode() {
   }
   emSyncViewModeControls();
   var data = emLoadMatrix(window._emActivePid);
+  if (!data) return; // DB not ready yet — user will re-click after load
   emRenderTable(data, _emFilters);
 }
 
@@ -155,6 +157,7 @@ function emSetSummaryView() {
   }
   emSyncViewModeControls();
   var data = emLoadMatrix(window._emActivePid);
+  if (!data) return; // DB not ready yet — user will re-click after load
   emRenderTable(data, _emFilters);
 }
 
@@ -165,6 +168,7 @@ function emDrillBuilding(pid, buildingName) {
   _emDrillBuilding = buildingName;
   _emCurrentPage = 0;
   var data = emLoadMatrix(pid);
+  if (!data) return; // DB not ready yet — user will re-click after load
   emRenderTable(data, _emFilters);
 }
 
@@ -174,6 +178,7 @@ function emExitDrillBuilding(pid) {
   _emDrillBuilding = null;
   _emCurrentPage = 0;
   var data = emLoadMatrix(pid);
+  if (!data) return; // DB not ready yet — user will re-click after load
   emRenderTable(data, _emFilters);
 }
 
@@ -978,6 +983,12 @@ function emLoadMatrix(projId) {
   if (!projId) return { rows: [], importedAt: null, buildings: [] };
   // '__preview__' is an in-memory-only sentinel — return the preview data without touching the DB
   if (projId === '__preview__') return window._emPreviewData || { rows: [], importedAt: null, buildings: [] };
+  // ── Cold-cache guard: return null sentinel when DB not ready ──
+  // Callers must check for null and treat it as "loading", not "empty".
+  // emRenderMatrix's Fix 1 guard handles this via DB.isReady() directly,
+  // so null never reaches the empty-state branch there. Other callers
+  // (emToggleEditMode, emToggleViewMode, etc.) have explicit null guards below.
+  if (window.DB && !window.DB.isReady()) return null;
   return sget('en_eqmatrix_' + projId, { rows: [], importedAt: null, buildings: [] });
 }
 
@@ -1091,15 +1102,26 @@ function initEquipMatrix(projId) {
       '<div style="font-size:28px;opacity:.4">&#x23F3;</div>' +
       '<div style="font-size:14px;font-weight:600">Loading equipment data…</div>' +
       '</div>';
-    // Re-render once DB signals completion — dbReady (success), dbLoadFailed (failure),
-    // or dataUpdated (write that incidentally means DB became ready). All use {once:true}
-    // so the handler fires exactly once regardless of which event arrives first.
+    // Re-render once DB signals completion — dbReady (success) or dbLoadFailed (failure).
+    // Both use {once:true} so the handler fires at most once. dataUpdated is intentionally
+    // NOT registered here — see lines below for the reason.
     var _emInitPending = function () {
       initEquipMatrix(projId);
     };
     window.addEventListener('dbReady', _emInitPending, { once: true });
     window.addEventListener('dbLoadFailed', _emInitPending, { once: true });
-    window.addEventListener('dataUpdated', _emInitPending, { once: true });
+    // dataUpdated REMOVED: fires while DB is still cold (e.g. theme change, settings save)
+    // and consumes the {once:true} slot prematurely. The original dbReady listener was
+    // already consumed, leaving the matrix stuck on "Loading…" forever. dbReady is the
+    // only reliable signal that warmCache has completed successfully.
+    // Fix 2B — defensive double-check: if DB became ready between the isReady() check
+    // above and the addEventListener calls (theoretical single-threaded race, but explicit),
+    // remove the listeners and re-call immediately.
+    if (window.DB && window.DB.isReady()) {
+      window.removeEventListener('dbReady', _emInitPending);
+      window.removeEventListener('dbLoadFailed', _emInitPending);
+      initEquipMatrix(projId);
+    }
     return;
   }
   // ── State (b): DB ready but load failed (IDB unavailable, fell back to localStorage) ──
@@ -1202,7 +1224,22 @@ function emRenderMatrix(container, data, pid) {
   window._emActivePid = pid;
   if (!data.edits) data.edits = {};
 
-  // ── Empty state: no rows yet ───────────────────────────────────────────────
+  // ── Guard: if DB not ready, show loading state instead of empty state ──────
+  // This closes the gap for all call sites that bypass initEquipMatrix
+  // (emToggleEditMode, emToggleViewMode, emSetSummaryView, emDrillBuilding,
+  // emExitDrillBuilding, import-success render). When warmCache is still
+  // running, emLoadMatrix returns null and sget falls back to {rows:[]}.
+  // Without this guard, those cold reads render "Import CSVs" incorrectly.
+  if (window.DB && !window.DB.isReady()) {
+    container.innerHTML =
+      '<div style="display:flex;flex:1;flex-direction:column;align-items:center;' +
+      'justify-content:center;gap:12px;color:var(--text2);min-height:0">' +
+      '<div style="font-size:28px;opacity:.4">&#x23F3;</div>' +
+      '<div style="font-size:14px;font-weight:600">Loading equipment data…</div>' +
+      '</div>';
+    return;
+  }
+  // ── Empty state: no rows yet (DB is ready — this is a genuinely empty project) ──
   if (!data.rows || data.rows.length === 0) {
     container.innerHTML =
       '<div style="display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:var(--text2);min-height:0">' +
@@ -4280,6 +4317,27 @@ function emHandleImport(pid) {
         showToast('Save failed — your import was NOT stored. Try again.', 'error');
         if (statusEl) statusEl.textContent = 'Save failed.';
         return;
+      }
+      // ── Belt-and-suspenders: request persistent storage after a successful import ──
+      // Does NOT override the user's "clear browsing data on close" setting.
+      // Only prevents browser eviction under storage pressure (low-disk, cache-clearing).
+      // Fire-and-forget — failure is non-fatal. No toast for grant/deny result.
+      if (navigator.storage && navigator.storage.persist) {
+        navigator.storage
+          .persist()
+          .then(function (granted) {
+            if (granted) {
+              console.log('[EquipMatrix] navigator.storage.persist() granted — IDB is durable.');
+            } else {
+              console.log(
+                '[EquipMatrix] navigator.storage.persist() not granted — IDB remains best-effort. ' +
+                  'This does not mean data will be lost; it means the browser may evict it under pressure.',
+              );
+            }
+          })
+          .catch(function (e) {
+            console.warn('[EquipMatrix] navigator.storage.persist() failed:', e);
+          });
       }
       var modeLabel = _emImportMode === 'replace' ? 'Re-imported' : 'Imported';
       var successMsg =

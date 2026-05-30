@@ -1183,6 +1183,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.30.424',
+    date: '2026-05-30',
+    title: 'Equipment Matrix no longer shows empty after a page refresh',
+    items: [
+      {
+        type: 'fix',
+        text: 'Fixed the Equipment Matrix sometimes showing empty after a refresh while your data was still loading. It now shows "Loading…" and fills in automatically once the database finishes loading — your data was never lost.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.30.423',
     date: '2026-05-30',
     title: 'Service Department backup and restore now capture all saved data',

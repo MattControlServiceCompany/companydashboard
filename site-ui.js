@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.30.423';
+  var CH_VERSION = 'v2026.05.30.424';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -32,13 +32,13 @@
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
     {
-      v: 'v2026.05.30.423',
+      v: 'v2026.05.30.424',
       date: '2026-05-30',
-      title: 'Service Department backup and restore now capture all saved data',
+      title: 'Equipment Matrix no longer shows empty after a page refresh',
       items: [
         {
           type: 'fix',
-          text: 'Service Department backup and restore now include all saved data (service agreements, staff, and dispatch records). Previously these backups were nearly empty and restoring could wipe data.',
+          text: 'Fixed the Equipment Matrix sometimes showing empty after a refresh while your data was still loading. It now shows "Loading…" and fills in automatically once the database finishes loading — your data was never lost.',
         },
       ],
     },
