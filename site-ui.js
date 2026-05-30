@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.30.422';
+  var CH_VERSION = 'v2026.05.30.423';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -32,20 +32,13 @@
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
     {
-      v: 'v2026.05.27.391',
-      date: '2026-05-27',
+      v: 'v2026.05.30.423',
+      date: '2026-05-30',
+      title: 'Service Department backup and restore now capture all saved data',
       items: [
         {
-          type: 'feature',
-          text: "What's New popup redesigned: current version fills the modal, previous versions scroll below.",
-        },
-        {
-          type: 'feature',
-          text: 'Symbol legend added: + means New Feature, checkmark means Bug Fix, and bullet means Change.',
-        },
-        {
-          type: 'feature',
-          text: 'Settings toggle added: choose whether the popup appears on every login, only when a new version ships, or never.',
+          type: 'fix',
+          text: 'Service Department backup and restore now include all saved data (service agreements, staff, and dispatch records). Previously these backups were nearly empty and restoring could wipe data.',
         },
       ],
     },

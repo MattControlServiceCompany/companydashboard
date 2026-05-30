@@ -1183,6 +1183,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.30.423',
+    date: '2026-05-30',
+    title: 'Service Department backup and restore now capture all saved data',
+    items: [
+      {
+        type: 'fix',
+        text: 'Service Department backup and restore now include all saved data (service agreements, staff, and dispatch records). Previously these backups were nearly empty and restoring could wipe data.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.30.422',
     date: '2026-05-30',
     title: 'Equipment Matrix data-loss fix — large imports now save reliably',
