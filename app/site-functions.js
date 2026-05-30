@@ -1183,6 +1183,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.30.425',
+    date: '2026-05-30',
+    title: 'Equipment Matrix: filter and count Lighting and Other equipment',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix now lets you filter by Lighting and Other equipment types using the Type dropdown. The summary bar also shows Lighting and Other counts when those equipment types are present in your project.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.30.424',
     date: '2026-05-30',
     title: 'Equipment Matrix no longer shows empty after a page refresh',

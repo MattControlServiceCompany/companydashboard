@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.30.424';
+  var CH_VERSION = 'v2026.05.30.425';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,17 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.05.30.425',
+      date: '2026-05-30',
+      title: 'Equipment Matrix: filter and count Lighting and Other equipment',
+      items: [
+        {
+          type: 'feature',
+          text: 'Equipment Matrix now lets you filter by Lighting and Other equipment types using the Type dropdown. The summary bar also shows Lighting and Other counts when those equipment types are present in your project.',
+        },
+      ],
+    },
     {
       v: 'v2026.05.30.424',
       date: '2026-05-30',

@@ -1282,6 +1282,8 @@ function emRenderMatrix(container, data, pid) {
     emStatPill('AHU / RTU', stats.ahu) +
     emStatPill('VAV / FPB', stats.vav) +
     emStatPill('Plants', stats.plants) +
+    (stats.lighting ? emStatPill('Lighting', stats.lighting) : '') +
+    (stats.other ? emStatPill('Other', stats.other) : '') +
     emStatPill('Live Data', stats.live) +
     (data.totalBASPoints ? emStatPill('BAS Points', data.totalBASPoints.toLocaleString()) : '') +
     '</div>';
@@ -1325,6 +1327,8 @@ function emCalcSummaryStats(rows) {
     ahu = 0,
     vav = 0,
     plants = 0,
+    lighting = 0,
+    other = 0,
     live = 0;
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
@@ -1332,6 +1336,8 @@ function emCalcSummaryStats(rows) {
     if (r.category === 'ahu') ahu++;
     if (r.category === 'vav' || r.category === 'fpb' || r.category === 'ddvav') vav++;
     if (r.category === 'hwp' || r.category === 'chwp' || r.category === 'ct') plants++;
+    if (r.category === 'lighting') lighting++;
+    if (r.category === 'other') other++;
     var pts = r.points || {};
     var hasLive = false;
     for (var k in pts) {
@@ -1348,6 +1354,8 @@ function emCalcSummaryStats(rows) {
     ahu: ahu,
     vav: vav,
     plants: plants,
+    lighting: lighting,
+    other: other,
     live: live,
   };
 }
@@ -1439,7 +1447,9 @@ function emRenderToolbar(data, pid, projBadge) {
     '<option value="ddvav">DD-VAV</option>' +
     '<option value="hwp">HW Plant</option>' +
     '<option value="chwp">CHW Plant</option>' +
-    '<option value="ct">Cooling Tower</option>';
+    '<option value="ct">Cooling Tower</option>' +
+    '<option value="lighting">Lighting</option>' +
+    '<option value="other">Other</option>';
   var colToggleStyle =
     'display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);cursor:pointer;padding:2px 6px;border-radius:3px;border:1px solid var(--border);background:var(--s2);user-select:none';
   var colToggles =
@@ -1951,6 +1961,8 @@ function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
     emStatPill('AHU / RTU', stats.ahu) +
     emStatPill('VAV / FPB', stats.vav) +
     emStatPill('Plants', stats.plants) +
+    (stats.lighting ? emStatPill('Lighting', stats.lighting) : '') +
+    (stats.other ? emStatPill('Other', stats.other) : '') +
     emStatPill('Live Data', stats.live) +
     (totalBASPoints ? emStatPill('BAS Points', totalBASPoints.toLocaleString()) : '');
 }
