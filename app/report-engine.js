@@ -9321,7 +9321,7 @@ function initUtilityTool() {
   }
   renderUDProjList();
   renderUDDetail();
-  fetch('site-ui.js')
+  fetch('site-ui.js?nocache=' + Date.now())
     .then((r) => r.text())
     .then((t) => {
       const m = t.match(/CH_VERSION\s*=\s*'([^']+)'/);

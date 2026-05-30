@@ -1183,6 +1183,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.30.426',
+    date: '2026-05-30',
+    title: 'Sidebar version badge now always shows the live release number',
+    items: [
+      {
+        type: 'fix',
+        text: 'The version number shown in the sidebar now always matches the live release (it was previously stuck on an old hardcoded value).',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.30.425',
     date: '2026-05-30',
     title: 'Equipment Matrix: filter and count Lighting and Other equipment',

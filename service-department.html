@@ -1499,9 +1499,7 @@
                 font-family: var(--mono);
                 letter-spacing: 0.5px;
               "
-            >
-              v2026.05.05.40
-            </div>
+            ></div>
           </div>
         </aside>
 
@@ -3515,7 +3513,7 @@
         applyAccentColor: siteApplyAccent,
       };
 
-      fetch('site-ui.js')
+      fetch('site-ui.js?nocache=' + Date.now())
         .then(function (r) {
           return r.text();
         })

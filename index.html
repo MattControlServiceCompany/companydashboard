@@ -1856,7 +1856,14 @@
               <button class="sb-btn" onclick="siteBackup()" title="Backup all data">Backup</button>
               <button class="sb-btn" onclick="siteRestore()" title="Restore from backup">Restore</button>
             </div>
-            <button class="sb-btn danger" style="width: 100%" onclick="siteResetData()" title="WARNING: Permanently deletes ALL projects, buildings, meters, and bills. Cannot be undone.">Reset Data</button>
+            <button
+              class="sb-btn danger"
+              style="width: 100%"
+              onclick="siteResetData()"
+              title="WARNING: Permanently deletes ALL projects, buildings, meters, and bills. Cannot be undone."
+            >
+              Reset Data
+            </button>
             <div
               class="sb-version"
               id="sb-version"
@@ -1868,9 +1875,7 @@
                 font-family: var(--mono);
                 letter-spacing: 0.5px;
               "
-            >
-              v2026.05.05.40
-            </div>
+            ></div>
           </div>
         </aside>
 
@@ -2574,7 +2579,12 @@
         inp.click();
       }
       function siteResetData() {
-        if (!confirm('WARNING: This will permanently delete ALL projects, buildings, meters, and utility bills. There is no undo and no server backup. Make sure you have downloaded a backup first.\n\nClick OK to delete everything, or Cancel to go back.')) return;
+        if (
+          !confirm(
+            'WARNING: This will permanently delete ALL projects, buildings, meters, and utility bills. There is no undo and no server backup. Make sure you have downloaded a backup first.\n\nClick OK to delete everything, or Cancel to go back.',
+          )
+        )
+          return;
         localStorage.clear();
         sessionStorage.clear();
         if (typeof showToast === 'function') showToast('Reset — reloading...');
@@ -2768,7 +2778,7 @@
         applyAccentColor: siteApplyAccent,
       };
 
-      fetch('site-ui.js')
+      fetch('site-ui.js?nocache=' + Date.now())
         .then(function (r) {
           return r.text();
         })

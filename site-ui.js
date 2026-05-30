@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.30.425';
+  var CH_VERSION = 'v2026.05.30.426';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,17 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.05.30.426',
+      date: '2026-05-30',
+      title: 'Sidebar version badge now always shows the live release number',
+      items: [
+        {
+          type: 'fix',
+          text: 'The version number shown in the sidebar now always matches the live release (it was previously stuck on an old hardcoded value).',
+        },
+      ],
+    },
     {
       v: 'v2026.05.30.425',
       date: '2026-05-30',
@@ -966,6 +977,7 @@
 
   // Expose API
   window.__siteUI = {
+    version: CH_VERSION,
     openSettings: openSettings,
     closeSettings: closeSettings,
     openHelp: openHelp,
