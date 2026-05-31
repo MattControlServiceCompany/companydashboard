@@ -644,9 +644,17 @@ function siteRestore() {
 }
 // Drag-and-drop restore removed — restore is button-only now
 async function siteResetData() {
-  if (!(await confirmAsync('Reset ALL data? This cannot be undone.'))) return;
+  if (
+    !confirm(
+      'This permanently erases ALL CompanyHub data on this device — projects, bills, utility data, and the Equipment Matrix database. This cannot be undone. Continue?',
+    )
+  )
+    return;
   localStorage.clear();
   sessionStorage.clear();
+  if (window.DB && window.DB.clear) {
+    await window.DB.clear();
+  }
   if (typeof showToast === 'function') showToast('Reset — reloading...');
   setTimeout(function () {
     location.reload();
@@ -1182,6 +1190,21 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  {
+    v: 'v2026.05.30.428',
+    date: '2026-05-30',
+    title: 'Reset Data now wipes all stored data, with a clearer warning',
+    items: [
+      {
+        type: 'fix',
+        text: 'Reset Data now fully erases all stored data on this device — including the Equipment Matrix database — not just project and bill data. The confirmation message now clearly describes what will be deleted.',
+      },
+      {
+        type: 'fix',
+        text: 'Fixed the Microsoft sign-in library failing to load (404). Microsoft 365 sign-in and Outlook sync now work correctly.',
+      },
+    ],
+  },
   {
     v: 'v2026.05.30.427',
     date: '2026-05-30',

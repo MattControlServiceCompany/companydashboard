@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.05.30.427';
+  var CH_VERSION = 'v2026.05.30.428';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,21 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.05.30.428',
+      date: '2026-05-30',
+      title: 'Reset Data now wipes all stored data, with a clearer warning',
+      items: [
+        {
+          type: 'fix',
+          text: 'Reset Data now fully erases all stored data on this device — including the Equipment Matrix database — not just project and bill data. The confirmation message now clearly describes what will be deleted.',
+        },
+        {
+          type: 'fix',
+          text: 'Fixed the Microsoft sign-in library failing to load (404). Microsoft 365 sign-in and Outlook sync now work correctly.',
+        },
+      ],
+    },
     {
       v: 'v2026.05.30.427',
       date: '2026-05-30',
@@ -250,11 +265,19 @@
   }
 
   /* ── RESET DATA ── */
-  function resetData() {
-    if (!confirm('Are you sure you want to reset all data? This cannot be undone.')) return;
+  async function resetData() {
+    if (
+      !confirm(
+        'This permanently erases ALL CompanyHub data on this device — projects, bills, utility data, and the Equipment Matrix database. This cannot be undone. Continue?',
+      )
+    )
+      return;
     localStorage.clear();
     sessionStorage.clear();
-    if (typeof showToast === 'function') showToast('All data reset — reloading...');
+    if (window.DB && window.DB.clear) {
+      await window.DB.clear();
+    }
+    if (typeof showToast === 'function') showToast('Reset — reloading...');
     setTimeout(function () {
       location.reload();
     }, 1200);
