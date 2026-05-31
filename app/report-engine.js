@@ -6667,7 +6667,7 @@ async function exportReportToPDF() {
     const pageW = 612,
       pageH = 792; // Letter size in points
 
-    const margin = { top: 10, bottom: 10, left: 10, right: 10 };
+    const margin = { top: 36, bottom: 36, left: 36, right: 36 }; // 36pt = 0.5in (unit: pt per jsPDF config)
     const contentW = pageW - margin.left - margin.right;
     const contentH = pageH - margin.top - margin.bottom;
 

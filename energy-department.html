@@ -2010,6 +2010,8 @@
         font-family: var(--rpt-font);
         font-size: 13px;
         line-height: 1.5;
+        padding: 12px 16px; /* safety buffer — keeps content off the raw page edge before PDF outer margin applies */
+        box-sizing: border-box;
       }
       /* Page number now rendered by JS via .rpt-pg-footer-pagenum */
 
@@ -7470,9 +7472,12 @@
           border-top-color: #ccc !important;
           color: #000000 !important;
         }
-        @page {
+        @page scorecard {
           margin: 0.5in;
           size: letter landscape;
+        }
+        .sc-root {
+          page: scorecard;
         }
       }
     </style>
@@ -14593,24 +14598,24 @@
     <script src="app/db.js?v=422"></script>
     <script src="app/core.js?v=422"></script>
     <script src="app/energy-savings.js?v=399"></script>
-    <script src="app/bill-analysis.js?v=399"></script>
+    <script src="app/bill-analysis.js?v=427"></script>
     <script src="extraction/bill-validation.js?v=399"></script>
     <script src="app/district-calendar.js?v=399"></script>
     <script src="app/utility-data.js?v=404"></script>
     <script src="app/pipeline-diagram.js?v=399"></script>
     <script src="app/csv-import.js?v=399"></script>
-    <script src="app/report-engine.js?v=426"></script>
+    <script src="app/report-engine.js?v=427"></script>
     <script src="app/report-preview.js?v=399"></script>
     <script src="app/calculators.js?v=399"></script>
     <script src="app/ecm-calculators.js?v=404"></script>
-    <script src="app/equipment-matrix.js?v=425"></script>
+    <script src="app/equipment-matrix.js?v=427"></script>
     <script src="app/graphics-setpoints.js?v=399"></script>
     <script src="app/budget.js?v=399"></script>
     <script src="app/scorecard.js?v=399"></script>
     <script src="app/portal-export.js?v=399"></script>
     <script src="app/bas-trends.js?v=399"></script>
 
-    <script src="app/site-functions.js?v=426"></script>
+    <script src="app/site-functions.js?v=427"></script>
 
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */

@@ -333,6 +333,12 @@ var EM_POINT_MAP = [
     col: 'zoneAirTempLive',
     label: 'Zone Air Temp',
     patterns: [/zone air temp/i, /room temp/i, /space temp/i, /zone temp/i],
+    // Negative guard: alarm/status/setpoint/virtual names must NOT map here even if the
+    // pattern matches (e.g. "High Zone Temperature", "Low Zone Temperature",
+    // "Virtual Zone Temperature"). Checked in emMapPointToColumn.
+    negativePatterns: [
+      /\b(high|low|alarm|fault|fail(ed|ure)?|diagnostic|virtual|setpoint|set\s?point|override|limit|status|enable|effective)\b/i,
+    ],
     types: ['AI'],
     cats: ['vav', 'fpb', 'ddvav'],
   },
@@ -792,7 +798,22 @@ function emMapPointToColumn(pointName, pointType, equipCategory) {
     var mapping = EM_POINT_MAP[i];
     if (equipCategory && mapping.cats && mapping.cats.indexOf(equipCategory) === -1) continue;
     for (var p = 0; p < mapping.patterns.length; p++) {
-      if (mapping.patterns[p].test(pointName)) return mapping.col;
+      if (mapping.patterns[p].test(pointName)) {
+        // If this column has negative guards, reject names that match any of them.
+        // Prevents alarm/status/virtual point names from mapping to live-reading columns
+        // (e.g. "High Zone Temperature" must not map to zoneAirTempLive).
+        if (mapping.negativePatterns) {
+          var blocked = false;
+          for (var n = 0; n < mapping.negativePatterns.length; n++) {
+            if (mapping.negativePatterns[n].test(pointName)) {
+              blocked = true;
+              break;
+            }
+          }
+          if (blocked) break; // break inner loop — skip this mapping entry entirely
+        }
+        return mapping.col;
+      }
     }
   }
   return null;
@@ -860,7 +881,35 @@ function emExtractEquipmentGroups(rows, colMap) {
       }
       var pointCol = emMapPointToColumn(pointName, null, category);
       if (pointCol && pointVal !== '') {
-        wgroup.pointValues[pointCol] = pointVal;
+        // Value-preference guard: never let a non-numeric value overwrite an existing
+        // numeric one. For temperature columns, also require the new numeric value to be
+        // in a plausible range (30–120 °F) to block garbage readings.
+        // This is the second line of defence against alarm/status points (e.g. "Normal")
+        // clobbering the real zone-temp reading.
+        var existing = wgroup.pointValues[pointCol];
+        var existingNum = existing !== undefined ? parseFloat(existing) : NaN;
+        var newNum = parseFloat(pointVal);
+        var existingIsNumeric = !isNaN(existingNum);
+        var newIsNumeric = !isNaN(newNum);
+        var isTempCol =
+          pointCol === 'zoneAirTempLive' ||
+          pointCol === 'supplyAirTempLive' ||
+          pointCol === 'returnAirTempLive' ||
+          pointCol === 'oaTempLive' ||
+          pointCol === 'mixedAirTempLive';
+        var newInRange = !isTempCol || (newNum >= 30 && newNum <= 120);
+        // Allow write only when:
+        //   slot is empty, OR
+        //   existing is non-numeric and new is numeric (and in range for temp cols), OR
+        //   both are numeric and new is in range (last-write-wins for two real readings,
+        //     but still gate on range to block obviously bogus values like 999 F)
+        if (
+          existing === undefined ||
+          (!existingIsNumeric && newIsNumeric && newInRange) ||
+          (existingIsNumeric && newIsNumeric && newInRange)
+        ) {
+          wgroup.pointValues[pointCol] = pointVal;
+        }
       }
     }
     return groups;

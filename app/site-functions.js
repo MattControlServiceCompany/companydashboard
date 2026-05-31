@@ -1183,6 +1183,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.05.30.427',
+    date: '2026-05-30',
+    title: 'Zone temps, print margins, and gas bill warnings fixed',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix now shows zone temperatures for far more buildings (an alarm status point was overwriting the real reading) — re-import your CSVs to apply.',
+      },
+      {
+        type: 'fix',
+        text: 'ASHRAE report print margins fixed to a proper 0.5-inch so content no longer falls in the non-printable zone.',
+      },
+      {
+        type: 'fix',
+        text: 'Kansas Gas Service bills no longer show a false “gas total differs” warning.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.30.426',
     date: '2026-05-30',
     title: 'Sidebar version badge now always shows the live release number',

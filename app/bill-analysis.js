@@ -158,10 +158,20 @@ function validateBillData(extracted, utilityName) {
     const gasTotal = pf(extracted.TotalCurrentCharges);
     if (gasTotal !== 0) {
       const gasCompSum =
-        Math.round((pf(extracted.CustomerCharge) + pf(extracted.GasCharge) + pf(extracted.FuelAdjustment)) * 100) / 100;
+        Math.round(
+          (pf(extracted.CustomerCharge) +
+            pf(extracted.GasCharge) +
+            pf(extracted.FuelAdjustment) +
+            (pf(extracted.DeliveryCharge) || 0) +
+            (pf(extracted.GasSystemReliability) || 0) +
+            (pf(extracted.WeatherNormalization) || 0) +
+            (pf(extracted.WinterEventCost) || 0) +
+            (pf(extracted.FranchiseFee) || 0)) *
+            100,
+        ) / 100;
       if (gasCompSum > 0) {
         const gasDiff = Math.abs(gasCompSum - gasTotal);
-        if (gasDiff > 1.0) {
+        if (gasDiff > gasTotal * 0.15 && gasDiff > 5) {
           warnings.push({
             level: 'warn',
             field: 'TotalCurrentCharges',
