@@ -1191,6 +1191,41 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.01.429',
+    date: '2026-06-01',
+    title: 'Equipment Matrix point-display fixes and DCV readiness in ASHRAE reports',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix now shows Zone CO2, Discharge Airflow, and other points from WebCTRL exports that were previously missing or blank — re-import your CSVs to apply.',
+      },
+      {
+        type: 'fix',
+        text: 'Zone temperatures now populate in the Summary view.',
+      },
+      {
+        type: 'fix',
+        text: 'A value of 0 now displays as "0" instead of blank — on screen and in CSV exports.',
+      },
+      {
+        type: 'fix',
+        text: 'Fixed cooling and heating setpoints that were wrongly showing 0 because a "Setpoint Adjust" reading was overwriting the real setpoint.',
+      },
+      {
+        type: 'fix',
+        text: 'Fixed the Damper Position column always showing blank.',
+      },
+      {
+        type: 'fix',
+        text: 'Fixed the "Manage Mappings" button doing nothing when clicked.',
+      },
+      {
+        type: 'feature',
+        text: 'ASHRAE reports are simpler and more concise, and now include a Demand Control Ventilation readiness section showing how many units are missing CO2 sensors.',
+      },
+    ],
+  },
+  {
     v: 'v2026.05.30.428',
     date: '2026-05-30',
     title: 'Reset Data now wipes all stored data, with a clearer warning',

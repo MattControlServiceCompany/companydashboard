@@ -710,7 +710,6 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
       const annCost = blR.reduce((s, r) => s + (r.cost || 0), 0);
       const blYears = blMonths.length / 12 || 1;
       var bestR2 = '—';
-      var bestR2 = '—';
       var regrType = '—';
       if (reg) {
         if (reg.dual && reg.dual.r2 != null) {
@@ -768,7 +767,6 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType) {
       rawBills.push({
         building: b.name || '—',
         commodity: m.commodity,
-        provider: m.provider || bill.provider || '—',
         provider: m.provider || bill.provider || '—',
         account: m.account || bill.account || '—',
         start: bill.start || '',
@@ -1533,9 +1531,6 @@ function rptPageCover(n, d) {
     '<div style="margin-top:6px">' +
     '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Portfolio Metrics</div>' +
     '<div class="rpt-gauge-row">' +
-    gaugeSVG(pctOfTarget, '#27ae60', 'vs Target', pctOfTarget + '%') +
-    gaugeSVG(energyRedPct, '#2e86c1', 'Energy Reduced', energyRedPct + '%') +
-    gaugeSVG(Math.max(0, euiImpPct), '#1e8449', 'Site EUI Improved', euiImpPct + '%') +
     gaugeSVG(pctOfTarget, 'var(--rpt-green)', 'vs Target', pctOfTarget + '%') +
     gaugeSVG(energyRedPct, 'var(--rpt-blue-btn)', 'Energy Reduced', energyRedPct + '%') +
     gaugeSVG(Math.max(0, euiImpPct), 'var(--rpt-green-dark)', 'Site EUI Improved', euiImpPct + '%') +
@@ -10637,6 +10632,28 @@ function collectASHRAE36Data(projId) {
   }).length;
   var portfolioStatus = portfolioComposite >= 75 ? 'green' : portfolioComposite >= 50 ? 'amber' : 'red';
 
+  // DCV readiness: count AHUs and VAV-type zones with/without a CO2 point.
+  // Uses coveredPoints from real point data — no config flag dependency.
+  var VAV_CATS = ['vav', 'fpb', 'ddvav'];
+  var dcvTotalAHU = 0,
+    dcvAHUWithCO2 = 0;
+  var dcvTotalZones = 0,
+    dcvZonesWithCO2 = 0;
+  buildingsData.forEach(function (b) {
+    b.equipResults.forEach(function (eq) {
+      var hasCO2Point = eq.compliance.coveredPoints.some(function (cp) {
+        return cp.categoryKey === 'co2';
+      });
+      if (eq.category === 'ahu') {
+        dcvTotalAHU++;
+        if (hasCO2Point) dcvAHUWithCO2++;
+      } else if (VAV_CATS.indexOf(eq.category) !== -1) {
+        dcvTotalZones++;
+        if (hasCO2Point) dcvZonesWithCO2++;
+      }
+    });
+  });
+
   return {
     project: { name: projName, id: projId },
     date: dateStr,
@@ -10654,6 +10671,12 @@ function collectASHRAE36Data(projId) {
       totalEquip: buildingsData.reduce(function (s, b) {
         return s + b.equipCount;
       }, 0),
+      dcv: {
+        totalAHU: dcvTotalAHU,
+        ahuMissingCO2: dcvTotalAHU - dcvAHUWithCO2,
+        totalZones: dcvTotalZones,
+        zonesMissingCO2: dcvTotalZones - dcvZonesWithCO2,
+      },
     },
   };
 }
@@ -10804,10 +10827,12 @@ function rptPageASHRAE36Cover(n, d) {
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Composite Score</div></div>' +
     '<div style="text-align:center">' +
     _a36GaugeSVG(p.pointPct, 'var(--rpt-blue)', 'Points', 110) +
-    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sensor Coverage</div></div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sensor Coverage</div>' +
+    '<div style="font-size:9px;color:var(--rpt-page-text);opacity:0.65;margin-top:2px;max-width:110px">How complete are the required BAS sensors?</div></div>' +
     '<div style="text-align:center">' +
     _a36GaugeSVG(p.seqPct, '#7c3aed', 'Sequences', 110) +
-    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sequence Coverage</div></div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-top:4px">Sequence Coverage</div>' +
+    '<div style="font-size:9px;color:var(--rpt-page-text);opacity:0.65;margin-top:2px;max-width:110px">How many control sequences have all required inputs?</div></div>' +
     '</div>';
 
   var bodyHTML =
@@ -10952,38 +10977,32 @@ function rptPageASHRAE36Executive(n, d) {
       '</div>';
   }
 
-  // Portfolio stat bar
-  var statBar =
-    '<div style="display:flex;gap:12px;margin-bottom:16px">' +
-    '<div style="flex:1;background:#f8fafc;border-radius:4px;padding:8px 10px;text-align:center;border:1px solid var(--rpt-rule)">' +
-    '<div style="font-size:18px;font-weight:700;color:' +
-    (p.composite >= 75 ? 'var(--rpt-green)' : p.composite >= 50 ? 'var(--rpt-orange)' : 'var(--rpt-red)') +
-    '">' +
-    p.composite +
-    '%</div>' +
-    '<div style="font-size:9px;color:var(--rpt-page-text);text-transform:uppercase;letter-spacing:0.04em">Portfolio Score</div>' +
-    '</div>' +
-    '<div style="flex:1;background:#f8fafc;border-radius:4px;padding:8px 10px;text-align:center;border:1px solid var(--rpt-rule)">' +
-    '<div style="font-size:18px;font-weight:700;color:var(--rpt-blue)">' +
-    p.pointPct +
-    '%</div>' +
-    '<div style="font-size:9px;color:var(--rpt-page-text);text-transform:uppercase;letter-spacing:0.04em">Sensor Coverage</div>' +
-    '</div>' +
-    '<div style="flex:1;background:#f8fafc;border-radius:4px;padding:8px 10px;text-align:center;border:1px solid var(--rpt-rule)">' +
-    '<div style="font-size:18px;font-weight:700;color:#7c3aed">' +
-    p.seqPct +
-    '%</div>' +
-    '<div style="font-size:9px;color:var(--rpt-page-text);text-transform:uppercase;letter-spacing:0.04em">Sequence Coverage</div>' +
-    '</div>' +
-    '<div style="flex:1;background:#f8fafc;border-radius:4px;padding:8px 10px;text-align:center;border:1px solid var(--rpt-rule)">' +
-    '<div style="font-size:18px;font-weight:700;color:var(--rpt-page-text)">' +
-    p.totalEquip +
-    '</div>' +
-    '<div style="font-size:9px;color:var(--rpt-page-text);text-transform:uppercase;letter-spacing:0.04em">Equipment Audited</div>' +
-    '</div>' +
-    '</div>';
+  // DCV readiness callout — only shown when at least one AHU or zone is missing a CO2 sensor
+  var dcvCallout = '';
+  var dcv = p.dcv || {};
+  var _dcvAhuMissing = dcv.ahuMissingCO2 || 0;
+  var _dcvZonesMissing = dcv.zonesMissingCO2 || 0;
+  if (_dcvAhuMissing > 0 || _dcvZonesMissing > 0) {
+    var dcvParts = [];
+    if (_dcvAhuMissing > 0) {
+      dcvParts.push(_dcvAhuMissing + ' of ' + dcv.totalAHU + ' air handler' + (dcv.totalAHU > 1 ? 's' : ''));
+    }
+    if (_dcvZonesMissing > 0) {
+      dcvParts.push(_dcvZonesMissing + ' of ' + dcv.totalZones + ' zone' + (dcv.totalZones > 1 ? 's' : ''));
+    }
+    var dcvSentence = dcvParts.join(' and ') + ' have no CO₂ sensor.';
+    dcvCallout =
+      '<div style="background:#f0f9ff;border-left:3px solid var(--rpt-blue);padding:10px 12px;border-radius:0 4px 4px 0;margin-bottom:14px">' +
+      '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:4px">Demand Control Ventilation Readiness</div>' +
+      '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6">' +
+      dcvSentence +
+      ' Without CO₂ sensing, these units ventilate at full design rates even when spaces are empty—wasting fan and cooling energy. ' +
+      'Adding CO₂ sensors enables demand control ventilation (typical 5–10% fan and cooling savings).' +
+      '</div>' +
+      '</div>';
+  }
 
-  var bodyHTML = statBar + callout + table;
+  var bodyHTML = dcvCallout + callout + table;
   return rptPage(n, 'ASHRAE 36 Audit — Executive Summary', bodyHTML, {
     data: fakeData,
     label: 'Page ' + n + ' — Executive Summary',
@@ -11050,31 +11069,75 @@ function rptPageASHRAE36Building(n, d, building) {
     '</div>' +
     '</div>';
 
-  // What's working (covered points summary)
-  var workingItems = [];
+  // What's working (plain-language summary grouped by equipment type)
+  var workingByType = {}; // cat -> { sensorKeys: [], commandKeys: [], seqKeys: [] }
+  var SENSOR_KEYS = [
+    'sat',
+    'rat',
+    'mat',
+    'oat',
+    'dsp',
+    'sfStatus',
+    'sfSpeed',
+    'discFlow',
+    'hwSupTemp',
+    'hwRetTemp',
+    'hwDiffPres',
+    'chwSupTemp',
+    'chwRetTemp',
+    'chwDiffPres',
+    'cwst',
+    'zoneCoolSp',
+    'zoneHtgSp',
+  ];
+  var COMMAND_KEYS = [
+    'sfEnable',
+    'sfSpeedCmd',
+    'sfVfd',
+    'oaDampCmd',
+    'raDampCmd',
+    'clgValve',
+    'htgValve',
+    'ctFanSpeed',
+  ];
   b.equipResults.forEach(function (eq) {
-    if (eq.compliance.coveredPoints && eq.compliance.coveredPoints.length) {
-      eq.compliance.coveredPoints.forEach(function (cp) {
-        if (workingItems.indexOf(cp.categoryLabel) === -1) workingItems.push(cp.categoryLabel);
-      });
-    }
+    if (!eq.compliance.coveredPoints || !eq.compliance.coveredPoints.length) return;
+    var cat = eq.category;
+    if (!workingByType[cat]) workingByType[cat] = { sensors: [], commands: [], seqs: [], label: eq.categoryLabel };
+    eq.compliance.coveredPoints.forEach(function (cp) {
+      var k = cp.categoryKey;
+      if (SENSOR_KEYS.indexOf(k) !== -1) {
+        if (workingByType[cat].sensors.indexOf(k) === -1) workingByType[cat].sensors.push(k);
+      } else if (COMMAND_KEYS.indexOf(k) !== -1) {
+        if (workingByType[cat].commands.indexOf(k) === -1) workingByType[cat].commands.push(k);
+      } else {
+        if (workingByType[cat].seqs.indexOf(k) === -1) workingByType[cat].seqs.push(k);
+      }
+    });
   });
+  var typeKeys = Object.keys(workingByType);
   var workingHTML = '';
-  if (workingItems.length) {
-    workingHTML =
-      '<div style="margin-bottom:12px">' +
-      '<div style="font-size:11px;font-weight:700;color:var(--rpt-green);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.04em">What Is Working</div>' +
-      '<div style="display:flex;flex-wrap:wrap;gap:4px">' +
-      workingItems
-        .map(function (w) {
-          return (
-            '<span style="font-size:10px;padding:2px 8px;background:#f0fdf4;border:1px solid var(--rpt-green);border-radius:10px;color:var(--rpt-green)">' +
-            w +
-            '</span>'
-          );
-        })
-        .join('') +
-      '</div></div>';
+  if (typeKeys.length) {
+    var sentences = typeKeys
+      .map(function (cat) {
+        var wt = workingByType[cat];
+        var parts = [];
+        if (wt.sensors.length) parts.push(wt.sensors.length + ' required sensor' + (wt.sensors.length > 1 ? 's' : ''));
+        if (wt.commands.length)
+          parts.push(wt.commands.length + ' control command' + (wt.commands.length > 1 ? 's' : ''));
+        if (wt.seqs.length) parts.push(wt.seqs.length + ' control sequence' + (wt.seqs.length > 1 ? 's' : ''));
+        if (!parts.length) return null;
+        return (wt.label || cat) + ': ' + parts.join(' and ') + ' in place.';
+      })
+      .filter(Boolean);
+    if (sentences.length) {
+      workingHTML =
+        '<div style="margin-bottom:12px">' +
+        '<div style="font-size:11px;font-weight:700;color:var(--rpt-green);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.04em">What Is Working</div>' +
+        '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.7">' +
+        sentences.join(' ') +
+        '</div></div>';
+    }
   }
 
   // Gaps section
@@ -11085,16 +11148,13 @@ function rptPageASHRAE36Building(n, d, building) {
         var desc = gap.desc || {};
         return (
           '<div style="margin-bottom:10px;padding:8px 10px;background:#fef9f0;border-left:3px solid var(--rpt-orange);border-radius:0 4px 4px 0">' +
-          '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">' +
+          '<div style="display:flex;justify-content:space-between;align-items:baseline">' +
           '<span style="font-size:11px;font-weight:700;color:var(--rpt-page-text)">' +
           (desc.short || gap.key) +
           '</span>' +
           '<span style="font-size:10px;color:var(--rpt-orange)">' +
           (desc.impact || '') +
           '</span>' +
-          '</div>' +
-          '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.5">' +
-          (desc.plain || '') +
           '</div>' +
           '</div>'
         );
@@ -11166,6 +11226,40 @@ function rptPageASHRAE36Recommendations(n, d) {
     })
     .join('');
 
+  // DCV row: always include if any AHUs or zones are missing CO2 sensors
+  var dcv = p.dcv || {};
+  var dcvMissing = (dcv.ahuMissingCO2 || 0) + (dcv.zonesMissingCO2 || 0);
+  var dcvRow = '';
+  if (dcvMissing > 0) {
+    var dcvUnitParts = [];
+    if ((dcv.ahuMissingCO2 || 0) > 0)
+      dcvUnitParts.push(dcv.ahuMissingCO2 + ' air handler' + (dcv.ahuMissingCO2 > 1 ? 's' : ''));
+    if ((dcv.zonesMissingCO2 || 0) > 0)
+      dcvUnitParts.push(dcv.zonesMissingCO2 + ' zone' + (dcv.zonesMissingCO2 > 1 ? 's' : ''));
+    var dcvUnitStr = dcvUnitParts.join(', ');
+    var dcvDesc = ASHRAE36_GAP_DESCRIPTIONS['co2'] || {};
+    var recCount = p.topGaps.length; // DCV row gets the next sequential number
+    dcvRow =
+      '<tr>' +
+      '<td style="padding:6px 8px;font-size:11px;font-weight:700;color:var(--rpt-blue);border-bottom:1px solid var(--rpt-rule);vertical-align:top">' +
+      (recCount + 1) +
+      '</td>' +
+      '<td style="padding:6px 8px;border-bottom:1px solid var(--rpt-rule);vertical-align:top">' +
+      '<div style="font-size:11px;font-weight:600;color:var(--rpt-page-text);margin-bottom:2px">Add CO₂ sensors — enable demand control ventilation</div>' +
+      '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.5">' +
+      (dcvDesc.plain ||
+        'CO₂ sensors measure occupancy indirectly and allow the BAS to reduce outdoor air intake when spaces are unoccupied. Without them, these units ventilate at full design rates around the clock.') +
+      '</div>' +
+      '</td>' +
+      '<td style="padding:6px 8px;font-size:10px;color:var(--rpt-orange);font-weight:600;border-bottom:1px solid var(--rpt-rule);vertical-align:top;white-space:nowrap">' +
+      (dcvDesc.impact || '5–10% fan and cooling savings') +
+      '</td>' +
+      '<td style="padding:6px 8px;font-size:10px;color:var(--rpt-page-text);border-bottom:1px solid var(--rpt-rule);vertical-align:top">' +
+      dcvUnitStr +
+      '</td>' +
+      '</tr>';
+  }
+
   var thStyle =
     'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#fff;background:var(--rpt-blue);text-align:left';
   var table =
@@ -11186,6 +11280,7 @@ function rptPageASHRAE36Recommendations(n, d) {
     '</tr></thead>' +
     '<tbody>' +
     recRows +
+    dcvRow +
     '</tbody>' +
     '</table>';
 
@@ -11219,11 +11314,9 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '<div style="background:#f8fafc;border-radius:4px;padding:12px 16px;margin-bottom:16px">' +
     '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.04em">Contents</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);line-height:2">' +
-    '<div>1. Executive Summary</div>' +
-    '<div>2. Scope of Work — Phase 1: Critical Gaps</div>' +
-    '<div>3. Scope of Work — Phase 2: Sequence Programming</div>' +
-    '<div>4. Expected Outcomes &amp; Timeline</div>' +
-    '<div>5. Next Steps</div>' +
+    '<div>1. Introduction &amp; Proposal Overview</div>' +
+    '<div>2. Scope of Work</div>' +
+    '<div>3. Expected Outcomes &amp; Timeline</div>' +
     '</div>' +
     '</div>';
 

@@ -283,14 +283,16 @@ var EM_POINT_MAP = [
   {
     col: 'oatLive',
     label: 'OAT (Live)',
-    patterns: [/outdoor air temp/i, /\boat\b/i, /oat \(live\)/i],
+    // FIX 4d: Added dry bulb patterns to match CSV 'Outside Air Dry Bulb'
+    patterns: [/outside air dry bulb/i, /outdoor air dry bulb/i, /outdoor air temp/i, /\boat\b/i, /oat \(live\)/i],
     types: ['AI'],
     cats: ['ahu', 'hwp', 'chwp'],
   },
   {
     col: 'sfSpeedLive',
     label: 'Supply Fan Speed',
-    patterns: [/supply fan speed/i, /fan speed/i, /sf speed/i],
+    // FIX 4b: Added /supply fan.*speed/i and /fan.*vfd.*speed/i to match 'Supply Fan VFD Speed'
+    patterns: [/supply fan.*speed/i, /fan.*vfd.*speed/i, /supply fan speed/i, /fan speed/i, /sf speed/i],
     types: ['AI', 'AO'],
     cats: ['ahu'],
   },
@@ -345,14 +347,20 @@ var EM_POINT_MAP = [
   {
     col: 'zoneCoolSpLive',
     label: 'Zone Cooling Setpoint',
-    patterns: [/zone cooling setpoint/i, /cooling setpoint/i, /clg setpoint/i],
+    // FIX 3b (1b74f531): Use /cooling.*setpoint/i to also match 'Cooling Occupied Setpoint'
+    // (word order: Cooling → Occupied → Setpoint). negativePatterns blocks Adjust and Unoccupied.
+    patterns: [/cooling.*setpoint/i, /clg setpoint/i],
+    negativePatterns: [/adjust|unoccupied/i],
     types: ['SP'],
     cats: ['vav', 'fpb', 'ddvav'],
   },
   {
     col: 'zoneHtgSpLive',
     label: 'Zone Heating Setpoint',
-    patterns: [/zone heating setpoint/i, /heating setpoint/i, /htg setpoint/i],
+    // FIX 3b (1b74f531): Use /heating.*setpoint/i to also match 'Heating Occupied Setpoint'.
+    // negativePatterns blocks Adjust and Unoccupied.
+    patterns: [/heating.*setpoint/i, /htg setpoint/i],
+    negativePatterns: [/adjust|unoccupied/i],
     types: ['SP'],
     cats: ['vav', 'fpb', 'ddvav'],
   },
@@ -380,7 +388,10 @@ var EM_POINT_MAP = [
   {
     col: 'discFlowLive',
     label: 'Discharge Airflow',
-    patterns: [/discharge airflow/i, /disc airflow/i, /zone airflow/i],
+    // FIX 2 (a0d29b4c): Added /\bair\s*flow\b/i and /flow.*input/i to match CSV 'Air Flow'
+    // and 'Flow Control / Flow Input'. negativePatterns blocks setpoints/requests/min/max.
+    patterns: [/discharge airflow/i, /disc airflow/i, /zone airflow/i, /\bair\s*flow\b/i, /flow.*input/i],
+    negativePatterns: [/set\s*point|setpoint|request|minimum|maximum/i],
     types: ['AI'],
     cats: ['vav', 'fpb', 'ddvav'],
   },
@@ -460,6 +471,14 @@ var EM_POINT_MAP = [
     patterns: [/cw return temp/i, /condenser water return/i, /cwrt\b/i],
     types: ['AI'],
     cats: ['ct'],
+  },
+  // FIX 1 (c0bf56e0): Zone CO2 — CSV uses 'Zone CO2' and 'Zone CO2 AV'
+  {
+    col: 'co2Live',
+    label: 'Zone CO2',
+    patterns: [/\bco2\b/i, /zone\s*co2/i, /carbon dioxide/i],
+    types: ['AI', 'BAI', 'BAV', 'AV'],
+    cats: ['ahu', 'vav', 'fpb', 'ddvav'],
   },
   { col: 'oaWetBulbLive', label: 'OA Wet Bulb', patterns: [/wet bulb/i, /wb\b/i], types: ['AI'], cats: ['ct'] },
   {
@@ -547,6 +566,18 @@ function emDetectColMap(headerRow) {
   var n = headerRow.length;
   var checkCount = 11;
   if (n >= 4 + 14) checkCount = 14;
+  var pointStart = 4 + checkCount;
+  // Build a reverse map: column index → EM_POINT_MAP col key, by matching header labels
+  var liveColKeyByIdx = {};
+  for (var pi = pointStart; pi < headerRow.length; pi++) {
+    var hdr = (headerRow[pi] || '').trim().toLowerCase();
+    for (var mi = 0; mi < EM_POINT_MAP.length; mi++) {
+      if (EM_POINT_MAP[mi].label.toLowerCase() === hdr) {
+        liveColKeyByIdx[pi] = EM_POINT_MAP[mi].col;
+        break;
+      }
+    }
+  }
   return {
     format: 'enriched',
     building: 0,
@@ -555,7 +586,8 @@ function emDetectColMap(headerRow) {
     equipType: 3,
     checkStart: 4,
     checkCount: checkCount,
-    pointStart: 4 + checkCount,
+    pointStart: pointStart,
+    liveColKeyByIdx: liveColKeyByIdx,
   };
 }
 
@@ -794,6 +826,9 @@ function emClassifyEquipType(equipTypeStr) {
 
 function emMapPointToColumn(pointName, pointType, equipCategory) {
   if (!pointName) return null;
+  // FIX 4c: Normalize whitespace before pattern matching so 'Mixed  Air Temperature' (double-space)
+  // and similar CSV artifacts match the same patterns as single-spaced names.
+  pointName = pointName.replace(/\s+/g, ' ').trim();
   for (var i = 0; i < EM_POINT_MAP.length; i++) {
     var mapping = EM_POINT_MAP[i];
     if (equipCategory && mapping.cats && mapping.cats.indexOf(equipCategory) === -1) continue;
@@ -947,6 +982,17 @@ function emExtractEquipmentGroups(rows, colMap) {
       var checkCols = colMap.checkCount === 14 ? EM_CHECK_COLS_14 : EM_CHECK_COLS_11;
       if (val !== '') {
         group.checkValues[checkCols[c]] = val;
+      }
+    }
+    // Read live-data columns (zone temps, setpoints, etc.) using the header-derived index map
+    if (colMap.liveColKeyByIdx) {
+      for (var lpi in colMap.liveColKeyByIdx) {
+        var lpiNum = parseInt(lpi, 10);
+        // FIX 3a (1b74f531): Use explicit null/undefined check so 0 survives (was falsy || '')
+        var lval = row[lpiNum] != null ? String(row[lpiNum]).trim() : '';
+        if (lval !== '') {
+          group.pointValues[colMap.liveColKeyByIdx[lpi]] = lval;
+        }
       }
     }
   }
@@ -2042,12 +2088,17 @@ function emGetCellValByDef(row, def, edits) {
   if (edits && edits[editKey] !== undefined) return edits[editKey];
   if (def.key.indexOf('check_') === 0) {
     var checkCols = EM_CHECK_COLS_14;
-    return (row.checks && row.checks[checkCols[def.checkIdx]]) || '';
+    // FIX 3a (1b74f531): Use explicit null/undefined check so 0 passes through (was falsy || '')
+    var cv = row.checks && row.checks[checkCols[def.checkIdx]];
+    return cv != null ? cv : '';
   }
   if (def.isLive || def.isDynPoint) {
-    return (row.points && row.points[def.key]) || '';
+    // FIX 3a (1b74f531): Use explicit null/undefined check so 0 and '0' pass through (was falsy || '')
+    var pv = row.points && row.points[def.key];
+    return pv != null ? pv : '';
   }
-  return row[def.key] || '';
+  // FIX 3a (1b74f531): Use explicit null/undefined check so 0 passes through (was falsy || '')
+  return row[def.key] != null ? row[def.key] : '';
 }
 
 /* ── emComputeFooterAvg ─────────────────────────────────────────────────────
@@ -3028,7 +3079,7 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
       var tempRaw = pts['zoneAirTempLive'];
       var htgRaw = pts['zoneHtgSpLive'];
       var coolRaw = pts['zoneCoolSpLive'];
-      var dampRaw = pts['dampPosnLive'];
+      var dampRaw = pts['dampPosLive']; // FIX 4a: was 'dampPosnLive' (typo), correct key is 'dampPosLive'
       var datRaw = pts['datLive'];
 
       var tempVal = tempRaw !== undefined && tempRaw !== '' ? parseFloat(tempRaw) : NaN;
@@ -3535,9 +3586,11 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
     if (coveredMap[catKey]) {
       var match = coveredMap[catKey];
       var tier = match.matchTier;
-      var rawVal = row.points && match.pointName ? row.points[match.pointName] || '' : '';
-      var displayVal = rawVal ? (rawVal.length > 8 ? rawVal.slice(0, 8) : rawVal) : null;
-      var tooltipBase = emHtmlEsc((match.pointName || '') + (rawVal ? ': ' + rawVal : ''));
+      // FIX 3a (1b74f531): Use explicit null/undefined check so 0/'0' passes through (was falsy || '')
+      var rawVal =
+        row.points && match.pointName ? (row.points[match.pointName] != null ? row.points[match.pointName] : '') : '';
+      var displayVal = rawVal !== '' ? (String(rawVal).length > 8 ? String(rawVal).slice(0, 8) : String(rawVal)) : null;
+      var tooltipBase = emHtmlEsc((match.pointName || '') + (rawVal !== '' ? ': ' + rawVal : ''));
       if (tier <= 2) {
         // High confidence — green cell showing live value (fallback to "Yes" if no value)
         return (
@@ -3991,12 +4044,17 @@ function emGetCellVal(row, colIdx, edits) {
   if (def.key.indexOf('check_') === 0) {
     var idx = def.checkIdx;
     var checkCols = EM_CHECK_COLS_14;
-    return (row.checks && row.checks[checkCols[idx]]) || '';
+    // FIX: Use explicit null/undefined check so 0 and '0' pass through (was falsy || '')
+    var cv = row.checks && row.checks[checkCols[idx]];
+    return cv != null ? cv : '';
   }
   if (def.isLive || def.isDynPoint) {
-    return (row.points && row.points[def.key]) || '';
+    // FIX: Use explicit null/undefined check so 0 and '0' pass through (was falsy || '')
+    var pv = row.points && row.points[def.key];
+    return pv != null ? pv : '';
   }
-  return row[def.key] || '';
+  // FIX: Use explicit null/undefined check so 0 passes through (was falsy || '')
+  return row[def.key] != null ? row[def.key] : '';
 }
 
 function emFormatCell(val, def) {
@@ -5172,7 +5230,7 @@ var EM_POINT_CATEGORIES = {
     {
       key: 'co2',
       label: 'CO2 Sensor',
-      required: false,
+      required: true,
       ashrae36Name: 'CO2 Sensor (Return or Zone)',
       ashrae36Section: '5.16',
       configFlag: 'hasCO2',
@@ -5510,7 +5568,7 @@ var EM_POINT_CATEGORIES = {
     {
       key: 'co2',
       label: 'Zone CO2 Sensor',
-      required: false,
+      required: true,
       ashrae36Name: 'Zone CO2 Concentration',
       ashrae36Section: '5.6',
       configFlag: 'hasCO2',
@@ -7841,6 +7899,26 @@ var EM_SEQUENCE_DEFS = [
     requiredCats: ['chillerStatus', 'chillerEnable', 'pchwpStatus'],
     keyCats: ['chillerEnable'],
   },
+
+  /* ── DCV sequences ──────────────────────────────────────────────────── */
+  {
+    key: 'demandCtrl',
+    label: 'DCV (AHU)',
+    ashrae36: '§5.16',
+    equipTypes: ['ahu'],
+    requiredCats: ['co2', 'oaDampCmd'],
+    keyCats: ['co2'],
+    configFlag: 'hasCO2',
+  },
+  {
+    key: 'vav_dcv',
+    label: 'DCV (VAV)',
+    ashrae36: '§5.6',
+    equipTypes: ['vav', 'fpb', 'ddvav'],
+    requiredCats: ['co2', 'dampCmd'],
+    keyCats: ['co2'],
+    configFlag: 'hasCO2',
+  },
 ];
 
 /* ── emComputeSequenceReadiness ─────────────────────────────────────────────
@@ -8311,6 +8389,10 @@ function emOpenManageMappings(pid) {
   if (!pid) return;
 
   var data = emLoadMatrix(pid);
+  if (!data) {
+    showToast('Equipment data still loading — try again in a moment', 'warn');
+    return;
+  }
   var rows = data.rows || [];
   if (rows.length === 0) {
     showToast('No equipment data to analyse', 'warn');
