@@ -15,7 +15,6 @@ function getProjSavingsData(projId) {
   const p = projects.find((x) => x.id === projId);
   if (!p) return { measures: [], blRates: {} };
   if (!p.savingsData) p.savingsData = { measures: [], blRates: {} };
-  if (!Array.isArray(p.savingsData.measures)) p.savingsData.measures = [];
   return p.savingsData;
 }
 
@@ -156,12 +155,251 @@ function addSavingsMeasure(projId) {
     totalDollar: 0,
   });
   sset('en_projects', projects);
+  renderSavingsMatrix(projId);
 }
 
 function removeSavingsMeasure(projId, msrId) {
   const sd = getProjSavingsData(projId);
   sd.measures = sd.measures.filter((m) => m.id !== msrId);
   sset('en_projects', projects);
+}
+
+function renderSavingsMatrix(projId) {
+  const sd = getProjSavingsData(projId);
+  const bldgs = getUDBldgs(projId);
+  const tbody = document.getElementById('sv-matrix-body-' + projId);
+  if (!tbody) return;
+  const bldgOpts = bldgs.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
+  if (!sd.measures.length) {
+    tbody.innerHTML = `<tr><td colspan="200" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
+            No measures yet — click "+ Add Measure" to start building your savings projection.
+          </td></tr>`;
+    renderSavingsFooter(projId, sd);
+    return;
+  }
+  // Auto-sync SQFT from current building data if measure has a building assigned
+  let _msrDataChanged = false;
+  sd.measures.forEach((m) => {
+    if (m.bldgId) {
+      const bldg = getUDBldg(projId, m.bldgId);
+      if (bldg) {
+        const bldgSqft = parseFloat(bldg.sqft) || 0;
+        if (bldgSqft > 0 && (m.sqft || 0) !== bldgSqft) {
+          m.sqft = bldgSqft;
+          _msrDataChanged = true;
+        }
+      }
+    }
+  });
+  if (_msrDataChanged) sset('en_projects', projects);
+
+  // ── Rate functions for cost calc ──
+  const _kwhRateFn = (r) => (mo) => (SUMMER_MOS.includes(mo) ? r.kwhSummer || 0 : r.kwhWinter || 0);
+  const _kwRateFn = (r) => (mo) => (SUMMER_MOS.includes(mo) ? r.kwSummer || 0 : r.kwWinter || 0);
+  const _gasRateFn = (r) => () => r.thermRate || 0;
+  const _propRateFn = (r) => () => r.gallonRate || 0;
+
+  // ── Usage cells helper (12 monthly inputs + total) ──
+  const _usageCells = (arr, cls, grp, bgColor, pId, mId) => {
+    const isOpen = !!_svColGroupState[grp];
+    const vals = arr || Array(12).fill(0);
+    const total = vals.reduce((a, b) => a + (parseFloat(b) || 0), 0);
+    const moCells = vals
+      .map(
+        (v, i) =>
+          `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:${bgColor}"><input class="sv-num-inp ${cls}" type="number" step="any" value="${v || ''}" placeholder="0" style="width:54px" onchange="updateMsrVal('${pId}','${mId}','${cls.replace('-col', '')}',${i},this.value)" onfocusout="autoSaveMsr('${pId}')"></td>`,
+      )
+      .join('');
+    return (
+      moCells +
+      `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;text-align:right;padding:4px 4px;white-space:nowrap">${total ? Math.round(total).toLocaleString() : ''}</td>`
+    );
+  };
+
+  // ── Cost cells helper (12 monthly read-only + total) ──
+  const _costCells = (arr, grp, bgColor, rateFn) => {
+    const isOpen = !!_svColGroupState[grp];
+    const vals = arr || Array(12).fill(0);
+    let total = 0;
+    const moCells = vals
+      .map((v, i) => {
+        const cost = (parseFloat(v) || 0) * rateFn(i);
+        total += cost;
+        return `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:${bgColor};font-family:var(--mono);font-size:10px;text-align:right;color:var(--text2)">${cost ? '$' + Math.round(cost).toLocaleString() : ''}</td>`;
+      })
+      .join('');
+    return (
+      moCells +
+      `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;text-align:right;padding:4px 4px;white-space:nowrap">${total ? '$' + Math.round(total).toLocaleString() : ''}</td>`
+    );
+  };
+
+  // ── Rate cell helper ──
+  const _rateCell = (mId, field, step, r) =>
+    `<td><input class="sv-num-inp sv-rate-inp" type="number" step="${step}" value="${r[field] || ''}" placeholder="0" style="width:52px;font-size:10px" onchange="svUpdateMsrRate('${mId}','${field}',parseFloat(this.value)||0)" onfocusout="autoSaveMsr('${projId}')"></td>`;
+
+  tbody.innerHTML = sd.measures
+    .map((m) => {
+      const r = m.rates || {};
+      if (!m.propane) m.propane = Array(12).fill(0);
+      const annMsrKwh = m.kwh.reduce((a, b) => a + (parseFloat(b) || 0), 0);
+
+      // Compute projected savings $ for this measure
+      let projSavings = 0;
+      for (let mo = 0; mo < 12; mo++) {
+        projSavings += (parseFloat(m.kwh[mo]) || 0) * _kwhRateFn(r)(mo);
+        projSavings += (parseFloat(m.kw[mo]) || 0) * _kwRateFn(r)(mo);
+        projSavings += (parseFloat(m.gas[mo]) || 0) * _gasRateFn(r)();
+        projSavings += (parseFloat(m.propane[mo]) || 0) * _propRateFn(r)();
+      }
+
+      const dollarStr = projSavings > 0 ? '$' + Math.round(projSavings).toLocaleString() : '—';
+      return `<tr id="sv-msr-row-${projId}-${m.id}">
+            <td style="text-align:center;vertical-align:top;padding-top:6px"><span class="sv-detail-toggle" id="sv-dtog-${m.id}" onclick="svToggleDetail('${m.id}')">▶</span></td>
+            <td style="text-align:center"><input type="checkbox" class="sv-sel-cb" ${m.selected ? 'checked' : ''} onchange="updateMsrSel('${projId}','${m.id}',this.checked)"></td>
+            <td><input class="sv-msr-txt" style="width:44px;text-align:center" placeholder="#" value="${m.msrNum || ''}" onchange="updateMsrField('${projId}','${m.id}','msrNum',this.value)"></td>
+            <td><select class="sv-msr-sel" onchange="updateMsrField('${projId}','${m.id}','bldgId',this.value)">${bldgOpts.replace(`value="${m.bldgId}"`, `value="${m.bldgId}" selected`)}</select></td>
+            <td><input class="sv-num-inp sv-sqft-inp" type="number" style="width:68px" placeholder="0" value="${m.sqft || ''}" onchange="updateMsrField('${projId}','${m.id}','sqft',parseFloat(this.value)||0)"></td>
+            <td><input class="sv-msr-txt" style="width:100%;min-width:160px" placeholder="e.g. BAS Setpoint Optimization 74/70°F" value="${m.desc || ''}" onchange="updateMsrField('${projId}','${m.id}','desc',this.value)"></td>
+            ${_rateCell(m.id, 'kwhSummer', '0.0001', r)}${_rateCell(m.id, 'kwhWinter', '0.0001', r)}
+            ${_rateCell(m.id, 'kwSummer', '0.01', r)}${_rateCell(m.id, 'kwWinter', '0.01', r)}
+            ${_rateCell(m.id, 'thermRate', '0.001', r)}${_rateCell(m.id, 'gallonRate', '0.001', r)}
+            ${_usageCells(m.kwh, 'kwh-col', 'kwh', 'rgba(59,130,246,0.03)', projId, m.id)}
+            ${_usageCells(m.kw, 'kw-col', 'kw', 'rgba(245,158,11,0.03)', projId, m.id)}
+            ${_usageCells(m.gas, 'gas-col', 'gas', 'rgba(20,184,166,0.03)', projId, m.id)}
+            ${_usageCells(m.propane, 'propane-col', 'propane', 'rgba(168,85,247,0.03)', projId, m.id)}
+            ${_costCells(m.kwh, 'kwhCost', 'rgba(59,130,246,0.02)', _kwhRateFn(r))}
+            ${_costCells(m.kw, 'kwCost', 'rgba(245,158,11,0.02)', _kwRateFn(r))}
+            ${_costCells(m.gas, 'gasCost', 'rgba(20,184,166,0.02)', _gasRateFn(r))}
+            ${_costCells(m.propane, 'propaneCost', 'rgba(168,85,247,0.02)', _propRateFn(r))}
+            <td class="sv-total-cell" style="border-left:2px solid var(--border2)" id="sv-msr-total-${projId}-${m.id}">${dollarStr}</td>
+            <td style="text-align:center"><button class="btn-del" onclick="removeSavingsMeasure(${projId},'${m.id}')">✕</button></td>
+          </tr>
+          <tr id="sv-detail-${m.id}" class="sv-detail-row" style="display:none">
+            <td colspan="200" style="padding:12px 16px">
+              <div class="sv-detail-grid">
+                <div>
+                  <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Utility Rates</div>
+                  <div class="sv-rate-group">
+                    <div class="sv-rate-field"><label>kWh $/Summer</label><input class="fi" type="number" step="0.0001" value="${r.kwhSummer || ''}" onchange="svUpdateMsrRate('${m.id}','kwhSummer',parseFloat(this.value)||0)"></div>
+                    <div class="sv-rate-field"><label>kWh $/Winter</label><input class="fi" type="number" step="0.0001" value="${r.kwhWinter || ''}" onchange="svUpdateMsrRate('${m.id}','kwhWinter',parseFloat(this.value)||0)"></div>
+                    <div class="sv-rate-field"><label>kW $/Summer</label><input class="fi" type="number" step="0.01" value="${r.kwSummer || ''}" onchange="svUpdateMsrRate('${m.id}','kwSummer',parseFloat(this.value)||0)"></div>
+                    <div class="sv-rate-field"><label>kW $/Winter</label><input class="fi" type="number" step="0.01" value="${r.kwWinter || ''}" onchange="svUpdateMsrRate('${m.id}','kwWinter',parseFloat(this.value)||0)"></div>
+                    <div class="sv-rate-field"><label>Gas $/Therm</label><input class="fi" type="number" step="0.001" value="${r.thermRate || ''}" onchange="svUpdateMsrRate('${m.id}','thermRate',parseFloat(this.value)||0)"></div>
+                    <div class="sv-rate-field"><label>Propane $/Gallon</label><input class="fi" type="number" step="0.001" value="${r.gallonRate || ''}" onchange="svUpdateMsrRate('${m.id}','gallonRate',parseFloat(this.value)||0)"></div>
+                  </div>
+                  <button class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:11px" onclick="svResetMsrRates('${m.id}')">Reset to Building Defaults</button>
+                </div>
+                <div>
+                  <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Financials</div>
+                  <div class="sv-rate-group">
+                    <div class="sv-rate-field"><label>Implementation Cost</label><input class="fi" type="number" step="1" value="${m.implCost || ''}" placeholder="$0" onchange="updateMsrField('${projId}','${m.id}','implCost',parseFloat(this.value)||0)"></div>
+                    <div class="sv-rate-field"><label>Incentive / Rebate</label><input class="fi" type="number" step="1" value="${m.incentive || ''}" placeholder="$0" onchange="updateMsrField('${projId}','${m.id}','incentive',parseFloat(this.value)||0)"></div>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+                    <div>Net Cost: <span class="sv-intensity" style="color:var(--text);font-weight:700">${(m.implCost || 0) - (m.incentive || 0) > 0 ? '$' + Math.round((m.implCost || 0) - (m.incentive || 0)).toLocaleString() : '—'}</span></div>
+                    <div>Simple Payback: <span class="sv-intensity" style="color:var(--accent);font-weight:700">${m.totalDollar > 0 && (m.implCost || 0) > 0 ? (((m.implCost || 0) - (m.incentive || 0)) / m.totalDollar).toFixed(1) + ' yrs' : '—'}</span></div>
+                  </div>
+                </div>
+                <div>
+                  <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Intensity Metrics</div>
+                  <div style="display:flex;flex-direction:column;gap:6px">
+                    <div>Sq Ft: <span class="sv-intensity" style="color:var(--text)">${m.sqft ? Number(m.sqft).toLocaleString() : '—'}</span></div>
+                    <div>kWh/sf saved: <span class="sv-intensity" style="color:var(--accent)">${m.sqft > 0 && annMsrKwh > 0 ? (annMsrKwh / m.sqft).toFixed(1) : '—'}</span></div>
+                    <div>$/sf saved: <span class="sv-intensity" style="color:var(--green)">${m.sqft > 0 && m.totalDollar > 0 ? '$' + (m.totalDollar / m.sqft).toFixed(2) : '—'}</span></div>
+                  </div>
+                </div>
+              </div>
+              <div style="margin-top:10px">
+                <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Notes</div>
+                <textarea class="fi" style="width:100%;min-height:48px;resize:vertical;font-size:12px" placeholder="Measure notes..." onchange="updateMsrField('${projId}','${m.id}','notes',this.value)">${m.notes || ''}</textarea>
+              </div>
+            </td>
+          </tr>`;
+    })
+    .join('');
+  renderSavingsFooter(projId, sd);
+}
+
+function renderSavingsFooter(projId, sd) {
+  const tfoot = document.getElementById('sv-matrix-foot-' + projId);
+  if (!tfoot) return;
+  const selMsrs = sd.measures.filter((m) => m.selected !== false);
+  const totKwh = Array(12).fill(0),
+    totKw = Array(12).fill(0),
+    totGas = Array(12).fill(0),
+    totPropane = Array(12).fill(0);
+  let grandTotal = 0,
+    totSqft = 0,
+    totKwhCost = 0,
+    totKwCost = 0,
+    totGasCost = 0,
+    totPropaneCost = 0;
+  selMsrs.forEach((m) => {
+    totSqft += parseFloat(m.sqft) || 0;
+    m.kwh.forEach((v, i) => (totKwh[i] += parseFloat(v) || 0));
+    m.kw.forEach((v, i) => (totKw[i] += parseFloat(v) || 0));
+    m.gas.forEach((v, i) => (totGas[i] += parseFloat(v) || 0));
+    (m.propane || []).forEach((v, i) => (totPropane[i] += parseFloat(v) || 0));
+    const rates = m.rates || (sd.blRates || {})[m.bldgId] || {};
+    for (let mo = 0; mo < 12; mo++) {
+      const s = SUMMER_MOS.includes(mo);
+      const kwhAmt = (parseFloat(m.kwh[mo]) || 0) * (s ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
+      const kwAmt = (parseFloat(m.kw[mo]) || 0) * (s ? rates.kwSummer || 0 : rates.kwWinter || 0);
+      const gasAmt = (parseFloat(m.gas[mo]) || 0) * (rates.thermRate || 0);
+      const propaneAmt = (parseFloat((m.propane || [])[mo]) || 0) * (rates.gallonRate || 0);
+      grandTotal += kwhAmt + kwAmt + gasAmt + propaneAmt;
+      totKwhCost += kwhAmt;
+      totKwCost += kwAmt;
+      totGasCost += gasAmt;
+      totPropaneCost += propaneAmt;
+    }
+  });
+  const fmtN = (v) => (v ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '');
+  const fmtD = (v) => (v > 0 ? '$' + Math.round(v).toLocaleString() : '');
+  // Footer usage cells (collapsible months + total)
+  const _footUsage = (totArr, grp, color) => {
+    const isOpen = !!_svColGroupState[grp];
+    const annTotal = totArr.reduce((a, b) => a + b, 0);
+    return (
+      totArr
+        .map(
+          (v, i) =>
+            `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});font-family:var(--mono);font-size:11px;font-weight:700;color:${color};text-align:right;padding:5px 3px">${fmtN(v)}</td>`,
+        )
+        .join('') +
+      `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;color:${color};text-align:right;padding:5px 3px">${fmtN(annTotal)}</td>`
+    );
+  };
+  const _footCost = (grp, totCost) => {
+    const isOpen = !!_svColGroupState[grp];
+    return (
+      Array(12)
+        .fill(0)
+        .map(
+          (_, i) =>
+            `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:5px 3px"></td>`,
+        )
+        .join('') +
+      `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;text-align:right;padding:5px 3px;color:var(--green)">${fmtD(totCost)}</td>`
+    );
+  };
+  tfoot.innerHTML = `<tr class="sv-foot-row">
+          <td></td><td></td><td></td>
+          <td style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
+          <td style="font-family:var(--mono);font-size:11px;font-weight:700;text-align:right;padding:5px 4px">${totSqft ? totSqft.toLocaleString(undefined, { maximumFractionDigits: 0 }) : ''}</td>
+          <td colspan="7"></td>
+          ${_footUsage(totKwh, 'kwh', 'var(--accent)')}
+          ${_footUsage(totKw, 'kw', 'var(--amber)')}
+          ${_footUsage(totGas, 'gas', 'var(--teal)')}
+          ${_footUsage(totPropane, 'propane', 'var(--purple,#a855f7)')}
+          ${_footCost('kwhCost', totKwhCost)}${_footCost('kwCost', totKwCost)}${_footCost('gasCost', totGasCost)}${_footCost('propaneCost', totPropaneCost)}
+          <td class="sv-total-cell sv-foot-total" style="border-left:2px solid var(--border2)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</td>
+          <td></td>
+        </tr>`;
+  renderSavingsSummary(projId, sd, totKwh, totKw, totGas, totPropane, grandTotal);
+  // Keep the compact header banner in sync with the computed grand total
+  if (typeof _updateCompactHdrSavings === 'function') _updateCompactHdrSavings(projId);
 }
 
 function renderSavingsSummary(projId, sd, totKwh, totKw, totGas, totPropane, grandTotal) {
@@ -254,6 +492,7 @@ function updateMsrSel(projId, msrId, checked) {
   if (!m) return;
   m.selected = checked;
   sset('en_projects', projects);
+  renderSavingsFooter(projId, sd);
 }
 function autoSaveMsr(projId) {
   sset('en_projects', projects);
@@ -291,6 +530,7 @@ function calcProjSavingsMatrix(projId) {
     if (cell) cell.textContent = total > 0 ? '$' + Math.round(total).toLocaleString() : '—';
   });
   sset('en_projects', projects);
+  renderSavingsFooter(projId, sd);
   showToast('Savings recalculated ✓');
 }
 
@@ -644,7 +884,7 @@ function _renderSavingsContent(wrap, projId) {
   // ── Measure rows ──
   const bldgOpts = bldgs.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
   let msrRows;
-  if (!Array.isArray(sd.measures) || !sd.measures.length) {
+  if (!sd.measures.length) {
     msrRows = `<tr><td colspan="200" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
             No measures yet — click "+ Add Measure" in the header to begin.
           </td></tr>`;
@@ -895,7 +1135,7 @@ function _renderSavingsContent(wrap, projId) {
                   </tr>
                 </thead>
                 <tbody>${msrRows}</tbody>
-                ${sd.measures.length ? '<tfoot>' + footRow + '</tfoot>' : ''}
+                <tfoot>${footRow}</tfoot>
               </table>
             </div>
           </div>
