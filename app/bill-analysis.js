@@ -2988,6 +2988,7 @@ function findMeterMatch(extracted) {
   const billAddr = _normalizeAddr(extracted.ServiceAddress);
   let bestMatch = null;
   let addrMatch = null;
+  let addrBestScore = 0; // tracks highest score seen so far for address fallback
   for (const proj of projects) {
     const udProj = getUDProj(proj.id);
     for (const bldg of udProj.buildings || []) {
@@ -3025,13 +3026,19 @@ function findMeterMatch(extracted) {
         if (bldgAddrNorm && _addressSimilarity(bldg.addr, extracted.ServiceAddress) >= bestScore) {
           isAlias = false;
         }
-        // Threshold: 0.60+ qualifies; exact wins over fuzzy
-        if ((exactHit || bestScore >= 0.6) && !addrMatch) {
+        // Threshold: 0.60+ qualifies; keep the BEST-scoring building across all
+        // buildings (not just the first one above 0.6). This prevents
+        // cross-contamination when two buildings share a similar base address
+        // (e.g. "301 6th St" vs "305 6th St") — the bill routes to whichever
+        // building scores highest rather than whichever is iterated first.
+        const candidateScore = exactHit ? 1.0 : bestScore;
+        if ((exactHit || bestScore >= 0.6) && candidateScore > addrBestScore) {
           const commMeter = billComm
             ? (bldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm)
             : null;
           const candidateMeter = commMeter || (bldg.meters || [])[0];
           if (candidateMeter) {
+            addrBestScore = candidateScore;
             addrMatch = {
               proj,
               bldg,
@@ -3039,7 +3046,7 @@ function findMeterMatch(extracted) {
               projId: proj.id,
               bldgId: bldg.id,
               meterId: candidateMeter.id,
-              fuzzyScore: exactHit ? 1.0 : bestScore,
+              fuzzyScore: candidateScore,
               isAlias,
             };
           }

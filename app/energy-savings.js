@@ -4825,7 +4825,28 @@ const UTILITY_RULES = [
         if (isKGSSection && accountMatches.length > 1) {
           // Split the section text at each "Account Number" boundary.
           // Each sub-block starts at an "Account Number" line and ends at the next one.
-          const subBlocks = s.split(/(?=Account\s+Number[\s:]*[0-9 ]{10,30})/i).filter((b) => b.trim().length > 20);
+          // Use a helper that recursively splits until no sub-block contains more than one
+          // Account Number occurrence. This handles OCR layouts where the initial split leaves
+          // multiple account headers in one piece (e.g. 3+ accounts on a page).
+          const _splitAccountBlocks = (text, depth = 0) => {
+            if (depth > 50) return [text];
+            const pieces = text.split(/(?=Account\s+Number[\s:]*[0-9 ]{10,30})/i).filter((b) => b.trim().length > 20);
+            const result = [];
+            for (const piece of pieces) {
+              const count = (piece.match(/Account\s+Number[\s:]*[0-9 ]{10,30}/gi) || []).length;
+              if (count > 1) {
+                // Still has multiple accounts — recurse directly on piece (lookahead split already
+                // anchors each piece to start at an "Account Number" header; re-slicing via indexOf
+                // always returns 0 and causes infinite recursion when inter-account text is <21 chars)
+                const sub = _splitAccountBlocks(piece, depth + 1);
+                result.push(...sub);
+              } else {
+                result.push(piece);
+              }
+            }
+            return result;
+          };
+          const subBlocks = _splitAccountBlocks(s);
           for (const block of subBlocks) {
             // Preserve the KGS brand text (needed for isKGS detection in extract()) and page markers
             // by prepending the section header up to the first "Account Number" if the block lacks it.
@@ -4833,6 +4854,9 @@ const UTILITY_RULES = [
               /kansas\s+gas\s+service/i.test(block) || /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(block);
             const blockText = hasKGSBrand ? block : 'Kansas Gas Service\n' + block;
             const r = this.extract(blockText);
+            // Skip records flagged by extract() as unidentifiable (no Account Number found).
+            // These arise from pre-header text pieces that get passed through the split.
+            if (r._skipRecord) continue;
             r._multiAccount = true;
             if (pageStart !== null) r._pageStart = pageStart;
             if (pageEnd !== null) r._pageEnd = pageEnd;
@@ -4844,9 +4868,12 @@ const UTILITY_RULES = [
             sText = 'Kansas Gas Service\n' + s;
           }
           const r = this.extract(sText);
-          if (pageStart !== null) r._pageStart = pageStart;
-          if (pageEnd !== null) r._pageEnd = pageEnd;
-          result.push(r);
+          // Skip records flagged as unidentifiable — do not emit wrong data.
+          if (!r._skipRecord) {
+            if (pageStart !== null) r._pageStart = pageStart;
+            if (pageEnd !== null) r._pageEnd = pageEnd;
+            result.push(r);
+          }
         }
       }
       if (_unmatchedSections.length) result._unmatchedPages = _unmatchedSections;
@@ -4863,10 +4890,53 @@ const UTILITY_RULES = [
         // Helper: normalize OCR number artifacts — colon misread as period (e.g. "17:55" → "17.55")
         const fixNum = (s) => (s ? s.replace(/(\d):(\d)/, '$1.$2') : null);
 
+        // === ACCOUNT-ANCHORED REGION ===
+        // When OCR linearizes two side-by-side account columns into one text block, all charge lines
+        // from BOTH accounts appear after the two "Account Number" headers. Without anchoring, every
+        // t.match() below uses first-match-wins and can pick up the wrong account's values.
+        //
+        // Strategy: find where THIS account's "Account Number" header starts and where the NEXT
+        // "Account Number" header starts (if any). Slice out only this account's region and run all
+        // field-extraction regexes against that slice (activeT) instead of the full block (t).
+        // If the block has only one account this is a no-op (activeT === t).
+        //
+        // t is still used for brand/isKGS detection so that KGS-branded blocks are correctly routed
+        // even when the block starts with page-header text before the first Account Number.
+        const _acctRe = /Account\s+Number[\s:]*[0-9 ]{10,30}/gi;
+        const _acctMatches = [...t.matchAll(_acctRe)];
+        let activeT;
+        if (_acctMatches.length === 0) {
+          // No Account Number in this block at all — block is likely pre-account header text or
+          // garbled OCR. Mark low-confidence and use the full text; fields will mostly be null.
+          activeT = t;
+        } else if (_acctMatches.length === 1) {
+          // Single account — anchor from the Account Number start to end of block.
+          activeT = t.slice(_acctMatches[0].index);
+        } else {
+          // Multiple Account Numbers survived into extract() — anchor to only the FIRST one.
+          // (extractAll should have prevented this via _splitAccountBlocks, but defence in depth.)
+          // Use the region from the first Account Number to just before the second.
+          activeT = t.slice(_acctMatches[0].index, _acctMatches[1].index);
+        }
+
         // === HEADER BLOCK ===
         // Account Number: "Account Number    510000123 2051604 18"
-        const accountM = t.match(/Account\s+Number[\s:]*([0-9 ]{10,30})/i);
+        const accountM = activeT.match(/Account\s+Number[\s:]*([0-9 ]{10,30})/i);
         const AccountNumber = accountM ? accountM[1].replace(/\s+/g, ' ').trim() : null;
+
+        // Low-confidence guard: if no Account Number was found at all, this block cannot be
+        // associated with any account. Return a flagged record rather than emitting wrong data.
+        if (!AccountNumber) {
+          return {
+            UtilityCompany: 'Kansas Gas Service',
+            Commodity: 'Gas',
+            _skipRecord: true,
+            _lowConfidence: true,
+            _reason: 'No Account Number found in block — likely garbled OCR or pre-header text',
+            commodity: 'gas',
+            _utilityName: 'Kansas Gas Service',
+          };
+        }
 
         // Statement Date: "Statement Date  02-20-26"
         // OCR sometimes splits "Statement Date" across garbled tokens: "Stat     t Dat               12-19-25"
@@ -4874,17 +4944,20 @@ const UTILITY_RULES = [
         // Pattern 1: normal "Statement Date MM-DD-YY"
         // Pattern 2: garbled — allow any non-digit chars between "Stat" and the date, but keep it short
         // to avoid matching unrelated text. The date always appears within ~30 chars of "Stat".
+        // Uses activeT so we only see dates belonging to this account's header block.
         const stmtM =
-          t.match(/Statement\s+Dat\w*\s+(\d{2}-\d{2}-\d{2})/i) || t.match(/Stat\b[^0-9\n]{0,30}(\d{2}-\d{2}-\d{2})/i);
+          activeT.match(/Statement\s+Dat\w*\s+(\d{2}-\d{2}-\d{2})/i) ||
+          activeT.match(/Stat\b[^0-9\n]{0,30}(\d{2}-\d{2}-\d{2})/i);
         const StatementDate = stmtM ? stmtM[1] : null;
 
         // Rate Schedule: "Rate    Residential" or "Rate    General Service Lg"
         // OCR sometimes misreads "Rate" as "FE", "Fat", "Rat", etc. so we can't always rely on the
         // keyword. Primary: match the literal word "Rate" followed by the rate name on the same line.
         // Fallback: look for "Residential" or "General Service" near the header block.
+        // Uses activeT to avoid picking up a different account's rate schedule.
         const rateM =
-          t.match(/\bRate\s+(Residential|General\s+Service\s*(?:Sm|Lg|Med)?[A-Za-z]*|Commercial[A-Za-z ]*)/i) ||
-          t.match(/(?:DIRECTOR OF FACILITIES|Active Deposit)[^\n]*(Residential|General\s+Service[^\n]{0,20})/i);
+          activeT.match(/\bRate\s+(Residential|General\s+Service\s*(?:Sm|Lg|Med)?[A-Za-z]*|Commercial[A-Za-z ]*)/i) ||
+          activeT.match(/(?:DIRECTOR OF FACILITIES|Active Deposit)[^\n]*(Residential|General\s+Service[^\n]{0,20})/i);
         const RateSchedule = rateM ? rateM[1].trim() : null;
 
         // Customer Name: all-caps line immediately before "DIRECTOR OF FACILITIES"
@@ -4892,20 +4965,23 @@ const UTILITY_RULES = [
         // text is on the same line, not a separate line. So \n won't separate them.
         // Pattern: capture the all-caps name appearing before the word DIRECTOR anywhere on the page,
         // allowing it to be on the same line (separated by many spaces) or a different line.
-        const custM = t.match(/([A-Z][A-Z &]{2,50})\s{2,}(?:[A-Z0-9 ]*\n\s*)?DIRECTOR\s+OF\s+FACILITIES/i);
+        // Uses activeT so each account yields its own customer name, not a neighbour's.
+        const custM = activeT.match(/([A-Z][A-Z &]{2,50})\s{2,}(?:[A-Z0-9 ]*\n\s*)?DIRECTOR\s+OF\s+FACILITIES/i);
         const CustomerName = custM ? custM[1].trim() : null;
 
         // Service Address: KGS bills have the address on the line above "BALDWIN CITY, KS" but that
         // line also contains "Active Deposit   NONE | Statement Date  XX-XX-XX" (OCR merges columns).
         // Extract the street address from the beginning of that line, stopping before "Active".
         // Example: "305 6TH ST # 306          Active Deposit    NONE | Statement Date   11-18-25"
-        const addrM = t.match(/([A-Z0-9#][A-Z0-9# ]{4,49?})\s{2,}Active\s+D/i);
+        // Uses activeT to avoid capturing another account's address.
+        const addrM = activeT.match(/([A-Z0-9#][A-Z0-9# ]{4,49?})\s{2,}Active\s+D/i);
         const ServiceAddress = addrM ? addrM[1].trim() : null;
 
         // === METER READING TABLE ===
         // Pattern: MeterNum   MM-DD-YY   MM-DD-YY   Days   Prev   Curr   Const   Mcf   WNA   CostGas
         // OCR sometimes inserts "~~" between dates
-        const meterRowM = t.match(
+        // Uses activeT so only this account's meter row is matched.
+        const meterRowM = activeT.match(
           /([A-Z0-9]{6,12})\s+(\d{2}-\d{2}-\d{2})\s*(?:~~\s*)?(\d{2}-\d{2}-\d{2})\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)/,
         );
 
@@ -4926,40 +5002,43 @@ const UTILITY_RULES = [
         // === BALANCE SECTION ===
         // All dollar-amount patterns use [\\d,.:] to capture values whether OCR renders decimal as
         // "." (normal) or ":" (misread — e.g. "17:55"). fixNum() then normalises colon→period.
-        const prevBalM = t.match(/Previous\s+Balance\s+\$?([\d,.:]+)/i);
+        // All use activeT to prevent first-match-wins picking up another account's balance.
+        const prevBalM = activeT.match(/Previous\s+Balance\s+\$?([\d,.:]+)/i);
         const PreviousBalance = fixNum(prevBalM ? prevBalM[1] : null);
 
         // OCR renders "Payments Received      82.90CR" — plural "Payments", amount at far right with CR suffix.
         // Old pattern used singular "Payment\s+Received" and tried to capture after a dash/dollar sign
         // which never appeared; the amount trailed by "CR" was after the regex had already given up.
-        const paymentM = t.match(/Payments?\s+Received[^\n]*?([\d,.:]+)CR/i);
+        const paymentM = activeT.match(/Payments?\s+Received[^\n]*?([\d,.:]+)CR/i);
         const PaymentsReceived = fixNum(paymentM ? paymentM[1] : null);
 
         // === CHARGES SECTION ===
         // fixNum() is applied to all captured dollar values to handle OCR colon-for-period artifacts
         // (e.g. "17:55" → "17.55" — seen on page 12 of test file).
-        const serviceChargeM = t.match(/Service\s+Charge\s+\$?([\d,.:]+)/i);
+        // All use activeT to prevent cross-account charge bleed.
+        const serviceChargeM = activeT.match(/Service\s+Charge\s+\$?([\d,.:]+)/i);
         const CustomerCharge = fixNum(serviceChargeM ? serviceChargeM[1] : null);
 
-        const deliveryM = t.match(/Delivery\s+Charge\s+\$?([\d,.:]+)/i);
+        const deliveryM = activeT.match(/Delivery\s+Charge\s+\$?([\d,.:]+)/i);
         const DeliveryCharge = fixNum(deliveryM ? deliveryM[1] : null);
 
         // GSRS is absent on some summer bills — null is correct when line doesn't appear.
         // Allow optional "CR" suffix (credit months, e.g. page 7 shows "0.37CR").
-        const gsrsM = t.match(/Gas\s+System\s+Reliability\s+Surcharge\s+\$?([\d,.:]+)(?:CR)?/i);
+        const gsrsM = activeT.match(/Gas\s+System\s+Reliability\s+Surcharge\s+\$?([\d,.:]+)(?:CR)?/i);
         const GasSystemReliability = fixNum(gsrsM ? gsrsM[1] : null);
 
-        const wnaM = t.match(/Weather\s+Normalization\s+(?:Adj(?:ustment)?)?\s+\$?([\d,.:]+)/i);
+        const wnaM = activeT.match(/Weather\s+Normalization\s+(?:Adj(?:ustment)?)?\s+\$?([\d,.:]+)/i);
         const WeatherNormalization = fixNum(wnaM ? wnaM[1] : null);
 
-        const costGasM = t.match(/Cost\s+of\s+Gas\s+\$?([\d,.:]+)/i);
+        const costGasM = activeT.match(/Cost\s+of\s+Gas\s+\$?([\d,.:]+)/i);
         const GasCharge = fixNum(costGasM ? costGasM[1] : null);
 
-        const winterM = t.match(/Winter\s+Event\s+Securitized\s+Cost\s+\$?([\d,.:]+)/i);
+        const winterM = activeT.match(/Winter\s+Event\s+Securitized\s+Cost\s+\$?([\d,.:]+)/i);
         const WinterEventCost = fixNum(winterM ? winterM[1] : null);
 
         // Sum all Franchise Fee line items (KGS often has two: state + local)
-        const franchiseMs = [...t.matchAll(/Franchise\s+Fee\s+\$?([\d,.:]+)/gi)];
+        // Uses activeT so only this account's franchise fee lines are summed.
+        const franchiseMs = [...activeT.matchAll(/Franchise\s+Fee\s+\$?([\d,.:]+)/gi)];
         const FranchiseFee =
           franchiseMs.length > 0
             ? String(
@@ -4971,13 +5050,15 @@ const UTILITY_RULES = [
         // Old pattern: "Total\s+Current\s+Charges\s+\$?(\d+)" — fails when "___" appears.
         // Also: "Current Charges" (without "Total") appears as a subtotal row mid-bill; we want
         // the TOTAL line, so match "Total Current Charges" specifically and allow any intervening chars.
-        const currentChargesM = t.match(/Total\s+Current\s+Charges[^\n]*?([\d,.:]+)\s*$/im);
+        // Uses activeT to avoid matching another account's total.
+        const currentChargesM = activeT.match(/Total\s+Current\s+Charges[^\n]*?([\d,.:]+)\s*$/im);
         const TotalCurrentCharges = fixNum(currentChargesM ? currentChargesM[1] : null);
 
         // "Amount Due" can be followed by formatting colons and spaces before the dollar amount
         // (e.g. "Amount Due   :   $107.95"). Skip non-digit chars after the label, then require
         // the value to START with a digit to avoid capturing a bare colon.
-        const amtDueM = t.match(/Amount\s+Due[^0-9\n]*(\d[\d,.:]*)/i);
+        // Uses activeT to avoid another account's amount-due line.
+        const amtDueM = activeT.match(/Amount\s+Due[^0-9\n]*(\d[\d,.:]*)/i);
         const TotalAmountDue = fixNum(amtDueM ? amtDueM[1] : null);
 
         return {

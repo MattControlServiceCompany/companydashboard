@@ -476,8 +476,25 @@ var EM_POINT_MAP = [
   {
     col: 'co2Live',
     label: 'Zone CO2',
-    patterns: [/\bco2\b/i, /zone\s*co2/i, /carbon dioxide/i],
+    patterns: [/\bco2\b/i, /zone\s*co2/i, /carbon dioxide/i, /co2\s*sensor/i, /co2\s*ppm/i],
     types: ['AI', 'BAI', 'BAV', 'AV'],
+    cats: ['ahu', 'vav', 'fpb', 'ddvav'],
+  },
+  // Milestone 1: Zone Humidity — surfaces from raw BAS point names at read time
+  {
+    col: 'rhZone',
+    label: 'Zone RH %',
+    patterns: [
+      /zone\s*r\.?h/i,
+      /space\s*r\.?h/i,
+      /room\s*r\.?h/i,
+      /relative\s*humidity/i,
+      /zone\s*humid/i,
+      /space\s*humid/i,
+      /\brh\s*%/i,
+      /\bhumidity\b/i,
+    ],
+    types: ['AI'],
     cats: ['ahu', 'vav', 'fpb', 'ddvav'],
   },
   { col: 'oaWetBulbLive', label: 'OA Wet Bulb', patterns: [/wet bulb/i, /wb\b/i], types: ['AI'], cats: ['ct'] },
@@ -829,6 +846,11 @@ function emMapPointToColumn(pointName, pointType, equipCategory) {
   // FIX 4c: Normalize whitespace before pattern matching so 'Mixed  Air Temperature' (double-space)
   // and similar CSV artifacts match the same patterns as single-spaced names.
   pointName = pointName.replace(/\s+/g, ' ').trim();
+  // Milestone 1: page-lifetime name cache (category-less lookups only — import path passes category)
+  if (!equipCategory) {
+    if (_emPointNameCache.has(pointName)) return _emPointNameCache.get(pointName);
+  }
+  var _mapResult = null;
   for (var i = 0; i < EM_POINT_MAP.length; i++) {
     var mapping = EM_POINT_MAP[i];
     if (equipCategory && mapping.cats && mapping.cats.indexOf(equipCategory) === -1) continue;
@@ -847,11 +869,17 @@ function emMapPointToColumn(pointName, pointType, equipCategory) {
           }
           if (blocked) break; // break inner loop — skip this mapping entry entirely
         }
-        return mapping.col;
+        _mapResult = mapping.col;
+        break;
       }
     }
+    if (_mapResult !== null) break;
   }
-  return null;
+  // Milestone 1: write result to name cache for category-less lookups
+  if (!equipCategory) {
+    _emPointNameCache.set(pointName, _mapResult);
+  }
+  return _mapResult;
 }
 
 function emExtractEquipmentGroups(rows, colMap) {
@@ -1092,6 +1120,12 @@ function emSaveMatrix(projId, data) {
   // Invalidate caches — data may have changed (edits, imports, deletions)
   _emComplianceCache = {};
   _emNormCache = new Map();
+  // Milestone 1: _emPointNameCache is page-lifetime but cleared here to stay consistent
+  // (edit path calls emSaveMatrix before re-render). _emPointsComputedCache is explicitly
+  // reset so any in-place mutation of row.points that may occur before emLoadMatrix replaces
+  // the row object is never served stale from the WeakMap.
+  _emPointNameCache = new Map();
+  _emPointsComputedCache = new WeakMap();
   // sset() returns a Promise that resolves on IDB tx.oncomplete (real commit).
   // Callers that need write durability (e.g. emHandleImport) should await this.
   return sset('en_eqmatrix_' + projId, data);
@@ -1177,6 +1211,8 @@ var _emViewMode = 'audit'; // 'audit' = ASHRAE 36 compliance columns; 'raw' = ra
 var _emZoomLevel = 100; // zoom percentage, 50–150
 var _emComplianceCache = {}; // Performance: module-level compliance result cache, keyed by row.id
 var _emNormCache = new Map(); // Performance: memoized emNormalizePoint results, keyed by rawName+'\0'+category
+var _emPointsComputedCache = new WeakMap(); // Milestone 1: keyed on row object; caches emGetNormalizedPoints result
+var _emPointNameCache = new Map(); // Milestone 1: rawName -> colKey, page-lifetime memoization for emMapPointToColumn
 var _emSearchTimer = null; // Performance: debounce timer for search input
 function emDebouncedSearch() {
   clearTimeout(_emSearchTimer);
@@ -2083,6 +2119,82 @@ var _EM_GROUP_COLORS = {
   'audit-behavior': '#0891b2',
 };
 
+/* ── Milestone 1: Known col-key set ─────────────────────────────────────────
+   Built once from EM_POINT_MAP. Used by emGetNormalizedPoints to distinguish
+   already-mapped col keys (e.g. 'satLive') from raw BAS names in row.points. */
+var _emKnownPointColKeys = (function () {
+  var s = new Set();
+  for (var _ki = 0; _ki < EM_POINT_MAP.length; _ki++) {
+    s.add(EM_POINT_MAP[_ki].col);
+  }
+  return s;
+})();
+
+/* ── emGetNormalizedPoints ───────────────────────────────────────────────────
+   Returns a flat { colKey: value } map for a row, derived at read time.
+
+   For rows already stored with mapped col keys (current import path):
+     - Copies existing mapped values directly.
+   For rows with raw BAS names mixed in (or future pointsRaw schema):
+     - Runs emMapPointToColumn on unknown keys to surface new columns
+       (e.g. 'Zone Humidity' → rhZone) WITHOUT requiring re-import.
+
+   Rules:
+     - Never overwrites an already-set colKey.
+     - Preserves 0 / '0' / false — only skips null/undefined.
+     - Result is WeakMap-memoized on the row object (invalidated when
+       emSaveMatrix loads fresh deserialized row objects).            */
+function emGetNormalizedPoints(row) {
+  if (_emPointsComputedCache.has(row)) return _emPointsComputedCache.get(row);
+
+  var result = {};
+
+  if (row.pointsRaw) {
+    // Future schema: pointsRaw is an array of [rawName, val] pairs
+    var rawEntries = row.pointsRaw;
+    for (var ri = 0; ri < rawEntries.length; ri++) {
+      var rawName = rawEntries[ri][0];
+      var rawVal = rawEntries[ri][1];
+      if (rawVal == null) continue;
+      var rColKey = emMapPointToColumn(rawName);
+      if (rColKey && result[rColKey] == null) {
+        result[rColKey] = rawVal;
+      }
+    }
+  } else if (row.points) {
+    // Legacy / current schema: row.points may contain a mix of known col keys
+    // (e.g. 'satLive') and raw BAS names (e.g. 'Zone Humidity') stored at import time.
+
+    // Pass 1: copy entries that are already known col keys — these are trusted mapped values
+    var pts = row.points;
+    var keys = Object.keys(pts);
+    for (var ki = 0; ki < keys.length; ki++) {
+      var k = keys[ki];
+      if (_emKnownPointColKeys.has(k)) {
+        var v = pts[k];
+        if (v != null) result[k] = v;
+      }
+    }
+
+    // Pass 2: iterate unknown keys (raw BAS names) and try to match them
+    // This surfaces new columns (humidity, CO2 additions, etc.) on already-stored data
+    for (var ki2 = 0; ki2 < keys.length; ki2++) {
+      var rawKey = keys[ki2];
+      if (_emKnownPointColKeys.has(rawKey)) continue; // already handled in pass 1
+      var rawV = pts[rawKey];
+      if (rawV == null) continue;
+      var colKey = emMapPointToColumn(rawKey);
+      if (colKey && result[colKey] == null) {
+        // Only add — never overwrite a value from pass 1
+        result[colKey] = rawV;
+      }
+    }
+  }
+
+  _emPointsComputedCache.set(row, result);
+  return result;
+}
+
 function emGetCellValByDef(row, def, edits) {
   var editKey = row.id + '::' + def.key;
   if (edits && edits[editKey] !== undefined) return edits[editKey];
@@ -2093,8 +2205,10 @@ function emGetCellValByDef(row, def, edits) {
     return cv != null ? cv : '';
   }
   if (def.isLive || def.isDynPoint) {
-    // FIX 3a (1b74f531): Use explicit null/undefined check so 0 and '0' pass through (was falsy || '')
-    var pv = row.points && row.points[def.key];
+    // Milestone 1: read through normalized-points engine so new columns (e.g. rhZone)
+    // surface from already-stored raw BAS names without re-import.
+    // FIX 3a (1b74f531): Use explicit null/undefined check so 0 and '0' pass through.
+    var pv = emGetNormalizedPoints(row)[def.key];
     return pv != null ? pv : '';
   }
   // FIX 3a (1b74f531): Use explicit null/undefined check so 0 passes through (was falsy || '')
@@ -3734,7 +3848,8 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
   }
 
   // ── Fallback ──
-  return '<td style="' + baseStyle + '">' + emHtmlEsc(String(row[def.key] || '')) + '</td>';
+  // Milestone 1: use != null guard (0-safe) instead of || '' (was falsy)
+  return '<td style="' + baseStyle + '">' + emHtmlEsc(String(row[def.key] != null ? row[def.key] : '')) + '</td>';
 }
 
 /* ── emHtmlEsc ──────────────────────────────────────────────────────────────
@@ -4028,6 +4143,7 @@ function emClearAllData(pid) {
   _EM_COL_DEFS = null;
   _emComplianceCache = {};
   _emNormCache = new Map();
+  _emPointNameCache = new Map(); // Milestone 1: also clear name lookup cache
   // Re-render matrix as empty
   var emptyData = { rows: [], importedAt: null, buildings: [] };
   var container = document.getElementById('em-proj-wrap');
@@ -4049,8 +4165,9 @@ function emGetCellVal(row, colIdx, edits) {
     return cv != null ? cv : '';
   }
   if (def.isLive || def.isDynPoint) {
+    // Milestone 1: read through normalized-points engine (mirrors emGetCellValByDef)
     // FIX: Use explicit null/undefined check so 0 and '0' pass through (was falsy || '')
-    var pv = row.points && row.points[def.key];
+    var pv = emGetNormalizedPoints(row)[def.key];
     return pv != null ? pv : '';
   }
   // FIX: Use explicit null/undefined check so 0 passes through (was falsy || '')
@@ -8705,6 +8822,7 @@ function emSaveManageMappings(pid) {
   // Invalidate compliance cache so re-render uses the new mappings
   _emComplianceCache = {};
   _emNormCache = new Map();
+  _emPointNameCache = new Map(); // Milestone 1: also clear name lookup cache
 
   // Close modal
   if (overlay.parentNode) overlay.parentNode.removeChild(overlay);

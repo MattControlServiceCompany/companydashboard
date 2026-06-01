@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.01.429';
+  var CH_VERSION = 'v2026.06.01.430';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,25 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+    v: 'v2026.06.01.430',
+    date: '2026-06-01',
+    title: 'Equipment Matrix humidity sensor support, KGS multi-account extraction, and bill routing improvements',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix now recognizes Zone Humidity sensors — improvements to point recognition apply to your existing data automatically, no re-import needed.',
+      },
+      {
+        type: 'fix',
+        text: 'Gas bill reading is more accurate on multi-account PDF statements — each account’s charges and meter data now stay matched to that account.',
+      },
+      {
+        type: 'fix',
+        text: 'Bills route more reliably to the correct building when multiple units share the same street address — different door numbers now become separate meters under one building.',
+      },
+    ],
+  },
   {
     v: 'v2026.06.01.429',
     date: '2026-06-01',
