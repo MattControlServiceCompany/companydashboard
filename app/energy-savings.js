@@ -6761,21 +6761,55 @@ const UTILITY_RULES = [
     },
     _extractPage: function (page) {
       // ── Account number ──
-      // Prefer the "ACCOUNT NUMBER\n<9-digit>" box in the top stub.
-      // Fall back to "ACCOUNT #: <9-digit>" in the bottom stub.
-      let AccountNumber =
-        page.match(/ACCOUNT\s+NUMBER\s+(\d{7,10})/i)?.[1] || page.match(/ACCOUNT\s*#[:\s]+(\d{7,10})/i)?.[1] || null;
+      // Real scanned OCR mangles the top "ACCOUNT NUMBER" region heavily
+      // (e.g. "ER ALDWIN", "FRALD" instead of "BALDWIN"; trailing period on
+      // label; number on next line buried in noise).  Try multiple patterns
+      // in reliability order and take the first valid 7-10 digit result.
+      //
+      // Pattern 1 (most reliable): bottom-stub "ACCOUNT #: <digits>"
+      //   OCR reliably renders this compact line: "ACCOUNT #: 408051900"
+      // Pattern 2: top-stub label + number on SAME line (clear scans):
+      //   "ACCOUNT NUMBER 408061800"
+      // Pattern 3: label + number on NEXT line (1-2 lines later, possibly
+      //   with OCR noise like "RIA | DWIN 406030500" between them):
+      //   "ACCOUNT NUMBER\n406040600" or "ACCOUNT NUMBER\nRIA|DWIN 406030500"
+      // Pattern 4: standalone 9-digit number that immediately follows OCR
+      //   noise derived from garbled "BALDWIN" / "ALDWIN" text near the top
+      //   of the right-hand column stub.
+      let AccountNumber = null;
+      // P1 — bottom stub (most reliable across all pages)
+      AccountNumber = page.match(/ACCOUNT\s*#[:\s]+(\d{7,10})/i)?.[1] || null;
+      // P2 — top label + number on same line
+      if (!AccountNumber) AccountNumber = page.match(/ACCOUNT\s+NUMBER\.?\s+(\d{7,10})/i)?.[1] || null;
+      // P3 — top label + number within 3 lines (up to ~60 chars of OCR noise)
+      if (!AccountNumber) {
+        const p3 = page.match(/ACCOUNT\s+NUMBER\.?[\s\S]{0,60}?(?:^|\s|\|)(\d{7,10})(?:\s|$)/im);
+        if (p3) AccountNumber = p3[1];
+      }
+      // P4 — 9-digit number after garbled "ALDWIN"/"DWIN"/"RALD" OCR fragment
+      if (!AccountNumber) {
+        const p4 = page.match(
+          /(?:ALDWIN|DWIN|RALD|RWIN|FRALD|ERALD|ER\s*ALDWIN|FR\s*DWI)[\s\S]{0,40}?(?:^|\s)(\d{9})(?:\s|$)/im,
+        );
+        if (p4) AccountNumber = p4[1];
+      }
 
       // Skip pages that have no account number (email/receipt pages that
       // slipped through the page-1 guard).
       if (!AccountNumber) return null;
 
       // ── Bill date (print date, top-right corner) ──
-      // Standalone date line like "4/10/26" or "12/10/25".
-      // Also accepts "M/D/YY" from near "ACCOUNT NUMBER" label.
+      // Standalone date like "4/10/26" or "12/10/25".
+      // Page 7 OCR renders "4" as "A" giving "A/10/26" — tolerate that.
+      // Also find date adjacent to "ACCOUNT NUMBER" label on same line.
       const BillDate =
         page.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})\s+ACCOUNT\s+NUMBER/i)?.[1] ||
         page.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s*$/m)?.[1] ||
+        // OCR "A" for "4": e.g. "A/10/26"
+        (() => {
+          const m = page.match(/^([A-Z]\/\d{1,2}\/\d{2,4})\s*$/m);
+          return m ? m[1].replace(/^[A-Z]/, '4') : null;
+        })() ||
         null;
 
       // ── Service FROM/TO (present in some pages, primarily older format) ──
@@ -6805,17 +6839,44 @@ const UTILITY_RULES = [
       }
 
       // ── Amount due (total for all commodities on this account page) ──
-      // "AMOUNT DUE NOW" column — value appears after the due dates.
-      // The column layout is: DUE DATE | AFTER DUE DATE | AMOUNT DUE NOW
-      // OCR may collapse to one line or split across lines.
-      const amtDueMatch =
+      // The column header "AMOUNT DUE NOW" is always garbled by OCR on real
+      // scanned bills (e.g. "BAROUxw mes once)", "FACGxs melo tensy") — the
+      // label-based patterns never match.  Use structural alternatives instead:
+      //
+      // Strategy A: "AMOUNT DUE NOW" survives OCR (digital PDFs / clear scans)
+      // Strategy B: Three-column row near a due-date:
+      //   "4/25/26  55.22  50.19"  →  last value is Amount Due Now
+      // Strategy C: Due-date + single amount on same line (common in larger bills):
+      //   "4/25/26 1978.53"
+      // Strategy D: "AMOUNT DUE" (partial label) fallback for partial OCR match
+      let TotalAmountDue = null;
+      // A — label survived
+      const _amtLabelMatch =
         page.match(/AMOUNT\s+DUE\s+NOW\s+[\d.]+\s+([\d,]+\.\d{2})/i) ||
         page.match(/AMOUNT\s+DUE\s+NOW\D{0,30}?([\d,]+\.\d{2})/i);
-      const TotalAmountDue = amtDueMatch ? amtDueMatch[1].replace(/,/g, '') : null;
+      if (_amtLabelMatch) TotalAmountDue = _amtLabelMatch[1].replace(/,/g, '');
+      // B — three-value line starting with a date (DUE DATE  AFTER-DUE  AMOUNT-DUE)
+      if (!TotalAmountDue) {
+        const _3col = page.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$/m);
+        if (_3col) TotalAmountDue = _3col[2].replace(/,/g, '');
+      }
+      // C — date + single amount on line (no after-due column; larger totals)
+      if (!TotalAmountDue) {
+        const _1col = page.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\s+([\d,]+\.\d{2})\s*$/m);
+        if (_1col) TotalAmountDue = _1col[1].replace(/,/g, '');
+      }
+      // D — partial "AMOUNT DUE" label (some pages retain partial text)
+      if (!TotalAmountDue) {
+        const _partial = page.match(/AMOUNT\s+DUE\D{0,40}?([\d,]+\.\d{2})/i);
+        if (_partial) TotalAmountDue = _partial[1].replace(/,/g, '');
+      }
 
       // ── Service address (from bottom stub) ──
       // "ADDRESS: 519 9TH ST" or "ADDRESS:  519 9TH ST"
-      const ServiceAddress = page.match(/ADDRESS\s*:\s*([^\n]+)/i)?.[1]?.trim() || null;
+      // Page 5 OCR renders the colon as semicolon: "ADDRESS; 6TH ST"
+      // Strip any trailing date that bleeds in from the adjacent column.
+      const _addrRaw = page.match(/ADDRESS\s*[;:]\s*([^\n]+)/i)?.[1]?.trim() || null;
+      const ServiceAddress = _addrRaw ? _addrRaw.replace(/\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/, '').trim() || null : null;
 
       // ── Customer / building name ──
       // "BAKER UNIVERSITY/COLLINS HOUSE" or "BAKER UNIVERSITY" alone.
@@ -6935,22 +6996,30 @@ const UTILITY_RULES = [
       let waDebtPmt = null;
       let waFranchiseFee = null;
 
+      // OCR frequently garbles the separator between charge code and label.
+      // Real format: "SW - SEWER" / "WA - WATER" / "EL - ELECTRIC"
+      // OCR produces: "SW ~- SEWER", "sw \xa0 SEWER", "WA ~ WATER",
+      //   "WA =~ DEBT PMT", "WwA \xa0 WATER", "EL - HELECTRIC", "S5W - FRANCHISE FRE"
+      // All patterns below use inline regex literals with [\s\xa0\xE2—–~=|\-]{1,6} as
+      // the tolerant separator (spaces, NBSP, tilde, equals, pipe, dash, 1-5 chars).
+
       for (const rawLine of lines) {
         const ln = rawLine.trim();
         if (!ln) continue;
 
         // ── Electric commodity lines ──
         // EL - ELECTRIC (may appear 2-3 times for multi-meter accounts)
-        if (/^EL\s*-\s*ELECTRIC\b/i.test(ln) && !/FRANCHISE/i.test(ln)) {
-          const m = _parseMeteredLine(ln.replace(/^EL\s*-\s*ELECTRIC\s*/i, ''));
+        // OCR variant: "EL - HELECTRIC" (extra H inserted before ELECTRIC)
+        if (/^EL[\s\xa0\xE2—–~=|\-]{1,6}H?ELECTRIC/i.test(ln) && !/FRANCHISE/i.test(ln)) {
+          const m = _parseMeteredLine(ln.replace(/^EL[\s\xa0\xE2—–~=|\-]{1,6}H?ELECTRIC\s*/i, ''));
           if (m.charge != null) elMeters.push(m);
           continue;
         }
 
         // EL - FUEL ADJUSTMENT (older format uses EL prefix instead of FA)
-        if (/^EL\s*-\s*FUEL\s+ADJ/i.test(ln)) {
+        if (/^EL[\s\xa0\xE2—–~=|\-]{1,6}FUEL\s+ADJ/i.test(ln)) {
           // Capture the signed charge amount
-          const raw = ln.replace(/^EL\s*-\s*FUEL\s+ADJ(?:USTMENT)?\s*/i, '').trim();
+          const raw = ln.replace(/^EL[\s\xa0\xE2—–~=|\-]{1,6}FUEL\s+ADJ(?:USTMENT)?\s*/i, '').trim();
           // Find the last decimal-looking token (handles trailing minus)
           const m = raw.match(/(-?[\d,]+\.\d{2}-?|-\.[\d]+|\.\d{2})\s*$/);
           if (m) {
@@ -6964,8 +7033,8 @@ const UTILITY_RULES = [
         }
 
         // FA - FUEL ADJUSTMENT (standard prefix for fuel adj)
-        if (/^FA\s*-\s*FUEL\s+ADJ/i.test(ln)) {
-          const raw = ln.replace(/^FA\s*-\s*FUEL\s+ADJ(?:USTMENT)?\s*/i, '').trim();
+        if (/^FA[\s\xa0\xE2—–~=|\-]{1,6}FUEL\s+ADJ/i.test(ln)) {
+          const raw = ln.replace(/^FA[\s\xa0\xE2—–~=|\-]{1,6}FUEL\s+ADJ(?:USTMENT)?\s*/i, '').trim();
           const m = raw.match(/(-?[\d,]+\.\d{2}-?|-\.[\d]+|\.\d{2})\s*$/);
           if (m) {
             let v = m[1];
@@ -6978,8 +7047,10 @@ const UTILITY_RULES = [
         }
 
         // EL/GH - FRANCHISE FEE (electric franchise — old format uses GH)
-        if (/^(?:EL|GH)\s*-\s*FRANCHISE\s+FEE/i.test(ln)) {
-          const raw = ln.replace(/^(?:EL|GH)\s*-\s*FRANCHISE\s+FEE\s*/i, '').trim();
+        // Also catches "S5W - FRANCHISE FRE" (OCR of "SW - FRANCHISE FEE") here
+        // only if code is EL or GH; S5W/SW franchise handled under sewer below.
+        if (/^(?:EL|GH)[\s\xa0\xE2—–~=|\-]{1,6}FRANCHISE/i.test(ln)) {
+          const raw = ln.replace(/^(?:EL|GH)[\s\xa0\xE2—–~=|\-]{1,6}FRANCHISE\s+FEE?\s*/i, '').trim();
           const m = raw.match(/([\d,]+\.\d{2})\s*$/);
           if (m) elFranchiseFee = (elFranchiseFee || 0) + parseFloat(m[1].replace(/,/g, ''));
           continue;
@@ -6988,8 +7059,10 @@ const UTILITY_RULES = [
         // ── Sewer commodity lines ──
         // SW - SEWER (metered) — sum all SW - SEWER rows (some accounts have
         // multiple sewer meters; exclude FRANCHISE lines, handled below).
-        if (/^SW\s*-\s*SEWER\b/i.test(ln) && !/FRANCHISE/i.test(ln)) {
-          const parsed = _parseMeteredLine(ln.replace(/^SW\s*-\s*SEWER\s*/i, ''));
+        // OCR variants: "SW ~- SEWER", "sw \xa0 SEWER", "S5W - SEWER"
+        // Code may OCR as "SW", "sw", or "S5W" (digit 5 for W).
+        if (/^[Ss][W5w][\s\xa0\xE2—–~=|\-]{1,6}SEWER/i.test(ln) && !/FRANCHISE/i.test(ln)) {
+          const parsed = _parseMeteredLine(ln.replace(/^[Ss][W5w][\s\xa0\xE2—–~=|\-]{1,6}SEWER\s*/i, ''));
           if (parsed.charge != null) {
             // Capture reads from the first row; subsequent rows only add to totals.
             if (swCharge === null) {
@@ -7003,8 +7076,9 @@ const UTILITY_RULES = [
         }
 
         // SW - FRANCHISE FEE (sewer franchise)
-        if (/^SW\s*-\s*FRANCHISE\s+FEE/i.test(ln)) {
-          const raw = ln.replace(/^SW\s*-\s*FRANCHISE\s+FEE\s*/i, '').trim();
+        // OCR variants: "S5W - FRANCHISE FRE", "SW ~ FRANCHISE FEE"
+        if (/^[Ss][W5w][\s\xa0\xE2—–~=|\-]{1,6}FRANCHISE/i.test(ln)) {
+          const raw = ln.replace(/^[Ss][W5w][\s\xa0\xE2—–~=|\-]{1,6}FRANCHISE\s+FEE?\s*/i, '').trim();
           const m = raw.match(/([\d,]+\.\d{2})\s*$/);
           if (m && swFranchiseFee === null) swFranchiseFee = parseFloat(m[1].replace(/,/g, ''));
           continue;
@@ -7015,8 +7089,12 @@ const UTILITY_RULES = [
         // Sum all WA - WATER rows so multi-meter accounts (e.g. main + sub-meter)
         // are totalled correctly.  Debt and franchise lines are excluded by the
         // DEBT|METER|FRANCHISE guard and handled in their own branches below.
-        if (/^WA\s*-\s*WATER\b/i.test(ln) && !/DEBT|METER|FRANCHISE/i.test(ln)) {
-          const parsed = _parseMeteredLine(ln.replace(/^WA\s*-\s*WATER\s*/i, ''));
+        // OCR variants: "WA \xa0 WATER", "WA ~ WATER", "WA \xa0- WATER", "WwA \xa0 WATER"
+        // Code "WA" may OCR as "WwA" (doubled w) — match [Ww]{1,2}[Aa].
+        if (/^[Ww]{1,2}[Aa][\s\xa0\xE2—–~=|\-]{1,6}WATER/i.test(ln) && !/DEBT|METER|FRANCHISE/i.test(ln)) {
+          const parsed = _parseMeteredLine(
+            ln.replace(/^[Ww]{1,2}[Aa][\s\xa0\xE2—–~=|\-]{1,6}WATER\s*/i, '').replace(/\s*\|\s*$/, ''),
+          );
           if (parsed.charge != null) {
             // Capture reads from the first row; subsequent rows only add to totals.
             if (waCharge === null) {
@@ -7030,27 +7108,187 @@ const UTILITY_RULES = [
         }
 
         // WA - DEBT PMT or WA - METER DEBT PMT (water debt payment fee)
-        if (/^WA\s*-\s*(?:METER\s+)?DEBT\s+PMT/i.test(ln)) {
-          const raw = ln.replace(/^WA\s*-\s*(?:METER\s+)?DEBT\s+PMT\s*/i, '').trim();
+        // OCR variants: "WA \xa0 DEBT PMT", "WA =~ DEBT PMT"
+        if (/^[Ww]{1,2}[Aa][\s\xa0\xE2—–~=|\-]{1,6}(?:METER\s+)?DEBT\s+PMT/i.test(ln)) {
+          const raw = ln
+            .replace(/^[Ww]{1,2}[Aa][\s\xa0\xE2—–~=|\-]{1,6}(?:METER\s+)?DEBT\s+PMT\s*/i, '')
+            .replace(/\s*[|i]\s*$/, '')
+            .trim();
           const m = raw.match(/([\d,]+\.\d{2})\s*$/);
           if (m && waDebtPmt === null) waDebtPmt = parseFloat(m[1].replace(/,/g, ''));
           continue;
         }
 
         // WA - WATER DEBT PMT (older format label variant)
-        if (/^WA\s*-\s*WATER\s+DEBT\s+PMT/i.test(ln)) {
-          const raw = ln.replace(/^WA\s*-\s*WATER\s+DEBT\s+PMT\s*/i, '').trim();
+        if (/^[Ww]{1,2}[Aa][\s\xa0\xE2—–~=|\-]{1,6}WATER\s+DEBT\s+PMT/i.test(ln)) {
+          const raw = ln.replace(/^[Ww]{1,2}[Aa][\s\xa0\xE2—–~=|\-]{1,6}WATER\s+DEBT\s+PMT\s*/i, '').trim();
           const m = raw.match(/([\d,]+\.\d{2})\s*$/);
           if (m && waDebtPmt === null) waDebtPmt = parseFloat(m[1].replace(/,/g, ''));
           continue;
         }
 
         // WA/HA - FRANCHISE FEE (water franchise — old format uses HA)
-        if (/^(?:WA|HA)\s*-\s*FRANCHISE\s+FEE/i.test(ln)) {
-          const raw = ln.replace(/^(?:WA|HA)\s*-\s*FRANCHISE\s+FEE\s*/i, '').trim();
+        // OCR variants: "WA -\xa0 FRANCHISE FEE", "WA \xa0 FRANCHISE FEE"
+        if (/^(?:[Ww]{1,2}[Aa]|HA)[\s\xa0\xE2—–~=|\-]{1,6}FRANCHISE/i.test(ln)) {
+          const raw = ln
+            .replace(/^(?:[Ww]{1,2}[Aa]|HA)[\s\xa0\xE2—–~=|\-]{1,6}FRANCHISE\s+FEE?\s*/i, '')
+            .replace(/\s*\|\s*$/, '')
+            .trim();
           const m = raw.match(/([\d,]+\.\d{2})\s*$/);
           if (m && waFranchiseFee === null) waFranchiseFee = parseFloat(m[1].replace(/,/g, ''));
           continue;
+        }
+      }
+
+      // ── Split-column fallback ──
+      // Real scanned OCR often renders the bill as two separate columns:
+      //   Left column:  charge labels on their own lines (no numbers)
+      //   Right column: data rows on their own lines (no labels)
+      //
+      // In this layout, "TO CITY HALL" or "TO.CITY HALL" introduces the
+      // right-column data block.  Each metered commodity (EL, SW, WA) gets
+      // exactly one data row in the same order they appear in the label list.
+      // Non-metered lines (FRANCHISE FEE, FUEL ADJ, DEBT PMT) do NOT get
+      // data rows in this block — they may appear as standalone single-value
+      // lines immediately after their metered peers.
+      //
+      // Data row format (last token is always the charge):
+      //   "2280 349.59"       → usage=2280, charge=349.59
+      //   "15036 201.09"      → usage=15036, charge=201.09
+      //   "prev curr charge"  → prevRead, currRead, charge
+      //
+      // This fallback only runs when the first-pass label+data-on-same-line
+      // loop found zero metered charges.
+      if (elMeters.length === 0 && swCharge === null && waCharge === null) {
+        // Detect which metered labels appear in the page, in order
+        const _meteredLabels = []; // 'EL' | 'SW' | 'WA'
+        for (const rawLine of lines) {
+          const t = rawLine.trim();
+          if (!t) continue;
+          if (/^EL[\s\xa0\xE2—–~=|\-]{1,6}H?ELECTRIC/i.test(t) && !/FRANCHISE/i.test(t)) {
+            _meteredLabels.push('EL');
+          } else if (/^[Ss][W5w][\s\xa0\xE2—–~=|\-]{1,6}SEWER/i.test(t) && !/FRANCHISE/i.test(t)) {
+            _meteredLabels.push('SW');
+          } else if (/^[Ww]{1,2}[Aa][\s\xa0\xE2—–~=|\-]{1,6}WATER/i.test(t) && !/DEBT|METER|FRANCHISE/i.test(t)) {
+            _meteredLabels.push('WA');
+          }
+          // Also catch garbled "FA ~ FUR, ADJUSTMENT" (OCR of "FA - FUEL ADJUSTMENT")
+          // These do not add a metered label but set a flag for later extraction
+          if (
+            (/^FA[\s\xa0\xE2—–~=|\-]{1,6}FUR/i.test(t) ||
+              /^FA[\s\xa0\xE2—–~=|\-]{1,6}FUEL\s+ADJ/i.test(t) ||
+              /^EL[\s\xa0\xE2—–~=|\-]{1,6}FUR/i.test(t) ||
+              /^EL[\s\xa0\xE2—–~=|\-]{1,6}FUEL\s+ADJ/i.test(t)) &&
+            fuelAdjCharge === null
+          ) {
+            // Will be extracted from standalone line after metered block
+          }
+        }
+
+        // Find the right-column data block.  It starts after "TO CITY HALL"
+        // (or "TO-CITY HALL") and ends at "COPY ONLY", "PAID" (standalone),
+        // or "FOR AFTER HOURS".  Do NOT use "ACCOUNT IS" as a terminator —
+        // "ACCOUNT IS BANK PAY" can appear inside the data block on some pages.
+        // Use a simple string search to avoid lazy-quantifier early-stop issues.
+        let _dataBlock = null;
+        const _toChIdx = page.search(/TO[.\-]?\s*CITY[\s\-]+HALL/i);
+        if (_toChIdx >= 0) {
+          const _afterToCh = page.substring(_toChIdx);
+          const _endMatch = _afterToCh.search(/\n\s*(?:PAID\b|COPY\s+ONLY|FOR\s+AFTER)/i);
+          _dataBlock = _endMatch >= 0 ? _afterToCh.substring(0, _endMatch) : _afterToCh.substring(0, 400);
+        }
+
+        if (_meteredLabels.length > 0 && _dataBlock) {
+          // Split data lines into two lists:
+          //   _meteredDataLines  — have at least one integer token (meter reads/usage)
+          //   _singleChargeLines — only a decimal, no integers (franchise fee, fuel adj, debt)
+          // This separation prevents standalone fee lines from being mis-mapped to
+          // metered labels when they appear interleaved (e.g. EL-charge, EL-fee, SW-charge).
+          const _allDataLines = _dataBlock
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter(
+              (l) =>
+                /[\d,]+\.\d{2}/.test(l) &&
+                !/account|address|service|city|due date|bank pay|assistance|payments|www\.|echecks/i.test(l),
+            );
+          const _meteredDataLines = _allDataLines.filter((l) => {
+            const toks = _tokens(l);
+            return toks.slice(0, -1).some((n) => Number.isInteger(n) && n >= 0);
+          });
+          const _singleChargeLines = _allDataLines.filter((l) => /^[\d,]+\.\d{2}$/.test(l));
+
+          // Map metered data lines (those with integer meter reads) to metered labels
+          for (let idx = 0; idx < _meteredLabels.length && idx < _meteredDataLines.length; idx++) {
+            const label = _meteredLabels[idx];
+            const dline = _meteredDataLines[idx];
+            const toks = _tokens(dline);
+            if (toks.length < 1) continue;
+            const charge = toks[toks.length - 1];
+            const intToks = toks.slice(0, -1).filter((n) => Number.isInteger(n) && n >= 0);
+            let prevR = null,
+              currR = null,
+              usageV = null;
+            if (intToks.length >= 3) {
+              prevR = intToks[intToks.length - 3];
+              currR = intToks[intToks.length - 2];
+              usageV = intToks[intToks.length - 1];
+            } else if (intToks.length === 2) {
+              prevR = intToks[0];
+              currR = intToks[1];
+              usageV = Math.abs(currR - prevR);
+            } else if (intToks.length === 1) {
+              usageV = intToks[0];
+            }
+
+            if (label === 'EL') {
+              elMeters.push({ prevRead: prevR, currRead: currR, usage: usageV, charge });
+            } else if (label === 'SW') {
+              swPrevRead = prevR;
+              swCurrRead = currR;
+              swUsage = usageV;
+              swCharge = charge;
+            } else if (label === 'WA') {
+              waPrevRead = prevR;
+              waCurrRead = currR;
+              waUsage = usageV;
+              waCharge = charge;
+            }
+          }
+
+          // Map standalone single-charge lines to non-metered labels in order.
+          // Non-metered labels: EL franchise, fuel adj, SW franchise, WA debt, WA franchise.
+          const _nonMeteredLabels = [];
+          for (const rawLine of lines) {
+            const t = rawLine.trim();
+            if (!t) continue;
+            if (/^(?:EL|GH)[\s\xa0\xE2—–~=|\-]{1,6}FRANCHISE/i.test(t) || /^SE\s+(?:PEE|FEE)$/i.test(t)) {
+              _nonMeteredLabels.push('EL_FRAN');
+            } else if (/^(?:FA|EL)[\s\xa0\xE2—–~=|\-]{1,6}(?:FUEL\s+ADJ|FUR)/i.test(t)) {
+              _nonMeteredLabels.push('FA');
+            } else if (/^[Ss][W5w][\s\xa0\xE2—–~=|\-]{1,6}FRANCHISE/i.test(t)) {
+              _nonMeteredLabels.push('SW_FRAN');
+            } else if (
+              /^[Ww]{1,2}[Aa][\s\xa0\xE2—–~=|\-]{1,6}(?:METER\s+)?DEBT\s+PMT/i.test(t) ||
+              /^[Ww]{1,2}[Aa][\s\xa0\xE2—–~=|\-]{1,6}WATER\s+DEBT\s+PMT/i.test(t)
+            ) {
+              _nonMeteredLabels.push('WA_DEBT');
+            } else if (/^(?:[Ww]{1,2}[Aa]|HA)[\s\xa0\xE2—–~=|\-]{1,6}FRANCHISE/i.test(t)) {
+              _nonMeteredLabels.push('WA_FRAN');
+            }
+          }
+          if (_nonMeteredLabels.length === _singleChargeLines.length) {
+            for (let idx = 0; idx < _nonMeteredLabels.length; idx++) {
+              const label = _nonMeteredLabels[idx];
+              const v = parseFloat(_singleChargeLines[idx].replace(/,/g, ''));
+              if (isNaN(v)) continue;
+              if (label === 'EL_FRAN') elFranchiseFee = (elFranchiseFee || 0) + v;
+              else if (label === 'FA' && fuelAdjCharge === null) fuelAdjCharge = v;
+              else if (label === 'SW_FRAN' && swFranchiseFee === null) swFranchiseFee = v;
+              else if (label === 'WA_DEBT' && waDebtPmt === null) waDebtPmt = v;
+              else if (label === 'WA_FRAN' && waFranchiseFee === null) waFranchiseFee = v;
+            }
+          }
         }
       }
 

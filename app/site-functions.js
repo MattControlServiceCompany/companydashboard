@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.02.434',
+    date: '2026-06-02',
+    title: 'City of Baldwin municipal bills now extract correctly from scanned PDFs',
+    items: [
+      {
+        type: 'fix',
+        text: 'City of Baldwin municipal bills now extract correctly from the scanned PDFs — account numbers and electric/water/sewer charges and totals are read even on imperfect scans (a prior version dropped every page to manual review).',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.01.433',
     date: '2026-06-01',
     title: 'Equipment Matrix recognizes far more equipment types, CO2 gap lowers coverage score, City of Baldwin water/sewer fixes',

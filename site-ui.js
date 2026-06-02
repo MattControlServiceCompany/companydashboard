@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.01.433';
+  var CH_VERSION = 'v2026.06.02.434';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -34,7 +34,8 @@
     {
       v: 'v2026.06.01.433',
       date: '2026-06-01',
-      title: 'Equipment Matrix recognizes far more equipment types, CO2 gap lowers coverage score, City of Baldwin water/sewer fixes',
+      title:
+        'Equipment Matrix recognizes far more equipment types, CO2 gap lowers coverage score, City of Baldwin water/sewer fixes',
       items: [
         {
           type: 'feature',
