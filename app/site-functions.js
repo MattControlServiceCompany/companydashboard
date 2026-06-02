@@ -1191,6 +1191,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.01.432',
+    date: '2026-06-01',
+    title: 'Equipment Matrix captures all BAS points with expandable All Points drawer and smart column filtering',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix now captures every BAS point from the imported file — nothing is dropped. Each equipment row has an expand arrow that opens an "All Points" drawer listing every point and its value.',
+      },
+      {
+        type: 'feature',
+        text: "When you filter the matrix to a single building, only the columns that building's equipment actually uses are shown — no more empty columns cluttering the view.",
+      },
+    ],
+  },
+  {
     v: 'v2026.06.01.431',
     date: '2026-06-01',
     title: 'Equipment classifier overhaul, Equipment Type column, and Constellation gas bill support',

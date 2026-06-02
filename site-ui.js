@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.01.431';
+  var CH_VERSION = 'v2026.06.01.432';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -32,60 +32,60 @@
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
     {
-    v: 'v2026.06.01.430',
-    date: '2026-06-01',
-    title: 'Equipment Matrix humidity sensor support, KGS multi-account extraction, and bill routing improvements',
-    items: [
-      {
-        type: 'feature',
-        text: 'Equipment Matrix now recognizes Zone Humidity sensors — improvements to point recognition apply to your existing data automatically, no re-import needed.',
-      },
-      {
-        type: 'fix',
-        text: 'Gas bill reading is more accurate on multi-account PDF statements — each account’s charges and meter data now stay matched to that account.',
-      },
-      {
-        type: 'fix',
-        text: 'Bills route more reliably to the correct building when multiple units share the same street address — different door numbers now become separate meters under one building.',
-      },
-    ],
-  },
-  {
-    v: 'v2026.06.01.429',
-    date: '2026-06-01',
-    title: 'Equipment Matrix point-display fixes and DCV readiness in ASHRAE reports',
-    items: [
-      {
-        type: 'fix',
-        text: 'Equipment Matrix now shows Zone CO2, Discharge Airflow, and other points from WebCTRL exports that were previously missing or blank — re-import your CSVs to apply.',
-      },
-      {
-        type: 'fix',
-        text: 'Zone temperatures now populate in the Summary view.',
-      },
-      {
-        type: 'fix',
-        text: 'A value of 0 now displays as "0" instead of blank — on screen and in CSV exports.',
-      },
-      {
-        type: 'fix',
-        text: 'Fixed cooling and heating setpoints that were wrongly showing 0 because a "Setpoint Adjust" reading was overwriting the real setpoint.',
-      },
-      {
-        type: 'fix',
-        text: 'Fixed the Damper Position column always showing blank.',
-      },
-      {
-        type: 'fix',
-        text: 'Fixed the "Manage Mappings" button doing nothing when clicked.',
-      },
-      {
-        type: 'feature',
-        text: 'ASHRAE reports are simpler and more concise, and now include a Demand Control Ventilation readiness section showing how many units are missing CO2 sensors.',
-      },
-    ],
-  },
-  {
+      v: 'v2026.06.01.430',
+      date: '2026-06-01',
+      title: 'Equipment Matrix humidity sensor support, KGS multi-account extraction, and bill routing improvements',
+      items: [
+        {
+          type: 'feature',
+          text: 'Equipment Matrix now recognizes Zone Humidity sensors — improvements to point recognition apply to your existing data automatically, no re-import needed.',
+        },
+        {
+          type: 'fix',
+          text: 'Gas bill reading is more accurate on multi-account PDF statements — each account’s charges and meter data now stay matched to that account.',
+        },
+        {
+          type: 'fix',
+          text: 'Bills route more reliably to the correct building when multiple units share the same street address — different door numbers now become separate meters under one building.',
+        },
+      ],
+    },
+    {
+      v: 'v2026.06.01.429',
+      date: '2026-06-01',
+      title: 'Equipment Matrix point-display fixes and DCV readiness in ASHRAE reports',
+      items: [
+        {
+          type: 'fix',
+          text: 'Equipment Matrix now shows Zone CO2, Discharge Airflow, and other points from WebCTRL exports that were previously missing or blank — re-import your CSVs to apply.',
+        },
+        {
+          type: 'fix',
+          text: 'Zone temperatures now populate in the Summary view.',
+        },
+        {
+          type: 'fix',
+          text: 'A value of 0 now displays as "0" instead of blank — on screen and in CSV exports.',
+        },
+        {
+          type: 'fix',
+          text: 'Fixed cooling and heating setpoints that were wrongly showing 0 because a "Setpoint Adjust" reading was overwriting the real setpoint.',
+        },
+        {
+          type: 'fix',
+          text: 'Fixed the Damper Position column always showing blank.',
+        },
+        {
+          type: 'fix',
+          text: 'Fixed the "Manage Mappings" button doing nothing when clicked.',
+        },
+        {
+          type: 'feature',
+          text: 'ASHRAE reports are simpler and more concise, and now include a Demand Control Ventilation readiness section showing how many units are missing CO2 sensors.',
+        },
+      ],
+    },
+    {
       v: 'v2026.05.30.428',
       date: '2026-05-30',
       title: 'Reset Data now wipes all stored data, with a clearer warning',

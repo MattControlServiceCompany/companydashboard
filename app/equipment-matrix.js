@@ -625,6 +625,7 @@ function emDetectColMap(headerRow) {
       checkStart: -1,
       checkCount: 0,
       pointStart: -1,
+      headerRow: headerRow, // M4: stored for pointsRaw capture
     };
   }
 
@@ -654,6 +655,7 @@ function emDetectColMap(headerRow) {
     checkCount: checkCount,
     pointStart: pointStart,
     liveColKeyByIdx: liveColKeyByIdx,
+    headerRow: headerRow, // M4: stored for pointsRaw capture
   };
 }
 
@@ -1166,6 +1168,7 @@ function emExtractEquipmentGroups(rows, colMap) {
             bacnetPathRoot: _thisPathRoot,
             checkValues: {},
             pointValues: {},
+            rawPointMap: {}, // M4: all raw BAS point names captured at import
             colMap: colMap,
           });
         }
@@ -1182,11 +1185,18 @@ function emExtractEquipmentGroups(rows, colMap) {
           bacnetPathRoot: _thisPathRoot2,
           checkValues: {},
           pointValues: {},
+          rawPointMap: {}, // M4: all raw BAS point names captured at import
           colMap: colMap,
         });
       }
       var wgroup = groups.get(groupKey);
 
+      // M4: Capture EVERY raw point name→value in rawPointMap (0-safe: skip only null/undefined).
+      // pointVal from CSV trim() is always a string, never null/undefined, so store unconditionally
+      // as long as the point name is non-empty.
+      if (pointName !== '') {
+        wgroup.rawPointMap[pointName] = pointVal;
+      }
       // Map point name + value to a live data column if we recognise it.
       // Also store every point directly under its raw name for dynamic column display.
       if (pointName !== '' && pointVal !== '') {
@@ -1276,6 +1286,7 @@ function emExtractEquipmentGroups(rows, colMap) {
         category: category,
         checkValues: {},
         pointValues: {},
+        rawPointMap: {}, // M4: all raw column header→value for pointsRaw capture
         colMap: colMap,
       });
     }
@@ -1297,6 +1308,16 @@ function emExtractEquipmentGroups(rows, colMap) {
         if (lval !== '') {
           group.pointValues[colMap.liveColKeyByIdx[lpi]] = lval;
         }
+      }
+    }
+    // M4: Capture all column header→value pairs from pointStart onward into rawPointMap.
+    // Uses colMap.headerRow for column names. 0-safe: store even if value is '0' or empty.
+    if (colMap.headerRow && colMap.pointStart >= 0) {
+      for (var rpi = colMap.pointStart; rpi < row.length && rpi < colMap.headerRow.length; rpi++) {
+        var rphdr = (colMap.headerRow[rpi] || '').trim();
+        if (!rphdr) continue;
+        var rpval = row[rpi] != null ? String(row[rpi]).trim() : '';
+        group.rawPointMap[rphdr] = rpval;
       }
     }
   }
@@ -1344,6 +1365,8 @@ function emGroupToMatrixRow(groupKey, group) {
     category: group.category,
     checks: checks,
     points: group.pointValues,
+    pointsRaw: group.rawPointMap || {}, // M4: complete raw point name→value map
+    schema: 2, // M4: rows with pointsRaw set are schema version 2
     // Physical Attributes
     serial: '',
     model: '',
@@ -1545,6 +1568,7 @@ var _emNormCache = new Map(); // Performance: memoized emNormalizePoint results,
 var _emPointsComputedCache = new WeakMap(); // Milestone 1: keyed on row object; caches emGetNormalizedPoints result
 var _emPointNameCache = new Map(); // Milestone 1: rawName -> colKey, page-lifetime memoization for emMapPointToColumn
 var _emSearchTimer = null; // Performance: debounce timer for search input
+var _emOpenDrawers = new Set(); // M4: per-equipment "All Points" drawer state, keyed by row.id
 function emDebouncedSearch() {
   clearTimeout(_emSearchTimer);
   _emSearchTimer = setTimeout(emApplyFilters, 200);
@@ -1724,6 +1748,7 @@ function emRenderMatrix(container, data, pid) {
   _emPageSize = EM_PAGE_SIZE;
   _emShowAllDynCols = false;
   _emViewMode = 'audit';
+  _emOpenDrawers = new Set();
   var savedZoom = parseInt(DB.get('en_em_zoom', '100'), 10);
   _emZoomLevel = savedZoom >= 50 && savedZoom <= 150 ? savedZoom : 100;
   emInjectMatrixCSS();
@@ -2524,15 +2549,30 @@ function emGetNormalizedPoints(row) {
   var result = {};
 
   if (row.pointsRaw) {
-    // Future schema: pointsRaw is an array of [rawName, val] pairs
+    // M4 schema: pointsRaw is an object { rawName: value } (string→string map)
+    // Legacy fallback: also handle array of [rawName, val] pairs (pre-M4 placeholder)
     var rawEntries = row.pointsRaw;
-    for (var ri = 0; ri < rawEntries.length; ri++) {
-      var rawName = rawEntries[ri][0];
-      var rawVal = rawEntries[ri][1];
-      if (rawVal == null) continue;
-      var rColKey = emMapPointToColumn(rawName);
-      if (rColKey && result[rColKey] == null) {
-        result[rColKey] = rawVal;
+    if (Array.isArray(rawEntries)) {
+      for (var ri = 0; ri < rawEntries.length; ri++) {
+        var rawName = rawEntries[ri][0];
+        var rawVal = rawEntries[ri][1];
+        if (rawVal == null) continue;
+        var rColKey = emMapPointToColumn(rawName);
+        if (rColKey && result[rColKey] == null) {
+          result[rColKey] = rawVal;
+        }
+      }
+    } else {
+      // Object format (M4): iterate keys
+      var rawKeys = Object.keys(rawEntries);
+      for (var rki = 0; rki < rawKeys.length; rki++) {
+        var rawName2 = rawKeys[rki];
+        var rawVal2 = rawEntries[rawName2];
+        if (rawVal2 == null) continue;
+        var rColKey2 = emMapPointToColumn(rawName2);
+        if (rColKey2 && result[rColKey2] == null) {
+          result[rColKey2] = rawVal2;
+        }
       }
     }
   } else if (row.points) {
@@ -2876,10 +2916,12 @@ function emRenderTable(data, filters) {
   // Also skip the short EM_POINT_MAP col names (satLive, ratLive, etc.)
   for (var pm = 0; pm < EM_POINT_MAP.length; pm++) existingDefKeys[EM_POINT_MAP[pm].col] = true;
 
-  // Count frequency of each raw point name across all rows
+  // M4 Part 3: Count frequency of each raw point name across FILTERED rows only.
+  // When a building filter is active, only columns present in that building appear.
+  // (Audit view emGetAuditColDefs already scopes to filtered rows — mirrors that behavior here.)
   var dynPointFreq = {};
-  for (var rr = 0; rr < rows.length; rr++) {
-    var pts = rows[rr].points || {};
+  for (var rr = 0; rr < filtered.length; rr++) {
+    var pts = filtered[rr].points || {};
     for (var ptKey in pts) {
       if (!existingDefKeys[ptKey]) {
         dynPointFreq[ptKey] = (dynPointFreq[ptKey] || 0) + 1;
@@ -2994,6 +3036,11 @@ function emRenderTable(data, filters) {
   var pageRows = filtered.slice(pageStart, pageEnd);
 
   var theadCells = '';
+  // M4 Part 2: expand-toggle column (leftmost, always visible in raw view)
+  theadCells +=
+    '<th style="position:sticky;top:0;background:var(--s2);border-top:3px solid transparent;' +
+    'font-weight:600;color:var(--text2);white-space:nowrap;' +
+    'width:28px;text-align:center;border-bottom:1px solid var(--border);border-right:1px solid var(--border)"></th>';
   if (_emEditMode) {
     theadCells +=
       '<th style="position:sticky;top:0;background:var(--s2);border-top:3px solid transparent;' +
@@ -3025,11 +3072,33 @@ function emRenderTable(data, filters) {
       '</th>';
   }
 
+  // M4 Part 2: total column count for drawer colspan
+  // = expand col (1) + edit col (0 or 1) + defs.length
+  var _emTotalColCount = 1 + (_emEditMode ? 1 : 0) + defs.length;
+
   var tbodyRows = '';
   for (var ri = 0; ri < pageRows.length; ri++) {
     var row = pageRows[ri];
     var rowId = row.id;
+    var isDrawerOpen = _emOpenDrawers.has(rowId);
     var cells = '';
+    // M4 Part 2: expand-toggle cell
+    var safeRowId = String(rowId).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    cells +=
+      '<td style="padding:2px 4px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);' +
+      'vertical-align:middle;text-align:center;width:28px">' +
+      '<button onclick="emTogglePointDrawer(\'' +
+      safeRowId +
+      '\')" ' +
+      'title="' +
+      (isDrawerOpen ? 'Collapse point list' : 'Expand all points') +
+      '" ' +
+      'style="font-size:11px;padding:0 4px;background:none;border:none;cursor:pointer;color:var(--text2);' +
+      'line-height:1;display:inline-block;transform:' +
+      (isDrawerOpen ? 'rotate(90deg)' : 'none') +
+      '">' +
+      '&#9654;</button>' +
+      '</td>';
     if (_emEditMode) {
       var delLabel = String(row.building || '') + ', ' + String(row.name || row.id || '');
       cells +=
@@ -3074,6 +3143,88 @@ function emRenderTable(data, filters) {
       }
     }
     tbodyRows += '<tr>' + cells + '</tr>';
+    // M4 Part 2: inline "All Points" drawer row (inserted right after equipment row)
+    if (isDrawerOpen) {
+      tbodyRows +=
+        '<tr><td colspan="' + _emTotalColCount + '" style="padding:0;border-bottom:2px solid var(--accent)">';
+      tbodyRows += '<div style="padding:10px 16px;background:var(--s1);font-size:12px">';
+      if (row.schema >= 2 && row.pointsRaw && Object.keys(row.pointsRaw).length > 0) {
+        // Build sorted point list from pointsRaw
+        var _drRawKeys = Object.keys(row.pointsRaw)
+          .slice()
+          .sort(function (a, b) {
+            return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0;
+          });
+        tbodyRows +=
+          '<div style="font-weight:600;color:var(--text2);margin-bottom:6px">All BAS Points (' +
+          _drRawKeys.length +
+          ' captured)</div>';
+        tbodyRows +=
+          '<table style="border-collapse:collapse;font-size:11px;font-family:Consolas,monospace;width:auto">';
+        tbodyRows +=
+          '<thead><tr>' +
+          '<th style="padding:3px 10px 3px 0;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Point Name</th>' +
+          '<th style="padding:3px 10px 3px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Value</th>' +
+          '<th style="padding:3px 0 3px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Mapped Column</th>' +
+          '</tr></thead><tbody>';
+        for (var _dri = 0; _dri < _drRawKeys.length; _dri++) {
+          var _drKey = _drRawKeys[_dri];
+          var _drVal = row.pointsRaw[_drKey];
+          var _drMapped = emMapPointToColumn(_drKey, null, row.category);
+          var _drBadge = _drMapped
+            ? '<span style="background:var(--accent);color:#fff;border-radius:3px;padding:1px 5px;font-size:10px">' +
+              emHtmlEsc(_drMapped) +
+              '</span>'
+            : '<span style="color:var(--text3)">—</span>';
+          var _drValDisplay =
+            _drVal === '' ? '<span style="color:var(--text3)">empty</span>' : emHtmlEsc(String(_drVal));
+          tbodyRows +=
+            '<tr>' +
+            '<td style="padding:2px 10px 2px 0;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text)">' +
+            emHtmlEsc(_drKey) +
+            '</td>' +
+            '<td style="padding:2px 10px;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text2)">' +
+            _drValDisplay +
+            '</td>' +
+            '<td style="padding:2px 0 2px 10px;border-bottom:1px solid var(--border)">' +
+            _drBadge +
+            '</td>' +
+            '</tr>';
+        }
+        tbodyRows += '</tbody></table>';
+      } else if (row.points && Object.keys(row.points).length > 0) {
+        // Legacy row without pointsRaw — show graceful fallback
+        tbodyRows +=
+          '<div style="color:var(--text2);margin-bottom:8px"><em>Full point list available after re-importing this CSV.</em></div>';
+        var _legPts = row.points;
+        var _legKeys = Object.keys(_legPts).slice().sort();
+        tbodyRows +=
+          '<table style="border-collapse:collapse;font-size:11px;font-family:Consolas,monospace;width:auto">';
+        tbodyRows +=
+          '<thead><tr>' +
+          '<th style="padding:3px 10px 3px 0;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Point / Column</th>' +
+          '<th style="padding:3px 0 3px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">Value</th>' +
+          '</tr></thead><tbody>';
+        for (var _lki = 0; _lki < _legKeys.length; _lki++) {
+          var _lk = _legKeys[_lki];
+          var _lv = _legPts[_lk];
+          if (_lv == null) continue;
+          tbodyRows +=
+            '<tr>' +
+            '<td style="padding:2px 10px 2px 0;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text)">' +
+            emHtmlEsc(_lk) +
+            '</td>' +
+            '<td style="padding:2px 0 2px 10px;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text2)">' +
+            emHtmlEsc(String(_lv)) +
+            '</td>' +
+            '</tr>';
+        }
+        tbodyRows += '</tbody></table>';
+      } else {
+        tbodyRows += '<span style="color:var(--text3)">No point data available for this equipment.</span>';
+      }
+      tbodyRows += '</div></td></tr>';
+    }
   }
 
   if (filtered.length === 0) {
@@ -3081,7 +3232,7 @@ function emRenderTable(data, filters) {
       rows.length === 0 ? 'No equipment data — click Import CSVs to begin' : 'No rows match the current filters.';
     tbodyRows =
       '<tr><td colspan="' +
-      defs.length +
+      _emTotalColCount +
       '" style="padding:48px 32px;text-align:center;font-size:14px;color:var(--text2)">' +
       emptyMsg +
       '</td></tr>';
@@ -4546,6 +4697,19 @@ function emGetCellVal(row, colIdx, edits) {
   }
   // FIX: Use explicit null/undefined check so 0 passes through (was falsy || '')
   return row[def.key] != null ? row[def.key] : '';
+}
+
+/* M4 Part 2: Toggle the "All Points" inline drawer for a single equipment row.
+   Keyed by row.id in the module-level _emOpenDrawers Set.
+   Survives sort/filter/page-toggle because state is in the Set, not the DOM.  */
+function emTogglePointDrawer(rowId) {
+  if (_emOpenDrawers.has(rowId)) {
+    _emOpenDrawers.delete(rowId);
+  } else {
+    _emOpenDrawers.add(rowId);
+  }
+  var data = emLoadMatrix(window._emActivePid);
+  if (data) emRenderTable(data, _emFilters);
 }
 
 function emFormatCell(val, def) {
