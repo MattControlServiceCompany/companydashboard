@@ -1191,6 +1191,30 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.02.439',
+    date: '2026-06-02',
+    title:
+      'Equipment Matrix Phase 3a: 28 new point categories, regrouped Manage Mappings, OA humidity/dewpoint/enthalpy, reheat valve fix',
+    items: [
+      {
+        type: 'feature',
+        text: 'Equipment Matrix now recognizes 28 additional point types across AHU, VAV, FCU, heater, exhaust fan, zone, and furnace equipment -- preheat temp, coil leaving temps, return CO2/RH, duct static pressure setpoints, ventilation CFM, damper positions, fan amps, and more are now classified instead of falling through to "Other".',
+      },
+      {
+        type: 'feature',
+        text: 'The Manage Mappings dropdown is now organized into 10 intuitive subject groups (Temperatures, Airflow, Humidity, CO2/IAQ, Pressures, Valves/Dampers, Fan/Pump Status, Demand/Mode, Setpoints, Other) instead of a flat alphabetical list -- easier to find the right mapping.',
+      },
+      {
+        type: 'feature',
+        text: 'Outside Air Relative Humidity, Dewpoint, and Enthalpy columns now appear for AHU and zone-level equipment (VAV, FCU, heater, furnace). Dewpoint is now its own separate category -- no longer aliased from wet bulb.',
+      },
+      {
+        type: 'fix',
+        text: 'Reheat valve points are no longer shadowed by the heating valve column -- reheat valve now maps correctly to its own dedicated column.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.02.438',
     date: '2026-06-02',
     title:

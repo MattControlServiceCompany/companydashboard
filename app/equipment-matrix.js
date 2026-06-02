@@ -414,7 +414,9 @@ var EM_POINT_MAP = [
   {
     col: 'htgValveLive',
     label: 'Heating Valve Position',
-    patterns: [/heating valve/i, /hw valve/i, /htg valve/i, /reheat valve/i],
+    // Phase 3a: removed /reheat valve/i — reheat valve must map to reheatValveLive (zone category),
+    // not to the AHU heating-coil valve. Shadow was preventing zone reheat valve from auto-assigning.
+    patterns: [/heating valve/i, /hw valve/i, /htg valve/i],
     // Phase 2A: guard against "Heating Valve Capacity GPM", "Heating Valve Low Limit",
     // "Heating Valve Cutoff", "Heating Valve Maximum/Minimum".
     negativePatterns: [/\b(limit|capacity|cutoff|gpm|alarm|fault|maximum|minimum)\b/i],
@@ -582,6 +584,11 @@ var EM_POINT_MAP = [
     cats: ['ahu', 'vav', 'fpb', 'ddvav'],
   },
   // Milestone 1: Zone Humidity — surfaces from raw BAS point names at read time
+  // Phase 3a: added negativePatterns to block "Outside Air Humidity", "Outdoor Humidity",
+  // "Outside Humidity", "Return Air Humidity" — those now go to oaRhLive / rhReturnLive.
+  // The broad /\bhumidity\b/i pattern is intentionally kept for zone-level humidity labels
+  // (e.g. "Zone Humidity", "Space Humidity", "Media Center Humidity") but OA/outdoor/return
+  // contexts are now excluded here so the more-specific columns win.
   {
     col: 'rhZone',
     label: 'Zone RH %',
@@ -594,6 +601,9 @@ var EM_POINT_MAP = [
       /space\s*humid/i,
       /\brh\s*%/i,
       /\bhumidity\b/i,
+    ],
+    negativePatterns: [
+      /outside|outdoor|outside\s+air|outdoor\s+air|\boa\s+hum|return\s+air|return\s+hum|\bra\s+hum|set\s?point/i,
     ],
     types: ['AI'],
     cats: ['ahu', 'vav', 'fpb', 'ddvav'],
@@ -705,6 +715,370 @@ var EM_POINT_MAP = [
     negativePatterns: [/high|low|alarm|effective|set\s?point/i],
     types: ['AI'],
     cats: ['zone', 'fcu', 'heater', 'ef'],
+  },
+
+  // ── Phase 3a NEW ENTRIES ────────────────────────────────────────────────
+  // GROUP 2 — Outside Air Conditions (all 3 were user-reported missing; highest priority)
+
+  // C1: Outside Air Relative Humidity — broadcast OA RH from outdoor sensor
+  // Taxonomy variants: "Outside Air Humidity", "Outside Air Humidity - RNet",
+  // "Outside Humidity", "Local Outside Air Humidity", "Local Outdoor Air Humidity",
+  // "RTU Outside Air Humidity", "Outdoor Humidity", "VCC-X Outside Air Humidity",
+  // "AmbientHumidity". negativePatterns: sensor-fault flags are excluded.
+  // Placed AFTER oaWetBulbLive (which has /wet bulb/i) so no collision possible.
+  {
+    col: 'oaRhLive',
+    label: 'OA Relative Humidity',
+    patterns: [
+      /outside\s+air\s+hum/i,
+      /outdoor\s+air\s+hum/i,
+      /outside\s+hum(?!id.*set)/i,
+      /outdoor\s+hum(?!id.*set)/i,
+      /local\s+out(?:side|door)\s+air\s+hum/i,
+      /rtu\s+outside\s+air\s+hum/i,
+      /vcc.?x\s+outside\s+air\s+hum/i,
+      /ambient\s*humidity/i,
+      /\boa\s+r\.?h\b/i,
+      /\boa\s+humidity\b/i,
+    ],
+    negativePatterns: [/invalid|sensor\s+fail|fault|set\s?point/i],
+    types: ['AI'],
+    cats: ['ahu', 'ct', 'dhu', 'rtu', 'vav', 'fpb', 'fcu', 'furnace'],
+  },
+
+  // C2: Outside Air Dewpoint — DISTINCT from wet bulb (was mis-aliased in oaWetBulb)
+  // Taxonomy variants: "Outside Air Dewpoint", "Outside Air Dew Point",
+  // "Current Dew Point". "Return Dewpoint" is AMBIGUOUS (return-air, not OA) — excluded here.
+  {
+    col: 'oaDewpointLive',
+    label: 'OA Dewpoint',
+    patterns: [
+      /outside\s+air\s+dew\s?point/i,
+      /outdoor\s+air\s+dew\s?point/i,
+      /current\s+dew\s?point/i,
+      /\boa\s+dew\s?point/i,
+    ],
+    negativePatterns: [/return|set\s?point|invalid|fault/i],
+    types: ['AI'],
+    cats: ['ahu', 'ct', 'dhu', 'rtu', 'vav', 'fpb', 'fcu', 'furnace'],
+  },
+
+  // C3: Outside Air Enthalpy — broadcast OA enthalpy used for economizer control
+  // Taxonomy: "Outside Air Enthalpy". negativePatterns: return-air enthalpy variants
+  // ("AHU-1 - Return Air Enthalpy") and economizer-control-selection flags are not sensors.
+  // Already exists in EM_POINT_CATEGORIES.ahu as 'oaEnthalpy' — this EM_POINT_MAP entry
+  // allows import-time auto-assignment to show in Raw View "Mapped" column.
+  {
+    col: 'oaEnthalpyLive',
+    label: 'OA Enthalpy',
+    patterns: [/outside\s+air\s+enthalpy/i, /outdoor\s+air\s+enthalpy/i, /\boa\s+enthalpy\b/i],
+    negativePatterns: [/return|economizer\s+control\s+selection|set\s?point|fault/i],
+    types: ['AI'],
+    cats: ['ahu', 'ct', 'dhu', 'rtu', 'vav', 'fpb', 'fcu', 'furnace'],
+  },
+
+  // GROUP 10 — Demand/Mode/Occupancy (user-reported missing; was blocked by EM_EXCLUSION_PATTERNS
+  // broad /\bdemand\b/i — now narrowed in Phase 1C to billing demand only)
+
+  // K1: Demand Level — broadcast ANI present on literally every control program
+  // Taxonomy: "Demand Level", "KW Demand Level", "High Meter Demand Level",
+  // "Demand Limit Set Point" (setpoint). negativePatterns: meter/kwh/billing/peak/interval
+  // ensures utility-meter demand readings are excluded; "set point" excluded so
+  // "Demand Limit Set Point" does not collide here (it's a setpoint, not a live level).
+  {
+    col: 'demandLevelLive',
+    label: 'Demand Level',
+    patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
+    negativePatterns: [/meter|kwh|billing|peak|interval|set\s?point|limit/i],
+    types: ['AI', 'AV', 'BAV'],
+    cats: ['ahu', 'vav', 'fpb', 'ddvav', 'hwp', 'chwp', 'ct', 'fcu', 'heater', 'ef', 'zone', 'furnace'],
+  },
+
+  // K4: Schedule / Scheduled Occupied
+  // Taxonomy: "Schedule", "Scheduled Occupied", "Zone Schedule".
+  // negativePatterns: "BACnet Schedule" is excluded (BACnet Schedule Object type, not a point name).
+  {
+    col: 'schedLive',
+    label: 'Scheduled Occupied',
+    patterns: [/\bscheduled?\s+occupied\b/i, /\bzone\s+schedule\b/i, /\bscheduled\s+on\b/i],
+    negativePatterns: [/bacnet\s+schedule|override/i],
+    types: ['AV', 'BAV', 'BI'],
+    cats: ['ahu', 'vav', 'fpb', 'ddvav', 'fcu', 'heater', 'ef', 'zone', 'furnace'],
+  },
+
+  // GROUP 1 — Missing Air Temperature columns (A7/A8/A9)
+  // A7: Preheat Coil Leaving Air Temperature
+  // Taxonomy: "Preheat Air Temperature" (JOCO AHU1_extract), "OA Pre-Coil Temperature".
+  {
+    col: 'preheatAirTempLive',
+    label: 'Preheat Air Temp',
+    patterns: [/preheat\s+air\s+temp/i, /oa\s+pre.?coil\s+temp/i, /pre.?heat\s+coil\s+leaving/i],
+    negativePatterns: [/alarm|limit|setpoint|set\s?point|fault/i],
+    types: ['AI'],
+    cats: ['ahu'],
+  },
+
+  // A8: Cooling Coil Leaving Air Temperature
+  // Taxonomy: "Cooling Coil Leaving Air Temperature".
+  {
+    col: 'clgCoilLvgTempLive',
+    label: 'Cooling Coil Leaving Temp',
+    patterns: [/cooling\s+coil\s+leaving\s+air/i, /clg\s+coil\s+lvg/i, /cooling\s+coil\s+leaving\s+temp/i],
+    negativePatterns: [/alarm|limit|setpoint|set\s?point|fault/i],
+    types: ['AI'],
+    cats: ['ahu'],
+  },
+
+  // A9: Heating Coil Leaving Air Temperature
+  // Taxonomy: "Heating Coil Leaving Air Temperature".
+  {
+    col: 'htgCoilLvgTempLive',
+    label: 'Heating Coil Leaving Temp',
+    patterns: [/heating\s+coil\s+leaving\s+air/i, /htg\s+coil\s+lvg/i, /heating\s+coil\s+leaving\s+temp/i],
+    negativePatterns: [/alarm|limit|setpoint|set\s?point|fault/i],
+    types: ['AI'],
+    cats: ['ahu'],
+  },
+
+  // GROUP 3 — Missing Zone/Space Conditions
+
+  // D2: Return Air Humidity — at AHU or DHU level (distinct from zone RH)
+  // Taxonomy: "Return Air Humidity" (DHU pool unit), "RA Hum", "AHU-1 - Return Air Humidity".
+  // negativePatterns: set point excluded (that's D3 below).
+  {
+    col: 'rhReturnLive',
+    label: 'Return Air Humidity',
+    patterns: [/return\s+air\s+hum/i, /\bra\s+hum\b/i],
+    negativePatterns: [/setpoint|set\s?point/i],
+    types: ['AI'],
+    cats: ['ahu', 'dhu'],
+  },
+
+  // D3: Zone Humidity Setpoint / Dehumidification Setpoint
+  // Taxonomy: "Dehumidification Set Point", "Return Humidity Set Point", "Zone Hum Set Point".
+  {
+    col: 'rhZoneSpLive',
+    label: 'Humidity Setpoint',
+    patterns: [/dehumidif.*set\s?point/i, /return\s+humidity\s+set/i, /zone\s+hum.*set/i, /humidity\s+set\s?point/i],
+    types: ['SP', 'AV'],
+    cats: ['ahu', 'dhu', 'rtu', 'vav', 'fpb'],
+  },
+
+  // E2: Return Air CO2 — at AHU level (distinct from zone CO2)
+  // Taxonomy: "RA CO2 (rac)", "Return Air CO2", "AHU-1 - CO2" (see AMBIG-9 — these are RA CO2).
+  {
+    col: 'co2ReturnLive',
+    label: 'Return Air CO2',
+    patterns: [/\bra\s+co2\b/i, /return\s+air\s+co2/i, /return\s+co2/i],
+    negativePatterns: [/alarm|setpoint|set\s?point/i],
+    types: ['AI', 'BAI'],
+    cats: ['ahu', 'dhu'],
+  },
+
+  // H9: Unoccupied Cooling Setpoint
+  // Taxonomy: "Cooling Unoccupied Setpoint", "Unoccupied Cooling Set Point",
+  // "Unoccupied Cooling Set Point ANI/ANO".
+  {
+    col: 'zoneCoolUnoccSpLive',
+    label: 'Unocc Cooling Setpoint',
+    patterns: [/cooling\s+unoccupied\s+set/i, /unoccupied\s+cool.*set/i, /unoccupied\s+cooling/i],
+    types: ['SP', 'AV'],
+    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'furnace', 'zone'],
+  },
+
+  // H10: Unoccupied Heating Setpoint
+  // Taxonomy: "Heating Unoccupied Setpoint", "Unoccupied Heating Set Point",
+  // "Unoccupied Heating Set Point ANI/ANO", "Unoccupied HTSP".
+  {
+    col: 'zoneHtgUnoccSpLive',
+    label: 'Unocc Heating Setpoint',
+    patterns: [
+      /heating\s+unoccupied\s+set/i,
+      /unoccupied\s+heat.*set/i,
+      /unoccupied\s+heating/i,
+      /\bunoccupied\s+htsp\b/i,
+    ],
+    types: ['SP', 'AV'],
+    cats: ['vav', 'fpb', 'ddvav', 'fcu', 'furnace', 'zone'],
+  },
+
+  // GROUP 5 — Airflow (AHU/Plant Level)
+
+  // F2: Discharge/Zone Airflow Setpoint
+  // Taxonomy: "Air Flow Set Point", "Airflow Set Point", "Flow SP".
+  {
+    col: 'discFlowSpLive',
+    label: 'Airflow Setpoint',
+    patterns: [/air\s+flow\s+set\s?point/i, /airflow\s+set\s?point/i, /flow\s+set\s?point/i],
+    types: ['SP', 'AV'],
+    cats: ['vav', 'fpb', 'ddvav'],
+  },
+
+  // F4: Ventilation CFM (AHU DCV total)
+  // Taxonomy: "Ventilation CFM".
+  {
+    col: 'ventCfmLive',
+    label: 'Ventilation CFM',
+    patterns: [/ventilation\s+cfm/i],
+    negativePatterns: [/set\s?point/i],
+    types: ['AI', 'AV'],
+    cats: ['ahu'],
+  },
+
+  // F5: Ventilation CFM Setpoint
+  // Taxonomy: "Ventilation CFM Set Point", "Ventilation CFM Setpoint".
+  {
+    col: 'ventCfmSpLive',
+    label: 'Ventilation CFM Setpoint',
+    patterns: [/ventilation\s+cfm\s+set/i, /ventilation\s+cfm\s+setpoint/i],
+    types: ['SP', 'AV'],
+    cats: ['ahu'],
+  },
+
+  // F6: Return Fan CFM
+  // Taxonomy: "Return Fan CFM".
+  {
+    col: 'rfCfmLive',
+    label: 'Return Fan CFM',
+    patterns: [/return\s+fan\s+cfm/i],
+    negativePatterns: [/set\s?point/i],
+    types: ['AI', 'AV'],
+    cats: ['ahu'],
+  },
+
+  // F7: Supply Fan CFM (total or per-fan)
+  // Taxonomy: "Supply Fan Total CFM", "Supply Fan 1 CFM", "Supply Fan 2 CFM".
+  {
+    col: 'sfCfmLive',
+    label: 'Supply Fan CFM',
+    patterns: [/supply\s+fan\s+(?:total\s+)?cfm/i],
+    negativePatterns: [/set\s?point/i],
+    types: ['AI', 'AV'],
+    cats: ['ahu'],
+  },
+
+  // GROUP 6 — Pressure (missing columns)
+
+  // G2: Duct Static Pressure Setpoint
+  // Taxonomy: "Supply Duct Static Set Point", "Supply Fan Duct Static Pressure Setpoint ANO".
+  {
+    col: 'dspSpLive',
+    label: 'Duct Static Setpoint',
+    patterns: [
+      /supply\s+duct\s+static\s+set/i,
+      /duct\s+static\s+set/i,
+      /supply\s+fan\s+duct\s+static\s+pressure\s+setpoint/i,
+      /air\s+source\s+static\s+set\s?point/i,
+    ],
+    types: ['SP', 'AV'],
+    cats: ['ahu', 'rtu'],
+  },
+
+  // G3: Return/Exhaust Duct Static Pressure
+  // Taxonomy: "Return Duct Static - Smoothed", "Exhaust Static Set Point", "Exhaust Static - Smoothed".
+  {
+    col: 'rdspLive',
+    label: 'Return/Exhaust Duct Static',
+    patterns: [/return\s+duct\s+static/i, /exhaust\s+static(?!\s+set)/i, /exhaust\s+duct\s+static/i],
+    negativePatterns: [/alarm|fault/i],
+    types: ['AI'],
+    cats: ['ahu'],
+  },
+
+  // GROUP 7 — Setpoints (AHU/Plant Level)
+
+  // H7: SAT Cooling Reset Setpoint
+  // Taxonomy: "Cooling Supply Air Set Point", "Active Supply Air Setpoint",
+  // "Active Discharge Temp Setpoint" (from locked AMBIG-2 decision: Group 7.1).
+  {
+    col: 'satCoolSpLive',
+    label: 'SAT Cooling Setpoint',
+    patterns: [/cooling\s+supply\s+air\s+set/i, /active\s+discharge\s+temp\s+set/i, /active\s+supply\s+air\s+set/i],
+    negativePatterns: [/heating/i],
+    types: ['SP', 'AV'],
+    cats: ['ahu', 'rtu'],
+  },
+
+  // H8: SAT Heating Reset Setpoint
+  // Taxonomy: "Heating Supply Air Set Point".
+  {
+    col: 'satHtgSpLive',
+    label: 'SAT Heating Setpoint',
+    patterns: [/heating\s+supply\s+air\s+set/i],
+    negativePatterns: [/cooling/i],
+    types: ['SP', 'AV'],
+    cats: ['ahu', 'rtu'],
+  },
+
+  // H11: Economizer Setpoint
+  // Taxonomy: "Economizer Set Point", "Economizer Control Temp" (JOCO AHU1_extract trend file).
+  {
+    col: 'econSpLive',
+    label: 'Economizer Setpoint',
+    patterns: [/economizer\s+set\s?point/i, /economizer\s+control\s+temp/i, /oa\s+enable\s+setpoint/i],
+    types: ['SP', 'AV'],
+    cats: ['ahu', 'rtu'],
+  },
+
+  // GROUP 8 — Valves & Dampers (AHU Level)
+
+  // I6: Return Air Damper Position
+  // Taxonomy: "Return Air Damper". negativePatterns: "set point" and "enable" excluded.
+  {
+    col: 'raDampLive',
+    label: 'Return Air Damper',
+    patterns: [/return\s+air\s+damper/i, /\bra\s+damper\b/i],
+    negativePatterns: [/set\s?point|enable/i],
+    types: ['AO', 'AI'],
+    cats: ['ahu', 'rtu'],
+  },
+
+  // I7: Relief Damper Position
+  // Taxonomy: "Relief Damper Feedback", "Relief Damper".
+  {
+    col: 'reliefDampLive',
+    label: 'Relief Damper',
+    patterns: [/relief\s+damper/i, /bldg\s+relief\s+damper/i],
+    negativePatterns: [/set\s?point|enable/i],
+    types: ['AO', 'AI'],
+    cats: ['ahu'],
+  },
+
+  // GROUP 9 — Fans & Pumps (missing columns)
+
+  // J2: Return Fan VFD Speed
+  // Taxonomy: "Return Fan VFD Speed", "Return Fan Drive Output Speed".
+  // negativePatterns: "reference" and "set" excluded so speed setpoints don't collide here.
+  {
+    col: 'rfSpeedLive',
+    label: 'Return Fan VFD Speed',
+    patterns: [/return\s+fan\s+vfd\s+speed/i, /return\s+fan\s+drive\s+output\s+speed/i, /return\s+fan.*speed/i],
+    negativePatterns: [/reference|set\s?point/i],
+    types: ['AI', 'AO'],
+    cats: ['ahu'],
+  },
+
+  // J4: Supply Fan Status / Enable / Command
+  // Taxonomy: "Supply Fan Status", "Supply Fan Enable", "Supply Fan Command",
+  // "Fan Status" (short form on RTU/furnace). negativePatterns: speed and VFD signal excluded
+  // (those go to sfSpeedLive); alarm/fault excluded.
+  {
+    col: 'sfStatusLive',
+    label: 'Supply Fan Status',
+    patterns: [/supply\s+fan\s+status/i, /supply\s+fan\s+command/i, /supply\s+fan\s+enable/i, /\bfan\s+status\b/i],
+    negativePatterns: [/alarm|fault|speed|vfd/i],
+    types: ['BI', 'BO', 'BAI', 'BAO', 'BAV', 'BV'],
+    cats: ['ahu', 'rtu', 'furnace', 'fcu'],
+  },
+
+  // J6: Supply Fan Amperage
+  // Taxonomy: "Supply Fan Amperage", "Supply Fan VFD Amps".
+  {
+    col: 'sfAmpsLive',
+    label: 'Supply Fan Amperage',
+    patterns: [/supply\s+fan\s+amperage/i, /supply\s+fan.*amps/i, /supply\s+fan\s+vfd\s+amps/i],
+    types: ['AI'],
+    cats: ['ahu', 'rtu'],
   },
 ];
 
@@ -6316,6 +6690,305 @@ var EM_POINT_CATEGORIES = {
       patterns: [/oa.?enthalpy/i, /outdoor.?enthalpy/i, /outside air enthalpy/i, /enthalpy sensor/i],
       aliases: ['oa enthalpy', 'outdoor enthalpy', 'outside air enthalpy', 'oa-h', 'outdoor air h', 'enthalpy sensor'],
     },
+    // ── Phase 3a additions to AHU block ────────────────────────────────
+    // C1: OA Relative Humidity — moved from ct-only to ahu (and added to ct separately)
+    // Matches "Outside Air Humidity", "Outside Air Humidity - RNet", "Outdoor Humidity",
+    // "Local Outside Air Humidity", "RTU Outside Air Humidity", "AmbientHumidity"
+    {
+      key: 'oaRh',
+      label: 'Outdoor Air Relative Humidity',
+      required: false,
+      ashrae36Name: 'Outdoor Air Relative Humidity',
+      ashrae36Section: '5.16',
+      patterns: [
+        /oa.?rh\b/i,
+        /outdoor.{0,10}humidity/i,
+        /outside.?air.?humidity/i,
+        /outside\s+humidity/i,
+        /local.*out(?:side|door).*air.*hum/i,
+        /rtu.*outside.*air.*hum/i,
+        /ambient.?humidity/i,
+        /(?:outside|outdoor|oa).{0,10}relative.?humidity/i,
+        /relative.?humidity.{0,10}(?:outside|outdoor|oa)/i,
+      ],
+      aliases: [
+        'oa rh',
+        'outdoor humidity',
+        'outside air humidity',
+        'outside humidity',
+        'oa humidity',
+        'outside air relative humidity',
+        'outdoor air relative humidity',
+        'oa relative humidity',
+        'oat rh',
+        'outdoor rh',
+        'ambient rh',
+        'oa-rh',
+        'outside air humidity - rnet',
+        'local outside air humidity',
+        'local outdoor air humidity',
+        'rtu outside air humidity',
+        'ambient humidity',
+      ],
+    },
+    // C2: OA Dewpoint — standalone category (previously mis-aliased to wet bulb in ct block)
+    // Taxonomy: "Outside Air Dewpoint", "Outside Air Dew Point", "Current Dew Point"
+    {
+      key: 'oaDewpoint',
+      label: 'Outdoor Air Dewpoint',
+      required: false,
+      ashrae36Name: 'Outdoor Air Dewpoint',
+      ashrae36Section: '5.16',
+      patterns: [
+        /outside\s+air\s+dew\s?point/i,
+        /outdoor\s+air\s+dew\s?point/i,
+        /current\s+dew\s?point/i,
+        /\boa\s+dew\s?point/i,
+        /oa.?dewpoint/i,
+      ],
+      aliases: [
+        'outside air dewpoint',
+        'outside air dew point',
+        'outdoor air dewpoint',
+        'outdoor air dew point',
+        'current dew point',
+        'oa dewpoint',
+        'oa dew point',
+        'current dewpoint',
+      ],
+    },
+    // K1: Demand Level — broadcast ANI present on all equipment
+    {
+      key: 'demandLevel',
+      label: 'Demand Level',
+      required: false,
+      ashrae36Name: 'Demand Level',
+      ashrae36Section: '5.16',
+      patterns: [/\bdemand\s+level\b/i, /\bkw\s+demand\s+level\b/i],
+      aliases: [
+        'demand level',
+        'kw demand level',
+        'demand level 1',
+        'demand level 2',
+        'demand level 3',
+        'demand level 4',
+        'demand level 5',
+      ],
+    },
+    // A7: Preheat Coil Leaving Air Temperature
+    {
+      key: 'preheatAirTemp',
+      label: 'Preheat Air Temperature',
+      required: false,
+      ashrae36Name: 'Preheat Air Temperature',
+      ashrae36Section: '5.16',
+      patterns: [/preheat\s+air\s+temp/i, /oa\s+pre.?coil\s+temp/i, /pre.?heat\s+coil\s+leaving/i],
+      aliases: ['preheat air temperature', 'preheat air temp', 'oa pre-coil temperature', 'pre-heat coil leaving temp'],
+    },
+    // A8: Cooling Coil Leaving Air Temperature
+    {
+      key: 'clgCoilLvgTemp',
+      label: 'Cooling Coil Leaving Air Temp',
+      required: false,
+      ashrae36Name: 'Cooling Coil Leaving Air Temperature',
+      ashrae36Section: '5.16',
+      patterns: [/cooling\s+coil\s+leaving\s+air/i, /clg\s+coil\s+lvg/i, /cooling\s+coil\s+leaving\s+temp/i],
+      aliases: ['cooling coil leaving air temperature', 'cooling coil leaving air temp', 'clg coil leaving temp'],
+    },
+    // A9: Heating Coil Leaving Air Temperature
+    {
+      key: 'htgCoilLvgTemp',
+      label: 'Heating Coil Leaving Air Temp',
+      required: false,
+      ashrae36Name: 'Heating Coil Leaving Air Temperature',
+      ashrae36Section: '5.16',
+      patterns: [/heating\s+coil\s+leaving\s+air/i, /htg\s+coil\s+lvg/i, /heating\s+coil\s+leaving\s+temp/i],
+      aliases: ['heating coil leaving air temperature', 'heating coil leaving air temp', 'htg coil leaving temp'],
+    },
+    // D2: Return Air Humidity
+    {
+      key: 'rhReturn',
+      label: 'Return Air Humidity',
+      required: false,
+      ashrae36Name: 'Return Air Relative Humidity',
+      ashrae36Section: '5.16',
+      patterns: [/return\s+air\s+hum/i, /\bra\s+hum\b/i],
+      aliases: ['return air humidity', 'return air relative humidity', 'ra hum', 'ra humidity', 'ahu return humidity'],
+    },
+    // E2: Return Air CO2
+    {
+      key: 'co2Return',
+      label: 'Return Air CO2',
+      required: false,
+      ashrae36Name: 'Return Air CO2',
+      ashrae36Section: '5.16',
+      patterns: [/\bra\s+co2\b/i, /return\s+air\s+co2/i, /return\s+co2/i],
+      aliases: ['ra co2', 'return air co2', 'return co2', 'ahu co2', 'ahu-1 - co2', 'ahu-2 - co2'],
+    },
+    // G2: Duct Static Pressure Setpoint
+    {
+      key: 'dspSp',
+      label: 'Duct Static Pressure Setpoint',
+      required: false,
+      ashrae36Name: 'Duct Static Pressure Setpoint',
+      ashrae36Section: '5.16',
+      patterns: [
+        /supply\s+duct\s+static\s+set/i,
+        /duct\s+static\s+set/i,
+        /supply\s+fan\s+duct\s+static.*setpoint/i,
+        /air\s+source\s+static\s+set\s?point/i,
+      ],
+      aliases: [
+        'supply duct static set point',
+        'duct static set point',
+        'duct static setpoint',
+        'supply duct static setpoint',
+      ],
+    },
+    // G3: Return/Exhaust Duct Static
+    {
+      key: 'rdsp',
+      label: 'Return / Exhaust Duct Static',
+      required: false,
+      ashrae36Name: 'Return Duct Static Pressure',
+      ashrae36Section: '5.16',
+      patterns: [/return\s+duct\s+static/i, /exhaust\s+static(?!\s+set)/i, /exhaust\s+duct\s+static/i],
+      aliases: [
+        'return duct static',
+        'return duct static - smoothed',
+        'exhaust static',
+        'exhaust static - smoothed',
+        'exhaust duct static pressure',
+      ],
+    },
+    // H7: SAT Cooling Reset Setpoint
+    {
+      key: 'satCoolSp',
+      label: 'SAT Cooling Setpoint',
+      required: false,
+      ashrae36Name: 'Supply Air Temperature Cooling Setpoint',
+      ashrae36Section: '5.16',
+      patterns: [/cooling\s+supply\s+air\s+set/i, /active\s+discharge\s+temp\s+set/i, /active\s+supply\s+air\s+set/i],
+      aliases: [
+        'cooling supply air set point',
+        'active discharge temp setpoint',
+        'active supply air setpoint',
+        'sat cooling setpoint',
+      ],
+    },
+    // H8: SAT Heating Reset Setpoint
+    {
+      key: 'satHtgSp',
+      label: 'SAT Heating Setpoint',
+      required: false,
+      ashrae36Name: 'Supply Air Temperature Heating Setpoint',
+      ashrae36Section: '5.16',
+      patterns: [/heating\s+supply\s+air\s+set/i],
+      aliases: ['heating supply air set point', 'sat heating setpoint', 'heat supply air setpoint'],
+    },
+    // H11: Economizer Setpoint
+    {
+      key: 'econSp',
+      label: 'Economizer Setpoint',
+      required: false,
+      ashrae36Name: 'Economizer Setpoint',
+      ashrae36Section: '5.16',
+      configFlag: 'hasEconomizer',
+      patterns: [/economizer\s+set\s?point/i, /economizer\s+control\s+temp/i, /oa\s+enable\s+setpoint/i],
+      aliases: ['economizer set point', 'economizer setpoint', 'economizer control temp', 'oa enable setpoint'],
+    },
+    // F4: Ventilation CFM
+    {
+      key: 'ventCfm',
+      label: 'Ventilation CFM',
+      required: false,
+      ashrae36Name: 'Ventilation Airflow',
+      ashrae36Section: '5.16',
+      patterns: [/ventilation\s+cfm/i],
+      aliases: ['ventilation cfm', 'ventilation airflow'],
+    },
+    // F5: Ventilation CFM Setpoint
+    {
+      key: 'ventCfmSp',
+      label: 'Ventilation CFM Setpoint',
+      required: false,
+      ashrae36Name: 'Ventilation Airflow Setpoint',
+      ashrae36Section: '5.16',
+      patterns: [/ventilation\s+cfm\s+set/i, /ventilation\s+cfm\s+setpoint/i],
+      aliases: ['ventilation cfm set point', 'ventilation cfm setpoint'],
+    },
+    // F6: Return Fan CFM
+    {
+      key: 'rfCfm',
+      label: 'Return Fan CFM',
+      required: false,
+      ashrae36Name: 'Return Fan Airflow',
+      ashrae36Section: '5.16',
+      configFlag: 'hasReturnFan',
+      patterns: [/return\s+fan\s+cfm/i],
+      aliases: ['return fan cfm', 'return fan airflow'],
+    },
+    // F7: Supply Fan CFM
+    {
+      key: 'sfCfm',
+      label: 'Supply Fan CFM',
+      required: false,
+      ashrae36Name: 'Supply Fan Airflow',
+      ashrae36Section: '5.16',
+      patterns: [/supply\s+fan\s+(?:total\s+)?cfm/i],
+      aliases: ['supply fan cfm', 'supply fan total cfm', 'supply fan 1 cfm', 'supply fan 2 cfm'],
+    },
+    // I6: Return Air Damper
+    {
+      key: 'raDamp',
+      label: 'Return Air Damper',
+      required: false,
+      ashrae36Name: 'Return Air Damper Position',
+      ashrae36Section: '5.16',
+      configFlag: 'hasEconomizer',
+      patterns: [/return\s+air\s+damper/i, /\bra\s+damper\b/i],
+      aliases: ['return air damper', 'ra damper', 'return damper'],
+    },
+    // I7: Relief Damper
+    {
+      key: 'reliefDamp',
+      label: 'Relief Damper',
+      required: false,
+      ashrae36Name: 'Relief Damper Position',
+      ashrae36Section: '5.16',
+      configFlag: 'hasReliefFan',
+      patterns: [/relief\s+damper/i, /bldg\s+relief\s+damper/i],
+      aliases: ['relief damper', 'relief damper feedback', 'bldg relief damper control'],
+    },
+    // J2: Return Fan VFD Speed
+    {
+      key: 'rfSpeed',
+      label: 'Return Fan VFD Speed',
+      required: false,
+      ashrae36Name: 'Return Fan Speed',
+      ashrae36Section: '5.16',
+      configFlag: 'hasReturnFan',
+      patterns: [/return\s+fan\s+vfd\s+speed/i, /return\s+fan\s+drive\s+output\s+speed/i, /return\s+fan.*speed/i],
+      aliases: [
+        'return fan vfd speed',
+        'return fan drive output speed',
+        'return fan speed',
+        'rf vfd speed',
+        'rf speed',
+      ],
+    },
+    // J6: Supply Fan Amperage
+    {
+      key: 'sfAmps',
+      label: 'Supply Fan Amperage',
+      required: false,
+      ashrae36Name: 'Supply Fan Amperage',
+      ashrae36Section: '5.16',
+      patterns: [/supply\s+fan\s+amperage/i, /supply\s+fan.*amps/i, /supply\s+fan\s+vfd\s+amps/i],
+      aliases: ['supply fan amperage', 'supply fan amps', 'supply fan vfd amps', 'sf amps'],
+    },
+    // K1 (duplicate for ahu — same entry also added to each equipment block below)
+    // Already added above as 'demandLevel'
   ],
 
   /* ── VAV (Single-Duct with Reheat, ASHRAE 36 §5.6) ────────────────── */
@@ -7872,15 +8545,10 @@ var EM_POINT_CATEGORIES = {
       required: true,
       ashrae36Name: 'Outdoor Air Wet Bulb Temperature',
       ashrae36Section: '5.21',
-      patterns: [
-        /wet.?bulb/i,
-        /\bwb\b.?temp/i,
-        /oa.?wet.?bulb/i,
-        /\boawb\b/i,
-        /outdoor.?wb/i,
-        /ambient.?wet.?bulb/i,
-        /dewpoint.?temp/i,
-      ],
+      // Phase 3a: removed /dewpoint.?temp/i pattern and 'dewpoint temp' alias —
+      // dewpoint is a distinct measurement from wet bulb; "Outside Air Dewpoint"
+      // must map to oaDewpoint (new category), not be aliased to wet bulb.
+      patterns: [/wet.?bulb/i, /\bwb\b.?temp/i, /oa.?wet.?bulb/i, /\boawb\b/i, /outdoor.?wb/i, /ambient.?wet.?bulb/i],
       aliases: [
         'oa wet bulb',
         'wb temp',
@@ -7891,7 +8559,6 @@ var EM_POINT_CATEGORIES = {
         'wet bulb',
         'oa-wb',
         'oa enthalpy (calculated)',
-        'dewpoint temp',
       ],
     },
     {
@@ -9594,59 +10261,117 @@ function emGetAllPoints(rows) {
    Deduplicates by label within each group to avoid showing the same concept
    twice (e.g. "Supply Air Temperature" from AHU and from FPB).             */
 function emBuildFunctionalCatOptions() {
-  // Functional group assignments by label keywords — order matters (first match wins)
+  // Functional group assignments by label keywords — order matters (first match wins).
+  // Phase 3a: reorganized to match the 10 intuitive subject-based groups from the locked taxonomy:
+  //   Air Temperatures, Outside Air Conditions, Zone/Space Conditions, Water Temperatures,
+  //   Airflow, Pressure, Setpoints, Valves & Dampers, Fans & Pumps, Demand/Mode/Occupancy.
+  // Added "Humidity" group so RH/dewpoint/enthalpy land correctly and not in "Other".
+  // "Outside Air Conditions" added so OAT, OA RH, OA Dewpoint, OA Enthalpy, OA Wet Bulb
+  //   are grouped together, not scattered across Temperature/Other.
   var funcGroups = [
     {
-      name: 'Temperature',
+      // Group 2 — Outside Air Conditions: OAT, OA RH, OA Dewpoint, OA Enthalpy, OA Wet Bulb
+      // Test before Temperature so "Outdoor Air Temperature" lands here, not in Temperature.
+      name: 'Outside Air Conditions',
       test: function (label) {
-        return /temp|temperature|enthalpy/i.test(label);
+        return (
+          /outdoor\s+air|outside\s+air|\boa\s+(temp|r\.?h|dewpoint|dew\s?point|enthalpy|wet\s+bulb|humid|relative)/i.test(
+            label,
+          ) ||
+          /\boa\s+relative\s+humidity|\boa\s+humidity\b|outdoor\s+humidity|outside\s+humidity/i.test(label) ||
+          /wet\s+bulb|dewpoint|dew\s+point/i.test(label)
+        );
       },
     },
     {
+      // Group 1 — Air Temperatures (AHU/RTU coil-level air temps)
+      name: 'Air Temperatures',
+      test: function (label) {
+        return /\btemp(?:erature)?\b|\benthalpy\b/i.test(label);
+      },
+    },
+    {
+      // Group 3 — Zone/Space Conditions (zone-level sensors and setpoints)
+      name: 'Zone/Space Conditions',
+      test: function (label) {
+        return /\bzone\b|\bspace\b|\broom\b/i.test(label);
+      },
+    },
+    {
+      // Group 4 — Water Temperatures (HW, CHW, CW, boiler)
+      name: 'Water Temperatures',
+      test: function (label) {
+        return /\b(hot\s+water|chilled\s+water|condenser\s+water|hw|chw|cw|boiler|pool\s+water)\b/i.test(label);
+      },
+    },
+    {
+      // New: Humidity group so RH/dewpoint/humidity labels not in Outside Air still sort correctly
+      name: 'Humidity',
+      test: function (label) {
+        return /humidity|relative\s+humidity|\brh\b|dewpoint|dew\s+point/i.test(label);
+      },
+    },
+    {
+      // Group 5 — Airflow
+      name: 'Airflow',
+      test: function (label) {
+        return /airflow|cfm|\bflow\b/i.test(label);
+      },
+    },
+    {
+      // Group 6 — Pressure
       name: 'Pressure',
       test: function (label) {
         return /pressure|static/i.test(label);
       },
     },
     {
-      name: 'Airflow',
-      test: function (label) {
-        return /airflow|flow|cfm/i.test(label);
-      },
-    },
-    {
-      name: 'Valve Commands',
-      test: function (label) {
-        return /valve/i.test(label);
-      },
-    },
-    {
-      name: 'Damper Commands',
-      test: function (label) {
-        return /damper/i.test(label);
-      },
-    },
-    {
-      name: 'Fan Controls',
-      test: function (label) {
-        return /fan|vfd|speed/i.test(label);
-      },
-    },
-    {
+      // Group 7 — Setpoints (plant/AHU level; zone setpoints caught by Zone/Space above)
       name: 'Setpoints',
       test: function (label) {
-        return /setpoint|set point/i.test(label);
+        return /setpoint|set\s+point/i.test(label);
       },
     },
     {
+      // Group 8 — Valves & Dampers
+      name: 'Valves & Dampers',
+      test: function (label) {
+        return /valve|damper/i.test(label);
+      },
+    },
+    {
+      // Group 9 — Fans & Pumps
+      name: 'Fans & Pumps',
+      test: function (label) {
+        return /fan|pump|vfd|speed|amperage|amps/i.test(label);
+      },
+    },
+    {
+      // Group 10 — Demand / Mode / Occupancy
+      name: 'Demand/Mode/Occupancy',
+      test: function (label) {
+        return /demand|mode|occupancy|occupied|schedule|override/i.test(label);
+      },
+    },
+    {
+      // CO2 / IAQ — sensors not caught above
+      name: 'CO2 / IAQ',
+      test: function (label) {
+        return /co2|carbon\s+dioxide|iaq/i.test(label);
+      },
+    },
+    {
+      // Status & Sensors catch-all before Other
       name: 'Status & Sensors',
       test: function (label) {
-        return /status|sensor|co2|freeze|plant/i.test(label);
+        return /status|sensor|freeze|plant|enable/i.test(label);
       },
     },
   ];
 
-  var catTypeOrder = ['ahu', 'vav', 'fpb', 'ddvav', 'hwp', 'chwp', 'ct'];
+  // Phase 3a: added fcu, heater, ef, zone, furnace so their categories appear in
+  // the Manage Mappings dropdown (previously only the first 7 were included).
+  var catTypeOrder = ['ahu', 'vav', 'fpb', 'ddvav', 'hwp', 'chwp', 'ct', 'fcu', 'heater', 'ef', 'zone', 'furnace'];
   // Collect all options: { key, label, equipType }
   var raw = [];
   var rawSeen = {}; // equipType:key dedup
