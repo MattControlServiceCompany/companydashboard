@@ -1919,6 +1919,8 @@ function emInjectMatrixCSS() {
     '.em-table-wrap thead th { position: sticky; top: 0; background: var(--s2); z-index: 11; }',
     // Resize cursor hint — applied to th when hovering near right edge (set via JS)
     '.em-table-wrap th.em-col-resizing { cursor: col-resize; user-select: none; }',
+    // Footer frozen cells keep the table-body background, not the header background
+    '.em-table-wrap tfoot td.em-frozen { background: var(--s1) !important; }',
   ].join('\n');
   document.head.appendChild(style);
 }
@@ -1948,12 +1950,14 @@ function emUpdateStickyOffsets() {
   // Number of frozen columns: always 3 data columns. In edit mode, also freeze the delete col.
   var frozenCount = hasDelCol ? 4 : 3;
 
-  // Collect all rows (thead + tbody)
+  // Collect all rows (thead + tbody + tfoot)
   var allRows = [];
   var theadRows = table.querySelectorAll('thead tr');
   var tbodyRows = table.querySelectorAll('tbody tr');
+  var tfootRows = table.querySelectorAll('tfoot tr');
   for (var i = 0; i < theadRows.length; i++) allRows.push(theadRows[i]);
   for (var j = 0; j < tbodyRows.length; j++) allRows.push(tbodyRows[j]);
+  for (var k = 0; k < tfootRows.length; k++) allRows.push(tfootRows[k]);
 
   if (allRows.length === 0) return;
 
@@ -3050,10 +3054,7 @@ function buildAuditFooterRow(totalsMap, defs, label, isBold) {
   for (var di = 0; di < defs.length; di++) {
     var def = defs[di];
     if (di === 0) {
-      var labelStyle =
-        tdBase +
-        'position:sticky;left:0;z-index:1;' +
-        (isBold ? 'font-weight:700;color:var(--text)' : 'font-style:italic;color:var(--text2)');
+      var labelStyle = tdBase + (isBold ? 'font-weight:700;color:var(--text)' : 'font-style:italic;color:var(--text2)');
       html += '<td style="' + labelStyle + '">' + label + '</td>';
       continue;
     }
@@ -3119,6 +3120,8 @@ function buildAvgFooterRow(avgMap, defs, label, isBold, hasEditCol) {
   var rowStyle = 'background:var(--s1);';
   var tdBase = 'padding:8px 12px;vertical-align:middle;border-top:2px solid var(--border);background:var(--s1);';
   var html = '<tr style="' + rowStyle + '">';
+  // Always emit a placeholder for the expand-toggle column (always present in Raw view)
+  html += '<td style="' + tdBase + 'width:28px;min-width:28px;"></td>';
   if (hasEditCol) {
     html += '<td style="' + tdBase + '"></td>';
   }
@@ -3126,10 +3129,7 @@ function buildAvgFooterRow(avgMap, defs, label, isBold, hasEditCol) {
     var def = defs[di];
     // First column (building) gets the label text
     if (di === 0) {
-      var labelStyle =
-        tdBase +
-        'position:sticky;left:0;z-index:1;' +
-        (isBold ? 'font-weight:700;color:var(--text)' : 'font-style:italic;color:var(--text2)');
+      var labelStyle = tdBase + (isBold ? 'font-weight:700;color:var(--text)' : 'font-style:italic;color:var(--text2)');
       html += '<td style="' + labelStyle + '">' + label + '</td>';
       continue;
     }
@@ -4844,6 +4844,11 @@ function emAttachColResizeHandler(wrap) {
 function emPrevPage(pid) {
   if (_emCurrentPage > 0) {
     _emCurrentPage--;
+    var _wrap = document.getElementById('em-table-wrap');
+    if (_wrap) {
+      _wrap.scrollTop = 0;
+      _wrap.scrollLeft = 0;
+    }
     var data = emLoadMatrix(pid);
     emRenderTable(data, _emFilters);
   }
@@ -4857,6 +4862,11 @@ function emNextPage(pid) {
   if (totalPages < 1) totalPages = 1;
   if (_emCurrentPage >= totalPages - 1) return;
   _emCurrentPage++;
+  var _wrap = document.getElementById('em-table-wrap');
+  if (_wrap) {
+    _wrap.scrollTop = 0;
+    _wrap.scrollLeft = 0;
+  }
   emRenderTable(data, _emFilters);
 }
 

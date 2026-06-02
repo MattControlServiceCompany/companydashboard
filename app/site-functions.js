@@ -1191,6 +1191,22 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.02.437',
+    date: '2026-06-02',
+    title:
+      'Equipment Matrix: footer columns now freeze correctly in Raw and Audit views, pagination resets scroll position',
+    items: [
+      {
+        type: 'fix',
+        text: 'Footer rows (Totals and Average) in the Equipment Matrix Raw and Audit views now freeze their left columns correctly -- they no longer scroll out of view horizontally when you have many columns.',
+      },
+      {
+        type: 'fix',
+        text: 'Navigating to the next or previous page in Equipment Matrix now scrolls the table back to the top-left, so you always start reading from the beginning of the new page.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.02.436',
     date: '2026-06-02',
     title:
