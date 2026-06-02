@@ -1191,6 +1191,30 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.02.438',
+    date: '2026-06-02',
+    title:
+      'Equipment Matrix Phase 2: smarter point matching -- fewer junk readings, Virtual points normalized, collision warnings',
+    items: [
+      {
+        type: 'fix',
+        text: 'Equipment Matrix now filters out alarm, limit, setpoint, and capacity points from live-reading columns (SAT, RAT, MAT, supply fan speed, cooling/heating valves, CO2) -- junk readings like "Cooling Valve Capacity GPM" or "Low Mixed Air Temperature" no longer appear in those columns.',
+      },
+      {
+        type: 'fix',
+        text: 'WebCTRL "Virtual Zone Temperature" points now map correctly to the Zone Temperature column instead of falling through to unmatched.',
+      },
+      {
+        type: 'fix',
+        text: 'Outside Air Wet Bulb and Broadcast Wet Bulb points on AHU and DHU equipment are now recognized (previously only matched cooling towers).',
+      },
+      {
+        type: 'change',
+        text: 'When two distinct real-sensor points compete for the same matrix column, a console warning is emitted with both point names so the conflict can be traced and corrected. Virtual points lose silently to real readings -- this is expected behavior.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.02.437',
     date: '2026-06-02',
     title:

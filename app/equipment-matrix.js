@@ -340,11 +340,34 @@ var EM_POINT_MAP = [
     col: 'satLive',
     label: 'Supply Air Temp',
     patterns: [/supply air temp/i, /sat\b/i],
+    // Phase 2A: guard against config/alarm points like "Low Supply Air Temperature Alarm",
+    // "High Supply Air Temperature Cooling" (limit config), "Supply Air Temp Setpoint",
+    // "Cooling Supply Air Set Point" (SAT reset setpoint — belongs in satCoolSpLive, Phase 3).
+    negativePatterns: [/\b(low|high|alarm|limit|setpoint|set\s*point|capacity|fault|heating|cooling)\b/i],
     types: ['AI', 'SP'],
     cats: ['ahu', 'vav', 'fpb'],
   },
-  { col: 'ratLive', label: 'Return Air Temp', patterns: [/return air temp/i, /rat\b/i], types: ['AI'], cats: ['ahu'] },
-  { col: 'matLive', label: 'Mixed Air Temp', patterns: [/mixed air temp/i, /mat\b/i], types: ['AI'], cats: ['ahu'] },
+  {
+    col: 'ratLive',
+    label: 'Return Air Temp',
+    patterns: [/return air temp/i, /rat\b/i],
+    // Phase 2A: guard against "Return Air Temperature Alarm", "Return Air Temp Setpoint".
+    negativePatterns: [/\b(low|high|alarm|limit|setpoint|set\s*point|capacity|fault)\b/i],
+    types: ['AI'],
+    cats: ['ahu'],
+  },
+  {
+    col: 'matLive',
+    label: 'Mixed Air Temp',
+    // Phase 2A: use /mixed\s+air\s+temp/i to tolerate double-space artifact
+    // "Mixed  Air Temperature" from LSSD CSV exports (see taxonomy investigation).
+    patterns: [/mixed\s+air\s+temp/i, /mat\b/i],
+    // Phase 2A: guard against "Low Mixed Air Temperature" / "High Mixed Air Temperature"
+    // (freeze-protection limit configs) and "AHU9 Mixed Air Low Limit".
+    negativePatterns: [/\b(low|high|alarm|limit|setpoint|set\s*point|cutoff|capacity|fault)\b/i],
+    types: ['AI'],
+    cats: ['ahu'],
+  },
   {
     col: 'oatLive',
     label: 'OAT (Live)',
@@ -358,6 +381,9 @@ var EM_POINT_MAP = [
     label: 'Supply Fan Speed',
     // FIX 4b: Added /supply fan.*speed/i and /fan.*vfd.*speed/i to match 'Supply Fan VFD Speed'
     patterns: [/supply fan.*speed/i, /fan.*vfd.*speed/i, /supply fan speed/i, /fan speed/i, /sf speed/i],
+    // Phase 2A: guard against "Return Fan VFD Speed" (needs rfSpeedLive, Phase 3), "Low Fan Speed
+    // Alarm", "Max Fan Speed" / "Maximum Fan Speed" (config limit), "Return Fan Drive Output Speed".
+    negativePatterns: [/\b(return|exhaust|low|high|alarm|limit|maximum|minimum|fault)\b/i],
     types: ['AI', 'AO'],
     cats: ['ahu'],
   },
@@ -379,6 +405,9 @@ var EM_POINT_MAP = [
     col: 'clgValveLive',
     label: 'Cooling Valve Position',
     patterns: [/cooling valve/i, /chw valve/i, /clg valve/i],
+    // Phase 2A: guard against "Cooling Valve Capacity GPM" (sizing config), "Cooling Valve Low Limit"
+    // (valve minimum position config), "Cooling Valve Cutoff Temp" (freeze protection limit).
+    negativePatterns: [/\b(limit|capacity|cutoff|gpm|alarm|fault|maximum|minimum)\b/i],
     types: ['AO', 'AI'],
     cats: ['ahu', 'fpb'],
   },
@@ -386,6 +415,9 @@ var EM_POINT_MAP = [
     col: 'htgValveLive',
     label: 'Heating Valve Position',
     patterns: [/heating valve/i, /hw valve/i, /htg valve/i, /reheat valve/i],
+    // Phase 2A: guard against "Heating Valve Capacity GPM", "Heating Valve Low Limit",
+    // "Heating Valve Cutoff", "Heating Valve Maximum/Minimum".
+    negativePatterns: [/\b(limit|capacity|cutoff|gpm|alarm|fault|maximum|minimum)\b/i],
     types: ['AO', 'AI'],
     cats: ['ahu', 'vav', 'fpb'],
   },
@@ -400,11 +432,12 @@ var EM_POINT_MAP = [
     col: 'zoneAirTempLive',
     label: 'Zone Air Temp',
     patterns: [/zone air temp/i, /room temp/i, /space temp/i, /zone temp/i],
-    // Negative guard: alarm/status/setpoint/virtual names must NOT map here even if the
-    // pattern matches (e.g. "High Zone Temperature", "Low Zone Temperature",
-    // "Virtual Zone Temperature"). Checked in emMapPointToColumn.
+    // Negative guard: alarm/status/setpoint names must NOT map here even if the
+    // pattern matches (e.g. "High Zone Temperature", "Low Zone Temperature").
+    // Phase 2B: "virtual" removed — "Virtual Zone Temperature" should map here via
+    // the virtual-stripping logic in emMapPointToColumn; excluding it hides useful data.
     negativePatterns: [
-      /\b(high|low|alarm|fault|fail(ed|ure)?|diagnostic|virtual|setpoint|set\s?point|override|limit|status|enable|effective)\b/i,
+      /\b(high|low|alarm|fault|fail(ed|ure)?|diagnostic|setpoint|set\s?point|override|limit|status|enable|effective)\b/i,
     ],
     types: ['AI'],
     cats: ['vav', 'fpb', 'ddvav'],
@@ -542,6 +575,9 @@ var EM_POINT_MAP = [
     col: 'co2Live',
     label: 'Zone CO2',
     patterns: [/\bco2\b/i, /zone\s*co2/i, /carbon dioxide/i, /co2\s*sensor/i, /co2\s*ppm/i],
+    // Phase 2A: guard against "CO2 Alarm", "High CO2 Alarm", "CO2 Override", "CO2 Setpoint",
+    // "CO2 Fault" — these are alarm/config objects, not live sensor readings.
+    negativePatterns: [/\b(alarm|high|low|override|fault|setpoint|set\s*point)\b/i],
     types: ['AI', 'BAI', 'BAV', 'AV'],
     cats: ['ahu', 'vav', 'fpb', 'ddvav'],
   },
@@ -562,7 +598,16 @@ var EM_POINT_MAP = [
     types: ['AI'],
     cats: ['ahu', 'vav', 'fpb', 'ddvav'],
   },
-  { col: 'oaWetBulbLive', label: 'OA Wet Bulb', patterns: [/wet bulb/i, /wb\b/i], types: ['AI'], cats: ['ct'] },
+  // Phase 2C: expanded cats from ['ct'] to ['ct', 'ahu', 'dhu'] — "Outside Air Wet Bulb" and
+  // "Broadcast Wet Bulb" appear on AHU and DHU (pool dehumidifier) equipment in JOCO data,
+  // not only on cooling towers.
+  {
+    col: 'oaWetBulbLive',
+    label: 'OA Wet Bulb',
+    patterns: [/wet bulb/i, /wb\b/i],
+    types: ['AI'],
+    cats: ['ct', 'ahu', 'dhu'],
+  },
   {
     col: 'ctFanSpeedLive',
     label: 'CT Fan Speed',
@@ -655,7 +700,9 @@ var EM_POINT_MAP = [
     col: 'zoneTempShortLive',
     label: 'Zone Temperature',
     patterns: [/^zone temp(erature)?$/i, /^zone\s+temperature$/i],
-    negativePatterns: [/high|low|alarm|virtual|effective|set\s?point/i],
+    // Phase 2B: removed "virtual" — "Virtual Zone Temperature" should match after virtual-stripping
+    // in emMapPointToColumn; it was previously blocked here, hiding useful data.
+    negativePatterns: [/high|low|alarm|effective|set\s?point/i],
     types: ['AI'],
     cats: ['zone', 'fcu', 'heater', 'ef'],
   },
@@ -1327,19 +1374,25 @@ function emMapPointToColumn(pointName, pointType, equipCategory) {
   if (!equipCategory) {
     if (_emPointNameCache.has(pointName)) return _emPointNameCache.get(pointName);
   }
+  // Phase 2B: strip leading "Virtual" qualifier before matching so "Virtual Zone Temperature"
+  // maps to the same column as "Zone Temperature". The original pointName is preserved by the
+  // caller — the collision resolution block uses it to detect virtual vs. real points.
+  var matchName = pointName.replace(/^\s*virtual\s+/i, '');
   var _mapResult = null;
   for (var i = 0; i < EM_POINT_MAP.length; i++) {
     var mapping = EM_POINT_MAP[i];
     if (equipCategory && mapping.cats && mapping.cats.indexOf(equipCategory) === -1) continue;
     for (var p = 0; p < mapping.patterns.length; p++) {
-      if (mapping.patterns[p].test(pointName)) {
+      if (mapping.patterns[p].test(matchName)) {
         // If this column has negative guards, reject names that match any of them.
-        // Prevents alarm/status/virtual point names from mapping to live-reading columns
+        // Prevents alarm/status point names from mapping to live-reading columns
         // (e.g. "High Zone Temperature" must not map to zoneAirTempLive).
+        // Guards are tested against matchName (post-virtual-strip) so "Virtual Zone Temperature"
+        // is not blocked by the former "virtual" guard that was in zoneAirTempLive.
         if (mapping.negativePatterns) {
           var blocked = false;
           for (var n = 0; n < mapping.negativePatterns.length; n++) {
-            if (mapping.negativePatterns[n].test(pointName)) {
+            if (mapping.negativePatterns[n].test(matchName)) {
               blocked = true;
               break;
             }
@@ -1475,34 +1528,95 @@ function emExtractEquipmentGroups(rows, colMap) {
       }
       var pointCol = emMapPointToColumn(pointName, null, category);
       if (pointCol && pointVal !== '') {
-        // Value-preference guard: never let a non-numeric value overwrite an existing
-        // numeric one. For temperature columns, also require the new numeric value to be
-        // in a plausible range (30–120 °F) to block garbage readings.
-        // This is the second line of defence against alarm/status points (e.g. "Normal")
-        // clobbering the real zone-temp reading.
+        // ── Collision resolution ──────────────────────────────────────────
+        // Phase 2B: detect whether the incoming point is a "Virtual" qualifier point.
+        // "Virtual Zone Temperature" is a software-computed aggregate; the physical sensor
+        // ("Zone Temperature") is preferred when both map to the same column.
+        var isVirtual = /^\s*virtual\s+/i.test(pointName);
+
+        // Track which point name won each column slot so we can warn on genuine collisions.
+        if (!wgroup._pointColWinner) wgroup._pointColWinner = {};
+
         var existing = wgroup.pointValues[pointCol];
-        var existingNum = existing !== undefined ? parseFloat(existing) : NaN;
-        var newNum = parseFloat(pointVal);
-        var existingIsNumeric = !isNaN(existingNum);
-        var newIsNumeric = !isNaN(newNum);
-        var isTempCol =
-          pointCol === 'zoneAirTempLive' ||
-          pointCol === 'satLive' ||
-          pointCol === 'ratLive' ||
-          pointCol === 'oatLive' ||
-          pointCol === 'matLive';
-        var newInRange = !isTempCol || (newNum >= 30 && newNum <= 120);
-        // Allow write only when:
-        //   slot is empty, OR
-        //   existing is non-numeric and new is numeric (and in range for temp cols), OR
-        //   both are numeric and new is in range (last-write-wins for two real readings,
-        //     but still gate on range to block obviously bogus values like 999 F)
-        if (
-          existing === undefined ||
-          (!existingIsNumeric && newIsNumeric && newInRange) ||
-          (existingIsNumeric && newIsNumeric && newInRange)
-        ) {
+        var existingWinner = wgroup._pointColWinner[pointCol];
+
+        if (existing === undefined) {
+          // Slot is empty — write unconditionally.
           wgroup.pointValues[pointCol] = pointVal;
+          wgroup._pointColWinner[pointCol] = pointName;
+        } else if (isVirtual) {
+          // Phase 2B: virtual point — only write if slot is still empty (already handled above).
+          // A real/physical point already occupies the slot; the virtual value loses silently.
+          // No console.warn — real-vs-virtual collision is expected and resolved by design.
+        } else {
+          // Phase 2B / Phase 4: slot already occupied by another non-virtual point.
+          // Check whether this is a redundant write (same point name repeated) or a genuine
+          // collision between two distinct non-virtual points that both mapped here.
+          var existingIsVirtual = existingWinner && /^\s*virtual\s+/i.test(existingWinner);
+          if (existingIsVirtual) {
+            // The previous winner was a virtual point — the real/physical point wins.
+            // Overwrite silently (no warning; this is the expected virtual-loses outcome).
+            wgroup.pointValues[pointCol] = pointVal;
+            wgroup._pointColWinner[pointCol] = pointName;
+          } else if (existingWinner && existingWinner !== pointName) {
+            // Phase 4: genuine collision — two distinct non-virtual points map to the same column.
+            // This is a mapping configuration problem. Surface it for triage.
+            // Value-preference: keep a numeric value over a text value; otherwise keep existing
+            // (first-wins for same-type values, since we have no other priority signal here).
+            var existingNum = parseFloat(existing);
+            var newNum = parseFloat(pointVal);
+            var existingIsNumeric = !isNaN(existingNum);
+            var newIsNumeric = !isNaN(newNum);
+            if (!existingIsNumeric && newIsNumeric) {
+              // Numeric displaces text — better signal.
+              wgroup.pointValues[pointCol] = pointVal;
+              wgroup._pointColWinner[pointCol] = pointName;
+              console.warn(
+                '[EM] Collision on column "' +
+                  pointCol +
+                  '" for equipment "' +
+                  wgroup.equipName +
+                  '": ' +
+                  '"' +
+                  existingWinner +
+                  '" (text "' +
+                  existing +
+                  '") displaced by "' +
+                  pointName +
+                  '" (numeric ' +
+                  pointVal +
+                  '). Check EM_POINT_MAP patterns.',
+              );
+            } else {
+              // Keep existing; log that the challenger lost.
+              console.warn(
+                '[EM] Collision on column "' +
+                  pointCol +
+                  '" for equipment "' +
+                  wgroup.equipName +
+                  '": ' +
+                  '"' +
+                  pointName +
+                  '" (' +
+                  pointVal +
+                  ') lost to existing "' +
+                  existingWinner +
+                  '" (' +
+                  existing +
+                  '). Check EM_POINT_MAP patterns.',
+              );
+            }
+          }
+          // else: same point name seen again (duplicate row in CSV) — silently overwrite.
+          // Phase 3 (STEP 3): the 30-120°F temperature range guard has been removed.
+          // The exclusion negativePatterns added in Phase 2A now prevent config/alarm points
+          // (capacity ratings, limit configs) from matching temperature columns in the first place.
+          // A range check on the displayed value is never-hide-a-raw-value-safe only if done
+          // before storage; since the raw drawer shows rawPointMap (always complete), removing
+          // this range guard from the display/collision path is safe per the locked rules.
+          if (existingWinner === pointName) {
+            wgroup.pointValues[pointCol] = pointVal;
+          }
         }
       }
     }
