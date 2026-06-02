@@ -6801,16 +6801,28 @@ const UTILITY_RULES = [
       // ── Bill date (print date, top-right corner) ──
       // Standalone date like "4/10/26" or "12/10/25".
       // Page 7 OCR renders "4" as "A" giving "A/10/26" — tolerate that.
-      // Also find date adjacent to "ACCOUNT NUMBER" label on same line.
-      const BillDate =
-        page.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})\s+ACCOUNT\s+NUMBER/i)?.[1] ||
-        page.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s*$/m)?.[1] ||
-        // OCR "A" for "4": e.g. "A/10/26"
-        (() => {
-          const m = page.match(/^([A-Z]\/\d{1,2}\/\d{2,4})\s*$/m);
-          return m ? m[1].replace(/^[A-Z]/, '4') : null;
-        })() ||
-        null;
+      // Also find date adjacent to "ACCOUNT NUMBER" label on same line or
+      // on the immediately preceding line (separated by pipe/column noise).
+      // FIX(2026-06-02): real OCR produces "4/10/26 |" (trailing pipe) or
+      // "4/10/26\nACCOUNT NUMBER" — the old \s* pattern fails with trailing
+      // pipe, and the same-line pattern fails when the date and label are on
+      // separate lines.  New patterns tolerate [\s|]* at end of date line and
+      // accept date on the line immediately before "ACCOUNT NUMBER".
+      const BillDate = (() => {
+        // P1 — date + ACCOUNT NUMBER on same line (clear scans, no pipe)
+        const _p1 = page.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})[\s|]*ACCOUNT\s+NUMBER/i)?.[1];
+        if (_p1) return _p1;
+        // P2 — date on own line, optionally followed by pipe/spaces (trailing pipe noise)
+        const _p2 = page.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})[\s|]*$/m)?.[1];
+        if (_p2) return _p2;
+        // P3 — date on one line, ACCOUNT NUMBER on next line (1-2 lines gap with pipe noise)
+        const _p3 = page.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})[\s|]*$[\s\S]{0,4}^ACCOUNT\s+NUMBER/m)?.[1];
+        if (_p3) return _p3;
+        // P4 — OCR "A" for "4": e.g. "A/10/26" (with optional trailing pipe)
+        const _p4m = page.match(/^([A-Z]\/\d{1,2}\/\d{2,4})[\s|]*$/m);
+        if (_p4m) return _p4m[1].replace(/^[A-Z]/, '4');
+        return null;
+      })();
 
       // ── Service FROM/TO (present in some pages, primarily older format) ──
       let BillingPeriodStart = null;
@@ -6874,9 +6886,16 @@ const UTILITY_RULES = [
       // ── Service address (from bottom stub) ──
       // "ADDRESS: 519 9TH ST" or "ADDRESS:  519 9TH ST"
       // Page 5 OCR renders the colon as semicolon: "ADDRESS; 6TH ST"
-      // Strip any trailing date that bleeds in from the adjacent column.
+      // FIX(2026-06-02): Truncate at the FIRST date-like token or run of
+      // numeric/amount columns that bleeds from adjacent columns into the
+      // address field.  The old regex only stripped a date at the very end,
+      // so "519 8TH IT 4/25/26 1038.14 243.76" passed through intact.
+      // New: split on the first occurrence of a date pattern anywhere in
+      // the string and keep only the portion before it.
       const _addrRaw = page.match(/ADDRESS\s*[;:]\s*([^\n]+)/i)?.[1]?.trim() || null;
-      const ServiceAddress = _addrRaw ? _addrRaw.replace(/\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/, '').trim() || null : null;
+      const ServiceAddress = _addrRaw
+        ? (_addrRaw.split(/\s+\d{1,2}\/\d{1,2}\/\d{2,4}/)[0] || _addrRaw).trim() || null
+        : null;
 
       // ── Customer / building name ──
       // "BAKER UNIVERSITY/COLLINS HOUSE" or "BAKER UNIVERSITY" alone.
@@ -7337,6 +7356,53 @@ const UTILITY_RULES = [
         });
       }
 
+      // ── FIX(2026-06-02): Usage sanity guard for OCR-inflated meter reads ──
+      // Real OCR occasionally inserts a leading '1' before a meter read,
+      // turning e.g. 176989 into 1769289 (7 digits vs 6 digits) and producing
+      // computed usages of 1,500,000+ gallons.  Guard: if usage > 500,000 gal
+      // for a monthly bill, null it out and flag _usageSuspect on the output.
+      // A legitimate monthly max for any single account is well under 500,000.
+      // Also null usage when prevRead and currRead have a 1-digit-count gap AND
+      // removing the leading digit of currRead closely matches prevRead (OCR
+      // leading-digit insertion pattern).
+      const _checkWaterUsageSuspect = (prevRead, currRead, usage) => {
+        if (usage == null) return false;
+        if (usage > 500000) return true;
+        // Digit-count mismatch check: only for large reads (>= 100,000) where an OCR
+        // leading-'1' insertion would always produce an implausibly large reading.
+        // Restricting to prevRead >= 100,000 avoids false positives on small meters
+        // (e.g. prevRead=100 → currRead=1100 is a legitimate 1,000-gal usage).
+        if (prevRead != null && currRead != null && prevRead >= 100000) {
+          const prevDigits = String(Math.floor(Math.abs(prevRead))).length;
+          const currDigits = String(Math.floor(Math.abs(currRead))).length;
+          if (currDigits - prevDigits === 1) {
+            const withoutLeading = parseInt(String(Math.floor(currRead)).slice(1));
+            if (withoutLeading > 0 && Math.abs(withoutLeading - prevRead) / prevRead < 0.2) return true;
+          }
+        }
+        return false;
+      };
+
+      const _waUsageSuspect = _checkWaterUsageSuspect(waPrevRead, waCurrRead, waUsage);
+      const _swUsageSuspect = _checkWaterUsageSuspect(swPrevRead, swCurrRead, swUsage);
+      if (_waUsageSuspect) waUsage = null;
+      if (_swUsageSuspect) swUsage = null;
+
+      // ── FIX(2026-06-02): Shared-meter water/sewer mismatch correction ──
+      // Water and sewer share the same physical meter so their usage should
+      // match.  When both are present and diverge by ~10x (ratio 8-15), a
+      // column mis-parse has occurred.  Prefer the water usage for sewer in
+      // that case and record _swUsageFromWater on the bill for traceability.
+      // Only applies when water usage survived the sanity check above.
+      let _swUsageFromWater = false;
+      if (waUsage != null && swUsage != null && swUsage !== 0 && waUsage !== 0) {
+        const _ratio = Math.max(waUsage, swUsage) / Math.min(waUsage, swUsage);
+        if (_ratio >= 8 && _ratio <= 15) {
+          swUsage = waUsage;
+          _swUsageFromWater = true;
+        }
+      }
+
       // ── Water bill ──
       if (waCharge != null && waCharge !== 0) {
         const waTotal = waCharge + (waDebtPmt || 0) + (waFranchiseFee || 0);
@@ -7346,6 +7412,7 @@ const UTILITY_RULES = [
           StartRead: waPrevRead,
           EndRead: waCurrRead,
           WaterUsage: waUsage || null,
+          ...(_waUsageSuspect ? { _usageSuspect: true } : {}),
           WaterCharge: waCharge,
           WaterDebtPayment: waDebtPmt || null,
           WaterFranchiseFee: waFranchiseFee || null,
@@ -7366,6 +7433,8 @@ const UTILITY_RULES = [
           StartRead: swPrevRead || waPrevRead,
           EndRead: swCurrRead || waCurrRead,
           SewerUsage: swUsage || null,
+          ...(_swUsageSuspect ? { _usageSuspect: true } : {}),
+          ...(_swUsageFromWater ? { _sewerUsageFromWater: true } : {}),
           SewerCharge: swCharge,
           SewerFranchiseFee: swFranchiseFee || null,
           TotalCurrentCharges: Math.round(swTotal * 100) / 100,

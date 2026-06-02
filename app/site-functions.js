@@ -1191,6 +1191,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.06.02.435',
+    date: '2026-06-02',
+    title: 'City of Baldwin data-quality improvements: bill dates, clean addresses, and invalid meter readings flagged',
+    items: [
+      {
+        type: 'fix',
+        text: 'City of Baldwin bills now capture the billing date and period, show a clean service address, and flag meter readings that scan noise inflated to impossible values.',
+      },
+    ],
+  },
+  {
     v: 'v2026.06.02.434',
     date: '2026-06-02',
     title: 'City of Baldwin municipal bills now extract correctly from scanned PDFs',
@@ -1204,7 +1215,8 @@ var RELEASE_NOTES = [
   {
     v: 'v2026.06.01.433',
     date: '2026-06-01',
-    title: 'Equipment Matrix recognizes far more equipment types, CO2 gap lowers coverage score, City of Baldwin water/sewer fixes',
+    title:
+      'Equipment Matrix recognizes far more equipment types, CO2 gap lowers coverage score, City of Baldwin water/sewer fixes',
     items: [
       {
         type: 'feature',

@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.06.02.434';
+  var CH_VERSION = 'v2026.06.02.435';
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
@@ -31,6 +31,18 @@
   // This stub is used by index.html and service-department.html which only load site-ui.js.
   // Keep in sync with the top entry in site-functions.js RELEASE_NOTES.
   var RELEASE_NOTES = [
+    {
+      v: 'v2026.06.02.435',
+      date: '2026-06-02',
+      title:
+        'City of Baldwin data-quality improvements: bill dates, clean addresses, and invalid meter readings flagged',
+      items: [
+        {
+          type: 'fix',
+          text: 'City of Baldwin bills now capture the billing date and period, show a clean service address, and flag meter readings that scan noise inflated to impossible values.',
+        },
+      ],
+    },
     {
       v: 'v2026.06.01.433',
       date: '2026-06-01',
